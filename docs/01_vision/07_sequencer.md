@@ -78,24 +78,18 @@ Run for WingFoil's major releases, with a reduced smoke run at each minor (brief
 | W19 — Hard ones | F6.12 M3 situation awareness · F6.9 S9 parallel agents | F6.12 | categories F and G covered at scale |
 | W20 — Openness | F7.3 external contribution guide | — | external scenario authors supported |
 
-W19 holds two high-uncertainty features (F6.12 and F6.9). This breaks the one-per-wave rule. The
-proposal is to accept it for v1.0, because it is far away and will be re-planned. The alternative is
-to split it into two waves.
+W19 holds two high-uncertainty features (F6.12 and F6.9). This breaks the one-per-wave rule. It is
+accepted for v1.0, because it is far away and will be re-planned (sequencer decision 4).
 
 ---
 
-## Open Questions
+## Decisions from the sequencer review
 
-1. **What the budget measures.** Is the 20–30 € per campaign the **API-equivalent cost**, or real
-   spending on a Claude subscription? With a subscription, the headless agent reports an estimated
-   cost that is not actually paid, and the real limit becomes usage quotas and time. This changes
-   F1.2 and F1.3. The proposal is to report API-equivalent cost always, and to set the guard on
-   whichever limit applies.
-2. **Determinism in v0.1.** A single repetition per arm cannot measure determinism (F4.5, W10). The
-   proposal is to run **3 repetitions on S1 only**, the cheapest scenario, and 1 repetition on the
-   others. The alternative is to move F4.5 to v0.2.
-3. **WingFoil version for the first public campaign.** The benchmark is built against the pinned
-   WingFoil 0.1.0, where many governance steps are expected failures (F3.6). The proposal is to
-   develop against 0.1.0, and to run the first public campaign on the **latest released WingFoil**
-   at that time, likely v0.2, which is in development with the Memory transition verbs. Or should
-   the first result be on 0.1.0?
+1. **Budget measure:** the API-equivalent cost is always reported. The budget guard (F1.2, F1.3)
+   applies to whichever limit actually applies: money for API usage, or quotas and time for a
+   subscription.
+2. **Determinism in v0.1:** 3 repetitions on S1 only, and 1 repetition on S2, S3 and S8. F4.5 stays
+   in W10.
+3. **WingFoil version:** the benchmark is developed against the pinned WingFoil 0.1.0. The first
+   public campaign runs on the latest released WingFoil at that time.
+4. **W19:** accepted with two high-uncertainty features.
