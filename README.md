@@ -4,8 +4,8 @@ Benchmark suite that measures **where WingFoil makes a difference** in AI-assist
 development: the same scenarios are executed by AI agents with and without WingFoil (and with
 competing tools), and compared on quality, cost and determinism.
 
-> **Status:** inception. Vision, personas, scope and the experiment design are being defined;
-> no scenario or runner exists yet.
+> **Status:** inception complete (see [`docs/01_vision/`](docs/01_vision/)); specification is next.
+> No scenario or runner exists yet.
 
 ## Tooling
 
