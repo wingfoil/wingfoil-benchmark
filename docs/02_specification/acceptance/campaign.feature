@@ -68,6 +68,7 @@ Feature: Campaign definition, cost estimate and budget guard
     When the maintainer starts the campaign
     Then the campaign does not start
     And no agent session is started
+    And no command-line option can make it start
 
   @F1.3
   Scenario: A run that exceeds its own cost cap is stopped

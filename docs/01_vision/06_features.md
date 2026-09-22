@@ -1,6 +1,6 @@
 # Features — WingFoil Benchmark
 
-**Version:** 1.1
+**Version:** 1.2
 **Date:** 2026-09-22
 **Status:** Approved
 **Traces to:** [05_journeys.md](05_journeys.md), [03_is-isnot.md](03_is-isnot.md); input: [X_competitor-landscape-2026-09-22.md](X_competitor-landscape-2026-09-22.md)
@@ -63,7 +63,7 @@ decision in the experiment design.
 | F4.5 | **Determinism metric**: agreement between repeated runs of the same arm, and across agents when more than one is available (for example agreement on hidden tests, and structural similarity of the result). No harness in the input landscape measures this, so it is an original metric, and it needs an operational definition. | J2.6 | H | M | **H** |
 | F4.6 | **Blind rubric judge** (not in the first release; arrives with S5): an LLM judge scores spec adherence against a rubric, with harness files stripped so that it cannot tell the arms apart. | J2.5 | M | M | **H** |
 | F4.8 | **Tool-neutral governance metrics**: governance is measured by outcomes that any harness can achieve, for example "is an illegal state transition prevented?" or "can who approved what, and why, be reconstructed from the repository?", and never by the presence of one tool's file or commit format. | J5.2, J6.1 | H | M | M |
-| F4.7 | **Maintainability as next-change cost**: the cost and success of the later steps of a scenario, attributed to the code produced by the earlier ones. | vision | H | L | M |
+| F4.7 | **Continuity metrics**: maintainability as **next-change cost** (M-F2), the cost and success of the later steps of a scenario attributed to the code produced by the earlier ones; and **decision consistency** (M-F1), whether earlier decisions are respected or explicitly revised (extended in 1.2). | vision | H | L | M |
 
 ## F5 — Results and reporting
 
@@ -152,3 +152,8 @@ phase. The IDs below are the candidates from the brief.
    `package.json` version had not been bumped. The WingFoil under development is now the **v0.2
    pre-release, pinned to commit `3df305e`**. Its only relevant gap is the missing **workflow engine**.
    Source: scenario-specs review (2026-09-22), [../02_specification/scenarios/README.md](../02_specification/scenarios/README.md) K5.
+7. **Amendment 1.2 (specification phase, acceptance review, 2026-09-22) — F4.7 extended.** Decision
+   consistency (M-F1, experiment design §4.3) had no feature. F4.7 now covers both continuity
+   metrics, M-F2 and M-F1, and stays in wave W9. The sequencer keeps its short label "next-change
+   cost". Source: [../02_specification/acceptance/README.md](../02_specification/acceptance/README.md),
+   decision 3.

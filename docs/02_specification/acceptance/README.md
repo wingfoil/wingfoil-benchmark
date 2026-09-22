@@ -32,17 +32,12 @@ v0.1**.
   3 interventions per step) are the **defaults**. The campaign file may override them (K4: budget
   gate loose until dry runs).
 
-## Open questions
+## Decisions from the acceptance review
 
-1. **Fake agent (Conventions):** is a scripted fake agent acceptable as the test double for
-   acceptance tests? The alternative is recording real Claude Code sessions once and replaying
-   them. That is more realistic, but the recordings go stale when the agent changes.
-2. **Budget refusal (campaign.feature, F1.3):** above the ceiling, the proposal is a **hard refusal**
-   that cannot be overridden from the command line, only by editing the campaign file. Is that
-   right, or should an explicit override flag exist?
-3. **Traceability gap: M-F1 has no feature.** Decision consistency (M-F1, experiment design §4.3) is
-   the core metric of S3, but no feature in `06_features.md` names it. `scoring.feature` tags its
-   scenarios `@F4.7` (next-change cost) for now. The proposal is an amendment to features 1.2 that
-   extends F4.7 to "continuity metrics: next-change cost (M-F2) and decision consistency (M-F1)".
-   The alternative is a separate feature F4.9 in W9. That would give W9 four features, one more
-   than the sequencer's rule allows.
+1. **Fake agent:** a scripted fake agent is the test double for acceptance tests. Real sessions are
+   used only in dry runs and campaigns.
+2. **Budget refusal (F1.3):** rigid. Above the ceiling a campaign never starts, and there is no
+   command-line override. The only way is to edit the campaign file, which changes the campaign's
+   identity.
+3. **M-F1 traceability:** F4.7 is extended to cover decision consistency (features 1.2). The
+   `@F4.7` tags in `scoring.feature` are therefore correct.
