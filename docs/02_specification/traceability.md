@@ -30,7 +30,7 @@ Only questions that are active in v0.1 are listed. Q-E2, Q-E3 (v0.2), G-A, G-B (
 | Q-C2 cost of development | S1 | M-K1, M-K2 | scoring.feature @F4.3; runner.feature @F2.3 | REQ-RUN-09, REQ-SCO-* |
 | Q-D1 real defects fixed | S2 steps 1–3 | M-D1 | scoring.feature @F4.1 | REQ-SCO-01, REQ-SCO-02 |
 | Q-D2 non-defects rejected | S2 step 2 (false), step 3 (duplicate) | M-D2 | scoring.feature @F4.8 (content check) | REQ-SCO-06 |
-| Q-D3 regressions | S2, S1 step 4 | M-D3 | scoring.feature @F4.1 | REQ-SCO-02 |
+| Q-D3 regressions | S2, S1 step 4 (S1 1.1) | M-D3 | scoring.feature @F4.1 | REQ-SCO-02 |
 | Q-E1 directives respected | S8 steps 1–4 | M-E1 | scoring.feature @F4.8 | REQ-SCO-05 |
 | Q-F1 decisions respected or revised | S3 (D1–D5), S2 step 3 | M-F1 | scoring.feature @F4.7 | REQ-SCO-06 |
 | Q-F2 next-change cost | S3 steps 2–5, S1 step 4 | M-F2 | scoring.feature @F4.7 | REQ-RUN-09 |
@@ -48,7 +48,7 @@ Only questions that are active in v0.1 are listed. Q-E2, Q-E3 (v0.2), G-A, G-B (
 | F2.1 isolated run | J2.3 | runner.feature | REQ-RUN-01, 02; REQ-CLI-10 | W1 |
 | F2.2 fresh-session steps | vision | runner.feature | REQ-RUN-04, 05 | W2 |
 | F2.3 Claude Code adapter | J2.3, J2.7 | runner.feature | REQ-RUN-04, 09, 15; REQ-ARC-04 | W2 |
-| F2.4 neutral approver | J2.4 | runner.feature | REQ-RUN-06, 07; REQ-SCO-11 | W2 |
+| F2.4 neutral approver | J2.4 | runner.feature | REQ-RUN-06, 07, 17 | W2 |
 | F2.5 arm setups | J6.1 | runner.feature | REQ-FMT-05; REQ-RUN-03, 11 | W3 |
 | F2.6 WingFoil under test | J2.1, J4.4 | runner.feature | REQ-RUN-14 | W3 |
 | F2.7 arm activation | J3.3, J6.1 | runner.feature | REQ-RUN-12; REQ-FMT-05 | W3 |
@@ -92,7 +92,7 @@ Only questions that are active in v0.1 are listed. Q-E2, Q-E3 (v0.2), G-A, G-B (
 | T4 prompt leakage or asymmetry | identical prompts; leak scan | REQ-FMT-08; runner.feature @F2.7 |
 | T5 training contamination | hold-out additions; purpose-written seeds (S2, S3, S8) | REQ-SCO-09; scenario specs |
 | T6 model non-determinism | repetitions; `n` on every value | REQ-FMT-07; REQ-SCO-07 |
-| T7 model or agent drift | model id and agent version pinned; baseline rerun per campaign | REQ-FMT-01; REQ-RUN-16 |
+| T7 model or agent drift | model id and agent version pinned; baseline rerun per campaign | REQ-FMT-01 (baseline mandatory, 1.1); REQ-RUN-16 |
 | T8 small n | preliminary labels | REQ-RES-03 |
 | T9 approver policy favours some tools | one versioned policy; interventions per arm | REQ-RUN-06, 07 |
 | T10 harness capability gap | expected failures | REQ-FMT-10; REQ-SCO-10 |
@@ -116,3 +116,13 @@ Only questions that are active in v0.1 are listed. Q-E2, Q-E3 (v0.2), G-A, G-B (
 4. **S1 carries Q-D3 through step 4, but S1's card does not list Q-D3.** S1 lists D as a secondary
    category, and its oracle checks regressions, but its GQM field omits Q-D3. The proposal is to add
    Q-D3 to S1's card in S1 1.1.
+
+## Decisions from the traceability review
+
+All four findings accepted (2026-09-22):
+
+1. REQ-SCO-11 moved to REQ-RUN-17 (requirements 1.1).
+2. T13 stays partly mitigated. Shell-level network use is not detected, and the method page declares
+   this limit. Container-level network logging is a possible later addition.
+3. REQ-FMT-01 makes the baseline arm mandatory (requirements 1.1).
+4. Q-D3 added to S1's card (S1 1.1).
