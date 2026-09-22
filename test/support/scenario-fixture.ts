@@ -53,6 +53,23 @@ export function tempDir(prefix: string, register: (cleanup: () => void) => void 
   return dir;
 }
 
+/** Write the scenario version directory `<root>/<id>/<version>/`; `files` are created empty. */
+export function writeScenarioAt(
+  root: string,
+  yaml: Record<string, unknown> | string = completeScenarioYaml(),
+  files: readonly string[] = COMPLETE_FILES,
+  id = 'S9',
+  version = '1.0',
+): void {
+  const dir = join(root, id, version);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, 'scenario.yaml'), typeof yaml === 'string' ? yaml : stringify(yaml));
+  for (const file of files) {
+    mkdirSync(dirname(join(dir, file)), { recursive: true });
+    writeFileSync(join(dir, file), '');
+  }
+}
+
 /**
  * Write a scenario version directory under a fresh scenarios root and return that root. `yaml` is
  * written as scenario.yaml (a string is written verbatim); `files` are created empty. The root is
@@ -65,12 +82,6 @@ export function writeScenario(
   version = '1.0',
 ): string {
   const root = tempDir('bench-scenarios-');
-  const dir = join(root, id, version);
-  mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, 'scenario.yaml'), typeof yaml === 'string' ? yaml : stringify(yaml));
-  for (const file of files) {
-    mkdirSync(dirname(join(dir, file)), { recursive: true });
-    writeFileSync(join(dir, file), '');
-  }
+  writeScenarioAt(root, yaml, files, id, version);
   return root;
 }
