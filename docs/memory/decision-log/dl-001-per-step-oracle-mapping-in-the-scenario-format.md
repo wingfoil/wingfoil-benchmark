@@ -18,8 +18,9 @@ The approved scenario specs score different material after different steps:
   after step 4.
 - S3 and S8: hidden functional tests per step.
 
-Experiment design §3.7 scores every step snapshot, so the scorer (F4.1, W6) must know which tests
-apply to which step. Today the format cannot say it.
+The experiment design scores every step snapshot (§3, item 7), and M-Q1 is the pass rate "on every
+step snapshot where the scenario defines tests for that step" (§4.1). The scorer (F4.1, W6) must
+therefore know which tests apply to which step. Today the format cannot say it.
 
 ## Options
 

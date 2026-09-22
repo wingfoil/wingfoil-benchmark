@@ -54,8 +54,8 @@ Classification confirmed in the design phase. The package is new, so every crite
 ### W1 technical decisions
 
 Recorded in [adr-001-w1-toolchain-and-runner-conventions](../adr/adr-001-w1-toolchain-and-runner-conventions.md)
-(the eleven defaults the approver accepted in the W1 plan phase, and the TypeScript 6.0.x pin). They
-apply to task-001, task-002 and task-003.
+(the eleven defaults the approver accepted in the W1 plan phase, and three deltas made during this
+task that await the approver's decision). They apply to task-001, task-002 and task-003.
 
 ### Package
 
@@ -90,23 +90,24 @@ apply to task-001, task-002 and task-003.
 | `gqm` | non-empty list, without duplicates, of `Q-<A–G><n>` or `G-X<n>` |
 | `capabilities` | list of kebab-case names without duplicates, e.g. `workflow-engine` (REQ-FMT-10 vocabulary); may be empty |
 | `seed` | relative directory; must exist; must not contain or lie inside `scenario.yaml`, a step prompt or an oracle path |
-| `steps` | non-empty list of `{ n, prompt_file }`; `n` runs 1, 2, 3 … in order; each file must exist; no file declared twice |
+| `steps` | non-empty list of `{ n, prompt_file }`; `n` runs 1, 2, 3 … in order; each file must exist; no file declared twice (`./a` and `a` are the same file); a prompt must not be or lie inside `scenario.yaml` or an oracle path |
 | `oracle.public_tests` | relative directory; must exist |
-| `oracle.checks` | list of relative files (content checks, REQ-SCO-06); each must exist; default empty |
-| `oracle.third_party` | list of `{ name, url (a URL), commit (40-hex SHA), license (SPDX expression) }`; default empty |
+| `oracle.checks` | list of relative files (content checks, REQ-SCO-06), without duplicates; each must exist; default empty |
+| `oracle.third_party` | list of `{ name, url (http, https, git or ssh), commit (40-hex SHA), license (SPDX-shaped expression, parentheses allowed; identifiers not checked against the SPDX list) }`; default empty |
 | `holdout` | boolean: whether hold-out additions are expected |
 
 Unknown keys are rejected (strict objects) and reported one per key at their own path, so that a typo
 never silently drops a field. Every path is relative and must stay inside the scenario version
 directory: absolute paths and `..` segments are rejected, and every declared path is checked again
-after `realpath`, so a symbolic link cannot leave the directory either. The seed must also be
-disjoint from everything the agent must not see (scenario file, later prompts, oracle), because it is
-copied into the run container (REQ-RUN-02). Returned paths are absolute, whatever the form of
+after `realpath`, so a symbolic link cannot leave the directory either. What the agent sees must be
+disjoint from what it must not see (REQ-RUN-02): the seed, copied into the run container, must not
+contain or lie inside `scenario.yaml`, any step prompt or any oracle path; a step prompt, given to
+the agent, must not be or lie inside `scenario.yaml` or an oracle path. Returned paths are absolute, whatever the form of
 `scenariosRoot`.
 
 Issues are reported in a stable order (determinism directive): schema issues in schema order; then id
-and version against their directories; then file-system issues in declaration order; then the first
-seed overlap. Issues with no field path (a file that is empty, unreadable, not YAML or not a mapping)
+and version against their directories; then file-system issues in declaration order; then every
+overlap, seed first. Overlaps are checked only when every declared path exists inside the directory. Issues with no field path (a file that is empty, unreadable, not YAML or not a mapping)
 are reported against `scenario.yaml`.
 
 Known gaps, recorded as elements rather than solved here: per-step oracle mapping
@@ -117,22 +118,23 @@ material without a git commit
 ### REQ-ARC-02 lint rule
 
 A local ESLint rule, `eslint/module-boundaries.js`, registered in `eslint.config.js` for
-`src/**/*.{ts,mts,cts,tsx}`. For every relative import, re-export and dynamic `import()` it resolves
-the target against `src/` and reports:
+`src/**/*.{ts,mts,cts,tsx}` (adr-001 delta 1). For every relative or absolute import, re-export,
+dynamic `import()` (string or plain template literal) and TypeScript `import('…')` type, it resolves
+the target against `src/`, with symbolic links resolved on both sides, and reports:
 
 - a file directly under `src/`, outside any module (REQ-ARC-01);
 - a source or target directory that is not one of the eleven modules;
-- an import leaving `src/`;
+- an import of `src/` itself or of anything outside `src/`;
 - an import to a module the direction rule forbids: `core` imports nothing; `campaign`, `scenario`,
   `arms`, `agents`, `results` import `core`; `runner`, `scoring`, `site` import those and `core`, never
   each other; `cli` imports all;
 - an import that reaches another module other than through its `index.js`.
 
-Imports inside the same module, at any depth, and package imports are not restricted. The first
-version used `no-restricted-imports` patterns; the review showed they missed dynamic and deep imports
-and `.mts` files and flagged subfolders named like modules, because patterns do not resolve paths.
-The test lints in-memory sources with the project configuration (`ESLint.lintText`), 13 allowed and 15
-forbidden cases, after loading typescript-eslint once in `beforeAll`.
+Imports inside the same module, at any depth, and package imports are not restricted. The cases run
+the rule in an in-process `Linter` (18 forbidden, 13 allowed, plus the `src/` message and a symlinked
+checkout); one test lints through the project configuration to check the wiring (`.ts` and `.mts` in
+`src/`, not tests). The rule is type-checked (`checkJs`) and outside the coverage threshold (adr-001
+delta 2).
 
 ### Acceptance traceability test
 
@@ -142,10 +144,12 @@ forbidden cases, after loading typescript-eslint once in `beforeAll`.
 tagged with one of its features must match an acceptance test title `@<feature> <scenario title>`.
 
 - The parser (a small line parser, no Gherkin library) reads `Scenario`, `Scenario Outline`,
-  `Scenario Template` and `Example`; Feature and Rule tags are inherited; comment lines keep pending
-  tags; CRLF is accepted.
-- Titles are collected by a static scan of the `it(…)`/`test(…)` calls in `test/acceptance/*.test.ts`,
-  with any quote kind and escapes. Comments, `it.skip` and `it.todo` do not count.
+  `Scenario Template` and `Example`; Feature tags, then the enclosing Rule's own tags, are inherited;
+  comment lines keep pending tags; CRLF is accepted.
+- Titles are read from the TypeScript syntax tree of `test/acceptance/*.test.ts`: calls to `it`/`test`
+  with any modifier chain (`.only`, `.concurrent`, `.each(…)`, tagged `.each`) except `skip`, `todo`,
+  `skipIf`, `runIf` and `fails`; string or plain template titles only. Comments and other calls
+  (`re.test`, `expect.it`, `describe`) never count.
 
 All test paths are resolved from the repository root (`test/support/paths.ts`), not from the working
 directory. Temporary directories are removed when the test that created them finishes.
@@ -201,10 +205,12 @@ visible next to its assertion.
   1. the seed could overlap the oracle (REQ-RUN-02): now rejected, on real paths;
   2. paths were relative with a relative root: now always absolute;
   3. the title scan missed titles containing quotes (`runner.feature` has "arm's"): rewritten;
-  4. parser gaps (Feature tags, comments, `Example`, CRLF; titles in comments and skipped tests counted);
+  4. parser gaps (Feature tags, comments, `Example`, CRLF; titles in comments and skipped tests
+     counted): **partly**, completed in round 2;
   5. issues with an empty path; unknown keys reported at the parent;
-  6. and 7. the dependency rule's false negatives and false positives: replaced by a local rule;
-  8. duplicates, URL and license not validated;
+  6. and 7. the dependency rule's false negatives and false positives: replaced by a local rule
+     (false negatives **partly**, completed in round 2);
+  8. duplicates, URL and license not validated: **partly**, completed in round 2;
   9. 38 temporary directories left per run;
   10. tests depended on the working directory;
   11. read errors reported as YAML errors;
@@ -218,9 +224,44 @@ visible next to its assertion.
   typescript-eslint cold took more than Vitest's 5 s per-test timeout. Loading now happens once in
   `beforeAll`. Two coverage gaps: a dead guard (removed) and an untested branch (a `scenario.yaml` that
   is not a mapping), whose test was written after the code: **characterization**, not red-first.
+- **Correction:** these notes first said items 4, 6 and 8 were fixed; round 2 showed they were only
+  partly fixed.
 - **Checklist (at `cbcf4c2`):** `npm test` 90/90; coverage 100% on all four
   measures; lint and typecheck clean; the suite also passes when run from `/tmp`; the count of
   `/tmp/bench-*` directories is unchanged after a run.
+
+### Review, round 2
+
+- **Reviewer:** the same independent reviewer, re-running its round-1 probes and reviewing the new
+  code, the two decision-logs and adr-001.
+- **Round-1 findings:** 8 fixed, 4 partly (1, 4, 6, 8). **New:** no blocker or major; minors A–G,
+  nits H–J; adr-001 did not quote the accepted defaults faithfully.
+- **Fixed** (red `c8ce6ab`, then `992af0a`, `85f5dd9`, `a8f033e`):
+  A. prompts could be or lie inside the oracle or `scenario.yaml`;
+  B. the title scan counted trailing comments and non-test calls: now read from the syntax tree;
+  C. it missed `it.each` with nested calls, `.concurrent`, `it (`, tagged `.each`;
+  D. the rule missed absolute, type-only and template-literal imports and symlinked checkouts;
+  E. URLs of any scheme, SPDX parentheses rejected, `./a` vs `a` duplicates, duplicate checks;
+  F. the cleanup test depended on test order;
+  G. Rule tags leaked into later Rules;
+  H. only the first seed overlap was reported; the Design said "later prompts";
+  I. `import '..'` gave a confusing message;
+  J. the rule was outside type-checking (now `checkJs`) and coverage (see below).
+- **adr-001:** now quotes the defaults from their first written record and lists three deltas for
+  the approver: the local lint rule (default 3), the coverage scope (default 2), the pinned tool
+  versions (addition). dl-001's citation corrected to §3 item 7 and §4.1 M-Q1.
+- **Found while fixing:**
+  - Moving the rule cases to an in-process `Linter` first broke them when run from another directory
+    (19 failures from `/tmp`): the config's `files` glob resolves against `process.cwd()`. Fixed by
+    passing `cwd` to the `Linter`.
+  - Vitest's v8 coverage reports lines 37, 62 and 78 of the rule as uncovered, while Node's own
+    coverage (`node --experimental-test-coverage`, same cases, scratch script) shows them executed.
+    The rule is therefore outside the coverage threshold (adr-001 delta 2).
+  - A dead check in the SPDX validator (always true) was removed; the `MIT WITH`, `()` and empty-string
+    cases were added after the code: **characterization**.
+- **Checklist (at `a8f033e`):** `npm test` 118/118; coverage 100% on all four measures (`src/`); lint
+  and typecheck clean; 118/118 with `--sequence.shuffle` (seeds 1, 3, 7), from `/tmp` and from
+  `test/`; `/tmp/bench-*` count unchanged after a run.
 
 ### WingFoil commands (declared vs observed)
 
