@@ -80,8 +80,9 @@ Two goals cut across all categories:
    - repetitions, per-run caps and the neutral-approver policy version;
    - the €/$ rate used for the API-equivalent cost.
 2. **Isolation.** A fresh container per run. It holds only the seed and the arm's environment. It
-   never holds the oracle, the hold-out, the runner or other runs. Network egress is limited to what
-   the agent needs (see open question 4).
+   never holds the oracle, the hold-out, the runner or other runs. **Internet access is allowed**, so
+   that agents and tools can install and look things up as they would in real work (experiment-design
+   decision 4). The run log records the agent's web requests, so their use can be reported (T13).
 3. **Setup phase.** The arm's setup script runs first. Its tokens, time and cost are recorded as
    **setup**, apart from the steps.
 4. **Steps.** Each step starts a **new agent session**, headless, with the step prompt. Only the
@@ -91,7 +92,7 @@ Two goals cut across all categories:
    approval request), the runner resumes it with a fixed reply from the policy below. Each reply is
    one **intervention**.
    - The policy is the same for every arm and has a version.
-   - **Proposed policy v1:**
+   - **Policy v1** (experiment-design decision 2):
      - approval requests get *"Approved. Proceed."*;
      - questions get *"No further input is available. Make the most reasonable choice, record it,
        and proceed."*;
@@ -153,10 +154,11 @@ Two goals cut across all categories:
   process forbids. The metric is whether the final repository shows it happened. It depends only on
   the outcome, not on how the tool stores state.
 - **M-E3 approval reconstructibility** (from v0.2): for each approval event in the scenario, can the
-  approver, the time and the reason be found from the repository alone? It is checked by a fixed
-  question set, answered by the blind judge, because a scripted parser would favour one tool's
-  format. It is deferred because the judge arrives in v0.3. The alternative is an earlier, scripted
-  but format-neutral heuristic (see open question 3).
+  approver and the reason be found from the repository alone? It is checked by a **scripted,
+  format-neutral tool** (experiment-design decision 3): an approval event is reconstructible when
+  the approver's identity and a non-empty reason appear in any git-tracked file, or in any commit,
+  changed at that step. The time comes from git. The tool looks for content, never for one harness's
+  file or commit format.
 
 ### 4.5 Determinism (operational)
 
@@ -200,6 +202,8 @@ campaign produces the reference values, and a threshold is proposed only after t
 | T10 | **Harness capability gap:** WingFoil 0.1.0 lacks transition verbs, a workflow engine and MCP writes | construct | expected failures (F3.6), published as losses; public campaign on the latest release (sequencer decision 3) |
 | T11 | **Oracle validity:** hidden tests capture the spec only partly | construct | multiple metrics per goal; rubric judge from v0.3 |
 | T12 | **Setup effort unequal across tools** | internal | setup from official documentation only; scripted and published; deviations such as disabled telemetry published |
+| T13 | **Answer lookup:** with internet access, an agent may fetch public material that overlaps the oracle, for example S1's official conformance suite | internal, construct | web requests logged and reported per arm; hold-out tests added to public oracles; fictional domains (S4) where lookup cannot help. Access is the same for every arm, so it is not an arm asymmetry |
+| T14 | **Model sensitivity:** a harness's effect may depend on the model | external | a model-comparison slice with Opus 5 (§6); cross-model numbers are shown as a separate comparison, never mixed with same-model ones |
 
 ---
 
@@ -208,31 +212,30 @@ campaign produces the reference values, and a threshold is proposed only after t
 The estimated campaign cost is the sum, over scenarios, arms and repetitions, of the setup cost plus
 the cost of every step.
 
-**v0.1 campaign shape (sequencer decision 2):**
+**v0.1 campaign shape** (sequencer decision 2, experiment-design decision 1):
 
+- **Model:** Claude Sonnet 5 (`claude-sonnet-5`) by default.
 - S1: 3 arms × 3 repetitions = 9 runs.
 - S2, S3, S8: 3 arms × 1 repetition = 9 runs.
-- Total: **18 runs**.
+- **Model-comparison slice:** S1 × 3 arms × 1 repetition with Claude Opus 5 (`claude-opus-5`) = 3
+  runs, compared with the matching Sonnet 5 runs. If the dry-run estimate does not fit the budget,
+  the slice shrinks to the wingfoil arm only. At least one comparable run is always kept.
+- Total: **21 runs** (18 with Sonnet 5, 3 with Opus 5).
 
-With a 30 € target, the average run must cost **about 1.5 € or less**, dry runs excluded. That is
-the sizing constraint for the scenarios in the specification phase. The per-scenario dry runs (F3.3)
-replace this estimate with measured values before any campaign starts.
+With a 30 € target, the Sonnet 5 runs must average **about 1.2 € or less**, leaving room for the
+more expensive Opus 5 slice, dry runs excluded. That is the sizing constraint for the scenarios in
+the specification phase. The per-scenario dry runs (F3.3) replace this estimate with measured values
+before any campaign starts.
 
 ---
 
-## Open Questions
+## Decisions from the experiment-design review
 
-1. **Model for v0.1.** The proposal is **Claude Sonnet 5** (`claude-sonnet-5`), for cost. A cheaper
-   model makes the ~1.5 € per run realistic, and a harness that helps a mid-size model is a more
-   relevant result. The alternative is Opus 5, with fewer or smaller scenarios.
-2. **Neutral-approver policy v1** (§3 step 5): accept the two fixed replies and the cap of 3
-   interventions per step?
-3. **Approval reconstructibility (M-E3):** wait for the blind judge (v0.3), or define an earlier,
-   format-neutral scripted heuristic in v0.2 (for example: an approval event is reconstructible if
-   the approver's identity and a non-empty reason appear in any git-tracked file or commit changed
-   at that step)?
-4. **Network egress:** restrict containers to the model API and the package registries needed by
-   the seed? This closes the "look the answer up online" path, but adds setup work.
-5. **Correction to the approved sequencer:** the W19 row lists only F6.12 under "High unc.", while
-   the text below it says the wave holds two high-uncertainty features (F6.12 and F6.9). Fix the row
-   in sequencer 1.1?
+1. **Model:** Claude Sonnet 5 by default, plus a model-comparison slice with Claude Opus 5 of at least
+   one comparable run (§6, T14).
+2. **Neutral-approver policy v1:** accepted as written in §3 step 5.
+3. **Approval reconstructibility (M-E3):** from v0.2, through a scripted tool that checks identity
+   and the presence of a reason (§4.4).
+4. **Network:** agents keep internet access, for a faster setup. The risk of looking answers up is
+   tracked as T13.
+5. **Sequencer W19 row:** left as it is.
