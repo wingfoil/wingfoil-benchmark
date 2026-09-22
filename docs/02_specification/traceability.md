@@ -1,8 +1,8 @@
 # Traceability (v0.1)
 
-**Version:** 0.1
+**Version:** 1.0
 **Date:** 2026-09-22
-**Status:** Draft
+**Status:** Approved
 **Traces to:** [06_features.md](../01_vision/06_features.md) 1.2, [07_sequencer.md](../01_vision/07_sequencer.md) 1.1, [09_experiment-design.md](../01_vision/09_experiment-design.md) 1.1, [scenarios/](scenarios/), [acceptance/](acceptance/), [requirements.md](requirements.md)
 
 ---
