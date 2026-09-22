@@ -101,21 +101,24 @@ part that concerns them:
 ## 7. Distribution
 
 Results are published as **GitHub Pages** of this repository and linked from the WingFoil
-`README.md`. The repository starts private and becomes public once it is mature. The hold-out
+`README.md`. The repository starts private and becomes public at the first published result. The hold-out
 repository stays private.
 
 ## 8. Success signals
 
-- A first public result, based on at least the micro scenarios S1–S3 with Claude Code, clear enough
-  to be quoted in a post.
+- A first public result (labelled preliminary), based on at least the micro scenarios S1–S3 with
+  Claude Code, clear enough to be quoted in a post.
 - Each published claim can be reproduced from a pinned campaign definition (scenario version,
   WingFoil version, agent and model id).
 - The maintainer can point to at least one WingFoil change driven by a benchmark finding.
 
-## 9. Open questions
+## 9. Decisions from the brief review
 
-- How are competitor tools chosen and set up so that the comparison is fair? For example, who
-  configures them, and how much effort each tool gets.
-- When does the repository become public: at the first published result, or later?
-- Is one repetition per arm acceptable for the "first post" results, given the budget? Or should
-  the first results be labelled as preliminary?
+- **Competitor comparison is fair.** Every tool, WingFoil included, gets equivalent setup effort:
+  it is configured by following its own official documentation. It receives the same step prompts
+  and the same budget. Its setup is scripted and reproducible, and its setup cost is reported
+  separately from the per-step cost.
+  *(The approver said "fair". The concrete rules are the facilitator's reading of that, to be
+  confirmed in the experiment design.)*
+- **The repository becomes public at the first published result.**
+- **Results with a single repetition per arm are published, labelled as preliminary.**
