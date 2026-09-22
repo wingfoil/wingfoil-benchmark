@@ -1,9 +1,9 @@
 # Features — WingFoil Benchmark
 
-**Version:** 0.1
+**Version:** 0.2
 **Date:** 2026-09-22
 **Status:** Draft
-**Traces to:** [05_journeys.md](05_journeys.md), [03_is-isnot.md](03_is-isnot.md)
+**Traces to:** [05_journeys.md](05_journeys.md), [03_is-isnot.md](03_is-isnot.md); input: [X_competitor-landscape-2026-09-22.md](X_competitor-landscape-2026-09-22.md)
 
 ---
 
@@ -24,7 +24,7 @@ decision in the experiment design.
 
 | ID | Feature | Journey | Value | Effort | Unc. |
 |---|---|---|---|---|---|
-| F1.1 | **Campaign file**: one file pins WingFoil version, scenarios with their versions, arms, agent, model id, repetitions and seed. The file identifies the campaign. | J2.1 | H | L | L |
+| F1.1 | **Campaign file**: one file pins the exact version of **every harness** (WingFoil and each competitor), scenarios with their versions, arms, agent, model id, repetitions and seed. The file identifies the campaign. Competitors release weekly or faster, so an unpinned harness makes a campaign unreproducible. | J2.1, J6.2 | H | L | L |
 | F1.2 | **Cost estimate**: predicts the cost of a campaign before it runs, from the dry-run costs of its scenarios. | J2.2 | H | M | M |
 | F1.3 | **Budget guard**: warns above 30 €, refuses to start above 100 €, and stops any run that exceeds its own cap. | J2.2, J2.4 | H | L | L |
 | F1.4 | **Resumable campaign**: continues after a failed run, and a campaign can be resumed without repeating completed runs. | J2.4 | M | M | L |
@@ -37,7 +37,8 @@ decision in the experiment design.
 | F2.2 | **Fresh-session steps**: each step starts a new agent session. Only the repository carries state from one step to the next. | vision | H | M | L |
 | F2.3 | **Claude Code adapter**: runs Claude Code headless and captures tokens, cost, turns, time and the transcript. | J2.3, J2.7 | H | M | M |
 | F2.4 | **Neutral approver**: answers approval gates and agent questions with a fixed policy that is the same for every arm, and counts each intervention. | J2.4 | H | M | **H** |
-| F2.5 | **Arm setups**: scripted setup for the baseline, baseline-docs and wingfoil arms. Setup cost is measured apart from step cost. | J6.1 | H | M | M |
+| F2.5 | **Arm setups**: scripted setup for the baseline, baseline-docs and wingfoil arms, and later for each competitor arm. Setup cost is measured apart from step cost. Every setup choice that deviates from a tool's defaults (for example disabling OpenSpec's telemetry) is part of the published setup. | J6.1 | H | M | M |
+| F2.7 | **Arm activation**: the mechanism by which a harness-neutral step prompt makes the agent use the arm's harness (WingFoil's `CLAUDE.md` + MCP, a competitor's slash commands). The mechanism depends on a review decision; see open question 4. | J3.3, J6.1 | H | M | **H** |
 | F2.6 | **WingFoil under test**: installs the WingFoil version pinned by the campaign inside the container, independently of the WingFoil that manages this repository. | J2.1, J4.4 | H | L | L |
 
 ## F3 — Scenarios
@@ -48,6 +49,7 @@ decision in the experiment design.
 | F3.2 | **Validator and leak scan**: checks the format, and checks that no oracle content appears in the seed or in the prompts, and that no prompt mentions a harness. | J3.6 | H | M | M |
 | F3.3 | **Dry run**: runs a single arm once, to measure real cost and calibrate difficulty. It feeds F1.2. | J3.7 | H | L | L |
 | F3.4 | **Scenario versioning**: any change creates a new version; results always record the version they ran. | J3.8 | M | L | L |
+| F3.6 | **Capability requirements and expected failures**: a scenario declares which harness capabilities it exercises. When the harness version under test lacks one (for example WingFoil 0.1.0 has no `memory submit/approve/reject` verbs, no workflow engine and a read-only MCP server), the result is marked **expected failure** and published as a loss, never skipped. | vision (losses published equally) | H | L | M |
 | F3.5 | **Hold-out integration**: oracles and private scenarios are read from a configured path, used only for scoring, and never mounted into a container. | J2.5, J3.4 | H | L | L |
 
 ## F4 — Scoring
@@ -58,8 +60,9 @@ decision in the experiment design.
 | F4.2 | **Static quality metrics**: lint findings, cyclomatic complexity, duplication and coverage. | J2.5 | M | M | L |
 | F4.3 | **Cost metrics**: tokens, money, wall time, turns and interventions, per step and per run. | J2.5 | H | L | L |
 | F4.4 | **Setup / step split and break-even**: separates setup cost from step cost and computes the per-scenario break-even. | J5.3 | M | L | M |
-| F4.5 | **Determinism metric**: agreement between repeated runs of the same arm (for example agreement on hidden tests, and structural similarity of the result). | J2.6 | H | M | **H** |
+| F4.5 | **Determinism metric**: agreement between repeated runs of the same arm, and across agents when more than one is available (for example agreement on hidden tests, and structural similarity of the result). No harness in the input landscape measures this, so it is an original metric, and it needs an operational definition. | J2.6 | H | M | **H** |
 | F4.6 | **Blind rubric judge**: an LLM judge scores spec adherence against a rubric, with harness files stripped so that it cannot tell the arms apart. | J2.5 | M | M | **H** |
+| F4.8 | **Tool-neutral governance metrics**: governance is measured by outcomes that any harness can achieve, for example "is an illegal state transition prevented?" or "can who approved what, and why, be reconstructed from the repository?", and never by the presence of one tool's file or commit format. | J5.2, J6.1 | H | M | M |
 | F4.7 | **Maintainability as next-change cost**: the cost and success of the later steps of a scenario, attributed to the code produced by the earlier ones. | vision | H | L | M |
 
 ## F5 — Results and reporting
@@ -99,7 +102,8 @@ phase. The IDs below are the candidates from the brief.
 
 | ID | Feature | Journey | Value | Effort | Unc. |
 |---|---|---|---|---|---|
-| F7.1 | **Competitor arm**: scripted setup of a competing tool from its official documentation, run under the same rules. | J6.1 | M | M | M |
+| F7.1 | **Competitor arm**: scripted setup of a competing tool from its official documentation, run under the same rules. Candidates from the input landscape: GitHub Spec Kit and OpenSpec, both MIT and both with a Claude Code integration; BMAD Method as a third option. | J6.1 | M | M | M |
+| F7.4 | **Harness eligibility criteria**: published criteria a tool must meet to get an arm, for example: runs with the campaign's agent and model id; version can be pinned; runs headless in a container; is a workflow harness rather than only a standards or prompt pack. Exclusions are published with their reason (from the input landscape, probable ones are Kiro, which imposes its own models and IDE, Taskmaster, which calls its own LLMs, and Agent OS, no longer a workflow harness). | J6.1 | M | L | M |
 | F7.2 | **Setup contest process**: an issue template for contesting a setup; a corrected setup yields a new campaign and the old one stays published. | J6.3 | L | L | L |
 | F7.3 | **External contribution guide**: guide and review step for outside scenario authors (deferred). | J7 | L | L | L |
 
@@ -116,6 +120,16 @@ phase. The IDs below are the candidates from the brief.
   All three must be settled in the experiment design before the specification phase.
 - **Budget pressure:** F4.6 spends tokens on every run it scores. With a 20–30 € budget it competes
   directly with repetitions.
+- **Category bias (threat from the input landscape):** WingFoil's unique points sit mostly in
+  category E. A benchmark written by WingFoil's maintainer risks measuring exactly what only
+  WingFoil does. Counter-measures in this draft: F4.8 (tool-neutral governance metrics), and
+  scenarios where competitors are expected to be strong:
+  - brownfield changes, OpenSpec's strength: F6.2 S2, F6.3 S3, F6.7 S7;
+  - workflow orchestration, Spec Kit's strength: F6.6 S6.
+
+  To be treated as a validity threat in the experiment design.
+- **WingFoil 0.1.0 capability gap:** the pinned WingFoil lacks the Memory transition verbs, the
+  workflow engine and MCP writes. F3.6 makes this visible instead of hiding it.
 - **Coverage of the first release:** F6.1–F6.3 are candidates because they have objective oracles
   (F4.1). The primary categories they cover are C, D and F. A, B, E and G would be missing from the
   first results.
@@ -125,8 +139,31 @@ phase. The IDs below are the candidates from the brief.
 1. **Blind judge (F4.6) in the first release?** The proposal is **no**. S1–S3 have objective
    oracles, so the budget goes to repetitions instead. The judge arrives together with S5, which
    needs it.
-2. **First competitor (F7.1):** which tool, and when? For example Spec Kit, after the first
-   WingFoil-only result.
+2. **First competitor (F7.1):** Spec Kit, OpenSpec, or both? And when: with the first public
+   result, or after a first WingFoil-only result? (Decided in the sequencer; your preference helps.)
 3. **Category gaps in the first release:** is it acceptable that the first public result covers only
    C, D and F? The alternative is to add S8 (directive compliance, low effort) so that E is
    covered too.
+4. **Arm activation (F2.7) — also a review point on approved documents.** Brief §4, is/is-not
+   (DOES "same step prompts", DOES NOT "tune prompts per arm") and journey J3 step 3 ("nothing in
+   them mentions a harness") become ambiguous for tools driven by slash commands. Options (no
+   choice made):
+   - **(a) Arm operating manual.** Each arm ships a fixed, published instruction file (its
+     `CLAUDE.md` / `AGENTS.md`) that maps the step's intent to the tool's commands. It counts as
+     setup cost.
+   - **(b) Per-arm prompt adapter.** A fixed, published prefix is added to the neutral prompt. This
+     technically breaks "identical prompts".
+   - **(c) Driver through the approver.** The neutral approver issues the tool-specific commands.
+     They count as interventions, which penalizes command-driven tools.
+   - **(d) Two layers with a size cap.** Like (a), but the activation text has the same maximum
+     size for every arm.
+
+   The WingFoil arm has the same need, handled today implicitly by its `CLAUDE.md` and MCP. The
+   chosen option is recorded as a review decision on is/is-not and journeys.
+5. **Small amendments to approved journeys — review point.**
+   - J2 step 1 says "WingFoil version". The proposal is to generalize it to "the version of every
+     harness".
+   - J6 step 1 should mention that setup choices deviating from defaults, such as telemetry, are
+     published.
+
+   Alternatively, the journeys stay as they are and F1.1 / F2.5 carry the detail.
