@@ -18,7 +18,7 @@ what differs from them.
 | K2 | Visibility | All four scenarios are **public**, so that they can be rerun without the hold-out. Each one also has **hold-out additions** (extra tests, variants), kept in the private repository (T13). Fully hold-out scenarios start in v0.3. |
 | K3 | Project rules | A scenario's rules (directives, decisions to follow) live **only in the arm's environment**: none in baseline, Markdown in baseline-docs, WingFoil directives and Memory in wingfoil. The seed carries no `CONTRIBUTING.md` with rules. |
 | K4 | Cost sizing | The per-run target of the experiment design (§6, about 1.2 € on Sonnet 5) is **indicative, with a loose gate**, until dry runs (F3.3) provide real data. The budget is then revised. Step counts below are sized with that target in mind. |
-| K5 | WingFoil under test | Scenarios and the runner are developed against the **WingFoil 0.2 pre-release** in the WingFoil repository, pinned to a commit when the arm is built (today `3df305e`). Compared with 0.1.0 it adds `memory submit/approve/reject/deprecate/history`, `directive create/assign/remove`, mutating MCP Tools and MCP Prompts that load role directives. It still has **no workflow engine**. The first public campaign still runs on the latest *released* WingFoil (sequencer decision 3). |
+| K5 | WingFoil under test | Scenarios and the runner are developed against the **WingFoil 0.2 pre-release** in the WingFoil repository, pinned to a commit when the arm is built (today `3df305e`). Compared with the v0.1 release it adds `memory submit/approve/reject/deprecate/history`, `directive create/assign/remove`, mutating MCP Tools and MCP Prompts that load role directives. It still has **no workflow engine**. Note: WingFoil's `package.json` still says `0.1.0`, so the version string does not identify the build. The commit does. The first public campaign still runs on the latest *released* WingFoil (sequencer decision 3). |
 
 ## 2. What a scenario spec contains
 
@@ -66,5 +66,5 @@ what differs from them.
      whenever the agent asks for it. This counts as an intervention.
 
    (b) keeps "agents never approve", which is a WingFoil principle, but it needs runner support.
-   The proposal is to settle it in the requirements phase, and to record here only that it is open.
-   It affects M-E3 and the wingfoil arm's operating manual.
+   **Deferred to the requirements phase** (scenario-specs review). It affects M-E3 and the wingfoil
+   arm's operating manual.
