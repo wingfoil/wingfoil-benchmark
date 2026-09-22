@@ -1,6 +1,6 @@
 # Is / Is Not / Does / Does Not — WingFoil Benchmark
 
-**Version:** 1.0
+**Version:** 1.1
 **Date:** 2026-09-22
 **Status:** Approved
 **Traces to:** [01_product-brief.md](01_product-brief.md), [02_product-vision.md](02_product-vision.md)
@@ -36,6 +36,9 @@
 
 - Gives every arm the **same step prompts**. The only difference between arms is the environment
   the agent runs in.
+- Activates each arm's harness through a fixed, published **operating manual** in the arm's
+  environment (its `CLAUDE.md` / `AGENTS.md`). The manual maps a step's intent to the harness's
+  own commands, and its cost counts as **setup**. This applies to every arm, WingFoil included.
 - Runs every step in a **fresh session**, so that continuity has to come from the harness, the
   documents or the code, and not from the conversation.
 - Keeps **oracles hidden** from the agent. The hold-out part stays in a private repository.
@@ -61,3 +64,13 @@
 - Drive **benchmark-specific features** into WingFoil. A change made only to win a scenario is
   overfitting, and the hold-out set exists to catch it.
 - Run inside, or write into, the WingFoil repository.
+
+---
+
+## Review decisions
+
+- **1.1, features review (2026-09-22) — arm activation.** Tools driven by slash commands or skills
+  made the "same step prompts" rule ambiguous. Option (a) was chosen: each arm is activated by a
+  fixed, published operating manual in its environment, counted as setup cost. Step prompts stay
+  identical and harness-neutral. Source: [06_features.md](06_features.md) F2.7, input
+  [X_competitor-landscape-2026-09-22.md](X_competitor-landscape-2026-09-22.md).

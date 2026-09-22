@@ -1,6 +1,6 @@
 # User Journeys — WingFoil Benchmark
 
-**Version:** 1.0
+**Version:** 1.1
 **Date:** 2026-09-22
 **Status:** Approved
 **Traces to:** [04_personas.md](04_personas.md), [03_is-isnot.md](03_is-isnot.md)
@@ -45,7 +45,7 @@ page or opens the README.
 
 | # | Step | Touchpoint | Pain / opportunity |
 |---|---|---|---|
-| 1 | Defines the campaign | campaign file: WingFoil version, scenarios, arms, agent and model, repetitions | Every variable is pinned in one file, and that file identifies the campaign. |
+| 1 | Defines the campaign | campaign file: the exact version of every harness, scenarios, arms, agent and model, repetitions | Every variable is pinned in one file, and that file identifies the campaign. Competitors release weekly or faster, so every harness is pinned, not only WingFoil. |
 | 2 | Gets a cost estimate | `estimate` command | The cost is known **before** spending. A campaign over the 30 € target warns; one over the 100 € ceiling refuses to start. |
 | 3 | Launches it | runner, Docker | Each run is isolated. The agent sees only the scenario seed. |
 | 4 | Watches progress | console, run log | The runner continues after one run fails. Runs over budget are stopped. Stuck agents are answered by the neutral approver, and each intervention is counted. |
@@ -67,7 +67,7 @@ published page matches the stored results.
 |---|---|---|---|
 | 1 | Picks the goal | experiment design (GQM): which question the scenario answers | A scenario exists to answer a GQM question, not because it is interesting. |
 | 2 | Writes the seed | seed repository | Small enough to fit the budget, and realistic enough to be credible. |
-| 3 | Writes the step prompts | one prompt per step | The same prompts serve every arm. Nothing in them mentions a harness. |
+| 3 | Writes the step prompts | one prompt per step | The same prompts serve every arm. Nothing in them mentions a harness: each arm's operating manual activates its harness. |
 | 4 | Writes the oracle | hidden tests, rubric, expected-items list; public or hold-out | A clear rule for what goes public and what goes to the hold-out. |
 | 5 | Tags it | categories (primary and secondary), result profiles | The tags drive the reporting on the site. |
 | 6 | Validates it | validator: format check and leak scan | The leak scan checks that no oracle content appears in the seed or the prompts. |
@@ -117,7 +117,7 @@ the fix.
 
 | # | Step | Touchpoint | Pain / opportunity |
 |---|---|---|---|
-| 1 | Reads the setup of each tool | scripted setup per arm, published | Equal effort: each tool is configured from its own official documentation. |
+| 1 | Reads the setup of each tool | scripted setup and operating manual per arm, published | Equal effort: each tool is configured from its own official documentation. Every choice that deviates from a tool's defaults (for example disabling telemetry) is published with the setup. |
 | 2 | Reruns a campaign | runner and campaign file | Reproducible without the hold-out. The site marks which results come from public scenarios and which from hold-out ones, and the public subset gives comparable numbers. |
 | 3 | Contests a setup | GitHub issue that points to the setup step | A corrected setup produces a new campaign. The old campaign stays published. |
 
@@ -138,3 +138,11 @@ a contribution guide and a review step by the maintainer.
 2. **Public and hold-out results (J6 step 2):** published results may mix public and hold-out
    scenarios. The site marks which is which.
 3. **Break-even (J5 step 3):** published, per scenario.
+
+### Amendment 1.1 (features review, 2026-09-22)
+
+4. **J2 step 1:** the campaign file pins the version of every harness, not only WingFoil's.
+5. **J3 step 3:** the harness is activated by the arm's operating manual, not by the prompt
+   (see is/is-not 1.1).
+6. **J6 step 1:** the published setup includes the arm's operating manual and every deviation from
+   the tool's defaults, such as disabled telemetry.
