@@ -1,4 +1,4 @@
-import { isAbsolute } from 'node:path';
+import { isAbsolute, posix } from 'node:path';
 import { z } from 'zod';
 
 /** The benchmark categories A–G (09_experiment-design.md). */
@@ -32,8 +32,53 @@ function uniqueList<T extends z.ZodType>(item: T) {
   return z.array(item).refine((list) => new Set(list).size === list.length, 'must not contain duplicates');
 }
 
-/** An SPDX license expression such as `MIT` or `Apache-2.0 OR MIT`. */
-const SPDX_EXPRESSION = /^[A-Za-z0-9][A-Za-z0-9.+-]*( (AND|OR|WITH) [A-Za-z0-9][A-Za-z0-9.+-]*)*$/;
+/** Two spellings of the same relative path (`./a/b`, `a/./b`) compare equal. */
+function samePathKey(path: string): string {
+  return posix.normalize(path.replaceAll('\\', '/'));
+}
+
+const SPDX_ID = /^[A-Za-z0-9][A-Za-z0-9.+-]*$/;
+const SPDX_OPERATORS = new Set(['AND', 'OR', 'WITH']);
+
+/**
+ * Whether `text` is shaped like an SPDX license expression: identifiers joined by `AND`/`OR`, an
+ * identifier `WITH` an exception, and parentheses. Identifiers are not checked against the SPDX list.
+ */
+function isSpdxExpression(text: string): boolean {
+  const tokens = text.match(/\(|\)|[^\s()]+/g) ?? [];
+  let position = 0;
+  const peek = () => tokens[position];
+  const isId = (token: string | undefined) =>
+    token !== undefined && SPDX_ID.test(token) && !SPDX_OPERATORS.has(token);
+  function term(): boolean {
+    if (peek() === '(') {
+      position += 1;
+      if (!expression() || peek() !== ')') return false;
+      position += 1;
+      return true;
+    }
+    if (!isId(peek())) return false;
+    position += 1;
+    if (peek() === 'WITH') {
+      position += 1;
+      if (!isId(peek())) return false;
+      position += 1;
+    }
+    return true;
+  }
+  function expression(): boolean {
+    if (!term()) return false;
+    while (peek() === 'AND' || peek() === 'OR') {
+      position += 1;
+      if (!term()) return false;
+    }
+    return true;
+  }
+  return expression() && position === tokens.length;
+}
+
+/** The URL schemes third-party material may be fetched from. */
+const SOURCE_PROTOCOL = /^(https?|git|ssh)$/;
 
 const category = z.enum(CATEGORIES);
 
@@ -49,9 +94,9 @@ const step = z.strictObject({ n: z.number().int(), prompt_file: relativePath });
 
 const thirdParty = z.strictObject({
   name: z.string().min(1),
-  url: z.url(),
+  url: z.url({ protocol: SOURCE_PROTOCOL, error: 'must be an http(s), git or ssh URL' }),
   commit: z.string().regex(/^[0-9a-f]{40}$/, 'must be a 40-character commit SHA'),
-  license: z.string().regex(SPDX_EXPRESSION, 'must be an SPDX license identifier or expression'),
+  license: z.string().refine(isSpdxExpression, 'must be an SPDX license identifier or expression'),
 });
 
 /** REQ-FMT-04: the `scenario.yaml` of `scenarios/<id>/<version>/`. Unknown keys are rejected. */
@@ -83,13 +128,19 @@ export const scenarioSchema = z.strictObject({
           });
         }
       });
-      if (new Set(steps.map((s) => s.prompt_file)).size !== steps.length) {
+      if (new Set(steps.map((s) => samePathKey(s.prompt_file))).size !== steps.length) {
         ctx.addIssue({ code: 'custom', path: [], message: 'must not declare the same prompt_file twice' });
       }
     }),
   oracle: z.strictObject({
     public_tests: relativePath,
-    checks: z.array(relativePath).default([]),
+    checks: z
+      .array(relativePath)
+      .refine(
+        (checks) => new Set(checks.map(samePathKey)).size === checks.length,
+        'must not contain duplicates',
+      )
+      .default([]),
     third_party: z.array(thirdParty).default([]),
   }),
   holdout: z.boolean(),

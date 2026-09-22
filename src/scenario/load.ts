@@ -20,7 +20,7 @@ interface Declared {
  * Load `<scenariosRoot>/<id>/<version>/scenario.yaml` (REQ-ARC-03, REQ-FMT-04) and return it with
  * absolute paths. Issues are reported in a stable order: schema issues in schema order; then id and
  * version against their directories; then every declared path on disk, in declaration order; then
- * whether the seed overlaps anything the agent must not see.
+ * every overlap between what the agent sees and what it must not see.
  */
 export function loadScenario(scenariosRoot: string, id: string, version: string): Result<Scenario> {
   const dir = resolve(scenariosRoot, id, version);
@@ -54,7 +54,7 @@ export function loadScenario(scenariosRoot: string, id: string, version: string)
   const seed: Declared = { path: 'seed', relative: spec.seed, kind: 'directory' };
   const others = otherPaths(spec);
   const issues = [...identityIssues(spec, id, version), ...fileIssues([seed, ...others], dir)];
-  if (issues.length === 0) issues.push(...seedOverlap(seed, others, dir));
+  if (issues.length === 0) issues.push(...overlapIssues(seed, others, dir));
   return issues.length > 0 ? fail(issues) : ok(toScenario(spec, dir));
 }
 
@@ -108,17 +108,27 @@ function fileIssues(declared: readonly Declared[], dir: string): Issue[] {
 }
 
 /**
- * The seed is copied into the run container (REQ-RUN-02), so it must not contain, or lie inside,
- * `scenario.yaml`, a step prompt or any oracle path. Only the first overlap is reported.
+ * What the agent sees must be disjoint from what it must not see (REQ-RUN-02). The seed is copied into
+ * the run container, so it must not contain or lie inside `scenario.yaml`, any step prompt or any
+ * oracle path; a step prompt is given to the agent, so it must not be or lie inside `scenario.yaml` or
+ * an oracle path. Checked on real paths; every overlap is reported, seed first, in declaration order.
  */
-function seedOverlap(seed: Declared, others: readonly Declared[], dir: string): Issue[] {
-  const seedReal = realpathSync(resolve(dir, seed.relative));
-  const candidates = [{ path: SCENARIO_FILE, relative: SCENARIO_FILE }, ...others];
-  const overlapping = candidates.find(({ relative }) => {
-    const real = realpathSync(resolve(dir, relative));
-    return isInside(real, seedReal) || isInside(seedReal, real);
-  });
-  return overlapping ? [{ path: 'seed', message: `'seed' overlaps ${overlapping.path}` }] : [];
+function overlapIssues(seed: Declared, others: readonly Declared[], dir: string): Issue[] {
+  const scenarioFile = { path: SCENARIO_FILE, relative: SCENARIO_FILE };
+  const prompts = others.filter(({ path }) => path.startsWith('steps['));
+  const hidden = [scenarioFile, ...others.filter(({ path }) => path.startsWith('oracle.'))];
+  const pairs = [
+    ...[scenarioFile, ...others].map((other) => [seed, other] as const),
+    ...prompts.flatMap((prompt) => hidden.map((other) => [prompt, other] as const)),
+  ];
+  const realOf = (relative: string) => realpathSync(resolve(dir, relative));
+  return pairs
+    .filter(([a, b]) => overlap(realOf(a.relative), realOf(b.relative)))
+    .map(([a, b]) => ({ path: a.path, message: `'${a.path}' overlaps ${b.path}` }));
+}
+
+function overlap(a: string, b: string): boolean {
+  return isInside(a, b) || isInside(b, a);
 }
 
 function exists(path: string, kind: Kind): boolean {
