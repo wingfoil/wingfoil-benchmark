@@ -1,8 +1,8 @@
 # MVP Canvas — WingFoil Benchmark
 
-**Version:** 1.0
+**Version:** 1.1
 **Date:** 2026-09-22
-**Status:** Approved
+**Status:** Approved (amendment in review)
 **Traces to:** [07_sequencer.md](07_sequencer.md) (release v0.1), [01_product-brief.md](01_product-brief.md)
 
 ---
@@ -65,5 +65,12 @@ The 33 features of waves W1–W11 in [07_sequencer.md](07_sequencer.md). In shor
 - **Build effort:** 11 waves. No dates are fixed. Wave W2 (neutral approver) and wave W10
   (determinism metric) carry the main uncertainty.
 - **Dependencies:** Docker, Claude Code headless, and the WingFoil version under test. Development
-  uses the pinned 0.1.0; the first public campaign uses the latest released WingFoil (sequencer
-  decision 3).
+  uses the pinned WingFoil v0.2 pre-release (`3df305e`); the first public campaign uses the latest
+  released WingFoil (sequencer decision 3, amended in sequencer 1.1).
+
+---
+
+## Review decisions
+
+- **1.1, specification phase (2026-09-22):** the development dependency now names the WingFoil v0.2
+  pre-release instead of "0.1.0", following sequencer 1.1.

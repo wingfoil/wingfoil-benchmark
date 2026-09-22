@@ -1,8 +1,8 @@
 # Features — WingFoil Benchmark
 
-**Version:** 1.0
+**Version:** 1.1
 **Date:** 2026-09-22
-**Status:** Approved
+**Status:** Approved (amendment in review)
 **Traces to:** [05_journeys.md](05_journeys.md), [03_is-isnot.md](03_is-isnot.md); input: [X_competitor-landscape-2026-09-22.md](X_competitor-landscape-2026-09-22.md)
 
 ---
@@ -49,7 +49,7 @@ decision in the experiment design.
 | F3.2 | **Validator and leak scan**: checks the format, and checks that no oracle content appears in the seed or in the prompts, and that no prompt mentions a harness. | J3.6 | H | M | M |
 | F3.3 | **Dry run**: runs a single arm once, to measure real cost and calibrate difficulty. It feeds F1.2. | J3.7 | H | L | L |
 | F3.4 | **Scenario versioning**: any change creates a new version; results always record the version they ran. | J3.8 | M | L | L |
-| F3.6 | **Capability requirements and expected failures**: a scenario declares which harness capabilities it exercises. When the harness version under test lacks one (for example WingFoil 0.1.0 has no `memory submit/approve/reject` verbs, no workflow engine and a read-only MCP server), the result is marked **expected failure** and published as a loss, never skipped. | vision (losses published equally) | H | L | M |
+| F3.6 | **Capability requirements and expected failures**: a scenario declares which harness capabilities it exercises. When the harness version under test lacks one (for example the WingFoil v0.2 pre-release has no workflow engine), the result is marked **expected failure** and published as a loss, never skipped. | vision (losses published equally) | H | L | M |
 | F3.5 | **Hold-out integration**: oracles and private scenarios are read from a configured path, used only for scoring, and never mounted into a container. | J2.5, J3.4 | H | L | L |
 
 ## F4 — Scoring
@@ -128,8 +128,8 @@ phase. The IDs below are the candidates from the brief.
   - workflow orchestration, Spec Kit's strength: F6.6 S6.
 
   To be treated as a validity threat in the experiment design.
-- **WingFoil 0.1.0 capability gap:** the pinned WingFoil lacks the Memory transition verbs, the
-  workflow engine and MCP writes. F3.6 makes this visible instead of hiding it.
+- **WingFoil capability gap:** the WingFoil under development (v0.2 pre-release) has no workflow
+  engine. F3.6 makes this visible instead of hiding it. (Corrected in 1.1.)
 - **Coverage of the first release:** F6.1–F6.3 and F6.8 (S1–S3, S8), which have objective oracles
   (F4.1). Their primary categories are C, D, E and F. A, B and G are missing from the first results,
   and, in line with "losses published equally", the site should say so.
@@ -146,3 +146,9 @@ phase. The IDs below are the candidates from the brief.
    setup cost. It is recorded as amendment 1.1 of [03_is-isnot.md](03_is-isnot.md) and
    [05_journeys.md](05_journeys.md).
 5. **Journey amendments:** accepted. J2 step 1, J3 step 3 and J6 step 1 are amended in journeys 1.1.
+6. **Amendment 1.1 (specification phase, 2026-09-22) — F3.6 example and review note corrected.**
+   Earlier text described the pinned build as "WingFoil 0.1.0" lacking the Memory transition
+   verbs and MCP writes. That was wrong: the build (`7a65580`) already had them, because WingFoil's
+   `package.json` version had not been bumped. The WingFoil under development is now the **v0.2
+   pre-release, pinned to commit `3df305e`**. Its only relevant gap is the missing **workflow engine**.
+   Source: scenario-specs review (2026-09-22), [../02_specification/scenarios/README.md](../02_specification/scenarios/README.md) K5.

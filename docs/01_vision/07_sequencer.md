@@ -1,8 +1,8 @@
 # Sequencer — WingFoil Benchmark
 
-**Version:** 1.0
+**Version:** 1.1
 **Date:** 2026-09-22
-**Status:** Approved
+**Status:** Approved (amendment in review)
 **Traces to:** [06_features.md](06_features.md) (decisions 1–3), [05_journeys.md](05_journeys.md), [04_personas.md](04_personas.md)
 
 ---
@@ -90,6 +90,16 @@ accepted for v1.0, because it is far away and will be re-planned (sequencer deci
    subscription.
 2. **Determinism in v0.1:** 3 repetitions on S1 only, and 1 repetition on S2, S3 and S8. F4.5 stays
    in W10.
-3. **WingFoil version:** the benchmark is developed against the pinned WingFoil 0.1.0. The first
-   public campaign runs on the latest released WingFoil at that time.
+3. **WingFoil version:** the benchmark is developed against the pinned WingFoil v0.2 pre-release
+   (commit `3df305e`; amended in 1.1). The first public campaign runs on the latest released
+   WingFoil at that time.
 4. **W19:** accepted with two high-uncertainty features.
+
+### Amendment 1.1 (specification phase, 2026-09-22)
+
+5. **Decision 3 amended:** development targets the WingFoil v0.2 pre-release pinned to a commit, not
+   "0.1.0". Earlier text described the pinned build as "WingFoil 0.1.0" lacking the Memory transition
+   verbs and MCP writes. That was wrong: the build (`7a65580`) already had them, because WingFoil's
+   `package.json` version had not been bumped. The WingFoil under development is now the **v0.2
+   pre-release, pinned to commit `3df305e`**. Its only relevant gap is the missing **workflow engine**.
+   Source: scenario-specs review (2026-09-22), [../02_specification/scenarios/README.md](../02_specification/scenarios/README.md) K5.
