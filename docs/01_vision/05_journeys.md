@@ -1,8 +1,8 @@
 # User Journeys — WingFoil Benchmark
 
-**Version:** 0.1
+**Version:** 1.0
 **Date:** 2026-09-22
-**Status:** Draft
+**Status:** Approved
 **Traces to:** [04_personas.md](04_personas.md), [03_is-isnot.md](03_is-isnot.md)
 
 ---
