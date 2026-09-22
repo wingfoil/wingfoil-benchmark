@@ -1,6 +1,6 @@
 # Requirements (v0.1)
 
-**Version:** 1.0
+**Version:** 1.1
 **Date:** 2026-09-22
 **Status:** Approved
 **Traces to:** [acceptance/](acceptance/) (all v0.1 features), [scenarios/](scenarios/) (K1–K5), [09_experiment-design.md](../01_vision/09_experiment-design.md), [07_sequencer.md](../01_vision/07_sequencer.md) v0.1
@@ -36,7 +36,7 @@ All human-authored files are YAML, validated by Zod schemas in `core`. All machi
 
 | ID | Requirement | Serves |
 |---|---|---|
-| REQ-FMT-01 | **Campaign file** (`campaigns/<name>.yaml`). It holds:<br>• `harnesses`: arm → `{tool, version, commit?}`<br>• `scenarios`: `[{id, version}]`<br>• `arms`<br>• `agent: {name, version}`<br>• `models`: a list with one default, plus slices `{model, scenarios, arms, repetitions}` for the Opus comparison<br>• `repetitions`: per scenario<br>• `approver_policy`: a version<br>• `caps: {step_time_s, step_tokens, run_cost_eur}`<br>• `budget: {warn_eur, ceiling_eur}`<br>• `currency: {usd_to_eur}` | F1.1, F1.3 |
+| REQ-FMT-01 | **Campaign file** (`campaigns/<name>.yaml`). It holds:<br>• `harnesses`: arm → `{tool, version, commit?}`<br>• `scenarios`: `[{id, version}]`<br>• `arms`<br>• `agent: {name, version}`<br>• `models`: a list with one default, plus slices `{model, scenarios, arms, repetitions}` for the Opus comparison<br>• `repetitions`: per scenario<br>• `approver_policy`: a version<br>• `caps: {step_time_s, step_tokens, run_cost_eur}`<br>• `budget: {warn_eur, ceiling_eur}`<br>• `currency: {usd_to_eur}`<br>A campaign must include the **baseline** arm (added in 1.1, threat T7). | F1.1, F1.3, T7 |
 | REQ-FMT-02 | **Campaign identity:** SHA-256 of the campaign file canonicalized (parsed, keys sorted, re-serialized as JSON), shortened to 12 hex characters. An execution of a campaign is `<campaign-id>/<n>`, with `n` counting executions. | F1.1 |
 | REQ-FMT-03 | A harness `version` must be a released version or a commit SHA. A branch name or `latest` is rejected. | F1.1 (error path) |
 | REQ-FMT-04 | **Scenario file** (`scenarios/<id>/<version>/scenario.yaml`). It holds:<br>• `id`, `version`<br>• `categories: {primary, secondary[]}`, `profiles[]`, `gqm[]`, `capabilities[]`<br>• `seed`: a directory<br>• `steps[]`: `{n, prompt_file}`<br>• `oracle`: public test directory, checks, third-party pins with licenses<br>• `holdout`: whether additions are expected | F3.1 |
@@ -84,6 +84,7 @@ One binary, `bench`, run with `npx bench`. Exit codes: `0` success, `1` failure,
 | REQ-RUN-15 | **Agent authentication:** by default the runner uses the maintainer's **Claude subscription** credentials, mounted read-only into the container at run time (requirements decision 2). An API key through an environment variable is also supported. Either way REQ-NFR-01 applies. Whether a read-only mount lets the agent refresh its token is to be verified in the W2 spike. | F2.3, REQ-NFR-01 |
 | REQ-RUN-16 | **Agent version:** Claude Code is pinned per campaign (`agent.version`). v0.1 development and dry runs use **2.1.221** (requirements decision 4). | F1.1, T7 |
 | REQ-RUN-12 | The operating manual of each arm is copied as `CLAUDE.md` into the workspace. Its size in tokens is measured with a fixed tokenizer approximation and recorded per run. | F2.7 |
+| REQ-RUN-17 | **Approval authority in the wingfoil arm** (requirements decision 1): the arm's WingFoil configuration declares a member "Benchmark Approver" with the `approver` role, and the container's git identity is that member. After the neutral approver's reply, the agent may run WingFoil's approval commands itself. The method page states that the *decision* is always the neutral approver's, and that the agent only executes it. | F2.4, F2.5, M-E3 |
 
 ## 5. Scoring (REQ-SCO)
 
@@ -94,7 +95,6 @@ One binary, `bench`, run with `npx bench`. Exit codes: `0` success, `1` failure,
 | REQ-SCO-03 | Scoring is deterministic: the same snapshot and oracle version give identical `score.json`. No wall clock or randomness enters a metric. Timestamps are only recorded as metadata. | F4.1 |
 | REQ-SCO-04 | Static quality (M-Q2): ESLint with the **benchmark's** fixed configuration, not the project's; complexity from ESLint's `complexity` data; duplication with jscpd; coverage from the project's own tests under c8, or 0 if there are none. All are pinned in the scoring image. | F4.2 |
 | REQ-SCO-05 | AST checks (M-E1 R2–R4, M-R2 public interface) use the TypeScript compiler API. R1 compares `dependencies` with the seed's. | F4.8, F4.5 |
-| REQ-SCO-11 | **Approval authority in the wingfoil arm** (requirements decision 1): the arm's WingFoil configuration declares a member "Benchmark Approver" with the `approver` role, and the container's git identity is that member. After the neutral approver's reply, the agent may run WingFoil's approval commands itself. The method page states that the *decision* is always the neutral approver's, and that the agent only executes it. | F2.4, F2.5, M-E3 |
 | REQ-SCO-06 | **Format-neutral content checks** (S2 duplicate, S3 D3 revision, and later M-E3). A check is a set of case-insensitive patterns, declared in the oracle, matched against the git-tracked text files changed in the step and against the step's commit messages. It never checks paths or file formats of a specific harness. | F4.7, F4.8 |
 | REQ-SCO-07 | Determinism metrics (M-R1–M-R3) are computed only for groups with n ≥ 2 runs sharing all pins. Otherwise the result is `n = 1` and no value. | F4.5 |
 | REQ-SCO-08 | Break-even follows experiment design §4.2, with the "not applicable" and "never" cases. | F4.4 |
@@ -127,7 +127,7 @@ One binary, `bench`, run with `npx bench`. Exit codes: `0` success, `1` failure,
 
 ## Decisions from the requirements review
 
-1. **Approval authority:** option (a), recorded as REQ-SCO-11.
+1. **Approval authority:** option (a), recorded as REQ-SCO-11 (moved to REQ-RUN-17 in 1.1).
 2. **Authentication:** the maintainer's Claude subscription by default (REQ-RUN-15). Quota exhaustion
    is handled by REQ-RUN-13.
 3. **What goes into git:** only the small files. Transcripts become GitHub release assets
@@ -142,3 +142,12 @@ requirement:
 - REQ-FMT-09, immutable scenario versions (F3.4);
 - REQ-FMT-10 and REQ-SCO-10, capabilities and expected failures (F3.6);
 - REQ-RUN-14, installing the WingFoil under test (F2.6).
+
+### Amendment 1.1 (traceability review, 2026-09-22)
+
+- REQ-SCO-11 moved to the runner section as **REQ-RUN-17**, with no change in content: it concerns
+  the wingfoil arm's setup and identity, not scoring.
+- REQ-FMT-01: a campaign must include the baseline arm, so that "baseline rerun per campaign" (T7)
+  is enforced rather than implicit.
+
+Source: [traceability.md](traceability.md) §4, findings 1 and 3.
