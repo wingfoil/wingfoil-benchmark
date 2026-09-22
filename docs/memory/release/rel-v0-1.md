@@ -1,7 +1,7 @@
 ---
-id: ""
+id: rel-v0-1
 type: release
-title: ""
+title: "v0.1"
 status: draft
 version: ""           # e.g. v0.1
 waves: []             # e.g. [W1, W2, …, W11]
