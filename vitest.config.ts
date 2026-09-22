@@ -7,6 +7,8 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       include: ['src/**/*.ts', 'eslint/**/*.js'],
+      // The bin only wires main() to the process; it is run by hand in review (task-002).
+      exclude: ['src/cli/main.ts'],
       thresholds: { lines: 80, branches: 80, functions: 80, statements: 80 },
     },
   },
