@@ -27,16 +27,21 @@ const relativePath = z
     message: 'must be a relative path inside the scenario directory',
   });
 
+/** A list whose entries are all different. */
+function uniqueList<T extends z.ZodType>(item: T) {
+  return z.array(item).refine((list) => new Set(list).size === list.length, 'must not contain duplicates');
+}
+
+/** An SPDX license expression such as `MIT` or `Apache-2.0 OR MIT`. */
+const SPDX_EXPRESSION = /^[A-Za-z0-9][A-Za-z0-9.+-]*( (AND|OR|WITH) [A-Za-z0-9][A-Za-z0-9.+-]*)*$/;
+
 const category = z.enum(CATEGORIES);
 
 const categories = z
-  .strictObject({ primary: category, secondary: z.array(category) })
+  .strictObject({ primary: category, secondary: uniqueList(category) })
   .superRefine((value, ctx) => {
     if (value.secondary.includes(value.primary)) {
       ctx.addIssue({ code: 'custom', path: ['secondary'], message: 'must not repeat the primary category' });
-    }
-    if (new Set(value.secondary).size !== value.secondary.length) {
-      ctx.addIssue({ code: 'custom', path: ['secondary'], message: 'must not contain duplicates' });
     }
   });
 
@@ -44,9 +49,9 @@ const step = z.strictObject({ n: z.number().int(), prompt_file: relativePath });
 
 const thirdParty = z.strictObject({
   name: z.string().min(1),
-  url: z.string().min(1),
+  url: z.url(),
   commit: z.string().regex(/^[0-9a-f]{40}$/, 'must be a 40-character commit SHA'),
-  license: z.string().min(1),
+  license: z.string().regex(SPDX_EXPRESSION, 'must be an SPDX license identifier or expression'),
 });
 
 /** REQ-FMT-04: the `scenario.yaml` of `scenarios/<id>/<version>/`. Unknown keys are rejected. */
@@ -61,9 +66,9 @@ export const scenarioSchema = z.strictObject({
     })
     .regex(SCENARIO_VERSION, 'must look like 1.0'),
   categories,
-  profiles: z.array(z.enum(PROFILES)).min(1),
-  gqm: z.array(z.string().regex(/^(Q-[A-G]\d+|G-X\d+)$/, 'must look like Q-C1 or G-X1')).min(1),
-  capabilities: z.array(z.string().regex(/^[a-z][a-z0-9]*(-[a-z0-9]+)*$/, 'must be kebab-case')),
+  profiles: uniqueList(z.enum(PROFILES)).min(1),
+  gqm: uniqueList(z.string().regex(/^(Q-[A-G]\d+|G-X\d+)$/, 'must look like Q-C1 or G-X1')).min(1),
+  capabilities: uniqueList(z.string().regex(/^[a-z][a-z0-9]*(-[a-z0-9]+)*$/, 'must be kebab-case')),
   seed: relativePath,
   steps: z
     .array(step)
@@ -78,6 +83,9 @@ export const scenarioSchema = z.strictObject({
           });
         }
       });
+      if (new Set(steps.map((s) => s.prompt_file)).size !== steps.length) {
+        ctx.addIssue({ code: 'custom', path: [], message: 'must not declare the same prompt_file twice' });
+      }
     }),
   oracle: z.strictObject({
     public_tests: relativePath,
