@@ -2,7 +2,7 @@
 id: task-001-scenario-format-and-package-skeleton
 type: task
 title: "Scenario format and package skeleton"
-status: in-review
+status: approved
 release: v0.1
 wave: W1
 features: [F3.1]
