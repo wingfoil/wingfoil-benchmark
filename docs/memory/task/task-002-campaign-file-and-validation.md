@@ -56,14 +56,18 @@ Conventions from [adr-001](../adr/adr-001-w1-toolchain-and-runner-conventions.md
 
 ### Modules created (REQ-ARC-01, REQ-ARC-05)
 
-- **`core`** gains `campaign.ts`: the Zod schema of the campaign file and its types, and
-  `canonicalJson(value)`.
-- **`campaign`**: `loadCampaign(file): Result<Campaign>` (read, parse, validate, check scenarios) and
-  `campaignId(data)`.
+- **`core`** gains `campaign.ts` (the Zod schema of the campaign file, its types, and
+  `campaignConsistency`), `canonical-json.ts`, and `yaml-file.ts` (`readYamlFile`, `parseWith`), the
+  file reading and issue mapping shared with the scenario loader, which now uses them.
+- **`campaign`**: `loadCampaign(file): Result<Campaign>` (read, parse, validate, check consistency,
+  compute the identity, locate `scenarios/` and `results/`) and `campaignId(data)`. It does **not**
+  load scenarios: `campaign` may not import `scenario` (REQ-ARC-02).
 - **`results`**: `nextExecution(resultsRoot, campaignId): number` (REQ-FMT-02 numbering, over the
   layout of REQ-FMT-06). It lives here because the executions are the results' directories; the
   runner (task-003) and the CLI use it.
-- **`cli`**: `main(argv, io): Promise<number>` (the exit code) and `src/cli/main.ts`, the `bench` bin.
+- **`cli`**: `checkCampaign(file)` (the campaign plus every scenario it names, loaded), `main(argv, io):
+  Promise<number>` (the exit code), and `src/cli/main.ts`, the `bench` bin. The runner (task-003) may
+  need `checkCampaign` too; it can move to `runner`, which may import both `campaign` and `scenario`.
 
 `.wingfoil/dna.yaml` lists `campaign`, `results` and `cli` (hand edit, N14).
 
@@ -82,12 +86,15 @@ Conventions from [adr-001](../adr/adr-001-w1-toolchain-and-runner-conventions.md
 | `budget` | `{ warn_eur, ceiling_eur }`, positive, `warn_eur ≤ ceiling_eur` |
 | `currency` | `{ usd_to_eur }`, positive |
 
-Unknown keys are rejected at their own path (as for scenarios). Model ids are not checked against a
+Unknown keys are rejected at their own path (as for scenarios). Cross-field rules (harness and slice
+arms, slice scenarios, one repetition count per scenario) are checked only once the schema passes, so
+one wrong field does not cascade into issues about the fields that refer to it. Model ids are not checked against a
 list: the campaign pins them, the agent refuses unknown ones at run time.
 
-**Scenarios exist.** The scenarios root follows REQ-ARC-03: `campaigns/<name>.yaml` sits next to
-`scenarios/`, so the root is `<campaign file directory>/../scenarios`. Each scenario is loaded with
-`loadScenario`; its issues are reported as `scenarios[<i>]: <id>@<version>: <path> <message>`. This also
+**Scenarios exist** (checked by `checkCampaign` in `cli`). The scenarios root follows REQ-ARC-03:
+`campaigns/<name>.yaml` sits next to `scenarios/`, so the root is `<campaign file
+directory>/../scenarios`. Each scenario is loaded with `loadScenario`; its issues are reported as
+`scenarios[<i>]: <id>@<version>: <path> <message>`. This also
 lets the fixture `test/fixtures/campaigns/smoke.yaml` use `test/fixtures/scenarios/`, with no extra
 option.
 
@@ -107,7 +114,7 @@ against directories yet.
 
 ### `bench campaign validate <file>` (REQ-CLI-01)
 
-- Valid: prints `campaign <id> is valid (<n> scenarios, <m> arms)` to stdout, exit 0.
+- Valid: prints `campaign <id> is valid (<n> scenarios, <m> arms)` to stdout (singular for 1), exit 0.
 - Invalid (schema, pins, scenarios, file not found or not YAML): one line per issue on stderr,
   `<path>: <message>`, exit 1.
 - Usage error (no file, extra arguments, unknown command or subcommand): usage text on stderr, exit 2.
@@ -122,12 +129,28 @@ against directories yet.
   helpers.
 - Unit: schema rules (each row above, happy and error paths), canonical JSON and identity, execution
   numbering, CLI exit codes and output.
-- The built bin is not run by `npm test` (it needs `npm run build`). In review, `npm run build` then
+- The built bin is not run by `npm test` (it needs `npm run build`), and `src/cli/main.ts` is
+  excluded from coverage: importing it in a test would run the CLI with Vitest's own arguments. In review, `npm run build` then
   `npx bench campaign validate test/fixtures/campaigns/smoke.yaml` is run and its output recorded.
 - Fixture: `test/fixtures/campaigns/smoke.yaml`, the trivial campaign (scenario T0, arm `baseline`,
   agent `fake`), used again by task-003.
 
 ## Execution notes
+
+### Build
+
+- **Design error caught by the lint rule:** the first implementation loaded scenarios inside
+  `loadCampaign`, as the Design said; `bench/module-boundaries` reported
+  "module 'campaign' must not import 'scenario' (REQ-ARC-02)". Scenario checks moved to `cli`
+  (`checkCampaign`), the Design above was corrected, and the tests were adapted (`ba48a56`).
+- **Cascading issues:** cross-field checks written as a Zod `superRefine` ran even when base fields were
+  invalid, so one bad arm name produced three issues. They became `campaignConsistency`, run after the
+  schema passes.
+- **Found by running the bin:** "1 scenarios, 1 arms"; fixed test-first.
+- **Bin check (after `npm run build`):** `npx bench campaign validate test/fixtures/campaigns/smoke.yaml`
+  → `campaign 9491f7cd4bb7 is valid (…)`, exit 0; the same command on a scenario file → one line per
+  issue, exit 1; `npx bench` → the usage, exit 2. npm runs the bin although `tsc` does not make it
+  executable.
 
 ### WingFoil commands (declared vs observed)
 
