@@ -40,3 +40,9 @@ v0.1**.
 2. **Budget refusal (campaign.feature, F1.3):** above the ceiling, the proposal is a **hard refusal**
    that cannot be overridden from the command line, only by editing the campaign file. Is that
    right, or should an explicit override flag exist?
+3. **Traceability gap: M-F1 has no feature.** Decision consistency (M-F1, experiment design §4.3) is
+   the core metric of S3, but no feature in `06_features.md` names it. `scoring.feature` tags its
+   scenarios `@F4.7` (next-change cost) for now. The proposal is an amendment to features 1.2 that
+   extends F4.7 to "continuity metrics: next-change cost (M-F2) and decision consistency (M-F1)".
+   The alternative is a separate feature F4.9 in W9. That would give W9 four features, one more
+   than the sequencer's rule allows.
