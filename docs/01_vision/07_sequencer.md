@@ -2,7 +2,7 @@
 
 **Version:** 1.1
 **Date:** 2026-09-22
-**Status:** Approved (amendment in review)
+**Status:** Approved
 **Traces to:** [06_features.md](06_features.md) (decisions 1–3), [05_journeys.md](05_journeys.md), [04_personas.md](04_personas.md)
 
 ---

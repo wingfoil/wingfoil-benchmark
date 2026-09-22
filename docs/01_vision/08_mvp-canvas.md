@@ -2,7 +2,7 @@
 
 **Version:** 1.1
 **Date:** 2026-09-22
-**Status:** Approved (amendment in review)
+**Status:** Approved
 **Traces to:** [07_sequencer.md](07_sequencer.md) (release v0.1), [01_product-brief.md](01_product-brief.md)
 
 ---

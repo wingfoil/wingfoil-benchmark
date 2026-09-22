@@ -2,7 +2,7 @@
 
 **Version:** 1.1
 **Date:** 2026-09-22
-**Status:** Approved (amendment in review)
+**Status:** Approved
 **Traces to:** [05_journeys.md](05_journeys.md), [03_is-isnot.md](03_is-isnot.md); input: [X_competitor-landscape-2026-09-22.md](X_competitor-landscape-2026-09-22.md)
 
 ---
