@@ -1,6 +1,6 @@
 # Experiment Design (GQM) — WingFoil Benchmark
 
-**Version:** 1.0
+**Version:** 1.1
 **Date:** 2026-09-22
 **Status:** Approved
 **Traces to:** [06_features.md](06_features.md) (F2.4, F2.7, F4.x, F7.4), [07_sequencer.md](07_sequencer.md) (decisions 1–3), [03_is-isnot.md](03_is-isnot.md) 1.1; input: [X_competitor-landscape-2026-09-22.md](X_competitor-landscape-2026-09-22.md)
@@ -199,7 +199,7 @@ campaign produces the reference values, and a threshold is proposed only after t
 | T7 | **Model or agent drift over time** | conclusion | model id and agent version pinned; the baseline is rerun in every campaign; only deltas are compared across campaigns |
 | T8 | **Small n from the budget** | conclusion | preliminary labels; no claim of significance in v0.1 |
 | T9 | **Neutral-approver policy favours some tools** (for example, tools that ask more questions) | internal | one versioned policy for every arm; interventions reported per arm |
-| T10 | **Harness capability gap:** WingFoil 0.1.0 lacks transition verbs, a workflow engine and MCP writes | construct | expected failures (F3.6), published as losses; public campaign on the latest release (sequencer decision 3) |
+| T10 | **Harness capability gap:** the WingFoil under development (v0.2 pre-release, `3df305e`) has no workflow engine; workflows are followed by hand | construct | expected failures (F3.6), published as losses; public campaign on the latest release (sequencer decision 3) |
 | T11 | **Oracle validity:** hidden tests capture the spec only partly | construct | multiple metrics per goal; rubric judge from v0.3 |
 | T12 | **Setup effort unequal across tools** | internal | setup from official documentation only; scripted and published; deviations such as disabled telemetry published |
 | T13 | **Answer lookup:** with internet access, an agent may fetch public material that overlaps the oracle, for example S1's official conformance suite | internal, construct | web requests logged and reported per arm; hold-out tests added to public oracles; fictional domains (S4) where lookup cannot help. Access is the same for every arm, so it is not an arm asymmetry |
@@ -239,3 +239,8 @@ before any campaign starts.
 4. **Network:** agents keep internet access, for a faster setup. The risk of looking answers up is
    tracked as T13.
 5. **Sequencer W19 row:** left as it is.
+6. **Amendment 1.1 (specification phase, 2026-09-22) — T10 corrected.** Earlier text described the pinned build as "WingFoil 0.1.0" lacking the Memory transition
+   verbs and MCP writes. That was wrong: the build (`7a65580`) already had them, because WingFoil's
+   `package.json` version had not been bumped. The WingFoil under development is now the **v0.2
+   pre-release, pinned to commit `3df305e`**. Its only relevant gap is the missing **workflow engine**.
+   Source: scenario-specs review (2026-09-22), [../02_specification/scenarios/README.md](../02_specification/scenarios/README.md) K5.
