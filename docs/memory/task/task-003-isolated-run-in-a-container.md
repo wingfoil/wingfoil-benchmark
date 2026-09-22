@@ -66,3 +66,8 @@ Preliminary classification (confirmed in the design phase). All behaviour is new
 - `npx wingfoil memory submit task-003-isolated-run-in-a-container` → `07bba23`. Declared: `draft → pending`, required fields checked,
   one commit `wf(task): submit <id>` with no bracket and no body. Observed: exit 0, empty stderr, 1 file,
   diff limited to `status: draft` → `status: pending`. Matches (subject without transition: N9).
+- `npx wingfoil memory approve task-003-isolated-run-in-a-container --reason "…"` → `29ead9f`, run after the approver's explicit
+  consent in chat. Declared: `pending → backlog` gate, approver role checked, subject with
+  `[from → to]`, `Approver:`/`Reason:` body, only `status` changed. Observed: exit 0, empty
+  stderr, subject `wf(task): approve task-003-isolated-run-in-a-container [pending → backlog]`, both trailers present, 1-line diff.
+  Matches.
