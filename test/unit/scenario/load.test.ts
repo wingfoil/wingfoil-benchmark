@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, rmSync, symlinkSync } from 'node:fs';
 import { isAbsolute, join, relative } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, onTestFinished } from 'vitest';
 
 import { loadScenario } from '../../../src/scenario/index.js';
 import { repoPath } from '../../support/paths.js';
@@ -296,6 +296,13 @@ describe('loadScenario', () => {
     expect(loadScenario(writeScenario(withThirdParty('license', license)), 'S9', '1.0').ok).toBe(true);
   });
 
+  it('rejects a license nested too deeply instead of throwing', () => {
+    const license = '('.repeat(10_000) + 'MIT' + ')'.repeat(10_000);
+    expect(paths(writeScenario(withThirdParty('license', license)))).toEqual([
+      'oracle.third_party[0].license',
+    ]);
+  });
+
   it.each([['(MIT OR'], ['MIT OR)'], ['MIT OR OR Apache-2.0'], ['AND MIT'], ['MIT WITH'], ['()'], ['']])(
     'rejects malformed SPDX expressions (%j)',
     (license) => {
@@ -325,6 +332,16 @@ describe('loadScenario', () => {
 });
 
 describe('scenario fixtures', () => {
+  it('removes a temporary directory by default when the test that created it finishes', () => {
+    let dir = '';
+    // Registered before tempDir's own cleanup: Vitest runs these hooks in reverse order, so this one runs after it.
+    onTestFinished(() => {
+      expect(existsSync(dir)).toBe(false);
+    });
+    dir = tempDir('bench-default-');
+    expect(existsSync(dir)).toBe(true);
+  });
+
   it('remove a temporary directory when the test that created it finishes', () => {
     const cleanups: (() => void)[] = [];
     const dir = tempDir('bench-cleanup-', (cleanup) => cleanups.push(cleanup));

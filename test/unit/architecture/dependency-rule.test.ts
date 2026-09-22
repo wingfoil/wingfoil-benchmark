@@ -65,6 +65,7 @@ const forbidden: [string, string][] = [
   ['src/core/a.ts', reexport(`${REPO_ROOT}src/scenario/index.js`)],
   ['src/core/a.ts', `export type T = import('../scenario/index.js').X;\n`],
   ['src/core/a.ts', 'export const m = import(`../scenario/index.js`);\n'],
+  ['src/core/a.ts', `declare module '../scenario/index.js' {\n  interface X {\n    y: string;\n  }\n}\n`],
 ];
 
 describe('REQ-ARC-02 dependency rule', () => {

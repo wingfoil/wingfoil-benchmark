@@ -144,6 +144,16 @@ describe('acceptance test title scan, edge cases', () => {
     ]);
   });
 
+  it('does not count tests inside skipped or pending suites', () => {
+    const source = [
+      "describe.skip('a', () => { it('@F8.1 in a skipped suite', () => {}); });",
+      "describe.todo('b', () => { it('@F8.2 in a pending suite', () => {}); });",
+      "describe('c', () => { describe.skip('d', () => { it('@F8.3 nested', () => {}); }); });",
+      "describe.only('e', () => { it('@F8.4 counted', () => {}); });",
+    ].join('\n');
+    expect(titlesOf(source)).toEqual(['@F8.4 counted']);
+  });
+
   it('ignores titles computed at run time', () => {
     expect(titlesOf("const t = 'x';\nit(`@F9.10 ${t}`, () => {});")).toEqual([]);
   });
