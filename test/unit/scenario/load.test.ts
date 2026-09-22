@@ -1,10 +1,15 @@
-import { mkdtempSync, symlinkSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { existsSync, mkdirSync, rmSync, symlinkSync } from 'node:fs';
+import { isAbsolute, join, relative } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { loadScenario } from '../../../src/scenario/index.js';
-import { completeScenarioYaml, writeScenario } from '../../support/scenario-fixture.js';
+import { repoPath } from '../../support/paths.js';
+import {
+  COMPLETE_FILES,
+  completeScenarioYaml,
+  tempDir,
+  writeScenario,
+} from '../../support/scenario-fixture.js';
 
 function issuesOf(root: string, id = 'S9', version = '1.0') {
   const result = loadScenario(root, id, version);
@@ -28,9 +33,20 @@ function withField(path: string[], value: unknown): Record<string, unknown> {
 
 describe('loadScenario', () => {
   it('loads the trivial fixture scenario T0', () => {
-    const result = loadScenario('test/fixtures/scenarios', 'T0', '1.0');
+    const result = loadScenario(repoPath('test/fixtures/scenarios'), 'T0', '1.0');
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.value.steps).toHaveLength(1);
+  });
+
+  it('returns absolute paths when the scenarios root is relative', () => {
+    const root = writeScenario();
+    const result = loadScenario(relative(process.cwd(), root), 'S9', '1.0');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const { dir, seedDir, steps, oracle } = result.value;
+    const all = [dir, seedDir, oracle.publicTestsDir, ...oracle.checks, ...steps.map((s) => s.promptPath)];
+    expect(all.filter((path) => !isAbsolute(path))).toEqual([]);
+    expect(dir).toBe(join(root, 'S9', '1.0'));
   });
 
   it('resolves oracle checks and keeps third-party pins and the hold-out flag', () => {
@@ -39,7 +55,7 @@ describe('loadScenario', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.oracle.checks).toEqual([join(root, 'S9', '1.0', 'oracle/checks/decision.yaml')]);
-    expect(result.value.oracle.thirdParty[0]?.license).toBe('MIT');
+    expect(result.value.oracle.thirdParty[0]?.license).toBe('Apache-2.0');
     expect(result.value.holdout).toBe(true);
     expect(result.value.dir).toBe(join(root, 'S9', '1.0'));
   });
@@ -60,6 +76,20 @@ describe('loadScenario', () => {
     expect(paths(writeScenario('id: [unclosed'))).toEqual(['scenario.yaml']);
   });
 
+  it('reports an empty scenario.yaml against the file, not an empty path', () => {
+    expect(paths(writeScenario(''))).toEqual(['scenario.yaml']);
+  });
+
+  it('tells a file that cannot be read apart from YAML that does not parse', () => {
+    const root = writeScenario();
+    const file = join(root, 'S9', '1.0', 'scenario.yaml');
+    rmSync(file);
+    mkdirSync(file);
+    expect(issuesOf(root)).toEqual([
+      { path: 'scenario.yaml', message: expect.stringMatching(/^cannot be read/) },
+    ]);
+  });
+
   it.each([
     'id',
     'version',
@@ -76,9 +106,20 @@ describe('loadScenario', () => {
     expect(issues).toEqual([{ path: field, message: 'is required' }]);
   });
 
-  it('rejects unknown keys, so that a typo never drops a field', () => {
-    const yaml = { ...completeScenarioYaml(), holdut: false };
-    expect(issuesOf(writeScenario(yaml))[0]?.message).toMatch(/holdut/);
+  it('rejects unknown keys at their own path, so that a typo never drops a field', () => {
+    const yaml = { ...completeScenarioYaml(), holdut: false, extra: 1 };
+    expect(issuesOf(writeScenario(yaml))).toEqual([
+      { path: 'holdut', message: 'is not a known field' },
+      { path: 'extra', message: 'is not a known field' },
+    ]);
+  });
+
+  it('rejects unknown nested keys at their own path', () => {
+    const yaml = completeScenarioYaml();
+    (yaml.oracle as Record<string, unknown>).extra = 1;
+    expect(issuesOf(writeScenario(yaml))).toEqual([
+      { path: 'oracle.extra', message: 'is not a known field' },
+    ]);
   });
 
   it.each([
@@ -97,6 +138,27 @@ describe('loadScenario', () => {
       ['oracle', 'third_party'],
       [{ name: 'x', url: 'u', commit: 'main', license: 'MIT' }],
       'oracle.third_party[0].commit',
+    ],
+    [
+      ['oracle', 'third_party'],
+      [{ name: 'x', url: 'not a url', commit: 'a'.repeat(40), license: 'MIT' }],
+      'oracle.third_party[0].url',
+    ],
+    [
+      ['oracle', 'third_party'],
+      [{ name: 'x', url: 'https://x.org', commit: 'a'.repeat(40), license: 'whatever I like' }],
+      'oracle.third_party[0].license',
+    ],
+    [['profiles'], ['architect', 'architect'], 'profiles'],
+    [['gqm'], ['Q-C1', 'Q-C1'], 'gqm'],
+    [['capabilities'], ['a', 'a'], 'capabilities'],
+    [
+      ['steps'],
+      [
+        { n: 1, prompt_file: 'prompts/01.md' },
+        { n: 2, prompt_file: 'prompts/01.md' },
+      ],
+      'steps',
     ],
     [['holdout'], 'yes', 'holdout'],
   ])('rejects a malformed %j', (field, value, path) => {
@@ -134,13 +196,9 @@ describe('loadScenario', () => {
   });
 
   it('rejects a declared path that is a symbolic link leading outside the scenario directory', () => {
-    const root = writeScenario(completeScenarioYaml(), [
-      'prompts/01.md',
-      'prompts/02.md',
-      'oracle/public/a.test.ts',
-      'oracle/checks/decision.yaml',
-    ]);
-    symlinkSync(mkdtempSync(join(tmpdir(), 'bench-outside-')), join(root, 'S9', '1.0', 'seed'));
+    const files = COMPLETE_FILES.filter((file) => !file.startsWith('seed/'));
+    const root = writeScenario(completeScenarioYaml(), files);
+    symlinkSync(tempDir('bench-outside-'), join(root, 'S9', '1.0', 'seed'));
     expect(issuesOf(root)).toEqual([
       { path: 'seed', message: "'seed' leads outside the scenario directory" },
     ]);
@@ -155,5 +213,46 @@ describe('loadScenario', () => {
         message: "must be a quoted string such as '1.0' (unquoted, YAML reads it as a number)",
       },
     ]);
+  });
+
+  it.each([
+    [['seed'], '.', "'seed' overlaps scenario.yaml"],
+    [['seed'], 'oracle', "'seed' overlaps oracle.public_tests"],
+    [['oracle', 'public_tests'], 'seed', "'seed' overlaps oracle.public_tests"],
+  ])('keeps the seed apart from the oracle and the scenario files (%j = %s)', (field, value, message) => {
+    const root = writeScenario(withField(field as string[], value));
+    expect(issuesOf(root)[0]).toEqual({ path: 'seed', message });
+  });
+
+  it('keeps later step prompts out of the seed', () => {
+    const yaml = completeScenarioYaml();
+    yaml.steps = [
+      { n: 1, prompt_file: 'prompts/01.md' },
+      { n: 2, prompt_file: 'seed/README.md' },
+    ];
+    expect(issuesOf(writeScenario(yaml))).toEqual([
+      { path: 'seed', message: "'seed' overlaps steps[1].prompt_file" },
+    ]);
+  });
+
+  it('keeps the seed apart from the oracle when the seed is a symbolic link to it', () => {
+    const files = COMPLETE_FILES.filter((file) => !file.startsWith('seed/'));
+    const root = writeScenario(completeScenarioYaml(), files);
+    symlinkSync(join(root, 'S9', '1.0', 'oracle'), join(root, 'S9', '1.0', 'seed'));
+    expect(issuesOf(root)).toEqual([{ path: 'seed', message: "'seed' overlaps oracle.public_tests" }]);
+  });
+});
+
+describe('scenario fixtures', () => {
+  let previous = '';
+
+  it('creates a temporary scenarios root', () => {
+    previous = writeScenario();
+    expect(existsSync(previous)).toBe(true);
+  });
+
+  it('removes it when the test that created it finishes', () => {
+    expect(previous).not.toBe('');
+    expect(existsSync(previous)).toBe(false);
   });
 });
