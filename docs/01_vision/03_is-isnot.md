@@ -2,7 +2,7 @@
 
 **Version:** 1.1
 **Date:** 2026-09-22
-**Status:** In review (amendment 1.1, from the features review)
+**Status:** Approved
 **Traces to:** [01_product-brief.md](01_product-brief.md), [02_product-vision.md](02_product-vision.md)
 
 ---

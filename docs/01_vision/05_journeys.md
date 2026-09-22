@@ -2,7 +2,7 @@
 
 **Version:** 1.1
 **Date:** 2026-09-22
-**Status:** In review (amendment 1.1, from the features review)
+**Status:** Approved
 **Traces to:** [04_personas.md](04_personas.md), [03_is-isnot.md](03_is-isnot.md)
 
 ---

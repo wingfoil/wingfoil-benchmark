@@ -1,8 +1,8 @@
 # Features — WingFoil Benchmark
 
-**Version:** 0.2
+**Version:** 1.0
 **Date:** 2026-09-22
-**Status:** Draft
+**Status:** Approved
 **Traces to:** [05_journeys.md](05_journeys.md), [03_is-isnot.md](03_is-isnot.md); input: [X_competitor-landscape-2026-09-22.md](X_competitor-landscape-2026-09-22.md)
 
 ---
