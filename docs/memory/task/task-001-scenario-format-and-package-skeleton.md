@@ -2,13 +2,12 @@
 id: task-001-scenario-format-and-package-skeleton
 type: task
 title: "Scenario format and package skeleton"
-status: in-progress
+status: in-review
 release: v0.1
 wave: W1
 features: [F3.1]
 acceptance: [scenarios.feature]
 requirements: [REQ-ARC-01, REQ-ARC-02, REQ-ARC-03, REQ-ARC-05, REQ-FMT-04, REQ-NFR-04]
-rejection_reason: "Review found 3 major defects: seed may overlap the oracle (REQ-RUN-02), returned paths not absolute with a relative root, traceability scan misses titles with quotes; plus minors 4-12. Fix all in task-001, then resubmit."
 ---
 
 ## Context
