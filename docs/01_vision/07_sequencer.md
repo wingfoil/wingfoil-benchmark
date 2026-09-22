@@ -1,8 +1,8 @@
 # Sequencer — WingFoil Benchmark
 
-**Version:** 0.1
+**Version:** 1.0
 **Date:** 2026-09-22
-**Status:** Draft
+**Status:** Approved
 **Traces to:** [06_features.md](06_features.md) (decisions 1–3), [05_journeys.md](05_journeys.md), [04_personas.md](04_personas.md)
 
 ---

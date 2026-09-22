@@ -1,8 +1,8 @@
 # MVP Canvas — WingFoil Benchmark
 
-**Version:** 0.1
+**Version:** 1.0
 **Date:** 2026-09-22
-**Status:** Draft
+**Status:** Approved
 **Traces to:** [07_sequencer.md](07_sequencer.md) (release v0.1), [01_product-brief.md](01_product-brief.md)
 
 ---
