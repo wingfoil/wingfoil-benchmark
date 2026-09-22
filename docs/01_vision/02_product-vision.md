@@ -31,8 +31,10 @@ configured with equal effort.
 | Unit of work | A **multi-session scenario**: a sequence of steps, each in a fresh session. A harness shows its value between sessions, so single-shot tasks alone would measure the wrong thing. |
 | Main control | The **baseline-docs** arm: the same information as the WingFoil arm, in free-form Markdown. Without it, "WingFoil helps" cannot be told apart from "more context helps". |
 | Where results are reported | Per **category** (A–G) and per **persona**. There is no single overall score that hides where a harness wins or loses. |
-| Honesty of results | **Proposed:** losses and ties are published with the same prominence as wins. A benchmark that only shows wins is an advertisement and would undermine the adoption purpose. See open question 1. |
+| Honesty of results | Losses and ties are published with the same prominence as wins. A benchmark that only shows wins is an advertisement and would undermine the adoption purpose. |
 | Reproducibility | Every published number traces back to a pinned campaign: scenario version, harness version, agent, model id and seed. |
+| Interventions during runs | A **scripted, neutral approver** answers approval gates and agent questions, with the same fixed answer policy for every arm. Every intervention is counted. A human answers only in macro projects, where interventions are an explicit metric. |
+| Name | **WingFoil Benchmark**. WingFoil is the first subject; competitors are compared under the same rules. |
 | Cost discipline | Designed around a 20–30 € campaign. Scenarios are kept small, and preliminary results with a single repetition are allowed if they are labelled as such. |
 
 ---
@@ -48,14 +50,8 @@ configured with equal effort.
 
 ---
 
-## Open Questions
+## Decisions from the vision review
 
-1. **Publishing losses.** Do you confirm that categories where WingFoil loses or ties are published
-   with the same prominence as the ones where it wins?
-2. **Approval gates in automated runs.** WingFoil's workflows include approver gates, and a baseline
-   agent will also stop to ask questions. Who answers during a benchmark run? The proposal is a
-   **scripted, neutral approver**: the same fixed answer policy for every arm, with every intervention
-   counted. A human would answer only in macro projects, where interventions are measured explicitly.
-3. **Name.** A benchmark that also compares competitors but is named after one of them may look
-   biased. Keep "WingFoil Benchmark", or choose a neutral name for the public site (for example
-   "Harness Bench") and keep WingFoil as its first subject?
+1. **Publishing losses:** confirmed. Losses and ties get the same prominence as wins.
+2. **Approval gates in automated runs:** a scripted, neutral approver, as described in Key Decisions.
+3. **Name:** "WingFoil Benchmark" is kept.

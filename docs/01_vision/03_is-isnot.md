@@ -44,6 +44,8 @@
     measured as the cost of the next change;
   - **cost:** tokens, money, time, turns and interventions;
   - **determinism:** agreement between repeated runs.
+- Answers approval gates and agent questions through a **scripted, neutral approver**, with the same
+  answer policy for every arm. Every intervention is counted.
 - Reports **setup cost separately** from per-step cost.
 - Reports **variance**, not only averages. It labels single-repetition results as **preliminary**.
 - **Pins** every variable of a campaign: scenario version, harness version, agent, model id and seed.
@@ -54,8 +56,7 @@
 
 - Tune prompts, budgets or time limits per arm.
 - Let the agent see oracles, other arms, the runner, or this repository.
-- Give any arm extra human help. Interventions follow the same policy for every arm, and every one
-  is counted.
+- Give any arm extra human help. Outside macro projects, no human answers during a run.
 - Compare numbers produced with different models or agent versions as if they were equivalent.
 - Drive **benchmark-specific features** into WingFoil. A change made only to win a scenario is
   overfitting, and the hold-out set exists to catch it.
