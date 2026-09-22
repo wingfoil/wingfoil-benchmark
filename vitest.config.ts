@@ -6,7 +6,7 @@ export default defineConfig({
     exclude: ['test/docker/**'],
     coverage: {
       provider: 'v8',
-      include: ['src/**/*.ts'],
+      include: ['src/**/*.ts', 'eslint/**/*.js'],
       thresholds: { lines: 80, branches: 80, functions: 80, statements: 80 },
     },
   },

@@ -1,5 +1,5 @@
 import { realpathSync } from 'node:fs';
-import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
+import { basename, dirname, isAbsolute, relative, resolve, sep } from 'node:path';
 
 /**
  * REQ-ARC-01/02: the modules under `src/` and what each may import.
@@ -24,7 +24,7 @@ const MODULES = Object.keys(ALLOWED_IMPORTS);
  * @returns {string}
  */
 function firstSegment(path) {
-  return path.split(sep)[0] ?? '';
+  return /** @type {string} */ (path.split(sep)[0]);
 }
 
 /**
@@ -37,7 +37,7 @@ function real(path) {
     return realpathSync(path);
   } catch {
     const parent = dirname(path);
-    return parent === path ? path : resolve(real(parent), path.slice(parent.length + 1));
+    return parent === path ? path : resolve(real(parent), basename(path));
   }
 }
 
@@ -80,8 +80,8 @@ function sourceText(source) {
 }
 
 /**
- * ESLint rule: every relative or absolute import, re-export, dynamic `import()` and TypeScript
- * `import('…')` type in `src/` respects REQ-ARC-02.
+ * ESLint rule: every relative or absolute import, re-export, dynamic `import()`, TypeScript
+ * `import('…')` type and `declare module '…'` augmentation in `src/` respects REQ-ARC-02.
  */
 /** @type {import('eslint').Rule.RuleModule} */
 export const moduleBoundaries = {
@@ -105,6 +105,10 @@ export const moduleBoundaries = {
       ExportNamedDeclaration: check,
       ImportExpression: check,
       TSImportType: check,
+      /** @param {any} node a `declare module` declaration */
+      TSModuleDeclaration(node) {
+        if (node.id.type === 'Literal') check({ source: node.id });
+      },
     };
   },
 };
