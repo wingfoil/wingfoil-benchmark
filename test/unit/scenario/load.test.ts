@@ -19,7 +19,7 @@ function withField(path: string[], value: unknown): Record<string, unknown> {
   let node: Record<string, unknown> = yaml;
   for (const key of path.slice(0, -1)) node = node[key] as Record<string, unknown>;
   const last = path[path.length - 1] as string;
-  if (value === undefined) delete node[last];
+  if (value === undefined) Reflect.deleteProperty(node, last);
   else node[last] = value;
   return yaml;
 }
