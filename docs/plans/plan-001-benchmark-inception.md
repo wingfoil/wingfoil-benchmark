@@ -2,7 +2,7 @@
 id: plan-001-benchmark-inception
 type: plan
 title: "Benchmark inception"
-status: active
+status: done
 workflow: benchmark-inception
 phase: inception
 ---
