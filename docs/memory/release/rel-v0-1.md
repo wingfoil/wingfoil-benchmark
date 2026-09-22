@@ -2,7 +2,7 @@
 id: rel-v0-1
 type: release
 title: "v0.1"
-status: draft
+status: planning
 version: v0.1
 waves: [W1, W2, W3, W4, W5, W6, W7, W8, W9, W10, W11]
 features: [F3.1, F1.1, F2.1, F2.2, F2.3, F2.4, F2.5, F2.6, F2.7, F3.5, F3.2, F3.4, F3.3, F1.2, F1.3, F4.1, F4.3, F3.6, F6.1, F6.2, F5.1, F6.3, F6.8, F4.8, F4.2, F4.7, F4.4, F4.5, F5.3, F5.4, F5.5, F5.8, F5.6]
