@@ -21,6 +21,14 @@ function paths(root: string, id = 'S9', version = '1.0'): string[] {
   return issuesOf(root, id, version).map((issue) => issue.path);
 }
 
+/** A complete scenario whose first third-party entry has `field` set to `value`. */
+function withThirdParty(field: 'url' | 'license', value: string): Record<string, unknown> {
+  const yaml = completeScenarioYaml();
+  const oracle = yaml.oracle as { third_party: Record<string, unknown>[] };
+  oracle.third_party = [{ ...oracle.third_party[0], [field]: value }];
+  return yaml;
+}
+
 function withField(path: string[], value: unknown): Record<string, unknown> {
   const yaml = completeScenarioYaml();
   let node: Record<string, unknown> = yaml;
@@ -276,9 +284,7 @@ describe('loadScenario', () => {
   it.each([['javascript:alert(1)'], ['file:///etc/passwd'], ['mailto:a@b.org'], ['data:text/plain,x']])(
     'accepts only http(s), git and ssh URLs for third-party material (%s)',
     (url) => {
-      const yaml = completeScenarioYaml();
-      (yaml.oracle as { third_party: { url: string }[] }).third_party[0]!.url = url;
-      expect(paths(writeScenario(yaml))).toEqual(['oracle.third_party[0].url']);
+      expect(paths(writeScenario(withThirdParty('url', url)))).toEqual(['oracle.third_party[0].url']);
     },
   );
 
@@ -287,17 +293,15 @@ describe('loadScenario', () => {
     ['MIT AND (BSD-2-Clause OR Apache-2.0)'],
     ['GPL-2.0-only WITH Classpath-exception-2.0'],
   ])('accepts SPDX expressions with parentheses (%s)', (license) => {
-    const yaml = completeScenarioYaml();
-    (yaml.oracle as { third_party: { license: string }[] }).third_party[0]!.license = license;
-    expect(loadScenario(writeScenario(yaml), 'S9', '1.0').ok).toBe(true);
+    expect(loadScenario(writeScenario(withThirdParty('license', license)), 'S9', '1.0').ok).toBe(true);
   });
 
-  it.each([['(MIT OR'], ['MIT OR)'], ['MIT OR OR Apache-2.0'], ['AND MIT']])(
-    'rejects malformed SPDX expressions (%s)',
+  it.each([['(MIT OR'], ['MIT OR)'], ['MIT OR OR Apache-2.0'], ['AND MIT'], ['MIT WITH'], ['()'], ['']])(
+    'rejects malformed SPDX expressions (%j)',
     (license) => {
-      const yaml = completeScenarioYaml();
-      (yaml.oracle as { third_party: { license: string }[] }).third_party[0]!.license = license;
-      expect(paths(writeScenario(yaml))).toEqual(['oracle.third_party[0].license']);
+      expect(paths(writeScenario(withThirdParty('license', license)))).toEqual([
+        'oracle.third_party[0].license',
+      ]);
     },
   );
 

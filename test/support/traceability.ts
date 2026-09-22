@@ -1,5 +1,6 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import ts from 'typescript';
 import { parse } from 'yaml';
 
 /** One Gherkin scenario: the file it is in, its feature tags (inherited ones first) and its title. */
@@ -14,11 +15,12 @@ const CONTAINER_LINE = /^(Feature|Rule):/;
 const SCENARIO_LINE = /^(?:Scenario Outline|Scenario Template|Scenario|Example):\s*(.+?)\s*$/;
 
 /**
- * Every scenario of a `.feature` file, with its `@F<n>.<m>` tags: those of the enclosing Feature or
- * Rule first, then its own. Comment lines keep pending tags; CRLF files are read as LF.
+ * Every scenario of a `.feature` file, with its `@F<n>.<m>` tags: those of the Feature, then those of
+ * the enclosing Rule (each Rule only its own), then the scenario's. Comment lines keep pending tags; CRLF files are read as LF.
  */
 export function parseFeatureFile(file: string, text: string): GherkinScenario[] {
   const scenarios: GherkinScenario[] = [];
+  let featureTags: string[] = [];
   let inherited: string[] = [];
   let pending: string[] = [];
   for (const line of text.split(/\r?\n/).map((l) => l.trim())) {
@@ -33,7 +35,8 @@ export function parseFeatureFile(file: string, text: string): GherkinScenario[] 
       continue;
     }
     if (CONTAINER_LINE.test(line)) {
-      inherited = line.startsWith('Feature') ? pending : [...inherited, ...pending];
+      if (line.startsWith('Feature')) featureTags = pending;
+      inherited = [...featureTags, ...(line.startsWith('Rule') ? pending : [])];
     }
     const title = SCENARIO_LINE.exec(line)?.[1];
     if (title) scenarios.push({ file, features: [...new Set([...inherited, ...pending])], title });
@@ -71,24 +74,45 @@ export function startedFeatures(taskDir: string): Set<string> {
   return features;
 }
 
-const COMMENTS = /\/\*[\s\S]*?\*\/|^\s*\/\/.*$/gm;
-const TEST_CALL =
-  /\b(?:it|test)(?:\.each\([^)]*\))?\(\s*(?:'((?:[^'\\\n]|\\.)*)'|"((?:[^"\\\n]|\\.)*)"|`((?:[^`\\]|\\.)*)`)/g;
+/** Modifiers after which a test does not verify anything. */
+const NOT_VERIFYING = new Set(['skip', 'todo', 'skipIf', 'runIf', 'fails']);
+
+/** Whether `callee` is `it`/`test`, possibly with modifiers (`.only`, `.each(…)`), none of them skipping. */
+function isTestCallee(callee: ts.Expression): boolean {
+  if (ts.isIdentifier(callee)) return callee.text === 'it' || callee.text === 'test';
+  if (ts.isPropertyAccessExpression(callee)) {
+    return !NOT_VERIFYING.has(callee.name.text) && isTestCallee(callee.expression);
+  }
+  if (ts.isCallExpression(callee)) return isTestCallee(callee.expression);
+  if (ts.isTaggedTemplateExpression(callee)) return isTestCallee(callee.tag);
+  return false;
+}
 
 /**
- * Titles of the `it(…)` and `test(…)` calls in the test files of `testDir` that start with `@F`, found by
- * a static scan. Comments are ignored, and so are `it.skip`/`it.todo`, which do not verify anything.
+ * Titles of the test calls in the test files of `testDir` that start with `@F`, read from the
+ * TypeScript syntax tree: comments and non-test calls never count, and `skip`/`todo` tests do not
+ * either. Titles computed at run time (template literals with `${}`) are not collected.
  */
 export function acceptanceTestTitles(testDir: string): Set<string> {
   const titles = new Set<string>();
   for (const name of readdirSync(testDir)
     .filter((n) => n.endsWith('.test.ts'))
     .sort()) {
-    const source = readFileSync(join(testDir, name), 'utf8').replace(COMMENTS, '');
-    for (const match of source.matchAll(TEST_CALL)) {
-      const title = (match[1] ?? match[2] ?? match[3] ?? '').replace(/\\(.)/g, '$1');
-      if (title.startsWith('@F')) titles.add(title);
-    }
+    const file = ts.createSourceFile(name, readFileSync(join(testDir, name), 'utf8'), ts.ScriptTarget.Latest);
+    const visit = (node: ts.Node): void => {
+      if (ts.isCallExpression(node) && isTestCallee(node.expression)) {
+        const [title] = node.arguments;
+        if (
+          title &&
+          (ts.isStringLiteral(title) || ts.isNoSubstitutionTemplateLiteral(title)) &&
+          title.text.startsWith('@F')
+        ) {
+          titles.add(title.text);
+        }
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(file);
   }
   return titles;
 }

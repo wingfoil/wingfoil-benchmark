@@ -1,19 +1,31 @@
 import { symlinkSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { ESLint } from 'eslint';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { ESLint, Linter } from 'eslint';
+import tseslint from 'typescript-eslint';
+import { describe, expect, it } from 'vitest';
 
+import { moduleBoundaries } from '../../../eslint/module-boundaries.js';
 import { REPO_ROOT } from '../../support/paths.js';
 import { tempDir } from '../../support/scenario-fixture.js';
 
 // REQ-ARC-02: modules depend only downwards, and scoring and runner never import each other.
-const eslint = new ESLint({ cwd: REPO_ROOT });
 const RULE = 'bench/module-boundaries';
+const SRC_ROOT = join(REPO_ROOT, 'src');
 
-async function violations(file: string, source: string): Promise<number> {
-  const [result] = await eslint.lintText(source, { filePath: `${REPO_ROOT}/${file}` });
-  return (result?.messages ?? []).filter((message) => message.ruleId === RULE).length;
+/** The rule alone, run in-process on `source` as if it were `file` (relative to `root`). */
+function lint(file: string, source: string, root = REPO_ROOT): Linter.LintMessage[] {
+  const config: Linter.Config = {
+    files: ['**/*.{ts,mts}'],
+    languageOptions: { parser: tseslint.parser as Linter.Parser },
+    plugins: { bench: { rules: { 'module-boundaries': moduleBoundaries } } },
+    rules: { [RULE]: ['error', { srcRoot: SRC_ROOT }] },
+  };
+  return new Linter({ configType: 'flat', cwd: root }).verify(source, config, join(root, file));
+}
+
+function violations(file: string, source: string): number {
+  return lint(file, source).filter((message) => message.ruleId === RULE).length;
 }
 
 const reexport = (target: string) => `export * from '${target}';\n`;
@@ -56,33 +68,39 @@ const forbidden: [string, string][] = [
 ];
 
 describe('REQ-ARC-02 dependency rule', () => {
-  // Loading typescript-eslint takes seconds on a cold start: do it once, outside the per-test timeout.
-  beforeAll(async () => {
-    await violations('src/core/warm-up.ts', '');
-  }, 60_000);
-
-  it.each(allowed)('%s may run: %s', async (file, source) => {
-    expect(await violations(file, source)).toBe(0);
+  it.each(allowed)('%s may run: %s', (file, source) => {
+    expect(violations(file, source)).toBe(0);
   });
 
-  it.each(forbidden)('%s must not run: %s', async (file, source) => {
-    expect(await violations(file, source)).toBe(1);
+  it.each(forbidden)('%s must not run: %s', (file, source) => {
+    expect(violations(file, source)).toBe(1);
   });
 
-  it('names the problem when a module imports src/ itself', async () => {
-    const [result] = await eslint.lintText(reexport('..'), { filePath: `${REPO_ROOT}/src/core/a.ts` });
-    expect(result?.messages.map((message) => message.message)).toEqual([
+  it('names the problem when a module imports src/ itself', () => {
+    expect(lint('src/core/a.ts', reexport('..')).map((message) => message.message)).toEqual([
       "module 'core' must not import from outside its own module directory (REQ-ARC-02)",
     ]);
   });
 
-  it('applies the rule when the repository is reached through a symbolic link', async () => {
+  it('applies the rule when the repository is reached through a symbolic link', () => {
     const link = join(tempDir('bench-link-'), 'repo');
     symlinkSync(REPO_ROOT, link);
-    const linked = new ESLint({ cwd: link });
-    const [result] = await linked.lintText(reexport('../scenario/index.js'), {
-      filePath: join(link, 'src/core/a.ts'),
-    });
-    expect((result?.messages ?? []).filter((message) => message.ruleId === RULE)).toHaveLength(1);
+    expect(lint('src/core/a.ts', reexport('../scenario/index.js'), link)).toHaveLength(1);
+  });
+});
+
+describe('REQ-ARC-02 dependency rule in the project configuration', () => {
+  const eslint = new ESLint({ cwd: REPO_ROOT });
+
+  async function projectViolations(file: string, source: string): Promise<number> {
+    const [result] = await eslint.lintText(source, { filePath: join(REPO_ROOT, file) });
+    return (result?.messages ?? []).filter((message) => message.ruleId === RULE).length;
+  }
+
+  // Loading typescript-eslint takes seconds on a cold start: allow for it in this one test.
+  it('reports forbidden imports in src/ and leaves tests alone', async () => {
+    expect(await projectViolations('src/core/a.ts', reexport('../scenario/index.js'))).toBe(1);
+    expect(await projectViolations('src/core/a.mts', reexport('../scenario/index.js'))).toBe(1);
+    expect(await projectViolations('test/unit/a.test.ts', reexport('../../src/core/scenario.js'))).toBe(0);
   }, 60_000);
 });

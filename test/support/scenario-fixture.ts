@@ -43,10 +43,13 @@ export const COMPLETE_FILES = [
   'oracle/checks/decision.yaml',
 ];
 
-/** A fresh temporary directory, removed when the current test finishes. */
-export function tempDir(prefix: string): string {
+/**
+ * A fresh temporary directory, removed when the current test finishes. `register` receives the
+ * cleanup; it defaults to Vitest's `onTestFinished`.
+ */
+export function tempDir(prefix: string, register: (cleanup: () => void) => void = onTestFinished): string {
   const dir = mkdtempSync(join(tmpdir(), prefix));
-  onTestFinished(() => rmSync(dir, { recursive: true, force: true }));
+  register(() => rmSync(dir, { recursive: true, force: true }));
   return dir;
 }
 
