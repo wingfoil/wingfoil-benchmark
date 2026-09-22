@@ -50,6 +50,23 @@ describe('feature file parser', () => {
     ]);
   });
 
+  it('gives each Rule its own tags, on top of the Feature tags', () => {
+    const text = [
+      '@F8.0',
+      'Feature: x',
+      '@F8.1',
+      'Rule: one',
+      'Scenario: In rule one',
+      '@F8.2',
+      'Rule: two',
+      'Scenario: In rule two',
+    ].join('\n');
+    expect(parseFeatureFile('x.feature', text).map(acceptanceTitle)).toEqual([
+      '@F8.0 @F8.1 In rule one',
+      '@F8.0 @F8.2 In rule two',
+    ]);
+  });
+
   it('inherits feature-level tags, keeps tags across comments and reads CRLF files', () => {
     const text = ['@F9.1', 'Feature: x', '  @F9.2', '  # a comment', '  Scenario: Only'].join('\r\n');
     expect(parseFeatureFile('x.feature', text).map(acceptanceTitle)).toEqual(['@F9.1 @F9.2 Only']);
@@ -90,5 +107,44 @@ describe('started features', () => {
       ['---', 'status: in-progress', 'features: [F9.9]', '---', ''].join('\r\n'),
     );
     expect([...startedFeatures(dir)]).toEqual(['F9.9']);
+  });
+});
+
+describe('acceptance test title scan, edge cases', () => {
+  function titlesOf(source: string): string[] {
+    const dir = tempDir('bench-titles-');
+    writeFileSync(join(dir, 'a.test.ts'), source);
+    return [...acceptanceTestTitles(dir)].sort();
+  }
+
+  it('does not count titles in trailing comments or in calls that are not tests', () => {
+    const source = [
+      "foo(); // it('@F9.1 trailing comment', () => {});",
+      "const re = /x/; re.test('@F9.2 regex test call');",
+      "expect.it('@F9.3 member it');",
+      "describe('@F9.8 a describe title', () => {});",
+    ].join('\n');
+    expect(titlesOf(source)).toEqual([]);
+  });
+
+  it('counts the test forms Vitest runs', () => {
+    const source = [
+      "it.each([[f(1)]])('@F9.4 each with nested calls', () => {});",
+      "it.concurrent('@F9.5 concurrent', () => {});",
+      "it ('@F9.6 space before the parenthesis', () => {});",
+      "test.each`a\n${1}`('@F9.7 each with a template table', () => {});",
+      "it.only('@F9.9 only', () => {});",
+    ].join('\n');
+    expect(titlesOf(source)).toEqual([
+      '@F9.4 each with nested calls',
+      '@F9.5 concurrent',
+      '@F9.6 space before the parenthesis',
+      '@F9.7 each with a template table',
+      '@F9.9 only',
+    ]);
+  });
+
+  it('ignores titles computed at run time', () => {
+    expect(titlesOf("const t = 'x';\nit(`@F9.10 ${t}`, () => {});")).toEqual([]);
   });
 });

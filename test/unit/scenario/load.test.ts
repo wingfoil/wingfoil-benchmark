@@ -221,16 +221,25 @@ describe('loadScenario', () => {
     ]);
   });
 
+  it('reports every overlap of the seed, in declaration order', () => {
+    expect(issuesOf(writeScenario(withField(['seed'], '.')))).toEqual([
+      { path: 'seed', message: "'seed' overlaps scenario.yaml" },
+      { path: 'seed', message: "'seed' overlaps steps[0].prompt_file" },
+      { path: 'seed', message: "'seed' overlaps steps[1].prompt_file" },
+      { path: 'seed', message: "'seed' overlaps oracle.public_tests" },
+      { path: 'seed', message: "'seed' overlaps oracle.checks[0]" },
+    ]);
+  });
+
   it.each([
-    [['seed'], '.', "'seed' overlaps scenario.yaml"],
     [['seed'], 'oracle', "'seed' overlaps oracle.public_tests"],
     [['oracle', 'public_tests'], 'seed', "'seed' overlaps oracle.public_tests"],
-  ])('keeps the seed apart from the oracle and the scenario files (%j = %s)', (field, value, message) => {
+  ])('keeps the seed apart from the oracle (%j = %s)', (field, value, message) => {
     const root = writeScenario(withField(field as string[], value));
     expect(issuesOf(root)[0]).toEqual({ path: 'seed', message });
   });
 
-  it('keeps later step prompts out of the seed', () => {
+  it('keeps step prompts out of the seed', () => {
     const yaml = completeScenarioYaml();
     yaml.steps = [
       { n: 1, prompt_file: 'prompts/01.md' },
@@ -245,20 +254,78 @@ describe('loadScenario', () => {
     const files = COMPLETE_FILES.filter((file) => !file.startsWith('seed/'));
     const root = writeScenario(completeScenarioYaml(), files);
     symlinkSync(join(root, 'S9', '1.0', 'oracle'), join(root, 'S9', '1.0', 'seed'));
-    expect(issuesOf(root)).toEqual([{ path: 'seed', message: "'seed' overlaps oracle.public_tests" }]);
+    expect(issuesOf(root)).toEqual([
+      { path: 'seed', message: "'seed' overlaps oracle.public_tests" },
+      { path: 'seed', message: "'seed' overlaps oracle.checks[0]" },
+    ]);
+  });
+
+  it.each([
+    ['oracle/public/a.test.ts', "'steps[1].prompt_file' overlaps oracle.public_tests"],
+    ['oracle/checks/decision.yaml', "'steps[1].prompt_file' overlaps oracle.checks[0]"],
+    ['scenario.yaml', "'steps[1].prompt_file' overlaps scenario.yaml"],
+  ])('keeps a step prompt apart from the oracle and scenario.yaml (%s)', (prompt, message) => {
+    const yaml = completeScenarioYaml();
+    yaml.steps = [
+      { n: 1, prompt_file: 'prompts/01.md' },
+      { n: 2, prompt_file: prompt },
+    ];
+    expect(issuesOf(writeScenario(yaml))[0]).toEqual({ path: 'steps[1].prompt_file', message });
+  });
+
+  it.each([['javascript:alert(1)'], ['file:///etc/passwd'], ['mailto:a@b.org'], ['data:text/plain,x']])(
+    'accepts only http(s), git and ssh URLs for third-party material (%s)',
+    (url) => {
+      const yaml = completeScenarioYaml();
+      (yaml.oracle as { third_party: { url: string }[] }).third_party[0]!.url = url;
+      expect(paths(writeScenario(yaml))).toEqual(['oracle.third_party[0].url']);
+    },
+  );
+
+  it.each([
+    ['(MIT OR Apache-2.0)'],
+    ['MIT AND (BSD-2-Clause OR Apache-2.0)'],
+    ['GPL-2.0-only WITH Classpath-exception-2.0'],
+  ])('accepts SPDX expressions with parentheses (%s)', (license) => {
+    const yaml = completeScenarioYaml();
+    (yaml.oracle as { third_party: { license: string }[] }).third_party[0]!.license = license;
+    expect(loadScenario(writeScenario(yaml), 'S9', '1.0').ok).toBe(true);
+  });
+
+  it.each([['(MIT OR'], ['MIT OR)'], ['MIT OR OR Apache-2.0'], ['AND MIT']])(
+    'rejects malformed SPDX expressions (%s)',
+    (license) => {
+      const yaml = completeScenarioYaml();
+      (yaml.oracle as { third_party: { license: string }[] }).third_party[0]!.license = license;
+      expect(paths(writeScenario(yaml))).toEqual(['oracle.third_party[0].license']);
+    },
+  );
+
+  it('treats spellings of the same path as one file', () => {
+    const yaml = completeScenarioYaml();
+    yaml.steps = [
+      { n: 1, prompt_file: 'prompts/01.md' },
+      { n: 2, prompt_file: './prompts/01.md' },
+    ];
+    expect(paths(writeScenario(yaml))).toEqual(['steps']);
+  });
+
+  it('rejects duplicate oracle checks', () => {
+    const yaml = completeScenarioYaml();
+    (yaml.oracle as Record<string, unknown>).checks = [
+      'oracle/checks/decision.yaml',
+      'oracle/./checks/decision.yaml',
+    ];
+    expect(paths(writeScenario(yaml))).toEqual(['oracle.checks']);
   });
 });
 
 describe('scenario fixtures', () => {
-  let previous = '';
-
-  it('creates a temporary scenarios root', () => {
-    previous = writeScenario();
-    expect(existsSync(previous)).toBe(true);
-  });
-
-  it('removes it when the test that created it finishes', () => {
-    expect(previous).not.toBe('');
-    expect(existsSync(previous)).toBe(false);
+  it('remove a temporary directory when the test that created it finishes', () => {
+    const cleanups: (() => void)[] = [];
+    const dir = tempDir('bench-cleanup-', (cleanup) => cleanups.push(cleanup));
+    expect(existsSync(dir)).toBe(true);
+    cleanups.forEach((cleanup) => cleanup());
+    expect(existsSync(dir)).toBe(false);
   });
 });
