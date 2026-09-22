@@ -97,9 +97,9 @@ This document describes two different sets of people, and they must not be confu
 
 ## 2. Result profiles (reporting dimension)
 
-Results are grouped by the kind of WingFoil user they matter to. The proposal is to reuse the user
-types in WingFoil's public vision (`docs/01_vision/04_personas.md` in the WingFoil repository), by
-**profile** rather than by name, so that this benchmark stays independent of how WingFoil names
+Results are grouped by the kind of WingFoil user they matter to. The profiles are the user types
+of WingFoil's public vision (`docs/01_vision/04_personas.md` in the WingFoil repository), referred to
+by **profile** rather than by name, so that this benchmark stays independent of how WingFoil names
 them.
 
 | Profile | Categories that matter most |
@@ -113,13 +113,10 @@ them.
 
 ---
 
-## Open Questions
+## Decisions from the personas review
 
-1. **Result profiles:** reuse WingFoil's six user types as above, or define profiles specific to the
-   benchmark?
-2. **Primary persona for the first release:** the brief puts purpose 1 first, which makes Riley the
-   primary persona. Riley needs a small number of striking, well-labelled results. Dana needs
-   breadth and method. Is Riley the primary persona for the first release, with Dana served from
-   the release after it?
-3. **External scenario authors:** should Quinn be supported from the start (format, validator,
-   contribution guide), or is the maintainer the only scenario author until the first public result?
+1. **Result profiles:** WingFoil's six user types are reused, as in §2.
+2. **Primary persona for the first release:** Riley. Dana is served from the release after it.
+3. **Scenario authors:** the maintainer is the only scenario author for now. Support for external
+   authors like Quinn (contribution guide, validator for outside contributions) is deferred. The
+   maintainer still needs the scenario format and the leak check for their own work.
