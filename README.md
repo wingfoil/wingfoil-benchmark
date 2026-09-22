@@ -6,8 +6,8 @@ competing tools), and compared on quality, cost and determinism.
 
 > **Status:** inception and specification complete (see [`docs/01_vision/`](docs/01_vision/) and
 > [`docs/02_specification/`](docs/02_specification/)); release v0.1 is in development
-> ([`docs/memory/release/rel-v0-1.md`](docs/memory/release/rel-v0-1.md)). The scenario format exists;
-> the runner does not yet.
+> ([`docs/memory/release/rel-v0-1.md`](docs/memory/release/rel-v0-1.md)). The scenario and campaign
+> formats exist, with `bench campaign validate`; the runner does not yet.
 
 ## Tooling
 
@@ -40,6 +40,19 @@ when a scenario of a started task has no test.
 
 Scenarios live in `scenarios/<id>/<version>/scenario.yaml`. The trivial scenario used by the runner's
 own tests is `test/fixtures/scenarios/T0/1.0/`.
+
+## Commands
+
+`npm run build` compiles the `bench` command; then:
+
+```bash
+npx bench campaign validate campaigns/<name>.yaml
+```
+
+It checks the campaign file (`docs/02_specification/requirements.md` REQ-FMT-01): every harness pinned
+to a released version or a commit, the baseline arm present, every scenario it names present under
+`scenarios/<id>/<version>/`. It prints the campaign's identity, the digest that names its results.
+Exit codes: `0` valid, `1` invalid (one line per problem), `2` usage error.
 
 ## License
 
