@@ -161,6 +161,35 @@ visible next to its assertion.
 
 ## Execution notes
 
+### Build
+
+- **TDD order, visible in history:** each behaviour has a red test commit followed by its
+  implementation: REQ-ARC-02 (`bea61fc` → `14cf847`), acceptance traceability (`2b39c6b`, green with
+  `b1285a0`), F3.1 and the loader (`74dc65c` → `b1285a0`), self-review fixes (`2c36906` → `5f66b03`).
+  The red runs failed for the expected reason: 8 forbidden imports not reported; the `@F3.1` test
+  missing; `src/scenario/index.js` not found; symlink accepted and generic version message.
+- **Deviation from default 4:** TypeScript 6.0.3 instead of the latest 7.0.2, because typescript-eslint
+  8.70.1 requires `<6.1.0` (recorded in Design).
+- **Self-review findings, fixed in this task** (in scope: the Design promises that declared paths stay
+  inside the scenario directory): a symlinked `seed` leading outside was accepted, now rejected after
+  `realpath`; `version: 1.0` unquoted is read by YAML as the number 1, and the message now says to
+  quote it.
+- **REQ-ARC-05:** `.wingfoil/dna.yaml` edited by hand (`7188272`), because `dna set` writes scalars
+  only (usage note N14).
+- **Documentation directive:** doc comments on every export (`2960a94`); README development section
+  (`ef4b4fe`).
+- **Review checklist (at `5f66b03`):** `npm test` 56/56 green; coverage 100% statements, branches,
+  functions and lines (threshold 80%, and `--coverage.thresholds.lines=101` exits 1, so the gate
+  works); `npm run lint` clean; `tsc --noEmit` clean; `npm run build` emits `dist/core`,
+  `dist/scenario`.
+- **Traceability:** F3.1 → `scenarios.feature` "A scenario declares everything the runner and the
+  scorer need" → `test/acceptance/scenarios.test.ts`; REQ-ARC-01 (package, `core`, `scenario`),
+  REQ-ARC-02 (`eslint.config.js`, `test/unit/architecture/`), REQ-ARC-03 (`loadScenario` reads
+  `<root>/<id>/<version>/`), REQ-ARC-05 (`dna.yaml`), REQ-FMT-04 (`src/core/scenario.ts`,
+  `test/unit/scenario/`), REQ-NFR-04 (`vitest.config.ts` thresholds).
+- **Follow-up for task-003** (already in its scope, not a new element): copying the seed into the run
+  workspace must not follow symbolic links.
+
 ### WingFoil commands (declared vs observed)
 
 - `npx wingfoil memory add --type task --title "…"` → `69ba5f3`. Declared: one commit
@@ -176,3 +205,9 @@ visible next to its assertion.
   `[from → to]`, `Approver:`/`Reason:` body, only `status` changed. Observed: exit 0, empty
   stderr, subject `wf(task): approve task-001-scenario-format-and-package-skeleton [pending → backlog]`, both trailers present, 1-line diff.
   Matches.
+- `npx wingfoil memory submit task-001-scenario-format-and-package-skeleton` → `41d86a5`. Declared:
+  `backlog → in-progress`, one commit, no bracket. Observed: exit 0, empty stderr, 1 file, diff
+  limited to `status`. Matches. The Design was committed by hand first (`c1085fe`), per N13.
+- `npx wingfoil dna show` (read-only, after the hand edit). Declared: loads and validates
+  `.wingfoil/dna.yaml`. Observed: exit 0, the two modules and the new `paths.sources`/`paths.tests`
+  printed as written, no commit. Matches.
