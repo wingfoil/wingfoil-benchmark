@@ -103,7 +103,7 @@ the fix.
 |---|---|---|---|
 | 1 | Chooses their profile | result profiles (e.g. tech lead, team developer) | The page filters to the categories that matter for that profile. |
 | 2 | Reads wins and losses | category detail | Losses are as visible as wins. |
-| 3 | Weighs the costs | setup cost and per-step cost, shown separately | The break-even point: after how many steps WingFoil's setup pays off. |
+| 3 | Weighs the costs | setup cost and per-step cost, shown separately | The break-even point: after how many steps WingFoil's setup pays off, shown per scenario because it depends heavily on the scenario. |
 | 4 | Checks the method | method page: arms, controls, validity threats, pins | Enough rigor to be trusted without reading the code. |
 | 5 | Decides | shareable link to a filtered view | A stable URL for each campaign and view. |
 
@@ -118,7 +118,7 @@ the fix.
 | # | Step | Touchpoint | Pain / opportunity |
 |---|---|---|---|
 | 1 | Reads the setup of each tool | scripted setup per arm, published | Equal effort: each tool is configured from its own official documentation. |
-| 2 | Reruns a campaign | runner and campaign file | Reproducible without the hold-out. The public subset gives comparable numbers. |
+| 2 | Reruns a campaign | runner and campaign file | Reproducible without the hold-out. The site marks which results come from public scenarios and which from hold-out ones, and the public subset gives comparable numbers. |
 | 3 | Contests a setup | GitHub issue that points to the setup step | A corrected setup produces a new campaign. The old campaign stays published. |
 
 **Ends well when:** Avery reproduces a number, or gets a contested setup corrected.
@@ -132,12 +132,9 @@ a contribution guide and a review step by the maintainer.
 
 ---
 
-## Open Questions
+## Decisions from the journeys review
 
-1. **Publishing (J2 step 8):** publishing is proposed as a deliberate, manual step. Is that right,
-   or should a campaign that finishes cleanly publish automatically?
-2. **Reproducing without the hold-out (J6 step 2):** Avery can rerun only the public scenarios. Is
-   it acceptable that published results mix public and hold-out scenarios, with the site showing
-   which is which?
-3. **Break-even (J5 step 3):** is "after how many steps WingFoil's setup cost pays off" a figure you
-   want to publish? It is appealing for Dana, but it depends heavily on the scenario.
+1. **Publishing (J2 step 8):** manual and deliberate. A campaign never publishes automatically.
+2. **Public and hold-out results (J6 step 2):** published results may mix public and hold-out
+   scenarios. The site marks which is which.
+3. **Break-even (J5 step 3):** published, per scenario.
