@@ -1,8 +1,8 @@
 # Product Brief — WingFoil Benchmark
 
-**Version:** 0.1
+**Version:** 1.0
 **Date:** 2026-09-22
-**Status:** Draft
+**Status:** Approved
 **Source:** kickoff session with the approver (Roberto Pompermaier), 2026-09-22
 
 ---
