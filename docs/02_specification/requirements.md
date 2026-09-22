@@ -43,6 +43,9 @@ All human-authored files are YAML, validated by Zod schemas in `core`. All machi
 | REQ-FMT-05 | **Arm definition** (`arms/<arm>/arm.yaml`). It holds: `name`, `setup` (script), `manual` (the operating manual file), `environment` (files copied into the workspace), `mcp` (optional config), and `requires` (the harness tool). | F2.5, F2.7 |
 | REQ-FMT-06 | **Results layout:** `results/<campaign-id>/<n>/`. It contains:<br>• `campaign.yaml`, a copy<br>• `runs/<scenario>@<ver>/<arm>/<model>/r<k>/`, holding `run.json`, `steps/<NN>/{usage.json, transcript.jsonl, diff.patch}` and `score.json`<br>• `aggregate.json` | F5.1 |
 | REQ-FMT-07 | `aggregate.json` stores every value together with the list of run paths it was computed from, and its `n`. | F5.1, experiment design §4.6 |
+| REQ-FMT-08 | **Scenario validator:** checks the schema (REQ-FMT-04), and runs a **leak scan**. The scan fails when:<br>• a step prompt contains a name from a declared list of harness and tool names;<br>• an oracle literal (an expected value or a test name of at least a declared minimum length) appears in the seed or in a prompt.<br>With the hold-out configured, hold-out oracles are scanned too. Their content is never printed; messages name only the file and the step. | F3.2 |
+| REQ-FMT-09 | **Scenario versions are immutable.** Results record the content hash of the scenario version they ran. The validator rejects a scenario version whose content no longer matches a hash recorded in stored results. | F3.4 |
+| REQ-FMT-10 | Arm definitions declare `provides[]`, the harness capabilities the arm offers, for example `workflow-engine: false` for the WingFoil v0.2 pre-release. | F3.6 |
 
 ## 3. Command surface (REQ-CLI)
 
@@ -76,6 +79,10 @@ One binary, `bench`, run with `npx bench`. Exit codes: `0` success, `1` failure,
 | REQ-RUN-09 | Usage is taken from the stream-json result events: tokens by kind, cost in USD converted with the campaign's rate, turns and duration. The API-equivalent cost is recorded whatever the billing (sequencer decision 1). | F2.3, M-K1 |
 | REQ-RUN-10 | Web use is recorded from tool-use events named `WebFetch` or `WebSearch`. Network use through shell commands is **not** detected, and the method page states this limit. | T13 |
 | REQ-RUN-11 | `baseline-docs` environment generator: a pure function of the wingfoil arm's configuration and the scenario. The output is deterministic, with sorted keys and fixed templates. | F2.5, T3 |
+| REQ-RUN-13 | **Subscription quota** (requirements decision 2): when a session fails because the subscription's usage limit is reached, the step's outcome is `quota exhausted`. The campaign stops starting new runs, and the runs already completed are kept. The API-equivalent cost cap (REQ-RUN-08) keeps working as a proxy budget. | F1.3, sequencer decision 1 |
+| REQ-RUN-14 | **WingFoil under test:** the wingfoil arm's setup installs WingFoil from a tarball built by the runner, with `npm pack` from a clean `git archive` of the pinned commit. It is never taken from `vendor/` (the managing WingFoil) nor from the host's `PATH`. The tarball's commit is recorded in `run.json`. | F2.6 |
+| REQ-RUN-15 | **Agent authentication:** by default the runner uses the maintainer's **Claude subscription** credentials, mounted read-only into the container at run time (requirements decision 2). An API key through an environment variable is also supported. Either way REQ-NFR-01 applies. Whether a read-only mount lets the agent refresh its token is to be verified in the W2 spike. | F2.3, REQ-NFR-01 |
+| REQ-RUN-16 | **Agent version:** Claude Code is pinned per campaign (`agent.version`). v0.1 development and dry runs use **2.1.221** (requirements decision 4). | F1.1, T7 |
 | REQ-RUN-12 | The operating manual of each arm is copied as `CLAUDE.md` into the workspace. Its size in tokens is measured with a fixed tokenizer approximation and recorded per run. | F2.7 |
 
 ## 5. Scoring (REQ-SCO)
@@ -87,10 +94,12 @@ One binary, `bench`, run with `npx bench`. Exit codes: `0` success, `1` failure,
 | REQ-SCO-03 | Scoring is deterministic: the same snapshot and oracle version give identical `score.json`. No wall clock or randomness enters a metric. Timestamps are only recorded as metadata. | F4.1 |
 | REQ-SCO-04 | Static quality (M-Q2): ESLint with the **benchmark's** fixed configuration, not the project's; complexity from ESLint's `complexity` data; duplication with jscpd; coverage from the project's own tests under c8, or 0 if there are none. All are pinned in the scoring image. | F4.2 |
 | REQ-SCO-05 | AST checks (M-E1 R2–R4, M-R2 public interface) use the TypeScript compiler API. R1 compares `dependencies` with the seed's. | F4.8, F4.5 |
+| REQ-SCO-11 | **Approval authority in the wingfoil arm** (requirements decision 1): the arm's WingFoil configuration declares a member "Benchmark Approver" with the `approver` role, and the container's git identity is that member. After the neutral approver's reply, the agent may run WingFoil's approval commands itself. The method page states that the *decision* is always the neutral approver's, and that the agent only executes it. | F2.4, F2.5, M-E3 |
 | REQ-SCO-06 | **Format-neutral content checks** (S2 duplicate, S3 D3 revision, and later M-E3). A check is a set of case-insensitive patterns, declared in the oracle, matched against the git-tracked text files changed in the step and against the step's commit messages. It never checks paths or file formats of a specific harness. | F4.7, F4.8 |
 | REQ-SCO-07 | Determinism metrics (M-R1–M-R3) are computed only for groups with n ≥ 2 runs sharing all pins. Otherwise the result is `n = 1` and no value. | F4.5 |
 | REQ-SCO-08 | Break-even follows experiment design §4.2, with the "not applicable" and "never" cases. | F4.4 |
 | REQ-SCO-09 | Hold-out results are stored separately from public results in `score.json`. | F3.5 |
+| REQ-SCO-10 | **Expected failures:** a run is marked `expected failure` when the scenario's `capabilities` are not all in the arm's `provides` (REQ-FMT-10). The missing capabilities are named. The run is still executed and scored, and it counts as a loss in aggregation. | F3.6 |
 
 ## 6. Results and site (REQ-RES)
 
@@ -100,6 +109,7 @@ One binary, `bench`, run with `npx bench`. Exit codes: `0` success, `1` failure,
 | REQ-RES-02 | The site is static HTML and CSS generated from `aggregate.json`, with no client framework. There is one landing page, one page per category, one method page, and permanent URLs per campaign execution (`/<campaign-id>/<n>/`). | F5.5, F5.8 |
 | REQ-RES-03 | The landing page renders:<br>• "harness, not model", with the model name;<br>• the headline and one chart;<br>• one row per category A–G, where uncovered categories are listed as "not covered";<br>• the `preliminary` badge and `n` on every value;<br>• markers for hold-out results.<br>Losses and wins use the same visual weight. | F5.5 |
 | REQ-RES-04 | `bench site publish` pushes `site/` to the `gh-pages` branch. It refuses while the repository is private: the repository becomes public at the first published result (brief decision). | F5.6 |
+| REQ-RES-06 | **What is committed** (requirements decision 3): `run.json`, `score.json`, `usage.json`, `diff.patch` and `aggregate.json` are committed. Transcripts (`transcript.jsonl`) are git-ignored, compressed per campaign execution, and attached to a GitHub release named `<campaign-id>-<n>`. `run.json` records the release asset that holds each transcript. | F5.1, F5.3 |
 | REQ-RES-05 | A finding note is Markdown with fixed sections: campaign, WingFoil commit, scenario@version, runs, metric values, links. It is written only into this repository. | F5.4 |
 
 ## 7. Non-functional (REQ-NFR)
@@ -115,26 +125,20 @@ One binary, `bench`, run with `npx bench`. Exit codes: `0` success, `1` failure,
 
 ---
 
-## Open questions
+## Decisions from the requirements review
 
-1. **Approval authority in the wingfoil arm** (deferred from scenario specs, README open question 1).
-   WingFoil 0.2 lets only an `approver` identity approve.
-   - **(a)** The container's git identity is a declared "benchmark approver" in the arm's WingFoil
-     configuration. After the neutral approver's "Approved. Proceed.", the agent runs the approval
-     command itself. It is simple and needs no runner support. It does let the agent execute an
-     approval, but the *decision* is the neutral approver's, and this is published.
-   - **(b)** The runner executes the approval command itself, under the neutral approver's identity.
-     This keeps "agents never approve", but it requires the runner to extract from the agent's
-     message which element to approve and to which state. That is harness-specific parsing, which
-     conflicts with arm parity.
+1. **Approval authority:** option (a), recorded as REQ-SCO-11.
+2. **Authentication:** the maintainer's Claude subscription by default (REQ-RUN-15). Quota exhaustion
+   is handled by REQ-RUN-13.
+3. **What goes into git:** only the small files. Transcripts become GitHub release assets
+   (REQ-RES-06).
+4. **Agent version:** Claude Code 2.1.221 for v0.1 development and dry runs, re-pinned per campaign
+   (REQ-RUN-16).
 
-   **Proposal: (a)**, stated on the method page.
-2. **Authentication for runs.** Dry runs and campaigns can use an **API key**, where the cost is real
-   money, or your **Claude subscription** credentials mounted read-only, where the real limit is
-   quota. The runner supports both (REQ-NFR-01). Which one for the first dry runs? This decides
-   which budget limit the guard enforces (sequencer decision 1).
-3. **What goes into git.** The proposal: `run.json`, `score.json`, `usage.json`, `diff.patch` and
-   `aggregate.json` are committed. **Transcripts** (large) are compressed and attached to a GitHub
-   release per campaign execution, and are git-ignored locally. Alternatively, commit everything.
-4. **Agent version pin.** Pin Claude Code **2.1.221**, the version on this machine, for v0.1
-   development and dry runs, and re-pin per campaign?
+Also added while preparing the traceability matrix, so that every v0.1 feature has at least one
+requirement:
+
+- REQ-FMT-08, the validator and leak scan (F3.2);
+- REQ-FMT-09, immutable scenario versions (F3.4);
+- REQ-FMT-10 and REQ-SCO-10, capabilities and expected failures (F3.6);
+- REQ-RUN-14, installing the WingFoil under test (F2.6).
