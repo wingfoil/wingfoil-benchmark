@@ -39,10 +39,13 @@ function samePathKey(path: string): string {
 
 const SPDX_ID = /^[A-Za-z0-9][A-Za-z0-9.+-]*$/;
 const SPDX_OPERATORS = new Set(['AND', 'OR', 'WITH']);
+/** Deeper nesting than any real license needs; it bounds the parser's recursion. */
+const SPDX_MAX_DEPTH = 32;
 
 /**
  * Whether `text` is shaped like an SPDX license expression: identifiers joined by `AND`/`OR`, an
- * identifier `WITH` an exception, and parentheses. Identifiers are not checked against the SPDX list.
+ * identifier `WITH` an exception, and parentheses nested at most {@link SPDX_MAX_DEPTH} deep.
+ * Identifiers are not checked against the SPDX list.
  */
 function isSpdxExpression(text: string): boolean {
   const tokens = text.match(/\(|\)|[^\s()]+/g) ?? [];
@@ -50,10 +53,10 @@ function isSpdxExpression(text: string): boolean {
   const peek = () => tokens[position];
   const isId = (token: string | undefined) =>
     token !== undefined && SPDX_ID.test(token) && !SPDX_OPERATORS.has(token);
-  function term(): boolean {
+  function term(depth: number): boolean {
     if (peek() === '(') {
       position += 1;
-      if (!expression() || peek() !== ')') return false;
+      if (depth >= SPDX_MAX_DEPTH || !expression(depth + 1) || peek() !== ')') return false;
       position += 1;
       return true;
     }
@@ -66,15 +69,15 @@ function isSpdxExpression(text: string): boolean {
     }
     return true;
   }
-  function expression(): boolean {
-    if (!term()) return false;
+  function expression(depth: number): boolean {
+    if (!term(depth)) return false;
     while (peek() === 'AND' || peek() === 'OR') {
       position += 1;
-      if (!term()) return false;
+      if (!term(depth)) return false;
     }
     return true;
   }
-  return expression() && position === tokens.length;
+  return expression(0) && position === tokens.length;
 }
 
 /** The URL schemes third-party material may be fetched from. */
