@@ -38,7 +38,7 @@ decision in the experiment design.
 | F2.3 | **Claude Code adapter**: runs Claude Code headless and captures tokens, cost, turns, time and the transcript. | J2.3, J2.7 | H | M | M |
 | F2.4 | **Neutral approver**: answers approval gates and agent questions with a fixed policy that is the same for every arm, and counts each intervention. | J2.4 | H | M | **H** |
 | F2.5 | **Arm setups**: scripted setup for the baseline, baseline-docs and wingfoil arms, and later for each competitor arm. Setup cost is measured apart from step cost. Every setup choice that deviates from a tool's defaults (for example disabling OpenSpec's telemetry) is part of the published setup. | J6.1 | H | M | M |
-| F2.7 | **Arm activation**: the mechanism by which a harness-neutral step prompt makes the agent use the arm's harness (WingFoil's `CLAUDE.md` + MCP, a competitor's slash commands). The mechanism depends on a review decision; see open question 4. | J3.3, J6.1 | H | M | **H** |
+| F2.7 | **Arm activation**: each arm ships a fixed, published operating manual in its environment (its `CLAUDE.md` / `AGENTS.md`) that maps a step's intent to the harness's commands (WingFoil's CLI + MCP, a competitor's slash commands). Its cost counts as setup. Step prompts stay identical and harness-neutral. | J3.3, J6.1 | H | M | M |
 | F2.6 | **WingFoil under test**: installs the WingFoil version pinned by the campaign inside the container, independently of the WingFoil that manages this repository. | J2.1, J4.4 | H | L | L |
 
 ## F3 — Scenarios
@@ -61,7 +61,7 @@ decision in the experiment design.
 | F4.3 | **Cost metrics**: tokens, money, wall time, turns and interventions, per step and per run. | J2.5 | H | L | L |
 | F4.4 | **Setup / step split and break-even**: separates setup cost from step cost and computes the per-scenario break-even. | J5.3 | M | L | M |
 | F4.5 | **Determinism metric**: agreement between repeated runs of the same arm, and across agents when more than one is available (for example agreement on hidden tests, and structural similarity of the result). No harness in the input landscape measures this, so it is an original metric, and it needs an operational definition. | J2.6 | H | M | **H** |
-| F4.6 | **Blind rubric judge**: an LLM judge scores spec adherence against a rubric, with harness files stripped so that it cannot tell the arms apart. | J2.5 | M | M | **H** |
+| F4.6 | **Blind rubric judge** (not in the first release; arrives with S5): an LLM judge scores spec adherence against a rubric, with harness files stripped so that it cannot tell the arms apart. | J2.5 | M | M | **H** |
 | F4.8 | **Tool-neutral governance metrics**: governance is measured by outcomes that any harness can achieve, for example "is an illegal state transition prevented?" or "can who approved what, and why, be reconstructed from the repository?", and never by the presence of one tool's file or commit format. | J5.2, J6.1 | H | M | M |
 | F4.7 | **Maintainability as next-change cost**: the cost and success of the later steps of a scenario, attributed to the code produced by the earlier ones. | vision | H | L | M |
 
@@ -134,36 +134,15 @@ phase. The IDs below are the candidates from the brief.
   (F4.1). The primary categories they cover are C, D and F. A, B, E and G would be missing from the
   first results.
 
-## Open Questions
+## Decisions from the features review
 
-1. **Blind judge (F4.6) in the first release?** The proposal is **no**. S1–S3 have objective
-   oracles, so the budget goes to repetitions instead. The judge arrives together with S5, which
-   needs it.
-2. **First competitor (F7.1):** Spec Kit, OpenSpec, or both? And when: with the first public
-   result, or after a first WingFoil-only result? (Decided in the sequencer; your preference helps.)
-3. **Category gaps in the first release:** is it acceptable that the first public result covers only
-   C, D and F? The alternative is to add S8 (directive compliance, low effort) so that E is
-   covered too.
-4. **Arm activation (F2.7) — also a review point on approved documents.** Brief §4, is/is-not
-   (DOES "same step prompts", DOES NOT "tune prompts per arm") and journey J3 step 3 ("nothing in
-   them mentions a harness") become ambiguous for tools driven by slash commands. Options (no
-   choice made):
-   - **(a) Arm operating manual.** Each arm ships a fixed, published instruction file (its
-     `CLAUDE.md` / `AGENTS.md`) that maps the step's intent to the tool's commands. It counts as
-     setup cost.
-   - **(b) Per-arm prompt adapter.** A fixed, published prefix is added to the neutral prompt. This
-     technically breaks "identical prompts".
-   - **(c) Driver through the approver.** The neutral approver issues the tool-specific commands.
-     They count as interventions, which penalizes command-driven tools.
-   - **(d) Two layers with a size cap.** Like (a), but the activation text has the same maximum
-     size for every arm.
-
-   The WingFoil arm has the same need, handled today implicitly by its `CLAUDE.md` and MCP. The
-   chosen option is recorded as a review decision on is/is-not and journeys.
-5. **Small amendments to approved journeys — review point.**
-   - J2 step 1 says "WingFoil version". The proposal is to generalize it to "the version of every
-     harness".
-   - J6 step 1 should mention that setup choices deviating from defaults, such as telemetry, are
-     published.
-
-   Alternatively, the journeys stay as they are and F1.1 / F2.5 carry the detail.
+1. **Blind judge (F4.6):** not in the first release. S1–S3 and S8 have objective oracles, so the
+   budget goes to repetitions. The judge arrives with S5, which needs it.
+2. **First competitors (F7.1):** both Spec Kit and OpenSpec. They are added **after** a first
+   WingFoil-only result. Timing is fixed in the sequencer.
+3. **Category coverage of the first release:** S8 (directive compliance) is added to S1–S3, so the
+   first public result covers C, D, E and F.
+4. **Arm activation (F2.7):** option (a), a fixed, published operating manual per arm, counted as
+   setup cost. It is recorded as amendment 1.1 of [03_is-isnot.md](03_is-isnot.md) and
+   [05_journeys.md](05_journeys.md).
+5. **Journey amendments:** accepted. J2 step 1, J3 step 3 and J6 step 1 are amended in journeys 1.1.
