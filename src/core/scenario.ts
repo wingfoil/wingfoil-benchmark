@@ -1,8 +1,7 @@
 import { isAbsolute } from 'node:path';
 import { z } from 'zod';
 
-/** REQ-FMT-04: the `scenario.yaml` of `scenarios/<id>/<version>/`. */
-
+/** The benchmark categories A–G (09_experiment-design.md). */
 export const CATEGORIES = ['A', 'B', 'C', 'D', 'E', 'F', 'G'] as const;
 
 /** The result profiles of 04_personas.md §2. */
@@ -15,7 +14,9 @@ export const PROFILES = [
   'architect',
 ] as const;
 
+/** A scenario id: S1, M2, T0. */
 export const SCENARIO_ID = /^[A-Z][A-Z0-9]*$/;
+/** A scenario version: 1.0, 1.1. */
 export const SCENARIO_VERSION = /^\d+\.\d+$/;
 
 /** A path relative to the scenario version directory that cannot leave it. */
@@ -48,6 +49,7 @@ const thirdParty = z.strictObject({
   license: z.string().min(1),
 });
 
+/** REQ-FMT-04: the `scenario.yaml` of `scenarios/<id>/<version>/`. Unknown keys are rejected. */
 export const scenarioSchema = z.strictObject({
   id: z.string().regex(SCENARIO_ID, 'must look like S1, M2 or T0'),
   version: z.string().regex(SCENARIO_VERSION, 'must look like 1.0'),
@@ -78,8 +80,11 @@ export const scenarioSchema = z.strictObject({
   holdout: z.boolean(),
 });
 
+/** A `scenario.yaml` as parsed, with relative paths. */
 export type ScenarioFile = z.infer<typeof scenarioSchema>;
+/** One of the categories A–G. */
 export type Category = (typeof CATEGORIES)[number];
+/** One of the result profiles. */
 export type Profile = (typeof PROFILES)[number];
 
 /** A loaded scenario version, with every path resolved to an absolute one. */

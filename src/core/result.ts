@@ -8,10 +8,12 @@ export interface Issue {
 export type Result<T> =
   { readonly ok: true; readonly value: T } | { readonly ok: false; readonly issues: readonly Issue[] };
 
+/** A successful result carrying `value`. */
 export function ok<T>(value: T): Result<T> {
   return { ok: true, value };
 }
 
+/** A failed result carrying the `issues` that explain why. */
 export function fail<T>(issues: readonly Issue[]): Result<T> {
   return { ok: false, issues };
 }
