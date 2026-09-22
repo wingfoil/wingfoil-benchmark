@@ -2,7 +2,7 @@
 id: plan-002-benchmark-specification
 type: plan
 title: "Benchmark specification"
-status: active
+status: done
 workflow: benchmark-specification
 phase: specification
 ---
