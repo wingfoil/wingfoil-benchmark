@@ -1,5 +1,6 @@
 # Acceptance — Results and reporting (v0.1)
 # Traces to: F5.1, F5.3, F5.4, F5.5, F5.6, F5.8 · J1, J2 steps 7–8, J4 · vision (losses published equally) · experiment design §4.6
+# Version: 1.0 · Status: Approved (2026-09-22)
 
 Feature: Stored results, run detail, finding notes and the published site
   As the WingFoil maintainer, and as Riley the curious reader

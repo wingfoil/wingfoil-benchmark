@@ -1,5 +1,6 @@
 # Acceptance — Scenarios (v0.1)
 # Traces to: F3.1–F3.6, F6.1–F6.3, F6.8 · J3 · scenario specs (docs/02_specification/scenarios/) · K1–K5
+# Version: 1.0 · Status: Approved (2026-09-22)
 
 Feature: Scenario format, hygiene and the v0.1 scenario content
   As the WingFoil maintainer acting as scenario author

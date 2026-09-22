@@ -1,5 +1,6 @@
 # Acceptance — Campaign (v0.1)
 # Traces to: F1.1, F1.2, F1.3 · J2 steps 1–2, 4 · experiment design §3 (pins), §6 (budget) · K4
+# Version: 1.0 · Status: Approved (2026-09-22)
 
 Feature: Campaign definition, cost estimate and budget guard
   As the WingFoil maintainer

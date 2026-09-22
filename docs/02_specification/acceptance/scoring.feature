@@ -1,5 +1,6 @@
 # Acceptance — Scoring (v0.1)
 # Traces to: F4.1–F4.5, F4.7, F4.8 · J2 steps 5–6 · experiment design §4 (M-Q*, M-D*, M-K*, M-F*, M-E1, M-R*)
+# Version: 1.0 · Status: Approved (2026-09-22)
 
 Feature: Scoring runs with defined, reproducible metrics
   As the WingFoil maintainer

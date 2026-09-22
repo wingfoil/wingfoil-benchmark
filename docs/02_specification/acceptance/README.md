@@ -1,8 +1,8 @@
 # Acceptance criteria (v0.1)
 
-**Version:** 0.1
+**Version:** 1.0
 **Date:** 2026-09-22
-**Status:** Draft
+**Status:** Approved
 **Traces to:** [07_sequencer.md](../../01_vision/07_sequencer.md) v0.1 (W1–W11), [06_features.md](../../01_vision/06_features.md), [05_journeys.md](../../01_vision/05_journeys.md) J1–J4, [09_experiment-design.md](../../01_vision/09_experiment-design.md)
 
 ---
