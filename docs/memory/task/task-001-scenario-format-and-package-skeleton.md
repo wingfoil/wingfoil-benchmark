@@ -332,3 +332,7 @@ visible next to its assertion.
 - `npx wingfoil memory submit task-001-…` → `aabc391` (`in-progress → in-review`, after the rejection).
   Declared: `status` set to the target and `rejection_reason` removed. Observed: exit 0, empty stderr,
   1 file, `status` changed and the `rejection_reason` line removed, nothing else. Matches.
+- `npx wingfoil memory approve` on task-001 (`e73477b`, `in-review → approved`), adr-001 (`cb2c0c1`),
+  dl-001 (`e63850d`), dl-002 (`c86b5e2`) (`pending → approved`), after the approver's explicit consent.
+  Observed for each: exit 0, empty stderr, bracketed subject, `Approver:`/`Reason:` body, 1-line
+  `status` diff. Matches.
