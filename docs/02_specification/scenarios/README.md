@@ -1,8 +1,8 @@
 # Scenario specifications — common conventions (v0.1)
 
-**Version:** 0.1
+**Version:** 1.0
 **Date:** 2026-09-22
-**Status:** Draft
+**Status:** Approved
 **Traces to:** [09_experiment-design.md](../../01_vision/09_experiment-design.md), [06_features.md](../../01_vision/06_features.md) F3.1, F3.6, F6.1–F6.3, F6.8; plan [plan-002](../../plans/plan-002-benchmark-specification.md)
 
 ---
