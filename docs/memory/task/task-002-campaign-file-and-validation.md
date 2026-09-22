@@ -2,7 +2,7 @@
 id: task-002-campaign-file-and-validation
 type: task
 title: "Campaign file and validation"
-status: backlog
+status: in-progress
 release: v0.1
 wave: W1
 features: [F1.1]
