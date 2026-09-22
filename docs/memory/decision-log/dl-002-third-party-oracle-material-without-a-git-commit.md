@@ -2,7 +2,7 @@
 id: dl-002-third-party-oracle-material-without-a-git-commit
 type: decision-log
 title: "Third-party oracle material without a git commit"
-status: draft
+status: pending
 ---
 
 ## Context
