@@ -1,5 +1,5 @@
-import { existsSync, readFileSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
+import { join, sep } from 'node:path';
 import { parse } from 'yaml';
 
 import { fail, formatPath, ok, scenarioSchema } from '../core/index.js';
@@ -65,9 +65,20 @@ function fileIssues(spec: ScenarioFile, dir: string): Issue[] {
       kind: 'file' as const,
     })),
   ];
-  return expected
-    .filter(({ relative, kind }) => !exists(join(dir, relative), kind))
-    .map(({ path, relative, kind }) => ({ path, message: `${kind} '${relative}' does not exist` }));
+  const root = realpathSync(dir);
+  return expected.flatMap(({ path, relative, kind }): Issue[] => {
+    const target = join(dir, relative);
+    if (!exists(target, kind)) return [{ path, message: `${kind} '${relative}' does not exist` }];
+    if (!isInside(realpathSync(target), root)) {
+      return [{ path, message: `'${relative}' leads outside the scenario directory` }];
+    }
+    return [];
+  });
+}
+
+/** Whether `path` is `root` or below it; both are real paths, so symbolic links cannot escape. */
+function isInside(path: string, root: string): boolean {
+  return path === root || path.startsWith(root + sep);
 }
 
 function exists(path: string, kind: 'file' | 'directory'): boolean {

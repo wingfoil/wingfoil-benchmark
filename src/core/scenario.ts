@@ -52,7 +52,14 @@ const thirdParty = z.strictObject({
 /** REQ-FMT-04: the `scenario.yaml` of `scenarios/<id>/<version>/`. Unknown keys are rejected. */
 export const scenarioSchema = z.strictObject({
   id: z.string().regex(SCENARIO_ID, 'must look like S1, M2 or T0'),
-  version: z.string().regex(SCENARIO_VERSION, 'must look like 1.0'),
+  version: z
+    .string({
+      error: (issue) =>
+        typeof issue.input === 'number'
+          ? "must be a quoted string such as '1.0' (unquoted, YAML reads it as a number)"
+          : undefined,
+    })
+    .regex(SCENARIO_VERSION, 'must look like 1.0'),
   categories,
   profiles: z.array(z.enum(PROFILES)).min(1),
   gqm: z.array(z.string().regex(/^(Q-[A-G]\d+|G-X\d+)$/, 'must look like Q-C1 or G-X1')).min(1),
