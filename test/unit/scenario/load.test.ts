@@ -1,3 +1,5 @@
+import { mkdtempSync, symlinkSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -128,6 +130,30 @@ describe('loadScenario', () => {
     const yaml = withField(['seed'], 'prompts/01.md');
     expect(issuesOf(writeScenario(yaml))).toEqual([
       { path: 'seed', message: "directory 'prompts/01.md' does not exist" },
+    ]);
+  });
+
+  it('rejects a declared path that is a symbolic link leading outside the scenario directory', () => {
+    const root = writeScenario(completeScenarioYaml(), [
+      'prompts/01.md',
+      'prompts/02.md',
+      'oracle/public/a.test.ts',
+      'oracle/checks/decision.yaml',
+    ]);
+    symlinkSync(mkdtempSync(join(tmpdir(), 'bench-outside-')), join(root, 'S9', '1.0', 'seed'));
+    expect(issuesOf(root)).toEqual([
+      { path: 'seed', message: "'seed' leads outside the scenario directory" },
+    ]);
+  });
+
+  it('explains that an unquoted version is read as a number', () => {
+    const yaml = completeScenarioYaml();
+    yaml.version = 1.0;
+    expect(issuesOf(writeScenario(yaml))).toEqual([
+      {
+        path: 'version',
+        message: "must be a quoted string such as '1.0' (unquoted, YAML reads it as a number)",
+      },
     ]);
   });
 });
