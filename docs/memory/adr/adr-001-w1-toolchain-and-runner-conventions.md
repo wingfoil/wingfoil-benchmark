@@ -2,7 +2,7 @@
 id: adr-001-w1-toolchain-and-runner-conventions
 type: adr
 title: "W1 toolchain and runner conventions"
-status: draft
+status: pending
 ---
 
 ## Context
