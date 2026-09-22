@@ -2,7 +2,7 @@
 id: dl-001-per-step-oracle-mapping-in-the-scenario-format
 type: decision-log
 title: "Per-step oracle mapping in the scenario format"
-status: pending
+status: approved
 ---
 
 ## Context
