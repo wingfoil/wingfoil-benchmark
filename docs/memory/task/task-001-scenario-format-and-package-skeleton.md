@@ -329,3 +329,6 @@ visible next to its assertion.
   to `pending` (`fcca4cc`, `be01f38`, `26c9e85`): each exit 0, empty stderr, one file, the `submit`
   diffs limited to `status`. Matches the code. The scaffolded template text and spec-010 claim that
   `submit` replaces placeholder comments and fills required fields; it does not (usage note N15).
+- `npx wingfoil memory submit task-001-…` → `aabc391` (`in-progress → in-review`, after the rejection).
+  Declared: `status` set to the target and `rejection_reason` removed. Observed: exit 0, empty stderr,
+  1 file, `status` changed and the `rejection_reason` line removed, nothing else. Matches.
