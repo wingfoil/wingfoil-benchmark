@@ -27,7 +27,7 @@ function withField(path: string[], value: unknown): Yaml {
 }
 
 describe('loadCampaign', () => {
-  it('returns the identity, the loaded scenarios and the results root', () => {
+  it('returns the identity and the scenarios and results roots', () => {
     const { root, file } = writeRepo();
     const result = loadCampaign(file);
     expect(result.ok).toBe(true);
@@ -35,7 +35,7 @@ describe('loadCampaign', () => {
     expect(result.value.id).toBe(campaignId(completeCampaignYaml()));
     expect(result.value.file).toBe(file);
     expect(result.value.resultsRoot).toBe(`${root}/results`);
-    expect(result.value.scenarios[0]?.dir).toBe(`${root}/scenarios/S1/1.0`);
+    expect(result.value.scenariosRoot).toBe(`${root}/scenarios`);
   });
 
   it('accepts the trivial fixture campaign', () => {
@@ -153,13 +153,6 @@ describe('loadCampaign', () => {
     [['currency', 'usd_to_eur'], 0, 'currency.usd_to_eur'],
   ])('rejects a malformed %j', (field, value, path) => {
     expect(paths(withField(field as string[], value))).toEqual([path]);
-  });
-
-  it('reports scenarios that do not load, naming the entry and the scenario', () => {
-    const issues = issuesOf(completeCampaignYaml(), ['S1@1.0', 'S2@1.0', 'S8@1.0']);
-    expect(issues).toEqual([
-      { path: 'scenarios[2]', message: expect.stringMatching(/^S3@1\.0: scenario\.yaml not found/) },
-    ]);
   });
 
   it.each([
