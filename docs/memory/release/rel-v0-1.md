@@ -55,7 +55,7 @@ Release-planning notes:
 
 ## Release checklist
 
-- [ ] release-planning: scope approved (planning → in-development)
+- [x] release-planning: scope approved (planning → in-development, `8c5c7e6`; plan: plan-003)
 - [ ] delivery: W1–W11 done, every wave's "Ends with" verified (tasks: —)
 - [ ] calibration: dry runs in every arm, budget revised (`docs/calibration/v0.1.md`)
 - [ ] validation: acceptance green on the fake agent, coverage > 80%, lint clean, one real-agent end-to-end run
