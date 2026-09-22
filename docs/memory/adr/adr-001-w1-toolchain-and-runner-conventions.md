@@ -15,7 +15,7 @@ In the W1 plan phase the agent proposed eleven technical defaults in the convers
 approver, who accepted them ("technical defaults 1-11 of the W1 plan phase accepted", approval commits
 `ef68c8c`, `ea6c461`, `29ead9f`). Their first written record is the W1 section of task-001's Design,
 written right after the acceptance (`c1085fe`); that transcription adds two design-time details, the
-`npx` check in default 1 and the pinned tool versions (delta 3 below). This ADR records the defaults
+`npx` check in default 1 and the pinned tool versions (delta 2 below). This ADR records the defaults
 as the benchmark's architectural baseline.
 
 ## Decision
@@ -50,6 +50,9 @@ typescript-eslint 8.70.1 requires `typescript >=4.8.4 <6.1.0`; Vitest and `@vite
 4.6.5; yaml 2.9.1; `@types/node` 22.x, matching the runtime. Exact versions are locked by
 `package-lock.json`.
 
+In default 2, "see below" points to the traceability test described in task-001's Design, where
+this text was first written.
+
 ## Deltas since acceptance (for the approver's decision)
 
 Changes made during task-001 that depart from, or add to, the accepted text. Each needs the
@@ -60,14 +63,9 @@ approver's decision together with this ADR.
    enforce the rule: they missed dynamic imports, deep imports that bypass `index.ts` and `.mts`
    files, and flagged subfolders named like modules. The implementation is now a local ESLint rule,
    `eslint/module-boundaries.js`, that resolves every import against `src/`. The intent of default 3
-   is unchanged: ESLint flat config, typescript-eslint strict, Prettier, and REQ-ARC-02 in lint.
-2. **Default 2, scope of the coverage threshold.** The 80% threshold applies to `src/` only. The lint
-   rule in `eslint/` is excluded, because Vitest's v8 coverage misreports that file: Vitest marks
-   lines 37, 62 and 78 uncovered, while Node's own coverage (`--experimental-test-coverage`) shows
-   them executed by the same cases. The rule is tested by in-process `Linter` cases and type-checked
-   (`checkJs`).
-
-3. **Pinned tool versions (addition).** The block after default 11 was written at design time, not
+   is unchanged: ESLint flat config, typescript-eslint strict, Prettier, and REQ-ARC-02 in lint. The
+   rule is type-checked and under the same 80% coverage threshold as `src/`.
+2. **Pinned tool versions (addition).** The block after default 11 was written at design time, not
    proposed with the defaults. Its one choice beyond "latest" is TypeScript 6.0.3 instead of 7.0.2,
    because typescript-eslint 8.70.1 requires `typescript <6.1.0`.
 

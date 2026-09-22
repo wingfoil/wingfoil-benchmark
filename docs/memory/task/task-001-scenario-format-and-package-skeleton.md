@@ -54,7 +54,7 @@ Classification confirmed in the design phase. The package is new, so every crite
 ### W1 technical decisions
 
 Recorded in [adr-001-w1-toolchain-and-runner-conventions](../adr/adr-001-w1-toolchain-and-runner-conventions.md)
-(the eleven defaults the approver accepted in the W1 plan phase, and three deltas made during this
+(the eleven defaults the approver accepted in the W1 plan phase, and two deltas made during this
 task that await the approver's decision). They apply to task-001, task-002 and task-003.
 
 ### Package
@@ -93,7 +93,7 @@ task that await the approver's decision). They apply to task-001, task-002 and t
 | `steps` | non-empty list of `{ n, prompt_file }`; `n` runs 1, 2, 3 … in order; each file must exist; no file declared twice (`./a` and `a` are the same file); a prompt must not be or lie inside `scenario.yaml` or an oracle path |
 | `oracle.public_tests` | relative directory; must exist |
 | `oracle.checks` | list of relative files (content checks, REQ-SCO-06), without duplicates; each must exist; default empty |
-| `oracle.third_party` | list of `{ name, url (http, https, git or ssh), commit (40-hex SHA), license (SPDX-shaped expression, parentheses allowed; identifiers not checked against the SPDX list) }`; default empty |
+| `oracle.third_party` | list of `{ name, url (http, https, git or ssh), commit (40-hex SHA), license (SPDX-shaped expression, parentheses nested at most 32 deep; identifiers not checked against the SPDX list, so `NOASSERTION` or `x` pass) }`; default empty |
 | `holdout` | boolean: whether hold-out additions are expected |
 
 Unknown keys are rejected (strict objects) and reported one per key at their own path, so that a typo
@@ -119,7 +119,8 @@ material without a git commit
 
 A local ESLint rule, `eslint/module-boundaries.js`, registered in `eslint.config.js` for
 `src/**/*.{ts,mts,cts,tsx}` (adr-001 delta 1). For every relative or absolute import, re-export,
-dynamic `import()` (string or plain template literal) and TypeScript `import('…')` type, it resolves
+dynamic `import()` (string or plain template literal), TypeScript `import('…')` type and
+`declare module '…'` augmentation, it resolves
 the target against `src/`, with symbolic links resolved on both sides, and reports:
 
 - a file directly under `src/`, outside any module (REQ-ARC-01);
@@ -131,10 +132,11 @@ the target against `src/`, with symbolic links resolved on both sides, and repor
 - an import that reaches another module other than through its `index.js`.
 
 Imports inside the same module, at any depth, and package imports are not restricted. The cases run
-the rule in an in-process `Linter` (18 forbidden, 13 allowed, plus the `src/` message and a symlinked
-checkout); one test lints through the project configuration to check the wiring (`.ts` and `.mts` in
-`src/`, not tests). The rule is type-checked (`checkJs`) and outside the coverage threshold (adr-001
-delta 2).
+the rule in an in-process `Linter` (20 forbidden, 15 allowed, plus the `src/` message and a symlinked
+checkout). One test lints through the project configuration in a separate ESLint process, to check the
+wiring (`.ts` and `.mts` in `src/`, not tests): loading the configuration inside the test process
+would load the rule a second time, which Vitest's coverage misattributes. The rule is type-checked
+(`checkJs`) and under the coverage threshold.
 
 ### Acceptance traceability test
 
@@ -148,8 +150,10 @@ tagged with one of its features must match an acceptance test title `@<feature> 
   comment lines keep pending tags; CRLF is accepted.
 - Titles are read from the TypeScript syntax tree of `test/acceptance/*.test.ts`: calls to `it`/`test`
   with any modifier chain (`.only`, `.concurrent`, `.each(…)`, tagged `.each`) except `skip`, `todo`,
-  `skipIf`, `runIf` and `fails`; string or plain template titles only. Comments and other calls
-  (`re.test`, `expect.it`, `describe`) never count.
+  `skipIf`, `runIf` and `fails`, and not inside a skipped or pending `describe`; string or plain
+  template titles only. Comments and other calls (`re.test`, `expect.it`, `describe`) never count.
+- Known limits of a static scan: a test in dead code, an `it` shadowed by a local function, or a test
+  with an empty body still count. Review is what catches those.
 
 All test paths are resolved from the repository root (`test/support/paths.ts`), not from the working
 directory. Temporary directories are removed when the test that created them finishes.
@@ -262,6 +266,37 @@ visible next to its assertion.
 - **Checklist (at `a8f033e`):** `npm test` 118/118; coverage 100% on all four measures (`src/`); lint
   and typecheck clean; 118/118 with `--sequence.shuffle` (seeds 1, 3, 7), from `/tmp` and from
   `test/`; `/tmp/bench-*` count unchanged after a run.
+
+- **Correction (round 3):** the Vitest coverage anomaly above has a probable cause: two copies of
+  the rule module, one loaded natively by `new ESLint()` through `eslint.config.js`, one through Vite.
+  With the in-process cases alone the rule measured 100% of lines. Moving the project-configuration
+  test to a separate process brought the rule back under the coverage gate, and adr-001 delta 2 was
+  withdrawn.
+
+### Review, round 3
+
+- **Earlier findings:** all fixed except B (skipped suites), E (some shapes) and J (coverage), partly
+  fixed. **New:** no blocker or major; 2 minors, 6 nits.
+- **Fixed** (red `4f814b7`, then `1f44d8a`, `60df072`, `caae64c`):
+  1. a license nested 8000 deep made `loadScenario` throw (stack overflow): nesting is capped at 32
+     and reported as an issue;
+  2. tests inside `describe.skip`/`describe.todo` counted: skipped suites are now pruned;
+  3. the rule's fallback for non-existent paths dropped a character at `/`: uses `basename`;
+  4. the coverage exclusion of the rule: removed, as above;
+  6. the cleanup test did not check the default registration: a test now checks that `tempDir`
+     removes its directory through `onTestFinished` (**characterization**: it passed at once);
+  7. `declare module '…'` augmentation was not checked: now it is;
+  8. adr-001's "see below" had no target: explained after the quoted defaults.
+- **Documented, not changed:** 5 (static-scan limits, now in the Design); E's remaining shapes
+  (`https://x` is a valid URL; license identifiers are not checked against the SPDX list, as the
+  Design states).
+- **Characterization cases added after the code** for coverage: a file outside `src/`, a non-module
+  directory under `src/`, `declare namespace`. One branch stays uncovered: the guard in the rule's
+  `real()` against recursing past the filesystem root, kept to rule out infinite recursion.
+- **Checklist (at `caae64c`):** `npm test` 125/125; coverage 100% statements, lines and functions,
+  99.1% branches (`src/` and `eslint/`); lint, typecheck and build clean; 125/125 with
+  `--sequence.shuffle` (seeds 1, 5, 13), from `/tmp` and with `npx vitest run` from `test/`;
+  `/tmp/bench-*` count unchanged.
 
 ### WingFoil commands (declared vs observed)
 
