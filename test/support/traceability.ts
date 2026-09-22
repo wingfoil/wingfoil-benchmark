@@ -88,10 +88,31 @@ function isTestCallee(callee: ts.Expression): boolean {
   return false;
 }
 
+/** Whether `callee` is `describe`/`suite` with a modifier chain that skips it (`.skip`, `.todo`, …). */
+function isSkippedSuite(callee: ts.Expression): boolean {
+  if (ts.isPropertyAccessExpression(callee)) {
+    return NOT_VERIFYING.has(callee.name.text)
+      ? isSuiteRoot(callee.expression)
+      : isSkippedSuite(callee.expression);
+  }
+  if (ts.isCallExpression(callee)) return isSkippedSuite(callee.expression);
+  if (ts.isTaggedTemplateExpression(callee)) return isSkippedSuite(callee.tag);
+  return false;
+}
+
+function isSuiteRoot(callee: ts.Expression): boolean {
+  if (ts.isIdentifier(callee)) return callee.text === 'describe' || callee.text === 'suite';
+  if (ts.isPropertyAccessExpression(callee)) return isSuiteRoot(callee.expression);
+  if (ts.isCallExpression(callee)) return isSuiteRoot(callee.expression);
+  return false;
+}
+
 /**
  * Titles of the test calls in the test files of `testDir` that start with `@F`, read from the
- * TypeScript syntax tree: comments and non-test calls never count, and `skip`/`todo` tests do not
- * either. Titles computed at run time (template literals with `${}`) are not collected.
+ * TypeScript syntax tree: comments and non-test calls never count, and neither do `skip`/`todo`
+ * tests or tests inside skipped suites. Titles computed at run time (template literals with `${}`)
+ * are not collected. A static scan cannot see that a test sits in dead code, that `it` is shadowed by
+ * a local function, or that a test body is empty.
  */
 export function acceptanceTestTitles(testDir: string): Set<string> {
   const titles = new Set<string>();
@@ -100,6 +121,7 @@ export function acceptanceTestTitles(testDir: string): Set<string> {
     .sort()) {
     const file = ts.createSourceFile(name, readFileSync(join(testDir, name), 'utf8'), ts.ScriptTarget.Latest);
     const visit = (node: ts.Node): void => {
+      if (ts.isCallExpression(node) && isSkippedSuite(node.expression)) return;
       if (ts.isCallExpression(node) && isTestCallee(node.expression)) {
         const [title] = node.arguments;
         if (

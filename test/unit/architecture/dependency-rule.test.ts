@@ -1,7 +1,8 @@
+import { spawnSync } from 'node:child_process';
 import { symlinkSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { ESLint, Linter } from 'eslint';
+import { Linter } from 'eslint';
 import tseslint from 'typescript-eslint';
 import { describe, expect, it } from 'vitest';
 
@@ -44,6 +45,8 @@ const allowed: [string, string][] = [
   ['src/runner/sub/a.ts', reexport('../../core/index.js')],
   ['src/core/a.ts', reexport('agents')],
   ['src/core/a.ts', reexport('node:path')],
+  ['test/a.ts', reexport('../src/core/scenario.js')],
+  ['src/core/a.ts', 'declare namespace Foo {\n  const x: number;\n}\n'],
 ];
 
 const forbidden: [string, string][] = [
@@ -61,6 +64,7 @@ const forbidden: [string, string][] = [
   ['src/runner/a.ts', reexport('../core/scenario.js')],
   ['src/core/a.ts', reexport('../util/x.js')],
   ['src/x.ts', reexport('./runner/index.js')],
+  ['src/util/a.ts', reexport('../core/index.js')],
   ['src/core/a.mts', reexport('../scenario/index.js')],
   ['src/core/a.ts', reexport(`${REPO_ROOT}src/scenario/index.js`)],
   ['src/core/a.ts', `export type T = import('../scenario/index.js').X;\n`],
@@ -91,17 +95,28 @@ describe('REQ-ARC-02 dependency rule', () => {
 });
 
 describe('REQ-ARC-02 dependency rule in the project configuration', () => {
-  const eslint = new ESLint({ cwd: REPO_ROOT });
-
-  async function projectViolations(file: string, source: string): Promise<number> {
-    const [result] = await eslint.lintText(source, { filePath: join(REPO_ROOT, file) });
+  /**
+   * Lint `source` as `file` with the project's own configuration, in a separate ESLint process: loading
+   * the configuration in this process would load the rule a second time, outside Vitest's coverage.
+   */
+  function projectViolations(file: string, source: string): number {
+    const eslintBin = join(REPO_ROOT, 'node_modules/eslint/bin/eslint.js');
+    const run = spawnSync(
+      process.execPath,
+      [eslintBin, '--stdin', '--stdin-filename', file, '--format', 'json'],
+      {
+        cwd: REPO_ROOT,
+        input: source,
+        encoding: 'utf8',
+      },
+    );
+    const [result] = JSON.parse(run.stdout) as { messages: { ruleId: string | null }[] }[];
     return (result?.messages ?? []).filter((message) => message.ruleId === RULE).length;
   }
 
-  // Loading typescript-eslint takes seconds on a cold start: allow for it in this one test.
-  it('reports forbidden imports in src/ and leaves tests alone', async () => {
-    expect(await projectViolations('src/core/a.ts', reexport('../scenario/index.js'))).toBe(1);
-    expect(await projectViolations('src/core/a.mts', reexport('../scenario/index.js'))).toBe(1);
-    expect(await projectViolations('test/unit/a.test.ts', reexport('../../src/core/scenario.js'))).toBe(0);
+  it('reports forbidden imports in src/ and leaves tests alone', () => {
+    expect(projectViolations('src/core/a.ts', reexport('../scenario/index.js'))).toBe(1);
+    expect(projectViolations('src/core/a.mts', reexport('../scenario/index.js'))).toBe(1);
+    expect(projectViolations('test/unit/a.test.ts', reexport('../../src/core/scenario.js'))).toBe(0);
   }, 60_000);
 });
