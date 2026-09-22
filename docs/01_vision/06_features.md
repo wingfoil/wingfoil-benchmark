@@ -130,9 +130,9 @@ phase. The IDs below are the candidates from the brief.
   To be treated as a validity threat in the experiment design.
 - **WingFoil 0.1.0 capability gap:** the pinned WingFoil lacks the Memory transition verbs, the
   workflow engine and MCP writes. F3.6 makes this visible instead of hiding it.
-- **Coverage of the first release:** F6.1–F6.3 are candidates because they have objective oracles
-  (F4.1). The primary categories they cover are C, D and F. A, B, E and G would be missing from the
-  first results.
+- **Coverage of the first release:** F6.1–F6.3 and F6.8 (S1–S3, S8), which have objective oracles
+  (F4.1). Their primary categories are C, D, E and F. A, B and G are missing from the first results,
+  and, in line with "losses published equally", the site should say so.
 
 ## Decisions from the features review
 
