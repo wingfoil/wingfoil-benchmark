@@ -2,6 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parse } from 'yaml';
 
+/** One Gherkin scenario: the file it is in, its feature tags (inherited ones first) and its title. */
 export interface GherkinScenario {
   readonly file: string;
   readonly features: readonly string[];
@@ -9,27 +10,34 @@ export interface GherkinScenario {
 }
 
 const FEATURE_TAG = /^@F\d+\.\d+$/;
-const SCENARIO_LINE = /^\s*Scenario(?: Outline)?:\s*(.+?)\s*$/;
+const CONTAINER_LINE = /^(Feature|Rule):/;
+const SCENARIO_LINE = /^(?:Scenario Outline|Scenario Template|Scenario|Example):\s*(.+?)\s*$/;
 
-/** Every scenario of a `.feature` file, with its `@F<n>.<m>` tags in declaration order. */
+/**
+ * Every scenario of a `.feature` file, with its `@F<n>.<m>` tags: those of the enclosing Feature or
+ * Rule first, then its own. Comment lines keep pending tags; CRLF files are read as LF.
+ */
 export function parseFeatureFile(file: string, text: string): GherkinScenario[] {
   const scenarios: GherkinScenario[] = [];
-  let tags: string[] = [];
-  for (const line of text.split('\n')) {
-    const trimmed = line.trim();
-    if (trimmed.startsWith('@')) {
-      tags.push(...trimmed.split(/\s+/));
+  let inherited: string[] = [];
+  let pending: string[] = [];
+  for (const line of text.split(/\r?\n/).map((l) => l.trim())) {
+    if (line === '' || line.startsWith('#')) continue;
+    if (line.startsWith('@')) {
+      pending.push(
+        ...line
+          .split(/\s+/)
+          .filter((tag) => FEATURE_TAG.test(tag))
+          .map((tag) => tag.slice(1)),
+      );
       continue;
     }
-    const match = SCENARIO_LINE.exec(line);
-    if (match?.[1]) {
-      scenarios.push({
-        file,
-        features: tags.filter((tag) => FEATURE_TAG.test(tag)).map((tag) => tag.slice(1)),
-        title: match[1],
-      });
+    if (CONTAINER_LINE.test(line)) {
+      inherited = line.startsWith('Feature') ? pending : [...inherited, ...pending];
     }
-    if (trimmed !== '') tags = [];
+    const title = SCENARIO_LINE.exec(line)?.[1];
+    if (title) scenarios.push({ file, features: [...new Set([...inherited, ...pending])], title });
+    pending = [];
   }
   return scenarios;
 }
@@ -39,6 +47,7 @@ export function acceptanceTitle(scenario: GherkinScenario): string {
   return [...scenario.features.map((feature) => `@${feature}`), scenario.title].join(' ');
 }
 
+/** Every scenario of every `.feature` file in `acceptanceDir`, files in name order. */
 export function readScenarios(acceptanceDir: string): GherkinScenario[] {
   return readdirSync(acceptanceDir)
     .filter((name) => name.endsWith('.feature'))
@@ -47,6 +56,7 @@ export function readScenarios(acceptanceDir: string): GherkinScenario[] {
 }
 
 const STARTED = new Set(['in-progress', 'in-review', 'approved', 'done']);
+const FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n---/;
 
 /** Features of every task that has started (`in-progress` or later). */
 export function startedFeatures(taskDir: string): Set<string> {
@@ -54,21 +64,30 @@ export function startedFeatures(taskDir: string): Set<string> {
   for (const name of readdirSync(taskDir)
     .filter((n) => n.endsWith('.md'))
     .sort()) {
-    const frontmatter = /^---\n([\s\S]*?)\n---/.exec(readFileSync(join(taskDir, name), 'utf8'))?.[1];
+    const frontmatter = FRONTMATTER.exec(readFileSync(join(taskDir, name), 'utf8'))?.[1];
     const task = parse(frontmatter ?? '') as { status?: string; features?: string[] } | null;
     if (task?.status && STARTED.has(task.status)) task.features?.forEach((feature) => features.add(feature));
   }
   return features;
 }
 
-const TITLE_LITERAL = /(['"`])(@F\d+\.\d+ [^'"`]+)\1/g;
+const COMMENTS = /\/\*[\s\S]*?\*\/|^\s*\/\/.*$/gm;
+const TEST_CALL =
+  /\b(?:it|test)(?:\.each\([^)]*\))?\(\s*(?:'((?:[^'\\\n]|\\.)*)'|"((?:[^"\\\n]|\\.)*)"|`((?:[^`\\]|\\.)*)`)/g;
 
-/** Acceptance test titles found by a static scan of the test files. */
+/**
+ * Titles of the `it(…)` and `test(…)` calls in the test files of `testDir` that start with `@F`, found by
+ * a static scan. Comments are ignored, and so are `it.skip`/`it.todo`, which do not verify anything.
+ */
 export function acceptanceTestTitles(testDir: string): Set<string> {
   const titles = new Set<string>();
-  for (const name of readdirSync(testDir).filter((n) => n.endsWith('.test.ts'))) {
-    for (const match of readFileSync(join(testDir, name), 'utf8').matchAll(TITLE_LITERAL)) {
-      if (match[2]) titles.add(match[2]);
+  for (const name of readdirSync(testDir)
+    .filter((n) => n.endsWith('.test.ts'))
+    .sort()) {
+    const source = readFileSync(join(testDir, name), 'utf8').replace(COMMENTS, '');
+    for (const match of source.matchAll(TEST_CALL)) {
+      const title = (match[1] ?? match[2] ?? match[3] ?? '').replace(/\\(.)/g, '$1');
+      if (title.startsWith('@F')) titles.add(title);
     }
   }
   return titles;

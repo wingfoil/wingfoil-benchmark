@@ -1,5 +1,5 @@
 import { ESLint } from 'eslint';
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 
 import { REPO_ROOT } from '../../support/paths.js';
 
@@ -49,6 +49,11 @@ const forbidden: [string, string][] = [
 ];
 
 describe('REQ-ARC-02 dependency rule', () => {
+  // Loading typescript-eslint takes seconds on a cold start: do it once, outside the per-test timeout.
+  beforeAll(async () => {
+    await violations('src/core/warm-up.ts', '');
+  }, 60_000);
+
   it.each(allowed)('%s may run: %s', async (file, source) => {
     expect(await violations(file, source)).toBe(0);
   });

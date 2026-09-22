@@ -80,6 +80,12 @@ describe('loadScenario', () => {
     expect(paths(writeScenario(''))).toEqual(['scenario.yaml']);
   });
 
+  it('reports a scenario.yaml that is not a mapping against the file', () => {
+    expect(issuesOf(writeScenario('- a\n- b\n'))).toEqual([
+      { path: 'scenario.yaml', message: expect.stringMatching(/expected object/) },
+    ]);
+  });
+
   it('tells a file that cannot be read apart from YAML that does not parse', () => {
     const root = writeScenario();
     const file = join(root, 'S9', '1.0', 'scenario.yaml');
@@ -136,7 +142,7 @@ describe('loadScenario', () => {
     [['steps'], [{ n: 2, prompt_file: 'prompts/01.md' }], 'steps[0].n'],
     [
       ['oracle', 'third_party'],
-      [{ name: 'x', url: 'u', commit: 'main', license: 'MIT' }],
+      [{ name: 'x', url: 'https://x.org', commit: 'main', license: 'MIT' }],
       'oracle.third_party[0].commit',
     ],
     [
