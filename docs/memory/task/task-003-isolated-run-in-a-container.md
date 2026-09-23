@@ -128,6 +128,33 @@ not a silent no-op, so a test cannot pass by doing nothing.
 
 ## Execution notes
 
+### Build
+
+- **TDD order, in the history:** ports (red `8266f5a`) → `dockerCli`/`gitCli`; the fake agent (red `6e4f06b`)
+  → `fakeAgent`; the runner's acceptance and unit tests (red `08b56ff`) → `runCampaign`; the command's tests
+  (red `af3e93a`) → `bench campaign run`. Each red run failed for its stated reason (missing module, or the
+  assertion the commit describes).
+- **`checkCampaign` moved from `cli` to `runner`**, as task-002's Design foresaw: the runner needs the
+  campaign and its scenarios, and `runner` may import both `campaign` and `scenario` (REQ-ARC-02).
+  `cli` re-exports it, so task-002's tests did not change.
+- **The command's ports are injectable.** `main(argv, io, ports?)` takes the Docker, git and agent
+  ports; the bin passes the real ones, tests pass doubles. Without this the CLI could only be tested
+  with Docker running.
+- **Output order:** the runner logs `campaign <id>, execution <n>` itself, so the header precedes the
+  run lines whatever calls it.
+- **Tests written after the code (characterization), to close coverage:** the system process port,
+  `processFailure`, the git port's failure path, `realPorts`, and the agent's command closure. They
+  passed on their first run; the behaviour was already there. One branch stays uncovered on purpose:
+  the `?? 1` fallback for a repetition count the schema already guarantees.
+- **The Docker test is not red-first:** it is the end-to-end verification of W1's "Ends with", written
+  once the runner existed, and it passed on its first run. Its commit message said "(red)"; the commit
+  was amended, while still local, to say what it is.
+- **W1 "Ends with", verified** (`npm run test:docker`, 93 s including the image build): the trivial
+  scenario T0 runs in a real container from `campaigns/smoke.yaml`; `hello.txt` is in the workspace
+  with the expected content, the workspace is a git repository, `results/<id>/1/campaign.yaml` exists,
+  no container is left behind, and the image is tagged with the campaign's identity.
+- **REQ-ARC-05:** `.wingfoil/dna.yaml` lists `agents` and `runner` (hand edit, N14).
+
 ### WingFoil commands (declared vs observed)
 
 - `npx wingfoil memory add --type task --title "…"` → `ab0f37c`. Declared: one commit
