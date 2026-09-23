@@ -130,6 +130,18 @@ describe('bench campaign run', () => {
     expect(ports.recorded.creates).toHaveLength(1);
   });
 
+  it('reports a campaign that cannot start at all, instead of crashing', async () => {
+    const { file } = writeRepo(fakeCampaign(), ['S1@1.0']);
+    const ports = doubles();
+    const docker = {
+      ...ports.docker,
+      build: () => Promise.reject(new Error('Cannot connect to the Docker daemon')),
+    };
+    const { code, stderr } = await runWith({ ...ports, docker }, 'campaign', 'run', file);
+    expect(code).toBe(1);
+    expect(stderr).toMatch(/^campaign: Cannot connect to the Docker daemon\n$/);
+  });
+
   it('exits 1 when a run fails, and says which', async () => {
     const { file } = writeRepo(fakeCampaign(), ['S1@1.0']);
     const ports = doubles({

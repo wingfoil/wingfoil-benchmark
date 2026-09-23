@@ -128,6 +128,31 @@ describe('the git port', () => {
     expect(process.calls[0]?.args).toContain('user.email=benchmark@localhost');
   });
 
+  it('keeps the host git environment out of the run', async () => {
+    const process = recorder([ok()]);
+    await gitCli(process).init('/repo/runs/w');
+    expect(process.calls[0]?.env).toMatchObject({
+      GIT_TEMPLATE_DIR: '',
+      GIT_DIR: '',
+      GIT_WORK_TREE: '',
+      GIT_INDEX_FILE: '',
+      GIT_OBJECT_DIRECTORY: '',
+      GIT_ALTERNATE_OBJECT_DIRECTORIES: '',
+      GIT_AUTHOR_NAME: 'WingFoil Benchmark',
+      GIT_AUTHOR_EMAIL: 'benchmark@localhost',
+      GIT_COMMITTER_NAME: 'WingFoil Benchmark',
+      GIT_COMMITTER_EMAIL: 'benchmark@localhost',
+    });
+  });
+
+  it('refuses a workspace path that would break the mount specification', async () => {
+    const process = recorder([ok('c0ffee\n')]);
+    await expect(
+      dockerCli(process).create({ image: 'abc', name: 'bench-abc', workspace: '/repo/a,b/w', user: 'node' }),
+    ).rejects.toThrow(/workspace path .* comma/);
+    expect(process.calls).toEqual([]);
+  });
+
   it('keeps the host git configuration, its templates and its hooks out of the run', async () => {
     const process = recorder([ok(), ok(), ok()]);
     const git = gitCli(process);
