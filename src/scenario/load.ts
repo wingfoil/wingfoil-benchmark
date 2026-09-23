@@ -1,8 +1,7 @@
-import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
+import { existsSync, realpathSync, statSync } from 'node:fs';
 import { resolve, sep } from 'node:path';
-import { parse } from 'yaml';
 
-import { fail, formatPath, ok, scenarioSchema } from '../core/index.js';
+import { fail, ok, parseWith, readYamlFile, scenarioSchema } from '../core/index.js';
 import type { Issue, Result, Scenario, ScenarioFile } from '../core/index.js';
 
 const SCENARIO_FILE = 'scenario.yaml';
@@ -24,49 +23,17 @@ interface Declared {
  */
 export function loadScenario(scenariosRoot: string, id: string, version: string): Result<Scenario> {
   const dir = resolve(scenariosRoot, id, version);
-  const file = resolve(dir, SCENARIO_FILE);
-  if (!existsSync(file)) {
-    return fail([{ path: SCENARIO_FILE, message: `not found in ${dir}` }]);
-  }
+  const read = readYamlFile(resolve(dir, SCENARIO_FILE));
+  if (!read.ok) return read;
+  const parsed = parseWith(scenarioSchema, read.value, SCENARIO_FILE);
+  if (!parsed.ok) return parsed;
 
-  let text: string;
-  try {
-    text = readFileSync(file, 'utf8');
-  } catch (error) {
-    return fail([{ path: SCENARIO_FILE, message: `cannot be read: ${(error as Error).message}` }]);
-  }
-
-  let data: unknown;
-  try {
-    data = parse(text);
-  } catch (error) {
-    return fail([{ path: SCENARIO_FILE, message: `is not valid YAML: ${(error as Error).message}` }]);
-  }
-  if (data === null || data === undefined) return fail([{ path: SCENARIO_FILE, message: 'is empty' }]);
-
-  const parsed = scenarioSchema.safeParse(data, {
-    error: (issue) =>
-      issue.code === 'invalid_type' && issue.input === undefined ? 'is required' : undefined,
-  });
-  if (!parsed.success) return fail(parsed.error.issues.flatMap(toIssues));
-
-  const spec = parsed.data;
+  const spec = parsed.value;
   const seed: Declared = { path: 'seed', relative: spec.seed, kind: 'directory' };
   const others = otherPaths(spec);
   const issues = [...identityIssues(spec, id, version), ...fileIssues([seed, ...others], dir)];
   if (issues.length === 0) issues.push(...overlapIssues(seed, others, dir));
   return issues.length > 0 ? fail(issues) : ok(toScenario(spec, dir));
-}
-
-/** One issue per Zod issue, and one per unknown key, each at its own field path. */
-function toIssues(issue: { code: string; path: PropertyKey[]; message: string; keys?: string[] }): Issue[] {
-  if (issue.code === 'unrecognized_keys' && issue.keys) {
-    return issue.keys.map((key) => ({
-      path: formatPath([...issue.path, key]),
-      message: 'is not a known field',
-    }));
-  }
-  return [{ path: formatPath(issue.path) || SCENARIO_FILE, message: issue.message }];
 }
 
 function identityIssues(spec: ScenarioFile, id: string, version: string): Issue[] {

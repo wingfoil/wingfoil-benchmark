@@ -1,7 +1,7 @@
 # Requirements (v0.1)
 
-**Version:** 1.1
-**Date:** 2026-09-22
+**Version:** 1.2
+**Date:** 2026-09-23
 **Status:** Approved
 **Traces to:** [acceptance/](acceptance/) (all v0.1 features), [scenarios/](scenarios/) (K1–K5), [09_experiment-design.md](../01_vision/09_experiment-design.md), [07_sequencer.md](../01_vision/07_sequencer.md) v0.1
 
@@ -36,9 +36,9 @@ All human-authored files are YAML, validated by Zod schemas in `core`. All machi
 
 | ID | Requirement | Serves |
 |---|---|---|
-| REQ-FMT-01 | **Campaign file** (`campaigns/<name>.yaml`). It holds:<br>• `harnesses`: arm → `{tool, version, commit?}`<br>• `scenarios`: `[{id, version}]`<br>• `arms`<br>• `agent: {name, version}`<br>• `models`: a list with one default, plus slices `{model, scenarios, arms, repetitions}` for the Opus comparison<br>• `repetitions`: per scenario<br>• `approver_policy`: a version<br>• `caps: {step_time_s, step_tokens, run_cost_eur}`<br>• `budget: {warn_eur, ceiling_eur}`<br>• `currency: {usd_to_eur}`<br>A campaign must include the **baseline** arm (added in 1.1, threat T7). | F1.1, F1.3, T7 |
+| REQ-FMT-01 | **Campaign file** (`campaigns/<name>.yaml`), which lives in `campaigns/`, beside `scenarios/` and `results/`. It holds:<br>• `harnesses`: arm → `{tool, version, commit?}`, one entry per arm **except** `baseline` and `baseline-docs`, which run the plain agent and must have none (added in 1.2; until W3 this list is fixed, then it follows each arm's `requires`, REQ-FMT-05)<br>• `scenarios`: `[{id, version}]`<br>• `arms`<br>• `agent: {name, version}`<br>• `models`: `{default, slices?}`, where each slice is `{model, scenarios, arms, repetitions}` for the Opus comparison (shape fixed in 1.2)<br>• `repetitions`: per scenario<br>• `approver_policy`: a version<br>• `caps: {step_time_s, step_tokens, run_cost_eur}`<br>• `budget: {warn_eur, ceiling_eur}`<br>• `currency: {usd_to_eur}`<br>A campaign must include the **baseline** arm (added in 1.1, threat T7). The scenario seed is not a campaign field: `scenario@version` pins it (1.2). | F1.1, F1.3, T7 |
 | REQ-FMT-02 | **Campaign identity:** SHA-256 of the campaign file canonicalized (parsed, keys sorted, re-serialized as JSON), shortened to 12 hex characters. An execution of a campaign is `<campaign-id>/<n>`, with `n` counting executions. | F1.1 |
-| REQ-FMT-03 | A harness `version` must be a released version or a commit SHA. A branch name or `latest` is rejected. | F1.1 (error path) |
+| REQ-FMT-03 | A harness `version` must be a released version (semver, optionally `v`-prefixed, with optional prerelease and build metadata) or a commit SHA of 7 to 40 hex characters. A branch name, a range or `latest` is rejected. When `version` is a SHA and `commit` is also given, `commit` is a 40-character SHA that starts with `version` (added in 1.2). | F1.1 (error path) |
 | REQ-FMT-04 | **Scenario file** (`scenarios/<id>/<version>/scenario.yaml`). It holds:<br>• `id`, `version`<br>• `categories: {primary, secondary[]}`, `profiles[]`, `gqm[]`, `capabilities[]`<br>• `seed`: a directory<br>• `steps[]`: `{n, prompt_file}`<br>• `oracle`: public test directory, checks, third-party pins with licenses<br>• `holdout`: whether additions are expected | F3.1 |
 | REQ-FMT-05 | **Arm definition** (`arms/<arm>/arm.yaml`). It holds: `name`, `setup` (script), `manual` (the operating manual file), `environment` (files copied into the workspace), `mcp` (optional config), and `requires` (the harness tool). | F2.5, F2.7 |
 | REQ-FMT-06 | **Results layout:** `results/<campaign-id>/<n>/`. It contains:<br>• `campaign.yaml`, a copy<br>• `runs/<scenario>@<ver>/<arm>/<model>/r<k>/`, holding `run.json`, `steps/<NN>/{usage.json, transcript.jsonl, diff.patch}` and `score.json`<br>• `aggregate.json` | F5.1 |
@@ -151,3 +151,22 @@ requirement:
   is enforced rather than implicit.
 
 Source: [traceability.md](traceability.md) §4, findings 1 and 3.
+
+### Amendment 1.2 (delivery, W1 task-002 review, 2026-09-23)
+
+- **REQ-FMT-01:** harness coverage is stated — one entry per arm except `baseline` and
+  `baseline-docs` — because the review showed that a campaign with a `wingfoil` arm and no harness
+  entry was accepted, which is the unreproducible campaign F1.1 exists to prevent. Until W3 the
+  harness-free arms are that fixed pair; from W3 the rule follows each arm's `requires` (REQ-FMT-05).
+- **REQ-FMT-01:** `models` is an object `{default, slices?}`, not a list with a marked default.
+- **REQ-FMT-01:** the campaign file lives in `campaigns/`, so that the `scenarios/` and `results/`
+  roots it derives stay inside the repository (REQ-ARC-03).
+- **REQ-FMT-01:** the scenario seed is pinned through `scenario@version`, not by a campaign field.
+- **REQ-FMT-03:** the accepted shapes of a pin are spelled out, and a `commit` given beside a SHA
+  `version` must extend it.
+
+The traceability matrix is unaffected: the feature, journey and acceptance file of every amended
+requirement stay the same.
+
+Source: [../memory/decision-log/dl-003-campaign-pins-harness-coverage-seed-and-the-models-shape.md](../memory/decision-log/dl-003-campaign-pins-harness-coverage-seed-and-the-models-shape.md)
+(approver decisions A and B, W1 task-002 review).
