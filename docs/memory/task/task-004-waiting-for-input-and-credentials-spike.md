@@ -84,7 +84,77 @@ run and what it printed, recorded in the Execution notes.
 
 ## Design
 
-<!-- Modules, interfaces, data formats touched; decisions taken and their reasons. -->
+The protocol below is written before anything is run, so that what was probed, and what it cost,
+can be read back against what was planned. **Nothing here has been executed yet.**
+
+### Rules the protocol holds to
+
+- **No production code.** Nothing under `src/`, `test/` or `docker/` changes. If a probe shows the
+  run image needs a change, that is a finding for task-006, not an edit here.
+- **The probes are committed, their output is not.** One shell script per probe under
+  `spikes/task-004/`, so the spike is reproducible and reviewable; `spikes/task-004/out/` is
+  git-ignored and holds the raw event streams. The scripts refuse to run without
+  `BENCH_SPIKE_CONFIRM=1`, so neither a test run nor a stray shell spends anything by accident.
+- **Cost, and where it stops.** The spike's own ceiling is **1.00 USD**, summed from the
+  `total_cost_usd` the sessions report — a conservative proxy for the 1 € the approver authorised, at
+  any plausible rate. The sum is checked after every probe; on reaching it the spike stops and the
+  remaining questions are reported open. On a subscription that figure is the API-equivalent cost,
+  not a charge (sequencer decision 1): the real consumption is quota, and quota exhaustion is itself
+  a finding (REQ-RUN-13).
+- **Cheapest model that answers the question.** The probes test the CLI's plumbing, not the model, so
+  they run on Haiku 4.5 (`claude-haiku-4-5`, 1 $/5 $ per MTok). One probe repeats on Sonnet 5
+  (`claude-sonnet-5`, 2 $/10 $), the reference campaign's model, only to confirm the `result` event
+  has the same shape there.
+- **Credentials (REQ-NFR-01).** No probe prints, copies or commits a credential. The scripts run
+  without `set -x`, refer to the credential file only by the path the approver names, and every
+  recorded stream is passed through the secret scan of P7 before any of it is quoted in the Execution
+  notes. If the file cannot be located, that is a finding, not something to go looking for.
+- **Evidence.** Each probe records, in the Execution notes: the command as run (credential path
+  elided), the exit code, the few events that answer the question, the answer, and the cost.
+
+### Probes
+
+| # | Question | What it runs | Cost |
+|---|---|---|---|
+| P0 | 7 | Build the run image with `AGENT_NAME=claude-code` and the candidate `AGENT_VERSION`; `claude --version` inside it. | none |
+| P1 | 4 | `claude --help` in the container: which of the REQ-RUN-04 flags exist, and what each says. | none |
+| P2 | 1, 2 | One trivial session with the full REQ-RUN-04 command line, stdin closed (`< /dev/null`) under a wall-clock timeout, so "it waits" is observable as a timeout rather than a hang. | ~0.01 $ |
+| P3 | 2 | The same prompt on Sonnet 5, to confirm the `result` event carries the same fields. | ~0.02 $ |
+| P4 | 7 | A session whose prompt makes the agent end by **asking a question**. The final assistant message is recorded verbatim. | ~0.02 $ |
+| P5 | 7 | A session whose prompt makes the agent end by **requesting approval** for an action it will not take on its own. Recorded verbatim. | ~0.02 $ |
+| P6 | 3 | `claude --resume <session id of P4> -p "<the policy's question reply>"` in the **same container**: does it continue that session, does the id hold, and does the resumed part carry the earlier turns? | ~0.02 $ |
+| P7 | 5 | The credential file mounted read-only; a session run as the container's `node` user; then a session forced to need a refresh, to see what a read-only mount does to it. The API-key variant runs only if a key is available, and is otherwise reported untested. | ~0.02 $ |
+| P8 | 6 | No session: a scan of everything P2–P7 recorded for the known secret values, compared by digest so that nothing secret is printed. | none |
+
+The estimate is a little under 0.15 $ in total, an order of magnitude below the ceiling. The ceiling
+is there for the case the estimate is wrong.
+
+### The two open risks the protocol admits
+
+- **The credential path is host-specific.** REQ-RUN-15 assumes a file that can be mounted read-only.
+  If Claude Code on this machine keeps its token somewhere that cannot be (a keyring, a service), the
+  requirement's default does not hold as written, and the spike's output is an **amendment proposal**
+  for the approver rather than a workaround invented here.
+- **`--max-budget-usd` may not exist, or may not mean what REQ-RUN-04 assumes.** P1 answers that
+  before task-006 is designed around it. If it is absent, the run cap has to be enforced by the
+  runner, which moves work into W5 and is worth knowing now rather than then.
+
+### What the spike produces
+
+- **dl-004**, the waiting-for-input classifier v1: the rules, their order (approval patterns first,
+  then a trailing question), the wording P4 and P5 actually produced, and how the classifier's
+  version binds to `approver_policy` (REQ-RUN-06).
+- **adr-002**, the W2 runner and adapter conventions: what P0–P8 found, plus the design defaults the
+  approver accepted at plan time — per-step artefacts written in their REQ-FMT-06 places, the
+  credential mount inside a two-mount allow-list, the recorded-session fake agent, and
+  `--max-budget-usd` emitted in W2 but enforced in W5.
+
+### Review
+
+This task has no tests of its own, so its review is: the seven questions answered with evidence, no
+secret anywhere in the repository or in the notes, the two documents written, and `npm test`,
+`npm run test:bin`, `npm run test:docker` and `npm run lint` still green at HEAD — `test:bin` named
+explicitly because forgetting it was the blocker of task-003's first review.
 
 ## Execution notes
 
