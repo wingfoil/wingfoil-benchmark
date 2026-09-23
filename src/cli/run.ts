@@ -1,7 +1,7 @@
 import { loadFakeScript } from '../agents/index.js';
 import type { AgentPort } from '../agents/index.js';
 import { fakeAgent } from '../agents/index.js';
-import { dockerCli, gitCli, systemProcess } from '../core/index.js';
+import { dockerCli, gitCli, reasonOf, systemProcess } from '../core/index.js';
 import type { DockerPort, GitPort, Issue, Result } from '../core/index.js';
 import { checkCampaign, runCampaign } from '../runner/index.js';
 
@@ -89,7 +89,7 @@ async function runCampaignCommand(file: string, io: Io, ports?: Ports): Promise<
     });
   } catch (error) {
     // The campaign could not start at all: no Docker daemon, no results directory, no image.
-    return report([{ path: 'campaign', message: (error as Error).message }], io);
+    return report([{ path: 'campaign', message: reasonOf(error) }], io);
   }
   const failed = summary.runs.filter((run) => run.outcome === 'failed').length;
   io.stdout(`${count(summary.runs.length - failed, 'run')} completed, ${failed} failed\n`);

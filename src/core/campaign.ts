@@ -14,7 +14,7 @@ const KEBAB = /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/;
  * A model id becomes part of a run's path and of its container's name, so it may hold only what is
  * safe in both: letters, digits, dots and dashes, starting with a letter or a digit.
  */
-const MODEL_ID = /^[a-z0-9]([a-z0-9-]|\.(?!\.))*$/;
+const MODEL_ID = /^[a-z0-9]([a-z0-9]|[.-](?![.-]))*[a-z0-9]$|^[a-z0-9]$/;
 /** Long enough for any model name, short enough to keep paths and container names within limits. */
 const MODEL_ID_MAX = 64;
 const FULL_SHA = /^[0-9a-f]{40}$/;

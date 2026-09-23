@@ -35,6 +35,7 @@ const ISOLATED_ENVIRONMENT = {
   GIT_CONFIG_NOSYSTEM: '1',
   GIT_TEMPLATE_DIR: '',
   GIT_DIR: undefined,
+  GIT_COMMON_DIR: undefined,
   GIT_WORK_TREE: undefined,
   GIT_INDEX_FILE: undefined,
   GIT_OBJECT_DIRECTORY: undefined,

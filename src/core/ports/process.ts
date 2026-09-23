@@ -49,6 +49,11 @@ function withEnvironment(changes: Readonly<Record<string, string | undefined>>):
   return environment;
 }
 
+/** What a thrown value says, whether or not it is an `Error`. */
+export function reasonOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 /** The error a port raises when its command fails: what ran, and what it said. */
 export function processFailure(command: string, args: readonly string[], result: ProcessResult): Error {
   const what = [command, ...args].join(' ');

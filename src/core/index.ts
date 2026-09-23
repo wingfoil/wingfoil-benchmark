@@ -10,5 +10,5 @@ export { dockerCli, WORKSPACE } from './ports/docker.js';
 export type { BuildRequest, CreateRequest, DockerPort } from './ports/docker.js';
 export { gitCli } from './ports/git.js';
 export type { GitPort } from './ports/git.js';
-export { processFailure, systemProcess } from './ports/process.js';
+export { processFailure, reasonOf, systemProcess } from './ports/process.js';
 export type { ProcessPort, ProcessResult } from './ports/process.js';

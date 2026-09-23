@@ -3,7 +3,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import type { AgentPort, StepOutcome } from '../agents/index.js';
-import { WORKSPACE } from '../core/index.js';
+import { reasonOf, WORKSPACE } from '../core/index.js';
 import type { DockerPort, GitPort, Scenario } from '../core/index.js';
 import { nextExecution } from '../results/index.js';
 
@@ -131,7 +131,7 @@ async function executeRun(context: RunContext, options: RunnerOptions): Promise<
     }
     return { ...identity, steps, outcome: 'completed' };
   } catch (error) {
-    const message = (error as Error).message;
+    const message = reasonOf(error);
     options.logError?.(`run ${name} failed: ${message}`);
     return { ...identity, steps, outcome: 'failed', error: message };
   } finally {
@@ -160,7 +160,7 @@ async function remove(container: string, options: RunnerOptions): Promise<void> 
   try {
     await options.docker.remove(container);
   } catch (error) {
-    options.logError?.(`could not remove ${container}: ${(error as Error).message}`);
+    options.logError?.(`could not remove ${container}: ${reasonOf(error)}`);
   }
 }
 
