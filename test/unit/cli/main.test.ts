@@ -39,6 +39,21 @@ describe('bench campaign validate', () => {
     ]);
   });
 
+  it('prints the usage on stdout and exits 0 when asked for help', async () => {
+    const { code, stdout, stderr } = await run('--help');
+    expect({ code, stderr }).toEqual({ code: 0, stderr: '' });
+    expect(stdout).toMatch(/^usage: bench campaign validate <file>\n/);
+  });
+
+  it.each([
+    [['campaign', 'validate', '--help']],
+    [['campaign', 'validate', '']],
+    [['campaign', 'validate', '-']],
+  ])('treats a flag or an empty file name as a usage error (%j)', async (argv) => {
+    const { code, stderr } = await run(...argv);
+    expect({ code, stderr }).toEqual({ code: 2, stderr: 'usage: bench campaign validate <file>\n' });
+  });
+
   it.each([
     [[]],
     [['campaign']],
@@ -46,7 +61,6 @@ describe('bench campaign validate', () => {
     [['campaign', 'validate', 'a.yaml', 'b.yaml']],
     [['campaign', 'run', 'a.yaml']],
     [['scenario', 'validate', 'S1@1.0']],
-    [['--help']],
   ])('exits 2 with the usage on a usage error (%j)', async (argv) => {
     const { code, stdout, stderr } = await run(...argv);
     expect({ code, stdout }).toEqual({ code: 2, stdout: '' });
