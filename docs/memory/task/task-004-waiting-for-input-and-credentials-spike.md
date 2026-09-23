@@ -174,3 +174,13 @@ explicitly because forgetting it was the blocker of task-003's first review.
   subject with `[from → to]`, `Approver:`/`Reason:` body, only `status` changed. Observed: exit 0,
   empty stderr, subject `wf(task): approve task-004-waiting-for-input-and-credentials-spike [pending → backlog]`,
   both trailers present, 1-line diff. Matches.
+- `npx wingfoil memory submit task-004-waiting-for-input-and-credentials-spike` → `d8cf51a`, on the
+  branch `task/task-004-waiting-for-input-and-credentials-spike`. Declared: `backlog → in-progress`,
+  a plain forward step with no gate (the task machine's `waiting` states have no verb), one commit
+  `wf(task): submit <id>`. Observed: exit 0, empty stderr, 1 file, diff limited to
+  `status: backlog` → `status: in-progress`. Matches.
+
+### Spike
+
+- The protocol of the Design section was written and committed (`7ce7741`) **before any probe ran**.
+  Nothing has been executed and nothing has been spent at the time of writing.
