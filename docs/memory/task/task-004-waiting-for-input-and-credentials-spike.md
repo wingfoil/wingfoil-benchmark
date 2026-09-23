@@ -180,7 +180,87 @@ explicitly because forgetting it was the blocker of task-003's first review.
   `wf(task): submit <id>`. Observed: exit 0, empty stderr, 1 file, diff limited to
   `status: backlog` → `status: in-progress`. Matches.
 
-### Spike
+### Spike, first run (2026-09-23)
 
-- The protocol of the Design section was written and committed (`7ce7741`) **before any probe ran**.
-  Nothing has been executed and nothing has been spent at the time of writing.
+The protocol of the Design section was written and committed (`7ce7741`) **before any probe ran**.
+
+**Spent: 0.0000 USD of the 1.00 USD ceiling.** The one session that started failed before it reached
+the API, so nothing was billed and no quota was used.
+
+**Order corrected.** The protocol ran P7 (credentials) last. That is wrong: every session probe needs
+credentials to start at all, so the credential mount had to come first. P0, P1 and P2 ran; P3–P6 are
+blocked on the finding below; P8 has nothing to scan.
+
+#### P0 — the image (question 7)
+
+`docker build --build-arg AGENT_NAME=claude-code --build-arg AGENT_VERSION=2.1.280` against the
+existing `docker/run-image/Dockerfile`, unchanged. `claude --version` inside the image →
+`2.1.280 (Claude Code)`, the latest release on npm on 2026-09-23; the maintainer's host runs 2.1.221,
+so the container and the host are deliberately not the same build. `/home/node/.claude` **does not
+exist in the image** — which turns out to matter, see P2.
+
+#### P1 — the flags (question 4)
+
+All eleven flags REQ-RUN-04 and REQ-RUN-07 name are present in 2.1.280: `-p`, `--output-format`,
+`--verbose`, `--model`, `--session-id`, `--permission-mode`, `--setting-sources`,
+`--max-budget-usd`, `--resume`, `--mcp-config`, `--strict-mcp-config`. `--max-budget-usd <amount>` is
+documented as "Maximum dollar amount to spend on API calls (only works with --print)", which is what
+REQ-RUN-04 assumes. **The second risk the Design named is closed:** the run cap does not have to be
+enforced by the runner.
+
+The help also lists `claude setup-token`, "Set up a long-lived authentication token". That is a
+cleaner path for REQ-RUN-15 than mounting an OAuth file, and it is the approver's decision, not one
+to take here.
+
+#### P2 — the session (questions 1 and 2), and where it stopped
+
+With stdin closed and a 180 s timeout, the session **exited on its own** (exit 1, not 124): a headless
+session does not block waiting for input. That is one half of question 1; the other half — what a
+session does when it *wants* an answer — needs P4 and P5.
+
+The stream carried three events: `system/init`, `assistant`, `result`. The `result` event holds every
+field REQ-RUN-09 needs — `session_id`, `total_cost_usd`, `usage.{input_tokens, output_tokens,
+cache_creation_input_tokens, cache_read_input_tokens}`, `num_turns`, `duration_ms`, `duration_api_ms`
+— plus `modelUsage`, `permission_denials`, `terminal_reason`, `is_error` and `subtype`. The **shape**
+is confirmed; the values are all zero, because the session failed, so a populated reading is still
+owed.
+
+**A trap for task-006, found by accident.** The failed session's result event reads
+`"subtype": "success"` **and** `"is_error": true`, with `"terminal_reason": "api_error"`. An adapter
+that keys on `subtype` would record a session that did nothing as a good one. The outcome must be
+read from `is_error` and `terminal_reason`, never from `subtype` alone.
+
+#### The blocker: the host's credentials are stale (question 5)
+
+The session's assistant message was `Failed to authenticate: OAuth session expired and could not be
+refreshed`. The cause is not the read-only mount:
+
+- the mount worked — inside the container `/home/node/.claude/.credentials.json` is present,
+  `-rw------- node node`, 280 bytes, because the image's `node` is uid 1000 like the host user;
+- the file itself is expired. Its `claudeAiOauth.refreshTokenExpiresAt` is **2026-08-19**, five weeks
+  before this run, and the file has not been written since 2026-08-20. Read by field name only; no
+  value was printed, copied or stored.
+
+So **REQ-RUN-15's actual question is still open**: whether a read-only mount lets a *valid* session
+refresh its token could not be tested, because no valid credential was available to refresh. Neither
+`ANTHROPIC_API_KEY` nor `ANTHROPIC_AUTH_TOKEN` is set on the host, so the API-key variant is untested
+too. Authenticating is the approver's action, never the agent's.
+
+#### Two more findings for task-006
+
+1. **The config directory is created root-owned.** With only the file mounted, Docker creates
+   `/home/node/.claude` as `root:root 755`, and the container's `node` cannot write in it
+   (`touch` → `Permission denied`). The agent still started, but `--resume` keeps its session files
+   under that directory, so P6 would have failed even with valid credentials. The run image must
+   create `/home/node/.claude` owned by `node`, or the agent must be pointed elsewhere.
+2. **Mounting a single file is fragile.** A login rewrites `.credentials.json` by replacing it, and a
+   bind mount of a file follows the old inode: after a re-login on the host, every container would
+   silently keep mounting the stale file. Mounting the directory read-only survives that, but
+   collides with finding 1 — the agent needs to write in its config directory. REQ-RUN-15 says
+   "read-only mount" without saying of what; the answer has to be written down rather than assumed.
+
+#### What is needed to finish
+
+Valid credentials in the container, obtained by the approver, by either `claude setup-token` on the
+host or a fresh login that rewrites `~/.claude/.credentials.json`. Then P3–P8 run as the protocol
+says, with the credential mount moved to the front of the order.
