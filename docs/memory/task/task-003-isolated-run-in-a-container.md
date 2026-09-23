@@ -2,7 +2,7 @@
 id: task-003-isolated-run-in-a-container
 type: task
 title: "Isolated run in a container"
-status: in-progress
+status: in-review
 release: v0.1
 wave: W1
 features: [F2.1]
