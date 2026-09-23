@@ -33,6 +33,20 @@ describe('the system process port', () => {
     expect(result.stdout).toBe('set');
   });
 
+  it('removes a variable it is asked to unset', async () => {
+    process.env.BENCH_PROBE_REMOVED = 'from the host';
+    try {
+      const result = await systemProcess.run(
+        process.execPath,
+        ['-e', 'process.stdout.write(String("BENCH_PROBE_REMOVED" in process.env))'],
+        { env: { BENCH_PROBE_REMOVED: undefined } },
+      );
+      expect(result.stdout).toBe('false');
+    } finally {
+      Reflect.deleteProperty(process.env, 'BENCH_PROBE_REMOVED');
+    }
+  });
+
   it('runs in the directory it is given', async () => {
     const result = await systemProcess.run(process.execPath, ['-e', 'process.stdout.write(process.cwd())'], {
       cwd: '/tmp',
