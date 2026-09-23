@@ -1,16 +1,20 @@
 import { describe, expect, it } from 'vitest';
 
 import { checkCampaign, main } from '../../../src/cli/index.js';
+import { doubles } from '../../support/runner-doubles.js';
 import { completeCampaignYaml, writeRepo } from '../../support/campaign-fixture.js';
 import { repoPath } from '../../support/paths.js';
 
 async function run(...argv: string[]) {
+  return runWith(undefined, ...argv);
+}
+
+/** Runs the command line against the given ports, so no Docker, git or agent is needed. */
+async function runWith(ports: ReturnType<typeof doubles> | undefined, ...argv: string[]) {
   let stdout = '';
   let stderr = '';
-  const code = await main(argv, {
-    stdout: (text) => (stdout += text),
-    stderr: (text) => (stderr += text),
-  });
+  const io = { stdout: (text: string) => (stdout += text), stderr: (text: string) => (stderr += text) };
+  const code = await main(argv, io, ports && { docker: ports.docker, git: ports.git, agent: ports.agent });
   return { code, stdout, stderr };
 }
 
@@ -65,6 +69,59 @@ describe('bench campaign validate', () => {
     const { code, stdout, stderr } = await run(...argv);
     expect({ code, stdout }).toEqual({ code: 2, stdout: '' });
     expect(stderr).toMatch(/^usage: bench campaign validate <file>\n/);
+  });
+});
+
+describe('bench campaign run', () => {
+  function fakeCampaign(): Record<string, unknown> {
+    return {
+      ...completeCampaignYaml(),
+      harnesses: {},
+      arms: ['baseline'],
+      scenarios: [{ id: 'S1', version: '1.0' }],
+      repetitions: { S1: 1 },
+      agent: { name: 'fake', version: '1.0.0' },
+      models: { default: 'fake-model' },
+    };
+  }
+
+  it('refuses an agent that has no adapter yet, before anything runs', async () => {
+    const { file } = writeRepo(completeCampaignYaml());
+    const ports = doubles();
+    const { code, stdout, stderr } = await runWith(ports, 'campaign', 'run', file);
+    expect({ code, stdout }).toEqual({ code: 1, stdout: '' });
+    expect(stderr).toBe("agent: 'claude-code' is not available yet: W1 runs the scripted fake agent\n");
+    expect(ports.recorded.builds).toEqual([]);
+  });
+
+  it('refuses an invalid campaign with one line per issue', async () => {
+    const yaml = fakeCampaign();
+    yaml.arms = ['wingfoil'];
+    const { code, stderr } = await runWith(doubles(), 'campaign', 'run', writeRepo(yaml, ['S1@1.0']).file);
+    expect({ code, stderr }).toEqual({ code: 1, stderr: 'arms: must include the baseline arm\n' });
+  });
+
+  it('runs the campaign and reports where its execution was stored', async () => {
+    const { file } = writeRepo(fakeCampaign(), ['S1@1.0']);
+    const ports = doubles();
+    const { code, stdout, stderr } = await runWith(ports, 'campaign', 'run', file);
+    expect({ code, stderr }).toEqual({ code: 0, stderr: '' });
+    expect(stdout).toMatch(/^campaign [0-9a-f]{12}, execution 1\n/);
+    expect(stdout).toMatch(/run S1@1\.0\/baseline\/fake-model\/r1\n/);
+    expect(stdout).toMatch(/1 run completed, 0 failed\n$/);
+    expect(ports.recorded.creates).toHaveLength(1);
+  });
+
+  it('exits 1 when a run fails, and says which', async () => {
+    const { file } = writeRepo(fakeCampaign(), ['S1@1.0']);
+    const ports = doubles({
+      onStep: () => {
+        throw new Error('the agent gave up');
+      },
+    });
+    const { code, stdout } = await runWith(ports, 'campaign', 'run', file);
+    expect(code).toBe(1);
+    expect(stdout).toMatch(/0 runs completed, 1 failed\n$/);
   });
 });
 
