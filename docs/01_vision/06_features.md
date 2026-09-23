@@ -1,7 +1,7 @@
 # Features — WingFoil Benchmark
 
-**Version:** 1.2
-**Date:** 2026-09-22
+**Version:** 1.3
+**Date:** 2026-09-23
 **Status:** Approved
 **Traces to:** [05_journeys.md](05_journeys.md), [03_is-isnot.md](03_is-isnot.md); input: [X_competitor-landscape-2026-09-22.md](X_competitor-landscape-2026-09-22.md)
 
@@ -24,7 +24,7 @@ decision in the experiment design.
 
 | ID | Feature | Journey | Value | Effort | Unc. |
 |---|---|---|---|---|---|
-| F1.1 | **Campaign file**: one file pins the exact version of **every harness** (WingFoil and each competitor), scenarios with their versions, arms, agent, model id, repetitions and seed. The file identifies the campaign. Competitors release weekly or faster, so an unpinned harness makes a campaign unreproducible. | J2.1, J6.2 | H | L | L |
+| F1.1 | **Campaign file**: one file pins the exact version of **every harness** (WingFoil and each competitor), scenarios with their versions, arms, agent, model id and repetitions. The scenario seed is pinned through `scenario@version` (amended in 1.3). The file identifies the campaign. Competitors release weekly or faster, so an unpinned harness makes a campaign unreproducible. | J2.1, J6.2 | H | L | L |
 | F1.2 | **Cost estimate**: predicts the cost of a campaign before it runs, from the dry-run costs of its scenarios. | J2.2 | H | M | M |
 | F1.3 | **Budget guard**: warns above 30 €, refuses to start above 100 €, and stops any run that exceeds its own cap. | J2.2, J2.4 | H | L | L |
 | F1.4 | **Resumable campaign**: continues after a failed run, and a campaign can be resumed without repeating completed runs. | J2.4 | M | M | L |
@@ -157,3 +157,11 @@ phase. The IDs below are the candidates from the brief.
    metrics, M-F2 and M-F1, and stays in wave W9. The sequencer keeps its short label "next-change
    cost". Source: [../02_specification/acceptance/README.md](../02_specification/acceptance/README.md),
    decision 3.
+
+8. **Amendment 1.3 (delivery, W1 task-002 review, 2026-09-23) — F1.1's "seed".** The feature listed a
+   "seed" among the variables a campaign file pins, which was read as a campaign field. There is none:
+   a scenario's seed is a directory of its version (REQ-FMT-04), so `scenario@version` already pins it,
+   and the agent under test exposes no sampling seed. F1.1 now says so. The traceability matrix is
+   unaffected: F1.1's journey, acceptance file and requirements do not change. Source:
+   [../memory/decision-log/dl-003-campaign-pins-harness-coverage-seed-and-the-models-shape.md](../memory/decision-log/dl-003-campaign-pins-harness-coverage-seed-and-the-models-shape.md),
+   decision 2.
