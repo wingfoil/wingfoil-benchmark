@@ -264,3 +264,111 @@ too. Authenticating is the approver's action, never the agent's.
 Valid credentials in the container, obtained by the approver, by either `claude setup-token` on the
 host or a fresh login that rewrites `~/.claude/.credentials.json`. Then P3–P8 run as the protocol
 says, with the credential mount moved to the front of the order.
+
+### Spike, second run (2026-09-23/24), with a long-lived token
+
+The approver created a token with `claude setup-token` and left it in a file of their own, mode 600,
+outside the repository. The probes read it at `docker exec` time into an environment variable; the
+value was never printed, copied or committed.
+
+**Spent: 0.1266 USD of the 1.00 USD ceiling**, over eight sessions.
+
+**Second deviation from the protocol.** P8 was to compare by digest. A digest cannot be computed over
+every substring of a transcript, so the comparison is a literal search whose *output* is only a count
+of files. The value is still never printed.
+
+#### Question 1 — a headless session never waits
+
+No probe ever hit the timeout: every session exited on its own. The session that asked a question and
+the session that requested approval both ended `is_error: false`, `terminal_reason: "completed"` —
+**indistinguishable, in the result event, from the session that simply answered.** There is no field
+that says "waiting". REQ-RUN-06's premise is confirmed from the other side: waiting can only be
+inferred from the text of the final assistant message.
+
+#### Question 2 — the result event, with real values
+
+| | trivial, Haiku 4.5 | trivial, Sonnet 5 |
+|---|---|---|
+| `total_cost_usd` | 0.00993 | 0.02499 |
+| `input_tokens` / `output_tokens` | 10 / 40 | 2 / 4 |
+| `cache_creation_input_tokens` | 6 683 | 8 479 |
+| `cache_read_input_tokens` | 13 642 | 18 764 |
+| `num_turns`, `duration_ms` | 1, 1 435 | 1, 2 083 |
+
+Every field REQ-RUN-09 needs is there, in both models, with the same names. **What the numbers say
+is worth more than the field list:** a session that replies with one word costs a cent, and almost
+all of it is the agent's own system prompt — some 20 000 cached tokens before the step's prompt is
+even read. The step cost of a real scenario will sit on top of a fixed per-session floor, which is
+what M-K3 and the W5 budget have to model. A step is never free.
+
+#### Question 3 — `--resume` continues the same session, and usage does not accumulate
+
+`claude --resume <id> -p <reply>` in the same container continued the session P4 had started: every
+event of the resumed stream carries **the same `session_id`**. Two things follow for task-006 and
+task-007:
+
+- **The resumed stream does not replay the earlier turns.** Its first assistant message is new work,
+  not the question P4 ended on. A run's transcript is therefore the *concatenation* of its
+  invocations, not the last one.
+- **Usage is per invocation.** The resume reported its own `num_turns: 12` and `total_cost_usd:
+  0.0681`. The adapter must **sum** the result events of a step and its resumes; reading the last one
+  would under-report every step that needed an intervention — exactly the steps the benchmark cares
+  about.
+
+#### Question 5 — the credentials, answered differently than the requirement assumed
+
+- **The long-lived token works, as `ANTHROPIC_AUTH_TOKEN`.** That is REQ-RUN-15's second form ("an
+  API key through an environment variable"), and with it nothing has to be mounted.
+- **The same token in `ANTHROPIC_API_KEY` does not work.** The agent emitted `system/api_retry`
+  events in a loop and produced **no result event at all** before the cap ended it. Two lessons: the
+  variable is not interchangeable, and **a step can end with no result event**, so the adapter must
+  treat a missing result as a failed step rather than assume one is always there.
+- **A credential needs sanitising.** The token file first held a line break, left by a paste that
+  wrapped; the agent failed with `Invalid Authorization header value ... it contains a line break at
+  character 80`. The runner must strip whitespace from a credential, or refuse it with a message that
+  says so — the agent's own error is clear, but it arrives only after a session has been started.
+- **REQ-RUN-15's literal question stays open.** The read-only OAuth mount could not be tested:
+  `~/.claude/.credentials.json` on this machine holds an **empty `accessToken`** and a
+  `refreshTokenExpiresAt` of 2026-08-19. Read by field name and length only.
+- **The mount, as REQ-RUN-15 describes it, does not work as written.** Mounting only the file makes
+  Docker create `/home/node/.claude` as `root:root`, where the container's `node` cannot write. With
+  the token and no mount, the agent creates that directory itself and fills it with `projects/`,
+  `sessions/` and `shell-snapshots/` — which is precisely what `--resume` needs. **The token is not
+  merely a convenience: it is what leaves the agent's config directory writable.**
+
+#### Question 6 — nothing leaked, which is not the same as nothing can
+
+The token appears in none of the recorded event streams, in no stderr, in no log and nowhere in the
+workspace. The OAuth values could not be scanned for, being empty. The scrubber REQ-NFR-01 asks for
+still has to exist; this run simply found no leak path.
+
+#### Question 7 — the wording, and why the naive rule fails
+
+- **A question** (P4, verbatim): *"What specifically needs to be cached — database queries, API
+  responses, computed results, or something else?"* — the message ends with `?`.
+- **An approval request** (P5, verbatim, last two sentences): *"**Are you sure you want me to delete
+  all files under `/workspace`?** This is a destructive operation and cannot be undone. Please
+  confirm that you want this to happen. Once you approve, I'll proceed. Otherwise, please let me know
+  what you'd like to do instead."*
+
+The approval request **does not end with a question**. Its question mark is in the middle; the last
+sentence is a statement. A classifier that tests whether the final message ends in `?` would read
+this as "not waiting" and the run would lose an intervention — and with it the neutral approver's
+whole purpose. REQ-RUN-06's "approval patterns first, then a trailing question" must therefore be
+read as: **approval patterns matched anywhere in the message, and only then the trailing-question
+test.** That is the single most useful thing this spike found, and it was found by looking at real
+wording rather than imagining it.
+
+#### One more, for the record
+
+`modelUsage` keyed the same session under both `claude-haiku-4-5` and `claude-haiku-4-5-20251001`. A
+run's model must be recorded from the campaign's pin, not from the keys of `modelUsage`.
+
+#### What is still owed by this task
+
+- **dl-004**, the classifier v1, written from the wording above.
+- **adr-002**, the W2 conventions, including an **amendment proposal for REQ-RUN-15**: the long-lived
+  token in `ANTHROPIC_AUTH_TOKEN` as the default, the read-only mount kept as a documented variant
+  that needs the image to own `/home/node/.claude`. That is an approver's decision, not one to take
+  here.
+- The probe container was removed; the image `bench-spike-task-004` is left for task-006 to reuse.
