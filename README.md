@@ -7,7 +7,8 @@ competing tools), and compared on quality, cost and determinism.
 > **Status:** inception and specification complete (see [`docs/01_vision/`](docs/01_vision/) and
 > [`docs/02_specification/`](docs/02_specification/)); release v0.1 is in development
 > ([`docs/memory/release/rel-v0-1.md`](docs/memory/release/rel-v0-1.md)). The scenario and campaign
-> formats exist, with `bench campaign validate`; the runner does not yet.
+> formats exist, and `bench campaign run` executes a scenario in a container against a scripted fake
+> agent. No real agent runs yet (W2).
 
 ## Tooling
 
@@ -49,10 +50,25 @@ own tests is `test/fixtures/scenarios/T0/1.0/`.
 npx bench campaign validate campaigns/<name>.yaml
 ```
 
-It checks the campaign file (`docs/02_specification/requirements.md` REQ-FMT-01): every harness pinned
+```bash
+BENCH_FAKE_SCRIPT=<script.json> npx bench campaign run campaigns/<name>.yaml
+```
+
+`validate` checks the campaign file (`docs/02_specification/requirements.md` REQ-FMT-01): every harness pinned
 to a released version or a commit, the baseline arm present, every scenario it names present under
 `scenarios/<id>/<version>/`. It prints the campaign's identity, the digest that names its results.
-Exit codes: `0` valid, `1` invalid (one line per problem), `2` usage error.
+`run` executes every scenario × arm × repetition: one Docker image per campaign, one container per
+run, whose only mount is that run's fresh workspace (a copy of the scenario seed, made a git
+repository). Workspaces land in `runs/<campaign-id>/<n>/`, the execution in
+`results/<campaign-id>/<n>/`. Until W2 only the scripted fake agent runs, and its script comes from
+`BENCH_FAKE_SCRIPT`: a campaign naming any other agent is refused.
+
+Exit codes: `0` success, `1` failure (one line per problem, or a run that failed), `2` usage error.
+
+```bash
+npm run test:bin     # the built command line
+npm run test:docker  # one scenario in a real container (needs Docker)
+```
 
 ## License
 
