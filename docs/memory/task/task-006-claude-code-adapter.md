@@ -87,3 +87,8 @@ Preliminary classification (confirmed in the design phase). All behaviour is new
   required fields checked, one commit `wf(task): submit <id>` with no bracket and no body. Observed:
   exit 0, empty stderr, 1 file, diff limited to `status: draft` → `status: pending`. Matches (subject
   without transition: N9).
+- `npx wingfoil memory approve task-006-claude-code-adapter --reason "…"` → `d7e7da8`, run after the
+  approver's explicit consent in chat. Declared: `pending → backlog` gate, approver role checked,
+  subject with `[from → to]`, `Approver:`/`Reason:` body, only `status` changed. Observed: exit 0,
+  empty stderr, subject `wf(task): approve task-006-claude-code-adapter [pending → backlog]`,
+  both trailers present, 1-line diff. Matches.
