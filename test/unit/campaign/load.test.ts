@@ -134,13 +134,18 @@ describe('loadCampaign', () => {
     ]);
   });
 
-  it.each([['01.2.3'], ['1.2.3+build']])(
-    'rejects a version that is not a released version (%s)',
+  it.each([['1.2.3+build'], ['v1.2.3+build.5']])(
+    'accepts a released version with build metadata (%s)',
     (version) => {
       const yaml = withField(['harnesses', 'wingfoil'], { tool: 'wingfoil', version });
-      expect(paths(yaml)).toEqual(['harnesses.wingfoil.version']);
+      expect(loadCampaign(writeRepo(yaml).file).ok).toBe(true);
     },
   );
+
+  it.each([['01.2.3'], ['1.2.3+']])('rejects a version that is not a released version (%s)', (version) => {
+    const yaml = withField(['harnesses', 'wingfoil'], { tool: 'wingfoil', version });
+    expect(paths(yaml)).toEqual(['harnesses.wingfoil.version']);
+  });
 
   it.each([
     [
