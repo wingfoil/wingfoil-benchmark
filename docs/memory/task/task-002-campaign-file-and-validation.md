@@ -224,6 +224,23 @@ against directories yet.
   lines and functions, 99.5% branches; `npm run lint` and `tsc --noEmit` clean; `npm run test:bin`
   4/4 against the built bin.
 
+### Review, round 3
+
+- **Result:** round-2 findings A, B, C, F fixed; D partly; E open (dl-003 awaits the approver). One new
+  **blocker, caused by a round-2 fix of mine**: dropping the `typeof version !== 'string'` guard
+  (trusting the new transform) meant that a harness pinning a `commit` with a missing, null or numeric
+  `version` made the validator throw `TypeError: … reading 'padEnd'` instead of returning an issue.
+  The object-level check runs even when the field's own check failed, so the value may be anything the
+  file held. Fixed test-first (red `1fa45d2` → `e3fbc34`), with cases for `undefined`, a number and
+  `null`.
+- **D:** the bin test now removes `dist/` before building, because `tsc` keeps the mode of a file it
+  overwrites, so an already executable `dist/` would have hidden a build that does not set it.
+- **Lesson:** coverage said 100% while this crash was reachable, because the existing tests covered the
+  line with a valid version. Coverage counts lines, not the states a value can be in.
+- **Checklist (at `e3fbc34`, on an export of HEAD):** `npm test` 235/235; coverage 100% statements,
+  lines and functions, 99.5% branches; `npm run lint`, `prettier --check` and `tsc --noEmit` clean;
+  `npm run test:bin` 4/4 against the built bin.
+
 ### WingFoil commands (declared vs observed)
 
 - `npx wingfoil memory add --type task --title "…"` → `742654a`. Declared: one commit
