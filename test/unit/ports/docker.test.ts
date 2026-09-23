@@ -4,14 +4,18 @@ import { dockerCli, gitCli } from '../../../src/core/index.js';
 import type { ProcessPort, ProcessResult } from '../../../src/core/index.js';
 
 /** A process port that records its calls and answers with scripted results. */
-function recorder(
-  results: ProcessResult[] = [],
-): ProcessPort & { calls: { command: string; args: string[] }[] } {
-  const calls: { command: string; args: string[] }[] = [];
+interface Call {
+  command: string;
+  args: string[];
+  env?: Readonly<Record<string, string>>;
+}
+
+function recorder(results: ProcessResult[] = []): ProcessPort & { calls: Call[] } {
+  const calls: Call[] = [];
   return {
     calls,
-    run: (command, args) => {
-      calls.push({ command, args: [...args] });
+    run: (command, args, options) => {
+      calls.push({ command, args: [...args], ...(options?.env ? { env: options.env } : {}) });
       return Promise.resolve(results.shift() ?? { code: 0, stdout: '', stderr: '' });
     },
   };
@@ -104,15 +108,21 @@ describe('the Docker port', () => {
 });
 
 describe('the git port', () => {
+  /** The arguments after the `-c` settings: what git is actually asked to do, and where. */
+  function command(args: readonly string[]): string[] {
+    const directory = args.indexOf('-C');
+    return [...args.slice(directory)];
+  }
+
   it('initializes a repository and commits everything with the benchmark identity', async () => {
     const process = recorder([ok(), ok(), ok()]);
     const git = gitCli(process);
     await git.init('/repo/runs/w');
     await git.commitAll('/repo/runs/w', 'seed');
-    expect(process.calls.map((call) => call.args.slice(-5))).toEqual([
+    expect(process.calls.map((call) => command(call.args))).toEqual([
       ['-C', '/repo/runs/w', 'init', '--quiet', '--initial-branch=main'],
-      ['/repo/runs/w', 'add', '--all'].slice(0, 3),
-      ['-C', '/repo/runs/w', 'commit', '--quiet', '--message', 'seed'].slice(-5),
+      ['-C', '/repo/runs/w', 'add', '--all'],
+      ['-C', '/repo/runs/w', 'commit', '--quiet', '--message', 'seed'],
     ]);
     expect(process.calls[0]?.args).toContain('user.name=WingFoil Benchmark');
     expect(process.calls[0]?.args).toContain('user.email=benchmark@localhost');

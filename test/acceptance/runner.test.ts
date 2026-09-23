@@ -57,8 +57,8 @@ describe('runner.feature', () => {
       const created = recorded.creates[0];
       expect(created?.workspace.startsWith(holdout)).toBe(false);
       expect(readdirSync(created?.workspace ?? '')).not.toContain('hidden-test.ts');
-      // The container has one mount, the workspace: nothing else can reach the hold-out.
-      expect(await docker.mountsOf('container-1')).toEqual(['container-1:/workspace']);
+      // The container has one mount, the run's own workspace: nothing else can reach the hold-out.
+      expect(await docker.mountsOf('container-1')).toEqual([`${created?.workspace ?? ''}:/workspace`]);
     } finally {
       delete process.env.BENCH_HOLDOUT_PATH;
     }

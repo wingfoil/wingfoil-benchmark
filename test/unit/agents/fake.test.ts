@@ -47,6 +47,14 @@ describe('loadFakeScript', () => {
     const result = loadFakeScript(join(tempDir('bench-script-'), 'missing.json'));
     expect(result.ok ? [] : result.issues.map((issue) => issue.path)).toEqual(['missing.json']);
   });
+
+  it('refuses a script larger than a script has any reason to be', () => {
+    const file = scriptFile(`{"T0": {"1": ["${'x'.repeat(1024 * 1024)}"]}}`);
+    const result = loadFakeScript(file);
+    expect(result.ok ? [] : result.issues.map((issue) => issue.message)).toEqual([
+      expect.stringMatching(/^is larger than 1048576 bytes/),
+    ]);
+  });
 });
 
 describe('the scripted fake agent', () => {

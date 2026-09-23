@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, statSync } from 'node:fs';
 import { basename } from 'node:path';
 import { z } from 'zod';
 
@@ -28,6 +28,9 @@ const scriptSchema = z.record(
   z.record(z.string().regex(/^[1-9]\d*$/, 'must be a step number'), z.array(z.string().min(1)).min(1)),
 );
 
+/** A script declares commands, not data: anything larger is a mistake. */
+const MAX_SCRIPT_BYTES = 1024 * 1024;
+
 /** Commands per scenario and step: `{ "<scenario id>": { "<step>": ["<shell command>", …] } }`. */
 export type FakeScript = z.infer<typeof scriptSchema>;
 
@@ -39,6 +42,10 @@ export function loadFakeScript(file: string): Result<FakeScript> {
   const label = basename(file);
   let text: string;
   try {
+    const size = statSync(file).size;
+    if (size > MAX_SCRIPT_BYTES) {
+      return fail([{ path: label, message: `is larger than ${MAX_SCRIPT_BYTES} bytes: ${size}` }]);
+    }
     text = readFileSync(file, 'utf8');
   } catch (error) {
     return fail([{ path: label, message: `cannot be read: ${(error as Error).message}` }]);

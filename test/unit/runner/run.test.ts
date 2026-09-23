@@ -171,18 +171,29 @@ describe('runCampaign', () => {
     ]);
   });
 
-  it.each([
-    ['create', 'container-1'],
-    ['init', undefined],
-  ] as const)('reports a run that fails in %s as failed, and carries on', async (call, removed) => {
-    const { checked } = checkedCampaign(campaignYaml({ repetitions: { S1: 2 } }));
-    const ports = doubles({ failing: { call, error: 'boom' } });
+  it.each(['create', 'init'] as const)(
+    'reports a run that fails in %s as failed, and carries on',
+    async (call) => {
+      const { checked } = checkedCampaign(campaignYaml({ repetitions: { S1: 2 } }));
+      const ports = doubles({ failing: { call, error: 'boom' } });
+
+      const summary = await runCampaign(checked, ports);
+
+      expect(summary.runs.map((run) => run.outcome)).toEqual(['failed', 'failed']);
+      expect(summary.runs[0]?.error).toMatch(/boom/);
+      // Neither call leaves a container behind: create failed, and init runs before it.
+      expect(ports.recorded.removes).toEqual([]);
+    },
+  );
+
+  it('removes the container when the run fails after it was created', async () => {
+    const { checked } = checkedCampaign();
+    const ports = doubles({ failing: { call: 'start', error: 'boom' } });
 
     const summary = await runCampaign(checked, ports);
 
-    expect(summary.runs.map((run) => run.outcome)).toEqual(['failed', 'failed']);
-    expect(summary.runs[0]?.error).toMatch(/boom/);
-    expect(ports.recorded.removes[0]).toBe(removed);
+    expect(summary.runs[0]?.outcome).toBe('failed');
+    expect(ports.recorded.removes).toEqual(['container-1']);
   });
 
   it('keeps the campaign going when removing a container fails', async () => {
@@ -239,5 +250,15 @@ describe('runCampaign', () => {
     const ports = doubles();
     await runCampaign(checked, ports);
     expect(existsSync(ports.recorded.buildRequests[0]?.dockerfile ?? '')).toBe(true);
+  });
+
+  it('reports a container with no mount at all', async () => {
+    const { checked } = checkedCampaign();
+    const ports = doubles();
+    const docker = { ...ports.docker, mountsOf: () => Promise.resolve([]) };
+
+    const summary = await runCampaign(checked, { ...ports, docker });
+
+    expect(summary.runs[0]?.error).toMatch(/other than its workspace: none/);
   });
 });

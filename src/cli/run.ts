@@ -73,7 +73,7 @@ async function runCampaignCommand(file: string, io: Io, ports?: Ports): Promise<
 
   const agentName = checked.value.campaign.spec.agent.name;
   if (!AVAILABLE_AGENTS.includes(agentName)) {
-    io.stderr(`agent: '${agentName}' is not available yet: W1 runs the scripted fake agent\n`);
+    io.stderr(`agent '${agentName}' is not available yet: W1 runs the scripted fake agent\n`);
     return EXIT.failure;
   }
 
@@ -83,6 +83,7 @@ async function runCampaignCommand(file: string, io: Io, ports?: Ports): Promise<
   const summary = await runCampaign(checked.value, {
     ...resolved.value,
     log: (line) => io.stdout(`${line}\n`),
+    logError: (line) => io.stderr(`${line}\n`),
   });
   const failed = summary.runs.filter((run) => run.outcome === 'failed').length;
   io.stdout(`${count(summary.runs.length - failed, 'run')} completed, ${failed} failed\n`);

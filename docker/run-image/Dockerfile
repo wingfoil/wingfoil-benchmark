@@ -1,9 +1,11 @@
 # The image every run of one campaign executes in (REQ-RUN-01). It is built once per campaign and
 # tagged with the campaign's identity, so a campaign always runs on the same image.
 #
-# node:22-bookworm, pinned by digest (resolved with `docker manifest inspect` on 2026-09-23), so that
-# a rebuild cannot silently change the runtime (REQ-NFR-02).
-FROM node:22-bookworm@sha256:ae9f58d5c9f5a537110310be6b3cf67cf9c67146a3bb9310c0cb515fe71c8392
+# node:22-bookworm, pinned by the digest of its multi-architecture index, so that a rebuild cannot
+# silently change the runtime (REQ-NFR-02) and the pin does not tie the benchmark to one architecture.
+# Resolved with `docker buildx imagetools inspect node:22-bookworm` on 2026-09-23; `docker manifest
+# inspect` prints the per-architecture manifests instead, and pinning one of those would be amd64-only.
+FROM node:22-bookworm@sha256:dd5847a04b0deee391fa145f1f4c6d214196668b6bcc7988ebed67249f226844
 
 # git: every workspace is a repository, and steps are compared through it (REQ-RUN-02, REQ-RUN-05).
 RUN apt-get update \

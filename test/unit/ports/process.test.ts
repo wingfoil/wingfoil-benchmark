@@ -22,6 +22,17 @@ describe('the system process port', () => {
     expect(result.code).toBe(1);
   });
 
+  it('adds the variables it is given to the environment', async () => {
+    const result = await systemProcess.run(
+      process.execPath,
+      ['-e', 'process.stdout.write(process.env.BENCH_PROBE ?? "")'],
+      {
+        env: { BENCH_PROBE: 'set' },
+      },
+    );
+    expect(result.stdout).toBe('set');
+  });
+
   it('runs in the directory it is given', async () => {
     const result = await systemProcess.run(process.execPath, ['-e', 'process.stdout.write(process.cwd())'], {
       cwd: '/tmp',

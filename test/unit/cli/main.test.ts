@@ -95,7 +95,7 @@ describe('bench campaign run', () => {
     const ports = doubles();
     const { code, stdout, stderr } = await runWith(ports, 'campaign', 'run', file);
     expect({ code, stdout }).toEqual({ code: 1, stdout: '' });
-    expect(stderr).toBe("agent: 'claude-code' is not available yet: W1 runs the scripted fake agent\n");
+    expect(stderr).toBe("agent 'claude-code' is not available yet: W1 runs the scripted fake agent\n");
     expect(ports.recorded.builds).toEqual([]);
   });
 
@@ -137,9 +137,10 @@ describe('bench campaign run', () => {
         throw new Error('the agent gave up');
       },
     });
-    const { code, stdout } = await runWith(ports, 'campaign', 'run', file);
+    const { code, stdout, stderr } = await runWith(ports, 'campaign', 'run', file);
     expect(code).toBe(1);
     expect(stdout).toMatch(/0 runs completed, 1 failed\n$/);
+    expect(stderr).toMatch(/^run S1@1\.0\/baseline\/fake-model\/r1 failed: the agent gave up\n$/);
   });
 });
 

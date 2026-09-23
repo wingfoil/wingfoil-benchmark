@@ -23,6 +23,8 @@ export interface Campaign {
   readonly file: string;
   /** The campaign file as validated (REQ-FMT-01). */
   readonly spec: CampaignFile;
+  /** The repository the campaign belongs to: the parent of its `campaigns/` directory (REQ-ARC-03). */
+  readonly repoRoot: string;
   /** `scenarios/` next to the campaign's `campaigns/` directory (REQ-ARC-03). */
   readonly scenariosRoot: string;
   /** `results/` next to the campaign's `campaigns/` directory (REQ-ARC-03). */
@@ -62,6 +64,7 @@ export function loadCampaign(file: string): Result<Campaign> {
     id: campaignId(read.value),
     file: path,
     spec: parsed.value,
+    repoRoot,
     scenariosRoot: join(repoRoot, 'scenarios'),
     resultsRoot: join(repoRoot, 'results'),
   });

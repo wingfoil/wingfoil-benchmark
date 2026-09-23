@@ -26,6 +26,11 @@ export interface DockerPort {
   /** Creates the container and returns its id. */
   create(request: CreateRequest): Promise<string>;
   start(container: string): Promise<void>;
+  /**
+   * Runs `command` in the container. The result carries the command's own exit code; a Docker failure
+   * (no such container, daemon down) arrives as a non-zero code with Docker's message on stderr, so
+   * the caller sees the text either way.
+   */
   exec(container: string, command: readonly string[]): Promise<ProcessResult>;
   remove(container: string): Promise<void>;
   /** The container's mounts, as `source:target`. */
