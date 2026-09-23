@@ -13,7 +13,7 @@ export interface ProcessPort {
   run(
     command: string,
     args: readonly string[],
-    options?: { cwd?: string; env?: Readonly<Record<string, string>> },
+    options?: { cwd?: string; env?: Readonly<Record<string, string | undefined>> },
   ): Promise<ProcessResult>;
 }
 
@@ -21,7 +21,7 @@ export interface ProcessPort {
 export const systemProcess: ProcessPort = {
   run(command, args, options) {
     return new Promise((resolve) => {
-      const environment = options?.env ? { ...process.env, ...options.env } : process.env;
+      const environment = options?.env ? withEnvironment(options.env) : process.env;
       execFile(
         command,
         [...args],
@@ -34,6 +34,20 @@ export const systemProcess: ProcessPort = {
     });
   },
 };
+
+/**
+ * The process environment with `changes` applied: a value replaces the host's, and `undefined`
+ * removes the variable. Removing matters for variables git reads, such as `GIT_DIR`: an empty value
+ * is not the same as an absent one, and git refuses an empty `GIT_DIR`.
+ */
+function withEnvironment(changes: Readonly<Record<string, string | undefined>>): NodeJS.ProcessEnv {
+  const environment: NodeJS.ProcessEnv = { ...process.env };
+  for (const [name, value] of Object.entries(changes)) {
+    if (value === undefined) Reflect.deleteProperty(environment, name);
+    else environment[name] = value;
+  }
+  return environment;
+}
 
 /** The error a port raises when its command fails: what ran, and what it said. */
 export function processFailure(command: string, args: readonly string[], result: ProcessResult): Error {

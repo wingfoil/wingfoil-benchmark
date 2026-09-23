@@ -7,11 +7,14 @@ import type { ProcessPort } from './process.js';
  * the run's bind mount — would carry the host's hooks and template files into the container, and a
  * host that signs commits would fail every seed commit.
  */
+const NAME = 'WingFoil Benchmark';
+const EMAIL = 'benchmark@localhost';
+
 const ISOLATION = [
   '-c',
-  'user.name=WingFoil Benchmark',
+  `user.name=${NAME}`,
   '-c',
-  'user.email=benchmark@localhost',
+  `user.email=${EMAIL}`,
   '-c',
   'init.templateDir=',
   '-c',
@@ -20,7 +23,27 @@ const ISOLATION = [
   'commit.gpgsign=false',
 ];
 
-const ISOLATED_ENVIRONMENT = { GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' };
+/**
+ * The environment git runs in. Variables beat `-c` settings, so the host's `GIT_*` must be answered
+ * here: `GIT_TEMPLATE_DIR` would copy host files and hooks into `.git/` — inside the run's bind
+ * mount — `GIT_AUTHOR_*`/`GIT_COMMITTER_*` would replace the fixed identity, and `GIT_DIR` and its
+ * siblings would point the commands at the host's own repository. Those last ones are **removed**:
+ * git refuses an empty `GIT_DIR` rather than ignoring it.
+ */
+const ISOLATED_ENVIRONMENT = {
+  GIT_CONFIG_GLOBAL: '/dev/null',
+  GIT_CONFIG_NOSYSTEM: '1',
+  GIT_TEMPLATE_DIR: '',
+  GIT_DIR: undefined,
+  GIT_WORK_TREE: undefined,
+  GIT_INDEX_FILE: undefined,
+  GIT_OBJECT_DIRECTORY: undefined,
+  GIT_ALTERNATE_OBJECT_DIRECTORIES: undefined,
+  GIT_AUTHOR_NAME: NAME,
+  GIT_AUTHOR_EMAIL: EMAIL,
+  GIT_COMMITTER_NAME: NAME,
+  GIT_COMMITTER_EMAIL: EMAIL,
+};
 
 /** REQ-ARC-04: git behind one interface. */
 export interface GitPort {

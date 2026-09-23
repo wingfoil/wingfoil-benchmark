@@ -7,7 +7,7 @@ import type { ProcessPort, ProcessResult } from '../../../src/core/index.js';
 interface Call {
   command: string;
   args: string[];
-  env?: Readonly<Record<string, string>>;
+  env?: Readonly<Record<string, string | undefined>>;
 }
 
 function recorder(results: ProcessResult[] = []): ProcessPort & { calls: Call[] } {
@@ -131,13 +131,20 @@ describe('the git port', () => {
   it('keeps the host git environment out of the run', async () => {
     const process = recorder([ok()]);
     await gitCli(process).init('/repo/runs/w');
-    expect(process.calls[0]?.env).toMatchObject({
+    const env = process.calls[0]?.env ?? {};
+    // Removed, not emptied: git refuses an empty GIT_DIR instead of ignoring it.
+    for (const name of [
+      'GIT_DIR',
+      'GIT_WORK_TREE',
+      'GIT_INDEX_FILE',
+      'GIT_OBJECT_DIRECTORY',
+      'GIT_ALTERNATE_OBJECT_DIRECTORIES',
+    ]) {
+      expect(name in env).toBe(true);
+      expect(env[name]).toBeUndefined();
+    }
+    expect(env).toMatchObject({
       GIT_TEMPLATE_DIR: '',
-      GIT_DIR: '',
-      GIT_WORK_TREE: '',
-      GIT_INDEX_FILE: '',
-      GIT_OBJECT_DIRECTORY: '',
-      GIT_ALTERNATE_OBJECT_DIRECTORIES: '',
       GIT_AUTHOR_NAME: 'WingFoil Benchmark',
       GIT_AUTHOR_EMAIL: 'benchmark@localhost',
       GIT_COMMITTER_NAME: 'WingFoil Benchmark',
@@ -157,7 +164,7 @@ describe('the git port', () => {
     const process = recorder([ok(), ok(), ok()]);
     const git = gitCli(process);
     await git.init('/repo/runs/w');
-    expect(process.calls[0]?.env).toEqual({ GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' });
+    expect(process.calls[0]?.env).toMatchObject({ GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' });
     const args = process.calls[0]?.args ?? [];
     expect(args).toContain('init.templateDir=');
     expect(args).toContain('core.hooksPath=');

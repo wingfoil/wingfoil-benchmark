@@ -80,11 +80,17 @@ async function runCampaignCommand(file: string, io: Io, ports?: Ports): Promise<
   const resolved = ports ? { ok: true as const, value: ports } : realPorts();
   if (!resolved.ok) return report(resolved.issues, io);
 
-  const summary = await runCampaign(checked.value, {
-    ...resolved.value,
-    log: (line) => io.stdout(`${line}\n`),
-    logError: (line) => io.stderr(`${line}\n`),
-  });
+  let summary;
+  try {
+    summary = await runCampaign(checked.value, {
+      ...resolved.value,
+      log: (line) => io.stdout(`${line}\n`),
+      logError: (line) => io.stderr(`${line}\n`),
+    });
+  } catch (error) {
+    // The campaign could not start at all: no Docker daemon, no results directory, no image.
+    return report([{ path: 'campaign', message: (error as Error).message }], io);
+  }
   const failed = summary.runs.filter((run) => run.outcome === 'failed').length;
   io.stdout(`${count(summary.runs.length - failed, 'run')} completed, ${failed} failed\n`);
   return summary.completed ? EXIT.ok : EXIT.failure;

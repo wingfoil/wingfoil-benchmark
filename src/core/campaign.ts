@@ -14,7 +14,9 @@ const KEBAB = /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/;
  * A model id becomes part of a run's path and of its container's name, so it may hold only what is
  * safe in both: letters, digits, dots and dashes, starting with a letter or a digit.
  */
-const MODEL_ID = /^[a-z0-9][a-z0-9.-]*$/;
+const MODEL_ID = /^[a-z0-9]([a-z0-9-]|\.(?!\.))*$/;
+/** Long enough for any model name, short enough to keep paths and container names within limits. */
+const MODEL_ID_MAX = 64;
 const FULL_SHA = /^[0-9a-f]{40}$/;
 
 /** The arm every campaign runs, so that each campaign reruns its own baseline (threat T7). */
@@ -63,6 +65,11 @@ const harness = z
     }
   });
 
+const modelId = z
+  .string()
+  .max(MODEL_ID_MAX)
+  .regex(MODEL_ID, 'must be a model id: lower-case letters, digits, single dots and dashes');
+
 const positive = z.number().positive();
 
 function uniqueBy<T>(key: (item: T) => string) {
@@ -75,7 +82,7 @@ const scenarioRef = z.strictObject({
 });
 
 const slice = z.strictObject({
-  model: z.string().regex(MODEL_ID, 'must be a model id: lower-case letters, digits, dots and dashes'),
+  model: modelId,
   scenarios: z
     .array(z.string())
     .min(1)
@@ -116,7 +123,7 @@ export const campaignSchema = z.strictObject({
     version: z.string().regex(RELEASE, 'must be a released version such as 2.1.221'),
   }),
   models: z.strictObject({
-    default: z.string().regex(MODEL_ID, 'must be a model id: lower-case letters, digits, dots and dashes'),
+    default: modelId,
     slices: z.array(slice).optional(),
   }),
   repetitions: z.record(z.string(), z.number().int().min(1)),

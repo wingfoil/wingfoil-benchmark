@@ -54,6 +54,11 @@ export function dockerCli(process: ProcessPort): DockerPort {
       await docker([...args, context]);
     },
     async create({ image, name, workspace, user }) {
+      // `--mount` takes comma-separated `key=value` pairs, so a path holding either would be read as
+      // more options. Refusing is safer than quoting: such a checkout cannot run the benchmark.
+      if (workspace.includes(',') || workspace.includes('=')) {
+        throw new Error(`the workspace path cannot hold a comma or an equals sign: ${workspace}`);
+      }
       const result = await docker([
         'create',
         '--name',
