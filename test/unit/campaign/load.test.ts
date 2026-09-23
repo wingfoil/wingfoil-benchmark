@@ -1,3 +1,5 @@
+import { copyFileSync } from 'node:fs';
+
 import { describe, expect, it } from 'vitest';
 
 import { campaignId, loadCampaign } from '../../../src/campaign/index.js';
@@ -43,11 +45,119 @@ describe('loadCampaign', () => {
     expect(result.ok && result.value.spec.agent.name).toBe('fake');
   });
 
-  it('accepts a campaign without slices, harnesses or optional commit', () => {
+  it('accepts a campaign without slices, with only the harness-free arms', () => {
     const yaml = completeCampaignYaml();
     yaml.models = { default: 'claude-sonnet-5' };
     yaml.harnesses = {};
+    yaml.arms = ['baseline', 'baseline-docs'];
     expect(loadCampaign(writeRepo(yaml).file).ok).toBe(true);
+  });
+
+  it('requires a harness for every arm that is not baseline or baseline-docs', () => {
+    const yaml = completeCampaignYaml();
+    yaml.harnesses = {};
+    expect(issuesOf(yaml)).toEqual([
+      {
+        path: 'harnesses.wingfoil',
+        message: 'is required: every arm but baseline and baseline-docs pins a harness',
+      },
+    ]);
+  });
+
+  it.each([['baseline'], ['baseline-docs']])('rejects a harness on the %s arm', (arm) => {
+    const yaml = completeCampaignYaml();
+    yaml.harnesses = {
+      wingfoil: { tool: 'wingfoil', version: '3df305e' },
+      [arm]: { tool: 'x', version: '1.0.0' },
+    };
+    expect(issuesOf(yaml)).toEqual([
+      { path: `harnesses.${arm}`, message: 'runs the plain agent, so it pins no harness' },
+    ]);
+  });
+
+  it('rejects a commit that contradicts a version pinned to a SHA', () => {
+    const yaml = withField(['harnesses', 'wingfoil'], {
+      tool: 'wingfoil',
+      version: '3df305e',
+      commit: 'f'.repeat(40),
+    });
+    expect(issuesOf(yaml)).toEqual([
+      { path: 'harnesses.wingfoil.commit', message: "must start with the version '3df305e'" },
+    ]);
+  });
+
+  it('accepts a commit that extends a version pinned to a short SHA', () => {
+    const yaml = withField(['harnesses', 'wingfoil'], {
+      tool: 'wingfoil',
+      version: '3df305e',
+      commit: '3df305e' + 'a'.repeat(33),
+    });
+    expect(loadCampaign(writeRepo(yaml).file).ok).toBe(true);
+  });
+
+  it('names an unpinned version even when YAML reads it as a number', () => {
+    const yaml = withField(['harnesses', 'wingfoil'], { tool: 'wingfoil', version: 12 });
+    expect(issuesOf(yaml)).toEqual([
+      {
+        path: 'harnesses.wingfoil.version',
+        message: "'12' is not pinned: use a released version or a commit SHA, quoted",
+      },
+    ]);
+  });
+
+  it.each([['01.2.3'], ['1.2.3+build']])(
+    'rejects a version that is not a released version (%s)',
+    (version) => {
+      const yaml = withField(['harnesses', 'wingfoil'], { tool: 'wingfoil', version });
+      expect(paths(yaml)).toEqual(['harnesses.wingfoil.version']);
+    },
+  );
+
+  it.each([
+    [
+      { model: 'claude-opus-5', scenarios: ['S1', 'S1'], arms: ['baseline'], repetitions: 1 },
+      'models.slices[0].scenarios',
+    ],
+    [
+      { model: 'claude-opus-5', scenarios: ['S1'], arms: ['baseline', 'baseline'], repetitions: 1 },
+      'models.slices[0].arms',
+    ],
+    [
+      { model: 'claude-sonnet-5', scenarios: ['S1'], arms: ['baseline'], repetitions: 1 },
+      'models.slices[0].model',
+    ],
+  ])('rejects a slice that repeats work (%j)', (value, path) => {
+    expect(paths(withField(['models', 'slices'], [value]))).toEqual([path]);
+  });
+
+  it('rejects two slices that cover the same model, scenario and arm', () => {
+    const slice = { model: 'claude-opus-5', scenarios: ['S1'], arms: ['baseline'], repetitions: 1 };
+    expect(paths(withField(['models', 'slices'], [slice, { ...slice, repetitions: 2 }]))).toEqual([
+      'models.slices[1]',
+    ]);
+  });
+
+  it('reports a YAML problem on one line', () => {
+    const issues = issuesOf('a: [unclosed');
+    expect(issues).toHaveLength(1);
+    expect(issues[0]?.message.split('\n')).toHaveLength(1);
+  });
+
+  it('reports a YAML warning as an issue instead of printing it', () => {
+    expect(issuesOf('a: !unknown 1\n')).toEqual([
+      { path: 'campaign.yaml', message: expect.stringMatching(/^is not valid YAML: .*[Tt]ag/) },
+    ]);
+  });
+
+  it('requires the campaign file to live in a campaigns directory', () => {
+    const { root } = writeRepo();
+    const stray = `${root}/campaign.yaml`;
+    copyFileSync(`${root}/campaigns/campaign.yaml`, stray);
+    expect(loadCampaign(stray).ok).toBe(false);
+    const result = loadCampaign(stray);
+    expect(result.ok ? [] : result.issues).toEqual([
+      { path: 'campaign.yaml', message: "must live in a 'campaigns' directory, next to 'scenarios'" },
+    ]);
   });
 
   it.each([['3df305e'], ['3df305e' + 'a'.repeat(33)], ['0.2.0'], ['v0.2.0'], ['1.0.0-rc.1']])(
