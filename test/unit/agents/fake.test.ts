@@ -34,7 +34,7 @@ describe('loadFakeScript', () => {
 
   it.each([
     ['{"T0": {"1": "touch x"}}', 'T0.1'],
-    ['{"T0": {"0": ["x"]}}', 'T0'],
+    ['{"T0": {"0": ["x"]}}', 'T0.0'],
     ['[]', 'script.json'],
     ['not json', 'script.json'],
   ])('reports a malformed script (%s)', (content, path) => {
