@@ -262,3 +262,11 @@ not a silent no-op, so a test cannot pass by doing nothing.
   `[from → to]`, `Approver:`/`Reason:` body, only `status` changed. Observed: exit 0, empty
   stderr, subject `wf(task): approve task-003-isolated-run-in-a-container [pending → backlog]`, both trailers present, 1-line diff.
   Matches.
+- `npx wingfoil memory submit task-003-…` → `377d7d9` (`in-progress → in-review`) and
+  `npx wingfoil memory approve task-003-… --reason "…"` → `2ad8011` (`in-review → approved`), after the
+  approver's explicit consent. Observed for each: exit 0, empty stderr, the declared subject and body,
+  a diff limited to `status`. Matches.
+- **adr-001's amendment has no verb.** The element is `approved`, and no Memory transition amends a
+  document in a terminal state, so the amendment was recorded the way non-Memory documents are: the
+  edit plus an approval commit carrying `Approver:` and `Reason:` (`f6c5a4f`). `memory history` shows
+  that commit with `operation: null`. Recorded as usage note N16.
