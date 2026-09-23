@@ -1,9 +1,16 @@
 import type { AgentPort, StepOutcome, StepRequest } from '../../src/agents/index.js';
-import type { CreateRequest, DockerPort, GitPort, ProcessResult } from '../../src/core/index.js';
+import type {
+  BuildRequest,
+  CreateRequest,
+  DockerPort,
+  GitPort,
+  ProcessResult,
+} from '../../src/core/index.js';
 
 /** Everything the doubles recorded, in order. */
 export interface Recorded {
   readonly builds: string[];
+  readonly buildRequests: BuildRequest[];
   readonly creates: CreateRequest[];
   readonly starts: string[];
   readonly execs: { container: string; command: string[] }[];
@@ -24,10 +31,16 @@ export interface Doubles {
  * container; `onStep` may throw, to exercise a failing run.
  */
 export function doubles(
-  options: { execResult?: ProcessResult; onStep?: (request: StepRequest) => void } = {},
+  options: {
+    execResult?: ProcessResult;
+    onStep?: (request: StepRequest) => void;
+    /** Makes one Docker or git call fail, to exercise a run that breaks outside its steps. */
+    failing?: { call: 'create' | 'start' | 'remove' | 'init'; error: string };
+  } = {},
 ): Doubles {
   const recorded: Recorded = {
     builds: [],
+    buildRequests: [],
     creates: [],
     starts: [],
     execs: [],
@@ -39,15 +52,18 @@ export function doubles(
   const docker: DockerPort = {
     build: (request) => {
       recorded.builds.push(request.tag);
+      recorded.buildRequests.push(request);
       return Promise.resolve();
     },
     create: (request) => {
       recorded.creates.push(request);
       containers += 1;
+      if (options.failing?.call === 'create') return Promise.reject(new Error(options.failing.error));
       return Promise.resolve(`container-${containers}`);
     },
     start: (container) => {
       recorded.starts.push(container);
+      if (options.failing?.call === 'start') return Promise.reject(new Error(options.failing.error));
       return Promise.resolve();
     },
     exec: (container, command) => {
@@ -56,13 +72,20 @@ export function doubles(
     },
     remove: (container) => {
       recorded.removes.push(container);
+      if (options.failing?.call === 'remove') return Promise.reject(new Error(options.failing.error));
       return Promise.resolve();
     },
-    mountsOf: (container) => Promise.resolve([`${container}:/workspace`]),
+    // Derived from what the run actually asked for, so an assertion on it means something.
+    mountsOf: (container) => {
+      const index = Number(container.replace('container-', '')) - 1;
+      const request = recorded.creates[index];
+      return Promise.resolve(request ? [`${request.workspace}:/workspace`] : []);
+    },
   };
   const git: GitPort = {
     init: (directory) => {
       recorded.gitCalls.push(`init ${directory}`);
+      if (options.failing?.call === 'init') return Promise.reject(new Error(options.failing.error));
       return Promise.resolve();
     },
     commitAll: (directory, message) => {

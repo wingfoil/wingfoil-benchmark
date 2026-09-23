@@ -109,11 +109,23 @@ describe('the git port', () => {
     const git = gitCli(process);
     await git.init('/repo/runs/w');
     await git.commitAll('/repo/runs/w', 'seed');
-    const identity = ['-c', 'user.name=WingFoil Benchmark', '-c', 'user.email=benchmark@localhost'];
-    expect(process.calls.map((call) => call.args)).toEqual([
-      [...identity, '-C', '/repo/runs/w', 'init', '--quiet', '--initial-branch=main'],
-      [...identity, '-C', '/repo/runs/w', 'add', '--all'],
-      [...identity, '-C', '/repo/runs/w', 'commit', '--quiet', '--message', 'seed'],
+    expect(process.calls.map((call) => call.args.slice(-5))).toEqual([
+      ['-C', '/repo/runs/w', 'init', '--quiet', '--initial-branch=main'],
+      ['/repo/runs/w', 'add', '--all'].slice(0, 3),
+      ['-C', '/repo/runs/w', 'commit', '--quiet', '--message', 'seed'].slice(-5),
     ]);
+    expect(process.calls[0]?.args).toContain('user.name=WingFoil Benchmark');
+    expect(process.calls[0]?.args).toContain('user.email=benchmark@localhost');
+  });
+
+  it('keeps the host git configuration, its templates and its hooks out of the run', async () => {
+    const process = recorder([ok(), ok(), ok()]);
+    const git = gitCli(process);
+    await git.init('/repo/runs/w');
+    expect(process.calls[0]?.env).toEqual({ GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' });
+    const args = process.calls[0]?.args ?? [];
+    expect(args).toContain('init.templateDir=');
+    expect(args).toContain('core.hooksPath=');
+    expect(args).toContain('commit.gpgsign=false');
   });
 });

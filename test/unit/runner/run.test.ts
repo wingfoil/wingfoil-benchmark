@@ -1,4 +1,12 @@
-import { mkdirSync, readdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -161,5 +169,75 @@ describe('runCampaign', () => {
       { container: 'container-1', command: ['sh', '-c', 'echo hi'] },
       { container: 'container-1', command: ['sh', '-c', 'echo hi'] },
     ]);
+  });
+
+  it.each([
+    ['create', 'container-1'],
+    ['init', undefined],
+  ] as const)('reports a run that fails in %s as failed, and carries on', async (call, removed) => {
+    const { checked } = checkedCampaign(campaignYaml({ repetitions: { S1: 2 } }));
+    const ports = doubles({ failing: { call, error: 'boom' } });
+
+    const summary = await runCampaign(checked, ports);
+
+    expect(summary.runs.map((run) => run.outcome)).toEqual(['failed', 'failed']);
+    expect(summary.runs[0]?.error).toMatch(/boom/);
+    expect(ports.recorded.removes[0]).toBe(removed);
+  });
+
+  it('keeps the campaign going when removing a container fails', async () => {
+    const { checked } = checkedCampaign(campaignYaml({ repetitions: { S1: 2 } }));
+    const ports = doubles({ failing: { call: 'remove', error: 'daemon gone' } });
+
+    const summary = await runCampaign(checked, ports);
+
+    expect(summary.runs.map((run) => run.outcome)).toEqual(['completed', 'completed']);
+    expect(ports.recorded.creates).toHaveLength(2);
+  });
+
+  it('starts every run from a fresh workspace', async () => {
+    const { checked } = checkedCampaign();
+    const first = doubles();
+    await runCampaign(checked, first);
+    const workspace = first.recorded.creates[0]?.workspace ?? '';
+    writeFileSync(join(workspace, 'leftover.txt'), 'from the previous run');
+    rmSync(join(checked.campaign.resultsRoot, checked.campaign.id), { recursive: true });
+
+    await runCampaign(checked, doubles());
+
+    expect(readdirSync(workspace).sort()).toEqual(['README.md']);
+    expect(existsSync(join(workspace, 'leftover.txt'))).toBe(false);
+  });
+
+  it('refuses to run a scenario whose seed is a symbolic link', async () => {
+    const { root, checked } = checkedCampaign();
+    const seed = join(root, 'scenarios/S1/1.0/seed');
+    rmSync(seed, { recursive: true });
+    symlinkSync(tempDir('bench-elsewhere-'), seed);
+    const ports = doubles();
+
+    const summary = await runCampaign(checked, ports);
+
+    expect(summary.runs[0]?.outcome).toBe('failed');
+    expect(summary.runs[0]?.error).toMatch(/seed .* is a symbolic link/);
+  });
+
+  it('checks that the container it created has no mount but the workspace', async () => {
+    const { checked } = checkedCampaign();
+    const ports = doubles();
+    const docker = { ...ports.docker, mountsOf: () => Promise.resolve(['/etc:/etc', '/w:/workspace']) };
+
+    const summary = await runCampaign(checked, { ...ports, docker });
+
+    expect(summary.runs[0]?.outcome).toBe('failed');
+    expect(summary.runs[0]?.error).toMatch(/mounts/);
+    expect(ports.recorded.removes).toEqual(['container-1']);
+  });
+
+  it('finds its own Dockerfile', async () => {
+    const { checked } = checkedCampaign();
+    const ports = doubles();
+    await runCampaign(checked, ports);
+    expect(existsSync(ports.recorded.buildRequests[0]?.dockerfile ?? '')).toBe(true);
   });
 });
