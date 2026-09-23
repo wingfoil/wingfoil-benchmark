@@ -12,7 +12,7 @@ export default tseslint.config(
   {
     // Node build scripts: plain ESM with the Node globals ESLint's browser-less base config omits.
     files: ['scripts/**/*.mjs'],
-    languageOptions: { globals: { URL: 'readonly', process: 'readonly' } },
+    languageOptions: { globals: { URL: 'readonly', console: 'readonly', process: 'readonly' } },
   },
   {
     files: ['src/**/*.{ts,mts,cts,tsx}'],
