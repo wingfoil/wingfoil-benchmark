@@ -2,7 +2,7 @@
 id: task-007-neutral-approver
 type: task
 title: "Neutral approver"
-status: draft
+status: pending
 release: v0.1
 wave: W2
 features: [F2.4]
