@@ -2,7 +2,7 @@
 id: task-005-fresh-session-steps
 type: task
 title: "Fresh-session steps"
-status: pending
+status: backlog
 release: v0.1
 wave: W2
 features: [F2.2]
