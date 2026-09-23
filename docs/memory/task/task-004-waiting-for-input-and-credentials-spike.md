@@ -2,7 +2,7 @@
 id: task-004-waiting-for-input-and-credentials-spike
 type: task
 title: "Waiting-for-input and credentials spike"
-status: backlog
+status: in-progress
 release: v0.1
 wave: W2
 features: [F2.3, F2.4]
