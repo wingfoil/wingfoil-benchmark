@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { basename, dirname } from 'node:path';
-import { parse } from 'yaml';
+import { parseDocument } from 'yaml';
 import type { z } from 'zod';
 
 import { fail, formatPath, ok } from './result.js';
@@ -21,13 +21,17 @@ export function readYamlFile(file: string): Result<unknown> {
     return fail([{ path: label, message: `cannot be read: ${(error as Error).message}` }]);
   }
 
-  let data: unknown;
-  try {
-    data = parse(text);
-  } catch (error) {
-    return fail([{ path: label, message: `is not valid YAML: ${(error as Error).message}` }]);
-  }
+  const document = parseDocument(text);
+  const problem = document.errors[0] ?? document.warnings[0];
+  if (problem) return fail([{ path: label, message: `is not valid YAML: ${firstLine(problem.message)}` }]);
+
+  const data: unknown = document.toJS();
   return data === null || data === undefined ? fail([{ path: label, message: 'is empty' }]) : ok(data);
+}
+
+/** The first line of a message: an issue is one line, and YAML errors carry a code frame. */
+function firstLine(message: string): string {
+  return message.split('\n', 1)[0] as string;
 }
 
 /**

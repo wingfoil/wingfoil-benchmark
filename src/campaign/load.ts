@@ -12,12 +12,16 @@ import {
 } from '../core/index.js';
 import type { CampaignFile, Result } from '../core/index.js';
 
+/** REQ-ARC-03: campaign files live in `campaigns/`, beside `scenarios/` and `results/`. */
+const CAMPAIGNS_DIR = 'campaigns';
+
 /** A validated campaign file and its identity. */
 export interface Campaign {
   /** REQ-FMT-02: the campaign's identity. */
   readonly id: string;
   /** Absolute path of the campaign file. */
   readonly file: string;
+  /** The campaign file as validated (REQ-FMT-01). */
   readonly spec: CampaignFile;
   /** `scenarios/` next to the campaign's `campaigns/` directory (REQ-ARC-03). */
   readonly scenariosRoot: string;
@@ -46,7 +50,14 @@ export function loadCampaign(file: string): Result<Campaign> {
   const inconsistent = campaignConsistency(parsed.value);
   if (inconsistent.length > 0) return fail(inconsistent);
 
-  const repoRoot = dirname(dirname(path));
+  const directory = dirname(path);
+  if (basename(directory) !== CAMPAIGNS_DIR) {
+    return fail([
+      { path: basename(path), message: `must live in a '${CAMPAIGNS_DIR}' directory, next to 'scenarios'` },
+    ]);
+  }
+
+  const repoRoot = dirname(directory);
   return ok({
     id: campaignId(read.value),
     file: path,
