@@ -272,9 +272,12 @@ describe('loadCampaign', () => {
     expect(paths(withField(['models', 'default'], model))).toEqual(['models.default']);
   });
 
-  it.each([['a..'], ['x'.repeat(65)]])('rejects a model id that is not a plain name (%s)', (model) => {
-    expect(paths(withField(['models', 'default'], model))).toEqual(['models.default']);
-  });
+  it.each([['a..'], ['a.'], ['a-'], ['x'.repeat(65)]])(
+    'rejects a model id that is not a plain name (%s)',
+    (model) => {
+      expect(paths(withField(['models', 'default'], model))).toEqual(['models.default']);
+    },
+  );
 
   it.each([['claude-sonnet-5'], ['claude-opus-5'], ['gpt-4o-2024-08-06'], ['fake-model'], ['llama3.1-70b']])(
     'accepts the model id %s',

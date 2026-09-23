@@ -261,4 +261,18 @@ describe('runCampaign', () => {
 
     expect(summary.runs[0]?.error).toMatch(/other than its workspace: none/);
   });
+
+  it('reports a failure that is not an Error', async () => {
+    const { checked } = checkedCampaign();
+    const ports = doubles({
+      onStep: () => {
+        // eslint-disable-next-line @typescript-eslint/only-throw-error
+        throw 'the agent said no';
+      },
+    });
+
+    const summary = await runCampaign(checked, ports);
+
+    expect(summary.runs[0]?.error).toBe('the agent said no');
+  });
 });

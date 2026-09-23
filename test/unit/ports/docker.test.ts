@@ -135,6 +135,7 @@ describe('the git port', () => {
     // Removed, not emptied: git refuses an empty GIT_DIR instead of ignoring it.
     for (const name of [
       'GIT_DIR',
+      'GIT_COMMON_DIR',
       'GIT_WORK_TREE',
       'GIT_INDEX_FILE',
       'GIT_OBJECT_DIRECTORY',
