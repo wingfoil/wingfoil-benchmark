@@ -256,3 +256,10 @@ against directories yet.
   `[from → to]`, `Approver:`/`Reason:` body, only `status` changed. Observed: exit 0, empty
   stderr, subject `wf(task): approve task-002-campaign-file-and-validation [pending → backlog]`, both trailers present, 1-line diff.
   Matches.
+- `npx wingfoil memory submit task-002-…` → `ec0c52a` (`in-progress → in-review`) and `npx wingfoil
+  memory approve task-002-… --reason "…"` → `ff9bd2f` (`in-review → approved`), after the approver's
+  explicit consent; `memory add`/`submit`/`approve` on `dl-003` → `3dc0aca`, its submit, and `8e553f1`
+  (`pending → approved`). Observed for each: exit 0, empty stderr, the declared subject (with the
+  bracket and the `Approver:`/`Reason:` body on the approvals), a diff limited to `status`. Matches.
+- The amendments to `requirements.md` (1.2) and `06_features.md` (1.3) are not Memory elements, so they
+  were recorded by hand: the draft commit, then an approval commit carrying `Approver:` and `Reason:`.
