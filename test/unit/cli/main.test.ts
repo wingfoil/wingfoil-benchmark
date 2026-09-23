@@ -1,9 +1,13 @@
+import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
-import { checkCampaign, main } from '../../../src/cli/index.js';
+import { checkCampaign, main, realPorts } from '../../../src/cli/index.js';
 import { doubles } from '../../support/runner-doubles.js';
 import { completeCampaignYaml, writeRepo } from '../../support/campaign-fixture.js';
 import { repoPath } from '../../support/paths.js';
+import { tempDir } from '../../support/scenario-fixture.js';
 
 async function run(...argv: string[]) {
   return runWith(undefined, ...argv);
@@ -55,7 +59,8 @@ describe('bench campaign validate', () => {
     [['campaign', 'validate', '-']],
   ])('treats a flag or an empty file name as a usage error (%j)', async (argv) => {
     const { code, stderr } = await run(...argv);
-    expect({ code, stderr }).toEqual({ code: 2, stderr: 'usage: bench campaign validate <file>\n' });
+    expect(code).toBe(2);
+    expect(stderr).toMatch(/^usage: bench campaign validate <file>\n\s+bench campaign run <file>\n$/);
   });
 
   it.each([
@@ -63,12 +68,12 @@ describe('bench campaign validate', () => {
     [['campaign']],
     [['campaign', 'validate']],
     [['campaign', 'validate', 'a.yaml', 'b.yaml']],
-    [['campaign', 'run', 'a.yaml']],
+    [['campaign', 'estimate', 'a.yaml']],
     [['scenario', 'validate', 'S1@1.0']],
   ])('exits 2 with the usage on a usage error (%j)', async (argv) => {
     const { code, stdout, stderr } = await run(...argv);
     expect({ code, stdout }).toEqual({ code: 2, stdout: '' });
-    expect(stderr).toMatch(/^usage: bench campaign validate <file>\n/);
+    expect(stderr).toMatch(/^usage: bench campaign validate <file>\n\s+bench campaign run <file>\n$/);
   });
 });
 
@@ -92,6 +97,19 @@ describe('bench campaign run', () => {
     expect({ code, stdout }).toEqual({ code: 1, stdout: '' });
     expect(stderr).toBe("agent: 'claude-code' is not available yet: W1 runs the scripted fake agent\n");
     expect(ports.recorded.builds).toEqual([]);
+  });
+
+  it('asks for the fake agent script when it runs without injected ports', async () => {
+    const previous = process.env.BENCH_FAKE_SCRIPT;
+    delete process.env.BENCH_FAKE_SCRIPT;
+    try {
+      const { file } = writeRepo(fakeCampaign(), ['S1@1.0']);
+      const { code, stderr } = await run('campaign', 'run', file);
+      expect(code).toBe(1);
+      expect(stderr).toMatch(/^BENCH_FAKE_SCRIPT: is not set/);
+    } finally {
+      if (previous !== undefined) process.env.BENCH_FAKE_SCRIPT = previous;
+    }
   });
 
   it('refuses an invalid campaign with one line per issue', async () => {
@@ -148,5 +166,40 @@ describe('checkCampaign', () => {
     yaml.arms = ['wingfoil'];
     const result = checkCampaign(writeRepo(yaml, []).file);
     expect(result.ok ? [] : result.issues.map((issue) => issue.path)).toEqual(['arms']);
+  });
+});
+
+describe('realPorts', () => {
+  const variable = 'BENCH_FAKE_SCRIPT';
+
+  function withScript<T>(value: string | undefined, body: () => T): T {
+    const previous = process.env[variable];
+    if (value === undefined) Reflect.deleteProperty(process.env, variable);
+    else process.env[variable] = value;
+    try {
+      return body();
+    } finally {
+      if (previous === undefined) Reflect.deleteProperty(process.env, variable);
+      else process.env[variable] = previous;
+    }
+  }
+
+  it('asks for the fake agent script when the variable is not set', () => {
+    const result = withScript(undefined, () => realPorts());
+    expect(result.ok ? [] : result.issues).toEqual([
+      { path: variable, message: "is not set: it holds the fake agent's script" },
+    ]);
+  });
+
+  it('reports a script that cannot be read', () => {
+    const result = withScript(join(tempDir('bench-script-'), 'missing.json'), () => realPorts());
+    expect(result.ok ? [] : result.issues.map((issue) => issue.path)).toEqual(['missing.json']);
+  });
+
+  it('builds the Docker, git and agent ports from a valid script', () => {
+    const file = join(tempDir('bench-script-'), 'script.json');
+    writeFileSync(file, JSON.stringify({ T0: { '1': ['true'] } }));
+    const result = withScript(file, () => realPorts());
+    expect(result.ok && Object.keys(result.value).sort()).toEqual(['agent', 'docker', 'git']);
   });
 });

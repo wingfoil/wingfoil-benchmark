@@ -146,4 +146,20 @@ describe('runCampaign', () => {
     expect(recorded.creates[0]?.name).toBe(`bench-${checked.campaign.id}-1-S1-1.0-baseline-fake-model-r1`);
     expect(recorded.creates[0]?.user).toBe('node');
   });
+
+  it("lets the agent run commands in the run's own container", async () => {
+    const { checked } = checkedCampaign();
+    const ports = doubles({
+      onStep: (request) => {
+        void request.run(['sh', '-c', 'echo hi']);
+      },
+    });
+
+    await runCampaign(checked, ports);
+
+    expect(ports.recorded.execs).toEqual([
+      { container: 'container-1', command: ['sh', '-c', 'echo hi'] },
+      { container: 'container-1', command: ['sh', '-c', 'echo hi'] },
+    ]);
+  });
 });

@@ -24,13 +24,5 @@ export async function prepareWorkspace(directory: string, scenario: Scenario, gi
 
 /** Symbolic links are not copied at all: nothing in a workspace may point outside it. */
 function keepInsideSeed(source: string): boolean {
-  return !isSymbolicLink(source);
-}
-
-function isSymbolicLink(path: string): boolean {
-  try {
-    return lstatSync(path).isSymbolicLink();
-  } catch {
-    return false;
-  }
+  return !lstatSync(source).isSymbolicLink();
 }

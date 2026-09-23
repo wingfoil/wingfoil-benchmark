@@ -54,6 +54,7 @@ export async function runCampaign(checked: CheckedCampaign, options: RunnerOptio
   const execution = nextExecution(campaign.resultsRoot, campaign.id);
   const resultsDir = join(campaign.resultsRoot, campaign.id, String(execution));
   mkdirSync(resultsDir, { recursive: true });
+  options.log?.(`campaign ${campaign.id}, execution ${execution}`);
   copyFileSync(campaign.file, join(resultsDir, 'campaign.yaml'));
 
   await options.docker.build({
@@ -66,6 +67,7 @@ export async function runCampaign(checked: CheckedCampaign, options: RunnerOptio
   const model = campaign.spec.models.default;
   const runs: RunResult[] = [];
   for (const scenario of scenarios) {
+    // The campaign schema gives every scenario a repetition count; the fallback only keeps the type honest.
     const repetitions = campaign.spec.repetitions[scenario.id] ?? 1;
     for (const arm of campaign.spec.arms) {
       for (let repetition = 1; repetition <= repetitions; repetition += 1) {
