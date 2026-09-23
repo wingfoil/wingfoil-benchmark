@@ -2,7 +2,7 @@
 id: dl-003-campaign-pins-harness-coverage-seed-and-the-models-shape
 type: decision-log
 title: "Campaign pins: harness coverage, seed and the models shape"
-status: pending
+status: approved
 ---
 
 ## Context
