@@ -6,7 +6,9 @@ import { loadScenario } from '../scenario/index.js';
 
 /** A valid campaign with every scenario it names loaded, in the campaign's order. */
 export interface CheckedCampaign {
+  /** The campaign file, validated, with its identity. */
   readonly campaign: Campaign;
+  /** The scenarios it names, loaded, in the campaign's order. */
   readonly scenarios: readonly Scenario[];
 }
 

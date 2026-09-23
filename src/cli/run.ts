@@ -10,15 +10,25 @@ export interface Io {
 export const EXIT = { ok: 0, failure: 1, usage: 2 } as const;
 
 const USAGE = 'usage: bench campaign validate <file>\n';
+const HELP_FLAGS = ['--help', '-h'];
 
 /** Run the `bench` command line `argv` (without the executable) and return its exit code. */
 export async function main(argv: readonly string[], io: Io): Promise<number> {
+  if (argv.length === 1 && HELP_FLAGS.includes(argv[0] as string)) {
+    io.stdout(USAGE);
+    return EXIT.ok;
+  }
   const [noun, verb, file, ...extra] = argv;
-  if (noun !== 'campaign' || verb !== 'validate' || file === undefined || extra.length > 0) {
+  if (noun !== 'campaign' || verb !== 'validate' || !isFileArgument(file) || extra.length > 0) {
     io.stderr(USAGE);
     return EXIT.usage;
   }
   return validateCampaign(file, io);
+}
+
+/** A file argument: present, not empty, and not an option. */
+function isFileArgument(file: string | undefined): file is string {
+  return file !== undefined && file !== '' && !file.startsWith('-');
 }
 
 /** REQ-CLI-01: `bench campaign validate <file>`. */
