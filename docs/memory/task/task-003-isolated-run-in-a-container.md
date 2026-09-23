@@ -217,7 +217,8 @@ not a silent no-op, so a test cannot pass by doing nothing.
   - the finding count was wrong (9 minors and 2 nits, not "9 minors and nits").
 - **New majors fixed** (red `2c8e029`, then `f795242`):
   1. a `docker build` that fails — the daemon not running is the ordinary case — still threw out of the
-     command: the user got a stack trace. It is now one line on stderr and exit 1;
+     command: the user got a stack trace. It is now reported on stderr as `campaign: <what failed>`
+     with exit 1 (the port's message names the command and quotes Docker, so it spans a few lines);
   2. the git isolation missed the host's `GIT_*` **variables**, which beat `-c` settings:
      `GIT_TEMPLATE_DIR` still copied host files and a `pre-commit` hook into `.git/` inside the bind
      mount, and `GIT_AUTHOR_*` replaced the fixed identity. My first attempt set `GIT_DIR` and its
@@ -228,8 +229,23 @@ not a silent no-op, so a test cannot pass by doing nothing.
 - **Minors fixed:** a checkout path holding a comma or an equals sign broke the `--mount` value and is
   now refused; model ids may not hold `..` and are bounded in length.
 - **Documented:** the mount check is defence in depth, not a proof (the Design says what it cannot
-  see). A half-prepared workspace survives a failed run on purpose, as debris to look at; the next
-  execution removes it.
+  see). A half-prepared workspace survives a failed run on purpose, as debris to look at: it stays
+  under `runs/<campaign-id>/<n>/`, which is git-ignored, and only a rerun of that same execution
+  number clears it.
+
+### Review, round 3
+
+- **Result:** no blocker, no major. Findings A–F fixed, G and H unchanged on purpose; 1 new minor,
+  1 robustness defect and 2 inaccurate sentences in my round-2 notes, both corrected above.
+- **Fixed** (red `f7532aa`, then `48574b3`):
+  - `GIT_COMMON_DIR` was the one `GIT_*` variable left unanswered; a host that exports it — git does
+    inside worktrees and while running hooks — made every seed commit fail. Every run would have been
+    `failed`, which the round-2 teardown fix at least keeps from ending the campaign;
+  - a thrown value that is not an `Error` was reported as `undefined`; `reasonOf` now renders it;
+  - a model id may no longer end in a dot or a dash.
+- **Accepted as they are:** the script's size check is stat-then-read (operator-supplied input); the
+  CLI's catch also swallows a programming error, which reads as a campaign failure — acceptable for a
+  command line, and worth a debug flag when one exists.
 
 ### WingFoil commands (declared vs observed)
 
