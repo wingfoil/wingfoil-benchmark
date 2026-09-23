@@ -5,7 +5,8 @@ import type { Issue } from './result.js';
 import { SCENARIO_ID, SCENARIO_VERSION } from './scenario.js';
 
 /** REQ-FMT-03: a released version (semver, optionally `v`-prefixed) or a commit SHA (7–40 hex). */
-const PINNED = /^(v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(-[0-9A-Za-z.-]+)?|[0-9a-f]{7,40})$/;
+const PINNED =
+  /^(v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?|[0-9a-f]{7,40})$/;
 /** A released version, as the agent must be pinned (REQ-RUN-16). */
 const RELEASE = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(-[0-9A-Za-z.-]+)?$/;
 const KEBAB = /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/;
