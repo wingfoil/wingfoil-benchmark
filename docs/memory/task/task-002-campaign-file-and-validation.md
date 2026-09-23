@@ -75,11 +75,11 @@ Conventions from [adr-001](../adr/adr-001-w1-toolchain-and-runner-conventions.md
 
 | Field | Rule |
 |---|---|
-| `harnesses` | map arm → `{ tool, version, commit? }`; every key is one of `arms`; `version` is a released version (semver, optionally `v`-prefixed) or a commit SHA (7–40 hex); `commit`, when given, is a 40-hex SHA; `latest`, branch names and ranges are rejected with a message naming the arm and the field |
+| `harnesses` | map arm → `{ tool, version, commit? }`; **one entry per arm except `baseline` and `baseline-docs`, which must have none** (dl-003); `version` is a released version (semver, optionally `v`-prefixed, no leading zeros) or a commit SHA (7–40 hex); `commit`, when given, is a 40-hex SHA that starts with `version` when `version` is a SHA; `latest`, branch names, ranges and a version YAML reads as a number are rejected with a message naming the arm and the field |
 | `scenarios` | non-empty list of `{ id, version }` (the scenario id and version patterns of task-001), no duplicates |
 | `arms` | non-empty list of kebab-case names, no duplicates, **must include `baseline`** (T7) |
 | `agent` | `{ name, version }`; `name` is `claude-code` or `fake` (adr-001 default 7); `version` is a released version (semver), never `latest` |
-| `models` | `{ default, slices? }`; `default` is a model id; each slice is `{ model, scenarios, arms, repetitions }`, whose scenarios and arms are among the campaign's |
+| `models` | `{ default, slices? }` (dl-003 decision 3); `default` is a model id; each slice is `{ model, scenarios, arms, repetitions }`, whose scenarios and arms are among the campaign's, without duplicates, whose model is not the default, and no two slices cover the same model, scenario and arm |
 | `repetitions` | map scenario id → integer ≥ 1, with exactly one entry per campaign scenario |
 | `approver_policy` | a version such as `v1` |
 | `caps` | `{ step_time_s, step_tokens, run_cost_eur }`, all positive |
@@ -91,8 +91,11 @@ arms, slice scenarios, one repetition count per scenario) are checked only once 
 one wrong field does not cascade into issues about the fields that refer to it. Model ids are not checked against a
 list: the campaign pins them, the agent refuses unknown ones at run time.
 
-**Scenarios exist** (checked by `checkCampaign` in `cli`). The scenarios root follows REQ-ARC-03:
-`campaigns/<name>.yaml` sits next to `scenarios/`, so the root is `<campaign file
+The scenario seed is pinned through `scenario@version`, not by a campaign field (dl-003 decision 2).
+
+**Scenarios exist** (checked by `checkCampaign` in `cli`). The scenarios root follows REQ-ARC-03, and
+the campaign file must live in a `campaigns/` directory, so that the roots it derives are inside the
+repository: `campaigns/<name>.yaml` sits next to `scenarios/`, so the root is `<campaign file
 directory>/../scenarios`. Each scenario is loaded with `loadScenario`; its issues are reported as
 `scenarios[<i>]: <id>@<version>: <path> <message>`. This also
 lets the fixture `test/fixtures/campaigns/smoke.yaml` use `test/fixtures/scenarios/`, with no extra
@@ -103,13 +106,17 @@ against directories yet.
 
 ### Identity and executions (REQ-FMT-02)
 
-- `canonicalJson`: the parsed YAML value serialized as JSON with object keys sorted by code point at
-  every level, arrays in their order, no whitespace. The identity is computed on the parsed file, not
+- `canonicalJson`: the parsed YAML value serialized as JSON with object keys sorted at every level by
+  UTF-16 code unit (JavaScript's default order, as RFC 8785 prescribes), arrays in their order, no
+  whitespace. The identity is computed on the parsed file, not
   on the schema's output, so defaults the schema may add never change it.
 - `campaignId`: the first 12 hex characters of the SHA-256 of that text. Formatting, comments and key
   order in the YAML do not change it; any value change does.
 - `nextExecution(resultsRoot, id)`: 1 + the highest `n` among the directories `results/<id>/<n>/`
-  whose name is a positive integer (other entries ignored), or 1 when there is none. The results root
+  whose name is a positive integer no larger than `Number.MAX_SAFE_INTEGER` (other entries ignored;
+  symbolic links to directories count, broken ones do not), or 1 when there is none. A results
+  directory that exists but cannot be listed throws, naming the directory: a broken environment is not
+  a campaign that fails validation. The results root
   is `<campaign file directory>/../results`, by the same layout rule.
 
 ### `bench campaign validate <file>` (REQ-CLI-01)
@@ -117,7 +124,11 @@ against directories yet.
 - Valid: prints `campaign <id> is valid (<n> scenarios, <m> arms)` to stdout (singular for 1), exit 0.
 - Invalid (schema, pins, scenarios, file not found or not YAML): one line per issue on stderr,
   `<path>: <message>`, exit 1.
-- Usage error (no file, extra arguments, unknown command or subcommand): usage text on stderr, exit 2.
+- Usage error (no file, an empty or option-like file argument, extra arguments, unknown command or
+  subcommand): usage text on stderr, exit 2. `bench --help` and `bench -h` print the same text on
+  stdout and exit 0: asking for help is not an error.
+- A campaign naming the `claude-code` agent validates: F1.1 requires it. Refusing to *run* an agent
+  that has no adapter yet (adr-001 default 7) belongs to `campaign run`, in task-003.
 - The argument parser is a small hand-written router (two words and one positional); no dependency.
 - `main` takes its output streams as parameters, so tests run it in-process. `src/cli/main.ts` only
   calls it with `process.argv` and sets `process.exitCode`.
@@ -147,10 +158,43 @@ against directories yet.
   invalid, so one bad arm name produced three issues. They became `campaignConsistency`, run after the
   schema passes.
 - **Found by running the bin:** "1 scenarios, 1 arms"; fixed test-first.
+- **Commit history, correction:** the commits up to `d6b4006` were split from a finished working tree,
+  not written in the order they suggest. `ba48a56`, labelled "(red)", fails only because the modules
+  it imports do not exist yet, not for the reasons its message gives; the first implementation that
+  broke the REQ-ARC-02 lint rule and the "1 scenarios" bug are not in the history at all. The plural
+  test was seen failing before the fix, but the history does not show it. From `d0a0da7` on, every red
+  test is committed before the code that makes it pass, and each red run is quoted in these notes.
 - **Bin check (after `npm run build`):** `npx bench campaign validate test/fixtures/campaigns/smoke.yaml`
   → `campaign 9491f7cd4bb7 is valid (…)`, exit 0; the same command on a scenario file → one line per
   issue, exit 1; `npx bench` → the usage, exit 2. npm runs the bin although `tsc` does not make it
   executable.
+
+### Review, round 1
+
+- **Reviewer:** an independent reviewer that did not write the code, read-only, each finding proven by
+  a probe.
+- **Result:** 1 blocker, 3 majors, 8 minors and nits.
+- **Blocker, reproduced by the author:** after a clean `npm run build`, `npx bench` failed with
+  `Permission denied` (exit 127), because `tsc` does not set the execute bit. The Execution note that
+  claimed the bin ran was wrong. Fixed test-first: `test/bin/bench.test.ts` (red `21674be`, `cff2dd3`)
+  builds and runs the bin through `npx`, and `npm run build` now sets the mode
+  (`scripts/make-bin-executable.mjs`). `npm run test:bin` runs those tests, outside `npm test`.
+- **Major 1 (approver decision A):** a campaign with a `wingfoil` arm and `harnesses: {}` was accepted.
+  Now every arm but `baseline` and `baseline-docs` must pin a harness, those two must not, and a
+  `commit` must extend a SHA `version` ([dl-003](../decision-log/dl-003-campaign-pins-harness-coverage-seed-and-the-models-shape.md)).
+- **Major 2 (approver decision B):** F1.1 lists a "seed" the schema rejects, and `models` is an object
+  where REQ-FMT-01 says list. Recorded in dl-003, with amendments to requirements and features due.
+- **Major 3:** the commit history was not honest; see the correction above.
+- **Minors and nits fixed:** versions with leading zeros or read as numbers; slices that repeat work;
+  YAML problems spanning several lines and YAML warnings printed outside the issue format; campaign
+  files outside `campaigns/`; `nextExecution` and symlinks, unsafe integers and unreadable
+  directories; `--help` treated as a usage error and empty or option-like file arguments; exports
+  nothing used; missing doc comments; the "code point" claim about the key order, which is UTF-16.
+- **Characterization tests added after the code:** an astral-plane key in `canonicalJson`, a harness
+  without a version, a broken symlink in `nextExecution`.
+- **Checklist (at `aaf940f`):** `npm test` 227/227; coverage 100% statements, lines and functions,
+  99.5% branches (the one branch left is task-001's guard in the lint rule); `npm run lint` and
+  `tsc --noEmit` clean; `npm run test:bin` 4/4 against the built bin.
 
 ### WingFoil commands (declared vs observed)
 
