@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { basename } from 'node:path';
 import { z } from 'zod';
 
-import { fail, ok, parseWith } from '../core/index.js';
+import { fail, parseWith } from '../core/index.js';
 import type { ProcessResult, Result } from '../core/index.js';
 
 /** What the agent is asked to do for one step of a run. */
