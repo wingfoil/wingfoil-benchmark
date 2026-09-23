@@ -224,6 +224,17 @@ describe('loadCampaign', () => {
     },
   );
 
+  it.each([[undefined], [12], [null]])(
+    'reports a harness whose commit is given but whose version is %j, without throwing',
+    (version) => {
+      const entry: Record<string, unknown> = { tool: 'wingfoil', commit: 'b'.repeat(40) };
+      if (version !== undefined) entry.version = version;
+      const yaml = withField(['harnesses', 'wingfoil'], entry);
+      expect(() => loadCampaign(writeRepo(yaml).file)).not.toThrow();
+      expect(paths(yaml)).toEqual(['harnesses.wingfoil.version']);
+    },
+  );
+
   it('names a harness that pins no version', () => {
     const yaml = withField(['harnesses', 'wingfoil'], { tool: 'wingfoil' });
     expect(issuesOf(yaml)).toEqual([{ path: 'harnesses.wingfoil.version', message: 'is required' }]);
