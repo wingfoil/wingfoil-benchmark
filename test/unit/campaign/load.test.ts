@@ -68,6 +68,7 @@ describe('loadCampaign', () => {
     const yaml = completeCampaignYaml();
     yaml.arms = ['baseline', 'constructor'];
     yaml.harnesses = {};
+    yaml.models = { default: 'claude-sonnet-5' };
     expect(issuesOf(yaml)).toEqual([
       {
         path: 'harnesses.constructor',

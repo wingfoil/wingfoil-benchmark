@@ -24,18 +24,22 @@ const AGENT_NAMES = ['claude-code', 'fake'] as const;
  * REQ-FMT-03. A version YAML read as a number (unquoted `0000000` or `12`) is reported as unpinned
  * too, with the same message, rather than as a type error.
  */
-const pinnedVersion = z.unknown().superRefine((version, ctx) => {
-  if (typeof version === 'string' && PINNED.test(version)) return;
-  if (version === undefined) {
-    ctx.addIssue({ code: 'custom', message: 'is required' });
-    return;
-  }
-  const quoted = typeof version === 'string' ? '' : ', quoted';
-  ctx.addIssue({
-    code: 'custom',
-    message: `'${String(version)}' is not pinned: use a released version or a commit SHA${quoted}`,
-  });
-});
+const pinnedVersion = z
+  .unknown()
+  .superRefine((version, ctx) => {
+    if (typeof version === 'string' && PINNED.test(version)) return;
+    if (version === undefined) {
+      ctx.addIssue({ code: 'custom', message: 'is required' });
+      return;
+    }
+    const quoted = typeof version === 'string' ? '' : ', quoted';
+    ctx.addIssue({
+      code: 'custom',
+      message: `'${String(version)}' is not pinned: use a released version or a commit SHA${quoted}`,
+    });
+  })
+  // The value is a pinned string once the check above passes; say so, so that callers read a string.
+  .transform((version) => version as string);
 
 const harness = z
   .strictObject({
@@ -44,8 +48,8 @@ const harness = z
     commit: z.string().regex(FULL_SHA, 'must be a 40-character commit SHA').optional(),
   })
   .superRefine((entry, ctx) => {
-    const version = entry.version;
-    if (typeof version !== 'string' || entry.commit === undefined || !FULL_SHA.test(entry.commit)) return;
+    const version: string = entry.version;
+    if (entry.commit === undefined || !FULL_SHA.test(entry.commit)) return;
     if (FULL_SHA.test(version.padEnd(40, '0')) && !entry.commit.startsWith(version)) {
       ctx.addIssue({ code: 'custom', path: ['commit'], message: `must start with the version '${version}'` });
     }
@@ -136,7 +140,7 @@ export function campaignConsistency(campaign: CampaignFile): Issue[] {
     }
   }
   for (const arm of campaign.arms) {
-    if (!HARNESS_FREE_ARMS.includes(arm) && campaign.harnesses[arm] === undefined) {
+    if (!HARNESS_FREE_ARMS.includes(arm) && !Object.hasOwn(campaign.harnesses, arm)) {
       issue(['harnesses', arm], 'is required: every arm but baseline and baseline-docs pins a harness');
     }
   }
@@ -145,8 +149,8 @@ export function campaignConsistency(campaign: CampaignFile): Issue[] {
     if (s.model === campaign.models.default) {
       issue(['models', 'slices', index, 'model'], 'is the default model, so the slice repeats the campaign');
     }
-    for (const id of s.scenarios) {
-      for (const arm of s.arms) {
+    for (const id of s.scenarios.filter((id) => scenarios.has(id))) {
+      for (const arm of s.arms.filter((arm) => arms.has(arm))) {
         const key = `${s.model}/${id}/${arm}`;
         if (covered.has(key)) issue(['models', 'slices', index], `covers ${key} twice`);
         covered.add(key);
