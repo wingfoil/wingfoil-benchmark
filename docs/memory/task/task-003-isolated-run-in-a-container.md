@@ -59,7 +59,7 @@ Conventions from [adr-001](../adr/adr-001-w1-toolchain-and-runner-conventions.md
 
 - **`core/ports/`**: the port interfaces of REQ-ARC-04 and their process-calling implementations —
   `process.ts` (a thin `execFile` wrapper returning `{code, stdout, stderr}`), `docker.ts`
-  (`DockerPort`: `build`, `create`, `start`, `exec`, `remove`, `inspectMounts`) and `git.ts`
+  (`DockerPort`: `build`, `create`, `start`, `exec`, `remove`, `mountsOf`) and `git.ts`
   (`GitPort`: `init`, `commitAll`). They live in `core` because `scoring` will need Docker in W6 and
   may not import `runner` (REQ-ARC-02). `core` already reads files, so calling processes there is the
   same kind of boundary, kept behind one interface each.
@@ -73,9 +73,12 @@ Conventions from [adr-001](../adr/adr-001-w1-toolchain-and-runner-conventions.md
 
 ### Image (REQ-RUN-01)
 
-`docker/run-image/Dockerfile`, versioned, from `node:22-bookworm` pinned by digest
-(`sha256:ae9f58d5c9f5a537110310be6b3cf67cf9c67146a3bb9310c0cb515fe71c8392`, resolved with
-`docker manifest inspect` on 2026-09-23), plus `git`. Claude Code is installed at the campaign's
+`docker/run-image/Dockerfile`, versioned, from `node:22-bookworm` pinned by the digest of its
+**multi-architecture index** (`sha256:dd5847a04b0deee391fa145f1f4c6d214196668b6bcc7988ebed67249f226844`,
+resolved with `docker buildx imagetools inspect` on 2026-09-23), plus `git`. `docker manifest inspect`
+prints the per-architecture manifests, and pinning one of those would tie the benchmark to amd64.
+
+Claude Code is installed at the campaign's
 `agent.version` only when `agent.name` is `claude-code`; a `fake` campaign skips it, so W1 needs no
 agent package. The image is built once per campaign and tagged `<campaign-id>`; a second run reuses
 it.
@@ -85,17 +88,26 @@ it.
 For each scenario × arm × repetition (models: the campaign's default; slices are W5):
 
 1. **Workspace:** `runs/<campaign-id>/<n>/<scenario>@<version>/<arm>/<model>/r<k>/workspace`
-   (git-ignored). The seed is copied into it **without following symbolic links** (task-001's
-   follow-up), then the arm's environment: arm definitions arrive in W3, so W1 copies nothing.
-2. **Git:** `git init`, one commit `seed`, with the benchmark's own identity passed per command
-   (`-c user.name … -c user.email …`), so the host's configuration never leaks into a run.
+   (git-ignored), **removed before it is rebuilt**, so a run never inherits another's files or `.git`.
+   The seed is copied into it **without following symbolic links** (task-001's follow-up), then the
+   arm's environment: arm definitions arrive in W3, so W1 copies nothing. A seed that is itself a
+   symbolic link is refused.
+2. **Git:** `git init`, one commit `seed`, with the benchmark's own identity, no global or system
+   configuration (`GIT_CONFIG_GLOBAL=/dev/null`, `GIT_CONFIG_NOSYSTEM=1`), no commit template, no
+   hooks and no signing. All of it matters because `.git/` sits **inside the bind mount**: the host's
+   hooks and template files would otherwise be carried into the container, and a host that signs
+   commits would fail every seed commit.
 3. **Container:** created from the campaign image with the workspace as its **only** bind mount, at
-   `/workspace`, user `node`, no other host path. The hold-out is never mounted, whatever
+   `/workspace`, user `node`, no other host path. The runner then asks Docker what the container
+   actually holds (`mountsOf`) and fails the run if it is anything but that one mount: the check does
+   not trust what the runner asked for. The hold-out is never mounted, whatever
    `BENCH_HOLDOUT_PATH` says (REQ-CLI-10); the runner never reads that variable.
 4. **Steps:** the agent port runs each step in the container; the scripted fake agent executes the
    commands its script declares for that step. Per-step commits, diffs, usage and transcripts are W2
    (REQ-RUN-04, 05, 09).
-5. **Teardown:** the container is removed, whatever the outcome.
+5. **Teardown:** the container is removed, whatever the outcome, and a removal that fails is logged
+   without losing the run's result. Every failure — preparing the workspace, creating, starting, a
+   step — makes that one run `failed`; the campaign carries on (REQ-NFR-03).
 
 **Fake agent script (W1 seam).** The fake agent reads a JSON script from the path in
 `BENCH_FAKE_SCRIPT`: `{ "<scenario id>": { "<step n>": ["<shell command>", …] } }`. It is a seam for
@@ -105,11 +117,13 @@ not a silent no-op, so a test cannot pass by doing nothing.
 ### `bench campaign run <file>` (REQ-CLI-03, partly)
 
 - Validates the campaign and its scenarios (`checkCampaign`), then runs it.
-- **Refuses any agent other than `fake`** with `agent 'claude-code' is not available yet`, exit 1
+- **Refuses any agent other than `fake`** with `agent '<name>' is not available yet: W1 runs the
+  scripted fake agent`, exit 1
   (adr-001 default 7). This is what keeps a real agent from starting before W2, and it is the reason
   this task can be developed without spending a token.
 - Estimate, warning, ceiling and the `--holdout` surface are W5 (F1.2, F1.3).
-- Prints one line per run and a final summary; exit 0 when every run completed, 1 otherwise.
+- Prints one line per run and a final summary on stdout, failures on stderr; exit 0 when every run
+  completed, 1 otherwise.
 - Creates `results/<campaign-id>/<n>/` with a copy of the campaign file (REQ-FMT-06's first bullet),
   `n` from `nextExecution`. The rest of the results layout is W7 (F5.1).
 
@@ -123,8 +137,10 @@ not a silent no-op, so a test cannot pass by doing nothing.
   handling; the CLI's refusal of a non-`fake` agent.
 - **Integration** (`test/docker/run.test.ts`, `npm run test:docker`, outside `npm test` and coverage):
   the real Docker runs T0 from `test/fixtures/campaigns/smoke.yaml` and asserts the file the step was
-  asked to create exists in the workspace, that the container is gone afterwards, and that its only
-  mount was the workspace. This run is the evidence of W1's "Ends with".
+  asked to create exists in the workspace, that the workspace is a git repository, that the execution
+  was recorded, that no container is left and that the image carries the campaign's identity. The
+  mount check runs inside the run itself (step 3 above), not after it: by then the container is gone.
+  This run is the evidence of W1's "Ends with".
 
 ## Execution notes
 
@@ -154,6 +170,38 @@ not a silent no-op, so a test cannot pass by doing nothing.
   with the expected content, the workspace is a git repository, `results/<id>/1/campaign.yaml` exists,
   no container is left behind, and the image is tagged with the campaign's identity.
 - **REQ-ARC-05:** `.wingfoil/dna.yaml` lists `agents` and `runner` (hand edit, N14).
+
+### Review, round 1
+
+- **Reviewer:** an independent reviewer that did not write the code, read-only, every finding proven by
+  a probe, with the checklist run on an export of HEAD.
+- **Result:** 1 blocker, 8 majors, 9 minors and nits.
+- **Blocker, and my own gap:** `npm run test:bin` was red at HEAD — the usage grew a second line when
+  `campaign run` arrived, and that suite runs outside `npm test`. I had not run it in this task. It is
+  part of the checklist from now on.
+- **Majors fixed** (red `e3cacce`, `88b3dc3`, then `a0fb2fb`, `3cec00e`):
+  1. a failure in `prepareWorkspace`, `create` or `remove` threw out of `runCampaign` and ended the
+     whole campaign (REQ-NFR-03); all of it now happens inside the run, and a failed run is a result;
+  2. a workspace was reused as it stood, keeping the previous run's files and `.git`; it is now removed
+     first, which is what REQ-RUN-02's "fresh workspace" means;
+  3. the host's git configuration reached `.git/` **inside the bind mount** (templates, hooks), and a
+     host with `commit.gpgsign` would have failed every seed commit;
+  4. `models.default` reached run paths, container names and the `--mount` value unchecked: `../..`
+     escaped `runs/`, and a colon or a comma broke Docker;
+  5. `packageRoot()` used `URL.pathname`, so a checkout path with a space broke the image build;
+  6. the base image was pinned to the amd64 manifest rather than the multi-architecture index;
+  7. the `@F2.1 @error` assertion was vacuous — the double answered from its own argument. The double
+     now derives its mounts from the recorded request, and the runner checks the container's mounts
+     against Docker itself;
+  8. the W1 "Ends with" was not recorded in `rel-v0-1` (done in the deliver phase).
+- **Minors and nits fixed:** a symlinked seed silently produced an empty workspace; `mountsOf` had no
+  production caller and is now the isolation check; the Design overstated what the Docker test asserts;
+  the DNA's `cli` description was stale; run failures went to stdout; two exports had no caller; the
+  fake agent's script is size-capped; the campaign carries its own `repoRoot`; the refusal message
+  matches the Design; `exec`'s behaviour on Docker errors is documented.
+- **Open, for the approver:** adr-001 default 5 says Claude Code is "installed and never invoked in
+  W1". The image installs it only for a `claude-code` campaign, which W1 refuses, so W1 installs
+  nothing at all. The ADR asks for a new ADR when a default changes.
 
 ### WingFoil commands (declared vs observed)
 
