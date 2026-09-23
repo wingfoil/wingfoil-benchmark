@@ -100,7 +100,9 @@ For each scenario × arm × repetition (models: the campaign's default; slices a
 3. **Container:** created from the campaign image with the workspace as its **only** bind mount, at
    `/workspace`, user `node`, no other host path. The runner then asks Docker what the container
    actually holds (`mountsOf`) and fails the run if it is anything but that one mount: the check does
-   not trust what the runner asked for. The hold-out is never mounted, whatever
+   not trust what the runner asked for. It is defence in depth, not a proof of isolation: Docker's
+   `.Mounts` shows binds, volumes and tmpfs, but not what the daemon injects itself (`/etc/hosts`,
+   `/etc/resolv.conf`, `/etc/hostname`) nor devices or shared namespaces. The hold-out is never mounted, whatever
    `BENCH_HOLDOUT_PATH` says (REQ-CLI-10); the runner never reads that variable.
 4. **Steps:** the agent port runs each step in the container; the scripted fake agent executes the
    commands its script declares for that step. Per-step commits, diffs, usage and transcripts are W2
@@ -175,7 +177,7 @@ not a silent no-op, so a test cannot pass by doing nothing.
 
 - **Reviewer:** an independent reviewer that did not write the code, read-only, every finding proven by
   a probe, with the checklist run on an export of HEAD.
-- **Result:** 1 blocker, 8 majors, 9 minors and nits.
+- **Result:** 1 blocker, 8 majors, 9 minors, 2 nits.
 - **Blocker, and my own gap:** `npm run test:bin` was red at HEAD — the usage grew a second line when
   `campaign run` arrived, and that suite runs outside `npm test`. I had not run it in this task. It is
   part of the checklist from now on.
@@ -193,15 +195,41 @@ not a silent no-op, so a test cannot pass by doing nothing.
   7. the `@F2.1 @error` assertion was vacuous — the double answered from its own argument. The double
      now derives its mounts from the recorded request, and the runner checks the container's mounts
      against Docker itself;
-  8. the W1 "Ends with" was not recorded in `rel-v0-1` (done in the deliver phase).
+  8. **deferred, not fixed:** the W1 "Ends with" is recorded in `rel-v0-1` in the deliver phase, once
+     the task is approved.
 - **Minors and nits fixed:** a symlinked seed silently produced an empty workspace; `mountsOf` had no
   production caller and is now the isolation check; the Design overstated what the Docker test asserts;
-  the DNA's `cli` description was stale; run failures went to stdout; two exports had no caller; the
+  run failures went to stdout; two exports had no caller; the
   fake agent's script is size-capped; the campaign carries its own `repoRoot`; the refusal message
   matches the Design; `exec`'s behaviour on Docker errors is documented.
 - **Open, for the approver:** adr-001 default 5 says Claude Code is "installed and never invoked in
   W1". The image installs it only for a `claude-code` campaign, which W1 refuses, so W1 installs
   nothing at all. The ADR asks for a new ADR when a default changes.
+
+### Review, round 2
+
+- **Result:** the blocker and 7 of 8 majors confirmed fixed (the eighth is deferred by design);
+  2 new majors, 2 minors, 4 nits; the whole checklist green on an export of HEAD.
+- **Corrections to my round-1 notes**, all three found by the reviewer:
+  - the DNA's `cli` description was listed as fixed and was not — the edit had never reached the file;
+    it is fixed now;
+  - the `rel-v0-1` record was listed under "fixed" while it is deferred to the deliver phase;
+  - the finding count was wrong (9 minors and 2 nits, not "9 minors and nits").
+- **New majors fixed** (red `2c8e029`, then `f795242`):
+  1. a `docker build` that fails — the daemon not running is the ordinary case — still threw out of the
+     command: the user got a stack trace. It is now one line on stderr and exit 1;
+  2. the git isolation missed the host's `GIT_*` **variables**, which beat `-c` settings:
+     `GIT_TEMPLATE_DIR` still copied host files and a `pre-commit` hook into `.git/` inside the bind
+     mount, and `GIT_AUTHOR_*` replaced the fixed identity. My first attempt set `GIT_DIR` and its
+     siblings to the empty string, which made `git init` fail with code 128: git refuses an empty
+     `GIT_DIR` instead of ignoring it. They are now **removed** from the environment. Verified against
+     real git with a hostile template and identity: no host file in `.git`, no hooks directory, author
+     `WingFoil Benchmark <benchmark@localhost>`.
+- **Minors fixed:** a checkout path holding a comma or an equals sign broke the `--mount` value and is
+  now refused; model ids may not hold `..` and are bounded in length.
+- **Documented:** the mount check is defence in depth, not a proof (the Design says what it cannot
+  see). A half-prepared workspace survives a failed run on purpose, as debris to look at; the next
+  execution removes it.
 
 ### WingFoil commands (declared vs observed)
 
