@@ -1,4 +1,4 @@
-import { checkCampaign } from './campaign.js';
+import { checkCampaign } from '../runner/index.js';
 
 /** Where the command writes its output; the bin passes the process streams, tests capture them. */
 export interface Io {
