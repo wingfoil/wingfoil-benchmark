@@ -190,6 +190,11 @@ describe('loadCampaign', () => {
     },
   );
 
+  it('names a harness that pins no version', () => {
+    const yaml = withField(['harnesses', 'wingfoil'], { tool: 'wingfoil' });
+    expect(issuesOf(yaml)).toEqual([{ path: 'harnesses.wingfoil.version', message: 'is required' }]);
+  });
+
   it('names a missing nested field', () => {
     expect(issuesOf(withField(['agent', 'version'], undefined))).toEqual([
       { path: 'agent.version', message: 'is required' },

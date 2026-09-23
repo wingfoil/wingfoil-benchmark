@@ -40,4 +40,11 @@ describe('nextExecution', () => {
     writeFileSync(join(root, 'abc'), '');
     expect(() => nextExecution(root, 'abc')).toThrow(/results directory .*abc/);
   });
+
+  it('ignores a broken symbolic link', () => {
+    const root = tempDir('bench-results-');
+    mkdirSync(join(root, 'abc', '1'), { recursive: true });
+    symlinkSync(join(root, 'gone'), join(root, 'abc', '7'));
+    expect(nextExecution(root, 'abc')).toBe(2);
+  });
 });
