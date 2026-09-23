@@ -75,7 +75,7 @@ Conventions from [adr-001](../adr/adr-001-w1-toolchain-and-runner-conventions.md
 
 | Field | Rule |
 |---|---|
-| `harnesses` | map arm → `{ tool, version, commit? }`; **one entry per arm except `baseline` and `baseline-docs`, which must have none** (dl-003); `version` is a released version (semver, optionally `v`-prefixed, no leading zeros) or a commit SHA (7–40 hex); `commit`, when given, is a 40-hex SHA that starts with `version` when `version` is a SHA; `latest`, branch names, ranges and a version YAML reads as a number are rejected with a message naming the arm and the field |
+| `harnesses` | map arm → `{ tool, version, commit? }`; **one entry per arm except `baseline` and `baseline-docs`, which must have none** (dl-003, checked with `Object.hasOwn`, so an arm named after a property of `Object.prototype` cannot inherit one); `version` is a released version (semver with optional prerelease and build metadata, optionally `v`-prefixed, no leading zeros) or a commit SHA (7–40 hex); `commit`, when given, is a 40-hex SHA that starts with `version` when `version` is a SHA; `latest`, branch names, ranges and a version YAML reads as a number are rejected with a message naming the arm and the field |
 | `scenarios` | non-empty list of `{ id, version }` (the scenario id and version patterns of task-001), no duplicates |
 | `arms` | non-empty list of kebab-case names, no duplicates, **must include `baseline`** (T7) |
 | `agent` | `{ name, version }`; `name` is `claude-code` or `fake` (adr-001 default 7); `version` is a released version (semver), never `latest` |
@@ -166,8 +166,8 @@ against directories yet.
   test is committed before the code that makes it pass, and each red run is quoted in these notes.
 - **Bin check (after `npm run build`):** `npx bench campaign validate test/fixtures/campaigns/smoke.yaml`
   → `campaign 9491f7cd4bb7 is valid (…)`, exit 0; the same command on a scenario file → one line per
-  issue, exit 1; `npx bench` → the usage, exit 2. npm runs the bin although `tsc` does not make it
-  executable.
+  issue, exit 1; `npx bench` → the usage, exit 2. (This note first claimed the bin ran although `tsc`
+  does not make it executable; review round 1 disproved it.)
 
 ### Review, round 1
 
@@ -190,11 +190,39 @@ against directories yet.
   files outside `campaigns/`; `nextExecution` and symlinks, unsafe integers and unreadable
   directories; `--help` treated as a usage error and empty or option-like file arguments; exports
   nothing used; missing doc comments; the "code point" claim about the key order, which is UTF-16.
-- **Characterization tests added after the code:** an astral-plane key in `canonicalJson`, a harness
-  without a version, a broken symlink in `nextExecution`.
+- **Characterization tests:** a harness without a version and a broken symlink in `nextExecution`
+  (both added after the code, to cover a branch); the astral-plane key in `canonicalJson` is in the
+  red commit `762733a`, where it already passed.
 - **Checklist (at `aaf940f`):** `npm test` 227/227; coverage 100% statements, lines and functions,
   99.5% branches (the one branch left is task-001's guard in the lint rule); `npm run lint` and
   `tsc --noEmit` clean; `npm run test:bin` 4/4 against the built bin.
+
+### Review, round 2
+
+- **Result:** 1 major, 3 minors, 6 nits; the blocker and 11 of 12 round-1 findings confirmed fixed.
+- **Major, and the lesson of this task:** `npm run lint` failed on the **committed** tree, because
+  `eslint.config.js` (the Node globals for `scripts/`) was only in the working tree. Every "lint
+  clean" claim before that was true of the working tree, not of what a reviewer would check out.
+  Fixed (`94bd009`, `a3ed293`), and from now on the review checklist is run on an export of HEAD
+  (`git archive HEAD | tar -x -C <dir>`, `node_modules` symlinked): lint 0, tests 230/230 there.
+- **Fixed** (red `6ed171f`, `cf43252`, then `787e1bf`, `4b08d4b`):
+  - an arm named `constructor` inherited a harness from `Object.prototype`, so the coverage rule was
+    bypassed: now `Object.hasOwn`;
+  - a validated `version` was typed `unknown`, so task-003 would have had to cast the pin: the schema
+    now states it is a string, which the type-check enforces;
+  - slice coverage cascaded onto scenarios and arms already reported;
+  - build metadata (`1.2.3+build`) is valid semver and is now accepted;
+  - the bin script explains a missing `dist/`;
+  - the bin test asserts the mode straight after an explicit build, because `npx` repairs the mode
+    itself in some layouts and could hide a build that does not set it.
+- **Documented, not changed:** a campaign with only `baseline` and `baseline-docs` pins no harness,
+  although baseline-docs is generated from the wingfoil arm's configuration (W3, F2.5, closes this);
+  hex words that are also branch names stay accepted (dl-003).
+- **Open, for the approver:** dl-003 is `pending`, and the validator is already stricter than
+  REQ-FMT-01 1.1. Its amendments (requirements 1.2, features 1.3) follow its approval.
+- **Checklist (at `4b08d4b`, on an export of HEAD):** `npm test` 232/232; coverage 100% statements,
+  lines and functions, 99.5% branches; `npm run lint` and `tsc --noEmit` clean; `npm run test:bin`
+  4/4 against the built bin.
 
 ### WingFoil commands (declared vs observed)
 
