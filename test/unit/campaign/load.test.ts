@@ -64,6 +64,34 @@ describe('loadCampaign', () => {
     ]);
   });
 
+  it('requires a harness for an arm whose name is a property of Object.prototype', () => {
+    const yaml = completeCampaignYaml();
+    yaml.arms = ['baseline', 'constructor'];
+    yaml.harnesses = {};
+    expect(issuesOf(yaml)).toEqual([
+      {
+        path: 'harnesses.constructor',
+        message: 'is required: every arm but baseline and baseline-docs pins a harness',
+      },
+    ]);
+  });
+
+  it('gives a validated harness version the type of a string', () => {
+    const result = loadCampaign(writeRepo().file);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const version: string = result.value.spec.harnesses.wingfoil?.version ?? '';
+    expect(version).toBe('3df305e');
+  });
+
+  it('does not repeat itself about scenarios a slice names that do not exist', () => {
+    const slice = { model: 'claude-opus-5', scenarios: ['S9'], arms: ['baseline'], repetitions: 1 };
+    expect(paths(withField(['models', 'slices'], [slice, { ...slice }]))).toEqual([
+      'models.slices[0].scenarios[0]',
+      'models.slices[1].scenarios[0]',
+    ]);
+  });
+
   it.each([['baseline'], ['baseline-docs']])('rejects a harness on the %s arm', (arm) => {
     const yaml = completeCampaignYaml();
     yaml.harnesses = {

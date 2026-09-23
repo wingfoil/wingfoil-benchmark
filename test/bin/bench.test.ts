@@ -24,9 +24,13 @@ describe('the built bench command', () => {
     }
   }
 
-  it('is executable', () => {
+  it('is executable straight after the build', () => {
+    // Checked before any npx call: npx repairs the mode itself in some layouts, which would hide
+    // a build that does not set it.
     const bin = join(REPO_ROOT, 'dist/cli/main.js');
+    execFileSync('npm', ['run', 'build'], { cwd: REPO_ROOT, encoding: 'utf8' });
     expect(statSync(bin).isFile()).toBe(true);
+    expect(statSync(bin).mode & 0o111).toBe(0o111);
     expect(() => accessSync(bin, constants.X_OK)).not.toThrow();
   });
 
