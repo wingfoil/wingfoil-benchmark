@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { accessSync, constants, statSync } from 'node:fs';
+import { accessSync, constants, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
 
@@ -28,6 +28,9 @@ describe('the built bench command', () => {
     // Checked before any npx call: npx repairs the mode itself in some layouts, which would hide
     // a build that does not set it.
     const bin = join(REPO_ROOT, 'dist/cli/main.js');
+    // From scratch: tsc keeps the mode of a file it overwrites, so an already executable dist/ would
+    // hide a build that does not set it.
+    rmSync(join(REPO_ROOT, 'dist'), { recursive: true, force: true });
     execFileSync('npm', ['run', 'build'], { cwd: REPO_ROOT, encoding: 'utf8' });
     expect(statSync(bin).isFile()).toBe(true);
     expect(statSync(bin).mode & 0o111).toBe(0o111);

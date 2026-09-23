@@ -49,8 +49,10 @@ const harness = z
     commit: z.string().regex(FULL_SHA, 'must be a 40-character commit SHA').optional(),
   })
   .superRefine((entry, ctx) => {
-    const version: string = entry.version;
-    if (entry.commit === undefined || !FULL_SHA.test(entry.commit)) return;
+    // `version` is typed string by the transform, but this check also runs when the version failed
+    // its own check, so the value may be anything the file held.
+    const version: unknown = entry.version;
+    if (typeof version !== 'string' || entry.commit === undefined || !FULL_SHA.test(entry.commit)) return;
     if (FULL_SHA.test(version.padEnd(40, '0')) && !entry.commit.startsWith(version)) {
       ctx.addIssue({ code: 'custom', path: ['commit'], message: `must start with the version '${version}'` });
     }
