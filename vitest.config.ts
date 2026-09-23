@@ -3,7 +3,7 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     include: ['test/**/*.test.ts'],
-    exclude: ['test/docker/**'],
+    exclude: ['test/docker/**', 'test/bin/**'],
     coverage: {
       provider: 'v8',
       include: ['src/**/*.ts', 'eslint/**/*.js'],
