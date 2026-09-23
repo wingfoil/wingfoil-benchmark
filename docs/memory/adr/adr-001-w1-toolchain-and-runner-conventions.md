@@ -69,6 +69,20 @@ approver's decision together with this ADR.
    proposed with the defaults. Its one choice beyond "latest" is TypeScript 6.0.3 instead of 7.0.2,
    because typescript-eslint 8.70.1 requires `typescript <6.1.0`.
 
+## Amendment 1 (W1 task-003 review, 2026-09-23)
+
+**Default 5, when Claude Code is installed.** The quoted default says the agent is "installed and
+never invoked in W1". The run image installs it **only when the campaign names it** (`agent.name ==
+claude-code`), and `bench campaign run` refuses such a campaign in W1, so W1 installs no agent at
+all: a `fake` campaign builds an image with nothing but Node and git.
+
+The intent is unchanged — no agent runs in W1 — and the result is stricter: nothing is downloaded, the
+image builds faster, and an agent cannot be present by accident. From W2, when the Claude Code adapter
+exists (F2.3), a campaign naming `claude-code` installs it at the version it pins (REQ-RUN-16).
+
+Recorded as an amendment rather than a superseding ADR, because it clarifies one default rather than
+changing the direction of the decision.
+
 ## Consequences
 
 - Every later task inherits these conventions. Changing one is a new ADR that supersedes this one.

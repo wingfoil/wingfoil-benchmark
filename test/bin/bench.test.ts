@@ -57,6 +57,7 @@ describe('the built bench command', () => {
 
   it('exits 2 with the usage when called without arguments', () => {
     const { status, stderr } = bench();
-    expect({ status, stderr }).toEqual({ status: 2, stderr: 'usage: bench campaign validate <file>\n' });
+    expect(status).toBe(2);
+    expect(stderr).toMatch(/^usage: bench campaign validate <file>\n\s+bench campaign run <file>\n$/);
   });
 });
