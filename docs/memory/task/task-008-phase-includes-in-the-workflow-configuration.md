@@ -2,7 +2,7 @@
 id: task-008-phase-includes-in-the-workflow-configuration
 type: task
 title: "Phase includes in the workflow configuration"
-status: pending
+status: backlog
 release: v0.1
 wave: W2
 features: []
