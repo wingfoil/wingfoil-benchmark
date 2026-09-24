@@ -2,7 +2,7 @@
 id: bug-002-ingest-workflows-declare-no-actions
 type: bug
 title: "The three ingest workflows declare no actions, so nothing knows what they create"
-status: pending
+status: approved
 ---
 
 ## Context
