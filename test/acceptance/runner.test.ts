@@ -91,6 +91,7 @@ describe('runner.feature', () => {
       expect(Object.keys(request).sort()).toEqual([
         'model',
         'prompt',
+        'remainingCostUsd',
         'run',
         'scenarioId',
         'sessionId',

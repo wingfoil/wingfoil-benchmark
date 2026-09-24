@@ -1,9 +1,12 @@
+import { dirname } from 'node:path';
+
 import { loadFakeScript } from '../agents/index.js';
 import type { AgentPort } from '../agents/index.js';
 import { fakeAgent } from '../agents/index.js';
 import { dockerCli, gitCli, reasonOf, systemProcess } from '../core/index.js';
 import type { DockerPort, GitPort, Issue, Result } from '../core/index.js';
 import { checkCampaign, runCampaign } from '../runner/index.js';
+import type { CheckedCampaign } from '../runner/index.js';
 
 /** Where the command writes its output; the bin passes the process streams, tests capture them. */
 export interface Io {
@@ -78,7 +81,7 @@ async function runCampaignCommand(file: string, io: Io, ports?: Ports): Promise<
     return EXIT.failure;
   }
 
-  const resolved = ports ? { ok: true as const, value: ports } : realPorts();
+  const resolved = ports ? { ok: true as const, value: ports } : realPorts(checked.value);
   if (!resolved.ok) return report(resolved.issues, io);
 
   let summary;
@@ -97,8 +100,11 @@ async function runCampaignCommand(file: string, io: Io, ports?: Ports): Promise<
   return summary.completed ? EXIT.ok : EXIT.failure;
 }
 
-/** The real ports, with the fake agent's script read from the environment. */
-export function realPorts(): Result<Ports> {
+/**
+ * The real ports, with the fake agent's script read from the environment. The campaign is already
+ * checked by the time this runs, so the fake is given the currency rate it needs to report a cost.
+ */
+export function realPorts(campaign: CheckedCampaign): Result<Ports> {
   const script = process.env[FAKE_SCRIPT_VARIABLE];
   if (script === undefined) {
     return {
@@ -110,7 +116,14 @@ export function realPorts(): Result<Ports> {
   if (!loaded.ok) return loaded;
   return {
     ok: true,
-    value: { docker: dockerCli(systemProcess), git: gitCli(systemProcess), agent: fakeAgent(loaded.value) },
+    value: {
+      docker: dockerCli(systemProcess),
+      git: gitCli(systemProcess),
+      agent: fakeAgent(loaded.value, {
+        dir: dirname(script),
+        usdToEur: campaign.campaign.spec.currency.usd_to_eur,
+      }),
+    },
   };
 }
 

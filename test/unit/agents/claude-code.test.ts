@@ -8,7 +8,9 @@ import { tempDir } from '../../support/scenario-fixture.js';
 
 /** A stream recorded from the real agent during the W2 spike (task-004). */
 function recorded(name: string): string[] {
-  return readFileSync(repoPath(join('test/fixtures/sessions', name)), 'utf8').split('\n').filter(Boolean);
+  return readFileSync(repoPath(join('test/fixtures/sessions', name)), 'utf8')
+    .split('\n')
+    .filter(Boolean);
 }
 
 /** The campaign rate of the fixtures: 0.92 € per $. */

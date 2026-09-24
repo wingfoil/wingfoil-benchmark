@@ -145,7 +145,13 @@ async function executeRun(context: RunContext, options: RunnerOptions): Promise<
     await assertOnlyWorkspaceMounted(container, workspace, options);
     await options.docker.start(container);
     for (const step of scenario.steps) {
-      steps.push(await executeStep(step, { container, workspace, outputDir, scenario, model }, options));
+      steps.push(
+        await executeStep(
+          step,
+          { container, workspace, outputDir, scenario, model, remainingCostUsd: remaining(campaign, steps) },
+          options,
+        ),
+      );
     }
     return { ...identity, steps, outcome: 'completed' };
   } catch (error) {
@@ -164,6 +170,18 @@ interface StepContext {
   readonly outputDir: string;
   readonly scenario: Scenario;
   readonly model: string;
+  /** What is left of the run's cost cap, in USD, for `--max-budget-usd` (REQ-RUN-04). */
+  readonly remainingCostUsd: number;
+}
+
+/**
+ * What a run may still spend, in USD: its cap less what its steps have already reported, converted
+ * with the campaign's rate. Enforcing it is F1.3 (W5); W2 only tells the agent what it is.
+ */
+function remaining(campaign: CheckedCampaign['campaign'], steps: readonly StepOutcome[]): number {
+  const { caps, currency } = campaign.spec;
+  const spentEur = steps.reduce((total, step) => total + step.usage.costEur, 0);
+  return Math.max(0, (caps.run_cost_eur - spentEur) / currency.usd_to_eur);
 }
 
 /**
@@ -177,7 +195,7 @@ async function executeStep(
   context: StepContext,
   options: RunnerOptions,
 ): Promise<StepOutcome> {
-  const { container, workspace, outputDir, scenario, model } = context;
+  const { container, workspace, outputDir, scenario, model, remainingCostUsd } = context;
   const number = stepNumber(step.n);
   let prompt: string;
   try {
@@ -195,6 +213,7 @@ async function executeStep(
     prompt,
     model,
     sessionId,
+    remainingCostUsd,
     run: (command) => options.docker.exec(container, command),
   });
   if (outcome.sessionId !== sessionId) {

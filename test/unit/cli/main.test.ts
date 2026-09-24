@@ -185,6 +185,20 @@ describe('checkCampaign', () => {
 describe('realPorts', () => {
   const variable = 'BENCH_FAKE_SCRIPT';
 
+  /** A checked campaign, which `realPorts` needs for the campaign's currency rate. */
+  function campaign() {
+    const yaml = completeCampaignYaml();
+    yaml.harnesses = {};
+    yaml.arms = ['baseline'];
+    yaml.scenarios = [{ id: 'S1', version: '1.0' }];
+    yaml.repetitions = { S1: 1 };
+    yaml.agent = { name: 'fake', version: '1.0.0' };
+    yaml.models = { default: 'fake-model' };
+    const checked = checkCampaign(writeRepo(yaml, ['S1@1.0']).file);
+    if (!checked.ok) throw new Error('the fixture campaign must be valid');
+    return checked.value;
+  }
+
   function withScript<T>(value: string | undefined, body: () => T): T {
     const previous = process.env[variable];
     if (value === undefined) Reflect.deleteProperty(process.env, variable);
@@ -198,21 +212,21 @@ describe('realPorts', () => {
   }
 
   it('asks for the fake agent script when the variable is not set', () => {
-    const result = withScript(undefined, () => realPorts());
+    const result = withScript(undefined, () => realPorts(campaign()));
     expect(result.ok ? [] : result.issues).toEqual([
       { path: variable, message: "is not set: it holds the fake agent's script" },
     ]);
   });
 
   it('reports a script that cannot be read', () => {
-    const result = withScript(join(tempDir('bench-script-'), 'missing.json'), () => realPorts());
+    const result = withScript(join(tempDir('bench-script-'), 'missing.json'), () => realPorts(campaign()));
     expect(result.ok ? [] : result.issues.map((issue) => issue.path)).toEqual(['missing.json']);
   });
 
   it('builds the Docker, git and agent ports from a valid script', () => {
     const file = join(tempDir('bench-script-'), 'script.json');
     writeFileSync(file, JSON.stringify({ T0: { '1': { commands: ['true'] } } }));
-    const result = withScript(file, () => realPorts());
+    const result = withScript(file, () => realPorts(campaign()));
     expect(result.ok && Object.keys(result.value).sort()).toEqual(['agent', 'docker', 'git']);
   });
 });
