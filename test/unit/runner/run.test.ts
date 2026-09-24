@@ -275,4 +275,25 @@ describe('runCampaign', () => {
 
     expect(summary.runs[0]?.error).toBe('the agent said no');
   });
+  it('fails the run when a step prompt cannot be read', async () => {
+    const { checked, root } = checkedCampaign();
+    rmSync(join(root, 'scenarios', 'S1', '1.0', 'prompts', '01.md'));
+    const ports = doubles();
+
+    const summary = await runCampaign(checked, ports);
+
+    expect(summary.runs[0]?.outcome).toBe('failed');
+    expect(summary.runs[0]?.error).toMatch(/prompts\/01\.md/);
+    expect(ports.recorded.steps).toEqual([]);
+  });
+
+  it('fails the run when the agent answers with a session it was not given', async () => {
+    const { checked } = checkedCampaign();
+    const ports = doubles({ sessionOf: () => 'a-session-of-its-own' });
+
+    const summary = await runCampaign(checked, ports);
+
+    expect(summary.runs[0]?.outcome).toBe('failed');
+    expect(summary.runs[0]?.error).toMatch(/a-session-of-its-own/);
+  });
 });

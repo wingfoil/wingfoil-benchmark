@@ -34,6 +34,8 @@ export function doubles(
   options: {
     execResult?: ProcessResult;
     onStep?: (request: StepRequest) => void;
+    /** The session the agent answers with; by default the one it was given (F2.2). */
+    sessionOf?: (request: StepRequest) => string;
     /** Makes one Docker or git call fail, to exercise a run that breaks outside its steps. */
     failing?: { call: 'create' | 'start' | 'remove' | 'init'; error: string };
   } = {},
@@ -92,12 +94,13 @@ export function doubles(
       recorded.gitCalls.push(`commit ${directory} ${message}`);
       return Promise.resolve();
     },
+    patchOf: (directory, ref) => Promise.resolve(`patch of ${directory} at ${ref}\n`),
   };
   const agent: AgentPort = {
     runStep: (request): Promise<StepOutcome> => {
       recorded.steps.push(request);
       options.onStep?.(request);
-      return Promise.resolve({ commands: [`step ${request.step}`] });
+      return Promise.resolve({ sessionId: options.sessionOf?.(request) ?? request.sessionId });
     },
   };
   return { docker, git, agent, recorded };
