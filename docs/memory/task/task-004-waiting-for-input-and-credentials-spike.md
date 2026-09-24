@@ -449,3 +449,16 @@ answered with evidence (Spike sections above), no credential value in the reposi
 notes, dl-004 and adr-002 written and approved, requirements amended to 1.3, and the four suites
 green — `npm test` 309, `test:bin` 4, `test:docker` 1, `lint` clean but for one warning that predates
 the task. The spike spent **0.1266 USD** of a 1.00 USD ceiling.
+
+### Approved
+
+- `npx wingfoil memory approve task-004-waiting-for-input-and-credentials-spike --reason "…"` →
+  `8eea973`, after the approver's explicit consent in chat. Declared: `in-review → approved` gate,
+  approver role checked, subject with `[from → to]`, `Approver:`/`Reason:` body, only `status`
+  changed. Observed: exit 0, empty stderr, the declared subject and both trailers, a one-line diff.
+  Matches.
+- **Carried into task-007:** the classifier's pattern list rests on two observed messages. The
+  approval reason records that more material is expected from task-007's own tests, and dl-004's
+  versioning is what makes revising it visible rather than silent.
+- **Carried into task-006:** decisions 1–10 of adr-002, and the finding that `spikes/` already holds
+  a built image (`bench-spike-task-004`) and a working command line to start from.
