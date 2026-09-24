@@ -213,3 +213,39 @@ is not kept: one shape, changed in one place, with the fixtures updated with it.
   subject with `[from → to]`, `Approver:`/`Reason:` body, only `status` changed. Observed: exit 0,
   empty stderr, subject `wf(task): approve task-005-fresh-session-steps [pending → backlog]`,
   both trailers present, 1-line diff. Matches.
+- `npx wingfoil memory submit task-005-fresh-session-steps` → `28f2c6f`, on the branch
+  `task/task-005-fresh-session-steps`. Declared: `in-progress → in-review`, a gate the approver
+  decides, one commit `wf(task): submit <id>`. Observed: exit 0, empty stderr, 1 file, diff limited to
+  `status: in-progress` → `status: in-review`. Matches.
+
+### For the reviewer
+
+The four criteria of the Acceptance criteria section, and where each is proved:
+
+| Criterion | Where |
+|---|---|
+| `@F2.2` one session per step, no state between them, a commit naming only the step number | `test/acceptance/runner.test.ts` |
+| REQ-RUN-05, the message is `step <NN>` and the patch is that commit's | the same test, plus the git port's unit tests |
+| REQ-RUN-05, a step that changed nothing is still committed | `test/unit/ports/docker.test.ts`, the `--allow-empty` call |
+| REQ-NFR-03, a failing step ends its run and not the campaign (characterization) | `test/unit/runner/run.test.ts`, unchanged from task-003 |
+
+Worth an adversarial look, in order of how much they would cost if wrong:
+
+1. **The session check** (`run.ts`, `executeStep`). It compares what the agent reported with what it
+   was given. If an adapter ever reports a session it did not actually use, the check passes and F2.2
+   is unguarded — the check is only as good as the adapter's honesty, and task-006 writes the first
+   real one.
+2. **The shape assertion** on a step request. It is a deliberate tripwire: adding a field to
+   `StepRequest` breaks it, which is the point. A reviewer should decide whether that is the right
+   trade for the friction it will cause in task-006 and task-007, which both add fields.
+3. **`--allow-empty` on every step commit**, including steps that did change something. It is
+   unconditional for simplicity; the alternative — ask git whether anything changed — is a second
+   call per step and a second thing to get wrong.
+4. **`patchOf` uses `HEAD`**, read immediately after the commit. Nothing else writes to that
+   repository between the two calls, but the coupling is implicit rather than stated in a type.
+5. **The prompt is read per step, per run.** A five-step scenario in three arms with three
+   repetitions reads the same five files 45 times. Cheap, but a reviewer may prefer it read once per
+   scenario — and may also argue that reading it per run is what makes a mid-campaign edit visible
+   rather than silently half-applied.
+
+Full suites at HEAD: `npm test` 316, `test:bin` 4, `test:docker` 1, `lint` clean.
