@@ -49,7 +49,7 @@ export interface StepResult {
   readonly n: number;
   /** The session the step ran in; every resume continued it. */
   readonly sessionId: string;
-  /** The sum over the step's invocations: a resume reports only its own usage (adr-002 decision 8). */
+  /** The step's invocations together: their work summed, and the session's latest cost. */
   readonly usage: SessionUsage;
   /** The invocations' transcripts, in order: a resume does not replay earlier turns (decision 10). */
   readonly transcript: readonly string[];
@@ -238,18 +238,28 @@ function remaining(campaign: CheckedCampaign['campaign'], spent: number): number
   return Math.max(0, (caps.run_cost_eur - spent) / currency.usd_to_eur);
 }
 
-/** The sum of two usages: a step's usage is that of all its invocations (adr-002 decision 8). */
-function addUsage(a: SessionUsage, b: SessionUsage): SessionUsage {
+/**
+ * A step's usage from its invocations (adr-002 decision 8 as corrected by task-007): the work of each
+ * is its own and is summed, while the cost each reports is the session's running total, so the step's
+ * cost is the largest seen. Summing it would count the step's first session again at every resume;
+ * taking the last would lose it when a resume ends with no result and reports nothing.
+ */
+function combine(a: SessionUsage, b: SessionUsage): SessionUsage {
   return {
     inputTokens: a.inputTokens + b.inputTokens,
     outputTokens: a.outputTokens + b.outputTokens,
     cacheCreationInputTokens: a.cacheCreationInputTokens + b.cacheCreationInputTokens,
     cacheReadInputTokens: a.cacheReadInputTokens + b.cacheReadInputTokens,
-    costUsd: a.costUsd + b.costUsd,
-    costEur: a.costEur + b.costEur,
+    costUsd: Math.max(a.costUsd, b.costUsd),
+    costEur: Math.max(a.costEur, b.costEur),
     turns: a.turns + b.turns,
     durationMs: a.durationMs + b.durationMs,
   };
+}
+
+/** The usage of a step's invocations so far. */
+function stepUsage(invocations: readonly StepOutcome[]): SessionUsage {
+  return invocations.map((invocation) => invocation.usage).reduce(combine);
 }
 
 /** How the policy names a kind in the log. */
@@ -328,7 +338,7 @@ async function executeStep(
       options.log?.(`step ${number}: intervention cap reached (${policy.maxInterventions})`);
       break;
     }
-    const left = remaining(campaign, spent + spentEur(invocations));
+    const left = remaining(campaign, spent + stepUsage(invocations).costEur);
     if (left <= 0) {
       error = `step ${number} not resumed: the run's cost cap is exhausted`;
       break;
@@ -370,7 +380,7 @@ async function executeStep(
   writeFileSync(join(stepDir, 'diff.patch'), scrub(patch, options.secrets ?? []));
   // What the step cost across its invocations, and the whole of what they said (REQ-RUN-09,
   // REQ-FMT-06). The transcript is git-ignored and scrubbed by the adapter (REQ-NFR-01, REQ-RES-06).
-  const usage = invocations.map((invocation) => invocation.usage).reduce(addUsage);
+  const usage = stepUsage(invocations);
   const transcript = invocations.flatMap((invocation) => invocation.transcript);
   writeFileSync(join(stepDir, 'usage.json'), `${JSON.stringify(usage, undefined, 2)}\n`);
   writeFileSync(join(stepDir, 'transcript.jsonl'), transcript.map((line) => `${line}\n`).join(''));

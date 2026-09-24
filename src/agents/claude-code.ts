@@ -55,7 +55,10 @@ function numberOf(value: unknown): number {
 
 function add(total: SessionUsage, event: Record<string, unknown>, usdToEur: number): SessionUsage {
   const usage = (event.usage ?? {}) as Record<string, unknown>;
-  const costUsd = total.costUsd + numberOf(event.total_cost_usd);
+  // A session's running total, not this invocation's: a resume reports what the whole session has
+  // cost so far (the spike's P6 = P4's cost + its own). Taking the largest is right for one session
+  // and never counts an earlier invocation twice.
+  const costUsd = Math.max(total.costUsd, numberOf(event.total_cost_usd));
   return {
     inputTokens: total.inputTokens + numberOf(usage.input_tokens),
     outputTokens: total.outputTokens + numberOf(usage.output_tokens),
@@ -80,9 +83,10 @@ function add(total: SessionUsage, event: Record<string, unknown>, usdToEur: numb
  *   and scoring it as a finished step would score truncated work as finished work;
  * - **a stream with no `result` event is a failed step**, not a step that used nothing. It is what a
  *   step killed by its cap leaves behind;
- * - **usage is summed over the events seen**, not taken from the last one: a step resumed by the
- *   neutral approver (REQ-RUN-07) reports its own usage per invocation, and reading only the last
- *   would under-report exactly the steps that needed an intervention.
+ * - **work is summed over the events seen; cost is not.** A resumed invocation (REQ-RUN-07) reports
+ *   its own tokens, turns and wall time, so reading only the last would under-report exactly the
+ *   steps that needed an intervention; but its `total_cost_usd` is the session's running total, so
+ *   summing it would count every earlier invocation again. The cost is the latest total.
  */
 export function readSession(lines: readonly string[], usdToEur: number): Session {
   let usage = ZERO;

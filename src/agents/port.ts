@@ -45,7 +45,11 @@ export interface ResumeRequest {
  */
 export interface StepOutcome {
   readonly sessionId: string;
-  /** What the step cost and how much work it did (REQ-RUN-09). */
+  /**
+   * How much work this invocation did, and what its **session** has cost so far (REQ-RUN-09). Tokens,
+   * turns and wall time are the invocation's own; the cost is the session's running total, which is
+   * what the agent reports on a resume. A fresh session's total is its own cost.
+   */
   readonly usage: SessionUsage;
   /** Every event of the step's stream, already scrubbed (REQ-NFR-01). */
   readonly transcript: readonly string[];
