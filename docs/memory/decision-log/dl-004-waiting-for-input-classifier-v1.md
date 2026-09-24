@@ -2,7 +2,7 @@
 id: dl-004-waiting-for-input-classifier-v1
 type: decision-log
 title: "Waiting-for-input classifier v1"
-status: pending
+status: approved
 ---
 
 ## Context
