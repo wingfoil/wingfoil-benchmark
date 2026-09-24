@@ -364,11 +364,28 @@ wording rather than imagining it.
 `modelUsage` keyed the same session under both `claude-haiku-4-5` and `claude-haiku-4-5-20251001`. A
 run's model must be recorded from the campaign's pin, not from the keys of `modelUsage`.
 
-#### What is still owed by this task
+#### The two documents, written
 
-- **dl-004**, the classifier v1, written from the wording above.
-- **adr-002**, the W2 conventions, including an **amendment proposal for REQ-RUN-15**: the long-lived
-  token in `ANTHROPIC_AUTH_TOKEN` as the default, the read-only mount kept as a documented variant
-  that needs the image to own `/home/node/.claude`. That is an approver's decision, not one to take
-  here.
+- **[dl-004](../decision-log/dl-004-waiting-for-input-classifier-v1.md)** — the classifier v1, written
+  from the wording above, with the real approval request kept in it as the test a trailing-question
+  rule alone would fail. It also proposes one clarifying sentence for requirements 1.3: "approval
+  patterns first" means matched **anywhere in the message**.
+- **[adr-002](../adr/adr-002-w2-runner-and-adapter-conventions.md)** — the W2 conventions. It keeps
+  the plan-phase defaults and the spike's findings apart, and carries two changes to what had been
+  agreed: the long-lived token becomes the authentication default (**an amendment to REQ-RUN-15,
+  proposed, not taken**), and the container keeps **exactly one mount**, which supersedes the
+  two-mount allow-list written into task-006's approval reason.
+
+Both are `pending`, awaiting the approver.
+
 - The probe container was removed; the image `bench-spike-task-004` is left for task-006 to reuse.
+- `npx wingfoil memory add --type decision-log --title "…"` → `1449744` and
+  `--type adr --title "…"` → `de85857`. Declared for each: one commit `wf(<type>): add <id>`, one new
+  file from that type's template, `status: draft`, id from the type's `id_pattern`. Observed: exit 0,
+  empty stderr, exactly that commit, 1 file, body identical to the template. Matches.
+- Bodies written and committed by hand in `docs(memory): dl-004 … and adr-002 …`, so that `submit`
+  carries only the state change (N13).
+- `npx wingfoil memory submit dl-004-…` → `1b170d0` and `submit adr-002-…` → `fa1e6e0`. Declared:
+  `draft → pending` on the default state machine, one commit per element with no bracket and no body.
+  Observed for each: exit 0, empty stderr, 1 file, diff limited to `status: draft` →
+  `status: pending`. Matches (subject without transition: N9).
