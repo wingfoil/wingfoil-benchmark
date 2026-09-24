@@ -16,7 +16,14 @@ const SCRIPT = {
 
 /** What the runner asks for: a fresh session per step (F2.2). */
 function request(step: number, run: (command: readonly string[]) => Promise<ProcessResult>) {
-  return { scenarioId: 'T0', step, prompt: `do step ${step}`, model: 'fake-model', sessionId: `session-${step}`, run };
+  return {
+    scenarioId: 'T0',
+    step,
+    prompt: `do step ${step}`,
+    model: 'fake-model',
+    sessionId: `session-${step}`,
+    run,
+  };
 }
 
 function scriptFile(content: unknown = SCRIPT): string {
@@ -94,8 +101,6 @@ describe('the scripted fake agent', () => {
 
   it('fails when a command fails, naming its output', async () => {
     const runner = exec([{ code: 2, stdout: '', stderr: 'boom' }]);
-    await expect(fakeAgent(SCRIPT).runStep(request(1, runner.run))).rejects.toThrow(
-      /touch hello.txt.*boom/s,
-    );
+    await expect(fakeAgent(SCRIPT).runStep(request(1, runner.run))).rejects.toThrow(/touch hello.txt.*boom/s);
   });
 });

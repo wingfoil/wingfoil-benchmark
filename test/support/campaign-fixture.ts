@@ -62,7 +62,10 @@ export function writeRepo(
   for (const entry of scenarios) {
     const [id = '', version = ''] = entry.split('@');
     const yaml = completeScenarioYaml(id, version, steps);
-    const files = [...COMPLETE_FILES.filter((file) => !file.startsWith('prompts/')), ...stepNumbers(steps).map(promptFile)];
+    const files = [
+      ...COMPLETE_FILES.filter((file) => !file.startsWith('prompts/')),
+      ...stepNumbers(steps).map(promptFile),
+    ];
     writeScenarioAt(join(root, 'scenarios'), yaml, files, id, version);
   }
   mkdirSync(join(root, 'campaigns'));

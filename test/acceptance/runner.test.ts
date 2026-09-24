@@ -37,7 +37,8 @@ describe('runner.feature', () => {
     // The workspace holds the seed, and nothing else: no oracle, no prompts, no runner code.
     expect(readdirSync(workspace).sort()).toEqual(['README.md']);
     expect(existsSync(join(workspace, 'oracle'))).toBe(false);
-    expect(recorded.gitCalls).toEqual([`init ${workspace}`, `commit ${workspace} seed`]);
+    // The run's repository starts from the seed and nothing else; the per-step commits are F2.2's.
+    expect(recorded.gitCalls.slice(0, 2)).toEqual([`init ${workspace}`, `commit ${workspace} seed`]);
     expect(recorded.removes).toEqual(['container-1']);
   });
 
@@ -87,7 +88,14 @@ describe('runner.feature', () => {
     // No conversation state is passed from one session to the next: the request has nowhere to put
     // it. Asserting the exact shape is what keeps a later change from quietly adding a history.
     for (const request of recorded.steps) {
-      expect(Object.keys(request).sort()).toEqual(['model', 'prompt', 'run', 'scenarioId', 'sessionId', 'step']);
+      expect(Object.keys(request).sort()).toEqual([
+        'model',
+        'prompt',
+        'run',
+        'scenarioId',
+        'sessionId',
+        'step',
+      ]);
     }
 
     // After each step the working tree is committed with a message naming only the step number.

@@ -211,7 +211,7 @@ describe('realPorts', () => {
 
   it('builds the Docker, git and agent ports from a valid script', () => {
     const file = join(tempDir('bench-script-'), 'script.json');
-    writeFileSync(file, JSON.stringify({ T0: { '1': ['true'] } }));
+    writeFileSync(file, JSON.stringify({ T0: { '1': { commands: ['true'] } } }));
     const result = withScript(file, () => realPorts());
     expect(result.ok && Object.keys(result.value).sort()).toEqual(['agent', 'docker', 'git']);
   });

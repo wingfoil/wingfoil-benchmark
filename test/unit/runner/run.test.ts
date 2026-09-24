@@ -266,7 +266,6 @@ describe('runCampaign', () => {
     const { checked } = checkedCampaign();
     const ports = doubles({
       onStep: () => {
-        // eslint-disable-next-line @typescript-eslint/only-throw-error
         throw 'the agent said no';
       },
     });

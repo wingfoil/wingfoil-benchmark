@@ -49,23 +49,36 @@ const ISOLATED_ENVIRONMENT = {
 /** REQ-ARC-04: git behind one interface. */
 export interface GitPort {
   init(directory: string): Promise<void>;
-  /** Stages everything and commits it. */
-  commitAll(directory: string, message: string): Promise<void>;
+  /**
+   * Stages everything and commits it. `allowEmpty` is what a step commit needs (REQ-RUN-05): a step
+   * that changed nothing is still a snapshot, and without it `git commit` fails and the step
+   * numbering skips exactly where an agent did nothing.
+   */
+  commitAll(directory: string, message: string, options?: { allowEmpty?: boolean }): Promise<void>;
+  /** The patch of one commit, for `steps/<NN>/diff.patch` (REQ-RUN-05). */
+  patchOf(directory: string, ref: string): Promise<string>;
 }
 
 /** The git port that calls the `git` command line. */
 export function gitCli(process: ProcessPort): GitPort {
-  async function git(directory: string, args: readonly string[]): Promise<void> {
+  async function git(directory: string, args: readonly string[]): Promise<string> {
     const full = [...ISOLATION, '-C', directory, ...args];
     const result = await process.run('git', full, { env: ISOLATED_ENVIRONMENT });
     if (result.code !== 0) throw processFailure('git', full, result);
+    return result.stdout;
   }
 
   return {
-    init: (directory) => git(directory, ['init', '--quiet', '--initial-branch=main']),
-    commitAll: async (directory, message) => {
-      await git(directory, ['add', '--all']);
-      await git(directory, ['commit', '--quiet', '--message', message]);
+    init: async (directory) => {
+      await git(directory, ['init', '--quiet', '--initial-branch=main']);
     },
+    commitAll: async (directory, message, options) => {
+      await git(directory, ['add', '--all']);
+      const empty = options?.allowEmpty === true ? ['--allow-empty'] : [];
+      await git(directory, ['commit', '--quiet', ...empty, '--message', message]);
+    },
+    // `show` of the commit itself, not a range: every step has a parent, but reading the commit is
+    // one fewer assumption about the history it sits in.
+    patchOf: (directory, ref) => git(directory, ['show', '--format=', '--patch', ref]),
   };
 }
