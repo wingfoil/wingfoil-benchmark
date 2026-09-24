@@ -424,3 +424,28 @@ Both are `pending`, awaiting the approver.
   task (an unused `eslint-disable` in `test/unit/runner/run.test.ts`, from W1). `npm run test:docker`
   is unchanged by this task and is re-run at review.
 
+### Into review
+
+- **`npm run test:docker` green** (1 test, 3.9 s on a warm image): the W1 "Ends with" still holds
+  with the requirements amendment and the lint change in place.
+- **The two checks of this repository contradicted each other, and the approver broke the tie.**
+  `memory submit` refused `features: []` / `acceptance: []` with `missing required field`, because it
+  reads an empty list as absent; the traceability test refuses a non-empty `features` on a task that
+  implements no scenario. Both could not be satisfied. The approver chose to drop `features` and
+  `acceptance` from the task type's `required` list in `.wingfoil/memory.yaml` (`4e242a5`), leaving
+  `release`, `wave` and `requirements`. Enforcement for delivery tasks stays where it already was:
+  the traceability test reads `features` as a claim, and the review phase checks traceability. The
+  cost is recorded honestly — the check is now weaker for *every* task, not just for spikes — and the
+  friction is filed as usage note N17.
+- `npx wingfoil memory submit task-004-waiting-for-input-and-credentials-spike` → `1ece880`.
+  Declared: `in-progress → in-review`, a gate the approver decides, one commit `wf(task): submit
+  <id>`. Observed: exit 0, empty stderr, 1 file, diff limited to `status: in-progress` →
+  `status: in-review`. Matches. The earlier attempt, at `f1ad2b0`, exited 1 with
+  `missing required field on submit: features, acceptance` and changed nothing — the refusal is
+  clean.
+
+**For the reviewer.** This task writes no production code, so the checklist is: the seven questions
+answered with evidence (Spike sections above), no credential value in the repository or in these
+notes, dl-004 and adr-002 written and approved, requirements amended to 1.3, and the four suites
+green — `npm test` 309, `test:bin` 4, `test:docker` 1, `lint` clean but for one warning that predates
+the task. The spike spent **0.1266 USD** of a 1.00 USD ceiling.
