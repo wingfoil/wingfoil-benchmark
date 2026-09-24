@@ -2,7 +2,7 @@
 id: task-009-capture-workflows-declare-what-they-create
 type: task
 title: "Capture workflows declare what they create"
-status: in-progress
+status: in-review
 release: v0.1
 wave: W2
 requirements: [REQ-ARC-05]
