@@ -163,3 +163,91 @@ describe('the scripted fake agent', () => {
     );
   });
 });
+
+describe('the scripted fake agent, resumed by the approver (REQ-RUN-07)', () => {
+  /** A script whose step 1 replays `question.jsonl`, then one scripted resume per entry. */
+  function resumable(resumes: unknown[]) {
+    const dir = tempDir('bench-resume-');
+    for (const name of ['question.jsonl', 'approval.jsonl', 'resumed.jsonl']) {
+      copyFileSync(repoPath(join('test/fixtures/sessions', name)), join(dir, name));
+    }
+    const file = join(dir, 'script.json');
+    writeFileSync(
+      file,
+      JSON.stringify({ T0: { '1': { commands: ['true'], events: 'question.jsonl', resumes } } }),
+    );
+    const script = loadFakeScript(file);
+    if (!script.ok) throw new Error(JSON.stringify(script.issues));
+    return fakeAgent(script.value, { dir, usdToEur: 0.92 });
+  }
+
+  const resumeRequest = (
+    intervention: number,
+    run: (command: readonly string[]) => Promise<ProcessResult>,
+  ) => ({
+    scenarioId: 'T0',
+    step: 1,
+    intervention,
+    sessionId: 'session-1',
+    reply: 'Approved. Proceed.',
+    remainingCostUsd: 3,
+    run,
+  });
+
+  it('passes on the final message of the session it replays', async () => {
+    const outcome = await resumable([]).runStep(request(1, exec().run));
+    expect(outcome.finalMessage).toMatch(/^What specifically needs to be cached/);
+  });
+
+  it('replays the scripted resume of each intervention, in order, running its commands', async () => {
+    const agent = resumable([
+      { events: 'approval.jsonl' },
+      { commands: ['echo done > done.txt'], events: 'resumed.jsonl' },
+    ]);
+    const runner = exec();
+
+    const first = await agent.resume(resumeRequest(1, runner.run));
+    const second = await agent.resume(resumeRequest(2, runner.run));
+
+    expect(first.finalMessage).toContain('Are you sure');
+    expect(first.usage.costUsd).toBeCloseTo(0.00634725, 10);
+    expect(second.usage.costUsd).toBeCloseTo(0.0681071, 10);
+    expect(second.transcript).toHaveLength(3);
+    // It answers in the session it was resumed in.
+    expect(second.sessionId).toBe('session-1');
+    expect(runner.commands).toEqual([['sh', '-c', 'echo done > done.txt']]);
+  });
+
+  it('can answer a resume from another session, so that the guard has something to catch', async () => {
+    const agent = resumable([{ session: 'elsewhere', events: 'resumed.jsonl' }]);
+    expect((await agent.resume(resumeRequest(1, exec().run))).sessionId).toBe('elsewhere');
+  });
+
+  it('fails a resume its script does not foresee, rather than replaying nothing', async () => {
+    const agent = resumable([{ events: 'resumed.jsonl' }]);
+    await expect(agent.resume(resumeRequest(2, exec().run))).rejects.toThrow(
+      /no scripted resume 2 for T0 step 1/,
+    );
+    await expect(
+      fakeAgent(SCRIPT, PLAIN).resume({ ...resumeRequest(1, exec().run), step: 9 }),
+    ).rejects.toThrow(/no scripted resume 1 for T0 step 9/);
+  });
+
+  it('fails a resume whose command fails', async () => {
+    const agent = resumable([{ commands: ['false'], events: 'resumed.jsonl' }]);
+    await expect(
+      agent.resume(resumeRequest(1, exec([{ code: 1, stdout: '', stderr: 'nope' }]).run)),
+    ).rejects.toThrow(/'false' failed with code 1/);
+  });
+
+  it.each([
+    ['{"T0": {"1": {"commands": ["true"], "resumes": [{}]}}}', 'T0.1.resumes[0].events'],
+    [
+      '{"T0": {"1": {"commands": ["true"], "resumes": [{"events": "a", "extra": 1}]}}}',
+      'T0.1.resumes[0].extra',
+    ],
+  ])('reports a malformed resume (%s)', (content, path) => {
+    const result = loadFakeScript(scriptFile(content));
+    expect(result.ok ? [] : result.issues.map((issue) => issue.path)).toEqual([path]);
+  });
+});

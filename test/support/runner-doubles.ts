@@ -1,4 +1,10 @@
-import type { AgentPort, SessionUsage, StepOutcome, StepRequest } from '../../src/agents/index.js';
+import type {
+  AgentPort,
+  ResumeRequest,
+  SessionUsage,
+  StepOutcome,
+  StepRequest,
+} from '../../src/agents/index.js';
 import type {
   BuildRequest,
   CreateRequest,
@@ -29,6 +35,16 @@ export interface Recorded {
   readonly removes: string[];
   readonly gitCalls: string[];
   readonly steps: StepRequest[];
+  /** Every resume the approver asked for, in order (REQ-RUN-07). */
+  readonly resumes: ResumeRequest[];
+}
+
+/** One invocation of the agent: a step's session, or a resume of it. */
+export type AgentRequest = StepRequest | ResumeRequest;
+
+/** Which invocation of its step a request is: 0 for the session, then 1, 2, 3 for its resumes. */
+export function invocationOf(request: AgentRequest): number {
+  return 'intervention' in request ? request.intervention : 0;
 }
 
 export interface Doubles {
@@ -45,15 +61,17 @@ export interface Doubles {
 export function doubles(
   options: {
     execResult?: ProcessResult;
-    onStep?: (request: StepRequest) => void;
+    onStep?: (request: AgentRequest) => void;
     /** The session the agent answers with; by default the one it was given (F2.2). */
-    sessionOf?: (request: StepRequest) => string;
-    /** What the step reports having cost (REQ-RUN-09); by default nothing. */
-    usageOf?: (request: StepRequest) => SessionUsage;
-    /** The step's recorded stream; by default one line naming the step. */
-    transcriptOf?: (request: StepRequest) => readonly string[];
-    /** Why the step's session failed, if it did: the agent reports it rather than throwing. */
-    errorOf?: (request: StepRequest) => string;
+    sessionOf?: (request: AgentRequest) => string;
+    /** What the invocation reports having cost (REQ-RUN-09); by default nothing. */
+    usageOf?: (request: AgentRequest) => SessionUsage;
+    /** The invocation's recorded stream; by default one line naming the step and the invocation. */
+    transcriptOf?: (request: AgentRequest) => readonly string[];
+    /** Why the invocation's session failed, if it did: the agent reports it rather than throwing. */
+    errorOf?: (request: AgentRequest) => string | undefined;
+    /** The session's final assistant message, which the approver classifies; by default none. */
+    messageOf?: (request: AgentRequest) => string | undefined;
     /** What a step's patch holds; by default a line naming the directory and the ref. */
     patchOf?: (directory: string, ref: string) => string;
     /** Makes one Docker or git call fail: `create`, `start`, `remove` and `init` break a run
@@ -70,6 +88,7 @@ export function doubles(
     removes: [],
     gitCalls: [],
     steps: [],
+    resumes: [],
   };
   let containers = 0;
   let patches = 0;
@@ -138,16 +157,28 @@ export function doubles(
       );
     },
   };
+  const answer = (request: AgentRequest): Promise<StepOutcome> => {
+    options.onStep?.(request);
+    const error = options.errorOf?.(request);
+    const message = options.messageOf?.(request);
+    return Promise.resolve({
+      sessionId: options.sessionOf?.(request) ?? request.sessionId,
+      usage: options.usageOf?.(request) ?? NO_USAGE,
+      transcript: options.transcriptOf?.(request) ?? [
+        `{"type":"result","step":${request.step},"invocation":${invocationOf(request)}}`,
+      ],
+      ...(error === undefined ? {} : { error }),
+      ...(message === undefined ? {} : { finalMessage: message }),
+    });
+  };
   const agent: AgentPort = {
-    runStep: (request): Promise<StepOutcome> => {
+    runStep: (request) => {
       recorded.steps.push(request);
-      options.onStep?.(request);
-      return Promise.resolve({
-        sessionId: options.sessionOf?.(request) ?? request.sessionId,
-        usage: options.usageOf?.(request) ?? NO_USAGE,
-        transcript: options.transcriptOf?.(request) ?? [`{"type":"result","step":${request.step}}`],
-        ...(options.errorOf === undefined ? {} : { error: options.errorOf(request) }),
-      });
+      return answer(request);
+    },
+    resume: (request) => {
+      recorded.resumes.push(request);
+      return answer(request);
     },
   };
   return { docker, git, agent, recorded };

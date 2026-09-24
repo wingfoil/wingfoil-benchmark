@@ -12,7 +12,7 @@ import { describe, expect, it } from 'vitest';
 
 import { checkCampaign, runCampaign } from '../../../src/runner/index.js';
 import { completeCampaignYaml, writeRepo } from '../../support/campaign-fixture.js';
-import { doubles } from '../../support/runner-doubles.js';
+import { doubles, invocationOf } from '../../support/runner-doubles.js';
 import { tempDir } from '../../support/scenario-fixture.js';
 
 function campaignYaml(overrides: Record<string, unknown> = {}): Record<string, unknown> {
@@ -441,5 +441,239 @@ describe('runCampaign', () => {
 
     expect(summary.runs[0]?.outcome).toBe('failed');
     expect(summary.runs[0]?.error).toMatch(/a-session-of-its-own/);
+  });
+});
+
+/** Usage with every figure derived from one number, so that sums are checkable field by field. */
+function usage(n: number) {
+  return {
+    inputTokens: n,
+    outputTokens: 10 * n,
+    cacheCreationInputTokens: 100 * n,
+    cacheReadInputTokens: 1000 * n,
+    // Powers of two, so that a sum is exact and a wrong sum cannot hide in a rounding.
+    costUsd: n / 32,
+    costEur: n / 64,
+    turns: n,
+    durationMs: 7 * n,
+  };
+}
+
+const QUESTION_REPLY =
+  'No further input is available. Make the most reasonable choice, record it, and proceed.';
+
+describe('the neutral approver in the step loop (F2.4)', () => {
+  it("sums a step's invocations and keeps their transcripts in order, in one snapshot", async () => {
+    const { checked } = checkedCampaign();
+    // Step 1 asks a question, its resume asks for approval, the second resume finishes.
+    const messages = ['Which cache?', 'Shall I delete the old one.', 'Done.'];
+    const ports = doubles({
+      messageOf: (request) => (request.step === 1 ? messages[invocationOf(request)] : undefined),
+      usageOf: (request) => usage(request.step * 10 + invocationOf(request) + 1),
+      transcriptOf: (request) => [
+        `s${request.step}i${invocationOf(request)}a`,
+        `s${request.step}i${invocationOf(request)}b`,
+      ],
+    });
+
+    const summary = await runCampaign(checked, ports);
+
+    expect(summary.runs[0]?.outcome).toBe('completed');
+    const step = join(summary.runs[0]?.outputDir ?? '', 'steps', '01');
+    // 11 + 12 + 13: the step and both its resumes, every field.
+    expect(JSON.parse(readFileSync(join(step, 'usage.json'), 'utf8'))).toEqual({
+      inputTokens: 36,
+      outputTokens: 360,
+      cacheCreationInputTokens: 3600,
+      cacheReadInputTokens: 36000,
+      costUsd: 36 / 32,
+      costEur: 36 / 64,
+      turns: 36,
+      durationMs: 252,
+    });
+    expect(readFileSync(join(step, 'transcript.jsonl'), 'utf8')).toBe(
+      's1i0a\ns1i0b\ns1i1a\ns1i1b\ns1i2a\ns1i2b\n',
+    );
+    // Resumed in the step's own session, with the policy's reply to what was asked.
+    const session = ports.recorded.steps[0]?.sessionId;
+    expect(ports.recorded.resumes.map((r) => [r.step, r.intervention, r.sessionId, r.reply])).toEqual([
+      [1, 1, session, QUESTION_REPLY],
+      [1, 2, session, 'Approved. Proceed.'],
+    ]);
+    // One snapshot per step, however many interventions it took (REQ-RUN-05).
+    const workspace = summary.runs[0]?.workspace ?? '';
+    expect(ports.recorded.gitCalls.filter((call) => call.startsWith('commit'))).toEqual([
+      `commit ${workspace} seed`,
+      `commit ${workspace} step 01 --allow-empty`,
+      `commit ${workspace} step 02 --allow-empty`,
+    ]);
+  });
+
+  it("records every intervention and each step's outcome in run.json (REQ-RUN-07)", async () => {
+    const { checked } = checkedCampaign();
+    const ports = doubles({
+      messageOf: (request) =>
+        request.step === 2 && invocationOf(request) === 0 ? 'Please confirm the target.' : undefined,
+    });
+
+    const summary = await runCampaign(checked, ports);
+
+    const record = JSON.parse(readFileSync(join(summary.runs[0]?.outputDir ?? '', 'run.json'), 'utf8')) as {
+      approver_policy: string;
+      interventions: unknown[];
+      steps: { n: number; outcome: string; interventions: number }[];
+    };
+    expect(record.approver_policy).toBe('v1');
+    expect(record.interventions).toEqual([{ step: 2, kind: 'approval', reply: 'Approved. Proceed.' }]);
+    expect(record.steps.map(({ n, outcome, interventions }) => ({ n, outcome, interventions }))).toEqual([
+      { n: 1, outcome: 'completed', interventions: 0 },
+      { n: 2, outcome: 'completed', interventions: 1 },
+    ]);
+  });
+
+  it('answers a third waiting session, and completes the step when the third resume finishes', async () => {
+    const { checked } = checkedCampaign();
+    const ports = doubles({
+      messageOf: (request) => (request.step === 1 && invocationOf(request) < 3 ? 'Which one?' : 'Done.'),
+    });
+
+    const summary = await runCampaign(checked, ports);
+
+    expect(ports.recorded.resumes.map((r) => r.intervention)).toEqual([1, 2, 3]);
+    expect(summary.runs[0]?.steps[0]?.outcome).toBe('completed');
+    expect(summary.runs[0]?.steps[0]?.interventions).toHaveLength(3);
+  });
+
+  it('gives a fourth waiting session no reply, ends the step, and goes on to the next one', async () => {
+    const { checked } = checkedCampaign();
+    const ports = doubles({ messageOf: (request) => (request.step === 1 ? 'Which one?' : 'Done.') });
+
+    const summary = await runCampaign(checked, ports);
+
+    // Three replies, never a fourth.
+    expect(ports.recorded.resumes.map((r) => r.intervention)).toEqual([1, 2, 3]);
+    const run = summary.runs[0];
+    expect(run?.steps.map((step) => step.outcome)).toEqual(['intervention cap reached', 'completed']);
+    // Hitting a cap ends the step, not the run: it is scored as it stands (§3.6).
+    expect(ports.recorded.steps.map((request) => request.step)).toEqual([1, 2]);
+    expect(run?.outcome).toBe('completed');
+    expect(run?.error).toBeUndefined();
+    const record = JSON.parse(readFileSync(join(run?.outputDir ?? '', 'run.json'), 'utf8')) as {
+      steps: { outcome: string }[];
+    };
+    expect(record.steps[0]?.outcome).toBe('intervention cap reached');
+    // The capped step still leaves its snapshot and everything its four sessions said.
+    const step = join(run?.outputDir ?? '', 'steps', '01');
+    expect(readFileSync(join(step, 'transcript.jsonl'), 'utf8').trim().split('\n')).toHaveLength(4);
+    expect(existsSync(join(step, 'diff.patch'))).toBe(true);
+  });
+
+  it('tells a resume what is left of the run cap after the step so far', async () => {
+    // The run cap is 3 EUR at 0.92 EUR per USD; the step's own session has already spent 1 EUR.
+    const { checked } = checkedCampaign();
+    const spent = { ...usage(1), costEur: 1 };
+    const ports = doubles({
+      messageOf: (request) => (request.step === 1 && invocationOf(request) === 0 ? 'Which one?' : undefined),
+      usageOf: (request) => (request.step === 1 && invocationOf(request) === 0 ? spent : usage(0)),
+    });
+
+    await runCampaign(checked, ports);
+
+    expect(ports.recorded.steps[0]?.remainingCostUsd).toBeCloseTo(3 / 0.92, 10);
+    expect(ports.recorded.resumes[0]?.remainingCostUsd).toBeCloseTo(2 / 0.92, 10);
+    expect(ports.recorded.steps[1]?.remainingCostUsd).toBeCloseTo(2 / 0.92, 10);
+  });
+
+  it('does not resume a session when nothing is left to spend', async () => {
+    const { checked } = checkedCampaign();
+    const ports = doubles({
+      messageOf: () => 'Which one?',
+      usageOf: () => ({ ...usage(1), costEur: 3.5 }),
+    });
+
+    const summary = await runCampaign(checked, ports);
+
+    expect(ports.recorded.resumes).toEqual([]);
+    expect(summary.runs[0]?.outcome).toBe('failed');
+    expect(summary.runs[0]?.error).toMatch(/step 01 .*not resumed: the run's cost cap is exhausted/);
+    // What the step did spend is kept.
+    const step = join(summary.runs[0]?.outputDir ?? '', 'steps', '01');
+    expect(JSON.parse(readFileSync(join(step, 'usage.json'), 'utf8'))).toMatchObject({ costEur: 3.5 });
+  });
+
+  it('does not classify a session that failed: a failure is never an intervention', async () => {
+    const { checked } = checkedCampaign();
+    const ports = doubles({ messageOf: () => 'Are you sure?', errorOf: () => 'api_error' });
+
+    const summary = await runCampaign(checked, ports);
+
+    expect(ports.recorded.resumes).toEqual([]);
+    expect(summary.runs[0]?.outcome).toBe('failed');
+    expect(summary.runs[0]?.steps[0]?.interventions).toEqual([]);
+    expect(summary.runs[0]?.steps[0]?.outcome).toBe('failed');
+  });
+
+  it('fails the run when a resume fails, keeping what every invocation spent and said', async () => {
+    const { checked } = checkedCampaign();
+    const ports = doubles({
+      messageOf: (request) => (invocationOf(request) === 0 ? 'Which one?' : undefined),
+      errorOf: (request) =>
+        invocationOf(request) === 1 ? 'the session ended with no result event' : undefined,
+      usageOf: () => usage(1),
+      transcriptOf: (request) => [`invocation ${invocationOf(request)}`],
+    });
+
+    const summary = await runCampaign(checked, ports);
+
+    const run = summary.runs[0];
+    expect(run?.outcome).toBe('failed');
+    expect(run?.error).toMatch(/step 01 of S1 failed: the session ended with no result event/);
+    const step = join(run?.outputDir ?? '', 'steps', '01');
+    expect(readFileSync(join(step, 'transcript.jsonl'), 'utf8')).toBe('invocation 0\ninvocation 1\n');
+    expect(JSON.parse(readFileSync(join(step, 'usage.json'), 'utf8'))).toMatchObject({ turns: 2 });
+    // The reply was sent, so it was an intervention, whatever came of it.
+    expect(run?.steps[0]?.interventions).toEqual([{ step: 1, kind: 'question', reply: QUESTION_REPLY }]);
+    expect(ports.recorded.steps).toHaveLength(1);
+  });
+
+  it('keeps the evidence of the step when the agent cannot resume at all', async () => {
+    const { checked } = checkedCampaign();
+    const ports = doubles({
+      messageOf: () => 'Which one?',
+      transcriptOf: (request) => [`invocation ${invocationOf(request)}`],
+      onStep: (request) => {
+        if (invocationOf(request) === 1) throw new Error('no scripted resume 1 for S1 step 1');
+      },
+    });
+
+    const summary = await runCampaign(checked, ports);
+
+    expect(summary.runs[0]?.outcome).toBe('failed');
+    expect(summary.runs[0]?.error).toMatch(/no scripted resume 1 for S1 step 1/);
+    const step = join(summary.runs[0]?.outputDir ?? '', 'steps', '01');
+    expect(readFileSync(join(step, 'transcript.jsonl'), 'utf8')).toBe('invocation 0\n');
+  });
+
+  it('fails the run when a resume answers from a session other than the one resumed', async () => {
+    const { checked } = checkedCampaign();
+    const ports = doubles({
+      messageOf: (request) => (invocationOf(request) === 0 ? 'Which one?' : undefined),
+      sessionOf: (request) => (invocationOf(request) === 1 ? 'a-session-of-its-own' : request.sessionId),
+    });
+
+    const summary = await runCampaign(checked, ports);
+
+    expect(summary.runs[0]?.outcome).toBe('failed');
+    expect(summary.runs[0]?.error).toMatch(/resume 1 of step 01 ran in session a-session-of-its-own/);
+  });
+
+  it('logs every intervention', async () => {
+    const { checked } = checkedCampaign();
+    const lines: string[] = [];
+    const ports = doubles({ messageOf: (request) => (invocationOf(request) === 0 ? 'Shall I?' : undefined) });
+
+    await runCampaign(checked, { ...ports, log: (line) => lines.push(line) });
+
+    expect(lines).toContain('step 01: approval request, intervention 1 of 3: Approved. Proceed.');
   });
 });

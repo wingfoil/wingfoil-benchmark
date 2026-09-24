@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { fakeAgent, loadFakeScript, readSession } from '../../src/agents/index.js';
-import type { StepRequest } from '../../src/agents/index.js';
+import type { AgentPort, ResumeRequest, StepRequest } from '../../src/agents/index.js';
 import { checkCampaign, runCampaign } from '../../src/runner/index.js';
 import { completeCampaignYaml, writeRepo } from '../support/campaign-fixture.js';
 import { doubles } from '../support/runner-doubles.js';
@@ -20,6 +20,75 @@ function smokeCampaign(): Record<string, unknown> {
   yaml.agent = { name: 'fake', version: '1.0.0' };
   yaml.models = { default: 'fake-model' };
   return yaml;
+}
+
+/** The replies of policy v1, as the feature file writes them: never the constants under test. */
+const APPROVED = 'Approved. Proceed.';
+const NO_INPUT = 'No further input is available. Make the most reasonable choice, record it, and proceed.';
+
+/** A step of the fake's script: the recorded session it replays, then one recording per resume. */
+interface ReplayedStep {
+  readonly events: string;
+  readonly resumes?: readonly string[];
+}
+
+/**
+ * The fake agent replaying streams the real agent produced during the W2 spike (adr-002 decision
+ * 13), with every resume the runner asks of it recorded. What the approver reads is what the agent
+ * wrote; nothing in these scenarios is a message the test made up.
+ */
+function replayingAgent(steps: Record<string, ReplayedStep>, usdToEur: number) {
+  const dir = tempDir('bench-approver-');
+  for (const name of ['approval.jsonl', 'question.jsonl', 'completed.jsonl', 'resumed.jsonl']) {
+    copyFileSync(repoPath(join('test/fixtures/sessions', name)), join(dir, name));
+  }
+  const script = join(dir, 'script.json');
+  writeFileSync(
+    script,
+    JSON.stringify({
+      S1: Object.fromEntries(
+        Object.entries(steps).map(([n, step]) => [
+          n,
+          {
+            commands: ['true'],
+            events: step.events,
+            resumes: (step.resumes ?? []).map((events) => ({ events })),
+          },
+        ]),
+      ),
+    }),
+  );
+  const loaded = loadFakeScript(script);
+  if (!loaded.ok) throw new Error(JSON.stringify(loaded.issues));
+  const replaying = fakeAgent(loaded.value, { dir, usdToEur });
+  const resumes: ResumeRequest[] = [];
+  const agent: AgentPort = {
+    runStep: (request) => replaying.runStep(request),
+    resume: (request) => {
+      resumes.push(request);
+      return replaying.resume(request);
+    },
+  };
+  return { agent, resumes };
+}
+
+/** The lines of a recorded session. */
+function recording(name: string): string[] {
+  return readFileSync(repoPath(join('test/fixtures/sessions', name)), 'utf8')
+    .split('\n')
+    .filter(Boolean);
+}
+
+/** What a run's own record says about its interventions (REQ-RUN-07). */
+interface RunRecord {
+  arm: string;
+  approver_policy: string;
+  interventions: { step: number; kind: string; reply: string }[];
+  steps: { n: number; outcome: string; interventions: number }[];
+}
+
+function runRecord(outputDir: string | undefined): RunRecord {
+  return JSON.parse(readFileSync(join(outputDir ?? '', 'run.json'), 'utf8')) as RunRecord;
 }
 
 describe('runner.feature', () => {
@@ -207,5 +276,133 @@ describe('runner.feature', () => {
       ).usage.costUsd,
       10,
     );
+  });
+
+  it('@F2.4 The neutral approver answers an approval request', async () => {
+    const { file } = writeRepo(smokeCampaign(), ['S1@1.0'], 1);
+    const checked = checkCampaign(file);
+    expect(checked.ok).toBe(true);
+    if (!checked.ok) return;
+    const rate = checked.value.campaign.spec.currency.usd_to_eur;
+    // The real approval request of the spike: its question mark is mid-message, it ends on a statement.
+    const { agent, resumes } = replayingAgent(
+      { '1': { events: 'approval.jsonl', resumes: ['completed.jsonl'] } },
+      rate,
+    );
+    const { docker, git } = doubles();
+
+    const summary = await runCampaign(checked.value, { docker, git, agent });
+
+    const run = summary.runs[0];
+    expect(run?.outcome).toBe('completed');
+    // The runner resumes the same session with the policy's reply.
+    expect(resumes.map((r) => [r.step, r.reply])).toEqual([[1, APPROVED]]);
+    expect(resumes[0]?.sessionId).toBe(run?.steps[0]?.sessionId);
+    // One intervention is recorded for that step: step, kind and reply.
+    const record = runRecord(run?.outputDir);
+    expect(record.interventions).toEqual([{ step: 1, kind: 'approval', reply: APPROVED }]);
+    expect(record.steps).toMatchObject([{ n: 1, outcome: 'completed', interventions: 1 }]);
+    // The step's usage is the session and its resume together, as the parser reads the two streams.
+    const both = readSession([...recording('approval.jsonl'), ...recording('completed.jsonl')], rate);
+    const stepDir = join(run?.outputDir ?? '', 'steps', '01');
+    expect(JSON.parse(readFileSync(join(stepDir, 'usage.json'), 'utf8'))).toEqual(both.usage);
+    expect(readFileSync(join(stepDir, 'transcript.jsonl'), 'utf8')).toBe(
+      both.transcript.map((line) => `${line}\n`).join(''),
+    );
+  });
+
+  it('@F2.4 The neutral approver answers a question', async () => {
+    const { file } = writeRepo(smokeCampaign(), ['S1@1.0'], 1);
+    const checked = checkCampaign(file);
+    expect(checked.ok).toBe(true);
+    if (!checked.ok) return;
+    const rate = checked.value.campaign.spec.currency.usd_to_eur;
+    // The spike's own sequence: a question, then the resumed session that answered it (P4, P6).
+    const { agent, resumes } = replayingAgent(
+      { '1': { events: 'question.jsonl', resumes: ['resumed.jsonl'] } },
+      rate,
+    );
+    const { docker, git } = doubles();
+
+    const summary = await runCampaign(checked.value, { docker, git, agent });
+
+    const run = summary.runs[0];
+    expect(run?.outcome).toBe('completed');
+    expect(resumes.map((r) => [r.step, r.reply])).toEqual([[1, NO_INPUT]]);
+    const record = runRecord(run?.outputDir);
+    expect(record.interventions).toEqual([{ step: 1, kind: 'question', reply: NO_INPUT }]);
+    expect(record.steps).toMatchObject([{ n: 1, outcome: 'completed', interventions: 1 }]);
+  });
+
+  it('@F2.4 A step ends after the maximum number of interventions', async () => {
+    const { file } = writeRepo(smokeCampaign(), ['S1@1.0'], 2);
+    const checked = checkCampaign(file);
+    expect(checked.ok).toBe(true);
+    if (!checked.ok) return;
+    const rate = checked.value.campaign.spec.currency.usd_to_eur;
+    // Four waiting sessions in step 1: the session, then three resumes that ask again. A fourth resume
+    // is scripted too, so that a runner replying a fourth time would be heard, not refused by the fake.
+    const { agent, resumes } = replayingAgent(
+      {
+        '1': {
+          events: 'question.jsonl',
+          resumes: ['question.jsonl', 'question.jsonl', 'question.jsonl', 'completed.jsonl'],
+        },
+        '2': { events: 'completed.jsonl' },
+      },
+      rate,
+    );
+    const { docker, git } = doubles();
+
+    const summary = await runCampaign(checked.value, { docker, git, agent });
+
+    const run = summary.runs[0];
+    // The fourth waiting session gets no reply.
+    expect(resumes.map((r) => r.intervention)).toEqual([1, 2, 3]);
+    // The step's outcome is "intervention cap reached"; the run goes on and scores it as it stands.
+    const record = runRecord(run?.outputDir);
+    expect(record.steps).toMatchObject([
+      { n: 1, outcome: 'intervention cap reached', interventions: 3 },
+      { n: 2, outcome: 'completed', interventions: 0 },
+    ]);
+    expect(record.interventions).toEqual(
+      [1, 2, 3].map(() => ({ step: 1, kind: 'question', reply: NO_INPUT })),
+    );
+    expect(run?.outcome).toBe('completed');
+  });
+
+  it('@F2.4 The policy is the same in every arm', async () => {
+    const yaml = smokeCampaign();
+    yaml.arms = ['baseline', 'baseline-docs', 'wingfoil'];
+    yaml.harnesses = { wingfoil: { tool: 'wingfoil', version: '3df305e' } };
+    const { file } = writeRepo(yaml, ['S1@1.0'], 1);
+    const checked = checkCampaign(file);
+    expect(checked.ok).toBe(true);
+    if (!checked.ok) return;
+    const rate = checked.value.campaign.spec.currency.usd_to_eur;
+    // The same fake session in each arm: a question, then an approval request, then done.
+    const { agent, resumes } = replayingAgent(
+      { '1': { events: 'question.jsonl', resumes: ['approval.jsonl', 'completed.jsonl'] } },
+      rate,
+    );
+    const { docker, git, recorded } = doubles();
+
+    const summary = await runCampaign(checked.value, { docker, git, agent });
+
+    // Three runs, in three different arms, each in a container of its own: the arm did vary.
+    expect(summary.runs.map((run) => run.arm)).toEqual(['baseline', 'baseline-docs', 'wingfoil']);
+    expect(new Set(recorded.creates.map((create) => create.workspace)).size).toBe(3);
+    // Each arm receives the same replies, in the same order...
+    expect(resumes.map((r) => r.reply)).toEqual([NO_INPUT, APPROVED, NO_INPUT, APPROVED, NO_INPUT, APPROVED]);
+    for (const run of summary.runs) {
+      const record = runRecord(run.outputDir);
+      expect(record.arm).toBe(run.arm);
+      expect(record.interventions).toEqual([
+        { step: 1, kind: 'question', reply: NO_INPUT },
+        { step: 1, kind: 'approval', reply: APPROVED },
+      ]);
+      // ...and the run log of each arm names the approver policy version.
+      expect(record.approver_policy).toBe('v1');
+    }
   });
 });
