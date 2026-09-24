@@ -80,7 +80,113 @@ Preliminary classification (confirmed in the design phase). All behaviour is new
 
 ## Design
 
-<!-- Modules, interfaces, data formats touched; decisions taken and their reasons. -->
+Conventions from [adr-001](../adr/adr-001-w1-toolchain-and-runner-conventions.md) and
+[adr-002](../adr/adr-002-w2-runner-and-adapter-conventions.md), whose decisions 1–13 were settled by
+the spike ([task-004](task-004-waiting-for-input-and-credentials-spike.md)). Builds on task-005's
+session seam.
+
+**Classification confirmed:** every criterion is **red-first**. Nothing here exists yet.
+
+### What this task does not have to discover
+
+The spike ran the real agent, so the following are facts rather than assumptions, and the design
+rests on them instead of on the documentation: every REQ-RUN-04 flag exists in 2.1.280 and
+`--max-budget-usd` means what the requirement says; a headless session exits rather than blocking;
+the `result` event carries `session_id`, `total_cost_usd`, `usage.{input_tokens, output_tokens,
+cache_creation_input_tokens, cache_read_input_tokens}`, `num_turns`, `duration_ms` and
+`duration_api_ms`; `subtype` can read `success` on a failed session; a stream can end with **no**
+`result` event at all; and `ANTHROPIC_AUTH_TOKEN` authenticates while `ANTHROPIC_API_KEY` does not.
+
+**The spike's recordings become this task's fixtures.** `spikes/task-004/out/*.jsonl` are real
+streams from the pinned agent: a trivial session, the same on Sonnet 5, a session ending in a
+question, one ending in an approval request, a resumed session, and two authentication failures (one
+of which has no `result` event). Trimmed copies go under `test/fixtures/sessions/`, so the parser is
+tested against output the agent actually produced rather than against output we imagined. P8 already
+scanned them: no credential appears in any of them, and the trimming is re-scanned before they are
+committed.
+
+### The adapter (`agents/claude-code.ts`)
+
+A second `AgentPort` beside the fake one (REQ-ARC-04). It runs the agent **inside the run's
+container**, through the Docker port, and parses what comes back.
+
+**The command line (REQ-RUN-04):** `claude -p <prompt> --output-format stream-json --verbose --model
+<id> --session-id <uuid> --permission-mode bypassPermissions --setting-sources project
+--max-budget-usd <remaining run cap>`. Asserted argument by argument, as the Docker and git ports
+already are. The wingfoil arm's `--mcp-config` / `--strict-mcp-config` are W3.
+
+`StepRequest` gains **one** field, the remaining run cap in USD, which is what `--max-budget-usd`
+needs. Task-005's shape assertion lists the request's keys exactly and will fail until it is updated:
+that is the tripwire working, and updating it is the one line task-005 predicted.
+
+**Reading a session** (adr-002 decisions 6–10):
+
+- the outcome comes from `is_error` and `terminal_reason`, **never from `subtype`** — the spike
+  recorded `"subtype": "success"` on a session that authenticated nothing;
+- a stream that ends with no `result` event is a **failed step**, not a step with zero usage;
+- usage is **summed over a step's invocations**. Only one invocation exists until task-007 adds
+  resumes, so the seam is built here and exercised there: `runStep` returns the sum of the result
+  events it saw, not the last one;
+- the model recorded is the campaign's pin, not a key of `modelUsage`, which the spike saw holding
+  both an alias and a dated id for one session.
+
+**What it writes**, under the run's output directory (REQ-FMT-06):
+
+- `steps/<NN>/usage.json` — tokens by kind, the API-equivalent cost in USD **and** in EUR converted
+  with the campaign's `usd_to_eur` (REQ-RUN-09, sequencer decision 1: the API-equivalent cost is
+  recorded whatever the billing), turns, wall time;
+- `steps/<NN>/transcript.jsonl` — the full event stream, scrubbed, **git-ignored** (REQ-RES-06);
+- `run.json` — minimal: the run's identity, the campaign and execution it belongs to, the agent and
+  model pinned, the approver policy version, and the per-step outcomes. This is adr-002 decision 11,
+  named in this task's Context so the wave cannot end without it. F5.1 (W7) completes it.
+
+**Scrubbing (REQ-NFR-01).** Before a transcript is stored, every known secret value is replaced with
+a fixed marker: the token the runner passed, and any value of `ANTHROPIC_*` in the runner's own
+environment. Known values only — the scrubber removes what we can name, and the design says so rather
+than implying it catches anything else. The spike found no leak path, which is weaker than proof.
+
+### Credentials (REQ-RUN-15, as amended in requirements 1.3)
+
+The token is read at container creation from a file the operator names (`BENCH_AGENT_TOKEN_FILE`),
+whitespace stripped, and passed as `ANTHROPIC_AUTH_TOKEN` in the container's environment. A value
+that is empty after stripping is refused **before** a container starts, with a message naming the
+file — the spike lost a session to a pasted newline and learned it only from the agent's own error.
+Nothing is mounted, so W1's single-mount check (REQ-RUN-02) stays exactly as it is (adr-002
+decision 5).
+
+### The image and the command
+
+The Dockerfile already installs the agent when the campaign names it, so nothing changes there.
+`bench campaign run` stops refusing `claude-code` — which spends **adr-001 default 7** and needs an
+amendment to that ADR, recorded with this task.
+
+**Spending stays deliberate.** Until the budget guard exists (F1.3, W5), a campaign whose agent is
+not `fake` runs only with `--allow-spending` on the command line. Without it the command refuses,
+naming the campaign's own ceiling so the operator sees what they would be authorising. This keeps
+plan-003's rule true of the code and not only of the process.
+
+### The fake agent replays recorded sessions (adr-002 decision 13)
+
+The scripted step gains an optional `events` file: a recorded stream the fake replays instead of
+inventing one. The same parser reads it, so the acceptance tests exercise the real path end to end
+with no agent and no spending. This is the other decision named in this task's Context.
+
+### What this task does not do
+
+No real agent runs here. The evidence that the parser matches reality is task-004's recordings; the
+end-to-end run with a real agent stays in the release's validation phase
+([plan-003](../../plans/plan-003-release-v0-1.md) step 4). **This task spends nothing.**
+
+### Tests
+
+- **Acceptance** (`test/acceptance/runner.test.ts`), `@F2.3`: usage and transcript recorded for every
+  session, against fake ports fed by a recorded stream.
+- **Unit:** the command line, argument by argument; the parser against each recorded fixture,
+  including the stream with no `result` event and the one whose `subtype` lies; the USD→EUR
+  conversion with the campaign's rate; the scrubber, with a token planted in a stream; the credential
+  file (missing, empty, whitespace-only, with an embedded newline); the CLI's refusal without
+  `--allow-spending` and its acceptance with it.
+- **No Docker test is added.** W2's "Ends with" is task-007's, and it covers this path.
 
 ## Execution notes
 
