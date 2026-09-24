@@ -61,12 +61,12 @@ export function writeRepo(
   const root = tempDir('bench-repo-');
   for (const entry of scenarios) {
     const [id = '', version = ''] = entry.split('@');
-    const yaml = completeScenarioYaml(id, version, steps);
+    const scenario = completeScenarioYaml(id, version, steps);
     const files = [
       ...COMPLETE_FILES.filter((file) => !file.startsWith('prompts/')),
       ...stepNumbers(steps).map(promptFile),
     ];
-    writeScenarioAt(join(root, 'scenarios'), yaml, files, id, version);
+    writeScenarioAt(join(root, 'scenarios'), scenario, files, id, version);
   }
   mkdirSync(join(root, 'campaigns'));
   const file = join(root, 'campaigns', 'campaign.yaml');

@@ -69,6 +69,19 @@ describe('runCampaign', () => {
     expect(summary.execution).toBe(1);
   });
 
+  it("lays a run's output out under results/<campaign-id>/<n>/runs/ (REQ-FMT-06)", async () => {
+    const { root, checked } = checkedCampaign();
+    const ports = doubles();
+
+    const summary = await runCampaign(checked, ports);
+
+    // Asserted literally, not derived from the value under test: the layout is the contract F5.1
+    // reads in W7, and a path that merely exists somewhere under results/ would satisfy nothing.
+    expect(summary.runs[0]?.outputDir).toBe(
+      join(root, 'results', checked.campaign.id, '1', 'runs', 'S1@1.0', 'baseline', 'fake-model', 'r1'),
+    );
+  });
+
   it('records the execution under results/<campaign-id>/<n>/ with a copy of the campaign file', async () => {
     const { root, checked } = checkedCampaign();
     const { docker, git, agent } = doubles();
@@ -274,6 +287,31 @@ describe('runCampaign', () => {
 
     expect(summary.runs[0]?.error).toBe('the agent said no');
   });
+  it('fails the run when a step commit fails, and carries on (REQ-NFR-03)', async () => {
+    const { checked } = checkedCampaign(campaignYaml({ repetitions: { S1: 2 } }));
+    const ports = doubles({ failing: { call: 'commit', error: 'the index is locked' } });
+
+    const summary = await runCampaign(checked, ports);
+
+    expect(summary.runs.map((run) => run.outcome)).toEqual(['failed', 'failed']);
+    expect(summary.runs[0]?.error).toMatch(/the index is locked/);
+    expect(ports.recorded.removes).toEqual(['container-1', 'container-2']);
+  });
+
+  it('fails the run when a step patch cannot be read, leaving the commit behind', async () => {
+    const { checked } = checkedCampaign();
+    const ports = doubles({ failing: { call: 'patch', error: 'bad object HEAD' } });
+
+    const summary = await runCampaign(checked, ports);
+
+    expect(summary.runs[0]?.outcome).toBe('failed');
+    expect(summary.runs[0]?.error).toMatch(/bad object HEAD/);
+    // The step is committed in the workspace but has no patch in the results: the run's repository
+    // and its record disagree, and the run is failed precisely so that nothing scores that gap.
+    expect(ports.recorded.gitCalls.some((call) => call.includes('step 01'))).toBe(true);
+    expect(existsSync(join(summary.runs[0]?.outputDir ?? '', 'steps', '01', 'diff.patch'))).toBe(false);
+  });
+
   it('fails the run when a step prompt cannot be read', async () => {
     const { checked, root } = checkedCampaign();
     rmSync(join(root, 'scenarios', 'S1', '1.0', 'prompts', '01.md'));

@@ -179,6 +179,22 @@ describe('loadScenario', () => {
     expect(paths(writeScenario(withField(field as string[], value)))).toEqual([path]);
   });
 
+  it('refuses more steps than a two-digit step number can name (REQ-RUN-05, REQ-FMT-06)', () => {
+    const steps = Array.from({ length: 100 }, (_, index) => ({
+      n: index + 1,
+      prompt_file: `prompts/${String(index + 1).padStart(2, '0')}.md`,
+    }));
+    // The prompt files exist, so the only thing left to complain about is the count itself.
+    const files = [
+      ...COMPLETE_FILES.filter((file) => !file.startsWith('prompts/')),
+      ...steps.map((s) => s.prompt_file),
+    ];
+    const issues = issuesOf(writeScenario(withField(['steps'], steps), files));
+    expect(issues.map((issue) => issue.path)).toEqual(['steps']);
+    // `steps/100` sorts before `steps/99` in any listing, and `step 100` breaks the message shape.
+    expect(issues[0]?.message).toMatch(/two digits/);
+  });
+
   it('rejects an id or version that differs from its directory', () => {
     const yaml = completeScenarioYaml('S8', '1.1');
     expect(paths(writeScenario(yaml))).toEqual(['id', 'version']);

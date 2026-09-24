@@ -98,19 +98,23 @@ describe('runner.feature', () => {
       ]);
     }
 
-    // After each step the working tree is committed with a message naming only the step number.
+    // After each step the working tree is committed with a message naming only the step number, with
+    // --allow-empty so a step that changed nothing is still a snapshot, and the patch is read after
+    // that commit: reading it before would store the previous step's diff under this step's number.
     const workspace = summary.runs[0]?.workspace ?? '';
     expect(recorded.gitCalls).toEqual([
       `init ${workspace}`,
       `commit ${workspace} seed`,
-      ...stepNumbers(steps).map((n) => `commit ${workspace} step ${String(n).padStart(2, '0')}`),
+      ...stepNumbers(steps).flatMap((n) => [
+        `commit ${workspace} step ${String(n).padStart(2, '0')} --allow-empty`,
+        `patch ${workspace} HEAD`,
+      ]),
     ]);
 
-    // Every step leaves a snapshot to score (REQ-RUN-05).
+    // Every step leaves a snapshot to score, in the place REQ-FMT-06 gives it (REQ-RUN-05).
     for (const n of stepNumbers(steps)) {
       const patch = join(summary.runs[0]?.outputDir ?? '', 'steps', String(n).padStart(2, '0'), 'diff.patch');
-      expect(existsSync(patch)).toBe(true);
-      expect(readFileSync(patch, 'utf8')).toContain(workspace);
+      expect(readFileSync(patch, 'utf8')).toBe(`patch of ${workspace} at HEAD\n`);
     }
   });
 });

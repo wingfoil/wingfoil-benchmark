@@ -37,7 +37,7 @@ export function doubles(
     /** The session the agent answers with; by default the one it was given (F2.2). */
     sessionOf?: (request: StepRequest) => string;
     /** Makes one Docker or git call fail, to exercise a run that breaks outside its steps. */
-    failing?: { call: 'create' | 'start' | 'remove' | 'init'; error: string };
+    failing?: { call: 'create' | 'start' | 'remove' | 'init' | 'commit' | 'patch'; error: string };
   } = {},
 ): Doubles {
   const recorded: Recorded = {
@@ -90,11 +90,25 @@ export function doubles(
       if (options.failing?.call === 'init') return Promise.reject(new Error(options.failing.error));
       return Promise.resolve();
     },
-    commitAll: (directory, message) => {
-      recorded.gitCalls.push(`commit ${directory} ${message}`);
+    // The options are part of the call: without them nothing could see whether the runner asked for
+    // --allow-empty, which is what keeps a step that changed nothing from failing its run.
+    commitAll: (directory, message, commit) => {
+      const empty = commit?.allowEmpty === true ? ' --allow-empty' : '';
+      recorded.gitCalls.push(`commit ${directory} ${message}${empty}`);
+      // Only a step commit: the seed commit happens in prepareWorkspace, before a container exists,
+      // and failing it would exercise a different moment of the run (covered by `init`).
+      if (options.failing?.call === 'commit' && message.startsWith('step ')) {
+        return Promise.reject(new Error(options.failing.error));
+      }
       return Promise.resolve();
     },
-    patchOf: (directory, ref) => Promise.resolve(`patch of ${directory} at ${ref}\n`),
+    // Recorded in the same transcript as the commits, so their order is pinned: a patch read before
+    // its commit would hold the previous step's snapshot, and every scored step would slip by one.
+    patchOf: (directory, ref) => {
+      recorded.gitCalls.push(`patch ${directory} ${ref}`);
+      if (options.failing?.call === 'patch') return Promise.reject(new Error(options.failing.error));
+      return Promise.resolve(`patch of ${directory} at ${ref}\n`);
+    },
   };
   const agent: AgentPort = {
     runStep: (request): Promise<StepOutcome> => {

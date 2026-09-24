@@ -95,7 +95,7 @@ describe('bench campaign run', () => {
     const ports = doubles();
     const { code, stdout, stderr } = await runWith(ports, 'campaign', 'run', file);
     expect({ code, stdout }).toEqual({ code: 1, stdout: '' });
-    expect(stderr).toBe("agent 'claude-code' is not available yet: W1 runs the scripted fake agent\n");
+    expect(stderr).toBe("agent 'claude-code' has no adapter yet: the scripted fake agent is the only one\n");
     expect(ports.recorded.builds).toEqual([]);
   });
 

@@ -64,8 +64,9 @@ function validateCampaign(file: string, io: Io): number {
 }
 
 /**
- * REQ-CLI-03, as far as W1 goes: `bench campaign run <file>` executes the campaign against the
- * scripted fake agent. The cost estimate, the warning and the ceiling arrive with F1.2 and F1.3 (W5).
+ * REQ-CLI-03, as far as W2 goes: `bench campaign run <file>` executes the campaign against the
+ * scripted fake agent, one session per step (F2.2). The Claude Code adapter arrives with F2.3, and
+ * the cost estimate, the warning and the ceiling with F1.2 and F1.3 (W5).
  */
 async function runCampaignCommand(file: string, io: Io, ports?: Ports): Promise<number> {
   const checked = checkCampaign(file);
@@ -73,7 +74,7 @@ async function runCampaignCommand(file: string, io: Io, ports?: Ports): Promise<
 
   const agentName = checked.value.campaign.spec.agent.name;
   if (!AVAILABLE_AGENTS.includes(agentName)) {
-    io.stderr(`agent '${agentName}' is not available yet: W1 runs the scripted fake agent\n`);
+    io.stderr(`agent '${agentName}' has no adapter yet: the scripted fake agent is the only one\n`);
     return EXIT.failure;
   }
 
