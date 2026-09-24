@@ -166,6 +166,37 @@ is not kept: one shape, changed in one place, with the fixtures updated with it.
 
 ## Execution notes
 
+### Build
+
+- **TDD order, in the history:** the acceptance test and the unit tests first (red `fc0b695`, ten
+  failures, each for its stated reason), then the code (`ce553e7`). The acceptance test failed on the
+  prompt the request did not carry, which is the assertion the task exists for.
+- **Two refinements to the Design, both smaller than it assumed:**
+  1. **No `T1` fixture on disk.** The acceptance test builds its five-step scenario with the existing
+     temporary-repository helpers, as the `@F2.1` tests already do; `completeScenarioYaml` and
+     `writeRepo` gained a step count. A scenario version directory under `test/fixtures/` is only
+     needed when a real container runs it, which is task-007's integration test. Writing one now
+     would have been a fixture with no reader.
+  2. **The design named `patchOf(workspace, 'HEAD')` and that is what it is**, but the step's output
+     directory had to be threaded through the run: `RunResult` gains `outputDir`, computed beside the
+     workspace from the same run name, so the two never drift apart.
+- **"No conversation state is passed" is asserted as a shape**, not as an absence: the acceptance test
+  checks that a step request has exactly `model`, `prompt`, `run`, `scenarioId`, `sessionId`, `step`.
+  An absence cannot be tested — a later change could add a history field and every "it is not there"
+  assertion would still pass.
+- **The session check earns its place.** The runner refuses an outcome whose `sessionId` is not the
+  one it gave. The fake can be scripted to return another, so the check has something to catch; without
+  that the branch would be untestable and, worse, an agent quietly resuming its own session would look
+  exactly like a compliant one.
+- **A failure found by lint, not by me:** the prompt-read error threw without a `cause`
+  (`preserve-caught-error`). Fixed in place.
+- **Cleaned up while here:** the unused `eslint-disable` in `test/unit/runner/run.test.ts`, a W1
+  leftover reported as a warning since task-004. It was on this task's own file and cost one line.
+- **Suites after the build:** `npm test` 316 passed (14 files), coverage 100% statements / 99.24%
+  branches / 100% functions; `npm run test:bin` 4 passed; **`npm run test:docker` 1 passed** — W1's
+  "Ends with" still holds with the new script shape and the per-step commits; `npm run lint` clean,
+  including the warning that had been there since W1.
+
 ### WingFoil commands (declared vs observed)
 
 - `npx wingfoil memory add --type task --title "…"` → `f8a35c0`. Declared: one commit
