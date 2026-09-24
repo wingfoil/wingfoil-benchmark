@@ -93,6 +93,9 @@ export function fakeAgent(script: FakeScript, options: FakeOptions): AgentPort {
         sessionId: scripted.session ?? sessionId,
         usage: replayed?.usage ?? NO_USAGE,
         transcript: replayed?.transcript ?? [],
+        // A replayed failure is a failure. Without this every acceptance test runs through an agent
+        // that cannot report one, and a failing step is untestable in every wave that uses the fake.
+        ...(replayed?.outcome === 'failed' ? { error: replayed.error ?? 'the session failed' } : {}),
       };
     },
   };

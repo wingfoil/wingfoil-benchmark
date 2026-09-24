@@ -111,6 +111,24 @@ describe('the scripted fake agent', () => {
     expect(runner.commands).toEqual([['sh', '-c', 'true']]);
   });
 
+  it('reports a replayed session that failed, instead of calling the step a success', async () => {
+    // Every acceptance test and every later wave runs through this path (adr-002 decision 13): an
+    // agent that cannot report a failure makes a failing step untestable everywhere.
+    const dir = tempDir('bench-replay-');
+    copyFileSync(repoPath('test/fixtures/sessions/failed-subtype-success.jsonl'), join(dir, 'session.jsonl'));
+    const file = join(dir, 'script.json');
+    writeFileSync(file, JSON.stringify({ T0: { '1': { commands: ['true'], events: 'session.jsonl' } } }));
+    const script = loadFakeScript(file);
+    expect(script.ok).toBe(true);
+    if (!script.ok) return;
+
+    const outcome = await fakeAgent(script.value, { dir, usdToEur: 0.92 }).runStep(request(1, exec().run));
+
+    expect(outcome.error).toMatch(/api_error/);
+    // And what it spent before failing is still reported.
+    expect(outcome.transcript.length).toBeGreaterThan(0);
+  });
+
   it('reports a recorded session it cannot read, rather than replaying nothing', async () => {
     const dir = tempDir('bench-replay-');
     const file = join(dir, 'script.json');

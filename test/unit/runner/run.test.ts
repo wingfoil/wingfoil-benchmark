@@ -326,7 +326,10 @@ describe('runCampaign', () => {
 
     const summary = await runCampaign(checked, {
       ...ports,
-      containerEnv: { ANTHROPIC_AUTH_TOKEN: token },
+      // The environment also carries things that are not secret, and from W3 it carries the arm's
+      // own settings: scrubbing every value of it would corrupt the patch instead of protecting it.
+      containerEnv: { ANTHROPIC_AUTH_TOKEN: token, LANG: 'C' },
+      secrets: [token],
     });
 
     // The agent runs with bypassPermissions and the token in its environment: one `env > notes.txt`
@@ -334,6 +337,8 @@ describe('runCampaign', () => {
     const patch = readFileSync(join(summary.runs[0]?.outputDir ?? '', 'steps', '01', 'diff.patch'), 'utf8');
     expect(patch).not.toContain(token);
     expect(patch).toContain('[redacted]');
+    // `C` is a value of the container's environment and must survive untouched.
+    expect(patch).toContain('ANTHROPIC_AUTH_TOKEN=');
   });
 
   it('keeps what a failed step spent, instead of throwing the evidence away', async () => {
@@ -378,6 +383,54 @@ describe('runCampaign', () => {
     expect(summary.runs[0]?.outcome).toBe('failed');
     expect(summary.runs[0]?.error).toMatch(/prompts\/01\.md/);
     expect(ports.recorded.steps).toEqual([]);
+  });
+
+  it('refuses to start a step with nothing left to spend, rather than passing a budget of zero', () =>
+    (async () => {
+      // The spike measured that --max-budget-usd exists and means what REQ-RUN-04 says. It did not
+      // measure what 0 does: refuse at once, or mean "no limit". Either is a wrong answer to give
+      // silently, so the step is not started. Enforcing the cap itself is F1.3 (W5).
+      const { checked } = checkedCampaign();
+      const spent = {
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheCreationInputTokens: 0,
+        cacheReadInputTokens: 0,
+        costUsd: 4,
+        costEur: 3.5,
+        turns: 1,
+        durationMs: 1,
+      };
+      const ports = doubles({ usageOf: () => spent });
+
+      const summary = await runCampaign(checked, ports);
+
+      // Step 1 ran and used more than the run's 3 EUR cap; step 2 was never started.
+      expect(ports.recorded.steps).toHaveLength(1);
+      expect(summary.runs[0]?.outcome).toBe('failed');
+      expect(summary.runs[0]?.error).toMatch(/cost cap/);
+    })());
+
+  it('keeps the evidence of a session that ended before naming itself', async () => {
+    // The one failure the spike actually recorded: a stream cut off by the step cap, with no result
+    // event and therefore no session id. The session guard used to fire first and blame a mismatch.
+    const { checked } = checkedCampaign();
+    const ports = doubles({
+      sessionOf: () => '',
+      errorOf: () => 'the session ended with no result event',
+      transcriptOf: () => ['{"type":"system","subtype":"api_retry"}'],
+    });
+
+    const summary = await runCampaign(checked, ports);
+
+    expect(summary.runs[0]?.outcome).toBe('failed');
+    // The reason is the truncation, not an invented session mismatch.
+    expect(summary.runs[0]?.error).toMatch(/no result event/);
+    expect(summary.runs[0]?.error).not.toMatch(/not in the one it was given/);
+    // And the transcript survives: it is the only evidence of why the session stopped.
+    const step = join(summary.runs[0]?.outputDir ?? '', 'steps', '01');
+    expect(readFileSync(join(step, 'transcript.jsonl'), 'utf8')).toContain('api_retry');
+    expect(existsSync(join(step, 'usage.json'))).toBe(true);
   });
 
   it('fails the run when the agent answers with a session it was not given', async () => {

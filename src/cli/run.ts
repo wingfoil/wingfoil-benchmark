@@ -125,8 +125,11 @@ async function runCampaignCommand(
       ...resolved.value,
       log: (line) => io.stdout(`${line}\n`),
       logError: (line) => io.stderr(`${line}\n`),
-      // The credential reaches the container here and nowhere else (REQ-RUN-15, REQ-NFR-01).
-      ...(credential?.ok === true ? { containerEnv: credential.value } : {}),
+      // The credential reaches the container here and nowhere else (REQ-RUN-15, REQ-NFR-01), and
+      // the values to scrub are named rather than taken from the whole environment.
+      ...(credential?.ok === true
+        ? { containerEnv: credential.value, secrets: Object.values(credential.value) }
+        : {}),
     });
   } catch (error) {
     // The campaign could not start at all: no Docker daemon, no results directory, no image.
@@ -161,8 +164,7 @@ export function realPorts(
       },
     };
   }
-  const exhaustive: 'fake' = name;
-  void exhaustive;
+  name satisfies typeof FREE_AGENT;
   const script = process.env[FAKE_SCRIPT_VARIABLE];
   if (script === undefined) {
     return {

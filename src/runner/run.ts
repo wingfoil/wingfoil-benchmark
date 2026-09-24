@@ -23,6 +23,12 @@ export interface RunnerOptions {
   readonly logError?: (line: string) => void;
   /** What every container of this campaign gets in its environment: the agent's credential. */
   readonly containerEnv?: Readonly<Record<string, string>>;
+  /**
+   * The values to remove from everything this run stores (REQ-NFR-01). Named explicitly rather than
+   * derived from {@link containerEnv}: from W3 that environment also carries an arm's own settings,
+   * and scrubbing a value like `C` or `en_US` would corrupt every patch instead of protecting it.
+   */
+  readonly secrets?: readonly string[];
 }
 
 /** One executed run: one scenario, in one arm, with one model, once. */
@@ -213,6 +219,13 @@ async function executeStep(
     });
   }
 
+  // `--max-budget-usd 0` is a value the spike never measured: it may refuse at once, or mean no
+  // limit at all. Neither is a thing to say by accident, so the step is not started. This is not the
+  // budget guard — enforcing the cap across a run and a campaign is F1.3 (REQ-RUN-08, W5).
+  if (remainingCostUsd <= 0) {
+    throw new Error(`step ${number} not started: the run's cost cap is exhausted`);
+  }
+
   const sessionId = randomUUID();
   const outcome = await options.agent.runStep({
     scenarioId: scenario.id,
@@ -223,11 +236,16 @@ async function executeStep(
     remainingCostUsd,
     run: (command) => options.docker.exec(container, command),
   });
-  if (outcome.sessionId !== sessionId) {
-    throw new Error(
-      `step ${number} ran in session ${outcome.sessionId}, not in the one it was given (${sessionId})`,
-    );
-  }
+
+  // **The order is the point.** The agent's own failure comes first: a session that ended before
+  // naming itself reports no session at all, and testing the id first would blame a mismatch for
+  // what was a truncated stream and bury the reason it stopped. The id guard is what remains for an
+  // outcome that did run — an agent continuing a session of its own is what F2.2 forbids.
+  const error =
+    outcome.error ??
+    (outcome.sessionId === sessionId
+      ? undefined
+      : `step ${number} ran in session ${outcome.sessionId}, not in the one it was given (${sessionId})`);
 
   // Every step leaves a snapshot to score, including a step that changed nothing (REQ-RUN-05).
   await options.git.commitAll(workspace, `step ${number}`, { allowEmpty: true });
@@ -235,13 +253,13 @@ async function executeStep(
   mkdirSync(stepDir, { recursive: true });
   // Scrubbed like the transcript: the agent runs with the credential in its own environment and
   // `bypassPermissions`, so one `env > notes.txt` would otherwise commit the token in a patch.
-  const secrets = Object.values(options.containerEnv ?? {});
-  writeFileSync(join(stepDir, 'diff.patch'), scrub(await options.git.patchOf(workspace, 'HEAD'), secrets));
+  const patch = await options.git.patchOf(workspace, 'HEAD');
+  writeFileSync(join(stepDir, 'diff.patch'), scrub(patch, options.secrets ?? []));
   // What the session cost, and the whole of what it said (REQ-RUN-09, REQ-FMT-06). The transcript is
   // git-ignored and scrubbed by the adapter that produced it (REQ-NFR-01, REQ-RES-06).
   writeFileSync(join(stepDir, 'usage.json'), `${JSON.stringify(outcome.usage, undefined, 2)}\n`);
   writeFileSync(join(stepDir, 'transcript.jsonl'), outcome.transcript.map((line) => `${line}\n`).join(''));
-  return outcome;
+  return error === undefined ? outcome : { ...outcome, error };
 }
 
 /**
