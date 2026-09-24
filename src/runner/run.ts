@@ -153,11 +153,11 @@ async function executeRun(context: RunContext, options: RunnerOptions): Promise<
         ),
       );
     }
-    return { ...identity, steps, outcome: 'completed' };
+    return record({ ...identity, steps, outcome: 'completed' }, campaign);
   } catch (error) {
     const message = reasonOf(error);
     options.logError?.(`run ${name} failed: ${message}`);
-    return { ...identity, steps, outcome: 'failed', error: message };
+    return record({ ...identity, steps, outcome: 'failed', error: message }, campaign);
   } finally {
     if (container !== undefined) await remove(container, options);
   }
@@ -227,6 +227,10 @@ async function executeStep(
   const stepDir = join(outputDir, 'steps', number);
   mkdirSync(stepDir, { recursive: true });
   writeFileSync(join(stepDir, 'diff.patch'), await options.git.patchOf(workspace, 'HEAD'));
+  // What the session cost, and the whole of what it said (REQ-RUN-09, REQ-FMT-06). The transcript is
+  // git-ignored and scrubbed by the adapter that produced it (REQ-NFR-01, REQ-RES-06).
+  writeFileSync(join(stepDir, 'usage.json'), `${JSON.stringify(outcome.usage, undefined, 2)}\n`);
+  writeFileSync(join(stepDir, 'transcript.jsonl'), outcome.transcript.map((line) => `${line}\n`).join(''));
   return outcome;
 }
 
@@ -258,4 +262,39 @@ async function remove(container: string, options: RunnerOptions): Promise<void> 
 /** The package root, from this file's location in `dist/runner/` or `src/runner/`. */
 function packageRoot(): string {
   return dirname(dirname(dirname(fileURLToPath(import.meta.url))));
+}
+
+/**
+ * Write the run's own record (adr-002 decision 11, a minimal `run.json`; F5.1 completes it in W7).
+ * It holds what a later reading of the usage needs and cannot recover: which scenario, arm, model and
+ * repetition this was, and which agent, model and approver policy the campaign pinned for it.
+ */
+function record(run: RunResult, campaign: CheckedCampaign['campaign']): RunResult {
+  mkdirSync(run.outputDir, { recursive: true });
+  const { agent, approver_policy } = campaign.spec;
+  writeFileSync(
+    join(run.outputDir, 'run.json'),
+    `${JSON.stringify(
+      {
+        campaign: campaign.id,
+        scenario: run.scenario,
+        version: run.version,
+        arm: run.arm,
+        model: run.model,
+        repetition: run.repetition,
+        agent,
+        approver_policy,
+        outcome: run.outcome,
+        ...(run.error === undefined ? {} : { error: run.error }),
+        steps: run.steps.map((step, index) => ({
+          n: index + 1,
+          session: step.sessionId,
+          usage: step.usage,
+        })),
+      },
+      undefined,
+      2,
+    )}\n`,
+  );
+  return run;
 }

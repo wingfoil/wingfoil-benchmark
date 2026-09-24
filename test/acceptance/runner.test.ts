@@ -120,4 +120,48 @@ describe('runner.feature', () => {
       expect(readFileSync(patch, 'utf8')).toBe(`patch of ${workspace} at HEAD #${n}\n`);
     }
   });
+  it('@F2.3 The Claude Code adapter records usage and the transcript of every session', async () => {
+    const { file } = writeRepo(smokeCampaign(), ['S1@1.0']);
+    const checked = checkCampaign(file);
+    expect(checked.ok).toBe(true);
+    if (!checked.ok) return;
+    const usage = {
+      inputTokens: 10,
+      outputTokens: 40,
+      cacheCreationInputTokens: 6628,
+      cacheReadInputTokens: 13790,
+      costUsd: 0.009874,
+      costEur: 0.009874 * 0.92,
+      turns: 1,
+      durationMs: 4236,
+    };
+    const { docker, git, agent } = doubles({
+      usageOf: () => usage,
+      transcriptOf: (request) => [`{"type":"result","step":${request.step}}`],
+    });
+
+    const summary = await runCampaign(checked.value, { docker, git, agent });
+
+    const run = summary.runs[0];
+    const step = join(run?.outputDir ?? '', 'steps', '01');
+    // Tokens by kind, the API-equivalent cost in both currencies, turns and wall time (REQ-RUN-09).
+    expect(JSON.parse(readFileSync(join(step, 'usage.json'), 'utf8'))).toEqual(usage);
+    // The full transcript is stored with the run.
+    expect(readFileSync(join(step, 'transcript.jsonl'), 'utf8')).toBe('{"type":"result","step":1}\n');
+    // And the run's own record names what it was: the pins a reading of the usage needs.
+    const record = JSON.parse(readFileSync(join(run?.outputDir ?? '', 'run.json'), 'utf8')) as Record<
+      string,
+      unknown
+    >;
+    expect(record).toMatchObject({
+      scenario: 'S1',
+      version: '1.0',
+      arm: 'baseline',
+      model: 'fake-model',
+      repetition: 1,
+      agent: { name: 'fake', version: '1.0.0' },
+      approver_policy: 'v1',
+      outcome: 'completed',
+    });
+  });
 });
