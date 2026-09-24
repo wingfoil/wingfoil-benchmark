@@ -190,6 +190,39 @@ end-to-end run with a real agent stays in the release's validation phase
 
 ## Execution notes
 
+### Build
+
+- **TDD order, in the history:** the parser, scrubber and token tests against the spike's real
+  streams (red `9e30d8a`) → `readSession`/`scrub`/`loadAgentToken` (`7bb1595`); the fake's replay
+  (red, then `65b3182`); the acceptance `@F2.3` (red) → the runner's writes (`636754e`); the
+  adapter's command line (red) → `claudeCodeAgent` and the spending opt-in (`5f1dca0`).
+- **A test of my own that could not fail.** The first version of "sums the result events of a step"
+  asserted only that two invocations cost *more than one*. A parser keeping just the **last** result
+  event also costs more than the first, so the mutation survived: 13 tests green with the sum
+  removed. It now asserts the exact sum of cost, turns, tokens and duration. Found by mutating, not
+  by reading — the method the task-005 review taught, applied before a reviewer had to.
+- **Mutations run against the new code**, each reverted after: the outcome read from `subtype`
+  instead of `is_error`; a missing `result` event treated as zero usage; the last result instead of
+  the sum; the scrubber disabled; the token's whitespace kept; `usage.json` written empty; the
+  transcript written without its lines; `run.json` without the approver policy. **Eight mutations,
+  eight reds.**
+- **`AVAILABLE_AGENTS` was deleted rather than extended.** With `claude-code` given an adapter, the
+  check had no reachable failure: `agent.name` is an enum of exactly the two agents, and both run.
+  Keeping it would have left a branch no valid campaign can reach — the defect W1's review named.
+  What it protected is now a narrower guard about money (`--allow-spending`), recorded as amendment 2
+  of adr-001.
+- **The credential goes in at container creation and nowhere else.** `CreateRequest` gained `env`,
+  and the docker port's test asserts both that the variable is passed **and** that the container
+  still has exactly one mount — the isolation of REQ-RUN-02 is untouched by giving the agent a token.
+- **task-005's shape assertion did its job.** Adding `remainingCostUsd` to `StepRequest` broke it, as
+  task-005 predicted it would, and updating it cost the one line that was forecast.
+- **The spike paid for itself here.** Eight fixtures under `test/fixtures/sessions/` are trimmed real
+  streams, re-scanned for credentials before being committed. Every decision the parser makes —
+  `subtype` can lie, a stream can end with no result, usage is per invocation — is tested against
+  output the agent actually produced, and none of it cost a token in this task.
+- **Suites after the build:** `npm test` 347 passed, coverage **100% statements** / 97.56% branches /
+  100% functions; `npm run test:bin` 4; `npm run test:docker` 1; `npm run lint` clean.
+
 ### WingFoil commands (declared vs observed)
 
 - `npx wingfoil memory add --type task --title "…"` → `0ae42bd`. Declared: one commit
