@@ -2,7 +2,7 @@
 id: bug-001-phase-include-names-a-file-path-instead-of-the-workflow
 type: bug
 title: "Phase include names a file path instead of the workflow"
-status: pending
+status: approved
 ---
 
 ## Context
