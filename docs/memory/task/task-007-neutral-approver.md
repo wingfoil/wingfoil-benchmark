@@ -361,3 +361,8 @@ governance metrics over interventions (F4.8) are W8; the method page is W11.
 - `npx wingfoil memory submit task-007-neutral-approver` → `817ac24`. Declared: `in-progress →
   in-review`, a plain `submit`, one commit `wf(task): submit <id>`. Observed: exit 0, JSON
   `{from: in-progress, to: in-review}`, 1 file, diff limited to the `status` line. Matches.
+- `npx wingfoil memory approve bug-004-… --reason "…"` → `9f8b69e` on main, run on the approver's
+  explicit instruction in chat ("approva bug 004"), which also chose adr-002's amendment over an
+  `adr-003`. Declared: `pending → approved` gate, `Approver:`/`Reason:` body, only `status` changed.
+  Observed: exit 0, the declared subject and trailers, a one-line diff. Matches. No separate task: the
+  fix is this task's (see bug-004's Resolution).

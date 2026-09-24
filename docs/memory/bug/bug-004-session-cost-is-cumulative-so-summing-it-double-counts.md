@@ -65,3 +65,13 @@ proposing `adr-003`. This element is the defect; the ADR is the decision.
 Still unmeasured, and worth one cheap session when someone is in a container anyway: whether
 `--max-budget-usd` on a resume compares against the cumulative cost or the invocation's. Until it is
 known, passing the remaining budget computed after the step so far is the conservative choice.
+
+## Resolution
+
+Fixed in [task-007](../task/task-007-neutral-approver.md), by agreement with the session that filed
+it: `readSession` and the step loop sum the work and take the latest cost, tested on the spike's own
+session and resume (`question.jsonl` + `resumed.jsonl`) with their literal figures. The decision is
+recorded as **adr-002 amendment 1**, not as the `adr-003` foreseen above — the approver chose the
+amendment, as for adr-001. `duration_ms` is shown per invocation by the span of P6's own events;
+`duration_api_ms` is unmeasured and the runner does not record it, so nothing needed the same
+treatment. The `--max-budget-usd` question above stays open.
