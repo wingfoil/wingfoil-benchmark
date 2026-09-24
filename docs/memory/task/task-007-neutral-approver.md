@@ -313,6 +313,29 @@ governance metrics over interventions (F4.8) are W8; the method page is W11.
 - **Suites after the round:** `npm test` 436 passed, 100% statements / 98.25% branches / 100%
   functions / 100% lines; `npm run test:bin` 4; `npm run test:docker` 2; `npm run lint` clean.
 
+### Review, round 2 (before submitting)
+
+- **Same reviewer, fresh export. Verdict: approvable.** B1 and the round-1 minors verified fixed; every
+  round-1 surviving mutation ported to the new code is red; 2 MB of trigger words classify in 15 ms;
+  the amendment's figures re-checked against the spike originals. It asked for two tests before merge
+  and flagged one claim of mine as false.
+- **Fixed:** the resume's cap had no test that tells a sum of running totals from the latest (a second
+  resume is now told cap − 1, not cap − 1.5); nothing pinned that a fence opens only at the start of a
+  line; my note said "a later result without text clears an earlier message (tested)" and it was
+  **not** tested — it is now; a full stop before a line break, and CRLF fences, now tested.
+- **A premise now checked rather than trusted:** if a resume ever reports a session total **lower**
+  than before, the step keeps the larger and the runner says so on the error stream. The acceptance
+  and Docker tests pair recordings that are not one session (`approval.jsonl` then `completed.jsonl`);
+  their totals happen to rise, so they model a resume's cost by shape only — said here, not hidden.
+- **Recorded as v2 candidates, not changed** (dl-004's rules as written; changing them is v2): an
+  inline ```` ```bash``` ```` at the start of a line opens a fence; a fence indented four spaces is
+  still a fence; a fence inside a blockquote is not stripped (a false positive, the cheap direction);
+  a last line of emphasis markers only; `e.g.` ends a sentence.
+- **Mutations of round 2, all red:** resume cap from summed totals, unanchored fence, earlier message
+  kept, `.` + newline not ending a sentence, the falling-total report switched off.
+- **Suites:** `npm test` 442 passed, 100% statements / 98.27% branches / 100% functions / 100% lines;
+  `npm run test:bin` 4; `npm run test:docker` 2; `npm run lint` clean.
+
 ### WingFoil commands (declared vs observed)
 
 - `npx wingfoil memory add --type task --title "…"` → `b3f55b7`. Declared: one commit
