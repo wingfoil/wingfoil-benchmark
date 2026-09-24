@@ -22,13 +22,13 @@ describe('reading a session (REQ-RUN-09)', () => {
     expect(session.sessionId).toBe('866c649d-7cdc-4192-a033-75c01a9b543f');
     expect(session.usage).toEqual({
       inputTokens: 10,
-      outputTokens: 43,
-      cacheCreationInputTokens: 2881,
-      cacheReadInputTokens: 17560,
+      outputTokens: 40,
+      cacheCreationInputTokens: 6628,
+      cacheReadInputTokens: 13790,
       costUsd: 0.009874,
       costEur: 0.009874 * RATE,
       turns: 1,
-      durationMs: 2079,
+      durationMs: 4236,
     });
   });
 
@@ -60,10 +60,15 @@ describe('reading a session (REQ-RUN-09)', () => {
   it('sums the result events of a step, so a resumed step is not under-reported', () => {
     // One step, two invocations: the step and the reply that resumed it (REQ-RUN-07, task-007).
     const first = readSession(recorded('completed.jsonl'), RATE);
+    const second = readSession(recorded('resumed.jsonl'), RATE);
     const both = readSession([...recorded('completed.jsonl'), ...recorded('resumed.jsonl')], RATE);
 
-    expect(both.usage.costUsd).toBeGreaterThan(first.usage.costUsd);
-    expect(both.usage.turns).toBeGreaterThan(first.usage.turns);
+    // The exact sum, not merely "more than one of them": a parser that kept only the last result
+    // event would also report more than the first, and that is the defect this test exists for.
+    expect(both.usage.costUsd).toBeCloseTo(first.usage.costUsd + second.usage.costUsd, 10);
+    expect(both.usage.turns).toBe(first.usage.turns + second.usage.turns);
+    expect(both.usage.outputTokens).toBe(first.usage.outputTokens + second.usage.outputTokens);
+    expect(both.usage.durationMs).toBe(first.usage.durationMs + second.usage.durationMs);
     expect(both.outcome).toBe('completed');
   });
 
