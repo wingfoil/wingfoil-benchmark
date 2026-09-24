@@ -357,3 +357,7 @@ governance metrics over interventions (F4.8) are W8; the method page is W11.
   after the design commit `d1f55f6`. Declared: `backlog → in-progress`, a plain `submit` by the agent,
   one commit `wf(task): submit <id>`. Observed: exit 0, JSON `{from: backlog, to: in-progress}` on
   stdout, 1 file, diff limited to the `status` line. Matches.
+- `npx wingfoil memory search --type task --status in-review` → no match: the review slot was free.
+- `npx wingfoil memory submit task-007-neutral-approver` → `817ac24`. Declared: `in-progress →
+  in-review`, a plain `submit`, one commit `wf(task): submit <id>`. Observed: exit 0, JSON
+  `{from: in-progress, to: in-review}`, 1 file, diff limited to the `status` line. Matches.
