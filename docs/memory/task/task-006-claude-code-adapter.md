@@ -226,6 +226,82 @@ end-to-end run with a real agent stays in the release's validation phase
 - **Suites after the build:** `npm test` 347 passed, coverage **100% statements** / 97.56% branches /
   100% functions; `npm run test:bin` 4; `npm run test:docker` 1; `npm run lint` clean.
 
+### Review, round 1
+
+- **Reviewer:** independent, read-only, on an export of HEAD, every finding proved by a probe. A new
+  reviewer rather than task-005's: that one's context was already large, and a fresh one does not
+  arrive looking for the previous task's defects.
+- **Result: not approvable.** 2 blockers, 5 majors, 7 minors, 2 nits.
+
+#### The two blockers
+
+1. **The token reached `run.json` and stderr.** `dockerCli` put `--env ANTHROPIC_AUTH_TOKEN=<token>`
+   on the command line, and `processFailure` renders the command line into the message it throws;
+   the runner logs that message and `record()` writes it into `run.json`, which is committed. A name
+   clash or a stopped daemon was enough. **Fixed:** only the variable **name** goes on the command
+   line, and the value is handed to the `docker` process in its own environment. The same argv was
+   also visible in `ps`.
+2. **`@F2.3` passed against a runner that invents usage.** The doubles returned canned usage and the
+   test compared the written files to the same literals. Replacing both writes with constants left
+   all 347 tests green. **Fixed:** the scenario now drives a real run through the fake replaying two
+   streams the agent produced during the spike, and asserts that what is on disk is what
+   `readSession` computes from them — the two transcripts proved different, so one step's snapshot
+   cannot stand in for another's.
+
+#### The five majors
+
+1. **A failed step threw away what it had spent.** The adapter threw, so `usage.json`,
+   `transcript.jsonl` and the step's entry in `run.json` were never written: real money, `steps: []`,
+   and the transcript — the only evidence of *why* — discarded. An agent now **reports** a failed
+   session; the runner stores it, then fails the run.
+2. **The session guard could never fire.** The parser kept the **first** `session_id`, which is the
+   one the init event echoes back from `--session-id` — so the runner compared an id with itself. It
+   now takes the id from the `result` event. This is the same defect I had claimed to remove by
+   deleting `AVAILABLE_AGENTS`, written ten lines further down.
+3. **`terminal_reason` never decided an outcome**, though adr-002 decision 6 says it does. A session
+   cut off by `--max-budget-usd` — reachable in W2, since this task emits the flag — was scored as a
+   completed step with truncated work. A session now completes only when `is_error` is not `true`
+   **and** `terminal_reason` is `completed`.
+4. **The whole credential path was unpinned:** dropping `containerEnv`, dropping `env` from the
+   create request, or building the adapter with an empty token each left 347 tests green — the first
+   two silently unauthenticate every run, the third silently disables the scrubber. The credential is
+   now required whenever the agent is not the free one, **injected ports included**: requiring it
+   only for real ports is what left the path untested.
+5. **`remaining()` was asserted by nothing.** Returning the cap unconverted, or never subtracting
+   what previous steps spent, both passed. The command-line test pinned the *formatting* of a
+   hand-supplied number. It is now asserted across two steps.
+
+#### Minors and nits, all fixed
+
+A line parsing to `null` crashed the parser instead of failing the session; `diff.patch` was neither
+scrubbed nor ignored, while the agent runs with `bypassPermissions` and the credential in its own
+environment; the Design promised a scrubber wider than the one built (corrected to what it does, and
+patches are now scrubbed too); `run.json`'s contents were unpinned; adr-002 decision 13 was never
+exercised end to end (B2's fix does it); `realPorts` handed the Claude Code adapter to **any**
+non-`fake` agent, so adding one to the enum would have given it this command line and this
+credential — the selection is now exhaustive over the enum and a new agent is a build error;
+`AgentPort` lived in the fake adapter with the real one importing it from there, and now lives in
+`agents/port.ts`; `--allow-spending` was silently accepted by `validate`; and the notes said eight
+fixtures where there are seven.
+
+#### What I take from it
+
+The review confirmed my eight mutations were real — it re-ran all eight. That was never the problem.
+**I mutated what I already had in mind.** Two blockers and five majors lived where I had not thought
+to look, and the one I had flagged to the reviewer as my weakest point (the `@F2.3` doubles) I
+flagged instead of fixing. A mutation I choose is a test of my imagination, not of the code.
+
+#### Mutations re-run after the fixes
+
+Each made, observed, reverted: the token back on the argv (2 red); the runner writing constants for
+usage and transcript (1 red); `remaining()` unconverted (1 red); `remaining()` never subtracting
+(1 red); `run.json` without its steps (1 red); `containerEnv` dropped (1 red); `env` dropped from the
+create request (1 red); the adapter built with an empty token (1 red); the patch left unscrubbed
+(1 red); a third agent added to the campaign enum (a **type error**, as intended).
+
+**Suites after the round:** `npm test` 356 passed, coverage 100% statements / 98.26% branches;
+`npm run test:bin` 4; `npm run lint` clean.
+
 ### WingFoil commands (declared vs observed)
 
 - `npx wingfoil memory add --type task --title "…"` → `0ae42bd`. Declared: one commit
