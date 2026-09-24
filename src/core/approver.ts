@@ -15,38 +15,74 @@ export interface ApproverPolicy {
   readonly maxInterventions: number;
 }
 
-/** Text up to the end of the sentence: no `.`, `!` or `?`, and no blank line. A single line break wraps. */
-const SENTENCE = String.raw`(?:(?!\n[^\S\n]*\n)[^.!?])*?`;
-
 /**
  * dl-004 rule 1, v1: the approval patterns, matched **anywhere** in the message. A real approval
  * request need not end with a question (the spike's did not), so these are read for what they ask.
+ * Frozen with v1: a pattern added or changed is v2, and the test that lists them says so.
  */
-const APPROVAL_PATTERNS: readonly RegExp[] = [
+const ANYWHERE: readonly RegExp[] = [
   /\bare\s+you\s+sure\b/i,
   /\b(?:please|can\s+you|could\s+you)\s+confirm\b/i,
-  new RegExp(String.raw`\b(?:needs?|requires?)\b${SENTENCE}\bapproval\b`, 'i'),
   /\bpermission\s+to\b/i,
   /\b(?:may|shall)\s+I\b/i,
   /\b(?:do\s+you\s+want|would\s+you\s+like)\s+me\s+to\b/i,
   /\b(?:awaiting|waiting\s+for)\s+your\b/i,
-  new RegExp(String.raw`\blet\s+me\s+know\b${SENTENCE}\b(?:proceed|continue|approve)`, 'i'),
 ];
+
+/** dl-004 rule 1's two patterns whose words must fall within one sentence: the first, then the second. */
+const WITHIN_SENTENCE: readonly (readonly [RegExp, RegExp])[] = [
+  [/\b(?:needs?|requires?)\b/i, /\bapproval\b/i],
+  [/\blet\s+me\s+know\b/i, /\b(?:proceed|continue|approve)/i],
+];
+
+/** Classifier v1's patterns, exported so that a test can pin them: changing one is v2 (dl-004). */
+export const CLASSIFIER_V1 = { anywhere: ANYWHERE, withinSentence: WITHIN_SENTENCE } as const;
+
+/**
+ * Where a sentence ends: `.`, `!` or `?` followed by a space or the end — so that `config.yaml` or
+ * `v1.2` do not end one — or a blank line. A single line break only wraps a sentence.
+ */
+const SENTENCE_END = /[.!?](?=\s|$)|\n[^\S\n]*\n/;
+
+/** An opening or closing code fence: three or more backticks or tildes, after optional indentation. */
+const FENCE = /^[^\S\n]*(`{3,}|~{3,})/;
 
 /**
  * dl-004's preparation: fenced code blocks and inline code spans are removed, so that a diff, a test
- * fixture or a file the agent quotes cannot trigger a rule. The message itself is never changed.
+ * fixture or a file the agent quotes cannot trigger a rule. A fence closes only on a line holding a
+ * run of the same character at least as long and nothing else (CommonMark); one never closed runs to
+ * the end. Line by line, so that no input can make it backtrack. The message itself is never changed.
  */
 function withoutCode(message: string): string {
-  return message
-    .replaceAll(/^[^\S\n]*(`{3,}|~{3,})[^\n]*\n[\s\S]*?(?:^[^\S\n]*\1[^\n]*$|(?![\s\S]))/gm, '')
-    .replaceAll(/`[^`\n]*`/g, '');
+  const kept: string[] = [];
+  let open: string | undefined;
+  for (const line of message.split('\n')) {
+    const run = FENCE.exec(line)?.[1];
+    if (open === undefined) {
+      if (run === undefined) kept.push(line);
+      else open = run;
+    } else if (run !== undefined && run[0] === open[0] && run.length >= open.length && line.trim() === run) {
+      open = undefined;
+    }
+  }
+  return kept.join('\n').replaceAll(/`[^`\n]*`/g, '');
 }
 
-/** Rule 2's reading of the last line: trailing whitespace and Markdown emphasis removed. */
+/** Whether the first pattern matches in a sentence and the second after it, in the same sentence. */
+function inOneSentence(sentences: readonly string[], [first, then]: readonly [RegExp, RegExp]): boolean {
+  return sentences.some((sentence) => {
+    const found = first.exec(sentence);
+    return found !== null && then.test(sentence.slice(found.index + found[0].length));
+  });
+}
+
+/** Rule 2's reading of the last non-empty line, with trailing whitespace and Markdown emphasis removed. */
 function lastLine(text: string): string {
-  const lines = text.split('\n').filter((line) => line.trim() !== '');
-  return (lines.at(-1) ?? '').replace(/[\s*_]+$/, '');
+  const line = text.split('\n').findLast((candidate) => candidate.trim() !== '') ?? '';
+  // A loop rather than a regex anchored at the end, which backtracks on a long run of `*` or `_`.
+  let end = line.length;
+  while (end > 0 && /[\s*_]/.test(line.charAt(end - 1))) end -= 1;
+  return line.slice(0, end);
 }
 
 /**
@@ -55,7 +91,13 @@ function lastLine(text: string): string {
  */
 export function classify(message: string): InterventionKind | undefined {
   const text = withoutCode(message);
-  if (APPROVAL_PATTERNS.some((pattern) => pattern.test(text))) return 'approval';
+  const sentences = text.split(SENTENCE_END);
+  if (
+    ANYWHERE.some((pattern) => pattern.test(text)) ||
+    WITHIN_SENTENCE.some((pair) => inOneSentence(sentences, pair))
+  ) {
+    return 'approval';
+  }
   if (lastLine(text).endsWith('?')) return 'question';
   return undefined;
 }
