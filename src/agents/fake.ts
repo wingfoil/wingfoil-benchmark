@@ -1,43 +1,22 @@
 import { readFileSync, statSync } from 'node:fs';
-import { basename } from 'node:path';
+import { basename, join } from 'node:path';
 import { z } from 'zod';
 
+import { readSession } from './claude-code.js';
+import type { Session, SessionUsage } from './claude-code.js';
+import type { AgentPort } from './port.js';
 import { fail, parseWith } from '../core/index.js';
-import type { ProcessResult, Result } from '../core/index.js';
-
-/**
- * What the agent is asked to do for one step of a run (F2.2). There is nowhere to put a conversation
- * history: each step is a session of its own, and only the repository carries state between them.
- */
-export interface StepRequest {
-  readonly scenarioId: string;
-  readonly step: number;
-  /** The text of the step's prompt file, read by the runner so that every arm gets the same bytes. */
-  readonly prompt: string;
-  readonly model: string;
-  /** A fresh session id, one per step. */
-  readonly sessionId: string;
-  /** Runs a command inside the run's container. */
-  readonly run: (command: readonly string[]) => Promise<ProcessResult>;
-}
-
-/**
- * What the agent did in a step. The session is reported rather than assumed, so the runner can check
- * that the agent used the one it was given. Usage and the transcript join it in task-006 (F2.3).
- */
-export interface StepOutcome {
-  readonly sessionId: string;
-}
-
-/** REQ-ARC-04: the agent behind one interface, so a run never depends on a real agent. */
-export interface AgentPort {
-  runStep(request: StepRequest): Promise<StepOutcome>;
-}
+import type { Result } from '../core/index.js';
 
 const scriptedStep = z.strictObject({
   /** The session the fake answers with. Absent means "the one the runner gave me", the ordinary case. */
   session: z.string().min(1).optional(),
   commands: z.array(z.string().min(1)).min(1),
+  /**
+   * A recorded stream-json session to replay, named relative to the script (adr-002 decision 13).
+   * Absent means the step reports no usage, which is what the trivial fixtures want.
+   */
+  events: z.string().min(1).optional(),
 });
 
 const scriptSchema = z.record(
@@ -76,8 +55,27 @@ export function loadFakeScript(file: string): Result<FakeScript> {
   return parseWith(scriptSchema, data, label);
 }
 
+/** What the fake needs beyond its script: where the script is, and the campaign's currency rate. */
+export interface FakeOptions {
+  /** The script's own directory: a recorded session is named relative to it. */
+  readonly dir: string;
+  readonly usdToEur: number;
+}
+
+/** A step that replays nothing reports no usage; it is a stand-in, not a measurement. */
+const NO_USAGE: SessionUsage = {
+  inputTokens: 0,
+  outputTokens: 0,
+  cacheCreationInputTokens: 0,
+  cacheReadInputTokens: 0,
+  costUsd: 0,
+  costEur: 0,
+  turns: 0,
+  durationMs: 0,
+};
+
 /** A scripted stand-in for an agent: it runs the commands its script declares, and nothing else. */
-export function fakeAgent(script: FakeScript): AgentPort {
+export function fakeAgent(script: FakeScript, options: FakeOptions): AgentPort {
   return {
     async runStep({ scenarioId, step, sessionId, run }) {
       const scripted = script[scenarioId]?.[String(step)];
@@ -90,7 +88,34 @@ export function fakeAgent(script: FakeScript): AgentPort {
           throw new Error(`'${command}' failed with code ${result.code}:\n${result.stderr.trim()}`);
         }
       }
-      return { sessionId: scripted.session ?? sessionId };
+      const replayed = replay(scripted.events, options);
+      return {
+        sessionId: scripted.session ?? sessionId,
+        usage: replayed?.usage ?? NO_USAGE,
+        transcript: replayed?.transcript ?? [],
+        // A replayed failure is a failure. Without this every acceptance test runs through an agent
+        // that cannot report one, and a failing step is untestable in every wave that uses the fake.
+        ...(replayed?.outcome === 'failed' ? { error: replayed.error ?? 'the session failed' } : {}),
+      };
     },
   };
+}
+
+/** Read the recorded session a scripted step names, if it names one. */
+function replay(events: string | undefined, options: FakeOptions): Session | undefined {
+  if (events === undefined) return undefined;
+  const file = join(options.dir, events);
+  let text: string;
+  try {
+    text = readFileSync(file, 'utf8');
+  } catch (error) {
+    throw new Error(
+      `the fake agent cannot read the recorded session ${events}: ${(error as Error).message}`,
+      { cause: error },
+    );
+  }
+  return readSession(
+    text.split('\n').filter((line) => line !== ''),
+    options.usdToEur,
+  );
 }

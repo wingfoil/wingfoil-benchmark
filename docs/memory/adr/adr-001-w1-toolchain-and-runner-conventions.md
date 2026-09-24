@@ -83,6 +83,23 @@ exists (F2.3), a campaign naming `claude-code` installs it at the version it pin
 Recorded as an amendment rather than a superseding ADR, because it clarifies one default rather than
 changing the direction of the decision.
 
+## Amendment 2 (W2 task-006, 2026-09-24)
+
+**Default 7, the agent adapter.** The quoted default says that in W1 only `fake` is registered and
+that `claude-code` is refused with exit 1, "agent not available". F2.3 gives `claude-code` an
+adapter, so the refusal has nothing left to refuse: `agent.name` is an enum of exactly those two
+names, and both now run. The command no longer keeps a list of available agents — keeping it would
+have left a branch that no valid campaign can reach, which W1's own review established is a defect.
+
+What the default protected is **not** dropped, it is replaced by something narrower and truer: a
+campaign whose agent is not `fake` refuses to start without `--allow-spending`, and the refusal names
+the campaign's ceiling so that whoever runs it sees what they would be authorising. The guard is
+about money, which is what mattered, rather than about availability, which was a proxy for it. It
+stands until the budget guard of F1.3 arrives in W5.
+
+Recorded as an amendment rather than a superseding ADR: default 7 was a statement about what existed
+in W1, and W2 is where it was always going to expire.
+
 ## Consequences
 
 - Every later task inherits these conventions. Changing one is a new ADR that supersedes this one.

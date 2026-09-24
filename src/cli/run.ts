@@ -1,9 +1,12 @@
-import { loadFakeScript } from '../agents/index.js';
+import { dirname } from 'node:path';
+
+import { claudeCodeAgent, loadAgentToken, loadFakeScript } from '../agents/index.js';
 import type { AgentPort } from '../agents/index.js';
 import { fakeAgent } from '../agents/index.js';
 import { dockerCli, gitCli, reasonOf, systemProcess } from '../core/index.js';
 import type { DockerPort, GitPort, Issue, Result } from '../core/index.js';
 import { checkCampaign, runCampaign } from '../runner/index.js';
+import type { CheckedCampaign } from '../runner/index.js';
 
 /** Where the command writes its output; the bin passes the process streams, tests capture them. */
 export interface Io {
@@ -21,13 +24,29 @@ export interface Ports {
 /** REQ-CLI exit codes. */
 export const EXIT = { ok: 0, failure: 1, usage: 2 } as const;
 
-/** The agents a run can use today: W2 adds the Claude Code adapter (F2.3). */
-const AVAILABLE_AGENTS = ['fake'];
+/**
+ * The agent that costs nothing: every other one needs {@link SPENDING_FLAG}. Which agents exist at
+ * all is the campaign schema's business (`agent.name` is an enum), so the command no longer keeps a
+ * list of its own: adr-001 default 7's refusal is spent now that F2.3 gives `claude-code` an adapter.
+ */
+const FREE_AGENT = 'fake';
+
+/**
+ * Spending stays deliberate until the budget guard exists (F1.3, W5): a campaign with a real agent
+ * runs only when whoever runs it says so on the command line.
+ */
+const SPENDING_FLAG = '--allow-spending';
+
+/** Where the agent's long-lived token is read from (REQ-RUN-15, requirements 1.3). */
+const TOKEN_VARIABLE = 'BENCH_AGENT_TOKEN_FILE';
+
+/** The variable the agent reads its credential from. `ANTHROPIC_API_KEY` does not work (task-004). */
+const AGENT_TOKEN_VARIABLE = 'ANTHROPIC_AUTH_TOKEN';
 
 /** Where the scripted fake agent reads its script, until W2 records real sessions. */
 const FAKE_SCRIPT_VARIABLE = 'BENCH_FAKE_SCRIPT';
 
-const USAGE = 'usage: bench campaign validate <file>\n       bench campaign run <file>\n';
+const USAGE = 'usage: bench campaign validate <file>\n       bench campaign run <file> [--allow-spending]\n';
 const HELP_FLAGS = ['--help', '-h'];
 
 /** Run the `bench` command line `argv` (without the executable) and return its exit code. */
@@ -37,12 +56,15 @@ export async function main(argv: readonly string[], io: Io, ports?: Ports): Prom
     return EXIT.ok;
   }
   const [noun, verb, file, ...extra] = argv;
-  if (noun !== 'campaign' || !isFileArgument(file) || extra.length > 0) {
+  // The flag belongs to `run`: accepting it on `validate` would say it means something there.
+  const allowSpending = verb === 'run' && extra.includes(SPENDING_FLAG);
+  const rest = allowSpending ? extra.filter((argument) => argument !== SPENDING_FLAG) : extra;
+  if (noun !== 'campaign' || !isFileArgument(file) || rest.length > 0) {
     io.stderr(USAGE);
     return EXIT.usage;
   }
   if (verb === 'validate') return validateCampaign(file, io);
-  if (verb === 'run') return runCampaignCommand(file, io, ports);
+  if (verb === 'run') return runCampaignCommand(file, io, ports, allowSpending);
   io.stderr(USAGE);
   return EXIT.usage;
 }
@@ -68,17 +90,33 @@ function validateCampaign(file: string, io: Io): number {
  * scripted fake agent, one session per step (F2.2). The Claude Code adapter arrives with F2.3, and
  * the cost estimate, the warning and the ceiling with F1.2 and F1.3 (W5).
  */
-async function runCampaignCommand(file: string, io: Io, ports?: Ports): Promise<number> {
+async function runCampaignCommand(
+  file: string,
+  io: Io,
+  ports?: Ports,
+  allowSpending = false,
+): Promise<number> {
   const checked = checkCampaign(file);
   if (!checked.ok) return report(checked.issues, io);
 
-  const agentName = checked.value.campaign.spec.agent.name;
-  if (!AVAILABLE_AGENTS.includes(agentName)) {
-    io.stderr(`agent '${agentName}' has no adapter yet: the scripted fake agent is the only one\n`);
+  const spec = checked.value.campaign.spec;
+  const agentName = spec.agent.name;
+  if (agentName !== FREE_AGENT && !allowSpending) {
+    io.stderr(
+      `campaign: agent '${agentName}' spends real money, up to ${spec.budget.ceiling_eur} EUR; ` +
+        `pass ${SPENDING_FLAG} to run it\n`,
+    );
     return EXIT.failure;
   }
 
-  const resolved = ports ? { ok: true as const, value: ports } : realPorts();
+  // Whenever the agent is not the free one, whoever runs the container needs the credential — with
+  // injected ports too, because the container's environment is the runner's business, not the
+  // port's. Requiring it only for real ports left the whole credential path untested.
+  const credential = agentName === FREE_AGENT ? undefined : agentCredential();
+  if (credential !== undefined && !credential.ok) return report(credential.issues, io);
+  const resolved = ports
+    ? { ok: true as const, value: ports }
+    : realPorts(checked.value, credential?.ok === true ? credential.value : undefined);
   if (!resolved.ok) return report(resolved.issues, io);
 
   let summary;
@@ -87,6 +125,11 @@ async function runCampaignCommand(file: string, io: Io, ports?: Ports): Promise<
       ...resolved.value,
       log: (line) => io.stdout(`${line}\n`),
       logError: (line) => io.stderr(`${line}\n`),
+      // The credential reaches the container here and nowhere else (REQ-RUN-15, REQ-NFR-01), and
+      // the values to scrub are named rather than taken from the whole environment.
+      ...(credential?.ok === true
+        ? { containerEnv: credential.value, secrets: Object.values(credential.value) }
+        : {}),
     });
   } catch (error) {
     // The campaign could not start at all: no Docker daemon, no results directory, no image.
@@ -97,8 +140,31 @@ async function runCampaignCommand(file: string, io: Io, ports?: Ports): Promise<
   return summary.completed ? EXIT.ok : EXIT.failure;
 }
 
-/** The real ports, with the fake agent's script read from the environment. */
-export function realPorts(): Result<Ports> {
+/**
+ * The real ports for this campaign. The campaign is already checked by the time this runs, so the
+ * agent is chosen by what it pins and is given the currency rate it needs to report a cost. A
+ * campaign with a real agent brings its credential, which the adapter keeps only in order to scrub
+ * it out of what is stored (REQ-NFR-01).
+ */
+export function realPorts(
+  campaign: CheckedCampaign,
+  credential?: Readonly<Record<string, string>>,
+): Result<Ports> {
+  const usdToEur = campaign.campaign.spec.currency.usd_to_eur;
+  const name = campaign.campaign.spec.agent.name;
+  // Exhaustive over the campaign schema's enum on purpose: adding an agent there without an adapter
+  // here is a build error, rather than a run that quietly gets Claude Code's command line.
+  if (name === 'claude-code') {
+    return {
+      ok: true,
+      value: {
+        docker: dockerCli(systemProcess),
+        git: gitCli(systemProcess),
+        agent: claudeCodeAgent({ token: credential?.[AGENT_TOKEN_VARIABLE] ?? '', usdToEur }),
+      },
+    };
+  }
+  name satisfies typeof FREE_AGENT;
   const script = process.env[FAKE_SCRIPT_VARIABLE];
   if (script === undefined) {
     return {
@@ -110,8 +176,29 @@ export function realPorts(): Result<Ports> {
   if (!loaded.ok) return loaded;
   return {
     ok: true,
-    value: { docker: dockerCli(systemProcess), git: gitCli(systemProcess), agent: fakeAgent(loaded.value) },
+    value: {
+      docker: dockerCli(systemProcess),
+      git: gitCli(systemProcess),
+      agent: fakeAgent(loaded.value, { dir: dirname(script), usdToEur }),
+    },
   };
+}
+
+/**
+ * The agent's credential (REQ-RUN-15): the long-lived token, read from the file the operator names
+ * and stripped of the whitespace a paste leaves behind, before any container is created.
+ */
+export function agentCredential(): Result<Readonly<Record<string, string>>> {
+  const file = process.env[TOKEN_VARIABLE];
+  if (file === undefined || file === '') {
+    return {
+      ok: false,
+      issues: [{ path: TOKEN_VARIABLE, message: "is not set: it names the file holding the agent's token" }],
+    };
+  }
+  const token = loadAgentToken(file);
+  if (!token.ok) return token;
+  return { ok: true, value: { [AGENT_TOKEN_VARIABLE]: token.value } };
 }
 
 function report(issues: readonly Issue[], io: Io): number {

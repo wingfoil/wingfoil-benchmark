@@ -1,9 +1,10 @@
-import { writeFileSync } from 'node:fs';
+import { copyFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { fakeAgent, loadFakeScript } from '../../../src/agents/index.js';
 import type { ProcessResult } from '../../../src/core/index.js';
+import { repoPath } from '../../support/paths.js';
 import { tempDir } from '../../support/scenario-fixture.js';
 
 const SCRIPT = {
@@ -22,9 +23,13 @@ function request(step: number, run: (command: readonly string[]) => Promise<Proc
     prompt: `do step ${step}`,
     model: 'fake-model',
     sessionId: `session-${step}`,
+    remainingCostUsd: 3,
     run,
   };
 }
+
+/** The fake's options when no recorded session is involved. */
+const PLAIN = { dir: '/nowhere', usdToEur: 0.92 };
 
 function scriptFile(content: unknown = SCRIPT): string {
   const dir = tempDir('bench-script-');
@@ -79,21 +84,73 @@ describe('loadFakeScript', () => {
 describe('the scripted fake agent', () => {
   it('runs the commands its script declares for the step', async () => {
     const runner = exec();
-    const outcome = await fakeAgent(SCRIPT).runStep(request(2, runner.run));
+    const outcome = await fakeAgent(SCRIPT, PLAIN).runStep(request(2, runner.run));
     expect(runner.commands).toEqual([['sh', '-c', 'echo hi > hello.txt']]);
     // It answers with the session it was given: the ordinary case (F2.2).
-    expect(outcome).toEqual({ sessionId: 'session-2' });
+    expect(outcome.sessionId).toBe('session-2');
+    expect(outcome.transcript).toEqual([]);
+  });
+
+  it('replays a recorded session when the script names one (adr-002 decision 13)', async () => {
+    const dir = tempDir('bench-replay-');
+    const events = join(dir, 'session.jsonl');
+    copyFileSync(repoPath('test/fixtures/sessions/completed.jsonl'), events);
+    const file = join(dir, 'script.json');
+    writeFileSync(file, JSON.stringify({ T0: { '1': { commands: ['true'], events: 'session.jsonl' } } }));
+    const script = loadFakeScript(file);
+    expect(script.ok).toBe(true);
+    if (!script.ok) return;
+    const runner = exec();
+
+    const outcome = await fakeAgent(script.value, { dir, usdToEur: 0.92 }).runStep(request(1, runner.run));
+
+    // The same stream the real agent produced, read by the same parser: the whole pipeline is
+    // exercised without an agent and without spending.
+    expect(outcome.usage.costUsd).toBeCloseTo(0.009874, 10);
+    expect(outcome.transcript).toHaveLength(4);
+    expect(runner.commands).toEqual([['sh', '-c', 'true']]);
+  });
+
+  it('reports a replayed session that failed, instead of calling the step a success', async () => {
+    // Every acceptance test and every later wave runs through this path (adr-002 decision 13): an
+    // agent that cannot report a failure makes a failing step untestable everywhere.
+    const dir = tempDir('bench-replay-');
+    copyFileSync(repoPath('test/fixtures/sessions/failed-subtype-success.jsonl'), join(dir, 'session.jsonl'));
+    const file = join(dir, 'script.json');
+    writeFileSync(file, JSON.stringify({ T0: { '1': { commands: ['true'], events: 'session.jsonl' } } }));
+    const script = loadFakeScript(file);
+    expect(script.ok).toBe(true);
+    if (!script.ok) return;
+
+    const outcome = await fakeAgent(script.value, { dir, usdToEur: 0.92 }).runStep(request(1, exec().run));
+
+    expect(outcome.error).toMatch(/api_error/);
+    // And what it spent before failing is still reported.
+    expect(outcome.transcript.length).toBeGreaterThan(0);
+  });
+
+  it('reports a recorded session it cannot read, rather than replaying nothing', async () => {
+    const dir = tempDir('bench-replay-');
+    const file = join(dir, 'script.json');
+    writeFileSync(file, JSON.stringify({ T0: { '1': { commands: ['true'], events: 'missing.jsonl' } } }));
+    const script = loadFakeScript(file);
+    expect(script.ok).toBe(true);
+    if (!script.ok) return;
+
+    await expect(
+      fakeAgent(script.value, { dir, usdToEur: 0.92 }).runStep(request(1, exec().run)),
+    ).rejects.toThrow(/missing.jsonl/);
   });
 
   it("can answer with a different session, so that the runner's check has something to catch", async () => {
     const runner = exec();
-    const outcome = await fakeAgent(SCRIPT).runStep(request(3, runner.run));
-    expect(outcome).toEqual({ sessionId: 'not-the-one-it-was-given' });
+    const outcome = await fakeAgent(SCRIPT, PLAIN).runStep(request(3, runner.run));
+    expect(outcome.sessionId).toBe('not-the-one-it-was-given');
   });
 
   it('fails when the script says nothing about the step, so that nothing passes silently', async () => {
     const runner = exec();
-    await expect(fakeAgent(SCRIPT).runStep(request(9, runner.run))).rejects.toThrow(
+    await expect(fakeAgent(SCRIPT, PLAIN).runStep(request(9, runner.run))).rejects.toThrow(
       /no scripted commands for T0 step 9/,
     );
     expect(runner.commands).toEqual([]);
@@ -101,6 +158,8 @@ describe('the scripted fake agent', () => {
 
   it('fails when a command fails, naming its output', async () => {
     const runner = exec([{ code: 2, stdout: '', stderr: 'boom' }]);
-    await expect(fakeAgent(SCRIPT).runStep(request(1, runner.run))).rejects.toThrow(/touch hello.txt.*boom/s);
+    await expect(fakeAgent(SCRIPT, PLAIN).runStep(request(1, runner.run))).rejects.toThrow(
+      /touch hello.txt.*boom/s,
+    );
   });
 });

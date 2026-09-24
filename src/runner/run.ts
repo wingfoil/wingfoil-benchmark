@@ -3,6 +3,7 @@ import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { scrub } from '../agents/index.js';
 import type { AgentPort, StepOutcome } from '../agents/index.js';
 import { reasonOf, WORKSPACE } from '../core/index.js';
 import type { DockerPort, GitPort, Scenario } from '../core/index.js';
@@ -20,6 +21,14 @@ export interface RunnerOptions {
   readonly log?: (line: string) => void;
   /** One line per failure; the command line sends these to its error stream. */
   readonly logError?: (line: string) => void;
+  /** What every container of this campaign gets in its environment: the agent's credential. */
+  readonly containerEnv?: Readonly<Record<string, string>>;
+  /**
+   * The values to remove from everything this run stores (REQ-NFR-01). Named explicitly rather than
+   * derived from {@link containerEnv}: from W3 that environment also carries an arm's own settings,
+   * and scrubbing a value like `C` or `en_US` would corrupt every patch instead of protecting it.
+   */
+  readonly secrets?: readonly string[];
 }
 
 /** One executed run: one scenario, in one arm, with one model, once. */
@@ -141,17 +150,27 @@ async function executeRun(context: RunContext, options: RunnerOptions): Promise<
       name: `bench-${campaign.id}-${execution}-${name.replaceAll(/[@/]/g, '-')}`,
       workspace,
       user: CONTAINER_USER,
+      ...(options.containerEnv === undefined ? {} : { env: options.containerEnv }),
     });
     await assertOnlyWorkspaceMounted(container, workspace, options);
     await options.docker.start(container);
     for (const step of scenario.steps) {
-      steps.push(await executeStep(step, { container, workspace, outputDir, scenario, model }, options));
+      const outcome = await executeStep(
+        step,
+        { container, workspace, outputDir, scenario, model, remainingCostUsd: remaining(campaign, steps) },
+        options,
+      );
+      // Recorded first, then failed: what the step spent and said is stored either way.
+      steps.push(outcome);
+      if (outcome.error !== undefined) {
+        throw new Error(`step ${stepNumber(step.n)} of ${scenario.id} failed: ${outcome.error}`);
+      }
     }
-    return { ...identity, steps, outcome: 'completed' };
+    return record({ ...identity, steps, outcome: 'completed' }, campaign);
   } catch (error) {
     const message = reasonOf(error);
     options.logError?.(`run ${name} failed: ${message}`);
-    return { ...identity, steps, outcome: 'failed', error: message };
+    return record({ ...identity, steps, outcome: 'failed', error: message }, campaign);
   } finally {
     if (container !== undefined) await remove(container, options);
   }
@@ -164,6 +183,18 @@ interface StepContext {
   readonly outputDir: string;
   readonly scenario: Scenario;
   readonly model: string;
+  /** What is left of the run's cost cap, in USD, for `--max-budget-usd` (REQ-RUN-04). */
+  readonly remainingCostUsd: number;
+}
+
+/**
+ * What a run may still spend, in USD: its cap less what its steps have already reported, converted
+ * with the campaign's rate. Enforcing it is F1.3 (W5); W2 only tells the agent what it is.
+ */
+function remaining(campaign: CheckedCampaign['campaign'], steps: readonly StepOutcome[]): number {
+  const { caps, currency } = campaign.spec;
+  const spentEur = steps.reduce((total, step) => total + step.usage.costEur, 0);
+  return Math.max(0, (caps.run_cost_eur - spentEur) / currency.usd_to_eur);
 }
 
 /**
@@ -177,7 +208,7 @@ async function executeStep(
   context: StepContext,
   options: RunnerOptions,
 ): Promise<StepOutcome> {
-  const { container, workspace, outputDir, scenario, model } = context;
+  const { container, workspace, outputDir, scenario, model, remainingCostUsd } = context;
   const number = stepNumber(step.n);
   let prompt: string;
   try {
@@ -188,6 +219,13 @@ async function executeStep(
     });
   }
 
+  // `--max-budget-usd 0` is a value the spike never measured: it may refuse at once, or mean no
+  // limit at all. Neither is a thing to say by accident, so the step is not started. This is not the
+  // budget guard — enforcing the cap across a run and a campaign is F1.3 (REQ-RUN-08, W5).
+  if (remainingCostUsd <= 0) {
+    throw new Error(`step ${number} not started: the run's cost cap is exhausted`);
+  }
+
   const sessionId = randomUUID();
   const outcome = await options.agent.runStep({
     scenarioId: scenario.id,
@@ -195,20 +233,33 @@ async function executeStep(
     prompt,
     model,
     sessionId,
+    remainingCostUsd,
     run: (command) => options.docker.exec(container, command),
   });
-  if (outcome.sessionId !== sessionId) {
-    throw new Error(
-      `step ${number} ran in session ${outcome.sessionId}, not in the one it was given (${sessionId})`,
-    );
-  }
+
+  // **The order is the point.** The agent's own failure comes first: a session that ended before
+  // naming itself reports no session at all, and testing the id first would blame a mismatch for
+  // what was a truncated stream and bury the reason it stopped. The id guard is what remains for an
+  // outcome that did run — an agent continuing a session of its own is what F2.2 forbids.
+  const error =
+    outcome.error ??
+    (outcome.sessionId === sessionId
+      ? undefined
+      : `step ${number} ran in session ${outcome.sessionId}, not in the one it was given (${sessionId})`);
 
   // Every step leaves a snapshot to score, including a step that changed nothing (REQ-RUN-05).
   await options.git.commitAll(workspace, `step ${number}`, { allowEmpty: true });
   const stepDir = join(outputDir, 'steps', number);
   mkdirSync(stepDir, { recursive: true });
-  writeFileSync(join(stepDir, 'diff.patch'), await options.git.patchOf(workspace, 'HEAD'));
-  return outcome;
+  // Scrubbed like the transcript: the agent runs with the credential in its own environment and
+  // `bypassPermissions`, so one `env > notes.txt` would otherwise commit the token in a patch.
+  const patch = await options.git.patchOf(workspace, 'HEAD');
+  writeFileSync(join(stepDir, 'diff.patch'), scrub(patch, options.secrets ?? []));
+  // What the session cost, and the whole of what it said (REQ-RUN-09, REQ-FMT-06). The transcript is
+  // git-ignored and scrubbed by the adapter that produced it (REQ-NFR-01, REQ-RES-06).
+  writeFileSync(join(stepDir, 'usage.json'), `${JSON.stringify(outcome.usage, undefined, 2)}\n`);
+  writeFileSync(join(stepDir, 'transcript.jsonl'), outcome.transcript.map((line) => `${line}\n`).join(''));
+  return error === undefined ? outcome : { ...outcome, error };
 }
 
 /**
@@ -239,4 +290,39 @@ async function remove(container: string, options: RunnerOptions): Promise<void> 
 /** The package root, from this file's location in `dist/runner/` or `src/runner/`. */
 function packageRoot(): string {
   return dirname(dirname(dirname(fileURLToPath(import.meta.url))));
+}
+
+/**
+ * Write the run's own record (adr-002 decision 11, a minimal `run.json`; F5.1 completes it in W7).
+ * It holds what a later reading of the usage needs and cannot recover: which scenario, arm, model and
+ * repetition this was, and which agent, model and approver policy the campaign pinned for it.
+ */
+function record(run: RunResult, campaign: CheckedCampaign['campaign']): RunResult {
+  mkdirSync(run.outputDir, { recursive: true });
+  const { agent, approver_policy } = campaign.spec;
+  writeFileSync(
+    join(run.outputDir, 'run.json'),
+    `${JSON.stringify(
+      {
+        campaign: campaign.id,
+        scenario: run.scenario,
+        version: run.version,
+        arm: run.arm,
+        model: run.model,
+        repetition: run.repetition,
+        agent,
+        approver_policy,
+        outcome: run.outcome,
+        ...(run.error === undefined ? {} : { error: run.error }),
+        steps: run.steps.map((step, index) => ({
+          n: index + 1,
+          session: step.sessionId,
+          usage: step.usage,
+        })),
+      },
+      undefined,
+      2,
+    )}\n`,
+  );
+  return run;
 }

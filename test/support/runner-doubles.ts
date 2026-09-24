@@ -1,4 +1,4 @@
-import type { AgentPort, StepOutcome, StepRequest } from '../../src/agents/index.js';
+import type { AgentPort, SessionUsage, StepOutcome, StepRequest } from '../../src/agents/index.js';
 import type {
   BuildRequest,
   CreateRequest,
@@ -6,6 +6,18 @@ import type {
   GitPort,
   ProcessResult,
 } from '../../src/core/index.js';
+
+/** A step that reports no usage, which is what a double does unless a test says otherwise. */
+const NO_USAGE: SessionUsage = {
+  inputTokens: 0,
+  outputTokens: 0,
+  cacheCreationInputTokens: 0,
+  cacheReadInputTokens: 0,
+  costUsd: 0,
+  costEur: 0,
+  turns: 0,
+  durationMs: 0,
+};
 
 /** Everything the doubles recorded, in order. */
 export interface Recorded {
@@ -36,6 +48,14 @@ export function doubles(
     onStep?: (request: StepRequest) => void;
     /** The session the agent answers with; by default the one it was given (F2.2). */
     sessionOf?: (request: StepRequest) => string;
+    /** What the step reports having cost (REQ-RUN-09); by default nothing. */
+    usageOf?: (request: StepRequest) => SessionUsage;
+    /** The step's recorded stream; by default one line naming the step. */
+    transcriptOf?: (request: StepRequest) => readonly string[];
+    /** Why the step's session failed, if it did: the agent reports it rather than throwing. */
+    errorOf?: (request: StepRequest) => string;
+    /** What a step's patch holds; by default a line naming the directory and the ref. */
+    patchOf?: (directory: string, ref: string) => string;
     /** Makes one Docker or git call fail: `create`, `start`, `remove` and `init` break a run
      * outside its steps, `commit` and `patch` break it inside one. */
     failing?: { call: 'create' | 'start' | 'remove' | 'init' | 'commit' | 'patch'; error: string };
@@ -113,14 +133,21 @@ export function doubles(
       patches += 1;
       recorded.gitCalls.push(`patch ${directory} ${ref}`);
       if (options.failing?.call === 'patch') return Promise.reject(new Error(options.failing.error));
-      return Promise.resolve(`patch of ${directory} at ${ref} #${patches}\n`);
+      return Promise.resolve(
+        options.patchOf?.(directory, ref) ?? `patch of ${directory} at ${ref} #${patches}\n`,
+      );
     },
   };
   const agent: AgentPort = {
     runStep: (request): Promise<StepOutcome> => {
       recorded.steps.push(request);
       options.onStep?.(request);
-      return Promise.resolve({ sessionId: options.sessionOf?.(request) ?? request.sessionId });
+      return Promise.resolve({
+        sessionId: options.sessionOf?.(request) ?? request.sessionId,
+        usage: options.usageOf?.(request) ?? NO_USAGE,
+        transcript: options.transcriptOf?.(request) ?? [`{"type":"result","step":${request.step}}`],
+        ...(options.errorOf === undefined ? {} : { error: options.errorOf(request) }),
+      });
     },
   };
   return { docker, git, agent, recorded };

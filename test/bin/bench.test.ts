@@ -58,6 +58,8 @@ describe('the built bench command', () => {
   it('exits 2 with the usage when called without arguments', () => {
     const { status, stderr } = bench();
     expect(status).toBe(2);
-    expect(stderr).toMatch(/^usage: bench campaign validate <file>\n\s+bench campaign run <file>\n$/);
+    expect(stderr).toMatch(
+      /^usage: bench campaign validate <file>\n\s+bench campaign run <file> \[--allow-spending\]\n$/,
+    );
   });
 });

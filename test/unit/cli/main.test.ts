@@ -3,7 +3,7 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { checkCampaign, main, realPorts } from '../../../src/cli/index.js';
+import { agentCredential, checkCampaign, main, realPorts } from '../../../src/cli/index.js';
 import { doubles } from '../../support/runner-doubles.js';
 import { completeCampaignYaml, writeRepo } from '../../support/campaign-fixture.js';
 import { repoPath } from '../../support/paths.js';
@@ -60,7 +60,9 @@ describe('bench campaign validate', () => {
   ])('treats a flag or an empty file name as a usage error (%j)', async (argv) => {
     const { code, stderr } = await run(...argv);
     expect(code).toBe(2);
-    expect(stderr).toMatch(/^usage: bench campaign validate <file>\n\s+bench campaign run <file>\n$/);
+    expect(stderr).toMatch(
+      /^usage: bench campaign validate <file>\n\s+bench campaign run <file> \[--allow-spending\]\n$/,
+    );
   });
 
   it.each([
@@ -73,7 +75,9 @@ describe('bench campaign validate', () => {
   ])('exits 2 with the usage on a usage error (%j)', async (argv) => {
     const { code, stdout, stderr } = await run(...argv);
     expect({ code, stdout }).toEqual({ code: 2, stdout: '' });
-    expect(stderr).toMatch(/^usage: bench campaign validate <file>\n\s+bench campaign run <file>\n$/);
+    expect(stderr).toMatch(
+      /^usage: bench campaign validate <file>\n\s+bench campaign run <file> \[--allow-spending\]\n$/,
+    );
   });
 });
 
@@ -90,13 +94,47 @@ describe('bench campaign run', () => {
     };
   }
 
-  it('refuses an agent that has no adapter yet, before anything runs', async () => {
+  it('does not pretend the spending flag means anything to validate', async () => {
+    const { file } = writeRepo(completeCampaignYaml());
+    let stderr = '';
+    const code = await main(['campaign', 'validate', file, '--allow-spending'], {
+      stdout: () => undefined,
+      stderr: (text) => (stderr += text),
+    });
+    expect(code).toBe(2);
+    expect(stderr).toMatch(/^usage: bench/);
+  });
+
+  it('refuses to spend before anything runs, not after the image is built', async () => {
     const { file } = writeRepo(completeCampaignYaml());
     const ports = doubles();
     const { code, stdout, stderr } = await runWith(ports, 'campaign', 'run', file);
     expect({ code, stdout }).toEqual({ code: 1, stdout: '' });
-    expect(stderr).toBe("agent 'claude-code' has no adapter yet: the scripted fake agent is the only one\n");
+    expect(stderr).toMatch(/spends real money/);
+    // Nothing was built and no container was created: the refusal comes first.
     expect(ports.recorded.builds).toEqual([]);
+    expect(ports.recorded.creates).toEqual([]);
+  });
+
+  it('runs a real agent once the opt-in is given, and hands its container the credential', async () => {
+    const token = 'sk-ant-oat01-SECRET';
+    const tokenFile = join(tempDir('bench-token-'), 'token');
+    // Written the way a paste leaves it, so the stripping is part of what this pins.
+    writeFileSync(tokenFile, `${token}\n`);
+    const { file } = writeRepo(completeCampaignYaml());
+    const ports = doubles();
+    const previous = process.env.BENCH_AGENT_TOKEN_FILE;
+    process.env.BENCH_AGENT_TOKEN_FILE = tokenFile;
+    try {
+      const { code } = await runWith(ports, 'campaign', 'run', file, '--allow-spending');
+      expect(code).toBe(0);
+      expect(ports.recorded.builds).toHaveLength(1);
+      // The credential reaches the container, stripped, under the variable the spike proved works.
+      expect(ports.recorded.creates[0]?.env).toEqual({ ANTHROPIC_AUTH_TOKEN: token });
+    } finally {
+      if (previous === undefined) Reflect.deleteProperty(process.env, 'BENCH_AGENT_TOKEN_FILE');
+      else process.env.BENCH_AGENT_TOKEN_FILE = previous;
+    }
   });
 
   it('asks for the fake agent script when it runs without injected ports', async () => {
@@ -185,6 +223,20 @@ describe('checkCampaign', () => {
 describe('realPorts', () => {
   const variable = 'BENCH_FAKE_SCRIPT';
 
+  /** A checked campaign, which `realPorts` needs for the campaign's currency rate. */
+  function campaign() {
+    const yaml = completeCampaignYaml();
+    yaml.harnesses = {};
+    yaml.arms = ['baseline'];
+    yaml.scenarios = [{ id: 'S1', version: '1.0' }];
+    yaml.repetitions = { S1: 1 };
+    yaml.agent = { name: 'fake', version: '1.0.0' };
+    yaml.models = { default: 'fake-model' };
+    const checked = checkCampaign(writeRepo(yaml, ['S1@1.0']).file);
+    if (!checked.ok) throw new Error('the fixture campaign must be valid');
+    return checked.value;
+  }
+
   function withScript<T>(value: string | undefined, body: () => T): T {
     const previous = process.env[variable];
     if (value === undefined) Reflect.deleteProperty(process.env, variable);
@@ -197,22 +249,125 @@ describe('realPorts', () => {
     }
   }
 
+  it('refuses to spend without an explicit opt-in, naming the ceiling it would run against', async () => {
+    const yaml = completeCampaignYaml();
+    yaml.agent = { name: 'claude-code', version: '2.1.280' };
+    const { file } = writeRepo(yaml);
+    let stderr = '';
+
+    const code = await main(['campaign', 'run', file], {
+      stdout: () => undefined,
+      stderr: (text) => (stderr += text),
+    });
+
+    expect(code).toBe(1);
+    // It names the money, not the flag alone: whoever runs it should see what they would authorise.
+    expect(stderr).toMatch(/--allow-spending/);
+    expect(stderr).toMatch(/100/);
+  });
+
+  it("asks for the file holding the agent's token when the variable is not set", async () => {
+    const yaml = completeCampaignYaml();
+    const { file } = writeRepo(yaml);
+    const previous = process.env.BENCH_AGENT_TOKEN_FILE;
+    Reflect.deleteProperty(process.env, 'BENCH_AGENT_TOKEN_FILE');
+    let stderr = '';
+    try {
+      const code = await main(['campaign', 'run', file, '--allow-spending'], {
+        stdout: () => undefined,
+        stderr: (text) => (stderr += text),
+      });
+      expect(code).toBe(1);
+      expect(stderr).toMatch(/BENCH_AGENT_TOKEN_FILE: is not set/);
+    } finally {
+      if (previous !== undefined) process.env.BENCH_AGENT_TOKEN_FILE = previous;
+    }
+  });
+
   it('asks for the fake agent script when the variable is not set', () => {
-    const result = withScript(undefined, () => realPorts());
+    const result = withScript(undefined, () => realPorts(campaign()));
     expect(result.ok ? [] : result.issues).toEqual([
       { path: variable, message: "is not set: it holds the fake agent's script" },
     ]);
   });
 
   it('reports a script that cannot be read', () => {
-    const result = withScript(join(tempDir('bench-script-'), 'missing.json'), () => realPorts());
+    const result = withScript(join(tempDir('bench-script-'), 'missing.json'), () => realPorts(campaign()));
     expect(result.ok ? [] : result.issues.map((issue) => issue.path)).toEqual(['missing.json']);
+  });
+
+  it('builds the Claude Code adapter when the campaign pins it, with the credential it must scrub', () => {
+    const yaml = completeCampaignYaml();
+    const checked = checkCampaign(writeRepo(yaml).file);
+    expect(checked.ok).toBe(true);
+    if (!checked.ok) return;
+
+    const result = realPorts(checked.value, { ANTHROPIC_AUTH_TOKEN: 'sk-ant-oat01-SECRET' });
+
+    // No fake script is read: the campaign pins a real agent, so the script variable is irrelevant.
+    expect(result.ok && Object.keys(result.value).sort()).toEqual(['agent', 'docker', 'git']);
+  });
+
+  it('gives the adapter the credential it must scrub, not an empty one', async () => {
+    const token = 'sk-ant-oat01-SECRET';
+    const checked = checkCampaign(writeRepo(completeCampaignYaml()).file);
+    expect(checked.ok).toBe(true);
+    if (!checked.ok) return;
+    const ports = realPorts(checked.value, { ANTHROPIC_AUTH_TOKEN: token });
+    expect(ports.ok).toBe(true);
+    if (!ports.ok) return;
+
+    // A session whose output happens to echo the token back: the adapter holds the token for
+    // exactly this, and an adapter built with an empty one would store the secret verbatim.
+    const outcome = await ports.value.agent.runStep({
+      scenarioId: 'S1',
+      step: 1,
+      prompt: 'x',
+      model: 'claude-sonnet-5',
+      sessionId: 'session-1',
+      remainingCostUsd: 1,
+      run: () =>
+        Promise.resolve({
+          code: 0,
+          stdout: `{"type":"result","is_error":false,"terminal_reason":"completed","leaked":"${token}"}`,
+          stderr: '',
+        }),
+    });
+
+    expect(outcome.transcript.join('')).not.toContain(token);
+    expect(outcome.transcript.join('')).toContain('[redacted]');
+  });
+
+  it("reads the agent's credential from the file the operator names", () => {
+    const file = join(tempDir('bench-token-'), 'token');
+    writeFileSync(file, 'sk-ant-oat01-AAAA\n');
+    const previous = process.env.BENCH_AGENT_TOKEN_FILE;
+    process.env.BENCH_AGENT_TOKEN_FILE = file;
+    try {
+      const result = agentCredential();
+      expect(result.ok && result.value).toEqual({ ANTHROPIC_AUTH_TOKEN: 'sk-ant-oat01-AAAA' });
+    } finally {
+      if (previous === undefined) Reflect.deleteProperty(process.env, 'BENCH_AGENT_TOKEN_FILE');
+      else process.env.BENCH_AGENT_TOKEN_FILE = previous;
+    }
+  });
+
+  it('reports a token file it cannot read, before any container is created', () => {
+    const previous = process.env.BENCH_AGENT_TOKEN_FILE;
+    process.env.BENCH_AGENT_TOKEN_FILE = join(tempDir('bench-token-'), 'missing');
+    try {
+      const result = agentCredential();
+      expect(result.ok ? [] : result.issues.map((issue) => issue.path)).toEqual(['missing']);
+    } finally {
+      if (previous === undefined) Reflect.deleteProperty(process.env, 'BENCH_AGENT_TOKEN_FILE');
+      else process.env.BENCH_AGENT_TOKEN_FILE = previous;
+    }
   });
 
   it('builds the Docker, git and agent ports from a valid script', () => {
     const file = join(tempDir('bench-script-'), 'script.json');
     writeFileSync(file, JSON.stringify({ T0: { '1': { commands: ['true'] } } }));
-    const result = withScript(file, () => realPorts());
+    const result = withScript(file, () => realPorts(campaign()));
     expect(result.ok && Object.keys(result.value).sort()).toEqual(['agent', 'docker', 'git']);
   });
 });

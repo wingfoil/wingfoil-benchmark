@@ -18,6 +18,13 @@ export interface CreateRequest {
   readonly name: string;
   readonly workspace: string;
   readonly user: string;
+  /**
+   * The container's environment: how the agent's credential reaches it (REQ-RUN-15, requirements
+   * 1.3). Only the variable **names** go on Docker's command line; the values are handed to the
+   * `docker` process in its own environment, so they cannot reach `ps`, an error message built from
+   * the command line, a log or a stored result (REQ-NFR-01).
+   */
+  readonly env?: Readonly<Record<string, string>>;
 }
 
 /** REQ-ARC-04: Docker behind one interface, so acceptance tests run without Docker. */
@@ -41,8 +48,15 @@ const MOUNT_FORMAT = '{{range .Mounts}}{{.Source}}:{{.Destination}}\n{{end}}';
 
 /** The Docker port that calls the `docker` command line. */
 export function dockerCli(process: ProcessPort): DockerPort {
-  async function docker(args: readonly string[]): Promise<ProcessResult> {
-    const result = await process.run('docker', args);
+  /**
+   * `env` reaches the `docker` process itself, never its arguments: `processFailure` renders the
+   * command line into the message it throws, and that message is logged and stored with the run.
+   */
+  async function docker(
+    args: readonly string[],
+    env?: Readonly<Record<string, string>>,
+  ): Promise<ProcessResult> {
+    const result = await process.run('docker', args, env === undefined ? undefined : { env });
     if (result.code !== 0) throw processFailure('docker', args, result);
     return result;
   }
@@ -53,26 +67,31 @@ export function dockerCli(process: ProcessPort): DockerPort {
       for (const [name, value] of Object.entries(buildArgs)) args.push('--build-arg', `${name}=${value}`);
       await docker([...args, context]);
     },
-    async create({ image, name, workspace, user }) {
+    async create({ image, name, workspace, user, env }) {
       // `--mount` takes comma-separated `key=value` pairs, so a path holding either would be read as
       // more options. Refusing is safer than quoting: such a checkout cannot run the benchmark.
       if (workspace.includes(',') || workspace.includes('=')) {
         throw new Error(`the workspace path cannot hold a comma or an equals sign: ${workspace}`);
       }
-      const result = await docker([
-        'create',
-        '--name',
-        name,
-        '--user',
-        user,
-        '--workdir',
-        WORKSPACE,
-        '--mount',
-        `type=bind,source=${workspace},target=${WORKSPACE}`,
-        image,
-        'sleep',
-        'infinity',
-      ]);
+      const result = await docker(
+        [
+          'create',
+          '--name',
+          name,
+          '--user',
+          user,
+          '--workdir',
+          WORKSPACE,
+          '--mount',
+          `type=bind,source=${workspace},target=${WORKSPACE}`,
+          // The name alone: `--env NAME` tells Docker to take NAME from this process's environment.
+          ...Object.keys(env ?? {}).flatMap((variable) => ['--env', variable]),
+          image,
+          'sleep',
+          'infinity',
+        ],
+        env,
+      );
       return result.stdout.trim();
     },
     async start(container) {
