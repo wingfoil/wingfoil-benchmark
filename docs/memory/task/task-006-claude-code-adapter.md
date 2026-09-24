@@ -2,12 +2,13 @@
 id: task-006-claude-code-adapter
 type: task
 title: "Claude Code adapter"
-status: in-review
+status: in-progress
 release: v0.1
 wave: W2
 features: [F2.3]
 acceptance: [runner.feature]
 requirements: [REQ-RUN-04, REQ-RUN-09, REQ-RUN-15, REQ-RUN-16, REQ-ARC-04, REQ-NFR-01]
+rejection_reason: "Round 2: both blockers fixed and four of five majors, but M1 is half-fixed and its redesign opened a hole of the same kind. The fake agent never propagates a replayed session's error, so a failed session is scored as a completed step on the path every acceptance test uses; and a stream with no result event loses its transcript because the session-id guard fires first, blaming a mismatch for a truncation. Plus --max-budget-usd 0 on an exhausted run, and a patch scrubbed against every environment value rather than the secret ones."
 ---
 
 ## Context
