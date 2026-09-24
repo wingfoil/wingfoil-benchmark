@@ -43,6 +43,14 @@ Scope of F2.3:
   what it would have spent against. This keeps plan-003's rule ("no run with a real agent without the
   approver's explicit consent") true of the code and not only of the process.
 
+**Two decisions of [adr-002](../adr/adr-002-w2-runner-and-adapter-conventions.md) land here, and
+nowhere else in W2.** Added after task-005's review raised them (approver, 2026-09-24): decision 11
+says the per-step artefacts include a **minimal `run.json`** from W2, and decision 13 says the fake
+agent **replays recorded stream-json sessions**. Task-005 does neither, and says so in its own
+Design — which is correct for that task but leaves the wave able to end without them. They are named
+here so that it cannot: this task is not done until both hold, or until adr-002 is amended by the
+approver.
+
 Out of scope: cap enforcement and the campaign ceiling (REQ-RUN-08, W5), quota exhaustion
 (REQ-RUN-13, W5), the setup phase and its separate cost (F2.5, W3), the results store (F5.1, W7).
 
