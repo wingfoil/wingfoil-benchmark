@@ -2,13 +2,12 @@
 id: task-005-fresh-session-steps
 type: task
 title: "Fresh-session steps"
-status: in-progress
+status: in-review
 release: v0.1
 wave: W2
 features: [F2.2]
 acceptance: [runner.feature]
 requirements: [REQ-RUN-04, REQ-RUN-05, REQ-ARC-04, REQ-NFR-03]
-rejection_reason: "Round 2: approvable, all nine findings verified closed by re-running the mutations. Taking the one hole it still found: the five expected patch strings are identical, so filing a step's snapshot under another step's number goes unnoticed - proven by mutation, and the same silent class that already cost this wave two rounds. Plus the two nits and a clause on REQ-FMT-06 for the 99-step cap."
 ---
 
 ## Context
