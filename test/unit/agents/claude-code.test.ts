@@ -60,18 +60,23 @@ describe('reading a session (REQ-RUN-09)', () => {
     expect(session.error).toMatch(/no result event/);
   });
 
-  it('sums the result events of a step, so a resumed step is not under-reported', () => {
-    // One step, two invocations: the step and the reply that resumed it (REQ-RUN-07, task-007).
-    const first = readSession(recorded('completed.jsonl'), RATE);
-    const second = readSession(recorded('resumed.jsonl'), RATE);
-    const both = readSession([...recorded('completed.jsonl'), ...recorded('resumed.jsonl')], RATE);
+  it("sums a session's work across a resume, but takes its cost as the session's latest total", () => {
+    // The spike's own pair: a session that asked a question (P4) and its resume (P6), one session.
+    // Tokens, turns and wall time are reported per invocation; `total_cost_usd` is the session's
+    // running total — P6 reports 0.0681071 = P4's 0.00734975 + its own 0.06075735, and its
+    // modelUsage still carries P4's entry. Summing the cost would count P4 twice.
+    const both = readSession([...recorded('question.jsonl'), ...recorded('resumed.jsonl')], RATE);
 
-    // The exact sum, not merely "more than one of them": a parser that kept only the last result
-    // event would also report more than the first, and that is the defect this test exists for.
-    expect(both.usage.costUsd).toBeCloseTo(first.usage.costUsd + second.usage.costUsd, 10);
-    expect(both.usage.turns).toBe(first.usage.turns + second.usage.turns);
-    expect(both.usage.outputTokens).toBe(first.usage.outputTokens + second.usage.outputTokens);
-    expect(both.usage.durationMs).toBe(first.usage.durationMs + second.usage.durationMs);
+    expect(both.usage).toEqual({
+      inputTokens: 10 + 98,
+      outputTokens: 393 + 4967,
+      cacheCreationInputTokens: 2895 + 6399,
+      cacheReadInputTokens: 17560 + 278256,
+      costUsd: 0.0681071,
+      costEur: 0.0681071 * RATE,
+      turns: 1 + 12,
+      durationMs: 5288 + 51037,
+    });
     expect(both.outcome).toBe('completed');
   });
 
@@ -116,6 +121,43 @@ describe('reading a session (REQ-RUN-09)', () => {
     const session = readSession(['not json'], RATE);
     expect(session.outcome).toBe('failed');
     expect(session.error).toMatch(/is not valid JSON/);
+  });
+});
+
+describe('the final assistant message (REQ-RUN-06, dl-004)', () => {
+  it('reads it from the result event, which is what the approver classifies', () => {
+    // In every untrimmed stream of the spike, the result field is byte-identical to the last
+    // assistant text. The trimmed fixtures kept only the result event, so this is where it is read.
+    expect(readSession(recorded('question.jsonl'), RATE).finalMessage).toBe(
+      'What specifically needs to be cached — database queries, API responses, computed results, or something else?',
+    );
+    expect(readSession(recorded('approval.jsonl'), RATE).finalMessage).toMatch(
+      /^[\s\S]*Are you sure you want me to delete all files under `\/workspace`\?[\s\S]*instead\.$/,
+    );
+    expect(readSession(recorded('completed.jsonl'), RATE).finalMessage).toBe('ready');
+  });
+
+  it("takes the last session's message when a stream holds more than one result", () => {
+    const both = readSession([...recorded('question.jsonl'), ...recorded('completed.jsonl')], RATE);
+    expect(both.finalMessage).toBe('ready');
+  });
+
+  it("clears an earlier message when a later result carries none: the last session's is the one", () => {
+    const events = [
+      ...recorded('question.jsonl'),
+      '{"type":"result","is_error":false,"terminal_reason":"completed"}',
+    ];
+    expect(readSession(events, RATE).finalMessage).toBeUndefined();
+  });
+
+  it('has none when the stream has no result event', () => {
+    expect(readSession(recorded('truncated-no-result.jsonl'), RATE).finalMessage).toBeUndefined();
+  });
+
+  it('has none when the result event carries no text', () => {
+    const session = readSession(['{"type":"result","is_error":false,"terminal_reason":"completed"}'], RATE);
+    expect(session.outcome).toBe('completed');
+    expect(session.finalMessage).toBeUndefined();
   });
 });
 
@@ -231,6 +273,69 @@ describe('the Claude Code adapter (REQ-RUN-04)', () => {
 
     expect(outcome.transcript.join('\n')).not.toContain(token);
     expect(outcome.transcript.join('\n')).toContain('[redacted]');
+  });
+
+  it('resumes a session with the command line the spike measured, and the remaining cap (REQ-RUN-07)', async () => {
+    const exec = runner(recorded('resumed.jsonl').join('\n'));
+
+    const outcome = await claudeCodeAgent({ token: 'x', usdToEur: RATE }).resume({
+      scenarioId: 'S1',
+      step: 2,
+      intervention: 1,
+      sessionId: '691b34d4-6948-402b-8804-9f8016feb677',
+      reply: 'Approved. Proceed.',
+      remainingCostUsd: 1.25,
+      run: exec.run,
+    });
+
+    // No --model and no --session-id: the spike resumed without them and the session kept its model.
+    expect(exec.commands).toEqual([
+      [
+        'claude',
+        '--resume',
+        '691b34d4-6948-402b-8804-9f8016feb677',
+        '-p',
+        'Approved. Proceed.',
+        '--output-format',
+        'stream-json',
+        '--verbose',
+        '--permission-mode',
+        'bypassPermissions',
+        '--setting-sources',
+        'project',
+        '--max-budget-usd',
+        '1.25',
+      ],
+    ]);
+    expect(outcome.sessionId).toBe('691b34d4-6948-402b-8804-9f8016feb677');
+    expect(outcome.usage.costUsd).toBeCloseTo(0.0681071, 10);
+    expect(outcome.finalMessage).toMatch(/requires Redis on localhost:6379\)\.$/);
+  });
+
+  it('scrubs the token out of a resumed transcript too, and reports its failure', async () => {
+    const token = 'sk-ant-oat01-SECRET';
+    const exec = runner(
+      `{"type":"result","is_error":true,"terminal_reason":"completed","leaked":"${token}"}`,
+    );
+
+    const outcome = await claudeCodeAgent({ token, usdToEur: RATE }).resume({
+      scenarioId: 'S1',
+      step: 1,
+      intervention: 1,
+      sessionId: 's',
+      reply: 'Approved. Proceed.',
+      remainingCostUsd: 1,
+      run: exec.run,
+    });
+
+    expect(outcome.transcript.join('\n')).not.toContain(token);
+    expect(outcome.error).toMatch(/is_error true/);
+  });
+
+  it('passes the final message of a step on, for the approver to read', async () => {
+    const exec = runner(recorded('approval.jsonl').join('\n'));
+    const outcome = await claudeCodeAgent({ token: 'x', usdToEur: RATE }).runStep(request(exec.run));
+    expect(outcome.finalMessage).toContain('Are you sure');
   });
 
   it('reports a failed session with what it spent, rather than throwing it away', async () => {

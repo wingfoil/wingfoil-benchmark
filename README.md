@@ -71,9 +71,18 @@ transcript.jsonl, diff.patch}` per step. Transcripts are git-ignored.
 Each step is a **fresh agent session**: nothing but the repository carries state from one step to the
 next, and after each step the workspace is committed as `step <NN>`.
 
+When a session ends **waiting for input** — a question, or a request for approval — the **neutral
+approver** answers it in the same session, with the fixed reply of the approver policy the campaign
+pins (`approver_policy: v1`): *"Approved. Proceed."* to an approval request, *"No further input is
+available. Make the most reasonable choice, record it, and proceed."* to a question. Each reply is an
+**intervention**, recorded in `run.json` with its step, kind and text. After three in one step, a
+session still waiting gets no reply and the step ends as `intervention cap reached`; the run goes on.
+The policy is the same in every arm.
+
 Which agent runs is the campaign's `agent.name`. The **scripted fake agent** costs nothing and reads
-its script from `BENCH_FAKE_SCRIPT`; a script may name a recorded session for the fake to replay, so
-the whole pipeline can be exercised without an agent. **Claude Code** reads its long-lived token from
+its script from `BENCH_FAKE_SCRIPT`; a script may name a recorded session for the fake to replay, and
+one recorded session per reply it expects from the approver, so the whole pipeline can be exercised
+without an agent. **Claude Code** reads its long-lived token from
 the file named by `BENCH_AGENT_TOKEN_FILE` — created with `claude setup-token` — which reaches the
 container as an environment variable and is scrubbed out of every stored transcript. Because it
 spends real money, a campaign naming it refuses to start unless `--allow-spending` is passed.
@@ -82,7 +91,7 @@ Exit codes: `0` success, `1` failure (one line per problem, or a run that failed
 
 ```bash
 npm run test:bin     # the built command line
-npm run test:docker  # one scenario in a real container (needs Docker)
+npm run test:docker  # W1's and W2's runs in a real container (needs Docker)
 ```
 
 ## License

@@ -4,9 +4,17 @@ import { z } from 'zod';
 
 import { readSession } from './claude-code.js';
 import type { Session, SessionUsage } from './claude-code.js';
-import type { AgentPort } from './port.js';
+import type { AgentPort, StepOutcome } from './port.js';
 import { fail, parseWith } from '../core/index.js';
 import type { Result } from '../core/index.js';
+
+/** One reply of the neutral approver, as the fake answers it: a recorded resumed session (REQ-RUN-07). */
+const scriptedResume = z.strictObject({
+  /** The session the fake answers from. Absent means "the one it was asked to resume". */
+  session: z.string().min(1).optional(),
+  commands: z.array(z.string().min(1)).optional(),
+  events: z.string().min(1),
+});
 
 const scriptedStep = z.strictObject({
   /** The session the fake answers with. Absent means "the one the runner gave me", the ordinary case. */
@@ -17,6 +25,8 @@ const scriptedStep = z.strictObject({
    * Absent means the step reports no usage, which is what the trivial fixtures want.
    */
   events: z.string().min(1).optional(),
+  /** One recorded session per intervention the step is expected to receive, in order. */
+  resumes: z.array(scriptedResume).optional(),
 });
 
 const scriptSchema = z.record(
@@ -74,6 +84,33 @@ const NO_USAGE: SessionUsage = {
   durationMs: 0,
 };
 
+/** Run a scripted invocation's commands in the container; a failing command fails the invocation. */
+async function runCommands(
+  commands: readonly string[],
+  run: (command: readonly string[]) => Promise<{ code: number; stderr: string }>,
+): Promise<void> {
+  for (const command of commands) {
+    const result = await run(['sh', '-c', command]);
+    if (result.code !== 0) {
+      throw new Error(`'${command}' failed with code ${result.code}:\n${result.stderr.trim()}`);
+    }
+  }
+}
+
+/** What an invocation reports from the session it replays, if any, in the session it answers from. */
+function outcomeOf(replayed: Session | undefined, sessionId: string): StepOutcome {
+  return {
+    sessionId,
+    usage: replayed?.usage ?? NO_USAGE,
+    transcript: replayed?.transcript ?? [],
+    // A replayed failure is a failure. Without this every acceptance test runs through an agent
+    // that cannot report one, and a failing step is untestable in every wave that uses the fake.
+    ...(replayed?.outcome === 'failed' ? { error: replayed.error ?? 'the session failed' } : {}),
+    // What the approver reads is what the recorded agent wrote.
+    ...(replayed?.finalMessage === undefined ? {} : { finalMessage: replayed.finalMessage }),
+  };
+}
+
 /** A scripted stand-in for an agent: it runs the commands its script declares, and nothing else. */
 export function fakeAgent(script: FakeScript, options: FakeOptions): AgentPort {
   return {
@@ -82,21 +119,20 @@ export function fakeAgent(script: FakeScript, options: FakeOptions): AgentPort {
       if (scripted === undefined) {
         throw new Error(`the fake agent has no scripted commands for ${scenarioId} step ${step}`);
       }
-      for (const command of scripted.commands) {
-        const result = await run(['sh', '-c', command]);
-        if (result.code !== 0) {
-          throw new Error(`'${command}' failed with code ${result.code}:\n${result.stderr.trim()}`);
-        }
+      await runCommands(scripted.commands, run);
+      return outcomeOf(replay(scripted.events, options), scripted.session ?? sessionId);
+    },
+    // A resume the script does not foresee is an error, as an unscripted step is: a runner that
+    // replies once too often must be heard, not answered with an empty session.
+    async resume({ scenarioId, step, intervention, sessionId, run }) {
+      const scripted = script[scenarioId]?.[String(step)]?.resumes?.[intervention - 1];
+      if (scripted === undefined) {
+        throw new Error(
+          `the fake agent has no scripted resume ${intervention} for ${scenarioId} step ${step}`,
+        );
       }
-      const replayed = replay(scripted.events, options);
-      return {
-        sessionId: scripted.session ?? sessionId,
-        usage: replayed?.usage ?? NO_USAGE,
-        transcript: replayed?.transcript ?? [],
-        // A replayed failure is a failure. Without this every acceptance test runs through an agent
-        // that cannot report one, and a failing step is untestable in every wave that uses the fake.
-        ...(replayed?.outcome === 'failed' ? { error: replayed.error ?? 'the session failed' } : {}),
-      };
+      await runCommands(scripted.commands ?? [], run);
+      return outcomeOf(replay(scripted.events, options), scripted.session ?? sessionId);
     },
   };
 }

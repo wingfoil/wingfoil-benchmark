@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { basename } from 'node:path';
 
-import type { AgentPort, StepOutcome, StepRequest } from './port.js';
+import type { AgentPort, ResumeRequest, StepOutcome, StepRequest } from './port.js';
 import { fail, ok } from '../core/index.js';
 import type { Result } from '../core/index.js';
 
@@ -26,6 +26,12 @@ export interface Session {
   readonly transcript: readonly string[];
   readonly outcome: 'completed' | 'failed';
   readonly error?: string;
+  /**
+   * The final assistant message: the `result` field of the last result event. In every untrimmed
+   * stream of the W2 spike it is byte-identical to the last assistant text, and it is the one place
+   * the agent writes that text for a reader. Absent when no result event carries one.
+   */
+  readonly finalMessage?: string;
 }
 
 /** The only `terminal_reason` that means the session finished the work it was given. */
@@ -49,7 +55,10 @@ function numberOf(value: unknown): number {
 
 function add(total: SessionUsage, event: Record<string, unknown>, usdToEur: number): SessionUsage {
   const usage = (event.usage ?? {}) as Record<string, unknown>;
-  const costUsd = total.costUsd + numberOf(event.total_cost_usd);
+  // A session's running total, not this invocation's: a resume reports what the whole session has
+  // cost so far (the spike's P6 = P4's cost + its own). Taking the largest is right for one session
+  // and never counts an earlier invocation twice.
+  const costUsd = Math.max(total.costUsd, numberOf(event.total_cost_usd));
   return {
     inputTokens: total.inputTokens + numberOf(usage.input_tokens),
     outputTokens: total.outputTokens + numberOf(usage.output_tokens),
@@ -74,14 +83,16 @@ function add(total: SessionUsage, event: Record<string, unknown>, usdToEur: numb
  *   and scoring it as a finished step would score truncated work as finished work;
  * - **a stream with no `result` event is a failed step**, not a step that used nothing. It is what a
  *   step killed by its cap leaves behind;
- * - **usage is summed over the events seen**, not taken from the last one: a step resumed by the
- *   neutral approver (REQ-RUN-07) reports its own usage per invocation, and reading only the last
- *   would under-report exactly the steps that needed an intervention.
+ * - **work is summed over the events seen; cost is not.** A resumed invocation (REQ-RUN-07) reports
+ *   its own tokens, turns and wall time, so reading only the last would under-report exactly the
+ *   steps that needed an intervention; but its `total_cost_usd` is the session's running total, so
+ *   summing it would count every earlier invocation again. The cost is the latest total.
  */
 export function readSession(lines: readonly string[], usdToEur: number): Session {
   let usage = ZERO;
   let sessionId = '';
   let results = 0;
+  let finalMessage: string | undefined;
   const failures: string[] = [];
 
   for (const line of lines) {
@@ -112,6 +123,7 @@ export function readSession(lines: readonly string[], usdToEur: number): Session
     // The session the agent *ended in*, not the one it was asked for: the init event echoes the
     // `--session-id` the runner passed, so reading that would compare an id with itself.
     if (typeof event.session_id === 'string') sessionId = event.session_id;
+    finalMessage = typeof event.result === 'string' ? event.result : undefined;
     const reason = typeof event.terminal_reason === 'string' ? event.terminal_reason : 'unknown';
     if (event.is_error !== false || reason !== COMPLETED) {
       failures.push(
@@ -129,10 +141,11 @@ export function readSession(lines: readonly string[], usdToEur: number): Session
       error: 'the session ended with no result event',
     };
   }
+  const message = finalMessage === undefined ? {} : { finalMessage };
   if (failures.length > 0) {
-    return { sessionId, usage, transcript: lines, outcome: 'failed', error: failures.join(', ') };
+    return { sessionId, usage, transcript: lines, outcome: 'failed', error: failures.join(', '), ...message };
   }
-  return { sessionId, usage, transcript: lines, outcome: 'completed' };
+  return { sessionId, usage, transcript: lines, outcome: 'completed', ...message };
 }
 
 /** What a scrubbed secret is replaced with, so that its absence is visible rather than silent. */
@@ -204,24 +217,54 @@ function commandLine(request: StepRequest): string[] {
 }
 
 /**
+ * The command line of a resume (REQ-RUN-07), as the W2 spike measured it (P6). It names neither a
+ * model nor a session id: the resumed session kept its pinned model without them, and a flag nobody
+ * measured together with `--resume` is not one to add by assumption.
+ */
+function resumeLine(request: ResumeRequest): string[] {
+  return [
+    'claude',
+    '--resume',
+    request.sessionId,
+    '-p',
+    request.reply,
+    '--output-format',
+    'stream-json',
+    '--verbose',
+    '--permission-mode',
+    'bypassPermissions',
+    '--setting-sources',
+    'project',
+    '--max-budget-usd',
+    String(request.remainingCostUsd),
+  ];
+}
+
+/**
  * Claude Code behind the agent port (F2.3, REQ-ARC-04). It runs inside the run's container, which
  * already holds the credential in its environment (REQ-RUN-15): the token is kept here only to be
  * removed from the transcript before it is stored (REQ-NFR-01).
  */
 export function claudeCodeAgent(options: AdapterOptions): AgentPort {
+  async function invoke(
+    run: (command: readonly string[]) => Promise<{ stdout: string }>,
+    command: readonly string[],
+  ): Promise<StepOutcome> {
+    const result = await run(command);
+    const lines = scrub(result.stdout, [options.token])
+      .split('\n')
+      .filter((line) => line.trim() !== '');
+    const session = readSession(lines, options.usdToEur);
+    return {
+      sessionId: session.sessionId,
+      usage: session.usage,
+      transcript: session.transcript,
+      ...(session.outcome === 'failed' ? { error: session.error ?? 'the session failed' } : {}),
+      ...(session.finalMessage === undefined ? {} : { finalMessage: session.finalMessage }),
+    };
+  }
   return {
-    async runStep(request: StepRequest): Promise<StepOutcome> {
-      const result = await request.run(commandLine(request));
-      const lines = scrub(result.stdout, [options.token])
-        .split('\n')
-        .filter((line) => line.trim() !== '');
-      const session = readSession(lines, options.usdToEur);
-      return {
-        sessionId: session.sessionId,
-        usage: session.usage,
-        transcript: session.transcript,
-        ...(session.outcome === 'failed' ? { error: session.error ?? 'the session failed' } : {}),
-      };
-    },
+    runStep: (request: StepRequest) => invoke(request.run, commandLine(request)),
+    resume: (request: ResumeRequest) => invoke(request.run, resumeLine(request)),
   };
 }

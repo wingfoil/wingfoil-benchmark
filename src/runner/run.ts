@@ -4,9 +4,9 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { scrub } from '../agents/index.js';
-import type { AgentPort, StepOutcome } from '../agents/index.js';
-import { reasonOf, WORKSPACE } from '../core/index.js';
-import type { DockerPort, GitPort, Scenario } from '../core/index.js';
+import type { AgentPort, SessionUsage, StepOutcome } from '../agents/index.js';
+import { approverPolicy, reasonOf, WORKSPACE } from '../core/index.js';
+import type { ApproverPolicy, DockerPort, GitPort, InterventionKind, Scenario } from '../core/index.js';
 import { nextExecution } from '../results/index.js';
 
 import type { CheckedCampaign } from './campaign.js';
@@ -31,6 +31,33 @@ export interface RunnerOptions {
   readonly secrets?: readonly string[];
 }
 
+/** One reply of the neutral approver (REQ-RUN-07): the step, what was asked for, and what was sent. */
+export interface Intervention {
+  readonly step: number;
+  readonly kind: InterventionKind;
+  readonly reply: string;
+}
+
+/**
+ * How a step ended. `intervention cap reached` is not a failure: the step ends and is scored as it
+ * stands (experiment design §3.5–3.6), and the run goes on. Only `failed` stops the run.
+ */
+export type StepOutcomeKind = 'completed' | 'intervention cap reached' | 'failed';
+
+/** One step, with every invocation of the agent it took: its session and the approver's resumes. */
+export interface StepResult {
+  readonly n: number;
+  /** The session the step ran in; every resume continued it. */
+  readonly sessionId: string;
+  /** The step's invocations together: their work summed, and the session's latest cost. */
+  readonly usage: SessionUsage;
+  /** The invocations' transcripts, in order: a resume does not replay earlier turns (decision 10). */
+  readonly transcript: readonly string[];
+  readonly outcome: StepOutcomeKind;
+  readonly interventions: readonly Intervention[];
+  readonly error?: string;
+}
+
 /** One executed run: one scenario, in one arm, with one model, once. */
 export interface RunResult {
   readonly scenario: string;
@@ -41,7 +68,7 @@ export interface RunResult {
   readonly workspace: string;
   /** Where this run's output goes: `steps/<NN>/…` under the execution's results (REQ-FMT-06). */
   readonly outputDir: string;
-  readonly steps: readonly StepOutcome[];
+  readonly steps: readonly StepResult[];
   readonly outcome: 'completed' | 'failed';
   readonly error?: string;
 }
@@ -141,9 +168,15 @@ async function executeRun(context: RunContext, options: RunnerOptions): Promise<
   };
   options.log?.(`run ${name}`);
 
-  const steps: StepOutcome[] = [];
+  const steps: StepResult[] = [];
   let container: string | undefined;
   try {
+    // The campaign's validation refuses a version this runner does not implement; this is the type's
+    // proof of it, and the guard if a campaign ever reached a run by another path.
+    const policy = approverPolicy(campaign.spec.approver_policy);
+    if (policy === undefined) {
+      throw new Error(`the approver policy ${campaign.spec.approver_policy} is not implemented`);
+    }
     await prepareWorkspace(workspace, scenario, options.git);
     container = await options.docker.create({
       image: campaign.id,
@@ -155,15 +188,16 @@ async function executeRun(context: RunContext, options: RunnerOptions): Promise<
     await assertOnlyWorkspaceMounted(container, workspace, options);
     await options.docker.start(container);
     for (const step of scenario.steps) {
-      const outcome = await executeStep(
+      const result = await executeStep(
         step,
-        { container, workspace, outputDir, scenario, model, remainingCostUsd: remaining(campaign, steps) },
+        { container, workspace, outputDir, scenario, model, policy, spent: spentEur(steps), campaign },
         options,
       );
-      // Recorded first, then failed: what the step spent and said is stored either way.
-      steps.push(outcome);
-      if (outcome.error !== undefined) {
-        throw new Error(`step ${stepNumber(step.n)} of ${scenario.id} failed: ${outcome.error}`);
+      // Recorded first, then failed: what the step spent and said is stored either way. A step that
+      // reached the intervention cap is not a failure: the run goes on to the next one.
+      steps.push(result);
+      if (result.error !== undefined) {
+        throw new Error(`step ${stepNumber(step.n)} of ${scenario.id} failed: ${result.error}`);
       }
     }
     return record({ ...identity, steps, outcome: 'completed' }, campaign);
@@ -176,39 +210,91 @@ async function executeRun(context: RunContext, options: RunnerOptions): Promise<
   }
 }
 
-/** What one step needs: where it runs, where its snapshot goes, and what it is asked. */
+/** What one step needs: where it runs, where its snapshot goes, what it is asked, and by what policy. */
 interface StepContext {
   readonly container: string;
   readonly workspace: string;
   readonly outputDir: string;
   readonly scenario: Scenario;
   readonly model: string;
-  /** What is left of the run's cost cap, in USD, for `--max-budget-usd` (REQ-RUN-04). */
-  readonly remainingCostUsd: number;
+  readonly policy: ApproverPolicy;
+  /** What the run's finished steps have spent, in EUR. */
+  readonly spent: number;
+  readonly campaign: CheckedCampaign['campaign'];
+}
+
+/** What a set of steps or invocations has spent, in EUR. */
+function spentEur(spent: readonly { readonly usage: SessionUsage }[]): number {
+  return spent.reduce((total, item) => total + item.usage.costEur, 0);
 }
 
 /**
- * What a run may still spend, in USD: its cap less what its steps have already reported, converted
- * with the campaign's rate. Enforcing it is F1.3 (W5); W2 only tells the agent what it is.
+ * What a run may still spend, in USD: its cap less what it has already spent — its finished steps
+ * **and** the current step's invocations so far, or a resume would be offered the whole cap again —
+ * converted with the campaign's rate. Enforcing it is F1.3 (W5); W2 only tells the agent what it is.
  */
-function remaining(campaign: CheckedCampaign['campaign'], steps: readonly StepOutcome[]): number {
+function remaining(campaign: CheckedCampaign['campaign'], spent: number): number {
   const { caps, currency } = campaign.spec;
-  const spentEur = steps.reduce((total, step) => total + step.usage.costEur, 0);
-  return Math.max(0, (caps.run_cost_eur - spentEur) / currency.usd_to_eur);
+  return Math.max(0, (caps.run_cost_eur - spent) / currency.usd_to_eur);
 }
 
 /**
- * One step (F2.2, REQ-RUN-05): a fresh session, then a snapshot. The prompt is read here, in one
- * place, so that every arm is asked the same bytes (F2.7 in W3). The session the agent reports is
- * checked against the one it was given: an agent that continues a session of its own would carry
- * state between steps, which is the one thing F2.2 forbids.
+ * A step's usage from its invocations (adr-002 decision 8 as corrected by task-007): the work of each
+ * is its own and is summed, while the cost each reports is the session's running total, so the step's
+ * cost is the largest seen. Summing it would count the step's first session again at every resume;
+ * taking the last would lose it when a resume ends with no result and reports nothing.
+ */
+function combine(a: SessionUsage, b: SessionUsage): SessionUsage {
+  return {
+    inputTokens: a.inputTokens + b.inputTokens,
+    outputTokens: a.outputTokens + b.outputTokens,
+    cacheCreationInputTokens: a.cacheCreationInputTokens + b.cacheCreationInputTokens,
+    cacheReadInputTokens: a.cacheReadInputTokens + b.cacheReadInputTokens,
+    costUsd: Math.max(a.costUsd, b.costUsd),
+    costEur: Math.max(a.costEur, b.costEur),
+    turns: a.turns + b.turns,
+    durationMs: a.durationMs + b.durationMs,
+  };
+}
+
+/** The usage of a step's invocations so far. */
+function stepUsage(invocations: readonly StepOutcome[]): SessionUsage {
+  return invocations.map((invocation) => invocation.usage).reduce(combine);
+}
+
+/** How the policy names a kind in the log. */
+const KIND_LABEL: Readonly<Record<InterventionKind, string>> = {
+  approval: 'approval request',
+  question: 'question',
+};
+
+/**
+ * The failure of one invocation, if it failed. **The order is the point.** The agent's own failure
+ * comes first: a session that ended before naming itself reports no session at all, and testing the
+ * id first would blame a mismatch for what was a truncated stream and bury the reason it stopped. The
+ * id guard is what remains for an invocation that did run — an agent continuing a session of its own
+ * is what F2.2 forbids, and a resume answered from another session is not the step's.
+ */
+function invocationError(outcome: StepOutcome, expected: string, name: string): string | undefined {
+  return (
+    outcome.error ??
+    (outcome.sessionId === expected
+      ? undefined
+      : `${name} ran in session ${outcome.sessionId}, not in the one it was given (${expected})`)
+  );
+}
+
+/**
+ * One step (F2.2, F2.4, REQ-RUN-05): a fresh session, the neutral approver's replies while it waits,
+ * then one snapshot. The prompt is read here, in one place, so that every arm is asked the same bytes
+ * (F2.7 in W3); the replies come from the policy alone, so every arm is answered the same way.
  */
 async function executeStep(
   step: Scenario['steps'][number],
   context: StepContext,
   options: RunnerOptions,
-): Promise<StepOutcome> {
-  const { container, workspace, outputDir, scenario, model, remainingCostUsd } = context;
+): Promise<StepResult> {
+  const { container, workspace, outputDir, scenario, model, policy, spent, campaign } = context;
   const number = stepNumber(step.n);
   let prompt: string;
   try {
@@ -222,32 +308,79 @@ async function executeStep(
   // `--max-budget-usd 0` is a value the spike never measured: it may refuse at once, or mean no
   // limit at all. Neither is a thing to say by accident, so the step is not started. This is not the
   // budget guard — enforcing the cap across a run and a campaign is F1.3 (REQ-RUN-08, W5).
+  const remainingCostUsd = remaining(campaign, spent);
   if (remainingCostUsd <= 0) {
     throw new Error(`step ${number} not started: the run's cost cap is exhausted`);
   }
 
   const sessionId = randomUUID();
-  const outcome = await options.agent.runStep({
+  const run = (command: readonly string[]) => options.docker.exec(container, command);
+  const first = await options.agent.runStep({
     scenarioId: scenario.id,
     step: step.n,
     prompt,
     model,
     sessionId,
     remainingCostUsd,
-    run: (command) => options.docker.exec(container, command),
+    run,
   });
+  const invocations: StepOutcome[] = [first];
+  const interventions: Intervention[] = [];
+  let error = invocationError(first, sessionId, `step ${number}`);
+  let outcome: StepOutcomeKind = 'completed';
 
-  // **The order is the point.** The agent's own failure comes first: a session that ended before
-  // naming itself reports no session at all, and testing the id first would blame a mismatch for
-  // what was a truncated stream and bury the reason it stopped. The id guard is what remains for an
-  // outcome that did run — an agent continuing a session of its own is what F2.2 forbids.
-  const error =
-    outcome.error ??
-    (outcome.sessionId === sessionId
-      ? undefined
-      : `step ${number} ran in session ${outcome.sessionId}, not in the one it was given (${sessionId})`);
+  // The neutral approver (F2.4). A failed session is never classified: it is a failure, not a wait.
+  for (let last = first; error === undefined;) {
+    const kind = last.finalMessage === undefined ? undefined : policy.classify(last.finalMessage);
+    if (kind === undefined) break;
+    if (interventions.length >= policy.maxInterventions) {
+      outcome = 'intervention cap reached';
+      options.log?.(`step ${number}: intervention cap reached (${policy.maxInterventions})`);
+      break;
+    }
+    const left = remaining(campaign, spent + stepUsage(invocations).costEur);
+    if (left <= 0) {
+      error = `step ${number} not resumed: the run's cost cap is exhausted`;
+      break;
+    }
+    const reply = policy.replies[kind];
+    const intervention = interventions.length + 1;
+    // Recorded before the reply is sent: once sent, it was an intervention, whatever comes of it.
+    interventions.push({ step: step.n, kind, reply });
+    options.log?.(
+      `step ${number}: ${KIND_LABEL[kind]}, intervention ${intervention} of ${policy.maxInterventions}: ${reply}`,
+    );
+    try {
+      last = await options.agent.resume({
+        scenarioId: scenario.id,
+        step: step.n,
+        intervention,
+        sessionId,
+        reply,
+        remainingCostUsd: left,
+        run,
+      });
+    } catch (failure) {
+      // What the step's earlier invocations spent and said is real, so it is stored before failing.
+      error = reasonOf(failure);
+      break;
+    }
+    // A resume reports the session's running total, so it never goes down. If it ever does — a
+    // different agent version, a stream that is not a resume — the larger figure is kept and the
+    // broken premise is said out loud rather than absorbed (adr-002 amendment 1).
+    const before = stepUsage(invocations).costUsd;
+    if (last.error === undefined && last.usage.costUsd < before) {
+      options.logError?.(
+        `step ${number}: resume ${intervention} reported a session cost of ${last.usage.costUsd} USD, ` +
+          `below the ${before} USD already reported; kept the larger`,
+      );
+    }
+    invocations.push(last);
+    error = invocationError(last, sessionId, `resume ${intervention} of step ${number}`);
+  }
 
-  // Every step leaves a snapshot to score, including a step that changed nothing (REQ-RUN-05).
+  // Every step leaves a snapshot to score, including a step that changed nothing (REQ-RUN-05), and
+  // only one, however many interventions it took.
   await options.git.commitAll(workspace, `step ${number}`, { allowEmpty: true });
   const stepDir = join(outputDir, 'steps', number);
   mkdirSync(stepDir, { recursive: true });
@@ -255,11 +388,14 @@ async function executeStep(
   // `bypassPermissions`, so one `env > notes.txt` would otherwise commit the token in a patch.
   const patch = await options.git.patchOf(workspace, 'HEAD');
   writeFileSync(join(stepDir, 'diff.patch'), scrub(patch, options.secrets ?? []));
-  // What the session cost, and the whole of what it said (REQ-RUN-09, REQ-FMT-06). The transcript is
-  // git-ignored and scrubbed by the adapter that produced it (REQ-NFR-01, REQ-RES-06).
-  writeFileSync(join(stepDir, 'usage.json'), `${JSON.stringify(outcome.usage, undefined, 2)}\n`);
-  writeFileSync(join(stepDir, 'transcript.jsonl'), outcome.transcript.map((line) => `${line}\n`).join(''));
-  return error === undefined ? outcome : { ...outcome, error };
+  // What the step cost across its invocations, and the whole of what they said (REQ-RUN-09,
+  // REQ-FMT-06). The transcript is git-ignored and scrubbed by the adapter (REQ-NFR-01, REQ-RES-06).
+  const usage = stepUsage(invocations);
+  const transcript = invocations.flatMap((invocation) => invocation.transcript);
+  writeFileSync(join(stepDir, 'usage.json'), `${JSON.stringify(usage, undefined, 2)}\n`);
+  writeFileSync(join(stepDir, 'transcript.jsonl'), transcript.map((line) => `${line}\n`).join(''));
+  const result = { n: step.n, sessionId: first.sessionId, usage, transcript, interventions };
+  return error === undefined ? { ...result, outcome } : { ...result, outcome: 'failed', error };
 }
 
 /**
@@ -314,11 +450,16 @@ function record(run: RunResult, campaign: CheckedCampaign['campaign']): RunResul
         approver_policy,
         outcome: run.outcome,
         ...(run.error === undefined ? {} : { error: run.error }),
-        steps: run.steps.map((step, index) => ({
-          n: index + 1,
+        steps: run.steps.map((step) => ({
+          n: step.n,
           session: step.sessionId,
+          outcome: step.outcome,
+          interventions: step.interventions.length,
           usage: step.usage,
         })),
+        // Every reply of the neutral approver, with its step, kind and text (REQ-RUN-07): what M-K2
+        // counts in W6, under the policy version named above.
+        interventions: run.steps.flatMap((step) => step.interventions),
       },
       undefined,
       2,
