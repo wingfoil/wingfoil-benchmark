@@ -60,18 +60,23 @@ describe('reading a session (REQ-RUN-09)', () => {
     expect(session.error).toMatch(/no result event/);
   });
 
-  it('sums the result events of a step, so a resumed step is not under-reported', () => {
-    // One step, two invocations: the step and the reply that resumed it (REQ-RUN-07, task-007).
-    const first = readSession(recorded('completed.jsonl'), RATE);
-    const second = readSession(recorded('resumed.jsonl'), RATE);
-    const both = readSession([...recorded('completed.jsonl'), ...recorded('resumed.jsonl')], RATE);
+  it("sums a session's work across a resume, but takes its cost as the session's latest total", () => {
+    // The spike's own pair: a session that asked a question (P4) and its resume (P6), one session.
+    // Tokens, turns and wall time are reported per invocation; `total_cost_usd` is the session's
+    // running total — P6 reports 0.0681071 = P4's 0.00734975 + its own 0.06075735, and its
+    // modelUsage still carries P4's entry. Summing the cost would count P4 twice.
+    const both = readSession([...recorded('question.jsonl'), ...recorded('resumed.jsonl')], RATE);
 
-    // The exact sum, not merely "more than one of them": a parser that kept only the last result
-    // event would also report more than the first, and that is the defect this test exists for.
-    expect(both.usage.costUsd).toBeCloseTo(first.usage.costUsd + second.usage.costUsd, 10);
-    expect(both.usage.turns).toBe(first.usage.turns + second.usage.turns);
-    expect(both.usage.outputTokens).toBe(first.usage.outputTokens + second.usage.outputTokens);
-    expect(both.usage.durationMs).toBe(first.usage.durationMs + second.usage.durationMs);
+    expect(both.usage).toEqual({
+      inputTokens: 10 + 98,
+      outputTokens: 393 + 4967,
+      cacheCreationInputTokens: 2895 + 6399,
+      cacheReadInputTokens: 17560 + 278256,
+      costUsd: 0.0681071,
+      costEur: 0.0681071 * RATE,
+      turns: 1 + 12,
+      durationMs: 5288 + 51037,
+    });
     expect(both.outcome).toBe('completed');
   });
 

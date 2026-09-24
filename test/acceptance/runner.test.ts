@@ -335,6 +335,20 @@ describe('runner.feature', () => {
     const record = runRecord(run?.outputDir);
     expect(record.interventions).toEqual([{ step: 1, kind: 'question', reply: NO_INPUT }]);
     expect(record.steps).toMatchObject([{ n: 1, outcome: 'completed', interventions: 1 }]);
+    // One session, two invocations: its work is summed, and its cost is the session's total as the
+    // resume reported it (0.0681071 USD), not that total plus the question's own cost again.
+    const usage = JSON.parse(
+      readFileSync(join(run?.outputDir ?? '', 'steps', '01', 'usage.json'), 'utf8'),
+    ) as {
+      inputTokens: number;
+      turns: number;
+      costUsd: number;
+      costEur: number;
+    };
+    expect(usage.inputTokens).toBe(10 + 98);
+    expect(usage.turns).toBe(1 + 12);
+    expect(usage.costUsd).toBeCloseTo(0.0681071, 12);
+    expect(usage.costEur).toBeCloseTo(0.0681071 * rate, 12);
   });
 
   it('@F2.4 A step ends after the maximum number of interventions', async () => {

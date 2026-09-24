@@ -480,14 +480,15 @@ describe('the neutral approver in the step loop (F2.4)', () => {
 
     expect(summary.runs[0]?.outcome).toBe('completed');
     const step = join(summary.runs[0]?.outputDir ?? '', 'steps', '01');
-    // 11 + 12 + 13: the step and both its resumes, every field.
+    // 11 + 12 + 13: the step and both its resumes, every field of work. The cost is not summed: an
+    // invocation reports the session's running total, so the step's cost is the latest, 13.
     expect(JSON.parse(readFileSync(join(step, 'usage.json'), 'utf8'))).toEqual({
       inputTokens: 36,
       outputTokens: 360,
       cacheCreationInputTokens: 3600,
       cacheReadInputTokens: 36000,
-      costUsd: 36 / 32,
-      costEur: 36 / 64,
+      costUsd: 13 / 32,
+      costEur: 13 / 64,
       turns: 36,
       durationMs: 252,
     });
@@ -582,6 +583,39 @@ describe('the neutral approver in the step loop (F2.4)', () => {
     expect(ports.recorded.steps[0]?.remainingCostUsd).toBeCloseTo(3 / 0.92, 10);
     expect(ports.recorded.resumes[0]?.remainingCostUsd).toBeCloseTo(2 / 0.92, 10);
     expect(ports.recorded.steps[1]?.remainingCostUsd).toBeCloseTo(2 / 0.92, 10);
+  });
+
+  it("keeps the session's cost when a resume ends with no result and so reports none", async () => {
+    // A truncated resume reports zero: the session's total is still what the last result said.
+    const { checked } = checkedCampaign();
+    const ports = doubles({
+      messageOf: (request) => (invocationOf(request) === 0 ? 'Which one?' : undefined),
+      usageOf: (request) => (invocationOf(request) === 0 ? usage(8) : usage(0)),
+      errorOf: (request) =>
+        invocationOf(request) === 1 ? 'the session ended with no result event' : undefined,
+    });
+
+    const summary = await runCampaign(checked, ports);
+
+    const step = join(summary.runs[0]?.outputDir ?? '', 'steps', '01');
+    expect(JSON.parse(readFileSync(join(step, 'usage.json'), 'utf8'))).toMatchObject({
+      costUsd: 8 / 32,
+      turns: 8,
+    });
+  });
+
+  it('ends a step at the intervention cap before it looks at what is left to spend', async () => {
+    // Both limits reached at once: the step is over by the policy, so no reply is weighed against the
+    // cap, and the step is scored as it stands rather than failing its run.
+    const { checked } = checkedCampaign();
+    const ports = doubles({
+      messageOf: (request) => (request.step === 1 ? 'Which one?' : undefined),
+      usageOf: (request) => ({ ...usage(0), costEur: invocationOf(request) === 3 ? 3 : 0 }),
+    });
+
+    const summary = await runCampaign(checked, ports);
+
+    expect(summary.runs[0]?.steps[0]?.outcome).toBe('intervention cap reached');
   });
 
   it('does not resume a session when nothing is left to spend', async () => {
