@@ -316,3 +316,19 @@ Full suites at HEAD: `npm test` 316, `test:bin` 4, `test:docker` 1, `lint` clean
   directory of that scenario is empty. It belongs to whichever task owns `prepareWorkspace` next.
 - **Suites after the round:** `npm test` 320, coverage 100% statements / 99.24% branches;
   `npm run test:bin` 4; `npm run test:docker` 1; `npm run lint` clean.
+- `npx wingfoil memory approve task-005-fresh-session-steps --reason "…"` → `d9776ea`, after the
+  approver's explicit consent in chat. Declared: `in-review → approved` gate, approver role checked,
+  subject with `[from → to]`, `Approver:`/`Reason:` body, only `status` changed. Observed: exit 0,
+  empty stderr, the declared subject and both trailers, a one-line diff. Matches.
+- A third review round was not run. The reviewer had called the work approvable before the round-2
+  fixes, and those fixes were smaller than round 1's; the mutation that found N-1 was re-run here
+  instead, which is the decisive check. Recorded as a judgement, not as an omission.
+
+### What this task hands on
+
+- **task-006 (F2.3):** the `StepRequest` shape assertion breaks when a field is added — by design.
+  Adding `usage`, the transcript and "the session ended waiting" costs one line in that assertion per
+  field. adr-002 decisions 11 and 13 are named in task-006's Context and are not done here.
+- **task-007 (F2.4):** the session check is a tripwire on an interface the runner does not control.
+  It catches a buggy adapter, not a dishonest one; the first real adapter arrives in task-006.
+- **Whoever touches `prepareWorkspace` next:** an empty seed still fails with git's own words.
