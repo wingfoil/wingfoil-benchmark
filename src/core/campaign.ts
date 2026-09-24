@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { approverPolicy, approverPolicyVersions } from './approver.js';
 import { formatPath } from './result.js';
 import type { Issue } from './result.js';
 import { SCENARIO_ID, SCENARIO_VERSION } from './scenario.js';
@@ -127,7 +128,15 @@ export const campaignSchema = z.strictObject({
     slices: z.array(slice).optional(),
   }),
   repetitions: z.record(z.string(), z.number().int().min(1)),
-  approver_policy: z.string().regex(/^v\d+$/, 'must look like v1'),
+  approver_policy: z
+    .string()
+    .regex(/^v\d+$/, { message: 'must look like v1', abort: true })
+    // REQ-RUN-06: the version pins the classifier and the replies. A version the runner does not
+    // implement would otherwise run as another, and its interventions could not be reconstructed.
+    .refine((version) => approverPolicy(version) !== undefined, {
+      error: (issue) =>
+        `'${String(issue.input)}' is not an approver policy this runner implements: ${approverPolicyVersions().join(', ')}`,
+    }),
   caps: z.strictObject({ step_time_s: positive, step_tokens: positive.int(), run_cost_eur: positive }),
   budget: z
     .strictObject({ warn_eur: positive, ceiling_eur: positive })

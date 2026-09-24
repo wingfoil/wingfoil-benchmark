@@ -12,3 +12,5 @@ export { gitCli } from './ports/git.js';
 export type { GitPort } from './ports/git.js';
 export { processFailure, reasonOf, systemProcess } from './ports/process.js';
 export type { ProcessPort, ProcessResult } from './ports/process.js';
+export { approverPolicy, approverPolicyVersions, classify } from './approver.js';
+export type { ApproverPolicy, InterventionKind } from './approver.js';
