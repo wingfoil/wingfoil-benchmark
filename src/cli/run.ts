@@ -56,8 +56,9 @@ export async function main(argv: readonly string[], io: Io, ports?: Ports): Prom
     return EXIT.ok;
   }
   const [noun, verb, file, ...extra] = argv;
-  const allowSpending = extra.includes(SPENDING_FLAG);
-  const rest = extra.filter((argument) => argument !== SPENDING_FLAG);
+  // The flag belongs to `run`: accepting it on `validate` would say it means something there.
+  const allowSpending = verb === 'run' && extra.includes(SPENDING_FLAG);
+  const rest = allowSpending ? extra.filter((argument) => argument !== SPENDING_FLAG) : extra;
   if (noun !== 'campaign' || !isFileArgument(file) || rest.length > 0) {
     io.stderr(USAGE);
     return EXIT.usage;
@@ -108,8 +109,10 @@ async function runCampaignCommand(
     return EXIT.failure;
   }
 
-  // Only when the command builds its own ports: with ports injected there is no container to reach.
-  const credential = ports === undefined && agentName !== FREE_AGENT ? agentCredential() : undefined;
+  // Whenever the agent is not the free one, whoever runs the container needs the credential — with
+  // injected ports too, because the container's environment is the runner's business, not the
+  // port's. Requiring it only for real ports left the whole credential path untested.
+  const credential = agentName === FREE_AGENT ? undefined : agentCredential();
   if (credential !== undefined && !credential.ok) return report(credential.issues, io);
   const resolved = ports
     ? { ok: true as const, value: ports }
@@ -145,7 +148,10 @@ export function realPorts(
   credential?: Readonly<Record<string, string>>,
 ): Result<Ports> {
   const usdToEur = campaign.campaign.spec.currency.usd_to_eur;
-  if (campaign.campaign.spec.agent.name !== FREE_AGENT) {
+  const name = campaign.campaign.spec.agent.name;
+  // Exhaustive over the campaign schema's enum on purpose: adding an agent there without an adapter
+  // here is a build error, rather than a run that quietly gets Claude Code's command line.
+  if (name === 'claude-code') {
     return {
       ok: true,
       value: {
@@ -155,6 +161,8 @@ export function realPorts(
       },
     };
   }
+  const exhaustive: 'fake' = name;
+  void exhaustive;
   const script = process.env[FAKE_SCRIPT_VARIABLE];
   if (script === undefined) {
     return {

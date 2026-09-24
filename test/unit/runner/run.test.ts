@@ -319,6 +319,23 @@ describe('runCampaign', () => {
     expect(existsSync(join(summary.runs[0]?.outputDir ?? '', 'steps', '01', 'diff.patch'))).toBe(false);
   });
 
+  it("scrubs the credential out of a step's patch, not only out of its transcript", async () => {
+    const token = 'sk-ant-oat01-SECRET';
+    const { checked } = checkedCampaign();
+    const ports = doubles({ patchOf: () => `+ANTHROPIC_AUTH_TOKEN=${token}\n` });
+
+    const summary = await runCampaign(checked, {
+      ...ports,
+      containerEnv: { ANTHROPIC_AUTH_TOKEN: token },
+    });
+
+    // The agent runs with bypassPermissions and the token in its environment: one `env > notes.txt`
+    // inside the workspace would otherwise commit the secret in a patch, and patches are committed.
+    const patch = readFileSync(join(summary.runs[0]?.outputDir ?? '', 'steps', '01', 'diff.patch'), 'utf8');
+    expect(patch).not.toContain(token);
+    expect(patch).toContain('[redacted]');
+  });
+
   it('keeps what a failed step spent, instead of throwing the evidence away', async () => {
     const { checked } = checkedCampaign();
     const usage = {

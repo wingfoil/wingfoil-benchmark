@@ -3,6 +3,7 @@ import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { scrub } from '../agents/index.js';
 import type { AgentPort, StepOutcome } from '../agents/index.js';
 import { reasonOf, WORKSPACE } from '../core/index.js';
 import type { DockerPort, GitPort, Scenario } from '../core/index.js';
@@ -232,7 +233,10 @@ async function executeStep(
   await options.git.commitAll(workspace, `step ${number}`, { allowEmpty: true });
   const stepDir = join(outputDir, 'steps', number);
   mkdirSync(stepDir, { recursive: true });
-  writeFileSync(join(stepDir, 'diff.patch'), await options.git.patchOf(workspace, 'HEAD'));
+  // Scrubbed like the transcript: the agent runs with the credential in its own environment and
+  // `bypassPermissions`, so one `env > notes.txt` would otherwise commit the token in a patch.
+  const secrets = Object.values(options.containerEnv ?? {});
+  writeFileSync(join(stepDir, 'diff.patch'), scrub(await options.git.patchOf(workspace, 'HEAD'), secrets));
   // What the session cost, and the whole of what it said (REQ-RUN-09, REQ-FMT-06). The transcript is
   // git-ignored and scrubbed by the adapter that produced it (REQ-NFR-01, REQ-RES-06).
   writeFileSync(join(stepDir, 'usage.json'), `${JSON.stringify(outcome.usage, undefined, 2)}\n`);

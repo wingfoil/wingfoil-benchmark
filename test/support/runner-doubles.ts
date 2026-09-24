@@ -54,6 +54,8 @@ export function doubles(
     transcriptOf?: (request: StepRequest) => readonly string[];
     /** Why the step's session failed, if it did: the agent reports it rather than throwing. */
     errorOf?: (request: StepRequest) => string;
+    /** What a step's patch holds; by default a line naming the directory and the ref. */
+    patchOf?: (directory: string, ref: string) => string;
     /** Makes one Docker or git call fail: `create`, `start`, `remove` and `init` break a run
      * outside its steps, `commit` and `patch` break it inside one. */
     failing?: { call: 'create' | 'start' | 'remove' | 'init' | 'commit' | 'patch'; error: string };
@@ -131,7 +133,9 @@ export function doubles(
       patches += 1;
       recorded.gitCalls.push(`patch ${directory} ${ref}`);
       if (options.failing?.call === 'patch') return Promise.reject(new Error(options.failing.error));
-      return Promise.resolve(`patch of ${directory} at ${ref} #${patches}\n`);
+      return Promise.resolve(
+        options.patchOf?.(directory, ref) ?? `patch of ${directory} at ${ref} #${patches}\n`,
+      );
     },
   };
   const agent: AgentPort = {

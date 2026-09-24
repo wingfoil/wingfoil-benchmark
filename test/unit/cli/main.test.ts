@@ -94,6 +94,17 @@ describe('bench campaign run', () => {
     };
   }
 
+  it('does not pretend the spending flag means anything to validate', async () => {
+    const { file } = writeRepo(completeCampaignYaml());
+    let stderr = '';
+    const code = await main(['campaign', 'validate', file, '--allow-spending'], {
+      stdout: () => undefined,
+      stderr: (text) => (stderr += text),
+    });
+    expect(code).toBe(2);
+    expect(stderr).toMatch(/^usage: bench/);
+  });
+
   it('refuses to spend before anything runs, not after the image is built', async () => {
     const { file } = writeRepo(completeCampaignYaml());
     const ports = doubles();
@@ -105,12 +116,25 @@ describe('bench campaign run', () => {
     expect(ports.recorded.creates).toEqual([]);
   });
 
-  it('runs a real agent once the opt-in is given', async () => {
+  it('runs a real agent once the opt-in is given, and hands its container the credential', async () => {
+    const token = 'sk-ant-oat01-SECRET';
+    const tokenFile = join(tempDir('bench-token-'), 'token');
+    // Written the way a paste leaves it, so the stripping is part of what this pins.
+    writeFileSync(tokenFile, `${token}\n`);
     const { file } = writeRepo(completeCampaignYaml());
     const ports = doubles();
-    const { code } = await runWith(ports, 'campaign', 'run', file, '--allow-spending');
-    expect(code).toBe(0);
-    expect(ports.recorded.builds).toHaveLength(1);
+    const previous = process.env.BENCH_AGENT_TOKEN_FILE;
+    process.env.BENCH_AGENT_TOKEN_FILE = tokenFile;
+    try {
+      const { code } = await runWith(ports, 'campaign', 'run', file, '--allow-spending');
+      expect(code).toBe(0);
+      expect(ports.recorded.builds).toHaveLength(1);
+      // The credential reaches the container, stripped, under the variable the spike proved works.
+      expect(ports.recorded.creates[0]?.env).toEqual({ ANTHROPIC_AUTH_TOKEN: token });
+    } finally {
+      if (previous === undefined) Reflect.deleteProperty(process.env, 'BENCH_AGENT_TOKEN_FILE');
+      else process.env.BENCH_AGENT_TOKEN_FILE = previous;
+    }
   });
 
   it('asks for the fake agent script when it runs without injected ports', async () => {
@@ -282,6 +306,36 @@ describe('realPorts', () => {
 
     // No fake script is read: the campaign pins a real agent, so the script variable is irrelevant.
     expect(result.ok && Object.keys(result.value).sort()).toEqual(['agent', 'docker', 'git']);
+  });
+
+  it('gives the adapter the credential it must scrub, not an empty one', async () => {
+    const token = 'sk-ant-oat01-SECRET';
+    const checked = checkCampaign(writeRepo(completeCampaignYaml()).file);
+    expect(checked.ok).toBe(true);
+    if (!checked.ok) return;
+    const ports = realPorts(checked.value, { ANTHROPIC_AUTH_TOKEN: token });
+    expect(ports.ok).toBe(true);
+    if (!ports.ok) return;
+
+    // A session whose output happens to echo the token back: the adapter holds the token for
+    // exactly this, and an adapter built with an empty one would store the secret verbatim.
+    const outcome = await ports.value.agent.runStep({
+      scenarioId: 'S1',
+      step: 1,
+      prompt: 'x',
+      model: 'claude-sonnet-5',
+      sessionId: 'session-1',
+      remainingCostUsd: 1,
+      run: () =>
+        Promise.resolve({
+          code: 0,
+          stdout: `{"type":"result","is_error":false,"terminal_reason":"completed","leaked":"${token}"}`,
+          stderr: '',
+        }),
+    });
+
+    expect(outcome.transcript.join('')).not.toContain(token);
+    expect(outcome.transcript.join('')).toContain('[redacted]');
   });
 
   it("reads the agent's credential from the file the operator names", () => {

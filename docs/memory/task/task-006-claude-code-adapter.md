@@ -141,10 +141,12 @@ that is the tripwire working, and updating it is the one line task-005 predicted
   model pinned, the approver policy version, and the per-step outcomes. This is adr-002 decision 11,
   named in this task's Context so the wave cannot end without it. F5.1 (W7) completes it.
 
-**Scrubbing (REQ-NFR-01).** Before a transcript is stored, every known secret value is replaced with
-a fixed marker: the token the runner passed, and any value of `ANTHROPIC_*` in the runner's own
-environment. Known values only — the scrubber removes what we can name, and the design says so rather
-than implying it catches anything else. The spike found no leak path, which is weaker than proof.
+**Scrubbing (REQ-NFR-01).** Before anything a run produces is stored, every known secret value is
+replaced with a fixed marker: **the credential this campaign passed into the container**. Known
+values only — the scrubber removes what we can name, and the design says so rather than implying it
+catches anything else. It covers the transcript **and the step patches**: the agent runs with
+`bypassPermissions` and the credential in its own environment, so a patch is as reachable as a
+transcript. The spike found no leak path, which is weaker than proof.
 
 ### Credentials (REQ-RUN-15, as amended in requirements 1.3)
 
@@ -217,7 +219,7 @@ end-to-end run with a real agent stays in the release's validation phase
   still has exactly one mount — the isolation of REQ-RUN-02 is untouched by giving the agent a token.
 - **task-005's shape assertion did its job.** Adding `remainingCostUsd` to `StepRequest` broke it, as
   task-005 predicted it would, and updating it cost the one line that was forecast.
-- **The spike paid for itself here.** Eight fixtures under `test/fixtures/sessions/` are trimmed real
+- **The spike paid for itself here.** Seven fixtures under `test/fixtures/sessions/` are trimmed real
   streams, re-scanned for credentials before being committed. Every decision the parser makes —
   `subtype` can lie, a stream can end with no result, usage is per invocation — is tested against
   output the agent actually produced, and none of it cost a token in this task.

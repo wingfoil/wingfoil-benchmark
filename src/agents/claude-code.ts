@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { basename } from 'node:path';
 
-import type { AgentPort, StepOutcome, StepRequest } from './fake.js';
+import type { AgentPort, StepOutcome, StepRequest } from './port.js';
 import { fail, ok } from '../core/index.js';
 import type { Result } from '../core/index.js';
 
