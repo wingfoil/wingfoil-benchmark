@@ -69,6 +69,24 @@ request:
 - no warning naming a file path in a phase `include` remains;
 - `.wingfoil/workflows.yaml` is unchanged.
 
+### Classification of the criteria
+
+No criterion is red-first or characterization in the usual sense: this task changes declarative
+configuration and delivers no code, and the repository's suites do not read `.wingfoil/`. The check
+that stands in for a test is the roadmap viewer, an external reader of the configuration, and it does
+behave red-first — **baseline recorded at `dbfe52b`, before any change: 13 warnings**, including the
+5 that name the path form and the 4 that report a `sub` workflow included by no phase. So the check
+fails before the change for the stated reason, and must pass after it.
+
+**One criterion is deliberately adversarial**, because a disappearing warning is weak evidence here.
+For `scenario-authoring` the warning goes away because the check stops applying to a `main`, not
+because anything was repaired — and deleting the file, or dropping it from the manifest, would make
+the same warning disappear just as well and would read as a pass. The acceptance therefore asserts
+what a mutation would break: the file still exists, still carries all seven phases, and is still
+listed in `.wingfoil/workflows.yaml`. Same idea for the manifest: it is asserted unchanged rather
+than assumed, since "fixing" a phase include by editing the manifest instead would also quiet the
+viewer.
+
 Commands are in the bug. The fix is not accepted on "the warning disappeared" alone: for
 `scenario-authoring` the warning goes away because the check no longer applies, which is the decided
 outcome, and that has to be read together with the file keeping all its phases.
