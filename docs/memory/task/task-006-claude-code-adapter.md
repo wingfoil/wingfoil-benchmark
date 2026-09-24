@@ -333,3 +333,40 @@ create request (1 red); the adapter built with an empty token (1 red); the patch
   task's review found: a check that cannot fail, read as if it had passed.
 - **Suites at HEAD:** `npm test` 356 passed, 100% statements / 98.26% branches; `npm run test:bin` 4;
   `npm run test:docker` 1; `npm run lint` clean.
+
+### Review, round 2
+
+- **Result:** both blockers fixed and verified, four of five majors fixed — and **M1 was half-fixed**,
+  with its redesign opening a new hole of the same kind. 2 new majors, 2 minors, 1 nit. All fixed.
+- **N-1, the one that matters most:** the fake agent never propagated a replayed session's `error`.
+  `StepOutcome.error` is the whole mechanism M1 introduced, and one of the project's two agents did
+  not set it — so a session that authenticated nothing was scored as a finished step, with plausible
+  usage, and `bench campaign run` exited 0. This is the path **every acceptance test and every wave
+  from W3 to W10 runs through** (adr-002 decision 13), which means a failing step was untestable
+  everywhere. One line, and a test that now fails without it.
+- **N-2:** a stream with no `result` event has no session id, so M2's change made the id guard fire
+  before M1's writes: the transcript — "the only evidence of why it stopped", by the port's own doc
+  comment — was discarded for **the one failure mode the spike actually recorded**, and the run
+  recorded a session mismatch as the reason for a truncation. Two round-1 fixes interacting.
+- **My own weak fix, caught by mutating:** I first wrote the guard as
+  `outcome.error ?? (sessionId !== '' && mismatch ? … )`, and removing the `!== ''` left all 359
+  tests green — because `??` short-circuits whenever the agent reported an error, so that condition
+  did nothing my tests could see. **The ordering is the mechanism**, not the condition. The code now
+  says so, and putting the id guard first turns a test red.
+- **N-3:** `remaining()` clamps at 0, so an exhausted run would have invoked the agent with
+  `--max-budget-usd 0` — a value the spike measured nothing about; it may refuse at once or mean no
+  limit. The step is no longer started. Recorded as **not** the budget guard: enforcing the cap
+  across a run and a campaign is REQ-RUN-08, F1.3, W5.
+- **N-4:** the patch was scrubbed against *every* value of the container's environment. `LANG=C`
+  would have redacted every `c` in every patch, and W3 puts the arm's own settings in that
+  environment. The runner is now given the values that are secret, named by the caller.
+- **N-5:** `name satisfies typeof FREE_AGENT` instead of a second copy of the literal.
+- **Reported against itself:** the reviewer's first M2 mutation was weak and it said so, then found
+  the real one. It also noted that `@F2.3` compares `usage.json` to `readSession(fixture)` while the
+  fake produces it the same way, so a parser bug is invisible *to that test* — covered instead by the
+  unit test's literal token counts. Worth knowing: that coverage is real but split across two files.
+- **Mutations re-run after these fixes:** the fake swallowing a replayed failure (1 red); the id
+  guard before the agent's error (1 red); a budget of zero passed anyway (1 red); the patch scrubbed
+  against every environment value (1 red).
+- **Suites:** `npm test` 359 passed, 100% statements / 98.02% branches; `test:bin` 4;
+  `test:docker` 1; `lint` clean.
