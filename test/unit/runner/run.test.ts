@@ -69,6 +69,19 @@ describe('runCampaign', () => {
     expect(summary.execution).toBe(1);
   });
 
+  it("lays a run's output out under results/<campaign-id>/<n>/runs/ (REQ-FMT-06)", async () => {
+    const { root, checked } = checkedCampaign();
+    const ports = doubles();
+
+    const summary = await runCampaign(checked, ports);
+
+    // Asserted literally, not derived from the value under test: the layout is the contract F5.1
+    // reads in W7, and a path that merely exists somewhere under results/ would satisfy nothing.
+    expect(summary.runs[0]?.outputDir).toBe(
+      join(root, 'results', checked.campaign.id, '1', 'runs', 'S1@1.0', 'baseline', 'fake-model', 'r1'),
+    );
+  });
+
   it('records the execution under results/<campaign-id>/<n>/ with a copy of the campaign file', async () => {
     const { root, checked } = checkedCampaign();
     const { docker, git, agent } = doubles();
@@ -266,7 +279,6 @@ describe('runCampaign', () => {
     const { checked } = checkedCampaign();
     const ports = doubles({
       onStep: () => {
-        // eslint-disable-next-line @typescript-eslint/only-throw-error
         throw 'the agent said no';
       },
     });
@@ -274,5 +286,58 @@ describe('runCampaign', () => {
     const summary = await runCampaign(checked, ports);
 
     expect(summary.runs[0]?.error).toBe('the agent said no');
+  });
+  it('fails the run when a step commit fails, and carries on (REQ-NFR-03)', async () => {
+    const { checked } = checkedCampaign(campaignYaml({ repetitions: { S1: 2 } }));
+    const ports = doubles({ failing: { call: 'commit', error: 'the index is locked' } });
+
+    const summary = await runCampaign(checked, ports);
+
+    expect(summary.runs.map((run) => run.outcome)).toEqual(['failed', 'failed']);
+    expect(summary.runs[0]?.error).toMatch(/the index is locked/);
+    expect(ports.recorded.removes).toEqual(['container-1', 'container-2']);
+  });
+
+  it('fails the run when a step patch cannot be read, leaving the commit behind', async () => {
+    const { checked } = checkedCampaign();
+    const ports = doubles({ failing: { call: 'patch', error: 'bad object HEAD' } });
+
+    const summary = await runCampaign(checked, ports);
+
+    expect(summary.runs[0]?.outcome).toBe('failed');
+    expect(summary.runs[0]?.error).toMatch(/bad object HEAD/);
+    // The whole transcript: step 1 is committed in the workspace, its patch is attempted and fails,
+    // and step 2 never starts. The run's repository and its record disagree by one commit, and the
+    // run is failed precisely so that nothing scores that gap.
+    const workspace = summary.runs[0]?.workspace ?? '';
+    expect(ports.recorded.gitCalls).toEqual([
+      `init ${workspace}`,
+      `commit ${workspace} seed`,
+      `commit ${workspace} step 01 --allow-empty`,
+      `patch ${workspace} HEAD`,
+    ]);
+    expect(existsSync(join(summary.runs[0]?.outputDir ?? '', 'steps', '01', 'diff.patch'))).toBe(false);
+  });
+
+  it('fails the run when a step prompt cannot be read', async () => {
+    const { checked, root } = checkedCampaign();
+    rmSync(join(root, 'scenarios', 'S1', '1.0', 'prompts', '01.md'));
+    const ports = doubles();
+
+    const summary = await runCampaign(checked, ports);
+
+    expect(summary.runs[0]?.outcome).toBe('failed');
+    expect(summary.runs[0]?.error).toMatch(/prompts\/01\.md/);
+    expect(ports.recorded.steps).toEqual([]);
+  });
+
+  it('fails the run when the agent answers with a session it was not given', async () => {
+    const { checked } = checkedCampaign();
+    const ports = doubles({ sessionOf: () => 'a-session-of-its-own' });
+
+    const summary = await runCampaign(checked, ports);
+
+    expect(summary.runs[0]?.outcome).toBe('failed');
+    expect(summary.runs[0]?.error).toMatch(/a-session-of-its-own/);
   });
 });

@@ -4,8 +4,8 @@ import { dirname, join } from 'node:path';
 import { onTestFinished } from 'vitest';
 import { stringify } from 'yaml';
 
-/** A scenario.yaml that declares every field of REQ-FMT-04. */
-export function completeScenarioYaml(id = 'S9', version = '1.0'): Record<string, unknown> {
+/** A scenario.yaml that declares every field of REQ-FMT-04, with `steps` steps. */
+export function completeScenarioYaml(id = 'S9', version = '1.0', steps = 2): Record<string, unknown> {
   return {
     id,
     version,
@@ -14,10 +14,7 @@ export function completeScenarioYaml(id = 'S9', version = '1.0'): Record<string,
     gqm: ['Q-C1', 'G-X1'],
     capabilities: ['workflow-engine'],
     seed: 'seed',
-    steps: [
-      { n: 1, prompt_file: 'prompts/01.md' },
-      { n: 2, prompt_file: 'prompts/02.md' },
-    ],
+    steps: stepNumbers(steps).map((n) => ({ n, prompt_file: promptFile(n) })),
     oracle: {
       public_tests: 'oracle/public',
       checks: ['oracle/checks/decision.yaml'],
@@ -32,6 +29,16 @@ export function completeScenarioYaml(id = 'S9', version = '1.0'): Record<string,
     },
     holdout: true,
   };
+}
+
+/** The step numbers 1…n. */
+export function stepNumbers(steps: number): number[] {
+  return Array.from({ length: steps }, (_, index) => index + 1);
+}
+
+/** The prompt file of step `n`, numbered as REQ-RUN-05 numbers a step. */
+export function promptFile(n: number): string {
+  return `prompts/${String(n).padStart(2, '0')}.md`;
 }
 
 /** The files a complete scenario declares. */

@@ -121,6 +121,10 @@ export const scenarioSchema = z.strictObject({
   steps: z
     .array(step)
     .min(1)
+    // A step is named with two digits, in its commit message and in `steps/<NN>/` (REQ-RUN-05,
+    // REQ-FMT-06). Beyond 99 the two stop agreeing: `steps/100` sorts before `steps/99` in any
+    // listing, and `step 100` breaks the message shape mid-run. No scenario of v0.1 comes near it.
+    .max(99, 'must not have more steps than two digits can name')
     .superRefine((steps, ctx) => {
       steps.forEach((s, index) => {
         if (s.n !== index + 1) {

@@ -95,7 +95,7 @@ describe('bench campaign run', () => {
     const ports = doubles();
     const { code, stdout, stderr } = await runWith(ports, 'campaign', 'run', file);
     expect({ code, stdout }).toEqual({ code: 1, stdout: '' });
-    expect(stderr).toBe("agent 'claude-code' is not available yet: W1 runs the scripted fake agent\n");
+    expect(stderr).toBe("agent 'claude-code' has no adapter yet: the scripted fake agent is the only one\n");
     expect(ports.recorded.builds).toEqual([]);
   });
 
@@ -211,7 +211,7 @@ describe('realPorts', () => {
 
   it('builds the Docker, git and agent ports from a valid script', () => {
     const file = join(tempDir('bench-script-'), 'script.json');
-    writeFileSync(file, JSON.stringify({ T0: { '1': ['true'] } }));
+    writeFileSync(file, JSON.stringify({ T0: { '1': { commands: ['true'] } } }));
     const result = withScript(file, () => realPorts());
     expect(result.ok && Object.keys(result.value).sort()).toEqual(['agent', 'docker', 'git']);
   });

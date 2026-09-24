@@ -2,7 +2,14 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { stringify } from 'yaml';
 
-import { completeScenarioYaml, tempDir, writeScenarioAt } from './scenario-fixture.js';
+import {
+  COMPLETE_FILES,
+  completeScenarioYaml,
+  promptFile,
+  stepNumbers,
+  tempDir,
+  writeScenarioAt,
+} from './scenario-fixture.js';
 
 /** The campaign of campaign.feature "A campaign file pins every variable" (REQ-FMT-01). */
 export function completeCampaignYaml(): Record<string, unknown> {
@@ -49,11 +56,17 @@ export interface RepoFixture {
 export function writeRepo(
   yaml: Record<string, unknown> | string = completeCampaignYaml(),
   scenarios: readonly string[] = ['S1@1.0', 'S2@1.0', 'S3@1.0', 'S8@1.0'],
+  steps = 2,
 ): RepoFixture {
   const root = tempDir('bench-repo-');
   for (const entry of scenarios) {
     const [id = '', version = ''] = entry.split('@');
-    writeScenarioAt(join(root, 'scenarios'), completeScenarioYaml(id, version), undefined, id, version);
+    const scenario = completeScenarioYaml(id, version, steps);
+    const files = [
+      ...COMPLETE_FILES.filter((file) => !file.startsWith('prompts/')),
+      ...stepNumbers(steps).map(promptFile),
+    ];
+    writeScenarioAt(join(root, 'scenarios'), scenario, files, id, version);
   }
   mkdirSync(join(root, 'campaigns'));
   const file = join(root, 'campaigns', 'campaign.yaml');

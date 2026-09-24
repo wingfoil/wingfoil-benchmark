@@ -1,4 +1,5 @@
-import { copyFileSync, mkdirSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
+import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -29,6 +30,8 @@ export interface RunResult {
   readonly model: string;
   readonly repetition: number;
   readonly workspace: string;
+  /** Where this run's output goes: `steps/<NN>/…` under the execution's results (REQ-FMT-06). */
+  readonly outputDir: string;
   readonly steps: readonly StepOutcome[];
   readonly outcome: 'completed' | 'failed';
   readonly error?: string;
@@ -49,6 +52,14 @@ const RUN_IMAGE_DIRECTORY = 'docker/run-image';
 
 /** Runs execute as this unprivileged user of the image (REQ-RUN-02). */
 const CONTAINER_USER = 'node';
+
+/**
+ * A step's number as it appears in a commit message and in a path (REQ-RUN-05, REQ-FMT-06), so that
+ * both name a step the same way.
+ */
+function stepNumber(step: number): string {
+  return String(step).padStart(2, '0');
+}
 
 /**
  * Run every scenario × arm × repetition of `checked` (REQ-RUN-01, REQ-RUN-02): one image per
@@ -77,7 +88,9 @@ export async function runCampaign(checked: CheckedCampaign, options: RunnerOptio
     const repetitions = campaign.spec.repetitions[scenario.id] ?? 1;
     for (const arm of campaign.spec.arms) {
       for (let repetition = 1; repetition <= repetitions; repetition += 1) {
-        runs.push(await executeRun({ campaign, scenario, arm, model, repetition, execution }, options));
+        runs.push(
+          await executeRun({ campaign, scenario, arm, model, repetition, execution, resultsDir }, options),
+        );
       }
     }
   }
@@ -91,11 +104,12 @@ interface RunContext {
   readonly model: string;
   readonly repetition: number;
   readonly execution: number;
+  readonly resultsDir: string;
 }
 
 /** One run: its own workspace, its own container, removed whatever happens. */
 async function executeRun(context: RunContext, options: RunnerOptions): Promise<RunResult> {
-  const { campaign, scenario, arm, model, repetition, execution } = context;
+  const { campaign, scenario, arm, model, repetition, execution, resultsDir } = context;
   const name = `${scenario.id}@${scenario.version}/${arm}/${model}/r${repetition}`;
   const workspace = join(
     campaign.repoRoot,
@@ -105,7 +119,17 @@ async function executeRun(context: RunContext, options: RunnerOptions): Promise<
     ...name.split('/'),
     'workspace',
   );
-  const identity = { scenario: scenario.id, version: scenario.version, arm, model, repetition, workspace };
+  // The workspace is debris to look at (git-ignored); the output is the run's record (REQ-FMT-06).
+  const outputDir = join(resultsDir, 'runs', ...name.split('/'));
+  const identity = {
+    scenario: scenario.id,
+    version: scenario.version,
+    arm,
+    model,
+    repetition,
+    workspace,
+    outputDir,
+  };
   options.log?.(`run ${name}`);
 
   const steps: StepOutcome[] = [];
@@ -121,13 +145,7 @@ async function executeRun(context: RunContext, options: RunnerOptions): Promise<
     await assertOnlyWorkspaceMounted(container, workspace, options);
     await options.docker.start(container);
     for (const step of scenario.steps) {
-      steps.push(
-        await options.agent.runStep({
-          scenarioId: scenario.id,
-          step: step.n,
-          run: (command) => options.docker.exec(container as string, command),
-        }),
-      );
+      steps.push(await executeStep(step, { container, workspace, outputDir, scenario, model }, options));
     }
     return { ...identity, steps, outcome: 'completed' };
   } catch (error) {
@@ -137,6 +155,60 @@ async function executeRun(context: RunContext, options: RunnerOptions): Promise<
   } finally {
     if (container !== undefined) await remove(container, options);
   }
+}
+
+/** What one step needs: where it runs, where its snapshot goes, and what it is asked. */
+interface StepContext {
+  readonly container: string;
+  readonly workspace: string;
+  readonly outputDir: string;
+  readonly scenario: Scenario;
+  readonly model: string;
+}
+
+/**
+ * One step (F2.2, REQ-RUN-05): a fresh session, then a snapshot. The prompt is read here, in one
+ * place, so that every arm is asked the same bytes (F2.7 in W3). The session the agent reports is
+ * checked against the one it was given: an agent that continues a session of its own would carry
+ * state between steps, which is the one thing F2.2 forbids.
+ */
+async function executeStep(
+  step: Scenario['steps'][number],
+  context: StepContext,
+  options: RunnerOptions,
+): Promise<StepOutcome> {
+  const { container, workspace, outputDir, scenario, model } = context;
+  const number = stepNumber(step.n);
+  let prompt: string;
+  try {
+    prompt = readFileSync(step.promptPath, 'utf8');
+  } catch (error) {
+    throw new Error(`cannot read the prompt of step ${number}, ${step.promptPath}: ${reasonOf(error)}`, {
+      cause: error,
+    });
+  }
+
+  const sessionId = randomUUID();
+  const outcome = await options.agent.runStep({
+    scenarioId: scenario.id,
+    step: step.n,
+    prompt,
+    model,
+    sessionId,
+    run: (command) => options.docker.exec(container, command),
+  });
+  if (outcome.sessionId !== sessionId) {
+    throw new Error(
+      `step ${number} ran in session ${outcome.sessionId}, not in the one it was given (${sessionId})`,
+    );
+  }
+
+  // Every step leaves a snapshot to score, including a step that changed nothing (REQ-RUN-05).
+  await options.git.commitAll(workspace, `step ${number}`, { allowEmpty: true });
+  const stepDir = join(outputDir, 'steps', number);
+  mkdirSync(stepDir, { recursive: true });
+  writeFileSync(join(stepDir, 'diff.patch'), await options.git.patchOf(workspace, 'HEAD'));
+  return outcome;
 }
 
 /**

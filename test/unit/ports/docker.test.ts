@@ -128,6 +128,29 @@ describe('the git port', () => {
     expect(process.calls[0]?.args).toContain('user.email=benchmark@localhost');
   });
 
+  it('commits a step that changed nothing, so that step numbering never skips (REQ-RUN-05)', async () => {
+    const process = recorder([ok(), ok()]);
+    await gitCli(process).commitAll('/repo/runs/w', 'step 03', { allowEmpty: true });
+    expect(process.calls.map((call) => command(call.args))).toEqual([
+      ['-C', '/repo/runs/w', 'add', '--all'],
+      ['-C', '/repo/runs/w', 'commit', '--quiet', '--allow-empty', '--message', 'step 03'],
+    ]);
+  });
+
+  it('reads the patch of a commit, so that every step leaves a snapshot', async () => {
+    const process = recorder([ok('diff --git a/x b/x\n')]);
+    const patch = await gitCli(process).patchOf('/repo/runs/w', 'HEAD');
+    expect(command(process.calls[0]?.args ?? [])).toEqual([
+      '-C',
+      '/repo/runs/w',
+      'show',
+      '--format=',
+      '--patch',
+      'HEAD',
+    ]);
+    expect(patch).toBe('diff --git a/x b/x\n');
+  });
+
   it('keeps the host git environment out of the run', async () => {
     const process = recorder([ok()]);
     await gitCli(process).init('/repo/runs/w');
