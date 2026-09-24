@@ -222,6 +222,48 @@ governance metrics over interventions (F4.8) are W8; the method page is W11.
 
 ## Execution notes
 
+### Build
+
+- **Handoff asked for, not assumed.** Before the design, the W2 session that delivered task-004–006 was
+  asked what they left for this one. Its answers shaped four decisions here: waiting stays out of the
+  parser; the cap must not travel in `StepOutcome.error`, or a capped step fails its run; summing moves
+  into the runner, where the parser's own test cannot see it; and the resume's cap must include the
+  step so far. It also named the defects most likely to recur — an assertion comparing a value with
+  itself, a double answering from its own argument, a vacuous "same in every arm" — and the tests were
+  written against them.
+- **The trimmed fixtures had lost the message the approver reads.** Found by reading them for this task:
+  `question.jsonl` and `approval.jsonl` kept a `thinking` event but not the assistant's text. Their
+  `result` event still carries it, and in the four untrimmed spike streams (P2, P4, P5, P6, in the
+  shared checkout's `spikes/task-004/out/`) that field equals the last assistant text byte for byte.
+  The fixtures were not re-trimmed; the design reads the field that is there.
+- **TDD order, in the history:** every test red first (`5f8857a`, 61 red); the classifier and the
+  policy, with the campaign refusing an unknown version (`196d8a9`); the port's `resume`, the parser's
+  `finalMessage`, the adapter's resume line and the fake's scripted resumes (`e6548f5`); the step loop
+  and `run.json` (`edc6539`); W2's "Ends with" against the real Docker (`a67bd5f`).
+- **One existing acceptance test changed, on purpose.** `@F2.3` replayed `question.jsonl` as its second
+  step; with the approver in place that session is answered, and the fake had no resume scripted for
+  it. It now replays `completed-sonnet.jsonl`: a finished session from another model, so the two
+  transcripts still differ. The scenario is about what a session records, not about who answers it.
+- **The Docker test was written after the code, so its red is shown by mutation**, not by history:
+  with the fake no longer passing the final message on, the run completes with no interventions and the
+  test fails on them. It needs no credential and spends nothing (the plan-time decision).
+- **The runner's policy guard was unreachable by the suites until tested directly**: validation refuses
+  an unknown version first, so the runner's own check is exercised with a `CheckedCampaign` built by
+  hand. A branch nothing can reach is what W1's review named a defect.
+- **Mutations, each made, observed and reverted — 23, all red:** the cap tested with `>` instead of `>=`
+  (2); the step's usage and transcript taken from the last invocation only (4, 4); a resume's cap
+  ignoring the step so far (2); the id guard off on a resume (1); the cap reported as an error (2); the
+  classifier's rules swapped (2); code not stripped (2); emphasis not stripped (1); a within-sentence
+  pattern crossing a full stop (1), or stopping at a single line break (1); the replies swapped (6); a
+  cap of 4 (4); the first result's message instead of the last (1); the fake or the adapter dropping the
+  final message (6, 2); the fake's resume replaying the step's own session (4); `--model` added to the
+  resume line (1); `run.json` without interventions (5) or with a constant step outcome (2); an unknown
+  policy accepted by validation (1); a failed session classified anyway (1); and an intervention not
+  recorded before the reply (the loop never ends: red by timeout). These are the mutations **I**
+  thought of; the review is asked for the ones I did not.
+- **Suites after the build:** `npm test` 423 passed, coverage 100% statements / 98.18% branches / 100%
+  functions / 100% lines; `npm run test:bin` 4; `npm run test:docker` 2; `npm run lint` clean.
+
 ### WingFoil commands (declared vs observed)
 
 - `npx wingfoil memory add --type task --title "…"` → `b3f55b7`. Declared: one commit
@@ -238,3 +280,8 @@ governance metrics over interventions (F4.8) are W8; the method page is W11.
   subject with `[from → to]`, `Approver:`/`Reason:` body, only `status` changed. Observed: exit 0,
   empty stderr, subject `wf(task): approve task-007-neutral-approver [pending → backlog]`,
   both trailers present, 1-line diff. Matches.
+- `npx wingfoil memory search --type task --status in-progress` → no match: the WIP slot was free.
+- `npx wingfoil memory submit task-007-neutral-approver` → `fa4e69d`, on `task/task-007-neutral-approver`
+  after the design commit `d1f55f6`. Declared: `backlog → in-progress`, a plain `submit` by the agent,
+  one commit `wf(task): submit <id>`. Observed: exit 0, JSON `{from: backlog, to: in-progress}` on
+  stdout, 1 file, diff limited to the `status` line. Matches.
