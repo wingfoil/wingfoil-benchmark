@@ -61,7 +61,108 @@ Preliminary classification (confirmed in the design phase). All behaviour is new
 
 ## Design
 
-<!-- Modules, interfaces, data formats touched; decisions taken and their reasons. -->
+Conventions from [adr-001](../adr/adr-001-w1-toolchain-and-runner-conventions.md) and
+[adr-002](../adr/adr-002-w2-runner-and-adapter-conventions.md). Builds on task-003 (`runner`,
+`agents`, `core/ports`).
+
+**Classification confirmed:** the three new criteria are red-first; REQ-NFR-03 is characterization —
+task-003's behaviour, re-asserted across the new seam rather than re-implemented.
+
+### One correction to this task's Context
+
+The Context says the fake agent's script declares "the events it emits and the commands it runs".
+The events have **no consumer until task-006**, where usage and transcripts are read, and W1's review
+was explicit that an export without a caller is a defect. So this task gives the fake a **session per
+step** (an id and the commands it runs); the recorded events arrive with the code that reads them.
+What this task must prove — one session per step, no state between them — needs the id, not the
+events.
+
+### The port becomes session-shaped (F2.2)
+
+```ts
+interface StepRequest {
+  readonly scenarioId: string;
+  readonly step: number;          // 1-based, as the scenario numbers them
+  readonly prompt: string;        // the text of the step's prompt_file
+  readonly model: string;         // the campaign's model for this run
+  readonly sessionId: string;     // a fresh UUID per step
+  readonly run: (command: readonly string[]) => Promise<ProcessResult>;
+}
+
+interface StepOutcome {
+  readonly sessionId: string;     // what the agent reports, to be checked against the request
+}
+```
+
+`StepOutcome.commands` of W1 disappears: it was the fake's own detail, and nothing scored it.
+`sessionId` is returned rather than assumed, so a test can prove the agent used the session it was
+given instead of one of its own. Usage, transcript and "the session ended waiting" join `StepOutcome`
+in task-006 and task-007.
+
+**The prompt is read by the runner**, from `scenario.steps[i].promptPath`, and passed as text. Reading
+it in one place is what will make F2.7's "byte-identical in every arm" true by construction rather
+than by care. A prompt that cannot be read fails that run, like any other preparation failure.
+
+**Fresh sessions.** One `randomUUID()` per step. Nothing of a session reaches the next: the port takes
+no history and returns none, so "no conversation state is passed" is a property of the interface, not
+a rule someone has to remember. Only the repository carries state, which is what F2.2 is about.
+
+### A snapshot per step (REQ-RUN-05)
+
+After each step, in the workspace, through the git port:
+
+1. `commitAll(workspace, 'step NN', { allowEmpty: true })`;
+2. `patchOf(workspace, 'HEAD')` → written to `steps/<NN>/diff.patch` under the run's results
+   directory.
+
+Three decisions in that:
+
+- **`NN` is two digits**, matching `steps/<NN>/` in REQ-FMT-06, so a path and a commit message name a
+  step the same way. The message is exactly `step 01`, `step 02`, …: neutral, and naming only the
+  step number, as the acceptance scenario requires.
+- **A step that changed nothing is still committed**, with `--allow-empty`. Otherwise `git commit`
+  fails, and step numbering would skip exactly where an agent did nothing — the case scoring most
+  needs to see. The seed commit keeps its current behaviour: a seed with no files is an error worth
+  surfacing.
+- **`patchOf` is a new port method**, `git show --format= --patch <ref>`, not `git diff HEAD~1 HEAD`:
+  every step has a parent (the seed commit), but reading the commit itself is one fewer assumption.
+
+### Where a run's output goes
+
+`runner` gains the results path beside the workspace path it already computes:
+
+- workspace: `runs/<campaign-id>/<n>/<scenario>@<ver>/<arm>/<model>/r<k>/workspace` (git-ignored),
+- output: `results/<campaign-id>/<n>/runs/<scenario>@<ver>/<arm>/<model>/r<k>/steps/<NN>/`.
+
+The two share the run's name, computed once. `run.json`, `score.json` and `aggregate.json` are F5.1
+(W7); this task creates only what it writes.
+
+### A failed step ends its run
+
+Unchanged from task-003 and stated because it is a choice, not an oversight: a step that throws makes
+that run `failed`, and the campaign carries on (REQ-NFR-03). Steps depend on each other — step 3 works
+on what step 2 left — so continuing past a failure would measure something the scenario never
+described. The snapshots of the steps that did run stay on disk and stay scoreable.
+
+### The fake agent (the W2 seam)
+
+The script gains a session per step:
+`{ "<scenario id>": { "<step>": { "session": "<id>"?, "commands": ["…"] } } }`. When `session` is
+absent the fake echoes the id it was given, which is the ordinary case; naming one is how a test makes
+the fake return **the wrong id**, so that the runner's check has something to catch. W1's array form
+is not kept: one shape, changed in one place, with the fixtures updated with it.
+
+### Tests
+
+- **Acceptance** (`test/acceptance/runner.test.ts`), `@F2.2`: a five-step scenario, against fake
+  ports — five calls, five distinct session ids, no history on any request, and one `step NN` commit
+  per step with its patch. `runner.feature` names S3, which is content and arrives in W8; the fixture
+  **T1** stands in for it with the same shape (five steps).
+- **Unit:** the prompt is read from `promptPath` and passed through; `NN` formatting; the empty-step
+  commit; `patchOf`'s command line; a step whose reported session id differs from the one requested;
+  a prompt file that cannot be read.
+- **Fixtures:** `test/fixtures/scenarios/T1/1.0/` (seed, five prompt files) and a campaign naming it.
+  T0 stays as it is, so the Docker test of W1 keeps running unchanged.
 
 ## Execution notes
 
