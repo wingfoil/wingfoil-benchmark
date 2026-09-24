@@ -318,3 +318,18 @@ create request (1 red); the adapter built with an empty token (1 red); the patch
   subject with `[from → to]`, `Approver:`/`Reason:` body, only `status` changed. Observed: exit 0,
   empty stderr, subject `wf(task): approve task-006-claude-code-adapter [pending → backlog]`,
   both trailers present, 1-line diff. Matches.
+
+### Back into review
+
+- **`npm run test:docker` green** (1 test, 2.6 s), once the machine was rebooted. It had been failing
+  on a container left behind by a test run I killed with a wrapper timeout — filed as
+  [bug-003](../bug/bug-003-an-interrupted-run-leaves-its-container-behind.md), not fixed here.
+- **A wrong diagnosis of mine, corrected in bug-003.** I wrote that the stale container had wedged
+  Docker. It had not: the host was in a kernel-level stall — ~300 threads uninterruptible on ACPI
+  embedded-controller queries, load average 327, `systemd` itself in `D` — so containerd could not
+  reap a zombie shim and every `docker rm` queued behind a `runc create` that would never return. I
+  had taken `docker version` still answering as evidence that the daemon was healthy; that call does
+  not touch the stuck container and proved nothing either way. The same shape as the defects this
+  task's review found: a check that cannot fail, read as if it had passed.
+- **Suites at HEAD:** `npm test` 356 passed, 100% statements / 98.26% branches; `npm run test:bin` 4;
+  `npm run test:docker` 1; `npm run lint` clean.
