@@ -116,3 +116,6 @@ plus a one-line `description` of the phase. Decisions and their reasons:
   Observed: exit 0, JSON `{from: backlog, to: in-progress}`, 1 file, 1-line diff. Matches.
 - `npx wingfoil workflow list` (before, after, and with the probe): exit 0 every time, including on a
   declaration naming a non-existent type and role — see N28.
+- `npx wingfoil memory submit task-009-capture-workflows-declare-what-they-create` → `1aecc18`.
+  Declared: `in-progress → in-review`, one commit, only `status` changed. Observed: exit 0, JSON
+  `{from: in-progress, to: in-review}`, 1-line diff. Matches.
