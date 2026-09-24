@@ -18,6 +18,11 @@ export interface CreateRequest {
   readonly name: string;
   readonly workspace: string;
   readonly user: string;
+  /**
+   * The container's environment: how the agent's credential reaches it (REQ-RUN-15, requirements
+   * 1.3). It is set at creation and never written to the workspace, a log or a transcript.
+   */
+  readonly env?: Readonly<Record<string, string>>;
 }
 
 /** REQ-ARC-04: Docker behind one interface, so acceptance tests run without Docker. */
@@ -53,7 +58,7 @@ export function dockerCli(process: ProcessPort): DockerPort {
       for (const [name, value] of Object.entries(buildArgs)) args.push('--build-arg', `${name}=${value}`);
       await docker([...args, context]);
     },
-    async create({ image, name, workspace, user }) {
+    async create({ image, name, workspace, user, env }) {
       // `--mount` takes comma-separated `key=value` pairs, so a path holding either would be read as
       // more options. Refusing is safer than quoting: such a checkout cannot run the benchmark.
       if (workspace.includes(',') || workspace.includes('=')) {
@@ -69,6 +74,7 @@ export function dockerCli(process: ProcessPort): DockerPort {
         WORKSPACE,
         '--mount',
         `type=bind,source=${workspace},target=${WORKSPACE}`,
+        ...Object.entries(env ?? {}).flatMap(([variable, value]) => ['--env', `${variable}=${value}`]),
         image,
         'sleep',
         'infinity',

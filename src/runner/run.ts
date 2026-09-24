@@ -20,6 +20,8 @@ export interface RunnerOptions {
   readonly log?: (line: string) => void;
   /** One line per failure; the command line sends these to its error stream. */
   readonly logError?: (line: string) => void;
+  /** What every container of this campaign gets in its environment: the agent's credential. */
+  readonly containerEnv?: Readonly<Record<string, string>>;
 }
 
 /** One executed run: one scenario, in one arm, with one model, once. */
@@ -141,6 +143,7 @@ async function executeRun(context: RunContext, options: RunnerOptions): Promise<
       name: `bench-${campaign.id}-${execution}-${name.replaceAll(/[@/]/g, '-')}`,
       workspace,
       user: CONTAINER_USER,
+      ...(options.containerEnv === undefined ? {} : { env: options.containerEnv }),
     });
     await assertOnlyWorkspaceMounted(container, workspace, options);
     await options.docker.start(container);

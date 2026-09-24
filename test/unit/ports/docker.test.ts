@@ -176,6 +176,22 @@ describe('the git port', () => {
     });
   });
 
+  it("carries the agent's credential into the container's environment (REQ-RUN-15)", async () => {
+    const process_ = recorder([ok('c0ffee\n')]);
+    await dockerCli(process_).create({
+      image: 'abc123',
+      name: 'bench-abc123-1',
+      workspace: '/repo/runs/abc123/1/w',
+      user: 'node',
+      env: { ANTHROPIC_AUTH_TOKEN: 'sk-ant-oat01-SECRET' },
+    });
+    const args = process_.calls[0]?.args ?? [];
+    expect(args).toContain('--env');
+    expect(args[args.indexOf('--env') + 1]).toBe('ANTHROPIC_AUTH_TOKEN=sk-ant-oat01-SECRET');
+    // It goes in at creation and nowhere else: the workspace mount is still the only mount.
+    expect(args.filter((argument) => argument === '--mount')).toHaveLength(1);
+  });
+
   it('refuses a workspace path that would break the mount specification', async () => {
     const process = recorder([ok('c0ffee\n')]);
     await expect(

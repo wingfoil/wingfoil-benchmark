@@ -2,7 +2,8 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-import { loadAgentToken, readSession, scrub } from '../../../src/agents/index.js';
+import { claudeCodeAgent, loadAgentToken, readSession, scrub } from '../../../src/agents/index.js';
+import type { ProcessResult } from '../../../src/core/index.js';
 import { repoPath } from '../../support/paths.js';
 import { tempDir } from '../../support/scenario-fixture.js';
 
@@ -126,5 +127,83 @@ describe('the agent token (REQ-RUN-15)', () => {
   it('refuses a file that cannot be read, naming it', () => {
     const result = loadAgentToken(join(tempDir('bench-token-'), 'missing'));
     expect(result.ok ? [] : result.issues.map((issue) => issue.path)).toEqual(['missing']);
+  });
+});
+
+describe('the Claude Code adapter (REQ-RUN-04)', () => {
+  function runner(stdout: string) {
+    const commands: string[][] = [];
+    return {
+      commands,
+      run: (command: readonly string[]) => {
+        commands.push([...command]);
+        return Promise.resolve({ code: 0, stdout, stderr: '' });
+      },
+    };
+  }
+
+  const request = (run: (command: readonly string[]) => Promise<ProcessResult>) => ({
+    scenarioId: 'S1',
+    step: 1,
+    prompt: 'add a caching layer',
+    model: 'claude-sonnet-5',
+    sessionId: '0babeb92-e70d-409c-8916-c15c542e5112',
+    remainingCostUsd: 2.75,
+    run,
+  });
+
+  it('builds the command line REQ-RUN-04 specifies, argument by argument', async () => {
+    const exec = runner(recorded('completed.jsonl').join('\n'));
+
+    await claudeCodeAgent({ token: 'sk-ant-oat01-SECRET', usdToEur: RATE }).runStep(request(exec.run));
+
+    expect(exec.commands).toEqual([
+      [
+        'claude',
+        '-p',
+        'add a caching layer',
+        '--output-format',
+        'stream-json',
+        '--verbose',
+        '--model',
+        'claude-sonnet-5',
+        '--session-id',
+        '0babeb92-e70d-409c-8916-c15c542e5112',
+        '--permission-mode',
+        'bypassPermissions',
+        '--setting-sources',
+        'project',
+        '--max-budget-usd',
+        '2.75',
+      ],
+    ]);
+  });
+
+  it('reports the usage and the session the agent actually used', async () => {
+    const exec = runner(recorded('completed.jsonl').join('\n'));
+
+    const outcome = await claudeCodeAgent({ token: 'x', usdToEur: RATE }).runStep(request(exec.run));
+
+    expect(outcome.sessionId).toBe('866c649d-7cdc-4192-a033-75c01a9b543f');
+    expect(outcome.usage.costUsd).toBeCloseTo(0.009874, 10);
+    expect(outcome.transcript).toHaveLength(4);
+  });
+
+  it('scrubs the token out of the transcript before it is stored (REQ-NFR-01)', async () => {
+    const token = 'sk-ant-oat01-SECRET';
+    const exec = runner(`{"type":"result","is_error":false,"leaked":"${token}"}`);
+
+    const outcome = await claudeCodeAgent({ token, usdToEur: RATE }).runStep(request(exec.run));
+
+    expect(outcome.transcript.join('\n')).not.toContain(token);
+    expect(outcome.transcript.join('\n')).toContain('[redacted]');
+  });
+
+  it('fails the step when the session failed, naming why', async () => {
+    const exec = runner(recorded('failed-subtype-success.jsonl').join('\n'));
+
+    await expect(claudeCodeAgent({ token: 'x', usdToEur: RATE }).runStep(request(exec.run))).rejects.toThrow(
+      /api_error/,
+    );
   });
 });

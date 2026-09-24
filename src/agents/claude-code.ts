@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { basename } from 'node:path';
 
+import type { AgentPort, StepOutcome, StepRequest } from './fake.js';
 import { fail, ok } from '../core/index.js';
 import type { Result } from '../core/index.js';
 
@@ -147,4 +148,58 @@ export function loadAgentToken(file: string): Result<string> {
   const token = text.replaceAll(/\s/gu, '');
   if (token === '') return fail([{ path: label, message: 'is empty: it holds no agent token' }]);
   return ok(token);
+}
+
+/** What the adapter needs that the step's request does not carry. */
+export interface AdapterOptions {
+  /** The long-lived token, held only so that it can be scrubbed out of what is stored. */
+  readonly token: string;
+  readonly usdToEur: number;
+}
+
+/**
+ * The agent's command line (REQ-RUN-04). Bypassing permissions is acceptable only because the
+ * container is isolated (REQ-RUN-02). The wingfoil arm's `--mcp-config` and `--strict-mcp-config`
+ * arrive with the arms in W3.
+ */
+function commandLine(request: StepRequest): string[] {
+  return [
+    'claude',
+    '-p',
+    request.prompt,
+    '--output-format',
+    'stream-json',
+    '--verbose',
+    '--model',
+    request.model,
+    '--session-id',
+    request.sessionId,
+    '--permission-mode',
+    'bypassPermissions',
+    '--setting-sources',
+    'project',
+    '--max-budget-usd',
+    String(request.remainingCostUsd),
+  ];
+}
+
+/**
+ * Claude Code behind the agent port (F2.3, REQ-ARC-04). It runs inside the run's container, which
+ * already holds the credential in its environment (REQ-RUN-15): the token is kept here only to be
+ * removed from the transcript before it is stored (REQ-NFR-01).
+ */
+export function claudeCodeAgent(options: AdapterOptions): AgentPort {
+  return {
+    async runStep(request: StepRequest): Promise<StepOutcome> {
+      const result = await request.run(commandLine(request));
+      const lines = scrub(result.stdout, [options.token])
+        .split('\n')
+        .filter((line) => line.trim() !== '');
+      const session = readSession(lines, options.usdToEur);
+      if (session.outcome === 'failed') {
+        throw new Error(`step ${request.step} of ${request.scenarioId} failed: ${session.error}`);
+      }
+      return { sessionId: session.sessionId, usage: session.usage, transcript: session.transcript };
+    },
+  };
 }
