@@ -50,7 +50,35 @@ drive. The criteria are verified by hand and recorded in the Execution notes:
 
 ## Design
 
-<!-- Modules, interfaces, data formats touched; decisions taken and their reasons. -->
+**Classification confirmed:** there is no code and no Gherkin criterion; the three criteria above are
+verified by hand, before and after, and recorded in the Execution notes (as in task-008).
+
+Each `capture` phase gets what WingFoil2's own ingest workflows declare
+(`docs/self/.wingfoil/workflows/custom/` in that repository, read-only), translated to this
+repository's Memory paths from `.wingfoil/memory.yaml`:
+
+| Workflow | `role` | `actions` | `produces` |
+|---|---|---|---|
+| `bug-ingest` | `developer` | `'memory.add(type: bug)'`, `memory.submit` | `docs/memory/bug/{id}.md` |
+| `decision-log-ingest` | `product-owner` | `'memory.add(type: decision-log)'`, `memory.submit` | `docs/memory/decision-log/{id}.md` |
+| `adr-ingest` | `architect` | `'memory.add(type: adr)'`, `memory.submit` | `docs/memory/adr/{id}.md` |
+
+plus a one-line `description` of the phase. Decisions and their reasons:
+
+- **The roles are WingFoil2's**, and each exists in this repository's `roles.yaml`. They say who
+  *typically* captures the element, not who may; nothing enforces roles without a workflow engine.
+- **`produces` is declared**, although bug-002 names only the actions as the defect: the task's own
+  "Done" asks each workflow to declare *the document it creates*, and `produces` is where that is said.
+  The paths are copied from `memory.yaml`, not re-invented, so the two cannot disagree today; nothing
+  checks that they stay in step (worth a usage note, not a fix here).
+- **No approval phase is added.** WingFoil2's versions have a second, gated phase (`triage` /
+  `approve`). This repository's gates are real — every bug, dl and adr has gone through `approve` — but
+  adding the phase is a process-design choice bug-002 explicitly leaves out, and this task's Context
+  says not to widen it. Recorded as a follow-up question for the approver, not taken.
+- **No `checks:` and no `version:`** — WingFoil2 declares them; this repository's other workflows do
+  not, and adding them would be the "make everything explicit" widening the Context rules out.
+- The two bare `memory.add` in `campaign-cycle` and `kanban-delivery` are left alone, as the Context
+  says.
 
 ## Execution notes
 
