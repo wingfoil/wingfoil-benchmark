@@ -284,3 +284,36 @@ Full suites at HEAD: `npm test` 316, `test:bin` 4, `test:docker` 1, `lint` clean
   but nothing yet guarantees the wave cannot end without them.
 - **Suites after the round:** `npm test` 320 passed, coverage 100% statements / 99.24% branches;
   `npm run test:bin` 4; `npm run test:docker` 1; `npm run lint` clean.
+
+### Review, round 2
+
+- **Result: approvable.** The reviewer re-ran its own four mutations rather than trusting my report —
+  four mutations, four reds — and confirmed all nine round-1 findings closed, with nothing weakened:
+  the round-1 positive controls still turn a test red each. It then attacked the new assertions along
+  the four lines I asked it to and found **one real hole**, plus one small debt and two nits.
+- **N-1, the hole, fixed** (`e64a29b`): the double answered every `patchOf` call with the same string,
+  so the five expected values in the acceptance test were **one value**. A snapshot filed under
+  another step's number read as correct. Its probe: numbering the step directory in reverse
+  (`steps.length + 1 - step.n`) left all 320 tests green — step 1's snapshot in `steps/05`, step 5's
+  in `steps/01`, and W7's scorer would read one as the other. A per-call counter makes each answer
+  distinct; I re-ran that mutation and it now fails exactly one test.
+- **N-2, fixed as an amendment** (`6414e37`, requirements 1.4): the 99-step cap had no requirement
+  behind it, only a code comment. REQ-FMT-06 now states that `<NN>` is two digits and that a scenario
+  has at most 99 steps, so an author of benchmark content meets the bound in the specification rather
+  than in an error message.
+- **N-3 and N-4, fixed:** the `failing` docstring still said those calls break a run *outside* its
+  steps, while `commit` and `patch` break it inside one; and the patch-failure test's
+  `some(call.includes('step 01'))` was satisfied by every passing run — it is now a `toEqual` on the
+  whole four-entry transcript, which proves what its comment claimed.
+- **Two things the round found that I had not claimed.** The round-1 fixes also pinned the *absence*
+  of `--allow-empty` on the seed commit, which nothing checked before. And `run.ts` and
+  `workspace.ts` are byte-identical to the version reviewed in round 1 — the fixes really were
+  test-only, apart from `.max(99)` and the CLI wording.
+- **On finding 7:** accepted as closed, with the caveat recorded here: nothing mechanical enforces
+  it. No test checks ADR decisions against tasks, so adr-002's decisions 11 and 13 are exactly as
+  safe as task-006's Context surviving its own scoping.
+- **Carried, not fixed** (pre-existing, task-003's `prepareWorkspace`): an empty seed fails with
+  git's own words — `nothing to commit, working tree clean` — instead of saying that the seed
+  directory of that scenario is empty. It belongs to whichever task owns `prepareWorkspace` next.
+- **Suites after the round:** `npm test` 320, coverage 100% statements / 99.24% branches;
+  `npm run test:bin` 4; `npm run test:docker` 1; `npm run lint` clean.
