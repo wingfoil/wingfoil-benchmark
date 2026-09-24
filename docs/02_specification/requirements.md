@@ -1,6 +1,6 @@
 # Requirements (v0.1)
 
-**Version:** 1.3
+**Version:** 1.4
 **Date:** 2026-09-24
 **Status:** Approved
 **Traces to:** [acceptance/](acceptance/) (all v0.1 features), [scenarios/](scenarios/) (K1–K5), [09_experiment-design.md](../01_vision/09_experiment-design.md), [07_sequencer.md](../01_vision/07_sequencer.md) v0.1
@@ -41,7 +41,7 @@ All human-authored files are YAML, validated by Zod schemas in `core`. All machi
 | REQ-FMT-03 | A harness `version` must be a released version (semver, optionally `v`-prefixed, with optional prerelease and build metadata) or a commit SHA of 7 to 40 hex characters. A branch name, a range or `latest` is rejected. When `version` is a SHA and `commit` is also given, `commit` is a 40-character SHA that starts with `version` (added in 1.2). | F1.1 (error path) |
 | REQ-FMT-04 | **Scenario file** (`scenarios/<id>/<version>/scenario.yaml`). It holds:<br>• `id`, `version`<br>• `categories: {primary, secondary[]}`, `profiles[]`, `gqm[]`, `capabilities[]`<br>• `seed`: a directory<br>• `steps[]`: `{n, prompt_file}`<br>• `oracle`: public test directory, checks, third-party pins with licenses<br>• `holdout`: whether additions are expected | F3.1 |
 | REQ-FMT-05 | **Arm definition** (`arms/<arm>/arm.yaml`). It holds: `name`, `setup` (script), `manual` (the operating manual file), `environment` (files copied into the workspace), `mcp` (optional config), and `requires` (the harness tool). | F2.5, F2.7 |
-| REQ-FMT-06 | **Results layout:** `results/<campaign-id>/<n>/`. It contains:<br>• `campaign.yaml`, a copy<br>• `runs/<scenario>@<ver>/<arm>/<model>/r<k>/`, holding `run.json`, `steps/<NN>/{usage.json, transcript.jsonl, diff.patch}` and `score.json`<br>• `aggregate.json` | F5.1 |
+| REQ-FMT-06 | **Results layout:** `results/<campaign-id>/<n>/`. It contains:<br>• `campaign.yaml`, a copy<br>• `runs/<scenario>@<ver>/<arm>/<model>/r<k>/`, holding `run.json`, `steps/<NN>/{usage.json, transcript.jsonl, diff.patch}` and `score.json`<br>• `aggregate.json`<br>`<NN>` is the step number in two digits, the same form REQ-RUN-05 uses in a commit message, so a scenario has **at most 99 steps** (1.4). | F5.1 |
 | REQ-FMT-07 | `aggregate.json` stores every value together with the list of run paths it was computed from, and its `n`. | F5.1, experiment design §4.6 |
 | REQ-FMT-08 | **Scenario validator:** checks the schema (REQ-FMT-04), and runs a **leak scan**. The scan fails when:<br>• a step prompt contains a name from a declared list of harness and tool names;<br>• an oracle literal (an expected value or a test name of at least a declared minimum length) appears in the seed or in a prompt.<br>With the hold-out configured, hold-out oracles are scanned too. Their content is never printed; messages name only the file and the step. | F3.2 |
 | REQ-FMT-09 | **Scenario versions are immutable.** Results record the content hash of the scenario version they ran. The validator rejects a scenario version whose content no longer matches a hash recorded in stored results. | F3.4 |
@@ -196,3 +196,17 @@ requirement stay the same.
 Source: [../memory/adr/adr-002-w2-runner-and-adapter-conventions.md](../memory/adr/adr-002-w2-runner-and-adapter-conventions.md)
 and [../memory/decision-log/dl-004-waiting-for-input-classifier-v1.md](../memory/decision-log/dl-004-waiting-for-input-classifier-v1.md),
 both approved by the approver on 2026-09-24 (W2 task-004).
+
+### Amendment 1.4 (delivery, W2 task-005 review, 2026-09-24)
+
+- **REQ-FMT-06:** `<NN>` is stated to be two digits, and a scenario is therefore limited to 99 steps.
+  The limit was added to the scenario schema during task-005 and refused a 100-step scenario with no
+  requirement behind it. Beyond 99 the two names of a step stop agreeing: `steps/100` sorts before
+  `steps/99` in any listing, and `step 100` breaks the commit-message shape mid-run. No v0.1 scenario
+  comes near the bound; it is written down so that an author of benchmark content meets it in the
+  specification rather than in an error message.
+
+The traceability matrix is unaffected: the feature, journey and acceptance file of every amended
+requirement stay the same.
+
+Source: the independent review of task-005 (W2, finding N-2), 2026-09-24.
