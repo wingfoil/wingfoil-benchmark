@@ -2,7 +2,7 @@
 id: task-006-claude-code-adapter
 type: task
 title: "Claude Code adapter"
-status: in-review
+status: approved
 release: v0.1
 wave: W2
 features: [F2.3]
