@@ -60,7 +60,23 @@ Two candidate fixes, deliberately not chosen here:
    previous execution and the command to clear it. Safer, less convenient, and it leaves the operator
    to act.
 
-A third, smaller point either fix should carry: the hold this leaves is worse than a stale name. On
-the machine where it was observed, the wedged container also made `docker rm`, `docker rm -f` and
-`docker inspect` hang on that container while `docker version` kept answering — so a fix that assumes
-`docker rm` returns promptly is not enough on its own.
+### A correction to the first draft of this element
+
+The first version of this element said the wedged container "also made `docker rm`, `docker rm -f`
+and `docker inspect` hang". **That was wrong, and the mistake is worth recording.** Those commands
+hung because the machine was in a kernel-level stall: about 300 threads in uninterruptible sleep on
+ACPI embedded-controller queries (`kec_query`, `kacpi_notify`), load average 327, and `systemd`
+itself in `D`. Docker was a victim of it, not the cause: containerd could not reap its shim, which
+was already a zombie, so `runc create` never returned and every `docker rm` queued behind it. A
+reboot cleared all of it, and the container removed itself in the normal way.
+
+So the container **never** wedged Docker. The two problems happened at the same time on the same
+machine and I read one as the cause of the other, because the symptom I checked — `docker version`
+still answering — does not touch the stuck container and so proved nothing either way.
+
+What survives of that paragraph is smaller and still true: a fix of the kind proposed above runs a
+`docker rm` at the start of a run, and a `docker rm` can take an unbounded time on an unhealthy
+host. Whichever fix is chosen should bound that call and report what it was waiting for, rather than
+hanging the campaign at its first run.
+
+What does **not** survive is the claim that this bug can wedge a host. It cannot.
