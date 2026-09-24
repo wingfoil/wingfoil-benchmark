@@ -72,10 +72,153 @@ Preliminary classification (confirmed in the design phase). All behaviour is new
   in a question is classified as an approval request. **red-first**
 - W2 "Ends with" — a multi-step run in a real container, with usage captured per step and
   interventions counted. **red-first**
+- REQ-RUN-06 (versioning) — a campaign naming an approver policy the runner does not implement is
+  refused at validation, rather than run under v1. **red-first** (added in the design phase)
 
 ## Design
 
-<!-- Modules, interfaces, data formats touched; decisions taken and their reasons. -->
+Conventions from [adr-001](../adr/adr-001-w1-toolchain-and-runner-conventions.md) and
+[adr-002](../adr/adr-002-w2-runner-and-adapter-conventions.md); the classifier is
+[dl-004](../decision-log/dl-004-waiting-for-input-classifier-v1.md), taken as a specification: its
+rules are not re-decided here. Builds on task-005's session seam and task-006's adapter.
+
+**Classification confirmed:** every criterion is **red-first**, and one is added (the last below).
+Nothing of the approver exists yet. The traceability test turns red the moment this task starts,
+because `@F2.4` has four scenarios and no acceptance test: that is the first red.
+
+### What the recordings say, and one thing they do not
+
+The spike's streams are the test material again, and reading them for this task turned up a gap.
+The trimmed fixtures `question.jsonl` and `approval.jsonl` kept the `system` and `result` events and
+one `thinking` event, but **not the assistant's text** — the very message dl-004 classifies. What they
+still hold is the `result` event's `result` field. In the four untrimmed spike streams kept in the
+shared checkout (P2, P4, P5, P6), that field is **byte-identical to the last assistant text** in every
+case. So:
+
+- **the final assistant message is read from the last `result` event's `result` field.** It is one
+  field the agent writes for exactly this purpose, it is present in the fixtures, and a session with no
+  `result` event is already a failed step (adr-002 decision 7), which the classifier never sees;
+- the transcript that is stored stays the bytes the agent produced. Stripping code before matching is
+  the **classifier's** preparation (dl-004), not the extraction's.
+
+### Where "waiting" lives
+
+**Not in the parser.** A waiting session ended `is_error: false`, `terminal_reason: "completed"`,
+exactly like one that finished (dl-004 observation 1). `readSession` keeps its two outcomes; it only
+additionally returns `finalMessage`, and `StepOutcome` carries it. Whether that text is waiting is the
+approver's reading, not the agent's: that is what makes the policy the same whatever the agent or arm.
+
+### The approver (`core/approver.ts`)
+
+Pure, with no I/O, in `core` so that the campaign schema can check a version against it:
+
+- `classify(message): 'approval' | 'question' | undefined` — dl-004 v1 verbatim: code fences and
+  inline code removed, case-insensitive; rule 1 (approval patterns, **anywhere**, `…` meaning within
+  one sentence) before rule 2 (the last non-empty line, trailing whitespace and Markdown emphasis
+  removed, ends with `?`);
+- `APPROVER_POLICIES = { v1: { classify, replies: { approval, question }, maxInterventions: 3 } }` —
+  the replies of experiment design §3.5 byte for byte.
+
+**A campaign naming a policy that does not exist is refused** at validation (`approver_policy: v2` →
+"is not an approver policy this runner implements: v1"). Without it a `v2` campaign would silently run
+v1 and its interventions could not be reproduced from what it pinned — the failure dl-004's versioning
+exists to prevent. This is the added criterion.
+
+### Resuming (REQ-RUN-07)
+
+`AgentPort` gains `resume(request)`, beside `runStep`. `StepRequest` is left alone: F2.2's shape
+assertion is what keeps a conversation history off a *fresh* step, and a resume is a different
+request, not a step with an extra field. `ResumeRequest` holds the scenario, the step, the intervention
+number, the session id, the reply, the remaining cap and `run`.
+
+The Claude Code command line is the one the spike **measured** (P6), with the remaining cap:
+`claude --resume <id> -p <reply> --output-format stream-json --verbose --permission-mode
+bypassPermissions --setting-sources project --max-budget-usd <remaining>`. **No `--model`**: the spike
+resumed without it and the session kept its pinned model (the resumed init reads the dated id of the
+same Haiku), and adding a flag nobody measured with `--resume` is the kind of thing task-006 learned
+not to do with `--max-budget-usd 0`. The id guard applies to a resume as to a step: the session that
+answers must be the one that was resumed.
+
+The fake's scripted step gains `resumes: [{ commands?, events }]`, one per expected intervention; a
+resume the script does not foresee is an error, as an unscripted step already is.
+
+### The step loop
+
+For one step: run the session; then, while it did not fail, classify its final message:
+
+1. not waiting → the step is `completed`;
+2. waiting and fewer than 3 interventions so far → record `{ step, kind, reply }`, resume with the
+   policy's reply, and classify the resumed session in turn;
+3. waiting with 3 interventions already made → no reply; the step's outcome is
+   **`intervention cap reached`**.
+
+Decisions, with the reasons:
+
+- **The cap is not an error.** `StepOutcome.error` fails the run; §3.5 says the step ends and §3.6
+  that a step hitting a cap is scored as it stands. So a step has an outcome of its own —
+  `completed`, `intervention cap reached` or `failed` — and **the run goes on to the next step** after
+  a capped one. Only `failed` stops the run.
+- **Invocations are summed in the runner.** `readSession` sums the result events of one stream; the
+  step and its resumes are separate streams, so the step's usage is their sum and its transcript their
+  concatenation, in order — a resumed stream does not replay earlier turns (task-004 question 3), so
+  what is not concatenated is lost. Asserted on the **step's** files, not only on the parser.
+- **The remaining cap includes the step so far.** A resume is told the run's cap less the finished
+  steps **and** this step's invocations until now, and it is refused like a step when nothing is left.
+  Otherwise a resume would be offered the whole remaining cap again.
+- **One snapshot per step,** after the last invocation: `step <NN>` and one patch, whatever the number
+  of interventions (REQ-RUN-05).
+
+### What the run records
+
+`run.json` gains, per step, its `outcome` and its interventions, and at the run level the list of
+interventions `{ step, kind, reply }` (REQ-RUN-07) next to the `approver_policy` it already names.
+That is what M-K2 (interventions per run) needs in W6, with nothing else to recover.
+`steps/<NN>/usage.json` and `transcript.jsonl` hold the step's totals across its invocations.
+
+### REQ-RUN-17, split on purpose
+
+This task delivers the half that is the runner's: **the decision is always the neutral approver's** —
+the reply is chosen by the policy from the text alone, and the agent only receives it. The other half —
+the wingfoil arm's WingFoil configuration declaring a "Benchmark Approver" member with the `approver`
+role, and the container's git identity being that member — is part of the arm definitions (F2.5,
+**W3**), and the method page's statement is **W11**. Recorded here, and again in `rel-v0-1` at delivery,
+so that W3 cannot close without it.
+
+### W2's "Ends with" against the real Docker
+
+A second fixture scenario, `T1`, three steps, run by `bench campaign run` against the real Docker with
+the fake replaying the spike's recordings (the approver's plan-time decision: **no credential, no
+spending**):
+
+- step 1 — `question.jsonl`, resumed with the question reply into `resumed.jsonl`;
+- step 2 — `approval.jsonl`, resumed with `Approved. Proceed.` into `completed.jsonl`;
+- step 3 — `completed.jsonl`, no intervention.
+
+Each step's commands write a file, so each patch is distinct. The test asserts one session per step
+(the ids in `run.json` differ, and each is the one of its resumes), the `step 01`–`step 03` commits in
+the workspace's own `git log`, a patch per step, a `usage.json` per step equal to the sum of its
+recordings, and two interventions with their kinds, replies and `approver_policy: v1`. It lives beside
+W1's in `test/docker/`. bug-003 is live: the test must not be interrupted mid-run.
+
+### Tests
+
+- **Unit** (`core/approver`): both real wordings of dl-004 (the approval one is the test a
+  trailing-question rule fails); each approval pattern; the order (a message that is both → approval);
+  a pattern inside a code fence or inline code does not match; `?` only mid-message is not a question;
+  trailing emphasis (`**…?**`) is; the `within one sentence` patterns do not match across a full stop.
+- **Unit** (`agents`): `finalMessage` from the fixtures; the resume command line argument by argument;
+  the fake's scripted resumes, including one it does not foresee.
+- **Unit** (`runner`): usage summed and transcript concatenated over a step's invocations; the cap at
+  **3 and at 4** waiting sessions (the off-by-one); the run continuing after a capped step; the remaining
+  cap passed to a resume; the id guard on a resume; a failed resume failing the run with its evidence kept.
+- **Acceptance**, `@F2.4` × 4, through the fake replaying real recordings. The replies are asserted
+  against the **literal strings of the feature file**, never against the constants under test; "the
+  same in every arm" also asserts that the three runs were three different arms.
+
+### What this task does not do
+
+No real agent runs here, and nothing is spent. The intervention **cost** against the budget is W5;
+governance metrics over interventions (F4.8) are W8; the method page is W11.
 
 ## Execution notes
 
