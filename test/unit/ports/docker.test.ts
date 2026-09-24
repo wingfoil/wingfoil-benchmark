@@ -185,11 +185,37 @@ describe('the git port', () => {
       user: 'node',
       env: { ANTHROPIC_AUTH_TOKEN: 'sk-ant-oat01-SECRET' },
     });
-    const args = process_.calls[0]?.args ?? [];
-    expect(args).toContain('--env');
-    expect(args[args.indexOf('--env') + 1]).toBe('ANTHROPIC_AUTH_TOKEN=sk-ant-oat01-SECRET');
+    const call = process_.calls[0];
+    const args = call?.args ?? [];
+    // The name goes on the command line; the value does not. `processFailure` renders the command
+    // line into the message it throws, and that message is logged and written into run.json.
+    expect(args[args.indexOf('--env') + 1]).toBe('ANTHROPIC_AUTH_TOKEN');
+    expect(args.join(' ')).not.toContain('sk-ant-oat01-SECRET');
+    // The value reaches the docker process itself, which is how the container gets it.
+    expect(call?.env).toEqual({ ANTHROPIC_AUTH_TOKEN: 'sk-ant-oat01-SECRET' });
     // It goes in at creation and nowhere else: the workspace mount is still the only mount.
     expect(args.filter((argument) => argument === '--mount')).toHaveLength(1);
+  });
+
+  it('keeps the credential out of the message it throws when create fails (REQ-NFR-01)', async () => {
+    // A name clash, a missing image or a daemon hiccup is an ordinary event, and this message is
+    // logged and written into the run's record, which is committed.
+    const token = 'sk-ant-oat01-SECRET';
+    const process_ = recorder([{ code: 125, stdout: '', stderr: 'name is already in use' }]);
+    let message = '';
+    try {
+      await dockerCli(process_).create({
+        image: 'abc123',
+        name: 'bench-abc123-1',
+        workspace: '/repo/runs/w',
+        user: 'node',
+        env: { ANTHROPIC_AUTH_TOKEN: token },
+      });
+    } catch (error) {
+      message = (error as Error).message;
+    }
+    expect(message).toMatch(/name is already in use/);
+    expect(message).not.toContain(token);
   });
 
   it('refuses a workspace path that would break the mount specification', async () => {

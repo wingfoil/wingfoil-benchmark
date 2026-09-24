@@ -80,6 +80,38 @@ describe('reading a session (REQ-RUN-09)', () => {
     expect(readSession(events, RATE).transcript).toEqual(events);
   });
 
+  it('names the session the agent ended in, not the one it was asked for', () => {
+    // The init event echoes the --session-id the runner passed, so reading the first session_id
+    // compares that id with itself. The result event is the one that says what actually ran.
+    const events = [
+      '{"type":"system","subtype":"init","session_id":"the-id-the-runner-gave"}',
+      '{"type":"result","is_error":false,"terminal_reason":"completed","session_id":"a-session-of-its-own"}',
+    ];
+    expect(readSession(events, RATE).sessionId).toBe('a-session-of-its-own');
+  });
+
+  it('fails a session that ended for any reason other than completing (adr-002 decision 6)', () => {
+    // --max-budget-usd is emitted in W2, so a budget-terminated session is reachable now.
+    const events = ['{"type":"result","terminal_reason":"max_budget_exceeded","total_cost_usd":3}'];
+    const session = readSession(events, RATE);
+
+    expect(session.outcome).toBe('failed');
+    expect(session.error).toMatch(/max_budget_exceeded/);
+    // What it spent before it was cut off is still recorded: the money was spent either way.
+    expect(session.usage.costUsd).toBe(3);
+  });
+
+  it('does not take a non-boolean is_error for a success', () => {
+    const session = readSession(['{"type":"result","is_error":"true","terminal_reason":"completed"}'], RATE);
+    expect(session.outcome).toBe('failed');
+  });
+
+  it('reports a line that is not an object rather than crashing on it', () => {
+    // `null` parses, so the JSON guard alone lets it through and the next property access throws.
+    expect(readSession(['null'], RATE).outcome).toBe('failed');
+    expect(readSession(['null'], RATE).error).toMatch(/not an object/);
+  });
+
   it('reports a line that is not JSON rather than skipping it', () => {
     const session = readSession(['not json'], RATE);
     expect(session.outcome).toBe('failed');
@@ -191,7 +223,9 @@ describe('the Claude Code adapter (REQ-RUN-04)', () => {
 
   it('scrubs the token out of the transcript before it is stored (REQ-NFR-01)', async () => {
     const token = 'sk-ant-oat01-SECRET';
-    const exec = runner(`{"type":"result","is_error":false,"leaked":"${token}"}`);
+    const exec = runner(
+      `{"type":"result","is_error":false,"terminal_reason":"completed","leaked":"${token}"}`,
+    );
 
     const outcome = await claudeCodeAgent({ token, usdToEur: RATE }).runStep(request(exec.run));
 
@@ -199,11 +233,13 @@ describe('the Claude Code adapter (REQ-RUN-04)', () => {
     expect(outcome.transcript.join('\n')).toContain('[redacted]');
   });
 
-  it('fails the step when the session failed, naming why', async () => {
+  it('reports a failed session with what it spent, rather than throwing it away', async () => {
     const exec = runner(recorded('failed-subtype-success.jsonl').join('\n'));
 
-    await expect(claudeCodeAgent({ token: 'x', usdToEur: RATE }).runStep(request(exec.run))).rejects.toThrow(
-      /api_error/,
-    );
+    const outcome = await claudeCodeAgent({ token: 'x', usdToEur: RATE }).runStep(request(exec.run));
+
+    expect(outcome.error).toMatch(/api_error/);
+    // The transcript survives the failure: it is the only evidence of why the session stopped.
+    expect(outcome.transcript.length).toBeGreaterThan(0);
   });
 });

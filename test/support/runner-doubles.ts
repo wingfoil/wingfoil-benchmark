@@ -52,6 +52,8 @@ export function doubles(
     usageOf?: (request: StepRequest) => SessionUsage;
     /** The step's recorded stream; by default one line naming the step. */
     transcriptOf?: (request: StepRequest) => readonly string[];
+    /** Why the step's session failed, if it did: the agent reports it rather than throwing. */
+    errorOf?: (request: StepRequest) => string;
     /** Makes one Docker or git call fail: `create`, `start`, `remove` and `init` break a run
      * outside its steps, `commit` and `patch` break it inside one. */
     failing?: { call: 'create' | 'start' | 'remove' | 'init' | 'commit' | 'patch'; error: string };
@@ -140,6 +142,7 @@ export function doubles(
         sessionId: options.sessionOf?.(request) ?? request.sessionId,
         usage: options.usageOf?.(request) ?? NO_USAGE,
         transcript: options.transcriptOf?.(request) ?? [`{"type":"result","step":${request.step}}`],
+        ...(options.errorOf === undefined ? {} : { error: options.errorOf(request) }),
       });
     },
   };

@@ -20,7 +20,9 @@ export interface CreateRequest {
   readonly user: string;
   /**
    * The container's environment: how the agent's credential reaches it (REQ-RUN-15, requirements
-   * 1.3). It is set at creation and never written to the workspace, a log or a transcript.
+   * 1.3). Only the variable **names** go on Docker's command line; the values are handed to the
+   * `docker` process in its own environment, so they cannot reach `ps`, an error message built from
+   * the command line, a log or a stored result (REQ-NFR-01).
    */
   readonly env?: Readonly<Record<string, string>>;
 }
@@ -46,8 +48,15 @@ const MOUNT_FORMAT = '{{range .Mounts}}{{.Source}}:{{.Destination}}\n{{end}}';
 
 /** The Docker port that calls the `docker` command line. */
 export function dockerCli(process: ProcessPort): DockerPort {
-  async function docker(args: readonly string[]): Promise<ProcessResult> {
-    const result = await process.run('docker', args);
+  /**
+   * `env` reaches the `docker` process itself, never its arguments: `processFailure` renders the
+   * command line into the message it throws, and that message is logged and stored with the run.
+   */
+  async function docker(
+    args: readonly string[],
+    env?: Readonly<Record<string, string>>,
+  ): Promise<ProcessResult> {
+    const result = await process.run('docker', args, env === undefined ? undefined : { env });
     if (result.code !== 0) throw processFailure('docker', args, result);
     return result;
   }
@@ -64,21 +73,25 @@ export function dockerCli(process: ProcessPort): DockerPort {
       if (workspace.includes(',') || workspace.includes('=')) {
         throw new Error(`the workspace path cannot hold a comma or an equals sign: ${workspace}`);
       }
-      const result = await docker([
-        'create',
-        '--name',
-        name,
-        '--user',
-        user,
-        '--workdir',
-        WORKSPACE,
-        '--mount',
-        `type=bind,source=${workspace},target=${WORKSPACE}`,
-        ...Object.entries(env ?? {}).flatMap(([variable, value]) => ['--env', `${variable}=${value}`]),
-        image,
-        'sleep',
-        'infinity',
-      ]);
+      const result = await docker(
+        [
+          'create',
+          '--name',
+          name,
+          '--user',
+          user,
+          '--workdir',
+          WORKSPACE,
+          '--mount',
+          `type=bind,source=${workspace},target=${WORKSPACE}`,
+          // The name alone: `--env NAME` tells Docker to take NAME from this process's environment.
+          ...Object.keys(env ?? {}).flatMap((variable) => ['--env', variable]),
+          image,
+          'sleep',
+          'infinity',
+        ],
+        env,
+      );
       return result.stdout.trim();
     },
     async start(container) {

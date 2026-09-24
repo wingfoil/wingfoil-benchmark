@@ -148,13 +148,16 @@ async function executeRun(context: RunContext, options: RunnerOptions): Promise<
     await assertOnlyWorkspaceMounted(container, workspace, options);
     await options.docker.start(container);
     for (const step of scenario.steps) {
-      steps.push(
-        await executeStep(
-          step,
-          { container, workspace, outputDir, scenario, model, remainingCostUsd: remaining(campaign, steps) },
-          options,
-        ),
+      const outcome = await executeStep(
+        step,
+        { container, workspace, outputDir, scenario, model, remainingCostUsd: remaining(campaign, steps) },
+        options,
       );
+      // Recorded first, then failed: what the step spent and said is stored either way.
+      steps.push(outcome);
+      if (outcome.error !== undefined) {
+        throw new Error(`step ${stepNumber(step.n)} of ${scenario.id} failed: ${outcome.error}`);
+      }
     }
     return record({ ...identity, steps, outcome: 'completed' }, campaign);
   } catch (error) {

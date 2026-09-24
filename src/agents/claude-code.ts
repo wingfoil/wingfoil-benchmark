@@ -28,6 +28,9 @@ export interface Session {
   readonly error?: string;
 }
 
+/** The only `terminal_reason` that means the session finished the work it was given. */
+const COMPLETED = 'completed';
+
 const ZERO: SessionUsage = {
   inputTokens: 0,
   outputTokens: 0,
@@ -65,7 +68,10 @@ function add(total: SessionUsage, event: Record<string, unknown>, usdToEur: numb
  * Three things the W2 spike proved, and which this function exists to honour:
  *
  * - **the outcome is `is_error` and `terminal_reason`, never `subtype`.** The spike recorded
- *   `"subtype": "success"` on a session that failed to authenticate and did nothing;
+ *   `"subtype": "success"` on a session that failed to authenticate and did nothing. A session
+ *   counts as completed only when `is_error` is not `true` **and** `terminal_reason` says
+ *   `completed`: a session cut off by `--max-budget-usd` reports neither an error nor completion,
+ *   and scoring it as a finished step would score truncated work as finished work;
  * - **a stream with no `result` event is a failed step**, not a step that used nothing. It is what a
  *   step killed by its cap leaves behind;
  * - **usage is summed over the events seen**, not taken from the last one: a step resumed by the
@@ -91,12 +97,26 @@ export function readSession(lines: readonly string[], usdToEur: number): Session
         error: `a line of the session is not valid JSON: ${(error as Error).message}`,
       };
     }
-    if (typeof event.session_id === 'string' && sessionId === '') sessionId = event.session_id;
+    if (typeof event !== 'object' || event === null) {
+      return {
+        sessionId,
+        usage,
+        transcript: lines,
+        outcome: 'failed',
+        error: 'a line of the session is not an object',
+      };
+    }
     if (event.type !== 'result') continue;
     results += 1;
     usage = add(usage, event, usdToEur);
-    if (event.is_error === true) {
-      failures.push(String(event.terminal_reason ?? event.subtype ?? 'unknown'));
+    // The session the agent *ended in*, not the one it was asked for: the init event echoes the
+    // `--session-id` the runner passed, so reading that would compare an id with itself.
+    if (typeof event.session_id === 'string') sessionId = event.session_id;
+    const reason = typeof event.terminal_reason === 'string' ? event.terminal_reason : 'unknown';
+    if (event.is_error !== false || reason !== COMPLETED) {
+      failures.push(
+        event.is_error !== false && reason === COMPLETED ? `is_error ${String(event.is_error)}` : reason,
+      );
     }
   }
 
@@ -196,10 +216,12 @@ export function claudeCodeAgent(options: AdapterOptions): AgentPort {
         .split('\n')
         .filter((line) => line.trim() !== '');
       const session = readSession(lines, options.usdToEur);
-      if (session.outcome === 'failed') {
-        throw new Error(`step ${request.step} of ${request.scenarioId} failed: ${session.error}`);
-      }
-      return { sessionId: session.sessionId, usage: session.usage, transcript: session.transcript };
+      return {
+        sessionId: session.sessionId,
+        usage: session.usage,
+        transcript: session.transcript,
+        ...(session.outcome === 'failed' ? { error: session.error ?? 'the session failed' } : {}),
+      };
     },
   };
 }

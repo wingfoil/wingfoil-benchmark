@@ -35,6 +35,12 @@ export interface StepOutcome {
   readonly usage: SessionUsage;
   /** Every event of the step's stream, already scrubbed (REQ-NFR-01). */
   readonly transcript: readonly string[];
+  /**
+   * Why the session failed, if it did. An agent **reports** a failed session rather than throwing:
+   * the money was spent either way, and the usage and the transcript are the only evidence of what
+   * it went on and of why it stopped. The runner stores them, then fails the run.
+   */
+  readonly error?: string;
 }
 
 /** REQ-ARC-04: the agent behind one interface, so a run never depends on a real agent. */

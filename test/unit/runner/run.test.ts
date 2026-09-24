@@ -319,6 +319,38 @@ describe('runCampaign', () => {
     expect(existsSync(join(summary.runs[0]?.outputDir ?? '', 'steps', '01', 'diff.patch'))).toBe(false);
   });
 
+  it('keeps what a failed step spent, instead of throwing the evidence away', async () => {
+    const { checked } = checkedCampaign();
+    const usage = {
+      inputTokens: 1,
+      outputTokens: 2,
+      cacheCreationInputTokens: 3,
+      cacheReadInputTokens: 4,
+      costUsd: 1.5,
+      costEur: 1.38,
+      turns: 1,
+      durationMs: 10,
+    };
+    const ports = doubles({
+      usageOf: () => usage,
+      transcriptOf: () => ['{"type":"result","is_error":true}'],
+      errorOf: () => 'api_error',
+    });
+
+    const summary = await runCampaign(checked, ports);
+
+    // The money was spent whatever the outcome, so the record has to show it (REQ-RUN-09).
+    const output = summary.runs[0]?.outputDir ?? '';
+    expect(summary.runs[0]?.outcome).toBe('failed');
+    expect(JSON.parse(readFileSync(join(output, 'steps', '01', 'usage.json'), 'utf8'))).toEqual(usage);
+    // And the transcript, which is the only evidence of why it failed.
+    expect(readFileSync(join(output, 'steps', '01', 'transcript.jsonl'), 'utf8')).toContain('is_error');
+    const record = JSON.parse(readFileSync(join(output, 'run.json'), 'utf8')) as { steps: unknown[] };
+    expect(record.steps).toHaveLength(1);
+    // The run stops at the failed step: step 2 never ran.
+    expect(ports.recorded.steps).toHaveLength(1);
+  });
+
   it('fails the run when a step prompt cannot be read', async () => {
     const { checked, root } = checkedCampaign();
     rmSync(join(root, 'scenarios', 'S1', '1.0', 'prompts', '01.md'));
