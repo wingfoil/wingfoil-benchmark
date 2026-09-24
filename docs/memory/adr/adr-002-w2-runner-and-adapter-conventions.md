@@ -2,7 +2,7 @@
 id: adr-002-w2-runner-and-adapter-conventions
 type: adr
 title: "W2 runner and adapter conventions"
-status: pending
+status: approved
 ---
 
 ## Context
