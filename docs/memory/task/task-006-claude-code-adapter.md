@@ -2,13 +2,12 @@
 id: task-006-claude-code-adapter
 type: task
 title: "Claude Code adapter"
-status: in-progress
+status: in-review
 release: v0.1
 wave: W2
 features: [F2.3]
 acceptance: [runner.feature]
 requirements: [REQ-RUN-04, REQ-RUN-09, REQ-RUN-15, REQ-RUN-16, REQ-ARC-04, REQ-NFR-01]
-rejection_reason: "Independent review: two blockers and five majors. The token reaches run.json and stderr through processFailure when docker create fails (REQ-NFR-01); the F2.3 acceptance passes against a runner that invents usage, the third occurrence of covered-but-unasserted; a failed step discards the usage it already spent; the session guard compares an id with itself; terminal_reason never decides an outcome; the whole credential path and the remaining-cost arithmetic are unpinned. Back to build."
 ---
 
 ## Context
