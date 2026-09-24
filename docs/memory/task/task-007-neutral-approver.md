@@ -366,3 +366,17 @@ governance metrics over interventions (F4.8) are W8; the method page is W11.
   `adr-003`. Declared: `pending → approved` gate, `Approver:`/`Reason:` body, only `status` changed.
   Observed: exit 0, the declared subject and trailers, a one-line diff. Matches. No separate task: the
   fix is this task's (see bug-004's Resolution).
+
+### Approved, and what it hands on
+
+- `npx wingfoil memory approve task-007-neutral-approver --reason "…"` → `9a062ed`, run by the
+  approver. Declared: `in-review → approved` gate, subject with `[from → to]`, `Approver:`/`Reason:`
+  body, only `status` changed. Observed: the declared subject and both trailers, a one-line diff.
+  Matches.
+- **W2's "Ends with" is recorded in [rel-v0-1](../release/rel-v0-1.md)**, with what the wave hands on.
+- **To W3 (F2.5–F2.7):** REQ-RUN-17's other half (the Benchmark Approver member and the container's git
+  identity); the MCP flags on the resume line as well as the step's.
+- **To validation (plan-003 step 4):** a resumed Sonnet session's model, and `--max-budget-usd` on a
+  resume.
+- **To W6 (F4.3, M-K2):** `run.json` holds every intervention with its step, kind and reply, and each
+  step's outcome, under the policy version: interventions per run need nothing else.

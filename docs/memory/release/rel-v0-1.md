@@ -33,7 +33,7 @@ Waves and features from [07_sequencer.md](../../01_vision/07_sequencer.md) 1.1. 
 | Wave | Features | High unc. | Ends with | Verified |
 |---|---|---|---|---|
 | W1 — Skeleton | F3.1 scenario format · F1.1 campaign file · F2.1 isolated run | — | a trivial scenario runs in a container from a campaign file | **2026-09-23** |
-| W2 — Agent in the loop | F2.2 fresh-session steps · F2.3 Claude Code adapter · F2.4 neutral approver | F2.4 | a multi-step run with usage captured and interventions counted | — |
+| W2 — Agent in the loop | F2.2 fresh-session steps · F2.3 Claude Code adapter · F2.4 neutral approver | F2.4 | a multi-step run with usage captured and interventions counted | **2026-09-24** |
 | W3 — Arms | F2.5 arm setups · F2.6 WingFoil under test · F2.7 arm activation (operating manuals) | — | the same scenario runs in the baseline, baseline-docs and wingfoil arms | — |
 | W4 — Scenario hygiene | F3.5 hold-out integration · F3.2 validator and leak scan · F3.4 scenario versioning | — | a scenario validated, with its oracle kept outside the container | — |
 | W5 — Cost control | F3.3 dry run · F1.2 cost estimate · F1.3 budget guard | — | a campaign refuses to start above the ceiling | — |
@@ -83,10 +83,59 @@ Release-planning notes:
 - W1 requirements also include REQ-RUN-16 (F1.1) and REQ-CLI-10 (F2.1), as mapped by
   [traceability.md](../../02_specification/traceability.md) §2.
 
+### W2 — verified 2026-09-24
+
+**"A multi-step run with usage captured and interventions counted."** `npm run test:docker`
+(`test/docker/run.test.ts`, second test) runs the three-step scenario T1 from
+`test/fixtures/campaigns/multi-step.yaml` through `bench campaign run` against the real Docker, with the
+fake agent replaying sessions the real agent produced in the W2 spike — a question, an approval
+request, a session that simply finished — so it needs no credential and spends nothing (the plan-time
+decision). It checks that:
+
+- the run completes, with one session per step (three distinct ids in `run.json`), each continued by
+  its own resume where the approver answered;
+- the workspace's own history is `seed`, `step 01`, `step 02`, `step 03`, and each step has its patch,
+  holding what the step and its resume did in the container;
+- each step's `usage.json` is its invocations together — work summed, cost the session's latest total
+  (bug-004, adr-002 amendment 1);
+- two interventions are recorded, a question and an approval request with the policy's replies, under
+  `approver_policy: v1`;
+- no container is left behind.
+
+Shown able to fail: with the approver blinded (the fake no longer passing the final message on) the
+run completes with no interventions and the test goes red.
+
+| Task | Feature | Delivered |
+|---|---|---|
+| [task-004](../task/task-004-waiting-for-input-and-credentials-spike.md) | — (spike) | the command line, the event shape, the credential path, the classifier's evidence |
+| [task-005](../task/task-005-fresh-session-steps.md) | F2.2 | one fresh session per step, `step <NN>` commits, the session guard |
+| [task-006](../task/task-006-claude-code-adapter.md) | F2.3 | the Claude Code adapter, usage and transcripts, `run.json`, the replaying fake, `--allow-spending` |
+| [task-007](../task/task-007-neutral-approver.md) | F2.4 | classifier and policy v1, resumes, the intervention cap, interventions in `run.json` |
+
+Decisions taken during W2: [adr-002](../adr/adr-002-w2-runner-and-adapter-conventions.md) (amended:
+decision 8), [dl-004](../decision-log/dl-004-waiting-for-input-classifier-v1.md); adr-001 amendment 2.
+Bugs: [bug-003](../bug/bug-003-an-interrupted-run-leaves-its-container-behind.md) (open: an
+interrupted run leaves its container behind),
+[bug-004](../bug/bug-004-session-cost-is-cumulative-so-summing-it-double-counts.md) (fixed in task-007).
+
+**Due before the waves that need them:**
+
+- **REQ-RUN-17, the other half, in W3 (F2.5):** the wingfoil arm declares a "Benchmark Approver" member
+  with the `approver` role and the container's git identity is that member. W2 delivered only the
+  runner's half — the decision is always the neutral approver's — and the method page's statement is
+  W11.
+- **W3 adds the wingfoil arm's `--mcp-config` / `--strict-mcp-config` to the resume line too**, or a
+  resumed session runs without the arm's tools.
+- **Validation (plan-003 step 4), with the real agent:** check that a resumed Sonnet 5 session stays on
+  Sonnet (the resume passes no `--model`; the spike saw it only with Haiku), and, cheaply, what
+  `--max-budget-usd` compares against on a resume.
+- **W5:** the intervention cost against the budget; a per-session cost floor (adr-002).
+- **Candidates for classifier v2**, never a quiet edit to v1: listed in task-007's review notes.
+
 ## Release checklist
 
 - [x] release-planning: scope approved (planning → in-development, `8c5c7e6`; plan: plan-003)
-- [ ] delivery: W1–W11 done, every wave's "Ends with" verified (W1 done: task-001, task-002, task-003)
+- [ ] delivery: W1–W11 done, every wave's "Ends with" verified (W1 done: task-001, task-002, task-003; W2 done: task-004, task-005, task-006, task-007)
 - [ ] calibration: dry runs in every arm, budget revised (`docs/calibration/v0.1.md`)
 - [ ] validation: acceptance green on the fake agent, coverage > 80%, lint clean, one real-agent end-to-end run
 - [ ] campaign: reference campaign published (campaign: —)
