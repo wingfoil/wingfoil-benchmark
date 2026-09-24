@@ -365,6 +365,16 @@ async function executeStep(
       error = reasonOf(failure);
       break;
     }
+    // A resume reports the session's running total, so it never goes down. If it ever does — a
+    // different agent version, a stream that is not a resume — the larger figure is kept and the
+    // broken premise is said out loud rather than absorbed (adr-002 amendment 1).
+    const before = stepUsage(invocations).costUsd;
+    if (last.error === undefined && last.usage.costUsd < before) {
+      options.logError?.(
+        `step ${number}: resume ${intervention} reported a session cost of ${last.usage.costUsd} USD, ` +
+          `below the ${before} USD already reported; kept the larger`,
+      );
+    }
     invocations.push(last);
     error = invocationError(last, sessionId, `resume ${intervention} of step ${number}`);
   }

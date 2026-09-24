@@ -142,6 +142,14 @@ describe('the final assistant message (REQ-RUN-06, dl-004)', () => {
     expect(both.finalMessage).toBe('ready');
   });
 
+  it("clears an earlier message when a later result carries none: the last session's is the one", () => {
+    const events = [
+      ...recorded('question.jsonl'),
+      '{"type":"result","is_error":false,"terminal_reason":"completed"}',
+    ];
+    expect(readSession(events, RATE).finalMessage).toBeUndefined();
+  });
+
   it('has none when the stream has no result event', () => {
     expect(readSession(recorded('truncated-no-result.jsonl'), RATE).finalMessage).toBeUndefined();
   });

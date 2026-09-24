@@ -618,6 +618,39 @@ describe('the neutral approver in the step loop (F2.4)', () => {
     expect(summary.runs[0]?.steps[0]?.outcome).toBe('intervention cap reached');
   });
 
+  it("tells a second resume the cap less the session's latest total, not the sum of its totals", async () => {
+    // Running totals of one session: 0.5, then 1 EUR. What the step has cost is 1, not 1.5.
+    const { checked } = checkedCampaign();
+    const totals = [0.5, 1, 1];
+    const ports = doubles({
+      messageOf: (request) => (request.step === 1 && invocationOf(request) < 2 ? 'Which one?' : undefined),
+      usageOf: (request) => ({
+        ...usage(0),
+        costEur: request.step === 1 ? (totals[invocationOf(request)] ?? 0) : 0,
+      }),
+    });
+
+    await runCampaign(checked, ports);
+
+    expect(ports.recorded.resumes.map((r) => r.remainingCostUsd)).toEqual([2.5 / 0.92, 2 / 0.92]);
+  });
+
+  it('reports a resume whose session total went down, rather than trusting it silently', async () => {
+    const { checked } = checkedCampaign();
+    const errors: string[] = [];
+    const ports = doubles({
+      messageOf: (request) => (request.step === 1 && invocationOf(request) === 0 ? 'Which one?' : undefined),
+      usageOf: (request) => ({ ...usage(0), costUsd: invocationOf(request) === 0 ? 0.5 : 0.25 }),
+    });
+
+    const summary = await runCampaign(checked, { ...ports, logError: (line) => errors.push(line) });
+
+    expect(errors).toEqual([
+      'step 01: resume 1 reported a session cost of 0.25 USD, below the 0.5 USD already reported; kept the larger',
+    ]);
+    expect(summary.runs[0]?.steps[0]?.usage.costUsd).toBe(0.5);
+  });
+
   it('does not resume a session when nothing is left to spend', async () => {
     const { checked } = checkedCampaign();
     const ports = doubles({

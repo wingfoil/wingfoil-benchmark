@@ -178,6 +178,18 @@ describe('the classifier v1, at its edges (review of task-007)', () => {
     expect(classify('Here is the plan:\n```\ncode\nDo you want me to proceed?')).toBeUndefined();
   });
 
+  it('opens a fence only at the start of a line, never in the middle of prose', () => {
+    expect(classify('Wrap it in ``` fences, then\nshall I commit it.')).toBe('approval');
+  });
+
+  it('ends a sentence at a full stop followed by a line break', () => {
+    expect(classify('We need to talk.\nThe approval is automatic')).toBeUndefined();
+  });
+
+  it('closes a fence written with CRLF line endings', () => {
+    expect(classify('```\r\nmay I\r\n```\r\nShall I merge it.')).toBe('approval');
+  });
+
   it('does not let an inline code span run across a line break', () => {
     // A lone backtick on one line must not pair with one on the next and swallow what lies between.
     expect(classify('It printed a ` on its own.\nDo you want me to delete `tmp` too.')).toBe('approval');
