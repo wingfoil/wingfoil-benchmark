@@ -250,3 +250,37 @@ Worth an adversarial look, in order of how much they would cost if wrong:
    rather than silently half-applied.
 
 Full suites at HEAD: `npm test` 316, `test:bin` 4, `test:docker` 1, `lint` clean.
+
+### Review, round 1
+
+- **Reviewer:** an independent reviewer that did not write the code, read-only, working on an export
+  of HEAD with `node_modules` linked so every finding could be proved by a probe.
+- **Result:** no blocker, **3 majors, 3 minors, 1 question, 2 nits** — and every major test-only. The
+  production code could not be made to misbehave; the suite could not be made to notice when it did.
+- **The three majors are one defect wearing three hats:** `--allow-empty`, the ref given to `patchOf`,
+  the order of commit-then-patch, and the REQ-FMT-06 output location were all **covered but
+  unasserted**. The reviewer mutated each and all 316 tests stayed green. It is the same class as
+  task-003's finding 7, which this task's own "For the reviewer" section claimed to have learned from
+  — and pointed at `test/unit/ports/docker.test.ts` as proof of the `--allow-empty` criterion, which
+  proves the *port forwards* the flag, not that the *runner sets* it. Coverage said 100%; three new
+  statements ran in every test without one assertion constraining what they did.
+- **Fixed** (`f3b7e00`): the git double records the commit options and the patch call in the same
+  transcript, so the acceptance test's `toEqual` pins the flag and the order together; the patch's
+  exact bytes are asserted instead of `toContain`; `outputDir` is asserted literally in a unit test
+  rather than derived from itself. **Each fix was verified by re-running the reviewer's mutation and
+  watching exactly one test go red, then reverting it.** Four mutations, four reds.
+- **Minor, fixed:** a scenario is capped at 99 steps (red first) — `steps/100` sorts before
+  `steps/99` and `step 100` breaks the message shape mid-run; the two failure paths the reviewer
+  wrote and found passing are now in the suite (a failing step commit, a failing `patchOf`), with the
+  double's commit failure scoped to step commits because the seed commit is a different moment of the
+  run.
+- **Minor, not a change:** `RunResult.outputDir` had no production reader. It now has an assertion on
+  the contract, which is the reason to keep it; W7's `run.json` is its first reader.
+- **Nits, fixed:** the shadowed `yaml` in the campaign fixture; the CLI's refusal message and the
+  command's doc comment still spoke of W1.
+- **Open, for the approver (the reviewer's question):** adr-002 decisions 11 and 13 say that from W2
+  the per-step artefacts include a minimal `run.json` and that the fake replays recorded stream-json
+  sessions. This task does neither, and says so. Neither decision is violated — task-006 is also W2 —
+  but nothing yet guarantees the wave cannot end without them.
+- **Suites after the round:** `npm test` 320 passed, coverage 100% statements / 99.24% branches;
+  `npm run test:bin` 4; `npm run test:docker` 1; `npm run lint` clean.
