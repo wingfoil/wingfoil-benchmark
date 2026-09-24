@@ -73,6 +73,36 @@ This ADR records two kinds of decision, kept apart on purpose:
 13. **The fake agent replays recorded stream-json sessions.** It replaces W1's command script and is
     what lets every later wave exercise the whole pipeline without spending.
 
+## Amendment 1 (W2 task-007 review, 2026-09-24)
+
+**Decision 8, usage over a step's invocations** — corrected; see
+[bug-004](../bug/bug-004-session-cost-is-cumulative-so-summing-it-double-counts.md). Decision 8 says
+`--resume` "reports its own usage, not the session's total". That holds for the **work** and not for
+the **cost**. The spike's own session and resume, P4 and P6 (one `session_id`), show it:
+
+- `total_cost_usd` is the **session's running total**: P6 reports 0.0681071 = P4's 0.00734975 + its
+  own 0.06075735, and P6's `modelUsage` still carries P4's entry beside its own;
+- the tokens are the invocation's own (P6's `usage` equals its own `modelUsage` entry), and so is
+  `num_turns` (12, P6's own assistant messages);
+- `duration_ms` is the invocation's own: P6's events span at least 48 772 ms, more than the
+  45 749 ms it would have left if its 51 037 were cumulative;
+- `duration_api_ms` fits either reading and is **unmeasured**; the runner does not record it, and a
+  metric that wants it needs its own measurement first.
+
+So a step's usage **sums the work** of its invocations and takes **the latest cost** (the largest
+seen, which also survives a resume that ends with no result and reports nothing). Summing the cost,
+as decision 8 read, counts the step's first session again at every resume and tells each resume it
+has less left than it has.
+
+**Still unmeasured, and deliberately conservative:** whether `--max-budget-usd` on a resume compares
+against the session's running total or the invocation's own spend. The runner passes what is left of
+the run's cap after the step so far, which can only be too small, never too large.
+
+Recorded as an amendment rather than a superseding ADR, as adr-001's were: the decision's intent — a
+step that needed an intervention is not under-reported — is unchanged, and what is corrected is a
+measured fact that had been read wrong. Decisions 9 and 10 stand: the double `modelUsage` key is the
+running record, and it still makes the keys no model identity.
+
 ## Consequences
 
 - **An amendment to REQ-RUN-15 is proposed to the approver** with this ADR: the long-lived token in
