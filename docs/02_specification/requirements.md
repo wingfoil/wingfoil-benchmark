@@ -1,7 +1,7 @@
 # Requirements (v0.1)
 
-**Version:** 1.2
-**Date:** 2026-09-23
+**Version:** 1.3
+**Date:** 2026-09-24
 **Status:** Approved
 **Traces to:** [acceptance/](acceptance/) (all v0.1 features), [scenarios/](scenarios/) (K1–K5), [09_experiment-design.md](../01_vision/09_experiment-design.md), [07_sequencer.md](../01_vision/07_sequencer.md) v0.1
 
@@ -73,7 +73,7 @@ One binary, `bench`, run with `npx bench`. Exit codes: `0` success, `1` failure,
 | REQ-RUN-03 | The arm setup runs inside the container before step 1. Its Claude Code usage (if any), wall time and cost are recorded as `setup`. | F2.5, M-K3 |
 | REQ-RUN-04 | Each step runs: `claude -p <prompt> --output-format stream-json --verbose --model <id> --session-id <uuid> --permission-mode bypassPermissions --setting-sources project --max-budget-usd <remaining run cap>`. The wingfoil arm also gets `--mcp-config <arm mcp> --strict-mcp-config`. Bypassing permissions is acceptable only because the container is isolated. | F2.2, F2.3, F2.6 |
 | REQ-RUN-05 | After each step the runner commits the workspace with the message `step <NN>`, then stores `diff.patch` for that step. | F2.2 |
-| REQ-RUN-06 | **Waiting-for-input detection (spike in W2).** A session is "waiting" when its final assistant message is classified as a question or an approval request by a fixed, versioned, rule-based classifier: approval patterns first, then a trailing question. The classifier's version is part of the approver policy version. | F2.4 |
+| REQ-RUN-06 | **Waiting-for-input detection.** A session is "waiting" when its final assistant message is classified as a question or an approval request by a fixed, versioned, rule-based classifier: approval patterns first, then a trailing question. **Approval patterns are matched anywhere in the message**, because a real approval request need not end with a question (1.3); the trailing-question test applies only when no approval pattern matched. The classifier's version is part of the approver policy version. The W2 spike settled it: [dl-004](../memory/decision-log/dl-004-waiting-for-input-classifier-v1.md). | F2.4 |
 | REQ-RUN-07 | A reply resumes the same session with `--resume <session-id> -p <reply>`. Each reply is recorded as an intervention: step, kind, and reply text. | F2.4 |
 | REQ-RUN-08 | Caps: a step is killed at `step_time_s`, or when its tokens exceed `step_tokens`. The run stops when its cumulative API-equivalent cost reaches `run_cost_eur`. The campaign stops starting runs when its cumulative cost reaches `ceiling_eur`. | F1.3 |
 | REQ-RUN-09 | Usage is taken from the stream-json result events: tokens by kind, cost in USD converted with the campaign's rate, turns and duration. The API-equivalent cost is recorded whatever the billing (sequencer decision 1). | F2.3, M-K1 |
@@ -81,7 +81,7 @@ One binary, `bench`, run with `npx bench`. Exit codes: `0` success, `1` failure,
 | REQ-RUN-11 | `baseline-docs` environment generator: a pure function of the wingfoil arm's configuration and the scenario. The output is deterministic, with sorted keys and fixed templates. | F2.5, T3 |
 | REQ-RUN-13 | **Subscription quota** (requirements decision 2): when a session fails because the subscription's usage limit is reached, the step's outcome is `quota exhausted`. The campaign stops starting new runs, and the runs already completed are kept. The API-equivalent cost cap (REQ-RUN-08) keeps working as a proxy budget. | F1.3, sequencer decision 1 |
 | REQ-RUN-14 | **WingFoil under test:** the wingfoil arm's setup installs WingFoil from a tarball built by the runner, with `npm pack` from a clean `git archive` of the pinned commit. It is never taken from `vendor/` (the managing WingFoil) nor from the host's `PATH`. The tarball's commit is recorded in `run.json`. | F2.6 |
-| REQ-RUN-15 | **Agent authentication:** by default the runner uses the maintainer's **Claude subscription** credentials, mounted read-only into the container at run time (requirements decision 2). An API key through an environment variable is also supported. Either way REQ-NFR-01 applies. Whether a read-only mount lets the agent refresh its token is to be verified in the W2 spike. | F2.3, REQ-NFR-01 |
+| REQ-RUN-15 | **Agent authentication (amended 1.3):** by default the runner passes a **long-lived token** of the maintainer's Claude subscription (`claude setup-token`) into the container in the environment variable `ANTHROPIC_AUTH_TOKEN`, read at run time from a file outside the repository. `ANTHROPIC_API_KEY` is not interchangeable with it. Whitespace is stripped from a credential before it is passed, and a malformed one is refused before a session starts. Mounting the credential file read-only stays a **documented variant**: it requires the run image to create the agent's configuration directory owned by the container user, because mounting the file alone makes Docker create that directory owned by root, where the agent cannot keep the session state `--resume` needs. REQ-NFR-01 applies to either form. | F2.3, REQ-NFR-01 |
 | REQ-RUN-16 | **Agent version:** Claude Code is pinned per campaign (`agent.version`). v0.1 development and dry runs use **2.1.221** (requirements decision 4). | F1.1, T7 |
 | REQ-RUN-12 | The operating manual of each arm is copied as `CLAUDE.md` into the workspace. Its size in tokens is measured with a fixed tokenizer approximation and recorded per run. | F2.7 |
 | REQ-RUN-17 | **Approval authority in the wingfoil arm** (requirements decision 1): the arm's WingFoil configuration declares a member "Benchmark Approver" with the `approver` role, and the container's git identity is that member. After the neutral approver's reply, the agent may run WingFoil's approval commands itself. The method page states that the *decision* is always the neutral approver's, and that the agent only executes it. | F2.4, F2.5, M-E3 |
@@ -128,8 +128,9 @@ One binary, `bench`, run with `npx bench`. Exit codes: `0` success, `1` failure,
 ## Decisions from the requirements review
 
 1. **Approval authority:** option (a), recorded as REQ-SCO-11 (moved to REQ-RUN-17 in 1.1).
-2. **Authentication:** the maintainer's Claude subscription by default (REQ-RUN-15). Quota exhaustion
-   is handled by REQ-RUN-13.
+2. **Authentication:** the maintainer's Claude subscription by default (REQ-RUN-15, amended in 1.3:
+   a long-lived token in an environment variable rather than a mounted credential file). Quota
+   exhaustion is handled by REQ-RUN-13.
 3. **What goes into git:** only the small files. Transcripts become GitHub release assets
    (REQ-RES-06).
 4. **Agent version:** Claude Code 2.1.221 for v0.1 development and dry runs, re-pinned per campaign
@@ -170,3 +171,28 @@ requirement stay the same.
 
 Source: [../memory/decision-log/dl-003-campaign-pins-harness-coverage-seed-and-the-models-shape.md](../memory/decision-log/dl-003-campaign-pins-harness-coverage-seed-and-the-models-shape.md)
 (approver decisions A and B, W1 task-002 review).
+
+### Amendment 1.3 (delivery, W2 task-004 spike, 2026-09-24)
+
+- **REQ-RUN-15 (amended).** The default is a long-lived token in `ANTHROPIC_AUTH_TOKEN`, not a
+  read-only mount of the credential file. The spike found that mounting the file alone makes Docker
+  create the agent's configuration directory owned by `root`, where the agent cannot write the
+  session state `--resume` depends on, and that the same token in `ANTHROPIC_API_KEY` does not
+  authenticate at all: it retries until the cap and produces no result event. The mount is kept as a
+  variant with its condition stated. Two operational rules are added: the variable is named, and a
+  credential is sanitised or refused before a session is started.
+- **REQ-RUN-06 (clarified).** "Approval patterns first" means matched **anywhere in the message**.
+  The spike recorded a real approval request whose question mark sits mid-message and whose last
+  sentence is a statement; a trailing-question test alone would have read it as "not waiting" and the
+  run would have lost the intervention. The requirement's ordering is unchanged; what it means is now
+  written down. The mention of the spike is replaced by its result.
+- **Requirements decision 4, agent version.** Development and the spike run Claude Code **2.1.280**,
+  the release current on 2026-09-23, rather than the 2.1.221 the decision named. Each campaign
+  re-pins its own version, as that decision already provides (REQ-RUN-16).
+
+The traceability matrix is unaffected: the feature, journey and acceptance file of every amended
+requirement stay the same.
+
+Source: [../memory/adr/adr-002-w2-runner-and-adapter-conventions.md](../memory/adr/adr-002-w2-runner-and-adapter-conventions.md)
+and [../memory/decision-log/dl-004-waiting-for-input-classifier-v1.md](../memory/decision-log/dl-004-waiting-for-input-classifier-v1.md),
+both approved by the approver on 2026-09-24 (W2 task-004).
