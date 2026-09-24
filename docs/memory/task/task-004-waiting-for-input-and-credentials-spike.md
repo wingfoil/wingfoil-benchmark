@@ -5,8 +5,8 @@ title: "Waiting-for-input and credentials spike"
 status: in-progress
 release: v0.1
 wave: W2
-features: [F2.3, F2.4]
-acceptance: [runner.feature]
+features: []
+acceptance: []
 requirements: [REQ-RUN-06, REQ-RUN-15, REQ-NFR-01]
 ---
 
@@ -18,9 +18,15 @@ in W2") and REQ-RUN-15 ("whether a read-only mount lets the agent refresh its to
 in the W2 spike"). F2.4 is the one high-uncertainty feature of the wave
 ([07_sequencer.md](../../01_vision/07_sequencer.md) 1.1).
 
-It is a **knowledge task**: it adds no behaviour and no code under `src/`. It implements none of the
-scenarios of `runner.feature`; it is traced to that file because its findings are what W2's @F2.3 and
-@F2.4 scenarios will be built against. Its probes are throwaway scripts, kept outside the package.
+It is a **knowledge task**: it adds no behaviour and no code under `src/`. Its probes are throwaway
+scripts, kept outside the package.
+
+**Its `features` and `acceptance` are empty on purpose.** The task informs F2.3 and F2.4 but delivers
+neither, and the repository's own traceability test reads `features` as a claim: every scenario of a
+started task's features must have an acceptance test named after it. Listing F2.3 and F2.4 here would
+have demanded five acceptance tests from a task that writes no code — and the test said so, in red,
+as soon as the task started (Execution notes). The relation to `runner.feature` belongs in this
+paragraph, not in a field that means "delivers".
 
 It is the only task of W2 that spends tokens. The approver authorised **up to about 1 € equivalent**
 on the maintainer's Claude subscription (plan phase, 2026-09-23). If the questions below are not
@@ -389,3 +395,32 @@ Both are `pending`, awaiting the approver.
   `draft → pending` on the default state machine, one commit per element with no bracket and no body.
   Observed for each: exit 0, empty stderr, 1 file, diff limited to `status: draft` →
   `status: pending`. Matches (subject without transition: N9).
+
+### Approvals, the amendment, and what the repository caught
+
+- `npx wingfoil memory approve dl-004-… --reason "…"` → `ac4338c` and
+  `approve adr-002-… --reason "…"` → `20a3132`, both after the approver's explicit consent in chat.
+  Declared: `pending → approved` gate, subject with `[from → to]`, `Approver:`/`Reason:` body, only
+  `status` changed. Observed for each: exit 0, empty stderr, the declared subject and trailers, a
+  one-line diff. Matches.
+- **requirements amended to 1.3** (`1adea8d`): REQ-RUN-15 rewritten around the long-lived token, with
+  the read-only mount kept as a variant and its condition stated; REQ-RUN-06 clarified ("approval
+  patterns are matched anywhere in the message"), and its "spike in W2" replaced by the spike's
+  result; requirements decision 4 annotated with the agent version development actually runs
+  (2.1.280). `requirements.md` is an approved document and not a Memory element, so the amendment is
+  the edit plus `Approver:`/`Reason:` trailers on its commit (N16, established in task-003).
+- **The traceability test caught a wrong claim in this task's own frontmatter.** With
+  `features: [F2.3, F2.4]` and the task `in-progress`, `test/acceptance/traceability.test.ts` failed
+  with five missing acceptance tests — the @F2.3 and @F2.4 scenarios — because it reads `features` as
+  "this task delivers these". A spike delivers none, so `features` and `acceptance` are now empty and
+  the relation to `runner.feature` lives in the Context. The rule is right and stays as it is; the
+  frontmatter was wrong. Worth remembering: the task template assumes every task ships a feature, and
+  a knowledge task does not.
+- **`spikes/` is excluded from lint and formatting.** It holds throwaway probes and whatever the
+  agent wrote while being probed (P6 left a small cache implementation in the workspace). That is
+  evidence, not project code, and it is never built or published.
+- **Suites at this point:** `npm test` 309 passed, 14 files, coverage 100% statements / 99.22%
+  branches; `npm run test:bin` 4 passed; `npm run lint` clean but for one warning that predates this
+  task (an unused `eslint-disable` in `test/unit/runner/run.test.ts`, from W1). `npm run test:docker`
+  is unchanged by this task and is re-run at review.
+
