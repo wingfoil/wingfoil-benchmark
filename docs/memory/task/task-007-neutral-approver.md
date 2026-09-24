@@ -131,7 +131,9 @@ assertion is what keeps a conversation history off a *fresh* step, and a resume 
 request, not a step with an extra field. `ResumeRequest` holds the scenario, the step, the intervention
 number, the session id, the reply, the remaining cap and `run`.
 
-The Claude Code command line is the one the spike **measured** (P6), with the remaining cap:
+The Claude Code command line is the one the spike **measured** (P6), with the remaining cap. **W3 must
+add the wingfoil arm's `--mcp-config` / `--strict-mcp-config` to this line as well as to the step's**,
+or a resumed session would run without the arm's tools:
 `claude --resume <id> -p <reply> --output-format stream-json --verbose --permission-mode
 bypassPermissions --setting-sources project --max-budget-usd <remaining>`. **No `--model`**: the spike
 resumed without it and the session kept its pinned model (the resumed init reads the dated id of the
@@ -158,10 +160,13 @@ Decisions, with the reasons:
   that a step hitting a cap is scored as it stands. So a step has an outcome of its own —
   `completed`, `intervention cap reached` or `failed` — and **the run goes on to the next step** after
   a capped one. Only `failed` stops the run.
-- **Invocations are summed in the runner.** `readSession` sums the result events of one stream; the
-  step and its resumes are separate streams, so the step's usage is their sum and its transcript their
-  concatenation, in order — a resumed stream does not replay earlier turns (task-004 question 3), so
-  what is not concatenated is lost. Asserted on the **step's** files, not only on the parser.
+- **Invocations are combined in the runner.** `readSession` reads one stream; the step and its
+  resumes are separate streams, so the step's work is their sum and its transcript their
+  concatenation, in order. *(Corrected in review, see below: the cost is **not** summed — a resume
+  reports the session's running total, so the step's cost is the latest. adr-002 amendment 1.)*
+  The transcript is concatenated — a resumed stream does not replay earlier turns (task-004
+  question 3), so what is not concatenated is lost. Asserted on the **step's** files, not only on
+  the parser.
 - **The remaining cap includes the step so far.** A resume is told the run's cap less the finished
   steps **and** this step's invocations until now, and it is refused like a step when nothing is left.
   Otherwise a resume would be offered the whole remaining cap again.
@@ -195,10 +200,10 @@ spending**):
 - step 3 — `completed.jsonl`, no intervention.
 
 Each step's commands write a file, so each patch is distinct. The test asserts one session per step
-(the ids in `run.json` differ, and each is the one of its resumes), the `step 01`–`step 03` commits in
-the workspace's own `git log`, a patch per step, a `usage.json` per step equal to the sum of its
-recordings, and two interventions with their kinds, replies and `approver_policy: v1`. It lives beside
-W1's in `test/docker/`. bug-003 is live: the test must not be interrupted mid-run.
+(the ids in `run.json` differ), the `step 01`–`step 03` commits in the workspace's own `git log`, a
+patch per step, a `usage.json` per step equal to what the parser reads from its recordings together,
+and two interventions with their kinds, replies and `approver_policy: v1`. It lives beside W1's in
+`test/docker/`. bug-003 is live: the test must not be interrupted mid-run.
 
 ### Tests
 
@@ -208,7 +213,7 @@ W1's in `test/docker/`. bug-003 is live: the test must not be interrupted mid-ru
   trailing emphasis (`**…?**`) is; the `within one sentence` patterns do not match across a full stop.
 - **Unit** (`agents`): `finalMessage` from the fixtures; the resume command line argument by argument;
   the fake's scripted resumes, including one it does not foresee.
-- **Unit** (`runner`): usage summed and transcript concatenated over a step's invocations; the cap at
+- **Unit** (`runner`): work summed, cost the latest, transcript concatenated over a step's invocations; the cap at
   **3 and at 4** waiting sessions (the off-by-one); the run continuing after a capped step; the remaining
   cap passed to a resume; the id guard on a resume; a failed resume failing the run with its evidence kept.
 - **Acceptance**, `@F2.4` × 4, through the fake replaying real recordings. The replies are asserted
@@ -262,6 +267,50 @@ governance metrics over interventions (F4.8) are W8; the method page is W11.
   recorded before the reply (the loop never ends: red by timeout). These are the mutations **I**
   thought of; the review is asked for the ones I did not.
 - **Suites after the build:** `npm test` 423 passed, coverage 100% statements / 98.18% branches / 100%
+  functions / 100% lines; `npm run test:bin` 4; `npm run test:docker` 2; `npm run lint` clean.
+
+### Review, round 1 (before submitting)
+
+- **Reviewer:** independent, on an export of HEAD, every finding proved by a probe; asked explicitly
+  for mutations I had **not** listed. Result: 1 blocker, 9 minors, 2 nits.
+- **B1, the blocker: a resumed step's cost was counted twice.** On a resume, `total_cost_usd` is the
+  session's running total, not the invocation's: the spike's own P6 reports P4's cost plus its own.
+  My build summed it — as adr-002 decision 8 said to, and as task-006's parser test pinned with two
+  **unrelated** sessions, `completed.jsonl` + `resumed.jsonl`, for which summing is right. The one real
+  session-and-resume pair, `question.jsonl` + `resumed.jsonl`, was in the same directory. Filed by the
+  W2 session as [bug-004](../bug/bug-004-session-cost-is-cumulative-so-summing-it-double-counts.md)
+  (its defect, merged in task-006) and fixed here by agreement, with that pair and literal figures:
+  work summed, cost the latest (largest) total. adr-002 **amendment 1** records the corrected fact,
+  with `duration_ms` shown per invocation by the span of P6's own events (the W2 session's
+  measurement) and `duration_api_ms` left unmeasured and unused. Mutations: cost summed in the parser
+  (2 red), in the runner (3), last-only in the runner (2).
+- **What I take from it:** my Design cited "task-004 question 3" and adr-002 decision 8 as facts, and I
+  re-read the spike's streams for this task — for the final message, not for the cost. Checking the
+  one number that an intervention changes, against the one recording that has an intervention in it,
+  was the obvious probe and I did not make it.
+- **Minors fixed:** a dot inside a word (`config.yaml`, `v1.2`) ended a sentence, a false negative
+  (m1); a closing fence carrying an info string closed the block, against CommonMark (m3); nothing
+  pinned v1's pattern list, so adding a pattern left the suite green — now listed by a test (m4);
+  twelve classifier mutations left green — case, `?`/`!` as sentence ends, indented, longer and tilde
+  fences, fence character matching, the unclosed fence, blank lines of spaces, a whitespace-only last
+  line, `\b` at both ends — all now red, plus two the review did not name (a lone backtick pairing
+  across lines; the within-sentence order) (m5); the order of the intervention cap and the cost cap
+  when both are reached, now pinned: the cap ends the step first (m6); the within-sentence patterns
+  were quadratic — 400 KB of trigger words took 24 s — and are now read sentence by sentence, the
+  last line trimmed by a loop (m7).
+- **Minors recorded, not changed:**
+  - **m2, rule 2 misses a question followed by punctuation or markup** — `(Which one?)`, `A or B?"`, a
+    trailing HTML comment. This is dl-004's rule as written (trailing whitespace and emphasis only), so
+    changing it is v2. A candidate for v2, named here so it is not rediscovered.
+  - **m8, the resume line has no MCP flags** — W3's, now said in the Design above.
+  - **m9, omitting `--model` on a resume rests on one Haiku session**, and Haiku is also the agent's
+    own auxiliary model, so the evidence that a resumed *Sonnet* session stays on Sonnet is weak. Not
+    changed without a measurement either way: **the release's validation run with the real agent
+    (plan-003 step 4) must check the resumed stream's `init` model** on Sonnet 5.
+  - Nits: a later result event with no `result` text clears an earlier message — deliberate, the last
+    session's message is the one that counts (tested); "the same in every arm" cannot prove more than
+    W2's arms allow, which the task already says.
+- **Suites after the round:** `npm test` 436 passed, 100% statements / 98.25% branches / 100%
   functions / 100% lines; `npm run test:bin` 4; `npm run test:docker` 2; `npm run lint` clean.
 
 ### WingFoil commands (declared vs observed)
