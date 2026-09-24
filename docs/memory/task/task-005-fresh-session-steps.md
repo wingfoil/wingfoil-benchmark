@@ -2,13 +2,12 @@
 id: task-005-fresh-session-steps
 type: task
 title: "Fresh-session steps"
-status: in-progress
+status: in-review
 release: v0.1
 wave: W2
 features: [F2.2]
 acceptance: [runner.feature]
 requirements: [REQ-RUN-04, REQ-RUN-05, REQ-ARC-04, REQ-NFR-03]
-rejection_reason: "Independent review: three majors, all test-only. The runner's --allow-empty, the ref and ordering of patchOf, and the REQ-FMT-06 output location are covered but unasserted - each was mutated and all 316 tests stayed green. Same class as task-003 finding 7. Production code is not at fault; the suite is. Back to build for the test gaps, the step-number cap, the two failure paths, and the two nits."
 ---
 
 ## Context
