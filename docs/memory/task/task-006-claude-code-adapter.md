@@ -369,3 +369,22 @@ create request (1 red); the adapter built with an empty token (1 red); the patch
   against every environment value (1 red).
 - **Suites:** `npm test` 359 passed, 100% statements / 98.02% branches; `test:bin` 4;
   `test:docker` 1; `lint` clean.
+
+### Approved, and what it hands on
+
+- `npx wingfoil memory approve task-006-claude-code-adapter --reason "…"`, after the approver's
+  explicit consent in chat. Declared: `in-review → approved` gate, subject with `[from → to]`,
+  `Approver:`/`Reason:` body, only `status` changed. Observed: exit 0, empty stderr, the declared
+  subject and both trailers, a one-line diff. Matches.
+- **To task-007 (F2.4):** `StepOutcome` already carries the usage, the transcript and the failure,
+  and `readSession` already sums across a step's invocations — the seam a resumed session needs. What
+  is missing is the waiting state: `readSession` reports an outcome, not "this session is asking
+  something". dl-004's classifier reads the **final assistant message**, which is in the transcript
+  this task stores.
+- **To W3 (F2.5–F2.7):** the container's environment now carries the credential, and an arm's own
+  settings will join it. The runner is handed the values that are **secret**, named by the caller,
+  precisely so that adding arm settings cannot start corrupting stored patches.
+- **Still owed by W2, named in this task's Context:** adr-002 decisions 11 and 13 are both met here —
+  a minimal `run.json`, and a fake that replays recorded sessions.
+- **Left open on purpose:** `--max-budget-usd 0` is refused rather than sent, because nothing has
+  measured what it means. If W5 needs the answer, it is one cheap session in a container.
