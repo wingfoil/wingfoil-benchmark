@@ -197,7 +197,9 @@ describe('runner.feature', () => {
     // decision 13), read by the same parser the real adapter uses. Nothing here is invented by the
     // test: what is asserted on disk is what readSession computes from those streams.
     const dir = tempDir('bench-replay-');
-    const streams = ['completed.jsonl', 'question.jsonl'];
+    // Two sessions that finished: a stream that ends waiting would now be answered by the approver
+    // (F2.4), and this scenario is about what a session records, not about who answers it.
+    const streams = ['completed.jsonl', 'completed-sonnet.jsonl'];
     for (const name of streams) copyFileSync(repoPath(join('test/fixtures/sessions', name)), join(dir, name));
     const script = join(dir, 'script.json');
     writeFileSync(
@@ -226,6 +228,7 @@ describe('runner.feature', () => {
         caps.push(request.remainingCostUsd);
         return replaying.runStep(request);
       },
+      resume: (request: ResumeRequest) => replaying.resume(request),
     };
 
     const summary = await runCampaign(checked.value, { docker, git, agent });

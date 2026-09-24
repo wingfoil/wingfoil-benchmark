@@ -667,6 +667,22 @@ describe('the neutral approver in the step loop (F2.4)', () => {
     expect(summary.runs[0]?.error).toMatch(/resume 1 of step 01 ran in session a-session-of-its-own/);
   });
 
+  it('refuses to run under a policy it does not implement, even when handed one past validation', async () => {
+    // Validation refuses it first (campaign load test); this is the guard for any other way in.
+    const { checked } = checkedCampaign();
+    const unvalidated = {
+      ...checked,
+      campaign: { ...checked.campaign, spec: { ...checked.campaign.spec, approver_policy: 'v2' } },
+    };
+    const ports = doubles();
+
+    const summary = await runCampaign(unvalidated, ports);
+
+    expect(summary.runs[0]?.outcome).toBe('failed');
+    expect(summary.runs[0]?.error).toMatch(/approver policy v2 is not implemented/);
+    expect(ports.recorded.steps).toEqual([]);
+  });
+
   it('logs every intervention', async () => {
     const { checked } = checkedCampaign();
     const lines: string[] = [];
