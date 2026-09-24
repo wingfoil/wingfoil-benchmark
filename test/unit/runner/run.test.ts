@@ -306,9 +306,16 @@ describe('runCampaign', () => {
 
     expect(summary.runs[0]?.outcome).toBe('failed');
     expect(summary.runs[0]?.error).toMatch(/bad object HEAD/);
-    // The step is committed in the workspace but has no patch in the results: the run's repository
-    // and its record disagree, and the run is failed precisely so that nothing scores that gap.
-    expect(ports.recorded.gitCalls.some((call) => call.includes('step 01'))).toBe(true);
+    // The whole transcript: step 1 is committed in the workspace, its patch is attempted and fails,
+    // and step 2 never starts. The run's repository and its record disagree by one commit, and the
+    // run is failed precisely so that nothing scores that gap.
+    const workspace = summary.runs[0]?.workspace ?? '';
+    expect(ports.recorded.gitCalls).toEqual([
+      `init ${workspace}`,
+      `commit ${workspace} seed`,
+      `commit ${workspace} step 01 --allow-empty`,
+      `patch ${workspace} HEAD`,
+    ]);
     expect(existsSync(join(summary.runs[0]?.outputDir ?? '', 'steps', '01', 'diff.patch'))).toBe(false);
   });
 

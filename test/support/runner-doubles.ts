@@ -36,7 +36,8 @@ export function doubles(
     onStep?: (request: StepRequest) => void;
     /** The session the agent answers with; by default the one it was given (F2.2). */
     sessionOf?: (request: StepRequest) => string;
-    /** Makes one Docker or git call fail, to exercise a run that breaks outside its steps. */
+    /** Makes one Docker or git call fail: `create`, `start`, `remove` and `init` break a run
+     * outside its steps, `commit` and `patch` break it inside one. */
     failing?: { call: 'create' | 'start' | 'remove' | 'init' | 'commit' | 'patch'; error: string };
   } = {},
 ): Doubles {
@@ -51,6 +52,7 @@ export function doubles(
     steps: [],
   };
   let containers = 0;
+  let patches = 0;
   const docker: DockerPort = {
     build: (request) => {
       recorded.builds.push(request.tag);
@@ -104,10 +106,14 @@ export function doubles(
     },
     // Recorded in the same transcript as the commits, so their order is pinned: a patch read before
     // its commit would hold the previous step's snapshot, and every scored step would slip by one.
+    // Every answer is different, so a test can tell which call's patch was written where. Without
+    // the counter all five answers are the same string, and a snapshot filed under another step's
+    // number reads as correct — the directory would be pinned by nothing at all.
     patchOf: (directory, ref) => {
+      patches += 1;
       recorded.gitCalls.push(`patch ${directory} ${ref}`);
       if (options.failing?.call === 'patch') return Promise.reject(new Error(options.failing.error));
-      return Promise.resolve(`patch of ${directory} at ${ref}\n`);
+      return Promise.resolve(`patch of ${directory} at ${ref} #${patches}\n`);
     },
   };
   const agent: AgentPort = {

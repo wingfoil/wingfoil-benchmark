@@ -111,10 +111,12 @@ describe('runner.feature', () => {
       ]),
     ]);
 
-    // Every step leaves a snapshot to score, in the place REQ-FMT-06 gives it (REQ-RUN-05).
+    // Every step leaves a snapshot to score, in the place REQ-FMT-06 gives it (REQ-RUN-05). The
+    // double answers each call differently, so this also pins that step N's patch is filed under
+    // steps/0N and not under some other step's number.
     for (const n of stepNumbers(steps)) {
       const patch = join(summary.runs[0]?.outputDir ?? '', 'steps', String(n).padStart(2, '0'), 'diff.patch');
-      expect(readFileSync(patch, 'utf8')).toBe(`patch of ${workspace} at HEAD\n`);
+      expect(readFileSync(patch, 'utf8')).toBe(`patch of ${workspace} at HEAD #${n}\n`);
     }
   });
 });
