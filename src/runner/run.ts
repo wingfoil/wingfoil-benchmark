@@ -110,6 +110,9 @@ export async function runCampaign(checked: CheckedCampaign, options: RunnerOptio
   options.log?.(`campaign ${campaign.id}, execution ${execution}`);
   copyFileSync(campaign.file, join(resultsDir, 'campaign.yaml'));
 
+  // Before anything is built: what earlier, interrupted runs of this campaign left behind (bug-003).
+  const leftovers = await leftBehind(campaign.id, execution, options);
+
   await options.docker.build({
     dockerfile: join(packageRoot(), RUN_IMAGE_DIRECTORY, 'Dockerfile'),
     context: join(packageRoot(), RUN_IMAGE_DIRECTORY),
@@ -125,7 +128,10 @@ export async function runCampaign(checked: CheckedCampaign, options: RunnerOptio
     for (const arm of campaign.spec.arms) {
       for (let repetition = 1; repetition <= repetitions; repetition += 1) {
         runs.push(
-          await executeRun({ campaign, scenario, arm, model, repetition, execution, resultsDir }, options),
+          await executeRun(
+            { campaign, scenario, arm, model, repetition, execution, resultsDir, leftovers },
+            options,
+          ),
         );
       }
     }
@@ -141,6 +147,8 @@ interface RunContext {
   readonly repetition: number;
   readonly execution: number;
   readonly resultsDir: string;
+  /** Containers of this campaign that already exist, by name, with their execution and state. */
+  readonly leftovers: ReadonlyMap<string, Leftover>;
 }
 
 /** One run: its own workspace, its own container, removed whatever happens. */
@@ -177,10 +185,24 @@ async function executeRun(context: RunContext, options: RunnerOptions): Promise<
     if (policy === undefined) {
       throw new Error(`the approver policy ${campaign.spec.approver_policy} is not implemented`);
     }
+    const containerName = `${containerPrefix(campaign.id)}${execution}-${name.replaceAll(/[@/]/g, '-')}`;
+    const stale = context.leftovers.get(containerName);
+    // Reported, never removed: the runner does not destroy what this run did not create (bug-003,
+    // approver's choice). The campaign goes on to its next run (REQ-NFR-03).
+    if (stale !== undefined) {
+      throw new Error(
+        stale.running
+          ? `container ${containerName} already exists and is running: another invocation of this ` +
+              `campaign may be using it. If none is, remove it with: docker rm --force ${containerName}`
+          : `container ${containerName} already exists: an interrupted run of execution ` +
+              `${stale.execution} of this campaign left it behind (bug-003). Remove it with: ` +
+              `docker rm --force ${containerName}`,
+      );
+    }
     await prepareWorkspace(workspace, scenario, options.git);
     container = await options.docker.create({
       image: campaign.id,
-      name: `bench-${campaign.id}-${execution}-${name.replaceAll(/[@/]/g, '-')}`,
+      name: containerName,
       workspace,
       user: CONTAINER_USER,
       ...(options.containerEnv === undefined ? {} : { env: options.containerEnv }),
@@ -412,6 +434,47 @@ async function assertOnlyWorkspaceMounted(
   if (mounts.length !== 1 || mounts[0] !== expected) {
     throw new Error(`the container has mounts other than its workspace: ${mounts.join(', ') || 'none'}`);
   }
+}
+
+/** Every container of a campaign starts with this: the campaign's identity, then the execution. */
+function containerPrefix(campaignId: string): string {
+  return `bench-${campaignId}-`;
+}
+
+/** A container of this campaign that already exists: the execution its name carries, and its state. */
+interface Leftover {
+  readonly execution: number;
+  readonly running: boolean;
+}
+
+/**
+ * The containers of this campaign that already exist (bug-003), by name. One the current execution
+ * will need is reported by that run; one of another execution is warned about once, here, with the
+ * command that clears it. A **stopped** one was left by an interrupted run. A **running** one may be
+ * another invocation of the same campaign — the id is a digest of the file, so another checkout or a
+ * second test suite shares it — and is not called interrupted: the runner cannot tell, and says so.
+ */
+async function leftBehind(
+  campaignId: string,
+  execution: number,
+  options: RunnerOptions,
+): Promise<ReadonlyMap<string, Leftover>> {
+  const prefix = containerPrefix(campaignId);
+  const leftovers = new Map<string, Leftover>();
+  for (const { name, running } of await options.docker.containersNamed(prefix)) {
+    const found = /^(\d+)-/.exec(name.slice(prefix.length))?.[1];
+    if (found === undefined) continue;
+    leftovers.set(name, { execution: Number(found), running });
+    if (Number(found) === execution) continue;
+    options.logError?.(
+      running
+        ? `container ${name} of execution ${found} is running: another invocation of this campaign may ` +
+            `be using it. If none is, remove it with: docker rm --force ${name}`
+        : `container ${name} was left behind by an interrupted run of execution ${found} of this ` +
+            `campaign (bug-003). Remove it with: docker rm --force ${name}`,
+    );
+  }
+  return leftovers;
 }
 
 /** Removing a container must not lose the run's result, nor stop the campaign. */

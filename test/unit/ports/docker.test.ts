@@ -8,6 +8,7 @@ interface Call {
   command: string;
   args: string[];
   env?: Readonly<Record<string, string | undefined>>;
+  timeoutMs?: number;
 }
 
 function recorder(results: ProcessResult[] = []): ProcessPort & { calls: Call[] } {
@@ -15,7 +16,12 @@ function recorder(results: ProcessResult[] = []): ProcessPort & { calls: Call[] 
   return {
     calls,
     run: (command, args, options) => {
-      calls.push({ command, args: [...args], ...(options?.env ? { env: options.env } : {}) });
+      calls.push({
+        command,
+        args: [...args],
+        ...(options?.env ? { env: options.env } : {}),
+        ...(options?.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
+      });
       return Promise.resolve(results.shift() ?? { code: 0, stdout: '', stderr: '' });
     },
   };
@@ -99,6 +105,40 @@ describe('the Docker port', () => {
       ['start', 'c0ffee'],
       ['rm', '--force'],
     ]);
+  });
+
+  it('lists the containers whose name starts with a prefix, within a time limit (bug-003)', async () => {
+    // Docker's name filter matches anywhere in a name, so the port keeps only true prefixes.
+    const process = recorder([
+      ok('bench-abc-1-S1-x\texited\nother-bench-abc-1\trunning\nbench-abc-2-S1-y\trunning\n\n'),
+    ]);
+
+    const containers = await dockerCli(process).containersNamed('bench-abc-');
+
+    // With its state: a running one may belong to another invocation of the same campaign.
+    expect(containers).toEqual([
+      { name: 'bench-abc-1-S1-x', running: false },
+      { name: 'bench-abc-2-S1-y', running: true },
+    ]);
+    expect(process.calls).toEqual([
+      {
+        command: 'docker',
+        args: ['ps', '--all', '--filter', 'name=bench-abc-', '--format', '{{.Names}}\t{{.State}}'],
+        timeoutMs: 30_000,
+      },
+    ]);
+  });
+
+  it('says what it was waiting for when listing containers times out', async () => {
+    const process = recorder([{ code: 1, stdout: '', stderr: '', timedOut: true }]);
+    await expect(dockerCli(process).containersNamed('bench-abc-')).rejects.toThrow(
+      'docker ps did not answer within 30 s while looking for containers left by earlier runs of this campaign',
+    );
+  });
+
+  it("fails with docker's own message when listing containers fails", async () => {
+    const process = recorder([{ code: 1, stdout: '', stderr: 'Cannot connect to the Docker daemon' }]);
+    await expect(dockerCli(process).containersNamed('bench-abc-')).rejects.toThrow(/Cannot connect/);
   });
 
   it('fails with the command and its error output when docker fails', async () => {
