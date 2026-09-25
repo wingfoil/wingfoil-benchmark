@@ -45,6 +45,9 @@ describe('runs in a real container', () => {
     expect(readFileSync(join(workspace, 'hello.txt'), 'utf8')).toBe('hello\n');
     expect(existsSync(join(workspace, '.git'))).toBe(true);
     expect(existsSync(join(root, 'results', image, '1', 'campaign.yaml'))).toBe(true);
+    expect(readFileSync(join(workspace, 'CLAUDE.md'), 'utf8')).toBe(
+      readFileSync(repoPath('test/fixtures/arms/baseline/manual.md'), 'utf8'),
+    );
 
     // W3: the arm's setup ran in the container, as its user, from the arm's copy outside the workspace;
     // the agent's identity is in the workspace's own config; the history is seed, setup, step 01.
@@ -232,6 +235,18 @@ describe('runs in a real container', () => {
       // …and absent from the baseline arm, which ran the same scenario.
       expect(existsSync(join(run('baseline'), '.wingfoil'))).toBe(false);
       expect(readFileSync(join(run('baseline'), 'cancel.txt'), 'utf8')).toBe('cancel\n');
+
+      // F2.7: each arm's manual is its CLAUDE.md, and the commands the wingfoil manual prescribes for
+      // reading the rules work against the WingFoil under test (the fake runs them in step 2).
+      for (const arm of ['baseline', 'wingfoil']) {
+        expect(readFileSync(join(run(arm), 'CLAUDE.md'), 'utf8')).toBe(
+          readFileSync(join(root, 'arms', arm, 'manual.md'), 'utf8'),
+        );
+      }
+      expect(readFileSync(join(run('wingfoil'), 'rules.json'), 'utf8')).toContain('no-throw');
+      expect(readFileSync(join(run('wingfoil'), 'decisions.json'), 'utf8')).toContain(
+        'dl-001-errors-are-returned-as-a-result',
+      );
 
       // REQ-RUN-17: the agent's approval, as the declared member, accepted by WingFoil.
       const approval = git('wingfoil', 'log', '--grep=approve dl-002', '--format=%an <%ae>%n%b');
