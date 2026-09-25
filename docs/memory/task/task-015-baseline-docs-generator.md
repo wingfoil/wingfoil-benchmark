@@ -2,7 +2,7 @@
 id: task-015-baseline-docs-generator
 type: task
 title: "Baseline-docs generator"
-status: pending
+status: backlog
 release: v0.1
 wave: W3
 features: [F2.5]
