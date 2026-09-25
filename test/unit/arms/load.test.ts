@@ -9,6 +9,7 @@ import {
   plainArmYaml,
   writeArmAt,
 } from '../../support/arm-fixture.js';
+import { repoPath } from '../../support/paths.js';
 import { tempDir } from '../../support/scenario-fixture.js';
 
 function issuesOf(root: string, name = 'wingfoil') {
@@ -18,6 +19,16 @@ function issuesOf(root: string, name = 'wingfoil') {
 }
 
 describe('loadArm (REQ-FMT-05)', () => {
+  it.each([
+    ['baseline', undefined],
+    ['baseline-docs', undefined],
+    ['wingfoil', 'wingfoil'],
+  ])("loads the benchmark's own %s arm", (name, requires) => {
+    const result = loadArm(repoPath('arms'), name);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.requires).toBe(requires);
+  });
+
   it('loads a complete arm with absolute paths', () => {
     const root = tempDir('bench-arm-');
     const dir = writeArmAt(root, 'wingfoil', completeArmYaml(), COMPLETE_ARM_FILES);

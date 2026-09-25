@@ -52,10 +52,10 @@ export function writeArmAt(
 }
 
 /**
- * The three v0.1 arms in a fresh `arms/` directory under `root` (default: a temporary one): baseline
- * and baseline-docs run the plain agent, wingfoil requires the `wingfoil` harness.
+ * The arms `names` in `arms/` under `root` (default: a temporary directory; default names: the three
+ * v0.1 arms). wingfoil requires the `wingfoil` harness; every other arm runs the plain agent.
  */
-export function writeArms(
+export function writeArmsNamed(
   root: string = tempDir('bench-arms-'),
   names: readonly string[] = ['baseline', 'baseline-docs', 'wingfoil'],
 ): string {

@@ -27,6 +27,8 @@ export interface Campaign {
   readonly repoRoot: string;
   /** `scenarios/` next to the campaign's `campaigns/` directory (REQ-ARC-03). */
   readonly scenariosRoot: string;
+  /** `arms/` next to the campaign's `campaigns/` directory (REQ-ARC-03). */
+  readonly armsRoot: string;
   /** `results/` next to the campaign's `campaigns/` directory (REQ-ARC-03). */
   readonly resultsRoot: string;
 }
@@ -66,6 +68,7 @@ export function loadCampaign(file: string): Result<Campaign> {
     spec: parsed.value,
     repoRoot,
     scenariosRoot: join(repoRoot, 'scenarios'),
+    armsRoot: join(repoRoot, 'arms'),
     resultsRoot: join(repoRoot, 'results'),
   });
 }

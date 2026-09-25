@@ -23,8 +23,6 @@ const FULL_SHA = /^[0-9a-f]{40}$/;
 /** The arm every campaign runs, so that each campaign reruns its own baseline (threat T7). */
 const BASELINE_ARM = 'baseline';
 
-/** The arms that run the plain agent, with no harness to pin (experiment design §2). */
-const HARNESS_FREE_ARMS = [BASELINE_ARM, 'baseline-docs'];
 
 /** The agent adapters a campaign may name. Until W2 only `fake` can run (adr-001, default 7). */
 const AGENT_NAMES = ['claude-code', 'fake'] as const;
@@ -149,7 +147,8 @@ export type CampaignFile = z.infer<typeof campaignSchema>;
 
 /**
  * Consistency between the fields of a campaign that already matches {@link campaignSchema}: harnesses
- * and slices name the campaign's own arms and scenarios, and every scenario, and only those, has a
+ * and slices name the campaign's own arms and scenarios (which arm needs a harness is
+ * {@link harnessCoverage}'s, from the arm definitions), and every scenario, and only those, has a
  * repetition count. Checked apart from the schema so that one wrong field does not cascade into
  * issues about the fields that refer to it.
  */
@@ -162,14 +161,6 @@ export function campaignConsistency(campaign: CampaignFile): Issue[] {
 
   for (const arm of Object.keys(campaign.harnesses).sort()) {
     if (!arms.has(arm)) issue(['harnesses', arm], "is not one of the campaign's arms");
-    else if (HARNESS_FREE_ARMS.includes(arm)) {
-      issue(['harnesses', arm], 'runs the plain agent, so it pins no harness');
-    }
-  }
-  for (const arm of campaign.arms) {
-    if (!HARNESS_FREE_ARMS.includes(arm) && !Object.hasOwn(campaign.harnesses, arm)) {
-      issue(['harnesses', arm], 'is required: every arm but baseline and baseline-docs pins a harness');
-    }
   }
   const covered = new Set<string>();
   campaign.models.slices?.forEach((s, index) => {
@@ -196,6 +187,45 @@ export function campaignConsistency(campaign: CampaignFile): Issue[] {
   }
   for (const id of Object.keys(campaign.repetitions).sort()) {
     if (!scenarios.has(id)) issue(['repetitions', id], "is not one of the campaign's scenarios");
+  }
+  return issues;
+}
+
+/** What {@link harnessCoverage} needs of an arm definition (REQ-FMT-05). */
+export interface ArmRequirement {
+  readonly name: string;
+  /** The harness tool the arm needs; absent for an arm that runs the plain agent. */
+  readonly requires?: string;
+}
+
+/**
+ * Harness coverage (REQ-FMT-01, dl-003): an arm whose definition requires a tool pins that tool's
+ * harness, and an arm that requires none pins nothing. Read from each arm's `requires`, so that a new
+ * arm is covered by its own definition rather than by a list of names; this replaces dl-003's
+ * interim rule, as it planned. `arms` are the campaign's arm definitions, in the campaign's order.
+ */
+export function harnessCoverage(campaign: CampaignFile, arms: readonly ArmRequirement[]): Issue[] {
+  const issues: Issue[] = [];
+  for (const { name, requires } of arms) {
+    const harness = Object.hasOwn(campaign.harnesses, name) ? campaign.harnesses[name] : undefined;
+    if (requires === undefined) {
+      if (harness !== undefined) {
+        issues.push({
+          path: formatPath(['harnesses', name]),
+          message: 'must not be set: the arm runs the plain agent',
+        });
+      }
+    } else if (harness === undefined) {
+      issues.push({
+        path: formatPath(['harnesses', name]),
+        message: `is required: the arm requires the harness '${requires}'`,
+      });
+    } else if (harness.tool !== requires) {
+      issues.push({
+        path: formatPath(['harnesses', name, 'tool']),
+        message: `is '${harness.tool}', but the arm requires '${requires}'`,
+      });
+    }
   }
   return issues;
 }
