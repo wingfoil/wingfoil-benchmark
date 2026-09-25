@@ -154,3 +154,55 @@ test reads real WingFoil output.
   required fields checked, one commit `wf(task): submit <id>` with no bracket and no body. Observed:
   exit 0, empty stderr, 1 file, diff limited to `status: draft` → `status: pending`. Matches (subject
   without transition: N9).
+- The approver's `memory approve` → `3684373` (`pending → backlog`). Matches.
+- `npx wingfoil memory submit task-015-baseline-docs-generator` → `b214074`, in the linked worktree
+  with its own `npm ci` (`backlog → in-progress`, one commit, only `status`). Matches.
+
+### A finding of the design phase
+
+The Context described the generator as a function of "the wingfoil arm's configuration and the
+scenario's `arms/wingfoil/`". The wingfoil agent sees more than the overlay: everything `wingfoil init
+--template Kanban` writes, which exists only inside the container. The design therefore adds a
+snapshot step that runs the wingfoil arm's own `setup.sh` in a one-off container, and keeps the
+generator pure over that snapshot. baseline-docs gets what wingfoil gets, byte for byte, not a
+reconstruction of it.
+
+### Build (TDD)
+
+1. **The generator** (`8683798`). Its 8 tests were red (no module), then green. The edge-case test
+   written for coverage found a real rendering bug: a workflow phase written as a plain string came
+   out as `****`; it now renders its name.
+2. **The snapshot step, the campaign rule, the wiring** (`78ab133`). 5 red, then green. Two earlier
+   tests used `baseline` and `baseline-docs` as any two plain arms; the new rule rightly refuses
+   baseline-docs without wingfoil, so they use another plain arm. One of my own assertions checked for
+   a `.git` the git double never creates; it now checks the git calls instead.
+3. **A real snapshot as the acceptance test's input** (`6c87d2e`). Captured by running the built CLI
+   on the fixtures against the real clone. **WingFoil's schema caught my fixture twice**: T2's new
+   `dna.yaml` gave technologies as strings, then without `category` — `E_VALIDATION
+   stacks.technologies.0.category … expected string` — and the wingfoil run failed on the agent's
+   first command. Read from `src/dna/schema.ts` at `3df305e`: a technology is `{name, category,
+   version?, notes?}`. The generator now renders a technology's version and category too, which is
+   project information baseline-docs would otherwise have missed. The snapshot (31 files) and the
+   rendered `PROJECT_RULES.md` are committed under `test/fixtures/wingfoil-config/`, protected from
+   prettier; the acceptance test compares against both. The first run of the new test failed on my
+   own expectation (`####` where a `##` body heading shifted by three becomes `#####`).
+4. **Docker** (`5706709`): T2 in the three arms against the real clone.
+
+### What baseline-docs received for T2 (4 598 bytes)
+
+Project (Orders, its description, Kanban, TypeScript, the `orders` module); **7 rules** — the
+developer's `code-quality`, `determinism`, `no-throw`, `testing` and the global `doc-versioning`,
+`documentation`, `security-secrets`; **1 decision**, T2's `dl-001` (the agent's own `dl-002` is made
+during the run, not part of the configuration); **5 workflows**. No trace of the Benchmark Approver.
+
+### W3 "Ends with", the fake-agent half
+
+`npm run test:docker`: **the same scenario, T2, runs in the baseline, baseline-docs and wingfoil
+arms** against WingFoil `3df305e` built from the clone, `3 runs completed, 0 failed`, none skipped.
+The real-agent run in the wingfoil arm (W3 plan-phase decision 4) is the other half; it needs the
+approver's consent and is done once this task is merged.
+
+### Review readiness
+
+`npm test` 550/550 (statements 100%, branches 97.81%, functions 100%, lines 100%), `npm run test:bin`
+4/4, `npm run test:docker` 4/4, `npm run lint` clean; no `bench*` container left.
