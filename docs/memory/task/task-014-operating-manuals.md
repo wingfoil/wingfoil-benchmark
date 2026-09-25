@@ -141,3 +141,61 @@ manuals would only make them longer. The approver reviews the text at this task'
   required fields checked, one commit `wf(task): submit <id>` with no bracket and no body. Observed:
   exit 0, empty stderr, 1 file, diff limited to `status: draft` → `status: pending`. Matches (subject
   without transition: N9).
+- The approver's `memory approve` → `5fe1ae7` (`pending → backlog`). Matches.
+- `npx wingfoil memory submit task-014-operating-manuals` → `8fcee4b`, in the linked worktree with its
+  own `npm ci` (`backlog → in-progress`, one commit, only `status`). Matches.
+
+### Design-phase decision
+
+The tokenizer approximation was put to the approver before the design was written: `ceil(UTF-8 bytes
+÷ 4)`, method `bytes-div-4` v1, chosen over a pinned tokenizer library and over the API's
+`count_tokens` (2026-09-25). The shared project description needed no question: S1's spec already
+puts it in the seed's README.
+
+### Build (TDD)
+
+1. **Activation and measurement** (`be2c804`). 13 red (the approximation, the runner's `CLAUDE.md`,
+   `run.json`'s `manual`, the acceptance test, the manual-content tests); the missing-manual criterion
+   passed at once, as a characterization should. Two of my own first assertions were wrong and were
+   fixed before any code: a digest written as a nonsense expression instead of computed, and a test
+   forbidding `npx wingfoil` anywhere in a manual that must say "never `npx wingfoil`" — it now checks
+   that every mention is a warning. Three earlier tests listed the workspace as exactly `README.md`;
+   the workspace now holds the arm's manual too, which `@F2.1`'s own title ("only the seed and the
+   arm's environment") allows, so they list `CLAUDE.md` and `README.md`, still exactly.
+2. **The manuals** (`c03020c`). The six content tests turned green with the text. The docker suite
+   now has the fake agent run, in the wingfoil arm, the two read commands the manual prescribes:
+   `directives list --role developer` returned T2's `no-throw` directive, and `memory search --type
+   decision-log --status approved` returned T2's `dl-001`. A command the manual got wrong would fail
+   the run. All four docker tests ran; none was skipped.
+
+### The manuals' sizes (the confound, experiment design §2)
+
+| Arm | Bytes | Tokens (`bytes-div-4`) |
+|---|---|---|
+| baseline | 479 | 120 |
+| baseline-docs | 631 | 158 |
+| wingfoil | 1 850 | 463 |
+
+The wingfoil manual is about four times the baseline's: that is the harness's own activation cost, and
+it is what `run.json` reports for every run so that the results can be read against it.
+
+### For the approver's review of the text
+
+- The three manuals are `arms/baseline/manual.md`, `arms/baseline-docs/manual.md` and
+  `arms/wingfoil/manual.md`. The common core is the whole baseline manual.
+- Choices in the wingfoil text worth a look: it asks for **a task per request** and **a decision-log
+  per design decision** (WingFoil's process, which is what the arm measures, but it also adds work the
+  baseline arms do not do); and it tells the agent to **ask for approval and stop**, then execute
+  `memory approve` after "Approved. Proceed." (REQ-RUN-17).
+- The manuals do not state the neutral approver's policy for questions: every arm meets it the same
+  way, from the runner.
+
+### Notes for the next task
+
+- task-015's generator must write `PROJECT_RULES.md` at the root of the baseline-docs environment: the
+  baseline-docs manual names it.
+
+### Review readiness
+
+`npm test` 533/533 (statements 100%, branches 98.11%, functions 100%, lines 100%), `npm run test:bin`
+4/4, `npm run test:docker` 4/4 (none skipped), `npm run lint` clean; no `bench*` container left.
