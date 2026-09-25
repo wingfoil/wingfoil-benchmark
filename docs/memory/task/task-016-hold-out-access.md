@@ -142,3 +142,35 @@ not if it resolved the variable.
   checked, one commit `wf(task): submit <id>` with no bracket and no body. Observed: exit 0, empty
   stderr, 1 file, diff limited to `status: draft` → `status: pending`. Matches (subject without
   transition: N9).
+- The approver's `memory approve` → `5de3cfe` (`pending → backlog`). Matches.
+- `npx wingfoil memory submit task-016-hold-out-access` → `ab37059`, in the linked worktree with its own
+  `npm ci` (`backlog → in-progress`, one commit, only `status`). Matches.
+
+### Build (TDD) — `9825de1`
+
+- 16 tests red first (the loader, the command, the `@F2.1` extension). Two were wrong before any code:
+  the `@F2.1` extension expected `campaign run` to exit 1, but with the doubles the run completes, and
+  completing is exactly the point (the variable, pointing nowhere, is not read) — it expects 0; and a
+  no-op `replace` in the loader's test.
+- Green, then 9 earlier CLI tests and the bin's usage test failed, as they should: they pinned the
+  usage text exactly, and one listed `scenario validate S1@1.0` as a usage error because the command
+  did not exist. The usage now has the scenario line; that case became `scenario estimate`, a verb that
+  still does not exist.
+- For coverage, a comparator whose equal branch could never run (paths are unique) became the default
+  sort, and the command got tests for a link in the hold-out and for `--holdout` followed by another
+  option.
+- `main` gained a fourth parameter, the repository root (default: the working directory), so that the
+  tests do not change the process's directory.
+
+### Notes for the next task
+
+- task-017 adds the leak scan to `validateScenario` (`src/cli/scenario.ts`), reading hold-out content
+  from the `files` `loadHoldoutAdditions` lists, and the `scenarios.feature` @F3.2 acceptance tests.
+- The hold-out's consistency issues name the hold-out path and a count of files, never a file's
+  content; the leak scan's messages must name only the file and the step (REQ-FMT-08).
+
+### Review readiness
+
+`npm test` 574/574 (statements 100%, branches 97.76%, functions 100%, lines 100%), `npm run test:bin`
+4/4, `npm run test:docker` 4/4, `npm run lint` clean; no `bench*` container left. No hold-out content in
+this repository: every hold-out of the tests is built in a temporary directory.
