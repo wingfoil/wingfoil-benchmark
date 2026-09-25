@@ -51,6 +51,16 @@ describe('checkCampaign, arms and harnesses (REQ-FMT-01, REQ-FMT-05, dl-003)', (
     expect(issues).toEqual([{ path: 'arms[0]', message: 'baseline: setup is required; manual is required' }]);
   });
 
+  // task-014, REQ-FMT-05 — characterization: task-012's loader already rejects it at the check.
+  it('rejects an arm whose manual names a missing file when the campaign is checked, not when it runs', () => {
+    const issues = issuesOf(completeCampaignYaml(), (root) =>
+      rmSync(join(root, 'arms', 'wingfoil', 'manual.md')),
+    );
+    expect(issues).toEqual([
+      { path: 'arms[2]', message: "wingfoil: manual file 'manual.md' does not exist" },
+    ]);
+  });
+
   // Characterization: what the interim rule of dl-003 enforced, now read from each arm's `requires`.
   it('requires a harness for an arm that requires a tool (wingfoil)', () => {
     const yaml = completeCampaignYaml();

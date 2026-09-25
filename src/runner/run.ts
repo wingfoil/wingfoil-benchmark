@@ -1,11 +1,11 @@
-import { randomUUID } from 'node:crypto';
-import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { createHash, randomUUID } from 'node:crypto';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { scrub } from '../agents/index.js';
 import type { AgentPort, SessionUsage, StepOutcome } from '../agents/index.js';
-import { approverPolicy, reasonOf, WORKSPACE } from '../core/index.js';
+import { approverPolicy, approximateTokens, reasonOf, TOKEN_METHOD, WORKSPACE } from '../core/index.js';
 import type { ApproverPolicy, Arm, DockerPort, GitPort, InterventionKind, Scenario } from '../core/index.js';
 import { nextExecution } from '../results/index.js';
 
@@ -77,6 +77,16 @@ export interface SetupResult {
   readonly code?: number;
 }
 
+/**
+ * The arm's operating manual as the run received it (REQ-RUN-12, F2.7): its size, by the fixed
+ * approximation, and the digest of the text measured.
+ */
+export interface ManualRecord {
+  readonly sha256: string;
+  readonly bytes: number;
+  readonly tokens: number;
+}
+
 /** One executed run: one scenario, in one arm, with one model, once. */
 export interface RunResult {
   readonly scenario: string;
@@ -89,6 +99,8 @@ export interface RunResult {
   readonly outputDir: string;
   /** The arm's setup, once it has run; absent when the run failed before it. */
   readonly setup?: SetupResult;
+  /** The arm's operating manual, measured (REQ-RUN-12). */
+  readonly manual?: ManualRecord;
   /** The harness the arm's setup installed, for an arm that requires one (adr-003 decision 4). */
   readonly harness?: HarnessArtefact;
   readonly steps: readonly StepResult[];
@@ -130,6 +142,9 @@ const MCP_CONFIG = '/home/node/mcp.json';
  * lets the agent commit, as it can in the wingfoil arm.
  */
 const AGENT_IDENTITY = { name: 'Benchmark Approver', email: 'approver@benchmark.localhost' };
+
+/** Where the arm's operating manual goes in the workspace, where the agent reads it (REQ-RUN-12). */
+const MANUAL_FILE = 'CLAUDE.md';
 
 /** The runner's commit that ends the setup phase, always present, possibly empty (adr-003 decision 10). */
 const SETUP_COMMIT = 'setup';
@@ -242,6 +257,7 @@ async function executeRun(context: RunContext, options: RunnerOptions): Promise<
   const { harness } = context;
   const identity = {
     ...(harness === undefined ? {} : { harness }),
+    manual: measure(readFileSync(arm.manualPath, 'utf8')),
     scenario: scenario.id,
     version: scenario.version,
     arm: arm.name,
@@ -358,6 +374,16 @@ async function executeSetup(arm: Arm, context: SetupContext, options: RunnerOpti
   const { container, workspace, outputDir, harness, scenarioDir } = context;
   await options.git.configureIdentity(workspace, AGENT_IDENTITY.name, AGENT_IDENTITY.email);
   if (arm.environmentDir !== undefined) copyEnvironment(workspace, arm.environmentDir);
+  // The manual after the environment, before the script: in the `setup` commit, never in a step's
+  // patch. A CLAUDE.md already there was meant for the agent by someone; it is not overwritten.
+  const manual = join(workspace, MANUAL_FILE);
+  if (existsSync(manual)) {
+    throw new Error(
+      `the workspace already holds a ${MANUAL_FILE}, from the seed or the arm's environment: the manual ` +
+        `of arm ${arm.name} would replace it`,
+    );
+  }
+  copyFileSync(arm.manualPath, manual);
   await options.docker.copyTo(container, arm.dir, ARM_DIR);
   if (arm.mcpPath !== undefined) await options.docker.copyTo(container, arm.mcpPath, MCP_CONFIG);
   if (harness !== undefined) await options.docker.copyTo(container, harness, HARNESS_ARTEFACT);
@@ -374,6 +400,15 @@ async function executeSetup(arm: Arm, context: SetupContext, options: RunnerOpti
 
   await options.git.commitAll(workspace, SETUP_COMMIT, { allowEmpty: true });
   return { durationMs, usage: NO_USAGE, commit: await options.git.head(workspace) };
+}
+
+/** A manual's size by the fixed approximation, and the digest of the text it was taken from. */
+function measure(text: string): ManualRecord {
+  return {
+    sha256: createHash('sha256').update(text).digest('hex'),
+    bytes: Buffer.byteLength(text, 'utf8'),
+    tokens: approximateTokens(text),
+  };
 }
 
 /** Why a run failed in its setup: the exit code, and the last lines the script wrote to its log. */
@@ -669,6 +704,19 @@ function record(run: RunResult, campaign: CheckedCampaign['campaign']): RunResul
         repetition: run.repetition,
         agent,
         approver_policy,
+        // The manual the arm ran with, and its size: a confound reported for every arm (REQ-RUN-12).
+        ...(run.manual === undefined
+          ? {}
+          : {
+              manual: {
+                file: MANUAL_FILE,
+                sha256: run.manual.sha256,
+                bytes: run.manual.bytes,
+                tokens: run.manual.tokens,
+                method: TOKEN_METHOD.name,
+                method_version: TOKEN_METHOD.version,
+              },
+            }),
         // The harness the arm ran with (REQ-RUN-14, adr-003 decision 4).
         ...(run.harness === undefined
           ? {}

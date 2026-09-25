@@ -118,8 +118,9 @@ describe('runner.feature', () => {
     expect(created?.image).toBe(checked.value.campaign.id);
     const workspace = created?.workspace ?? '';
     expect(summary.runs[0]?.workspace).toBe(workspace);
-    // The workspace holds the seed, and nothing else: no oracle, no prompts, no runner code.
-    expect(readdirSync(workspace).sort()).toEqual(['README.md']);
+    // The workspace holds the seed and the arm's environment — here, its manual as CLAUDE.md (F2.7) —
+    // and nothing else: no oracle, no prompts, no runner code.
+    expect(readdirSync(workspace).sort()).toEqual(['CLAUDE.md', 'README.md']);
     expect(existsSync(join(workspace, 'oracle'))).toBe(false);
     // The run's repository starts from the seed and nothing else; the per-step commits are F2.2's.
     expect(recorded.gitCalls.slice(0, 2)).toEqual([`init ${workspace}`, `commit ${workspace} seed`]);
@@ -228,6 +229,49 @@ describe('runner.feature', () => {
       `${join(root, '.cache', 'harness', 'wingfoil', sha, 'installed.tgz')} -> container-2:/home/node/harness.tgz`,
     ]);
     expect(ports.recorded.copies.some((copy) => copy.includes('vendor'))).toBe(false);
+  });
+
+  it('@F2.7 Each arm is activated by its operating manual, and prompts stay identical', async () => {
+    const yaml = smokeCampaign();
+    yaml.arms = ['baseline', 'baseline-docs', 'wingfoil'];
+    yaml.harnesses = { wingfoil: { tool: 'wingfoil', version: '3df305e' } };
+    const { root, file } = writeRepo(yaml, ['S1@1.0']);
+    for (const arm of ['baseline', 'baseline-docs', 'wingfoil']) {
+      writeFileSync(
+        join(root, 'arms', arm, 'manual.md'),
+        `# The ${arm} manual\n\n${'x'.repeat(arm.length * 10)}\n`,
+      );
+    }
+    const checked = checkCampaign(file);
+    if (!checked.ok) throw new Error(JSON.stringify(checked.issues));
+    const ports = doubles();
+
+    // When the runner prepares step 1 of S1 in every arm
+    const summary = await runCampaign(checked.value, {
+      ...ports,
+      harnessSources: { wingfoil: '/clones/wingfoil' },
+    });
+
+    // Then the step prompt is byte-identical in every arm
+    const firstSteps = ports.recorded.steps.filter((step) => step.step === 1);
+    expect(firstSteps).toHaveLength(3);
+    expect(new Set(firstSteps.map((step) => step.prompt)).size).toBe(1);
+    expect(firstSteps[0]?.prompt).toBe(
+      readFileSync(join(root, 'scenarios', 'S1', '1.0', 'prompts', '01.md'), 'utf8'),
+    );
+    for (const run of summary.runs) {
+      const manual = readFileSync(join(root, 'arms', run.arm, 'manual.md'), 'utf8');
+      // And each arm's environment contains that arm's operating manual
+      expect(readFileSync(join(run.workspace, 'CLAUDE.md'), 'utf8')).toBe(manual);
+      // And the size of each operating manual in tokens is recorded with the run
+      const record = JSON.parse(readFileSync(join(run.outputDir, 'run.json'), 'utf8')) as {
+        manual: { tokens: number; method: string };
+      };
+      expect(record.manual).toMatchObject({
+        tokens: Math.ceil(Buffer.byteLength(manual) / 4),
+        method: 'bytes-div-4',
+      });
+    }
   });
 
   it('@F2.2 Each step starts a new agent session', async () => {
