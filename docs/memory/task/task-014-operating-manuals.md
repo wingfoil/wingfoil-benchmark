@@ -58,7 +58,75 @@ Preliminary classification (confirmed in the design phase). All behaviour is new
 
 ## Design
 
-<!-- Modules, interfaces, data formats touched; decisions taken and their reasons. -->
+Follows [adr-003](../adr/adr-003-w3-arm-conventions.md) decisions 3, 8, 13 and 14; builds on task-012
+(the `manual` field, the setup phase) and task-013 (a working WingFoil in the wingfoil arm).
+
+**Classification, revised.** The first two criteria are red-first. The third — a `manual` naming a
+missing file rejected at the campaign check — is **characterization**: task-012's arm loader already
+does it (`file 'manual.md' does not exist`, reported at `arms[<i>]`). The test is kept and named after
+this criterion.
+
+### Two questions the Context left open, now settled
+
+1. **The shared project description** needs no new field. S1's spec puts it in the **seed**: "a README
+   with a one-paragraph project description, the same text for every arm". The seed is the same in
+   every arm by construction, so the description is too; the baseline's "minimal instruction file"
+   (experiment design §2) is its manual. `CLAUDE.md` is therefore the arm's manual alone, not a
+   composition.
+2. **The tokenizer approximation** (approver, 2026-09-25, design phase): **`ceil(UTF-8 bytes ÷ 4)`**,
+   recorded as method `bytes-div-4`, version 1. It needs no dependency, gives the same number on every
+   machine for ever, and what it is for — comparing the arms' manuals, a confound (experiment design
+   §2) — needs a stable relative size, not the model's own count. `run.json` names the method, so the
+   number is never read as the model's.
+
+### Activation (REQ-RUN-12)
+
+In the setup phase, after the arm's environment and before its script, the runner copies the arm's
+manual to `CLAUDE.md` at the workspace's root; it goes into the `setup` commit, so no step's patch
+holds it. If the workspace already has a `CLAUDE.md` — from the seed or the arm's environment — the run
+fails naming where it came from, rather than replace a file the scenario or the arm meant the agent to
+read. (Keeping such files out of seeds is the leak scan's, W4.)
+
+`run.json` gains `manual: { file: "CLAUDE.md", sha256, bytes, tokens, method: "bytes-div-4",
+method_version: 1 }`. The digest ties a published number to the text it measured.
+`core/tokens.ts` holds the approximation, one function and its method name.
+
+### The three manuals (F2.7)
+
+One file per arm, `arms/<arm>/manual.md`, published with the benchmark. Two rules shape them:
+
+- **A common core, byte-identical in every arm**: what every agent is told regardless of the harness —
+  one request per session, only the repository carries over, the project is described in `README.md`.
+  A test checks the core is the same text in all three.
+- **The arm's own section maps a step's intent to its harness**, and says nothing a harness does not
+  offer:
+  - **baseline:** nothing beyond the core;
+  - **baseline-docs:** where the project's rules are, as Markdown: `PROJECT_RULES.md` at the
+    workspace's root, which task-015's generator writes into this arm's environment;
+  - **wingfoil** (against `3df305e` as observed in task-011): call `wingfoil`, never `npx wingfoil`;
+    before changing code, read the rules for the developer role (`wingfoil directives list --role
+    developer`) and the approved decisions (`wingfoil memory search --type decision-log --status
+    approved`), also readable over MCP (`wingfoil://dna`, `wingfoil://memory/decision-log`); track each
+    request as a task and record design decisions as decision-logs (`memory add` → body → `memory
+    submit`); never approve on one's own initiative: ask for approval and stop; after the reply
+    "Approved. Proceed.", run `wingfoil memory approve <id> --reason "<that reply>"` (REQ-RUN-17);
+    never edit `.wingfoil/` or a `status:` line by hand. No MCP Tool is mentioned: there is none at
+    `3df305e` (adr-003 decision 13).
+
+The manuals do not pre-empt the neutral approver's policy (they do not say what happens to a
+question): the policy is the same for every arm and applied by the runner, and repeating it in the
+manuals would only make them longer. The approver reviews the text at this task's gate.
+
+### Tests
+
+- **Acceptance** (fake ports): `@F2.7 Each arm is activated by its operating manual, and prompts stay
+  identical` — step 1 of one scenario prepared in the three arms: the prompt bytes are identical, each
+  workspace's `CLAUDE.md` is its arm's manual, and each `run.json` carries its manual's tokens.
+- **Unit:** the approximation (ASCII, multi-byte UTF-8, empty text); the `manual` record; the refusal
+  of an existing `CLAUDE.md`; the missing-manual check (characterization); the three real manuals
+  share the common core byte for byte, and the wingfoil manual never writes `npx wingfoil`.
+- **Docker:** the W1 run's workspace holds `CLAUDE.md`, and the W3 run's wingfoil workspace holds the
+  wingfoil manual.
 
 ## Execution notes
 
