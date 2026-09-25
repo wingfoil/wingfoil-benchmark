@@ -206,3 +206,10 @@ approver's consent and is done once this task is merged.
 
 `npm test` 550/550 (statements 100%, branches 97.81%, functions 100%, lines 100%), `npm run test:bin`
 4/4, `npm run test:docker` 4/4, `npm run lint` clean; no `bench*` container left.
+
+### Review and approval
+
+- `npx wingfoil memory submit task-015-…` → `6d76592` (`in-progress → in-review`, one commit, only
+  `status` changed). Matches.
+- `npx wingfoil memory approve task-015-… --reason "…"` → `c2ffc22`, run by the approver from the
+  worktree (`in-review → approved`, `Approver:`/`Reason:` trailers, only `status` changed). Matches.
