@@ -1,3 +1,6 @@
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import type {
   AgentPort,
   ResumeRequest,
@@ -11,6 +14,7 @@ import type {
   DockerPort,
   GitPort,
   ProcessResult,
+  RunOnceRequest,
 } from '../../src/core/index.js';
 
 /** A step that reports no usage, which is what a double does unless a test says otherwise. */
@@ -24,6 +28,13 @@ const NO_USAGE: SessionUsage = {
   turns: 0,
   durationMs: 0,
 };
+
+/** A harness build as the real one leaves it: the npm tarball and the installed artefact in `out/`. */
+export function fakeBuild(request: RunOnceRequest): void {
+  mkdirSync(join(request.mount.source, 'out'), { recursive: true });
+  writeFileSync(join(request.mount.source, 'out', 'wingfoil-0.1.0.tgz'), 'tarball');
+  writeFileSync(join(request.mount.source, 'out', 'installed.tgz'), 'installed');
+}
 
 /** Everything the doubles recorded, in order. */
 export interface Recorded {
@@ -41,6 +52,8 @@ export interface Recorded {
   readonly listed: string[];
   /** Every copy into a container, as `source -> container:target` (REQ-RUN-03). */
   readonly copies: string[];
+  /** Every one-off container, such as a harness build (adr-003 decision 1). */
+  readonly runOnce: RunOnceRequest[];
 }
 
 /** One invocation of the agent: a step's session, or a resume of it. */
@@ -84,8 +97,16 @@ export function doubles(
       call: 'create' | 'start' | 'remove' | 'init' | 'commit' | 'patch' | 'list';
       error: string;
     };
+    /** What a one-off container answers; by default success. */
+    runOnceResult?: ProcessResult;
+    /** What a one-off container does to its mount before answering: a build writes its artefacts. */
+    onRunOnce?: (request: RunOnceRequest) => void;
     /** What a command in the container answers, by command; falls back to {@link execResult}. */
     execResultOf?: (command: readonly string[]) => ProcessResult | undefined;
+    /** The commits a harness clone knows, by the revision that names them (REQ-RUN-14). */
+    commits?: Readonly<Record<string, string>>;
+    /** What archiving a commit writes, given the file it writes to; by default nothing. */
+    archive?: (file: string) => void;
     /** Containers that already exist, as Docker names them: what an interrupted run left behind. */
     leftovers?: readonly string[];
     /** Which of {@link leftovers} are running, as another invocation's would be. */
@@ -104,6 +125,7 @@ export function doubles(
     resumes: [],
     listed: [],
     copies: [],
+    runOnce: [],
   };
   let containers = 0;
   let patches = 0;
@@ -129,6 +151,11 @@ export function doubles(
       return Promise.resolve(
         options.execResultOf?.(command) ?? options.execResult ?? { code: 0, stdout: '', stderr: '' },
       );
+    },
+    runOnce: (request) => {
+      recorded.runOnce.push(request);
+      (options.onRunOnce ?? fakeBuild)(request);
+      return Promise.resolve(options.runOnceResult ?? { code: 0, stdout: '', stderr: '' });
     },
     copyTo: (container, source, target) => {
       recorded.copies.push(`${source} -> ${container}:${target}`);
@@ -179,6 +206,15 @@ export function doubles(
     configureIdentity: (directory, name, email) => {
       recorded.gitCalls.push(`identity ${directory} ${name} <${email}>`);
       return Promise.resolve();
+    },
+    resolveCommit: (repository, rev) => {
+      recorded.gitCalls.push(`resolve ${repository} ${rev}`);
+      // By default every revision is a commit, spelled out to 40 characters; `commits` narrows that.
+      return Promise.resolve(options.commits === undefined ? rev.padEnd(40, '0') : options.commits[rev]);
+    },
+    archive: (repository, sha, file) => {
+      recorded.gitCalls.push(`archive ${repository} ${sha}`);
+      return Promise.resolve(options.archive?.(file));
     },
     head: (directory) => {
       recorded.gitCalls.push(`head ${directory}`);

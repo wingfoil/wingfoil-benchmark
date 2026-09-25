@@ -10,6 +10,8 @@ import type { ApproverPolicy, Arm, DockerPort, GitPort, InterventionKind, Scenar
 import { nextExecution } from '../results/index.js';
 
 import type { CheckedCampaign } from './campaign.js';
+import { prepareHarnesses } from './harness.js';
+import type { HarnessArtefact } from './harness.js';
 import { copyEnvironment, prepareWorkspace } from './workspace.js';
 
 /** The ports a campaign runs against (REQ-ARC-04), and where its output goes. */
@@ -29,6 +31,11 @@ export interface RunnerOptions {
    * and scrubbing a value like `C` or `en_US` would corrupt every patch instead of protecting it.
    */
   readonly secrets?: readonly string[];
+  /**
+   * The local clone of each harness tool, by the name an arm `requires` (W3 plan-phase decision 3):
+   * the WingFoil under test is built from it by SHA (REQ-RUN-14).
+   */
+  readonly harnessSources?: Readonly<Record<string, string>>;
 }
 
 /** One reply of the neutral approver (REQ-RUN-07): the step, what was asked for, and what was sent. */
@@ -82,6 +89,8 @@ export interface RunResult {
   readonly outputDir: string;
   /** The arm's setup, once it has run; absent when the run failed before it. */
   readonly setup?: SetupResult;
+  /** The harness the arm's setup installed, for an arm that requires one (adr-003 decision 4). */
+  readonly harness?: HarnessArtefact;
   readonly steps: readonly StepResult[];
   readonly outcome: 'completed' | 'failed';
   readonly error?: string;
@@ -105,6 +114,12 @@ const CONTAINER_USER = 'node';
 
 /** Where an arm's directory is copied in the container: its user's home, outside the workspace. */
 const ARM_DIR = '/home/node/arm';
+
+/** Where the harness artefact is copied in the container, for the arm's setup to install. */
+const HARNESS_ARTEFACT = '/home/node/harness.tgz';
+
+/** Where a scenario's configuration for the arm is copied in the container (dl-005). */
+const SCENARIO_DIR = '/home/node/scenario';
 
 /** Where an arm's MCP configuration is copied in the container (adr-003 decision 12). */
 const MCP_CONFIG = '/home/node/mcp.json';
@@ -164,6 +179,8 @@ export async function runCampaign(checked: CheckedCampaign, options: RunnerOptio
     tag: campaign.id,
     buildArgs: { AGENT_NAME: campaign.spec.agent.name, AGENT_VERSION: campaign.spec.agent.version },
   });
+  // Every harness before any run: an arm never runs without the one it requires (REQ-RUN-14).
+  const harnesses = await prepareHarnesses(checked, options);
 
   const model = campaign.spec.models.default;
   const runs: RunResult[] = [];
@@ -174,7 +191,17 @@ export async function runCampaign(checked: CheckedCampaign, options: RunnerOptio
       for (let repetition = 1; repetition <= repetitions; repetition += 1) {
         runs.push(
           await executeRun(
-            { campaign, scenario, arm, model, repetition, execution, resultsDir, leftovers },
+            {
+              campaign,
+              scenario,
+              arm,
+              model,
+              repetition,
+              execution,
+              resultsDir,
+              leftovers,
+              ...(arm.requires === undefined ? {} : { harness: harnesses.get(arm.requires) }),
+            },
             options,
           ),
         );
@@ -194,6 +221,8 @@ interface RunContext {
   readonly resultsDir: string;
   /** Containers of this campaign that already exist, by name, with their execution and state. */
   readonly leftovers: ReadonlyMap<string, Leftover>;
+  /** The harness the arm requires, built for this campaign. */
+  readonly harness?: HarnessArtefact | undefined;
 }
 
 /** One run: its own workspace, its own container, removed whatever happens. */
@@ -210,7 +239,9 @@ async function executeRun(context: RunContext, options: RunnerOptions): Promise<
   );
   // The workspace is debris to look at (git-ignored); the output is the run's record (REQ-FMT-06).
   const outputDir = join(resultsDir, 'runs', ...name.split('/'));
+  const { harness } = context;
   const identity = {
+    ...(harness === undefined ? {} : { harness }),
     scenario: scenario.id,
     version: scenario.version,
     arm: arm.name,
@@ -255,7 +286,17 @@ async function executeRun(context: RunContext, options: RunnerOptions): Promise<
     });
     await assertOnlyWorkspaceMounted(container, workspace, options);
     await options.docker.start(container);
-    setup = await executeSetup(arm, { container, workspace, outputDir }, options);
+    setup = await executeSetup(
+      arm,
+      {
+        container,
+        workspace,
+        outputDir,
+        ...(harness === undefined ? {} : { harness: harness.installed }),
+        ...(scenario.armDirs[arm.name] === undefined ? {} : { scenarioDir: scenario.armDirs[arm.name] }),
+      },
+      options,
+    );
     if (setup.code !== undefined) throw new Error(setupFailure(arm, setup.code, outputDir));
     const mcpConfig = arm.mcpPath === undefined ? undefined : MCP_CONFIG;
     for (const step of scenario.steps) {
@@ -299,22 +340,28 @@ interface SetupContext {
   readonly container: string;
   readonly workspace: string;
   readonly outputDir: string;
+  /** The installed harness artefact on the host, for an arm that requires one. */
+  readonly harness?: string;
+  /** The scenario's configuration for this arm, if it has one (dl-005). */
+  readonly scenarioDir?: string | undefined;
 }
 
 /**
  * The setup phase (REQ-RUN-03, adr-003 decisions 6, 7, 10–12), between the container's start and
  * step 1: the agent's identity in the workspace's own git configuration; the arm's environment over
- * the seed; the arm's directory, and its MCP configuration if any, in the container outside the
- * workspace; the arm's script, timed, with its output kept; then the `setup` commit, so that step 1's
+ * the seed; the arm's directory, its MCP configuration, its harness and the scenario's configuration
+ * for it, if any, in the container outside the workspace; the arm's script, timed, with its output kept; then the `setup` commit, so that step 1's
  * patch holds only what the agent did. A failing script is reported by its exit code, and nothing is
  * committed after it.
  */
 async function executeSetup(arm: Arm, context: SetupContext, options: RunnerOptions): Promise<SetupResult> {
-  const { container, workspace, outputDir } = context;
+  const { container, workspace, outputDir, harness, scenarioDir } = context;
   await options.git.configureIdentity(workspace, AGENT_IDENTITY.name, AGENT_IDENTITY.email);
   if (arm.environmentDir !== undefined) copyEnvironment(workspace, arm.environmentDir);
   await options.docker.copyTo(container, arm.dir, ARM_DIR);
   if (arm.mcpPath !== undefined) await options.docker.copyTo(container, arm.mcpPath, MCP_CONFIG);
+  if (harness !== undefined) await options.docker.copyTo(container, harness, HARNESS_ARTEFACT);
+  if (scenarioDir !== undefined) await options.docker.copyTo(container, scenarioDir, SCENARIO_DIR);
 
   const started = performance.now();
   const result = await options.docker.exec(container, ['bash', `${ARM_DIR}/${arm.setup}`]);
@@ -622,6 +669,17 @@ function record(run: RunResult, campaign: CheckedCampaign['campaign']): RunResul
         repetition: run.repetition,
         agent,
         approver_policy,
+        // The harness the arm ran with (REQ-RUN-14, adr-003 decision 4).
+        ...(run.harness === undefined
+          ? {}
+          : {
+              harness: {
+                tool: run.harness.tool,
+                commit: run.harness.commit,
+                tarball_sha256: run.harness.tarballSha256,
+                installed_sha256: run.harness.installedSha256,
+              },
+            }),
         // The setup, apart from the steps (REQ-RUN-03): what M-K3 sets against their cost in W9.
         ...(run.setup === undefined
           ? {}

@@ -100,6 +100,39 @@ describe('the Docker port', () => {
     await expect(dockerCli(process).copyTo('c0ffee', '/a', '/b')).rejects.toThrow(/no such container/);
   });
 
+  it('runs a one-off container with one bind mount, removed when it ends', async () => {
+    const process = recorder([{ code: 0, stdout: 'built\n', stderr: '' }]);
+    const result = await dockerCli(process).runOnce({
+      image: 'abc123',
+      user: 'node',
+      mount: { source: '/repo/.cache/build', target: '/build' },
+      command: ['bash', '-c', 'npm pack'],
+    });
+    expect(result).toEqual({ code: 0, stdout: 'built\n', stderr: '' });
+    expect(process.calls[0]?.args).toEqual([
+      'run',
+      '--rm',
+      '--user',
+      'node',
+      '--mount',
+      'type=bind,source=/repo/.cache/build,target=/build',
+      'abc123',
+      'bash',
+      '-c',
+      'npm pack',
+    ]);
+  });
+
+  it('refuses a build path that would break the mount specification', () => {
+    const request = {
+      image: 'abc',
+      user: 'node',
+      mount: { source: '/a,b', target: '/build' },
+      command: ['true'],
+    };
+    expect(() => dockerCli(recorder()).runOnce(request)).toThrow(/cannot hold a comma or an equals sign/);
+  });
+
   it('lists the mounts of a container', async () => {
     const process = recorder([ok('/repo/runs/abc123/1/w:/workspace\n')]);
     const mounts = await dockerCli(process).mountsOf('c0ffee');
@@ -212,6 +245,37 @@ describe('the git port', () => {
     expect(process.calls.map((call) => command(call.args))).toEqual([
       ['-C', '/repo/runs/w', 'config', 'user.name', 'Benchmark Approver'],
       ['-C', '/repo/runs/w', 'config', 'user.email', 'approver@benchmark.localhost'],
+    ]);
+  });
+
+  it('resolves a revision to the full SHA of a commit, or says there is none', async () => {
+    const process = recorder([
+      ok('3df305ea198d7e2ca0da73bfb12b14af865e9922\n'),
+      { code: 128, stdout: '', stderr: 'fatal' },
+    ]);
+    const git = gitCli(process);
+    expect(await git.resolveCommit('/clone', '3df305e')).toBe('3df305ea198d7e2ca0da73bfb12b14af865e9922');
+    expect(command(process.calls[0]?.args ?? [])).toEqual([
+      '-C',
+      '/clone',
+      'rev-parse',
+      '--verify',
+      '--quiet',
+      '3df305e^{commit}',
+    ]);
+    expect(await git.resolveCommit('/clone', 'deadbee')).toBeUndefined();
+  });
+
+  it('archives a commit as a tar file, reading nothing but the object store', async () => {
+    const process = recorder([ok()]);
+    await gitCli(process).archive('/clone', '3df305ea198d7e2ca0da73bfb12b14af865e9922', '/build/src.tar');
+    expect(command(process.calls[0]?.args ?? [])).toEqual([
+      '-C',
+      '/clone',
+      'archive',
+      '--format=tar',
+      '--output=/build/src.tar',
+      '3df305ea198d7e2ca0da73bfb12b14af865e9922',
     ]);
   });
 

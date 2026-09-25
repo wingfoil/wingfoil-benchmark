@@ -46,6 +46,9 @@ const AGENT_TOKEN_VARIABLE = 'ANTHROPIC_AUTH_TOKEN';
 /** Where the scripted fake agent reads its script, until W2 records real sessions. */
 const FAKE_SCRIPT_VARIABLE = 'BENCH_FAKE_SCRIPT';
 
+/** The local WingFoil clone the WingFoil under test is built from (REQ-RUN-14). */
+const WINGFOIL_REPO_VARIABLE = 'BENCH_WINGFOIL_REPO';
+
 const USAGE = 'usage: bench campaign validate <file>\n       bench campaign run <file> [--allow-spending]\n';
 const HELP_FLAGS = ['--help', '-h'];
 
@@ -114,6 +117,21 @@ async function runCampaignCommand(
   // port's. Requiring it only for real ports left the whole credential path untested.
   const credential = agentName === FREE_AGENT ? undefined : agentCredential();
   if (credential !== undefined && !credential.ok) return report(credential.issues, io);
+  // A campaign with a WingFoil harness needs the clone it is built from, before anything is built.
+  const pinsWingfoil = Object.values(spec.harnesses).some((harness) => harness.tool === 'wingfoil');
+  const wingfoilRepo = process.env[WINGFOIL_REPO_VARIABLE];
+  if (pinsWingfoil && (wingfoilRepo === undefined || wingfoilRepo === '')) {
+    return report(
+      [
+        {
+          path: WINGFOIL_REPO_VARIABLE,
+          message: 'is not set: it names the local WingFoil clone the WingFoil under test is built from',
+        },
+      ],
+      io,
+    );
+  }
+
   const resolved = ports
     ? { ok: true as const, value: ports }
     : realPorts(checked.value, credential?.ok === true ? credential.value : undefined);
@@ -123,6 +141,7 @@ async function runCampaignCommand(
   try {
     summary = await runCampaign(checked.value, {
       ...resolved.value,
+      ...(pinsWingfoil && wingfoilRepo !== undefined ? { harnessSources: { wingfoil: wingfoilRepo } } : {}),
       log: (line) => io.stdout(`${line}\n`),
       logError: (line) => io.stderr(`${line}\n`),
       // The credential reaches the container here and nowhere else (REQ-RUN-15, REQ-NFR-01), and

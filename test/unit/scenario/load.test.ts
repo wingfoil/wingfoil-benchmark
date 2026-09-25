@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, rmSync, symlinkSync } from 'node:fs';
+import { existsSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { isAbsolute, join, relative } from 'node:path';
 import { describe, expect, it, onTestFinished } from 'vitest';
 
@@ -243,6 +243,71 @@ describe('loadScenario', () => {
         message: "must be a quoted string such as '1.0' (unquoted, YAML reads it as a number)",
       },
     ]);
+  });
+
+  it("finds a scenario's per-arm configuration by name, with no field in scenario.yaml (dl-005)", () => {
+    const root = writeScenario();
+    const dir = join(root, 'S9', '1.0');
+    mkdirSync(join(dir, 'arms', 'wingfoil', '.wingfoil'), { recursive: true });
+    mkdirSync(join(dir, 'arms', 'baseline-docs'));
+
+    const result = loadScenario(root, 'S9', '1.0');
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.armDirs).toEqual({
+      'baseline-docs': join(dir, 'arms', 'baseline-docs'),
+      wingfoil: join(dir, 'arms', 'wingfoil'),
+    });
+  });
+
+  it('has no per-arm configuration when the scenario has no arms/ directory', () => {
+    const result = loadScenario(writeScenario(), 'S9', '1.0');
+    expect(result.ok && result.value.armDirs).toEqual({});
+  });
+
+  it.each([
+    [
+      'a file',
+      (dir: string) => writeFileSync(join(dir, 'arms', 'notes.md'), 'x'),
+      "'arms/notes.md' is not a directory",
+    ],
+    [
+      'a name no arm can have',
+      (dir: string) => mkdirSync(join(dir, 'arms', 'Wing Foil')),
+      "'arms/Wing Foil' is not an arm name",
+    ],
+    [
+      'a symbolic link',
+      (dir: string) => symlinkSync(join(dir, 'oracle'), join(dir, 'arms', 'wingfoil')),
+      "'arms/wingfoil' is a symbolic link",
+    ],
+  ])('refuses an entry of arms/ that is %s', (_, make, message) => {
+    const root = writeScenario();
+    const dir = join(root, 'S9', '1.0');
+    mkdirSync(join(dir, 'arms'));
+    make(dir);
+    expect(issuesOf(root)).toEqual([{ path: 'arms', message }]);
+  });
+
+  it("keeps the seed and the prompts apart from an arm's configuration: the baseline must not see a rule", () => {
+    const yaml = completeScenarioYaml();
+    yaml.steps = [
+      { n: 1, prompt_file: 'prompts/01.md' },
+      { n: 2, prompt_file: 'arms/wingfoil/rule.md' },
+    ];
+    const root = writeScenario(yaml, [...COMPLETE_FILES, 'arms/wingfoil/rule.md', 'seed/arms/x/y.md']);
+    const dir = join(root, 'S9', '1.0');
+    rmSync(join(dir, 'arms'), { recursive: true });
+    mkdirSync(join(dir, 'arms', 'wingfoil'), { recursive: true });
+    writeFileSync(join(dir, 'arms', 'wingfoil', 'rule.md'), 'rule\n');
+    expect(issuesOf(root)).toEqual([
+      { path: 'steps[1].prompt_file', message: "'steps[1].prompt_file' overlaps arms.wingfoil" },
+    ]);
+
+    const inside = writeScenario(withField(['seed'], '.'));
+    mkdirSync(join(inside, 'S9', '1.0', 'arms', 'wingfoil'), { recursive: true });
+    expect(issuesOf(inside)).toContainEqual({ path: 'seed', message: "'seed' overlaps arms.wingfoil" });
   });
 
   it('reports every overlap of the seed, in declaration order', () => {
