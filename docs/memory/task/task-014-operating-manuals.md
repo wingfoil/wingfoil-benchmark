@@ -2,7 +2,7 @@
 id: task-014-operating-manuals
 type: task
 title: "Operating manuals"
-status: in-progress
+status: in-review
 release: v0.1
 wave: W3
 features: [F2.7]
