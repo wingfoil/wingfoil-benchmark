@@ -119,3 +119,12 @@ plus a one-line `description` of the phase. Decisions and their reasons:
 - `npx wingfoil memory submit task-009-capture-workflows-declare-what-they-create` → `1aecc18`.
   Declared: `in-progress → in-review`, one commit, only `status` changed. Observed: exit 0, JSON
   `{from: in-progress, to: in-review}`, 1-line diff. Matches.
+
+### Approved, and what it hands on
+
+- `npx wingfoil memory approve task-009-… --reason "…"` → `f52c6b7`, run by the approver. Declared:
+  `in-review → approved` gate, `[from → to]` subject, `Approver:`/`Reason:` body, only `status`
+  changed. Observed: as declared. Matches.
+- bug-002 records its resolution. The gated second phase of WingFoil2's ingest workflows stays an
+  open question; bug-005 (v0.2) is where the bug↔task link this note had to write in prose gets a
+  field.

@@ -103,3 +103,11 @@ made the missing one obvious. The project's own CLI does not report it, which is
 carrying back — see the usage notes, where this is recorded as a second manifestation of N1 (the
 `init` scaffold produces something syntactically valid that cannot do its job, and nothing flags it)
 rather than as a finding of its own.
+
+## Resolution
+
+Fixed in [task-009](../task/task-009-capture-workflows-declare-what-they-create.md): each capture phase
+declares `memory.add(type: …)`, `memory.submit`, a `role` and the document it `produces`. The two bare
+`memory.add` in `campaign-cycle` and `kanban-delivery` are untouched, as scoped above. `workflow list`
+does not check a declared type, role or path against the schema (usage note N28), so their
+correctness rests on the by-hand check recorded in the task.
