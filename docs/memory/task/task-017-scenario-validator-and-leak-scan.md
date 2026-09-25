@@ -152,3 +152,38 @@ oracle file, then by position):
   checked, one commit `wf(task): submit <id>` with no bracket and no body. Observed: exit 0, empty
   stderr, 1 file, diff limited to `status: draft` → `status: pending`. Matches (subject without
   transition: N9).
+- The approver's `memory approve` → `fff0b83` (`pending → backlog`). Matches.
+- `npx wingfoil memory submit task-017-scenario-validator-and-leak-scan` → `e831c2b`, in the linked
+  worktree with its own `npm ci` (`backlog → in-progress`, one commit, only `status`). Matches.
+
+### Build (TDD) — `948d347`
+
+- 21 tests red first (the scan's module, the three `@F3.2` scenarios, the declarations). "A well-formed
+  scenario passes the validator" was green at once, as it should be: task-016's command already
+  accepts a clean scenario; the two error scenarios were the red ones.
+- **The scan's first finding was in my own fixture.** T3's second prompt read "an order cannot be
+  cancelled twice", and `'cancelled'` is the value its public test expects: by REQ-FMT-08's rule, a
+  leak. The prompt now reads "Refuse a second cancellation of the same order." It is a real property of
+  the rule worth knowing before W7 and W8: **an expected value that is an ordinary word of eight
+  letters or more cannot appear in a prompt**, so a scenario author phrases prompts around it, or the
+  declared minimum is raised. Recorded here as a known limit next to "numbers are not literals".
+- T3's oracle is a TypeScript test of code the agent has to write, so it does not compile against the
+  seed and must not run as one of the benchmark's own tests: `test/fixtures` is now excluded from the
+  type-check (`tsconfig.json`) and from `npm test` (`vitest.config.ts`). Fixtures are scenario
+  content; their oracles test an agent's work.
+- Two edits of mine to task-016's CLI test did not apply, because prettier had wrapped the lines they
+  matched; the tests said so (`leak-scan.yaml: not found`, `repoPath is not defined`). Fixed.
+- For coverage, three guards that could not fail were removed rather than tested (a hold-out read
+  through an optional where it was already known, and `existsSync` on directories the loader had
+  checked); a missing `leak-scan.yaml` through the command, and two arms ordered by name, got tests.
+
+### Deviation from the Design
+
+None in behaviour. The fixtures' exclusion from the type-check and the test run is new, and needed by
+any scenario whose oracle is code (all of v0.1's, K1).
+
+### Review readiness
+
+`npm test` 597/597 (statements 100%, branches 97.5%, functions 100%, lines 100%), `npm run test:bin`
+4/4, `npm run test:docker` 4/4, `npm run lint` clean; no `bench*` container left. `scenarios.feature`
+@F3.2 has its three acceptance tests; the traceability test is green with F3.2 started.
