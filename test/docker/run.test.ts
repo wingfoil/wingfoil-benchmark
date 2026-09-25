@@ -162,6 +162,101 @@ describe('runs in a real container', () => {
     expect(containers).not.toContain(`bench-${image}-`);
   });
 
+  /** The WingFoil clone the WingFoil under test is built from (REQ-RUN-14): the one next to this repository. */
+  const clone = process.env.BENCH_WINGFOIL_REPO ?? repoPath('../WingFoil2');
+
+  it.skipIf(!existsSync(join(clone, '.git')))(
+    'W3: @F2.6 the WingFoil under test is the pinned build, and the agent executes an approval (REQ-RUN-17)',
+    async () => {
+      const root = tempDir('bench-docker-');
+      cpSync(repoPath('test/fixtures/campaigns'), join(root, 'campaigns'), { recursive: true });
+      cpSync(repoPath('test/fixtures/scenarios'), join(root, 'scenarios'), { recursive: true });
+      cpSync(repoPath('test/fixtures/arms'), join(root, 'arms'), { recursive: true });
+      // The benchmark's own wingfoil arm, not a fixture: its setup is what is under test here.
+      cpSync(repoPath('arms/wingfoil'), join(root, 'arms', 'wingfoil'), { recursive: true });
+      process.env.BENCH_FAKE_SCRIPT = repoPath('test/fixtures/fake-script-arms.json');
+      process.env.BENCH_WINGFOIL_REPO = clone;
+
+      let output = '';
+      const code = await main(['campaign', 'run', join(root, 'campaigns', 'arms.yaml')], {
+        stdout: (text) => (output += text),
+        stderr: (text) => (output += text),
+      });
+
+      expect({ code, output }).toEqual({
+        code: 0,
+        output: expect.stringContaining('2 runs completed, 0 failed'),
+      });
+      image = /campaign ([0-9a-f]{12})/.exec(output)?.[1] ?? '';
+      const sha = execFileSync('git', ['-C', clone, 'rev-parse', '3df305e^{commit}'], {
+        encoding: 'utf8',
+      }).trim();
+      const run = (arm: string) =>
+        join(root, 'runs', image, '1', 'T2@1.0', arm, 'fake-model', 'r1', 'workspace');
+      const out = (arm: string) =>
+        join(root, 'results', image, '1', 'runs', 'T2@1.0', arm, 'fake-model', 'r1');
+      const git = (arm: string, ...args: string[]) =>
+        execFileSync('git', ['-C', run(arm), '-c', 'safe.directory=*', ...args], { encoding: 'utf8' }).trim();
+
+      // Given the campaign pins wingfoil@3df305e, when the runner sets up the wingfoil arm, then the
+      // WingFoil installed in the container is built from that commit…
+      const record = JSON.parse(readFileSync(join(out('wingfoil'), 'run.json'), 'utf8')) as {
+        harness: { commit: string; tarball_sha256: string };
+      };
+      expect(record.harness.commit).toBe(sha);
+      expect(record.harness.tarball_sha256).toMatch(/^[0-9a-f]{64}$/);
+      // …and independent of the managing WingFoil: installed from the artefact, found on the PATH the
+      // image gives the arm, not in vendor/ nor on the host.
+      expect(readFileSync(join(out('wingfoil'), 'setup', 'log.txt'), 'utf8')).toContain(
+        `WingFoil under test: commit ${sha}, at /home/node/.local/bin/wingfoil`,
+      );
+
+      // The scenario's configuration is in the wingfoil arm (dl-005), with the approver declared…
+      expect(existsSync(join(run('wingfoil'), '.wingfoil', 'directives', 'custom', 'no-throw.md'))).toBe(
+        true,
+      );
+      expect(
+        existsSync(
+          join(
+            run('wingfoil'),
+            'docs',
+            'memory',
+            'decision-log',
+            'dl-001-errors-are-returned-as-a-result.md',
+          ),
+        ),
+      ).toBe(true);
+      expect(readFileSync(join(run('wingfoil'), '.wingfoil', 'dna.yaml'), 'utf8')).toMatch(
+        /name: Benchmark Approver\n\s+email: approver@benchmark\.localhost\n\s+roles:\n\s+- approver/,
+      );
+      // …and absent from the baseline arm, which ran the same scenario.
+      expect(existsSync(join(run('baseline'), '.wingfoil'))).toBe(false);
+      expect(readFileSync(join(run('baseline'), 'cancel.txt'), 'utf8')).toBe('cancel\n');
+
+      // REQ-RUN-17: the agent's approval, as the declared member, accepted by WingFoil.
+      const approval = git('wingfoil', 'log', '--grep=approve dl-002', '--format=%an <%ae>%n%b');
+      expect(approval).toContain('Benchmark Approver <approver@benchmark.localhost>');
+      expect(approval).toContain('Approver: Benchmark Approver <approver@benchmark.localhost> (approver)');
+      expect(git('wingfoil', 'log', '--format=%s').split('\n')).toEqual([
+        'step 02',
+        'step 01',
+        'wf(decision-log): approve dl-002-orders-are-cancelled-not-deleted [pending → approved]',
+        'wf(decision-log): submit dl-002-orders-are-cancelled-not-deleted',
+        'wf(decision-log): add dl-002-orders-are-cancelled-not-deleted',
+        'setup',
+        'chore(wingfoil): declare the Benchmark Approver',
+        'chore(wingfoil): apply the scenario configuration',
+        'chore(wingfoil): initialize .wingfoil/ with the Kanban template (P5.1.1)',
+        'seed',
+      ]);
+
+      const containers = execFileSync('docker', ['ps', '--all', '--format', '{{.Names}}'], {
+        encoding: 'utf8',
+      });
+      expect(containers).not.toContain(`bench-${image}-`);
+    },
+  );
+
   it('bug-003: a container an interrupted run left behind is reported, never removed', async () => {
     const root = tempDir('bench-docker-');
     cpSync(repoPath('test/fixtures/campaigns'), join(root, 'campaigns'), { recursive: true });

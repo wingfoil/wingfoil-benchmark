@@ -20,6 +20,10 @@ RUN if [ "$AGENT_NAME" = "claude-code" ]; then \
         npm install --global "@anthropic-ai/claude-code@${AGENT_VERSION}"; \
     fi
 
+# Where an arm's setup puts the harness it installs (adr-003 decision 3), first on the PATH so the
+# agent's shell finds it. Empty in an arm with no harness, so the image is the same for every arm.
+ENV PATH=/home/node/.local/bin:$PATH
+
 # Runs execute as an unprivileged user, in the only directory bound into the container.
 USER node
 WORKDIR /workspace
