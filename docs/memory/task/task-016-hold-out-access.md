@@ -42,8 +42,11 @@ hold-outs in temporary directories, from T-scenario data that is not benchmark c
    scanning by the validator (task-017); the two scoring scenarios go with F4.1 in W6, where a task
    declares F3.5. No amendment: the sequencer's W4 row keeps F3.5, whose scoring half cannot be tested
    before a scorer exists.
-2. **Four tasks:** task-016 hold-out access, task-017 validator and leak scan (F3.2), task-018 scenario
-   versioning (F3.4), task-019 bug-006.
+2. **Five tasks:** task-016 hold-out access, task-017 validator and leak scan (F3.2), task-018 scenario
+   versioning (F3.4), task-020 real-agent runs declared in delivery and the spending ledger
+   ([dl-006](../decision-log/dl-006-real-agent-runs-during-delivery-are-declared-by-the-workflow.md)),
+   task-019 bug-006 — task-020 before task-019, so that task-019's real sessions are the first entries
+   the ledger records as they happen. bug-005 stays with the triage of release v0.2, as it says.
 3. **bug-006 is fixed in W4**, before the dry runs of W5, which are real runs.
 4. **W4's "Ends with" is verified offline**: `bench scenario validate` on a T-scenario with a hold-out
    in a temporary directory, and the docker suite's existing proof that a run's container holds no
