@@ -8,6 +8,8 @@ import type { DockerPort, GitPort, Issue, Result } from '../core/index.js';
 import { checkCampaign, runCampaign } from '../runner/index.js';
 import type { CheckedCampaign } from '../runner/index.js';
 
+import { parseScenarioArguments, validateScenario } from './scenario.js';
+
 /** Where the command writes its output; the bin passes the process streams, tests capture them. */
 export interface Io {
   readonly stdout: (text: string) => void;
@@ -49,15 +51,27 @@ const FAKE_SCRIPT_VARIABLE = 'BENCH_FAKE_SCRIPT';
 /** The local WingFoil clone the WingFoil under test is built from (REQ-RUN-14). */
 const WINGFOIL_REPO_VARIABLE = 'BENCH_WINGFOIL_REPO';
 
-const USAGE = 'usage: bench campaign validate <file>\n       bench campaign run <file> [--allow-spending]\n';
+const USAGE =
+  'usage: bench campaign validate <file>\n' +
+  '       bench campaign run <file> [--allow-spending]\n' +
+  '       bench scenario validate <id>@<version> [--holdout <path>]\n';
 const HELP_FLAGS = ['--help', '-h'];
 
-/** Run the `bench` command line `argv` (without the executable) and return its exit code. */
-export async function main(argv: readonly string[], io: Io, ports?: Ports): Promise<number> {
+/**
+ * Run the `bench` command line `argv` (without the executable) and return its exit code. `root` is the
+ * repository a command that names a scenario reads `scenarios/` from: the working directory.
+ */
+export async function main(
+  argv: readonly string[],
+  io: Io,
+  ports?: Ports,
+  root: string = process.cwd(),
+): Promise<number> {
   if (argv.length === 1 && HELP_FLAGS.includes(argv[0] as string)) {
     io.stdout(USAGE);
     return EXIT.ok;
   }
+  if (argv[0] === 'scenario') return scenarioCommand(argv.slice(1), io, root);
   const [noun, verb, file, ...extra] = argv;
   // The flag belongs to `run`: accepting it on `validate` would say it means something there.
   const allowSpending = verb === 'run' && extra.includes(SPENDING_FLAG);
@@ -70,6 +84,20 @@ export async function main(argv: readonly string[], io: Io, ports?: Ports): Prom
   if (verb === 'run') return runCampaignCommand(file, io, ports, allowSpending);
   io.stderr(USAGE);
   return EXIT.usage;
+}
+
+/** `bench scenario validate` (REQ-CLI-04), the only scenario command so far. */
+function scenarioCommand(argv: readonly string[], io: Io, root: string): number {
+  const [verb, ...rest] = argv;
+  const args = verb === 'validate' ? parseScenarioArguments(rest) : undefined;
+  if (args === undefined) {
+    io.stderr(USAGE);
+    return EXIT.usage;
+  }
+  const result = validateScenario(args, root);
+  if (!result.ok) return report(result.issues, io);
+  io.stdout(`${result.line}\n`);
+  return EXIT.ok;
 }
 
 /** A file argument: present, not empty, and not an option. */

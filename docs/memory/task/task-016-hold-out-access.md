@@ -2,7 +2,7 @@
 id: task-016-hold-out-access
 type: task
 title: "Hold-out access"
-status: backlog
+status: approved
 release: v0.1
 wave: W4
 features: []
@@ -72,7 +72,62 @@ Preliminary classification (confirmed in the design phase).
 
 ## Design
 
-<!-- Modules, interfaces, data formats touched; decisions taken and their reasons. -->
+**Classification confirmed**: the `@F2.1` criterion is a characterization, the other three red-first.
+
+### A correction to this task's Context: the hold-out gets its consumer here
+
+The Context names the validator (task-017) as the hold-out's first user. A loader shipped with no
+caller is a defect in this repository (W1's review; task-005 dropped the fake's events for the same
+reason). So this task creates **`bench scenario validate <id>@<version> [--holdout <path>]`**
+(REQ-CLI-04) with the checks that exist today — the schema and the loader's (REQ-FMT-04) — and the
+hold-out's own consistency, below. task-017 adds the leak scan to the same command, and the
+`scenarios.feature` @F3.2 acceptance tests with it, since F3.2 is its feature. Nothing moves between
+features: F3.2's scenarios stay task-017's.
+
+### Where the hold-out is (REQ-CLI-10)
+
+`--holdout <path>` wins over `BENCH_HOLDOUT_PATH`; an empty variable counts as unset. A configured path
+must exist, be a directory, and hold a `scenarios/` directory — the layout that mirrors this
+repository's (REQ-ARC-03); anything else is an error naming the path and what is wrong with it. A path
+is not content, so naming it prints no hold-out material.
+
+`bench scenario validate` reads scenarios from `scenarios/` under the working directory, the
+repository's root (REQ-ARC-03), the way `campaign validate` reads them beside the campaign file.
+
+### A scenario version's additions — `scenario/holdout.ts`
+
+`loadHoldoutAdditions(holdoutRoot, id, version)` looks at `<holdout>/scenarios/<id>/<version>/` and
+returns its **file names only**, relative and sorted: it never opens a file. A symbolic link in it is
+refused by its relative path, as in a seed or an arm directory. Reading content is for the leak scan
+(task-017) and for scoring (W6), each where it needs it.
+
+### Consistency with `holdout:` (REQ-FMT-04)
+
+| `holdout:` | Hold-out configured | Additions found | Outcome |
+|---|---|---|---|
+| any | no | — | valid if the rest is; stdout says `hold-out: not configured` (K2: a public rerun needs no hold-out) |
+| `true` | yes | some | valid; stdout says how many files |
+| `true` | yes | none | issue at `holdout`: the scenario expects additions and the hold-out has none for it |
+| `false` | yes | some | issue at `holdout`: additions exist for a scenario that declares none |
+| `false` | yes | none | valid |
+
+### Never read by `campaign run` (REQ-CLI-10, F2.1)
+
+The runner takes no hold-out option, and `campaign run` neither accepts `--holdout` (a usage error)
+nor reads `BENCH_HOLDOUT_PATH`. The `@F2.1` acceptance test (task-003's) is extended at the command
+line: with the variable set to a path that does not exist, `campaign run` still runs, which it could
+not if it resolved the variable.
+
+### Tests
+
+- **Acceptance:** `@F2.1 A run cannot see the hold-out even if the path is configured`, extended as
+  above (characterization).
+- **Unit:** the path's resolution and its errors; the additions loader (files listed, sorted, never
+  read; links refused; none found); every row of the consistency table through the command; the
+  command's usage errors (`<id>@<version>` malformed, unknown scenario, `--holdout` without a path);
+  and, for every case, that no byte of an addition's content reaches stdout, stderr or any file the
+  command writes — each fixture addition holds a marker string the test searches for.
+- The hold-outs are built in temporary directories: no hold-out content is written in this repository.
 
 ## Execution notes
 
@@ -87,3 +142,42 @@ Preliminary classification (confirmed in the design phase).
   checked, one commit `wf(task): submit <id>` with no bracket and no body. Observed: exit 0, empty
   stderr, 1 file, diff limited to `status: draft` → `status: pending`. Matches (subject without
   transition: N9).
+- The approver's `memory approve` → `5de3cfe` (`pending → backlog`). Matches.
+- `npx wingfoil memory submit task-016-hold-out-access` → `ab37059`, in the linked worktree with its own
+  `npm ci` (`backlog → in-progress`, one commit, only `status`). Matches.
+
+### Build (TDD) — `9825de1`
+
+- 16 tests red first (the loader, the command, the `@F2.1` extension). Two were wrong before any code:
+  the `@F2.1` extension expected `campaign run` to exit 1, but with the doubles the run completes, and
+  completing is exactly the point (the variable, pointing nowhere, is not read) — it expects 0; and a
+  no-op `replace` in the loader's test.
+- Green, then 9 earlier CLI tests and the bin's usage test failed, as they should: they pinned the
+  usage text exactly, and one listed `scenario validate S1@1.0` as a usage error because the command
+  did not exist. The usage now has the scenario line; that case became `scenario estimate`, a verb that
+  still does not exist.
+- For coverage, a comparator whose equal branch could never run (paths are unique) became the default
+  sort, and the command got tests for a link in the hold-out and for `--holdout` followed by another
+  option.
+- `main` gained a fourth parameter, the repository root (default: the working directory), so that the
+  tests do not change the process's directory.
+
+### Notes for the next task
+
+- task-017 adds the leak scan to `validateScenario` (`src/cli/scenario.ts`), reading hold-out content
+  from the `files` `loadHoldoutAdditions` lists, and the `scenarios.feature` @F3.2 acceptance tests.
+- The hold-out's consistency issues name the hold-out path and a count of files, never a file's
+  content; the leak scan's messages must name only the file and the step (REQ-FMT-08).
+
+### Review readiness
+
+`npm test` 574/574 (statements 100%, branches 97.76%, functions 100%, lines 100%), `npm run test:bin`
+4/4, `npm run test:docker` 4/4, `npm run lint` clean; no `bench*` container left. No hold-out content in
+this repository: every hold-out of the tests is built in a temporary directory.
+
+### Review and approval
+
+- `npx wingfoil memory submit task-016-…` → `55a3448` (`in-progress → in-review`, one commit, only
+  `status` changed). Matches.
+- `npx wingfoil memory approve task-016-… --reason "…"` → `d19158a`, run by the approver from the
+  worktree (`in-review → approved`, `Approver:`/`Reason:` trailers, only `status` changed). Matches.

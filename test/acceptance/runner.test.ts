@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { fakeAgent, loadFakeScript, readSession } from '../../src/agents/index.js';
 import { renderProjectRules } from '../../src/arms/index.js';
 import type { AgentPort, ResumeRequest, StepRequest } from '../../src/agents/index.js';
+import { main } from '../../src/cli/index.js';
 import { checkCampaign, runCampaign } from '../../src/runner/index.js';
 import { completeCampaignYaml, writeRepo } from '../support/campaign-fixture.js';
 import { doubles } from '../support/runner-doubles.js';
@@ -154,6 +155,22 @@ describe('runner.feature', () => {
       expect(readdirSync(created?.workspace ?? '')).not.toContain('hidden-test.ts');
       // The container has one mount, the run's own workspace: nothing else can reach the hold-out.
       expect(await docker.mountsOf('container-1')).toEqual([`${created?.workspace ?? ''}:/workspace`]);
+    } finally {
+      delete process.env.BENCH_HOLDOUT_PATH;
+    }
+
+    // task-016 (REQ-CLI-10): the command line does not read the variable for a run. Set to a path
+    // that does not exist, it would stop a command that resolved it; `campaign run` runs anyway, and
+    // takes no --holdout at all.
+    process.env.BENCH_HOLDOUT_PATH = join(tempDir('bench-holdout-'), 'nowhere');
+    try {
+      process.env.BENCH_FAKE_SCRIPT = repoPath('test/fixtures/fake-script.json');
+      const { file } = writeRepo(smokeCampaign(), ['S1@1.0']);
+      let stderr = '';
+      const io = { stdout: () => undefined, stderr: (text: string) => (stderr += text) };
+      expect(await main(['campaign', 'run', file], io, doubles())).toBe(0);
+      expect(stderr).not.toMatch(/BENCH_HOLDOUT_PATH|hold-out/);
+      expect(await main(['campaign', 'run', file, '--holdout', '/x'], io, doubles())).toBe(2);
     } finally {
       delete process.env.BENCH_HOLDOUT_PATH;
     }
