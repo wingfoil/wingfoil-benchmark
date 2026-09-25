@@ -2,7 +2,7 @@
 id: task-017-scenario-validator-and-leak-scan
 type: task
 title: "Scenario validator and leak scan"
-status: backlog
+status: in-progress
 release: v0.1
 wave: W4
 features: [F3.2]
