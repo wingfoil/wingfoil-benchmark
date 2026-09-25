@@ -163,3 +163,5 @@ otherwise pay one more Docker call per run.
   `4f46a22` (`pending → backlog`).
 - `npx wingfoil memory submit task-010-…` → `d1ca432`, after the design commit `ee8f7c0`. Declared:
   `backlog → in-progress`, only `status` changed. Observed: exit 0, as declared. Matches.
+- `npx wingfoil memory submit task-010-…` (`in-progress → in-review`): exit 0, only `status` changed.
+  Matches.
