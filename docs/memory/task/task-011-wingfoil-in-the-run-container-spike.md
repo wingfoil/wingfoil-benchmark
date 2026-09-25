@@ -223,3 +223,154 @@ adr-003 written, the spending reported, and `npm test`, `npm run test:bin`, `npm
 - The same two commands on dl-005 (plan-phase decision 2): `memory add --type decision-log` →
   `1085158`, `memory submit` → `d1dbed9`, `draft → pending`. Observed as declared, as above. Its id
   is derived from the whole title, 92 characters long; nothing shortens it.
+- `npx wingfoil memory submit task-011-wingfoil-in-the-run-container-spike` (run from the linked
+  worktree `WingFoil2-Benchmark-task-011` with the main checkout's binary, no `node_modules` link) →
+  `a5a4054` on the task branch. Declared: `backlog → in-progress`, one commit. Observed: exit 0, empty
+  stderr, 1 file, diff limited to `status`, and the commit landed on the worktree's branch, not on
+  main (main stayed at `3684373`). Matches: WingFoil resolves the project from the working directory.
+
+### Deviation from the Design: the clone's `HEAD` moves under us
+
+The Design asked for the WingFoil clone's `HEAD` and `git status` to be identical before P1 and after
+P6. `HEAD` was not: `98871b8` at P0, `5eb60d4` at P6, because another session ("DEV v0.2 - Wave2") was
+committing in that repository while the spike ran. `git status --porcelain` hashed the same
+(`a621789c…`, clean) both times. What proves the clone was only read is therefore the scripts
+themselves: `lib.sh` runs `git -C "$WINGFOIL_REPO"` with `rev-parse`, `archive` and `status` only. It is
+also a fact for task-013: the configured clone is a *live* repository, so the runner must read the
+pinned commit by SHA (as `git archive <sha>` does) and never its working tree or `HEAD`.
+
+### Answers (probes P0–P8, 2026-09-25)
+
+Scripts in `spikes/task-011/`, output in its git-ignored `out/`. Every `wingfoil` command in P3–P7 ran
+**inside the container, against the WingFoil under test** (`3df305e` via the P2 (c) artefact), not
+against the managing WingFoil.
+
+**P0 — pins.** `3df305e` → `3df305ea198d7e2ca0da73bfb12b14af865e9922`. Run image built with
+`AGENT_NAME=fake`; the base is `node:22-bookworm@sha256:dd5847a0…`.
+
+**Q1 (P1) — the build is reproducible, byte for byte.** `git archive 3df305e`, then `npm ci` and
+`npm pack` (whose `prepack` runs `tsc`): twice in fresh containers of the pinned base (Node 22.23.2,
+npm 10.9.8; 8.9 s and 6.7 s) and once on the host (Node 22.21.0; 4.5 s). All three tarballs, and
+`vendor/wingfoil-0.2-pre-3df305e.tgz` built earlier from the same commit, have the same SHA-256
+(`a1939e10c77441c6…`) and size (315 974 bytes). So a commit identifies its tarball, and the Design's
+first open risk did not materialise. The consequence worth stating: the WingFoil under test and the
+managing WingFoil are today *the same bytes*. REQ-RUN-14's independence is about provenance and path,
+and task-013 has to prove it that way (built from the clone, installed outside `vendor/` and the
+host's `PATH`), not by a difference in content.
+
+**Q2 (P2) — installing the tarball alone does not pin WingFoil's dependencies; the lockfile does.**
+
+| Install, as `node`, outside `/workspace` | Time | Against `package-lock.json` at `3df305e` |
+|---|---|---|
+| (a) `npm install --prefix ~/wf <tarball>` | 11.8 s | 111 packages, **17 at another version** (e.g. `@modelcontextprotocol/sdk` 1.30.1 vs 1.29.0, `@hono/node-server` 2.1.1 vs 1.19.14), 1 not in the lock |
+| (b) tarball unpacked + the archive's lockfile, `npm ci --omit=dev --ignore-scripts` | 11.2 s | 109 of 109 runtime entries, **0 differ** |
+| (c) (b) packed once (5.2 MB), then only unpacked in the run container, `--network none` | ~3 s | as (b); `wingfoil --version` → `0.1.0` with no network |
+
+(a) is what REQ-RUN-14's wording ("installs WingFoil from a tarball") gives, and it would let two runs
+of one campaign exercise different code — in the MCP SDK among others. (b)/(c) pin it. `dist/cli.js` is
+not executable in the tarball (mode 644), so (c) needs a small `wingfoil` wrapper on the `PATH`
+(`exec node …/dist/cli.js "$@"`); `npm install` makes that shim itself in (a).
+
+`npx wingfoil` does **not** resolve to the wrapper on the `PATH`: `npx --no-install wingfoil` went to
+the registry (`EAI_AGAIN` with no network; 72 s of the (c) timing is that wait). Today `wingfoil` is
+not on npm (`npm view wingfoil` → E404), so with the network `npx wingfoil` would fail; the day WingFoil
+is published, it would silently fetch a *registry release* instead of the pinned commit. The arm's setup
+and its manual must call `wingfoil`, never `npx wingfoil`.
+
+**Q3 (P3) — `init` needs `--template` and a git identity in the repository's config, and commits.**
+
+- With stdin closed and no `--template`: `error: missing required argument: --template`, exit 2, nothing
+  written. `init --help` does not list the templates; the source does: `Scrum` (default) and `Kanban`
+  (usage note N30).
+- With the identity the runner uses today — environment only (`GIT_AUTHOR_*`, `GIT_CONFIG_GLOBAL=/dev/null`,
+  no `user.email` in any config): `error: git identity not configured (user.name/user.email)`, exit 1,
+  nothing written, for both templates. WingFoil reads `git config`, not the environment.
+- With `user.name`/`user.email` in the workspace's own `.git/config`: exit 0, 27 files under
+  `.wingfoil/` (6 built-in and 4 custom directives, `dna.yaml`, `memory.yaml`, 7 Memory templates,
+  `roles.yaml`, `workflows.yaml`, 5 workflows), and **one commit of its own**,
+  `chore(wingfoil): initialize .wingfoil/ with the Kanban template (P5.1.1)`, working tree clean. The
+  history becomes `seed`, `chore(wingfoil): …`, then the steps: the setup adds commits between the seed
+  and step 01, which adr-003 has to place.
+
+**Q4 (P4) — a scenario's configuration can be copied in as files; only its history differs.**
+DNA lives in `.wingfoil/dna.yaml`, directive bodies in `.wingfoil/directives/{built-in,custom}/*.md`,
+role bindings in `.wingfoil/roles.yaml`, Memory in `docs/memory/<type>/<id>.md` (`memory.yaml` `path:`).
+Workspace A built a small configuration by commands: `dna set project.name` / `project.description`,
+`directive create --name no-throw`, `directive assign --directive no-throw --role developer`,
+`memory add --type decision-log` → `submit` → `approve --reason`, all exit 0. Workspace B got the
+same `.wingfoil/` and `docs/` as files (a `git archive` of A) in one hand-made commit. WingFoil read
+both back the same: `dna show project`, `directives list` and `memory search --type decision-log` are
+identical. Only `memory history` differs: in A each element has `add`, `submit` and an `approve` naming
+the approver and the reason; in B the one commit shows `operation: null`, `to: approved`,
+`approver: null`. So the layout of `arms/wingfoil/` is simply the paths above; whether the setup
+**copies** it (fast, history-less) or **replays** it through commands (a real audit trail in the
+container) is a choice for adr-003, not something WingFoil forces.
+
+**Q5 (P5) — approval authority works as REQ-RUN-17 needs, keyed on `git config user.email`.**
+`dna set` writes string leaves only (`dna show team.members` → `no DNA key named 'team.members'`;
+there is no verb that adds a member), so the member is written into `dna.yaml` and committed by hand
+(usage note N33): `team.members: [{name: Benchmark Approver, email: approver@benchmark.localhost,
+roles: [approver]}]`. Then, with `git config user.email approver@benchmark.localhost`: `memory approve`
+→ exit 0, commit body `Approver: Benchmark Approver <approver@benchmark.localhost> (approver)` and the
+reason. With `user.email benchmark@localhost`: `error: user not authorized to approve type
+'decision-log'`, exit 1. With the identity in the environment only: `git identity not configured`,
+exit 1. The email match is case-insensitive (`APPROVER@…` accepted).
+
+One trap, seen because the probe container carried the runner's `GIT_AUTHOR_*`/`GIT_COMMITTER_*`
+variables: the approval commits were *authored* by `WingFoil Benchmark <benchmark@localhost>` while
+their body named Benchmark Approver as approver. The commit's author comes from the environment,
+WingFoil's check and record from `git config` (usage note N32). The runner does not pass those
+variables into the container today (its own commits use `git -c` on the host side), and adr-003 must
+keep it that way.
+
+**Q6 (P6) — `wingfoil mcp` has no Tools at `3df305e`: Resources and Prompts only.** Started over stdio
+with no TTY, it answers in 0.3 s: `serverInfo {name: wingfoil, version: 0.1.0}`, capabilities
+`resources, prompts`. `tools/list` → `-32601 Method not found`. Prompts (7): `developer-session`,
+`reviewer-session`, `qa-session`, `architect-session`, `product-owner-session`, `tech-lead-session`,
+`approver-session`. Resources: `wingfoil://dna`, `wingfoil://workflows`; templates
+`wingfoil://memory/{type}`, `wingfoil://memory/{type}/{id}`, `wingfoil://dna/{section}`,
+`wingfoil://workflows/{name}`. It is deliberate: `src/mcp/server.ts` at `3df305e` says
+`createMcpServer` "deliberately does NOT call `registerCoreModules`", Tools being a later work item
+(P5.2.3). **This contradicts K5** ([scenarios/README.md](../../02_specification/scenarios/README.md)),
+which lists "mutating MCP Tools" among what `3df305e` adds; an amendment is proposed below. For the
+wave it means the agent *acts* through the CLI and *reads* through MCP (usage note N31).
+The config Claude Code needs: `{"mcpServers": {"wingfoil": {"type": "stdio", "command": "<path to the
+wingfoil wrapper>", "args": ["mcp"]}}}`.
+
+**Q7 (P7, spent 0.040 USD) — `CLAUDE.md` is loaded, the server connects, and the MCP flags work on a
+resume.** Claude Code 2.1.280, `claude-haiku-4-5`, token in `ANTHROPIC_AUTH_TOKEN` per adr-002.
+
+- **P7a**, REQ-RUN-04 line plus `--mcp-config /home/node/mcp.json --strict-mcp-config`: the `init` event
+  lists `mcp_servers: [{name: wingfoil, status: connected}]`, the tools `ListMcpResourcesTool`,
+  `ReadMcpResourceDirTool`, `ReadMcpResourceTool`, and the seven prompts as slash commands
+  `mcp__wingfoil__<role>-session`. The reply began with the codeword from `CLAUDE.md`
+  (`PELICAN-7342`), so **`--setting-sources project` loads the workspace's `CLAUDE.md`** (REQ-RUN-12
+  holds as written). 0.0130 USD.
+- **P7b**, `--resume <id>` with the same two MCP flags: accepted; the server connected again, and the
+  agent read `wingfoil://dna` and answered `PELICAN-7342: Kanban`, the right value. 0.0273 USD. P7c
+  was not needed.
+- The `init` event also names `memory_paths.auto = /home/node/.claude/projects/-workspace/memory/`:
+  Claude Code's auto-memory, in the container's home, outside the workspace. The container lives for
+  the whole run, so a step's session could leave notes there that the next step's session reads — state
+  carried between steps outside the repository, which REQ-RUN-04 forbids. Not a W3 matter; proposed to
+  the approver as a bug below.
+
+**P8.** No file under `spikes/task-011/` or its `out/` contains the token or its last 12 characters
+(counts only, the value never printed). No stderr from either session.
+
+**Spending:** 0.0402 USD API-equivalent, on the maintainer's subscription, of the 0.50 € authorised.
+
+### For the approver
+
+1. **K5 amendment (scenarios README):** "mutating MCP Tools" is not in `3df305e`; its MCP server
+   offers read-only Resources and role Prompts. Proposed wording: "…`directive create/assign/remove`,
+   MCP read-only Resources and MCP Prompts that load role directives (mutating MCP Tools come later)".
+   F2.7's "WingFoil's CLI + MCP" stays true.
+2. **REQ-RUN-14 amendment:** add that the WingFoil under test is installed **with the dependency
+   versions of its lockfile at the pinned commit** (install (b)/(c)), and that it is invoked as
+   `wingfoil`, never through `npx`. The tarball is still built exactly as the requirement says.
+3. **A bug for the auto-memory** of Claude Code (`~/.claude/projects/-workspace/memory/`), which can
+   carry state between the steps of a run: for `bug-ingest`, with the fix left to a later task.
+
+Items 1 and 2 are review decisions on approved documents; the requirements amendment would be 1.5,
+together with dl-005's REQ-FMT-04 change planned for task-013.
