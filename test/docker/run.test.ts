@@ -169,7 +169,7 @@ describe('runs in a real container', () => {
   const clone = process.env.BENCH_WINGFOIL_REPO ?? repoPath('../WingFoil2');
 
   it.skipIf(!existsSync(join(clone, '.git')))(
-    'W3: @F2.6 the WingFoil under test is the pinned build, and the agent executes an approval (REQ-RUN-17)',
+    "W3: the same scenario in the baseline, baseline-docs and wingfoil arms — @F2.6, REQ-RUN-17, @F2.5's generator",
     async () => {
       const root = tempDir('bench-docker-');
       cpSync(repoPath('test/fixtures/campaigns'), join(root, 'campaigns'), { recursive: true });
@@ -177,6 +177,7 @@ describe('runs in a real container', () => {
       cpSync(repoPath('test/fixtures/arms'), join(root, 'arms'), { recursive: true });
       // The benchmark's own wingfoil arm, not a fixture: its setup is what is under test here.
       cpSync(repoPath('arms/wingfoil'), join(root, 'arms', 'wingfoil'), { recursive: true });
+      cpSync(repoPath('arms/baseline-docs'), join(root, 'arms', 'baseline-docs'), { recursive: true });
       process.env.BENCH_FAKE_SCRIPT = repoPath('test/fixtures/fake-script-arms.json');
       process.env.BENCH_WINGFOIL_REPO = clone;
 
@@ -188,7 +189,7 @@ describe('runs in a real container', () => {
 
       expect({ code, output }).toEqual({
         code: 0,
-        output: expect.stringContaining('2 runs completed, 0 failed'),
+        output: expect.stringContaining('3 runs completed, 0 failed'),
       });
       image = /campaign ([0-9a-f]{12})/.exec(output)?.[1] ?? '';
       const sha = execFileSync('git', ['-C', clone, 'rev-parse', '3df305e^{commit}'], {
@@ -246,6 +247,21 @@ describe('runs in a real container', () => {
       expect(readFileSync(join(run('wingfoil'), 'rules.json'), 'utf8')).toContain('no-throw');
       expect(readFileSync(join(run('wingfoil'), 'decisions.json'), 'utf8')).toContain(
         'dl-001-errors-are-returned-as-a-result',
+      );
+
+      // REQ-RUN-11: baseline-docs received T2's wingfoil configuration as Markdown, the same file the
+      // results keep, generated from the snapshot the wingfoil arm's own setup made.
+      const generated = join(root, 'results', image, '1', 'generated', 'T2@1.0');
+      const rules = readFileSync(join(run('baseline-docs'), 'PROJECT_RULES.md'), 'utf8');
+      expect(rules).toBe(readFileSync(join(generated, 'PROJECT_RULES.md'), 'utf8'));
+      expect(rules).toContain('### No throw\n\nFunctions of the domain return a `Result` and never throw.\n');
+      expect(rules).toContain('### Errors are returned as a Result');
+      expect(rules).toContain('**Orders** — A small orders domain.');
+      expect(existsSync(join(generated, 'wingfoil', '.wingfoil', 'dna.yaml'))).toBe(true);
+      expect(existsSync(join(run('baseline-docs'), '.wingfoil'))).toBe(false);
+      expect(existsSync(join(run('baseline'), 'PROJECT_RULES.md'))).toBe(false);
+      expect(readFileSync(join(run('baseline-docs'), 'CLAUDE.md'), 'utf8')).toBe(
+        readFileSync(join(root, 'arms', 'baseline-docs', 'manual.md'), 'utf8'),
       );
 
       // REQ-RUN-17: the agent's approval, as the declared member, accepted by WingFoil.
