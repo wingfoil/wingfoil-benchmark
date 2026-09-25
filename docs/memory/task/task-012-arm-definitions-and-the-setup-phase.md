@@ -2,7 +2,7 @@
 id: task-012-arm-definitions-and-the-setup-phase
 type: task
 title: "Arm definitions and the setup phase"
-status: in-review
+status: approved
 release: v0.1
 wave: W3
 features: []
