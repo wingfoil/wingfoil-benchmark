@@ -1,8 +1,9 @@
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { fakeAgent, loadFakeScript, readSession } from '../../src/agents/index.js';
+import { renderProjectRules } from '../../src/arms/index.js';
 import type { AgentPort, ResumeRequest, StepRequest } from '../../src/agents/index.js';
 import { checkCampaign, runCampaign } from '../../src/runner/index.js';
 import { completeCampaignYaml, writeRepo } from '../support/campaign-fixture.js';
@@ -20,6 +21,14 @@ function smokeCampaign(): Record<string, unknown> {
   yaml.agent = { name: 'fake', version: '1.0.0' };
   yaml.models = { default: 'fake-model' };
   return yaml;
+}
+
+/** Every file below `directory`, at any depth. */
+function filesUnder(directory: string): string[] {
+  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const path = join(directory, entry.name);
+    return entry.isDirectory() ? filesUnder(path) : [path];
+  });
 }
 
 /** A setup's usage: a v0.1 setup runs no agent, so every field is zero (adr-003 decision 11). */
@@ -188,6 +197,28 @@ describe('runner.feature', () => {
     expect(record.steps.map((step) => step.n)).toEqual([1, 2]);
     expect(record.steps.every((step) => step.usage.inputTokens === 100)).toBe(true);
     expect(readdirSync(join(wingfoil?.outputDir ?? '', 'steps'))).toEqual(['01', '02']);
+  });
+
+  it("@F2.5 The baseline-docs environment is generated from the wingfoil arm's configuration", () => {
+    // Given the wingfoil arm's configuration for S8 — T2 stands in for S8 until W8: a snapshot WingFoil
+    // 3df305e wrote in a real run, with T2's rules (test/fixtures/wingfoil-config/README.md).
+    const root = repoPath('test/fixtures/wingfoil-config/T2');
+    const files = new Map(
+      filesUnder(root).map((file) => [relative(root, file), readFileSync(file, 'utf8')] as const),
+    );
+
+    // When the baseline-docs environment for S8 is generated
+    const rules = renderProjectRules(files);
+
+    // Then it contains the same directives, decisions and project description as Markdown
+    expect(rules).toContain('**Orders** — A small orders domain.');
+    expect(rules).toContain('### No throw\n\nFunctions of the domain return a `Result` and never throw.\n');
+    expect(rules).toContain('### Errors are returned as a Result\n\n##### Context\n');
+    expect(rules).not.toContain('Benchmark Approver');
+    expect(rules).toBe(readFileSync(repoPath('test/fixtures/wingfoil-config/T2.PROJECT_RULES.md'), 'utf8'));
+    // And generating it twice yields byte-identical output, whatever order the files are read in
+    expect(renderProjectRules(files)).toBe(rules);
+    expect(renderProjectRules(new Map([...files].reverse()))).toBe(rules);
   });
 
   it('@F2.6 The WingFoil under test is the version pinned by the campaign', async () => {

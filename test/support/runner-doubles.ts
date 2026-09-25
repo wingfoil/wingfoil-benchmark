@@ -29,8 +29,23 @@ const NO_USAGE: SessionUsage = {
   durationMs: 0,
 };
 
-/** A harness build as the real one leaves it: the npm tarball and the installed artefact in `out/`. */
+/**
+ * A one-off container as the real ones leave their mount: a harness build, the npm tarball and the
+ * installed artefact in `out/`; a snapshot of the wingfoil configuration, a small `.wingfoil/`.
+ */
 export function fakeBuild(request: RunOnceRequest): void {
+  // The snapshot of a wingfoil configuration runs the arm's setup instead (task-015).
+  if (request.command.join(' ').includes('/build/arm/')) {
+    const config = join(request.mount.source, 'workspace', '.wingfoil');
+    mkdirSync(join(config, 'directives', 'custom'), { recursive: true });
+    writeFileSync(join(config, 'dna.yaml'), 'project:\n  name: Fake\n  description: A fake project.\n');
+    writeFileSync(join(config, 'roles.yaml'), 'assignments:\n  developer: [fake-rule]\n');
+    writeFileSync(
+      join(config, 'directives', 'custom', 'fake-rule.md'),
+      '---\nid: fake-rule\ntitle: Fake rule\n---\nBe fake.\n',
+    );
+    return;
+  }
   mkdirSync(join(request.mount.source, 'out'), { recursive: true });
   writeFileSync(join(request.mount.source, 'out', 'wingfoil-0.1.0.tgz'), 'tarball');
   writeFileSync(join(request.mount.source, 'out', 'installed.tgz'), 'installed');

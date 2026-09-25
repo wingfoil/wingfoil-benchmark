@@ -40,7 +40,7 @@ function checkedCampaign(yaml: Record<string, unknown> = campaignYaml(), scenari
 describe('runCampaign', () => {
   it('builds the campaign image once and reuses it for every run', async () => {
     const { checked } = checkedCampaign(
-      campaignYaml({ arms: ['baseline', 'baseline-docs'], repetitions: { S1: 2 } }),
+      campaignYaml({ arms: ['baseline', 'baseline-notes'], repetitions: { S1: 2 } }),
     );
     const { docker, git, agent, recorded } = doubles();
 
@@ -51,8 +51,8 @@ describe('runCampaign', () => {
     expect(summary.runs.map((run) => `${run.arm}/r${run.repetition}`)).toEqual([
       'baseline/r1',
       'baseline/r2',
-      'baseline-docs/r1',
-      'baseline-docs/r2',
+      'baseline-notes/r1',
+      'baseline-notes/r2',
     ]);
     expect(recorded.creates).toHaveLength(4);
     expect(new Set(recorded.creates.map((create) => create.workspace)).size).toBe(4);
@@ -1036,7 +1036,7 @@ describe('the setup phase (REQ-RUN-03, adr-003)', () => {
   });
 
   it('fails the run on a failing setup, runs no step, and goes on with the campaign (REQ-NFR-03)', async () => {
-    const { checked } = checkedCampaign(campaignYaml({ arms: ['baseline', 'baseline-docs'] }));
+    const { checked } = checkedCampaign(campaignYaml({ arms: ['baseline', 'baseline-notes'] }));
     const failed: string[] = [];
     const ports = doubles({
       execResultOf: (command) =>
