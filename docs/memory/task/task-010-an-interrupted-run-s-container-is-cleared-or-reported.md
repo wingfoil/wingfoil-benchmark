@@ -165,3 +165,8 @@ otherwise pay one more Docker call per run.
   `backlog → in-progress`, only `status` changed. Observed: exit 0, as declared. Matches.
 - `npx wingfoil memory submit task-010-…` (`in-progress → in-review`): exit 0, only `status` changed.
   Matches.
+
+### Approved
+
+- `npx wingfoil memory approve task-010-… --reason "…"` → `82b2fcf`, run by the approver
+  (`in-review → approved`, `Approver:`/`Reason:` trailers, only `status` changed). Matches.
