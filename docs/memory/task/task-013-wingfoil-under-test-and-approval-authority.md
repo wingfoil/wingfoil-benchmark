@@ -168,3 +168,64 @@ dl-005 planned (it said 1.5; task-011 took that number).
   required fields checked, one commit `wf(task): submit <id>` with no bracket and no body. Observed:
   exit 0, empty stderr, 1 file, diff limited to `status: draft` → `status: pending`. Matches (subject
   without transition: N9).
+- The approver's `memory approve` → `68b8f14` (`pending → backlog`). Matches.
+- `npx wingfoil memory submit task-013-wingfoil-under-test-and-approval-authority` → `b9c7e78`, in the
+  linked worktree with its own `npm ci` (`backlog → in-progress`, one commit, only `status`). Matches.
+
+### Build (TDD, red first at each cycle)
+
+1. **A scenario's `arms/<arm>/` and the ports a build needs** (`bbc0ca1`). 9 red, then green. The
+   traceability test went red at the same time, as it should: F2.6 had started with no acceptance test
+   yet. It turned green in cycle 2 as soon as the `@F2.6` title existed.
+2. **The builder and its wiring** (`7b7fbee`). 11 red, then green. Six earlier tests then failed
+   because an arm that requires WingFoil now needs a clone and a build, which did not exist before:
+   the doubles now answer a build the way the real one leaves it and resolve any revision, the
+   runner's tests that use the wingfoil arm pass `harnessSources`, and in the CLI the
+   `BENCH_WINGFOIL_REPO` check moved after the spending and credential checks, so that a refusal to
+   spend is still the first thing said. One expectation grew by the harness copy, kept exact. Four
+   error paths got a test each so that `harness.ts` and the ports are fully covered by statements.
+3. **The real setup, T2, docker** (`7245ad9`). `arms/wingfoil/setup.sh` installs the artefact behind a
+   `wingfoil` wrapper, `init`s, lays T2's configuration over it, declares the approver; the run image
+   puts `/home/node/.local/bin` on its `PATH`. The docker test (44 s, of which the build is most) was
+   **green at its first run**, so it was shown able to fail: with the member declared under another
+   email, the agent's `memory approve` is refused by WingFoil itself (`user not authorized to approve
+   type 'decision-log'`) and the test goes red; restored from a copy, green again. It also checked
+   that it ran rather than skipped (`skipIf` on the clone).
+4. `508a538`: `.cache/` was not git-ignored, although the Design said so. Fixed.
+5. **Requirements 1.6** (`679fc9b`): REQ-FMT-04 and a note on REQ-ARC-03, as dl-005 planned. Written
+   for the approver's review decision at this task's gate; its commit says it is not yet approved.
+
+### WingFoil under test (declared vs observed), inside the container at `3df305e`
+
+- `wingfoil init --template Kanban`: one commit `chore(wingfoil): initialize .wingfoil/ with the Kanban
+  template (P5.1.1)`, authored by the repository's identity (Benchmark Approver). As in task-011 P3.
+- `wingfoil memory add --type decision-log` / `submit` / `approve --reason`, run by the fake agent as
+  Benchmark Approver: three `wf(decision-log)` commits, the last with `Approver: Benchmark Approver
+  <approver@benchmark.localhost> (approver)`. Matches REQ-RUN-17.
+- The same `approve` with the member declared under another email: exit 1, `user not authorized to
+  approve type 'decision-log'`. Matches task-011 P5.
+
+### Deviations from the Design
+
+- **The build runs as the host's user**, not as `node`, with `HOME` inside the build directory: what
+  the build writes into its mount stays the host's to read and remove, whatever its user ids are
+  (task-012 met the same question with `docker cp`).
+- **The history of a wingfoil run** is `seed`, `init`, `apply the scenario configuration`, `declare
+  the Benchmark Approver`, `setup`, then the steps, with the agent's own `wf(...)` commits inside the
+  step that made them. The docker test pins it.
+
+### Notes for the next tasks
+
+- The wingfoil manual (task-014) must name `wingfoil`, never `npx wingfoil` (adr-003 decision 3), and
+  the approval commands the agent may run after the neutral approver's reply (REQ-RUN-17).
+- The baseline-docs generator (task-015) reads the same `arms/wingfoil/` of a scenario: T2's is its
+  input.
+- `setup.sh` rewrites `dna.yaml` with `js-yaml` when it adds the member, which drops the file's
+  comments; the agent sees a comment-free `dna.yaml`. Harmless for v0.1; a verb for members would
+  remove it (usage note N33).
+
+### Review readiness
+
+`npm test` 518/518 (statements 100%, branches 98.27%, functions 100%, lines 100%), `npm run test:bin`
+4/4, `npm run test:docker` 4/4 (the W3 test ran, against `../WingFoil2` at `3df305e`), `npm run lint`
+clean; no `bench*` container left.
