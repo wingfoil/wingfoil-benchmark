@@ -2,7 +2,7 @@
 id: dl-005-a-scenario-s-project-rules-live-in-the-scenario-as-the-wingfoil-arm-s-configuration
 type: decision-log
 title: "A scenario's project rules live in the scenario, as the wingfoil arm's configuration"
-status: pending
+status: approved
 ---
 
 ## Context
