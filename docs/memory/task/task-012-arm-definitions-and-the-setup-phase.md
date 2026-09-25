@@ -252,3 +252,10 @@ own under `test/fixtures/arms/`, since their campaigns live in `test/fixtures/ca
 
 `npm test` 494/494 (statements 100%, branches 98.42%, functions 100%, lines 100%), `npm run test:bin`
 4/4, `npm run test:docker` 3/3, `npm run lint` clean; no `bench*` container left.
+
+### Review and approval
+
+- `npx wingfoil memory submit task-012-…` → `5e8f359` (`in-progress → in-review`, one commit, only
+  `status` changed). Matches.
+- `npx wingfoil memory approve task-012-… --reason "…"` → `906b552`, run by the approver from the
+  worktree (`in-review → approved`, `Approver:`/`Reason:` trailers, only `status` changed). Matches.
