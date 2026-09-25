@@ -174,3 +174,10 @@ not if it resolved the variable.
 `npm test` 574/574 (statements 100%, branches 97.76%, functions 100%, lines 100%), `npm run test:bin`
 4/4, `npm run test:docker` 4/4, `npm run lint` clean; no `bench*` container left. No hold-out content in
 this repository: every hold-out of the tests is built in a temporary directory.
+
+### Review and approval
+
+- `npx wingfoil memory submit task-016-…` → `55a3448` (`in-progress → in-review`, one commit, only
+  `status` changed). Matches.
+- `npx wingfoil memory approve task-016-… --reason "…"` → `d19158a`, run by the approver from the
+  worktree (`in-review → approved`, `Approver:`/`Reason:` trailers, only `status` changed). Matches.
