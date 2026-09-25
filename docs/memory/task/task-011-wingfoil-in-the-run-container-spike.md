@@ -397,3 +397,10 @@ together with dl-005's REQ-FMT-04 change planned for task-013.
   **requirements 1.5** (REQ-RUN-14: lockfile-faithful install, `wingfoil` never through `npx`) and **scenarios README 1.1** (K5: no MCP Tools at `3df305e`; a new §6 records
   the amendment). dl-005 had planned its REQ-FMT-04 change as "requirements 1.5"; since 1.5 is now
   taken, task-013 writes it as 1.6. dl-005 itself is approved and is not edited for a version number.
+
+### Review and approval
+
+- `npx wingfoil memory submit task-011-…` → `73fa879` (`in-progress → in-review`, one commit, only
+  `status` changed). Matches.
+- `npx wingfoil memory approve task-011-… --reason "…"` → `21d9403`, run by the approver from the
+  worktree (`in-review → approved`, `Approver:`/`Reason:` trailers, only `status` changed). Matches.
