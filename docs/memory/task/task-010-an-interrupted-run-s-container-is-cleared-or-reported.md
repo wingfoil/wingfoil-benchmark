@@ -110,5 +110,33 @@ otherwise pay one more Docker call per run.
 
 ## Execution notes
 
-<!-- What happened while building: deviations, blockers, follow-ups (filed as elements, never left
-     here). For every `wingfoil` command: declared vs observed behaviour. -->
+### Build
+
+- **The bug's framing, confirmed in code.** `nextExecution` counts the `results/<id>/<n>/` directories
+  the interrupted run already created, so an ordinary rerun gets `n + 1`: the Docker test shows both
+  sides — with the results removed the rerun collides and is reported; the next rerun gets execution 2,
+  warns about the leftover of execution 1, and completes.
+- **TDD order, in the history:** every test red first (`0454001`, 9 red plus the Docker test); the
+  process port's time limit, `containersNamed` and the runner's check (`37daba8`); one more assertion
+  after a surviving mutation (`0db70de`); the README (`041c39a`).
+- **Mutations, each made, observed and reverted — 9, all red after `0db70de`:** the collision check
+  off; the warnings off; the warning emitted for the current execution too (**survived** the first
+  suite: the collision test captured the error stream without asserting it; it now asserts the run's
+  failure is the only line); a prefix of `bench-` alone; the listing without its time limit;
+  `timedOut` never set; `timedOut` set on any kill; the port not filtering Docker's substring match;
+  the stale container removed instead of reported.
+- **The runner removes nothing it did not create.** Asserted in the unit test (`removes` holds only
+  the containers the runs created) and against the real Docker (the stale container is still listed
+  after both reruns, and the test removes it itself in a `finally`).
+- **Suites:** `npm test` 454 passed, 100% statements / 98.33% branches / 100% functions / 100% lines;
+  `npm run test:docker` 3; `npm run lint` clean.
+
+### WingFoil commands (declared vs observed)
+
+- `npx wingfoil memory add --type task --title "…"` → `73de01d`, on main. Declared: one commit, one
+  file from the template, `status: draft`. Observed: as declared; the id's slug renders the apostrophe
+  of "run's" as `run-s`. Content filled by hand in `e7f96c7`.
+- `npx wingfoil memory submit task-010-…` → `5a87f36` (`draft → pending`); approved by the approver in
+  `4f46a22` (`pending → backlog`).
+- `npx wingfoil memory submit task-010-…` → `d1ca432`, after the design commit `ee8f7c0`. Declared:
+  `backlog → in-progress`, only `status` changed. Observed: exit 0, as declared. Matches.
