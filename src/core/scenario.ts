@@ -177,4 +177,9 @@ export interface Scenario {
     readonly thirdParty: readonly ScenarioFile['oracle']['third_party'][number][];
   };
   readonly holdout: boolean;
+  /**
+   * The scenario's configuration for each arm that has one, by arm name: `arms/<arm>/` beside the
+   * seed (dl-005, REQ-FMT-04). Only that arm's setup receives it; the seed and the prompts never do.
+   */
+  readonly armDirs: Readonly<Record<string, string>>;
 }

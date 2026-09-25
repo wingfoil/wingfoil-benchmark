@@ -1,10 +1,13 @@
-import { existsSync, realpathSync, statSync } from 'node:fs';
+import { existsSync, lstatSync, readdirSync, realpathSync, statSync } from 'node:fs';
 import { resolve, sep } from 'node:path';
 
-import { fail, ok, parseWith, readYamlFile, scenarioSchema } from '../core/index.js';
+import { ARM_NAME, fail, ok, parseWith, readYamlFile, scenarioSchema } from '../core/index.js';
 import type { Issue, Result, Scenario, ScenarioFile } from '../core/index.js';
 
 const SCENARIO_FILE = 'scenario.yaml';
+
+/** Where a scenario keeps its configuration per arm, one directory per arm name (dl-005). */
+const ARMS_DIR = 'arms';
 
 type Kind = 'file' | 'directory';
 
@@ -19,7 +22,7 @@ interface Declared {
  * Load `<scenariosRoot>/<id>/<version>/scenario.yaml` (REQ-ARC-03, REQ-FMT-04) and return it with
  * absolute paths. Issues are reported in a stable order: schema issues in schema order; then id and
  * version against their directories; then every declared path on disk, in declaration order; then
- * every overlap between what the agent sees and what it must not see.
+ * the entries of `arms/`; then every overlap between what the agent sees and what it must not see.
  */
 export function loadScenario(scenariosRoot: string, id: string, version: string): Result<Scenario> {
   const dir = resolve(scenariosRoot, id, version);
@@ -31,9 +34,14 @@ export function loadScenario(scenariosRoot: string, id: string, version: string)
   const spec = parsed.value;
   const seed: Declared = { path: 'seed', relative: spec.seed, kind: 'directory' };
   const others = otherPaths(spec);
-  const issues = [...identityIssues(spec, id, version), ...fileIssues([seed, ...others], dir)];
-  if (issues.length === 0) issues.push(...overlapIssues(seed, others, dir));
-  return issues.length > 0 ? fail(issues) : ok(toScenario(spec, dir));
+  const arms = armEntries(dir);
+  const issues = [
+    ...identityIssues(spec, id, version),
+    ...fileIssues([seed, ...others], dir),
+    ...arms.issues,
+  ];
+  if (issues.length === 0) issues.push(...overlapIssues(seed, others, arms.declared, dir));
+  return issues.length > 0 ? fail(issues) : ok(toScenario(spec, dir, arms.declared));
 }
 
 function identityIssues(spec: ScenarioFile, id: string, version: string): Issue[] {
@@ -62,6 +70,28 @@ function otherPaths(spec: ScenarioFile): Declared[] {
   ];
 }
 
+/**
+ * The directories of `arms/`, found by name (dl-005): each must be a real directory named like an arm.
+ * A scenario with no `arms/` has none.
+ */
+function armEntries(dir: string): { declared: Declared[]; issues: Issue[] } {
+  const root = resolve(dir, ARMS_DIR);
+  if (!existsSync(root)) return { declared: [], issues: [] };
+  const declared: Declared[] = [];
+  const issues: Issue[] = [];
+  for (const name of readdirSync(root).sort()) {
+    const relative = `${ARMS_DIR}/${name}`;
+    const stats = lstatSync(resolve(root, name));
+    if (stats.isSymbolicLink()) issues.push({ path: ARMS_DIR, message: `'${relative}' is a symbolic link` });
+    else if (!stats.isDirectory())
+      issues.push({ path: ARMS_DIR, message: `'${relative}' is not a directory` });
+    else if (!ARM_NAME.test(name))
+      issues.push({ path: ARMS_DIR, message: `'${relative}' is not an arm name` });
+    else declared.push({ path: `${ARMS_DIR}.${name}`, relative, kind: 'directory' });
+  }
+  return { declared, issues };
+}
+
 function fileIssues(declared: readonly Declared[], dir: string): Issue[] {
   const root = realpathSync(dir);
   return declared.flatMap(({ path, relative, kind }): Issue[] => {
@@ -76,16 +106,23 @@ function fileIssues(declared: readonly Declared[], dir: string): Issue[] {
 
 /**
  * What the agent sees must be disjoint from what it must not see (REQ-RUN-02). The seed is copied into
- * the run container, so it must not contain or lie inside `scenario.yaml`, any step prompt or any
- * oracle path; a step prompt is given to the agent, so it must not be or lie inside `scenario.yaml` or
- * an oracle path. Checked on real paths; every overlap is reported, seed first, in declaration order.
+ * the run container, so it must not contain or lie inside `scenario.yaml`, any step prompt, any
+ * oracle path or any arm's configuration; a step prompt is given to the agent in every arm, so it must
+ * not be or lie inside `scenario.yaml`, an oracle path or an arm's configuration — the baseline arm
+ * must not receive a rule (K3, dl-005). Checked on real paths; every overlap is reported, seed first,
+ * in declaration order.
  */
-function overlapIssues(seed: Declared, others: readonly Declared[], dir: string): Issue[] {
+function overlapIssues(
+  seed: Declared,
+  others: readonly Declared[],
+  arms: readonly Declared[],
+  dir: string,
+): Issue[] {
   const scenarioFile = { path: SCENARIO_FILE, relative: SCENARIO_FILE };
   const prompts = others.filter(({ path }) => path.startsWith('steps['));
-  const hidden = [scenarioFile, ...others.filter(({ path }) => path.startsWith('oracle.'))];
+  const hidden = [scenarioFile, ...others.filter(({ path }) => path.startsWith('oracle.')), ...arms];
   const pairs = [
-    ...[scenarioFile, ...others].map((other) => [seed, other] as const),
+    ...[scenarioFile, ...others, ...arms].map((other) => [seed, other] as const),
     ...prompts.flatMap((prompt) => hidden.map((other) => [prompt, other] as const)),
   ];
   const realOf = (relative: string) => realpathSync(resolve(dir, relative));
@@ -109,7 +146,7 @@ function isInside(path: string, root: string): boolean {
   return path === root || path.startsWith(root + sep);
 }
 
-function toScenario(spec: ScenarioFile, dir: string): Scenario {
+function toScenario(spec: ScenarioFile, dir: string, arms: readonly Declared[]): Scenario {
   return {
     id: spec.id,
     version: spec.version,
@@ -126,5 +163,8 @@ function toScenario(spec: ScenarioFile, dir: string): Scenario {
       thirdParty: spec.oracle.third_party,
     },
     holdout: spec.holdout,
+    armDirs: Object.fromEntries(
+      arms.map(({ relative }) => [relative.slice(ARMS_DIR.length + 1), resolve(dir, relative)]),
+    ),
   };
 }

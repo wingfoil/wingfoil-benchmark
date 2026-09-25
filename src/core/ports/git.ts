@@ -65,6 +65,13 @@ export interface GitPort {
   configureIdentity(directory: string, name: string, email: string): Promise<void>;
   /** The full SHA of the commit the repository is at. */
   head(directory: string): Promise<string>;
+  /**
+   * The full SHA of the commit `rev` names in `repository`, or `undefined` when it names none: how a
+   * harness pin is checked against its clone (REQ-RUN-14).
+   */
+  resolveCommit(repository: string, rev: string): Promise<string | undefined>;
+  /** Writes commit `sha` of `repository` as a tar file `file`: its tree only, from the object store. */
+  archive(repository: string, sha: string, file: string): Promise<void>;
 }
 
 /** The git port that calls the `git` command line. */
@@ -93,5 +100,13 @@ export function gitCli(process: ProcessPort): GitPort {
       await git(directory, ['config', 'user.email', email]);
     },
     head: async (directory) => (await git(directory, ['rev-parse', 'HEAD'])).trim(),
+    resolveCommit: async (repository, rev) => {
+      const args = [...ISOLATION, '-C', repository, 'rev-parse', '--verify', '--quiet', `${rev}^{commit}`];
+      const result = await process.run('git', args, { env: ISOLATED_ENVIRONMENT });
+      return result.code === 0 ? result.stdout.trim() : undefined;
+    },
+    archive: async (repository, sha, file) => {
+      await git(repository, ['archive', '--format=tar', `--output=${file}`, sha]);
+    },
   };
 }

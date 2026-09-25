@@ -27,6 +27,17 @@ export interface CreateRequest {
   readonly env?: Readonly<Record<string, string>>;
 }
 
+/**
+ * A one-off container, removed when its command ends: how the runner builds a harness (adr-003
+ * decision 1) in the campaign's image. It is not a run: its one mount is a build directory.
+ */
+export interface RunOnceRequest {
+  readonly image: string;
+  readonly user: string;
+  readonly mount: { readonly source: string; readonly target: string };
+  readonly command: readonly string[];
+}
+
 /** REQ-ARC-04: Docker behind one interface, so acceptance tests run without Docker. */
 export interface DockerPort {
   build(request: BuildRequest): Promise<void>;
@@ -45,6 +56,8 @@ export interface DockerPort {
    * to the container, readable by its user whatever the host's user ids are.
    */
   copyTo(container: string, source: string, target: string): Promise<void>;
+  /** Runs {@link RunOnceRequest.command} in a fresh container of `image`, and reports its outcome. */
+  runOnce(request: RunOnceRequest): Promise<ProcessResult>;
   remove(container: string): Promise<void>;
   /** The container's mounts, as `source:target`. */
   mountsOf(container: string): Promise<string[]>;
@@ -122,6 +135,21 @@ export function dockerCli(process: ProcessPort): DockerPort {
     },
     async copyTo(container, source, target) {
       await docker(['cp', source, `${container}:${target}`]);
+    },
+    runOnce({ image, user, mount, command }) {
+      if (mount.source.includes(',') || mount.source.includes('=')) {
+        throw new Error(`the build path cannot hold a comma or an equals sign: ${mount.source}`);
+      }
+      return process.run('docker', [
+        'run',
+        '--rm',
+        '--user',
+        user,
+        '--mount',
+        `type=bind,source=${mount.source},target=${mount.target}`,
+        image,
+        ...command,
+      ]);
     },
     async remove(container) {
       await docker(['rm', '--force', container]);

@@ -9,7 +9,13 @@ export type { ArmRequirement, CampaignFile } from './campaign.js';
 export { canonicalJson } from './canonical-json.js';
 export { parseWith, readYamlFile } from './yaml-file.js';
 export { dockerCli, WORKSPACE } from './ports/docker.js';
-export type { BuildRequest, ContainerState, CreateRequest, DockerPort } from './ports/docker.js';
+export type {
+  BuildRequest,
+  ContainerState,
+  CreateRequest,
+  DockerPort,
+  RunOnceRequest,
+} from './ports/docker.js';
 export { gitCli } from './ports/git.js';
 export type { GitPort } from './ports/git.js';
 export { processFailure, reasonOf, systemProcess } from './ports/process.js';
