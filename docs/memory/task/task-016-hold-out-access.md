@@ -2,7 +2,7 @@
 id: task-016-hold-out-access
 type: task
 title: "Hold-out access"
-status: pending
+status: backlog
 release: v0.1
 wave: W4
 features: []
