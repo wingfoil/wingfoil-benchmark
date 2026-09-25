@@ -2,7 +2,7 @@
 id: task-010-an-interrupted-run-s-container-is-cleared-or-reported
 type: task
 title: "An interrupted run's container is cleared or reported"
-status: approved
+status: done
 release: v0.1
 wave: W3
 features: []
