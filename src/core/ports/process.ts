@@ -6,6 +6,8 @@ export interface ProcessResult {
   readonly code: number;
   readonly stdout: string;
   readonly stderr: string;
+  /** Set when the process was stopped because it outlived the time limit it was given. */
+  readonly timedOut?: true;
 }
 
 /** REQ-ARC-04: every external program is called through this port, so tests replace it with a fake. */
@@ -13,7 +15,12 @@ export interface ProcessPort {
   run(
     command: string,
     args: readonly string[],
-    options?: { cwd?: string; env?: Readonly<Record<string, string | undefined>> },
+    options?: {
+      cwd?: string;
+      env?: Readonly<Record<string, string | undefined>>;
+      /** Stop the process after this many milliseconds, and say so in the result. */
+      timeoutMs?: number;
+    },
   ): Promise<ProcessResult>;
 }
 
@@ -25,10 +32,13 @@ export const systemProcess: ProcessPort = {
       execFile(
         command,
         [...args],
-        { cwd: options?.cwd, env: environment, encoding: 'utf8' },
+        { cwd: options?.cwd, env: environment, encoding: 'utf8', timeout: options?.timeoutMs ?? 0 },
         (error, stdout, stderr) => {
           const code = error && typeof error.code === 'number' ? error.code : error ? 1 : 0;
-          resolve({ code, stdout, stderr });
+          // `killed` is set only when Node itself stopped the process, which with no other kill in
+          // this port means the time limit ran out; a process killed by anyone else is not a timeout.
+          const timedOut = options?.timeoutMs !== undefined && error?.killed === true;
+          resolve({ code, stdout, stderr, ...(timedOut ? { timedOut } : {}) });
         },
       );
     });

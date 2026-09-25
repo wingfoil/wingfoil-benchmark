@@ -42,7 +42,15 @@ export interface DockerPort {
   remove(container: string): Promise<void>;
   /** The container's mounts, as `source:target`. */
   mountsOf(container: string): Promise<string[]>;
+  /**
+   * Every container, running or not, whose name starts with `prefix` (bug-003). Bounded in time: a
+   * daemon that cannot list its containers says so rather than hanging the campaign.
+   */
+  containersNamed(prefix: string): Promise<string[]>;
 }
+
+/** How long listing containers may take before the campaign stops waiting for Docker. */
+const LIST_TIMEOUT_MS = 30_000;
 
 const MOUNT_FORMAT = '{{range .Mounts}}{{.Source}}:{{.Destination}}\n{{end}}';
 
@@ -102,6 +110,19 @@ export function dockerCli(process: ProcessPort): DockerPort {
     },
     async remove(container) {
       await docker(['rm', '--force', container]);
+    },
+    async containersNamed(prefix) {
+      const args = ['ps', '--all', '--filter', `name=${prefix}`, '--format', '{{.Names}}'];
+      const result = await process.run('docker', args, { timeoutMs: LIST_TIMEOUT_MS });
+      if (result.timedOut === true) {
+        throw new Error(
+          `docker ps did not answer within ${LIST_TIMEOUT_MS / 1000} s while looking for containers ` +
+            'left by earlier runs of this campaign',
+        );
+      }
+      if (result.code !== 0) throw processFailure('docker', args, result);
+      // Docker's name filter matches anywhere in a name; only a true prefix is this campaign's.
+      return result.stdout.split('\n').filter((name) => name.startsWith(prefix));
     },
     async mountsOf(container) {
       const result = await docker(['inspect', '--format', MOUNT_FORMAT, container]);
