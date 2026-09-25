@@ -1,7 +1,7 @@
 # Requirements (v0.1)
 
-**Version:** 1.4
-**Date:** 2026-09-24
+**Version:** 1.5
+**Date:** 2026-09-25
 **Status:** Approved
 **Traces to:** [acceptance/](acceptance/) (all v0.1 features), [scenarios/](scenarios/) (K1–K5), [09_experiment-design.md](../01_vision/09_experiment-design.md), [07_sequencer.md](../01_vision/07_sequencer.md) v0.1
 
@@ -80,7 +80,7 @@ One binary, `bench`, run with `npx bench`. Exit codes: `0` success, `1` failure,
 | REQ-RUN-10 | Web use is recorded from tool-use events named `WebFetch` or `WebSearch`. Network use through shell commands is **not** detected, and the method page states this limit. | T13 |
 | REQ-RUN-11 | `baseline-docs` environment generator: a pure function of the wingfoil arm's configuration and the scenario. The output is deterministic, with sorted keys and fixed templates. | F2.5, T3 |
 | REQ-RUN-13 | **Subscription quota** (requirements decision 2): when a session fails because the subscription's usage limit is reached, the step's outcome is `quota exhausted`. The campaign stops starting new runs, and the runs already completed are kept. The API-equivalent cost cap (REQ-RUN-08) keeps working as a proxy budget. | F1.3, sequencer decision 1 |
-| REQ-RUN-14 | **WingFoil under test:** the wingfoil arm's setup installs WingFoil from a tarball built by the runner, with `npm pack` from a clean `git archive` of the pinned commit. It is never taken from `vendor/` (the managing WingFoil) nor from the host's `PATH`. The tarball's commit is recorded in `run.json`. | F2.6 |
+| REQ-RUN-14 | **WingFoil under test:** the wingfoil arm's setup installs WingFoil from a tarball built by the runner, with `npm pack` from a clean `git archive` of the pinned commit. It is never taken from `vendor/` (the managing WingFoil) nor from the host's `PATH`. Its dependencies are installed at the versions of the `package-lock.json` of that same commit, never resolved from the ranges in `package.json` (added in 1.5). It is invoked as `wingfoil`, never through `npx`, which does not resolve to the installed build and may fetch a published release instead (added in 1.5). The tarball's commit is recorded in `run.json`. | F2.6 |
 | REQ-RUN-15 | **Agent authentication (amended 1.3):** by default the runner passes a **long-lived token** of the maintainer's Claude subscription (`claude setup-token`) into the container in the environment variable `ANTHROPIC_AUTH_TOKEN`, read at run time from a file outside the repository. `ANTHROPIC_API_KEY` is not interchangeable with it. Whitespace is stripped from a credential before it is passed, and a malformed one is refused before a session starts. Mounting the credential file read-only stays a **documented variant**: it requires the run image to create the agent's configuration directory owned by the container user, because mounting the file alone makes Docker create that directory owned by root, where the agent cannot keep the session state `--resume` needs. REQ-NFR-01 applies to either form. | F2.3, REQ-NFR-01 |
 | REQ-RUN-16 | **Agent version:** Claude Code is pinned per campaign (`agent.version`). v0.1 development and dry runs use **2.1.221** (requirements decision 4). | F1.1, T7 |
 | REQ-RUN-12 | The operating manual of each arm is copied as `CLAUDE.md` into the workspace. Its size in tokens is measured with a fixed tokenizer approximation and recorded per run. | F2.7 |
@@ -210,3 +210,22 @@ The traceability matrix is unaffected: the feature, journey and acceptance file 
 requirement stay the same.
 
 Source: the independent review of task-005 (W2, finding N-2), 2026-09-24.
+
+### Amendment 1.5 (delivery, W3 task-011 spike, 2026-09-25)
+
+- **REQ-RUN-14:** the WingFoil under test is installed with the dependency versions of its own
+  lockfile at the pinned commit, and is invoked as `wingfoil`, never through `npx`. The spike found
+  that the tarball built as the requirement says is reproducible byte for byte, but carries no
+  lockfile: installing it alone resolved 17 of 111 dependencies to other versions than the lock's,
+  `@modelcontextprotocol/sdk` among them, so two runs of one campaign could have exercised different
+  code. Installing with the lockfile matched all 109 runtime entries. `npx wingfoil` did not see the
+  installed build on the `PATH` and went to the npm registry, where a future published release would
+  replace the pinned commit without notice. How the runner builds, caches and installs the artefact is
+  [adr-003](../memory/adr/adr-003-w3-arm-conventions.md) decisions 1–5.
+
+The traceability matrix is unaffected: REQ-RUN-14 still serves F2.6, `runner.feature`, wave W3.
+dl-005's change to REQ-FMT-04 (a scenario's `arms/wingfoil/` directory) is not part of this
+amendment; task-013 writes it, as the next version.
+
+Source: [task-011](../memory/task/task-011-wingfoil-in-the-run-container-spike.md) Execution notes
+(Q1, Q2), review decision of the approver, 2026-09-25.
