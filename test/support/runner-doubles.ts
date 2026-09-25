@@ -37,6 +37,8 @@ export interface Recorded {
   readonly steps: StepRequest[];
   /** Every resume the approver asked for, in order (REQ-RUN-07). */
   readonly resumes: ResumeRequest[];
+  /** Every prefix the runner asked Docker to list containers by (bug-003). */
+  readonly listed: string[];
 }
 
 /** One invocation of the agent: a step's session, or a resume of it. */
@@ -76,7 +78,12 @@ export function doubles(
     patchOf?: (directory: string, ref: string) => string;
     /** Makes one Docker or git call fail: `create`, `start`, `remove` and `init` break a run
      * outside its steps, `commit` and `patch` break it inside one. */
-    failing?: { call: 'create' | 'start' | 'remove' | 'init' | 'commit' | 'patch'; error: string };
+    failing?: {
+      call: 'create' | 'start' | 'remove' | 'init' | 'commit' | 'patch' | 'list';
+      error: string;
+    };
+    /** Containers that already exist, as Docker names them: what an interrupted run left behind. */
+    leftovers?: readonly string[];
   } = {},
 ): Doubles {
   const recorded: Recorded = {
@@ -89,6 +96,7 @@ export function doubles(
     gitCalls: [],
     steps: [],
     resumes: [],
+    listed: [],
   };
   let containers = 0;
   let patches = 0;
@@ -117,6 +125,13 @@ export function doubles(
       recorded.removes.push(container);
       if (options.failing?.call === 'remove') return Promise.reject(new Error(options.failing.error));
       return Promise.resolve();
+    },
+    // Filtered by the prefix the runner asked for, as the real port does: a runner asking too broadly
+    // would get back containers that are not its campaign's, and a test can see it.
+    containersNamed: (prefix) => {
+      recorded.listed.push(prefix);
+      if (options.failing?.call === 'list') return Promise.reject(new Error(options.failing.error));
+      return Promise.resolve((options.leftovers ?? []).filter((name) => name.startsWith(prefix)));
     },
     // Derived from what the run actually asked for, so an assertion on it means something.
     mountsOf: (container) => {

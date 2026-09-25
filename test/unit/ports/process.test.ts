@@ -55,6 +55,31 @@ describe('the system process port', () => {
   });
 });
 
+describe('the system process port, with a time limit (bug-003)', () => {
+  it('stops a command that outlives its time limit, and says that is why it ended', async () => {
+    const started = Date.now();
+    const result = await systemProcess.run(process.execPath, ['-e', 'setTimeout(() => {}, 10000)'], {
+      timeoutMs: 200,
+    });
+    expect(result.timedOut).toBe(true);
+    expect(result.code).not.toBe(0);
+    expect(Date.now() - started).toBeLessThan(5000);
+  });
+
+  it('does not report a timeout for a command that finished in time', async () => {
+    const result = await systemProcess.run(process.execPath, ['-e', 'process.exit(0)'], { timeoutMs: 5000 });
+    expect(result).toEqual({ code: 0, stdout: '', stderr: '' });
+  });
+
+  it('does not report a timeout for a command killed by someone else', async () => {
+    const result = await systemProcess.run(process.execPath, ['-e', 'process.kill(process.pid, "SIGTERM")'], {
+      timeoutMs: 5000,
+    });
+    expect(result.code).not.toBe(0);
+    expect(result.timedOut).toBeUndefined();
+  });
+});
+
 describe('processFailure', () => {
   it('names the command and what it said', () => {
     const error = processFailure('docker', ['start', 'x'], { code: 2, stdout: '', stderr: 'boom\n' });

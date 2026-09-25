@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { cpSync, existsSync, readFileSync } from 'node:fs';
+import { cpSync, existsSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -136,5 +136,51 @@ describe('runs in a real container', () => {
       encoding: 'utf8',
     });
     expect(containers).not.toContain(`bench-${image}-`);
+  });
+
+  it('bug-003: a container an interrupted run left behind is reported, never removed', async () => {
+    const root = tempDir('bench-docker-');
+    cpSync(repoPath('test/fixtures/campaigns'), join(root, 'campaigns'), { recursive: true });
+    cpSync(repoPath('test/fixtures/scenarios'), join(root, 'scenarios'), { recursive: true });
+    process.env.BENCH_FAKE_SCRIPT = repoPath('test/fixtures/fake-script.json');
+    const campaign = join(root, 'campaigns', 'smoke.yaml');
+    const run = async () => {
+      let output = '';
+      const code = await main(['campaign', 'run', campaign], {
+        stdout: (text) => (output += text),
+        stderr: (text) => (output += text),
+      });
+      return { code, output };
+    };
+
+    const first = await run();
+    expect(first.code).toBe(0);
+    image = /campaign ([0-9a-f]{12})/.exec(first.output)?.[1] ?? '';
+    // What an interrupted run leaves: a container with the name execution 1's run used.
+    const stale = `bench-${image}-1-T0-1.0-baseline-fake-model-r1`;
+    execFileSync('docker', ['create', '--name', stale, image, 'sleep', 'infinity'], { encoding: 'utf8' });
+    try {
+      // With the results gone the rerun is execution 1 again, and needs that very name.
+      rmSync(join(root, 'results'), { recursive: true, force: true });
+      const collided = await run();
+      expect(collided.code).toBe(1);
+      expect(collided.output).toContain(
+        `container ${stale} already exists: an interrupted run of execution 1 of this campaign left it ` +
+          `behind (bug-003). Remove it with: docker rm --force ${stale}`,
+      );
+
+      // The ordinary rerun gets the next execution: it warns about the leftover and completes.
+      const rerun = await run();
+      expect(rerun.code).toBe(0);
+      expect(rerun.output).toContain(
+        `container ${stale} was left behind by an interrupted run of execution 1 of this campaign`,
+      );
+
+      // And the runner removed nothing it did not create.
+      const names = execFileSync('docker', ['ps', '--all', '--format', '{{.Names}}'], { encoding: 'utf8' });
+      expect(names.split('\n')).toContain(stale);
+    } finally {
+      execFileSync('docker', ['rm', '--force', stale], { encoding: 'utf8' });
+    }
   });
 });

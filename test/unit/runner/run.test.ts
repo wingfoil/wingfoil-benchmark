@@ -760,3 +760,89 @@ describe('the neutral approver in the step loop (F2.4)', () => {
     expect(lines).toContain('step 01: approval request, intervention 1 of 3: Approved. Proceed.');
   });
 });
+
+describe('a container an interrupted run left behind (bug-003)', () => {
+  /** The name the runner gives a run's container (task-003): campaign, execution, run. */
+  function containerName(campaignId: string, execution: number, repetition: number): string {
+    return `bench-${campaignId}-${execution}-S1-1.0-baseline-fake-model-r${repetition}`;
+  }
+
+  it('fails the run whose container name is taken, naming the cause and the remedy, and goes on', async () => {
+    const { checked } = checkedCampaign(campaignYaml({ repetitions: { S1: 2 } }));
+    const taken = containerName(checked.campaign.id, 1, 1);
+    const errors: string[] = [];
+    const ports = doubles({ leftovers: [taken] });
+
+    const summary = await runCampaign(checked, { ...ports, logError: (line) => errors.push(line) });
+
+    expect(summary.runs.map((run) => run.outcome)).toEqual(['failed', 'completed']);
+    expect(summary.runs[0]?.error).toBe(
+      `container ${taken} already exists: an interrupted run of execution 1 of this campaign left it ` +
+        `behind (bug-003). Remove it with: docker rm --force ${taken}`,
+    );
+    // Nothing is created in its place, and nothing that the run did not create is removed.
+    expect(ports.recorded.creates.map((create) => create.name)).toEqual([
+      containerName(checked.campaign.id, 1, 2),
+    ]);
+    expect(ports.recorded.removes).toEqual(['container-1']);
+    expect(ports.recorded.steps.map((request) => request.step)).toEqual([1, 2]);
+  });
+
+  it('warns once about each container of an earlier execution, and runs as usual', async () => {
+    const { checked } = checkedCampaign();
+    const earlier = [containerName(checked.campaign.id, 3, 1), containerName(checked.campaign.id, 7, 2)];
+    const errors: string[] = [];
+    const ports = doubles({ leftovers: earlier });
+
+    const summary = await runCampaign(checked, { ...ports, logError: (line) => errors.push(line) });
+
+    expect(summary.runs[0]?.outcome).toBe('completed');
+    expect(errors).toEqual([
+      `container ${earlier[0] ?? ''} was left behind by an interrupted run of execution 3 of this campaign ` +
+        `(bug-003). Remove it with: docker rm --force ${earlier[0] ?? ''}`,
+      `container ${earlier[1] ?? ''} was left behind by an interrupted run of execution 7 of this campaign ` +
+        `(bug-003). Remove it with: docker rm --force ${earlier[1] ?? ''}`,
+    ]);
+  });
+
+  it("asks only for this campaign's containers, and ignores another campaign's", async () => {
+    const { checked } = checkedCampaign();
+    const errors: string[] = [];
+    const ports = doubles({ leftovers: ['bench-0123456789ab-1-S1-1.0-baseline-fake-model-r1'] });
+
+    const summary = await runCampaign(checked, { ...ports, logError: (line) => errors.push(line) });
+
+    expect(ports.recorded.listed).toEqual([`bench-${checked.campaign.id}-`]);
+    expect(errors).toEqual([]);
+    expect(summary.runs[0]?.outcome).toBe('completed');
+  });
+
+  it('looks before building the image, and not before every run', async () => {
+    const { checked } = checkedCampaign(campaignYaml({ repetitions: { S1: 3 } }));
+    const order: string[] = [];
+    const ports = doubles();
+    const docker = {
+      ...ports.docker,
+      build: (request: Parameters<typeof ports.docker.build>[0]) => {
+        order.push('build');
+        return ports.docker.build(request);
+      },
+      containersNamed: (prefix: string) => {
+        order.push('list');
+        return ports.docker.containersNamed(prefix);
+      },
+    };
+
+    await runCampaign(checked, { ...ports, docker });
+
+    expect(order).toEqual(['list', 'build']);
+  });
+
+  it('does not start the campaign when Docker cannot say what is left behind', async () => {
+    const { checked } = checkedCampaign();
+    const ports = doubles({ failing: { call: 'list', error: 'docker ps did not answer within 30 s' } });
+
+    await expect(runCampaign(checked, ports)).rejects.toThrow('docker ps did not answer within 30 s');
+    expect(ports.recorded.builds).toEqual([]);
+  });
+});
