@@ -786,6 +786,10 @@ describe('a container an interrupted run left behind (bug-003)', () => {
     ]);
     expect(ports.recorded.removes).toEqual(['container-1']);
     expect(ports.recorded.steps.map((request) => request.step)).toEqual([1, 2]);
+    // Said once, by the run that needed the name: not also as a leak of an earlier execution.
+    expect(errors).toEqual([
+      expect.stringMatching(/^run S1@1\.0\/baseline\/fake-model\/r1 failed: container /),
+    ]);
   });
 
   it('warns once about each container of an earlier execution, and runs as usual', async () => {
@@ -813,6 +817,17 @@ describe('a container an interrupted run left behind (bug-003)', () => {
     const summary = await runCampaign(checked, { ...ports, logError: (line) => errors.push(line) });
 
     expect(ports.recorded.listed).toEqual([`bench-${checked.campaign.id}-`]);
+    expect(errors).toEqual([]);
+    expect(summary.runs[0]?.outcome).toBe('completed');
+  });
+
+  it('ignores a container that only shares the prefix, with no execution in its name', async () => {
+    const { checked } = checkedCampaign();
+    const errors: string[] = [];
+    const ports = doubles({ leftovers: [`bench-${checked.campaign.id}-manual-debugging`] });
+
+    const summary = await runCampaign(checked, { ...ports, logError: (line) => errors.push(line) });
+
     expect(errors).toEqual([]);
     expect(summary.runs[0]?.outcome).toBe('completed');
   });
