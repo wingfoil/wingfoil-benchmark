@@ -786,6 +786,8 @@ describe('a container an interrupted run left behind (bug-003)', () => {
     ]);
     expect(ports.recorded.removes).toEqual(['container-1']);
     expect(ports.recorded.steps.map((request) => request.step)).toEqual([1, 2]);
+    // The failed run built no workspace: it was refused before anything was prepared for it.
+    expect(ports.recorded.gitCalls.filter((call) => call.startsWith('init'))).toHaveLength(1);
     // Said once, by the run that needed the name: not also as a leak of an earlier execution.
     expect(errors).toEqual([
       expect.stringMatching(/^run S1@1\.0\/baseline\/fake-model\/r1 failed: container /),
@@ -819,6 +821,55 @@ describe('a container an interrupted run left behind (bug-003)', () => {
     expect(ports.recorded.listed).toEqual([`bench-${checked.campaign.id}-`]);
     expect(errors).toEqual([]);
     expect(summary.runs[0]?.outcome).toBe('completed');
+  });
+
+  it('warns about a leftover of an earlier execution than the current one, the ordinary rerun', async () => {
+    const { checked, root } = checkedCampaign();
+    // Executions 1 and 2 already ran, so this is execution 3.
+    for (const n of ['1', '2']) mkdirSync(join(root, 'results', checked.campaign.id, n), { recursive: true });
+    const earlier = containerName(checked.campaign.id, 1, 1);
+    const errors: string[] = [];
+    const ports = doubles({ leftovers: [earlier] });
+
+    const summary = await runCampaign(checked, { ...ports, logError: (line) => errors.push(line) });
+
+    expect(summary.execution).toBe(3);
+    expect(errors).toEqual([
+      expect.stringContaining(`container ${earlier} was left behind by an interrupted run of execution 1`),
+    ]);
+  });
+
+  it('does not call a running container interrupted: another invocation of the campaign may own it', async () => {
+    // The campaign id is a digest of the file, so the same campaign run from another checkout, or two
+    // test suites at once, share the prefix. The runner cannot tell, so it says so instead of advising
+    // a forced removal of someone else's run.
+    const { checked } = checkedCampaign(campaignYaml({ repetitions: { S1: 2 } }));
+    const mine = containerName(checked.campaign.id, 1, 1);
+    const theirs = containerName(checked.campaign.id, 4, 1);
+    const errors: string[] = [];
+    const ports = doubles({ leftovers: [mine, theirs], running: [mine, theirs] });
+
+    const summary = await runCampaign(checked, { ...ports, logError: (line) => errors.push(line) });
+
+    expect(summary.runs[0]?.error).toBe(
+      `container ${mine} already exists and is running: another invocation of this campaign may be ` +
+        `using it. If none is, remove it with: docker rm --force ${mine}`,
+    );
+    expect(errors).toContain(
+      `container ${theirs} of execution 4 is running: another invocation of this campaign may be using ` +
+        `it. If none is, remove it with: docker rm --force ${theirs}`,
+    );
+    expect(errors.join('\n')).not.toMatch(/interrupted/);
+  });
+
+  it('reads the execution only from where the name puts it', async () => {
+    const { checked } = checkedCampaign();
+    const errors: string[] = [];
+    const ports = doubles({ leftovers: [`bench-${checked.campaign.id}-manual2-debugging`] });
+
+    await runCampaign(checked, { ...ports, logError: (line) => errors.push(line) });
+
+    expect(errors).toEqual([]);
   });
 
   it('ignores a container that only shares the prefix, with no execution in its name', async () => {

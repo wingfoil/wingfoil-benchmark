@@ -84,6 +84,8 @@ export function doubles(
     };
     /** Containers that already exist, as Docker names them: what an interrupted run left behind. */
     leftovers?: readonly string[];
+    /** Which of {@link leftovers} are running, as another invocation's would be. */
+    running?: readonly string[];
   } = {},
 ): Doubles {
   const recorded: Recorded = {
@@ -131,7 +133,11 @@ export function doubles(
     containersNamed: (prefix) => {
       recorded.listed.push(prefix);
       if (options.failing?.call === 'list') return Promise.reject(new Error(options.failing.error));
-      return Promise.resolve((options.leftovers ?? []).filter((name) => name.startsWith(prefix)));
+      return Promise.resolve(
+        (options.leftovers ?? [])
+          .filter((name) => name.startsWith(prefix))
+          .map((name) => ({ name, running: options.running?.includes(name) ?? false })),
+      );
     },
     // Derived from what the run actually asked for, so an assertion on it means something.
     mountsOf: (container) => {

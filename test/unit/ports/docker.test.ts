@@ -109,15 +109,21 @@ describe('the Docker port', () => {
 
   it('lists the containers whose name starts with a prefix, within a time limit (bug-003)', async () => {
     // Docker's name filter matches anywhere in a name, so the port keeps only true prefixes.
-    const process = recorder([ok('bench-abc-1-S1-x\nother-bench-abc-1\nbench-abc-2-S1-y\n\n')]);
+    const process = recorder([
+      ok('bench-abc-1-S1-x\texited\nother-bench-abc-1\trunning\nbench-abc-2-S1-y\trunning\n\n'),
+    ]);
 
-    const names = await dockerCli(process).containersNamed('bench-abc-');
+    const containers = await dockerCli(process).containersNamed('bench-abc-');
 
-    expect(names).toEqual(['bench-abc-1-S1-x', 'bench-abc-2-S1-y']);
+    // With its state: a running one may belong to another invocation of the same campaign.
+    expect(containers).toEqual([
+      { name: 'bench-abc-1-S1-x', running: false },
+      { name: 'bench-abc-2-S1-y', running: true },
+    ]);
     expect(process.calls).toEqual([
       {
         command: 'docker',
-        args: ['ps', '--all', '--filter', 'name=bench-abc-', '--format', '{{.Names}}'],
+        args: ['ps', '--all', '--filter', 'name=bench-abc-', '--format', '{{.Names}}\t{{.State}}'],
         timeoutMs: 30_000,
       },
     ]);

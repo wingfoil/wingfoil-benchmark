@@ -66,6 +66,13 @@ describe('the system process port, with a time limit (bug-003)', () => {
     expect(Date.now() - started).toBeLessThan(5000);
   });
 
+  it('stops a command that ignores the polite signal: the limit is a bound, not a request', async () => {
+    const started = Date.now();
+    const result = await systemProcess.run('sh', ['-c', 'trap "" TERM; sleep 5'], { timeoutMs: 200 });
+    expect(result.timedOut).toBe(true);
+    expect(Date.now() - started).toBeLessThan(2000);
+  });
+
   it('does not report a timeout for a command that finished in time', async () => {
     const result = await systemProcess.run(process.execPath, ['-e', 'process.exit(0)'], { timeoutMs: 5000 });
     expect(result).toEqual({ code: 0, stdout: '', stderr: '' });
