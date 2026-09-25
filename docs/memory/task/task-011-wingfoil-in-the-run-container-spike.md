@@ -229,6 +229,11 @@ adr-003 written, the spending reported, and `npm test`, `npm run test:bin`, `npm
   stderr, 1 file, diff limited to `status`, and the commit landed on the worktree's branch, not on
   main (main stayed at `3684373`). Matches: WingFoil resolves the project from the working directory.
 
+- adr-003 and bug-006, from the worktree: `memory add --type adr` → `8152d81`, `memory submit` →
+  `380b594` (`draft → pending`); `memory add --type bug` → `92a9ce6`, `memory submit` → `ce7c893`
+  (`draft → pending`). Each: exit 0, empty stderr, one commit, one file; the add from the template, the
+  submit's diff limited to `status`. Matches. Bodies committed by hand before each submit (N13).
+
 ### Deviation from the Design: the clone's `HEAD` moves under us
 
 The Design asked for the WingFoil clone's `HEAD` and `git status` to be identical before P1 and after
@@ -374,3 +379,10 @@ resume.** Claude Code 2.1.280, `claude-haiku-4-5`, token in `ANTHROPIC_AUTH_TOKE
 
 Items 1 and 2 are review decisions on approved documents; the requirements amendment would be 1.5,
 together with dl-005's REQ-FMT-04 change planned for task-013.
+
+### Review readiness (2026-09-25, at `ce7c893` plus this note)
+
+`npm test` green (statements 100%, branches 98.12%, functions 100%, lines 100%), `npm run test:bin`
+4/4, `npm run test:docker` 3/3, `npm run lint` clean — run in the linked worktree with its own
+`npm ci`, no `node_modules` link. No `bench*` container left, the spike's included. No code under
+`src/`, `test/` or `docker/` changed.
