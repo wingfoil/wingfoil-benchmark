@@ -122,6 +122,9 @@ What the spike found, in one line each:
 - **A bug is proposed** for Claude Code's auto-memory (`/home/node/.claude/projects/-workspace/memory/`),
   which lives in the container for the whole run and could carry state from one step's session to the
   next, outside the repository (REQ-RUN-04). It is not W3's; it affects every arm equally.
+- **task-012's Context is superseded on one point:** it lays the arm's `environment` over the seed
+  *before* the `seed` commit. Decision 10 moves it into the setup, after `seed`, so the `seed` commit is
+  the same in every arm and only the setup differs. task-012's design follows this ADR.
 - The runner gains a cache directory for installed WingFoil artefacts, git-ignored, and a
   configuration key for the WingFoil clone's path (task-013 names both).
 - The reference campaign runs on the latest *released* WingFoil (sequencer decision 3), not `3df305e`.
