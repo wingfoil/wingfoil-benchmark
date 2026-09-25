@@ -2,7 +2,7 @@
 id: task-013-wingfoil-under-test-and-approval-authority
 type: task
 title: "WingFoil under test and approval authority"
-status: pending
+status: backlog
 release: v0.1
 wave: W3
 features: [F2.6]
