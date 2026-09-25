@@ -199,3 +199,12 @@ it is what `run.json` reports for every run so that the results can be read agai
 
 `npm test` 533/533 (statements 100%, branches 98.11%, functions 100%, lines 100%), `npm run test:bin`
 4/4, `npm run test:docker` 4/4 (none skipped), `npm run lint` clean; no `bench*` container left.
+
+### Review and approval
+
+- `npx wingfoil memory submit task-014-…` → `5b77614` (`in-progress → in-review`, one commit, only
+  `status` changed). Matches.
+- `npx wingfoil memory approve task-014-… --reason "…"` → `b11682a`, run by the approver from the
+  worktree (`in-review → approved`, `Approver:`/`Reason:` trailers, only `status` changed). Matches.
+  The approver reviewed the manuals' text and kept it as written, the task-per-request and
+  decision-log-per-decision rules of the wingfoil manual included.
