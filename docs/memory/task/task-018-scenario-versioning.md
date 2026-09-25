@@ -3,21 +3,44 @@ id: task-018-scenario-versioning
 type: task
 title: "Scenario versioning"
 status: draft
-release: ""           # e.g. v0.1
-wave: ""              # e.g. W1
-features: []          # e.g. [F1.1, F3.1]
-acceptance: []        # e.g. [campaign.feature, scenarios.feature]
-requirements: []      # e.g. [REQ-FMT-01, REQ-FMT-02]
+release: v0.1
+wave: W4
+features: [F3.4]
+acceptance: [scenarios.feature]
+requirements: [REQ-FMT-09, REQ-FMT-06]
 ---
 
 ## Context
 
-<!-- Why this task, which wave it belongs to, and what "done" means for the wave's "Ends with". -->
+Third task of wave **W4 — Scenario hygiene** of release v0.1 ([rel-v0-1](../release/rel-v0-1.md)).
+It builds on task-017 (the validator).
+
+Scope of F3.4:
+
+- **A scenario version's content hash (REQ-FMT-09).** Computed over everything a run of that version
+  depends on — `scenario.yaml`, the seed, the prompts, the public oracle, and its `arms/<arm>/`
+  configuration (dl-005) — deterministically, whatever the machine and the order files are read in.
+  Whether hold-out additions are part of it is this task's design decision (they are not in the
+  public repository, and a public rerun must still be able to check the hash).
+- **Results record it**: `run.json` names the hash of the version it ran.
+- **Versions are immutable.** `bench scenario validate` rejects a version whose content no longer
+  matches a hash recorded in stored results, and `campaign run` refuses to run it, so that the change
+  has to become a new version first (`scenarios.feature` @F3.4). Stored results keep pointing to the
+  version they ran.
+
+**Done** means: `scenarios.feature` @F3.4 "Changing a scenario creates a new version" passes; tests,
+coverage and lint pass.
 
 ## Acceptance criteria
 
-<!-- One line per criterion (Gherkin scenario or requirement), each classified as red-first
-     (new behaviour: a failing test precedes the code) or characterization (existing behaviour). -->
+Preliminary classification (confirmed in the design phase). All behaviour is new: **red-first**.
+
+- `scenarios.feature` @F3.4 "Changing a scenario creates a new version" — a changed prompt of a version
+  with stored results must become a new version before it runs, and the stored results keep pointing
+  to the old one. **red-first**
+- REQ-FMT-09 — the hash is the same for the same content on any machine and in any read order, and
+  differs when any file it covers changes. **red-first**
+- REQ-FMT-06 — `run.json` records the hash. **red-first**
 
 ## Design
 
