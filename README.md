@@ -87,11 +87,16 @@ the file named by `BENCH_AGENT_TOKEN_FILE` — created with `claude setup-token`
 container as an environment variable and is scrubbed out of every stored transcript. Because it
 spends real money, a campaign naming it refuses to start unless `--allow-spending` is passed.
 
+A run that is interrupted — a killed process, a closed terminal, a reboot — can leave its container
+behind. The runner never removes a container it did not create: at the start of a campaign it lists
+the ones earlier runs of that campaign left, warns about each with the `docker rm --force` that clears
+it, and fails the run whose container name is still taken, with the same command.
+
 Exit codes: `0` success, `1` failure (one line per problem, or a run that failed), `2` usage error.
 
 ```bash
 npm run test:bin     # the built command line
-npm run test:docker  # W1's and W2's runs in a real container (needs Docker)
+npm run test:docker  # W1's and W2's runs, and bug-003's, in a real container (needs Docker)
 ```
 
 ## License
