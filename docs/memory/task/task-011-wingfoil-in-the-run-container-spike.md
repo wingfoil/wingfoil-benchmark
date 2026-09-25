@@ -97,7 +97,115 @@ seven questions above.
 
 ## Design
 
-<!-- Modules, interfaces, data formats touched; decisions taken and their reasons. -->
+The protocol below is written before anything is run, as task-004's was, so that what was probed and
+what it cost can be read back against what was planned. **Nothing here has been executed yet.**
+
+### What a read-only look at `3df305e` already shows
+
+Read with `git -C ../WingFoil2 show 3df305e:<path>`, nothing written. Each point sharpens a question
+rather than answering it; the probes still have to observe it.
+
+- **The tarball needs a build.** `package.json` ships only `dist/` and `README.md` (`files`), and
+  `prepack` runs `npm run build` (`tsc`). `npm pack` on a clean `git archive` therefore needs
+  `npm ci` first, with the dev dependencies (TypeScript). The build needs the network and a Node
+  runtime, and *which* Node builds it is part of what the tarball is (question 1).
+- **The installed dependencies are not pinned by the tarball.** `npm pack` does not include
+  `package-lock.json`, and the six runtime dependencies are `^` ranges (`@anthropic-ai/sdk`,
+  `@modelcontextprotocol/sdk`, `chalk`, `commander`, `js-yaml`, `zod`). Installing the tarball resolves
+  them on the day of the run, so two runs of the same campaign could exercise different code. That
+  would break the determinism directive and REQ-NFR-02, so question 2 now asks how to install with the
+  lockfile's versions.
+- **`init` without a terminal needs `--template`.** `src/cli/init-command.ts`: with no TTY or with
+  `--no-interactive`, a missing `--template` exits 2 (question 3).
+- **Approval authority is keyed on the git email.** `src/core/approval-authority.ts`: a
+  `dna.yaml` `team.members[]` entry whose `email` matches `git config user.email` (case-insensitive)
+  and whose `roles` include `approver` may approve. `team.agents[].approval_authority` is documented
+  as a governance fact, not checked (question 5).
+- **There is an `mcp` command** (`src/cli/mcp-command.ts`, `src/mcp/server.ts`), with a read-only
+  mode (`src/mcp/read-only.ts`) the probe must look at (question 6).
+
+### Rules the protocol holds to
+
+- **No production code.** Nothing under `src/`, `test/`, `docker/` or `arms/` changes. A probe that
+  shows the run image or the runner needs a change produces a finding for task-012 or task-013, not an
+  edit here.
+- **Probes committed, output not.** One shell script per probe under `spikes/task-011/`, sharing a
+  `lib.sh`; `spikes/task-011/out/` is already ignored by `spikes/*/out/`. Only P7 spends, and it
+  refuses to run without `BENCH_SPIKE_CONFIRM=1`, as in task-004.
+- **The WingFoil repository is only read.** The only command run against it is
+  `git -C ../WingFoil2 archive 3df305e` (and `rev-parse` to resolve the full SHA). Its `git status`
+  and `HEAD` are recorded before P1 and after P6 and must be identical (W3 plan-phase decision 3).
+- **The build runs in the run image's base, not on the host.** The run image's `FROM` (the pinned
+  `node:22-bookworm` digest) is the one Node the benchmark controls. P1 also builds once on the host,
+  only to compare the two.
+- **Nothing installed lands in the workspace.** WingFoil is installed outside `/workspace`, so a
+  step's patch never contains it. The workspace keeps its single bind mount (REQ-RUN-02).
+- **Every `wingfoil` command gets its declared-vs-observed note**, including those run *inside* the
+  container against the WingFoil under test, marked as such so they are not confused with the managing
+  WingFoil. Friction goes to the usage-notes inbox.
+- **Credentials as in adr-002:** the long-lived token enters P7's container as an environment variable
+  on each `exec`, never as a mount or a file. P8 scans everything recorded before any of it is quoted.
+
+### Cost, and where it stops
+
+The approver authorised **up to about 0.50 €** for question 7 (task-011 approval, `e769c71`). The
+spike's own ceiling is **0.50 USD**, summed from the `total_cost_usd` the sessions report: at any
+plausible rate that is at or below 0.50 €, so it errs on the side of spending less. On the subscription
+that figure is the API-equivalent cost, not a charge (sequencer decision 1). The sum is checked before
+every session; on reaching it the spike stops, and what is left of question 7 moves to the wave's
+real-agent run, as the task's Context says.
+
+The sessions test plumbing, not the model, so they run on **Haiku 4.5** (`claude-haiku-4-5`), with the
+agent version adr-002 pinned. Whether a resumed **Sonnet** session stays on Sonnet is the W2
+carry-over assigned to the wave's real-agent run, not to this spike.
+
+### Probes
+
+| # | Question | What it runs | Cost |
+|---|---|---|---|
+| P0 | — | Resolve `3df305e` to its full SHA in the clone; record the clone's `HEAD` and `git status --porcelain`. Build the run image twice: `AGENT_NAME=fake` (P1–P6) and `AGENT_NAME=claude-code` (P7). | none |
+| P1 | 1 | `git archive 3df305e` → a temp directory; in a container of the pinned `node:22-bookworm`: `npm ci`, then `npm pack`. Twice, in two fresh containers: time, size, `sha256` of each tarball. Once more on the host. The three digests are compared with each other and with `vendor/wingfoil-0.2-pre-3df305e.tgz` (built from the same commit), for information only: REQ-RUN-14 never *uses* the vendored one. | none |
+| P2 | 2 | In the run image as `node`, three installs, each outside `/workspace`: **(a)** `npm install --prefix <dir> <tarball>`, where dependencies float; **(b)** the archive's `package.json` + `package-lock.json` with `npm ci --omit=dev`, plus the built `dist/`, where dependencies are pinned by the lock; **(c)** whatever (b) needs to become a single artefact the runner can cache per commit. For each: time, network fetches, `npm ls --all --json` diffed against the lock, and which binary `npx wingfoil` and `wingfoil` resolve to on the `PATH`. | none |
+| P3 | 3 | A workspace made the way the runner makes it (seed, `seed` commit, benchmark git identity). Then `wingfoil init --template <t> --no-interactive` with stdin closed, for the template(s) `3df305e` offers: exit code, files written, whether it commits and under which identity, `git log` afterwards. | none |
+| P4 | 4 | Locate the DNA, directive and Memory files `init` produced. Then write a small prepared configuration (one DNA field, one directive bound to `developer`, one decision-log element) two ways: copied in as files, and created through `wingfoil dna set`, `directive create`/`assign` and `memory add`/`submit`. For both, WingFoil must read it back the same (`dna`, `directive list`, `memory search`, and `memory history` for the element). The layout that survives the copy fixes `arms/wingfoil/` (dl-005). | none |
+| P5 | 5 | Add a member "Benchmark Approver" with the `approver` role to `dna.yaml`; set the container's git identity to that member; add a task, submit it, approve it with `--reason`. Then the same approve under a different email must be refused with `user not authorized to approve type 'task'`. `memory history` shows who approved. | none |
+| P6 | 6 | Start `wingfoil mcp` in the container with no TTY; drive it over stdio with a scripted `initialize` and `tools/list` (and `prompts/list`); record the tools, whether any is read-only by default, and how it stops. Write the `--mcp-config` JSON that P7 uses. Record the clone's `HEAD` and status again (must match P0). | none |
+| P7 | 7 | **Spends.** A workspace with a `CLAUDE.md` that asks for a fixed, otherwise unguessable codeword in the reply, and the P6 MCP config. **P7a:** one session with the REQ-RUN-04 command line, `--setting-sources project`, `--mcp-config <file> --strict-mcp-config`: does the reply carry the codeword, and does the `init` event list the WingFoil server and its tools? **P7b:** `--resume` of that session with the same two MCP flags: accepted, and are the tools still listed? **P7c**, only if P7b is refused: the resume without them, to see whether the tools persist anyway. | ~0.05 $ |
+| P8 | — | No session: the secret scan of everything P7 recorded, by digest, as in task-004's P8. | none |
+
+The estimate is under 0.10 $, well below the ceiling. The ceiling is there for the case the estimate is
+wrong.
+
+### Open risks the protocol admits
+
+- **The build may not be reproducible.** If P1's two container digests differ, a tarball is not
+  identified by its commit alone. adr-003 then records the tarball's own `sha256` in `run.json` next to
+  the commit, and the question of a reproducible build goes to the approver as a proposal to amend
+  REQ-RUN-14, not as a workaround.
+- **Pinned dependencies may not fit REQ-RUN-14 as written**, which says "installs WingFoil from a
+  tarball". If only install (b) pins the dependencies, the artefact the runner builds is more than a
+  tarball, and that is an amendment for the approver to decide.
+- **The copied configuration may not be valid as files.** If WingFoil only accepts some of it through
+  its commands (for example Memory with a history), the wingfoil arm's setup has to *replay* commands
+  rather than copy files. That changes dl-005's "exact layout" into a script, and is reported as a
+  consequence of dl-005, not decided here.
+
+### What the spike produces
+
+- **adr-003**, the W3 arm conventions: what P0–P8 found, and the defaults of the wave: where and how
+  the WingFoil under test is built and cached, how it is installed with pinned dependencies, how
+  `init` and the scenario's configuration are applied, the approver member and git identity, the MCP
+  config and its flags on both command lines, and how the setup is recorded.
+- The layout of a scenario's `arms/wingfoil/`, recorded in adr-003 as dl-005 asked.
+- Amendment proposals where the observed behaviour departs from REQ-RUN-14, REQ-RUN-12 or REQ-RUN-17.
+- WingFoil friction as numbered notes in the usage-notes inbox.
+
+### Review
+
+This task has no tests of its own, so its review is: the seven questions answered with evidence, the
+WingFoil clone untouched (P0 and P6 match), no secret anywhere in the repository or in the notes,
+adr-003 written, the spending reported, and `npm test`, `npm run test:bin`, `npm run test:docker` and
+`npm run lint` still green at HEAD.
 
 ## Execution notes
 
