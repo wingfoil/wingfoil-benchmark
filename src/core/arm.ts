@@ -24,7 +24,10 @@ export const armSchema = z.strictObject({
   /** The arm's MCP configuration, for Claude Code's `--mcp-config`. */
   mcp: relativePath.optional(),
   /** The harness tool the arm needs; absent for an arm that runs the plain agent. */
-  requires: z.string().regex(/^[a-z][a-z0-9-]*$/, 'must be a lower-case tool name').optional(),
+  requires: z
+    .string()
+    .regex(/^[a-z][a-z0-9-]*$/, 'must be a lower-case tool name')
+    .optional(),
 });
 
 /** An `arm.yaml` as parsed, with relative paths. */

@@ -32,7 +32,10 @@ export function checkCampaign(file: string): Result<CheckedCampaign> {
     const scenario = loadScenario(campaign.scenariosRoot, id, version);
     if (scenario.ok) scenarios.push(scenario.value);
     else {
-      issues.push({ path: `scenarios[${index}]`, message: `${id}@${version}: ${reasonsOf(scenario.issues)}` });
+      issues.push({
+        path: `scenarios[${index}]`,
+        message: `${id}@${version}: ${reasonsOf(scenario.issues)}`,
+      });
     }
   });
   const arms: Arm[] = [];

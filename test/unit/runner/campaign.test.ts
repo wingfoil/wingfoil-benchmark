@@ -48,9 +48,7 @@ describe('checkCampaign, arms and harnesses (REQ-FMT-01, REQ-FMT-05, dl-003)', (
     const issues = issuesOf(completeCampaignYaml(), (root) =>
       writeFileSync(join(root, 'arms', 'baseline', 'arm.yaml'), stringify({ name: 'baseline' })),
     );
-    expect(issues).toEqual([
-      { path: 'arms[0]', message: 'baseline: setup is required; manual is required' },
-    ]);
+    expect(issues).toEqual([{ path: 'arms[0]', message: 'baseline: setup is required; manual is required' }]);
   });
 
   // Characterization: what the interim rule of dl-003 enforced, now read from each arm's `requires`.
@@ -62,16 +60,19 @@ describe('checkCampaign, arms and harnesses (REQ-FMT-01, REQ-FMT-05, dl-003)', (
     ]);
   });
 
-  it.each([['baseline'], ['baseline-docs']])('rejects a harness on the %s arm, which requires none', (arm) => {
-    const yaml = completeCampaignYaml();
-    yaml.harnesses = {
-      wingfoil: { tool: 'wingfoil', version: '3df305e' },
-      [arm]: { tool: 'x', version: '1.0.0' },
-    };
-    expect(issuesOf(yaml)).toEqual([
-      { path: `harnesses.${arm}`, message: 'must not be set: the arm runs the plain agent' },
-    ]);
-  });
+  it.each([['baseline'], ['baseline-docs']])(
+    'rejects a harness on the %s arm, which requires none',
+    (arm) => {
+      const yaml = completeCampaignYaml();
+      yaml.harnesses = {
+        wingfoil: { tool: 'wingfoil', version: '3df305e' },
+        [arm]: { tool: 'x', version: '1.0.0' },
+      };
+      expect(issuesOf(yaml)).toEqual([
+        { path: `harnesses.${arm}`, message: 'must not be set: the arm runs the plain agent' },
+      ]);
+    },
+  );
 
   // Red-first: what the fixed list of dl-003 could not know.
   it('accepts a new plain-agent arm with no harness, which the fixed list would have refused', () => {

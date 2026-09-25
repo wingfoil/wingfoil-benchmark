@@ -23,7 +23,6 @@ const FULL_SHA = /^[0-9a-f]{40}$/;
 /** The arm every campaign runs, so that each campaign reruns its own baseline (threat T7). */
 const BASELINE_ARM = 'baseline';
 
-
 /** The agent adapters a campaign may name. Until W2 only `fake` can run (adr-001, default 7). */
 const AGENT_NAMES = ['claude-code', 'fake'] as const;
 

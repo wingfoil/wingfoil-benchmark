@@ -3,12 +3,7 @@ import { isAbsolute, join, relative } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { loadArm } from '../../../src/arms/index.js';
-import {
-  COMPLETE_ARM_FILES,
-  completeArmYaml,
-  plainArmYaml,
-  writeArmAt,
-} from '../../support/arm-fixture.js';
+import { COMPLETE_ARM_FILES, completeArmYaml, plainArmYaml, writeArmAt } from '../../support/arm-fixture.js';
 import { repoPath } from '../../support/paths.js';
 import { tempDir } from '../../support/scenario-fixture.js';
 

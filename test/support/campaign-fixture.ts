@@ -72,7 +72,10 @@ export function writeRepo(
   // Every arm the campaign names gets a definition (REQ-FMT-05): wingfoil requires its harness, the
   // others run the plain agent. A test that wants an arm missing removes its directory.
   const named = typeof yaml === 'string' ? [] : ((yaml.arms as unknown[] | undefined) ?? []);
-  writeArmsNamed(root, named.filter((arm): arm is string => typeof arm === 'string'));
+  writeArmsNamed(
+    root,
+    named.filter((arm): arm is string => typeof arm === 'string'),
+  );
   mkdirSync(join(root, 'campaigns'));
   const file = join(root, 'campaigns', 'campaign.yaml');
   writeFileSync(file, typeof yaml === 'string' ? yaml : stringify(yaml));
