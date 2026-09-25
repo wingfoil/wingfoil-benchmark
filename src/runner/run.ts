@@ -147,8 +147,8 @@ interface RunContext {
   readonly repetition: number;
   readonly execution: number;
   readonly resultsDir: string;
-  /** Containers of this campaign that interrupted runs left behind, by name, with their execution. */
-  readonly leftovers: ReadonlyMap<string, number>;
+  /** Containers of this campaign that already exist, by name, with their execution and state. */
+  readonly leftovers: ReadonlyMap<string, Leftover>;
 }
 
 /** One run: its own workspace, its own container, removed whatever happens. */
@@ -191,8 +191,12 @@ async function executeRun(context: RunContext, options: RunnerOptions): Promise<
     // approver's choice). The campaign goes on to its next run (REQ-NFR-03).
     if (stale !== undefined) {
       throw new Error(
-        `container ${containerName} already exists: an interrupted run of execution ${stale} of this ` +
-          `campaign left it behind (bug-003). Remove it with: docker rm --force ${containerName}`,
+        stale.running
+          ? `container ${containerName} already exists and is running: another invocation of this ` +
+              `campaign may be using it. If none is, remove it with: docker rm --force ${containerName}`
+          : `container ${containerName} already exists: an interrupted run of execution ` +
+              `${stale.execution} of this campaign left it behind (bug-003). Remove it with: ` +
+              `docker rm --force ${containerName}`,
       );
     }
     await prepareWorkspace(workspace, scenario, options.git);
@@ -437,30 +441,38 @@ function containerPrefix(campaignId: string): string {
   return `bench-${campaignId}-`;
 }
 
+/** A container of this campaign that already exists: the execution its name carries, and its state. */
+interface Leftover {
+  readonly execution: number;
+  readonly running: boolean;
+}
+
 /**
- * The containers of this campaign that interrupted runs left behind (bug-003), by name, with the
- * execution each belongs to. One that the current execution will need is reported by that run; one of
- * an earlier execution is only a leak, and is warned about once, here, with the command that clears
- * it. Asked once per campaign: nothing but this campaign's own runs can add to it, and they remove
- * what they create.
+ * The containers of this campaign that already exist (bug-003), by name. One the current execution
+ * will need is reported by that run; one of another execution is warned about once, here, with the
+ * command that clears it. A **stopped** one was left by an interrupted run. A **running** one may be
+ * another invocation of the same campaign — the id is a digest of the file, so another checkout or a
+ * second test suite shares it — and is not called interrupted: the runner cannot tell, and says so.
  */
 async function leftBehind(
   campaignId: string,
   execution: number,
   options: RunnerOptions,
-): Promise<ReadonlyMap<string, number>> {
+): Promise<ReadonlyMap<string, Leftover>> {
   const prefix = containerPrefix(campaignId);
-  const leftovers = new Map<string, number>();
-  for (const container of await options.docker.containersNamed(prefix)) {
-    const found = /^(\d+)-/.exec(container.slice(prefix.length))?.[1];
+  const leftovers = new Map<string, Leftover>();
+  for (const { name, running } of await options.docker.containersNamed(prefix)) {
+    const found = /^(\d+)-/.exec(name.slice(prefix.length))?.[1];
     if (found === undefined) continue;
-    leftovers.set(container, Number(found));
-    if (Number(found) !== execution) {
-      options.logError?.(
-        `container ${container} was left behind by an interrupted run of execution ${found} of this ` +
-          `campaign (bug-003). Remove it with: docker rm --force ${container}`,
-      );
-    }
+    leftovers.set(name, { execution: Number(found), running });
+    if (Number(found) === execution) continue;
+    options.logError?.(
+      running
+        ? `container ${name} of execution ${found} is running: another invocation of this campaign may ` +
+            `be using it. If none is, remove it with: docker rm --force ${name}`
+        : `container ${name} was left behind by an interrupted run of execution ${found} of this ` +
+            `campaign (bug-003). Remove it with: docker rm --force ${name}`,
+    );
   }
   return leftovers;
 }

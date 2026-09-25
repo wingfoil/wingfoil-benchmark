@@ -32,7 +32,14 @@ export const systemProcess: ProcessPort = {
       execFile(
         command,
         [...args],
-        { cwd: options?.cwd, env: environment, encoding: 'utf8', timeout: options?.timeoutMs ?? 0 },
+        {
+          cwd: options?.cwd,
+          env: environment,
+          encoding: 'utf8',
+          timeout: options?.timeoutMs ?? 0,
+          // A bound, not a request: a process that ignores SIGTERM would otherwise outlive its limit.
+          killSignal: 'SIGKILL',
+        },
         (error, stdout, stderr) => {
           const code = error && typeof error.code === 'number' ? error.code : error ? 1 : 0;
           // `killed` is set only when Node itself stopped the process, which with no other kill in

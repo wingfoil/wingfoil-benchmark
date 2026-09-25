@@ -46,7 +46,13 @@ export interface DockerPort {
    * Every container, running or not, whose name starts with `prefix` (bug-003). Bounded in time: a
    * daemon that cannot list its containers says so rather than hanging the campaign.
    */
-  containersNamed(prefix: string): Promise<string[]>;
+  containersNamed(prefix: string): Promise<ContainerState[]>;
+}
+
+/** A container's name, and whether it is running — that is, possibly still someone's run. */
+export interface ContainerState {
+  readonly name: string;
+  readonly running: boolean;
 }
 
 /** How long listing containers may take before the campaign stops waiting for Docker. */
@@ -112,7 +118,7 @@ export function dockerCli(process: ProcessPort): DockerPort {
       await docker(['rm', '--force', container]);
     },
     async containersNamed(prefix) {
-      const args = ['ps', '--all', '--filter', `name=${prefix}`, '--format', '{{.Names}}'];
+      const args = ['ps', '--all', '--filter', `name=${prefix}`, '--format', '{{.Names}}\t{{.State}}'];
       const result = await process.run('docker', args, { timeoutMs: LIST_TIMEOUT_MS });
       if (result.timedOut === true) {
         throw new Error(
@@ -122,7 +128,11 @@ export function dockerCli(process: ProcessPort): DockerPort {
       }
       if (result.code !== 0) throw processFailure('docker', args, result);
       // Docker's name filter matches anywhere in a name; only a true prefix is this campaign's.
-      return result.stdout.split('\n').filter((name) => name.startsWith(prefix));
+      return result.stdout
+        .split('\n')
+        .map((line) => line.split('\t'))
+        .filter(([name]) => name?.startsWith(prefix) === true)
+        .map(([name, state]) => ({ name: name ?? '', running: state === 'running' }));
     },
     async mountsOf(container) {
       const result = await docker(['inspect', '--format', MOUNT_FORMAT, container]);
