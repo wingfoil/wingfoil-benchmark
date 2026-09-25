@@ -2,7 +2,7 @@
 id: task-011-wingfoil-in-the-run-container-spike
 type: task
 title: "WingFoil in the run container spike"
-status: approved
+status: done
 release: v0.1
 wave: W3
 features: []
