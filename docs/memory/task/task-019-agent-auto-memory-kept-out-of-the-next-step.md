@@ -2,7 +2,7 @@
 id: task-019-agent-auto-memory-kept-out-of-the-next-step
 type: task
 title: "Agent auto-memory kept out of the next step"
-status: pending
+status: backlog
 release: v0.1
 wave: W4
 features: []
