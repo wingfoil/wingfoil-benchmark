@@ -11,6 +11,8 @@ import { nextExecution } from '../results/index.js';
 
 import type { CheckedCampaign } from './campaign.js';
 import { prepareHarnesses } from './harness.js';
+import { AGENT_IDENTITY } from './identity.js';
+import { GENERATED_ARM, prepareProjectRules, PROJECT_RULES } from './project-rules.js';
 import type { HarnessArtefact } from './harness.js';
 import { copyEnvironment, prepareWorkspace } from './workspace.js';
 
@@ -136,13 +138,6 @@ const SCENARIO_DIR = '/home/node/scenario';
 /** Where an arm's MCP configuration is copied in the container (adr-003 decision 12). */
 const MCP_CONFIG = '/home/node/mcp.json';
 
-/**
- * The identity the agent commits with, the same in every arm (adr-003 decisions 6, 7): in the
- * wingfoil arm it is the declared member with the `approver` role (REQ-RUN-17); elsewhere it only
- * lets the agent commit, as it can in the wingfoil arm.
- */
-const AGENT_IDENTITY = { name: 'Benchmark Approver', email: 'approver@benchmark.localhost' };
-
 /** Where the arm's operating manual goes in the workspace, where the agent reads it (REQ-RUN-12). */
 const MANUAL_FILE = 'CLAUDE.md';
 
@@ -196,6 +191,8 @@ export async function runCampaign(checked: CheckedCampaign, options: RunnerOptio
   });
   // Every harness before any run: an arm never runs without the one it requires (REQ-RUN-14).
   const harnesses = await prepareHarnesses(checked, options);
+  // The baseline-docs environment of every scenario, from the wingfoil configuration (REQ-RUN-11).
+  const projectRules = await prepareProjectRules(checked, harnesses, resultsDir, options);
 
   const model = campaign.spec.models.default;
   const runs: RunResult[] = [];
@@ -216,6 +213,9 @@ export async function runCampaign(checked: CheckedCampaign, options: RunnerOptio
               resultsDir,
               leftovers,
               ...(arm.requires === undefined ? {} : { harness: harnesses.get(arm.requires) }),
+              ...(arm.name === GENERATED_ARM
+                ? { projectRules: projectRules.get(`${scenario.id}@${scenario.version}`) }
+                : {}),
             },
             options,
           ),
@@ -238,6 +238,8 @@ interface RunContext {
   readonly leftovers: ReadonlyMap<string, Leftover>;
   /** The harness the arm requires, built for this campaign. */
   readonly harness?: HarnessArtefact | undefined;
+  /** The generated `PROJECT_RULES.md` of the scenario, for the baseline-docs arm (REQ-RUN-11). */
+  readonly projectRules?: string | undefined;
 }
 
 /** One run: its own workspace, its own container, removed whatever happens. */
@@ -310,6 +312,7 @@ async function executeRun(context: RunContext, options: RunnerOptions): Promise<
         outputDir,
         ...(harness === undefined ? {} : { harness: harness.installed }),
         ...(scenario.armDirs[arm.name] === undefined ? {} : { scenarioDir: scenario.armDirs[arm.name] }),
+        ...(context.projectRules === undefined ? {} : { projectRules: context.projectRules }),
       },
       options,
     );
@@ -360,6 +363,8 @@ interface SetupContext {
   readonly harness?: string;
   /** The scenario's configuration for this arm, if it has one (dl-005). */
   readonly scenarioDir?: string | undefined;
+  /** The generated rules of the scenario, for the baseline-docs arm (REQ-RUN-11). */
+  readonly projectRules?: string;
 }
 
 /**
@@ -371,9 +376,11 @@ interface SetupContext {
  * committed after it.
  */
 async function executeSetup(arm: Arm, context: SetupContext, options: RunnerOptions): Promise<SetupResult> {
-  const { container, workspace, outputDir, harness, scenarioDir } = context;
+  const { container, workspace, outputDir, harness, scenarioDir, projectRules } = context;
   await options.git.configureIdentity(workspace, AGENT_IDENTITY.name, AGENT_IDENTITY.email);
   if (arm.environmentDir !== undefined) copyEnvironment(workspace, arm.environmentDir);
+  // The generated part of the arm's environment, like any other environment file (REQ-RUN-11).
+  if (projectRules !== undefined) copyFileSync(projectRules, join(workspace, PROJECT_RULES));
   // The manual after the environment, before the script: in the `setup` commit, never in a step's
   // patch. A CLAUDE.md already there was meant for the agent by someone; it is not overwritten.
   const manual = join(workspace, MANUAL_FILE);

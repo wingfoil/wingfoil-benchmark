@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import type { Arm, DockerPort, GitPort } from '../core/index.js';
 
 import type { CheckedCampaign } from './campaign.js';
+import { hostUser } from './identity.js';
 
 /**
  * A harness built for a campaign (REQ-RUN-14, adr-003 decisions 1–5): the installed artefact a run's
@@ -173,12 +174,4 @@ function artefactOf(record: CacheRecord, installed: string): HarnessArtefact {
 
 function sha256(file: string): string {
   return createHash('sha256').update(readFileSync(file)).digest('hex');
-}
-
-/**
- * The host's user and group, so that what the build writes into its mount stays the host's to read
- * and remove, whatever its ids are.
- */
-function hostUser(): string {
-  return `${process.getuid?.() ?? 1000}:${process.getgid?.() ?? 1000}`;
 }

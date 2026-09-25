@@ -45,6 +45,15 @@ export function checkCampaign(file: string): Result<CheckedCampaign> {
     else issues.push({ path: `arms[${index}]`, message: `${name}: ${reasonsOf(arm.issues)}` });
   });
   if (arms.length === campaign.spec.arms.length) issues.push(...harnessCoverage(campaign.spec, arms));
+  // baseline-docs is generated from the wingfoil arm's configuration (REQ-RUN-11): without the
+  // wingfoil arm there is nothing to generate it from.
+  if (campaign.spec.arms.includes('baseline-docs') && !campaign.spec.arms.includes('wingfoil')) {
+    issues.push({
+      path: 'arms',
+      message:
+        "includes baseline-docs, which is generated from the wingfoil arm's configuration: add the wingfoil arm",
+    });
+  }
   return issues.length > 0 ? fail(issues) : ok({ campaign, scenarios, arms });
 }
 

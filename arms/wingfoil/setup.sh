@@ -3,7 +3,11 @@
 # already written the git identity (Benchmark Approver), copied this directory to ~/arm, the WingFoil
 # under test to ~/harness.tgz and, if the scenario has one, its configuration to ~/scenario.
 set -euo pipefail
-cd /workspace
+# WORKSPACE and HOME are set otherwise only when the runner snapshots this configuration for the
+# baseline-docs generator (task-015), in a one-off container with a build directory as its home.
+WORKSPACE="${WORKSPACE:-/workspace}"
+export PATH="$HOME/.local/bin:$PATH"
+cd "$WORKSPACE"
 
 # 1. The WingFoil under test, outside the workspace, called `wingfoil` (never `npx wingfoil`).
 mkdir -p "$HOME/.local/bin"
@@ -17,7 +21,7 @@ wingfoil init --template Kanban > /dev/null
 
 # 3. The scenario's configuration, if any (dl-005): copied over init's files, committed once.
 if [ -d "$HOME/scenario" ]; then
-  cp -R "$HOME/scenario/." /workspace/
+  cp -R "$HOME/scenario/." "$WORKSPACE/"
   git add --all
   git commit --quiet --message "chore(wingfoil): apply the scenario configuration"
 fi
