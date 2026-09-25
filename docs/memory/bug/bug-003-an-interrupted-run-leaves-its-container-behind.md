@@ -2,7 +2,7 @@
 id: bug-003-an-interrupted-run-leaves-its-container-behind
 type: bug
 title: "An interrupted run leaves its container behind"
-status: pending
+status: approved
 ---
 
 ## Context
