@@ -166,6 +166,17 @@ describe('the baseline-docs environment, generated per scenario (REQ-RUN-11)', (
   });
 });
 
+describe('the snapshot step, reached without the campaign check', () => {
+  it('refuses a baseline-docs arm with no wingfoil arm to generate it from', async () => {
+    const { checked: campaign } = checked();
+    const unchecked = { ...campaign, arms: campaign.arms.filter((arm) => arm.name !== 'wingfoil') };
+
+    await expect(
+      runCampaign(unchecked, { ...doubles(), harnessSources: { wingfoil: CLONE } }),
+    ).rejects.toThrow('the baseline-docs arm is generated from the wingfoil arm and its harness');
+  });
+});
+
 describe('checkCampaign, the baseline-docs arm (REQ-RUN-11)', () => {
   it('rejects a campaign with baseline-docs and no wingfoil arm to generate it from', () => {
     const result = checkCampaign(writeRepo(campaignYaml(['baseline', 'baseline-docs']), ['S1@1.0']).file);

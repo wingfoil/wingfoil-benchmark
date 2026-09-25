@@ -69,7 +69,7 @@ function project(files: ReadonlyMap<string, string>): string[] {
   if (text(about.methodology) !== '') blocks.push(`Methodology: ${text(about.methodology)}`);
   const stacks = object(dna.stacks);
   const stackLines = [
-    ['Technologies', list(stacks.technologies).map(nameOf)],
+    ['Technologies', list(stacks.technologies).map(technology)],
     ['Methodologies', list(stacks.methodologies).map(nameOf)],
   ]
     .filter(([, names]) => (names as string[]).some((entry) => entry !== ''))
@@ -89,6 +89,15 @@ function project(files: ReadonlyMap<string, string>): string[] {
     .filter((line) => line !== '');
   if (modules.length > 0) blocks.push('Modules:', modules.join('\n'));
   return blocks.length > 0 ? ['## Project', ...blocks] : [];
+}
+
+/** A technology as WingFoil's schema holds it: its name, then its version and category if given. */
+function technology(entry: unknown): string {
+  const name = nameOf(entry);
+  const version = text(object(entry).version);
+  const category = text(object(entry).category);
+  if (name === '') return '';
+  return `${name}${version === '' ? '' : ` ${version}`}${category === '' ? '' : ` (${category})`}`;
 }
 
 /** A stack entry is a name or an object with one. */

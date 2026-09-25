@@ -17,7 +17,12 @@ function snapshot(): Map<string, string> {
         '  - name: orders',
         '    description: the order aggregate',
         'stacks:',
-        '  technologies: [TypeScript]',
+        '  technologies:',
+        '    - name: TypeScript',
+        '      category: language',
+        '      version: "5"',
+        '    - name: Node',
+        '      category: runtime',
         '  methodologies:',
         '    - name: Kanban',
         '    - name: TDD',
@@ -81,7 +86,9 @@ describe('the baseline-docs generator (REQ-RUN-11)', () => {
 
   it("renders the project's description, methodology, stacks and modules", () => {
     expect(rules).toContain('## Project\n\n**Orders** — A small orders domain.\n\nMethodology: Kanban\n');
-    expect(rules).toContain('- Technologies: TypeScript\n- Methodologies: Kanban, TDD\n');
+    expect(rules).toContain(
+      '- Technologies: TypeScript 5 (language), Node (runtime)\n- Methodologies: Kanban, TDD\n',
+    );
     expect(rules).toContain('- **orders** — the order aggregate\n');
   });
 
@@ -139,7 +146,7 @@ describe('the baseline-docs generator (REQ-RUN-11)', () => {
       new Map([
         [
           '.wingfoil/dna.yaml',
-          'project:\n  description: Only a description.\nmodules: [billing, 7]\nstacks:\n  technologies: [Node]\n  methodologies: []\n',
+          'project:\n  description: Only a description.\nmodules: [billing, 7]\nstacks:\n  technologies: [Node, { category: nameless }]\n  methodologies: []\n',
         ],
         ['.wingfoil/roles.yaml', 'assignments:\n  developer: [bare, deep, same, same-too]\n'],
         ['.wingfoil/directives/custom/bare.md', 'No frontmatter at all.\n'],
