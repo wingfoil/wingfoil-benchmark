@@ -61,7 +61,7 @@ describe('bench campaign validate', () => {
     const { code, stderr } = await run(...argv);
     expect(code).toBe(2);
     expect(stderr).toMatch(
-      /^usage: bench campaign validate <file>\n\s+bench campaign run <file> \[--allow-spending\]\n$/,
+      /^usage: bench campaign validate <file>\n\s+bench campaign run <file> \[--allow-spending\]\n\s+bench scenario validate <id>@<version> \[--holdout <path>\]\n$/,
     );
   });
 
@@ -71,12 +71,13 @@ describe('bench campaign validate', () => {
     [['campaign', 'validate']],
     [['campaign', 'validate', 'a.yaml', 'b.yaml']],
     [['campaign', 'estimate', 'a.yaml']],
-    [['scenario', 'validate', 'S1@1.0']],
+    // `scenario validate` exists since task-016; a scenario verb that does not is still a usage error.
+    [['scenario', 'estimate', 'S1@1.0']],
   ])('exits 2 with the usage on a usage error (%j)', async (argv) => {
     const { code, stdout, stderr } = await run(...argv);
     expect({ code, stdout }).toEqual({ code: 2, stdout: '' });
     expect(stderr).toMatch(
-      /^usage: bench campaign validate <file>\n\s+bench campaign run <file> \[--allow-spending\]\n$/,
+      /^usage: bench campaign validate <file>\n\s+bench campaign run <file> \[--allow-spending\]\n\s+bench scenario validate <id>@<version> \[--holdout <path>\]\n$/,
     );
   });
 });
