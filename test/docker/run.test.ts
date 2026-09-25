@@ -25,6 +25,7 @@ describe('runs in a real container', () => {
     const root = tempDir('bench-docker-');
     cpSync(repoPath('test/fixtures/campaigns'), join(root, 'campaigns'), { recursive: true });
     cpSync(repoPath('test/fixtures/scenarios'), join(root, 'scenarios'), { recursive: true });
+    cpSync(repoPath('test/fixtures/arms'), join(root, 'arms'), { recursive: true });
     process.env.BENCH_FAKE_SCRIPT = repoPath('test/fixtures/fake-script.json');
 
     let output = '';
@@ -45,6 +46,28 @@ describe('runs in a real container', () => {
     expect(existsSync(join(workspace, '.git'))).toBe(true);
     expect(existsSync(join(root, 'results', image, '1', 'campaign.yaml'))).toBe(true);
 
+    // W3: the arm's setup ran in the container, as its user, from the arm's copy outside the workspace;
+    // the agent's identity is in the workspace's own config; the history is seed, setup, step 01.
+    const output1 = join(root, 'results', image, '1', 'runs', 'T0@1.0', 'baseline', 'fake-model', 'r1');
+    expect(readFileSync(join(output1, 'setup', 'log.txt'), 'utf8')).toBe(
+      'fixture setup ran as node in /workspace, from /home/node/arm\n',
+    );
+    const git = (...args: string[]) =>
+      execFileSync('git', ['-C', workspace, '-c', 'safe.directory=*', ...args], { encoding: 'utf8' }).trim();
+    expect(git('log', '--format=%s <%ae>').split('\n')).toEqual([
+      'step 01 <benchmark@localhost>',
+      'setup <benchmark@localhost>',
+      'seed <benchmark@localhost>',
+    ]);
+    expect([git('config', '--local', 'user.name'), git('config', '--local', 'user.email')]).toEqual([
+      'Benchmark Approver',
+      'approver@benchmark.localhost',
+    ]);
+    const record = JSON.parse(readFileSync(join(output1, 'run.json'), 'utf8')) as {
+      setup: { commit: string };
+    };
+    expect(record.setup.commit).toBe(git('rev-parse', 'HEAD~1'));
+
     // No container is left, and the image is the campaign's.
     const containers = execFileSync('docker', ['ps', '--all', '--format', '{{.Names}}'], {
       encoding: 'utf8',
@@ -62,6 +85,7 @@ describe('runs in a real container', () => {
     const root = tempDir('bench-docker-');
     cpSync(repoPath('test/fixtures/campaigns'), join(root, 'campaigns'), { recursive: true });
     cpSync(repoPath('test/fixtures/scenarios'), join(root, 'scenarios'), { recursive: true });
+    cpSync(repoPath('test/fixtures/arms'), join(root, 'arms'), { recursive: true });
     process.env.BENCH_FAKE_SCRIPT = repoPath('test/fixtures/fake-script-multi-step.json');
 
     let output = '';
@@ -107,7 +131,7 @@ describe('runs in a real container', () => {
     const subjects = execFileSync('git', ['-C', workspace, '-c', 'safe.directory=*', 'log', '--format=%s'], {
       encoding: 'utf8',
     });
-    expect(subjects.trim().split('\n')).toEqual(['step 03', 'step 02', 'step 01', 'seed']);
+    expect(subjects.trim().split('\n')).toEqual(['step 03', 'step 02', 'step 01', 'setup', 'seed']);
 
     // A patch per step, holding what that step and its resumes did in the container.
     const patch = (n: string) => readFileSync(join(outputDir, 'steps', n, 'diff.patch'), 'utf8');
@@ -142,6 +166,7 @@ describe('runs in a real container', () => {
     const root = tempDir('bench-docker-');
     cpSync(repoPath('test/fixtures/campaigns'), join(root, 'campaigns'), { recursive: true });
     cpSync(repoPath('test/fixtures/scenarios'), join(root, 'scenarios'), { recursive: true });
+    cpSync(repoPath('test/fixtures/arms'), join(root, 'arms'), { recursive: true });
     process.env.BENCH_FAKE_SCRIPT = repoPath('test/fixtures/fake-script.json');
     const campaign = join(root, 'campaigns', 'smoke.yaml');
     const run = async () => {

@@ -6,11 +6,11 @@ import { fileURLToPath } from 'node:url';
 import { scrub } from '../agents/index.js';
 import type { AgentPort, SessionUsage, StepOutcome } from '../agents/index.js';
 import { approverPolicy, reasonOf, WORKSPACE } from '../core/index.js';
-import type { ApproverPolicy, DockerPort, GitPort, InterventionKind, Scenario } from '../core/index.js';
+import type { ApproverPolicy, Arm, DockerPort, GitPort, InterventionKind, Scenario } from '../core/index.js';
 import { nextExecution } from '../results/index.js';
 
 import type { CheckedCampaign } from './campaign.js';
-import { prepareWorkspace } from './workspace.js';
+import { copyEnvironment, prepareWorkspace } from './workspace.js';
 
 /** The ports a campaign runs against (REQ-ARC-04), and where its output goes. */
 export interface RunnerOptions {
@@ -58,6 +58,18 @@ export interface StepResult {
   readonly error?: string;
 }
 
+/**
+ * The setup phase of a run (REQ-RUN-03): how long the arm's setup took and what it cost, apart from
+ * the steps. A v0.1 setup runs no agent, so its usage is zero (adr-003 decision 11). `commit` is the
+ * `setup` commit the first step starts from; `code` is the script's exit code when it failed.
+ */
+export interface SetupResult {
+  readonly durationMs: number;
+  readonly usage: SessionUsage;
+  readonly commit?: string;
+  readonly code?: number;
+}
+
 /** One executed run: one scenario, in one arm, with one model, once. */
 export interface RunResult {
   readonly scenario: string;
@@ -68,6 +80,8 @@ export interface RunResult {
   readonly workspace: string;
   /** Where this run's output goes: `steps/<NN>/…` under the execution's results (REQ-FMT-06). */
   readonly outputDir: string;
+  /** The arm's setup, once it has run; absent when the run failed before it. */
+  readonly setup?: SetupResult;
   readonly steps: readonly StepResult[];
   readonly outcome: 'completed' | 'failed';
   readonly error?: string;
@@ -89,6 +103,37 @@ const RUN_IMAGE_DIRECTORY = 'docker/run-image';
 /** Runs execute as this unprivileged user of the image (REQ-RUN-02). */
 const CONTAINER_USER = 'node';
 
+/** Where an arm's directory is copied in the container: its user's home, outside the workspace. */
+const ARM_DIR = '/home/node/arm';
+
+/** Where an arm's MCP configuration is copied in the container (adr-003 decision 12). */
+const MCP_CONFIG = '/home/node/mcp.json';
+
+/**
+ * The identity the agent commits with, the same in every arm (adr-003 decisions 6, 7): in the
+ * wingfoil arm it is the declared member with the `approver` role (REQ-RUN-17); elsewhere it only
+ * lets the agent commit, as it can in the wingfoil arm.
+ */
+const AGENT_IDENTITY = { name: 'Benchmark Approver', email: 'approver@benchmark.localhost' };
+
+/** The runner's commit that ends the setup phase, always present, possibly empty (adr-003 decision 10). */
+const SETUP_COMMIT = 'setup';
+
+/** A setup's usage: it runs no agent in v0.1 (adr-003 decision 11). */
+const NO_USAGE: SessionUsage = {
+  inputTokens: 0,
+  outputTokens: 0,
+  cacheCreationInputTokens: 0,
+  cacheReadInputTokens: 0,
+  costUsd: 0,
+  costEur: 0,
+  turns: 0,
+  durationMs: 0,
+};
+
+/** How many lines of a failing setup's error output its run's error keeps. */
+const SETUP_ERROR_LINES = 5;
+
 /**
  * A step's number as it appears in a commit message and in a path (REQ-RUN-05, REQ-FMT-06), so that
  * both name a step the same way.
@@ -103,7 +148,7 @@ function stepNumber(step: number): string {
  * not stop the campaign (REQ-NFR-03).
  */
 export async function runCampaign(checked: CheckedCampaign, options: RunnerOptions): Promise<RunSummary> {
-  const { campaign, scenarios } = checked;
+  const { campaign, scenarios, arms } = checked;
   const execution = nextExecution(campaign.resultsRoot, campaign.id);
   const resultsDir = join(campaign.resultsRoot, campaign.id, String(execution));
   mkdirSync(resultsDir, { recursive: true });
@@ -125,7 +170,7 @@ export async function runCampaign(checked: CheckedCampaign, options: RunnerOptio
   for (const scenario of scenarios) {
     // The campaign schema gives every scenario a repetition count; the fallback only keeps the type honest.
     const repetitions = campaign.spec.repetitions[scenario.id] ?? 1;
-    for (const arm of campaign.spec.arms) {
+    for (const arm of arms) {
       for (let repetition = 1; repetition <= repetitions; repetition += 1) {
         runs.push(
           await executeRun(
@@ -142,7 +187,7 @@ export async function runCampaign(checked: CheckedCampaign, options: RunnerOptio
 interface RunContext {
   readonly campaign: CheckedCampaign['campaign'];
   readonly scenario: Scenario;
-  readonly arm: string;
+  readonly arm: Arm;
   readonly model: string;
   readonly repetition: number;
   readonly execution: number;
@@ -154,7 +199,7 @@ interface RunContext {
 /** One run: its own workspace, its own container, removed whatever happens. */
 async function executeRun(context: RunContext, options: RunnerOptions): Promise<RunResult> {
   const { campaign, scenario, arm, model, repetition, execution, resultsDir } = context;
-  const name = `${scenario.id}@${scenario.version}/${arm}/${model}/r${repetition}`;
+  const name = `${scenario.id}@${scenario.version}/${arm.name}/${model}/r${repetition}`;
   const workspace = join(
     campaign.repoRoot,
     'runs',
@@ -168,7 +213,7 @@ async function executeRun(context: RunContext, options: RunnerOptions): Promise<
   const identity = {
     scenario: scenario.id,
     version: scenario.version,
-    arm,
+    arm: arm.name,
     model,
     repetition,
     workspace,
@@ -178,6 +223,7 @@ async function executeRun(context: RunContext, options: RunnerOptions): Promise<
 
   const steps: StepResult[] = [];
   let container: string | undefined;
+  let setup: SetupResult | undefined;
   try {
     // The campaign's validation refuses a version this runner does not implement; this is the type's
     // proof of it, and the guard if a campaign ever reached a run by another path.
@@ -209,10 +255,23 @@ async function executeRun(context: RunContext, options: RunnerOptions): Promise<
     });
     await assertOnlyWorkspaceMounted(container, workspace, options);
     await options.docker.start(container);
+    setup = await executeSetup(arm, { container, workspace, outputDir }, options);
+    if (setup.code !== undefined) throw new Error(setupFailure(arm, setup.code, outputDir));
+    const mcpConfig = arm.mcpPath === undefined ? undefined : MCP_CONFIG;
     for (const step of scenario.steps) {
       const result = await executeStep(
         step,
-        { container, workspace, outputDir, scenario, model, policy, spent: spentEur(steps), campaign },
+        {
+          container,
+          workspace,
+          outputDir,
+          scenario,
+          model,
+          policy,
+          spent: spentEur(steps),
+          campaign,
+          ...(mcpConfig === undefined ? {} : { mcpConfig }),
+        },
         options,
       );
       // Recorded first, then failed: what the step spent and said is stored either way. A step that
@@ -222,14 +281,61 @@ async function executeRun(context: RunContext, options: RunnerOptions): Promise<
         throw new Error(`step ${stepNumber(step.n)} of ${scenario.id} failed: ${result.error}`);
       }
     }
-    return record({ ...identity, steps, outcome: 'completed' }, campaign);
+    return record({ ...identity, setup, steps, outcome: 'completed' }, campaign);
   } catch (error) {
     const message = reasonOf(error);
     options.logError?.(`run ${name} failed: ${message}`);
-    return record({ ...identity, steps, outcome: 'failed', error: message }, campaign);
+    return record(
+      { ...identity, ...(setup === undefined ? {} : { setup }), steps, outcome: 'failed', error: message },
+      campaign,
+    );
   } finally {
     if (container !== undefined) await remove(container, options);
   }
+}
+
+/** Where a run's setup happens: its container, its workspace, and where its output goes. */
+interface SetupContext {
+  readonly container: string;
+  readonly workspace: string;
+  readonly outputDir: string;
+}
+
+/**
+ * The setup phase (REQ-RUN-03, adr-003 decisions 6, 7, 10–12), between the container's start and
+ * step 1: the agent's identity in the workspace's own git configuration; the arm's environment over
+ * the seed; the arm's directory, and its MCP configuration if any, in the container outside the
+ * workspace; the arm's script, timed, with its output kept; then the `setup` commit, so that step 1's
+ * patch holds only what the agent did. A failing script is reported by its exit code, and nothing is
+ * committed after it.
+ */
+async function executeSetup(arm: Arm, context: SetupContext, options: RunnerOptions): Promise<SetupResult> {
+  const { container, workspace, outputDir } = context;
+  await options.git.configureIdentity(workspace, AGENT_IDENTITY.name, AGENT_IDENTITY.email);
+  if (arm.environmentDir !== undefined) copyEnvironment(workspace, arm.environmentDir);
+  await options.docker.copyTo(container, arm.dir, ARM_DIR);
+  if (arm.mcpPath !== undefined) await options.docker.copyTo(container, arm.mcpPath, MCP_CONFIG);
+
+  const started = performance.now();
+  const result = await options.docker.exec(container, ['bash', `${ARM_DIR}/${arm.setup}`]);
+  const durationMs = Math.round(performance.now() - started);
+  const setupDir = join(outputDir, 'setup');
+  mkdirSync(setupDir, { recursive: true });
+  // Scrubbed like a patch: a setup may print what it was given.
+  writeFileSync(join(setupDir, 'log.txt'), scrub(`${result.stdout}${result.stderr}`, options.secrets ?? []));
+  if (result.code !== 0) return { durationMs, usage: NO_USAGE, code: result.code };
+
+  await options.git.commitAll(workspace, SETUP_COMMIT, { allowEmpty: true });
+  return { durationMs, usage: NO_USAGE, commit: await options.git.head(workspace) };
+}
+
+/** Why a run failed in its setup: the exit code, and the last lines the script wrote to its log. */
+function setupFailure(arm: Arm, code: number, outputDir: string): string {
+  const log = readFileSync(join(outputDir, 'setup', 'log.txt'), 'utf8')
+    .trimEnd()
+    .split('\n');
+  const tail = log.slice(-SETUP_ERROR_LINES).join('\n');
+  return `the setup of arm ${arm.name} failed with code ${code}${tail === '' ? '' : `: ${tail}`}`;
 }
 
 /** What one step needs: where it runs, where its snapshot goes, what it is asked, and by what policy. */
@@ -243,6 +349,8 @@ interface StepContext {
   /** What the run's finished steps have spent, in EUR. */
   readonly spent: number;
   readonly campaign: CheckedCampaign['campaign'];
+  /** The arm's MCP configuration in the container, on every invocation of the step. */
+  readonly mcpConfig?: string;
 }
 
 /** What a set of steps or invocations has spent, in EUR. */
@@ -316,7 +424,8 @@ async function executeStep(
   context: StepContext,
   options: RunnerOptions,
 ): Promise<StepResult> {
-  const { container, workspace, outputDir, scenario, model, policy, spent, campaign } = context;
+  const { container, workspace, outputDir, scenario, model, policy, spent, campaign, mcpConfig } = context;
+  const mcp = mcpConfig === undefined ? {} : { mcpConfig };
   const number = stepNumber(step.n);
   let prompt: string;
   try {
@@ -344,6 +453,7 @@ async function executeStep(
     model,
     sessionId,
     remainingCostUsd,
+    ...mcp,
     run,
   });
   const invocations: StepOutcome[] = [first];
@@ -380,6 +490,7 @@ async function executeStep(
         sessionId,
         reply,
         remainingCostUsd: left,
+        ...mcp,
         run,
       });
     } catch (failure) {
@@ -511,6 +622,17 @@ function record(run: RunResult, campaign: CheckedCampaign['campaign']): RunResul
         repetition: run.repetition,
         agent,
         approver_policy,
+        // The setup, apart from the steps (REQ-RUN-03): what M-K3 sets against their cost in W9.
+        ...(run.setup === undefined
+          ? {}
+          : {
+              setup: {
+                duration_ms: run.setup.durationMs,
+                usage: run.setup.usage,
+                ...(run.setup.commit === undefined ? {} : { commit: run.setup.commit }),
+                ...(run.setup.code === undefined ? {} : { code: run.setup.code }),
+              },
+            }),
         outcome: run.outcome,
         ...(run.error === undefined ? {} : { error: run.error }),
         steps: run.steps.map((step) => ({

@@ -179,6 +179,7 @@ describe('runCampaign', () => {
     await runCampaign(checked, ports);
 
     expect(ports.recorded.execs).toEqual([
+      { container: 'container-1', command: ['bash', '/home/node/arm/setup.sh'] },
       { container: 'container-1', command: ['sh', '-c', 'echo hi'] },
       { container: 'container-1', command: ['sh', '-c', 'echo hi'] },
     ]);
@@ -313,6 +314,9 @@ describe('runCampaign', () => {
     expect(ports.recorded.gitCalls).toEqual([
       `init ${workspace}`,
       `commit ${workspace} seed`,
+      `identity ${workspace} Benchmark Approver <approver@benchmark.localhost>`,
+      `commit ${workspace} setup --allow-empty`,
+      `head ${workspace}`,
       `commit ${workspace} step 01 --allow-empty`,
       `patch ${workspace} HEAD`,
     ]);
@@ -505,6 +509,7 @@ describe('the neutral approver in the step loop (F2.4)', () => {
     const workspace = summary.runs[0]?.workspace ?? '';
     expect(ports.recorded.gitCalls.filter((call) => call.startsWith('commit'))).toEqual([
       `commit ${workspace} seed`,
+      `commit ${workspace} setup --allow-empty`,
       `commit ${workspace} step 01 --allow-empty`,
       `commit ${workspace} step 02 --allow-empty`,
     ]);
@@ -910,5 +915,144 @@ describe('a container an interrupted run left behind (bug-003)', () => {
 
     await expect(runCampaign(checked, ports)).rejects.toThrow('docker ps did not answer within 30 s');
     expect(ports.recorded.builds).toEqual([]);
+  });
+});
+
+describe('the setup phase (REQ-RUN-03, adr-003)', () => {
+  const wingfoilCampaign = () =>
+    campaignYaml({
+      arms: ['baseline', 'wingfoil'],
+      harnesses: { wingfoil: { tool: 'wingfoil', version: '3df305e' } },
+    });
+
+  it('writes the identity, copies the arm, runs its setup and commits it, all before step 1', async () => {
+    const { root, checked } = checkedCampaign(campaignYaml());
+    const ports = doubles({
+      onStep: () =>
+        expect(ports.recorded.execs.map((exec) => exec.command)).toContainEqual([
+          'bash',
+          '/home/node/arm/setup.sh',
+        ]),
+    });
+
+    const summary = await runCampaign(checked, ports);
+
+    const workspace = summary.runs[0]?.workspace ?? '';
+    expect(ports.recorded.gitCalls.filter((call) => !call.startsWith('patch'))).toEqual([
+      `init ${workspace}`,
+      `commit ${workspace} seed`,
+      `identity ${workspace} Benchmark Approver <approver@benchmark.localhost>`,
+      `commit ${workspace} setup --allow-empty`,
+      `head ${workspace}`,
+      `commit ${workspace} step 01 --allow-empty`,
+      `commit ${workspace} step 02 --allow-empty`,
+    ]);
+    expect(ports.recorded.copies).toEqual([
+      `${join(root, 'arms', 'baseline')} -> container-1:/home/node/arm`,
+    ]);
+    expect(ports.recorded.steps.map((step) => step.mcpConfig)).toEqual([undefined, undefined]);
+  });
+
+  it("copies the arm's environment into the workspace, after the seed commit", async () => {
+    const { checked } = checkedCampaign(wingfoilCampaign());
+    const ports = doubles();
+
+    const summary = await runCampaign(checked, ports);
+
+    const wingfoil = summary.runs.find((run) => run.arm === 'wingfoil');
+    expect(readFileSync(join(wingfoil?.workspace ?? '', 'NOTES.md'), 'utf8')).toBe('environment/NOTES.md\n');
+    const baseline = summary.runs.find((run) => run.arm === 'baseline');
+    expect(existsSync(join(baseline?.workspace ?? '', 'NOTES.md'))).toBe(false);
+  });
+
+  it('gives an arm with MCP its configuration outside the workspace, on every step and resume', async () => {
+    const { root, checked } = checkedCampaign(wingfoilCampaign());
+    const ports = doubles({
+      messageOf: (request) => (request.step === 1 && 'prompt' in request ? 'Shall I proceed?' : undefined),
+    });
+
+    await runCampaign(checked, ports);
+
+    expect(ports.recorded.copies.slice(1)).toEqual([
+      `${join(root, 'arms', 'wingfoil')} -> container-2:/home/node/arm`,
+      `${join(root, 'arms', 'wingfoil', 'mcp.json')} -> container-2:/home/node/mcp.json`,
+    ]);
+    const wingfoilSteps = ports.recorded.steps.slice(2);
+    expect(wingfoilSteps.map((step) => step.mcpConfig)).toEqual([
+      '/home/node/mcp.json',
+      '/home/node/mcp.json',
+    ]);
+    expect(ports.recorded.resumes.map((resume) => resume.mcpConfig)).toEqual([
+      undefined,
+      '/home/node/mcp.json',
+    ]);
+  });
+
+  it('records the setup in run.json, apart from the steps', async () => {
+    const { checked } = checkedCampaign();
+    const ports = doubles();
+
+    const summary = await runCampaign(checked, ports);
+
+    const record = JSON.parse(readFileSync(join(summary.runs[0]?.outputDir ?? '', 'run.json'), 'utf8')) as {
+      setup: { duration_ms: number; usage: Record<string, number>; commit: string };
+      steps: unknown[];
+    };
+    expect(record.setup.commit).toBe('5e7a9c0ffee5e7a9c0ffee5e7a9c0ffee5e7a9c0');
+    expect(record.setup.duration_ms).toBeGreaterThanOrEqual(0);
+    expect(Object.values(record.setup.usage).every((value) => value === 0)).toBe(true);
+    expect(record.steps).toHaveLength(2);
+  });
+
+  it('keeps the setup output, scrubbed, as setup/log.txt', async () => {
+    const { checked } = checkedCampaign();
+    const ports = doubles({
+      execResultOf: (command) =>
+        command[0] === 'bash'
+          ? { code: 0, stdout: 'installed with tok-SECRET\n', stderr: 'a warning\n' }
+          : undefined,
+    });
+
+    const summary = await runCampaign(checked, { ...ports, secrets: ['tok-SECRET'] });
+
+    const log = readFileSync(join(summary.runs[0]?.outputDir ?? '', 'setup', 'log.txt'), 'utf8');
+    expect(log).toBe('installed with [redacted]\na warning\n');
+  });
+
+  it('names only the exit code of a setup that failed without a word', async () => {
+    const { checked } = checkedCampaign();
+    const ports = doubles({
+      execResultOf: (command) => (command[0] === 'bash' ? { code: 1, stdout: '', stderr: '' } : undefined),
+    });
+
+    const summary = await runCampaign(checked, ports);
+
+    expect(summary.runs[0]?.error).toBe('the setup of arm baseline failed with code 1');
+  });
+
+  it('fails the run on a failing setup, runs no step, and goes on with the campaign (REQ-NFR-03)', async () => {
+    const { checked } = checkedCampaign(campaignYaml({ arms: ['baseline', 'baseline-docs'] }));
+    const failed: string[] = [];
+    const ports = doubles({
+      execResultOf: (command) =>
+        command[0] === 'bash' && ports.recorded.copies.length === 1
+          ? { code: 3, stdout: '', stderr: 'npm ERR! network\nlast line of the failure\n' }
+          : undefined,
+    });
+
+    const summary = await runCampaign(checked, { ...ports, logError: (line) => failed.push(line) });
+
+    expect(summary.runs.map((run) => run.outcome)).toEqual(['failed', 'completed']);
+    expect(summary.runs[0]?.error).toBe(
+      'the setup of arm baseline failed with code 3: npm ERR! network\nlast line of the failure',
+    );
+    expect(summary.runs[0]?.steps).toEqual([]);
+    expect(ports.recorded.steps.map((step) => step.step)).toEqual([1, 2]);
+    expect(failed).toHaveLength(1);
+    const record = JSON.parse(readFileSync(join(summary.runs[0]?.outputDir ?? '', 'run.json'), 'utf8')) as {
+      setup: { code: number; commit?: string };
+    };
+    expect(record.setup.code).toBe(3);
+    expect(record.setup.commit).toBeUndefined();
   });
 });

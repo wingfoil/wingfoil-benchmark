@@ -2,6 +2,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { stringify } from 'yaml';
 
+import { writeArmsNamed } from './arm-fixture.js';
 import {
   COMPLETE_FILES,
   completeScenarioYaml,
@@ -42,7 +43,7 @@ export function completeCampaignYaml(): Record<string, unknown> {
   };
 }
 
-/** A repository layout in a fresh temporary directory: `campaigns/`, `scenarios/`, `results/`. */
+/** A repository layout in a fresh temporary directory: `campaigns/`, `scenarios/`, `arms/`, `results/`. */
 export interface RepoFixture {
   readonly root: string;
   /** The campaign file, `campaigns/campaign.yaml`. */
@@ -68,6 +69,13 @@ export function writeRepo(
     ];
     writeScenarioAt(join(root, 'scenarios'), scenario, files, id, version);
   }
+  // Every arm the campaign names gets a definition (REQ-FMT-05): wingfoil requires its harness, the
+  // others run the plain agent. A test that wants an arm missing removes its directory.
+  const named = typeof yaml === 'string' ? [] : ((yaml.arms as unknown[] | undefined) ?? []);
+  writeArmsNamed(
+    root,
+    named.filter((arm): arm is string => typeof arm === 'string'),
+  );
   mkdirSync(join(root, 'campaigns'));
   const file = join(root, 'campaigns', 'campaign.yaml');
   writeFileSync(file, typeof yaml === 'string' ? yaml : stringify(yaml));

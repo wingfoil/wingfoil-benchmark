@@ -192,8 +192,7 @@ export interface AdapterOptions {
 
 /**
  * The agent's command line (REQ-RUN-04). Bypassing permissions is acceptable only because the
- * container is isolated (REQ-RUN-02). The wingfoil arm's `--mcp-config` and `--strict-mcp-config`
- * arrive with the arms in W3.
+ * container is isolated (REQ-RUN-02).
  */
 function commandLine(request: StepRequest): string[] {
   return [
@@ -213,7 +212,18 @@ function commandLine(request: StepRequest): string[] {
     'project',
     '--max-budget-usd',
     String(request.remainingCostUsd),
+    ...mcpFlags(request.mcpConfig),
   ];
+}
+
+/**
+ * An arm's MCP configuration (adr-003 decision 12), and no other server: `--strict-mcp-config` keeps
+ * any configuration the agent might find elsewhere out of the run. On both command lines — the W3
+ * spike saw a resume accept them and reconnect the server; without them it would run without the
+ * arm's tools.
+ */
+function mcpFlags(config: string | undefined): string[] {
+  return config === undefined ? [] : ['--mcp-config', config, '--strict-mcp-config'];
 }
 
 /**
@@ -237,6 +247,7 @@ function resumeLine(request: ResumeRequest): string[] {
     'project',
     '--max-budget-usd',
     String(request.remainingCostUsd),
+    ...mcpFlags(request.mcpConfig),
   ];
 }
 

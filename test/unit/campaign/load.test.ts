@@ -37,6 +37,7 @@ describe('loadCampaign', () => {
     expect(result.value.id).toBe(campaignId(completeCampaignYaml()));
     expect(result.value.file).toBe(file);
     expect(result.value.resultsRoot).toBe(`${root}/results`);
+    expect(result.value.armsRoot).toBe(`${root}/arms`);
     expect(result.value.scenariosRoot).toBe(`${root}/scenarios`);
   });
 
@@ -53,28 +54,10 @@ describe('loadCampaign', () => {
     expect(loadCampaign(writeRepo(yaml).file).ok).toBe(true);
   });
 
-  it('requires a harness for every arm that is not baseline or baseline-docs', () => {
+  it('leaves harness coverage to the arm definitions, which it cannot read (REQ-ARC-02)', () => {
     const yaml = completeCampaignYaml();
     yaml.harnesses = {};
-    expect(issuesOf(yaml)).toEqual([
-      {
-        path: 'harnesses.wingfoil',
-        message: 'is required: every arm but baseline and baseline-docs pins a harness',
-      },
-    ]);
-  });
-
-  it('requires a harness for an arm whose name is a property of Object.prototype', () => {
-    const yaml = completeCampaignYaml();
-    yaml.arms = ['baseline', 'constructor'];
-    yaml.harnesses = {};
-    yaml.models = { default: 'claude-sonnet-5' };
-    expect(issuesOf(yaml)).toEqual([
-      {
-        path: 'harnesses.constructor',
-        message: 'is required: every arm but baseline and baseline-docs pins a harness',
-      },
-    ]);
+    expect(loadCampaign(writeRepo(yaml).file).ok).toBe(true);
   });
 
   it('gives a validated harness version the type of a string', () => {
@@ -90,17 +73,6 @@ describe('loadCampaign', () => {
     expect(paths(withField(['models', 'slices'], [slice, { ...slice }]))).toEqual([
       'models.slices[0].scenarios[0]',
       'models.slices[1].scenarios[0]',
-    ]);
-  });
-
-  it.each([['baseline'], ['baseline-docs']])('rejects a harness on the %s arm', (arm) => {
-    const yaml = completeCampaignYaml();
-    yaml.harnesses = {
-      wingfoil: { tool: 'wingfoil', version: '3df305e' },
-      [arm]: { tool: 'x', version: '1.0.0' },
-    };
-    expect(issuesOf(yaml)).toEqual([
-      { path: `harnesses.${arm}`, message: 'runs the plain agent, so it pins no harness' },
     ]);
   });
 

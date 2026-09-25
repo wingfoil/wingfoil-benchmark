@@ -22,6 +22,18 @@ function smokeCampaign(): Record<string, unknown> {
   return yaml;
 }
 
+/** A setup's usage: a v0.1 setup runs no agent, so every field is zero (adr-003 decision 11). */
+const ZERO_USAGE = {
+  inputTokens: 0,
+  outputTokens: 0,
+  cacheCreationInputTokens: 0,
+  cacheReadInputTokens: 0,
+  costUsd: 0,
+  costEur: 0,
+  turns: 0,
+  durationMs: 0,
+};
+
 /** The replies of policy v1, as the feature file writes them: never the constants under test. */
 const APPROVED = 'Approved. Proceed.';
 const NO_INPUT = 'No further input is available. Make the most reasonable choice, record it, and proceed.';
@@ -136,6 +148,44 @@ describe('runner.feature', () => {
       delete process.env.BENCH_HOLDOUT_PATH;
     }
   });
+  it("@F2.5 Each arm's setup is scripted and measured apart from the steps", async () => {
+    const yaml = smokeCampaign();
+    yaml.arms = ['baseline', 'wingfoil'];
+    yaml.harnesses = { wingfoil: { tool: 'wingfoil', version: '3df305e' } };
+    const checked = checkCampaign(writeRepo(yaml, ['S1@1.0']).file);
+    if (!checked.ok) throw new Error(JSON.stringify(checked.issues));
+    const setupRanBeforeStep: boolean[] = [];
+    const ports = doubles({
+      // Setups report time and output, never tokens: a v0.1 setup runs no agent (adr-003 decision 11).
+      onStep: (request) => {
+        if (request.step === 1 && 'prompt' in request) {
+          setupRanBeforeStep.push(
+            ports.recorded.execs.some((exec) => exec.command.join(' ') === 'bash /home/node/arm/setup.sh'),
+          );
+        }
+      },
+      usageOf: () => ({ ...ZERO_USAGE, inputTokens: 100, costUsd: 0.5, costEur: 0.5, turns: 1 }),
+    });
+
+    // When the runner starts a run in the wingfoil arm
+    const summary = await runCampaign(checked.value, ports);
+
+    // Then the arm's setup script runs before the first step
+    const wingfoil = summary.runs.find((run) => run.arm === 'wingfoil');
+    expect(wingfoil?.outcome).toBe('completed');
+    expect(setupRanBeforeStep).toEqual([true, true]);
+    // And its tokens, time and cost are recorded as setup, not as a step
+    const record = JSON.parse(readFileSync(join(wingfoil?.outputDir ?? '', 'run.json'), 'utf8')) as {
+      setup: { duration_ms: number; usage: typeof ZERO_USAGE };
+      steps: { n: number; usage: typeof ZERO_USAGE }[];
+    };
+    expect(record.setup.usage).toEqual(ZERO_USAGE);
+    expect(record.setup.duration_ms).toBeGreaterThanOrEqual(0);
+    expect(record.steps.map((step) => step.n)).toEqual([1, 2]);
+    expect(record.steps.every((step) => step.usage.inputTokens === 100)).toBe(true);
+    expect(readdirSync(join(wingfoil?.outputDir ?? '', 'steps'))).toEqual(['01', '02']);
+  });
+
   it('@F2.2 Each step starts a new agent session', async () => {
     const steps = 5;
     const { root, file } = writeRepo(smokeCampaign(), ['S1@1.0'], steps);
@@ -173,11 +223,15 @@ describe('runner.feature', () => {
 
     // After each step the working tree is committed with a message naming only the step number, with
     // --allow-empty so a step that changed nothing is still a snapshot, and the patch is read after
-    // that commit: reading it before would store the previous step's diff under this step's number.
+    // that commit: reading it before would store the previous step's diff under this step's number. The
+    // setup's commit comes first: step 1 starts from it (adr-003 decision 10).
     const workspace = summary.runs[0]?.workspace ?? '';
     expect(recorded.gitCalls).toEqual([
       `init ${workspace}`,
       `commit ${workspace} seed`,
+      `identity ${workspace} Benchmark Approver <approver@benchmark.localhost>`,
+      `commit ${workspace} setup --allow-empty`,
+      `head ${workspace}`,
       ...stepNumbers(steps).flatMap((n) => [
         `commit ${workspace} step ${String(n).padStart(2, '0')} --allow-empty`,
         `patch ${workspace} HEAD`,

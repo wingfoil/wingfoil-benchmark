@@ -253,6 +253,21 @@ describe('the Claude Code adapter (REQ-RUN-04)', () => {
     ]);
   });
 
+  it("adds the arm's MCP configuration, and only it, when the arm has one (adr-003 decision 12)", async () => {
+    const exec = runner(recorded('completed.jsonl').join('\n'));
+
+    await claudeCodeAgent({ token: 'x', usdToEur: RATE }).runStep({
+      ...request(exec.run),
+      mcpConfig: '/home/node/mcp.json',
+    });
+
+    expect(exec.commands[0]?.slice(-3)).toEqual([
+      '--mcp-config',
+      '/home/node/mcp.json',
+      '--strict-mcp-config',
+    ]);
+  });
+
   it('reports the usage and the session the agent actually used', async () => {
     const exec = runner(recorded('completed.jsonl').join('\n'));
 
@@ -310,6 +325,27 @@ describe('the Claude Code adapter (REQ-RUN-04)', () => {
     expect(outcome.sessionId).toBe('691b34d4-6948-402b-8804-9f8016feb677');
     expect(outcome.usage.costUsd).toBeCloseTo(0.0681071, 10);
     expect(outcome.finalMessage).toMatch(/requires Redis on localhost:6379\)\.$/);
+  });
+
+  it("keeps the MCP configuration on a resume, or the resumed session would lose the arm's tools", async () => {
+    const exec = runner(recorded('resumed.jsonl').join('\n'));
+
+    await claudeCodeAgent({ token: 'x', usdToEur: RATE }).resume({
+      scenarioId: 'S1',
+      step: 2,
+      intervention: 1,
+      sessionId: '691b34d4-6948-402b-8804-9f8016feb677',
+      reply: 'Approved. Proceed.',
+      remainingCostUsd: 1.25,
+      mcpConfig: '/home/node/mcp.json',
+      run: exec.run,
+    });
+
+    expect(exec.commands[0]?.slice(-3)).toEqual([
+      '--mcp-config',
+      '/home/node/mcp.json',
+      '--strict-mcp-config',
+    ]);
   });
 
   it('scrubs the token out of a resumed transcript too, and reports its failure', async () => {
