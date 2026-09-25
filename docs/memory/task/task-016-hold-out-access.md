@@ -72,7 +72,62 @@ Preliminary classification (confirmed in the design phase).
 
 ## Design
 
-<!-- Modules, interfaces, data formats touched; decisions taken and their reasons. -->
+**Classification confirmed**: the `@F2.1` criterion is a characterization, the other three red-first.
+
+### A correction to this task's Context: the hold-out gets its consumer here
+
+The Context names the validator (task-017) as the hold-out's first user. A loader shipped with no
+caller is a defect in this repository (W1's review; task-005 dropped the fake's events for the same
+reason). So this task creates **`bench scenario validate <id>@<version> [--holdout <path>]`**
+(REQ-CLI-04) with the checks that exist today — the schema and the loader's (REQ-FMT-04) — and the
+hold-out's own consistency, below. task-017 adds the leak scan to the same command, and the
+`scenarios.feature` @F3.2 acceptance tests with it, since F3.2 is its feature. Nothing moves between
+features: F3.2's scenarios stay task-017's.
+
+### Where the hold-out is (REQ-CLI-10)
+
+`--holdout <path>` wins over `BENCH_HOLDOUT_PATH`; an empty variable counts as unset. A configured path
+must exist, be a directory, and hold a `scenarios/` directory — the layout that mirrors this
+repository's (REQ-ARC-03); anything else is an error naming the path and what is wrong with it. A path
+is not content, so naming it prints no hold-out material.
+
+`bench scenario validate` reads scenarios from `scenarios/` under the working directory, the
+repository's root (REQ-ARC-03), the way `campaign validate` reads them beside the campaign file.
+
+### A scenario version's additions — `scenario/holdout.ts`
+
+`loadHoldoutAdditions(holdoutRoot, id, version)` looks at `<holdout>/scenarios/<id>/<version>/` and
+returns its **file names only**, relative and sorted: it never opens a file. A symbolic link in it is
+refused by its relative path, as in a seed or an arm directory. Reading content is for the leak scan
+(task-017) and for scoring (W6), each where it needs it.
+
+### Consistency with `holdout:` (REQ-FMT-04)
+
+| `holdout:` | Hold-out configured | Additions found | Outcome |
+|---|---|---|---|
+| any | no | — | valid if the rest is; stdout says `hold-out: not configured` (K2: a public rerun needs no hold-out) |
+| `true` | yes | some | valid; stdout says how many files |
+| `true` | yes | none | issue at `holdout`: the scenario expects additions and the hold-out has none for it |
+| `false` | yes | some | issue at `holdout`: additions exist for a scenario that declares none |
+| `false` | yes | none | valid |
+
+### Never read by `campaign run` (REQ-CLI-10, F2.1)
+
+The runner takes no hold-out option, and `campaign run` neither accepts `--holdout` (a usage error)
+nor reads `BENCH_HOLDOUT_PATH`. The `@F2.1` acceptance test (task-003's) is extended at the command
+line: with the variable set to a path that does not exist, `campaign run` still runs, which it could
+not if it resolved the variable.
+
+### Tests
+
+- **Acceptance:** `@F2.1 A run cannot see the hold-out even if the path is configured`, extended as
+  above (characterization).
+- **Unit:** the path's resolution and its errors; the additions loader (files listed, sorted, never
+  read; links refused; none found); every row of the consistency table through the command; the
+  command's usage errors (`<id>@<version>` malformed, unknown scenario, `--holdout` without a path);
+  and, for every case, that no byte of an addition's content reaches stdout, stderr or any file the
+  command writes — each fixture addition holds a marker string the test searches for.
+- The hold-outs are built in temporary directories: no hold-out content is written in this repository.
 
 ## Execution notes
 
