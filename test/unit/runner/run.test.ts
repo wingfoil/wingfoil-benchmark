@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import {
   existsSync,
   mkdirSync,
@@ -143,7 +144,7 @@ describe('runCampaign', () => {
 
     await runCampaign(checked, { docker, git, agent });
 
-    expect(readdirSync(recorded.creates[0]?.workspace ?? '').sort()).toEqual(['README.md']);
+    expect(readdirSync(recorded.creates[0]?.workspace ?? '').sort()).toEqual(['CLAUDE.md', 'README.md']);
   });
 
   it('copies the seed directory tree, subdirectories included', async () => {
@@ -230,7 +231,7 @@ describe('runCampaign', () => {
 
     await runCampaign(checked, doubles());
 
-    expect(readdirSync(workspace).sort()).toEqual(['README.md']);
+    expect(readdirSync(workspace).sort()).toEqual(['CLAUDE.md', 'README.md']);
     expect(existsSync(join(workspace, 'leftover.txt'))).toBe(false);
   });
 
@@ -1058,5 +1059,61 @@ describe('the setup phase (REQ-RUN-03, adr-003)', () => {
     };
     expect(record.setup.code).toBe(3);
     expect(record.setup.commit).toBeUndefined();
+  });
+});
+
+describe('the operating manual (REQ-RUN-12, F2.7)', () => {
+  it("puts the arm's manual in the workspace as CLAUDE.md before the setup runs, so no step's patch holds it", async () => {
+    const { root, checked } = checkedCampaign();
+    let present = false;
+    const ports = doubles({
+      execResultOf: (command) => {
+        if (command[0] === 'bash')
+          present = existsSync(join(ports.recorded.creates[0]?.workspace ?? '', 'CLAUDE.md'));
+        return undefined;
+      },
+    });
+
+    const summary = await runCampaign(checked, ports);
+
+    expect(present).toBe(true);
+    const workspace = summary.runs[0]?.workspace ?? '';
+    expect(readFileSync(join(workspace, 'CLAUDE.md'), 'utf8')).toBe(
+      readFileSync(join(root, 'arms', 'baseline', 'manual.md'), 'utf8'),
+    );
+  });
+
+  it("records the manual's size with the run: bytes, the approximation, its method and the text's digest", async () => {
+    const { root, checked } = checkedCampaign();
+    writeFileSync(join(root, 'arms', 'baseline', 'manual.md'), 'Read README.md first.\n');
+    const ports = doubles();
+
+    const summary = await runCampaign(checked, ports);
+
+    const record = JSON.parse(readFileSync(join(summary.runs[0]?.outputDir ?? '', 'run.json'), 'utf8')) as {
+      manual: Record<string, unknown>;
+    };
+    expect(record.manual).toEqual({
+      file: 'CLAUDE.md',
+      sha256: createHash('sha256').update('Read README.md first.\n').digest('hex'),
+      bytes: 22,
+      tokens: 6,
+      method: 'bytes-div-4',
+      method_version: 1,
+    });
+  });
+
+  it('refuses to replace a CLAUDE.md the seed already holds', async () => {
+    const { root, checked } = checkedCampaign();
+    writeFileSync(join(root, 'scenarios', 'S1', '1.0', 'seed', 'CLAUDE.md'), 'from the seed\n');
+    const ports = doubles();
+
+    const summary = await runCampaign(checked, ports);
+
+    expect(summary.runs[0]?.outcome).toBe('failed');
+    expect(summary.runs[0]?.error).toBe(
+      "the workspace already holds a CLAUDE.md, from the seed or the arm's environment: the manual of arm baseline would replace it",
+    );
+    expect(ports.recorded.steps).toEqual([]);
   });
 });

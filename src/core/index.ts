@@ -7,6 +7,7 @@ export type { Arm, ArmFile } from './arm.js';
 export { campaignConsistency, campaignSchema, harnessCoverage } from './campaign.js';
 export type { ArmRequirement, CampaignFile } from './campaign.js';
 export { canonicalJson } from './canonical-json.js';
+export { approximateTokens, TOKEN_METHOD } from './tokens.js';
 export { parseWith, readYamlFile } from './yaml-file.js';
 export { dockerCli, WORKSPACE } from './ports/docker.js';
 export type {
