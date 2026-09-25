@@ -2,7 +2,7 @@
 id: bug-006-claude-code-s-auto-memory-can-carry-state-between-the-steps-of-a-run
 type: bug
 title: "Claude Code's auto-memory can carry state between the steps of a run"
-status: pending
+status: approved
 ---
 
 ## Context
