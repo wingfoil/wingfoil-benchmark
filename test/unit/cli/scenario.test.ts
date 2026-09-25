@@ -1,8 +1,17 @@
-import { mkdirSync, readdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
+import {
+  copyFileSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { main } from '../../../src/cli/index.js';
+import { repoPath } from '../../support/paths.js';
 import {
   COMPLETE_FILES,
   completeScenarioYaml,
@@ -21,6 +30,8 @@ function repo(holdoutFlag = true): string {
     { ...completeScenarioYaml(), holdout: holdoutFlag },
     COMPLETE_FILES,
   );
+  // The leak scan's declarations, as the repository has them (task-017).
+  copyFileSync(repoPath('scenarios/leak-scan.yaml'), join(root, 'scenarios', 'leak-scan.yaml'));
   return root;
 }
 
@@ -137,6 +148,14 @@ describe('bench scenario validate (REQ-CLI-04, REQ-CLI-10)', () => {
     symlinkSync('/etc/hostname', join(linked, 'scenarios', 'S9', '1.0', 'escape'));
     expect((await run(repo(), 'scenario', 'validate', 'S9@1.0', '--holdout', linked)).stderr).toBe(
       "holdout: 'escape' is a symbolic link\n",
+    );
+  });
+
+  it('refuses to validate without the leak-scan declarations, rather than scan by defaults', async () => {
+    const root = repo();
+    rmSync(join(root, 'scenarios', 'leak-scan.yaml'));
+    expect((await run(root, 'scenario', 'validate', 'S9@1.0')).stderr).toBe(
+      `leak-scan.yaml: not found in ${join(root, 'scenarios')}\n`,
     );
   });
 
