@@ -386,3 +386,14 @@ together with dl-005's REQ-FMT-04 change planned for task-013.
 4/4, `npm run test:docker` 3/3, `npm run lint` clean — run in the linked worktree with its own
 `npm ci`, no `node_modules` link. No `bench*` container left, the spike's included. No code under
 `src/`, `test/` or `docker/` changed.
+
+### Approvals and amendments (2026-09-25)
+
+- adr-003 approved (`51b6c7e`), with both of its choices as proposed: the same git identity in every
+  arm, the scenario's configuration copied rather than replayed. bug-006 approved (`e4b5d9e`), to be
+  handled in its own task, outside W3. Both approvals were run by the approver from this worktree, so
+  their commits are on the task branch.
+- The approver accepted both amendments and asked for them in this task. Written in `3d6db13`:
+  **requirements 1.5** (REQ-RUN-14: lockfile-faithful install, `wingfoil` never through `npx`) and **scenarios README 1.1** (K5: no MCP Tools at `3df305e`; a new §6 records
+  the amendment). dl-005 had planned its REQ-FMT-04 change as "requirements 1.5"; since 1.5 is now
+  taken, task-013 writes it as 1.6. dl-005 itself is approved and is not edited for a version number.
