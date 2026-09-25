@@ -2,7 +2,7 @@
 id: adr-003-w3-arm-conventions
 type: adr
 title: "W3 arm conventions"
-status: pending
+status: approved
 ---
 
 ## Context
