@@ -229,3 +229,11 @@ dl-005 planned (it said 1.5; task-011 took that number).
 `npm test` 518/518 (statements 100%, branches 98.27%, functions 100%, lines 100%), `npm run test:bin`
 4/4, `npm run test:docker` 4/4 (the W3 test ran, against `../WingFoil2` at `3df305e`), `npm run lint`
 clean; no `bench*` container left.
+
+### Review and approval
+
+- `npx wingfoil memory submit task-013-…` → `0489250` (`in-progress → in-review`, one commit, only
+  `status` changed). Matches.
+- `npx wingfoil memory approve task-013-… --reason "…"` → `1ae3ea8`, run by the approver from the
+  worktree (`in-review → approved`, `Approver:`/`Reason:` trailers, only `status` changed). Matches.
+  Its reason accepts requirements 1.6 (`679fc9b`), the review decision that amendment waited for.
