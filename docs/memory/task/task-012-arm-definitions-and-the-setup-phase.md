@@ -197,3 +197,58 @@ own under `test/fixtures/arms/`, since their campaigns live in `test/fixtures/ca
   required fields checked, one commit `wf(task): submit <id>` with no bracket and no body. Observed:
   exit 0, empty stderr, 1 file, diff limited to `status: draft` → `status: pending`. Matches (subject
   without transition: N9).
+- The approver's `memory approve` → `8a78c69` (`pending → backlog`, `Approver:`/`Reason:` trailers).
+  Matches.
+- `npx wingfoil memory submit task-012-arm-definitions-and-the-setup-phase` → `a74d2df`, run in the
+  linked worktree `WingFoil2-Benchmark-task-012` with its own `npm ci` (no `node_modules` link).
+  Declared: `backlog → in-progress`, one commit. Observed: exit 0, empty stderr, one file, diff limited
+  to `status`, on the task branch. Matches.
+
+### Build (TDD, red first at each cycle)
+
+1. **The arm definition** (`b975e8c`). 12 tests red (module missing), then green. One test changed
+   before any code: the first draft let an MCP configuration that is not JSON pass, leaving Claude
+   Code to find it — at a session already paid for. The loader now parses it and reports
+   `'mcp.json' is not valid JSON: …` at the campaign check. The first green run then failed on the
+   test fixture itself, which wrote `mcp.json\n` into `mcp.json`: the check caught its own fixture.
+2. **Harness coverage from `requires`** (`a83825d`). 11 red, then green. `HARNESS_FREE_ARMS` is gone;
+   the three old `loadCampaign` tests of the rule moved to `test/unit/runner/campaign.test.ts`,
+   rewritten against `requires` (characterization: baseline, baseline-docs, wingfoil), plus the
+   red-first cases the fixed list could not know (a new plain arm with no harness is accepted; a new
+   arm that requires a tool needs one; a harness of the wrong tool is refused). `campaign.feature`
+   @F1.1 @error stayed green unchanged. The whole suite then failed once, as expected, on
+   `bench campaign validate test/fixtures/campaigns/smoke.yaml`: fixture campaigns need arms too, so
+   `test/fixtures/arms/baseline/` exists now. The benchmark's own `arms/` got its three arms, and a
+   test loads each of them. `4f95498` is the prettier pass the commit before it skipped.
+3. **The setup phase and MCP on both lines** (`2b981ac`). 13 red, then green; four earlier tests
+   failed on the new shape of a run (the identity, `setup` and `head` calls, the setup's `exec`) and
+   were updated to the new exact sequences, not loosened. Two branches were left uncovered and got a
+   test each: a nested environment directory with no link, and a setup that fails without a word.
+4. **Docker** (`6d471d4`). The W1 and W2 runs now go through a real setup, green at the first run: a
+   real `docker cp` of the arm to `/home/node/arm`, the script run as `node` in `/workspace`
+   (`setup/log.txt` says so), the identity in `.git/config`, and the history `seed`, `setup`,
+   `step 01`, all authored by `WingFoil Benchmark <benchmark@localhost>` — the runner's `-c` identity
+   wins over the repository's, as the Design said.
+
+### Deviations from the Design
+
+- **`docker cp` without `--archive`.** The Design said `--archive`, "so the files keep the `node`
+  owner". `--archive` keeps the *host's* uid and gid, which is `node`'s only on a host whose user is
+  1000. Without it the files belong to root and stay readable, which is all a setup needs of its own
+  directory; the docker suite confirms `bash /home/node/arm/setup.sh` runs as `node`.
+- **The fixture arm's setup prints instead of leaving a file.** A mark in the container's home cannot
+  be read after the run, because the container is removed; the docker suite reads `setup/log.txt`.
+
+### Notes for the next tasks
+
+- `arms/wingfoil/setup.sh` refuses to run (exit 1, naming task-013), so a wingfoil run fails at its
+  setup until task-013; `arms/wingfoil/mcp.json` already points at `/home/node/.local/bin/wingfoil`,
+  where adr-003 decision 3 puts the wrapper.
+- The three `manual.md` files are placeholders for task-014; nothing copies them into the workspace
+  yet (REQ-RUN-12 is task-014's).
+- baseline-docs has no `environment` yet: task-015 generates it.
+
+### Review readiness
+
+`npm test` 494/494 (statements 100%, branches 98.42%, functions 100%, lines 100%), `npm run test:bin`
+4/4, `npm run test:docker` 3/3, `npm run lint` clean; no `bench*` container left.
