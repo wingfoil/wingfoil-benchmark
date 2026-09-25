@@ -34,7 +34,7 @@ Waves and features from [07_sequencer.md](../../01_vision/07_sequencer.md) 1.1. 
 |---|---|---|---|---|
 | W1 — Skeleton | F3.1 scenario format · F1.1 campaign file · F2.1 isolated run | — | a trivial scenario runs in a container from a campaign file | **2026-09-23** |
 | W2 — Agent in the loop | F2.2 fresh-session steps · F2.3 Claude Code adapter · F2.4 neutral approver | F2.4 | a multi-step run with usage captured and interventions counted | **2026-09-24** |
-| W3 — Arms | F2.5 arm setups · F2.6 WingFoil under test · F2.7 arm activation (operating manuals) | — | the same scenario runs in the baseline, baseline-docs and wingfoil arms | — |
+| W3 — Arms | F2.5 arm setups · F2.6 WingFoil under test · F2.7 arm activation (operating manuals) | — | the same scenario runs in the baseline, baseline-docs and wingfoil arms || **2026-09-25** |
 | W4 — Scenario hygiene | F3.5 hold-out integration · F3.2 validator and leak scan · F3.4 scenario versioning | — | a scenario validated, with its oracle kept outside the container | — |
 | W5 — Cost control | F3.3 dry run · F1.2 cost estimate · F1.3 budget guard | — | a campaign refuses to start above the ceiling | — |
 | W6 — First scores | F4.1 hidden-test oracle · F4.3 cost metrics · F3.6 expected failures | — | pass/fail and cost per run, with expected failures marked | — |
@@ -132,10 +132,80 @@ interrupted run leaves its container behind),
 - **W5:** the intervention cost against the budget; a per-session cost floor (adr-002).
 - **Candidates for classifier v2**, never a quiet edit to v1: listed in task-007's review notes.
 
+### W3 — verified 2026-09-25
+
+**"The same scenario runs in the baseline, baseline-docs and wingfoil arms."** Checked in two halves,
+as the W3 plan phase decided (task-011, decision 4).
+
+**With the fake agent** — `npm run test:docker` (`test/docker/run.test.ts`, the W3 test) runs T2
+(standing in for S8) from `test/fixtures/campaigns/arms.yaml` in the three arms, against WingFoil
+`3df305e` built from the local clone: `3 runs completed, 0 failed`. It checks that:
+
+- the WingFoil in the wingfoil container is built from `3df305ea198d…` (`run.json` `harness.commit`,
+  the setup log), found at `/home/node/.local/bin/wingfoil`, independent of the managing WingFoil;
+- T2's rules and decision are in the wingfoil arm only, and the Benchmark Approver is declared;
+- the agent's `memory approve` is accepted as `Approver: Benchmark Approver … (approver)`; shown able to
+  fail with the member under another email (`user not authorized to approve`);
+- baseline-docs receives `PROJECT_RULES.md`, rendered from a snapshot the wingfoil arm's own setup
+  made, with T2's `no-throw` rule and `dl-001`; each arm's `CLAUDE.md` is its manual;
+- no container is left behind.
+
+**With the real agent** — approver's consent 2026-09-25: Sonnet 5, at most 3 €. Campaign
+`ccf207c46915` (T2, baseline and wingfoil, Claude Code 2.1.280, `claude-sonnet-5`), run outside the
+repository; `2 runs completed, 0 failed`, **0.72 € API-equivalent** in all:
+
+| Arm | Setup | Manual (`bytes-div-4`) | Step 1 | Step 2 | Interventions |
+|---|---|---|---|---|---|
+| baseline | 0.1 s | 120 tokens | 0.065 € | 0.039 € | 0 |
+| wingfoil | 2.2 s | 463 tokens | 0.521 € (50 turns) | 0.094 € | 1 approval request |
+
+In the wingfoil arm the agent did what its manual maps: read `directives list --role developer` and the
+approved decisions, followed `dl-001` (a `Result`, no throw), tracked the request as `task-001`,
+recorded `dl-002`, submitted both, asked for approval and stopped; after the neutral approver's
+"Approved. Proceed." it ran `memory approve` on both, recorded as the Benchmark Approver (author and
+`Approver:` line agree). The token appears in no stored file.
+
+| Task | Feature | Delivered |
+|---|---|---|
+| [task-011](../task/task-011-wingfoil-in-the-run-container-spike.md) | — (spike) | WingFoil `3df305e` in the container, observed; adr-003; 0.04 USD |
+| [task-012](../task/task-012-arm-definitions-and-the-setup-phase.md) | (F2.5) | `arms/<arm>/arm.yaml`, harness coverage from `requires`, the setup phase, MCP on both command lines |
+| [task-013](../task/task-013-wingfoil-under-test-and-approval-authority.md) | F2.6 | the WingFoil under test built from the clone by SHA, the wingfoil setup, the Benchmark Approver, a scenario's `arms/<arm>/` |
+| [task-014](../task/task-014-operating-manuals.md) | F2.7 | the three manuals as `CLAUDE.md`, their size recorded |
+| [task-015](../task/task-015-baseline-docs-generator.md) | F2.5 | the snapshot of the wingfoil configuration and the baseline-docs generator |
+
+Decisions taken during W3: [dl-005](../decision-log/dl-005-a-scenario-s-project-rules-live-in-the-scenario-as-the-wingfoil-arm-s-configuration.md),
+[adr-003](../adr/adr-003-w3-arm-conventions.md); requirements 1.5 (REQ-RUN-14) and 1.6 (REQ-FMT-04,
+REQ-ARC-03); scenarios README 1.1 (K5: no MCP Tools at `3df305e`). Bugs:
+[bug-006](../bug/bug-006-claude-code-s-auto-memory-can-carry-state-between-the-steps-of-a-run.md)
+(open: Claude Code's auto-memory lives in the container for a whole run). WingFoil usage notes N30–N34.
+
+**W2's carry-overs, settled here:**
+
+- REQ-RUN-17's other half and the MCP flags on the resume line: delivered (task-013, task-012).
+- A resumed Sonnet 5 session **stays on Sonnet**: the resume's `init` event and its `modelUsage` both
+  name `claude-sonnet-5`, in the same session, with the WingFoil server connected again.
+- What `--max-budget-usd` compares against on a resume: **not observed** — the resume cost about
+  0.03 USD, far from its cap. It stays open for W5's budget guard, which must not rely on it.
+
+**Due before the waves that need them:**
+
+- **W4 (F3.2, the leak scan):** a scenario's `arms/<arm>/` must not leak into the seed or the prompts
+  (the loader checks overlap, not content); a seed must not carry a `CLAUDE.md` or `PROJECT_RULES.md`
+  (the runner refuses to overwrite `CLAUDE.md`, but only at run time).
+- **W5 (F1.2, F1.3):** the wingfoil arm's first step cost eight times the baseline's here (0.52 € vs
+  0.065 €, 50 turns): the estimate needs a per-arm step cost, not one figure. Setup is time only
+  (adr-003 decision 11), and the harness build happens once per campaign, outside every run.
+- **bug-006** before the reference campaign: auto-memory could carry state between steps in every arm.
+- **Before the campaign (sequencer decision 3):** the reference campaign pins the latest *released*
+  WingFoil, not `3df305e`; re-run `spikes/task-011/p6-mcp.sh` against it (adr-003 consequence) and
+  refresh `test/fixtures/wingfoil-config/` from a real run.
+- **W11 (F5.8):** the method page states that the decision is always the neutral approver's and the
+  agent only executes it (REQ-RUN-17), and publishes the three manuals and the baseline-docs table.
+
 ## Release checklist
 
 - [x] release-planning: scope approved (planning → in-development, `8c5c7e6`; plan: plan-003)
-- [ ] delivery: W1–W11 done, every wave's "Ends with" verified (W1 done: task-001, task-002, task-003; W2 done: task-004, task-005, task-006, task-007)
+- [ ] delivery: W1–W11 done, every wave's "Ends with" verified (W1 done: task-001, task-002, task-003; W2 done: task-004, task-005, task-006, task-007; W3 done: task-011, task-012, task-013, task-014, task-015)
 - [ ] calibration: dry runs in every arm, budget revised (`docs/calibration/v0.1.md`)
 - [ ] validation: acceptance green on the fake agent, coverage > 80%, lint clean, one real-agent end-to-end run
 - [ ] campaign: reference campaign published (campaign: —)
