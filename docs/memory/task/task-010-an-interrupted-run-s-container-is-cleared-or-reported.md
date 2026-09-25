@@ -131,6 +131,29 @@ otherwise pay one more Docker call per run.
 - **Suites:** `npm test` 454 passed, 100% statements / 98.33% branches / 100% functions / 100% lines;
   `npm run test:docker` 3; `npm run lint` clean.
 
+### Review, round 1
+
+- **Independent reviewer, on an export. Verdict: approvable**, 1 major, 3 minors, 3 nits; all fixed
+  or recorded.
+- **Major — a live run called interrupted.** The campaign id is a digest of the file, so the same
+  campaign run from another checkout, or two `npm run test:docker` at once, shares the prefix: a
+  **running** container of it may be someone's live run, and the first build would have told the
+  operator it was interrupted and to `docker rm --force` it. The port now reads each container's
+  state; a running one is reported as "another invocation of this campaign may be using it. If none
+  is, remove it with: …", never as interrupted. The Design's "nothing but this campaign's own runs can
+  add to it" was wrong across processes.
+- **Minors fixed:** the execution was parsed with an anchored regex that no test pinned (a name like
+  `…-manual2-…` now tested); the time limit sent SIGTERM only, so a process ignoring it outlived the
+  limit (a `trap "" TERM` probe took 3 s against 300 ms) — it now kills with SIGKILL; the warning's
+  direction was pinned only by the Docker suite (the ordinary case, a leftover of an **earlier**
+  execution, now a unit test). Nit fixed: the refused run builds no workspace, now asserted.
+- **Nits recorded:** a failed `docker ps` uses up an execution number, as a failed build already
+  does; two surviving mutations are equivalent to the code (explained in the review).
+- **Mutations of the round, all red:** unanchored parsing, warning only later executions, the state
+  ignored by the run, by the warning, and by the port, no SIGKILL.
+- **Suites:** `npm test` 458 passed, 100% statements / 98.12% branches / 100% functions / 100% lines;
+  `npm run test:docker` 3; `npm run lint` clean.
+
 ### WingFoil commands (declared vs observed)
 
 - `npx wingfoil memory add --type task --title "…"` → `73de01d`, on main. Declared: one commit, one

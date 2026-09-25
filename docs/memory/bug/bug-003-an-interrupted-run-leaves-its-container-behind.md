@@ -80,3 +80,13 @@ host. Whichever fix is chosen should bound that call and report what it was wait
 hanging the campaign at its first run.
 
 What does **not** survive is the claim that this bug can wedge a host. It cannot.
+
+## Resolution
+
+Fixed in [task-010](../task/task-010-an-interrupted-run-s-container-is-cleared-or-reported.md) with
+fix 2, the approver's choice: **reported, never removed**. At the start of a campaign the runner lists
+this campaign's containers (bounded at 30 s). A run whose name is taken fails with the cause and the
+`docker rm --force` that clears it; a leftover of another execution is warned about; a **running**
+one is reported as possibly another invocation's, not as interrupted. Scoping the task corrected this
+element's framing: an ordinary rerun gets the next execution number and does not collide — it leaks
+the old container silently, which is now warned about; the collision needs the results to be gone.
