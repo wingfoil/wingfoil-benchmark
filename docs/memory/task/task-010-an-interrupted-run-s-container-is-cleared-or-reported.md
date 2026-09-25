@@ -60,7 +60,53 @@ No Gherkin scenario covers it; the criteria are requirements, all **red-first** 
 
 ## Design
 
-<!-- Modules, interfaces, data formats touched; decisions taken and their reasons. -->
+**The approver's choice (2026-09-25): fix 2, report it.** The runner never removes a container it did
+not create in this run; it names what it found and how to clear it. Offered alongside were fix 1
+(remove blindly) and a labelled variant of it (remove only a container carrying the run's own label).
+
+**Classification confirmed:** all three criteria red-first.
+
+### One look, at the start of the campaign
+
+Before the image is built, the runner asks Docker once for every container whose name starts with
+`bench-<campaign-id>-` — the prefix every container of this campaign carries — and reads the execution
+number out of each name. Two cases follow, which are the two consequences the Context found:
+
+- **a container with the very name a run is about to use** (the results were cleared, or the test
+  suite starts from a fresh directory): **that run fails** before `docker create`, with the message
+  `container <name> already exists: an interrupted run of execution <n> of this campaign left it
+  behind (bug-003). Remove it with: docker rm --force <name>`. The campaign goes on to its next run
+  (REQ-NFR-03), and each run that collides says so for its own container;
+- **containers of earlier executions** (the ordinary rerun, which gets `n + 1` and does not collide):
+  **one warning per container** on the error stream, naming it, its execution and the same command.
+  The runs proceed: the leak is made visible, not treated as a failure of a run it does not touch.
+
+Asking once, up front, rather than before each `create`: the set cannot grow during the campaign
+except by this campaign's own runs, which remove what they create; and a campaign of many runs would
+otherwise pay one more Docker call per run.
+
+### The ports
+
+- `DockerPort.containersNamed(prefix)` — `docker ps --all --filter name=<prefix> --format
+  {{.Names}}`, then filtered with `startsWith` in the runner's own terms: Docker's `name` filter
+  matches anywhere in the name, which is not what "left by this campaign" means.
+- **The call is bounded** (bug-003's condition): `ProcessPort.run` gains an optional `timeoutMs`, the
+  real port passes it to `execFile`'s `timeout`, and a killed process comes back with
+  `timedOut: true` instead of an opaque exit code. `containersNamed` uses 30 s and, when it expires,
+  fails the **campaign** with `docker ps did not answer within 30 s while looking for containers
+  left by earlier runs of this campaign`: a daemon that cannot list containers cannot create them
+  either, and saying so at once beats a hang at the first run.
+
+### Tests
+
+- **Unit:** the process port's timeout, against a real `sleep`; `containersNamed`'s command line, its
+  filtering and its timeout; the runner — a colliding container fails that run only, with the name,
+  the execution and the command, and `create` is never called for it; containers of other executions
+  produce one warning each and every run proceeds; a container of **another** campaign is ignored.
+- **Docker** (`npm run test:docker`): the interrupted case for real — a container created by hand
+  with the name a run will use makes that run fail with the message, and a rerun that gets the next
+  execution warns about it and completes. The container is removed in a `finally`, so the test does
+  not become the thing it tests.
 
 ## Execution notes
 
