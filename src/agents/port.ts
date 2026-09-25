@@ -15,6 +15,8 @@ export interface StepRequest {
   readonly sessionId: string;
   /** What is left of the run's cost cap, in USD: `--max-budget-usd` (REQ-RUN-04). */
   readonly remainingCostUsd: number;
+  /** The arm's MCP configuration, as a path inside the container; absent when the arm has none. */
+  readonly mcpConfig?: string;
   /** Runs a command inside the run's container. */
   readonly run: (command: readonly string[]) => Promise<ProcessResult>;
 }
@@ -35,6 +37,8 @@ export interface ResumeRequest {
   readonly reply: string;
   /** What is left of the run's cost cap, in USD, after the step so far (REQ-RUN-04). */
   readonly remainingCostUsd: number;
+  /** The arm's MCP configuration, as on the step's first command line: a resume must keep it. */
+  readonly mcpConfig?: string;
   /** Runs a command inside the run's container. */
   readonly run: (command: readonly string[]) => Promise<ProcessResult>;
 }

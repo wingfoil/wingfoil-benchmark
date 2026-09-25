@@ -57,6 +57,14 @@ export interface GitPort {
   commitAll(directory: string, message: string, options?: { allowEmpty?: boolean }): Promise<void>;
   /** The patch of one commit, for `steps/<NN>/diff.patch` (REQ-RUN-05). */
   patchOf(directory: string, ref: string): Promise<string>;
+  /**
+   * Writes `user.name` and `user.email` into the repository's own configuration: the identity the
+   * agent commits with in the container (adr-003 decisions 6, 7). The runner's own commits keep the
+   * fixed identity its `-c` settings give them, which take precedence over the repository's.
+   */
+  configureIdentity(directory: string, name: string, email: string): Promise<void>;
+  /** The full SHA of the commit the repository is at. */
+  head(directory: string): Promise<string>;
 }
 
 /** The git port that calls the `git` command line. */
@@ -80,5 +88,10 @@ export function gitCli(process: ProcessPort): GitPort {
     // `show` of the commit itself, not a range: every step has a parent, but reading the commit is
     // one fewer assumption about the history it sits in.
     patchOf: (directory, ref) => git(directory, ['show', '--format=', '--patch', ref]),
+    configureIdentity: async (directory, name, email) => {
+      await git(directory, ['config', 'user.name', name]);
+      await git(directory, ['config', 'user.email', email]);
+    },
+    head: async (directory) => (await git(directory, ['rev-parse', 'HEAD'])).trim(),
   };
 }

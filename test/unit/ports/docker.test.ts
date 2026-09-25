@@ -89,6 +89,17 @@ describe('the Docker port', () => {
     expect(process.calls[0]?.args).toEqual(['exec', 'c0ffee', 'sh', '-c', 'echo hi']);
   });
 
+  it("copies a host path into the container, outside the workspace's mount (REQ-RUN-03)", async () => {
+    const process = recorder([ok()]);
+    await dockerCli(process).copyTo('c0ffee', '/repo/arms/wingfoil', '/home/node/arm');
+    expect(process.calls[0]?.args).toEqual(['cp', '/repo/arms/wingfoil', 'c0ffee:/home/node/arm']);
+  });
+
+  it('fails with the command and its error output when a copy fails', async () => {
+    const process = recorder([{ code: 1, stdout: '', stderr: 'no such container' }]);
+    await expect(dockerCli(process).copyTo('c0ffee', '/a', '/b')).rejects.toThrow(/no such container/);
+  });
+
   it('lists the mounts of a container', async () => {
     const process = recorder([ok('/repo/runs/abc123/1/w:/workspace\n')]);
     const mounts = await dockerCli(process).mountsOf('c0ffee');
@@ -189,6 +200,26 @@ describe('the git port', () => {
       'HEAD',
     ]);
     expect(patch).toBe('diff --git a/x b/x\n');
+  });
+
+  it("writes an identity into the repository's own configuration (adr-003 decision 6)", async () => {
+    const process = recorder([ok(), ok()]);
+    await gitCli(process).configureIdentity(
+      '/repo/runs/w',
+      'Benchmark Approver',
+      'approver@benchmark.localhost',
+    );
+    expect(process.calls.map((call) => command(call.args))).toEqual([
+      ['-C', '/repo/runs/w', 'config', 'user.name', 'Benchmark Approver'],
+      ['-C', '/repo/runs/w', 'config', 'user.email', 'approver@benchmark.localhost'],
+    ]);
+  });
+
+  it('names the commit a repository is at', async () => {
+    const process = recorder([ok('3df305ea198d7e2ca0da73bfb12b14af865e9922\n')]);
+    const head = await gitCli(process).head('/repo/runs/w');
+    expect(command(process.calls[0]?.args ?? [])).toEqual(['-C', '/repo/runs/w', 'rev-parse', 'HEAD']);
+    expect(head).toBe('3df305ea198d7e2ca0da73bfb12b14af865e9922');
   });
 
   it('keeps the host git environment out of the run', async () => {

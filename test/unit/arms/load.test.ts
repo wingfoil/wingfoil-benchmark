@@ -127,6 +127,19 @@ describe('loadArm (REQ-FMT-05)', () => {
     ]);
   });
 
+  it('accepts an environment with nested directories and no link, searching them all', () => {
+    const root = tempDir('bench-arm-');
+    const dir = writeArmAt(root, 'wingfoil', completeArmYaml(), COMPLETE_ARM_FILES);
+    mkdirSync(join(dir, 'environment', 'a', 'b'), { recursive: true });
+    writeFileSync(join(dir, 'environment', 'a', 'b', 'deep.md'), 'deep\n');
+    mkdirSync(join(dir, 'environment', 'z'));
+    symlinkSync('/etc/hostname', join(dir, 'environment', 'z', 'late'));
+
+    expect(issuesOf(root)).toEqual([
+      { path: 'environment', message: "'environment/z/late' is a symbolic link" },
+    ]);
+  });
+
   it('requires the harness tool to be a plain name', () => {
     const root = tempDir('bench-arm-');
     writeArmAt(root, 'wingfoil', { ...completeArmYaml(), requires: 'Wing Foil' }, COMPLETE_ARM_FILES);

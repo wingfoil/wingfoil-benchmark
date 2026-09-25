@@ -39,6 +39,8 @@ export interface Recorded {
   readonly resumes: ResumeRequest[];
   /** Every prefix the runner asked Docker to list containers by (bug-003). */
   readonly listed: string[];
+  /** Every copy into a container, as `source -> container:target` (REQ-RUN-03). */
+  readonly copies: string[];
 }
 
 /** One invocation of the agent: a step's session, or a resume of it. */
@@ -82,6 +84,8 @@ export function doubles(
       call: 'create' | 'start' | 'remove' | 'init' | 'commit' | 'patch' | 'list';
       error: string;
     };
+    /** What a command in the container answers, by command; falls back to {@link execResult}. */
+    execResultOf?: (command: readonly string[]) => ProcessResult | undefined;
     /** Containers that already exist, as Docker names them: what an interrupted run left behind. */
     leftovers?: readonly string[];
     /** Which of {@link leftovers} are running, as another invocation's would be. */
@@ -99,6 +103,7 @@ export function doubles(
     steps: [],
     resumes: [],
     listed: [],
+    copies: [],
   };
   let containers = 0;
   let patches = 0;
@@ -121,7 +126,13 @@ export function doubles(
     },
     exec: (container, command) => {
       recorded.execs.push({ container, command: [...command] });
-      return Promise.resolve(options.execResult ?? { code: 0, stdout: '', stderr: '' });
+      return Promise.resolve(
+        options.execResultOf?.(command) ?? options.execResult ?? { code: 0, stdout: '', stderr: '' },
+      );
+    },
+    copyTo: (container, source, target) => {
+      recorded.copies.push(`${source} -> ${container}:${target}`);
+      return Promise.resolve();
     },
     remove: (container) => {
       recorded.removes.push(container);
@@ -163,6 +174,15 @@ export function doubles(
         return Promise.reject(new Error(options.failing.error));
       }
       return Promise.resolve();
+    },
+    // In the same transcript as the commits: the identity must be written before the setup runs.
+    configureIdentity: (directory, name, email) => {
+      recorded.gitCalls.push(`identity ${directory} ${name} <${email}>`);
+      return Promise.resolve();
+    },
+    head: (directory) => {
+      recorded.gitCalls.push(`head ${directory}`);
+      return Promise.resolve('5e7a9c0ffee5e7a9c0ffee5e7a9c0ffee5e7a9c0');
     },
     // Recorded in the same transcript as the commits, so their order is pinned: a patch read before
     // its commit would hold the previous step's snapshot, and every scored step would slip by one.

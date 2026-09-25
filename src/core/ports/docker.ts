@@ -39,6 +39,12 @@ export interface DockerPort {
    * the caller sees the text either way.
    */
   exec(container: string, command: readonly string[]): Promise<ProcessResult>;
+  /**
+   * Copies the host path `source` (a file or a directory) to `target` in the container (REQ-RUN-03):
+   * how an arm's files reach it without a second mount (REQ-RUN-02). Not `--archive`: the files belong
+   * to the container, readable by its user whatever the host's user ids are.
+   */
+  copyTo(container: string, source: string, target: string): Promise<void>;
   remove(container: string): Promise<void>;
   /** The container's mounts, as `source:target`. */
   mountsOf(container: string): Promise<string[]>;
@@ -113,6 +119,9 @@ export function dockerCli(process: ProcessPort): DockerPort {
     },
     exec(container, command) {
       return process.run('docker', ['exec', container, ...command]);
+    },
+    async copyTo(container, source, target) {
+      await docker(['cp', source, `${container}:${target}`]);
     },
     async remove(container) {
       await docker(['rm', '--force', container]);
