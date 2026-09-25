@@ -57,7 +57,89 @@ Preliminary classification (confirmed in the design phase).
 
 ## Design
 
-<!-- Modules, interfaces, data formats touched; decisions taken and their reasons. -->
+Follows [adr-003](../adr/adr-003-w3-arm-conventions.md) and
+[dl-005](../decision-log/dl-005-a-scenario-s-project-rules-live-in-the-scenario-as-the-wingfoil-arm-s-configuration.md);
+builds on task-013 (the WingFoil under test, a scenario's `arms/wingfoil/`, `arms/wingfoil/setup.sh`)
+and task-014 (the baseline-docs manual names `PROJECT_RULES.md`). **Classification confirmed.**
+
+### The input is the wingfoil arm's configuration as the agent meets it, not the overlay alone
+
+The wingfoil agent does not see only the scenario's `arms/wingfoil/`: it sees everything `wingfoil
+init --template Kanban` writes (built-in directives, role bindings, workflows), with the scenario's
+overlay and the approver member on top. Those files are written by the WingFoil under test, inside the
+container; they exist nowhere on the host. A generator reading the overlay alone would give
+baseline-docs less than wingfoil gets — the asymmetry T3 exists to prevent.
+
+So the work is split in two, and only the second part is the generator REQ-RUN-11 describes:
+
+1. **A snapshot of the wingfoil configuration, per scenario** (`runner/wingfoil-config.ts`). Once per
+   campaign and scenario, the runner runs **the wingfoil arm's own `setup.sh`** in a one-off container
+   of the campaign image (`DockerPort.runOnce`), on an empty repository, with the campaign's WingFoil
+   artefact and the scenario's `arms/wingfoil/`, and keeps what it leaves under `.wingfoil/` and
+   `docs/memory/`. It is the same script, the same WingFoil and the same overlay the wingfoil arm's
+   runs get, so the snapshot is the wingfoil arm's configuration byte for byte. `setup.sh` gains
+   `WORKSPACE` (default `/workspace`) and puts `$HOME/.local/bin` on its own `PATH`, so it runs with the
+   build directory as its home; in a run nothing changes.
+2. **The generator** (`arms/baseline-docs.ts`, `renderProjectRules(files)`): a pure function of that
+   snapshot, as a map from path to text, returning `PROJECT_RULES.md`.
+
+The snapshot and the generated file are kept in the execution's results,
+`results/<campaign-id>/<n>/generated/<scenario>@<version>/{wingfoil/, PROJECT_RULES.md}`, so that what
+the baseline-docs arm received is published with the runs. In the setup phase of a baseline-docs run
+the runner copies `PROJECT_RULES.md` into the workspace, like an environment file.
+
+**A campaign with a baseline-docs arm must also have a wingfoil arm** (with its harness): there is no
+configuration to render otherwise. The campaign check says so at `arms`. It is a rule about the arm
+named `baseline-docs`, not a field of `arm.yaml`: v0.1 has one generated arm, and a general mechanism
+would be designed for none.
+
+### What counts as "the same information" (T3)
+
+Every kind of content the snapshot holds, and what the generator does with it:
+
+| Content | Rendered? | Why |
+|---|---|---|
+| `dna.yaml` `project` (name, description, methodology) | yes | the project description `runner.feature` names |
+| `dna.yaml` `stacks`, `modules` | yes | the project's technologies and parts |
+| `dna.yaml` `team.roles` | no | who does what in WingFoil's process; the baseline-docs agent has no roles |
+| `dna.yaml` `team.members` | no | the Benchmark Approver is the approval mechanism of the arm (REQ-RUN-17), not project information |
+| `dna.yaml` `paths` | no | query categories for WingFoil's navigation |
+| directives bound to `developer`, and the `global` ones (`roles.yaml`) | yes, full text | what the wingfoil manual tells the agent to read (`directives list --role developer`) |
+| directives bound only to other roles | no | the wingfoil manual does not send the agent to them either |
+| Memory `decision-log` and `adr` elements with `status: approved` | yes, title and body | the decisions to follow; what the manual tells the agent to read |
+| Memory elements in any other state, and other types (`task`, `bug`, `release`, …) | no | process state, not rules |
+| workflows (`workflows/custom/*.yaml`) | yes: name, description, phases | the "workflow descriptions" of experiment design §2 |
+| `memory.yaml`, Memory templates, `workflows.yaml` | no | the tool's own mechanics |
+
+The table is also written as a comment at the top of the generator, next to the code that applies it.
+
+### Determinism (REQ-RUN-11)
+
+Fixed templates; sections in a fixed order; directives by id, Memory elements by id, workflows by
+name; YAML read with the benchmark's own `yaml` package and never re-serialized; bodies copied as they
+are, with their trailing whitespace normalized to one newline. No clock, no randomness, no dependence
+on the order files are listed in. The same snapshot gives the same bytes twice, and in any order of
+its entries.
+
+### Fixture
+
+T2's `arms/wingfoil/` gains a `dna.yaml` (the Kanban one, with T2's project name and description): the
+scenario's configuration of a real scenario will bring one, and it exercises the member being added
+after it (task-013's order). The acceptance test's input is **a snapshot of T2 committed as a fixture**
+(`test/fixtures/wingfoil-config/T2/`), taken from a real run of the snapshot step, so the fake-port
+test reads real WingFoil output.
+
+### Tests
+
+- **Acceptance** (`runner.feature` @F2.5, the generator): T2's snapshot rendered holds its directives,
+  its decision and its project description as Markdown, and twice byte-identical; the setup scenario
+  (task-012's) re-run as characterization.
+- **Unit:** each row of the table (rendered or left out), order independence, missing sections; the
+  snapshot step with doubles (its container, what it keeps, a failing one); the campaign rule; the
+  file reaching the baseline-docs workspace and no other.
+- **Docker:** T2 in the three arms against the real clone — the wave's "Ends with" with the fake agent:
+  the baseline-docs workspace holds `PROJECT_RULES.md` with T2's `no-throw` text and `dl-001`, equal to
+  the one kept in the results.
 
 ## Execution notes
 
