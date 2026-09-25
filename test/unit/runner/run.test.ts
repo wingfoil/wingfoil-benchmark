@@ -957,7 +957,10 @@ describe('the setup phase (REQ-RUN-03, adr-003)', () => {
     const { checked } = checkedCampaign(wingfoilCampaign());
     const ports = doubles();
 
-    const summary = await runCampaign(checked, ports);
+    const summary = await runCampaign(checked, {
+      ...ports,
+      harnessSources: { wingfoil: '/clones/wingfoil' },
+    });
 
     const wingfoil = summary.runs.find((run) => run.arm === 'wingfoil');
     expect(readFileSync(join(wingfoil?.workspace ?? '', 'NOTES.md'), 'utf8')).toBe('environment/NOTES.md\n');
@@ -971,11 +974,12 @@ describe('the setup phase (REQ-RUN-03, adr-003)', () => {
       messageOf: (request) => (request.step === 1 && 'prompt' in request ? 'Shall I proceed?' : undefined),
     });
 
-    await runCampaign(checked, ports);
+    await runCampaign(checked, { ...ports, harnessSources: { wingfoil: '/clones/wingfoil' } });
 
     expect(ports.recorded.copies.slice(1)).toEqual([
       `${join(root, 'arms', 'wingfoil')} -> container-2:/home/node/arm`,
       `${join(root, 'arms', 'wingfoil', 'mcp.json')} -> container-2:/home/node/mcp.json`,
+      `${join(root, '.cache', 'harness', 'wingfoil', '3df305e'.padEnd(40, '0'), 'installed.tgz')} -> container-2:/home/node/harness.tgz`,
     ]);
     const wingfoilSteps = ports.recorded.steps.slice(2);
     expect(wingfoilSteps.map((step) => step.mcpConfig)).toEqual([

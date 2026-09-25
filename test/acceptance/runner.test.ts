@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -168,7 +168,10 @@ describe('runner.feature', () => {
     });
 
     // When the runner starts a run in the wingfoil arm
-    const summary = await runCampaign(checked.value, ports);
+    const summary = await runCampaign(checked.value, {
+      ...ports,
+      harnessSources: { wingfoil: '/clones/wingfoil' },
+    });
 
     // Then the arm's setup script runs before the first step
     const wingfoil = summary.runs.find((run) => run.arm === 'wingfoil');
@@ -184,6 +187,47 @@ describe('runner.feature', () => {
     expect(record.steps.map((step) => step.n)).toEqual([1, 2]);
     expect(record.steps.every((step) => step.usage.inputTokens === 100)).toBe(true);
     expect(readdirSync(join(wingfoil?.outputDir ?? '', 'steps'))).toEqual(['01', '02']);
+  });
+
+  it('@F2.6 The WingFoil under test is the version pinned by the campaign', async () => {
+    const sha = '3df305ea198d7e2ca0da73bfb12b14af865e9922';
+    // Given the campaign pins wingfoil@3df305e
+    const yaml = smokeCampaign();
+    yaml.arms = ['baseline', 'wingfoil'];
+    yaml.harnesses = { wingfoil: { tool: 'wingfoil', version: '3df305e' } };
+    const { root, file } = writeRepo(yaml, ['S1@1.0']);
+    const checked = checkCampaign(file);
+    if (!checked.ok) throw new Error(JSON.stringify(checked.issues));
+    const ports = doubles({
+      commits: { '3df305e': sha },
+      onRunOnce: (request) => {
+        mkdirSync(join(request.mount.source, 'out'), { recursive: true });
+        writeFileSync(join(request.mount.source, 'out', 'wingfoil-0.1.0.tgz'), 'tarball');
+        writeFileSync(join(request.mount.source, 'out', 'installed.tgz'), 'installed');
+      },
+    });
+
+    // When the runner sets up the wingfoil arm
+    const summary = await runCampaign(checked.value, {
+      ...ports,
+      harnessSources: { wingfoil: '/clones/wingfoil' },
+    });
+
+    // Then the WingFoil installed in the container is built from commit 3df305e
+    expect(ports.recorded.gitCalls).toContain(`archive /clones/wingfoil ${sha}`);
+    expect(ports.recorded.runOnce[0]?.command.join(' ')).toContain(sha);
+    const wingfoil = summary.runs.find((run) => run.arm === 'wingfoil');
+    const record = JSON.parse(readFileSync(join(wingfoil?.outputDir ?? '', 'run.json'), 'utf8')) as {
+      harness: { commit: string };
+    };
+    expect(record.harness.commit).toBe(sha);
+    // And it is independent of the WingFoil that manages the benchmark repository: what reaches the
+    // container is the artefact built from the clone, never anything under vendor/.
+    const harnessCopies = ports.recorded.copies.filter((copy) => copy.endsWith(':/home/node/harness.tgz'));
+    expect(harnessCopies).toEqual([
+      `${join(root, '.cache', 'harness', 'wingfoil', sha, 'installed.tgz')} -> container-2:/home/node/harness.tgz`,
+    ]);
+    expect(ports.recorded.copies.some((copy) => copy.includes('vendor'))).toBe(false);
   });
 
   it('@F2.2 Each step starts a new agent session', async () => {
@@ -458,7 +502,12 @@ describe('runner.feature', () => {
     );
     const { docker, git, recorded } = doubles();
 
-    const summary = await runCampaign(checked.value, { docker, git, agent });
+    const summary = await runCampaign(checked.value, {
+      docker,
+      git,
+      agent,
+      harnessSources: { wingfoil: '/clones/wingfoil' },
+    });
 
     // Three runs, in three different arms, each in a container of its own: the arm did vary.
     expect(summary.runs.map((run) => run.arm)).toEqual(['baseline', 'baseline-docs', 'wingfoil']);

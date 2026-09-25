@@ -105,6 +105,32 @@ describe('bench campaign run', () => {
     expect(stderr).toMatch(/^usage: bench/);
   });
 
+  it('needs BENCH_WINGFOIL_REPO for a campaign with a wingfoil harness, before anything is built', async () => {
+    const yaml = {
+      ...fakeCampaign(),
+      arms: ['baseline', 'wingfoil'],
+      harnesses: { wingfoil: { tool: 'wingfoil', version: '3df305e' } },
+    };
+    const { file } = writeRepo(yaml, ['S1@1.0']);
+    const previous = process.env.BENCH_WINGFOIL_REPO;
+    delete process.env.BENCH_WINGFOIL_REPO;
+    try {
+      const ports = doubles();
+      const { code, stderr } = await runWith(ports, 'campaign', 'run', file);
+      expect(code).toBe(1);
+      expect(stderr).toMatch(/^BENCH_WINGFOIL_REPO: is not set: it names the local WingFoil clone/);
+      expect(ports.recorded.builds).toEqual([]);
+
+      process.env.BENCH_WINGFOIL_REPO = '/clones/wingfoil';
+      const next = doubles();
+      await runWith(next, 'campaign', 'run', file);
+      expect(next.recorded.gitCalls[0]).toBe('resolve /clones/wingfoil 3df305e');
+    } finally {
+      if (previous === undefined) delete process.env.BENCH_WINGFOIL_REPO;
+      else process.env.BENCH_WINGFOIL_REPO = previous;
+    }
+  });
+
   it('refuses to spend before anything runs, not after the image is built', async () => {
     const { file } = writeRepo(completeCampaignYaml());
     const ports = doubles();
@@ -125,6 +151,9 @@ describe('bench campaign run', () => {
     const ports = doubles();
     const previous = process.env.BENCH_AGENT_TOKEN_FILE;
     process.env.BENCH_AGENT_TOKEN_FILE = tokenFile;
+    // The complete campaign pins a WingFoil harness, which is built from a clone (REQ-RUN-14).
+    const previousRepo = process.env.BENCH_WINGFOIL_REPO;
+    process.env.BENCH_WINGFOIL_REPO = '/clones/wingfoil';
     try {
       const { code } = await runWith(ports, 'campaign', 'run', file, '--allow-spending');
       expect(code).toBe(0);
@@ -134,6 +163,8 @@ describe('bench campaign run', () => {
     } finally {
       if (previous === undefined) Reflect.deleteProperty(process.env, 'BENCH_AGENT_TOKEN_FILE');
       else process.env.BENCH_AGENT_TOKEN_FILE = previous;
+      if (previousRepo === undefined) Reflect.deleteProperty(process.env, 'BENCH_WINGFOIL_REPO');
+      else process.env.BENCH_WINGFOIL_REPO = previousRepo;
     }
   });
 

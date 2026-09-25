@@ -123,6 +123,16 @@ describe('the Docker port', () => {
     ]);
   });
 
+  it('refuses a build path that would break the mount specification', () => {
+    const request = {
+      image: 'abc',
+      user: 'node',
+      mount: { source: '/a,b', target: '/build' },
+      command: ['true'],
+    };
+    expect(() => dockerCli(recorder()).runOnce(request)).toThrow(/cannot hold a comma or an equals sign/);
+  });
+
   it('lists the mounts of a container', async () => {
     const process = recorder([ok('/repo/runs/abc123/1/w:/workspace\n')]);
     const mounts = await dockerCli(process).mountsOf('c0ffee');

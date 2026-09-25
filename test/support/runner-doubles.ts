@@ -1,3 +1,6 @@
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import type {
   AgentPort,
   ResumeRequest,
@@ -25,6 +28,13 @@ const NO_USAGE: SessionUsage = {
   turns: 0,
   durationMs: 0,
 };
+
+/** A harness build as the real one leaves it: the npm tarball and the installed artefact in `out/`. */
+export function fakeBuild(request: RunOnceRequest): void {
+  mkdirSync(join(request.mount.source, 'out'), { recursive: true });
+  writeFileSync(join(request.mount.source, 'out', 'wingfoil-0.1.0.tgz'), 'tarball');
+  writeFileSync(join(request.mount.source, 'out', 'installed.tgz'), 'installed');
+}
 
 /** Everything the doubles recorded, in order. */
 export interface Recorded {
@@ -89,6 +99,8 @@ export function doubles(
     };
     /** What a one-off container answers; by default success. */
     runOnceResult?: ProcessResult;
+    /** What a one-off container does to its mount before answering: a build writes its artefacts. */
+    onRunOnce?: (request: RunOnceRequest) => void;
     /** What a command in the container answers, by command; falls back to {@link execResult}. */
     execResultOf?: (command: readonly string[]) => ProcessResult | undefined;
     /** The commits a harness clone knows, by the revision that names them (REQ-RUN-14). */
@@ -142,6 +154,7 @@ export function doubles(
     },
     runOnce: (request) => {
       recorded.runOnce.push(request);
+      (options.onRunOnce ?? fakeBuild)(request);
       return Promise.resolve(options.runOnceResult ?? { code: 0, stdout: '', stderr: '' });
     },
     copyTo: (container, source, target) => {
@@ -196,7 +209,8 @@ export function doubles(
     },
     resolveCommit: (repository, rev) => {
       recorded.gitCalls.push(`resolve ${repository} ${rev}`);
-      return Promise.resolve(options.commits?.[rev]);
+      // By default every revision is a commit, spelled out to 40 characters; `commits` narrows that.
+      return Promise.resolve(options.commits === undefined ? rev.padEnd(40, '0') : options.commits[rev]);
     },
     archive: (repository, sha, file) => {
       recorded.gitCalls.push(`archive ${repository} ${sha}`);
