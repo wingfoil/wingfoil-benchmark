@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -90,6 +90,15 @@ describe('rebuildSnapshots (task-027, REQ-SCO-01)', () => {
     const result = await rebuild(fixture);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.issues[0]?.path).toBe('step 01');
+  });
+
+  it("names the setup when its patch is missing from the run's results", async () => {
+    const fixture = await storedRun({ steps: [CANCEL] });
+    rmSync(join(fixture.runDir, 'setup', 'diff.patch'));
+    expect(await rebuild(fixture)).toEqual({
+      ok: false,
+      issues: [{ path: 'setup', message: `${join(fixture.runDir, 'setup', 'diff.patch')} is missing` }],
+    });
   });
 
   it('refuses a run stored before runs recorded their trees', async () => {
