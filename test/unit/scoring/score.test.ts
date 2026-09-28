@@ -103,6 +103,8 @@ describe('scoreRun (F4.1, REQ-SCO-01–03)', () => {
         },
         // Not given one: the score says so, rather than look like one that includes it (F3.5).
         holdout: { scored: false, reason: 'not configured' },
+        // Not marked (F3.6): the key is there, so aggregation never infers it from an absent one.
+        expected_failure: null,
         // M-K1 and M-K2 (F4.3): their own tests are in cost.test.ts.
         cost: expect.objectContaining({ usd_to_eur: 0.5, run: expect.objectContaining({ turns: 9 }) }),
       },
@@ -253,6 +255,7 @@ describe('scoreSummary', () => {
         scorer: { image: 'i', tsx: 't' },
         holdout: { scored: false, reason: 'none declared' },
         cost: NO_COST,
+        expected_failure: null,
         steps: [
           { n: 1, suites: [] },
           { n: 2, suites: [{ id: 'a', passed: 1, total: 2, failed: ['x'] }], m_q1: { passed: 1, total: 2 } },
@@ -275,6 +278,7 @@ describe('scoreSummary', () => {
         final: { step: 1, suites: [] },
         holdout: { scored: false, reason: 'none declared' },
         cost: NO_COST,
+        expected_failure: null,
       }),
     ).toBe('no hidden tests');
   });
@@ -404,6 +408,7 @@ describe('scoreRun with the hold-out (task-028, F3.5, REQ-SCO-09)', () => {
       ],
       final: { step: 1, suites: [], m_q1: { passed: 1, total: 1 } },
       cost: NO_COST,
+      expected_failure: null,
     };
     expect(
       scoreSummary({
@@ -421,6 +426,23 @@ describe('scoreRun with the hold-out (task-028, F3.5, REQ-SCO-09)', () => {
     );
     expect(scoreSummary({ ...base, holdout: { scored: false, reason: 'none declared' } })).toBe(
       'step 01 1/1, final 1/1',
+    );
+  });
+});
+
+describe('expected failures in score.json (F3.6, REQ-SCO-10)', () => {
+  it('carries the mark the runner recorded, and scores the run as any other', async () => {
+    const fixture = await storedRun({ steps: [{}, CANCEL] });
+    const file = join(fixture.runDir, 'run.json');
+    const record = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>;
+    writeFileSync(file, JSON.stringify({ ...record, expected_failure: { missing: ['workflow-engine'] } }));
+
+    const { result } = await score(fixture);
+
+    expect(result.ok && result.value.expected_failure).toEqual({ missing: ['workflow-engine'] });
+    expect(result.ok && result.value.final).toMatchObject({ m_q1: { passed: 1, total: 1 } });
+    expect(result.ok && scoreSummary(result.value)).toBe(
+      'step 01 0/1, step 02 1/1, final 1/1; hold-out not scored; expected failure (missing workflow-engine)',
     );
   });
 });

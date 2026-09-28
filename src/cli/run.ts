@@ -1,3 +1,4 @@
+import { missingCapabilities } from '../arms/index.js';
 import { reasonOf } from '../core/index.js';
 import type { Result } from '../core/index.js';
 import { checkCampaign, estimateCampaign, formatEstimate, runCampaign, totalLine } from '../runner/index.js';
@@ -73,6 +74,17 @@ function validateCampaign(file: string, io: Io): number {
   io.stdout(
     `campaign ${id} is valid (${count(spec.scenarios.length, 'scenario')}, ${count(spec.arms.length, 'arm')})\n`,
   );
+  // Every run that will be an expected failure (F3.6), before anything is spent: it runs, and is marked.
+  for (const scenario of result.value.scenarios) {
+    for (const arm of result.value.arms) {
+      const missing = missingCapabilities(scenario, arm);
+      if (missing.length > 0) {
+        io.stdout(
+          `expected failure: ${scenario.id}@${scenario.version} in ${arm.name} (missing ${missing.join(', ')})\n`,
+        );
+      }
+    }
+  }
   return EXIT.ok;
 }
 

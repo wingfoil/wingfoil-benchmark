@@ -39,6 +39,7 @@ const storedRunSchema = z.object({
   repetition: z.number().int(),
   outcome: z.string(),
   setup: z.object({ tree: z.string().optional() }).optional(),
+  expected_failure: z.object({ missing: z.array(z.string()) }).optional(),
   steps: z.array(
     z.object({
       n: z.number().int(),
@@ -60,6 +61,8 @@ export interface StoredRun {
   readonly repetition: number;
   readonly outcome: string;
   readonly setupTree?: string;
+  /** The capabilities the run's harness lacked (F3.6), when it was marked an expected failure. */
+  readonly expectedFailure?: { readonly missing: readonly string[] };
   readonly steps: readonly StoredStep[];
 }
 
@@ -97,6 +100,7 @@ export function readStoredRun(runDir: string): Result<StoredRun> {
       repetition: run.repetition,
       outcome: run.outcome,
       ...(run.setup?.tree === undefined ? {} : { setupTree: run.setup.tree }),
+      ...(run.expected_failure === undefined ? {} : { expectedFailure: run.expected_failure }),
       steps: run.steps.map((step) => ({
         n: step.n,
         ...(step.tree === undefined ? {} : { tree: step.tree }),

@@ -16,6 +16,7 @@ import type {
   Scenario,
 } from '../core/index.js';
 import { nextExecution } from '../results/index.js';
+import { missingCapabilities } from '../arms/index.js';
 import { prepareWorkspace } from '../scenario/index.js';
 
 import type { CheckedCampaign } from './campaign.js';
@@ -139,6 +140,10 @@ export interface RunResult {
   readonly manual?: ManualRecord;
   /** The harness the arm's setup installed, for an arm that requires one (adr-003 decision 4). */
   readonly harness?: HarnessArtefact;
+  /** What the arm's harness was taken to provide (REQ-FMT-10), for an arm that requires one. */
+  readonly provides?: Readonly<Record<string, boolean>>;
+  /** The scenario's capabilities the harness lacks (F3.6): the run is executed and scored, and marked. */
+  readonly expectedFailure?: { readonly missing: readonly string[] };
   readonly steps: readonly StepResult[];
   readonly outcome: RunOutcomeKind;
   readonly error?: string;
@@ -408,8 +413,12 @@ async function executeRun(context: RunContext, options: RunnerOptions): Promise<
   // The workspace is debris to look at (git-ignored); the output is the run's record (REQ-FMT-06).
   const outputDir = join(resultsDir, 'runs', ...name.split('/'));
   const { harness } = context;
+  // Decided before anything runs, from the scenario and the arm alone (F3.6, task-030).
+  const missing = missingCapabilities(scenario, arm);
   const identity = {
     ...(harness === undefined ? {} : { harness }),
+    ...(arm.requires === undefined ? {} : { provides: arm.provides }),
+    ...(missing.length === 0 ? {} : { expectedFailure: { missing } }),
     manual: measure(readFileSync(arm.manualPath, 'utf8')),
     scenario: scenario.id,
     version: scenario.version,
@@ -420,7 +429,9 @@ async function executeRun(context: RunContext, options: RunnerOptions): Promise<
     workspace,
     outputDir,
   };
-  options.log?.(`run ${name}`);
+  options.log?.(
+    missing.length === 0 ? `run ${name}` : `run ${name}: expected failure (missing ${missing.join(', ')})`,
+  );
 
   const steps: StepResult[] = [];
   let container: string | undefined;
@@ -1015,6 +1026,10 @@ function record(run: RunResult, plan: RunPlan): RunResult {
                 installed_sha256: run.harness.installedSha256,
               },
             }),
+        // What the harness was taken to provide, and what the scenario needed that it lacks (F3.6): the
+        // run is executed and scored as any other, and marked, never skipped.
+        ...(run.provides === undefined ? {} : { provides: run.provides }),
+        ...(run.expectedFailure === undefined ? {} : { expected_failure: run.expectedFailure }),
         // The setup, apart from the steps (REQ-RUN-03): what M-K3 sets against their cost in W9.
         ...(run.setup === undefined
           ? {}

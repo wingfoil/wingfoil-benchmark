@@ -28,6 +28,14 @@ export const armSchema = z.strictObject({
     .string()
     .regex(/^[a-z][a-z0-9-]*$/, 'must be a lower-case tool name')
     .optional(),
+  /**
+   * The harness capabilities the arm offers (REQ-FMT-10, F3.6): `true` provided, `false` a known gap;
+   * an undeclared capability is not provided. Only an arm with a harness is checked against a scenario's
+   * `capabilities` (task-030).
+   */
+  provides: z
+    .record(z.string().regex(/^[a-z][a-z0-9]*(-[a-z0-9]+)*$/, 'must be kebab-case'), z.boolean())
+    .default({}),
 });
 
 /** An `arm.yaml` as parsed, with relative paths. */
@@ -44,4 +52,6 @@ export interface Arm {
   readonly environmentDir?: string;
   readonly mcpPath?: string;
   readonly requires?: string;
+  /** The harness capabilities the arm offers, by name (REQ-FMT-10). */
+  readonly provides: Readonly<Record<string, boolean>>;
 }

@@ -41,8 +41,44 @@ describe('loadArm (REQ-FMT-05)', () => {
       environmentDir: join(dir, 'environment'),
       mcpPath: join(dir, 'mcp.json'),
       requires: 'wingfoil',
+      provides: {},
     });
     expect(isAbsolute(result.value.dir)).toBe(true);
+  });
+
+  it("loads the harness capabilities an arm provides, and the benchmark's wingfoil arm's (REQ-FMT-10)", () => {
+    const root = tempDir('bench-arm-');
+    writeArmAt(
+      root,
+      'wingfoil',
+      { ...completeArmYaml(), provides: { 'workflow-engine': false, 'directive-delivery': true } },
+      COMPLETE_ARM_FILES,
+    );
+    const result = loadArm(root, 'wingfoil');
+    expect(result.ok && result.value.provides).toEqual({
+      'workflow-engine': false,
+      'directive-delivery': true,
+    });
+
+    // K5's facts about 3df305e: directives and the memory life cycle, no workflow engine, no MCP Tools.
+    const own = loadArm(repoPath('arms'), 'wingfoil');
+    expect(own.ok && own.value.provides).toEqual({
+      'directive-delivery': true,
+      'memory-lifecycle': true,
+      'workflow-engine': false,
+      'mcp-tools': false,
+    });
+  });
+
+  it.each([
+    [{ 'Workflow Engine': true }, 'provides.Workflow Engine'],
+    [{ 'workflow-engine': 'no' }, 'provides.workflow-engine'],
+    [['workflow-engine'], 'provides'],
+  ])('refuses provides %j', (provides, path) => {
+    const root = tempDir('bench-arm-');
+    writeArmAt(root, 'wingfoil', { ...completeArmYaml(), provides }, COMPLETE_ARM_FILES);
+    const result = loadArm(root, 'wingfoil');
+    expect(result.ok || result.issues.map((issue) => issue.path)).toEqual([path]);
   });
 
   it('loads a plain-agent arm: no environment, no MCP, no harness', () => {

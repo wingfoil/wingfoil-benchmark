@@ -79,6 +79,16 @@ describe('readStoredRun (task-027)', () => {
     });
   });
 
+  it('reads the expected-failure mark of a run, and its absence (F3.6)', () => {
+    const root = tempDir('bench-results-');
+    const marked = run(root, 'a', { ...RECORD, expected_failure: { missing: ['workflow-engine'] } });
+    expect(readStoredRun(marked).ok && readStoredRun(marked)).toMatchObject({
+      value: { expectedFailure: { missing: ['workflow-engine'] } },
+    });
+    const plain = readStoredRun(run(root, 'b', RECORD));
+    expect(plain.ok && plain.value.expectedFailure).toBeUndefined();
+  });
+
   it('reads a run stored before trees were recorded, with none', () => {
     const { setup, steps, ...rest } = RECORD;
     const dir = run(tempDir('bench-results-'), 'r', {

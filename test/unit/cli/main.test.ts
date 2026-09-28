@@ -28,7 +28,17 @@ describe('bench campaign validate', () => {
     const { file } = writeRepo();
     const { code, stdout, stderr } = await run('campaign', 'validate', file);
     expect({ code, stderr }).toEqual({ code: 0, stderr: '' });
-    expect(stdout).toMatch(/^campaign [0-9a-f]{12} is valid \(4 scenarios, 3 arms\)\n$/);
+    // The complete fixture scenarios declare `workflow-engine`, which the fixture wingfoil arm does not
+    // provide: each will be an expected failure there, and validate says so before anything runs (F3.6).
+    expect(stdout).toMatch(
+      new RegExp(
+        '^campaign [0-9a-f]{12} is valid \\(4 scenarios, 3 arms\\)\\n' +
+          ['S1', 'S2', 'S3', 'S8']
+            .map((id) => `expected failure: ${id}@1\\.0 in wingfoil \\(missing workflow-engine\\)\\n`)
+            .join('') +
+          '$',
+      ),
+    );
   });
 
   it('uses the singular for one scenario and one arm', async () => {
