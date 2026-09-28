@@ -38,11 +38,26 @@ export interface RunOnceRequest {
   readonly command: readonly string[];
 }
 
+/**
+ * What creating a scoring container needs (REQ-SCO-01, task-027): its image, its name, its working
+ * directory, and its bind mounts — every one read-only. It has no network, and no workspace: a snapshot
+ * is copied in, never mounted.
+ */
+export interface ScoringContainerRequest {
+  readonly image: string;
+  readonly name: string;
+  readonly user: string;
+  readonly workdir: string;
+  readonly readOnly: readonly { readonly source: string; readonly target: string }[];
+}
+
 /** REQ-ARC-04: Docker behind one interface, so acceptance tests run without Docker. */
 export interface DockerPort {
   build(request: BuildRequest): Promise<void>;
   /** Creates the container and returns its id. */
   create(request: CreateRequest): Promise<string>;
+  /** Creates a scoring container, with no network and read-only mounts, and returns its id. */
+  createScoring(request: ScoringContainerRequest): Promise<string>;
   start(container: string): Promise<void>;
   /**
    * Runs `command` in the container. The result carries the command's own exit code; a Docker failure
@@ -125,6 +140,33 @@ export function dockerCli(process: ProcessPort): DockerPort {
         ],
         env,
       );
+      return result.stdout.trim();
+    },
+    async createScoring({ image, name, user, workdir, readOnly }) {
+      for (const { source } of readOnly) {
+        if (source.includes(',') || source.includes('=')) {
+          throw new Error(`a scoring mount's path cannot hold a comma or an equals sign: ${source}`);
+        }
+      }
+      const result = await docker([
+        'create',
+        '--name',
+        name,
+        '--user',
+        user,
+        '--workdir',
+        workdir,
+        // Hidden tests never reach the network: nothing a snapshot fetches can change its score.
+        '--network',
+        'none',
+        ...readOnly.flatMap(({ source, target }) => [
+          '--mount',
+          `type=bind,source=${source},target=${target},readonly`,
+        ]),
+        image,
+        'sleep',
+        'infinity',
+      ]);
       return result.stdout.trim();
     },
     async start(container) {

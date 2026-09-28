@@ -57,6 +57,46 @@ describe('the Docker port', () => {
     ]);
   });
 
+  it('creates a scoring container with no network and every mount read-only (REQ-SCO-01)', async () => {
+    const process = recorder([ok('5c0re\n')]);
+    const id = await dockerCli(process).createScoring({
+      image: 'bench-score:abc',
+      name: 'bench-score-1',
+      user: 'node',
+      workdir: '/score',
+      readOnly: [{ source: '/repo/scenarios/T3/1.0/oracle/public', target: '/score/oracle/public' }],
+    });
+    expect(id).toBe('5c0re');
+    expect(process.calls[0]?.args).toEqual([
+      'create',
+      '--name',
+      'bench-score-1',
+      '--user',
+      'node',
+      '--workdir',
+      '/score',
+      '--network',
+      'none',
+      '--mount',
+      'type=bind,source=/repo/scenarios/T3/1.0/oracle/public,target=/score/oracle/public,readonly',
+      'bench-score:abc',
+      'sleep',
+      'infinity',
+    ]);
+  });
+
+  it('refuses a scoring mount whose path would be read as more mount options', async () => {
+    await expect(
+      dockerCli(recorder()).createScoring({
+        image: 'i',
+        name: 'n',
+        user: 'node',
+        workdir: '/score',
+        readOnly: [{ source: '/repo/a,b', target: '/score/x' }],
+      }),
+    ).rejects.toThrow(/cannot hold a comma or an equals sign: \/repo\/a,b/);
+  });
+
   it('creates a container whose only mount is the workspace', async () => {
     const process = recorder([ok('c0ffee\n')]);
     const id = await dockerCli(process).create({
@@ -221,18 +261,38 @@ describe('the git port', () => {
     ]);
   });
 
-  it('reads the patch of a commit, so that every step leaves a snapshot', async () => {
+  it('reads the patch between two snapshots, binary-safe, so that every snapshot can be rebuilt (task-027, bug-007)', async () => {
     const process = recorder([ok('diff --git a/x b/x\n')]);
-    const patch = await gitCli(process).patchOf('/repo/runs/w', 'HEAD');
+    const patch = await gitCli(process).patchOf('/repo/runs/w', 'a'.repeat(40), 'b'.repeat(40));
     expect(command(process.calls[0]?.args ?? [])).toEqual([
       '-C',
       '/repo/runs/w',
-      'show',
-      '--format=',
-      '--patch',
-      'HEAD',
+      'diff',
+      '--binary',
+      '--full-index',
+      'a'.repeat(40),
+      'b'.repeat(40),
     ]);
     expect(patch).toBe('diff --git a/x b/x\n');
+  });
+
+  it('names the tree of a commit: its content, whatever its date or author (task-027)', async () => {
+    const process = recorder([ok('4b825dc642cb6eb9a060e54bf8d69288fbee4904\n')]);
+    const tree = await gitCli(process).tree('/repo/runs/w', 'HEAD');
+    expect(command(process.calls[0]?.args ?? [])).toEqual(['-C', '/repo/runs/w', 'rev-parse', 'HEAD^{tree}']);
+    expect(tree).toBe('4b825dc642cb6eb9a060e54bf8d69288fbee4904');
+  });
+
+  it('applies a stored patch to the working tree and the index (task-027)', async () => {
+    const process = recorder([ok()]);
+    await gitCli(process).apply('/tmp/snapshot', '/results/r1/steps/01/diff.patch');
+    expect(command(process.calls[0]?.args ?? [])).toEqual([
+      '-C',
+      '/tmp/snapshot',
+      'apply',
+      '--index',
+      '/results/r1/steps/01/diff.patch',
+    ]);
   });
 
   it("writes an identity into the repository's own configuration (adr-003 decision 6)", async () => {

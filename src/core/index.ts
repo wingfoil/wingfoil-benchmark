@@ -20,6 +20,7 @@ export type {
   CreateRequest,
   DockerPort,
   RunOnceRequest,
+  ScoringContainerRequest,
 } from './ports/docker.js';
 export { gitCli } from './ports/git.js';
 export type { GitPort } from './ports/git.js';

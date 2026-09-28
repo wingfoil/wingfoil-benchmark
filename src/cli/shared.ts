@@ -31,7 +31,8 @@ export const USAGE =
   '       bench campaign estimate <file>\n' +
   '       bench campaign run <file> [--allow-spending]\n' +
   '       bench scenario validate <id>@<version> [--holdout <path>]\n' +
-  '       bench scenario dry-run <id>@<version> --arm <arm> [--model <id>] [--allow-spending]\n';
+  '       bench scenario dry-run <id>@<version> --arm <arm> [--model <id>] [--allow-spending]\n' +
+  '       bench score <campaign-id>/<n>|dry-runs/<n> [--holdout <path>]\n';
 
 /** REQ-CLI exit codes. */
 export const EXIT = { ok: 0, failure: 1, usage: 2 } as const;

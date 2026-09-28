@@ -365,15 +365,21 @@ describe('runner.feature', () => {
     // that commit: reading it before would store the previous step's diff under this step's number. The
     // setup's commit comes first: step 1 starts from it (adr-003 decision 10).
     const workspace = summary.runs[0]?.workspace ?? '';
+    // Every patch runs from the snapshot before it to this one, by their trees (task-027, bug-007).
+    const tree = (n: number) => `tree-${n}`.padEnd(40, '0');
     expect(recorded.gitCalls).toEqual([
       `init ${workspace}`,
       `commit ${workspace} seed`,
+      `tree ${workspace} HEAD`,
       `identity ${workspace} Benchmark Approver <approver@benchmark.localhost>`,
       `commit ${workspace} setup --allow-empty`,
       `head ${workspace}`,
+      `tree ${workspace} HEAD`,
+      `patch ${workspace} ${tree(1)} ${tree(2)}`,
       ...stepNumbers(steps).flatMap((n) => [
         `commit ${workspace} step ${String(n).padStart(2, '0')} --allow-empty`,
-        `patch ${workspace} HEAD`,
+        `tree ${workspace} HEAD`,
+        `patch ${workspace} ${tree(n + 1)} ${tree(n + 2)}`,
       ]),
     ]);
 
@@ -382,7 +388,10 @@ describe('runner.feature', () => {
     // steps/0N and not under some other step's number.
     for (const n of stepNumbers(steps)) {
       const patch = join(summary.runs[0]?.outputDir ?? '', 'steps', String(n).padStart(2, '0'), 'diff.patch');
-      expect(readFileSync(patch, 'utf8')).toBe(`patch of ${workspace} at HEAD #${n}\n`);
+      // The setup's patch is #1 (task-027), so step N's is #N+1.
+      expect(readFileSync(patch, 'utf8')).toBe(
+        `patch of ${workspace} from ${tree(n + 1)} to ${tree(n + 2)} #${n + 1}\n`,
+      );
     }
   });
   it('@F2.3 The Claude Code adapter records usage and the transcript of every session', async () => {

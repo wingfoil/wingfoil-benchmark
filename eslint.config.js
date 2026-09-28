@@ -12,8 +12,9 @@ export default tseslint.config(
   js.configs.recommended,
   ...tseslint.configs.strict,
   {
-    // Node build scripts: plain ESM with the Node globals ESLint's browser-less base config omits.
-    files: ['scripts/**/*.mjs'],
+    // Node build scripts, and the scoring image's reporter: plain ESM with the Node globals ESLint's
+    // browser-less base config omits.
+    files: ['scripts/**/*.mjs', 'docker/**/*.mjs'],
     languageOptions: { globals: { URL: 'readonly', console: 'readonly', process: 'readonly' } },
   },
   {

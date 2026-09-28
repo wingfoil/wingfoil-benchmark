@@ -15,6 +15,7 @@ import type {
   GitPort,
   ProcessResult,
   RunOnceRequest,
+  ScoringContainerRequest,
 } from '../../src/core/index.js';
 
 /** A step that reports no usage, which is what a double does unless a test says otherwise. */
@@ -56,6 +57,8 @@ export interface Recorded {
   readonly builds: string[];
   readonly buildRequests: BuildRequest[];
   readonly creates: CreateRequest[];
+  /** Every scoring container (task-027): its image, its read-only mounts. */
+  readonly scoringCreates: ScoringContainerRequest[];
   readonly starts: string[];
   readonly execs: { container: string; command: string[] }[];
   readonly removes: string[];
@@ -106,8 +109,8 @@ export function doubles(
     stopOf?: (request: AgentRequest) => 'cap reached' | 'quota exhausted' | undefined;
     /** The session's final assistant message, which the approver classifies; by default none. */
     messageOf?: (request: AgentRequest) => string | undefined;
-    /** What a step's patch holds; by default a line naming the directory and the ref. */
-    patchOf?: (directory: string, ref: string) => string;
+    /** What a patch holds; by default a line naming the directory and the two trees. */
+    patchOf?: (directory: string, from: string, to: string) => string;
     /** Makes one Docker or git call fail: `create`, `start`, `remove` and `init` break a run
      * outside its steps, `commit` and `patch` break it inside one. */
     failing?: {
@@ -134,6 +137,7 @@ export function doubles(
     builds: [],
     buildRequests: [],
     creates: [],
+    scoringCreates: [],
     starts: [],
     execs: [],
     removes: [],
@@ -146,6 +150,8 @@ export function doubles(
   };
   let containers = 0;
   let patches = 0;
+  let trees = 0;
+  let lastCommit = '';
   const docker: DockerPort = {
     build: (request) => {
       recorded.builds.push(request.tag);
@@ -156,6 +162,11 @@ export function doubles(
       recorded.creates.push(request);
       containers += 1;
       if (options.failing?.call === 'create') return Promise.reject(new Error(options.failing.error));
+      return Promise.resolve(`container-${containers}`);
+    },
+    createScoring: (request) => {
+      recorded.scoringCreates.push(request);
+      containers += 1;
       return Promise.resolve(`container-${containers}`);
     },
     start: (container) => {
@@ -212,6 +223,7 @@ export function doubles(
     commitAll: (directory, message, commit) => {
       const empty = commit?.allowEmpty === true ? ' --allow-empty' : '';
       recorded.gitCalls.push(`commit ${directory} ${message}${empty}`);
+      lastCommit = message;
       // Only a step commit: the seed commit happens in prepareWorkspace, before a container exists,
       // and failing it would exercise a different moment of the run (covered by `init`).
       if (options.failing?.call === 'commit' && message.startsWith('step ')) {
@@ -242,13 +254,26 @@ export function doubles(
     // Every answer is different, so a test can tell which call's patch was written where. Without
     // the counter all five answers are the same string, and a snapshot filed under another step's
     // number reads as correct — the directory would be pinned by nothing at all.
-    patchOf: (directory, ref) => {
+    patchOf: (directory, from, to) => {
       patches += 1;
-      recorded.gitCalls.push(`patch ${directory} ${ref}`);
-      if (options.failing?.call === 'patch') return Promise.reject(new Error(options.failing.error));
+      recorded.gitCalls.push(`patch ${directory} ${from} ${to}`);
+      // A step's patch only, as for `commit`: the setup's patch (task-027) failing is a setup failure.
+      if (options.failing?.call === 'patch' && lastCommit.startsWith('step ')) {
+        return Promise.reject(new Error(options.failing.error));
+      }
       return Promise.resolve(
-        options.patchOf?.(directory, ref) ?? `patch of ${directory} at ${ref} #${patches}\n`,
+        options.patchOf?.(directory, from, to) ?? `patch of ${directory} from ${from} to ${to} #${patches}\n`,
       );
+    },
+    // Each tree different and in call order, so a test can tell which commit's tree was recorded where.
+    tree: (directory, ref) => {
+      trees += 1;
+      recorded.gitCalls.push(`tree ${directory} ${ref}`);
+      return Promise.resolve(`tree-${trees}`.padEnd(40, '0'));
+    },
+    apply: (directory, patchFile) => {
+      recorded.gitCalls.push(`apply ${directory} ${patchFile}`);
+      return Promise.resolve();
     },
   };
   const answer = (request: AgentRequest): Promise<StepOutcome> => {
