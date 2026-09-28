@@ -247,3 +247,44 @@ profile's rate.
   commit `wf(task): submit <id>`. Observed: exit 0, empty stderr, 1 file, diff limited to
   `status: backlog` → `status: in-progress`, subject without transition (N9). Matches. WIP after it:
   one task `in-progress` (this one), none `in-review`.
+
+### Build
+
+In one commit, `ff5ebfa`: the profile (`core/dry-run.ts`, `scenario/dry-run.ts`), the runner on a
+`RunPlan` (`runner/run.ts`, `harness.ts`, `project-rules.ts`, `runner/dry-run.ts`), the results
+(`results/dry-runs.ts`, `recorded.ts`), the command (`cli/dry-run.ts`, with `cli/shared.ts` holding what
+it shares with `campaign run`), the README, and the tests.
+
+**Not red-first, and said so.** The code was written before its tests, against the Design, instead of
+after a failing test. The traceability test was the only red before the code (the @F3.3 scenario had no
+test once the task started), and the refactoring was checked against the 616 existing tests — green,
+unchanged but for the usage text — before the new tests existed. To show the new tests can fail, six
+mutations of the code were run afterwards, each reverted: dry runs freezing a version (2 tests red),
+failed dry runs counting (2), a dry run marked as a campaign's (5), stored under its own id instead of
+`dry-runs` (5), no leak scan (1), the WingFoil clone required for every arm (7). The next tasks go back
+to test-first.
+
+### Deviation from the Design
+
+- **`--model` invalid is an issue (exit 1), not a usage error.** The Design's sentence put it among the
+  usage errors; checking it needs the profile's default anyway, and the issue names what is wrong
+  (`--model: must be a model id: …`), which a usage line would not.
+- **The command lives in `cli/dry-run.ts`**, not `cli/scenario.ts`: it is asynchronous and runs the
+  agent, like `campaign run`, and shares that command's checks through `cli/shared.ts`. `main` sends
+  `scenario dry-run` there before `scenario validate` is parsed.
+- An arm that fails to load is named at `--arm`, and the wingfoil arm baseline-docs needs at `arms`,
+  saying why it is needed.
+
+### Known limits
+
+- **The benchmark has no `scenarios/dry-run.yaml` yet** (Design): calibration writes it. Until then
+  `bench scenario dry-run` in this repository answers `dry-run.yaml: not found in …/scenarios`.
+- `latestDryRun` looks for `r1` only: a dry run is always repetition 1.
+- A dry run's image is tagged `dry-<12 hex>` and, like a campaign's, is not removed after the run.
+
+### Review readiness
+
+`npm test` 656/656 (statements 99.79%, branches 96.96%, functions 100%, lines 100%), `npm run test:bin`
+4/4, `npm run test:docker` 5/5 (the new dry run of T1 included, and W3's three arms against the local
+WingFoil clone), `npm run lint` clean, `npm run build` clean; no `bench-*` container and no `dry-*`
+image left. Nothing was spent.
