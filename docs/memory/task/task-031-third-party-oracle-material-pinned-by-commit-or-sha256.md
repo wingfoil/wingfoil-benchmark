@@ -2,7 +2,7 @@
 id: task-031-third-party-oracle-material-pinned-by-commit-or-sha256
 type: task
 title: "Third-party oracle material pinned by commit or sha256"
-status: backlog
+status: in-progress
 release: v0.1
 wave: W7
 features: []
