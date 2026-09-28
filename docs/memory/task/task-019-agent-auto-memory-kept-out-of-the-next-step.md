@@ -54,7 +54,59 @@ Preliminary classification (confirmed in the design phase).
 
 ## Design
 
-<!-- Modules, interfaces, data formats touched; decisions taken and their reasons. -->
+**Classification confirmed.**
+
+### What the pinned agent offers, read before anything is spent
+
+`grep -a` on the native binary of Claude Code 2.1.280 in the run image (the spike's image of
+task-011) finds the variable **`CLAUDE_CODE_DISABLE_AUTO_MEMORY`**, and no `autoMemory…` setting key.
+That a name exists in a binary proves nothing about what it does; the real sessions below find out.
+
+### Two defences, both the same in every arm
+
+1. **The runner clears the auto-memory before every step** (this is the fix that holds whatever the
+   agent does): before a step's first session it runs, in the container,
+   `rm -rf "$HOME"/.claude/projects/*/memory`. It does not touch the rest of `~/.claude/projects/` —
+   the session transcripts there are what `--resume` needs within a step — and it runs before every
+   step, so step 1 starts as clean as the others. It adds no mount and writes nothing to the workspace
+   (REQ-RUN-02). The command and its failure path are the runner's; a failing clear fails the run, as
+   a failing step does (REQ-NFR-03): a step that might read the previous one's notes is not scored.
+2. **The runner turns auto-memory off**, if the real sessions show that the pinned agent honours
+   `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`: then no note is written in the first place, and an agent that
+   would otherwise spend turns on its memory does not. It is set by the runner in every container's
+   environment, next to the credential, and it is not a secret. If the sessions show it is not
+   honoured, this defence is dropped and the notes say so: the first one is enough to fix the bug.
+
+### What the real sessions observe (Haiku 4.5, ceiling 0.30 €, consented at `2bb466e`)
+
+Scripts under `spikes/task-019/`, the same pattern as task-011's P7 (the token enters by name on each
+`exec`, a secret scan closes the spike, output git-ignored):
+
+- **M1, without the variable**: session A is asked to save a note to its auto-memory ("the codeword is
+  …") and reply `done`; the probe then lists `~/.claude/projects/*/memory/`. Session B, fresh, is asked
+  for the codeword from its memory. This shows whether the bug happens at all: whether a note is
+  written, and whether a new session reads it.
+- **M2, with the variable**: the same two sessions. Is `memory_paths` still in the `init` event, is a
+  note written, is the codeword recalled?
+- M3 is not needed: the clear is a file operation the fake-agent tests prove.
+
+Estimated cost: four short sessions, a few cents. The ceiling is checked before each session, as in
+task-011. The spending becomes a line of the v0.1 ledger when it happens (dl-006, task-020).
+
+### Tests
+
+- **Unit** (doubles): the clear runs before each step's first invocation and never before a resume;
+  a failing clear fails the run; the variable is in every container's environment (if kept) and not
+  among the secrets scrubbed.
+- **Docker**: a fake-agent run of T1 (three steps) whose step 1 writes a note under
+  `~/.claude/projects/-workspace/memory/` and whose step 2 fails if it finds one — green only if the
+  clear works in a real container.
+
+### Closing bug-006
+
+WingFoil has no link between a bug and the task that fixes it (bug-005, usage note N29), and `bug`
+ends at `approved`. So the resolution is written where it can be: a *Resolution* section in bug-006,
+naming this task and its commits, as bug-004 did, committed with this task.
 
 ## Execution notes
 
