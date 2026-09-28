@@ -240,3 +240,12 @@ under `orders/`) and @F3.4 green. REQ-FMT-04 and REQ-ARC-03 as amended in 1.7; R
 scanned); REQ-FMT-09 (unchanged). dl-001's Consequences: the amendment (1.7) and the schema change, done
 with no stored result affected; hold-out additions mirror the suite ids. No new bug or decision-log.
 
+
+### Review and approval
+
+- `npx wingfoil memory submit task-026-oracle-suites-per-step` → `3c058c0`
+  (`in-progress → in-review`, one commit, only `status` changed). Matches.
+- `npx wingfoil memory approve task-026-oracle-suites-per-step --reason "…"` → `856321e`, run by the
+  approver (`in-review → approved`, `Approver:`/`Reason:` trailers, only `status` changed). Matches.
+  The reason accepts requirements 1.7 and the deviation (steps checked in the loader): this is the
+  amendment's recorded review decision.

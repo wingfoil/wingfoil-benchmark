@@ -263,4 +263,4 @@ The traceability matrix is unaffected: REQ-FMT-04 still serves F3.1 and REQ-ARC-
 suites are read in wave W6 by F4.1's scorer and by the scoring half of F3.5.
 
 Source: [task-026](../memory/task/task-026-oracle-suites-per-step.md), review decision of the approver
-at that task's review.
+at that task's review, 2026-09-28 (`856321e`).
