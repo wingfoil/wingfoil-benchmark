@@ -187,3 +187,55 @@ invocation's outcome kind), `agents/fake.ts` (a script can end a session either 
 
 Spent **0.0522 USD reported**, plus about 0.009 USD C3 could not report, of the 0.30 USD consented; its
 line is in `docs/calibration/v0.1-ledger.md`. No file under the spike or its output holds the token.
+- Design committed by hand on `task/task-024-cost-and-time-caps-during-a-run` (`bf5e3c7`, with the spike
+  and the ledger line), then `npx wingfoil memory submit task-024-cost-and-time-caps-during-a-run` →
+  `628ef6e` (`backlog → in-progress`, one commit, only `status`). Matches. WIP: this task
+  `in-progress`, none `in-review`.
+
+### Build (TDD) — `a15b855`
+
+1. **Tests first:** the two @F1.3 acceptance tests; the adapter's readings (C1's real `result` event,
+   two constructed quota events, the stop through the port); ten runner tests (cost cap, time cap,
+   token cap, ceiling, quota); the CLI's summary; and the two existing runner tests that expected a
+   failure where the cap is now reached. **17 red**, then green. The traceability test was green
+   throughout: F1.3's four scenarios all had tests once these two were written.
+2. **Existing expectations that changed with the behaviour:** the exact `exec` list of "lets the agent
+   run commands in the run's own container" (the agent's commands now run under `timeout`), and the W2
+   docker fixture's `step_tokens: 1000` — its recorded sessions hold some 20 000 tokens, which the cap
+   now counts — raised to 2 000 000.
+3. **Added after the code, for coverage:** an agent that throws after the killed command (as the fake
+   does) read as the time cap, and a step with no time left before its first command. The first
+   version of the second test was wrong — `Math.ceil` turns a 1 ms step into a 1 s `timeout` — and was
+   rewritten so that the time is really spent.
+4. **Docker:** T3's first step sleeps 30 s against a 2 s cap in a real container: killed at the cap,
+   `before.txt` kept, `never.txt` absent, step `time cap reached` with `cost_bound_usd`, run `cap
+   reached`, no container left.
+5. A test of mine gave the adapter the token `t`, which the scrubber then removed from every `"type"`
+   of the stream; a realistic token fixed the test, not the code.
+
+### Deviation from the Design
+
+- **A time-capped step ends the run in practice.** The Design said the run goes on after a step cap.
+  For the token cap it does. For the time cap, the killed invocation is counted at its bound, which is
+  all that was left of the run's cap, so the next step finds nothing left and the run ends `cap
+  reached`. The bound is kept: counting less than can have been spent would let a run exceed its cap
+  unseen. A cheaper bound needs a price table and the stream's per-message tokens, whose output counts
+  are not final (C1) — not built.
+- `timeout` gets whole seconds (`Math.ceil` of what is left): a step can run up to a second past a
+  fractional `step_time_s`.
+
+### Known limits
+
+- **Quota exhaustion is recognised on a documented, not an observed, shape** (`usage limit` or
+  `rate_limit` in a failed `result`). If the agent words it otherwise, the step fails instead, and the
+  campaign goes on starting runs that will fail the same way.
+- `step_tokens` is not enforced within an invocation; the cost cap bounds it there.
+- The cost cap lets a session run one turn past it (C1: 0.0419 USD for 0.04); the method page (W11)
+  should say so.
+
+### Review readiness
+
+`npm test` 700/700 (statements 99.81%, branches 96.9%, functions 100%, lines 100%), `npm run test:bin`
+5/5, `npm run test:docker` 6/6, `npm run lint` clean, `npm run build` clean; no `bench-*` container
+left. `campaign.feature` @F1.3 has its four acceptance tests. Spent in this task: 0.0522 USD reported,
+plus about 0.009 USD unreported, within the 0.30 USD consented.
