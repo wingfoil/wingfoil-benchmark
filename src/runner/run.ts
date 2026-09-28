@@ -18,6 +18,7 @@ import type {
 import { nextExecution } from '../results/index.js';
 
 import type { CheckedCampaign } from './campaign.js';
+import { campaignKeys } from './estimate.js';
 import { prepareHarnesses } from './harness.js';
 import { AGENT_IDENTITY } from './identity.js';
 import { GENERATED_ARM, prepareProjectRules, PROJECT_RULES } from './project-rules.js';
@@ -271,15 +272,22 @@ export async function runCampaign(checked: CheckedCampaign, options: RunnerOptio
   return runPlan(campaignPlan(checked), options);
 }
 
-/** A campaign's plan: every scenario × arm × repetition, with the default model, in that order. */
-function campaignPlan({ campaign, scenarios, arms }: CheckedCampaign): RunPlan {
-  const model = campaign.spec.models.default;
-  const runs = scenarios.flatMap((scenario) => {
-    // The campaign schema gives every scenario a repetition count; the fallback only keeps the type honest.
-    const repetitions = campaign.spec.repetitions[scenario.id] ?? 1;
-    return arms.flatMap((arm) =>
-      Array.from({ length: repetitions }, (_, index) => ({ scenario, arm, model, repetition: index + 1 })),
-    );
+/**
+ * A campaign's plan: every key the campaign file describes — the default model over every scenario ×
+ * arm, then each model slice over its scenarios × arms (task-025) — in its repetitions. The keys are
+ * the estimate's own (`campaignKeys`), so that what is priced is what runs.
+ */
+function campaignPlan(checked: CheckedCampaign): RunPlan {
+  const { campaign, scenarios, arms } = checked;
+  const runs = campaignKeys(checked).flatMap(({ scenario, arm: name, model, repetitions }) => {
+    // Every key names one of the campaign's arms, all of them loaded by the campaign check.
+    const arm = arms.find((loaded) => loaded.name === name) as Arm;
+    return Array.from({ length: repetitions }, (_, index) => ({
+      scenario,
+      arm,
+      model,
+      repetition: index + 1,
+    }));
   });
   return {
     noun: 'campaign',
