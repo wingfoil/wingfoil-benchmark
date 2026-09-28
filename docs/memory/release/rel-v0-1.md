@@ -37,7 +37,7 @@ Waves and features from [07_sequencer.md](../../01_vision/07_sequencer.md) 1.1. 
 | W3 — Arms | F2.5 arm setups · F2.6 WingFoil under test · F2.7 arm activation (operating manuals) | — | the same scenario runs in the baseline, baseline-docs and wingfoil arms || **2026-09-25** |
 | W4 — Scenario hygiene | F3.5 hold-out integration · F3.2 validator and leak scan · F3.4 scenario versioning | — | a scenario validated, with its oracle kept outside the container || **2026-09-28** |
 | W5 — Cost control | F3.3 dry run · F1.2 cost estimate · F1.3 budget guard | — | a campaign refuses to start above the ceiling | **2026-09-28** |
-| W6 — First scores | F4.1 hidden-test oracle · F4.3 cost metrics · F3.6 expected failures | — | pass/fail and cost per run, with expected failures marked | — |
+| W6 — First scores | F4.1 hidden-test oracle · F4.3 cost metrics · F3.6 expected failures | — | pass/fail and cost per run, with expected failures marked | **2026-09-28** |
 | W7 — First content | F6.1 S1 conformance · F6.2 S2 injected bugs · F5.1 results store | — | S1 and S2 scored in all three arms | — |
 | W8 — Continuity and governance | F6.3 S3 multi-session evolution · F6.8 S8 directive compliance · F4.8 tool-neutral governance metrics | — | S3 and S8 scored | — |
 | W9 — Quality | F4.2 static quality · F4.7 next-change cost · F4.4 setup/step split and break-even | — | the full quality and cost picture per run | — |
@@ -300,10 +300,74 @@ cost. This settles W3's open question (what `--max-budget-usd` compares against 
 - **W11 (F5.8):** the method page states that the cost cap lets a session run one turn past it, how a
   killed step is counted, and that `step_tokens` is checked between invocations.
 
+### W6 — verified 2026-09-28
+
+**"Pass/fail and cost per run, with expected failures marked."** Verified offline, with the fake agent, as
+the W6 plan phase decided (task-026, decision 4); no real-agent half (`real-agent-check` not taken).
+
+- **By hand, on main** (`e4c82f8`, the built CLI), in a temporary repository holding the benchmark's own
+  arms, T3 made to declare `workflow-engine`, and a hold-out with two tests for T3's suite. The fake
+  wrote a binary file in step 1 — and, in the wingfoil arm, a WingFoil decision-log of its own, a commit
+  of the agent's — and the cancellation in step 2:
+  - `bench scenario dry-run T3@1.0 --arm baseline|wingfoil` → both completed at 0 USD; the wingfoil one
+    logged `expected failure (missing workflow-engine)`;
+  - `bench campaign validate` → `campaign 3fba3a8558fe is valid (1 scenario, 2 arms)` and
+    `expected failure: T3@1.0 in wingfoil (missing workflow-engine)`;
+  - `bench campaign run` → the estimate, `2 runs completed, 0 failed` — the wingfoil run **executed**,
+    and logged as an expected failure;
+  - `bench score 3fba3a8558fe/1 --holdout <tmp>` →
+    `T3@1.0 baseline fake-model r1: step 01 0/1, step 02 1/1, final 1/1; hold-out final 1/2` and
+    `T3@1.0 wingfoil fake-model r1: step 01 0/1, step 02 1/1, final 1/1; hold-out final 1/2; expected failure (missing workflow-engine)`.
+    Each `score.json` holds M-Q1 per step and final (**pass/fail**), the hold-out apart in counts, and
+    `cost` per step and per run (**cost**: all zero with the fake, at 0.92 EUR/USD) and
+    `expected_failure` (`null` for baseline — **marked**). Scored again: the same bytes. No hold-out
+    test name in any `score.json`; no `bench-*` container left.
+  - The wingfoil snapshots rebuilt through `wingfoil init`'s and the Benchmark Approver's commits in the
+    setup and the agent's `wf(decision-log): add …` in step 1, each checked by tree: bug-007's fix, on
+    the real WingFoil `3df305e`.
+- **Acceptance:** `scoring.feature` @F4.1 (two scenarios) and @F4.3, `scenarios.feature` @F3.5 (two) and
+  @F3.6, all green; `npm test` 820/820, `npm run test:docker` 7/7 — W6's own runs T3 through a real
+  `campaign run` and a real `bench score`, node:test and tsx executing in the scoring image.
+
+| Task | Feature | Delivered |
+|---|---|---|
+| [task-026](../task/task-026-oracle-suites-per-step.md) | — (dl-001) | `oracle.suites` bound to steps; hold-out additions under a suite id; requirements 1.7 |
+| [task-027](../task/task-027-hidden-test-oracle.md) | F4.1 | `bench score`, snapshots rebuilt from stored patches and checked by tree, the scoring image and container, the census, `score.json` v1; adr-004; bug-007; requirements 1.8 |
+| [task-028](../task/task-028-hold-out-tests-in-scoring.md) | F3.5 (scoring half) | hold-out suites beside the public one, in counts only, with their hash; "not scored" said; adr-004 amendment 1 |
+| [task-029](../task/task-029-cost-metrics.md) | F4.3 | M-K1 and M-K2 per step and per run; a killed step at its bound |
+| [task-030](../task/task-030-expected-failures.md) | F3.6 | `provides`, the mark for harness arms, carried into `score.json`, listed by `campaign validate`; requirements 1.9 |
+
+Decisions taken during W6: the plan-phase decisions in task-026 (six);
+[adr-004](../adr/adr-004-w6-scoring-conventions.md) (the scoring conventions, amended once); requirements
+1.7, 1.8 and 1.9; the review points of task-027 to task-030, recorded in each task. Bugs:
+[bug-007](../bug/bug-007-a-stored-patch-leaves-out-the-commits-made-between-two-snapshots.md) (found and
+fixed in task-027: stored patches had left out every commit between two snapshots since W2); bug-001's
+missing Resolution written. No spending: **1.0415 USD** reported in all so far
+([v0.1 ledger](../../calibration/v0.1-ledger.md)).
+
+**Due before the phases and waves that need them:**
+
+- **W7's first task: dl-002** (third-party oracle material pinned by `commit` or `sha256`; S1's full SHA)
+  — the approver's decision of 2026-09-28.
+- **W7 and W8 (scenario authoring):** every hidden test, public or hold-out, imports the code under test
+  inside the test, is registered unconditionally with a unique name, and passes nothing on the seed by
+  accident (adr-004 decision 10; W6's own hold-out test first passed on a snapshot without `cancel`); a
+  hold-out test is written as a sibling of its public suite (amendment 1). A seed that needs dependencies
+  to run its tests needs a way to get them with no network.
+- **W7 (F5.1, aggregation):** how `not_reached` steps and final snapshots count, and an expected failure
+  counted as a loss with its capability named (W6 plan-phase decision 6); dry runs are scored by
+  `bench score dry-runs/<n>` and never aggregated; `score.json`'s `holdout.scored: false` is shown.
+- **W9 (F4.4):** the setup's cost (M-K3) beside the steps', from `run.json`; the setup's time is not in
+  `cost.run`.
+- **Before the reference campaign:** `arms/wingfoil/arm.yaml`'s `provides` re-assessed with the pinned,
+  released WingFoil, beside the MCP probe (W3); runs stored before task-027 cannot be scored.
+- **W11 (F5.8):** the method page states adr-004's counting rules, what a hold-out result is, and each
+  harness's gaps (`provides: false`) and expected failures.
+
 ## Release checklist
 
 - [x] release-planning: scope approved (planning → in-development, `8c5c7e6`; plan: plan-003)
-- [ ] delivery: W1–W11 done, every wave's "Ends with" verified (W1 done: task-001, task-002, task-003; W2 done: task-004, task-005, task-006, task-007; W3 done: task-011, task-012, task-013, task-014, task-015; W4 done: task-016, task-017, task-018, task-020, task-019; W5 done: task-021, task-022, task-023, task-024, task-025)
+- [ ] delivery: W1–W11 done, every wave's "Ends with" verified (W1 done: task-001, task-002, task-003; W2 done: task-004, task-005, task-006, task-007; W3 done: task-011, task-012, task-013, task-014, task-015; W4 done: task-016, task-017, task-018, task-020, task-019; W5 done: task-021, task-022, task-023, task-024, task-025; W6 done: task-026, task-027, task-028, task-029, task-030)
 - [ ] calibration: dry runs in every arm, budget revised (`docs/calibration/v0.1.md`)
 - [ ] validation: acceptance green on the fake agent, coverage > 80%, lint clean, one real-agent end-to-end run
 - [ ] campaign: reference campaign published (campaign: —)
