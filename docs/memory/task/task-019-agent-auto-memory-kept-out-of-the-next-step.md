@@ -156,3 +156,10 @@ no file under the spike or its output holds the token. The line is in `docs/cali
 
 `npm test` 617/617 (statements 100%, branches 97.45%, functions 100%, lines 100%), `npm run test:bin`
 4/4, `npm run test:docker` 4/4, `npm run lint` clean; no `bench*` or spike container left.
+
+### Review and approval
+
+- `npx wingfoil memory submit task-019-…` → `e3aa732` (`in-progress → in-review`, one commit, only
+  `status` changed). Matches.
+- `npx wingfoil memory approve task-019-… --reason "…"` → `2527c02`, run by the approver from the
+  worktree (`in-review → approved`, `Approver:`/`Reason:` trailers, only `status` changed). Matches.
