@@ -213,3 +213,81 @@ decision is the approver's at this task's review.
   fields checked, one commit `wf(task): submit <id>` with no bracket and no body. Observed: exit 0,
   empty stderr, 1 file, diff limited to `status: draft` → `status: pending`. Matches (subject without
   transition: N9).
+- `npx wingfoil memory approve task-027-hidden-test-oracle --reason "…"`, run by the approver → `29f6a78`
+  (`pending → backlog`, `Approver:`/`Reason:` trailers). Matches.
+- Design committed by hand on `task/task-027-hidden-test-oracle` (`0bfa04c`), then `npx wingfoil memory
+  submit task-027-hidden-test-oracle` → `0ead612`. Declared: `backlog → in-progress`, one commit. Observed:
+  exit 0, empty stderr, 1 file, only `status` changed, subject without transition (N9). Matches. WIP after
+  it: one task `in-progress` (this one), none `in-review`.
+- `npx wingfoil memory add --type bug --title "A stored patch leaves out the commits made between two
+  snapshots"` → `957ae27`, and `--type adr --title "W6 scoring conventions"` → `9ca411d`. Declared: one
+  commit `wf(<type>): add <id>`, one file from the type's template, `status: draft`. Observed: exit 0, empty
+  stderr, 1 file each. The scaffold's body is a placeholder comment saying that `memory submit` "replaces
+  these placeholder comments with real content": it does not, and nothing declares that it does outside
+  the comment itself. The bodies were written by hand first (`db6ec25`), as plan-003's rule says.
+  Otherwise matches.
+- `npx wingfoil memory submit bug-007-…` → `310a7de`, `npx wingfoil memory submit adr-004-…` → `ed649a2`.
+  Declared: `draft → pending`. Observed: exit 0, 1 file each, only `status` changed. Matches. Both wait
+  for the approver with this task.
+
+### Build
+
+Test-first throughout: each part's tests were written and run red before its code.
+
+- **The runner stores what a snapshot is rebuilt from** (`5e11b54`, then `f8820c7`). The git port gains
+  `tree` and `apply`; `run.json` records the tree of the setup and of every step; the setup stores
+  `setup/diff.patch`.
+- **Deviation from the Design, and a bug found — bug-007.** The Design took each patch as `git show
+  --binary` of the runner's commit. Re-reading adr-003 decision 10 during the build: the harness commits
+  during the setup (`wingfoil init`), and in the wingfoil arm the agent commits during a step (`memory
+  add`, `submit`, `approve`). `git show HEAD` — the patch since task-005 — left all of that out of every
+  stored patch, and no snapshot could have been rebuilt from them. Every patch now runs **between two
+  snapshots' trees** (`git diff --binary --full-index <previous tree> <tree>`): the setup's from the seed,
+  each step's from the previous snapshot. Filed as
+  [bug-007](../bug/bug-007-a-stored-patch-leaves-out-the-commits-made-between-two-snapshots.md), with its
+  Resolution; a snapshot test rebuilds through harness and agent commits.
+- **Results and ports** (`00c3cce`): `executionRuns`, `readStoredRun` in `results/`; `createScoring` in the
+  Docker port (`--network none`, read-only bind mounts); `prepareWorkspace` moved to `scenario/`, so scoring
+  rebuilds the run's repository with the runner's own code without importing `runner` (REQ-ARC-02).
+- **The scoring module** (`bde2eda`): `scoringImage`, `rebuildSnapshots`, `runSuite`, `scoreRun`,
+  `writeScore`, `scoreSummary`; `docker/score-image/` (tsx 4.23.15 with its lockfile, the reporter). The
+  reporter was written against the events Node 22.21 actually emits (probed: `test:start` in pre-order
+  gives the name path; a file that fails to load or is killed reports a failure no `test:start`
+  announced).
+- **Deviation:** `score.json`'s `scorer` records the image tag and the tsx version, not Node's: Node is
+  pinned by the image's base digest, and the tag changes with the directory it is built from.
+- **The command** (`0872f78`): `bench score <campaign-id>/<n>|dry-runs/<n> [--holdout <path>]`.
+- **The wave's Docker test** (`e8f7fd2`): T3 in the baseline arm, the fake writing a binary file in step 1
+  and the cancellation in step 2, a real `campaign run`, then a real `bench score`: `step 01 0/1, step 02
+  1/1, final 1/1` — node:test and tsx really ran in the scoring image, and step 1 shows the oracle able to
+  fail. Scored again: the same bytes. No `bench-score-` container left.
+- **Tests use the real git for scoring** (the stored-run fixture and the rebuild): a double could not
+  apply a patch or name a tree. Docker is the double (`scoringDocker`), which judges T3's hidden test from
+  the snapshot copied into it, so the acceptance tests exercise the real rebuild.
+- **T3's hidden test** moved from Vitest to `node:test`, importing the code under test inside the test
+  (adr-004 decision 10); its literals are unchanged, so the leak-scan tests are too.
+- **Documents:** adr-004 (the W6 scoring conventions), requirements **1.8** (`81bb91d`: REQ-RUN-05,
+  REQ-FMT-06, REQ-CLI-06, REQ-SCO-01), the README's `bench score` (`68005e6`). adr-004, bug-007 and 1.8
+  wait for the approver's decision at this task's review.
+
+### Suites (at `68005e6`)
+
+- `npm test`: **783 passed** (41 files); coverage 99.53% statements / 95.95% branches / 99.77% functions /
+  99.94% lines; `src/scoring` 97% statements / 86% branches.
+- `npm run test:bin`: 5 passed (the usage now lists `bench score`). `npm run test:docker`: **7 passed**
+  (W6's new). `npm run lint`, `npx tsc --noEmit`, `npm run build`: clean. No `bench-*` container left.
+
+### Traceability
+
+`scoring.feature` @F4.1 (both scenarios) green in `test/acceptance/scoring.test.ts`. REQ-CLI-06,
+REQ-SCO-01, REQ-SCO-02, REQ-SCO-03 (byte-identical `score.json`, no timestamp), REQ-FMT-06 (`score.json`
+and `setup/` beside `run.json`), REQ-ARC-01 (the `scoring` module), REQ-ARC-02 (the lint rule, unchanged,
+and `prepareWorkspace` moved down to keep it), REQ-ARC-04 (Docker and git through their ports). Nothing
+was spent.
+
+### Carried forward
+
+- **task-028:** hold-out suites run through `runSuite` with their own census; `--holdout` is already
+  checked by `bench score`.
+- **W7 (F5.1):** how `not_reached` counts in aggregation; S-scenario oracles follow adr-004 decision 10.
+- **W11 (F5.8):** the method page states adr-004's counting rules.
