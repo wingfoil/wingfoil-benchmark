@@ -36,8 +36,9 @@ Scope:
 "A campaign file pins every variable" already declares one; this task makes the runner honour it and
 adds no feature. `campaign.feature` stays the acceptance file it is checked against.
 
-**Order in W5 (W5 plan-phase decision 6, the approver's, 2026-09-28):** after task-023 and task-024, so
-the wave's "Ends with" is not delayed; any order works, as the slices touch neither the guard nor the
+**Order in W5 (W5 plan-phase decision 6: a fifth task is the approver's choice, 2026-09-28; the order is
+proposed, and confirmed at this task's pending → backlog gate):** after task-023 and task-024, so the
+wave's "Ends with" is not delayed; any order works, as the slices touch neither the guard nor the
 caps. Cross-model results are reported apart from same-model ones (T14), but that is aggregation, W7.
 
 No real agent runs here: the fake agent stands in, and nothing is spent.
