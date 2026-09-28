@@ -51,7 +51,68 @@ Preliminary classification (confirmed in the design phase).
 
 ## Design
 
-<!-- Modules, interfaces, data formats touched; decisions taken and their reasons. -->
+**Classification confirmed.** The runner's half of REQ-RUN-09 (usage from the stream, EUR at the
+campaign's rate) is characterization: nothing in the runner changes.
+
+### Where the numbers come from
+
+Only what the run stored (W6 plan-phase decision 5), no container:
+
+- each step's `steps/<NN>/usage.json`: tokens by kind, `costUsd` (the session's latest total, bug-004),
+  `costEur` at the rate the run used, `turns`, `durationMs` — its invocations together (task-007);
+- `run.json`: each step's `outcome`, its number of `interventions`, and, for a step killed at
+  `step_time_s` that reported no cost, `cost_bound_usd` (task-024);
+- the rate: `currency.usd_to_eur` of the pins the execution ran with, the copy beside its runs
+  (`campaign.yaml`, or a dry run's `dry-run.yaml`). REQ-RUN-09 converts with **the campaign's** rate,
+  and a stored `costEur` already is; the rate is read only to convert a cost bound, and is recorded.
+
+### The metrics (experiment design §4.2)
+
+Per step the run reached, in `score.json` under `cost`:
+
+- **M-K1:** `tokens` — `input`, `output`, `cache_creation`, `cache_read`; `cost_usd`, `cost_eur`;
+- **M-K2:** `wall_time_ms` — the duration the agent reported for the step's invocations, summed; `turns`;
+  `interventions`;
+- the step's `outcome`, so a reader sees a `time cap reached` beside its numbers.
+
+**A step killed at its time cap** (task-024) counts **at its bound**, as the budget counted it:
+`cost_usd` is the larger of what it reported and `cost_bound_usd`, `cost_eur` that at the rate, and
+`cost_reported: false` says so. Its wall time is what was reported before the kill; the cap it hit is in
+the campaign file.
+
+**The run** is the sum of its reached steps, with `cost_reported: false` if any step's was not. A step
+not reached is `not_reached` and costs nothing. Money is rounded to 6 decimals (a millionth of a unit,
+far below anything priced), so that float noise from summing never shows; tokens, turns, milliseconds
+and interventions are integers.
+
+**Out of scope:** the setup (M-K3) and the step/setup split (M-K4) are F4.4's, in W9. The setup's time
+stays in `run.json`, apart, and is not in the run's wall time here.
+
+### `score.json`
+
+```json
+"cost": {
+  "usd_to_eur": 0.92,
+  "steps": [
+    { "n": 1, "outcome": "completed", "tokens": { "input": 10, "output": 200, "cache_creation": 0, "cache_read": 5 },
+      "cost_usd": 0.0681, "cost_eur": 0.062652, "cost_reported": true, "wall_time_ms": 41250, "turns": 7,
+      "interventions": 1 },
+    { "n": 2, "not_reached": true }
+  ],
+  "run": { "tokens": { … }, "cost_usd": …, "cost_eur": …, "cost_reported": true, "wall_time_ms": …, "turns": …,
+           "interventions": … }
+}
+```
+
+A new key, so `score_version` stays 1 (adr-004 decision 12). The command line's line does not grow: the
+cost is in `bench campaign run`'s own output already (task-022).
+
+### Where the code goes
+
+`scoring/cost.ts`, `costMetrics(runDir, executionDir)`: pure reads and sums, no port. `readStoredRun`
+(results) gains each step's `outcome`, `interventions` and `cost_bound_usd`; a reader of `usage.json` and
+of the pins' rate sits beside it in `results/`. `scoreRun` adds `cost` after the hidden tests; a missing or
+unreadable `usage.json` of a reached step, or a missing rate, is an issue naming the file.
 
 ## Execution notes
 
