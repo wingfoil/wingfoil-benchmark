@@ -98,6 +98,16 @@ takes what a campaign file would pin — agent, harnesses, approver policy, caps
 completed dry run of the same version, arm and model cost; when it ends, it prints what this one cost
 per step and in total.
 
+```bash
+npx bench campaign estimate campaigns/<name>.yaml
+```
+
+`estimate` prices a campaign before it runs, from its scenarios' dry runs: for every scenario version,
+arm and model the campaign file describes — its model slices included — the latest completed dry run's
+cost times the repetitions, then the total in euro at the campaign's rate, as an API-equivalent cost.
+It starts nothing. A key with no dry run fails the estimate, naming the dry run to make. `campaign run`
+prints the same total before it starts, and what the campaign spent when it ends.
+
 A run that is interrupted — a killed process, a closed terminal, a reboot — can leave its container
 behind. The runner never removes a container it did not create: at the start of a campaign it lists
 the ones earlier runs of that campaign left, warns about each with the `docker rm --force` that clears

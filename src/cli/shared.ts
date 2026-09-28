@@ -23,6 +23,7 @@ export interface Ports {
 /** The command line's usage, printed on `--help` and on a usage error. */
 export const USAGE =
   'usage: bench campaign validate <file>\n' +
+  '       bench campaign estimate <file>\n' +
   '       bench campaign run <file> [--allow-spending]\n' +
   '       bench scenario validate <id>@<version> [--holdout <path>]\n' +
   '       bench scenario dry-run <id>@<version> --arm <arm> [--model <id>] [--allow-spending]\n';
