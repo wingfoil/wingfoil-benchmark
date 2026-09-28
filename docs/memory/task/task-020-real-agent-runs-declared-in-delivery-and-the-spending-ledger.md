@@ -2,7 +2,7 @@
 id: task-020-real-agent-runs-declared-in-delivery-and-the-spending-ledger
 type: task
 title: "Real-agent runs declared in delivery, and the spending ledger"
-status: in-progress
+status: in-review
 release: v0.1
 wave: W4
 features: []
