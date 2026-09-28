@@ -35,7 +35,7 @@ Waves and features from [07_sequencer.md](../../01_vision/07_sequencer.md) 1.1. 
 | W1 — Skeleton | F3.1 scenario format · F1.1 campaign file · F2.1 isolated run | — | a trivial scenario runs in a container from a campaign file | **2026-09-23** |
 | W2 — Agent in the loop | F2.2 fresh-session steps · F2.3 Claude Code adapter · F2.4 neutral approver | F2.4 | a multi-step run with usage captured and interventions counted | **2026-09-24** |
 | W3 — Arms | F2.5 arm setups · F2.6 WingFoil under test · F2.7 arm activation (operating manuals) | — | the same scenario runs in the baseline, baseline-docs and wingfoil arms || **2026-09-25** |
-| W4 — Scenario hygiene | F3.5 hold-out integration · F3.2 validator and leak scan · F3.4 scenario versioning | — | a scenario validated, with its oracle kept outside the container | — |
+| W4 — Scenario hygiene | F3.5 hold-out integration · F3.2 validator and leak scan · F3.4 scenario versioning | — | a scenario validated, with its oracle kept outside the container || **2026-09-28** |
 | W5 — Cost control | F3.3 dry run · F1.2 cost estimate · F1.3 budget guard | — | a campaign refuses to start above the ceiling | — |
 | W6 — First scores | F4.1 hidden-test oracle · F4.3 cost metrics · F3.6 expected failures | — | pass/fail and cost per run, with expected failures marked | — |
 | W7 — First content | F6.1 S1 conformance · F6.2 S2 injected bugs · F5.1 results store | — | S1 and S2 scored in all three arms | — |
@@ -202,10 +202,53 @@ REQ-ARC-03); scenarios README 1.1 (K5: no MCP Tools at `3df305e`). Bugs:
 - **W11 (F5.8):** the method page states that the decision is always the neutral approver's and the
   agent only executes it (REQ-RUN-17), and publishes the three manuals and the baseline-docs table.
 
+### W4 — verified 2026-09-28
+
+**"A scenario validated, with its oracle kept outside the container."** Verified offline, as the W4
+plan phase decided (task-016, decision 4); no real-agent half (`real-agent-check` not taken).
+
+- **Validated.** The CLI built from main, in a repository holding T3 (standing in for S1–S3) and
+  `scenarios/leak-scan.yaml`, with a hold-out in a temporary directory:
+  `bench scenario validate T3@1.0 --holdout <tmp>` → `scenario T3@1.0 is valid (hold-out: 1 file)`,
+  exit 0. With a hold-out expected value copied into a step prompt, the same command fails with
+  `steps[1].prompt_file: holds a literal of the hold-out file hidden/refund.test.ts`, exit 1, and
+  prints nothing of the hold-out. `scenarios.feature` @F3.2 (three scenarios) and @F3.4 are green.
+- **Oracle outside the container.** `npm run test:docker` on main, 4/4: every run's container has one
+  mount, its workspace (checked against Docker itself since W1), and `runner.feature` @F2.1 "A run
+  cannot see the hold-out even if the path is configured" is green — extended in task-016 so that a
+  configured `BENCH_HOLDOUT_PATH` is not even read by `campaign run`. The oracle's text never reaches
+  a seed or a prompt either: that is the leak scan's job, above.
+
+| Task | Feature | Delivered |
+|---|---|---|
+| [task-016](../task/task-016-hold-out-access.md) | (F3.5, integration half) | `bench scenario validate`, the hold-out's path and additions, never read by `campaign run` |
+| [task-017](../task/task-017-scenario-validator-and-leak-scan.md) | F3.2 | the leak scan: harness names, oracle literals (hold-out included, never printed), arm configuration, reserved seed names |
+| [task-018](../task/task-018-scenario-versioning.md) | F3.4 | the content hash in `run.json`, changed versions refused, `.gitattributes` |
+| [task-020](../task/task-020-real-agent-runs-declared-in-delivery-and-the-spending-ledger.md) | — (dl-006) | `kanban-delivery` 2 (`real-agent-check`), `release-cycle` 2, the v0.1 spending ledger |
+| [task-019](../task/task-019-agent-auto-memory-kept-out-of-the-next-step.md) | — (bug-006) | auto-memory off and cleared before every step, proven with the real agent (0.0416 USD) |
+
+Decisions taken during W4: the plan-phase decisions in task-016 (F3.5 split between W4 and W6);
+[dl-006](../decision-log/dl-006-real-agent-runs-during-delivery-are-declared-by-the-workflow.md)
+(approved, implemented by task-020). Bugs:
+[bug-006](../bug/bug-006-claude-code-s-auto-memory-can-carry-state-between-the-steps-of-a-run.md)
+fixed (Resolution section; bug-005 stays with v0.2's triage). Spending so far, all of it in
+delivery: **0.9893 USD** ([v0.1 ledger](../../calibration/v0.1-ledger.md)).
+
+**Due before the waves that need them:**
+
+- **W6 (F4.1):** the scoring half of F3.5 — hold-out tests run on a run's snapshots and reported apart
+  in `score.json` (REQ-SCO-09); the task that delivers it declares F3.5. It reads the additions through
+  task-016's `loadHoldoutAdditions`.
+- **W7 and W8 (scenario content):** an expected value that is an ordinary word of eight letters or
+  more cannot appear in a prompt (task-017's known limit), and numbers are not scanned; a scenario
+  version with stored results is immutable — a change is a new version (task-018).
+- **W5 (calibration's inputs):** the ledger says what delivery spent; its dry runs are ledger lines too
+  (`release-cycle` 2).
+
 ## Release checklist
 
 - [x] release-planning: scope approved (planning → in-development, `8c5c7e6`; plan: plan-003)
-- [ ] delivery: W1–W11 done, every wave's "Ends with" verified (W1 done: task-001, task-002, task-003; W2 done: task-004, task-005, task-006, task-007; W3 done: task-011, task-012, task-013, task-014, task-015)
+- [ ] delivery: W1–W11 done, every wave's "Ends with" verified (W1 done: task-001, task-002, task-003; W2 done: task-004, task-005, task-006, task-007; W3 done: task-011, task-012, task-013, task-014, task-015; W4 done: task-016, task-017, task-018, task-020, task-019)
 - [ ] calibration: dry runs in every arm, budget revised (`docs/calibration/v0.1.md`)
 - [ ] validation: acceptance green on the fake agent, coverage > 80%, lint clean, one real-agent end-to-end run
 - [ ] campaign: reference campaign published (campaign: —)
