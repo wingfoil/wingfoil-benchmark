@@ -49,7 +49,7 @@ tests in a suite, through task-027's path).
 `bench scenario validate` refuses a missing, doubled or wrong pin, README and S1.md are amended with
 S1's full SHA; tests, coverage and lint pass.
 
-### W7 plan-phase decisions (proposed to the approver, 2026-09-28)
+### W7 plan-phase decisions (accepted by the approver, 2026-09-28, `4dbb6c9`)
 
 1. **Four tasks, in this order:** task-031 third-party pins (dl-002); task-032 S1 conformance scenario
    (F6.1); task-033 S2 injected-bug scenario (F6.2); task-034 results store and aggregation (F5.1). The
