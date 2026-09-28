@@ -37,7 +37,11 @@ S1 ([09_experiment-design.md](../01_vision/09_experiment-design.md) 1.1).
 - Nothing about the benchmark is written into the WingFoil repository.
 - Hold-out oracle content is written only in the private `WingFoil2-Benchmark-HoldOut` repository.
 - The budget gate stays loose (K4) until calibration. No run with a real agent starts without the
-  approver's explicit consent.
+  approver's explicit consent. Where that consent is given and how each run is counted is declared
+  since W4 ([dl-006](../memory/decision-log/dl-006-real-agent-runs-during-delivery-are-declared-by-the-workflow.md),
+  task-020): a spike's at its pending → backlog gate and a wave's in `kanban-delivery`'s optional
+  `real-agent-check` phase; every run is a line of the release's spending ledger,
+  [docs/calibration/v0.1-ledger.md](../calibration/v0.1-ledger.md), which calibration reads.
 - Subscription credentials never reach disk, logs, transcripts or results (security-secrets).
 
 ## Steps
