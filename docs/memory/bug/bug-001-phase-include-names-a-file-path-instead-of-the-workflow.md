@@ -67,3 +67,14 @@ history. The fix returns through the task that this bug opens. Verified there, n
 The underlying WingFoil issues are recorded in the usage notes as N18 (`include` carrying two
 meanings, unvalidated) and N20 (`kind` conflating "startable" with "includable", which is what forces
 both decisions above).
+
+## Resolution
+
+Fixed by [task-008](../task/task-008-phase-includes-in-the-workflow-configuration.md) (merged in
+`88cb76b`), in W2 of release v0.1: `a6d7a2b` names the workflow in the five phase includes, `f1246ca`
+drops the `campaign-cycle` include (decision 1), `d6f67c9` makes `scenario-authoring` `kind: main`
+(decision 2). The roadmap viewer's warnings went 13 → 3; the three left are N19's, a different defect.
+Checked again on 2026-09-28: `sw-life-cycle` includes `benchmark-inception`, `benchmark-specification`
+and `release-cycle`, and `release-cycle` includes `kanban-delivery`, all by name. WingFoil has no link
+from a bug to the task that fixes it and no state after `approved` (bug-005), so the resolution is
+recorded here, as for the other bugs; this one lacked it until now.

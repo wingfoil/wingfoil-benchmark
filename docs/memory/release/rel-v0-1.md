@@ -73,8 +73,9 @@ Decisions taken during W1: [adr-001](../adr/adr-001-w1-toolchain-and-runner-conv
 [dl-003](../decision-log/dl-003-campaign-pins-harness-coverage-seed-and-the-models-shape.md).
 Amendments: requirements 1.2, features 1.3.
 
-**Due before the waves that need them:** dl-001 (per-step oracle suites) before W6 and W7; dl-002
-(third-party material pinned by `commit` or `sha256`, and S1's full SHA) before W7; the interim
+**Due before the waves that need them:** dl-001 (per-step oracle suites) before W6 and W7 (done:
+task-026); dl-002 (third-party material pinned by `commit` or `sha256`, and S1's full SHA) before W7 —
+the approver's decision of 2026-09-28: **W7's first task**; the interim
 harness rule of dl-003 revisited in W3 with the arm definitions.
 
 Release-planning notes:
