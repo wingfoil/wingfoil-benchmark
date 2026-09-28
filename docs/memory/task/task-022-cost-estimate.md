@@ -135,3 +135,47 @@ sum over every run's steps, next to the `runs completed` line.
   checked, one commit `wf(task): submit <id>` with no bracket and no body. Observed: exit 0, empty
   stderr, 1 file, diff limited to `status: draft` → `status: pending`. Matches (subject without
   transition: N9).
+- The approver's `memory approve` → `a2b689a` (`pending → backlog`). Matches.
+- Design committed by hand on `task/task-022-cost-estimate` (`57491ab`), then
+  `npx wingfoil memory submit task-022-cost-estimate` → `9cd283b` (`backlog → in-progress`, one commit,
+  only `status`). Matches. WIP after it: this task `in-progress`, none `in-review`.
+
+### Build (TDD)
+
+1. **Tests first.** The two @F1.2 acceptance tests, five `estimateCampaign` unit tests, and the CLI's
+   changed expectations (the usage gains `campaign estimate`; `campaign estimate <file>` stops being a
+   usage error; `campaign run` prints the estimate before and the cost after): **19 red**, each for the
+   missing command or module — the acceptance tests failed on exit 2, the usage error.
+2. **`runner/estimate.ts`, then the CLI** (`2078fda`): the five unit tests green at the first
+   implementation, then the CLI's. One existing test, "exits 1 when a run fails", went red on its
+   anchored end-of-output and was updated for the cost line.
+3. **Added after the code, for coverage:** `campaign run` printing an available estimate, `campaign
+   estimate` on an invalid campaign, and an unknown campaign verb with a file (the branch
+   `campaign estimate a.yaml` used to cover). They describe behaviour already written, so they were green
+   when added.
+
+### Deviation from the Design
+
+None. One detail the Design left open: a harness note shows the first 7 characters of the dry run's
+commit, the length of the shortest pin REQ-FMT-03 allows.
+
+### For the approver: model slices are never run
+
+The runner runs the default model only; `models.slices` is validated and, from this task, estimated, but
+no code runs a slice. task-003 said "slices are W5", and none of W5's four tasks runs them. The
+reference campaign's Opus 5 comparison on S1 (sequencer decision 2) is a slice, so it would be priced
+and never executed. Not built here: it needs a place in the plan — task-024, a fifth W5 task, or W6.
+
+### Known limits
+
+- **task-023 will need dry runs in every `campaign run` test.** Once a campaign that cannot be
+  estimated refuses to start, every test that runs a campaign — unit, acceptance and the docker suite —
+  has to store a dry run for each of its keys first (`writeStoredDryRun` is in `test/support/`).
+- The estimate is a sum of single dry runs: no variance, and one dry run per key, as decided in
+  task-021's Design.
+
+### Review readiness
+
+`npm test` 668/668 (statements 99.8%, branches 96.86%, functions 100%, lines 100%), `npm run test:bin`
+4/4, `npm run test:docker` 5/5, `npm run lint` clean, `npm run build` clean; no `bench-*` container
+left. `campaign.feature` @F1.2 has its two acceptance tests. Nothing was spent.
