@@ -8,7 +8,7 @@ import { checkCampaign, main } from '../../src/cli/index.js';
 import { nextExecution } from '../../src/results/index.js';
 import { writeArmsNamed } from '../support/arm-fixture.js';
 import { completeCampaignYaml, writeRepo } from '../support/campaign-fixture.js';
-import { writeDryRunProfile } from '../support/dry-run-fixture.js';
+import { priceCampaign, writeDryRunProfile } from '../support/dry-run-fixture.js';
 import { repoPath } from '../support/paths.js';
 import { doubles } from '../support/runner-doubles.js';
 import type { Doubles } from '../support/runner-doubles.js';
@@ -88,6 +88,58 @@ async function estimate(file: string, ports: Doubles) {
     ports,
   );
   return { code, stdout, stderr };
+}
+
+/**
+ * A repository whose campaign runs T3 once in the baseline arm at 1 EUR/USD under `budget`, with a
+ * stored dry run of T3 that costs `estimateEur`: the campaign's estimate (task-022).
+ */
+function budgetedRepository(estimateEur: number, budget: { warn_eur: number; ceiling_eur: number }): string {
+  const root = tempDir('bench-repo-');
+  cpSync(repoPath('test/fixtures/scenarios/T3'), join(root, 'scenarios', 'T3'), { recursive: true });
+  writeArmsNamed(root, ['baseline']);
+  mkdirSync(join(root, 'campaigns'));
+  const file = join(root, 'campaigns', 'c.yaml');
+  writeFileSync(
+    file,
+    stringify({
+      ...completeCampaignYaml(),
+      harnesses: {},
+      scenarios: [{ id: 'T3', version: '1.0' }],
+      arms: ['baseline'],
+      repetitions: { T3: 1 },
+      agent: { name: 'fake', version: '1.0.0' },
+      models: { default: 'fake-model' },
+      budget,
+      currency: { usd_to_eur: 1 },
+    }),
+  );
+  priceCampaign(file, estimateEur);
+  return file;
+}
+
+/** `campaign run`, with the maintainer's answers to any question, in order; none means no terminal. */
+async function start(file: string, ports: Doubles, answers?: string[], ...flags: string[]) {
+  let stdout = '';
+  let stderr = '';
+  const questions: string[] = [];
+  const code = await main(
+    ['campaign', 'run', file, ...flags],
+    {
+      stdout: (text) => (stdout += text),
+      stderr: (text) => (stderr += text),
+      ...(answers === undefined
+        ? {}
+        : {
+            ask: (question: string) => {
+              questions.push(question);
+              return Promise.resolve(answers.shift() ?? '');
+            },
+          }),
+    },
+    ports,
+  );
+  return { code, stdout, stderr, questions };
 }
 
 describe('campaign.feature', () => {
@@ -182,5 +234,54 @@ describe('campaign.feature', () => {
         'scenarios[0]: T3@1.0 has no completed dry run in arm wingfoil on model fake-model: run bench ' +
         'scenario dry-run T3@1.0 --arm wingfoil --model fake-model first\n',
     });
+  });
+
+  it('@F1.3 A campaign above the warning threshold warns but may start', async () => {
+    // Given the estimate is 42 euro
+    // And the warning threshold is 30 euro and the ceiling is 100 euro
+    const file = budgetedRepository(42, { warn_eur: 30, ceiling_eur: 100 });
+
+    // When the maintainer starts the campaign
+    // Then a warning shows the estimate and the threshold
+    const declined = doubles();
+    const refused = await start(file, declined, ['n']);
+    expect(refused.stderr).toContain(
+      'campaign: the estimate, 42.0000 EUR, is above the warning threshold, 30 EUR\n',
+    );
+    expect(refused.questions).toEqual(['Start the campaign? [y/N] ']);
+    expect(refused.code).toBe(1);
+    expect(refused.stderr).toMatch(/campaign: not started: not confirmed\n$/);
+    expect(declined.recorded.builds).toEqual([]);
+
+    // And the campaign starts only after the maintainer confirms
+    const confirmed = doubles();
+    const started = await start(file, confirmed, ['y']);
+    expect(started.code).toBe(0);
+    expect(confirmed.recorded.creates).toHaveLength(1);
+  });
+
+  it('@F1.3 A campaign above the ceiling refuses to start', async () => {
+    // Given the estimate is 130 euro
+    // And the ceiling is 100 euro
+    const file = budgetedRepository(130, { warn_eur: 30, ceiling_eur: 100 });
+
+    // When the maintainer starts the campaign
+    // (and no command-line option can make it start: the only one there is, included)
+    for (const flags of [[], ['--allow-spending']]) {
+      const ports = doubles();
+      const result = await start(file, ports, ['y'], ...flags);
+
+      // Then the campaign does not start
+      expect(result.code).toBe(1);
+      expect(result.stderr).toBe(
+        'campaign: not started: the estimate, 130.0000 EUR, is above the ceiling, 100 EUR. No option ' +
+          "overrides it: lower the campaign's cost, or raise ceiling_eur, which makes a new campaign\n",
+      );
+      expect(result.questions).toEqual([]);
+      // And no agent session is started
+      expect(ports.recorded.steps).toEqual([]);
+      expect(ports.recorded.builds).toEqual([]);
+      expect(ports.recorded.creates).toEqual([]);
+    }
   });
 });

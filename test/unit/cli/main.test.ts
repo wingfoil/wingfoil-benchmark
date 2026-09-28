@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { agentCredential, checkCampaign, main, realPorts } from '../../../src/cli/index.js';
 import { doubles } from '../../support/runner-doubles.js';
 import { completeCampaignYaml, writeRepo } from '../../support/campaign-fixture.js';
-import { writeStoredDryRun } from '../../support/dry-run-fixture.js';
+import { priceCampaign, writeStoredDryRun } from '../../support/dry-run-fixture.js';
 import { repoPath } from '../../support/paths.js';
 import { tempDir } from '../../support/scenario-fixture.js';
 
@@ -119,6 +119,7 @@ describe('bench campaign run', () => {
       harnesses: { wingfoil: { tool: 'wingfoil', version: '3df305e' } },
     };
     const { file } = writeRepo(yaml, ['S1@1.0']);
+    priceCampaign(file);
     const previous = process.env.BENCH_WINGFOIL_REPO;
     delete process.env.BENCH_WINGFOIL_REPO;
     try {
@@ -140,9 +141,11 @@ describe('bench campaign run', () => {
 
   it('refuses to spend before anything runs, not after the image is built', async () => {
     const { file } = writeRepo(completeCampaignYaml());
+    priceCampaign(file);
     const ports = doubles();
     const { code, stdout, stderr } = await runWith(ports, 'campaign', 'run', file);
-    expect({ code, stdout }).toEqual({ code: 1, stdout: '' });
+    // The estimate is printed first (REQ-NFR-06); nothing else happens before the refusal.
+    expect({ code, stdout }).toEqual({ code: 1, stdout: expect.stringMatching(/^estimate: [^\n]*\n$/) });
     expect(stderr).toMatch(/spends real money/);
     // Nothing was built and no container was created: the refusal comes first.
     expect(ports.recorded.builds).toEqual([]);
@@ -155,6 +158,7 @@ describe('bench campaign run', () => {
     // Written the way a paste leaves it, so the stripping is part of what this pins.
     writeFileSync(tokenFile, `${token}\n`);
     const { file } = writeRepo(completeCampaignYaml());
+    priceCampaign(file);
     const ports = doubles();
     const previous = process.env.BENCH_AGENT_TOKEN_FILE;
     process.env.BENCH_AGENT_TOKEN_FILE = tokenFile;
@@ -184,6 +188,7 @@ describe('bench campaign run', () => {
     delete process.env.BENCH_FAKE_SCRIPT;
     try {
       const { file } = writeRepo(fakeCampaign(), ['S1@1.0']);
+      priceCampaign(file);
       const { code, stderr } = await run('campaign', 'run', file);
       expect(code).toBe(1);
       expect(stderr).toMatch(/^BENCH_FAKE_SCRIPT: is not set/);
@@ -201,13 +206,13 @@ describe('bench campaign run', () => {
 
   it('runs the campaign and reports where its execution was stored', async () => {
     const { file } = writeRepo(fakeCampaign(), ['S1@1.0']);
+    priceCampaign(file);
     const ports = doubles();
     const { code, stdout, stderr } = await runWith(ports, 'campaign', 'run', file);
     expect({ code, stderr }).toEqual({ code: 0, stderr: '' });
-    // What it expects to spend before anything is built, and what it spent at the end (REQ-NFR-06):
-    // no dry run of S1 exists, so there is no estimate, and the run goes on (task-023 refuses it).
+    // What it expects to spend before anything is built, and what it spent at the end (REQ-NFR-06).
     expect(stdout).toMatch(
-      /^estimate: not available, 1 dry run missing\ncampaign [0-9a-f]{12}, execution 1\n/,
+      /^estimate: 0\.0000 USD, 0\.0000 EUR at 0\.92 EUR\/USD, API-equivalent\ncampaign [0-9a-f]{12}, execution 1\n/,
     );
     expect(stdout).toMatch(/run S1@1\.0\/baseline\/fake-model\/r1\n/);
     expect(stdout).toMatch(
@@ -218,6 +223,7 @@ describe('bench campaign run', () => {
 
   it('reports a campaign that cannot start at all, instead of crashing', async () => {
     const { file } = writeRepo(fakeCampaign(), ['S1@1.0']);
+    priceCampaign(file);
     const ports = doubles();
     const docker = {
       ...ports.docker,
@@ -256,8 +262,108 @@ describe('bench campaign run', () => {
     });
   });
 
+  describe('the budget guard at start (F1.3, task-023)', () => {
+    /** A priced campaign under `budget`, at 1 EUR/USD, and `campaign run` with the given answers. */
+    function priced(estimateEur: number, budget: { warn_eur: number; ceiling_eur: number }, extra = {}) {
+      const { file } = writeRepo({ ...fakeCampaign(), budget, currency: { usd_to_eur: 1 }, ...extra }, [
+        'S1@1.0',
+      ]);
+      priceCampaign(file, estimateEur);
+      return file;
+    }
+
+    async function start(
+      file: string,
+      ports: ReturnType<typeof doubles>,
+      ask?: (q: string) => Promise<string>,
+      ...flags: string[]
+    ) {
+      let stdout = '';
+      let stderr = '';
+      const code = await main(
+        ['campaign', 'run', file, ...flags],
+        { stdout: (t) => (stdout += t), stderr: (t) => (stderr += t), ...(ask === undefined ? {} : { ask }) },
+        ports,
+      );
+      return { code, stdout, stderr };
+    }
+
+    it('does not start a campaign whose cost cannot be estimated, and lists what is missing', async () => {
+      const { file } = writeRepo(fakeCampaign(), ['S1@1.0']);
+      const ports = doubles();
+      const result = await start(file, ports);
+      expect(result).toEqual({
+        code: 1,
+        stdout: 'estimate: not available, 1 dry run missing\n',
+        stderr:
+          'scenarios[0]: S1@1.0 has no completed dry run in arm baseline on model fake-model: run bench ' +
+          'scenario dry-run S1@1.0 --arm baseline --model fake-model first\n' +
+          'campaign: not started: its cost cannot be estimated\n',
+      });
+      expect(ports.recorded.builds).toEqual([]);
+    });
+
+    it('refuses above the warning threshold when there is no terminal to confirm on', async () => {
+      const ports = doubles();
+      const result = await start(priced(42, { warn_eur: 30, ceiling_eur: 100 }), ports);
+      expect(result.code).toBe(1);
+      expect(result.stderr).toBe(
+        'campaign: the estimate, 42.0000 EUR, is above the warning threshold, 30 EUR\n' +
+          'campaign: not started: a campaign above its warning threshold is confirmed on a terminal\n',
+      );
+      expect(ports.recorded.builds).toEqual([]);
+    });
+
+    it.each([['y'], ['yes'], [' Y \n'], ['YES']])('takes %j as a confirmation', async (answer) => {
+      const ports = doubles();
+      const result = await start(priced(42, { warn_eur: 30, ceiling_eur: 100 }), ports, () =>
+        Promise.resolve(answer),
+      );
+      expect(result.code).toBe(0);
+      expect(ports.recorded.creates).toHaveLength(1);
+    });
+
+    it.each([[''], ['n'], ['yep'], ['no']])('takes %j as a refusal', async (answer) => {
+      const ports = doubles();
+      const result = await start(priced(42, { warn_eur: 30, ceiling_eur: 100 }), ports, () =>
+        Promise.resolve(answer),
+      );
+      expect(result.code).toBe(1);
+      expect(ports.recorded.builds).toEqual([]);
+    });
+
+    it('starts at the threshold and at the ceiling without asking: only above them counts', async () => {
+      const asked: string[] = [];
+      const ask = (question: string) => {
+        asked.push(question);
+        return Promise.resolve('n');
+      };
+      expect((await start(priced(30, { warn_eur: 30, ceiling_eur: 100 }), doubles(), ask)).code).toBe(0);
+      expect((await start(priced(30, { warn_eur: 30, ceiling_eur: 30 }), doubles(), ask)).code).toBe(0);
+      expect(asked).toEqual([]);
+    });
+
+    it('refuses the ceiling before it asks for the spending flag, and asks nothing', async () => {
+      const agent = { agent: { name: 'claude-code', version: '2.1.280' } };
+      const asked: string[] = [];
+      const ask = (question: string) => {
+        asked.push(question);
+        return Promise.resolve('y');
+      };
+      const above = await start(priced(130, { warn_eur: 30, ceiling_eur: 100 }, agent), doubles(), ask);
+      expect(above.stderr).toMatch(
+        /^campaign: not started: the estimate, 130\.0000 EUR, is above the ceiling/,
+      );
+      // Above the warning threshold, a missing opt-in to spend is refused before any question.
+      const warned = await start(priced(42, { warn_eur: 30, ceiling_eur: 100 }, agent), doubles(), ask);
+      expect(warned.stderr).toMatch(/^campaign: agent 'claude-code' spends real money/);
+      expect(asked).toEqual([]);
+    });
+  });
+
   it('exits 1 when a run fails, and says which', async () => {
     const { file } = writeRepo(fakeCampaign(), ['S1@1.0']);
+    priceCampaign(file);
     const ports = doubles({
       onStep: () => {
         throw new Error('the agent gave up');
@@ -329,6 +435,7 @@ describe('realPorts', () => {
     const yaml = completeCampaignYaml();
     yaml.agent = { name: 'claude-code', version: '2.1.280' };
     const { file } = writeRepo(yaml);
+    priceCampaign(file);
     let stderr = '';
 
     const code = await main(['campaign', 'run', file], {
@@ -345,6 +452,7 @@ describe('realPorts', () => {
   it("asks for the file holding the agent's token when the variable is not set", async () => {
     const yaml = completeCampaignYaml();
     const { file } = writeRepo(yaml);
+    priceCampaign(file);
     const previous = process.env.BENCH_AGENT_TOKEN_FILE;
     Reflect.deleteProperty(process.env, 'BENCH_AGENT_TOKEN_FILE');
     let stderr = '';

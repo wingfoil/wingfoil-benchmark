@@ -9,6 +9,7 @@ import { main } from '../../src/cli/index.js';
 import { checkCampaign, runCampaign } from '../../src/runner/index.js';
 import { completeCampaignYaml, writeRepo } from '../support/campaign-fixture.js';
 import { doubles } from '../support/runner-doubles.js';
+import { priceCampaign } from '../support/dry-run-fixture.js';
 import { repoPath } from '../support/paths.js';
 import { promptFile, stepNumbers, tempDir } from '../support/scenario-fixture.js';
 
@@ -166,6 +167,8 @@ describe('runner.feature', () => {
     try {
       process.env.BENCH_FAKE_SCRIPT = repoPath('test/fixtures/fake-script.json');
       const { file } = writeRepo(smokeCampaign(), ['S1@1.0']);
+      // The command's budget guard needs the campaign's dry runs (task-023).
+      priceCampaign(file);
       let stderr = '';
       const io = { stdout: () => undefined, stderr: (text: string) => (stderr += text) };
       expect(await main(['campaign', 'run', file], io, doubles())).toBe(0);

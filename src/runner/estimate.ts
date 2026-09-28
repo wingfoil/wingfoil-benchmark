@@ -33,7 +33,7 @@ export interface Estimate {
 }
 
 /** One key the campaign runs, with how many times, and where its scenario is in the campaign. */
-interface Key {
+export interface CampaignKey {
   readonly index: number;
   readonly scenario: Scenario;
   readonly arm: string;
@@ -52,7 +52,7 @@ export function estimateCampaign(checked: CheckedCampaign): Result<Estimate> {
   const { campaign } = checked;
   const lines: EstimateLine[] = [];
   const issues: Issue[] = [];
-  for (const key of keysOf(checked)) {
+  for (const key of campaignKeys(checked)) {
     const { scenario, arm, model, repetitions } = key;
     const dryRun = latestDryRun(campaign.resultsRoot, {
       id: scenario.id,
@@ -90,10 +90,10 @@ export function estimateCampaign(checked: CheckedCampaign): Result<Estimate> {
 }
 
 /** Every key the campaign file describes, in its order: the default model, then each slice. */
-function keysOf({ campaign, scenarios }: CheckedCampaign): Key[] {
+export function campaignKeys({ campaign, scenarios }: CheckedCampaign): CampaignKey[] {
   const { spec } = campaign;
   const indexOf = (id: string) => spec.scenarios.findIndex((ref) => ref.id === id);
-  const keys: Key[] = [];
+  const keys: CampaignKey[] = [];
   for (const scenario of scenarios) {
     for (const arm of spec.arms) {
       const repetitions = spec.repetitions[scenario.id] ?? 1;

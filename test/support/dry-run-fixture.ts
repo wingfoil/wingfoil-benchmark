@@ -2,6 +2,9 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { stringify } from 'yaml';
 
+import { nextExecution } from '../../src/results/index.js';
+import { campaignKeys, checkCampaign } from '../../src/runner/index.js';
+
 /** A dry-run profile (task-021) for the fake agent, with a currency rate that shows in the output. */
 export function dryRunProfileYaml(): Record<string, unknown> {
   return {
@@ -67,4 +70,28 @@ export function writeStoredDryRun(root: string, execution: number, run: StoredDr
     }),
   );
   return executionDir;
+}
+
+/**
+ * Store a completed dry run, at `usd` per run, for every key the campaign in `file` runs — its default
+ * model and its slices (task-022's keys) — so that `campaign run` can estimate it (task-023). A campaign
+ * that does not check is left alone: the test is about that.
+ */
+export function priceCampaign(file: string, usd = 0): void {
+  const checked = checkCampaign(file);
+  if (!checked.ok) return;
+  const { repoRoot, resultsRoot, spec } = checked.value.campaign;
+  let execution = nextExecution(resultsRoot, 'dry-runs');
+  for (const { scenario, arm, model } of campaignKeys(checked.value)) {
+    writeStoredDryRun(repoRoot, execution, {
+      id: scenario.id,
+      version: scenario.version,
+      hash: scenario.hash,
+      arm,
+      model,
+      stepCostsUsd: [usd],
+      agent: spec.agent,
+    });
+    execution += 1;
+  }
 }

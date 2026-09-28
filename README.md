@@ -108,6 +108,11 @@ cost times the repetitions, then the total in euro at the campaign's rate, as an
 It starts nothing. A key with no dry run fails the estimate, naming the dry run to make. `campaign run`
 prints the same total before it starts, and what the campaign spent when it ends.
 
+Before anything is built, `campaign run` applies the **budget guard**: a campaign whose cost cannot be
+estimated does not start, nor does one whose estimate is above its `ceiling_eur` — no option overrides
+the ceiling. Above `warn_eur` it shows the estimate and the threshold and starts only when the
+maintainer answers `y` on a terminal; without a terminal it does not start.
+
 A run that is interrupted — a killed process, a closed terminal, a reboot — can leave its container
 behind. The runner never removes a container it did not create: at the start of a campaign it lists
 the ones earlier runs of that campaign left, warns about each with the `docker rm --force` that clears

@@ -1,9 +1,14 @@
 import { execFileSync } from 'node:child_process';
-import { accessSync, constants, rmSync, statSync } from 'node:fs';
+import { accessSync, constants, cpSync, mkdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { stringify } from 'yaml';
 import { beforeAll, describe, expect, it } from 'vitest';
 
+import { writeArmsNamed } from '../support/arm-fixture.js';
+import { completeCampaignYaml } from '../support/campaign-fixture.js';
+import { priceCampaign } from '../support/dry-run-fixture.js';
 import { REPO_ROOT, repoPath } from '../support/paths.js';
+import { tempDir } from '../support/scenario-fixture.js';
 
 /**
  * The built command line. Not part of `npm test`: it needs `npm run build`. Run it with
@@ -53,6 +58,40 @@ describe('the built bench command', () => {
     );
     expect(status).toBe(1);
     expect(stderr).toMatch(/^harnesses: is required\n/);
+  });
+
+  it("W5's Ends with: a campaign refuses to start above the ceiling, whatever its options", () => {
+    // A repository of its own: T3 once in the baseline arm, and a dry run that prices it at 130 EUR.
+    const root = tempDir('bench-bin-');
+    cpSync(repoPath('test/fixtures/scenarios/T3'), join(root, 'scenarios', 'T3'), { recursive: true });
+    writeArmsNamed(root, ['baseline']);
+    mkdirSync(join(root, 'campaigns'));
+    const file = join(root, 'campaigns', 'c.yaml');
+    writeFileSync(
+      file,
+      stringify({
+        ...completeCampaignYaml(),
+        harnesses: {},
+        scenarios: [{ id: 'T3', version: '1.0' }],
+        arms: ['baseline'],
+        repetitions: { T3: 1 },
+        agent: { name: 'fake', version: '1.0.0' },
+        models: { default: 'fake-model' },
+        budget: { warn_eur: 30, ceiling_eur: 100 },
+        currency: { usd_to_eur: 1 },
+      }),
+    );
+    priceCampaign(file, 130);
+
+    for (const flags of [[], ['--allow-spending']]) {
+      expect(bench('campaign', 'run', file, ...flags)).toEqual({
+        status: 1,
+        stdout: 'estimate: 130.0000 USD, 130.0000 EUR at 1 EUR/USD, API-equivalent\n',
+        stderr:
+          'campaign: not started: the estimate, 130.0000 EUR, is above the ceiling, 100 EUR. No option ' +
+          "overrides it: lower the campaign's cost, or raise ceiling_eur, which makes a new campaign\n",
+      });
+    }
   });
 
   it('exits 2 with the usage when called without arguments', () => {

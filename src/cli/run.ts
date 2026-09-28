@@ -74,6 +74,14 @@ function validateCampaign(file: string, io: Io): number {
   return EXIT.ok;
 }
 
+/** How every refusal of the budget guard begins. */
+const NOT_STARTED = 'not started: ';
+
+/** An amount in EUR as the guard prints it. */
+function eur(value: number): string {
+  return `${value.toFixed(4)} EUR`;
+}
+
 /**
  * REQ-CLI-02: `bench campaign estimate <file>` (F1.2). The campaign's cost from its scenarios' dry
  * runs, one line per scenario version, arm and model, then the total; it reads files only, and
@@ -93,9 +101,11 @@ function estimateCommand(file: string, io: Io): number {
 }
 
 /**
- * REQ-CLI-03, as far as task-022 goes: `bench campaign run <file>` executes the campaign, one session
- * per step (F2.2), a real agent only with {@link SPENDING_FLAG}, printing its estimate before and its
- * cost after (REQ-NFR-06). The warning and the ceiling arrive with F1.3 (task-023).
+ * REQ-CLI-03: `bench campaign run <file>` executes the campaign, one session per step (F2.2). Before
+ * anything is built, the budget guard (F1.3, task-023 Design): no estimate or an estimate above
+ * `ceiling_eur` refuses, with no override; then a real agent only with {@link SPENDING_FLAG}; then above
+ * `warn_eur` the maintainer confirms on a terminal. It prints its estimate before and its cost after
+ * (REQ-NFR-06).
  */
 async function runCampaignCommand(
   file: string,
@@ -107,6 +117,35 @@ async function runCampaignCommand(
   if (!checked.ok) return report(checked.issues, io);
 
   const spec = checked.value.campaign.spec;
+  const rate = spec.currency.usd_to_eur;
+  // What it expects to spend, before anything is built (REQ-NFR-06), and the budget guard's first two
+  // refusals (F1.3, task-023): a campaign whose cost is unknown, and one above its ceiling, never start.
+  const estimate = estimateCampaign(checked.value);
+  if (!estimate.ok) {
+    io.stdout(`estimate: not available, ${count(estimate.issues.length, 'dry run')} missing\n`);
+    return report(
+      [...estimate.issues, { path: 'campaign', message: NOT_STARTED + 'its cost cannot be estimated' }],
+      io,
+    );
+  }
+  io.stdout(`${totalLine(estimate.value.totalUsd, rate, 'estimate')}\n`);
+  const { totalEur } = estimate.value;
+  const { warn_eur, ceiling_eur } = spec.budget;
+  if (totalEur > ceiling_eur) {
+    // No option is read here, and none exists: the ceiling is the campaign file's (acceptance decision 2).
+    return report(
+      [
+        {
+          path: 'campaign',
+          message:
+            `${NOT_STARTED}the estimate, ${eur(totalEur)}, is above the ceiling, ${ceiling_eur} EUR. No option ` +
+            "overrides it: lower the campaign's cost, or raise ceiling_eur, which makes a new campaign",
+        },
+      ],
+      io,
+    );
+  }
+
   const spending = checkSpending(spec, {
     allowSpending,
     // A campaign with a WingFoil harness needs the clone it is built from, before anything is built.
@@ -124,15 +163,24 @@ async function runCampaignCommand(
   const resolved = ports ? { ok: true as const, value: ports } : portsFor(spec, credential);
   if (!resolved.ok) return report(resolved.issues, io);
 
-  // What it expects to spend, before anything is built (REQ-NFR-06). A campaign that cannot be
-  // estimated still runs here: refusing it is the budget guard's (F1.3, task-023).
-  const rate = spec.currency.usd_to_eur;
-  const estimate = estimateCampaign(checked.value);
-  io.stdout(
-    estimate.ok
-      ? `${totalLine(estimate.value.totalUsd, rate, 'estimate')}\n`
-      : `estimate: not available, ${count(estimate.issues.length, 'dry run')} missing\n`,
-  );
+  // The warning, last, so that nobody confirms what a missing credential would stop a second later.
+  if (totalEur > warn_eur) {
+    io.stderr(`campaign: the estimate, ${eur(totalEur)}, is above the warning threshold, ${warn_eur} EUR\n`);
+    if (io.ask === undefined) {
+      return report(
+        [
+          {
+            path: 'campaign',
+            message: `${NOT_STARTED}a campaign above its warning threshold is confirmed on a terminal`,
+          },
+        ],
+        io,
+      );
+    }
+    const answer = (await io.ask('Start the campaign? [y/N] ')).trim().toLowerCase();
+    if (answer !== 'y' && answer !== 'yes')
+      return report([{ path: 'campaign', message: `${NOT_STARTED}not confirmed` }], io);
+  }
 
   let summary;
   try {
