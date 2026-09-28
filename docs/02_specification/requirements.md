@@ -1,6 +1,6 @@
 # Requirements (v0.1)
 
-**Version:** 1.7
+**Version:** 1.8
 **Date:** 2026-09-28
 **Status:** Approved
 **Traces to:** [acceptance/](acceptance/) (all v0.1 features), [scenarios/](scenarios/) (K1–K5), [09_experiment-design.md](../01_vision/09_experiment-design.md), [07_sequencer.md](../01_vision/07_sequencer.md) v0.1
@@ -41,7 +41,7 @@ All human-authored files are YAML, validated by Zod schemas in `core`. All machi
 | REQ-FMT-03 | A harness `version` must be a released version (semver, optionally `v`-prefixed, with optional prerelease and build metadata) or a commit SHA of 7 to 40 hex characters. A branch name, a range or `latest` is rejected. When `version` is a SHA and `commit` is also given, `commit` is a 40-character SHA that starts with `version` (added in 1.2). | F1.1 (error path) |
 | REQ-FMT-04 | **Scenario file** (`scenarios/<id>/<version>/scenario.yaml`). It holds:<br>• `id`, `version`<br>• `categories: {primary, secondary[]}`, `profiles[]`, `gqm[]`, `capabilities[]`<br>• `seed`: a directory<br>• `steps[]`: `{n, prompt_file}`<br>• `oracle`: `suites[]` as `{id, dir, after_steps[]}`, each suite of hidden tests declared once with the steps after which it is scored (changed in 1.7, dl-001); checks; third-party pins with licenses<br>• `holdout`: whether additions are expected<br>Beside it, optionally, `arms/<arm>/`: the scenario's configuration for that arm, found by the arm's name with no field in the file (added in 1.6, dl-005). Neither the seed nor a prompt may contain it or lie in it. | F3.1 |
 | REQ-FMT-05 | **Arm definition** (`arms/<arm>/arm.yaml`). It holds: `name`, `setup` (script), `manual` (the operating manual file), `environment` (files copied into the workspace), `mcp` (optional config), and `requires` (the harness tool). | F2.5, F2.7 |
-| REQ-FMT-06 | **Results layout:** `results/<campaign-id>/<n>/`. It contains:<br>• `campaign.yaml`, a copy<br>• `runs/<scenario>@<ver>/<arm>/<model>/r<k>/`, holding `run.json`, `steps/<NN>/{usage.json, transcript.jsonl, diff.patch}` and `score.json`<br>• `aggregate.json`<br>`<NN>` is the step number in two digits, the same form REQ-RUN-05 uses in a commit message, so a scenario has **at most 99 steps** (1.4). | F5.1 |
+| REQ-FMT-06 | **Results layout:** `results/<campaign-id>/<n>/`. It contains:<br>• `campaign.yaml`, a copy<br>• `runs/<scenario>@<ver>/<arm>/<model>/r<k>/`, holding `run.json`, `setup/{log.txt, diff.patch}`, `steps/<NN>/{usage.json, transcript.jsonl, diff.patch}` and `score.json`<br>• `aggregate.json`<br>`<NN>` is the step number in two digits, the same form REQ-RUN-05 uses in a commit message, so a scenario has **at most 99 steps** (1.4). | F5.1 |
 | REQ-FMT-07 | `aggregate.json` stores every value together with the list of run paths it was computed from, and its `n`. | F5.1, experiment design §4.6 |
 | REQ-FMT-08 | **Scenario validator:** checks the schema (REQ-FMT-04), and runs a **leak scan**. The scan fails when:<br>• a step prompt contains a name from a declared list of harness and tool names;<br>• an oracle literal (an expected value or a test name of at least a declared minimum length) appears in the seed or in a prompt.<br>With the hold-out configured, hold-out oracles are scanned too. Their content is never printed; messages name only the file and the step. | F3.2 |
 | REQ-FMT-09 | **Scenario versions are immutable.** Results record the content hash of the scenario version they ran. The validator rejects a scenario version whose content no longer matches a hash recorded in stored results. | F3.4 |
@@ -58,7 +58,7 @@ One binary, `bench`, run with `npx bench`. Exit codes: `0` success, `1` failure,
 | REQ-CLI-03 | `bench campaign run <file>`. It asks for confirmation above `warn_eur`, and refuses above `ceiling_eur` with **no override option** (acceptance decision 2). | F1.3, F2.* |
 | REQ-CLI-04 | `bench scenario validate <id>@<version> [--holdout <path>]` | F3.2 |
 | REQ-CLI-05 | `bench scenario dry-run <id>@<version> --arm <arm> [--model <id>]` | F3.3 |
-| REQ-CLI-06 | `bench score <campaign-id>/<n> [--holdout <path>]` | F4.* |
+| REQ-CLI-06 | `bench score <campaign-id>/<n> [--holdout <path>]`; `bench score dry-runs/<n>` scores a dry run, whose `score.json` stays with it (added in 1.8) | F4.* |
 | REQ-CLI-07 | `bench finding <campaign-id>/<n> --scenario … --metric … --arms …`. It writes `findings/<id>.md`. | F5.4 |
 | REQ-CLI-08 | `bench run show <run-path>` and `bench run compare <run-path> <run-path>` | F5.3 |
 | REQ-CLI-09 | `bench site build <campaign-id>/<n>` writes to `site/`. `bench site publish` deploys it; publishing only ever happens through this command. | F5.5, F5.6, F5.8 |
@@ -72,7 +72,7 @@ One binary, `bench`, run with `npx bench`. Exit codes: `0` success, `1` failure,
 | REQ-RUN-02 | One container per run. The only bind mount is a fresh workspace directory, containing a copy of the seed plus the arm's environment, which becomes a git repository with one initial commit. Nothing from the benchmark repository or the hold-out is mounted. | F2.1 |
 | REQ-RUN-03 | The arm setup runs inside the container before step 1. Its Claude Code usage (if any), wall time and cost are recorded as `setup`. | F2.5, M-K3 |
 | REQ-RUN-04 | Each step runs: `claude -p <prompt> --output-format stream-json --verbose --model <id> --session-id <uuid> --permission-mode bypassPermissions --setting-sources project --max-budget-usd <remaining run cap>`. The wingfoil arm also gets `--mcp-config <arm mcp> --strict-mcp-config`. Bypassing permissions is acceptable only because the container is isolated. | F2.2, F2.3, F2.6 |
-| REQ-RUN-05 | After each step the runner commits the workspace with the message `step <NN>`, then stores `diff.patch` for that step. | F2.2 |
+| REQ-RUN-05 | After each step the runner commits the workspace with the message `step <NN>`, then stores `diff.patch` for that step: the binary-safe patch from the previous snapshot's tree to this one's, whatever was committed in between. After the setup it stores `setup/diff.patch`, from the seed's tree. `run.json` records the tree of the setup and of every step (changed in 1.8, task-027, bug-007). | F2.2 |
 | REQ-RUN-06 | **Waiting-for-input detection.** A session is "waiting" when its final assistant message is classified as a question or an approval request by a fixed, versioned, rule-based classifier: approval patterns first, then a trailing question. **Approval patterns are matched anywhere in the message**, because a real approval request need not end with a question (1.3); the trailing-question test applies only when no approval pattern matched. The classifier's version is part of the approver policy version. The W2 spike settled it: [dl-004](../memory/decision-log/dl-004-waiting-for-input-classifier-v1.md). | F2.4 |
 | REQ-RUN-07 | A reply resumes the same session with `--resume <session-id> -p <reply>`. Each reply is recorded as an intervention: step, kind, and reply text. | F2.4 |
 | REQ-RUN-08 | Caps: a step is killed at `step_time_s`, or when its tokens exceed `step_tokens`. The run stops when its cumulative API-equivalent cost reaches `run_cost_eur`. The campaign stops starting runs when its cumulative cost reaches `ceiling_eur`. | F1.3 |
@@ -90,7 +90,7 @@ One binary, `bench`, run with `npx bench`. Exit codes: `0` success, `1` failure,
 
 | ID | Requirement | Serves |
 |---|---|---|
-| REQ-SCO-01 | Scoring runs in its own container, from a copy of each step snapshot, with the oracle mounted **read-only**. It never uses a run container. | F4.1 |
+| REQ-SCO-01 | Scoring runs in its own container, from a copy of each step snapshot, with the oracle mounted **read-only** and **no network** (added in 1.8). It never uses a run container. Each snapshot is rebuilt from what the run stored (REQ-RUN-05) and checked against the tree the run recorded. | F4.1 |
 | REQ-SCO-02 | Hidden tests use Node's built-in `node:test`, with `tsx` to load the snapshot's TypeScript. They are independent of whatever test tool the agent chose. | F4.1 |
 | REQ-SCO-03 | Scoring is deterministic: the same snapshot and oracle version give identical `score.json`. No wall clock or randomness enters a metric. Timestamps are only recorded as metadata. | F4.1 |
 | REQ-SCO-04 | Static quality (M-Q2): ESLint with the **benchmark's** fixed configuration, not the project's; complexity from ESLint's `complexity` data; duplication with jscpd; coverage from the project's own tests under c8, or 0 if there are none. All are pinned in the scoring image. | F4.2 |
@@ -264,3 +264,24 @@ suites are read in wave W6 by F4.1's scorer and by the scoring half of F3.5.
 
 Source: [task-026](../memory/task/task-026-oracle-suites-per-step.md), review decision of the approver
 at that task's review, 2026-09-28 (`856321e`).
+
+### Amendment 1.8 (delivery, W6 task-027, 2026-09-28)
+
+- **REQ-RUN-05:** a stored patch runs from the previous snapshot's tree to this one's, binary-safe, so
+  that the harness's and the agent's own commits within a phase are in it
+  ([bug-007](../memory/bug/bug-007-a-stored-patch-leaves-out-the-commits-made-between-two-snapshots.md));
+  the setup stores its patch from the seed; `run.json` records every snapshot's tree, which scoring
+  rebuilds snapshots from (F4.1).
+- **REQ-FMT-06:** a run's results hold `setup/log.txt` (since W3) and `setup/diff.patch`.
+- **REQ-CLI-06:** `bench score dry-runs/<n>` scores a dry run (F6.x in W7 needs it); a dry run is never
+  aggregated (REQ-RES-01).
+- **REQ-SCO-01:** the scoring container has no network; snapshots are rebuilt from the stored patches
+  and checked against the recorded trees.
+
+The conventions scoring rests on — the census, how hidden tests are counted, how an oracle must import
+the code under test — are [adr-004](../memory/adr/adr-004-w6-scoring-conventions.md)'s. The traceability
+matrix is unaffected: REQ-RUN-05 stays with F2.2, which stores the patches, and F4.1 reads them through
+REQ-SCO-01.
+
+Source: [task-027](../memory/task/task-027-hidden-test-oracle.md), review decision of the approver at
+that task's review.
