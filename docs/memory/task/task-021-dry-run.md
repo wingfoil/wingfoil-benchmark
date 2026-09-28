@@ -288,3 +288,11 @@ to test-first.
 4/4, `npm run test:docker` 5/5 (the new dry run of T1 included, and W3's three arms against the local
 WingFoil clone), `npm run lint` clean, `npm run build` clean; no `bench-*` container and no `dry-*`
 image left. Nothing was spent.
+
+### Review and approval
+
+- `npx wingfoil memory submit task-021-dry-run` → `db572f6` (`in-progress → in-review`, one commit, only
+  `status` changed). Matches.
+- `npx wingfoil memory approve task-021-dry-run --reason "…"` → `66d4eef`, run by the approver
+  (`in-review → approved`, `Approver:`/`Reason:` trailers, only `status` changed). Matches. The reason
+  records that the tests were written after the code and shown able to fail by mutation.
