@@ -36,7 +36,7 @@ Waves and features from [07_sequencer.md](../../01_vision/07_sequencer.md) 1.1. 
 | W2 — Agent in the loop | F2.2 fresh-session steps · F2.3 Claude Code adapter · F2.4 neutral approver | F2.4 | a multi-step run with usage captured and interventions counted | **2026-09-24** |
 | W3 — Arms | F2.5 arm setups · F2.6 WingFoil under test · F2.7 arm activation (operating manuals) | — | the same scenario runs in the baseline, baseline-docs and wingfoil arms || **2026-09-25** |
 | W4 — Scenario hygiene | F3.5 hold-out integration · F3.2 validator and leak scan · F3.4 scenario versioning | — | a scenario validated, with its oracle kept outside the container || **2026-09-28** |
-| W5 — Cost control | F3.3 dry run · F1.2 cost estimate · F1.3 budget guard | — | a campaign refuses to start above the ceiling | — |
+| W5 — Cost control | F3.3 dry run · F1.2 cost estimate · F1.3 budget guard | — | a campaign refuses to start above the ceiling | **2026-09-28** |
 | W6 — First scores | F4.1 hidden-test oracle · F4.3 cost metrics · F3.6 expected failures | — | pass/fail and cost per run, with expected failures marked | — |
 | W7 — First content | F6.1 S1 conformance · F6.2 S2 injected bugs · F5.1 results store | — | S1 and S2 scored in all three arms | — |
 | W8 — Continuity and governance | F6.3 S3 multi-session evolution · F6.8 S8 directive compliance · F4.8 tool-neutral governance metrics | — | S3 and S8 scored | — |
@@ -245,10 +245,64 @@ delivery: **0.9893 USD** ([v0.1 ledger](../../calibration/v0.1-ledger.md)).
 - **W5 (calibration's inputs):** the ledger says what delivery spent; its dry runs are ledger lines too
   (`release-cycle` 2).
 
+### W5 — verified 2026-09-28
+
+**"A campaign refuses to start above the ceiling."** Verified offline, with the fake agent, as the W5
+plan phase decided (task-021, decision 3); no real-agent half (`real-agent-check` not taken).
+
+- **The built command** (`npm run test:bin`, "W5's Ends with"): `bench campaign run` on a campaign whose
+  stored dry run prices it at 130 EUR against a 100 EUR ceiling exits 1 with `campaign: not started:
+  the estimate, 130.0000 EUR, is above the ceiling, 100 EUR. No option overrides it …`, with and without
+  `--allow-spending`, before any Docker call.
+- **The whole chain, by hand, on main** (`3bb0b90`), in a temporary repository: `bench scenario dry-run
+  T1@1.0 --arm baseline` ran T1 in a real container with the fake replaying the W2 spike's sessions —
+  `completed, 0.0879 USD (0.0808 EUR) — step 01 0.0681 USD, step 02 0.0099 USD, step 03 0.0099 USD —
+  results/dry-runs/1`; `bench campaign estimate` on a campaign of 1500 repetitions of T1 → `estimate:
+  131.7826 USD, 121.2400 EUR at 0.92 EUR/USD, API-equivalent`; `bench campaign run … --allow-spending`
+  → the same estimate, then the refusal above the ceiling, exit 1, no execution directory under
+  `results/`. With 1000 repetitions (80.83 EUR) the same command stopped at the warning threshold
+  instead: no terminal to confirm on.
+- **Acceptance:** `campaign.feature` @F1.2 (two scenarios) and @F1.3 (four), `scenarios.feature` @F3.3,
+  all green; `npm test` 703/703, `npm run test:docker` 6/6.
+
+| Task | Feature | Delivered |
+|---|---|---|
+| [task-021](../task/task-021-dry-run.md) | F3.3 | `bench scenario dry-run`, `scenarios/dry-run.yaml`, `results/dry-runs/`, one runner path (`RunPlan`) |
+| [task-022](../task/task-022-cost-estimate.md) | F1.2 | `bench campaign estimate`, per scenario version, arm and model, slices included; the estimate and cost in `campaign run` |
+| [task-023](../task/task-023-budget-guard-at-campaign-start.md) | (F1.3, start half) | no estimate or above the ceiling never starts; above the warning, a confirmation on a terminal only |
+| [task-024](../task/task-024-cost-and-time-caps-during-a-run.md) | F1.3 | the agent's cost cap recognised, `step_time_s` by `timeout`, `step_tokens`, the ceiling across runs, the quota; its spike |
+| [task-025](../task/task-025-model-slices-run-in-a-campaign.md) | — (F1.1's slices) | model slices run, from the same keys the estimate prices |
+
+Decisions taken during W5: the plan-phase decisions in task-021 (six: a fifth task, task-025, added at
+task-022's review); task-023's (no flag confirms above the warning threshold; `features: []`, F1.3
+declared by task-024, as task-016 did for F3.5); task-024's (the agent's own cap, a killed step counted
+at its bound, `step_tokens` between invocations). No new bug or decision-log. Spending: task-024's spike,
+**0.0522 USD** reported plus about 0.009 USD a killed session could not report; **1.0415 USD** reported
+in all so far ([v0.1 ledger](../../calibration/v0.1-ledger.md)).
+
+**What the pinned agent does at its caps** (task-024's spike, Claude Code 2.1.280): it stops at
+`--max-budget-usd` one turn past it at most (0.0419 USD for 0.04), `terminal_reason: budget_exhausted`;
+a resume's cap is compared with the resume's own spending; a session killed by `timeout` reports no
+cost. This settles W3's open question (what `--max-budget-usd` compares against on a resume).
+
+**Due before the phases and waves that need them:**
+
+- **Calibration (plan-003 step 3):** write the benchmark's own `scenarios/dry-run.yaml` (agent 2.1.280 as
+  REQ-RUN-16 was amended, the model, the caps); dry-run S1, S2, S3 and S8 in every arm **and** S1 on
+  Opus 5 for the slice (task-021 decision 2: no cost is scaled between models); every dry run is a
+  ledger line.
+- **Before the campaign:** quota exhaustion is recognised on a documented, not observed, shape
+  (task-024); a campaign's run killed at `step_time_s` ends at its cap, since its cost counts at its
+  bound.
+- **W7 (aggregation, F5.1):** dry runs are never read (REQ-RES-01); slice results are reported apart from
+  same-model ones (T14).
+- **W11 (F5.8):** the method page states that the cost cap lets a session run one turn past it, how a
+  killed step is counted, and that `step_tokens` is checked between invocations.
+
 ## Release checklist
 
 - [x] release-planning: scope approved (planning → in-development, `8c5c7e6`; plan: plan-003)
-- [ ] delivery: W1–W11 done, every wave's "Ends with" verified (W1 done: task-001, task-002, task-003; W2 done: task-004, task-005, task-006, task-007; W3 done: task-011, task-012, task-013, task-014, task-015; W4 done: task-016, task-017, task-018, task-020, task-019)
+- [ ] delivery: W1–W11 done, every wave's "Ends with" verified (W1 done: task-001, task-002, task-003; W2 done: task-004, task-005, task-006, task-007; W3 done: task-011, task-012, task-013, task-014, task-015; W4 done: task-016, task-017, task-018, task-020, task-019; W5 done: task-021, task-022, task-023, task-024, task-025)
 - [ ] calibration: dry runs in every arm, budget revised (`docs/calibration/v0.1.md`)
 - [ ] validation: acceptance green on the fake agent, coverage > 80%, lint clean, one real-agent end-to-end run
 - [ ] campaign: reference campaign published (campaign: —)
