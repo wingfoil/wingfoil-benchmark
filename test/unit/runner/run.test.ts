@@ -183,9 +183,10 @@ describe('runCampaign', () => {
       { container: 'container-1', command: ['bash', '/home/node/arm/setup.sh'] },
       // Before each step, the agent's auto-memory is cleared (bug-006).
       { container: 'container-1', command: ['sh', '-c', 'rm -rf "$HOME"/.claude/projects/*/memory'] },
-      { container: 'container-1', command: ['sh', '-c', 'echo hi'] },
+      // The agent's commands run under the step's time cap: 1800 s at most (task-024, REQ-RUN-08).
+      { container: 'container-1', command: ['timeout', '-k', '10', '1800', 'sh', '-c', 'echo hi'] },
       { container: 'container-1', command: ['sh', '-c', 'rm -rf "$HOME"/.claude/projects/*/memory'] },
-      { container: 'container-1', command: ['sh', '-c', 'echo hi'] },
+      { container: 'container-1', command: ['timeout', '-k', '10', '1800', 'sh', '-c', 'echo hi'] },
     ]);
   });
 
@@ -413,10 +414,11 @@ describe('runCampaign', () => {
 
       const summary = await runCampaign(checked, ports);
 
-      // Step 1 ran and used more than the run's 3 EUR cap; step 2 was never started.
+      // Step 1 ran and used more than the run's 3 EUR cap; step 2 was never started, and the run
+      // ended at its cap rather than failing (task-024, REQ-RUN-08).
       expect(ports.recorded.steps).toHaveLength(1);
-      expect(summary.runs[0]?.outcome).toBe('failed');
-      expect(summary.runs[0]?.error).toMatch(/cost cap/);
+      expect(summary.runs[0]?.outcome).toBe('cap reached');
+      expect(summary.runs[0]?.error).toBeUndefined();
     })());
 
   it('keeps the evidence of a session that ended before naming itself', async () => {
@@ -670,8 +672,9 @@ describe('the neutral approver in the step loop (F2.4)', () => {
     const summary = await runCampaign(checked, ports);
 
     expect(ports.recorded.resumes).toEqual([]);
-    expect(summary.runs[0]?.outcome).toBe('failed');
-    expect(summary.runs[0]?.error).toMatch(/step 01 .*not resumed: the run's cost cap is exhausted/);
+    // The step and the run end at the cap (task-024): nothing failed.
+    expect(summary.runs[0]?.outcome).toBe('cap reached');
+    expect(summary.runs[0]?.steps[0]?.outcome).toBe('cap reached');
     // What the step did spend is kept.
     const step = join(summary.runs[0]?.outputDir ?? '', 'steps', '01');
     expect(JSON.parse(readFileSync(join(step, 'usage.json'), 'utf8'))).toMatchObject({ costEur: 3.5 });

@@ -106,6 +106,10 @@ function outcomeOf(replayed: Session | undefined, sessionId: string): StepOutcom
     // A replayed failure is a failure. Without this every acceptance test runs through an agent
     // that cannot report one, and a failing step is untestable in every wave that uses the fake.
     ...(replayed?.outcome === 'failed' ? { error: replayed.error ?? 'the session failed' } : {}),
+    // A replayed stop is a stop (task-024): a recorded cut-off session plays the same in every test.
+    ...(replayed?.outcome === 'cap reached' || replayed?.outcome === 'quota exhausted'
+      ? { stop: replayed.outcome }
+      : {}),
     // What the approver reads is what the recorded agent wrote.
     ...(replayed?.finalMessage === undefined ? {} : { finalMessage: replayed.finalMessage }),
   };

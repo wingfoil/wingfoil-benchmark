@@ -1,10 +1,11 @@
-import { copyFileSync, cpSync, mkdirSync, writeFileSync } from 'node:fs';
+import { copyFileSync, cpSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { stringify } from 'yaml';
 
 import { loadCampaign } from '../../src/campaign/index.js';
 import { checkCampaign, main } from '../../src/cli/index.js';
+import { runCampaign } from '../../src/runner/index.js';
 import { nextExecution } from '../../src/results/index.js';
 import { writeArmsNamed } from '../support/arm-fixture.js';
 import { completeCampaignYaml, writeRepo } from '../support/campaign-fixture.js';
@@ -140,6 +141,46 @@ async function start(file: string, ports: Doubles, answers?: string[], ...flags:
     ports,
   );
   return { code, stdout, stderr, questions };
+}
+
+/** T3 (two steps) in the baseline arm, `repetitions` times, at 1 EUR/USD, with the caps and budget given. */
+function cappedCampaign(runCostEur: number, repetitions: number, ceilingEur: number) {
+  const root = tempDir('bench-repo-');
+  cpSync(repoPath('test/fixtures/scenarios/T3'), join(root, 'scenarios', 'T3'), { recursive: true });
+  writeArmsNamed(root, ['baseline']);
+  mkdirSync(join(root, 'campaigns'));
+  const file = join(root, 'campaigns', 'c.yaml');
+  writeFileSync(
+    file,
+    stringify({
+      ...completeCampaignYaml(),
+      harnesses: {},
+      scenarios: [{ id: 'T3', version: '1.0' }],
+      arms: ['baseline'],
+      repetitions: { T3: repetitions },
+      agent: { name: 'fake', version: '1.0.0' },
+      models: { default: 'fake-model' },
+      caps: { step_time_s: 60, step_tokens: 1_000_000, run_cost_eur: runCostEur },
+      budget: { warn_eur: ceilingEur, ceiling_eur: ceilingEur },
+      currency: { usd_to_eur: 1 },
+    }),
+  );
+  const checked = checkCampaign(file);
+  if (!checked.ok) throw new Error(JSON.stringify(checked.issues));
+  return checked.value;
+}
+
+function spent(costUsd: number) {
+  return {
+    inputTokens: 1,
+    outputTokens: 1,
+    cacheCreationInputTokens: 0,
+    cacheReadInputTokens: 0,
+    costUsd,
+    costEur: costUsd,
+    turns: 1,
+    durationMs: 1,
+  };
 }
 
 describe('campaign.feature', () => {
@@ -282,6 +323,51 @@ describe('campaign.feature', () => {
       expect(ports.recorded.steps).toEqual([]);
       expect(ports.recorded.builds).toEqual([]);
       expect(ports.recorded.creates).toEqual([]);
+    }
+  });
+
+  it('@F1.3 A run that exceeds its own cost cap is stopped', async () => {
+    // Given a run whose cost cap is 3 euro
+    const checked = cappedCampaign(3, 1, 100);
+    // When the run's accumulated cost reaches 3 euro during a step — the agent, given what is left of
+    // the cap, stops there, as Claude Code does at --max-budget-usd (task-024, C1)
+    const ports = doubles({
+      usageOf: () => spent(3.1),
+      stopOf: (request) => (request.step === 1 ? 'cap reached' : undefined),
+    });
+    const summary = await runCampaign(checked, ports);
+    const run = summary.runs[0];
+
+    // Then the step is stopped
+    expect(ports.recorded.steps.map((request) => request.step)).toEqual([1]);
+    expect(ports.recorded.steps[0]?.remainingCostUsd).toBe(3);
+    // And the run ends with the outcome "cap reached"
+    expect(run?.outcome).toBe('cap reached');
+    expect(run?.steps.map((step) => step.outcome)).toEqual(['cap reached']);
+    // And the snapshot at that moment is kept for scoring
+    expect(ports.recorded.gitCalls).toContainEqual(expect.stringMatching(/commit .* step 01/));
+    expect(readFileSync(join(run?.outputDir ?? '', 'steps', '01', 'diff.patch'), 'utf8')).not.toBe('');
+  });
+
+  it('@F1.3 A campaign stops starting new runs when the budget is spent', async () => {
+    // Given the campaign's accumulated cost reaches the ceiling — three runs of T3, 1 EUR each, under
+    // a 2 EUR ceiling
+    const checked = cappedCampaign(3, 3, 2);
+    const ports = doubles({ usageOf: () => spent(0.5) });
+
+    // When the next run would start
+    const summary = await runCampaign(checked, ports);
+
+    // Then it does not start
+    expect(ports.recorded.creates).toHaveLength(2);
+    // And the campaign ends with the outcome "budget exhausted"
+    expect(summary.outcome).toBe('budget exhausted');
+    // And the completed runs are kept and can be scored
+    expect(summary.runs.map((run) => run.outcome)).toEqual(['completed', 'completed']);
+    for (const run of summary.runs) {
+      expect(JSON.parse(readFileSync(join(run.outputDir, 'run.json'), 'utf8'))).toMatchObject({
+        outcome: 'completed',
+      });
     }
   });
 });

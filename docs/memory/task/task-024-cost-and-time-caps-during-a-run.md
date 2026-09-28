@@ -2,7 +2,7 @@
 id: task-024-cost-and-time-caps-during-a-run
 type: task
 title: "Cost and time caps during a run"
-status: backlog
+status: approved
 release: v0.1
 wave: W5
 features: [F1.3]
@@ -69,7 +69,96 @@ Preliminary classification (confirmed in the design phase).
 
 ## Design
 
-<!-- Modules, interfaces, data formats touched; decisions taken and their reasons. -->
+**Classification confirmed**, but for two criteria the observation below reshapes: REQ-RUN-08's step
+caps are enforced as described under "The step caps", and REQ-RUN-13 is built on an unverified shape.
+Test-first.
+
+### What the pinned agent does at its caps (observed before designing; Execution notes, "Real sessions")
+
+- **At `--max-budget-usd`, a session stops by itself, one turn past the cap at most:** exit 1, a
+  `result` event with `subtype: error_max_budget_usd`, `is_error: true`, `terminal_reason:
+  budget_exhausted`, `errors: ["Reached maximum budget ($0.04)"]`, and its real cost (0.0419 USD for a
+  0.04 cap, 14 turns). What it did before the cut is in the workspace.
+- **A resume's cap is compared with the resume's own spending**, not with the session's running total:
+  with a cap below what the session had already cost, the resume still worked for two turns. The
+  runner already passes each invocation what is left of the run's cap (task-006, task-007), which is
+  what this needs.
+- **The stream cannot price a session as it runs:** every `assistant` event carries a `usage`, but its
+  `output_tokens` is the streaming start value (3 or 4 where the `result` counts 1349), and a price table
+  would be needed besides. The runner enforces nothing from the stream.
+- **A session killed by `timeout` leaves no `result` event:** exit 124, no cost reported, the work up to
+  the kill in the workspace, no process left.
+
+### The run's cost cap during a step — the agent's flag, recognised
+
+The runner keeps passing what is left of `run_cost_eur` as `--max-budget-usd`, and **recognises the
+stop**: the adapter reads `terminal_reason: budget_exhausted` as its own outcome, `cap reached`, instead
+of a failure. The step then ends `cap reached`: its snapshot is committed and its patch kept, as for any
+step (`campaign.feature` @F1.3: "the snapshot at that moment is kept for scoring"), and **the run ends
+with the outcome `cap reached`**, no further step started. The same outcome, with no session started,
+when nothing is left before a step or a resume (today an error). What the cap allows past itself — one
+turn, 5% in C1 — is recorded, as the agent reports it; the method page states it (W11).
+
+### The step caps (REQ-RUN-08)
+
+- **`step_time_s`:** every invocation runs under `timeout -k 10 <seconds left of the step>` inside the
+  container. Exit 124 or 137 ends the step `time cap reached`, snapshot kept. The killed invocation
+  reported no cost, so the runner counts it at its **upper bound** — the `--max-budget-usd` it was
+  given — for the run's cap and the campaign's ceiling, and records `cost_reported: false` on the step
+  with that bound: the budget never counts less than was possibly spent.
+- **`step_tokens`:** checked **between invocations**: a step whose tokens (input, output, cache creation
+  and cache read, summed) exceed `step_tokens` is not resumed and ends `token cap reached`. Within one
+  invocation the cost cap bounds it: the exec returns only at the end, and the stream's token counts are
+  not final. This is a narrower reading of "killed when its tokens exceed", recorded as this task's
+  decision.
+- A step ended by a step cap is scored as it stands and **the run goes on**, as with the intervention
+  cap (experiment design §3.5–3.6): a later step is a fresh session with its own caps.
+
+### The campaign's ceiling during the campaign
+
+`runPlan` keeps the campaign's running cost (every step, killed ones at their bound). Before each run, if
+it has reached `ceiling_eur`, no run starts and the execution ends **`budget exhausted`**; the runs
+already done are stored as always. `RunPlan` gains `ceilingEur`, set for a campaign; a dry run has none.
+`RunSummary` gains `outcome`: `completed`, `budget exhausted` or `quota exhausted`.
+
+### Subscription quota (REQ-RUN-13) — unverified
+
+Not provoked (it would take the subscription's whole limit). A session whose `result` is an error and
+whose `result` text or `errors` say the usage limit was reached is `quota exhausted`: the step ends so,
+the run ends so, and no further run of the campaign starts (execution outcome `quota exhausted`).
+The recognition is one function over the event, `isQuotaExhausted`, matching `usage limit` or
+`rate_limit` case-insensitively; its tests use a constructed event, and the notes say so.
+
+### Records and output
+
+- `run.json`: a run's `outcome` may be `cap reached` or `quota exhausted`; a step's may be `cap reached`,
+  `time cap reached`, `token cap reached` or `quota exhausted`, with `cost_reported: false` and
+  `cost_bound_usd` on a killed one.
+- `campaign run` prints `<k> runs completed, <m> failed` as today, then the other outcomes that
+  occurred (`1 cap reached`), and `campaign ended: budget exhausted` or `… quota exhausted` when it did.
+  Exit 0 only when every run completed and the campaign was not stopped.
+- `latestDryRun` counts completed dry runs only (task-021): a dry run cut by its cap does not price a
+  scenario.
+
+### Modules
+
+`agents/claude-code.ts` (the `cap reached` and `quota exhausted` readings), `agents/port.ts` (the
+invocation's outcome kind), `agents/fake.ts` (a script can end a session either way, or run long),
+`runner/run.ts` (timeouts, the outcomes, the running cost, the ceiling), `cli/run.ts` (the summary).
+
+### Tests
+
+- **Acceptance** (`campaign.feature` @F1.3, doubles): "A run that exceeds its own cost cap is stopped" —
+  the agent reports `budget_exhausted` in step 1 of 2: step `cap reached`, its patch kept, run `cap
+  reached`, step 2 never started; "A campaign stops starting new runs when the budget is spent" — two
+  runs whose first spends the ceiling: the second never starts, the execution is `budget exhausted`, the
+  first run's record is complete.
+- **Unit:** the adapter's readings (C1's and C2's real `result` events, trimmed, as fixtures); `timeout`
+  on every invocation with the seconds left, 124 and 137 read as `time cap reached`, the bound counted;
+  the token cap between invocations; no step or resume started with nothing left → `cap reached`; the
+  ceiling across runs; quota on the step, the run and the campaign; the summary lines and exit codes.
+- **Docker:** a step of the fake that runs past a 2-second `step_time_s` is killed in a real container:
+  `time cap reached`, the next step runs.
 
 ## Execution notes
 
@@ -84,3 +173,77 @@ Preliminary classification (confirmed in the design phase).
   checked, one commit `wf(task): submit <id>` with no bracket and no body. Observed: exit 0, empty
   stderr, 1 file, diff limited to `status: draft` → `status: pending`. Matches (subject without
   transition: N9).
+- The approver's `memory approve` → `bfc386e` (`pending → backlog`), with the spending consent (up to
+  0.30 USD on Haiku 4.5). Matches.
+
+### Real sessions (`spikes/task-024/probe.sh`, `probe-kill.sh`; Haiku 4.5, Claude Code 2.1.280)
+
+| Probe | Cap | Exit | `result` | Turns | Cost | Workspace |
+|---|---|---|---|---|---|---|
+| C1, a first invocation | 0.04 | 1 | `error_max_budget_usd`, `budget_exhausted` | 14 | 0.0419 USD | f01–f14 |
+| C2, the session | 0.20 | 0 | `success`, `completed` | 1 | 0.0054 USD | — |
+| C2, its resume | 0.0033 (below the session's 0.0054) | 1 | `error_max_budget_usd`, `budget_exhausted` | 2 | 0.0103 USD running total, 0.0049 its own | `resumed.txt` |
+| C3, killed by `timeout -k 5 8` | 0.05 | 124 | **none** | 3 tool calls | not reported (about 0.009 USD at C1's rate) | f01–f03 |
+
+Spent **0.0522 USD reported**, plus about 0.009 USD C3 could not report, of the 0.30 USD consented; its
+line is in `docs/calibration/v0.1-ledger.md`. No file under the spike or its output holds the token.
+- Design committed by hand on `task/task-024-cost-and-time-caps-during-a-run` (`bf5e3c7`, with the spike
+  and the ledger line), then `npx wingfoil memory submit task-024-cost-and-time-caps-during-a-run` →
+  `628ef6e` (`backlog → in-progress`, one commit, only `status`). Matches. WIP: this task
+  `in-progress`, none `in-review`.
+
+### Build (TDD) — `a15b855`
+
+1. **Tests first:** the two @F1.3 acceptance tests; the adapter's readings (C1's real `result` event,
+   two constructed quota events, the stop through the port); ten runner tests (cost cap, time cap,
+   token cap, ceiling, quota); the CLI's summary; and the two existing runner tests that expected a
+   failure where the cap is now reached. **17 red**, then green. The traceability test was green
+   throughout: F1.3's four scenarios all had tests once these two were written.
+2. **Existing expectations that changed with the behaviour:** the exact `exec` list of "lets the agent
+   run commands in the run's own container" (the agent's commands now run under `timeout`), and the W2
+   docker fixture's `step_tokens: 1000` — its recorded sessions hold some 20 000 tokens, which the cap
+   now counts — raised to 2 000 000.
+3. **Added after the code, for coverage:** an agent that throws after the killed command (as the fake
+   does) read as the time cap, and a step with no time left before its first command. The first
+   version of the second test was wrong — `Math.ceil` turns a 1 ms step into a 1 s `timeout` — and was
+   rewritten so that the time is really spent.
+4. **Docker:** T3's first step sleeps 30 s against a 2 s cap in a real container: killed at the cap,
+   `before.txt` kept, `never.txt` absent, step `time cap reached` with `cost_bound_usd`, run `cap
+   reached`, no container left.
+5. A test of mine gave the adapter the token `t`, which the scrubber then removed from every `"type"`
+   of the stream; a realistic token fixed the test, not the code.
+
+### Deviation from the Design
+
+- **A time-capped step ends the run in practice.** The Design said the run goes on after a step cap.
+  For the token cap it does. For the time cap, the killed invocation is counted at its bound, which is
+  all that was left of the run's cap, so the next step finds nothing left and the run ends `cap
+  reached`. The bound is kept: counting less than can have been spent would let a run exceed its cap
+  unseen. A cheaper bound needs a price table and the stream's per-message tokens, whose output counts
+  are not final (C1) — not built.
+- `timeout` gets whole seconds (`Math.ceil` of what is left): a step can run up to a second past a
+  fractional `step_time_s`.
+
+### Known limits
+
+- **Quota exhaustion is recognised on a documented, not an observed, shape** (`usage limit` or
+  `rate_limit` in a failed `result`). If the agent words it otherwise, the step fails instead, and the
+  campaign goes on starting runs that will fail the same way.
+- `step_tokens` is not enforced within an invocation; the cost cap bounds it there.
+- The cost cap lets a session run one turn past it (C1: 0.0419 USD for 0.04); the method page (W11)
+  should say so.
+
+### Review readiness
+
+`npm test` 700/700 (statements 99.81%, branches 96.9%, functions 100%, lines 100%), `npm run test:bin`
+5/5, `npm run test:docker` 6/6, `npm run lint` clean, `npm run build` clean; no `bench-*` container
+left. `campaign.feature` @F1.3 has its four acceptance tests. Spent in this task: 0.0522 USD reported,
+plus about 0.009 USD unreported, within the 0.30 USD consented.
+
+### Review and approval
+
+- `npx wingfoil memory submit task-024-cost-and-time-caps-during-a-run` → `1e0bda8`
+  (`in-progress → in-review`, one commit, only `status` changed). Matches.
+- `npx wingfoil memory approve task-024-cost-and-time-caps-during-a-run --reason "…"` → `661297e`,
+  run by the approver (`in-review → approved`, `Approver:`/`Reason:` trailers, only `status`
+  changed). Matches.

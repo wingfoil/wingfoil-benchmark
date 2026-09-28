@@ -213,6 +213,51 @@ describe('runs in a real container', () => {
     expect(containers).not.toContain(`bench-${image}-`);
   });
 
+  it('task-024: a step past its step_time_s is killed in the container, its work up to then kept', async () => {
+    // T3's first step writes a file, then sleeps 30 s against a 2 s cap. The fake reports no cost, so
+    // the killed step counts at its bound — the whole run cap — and step 2 is not started.
+    const root = tempDir('bench-docker-');
+    cpSync(repoPath('test/fixtures/campaigns'), join(root, 'campaigns'), { recursive: true });
+    cpSync(repoPath('test/fixtures/scenarios'), join(root, 'scenarios'), { recursive: true });
+    cpSync(repoPath('test/fixtures/arms'), join(root, 'arms'), { recursive: true });
+    process.env.BENCH_FAKE_SCRIPT = repoPath('test/fixtures/fake-script-time-cap.json');
+    priceCampaign(join(root, 'campaigns', 'time-cap.yaml'));
+
+    let output = '';
+    const started = Date.now();
+    const code = await main(['campaign', 'run', join(root, 'campaigns', 'time-cap.yaml')], {
+      stdout: (text) => (output += text),
+      stderr: (text) => (output += text),
+    });
+
+    expect(code).toBe(1);
+    expect(output).toContain('step 01: time cap reached (2 s)');
+    expect(output).toContain('0 runs completed, 0 failed, 1 cap reached');
+    image = /campaign ([0-9a-f]{12})/.exec(output)?.[1] ?? '';
+    const name = ['T3@1.0', 'baseline', 'fake-model', 'r1'];
+    const workspace = join(root, 'runs', image, '1', ...name, 'workspace');
+    expect(readFileSync(join(workspace, 'before.txt'), 'utf8')).toBe('before\n');
+    expect(existsSync(join(workspace, 'never.txt'))).toBe(false);
+    expect(existsSync(join(workspace, 'after.txt'))).toBe(false);
+    const record = JSON.parse(
+      readFileSync(join(root, 'results', image, '1', 'runs', ...name, 'run.json'), 'utf8'),
+    ) as {
+      outcome: string;
+      steps: { outcome: string; cost_reported?: boolean; cost_bound_usd?: number }[];
+    };
+    expect(record.outcome).toBe('cap reached');
+    expect(record.steps).toMatchObject([
+      { outcome: 'time cap reached', cost_reported: false, cost_bound_usd: 0.01 },
+    ]);
+    // Killed at the cap, not after the sleep.
+    expect(Date.now() - started).toBeLessThan(60_000);
+
+    const containers = execFileSync('docker', ['ps', '--all', '--format', '{{.Names}}'], {
+      encoding: 'utf8',
+    });
+    expect(containers).not.toContain(`bench-${image}-`);
+  });
+
   /** The WingFoil clone the WingFoil under test is built from (REQ-RUN-14): the one next to this repository. */
   const clone = process.env.BENCH_WINGFOIL_REPO ?? repoPath('../WingFoil2');
 

@@ -102,6 +102,8 @@ export function doubles(
     transcriptOf?: (request: AgentRequest) => readonly string[];
     /** Why the invocation's session failed, if it did: the agent reports it rather than throwing. */
     errorOf?: (request: AgentRequest) => string | undefined;
+    /** How the agent says the session stopped short (task-024): its cost cap, or the quota. */
+    stopOf?: (request: AgentRequest) => 'cap reached' | 'quota exhausted' | undefined;
     /** The session's final assistant message, which the approver classifies; by default none. */
     messageOf?: (request: AgentRequest) => string | undefined;
     /** What a step's patch holds; by default a line naming the directory and the ref. */
@@ -253,6 +255,7 @@ export function doubles(
     options.onStep?.(request);
     const error = options.errorOf?.(request);
     const message = options.messageOf?.(request);
+    const stop = options.stopOf?.(request);
     return Promise.resolve({
       sessionId: options.sessionOf?.(request) ?? request.sessionId,
       usage: options.usageOf?.(request) ?? NO_USAGE,
@@ -260,6 +263,7 @@ export function doubles(
         `{"type":"result","step":${request.step},"invocation":${invocationOf(request)}}`,
       ],
       ...(error === undefined ? {} : { error }),
+      ...(stop === undefined ? {} : { stop }),
       ...(message === undefined ? {} : { finalMessage: message }),
     });
   };
