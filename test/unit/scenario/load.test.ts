@@ -52,7 +52,13 @@ describe('loadScenario', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     const { dir, seedDir, steps, oracle } = result.value;
-    const all = [dir, seedDir, oracle.publicTestsDir, ...oracle.checks, ...steps.map((s) => s.promptPath)];
+    const all = [
+      dir,
+      seedDir,
+      ...oracle.suites.map((suite) => suite.dir),
+      ...oracle.checks,
+      ...steps.map((s) => s.promptPath),
+    ];
     expect(all.filter((path) => !isAbsolute(path))).toEqual([]);
     expect(dir).toBe(join(root, 'S9', '1.0'));
   });
@@ -70,7 +76,7 @@ describe('loadScenario', () => {
 
   it('defaults oracle checks and third-party pins to empty lists', () => {
     const yaml = completeScenarioYaml();
-    yaml.oracle = { public_tests: 'oracle/public' };
+    yaml.oracle = { suites: [] };
     const result = loadScenario(writeScenario(yaml), 'S9', '1.0');
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.value.oracle).toMatchObject({ checks: [], thirdParty: [] });
@@ -213,7 +219,8 @@ describe('loadScenario', () => {
     expect(issuesOf(root)).toEqual([
       { path: 'seed', message: "directory 'seed' does not exist" },
       { path: 'steps[1].prompt_file', message: "file 'prompts/02.md' does not exist" },
-      { path: 'oracle.public_tests', message: "directory 'oracle/public' does not exist" },
+      { path: 'oracle.suites[0].dir', message: "directory 'oracle/first' does not exist" },
+      { path: 'oracle.suites[1].dir', message: "directory 'oracle/all' does not exist" },
       { path: 'oracle.checks[0]', message: "file 'oracle/checks/decision.yaml' does not exist" },
     ]);
   });
@@ -315,14 +322,15 @@ describe('loadScenario', () => {
       { path: 'seed', message: "'seed' overlaps scenario.yaml" },
       { path: 'seed', message: "'seed' overlaps steps[0].prompt_file" },
       { path: 'seed', message: "'seed' overlaps steps[1].prompt_file" },
-      { path: 'seed', message: "'seed' overlaps oracle.public_tests" },
+      { path: 'seed', message: "'seed' overlaps oracle.suites[0].dir" },
+      { path: 'seed', message: "'seed' overlaps oracle.suites[1].dir" },
       { path: 'seed', message: "'seed' overlaps oracle.checks[0]" },
     ]);
   });
 
   it.each([
-    [['seed'], 'oracle', "'seed' overlaps oracle.public_tests"],
-    [['oracle', 'public_tests'], 'seed', "'seed' overlaps oracle.public_tests"],
+    [['seed'], 'oracle', "'seed' overlaps oracle.suites[0].dir"],
+    [['oracle', 'suites'], [{ id: 'x', dir: 'seed', after_steps: [1] }], "'seed' overlaps oracle.suites[0].dir"],
   ])('keeps the seed apart from the oracle (%j = %s)', (field, value, message) => {
     const root = writeScenario(withField(field as string[], value));
     expect(issuesOf(root)[0]).toEqual({ path: 'seed', message });
@@ -344,13 +352,15 @@ describe('loadScenario', () => {
     const root = writeScenario(completeScenarioYaml(), files);
     symlinkSync(join(root, 'S9', '1.0', 'oracle'), join(root, 'S9', '1.0', 'seed'));
     expect(issuesOf(root)).toEqual([
-      { path: 'seed', message: "'seed' overlaps oracle.public_tests" },
+      { path: 'seed', message: "'seed' overlaps oracle.suites[0].dir" },
+      { path: 'seed', message: "'seed' overlaps oracle.suites[1].dir" },
       { path: 'seed', message: "'seed' overlaps oracle.checks[0]" },
     ]);
   });
 
   it.each([
-    ['oracle/public/a.test.ts', "'steps[1].prompt_file' overlaps oracle.public_tests"],
+    ['oracle/first/a.test.ts', "'steps[1].prompt_file' overlaps oracle.suites[0].dir"],
+    ['oracle/all/b.test.ts', "'steps[1].prompt_file' overlaps oracle.suites[1].dir"],
     ['oracle/checks/decision.yaml', "'steps[1].prompt_file' overlaps oracle.checks[0]"],
     ['scenario.yaml', "'steps[1].prompt_file' overlaps scenario.yaml"],
   ])('keeps a step prompt apart from the oracle and scenario.yaml (%s)', (prompt, message) => {
@@ -409,6 +419,114 @@ describe('loadScenario', () => {
       'oracle/./checks/decision.yaml',
     ];
     expect(paths(writeScenario(yaml))).toEqual(['oracle.checks']);
+  });
+});
+
+describe('loadScenario — oracle suites (dl-001)', () => {
+  it('loads every suite with an absolute directory and its steps in order', () => {
+    const root = writeScenario();
+    const result = loadScenario(root, 'S9', '1.0');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const dir = join(root, 'S9', '1.0');
+    expect(result.value.oracle.suites).toEqual([
+      { id: 'first', dir: join(dir, 'oracle/first'), afterSteps: [1] },
+      { id: 'all', dir: join(dir, 'oracle/all'), afterSteps: [1, 2] },
+    ]);
+  });
+
+  it('accepts a scenario that declares no suite, and loads none', () => {
+    const result = loadScenario(writeScenario(withField(['oracle', 'suites'], [])), 'S9', '1.0');
+    expect(result.ok && result.value.oracle.suites).toEqual([]);
+  });
+
+  it('requires the suites to be declared', () => {
+    expect(issuesOf(writeScenario(withField(['oracle', 'suites'], undefined)))).toEqual([
+      { path: 'oracle.suites', message: 'is required' },
+    ]);
+  });
+
+  it('refuses the single public test directory the suites replace', () => {
+    const yaml = completeScenarioYaml();
+    (yaml.oracle as Record<string, unknown>).public_tests = 'oracle/first';
+    expect(issuesOf(writeScenario(yaml))).toEqual([
+      { path: 'oracle.public_tests', message: 'is not a known field' },
+    ]);
+  });
+
+  it.each([
+    [{ id: 'Pointer Suite', dir: 'oracle/first', after_steps: [1] }, 'oracle.suites[0].id'],
+    [{ id: 'a/b', dir: 'oracle/first', after_steps: [1] }, 'oracle.suites[0].id'],
+    [{ id: 'first', dir: '../outside', after_steps: [1] }, 'oracle.suites[0].dir'],
+    [{ id: 'first', dir: 'oracle/first', after_steps: [] }, 'oracle.suites[0].after_steps'],
+    [{ id: 'first', dir: 'oracle/first', after_steps: [1, 1] }, 'oracle.suites[0].after_steps'],
+    [{ id: 'first', dir: 'oracle/first', after_steps: [1.5] }, 'oracle.suites[0].after_steps[0]'],
+    [{ id: 'first', dir: 'oracle/first', after_steps: [1], extra: 1 }, 'oracle.suites[0].extra'],
+  ])('rejects a malformed suite %j', (suite, path) => {
+    expect(paths(writeScenario(withField(['oracle', 'suites'], [suite])))).toEqual([path]);
+  });
+
+  it('refuses a suite bound to a step the scenario does not declare, naming each', () => {
+    const suites = [
+      { id: 'first', dir: 'oracle/first', after_steps: [1, 3] },
+      { id: 'all', dir: 'oracle/all', after_steps: [0, 2] },
+    ];
+    expect(issuesOf(writeScenario(withField(['oracle', 'suites'], suites)))).toEqual([
+      { path: 'oracle.suites[0].after_steps[1]', message: 'must be a declared step: the scenario has steps 1–2' },
+      { path: 'oracle.suites[1].after_steps[0]', message: 'must be a declared step: the scenario has steps 1–2' },
+    ]);
+  });
+
+  it('refuses two suites with the same id', () => {
+    const suites = [
+      { id: 'first', dir: 'oracle/first', after_steps: [1] },
+      { id: 'first', dir: 'oracle/all', after_steps: [2] },
+    ];
+    expect(issuesOf(writeScenario(withField(['oracle', 'suites'], suites)))).toEqual([
+      { path: 'oracle.suites[1].id', message: 'repeats the id of oracle.suites[0]' },
+    ]);
+  });
+
+  it('refuses two suites on the same directory, however it is spelled', () => {
+    const suites = [
+      { id: 'first', dir: 'oracle/first', after_steps: [1] },
+      { id: 'again', dir: './oracle/first', after_steps: [2] },
+    ];
+    expect(issuesOf(writeScenario(withField(['oracle', 'suites'], suites)))).toEqual([
+      { path: 'oracle.suites[1].dir', message: 'repeats the directory of oracle.suites[0]' },
+    ]);
+  });
+
+  it('refuses a suite inside another: its tests would be scored after steps nobody declared', () => {
+    const suites = [
+      { id: 'first', dir: 'oracle/first', after_steps: [1] },
+      { id: 'deep', dir: 'oracle/first/deep', after_steps: [2] },
+    ];
+    const root = writeScenario(withField(['oracle', 'suites'], suites), [
+      ...COMPLETE_FILES,
+      'oracle/first/deep/c.test.ts',
+    ]);
+    expect(issuesOf(root)).toEqual([
+      { path: 'oracle.suites[1].dir', message: "'oracle.suites[1].dir' overlaps oracle.suites[0].dir" },
+    ]);
+  });
+
+  it('refuses a suite that is a symbolic link to another', () => {
+    const files = COMPLETE_FILES.filter((file) => !file.startsWith('oracle/all/'));
+    const root = writeScenario(completeScenarioYaml(), files);
+    symlinkSync(join(root, 'S9', '1.0', 'oracle', 'first'), join(root, 'S9', '1.0', 'oracle', 'all'));
+    expect(issuesOf(root)).toEqual([
+      { path: 'oracle.suites[1].dir', message: "'oracle.suites[1].dir' overlaps oracle.suites[0].dir" },
+    ]);
+  });
+
+  it('refuses a check inside a suite: a check is a pattern file, not a test to run', () => {
+    const yaml = completeScenarioYaml();
+    (yaml.oracle as Record<string, unknown>).checks = ['oracle/first/decision.yaml'];
+    const root = writeScenario(yaml, [...COMPLETE_FILES, 'oracle/first/decision.yaml']);
+    expect(issuesOf(root)).toEqual([
+      { path: 'oracle.checks[0]', message: "'oracle.checks[0]' overlaps oracle.suites[0].dir" },
+    ]);
   });
 });
 

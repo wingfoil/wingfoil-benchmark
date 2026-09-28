@@ -2,7 +2,7 @@ import { mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-import { checkHoldoutRoot, loadHoldoutAdditions } from '../../../src/scenario/index.js';
+import { checkHoldoutRoot, holdoutSuiteIssues, loadHoldoutAdditions } from '../../../src/scenario/index.js';
 import { tempDir } from '../../support/scenario-fixture.js';
 
 /** A hold-out checkout in a temporary directory: `scenarios/<id>/<version>/` and the given files. */
@@ -65,5 +65,32 @@ describe('loadHoldoutAdditions (REQ-ARC-03)', () => {
       ok: false,
       issues: [{ path: 'holdout', message: "'escape' is a symbolic link" }],
     });
+  });
+});
+
+describe('holdoutSuiteIssues (dl-001, REQ-ARC-03)', () => {
+  const suites = [
+    { id: 'pointer', dir: '/s/oracle/pointer', afterSteps: [1] },
+    { id: 'patch', dir: '/s/oracle/patch', afterSteps: [2, 3] },
+  ];
+
+  it('accepts additions that all sit under a declared suite id, at any depth', () => {
+    const files = ['patch/deep/a.test.ts', 'pointer/b.test.ts'];
+    expect(holdoutSuiteIssues(suites, { dir: '/h', files })).toEqual([]);
+  });
+
+  it('names each file under no declared suite, and the suites it could be under, sorted', () => {
+    const files = ['a.test.ts', 'checks/b.yaml', 'patch/c.test.ts', 'patches/d.test.ts'];
+    expect(holdoutSuiteIssues(suites, { dir: '/h', files })).toEqual([
+      { path: 'holdout', message: "'a.test.ts' is under no declared suite (patch, pointer)" },
+      { path: 'holdout', message: "'checks/b.yaml' is under no declared suite (patch, pointer)" },
+      { path: 'holdout', message: "'patches/d.test.ts' is under no declared suite (patch, pointer)" },
+    ]);
+  });
+
+  it('says so when the scenario declares no suite at all', () => {
+    expect(holdoutSuiteIssues([], { dir: '/h', files: ['x/a.test.ts'] })).toEqual([
+      { path: 'holdout', message: "'x/a.test.ts' is under no declared suite (none)" },
+    ]);
   });
 });
