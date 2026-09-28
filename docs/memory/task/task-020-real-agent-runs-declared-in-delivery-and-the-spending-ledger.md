@@ -2,7 +2,7 @@
 id: task-020-real-agent-runs-declared-in-delivery-and-the-spending-ledger
 type: task
 title: "Real-agent runs declared in delivery, and the spending ledger"
-status: backlog
+status: approved
 release: v0.1
 wave: W4
 features: []
@@ -60,7 +60,67 @@ behaviour. Its exit criteria:
 
 ## Design
 
-<!-- Modules, interfaces, data formats touched; decisions taken and their reasons. -->
+dl-006 was approved as proposed, **A together with C** (`4070548`: "A + C: optional real-agent half
+of the wave check with a consent gate before the run, one spending ledger per release").
+
+### What WingFoil `3df305e` can express
+
+Read from `src/workflow/schema.ts` at the pin: a phase may declare `optional: true`, an
+`approval: { by_role }`, `produces:` and `checks: { pre, post }`. So the real-agent half is declared
+as **its own optional phase**, with its gate and its product, rather than as a sentence inside
+`deliver`: what is optional, gated and produced is then data WingFoil reads, not prose.
+
+### `kanban-delivery.yaml` (version 2)
+
+- **A new phase, `real-agent-check`**, after `deliver`: `optional: true`, `role: developer`,
+  `approval: { by_role: approver }`, `produces: [docs/calibration/{release}-ledger.md]`. Its
+  description says when it applies (once per wave, after the wave's last task is done, when the
+  wave's plan phase decided a real-agent half because the "Ends with" names behaviour the fake agent
+  cannot show), what the approval is (consent with model and ceiling, **before** the run), where the
+  run happens (a campaign outside the repository), and what it records (the release element's wave
+  section — consent date, model, ceiling, campaign id, cost per arm, outcome — and a ledger line).
+- **`plan`** says that a task which spends (a spike) states its ceiling in its Context, that the
+  pending → backlog approval is the consent, and that its spending is a ledger line.
+- **`deliver`** says that the fake-agent half of the wave check stays the mandatory one.
+- `version: 2` is added to the file (it had none: the unversioned original is 1), as dl-006's
+  consequences ask.
+
+### `release-cycle.yaml` (version 2)
+
+- **`calibration`** lists the ledger among its inputs and says that none of the delivery runs it
+  holds is a dry run.
+- **`validation`** says how its end-to-end run differs from a delivery wave check (the release's
+  validation, on the cheapest scenario, versus one wave's "Ends with"), and that its cost is a
+  ledger line too.
+- `version: 2`, as above.
+
+### `docs/calibration/v0.1-ledger.md`
+
+One line per real-agent run of the release, in date order: date, element, kind (spike, wave check,
+later calibration, validation, campaign), consent (where it was given), model, ceiling, cost in USD
+and EUR, source (the commit or element that records it). Filled back with the three runs of delivery
+so far:
+
+| Date | Element | Kind | Consent | Model | Ceiling | Cost |
+|---|---|---|---|---|---|---|
+| 2026-09-23 | task-004 | spike | task-004 pending → backlog, `80ccf67` | Haiku 4.5, Sonnet 5 | 1.00 USD (~1 €) | 0.1266 USD |
+| 2026-09-25 | task-011 | spike | task-011 pending → backlog, `e769c71` | Haiku 4.5 | 0.50 USD (~0.50 €) | 0.0402 USD |
+| 2026-09-25 | W3 wave check, campaign `ccf207c46915` | wave check | at run time, recorded in rel-v0-1 `8a4950c` | Sonnet 5 | 3 € | 0.7809 USD (0.7184 €) |
+
+Its total, 0.9477 USD, is what development has spent before calibration: the input dl-006 found
+calibration lacked. The W3 row shows the gap dl-006 names — its consent was given at run time; from
+now on the approval of `real-agent-check` precedes the run.
+
+### plan-003
+
+The constraint "No run with a real agent starts without the approver's explicit consent" keeps its
+words and points to where they are now declared: `kanban-delivery`'s `plan` and `real-agent-check`,
+`release-cycle`'s phases, and the ledger.
+
+### Checks
+
+- `npx wingfoil workflow list` before (saved: exit 0, no warning) and after; any new warning explained.
+- `npm test` and `npm run lint` (the repository's own tests read `.wingfoil/`).
 
 ## Execution notes
 
@@ -74,3 +134,37 @@ behaviour. Its exit criteria:
 - `npx wingfoil memory submit task-020-real-agent-runs-declared-in-delivery-and-the-spending-ledger` →
   `cf5121b`. Declared: `draft → pending`, one commit `wf(task): submit <id>`. Observed: exit 0, empty
   stderr, 1 file, diff limited to `status`. Matches (subject without transition: N9).
+- The approver's `memory approve` → `0b7b6d0` (`pending → backlog`), after dl-006's approval
+  (`4070548`). Matches.
+- `npx wingfoil memory submit task-020-…` → `d33bb54`, in the linked worktree with its own `npm ci`
+  (`backlog → in-progress`, one commit, only `status`). Matches.
+- `npx wingfoil workflow list`, before the change: exit 0, no warning, 17 workflows-and-phases names.
+  After: exit 0, no warning, one more name, `real-agent-check`, read with `"optional": true`,
+  `"approval": {"by_role": "approver"}` and `"produces": ["docs/calibration/{release}-ledger.md"]`, and
+  `"version": 2` on both workflows. Declared (schema at `3df305e`): all four keys are phase or workflow
+  fields. Observed: as declared. Matches.
+
+### Build
+
+1. `.wingfoil/` (`chore(wingfoil)`, with the `Approver:` line of dl-006's approval, as this repository's
+   rule asks for a configuration change that implements an approver's decision): `kanban-delivery` 2 —
+   the `real-agent-check` phase, the consent sentence in `plan`, the mandatory fake-agent check in
+   `deliver`; `release-cycle` 2 — the ledger as calibration's input, and validation versus a wave check.
+2. `docs/calibration/v0.1-ledger.md`, filled back (total 0.9477 USD), and plan-003's constraint pointing
+   to where the consent and the counting are now declared.
+
+No code changed; `npm test` 614/614 and `npm run lint` clean after the change.
+
+### Notes for the next task
+
+- task-019's real sessions (up to 0.30 € on Haiku, consented at its pending → backlog gate, `2bb466e`)
+  are the first spending the ledger records as it happens: one line, written when they run.
+- W4's plan phase decided no real-agent half for the wave (decision 4, task-016): no
+  `real-agent-check` for W4.
+
+### Review and approval
+
+- `npx wingfoil memory submit task-020-…` → `6f0daa8` (`in-progress → in-review`, one commit, only
+  `status` changed). Matches.
+- `npx wingfoil memory approve task-020-… --reason "…"` → `1c7ed6f`, run by the approver from the
+  worktree (`in-review → approved`, `Approver:`/`Reason:` trailers, only `status` changed). Matches.
