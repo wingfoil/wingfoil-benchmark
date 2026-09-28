@@ -187,3 +187,56 @@ the release element says so when W6 is recorded.
   fields checked, one commit `wf(task): submit <id>` with no bracket and no body. Observed: exit 0,
   empty stderr, 1 file, diff limited to `status: draft` → `status: pending`. Matches (subject without
   transition: N9).
+- `npx wingfoil memory approve task-026-oracle-suites-per-step --reason "…"`, run by the approver →
+  `39c6344`. `memory history` records `operation: approve`, `pending → backlog`, the approver and the
+  reason. It also lists two unrelated commits before the `add` (`d5a31a4`, `8d96d99`) and prints two
+  `fatal: path … exists on disk, but not in …` lines on stderr: N7, reproduced.
+- Design committed by hand on `task/task-026-oracle-suites-per-step` (`efa6d51`), then
+  `npx wingfoil memory submit task-026-oracle-suites-per-step` → `45977d8`. Declared: `backlog →
+  in-progress`, one commit `wf(task): submit <id>`. Observed: exit 0, empty stderr, 1 file, diff limited
+  to `status: backlog` → `status: in-progress`, subject without transition (N9). Matches. WIP after it:
+  one task `in-progress` (this one), none `in-review`.
+
+### Build
+
+Test-first: the red tests in `8b9d6ff` (fixtures T0–T3 migrated, 126 failing), the code in `64cc997`,
+the amendment in `4aabdd3`.
+
+- **Schema** (`src/core/scenario.ts`): `oracle.suites`, a strict `{id, dir, after_steps}`; `id`
+  kebab-case (the same rule as a capability, now one `kebabName`), `after_steps` distinct integers, at
+  least one. A repeated id or directory is reported on the later entry. `public_tests` is an unknown key.
+  `Suite` is exported from `core`.
+- **Deviation from the Design:** whether each `after_steps` value is a declared step is checked **in the
+  loader**, not in a schema `superRefine`. A refinement on the whole file runs only when every other
+  field parsed, so one unrelated issue would hide it; the loader reports it right after id and version,
+  in a stable order (`suiteStepIssues`), naming the offending entry as designed.
+- **Loader** (`src/scenario/load.ts`): each suite dir is a declared directory `oracle.suites[i].dir`
+  (it exists, stays inside); suites are pairwise disjoint and a check lies in no suite, on real paths, so a
+  symbolic link from one suite to another is caught; `afterSteps` sorted.
+- **Leak scan:** `oracleFiles` walks every suite in declaration order, then the checks.
+- **Hold-out:** `holdoutSuiteIssues(suites, additions)` in `src/scenario/holdout.ts`; `bench scenario
+  validate` reports its issues after the count checks and before the leak scan. Names the file and the
+  declared ids, sorted, or `(none)`.
+- **REQ-FMT-09:** no code change, as the Design found; the red test in `leak-scan.test.ts` exercises a
+  second suite through the loaded scenario, and the hash covers the directory as before.
+- **Fixtures:** T0–T2 `suites: []`, their empty `oracle/public/.gitkeep` removed; T3 `orders` over
+  `oracle/public`, after steps 1 and 2. No test pins a scenario hash, so none changed. The hold-out
+  fixtures of the acceptance and CLI tests moved under a suite id (`orders/`, `first/`, `all/`).
+- **Requirements 1.7:** REQ-FMT-04's `oracle` bullet and REQ-ARC-03's hold-out sentence, with the
+  "Amendment 1.7" section; its review decision is the approver's at this task's review.
+
+### Suites (at `4aabdd3`)
+
+- `npm test`: **726 passed** (35 files); coverage 99.81% statements / 97.03% branches / 100% functions /
+  100% lines. The uncovered branches in `scenario.ts` and `leak-scan.ts` are sort comparators that
+  existed before this task.
+- `npm run test:bin`: 5 passed. `npm run test:docker`: 6 passed (T0–T2 without an oracle directory).
+- `npm run lint`: clean. `npx tsc --noEmit`: clean.
+
+### Traceability
+
+`scenarios.feature` @F3.1 (the suites of a complete scenario), @F3.2 (three scenarios, hold-out files
+under `orders/`) and @F3.4 green. REQ-FMT-04 and REQ-ARC-03 as amended in 1.7; REQ-FMT-08 (every suite
+scanned); REQ-FMT-09 (unchanged). dl-001's Consequences: the amendment (1.7) and the schema change, done
+with no stored result affected; hold-out additions mirror the suite ids. No new bug or decision-log.
+
