@@ -127,11 +127,25 @@ behind. The runner never removes a container it did not create: at the start of 
 the ones earlier runs of that campaign left, warns about each with the `docker rm --force` that clears
 it, and fails the run whose container name is still taken, with the same command.
 
+```bash
+npx bench score <campaign-id>/<n> [--holdout <path>]
+npx bench score dry-runs/<n>
+```
+
+`score` scores every run of an execution with its scenario's **hidden tests**, outside every run
+container. Each step's snapshot is rebuilt from what the run stored — the seed, the setup's patch and
+each step's patch — and checked against the tree the run recorded. Each suite then runs under
+`node:test` with `tsx`, in a scoring container built from `docker/score-image/`, with no network, the
+suite mounted read-only and the snapshot copied in. A suite's total is what it counts on the seed; a
+test a snapshot does not pass, or never reports, fails. The result is `score.json` beside `run.json`:
+M-Q1 for every step a suite is bound to and for the final snapshot, byte-identical when scored again
+(adr-004). One line per run: `T3@1.0 baseline fake-model r1: step 01 0/1, step 02 1/1, final 1/1`.
+
 Exit codes: `0` success, `1` failure (one line per problem, or a run that failed), `2` usage error.
 
 ```bash
 npm run test:bin     # the built command line
-npm run test:docker  # W1's to W3's runs, a dry run, and bug-003's, in a real container (needs Docker)
+npm run test:docker  # W1's to W3's runs, a dry run, bug-003's, and W6's scoring, in a real container (needs Docker)
 ```
 
 ## License
