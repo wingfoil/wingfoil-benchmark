@@ -191,8 +191,44 @@ export function scoringDocker(
   return { docker, recorded };
 }
 
-/** T3's hidden test as the scoring image would judge it on `snapshot`. */
-export function judgeT3(snapshot: string): ProcessResult {
+/** What a T3 hold-out holds (task-028): two tests whose names and content must never be printed. */
+export const HOLDOUT_SECRET = 'HOLDOUT-SECRET-5e1f';
+
+/** A hold-out checkout with T3's additions under its suite `orders`, in a temporary directory. */
+export function t3Holdout(): string {
+  const root = tempDir('bench-holdout-');
+  const dir = join(root, 'scenarios', 'T3', '1.0', 'orders');
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, 'refund.test.ts'), `// ${HOLDOUT_SECRET}\n`);
+  return root;
+}
+
+/** The two hold-out tests as the reporter names them, from the hold-out's mount beside the suite. */
+export const HOLDOUT_TESTS = [
+  { file: 'oracle/public.holdout/refund.test.ts', path: [`${HOLDOUT_SECRET} refunds a cancelled order`] },
+  { file: 'oracle/public.holdout/refund.test.ts', path: [`${HOLDOUT_SECRET} keeps the shipping fee`] },
+];
+
+/**
+ * T3's hidden tests as the scoring image would judge them on `snapshot`: the public one, or — when the
+ * command runs the hold-out's files — the two hold-out ones: the first passes where the public one
+ * does, the second never.
+ */
+export function judgeT3(snapshot: string, command: readonly string[] = []): ProcessResult {
+  if (command.some((argument) => argument.includes('.holdout/'))) {
+    const file = join(snapshot, 'src', 'orders.ts');
+    const cancels = existsSync(file) && readFileSync(file, 'utf8').includes("status: 'cancelled'");
+    const [first, second] = HOLDOUT_TESTS as [(typeof HOLDOUT_TESTS)[0], (typeof HOLDOUT_TESTS)[0]];
+    return {
+      code: 1,
+      stdout: reporterLine(first, cancels ? 'pass' : 'fail') + reporterLine(second, 'fail'),
+      stderr: `AssertionError: ${HOLDOUT_SECRET}\n`,
+    };
+  }
+  return judgePublic(snapshot);
+}
+
+function judgePublic(snapshot: string): ProcessResult {
   const file = join(snapshot, 'src', 'orders.ts');
   const passes = existsSync(file) && readFileSync(file, 'utf8').includes("status: 'cancelled'");
   return { code: passes ? 0 : 1, stdout: reporterLine(T3_TEST, passes ? 'pass' : 'fail'), stderr: '' };

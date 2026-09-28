@@ -6,13 +6,17 @@ import { gitCli, systemProcess } from '../../../src/core/index.js';
 import type { ProcessResult } from '../../../src/core/index.js';
 import { readStoredRun } from '../../../src/results/index.js';
 import { scoreRun, scoreSummary, writeScore } from '../../../src/scoring/index.js';
-import type { Census } from '../../../src/scoring/index.js';
+import type { Census, HoldoutInput } from '../../../src/scoring/index.js';
+import { loadHoldoutAdditions } from '../../../src/scenario/index.js';
 import {
   CANCEL,
+  HOLDOUT_SECRET,
+  HOLDOUT_TESTS,
   judgeT3,
   reporterLine,
   scoringDocker,
   storedRun,
+  t3Holdout,
   T3_TEST,
 } from '../../support/score-fixture.js';
 
@@ -22,6 +26,7 @@ async function score(
   fixture: Awaited<ReturnType<typeof storedRun>>,
   judge: (snapshot: string, command: readonly string[]) => ProcessResult = judgeT3,
   census: Census = new Map(),
+  holdout?: HoldoutInput,
 ) {
   const run = readStoredRun(fixture.runDir);
   if (!run.ok) throw new Error(JSON.stringify(run.issues));
@@ -35,6 +40,7 @@ async function score(
     git: gitCli(systemProcess),
     census,
     containerPrefix: 'bench-score-t',
+    ...(holdout === undefined ? {} : { holdout }),
   });
   return { result, recorded };
 }
@@ -79,6 +85,8 @@ describe('scoreRun (F4.1, REQ-SCO-01–03)', () => {
           suites: [{ id: 'orders', passed: 1, total: 1, failed: [] }],
           m_q1: { passed: 1, total: 1 },
         },
+        // Not given one: the score says so, rather than look like one that includes it (F3.5).
+        holdout: { scored: false, reason: 'not configured' },
       },
     });
     // The census on the seed, then steps 1 and 2; the final snapshot is step 2's, already scored.
@@ -225,6 +233,7 @@ describe('scoreSummary', () => {
         version: '1.0',
         scenario_hash: 'h',
         scorer: { image: 'i', tsx: 't' },
+        holdout: { scored: false, reason: 'none declared' },
         steps: [
           { n: 1, suites: [] },
           { n: 2, suites: [{ id: 'a', passed: 1, total: 2, failed: ['x'] }], m_q1: { passed: 1, total: 2 } },
@@ -245,7 +254,152 @@ describe('scoreSummary', () => {
         scorer: { image: 'i', tsx: 't' },
         steps: [{ n: 1, suites: [] }],
         final: { step: 1, suites: [] },
+        holdout: { scored: false, reason: 'none declared' },
       }),
     ).toBe('no hidden tests');
+  });
+});
+
+describe('scoreRun with the hold-out (task-028, F3.5, REQ-SCO-09)', () => {
+  async function withHoldout(steps: NonNullable<Parameters<typeof storedRun>[0]>['steps'] = [{}, CANCEL]) {
+    const fixture = await storedRun({ steps });
+    const loaded = loadHoldoutAdditions(t3Holdout(), 'T3', '1.0');
+    if (!loaded.ok) throw new Error('no hold-out');
+    return { fixture, additions: loaded.value };
+  }
+
+  it("scores the hold-out's tests on every snapshot, apart from the public ones, in counts only", async () => {
+    const { fixture, additions } = await withHoldout();
+
+    const { result, recorded } = await score(fixture, judgeT3, new Map(), { additions });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // The public results are the same as without a hold-out: nothing is folded into them.
+    expect(result.value.final).toMatchObject({ m_q1: { passed: 1, total: 1 } });
+    expect(result.value.holdout).toEqual({
+      scored: true,
+      hash: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
+      steps: [
+        { n: 1, suites: [{ id: 'orders', passed: 0, total: 2 }], m_q1: { passed: 0, total: 2 } },
+        { n: 2, suites: [{ id: 'orders', passed: 1, total: 2 }], m_q1: { passed: 1, total: 2 } },
+      ],
+      final: { step: 2, suites: [{ id: 'orders', passed: 1, total: 2 }], m_q1: { passed: 1, total: 2 } },
+    });
+    expect(JSON.stringify(result.value)).not.toContain(HOLDOUT_SECRET);
+    // Its own containers: a census and two snapshots, each with the hold-out beside the suite.
+    expect(recorded.creates.filter((create) => create.readOnly.length === 2)).toHaveLength(3);
+  });
+
+  it('records a hold-out step the run never reached as not reached', async () => {
+    const { fixture, additions } = await withHoldout([CANCEL]);
+    const { result } = await score(fixture, judgeT3, new Map(), { additions });
+    expect(result.ok && result.value.holdout).toMatchObject({
+      steps: [{ n: 1 }, { n: 2, not_reached: true }],
+      final: { not_reached: true },
+    });
+  });
+
+  it('records why the hold-out was not scored', async () => {
+    const fixture = await storedRun({ steps: [{}, CANCEL] });
+    const { result } = await score(fixture, judgeT3, new Map(), { notScored: 'none declared' });
+    expect(result.ok && result.value.holdout).toEqual({ scored: false, reason: 'none declared' });
+  });
+
+  it('names no hold-out test in an oracle error, only the suite and the file', async () => {
+    const { fixture, additions } = await withHoldout();
+    const holdoutRun = (command: readonly string[]) =>
+      command.some((argument) => argument.includes('.holdout/'));
+
+    const repeated = await score(
+      fixture,
+      (snapshot, command) => {
+        const judged = judgeT3(snapshot, command);
+        return holdoutRun(command) ? { ...judged, stdout: judged.stdout + judged.stdout } : judged;
+      },
+      new Map(),
+      { additions },
+    );
+    expect(repeated.result).toEqual({
+      ok: false,
+      issues: [{ path: 'hold-out suite orders', message: 'two hold-out tests share a name on the seed' }],
+    });
+
+    const extra = { file: HOLDOUT_TESTS[0]?.file ?? '', path: [`${HOLDOUT_SECRET} late`] };
+    const unknown = await score(
+      fixture,
+      (snapshot, command) => {
+        const judged = judgeT3(snapshot, command);
+        return holdoutRun(command) && !snapshot.endsWith('seed')
+          ? { ...judged, stdout: judged.stdout + reporterLine(extra, 'pass') }
+          : judged;
+      },
+      new Map(),
+      { additions },
+    );
+    expect(unknown.result).toEqual({
+      ok: false,
+      issues: [
+        {
+          path: 'hold-out suite orders',
+          message: 'step 01 reports a hold-out test the census on the seed does not have (adr-004)',
+        },
+      ],
+    });
+
+    const unloadable = await score(
+      fixture,
+      (snapshot, command) =>
+        holdoutRun(command)
+          ? {
+              code: 1,
+              stdout: '{"kind":"file","file":"oracle/public.holdout/refund.test.ts","status":"fail"}\n',
+              stderr: '',
+            }
+          : judgeT3(snapshot, command),
+      new Map(),
+      { additions },
+    );
+    expect(unloadable.result).toEqual({
+      ok: false,
+      issues: [
+        {
+          path: 'hold-out suite orders',
+          message:
+            'oracle/public.holdout/refund.test.ts fails to load on the seed: a hidden test must import the code under test inside the test (adr-004)',
+        },
+      ],
+    });
+  });
+
+  it('says the hold-out in the summary line: its final M-Q1, or that it was not scored', () => {
+    const base = {
+      score_version: 1,
+      scenario: 'T3',
+      version: '1.0',
+      scenario_hash: 'h',
+      scorer: { image: 'i', tsx: 't' },
+      steps: [
+        { n: 1, suites: [{ id: 'a', passed: 1, total: 1, failed: [] }], m_q1: { passed: 1, total: 1 } },
+      ],
+      final: { step: 1, suites: [], m_q1: { passed: 1, total: 1 } },
+    };
+    expect(
+      scoreSummary({
+        ...base,
+        holdout: {
+          scored: true,
+          hash: 'h',
+          steps: [],
+          final: { step: 1, suites: [], m_q1: { passed: 1, total: 2 } },
+        },
+      }),
+    ).toBe('step 01 1/1, final 1/1; hold-out final 1/2');
+    expect(scoreSummary({ ...base, holdout: { scored: false, reason: 'not configured' } })).toBe(
+      'step 01 1/1, final 1/1; hold-out not scored',
+    );
+    expect(scoreSummary({ ...base, holdout: { scored: false, reason: 'none declared' } })).toBe(
+      'step 01 1/1, final 1/1',
+    );
   });
 });

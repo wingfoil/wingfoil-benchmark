@@ -93,3 +93,24 @@ designing shape them:
   snapshot that did not load or was killed scores.
 - **Cost:** one container per suite and snapshot, plus a census per suite; for S1's four steps and three
   suites that is about a dozen containers per run, each a few seconds.
+
+## Amendment 1 (W6 task-028, 2026-09-28; accepted at its review, `e1d2802`)
+
+What [task-028](../task/task-028-hold-out-tests-in-scoring.md) added for the hold-out (F3.5,
+REQ-SCO-09), which scenario authors writing the private `WingFoil2-Benchmark-HoldOut` repository in W7
+and W8 must follow:
+
+13. **A hold-out suite** is a suite's additions, under `<suite-id>/` in the hold-out (dl-001). It runs
+    like a public suite — decisions 3 to 9 — in **containers of its own**, never with the public suite,
+    with a census of its own on the seed.
+14. **Where it sits:** mounted read-only at `<suite dir>.holdout/`, **beside** the public suite, which is
+    mounted too. A hold-out test is written as a sibling of the public suite's files: the same relative
+    import of the code under test, and the public suite's helpers at `../<suite dir name>/`.
+15. **Counts only.** `score.json` keeps the hold-out under `holdout`, apart from the public results, with
+    its additions' hash (task-018's rule) and each suite's `passed` and `total` — no failing tests. No
+    hold-out test name, message or container output is printed or stored; an oracle error names the
+    suite and at most the file.
+16. **Not scored, said.** Without a hold-out, `holdout` is `{ scored: false, reason }` — `not configured`,
+    or `none declared` for a version that declares none — and the command line says `hold-out not
+    scored` for a version that expects one. A version whose `holdout:` disagrees with the additions is
+    not scored.

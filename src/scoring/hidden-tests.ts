@@ -77,15 +77,23 @@ export function parseReport(stdout: string): Result<SuiteReport> {
 
 /** A suite's test files, relative to the scenario version directory, in code-unit order. */
 export function suiteTestFiles(scenario: Scenario, suite: Suite): string[] {
-  const walk = (directory: string): string[] =>
-    readdirSync(directory).flatMap((name) => {
-      const path = join(directory, name);
+  return testFilesUnder(suite.dir, relative(scenario.dir, suite.dir));
+}
+
+/** The test files under `directory`, as `<prefix>/<path under it>`, in code-unit order. */
+function testFilesUnder(directory: string, prefix: string): string[] {
+  const walk = (dir: string): string[] =>
+    readdirSync(dir).flatMap((name) => {
+      const path = join(dir, name);
       return statSync(path).isDirectory() ? walk(path) : TEST_FILE.test(name) ? [path] : [];
     });
-  return walk(suite.dir)
-    .map((file) => relative(scenario.dir, file).split('\\').join('/'))
+  return walk(directory)
+    .map((file) => `${prefix.split('\\').join('/')}/${relative(directory, file).split('\\').join('/')}`)
     .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
 }
+
+/** Where a suite's hold-out additions are mounted: beside the suite, at the same depth (task-028). */
+const HOLDOUT_SUFFIX = '.holdout';
 
 /** The command that runs `files` in the scoring container (REQ-SCO-02, adr-004). */
 export function suiteCommand(files: readonly string[]): string[] {
@@ -112,6 +120,13 @@ export interface SuiteRequest {
   readonly scenario: Scenario;
   readonly suite: Suite;
   readonly snapshotDir: string;
+  /**
+   * The suite's hold-out additions (task-028): when given, they are what runs, mounted read-only
+   * beside the public suite — which is mounted too, for its helpers — and nothing else runs.
+   */
+  readonly holdoutDir?: string;
+  /** What the suite's tests write must not be repeated: the hold-out's (REQ-FMT-08's rule). */
+  readonly confidential?: boolean;
 }
 
 /**
@@ -121,8 +136,12 @@ export interface SuiteRequest {
  * container is removed whatever happens. A suite with no test file runs nothing.
  */
 export async function runSuite(request: SuiteRequest): Promise<Result<SuiteReport>> {
-  const { docker, scenario, suite } = request;
-  const files = suiteTestFiles(scenario, suite);
+  const { docker, scenario, suite, holdoutDir } = request;
+  const suitePath = relative(scenario.dir, suite.dir).split('\\').join('/');
+  const files =
+    holdoutDir === undefined
+      ? suiteTestFiles(scenario, suite)
+      : testFilesUnder(holdoutDir, `${suitePath}${HOLDOUT_SUFFIX}`);
   if (files.length === 0) return ok({ tests: [], failedFiles: [] });
   const inside = (path: string) => `${SCORE_ROOT}/${relative(scenario.dir, path).split('\\').join('/')}`;
   const container = await docker.createScoring({
@@ -130,14 +149,19 @@ export async function runSuite(request: SuiteRequest): Promise<Result<SuiteRepor
     name: request.container,
     user: SCORE_USER,
     workdir: SCORE_ROOT,
-    readOnly: [{ source: suite.dir, target: inside(suite.dir) }],
+    readOnly: [
+      { source: suite.dir, target: inside(suite.dir) },
+      ...(holdoutDir === undefined
+        ? []
+        : [{ source: holdoutDir, target: `${SCORE_ROOT}/${suitePath}${HOLDOUT_SUFFIX}` }]),
+    ],
   });
   try {
     await docker.start(container);
     await docker.copyTo(container, request.snapshotDir, inside(scenario.seedDir));
     const result = await docker.exec(container, suiteCommand(files));
     if (!READABLE_EXITS.includes(result.code)) {
-      const said = result.stderr.trim().split('\n').slice(-5).join('\n');
+      const said = request.confidential === true ? '' : result.stderr.trim().split('\n').slice(-5).join('\n');
       return fail([
         {
           path: `suite ${suite.id}`,
