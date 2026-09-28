@@ -27,6 +27,12 @@ const SCENARIO_REF = new RegExp(
 export type ScenarioValidation =
   { readonly ok: true; readonly line: string } | { readonly ok: false; readonly issues: readonly Issue[] };
 
+/** `<id>@<version>` parsed, or `undefined` when `ref` is not one. */
+export function parseScenarioRef(ref: string | undefined): { id: string; version: string } | undefined {
+  const match = ref === undefined ? null : SCENARIO_REF.exec(ref);
+  return match === null ? undefined : { id: match[1] ?? '', version: match[2] ?? '' };
+}
+
 /** A scenario reference and a hold-out option, parsed; `undefined` for a usage error. */
 export interface ScenarioArguments {
   readonly id: string;
@@ -37,9 +43,8 @@ export interface ScenarioArguments {
 /** `<id>@<version> [--holdout <path>]`, or `undefined` when the arguments are not that. */
 export function parseScenarioArguments(args: readonly string[]): ScenarioArguments | undefined {
   const [ref, ...rest] = args;
-  const match = ref === undefined ? null : SCENARIO_REF.exec(ref);
-  if (match === null) return undefined;
-  const reference = { id: match[1] ?? '', version: match[2] ?? '' };
+  const reference = parseScenarioRef(ref);
+  if (reference === undefined) return undefined;
   if (rest.length === 0) return reference;
   const [option, path, ...extra] = rest;
   if (

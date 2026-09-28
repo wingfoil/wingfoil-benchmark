@@ -6,7 +6,15 @@ import { fileURLToPath } from 'node:url';
 import { scrub } from '../agents/index.js';
 import type { AgentPort, SessionUsage, StepOutcome } from '../agents/index.js';
 import { approverPolicy, approximateTokens, reasonOf, TOKEN_METHOD, WORKSPACE } from '../core/index.js';
-import type { ApproverPolicy, Arm, DockerPort, GitPort, InterventionKind, Scenario } from '../core/index.js';
+import type {
+  ApproverPolicy,
+  Arm,
+  CampaignFile,
+  DockerPort,
+  GitPort,
+  InterventionKind,
+  Scenario,
+} from '../core/index.js';
 import { nextExecution } from '../results/index.js';
 
 import type { CheckedCampaign } from './campaign.js';
@@ -112,7 +120,42 @@ export interface RunResult {
   readonly error?: string;
 }
 
-/** What one execution of a campaign produced. */
+/** What a run is pinned to, whether a campaign file or a dry-run profile pins it (task-021). */
+export type RunPins = Pick<CampaignFile, 'harnesses' | 'agent' | 'approver_policy' | 'caps' | 'currency'>;
+
+/** One run to execute: one scenario, in one arm, with one model, once. */
+export interface PlannedRun {
+  readonly scenario: Scenario;
+  readonly arm: Arm;
+  readonly model: string;
+  readonly repetition: number;
+}
+
+/**
+ * What an execution runs (task-021 Design): a campaign's runs, or a dry run's one, through the same
+ * code. `arms` are every arm loaded — those that run and those an environment is generated from — and
+ * `scenarios` every scenario that runs; `runs` is what actually runs, in order.
+ */
+export interface RunPlan {
+  /** What the execution is, in its log and in a leftover's message: `campaign` or `dry run`. */
+  readonly noun: string;
+  /** The image's tag and the stem of every container's name (REQ-FMT-02 for a campaign). */
+  readonly id: string;
+  readonly pins: RunPins;
+  readonly repoRoot: string;
+  readonly resultsRoot: string;
+  /** The directory the executions are numbered in, under `results/` and `runs/`. */
+  readonly key: string;
+  /** The file the execution ran from, copied into its results under `name`. */
+  readonly source: { readonly file: string; readonly name: string };
+  readonly scenarios: readonly Scenario[];
+  readonly arms: readonly Arm[];
+  readonly runs: readonly PlannedRun[];
+  /** What each `run.json` says the run belonged to (REQ-RES-01: a dry run is never a campaign's). */
+  readonly origin: { readonly campaign: string } | { readonly dry_run: true };
+}
+
+/** What one execution of a campaign or a dry run produced. */
 export interface RunSummary {
   /** The execution number `n` of `<campaign-id>/<n>` (REQ-FMT-02). */
   readonly execution: number;
@@ -190,70 +233,99 @@ function stepNumber(step: number): string {
  * not stop the campaign (REQ-NFR-03).
  */
 export async function runCampaign(checked: CheckedCampaign, options: RunnerOptions): Promise<RunSummary> {
-  const { campaign, scenarios, arms } = checked;
-  const execution = nextExecution(campaign.resultsRoot, campaign.id);
-  const resultsDir = join(campaign.resultsRoot, campaign.id, String(execution));
-  mkdirSync(resultsDir, { recursive: true });
-  options.log?.(`campaign ${campaign.id}, execution ${execution}`);
-  copyFileSync(campaign.file, join(resultsDir, 'campaign.yaml'));
+  return runPlan(campaignPlan(checked), options);
+}
 
-  // Before anything is built: what earlier, interrupted runs of this campaign left behind (bug-003).
-  const leftovers = await leftBehind(campaign.id, execution, options);
+/** A campaign's plan: every scenario × arm × repetition, with the default model, in that order. */
+function campaignPlan({ campaign, scenarios, arms }: CheckedCampaign): RunPlan {
+  const model = campaign.spec.models.default;
+  const runs = scenarios.flatMap((scenario) => {
+    // The campaign schema gives every scenario a repetition count; the fallback only keeps the type honest.
+    const repetitions = campaign.spec.repetitions[scenario.id] ?? 1;
+    return arms.flatMap((arm) =>
+      Array.from({ length: repetitions }, (_, index) => ({ scenario, arm, model, repetition: index + 1 })),
+    );
+  });
+  return {
+    noun: 'campaign',
+    id: campaign.id,
+    pins: campaign.spec,
+    repoRoot: campaign.repoRoot,
+    resultsRoot: campaign.resultsRoot,
+    key: campaign.id,
+    source: { file: campaign.file, name: 'campaign.yaml' },
+    scenarios,
+    arms,
+    runs,
+    origin: { campaign: campaign.id },
+  };
+}
+
+/**
+ * Execute `plan` (REQ-RUN-01, REQ-RUN-02): one image, every harness and generated environment before
+ * any run, then one container per run, whose only bind mount is that run's workspace. A failed run
+ * does not stop the others (REQ-NFR-03).
+ */
+export async function runPlan(plan: RunPlan, options: RunnerOptions): Promise<RunSummary> {
+  const execution = nextExecution(plan.resultsRoot, plan.key);
+  const resultsDir = join(plan.resultsRoot, plan.key, String(execution));
+  mkdirSync(resultsDir, { recursive: true });
+  options.log?.(`${plan.noun} ${plan.id}, execution ${execution}`);
+  copyFileSync(plan.source.file, join(resultsDir, plan.source.name));
+
+  // Before anything is built: what earlier, interrupted runs of this plan left behind (bug-003).
+  const leftovers = await leftBehind(plan, execution, options);
 
   await options.docker.build({
     dockerfile: join(packageRoot(), RUN_IMAGE_DIRECTORY, 'Dockerfile'),
     context: join(packageRoot(), RUN_IMAGE_DIRECTORY),
-    tag: campaign.id,
-    buildArgs: { AGENT_NAME: campaign.spec.agent.name, AGENT_VERSION: campaign.spec.agent.version },
+    tag: plan.id,
+    buildArgs: { AGENT_NAME: plan.pins.agent.name, AGENT_VERSION: plan.pins.agent.version },
   });
   // Every harness before any run: an arm never runs without the one it requires (REQ-RUN-14).
-  const harnesses = await prepareHarnesses(checked, options);
+  const harnesses = await prepareHarnesses(
+    { id: plan.id, repoRoot: plan.repoRoot, arms: plan.arms, harnesses: plan.pins.harnesses },
+    options,
+  );
   // The baseline-docs environment of every scenario, from the wingfoil configuration (REQ-RUN-11).
-  const projectRules = await prepareProjectRules(checked, harnesses, resultsDir, options);
+  const projectRules = await prepareProjectRules(plan, harnesses, resultsDir, options);
 
-  const model = campaign.spec.models.default;
   const runs: RunResult[] = [];
-  for (const scenario of scenarios) {
-    // The campaign schema gives every scenario a repetition count; the fallback only keeps the type honest.
-    const repetitions = campaign.spec.repetitions[scenario.id] ?? 1;
-    for (const arm of arms) {
-      for (let repetition = 1; repetition <= repetitions; repetition += 1) {
-        runs.push(
-          await executeRun(
-            {
-              campaign,
-              scenario,
-              arm,
-              model,
-              repetition,
-              execution,
-              resultsDir,
-              leftovers,
-              ...(arm.requires === undefined ? {} : { harness: harnesses.get(arm.requires) }),
-              ...(arm.name === GENERATED_ARM
-                ? { projectRules: projectRules.get(`${scenario.id}@${scenario.version}`) }
-                : {}),
-            },
-            options,
-          ),
-        );
-      }
-    }
+  for (const { scenario, arm, model, repetition } of plan.runs) {
+    runs.push(
+      await executeRun(
+        {
+          plan,
+          scenario,
+          arm,
+          model,
+          repetition,
+          execution,
+          resultsDir,
+          leftovers,
+          ...(arm.requires === undefined ? {} : { harness: harnesses.get(arm.requires) }),
+          ...(arm.name === GENERATED_ARM
+            ? { projectRules: projectRules.get(`${scenario.id}@${scenario.version}`) }
+            : {}),
+        },
+        options,
+      ),
+    );
   }
   return { execution, resultsDir, runs, completed: runs.every((run) => run.outcome === 'completed') };
 }
 
 interface RunContext {
-  readonly campaign: CheckedCampaign['campaign'];
+  readonly plan: RunPlan;
   readonly scenario: Scenario;
   readonly arm: Arm;
   readonly model: string;
   readonly repetition: number;
   readonly execution: number;
   readonly resultsDir: string;
-  /** Containers of this campaign that already exist, by name, with their execution and state. */
+  /** Containers of this plan that already exist, by name, with their execution and state. */
   readonly leftovers: ReadonlyMap<string, Leftover>;
-  /** The harness the arm requires, built for this campaign. */
+  /** The harness the arm requires, built for this execution. */
   readonly harness?: HarnessArtefact | undefined;
   /** The generated `PROJECT_RULES.md` of the scenario, for the baseline-docs arm (REQ-RUN-11). */
   readonly projectRules?: string | undefined;
@@ -261,16 +333,9 @@ interface RunContext {
 
 /** One run: its own workspace, its own container, removed whatever happens. */
 async function executeRun(context: RunContext, options: RunnerOptions): Promise<RunResult> {
-  const { campaign, scenario, arm, model, repetition, execution, resultsDir } = context;
+  const { plan, scenario, arm, model, repetition, execution, resultsDir } = context;
   const name = `${scenario.id}@${scenario.version}/${arm.name}/${model}/r${repetition}`;
-  const workspace = join(
-    campaign.repoRoot,
-    'runs',
-    campaign.id,
-    String(execution),
-    ...name.split('/'),
-    'workspace',
-  );
+  const workspace = join(plan.repoRoot, 'runs', plan.key, String(execution), ...name.split('/'), 'workspace');
   // The workspace is debris to look at (git-ignored); the output is the run's record (REQ-FMT-06).
   const outputDir = join(resultsDir, 'runs', ...name.split('/'));
   const { harness } = context;
@@ -294,11 +359,11 @@ async function executeRun(context: RunContext, options: RunnerOptions): Promise<
   try {
     // The campaign's validation refuses a version this runner does not implement; this is the type's
     // proof of it, and the guard if a campaign ever reached a run by another path.
-    const policy = approverPolicy(campaign.spec.approver_policy);
+    const policy = approverPolicy(plan.pins.approver_policy);
     if (policy === undefined) {
-      throw new Error(`the approver policy ${campaign.spec.approver_policy} is not implemented`);
+      throw new Error(`the approver policy ${plan.pins.approver_policy} is not implemented`);
     }
-    const containerName = `${containerPrefix(campaign.id)}${execution}-${name.replaceAll(/[@/]/g, '-')}`;
+    const containerName = `${containerPrefix(plan.id)}${execution}-${name.replaceAll(/[@/]/g, '-')}`;
     const stale = context.leftovers.get(containerName);
     // Reported, never removed: the runner does not destroy what this run did not create (bug-003,
     // approver's choice). The campaign goes on to its next run (REQ-NFR-03).
@@ -306,15 +371,15 @@ async function executeRun(context: RunContext, options: RunnerOptions): Promise<
       throw new Error(
         stale.running
           ? `container ${containerName} already exists and is running: another invocation of this ` +
-              `campaign may be using it. If none is, remove it with: docker rm --force ${containerName}`
+              `${plan.noun} may be using it. If none is, remove it with: docker rm --force ${containerName}`
           : `container ${containerName} already exists: an interrupted run of execution ` +
-              `${stale.execution} of this campaign left it behind (bug-003). Remove it with: ` +
+              `${stale.execution} of this ${plan.noun} left it behind (bug-003). Remove it with: ` +
               `docker rm --force ${containerName}`,
       );
     }
     await prepareWorkspace(workspace, scenario, options.git);
     container = await options.docker.create({
-      image: campaign.id,
+      image: plan.id,
       name: containerName,
       workspace,
       user: CONTAINER_USER,
@@ -347,7 +412,7 @@ async function executeRun(context: RunContext, options: RunnerOptions): Promise<
           model,
           policy,
           spent: spentEur(steps),
-          campaign,
+          pins: plan.pins,
           ...(mcpConfig === undefined ? {} : { mcpConfig }),
         },
         options,
@@ -359,13 +424,13 @@ async function executeRun(context: RunContext, options: RunnerOptions): Promise<
         throw new Error(`step ${stepNumber(step.n)} of ${scenario.id} failed: ${result.error}`);
       }
     }
-    return record({ ...identity, setup, steps, outcome: 'completed' }, campaign);
+    return record({ ...identity, setup, steps, outcome: 'completed' }, plan);
   } catch (error) {
     const message = reasonOf(error);
     options.logError?.(`run ${name} failed: ${message}`);
     return record(
       { ...identity, ...(setup === undefined ? {} : { setup }), steps, outcome: 'failed', error: message },
-      campaign,
+      plan,
     );
   } finally {
     if (container !== undefined) await remove(container, options);
@@ -455,7 +520,7 @@ interface StepContext {
   readonly policy: ApproverPolicy;
   /** What the run's finished steps have spent, in EUR. */
   readonly spent: number;
-  readonly campaign: CheckedCampaign['campaign'];
+  readonly pins: RunPins;
   /** The arm's MCP configuration in the container, on every invocation of the step. */
   readonly mcpConfig?: string;
 }
@@ -470,8 +535,8 @@ function spentEur(spent: readonly { readonly usage: SessionUsage }[]): number {
  * **and** the current step's invocations so far, or a resume would be offered the whole cap again —
  * converted with the campaign's rate. Enforcing it is F1.3 (W5); W2 only tells the agent what it is.
  */
-function remaining(campaign: CheckedCampaign['campaign'], spent: number): number {
-  const { caps, currency } = campaign.spec;
+function remaining(pins: RunPins, spent: number): number {
+  const { caps, currency } = pins;
   return Math.max(0, (caps.run_cost_eur - spent) / currency.usd_to_eur);
 }
 
@@ -531,7 +596,7 @@ async function executeStep(
   context: StepContext,
   options: RunnerOptions,
 ): Promise<StepResult> {
-  const { container, workspace, outputDir, scenario, model, policy, spent, campaign, mcpConfig } = context;
+  const { container, workspace, outputDir, scenario, model, policy, spent, pins, mcpConfig } = context;
   const mcp = mcpConfig === undefined ? {} : { mcpConfig };
   const number = stepNumber(step.n);
   let prompt: string;
@@ -546,7 +611,7 @@ async function executeStep(
   // `--max-budget-usd 0` is a value the spike never measured: it may refuse at once, or mean no
   // limit at all. Neither is a thing to say by accident, so the step is not started. This is not the
   // budget guard — enforcing the cap across a run and a campaign is F1.3 (REQ-RUN-08, W5).
-  const remainingCostUsd = remaining(campaign, spent);
+  const remainingCostUsd = remaining(pins, spent);
   if (remainingCostUsd <= 0) {
     throw new Error(`step ${number} not started: the run's cost cap is exhausted`);
   }
@@ -585,7 +650,7 @@ async function executeStep(
       options.log?.(`step ${number}: intervention cap reached (${policy.maxInterventions})`);
       break;
     }
-    const left = remaining(campaign, spent + stepUsage(invocations).costEur);
+    const left = remaining(pins, spent + stepUsage(invocations).costEur);
     if (left <= 0) {
       error = `step ${number} not resumed: the run's cost cap is exhausted`;
       break;
@@ -662,30 +727,30 @@ async function assertOnlyWorkspaceMounted(
   }
 }
 
-/** Every container of a campaign starts with this: the campaign's identity, then the execution. */
-function containerPrefix(campaignId: string): string {
-  return `bench-${campaignId}-`;
+/** Every container of a plan starts with this: the plan's identity, then the execution. */
+function containerPrefix(id: string): string {
+  return `bench-${id}-`;
 }
 
-/** A container of this campaign that already exists: the execution its name carries, and its state. */
+/** A container of this plan that already exists: the execution its name carries, and its state. */
 interface Leftover {
   readonly execution: number;
   readonly running: boolean;
 }
 
 /**
- * The containers of this campaign that already exist (bug-003), by name. One the current execution
+ * The containers of this plan that already exist (bug-003), by name. One the current execution
  * will need is reported by that run; one of another execution is warned about once, here, with the
  * command that clears it. A **stopped** one was left by an interrupted run. A **running** one may be
  * another invocation of the same campaign — the id is a digest of the file, so another checkout or a
  * second test suite shares it — and is not called interrupted: the runner cannot tell, and says so.
  */
 async function leftBehind(
-  campaignId: string,
+  plan: RunPlan,
   execution: number,
   options: RunnerOptions,
 ): Promise<ReadonlyMap<string, Leftover>> {
-  const prefix = containerPrefix(campaignId);
+  const prefix = containerPrefix(plan.id);
   const leftovers = new Map<string, Leftover>();
   for (const { name, running } of await options.docker.containersNamed(prefix)) {
     const found = /^(\d+)-/.exec(name.slice(prefix.length))?.[1];
@@ -694,10 +759,10 @@ async function leftBehind(
     if (Number(found) === execution) continue;
     options.logError?.(
       running
-        ? `container ${name} of execution ${found} is running: another invocation of this campaign may ` +
+        ? `container ${name} of execution ${found} is running: another invocation of this ${plan.noun} may ` +
             `be using it. If none is, remove it with: docker rm --force ${name}`
         : `container ${name} was left behind by an interrupted run of execution ${found} of this ` +
-            `campaign (bug-003). Remove it with: docker rm --force ${name}`,
+            `${plan.noun} (bug-003). Remove it with: docker rm --force ${name}`,
     );
   }
   return leftovers;
@@ -722,14 +787,15 @@ function packageRoot(): string {
  * It holds what a later reading of the usage needs and cannot recover: which scenario, arm, model and
  * repetition this was, and which agent, model and approver policy the campaign pinned for it.
  */
-function record(run: RunResult, campaign: CheckedCampaign['campaign']): RunResult {
+function record(run: RunResult, plan: RunPlan): RunResult {
   mkdirSync(run.outputDir, { recursive: true });
-  const { agent, approver_policy } = campaign.spec;
+  const { agent, approver_policy } = plan.pins;
   writeFileSync(
     join(run.outputDir, 'run.json'),
     `${JSON.stringify(
       {
-        campaign: campaign.id,
+        // The campaign the run belonged to, or `dry_run: true`: a dry run is never a campaign's (REQ-RES-01).
+        ...plan.origin,
         scenario: run.scenario,
         version: run.version,
         // What the version's content was when it ran (REQ-FMT-09): a later change is refused, not mixed in.

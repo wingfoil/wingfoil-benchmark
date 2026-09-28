@@ -1,14 +1,16 @@
-import { copyFileSync, cpSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { copyFileSync, cpSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { stringify } from 'yaml';
 import { describe, expect, it } from 'vitest';
 
 import { main } from '../../src/cli/index.js';
 import { checkCampaign, runCampaign } from '../../src/runner/index.js';
+import { latestDryRun } from '../../src/results/index.js';
 import { loadScenario } from '../../src/scenario/index.js';
 import { writeArmsNamed } from '../support/arm-fixture.js';
 import { completeCampaignYaml } from '../support/campaign-fixture.js';
-import { doubles } from '../support/runner-doubles.js';
+import { writeDryRunProfile } from '../support/dry-run-fixture.js';
+import { doubles, invocationOf } from '../support/runner-doubles.js';
 import { repoPath } from '../support/paths.js';
 import { tempDir, writeScenario } from '../support/scenario-fixture.js';
 
@@ -121,6 +123,82 @@ describe('scenarios.feature', () => {
       stderr: 'steps[0].prompt_file: holds a literal of the hold-out file hidden/refund.test.ts\n',
     });
     expect(result.stderr).not.toContain('4417');
+  });
+
+  it('@F3.3 A dry run measures the real cost of a scenario in one arm', async () => {
+    // T3 stands in for S1 and baseline for the wingfoil arm; the fake agent for the real one reports a
+    // cost per step, as the real one does (REQ-RUN-9), and no container or session is real.
+    const root = repository();
+    writeArmsNamed(root, ['baseline']);
+    writeDryRunProfile(root);
+    const cost = [0.03, 0.01];
+    const ports = doubles({
+      usageOf: (request) => ({
+        inputTokens: 1,
+        outputTokens: 1,
+        cacheCreationInputTokens: 0,
+        cacheReadInputTokens: 0,
+        costUsd: invocationOf(request) === 0 ? (cost[request.step - 1] ?? 0) : 0,
+        costEur: 0,
+        turns: 1,
+        durationMs: 1,
+      }),
+    });
+    let stdout = '';
+    let stderr = '';
+
+    // When the maintainer dry-runs S1 in the wingfoil arm with the real agent
+    const code = await main(
+      ['scenario', 'dry-run', 'T3@1.0', '--arm', 'baseline'],
+      { stdout: (text) => (stdout += text), stderr: (text) => (stderr += text) },
+      ports,
+      root,
+    );
+
+    // Then one run of S1 is executed in that arm
+    expect({ code, stderr }).toEqual({ code: 0, stderr: '' });
+    expect(ports.recorded.creates).toHaveLength(1);
+    expect(ports.recorded.steps.map((step) => step.step)).toEqual([1, 2]);
+
+    // And its cost per step and in total is recorded as the dry-run cost of S1 in that arm
+    const dir = join(root, 'results', 'dry-runs', '1');
+    const record = JSON.parse(
+      readFileSync(join(dir, 'runs', 'T3@1.0', 'baseline', 'fake-model', 'r1', 'run.json'), 'utf8'),
+    ) as Record<string, unknown>;
+    const scenario = loadScenario(join(root, 'scenarios'), 'T3', '1.0');
+    if (!scenario.ok) throw new Error(JSON.stringify(scenario.issues));
+    const key = { id: 'T3', version: '1.0', hash: scenario.value.hash, arm: 'baseline', model: 'fake-model' };
+    expect(record).toMatchObject({
+      dry_run: true,
+      scenario_hash: key.hash,
+      arm: 'baseline',
+      outcome: 'completed',
+    });
+    expect(latestDryRun(join(root, 'results'), key)).toMatchObject({
+      execution: 1,
+      dir,
+      costUsd: 0.04,
+      stepCostsUsd: [0.03, 0.01],
+    });
+    expect(stdout).toContain('dry run T3@1.0 in baseline on fake-model: no dry run yet');
+    expect(stdout).toContain(
+      'dry run T3@1.0 in baseline: completed, 0.0400 USD (0.0200 EUR) — step 01 0.0300 USD, ' +
+        'step 02 0.0100 USD — results/dry-runs/1\n',
+    );
+
+    // And the result is marked as a dry run and never appears in published results
+    expect(record).not.toHaveProperty('campaign');
+    expect(readdirSync(join(root, 'results'))).toEqual(['dry-runs']);
+    // It is no campaign's result either: the version stays open to change (task-021 Design), and the
+    // changed version's cost is no longer the dry run's.
+    writeFileSync(
+      join(root, 'scenarios', 'T3', '1.0', 'prompts', '02.md'),
+      'Refuse to cancel a shipped order.\n',
+    );
+    expect((await validate(root)).code).toBe(0);
+    const changed = loadScenario(join(root, 'scenarios'), 'T3', '1.0');
+    if (!changed.ok) throw new Error(JSON.stringify(changed.issues));
+    expect(latestDryRun(join(root, 'results'), { ...key, hash: changed.value.hash })).toBeUndefined();
   });
 
   it('@F3.4 Changing a scenario creates a new version', async () => {

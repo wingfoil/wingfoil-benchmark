@@ -9,3 +9,4 @@ export {
   oracleLiterals,
   scanScenario,
 } from './leak-scan.js';
+export { DRY_RUN_PROFILE, loadDryRunProfile } from './dry-run.js';

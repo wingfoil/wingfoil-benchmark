@@ -2,9 +2,8 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import type { Arm, DockerPort, GitPort } from '../core/index.js';
+import type { Arm, CampaignFile, DockerPort, GitPort } from '../core/index.js';
 
-import type { CheckedCampaign } from './campaign.js';
 import { hostUser } from './identity.js';
 
 /**
@@ -19,6 +18,17 @@ export interface HarnessArtefact {
   readonly installedSha256: string;
   /** The installed artefact on the host, copied into each run's container. */
   readonly installed: string;
+}
+
+/**
+ * What the harnesses are built for: a campaign or a dry run (task-021) — its identity, which is the
+ * image a build runs in, its repository, whose `.cache/` keeps the artefacts, its arms and its pins.
+ */
+export interface HarnessTarget {
+  readonly id: string;
+  readonly repoRoot: string;
+  readonly arms: readonly Arm[];
+  readonly harnesses: CampaignFile['harnesses'];
 }
 
 /** What a harness build needs: the ports, and the local clone of each tool. */
@@ -77,14 +87,14 @@ const BUILDERS: Readonly<Record<string, (sha: string) => string>> = { wingfoil: 
  * that fails stops the campaign: an arm never runs without its harness.
  */
 export async function prepareHarnesses(
-  checked: CheckedCampaign,
+  target: HarnessTarget,
   options: HarnessOptions,
 ): Promise<ReadonlyMap<string, HarnessArtefact>> {
   const artefacts = new Map<string, HarnessArtefact>();
-  for (const arm of checked.arms) {
+  for (const arm of target.arms) {
     const tool = arm.requires;
     if (tool === undefined || artefacts.has(tool)) continue;
-    artefacts.set(tool, await prepare(arm, tool, checked, options));
+    artefacts.set(tool, await prepare(arm, tool, target, options));
   }
   return artefacts;
 }
@@ -92,11 +102,11 @@ export async function prepareHarnesses(
 async function prepare(
   arm: Arm,
   tool: string,
-  { campaign }: CheckedCampaign,
+  target: HarnessTarget,
   options: HarnessOptions,
 ): Promise<HarnessArtefact> {
-  // Checked by the campaign check (harness coverage); the guard keeps the type honest.
-  const harness = campaign.spec.harnesses[arm.name];
+  // Checked by the campaign or dry-run check (harness coverage); the guard keeps the type honest.
+  const harness = target.harnesses[arm.name];
   if (harness === undefined) throw new Error(`arm ${arm.name} requires '${tool}' and pins no harness`);
   const builder = BUILDERS[harness.tool];
   if (builder === undefined) {
@@ -113,7 +123,7 @@ async function prepare(
   if (sha === undefined)
     throw new Error(`the ${tool} harness pins ${pin}, which is not a commit of ${clone}`);
 
-  const cache = join(campaign.repoRoot, '.cache', 'harness', tool, sha);
+  const cache = join(target.repoRoot, '.cache', 'harness', tool, sha);
   const cached = fromCache(cache, tool, sha);
   if (cached !== undefined) return cached;
 
@@ -122,7 +132,7 @@ async function prepare(
   mkdirSync(build, { recursive: true });
   await options.git.archive(clone, sha, join(build, 'src.tar'));
   const result = await options.docker.runOnce({
-    image: campaign.id,
+    image: target.id,
     user: hostUser(),
     mount: { source: build, target: BUILD },
     command: ['bash', '-c', builder(sha)],

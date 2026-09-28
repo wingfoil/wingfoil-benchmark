@@ -63,7 +63,8 @@ const harness = z
     }
   });
 
-const modelId = z
+/** A model id, as a campaign or a dry run names one. */
+export const modelId = z
   .string()
   .max(MODEL_ID_MAX)
   .regex(MODEL_ID, 'must be a model id: lower-case letters, digits, single dots and dashes');
@@ -203,7 +204,10 @@ export interface ArmRequirement {
  * arm is covered by its own definition rather than by a list of names; this replaces dl-003's
  * interim rule, as it planned. `arms` are the campaign's arm definitions, in the campaign's order.
  */
-export function harnessCoverage(campaign: CampaignFile, arms: readonly ArmRequirement[]): Issue[] {
+export function harnessCoverage(
+  campaign: Pick<CampaignFile, 'harnesses'>,
+  arms: readonly ArmRequirement[],
+): Issue[] {
   const issues: Issue[] = [];
   for (const { name, requires } of arms) {
     const harness = Object.hasOwn(campaign.harnesses, name) ? campaign.harnesses[name] : undefined;
