@@ -239,3 +239,10 @@ and README say Apache-2.0. Nothing is vendored here. task-032 takes the two file
   fields checked, one commit `wf(task): submit <id>` with no bracket and no body. Observed: exit 0,
   empty stderr, 1 file, diff limited to `status: draft` → `status: pending`. Matches (subject without
   transition: N9).
+- `npx wingfoil memory approve … [pending → backlog]` → `4dbb6c9`, run by the approver.
+- Design committed by hand on `task/task-031-…` (`6f3717b`), so that `submit` carries only the state
+  change (N13).
+- `npx wingfoil memory submit task-031-third-party-oracle-material-pinned-by-commit-or-sha256` →
+  `bbc58a8`. Declared: `backlog → in-progress`, one commit `wf(task): submit <id>`. Observed: exit 0,
+  empty stderr, 1 file, diff limited to `status: backlog` → `status: in-progress`. Matches (subject
+  without transition: N9).
