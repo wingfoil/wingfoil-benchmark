@@ -134,3 +134,53 @@ task-016's test stays green).
   fields checked, one commit `wf(task): submit <id>` with no bracket and no body. Observed: exit 0,
   empty stderr, 1 file, diff limited to `status: draft` → `status: pending`. Matches (subject without
   transition: N9).
+- `npx wingfoil memory approve task-028-hold-out-tests-in-scoring --reason "…"`, run by the approver →
+  `0e2c14a` (`pending → backlog`). Matches.
+- Design committed by hand on `task/task-028-hold-out-tests-in-scoring`, then `npx wingfoil memory submit
+  task-028-hold-out-tests-in-scoring` → `1dda77b`. Declared: `backlog → in-progress`, one commit. Observed:
+  exit 0, empty stderr, 1 file, only `status` changed (N9). Matches. WIP after it: one `in-progress` (this
+  one), none `in-review`.
+
+### Build
+
+Test-first: the unit tests of the hold-out's grouping and hash, of `runSuite`'s second mount and
+confidential failure, of `scoreRun`'s hold-out results, and of the command were written and run red
+(11, then 2) before the code (`74b992d`).
+
+- `scoring/holdout.ts`: `holdoutSuites` groups the additions by suite id; `holdoutHash` by task-018's rule.
+- `runSuite` takes `holdoutDir` — the public suite mounted as before, the additions at
+  `<suite dir>.holdout/`, only their test files run — and `confidential`, which drops the container's
+  stderr from a failure.
+- `scoreRun` scores a **group** of suites: the public ones, then the hold-out's with `confidential` set,
+  each group through the same per-step and final rules; the hold-out's tallies carry no `failed`, its
+  census is keyed by the additions' hash, and its oracle errors name the suite and at most the file.
+  `score.json` gains `holdout` (`scored`, `hash`, `steps`, `final`, or `scored: false` with its `reason`).
+- `bench score`: the additions per scenario version from `--holdout` or `BENCH_HOLDOUT_PATH`; a version
+  whose `holdout:` disagrees with them is not scored, with `bench scenario validate`'s words; the line
+  ends `; hold-out final <p>/<t>`, `; hold-out not scored`, or nothing for a version that declares none.
+- **The wave's Docker test** now scores T3 with a real hold-out: two `node:test` tests beside the public
+  suite, importing the code under test by the public tests' own relative path. `hold-out final 1/2`
+  (0/2 after step 1), and no hold-out test name in `score.json`. It first gave 1/2 after step 1: the
+  test "refuses a second cancellation" passed on a snapshot without `cancel`, since calling `undefined`
+  throws too — a flaw of the test written for it, fixed by asserting `cancel` is a function first, and
+  the kind of oracle mistake the census cannot see.
+- **adr-004 amendment 1** (`88b77c3`) records decisions 13–16: the hold-out suite, its place beside the
+  public suite, counts only, and "not scored" said. It is a rule for the hold-out's authors in W7 and W8,
+  so it waits for the approver's decision at this task's review.
+- No requirement changes: REQ-SCO-09 is met as written, REQ-CLI-06 already names `--holdout`.
+
+### Suites (at `88b77c3`)
+
+- `npm test`: **798 passed** (43 files); coverage 99.49% statements / 95.9% branches / 100% functions /
+  100% lines.
+- `npm run test:bin` 5, `npm run test:docker` **7** (W6's with the hold-out), `npm run lint`, `npx tsc
+  --noEmit`, `npm run build`: clean. No `bench-*` container left.
+
+### Traceability
+
+`scenarios.feature` @F3.5 "Hold-out additions are used for scoring only" and @F3.5 @error "A missing
+hold-out does not break scoring of public oracles", green in `test/acceptance/scenarios.test.ts`. F3.5 is
+declared here, as task-016 left it. REQ-SCO-09 (apart, in `score.json`), REQ-CLI-06 and REQ-CLI-10 (the
+option and the variable), REQ-ARC-03 (additions under the suite ids). `campaign run` untouched: task-016's
+test that it never reads the hold-out stays green. Nothing was spent.
+
