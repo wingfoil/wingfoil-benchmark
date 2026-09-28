@@ -44,7 +44,63 @@ Preliminary classification (confirmed in the design phase). All behaviour is new
 
 ## Design
 
-<!-- Modules, interfaces, data formats touched; decisions taken and their reasons. -->
+Builds on task-017 (`bench scenario validate`) and on the results layout (REQ-FMT-06). **Classification
+confirmed:** all red-first.
+
+### The content hash (REQ-FMT-09) — `scenario/hash.ts`
+
+`scenarioHash(dir)`: every entry under `scenarios/<id>/<version>/` — `scenario.yaml`, the seed, the
+prompts, the public oracle, the `arms/<arm>/` configuration, and anything else the directory holds —
+listed as `<sha256 of its bytes>  <path relative to the directory, with '/'>`, one line each, sorted
+by path (code-unit order), and the SHA-256 of those lines is the hash, written `sha256:<hex>`. A
+symbolic link is hashed as its target text, so that changing where it points is a change. The
+directory is the unit because the directory is what a version names: whatever is in it, a run could
+depend on.
+
+**Hold-out additions are not in it** (the Context's open question). They live in the private
+repository, so a public rerun could not recompute a hash that covered them, and REQ-FMT-09's check
+would be unverifiable by exactly the readers F3.4 exists for. What the hold-out contributed to a run is
+recorded where it is used, with the scoring (W6, `score.json`, REQ-SCO-09).
+
+**The same on any machine.** The hash is taken over bytes, and git may rewrite line endings at
+checkout (`core.autocrlf` on Windows). A new `.gitattributes` gives `scenarios/**` the `-text`
+attribute: git stores and checks out their bytes unchanged, everywhere, so a clone on any system hashes
+the same. (This repository's own checkout uses `autocrlf=input`, which would not alter them either; the
+attribute makes it hold for every clone.)
+
+`loadScenario` computes it: `Scenario.hash`.
+
+### Results record it (REQ-FMT-06)
+
+`run.json` gains `scenario_hash`, next to `scenario` and `version`.
+
+### Versions are immutable (REQ-FMT-09, `scenarios.feature` @F3.4)
+
+`results/recorded.ts`: `recordedHashes(resultsRoot, id, version)` reads every
+`results/*/*/runs/<id>@<version>/**/run.json` and returns the distinct `scenario_hash` values with one
+run each, as evidence. A run recorded before this task has no hash and cannot be compared: it is
+skipped, and nothing is inferred from it.
+
+A version whose current hash differs from a recorded one is refused, with an issue at the scenario
+that names the recorded run and says to register the change as a new version:
+`scenarios[0]: S1@1.0 has changed since results/<campaign-id>/1/runs/S1@1.0/… ran it: register the
+change as a new version`. Checked in two places:
+
+- **`checkCampaign`** — so `campaign validate` and `campaign run` refuse it: a changed version
+  never runs under its old name. Stored results are never touched: they keep pointing to the version
+  and hash they ran with.
+- **`bench scenario validate`**, reading `results/` under the root, after the scenario's own checks.
+
+### Tests
+
+- **Acceptance** (`scenarios.feature` @F3.4): a campaign runs S1@1.0 (doubles; its `run.json` gets the
+  hash); a step prompt of 1.0 changes; `campaign validate` refuses it naming the recorded run; the
+  stored `run.json` still says `1.0` and the old hash; the change copied as 1.1 validates and runs.
+- **Unit:** the hash (every kind of file changes it; the same content in another directory or read in
+  another order gives the same hash; a link's target is hashed; the hold-out is not), `recordedHashes`
+  (several executions, runs without a hash skipped, other versions ignored), the check in both
+  commands, `run.json`'s field. The `.gitattributes` rule is checked by a test that asks git
+  (`git check-attr text`) for a file under `scenarios/`.
 
 ## Execution notes
 
