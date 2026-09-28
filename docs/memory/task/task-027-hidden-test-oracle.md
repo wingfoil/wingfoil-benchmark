@@ -2,7 +2,7 @@
 id: task-027-hidden-test-oracle
 type: task
 title: "Hidden-test oracle"
-status: draft
+status: pending
 release: v0.1
 wave: W6
 features: [F4.1]
