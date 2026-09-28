@@ -92,14 +92,139 @@ Preliminary classification (confirmed in the design phase).
 - dl-002 — a `sha256` that does not match the vendored material is refused by `bench scenario
   validate`, naming the entry. **red-first**
 - REQ-FMT-04 — a `commit` that is not 40-hex is still refused (S1's `2a928f9`). **characterization**
-- REQ-FMT-04 — the license of non-SPDX material, as decided in the design. **red-first**
+- REQ-FMT-04 — the license of non-SPDX material as an SPDX `LicenseRef-…`. **characterization**
+  (design: the expression check already accepts it)
+- REQ-FMT-04 — an entry names the files it vendors, which exist, lie in a suite and are vendored by no
+  other entry; `sha256` pins exactly one file. **red-first** (added in the design)
 - REQ-FMT-09 — a change in a vendored third-party file changes the version's hash.
   **characterization**
 - `scenarios.feature` @F3.1, @F3.2 and @F3.4 stay green. **characterization**
 
 ## Design
 
-<!-- Modules, interfaces, data formats touched; decisions taken and their reasons. -->
+**Classification confirmed**, with two changes. The license criterion is **characterization**: the
+existing `isSpdxExpression` does not check identifiers against the SPDX list, and SPDX's own form for a
+license outside the list, `LicenseRef-<idstring>` (letters, digits, `.` and `-`), already matches its
+`SPDX_ID`, so a test only fixes that it is accepted. And one **red-first** criterion is added, for the
+`files` an entry vendors (below). Everything else stays as classified.
+
+### The entry — `commit` or `sha256`, and the files it vendors (REQ-FMT-04 as amended)
+
+```yaml
+oracle:
+  third_party:
+    - name: json-patch-tests
+      url: https://github.com/json-patch/json-patch-tests
+      commit: 2a928f9044aad35c74e2788d498bcf2c6b91adea
+      license: Apache-2.0
+      files: [oracle/patch/tests.json, oracle/patch/spec_tests.json]
+    - name: RFC 6901 section 5 examples
+      url: https://www.rfc-editor.org/rfc/rfc6901#section-5
+      sha256: <64 hex, of the file's bytes>
+      license: LicenseRef-…            # which one: task-032 (dl-002)
+      files: [oracle/pointer/rfc6901-examples.json]
+```
+
+In `src/core/scenario.ts`, `thirdParty` stays a strict object:
+
+- `name`, `url` and `license` unchanged;
+- `commit`: optional, 40 lowercase hex, the message unchanged (S1's `2a928f9` is still refused);
+- `sha256`: optional, 64 lowercase hex, `must be a 64-character SHA-256 in lowercase hex`;
+- **`files`: required**, a non-empty list of relative paths (the existing `relativePath`), with no
+  duplicates by `samePathKey`. It is what the entry vendors into the oracle: dl-002 pins "what is
+  actually used", and a license is recorded for something, so the entry names that something. It is
+  required for `commit` entries too, since they are vendored as well; no stored scenario declares an
+  entry, so nothing breaks.
+
+A `superRefine` on the entry adds, each an issue on the entry's path:
+
+- neither `commit` nor `sha256`: `oracle.third_party[i]`: `must be pinned by commit or by sha256`;
+- both: `oracle.third_party[i]`: `must be pinned by commit or by sha256, not both`;
+- `sha256` with more than one file: `oracle.third_party[i].files`: `must name one file when pinned by
+  sha256`. **One file per `sha256` entry**, so that the pin is the file's plain SHA-256 and anyone
+  can check it with `sha256sum`, with no hashing convention of the benchmark's to learn. S1's two RFC
+  sources are two entries.
+
+Across entries, on the `oracle` object: a file named by two entries is an issue on the later one
+(`oracle.third_party[i].files[j]`: `is vendored by oracle.third_party[k] too`). Two licenses for the
+same bytes cannot both be right.
+
+### The loader — the files exist, sit in a suite, and match their `sha256`
+
+In `src/scenario/load.ts`:
+
+- **Each file is a declared path**, kind `file`, `oracle.third_party[i].files[j]`, checked by
+  `fileIssues` like any other. It must exist and stay inside the version directory.
+- **Each file lies inside a declared suite's directory**, checked on real paths after `fileIssues`,
+  with the issue `'<file>' is in no suite of oracle.suites`. Vendored material is oracle material:
+  inside a suite it is hidden from the seed and the prompts by the existing overlap rules, leak-scanned
+  by `oracleFiles`, and mounted read-only for scoring. Outside every suite, nothing would guarantee
+  any of that. A check (REQ-SCO-06) is a pattern file of the benchmark's, not third-party material.
+- **A `sha256` entry's file is hashed and compared**, and on a mismatch the issue is
+  `oracle.third_party[i].sha256`: `does not match <file>`. The loader does it, not only
+  `bench scenario validate`: `campaign run`, `dry-run` and `bench score` all load the scenario, so
+  material that changed after it was pinned stops every one of them, and the scorer checks it "byte for
+  byte" as dl-002 wants.
+- **A `commit` entry is not checked against its source.** That would need the network and the upstream
+  repository at run time, which REQ-SCO-01 and the determinism directive rule out. Its files are covered
+  by the version's content hash (REQ-FMT-09) once the version is registered. How they were taken from
+  the commit (`git show <commit>:<path>`) is recorded in S1's authoring task, so anyone can repeat it.
+
+Order of issues: schema, identity, suite steps, declared paths on disk (the vendored files after the
+checks, in declaration order), arms, then the vendored files outside a suite and the `sha256`
+mismatches, then the overlaps, as today. The last two need files that exist, so they run only when
+there is no issue before them.
+
+`Scenario.oracle.thirdParty` becomes `readonly ThirdParty[]`: `{ name, url, license, pin: { commit } |
+{ sha256 }, files }`, with `files` absolute like every other loaded path. The union makes "exactly
+one" a fact of the type and not a convention. Nothing reads it downstream today; scoring and the site
+(W11, the licenses on the method page) will.
+
+### The hash and the leak scan
+
+- **REQ-FMT-09:** unchanged. `scenarioHash` covers every file of the version directory, and the
+  vendored files are among them. A test fixes it for a vendored file.
+- **REQ-FMT-08:** unchanged. A vendored file sits in a suite, so `oracleFiles` scans it. That the
+  vendored JSON is full of literals is task-032's concern (its Context).
+
+### S1's full SHA (read-only, from upstream)
+
+`git clone --filter=blob:none https://github.com/json-patch/json-patch-tests` into a scratch directory,
+outside the repository, then `git rev-parse --verify '2a928f9^{commit}'` →
+**`2a928f9044aad35c74e2788d498bcf2c6b91adea`**. It is unambiguous, and it is still upstream's `HEAD`:
+"Merge pull request #46 from cyangle/change_after_copy", 2025-02-21. At that commit `tests.json` has
+95 cases (3 `disabled`) and `spec_tests.json` 17 (1 `disabled`), as S1.md §6 says. Its `package.json`
+and README say Apache-2.0. Nothing is vendored here. task-032 takes the two files from this commit.
+
+### The amendments (each with a recorded review decision)
+
+- **Scenario specs README 1.2, §4:** "Third-party test material is pinned to a commit when it comes from
+  a git repository, or else by the SHA-256 of the file as vendored into the oracle; the entry names the
+  files it vendors, which lie in a suite, and records their license, as an SPDX identifier or a
+  `LicenseRef-` when the license has none (dl-002)."
+- **S1.md 1.2, §6:** `json-patch-tests` pinned at `2a928f9044aad35c74e2788d498bcf2c6b91adea`; the RFC 6901
+  §5 and RFC 7386 Appendix A examples are vendored as one file each and pinned by its `sha256`, with
+  their license confirmed at authoring (task-032).
+- **Requirements 1.10, REQ-FMT-04:** "third-party pins with licenses" becomes "third-party material as
+  `{name, url, commit | sha256, license, files[]}`, pinned by exactly one of the two (dl-002)". The
+  traceability matrix is unaffected.
+
+### Tests
+
+- **Unit, `test/unit/scenario/load.test.ts`**, red first: an entry with `sha256` only is valid; neither
+  and both are refused; `sha256` with two files; a `sha256` of the wrong length or case; `files`
+  missing, empty or repeated; a file named by two entries; a file that does not exist, is outside the
+  version directory, or is in no suite; a `sha256` that does not match; the loaded `pin` for each kind,
+  and absolute `files`. Characterization: `2a928f9` refused as a commit; `LicenseRef-IETF-Trust`
+  accepted; a change in a vendored file changes `scenarioHash`.
+- **The fixture** (`test/support/scenario-fixture.ts`): the complete scenario declares one entry of each
+  kind, with a vendored file in each suite and the `sha256` computed from the fixture's own bytes.
+- **The command:** `bench scenario validate` on a scenario whose vendored file was edited after it was
+  pinned exits 1 and names `oracle.third_party[i].sha256`. This is dl-002's criterion, tested where
+  task-016 and task-017 tested the command.
+- **Acceptance:** `scenarios.feature` @F3.1, @F3.2 and @F3.4 green on the updated fixture. No scenario
+  is added to the approved `.feature` file: dl-002 is a decision, not a feature, and its criteria are
+  the requirement's and the command's tests above.
 
 ## Execution notes
 
