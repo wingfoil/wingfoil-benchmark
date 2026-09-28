@@ -2,7 +2,7 @@
 id: task-018-scenario-versioning
 type: task
 title: "Scenario versioning"
-status: approved
+status: done
 release: v0.1
 wave: W4
 features: [F3.4]
