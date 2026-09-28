@@ -139,7 +139,11 @@ each step's patch — and checked against the tree the run recorded. Each suite 
 suite mounted read-only and the snapshot copied in. A suite's total is what it counts on the seed; a
 test a snapshot does not pass, or never reports, fails. The result is `score.json` beside `run.json`:
 M-Q1 for every step a suite is bound to and for the final snapshot, byte-identical when scored again
-(adr-004). One line per run: `T3@1.0 baseline fake-model r1: step 01 0/1, step 02 1/1, final 1/1`.
+(adr-004). With `--holdout` (or `BENCH_HOLDOUT_PATH`), the hold-out's additions run the same way, in
+containers of their own beside the public suite, and are stored apart under `holdout`, in counts only:
+no name, message or output of a hold-out test is printed or stored. Without one, `holdout` says why it
+was not scored. One line per run: `T3@1.0 baseline fake-model r1: step 01 0/1, step 02 1/1, final 1/1;
+hold-out final 1/2`.
 
 Exit codes: `0` success, `1` failure (one line per problem, or a run that failed), `2` usage error.
 
