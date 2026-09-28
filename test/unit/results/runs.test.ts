@@ -91,7 +91,8 @@ describe('readStoredRun (task-027)', () => {
       ok: false,
       issues: [{ path: 'run.json', message: expect.stringMatching(/^is not JSON/) }],
     });
-    const { scenario_hash: _, ...missing } = RECORD;
+    const missing: Partial<typeof RECORD> = { ...RECORD };
+    delete missing.scenario_hash;
     expect(readStoredRun(run(root, 'b', missing))).toEqual({
       ok: false,
       issues: [{ path: 'run.json.scenario_hash', message: 'is required' }],
