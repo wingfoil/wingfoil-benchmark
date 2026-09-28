@@ -4,6 +4,8 @@ import { resolve, sep } from 'node:path';
 import { ARM_NAME, fail, ok, parseWith, readYamlFile, scenarioSchema } from '../core/index.js';
 import type { Issue, Result, Scenario, ScenarioFile } from '../core/index.js';
 
+import { scenarioHash } from './hash.js';
+
 const SCENARIO_FILE = 'scenario.yaml';
 
 /** Where a scenario keeps its configuration per arm, one directory per arm name (dl-005). */
@@ -163,6 +165,7 @@ function toScenario(spec: ScenarioFile, dir: string, arms: readonly Declared[]):
       thirdParty: spec.oracle.third_party,
     },
     holdout: spec.holdout,
+    hash: scenarioHash(dir),
     armDirs: Object.fromEntries(
       arms.map(({ relative }) => [relative.slice(ARMS_DIR.length + 1), resolve(dir, relative)]),
     ),
