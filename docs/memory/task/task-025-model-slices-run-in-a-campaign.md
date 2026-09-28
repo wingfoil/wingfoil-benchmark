@@ -131,3 +131,11 @@ None; the restated criterion (resumes name no model) is the Design's.
 `npm test` 703/703 (statements 99.81%, branches 96.99%, functions 100%, lines 100%), `npm run test:bin`
 5/5, `npm run test:docker` 6/6, `npm run lint` clean, `npm run build` clean; no `bench-*` container
 left. Nothing was spent.
+
+### Review and approval
+
+- `npx wingfoil memory submit task-025-model-slices-run-in-a-campaign` → `086b493`
+  (`in-progress → in-review`, one commit, only `status` changed). Matches.
+- `npx wingfoil memory approve task-025-model-slices-run-in-a-campaign --reason "…"` → `079293b`,
+  run by the approver (`in-review → approved`, `Approver:`/`Reason:` trailers, only `status`
+  changed). Matches.
