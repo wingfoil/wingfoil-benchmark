@@ -2,7 +2,7 @@
 id: task-023-budget-guard-at-campaign-start
 type: task
 title: "Budget guard at campaign start"
-status: in-progress
+status: in-review
 release: v0.1
 wave: W5
 features: []
