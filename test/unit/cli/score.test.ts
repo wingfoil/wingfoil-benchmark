@@ -5,7 +5,15 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { AgentPort } from '../../../src/agents/index.js';
 import { main } from '../../../src/cli/index.js';
 import { gitCli, systemProcess } from '../../../src/core/index.js';
-import { CANCEL, EXECUTION, RUN_PATH, scoringDocker, storedRun } from '../../support/score-fixture.js';
+import {
+  CANCEL,
+  EXECUTION,
+  HOLDOUT_SECRET,
+  RUN_PATH,
+  scoringDocker,
+  storedRun,
+  t3Holdout,
+} from '../../support/score-fixture.js';
 import { tempDir } from '../../support/scenario-fixture.js';
 
 const NO_AGENT: AgentPort = {
@@ -40,7 +48,8 @@ describe('bench score (REQ-CLI-06)', () => {
 
     expect(result).toMatchObject({
       code: 0,
-      stdout: 'T3@1.0 baseline fake-model r1: step 01 0/1, step 02 1/1, final 1/1\n',
+      // T3 declares hold-out additions, and none was given: the line says so (F3.5).
+      stdout: 'T3@1.0 baseline fake-model r1: step 01 0/1, step 02 1/1, final 1/1; hold-out not scored\n',
       stderr: '',
     });
     expect(existsSync(join(fixture.runDir, 'score.json'))).toBe(true);
@@ -114,6 +123,49 @@ describe('bench score (REQ-CLI-06)', () => {
     );
   });
 
+  it("scores the hold-out's additions apart and in counts, and prints none of them (F3.5)", async () => {
+    const fixture = await storedRun({ steps: [{}, CANCEL] });
+
+    const result = await score(fixture.root, EXECUTION, '--holdout', t3Holdout());
+
+    expect(result).toMatchObject({
+      code: 0,
+      stdout: 'T3@1.0 baseline fake-model r1: step 01 0/1, step 02 1/1, final 1/1; hold-out final 1/2\n',
+      stderr: '',
+    });
+    const stored = readFileSync(join(fixture.runDir, 'score.json'), 'utf8');
+    expect(JSON.parse(stored)).toMatchObject({
+      holdout: { scored: true, final: { m_q1: { passed: 1, total: 2 } } },
+    });
+    expect(stored).not.toContain(HOLDOUT_SECRET);
+  });
+
+  it('refuses to score a version that expects additions the hold-out does not have, and one that declares none', async () => {
+    const fixture = await storedRun({ steps: [{}, CANCEL] });
+    const empty = tempDir('bench-holdout-');
+    const { mkdirSync, rmSync } = await import('node:fs');
+    mkdirSync(join(empty, 'scenarios'));
+    expect(await score(fixture.root, EXECUTION, '--holdout', empty)).toMatchObject({
+      code: 1,
+      stderr: `T3@1.0 baseline fake-model r1: holdout: the scenario expects hold-out additions, and ${empty} has none for T3@1.0\n`,
+    });
+
+    const yaml = join(fixture.root, 'scenarios', 'T3', '1.0', 'scenario.yaml');
+    writeFileSync(yaml, readFileSync(yaml, 'utf8').replace('holdout: true', 'holdout: false'));
+    // The version's hash changes with it: store the run again against the version as it is now.
+    const again = await storedRunIn(fixture);
+    const holdout = t3Holdout();
+    expect(await score(again, EXECUTION, '--holdout', holdout)).toMatchObject({
+      code: 1,
+      stderr: `T3@1.0 baseline fake-model r1: holdout: the scenario declares no hold-out additions, and ${holdout} has 1 file for T3@1.0\n`,
+    });
+    // With none given, a version that declares none says nothing of a hold-out.
+    expect((await score(again, EXECUTION)).stdout).toBe(
+      'T3@1.0 baseline fake-model r1: step 01 0/1, step 02 1/1, final 1/1\n',
+    );
+    rmSync(empty, { recursive: true, force: true });
+  });
+
   it.each([
     [[]],
     [['abcdef012345']],
@@ -129,3 +181,14 @@ describe('bench score (REQ-CLI-06)', () => {
     expect(result.stderr).toMatch(/^usage: bench/);
   });
 });
+
+/** The fixture's run stored again, against its scenario version as it is now. */
+async function storedRunIn(fixture: Awaited<ReturnType<typeof storedRun>>): Promise<string> {
+  const { loadScenario } = await import('../../../src/scenario/index.js');
+  const scenario = loadScenario(join(fixture.root, 'scenarios'), 'T3', '1.0');
+  if (!scenario.ok) throw new Error('T3 does not load');
+  const file = join(fixture.runDir, 'run.json');
+  const record = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>;
+  writeFileSync(file, JSON.stringify({ ...record, scenario_hash: scenario.value.hash }));
+  return fixture.root;
+}

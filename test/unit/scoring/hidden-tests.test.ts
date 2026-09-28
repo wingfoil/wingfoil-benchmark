@@ -191,4 +191,51 @@ describe('runSuite (REQ-SCO-01)', () => {
     expect(report).toEqual({ ok: true, value: { tests: [], failedFiles: [] } });
     expect(recorded.creates).toEqual([]);
   });
+
+  it("runs a hold-out suite's files from their own read-only mount beside the public suite's (task-028)", async () => {
+    const scenario = t3Like();
+    const holdout = join(scenario.dir, '..', 'holdout-first');
+    mkdirSync(join(holdout, 'deep'), { recursive: true });
+    writeFileSync(join(holdout, 'a.test.ts'), '');
+    writeFileSync(join(holdout, 'deep', 'b.test.ts'), '');
+    writeFileSync(join(holdout, 'helper.ts'), '');
+    const { docker, recorded } = scoringDocker(() => ({ code: 0, stdout: '', stderr: '' }));
+
+    await runSuite({
+      docker,
+      image: 'i',
+      container: 'c',
+      scenario,
+      suite: firstSuite(scenario),
+      snapshotDir: scenario.seedDir,
+      holdoutDir: holdout,
+    });
+
+    expect(recorded.creates[0]?.readOnly).toEqual([
+      { source: join(scenario.dir, 'oracle/first'), target: '/score/oracle/first' },
+      { source: holdout, target: '/score/oracle/first.holdout' },
+    ]);
+    expect(recorded.execs[0]?.command.slice(-2)).toEqual([
+      'oracle/first.holdout/a.test.ts',
+      'oracle/first.holdout/deep/b.test.ts',
+    ]);
+  });
+
+  it('says nothing a confidential suite wrote when its container fails', async () => {
+    const scenario = t3Like();
+    const { docker } = scoringDocker(() => ({ code: 127, stdout: '', stderr: 'SECRET\n' }));
+    const report = await runSuite({
+      docker,
+      image: 'i',
+      container: 'c',
+      scenario,
+      suite: firstSuite(scenario),
+      snapshotDir: scenario.seedDir,
+      confidential: true,
+    });
+    expect(report).toEqual({
+      ok: false,
+      issues: [{ path: 'suite first', message: 'the scoring container exited with code 127' }],
+    });
+  });
 });

@@ -13,6 +13,35 @@ import { writeDryRunProfile } from '../support/dry-run-fixture.js';
 import { doubles, invocationOf } from '../support/runner-doubles.js';
 import { repoPath } from '../support/paths.js';
 import { tempDir, writeScenario } from '../support/scenario-fixture.js';
+import {
+  CANCEL,
+  EXECUTION,
+  HOLDOUT_SECRET,
+  scoringDocker,
+  storedRun,
+  t3Holdout,
+} from '../support/score-fixture.js';
+import { gitCli, systemProcess } from '../../src/core/index.js';
+import type { AgentPort } from '../../src/agents/index.js';
+
+const NO_AGENT: AgentPort = {
+  runStep: () => Promise.reject(new Error('scoring runs no agent')),
+  resume: () => Promise.reject(new Error('scoring runs no agent')),
+};
+
+/** `bench score` on the stored-run fixture's execution, with Docker replaced by the scoring double. */
+async function benchScore(root: string, ...argv: string[]) {
+  const { docker, recorded } = scoringDocker();
+  let stdout = '';
+  let stderr = '';
+  const code = await main(
+    ['score', EXECUTION, ...argv],
+    { stdout: (text) => (stdout += text), stderr: (text) => (stderr += text) },
+    { docker, git: gitCli(systemProcess), agent: NO_AGENT },
+    root,
+  );
+  return { code, stdout, stderr, recorded };
+}
 
 /**
  * A repository holding the fixture T3 — standing in for S1, S2 and S3 until W7 and W8 — and the
@@ -126,6 +155,54 @@ describe('scenarios.feature', () => {
       stderr: 'steps[0].prompt_file: holds a literal of the hold-out file orders/refund.test.ts\n',
     });
     expect(result.stderr).not.toContain('4417');
+  });
+
+  it('@F3.5 Hold-out additions are used for scoring only', async () => {
+    // Given the hold-out path is configured, and it contains additional tests for S1 — T3 standing in
+    const fixture = await storedRun({ steps: [{}, CANCEL] });
+    const additions = t3Holdout();
+
+    // When a run of S1 is scored
+    const result = await benchScore(fixture.root, '--holdout', additions);
+
+    // Then the hold-out tests are executed on the run's snapshots — in containers of their own, the
+    // additions mounted read-only beside the public suite
+    expect(result.code).toBe(0);
+    const holdoutRuns = result.recorded.creates.filter((create) =>
+      create.readOnly.some((mount) => mount.target === '/score/oracle/public.holdout'),
+    );
+    expect(holdoutRuns.length).toBeGreaterThan(0);
+    // And their results are reported apart from the public tests, in counts, naming no hold-out test
+    const score = JSON.parse(readFileSync(join(fixture.runDir, 'score.json'), 'utf8')) as {
+      final: { m_q1: unknown };
+      holdout: { scored: boolean; final: { m_q1: unknown } };
+    };
+    expect(score.final.m_q1).toEqual({ passed: 1, total: 1 });
+    expect(score.holdout).toMatchObject({ scored: true, final: { m_q1: { passed: 1, total: 2 } } });
+    expect(result.stdout + result.stderr + JSON.stringify(score)).not.toContain(HOLDOUT_SECRET);
+  });
+
+  it('@F3.5 A missing hold-out does not break scoring of public oracles', async () => {
+    // Given the hold-out path is not configured
+    const previous = process.env.BENCH_HOLDOUT_PATH;
+    delete process.env.BENCH_HOLDOUT_PATH;
+    const fixture = await storedRun({ steps: [{}, CANCEL] });
+
+    // When a run of S1 is scored
+    const result = await benchScore(fixture.root).finally(() => {
+      if (previous !== undefined) process.env.BENCH_HOLDOUT_PATH = previous;
+    });
+
+    // Then the public oracle is scored
+    expect(result.code).toBe(0);
+    const score = JSON.parse(readFileSync(join(fixture.runDir, 'score.json'), 'utf8')) as {
+      final: { m_q1: unknown };
+      holdout: unknown;
+    };
+    expect(score.final.m_q1).toEqual({ passed: 1, total: 1 });
+    // And the report states that hold-out additions were not scored
+    expect(score.holdout).toEqual({ scored: false, reason: 'not configured' });
+    expect(result.stdout).toMatch(/; hold-out not scored\n$/);
   });
 
   it('@F3.3 A dry run measures the real cost of a scenario in one arm', async () => {
