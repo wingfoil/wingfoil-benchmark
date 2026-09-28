@@ -40,4 +40,14 @@ describe('holdoutHash (task-028, REQ-SCO-03)', () => {
     writeFileSync(join(found.dir, 'orders', 'refund.test.ts'), '// changed\n');
     expect(holdoutHash(found)).not.toBe(hash);
   });
+
+  it('does not depend on the order the additions are listed in', async () => {
+    const { additions: found } = await additions();
+    const { writeFileSync } = await import('node:fs');
+    writeFileSync(join(found.dir, 'orders', 'a.test.ts'), '// a\n');
+    const files = ['orders/a.test.ts', 'orders/refund.test.ts'];
+    expect(holdoutHash({ dir: found.dir, files })).toBe(
+      holdoutHash({ dir: found.dir, files: [...files].reverse() }),
+    );
+  });
 });
