@@ -187,3 +187,10 @@ any scenario whose oracle is code (all of v0.1's, K1).
 `npm test` 597/597 (statements 100%, branches 97.5%, functions 100%, lines 100%), `npm run test:bin`
 4/4, `npm run test:docker` 4/4, `npm run lint` clean; no `bench*` container left. `scenarios.feature`
 @F3.2 has its three acceptance tests; the traceability test is green with F3.2 started.
+
+### Review and approval
+
+- `npx wingfoil memory submit task-017-…` → `6f3a50c` (`in-progress → in-review`, one commit, only
+  `status` changed). Matches.
+- `npx wingfoil memory approve task-017-… --reason "…"` → `22b0c76`, run by the approver from the
+  worktree (`in-review → approved`, `Approver:`/`Reason:` trailers, only `status` changed). Matches.
