@@ -163,3 +163,13 @@ test after them (`bcf9941`).
 half unchanged, the bound converted at the same rate), REQ-SCO-03 (the same files give the same bytes).
 No requirement or ADR changes. Nothing was spent.
 
+
+### Review and approval
+
+- `npx wingfoil memory submit task-029-cost-metrics` → `f06a9f2` (`in-progress → in-review`, one commit,
+  only `status` changed). Matches.
+- The approver accepted the six review points as proposed (2026-09-28): wall time as the agent reported
+  it; a killed step at its bound, flagged; the setup left to W9; money to six decimals; a run with missing
+  usage not scored at all; no cost on `bench score`'s line.
+- `npx wingfoil memory approve task-029-cost-metrics --reason "…"` → `8cd88a2`, run by the approver
+  (`in-review → approved`, `Approver:`/`Reason:` trailers, only `status` changed). Matches.
