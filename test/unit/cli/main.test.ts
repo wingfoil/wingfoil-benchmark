@@ -160,7 +160,11 @@ describe('bench campaign run', () => {
       expect(code).toBe(0);
       expect(ports.recorded.builds).toHaveLength(1);
       // The credential reaches the container, stripped, under the variable the spike proved works.
-      expect(ports.recorded.creates[0]?.env).toEqual({ ANTHROPIC_AUTH_TOKEN: token });
+      // The credential, and the runner's own setting that turns the agent's auto-memory off (bug-006).
+      expect(ports.recorded.creates[0]?.env).toEqual({
+        CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1',
+        ANTHROPIC_AUTH_TOKEN: token,
+      });
     } finally {
       if (previous === undefined) Reflect.deleteProperty(process.env, 'BENCH_AGENT_TOKEN_FILE');
       else process.env.BENCH_AGENT_TOKEN_FILE = previous;

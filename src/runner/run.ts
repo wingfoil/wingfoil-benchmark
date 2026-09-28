@@ -158,6 +158,21 @@ const NO_USAGE: SessionUsage = {
   durationMs: 0,
 };
 
+/**
+ * What every container's agent gets in its environment besides the credential (bug-006, task-019):
+ * Claude Code's auto-memory turned off. Without it, 2.1.280 writes notes under
+ * `~/.claude/projects/<project>/memory/` that a later session reads — state carried between steps
+ * outside the repository (REQ-RUN-04). task-019 saw the agent honour the variable. Not a secret.
+ */
+const AGENT_ENVIRONMENT: Readonly<Record<string, string>> = { CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1' };
+
+/**
+ * Run in the container before every step's first session, whatever the agent (bug-006): its
+ * auto-memory, if any, removed; the rest of `~/.claude/projects/`, which `--resume` needs within a
+ * step, kept.
+ */
+const CLEAR_AUTO_MEMORY = ['sh', '-c', 'rm -rf "$HOME"/.claude/projects/*/memory'];
+
 /** How many lines of a failing setup's error output its run's error keeps. */
 const SETUP_ERROR_LINES = 5;
 
@@ -303,7 +318,7 @@ async function executeRun(context: RunContext, options: RunnerOptions): Promise<
       name: containerName,
       workspace,
       user: CONTAINER_USER,
-      ...(options.containerEnv === undefined ? {} : { env: options.containerEnv }),
+      env: { ...AGENT_ENVIRONMENT, ...options.containerEnv },
     });
     await assertOnlyWorkspaceMounted(container, workspace, options);
     await options.docker.start(container);
@@ -534,6 +549,14 @@ async function executeStep(
   const remainingCostUsd = remaining(campaign, spent);
   if (remainingCostUsd <= 0) {
     throw new Error(`step ${number} not started: the run's cost cap is exhausted`);
+  }
+
+  // Nothing an earlier step's session left in the agent's own memory reaches this one (bug-006).
+  const cleared = await options.docker.exec(container, CLEAR_AUTO_MEMORY);
+  if (cleared.code !== 0) {
+    throw new Error(
+      `could not clear the agent's auto-memory before step ${number}: ${cleared.stderr.trim()}`,
+    );
   }
 
   const sessionId = randomUUID();

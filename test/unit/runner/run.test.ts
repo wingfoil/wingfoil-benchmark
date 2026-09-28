@@ -181,7 +181,10 @@ describe('runCampaign', () => {
 
     expect(ports.recorded.execs).toEqual([
       { container: 'container-1', command: ['bash', '/home/node/arm/setup.sh'] },
+      // Before each step, the agent's auto-memory is cleared (bug-006).
+      { container: 'container-1', command: ['sh', '-c', 'rm -rf "$HOME"/.claude/projects/*/memory'] },
       { container: 'container-1', command: ['sh', '-c', 'echo hi'] },
+      { container: 'container-1', command: ['sh', '-c', 'rm -rf "$HOME"/.claude/projects/*/memory'] },
       { container: 'container-1', command: ['sh', '-c', 'echo hi'] },
     ]);
   });
@@ -1115,5 +1118,62 @@ describe('the operating manual (REQ-RUN-12, F2.7)', () => {
       "the workspace already holds a CLAUDE.md, from the seed or the arm's environment: the manual of arm baseline would replace it",
     );
     expect(ports.recorded.steps).toEqual([]);
+  });
+});
+
+describe("the agent's auto-memory is kept out of the next step (bug-006, REQ-RUN-04)", () => {
+  const CLEAR = ['sh', '-c', 'rm -rf "$HOME"/.claude/projects/*/memory'];
+
+  it('clears it before every step, and never before a resume', async () => {
+    const { checked } = checkedCampaign();
+    const lastExecBefore: string[] = [];
+    const ports = doubles({
+      onStep: (request) => {
+        lastExecBefore.push(
+          `${'intervention' in request ? 'resume' : 'step'} ${request.step}: ${ports.recorded.execs.at(-1)?.command.join(' ') ?? ''}`,
+        );
+      },
+      messageOf: (request) =>
+        request.step === 1 && !('intervention' in request) ? 'Shall I proceed?' : undefined,
+    });
+
+    await runCampaign(checked, ports);
+
+    expect(lastExecBefore).toEqual([
+      `step 1: ${CLEAR.join(' ')}`,
+      `resume 1: ${CLEAR.join(' ')}`,
+      `step 2: ${CLEAR.join(' ')}`,
+    ]);
+    expect(ports.recorded.execs.filter((exec) => exec.command.join(' ') === CLEAR.join(' '))).toHaveLength(2);
+  });
+
+  it('fails the run when it cannot clear it: a step that might read the last one is not scored', async () => {
+    const { checked } = checkedCampaign();
+    const ports = doubles({
+      execResultOf: (command) =>
+        command[0] === 'sh' && command[2]?.startsWith('rm -rf')
+          ? { code: 1, stdout: '', stderr: 'Permission denied\n' }
+          : undefined,
+    });
+
+    const summary = await runCampaign(checked, ports);
+
+    expect(summary.runs[0]?.outcome).toBe('failed');
+    expect(summary.runs[0]?.error).toBe(
+      "could not clear the agent's auto-memory before step 01: Permission denied",
+    );
+    expect(ports.recorded.steps).toEqual([]);
+  });
+
+  it('turns it off in every container, which the pinned agent honours, and keeps it out of the secrets', async () => {
+    const { checked } = checkedCampaign(campaignYaml({ arms: ['baseline', 'baseline-notes'] }));
+    const ports = doubles();
+
+    await runCampaign(checked, { ...ports, containerEnv: { ANTHROPIC_AUTH_TOKEN: 'tok' }, secrets: ['tok'] });
+
+    expect(ports.recorded.creates.map((create) => create.env)).toEqual([
+      { CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1', ANTHROPIC_AUTH_TOKEN: 'tok' },
+      { CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1', ANTHROPIC_AUTH_TOKEN: 'tok' },
+    ]);
   });
 });
