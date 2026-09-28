@@ -5,7 +5,7 @@ title: "Budget guard at campaign start"
 status: in-progress
 release: v0.1
 wave: W5
-features: [F1.3]
+features: []
 acceptance: [campaign.feature]
 requirements: [REQ-CLI-03]
 ---
@@ -39,6 +39,12 @@ refused with no session and no container; the same campaign under a higher ceili
 **Done** means: `campaign.feature` @F1.3 "A campaign above the warning threshold warns but may start"
 and "A campaign above the ceiling refuses to start" pass; the wave check is recorded in `rel-v0-1`
 when W5's last task is done; tests, coverage and lint pass.
+
+**Why `features` is empty (build phase, 2026-09-28).** F1.3 has four acceptance scenarios; this task
+delivers the two at the start, task-024 the two during a run. The traceability test asks every scenario
+of a started task's features to have a test, so declaring F1.3 here would hold the two stops red until
+task-024. As task-016 did for F3.5, the feature is declared by the task that completes it, task-024;
+this task's two scenarios have their tests all the same.
 
 ## Acceptance criteria
 
@@ -124,3 +130,43 @@ completed dry run for every key of a campaign (default model and slices), at the
   checked, one commit `wf(task): submit <id>` with no bracket and no body. Observed: exit 0, empty
   stderr, 1 file, diff limited to `status: draft` → `status: pending`. Matches (subject without
   transition: N9).
+- The approver's `memory approve` → `c3ff77d` (`pending → backlog`). Matches.
+- Design committed by hand on `task/task-023-budget-guard-at-campaign-start` (`65fa915`), then
+  `npx wingfoil memory submit task-023-budget-guard-at-campaign-start` → `840f972`
+  (`backlog → in-progress`, one commit, only `status`). Matches. WIP: this task `in-progress`, none
+  `in-review`.
+
+### Build (TDD)
+
+1. **Tests first:** the two @F1.3 acceptance tests; eleven unit tests of the guard (no estimate, no
+   terminal, four answers that confirm and four that refuse, the thresholds themselves, the order of the
+   refusals); the existing `campaign run` tests given a dry run for every key (`priceCampaign`). **24
+   red**, 22 for the guard that did not exist and 2 for the traceability test (below).
+2. **The guard** (`e8131d0`): green at the first implementation but for two tests that ran a campaign
+   through the command and had not been priced — `runner.feature` @F2.1's hold-out check and one
+   expectation of an empty stdout, which now holds the estimate. Both updated.
+3. **The docker suite's four campaign runs** priced the same way, and **the built command's test** of
+   W5's "Ends with" added: green when added, since the guard existed.
+4. **The terminal prompt, by hand:** `node dist/cli/main.js campaign run` on a campaign estimated at
+   42 EUR, through `script` for a pseudo-terminal, answering `n` → the warning, `Start the campaign?
+   [y/N]`, `campaign: not started: not confirmed`, exit 1; with stdin not a terminal → `… is confirmed
+   on a terminal`, exit 1. No automated test drives `readline` itself.
+
+### Deviation from the Design
+
+- **`features: []`, not `[F1.3]`** (the Context's new paragraph): the traceability test would otherwise
+  hold task-024's two scenarios red from now on. task-016's precedent for F3.5; task-024 declares F1.3.
+  The approver accepted the task with `[F1.3]`: this is a change to the approved scope's declaration,
+  not to its content, and is put to the approver at review.
+
+### Known limits
+
+- The prompt itself (`node:readline` in `cli/main.ts`) is checked by hand only (Build, 4).
+- A campaign's estimate reads the dry runs at start; nothing re-checks the budget while it runs. That is
+  task-024's (`budget exhausted`).
+
+### Review readiness
+
+`npm test` 682/682 (statements 99.8%, branches 96.89%, functions 100%, lines 100%), `npm run test:bin`
+5/5, `npm run test:docker` 5/5, `npm run lint` clean, `npm run build` clean; no `bench-*` container
+left. `campaign.feature` @F1.3's two start scenarios have their acceptance tests. Nothing was spent.
