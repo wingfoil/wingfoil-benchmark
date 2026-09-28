@@ -55,8 +55,15 @@ export interface GitPort {
    * numbering skips exactly where an agent did nothing.
    */
   commitAll(directory: string, message: string, options?: { allowEmpty?: boolean }): Promise<void>;
-  /** The patch of one commit, for `steps/<NN>/diff.patch` (REQ-RUN-05). */
+  /**
+   * The patch of one commit, for `steps/<NN>/diff.patch` and `setup/diff.patch` (REQ-RUN-05): binary
+   * files included and full object ids, so that `apply` rebuilds the snapshot from it (task-027).
+   */
   patchOf(directory: string, ref: string): Promise<string>;
+  /** The id of the tree of commit `ref`: its content alone, what a rebuilt snapshot is checked against. */
+  tree(directory: string, ref: string): Promise<string>;
+  /** Applies a patch file to the working tree and the index, as the next commit's content (task-027). */
+  apply(directory: string, patchFile: string): Promise<void>;
   /**
    * Writes `user.name` and `user.email` into the repository's own configuration: the identity the
    * agent commits with in the container (adr-003 decisions 6, 7). The runner's own commits keep the
@@ -94,7 +101,12 @@ export function gitCli(process: ProcessPort): GitPort {
     },
     // `show` of the commit itself, not a range: every step has a parent, but reading the commit is
     // one fewer assumption about the history it sits in.
-    patchOf: (directory, ref) => git(directory, ['show', '--format=', '--patch', ref]),
+    patchOf: (directory, ref) =>
+      git(directory, ['show', '--format=', '--patch', '--binary', '--full-index', ref]),
+    tree: async (directory, ref) => (await git(directory, ['rev-parse', `${ref}^{tree}`])).trim(),
+    apply: async (directory, patchFile) => {
+      await git(directory, ['apply', '--index', patchFile]);
+    },
     configureIdentity: async (directory, name, email) => {
       await git(directory, ['config', 'user.name', name]);
       await git(directory, ['config', 'user.email', email]);

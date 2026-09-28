@@ -322,6 +322,8 @@ describe('runCampaign', () => {
       `identity ${workspace} Benchmark Approver <approver@benchmark.localhost>`,
       `commit ${workspace} setup --allow-empty`,
       `head ${workspace}`,
+      `tree ${workspace} HEAD`,
+      `patch ${workspace} HEAD`,
       `commit ${workspace} step 01 --allow-empty`,
       `patch ${workspace} HEAD`,
     ]);
@@ -945,7 +947,7 @@ describe('the setup phase (REQ-RUN-03, adr-003)', () => {
     const summary = await runCampaign(checked, ports);
 
     const workspace = summary.runs[0]?.workspace ?? '';
-    expect(ports.recorded.gitCalls.filter((call) => !call.startsWith('patch'))).toEqual([
+    expect(ports.recorded.gitCalls.filter((call) => !/^(patch|tree) /.test(call))).toEqual([
       `init ${workspace}`,
       `commit ${workspace} seed`,
       `identity ${workspace} Benchmark Approver <approver@benchmark.localhost>`,
@@ -1013,6 +1015,41 @@ describe('the setup phase (REQ-RUN-03, adr-003)', () => {
     expect(record.setup.duration_ms).toBeGreaterThanOrEqual(0);
     expect(Object.values(record.setup.usage).every((value) => value === 0)).toBe(true);
     expect(record.steps).toHaveLength(2);
+  });
+
+  it("stores the setup commit's patch, scrubbed, and every commit's tree, so a snapshot can be rebuilt (task-027)", async () => {
+    const token = 'tok-SECRET';
+    const { checked } = checkedCampaign();
+    const ports = doubles({ patchOf: (_, ref) => `+${ref} with ${token}\n` });
+
+    const summary = await runCampaign(checked, { ...ports, secrets: [token] });
+
+    const outputDir = summary.runs[0]?.outputDir ?? '';
+    expect(readFileSync(join(outputDir, 'setup', 'diff.patch'), 'utf8')).toBe('+HEAD with [redacted]\n');
+    const record = JSON.parse(readFileSync(join(outputDir, 'run.json'), 'utf8')) as {
+      setup: { tree: string };
+      steps: { tree: string }[];
+    };
+    // The double answers each tree differently, in call order: setup first, then each step's.
+    expect(record.setup.tree).toBe('tree-1'.padEnd(40, '0'));
+    expect(record.steps.map((step) => step.tree)).toEqual([
+      'tree-2'.padEnd(40, '0'),
+      'tree-3'.padEnd(40, '0'),
+    ]);
+    // Each read after its own commit, so a tree is never the previous snapshot's.
+    const workspace = summary.runs[0]?.workspace ?? '';
+    expect(ports.recorded.gitCalls.slice(3)).toEqual([
+      `commit ${workspace} setup --allow-empty`,
+      `head ${workspace}`,
+      `tree ${workspace} HEAD`,
+      `patch ${workspace} HEAD`,
+      `commit ${workspace} step 01 --allow-empty`,
+      `patch ${workspace} HEAD`,
+      `tree ${workspace} HEAD`,
+      `commit ${workspace} step 02 --allow-empty`,
+      `patch ${workspace} HEAD`,
+      `tree ${workspace} HEAD`,
+    ]);
   });
 
   it('keeps the setup output, scrubbed, as setup/log.txt', async () => {

@@ -371,9 +371,12 @@ describe('runner.feature', () => {
       `identity ${workspace} Benchmark Approver <approver@benchmark.localhost>`,
       `commit ${workspace} setup --allow-empty`,
       `head ${workspace}`,
+      `tree ${workspace} HEAD`,
+      `patch ${workspace} HEAD`,
       ...stepNumbers(steps).flatMap((n) => [
         `commit ${workspace} step ${String(n).padStart(2, '0')} --allow-empty`,
         `patch ${workspace} HEAD`,
+        `tree ${workspace} HEAD`,
       ]),
     ]);
 
@@ -382,7 +385,8 @@ describe('runner.feature', () => {
     // steps/0N and not under some other step's number.
     for (const n of stepNumbers(steps)) {
       const patch = join(summary.runs[0]?.outputDir ?? '', 'steps', String(n).padStart(2, '0'), 'diff.patch');
-      expect(readFileSync(patch, 'utf8')).toBe(`patch of ${workspace} at HEAD #${n}\n`);
+      // The setup's patch is #1 (task-027), so step N's is #N+1.
+      expect(readFileSync(patch, 'utf8')).toBe(`patch of ${workspace} at HEAD #${n + 1}\n`);
     }
   });
   it('@F2.3 The Claude Code adapter records usage and the transcript of every session', async () => {

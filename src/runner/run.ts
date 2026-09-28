@@ -85,6 +85,8 @@ export interface StepResult {
   readonly transcript: readonly string[];
   readonly outcome: StepOutcomeKind;
   readonly interventions: readonly Intervention[];
+  /** The tree of the step's commit (task-027): what scoring checks the snapshot it rebuilds against. */
+  readonly tree?: string;
   readonly error?: string;
   /**
    * For a step whose last invocation was killed at `step_time_s` and reported no cost (task-024, C3):
@@ -103,6 +105,8 @@ export interface SetupResult {
   readonly durationMs: number;
   readonly usage: SessionUsage;
   readonly commit?: string;
+  /** The tree of the `setup` commit (task-027), beside its patch, `setup/diff.patch`. */
+  readonly tree?: string;
   readonly code?: number;
 }
 
@@ -559,7 +563,14 @@ async function executeSetup(arm: Arm, context: SetupContext, options: RunnerOpti
   if (result.code !== 0) return { durationMs, usage: NO_USAGE, code: result.code };
 
   await options.git.commitAll(workspace, SETUP_COMMIT, { allowEmpty: true });
-  return { durationMs, usage: NO_USAGE, commit: await options.git.head(workspace) };
+  const commit = await options.git.head(workspace);
+  const tree = await options.git.tree(workspace, 'HEAD');
+  // What the setup changed, so that scoring can rebuild step 1's snapshot from the seed (task-027).
+  writeFileSync(
+    join(setupDir, 'diff.patch'),
+    scrub(await options.git.patchOf(workspace, 'HEAD'), options.secrets ?? []),
+  );
+  return { durationMs, usage: NO_USAGE, commit, tree };
 }
 
 /** A manual's size by the fixed approximation, and the digest of the text it was taken from. */
@@ -852,6 +863,7 @@ async function executeStep(
   // `bypassPermissions`, so one `env > notes.txt` would otherwise commit the token in a patch.
   const patch = await options.git.patchOf(workspace, 'HEAD');
   writeFileSync(join(stepDir, 'diff.patch'), scrub(patch, options.secrets ?? []));
+  const tree = await options.git.tree(workspace, 'HEAD');
   // What the step cost across its invocations, and the whole of what they said (REQ-RUN-09,
   // REQ-FMT-06). The transcript is git-ignored and scrubbed by the adapter (REQ-NFR-01, REQ-RES-06).
   const usage = stepUsage(invocations);
@@ -864,6 +876,7 @@ async function executeStep(
     usage,
     transcript,
     interventions,
+    tree,
     ...(costBoundUsd === undefined ? {} : { costBoundUsd }),
   };
   return error === undefined ? { ...result, outcome } : { ...result, outcome: 'failed', error };
@@ -995,6 +1008,7 @@ function record(run: RunResult, plan: RunPlan): RunResult {
                 duration_ms: run.setup.durationMs,
                 usage: run.setup.usage,
                 ...(run.setup.commit === undefined ? {} : { commit: run.setup.commit }),
+                ...(run.setup.tree === undefined ? {} : { tree: run.setup.tree }),
                 ...(run.setup.code === undefined ? {} : { code: run.setup.code }),
               },
             }),
@@ -1006,6 +1020,7 @@ function record(run: RunResult, plan: RunPlan): RunResult {
           outcome: step.outcome,
           interventions: step.interventions.length,
           usage: step.usage,
+          ...(step.tree === undefined ? {} : { tree: step.tree }),
           // A step killed at its time cap reported no cost: what it can have cost at most (task-024).
           ...(step.costBoundUsd === undefined
             ? {}

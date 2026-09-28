@@ -146,6 +146,8 @@ export function doubles(
   };
   let containers = 0;
   let patches = 0;
+  let trees = 0;
+  let lastCommit = '';
   const docker: DockerPort = {
     build: (request) => {
       recorded.builds.push(request.tag);
@@ -212,6 +214,7 @@ export function doubles(
     commitAll: (directory, message, commit) => {
       const empty = commit?.allowEmpty === true ? ' --allow-empty' : '';
       recorded.gitCalls.push(`commit ${directory} ${message}${empty}`);
+      lastCommit = message;
       // Only a step commit: the seed commit happens in prepareWorkspace, before a container exists,
       // and failing it would exercise a different moment of the run (covered by `init`).
       if (options.failing?.call === 'commit' && message.startsWith('step ')) {
@@ -245,10 +248,23 @@ export function doubles(
     patchOf: (directory, ref) => {
       patches += 1;
       recorded.gitCalls.push(`patch ${directory} ${ref}`);
-      if (options.failing?.call === 'patch') return Promise.reject(new Error(options.failing.error));
+      // A step's patch only, as for `commit`: the setup's patch (task-027) failing is a setup failure.
+      if (options.failing?.call === 'patch' && lastCommit.startsWith('step ')) {
+        return Promise.reject(new Error(options.failing.error));
+      }
       return Promise.resolve(
         options.patchOf?.(directory, ref) ?? `patch of ${directory} at ${ref} #${patches}\n`,
       );
+    },
+    // Each tree different and in call order, so a test can tell which commit's tree was recorded where.
+    tree: (directory, ref) => {
+      trees += 1;
+      recorded.gitCalls.push(`tree ${directory} ${ref}`);
+      return Promise.resolve(`tree-${trees}`.padEnd(40, '0'));
+    },
+    apply: (directory, patchFile) => {
+      recorded.gitCalls.push(`apply ${directory} ${patchFile}`);
+      return Promise.resolve();
     },
   };
   const answer = (request: AgentRequest): Promise<StepOutcome> => {

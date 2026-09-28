@@ -221,7 +221,7 @@ describe('the git port', () => {
     ]);
   });
 
-  it('reads the patch of a commit, so that every step leaves a snapshot', async () => {
+  it('reads the patch of a commit, binary-safe, so that every snapshot can be rebuilt (task-027)', async () => {
     const process = recorder([ok('diff --git a/x b/x\n')]);
     const patch = await gitCli(process).patchOf('/repo/runs/w', 'HEAD');
     expect(command(process.calls[0]?.args ?? [])).toEqual([
@@ -230,9 +230,30 @@ describe('the git port', () => {
       'show',
       '--format=',
       '--patch',
+      '--binary',
+      '--full-index',
       'HEAD',
     ]);
     expect(patch).toBe('diff --git a/x b/x\n');
+  });
+
+  it('names the tree of a commit: its content, whatever its date or author (task-027)', async () => {
+    const process = recorder([ok('4b825dc642cb6eb9a060e54bf8d69288fbee4904\n')]);
+    const tree = await gitCli(process).tree('/repo/runs/w', 'HEAD');
+    expect(command(process.calls[0]?.args ?? [])).toEqual(['-C', '/repo/runs/w', 'rev-parse', 'HEAD^{tree}']);
+    expect(tree).toBe('4b825dc642cb6eb9a060e54bf8d69288fbee4904');
+  });
+
+  it('applies a stored patch to the working tree and the index (task-027)', async () => {
+    const process = recorder([ok()]);
+    await gitCli(process).apply('/tmp/snapshot', '/results/r1/steps/01/diff.patch');
+    expect(command(process.calls[0]?.args ?? [])).toEqual([
+      '-C',
+      '/tmp/snapshot',
+      'apply',
+      '--index',
+      '/results/r1/steps/01/diff.patch',
+    ]);
   });
 
   it("writes an identity into the repository's own configuration (adr-003 decision 6)", async () => {
