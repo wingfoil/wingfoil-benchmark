@@ -246,3 +246,54 @@ and README say Apache-2.0. Nothing is vendored here. task-032 takes the two file
   `bbc58a8`. Declared: `backlog → in-progress`, one commit `wf(task): submit <id>`. Observed: exit 0,
   empty stderr, 1 file, diff limited to `status: backlog` → `status: in-progress`. Matches (subject
   without transition: N9).
+
+### Build
+
+Test-first: `32b7f6b` (red: 108 of 120 loader tests failing, the fixture's new fields refused by the
+old schema), then `c50c997` (green), then the amendments in `8cf64ac`.
+
+- **`src/core/scenario.ts`:** `commit` and `sha256` optional, exactly one of them required (a
+  `superRefine` on the entry); `files` required, non-empty, distinct by `samePathKey`; a `sha256` pin
+  over one file only; a file vendored by two entries refused on the later one. A new exported
+  `ThirdParty` type holds the `pin` as a union.
+- **`src/scenario/load.ts`:** the vendored files are declared paths of kind `file`, after the checks.
+  `fileIssues` covers existence and escape, and the existing overlap rules keep them out of the seed and
+  the prompts, since their paths start with `oracle.`. The new `vendoredIssues` covers "in no suite" and
+  the `sha256` comparison.
+- **The fixture:** the complete scenario declares both kinds, `commit` over
+  `oracle/first/vendor/cases.json` and `sha256` (`EMPTY_SHA256`, the fixture writing every file empty)
+  over `oracle/first/examples.json`. Five existing loader tests now expect the two files among the
+  declared paths and the seed's overlaps; the no-suite test clears `third_party` as well, since with no
+  suite there is nowhere to vendor. Two lists of files in `test/unit/scoring/hidden-tests.test.ts` gained
+  the two files. They are data, not tests, so `suiteTestFiles` still returns the same list.
+
+**Deviations from the design**, neither changing what is refused:
+
+- **Order:** the overlaps are reported **before** the vendored files outside a suite and the `sha256`
+  mismatches, not after. A seed that overlaps the oracle is the graver issue. Reported first, it is not
+  hidden behind "in no suite", which the same misconfiguration also produces (the case of a suite
+  declared on the seed itself).
+- **The fixture's two files are in the same suite** (`first`), not one per suite. The tests that
+  symlink or remove the `all` suite would otherwise have reported a vendored file too. A file in the
+  second suite is accepted by its own test.
+
+**Checks:**
+
+- `npm test`: 842/842 (+17). Coverage 99.42% statements, 95.57% branches, 100% functions and lines.
+- `npm run lint`: clean.
+- `npm run test:bin`: 5/5.
+- `npm run test:docker`: 7/7 (T0–T3 declare no third-party material, so none of them is affected).
+- **By hand, with the built CLI, in a temporary repository holding T3** with a `sha256` entry over a
+  vendored `oracle/public/examples.json`:
+  - `bench scenario validate T3@1.0` → `scenario T3@1.0 is valid (hold-out: not configured)`, exit 0;
+  - with the file edited → `oracle.third_party[0].sha256: does not match
+    'oracle/public/examples.json'`, exit 1;
+  - with `commit: 2a928f9` instead → `oracle.third_party[0].commit: must be a 40-character commit
+    SHA`, exit 1.
+
+**Amendments** (`8cf64ac`), each waiting for its review decision at this task's review: requirements 1.10
+(REQ-FMT-04), scenario specs README 1.2 (§4), S1.md 1.2 (§6, the full SHA). The traceability matrix is
+unaffected.
+
+No `wingfoil` command was run in the build phase. No real agent, no spending.
+
