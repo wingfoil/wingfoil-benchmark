@@ -127,3 +127,39 @@ unreadable `usage.json` of a reached step, or a missing rate, is an issue naming
   fields checked, one commit `wf(task): submit <id>` with no bracket and no body. Observed: exit 0,
   empty stderr, 1 file, diff limited to `status: draft` → `status: pending`. Matches (subject without
   transition: N9).
+- `npx wingfoil memory approve task-029-cost-metrics --reason "…"`, run by the approver → `5a12606`
+  (`pending → backlog`). Matches.
+- Design committed by hand on `task/task-029-cost-metrics`, then `npx wingfoil memory submit
+  task-029-cost-metrics` → `668481b`. Declared: `backlog → in-progress`, one commit. Observed: exit 0, empty
+  stderr, 1 file, only `status` changed (N9). Matches. WIP after it: one `in-progress`, none `in-review`.
+
+### Build
+
+Test-first: `results` readers and `costMetrics` red (11), then the code; `scoreRun`'s and the acceptance
+test after them (`bcf9941`).
+
+- `results/runs.ts`: `readStoredRun` gains each step's `outcome`, `interventions` and `cost_bound_usd`;
+  `readStepUsage` reads a step's `usage.json`; `executionRate` reads `currency.usd_to_eur` from the
+  execution's `campaign.yaml` or `dry-run.yaml`.
+- `scoring/cost.ts`: `costMetrics`, pure reads and sums. `scoreRun` computes it first — a run whose
+  stored usage is missing is not scored — and `score.json` gains `cost` after `holdout`; `score_version`
+  stays 1.
+- **As designed**, with one observation for the review: M-K2's wall time is the **duration the agent
+  reported** for the step's invocations, summed, not a clock the runner kept; a step killed at its time
+  cap therefore shows only what was reported before the kill (its cap is the campaign file's
+  `step_time_s`). The runner measures only the setup's time itself.
+- The wave's Docker test checks `cost` on the real runner's output: all zero with the fake, per step and
+  for the run, at the campaign's rate of 1.
+
+### Suites (at `8e9a2bb`)
+
+- `npm test`: **809 passed**; coverage 99.4% statements / 95.77% branches / 100% functions / 100% lines.
+- `npm run test:bin` 5, `npm run test:docker` 7, lint, typecheck, build: clean. No `bench-*` container left.
+
+### Traceability
+
+`scoring.feature` @F4.3 "Cost metrics are recorded per step and per run", green in
+`test/acceptance/scoring.test.ts`. REQ-RUN-09 (API-equivalent, EUR at the campaign's rate: the runner's
+half unchanged, the bound converted at the same rate), REQ-SCO-03 (the same files give the same bytes).
+No requirement or ADR changes. Nothing was spent.
+
