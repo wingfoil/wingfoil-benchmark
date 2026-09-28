@@ -115,3 +115,35 @@ change as a new version`. Checked in two places:
   checked, one commit `wf(task): submit <id>` with no bracket and no body. Observed: exit 0, empty
   stderr, 1 file, diff limited to `status: draft` → `status: pending`. Matches (subject without
   transition: N9).
+- The approver's `memory approve` → `06e7d93` (`pending → backlog`). Matches.
+- `npx wingfoil memory submit task-018-scenario-versioning` → `a0dfb96`, in the linked worktree with
+  its own `npm ci` (`backlog → in-progress`, one commit, only `status`). Matches.
+
+### Build (TDD)
+
+1. **The hash and the recorded hashes** (`f1ca50c`). 14 tests red, then green. The traceability test
+   went red as F3.4 started, and back to green with its acceptance test.
+2. **`run.json`, the two checks, `.gitattributes`** (`03a97a0`). 3 red — `@F3.4`, and the
+   two `git check-attr` cases — then green at the first implementation. The check is one function,
+   `versionChange` (module `results`), used by `checkCampaign` and by `bench scenario validate`, so the
+   message is written once. The attribute rule is `**/scenarios/** -text`, so that the fixtures'
+   scenarios keep their bytes too, not only the repository's `scenarios/`.
+
+### Deviation from the Design
+
+None. One detail the Design left open: `bench scenario validate` names the issue `scenario:`, since it
+validates one scenario and has no campaign entry to point at; `checkCampaign` names it `scenarios[<i>]`
+as for any other scenario issue.
+
+### Known limits
+
+- A run stored before this task has no `scenario_hash` and is skipped by the check: nothing is inferred
+  from it. No such run exists in a results directory of this repository today (`results/` is
+  git-ignored and every result so far is in temporary directories or in the scratchpad).
+- The check reads every `run.json` of the version at every campaign check: linear in the results kept,
+  which for v0.1's campaigns is a few dozen files.
+
+### Review readiness
+
+`npm test` 614/614 (statements 100%, branches 97.45%, functions 100%, lines 100%), `npm run test:bin`
+4/4, `npm run test:docker` 4/4, `npm run lint` clean; no `bench*` container left.
