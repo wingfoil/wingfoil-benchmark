@@ -62,7 +62,8 @@ BENCH_AGENT_TOKEN_FILE=<token-file> npx bench campaign run campaigns/<name>.yaml
 `validate` checks the campaign file (`docs/02_specification/requirements.md` REQ-FMT-01): every harness pinned
 to a released version or a commit, the baseline arm present, every scenario it names present under
 `scenarios/<id>/<version>/`. It prints the campaign's identity, the digest that names its results.
-`run` executes every scenario × arm × repetition: one Docker image per campaign, one container per
+`run` executes every scenario × arm × repetition with the default model, then each model slice's
+scenarios × arms × repetitions with the slice's model: one Docker image per campaign, one container per
 run, whose only mount is that run's fresh workspace (a copy of the scenario seed, made a git
 repository). Workspaces land in `runs/<campaign-id>/<n>/`, the execution in
 `results/<campaign-id>/<n>/`, which holds `run.json` per run and `steps/<NN>/{usage.json,
