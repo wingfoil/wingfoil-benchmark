@@ -16,6 +16,7 @@ import type {
   Scenario,
 } from '../core/index.js';
 import { nextExecution } from '../results/index.js';
+import { prepareWorkspace } from '../scenario/index.js';
 
 import type { CheckedCampaign } from './campaign.js';
 import { campaignKeys } from './estimate.js';
@@ -23,7 +24,7 @@ import { prepareHarnesses } from './harness.js';
 import { AGENT_IDENTITY } from './identity.js';
 import { GENERATED_ARM, prepareProjectRules, PROJECT_RULES } from './project-rules.js';
 import type { HarnessArtefact } from './harness.js';
-import { copyEnvironment, prepareWorkspace } from './workspace.js';
+import { copyEnvironment } from './workspace.js';
 
 /** The ports a campaign runs against (REQ-ARC-04), and where its output goes. */
 export interface RunnerOptions {

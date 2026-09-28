@@ -15,6 +15,7 @@ import type {
   GitPort,
   ProcessResult,
   RunOnceRequest,
+  ScoringContainerRequest,
 } from '../../src/core/index.js';
 
 /** A step that reports no usage, which is what a double does unless a test says otherwise. */
@@ -56,6 +57,8 @@ export interface Recorded {
   readonly builds: string[];
   readonly buildRequests: BuildRequest[];
   readonly creates: CreateRequest[];
+  /** Every scoring container (task-027): its image, its read-only mounts. */
+  readonly scoringCreates: ScoringContainerRequest[];
   readonly starts: string[];
   readonly execs: { container: string; command: string[] }[];
   readonly removes: string[];
@@ -134,6 +137,7 @@ export function doubles(
     builds: [],
     buildRequests: [],
     creates: [],
+    scoringCreates: [],
     starts: [],
     execs: [],
     removes: [],
@@ -158,6 +162,11 @@ export function doubles(
       recorded.creates.push(request);
       containers += 1;
       if (options.failing?.call === 'create') return Promise.reject(new Error(options.failing.error));
+      return Promise.resolve(`container-${containers}`);
+    },
+    createScoring: (request) => {
+      recorded.scoringCreates.push(request);
+      containers += 1;
       return Promise.resolve(`container-${containers}`);
     },
     start: (container) => {

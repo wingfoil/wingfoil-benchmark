@@ -57,6 +57,46 @@ describe('the Docker port', () => {
     ]);
   });
 
+  it('creates a scoring container with no network and every mount read-only (REQ-SCO-01)', async () => {
+    const process = recorder([ok('5c0re\n')]);
+    const id = await dockerCli(process).createScoring({
+      image: 'bench-score:abc',
+      name: 'bench-score-1',
+      user: 'node',
+      workdir: '/score',
+      readOnly: [{ source: '/repo/scenarios/T3/1.0/oracle/public', target: '/score/oracle/public' }],
+    });
+    expect(id).toBe('5c0re');
+    expect(process.calls[0]?.args).toEqual([
+      'create',
+      '--name',
+      'bench-score-1',
+      '--user',
+      'node',
+      '--workdir',
+      '/score',
+      '--network',
+      'none',
+      '--mount',
+      'type=bind,source=/repo/scenarios/T3/1.0/oracle/public,target=/score/oracle/public,readonly',
+      'bench-score:abc',
+      'sleep',
+      'infinity',
+    ]);
+  });
+
+  it('refuses a scoring mount whose path would be read as more mount options', async () => {
+    await expect(
+      dockerCli(recorder()).createScoring({
+        image: 'i',
+        name: 'n',
+        user: 'node',
+        workdir: '/score',
+        readOnly: [{ source: '/repo/a,b', target: '/score/x' }],
+      }),
+    ).rejects.toThrow(/cannot hold a comma or an equals sign: \/repo\/a,b/);
+  });
+
   it('creates a container whose only mount is the workspace', async () => {
     const process = recorder([ok('c0ffee\n')]);
     const id = await dockerCli(process).create({
