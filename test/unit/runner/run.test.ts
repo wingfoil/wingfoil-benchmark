@@ -1226,3 +1226,45 @@ describe("the agent's auto-memory is kept out of the next step (bug-006, REQ-RUN
     ]);
   });
 });
+
+describe('expected failures (F3.6, REQ-SCO-10)', () => {
+  it('runs a scenario the harness arm lacks a capability for, and marks it in run.json, naming the capability', async () => {
+    // The complete fixture scenario declares `workflow-engine`; the fixture wingfoil arm provides nothing.
+    const { checked } = checkedCampaign(
+      campaignYaml({
+        arms: ['baseline', 'wingfoil'],
+        harnesses: { wingfoil: { tool: 'wingfoil', version: '3df305e' } },
+      }),
+    );
+    const ports = doubles();
+    const log: string[] = [];
+
+    const summary = await runCampaign(checked, {
+      ...ports,
+      harnessSources: { wingfoil: '/clones/wingfoil' },
+      log: (line) => log.push(line),
+    });
+
+    const record = (arm: string) =>
+      JSON.parse(
+        readFileSync(join(summary.runs.find((run) => run.arm === arm)?.outputDir ?? '', 'run.json'), 'utf8'),
+      ) as Record<string, unknown>;
+    // Executed normally, never skipped: both steps ran in the wingfoil arm too.
+    expect(summary.runs.map((run) => [run.arm, run.outcome, run.steps.length])).toEqual([
+      ['baseline', 'completed', 2],
+      ['wingfoil', 'completed', 2],
+    ]);
+    expect(record('wingfoil')).toMatchObject({
+      provides: {},
+      expected_failure: { missing: ['workflow-engine'] },
+    });
+    // The baseline is the reference: no harness, so nothing it could lack.
+    expect(record('baseline')).not.toHaveProperty('expected_failure');
+    expect(record('baseline')).not.toHaveProperty('provides');
+    expect(log).toContainEqual(
+      expect.stringMatching(
+        /^run S1@1\.0\/wingfoil\/fake-model\/r1: expected failure \(missing workflow-engine\)$/,
+      ),
+    );
+  });
+});

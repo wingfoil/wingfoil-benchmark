@@ -72,6 +72,8 @@ export interface ScoreFile {
   readonly holdout: HoldoutScore;
   /** M-K1 and M-K2 per step and for the run (F4.3, task-029). */
   readonly cost: CostScore;
+  /** The run's mark (F3.6), as the runner recorded it: `null`, or the capabilities its harness lacked. */
+  readonly expected_failure: { readonly missing: readonly string[] } | null;
 }
 
 /**
@@ -158,6 +160,8 @@ export async function scoreRun(request: ScoreRequest): Promise<Result<ScoreFile>
       final: publicScore.value.final as FinalScore,
       holdout: holdoutScore,
       cost: cost.value,
+      expected_failure:
+        run.expectedFailure === undefined ? null : { missing: [...run.expectedFailure.missing] },
     });
   } finally {
     rmSync(workDir, { recursive: true, force: true });
@@ -347,9 +351,17 @@ export function scoreSummary(score: ScoreFile): string {
   if ('not_reached' in score.final) parts.push('final not reached');
   else if (score.final.m_q1 !== undefined) parts.push(`final ${tallied(score.final.m_q1)}`);
   const line = parts.length === 0 ? 'no hidden tests' : parts.join(', ');
-  const { holdout } = score;
-  if (!holdout.scored) return holdout.reason === 'not configured' ? `${line}; hold-out not scored` : line;
-  if ('not_reached' in holdout.final) return `${line}; hold-out final not reached`;
+  const marked =
+    score.expected_failure === null
+      ? ''
+      : `; expected failure (missing ${score.expected_failure.missing.join(', ')})`;
+  return `${line}${holdoutPart(score.holdout, tallied)}${marked}`;
+}
+
+/** What the summary line says of the hold-out: its final M-Q1, that it was not scored, or nothing. */
+function holdoutPart(holdout: HoldoutScore, tallied: (m: Tally | undefined) => string | undefined): string {
+  if (!holdout.scored) return holdout.reason === 'not configured' ? '; hold-out not scored' : '';
+  if ('not_reached' in holdout.final) return '; hold-out final not reached';
   const value = tallied(holdout.final.m_q1);
-  return value === undefined ? line : `${line}; hold-out final ${value}`;
+  return value === undefined ? '' : `; hold-out final ${value}`;
 }

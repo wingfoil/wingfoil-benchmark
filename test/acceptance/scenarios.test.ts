@@ -8,7 +8,7 @@ import { checkCampaign, runCampaign } from '../../src/runner/index.js';
 import { latestDryRun } from '../../src/results/index.js';
 import { loadScenario } from '../../src/scenario/index.js';
 import { writeArmsNamed } from '../support/arm-fixture.js';
-import { completeCampaignYaml } from '../support/campaign-fixture.js';
+import { completeCampaignYaml, writeRepo } from '../support/campaign-fixture.js';
 import { writeDryRunProfile } from '../support/dry-run-fixture.js';
 import { doubles, invocationOf } from '../support/runner-doubles.js';
 import { repoPath } from '../support/paths.js';
@@ -203,6 +203,57 @@ describe('scenarios.feature', () => {
     // And the report states that hold-out additions were not scored
     expect(score.holdout).toEqual({ scored: false, reason: 'not configured' });
     expect(result.stdout).toMatch(/; hold-out not scored\n$/);
+  });
+
+  it('@F3.6 A scenario that needs a missing harness capability is an expected failure', async () => {
+    // Given a scenario that declares the capability "workflow engine" — the complete fixture does
+    const { file } = writeRepo(
+      {
+        ...completeCampaignYaml(),
+        scenarios: [{ id: 'S1', version: '1.0' }],
+        repetitions: { S1: 1 },
+        arms: ['baseline', 'wingfoil'],
+        harnesses: { wingfoil: { tool: 'wingfoil', version: '3df305e' } },
+        agent: { name: 'fake', version: '1.0.0' },
+        models: { default: 'fake-model' },
+      },
+      ['S1@1.0'],
+    );
+    const checked = checkCampaign(file);
+    if (!checked.ok) throw new Error(JSON.stringify(checked.issues));
+    // And the WingFoil under test does not provide it: the fixture wingfoil arm declares no `provides`
+    expect(checked.value.arms.find((arm) => arm.name === 'wingfoil')?.provides).toEqual({});
+
+    // When the scenario runs in the wingfoil arm
+    const ports = doubles();
+    const summary = await runCampaign(checked.value, {
+      ...ports,
+      harnessSources: { wingfoil: '/clones/wingfoil' },
+    });
+
+    // Then the run is executed normally
+    const wingfoil = summary.runs.find((run) => run.arm === 'wingfoil');
+    expect([wingfoil?.outcome, wingfoil?.steps.length]).toEqual(['completed', 2]);
+    // And its result is marked "expected failure", naming the missing capability
+    const record = JSON.parse(readFileSync(join(wingfoil?.outputDir ?? '', 'run.json'), 'utf8')) as {
+      expected_failure: unknown;
+    };
+    expect(record.expected_failure).toEqual({ missing: ['workflow-engine'] });
+    // And it is scored like any run, the mark carried into its score (published as a loss: W7's)
+    const stored = await storedRun({ steps: [{}, CANCEL] });
+    const runFile = join(stored.runDir, 'run.json');
+    const run = JSON.parse(readFileSync(runFile, 'utf8')) as Record<string, unknown>;
+    writeFileSync(runFile, JSON.stringify({ ...run, expected_failure: record.expected_failure }));
+    const scored = await benchScore(stored.root);
+    expect(scored.code).toBe(0);
+    expect(scored.stdout).toMatch(
+      /final 1\/1; hold-out not scored; expected failure \(missing workflow-engine\)\n$/,
+    );
+    const score = JSON.parse(readFileSync(join(stored.runDir, 'score.json'), 'utf8')) as Record<
+      string,
+      unknown
+    >;
+    expect(score.expected_failure).toEqual({ missing: ['workflow-engine'] });
   });
 
   it('@F3.3 A dry run measures the real cost of a scenario in one arm', async () => {
