@@ -2,7 +2,7 @@
 id: task-030-expected-failures
 type: task
 title: "Expected failures"
-status: backlog
+status: in-progress
 release: v0.1
 wave: W6
 features: [F3.6]
