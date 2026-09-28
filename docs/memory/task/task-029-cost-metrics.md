@@ -2,7 +2,7 @@
 id: task-029-cost-metrics
 type: task
 title: "Cost metrics"
-status: backlog
+status: in-progress
 release: v0.1
 wave: W6
 features: [F4.3]
