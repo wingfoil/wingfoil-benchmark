@@ -48,3 +48,21 @@ A task that (1) checks with the fake agent that nothing under `/home/node/.claud
 between steps, or (2) checks with a cheap real session whether the directory is written, then either
 disables auto-memory in the run image's settings or clears the directory between steps. Not part of
 W3; it applies to every arm.
+
+## Resolution
+
+Fixed by [task-019](../task/task-019-agent-auto-memory-kept-out-of-the-next-step.md) (`01159e9`), in
+W4 of release v0.1. WingFoil has no link from a bug to the task that fixes it and no state after
+`approved` (bug-005), so the resolution is recorded here.
+
+- **The bug was real.** Claude Code 2.1.280, headless: a session asked to save a codeword to its
+  auto-memory wrote `project_codeword.md` and `MEMORY.md` under
+  `/home/node/.claude/projects/-workspace/memory/`, and a new session in the same container answered
+  the codeword back — state carried between sessions outside the repository.
+- **Fix, two defences, the same in every arm:** `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` in every
+  container's environment, which the agent honours (no `memory_paths` in its `init` event, nothing
+  written, nothing recalled); and the runner removes `~/.claude/projects/*/memory` before every
+  step's first session, whatever the agent does.
+- **Proof:** the docker suite writes a note in step 1, finds it on the resume within step 1, and fails
+  step 2 if it is still there; with the clear disabled it goes red on exactly that check.
+

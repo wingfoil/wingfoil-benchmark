@@ -121,3 +121,38 @@ naming this task and its commits, as bug-004 did, committed with this task.
   checked, one commit `wf(task): submit <id>` with no bracket and no body. Observed: exit 0, empty
   stderr, 1 file, diff limited to `status: draft` → `status: pending`. Matches (subject without
   transition: N9).
+- The approver's `memory approve` → `2bb466e` (`pending → backlog`), with the spending consent
+  (up to 0.30 € on Haiku). Matches.
+- `npx wingfoil memory submit task-019-…` → `9170769`, in the linked worktree with its own `npm ci`
+  (`backlog → in-progress`, one commit, only `status`). Matches.
+
+### Real sessions (`spikes/task-019/probe.sh`, Haiku 4.5, Claude Code 2.1.280)
+
+| Probe | Session | `memory_paths` in `init` | Memory files after A | Reply | Cost |
+|---|---|---|---|---|---|
+| M1, no variable | A: save the codeword | `-workspace/memory/` | `project_codeword.md`, `MEMORY.md` | `done` | 0.0198 USD |
+| M1 | B, new session: recall it | `-workspace/memory/` | — | **`HERON-5521`** | 0.0066 USD |
+| M2, `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` | A | absent | none | "I don't have a tool available to save…" | 0.0094 USD |
+| M2 | B | absent | — | `NONE` | 0.0058 USD |
+
+**bug-006 is real**, and **the variable is honoured**. Spent **0.0416 USD** of the 0.30 USD ceiling;
+no file under the spike or its output holds the token. The line is in `docs/calibration/v0.1-ledger.md`
+— the first one written as it happened (dl-006).
+
+### Build (TDD) — `01159e9`
+
+- 3 unit tests red (the clear before every step and never before a resume; a failing clear fails the
+  run; the variable in every container and not among the secrets), then green. Two earlier tests
+  pinned the exact container environment and the exact list of `exec`s; they now include the
+  variable and the clears, still exactly.
+- A comment of mine wrote the glob `projects/*/memory`: its `*/` closed the block comment and broke
+  the file. It names `<project>` now.
+- Docker: T1's fake script writes a note under the auto-memory in step 1, checks it is still there on
+  step 1's resume, and fails step 2 if it finds it. Green; **shown able to fail** by making the clear a
+  no-op: step 2's check failed (`test ! -e …/memory/note.md … failed with code 1`), then restored.
+- bug-006 gets a *Resolution* section (bug-005: no link, no closing state).
+
+### Review readiness
+
+`npm test` 617/617 (statements 100%, branches 97.45%, functions 100%, lines 100%), `npm run test:bin`
+4/4, `npm run test:docker` 4/4, `npm run lint` clean; no `bench*` or spike container left.
