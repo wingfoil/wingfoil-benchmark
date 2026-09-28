@@ -2,7 +2,7 @@
 id: task-025-model-slices-run-in-a-campaign
 type: task
 title: "Model slices run in a campaign"
-status: pending
+status: backlog
 release: v0.1
 wave: W5
 features: []
