@@ -59,7 +59,39 @@ Preliminary classification (confirmed in the design phase).
 
 ## Design
 
-<!-- Modules, interfaces, data formats touched; decisions taken and their reasons. -->
+**Classification confirmed**, with one criterion restated (below). Test-first.
+
+### One list of keys for the estimate and the runner
+
+`campaignPlan` (task-021) builds its runs from **`campaignKeys`** (task-022, exported by task-023):
+every key — the default model over every scenario × arm, then each slice over its scenarios × arms —
+expanded into its repetitions, `r1…r<n>`. The estimate prices the same keys, so the two cannot drift:
+a test holds the runner's runs, grouped by key, equal to the estimate's lines with their repetitions.
+A campaign without slices yields today's runs in today's order (characterization: the existing runner
+tests are unchanged).
+
+### What a slice run is
+
+The same run as any other — image, harnesses, generated environments, approver policy, caps — with the
+slice's model as `--model` on the step's first invocation. Its workspace, its output and its container
+name already carry the model (REQ-FMT-06: `runs/<scenario>@<ver>/<arm>/<model>/r<k>/`), and its
+`run.json` names it.
+
+**Restated criterion — resumes.** The Context's "every agent invocation (first and resumes) names that
+model" does not hold as written, on purpose: a resume names no model (adr-002: the resumed session keeps
+the model it was started with, seen with Haiku in W2 and with Sonnet 5 in W3). A resume continues the
+slice's session, so it runs on the slice's model without being told. The test checks the step's
+request, and that resumes carry the step's session.
+
+### Order and the ceiling
+
+Slice runs come after every default-model run, as the campaign file lists them. With task-024's ceiling,
+a campaign short of budget loses its slice runs first — the order experiment design §6 wants ("the slice
+shrinks … at least one comparable run is always kept" is calibration's sizing, not the runner's).
+
+### Modules
+
+`runner/run.ts` (`campaignPlan`), `runner/estimate.ts` (`campaignKeys` unchanged).
 
 ## Execution notes
 
@@ -69,3 +101,4 @@ Preliminary classification (confirmed in the design phase).
   commit `wf(task): add <id>`, one new file from the template, `status: draft`, id from
   `task-{n}-{slug}`. Observed: exit 0, empty stderr, exactly that commit, 1 file, body identical to the
   template. Matches.
+- The approver's `memory approve` → `ee4c8e1` (`pending → backlog`). Matches.
