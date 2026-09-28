@@ -134,3 +134,30 @@ words and points to where they are now declared: `kanban-delivery`'s `plan` and 
 - `npx wingfoil memory submit task-020-real-agent-runs-declared-in-delivery-and-the-spending-ledger` →
   `cf5121b`. Declared: `draft → pending`, one commit `wf(task): submit <id>`. Observed: exit 0, empty
   stderr, 1 file, diff limited to `status`. Matches (subject without transition: N9).
+- The approver's `memory approve` → `0b7b6d0` (`pending → backlog`), after dl-006's approval
+  (`4070548`). Matches.
+- `npx wingfoil memory submit task-020-…` → `d33bb54`, in the linked worktree with its own `npm ci`
+  (`backlog → in-progress`, one commit, only `status`). Matches.
+- `npx wingfoil workflow list`, before the change: exit 0, no warning, 17 workflows-and-phases names.
+  After: exit 0, no warning, one more name, `real-agent-check`, read with `"optional": true`,
+  `"approval": {"by_role": "approver"}` and `"produces": ["docs/calibration/{release}-ledger.md"]`, and
+  `"version": 2` on both workflows. Declared (schema at `3df305e`): all four keys are phase or workflow
+  fields. Observed: as declared. Matches.
+
+### Build
+
+1. `.wingfoil/` (`chore(wingfoil)`, with the `Approver:` line of dl-006's approval, as this repository's
+   rule asks for a configuration change that implements an approver's decision): `kanban-delivery` 2 —
+   the `real-agent-check` phase, the consent sentence in `plan`, the mandatory fake-agent check in
+   `deliver`; `release-cycle` 2 — the ledger as calibration's input, and validation versus a wave check.
+2. `docs/calibration/v0.1-ledger.md`, filled back (total 0.9477 USD), and plan-003's constraint pointing
+   to where the consent and the counting are now declared.
+
+No code changed; `npm test` 614/614 and `npm run lint` clean after the change.
+
+### Notes for the next task
+
+- task-019's real sessions (up to 0.30 € on Haiku, consented at its pending → backlog gate, `2bb466e`)
+  are the first spending the ledger records as it happens: one line, written when they run.
+- W4's plan phase decided no real-agent half for the wave (decision 4, task-016): no
+  `real-agent-check` for W4.
