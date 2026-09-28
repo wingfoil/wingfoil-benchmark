@@ -1,6 +1,8 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
+import { DRY_RUNS } from './dry-runs.js';
+
 /** A content hash a stored run recorded for a scenario version, and one such run as evidence. */
 export interface RecordedHash {
   readonly hash: string;
@@ -11,11 +13,13 @@ export interface RecordedHash {
  * The distinct `scenario_hash` values stored results recorded for scenario `id@version` (REQ-FMT-09),
  * each with the first run that recorded it, in path order: every
  * `<resultsRoot>/<campaign-id>/<n>/runs/<id>@<version>/**∕run.json`. A run recorded before hashes
- * existed, or a record that cannot be read as JSON, cannot be compared and is skipped.
+ * existed, or a record that cannot be read as JSON, cannot be compared and is skipped. Dry runs,
+ * under `results/dry-runs/`, are not results of a campaign and are not read.
  */
 export function recordedHashes(resultsRoot: string, id: string, version: string): RecordedHash[] {
   const found = new Map<string, string>();
-  for (const campaign of directories(resultsRoot)) {
+  // Dry runs never freeze a version (task-021 Design): scenario authoring changes what it dry-ran.
+  for (const campaign of directories(resultsRoot).filter((name) => name !== DRY_RUNS)) {
     for (const execution of directories(join(resultsRoot, campaign))) {
       for (const file of runRecords(join(resultsRoot, campaign, execution, 'runs', `${id}@${version}`))) {
         const hash = hashOf(file);

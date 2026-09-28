@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { readSession } from '../../src/agents/index.js';
 import { main } from '../../src/cli/index.js';
+import { dryRunProfileYaml, writeDryRunProfile } from '../support/dry-run-fixture.js';
 import { repoPath } from '../support/paths.js';
 import { tempDir } from '../support/scenario-fixture.js';
 
@@ -157,6 +158,51 @@ describe('runs in a real container', () => {
       const usage: unknown = JSON.parse(readFileSync(join(outputDir, 'steps', n, 'usage.json'), 'utf8'));
       expect(usage).toEqual(readSession(files.flatMap(recording), 1).usage);
     }
+
+    // No container is left.
+    const containers = execFileSync('docker', ['ps', '--all', '--format', '{{.Names}}'], {
+      encoding: 'utf8',
+    });
+    expect(containers).not.toContain(`bench-${image}-`);
+  });
+
+  it('W5 (task-021): a dry run in a real container, stored under results/dry-runs/', async () => {
+    // T1 in the baseline arm, with the fake replaying the W2 spike's sessions, which report the costs
+    // the real agent reported. No credential, no spending.
+    const root = tempDir('bench-docker-');
+    cpSync(repoPath('test/fixtures/scenarios'), join(root, 'scenarios'), { recursive: true });
+    cpSync(repoPath('test/fixtures/arms'), join(root, 'arms'), { recursive: true });
+    cpSync(repoPath('scenarios/leak-scan.yaml'), join(root, 'scenarios', 'leak-scan.yaml'));
+    writeDryRunProfile(root, { ...dryRunProfileYaml(), harnesses: {}, currency: { usd_to_eur: 1 } });
+    process.env.BENCH_FAKE_SCRIPT = repoPath('test/fixtures/fake-script-multi-step.json');
+
+    let output = '';
+    const code = await main(
+      ['scenario', 'dry-run', 'T1@1.0', '--arm', 'baseline'],
+      { stdout: (text) => (output += text), stderr: (text) => (output += text) },
+      undefined,
+      root,
+    );
+
+    expect({ code, output }).toEqual({
+      code: 0,
+      output: expect.stringMatching(
+        /dry run T1@1\.0 in baseline: completed, [0-9.]+ USD .* — results\/dry-runs\/1\n$/,
+      ),
+    });
+    image = /dry run (dry-[0-9a-f]{12}), execution 1/.exec(output)?.[1] ?? '';
+    expect(image).toMatch(/^dry-[0-9a-f]{12}$/);
+    const record = JSON.parse(
+      readFileSync(
+        join(root, 'results', 'dry-runs', '1', 'runs', 'T1@1.0', 'baseline', 'fake-model', 'r1', 'run.json'),
+        'utf8',
+      ),
+    ) as { dry_run: boolean; outcome: string; steps: { usage: { costUsd: number } }[] };
+    expect(record).toMatchObject({ dry_run: true, outcome: 'completed' });
+    const total = record.steps.reduce((sum, step) => sum + step.usage.costUsd, 0);
+    expect(total).toBeGreaterThan(0);
+    expect(output).toContain(`completed, ${total.toFixed(4)} USD`);
+    expect(existsSync(join(root, 'results', 'dry-runs', '1', 'dry-run.yaml'))).toBe(true);
 
     // No container is left.
     const containers = execFileSync('docker', ['ps', '--all', '--format', '{{.Names}}'], {

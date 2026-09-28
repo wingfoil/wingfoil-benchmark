@@ -87,6 +87,17 @@ the file named by `BENCH_AGENT_TOKEN_FILE` — created with `claude setup-token`
 container as an environment variable and is scrubbed out of every stored transcript. Because it
 spends real money, a campaign naming it refuses to start unless `--allow-spending` is passed.
 
+```bash
+npx bench scenario dry-run <id>@<version> --arm <arm> [--model <id>] [--allow-spending]
+```
+
+A **dry run** is one real run of a scenario version in one arm, made to measure what it costs. It
+takes what a campaign file would pin — agent, harnesses, approver policy, caps, currency rate — from
+`scenarios/dry-run.yaml`, and it is stored in `results/dry-runs/<n>/`, marked `dry_run: true` in its
+`run.json` and never counted as a campaign's result. Before it starts, it prints what the latest
+completed dry run of the same version, arm and model cost; when it ends, it prints what this one cost
+per step and in total.
+
 A run that is interrupted — a killed process, a closed terminal, a reboot — can leave its container
 behind. The runner never removes a container it did not create: at the start of a campaign it lists
 the ones earlier runs of that campaign left, warns about each with the `docker rm --force` that clears
@@ -96,7 +107,7 @@ Exit codes: `0` success, `1` failure (one line per problem, or a run that failed
 
 ```bash
 npm run test:bin     # the built command line
-npm run test:docker  # W1's and W2's runs, and bug-003's, in a real container (needs Docker)
+npm run test:docker  # W1's to W3's runs, a dry run, and bug-003's, in a real container (needs Docker)
 ```
 
 ## License

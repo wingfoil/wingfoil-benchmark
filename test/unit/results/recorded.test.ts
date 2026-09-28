@@ -37,6 +37,17 @@ describe('recordedHashes (REQ-FMT-09)', () => {
     expect(recordedHashes(root, 'S1', '1.0')).toEqual([]);
   });
 
+  it('never reads a dry run: a dry run does not freeze a version (task-021)', () => {
+    const root = tempDir('bench-results-');
+    run(root, 'dry-runs/1/runs/S1@1.0/baseline/m/r1', {
+      dry_run: true,
+      scenario: 'S1',
+      version: '1.0',
+      scenario_hash: 'sha256:a',
+    });
+    expect(recordedHashes(root, 'S1', '1.0')).toEqual([]);
+  });
+
   it('has none when there are no results at all', () => {
     expect(recordedHashes(join(tempDir('bench-results-'), 'results'), 'S1', '1.0')).toEqual([]);
   });

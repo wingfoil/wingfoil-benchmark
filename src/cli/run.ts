@@ -1,60 +1,16 @@
-import { dirname } from 'node:path';
-
-import { claudeCodeAgent, loadAgentToken, loadFakeScript } from '../agents/index.js';
-import type { AgentPort } from '../agents/index.js';
-import { fakeAgent } from '../agents/index.js';
-import { dockerCli, gitCli, reasonOf, systemProcess } from '../core/index.js';
-import type { DockerPort, GitPort, Issue, Result } from '../core/index.js';
+import { reasonOf } from '../core/index.js';
+import type { Result } from '../core/index.js';
 import { checkCampaign, runCampaign } from '../runner/index.js';
 import type { CheckedCampaign } from '../runner/index.js';
 
+import { dryRunCommand } from './dry-run.js';
 import { parseScenarioArguments, validateScenario } from './scenario.js';
+import { checkSpending, count, EXIT, portsFor, report, SPENDING_FLAG, USAGE } from './shared.js';
+import type { Io, Ports } from './shared.js';
 
-/** Where the command writes its output; the bin passes the process streams, tests capture them. */
-export interface Io {
-  readonly stdout: (text: string) => void;
-  readonly stderr: (text: string) => void;
-}
+export { agentCredential, EXIT } from './shared.js';
+export type { Io, Ports } from './shared.js';
 
-/** The ports a run uses. Tests pass doubles; the bin passes the real ones (REQ-ARC-04). */
-export interface Ports {
-  readonly docker: DockerPort;
-  readonly git: GitPort;
-  readonly agent: AgentPort;
-}
-
-/** REQ-CLI exit codes. */
-export const EXIT = { ok: 0, failure: 1, usage: 2 } as const;
-
-/**
- * The agent that costs nothing: every other one needs {@link SPENDING_FLAG}. Which agents exist at
- * all is the campaign schema's business (`agent.name` is an enum), so the command no longer keeps a
- * list of its own: adr-001 default 7's refusal is spent now that F2.3 gives `claude-code` an adapter.
- */
-const FREE_AGENT = 'fake';
-
-/**
- * Spending stays deliberate until the budget guard exists (F1.3, W5): a campaign with a real agent
- * runs only when whoever runs it says so on the command line.
- */
-const SPENDING_FLAG = '--allow-spending';
-
-/** Where the agent's long-lived token is read from (REQ-RUN-15, requirements 1.3). */
-const TOKEN_VARIABLE = 'BENCH_AGENT_TOKEN_FILE';
-
-/** The variable the agent reads its credential from. `ANTHROPIC_API_KEY` does not work (task-004). */
-const AGENT_TOKEN_VARIABLE = 'ANTHROPIC_AUTH_TOKEN';
-
-/** Where the scripted fake agent reads its script, until W2 records real sessions. */
-const FAKE_SCRIPT_VARIABLE = 'BENCH_FAKE_SCRIPT';
-
-/** The local WingFoil clone the WingFoil under test is built from (REQ-RUN-14). */
-const WINGFOIL_REPO_VARIABLE = 'BENCH_WINGFOIL_REPO';
-
-const USAGE =
-  'usage: bench campaign validate <file>\n' +
-  '       bench campaign run <file> [--allow-spending]\n' +
-  '       bench scenario validate <id>@<version> [--holdout <path>]\n';
 const HELP_FLAGS = ['--help', '-h'];
 
 /**
@@ -71,6 +27,7 @@ export async function main(
     io.stdout(USAGE);
     return EXIT.ok;
   }
+  if (argv[0] === 'scenario' && argv[1] === 'dry-run') return dryRunCommand(argv.slice(2), io, ports, root);
   if (argv[0] === 'scenario') return scenarioCommand(argv.slice(1), io, root);
   const [noun, verb, file, ...extra] = argv;
   // The flag belongs to `run`: accepting it on `validate` would say it means something there.
@@ -86,7 +43,7 @@ export async function main(
   return EXIT.usage;
 }
 
-/** `bench scenario validate` (REQ-CLI-04), the only scenario command so far. */
+/** `bench scenario validate` (REQ-CLI-04); `dry-run` is dispatched before it reaches here. */
 function scenarioCommand(argv: readonly string[], io: Io, root: string): number {
   const [verb, ...rest] = argv;
   const args = verb === 'validate' ? parseScenarioArguments(rest) : undefined;
@@ -117,9 +74,9 @@ function validateCampaign(file: string, io: Io): number {
 }
 
 /**
- * REQ-CLI-03, as far as W2 goes: `bench campaign run <file>` executes the campaign against the
- * scripted fake agent, one session per step (F2.2). The Claude Code adapter arrives with F2.3, and
- * the cost estimate, the warning and the ceiling with F1.2 and F1.3 (W5).
+ * REQ-CLI-03, as far as W4 goes: `bench campaign run <file>` executes the campaign, one session per
+ * step (F2.2), a real agent only with {@link SPENDING_FLAG}. The cost estimate, the warning and the
+ * ceiling arrive with F1.2 and F1.3 (W5).
  */
 async function runCampaignCommand(
   file: string,
@@ -131,52 +88,33 @@ async function runCampaignCommand(
   if (!checked.ok) return report(checked.issues, io);
 
   const spec = checked.value.campaign.spec;
-  const agentName = spec.agent.name;
-  if (agentName !== FREE_AGENT && !allowSpending) {
-    io.stderr(
-      `campaign: agent '${agentName}' spends real money, up to ${spec.budget.ceiling_eur} EUR; ` +
-        `pass ${SPENDING_FLAG} to run it\n`,
-    );
-    return EXIT.failure;
-  }
+  const spending = checkSpending(spec, {
+    allowSpending,
+    // A campaign with a WingFoil harness needs the clone it is built from, before anything is built.
+    buildsWingfoil: Object.values(spec.harnesses).some((harness) => harness.tool === 'wingfoil'),
+    refusal: {
+      path: 'campaign',
+      message:
+        `agent '${spec.agent.name}' spends real money, up to ${spec.budget.ceiling_eur} EUR; ` +
+        `pass ${SPENDING_FLAG} to run it`,
+    },
+  });
+  if (!spending.ok) return report(spending.issues, io);
+  const { credential, harnessSources } = spending.value;
 
-  // Whenever the agent is not the free one, whoever runs the container needs the credential — with
-  // injected ports too, because the container's environment is the runner's business, not the
-  // port's. Requiring it only for real ports left the whole credential path untested.
-  const credential = agentName === FREE_AGENT ? undefined : agentCredential();
-  if (credential !== undefined && !credential.ok) return report(credential.issues, io);
-  // A campaign with a WingFoil harness needs the clone it is built from, before anything is built.
-  const pinsWingfoil = Object.values(spec.harnesses).some((harness) => harness.tool === 'wingfoil');
-  const wingfoilRepo = process.env[WINGFOIL_REPO_VARIABLE];
-  if (pinsWingfoil && (wingfoilRepo === undefined || wingfoilRepo === '')) {
-    return report(
-      [
-        {
-          path: WINGFOIL_REPO_VARIABLE,
-          message: 'is not set: it names the local WingFoil clone the WingFoil under test is built from',
-        },
-      ],
-      io,
-    );
-  }
-
-  const resolved = ports
-    ? { ok: true as const, value: ports }
-    : realPorts(checked.value, credential?.ok === true ? credential.value : undefined);
+  const resolved = ports ? { ok: true as const, value: ports } : portsFor(spec, credential);
   if (!resolved.ok) return report(resolved.issues, io);
 
   let summary;
   try {
     summary = await runCampaign(checked.value, {
       ...resolved.value,
-      ...(pinsWingfoil && wingfoilRepo !== undefined ? { harnessSources: { wingfoil: wingfoilRepo } } : {}),
+      ...(harnessSources === undefined ? {} : { harnessSources }),
       log: (line) => io.stdout(`${line}\n`),
       logError: (line) => io.stderr(`${line}\n`),
       // The credential reaches the container here and nowhere else (REQ-RUN-15, REQ-NFR-01), and
       // the values to scrub are named rather than taken from the whole environment.
-      ...(credential?.ok === true
-        ? { containerEnv: credential.value, secrets: Object.values(credential.value) }
-        : {}),
+      ...(credential === undefined ? {} : { containerEnv: credential, secrets: Object.values(credential) }),
     });
   } catch (error) {
     // The campaign could not start at all: no Docker daemon, no results directory, no image.
@@ -187,72 +125,10 @@ async function runCampaignCommand(
   return summary.completed ? EXIT.ok : EXIT.failure;
 }
 
-/**
- * The real ports for this campaign. The campaign is already checked by the time this runs, so the
- * agent is chosen by what it pins and is given the currency rate it needs to report a cost. A
- * campaign with a real agent brings its credential, which the adapter keeps only in order to scrub
- * it out of what is stored (REQ-NFR-01).
- */
+/** The real ports for a checked campaign: {@link portsFor} its pins. */
 export function realPorts(
   campaign: CheckedCampaign,
   credential?: Readonly<Record<string, string>>,
 ): Result<Ports> {
-  const usdToEur = campaign.campaign.spec.currency.usd_to_eur;
-  const name = campaign.campaign.spec.agent.name;
-  // Exhaustive over the campaign schema's enum on purpose: adding an agent there without an adapter
-  // here is a build error, rather than a run that quietly gets Claude Code's command line.
-  if (name === 'claude-code') {
-    return {
-      ok: true,
-      value: {
-        docker: dockerCli(systemProcess),
-        git: gitCli(systemProcess),
-        agent: claudeCodeAgent({ token: credential?.[AGENT_TOKEN_VARIABLE] ?? '', usdToEur }),
-      },
-    };
-  }
-  name satisfies typeof FREE_AGENT;
-  const script = process.env[FAKE_SCRIPT_VARIABLE];
-  if (script === undefined) {
-    return {
-      ok: false,
-      issues: [{ path: FAKE_SCRIPT_VARIABLE, message: "is not set: it holds the fake agent's script" }],
-    };
-  }
-  const loaded = loadFakeScript(script);
-  if (!loaded.ok) return loaded;
-  return {
-    ok: true,
-    value: {
-      docker: dockerCli(systemProcess),
-      git: gitCli(systemProcess),
-      agent: fakeAgent(loaded.value, { dir: dirname(script), usdToEur }),
-    },
-  };
-}
-
-/**
- * The agent's credential (REQ-RUN-15): the long-lived token, read from the file the operator names
- * and stripped of the whitespace a paste leaves behind, before any container is created.
- */
-export function agentCredential(): Result<Readonly<Record<string, string>>> {
-  const file = process.env[TOKEN_VARIABLE];
-  if (file === undefined || file === '') {
-    return {
-      ok: false,
-      issues: [{ path: TOKEN_VARIABLE, message: "is not set: it names the file holding the agent's token" }],
-    };
-  }
-  const token = loadAgentToken(file);
-  if (!token.ok) return token;
-  return { ok: true, value: { [AGENT_TOKEN_VARIABLE]: token.value } };
-}
-
-function report(issues: readonly Issue[], io: Io): number {
-  io.stderr(issues.map((issue) => `${issue.path}: ${issue.message}\n`).join(''));
-  return EXIT.failure;
-}
-
-function count(n: number, noun: string): string {
-  return `${n} ${noun}${n === 1 ? '' : 's'}`;
+  return portsFor(campaign.campaign.spec, credential);
 }

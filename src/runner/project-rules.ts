@@ -4,7 +4,6 @@ import { join, relative } from 'node:path';
 import { renderProjectRules } from '../arms/index.js';
 import type { Arm, DockerPort, GitPort, Scenario } from '../core/index.js';
 
-import type { CheckedCampaign } from './campaign.js';
 import type { HarnessArtefact } from './harness.js';
 import { AGENT_IDENTITY, hostUser } from './identity.js';
 
@@ -21,6 +20,13 @@ const KEPT = ['.wingfoil', 'docs/memory'];
 /** How many lines of a failing snapshot's error output its error keeps. */
 const ERROR_LINES = 5;
 
+/** What the environments are generated for: a campaign or a dry run, its image, arms and scenarios. */
+export interface ProjectRulesTarget {
+  readonly id: string;
+  readonly arms: readonly Arm[];
+  readonly scenarios: readonly Scenario[];
+}
+
 /** What the snapshot step needs. */
 export interface ProjectRulesOptions {
   readonly docker: DockerPort;
@@ -36,7 +42,7 @@ export interface ProjectRulesOptions {
  * each scenario, by `<id>@<version>`; an empty map for a campaign without the arm.
  */
 export async function prepareProjectRules(
-  checked: CheckedCampaign,
+  checked: ProjectRulesTarget,
   harnesses: ReadonlyMap<string, HarnessArtefact>,
   resultsDir: string,
   options: ProjectRulesOptions,
@@ -54,14 +60,7 @@ export async function prepareProjectRules(
     const key = `${scenario.id}@${scenario.version}`;
     rules.set(
       key,
-      await snapshot(
-        key,
-        scenario,
-        source,
-        harness,
-        { resultsDir, campaignId: checked.campaign.id },
-        options,
-      ),
+      await snapshot(key, scenario, source, harness, { resultsDir, campaignId: checked.id }, options),
     );
   }
   return rules;
