@@ -1,5 +1,5 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 
 /** A content hash a stored run recorded for a scenario version, and one such run as evidence. */
 export interface RecordedHash {
@@ -48,4 +48,21 @@ function directories(dir: string): string[] {
   return readdirSync(dir)
     .filter((name) => statSync(join(dir, name)).isDirectory())
     .sort();
+}
+
+/**
+ * Why scenario `id@version`, whose content now hashes to `hash`, may not run under that name
+ * (REQ-FMT-09): a stored run recorded another hash for it. `undefined` when no stored run disagrees.
+ * The run is named relative to `root`, the repository.
+ */
+export function versionChange(
+  resultsRoot: string,
+  root: string,
+  scenario: { readonly id: string; readonly version: string; readonly hash: string },
+): string | undefined {
+  const { id, version, hash } = scenario;
+  const other = recordedHashes(resultsRoot, id, version).find((recorded) => recorded.hash !== hash);
+  return other === undefined
+    ? undefined
+    : `${id}@${version} has changed since ${relative(root, other.run)} ran it: register the change as a new version`;
 }

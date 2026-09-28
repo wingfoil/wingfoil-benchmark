@@ -1,6 +1,7 @@
 import { join } from 'node:path';
 
 import { SCENARIO_ID, SCENARIO_VERSION } from '../core/index.js';
+import { versionChange } from '../results/index.js';
 import type { Issue } from '../core/index.js';
 import {
   checkHoldoutRoot,
@@ -55,7 +56,8 @@ export function parseScenarioArguments(args: readonly string[]): ScenarioArgumen
 
 /**
  * REQ-CLI-04: `bench scenario validate <id>@<version> [--holdout <path>]`, reading `scenarios/` under
- * `root` (REQ-ARC-03). The scenario's own checks (REQ-FMT-04), then its hold-out's consistency with
+ * `root` (REQ-ARC-03). The scenario's own checks (REQ-FMT-04), its immutability against the results under
+ * `root` (REQ-FMT-09), then its hold-out's consistency with
  * `holdout:` when a hold-out is configured — from the option, or else from {@link HOLDOUT_VARIABLE}
  * (REQ-CLI-10). Then the leak scan (REQ-FMT-08) with the declarations of `scenarios/leak-scan.yaml`,
  * the hold-out's additions included; its findings name files and steps, never content.
@@ -64,6 +66,8 @@ export function validateScenario(args: ScenarioArguments, root: string): Scenari
   const name = `${args.id}@${args.version}`;
   const scenario = loadScenario(join(root, 'scenarios'), args.id, args.version);
   if (!scenario.ok) return { ok: false, issues: scenario.issues };
+  const changed = versionChange(join(root, 'results'), root, scenario.value);
+  if (changed !== undefined) return { ok: false, issues: [{ path: 'scenario', message: changed }] };
   const declarations = loadLeakScanDeclarations(join(root, 'scenarios', 'leak-scan.yaml'));
   if (!declarations.ok) return { ok: false, issues: declarations.issues };
   const scan = (additions?: HoldoutAdditions): ScenarioValidation | undefined => {

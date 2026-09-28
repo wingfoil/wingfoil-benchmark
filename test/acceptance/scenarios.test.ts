@@ -1,9 +1,14 @@
-import { copyFileSync, cpSync, mkdirSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { copyFileSync, cpSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { join, relative } from 'node:path';
+import { stringify } from 'yaml';
 import { describe, expect, it } from 'vitest';
 
 import { main } from '../../src/cli/index.js';
+import { checkCampaign, runCampaign } from '../../src/runner/index.js';
 import { loadScenario } from '../../src/scenario/index.js';
+import { writeArmsNamed } from '../support/arm-fixture.js';
+import { completeCampaignYaml } from '../support/campaign-fixture.js';
+import { doubles } from '../support/runner-doubles.js';
 import { repoPath } from '../support/paths.js';
 import { tempDir, writeScenario } from '../support/scenario-fixture.js';
 
@@ -116,5 +121,63 @@ describe('scenarios.feature', () => {
       stderr: 'steps[0].prompt_file: holds a literal of the hold-out file hidden/refund.test.ts\n',
     });
     expect(result.stderr).not.toContain('4417');
+  });
+
+  it('@F3.4 Changing a scenario creates a new version', async () => {
+    // Given S1 at version 1.0 has stored results — T3, run once by a campaign with the doubles
+    const root = repository();
+    mkdirSync(join(root, 'campaigns'));
+    const campaign = join(root, 'campaigns', 'c.yaml');
+    const yaml = (version: string) =>
+      stringify({
+        ...completeCampaignYaml(),
+        harnesses: {},
+        arms: ['baseline'],
+        scenarios: [{ id: 'T3', version }],
+        repetitions: { T3: 1 },
+        agent: { name: 'fake', version: '1.0.0' },
+        models: { default: 'fake-model' },
+      });
+    writeFileSync(campaign, yaml('1.0'));
+    writeArmsNamed(root, ['baseline']);
+    const first = checkCampaign(campaign);
+    if (!first.ok) throw new Error(JSON.stringify(first.issues));
+    const summary = await runCampaign(first.value, doubles());
+    const recordFile = join(summary.runs[0]?.outputDir ?? '', 'run.json');
+    const stored = readFileSync(recordFile, 'utf8');
+    expect(JSON.parse(stored)).toMatchObject({
+      scenario: 'T3',
+      version: '1.0',
+      scenario_hash: first.value.scenarios[0]?.hash,
+    });
+
+    // When the maintainer changes a step prompt of S1
+    const version = join(root, 'scenarios', 'T3', '1.0');
+    writeFileSync(join(version, 'prompts', '02.md'), 'Refuse to cancel a shipped order.\n');
+
+    // Then S1 must be registered as a new version before it can run
+    const refused = checkCampaign(campaign);
+    expect(refused.ok).toBe(false);
+    if (!refused.ok) {
+      expect(refused.issues).toEqual([
+        {
+          path: 'scenarios[0]',
+          message: `T3@1.0 has changed since ${relative(root, recordFile)} ran it: register the change as a new version`,
+        },
+      ]);
+    }
+    expect((await validate(root)).stderr).toBe(
+      `scenario: T3@1.0 has changed since ${relative(root, recordFile)} ran it: register the change as a new version\n`,
+    );
+    cpSync(version, join(root, 'scenarios', 'T3', '1.1'), { recursive: true });
+    writeFileSync(
+      join(root, 'scenarios', 'T3', '1.1', 'scenario.yaml'),
+      readFileSync(join(version, 'scenario.yaml'), 'utf8').replace("version: '1.0'", "version: '1.1'"),
+    );
+    writeFileSync(campaign, yaml('1.1'));
+    expect(checkCampaign(campaign).ok).toBe(true);
+
+    // And the stored results keep pointing to version 1.0
+    expect(readFileSync(recordFile, 'utf8')).toBe(stored);
   });
 });

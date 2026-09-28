@@ -3,6 +3,7 @@ import { loadCampaign } from '../campaign/index.js';
 import type { Campaign } from '../campaign/index.js';
 import { fail, harnessCoverage, ok } from '../core/index.js';
 import type { Arm, Issue, Result, Scenario } from '../core/index.js';
+import { versionChange } from '../results/index.js';
 import { loadScenario } from '../scenario/index.js';
 
 /** A valid campaign with every scenario and every arm it names loaded, in the campaign's order. */
@@ -30,7 +31,12 @@ export function checkCampaign(file: string): Result<CheckedCampaign> {
   const issues: Issue[] = [];
   campaign.spec.scenarios.forEach(({ id, version }, index) => {
     const scenario = loadScenario(campaign.scenariosRoot, id, version);
-    if (scenario.ok) scenarios.push(scenario.value);
+    // A version that changed since stored results ran it never runs under its old name (REQ-FMT-09).
+    const changed = scenario.ok
+      ? versionChange(campaign.resultsRoot, campaign.repoRoot, scenario.value)
+      : undefined;
+    if (changed !== undefined) issues.push({ path: `scenarios[${index}]`, message: changed });
+    else if (scenario.ok) scenarios.push(scenario.value);
     else {
       issues.push({
         path: `scenarios[${index}]`,
