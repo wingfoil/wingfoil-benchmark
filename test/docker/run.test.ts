@@ -84,6 +84,52 @@ describe('runs in a real container', () => {
     expect(images.split('\n')).toContain(image);
   });
 
+  it('W6: a run scored outside its container, its hidden tests executed on every snapshot', async () => {
+    // T3 in the baseline arm, the fake writing a binary file in step 1 and the cancellation in step 2.
+    // Then `bench score`: the snapshots rebuilt from what the run stored, T3's hidden test run by
+    // node:test with tsx in the scoring image, against the census on the seed. No credential, no spending.
+    const root = tempDir('bench-docker-');
+    cpSync(repoPath('test/fixtures/campaigns'), join(root, 'campaigns'), { recursive: true });
+    cpSync(repoPath('test/fixtures/scenarios'), join(root, 'scenarios'), { recursive: true });
+    cpSync(repoPath('test/fixtures/arms'), join(root, 'arms'), { recursive: true });
+    process.env.BENCH_FAKE_SCRIPT = repoPath('test/fixtures/fake-script-scoring.json');
+    const campaign = join(root, 'campaigns', 'scoring.yaml');
+    priceCampaign(campaign);
+    let output = '';
+    const io = { stdout: (text: string) => (output += text), stderr: (text: string) => (output += text) };
+
+    expect(await main(['campaign', 'run', campaign], io)).toBe(0);
+    image = /campaign ([0-9a-f]{12})/.exec(output)?.[1] ?? '';
+    output = '';
+
+    expect(await main(['score', `${image}/1`], io, undefined, root)).toBe(0);
+    // Step 1 fails the hidden test (the seed cannot cancel), step 2 passes it: shown able to fail.
+    expect(output).toBe('T3@1.0 baseline fake-model r1: step 01 0/1, step 02 1/1, final 1/1\n');
+    const runDir = join(root, 'results', image, '1', 'runs', 'T3@1.0', 'baseline', 'fake-model', 'r1');
+    const scoreFile = join(runDir, 'score.json');
+    const first = readFileSync(scoreFile);
+    const score = JSON.parse(first.toString('utf8')) as {
+      scorer: { image: string; tsx: string };
+      steps: { suites: { failed: string[] }[] }[];
+    };
+    expect(score.scorer).toEqual({
+      image: expect.stringMatching(/^bench-score:[0-9a-f]{12}$/),
+      tsx: '4.23.15',
+    });
+    expect(score.steps[0]?.suites[0]?.failed).toEqual([
+      'oracle/public/cancel.test.ts > cancelling an order > marks a pending order as cancelled',
+    ]);
+
+    // Scored again: the same bytes (REQ-SCO-03). And no scoring container is left.
+    output = '';
+    expect(await main(['score', `${image}/1`], io, undefined, root)).toBe(0);
+    expect(readFileSync(scoreFile)).toEqual(first);
+    const containers = execFileSync('docker', ['ps', '--all', '--format', '{{.Names}}'], {
+      encoding: 'utf8',
+    });
+    expect(containers).not.toContain('bench-score-');
+  });
+
   it('W2: a multi-step run, with usage captured per step and interventions counted', async () => {
     // Real Docker, and the fake replaying sessions the real agent produced during the spike: one
     // question, one approval request, one session that simply finished. No credential, no spending.
