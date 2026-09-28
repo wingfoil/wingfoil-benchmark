@@ -223,8 +223,8 @@ decision is the approver's at this task's review.
   snapshots"` → `957ae27`, and `--type adr --title "W6 scoring conventions"` → `9ca411d`. Declared: one
   commit `wf(<type>): add <id>`, one file from the type's template, `status: draft`. Observed: exit 0, empty
   stderr, 1 file each. The scaffold's body is a placeholder comment saying that `memory submit` "replaces
-  these placeholder comments with real content": it does not, and nothing declares that it does outside
-  the comment itself. The bodies were written by hand first (`db6ec25`), as plan-003's rule says.
+  these placeholder comments with real content": it does not — usage note N15, reproduced. The bodies
+  were written by hand first (`db6ec25`), as plan-003's rule says.
   Otherwise matches.
 - `npx wingfoil memory submit bug-007-…` → `310a7de`, `npx wingfoil memory submit adr-004-…` → `ed649a2`.
   Declared: `draft → pending`. Observed: exit 0, 1 file each, only `status` changed. Matches. Both wait
