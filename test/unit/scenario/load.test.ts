@@ -7,6 +7,7 @@ import { repoPath } from '../../support/paths.js';
 import {
   COMPLETE_FILES,
   completeScenarioYaml,
+  EMPTY_SHA256,
   tempDir,
   writeScenario,
 } from '../../support/scenario-fixture.js';
@@ -156,17 +157,33 @@ describe('loadScenario', () => {
     [['steps'], [{ n: 2, prompt_file: 'prompts/01.md' }], 'steps[0].n'],
     [
       ['oracle', 'third_party'],
-      [{ name: 'x', url: 'https://x.org', commit: 'main', license: 'MIT' }],
+      [{ name: 'x', url: 'https://x.org', commit: 'main', license: 'MIT', files: ['oracle/first/x.json'] }],
       'oracle.third_party[0].commit',
     ],
     [
       ['oracle', 'third_party'],
-      [{ name: 'x', url: 'not a url', commit: 'a'.repeat(40), license: 'MIT' }],
+      [
+        {
+          name: 'x',
+          url: 'not a url',
+          commit: 'a'.repeat(40),
+          license: 'MIT',
+          files: ['oracle/first/x.json'],
+        },
+      ],
       'oracle.third_party[0].url',
     ],
     [
       ['oracle', 'third_party'],
-      [{ name: 'x', url: 'https://x.org', commit: 'a'.repeat(40), license: 'whatever I like' }],
+      [
+        {
+          name: 'x',
+          url: 'https://x.org',
+          commit: 'a'.repeat(40),
+          license: 'whatever I like',
+          files: ['oracle/first/x.json'],
+        },
+      ],
       'oracle.third_party[0].license',
     ],
     [['profiles'], ['architect', 'architect'], 'profiles'],
@@ -179,6 +196,19 @@ describe('loadScenario', () => {
         { n: 2, prompt_file: 'prompts/01.md' },
       ],
       'steps',
+    ],
+    [
+      ['oracle', 'third_party'],
+      [
+        {
+          name: 'x',
+          url: 'https://x.org',
+          commit: '2a928f9',
+          license: 'MIT',
+          files: ['oracle/first/x.json'],
+        },
+      ],
+      'oracle.third_party[0].commit',
     ],
     [['holdout'], 'yes', 'holdout'],
   ])('rejects a malformed %j', (field, value, path) => {
@@ -537,6 +567,162 @@ describe('loadScenario — oracle suites (dl-001)', () => {
     expect(issuesOf(root)).toEqual([
       { path: 'oracle.checks[0]', message: "'oracle.checks[0]' overlaps oracle.suites[0].dir" },
     ]);
+  });
+});
+
+/** A complete scenario whose third-party entries are `entries`. */
+function withEntries(...entries: Record<string, unknown>[]): Record<string, unknown> {
+  const yaml = completeScenarioYaml();
+  (yaml.oracle as Record<string, unknown>).third_party = entries;
+  return yaml;
+}
+
+const COMMIT_ENTRY = {
+  name: 'suite',
+  url: 'https://example.org/suite.git',
+  commit: 'a'.repeat(40),
+  license: 'Apache-2.0',
+  files: ['oracle/first/vendor/cases.json'],
+};
+const SHA256_ENTRY = {
+  name: 'examples',
+  url: 'https://example.org/spec#examples',
+  sha256: EMPTY_SHA256,
+  license: 'LicenseRef-Example',
+  files: ['oracle/first/examples.json'],
+};
+
+describe('loadScenario — third-party material (dl-002)', () => {
+  it('loads each entry with its pin and the absolute files it vendors', () => {
+    const root = writeScenario();
+    const result = loadScenario(root, 'S9', '1.0');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const dir = join(root, 'S9', '1.0');
+    expect(result.value.oracle.thirdParty).toEqual([
+      {
+        name: 'conformance-suite',
+        url: 'https://example.org/suite.git',
+        license: 'Apache-2.0',
+        pin: { commit: 'a'.repeat(40) },
+        files: [join(dir, 'oracle/first/vendor/cases.json')],
+      },
+      {
+        name: 'specification-examples',
+        url: 'https://example.org/spec#examples',
+        license: 'LicenseRef-Example',
+        pin: { sha256: EMPTY_SHA256 },
+        files: [join(dir, 'oracle/first/examples.json')],
+      },
+    ]);
+  });
+
+  it('refuses an entry pinned by neither a commit nor a sha256', () => {
+    const { commit: _commit, ...unpinned } = COMMIT_ENTRY;
+    expect(issuesOf(writeScenario(withEntries(unpinned)))).toEqual([
+      { path: 'oracle.third_party[0]', message: 'must be pinned by commit or by sha256' },
+    ]);
+  });
+
+  it('refuses an entry pinned by both', () => {
+    expect(issuesOf(writeScenario(withEntries({ ...SHA256_ENTRY, commit: 'a'.repeat(40) })))).toEqual([
+      { path: 'oracle.third_party[0]', message: 'must be pinned by commit or by sha256, not both' },
+    ]);
+  });
+
+  it.each([['abc'], [EMPTY_SHA256.toUpperCase()], [EMPTY_SHA256 + '0'], [`sha256:${EMPTY_SHA256}`]])(
+    'refuses a sha256 that is not 64 lowercase hex (%s)',
+    (sha256) => {
+      expect(paths(writeScenario(withEntries({ ...SHA256_ENTRY, sha256 })))).toEqual([
+        'oracle.third_party[0].sha256',
+      ]);
+    },
+  );
+
+  it("refuses a sha256 pin over more than one file: the pin is one file's plain SHA-256", () => {
+    const files = ['oracle/first/examples.json', 'oracle/first/vendor/cases.json'];
+    expect(issuesOf(writeScenario(withEntries({ ...SHA256_ENTRY, files })))).toEqual([
+      { path: 'oracle.third_party[0].files', message: 'must name one file when pinned by sha256' },
+    ]);
+  });
+
+  it.each([
+    ['missing', undefined],
+    ['empty', []],
+    ['repeated', ['oracle/first/vendor/cases.json', 'oracle/first/./vendor/cases.json']],
+  ])('refuses the vendored files %s', (_case, files) => {
+    const { files: _files, ...entry } = COMMIT_ENTRY;
+    const yaml = withEntries(files === undefined ? entry : { ...entry, files });
+    expect(paths(writeScenario(yaml))).toEqual(['oracle.third_party[0].files']);
+  });
+
+  it('refuses a file vendored by two entries: two licenses for the same bytes', () => {
+    const yaml = withEntries(SHA256_ENTRY, { ...COMMIT_ENTRY, files: ['oracle/first/./examples.json'] });
+    expect(issuesOf(writeScenario(yaml))).toEqual([
+      { path: 'oracle.third_party[1].files[0]', message: 'is vendored by oracle.third_party[0] too' },
+    ]);
+  });
+
+  it('refuses a vendored file that does not exist, naming it', () => {
+    const files = COMPLETE_FILES.filter((file) => file !== 'oracle/first/vendor/cases.json');
+    expect(issuesOf(writeScenario(completeScenarioYaml(), files))).toEqual([
+      {
+        path: 'oracle.third_party[0].files[0]',
+        message: "file 'oracle/first/vendor/cases.json' does not exist",
+      },
+    ]);
+  });
+
+  it('refuses a vendored file outside the scenario directory', () => {
+    expect(paths(writeScenario(withEntries({ ...COMMIT_ENTRY, files: ['../x.json'] })))).toEqual([
+      'oracle.third_party[0].files[0]',
+    ]);
+    const root = writeScenario(withEntries({ ...COMMIT_ENTRY, files: ['oracle/first/link.json'] }));
+    const outside = join(tempDir('bench-outside-'), 'x.json');
+    writeFileSync(outside, '');
+    symlinkSync(outside, join(root, 'S9', '1.0', 'oracle/first/link.json'));
+    expect(issuesOf(root)).toEqual([
+      {
+        path: 'oracle.third_party[0].files[0]',
+        message: "'oracle/first/link.json' leads outside the scenario directory",
+      },
+    ]);
+  });
+
+  it('refuses a vendored file in no suite: it would be neither hidden nor scanned', () => {
+    const yaml = withEntries({ ...COMMIT_ENTRY, files: ['oracle/vendor.json'] });
+    expect(issuesOf(writeScenario(yaml, [...COMPLETE_FILES, 'oracle/vendor.json']))).toEqual([
+      {
+        path: 'oracle.third_party[0].files[0]',
+        message: "'oracle/vendor.json' is in no suite of oracle.suites",
+      },
+    ]);
+  });
+
+  it('accepts a vendored file in any suite, not only the first', () => {
+    const yaml = withEntries({ ...COMMIT_ENTRY, files: ['oracle/all/cases.json'] });
+    expect(
+      loadScenario(writeScenario(yaml, [...COMPLETE_FILES, 'oracle/all/cases.json']), 'S9', '1.0').ok,
+    ).toBe(true);
+  });
+
+  it('refuses a file changed after it was pinned by its sha256, naming the entry and the file', () => {
+    const root = writeScenario();
+    writeFileSync(join(root, 'S9', '1.0', 'oracle/first/examples.json'), '{"edited": true}\n');
+    expect(issuesOf(root)).toEqual([
+      { path: 'oracle.third_party[1].sha256', message: "does not match 'oracle/first/examples.json'" },
+    ]);
+  });
+
+  it('does not check a commit entry against its source: no network (REQ-SCO-01)', () => {
+    const root = writeScenario();
+    writeFileSync(join(root, 'S9', '1.0', 'oracle/first/vendor/cases.json'), '[]\n');
+    expect(loadScenario(root, 'S9', '1.0').ok).toBe(true);
+  });
+
+  it('accepts a license outside the SPDX list as an SPDX LicenseRef', () => {
+    const yaml = withEntries({ ...SHA256_ENTRY, license: 'LicenseRef-IETF-Trust-TLP' });
+    expect(loadScenario(writeScenario(yaml), 'S9', '1.0').ok).toBe(true);
   });
 });
 
