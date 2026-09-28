@@ -2,7 +2,7 @@
 id: task-021-dry-run
 type: task
 title: "Dry run"
-status: in-progress
+status: in-review
 release: v0.1
 wave: W5
 features: [F3.3]
