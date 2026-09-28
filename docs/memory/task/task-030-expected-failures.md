@@ -139,3 +139,51 @@ K5's four entries.
   fields checked, one commit `wf(task): submit <id>` with no bracket and no body. Observed: exit 0,
   empty stderr, 1 file, diff limited to `status: draft` → `status: pending`. Matches (subject without
   transition: N9).
+- `npx wingfoil memory approve task-030-expected-failures --reason "…"`, run by the approver → `4547acf`
+  (`pending → backlog`). Matches.
+- Design committed by hand on `task/task-030-expected-failures`, then `npx wingfoil memory submit
+  task-030-expected-failures` → `4b82707`. Declared: `backlog → in-progress`, one commit. Observed: exit 0,
+  empty stderr, 1 file, only `status` changed (N9). Matches. WIP after it: one `in-progress`, none
+  `in-review`.
+
+### Build
+
+Test-first: the arm's `provides`, `missingCapabilities`, the runner's mark, `campaign validate`'s lines,
+the stored mark and `score.json`'s field red (12), then the code (`dd05514`); the acceptance test after.
+
+- `core/arm.ts`: `provides`, a map of kebab-case capability to boolean, default `{}`; `Arm.provides`.
+- `arms/capabilities.ts`: `missingCapabilities(scenario, arm)` — none for an arm without `requires`.
+- The runner decides the mark from the scenario and the arm before the run starts: the run's log line
+  ends `: expected failure (missing …)`; `run.json` gains `provides` for a harness arm and
+  `expected_failure: { missing }` for a marked run. The run itself is untouched: executed and scored.
+- `bench campaign validate` lists one line per scenario and arm that will be an expected failure.
+- `readStoredRun` reads the mark; `score.json` always carries `expected_failure`, `null` or the missing
+  capabilities; `bench score`'s line ends `; expected failure (missing …)`.
+- `arms/wingfoil/arm.yaml` states K5's facts about `3df305e`: `directive-delivery` and `memory-lifecycle`
+  provided, `workflow-engine` and `mcp-tools` not.
+- **Deviation:** no fixture T4. The complete fixture scenario already declares `workflow-engine` and the
+  fixture wingfoil arm provides nothing, so the runner's, the command's and the acceptance tests show the
+  mark on it; `campaign validate`'s existing test now lists its four expected failures.
+- **Requirements 1.9** (`484ec3e`): REQ-FMT-10 (a map), REQ-FMT-05 (`provides`), REQ-SCO-10 (harness
+  arms only); the README says what an expected failure is.
+
+### Suites (at the build notes)
+
+- `npm test`: **820 passed**; coverage 99.41% statements / 95.62% branches / 100% functions / 100% lines.
+- `npm run test:bin` 5, `npm run test:docker` 7 (W3's with the benchmark's own wingfoil arm, now with
+  `provides`), lint, typecheck, build: clean. No `bench-*` container left.
+
+### Traceability
+
+`scenarios.feature` @F3.6 "A scenario that needs a missing harness capability is an expected failure",
+green in `test/acceptance/scenarios.test.ts`, up to its last clause: "published as a loss" is W7's
+aggregation (W6 plan-phase decision 6). REQ-FMT-10, REQ-FMT-05 and REQ-SCO-10 as amended in 1.9. Nothing
+was spent.
+
+### Carried forward
+
+- **Before the reference campaign:** `arms/wingfoil/arm.yaml`'s `provides` is re-assessed with the pinned
+  WingFoil (the latest release, sequencer decision 3), beside re-running the MCP probe.
+- **W7 (F5.1):** an expected failure counts as a loss in aggregation, with the capability named.
+- **W11 (F5.8):** the method page lists each harness's gaps (`false` entries) and the expected failures.
+
