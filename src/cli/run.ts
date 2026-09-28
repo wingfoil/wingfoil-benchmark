@@ -1,6 +1,6 @@
 import { reasonOf } from '../core/index.js';
 import type { Result } from '../core/index.js';
-import { checkCampaign, runCampaign } from '../runner/index.js';
+import { checkCampaign, estimateCampaign, formatEstimate, runCampaign, totalLine } from '../runner/index.js';
 import type { CheckedCampaign } from '../runner/index.js';
 
 import { dryRunCommand } from './dry-run.js';
@@ -38,6 +38,7 @@ export async function main(
     return EXIT.usage;
   }
   if (verb === 'validate') return validateCampaign(file, io);
+  if (verb === 'estimate') return estimateCommand(file, io);
   if (verb === 'run') return runCampaignCommand(file, io, ports, allowSpending);
   io.stderr(USAGE);
   return EXIT.usage;
@@ -74,9 +75,27 @@ function validateCampaign(file: string, io: Io): number {
 }
 
 /**
- * REQ-CLI-03, as far as W4 goes: `bench campaign run <file>` executes the campaign, one session per
- * step (F2.2), a real agent only with {@link SPENDING_FLAG}. The cost estimate, the warning and the
- * ceiling arrive with F1.2 and F1.3 (W5).
+ * REQ-CLI-02: `bench campaign estimate <file>` (F1.2). The campaign's cost from its scenarios' dry
+ * runs, one line per scenario version, arm and model, then the total; it reads files only, and
+ * starts no container and no session.
+ */
+function estimateCommand(file: string, io: Io): number {
+  const checked = checkCampaign(file);
+  if (!checked.ok) return report(checked.issues, io);
+  const estimate = estimateCampaign(checked.value);
+  if (!estimate.ok) return report(estimate.issues, io);
+  io.stdout(
+    formatEstimate(estimate.value, checked.value.campaign.repoRoot)
+      .map((line) => `${line}\n`)
+      .join(''),
+  );
+  return EXIT.ok;
+}
+
+/**
+ * REQ-CLI-03, as far as task-022 goes: `bench campaign run <file>` executes the campaign, one session
+ * per step (F2.2), a real agent only with {@link SPENDING_FLAG}, printing its estimate before and its
+ * cost after (REQ-NFR-06). The warning and the ceiling arrive with F1.3 (task-023).
  */
 async function runCampaignCommand(
   file: string,
@@ -105,6 +124,16 @@ async function runCampaignCommand(
   const resolved = ports ? { ok: true as const, value: ports } : portsFor(spec, credential);
   if (!resolved.ok) return report(resolved.issues, io);
 
+  // What it expects to spend, before anything is built (REQ-NFR-06). A campaign that cannot be
+  // estimated still runs here: refusing it is the budget guard's (F1.3, task-023).
+  const rate = spec.currency.usd_to_eur;
+  const estimate = estimateCampaign(checked.value);
+  io.stdout(
+    estimate.ok
+      ? `${totalLine(estimate.value.totalUsd, rate, 'estimate')}\n`
+      : `estimate: not available, ${count(estimate.issues.length, 'dry run')} missing\n`,
+  );
+
   let summary;
   try {
     summary = await runCampaign(checked.value, {
@@ -122,6 +151,11 @@ async function runCampaignCommand(
   }
   const failed = summary.runs.filter((run) => run.outcome === 'failed').length;
   io.stdout(`${count(summary.runs.length - failed, 'run')} completed, ${failed} failed\n`);
+  // What it spent, once it ended (REQ-NFR-06): every step of every run, as the agent reported it.
+  const spent = summary.runs
+    .flatMap((run) => run.steps)
+    .reduce((total, step) => total + step.usage.costUsd, 0);
+  io.stdout(`${totalLine(spent, rate, 'cost')}\n`);
   return summary.completed ? EXIT.ok : EXIT.failure;
 }
 

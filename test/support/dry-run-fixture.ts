@@ -1,4 +1,4 @@
-import { writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { stringify } from 'yaml';
 
@@ -22,4 +22,49 @@ export function writeDryRunProfile(
   const file = join(root, 'scenarios', 'dry-run.yaml');
   writeFileSync(file, typeof yaml === 'string' ? yaml : stringify(yaml));
   return file;
+}
+
+/** What a stored dry run holds, for a test that needs one without running it. */
+export interface StoredDryRun {
+  readonly id?: string;
+  readonly version?: string;
+  readonly hash: string;
+  readonly arm: string;
+  readonly model?: string;
+  readonly stepCostsUsd: readonly number[];
+  readonly outcome?: string;
+  readonly agent?: { readonly name: string; readonly version: string };
+  readonly harnessCommit?: string;
+}
+
+/**
+ * Write the `run.json` a dry run stores (task-021) at `results/dry-runs/<execution>/runs/…/r1/` under
+ * `root`, and return the execution's directory.
+ */
+export function writeStoredDryRun(root: string, execution: number, run: StoredDryRun): string {
+  const id = run.id ?? 'T3';
+  const version = run.version ?? '1.0';
+  const model = run.model ?? 'fake-model';
+  const executionDir = join(root, 'results', 'dry-runs', String(execution));
+  const dir = join(executionDir, 'runs', `${id}@${version}`, run.arm, model, 'r1');
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(
+    join(dir, 'run.json'),
+    JSON.stringify({
+      dry_run: true,
+      scenario: id,
+      version,
+      scenario_hash: run.hash,
+      arm: run.arm,
+      model,
+      repetition: 1,
+      agent: run.agent ?? { name: 'fake', version: '1.0.0' },
+      ...(run.harnessCommit === undefined
+        ? {}
+        : { harness: { tool: 'wingfoil', commit: run.harnessCommit } }),
+      outcome: run.outcome ?? 'completed',
+      steps: run.stepCostsUsd.map((costUsd, index) => ({ n: index + 1, usage: { costUsd } })),
+    }),
+  );
+  return executionDir;
 }

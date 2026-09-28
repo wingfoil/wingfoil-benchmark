@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { agentCredential, checkCampaign, main, realPorts } from '../../../src/cli/index.js';
 import { doubles } from '../../support/runner-doubles.js';
 import { completeCampaignYaml, writeRepo } from '../../support/campaign-fixture.js';
+import { writeStoredDryRun } from '../../support/dry-run-fixture.js';
 import { repoPath } from '../../support/paths.js';
 import { tempDir } from '../../support/scenario-fixture.js';
 
@@ -61,7 +62,7 @@ describe('bench campaign validate', () => {
     const { code, stderr } = await run(...argv);
     expect(code).toBe(2);
     expect(stderr).toMatch(
-      /^usage: bench campaign validate <file>\n\s+bench campaign run <file> \[--allow-spending\]\n\s+bench scenario validate <id>@<version> \[--holdout <path>\]\n\s+bench scenario dry-run <id>@<version> --arm <arm> \[--model <id>\] \[--allow-spending\]\n$/,
+      /^usage: bench campaign validate <file>\n\s+bench campaign estimate <file>\n\s+bench campaign run <file> \[--allow-spending\]\n\s+bench scenario validate <id>@<version> \[--holdout <path>\]\n\s+bench scenario dry-run <id>@<version> --arm <arm> \[--model <id>\] \[--allow-spending\]\n$/,
     );
   });
 
@@ -70,14 +71,19 @@ describe('bench campaign validate', () => {
     [['campaign']],
     [['campaign', 'validate']],
     [['campaign', 'validate', 'a.yaml', 'b.yaml']],
-    [['campaign', 'estimate', 'a.yaml']],
+    // A verb that does not exist, with a file: what `campaign estimate` was until task-022.
+    [['campaign', 'score', 'a.yaml']],
+    [['campaign', 'estimate']],
+    [['campaign', 'estimate', 'a.yaml', 'b.yaml']],
+    // The spending flag belongs to `run`: an estimate spends nothing (task-022).
+    [['campaign', 'estimate', 'a.yaml', '--allow-spending']],
     // `scenario validate` exists since task-016; a scenario verb that does not is still a usage error.
     [['scenario', 'estimate', 'S1@1.0']],
   ])('exits 2 with the usage on a usage error (%j)', async (argv) => {
     const { code, stdout, stderr } = await run(...argv);
     expect({ code, stdout }).toEqual({ code: 2, stdout: '' });
     expect(stderr).toMatch(
-      /^usage: bench campaign validate <file>\n\s+bench campaign run <file> \[--allow-spending\]\n\s+bench scenario validate <id>@<version> \[--holdout <path>\]\n\s+bench scenario dry-run <id>@<version> --arm <arm> \[--model <id>\] \[--allow-spending\]\n$/,
+      /^usage: bench campaign validate <file>\n\s+bench campaign estimate <file>\n\s+bench campaign run <file> \[--allow-spending\]\n\s+bench scenario validate <id>@<version> \[--holdout <path>\]\n\s+bench scenario dry-run <id>@<version> --arm <arm> \[--model <id>\] \[--allow-spending\]\n$/,
     );
   });
 });
@@ -198,9 +204,15 @@ describe('bench campaign run', () => {
     const ports = doubles();
     const { code, stdout, stderr } = await runWith(ports, 'campaign', 'run', file);
     expect({ code, stderr }).toEqual({ code: 0, stderr: '' });
-    expect(stdout).toMatch(/^campaign [0-9a-f]{12}, execution 1\n/);
+    // What it expects to spend before anything is built, and what it spent at the end (REQ-NFR-06):
+    // no dry run of S1 exists, so there is no estimate, and the run goes on (task-023 refuses it).
+    expect(stdout).toMatch(
+      /^estimate: not available, 1 dry run missing\ncampaign [0-9a-f]{12}, execution 1\n/,
+    );
     expect(stdout).toMatch(/run S1@1\.0\/baseline\/fake-model\/r1\n/);
-    expect(stdout).toMatch(/1 run completed, 0 failed\n$/);
+    expect(stdout).toMatch(
+      /1 run completed, 0 failed\ncost: 0\.0000 USD, 0\.0000 EUR at 0\.92 EUR\/USD, API-equivalent\n$/,
+    );
     expect(ports.recorded.creates).toHaveLength(1);
   });
 
@@ -216,6 +228,34 @@ describe('bench campaign run', () => {
     expect(stderr).toMatch(/^campaign: Cannot connect to the Docker daemon\n$/);
   });
 
+  it('prints the estimate before anything is built when every key has a dry run (REQ-NFR-06)', async () => {
+    const { root, file } = writeRepo(fakeCampaign(), ['S1@1.0']);
+    const checked = checkCampaign(file);
+    if (!checked.ok) throw new Error(JSON.stringify(checked.issues));
+    const hash = checked.value.scenarios[0]?.hash ?? '';
+    writeStoredDryRun(root, 1, { id: 'S1', hash, arm: 'baseline', stepCostsUsd: [0.5] });
+    const { stdout } = await runWith(doubles(), 'campaign', 'run', file);
+    expect(stdout).toMatch(
+      /^estimate: 0\.5000 USD, 0\.4600 EUR at 0\.92 EUR\/USD, API-equivalent\ncampaign /,
+    );
+  });
+
+  it('refuses to estimate an invalid campaign, one line per issue', async () => {
+    const yaml = fakeCampaign();
+    yaml.arms = ['wingfoil'];
+    const { code, stdout, stderr } = await runWith(
+      doubles(),
+      'campaign',
+      'estimate',
+      writeRepo(yaml, ['S1@1.0']).file,
+    );
+    expect({ code, stdout, stderr }).toEqual({
+      code: 1,
+      stdout: '',
+      stderr: 'arms: must include the baseline arm\n',
+    });
+  });
+
   it('exits 1 when a run fails, and says which', async () => {
     const { file } = writeRepo(fakeCampaign(), ['S1@1.0']);
     const ports = doubles({
@@ -225,7 +265,7 @@ describe('bench campaign run', () => {
     });
     const { code, stdout, stderr } = await runWith(ports, 'campaign', 'run', file);
     expect(code).toBe(1);
-    expect(stdout).toMatch(/0 runs completed, 1 failed\n$/);
+    expect(stdout).toMatch(/0 runs completed, 1 failed\ncost: 0\.0000 USD, .*\n$/);
     expect(stderr).toMatch(/^run S1@1\.0\/baseline\/fake-model\/r1 failed: the agent gave up\n$/);
   });
 });
