@@ -2,7 +2,7 @@
 id: task-024-cost-and-time-caps-during-a-run
 type: task
 title: "Cost and time caps during a run"
-status: draft
+status: pending
 release: v0.1
 wave: W5
 features: [F1.3]
