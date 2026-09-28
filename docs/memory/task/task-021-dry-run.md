@@ -42,7 +42,7 @@ Left to the design phase: where a dry run takes the pins a campaign file would g
 version, harness commit, caps, currency rate) — a fixed dry-run profile in the repository, or a
 campaign file named on the command line; and which dry run counts when a key has several.
 
-### W5 plan-phase decisions (proposed to the approver, 2026-09-28)
+### W5 plan-phase decisions (accepted by the approver, 2026-09-28, `1b3ea5b`)
 
 1. **Four tasks, in this order:** task-021 dry run (F3.3), task-022 cost estimate (F1.2), task-023
    budget guard at campaign start (F1.3, the refusals), task-024 cost and time caps during a run
@@ -240,3 +240,10 @@ profile's rate.
   checked, one commit `wf(task): submit <id>` with no bracket and no body. Observed: exit 0, empty
   stderr, 1 file, diff limited to `status: draft` → `status: pending`. Matches (subject without
   transition: N9).
+- `npx wingfoil memory approve task-021-dry-run --reason "…"`, run by the approver → `1b3ea5b`.
+  `memory history` records `operation: approve`, `pending → backlog`, the approver and the reason.
+- Design committed by hand on `task/task-021-dry-run` (`docs(task): design task-021 …`), then
+  `npx wingfoil memory submit task-021-dry-run` → `76f3b90`. Declared: `backlog → in-progress`, one
+  commit `wf(task): submit <id>`. Observed: exit 0, empty stderr, 1 file, diff limited to
+  `status: backlog` → `status: in-progress`, subject without transition (N9). Matches. WIP after it:
+  one task `in-progress` (this one), none `in-review`.
