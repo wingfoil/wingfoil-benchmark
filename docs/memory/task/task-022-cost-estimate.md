@@ -2,7 +2,7 @@
 id: task-022-cost-estimate
 type: task
 title: "Cost estimate"
-status: backlog
+status: in-progress
 release: v0.1
 wave: W5
 features: [F1.2]
