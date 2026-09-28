@@ -182,4 +182,6 @@ export interface Scenario {
    * seed (dl-005, REQ-FMT-04). Only that arm's setup receives it; the seed and the prompts never do.
    */
   readonly armDirs: Readonly<Record<string, string>>;
+  /** The version's content hash (REQ-FMT-09), `sha256:<hex>`: what results record, and what makes it immutable. */
+  readonly hash: string;
 }

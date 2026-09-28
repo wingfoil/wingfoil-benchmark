@@ -93,6 +93,8 @@ export interface ManualRecord {
 export interface RunResult {
   readonly scenario: string;
   readonly version: string;
+  /** The version's content hash when it ran (REQ-FMT-09). */
+  readonly scenarioHash: string;
   readonly arm: string;
   readonly model: string;
   readonly repetition: number;
@@ -262,6 +264,7 @@ async function executeRun(context: RunContext, options: RunnerOptions): Promise<
     manual: measure(readFileSync(arm.manualPath, 'utf8')),
     scenario: scenario.id,
     version: scenario.version,
+    scenarioHash: scenario.hash,
     arm: arm.name,
     model,
     repetition,
@@ -706,6 +709,8 @@ function record(run: RunResult, campaign: CheckedCampaign['campaign']): RunResul
         campaign: campaign.id,
         scenario: run.scenario,
         version: run.version,
+        // What the version's content was when it ran (REQ-FMT-09): a later change is refused, not mixed in.
+        scenario_hash: run.scenarioHash,
         arm: run.arm,
         model: run.model,
         repetition: run.repetition,
