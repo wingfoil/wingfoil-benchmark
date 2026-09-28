@@ -179,3 +179,11 @@ and never executed. Not built here: it needs a place in the plan — task-024, a
 `npm test` 668/668 (statements 99.8%, branches 96.86%, functions 100%, lines 100%), `npm run test:bin`
 4/4, `npm run test:docker` 5/5, `npm run lint` clean, `npm run build` clean; no `bench-*` container
 left. `campaign.feature` @F1.2 has its two acceptance tests. Nothing was spent.
+
+### Review and approval
+
+- `npx wingfoil memory submit task-022-cost-estimate` → `a80ce68` (`in-progress → in-review`, one
+  commit, only `status` changed). Matches.
+- `npx wingfoil memory approve task-022-cost-estimate --reason "…"` → `aa3d6fe`, run by the
+  approver (`in-review → approved`, `Approver:`/`Reason:` trailers, only `status` changed). Matches.
+- **Model slices:** the approver chose a fifth W5 task to run them (2026-09-28), task-025.
