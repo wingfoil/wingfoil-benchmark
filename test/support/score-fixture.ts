@@ -51,6 +51,8 @@ export async function storedRun(
     setup?: Files;
     setupCommits?: readonly Files[];
     outcome?: string;
+    /** What each step records beside its snapshot (task-029); by default {@link usageOf}. */
+    record?: (n: number) => StepRecord;
   } = { steps: [] },
 ): Promise<StoredRunFixture> {
   const root = tempDir('bench-score-repo-');
@@ -75,7 +77,8 @@ export async function storedRun(
   const setupTree = await git.tree(workspace, 'HEAD');
   writeFileSync(join(runDir, 'setup', 'diff.patch'), await git.patchOf(workspace, seedTree, setupTree));
 
-  const steps: { n: number; outcome: string; tree: string }[] = [];
+  const steps: Record<string, unknown>[] = [];
+  const recordOf = options.record ?? defaultRecord;
   let previous = setupTree;
   for (const [index, step] of options.steps.entries()) {
     const number = String(index + 1).padStart(2, '0');
@@ -89,10 +92,27 @@ export async function storedRun(
     const tree = await git.tree(workspace, 'HEAD');
     mkdirSync(join(runDir, 'steps', number), { recursive: true });
     writeFileSync(join(runDir, 'steps', number, 'diff.patch'), await git.patchOf(workspace, previous, tree));
-    steps.push({ n: index + 1, outcome: 'completed', tree });
+    const record = recordOf(index + 1);
+    writeFileSync(
+      join(runDir, 'steps', number, 'usage.json'),
+      `${JSON.stringify(record.usage, undefined, 2)}\n`,
+    );
+    steps.push({
+      n: index + 1,
+      session: `session-${index + 1}`,
+      outcome: record.outcome ?? 'completed',
+      interventions: record.interventions ?? 0,
+      usage: record.usage,
+      tree,
+      ...(record.costBoundUsd === undefined
+        ? {}
+        : { cost_reported: false, cost_bound_usd: record.costBoundUsd }),
+    });
     previous = tree;
   }
   const outcome = options.outcome ?? (steps.length === scenario.steps.length ? 'completed' : 'failed');
+  // The pins the execution ran with, whose rate converts a cost bound (task-029).
+  writeFileSync(join(executionDir, 'campaign.yaml'), 'currency:\n  usd_to_eur: 0.5\n');
   writeFileSync(
     join(runDir, 'run.json'),
     `${JSON.stringify(
@@ -113,6 +133,41 @@ export async function storedRun(
     )}\n`,
   );
   return { root, executionDir, runDir, scenario, workspace };
+}
+
+/** What a step records beside its snapshot: its usage, outcome, interventions and cost bound. */
+export interface StepRecord {
+  readonly usage: {
+    inputTokens: number;
+    outputTokens: number;
+    cacheCreationInputTokens: number;
+    cacheReadInputTokens: number;
+    costUsd: number;
+    costEur: number;
+    turns: number;
+    durationMs: number;
+  };
+  readonly outcome?: string;
+  readonly interventions?: number;
+  readonly costBoundUsd?: number;
+}
+
+/** Step `n`'s usage by default: every figure a multiple of `n`, at the fixture's rate of 0.5 EUR/USD. */
+export function usageOf(n: number): StepRecord['usage'] {
+  return {
+    inputTokens: 10 * n,
+    outputTokens: 100 * n,
+    cacheCreationInputTokens: 1000 * n,
+    cacheReadInputTokens: 10000 * n,
+    costUsd: 0.1 * n,
+    costEur: 0.05 * n,
+    turns: 3 * n,
+    durationMs: 1000 * n,
+  };
+}
+
+function defaultRecord(n: number): StepRecord {
+  return { usage: usageOf(n), interventions: n - 1 };
 }
 
 /** A step that implements T3's cancellation, which its one hidden test checks. */

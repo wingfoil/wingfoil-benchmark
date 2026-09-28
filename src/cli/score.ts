@@ -62,7 +62,7 @@ export async function scoreCommand(
   let failed = false;
   for (const [index, runDir] of runs.entries()) {
     const label = runLabel(executionDir, runDir);
-    const scored = await scoreOne(runDir, root, {
+    const scored = await scoreOne(runDir, executionDir, root, {
       docker,
       git,
       image,
@@ -81,6 +81,7 @@ export async function scoreCommand(
 
 async function scoreOne(
   runDir: string,
+  executionDir: string,
   root: string,
   context: {
     docker: DockerPort;
@@ -99,6 +100,7 @@ async function scoreOne(
   if (!holdout.ok) return holdout;
   const score = await scoreRun({
     runDir,
+    executionDir,
     run: run.value,
     scenario: scenario.value,
     image: context.image,

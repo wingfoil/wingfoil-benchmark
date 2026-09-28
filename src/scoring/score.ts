@@ -7,6 +7,8 @@ import type { DockerPort, GitPort, Result, Scenario, Suite } from '../core/index
 import type { StoredRun } from '../results/index.js';
 import type { HoldoutAdditions } from '../scenario/index.js';
 
+import { costMetrics } from './cost.js';
+import type { CostScore } from './cost.js';
 import { runSuite } from './hidden-tests.js';
 import { holdoutHash, holdoutSuites } from './holdout.js';
 import type { SuiteReport, TestResult } from './hidden-tests.js';
@@ -68,6 +70,8 @@ export interface ScoreFile {
   readonly steps: readonly StepScore[];
   readonly final: FinalScore;
   readonly holdout: HoldoutScore;
+  /** M-K1 and M-K2 per step and for the run (F4.3, task-029). */
+  readonly cost: CostScore;
 }
 
 /**
@@ -84,6 +88,8 @@ export type HoldoutInput =
 /** What scoring one run needs. */
 export interface ScoreRequest {
   readonly runDir: string;
+  /** The run's execution, `results/<campaign-id>/<n>` or `results/dry-runs/<n>`: where its pins are. */
+  readonly executionDir: string;
   readonly run: StoredRun;
   readonly scenario: Scenario;
   readonly image: ScoringImage;
@@ -114,6 +120,8 @@ interface Group {
 export async function scoreRun(request: ScoreRequest): Promise<Result<ScoreFile>> {
   const { run, scenario } = request;
   const holdout = request.holdout ?? { notScored: 'not configured' };
+  const cost = costMetrics({ runDir: request.runDir, executionDir: request.executionDir, run, scenario });
+  if (!cost.ok) return cost;
   const workDir = mkdtempSync(join(tmpdir(), 'bench-score-'));
   try {
     const snapshots = await rebuildSnapshots({ ...request, workDir });
@@ -149,6 +157,7 @@ export async function scoreRun(request: ScoreRequest): Promise<Result<ScoreFile>
       steps: publicScore.value.steps as StepScore[],
       final: publicScore.value.final as FinalScore,
       holdout: holdoutScore,
+      cost: cost.value,
     });
   } finally {
     rmSync(workDir, { recursive: true, force: true });

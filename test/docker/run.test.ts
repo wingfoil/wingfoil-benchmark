@@ -153,6 +153,18 @@ describe('runs in a real container', () => {
       },
     });
     expect(first.toString('utf8')).not.toContain('second cancellation');
+    // M-K1 and M-K2 from what the real runner stored (task-029): the fake reports no usage, so every
+    // figure is zero, per step and for the run, at the campaign's rate.
+    expect(JSON.parse(first.toString('utf8'))).toMatchObject({
+      cost: {
+        usd_to_eur: 1,
+        steps: [
+          { n: 1, outcome: 'completed', cost_eur: 0, interventions: 0 },
+          { n: 2, outcome: 'completed', cost_eur: 0, interventions: 0 },
+        ],
+        run: { cost_usd: 0, cost_reported: true, turns: 0 },
+      },
+    });
 
     // Scored again: the same bytes (REQ-SCO-03). And no scoring container is left.
     output = '';

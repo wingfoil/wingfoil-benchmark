@@ -74,4 +74,39 @@ describe('scoring.feature', () => {
     expect(again.code).toBe(0);
     expect(readFileSync(join(fixture.runDir, 'score.json'))).toEqual(first);
   });
+
+  it('@F4.3 Cost metrics are recorded per step and per run', async () => {
+    // Given a completed run with one committed snapshot per step — step 2 answered once by the approver
+    const fixture = await storedRun({ steps: [{}, CANCEL] });
+
+    // When the run is scored
+    await benchScore(fixture.root);
+
+    // Then M-K1 and M-K2 are recorded per step and summed per run: tokens by kind, API-equivalent cost
+    // in euro, wall time, turns and interventions
+    const { cost } = JSON.parse(readFileSync(join(fixture.runDir, 'score.json'), 'utf8')) as {
+      cost: { steps: Record<string, unknown>[]; run: Record<string, unknown> };
+    };
+    expect(
+      cost.steps.map((step) => [step.n, step.cost_eur, step.wall_time_ms, step.turns, step.interventions]),
+    ).toEqual([
+      [1, 0.05, 1000, 3, 0],
+      [2, 0.1, 2000, 6, 1],
+    ]);
+    expect(cost.steps[1]?.tokens).toEqual({
+      input: 20,
+      output: 200,
+      cache_creation: 2000,
+      cache_read: 20000,
+    });
+    expect(cost.run).toEqual({
+      tokens: { input: 30, output: 300, cache_creation: 3000, cache_read: 30000 },
+      cost_usd: 0.3,
+      cost_eur: 0.15,
+      cost_reported: true,
+      wall_time_ms: 3000,
+      turns: 9,
+      interventions: 1,
+    });
+  });
 });
