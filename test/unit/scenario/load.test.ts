@@ -330,7 +330,11 @@ describe('loadScenario', () => {
 
   it.each([
     [['seed'], 'oracle', "'seed' overlaps oracle.suites[0].dir"],
-    [['oracle', 'suites'], [{ id: 'x', dir: 'seed', after_steps: [1] }], "'seed' overlaps oracle.suites[0].dir"],
+    [
+      ['oracle', 'suites'],
+      [{ id: 'x', dir: 'seed', after_steps: [1] }],
+      "'seed' overlaps oracle.suites[0].dir",
+    ],
   ])('keeps the seed apart from the oracle (%j = %s)', (field, value, message) => {
     const root = writeScenario(withField(field as string[], value));
     expect(issuesOf(root)[0]).toEqual({ path: 'seed', message });
@@ -472,8 +476,14 @@ describe('loadScenario — oracle suites (dl-001)', () => {
       { id: 'all', dir: 'oracle/all', after_steps: [0, 2] },
     ];
     expect(issuesOf(writeScenario(withField(['oracle', 'suites'], suites)))).toEqual([
-      { path: 'oracle.suites[0].after_steps[1]', message: 'must be a declared step: the scenario has steps 1–2' },
-      { path: 'oracle.suites[1].after_steps[0]', message: 'must be a declared step: the scenario has steps 1–2' },
+      {
+        path: 'oracle.suites[0].after_steps[1]',
+        message: 'must be a declared step: the scenario has steps 1–2',
+      },
+      {
+        path: 'oracle.suites[1].after_steps[0]',
+        message: 'must be a declared step: the scenario has steps 1–2',
+      },
     ]);
   });
 

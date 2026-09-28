@@ -116,8 +116,11 @@ describe('scanScenario (REQ-FMT-08)', () => {
         ),
       );
       mkdirSync(join(dir, 'oracle', 'refunds'));
-      writeFileSync(join(dir, 'oracle', 'refunds', 'refund.test.ts'), "expect(r).toBe('refunded in full');\n");
-      writeFileSync(join(dir, 'prompts', '02.md'), 'A cancelled paid order is refunded in full.\n');
+      writeFileSync(
+        join(dir, 'oracle', 'refunds', 'refund.test.ts'),
+        "expect(r).toBe('refunded in full');\n",
+      );
+      writeFileSync(join(dir, 'prompts', '02.md'), 'A paid order is refunded in full on request.\n');
     });
     expect(scenario.oracle.suites.map((suite) => suite.id)).toEqual(['orders', 'refunds']);
     expect(scanScenario(scenario, DECLARATIONS)).toEqual([

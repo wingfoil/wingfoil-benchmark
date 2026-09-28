@@ -2,7 +2,7 @@ import { existsSync, lstatSync, readdirSync, statSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 
 import { fail, ok } from '../core/index.js';
-import type { Issue, Result } from '../core/index.js';
+import type { Issue, Result, Suite } from '../core/index.js';
 
 /** A hold-out checkout mirrors this repository's layout for its additions (REQ-ARC-03). */
 const SCENARIOS_DIR = 'scenarios';
@@ -57,4 +57,20 @@ export function loadHoldoutAdditions(
   };
   walk(dir);
   return issues.length > 0 ? fail(issues) : ok({ dir, files: files.sort() });
+}
+
+/**
+ * The additions that sit under no declared suite (dl-001, REQ-ARC-03): a hold-out file of a scenario
+ * version belongs to the suite whose id is its first path segment, and is scored after that suite's
+ * steps. One issue per stray file, naming it and the suite ids it could be under — never its content.
+ */
+export function holdoutSuiteIssues(suites: readonly Suite[], additions: HoldoutAdditions): Issue[] {
+  const ids = new Set(suites.map((suite) => suite.id));
+  const known = ids.size === 0 ? 'none' : [...ids].sort().join(', ');
+  return additions.files
+    .filter((file) => {
+      const [first, ...rest] = file.split('/');
+      return rest.length === 0 || !ids.has(first as string);
+    })
+    .map((file) => ({ path: 'holdout', message: `'${file}' is under no declared suite (${known})` }));
 }
