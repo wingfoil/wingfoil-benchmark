@@ -316,16 +316,19 @@ describe('runCampaign', () => {
     // and step 2 never starts. The run's repository and its record disagree by one commit, and the
     // run is failed precisely so that nothing scores that gap.
     const workspace = summary.runs[0]?.workspace ?? '';
+    const tree = (n: number) => `tree-${n}`.padEnd(40, '0');
     expect(ports.recorded.gitCalls).toEqual([
       `init ${workspace}`,
       `commit ${workspace} seed`,
+      `tree ${workspace} HEAD`,
       `identity ${workspace} Benchmark Approver <approver@benchmark.localhost>`,
       `commit ${workspace} setup --allow-empty`,
       `head ${workspace}`,
       `tree ${workspace} HEAD`,
-      `patch ${workspace} HEAD`,
+      `patch ${workspace} ${tree(1)} ${tree(2)}`,
       `commit ${workspace} step 01 --allow-empty`,
-      `patch ${workspace} HEAD`,
+      `tree ${workspace} HEAD`,
+      `patch ${workspace} ${tree(2)} ${tree(3)}`,
     ]);
     expect(existsSync(join(summary.runs[0]?.outputDir ?? '', 'steps', '01', 'diff.patch'))).toBe(false);
   });
@@ -1017,38 +1020,44 @@ describe('the setup phase (REQ-RUN-03, adr-003)', () => {
     expect(record.steps).toHaveLength(2);
   });
 
-  it("stores the setup commit's patch, scrubbed, and every commit's tree, so a snapshot can be rebuilt (task-027)", async () => {
+  it("stores the setup's patch from the seed, scrubbed, and every snapshot's tree, so a snapshot can be rebuilt (task-027, bug-007)", async () => {
     const token = 'tok-SECRET';
     const { checked } = checkedCampaign();
-    const ports = doubles({ patchOf: (_, ref) => `+${ref} with ${token}\n` });
+    const ports = doubles({
+      patchOf: (_, from, to) => `+${from.slice(0, 6)}..${to.slice(0, 6)} with ${token}\n`,
+    });
 
     const summary = await runCampaign(checked, { ...ports, secrets: [token] });
 
     const outputDir = summary.runs[0]?.outputDir ?? '';
-    expect(readFileSync(join(outputDir, 'setup', 'diff.patch'), 'utf8')).toBe('+HEAD with [redacted]\n');
+    // From the seed's tree to the setup's: the harness's own commits in between are in it (bug-007).
+    expect(readFileSync(join(outputDir, 'setup', 'diff.patch'), 'utf8')).toBe(
+      '+tree-1..tree-2 with [redacted]\n',
+    );
     const record = JSON.parse(readFileSync(join(outputDir, 'run.json'), 'utf8')) as {
       setup: { tree: string };
       steps: { tree: string }[];
     };
-    // The double answers each tree differently, in call order: setup first, then each step's.
-    expect(record.setup.tree).toBe('tree-1'.padEnd(40, '0'));
-    expect(record.steps.map((step) => step.tree)).toEqual([
-      'tree-2'.padEnd(40, '0'),
-      'tree-3'.padEnd(40, '0'),
-    ]);
-    // Each read after its own commit, so a tree is never the previous snapshot's.
+    // The double answers each tree differently, in call order: the seed's, the setup's, each step's.
+    const tree = (n: number) => `tree-${n}`.padEnd(40, '0');
+    expect(record.setup.tree).toBe(tree(2));
+    expect(record.steps.map((step) => step.tree)).toEqual([tree(3), tree(4)]);
+    expect(readFileSync(join(outputDir, 'steps', '02', 'diff.patch'), 'utf8')).toBe(
+      '+tree-3..tree-4 with [redacted]\n',
+    );
+    // Each tree read after its own commit, and each patch from the snapshot before it to this one.
     const workspace = summary.runs[0]?.workspace ?? '';
-    expect(ports.recorded.gitCalls.slice(3)).toEqual([
+    expect(ports.recorded.gitCalls.slice(4)).toEqual([
       `commit ${workspace} setup --allow-empty`,
       `head ${workspace}`,
       `tree ${workspace} HEAD`,
-      `patch ${workspace} HEAD`,
+      `patch ${workspace} ${tree(1)} ${tree(2)}`,
       `commit ${workspace} step 01 --allow-empty`,
-      `patch ${workspace} HEAD`,
       `tree ${workspace} HEAD`,
+      `patch ${workspace} ${tree(2)} ${tree(3)}`,
       `commit ${workspace} step 02 --allow-empty`,
-      `patch ${workspace} HEAD`,
       `tree ${workspace} HEAD`,
+      `patch ${workspace} ${tree(3)} ${tree(4)}`,
     ]);
   });
 

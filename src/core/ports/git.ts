@@ -56,10 +56,12 @@ export interface GitPort {
    */
   commitAll(directory: string, message: string, options?: { allowEmpty?: boolean }): Promise<void>;
   /**
-   * The patch of one commit, for `steps/<NN>/diff.patch` and `setup/diff.patch` (REQ-RUN-05): binary
-   * files included and full object ids, so that `apply` rebuilds the snapshot from it (task-027).
+   * The patch from tree `from` to tree `to`, for `setup/diff.patch` and `steps/<NN>/diff.patch`
+   * (REQ-RUN-05): everything between two snapshots, whatever commits the harness or the agent made in
+   * between (bug-007), binary files included and full object ids, so that `apply` rebuilds the later
+   * snapshot from the earlier one (task-027).
    */
-  patchOf(directory: string, ref: string): Promise<string>;
+  patchOf(directory: string, from: string, to: string): Promise<string>;
   /** The id of the tree of commit `ref`: its content alone, what a rebuilt snapshot is checked against. */
   tree(directory: string, ref: string): Promise<string>;
   /** Applies a patch file to the working tree and the index, as the next commit's content (task-027). */
@@ -99,10 +101,7 @@ export function gitCli(process: ProcessPort): GitPort {
       const empty = options?.allowEmpty === true ? ['--allow-empty'] : [];
       await git(directory, ['commit', '--quiet', ...empty, '--message', message]);
     },
-    // `show` of the commit itself, not a range: every step has a parent, but reading the commit is
-    // one fewer assumption about the history it sits in.
-    patchOf: (directory, ref) =>
-      git(directory, ['show', '--format=', '--patch', '--binary', '--full-index', ref]),
+    patchOf: (directory, from, to) => git(directory, ['diff', '--binary', '--full-index', from, to]),
     tree: async (directory, ref) => (await git(directory, ['rev-parse', `${ref}^{tree}`])).trim(),
     apply: async (directory, patchFile) => {
       await git(directory, ['apply', '--index', patchFile]);

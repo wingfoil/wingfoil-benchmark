@@ -261,18 +261,17 @@ describe('the git port', () => {
     ]);
   });
 
-  it('reads the patch of a commit, binary-safe, so that every snapshot can be rebuilt (task-027)', async () => {
+  it('reads the patch between two snapshots, binary-safe, so that every snapshot can be rebuilt (task-027, bug-007)', async () => {
     const process = recorder([ok('diff --git a/x b/x\n')]);
-    const patch = await gitCli(process).patchOf('/repo/runs/w', 'HEAD');
+    const patch = await gitCli(process).patchOf('/repo/runs/w', 'a'.repeat(40), 'b'.repeat(40));
     expect(command(process.calls[0]?.args ?? [])).toEqual([
       '-C',
       '/repo/runs/w',
-      'show',
-      '--format=',
-      '--patch',
+      'diff',
       '--binary',
       '--full-index',
-      'HEAD',
+      'a'.repeat(40),
+      'b'.repeat(40),
     ]);
     expect(patch).toBe('diff --git a/x b/x\n');
   });

@@ -447,6 +447,8 @@ async function executeRun(context: RunContext, options: RunnerOptions): Promise<
       );
     }
     await prepareWorkspace(workspace, scenario, options.git);
+    // Every stored patch runs from one snapshot's tree to the next (task-027, bug-007).
+    const seedTree = await options.git.tree(workspace, 'HEAD');
     container = await options.docker.create({
       image: plan.id,
       name: containerName,
@@ -462,6 +464,7 @@ async function executeRun(context: RunContext, options: RunnerOptions): Promise<
         container,
         workspace,
         outputDir,
+        seedTree,
         ...(harness === undefined ? {} : { harness: harness.installed }),
         ...(scenario.armDirs[arm.name] === undefined ? {} : { scenarioDir: scenario.armDirs[arm.name] }),
         ...(context.projectRules === undefined ? {} : { projectRules: context.projectRules }),
@@ -470,6 +473,7 @@ async function executeRun(context: RunContext, options: RunnerOptions): Promise<
     );
     if (setup.code !== undefined) throw new Error(setupFailure(arm, setup.code, outputDir));
     const mcpConfig = arm.mcpPath === undefined ? undefined : MCP_CONFIG;
+    let previousTree = setup.tree as string;
     for (const step of scenario.steps) {
       const result = await executeStep(
         step,
@@ -482,10 +486,12 @@ async function executeRun(context: RunContext, options: RunnerOptions): Promise<
           policy,
           spent: spentEur(steps, plan.pins),
           pins: plan.pins,
+          previousTree,
           ...(mcpConfig === undefined ? {} : { mcpConfig }),
         },
         options,
       );
+      if (result !== CAP_REACHED && result.tree !== undefined) previousTree = result.tree;
       // Nothing was left of the run's cost cap to start the step with (task-024).
       if (result === CAP_REACHED) return record({ ...identity, setup, steps, outcome: 'cap reached' }, plan);
       // Recorded first, then failed: what the step spent and said is stored either way. A step that
@@ -517,6 +523,8 @@ interface SetupContext {
   readonly container: string;
   readonly workspace: string;
   readonly outputDir: string;
+  /** The tree of the `seed` commit, which the setup's patch starts from (task-027). */
+  readonly seedTree: string;
   /** The installed harness artefact on the host, for an arm that requires one. */
   readonly harness?: string;
   /** The scenario's configuration for this arm, if it has one (dl-005). */
@@ -534,7 +542,7 @@ interface SetupContext {
  * committed after it.
  */
 async function executeSetup(arm: Arm, context: SetupContext, options: RunnerOptions): Promise<SetupResult> {
-  const { container, workspace, outputDir, harness, scenarioDir, projectRules } = context;
+  const { container, workspace, outputDir, seedTree, harness, scenarioDir, projectRules } = context;
   await options.git.configureIdentity(workspace, AGENT_IDENTITY.name, AGENT_IDENTITY.email);
   if (arm.environmentDir !== undefined) copyEnvironment(workspace, arm.environmentDir);
   // The generated part of the arm's environment, like any other environment file (REQ-RUN-11).
@@ -566,10 +574,11 @@ async function executeSetup(arm: Arm, context: SetupContext, options: RunnerOpti
   await options.git.commitAll(workspace, SETUP_COMMIT, { allowEmpty: true });
   const commit = await options.git.head(workspace);
   const tree = await options.git.tree(workspace, 'HEAD');
-  // What the setup changed, so that scoring can rebuild step 1's snapshot from the seed (task-027).
+  // What the setup changed since the seed — the harness's own commits included (adr-003 decision 10)
+  // — so that scoring can rebuild step 1's snapshot from the seed (task-027).
   writeFileSync(
     join(setupDir, 'diff.patch'),
-    scrub(await options.git.patchOf(workspace, 'HEAD'), options.secrets ?? []),
+    scrub(await options.git.patchOf(workspace, seedTree, tree), options.secrets ?? []),
   );
   return { durationMs, usage: NO_USAGE, commit, tree };
 }
@@ -603,6 +612,8 @@ interface StepContext {
   /** What the run's finished steps have spent, in EUR. */
   readonly spent: number;
   readonly pins: RunPins;
+  /** The tree of the snapshot before this step — the setup's, or the previous step's — its patch starts from. */
+  readonly previousTree: string;
   /** The arm's MCP configuration in the container, on every invocation of the step. */
   readonly mcpConfig?: string;
 }
@@ -690,7 +701,8 @@ async function executeStep(
   context: StepContext,
   options: RunnerOptions,
 ): Promise<StepResult | typeof CAP_REACHED> {
-  const { container, workspace, outputDir, scenario, model, policy, spent, pins, mcpConfig } = context;
+  const { container, workspace, outputDir, scenario, model, policy, spent, pins, previousTree, mcpConfig } =
+    context;
   const mcp = mcpConfig === undefined ? {} : { mcpConfig };
   const number = stepNumber(step.n);
   let prompt: string;
@@ -860,11 +872,13 @@ async function executeStep(
   await options.git.commitAll(workspace, `step ${number}`, { allowEmpty: true });
   const stepDir = join(outputDir, 'steps', number);
   mkdirSync(stepDir, { recursive: true });
+  // From the previous snapshot, not the last commit: an agent that commits during its step (the
+  // wingfoil arm's does) would otherwise leave its own commits out of the patch (bug-007).
+  const tree = await options.git.tree(workspace, 'HEAD');
   // Scrubbed like the transcript: the agent runs with the credential in its own environment and
   // `bypassPermissions`, so one `env > notes.txt` would otherwise commit the token in a patch.
-  const patch = await options.git.patchOf(workspace, 'HEAD');
+  const patch = await options.git.patchOf(workspace, previousTree, tree);
   writeFileSync(join(stepDir, 'diff.patch'), scrub(patch, options.secrets ?? []));
-  const tree = await options.git.tree(workspace, 'HEAD');
   // What the step cost across its invocations, and the whole of what they said (REQ-RUN-09,
   // REQ-FMT-06). The transcript is git-ignored and scrubbed by the adapter (REQ-NFR-01, REQ-RES-06).
   const usage = stepUsage(invocations);

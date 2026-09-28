@@ -40,11 +40,18 @@ function write(directory: string, files: Files): void {
 
 /**
  * A run of T3 stored as the runner stores one since task-027, made with the real git: the seed commit,
- * the setup (`setup` files) and one commit per step, each with its binary-safe patch and its tree in
- * `run.json`. `steps` are what each step wrote; fewer than T3's two is a run that stopped early.
+ * the setup (`setup` files, and `setupCommits` the harness makes first) and one commit per step, each
+ * with its binary-safe patch from the previous snapshot and its tree in `run.json`. A step is what it
+ * wrote, or a list of what the agent committed itself before the runner's step commit (bug-007).
+ * Fewer steps than T3's two is a run that stopped early.
  */
 export async function storedRun(
-  options: { steps: readonly Files[]; setup?: Files; outcome?: string } = { steps: [] },
+  options: {
+    steps: readonly (Files | readonly Files[])[];
+    setup?: Files;
+    setupCommits?: readonly Files[];
+    outcome?: string;
+  } = { steps: [] },
 ): Promise<StoredRunFixture> {
   const root = tempDir('bench-score-repo-');
   cpSync(repoPath('test/fixtures/scenarios/T3'), join(root, 'scenarios', 'T3'), { recursive: true });
@@ -58,19 +65,32 @@ export async function storedRun(
   const executionDir = join(root, 'results', EXECUTION);
   const runDir = join(executionDir, RUN_PATH);
   mkdirSync(join(runDir, 'setup'), { recursive: true });
+  const seedTree = await git.tree(workspace, 'HEAD');
+  for (const [index, files] of (options.setupCommits ?? []).entries()) {
+    write(workspace, files);
+    await git.commitAll(workspace, `harness ${index + 1}`, { allowEmpty: true });
+  }
   write(workspace, options.setup ?? { 'CLAUDE.md': 'The manual.\n' });
   await git.commitAll(workspace, 'setup', { allowEmpty: true });
-  writeFileSync(join(runDir, 'setup', 'diff.patch'), await git.patchOf(workspace, 'HEAD'));
   const setupTree = await git.tree(workspace, 'HEAD');
+  writeFileSync(join(runDir, 'setup', 'diff.patch'), await git.patchOf(workspace, seedTree, setupTree));
 
   const steps: { n: number; outcome: string; tree: string }[] = [];
-  for (const [index, files] of options.steps.entries()) {
+  let previous = setupTree;
+  for (const [index, step] of options.steps.entries()) {
     const number = String(index + 1).padStart(2, '0');
-    write(workspace, files);
+    if (Array.isArray(step)) {
+      for (const [commit, files] of (step as readonly Files[]).entries()) {
+        write(workspace, files);
+        await git.commitAll(workspace, `agent ${number}.${commit + 1}`, { allowEmpty: true });
+      }
+    } else write(workspace, step as Files);
     await git.commitAll(workspace, `step ${number}`, { allowEmpty: true });
+    const tree = await git.tree(workspace, 'HEAD');
     mkdirSync(join(runDir, 'steps', number), { recursive: true });
-    writeFileSync(join(runDir, 'steps', number, 'diff.patch'), await git.patchOf(workspace, 'HEAD'));
-    steps.push({ n: index + 1, outcome: 'completed', tree: await git.tree(workspace, 'HEAD') });
+    writeFileSync(join(runDir, 'steps', number, 'diff.patch'), await git.patchOf(workspace, previous, tree));
+    steps.push({ n: index + 1, outcome: 'completed', tree });
+    previous = tree;
   }
   const outcome = options.outcome ?? (steps.length === scenario.steps.length ? 'completed' : 'failed');
   writeFileSync(

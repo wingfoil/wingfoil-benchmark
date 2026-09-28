@@ -109,8 +109,8 @@ export function doubles(
     stopOf?: (request: AgentRequest) => 'cap reached' | 'quota exhausted' | undefined;
     /** The session's final assistant message, which the approver classifies; by default none. */
     messageOf?: (request: AgentRequest) => string | undefined;
-    /** What a step's patch holds; by default a line naming the directory and the ref. */
-    patchOf?: (directory: string, ref: string) => string;
+    /** What a patch holds; by default a line naming the directory and the two trees. */
+    patchOf?: (directory: string, from: string, to: string) => string;
     /** Makes one Docker or git call fail: `create`, `start`, `remove` and `init` break a run
      * outside its steps, `commit` and `patch` break it inside one. */
     failing?: {
@@ -254,15 +254,15 @@ export function doubles(
     // Every answer is different, so a test can tell which call's patch was written where. Without
     // the counter all five answers are the same string, and a snapshot filed under another step's
     // number reads as correct — the directory would be pinned by nothing at all.
-    patchOf: (directory, ref) => {
+    patchOf: (directory, from, to) => {
       patches += 1;
-      recorded.gitCalls.push(`patch ${directory} ${ref}`);
+      recorded.gitCalls.push(`patch ${directory} ${from} ${to}`);
       // A step's patch only, as for `commit`: the setup's patch (task-027) failing is a setup failure.
       if (options.failing?.call === 'patch' && lastCommit.startsWith('step ')) {
         return Promise.reject(new Error(options.failing.error));
       }
       return Promise.resolve(
-        options.patchOf?.(directory, ref) ?? `patch of ${directory} at ${ref} #${patches}\n`,
+        options.patchOf?.(directory, from, to) ?? `patch of ${directory} from ${from} to ${to} #${patches}\n`,
       );
     },
     // Each tree different and in call order, so a test can tell which commit's tree was recorded where.

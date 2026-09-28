@@ -59,6 +59,18 @@ describe('rebuildSnapshots (task-027, REQ-SCO-01)', () => {
     expect(readFileSync(join(result.value.get(1) ?? '', 'README.md'), 'utf8')).toBeTruthy();
   });
 
+  it("rebuilds through the harness's and the agent's own commits, which a stored patch includes (bug-007)", async () => {
+    const fixture = await storedRun({
+      setupCommits: [{ '.wingfoil/dna.yaml': 'x: 1\n' }],
+      steps: [[{ 'docs/task-001.md': 'a task\n' }, { 'docs/task-001.md': 'approved\n' }], CANCEL],
+    });
+    const result = await rebuild(fixture);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(readFileSync(join(result.value.get(1) ?? '', 'docs', 'task-001.md'), 'utf8')).toBe('approved\n');
+    expect(contents(result.value.get(2) ?? '')).toEqual(contents(fixture.workspace));
+  });
+
   it('rebuilds a step that changed nothing, and a setup that changed nothing', async () => {
     const fixture = await storedRun({ setup: {}, steps: [{}, CANCEL] });
     const result = await rebuild(fixture);
