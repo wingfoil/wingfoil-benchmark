@@ -2,7 +2,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { z } from 'zod';
 
-import { fail, parseWith } from '../core/index.js';
+import { fail, ok, parseWith, readYamlFile } from '../core/index.js';
 import type { Result } from '../core/index.js';
 
 const RUN_FILE = 'run.json';
@@ -39,7 +39,15 @@ const storedRunSchema = z.object({
   repetition: z.number().int(),
   outcome: z.string(),
   setup: z.object({ tree: z.string().optional() }).optional(),
-  steps: z.array(z.object({ n: z.number().int(), tree: z.string().optional() })),
+  steps: z.array(
+    z.object({
+      n: z.number().int(),
+      tree: z.string().optional(),
+      outcome: z.string(),
+      interventions: z.number().int(),
+      cost_bound_usd: z.number().optional(),
+    }),
+  ),
 });
 
 /** A stored run as scoring sees it. A tree is absent in a run stored before trees were recorded. */
@@ -52,7 +60,17 @@ export interface StoredRun {
   readonly repetition: number;
   readonly outcome: string;
   readonly setupTree?: string;
-  readonly steps: readonly { readonly n: number; readonly tree?: string }[];
+  readonly steps: readonly StoredStep[];
+}
+
+/** A step as `run.json` records it: its snapshot's tree, how it ended, and what the budget counted it at. */
+export interface StoredStep {
+  readonly n: number;
+  readonly tree?: string;
+  readonly outcome: string;
+  readonly interventions: number;
+  /** For a step killed at its time cap that reported no cost: the most it can have cost (task-024). */
+  readonly costBoundUsd?: number;
 }
 
 /** Read the `run.json` of the run in `runDir`; every issue is named against the file. */
@@ -79,7 +97,62 @@ export function readStoredRun(runDir: string): Result<StoredRun> {
       repetition: run.repetition,
       outcome: run.outcome,
       ...(run.setup?.tree === undefined ? {} : { setupTree: run.setup.tree }),
-      steps: run.steps.map((step) => ({ n: step.n, ...(step.tree === undefined ? {} : { tree: step.tree }) })),
+      steps: run.steps.map((step) => ({
+        n: step.n,
+        ...(step.tree === undefined ? {} : { tree: step.tree }),
+        outcome: step.outcome,
+        interventions: step.interventions,
+        ...(step.cost_bound_usd === undefined ? {} : { costBoundUsd: step.cost_bound_usd }),
+      })),
     },
   };
+}
+
+/** A step's `usage.json` (REQ-FMT-06): its invocations together, as the runner stored them (task-007). */
+const stepUsageSchema = z.object({
+  inputTokens: z.number(),
+  outputTokens: z.number(),
+  cacheCreationInputTokens: z.number(),
+  cacheReadInputTokens: z.number(),
+  costUsd: z.number(),
+  costEur: z.number(),
+  turns: z.number(),
+  durationMs: z.number(),
+});
+
+/** What a step's `usage.json` holds. */
+export type StepUsage = z.infer<typeof stepUsageSchema>;
+
+/** Read step `n`'s `usage.json` in the run in `runDir`; issues name the file, relative to the run. */
+export function readStepUsage(runDir: string, n: number): Result<StepUsage> {
+  const file = `steps/${String(n).padStart(2, '0')}/usage.json`;
+  let data: unknown;
+  try {
+    data = JSON.parse(readFileSync(join(runDir, file), 'utf8'));
+  } catch (error) {
+    return fail([{ path: file, message: `cannot be read: ${(error as Error).message}` }]);
+  }
+  const parsed = parseWith(stepUsageSchema, data, file);
+  return parsed.ok
+    ? ok(parsed.value)
+    : fail(parsed.issues.map((issue) => ({ ...issue, path: issue.path === file ? file : `${file}.${issue.path}` })));
+}
+
+/** The files an execution's pins are copied to, beside its runs: a campaign's, or a dry run's (task-021). */
+const PINS_FILES = ['campaign.yaml', 'dry-run.yaml'] as const;
+
+const rateSchema = z.object({ currency: z.object({ usd_to_eur: z.number().positive() }) });
+
+/** The rate the execution in `executionDir` converted USD to EUR with (REQ-RUN-09). */
+export function executionRate(executionDir: string): Result<number> {
+  const name = PINS_FILES.find((file) => existsSync(join(executionDir, file)));
+  if (name === undefined) {
+    return fail([{ path: executionDir, message: 'holds neither campaign.yaml nor dry-run.yaml' }]);
+  }
+  const read = readYamlFile(join(executionDir, name));
+  if (!read.ok) return read;
+  const parsed = parseWith(rateSchema, read.value, name);
+  return parsed.ok
+    ? ok(parsed.value.currency.usd_to_eur)
+    : fail(parsed.issues.map((issue) => ({ ...issue, path: `${name}.${issue.path}` })));
 }

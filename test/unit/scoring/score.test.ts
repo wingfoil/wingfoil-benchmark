@@ -20,6 +20,21 @@ import {
   T3_TEST,
 } from '../../support/score-fixture.js';
 
+/** A cost block for the summary's tests, which do not read it. */
+const NO_COST = {
+  usd_to_eur: 1,
+  steps: [],
+  run: {
+    tokens: { input: 0, output: 0, cache_creation: 0, cache_read: 0 },
+    cost_usd: 0,
+    cost_eur: 0,
+    cost_reported: true,
+    wall_time_ms: 0,
+    turns: 0,
+    interventions: 0,
+  },
+};
+
 const IMAGE = { tag: 'bench-score:0123456789ab', dockerfile: '', context: '', tsx: '4.23.15' };
 
 async function score(
@@ -33,6 +48,7 @@ async function score(
   const { docker, recorded } = scoringDocker(judge);
   const result = await scoreRun({
     runDir: fixture.runDir,
+    executionDir: fixture.executionDir,
     run: run.value,
     scenario: fixture.scenario,
     image: IMAGE,
@@ -87,6 +103,8 @@ describe('scoreRun (F4.1, REQ-SCO-01–03)', () => {
         },
         // Not given one: the score says so, rather than look like one that includes it (F3.5).
         holdout: { scored: false, reason: 'not configured' },
+        // M-K1 and M-K2 (F4.3): their own tests are in cost.test.ts.
+        cost: expect.objectContaining({ usd_to_eur: 0.5, run: expect.objectContaining({ turns: 9 }) }),
       },
     });
     // The census on the seed, then steps 1 and 2; the final snapshot is step 2's, already scored.
@@ -234,6 +252,7 @@ describe('scoreSummary', () => {
         scenario_hash: 'h',
         scorer: { image: 'i', tsx: 't' },
         holdout: { scored: false, reason: 'none declared' },
+        cost: NO_COST,
         steps: [
           { n: 1, suites: [] },
           { n: 2, suites: [{ id: 'a', passed: 1, total: 2, failed: ['x'] }], m_q1: { passed: 1, total: 2 } },
@@ -255,6 +274,7 @@ describe('scoreSummary', () => {
         steps: [{ n: 1, suites: [] }],
         final: { step: 1, suites: [] },
         holdout: { scored: false, reason: 'none declared' },
+        cost: NO_COST,
       }),
     ).toBe('no hidden tests');
   });
@@ -383,6 +403,7 @@ describe('scoreRun with the hold-out (task-028, F3.5, REQ-SCO-09)', () => {
         { n: 1, suites: [{ id: 'a', passed: 1, total: 1, failed: [] }], m_q1: { passed: 1, total: 1 } },
       ],
       final: { step: 1, suites: [], m_q1: { passed: 1, total: 1 } },
+      cost: NO_COST,
     };
     expect(
       scoreSummary({
