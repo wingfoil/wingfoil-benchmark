@@ -291,3 +291,17 @@ was spent.
   checked by `bench score`.
 - **W7 (F5.1):** how `not_reached` counts in aggregation; S-scenario oracles follow adr-004 decision 10.
 - **W11 (F5.8):** the method page states adr-004's counting rules.
+
+### Review and approval
+
+- `npx wingfoil memory submit task-027-hidden-test-oracle` → `79fa7fb` (`in-progress → in-review`, one
+  commit, only `status` changed). Matches.
+- Before approving, the approver decided the five points raised at review (2026-09-28), all as
+  proposed: (1) bug-007 fixed within this task; (2) adr-004's census on the seed, and the rule that a
+  hidden test imports the code under test inside the test; (3) the final snapshot scored against every
+  suite; (4) steps not reached recorded `not_reached`, their count left to W7; (5) `score.json` records
+  no Node version, and `bench score dry-runs/<n>` stays.
+- `npx wingfoil memory approve task-027-hidden-test-oracle --reason "…"` → `54d22f9`, `… bug-007-…` →
+  `117bc73` (`pending → approved`), `… adr-004-…` → `19146ac` (`pending → approved`), all run by the
+  approver, each with `Approver:`/`Reason:` trailers and only `status` changed. Matches. The task's
+  approval is requirements 1.8's recorded review decision.
