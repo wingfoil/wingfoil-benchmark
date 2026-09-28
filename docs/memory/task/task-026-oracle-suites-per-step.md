@@ -2,7 +2,7 @@
 id: task-026-oracle-suites-per-step
 type: task
 title: "Oracle suites per step"
-status: pending
+status: backlog
 release: v0.1
 wave: W6
 features: []
