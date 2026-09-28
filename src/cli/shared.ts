@@ -11,6 +11,11 @@ import type { RunPins } from '../runner/index.js';
 export interface Io {
   readonly stdout: (text: string) => void;
   readonly stderr: (text: string) => void;
+  /**
+   * Ask the maintainer `question` and return the answer; present only when there is a terminal to ask
+   * on (task-023). Without it, nothing that needs a confirmation starts.
+   */
+  readonly ask?: (question: string) => Promise<string>;
 }
 
 /** The ports a run uses. Tests pass doubles; the bin passes the real ones (REQ-ARC-04). */

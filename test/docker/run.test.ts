@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { readSession } from '../../src/agents/index.js';
 import { main } from '../../src/cli/index.js';
-import { dryRunProfileYaml, writeDryRunProfile } from '../support/dry-run-fixture.js';
+import { dryRunProfileYaml, priceCampaign, writeDryRunProfile } from '../support/dry-run-fixture.js';
 import { repoPath } from '../support/paths.js';
 import { tempDir } from '../support/scenario-fixture.js';
 
@@ -30,6 +30,7 @@ describe('runs in a real container', () => {
     process.env.BENCH_FAKE_SCRIPT = repoPath('test/fixtures/fake-script.json');
 
     let output = '';
+    priceCampaign(join(root, 'campaigns', 'smoke.yaml'));
     const code = await main(['campaign', 'run', join(root, 'campaigns', 'smoke.yaml')], {
       stdout: (text) => (output += text),
       stderr: (text) => (output += text),
@@ -93,6 +94,7 @@ describe('runs in a real container', () => {
     process.env.BENCH_FAKE_SCRIPT = repoPath('test/fixtures/fake-script-multi-step.json');
 
     let output = '';
+    priceCampaign(join(root, 'campaigns', 'multi-step.yaml'));
     const code = await main(['campaign', 'run', join(root, 'campaigns', 'multi-step.yaml')], {
       stdout: (text) => (output += text),
       stderr: (text) => (output += text),
@@ -228,6 +230,7 @@ describe('runs in a real container', () => {
       process.env.BENCH_WINGFOIL_REPO = clone;
 
       let output = '';
+      priceCampaign(join(root, 'campaigns', 'arms.yaml'));
       const code = await main(['campaign', 'run', join(root, 'campaigns', 'arms.yaml')], {
         stdout: (text) => (output += text),
         stderr: (text) => (output += text),
@@ -343,6 +346,7 @@ describe('runs in a real container', () => {
     const campaign = join(root, 'campaigns', 'smoke.yaml');
     const run = async () => {
       let output = '';
+      priceCampaign(campaign);
       const code = await main(['campaign', 'run', campaign], {
         stdout: (text) => (output += text),
         stderr: (text) => (output += text),
