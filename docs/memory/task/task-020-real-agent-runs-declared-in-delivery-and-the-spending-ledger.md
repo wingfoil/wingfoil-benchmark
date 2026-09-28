@@ -161,3 +161,10 @@ No code changed; `npm test` 614/614 and `npm run lint` clean after the change.
   are the first spending the ledger records as it happens: one line, written when they run.
 - W4's plan phase decided no real-agent half for the wave (decision 4, task-016): no
   `real-agent-check` for W4.
+
+### Review and approval
+
+- `npx wingfoil memory submit task-020-…` → `6f0daa8` (`in-progress → in-review`, one commit, only
+  `status` changed). Matches.
+- `npx wingfoil memory approve task-020-… --reason "…"` → `1c7ed6f`, run by the approver from the
+  worktree (`in-review → approved`, `Approver:`/`Reason:` trailers, only `status` changed). Matches.
