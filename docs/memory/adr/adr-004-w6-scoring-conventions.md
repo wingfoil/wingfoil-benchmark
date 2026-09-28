@@ -94,7 +94,7 @@ designing shape them:
 - **Cost:** one container per suite and snapshot, plus a census per suite; for S1's four steps and three
   suites that is about a dozen containers per run, each a few seconds.
 
-## Amendment 1 (W6 task-028, 2026-09-28)
+## Amendment 1 (W6 task-028, 2026-09-28; accepted at its review, `e1d2802`)
 
 What [task-028](../task/task-028-hold-out-tests-in-scoring.md) added for the hold-out (F3.5,
 REQ-SCO-09), which scenario authors writing the private `WingFoil2-Benchmark-HoldOut` repository in W7

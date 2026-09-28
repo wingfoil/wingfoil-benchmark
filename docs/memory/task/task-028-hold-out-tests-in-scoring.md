@@ -184,3 +184,15 @@ declared here, as task-016 left it. REQ-SCO-09 (apart, in `score.json`), REQ-CLI
 option and the variable), REQ-ARC-03 (additions under the suite ids). `campaign run` untouched: task-016's
 test that it never reads the hold-out stays green. Nothing was spent.
 
+
+### Review and approval
+
+- `npx wingfoil memory submit task-028-hold-out-tests-in-scoring` → `e8a4632` (`in-progress → in-review`,
+  one commit, only `status` changed). Matches.
+- The approver accepted the five review points as proposed (2026-09-28): hold-out suites in containers of
+  their own beside the public suite; counts only, no messages kept anywhere; the additions' hash; a
+  version expecting a hold-out scored without one recorded `not configured`, not refused; mismatches not
+  scored.
+- `npx wingfoil memory approve task-028-hold-out-tests-in-scoring --reason "…"` → `e1d2802`, run by the
+  approver (`in-review → approved`, `Approver:`/`Reason:` trailers, only `status` changed). Matches. It is
+  adr-004 amendment 1's recorded review decision.
