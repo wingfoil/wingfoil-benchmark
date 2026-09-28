@@ -1,6 +1,6 @@
 # Requirements (v0.1)
 
-**Version:** 1.9
+**Version:** 1.10
 **Date:** 2026-09-28
 **Status:** Approved
 **Traces to:** [acceptance/](acceptance/) (all v0.1 features), [scenarios/](scenarios/) (K1–K5), [09_experiment-design.md](../01_vision/09_experiment-design.md), [07_sequencer.md](../01_vision/07_sequencer.md) v0.1
@@ -39,7 +39,7 @@ All human-authored files are YAML, validated by Zod schemas in `core`. All machi
 | REQ-FMT-01 | **Campaign file** (`campaigns/<name>.yaml`), which lives in `campaigns/`, beside `scenarios/` and `results/`. It holds:<br>• `harnesses`: arm → `{tool, version, commit?}`, one entry per arm **except** `baseline` and `baseline-docs`, which run the plain agent and must have none (added in 1.2; until W3 this list is fixed, then it follows each arm's `requires`, REQ-FMT-05)<br>• `scenarios`: `[{id, version}]`<br>• `arms`<br>• `agent: {name, version}`<br>• `models`: `{default, slices?}`, where each slice is `{model, scenarios, arms, repetitions}` for the Opus comparison (shape fixed in 1.2)<br>• `repetitions`: per scenario<br>• `approver_policy`: a version<br>• `caps: {step_time_s, step_tokens, run_cost_eur}`<br>• `budget: {warn_eur, ceiling_eur}`<br>• `currency: {usd_to_eur}`<br>A campaign must include the **baseline** arm (added in 1.1, threat T7). The scenario seed is not a campaign field: `scenario@version` pins it (1.2). | F1.1, F1.3, T7 |
 | REQ-FMT-02 | **Campaign identity:** SHA-256 of the campaign file canonicalized (parsed, keys sorted, re-serialized as JSON), shortened to 12 hex characters. An execution of a campaign is `<campaign-id>/<n>`, with `n` counting executions. | F1.1 |
 | REQ-FMT-03 | A harness `version` must be a released version (semver, optionally `v`-prefixed, with optional prerelease and build metadata) or a commit SHA of 7 to 40 hex characters. A branch name, a range or `latest` is rejected. When `version` is a SHA and `commit` is also given, `commit` is a 40-character SHA that starts with `version` (added in 1.2). | F1.1 (error path) |
-| REQ-FMT-04 | **Scenario file** (`scenarios/<id>/<version>/scenario.yaml`). It holds:<br>• `id`, `version`<br>• `categories: {primary, secondary[]}`, `profiles[]`, `gqm[]`, `capabilities[]`<br>• `seed`: a directory<br>• `steps[]`: `{n, prompt_file}`<br>• `oracle`: `suites[]` as `{id, dir, after_steps[]}`, each suite of hidden tests declared once with the steps after which it is scored (changed in 1.7, dl-001); checks; third-party pins with licenses<br>• `holdout`: whether additions are expected<br>Beside it, optionally, `arms/<arm>/`: the scenario's configuration for that arm, found by the arm's name with no field in the file (added in 1.6, dl-005). Neither the seed nor a prompt may contain it or lie in it. | F3.1 |
+| REQ-FMT-04 | **Scenario file** (`scenarios/<id>/<version>/scenario.yaml`). It holds:<br>• `id`, `version`<br>• `categories: {primary, secondary[]}`, `profiles[]`, `gqm[]`, `capabilities[]`<br>• `seed`: a directory<br>• `steps[]`: `{n, prompt_file}`<br>• `oracle`: `suites[]` as `{id, dir, after_steps[]}`, each suite of hidden tests declared once with the steps after which it is scored (changed in 1.7, dl-001); checks; `third_party[]` as `{name, url, commit \| sha256, license, files[]}`, the material vendored into a suite and pinned by exactly one of the two (changed in 1.10, dl-002)<br>• `holdout`: whether additions are expected<br>Beside it, optionally, `arms/<arm>/`: the scenario's configuration for that arm, found by the arm's name with no field in the file (added in 1.6, dl-005). Neither the seed nor a prompt may contain it or lie in it. | F3.1 |
 | REQ-FMT-05 | **Arm definition** (`arms/<arm>/arm.yaml`). It holds: `name`, `setup` (script), `manual` (the operating manual file), `environment` (files copied into the workspace), `mcp` (optional config), `requires` (the harness tool), and `provides` (REQ-FMT-10; added in 1.9). | F2.5, F2.7 |
 | REQ-FMT-06 | **Results layout:** `results/<campaign-id>/<n>/`. It contains:<br>• `campaign.yaml`, a copy<br>• `runs/<scenario>@<ver>/<arm>/<model>/r<k>/`, holding `run.json`, `setup/{log.txt, diff.patch}`, `steps/<NN>/{usage.json, transcript.jsonl, diff.patch}` and `score.json`<br>• `aggregate.json`<br>`<NN>` is the step number in two digits, the same form REQ-RUN-05 uses in a commit message, so a scenario has **at most 99 steps** (1.4). | F5.1 |
 | REQ-FMT-07 | `aggregate.json` stores every value together with the list of run paths it was computed from, and its `n`. | F5.1, experiment design §4.6 |
@@ -301,3 +301,18 @@ The traceability matrix is unaffected: all three still serve F3.6 (and REQ-FMT-0
 
 Source: [task-030](../memory/task/task-030-expected-failures.md), review decision of the approver at that
 task's review, 2026-09-28 (`96d7d1f`).
+
+### Amendment 1.10 (delivery, W7 task-031, 2026-09-28)
+
+- **REQ-FMT-04:** "third-party pins with licenses" becomes `third_party[]` as `{name, url, commit | sha256,
+  license, files[]}`, as dl-002 decided. The pin is exactly one of a 40-character git `commit` or the
+  `sha256` of the one file it vendors, for material that has no commit (S1's RFC examples). `files` names
+  what the entry vendors, each file inside a declared suite and vendored by no other entry. A `sha256` is
+  checked every time the scenario is loaded; a `commit` is not checked against its source, which would
+  need the network, and the version's hash covers its files (REQ-FMT-09). A license outside the SPDX list
+  is written as an SPDX `LicenseRef-`.
+
+The traceability matrix is unaffected: REQ-FMT-04 still serves F3.1.
+
+Source: [task-031](../memory/task/task-031-third-party-oracle-material-pinned-by-commit-or-sha256.md),
+review decision of the approver at that task's review.

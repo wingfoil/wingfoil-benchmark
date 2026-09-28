@@ -1,7 +1,7 @@
 # Scenario specifications — common conventions (v0.1)
 
-**Version:** 1.1
-**Date:** 2026-09-25
+**Version:** 1.2
+**Date:** 2026-09-28
 **Status:** Approved
 **Traces to:** [09_experiment-design.md](../../01_vision/09_experiment-design.md), [06_features.md](../../01_vision/06_features.md) F3.1, F3.6, F6.1–F6.3, F6.8; plan [plan-002](../../plans/plan-002-benchmark-specification.md)
 
@@ -51,7 +51,10 @@ what differs from them.
 
 - Hidden tests run **outside** the run container, on the per-step snapshots (experiment design §3.7).
 - Every oracle is versioned together with its scenario (F3.4).
-- Third-party test material is pinned to a commit, and its license is recorded.
+- Third-party test material is pinned to a commit when it comes from a git repository, or else by the
+  SHA-256 of the file as vendored into the oracle. The entry names the files it vendors, which lie in a
+  suite, and records their license: an SPDX identifier, or a `LicenseRef-` when the license has none
+  (changed in 1.2, dl-002).
 - Scripted checks (decision consistency, directive violations, approval reconstructibility) look for
   **content**, never for a specific harness's file or commit format (F4.8).
 
@@ -84,3 +87,16 @@ what differs from them.
 
 Source: [task-011](../../memory/task/task-011-wingfoil-in-the-run-container-spike.md) Execution notes
 (Q6), review decision of the approver, 2026-09-25.
+
+### Amendment 1.2 (delivery, W7 task-031, 2026-09-28)
+
+- **§4:** third-party material without a git commit — the examples of a published document, such as S1's
+  RFC 6901 §5 and RFC 7386 Appendix A — is pinned by the SHA-256 of the one file it is vendored as, which
+  anyone can check with `sha256sum`; git material keeps its full commit. Every entry names its vendored
+  files, and they lie in a suite, so that they are hidden from the agent and leak-scanned like the suite's
+  tests. A license with no SPDX identifier is written as an SPDX `LicenseRef-`
+  ([dl-002](../../memory/decision-log/dl-002-third-party-oracle-material-without-a-git-commit.md),
+  requirements 1.10).
+
+Source: [task-031](../../memory/task/task-031-third-party-oracle-material-pinned-by-commit-or-sha256.md),
+review decision of the approver at that task's review.
