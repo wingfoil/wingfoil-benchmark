@@ -239,3 +239,11 @@ line is in `docs/calibration/v0.1-ledger.md`. No file under the spike or its out
 5/5, `npm run test:docker` 6/6, `npm run lint` clean, `npm run build` clean; no `bench-*` container
 left. `campaign.feature` @F1.3 has its four acceptance tests. Spent in this task: 0.0522 USD reported,
 plus about 0.009 USD unreported, within the 0.30 USD consented.
+
+### Review and approval
+
+- `npx wingfoil memory submit task-024-cost-and-time-caps-during-a-run` → `1e0bda8`
+  (`in-progress → in-review`, one commit, only `status` changed). Matches.
+- `npx wingfoil memory approve task-024-cost-and-time-caps-during-a-run --reason "…"` → `661297e`,
+  run by the approver (`in-review → approved`, `Approver:`/`Reason:` trailers, only `status`
+  changed). Matches.
