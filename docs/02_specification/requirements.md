@@ -300,5 +300,4 @@ that task's review, 2026-09-28 (`54d22f9`).
 The traceability matrix is unaffected: all three still serve F3.6 (and REQ-FMT-05 F2.5, F2.7).
 
 Source: [task-030](../memory/task/task-030-expected-failures.md), review decision of the approver at that
-task's review.
-
+task's review, 2026-09-28 (`96d7d1f`).
