@@ -246,6 +246,9 @@ and README say Apache-2.0. Nothing is vendored here. task-032 takes the two file
   `bbc58a8`. Declared: `backlog → in-progress`, one commit `wf(task): submit <id>`. Observed: exit 0,
   empty stderr, 1 file, diff limited to `status: backlog` → `status: in-progress`. Matches (subject
   without transition: N9).
+- `npx wingfoil memory submit task-031-third-party-oracle-material-pinned-by-commit-or-sha256` →
+  `164aa26`. Declared: `in-progress → in-review`, one commit `wf(task): submit <id>`. Observed: exit 0,
+  empty stderr, 1 file, diff limited to `status: in-progress` → `status: in-review`. Matches (N9).
 
 ### Build
 
