@@ -5,6 +5,7 @@ import { versionChange } from '../results/index.js';
 import type { Issue } from '../core/index.js';
 import {
   checkHoldoutRoot,
+  holdoutSuiteIssues,
   loadHoldoutAdditions,
   loadLeakScanDeclarations,
   loadScenario,
@@ -64,7 +65,7 @@ export function parseScenarioArguments(args: readonly string[]): ScenarioArgumen
  * `root` (REQ-ARC-03). The scenario's own checks (REQ-FMT-04), its immutability against the results under
  * `root` (REQ-FMT-09), then its hold-out's consistency with
  * `holdout:` when a hold-out is configured — from the option, or else from {@link HOLDOUT_VARIABLE}
- * (REQ-CLI-10). Then the leak scan (REQ-FMT-08) with the declarations of `scenarios/leak-scan.yaml`,
+ * (REQ-CLI-10) — and every addition under a declared suite's id (dl-001). Then the leak scan (REQ-FMT-08) with the declarations of `scenarios/leak-scan.yaml`,
  * the hold-out's additions included; its findings name files and steps, never content.
  */
 export function validateScenario(args: ScenarioArguments, root: string): ScenarioValidation {
@@ -118,6 +119,8 @@ export function validateScenario(args: ScenarioArguments, root: string): Scenari
       ],
     };
   }
+  const strays = holdoutSuiteIssues(scenario.value.oracle.suites, additions.value);
+  if (strays.length > 0) return { ok: false, issues: strays };
   return (
     scan(additions.value) ?? {
       ok: true,

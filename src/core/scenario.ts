@@ -95,6 +95,42 @@ const categories = z
 
 const step = z.strictObject({ n: z.number().int(), prompt_file: relativePath });
 
+/** A kebab-case name: a capability, or a suite's id (a single path segment, so a hold-out directory name). */
+const kebabName = z.string().regex(/^[a-z][a-z0-9]*(-[a-z0-9]+)*$/, 'must be kebab-case');
+
+/**
+ * A suite of hidden tests and the steps after which it is scored (dl-001, REQ-FMT-04): its `id` names
+ * it in scores and is the hold-out's directory for its additions (REQ-ARC-03). Whether each step is one
+ * the scenario declares is checked by the loader, which has the steps.
+ */
+const suite = z.strictObject({
+  id: kebabName,
+  dir: relativePath,
+  after_steps: uniqueList(z.number().int()).min(1),
+});
+
+/** Every suite once: no id and no directory twice, each reported on the later entry. */
+const suites = z.array(suite).superRefine((list, ctx) => {
+  list.forEach((entry, index) => {
+    const id = list.findIndex((other) => other.id === entry.id);
+    if (id < index) {
+      ctx.addIssue({
+        code: 'custom',
+        path: [index, 'id'],
+        message: `repeats the id of oracle.suites[${id}]`,
+      });
+    }
+    const dir = list.findIndex((other) => samePathKey(other.dir) === samePathKey(entry.dir));
+    if (dir < index) {
+      ctx.addIssue({
+        code: 'custom',
+        path: [index, 'dir'],
+        message: `repeats the directory of oracle.suites[${dir}]`,
+      });
+    }
+  });
+});
+
 const thirdParty = z.strictObject({
   name: z.string().min(1),
   url: z.url({ protocol: SOURCE_PROTOCOL, error: 'must be an http(s), git or ssh URL' }),
@@ -116,7 +152,7 @@ export const scenarioSchema = z.strictObject({
   categories,
   profiles: uniqueList(z.enum(PROFILES)).min(1),
   gqm: uniqueList(z.string().regex(/^(Q-[A-G]\d+|G-X\d+)$/, 'must look like Q-C1 or G-X1')).min(1),
-  capabilities: uniqueList(z.string().regex(/^[a-z][a-z0-9]*(-[a-z0-9]+)*$/, 'must be kebab-case')),
+  capabilities: uniqueList(kebabName),
   seed: relativePath,
   steps: z
     .array(step)
@@ -140,7 +176,7 @@ export const scenarioSchema = z.strictObject({
       }
     }),
   oracle: z.strictObject({
-    public_tests: relativePath,
+    suites,
     checks: z
       .array(relativePath)
       .refine(
@@ -160,6 +196,13 @@ export type Category = (typeof CATEGORIES)[number];
 /** One of the result profiles. */
 export type Profile = (typeof PROFILES)[number];
 
+/** A loaded suite of hidden tests: its id, its absolute directory, and the steps after which it is scored. */
+export interface Suite {
+  readonly id: string;
+  readonly dir: string;
+  readonly afterSteps: readonly number[];
+}
+
 /** A loaded scenario version, with every path resolved to an absolute one. */
 export interface Scenario {
   readonly id: string;
@@ -172,7 +215,8 @@ export interface Scenario {
   readonly seedDir: string;
   readonly steps: readonly { readonly n: number; readonly promptPath: string }[];
   readonly oracle: {
-    readonly publicTestsDir: string;
+    /** The suites of hidden tests (dl-001), in declaration order, each with its steps in ascending order. */
+    readonly suites: readonly Suite[];
     readonly checks: readonly string[];
     readonly thirdParty: readonly ScenarioFile['oracle']['third_party'][number][];
   };

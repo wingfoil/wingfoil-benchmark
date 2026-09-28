@@ -1,4 +1,4 @@
-import { cpSync, mkdirSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -103,6 +103,29 @@ describe('scanScenario (REQ-FMT-08)', () => {
       { path: 'seed', message: 'src/status.ts holds a literal of oracle/public/cancel.test.ts' },
     ]);
     expect(JSON.stringify(issues)).not.toContain('cancelled');
+  });
+
+  it('scans every suite of the oracle, not only the first (dl-001)', () => {
+    const { scenario } = t3((dir) => {
+      const yaml = join(dir, 'scenario.yaml');
+      writeFileSync(
+        yaml,
+        readFileSync(yaml, 'utf8').replace(
+          'after_steps: [1, 2] }',
+          'after_steps: [1, 2] }\n    - { id: refunds, dir: oracle/refunds, after_steps: [2] }',
+        ),
+      );
+      mkdirSync(join(dir, 'oracle', 'refunds'));
+      writeFileSync(
+        join(dir, 'oracle', 'refunds', 'refund.test.ts'),
+        "expect(r).toBe('refunded in full');\n",
+      );
+      writeFileSync(join(dir, 'prompts', '02.md'), 'A paid order is refunded in full on request.\n');
+    });
+    expect(scenario.oracle.suites.map((suite) => suite.id)).toEqual(['orders', 'refunds']);
+    expect(scanScenario(scenario, DECLARATIONS)).toEqual([
+      { path: 'steps[1].prompt_file', message: 'holds a literal of oracle/refunds/refund.test.ts' },
+    ]);
   });
 
   it('scans the hold-out additions and names only their file', () => {

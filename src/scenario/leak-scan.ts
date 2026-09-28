@@ -137,9 +137,9 @@ export function scanScenario(
   return issues;
 }
 
-/** The public oracle's files and its checks, in a stable order. */
+/** The public oracle's files — every suite's, in declaration order (dl-001) — and its checks, in a stable order. */
 function oracleFiles(scenario: Scenario): string[] {
-  return [...filesUnder(scenario.oracle.publicTestsDir), ...scenario.oracle.checks];
+  return [...scenario.oracle.suites.flatMap((suite) => filesUnder(suite.dir)), ...scenario.oracle.checks];
 }
 
 /** The reserved names in a seed, as paths relative to it, in a stable order; a reserved directory is not entered. */

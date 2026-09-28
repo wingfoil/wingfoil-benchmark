@@ -23,8 +23,9 @@ interface Declared {
 /**
  * Load `<scenariosRoot>/<id>/<version>/scenario.yaml` (REQ-ARC-03, REQ-FMT-04) and return it with
  * absolute paths. Issues are reported in a stable order: schema issues in schema order; then id and
- * version against their directories; then every declared path on disk, in declaration order; then
- * the entries of `arms/`; then every overlap between what the agent sees and what it must not see.
+ * version against their directories; then every suite's steps against the declared steps (dl-001);
+ * then every declared path on disk, in declaration order; then the entries of `arms/`; then every
+ * overlap between what the agent sees and what it must not see, and between the oracle's own paths.
  */
 export function loadScenario(scenariosRoot: string, id: string, version: string): Result<Scenario> {
   const dir = resolve(scenariosRoot, id, version);
@@ -39,6 +40,7 @@ export function loadScenario(scenariosRoot: string, id: string, version: string)
   const arms = armEntries(dir);
   const issues = [
     ...identityIssues(spec, id, version),
+    ...suiteStepIssues(spec),
     ...fileIssues([seed, ...others], dir),
     ...arms.issues,
   ];
@@ -55,6 +57,23 @@ function identityIssues(spec: ScenarioFile, id: string, version: string): Issue[
   return issues;
 }
 
+/** A suite may only be scored after a step the scenario declares (dl-001). */
+function suiteStepIssues(spec: ScenarioFile): Issue[] {
+  const last = spec.steps.length;
+  return spec.oracle.suites.flatMap((suite, index) =>
+    suite.after_steps.flatMap((n, position): Issue[] =>
+      n >= 1 && n <= last
+        ? []
+        : [
+            {
+              path: `oracle.suites[${index}].after_steps[${position}]`,
+              message: `must be a declared step: the scenario has steps 1–${last}`,
+            },
+          ],
+    ),
+  );
+}
+
 /** Every path the file declares besides the seed, in declaration order. */
 function otherPaths(spec: ScenarioFile): Declared[] {
   return [
@@ -63,7 +82,11 @@ function otherPaths(spec: ScenarioFile): Declared[] {
       relative: step.prompt_file,
       kind: 'file',
     })),
-    { path: 'oracle.public_tests', relative: spec.oracle.public_tests, kind: 'directory' },
+    ...spec.oracle.suites.map((suite, index): Declared => ({
+      path: `oracle.suites[${index}].dir`,
+      relative: suite.dir,
+      kind: 'directory',
+    })),
     ...spec.oracle.checks.map((check, index): Declared => ({
       path: `oracle.checks[${index}]`,
       relative: check,
@@ -111,8 +134,10 @@ function fileIssues(declared: readonly Declared[], dir: string): Issue[] {
  * the run container, so it must not contain or lie inside `scenario.yaml`, any step prompt, any
  * oracle path or any arm's configuration; a step prompt is given to the agent in every arm, so it must
  * not be or lie inside `scenario.yaml`, an oracle path or an arm's configuration — the baseline arm
- * must not receive a rule (K3, dl-005). Checked on real paths; every overlap is reported, seed first,
- * in declaration order.
+ * must not receive a rule (K3, dl-005). Within the oracle, suites are disjoint — a test in two suites
+ * would be scored after steps nobody bound it to — and a check, a pattern file (REQ-SCO-06), is in no
+ * suite (dl-001). Checked on real paths; every overlap is reported, seed first, then the prompts, then
+ * the oracle, each on the later path, in declaration order.
  */
 function overlapIssues(
   seed: Declared,
@@ -123,9 +148,13 @@ function overlapIssues(
   const scenarioFile = { path: SCENARIO_FILE, relative: SCENARIO_FILE };
   const prompts = others.filter(({ path }) => path.startsWith('steps['));
   const hidden = [scenarioFile, ...others.filter(({ path }) => path.startsWith('oracle.')), ...arms];
+  const suites = others.filter(({ path }) => path.startsWith('oracle.suites['));
+  const checks = others.filter(({ path }) => path.startsWith('oracle.checks['));
   const pairs = [
     ...[scenarioFile, ...others, ...arms].map((other) => [seed, other] as const),
     ...prompts.flatMap((prompt) => hidden.map((other) => [prompt, other] as const)),
+    ...suites.flatMap((later, index) => suites.slice(0, index).map((earlier) => [later, earlier] as const)),
+    ...checks.flatMap((check) => suites.map((suite) => [check, suite] as const)),
   ];
   const realOf = (relative: string) => realpathSync(resolve(dir, relative));
   return pairs
@@ -160,7 +189,11 @@ function toScenario(spec: ScenarioFile, dir: string, arms: readonly Declared[]):
     seedDir: resolve(dir, spec.seed),
     steps: spec.steps.map((step) => ({ n: step.n, promptPath: resolve(dir, step.prompt_file) })),
     oracle: {
-      publicTestsDir: resolve(dir, spec.oracle.public_tests),
+      suites: spec.oracle.suites.map((suite) => ({
+        id: suite.id,
+        dir: resolve(dir, suite.dir),
+        afterSteps: [...suite.after_steps].sort((a, b) => a - b),
+      })),
       checks: spec.oracle.checks.map((check) => resolve(dir, check)),
       thirdParty: spec.oracle.third_party,
     },

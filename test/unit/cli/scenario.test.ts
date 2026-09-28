@@ -7,7 +7,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { main } from '../../../src/cli/index.js';
@@ -39,8 +39,10 @@ function repo(holdoutFlag = true): string {
 function holdout(files: readonly string[]): string {
   const root = tempDir('bench-holdout-');
   mkdirSync(join(root, 'scenarios', 'S9', '1.0'), { recursive: true });
-  for (const file of files)
+  for (const file of files) {
+    mkdirSync(dirname(join(root, 'scenarios', 'S9', '1.0', file)), { recursive: true });
     writeFileSync(join(root, 'scenarios', 'S9', '1.0', file), `expect(x).toBe('${SECRET}')\n`);
+  }
   return root;
 }
 
@@ -89,15 +91,15 @@ describe('bench scenario validate (REQ-CLI-04, REQ-CLI-10)', () => {
       'validate',
       'S9@1.0',
       '--holdout',
-      holdout(['a.test.ts', 'b.test.ts']),
+      holdout(['first/a.test.ts', 'all/b.test.ts']),
     );
     expect(result).toEqual({ code: 0, stdout: 'scenario S9@1.0 is valid (hold-out: 2 files)\n', stderr: '' });
   });
 
   it('takes the hold-out from BENCH_HOLDOUT_PATH, and --holdout over it', async () => {
-    process.env.BENCH_HOLDOUT_PATH = holdout(['a.test.ts']);
+    process.env.BENCH_HOLDOUT_PATH = holdout(['first/a.test.ts']);
     expect((await run(repo(), 'scenario', 'validate', 'S9@1.0')).stdout).toMatch(/\(hold-out: 1 file\)/);
-    const option = holdout(['a.test.ts', 'b.test.ts', 'c.test.ts']);
+    const option = holdout(['first/a.test.ts', 'first/b.test.ts', 'all/c.test.ts']);
     expect((await run(repo(), 'scenario', 'validate', 'S9@1.0', '--holdout', option)).stdout).toMatch(
       /3 files/,
     );
@@ -116,7 +118,7 @@ describe('bench scenario validate (REQ-CLI-04, REQ-CLI-10)', () => {
   });
 
   it('rejects additions for a scenario that declares none', async () => {
-    const extra = holdout(['a.test.ts']);
+    const extra = holdout(['first/a.test.ts']);
     const result = await run(repo(false), 'scenario', 'validate', 'S9@1.0', '--holdout', extra);
     expect(result).toEqual({
       code: 1,
@@ -144,11 +146,23 @@ describe('bench scenario validate (REQ-CLI-04, REQ-CLI-10)', () => {
   });
 
   it('refuses a hold-out whose additions hold a symbolic link, by its relative path', async () => {
-    const linked = holdout(['a.test.ts']);
+    const linked = holdout(['first/a.test.ts']);
     symlinkSync('/etc/hostname', join(linked, 'scenarios', 'S9', '1.0', 'escape'));
     expect((await run(repo(), 'scenario', 'validate', 'S9@1.0', '--holdout', linked)).stderr).toBe(
       "holdout: 'escape' is a symbolic link\n",
     );
+  });
+
+  it('refuses a hold-out file under no declared suite, naming the file only (dl-001)', async () => {
+    const stray = holdout(['first/a.test.ts', 'a.test.ts', 'checks/b.yaml', 'other/c.test.ts']);
+    expect(await run(repo(), 'scenario', 'validate', 'S9@1.0', '--holdout', stray)).toEqual({
+      code: 1,
+      stdout: '',
+      stderr:
+        "holdout: 'a.test.ts' is under no declared suite (all, first)\n" +
+        "holdout: 'checks/b.yaml' is under no declared suite (all, first)\n" +
+        "holdout: 'other/c.test.ts' is under no declared suite (all, first)\n",
+    });
   });
 
   it('refuses to validate without the leak-scan declarations, rather than scan by defaults', async () => {

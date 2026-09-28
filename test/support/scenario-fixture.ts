@@ -16,7 +16,12 @@ export function completeScenarioYaml(id = 'S9', version = '1.0', steps = 2): Rec
     seed: 'seed',
     steps: stepNumbers(steps).map((n) => ({ n, prompt_file: promptFile(n) })),
     oracle: {
-      public_tests: 'oracle/public',
+      // Two suites (dl-001): one after step 1, one after every step, listed from the last step down
+      // so that the loaded order (sorted) differs from the file's.
+      suites: [
+        { id: 'first', dir: 'oracle/first', after_steps: [1] },
+        { id: 'all', dir: 'oracle/all', after_steps: stepNumbers(steps).reverse() },
+      ],
       checks: ['oracle/checks/decision.yaml'],
       third_party: [
         {
@@ -46,7 +51,8 @@ export const COMPLETE_FILES = [
   'seed/README.md',
   'prompts/01.md',
   'prompts/02.md',
-  'oracle/public/a.test.ts',
+  'oracle/first/a.test.ts',
+  'oracle/all/b.test.ts',
   'oracle/checks/decision.yaml',
 ];
 

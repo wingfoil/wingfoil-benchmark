@@ -68,7 +68,10 @@ describe('scenarios.feature', () => {
       { n: 1, promptPath: join(dir, 'prompts/01.md') },
       { n: 2, promptPath: join(dir, 'prompts/02.md') },
     ]);
-    expect(scenario.oracle.publicTestsDir).toBe(join(dir, 'oracle/public'));
+    expect(scenario.oracle.suites).toEqual([
+      { id: 'first', dir: join(dir, 'oracle/first'), afterSteps: [1] },
+      { id: 'all', dir: join(dir, 'oracle/all'), afterSteps: [1, 2] },
+    ]);
     expect(scenario.categories).toEqual({ primary: 'C', secondary: ['D'] });
     expect(scenario.profiles).toEqual(['solo-developer', 'team-developer']);
     expect(scenario.gqm).toEqual(['Q-C1', 'G-X1']);
@@ -78,7 +81,7 @@ describe('scenarios.feature', () => {
   it('@F3.2 A well-formed scenario passes the validator', async () => {
     // Given scenario S1 as specified — T3, with its hold-out additions
     const root = repository();
-    const additions = holdout({ 'hidden/refund.test.ts': "expect(refund(o)).toBe('refunded in full');\n" });
+    const additions = holdout({ 'orders/refund.test.ts': "expect(refund(o)).toBe('refunded in full');\n" });
 
     // When the maintainer validates it
     const result = await validate(root, '--holdout', additions);
@@ -110,7 +113,7 @@ describe('scenarios.feature', () => {
     const root = repository((dir) =>
       writeFileSync(join(dir, 'prompts', '01.md'), `Add a way to cancel an order; it ends ${secret}.\n`),
     );
-    const additions = holdout({ 'hidden/refund.test.ts': `expect(refund(o)).toBe('${secret}');\n` });
+    const additions = holdout({ 'orders/refund.test.ts': `expect(refund(o)).toBe('${secret}');\n` });
 
     // When the maintainer validates S2 with the hold-out path configured
     const result = await validate(root, '--holdout', additions);
@@ -120,7 +123,7 @@ describe('scenarios.feature', () => {
     expect(result).toEqual({
       code: 1,
       stdout: '',
-      stderr: 'steps[0].prompt_file: holds a literal of the hold-out file hidden/refund.test.ts\n',
+      stderr: 'steps[0].prompt_file: holds a literal of the hold-out file orders/refund.test.ts\n',
     });
     expect(result.stderr).not.toContain('4417');
   });

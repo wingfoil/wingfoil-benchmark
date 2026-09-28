@@ -2,7 +2,7 @@
 id: task-026-oracle-suites-per-step
 type: task
 title: "Oracle suites per step"
-status: backlog
+status: approved
 release: v0.1
 wave: W6
 features: []
@@ -40,7 +40,7 @@ Scope, as dl-001 decided (option 3, declared suites):
 refuses a suite bound to a missing step; the leak scan and the hash cover every suite; requirements
 amended; tests, coverage and lint pass.
 
-### W6 plan-phase decisions (proposed to the approver)
+### W6 plan-phase decisions (accepted by the approver, 2026-09-28, `39c6344`)
 
 1. **Five tasks, in this order:** task-026 oracle suites per step (dl-001); task-027 hidden-test
    oracle (F4.1: `bench score`, the scoring container, M-Q1, `score.json`); task-028 hold-out tests in
@@ -74,14 +74,105 @@ Preliminary classification (confirmed in the design phase).
 - REQ-FMT-04 — a suite bound to a step the scenario does not declare, a repeated suite id, two suites
   on one directory: each an issue naming the suite. **red-first**
 - REQ-FMT-08 — the leak scan finds an oracle literal from any suite, not only the first. **red-first**
-- REQ-FMT-09 — a change in any suite's file changes the version's hash. **red-first**
+- REQ-FMT-09 — a change in any suite's file changes the version's hash. **characterization** (design:
+  the hash already covers the whole version directory)
 - REQ-ARC-03 / dl-001 — a hold-out file outside a declared suite id is a validation issue, named by
   path only. **red-first**
 - `scenarios.feature` @F3.1, @F3.2 and @F3.4 stay green on the migrated fixtures. **characterization**
 
 ## Design
 
-<!-- Modules, interfaces, data formats touched; decisions taken and their reasons. -->
+**Classification confirmed**, with one change: REQ-FMT-09 is characterization — `scenarioHash`
+(task-018) hashes every file of the version directory, so a suite anywhere in it is covered already; a
+test fixes it for a second suite. Everything else is red-first.
+
+### The format — `oracle.suites` (REQ-FMT-04 as amended)
+
+```yaml
+oracle:
+  suites:
+    - { id: pointer, dir: oracle/pointer, after_steps: [1] }
+    - { id: patch,   dir: oracle/patch,   after_steps: [2, 3, 4] }
+  checks: [...]        # unchanged
+  third_party: [...]   # unchanged
+```
+
+In `scenarioSchema` (`src/core/scenario.ts`), `public_tests` is removed — as an unknown key it is then
+refused by the strict object, with no special message, since no stored scenario uses it. `suites` is
+**required and may be empty**: T0–T2 have no hidden tests (T1's `oracle/public/` holds only a
+`.gitkeep`), and a scenario that scores nothing says so explicitly with `suites: []`; what scoring does
+with it (no M-Q1 value) is task-027's. A suite is a strict object:
+
+- `id`: kebab-case, like a capability. It names the suite in `score.json` (task-027) and is the
+  hold-out's directory for the suite (below), so it must be a single path segment.
+- `dir`: a relative path inside the version directory (the existing `relativePath`).
+- `after_steps`: a non-empty list of distinct integers.
+
+Checks on the whole file, in a `superRefine` on the `oracle`-bearing object because they need `steps`,
+each an issue on the offending entry:
+
+- `oracle.suites[i].after_steps[j]`: `must be a declared step: the scenario has steps 1–N`;
+- `oracle.suites[i].id`: `repeats the id of oracle.suites[k]`;
+- `oracle.suites[i].dir`: `repeats the directory of oracle.suites[k]` (compared with `samePathKey`).
+
+No order is imposed on `after_steps`; the loaded scenario holds them sorted, so the order in the file
+changes nothing downstream (it still changes the hash, as any edit does).
+
+**The final snapshot is not a field.** M-Q1 is also measured "on the final snapshot" (experiment design
+§4.1); which suites run on it — those bound to the last step, or every suite — is scoring's rule, not
+the format's, and is decided in task-027's design. dl-001 needs no such field either.
+
+### The loader (`src/scenario/load.ts`) and the `Scenario` type
+
+`Scenario.oracle.publicTestsDir` becomes `suites: readonly { id; dir; afterSteps }[]`, `dir` absolute,
+`afterSteps` sorted. Each suite dir is a declared path `oracle.suites[i].dir`, kind `directory`: it
+must exist and stay inside the version directory (`fileIssues`), and it joins the paths the seed and the
+prompts must not overlap (`overlapIssues`, which already treats every `oracle.` path as hidden). Two new
+overlap rules, on real paths:
+
+- suites are pairwise disjoint: a test file in two suites would be scored after the steps of both,
+  which no one declared;
+- a check is not inside a suite: a check is a pattern file (REQ-SCO-06), not a test to run.
+
+### The leak scan (REQ-FMT-08)
+
+`oracleFiles(scenario)` becomes the files under every suite dir, in declaration order, then the checks.
+The label of a finding stays the file's path relative to the version directory, so it already names the
+suite's directory. A literal found only in the second suite is found — the red test.
+
+### The hold-out's layout (REQ-ARC-03, dl-001)
+
+A hold-out file of a scenario version must sit under `<suite-id>/` for a declared suite id:
+`<holdout>/scenarios/<id>/<version>/<suite-id>/…`. `holdoutSuiteIssues(scenario, additions)` in
+`src/scenario/holdout.ts` returns one issue per file outside one — `{ path: 'holdout', message: "'x.ts'
+is under no declared suite (patch, pointer)" }` — naming the file only, never its content.
+`bench scenario validate` reports them after the existing count checks and before the leak scan.
+`loadHoldoutAdditions` stays as it is; which suite an addition belongs to is its first path segment,
+which task-028 reads.
+
+Hold-out **checks** have no place in this layout: dl-001 speaks of suites only, and no v0.1 scenario
+spec asks for a hidden check. Should S2 or S3 need one when REQ-SCO-06 is built (W8), its layout is
+decided then; until then a hold-out `checks/` directory is a file under no suite and is refused.
+
+### Fixtures and tests
+
+- T0, T1, T2: `suites: []`; T1's empty `oracle/public/` with its `.gitkeep` is removed.
+- T3: `suites: [{ id: orders, dir: oracle/public, after_steps: [1, 2] }]`. Its content hash changes; T3
+  has no stored campaign result, and the fixtures that pin a hash (if any) are updated with it.
+- `completeScenarioYaml` (`test/support/scenario-fixture.ts`) declares two suites, so that every
+  multi-suite rule has a complete file to start from.
+- Hold-out fixtures move under a suite id (`hidden/refund.test.ts` → `orders/refund.test.ts`, and so
+  on); the acceptance test's expected message follows.
+
+### The amendment — requirements.md 1.7
+
+REQ-FMT-04's `oracle` bullet becomes "`oracle`: `suites[]` as `{id, dir, after_steps[]}` — each suite
+declared once, with the steps after which it is scored — checks, third-party pins with licenses";
+REQ-ARC-03 adds that the hold-out's additions for a scenario version sit under the ids of its suites.
+The version goes to 1.7 with an "Amendment 1.7" section citing dl-001 and this task; its review
+decision is the approver's at this task's review, recorded there as 1.6's was at task-013's. The
+traceability matrix is unaffected. dl-001 stays `approved`; its Consequences are met by this task and
+the release element says so when W6 is recorded.
 
 ## Execution notes
 
@@ -96,3 +187,65 @@ Preliminary classification (confirmed in the design phase).
   fields checked, one commit `wf(task): submit <id>` with no bracket and no body. Observed: exit 0,
   empty stderr, 1 file, diff limited to `status: draft` → `status: pending`. Matches (subject without
   transition: N9).
+- `npx wingfoil memory approve task-026-oracle-suites-per-step --reason "…"`, run by the approver →
+  `39c6344`. `memory history` records `operation: approve`, `pending → backlog`, the approver and the
+  reason. It also lists two unrelated commits before the `add` (`d5a31a4`, `8d96d99`) and prints two
+  `fatal: path … exists on disk, but not in …` lines on stderr: N7, reproduced.
+- Design committed by hand on `task/task-026-oracle-suites-per-step` (`efa6d51`), then
+  `npx wingfoil memory submit task-026-oracle-suites-per-step` → `45977d8`. Declared: `backlog →
+  in-progress`, one commit `wf(task): submit <id>`. Observed: exit 0, empty stderr, 1 file, diff limited
+  to `status: backlog` → `status: in-progress`, subject without transition (N9). Matches. WIP after it:
+  one task `in-progress` (this one), none `in-review`.
+
+### Build
+
+Test-first: the red tests in `8b9d6ff` (fixtures T0–T3 migrated, 126 failing), the code in `64cc997`,
+the amendment in `4aabdd3`.
+
+- **Schema** (`src/core/scenario.ts`): `oracle.suites`, a strict `{id, dir, after_steps}`; `id`
+  kebab-case (the same rule as a capability, now one `kebabName`), `after_steps` distinct integers, at
+  least one. A repeated id or directory is reported on the later entry. `public_tests` is an unknown key.
+  `Suite` is exported from `core`.
+- **Deviation from the Design:** whether each `after_steps` value is a declared step is checked **in the
+  loader**, not in a schema `superRefine`. A refinement on the whole file runs only when every other
+  field parsed, so one unrelated issue would hide it; the loader reports it right after id and version,
+  in a stable order (`suiteStepIssues`), naming the offending entry as designed.
+- **Loader** (`src/scenario/load.ts`): each suite dir is a declared directory `oracle.suites[i].dir`
+  (it exists, stays inside); suites are pairwise disjoint and a check lies in no suite, on real paths, so a
+  symbolic link from one suite to another is caught; `afterSteps` sorted.
+- **Leak scan:** `oracleFiles` walks every suite in declaration order, then the checks.
+- **Hold-out:** `holdoutSuiteIssues(suites, additions)` in `src/scenario/holdout.ts`; `bench scenario
+  validate` reports its issues after the count checks and before the leak scan. Names the file and the
+  declared ids, sorted, or `(none)`.
+- **REQ-FMT-09:** no code change, as the Design found; the red test in `leak-scan.test.ts` exercises a
+  second suite through the loaded scenario, and the hash covers the directory as before.
+- **Fixtures:** T0–T2 `suites: []`, their empty `oracle/public/.gitkeep` removed; T3 `orders` over
+  `oracle/public`, after steps 1 and 2. No test pins a scenario hash, so none changed. The hold-out
+  fixtures of the acceptance and CLI tests moved under a suite id (`orders/`, `first/`, `all/`).
+- **Requirements 1.7:** REQ-FMT-04's `oracle` bullet and REQ-ARC-03's hold-out sentence, with the
+  "Amendment 1.7" section; its review decision is the approver's at this task's review.
+
+### Suites (at `4aabdd3`)
+
+- `npm test`: **726 passed** (35 files); coverage 99.81% statements / 97.03% branches / 100% functions /
+  100% lines. The uncovered branches in `scenario.ts` and `leak-scan.ts` are sort comparators that
+  existed before this task.
+- `npm run test:bin`: 5 passed. `npm run test:docker`: 6 passed (T0–T2 without an oracle directory).
+- `npm run lint`: clean. `npx tsc --noEmit`: clean.
+
+### Traceability
+
+`scenarios.feature` @F3.1 (the suites of a complete scenario), @F3.2 (three scenarios, hold-out files
+under `orders/`) and @F3.4 green. REQ-FMT-04 and REQ-ARC-03 as amended in 1.7; REQ-FMT-08 (every suite
+scanned); REQ-FMT-09 (unchanged). dl-001's Consequences: the amendment (1.7) and the schema change, done
+with no stored result affected; hold-out additions mirror the suite ids. No new bug or decision-log.
+
+
+### Review and approval
+
+- `npx wingfoil memory submit task-026-oracle-suites-per-step` → `3c058c0`
+  (`in-progress → in-review`, one commit, only `status` changed). Matches.
+- `npx wingfoil memory approve task-026-oracle-suites-per-step --reason "…"` → `856321e`, run by the
+  approver (`in-review → approved`, `Approver:`/`Reason:` trailers, only `status` changed). Matches.
+  The reason accepts requirements 1.7 and the deviation (steps checked in the loader): this is the
+  amendment's recorded review decision.
