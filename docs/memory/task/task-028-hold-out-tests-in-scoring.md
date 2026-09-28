@@ -2,7 +2,7 @@
 id: task-028-hold-out-tests-in-scoring
 type: task
 title: "Hold-out tests in scoring"
-status: pending
+status: backlog
 release: v0.1
 wave: W6
 features: [F3.5]
