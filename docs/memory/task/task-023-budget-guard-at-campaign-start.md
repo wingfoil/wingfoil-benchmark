@@ -170,3 +170,11 @@ completed dry run for every key of a campaign (default model and slices), at the
 `npm test` 682/682 (statements 99.8%, branches 96.89%, functions 100%, lines 100%), `npm run test:bin`
 5/5, `npm run test:docker` 5/5, `npm run lint` clean, `npm run build` clean; no `bench-*` container
 left. `campaign.feature` @F1.3's two start scenarios have their acceptance tests. Nothing was spent.
+
+### Review and approval
+
+- `npx wingfoil memory submit task-023-budget-guard-at-campaign-start` → `d33c747`
+  (`in-progress → in-review`, one commit, only `status` changed). Matches.
+- `npx wingfoil memory approve task-023-budget-guard-at-campaign-start --reason "…"` → `b9b9fff`, run
+  by the approver (`in-review → approved`, `Approver:`/`Reason:` trailers, only `status` changed).
+  Matches. The reason accepts `features: []`, F1.3 being declared by task-024.
