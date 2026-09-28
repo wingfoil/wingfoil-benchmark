@@ -102,3 +102,32 @@ shrinks … at least one comparable run is always kept" is calibration's sizing,
   `task-{n}-{slug}`. Observed: exit 0, empty stderr, exactly that commit, 1 file, body identical to the
   template. Matches.
 - The approver's `memory approve` → `ee4c8e1` (`pending → backlog`). Matches.
+- `npx wingfoil memory submit task-025-model-slices-run-in-a-campaign` → `7d9d993` (`draft → pending`,
+  one commit, only `status`). Matches (subject without transition: N9).
+- Design committed by hand on `task/task-025-model-slices-run-in-a-campaign` (`d68fc6c`), then
+  `npx wingfoil memory submit task-025-model-slices-run-in-a-campaign` → `d6abee7`
+  (`backlog → in-progress`, one commit, only `status`). Matches. WIP: this task `in-progress`, none
+  `in-review`.
+
+### Build (TDD) — `3c98726`
+
+1. **Tests first:** three runner tests — the slice's runs, after the default model's, in order; the
+   slice model given to the agent, the run stored under it, a resume continuing the slice's session;
+   the runs equal to the estimate's keys and repetitions. **3 red**, then green at the first
+   implementation, `campaignPlan` built from `campaignKeys`.
+2. Every existing test green unchanged: a campaign without slices runs as before (characterization).
+
+### Deviation from the Design
+
+None; the restated criterion (resumes name no model) is the Design's.
+
+### Known limits
+
+- Cross-model results are stored side by side under their model; keeping them apart in reports (T14)
+  is aggregation's, W7.
+
+### Review readiness
+
+`npm test` 703/703 (statements 99.81%, branches 96.99%, functions 100%, lines 100%), `npm run test:bin`
+5/5, `npm run test:docker` 6/6, `npm run lint` clean, `npm run build` clean; no `bench-*` container
+left. Nothing was spent.
