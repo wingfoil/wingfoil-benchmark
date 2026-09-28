@@ -2,7 +2,7 @@
 id: task-029-cost-metrics
 type: task
 title: "Cost metrics"
-status: approved
+status: done
 release: v0.1
 wave: W6
 features: [F4.3]
