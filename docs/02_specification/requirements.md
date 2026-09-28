@@ -1,6 +1,6 @@
 # Requirements (v0.1)
 
-**Version:** 1.8
+**Version:** 1.9
 **Date:** 2026-09-28
 **Status:** Approved
 **Traces to:** [acceptance/](acceptance/) (all v0.1 features), [scenarios/](scenarios/) (K1–K5), [09_experiment-design.md](../01_vision/09_experiment-design.md), [07_sequencer.md](../01_vision/07_sequencer.md) v0.1
@@ -40,12 +40,12 @@ All human-authored files are YAML, validated by Zod schemas in `core`. All machi
 | REQ-FMT-02 | **Campaign identity:** SHA-256 of the campaign file canonicalized (parsed, keys sorted, re-serialized as JSON), shortened to 12 hex characters. An execution of a campaign is `<campaign-id>/<n>`, with `n` counting executions. | F1.1 |
 | REQ-FMT-03 | A harness `version` must be a released version (semver, optionally `v`-prefixed, with optional prerelease and build metadata) or a commit SHA of 7 to 40 hex characters. A branch name, a range or `latest` is rejected. When `version` is a SHA and `commit` is also given, `commit` is a 40-character SHA that starts with `version` (added in 1.2). | F1.1 (error path) |
 | REQ-FMT-04 | **Scenario file** (`scenarios/<id>/<version>/scenario.yaml`). It holds:<br>• `id`, `version`<br>• `categories: {primary, secondary[]}`, `profiles[]`, `gqm[]`, `capabilities[]`<br>• `seed`: a directory<br>• `steps[]`: `{n, prompt_file}`<br>• `oracle`: `suites[]` as `{id, dir, after_steps[]}`, each suite of hidden tests declared once with the steps after which it is scored (changed in 1.7, dl-001); checks; third-party pins with licenses<br>• `holdout`: whether additions are expected<br>Beside it, optionally, `arms/<arm>/`: the scenario's configuration for that arm, found by the arm's name with no field in the file (added in 1.6, dl-005). Neither the seed nor a prompt may contain it or lie in it. | F3.1 |
-| REQ-FMT-05 | **Arm definition** (`arms/<arm>/arm.yaml`). It holds: `name`, `setup` (script), `manual` (the operating manual file), `environment` (files copied into the workspace), `mcp` (optional config), and `requires` (the harness tool). | F2.5, F2.7 |
+| REQ-FMT-05 | **Arm definition** (`arms/<arm>/arm.yaml`). It holds: `name`, `setup` (script), `manual` (the operating manual file), `environment` (files copied into the workspace), `mcp` (optional config), `requires` (the harness tool), and `provides` (REQ-FMT-10; added in 1.9). | F2.5, F2.7 |
 | REQ-FMT-06 | **Results layout:** `results/<campaign-id>/<n>/`. It contains:<br>• `campaign.yaml`, a copy<br>• `runs/<scenario>@<ver>/<arm>/<model>/r<k>/`, holding `run.json`, `setup/{log.txt, diff.patch}`, `steps/<NN>/{usage.json, transcript.jsonl, diff.patch}` and `score.json`<br>• `aggregate.json`<br>`<NN>` is the step number in two digits, the same form REQ-RUN-05 uses in a commit message, so a scenario has **at most 99 steps** (1.4). | F5.1 |
 | REQ-FMT-07 | `aggregate.json` stores every value together with the list of run paths it was computed from, and its `n`. | F5.1, experiment design §4.6 |
 | REQ-FMT-08 | **Scenario validator:** checks the schema (REQ-FMT-04), and runs a **leak scan**. The scan fails when:<br>• a step prompt contains a name from a declared list of harness and tool names;<br>• an oracle literal (an expected value or a test name of at least a declared minimum length) appears in the seed or in a prompt.<br>With the hold-out configured, hold-out oracles are scanned too. Their content is never printed; messages name only the file and the step. | F3.2 |
 | REQ-FMT-09 | **Scenario versions are immutable.** Results record the content hash of the scenario version they ran. The validator rejects a scenario version whose content no longer matches a hash recorded in stored results. | F3.4 |
-| REQ-FMT-10 | Arm definitions declare `provides[]`, the harness capabilities the arm offers, for example `workflow-engine: false` for the WingFoil v0.2 pre-release. | F3.6 |
+| REQ-FMT-10 | Arm definitions declare `provides`, the harness capabilities the arm offers, as a map of capability to boolean: for example `workflow-engine: false` for the WingFoil v0.2 pre-release. An undeclared capability is not provided (1.9). | F3.6 |
 
 ## 3. Command surface (REQ-CLI)
 
@@ -99,7 +99,7 @@ One binary, `bench`, run with `npx bench`. Exit codes: `0` success, `1` failure,
 | REQ-SCO-07 | Determinism metrics (M-R1–M-R3) are computed only for groups with n ≥ 2 runs sharing all pins. Otherwise the result is `n = 1` and no value. | F4.5 |
 | REQ-SCO-08 | Break-even follows experiment design §4.2, with the "not applicable" and "never" cases. | F4.4 |
 | REQ-SCO-09 | Hold-out results are stored separately from public results in `score.json`. | F3.5 |
-| REQ-SCO-10 | **Expected failures:** a run is marked `expected failure` when the scenario's `capabilities` are not all in the arm's `provides` (REQ-FMT-10). The missing capabilities are named. The run is still executed and scored, and it counts as a loss in aggregation. | F3.6 |
+| REQ-SCO-10 | **Expected failures:** a run **of an arm with a harness** (`requires`) is marked `expected failure` when the scenario's `capabilities` are not all provided by the arm (REQ-FMT-10); baseline arms are the reference and are never marked (1.9). The missing capabilities are named. The run is still executed and scored, and it counts as a loss in aggregation. | F3.6 |
 
 ## 6. Results and site (REQ-RES)
 
@@ -285,3 +285,20 @@ REQ-SCO-01.
 
 Source: [task-027](../memory/task/task-027-hidden-test-oracle.md), review decision of the approver at
 that task's review, 2026-09-28 (`54d22f9`).
+
+### Amendment 1.9 (delivery, W6 task-030, 2026-09-28)
+
+- **REQ-FMT-10:** `provides` is a map of capability to boolean, as its own example (`workflow-engine:
+  false`) writes it, not a list: a `false` states a known gap of the harness. An undeclared capability is
+  not provided.
+- **REQ-FMT-05:** the arm definition's fields include `provides`.
+- **REQ-SCO-10:** only a run of an arm with a harness is checked. Read literally, the requirement marked
+  every baseline run of a scenario that needs any capability — S8's directive delivery, for one — although
+  F3.6 is about "the harness version under test" and its acceptance about the wingfoil arm. The baseline
+  arms are the reference a harness is compared with, and are never marked.
+
+The traceability matrix is unaffected: all three still serve F3.6 (and REQ-FMT-05 F2.5, F2.7).
+
+Source: [task-030](../memory/task/task-030-expected-failures.md), review decision of the approver at that
+task's review.
+
