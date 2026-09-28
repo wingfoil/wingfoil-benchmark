@@ -113,6 +113,14 @@ estimated does not start, nor does one whose estimate is above its `ceiling_eur`
 the ceiling. Above `warn_eur` it shows the estimate and the threshold and starts only when the
 maintainer answers `y` on a terminal; without a terminal it does not start.
 
+While it runs, the caps hold. Each session is given what is left of the run's `run_cost_eur` as the
+agent's own budget, and stops there: the step and the run end `cap reached`, the step's snapshot kept.
+Every command of a step runs under `timeout` with what is left of `step_time_s`: a step killed there
+ends `time cap reached`, and since a killed session reports no cost, it is counted at the most it can
+have cost. A session whose tokens exceed `step_tokens` is not resumed (`token cap reached`). No run
+starts once the runs so far have spent `ceiling_eur` (`campaign ended: budget exhausted`), nor after a
+session met the subscription's usage limit (`quota exhausted`).
+
 A run that is interrupted — a killed process, a closed terminal, a reboot — can leave its container
 behind. The runner never removes a container it did not create: at the start of a campaign it lists
 the ones earlier runs of that campaign left, warns about each with the `docker rm --force` that clears

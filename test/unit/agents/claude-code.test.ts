@@ -106,6 +106,51 @@ describe('reading a session (REQ-RUN-09)', () => {
     expect(session.usage.costUsd).toBe(3);
   });
 
+  it('reads a session its --max-budget-usd stopped as cap reached, not as a failure (task-024, C1)', () => {
+    // C1's result event, trimmed: what Claude Code 2.1.280 wrote when its 0.04 USD cap stopped it.
+    const events = [
+      '{"type":"result","subtype":"error_max_budget_usd","is_error":true,"terminal_reason":"budget_exhausted",' +
+        '"total_cost_usd":0.0418931,"num_turns":14,"session_id":"s","result":"","errors":["Reached maximum budget ($0.04)"]}',
+    ];
+    const session = readSession(events, RATE);
+    expect(session.outcome).toBe('cap reached');
+    expect(session.error).toBeUndefined();
+    expect(session.usage.costUsd).toBe(0.0418931);
+  });
+
+  it('reads a session the subscription quota stopped as quota exhausted (REQ-RUN-13, unverified shape)', () => {
+    for (const event of [
+      '{"type":"result","is_error":true,"terminal_reason":"api_error","result":"Claude AI usage limit reached|1760000000"}',
+      '{"type":"result","is_error":true,"terminal_reason":"api_error","errors":["rate_limit_error: quota"]}',
+    ]) {
+      expect(readSession([event], RATE).outcome).toBe('quota exhausted');
+    }
+    // Another API error is a failure, as before.
+    expect(
+      readSession(
+        ['{"type":"result","is_error":true,"terminal_reason":"api_error","result":"overloaded"}'],
+        RATE,
+      ).outcome,
+    ).toBe('failed');
+  });
+
+  it('reports the stop of the session through the port', async () => {
+    const stream =
+      '{"type":"result","subtype":"error_max_budget_usd","is_error":true,"terminal_reason":"budget_exhausted","total_cost_usd":0.04,"session_id":"s"}\n';
+    const agent = claudeCodeAgent({ token: 'sk-ant-oat01-TEST', usdToEur: 1 });
+    const outcome = await agent.runStep({
+      scenarioId: 'S1',
+      step: 1,
+      prompt: 'p',
+      model: 'm',
+      sessionId: 's',
+      remainingCostUsd: 0.04,
+      run: () => Promise.resolve({ code: 1, stdout: stream, stderr: '' }),
+    });
+    expect(outcome).toMatchObject({ sessionId: 's', stop: 'cap reached' });
+    expect(outcome.error).toBeUndefined();
+  });
+
   it('does not take a non-boolean is_error for a success', () => {
     const session = readSession(['{"type":"result","is_error":"true","terminal_reason":"completed"}'], RATE);
     expect(session.outcome).toBe('failed');

@@ -361,6 +361,33 @@ describe('bench campaign run', () => {
     });
   });
 
+  it('reports the runs that ended at a cap, and a campaign the budget stopped (task-024)', async () => {
+    const yaml = {
+      ...fakeCampaign(),
+      repetitions: { S1: 2 },
+      budget: { warn_eur: 1, ceiling_eur: 1 },
+      currency: { usd_to_eur: 1 },
+    };
+    const { file } = writeRepo(yaml, ['S1@1.0']);
+    priceCampaign(file);
+    const spend = (costUsd: number) => ({
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheCreationInputTokens: 0,
+      cacheReadInputTokens: 0,
+      costUsd,
+      costEur: costUsd,
+      turns: 1,
+      durationMs: 1,
+    });
+    const ports = doubles({ usageOf: () => spend(1.5), stopOf: () => 'cap reached' });
+    const { code, stdout } = await runWith(ports, 'campaign', 'run', file);
+    expect(code).toBe(1);
+    expect(stdout).toMatch(
+      /0 runs completed, 0 failed, 1 cap reached\ncampaign ended: budget exhausted\ncost: 1\.5000 USD, /,
+    );
+  });
+
   it('exits 1 when a run fails, and says which', async () => {
     const { file } = writeRepo(fakeCampaign(), ['S1@1.0']);
     priceCampaign(file);

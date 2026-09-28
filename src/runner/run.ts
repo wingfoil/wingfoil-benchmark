@@ -56,10 +56,22 @@ export interface Intervention {
 }
 
 /**
- * How a step ended. `intervention cap reached` is not a failure: the step ends and is scored as it
- * stands (experiment design §3.5–3.6), and the run goes on. Only `failed` stops the run.
+ * How a step ended. `intervention cap reached`, `time cap reached` and `token cap reached` are not
+ * failures: the step ends and is scored as it stands (experiment design §3.5–3.6), and the run goes
+ * on. `cap reached` (the run's cost cap) and `quota exhausted` end the run there (task-024, F1.3,
+ * REQ-RUN-13), with the step's snapshot kept; only `failed` fails it.
  */
-export type StepOutcomeKind = 'completed' | 'intervention cap reached' | 'failed';
+export type StepOutcomeKind =
+  | 'completed'
+  | 'intervention cap reached'
+  | 'time cap reached'
+  | 'token cap reached'
+  | 'cap reached'
+  | 'quota exhausted'
+  | 'failed';
+
+/** How a run ended: every step done, stopped at its cost cap or at the quota, or failed. */
+export type RunOutcomeKind = 'completed' | 'cap reached' | 'quota exhausted' | 'failed';
 
 /** One step, with every invocation of the agent it took: its session and the approver's resumes. */
 export interface StepResult {
@@ -73,6 +85,12 @@ export interface StepResult {
   readonly outcome: StepOutcomeKind;
   readonly interventions: readonly Intervention[];
   readonly error?: string;
+  /**
+   * For a step whose last invocation was killed at `step_time_s` and reported no cost (task-024, C3):
+   * the most it can have cost, in USD — its session's cost before that invocation plus the
+   * `--max-budget-usd` the invocation was given. The budget counts this, never less.
+   */
+  readonly costBoundUsd?: number;
 }
 
 /**
@@ -116,7 +134,7 @@ export interface RunResult {
   /** The harness the arm's setup installed, for an arm that requires one (adr-003 decision 4). */
   readonly harness?: HarnessArtefact;
   readonly steps: readonly StepResult[];
-  readonly outcome: 'completed' | 'failed';
+  readonly outcome: RunOutcomeKind;
   readonly error?: string;
 }
 
@@ -153,6 +171,8 @@ export interface RunPlan {
   readonly runs: readonly PlannedRun[];
   /** What each `run.json` says the run belonged to (REQ-RES-01: a dry run is never a campaign's). */
   readonly origin: { readonly campaign: string } | { readonly dry_run: true };
+  /** The campaign's `ceiling_eur`: no run starts once the runs so far have spent it (task-024). */
+  readonly ceilingEur?: number;
 }
 
 /** What one execution of a campaign or a dry run produced. */
@@ -161,7 +181,12 @@ export interface RunSummary {
   readonly execution: number;
   readonly resultsDir: string;
   readonly runs: readonly RunResult[];
-  /** Whether every run completed. */
+  /**
+   * How the execution ended (task-024): every planned run started, or it stopped starting them —
+   * `budget exhausted` at the ceiling, `quota exhausted` at the subscription's limit (REQ-RUN-13).
+   */
+  readonly outcome: 'completed' | 'budget exhausted' | 'quota exhausted';
+  /** Whether every planned run ran and completed. */
   readonly completed: boolean;
 }
 
@@ -216,6 +241,16 @@ const AGENT_ENVIRONMENT: Readonly<Record<string, string>> = { CLAUDE_CODE_DISABL
  */
 const CLEAR_AUTO_MEMORY = ['sh', '-c', 'rm -rf "$HOME"/.claude/projects/*/memory'];
 
+/** A step that was not started: nothing was left of the run's cost cap (task-024). */
+const CAP_REACHED = 'cap reached';
+
+/** `timeout`'s exit code when it stopped the command, and the one when it had to kill it. */
+const TIMED_OUT = 124;
+const KILLED = 137;
+
+/** How long `timeout` waits after its TERM before it kills the invocation (task-024). */
+const KILL_AFTER_S = 10;
+
 /** How many lines of a failing setup's error output its run's error keeps. */
 const SETUP_ERROR_LINES = 5;
 
@@ -258,6 +293,7 @@ function campaignPlan({ campaign, scenarios, arms }: CheckedCampaign): RunPlan {
     arms,
     runs,
     origin: { campaign: campaign.id },
+    ceilingEur: campaign.spec.budget.ceiling_eur,
   };
 }
 
@@ -291,28 +327,48 @@ export async function runPlan(plan: RunPlan, options: RunnerOptions): Promise<Ru
   const projectRules = await prepareProjectRules(plan, harnesses, resultsDir, options);
 
   const runs: RunResult[] = [];
+  let outcome: RunSummary['outcome'] = 'completed';
+  let spent = 0;
   for (const { scenario, arm, model, repetition } of plan.runs) {
-    runs.push(
-      await executeRun(
-        {
-          plan,
-          scenario,
-          arm,
-          model,
-          repetition,
-          execution,
-          resultsDir,
-          leftovers,
-          ...(arm.requires === undefined ? {} : { harness: harnesses.get(arm.requires) }),
-          ...(arm.name === GENERATED_ARM
-            ? { projectRules: projectRules.get(`${scenario.id}@${scenario.version}`) }
-            : {}),
-        },
-        options,
-      ),
+    // The campaign's ceiling, while it runs (REQ-RUN-08): no run starts once the runs so far spent it.
+    if (plan.ceilingEur !== undefined && spent >= plan.ceilingEur) {
+      outcome = 'budget exhausted';
+      options.log?.(`${plan.noun} ${plan.id}: budget exhausted, ${spent} of ${plan.ceilingEur} EUR spent`);
+      break;
+    }
+    const run = await executeRun(
+      {
+        plan,
+        scenario,
+        arm,
+        model,
+        repetition,
+        execution,
+        resultsDir,
+        leftovers,
+        ...(arm.requires === undefined ? {} : { harness: harnesses.get(arm.requires) }),
+        ...(arm.name === GENERATED_ARM
+          ? { projectRules: projectRules.get(`${scenario.id}@${scenario.version}`) }
+          : {}),
+      },
+      options,
     );
+    runs.push(run);
+    spent += spentEur(run.steps, plan.pins);
+    // The subscription's quota ends the campaign's runs, not only this one (REQ-RUN-13).
+    if (run.outcome === 'quota exhausted') {
+      outcome = 'quota exhausted';
+      break;
+    }
   }
-  return { execution, resultsDir, runs, completed: runs.every((run) => run.outcome === 'completed') };
+  const completed = outcome === 'completed' && runs.length === plan.runs.length;
+  return {
+    execution,
+    resultsDir,
+    runs,
+    outcome,
+    completed: completed && runs.every((run) => run.outcome === 'completed'),
+  };
 }
 
 interface RunContext {
@@ -411,17 +467,23 @@ async function executeRun(context: RunContext, options: RunnerOptions): Promise<
           scenario,
           model,
           policy,
-          spent: spentEur(steps),
+          spent: spentEur(steps, plan.pins),
           pins: plan.pins,
           ...(mcpConfig === undefined ? {} : { mcpConfig }),
         },
         options,
       );
+      // Nothing was left of the run's cost cap to start the step with (task-024).
+      if (result === CAP_REACHED) return record({ ...identity, setup, steps, outcome: 'cap reached' }, plan);
       // Recorded first, then failed: what the step spent and said is stored either way. A step that
-      // reached the intervention cap is not a failure: the run goes on to the next one.
+      // reached the intervention, time or token cap is not a failure: the run goes on to the next one.
       steps.push(result);
       if (result.error !== undefined) {
         throw new Error(`step ${stepNumber(step.n)} of ${scenario.id} failed: ${result.error}`);
+      }
+      // The run's cost cap and the quota end the run at this step, its snapshot kept (task-024).
+      if (result.outcome === 'cap reached' || result.outcome === 'quota exhausted') {
+        return record({ ...identity, setup, steps, outcome: result.outcome }, plan);
       }
     }
     return record({ ...identity, setup, steps, outcome: 'completed' }, plan);
@@ -525,9 +587,16 @@ interface StepContext {
   readonly mcpConfig?: string;
 }
 
-/** What a set of steps or invocations has spent, in EUR. */
-function spentEur(spent: readonly { readonly usage: SessionUsage }[]): number {
-  return spent.reduce((total, item) => total + item.usage.costEur, 0);
+/**
+ * What a set of steps has spent, in EUR, as the budget counts it: what each reported, or, for a step
+ * killed before it could report (task-024), the most it can have cost.
+ */
+function spentEur(steps: readonly Pick<StepResult, 'usage' | 'costBoundUsd'>[], pins: RunPins): number {
+  return steps.reduce(
+    (total, step) =>
+      total + Math.max(step.usage.costEur, (step.costBoundUsd ?? 0) * pins.currency.usd_to_eur),
+    0,
+  );
 }
 
 /**
@@ -559,9 +628,14 @@ function combine(a: SessionUsage, b: SessionUsage): SessionUsage {
   };
 }
 
+/** Every token a usage counts, of every kind: what `step_tokens` caps (task-024). */
+function tokensOf(usage: SessionUsage): number {
+  return usage.inputTokens + usage.outputTokens + usage.cacheCreationInputTokens + usage.cacheReadInputTokens;
+}
+
 /** The usage of a step's invocations so far. */
 function stepUsage(invocations: readonly StepOutcome[]): SessionUsage {
-  return invocations.map((invocation) => invocation.usage).reduce(combine);
+  return invocations.map((invocation) => invocation.usage).reduce(combine, NO_USAGE);
 }
 
 /** How the policy names a kind in the log. */
@@ -595,7 +669,7 @@ async function executeStep(
   step: Scenario['steps'][number],
   context: StepContext,
   options: RunnerOptions,
-): Promise<StepResult> {
+): Promise<StepResult | typeof CAP_REACHED> {
   const { container, workspace, outputDir, scenario, model, policy, spent, pins, mcpConfig } = context;
   const mcp = mcpConfig === undefined ? {} : { mcpConfig };
   const number = stepNumber(step.n);
@@ -609,12 +683,10 @@ async function executeStep(
   }
 
   // `--max-budget-usd 0` is a value the spike never measured: it may refuse at once, or mean no
-  // limit at all. Neither is a thing to say by accident, so the step is not started. This is not the
-  // budget guard — enforcing the cap across a run and a campaign is F1.3 (REQ-RUN-08, W5).
+  // limit at all. With nothing left of the run's cost cap the step is not started, and the run ends
+  // at its cap (task-024, REQ-RUN-08).
   const remainingCostUsd = remaining(pins, spent);
-  if (remainingCostUsd <= 0) {
-    throw new Error(`step ${number} not started: the run's cost cap is exhausted`);
-  }
+  if (remainingCostUsd <= 0) return CAP_REACHED;
 
   // Nothing an earlier step's session left in the agent's own memory reaches this one (bug-006).
   const cleared = await options.docker.exec(container, CLEAR_AUTO_MEMORY);
@@ -624,35 +696,107 @@ async function executeStep(
     );
   }
 
-  const sessionId = randomUUID();
-  const run = (command: readonly string[]) => options.docker.exec(container, command);
-  const first = await options.agent.runStep({
-    scenarioId: scenario.id,
-    step: step.n,
-    prompt,
-    model,
-    sessionId,
-    remainingCostUsd,
-    ...mcp,
-    run,
-  });
-  const invocations: StepOutcome[] = [first];
-  const interventions: Intervention[] = [];
-  let error = invocationError(first, sessionId, `step ${number}`);
-  let outcome: StepOutcomeKind = 'completed';
+  // step_time_s (REQ-RUN-08, task-024): every command of every invocation runs under `timeout`, with
+  // what is left of the step's time. A killed session reports nothing (C3), so the kill is read here,
+  // from the exit code, whatever the agent then says.
+  const deadline = performance.now() + pins.caps.step_time_s * 1000;
+  let killed = false;
+  const run = async (command: readonly string[]) => {
+    const seconds = Math.ceil((deadline - performance.now()) / 1000);
+    if (seconds <= 0) {
+      killed = true;
+      return { code: TIMED_OUT, stdout: '', stderr: `step ${number}: time cap reached` };
+    }
+    const result = await options.docker.exec(container, [
+      'timeout',
+      '-k',
+      String(KILL_AFTER_S),
+      String(seconds),
+      ...command,
+    ]);
+    if (result.code === TIMED_OUT || result.code === KILLED) killed = true;
+    return result;
+  };
+  /** One invocation; a throw is the agent's failure unless the invocation was killed at the time cap. */
+  const invoke = async (call: () => Promise<StepOutcome>): Promise<StepOutcome | string> => {
+    killed = false;
+    try {
+      return await call();
+    } catch (failure) {
+      // What a killed invocation reported is nothing: its cost is counted at its bound (settle).
+      if (killed) return { sessionId, usage: NO_USAGE, transcript: [] };
+      return reasonOf(failure);
+    }
+  };
 
-  // The neutral approver (F2.4). A failed session is never classified: it is a failure, not a wait.
-  for (let last = first; error === undefined;) {
-    const kind = last.finalMessage === undefined ? undefined : policy.classify(last.finalMessage);
+  const sessionId = randomUUID();
+  const invocations: StepOutcome[] = [];
+  const interventions: Intervention[] = [];
+  let error: string | undefined;
+  let outcome: StepOutcomeKind = 'completed';
+  let costBoundUsd: number | undefined;
+  /** What an invocation that ended reports: its stop, its kill, or its failure. */
+  const settle = (result: StepOutcome | string, name: string, bound: number): boolean => {
+    if (typeof result === 'string') {
+      if (invocations.length === 0) throw new Error(result);
+      error = result;
+      return false;
+    }
+    invocations.push(result);
+    if (killed) {
+      outcome = 'time cap reached';
+      costBoundUsd = bound;
+      options.log?.(`step ${number}: time cap reached (${pins.caps.step_time_s} s)`);
+      return false;
+    }
+    error = invocationError(result, sessionId, name);
+    if (error === undefined && result.stop !== undefined) {
+      outcome = result.stop;
+      options.log?.(`step ${number}: ${result.stop}`);
+      return false;
+    }
+    return error === undefined;
+  };
+
+  let going = settle(
+    await invoke(() =>
+      options.agent.runStep({
+        scenarioId: scenario.id,
+        step: step.n,
+        prompt,
+        model,
+        sessionId,
+        remainingCostUsd,
+        ...mcp,
+        run,
+      }),
+    ),
+    `step ${number}`,
+    remainingCostUsd,
+  );
+
+  // The neutral approver (F2.4). A failed or stopped session is never classified.
+  while (going) {
+    const last = invocations[invocations.length - 1];
+    const kind = last?.finalMessage === undefined ? undefined : policy.classify(last.finalMessage);
     if (kind === undefined) break;
     if (interventions.length >= policy.maxInterventions) {
       outcome = 'intervention cap reached';
       options.log?.(`step ${number}: intervention cap reached (${policy.maxInterventions})`);
       break;
     }
+    // step_tokens (REQ-RUN-08, task-024): checked between invocations, the only place the tokens are
+    // final; within one, the cost cap bounds it.
+    if (tokensOf(stepUsage(invocations)) > pins.caps.step_tokens) {
+      outcome = 'token cap reached';
+      options.log?.(`step ${number}: token cap reached (${pins.caps.step_tokens})`);
+      break;
+    }
+    const sessionCostUsd = stepUsage(invocations).costUsd;
     const left = remaining(pins, spent + stepUsage(invocations).costEur);
     if (left <= 0) {
-      error = `step ${number} not resumed: the run's cost cap is exhausted`;
+      outcome = 'cap reached';
+      options.log?.(`step ${number}: cap reached before resume ${interventions.length + 1}`);
       break;
     }
     const reply = policy.replies[kind];
@@ -662,8 +806,8 @@ async function executeStep(
     options.log?.(
       `step ${number}: ${KIND_LABEL[kind]}, intervention ${intervention} of ${policy.maxInterventions}: ${reply}`,
     );
-    try {
-      last = await options.agent.resume({
+    const resumed = await invoke(() =>
+      options.agent.resume({
         scenarioId: scenario.id,
         step: step.n,
         intervention,
@@ -672,24 +816,23 @@ async function executeStep(
         remainingCostUsd: left,
         ...mcp,
         run,
-      });
-    } catch (failure) {
-      // What the step's earlier invocations spent and said is real, so it is stored before failing.
-      error = reasonOf(failure);
-      break;
-    }
+      }),
+    );
     // A resume reports the session's running total, so it never goes down. If it ever does — a
     // different agent version, a stream that is not a resume — the larger figure is kept and the
     // broken premise is said out loud rather than absorbed (adr-002 amendment 1).
-    const before = stepUsage(invocations).costUsd;
-    if (last.error === undefined && last.usage.costUsd < before) {
+    if (
+      typeof resumed !== 'string' &&
+      !killed &&
+      resumed.error === undefined &&
+      resumed.usage.costUsd < sessionCostUsd
+    ) {
       options.logError?.(
-        `step ${number}: resume ${intervention} reported a session cost of ${last.usage.costUsd} USD, ` +
-          `below the ${before} USD already reported; kept the larger`,
+        `step ${number}: resume ${intervention} reported a session cost of ${resumed.usage.costUsd} USD, ` +
+          `below the ${sessionCostUsd} USD already reported; kept the larger`,
       );
     }
-    invocations.push(last);
-    error = invocationError(last, sessionId, `resume ${intervention} of step ${number}`);
+    going = settle(resumed, `resume ${intervention} of step ${number}`, sessionCostUsd + left);
   }
 
   // Every step leaves a snapshot to score, including a step that changed nothing (REQ-RUN-05), and
@@ -707,7 +850,14 @@ async function executeStep(
   const transcript = invocations.flatMap((invocation) => invocation.transcript);
   writeFileSync(join(stepDir, 'usage.json'), `${JSON.stringify(usage, undefined, 2)}\n`);
   writeFileSync(join(stepDir, 'transcript.jsonl'), transcript.map((line) => `${line}\n`).join(''));
-  const result = { n: step.n, sessionId: first.sessionId, usage, transcript, interventions };
+  const result = {
+    n: step.n,
+    sessionId: invocations[0]?.sessionId ?? sessionId,
+    usage,
+    transcript,
+    interventions,
+    ...(costBoundUsd === undefined ? {} : { costBoundUsd }),
+  };
   return error === undefined ? { ...result, outcome } : { ...result, outcome: 'failed', error };
 }
 
@@ -848,6 +998,10 @@ function record(run: RunResult, plan: RunPlan): RunResult {
           outcome: step.outcome,
           interventions: step.interventions.length,
           usage: step.usage,
+          // A step killed at its time cap reported no cost: what it can have cost at most (task-024).
+          ...(step.costBoundUsd === undefined
+            ? {}
+            : { cost_reported: false, cost_bound_usd: step.costBoundUsd }),
         })),
         // Every reply of the neutral approver, with its step, kind and text (REQ-RUN-07): what M-K2
         // counts in W6, under the policy version named above.

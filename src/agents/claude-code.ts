@@ -24,7 +24,11 @@ export interface Session {
   readonly sessionId: string;
   readonly usage: SessionUsage;
   readonly transcript: readonly string[];
-  readonly outcome: 'completed' | 'failed';
+  /**
+   * `cap reached`: the session stopped at its `--max-budget-usd` (task-024, C1); `quota exhausted`: at
+   * the subscription's usage limit (REQ-RUN-13). Neither is a failure: both are stops the runner reads.
+   */
+  readonly outcome: 'completed' | 'failed' | 'cap reached' | 'quota exhausted';
   readonly error?: string;
   /**
    * The final assistant message: the `result` field of the last result event. In every untrimmed
@@ -36,6 +40,21 @@ export interface Session {
 
 /** The only `terminal_reason` that means the session finished the work it was given. */
 const COMPLETED = 'completed';
+
+/** What Claude Code 2.1.280 says when `--max-budget-usd` stopped a session (task-024, C1). */
+const BUDGET_EXHAUSTED = 'budget_exhausted';
+
+/**
+ * Whether a failed `result` event says the subscription's usage limit was reached (REQ-RUN-13). **Not
+ * observed**: provoking it would take the subscription's whole limit (task-024). It matches what the
+ * agent is documented to write — "usage limit" in the result text, or a `rate_limit` error.
+ */
+export function isQuotaExhausted(event: Readonly<Record<string, unknown>>): boolean {
+  if (event.is_error !== true) return false;
+  const errors = Array.isArray(event.errors) ? event.errors.map(String) : [];
+  const text = [typeof event.result === 'string' ? event.result : '', ...errors].join('\n');
+  return /usage limit|rate_limit/i.test(text);
+}
 
 const ZERO: SessionUsage = {
   inputTokens: 0,
@@ -94,6 +113,7 @@ export function readSession(lines: readonly string[], usdToEur: number): Session
   let results = 0;
   let finalMessage: string | undefined;
   const failures: string[] = [];
+  let stop: 'cap reached' | 'quota exhausted' | undefined;
 
   for (const line of lines) {
     let event: Record<string, unknown>;
@@ -125,7 +145,11 @@ export function readSession(lines: readonly string[], usdToEur: number): Session
     if (typeof event.session_id === 'string') sessionId = event.session_id;
     finalMessage = typeof event.result === 'string' ? event.result : undefined;
     const reason = typeof event.terminal_reason === 'string' ? event.terminal_reason : 'unknown';
-    if (event.is_error !== false || reason !== COMPLETED) {
+    if (reason === BUDGET_EXHAUSTED) {
+      stop = 'cap reached';
+    } else if (isQuotaExhausted(event)) {
+      stop = 'quota exhausted';
+    } else if (event.is_error !== false || reason !== COMPLETED) {
       failures.push(
         event.is_error !== false && reason === COMPLETED ? `is_error ${String(event.is_error)}` : reason,
       );
@@ -145,7 +169,7 @@ export function readSession(lines: readonly string[], usdToEur: number): Session
   if (failures.length > 0) {
     return { sessionId, usage, transcript: lines, outcome: 'failed', error: failures.join(', '), ...message };
   }
-  return { sessionId, usage, transcript: lines, outcome: 'completed', ...message };
+  return { sessionId, usage, transcript: lines, outcome: stop ?? 'completed', ...message };
 }
 
 /** What a scrubbed secret is replaced with, so that its absence is visible rather than silent. */
@@ -271,6 +295,9 @@ export function claudeCodeAgent(options: AdapterOptions): AgentPort {
       usage: session.usage,
       transcript: session.transcript,
       ...(session.outcome === 'failed' ? { error: session.error ?? 'the session failed' } : {}),
+      ...(session.outcome === 'cap reached' || session.outcome === 'quota exhausted'
+        ? { stop: session.outcome }
+        : {}),
       ...(session.finalMessage === undefined ? {} : { finalMessage: session.finalMessage }),
     };
   }
