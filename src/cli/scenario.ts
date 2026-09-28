@@ -2,7 +2,14 @@ import { join } from 'node:path';
 
 import { SCENARIO_ID, SCENARIO_VERSION } from '../core/index.js';
 import type { Issue } from '../core/index.js';
-import { checkHoldoutRoot, loadHoldoutAdditions, loadScenario } from '../scenario/index.js';
+import {
+  checkHoldoutRoot,
+  loadHoldoutAdditions,
+  loadLeakScanDeclarations,
+  loadScenario,
+  scanScenario,
+} from '../scenario/index.js';
+import type { HoldoutAdditions } from '../scenario/index.js';
 
 /** Where the hold-out path comes from when no `--holdout` is given (REQ-CLI-10). */
 export const HOLDOUT_VARIABLE = 'BENCH_HOLDOUT_PATH';
@@ -50,19 +57,25 @@ export function parseScenarioArguments(args: readonly string[]): ScenarioArgumen
  * REQ-CLI-04: `bench scenario validate <id>@<version> [--holdout <path>]`, reading `scenarios/` under
  * `root` (REQ-ARC-03). The scenario's own checks (REQ-FMT-04), then its hold-out's consistency with
  * `holdout:` when a hold-out is configured — from the option, or else from {@link HOLDOUT_VARIABLE}
- * (REQ-CLI-10). No hold-out file is opened: only their names are counted. The leak scan joins in
- * task-017.
+ * (REQ-CLI-10). Then the leak scan (REQ-FMT-08) with the declarations of `scenarios/leak-scan.yaml`,
+ * the hold-out's additions included; its findings name files and steps, never content.
  */
 export function validateScenario(args: ScenarioArguments, root: string): ScenarioValidation {
   const name = `${args.id}@${args.version}`;
   const scenario = loadScenario(join(root, 'scenarios'), args.id, args.version);
   if (!scenario.ok) return { ok: false, issues: scenario.issues };
+  const declarations = loadLeakScanDeclarations(join(root, 'scenarios', 'leak-scan.yaml'));
+  if (!declarations.ok) return { ok: false, issues: declarations.issues };
+  const scan = (additions?: HoldoutAdditions): ScenarioValidation | undefined => {
+    const leaks = scanScenario(scenario.value, declarations.value, additions);
+    return leaks.length > 0 ? { ok: false, issues: leaks } : undefined;
+  };
 
   const variable = process.env[HOLDOUT_VARIABLE];
   const source = args.holdout !== undefined ? HOLDOUT_OPTION : variable ? HOLDOUT_VARIABLE : undefined;
   const path = args.holdout ?? (variable || undefined);
   if (source === undefined || path === undefined) {
-    return { ok: true, line: `scenario ${name} is valid (hold-out: not configured)` };
+    return scan() ?? { ok: true, line: `scenario ${name} is valid (hold-out: not configured)` };
   }
   const holdout = checkHoldoutRoot(path);
   if (!holdout.ok) {
@@ -96,7 +109,12 @@ export function validateScenario(args: ScenarioArguments, root: string): Scenari
       ],
     };
   }
-  return { ok: true, line: `scenario ${name} is valid (hold-out: ${found === 0 ? 'none' : files(found)})` };
+  return (
+    scan(additions.value) ?? {
+      ok: true,
+      line: `scenario ${name} is valid (hold-out: ${found === 0 ? 'none' : files(found)})`,
+    }
+  );
 }
 
 function files(n: number): string {

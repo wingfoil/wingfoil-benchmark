@@ -3,6 +3,8 @@ export type { Issue, Result } from './result.js';
 export { CATEGORIES, PROFILES, SCENARIO_ID, SCENARIO_VERSION, scenarioSchema } from './scenario.js';
 export type { Category, Profile, Scenario, ScenarioFile } from './scenario.js';
 export { ARM_NAME, armSchema } from './arm.js';
+export { leakScanSchema } from './leak-scan.js';
+export type { LeakScanDeclarations } from './leak-scan.js';
 export type { Arm, ArmFile } from './arm.js';
 export { campaignConsistency, campaignSchema, harnessCoverage } from './campaign.js';
 export type { ArmRequirement, CampaignFile } from './campaign.js';

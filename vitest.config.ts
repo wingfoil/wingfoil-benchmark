@@ -3,7 +3,8 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     include: ['test/**/*.test.ts'],
-    exclude: ['test/docker/**', 'test/bin/**'],
+    // Fixtures are scenario content, not the benchmark's tests: an oracle there tests an agent's work.
+    exclude: ['test/docker/**', 'test/bin/**', 'test/fixtures/**'],
     coverage: {
       provider: 'v8',
       include: ['src/**/*.ts', 'eslint/**/*.js'],

@@ -2,7 +2,7 @@
 id: task-017-scenario-validator-and-leak-scan
 type: task
 title: "Scenario validator and leak scan"
-status: backlog
+status: approved
 release: v0.1
 wave: W4
 features: [F3.2]
@@ -50,7 +50,94 @@ Preliminary classification (confirmed in the design phase). All behaviour is new
 
 ## Design
 
-<!-- Modules, interfaces, data formats touched; decisions taken and their reasons. -->
+Builds on task-016: `bench scenario validate` exists, with the scenario's checks and the hold-out's
+consistency; this task adds the leak scan to it (`validateScenario`, `src/cli/scenario.ts`) and the
+`scenarios.feature` @F3.2 acceptance tests. **Classification confirmed:** all red-first.
+
+### The declared list and the minimum length (REQ-FMT-08) — `scenarios/leak-scan.yaml`
+
+Both are **declared in one versioned file of the repository**, `scenarios/leak-scan.yaml`, beside the
+scenarios it applies to, and published with the method (it is part of what makes a scenario valid):
+
+```yaml
+# The leak scan's declarations (REQ-FMT-08).
+harness_names: [WingFoil, OpenSpec, Spec Kit, spec-kit, BMAD, Kiro, Agent OS, Taskmaster]
+oracle_literal_min_length: 8
+```
+
+- **Harness names**: WingFoil, and the tools of the competitor landscape (2026-09-22) the sequencer
+  plans arms for (v0.2: Spec Kit, OpenSpec) or names as candidates, so that a prompt written today
+  stays valid when those arms arrive. Matched case-insensitively, on word boundaries: `wingfoil`,
+  `WINGFOIL` and `WingFoil's` match; `wingfoiling` does not.
+- **Minimum length 8**: shorter literals (`ok`, `pending`, `id`) are words any seed contains; the
+  number is a declaration, changed by editing the file, not the code.
+
+A missing or malformed `leak-scan.yaml` is an issue of the command, not a silent default: the scan's
+rules are the ones written down.
+
+### What an oracle literal is
+
+In every **oracle file** — the public tests (`oracle.public_tests`), the checks (`oracle.checks`) and,
+with the hold-out configured, its additions (task-016) — the literals are the **quoted strings**
+(`'…'`, `"…"`, and `` `…` `` without `${}`) of at least the minimum length. That covers both kinds
+REQ-FMT-08 names: an expected value (`expect(x).toBe('Order 42 cancelled')`) and a test name
+(`it('rejects an order already shipped', …)`). Two exclusions keep it from flagging what is not
+oracle content:
+
+- **module specifiers** (`from '…'`, `import('…')`, `require('…')`): a test imports the seed's code by
+  path, and those paths are in the seed by construction;
+- literals that are **only whitespace or punctuation**.
+
+A literal is searched as an exact substring in every text file of the seed and in every step prompt.
+Numbers are not literals in v0.1 (an expected `42` would match half of any seed): recorded as a known
+limit of the scan, not hidden.
+
+### What else leaks (W3's carry-overs)
+
+- **A scenario's `arms/<arm>/` configuration** (K3, dl-005): its Markdown documents — the directives
+  and the Memory elements, the rules and the decisions — are split into lines, after their
+  frontmatter; each line of at least the minimum length, with heading marks and list bullets removed,
+  is searched in the seed and the prompts. Its YAML files (`dna.yaml`, `roles.yaml`) are not scanned:
+  the project description the DNA carries is meant to be in the seed's README too (S1's spec, task-014),
+  and the rest is configuration, not prose a prompt could repeat.
+- **Reserved names in the seed**: a `CLAUDE.md` or a `.claude/` at any depth (Claude Code reads them);
+  a `.wingfoil/` at any depth (it would make any arm a wingfoil arm); `PROJECT_RULES.md` or `.mcp.json`
+  at the seed's root (the runner writes the first; the agent would read the second).
+
+### Messages (REQ-FMT-08)
+
+One issue per finding, in a stable order (prompts by step, then seed files by path; findings by the
+oracle file, then by position):
+
+- harness name: `steps[1].prompt_file: names the harness 'WingFoil'` — the step and the offending text,
+  as `scenarios.feature` asks;
+- oracle literal: `steps[1].prompt_file: holds a literal of the hold-out file hidden/a.test.ts` or
+  `seed: src/orders.ts holds a literal of oracle/public/a.test.ts` — the file and the step, **never the
+  literal**, for the hold-out as REQ-FMT-08 requires and for the public oracle too, so that one rule
+  covers both;
+- arm configuration: `steps[0].prompt_file: repeats a line of arms/wingfoil/.wingfoil/directives/custom/no-throw.md`;
+- reserved name: `seed: holds CLAUDE.md, which a run's setup reserves`.
+
+### Code
+
+- `core/leak-scan.ts`: the schema of `leak-scan.yaml`.
+- `scenario/leak-scan.ts`: `oracleLiterals(text)` (pure), `armLines(text)` (pure), and
+  `scanScenario(scenario, declarations, holdout?)`, which reads the files and returns the issues. The
+  hold-out's content is read here, into memory, and never leaves it except as a file name.
+- `cli/scenario.ts`: loads `scenarios/leak-scan.yaml` from the root and runs the scan after the
+  hold-out's consistency.
+
+### Fixture and tests
+
+- **T3** (`test/fixtures/scenarios/T3/1.0/`), standing in for S1, S2 and S3: a seed, two prompts, a
+  public oracle test with an expected value and test names, `holdout: true`. The acceptance tests copy
+  it to a temporary repository and change what each scenario needs; the hold-out is built there too.
+- **Acceptance** (`test/acceptance/scenarios.test.ts`): the three `@F3.2` scenarios.
+- **Unit:** the literal extraction (quotes, template literals, specifiers, the minimum), the harness
+  match (case, word boundaries), the arm lines, each reserved name, the declarations file (missing,
+  malformed), the order of issues, and — for every hold-out finding — that its content reaches no
+  output.
+- The benchmark's own `scenarios/leak-scan.yaml` is loaded by a test, as `arms/` is.
 
 ## Execution notes
 
@@ -65,3 +152,45 @@ Preliminary classification (confirmed in the design phase). All behaviour is new
   checked, one commit `wf(task): submit <id>` with no bracket and no body. Observed: exit 0, empty
   stderr, 1 file, diff limited to `status: draft` → `status: pending`. Matches (subject without
   transition: N9).
+- The approver's `memory approve` → `fff0b83` (`pending → backlog`). Matches.
+- `npx wingfoil memory submit task-017-scenario-validator-and-leak-scan` → `e831c2b`, in the linked
+  worktree with its own `npm ci` (`backlog → in-progress`, one commit, only `status`). Matches.
+
+### Build (TDD) — `948d347`
+
+- 21 tests red first (the scan's module, the three `@F3.2` scenarios, the declarations). "A well-formed
+  scenario passes the validator" was green at once, as it should be: task-016's command already
+  accepts a clean scenario; the two error scenarios were the red ones.
+- **The scan's first finding was in my own fixture.** T3's second prompt read "an order cannot be
+  cancelled twice", and `'cancelled'` is the value its public test expects: by REQ-FMT-08's rule, a
+  leak. The prompt now reads "Refuse a second cancellation of the same order." It is a real property of
+  the rule worth knowing before W7 and W8: **an expected value that is an ordinary word of eight
+  letters or more cannot appear in a prompt**, so a scenario author phrases prompts around it, or the
+  declared minimum is raised. Recorded here as a known limit next to "numbers are not literals".
+- T3's oracle is a TypeScript test of code the agent has to write, so it does not compile against the
+  seed and must not run as one of the benchmark's own tests: `test/fixtures` is now excluded from the
+  type-check (`tsconfig.json`) and from `npm test` (`vitest.config.ts`). Fixtures are scenario
+  content; their oracles test an agent's work.
+- Two edits of mine to task-016's CLI test did not apply, because prettier had wrapped the lines they
+  matched; the tests said so (`leak-scan.yaml: not found`, `repoPath is not defined`). Fixed.
+- For coverage, three guards that could not fail were removed rather than tested (a hold-out read
+  through an optional where it was already known, and `existsSync` on directories the loader had
+  checked); a missing `leak-scan.yaml` through the command, and two arms ordered by name, got tests.
+
+### Deviation from the Design
+
+None in behaviour. The fixtures' exclusion from the type-check and the test run is new, and needed by
+any scenario whose oracle is code (all of v0.1's, K1).
+
+### Review readiness
+
+`npm test` 597/597 (statements 100%, branches 97.5%, functions 100%, lines 100%), `npm run test:bin`
+4/4, `npm run test:docker` 4/4, `npm run lint` clean; no `bench*` container left. `scenarios.feature`
+@F3.2 has its three acceptance tests; the traceability test is green with F3.2 started.
+
+### Review and approval
+
+- `npx wingfoil memory submit task-017-…` → `6f3a50c` (`in-progress → in-review`, one commit, only
+  `status` changed). Matches.
+- `npx wingfoil memory approve task-017-… --reason "…"` → `22b0c76`, run by the approver from the
+  worktree (`in-review → approved`, `Approver:`/`Reason:` trailers, only `status` changed). Matches.
