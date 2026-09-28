@@ -1,8 +1,9 @@
-import { existsSync, lstatSync, readdirSync, realpathSync, statSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { resolve, sep } from 'node:path';
 
 import { ARM_NAME, fail, ok, parseWith, readYamlFile, scenarioSchema } from '../core/index.js';
-import type { Issue, Result, Scenario, ScenarioFile } from '../core/index.js';
+import type { Issue, Result, Scenario, ScenarioFile, ThirdParty } from '../core/index.js';
 
 import { scenarioHash } from './hash.js';
 
@@ -25,7 +26,8 @@ interface Declared {
  * absolute paths. Issues are reported in a stable order: schema issues in schema order; then id and
  * version against their directories; then every suite's steps against the declared steps (dl-001);
  * then every declared path on disk, in declaration order; then the entries of `arms/`; then every
- * overlap between what the agent sees and what it must not see, and between the oracle's own paths.
+ * overlap between what the agent sees and what it must not see, and between the oracle's own paths;
+ * then the third-party files outside every suite and those that no longer match their `sha256` (dl-002).
  */
 export function loadScenario(scenariosRoot: string, id: string, version: string): Result<Scenario> {
   const dir = resolve(scenariosRoot, id, version);
@@ -45,6 +47,7 @@ export function loadScenario(scenariosRoot: string, id: string, version: string)
     ...arms.issues,
   ];
   if (issues.length === 0) issues.push(...overlapIssues(seed, others, arms.declared, dir));
+  if (issues.length === 0) issues.push(...vendoredIssues(spec, dir));
   return issues.length > 0 ? fail(issues) : ok(toScenario(spec, dir, arms.declared));
 }
 
@@ -92,7 +95,52 @@ function otherPaths(spec: ScenarioFile): Declared[] {
       relative: check,
       kind: 'file',
     })),
+    ...vendoredFiles(spec),
   ];
+}
+
+/** The files each third-party entry vendors (dl-002), in declaration order. */
+function vendoredFiles(spec: ScenarioFile): Declared[] {
+  return spec.oracle.third_party.flatMap((entry, index) =>
+    entry.files.map((file, position): Declared => ({
+      path: `oracle.third_party[${index}].files[${position}]`,
+      relative: file,
+      kind: 'file',
+    })),
+  );
+}
+
+/**
+ * Third-party material is oracle material (dl-002): each vendored file lies in a declared suite, so
+ * that it is hidden from the agent, leak-scanned and mounted read-only for scoring like the suite's
+ * tests; and a file pinned by `sha256` still has that SHA-256, so that material changed after it was
+ * pinned stops every command that loads the scenario. A `commit` is not checked against its source,
+ * which would need the network; the version's hash covers its files (REQ-FMT-09). On real paths, the
+ * files existing (checked before).
+ */
+function vendoredIssues(spec: ScenarioFile, dir: string): Issue[] {
+  const suites = spec.oracle.suites.map((suite) => realpathSync(resolve(dir, suite.dir)));
+  return spec.oracle.third_party.flatMap((entry, index) => {
+    const outside = entry.files.flatMap((file, position): Issue[] => {
+      const real = realpathSync(resolve(dir, file));
+      return suites.some((suite) => isInside(real, suite))
+        ? []
+        : [
+            {
+              path: `oracle.third_party[${index}].files[${position}]`,
+              message: `'${file}' is in no suite of oracle.suites`,
+            },
+          ];
+    });
+    if (outside.length > 0 || entry.sha256 === undefined) return outside;
+    const [file] = entry.files;
+    const digest = createHash('sha256')
+      .update(readFileSync(resolve(dir, file ?? '')))
+      .digest('hex');
+    return digest === entry.sha256
+      ? []
+      : [{ path: `oracle.third_party[${index}].sha256`, message: `does not match '${file}'` }];
+  });
 }
 
 /**
@@ -195,7 +243,15 @@ function toScenario(spec: ScenarioFile, dir: string, arms: readonly Declared[]):
         afterSteps: [...suite.after_steps].sort((a, b) => a - b),
       })),
       checks: spec.oracle.checks.map((check) => resolve(dir, check)),
-      thirdParty: spec.oracle.third_party,
+      thirdParty: spec.oracle.third_party.map(
+        ({ name, url, license, commit, sha256, files }): ThirdParty => ({
+          name,
+          url,
+          license,
+          pin: commit !== undefined ? { commit } : { sha256: sha256 ?? '' },
+          files: files.map((file) => resolve(dir, file)),
+        }),
+      ),
     },
     holdout: spec.holdout,
     hash: scenarioHash(dir),

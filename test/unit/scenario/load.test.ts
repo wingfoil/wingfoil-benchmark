@@ -252,6 +252,11 @@ describe('loadScenario', () => {
       { path: 'oracle.suites[0].dir', message: "directory 'oracle/first' does not exist" },
       { path: 'oracle.suites[1].dir', message: "directory 'oracle/all' does not exist" },
       { path: 'oracle.checks[0]', message: "file 'oracle/checks/decision.yaml' does not exist" },
+      {
+        path: 'oracle.third_party[0].files[0]',
+        message: "file 'oracle/first/vendor/cases.json' does not exist",
+      },
+      { path: 'oracle.third_party[1].files[0]', message: "file 'oracle/first/examples.json' does not exist" },
     ]);
   });
 
@@ -355,6 +360,8 @@ describe('loadScenario', () => {
       { path: 'seed', message: "'seed' overlaps oracle.suites[0].dir" },
       { path: 'seed', message: "'seed' overlaps oracle.suites[1].dir" },
       { path: 'seed', message: "'seed' overlaps oracle.checks[0]" },
+      { path: 'seed', message: "'seed' overlaps oracle.third_party[0].files[0]" },
+      { path: 'seed', message: "'seed' overlaps oracle.third_party[1].files[0]" },
     ]);
   });
 
@@ -389,6 +396,8 @@ describe('loadScenario', () => {
       { path: 'seed', message: "'seed' overlaps oracle.suites[0].dir" },
       { path: 'seed', message: "'seed' overlaps oracle.suites[1].dir" },
       { path: 'seed', message: "'seed' overlaps oracle.checks[0]" },
+      { path: 'seed', message: "'seed' overlaps oracle.third_party[0].files[0]" },
+      { path: 'seed', message: "'seed' overlaps oracle.third_party[1].files[0]" },
     ]);
   });
 
@@ -470,7 +479,10 @@ describe('loadScenario — oracle suites (dl-001)', () => {
   });
 
   it('accepts a scenario that declares no suite, and loads none', () => {
-    const result = loadScenario(writeScenario(withField(['oracle', 'suites'], [])), 'S9', '1.0');
+    // With no suite there is nowhere to vendor third-party material (dl-002).
+    const yaml = withField(['oracle', 'suites'], []);
+    (yaml.oracle as Record<string, unknown>).third_party = [];
+    const result = loadScenario(writeScenario(yaml), 'S9', '1.0');
     expect(result.ok && result.value.oracle.suites).toEqual([]);
   });
 
@@ -618,7 +630,8 @@ describe('loadScenario — third-party material (dl-002)', () => {
   });
 
   it('refuses an entry pinned by neither a commit nor a sha256', () => {
-    const { commit: _commit, ...unpinned } = COMMIT_ENTRY;
+    const unpinned: Record<string, unknown> = { ...COMMIT_ENTRY };
+    delete unpinned.commit;
     expect(issuesOf(writeScenario(withEntries(unpinned)))).toEqual([
       { path: 'oracle.third_party[0]', message: 'must be pinned by commit or by sha256' },
     ]);
@@ -651,7 +664,8 @@ describe('loadScenario — third-party material (dl-002)', () => {
     ['empty', []],
     ['repeated', ['oracle/first/vendor/cases.json', 'oracle/first/./vendor/cases.json']],
   ])('refuses the vendored files %s', (_case, files) => {
-    const { files: _files, ...entry } = COMMIT_ENTRY;
+    const entry: Record<string, unknown> = { ...COMMIT_ENTRY };
+    delete entry.files;
     const yaml = withEntries(files === undefined ? entry : { ...entry, files });
     expect(paths(writeScenario(yaml))).toEqual(['oracle.third_party[0].files']);
   });
