@@ -284,4 +284,4 @@ matrix is unaffected: REQ-RUN-05 stays with F2.2, which stores the patches, and 
 REQ-SCO-01.
 
 Source: [task-027](../memory/task/task-027-hidden-test-oracle.md), review decision of the approver at
-that task's review.
+that task's review, 2026-09-28 (`54d22f9`).
