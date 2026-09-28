@@ -187,3 +187,14 @@ was spent.
 - **W7 (F5.1):** an expected failure counts as a loss in aggregation, with the capability named.
 - **W11 (F5.8):** the method page lists each harness's gaps (`false` entries) and the expected failures.
 
+
+### Review and approval
+
+- `npx wingfoil memory submit task-030-expected-failures` → `8eb88d1` (`in-progress → in-review`, one
+  commit, only `status` changed). Matches.
+- The approver accepted the six review points as proposed (2026-09-28): harness arms only, baselines never
+  marked; `provides` a map; `provides` in `arm.yaml`, re-assessed with the pinned WingFoil; the mark
+  decided at planning and carried; `campaign validate` lists expected failures; no fixture T4.
+- `npx wingfoil memory approve task-030-expected-failures --reason "…"` → `96d7d1f`, run by the approver
+  (`in-review → approved`, `Approver:`/`Reason:` trailers, only `status` changed). Matches. It is
+  requirements 1.9's recorded review decision.
