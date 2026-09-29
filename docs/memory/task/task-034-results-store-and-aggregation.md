@@ -2,7 +2,7 @@
 id: task-034-results-store-and-aggregation
 type: task
 title: "Results store and aggregation"
-status: backlog
+status: in-progress
 release: v0.1
 wave: W7
 features: [F5.1]
