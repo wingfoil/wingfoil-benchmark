@@ -325,3 +325,11 @@ Commits on `task/task-041-static-quality-metrics`:
   - Declared: `in-progress → in-review`, one commit `wf(task): submit <id>`.
   - Observed: exit 0, 1 file, and a diff limited to `status: in-progress` → `status: in-review`.
     Matches.
+
+### Approval
+
+- `memory approve … [in-review → approved]` → `11d69f4`, run by the approver in the task's worktree.
+  - Declared: `in-review → approved`, one commit with an `Approver:` and a `Reason:` line.
+  - Observed: exactly that, with 1 file.
+- The review decision of requirements 1.16 and adr-004 amendment 3 is the approver's reason: "requirements
+  1.16 (REQ-SCO-04) and adr-004 amendment 3 accepted". Both name `11d69f4`.

@@ -130,7 +130,7 @@ scoring image for M-E1's directive checks (F4.8, REQ-SCO-05 as amended in requir
 19. **Checks that read text run in the scorer's process**, not in a container: content, unchanged
     (task-035) and dependencies. Neither they nor the AST script run anything of the agent's.
 
-## Amendment 3 (W9 task-041, 2026-09-29; accepted at its review)
+## Amendment 3 (W9 task-041, 2026-09-29; accepted at its review, `11d69f4`)
 
 What [task-041](../task/task-041-static-quality-metrics.md) added to the scoring image for M-Q2 (F4.2,
 REQ-SCO-04 as amended in requirements 1.16):

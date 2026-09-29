@@ -427,4 +427,4 @@ approver on 2026-09-29; review decision of the approver at that task's review, 2
 The traceability matrix is unaffected: REQ-SCO-04 already traces to F4.2 and Q-C1.
 
 Source: [task-041](../memory/task/task-041-static-quality-metrics.md), design confirmed by the
-approver on 2026-09-29; review decision of the approver at that task's review.
+approver on 2026-09-29; review decision of the approver at that task's review, 2026-09-29 (`11d69f4`).
