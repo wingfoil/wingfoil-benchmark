@@ -136,7 +136,8 @@ describe('runs in a real container', () => {
     // Step 1 fails the hidden test (the seed cannot cancel), step 2 passes it: shown able to fail. The
     // hold-out's two tests, apart: none after step 1, one after step 2.
     expect(output).toBe(
-      'T3@1.0 baseline fake-model r1: step 01 0/1, step 02 1/1, final 1/1; hold-out final 1/2\n',
+      'T3@1.0 baseline fake-model r1: step 01 0/1, step 02 1/1, final 1/1; hold-out final 1/2\n' +
+        `aggregate: results/${image}/1/aggregate.json (1 group, 0 slices)\n`,
     );
     const runDir = join(root, 'results', image, '1', 'runs', 'T3@1.0', 'baseline', 'fake-model', 'r1');
     const scoreFile = join(runDir, 'score.json');
@@ -177,6 +178,22 @@ describe('runs in a real container', () => {
     output = '';
     expect(await main(['score', `${image}/1`, '--holdout', holdout], io, undefined, root)).toBe(0);
     expect(readFileSync(scoreFile)).toEqual(first);
+    // W7 (task-034): the execution's aggregate, from the committed files only, the same bytes again.
+    const aggregateFile = join(root, 'results', image, '1', 'aggregate.json');
+    const aggregate = readFileSync(aggregateFile, 'utf8');
+    expect(JSON.parse(aggregate)).toMatchObject({
+      campaign: image,
+      execution: 1,
+      groups: [
+        {
+          runs: [`${image}/1/runs/T3@1.0/baseline/fake-model/r1`],
+          n: 1,
+          preliminary: true,
+          metrics: { m_q1: { final: { m_q1: { values: [{ passed: 1, total: 1 }] } } } },
+        },
+      ],
+      slices: [],
+    });
     const containers = execFileSync('docker', ['ps', '--all', '--format', '{{.Names}}'], {
       encoding: 'utf8',
     });

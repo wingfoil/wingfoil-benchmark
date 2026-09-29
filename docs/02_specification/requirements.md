@@ -1,7 +1,7 @@
 # Requirements (v0.1)
 
-**Version:** 1.10
-**Date:** 2026-09-28
+**Version:** 1.11
+**Date:** 2026-09-29
 **Status:** Approved
 **Traces to:** [acceptance/](acceptance/) (all v0.1 features), [scenarios/](scenarios/) (K1–K5), [09_experiment-design.md](../01_vision/09_experiment-design.md), [07_sequencer.md](../01_vision/07_sequencer.md) v0.1
 
@@ -58,7 +58,7 @@ One binary, `bench`, run with `npx bench`. Exit codes: `0` success, `1` failure,
 | REQ-CLI-03 | `bench campaign run <file>`. It asks for confirmation above `warn_eur`, and refuses above `ceiling_eur` with **no override option** (acceptance decision 2). | F1.3, F2.* |
 | REQ-CLI-04 | `bench scenario validate <id>@<version> [--holdout <path>]` | F3.2 |
 | REQ-CLI-05 | `bench scenario dry-run <id>@<version> --arm <arm> [--model <id>]` | F3.3 |
-| REQ-CLI-06 | `bench score <campaign-id>/<n> [--holdout <path>]`; `bench score dry-runs/<n>` scores a dry run, whose `score.json` stays with it (added in 1.8) | F4.* |
+| REQ-CLI-06 | `bench score <campaign-id>/<n> [--holdout <path>]`; `bench score dry-runs/<n>` scores a dry run, whose `score.json` stays with it (added in 1.8). When every run of a campaign execution is scored, it writes the execution's `aggregate.json` (REQ-FMT-06, REQ-FMT-07); it never aggregates a dry run (added in 1.11) | F4.*, F5.1 |
 | REQ-CLI-07 | `bench finding <campaign-id>/<n> --scenario … --metric … --arms …`. It writes `findings/<id>.md`. | F5.4 |
 | REQ-CLI-08 | `bench run show <run-path>` and `bench run compare <run-path> <run-path>` | F5.3 |
 | REQ-CLI-09 | `bench site build <campaign-id>/<n>` writes to `site/`. `bench site publish` deploys it; publishing only ever happens through this command. | F5.5, F5.6, F5.8 |
@@ -316,3 +316,17 @@ The traceability matrix is unaffected: REQ-FMT-04 still serves F3.1.
 
 Source: [task-031](../memory/task/task-031-third-party-oracle-material-pinned-by-commit-or-sha256.md),
 review decision of the approver at that task's review, 2026-09-29 (`312c4c1`).
+
+### Amendment 1.11 (delivery, W7 task-034, 2026-09-29)
+
+- **REQ-CLI-06:** `bench score <campaign-id>/<n>` writes the execution's `aggregate.json` once every run
+  of it is scored. It writes none, and removes a stale one, when a run could not be scored, since an
+  aggregate with runs missing from it would break REQ-FMT-07. It never aggregates a dry run (REQ-RES-01).
+  No command is added: REQ-FMT-06 already puts the file beside the runs, and the aggregation reads only
+  committed files, so it can be recomputed from a checkout.
+
+REQ-CLI-06's feature column gains F5.1. The traceability matrix (1.0) is left as it is: F5.1's row already names
+REQ-FMT-06 and REQ-FMT-07, which the aggregate implements.
+
+Source: [task-034](../memory/task/task-034-results-store-and-aggregation.md), review decision of the
+approver at that task's review, 2026-09-29 (`45a5e31`).

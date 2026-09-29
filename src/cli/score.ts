@@ -1,9 +1,16 @@
-import { existsSync } from 'node:fs';
+import { existsSync, rmSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
 import { dockerCli, gitCli, systemProcess } from '../core/index.js';
 import type { DockerPort, GitPort, Issue, Scenario } from '../core/index.js';
-import { DRY_RUNS, executionRuns, readStoredRun } from '../results/index.js';
+import {
+  AGGREGATE_FILE,
+  aggregateExecution,
+  DRY_RUNS,
+  executionRuns,
+  readStoredRun,
+  writeAggregate,
+} from '../results/index.js';
 import { checkHoldoutRoot, loadHoldoutAdditions, loadScenario } from '../scenario/index.js';
 import { scoreRun, scoreSummary, scoringImage, writeScore } from '../scoring/index.js';
 import type { Census, HoldoutInput } from '../scoring/index.js';
@@ -19,7 +26,8 @@ const TARGET = new RegExp(`^([0-9a-f]{12}|${DRY_RUNS})/[1-9]\\d*$`);
  * REQ-CLI-06: `bench score <campaign-id>/<n> [--holdout <path>]`, and `bench score dry-runs/<n>` (task-027).
  * Every run of the execution under `root/results/`, in path order: rebuilt, scored with its scenario's
  * public oracle, its `score.json` written, one line on stdout — or why it could not be, on stderr.
- * Exit 0 when every run was scored, whatever its tests did; 1 otherwise. A hold-out it is given is
+ * Exit 0 when every run was scored, whatever its tests did; 1 otherwise. A campaign's execution whose
+ * runs were all scored gets its `aggregate.json` (F5.1); a dry run never does. A hold-out it is given is
  * checked before anything is scored, and its additions are scored apart, in counts only (task-028); a
  * scenario version whose `holdout:` disagrees with them is not scored, as `scenario validate` refuses it.
  */
@@ -59,7 +67,7 @@ export async function scoreCommand(
   const image = scoringImage();
   await docker.build({ dockerfile: image.dockerfile, context: image.context, tag: image.tag, buildArgs: {} });
   const census: Census = new Map();
-  let failed = false;
+  let failed = 0;
   for (const [index, runDir] of runs.entries()) {
     const label = runLabel(executionDir, runDir);
     const scored = await scoreOne(runDir, executionDir, root, {
@@ -72,11 +80,41 @@ export async function scoreCommand(
     });
     if (scored.ok) io.stdout(`${label}: ${scored.line}\n`);
     else {
-      failed = true;
+      failed += 1;
       io.stderr(scored.issues.map((issue) => `${label}: ${issue.path}: ${issue.message}\n`).join(''));
     }
   }
-  return failed ? EXIT.failure : EXIT.ok;
+  // A dry run is never aggregated (REQ-RES-01); a campaign's execution is, once every run is scored (F5.1).
+  if (target.startsWith(`${DRY_RUNS}/`)) return failed > 0 ? EXIT.failure : EXIT.ok;
+  return aggregate(executionDir, name, failed, io);
+}
+
+/**
+ * Write the execution's `aggregate.json` when all its runs were scored; otherwise remove one written
+ * before, which no longer stands behind every run, and say so (task-034).
+ */
+function aggregate(executionDir: string, name: string, failed: number, io: Io): number {
+  const file = join(executionDir, AGGREGATE_FILE);
+  if (failed > 0) {
+    rmSync(file, { force: true });
+    io.stderr(`not aggregated: ${failed} run${failed === 1 ? '' : 's'} not scored\n`);
+    return EXIT.failure;
+  }
+  const aggregated = aggregateExecution(executionDir);
+  if (!aggregated.ok) {
+    rmSync(file, { force: true });
+    return report(
+      aggregated.issues.map((issue) => ({ ...issue, path: `${name}/${issue.path}` })),
+      io,
+    );
+  }
+  writeAggregate(executionDir, aggregated.value);
+  const { groups, slices } = aggregated.value;
+  const count = (n: number, noun: string) => `${n} ${noun}${n === 1 ? '' : 's'}`;
+  io.stdout(
+    `aggregate: ${name}/${AGGREGATE_FILE} (${count(groups.length, 'group')}, ${count(slices.length, 'slice')})\n`,
+  );
+  return EXIT.ok;
 }
 
 async function scoreOne(

@@ -53,10 +53,28 @@ export async function storedRun(
     outcome?: string;
     /** What each step records beside its snapshot (task-029); by default {@link usageOf}. */
     record?: (n: number) => StepRecord;
+    /**
+     * Another run in an existing fixture's repository (task-034): its root, and where the run goes — by
+     * default the fixture's execution, arm, model and repetition. A `dry-runs/<n>` execution records its
+     * pins as a dry run's.
+     */
+    into?: {
+      readonly root: string;
+      readonly execution?: string;
+      readonly arm?: string;
+      readonly model?: string;
+      readonly repetition?: number;
+    };
   } = { steps: [] },
 ): Promise<StoredRunFixture> {
-  const root = tempDir('bench-score-repo-');
-  cpSync(repoPath('test/fixtures/scenarios/T3'), join(root, 'scenarios', 'T3'), { recursive: true });
+  const root = options.into?.root ?? tempDir('bench-score-repo-');
+  if (options.into === undefined) {
+    cpSync(repoPath('test/fixtures/scenarios/T3'), join(root, 'scenarios', 'T3'), { recursive: true });
+  }
+  const execution = options.into?.execution ?? EXECUTION;
+  const arm = options.into?.arm ?? 'baseline';
+  const model = options.into?.model ?? 'fake-model';
+  const repetition = options.into?.repetition ?? 1;
   const loaded = loadScenario(join(root, 'scenarios'), 'T3', '1.0');
   if (!loaded.ok) throw new Error(JSON.stringify(loaded.issues));
   const scenario = loaded.value;
@@ -64,8 +82,8 @@ export async function storedRun(
   const workspace = tempDir('bench-score-ws-');
   await prepareWorkspace(workspace, scenario, git);
 
-  const executionDir = join(root, 'results', EXECUTION);
-  const runDir = join(executionDir, RUN_PATH);
+  const executionDir = join(root, 'results', execution);
+  const runDir = join(executionDir, 'runs', 'T3@1.0', arm, model, `r${repetition}`);
   mkdirSync(join(runDir, 'setup'), { recursive: true });
   const seedTree = await git.tree(workspace, 'HEAD');
   for (const [index, files] of (options.setupCommits ?? []).entries()) {
@@ -111,19 +129,27 @@ export async function storedRun(
     previous = tree;
   }
   const outcome = options.outcome ?? (steps.length === scenario.steps.length ? 'completed' : 'failed');
-  // The pins the execution ran with, whose rate converts a cost bound (task-029).
-  writeFileSync(join(executionDir, 'campaign.yaml'), 'currency:\n  usd_to_eur: 0.5\n');
+  // The pins the execution ran with: the rate that converts a cost bound (task-029), and, for a
+  // campaign, its default model, which tells its slices apart (task-034).
+  if (execution.startsWith('dry-runs/')) {
+    writeFileSync(join(executionDir, 'dry-run.yaml'), 'currency:\n  usd_to_eur: 0.5\n');
+  } else {
+    writeFileSync(
+      join(executionDir, 'campaign.yaml'),
+      'models:\n  default: fake-model\ncurrency:\n  usd_to_eur: 0.5\n',
+    );
+  }
   writeFileSync(
     join(runDir, 'run.json'),
     `${JSON.stringify(
       {
-        campaign: 'abcdef012345',
+        ...(execution.startsWith('dry-runs/') ? { dry_run: true } : { campaign: execution.split('/')[0] }),
         scenario: 'T3',
         version: '1.0',
         scenario_hash: scenario.hash,
-        arm: 'baseline',
-        model: 'fake-model',
-        repetition: 1,
+        arm,
+        model,
+        repetition,
         setup: { duration_ms: 1, commit: await git.head(workspace), tree: setupTree },
         outcome,
         steps,

@@ -2,12 +2,12 @@
 id: task-034-results-store-and-aggregation
 type: task
 title: "Results store and aggregation"
-status: backlog
+status: approved
 release: v0.1
 wave: W7
 features: [F5.1]
 acceptance: [results.feature, scenarios.feature]
-requirements: [REQ-FMT-06, REQ-FMT-07, REQ-RES-01, REQ-RES-06, REQ-SCO-03, REQ-SCO-09, REQ-SCO-10]
+requirements: [REQ-CLI-06, REQ-FMT-06, REQ-FMT-07, REQ-RES-01, REQ-RES-06, REQ-SCO-03, REQ-SCO-09, REQ-SCO-10]
 ---
 
 ## Context
@@ -71,7 +71,143 @@ Preliminary classification (confirmed in the design phase).
 
 ## Design
 
-<!-- Modules, interfaces, data formats touched; decisions taken and their reasons. -->
+**Classification confirmed**, all red-first. The @F3.6 criterion extends the existing acceptance test
+("… is an expected failure") with its last line. The two @F5.1 scenarios go into a new
+`test/acceptance/results.test.ts`, which traceability requires once F5.1 has started.
+
+### Who writes `aggregate.json`: `bench score`, when every run is scored
+
+`bench score <campaign-id>/<n>` already reads every run of the execution. When all of them were scored
+(exit 0), it writes `results/<campaign-id>/<n>/aggregate.json` and says so on its last line. Otherwise:
+
+- a run could not be scored: it writes none, removes a stale one, and says why ("not aggregated: 1 run
+  not scored"). An aggregate over some of an execution's runs would be a number with runs missing from
+  it, which REQ-FMT-07 forbids.
+- `bench score dry-runs/<n>`: it never writes one (REQ-RES-01).
+
+No command is added. REQ-CLI-06 gains the sentence (requirements 1.11), and REQ-FMT-06 already puts the
+file there. The computation is a pure function over the stored files, `aggregateExecution(executionDir)`
+in `src/results/`, so the site (W11) and a reader with a checkout can recompute it without Docker.
+
+It reads **only what is committed** (REQ-RES-06):
+
+- each run's `score.json` and `run.json`;
+- the execution's `campaign.yaml` copy, for the default model.
+
+It refuses an execution where a run has no `score.json`, a `score_version` it does not know, or a
+`scenario_hash` that differs from its `run.json`'s: a score of another version of the scenario.
+
+### The file — `aggregate.json`, version 1
+
+```json
+{
+  "aggregate_version": 1,
+  "campaign": "3fba3a8558fe",
+  "execution": 1,
+  "model": "claude-sonnet-5",
+  "groups": [ Group, … ],
+  "slices": [ Group, … ]
+}
+```
+
+- **A group** is one scenario version × arm × model:
+
+  ```json
+  { "scenario": "S1", "version": "1.0", "arm": "wingfoil", "model": "claude-sonnet-5",
+    "runs": ["3fba3a8558fe/1/runs/S1@1.0/wingfoil/claude-sonnet-5/r1", …],
+    "n": 3, "preliminary": false, "losses": [ … ], "metrics": { … } }
+  ```
+- **A run's name** is its path under `results/`. It carries the campaign, the scenario version, the arm,
+  the model id and the repetition: the lineage `results.feature` @F5.1 asks every aggregate to show.
+- **Slices (T14):** a group whose model is not the campaign's default goes to `slices`, never to
+  `groups`, so a cross-model number cannot sit among same-model ones.
+- **Order:** groups by scenario, version, arm and model, runs by path, keys in a fixed order, and no
+  timestamp. Aggregated twice, the same bytes (REQ-SCO-03).
+
+### Every value with its runs and its `n` (REQ-FMT-07, experiment design §4.6)
+
+Each metric is one **Value**:
+
+```json
+{ "n": 3, "runs": [ … ], "values": [ … ], "min": …, "max": … }
+```
+
+- `values` is one entry per run, in the order of `runs`.
+- `min` and `max` are there only when `n ≥ 2`.
+- A group's `preliminary` is `n = 1`, and a value from a single run carries no range.
+- "Beyond variance" (n ≥ 3 and ranges that do not overlap) and per-category rows are the site's reading
+  of these values (F5.5, W11). The aggregate stores nothing derived that the site can compute from it.
+- **M-Q1 is kept as a tally** `{passed, total}`: its `min`/`max` are the runs with the lowest and
+  highest ratio (the first on a tie), and no float enters the file. The cost figures are the run's own
+  numbers.
+
+`metrics`, from what `score.json` holds today:
+
+- `m_q1.steps[k]`: M-Q1 at step k, with its suites, as Values;
+- `m_q1.final`: M-Q1 on the final snapshot, with its suites, as Values;
+- `holdout`: the same for the hold-out, apart (REQ-SCO-09). A run whose hold-out was not scored is left
+  out of the hold-out's Values and listed in `holdout.not_scored` with its reason. If none was scored,
+  the group's hold-out is `{ "scored": false, "reason": … }`, "not scored", never a zero.
+- `cost`: the run's M-K1 and M-K2 (`cost_eur`, `cost_usd`, the tokens by kind, `wall_time_ms`, `turns`,
+  `interventions`) as Values, each run keeping `cost_reported` beside its figure.
+- `regressions` (M-D3's step-to-step half, carried from task-032): per public suite and step, how many of
+  the suite's tests failed there and not at the previous step it is scored at. That is the step's
+  `failed` list minus the previous one's. S1's "Patch after step 4 as after step 3" is `patch` at step
+  4.
+
+  M-D3 as the experiment design defines it — tests that passed **on the seed** and fail at the end —
+  needs each test's result on the seed, which `score.json` does not keep. It is not computed here. For
+  S2 its regression suite passes on the seed by construction, so its failures at the end are M-D3. The
+  general metric is carried to W9, with the rest of the quality picture.
+
+### Losses — never skipped, never hidden (REQ-SCO-10, adr-004, @F3.6)
+
+`losses` lists each run that counts as a loss, with its reason:
+
+- **`expected failure (missing workflow-engine)`**: the run was executed and scored, and its measured
+  values stay in `values`. The loss is a mark for the reader and the site, which compare arms. It is not
+  a number changed.
+- **`final not reached`**, a run that did not complete: its final M-Q1 enters `values` as `{passed: 0,
+  total: <the suites' census total>}`. Leaving it out would make the arm look better for failing to
+  finish. The census total is the same for every run of a scenario version. A step not reached is left
+  out of that step's Values, named in the step's `not_reached` list, and is not a loss by itself.
+
+This is the reading of adr-004's "decides how `not_reached` counts — as a loss, like an expected
+failure", to be confirmed at review.
+
+### Acceptance and unit tests
+
+- **Acceptance, `results.test.ts`:**
+  - "Every aggregate links to the runs behind it": an execution of two scenarios in two arms, stored with
+    task-027's `storedRun` fixture generalised to several runs, scored with the doubles. Every Value of
+    `aggregate.json` names runs that exist under the execution, and `n` equals their number.
+  - "Dry runs never enter campaign results": the same, with scored dry runs of the same scenario under
+    `results/dry-runs/`. The aggregate names none of them, and `bench score dry-runs/<n>` writes no
+    `aggregate.json`.
+- **Acceptance, @F3.6:** the existing test goes on to aggregate. The wingfoil group lists the loss with
+  `missing workflow-engine`, and its values are there.
+- **Unit, `src/results/aggregate.ts`:**
+  - grouping, and the slice apart;
+  - Values: `n`, `min`/`max` only from 2;
+  - a not-reached final as a zero loss, and a not-reached step left out;
+  - the hold-out apart, "not scored" when so;
+  - step-to-step regressions;
+  - refusals: missing `score.json`, unknown version, hash mismatch;
+  - byte-identical twice.
+- **CLI:** the aggregate is written after a complete scoring, a stale one is removed after an incomplete
+  one, and a dry run gets none.
+
+### The W7 wave check, after this task (decision 4)
+
+In a temporary repository holding S1, S2 and the benchmark's arms, with the fake replaying S1's and
+S2's references (one script for both):
+
+1. `bench scenario dry-run` of S1 and S2 in the three arms: the costs the estimate needs.
+2. A campaign of S1 and S2 in the three arms, WingFoil `3df305e`: `bench campaign run`.
+3. `bench score <id>/1 --holdout ../WingFoil2-Benchmark-HoldOut`: every run scored, and the aggregate
+   written.
+
+Recorded in `rel-v0-1`'s W7 section, with the carry-overs to W8 and W9.
 
 ## Execution notes
 
@@ -86,3 +222,74 @@ Preliminary classification (confirmed in the design phase).
   fields checked, one commit `wf(task): submit <id>` with no bracket and no body. Observed: exit 0,
   empty stderr, 1 file, diff limited to `status: draft` → `status: pending`. Matches (subject without
   transition: N9).
+- `npx wingfoil memory approve … [pending → backlog]` → `dc3dc4f`, run by the approver.
+- Design committed by hand on `task/task-034-results-store-and-aggregation` (`9f2f75a`), so that `submit`
+  carries only the state change (N13).
+- `npx wingfoil memory submit task-034-results-store-and-aggregation` → `e466401`. Declared: `backlog →
+  in-progress`, one commit `wf(task): submit <id>`. Observed: exit 0, empty stderr, 1 file, diff limited
+  to `status: backlog` → `status: in-progress`. Matches (N9).
+- `npx wingfoil memory submit task-034-results-store-and-aggregation` → `0481397`. Declared: `in-progress →
+  in-review`, one commit `wf(task): submit <id>`. Observed: exit 0, empty stderr, 1 file, diff limited to
+  `status: in-progress` → `status: in-review`. Matches (N9).
+
+### Build
+
+Commits:
+
+- `b10eaa2`: the tests, red — no `aggregateExecution`, and F5.1's acceptance missing, which traceability
+  reported.
+- `0e757ab`: `src/results/aggregate.ts` and `bench score`'s aggregation.
+- `559905d`: requirements 1.11.
+
+**As designed**, with these points found in the build:
+
+- **`results/` reads `score.json` with a schema of its own.** REQ-ARC-02 lets `results` (the middle
+  layer) never import `scoring` (the top), so it reads the file as it reads `run.json`. The schema
+  covers only what aggregation uses.
+- **The group order** is a sort on the joined key (scenario, version, arm, model, NUL-separated), which
+  orders as the parts do. The first version had a comparator with an unreachable branch.
+- **The traceability matrix is not edited.** It is approved at 1.0. F5.1's row already names REQ-FMT-06
+  and REQ-FMT-07, and REQ-CLI-06's feature column in requirements 1.11 gains F5.1.
+- **`storedRun` writes several runs** — arm, repetition, and a `dry-runs/<n>` execution — into one
+  repository. Its `campaign.yaml` now names the default model, and a dry run's gets `dry-run.yaml`.
+- **Expectations that changed with the aggregate line:** four exact-output tests of `bench score` (unit,
+  acceptance @F3.5 and @F3.6) and W6's Docker test, which now also checks the aggregate of its real run.
+
+**Checks:**
+
+- `npm test`: 877/877 (+15). Coverage 99.17% statements, 94.89% branches, 100% lines.
+- `npm run lint`: clean.
+- `npm run test:bin`: 5/5.
+- `npm run test:docker`: 11/11, with no container and no `dry-` image left.
+
+**A rehearsal of the W7 wave check**, on this branch's built CLI, in a temporary repository with S1, S2
+and the benchmark's arms. The fake replays S1's reference and the hold-out's S2 reference, from one
+script, and `BENCH_WINGFOIL_REPO` points at `../WingFoil2`.
+
+1. Six dry runs, S1 and S2 in the three arms: `completed, 0.0000 USD` each (`results/dry-runs/1`–`6`).
+2. `bench campaign validate` → `campaign 27e28fe609f6 is valid (2 scenarios, 3 arms)`.
+3. `bench campaign run` → `6 runs completed, 0 failed`, cost 0.
+4. `bench score 27e28fe609f6/1 --holdout ../WingFoil2-Benchmark-HoldOut` → six lines, exit 0:
+   - S1: `step 01 12/12, step 02 105/108, step 03 108/108, step 04 123/123, final 135/135; hold-out final
+     33/33` in each arm;
+   - S2: `step 01 19/19, step 02 22/22, step 03 24/24, final 24/24; hold-out final 17/17` in each arm;
+   - then `aggregate: results/27e28fe609f6/1/aggregate.json (6 groups, 0 slices)`.
+5. The aggregate: six groups, each `n` 1 and `preliminary`, with no loss and the hold-out scored. The
+   regressions are all 0 — S1's `patch` at steps 3 and 4, and S2's suites from step to step. The file
+   names no dry run.
+6. Scored again: the same bytes. No `bench-` container left.
+
+The official check is made on main once this task is merged (kanban-delivery, deliver phase).
+
+No real agent, no spending. No `wingfoil` command in the build phase.
+
+### Review and approval
+
+- `npx wingfoil memory approve task-034-results-store-and-aggregation --reason "…"` → `45a5e31`, run by
+  the approver (`in-review → approved`, `Approver:`/`Reason:` trailers, only `status` changed). Matches.
+- Its reason records the review decisions, 2026-09-29, and is requirements 1.11's review decision:
+  - `aggregate.json` accepted;
+  - losses as designed: an expected failure keeps its measured values and is marked, and a final not
+    reached counts as nothing passed;
+  - M-D3 step to step here, the full M-D3 (tests that passed on the seed) carried to W9.
+
