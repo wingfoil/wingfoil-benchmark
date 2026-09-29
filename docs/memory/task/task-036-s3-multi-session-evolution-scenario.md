@@ -258,3 +258,9 @@ No real agent and no spending (W8 decision 5).
 - `npx wingfoil memory submit task-036-s3-multi-session-evolution-scenario` → `aeedd31`. Declared: `draft → pending`, required fields checked, one
   commit `wf(task): submit <id>`. Observed: exit 0, 1 file, diff limited to `status: draft` →
   `status: pending`. Matches (subject without transition: N9).
+- `npx wingfoil memory approve … [pending → backlog]` → `9af9c2c`, run by the approver.
+- Design committed by hand on `task/task-036-s3-multi-session-evolution-scenario` (`561e2f9`), in a
+  linked worktree with its own install (N13).
+- `npx wingfoil memory submit task-036-s3-multi-session-evolution-scenario` → `5cbd956`. Declared:
+  `backlog → in-progress`, one commit `wf(task): submit <id>`. Observed: exit 0, 1 file, diff limited to
+  `status: backlog` → `status: in-progress`. Matches (N9).
