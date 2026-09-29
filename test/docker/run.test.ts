@@ -144,13 +144,18 @@ describe('runs in a real container', () => {
     const scoreFile = join(runDir, 'score.json');
     const first = readFileSync(scoreFile);
     const score = JSON.parse(first.toString('utf8')) as {
-      scorer: { image: string; tsx: string; typescript: string };
+      scorer: Record<string, string>;
       steps: { suites: { failed: string[] }[] }[];
     };
     expect(score.scorer).toEqual({
       image: expect.stringMatching(/^bench-score:[0-9a-f]{12}$/),
       tsx: '4.23.15',
       typescript: '6.0.3',
+      // M-Q2's tools (task-041), as the image pins them.
+      eslint: '10.11.0',
+      typescript_eslint: '8.70.1',
+      jscpd: '5.3.3',
+      c8: '12.0.0',
     });
     expect(score.steps[0]?.suites[0]?.failed).toEqual([
       'oracle/public/cancel.test.ts > cancelling an order > marks a pending order as cancelled',
@@ -523,6 +528,16 @@ describe('runs in a real container', () => {
         steps: [{ n: 4, passed: true, where: { file: 'DECISIONS.md' } }],
       },
     ]);
+    // M-Q2 (task-041) by the real image on a project with no tests: its code measured, nothing covered.
+    const quality = score.m_q2 as {
+      measured: string[];
+      lint: { lines: number };
+      coverage: { covered: number; total: number };
+    };
+    expect(quality.measured).toEqual(['src/index.ts', 'src/rentals.ts']);
+    expect(quality.lint.lines).toBeGreaterThan(0);
+    expect(quality.coverage.covered).toBe(0);
+    expect(quality.coverage.total).toBeGreaterThan(0);
   }
 
   async function s8InArm(root: string, arm: string, execution: number): Promise<void> {
