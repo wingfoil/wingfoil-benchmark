@@ -228,3 +228,13 @@ On the final snapshot, compared with the seed:
 
 <!-- What happened while building: deviations, blockers, follow-ups (filed as elements, never left
      here). For every `wingfoil` command: declared vs observed behaviour. -->
+
+### WingFoil commands (declared vs observed)
+
+- `memory approve … [pending → backlog]` → `4347df5`, run by the approver. The W9 plan phase's commands
+  are recorded in task-039.
+- Design committed by hand (`a4dc83d`), then `node_modules/.bin/wingfoil memory submit
+  task-041-static-quality-metrics` in the task's worktree → `7816ccf`.
+  - Declared: `backlog → in-progress`, one commit `wf(task): submit <id>`.
+  - Observed: exit 0, 1 file, and a diff limited to `status: backlog` → `status: in-progress`.
+    Matches.
