@@ -67,7 +67,7 @@ function holdout(files: Record<string, string>): string {
 }
 
 /** The v0.1 scenarios authored so far: the rows of the @F6.x outline that can run. */
-const READY = ['S1'];
+const READY = ['S1', 'S2'];
 
 /** The WingFoil commit the fixture arms' harness resolves to (W3). */
 const WINGFOIL_SHA = '3df305ea198d7e2ca0da73bfb12b14af865e9922';
@@ -415,7 +415,7 @@ describe('scenarios.feature', () => {
   });
 
   it('@F6.1 @F6.2 @F6.3 @F6.8 Each v0.1 scenario is ready for a campaign', async () => {
-    // The rows of the outline authored so far (W7: S1; S2 with task-033; S3 and S8 in W8).
+    // The rows of the outline authored so far (W7: S1 and S2; S3 and S8 in W8).
     for (const id of READY) {
       // Given scenario <id> as specified, copied from this repository with the three arms
       const root = tempDir('bench-repo-');
@@ -465,5 +465,5 @@ describe('scenarios.feature', () => {
         expect(scored.stdout).toMatch(new RegExp(`^${id}@1\\.0 ${arm} fake-model r1: step 01 `));
       }
     }
-  }, 120_000); // The hidden tests really run, three suites on every snapshot of every arm: seconds.
+  }, 240_000); // The hidden tests really run, every suite on every snapshot of every arm: seconds.
 });

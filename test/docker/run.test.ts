@@ -360,96 +360,145 @@ describe('runs in a real container', () => {
   /** The WingFoil clone the WingFoil under test is built from (REQ-RUN-14): the one next to this repository. */
   const clone = process.env.BENCH_WINGFOIL_REPO ?? repoPath('../WingFoil2');
 
-  /** The hold-out repository, when this machine has one with S1's additions (K2). */
+  /** The hold-out repository, when this machine has one (K2): S1's additions, S2's answer key. */
   const holdoutRepo = process.env.BENCH_HOLDOUT_PATH ?? repoPath('../WingFoil2-Benchmark-HoldOut');
-  const hasS1Holdout = existsSync(join(holdoutRepo, 'scenarios', 'S1', '1.0'));
+  const hasHoldout = (id: string) => existsSync(join(holdoutRepo, 'scenarios', id, '1.0'));
+  /** S2's reference is its answer key, in the hold-out only (W7 decision 5). */
+  const s2Reference = join(holdoutRepo, 'reference', 'S2');
+
+  interface ScoreFile {
+    steps: { n: number; suites: { id: string; passed: number; total: number }[] }[];
+    final: { m_q1: { passed: number; total: number } };
+    holdout: { scored: boolean; final?: { m_q1: { passed: number; total: number } } };
+  }
 
   /**
-   * W7 (task-032): S1@1.0 dry-run in `arm` with the fake replaying S1's reference, then scored by the
-   * real scoring image — the wave check's half for S1 (W7 decision 4). No credential, no spending.
+   * W7 (task-032, task-033): `id`@1.0 dry-run in `arm` with the fake replaying its reference, then scored
+   * by the real scoring image, with the hold-out when there is one — the wave check's half (W7 decision
+   * 4). Returns each step's suites as `passed/total`, and the score. No credential, no spending.
    */
-  async function s1InArm(root: string, arm: string, execution: number): Promise<void> {
+  async function scoredInArm(
+    root: string,
+    id: string,
+    arm: string,
+    execution: number,
+  ): Promise<{ suites: Record<string, string>[]; score: ScoreFile }> {
     let output = '';
     const code = await main(
-      ['scenario', 'dry-run', 'S1@1.0', '--arm', arm],
+      ['scenario', 'dry-run', `${id}@1.0`, '--arm', arm],
       { stdout: (text) => (output += text), stderr: (text) => (output += text) },
       undefined,
       root,
     );
     expect({ code, output }).toEqual({
       code: 0,
-      output: expect.stringContaining(`dry run S1@1.0 in ${arm}: completed`),
+      output: expect.stringContaining(`dry run ${id}@1.0 in ${arm}: completed`),
     });
     images.push(/dry run (dry-[0-9a-f]{12}), execution/.exec(output)?.[1] ?? '');
 
     let scored = '';
     const scoreCode = await main(
-      ['score', `dry-runs/${execution}`, ...(hasS1Holdout ? ['--holdout', holdoutRepo] : [])],
+      ['score', `dry-runs/${execution}`, ...(hasHoldout(id) ? ['--holdout', holdoutRepo] : [])],
       { stdout: (text) => (scored += text), stderr: (text) => (scored += text) },
       undefined,
       root,
     );
     expect(scoreCode).toBe(0);
-    const score = JSON.parse(
-      readFileSync(
-        join(
-          root,
-          'results',
-          'dry-runs',
-          String(execution),
-          'runs',
-          'S1@1.0',
-          arm,
-          'fake-model',
-          'r1',
-          'score.json',
-        ),
-        'utf8',
-      ),
-    ) as {
-      steps: { n: number; suites: { id: string; passed: number; total: number }[] }[];
-      final: { m_q1: { passed: number; total: number } };
-      holdout: { scored: boolean; final?: { m_q1: { passed: number; total: number } } };
-    };
+    const file = join(
+      root,
+      'results',
+      'dry-runs',
+      String(execution),
+      'runs',
+      `${id}@1.0`,
+      arm,
+      'fake-model',
+      'r1',
+    );
+    const score = JSON.parse(readFileSync(join(file, 'score.json'), 'utf8')) as ScoreFile;
+    if (hasHoldout(id)) {
+      // Counts only, all passing; no hold-out name reaches the output.
+      expect(score.holdout.scored).toBe(true);
+      expect(score.holdout.final?.m_q1.passed).toBe(score.holdout.final?.m_q1.total);
+      expect(scored).not.toMatch(/holdout\/|\.holdout/);
+    }
     const suites = score.steps.map((step) =>
       Object.fromEntries(step.suites.map((suite) => [suite.id, `${suite.passed}/${suite.total}`])),
     );
+    return { suites, score };
+  }
+
+  /** A repository with scenario `id` and the benchmark's own arms, the fake replaying `reference`. */
+  function scenarioRepository(id: string, reference: string, harnesses: Record<string, unknown>): string {
+    const root = tempDir('bench-docker-');
+    cpSync(repoPath(`scenarios/${id}`), join(root, 'scenarios', id), { recursive: true });
+    cpSync(repoPath('scenarios/leak-scan.yaml'), join(root, 'scenarios', 'leak-scan.yaml'));
+    cpSync(repoPath('arms'), join(root, 'arms'), { recursive: true });
+    writeDryRunProfile(root, { ...dryRunProfileYaml(), harnesses, currency: { usd_to_eur: 1 } });
+    process.env.BENCH_FAKE_SCRIPT = referenceScript(id, reference);
+    return root;
+  }
+
+  async function s1InArm(root: string, arm: string, execution: number): Promise<void> {
+    const { suites, score } = await scoredInArm(root, 'S1', arm, execution);
     // Pointer after step 1; Patch rising from step 2 to step 3, and kept at step 4; Merge Patch.
     expect(suites[0]).toEqual({ pointer: '12/12' });
     expect(suites[1]?.patch).not.toBe('108/108');
     expect(suites[2]).toEqual({ patch: '108/108' });
     expect(suites[3]).toEqual({ patch: '108/108', 'merge-patch': '15/15' });
     expect(score.final.m_q1).toEqual({ passed: 135, total: 135 });
-    if (hasS1Holdout) {
-      // Counts only, all passing; no hold-out name reaches the output.
-      expect(score.holdout.scored).toBe(true);
-      expect(score.holdout.final?.m_q1.passed).toBe(score.holdout.final?.m_q1.total);
-      expect(scored).not.toMatch(/holdout\/|\.holdout/);
-    }
   }
 
-  /** A repository with S1 and the benchmark's own arms. */
-  function s1Repository(harnesses: Record<string, unknown>): string {
-    const root = tempDir('bench-docker-');
-    cpSync(repoPath('scenarios/S1'), join(root, 'scenarios', 'S1'), { recursive: true });
-    cpSync(repoPath('scenarios/leak-scan.yaml'), join(root, 'scenarios', 'leak-scan.yaml'));
-    cpSync(repoPath('arms'), join(root, 'arms'), { recursive: true });
-    writeDryRunProfile(root, { ...dryRunProfileYaml(), harnesses, currency: { usd_to_eur: 1 } });
-    process.env.BENCH_FAKE_SCRIPT = referenceScript('S1', repoPath('test/fixtures/reference/S1'));
-    return root;
+  async function s2InArm(root: string, arm: string, execution: number): Promise<void> {
+    const { suites, score } = await scoredInArm(root, 'S2', arm, execution);
+    // Each report's tests green from its step on; the rules and the false report's behaviour kept.
+    expect(suites).toEqual([
+      { regression: '16/16', 'reports-1': '3/3' },
+      { regression: '16/16', 'reports-1': '3/3', 'reports-2': '2/2', 'false-report': '1/1' },
+      {
+        regression: '16/16',
+        'reports-1': '3/3',
+        'reports-2': '2/2',
+        'false-report': '1/1',
+        'reports-3': '2/2',
+      },
+    ]);
+    expect(score.final.m_q1).toEqual({ passed: 24, total: 24 });
   }
+
+  const s1Reference = repoPath('test/fixtures/reference/S1');
+  const withClone = () => {
+    process.env.BENCH_WINGFOIL_REPO = clone;
+    return dryRunProfileYaml().harnesses as Record<string, unknown>;
+  };
 
   it('W7 (task-032): S1 in the baseline arm, scored by its real oracle', async () => {
-    await s1InArm(s1Repository({}), 'baseline', 1);
+    await s1InArm(scenarioRepository('S1', s1Reference, {}), 'baseline', 1);
   });
 
   it.skipIf(!existsSync(join(clone, '.git')))(
     'W7 (task-032): S1 in the baseline-docs and wingfoil arms, scored by its real oracle',
     async () => {
-      process.env.BENCH_WINGFOIL_REPO = clone;
-      const root = s1Repository(dryRunProfileYaml().harnesses as Record<string, unknown>);
+      const root = scenarioRepository('S1', s1Reference, withClone());
       await s1InArm(root, 'baseline-docs', 1);
       await s1InArm(root, 'wingfoil', 2);
+    },
+  );
+
+  // S2's reference is the answer key: without the hold-out there is nothing to replay (decision 5).
+  it.skipIf(!existsSync(s2Reference))(
+    'W7 (task-033): S2 in the baseline arm, scored by its real oracle',
+    async () => {
+      await s2InArm(scenarioRepository('S2', s2Reference, {}), 'baseline', 1);
+    },
+  );
+
+  it.skipIf(!existsSync(s2Reference) || !existsSync(join(clone, '.git')))(
+    'W7 (task-033): S2 in the baseline-docs and wingfoil arms, scored by its real oracle',
+    async () => {
+      const root = scenarioRepository('S2', s2Reference, withClone());
+      await s2InArm(root, 'baseline-docs', 1);
+      await s2InArm(root, 'wingfoil', 2);
     },
   );
 

@@ -56,6 +56,8 @@ export function referenceScript(id: string, dir: string): string {
 export function referenceSnapshot(seedDir: string, dir: string, upTo: number): string {
   const snapshot = tempDir('bench-snapshot-');
   cpSync(seedDir, snapshot, { recursive: true });
-  for (const stepDir of referenceSteps(dir).slice(0, upTo)) cpSync(stepDir, snapshot, { recursive: true });
+  // Step 0 is the seed itself, whether or not the reference is at hand.
+  const steps = upTo === 0 ? [] : referenceSteps(dir).slice(0, upTo);
+  for (const stepDir of steps) cpSync(stepDir, snapshot, { recursive: true });
   return snapshot;
 }
