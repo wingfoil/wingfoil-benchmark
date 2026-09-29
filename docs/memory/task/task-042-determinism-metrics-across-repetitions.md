@@ -310,3 +310,7 @@ step only.
   - Declared: `draft → pending`, required fields checked, one commit `wf(task): submit <id>`.
   - Observed: exit 0 each time, 1 file, and a diff limited to `status: draft` → `status: pending`.
     Matches (the subject names no transition: N9).
+- `node_modules/.bin/wingfoil memory submit task-042-determinism-metrics-across-repetitions` (`f71c04c`),
+  in the worktree of branch `task/task-042-determinism-metrics-across-repetitions`.
+  - Declared: `backlog → in-progress`, one commit `wf(task): submit <id>`.
+  - Observed: exit 0, 1 file, a diff limited to `status: backlog` → `status: in-progress`. Matches.
