@@ -1,7 +1,7 @@
 import { copyFileSync, cpSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { stringify } from 'yaml';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { main } from '../../src/cli/index.js';
 import { checkCampaign, runCampaign } from '../../src/runner/index.js';
@@ -10,7 +10,8 @@ import { loadScenario } from '../../src/scenario/index.js';
 import { writeArmsNamed } from '../support/arm-fixture.js';
 import { completeCampaignYaml, writeRepo } from '../support/campaign-fixture.js';
 import { writeDryRunProfile } from '../support/dry-run-fixture.js';
-import { doubles, invocationOf } from '../support/runner-doubles.js';
+import { doubles, fakeBuild, invocationOf } from '../support/runner-doubles.js';
+import { localScoringDocker } from '../support/local-scoring.js';
 import { repoPath } from '../support/paths.js';
 import { tempDir, writeScenario } from '../support/scenario-fixture.js';
 import {
@@ -65,6 +66,25 @@ function holdout(files: Record<string, string>): string {
   return root;
 }
 
+/** The v0.1 scenarios authored so far: the rows of the @F6.x outline that can run. */
+const READY = ['S1'];
+
+/** The WingFoil commit the fixture arms' harness resolves to (W3). */
+const WINGFOIL_SHA = '3df305ea198d7e2ca0da73bfb12b14af865e9922';
+
+/** Any `bench` command in `root`, with `ports` when given. */
+async function cli(root: string, argv: readonly string[], ports?: Parameters<typeof main>[2]) {
+  let stdout = '';
+  let stderr = '';
+  const code = await main(
+    [...argv],
+    { stdout: (text) => (stdout += text), stderr: (text) => (stderr += text) },
+    ports,
+    root,
+  );
+  return { code, stdout, stderr };
+}
+
 async function validate(root: string, ...argv: string[]) {
   let stdout = '';
   let stderr = '';
@@ -81,6 +101,10 @@ async function validate(root: string, ...argv: string[]) {
 }
 
 describe('scenarios.feature', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it('@F3.1 A scenario declares everything the runner and the scorer need', () => {
     const root = writeScenario();
     const dir = join(root, 'S9', '1.0');
@@ -388,5 +412,56 @@ describe('scenarios.feature', () => {
 
     // And the stored results keep pointing to version 1.0
     expect(readFileSync(recordFile, 'utf8')).toBe(stored);
+  });
+
+  it('@F6.1 @F6.2 @F6.3 @F6.8 Each v0.1 scenario is ready for a campaign', async () => {
+    // The rows of the outline authored so far (W7: S1; S2 with task-033; S3 and S8 in W8).
+    for (const id of READY) {
+      // Given scenario <id> as specified, copied from this repository with the three arms
+      const root = tempDir('bench-repo-');
+      cpSync(repoPath(`scenarios/${id}`), join(root, 'scenarios', id), { recursive: true });
+      copyFileSync(repoPath('scenarios/leak-scan.yaml'), join(root, 'scenarios', 'leak-scan.yaml'));
+      writeArmsNamed(root, ['baseline', 'baseline-docs', 'wingfoil']);
+      writeDryRunProfile(root);
+      vi.stubEnv('BENCH_WINGFOIL_REPO', '/clones/wingfoil');
+      vi.stubEnv('BENCH_HOLDOUT_PATH', '');
+
+      // When the maintainer validates it
+      const validated = await cli(root, ['scenario', 'validate', `${id}@1.0`]);
+      // Then validation passes
+      expect(validated).toEqual({
+        code: 0,
+        stdout: `scenario ${id}@1.0 is valid (hold-out: not configured)\n`,
+        stderr: '',
+      });
+
+      for (const [index, arm] of ['baseline', 'baseline-docs', 'wingfoil'].entries()) {
+        // When the maintainer dry-runs it in each of the three arms — the agent and the containers
+        // doubled, the workspace's git real, so that the run stores patches a snapshot is rebuilt from
+        const run = doubles({ commits: { '3df305e': WINGFOIL_SHA }, onRunOnce: fakeBuild });
+        const dryRun = await cli(root, ['scenario', 'dry-run', `${id}@1.0`, '--arm', arm], {
+          docker: run.docker,
+          agent: run.agent,
+          git: gitCli(systemProcess),
+        });
+        expect(dryRun.code).toBe(0);
+        // Then every arm has a recorded dry-run cost
+        const execution = join(root, 'results', 'dry-runs', String(index + 1));
+        const record = JSON.parse(
+          readFileSync(join(execution, 'runs', `${id}@1.0`, arm, 'fake-model', 'r1', 'run.json'), 'utf8'),
+        ) as { dry_run: boolean; steps: { usage: { costUsd: number } }[] };
+        expect(record.dry_run).toBe(true);
+        expect(record.steps.every((step) => typeof step.usage.costUsd === 'number')).toBe(true);
+
+        // And the public oracle scores the dry run without errors — its hidden tests really run
+        const scored = await cli(root, ['score', `dry-runs/${index + 1}`], {
+          docker: localScoringDocker(),
+          git: gitCli(systemProcess),
+          agent: NO_AGENT,
+        });
+        expect(scored).toMatchObject({ code: 0, stderr: '' });
+        expect(scored.stdout).toMatch(new RegExp(`^${id}@1\\.0 ${arm} fake-model r1: step 01 `));
+      }
+    }
   });
 });
