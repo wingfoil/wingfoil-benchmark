@@ -224,3 +224,9 @@ from another user.
   fields checked, one commit `wf(task): submit <id>` with no bracket and no body. Observed: exit 0,
   empty stderr, 1 file, diff limited to `status: draft` → `status: pending`. Matches (subject without
   transition: N9).
+- `npx wingfoil memory approve … [pending → backlog]` → `ad9164e`, run by the approver.
+- Design committed by hand on `task/task-033-s2-injected-bug-scenario` (`8c5f3ff`), so that `submit`
+  carries only the state change (N13).
+- `npx wingfoil memory submit task-033-s2-injected-bug-scenario` → `6f7cb1e`. Declared: `backlog →
+  in-progress`, one commit `wf(task): submit <id>`. Observed: exit 0, empty stderr, 1 file, diff limited
+  to `status: backlog` → `status: in-progress`. Matches (N9).
