@@ -298,3 +298,9 @@ No real agent and no spending.
 - `npx wingfoil memory submit task-038-s8-directive-compliance-scenario` → `f32ea92`. Declared: `draft → pending`, required fields checked, one
   commit `wf(task): submit <id>`. Observed: exit 0, 1 file, diff limited to `status: draft` →
   `status: pending`. Matches (subject without transition: N9).
+- `npx wingfoil memory approve … [pending → backlog]` → `0092a6a`, run by the approver.
+- Design committed by hand on `task/task-038-s8-directive-compliance-scenario` (`d1039d9`), in a linked
+  worktree with its own install (N13).
+- `npx wingfoil memory submit task-038-s8-directive-compliance-scenario` → `82b1ea8`. Declared: `backlog →
+  in-progress`, one commit `wf(task): submit <id>`. Observed: exit 0, 1 file, diff limited to `status:
+  backlog` → `status: in-progress`. Matches (N9).
