@@ -333,3 +333,11 @@ Commits on `task/task-041-static-quality-metrics`:
   - Observed: exactly that, with 1 file.
 - The review decision of requirements 1.16 and adr-004 amendment 3 is the approver's reason: "requirements
   1.16 (REQ-SCO-04) and adr-004 amendment 3 accepted". Both name `11d69f4`.
+
+### Delivery
+
+- `git merge --no-ff task/task-041-static-quality-metrics` on main → `cef1db9`.
+- `npx wingfoil memory submit task-041-static-quality-metrics` on main → `8ae47fd`.
+  - Declared: `approved → done`, one commit.
+  - Observed: exit 0, 1 file, and a diff limited to `status: approved` → `status: done`. Matches.
+- Last task of W9. The wave check follows, recorded in rel-v0-1.
