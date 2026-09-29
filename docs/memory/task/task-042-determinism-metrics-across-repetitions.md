@@ -2,12 +2,13 @@
 id: task-042-determinism-metrics-across-repetitions
 type: task
 title: "Determinism metrics across repetitions"
-status: in-review
+status: in-progress
 release: v0.1
 wave: W10
 features: [F4.5]
 acceptance: [scoring.feature]
 requirements: [REQ-SCO-03, REQ-SCO-05, REQ-SCO-07, REQ-SCO-09, REQ-FMT-07]
+rejection_reason: "independent review: interface.mjs private parameter properties, namespaces, overload implementations and function-valued expressions; missing tests (scenario_hash pin, mixed older runs, pins-differ line, S2 in wingfoil)"
 ---
 
 ## Context
