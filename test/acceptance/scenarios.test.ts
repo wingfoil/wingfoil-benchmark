@@ -481,5 +481,5 @@ describe('scenarios.feature', () => {
         expect(scored.stdout).toMatch(new RegExp(`^${id}@1\\.0 ${arm} fake-model r1: step 01 `));
       }
     }
-  }, 240_000); // The hidden tests really run, every suite on every snapshot of every arm: seconds.
+  }, 600_000); // The hidden tests really run, every suite on every snapshot of every arm: minutes (173 s alone with S1–S3).
 });
