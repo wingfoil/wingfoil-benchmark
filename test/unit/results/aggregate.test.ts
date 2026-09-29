@@ -29,6 +29,8 @@ interface RunSpec {
   readonly costReported?: boolean;
   /** The hash score.json records, when it differs from run.json's. */
   readonly scoredHash?: string;
+  /** score.json's `checks` (task-035); absent, the run was scored before checks were. */
+  readonly checks?: readonly unknown[];
 }
 
 const tally = (suites: readonly Suite[]) => ({
@@ -104,6 +106,7 @@ function execution(runs: readonly RunSpec[], pins = 'models:\n  default: model-a
                     m_q1: tally(run.holdout.final),
                   },
                 },
+        ...(run.checks === undefined ? {} : { checks: run.checks }),
         cost: {
           usd_to_eur: 0.5,
           steps: [],
@@ -250,6 +253,61 @@ describe('aggregateExecution (F5.1, REQ-FMT-07)', () => {
       { suite: 'p', step: 2, value: { n: 1, runs: [name('baseline')], values: [0] } },
       { suite: 'p', step: 3, value: { n: 1, runs: [name('baseline')], values: [1] } },
     ]);
+  });
+
+  it('keeps each check per step as a tally of one, with its runs, and the runs that never reached it (task-035)', () => {
+    const passed = (n: number) => ({ n, passed: true, where: { file: 'NOTES.md' } });
+    const failed = (n: number) => ({ n, passed: false });
+    const dir = execution([
+      {
+        arm: 'baseline',
+        r: 1,
+        steps: [[s('a', 1, 1)], 'not reached'],
+        final: 'not reached',
+        checks: [{ id: 'dup', kind: 'content', steps: [passed(1), { n: 2, not_reached: true }] }],
+      },
+      {
+        arm: 'baseline',
+        r: 2,
+        steps: [[s('a', 1, 1)], [s('a', 1, 1)]],
+        checks: [{ id: 'dup', kind: 'content', steps: [failed(1), passed(2)] }],
+      },
+      // Scored before task-035: no `checks` key, so nothing to count, and no error.
+      { arm: 'baseline', r: 3, steps: [[s('a', 1, 1)], [s('a', 1, 1)]] },
+    ]);
+    const [group] = aggregate(dir).groups;
+    expect(group?.metrics.checks).toEqual([
+      {
+        id: 'dup',
+        kind: 'content',
+        steps: [
+          {
+            step: 1,
+            passed: {
+              n: 2,
+              runs: [name('baseline', 1), name('baseline', 2)],
+              values: [
+                { passed: 1, total: 1 },
+                { passed: 0, total: 1 },
+              ],
+              min: { passed: 0, total: 1 },
+              max: { passed: 1, total: 1 },
+            },
+            not_reached: [],
+          },
+          {
+            step: 2,
+            passed: { n: 1, runs: [name('baseline', 2)], values: [{ passed: 1, total: 1 }] },
+            not_reached: [name('baseline', 1)],
+          },
+        ],
+      },
+    ]);
+  });
+
+  it('lists no check for a group none of whose runs has one', () => {
+    const [group] = aggregate(execution([{ arm: 'baseline', steps: [[s('a', 1, 1)]], checks: [] }])).groups;
+    expect(group?.metrics.checks).toEqual([]);
   });
 
   it('keeps the cost figures of each run, naming the runs whose cost is a bound', () => {

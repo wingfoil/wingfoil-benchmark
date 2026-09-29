@@ -111,6 +111,8 @@ export function doubles(
     messageOf?: (request: AgentRequest) => string | undefined;
     /** What a patch holds; by default a line naming the directory and the two trees. */
     patchOf?: (directory: string, from: string, to: string) => string;
+    /** The messages of the commits a step made (task-035); by default none. */
+    messagesOf?: (directory: string, from: string) => readonly string[];
     /** Makes one Docker or git call fail: `create`, `start`, `remove` and `init` break a run
      * outside its steps, `commit` and `patch` break it inside one. */
     failing?: {
@@ -151,6 +153,7 @@ export function doubles(
   let containers = 0;
   let patches = 0;
   let trees = 0;
+  let heads = 0;
   let lastCommit = '';
   const docker: DockerPort = {
     build: (request) => {
@@ -245,9 +248,15 @@ export function doubles(
       recorded.gitCalls.push(`archive ${repository} ${sha}`);
       return Promise.resolve(options.archive?.(file));
     },
+    // Each commit different and in call order, so a test can tell which one a step's messages start from.
     head: (directory) => {
+      heads += 1;
       recorded.gitCalls.push(`head ${directory}`);
-      return Promise.resolve('5e7a9c0ffee5e7a9c0ffee5e7a9c0ffee5e7a9c0');
+      return Promise.resolve(`commit-${heads}`.padEnd(40, '0'));
+    },
+    messagesSince: (directory, from) => {
+      recorded.gitCalls.push(`messages ${directory} ${from}`);
+      return Promise.resolve([...(options.messagesOf?.(directory, from) ?? [])]);
     },
     // Recorded in the same transcript as the commits, so their order is pinned: a patch read before
     // its commit would hold the previous step's snapshot, and every scored step would slip by one.

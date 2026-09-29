@@ -103,6 +103,8 @@ describe('scoreRun (F4.1, REQ-SCO-01–03)', () => {
         },
         // Not given one: the score says so, rather than look like one that includes it (F3.5).
         holdout: { scored: false, reason: 'not configured' },
+        // T3 declares no check (task-035): the key is there, empty.
+        checks: [],
         // Not marked (F3.6): the key is there, so aggregation never infers it from an absent one.
         expected_failure: null,
         // M-K1 and M-K2 (F4.3): their own tests are in cost.test.ts.
@@ -281,6 +283,96 @@ describe('scoreSummary', () => {
         expected_failure: null,
       }),
     ).toBe('no hidden tests');
+  });
+});
+
+describe('checks in score.json (REQ-SCO-06, task-035)', () => {
+  const CHECKS = {
+    'oracle/checks/refusal.yaml': 'kind: content\nsteps: [2]\npatterns:\n  - [already cancelled]\n',
+    'oracle/checks/shipping.yaml':
+      'kind: unchanged\nsteps: [1, 2]\nregions:\n  - { file: src/orders.ts, lines: [8, 10] }\n',
+  };
+
+  it('scores every check on its steps, after the hold-out, in declaration order', async () => {
+    const fixture = await storedRun({
+      checks: CHECKS,
+      steps: [CANCEL, [{ 'NOTES.md': 'A second cancel of an order already cancelled is refused.\n' }]],
+    });
+
+    const { result } = await score(fixture);
+
+    if (!result.ok) throw new Error(JSON.stringify(result.issues));
+    expect(Object.keys(result.value)).toEqual([
+      'score_version',
+      'scenario',
+      'version',
+      'scenario_hash',
+      'scorer',
+      'steps',
+      'final',
+      'holdout',
+      'checks',
+      'cost',
+      'expected_failure',
+    ]);
+    // CANCEL rewrites orders.ts without `ship`: the region is gone from step 1 on.
+    expect(result.value.checks).toEqual([
+      { id: 'refusal', kind: 'content', steps: [{ n: 2, passed: true, where: { file: 'NOTES.md' } }] },
+      {
+        id: 'shipping',
+        kind: 'unchanged',
+        steps: [
+          { n: 1, passed: false, region: 0 },
+          { n: 2, passed: false, region: 0 },
+        ],
+      },
+    ]);
+  });
+
+  it('refuses to score a content check on a run that recorded no commit messages', async () => {
+    const fixture = await storedRun({ checks: CHECKS, steps: [{}, CANCEL], withoutMessages: true });
+    const { result } = await score(fixture);
+    expect(result).toEqual({
+      ok: false,
+      issues: [
+        {
+          path: 'steps/02/commits.json',
+          message: 'is missing: the run was stored before steps recorded their commit messages (task-035)',
+        },
+      ],
+    });
+  });
+
+  it('says the checks in the summary line: passed over scored, across checks and steps', () => {
+    const base = {
+      score_version: 1,
+      scenario: 'T3',
+      version: '1.0',
+      scenario_hash: 'h',
+      scorer: { image: 'i', tsx: 't' },
+      steps: [{ n: 1, suites: [] }],
+      final: { step: 1, suites: [] },
+      holdout: { scored: false, reason: 'none declared' },
+      cost: NO_COST,
+      expected_failure: null,
+    } as const;
+    expect(
+      scoreSummary({
+        ...base,
+        checks: [
+          {
+            id: 'a',
+            kind: 'content',
+            steps: [
+              { n: 1, passed: true, where: { commit: 1 } },
+              { n: 2, not_reached: true },
+            ],
+          },
+          { id: 'b', kind: 'unchanged', steps: [{ n: 1, passed: false, region: 0 }] },
+        ],
+      }),
+    ).toBe('no hidden tests; checks 1/2');
+    expect(scoreSummary({ ...base, checks: [] })).toBe('no hidden tests');
   });
 });
 

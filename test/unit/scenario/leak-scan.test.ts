@@ -105,6 +105,26 @@ describe('scanScenario (REQ-FMT-08)', () => {
     expect(JSON.stringify(issues)).not.toContain('cancelled');
   });
 
+  it("leaves a check's patterns out of the literal scan: they are the prompt's own words (task-035)", () => {
+    const { scenario } = t3((dir) => {
+      const yaml = join(dir, 'scenario.yaml');
+      writeFileSync(
+        yaml,
+        readFileSync(yaml, 'utf8').replace(
+          'holdout: true',
+          '  checks: [oracle/checks/second.yaml]\nholdout: true',
+        ),
+      );
+      mkdirSync(join(dir, 'oracle', 'checks'));
+      writeFileSync(
+        join(dir, 'oracle', 'checks', 'second.yaml'),
+        "kind: content\nsteps: [2]\npatterns:\n  - ['second cancellation']\n  - ['already refused']\n",
+      );
+    });
+    expect(scenario.oracle.checks.map((check) => check.id)).toEqual(['second']);
+    expect(scanScenario(scenario, DECLARATIONS)).toEqual([]);
+  });
+
   it('scans every suite of the oracle, not only the first (dl-001)', () => {
     const { scenario } = t3((dir) => {
       const yaml = join(dir, 'scenario.yaml');

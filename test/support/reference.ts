@@ -1,5 +1,7 @@
-import { cpSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
+
+import { gitCli, systemProcess } from '../../src/core/index.js';
 
 import { tempDir } from './scenario-fixture.js';
 
@@ -60,4 +62,41 @@ export function referenceSnapshot(seedDir: string, dir: string, upTo: number): s
   const steps = upTo === 0 ? [] : referenceSteps(dir).slice(0, upTo);
   for (const stepDir of steps) cpSync(stepDir, snapshot, { recursive: true });
   return snapshot;
+}
+
+/**
+ * A run of the reference stored as the runner stores one (task-035): the seed committed, then each
+ * step's files laid over it — and `edit`, which may change the workspace to make a variant — committed,
+ * with its patch from the previous snapshot and its `commits.json`, and its snapshot as a directory.
+ * What scoring's checks read, without a container or a fake agent.
+ */
+export async function referenceRun(
+  seedDir: string,
+  dir: string,
+  edit: (n: number, workspace: string) => void = () => undefined,
+): Promise<{ runDir: string; snapshots: ReadonlyMap<number, string> }> {
+  const git = gitCli(systemProcess);
+  const workspace = tempDir('bench-reference-ws-');
+  const runDir = tempDir('bench-reference-run-');
+  cpSync(seedDir, workspace, { recursive: true });
+  await git.init(workspace);
+  await git.commitAll(workspace, 'seed');
+  let previous = await git.tree(workspace, 'HEAD');
+  const snapshots = new Map<number, string>();
+  for (const [index, stepDir] of referenceSteps(dir).entries()) {
+    const number = String(index + 1).padStart(2, '0');
+    cpSync(stepDir, workspace, { recursive: true });
+    edit(index + 1, workspace);
+    await git.commitAll(workspace, `step ${number}`, { allowEmpty: true });
+    const tree = await git.tree(workspace, 'HEAD');
+    const stepOut = join(runDir, 'steps', number);
+    mkdirSync(stepOut, { recursive: true });
+    writeFileSync(join(stepOut, 'diff.patch'), await git.patchOf(workspace, previous, tree));
+    writeFileSync(join(stepOut, 'commits.json'), '{\n  "messages": []\n}\n');
+    const snapshot = tempDir('bench-reference-snap-');
+    cpSync(workspace, snapshot, { recursive: true, filter: (source) => source !== join(workspace, '.git') });
+    snapshots.set(index + 1, snapshot);
+    previous = tree;
+  }
+  return { runDir, snapshots };
 }
