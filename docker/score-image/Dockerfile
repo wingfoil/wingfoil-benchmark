@@ -1,5 +1,5 @@
 # The image hidden tests run in (REQ-SCO-01, REQ-SCO-02, task-027): never a run's image. It holds the
-# run image's pinned Node, tsx and TypeScript at a fixed path with their lockfile, the benchmark's node:test reporter, its AST checks
+# run image's pinned Node, tsx and TypeScript at a fixed path with their lockfile, the benchmark's node:test reporter, its AST checks,
 # its static-quality measure (M-Q2: ESLint, jscpd, c8) and its public-interface extraction (M-R2, with
 # the same TypeScript)
 # — no agent, no git, no harness. Its tag is the SHA-256 of this directory, so any change here is a new
