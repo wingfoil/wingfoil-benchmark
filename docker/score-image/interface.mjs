@@ -7,9 +7,10 @@
 // Every exported declaration is one entry, `<file>: <signature>`: the declaration with its bodies and
 // initializers removed, printed by the compiler's printer without comments, its whitespace collapsed. A
 // class keeps its members that are not private, and a private parameter property is a plain parameter;
-// an overload's implementation is left out; a namespace keeps its exported members. A value that is a
-// function or class literal, behind parentheses or `satisfies` or as a default export, keeps its
-// parameters and types; one asserted `as T` has the type T. A file that does not parse is one entry,
+// an overload's implementation is left out, for functions, methods and constructors alike, a static
+// member apart from an instance one; a namespace keeps its exported members, and an ambient one all of
+// them. A value that is a function or class literal, behind parentheses or `satisfies` or as a default
+// export, keeps its parameters and types; one asserted `as T`, behind `satisfies` too, has the type T. A file that does not parse is one entry,
 // `<file>: (does not parse)`. The entries are printed sorted by code unit, without duplicates, one JSON string per line.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -56,21 +57,32 @@ function publicParameters(parameters) {
   );
 }
 
+/** A callable's name as callers see it: its text for a plain, quoted or numeric name; static apart. */
+function nameOf(node) {
+  const name = node.name;
+  const text =
+    name === undefined
+      ? 'default'
+      : ts.isIdentifier(name) || ts.isStringLiteral(name) || ts.isNumericLiteral(name)
+        ? name.text
+        : name.getText();
+  return `${hasModifier(node, ts.SyntaxKind.StaticKeyword) ? 'static ' : ''}${text}`;
+}
+
+/** A function, method or constructor: the declarations that can be overloaded. */
+const isCallable = (node) =>
+  ts.isFunctionDeclaration(node) || ts.isMethodDeclaration(node) || ts.isConstructorDeclaration(node);
+
 /**
- * The names of the overloaded functions or methods among `nodes`: those declared without a body. Their
- * implementation, which has one, is hidden from callers.
+ * The overloaded callables among `nodes`, by {@link nameOf}: those declared without a body. Their
+ * implementation, which has one, is hidden from callers. An abstract or ambient declaration has no body
+ * and no implementation, and hides nothing.
  */
 function overloaded(nodes) {
-  return new Set(
-    nodes
-      .filter((n) => (ts.isFunctionDeclaration(n) || ts.isMethodDeclaration(n)) && n.body === undefined)
-      .map((n) => n.name?.getText()),
-  );
+  return new Set(nodes.filter((n) => isCallable(n) && n.body === undefined).map(nameOf));
 }
 const isImplementation = (node, names) =>
-  (ts.isFunctionDeclaration(node) || ts.isMethodDeclaration(node)) &&
-  node.body !== undefined &&
-  names.has(node.name?.getText());
+  isCallable(node) && node.body !== undefined && names.has(nameOf(node));
 
 /** A class's members as the interface sees them. */
 function members(list) {
@@ -127,10 +139,12 @@ function unwrapped(expression) {
   return e;
 }
 
-/** The type an expression is asserted to have (`as T`, `<T>`), which is what its users see. */
+/** The type an expression is asserted to have (`as T`, `<T>`, behind `satisfies`), which is what its users see. */
 function asserted(expression) {
   let e = expression;
-  while (e !== undefined && ts.isParenthesizedExpression(e)) e = e.expression;
+  while (e !== undefined && (ts.isParenthesizedExpression(e) || ts.isSatisfiesExpression(e))) {
+    e = e.expression;
+  }
   return e !== undefined &&
     (ts.isAsExpression(e) || ts.isTypeAssertionExpression(e)) &&
     !ts.isConstTypeReference(e.type)
@@ -178,28 +192,33 @@ function value(expression) {
   return undefined;
 }
 
-/** A namespace's body as the interface sees it: its exported members, nested namespaces included. */
-function namespaceBody(body) {
+/**
+ * A namespace's body as the interface sees it: its exported members, nested namespaces included. In an
+ * ambient (`declare`) namespace every member is exported, with or without the keyword.
+ */
+function namespaceBody(body, ambient) {
   if (body === undefined) return undefined;
   if (ts.isModuleDeclaration(body)) {
-    return f.updateModuleDeclaration(body, body.modifiers, body.name, namespaceBody(body.body));
+    return f.updateModuleDeclaration(body, body.modifiers, body.name, namespaceBody(body.body, ambient));
   }
-  if (ts.isModuleBlock(body)) return f.updateModuleBlock(body, statements(body.statements));
+  if (ts.isModuleBlock(body)) return f.updateModuleBlock(body, statements(body.statements, ambient));
   return body;
 }
 
 /** The statement as the interface sees it, or undefined when it exports nothing. */
-function signature(statement) {
+function signature(statement, ambient = false) {
   if (ts.isExportDeclaration(statement)) return statement;
   if (ts.isExportAssignment(statement)) {
     if (ts.isIdentifier(statement.expression)) return statement;
+    const type = asserted(statement.expression);
+    const elided = f.createIdentifier('…');
     return f.updateExportAssignment(
       statement,
       statement.modifiers,
-      value(statement.expression) ?? f.createIdentifier('…'),
+      type === undefined ? (value(statement.expression) ?? elided) : f.createAsExpression(elided, type),
     );
   }
-  if (!isExported(statement)) return undefined;
+  if (!ambient && !isExported(statement)) return undefined;
   if (ts.isFunctionDeclaration(statement)) {
     return f.updateFunctionDeclaration(
       statement,
@@ -247,7 +266,7 @@ function signature(statement) {
       statement,
       statement.modifiers,
       statement.name,
-      namespaceBody(statement.body),
+      namespaceBody(statement.body, ambient || hasModifier(statement, ts.SyntaxKind.DeclareKeyword)),
     );
   }
   // Interfaces, type aliases, enums and `export import`: what they declare is their signature.
@@ -255,11 +274,11 @@ function signature(statement) {
 }
 
 /** The statements of a file or a namespace as the interface sees them: an overload's implementation left out. */
-function statements(list) {
+function statements(list, ambient = false) {
   const names = overloaded(list);
   return list
     .filter((statement) => !isImplementation(statement, names))
-    .map(signature)
+    .map((statement) => signature(statement, ambient))
     .filter((node) => node !== undefined);
 }
 
