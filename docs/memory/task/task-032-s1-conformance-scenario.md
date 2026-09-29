@@ -2,7 +2,7 @@
 id: task-032-s1-conformance-scenario
 type: task
 title: "S1 conformance scenario"
-status: backlog
+status: approved
 release: v0.1
 wave: W7
 features: [F6.1]
@@ -69,10 +69,211 @@ Preliminary classification (confirmed in the design phase).
 - REQ-FMT-08 — the leak scan is clean on S1, the hold-out's additions included. **red-first**
 - REQ-SCO-01 / REQ-SCO-02 — the reference solution passes every suite after its steps, the seed none
   (adr-004 decision 10); a mutating `applyPatch` fails the non-mutation check. **red-first**
+- dl-002 — the RFC examples' license confirmed and recorded (BSD-3-Clause), with the notices the
+  licenses require. **red-first** (added in the design)
 
 ## Design
 
-<!-- Modules, interfaces, data formats touched; decisions taken and their reasons. -->
+**Classification confirmed**, all four red-first. One criterion is added: the RFC examples' license,
+confirmed below, as dl-002 asked. The outline's criterion is automated twice: in `test/acceptance/`
+with the Docker doubles, which traceability requires, and in `test/docker/` with the real scoring
+image, which is the wave check's half (W7 decision 4).
+
+### `scenarios/S1/1.0/`
+
+```
+scenario.yaml
+seed/            package.json, tsconfig.json, .gitignore, README.md
+prompts/         01.md … 04.md
+oracle/pointer/      pointer.test.mts, rfc6901-section5.json
+oracle/patch/        patch.test.mts, tests.json, spec_tests.json
+oracle/merge-patch/  merge-patch.test.mts, rfc7386-appendix-a.json
+oracle/licenses/     Apache-2.0.txt, BSD-3-Clause-IETF.txt, NOTICE.md
+```
+
+`scenario.yaml` holds S1.md's card:
+
+- `categories: {primary: C, secondary: [D]}`;
+- `profiles: [solo-developer, team-developer]`;
+- `gqm: [Q-C1, Q-C2, Q-D3, G-X1, G-X2]`;
+- `capabilities: []` (§7);
+- `holdout: true`.
+
+It declares three suites, whose ids are also the hold-out's directory names:
+
+| Suite | Directory | `after_steps` |
+|---|---|---|
+| `pointer` | `oracle/pointer` | `[1]` |
+| `patch` | `oracle/patch` | `[2, 3, 4]` |
+| `merge-patch` | `oracle/merge-patch` | `[4]` |
+
+The Pointer examples are scored after step 1 only, as §6 says. Steps 2–4 build on Pointer, and its
+hold-out additions guard its edge cases.
+
+### The seed (§3, K3)
+
+- **`package.json`:** `"type": "module"`, `"private": true`, no dependency, and `"test": "node --test"`,
+  a test script that finds no test and exits 0 with no install. That exit is checked in the build, on
+  the pinned image's Node 22.
+- **`tsconfig.json`:** `strict`, `NodeNext`, `ES2022`, `include: ["src"]`, `outDir: "dist"`.
+- **`.gitignore`:** `node_modules` and `dist`. It is a convention, not a rule (K3). It keeps an
+  install the agent may make out of the step patches.
+- **`README.md`:** the one paragraph, which names what the library is for and no specification.
+- **No `src/`.** The prompts name `src/index.ts`, and the agent creates it.
+
+`"type": "module"` matters for scoring: tsx loads the snapshot's `src/*.ts` as ESM, which is what the
+suites' `await import('../../seed/src/index.js')` expects. The run image has no TypeScript; the agent
+can install it from the network, as any developer would, and nothing in scoring depends on that.
+
+### The prompts (§5, README §3)
+
+Four prompts in a product owner's voice, naming no harness and no tool:
+
+1. JSON Pointer, RFC 6901. It asks for `resolvePointer(document, pointer)` exported from `src/index.ts`,
+   returning the referenced value and throwing when the pointer is invalid or does not resolve, and says
+   later features will build on it.
+2. JSON Patch, RFC 6902, the six operations. It asks for `applyPatch(document, patch)`, which returns a
+   new document, must not mutate its input, and throws on an invalid patch or a failed operation.
+3. Users report surprising results on invalid patches and edge cases. It asks for behaviour that
+   conforms to the RFC and lists no case.
+4. JSON Merge Patch, RFC 7386. It asks for `applyMergePatch(target, patch)`, returning the merged
+   document.
+
+Their final text is written in the build and read at review. The leak scan checks them.
+
+### The suites — how a case becomes a test (REQ-SCO-02, adr-004 decision 10)
+
+Each suite is **one `.test.mts` file beside its data**, self-contained, because each suite is mounted
+alone at `/score/oracle/<id>`.
+
+- **`.mts`** makes the file ESM whatever lies around it. There is no `package.json` under
+  `/score/oracle`, and `import.meta.url` is needed to read the data:
+  `readFileSync(new URL('./tests.json', import.meta.url))`. That this works under the image's tsx is
+  the build's first red test, in Docker.
+- **Every case is a registered test with a unique name built from its index** (`` `tests.json #${i}: ${comment}` ``,
+  `` `spec_tests.json #${i}: …` ``, `` `RFC 6901 §5: ${pointer}` ``). They are registered
+  unconditionally, because they come from the data, not from the snapshot. The code under test is
+  imported inside each test, so that a snapshot without it fails every test, not the file. The names are
+  template literals with `${}`, which are not literals for the leak scan.
+- **`json-patch-tests`:** a case with `error` passes when `applyPatch` throws. A case with `expected`
+  passes when the result deep-equals it. A case with neither passes when the patch applies without
+  throwing (the suite's own README). A `disabled` case is registered with `{ skip: true }`, which the
+  census counts nowhere (adr-004), so "`disabled` cases are skipped" (§6) is visible, not silent.
+  Counted totals: 92 of 95 and 16 of 17.
+- **Pointer:** the 12 examples of §5 against `resolvePointer`, 12 tests.
+- **Merge Patch:** the 15 cases of Appendix A against `applyMergePatch`, 15 tests.
+
+### The non-mutation check — a reading of S1.md §6 to confirm at review
+
+§6 says "every call receives a frozen copy of its input", and §4's contracts forbid mutation only to
+`applyPatch`. **Calls to `resolvePointer` and `applyPatch` receive deep-frozen copies**, and a
+successful `applyPatch` is also checked against a copy of its input taken before the call.
+**`applyMergePatch` receives fresh, unfrozen copies.** Its contract does not forbid mutation, and RFC
+7386's own pseudo-code merges into its target in place, so freezing would fail an implementation that
+follows the RFC to the letter, for a rule §4 never set. Known limit: a case that expects an error passes
+on any throw, including the `TypeError` a mutating `applyPatch` raises on a frozen input. The success
+cases catch that implementation anyway. If the approver prefers §6's words literally, it is one line
+per suite, and S1.md needs no change either way.
+
+### The regression check (§6, Q-D3) — no code here, carried to task-034
+
+`score.json` already lists, for each public suite at each step, the tests that failed (task-027). "After
+step 4 the Patch suite still passes as it did after step 3" is therefore the tests in `patch`'s `failed`
+at step 4 that are not in it at step 3, read from what is stored. S1 adds no metric and no field.
+Reporting it (M-D3, which S2 needs too) is aggregation's, so a line is added to task-034's Context,
+to be confirmed in its design.
+
+### Third-party material (dl-002, task-031) and the licenses — confirmed here
+
+| Entry | Pin | License | Files |
+|---|---|---|---|
+| `json-patch-tests` | `commit: 2a928f9044aad35c74e2788d498bcf2c6b91adea` | `Apache-2.0` | `oracle/patch/tests.json`, `oracle/patch/spec_tests.json`, taken with `git show <commit>:<file>`, byte for byte |
+| RFC 6901 §5 examples | `sha256` of `rfc6901-section5.json` | `BSD-3-Clause` | `oracle/pointer/rfc6901-section5.json` |
+| RFC 7386 Appendix A | `sha256` of `rfc7386-appendix-a.json` | `BSD-3-Clause` | `oracle/merge-patch/rfc7386-appendix-a.json` |
+
+**The RFC examples' license is BSD-3-Clause, confirmed (dl-002).**
+
+- Both RFCs, of 2013 and 2014, carry the IETF Trust boilerplate: "Code Components extracted from this
+  document must include Simplified BSD License text as described in Section 4.e of the Trust Legal
+  Provisions".
+- The Trust's list of Code Components names **JSON** and **tables of values**. The §5 document and its
+  table of pointers, and Appendix A's table of JSON triples, are both.
+- The license TLP 4.e describes is the three-clause text. The Trust corrected its name from
+  "Simplified" to "Revised BSD License" on 2021-09-21 (Corrected TLP 5.0).
+
+So the examples are an SPDX-listed license and need no `LicenseRef-`. task-031's `LicenseRef-` route
+stays available for material that does need it.
+
+The examples are transcribed into JSON: the document, then `{pointer, expected}` pairs, and
+`{target, patch, result}` triples. Their `sha256` is taken from that file. BSD-3-Clause allows the
+reformatting, and requires the notice to go with it. Apache-2.0 requires a copy of the license.
+
+**`oracle/licenses/`** therefore holds:
+
+- the Apache-2.0 text;
+- the BSD-3-Clause text with "Copyright (c) 2013 IETF Trust and the persons identified as the document
+  authors" and its 2014 counterpart;
+- a `NOTICE.md` naming each file, its source and its license.
+
+It lies outside every suite. It is not oracle material, so it is neither mounted nor leak-scanned, and
+it is published with the scenario.
+
+### Hold-out additions (§6, K2) — in `WingFoil2-Benchmark-HoldOut` only
+
+`scenarios/S1/1.0/{pointer,patch,merge-patch}/*.test.mts`: Pointer escaping edge cases, deep-structure
+and large-array Patch cases, and Merge Patch cases beyond the appendix. They are benchmark-authored and
+written with the same rules as the public suites. They import `../../seed/src/index.js` from their
+`.holdout` mount, which sits at the same depth. They are committed in the hold-out repository. This
+task records their count per suite and that repository's commit, never their content.
+
+### The reference solution and the fake sessions (W7 decision 4)
+
+`test/fixtures/reference/S1/<step>/` holds the files a step writes: step 1 Pointer and `src/index.ts`,
+step 2 Patch, step 3 Patch's error semantics, step 4 Merge Patch. **Step 2's Patch leaves out part of the
+error semantics that step 3 adds**, so the scores show what §6 expects: the Patch suite rising from step
+2 to step 3 on the same suite. `test/fixtures` is outside `tsc` and lint; the reference is checked by the
+tests that score it.
+
+A helper, `referenceScript(scenario, steps)` in `test/support/`, builds the fake's script from those
+directories. Each file becomes a `mkdir -p … && echo <base64> | base64 -d > <path>` command, written
+to a temporary file for `BENCH_FAKE_SCRIPT`. No reference is copied by hand into a JSON fixture.
+task-033 reuses the helper with its hold-out reference (decision 5).
+
+### Tests
+
+- **A local scoring double** (`test/support/`), so that the hidden tests really run in `npm test`:
+  - `tsx` is added as a devDependency, pinned to `4.23.15`, the version the scoring image's lockfile pins.
+  - A `judge` for `scoringDocker` lays out the snapshot and the suite in a temporary `/score`-like
+    directory, as `runSuite` would in the container.
+  - It runs the command's test files with `node --import tsx --test --test-reporter=docker/score-image/reporter.mjs`
+    on the host, with no network needed.
+
+  Host Node 22.21 against the image's 22.x is the known difference. The Docker test below is the check
+  that matters.
+- **Acceptance, `test/acceptance/scenarios.test.ts`:** `@F6.1 @F6.2 @F6.3 @F6.8 Each v0.1 scenario is
+  ready for a campaign`, over the rows that exist (S1 now; task-033 adds S2). For each row:
+  - `bench scenario validate` on the scenario copied from the repository passes;
+  - `bench scenario dry-run` in baseline, baseline-docs and wingfoil records a cost per arm, with the
+    doubles the W3–W5 acceptance tests use;
+  - `bench score dry-runs/<n>` scores each dry run with the local judge and exits 0.
+
+  With the doubles no command is executed in a workspace, so each snapshot is the seed and every suite
+  scores 0/N. "Without errors" is exactly the outline's claim.
+- **Unit, the oracle against the reference** (local judge):
+  - the seed passes no test of any suite (adr-004 decision 10);
+  - each reference step passes every test of its suites, except the step-2 Patch cases step 3 fixes;
+  - an `applyPatch` that mutates its input fails the success cases;
+  - a `json-patch-tests` file changed by one byte is refused by its pin.
+- **Docker, `test/docker/run.test.ts`, "W7: S1":** in a temporary repository with the benchmark's arms:
+  - the fake replays the reference (`referenceScript`);
+  - `bench scenario dry-run S1@1.0` in the three arms (wingfoil `skipIf` there is no WingFoil clone, as
+    in W3);
+  - `bench score dry-runs/<n>` for each, with the real scoring image: pointer 12/12 after step 1, patch
+    rising from step 2 to 108/108 after step 3 and still 108/108 after step 4, merge-patch 15/15;
+  - with a hold-out configured (`BENCH_HOLDOUT_PATH`, else skipped with the reason), its counts are
+    all passing and no hold-out name is printed.
+- **Validation by hand:** `bench scenario validate S1@1.0 --holdout ../WingFoil2-Benchmark-HoldOut`,
+  its line recorded in the build notes.
 
 ## Execution notes
 
@@ -87,3 +288,87 @@ Preliminary classification (confirmed in the design phase).
   fields checked, one commit `wf(task): submit <id>` with no bracket and no body. Observed: exit 0,
   empty stderr, 1 file, diff limited to `status: draft` → `status: pending`. Matches (subject without
   transition: N9).
+- `npx wingfoil memory approve … [pending → backlog]` → `dbdd07b`, run by the approver.
+- Design committed by hand on `task/task-032-s1-conformance-scenario` (`de408e2`), so that `submit`
+  carries only the state change (N13).
+- `npx wingfoil memory submit task-032-s1-conformance-scenario` → `b390c36`. Declared: `backlog →
+  in-progress`, one commit `wf(task): submit <id>`. Observed: exit 0, empty stderr, 1 file, diff limited
+  to `status: backlog` → `status: in-progress`. Matches (N9).
+- `npx wingfoil memory submit task-032-s1-conformance-scenario` → `42375e6`. Declared: `in-progress →
+  in-review`, one commit `wf(task): submit <id>`. Observed: exit 0, empty stderr, 1 file, diff limited to
+  `status: in-progress` → `status: in-review`. Matches (N9).
+
+### Build
+
+Test-first: `285e8b6` (red: the S1 unit tests and the @F6.x outline failing, with no S1 to load), then
+`1025f2c` (S1@1.0, its licenses, the reference), then `8f4583b` (a fix to the Docker test's clean-up).
+Hold-out additions: `dc21873` in `WingFoil2-Benchmark-HoldOut`.
+
+**`scenarios/S1/1.0/`**, as designed:
+
+- `json-patch-tests`: `tests.json` and `spec_tests.json`, taken with `git show 2a928f9044aa…:<file>`.
+  Their `git hash-object` equals the commit's blobs (`ae1f7f0…`, `c160535…`).
+- The RFC examples transcribed with Python's `json`: `rfc6901-section5.json` (`026f4312…`) and
+  `rfc7386-appendix-a.json` (`d763694f…`), each pinned by that `sha256`.
+- `oracle/licenses/`: `Apache-2.0.txt` (the ASF's own text, `cfc7749b…`), `BSD-3-Clause-IETF.txt` (the
+  TLP 4.e text with both RFCs' copyright lines and the attribution TLP 4.d asks for), and `NOTICE.md`.
+
+**What the build found:**
+
+- **The leak scan shaped the data's keys.** Every quoted string of 8 characters or more in an oracle file
+  is a literal, so the transcriptions use `doc`, `cases`, `pointer`, `value`, `target`, `patch` and
+  `result`. `"document"` or `"expected"` would have matched the prompts ("JSON document", "did not
+  expect"). The suites' names are template literals, or words under 8 characters. `bench scenario
+  validate S1@1.0 --holdout ../WingFoil2-Benchmark-HoldOut` → `scenario S1@1.0 is valid (hold-out: 3
+  files)`, first time.
+- **`.prettierignore` gains `scenarios/*/*/`.** A scenario version is hashed over its bytes and holds
+  vendored files as they were published. `prettier --check` would have refused upstream's `tests.json`,
+  and `--write` would have changed it and its hash. `scenarios/leak-scan.yaml` stays formatted.
+- **The acceptance test's git.** The runner doubles fake git, so their patches are not ones scoring can
+  rebuild a snapshot from. The outline test therefore runs the dry runs with the real git for the
+  workspace, and doubles only the WingFoil clone's `resolveCommit` and `archive`. The scoring then runs
+  S1's hidden tests for real, through the local double. It takes about 7 s, so its timeout is 120 s.
+- **The local scoring double copies**, never links, the suite and the snapshot. Node resolves a test's
+  relative import from the real path, so a linked suite would import the scenario's own seed.
+- **The reference as scored:**
+  - Pointer: 12/12 after step 1.
+  - Patch: **105/108** after step 2. Step 2 does not check the operations' members, so three cases fail:
+    `missing 'value' parameter to add`, `… to replace`, `unrecognized op should fail`. **108/108** after
+    step 3, and still 108/108 after step 4.
+  - Merge Patch: 15/15.
+  - On the seed, every suite 0/N with 4 `disabled` cases skipped and uncounted; the names are unique.
+  - A mutating `applyPatch` fails at least every Patch case whose result is an object.
+- **The hold-out additions**: 33 tests (pointer 15, patch 8, merge-patch 10). Run with the image's
+  reporter from their `.holdout` mounts, they pass 0 on the seed and 33 on the reference's step 4.
+  Here: their counts and commit only.
+- **The seed's test script** in the pinned run image (`node:22-bookworm@sha256:dd5847a0…`, Node
+  22.23.2), read-only and with no network: `npm test` → `# tests 0`, exit 0.
+- **The Docker test's clean-up**: the W7 tests build dry-run images only, and `afterEach` still removed
+  the previous test's `image`, a second time ("No such image" on stderr, harmless). `image` is now reset
+  once it is removed.
+
+**Checks:**
+
+- `npm test`: 855/855 (+13). Coverage 99.42% statements, 95.72% branches, 100% functions and lines.
+- `npm run lint`: clean (the oracle's `.mts` files and the reference included).
+- `npm run test:docker`: **9/9**, no container and no `dry-` image left. The two W7 tests:
+  - S1 dry-run in **baseline**, **baseline-docs** and **wingfoil** (WingFoil `3df305e` from the clone),
+    with the fake replaying the reference, and scored by the real scoring image: `pointer 12/12`;
+    `patch` 105/108 → 108/108 → 108/108; `merge-patch 15/15`; final 135/135.
+  - With the hold-out configured, its final counts are all passing, and no hold-out name is in the
+    output.
+  - `.test.mts` reading its data through `import.meta.url` works under the image's tsx 4.23.15.
+
+The **license confirmation** (dl-002) is in the Design section and in `oracle/licenses/NOTICE.md`.
+
+No real agent, no spending. No `wingfoil` command in the build phase.
+
+### Review and approval
+
+- `npx wingfoil memory approve task-032-s1-conformance-scenario --reason "…"` → `d254b9c`, run by the
+  approver (`in-review → approved`, `Approver:`/`Reason:` trailers, only `status` changed). Matches.
+- Its reason records the review decisions, 2026-09-29: S1@1.0 accepted, its prompts included; frozen
+  inputs for `resolvePointer` and `applyPatch` only, S1.md §6 read against §4's contracts, with no
+  amendment; the RFC examples under BSD-3-Clause, dl-002's license confirmation.
+- Carried: the regression line (M-D3) added to task-034's Context, to be confirmed in its design.
+
