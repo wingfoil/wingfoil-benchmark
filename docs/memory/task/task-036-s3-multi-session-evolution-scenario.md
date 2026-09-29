@@ -332,3 +332,14 @@ Commits:
 - `npm run test:docker`: 13/13 (+2), with no `bench-` container left.
 
 No real agent, no spending. No `wingfoil` command in the build phase.
+
+### Review
+
+- `npx wingfoil memory submit task-036-s3-multi-session-evolution-scenario` → `aeac5fb`. Declared: `in-progress → in-review`, one commit `wf(task): submit <id>`. Observed: exit 0, 1 file,
+  diff limited to `status: in-progress` → `status: in-review`. Matches (N9).
+- Traceability: `features: [F6.3]`, `acceptance: [scenarios.feature, scoring.feature]` (scoring's @F4.8 on
+  S3 is task-037's), requirements as scoped. No amendment: S3.md is followed as written.
+- **For the approver's review:**
+  - the prompts' text (`scenarios/S3/1.0/prompts/`);
+  - the D3 test in `bookings` on a period off the hour (the design's choice);
+  - the timeouts raised in S1's unit tests and the outline test.
