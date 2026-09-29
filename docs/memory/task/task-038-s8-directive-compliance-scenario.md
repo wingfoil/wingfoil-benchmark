@@ -390,3 +390,13 @@ Commits:
   The rules reached only baseline-docs (`PROJECT_RULES.md`) and wingfoil (the directives).
 
 No real agent, no spending. No `wingfoil` command in the build phase.
+
+### Review
+
+- `npx wingfoil memory submit task-038-s8-directive-compliance-scenario` → `3683119`. Declared: `in-progress →
+  in-review`, one commit `wf(task): submit <id>`. Observed: exit 0, 1 file, diff limited to `status:
+  in-progress` → `status: in-review`. Matches (N9).
+- Traceability: `features: [F6.8]`; the outline's S8 row and @F2.5 on S8 green in `test/acceptance/`.
+- **For the approver's review:** the prompts' text (`scenarios/S8/1.0/prompts/`), the directives' text
+  (`arms/wingfoil/.wingfoil/directives/custom/`), S8.md 1.1's review decision, and the removal of T2's
+  snapshot fixture.
