@@ -2,7 +2,7 @@
 id: task-035-check-format-and-content-checks
 type: task
 title: "Check format and content checks"
-status: pending
+status: backlog
 release: v0.1
 wave: W8
 features: []
