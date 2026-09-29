@@ -2,7 +2,7 @@
 id: task-040-setup-cost-and-break-even
 type: task
 title: "Setup cost and break-even"
-status: approved
+status: done
 release: v0.1
 wave: W9
 features: [F4.4]
