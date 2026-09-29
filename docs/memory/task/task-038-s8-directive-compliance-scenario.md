@@ -400,3 +400,9 @@ No real agent, no spending. No `wingfoil` command in the build phase.
 - **For the approver's review:** the prompts' text (`scenarios/S8/1.0/prompts/`), the directives' text
   (`arms/wingfoil/.wingfoil/directives/custom/`), S8.md 1.1's review decision, and the removal of T2's
   snapshot fixture.
+
+### Approval
+
+- `npx wingfoil memory approve task-038-s8-directive-compliance-scenario --reason "…"` → `0f48cae`, run by
+  the approver (`in-review → approved`, `Approver:`/`Reason:` trailers, only `status` changed). Matches.
+- Its reason is the review decision, 2026-09-29, of S8@1.0 and of S8.md 1.1.
