@@ -49,10 +49,13 @@ describe('bench score (REQ-CLI-06)', () => {
     expect(result).toMatchObject({
       code: 0,
       // T3 declares hold-out additions, and none was given: the line says so (F3.5).
-      stdout: 'T3@1.0 baseline fake-model r1: step 01 0/1, step 02 1/1, final 1/1; hold-out not scored\n',
+      stdout:
+        'T3@1.0 baseline fake-model r1: step 01 0/1, step 02 1/1, final 1/1; hold-out not scored\n' +
+        'aggregate: results/abcdef012345/1/aggregate.json (1 group, 0 slices)\n',
       stderr: '',
     });
     expect(existsSync(join(fixture.runDir, 'score.json'))).toBe(true);
+    expect(existsSync(join(fixture.executionDir, 'aggregate.json'))).toBe(true);
     // The scoring image is built once, from its own directory, and tagged by its content.
     expect(result.recorded.builds).toEqual([expect.stringMatching(/^bench-score:[0-9a-f]{12}$/)]);
   });
@@ -67,6 +70,9 @@ describe('bench score (REQ-CLI-06)', () => {
 
     expect(result.code).toBe(0);
     expect(existsSync(join(dryRun, RUN_PATH, 'score.json'))).toBe(true);
+    // A dry run is never aggregated (REQ-RES-01).
+    expect(result.stdout).not.toContain('aggregate');
+    expect(existsSync(join(dryRun, 'aggregate.json'))).toBe(false);
   });
 
   it('says why a run could not be scored, scores the others, and exits 1', async () => {
@@ -84,6 +90,23 @@ describe('bench score (REQ-CLI-06)', () => {
         'T3@1.0 baseline fake-model r1: run.json: was stored before runs recorded what their snapshots are rebuilt from (task-027)\n',
     });
     expect(existsSync(join(fixture.runDir, 'score.json'))).toBe(false);
+  });
+
+  it('aggregates only when every run is scored, and removes an aggregate it can no longer stand behind', async () => {
+    const fixture = await storedRun({ steps: [{}, CANCEL] });
+    expect((await score(fixture.root, EXECUTION)).code).toBe(0);
+    const aggregate = join(fixture.executionDir, 'aggregate.json');
+    expect(existsSync(aggregate)).toBe(true);
+    await storedRun({ steps: [{}, CANCEL], into: { root: fixture.root, arm: 'wingfoil' } });
+    const broken = join(fixture.executionDir, 'runs', 'T3@1.0', 'wingfoil', 'fake-model', 'r1', 'run.json');
+    const record = JSON.parse(readFileSync(broken, 'utf8')) as Record<string, unknown>;
+    writeFileSync(broken, JSON.stringify({ ...record, setup: { duration_ms: 1 } }));
+
+    const result = await score(fixture.root, EXECUTION);
+
+    expect(result.code).toBe(1);
+    expect(result.stderr).toMatch(/\nnot aggregated: 1 run not scored\n$/);
+    expect(existsSync(aggregate)).toBe(false);
   });
 
   it('names an execution that does not exist, or holds no run', async () => {

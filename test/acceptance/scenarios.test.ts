@@ -263,7 +263,7 @@ describe('scenarios.feature', () => {
       expected_failure: unknown;
     };
     expect(record.expected_failure).toEqual({ missing: ['workflow-engine'] });
-    // And it is scored like any run, the mark carried into its score (published as a loss: W7's)
+    // And it is scored like any run, the mark carried into its score
     const stored = await storedRun({ steps: [{}, CANCEL] });
     const runFile = join(stored.runDir, 'run.json');
     const run = JSON.parse(readFileSync(runFile, 'utf8')) as Record<string, unknown>;
@@ -271,13 +271,29 @@ describe('scenarios.feature', () => {
     const scored = await benchScore(stored.root);
     expect(scored.code).toBe(0);
     expect(scored.stdout).toMatch(
-      /final 1\/1; hold-out not scored; expected failure \(missing workflow-engine\)\n$/,
+      /final 1\/1; hold-out not scored; expected failure \(missing workflow-engine\)\naggregate: /,
     );
     const score = JSON.parse(readFileSync(join(stored.runDir, 'score.json'), 'utf8')) as Record<
       string,
       unknown
     >;
     expect(score.expected_failure).toEqual({ missing: ['workflow-engine'] });
+    // And it is published as a loss, never skipped: aggregated with what it measured, the loss named
+    const aggregate = JSON.parse(readFileSync(join(stored.executionDir, 'aggregate.json'), 'utf8')) as {
+      groups: {
+        runs: string[];
+        losses: unknown[];
+        metrics: { m_q1: { final: { m_q1: { values: unknown[] } } } };
+      }[];
+    };
+    expect(aggregate.groups[0]?.runs).toEqual(['abcdef012345/1/runs/T3@1.0/baseline/fake-model/r1']);
+    expect(aggregate.groups[0]?.losses).toEqual([
+      {
+        run: 'abcdef012345/1/runs/T3@1.0/baseline/fake-model/r1',
+        reason: 'expected failure (missing workflow-engine)',
+      },
+    ]);
+    expect(aggregate.groups[0]?.metrics.m_q1.final.m_q1.values).toEqual([{ passed: 1, total: 1 }]);
   });
 
   it('@F3.3 A dry run measures the real cost of a scenario in one arm', async () => {
