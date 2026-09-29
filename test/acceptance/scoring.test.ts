@@ -124,11 +124,17 @@ describe('scoring.feature', { timeout: 120_000 }, () => {
     expect(recorded.creates.length).toBeGreaterThan(0);
     for (const create of recorded.creates) {
       expect(create.image).toMatch(/^bench-score:/);
-      expect(create.readOnly).toEqual([
-        { source: join(fixture.scenario.dir, 'oracle', 'public'), target: '/score/oracle/public' },
-      ]);
+      // M-Q2's container (task-041) reads the snapshot alone: no oracle is mounted in it.
+      expect(create.readOnly).toEqual(
+        create.name.endsWith('-quality')
+          ? []
+          : [{ source: join(fixture.scenario.dir, 'oracle', 'public'), target: '/score/oracle/public' }],
+      );
     }
-    expect(recorded.copies.every((copy) => copy.endsWith(':/score/seed'))).toBe(true);
+    // Each snapshot where the suites import it from; M-Q2's copy of the final one where its script reads it.
+    expect(
+      recorded.copies.every((copy) => copy.endsWith(':/score/seed') || copy.endsWith(':/score/snapshot')),
+    ).toBe(true);
     expect(recorded.removes).toHaveLength(recorded.creates.length);
 
     // And M-Q1 is recorded for the final snapshot and for every step that defines tests

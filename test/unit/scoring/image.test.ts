@@ -37,11 +37,11 @@ describe('scoringImage (REQ-SCO-01, REQ-SCO-02)', () => {
     ]);
     expect(image.jscpd).toBe('5.3.3');
     expect(image.c8).toBe('12.0.0');
-    for (const file of ['quality.mjs', 'eslint.config.mjs']) {
+    for (const file of ['quality.mjs', 'lint-rules.mjs']) {
       expect(existsSync(repoPath(`docker/score-image/${file}`))).toBe(true);
     }
     expect(readFileSync(repoPath('docker/score-image/Dockerfile'), 'utf8')).toMatch(
-      /COPY .*quality\.mjs.*eslint\.config\.mjs/,
+      /COPY .*quality\.mjs.*lint-rules\.mjs/,
     );
   });
 

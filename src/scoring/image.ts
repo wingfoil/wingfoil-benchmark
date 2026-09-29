@@ -16,6 +16,11 @@ export interface ScoringImage {
   readonly tsx: string;
   /** The TypeScript the AST checks parse with (REQ-SCO-05, task-037), recorded in every `score.json`. */
   readonly typescript: string;
+  /** M-Q2's tools (REQ-SCO-04, task-041), each recorded in every `score.json`. */
+  readonly eslint: string;
+  readonly typescriptEslint: string;
+  readonly jscpd: string;
+  readonly c8: string;
 }
 
 /** The scoring image of the package at `root`. */
@@ -25,7 +30,7 @@ export function scoringImage(root: string = packageRoot()): ScoringImage {
     .map((file) => `${sha256(readFileSync(file))}  ${relative(context, file).split('\\').join('/')}\n`)
     .sort();
   const pinned = JSON.parse(readFileSync(join(context, 'package.json'), 'utf8')) as {
-    dependencies: { tsx: string; typescript: string };
+    dependencies: Record<'tsx' | 'typescript' | 'eslint' | 'typescript-eslint' | 'jscpd' | 'c8', string>;
   };
   return {
     tag: `bench-score:${sha256(lines.join('')).slice(0, 12)}`,
@@ -33,6 +38,10 @@ export function scoringImage(root: string = packageRoot()): ScoringImage {
     context,
     tsx: pinned.dependencies.tsx,
     typescript: pinned.dependencies.typescript,
+    eslint: pinned.dependencies.eslint,
+    typescriptEslint: pinned.dependencies['typescript-eslint'],
+    jscpd: pinned.dependencies.jscpd,
+    c8: pinned.dependencies.c8,
   };
 }
 

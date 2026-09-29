@@ -390,6 +390,8 @@ describe('runs in a real container', () => {
     final: { m_q1: { passed: number; total: number } };
     holdout: { scored: boolean; final?: { m_q1: { passed: number; total: number } } };
     checks: { id: string; steps: { n: number; passed?: boolean; where?: unknown; violations?: number }[] }[];
+    m_q2: unknown;
+    scorer: Record<string, string>;
   }
 
   /**

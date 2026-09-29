@@ -101,7 +101,24 @@ export interface Group {
     readonly m_f2?: MF2Aggregate;
     /** M-D3 from the seed (REQ-SCO-12, task-039), when the group's runs were scored with it. */
     readonly m_d3?: MD3Aggregate;
+    /** M-Q2 (REQ-SCO-04, task-041), when the group's runs were scored with it. */
+    readonly m_q2?: MQ2Aggregate;
   };
+}
+
+/**
+ * M-Q2 across a group (task-041): each indicator apart, as the integers it is a ratio of, over the runs
+ * that measured something; no composite. The runs with no final snapshot, and those that changed no
+ * source file, are named apart: nothing was measured, so nothing is counted.
+ */
+export interface MQ2Aggregate {
+  readonly lint: Value<{ readonly findings: number; readonly lines: number }>;
+  readonly complexity_mean: Value<{ readonly sum: number; readonly functions: number }>;
+  readonly complexity_max: Value<number>;
+  readonly duplication: Value<{ readonly duplicated_lines: number; readonly lines: number }>;
+  readonly coverage: Value<{ readonly covered: number; readonly total: number }>;
+  readonly not_reached: readonly string[];
+  readonly not_applicable: readonly string[];
 }
 
 /**
@@ -251,6 +268,19 @@ const scoreSchema = z.object({
     .optional(),
   m_d3: z
     .union([z.object({ not_reached: z.literal(true) }), z.object({ count: z.number().int() })])
+    .optional(),
+  // Optional: M-Q2 (task-041); a score.json written before it has none.
+  m_q2: z
+    .union([
+      z.object({ not_reached: z.literal(true) }),
+      z.object({ not_applicable: z.literal(true) }),
+      z.object({
+        lint: z.object({ findings: z.number().int(), lines: z.number().int() }),
+        complexity: z.object({ functions: z.number().int(), sum: z.number().int(), max: z.number().int() }),
+        duplication: z.object({ duplicated_lines: z.number().int(), lines: z.number().int() }),
+        coverage: z.object({ covered: z.number().int(), total: z.number().int() }),
+      }),
+    ])
     .optional(),
   cost: z.object({
     run: costFigures,
@@ -412,10 +442,48 @@ function continuityOf(runs: readonly ScoredRun[]): Pick<Group['metrics'], 'm_f1'
   const m_f1 = mF1Of(runs);
   const m_f2 = mF2Of(runs);
   const m_d3 = mD3Of(runs);
+  const m_q2 = mQ2Of(runs);
   return {
     ...(m_f1 === undefined ? {} : { m_f1 }),
     ...(m_f2 === undefined ? {} : { m_f2 }),
     ...(m_d3 === undefined ? {} : { m_d3 }),
+    ...(m_q2 === undefined ? {} : { m_q2 }),
+  };
+}
+
+function mQ2Of(runs: readonly ScoredRun[]): MQ2Aggregate | undefined {
+  const scored = runs.flatMap((run) => (run.score.m_q2 === undefined ? [] : [{ run: run.name, m_q2: run.score.m_q2 }]));
+  if (scored.length === 0) return undefined;
+  const measured = scored.flatMap(({ run, m_q2 }) => ('lint' in m_q2 ? [{ run, m: m_q2 }] : []));
+  const ratio = (part: number, whole: number) => (whole === 0 ? 0 : part / whole);
+  const of = <T>(pick: (m: (typeof measured)[number]['m']) => T, compare: (a: T, b: T) => number) =>
+    valueOf(
+      measured.map(({ run, m }) => ({ run, value: pick(m) })),
+      compare,
+    );
+  return {
+    lint: of(
+      (m) => ({ findings: m.lint.findings, lines: m.lint.lines }),
+      (a, b) => ratio(a.findings, a.lines) - ratio(b.findings, b.lines),
+    ),
+    complexity_mean: of(
+      (m) => ({ sum: m.complexity.sum, functions: m.complexity.functions }),
+      (a, b) => ratio(a.sum, a.functions) - ratio(b.sum, b.functions),
+    ),
+    complexity_max: of(
+      (m) => m.complexity.max,
+      (a, b) => a - b,
+    ),
+    duplication: of(
+      (m) => ({ duplicated_lines: m.duplication.duplicated_lines, lines: m.duplication.lines }),
+      (a, b) => ratio(a.duplicated_lines, a.lines) - ratio(b.duplicated_lines, b.lines),
+    ),
+    coverage: of(
+      (m) => ({ covered: m.coverage.covered, total: m.coverage.total }),
+      (a, b) => ratio(a.covered, a.total) - ratio(b.covered, b.total),
+    ),
+    not_reached: scored.filter(({ m_q2 }) => 'not_reached' in m_q2).map(({ run }) => run),
+    not_applicable: scored.filter(({ m_q2 }) => 'not_applicable' in m_q2).map(({ run }) => run),
   };
 }
 

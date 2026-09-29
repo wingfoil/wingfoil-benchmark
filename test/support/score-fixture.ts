@@ -353,6 +353,10 @@ export function scoringDocker(
     },
     exec: (container, command) => {
       recorded.execs.push({ container, command: [...command] });
+      // The image's static-quality measure (task-041) says the same of every snapshot here.
+      if (command.some((argument) => argument.includes('quality.mjs'))) {
+        return Promise.resolve({ code: 0, stdout: `${JSON.stringify(QUALITY)}\n`, stderr: '' });
+      }
       return Promise.resolve(judge(snapshots.get(container) ?? '', command));
     },
     remove: (container) => {
@@ -391,9 +395,6 @@ export const HOLDOUT_TESTS = [
  * does, the second never.
  */
 export function judgeT3(snapshot: string, command: readonly string[] = []): ProcessResult {
-  if (command.some((argument) => argument.includes('quality.mjs'))) {
-    return { code: 0, stdout: `${JSON.stringify(QUALITY)}\n`, stderr: '' };
-  }
   if (command.some((argument) => argument.includes('.holdout/'))) {
     const file = join(snapshot, 'src', 'orders.ts');
     const cancels = existsSync(file) && readFileSync(file, 'utf8').includes("status: 'cancelled'");
