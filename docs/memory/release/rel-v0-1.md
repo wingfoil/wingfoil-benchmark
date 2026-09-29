@@ -39,7 +39,7 @@ Waves and features from [07_sequencer.md](../../01_vision/07_sequencer.md) 1.1. 
 | W5 — Cost control | F3.3 dry run · F1.2 cost estimate · F1.3 budget guard | — | a campaign refuses to start above the ceiling | **2026-09-28** |
 | W6 — First scores | F4.1 hidden-test oracle · F4.3 cost metrics · F3.6 expected failures | — | pass/fail and cost per run, with expected failures marked | **2026-09-28** |
 | W7 — First content | F6.1 S1 conformance · F6.2 S2 injected bugs · F5.1 results store | — | S1 and S2 scored in all three arms | **2026-09-29** |
-| W8 — Continuity and governance | F6.3 S3 multi-session evolution · F6.8 S8 directive compliance · F4.8 tool-neutral governance metrics | — | S3 and S8 scored | — |
+| W8 — Continuity and governance | F6.3 S3 multi-session evolution · F6.8 S8 directive compliance · F4.8 tool-neutral governance metrics | — | S3 and S8 scored | **2026-09-29** |
 | W9 — Quality | F4.2 static quality · F4.7 next-change cost · F4.4 setup/step split and break-even | — | the full quality and cost picture per run | — |
 | W10 — Determinism and findings | F4.5 determinism metric · F5.3 run detail · F5.4 finding note | F4.5 | determinism measured, and a first finding note ready for WingFoil | — |
 | W11 — Publish | F5.5 landing page · F5.8 method page · F5.6 manual publish | — | first preliminary result public; repository public | — |
@@ -446,10 +446,107 @@ repository. No bug. No spending: **1.0415 USD** reported in all so far
   - the site reads "beyond variance" and categories from `aggregate.json`;
   - S2's answer key is never published.
 
+### W8 — verified 2026-09-29
+
+**"S3 and S8 scored."** Verified offline, with the fake agent, as the W8 plan phase decided (task-035,
+decision 5). There is no real-agent half: `real-agent-check` was not taken.
+
+- **By hand, on main** (`c86f58e`, the built CLI), in a temporary repository holding S3@1.0, S8@1.0 and
+  the benchmark's arms. The fake replays S3's and S8's public references (`test/fixtures/reference/S3`,
+  `…/S8`), and WingFoil `3df305e` is built from the clone.
+  - `bench scenario validate S3@1.0 --holdout …` → `valid (hold-out: 4 files)`; `S8@1.0` → `valid
+    (hold-out: 4 files)`.
+  - Six dry runs, S3 and S8 in baseline, baseline-docs and wingfoil, each `completed, 0.0000 USD`.
+  - `bench campaign validate` → `campaign 557dd5f078f5 is valid (2 scenarios, 3 arms)`. `bench campaign
+    run` → `6 runs completed, 0 failed`, cost 0. The wingfoil runs record `harness.commit`
+    `3df305ea198d…`.
+  - `bench score 557dd5f078f5/1 --holdout ../WingFoil2-Benchmark-HoldOut` → exit 0:
+    - S3 in each arm: `step 01 11/11, step 02 16/16, step 03 20/20, step 04 30/30, step 05 37/37, final
+      37/37; hold-out final 17/17; checks 1/1`. Each feature's suite is green from its step on, and
+      D3's revision is found at step 4 in `DECISIONS.md`.
+    - S8 in each arm: `step 01 11/11, step 02 14/14, step 03 19/19, step 04 23/23, final 23/23;
+      hold-out final 7/7; checks 16/16`. **M-E1 is zero** for R1–R4 at every step, counted by the
+      scoring image's TypeScript 6.0.3.
+    - Then `aggregate: results/557dd5f078f5/1/aggregate.json (6 groups, 0 slices)`.
+  - **The aggregate:**
+    - six groups, each `n` 1 and `preliminary`, with no loss;
+    - the hold-out scored, and step-to-step regressions all 0;
+    - each check per step, and S8's violations as values;
+    - no dry run named;
+    - aggregated again: the same bytes. No `bench-` container is left.
+  - **K3:** S8's rules reached only baseline-docs (`PROJECT_RULES.md` in its setup patch) and wingfoil
+    (the directive files in its setup patch). Baseline received nothing.
+- **Acceptance:**
+  - `scenarios.feature`'s @F6.1/@F6.2/@F6.3/@F6.8 outline, now with all four rows;
+  - `scoring.feature`'s two @F4.8 scenarios, "per rule and per step" (T3) and "do not depend on a
+    harness's format" (S3);
+  - `runner.feature` @F2.5 on S8's configuration snapshot.
+
+  All are green. `npm test` 948/948 (coverage 99.11%), lint clean, `npm run test:bin` 5/5,
+  `npm run test:docker` 16/16. The W8 Docker tests run S3 and S8 in the three arms through the real
+  scoring image, and the directive checks through its TypeScript.
+- **What the fake cannot show:** it replays the same commands in every arm (W8 decision 5), so every arm
+  scores the reference's result, and the arms' difference on S8, which is S8's point, is calibration's
+  and the campaign's.
+
+| Task | Feature | Delivered |
+|---|---|---|
+| [task-035](../task/task-035-check-format-and-content-checks.md) | (F4.8, first half) | the check file; `content` (groups of substrings on the lines a step added and its commit messages) and `unchanged` (seed regions); `commits.json` per step; checks in `score.json` and `aggregate.json`; S2's two checks |
+| [task-036](../task/task-036-s3-multi-session-evolution-scenario.md) | F6.3 | S3@1.0: five suites by feature, decisions named D1–D5, D3's revision as a content check, the public reference |
+| [task-037](../task/task-037-directive-checks-and-tool-neutral-governance-metrics.md) | F4.8 | M-E1: `dependencies` and `ast` checks, violations per rule and step with their places, the AST in the scoring image with the TypeScript it pins |
+| [task-038](../task/task-038-s8-directive-compliance-scenario.md) | F6.8 | S8@1.0: a to-do seed compliant by construction, R1–R4 as WingFoil directives and as four checks, five suites, baseline-docs from a real snapshot |
+
+Decisions taken during W8:
+
+- the plan-phase decisions in task-035 (seven), with the approver's three choices:
+  - four tasks, infrastructure just in time;
+  - S2's false report as an `unchanged` check;
+  - D3's content check in W8 and M-F1 in W9;
+- the design choices confirmed by the approver:
+  - task-035: groups of substrings on added lines, check files out of the literal scan, the prompt check,
+    `commits.json`;
+  - task-037: `crypto` randomness counted, tests and `.d.ts` out of `ast` checks, violations with file
+    and line;
+  - task-038: a functional hold-out only, validation tests neutral between a returned and a thrown
+    error, a to-do seed;
+- requirements 1.12 (REQ-SCO-06, REQ-RUN-05, REQ-FMT-04, -06, -08, REQ-RES-06) and 1.13 (REQ-SCO-05, -06);
+  adr-004 amendment 2; S8.md 1.1.
+
+Hold-out content: `WingFoil2-Benchmark-HoldOut` `0a52804` (S2's reference records the duplicate),
+`15f6d29` (S3) and `3792676` (S8), never in this repository. No bug. No spending: **1.0415 USD**
+reported in all so far ([v0.1 ledger](../../calibration/v0.1-ledger.md)).
+
+**Due before the phases and waves that need them:**
+
+- **W9 (F4.7, continuity):**
+  - M-F1 as the experiment design defines it. It is the share of D1–D5 respected or explicitly
+    revised: the `D<n>:` hidden tests at the final snapshot, read by name from `score.json`, and D3's
+    content check. W8 delivered its parts (task-035 decision 3).
+  - M-F2, the cost and M-Q1 of steps 2 to 5.
+  - The full M-D3, from each test's result on the seed (W7's carry-over).
+- **W9 (F4.2, static quality):** REQ-SCO-04's ESLint, jscpd and c8 are pinned in the scoring image, as
+  TypeScript now is (adr-004 amendment 2). M-K3 and M-K4 join the aggregate's `cost`.
+- **W10 (F4.5, M-R2):** the public-interface comparison can reuse the image's parser
+  (`ast-checks.mjs`).
+- **Calibration (plan-003 step 3):**
+  - the real-agent dry runs of S1, S2, S3 and S8 in every arm, and S1 on Opus 5 for the slice;
+  - then S1–S3 and S8 are **registered**;
+  - S8's arm difference and S2's and S3's checks on a real agent are first seen there.
+- **Before the reference campaign:**
+  - refresh `test/fixtures/wingfoil-config/S8/` from a real run with the pinned, released WingFoil;
+  - re-assess `provides.directive-delivery` beside the MCP probe (W3, W6);
+  - old runs without `commits.json` cannot be scored by a scenario with a content check (task-035).
+- **W11 (F5.8, the method page):**
+  - the check file and its four kinds, and that checks read text, the AST excepted;
+  - content checks: added lines only, the prompt check, a code comment counting as a record (S3.md §9);
+  - the syntactic rules' limits: an alias is not seen, tests and declaration files are left out, `crypto`
+    randomness is counted;
+  - S8's four directives, published as rules.
+
 ## Release checklist
 
 - [x] release-planning: scope approved (planning → in-development, `8c5c7e6`; plan: plan-003)
-- [ ] delivery: W1–W11 done, every wave's "Ends with" verified (W1 done: task-001, task-002, task-003; W2 done: task-004, task-005, task-006, task-007; W3 done: task-011, task-012, task-013, task-014, task-015; W4 done: task-016, task-017, task-018, task-020, task-019; W5 done: task-021, task-022, task-023, task-024, task-025; W6 done: task-026, task-027, task-028, task-029, task-030; W7 done: task-031, task-032, task-033, task-034)
+- [ ] delivery: W1–W11 done, every wave's "Ends with" verified (W1 done: task-001, task-002, task-003; W2 done: task-004, task-005, task-006, task-007; W3 done: task-011, task-012, task-013, task-014, task-015; W4 done: task-016, task-017, task-018, task-020, task-019; W5 done: task-021, task-022, task-023, task-024, task-025; W6 done: task-026, task-027, task-028, task-029, task-030; W7 done: task-031, task-032, task-033, task-034; W8 done: task-035, task-036, task-037, task-038)
 - [ ] calibration: dry runs in every arm, budget revised (`docs/calibration/v0.1.md`)
 - [ ] validation: acceptance green on the fake agent, coverage > 80%, lint clean, one real-agent end-to-end run
 - [ ] campaign: reference campaign published (campaign: —)
