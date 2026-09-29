@@ -114,3 +114,18 @@ and W8 must follow:
     or `none declared` for a version that declares none — and the command line says `hold-out not
     scored` for a version that expects one. A version whose `holdout:` disagrees with the additions is
     not scored.
+
+## Amendment 2 (W8 task-037, 2026-09-29; accepted at its review)
+
+What [task-037](../task/task-037-directive-checks-and-tool-neutral-governance-metrics.md) added to the
+scoring image for M-E1's directive checks (F4.8, REQ-SCO-05 as amended in requirements 1.13):
+
+17. **The image pins TypeScript** (`typescript` 6.0.3, the repository's own version) beside tsx, with the
+    same lockfile. `score.json`'s `scorer` records it as `typescript`, beside `tsx`.
+18. **The AST checks run in the image**, by its script `/opt/score/ast-checks.mjs`: one container per
+    step that has an `ast` check, with no mount and no network, the snapshot copied to
+    `/score/snapshot`. The script parses each file with the compiler's parser alone — no program, no
+    type check, no `tsconfig` — so an agent's type errors cannot stop it, and prints one JSON line per
+    violation. An exit other than 0 is an oracle error naming the step, as a suite's is.
+19. **Checks that read text run in the scorer's process**, not in a container: content, unchanged
+    (task-035) and dependencies. Neither they nor the AST script run anything of the agent's.
