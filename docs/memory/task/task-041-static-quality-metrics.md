@@ -238,3 +238,85 @@ On the final snapshot, compared with the seed:
   - Declared: `backlog → in-progress`, one commit `wf(task): submit <id>`.
   - Observed: exit 0, 1 file, and a diff limited to `status: backlog` → `status: in-progress`.
     Matches.
+
+### Build
+
+Commits on `task/task-041-static-quality-metrics`:
+
+- `8729e53` `test(scoring)` (red): 22 failing tests.
+  - `measuredFiles`, `parseQuality` and `qualityInContainer`;
+  - `quality.mjs` run on this machine with the pinned tools;
+  - `m_q2` and `scorer` in `score.json`, and M-Q2 in the aggregate;
+  - the image's pins;
+  - `scoring.feature` @F4.2 on S8's reference, and coverage 0 on S3's.
+- `8bc9f3a` `docs(requirements)`: requirements 1.16 and adr-004 amendment 3.
+- `a81b9b7` `feat(scoring)`: the implementation.
+- `da7a3cb` `test(docker)`: the W6 test's `scorer`, and M-Q2 in S3's Docker test.
+
+**Deviations from the Design:**
+
+1. **The image's lint configuration is `lint-rules.mjs`, not `eslint.config.mjs`.** ESLint 10 looks for
+   the nearest `eslint.config.*` from each file it lints. Under that name the image's configuration took
+   over this repository's own lint of `docker/score-image/`, which gave 225 errors. `quality.mjs` passes
+   it explicitly, so no ESLint finds it by itself. adr-004 amendment 3 and REQ-SCO-04 name no file, so
+   neither changes.
+2. **`duplication.lines` is the measured lines as `quality.mjs` counts them,** the same count `lint` uses.
+   jscpd gives only the duplicated lines. Its own line total counts differently, and the two indicators
+   now share one denominator.
+3. **The scoring double answers the quality command for every judge.** Some unit tests use a judge of
+   their own. The double's canned `QUALITY` line is in `scoringDocker`, not in `judgeT3`.
+4. **Existing tests that described every scoring container were updated:**
+   - @F4.1: M-Q2's container mounts no oracle, and copies the snapshot to `/score/snapshot`;
+   - `score.test.ts`: one more container in the census-and-steps test, and `m_q2` in the key order;
+   - the summary tests' `ScoreFile` literals;
+   - the W6 Docker test's `scorer`.
+
+**Checks:**
+
+- `npm run typecheck` clean, and `npm run lint` clean: ESLint and Prettier.
+- `npm test`: 1011/1011, coverage 99.07% (`quality.ts` 100% of lines).
+- `quality.mjs` on the host (`quality-script.test.ts`): 8/8.
+  - complexity 3 functions, sum 5, max 3;
+  - the project's own ESLint configuration ignored;
+  - a file that does not parse counts as one finding;
+  - duplication found;
+  - coverage through `npm test`, with the tests passing and with them failing;
+  - no test script;
+  - the same result twice.
+- `npm run test:bin`: 5/5.
+- `scoring.feature` @F4.2 on S8's reference, through the local double: the four indicators as integer
+  pairs, no composite key, and the tests `passed` with lines covered. S3's reference has 0 lines
+  covered, and a non-zero total.
+- `npm run test:docker`: 15 of 16 in the full run (816 s, the new image built on its first use). The one
+  failure was the W6 test's exact `scorer`, which the new tools changed. After `da7a3cb`, the W6 test and
+  both S3 tests were rerun and pass. So the real image's ESLint, jscpd and c8 measured:
+  - S8 in the three arms: tests `passed`, lines covered;
+  - S3 in the three arms: `src/index.ts` and `src/rentals.ts` measured, 0 covered.
+
+### Review
+
+- **Traceability.**
+  - `features: [F4.2]`: the @F4.2 scenario has its test, and `traceability.test.ts` is green.
+  - `acceptance: [scoring.feature]`.
+  - `requirements`:
+    - REQ-SCO-04 is amended;
+    - REQ-SCO-01: one container, no mount, no network;
+    - REQ-SCO-03: `quality.mjs` gives the same line twice;
+    - REQ-FMT-07: M-Q2's values in the aggregate.
+- **W9 decisions held.**
+  - Decision 3: coverage from the project's own tests.
+  - Decision 5: `SCORE_VERSION` and `AGGREGATE_VERSION` stay 1, since `m_q2` and the `scorer` keys are
+    new.
+  - Decision 6: the image changed once, here.
+- **A note for calibration and the campaign.** M-Q2 runs the agent's own tests, isolated but unbounded
+  in what they do. A test that depends on time or order can make M-Q2's coverage vary between two
+  scorings of one run. REQ-SCO-03 then holds only as far as the project's tests are deterministic, which
+  the method page states (W11). Every hidden test is the benchmark's, and none of them is affected.
+- **For the approver's review decision:** requirements 1.16 (REQ-SCO-04) and adr-004 amendment 3.
+- **For W11 (F5.8), the method page states:**
+  - the lint configuration, `lint-rules.mjs`, and its two rule sets;
+  - that complexity is read per function;
+  - jscpd's minimum of 50 tokens;
+  - coverage from `npm test` under c8, whether the tests pass or fail;
+  - the files measured, and the setup's files left out.
+- No new bug and no new decision-log. No WingFoil usage note. No spending.
