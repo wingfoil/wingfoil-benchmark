@@ -328,3 +328,9 @@ For each check, in declaration order, and each of its steps:
 - `npx wingfoil memory submit task-035-check-format-and-content-checks` → `439777f`. Declared: `draft → pending`, required fields checked, one
   commit `wf(task): submit <id>`. Observed: exit 0, 1 file, diff limited to `status: draft` →
   `status: pending`. Matches (subject without transition: N9).
+- `npx wingfoil memory approve … [pending → backlog]` → `49d1b59`, run by the approver.
+- Design committed by hand on `task/task-035-check-format-and-content-checks` (`a4a3273`), in a linked
+  worktree with its own install, so that `submit` carries only the state change (N13).
+- `npx wingfoil memory submit task-035-check-format-and-content-checks` → `84e1a2d`. Declared:
+  `backlog → in-progress`, one commit `wf(task): submit <id>`. Observed: exit 0, 1 file, diff limited to
+  `status: backlog` → `status: in-progress`. Matches (subject without transition: N9).
