@@ -14,6 +14,8 @@ export interface ScoringImage {
   readonly context: string;
   /** The tsx version the image's `package.json` pins, recorded in every `score.json`. */
   readonly tsx: string;
+  /** The TypeScript the AST checks parse with (REQ-SCO-05, task-037), recorded in every `score.json`. */
+  readonly typescript: string;
 }
 
 /** The scoring image of the package at `root`. */
@@ -23,13 +25,14 @@ export function scoringImage(root: string = packageRoot()): ScoringImage {
     .map((file) => `${sha256(readFileSync(file))}  ${relative(context, file).split('\\').join('/')}\n`)
     .sort();
   const pinned = JSON.parse(readFileSync(join(context, 'package.json'), 'utf8')) as {
-    dependencies: { tsx: string };
+    dependencies: { tsx: string; typescript: string };
   };
   return {
     tag: `bench-score:${sha256(lines.join('')).slice(0, 12)}`,
     dockerfile: join(context, 'Dockerfile'),
     context,
     tsx: pinned.dependencies.tsx,
+    typescript: pinned.dependencies.typescript,
   };
 }
 

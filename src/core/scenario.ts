@@ -224,11 +224,35 @@ const unchangedCheck = z.strictObject({
   regions: z.array(region).min(1),
 });
 
+/** A directive on dependencies (REQ-SCO-05, R1): no runtime dependency the seed did not have. */
+const dependenciesCheck = z.strictObject({ kind: z.literal('dependencies'), steps: checkSteps });
+
+/**
+ * The AST rules an `ast` check counts (REQ-SCO-05 as amended in 1.13, task-037), matched on syntax: an
+ * exported function with no TSDoc block before it; the wall clock (`Date.now()`, `new Date()` with no
+ * argument); randomness (`Math.random()` and Node's `crypto` random functions); a `throw` statement.
+ */
+export const AST_RULES = ['undocumented-export', 'wall-clock', 'randomness', 'throw'] as const;
+
+/** A directive on code (REQ-SCO-05): its rules, counted in the files under `dir` of a step's snapshot. */
+const astCheck = z.strictObject({
+  kind: z.literal('ast'),
+  steps: checkSteps,
+  dir: relativePath,
+  rules: uniqueList(z.enum(AST_RULES)).min(1),
+});
+
 /**
  * A check file of `oracle.checks` (REQ-SCO-06 as amended in 1.12, task-035): its `kind`, the steps it is
- * scored at, and what the kind needs. Its id is its file's name.
+ * scored at, and what the kind needs. Its id is its file's name. `dependencies` and `ast` are the
+ * directive checks of M-E1 (REQ-SCO-05, task-037).
  */
-export const checkFileSchema = z.discriminatedUnion('kind', [contentCheck, unchangedCheck]);
+export const checkFileSchema = z.discriminatedUnion('kind', [
+  contentCheck,
+  unchangedCheck,
+  dependenciesCheck,
+  astCheck,
+]);
 
 /** A check file as parsed, with seed-relative region paths. */
 export type CheckFile = z.infer<typeof checkFileSchema>;
@@ -337,8 +361,24 @@ export interface UnchangedCheck extends CheckBase {
   readonly regions: readonly Region[];
 }
 
-/** A loaded check (REQ-SCO-06 as amended in 1.12). */
-export type Check = ContentCheck | UnchangedCheck;
+/** A loaded dependencies check: the seed's runtime dependencies, by name, sorted. */
+export interface DependenciesCheck extends CheckBase {
+  readonly kind: 'dependencies';
+  readonly seedDependencies: readonly string[];
+}
+
+/** One of the rules an `ast` check counts. */
+export type AstRule = (typeof AST_RULES)[number];
+
+/** A loaded ast check: the snapshot-relative directory it reads, and its rules. */
+export interface AstCheck extends CheckBase {
+  readonly kind: 'ast';
+  readonly dir: string;
+  readonly rules: readonly AstRule[];
+}
+
+/** A loaded check (REQ-SCO-06 as amended in 1.12; the directive kinds, REQ-SCO-05 as amended in 1.13). */
+export type Check = ContentCheck | UnchangedCheck | DependenciesCheck | AstCheck;
 
 /** A loaded scenario version, with every path resolved to an absolute one. */
 export interface Scenario {

@@ -5,6 +5,7 @@ import { basename, relative, resolve, sep } from 'node:path';
 import {
   ARM_NAME,
   checkFileSchema,
+  dependenciesOf,
   fail,
   linesOf,
   ok,
@@ -119,7 +120,20 @@ function loadChecks(spec: ScenarioFile, dir: string): Result<Check[]> {
             },
           ],
     );
-    if (check.kind === 'content') {
+    if (check.kind === 'dependencies') {
+      if (found.length === 0) {
+        checks.push({
+          id,
+          file,
+          kind: 'dependencies',
+          steps: check.steps,
+          seedDependencies: dependenciesOf(seedDir),
+        });
+      }
+    } else if (check.kind === 'ast') {
+      if (found.length === 0)
+        checks.push({ id, file, kind: 'ast', steps: check.steps, dir: check.dir, rules: check.rules });
+    } else if (check.kind === 'content') {
       found.push(...promptIssues(spec, dir, at, check.steps, check.patterns));
       if (found.length === 0)
         checks.push({ id, file, kind: 'content', steps: check.steps, patterns: check.patterns });

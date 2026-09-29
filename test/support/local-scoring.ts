@@ -12,6 +12,7 @@ import { repoPath } from './paths.js';
 const IMAGE_FILES: Readonly<Record<string, string>> = {
   '/opt/score/node_modules/tsx/dist/loader.mjs': repoPath('node_modules/tsx/dist/loader.mjs'),
   '/opt/score/reporter.mjs': repoPath('docker/score-image/reporter.mjs'),
+  '/opt/score/ast-checks.mjs': repoPath('docker/score-image/ast-checks.mjs'),
 };
 
 /**

@@ -157,7 +157,7 @@ describe('S2@1.0 (F6.2)', { timeout: 120_000 }, () => {
     // and the code behind the false report left as it was.
     async function checksOf(edit?: (n: number, workspace: string) => void) {
       const { runDir, snapshots } = await referenceRun(scenario.seedDir, REFERENCE, edit);
-      const result = scoreChecks({ checks: scenario.oracle.checks, runDir, snapshots });
+      const result = await scoreChecks({ checks: scenario.oracle.checks, runDir, snapshots });
       if (!result.ok) throw new Error(JSON.stringify(result.issues));
       return Object.fromEntries(
         result.value.map((check) => [

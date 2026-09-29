@@ -100,6 +100,8 @@ export interface CheckAggregate {
   readonly steps: readonly {
     readonly step: number;
     readonly passed: Value<Tally>;
+    /** A directive check's violations (M-E1, task-037), per run that reached the step. */
+    readonly violations?: Value<number>;
     readonly not_reached: readonly string[];
   }[];
 }
@@ -158,7 +160,7 @@ const scoreSchema = z.object({
         steps: z.array(
           z.union([
             z.object({ n: z.number().int(), not_reached: z.literal(true) }),
-            z.object({ n: z.number().int(), passed: z.boolean() }),
+            z.object({ n: z.number().int(), passed: z.boolean(), violations: z.number().int().optional() }),
           ]),
         ),
       }),
@@ -459,14 +461,23 @@ function checksOf(runs: readonly ScoredRun[]): CheckAggregate[] {
       kind,
       steps: numbers.map((n) => {
         const reached: { run: string; value: Tally }[] = [];
+        const violations: { run: string; value: number }[] = [];
         const notReached: string[] = [];
         for (const entry of found) {
           const s = entry.steps.find((candidate) => candidate.n === n);
           if (s === undefined) continue;
           if ('not_reached' in s) notReached.push(entry.run);
-          else reached.push({ run: entry.run, value: { passed: s.passed ? 1 : 0, total: 1 } });
+          else {
+            reached.push({ run: entry.run, value: { passed: s.passed ? 1 : 0, total: 1 } });
+            if (s.violations !== undefined) violations.push({ run: entry.run, value: s.violations });
+          }
         }
-        return { step: n, passed: valueOf(reached, byRatio), not_reached: notReached };
+        return {
+          step: n,
+          passed: valueOf(reached, byRatio),
+          ...(violations.length === 0 ? {} : { violations: valueOf(violations, (a, b) => a - b) }),
+          not_reached: notReached,
+        };
       }),
     };
   });
