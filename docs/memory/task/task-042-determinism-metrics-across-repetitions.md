@@ -113,7 +113,17 @@ Out of scope:
    - never run `npm test` and `npm run test:docker` at the same time;
    - oracle `.mts` files are linted;
    - scoring time: 7 min 42 s for 12 runs in W9. The wave check has 12 runs again (S1 × 3 and S2 × 1 in
-     three arms), scored twice.
+     three arms), scored twice;
+   - after a merge that changes dependencies, main needs `npm ci` and `npm run build` before the wave
+     check;
+   - if the image changes: no file in `docker/score-image/` is named `eslint.config.*` (ESLint takes the
+     nearest config); a new tool is pinned at the same version in the image's `package.json` and in the
+     repository's devDependencies, and mapped in `test/support/local-scoring.ts`; the W6 Docker test
+     asserts `scorer` exactly;
+   - the next scoring requirement id is REQ-SCO-13 (REQ-SCO-11 was retired in 1.1); requirements are at
+     1.16, adr-004 at amendment 3;
+   - W9's wave-check scripts (merged reference script, synthetic rewrite, summary) are the model for
+     W10's (W9 session handover, 2026-09-29).
 
 ## Acceptance criteria
 
