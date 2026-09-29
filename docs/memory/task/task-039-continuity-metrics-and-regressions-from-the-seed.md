@@ -7,7 +7,7 @@ release: v0.1
 wave: W9
 features: [F4.7]
 acceptance: [scoring.feature]
-requirements: [REQ-SCO-02, REQ-SCO-03, REQ-SCO-06, REQ-SCO-11, REQ-RUN-09, REQ-FMT-04, REQ-FMT-07]
+requirements: [REQ-SCO-02, REQ-SCO-03, REQ-SCO-06, REQ-SCO-12, REQ-RUN-09, REQ-FMT-04, REQ-FMT-07]
 ---
 
 ## Context
@@ -307,13 +307,13 @@ existing value changes how it is computed.
 ### Requirements 1.14
 
 - **REQ-FMT-04:** `oracle.decisions`.
-- **REQ-SCO-11 (new):** the continuity metrics and M-D3:
+- **REQ-SCO-12 (new):** the continuity metrics and M-D3:
   - M-F1's four rows;
   - M-F2 as the reading of steps 2 to n;
   - M-D3 from the seed's public results;
   - a final not reached, in `score.json` and in aggregation.
 - **Traceability 1.1** (an amendment to the approved 1.0):
-  - REQ-SCO-11 joins the rows of Q-F1, Q-F2 and Q-D3 in §1;
+  - REQ-SCO-12 joins the rows of Q-F1, Q-F2 and Q-D3 in §1;
   - it joins F4.7's and F4.1's rows in §2. M-D3 is not F4.7's metric, and in v0.1 it has no feature of
     its own. The matrix already traces Q-D3 to `scoring.feature` @F4.1.
 
@@ -359,3 +359,82 @@ existing value changes how it is computed.
   - Declared: `backlog → in-progress`, one commit `wf(task): submit <id>`.
   - Observed: exit 0, 1 file, and a diff limited to `status: backlog` → `status: in-progress`.
     Matches.
+
+### Build
+
+Commits on `task/task-039-continuity-metrics-and-regressions-from-the-seed`:
+
+- `a8f4d4a` `test(scoring)` (red): 26 failing tests.
+  - `oracle.decisions` loaded and validated;
+  - `mF1`, `mF2` and `mD3`;
+  - `seed`, `m_f1`, `m_f2` and `m_d3` in `score.json`, and the three in `aggregate.json`;
+  - the three `scoring.feature` @F4.7 scenarios, on S3's reference.
+- `833dff2` `test(scoring)`: the requirement's id, REQ-SCO-12 (see the deviations).
+- `bd50a4f` `docs(requirements)`: requirements 1.14 and traceability 1.1.
+- `035fcca` `feat(scoring)`: the implementation.
+- `8ce2d2b` `feat(scenarios)`: S3@1.0 lists D1–D5, with D3 revised by `d3-revision`.
+
+**Deviations from the Design:**
+
+1. **REQ-SCO-12, not REQ-SCO-11.** REQ-SCO-11 was retired in requirements 1.1: it moved to REQ-RUN-17
+   at the traceability review. A retired id is not reused.
+2. **M-D3 is not in the summary line; M-F1 is.** An `; M-D3 0` on every run's line would change the
+   expected output of the CLI, bin, Docker and acceptance tests, and it says nothing a reader needs
+   there. M-D3 is in `score.json` and in the aggregate.
+3. **M-D3 needs no census keys.** A census test either passed or failed on the seed. So the tests that
+   passed there and fail at the end are the final's `failed` keys less the seed's `failed` keys, suite
+   by suite.
+4. **The aggregate's M-F2 reads `m_f2`,** not `cost.steps`. That is the same data, already paired with
+   the step's M-Q1.
+5. **One validation was dropped: "a revision check not scored after the step it revises".** The
+   scenario never names the step that revises a decision, so there is nothing to compare the check's
+   steps with. M-F1 reads the check at its last step instead.
+6. **The `scenarios.feature` outline is unchanged.** Its dry runs replay nothing, so S3's values are
+   not the reference's there. The @F4.7 scenarios score S3's reference itself, through the local
+   scoring double, and assert M-F1 5/5, M-D3 0 and M-F2 for steps 2–5. The outline still scores S3
+   with its decisions, and it would fail if a decision had no test.
+7. **The seed is scored whatever the run reached.** Every public suite's census now comes first, then
+   the steps. A run that reached no step costs one container, the census, which is shared and cached
+   per `bench score`. The test "scores nothing for a run that reached no step" became "scores only the
+   seed …".
+8. **Test support:**
+   - `storedRun` takes `scenario`, to store a run of a real scenario, and `decisions`, for T3;
+   - `reference.ts` gains `referenceFiles`, a reference's steps as files;
+   - the four `ScoreFile` literals of the summary tests gain `seed` and `m_d3`.
+
+**Checks:**
+
+- `npm run typecheck` clean, and `npm run lint` clean: ESLint and Prettier.
+- `npm test`: 975/975, coverage 99.12% (`continuity.ts` 100% of lines).
+- `npm run test:bin`: 5/5.
+- `scoring.feature` @F4.7, all three scenarios, on S3's reference with the hidden tests really run:
+  - the reference: M-F1 5/5 with D3 `revised`, M-D3 0, and M-F2 steps 2–5 at 16/16, 20/20, 30/30,
+    37/37;
+  - step 4's `DECISIONS.md` taken back: the final is still 37/37, and M-F1 is 4/5 with D3 `failed`.
+- `npm run test:docker`: 16/16 (552 s), run after `npm test`, never alongside it. It covers the W7 and
+  W8 tests of S1, S2, S3 and S8 through the real scoring image, S3 now with its decisions.
+
+### Review
+
+- **Traceability.**
+  - `features: [F4.7]`: all three @F4.7 scenarios have tests titled as the gate requires, and
+    `traceability.test.ts` is green.
+  - `acceptance: [scoring.feature]`.
+  - `requirements`: REQ-SCO-12 is new; REQ-FMT-04 and REQ-SCO-06 are the ones M-F1 reads; REQ-SCO-02
+    and -03 hold as before; REQ-RUN-09 is M-F2's cost; REQ-FMT-07 covers the aggregate's values.
+- **The Context said "S3@1.0 is not changed".** The design, which the approver confirmed, changed
+  that: S3@1.0 gains `oracle.decisions`. Its hash changes. No stored result carries the old one, and S3
+  is registered only at calibration (W8 decision 4).
+- **W9 decision 5 held.** `SCORE_VERSION` and `AGGREGATE_VERSION` stay 1. Every metric is a new key,
+  and the aggregate still reads a `score.json` without them (a characterization test).
+- **Amendments for the approver's review decision:**
+  - requirements 1.14: REQ-FMT-04 and REQ-SCO-12;
+  - traceability 1.1.
+
+  Their "Source" lines get the approval commit's hash once approved.
+- **For W11 (F5.8), the method page states:**
+  - M-F1's four rows, and that a revision the scenario asks for counts only when recorded;
+  - that M-F2 is a reading of the later steps, not a computed attribution;
+  - M-D3 from the seed, public tests only;
+  - that a final not reached is a loss for M-F1 and M-D3.
+- No new bug and no new decision-log. No WingFoil usage note. No spending.
