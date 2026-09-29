@@ -160,7 +160,7 @@ describe('content checks (REQ-SCO-06)', () => {
   });
 
   it('passes the same record whatever form a harness gives it: a decision-log or a notes file (F4.8)', async () => {
-    const check = content([['whole days'], ['revised', 'superseded']]);
+    const check = content([['whole days'], ['revised', 'supersede']]);
     const wingfoil = await scored(check, [
       {
         files: {
@@ -177,6 +177,22 @@ describe('content checks (REQ-SCO-06)', () => {
       { n: 1, passed: true, where: { file: '.wingfoil/memory/decision-log/dl-002-hourly-rentals.md' } },
     ]);
     expect(plain[0]?.steps).toEqual([{ n: 1, passed: true, where: { file: 'NOTES.md' } }]);
+  });
+
+  it('names a file git quotes in its patch by its real name', async () => {
+    const checks = await scored(content([['revised']]), [
+      { files: { 'notes/décision\t"1".md': 'revised\n' } },
+    ]);
+    expect(checks[0]?.steps).toEqual([{ n: 1, passed: true, where: { file: 'notes/décision\t"1".md' } }]);
+  });
+
+  it("is an issue, not a failed check, when a step's patch is missing", async () => {
+    const { runDir, snapshots } = await run([{ files: { 'n.md': 'revised\n' } }]);
+    rmSync(join(runDir, 'steps', '01', 'diff.patch'));
+    expect(scoreChecks({ checks: [content([['revised']])], runDir, snapshots })).toEqual({
+      ok: false,
+      issues: [{ path: 'steps/01/diff.patch', message: 'is missing' }],
+    });
   });
 
   it('refuses a run stored before steps recorded their commit messages, rather than guess', async () => {
@@ -219,6 +235,11 @@ describe('unchanged checks (REQ-SCO-06 as amended)', () => {
     ]);
     expect(gone[0]?.steps).toEqual([{ n: 1, passed: false, region: 1 }]);
     expect(reformatted[0]?.steps).toEqual([{ n: 1, passed: false, region: 1 }]);
+  });
+
+  it('reads a file with no final newline as the same lines', async () => {
+    const checks = await scored(unchanged(), [{ files: { 'src/tax.ts': SEED['src/tax.ts'].trimEnd() } }]);
+    expect(checks[0]?.steps).toEqual([{ n: 1, passed: true }]);
   });
 
   it('needs no commit messages: a run stored before task-035 is still scored', async () => {

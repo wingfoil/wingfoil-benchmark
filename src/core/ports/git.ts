@@ -75,6 +75,12 @@ export interface GitPort {
   /** The full SHA of the commit the repository is at. */
   head(directory: string): Promise<string>;
   /**
+   * The full messages, oldest first, of the commits reachable from `HEAD` and not from commit `from`:
+   * what the agent and its harness committed during a step (task-035), since the patch keeps only
+   * trees (bug-007). Each without its trailing newlines.
+   */
+  messagesSince(directory: string, from: string): Promise<string[]>;
+  /**
    * The full SHA of the commit `rev` names in `repository`, or `undefined` when it names none: how a
    * harness pin is checked against its clone (REQ-RUN-14).
    */
@@ -111,6 +117,15 @@ export function gitCli(process: ProcessPort): GitPort {
       await git(directory, ['config', 'user.email', email]);
     },
     head: async (directory) => (await git(directory, ['rev-parse', 'HEAD'])).trim(),
+    messagesSince: async (directory, from) => {
+      // Each message ends with a NUL, and git puts a newline between commits: the last piece is
+      // what follows the last NUL, never a message.
+      const pieces = (await git(directory, ['log', '--reverse', '--format=%B%x00', `${from}..HEAD`])).split(
+        '\0',
+      );
+      pieces.pop();
+      return pieces.map((piece) => piece.replace(/^\n/, '').replace(/\n+$/, ''));
+    },
     resolveCommit: async (repository, rev) => {
       const args = [...ISOLATION, '-C', repository, 'rev-parse', '--verify', '--quiet', `${rev}^{commit}`];
       const result = await process.run('git', args, { env: ISOLATED_ENVIRONMENT });

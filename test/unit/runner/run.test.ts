@@ -984,12 +984,11 @@ describe('the setup phase (REQ-RUN-03, adr-003)', () => {
     const summary = await runCampaign(checked, ports);
 
     const workspace = summary.runs[0]?.workspace ?? '';
-    expect(ports.recorded.gitCalls.filter((call) => !/^(patch|tree) /.test(call))).toEqual([
+    expect(ports.recorded.gitCalls.filter((call) => !/^(patch|tree|messages|head) /.test(call))).toEqual([
       `init ${workspace}`,
       `commit ${workspace} seed`,
       `identity ${workspace} Benchmark Approver <approver@benchmark.localhost>`,
       `commit ${workspace} setup --allow-empty`,
-      `head ${workspace}`,
       `commit ${workspace} step 01 --allow-empty`,
       `commit ${workspace} step 02 --allow-empty`,
     ]);
@@ -1086,10 +1085,14 @@ describe('the setup phase (REQ-RUN-03, adr-003)', () => {
       `head ${workspace}`,
       `tree ${workspace} HEAD`,
       `patch ${workspace} ${tree(1)} ${tree(2)}`,
+      `messages ${workspace} ${'commit-1'.padEnd(40, '0')}`,
       `commit ${workspace} step 01 --allow-empty`,
+      `head ${workspace}`,
       `tree ${workspace} HEAD`,
       `patch ${workspace} ${tree(2)} ${tree(3)}`,
+      `messages ${workspace} ${'commit-2'.padEnd(40, '0')}`,
       `commit ${workspace} step 02 --allow-empty`,
+      `head ${workspace}`,
       `tree ${workspace} HEAD`,
       `patch ${workspace} ${tree(3)} ${tree(4)}`,
     ]);

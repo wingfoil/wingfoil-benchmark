@@ -387,6 +387,7 @@ describe('runs in a real container', () => {
     steps: { n: number; suites: { id: string; passed: number; total: number }[] }[];
     final: { m_q1: { passed: number; total: number } };
     holdout: { scored: boolean; final?: { m_q1: { passed: number; total: number } } };
+    checks: { id: string; steps: { n: number; passed?: boolean; where?: unknown }[] }[];
   }
 
   /**
@@ -481,6 +482,19 @@ describe('runs in a real container', () => {
       },
     ]);
     expect(score.final.m_q1).toEqual({ passed: 24, total: 24 });
+    // S2.md §6's two checks (task-035), run by `bench score` beside the scoring containers: the
+    // reference records the duplicate in step 3's notes, and leaves the false report's code alone.
+    expect(score.checks).toEqual([
+      { id: 'duplicate', kind: 'content', steps: [{ n: 3, passed: true, where: { file: 'NOTES.md' } }] },
+      {
+        id: 'false-report',
+        kind: 'unchanged',
+        steps: [
+          { n: 2, passed: true },
+          { n: 3, passed: true },
+        ],
+      },
+    ]);
   }
 
   const s1Reference = repoPath('test/fixtures/reference/S1');

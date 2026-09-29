@@ -30,7 +30,7 @@ function scenarioWith(
   return root;
 }
 
-function issuesOf(root: string): { path: string; message: string }[] {
+function issuesOf(root: string): readonly { path: string; message: string }[] {
   const result = loadScenario(root, 'S9', '1.0');
   return result.ok ? [] : result.issues;
 }

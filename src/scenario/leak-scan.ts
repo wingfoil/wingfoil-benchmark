@@ -137,9 +137,13 @@ export function scanScenario(
   return issues;
 }
 
-/** The public oracle's files — every suite's, in declaration order (dl-001) — and its checks, in a stable order. */
+/**
+ * The public oracle's files: every suite's, in declaration order (dl-001). Not its checks (task-035):
+ * their patterns are the words the prompts themselves use, and the loader refuses a check that a
+ * step's prompt satisfies, which is the leak that matters for them (REQ-SCO-06 as amended in 1.12).
+ */
 function oracleFiles(scenario: Scenario): string[] {
-  return [...scenario.oracle.suites.flatMap((suite) => filesUnder(suite.dir)), ...scenario.oracle.checks];
+  return scenario.oracle.suites.flatMap((suite) => filesUnder(suite.dir));
 }
 
 /** The reserved names in a seed, as paths relative to it, in a stable order; a reserved directory is not entered. */

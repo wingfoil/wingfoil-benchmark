@@ -258,6 +258,7 @@ describe('scoreSummary', () => {
         holdout: { scored: false, reason: 'none declared' },
         cost: NO_COST,
         expected_failure: null,
+        checks: [],
         steps: [
           { n: 1, suites: [] },
           { n: 2, suites: [{ id: 'a', passed: 1, total: 2, failed: ['x'] }], m_q1: { passed: 1, total: 2 } },
@@ -281,6 +282,7 @@ describe('scoreSummary', () => {
         holdout: { scored: false, reason: 'none declared' },
         cost: NO_COST,
         expected_failure: null,
+        checks: [],
       }),
     ).toBe('no hidden tests');
   });
@@ -501,6 +503,7 @@ describe('scoreRun with the hold-out (task-028, F3.5, REQ-SCO-09)', () => {
       final: { step: 1, suites: [], m_q1: { passed: 1, total: 1 } },
       cost: NO_COST,
       expected_failure: null,
+      checks: [],
     };
     expect(
       scoreSummary({

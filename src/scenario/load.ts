@@ -1,9 +1,19 @@
 import { createHash } from 'node:crypto';
 import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
-import { resolve, sep } from 'node:path';
+import { basename, relative, resolve, sep } from 'node:path';
 
-import { ARM_NAME, fail, ok, parseWith, readYamlFile, scenarioSchema } from '../core/index.js';
-import type { Issue, Result, Scenario, ScenarioFile, ThirdParty } from '../core/index.js';
+import {
+  ARM_NAME,
+  checkFileSchema,
+  fail,
+  linesOf,
+  ok,
+  parseWith,
+  readYamlFile,
+  satisfies,
+  scenarioSchema,
+} from '../core/index.js';
+import type { Check, Issue, Result, Scenario, ScenarioFile, ThirdParty } from '../core/index.js';
 
 import { scenarioHash } from './hash.js';
 
@@ -27,7 +37,8 @@ interface Declared {
  * version against their directories; then every suite's steps against the declared steps (dl-001);
  * then every declared path on disk, in declaration order; then the entries of `arms/`; then every
  * overlap between what the agent sees and what it must not see, and between the oracle's own paths;
- * then the third-party files outside every suite and those that no longer match their `sha256` (dl-002).
+ * then the third-party files outside every suite and those that no longer match their `sha256` (dl-002);
+ * then each check file's own issues, in declaration order (REQ-SCO-06, task-035).
  */
 export function loadScenario(scenariosRoot: string, id: string, version: string): Result<Scenario> {
   const dir = resolve(scenariosRoot, id, version);
@@ -48,7 +59,125 @@ export function loadScenario(scenariosRoot: string, id: string, version: string)
   ];
   if (issues.length === 0) issues.push(...overlapIssues(seed, others, arms.declared, dir));
   if (issues.length === 0) issues.push(...vendoredIssues(spec, dir));
-  return issues.length > 0 ? fail(issues) : ok(toScenario(spec, dir, arms.declared));
+  if (issues.length > 0) return fail(issues);
+  const checks = loadChecks(spec, dir);
+  return checks.ok ? ok(toScenario(spec, dir, arms.declared, checks.value)) : checks;
+}
+
+/** A check file's name: its id, in kebab case, then `.yaml`. */
+const CHECK_FILE = /^([a-z][a-z0-9]*(?:-[a-z0-9]+)*)\.yaml$/;
+
+/**
+ * Read every check file of `oracle.checks` (REQ-SCO-06 as amended in 1.12, task-035), the files existing
+ * and lying in no suite (checked before). A check's id is its file's name; its steps are the scenario's;
+ * an unchanged check's regions lie in the seed's files, whose lines are loaded with it; and a content
+ * check must not be one that its own step's prompt satisfies, or an agent copying the prompt would pass.
+ */
+function loadChecks(spec: ScenarioFile, dir: string): Result<Check[]> {
+  const seedDir = resolve(dir, spec.seed);
+  const issues: Issue[] = [];
+  const checks: Check[] = [];
+  const ids = new Map<string, number>();
+  spec.oracle.checks.forEach((path, index) => {
+    const at = `oracle.checks[${index}]`;
+    const file = resolve(dir, path);
+    const name = CHECK_FILE.exec(basename(file));
+    if (name === null) {
+      issues.push({ path: at, message: `'${basename(file)}' must be named <id>.yaml, with a kebab-case id` });
+      return;
+    }
+    const id = name[1] as string;
+    const earlier = ids.get(id);
+    if (earlier !== undefined) {
+      issues.push({ path: at, message: `repeats the id '${id}' of oracle.checks[${earlier}]` });
+      return;
+    }
+    ids.set(id, index);
+    const read = readYamlFile(file);
+    if (!read.ok) {
+      issues.push(...read.issues.map((issue) => ({ path: at, message: `${issue.path} ${issue.message}` })));
+      return;
+    }
+    const parsed = parseWith(checkFileSchema, read.value, '');
+    if (!parsed.ok) {
+      issues.push(
+        ...parsed.issues.map((issue) => ({
+          path: issue.path ? `${at}.${issue.path}` : at,
+          message: issue.message,
+        })),
+      );
+      return;
+    }
+    const check = parsed.value;
+    const found = check.steps.flatMap((n, position): Issue[] =>
+      n <= spec.steps.length
+        ? []
+        : [
+            {
+              path: `${at}.steps[${position}]`,
+              message: `must be a declared step: the scenario has steps 1–${spec.steps.length}`,
+            },
+          ],
+    );
+    if (check.kind === 'content') {
+      found.push(...promptIssues(spec, dir, at, check.steps, check.patterns));
+      if (found.length === 0)
+        checks.push({ id, file, kind: 'content', steps: check.steps, patterns: check.patterns });
+    } else {
+      const regions = check.regions.map((entry, position) => {
+        const where = `${at}.regions[${position}]`;
+        const target = resolve(seedDir, entry.file);
+        if (!exists(target, 'file') || !isInside(realpathSync(target), realpathSync(seedDir))) {
+          found.push({ path: `${where}.file`, message: `'${entry.file}' is not a file of the seed` });
+          return undefined;
+        }
+        const lines = linesOf(readFileSync(target, 'utf8'));
+        const [from, to] = entry.lines;
+        if (to > lines.length) {
+          found.push({
+            path: `${where}.lines`,
+            message: `goes past the end of '${entry.file}', which has ${lines.length} lines`,
+          });
+          return undefined;
+        }
+        return { path: entry.file, from, to, lines: lines.slice(from - 1, to) };
+      });
+      if (found.length === 0) {
+        checks.push({
+          id,
+          file,
+          kind: 'unchanged',
+          steps: check.steps,
+          regions: regions.filter((entry) => entry !== undefined),
+        });
+      }
+    }
+    issues.push(...found);
+  });
+  return issues.length > 0 ? fail(issues) : ok(checks);
+}
+
+/** The steps of a content check whose own prompt satisfies it: one issue on the check, the first. */
+function promptIssues(
+  spec: ScenarioFile,
+  dir: string,
+  at: string,
+  steps: readonly number[],
+  patterns: readonly (readonly string[])[],
+): Issue[] {
+  for (const n of steps) {
+    const prompt = spec.steps[n - 1]?.prompt_file;
+    if (prompt === undefined) continue;
+    if (satisfies(readFileSync(resolve(dir, prompt), 'utf8'), patterns)) {
+      return [
+        {
+          path: at,
+          message: `is satisfied by the text of ${relative(dir, resolve(dir, prompt))}: an agent that copies its prompt would pass`,
+        },
+      ];
+    }
+  }
+  return [];
 }
 
 function identityIssues(spec: ScenarioFile, id: string, version: string): Issue[] {
@@ -225,7 +354,12 @@ function isInside(path: string, root: string): boolean {
   return path === root || path.startsWith(root + sep);
 }
 
-function toScenario(spec: ScenarioFile, dir: string, arms: readonly Declared[]): Scenario {
+function toScenario(
+  spec: ScenarioFile,
+  dir: string,
+  arms: readonly Declared[],
+  checks: readonly Check[],
+): Scenario {
   return {
     id: spec.id,
     version: spec.version,
@@ -242,7 +376,7 @@ function toScenario(spec: ScenarioFile, dir: string, arms: readonly Declared[]):
         dir: resolve(dir, suite.dir),
         afterSteps: [...suite.after_steps].sort((a, b) => a - b),
       })),
-      checks: spec.oracle.checks.map((check) => resolve(dir, check)),
+      checks,
       thirdParty: spec.oracle.third_party.map(
         ({ name, url, license, commit, sha256, files }): ThirdParty => ({
           name,

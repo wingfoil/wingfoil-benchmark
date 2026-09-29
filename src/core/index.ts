@@ -1,8 +1,28 @@
 export { fail, formatPath, ok } from './result.js';
 export type { Issue, Result } from './result.js';
-export { CATEGORIES, PROFILES, SCENARIO_ID, SCENARIO_VERSION, scenarioSchema } from './scenario.js';
-export type { Category, Profile, Scenario, ScenarioFile, Suite, ThirdParty } from './scenario.js';
+export {
+  CATEGORIES,
+  checkFileSchema,
+  PROFILES,
+  SCENARIO_ID,
+  SCENARIO_VERSION,
+  scenarioSchema,
+} from './scenario.js';
+export type {
+  Category,
+  Check,
+  CheckFile,
+  ContentCheck,
+  Profile,
+  Region,
+  Scenario,
+  ScenarioFile,
+  Suite,
+  ThirdParty,
+  UnchangedCheck,
+} from './scenario.js';
 export { ARM_NAME, armSchema } from './arm.js';
+export { foldText, linesOf, satisfies } from './check-text.js';
 export { leakScanSchema } from './leak-scan.js';
 export type { LeakScanDeclarations } from './leak-scan.js';
 export type { Arm, ArmFile } from './arm.js';

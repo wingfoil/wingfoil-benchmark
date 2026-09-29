@@ -88,7 +88,20 @@ export interface Group {
     readonly cost: CostAggregate;
     /** A public suite's tests failing at a step and not at the previous step it is scored at. */
     readonly regressions: readonly { readonly suite: string; readonly step: number; readonly value: Value<number> }[];
+    /** Each check on each of its steps (REQ-SCO-06, task-035): a tally of one per run, passed or not. */
+    readonly checks: readonly CheckAggregate[];
   };
+}
+
+/** A check across the runs of a group that scored it (task-035). */
+export interface CheckAggregate {
+  readonly id: string;
+  readonly kind: string;
+  readonly steps: readonly {
+    readonly step: number;
+    readonly passed: Value<Tally>;
+    readonly not_reached: readonly string[];
+  }[];
 }
 
 /** `aggregate.json`, version 1 (F5.1): no timestamp, keys and entries in a fixed order (REQ-SCO-03). */
@@ -136,6 +149,21 @@ const scoreSchema = z.object({
     z.object({ scored: z.literal(false), reason: z.string() }),
     z.object({ scored: z.literal(true), steps: z.array(step), final }),
   ]),
+  // Optional: a score.json written before task-035 has no checks, and still aggregates.
+  checks: z
+    .array(
+      z.object({
+        id: z.string(),
+        kind: z.string(),
+        steps: z.array(
+          z.union([
+            z.object({ n: z.number().int(), not_reached: z.literal(true) }),
+            z.object({ n: z.number().int(), passed: z.boolean() }),
+          ]),
+        ),
+      }),
+    )
+    .optional(),
   cost: z.object({ run: costFigures }),
   expected_failure: z.object({ missing: z.array(z.string()) }).nullable(),
 });
@@ -265,6 +293,7 @@ function aggregateGroup(runs: readonly ScoredRun[]): Group {
       holdout: holdoutOf(runs),
       cost: costOf(runs),
       regressions: regressionsOf(runs),
+      checks: checksOf(runs),
     },
   };
 }
@@ -404,6 +433,42 @@ function regressionsOf(runs: readonly ScoredRun[]): Group['metrics']['regression
         ),
       };
     });
+  });
+}
+
+/**
+ * Each check a run of the group scored, in the order the runs first declare them, on each of its steps:
+ * the runs that reached the step, each a tally of one (passed or not), and those that never did. A loss
+ * keeps its checks, as it keeps M-Q1 (task-034).
+ */
+function checksOf(runs: readonly ScoredRun[]): CheckAggregate[] {
+  const order: { id: string; kind: string }[] = [];
+  for (const run of runs) {
+    for (const check of run.score.checks ?? []) {
+      if (!order.some((known) => known.id === check.id)) order.push({ id: check.id, kind: check.kind });
+    }
+  }
+  return order.map(({ id, kind }) => {
+    const found = runs.flatMap((run) => {
+      const check = (run.score.checks ?? []).find((candidate) => candidate.id === id);
+      return check === undefined ? [] : [{ run: run.name, steps: check.steps }];
+    });
+    const numbers = [...new Set(found.flatMap((entry) => entry.steps.map((s) => s.n)))].sort((a, b) => a - b);
+    return {
+      id,
+      kind,
+      steps: numbers.map((n) => {
+        const reached: { run: string; value: Tally }[] = [];
+        const notReached: string[] = [];
+        for (const entry of found) {
+          const s = entry.steps.find((candidate) => candidate.n === n);
+          if (s === undefined) continue;
+          if ('not_reached' in s) notReached.push(entry.run);
+          else reached.push({ run: entry.run, value: { passed: s.passed ? 1 : 0, total: 1 } });
+        }
+        return { step: n, passed: valueOf(reached, byRatio), not_reached: notReached };
+      }),
+    };
   });
 }
 
