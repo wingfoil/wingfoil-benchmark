@@ -312,3 +312,11 @@ No real agent, no spending. No `wingfoil` command in the build phase.
   changed). Matches.
 - Its reason is the review decision, 2026-09-29, of requirements 1.13 and adr-004 amendment 2: M-E1's
   directive checks accepted, the AST in the scoring image.
+
+### Delivery
+
+- Merged into main with `--no-ff` → `da7ae51`.
+- `npx wingfoil memory submit task-037-directive-checks-and-tool-neutral-governance-metrics` → `f1f7fcf`.
+  Declared: `approved → done`, one commit `wf(task): submit <id>`. Observed: exit 0, 1 file, diff limited to
+  `status: approved` → `status: done`. Matches (N9).
+- Not the last task of W8: the wave's "Ends with" is checked after task-038 (W8 decision 1).
