@@ -294,6 +294,9 @@ task-033 reuses the helper with its hold-out reference (decision 5).
 - `npx wingfoil memory submit task-032-s1-conformance-scenario` → `b390c36`. Declared: `backlog →
   in-progress`, one commit `wf(task): submit <id>`. Observed: exit 0, empty stderr, 1 file, diff limited
   to `status: backlog` → `status: in-progress`. Matches (N9).
+- `npx wingfoil memory submit task-032-s1-conformance-scenario` → `42375e6`. Declared: `in-progress →
+  in-review`, one commit `wf(task): submit <id>`. Observed: exit 0, empty stderr, 1 file, diff limited to
+  `status: in-progress` → `status: in-review`. Matches (N9).
 
 ### Build
 
