@@ -185,9 +185,9 @@ describe('scoring.feature', { timeout: 120_000 }, () => {
     expect(recorded.creates.length).toBeGreaterThan(0);
     for (const create of recorded.creates) {
       expect(create.image).toMatch(/^bench-score:/);
-      // M-Q2's container (task-041) reads the snapshot alone: no oracle is mounted in it.
+      // M-Q2's container (task-041) and M-R2's (task-042) read the snapshot alone: no oracle is mounted.
       expect(create.readOnly).toEqual(
-        create.name.endsWith('-quality')
+        create.name.endsWith('-quality') || create.name.endsWith('-interface')
           ? []
           : [{ source: join(fixture.scenario.dir, 'oracle', 'public'), target: '/score/oracle/public' }],
       );

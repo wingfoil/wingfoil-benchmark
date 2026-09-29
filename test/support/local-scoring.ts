@@ -14,6 +14,7 @@ const IMAGE_FILES: Readonly<Record<string, string>> = {
   '/opt/score/reporter.mjs': repoPath('docker/score-image/reporter.mjs'),
   '/opt/score/ast-checks.mjs': repoPath('docker/score-image/ast-checks.mjs'),
   '/opt/score/quality.mjs': repoPath('docker/score-image/quality.mjs'),
+  '/opt/score/interface.mjs': repoPath('docker/score-image/interface.mjs'),
 };
 
 /**
