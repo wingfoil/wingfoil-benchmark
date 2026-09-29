@@ -304,3 +304,89 @@ No real agent and no spending.
 - `npx wingfoil memory submit task-038-s8-directive-compliance-scenario` → `82b1ea8`. Declared: `backlog →
   in-progress`, one commit `wf(task): submit <id>`. Observed: exit 0, 1 file, diff limited to `status:
   backlog` → `status: in-progress`. Matches (N9).
+
+### Build
+
+Commits:
+
+- `31b9d0b`: the tests, red.
+- `8671b9b`: S8.md 1.1.
+- `a6dd15f`: S8@1.0, its reference, and the snapshot fixture.
+- `f5597ca`: the reference formatted.
+- Hold-out `3792676`: four files, functional only.
+
+**As designed**, with these points found in the build:
+
+- **The seed:**
+  - a to-do list under `src/domain/` (`result.ts`, `task.ts`, `list.ts`, `summary.ts`), the public API in
+    `src/index.ts`, and 6 visible tests;
+  - 286 lines of code, about 360 with the tests;
+  - on it the four checks count **zero violations**, a unit test.
+
+  `summary.ts` was added to bring the domain nearer S8.md §3's 300–500 lines.
+- **The suites**, in tests:
+
+  | Suite | Tests |
+  |---|---|
+  | `core` | 6 |
+  | `ids` | 5 |
+  | `timestamps` | 3 |
+  | `validation` | 5 |
+  | `bulk-import` | 4 |
+
+  That is 23 in all. `core` passes on the seed on purpose; every other suite fails it entirely.
+  - Two tests first passed on the seed by accident, and were caught by the unit test:
+    - `ids`' "refuses an id no task has": a missing `get` throws, which counted as a refusal. It now
+      first checks that `get` works;
+    - `timestamps`' "read back": two `undefined` times compared equal. It now checks the format first.
+
+    This is adr-004 decision 10 in practice.
+  - `timestamps` checks real times: each stamp lies within a second of the test's own clock, and every
+    change moves `updatedAt` forward after a 25 ms pause.
+- **The oracle is linted with the repository's rules** (no `any`, no unused helper). Each suite
+  therefore declares the small structural types of the API it calls (`TaskView`, `Outcome`, `TaskList`)
+  and keeps only the helpers it uses.
+- **The leak scan found:**
+  - three describe or test names shared with the prompts or the seed's own test: "bulk import",
+    "invalid input", and the seed test's "completes a task once, and reopens it";
+  - `'function'` and a backticked `undefined`, words the seed uses;
+  - one hold-out title, "one more", which is in a TSDoc of the seed.
+
+  All were renamed. The directive lines of `arms/wingfoil/` appear nowhere in the seed or the prompts
+  (the arm-line rule).
+- **The reference:**
+  - generated from one template with step blocks, as S3's was: ids `t-1`, `t-2`… from a counter in the
+    domain; the clock passed in by `src/index.ts` (`createTaskList({ now })`); validation in the domain
+    returning `invalid-input` results; `importTasks` documented in `src/index.ts` over a domain
+    `importLines`;
+  - step 1 also updates the seed's visible test, which compared a whole task;
+  - its `src/` type-checks at every step with the seed's `tsconfig`, and its visible tests pass at every
+    step.
+  - M-E1 is **zero at all four steps**.
+- **The easy-path variant**, added beside the reference by the test: R1 `[1, 1, 1, 1]`, R2 `[0, 0, 0, 1]`,
+  R3 `[1, 2, 2, 2]`, R4 `[0, 0, 1, 2]`. Every hidden test still passes at step 4. M-E1 moves while M-Q1
+  does not.
+- **The baseline-docs snapshot** was taken from a real dry run of S8 in baseline-docs, on this branch's
+  CLI, with the fake replaying the reference and WingFoil `3df305e` built from the clone. That gives
+  `test/fixtures/wingfoil-config/S8/` and `S8.PROJECT_RULES.md`, where R1–R4 are rendered under
+  "Rules" beside init's own directives. @F2.5 now reads them. **T2's snapshot was removed**, since
+  nothing used it any more; the README says so.
+- **@F4.8 "per rule and per step" stays on T3.** It already reads simply, and S8's own counts are
+  covered by the unit test (reference zero, easy path per step) and by the Docker test.
+- **The Docker test checks K3 on the setup patches** rather than running `directives list` in the
+  container. baseline-docs' patch holds `+### No new runtime dependency` (`PROJECT_RULES.md`); wingfoil's
+  holds `r1-no-new-dependency.md` (the directive file); baseline's holds neither. It is the same
+  evidence, from what the run stored.
+
+**Checks:**
+
+- `bench scenario validate S8@1.0 --holdout ../WingFoil2-Benchmark-HoldOut` →
+  `scenario S8@1.0 is valid (hold-out: 4 files)`.
+- `npm test`: 948/948 (+9). Coverage 99.11% statements, 94.52% branches, 99.91% lines.
+- `npm run typecheck` and `npm run lint`: clean.
+- `npm run test:bin`: 5/5.
+- `npm run test:docker`: 16/16 (+2), with no `bench-` container left. S8 ran in baseline, baseline-docs and
+  wingfoil, scored by the real image. Every suite passed at its steps and M-E1 was zero at every step.
+  The rules reached only baseline-docs (`PROJECT_RULES.md`) and wingfoil (the directives).
+
+No real agent, no spending. No `wingfoil` command in the build phase.
