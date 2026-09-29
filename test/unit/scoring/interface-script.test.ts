@@ -173,4 +173,26 @@ describe('interface.mjs (M-R2, REQ-SCO-05, task-042)', { timeout: 60_000 }, () =
       's.ts: export default … as Config;',
     ]);
   });
+
+  it('never takes a constructor for a method named default, nor the other way round', () => {
+    const root = snapshot({
+      'a.ts':
+        'export class A {\n  constructor(a: string);\n  constructor(a: unknown) {}\n  default(): number {\n    return 1;\n  }\n}\n' +
+        'export class B {\n  constructor() {}\n  default(a: string): void;\n  default(a: unknown) {}\n}\n',
+    });
+    expect(entries(root, ['a.ts'])).toEqual([
+      'a.ts: export class A { constructor(a: string); default(): number; }',
+      'a.ts: export class B { constructor(); default(a: string): void; }',
+    ]);
+  });
+
+  it('keeps only the exported members of an ambient namespace that declares its exports', () => {
+    const root = snapshot({
+      'n.ts':
+        'export declare namespace N {\n  const a: number;\n  export const b: number;\n  export {};\n}\n',
+    });
+    expect(entries(root, ['n.ts'])).toEqual([
+      'n.ts: export declare namespace N { export const b: number; export {}; }',
+    ]);
+  });
 });
