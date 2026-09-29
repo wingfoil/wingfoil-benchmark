@@ -58,6 +58,16 @@ export async function storedRun(
      * listed in `oracle.checks`. Not with `into`: the scenario is the existing fixture's.
      */
     checks?: Readonly<Record<string, string>>;
+    /**
+     * A scenario of the repository's own `scenarios/` to store a run of, in place of the fixture T3
+     * (task-039), such as `S3`: its steps are then its reference's. With `into`, the one already there.
+     */
+    scenario?: string;
+    /**
+     * The decisions T3's oracle lists (task-039), as the YAML of `oracle.decisions`. Not with `into`:
+     * the scenario is the existing fixture's.
+     */
+    decisions?: string;
     /** A run stored before steps recorded their commit messages (task-035): no `commits.json`. */
     withoutMessages?: boolean;
     /**
@@ -75,15 +85,19 @@ export async function storedRun(
   } = { steps: [] },
 ): Promise<StoredRunFixture> {
   const root = options.into?.root ?? tempDir('bench-score-repo-');
+  const id = options.scenario ?? 'T3';
   if (options.into === undefined) {
-    cpSync(repoPath('test/fixtures/scenarios/T3'), join(root, 'scenarios', 'T3'), { recursive: true });
+    const source = id === 'T3' ? repoPath('test/fixtures/scenarios/T3') : repoPath(`scenarios/${id}`);
+    cpSync(source, join(root, 'scenarios', id), { recursive: true });
     addChecks(join(root, 'scenarios', 'T3', '1.0'), options.checks ?? {});
+    if (options.decisions !== undefined)
+      addDecisions(join(root, 'scenarios', 'T3', '1.0'), options.decisions);
   }
   const execution = options.into?.execution ?? EXECUTION;
   const arm = options.into?.arm ?? 'baseline';
   const model = options.into?.model ?? 'fake-model';
   const repetition = options.into?.repetition ?? 1;
-  const loaded = loadScenario(join(root, 'scenarios'), 'T3', '1.0');
+  const loaded = loadScenario(join(root, 'scenarios'), id, '1.0');
   if (!loaded.ok) throw new Error(JSON.stringify(loaded.issues));
   const scenario = loaded.value;
   const git = gitCli(systemProcess);
@@ -91,7 +105,7 @@ export async function storedRun(
   await prepareWorkspace(workspace, scenario, git);
 
   const executionDir = join(root, 'results', execution);
-  const runDir = join(executionDir, 'runs', 'T3@1.0', arm, model, `r${repetition}`);
+  const runDir = join(executionDir, 'runs', `${id}@1.0`, arm, model, `r${repetition}`);
   mkdirSync(join(runDir, 'setup'), { recursive: true });
   const seedTree = await git.tree(workspace, 'HEAD');
   for (const [index, files] of (options.setupCommits ?? []).entries()) {
@@ -160,7 +174,7 @@ export async function storedRun(
     `${JSON.stringify(
       {
         ...(execution.startsWith('dry-runs/') ? { dry_run: true } : { campaign: execution.split('/')[0] }),
-        scenario: 'T3',
+        scenario: id,
         version: '1.0',
         scenario_hash: scenario.hash,
         arm,
@@ -186,6 +200,15 @@ function addChecks(dir: string, checks: Readonly<Record<string, string>>): void 
   writeFileSync(
     yaml,
     readFileSync(yaml, 'utf8').replace('holdout: true', `  checks: [${paths.join(', ')}]\nholdout: true`),
+  );
+}
+
+/** List `decisions` in the version directory `dir`'s `oracle.decisions`. */
+function addDecisions(dir: string, decisions: string): void {
+  const yaml = join(dir, 'scenario.yaml');
+  writeFileSync(
+    yaml,
+    readFileSync(yaml, 'utf8').replace('holdout: true', `  decisions: ${decisions}\nholdout: true`),
   );
 }
 

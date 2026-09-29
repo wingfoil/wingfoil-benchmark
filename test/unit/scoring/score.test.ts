@@ -81,6 +81,20 @@ describe('scoreRun (F4.1, REQ-SCO-01–03)', () => {
         version: '1.0',
         scenario_hash: fixture.scenario.hash,
         scorer: { image: 'bench-score:0123456789ab', tsx: '4.23.15', typescript: '6.0.3' },
+        // The public suites on the seed, with its own verdicts (task-039): M-D3 reads them.
+        seed: {
+          suites: [
+            {
+              id: 'orders',
+              passed: 0,
+              total: 1,
+              failed: [
+                'oracle/public/cancel.test.ts > cancelling an order > marks a pending order as cancelled',
+              ],
+            },
+          ],
+          m_q1: { passed: 0, total: 1 },
+        },
         steps: [
           {
             n: 1,
@@ -111,6 +125,11 @@ describe('scoreRun (F4.1, REQ-SCO-01–03)', () => {
         holdout: { scored: false, reason: 'not configured' },
         // T3 declares no check (task-035): the key is there, empty.
         checks: [],
+        // M-F2 (task-039): step 2, the one after the first, with its cost and its M-Q1. No M-F1: T3
+        // lists no decision.
+        m_f2: { steps: [{ n: 2, cost_eur: 0.1, m_q1: { passed: 1, total: 1 } }] },
+        // M-D3 (task-039): the one test failed on the seed, so nothing it passed there can regress.
+        m_d3: { count: 0, tests: [] },
         // Not marked (F3.6): the key is there, so aggregation never infers it from an absent one.
         expected_failure: null,
         // M-K1 and M-K2 (F4.3): their own tests are in cost.test.ts.
@@ -136,6 +155,10 @@ describe('scoreRun (F4.1, REQ-SCO-01–03)', () => {
       { n: 2, not_reached: true },
     ]);
     expect(result.ok && result.value.final).toEqual({ not_reached: true });
+    // The seed is scored all the same; what needs the final snapshot says it was not reached.
+    expect(result.ok && result.value.seed.m_q1).toEqual({ passed: 0, total: 1 });
+    expect(result.ok && result.value.m_d3).toEqual({ not_reached: true });
+    expect(result.ok && result.value.m_f2).toEqual({ steps: [{ n: 2, not_reached: true }] });
   });
 
   it('counts a census test a snapshot never reported as failed: a killed file hides its tests', async () => {
@@ -316,10 +339,13 @@ describe('checks in score.json (REQ-SCO-06, task-035)', () => {
       'version',
       'scenario_hash',
       'scorer',
+      'seed',
       'steps',
       'final',
       'holdout',
       'checks',
+      'm_f2',
+      'm_d3',
       'cost',
       'expected_failure',
     ]);
@@ -545,5 +571,46 @@ describe('expected failures in score.json (F3.6, REQ-SCO-10)', () => {
     expect(result.ok && scoreSummary(result.value)).toBe(
       'step 01 0/1, step 02 1/1, final 1/1; hold-out not scored; expected failure (missing workflow-engine)',
     );
+  });
+});
+
+describe('continuity and regressions in score.json (REQ-SCO-11, task-039)', () => {
+  /** T3's one test, named for decision D1 as S3 names its decision tests. */
+  const D1_TEST = {
+    file: T3_TEST.file,
+    path: ['cancelling an order', 'D1: marks a pending order as cancelled'],
+  };
+  const judgeD1 = (snapshot: string): ProcessResult => {
+    const judged = judgeT3(snapshot);
+    const status = judged.code === 0 ? 'pass' : 'fail';
+    return { ...judged, stdout: reporterLine(D1_TEST, status) };
+  };
+
+  it('scores M-F1 on the final snapshot from the decisions the oracle lists', async () => {
+    const fixture = await storedRun({ steps: [{}, CANCEL], decisions: '[{ id: D1 }]' });
+
+    const { result } = await score(fixture, judgeD1);
+
+    if (!result.ok) throw new Error(JSON.stringify(result.issues));
+    expect(result.value.m_f1).toEqual({
+      consistent: 1,
+      total: 1,
+      decisions: [{ id: 'D1', outcome: 'respected', failed: [] }],
+    });
+    expect(Object.keys(result.value).indexOf('m_f1')).toBe(Object.keys(result.value).indexOf('checks') + 1);
+    expect(scoreSummary(result.value)).toBe(
+      'step 01 0/1, step 02 1/1, final 1/1; hold-out not scored; M-F1 1/1',
+    );
+  });
+
+  it('is an oracle error, naming the decision, when a listed decision has no public hidden test', async () => {
+    const fixture = await storedRun({ steps: [{}, CANCEL], decisions: '[{ id: D1 }]' });
+
+    const { result } = await score(fixture);
+
+    expect(result).toEqual({
+      ok: false,
+      issues: [{ path: 'oracle.decisions[D1]', message: "has no public hidden test named 'D1: …'" }],
+    });
   });
 });
