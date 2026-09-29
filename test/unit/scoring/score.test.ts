@@ -33,6 +33,7 @@ const NO_COST = {
     turns: 0,
     interventions: 0,
   },
+  setup: { not_recorded: true as const },
 };
 
 const IMAGE = {

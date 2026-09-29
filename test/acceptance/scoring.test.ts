@@ -10,7 +10,8 @@ import { scoreChecks } from '../../src/scoring/index.js';
 import { localScoringDocker } from '../support/local-scoring.js';
 import { repoPath } from '../support/paths.js';
 import { referenceFiles, referenceRun } from '../support/reference.js';
-import { CANCEL, EXECUTION, scoringDocker, storedRun } from '../support/score-fixture.js';
+import { CANCEL, EXECUTION, scoringDocker, storedRun, usageOf } from '../support/score-fixture.js';
+import type { Files } from '../support/score-fixture.js';
 
 const NO_AGENT: AgentPort = {
   runStep: () => Promise.reject(new Error('scoring runs no agent')),
@@ -80,6 +81,30 @@ function scoredS3Runs(): Promise<readonly Record<string, unknown>[]> {
     );
   })();
   return s3Scores;
+}
+
+/**
+ * An execution of T3 (standing in for S3) in the baseline and wingfoil arms, scored and aggregated by
+ * `bench score` (task-040): the baseline's steps cost 0.05 EUR times their number; wingfoil's cost
+ * `stepEur` times their number, with a setup of `setupEur` and the steps `wingfoilSteps` wrote. The
+ * aggregate's break-even entry for wingfoil.
+ */
+async function breakEvenOf(options: { stepEur: number; setupEur: number; wingfoilSteps: readonly Files[] }) {
+  const base = await storedRun({ steps: [{}, CANCEL] });
+  await storedRun({
+    steps: options.wingfoilSteps,
+    into: { root: base.root, arm: 'wingfoil' },
+    setupUsage: { ...usageOf(0), costUsd: 2 * options.setupEur, costEur: options.setupEur },
+    record: (n) => ({
+      usage: { ...usageOf(n), costUsd: 2 * options.stepEur * n, costEur: options.stepEur * n },
+    }),
+  });
+  const { code, stdout } = await benchScore(base.root);
+  if (code !== 0) throw new Error(stdout);
+  const aggregate = JSON.parse(readFileSync(join(base.executionDir, 'aggregate.json'), 'utf8')) as {
+    break_even: { arm: string; value: unknown }[];
+  };
+  return aggregate.break_even.find((entry) => entry.arm === 'wingfoil');
 }
 
 // T3 stands in for S1 until W7: two steps, one suite scored after both. Its one hidden test fails on
@@ -225,6 +250,32 @@ describe('scoring.feature', { timeout: 120_000 }, () => {
         ],
       ],
     ]);
+  });
+
+  it('@F4.4 Break-even is computed only when quality is not worse', async () => {
+    // Given the wingfoil arm's M-Q1 is not lower than the baseline's on S3 — both cancel orders at step 2
+    // And the wingfoil arm's mean step cost is lower than the baseline's — 0.0375 EUR against 0.075
+    // When break-even is computed for S3 — a setup of 0.3 EUR, synthetic: no v0.1 setup costs anything
+    const entry = await breakEvenOf({ stepEur: 0.025, setupEur: 0.3, wingfoilSteps: [{}, CANCEL] });
+
+    // Then M-K4 equals the wingfoil setup cost divided by the difference in mean step cost
+    expect(entry).toMatchObject({
+      value: 8,
+      setup_cost_eur: { arm: 0.3 },
+      mean_step_cost_eur: { baseline: 0.075, arm: 0.0375 },
+      final_m_q1: { baseline: 1, arm: 1 },
+    });
+  });
+
+  it('@F4.4 Break-even special cases', async () => {
+    // | quality        | step cost      | result         |
+    // | lower than     | lower than     | not applicable |  wingfoil never cancels an order
+    const lower = await breakEvenOf({ stepEur: 0.025, setupEur: 0.3, wingfoilSteps: [{}, {}] });
+    expect(lower).toMatchObject({ value: 'not applicable', final_m_q1: { baseline: 1, arm: 0 } });
+
+    // | not lower than | not lower than | never          |  wingfoil's steps cost twice the baseline's
+    const dearer = await breakEvenOf({ stepEur: 0.1, setupEur: 0.3, wingfoilSteps: [{}, CANCEL] });
+    expect(dearer).toMatchObject({ value: 'never', mean_step_cost_eur: { baseline: 0.075, arm: 0.15 } });
   });
 
   it('@F4.7 Next-change cost is attributed to later steps', async () => {

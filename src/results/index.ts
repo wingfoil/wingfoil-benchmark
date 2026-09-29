@@ -8,6 +8,7 @@ export type { StepUsage, StoredRun, StoredStep } from './runs.js';
 export { AGGREGATE_FILE, AGGREGATE_VERSION, aggregateExecution, writeAggregate } from './aggregate.js';
 export type {
   AggregateFile,
+  BreakEven,
   CheckAggregate,
   Group,
   SnapshotAggregate,

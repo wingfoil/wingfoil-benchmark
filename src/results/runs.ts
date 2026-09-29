@@ -29,6 +29,18 @@ export function executionRuns(executionDir: string): string[] {
   return found;
 }
 
+/** A step's `usage.json` (REQ-FMT-06): its invocations together, as the runner stored them (task-007). */
+const stepUsageSchema = z.object({
+  inputTokens: z.number(),
+  outputTokens: z.number(),
+  cacheCreationInputTokens: z.number(),
+  cacheReadInputTokens: z.number(),
+  costUsd: z.number(),
+  costEur: z.number(),
+  turns: z.number(),
+  durationMs: z.number(),
+});
+
 /** What scoring reads from a `run.json` (task-027): the rest of the record is not its business. */
 const storedRunSchema = z.object({
   scenario: z.string(),
@@ -38,7 +50,10 @@ const storedRunSchema = z.object({
   model: z.string(),
   repetition: z.number().int(),
   outcome: z.string(),
-  setup: z.object({ tree: z.string().optional() }).optional(),
+  setup: z
+    .object({ tree: z.string().optional(), duration_ms: z.number().optional(), usage: stepUsageSchema.optional() })
+    .optional(),
+  manual: z.object({ tokens: z.number() }).optional(),
   expected_failure: z.object({ missing: z.array(z.string()) }).optional(),
   steps: z.array(
     z.object({
@@ -61,6 +76,10 @@ export interface StoredRun {
   readonly repetition: number;
   readonly outcome: string;
   readonly setupTree?: string;
+  /** The setup's duration and usage (REQ-RUN-03), for M-K3 (task-040); absent in a run stored without them. */
+  readonly setup?: { readonly durationMs: number; readonly usage: StepUsage };
+  /** The operating manual's tokens (REQ-RUN-12), for M-K3; absent when none was recorded. */
+  readonly manualTokens?: number;
   /** The capabilities the run's harness lacked (F3.6), when it was marked an expected failure. */
   readonly expectedFailure?: { readonly missing: readonly string[] };
   readonly steps: readonly StoredStep[];
@@ -100,6 +119,10 @@ export function readStoredRun(runDir: string): Result<StoredRun> {
       repetition: run.repetition,
       outcome: run.outcome,
       ...(run.setup?.tree === undefined ? {} : { setupTree: run.setup.tree }),
+      ...(run.setup?.duration_ms === undefined || run.setup.usage === undefined
+        ? {}
+        : { setup: { durationMs: run.setup.duration_ms, usage: run.setup.usage } }),
+      ...(run.manual === undefined ? {} : { manualTokens: run.manual.tokens }),
       ...(run.expected_failure === undefined ? {} : { expectedFailure: run.expected_failure }),
       steps: run.steps.map((step) => ({
         n: step.n,
@@ -111,18 +134,6 @@ export function readStoredRun(runDir: string): Result<StoredRun> {
     },
   };
 }
-
-/** A step's `usage.json` (REQ-FMT-06): its invocations together, as the runner stored them (task-007). */
-const stepUsageSchema = z.object({
-  inputTokens: z.number(),
-  outputTokens: z.number(),
-  cacheCreationInputTokens: z.number(),
-  cacheReadInputTokens: z.number(),
-  costUsd: z.number(),
-  costEur: z.number(),
-  turns: z.number(),
-  durationMs: z.number(),
-});
 
 /** What a step's `usage.json` holds. */
 export type StepUsage = z.infer<typeof stepUsageSchema>;
