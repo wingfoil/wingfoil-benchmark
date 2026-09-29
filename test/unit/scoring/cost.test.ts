@@ -161,7 +161,8 @@ describe('costMetrics (F4.3, M-K1, M-K2)', () => {
       expect(noManual.ok && noManual.value.setup).not.toHaveProperty('manual_tokens');
 
       const file = join(fixture.runDir, 'run.json');
-      const { setup: _setup, ...record } = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>;
+      const record = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>;
+      delete record.setup;
       writeFileSync(file, JSON.stringify(record));
       const noSetup = await cost(fixture);
       expect(noSetup.ok && noSetup.value.setup).toEqual({ not_recorded: true });

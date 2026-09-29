@@ -139,6 +139,7 @@ describe('mF2: next-change cost (experiment design §4.3, REQ-SCO-12)', () => {
       { n: 4, not_reached: true },
     ],
     run: figures(0.875),
+    setup: { not_recorded: true },
   };
 
   it('reads each step after the first: its cost in euro and its M-Q1, or that it was not reached', () => {

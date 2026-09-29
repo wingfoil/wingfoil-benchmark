@@ -68,6 +68,11 @@ export interface CostAggregate {
   readonly turns: Value<number>;
   readonly interventions: Value<number>;
   readonly bound: readonly string[];
+  /** M-K3 (task-040), over the runs that recorded their setup; absent when none did. */
+  readonly setup_cost_eur?: Value<number>;
+  readonly setup_wall_time_ms?: Value<number>;
+  /** The manual's tokens (REQ-RUN-12), over the runs that recorded them. */
+  readonly manual_tokens?: Value<number>;
 }
 
 /** One scenario version in one arm with one model: its runs and what they measured. */
@@ -152,6 +157,25 @@ export interface AggregateFile {
   readonly model: string;
   readonly groups: readonly Group[];
   readonly slices: readonly Group[];
+  /** M-K4 (REQ-SCO-08, task-040): each arm against the baseline of its scenario version and model. */
+  readonly break_even: readonly BreakEven[];
+}
+
+/**
+ * M-K4 for one arm (experiment design §4.2, REQ-SCO-08 as amended in 1.15): a number of runs, or why
+ * there is none; with what it was computed from, each kept to a millionth, and both groups' runs.
+ */
+export interface BreakEven {
+  readonly scenario: string;
+  readonly version: string;
+  readonly model: string;
+  readonly arm: string;
+  readonly value: number | 'not applicable' | 'never';
+  readonly setup_cost_eur: { readonly arm: number };
+  readonly mean_step_cost_eur: { readonly baseline: number; readonly arm: number };
+  readonly final_m_q1: { readonly baseline: number; readonly arm: number };
+  readonly runs: { readonly baseline: readonly string[]; readonly arm: readonly string[] };
+  readonly n: { readonly baseline: number; readonly arm: number };
 }
 
 // What aggregation reads of a score.json (task-027): its own schema, as results/ cannot import scoring/.
@@ -228,7 +252,25 @@ const scoreSchema = z.object({
   m_d3: z
     .union([z.object({ not_reached: z.literal(true) }), z.object({ count: z.number().int() })])
     .optional(),
-  cost: z.object({ run: costFigures }),
+  cost: z.object({
+    run: costFigures,
+    // Optional: read for M-K4's mean step cost (task-040); a score.json before task-029 has none.
+    steps: z
+      .array(
+        z.union([
+          z.object({ n: z.number().int(), not_reached: z.literal(true) }),
+          z.object({ n: z.number().int(), cost_eur: z.number() }),
+        ]),
+      )
+      .optional(),
+    // Optional: M-K3 (task-040); a score.json written before it has none.
+    setup: z
+      .union([
+        z.object({ not_recorded: z.literal(true) }),
+        z.object({ cost_eur: z.number(), wall_time_ms: z.number(), manual_tokens: z.number().optional() }),
+      ])
+      .optional(),
+  }),
   expected_failure: z.object({ missing: z.array(z.string()) }).nullable(),
 });
 type Score = z.infer<typeof scoreSchema>;
@@ -273,7 +315,8 @@ export function aggregateExecution(executionDir: string): Result<AggregateFile> 
   if (runs.length === 0) return fail([{ path: executionDir, message: 'holds no run' }]);
 
   const model = parsedPins.value.models.default;
-  const groups = groupRuns(runs).map(aggregateGroup);
+  const grouped = groupRuns(runs);
+  const groups = grouped.map(aggregateGroup);
   return ok({
     aggregate_version: AGGREGATE_VERSION,
     campaign,
@@ -281,6 +324,7 @@ export function aggregateExecution(executionDir: string): Result<AggregateFile> 
     model,
     groups: groups.filter((group) => group.model === model),
     slices: groups.filter((group) => group.model !== model),
+    break_even: breakEven(grouped),
   });
 }
 
@@ -556,7 +600,101 @@ function costOf(runs: readonly ScoredRun[]): CostAggregate {
     turns: of((s) => s.cost.run.turns),
     interventions: of((s) => s.cost.run.interventions),
     bound: runs.filter((run) => !run.score.cost.run.cost_reported).map((run) => run.name),
+    ...setupOf(runs),
   };
+}
+
+/** M-K3 across a group (task-040): each figure over the runs that recorded it, or nothing. */
+function setupOf(runs: readonly ScoredRun[]): Pick<CostAggregate, 'setup_cost_eur' | 'setup_wall_time_ms' | 'manual_tokens'> {
+  const recorded = runs.flatMap((run) => {
+    const setup = run.score.cost.setup;
+    return setup === undefined || 'not_recorded' in setup ? [] : [{ run: run.name, setup }];
+  });
+  if (recorded.length === 0) return {};
+  const byNumber = (a: number, b: number) => a - b;
+  const manual = recorded.flatMap(({ run, setup }) =>
+    setup.manual_tokens === undefined ? [] : [{ run, value: setup.manual_tokens }],
+  );
+  return {
+    setup_cost_eur: valueOf(recorded.map(({ run, setup }) => ({ run, value: setup.cost_eur })), byNumber),
+    setup_wall_time_ms: valueOf(recorded.map(({ run, setup }) => ({ run, value: setup.wall_time_ms })), byNumber),
+    ...(manual.length === 0 ? {} : { manual_tokens: valueOf(manual, byNumber) }),
+  };
+}
+
+/** The arm every other is compared with (experiment design §2, REQ-FMT-01). */
+const BASELINE = 'baseline';
+
+/** A mean kept to a millionth, as money is (task-029): float noise never decides a comparison. */
+function mean(values: readonly number[]): number {
+  return Math.round((values.reduce((sum, v) => sum + v, 0) / values.length) * 1e6) / 1e6;
+}
+
+/** A group's inputs to M-K4, or undefined when its scores lack one of them (scored before task-029 or -040). */
+function breakEvenInputs(runs: readonly ScoredRun[]) {
+  const finals = runs.map((run) => {
+    const m = 'not_reached' in run.score.final ? undefined : run.score.final.m_q1;
+    return m === undefined || m.total === 0 ? 0 : m.passed / m.total;
+  });
+  const stepCosts: number[] = [];
+  const setupCosts: number[] = [];
+  for (const run of runs) {
+    const { steps, setup } = run.score.cost;
+    if (steps === undefined) return undefined;
+    for (const step of steps) if (!('not_reached' in step)) stepCosts.push(step.cost_eur);
+    if (setup !== undefined && !('not_recorded' in setup)) setupCosts.push(setup.cost_eur);
+  }
+  if (stepCosts.length === 0) return undefined;
+  return {
+    finalMQ1: mean(finals),
+    stepCost: mean(stepCosts),
+    setupCost: setupCosts.length === runs.length ? mean(setupCosts) : undefined,
+    runs: runs.map((run) => run.name),
+  };
+}
+
+/**
+ * M-K4 (REQ-SCO-08 as amended in 1.15): each arm but the baseline against the baseline of its scenario
+ * version and model — not applicable when its final M-Q1 is lower, never when its mean step cost is not
+ * lower, otherwise its mean setup cost over the difference. Left out without a baseline, or when a run
+ * of the arm recorded no setup cost: an unknown cost is not a zero.
+ */
+function breakEven(grouped: readonly ScoredRun[][]): BreakEven[] {
+  const key = (run: ScoredRun) => [run.scenario, run.version, run.model].join('\u0000');
+  const baselines = new Map<string, ScoredRun[]>();
+  for (const runs of grouped) {
+    const first = runs[0] as ScoredRun;
+    if (first.arm === BASELINE) baselines.set(key(first), runs);
+  }
+  const entries: BreakEven[] = [];
+  for (const runs of grouped) {
+    const first = runs[0] as ScoredRun;
+    const reference = baselines.get(key(first));
+    if (first.arm === BASELINE || reference === undefined) continue;
+    const base = breakEvenInputs(reference);
+    const arm = breakEvenInputs(runs);
+    if (base === undefined || arm === undefined || arm.setupCost === undefined) continue;
+    const value =
+      arm.finalMQ1 < base.finalMQ1
+        ? 'not applicable'
+        : arm.stepCost >= base.stepCost
+          ? 'never'
+          : Math.round((arm.setupCost / (base.stepCost - arm.stepCost)) * 1e6) / 1e6;
+    entries.push({
+      scenario: first.scenario,
+      version: first.version,
+      model: first.model,
+      arm: first.arm,
+      value,
+      setup_cost_eur: { arm: arm.setupCost },
+      mean_step_cost_eur: { baseline: base.stepCost, arm: arm.stepCost },
+      final_m_q1: { baseline: base.finalMQ1, arm: arm.finalMQ1 },
+      runs: { baseline: base.runs, arm: arm.runs },
+      n: { baseline: base.runs.length, arm: arm.runs.length },
+    });
+  }
+  const order = (e: BreakEven) => [e.scenario, e.version, e.model, e.arm].join('\u0000');
+  return entries.sort((a, b) => (order(a) < order(b) ? -1 : order(a) > order(b) ? 1 : 0));
 }
 
 /** For each public suite, at each step after the first it is scored at: its tests newly failing there. */

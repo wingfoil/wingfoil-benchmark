@@ -28,11 +28,30 @@ export type StepCost =
   | ({ readonly n: number; readonly outcome: string } & CostFigures)
   | { readonly n: number; readonly not_reached: true };
 
-/** `score.json`'s `cost` (F4.3, task-029): per step, the run's sums, and the rate a bound is converted at. */
+/**
+ * M-K3 (experiment design §4.2, task-040): the setup's M-K1 and M-K2 — its wall time the setup's own
+ * duration — and the operating manual's tokens when recorded; or that the run recorded no setup.
+ */
+export type SetupCost =
+  | {
+      readonly tokens: Tokens;
+      readonly cost_usd: number;
+      readonly cost_eur: number;
+      readonly wall_time_ms: number;
+      readonly turns: number;
+      readonly manual_tokens?: number;
+    }
+  | { readonly not_recorded: true };
+
+/**
+ * `score.json`'s `cost` (F4.3, task-029): per step, the run's sums, and the rate a bound is converted
+ * at; and the setup apart, never in the run's sums (M-K3, task-040).
+ */
 export interface CostScore {
   readonly usd_to_eur: number;
   readonly steps: readonly StepCost[];
   readonly run: CostFigures;
+  readonly setup: SetupCost;
 }
 
 /** What reading a run's cost needs. */
@@ -101,7 +120,27 @@ export function costMetrics(request: CostRequest): Result<CostScore> {
     steps.push({ n, outcome: step.outcome, ...figures });
     run = add(run, figures);
   }
-  return issues.length > 0 ? fail(issues) : ok({ usd_to_eur: rate.value, steps, run });
+  if (issues.length > 0) return fail(issues);
+  return ok({ usd_to_eur: rate.value, steps, run, setup: setupCost(request.run) });
+}
+
+/** M-K3 from what `run.json` recorded of the setup (REQ-RUN-03) and of the manual (REQ-RUN-12). */
+function setupCost(run: StoredRun): SetupCost {
+  if (run.setup === undefined) return { not_recorded: true };
+  const u = run.setup.usage;
+  return {
+    tokens: {
+      input: u.inputTokens,
+      output: u.outputTokens,
+      cache_creation: u.cacheCreationInputTokens,
+      cache_read: u.cacheReadInputTokens,
+    },
+    cost_usd: money(u.costUsd),
+    cost_eur: money(u.costEur),
+    wall_time_ms: run.setup.durationMs,
+    turns: u.turns,
+    ...(run.manualTokens === undefined ? {} : { manual_tokens: run.manualTokens }),
+  };
 }
 
 function add(a: CostFigures, b: CostFigures): CostFigures {
