@@ -363,3 +363,12 @@ The **license confirmation** (dl-002) is in the Design section and in `oracle/li
 
 No real agent, no spending. No `wingfoil` command in the build phase.
 
+### Review and approval
+
+- `npx wingfoil memory approve task-032-s1-conformance-scenario --reason "…"` → `d254b9c`, run by the
+  approver (`in-review → approved`, `Approver:`/`Reason:` trailers, only `status` changed). Matches.
+- Its reason records the review decisions, 2026-09-29: S1@1.0 accepted, its prompts included; frozen
+  inputs for `resolvePointer` and `applyPatch` only, S1.md §6 read against §4's contracts, with no
+  amendment; the RFC examples under BSD-3-Clause, dl-002's license confirmation.
+- Carried: the regression line (M-D3) added to task-034's Context, to be confirmed in its design.
+
