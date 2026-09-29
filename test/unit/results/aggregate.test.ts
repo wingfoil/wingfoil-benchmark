@@ -43,6 +43,8 @@ interface RunSpec {
   readonly harnessCommit?: string;
   /** The scoring image score.json's `scorer` names; by default `bench-score:x`. */
   readonly scorerImage?: string;
+  /** The scenario hash run.json and score.json both record; by default `sha256:<scenario>`. */
+  readonly scenarioHash?: string;
 }
 
 const tally = (suites: readonly Suite[]) => ({
@@ -77,7 +79,7 @@ function execution(runs: readonly RunSpec[], pins = 'models:\n  default: model-a
       JSON.stringify({
         scenario,
         version: '1.0',
-        scenario_hash: `sha256:${scenario}`,
+        scenario_hash: run.scenarioHash ?? `sha256:${scenario}`,
         arm: run.arm,
         model,
         repetition: run.r ?? 1,
@@ -93,7 +95,7 @@ function execution(runs: readonly RunSpec[], pins = 'models:\n  default: model-a
         score_version: 1,
         scenario,
         version: '1.0',
-        scenario_hash: run.scoredHash ?? `sha256:${scenario}`,
+        scenario_hash: run.scoredHash ?? run.scenarioHash ?? `sha256:${scenario}`,
         scorer: { image: run.scorerImage ?? 'bench-score:x', tsx: '4.23.15' },
         steps: run.steps.map((step, index) =>
           step === 'not reached'
@@ -390,6 +392,22 @@ describe('aggregateExecution (F5.1, REQ-FMT-07)', () => {
         runs: [name('wingfoil', 1), name('wingfoil', 2)],
         not_reached: [],
         pins_differ: ['harness_commit', 'scorer'],
+      });
+    });
+
+    it('gives no value when the runs ran different versions of the scenario, and names the hash', () => {
+      const [group] = aggregate(execution([rep(1), rep(2, { scenarioHash: 'sha256:other' })])).groups;
+      expect(group?.metrics.m_r).toMatchObject({ n: 2, pins_differ: ['scenario_hash'] });
+      expect(group?.metrics.m_r).not.toHaveProperty('m_r1');
+    });
+
+    it('gives M-R1 alone when some runs were scored before task-042 and others after', () => {
+      const [group] = aggregate(execution([rep(1), { ...rep(2), determinism: undefined } as RunSpec])).groups;
+      expect(group?.metrics.m_r).toEqual({
+        n: 2,
+        runs: [name('wingfoil', 1), name('wingfoil', 2)],
+        not_reached: [],
+        m_r1: { agree: 3, total: 3 },
       });
     });
 

@@ -41,6 +41,32 @@ describe('bench score (REQ-CLI-06)', () => {
     else process.env.BENCH_HOLDOUT_PATH = previous;
   });
 
+  it('says in how many groups determinism was measured, of one run, or not for pins that differ (task-042)', async () => {
+    const fixture = await storedRun({
+      steps: [{}, CANCEL],
+      into: { root: tempDir('bench-score-repo-'), arm: 'wingfoil' },
+    });
+    const second = await storedRun({
+      steps: [{}, CANCEL],
+      into: { root: fixture.root, arm: 'wingfoil', repetition: 2 },
+    });
+    for (const [runDir, commit] of [
+      [fixture.runDir, 'aaaa'],
+      [second.runDir, 'bbbb'],
+    ] as const) {
+      const file = join(runDir, 'run.json');
+      const run = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>;
+      writeFileSync(file, JSON.stringify({ ...run, harness: { tool: 'wingfoil', commit } }));
+    }
+
+    const { code, stdout } = await score(fixture.root, EXECUTION);
+
+    expect(code).toBe(0);
+    expect(stdout).toContain(
+      '(1 group, 0 slices; determinism measured in 0, n = 1 in 0, pins differ in 1)\n',
+    );
+  });
+
   it('scores every run of an execution, writes its score.json and says M-Q1 in one line per run', async () => {
     const fixture = await storedRun({ steps: [{}, CANCEL] });
 

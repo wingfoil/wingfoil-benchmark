@@ -117,7 +117,7 @@ async function breakEvenOf(options: { stepEur: number; setupEur: number; wingfoi
 
 /**
  * Three repetitions of S1 in the wingfoil arm, stored from its reference (task-042), and one run of S2
- * in the baseline arm, in one execution scored and aggregated by `bench score` with the local scoring
+ * in the same arm, in one execution scored and aggregated by `bench score` with the local scoring
  * double: r1 as the reference wrote it; r2 with step 4's merge patch keeping `null` members, behind a
  * parameter of its own, so that some hidden tests fail and one export changes; r3 with a notes file and
  * a lockfile beside the reference's code. The aggregate, the output, and r1's and r2's `score.json`.
@@ -155,7 +155,7 @@ function scoredS1Repetitions() {
       steps: withStep4({ 'NOTES.md': 'Merge patch done.\n', 'package-lock.json': '{}\n' }),
       into: at(3),
     });
-    await storedRun({ scenario: 'S2', steps: [{}, {}, {}], into: { root } });
+    await storedRun({ scenario: 'S2', steps: [{}, {}, {}], into: { root, arm: 'wingfoil' } });
     const { code, stdout } = await benchScoreLocally(root);
     if (code !== 0) throw new Error(stdout);
     const read = (file: string) => JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>;
@@ -444,8 +444,7 @@ describe('scoring.feature', { timeout: 120_000 }, () => {
   }, 900_000);
 
   it('@F4.5 Determinism is not computed from a single repetition', async () => {
-    // Given 1 completed repetition of S2 in the wingfoil arm — the baseline arm here: the arm changes
-    // nothing of the rule
+    // Given 1 completed repetition of S2 in the wingfoil arm
     // When determinism is computed
     const { aggregate, stdout } = await scoredS1Repetitions();
     const groups = aggregate.groups as { scenario: string; runs: string[]; metrics: { m_r: MR } }[];
