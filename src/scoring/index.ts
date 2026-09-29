@@ -5,12 +5,14 @@ export type { ScoringImage } from './image.js';
 export { SCORE_VERSION, scoreRun, scoreSummary, writeScore } from './score.js';
 export type {
   Census,
+  CensusEntry,
   FinalScore,
   HoldoutInput,
   HoldoutNotScored,
   HoldoutScore,
   ScoreFile,
   ScoreRequest,
+  SeedScore,
   StepScore,
   SuiteScore,
   SuiteTally,
@@ -26,3 +28,5 @@ export { astInContainer } from './ast.js';
 export type { AstFinding, AstRunner } from './ast.js';
 export { costMetrics } from './cost.js';
 export type { CostFigures, CostRequest, CostScore, StepCost, Tokens } from './cost.js';
+export { mD3, mF1, mF2 } from './continuity.js';
+export type { DecisionOutcome, DecisionScore, MD3Score, MF1Score, MF2Score } from './continuity.js';

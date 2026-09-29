@@ -260,7 +260,7 @@ describe('scoreRun (F4.1, REQ-SCO-01–03)', () => {
     expect(bytes.toString('utf8')).not.toMatch(/\d{4}-\d{2}-\d{2}T/);
   });
 
-  it('scores nothing for a run that reached no step, and builds no snapshot', async () => {
+  it('scores only the seed for a run that reached no step, and builds no snapshot', async () => {
     const fixture = await storedRun({ steps: [] });
     // A run whose setup failed has no setup tree either: nothing needs rebuilding.
     const file = join(fixture.runDir, 'run.json');
@@ -271,7 +271,9 @@ describe('scoreRun (F4.1, REQ-SCO-01–03)', () => {
       { n: 1, not_reached: true },
       { n: 2, not_reached: true },
     ]);
-    expect(recorded.creates).toEqual([]);
+    // The seed is scored whatever the run reached (task-039): one container, for the census.
+    expect(recorded.copies.map((copy) => copy.split(' -> ')[0])).toEqual([fixture.scenario.seedDir]);
+    expect(result.ok && result.value.m_d3).toEqual({ not_reached: true });
   });
 });
 
@@ -284,6 +286,8 @@ describe('scoreSummary', () => {
         version: '1.0',
         scenario_hash: 'h',
         scorer: { image: 'i', tsx: 't', typescript: 'ts' },
+        seed: { suites: [] },
+        m_d3: { count: 0, tests: [] },
         holdout: { scored: false, reason: 'none declared' },
         cost: NO_COST,
         expected_failure: null,
@@ -306,6 +310,8 @@ describe('scoreSummary', () => {
         version: '1.0',
         scenario_hash: 'h',
         scorer: { image: 'i', tsx: 't', typescript: 'ts' },
+        seed: { suites: [] },
+        m_d3: { count: 0, tests: [] },
         steps: [{ n: 1, suites: [] }],
         final: { step: 1, suites: [] },
         holdout: { scored: false, reason: 'none declared' },
@@ -384,6 +390,8 @@ describe('checks in score.json (REQ-SCO-06, task-035)', () => {
       version: '1.0',
       scenario_hash: 'h',
       scorer: { image: 'i', tsx: 't', typescript: 'ts' },
+      seed: { suites: [] },
+      m_d3: { count: 0, tests: [] },
       steps: [{ n: 1, suites: [] }],
       final: { step: 1, suites: [] },
       holdout: { scored: false, reason: 'none declared' },
@@ -529,6 +537,8 @@ describe('scoreRun with the hold-out (task-028, F3.5, REQ-SCO-09)', () => {
       version: '1.0',
       scenario_hash: 'h',
       scorer: { image: 'i', tsx: 't', typescript: 'ts' },
+      seed: { suites: [] },
+      m_d3: { count: 0, tests: [] },
       steps: [
         { n: 1, suites: [{ id: 'a', passed: 1, total: 1, failed: [] }], m_q1: { passed: 1, total: 1 } },
       ],

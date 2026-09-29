@@ -90,7 +90,44 @@ export interface Group {
     readonly regressions: readonly { readonly suite: string; readonly step: number; readonly value: Value<number> }[];
     /** Each check on each of its steps (REQ-SCO-06, task-035): a tally of one per run, passed or not. */
     readonly checks: readonly CheckAggregate[];
+    /** M-F1 (REQ-SCO-12, task-039), when the group's scenario lists decisions. */
+    readonly m_f1?: MF1Aggregate;
+    /** M-F2 (REQ-SCO-12, task-039), when the group's runs were scored with it. */
+    readonly m_f2?: MF2Aggregate;
+    /** M-D3 from the seed (REQ-SCO-12, task-039), when the group's runs were scored with it. */
+    readonly m_d3?: MD3Aggregate;
   };
+}
+
+/**
+ * M-F1 across a group (task-039): the share of decisions respected or revised, and each decision as a
+ * tally of one per run with how many runs had each outcome. A final not reached is a loss: nothing
+ * consistent (task-034's rule for M-Q1), and the run is listed.
+ */
+export interface MF1Aggregate {
+  readonly share: Value<Tally>;
+  readonly decisions: readonly {
+    readonly id: string;
+    readonly consistent: Value<Tally>;
+    readonly outcomes: { readonly respected: number; readonly revised: number; readonly failed: number };
+  }[];
+  readonly not_reached: readonly string[];
+}
+
+/** M-F2 across a group: each step after the first, its cost in euro and its M-Q1, and the runs that never reached it. */
+export interface MF2Aggregate {
+  readonly steps: readonly {
+    readonly step: number;
+    readonly cost_eur: Value<number>;
+    readonly m_q1: Value<Tally>;
+    readonly not_reached: readonly string[];
+  }[];
+}
+
+/** M-D3 across a group: regressions per run; a final not reached loses every test that passed on the seed. */
+export interface MD3Aggregate {
+  readonly value: Value<number>;
+  readonly not_reached: readonly string[];
 }
 
 /** A check across the runs of a group that scored it (task-035). */
@@ -165,6 +202,31 @@ const scoreSchema = z.object({
         ),
       }),
     )
+    .optional(),
+  // Optional: a score.json written before task-039 has none of these, and still aggregates.
+  seed: z.object({ suites: z.array(suite), m_q1: tally.optional() }).optional(),
+  m_f1: z
+    .union([
+      z.object({ not_reached: z.literal(true) }),
+      z.object({
+        consistent: z.number().int(),
+        total: z.number().int(),
+        decisions: z.array(z.object({ id: z.string(), outcome: z.enum(['respected', 'revised', 'failed']) })),
+      }),
+    ])
+    .optional(),
+  m_f2: z
+    .object({
+      steps: z.array(
+        z.union([
+          z.object({ n: z.number().int(), not_reached: z.literal(true) }),
+          z.object({ n: z.number().int(), cost_eur: z.number(), m_q1: tally.optional() }),
+        ]),
+      ),
+    })
+    .optional(),
+  m_d3: z
+    .union([z.object({ not_reached: z.literal(true) }), z.object({ count: z.number().int() })])
     .optional(),
   cost: z.object({ run: costFigures }),
   expected_failure: z.object({ missing: z.array(z.string()) }).nullable(),
@@ -296,7 +358,105 @@ function aggregateGroup(runs: readonly ScoredRun[]): Group {
       cost: costOf(runs),
       regressions: regressionsOf(runs),
       checks: checksOf(runs),
+      ...continuityOf(runs),
     },
+  };
+}
+
+/** M-F1, M-F2 and M-D3 of a group (task-039), each only when some run of the group was scored with it. */
+function continuityOf(runs: readonly ScoredRun[]): Pick<Group['metrics'], 'm_f1' | 'm_f2' | 'm_d3'> {
+  const m_f1 = mF1Of(runs);
+  const m_f2 = mF2Of(runs);
+  const m_d3 = mD3Of(runs);
+  return {
+    ...(m_f1 === undefined ? {} : { m_f1 }),
+    ...(m_f2 === undefined ? {} : { m_f2 }),
+    ...(m_d3 === undefined ? {} : { m_d3 }),
+  };
+}
+
+function mF1Of(runs: readonly ScoredRun[]): MF1Aggregate | undefined {
+  const scored = runs.flatMap((run) => (run.score.m_f1 === undefined ? [] : [{ run: run.name, m_f1: run.score.m_f1 }]));
+  if (scored.length === 0) return undefined;
+  // The decisions, in the order the first run that reached its final snapshot lists them.
+  const ids: string[] = [];
+  for (const { m_f1 } of scored) {
+    if ('decisions' in m_f1) for (const d of m_f1.decisions) if (!ids.includes(d.id)) ids.push(d.id);
+  }
+  const outcomeOf = (m_f1: (typeof scored)[number]['m_f1'], id: string) =>
+    'decisions' in m_f1 ? m_f1.decisions.find((d) => d.id === id)?.outcome : undefined;
+  return {
+    share: valueOf(
+      scored.map(({ run, m_f1 }) => ({
+        run,
+        value: 'not_reached' in m_f1 ? { passed: 0, total: ids.length } : { passed: m_f1.consistent, total: m_f1.total },
+      })),
+      byRatio,
+    ),
+    decisions: ids.map((id) => {
+      const outcomes = scored.map(({ m_f1 }) => outcomeOf(m_f1, id));
+      return {
+        id,
+        consistent: valueOf(
+          scored.map(({ run }, index) => {
+            const outcome = outcomes[index];
+            return { run, value: { passed: outcome === 'respected' || outcome === 'revised' ? 1 : 0, total: 1 } };
+          }),
+          byRatio,
+        ),
+        outcomes: {
+          respected: outcomes.filter((o) => o === 'respected').length,
+          revised: outcomes.filter((o) => o === 'revised').length,
+          failed: outcomes.filter((o) => o === 'failed').length,
+        },
+      };
+    }),
+    not_reached: scored.filter(({ m_f1 }) => 'not_reached' in m_f1).map(({ run }) => run),
+  };
+}
+
+function mF2Of(runs: readonly ScoredRun[]): MF2Aggregate | undefined {
+  const scored = runs.flatMap((run) => (run.score.m_f2 === undefined ? [] : [{ run: run.name, steps: run.score.m_f2.steps }]));
+  if (scored.length === 0) return undefined;
+  const numbers = [...new Set(scored.flatMap((entry) => entry.steps.map((s) => s.n)))].sort((a, b) => a - b);
+  return {
+    steps: numbers.map((n) => {
+      const cost: { run: string; value: number }[] = [];
+      const quality: { run: string; value: Tally }[] = [];
+      const notReached: string[] = [];
+      for (const entry of scored) {
+        const found = entry.steps.find((s) => s.n === n);
+        if (found === undefined) continue;
+        if ('not_reached' in found) notReached.push(entry.run);
+        else {
+          cost.push({ run: entry.run, value: found.cost_eur });
+          if (found.m_q1 !== undefined) quality.push({ run: entry.run, value: tallyOf(found.m_q1) });
+        }
+      }
+      return {
+        step: n,
+        cost_eur: valueOf(cost, (a, b) => a - b),
+        m_q1: valueOf(quality, byRatio),
+        not_reached: notReached,
+      };
+    }),
+  };
+}
+
+function mD3Of(runs: readonly ScoredRun[]): MD3Aggregate | undefined {
+  const scored = runs.flatMap((run) =>
+    run.score.m_d3 === undefined ? [] : [{ run: run.name, m_d3: run.score.m_d3, seed: run.score.seed }],
+  );
+  if (scored.length === 0) return undefined;
+  return {
+    value: valueOf(
+      scored.map(({ run, m_d3, seed }) => ({
+        run,
+        value: 'not_reached' in m_d3 ? (seed?.m_q1?.passed ?? 0) : m_d3.count,
+      })),
+      (a, b) => a - b,
+    ),
+    not_reached: scored.filter(({ m_d3 }) => 'not_reached' in m_d3).map(({ run }) => run),
   };
 }
 

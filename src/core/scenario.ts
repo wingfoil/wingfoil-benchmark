@@ -257,6 +257,16 @@ export const checkFileSchema = z.discriminatedUnion('kind', [
 /** A check file as parsed, with seed-relative region paths. */
 export type CheckFile = z.infer<typeof checkFileSchema>;
 
+/**
+ * A decision the oracle lists for M-F1 (REQ-FMT-04 as amended in 1.14, task-039): its id, which its
+ * public hidden tests start their name with, and the content check recording its revision when the
+ * scenario revises it. Whether that check exists, and is a content check, is the loader's.
+ */
+const decision = z.strictObject({
+  id: z.string().regex(/^[A-Z][A-Za-z0-9]*$/, 'must be a capitalised word, such as D1'),
+  revised_by: z.string().optional(),
+});
+
 /** REQ-FMT-04: the `scenario.yaml` of `scenarios/<id>/<version>/`. Unknown keys are rejected. */
 export const scenarioSchema = z.strictObject({
   id: z.string().regex(SCENARIO_ID, 'must look like S1, M2 or T0'),
@@ -304,6 +314,7 @@ export const scenarioSchema = z.strictObject({
       )
       .default([]),
     third_party: thirdParties.default([]),
+    decisions: z.array(decision).default([]),
   }),
   holdout: z.boolean(),
 });
@@ -380,6 +391,12 @@ export interface AstCheck extends CheckBase {
 /** A loaded check (REQ-SCO-06 as amended in 1.12; the directive kinds, REQ-SCO-05 as amended in 1.13). */
 export type Check = ContentCheck | UnchangedCheck | DependenciesCheck | AstCheck;
 
+/** A decision M-F1 checks (REQ-SCO-12): its id, and the content check that records its revision, if any. */
+export interface Decision {
+  readonly id: string;
+  readonly revisedBy?: string;
+}
+
 /** A loaded scenario version, with every path resolved to an absolute one. */
 export interface Scenario {
   readonly id: string;
@@ -398,6 +415,8 @@ export interface Scenario {
     readonly checks: readonly Check[];
     /** The third-party material vendored into the suites (dl-002), in declaration order. */
     readonly thirdParty: readonly ThirdParty[];
+    /** The decisions M-F1 checks (REQ-SCO-12, task-039), in declaration order; none by default. */
+    readonly decisions: readonly Decision[];
   };
   readonly holdout: boolean;
   /**
