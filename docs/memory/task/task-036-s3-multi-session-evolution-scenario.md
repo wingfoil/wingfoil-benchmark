@@ -2,7 +2,7 @@
 id: task-036-s3-multi-session-evolution-scenario
 type: task
 title: "S3 multi-session evolution scenario"
-status: draft
+status: pending
 release: v0.1
 wave: W8
 features: [F6.3]
