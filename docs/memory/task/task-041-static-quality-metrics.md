@@ -2,7 +2,7 @@
 id: task-041-static-quality-metrics
 type: task
 title: "Static quality metrics"
-status: backlog
+status: in-progress
 release: v0.1
 wave: W9
 features: [F4.2]
