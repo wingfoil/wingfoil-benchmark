@@ -220,9 +220,9 @@ describe('runner.feature', () => {
   });
 
   it("@F2.5 The baseline-docs environment is generated from the wingfoil arm's configuration", () => {
-    // Given the wingfoil arm's configuration for S8 — T2 stands in for S8 until W8: a snapshot WingFoil
-    // 3df305e wrote in a real run, with T2's rules (test/fixtures/wingfoil-config/README.md).
-    const root = repoPath('test/fixtures/wingfoil-config/T2');
+    // Given the wingfoil arm's configuration for S8: a snapshot WingFoil 3df305e wrote in a real run, with
+    // S8's rules (test/fixtures/wingfoil-config/README.md; task-038, T2 stood in for S8 until W8)
+    const root = repoPath('test/fixtures/wingfoil-config/S8');
     const files = new Map(
       filesUnder(root).map((file) => [relative(root, file), readFileSync(file, 'utf8')] as const),
     );
@@ -231,11 +231,19 @@ describe('runner.feature', () => {
     const rules = renderProjectRules(files);
 
     // Then it contains the same directives, decisions and project description as Markdown
-    expect(rules).toContain('**Orders** — A small orders domain.');
-    expect(rules).toContain('### No throw\n\nFunctions of the domain return a `Result` and never throw.\n');
-    expect(rules).toContain('### Errors are returned as a Result\n\n##### Context\n');
+    expect(rules).toContain(
+      '**Tidy Tasks** — The task list behind a small to-do app for households and small teams.',
+    );
+    for (const title of [
+      'No new runtime dependency',
+      'TSDoc on every exported function',
+      'No wall clock or randomness in the domain',
+      'Errors are returned as a Result in the domain',
+    ]) {
+      expect(rules).toContain(`### ${title}\n`);
+    }
     expect(rules).not.toContain('Benchmark Approver');
-    expect(rules).toBe(readFileSync(repoPath('test/fixtures/wingfoil-config/T2.PROJECT_RULES.md'), 'utf8'));
+    expect(rules).toBe(readFileSync(repoPath('test/fixtures/wingfoil-config/S8.PROJECT_RULES.md'), 'utf8'));
     // And generating it twice yields byte-identical output, whatever order the files are read in
     expect(renderProjectRules(files)).toBe(rules);
     expect(renderProjectRules(new Map([...files].reverse()))).toBe(rules);
