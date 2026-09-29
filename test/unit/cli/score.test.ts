@@ -87,7 +87,8 @@ describe('bench score (REQ-CLI-06)', () => {
       code: 1,
       stdout: '',
       stderr:
-        'T3@1.0 baseline fake-model r1: run.json: was stored before runs recorded what their snapshots are rebuilt from (task-027)\n',
+        'T3@1.0 baseline fake-model r1: run.json: was stored before runs recorded what their snapshots are rebuilt from (task-027)\n' +
+        'not aggregated: 1 run not scored\n',
     });
     expect(existsSync(join(fixture.runDir, 'score.json'))).toBe(false);
   });
@@ -107,6 +108,18 @@ describe('bench score (REQ-CLI-06)', () => {
     expect(result.code).toBe(1);
     expect(result.stderr).toMatch(/\nnot aggregated: 1 run not scored\n$/);
     expect(existsSync(aggregate)).toBe(false);
+  });
+
+  it('scores, but does not aggregate, an execution whose pins do not name its default model', async () => {
+    const fixture = await storedRun({ steps: [{}, CANCEL] });
+    writeFileSync(join(fixture.executionDir, 'campaign.yaml'), 'currency:\n  usd_to_eur: 0.5\n');
+
+    const result = await score(fixture.root, EXECUTION);
+
+    expect(result.code).toBe(1);
+    expect(result.stderr).toMatch(/^results\/abcdef012345\/1\/campaign\.yaml\.models: /);
+    expect(existsSync(join(fixture.runDir, 'score.json'))).toBe(true);
+    expect(existsSync(join(fixture.executionDir, 'aggregate.json'))).toBe(false);
   });
 
   it('names an execution that does not exist, or holds no run', async () => {
@@ -153,7 +166,9 @@ describe('bench score (REQ-CLI-06)', () => {
 
     expect(result).toMatchObject({
       code: 0,
-      stdout: 'T3@1.0 baseline fake-model r1: step 01 0/1, step 02 1/1, final 1/1; hold-out final 1/2\n',
+      stdout:
+        'T3@1.0 baseline fake-model r1: step 01 0/1, step 02 1/1, final 1/1; hold-out final 1/2\n' +
+        'aggregate: results/abcdef012345/1/aggregate.json (1 group, 0 slices)\n',
       stderr: '',
     });
     const stored = readFileSync(join(fixture.runDir, 'score.json'), 'utf8');
@@ -170,7 +185,9 @@ describe('bench score (REQ-CLI-06)', () => {
     mkdirSync(join(empty, 'scenarios'));
     expect(await score(fixture.root, EXECUTION, '--holdout', empty)).toMatchObject({
       code: 1,
-      stderr: `T3@1.0 baseline fake-model r1: holdout: the scenario expects hold-out additions, and ${empty} has none for T3@1.0\n`,
+      stderr:
+        `T3@1.0 baseline fake-model r1: holdout: the scenario expects hold-out additions, and ${empty} has none for T3@1.0\n` +
+        'not aggregated: 1 run not scored\n',
     });
 
     const yaml = join(fixture.root, 'scenarios', 'T3', '1.0', 'scenario.yaml');
@@ -180,11 +197,14 @@ describe('bench score (REQ-CLI-06)', () => {
     const holdout = t3Holdout();
     expect(await score(again, EXECUTION, '--holdout', holdout)).toMatchObject({
       code: 1,
-      stderr: `T3@1.0 baseline fake-model r1: holdout: the scenario declares no hold-out additions, and ${holdout} has 1 file for T3@1.0\n`,
+      stderr:
+        `T3@1.0 baseline fake-model r1: holdout: the scenario declares no hold-out additions, and ${holdout} has 1 file for T3@1.0\n` +
+        'not aggregated: 1 run not scored\n',
     });
     // With none given, a version that declares none says nothing of a hold-out.
     expect((await score(again, EXECUTION)).stdout).toBe(
-      'T3@1.0 baseline fake-model r1: step 01 0/1, step 02 1/1, final 1/1\n',
+      'T3@1.0 baseline fake-model r1: step 01 0/1, step 02 1/1, final 1/1\n' +
+        'aggregate: results/abcdef012345/1/aggregate.json (1 group, 0 slices)\n',
     );
     rmSync(empty, { recursive: true, force: true });
   });

@@ -226,7 +226,7 @@ describe('scenarios.feature', () => {
     expect(score.final.m_q1).toEqual({ passed: 1, total: 1 });
     // And the report states that hold-out additions were not scored
     expect(score.holdout).toEqual({ scored: false, reason: 'not configured' });
-    expect(result.stdout).toMatch(/; hold-out not scored\n$/);
+    expect(result.stdout).toMatch(/; hold-out not scored\naggregate: /);
   });
 
   it('@F3.6 A scenario that needs a missing harness capability is an expected failure', async () => {

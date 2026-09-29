@@ -291,6 +291,12 @@ describe('aggregateExecution (F5.1, REQ-FMT-07)', () => {
       ],
     });
 
+    writeFileSync(scoreFile, '{ not json');
+    expect(aggregateExecution(dir)).toMatchObject({
+      ok: false,
+      issues: [{ path: 'runs/T3@1.0/baseline/model-a/r1/score.json', message: expect.stringMatching(/^is not JSON/) }],
+    });
+
     rmSync(scoreFile);
     expect(aggregateExecution(dir)).toMatchObject({
       ok: false,
