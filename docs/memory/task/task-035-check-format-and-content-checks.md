@@ -334,3 +334,65 @@ For each check, in declaration order, and each of its steps:
 - `npx wingfoil memory submit task-035-check-format-and-content-checks` → `84e1a2d`. Declared:
   `backlog → in-progress`, one commit `wf(task): submit <id>`. Observed: exit 0, 1 file, diff limited to
   `status: backlog` → `status: in-progress`. Matches (subject without transition: N9).
+
+### Build
+
+Commits:
+
+- `26b7856`: the tests, red (39 failing).
+- `34df161`: requirements 1.12.
+- `d4e6c7b`: the implementation, and S2@1.0's two checks.
+- Hold-out `0a52804`: `reference/S2/03/NOTES.md`, the reference's record of the duplicate. Its content is
+  not recorded here.
+
+**As designed**, with these points found in the build:
+
+- **The text helpers live in `core/check-text.ts`** (`linesOf`, `foldText`, `satisfies`). The loader's
+  prompt check and scoring's content check then fold text the same way, and neither imports the
+  other.
+- **Loader issue paths.**
+  - A check's issues are reported under its entry, e.g. `oracle.checks[0].regions[0].lines`.
+  - A YAML problem reads `oracle.checks[0]: a.yaml is not valid YAML …`.
+  - The design's `(file.yaml)` in the path was dropped, since the entry already names the file.
+- **The runner's git calls per step.** It now reads `messagesSince` before the step commit, and
+  `head` after it. In the runner doubles, `head` answers a different commit per call, so a test can
+  tell which commit a step's messages start from. Four exact-sequence tests changed with it: two unit
+  tests, the acceptance @F2.2 test, and the setup-order test.
+- **`storedRun` writes `commits.json`** with the agent's commits. `withoutMessages` stores a run as it
+  was before task-035, and `checks` adds check files to T3. `test/support/reference.ts` gains
+  `referenceRun`, a run of a reference with real git, used by S2's check tests.
+- **The complete scenario fixture's check** holds real content: a content check on step 1, which every
+  fixture has.
+- **S2's duplicate patterns** are a single group of 16 recognition phrases (`already fixed`,
+  `duplicate`, `same issue` …). None appears in prompt 3, which the loader checks. The false report's
+  regions are `tax.ts` 29–32, and `pricing.ts` 82 and 93–94.
+- **The reference and the variants:**
+  - The reference passes both checks.
+  - A step 3 without its notes fails the duplicate check.
+  - A step 2 whose `shippingVat` returns 0 fails the false-report check at steps 2 and 3.
+- **The validator on the built CLI:**
+  - `bench scenario validate S2@1.0 --holdout ../WingFoil2-Benchmark-HoldOut` → `valid (hold-out: 8
+    files)`. S1 is still valid (3 files).
+  - With "duplicate" appended to a copy of prompt 3, it gives `oracle.checks[0]: is satisfied by the
+    text of prompts/03.md: an agent that copies its prompt would pass`, exit 1.
+- **Coverage.** Three tests were added after the first full run:
+  - a path git quotes (a tab, quotes and an accent), unquoted to its real name;
+  - a missing `diff.patch`, which is an issue rather than a failed check;
+  - a file with no final newline.
+
+  `checks.ts` then went from 76% to 100% of lines.
+
+**Checks:**
+
+- `npm test`: 914/914 (+37). Coverage: 99.08% statements, 94.73% branches, 99.9% lines. One earlier run
+  had two S1 tests time out while the Docker suite was running alongside. Both pass alone, and in the
+  full run above.
+- `npm run typecheck` and `npm run lint`: clean.
+- `npm run test:bin`: 5/5.
+- `npm run test:docker`: 11/11, with no `bench-` container left.
+  - The W7 S2 tests now also assert `checks` in `score.json`, written by `bench score` with the real
+    scoring image, in the three arms.
+  - In each arm, the duplicate check passes at step 3 on `NOTES.md`, and the false-report check passes
+    at steps 2 and 3.
+
+No real agent, no spending. No `wingfoil` command in the build phase.
