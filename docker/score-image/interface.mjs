@@ -9,9 +9,10 @@
 // class keeps its members that are not private, and a private parameter property is a plain parameter;
 // an overload's implementation is left out, for functions, methods and constructors alike, a static
 // member apart from an instance one; a namespace keeps its exported members, and an ambient one all of
-// them. A value that is a function or class literal, behind parentheses or `satisfies` or as a default
-// export, keeps its parameters and types; one asserted `as T`, behind `satisfies` too, has the type T. A file that does not parse is one entry,
-// `<file>: (does not parse)`. The entries are printed sorted by code unit, without duplicates, one JSON string per line.
+// them unless it declares its exports. A value that is a function or class literal, behind parentheses
+// or `satisfies` or as a default export, keeps its parameters and types; one asserted `as T`, behind
+// `satisfies` too, has the type T. A file that does not parse is one entry, `<file>: (does not parse)`.
+// The entries are printed sorted by code unit, without duplicates, one JSON string per line.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import ts from 'typescript';
@@ -57,8 +58,12 @@ function publicParameters(parameters) {
   );
 }
 
-/** A callable's name as callers see it: its text for a plain, quoted or numeric name; static apart. */
+/**
+ * A callable's name as callers see it: its text for a plain, quoted or numeric name, static apart; a
+ * nameless default function is `default`, and a constructor `constructor`, which no method can be named.
+ */
 function nameOf(node) {
+  if (ts.isConstructorDeclaration(node)) return 'constructor';
   const name = node.name;
   const text =
     name === undefined
@@ -201,7 +206,11 @@ function namespaceBody(body, ambient) {
   if (ts.isModuleDeclaration(body)) {
     return f.updateModuleDeclaration(body, body.modifiers, body.name, namespaceBody(body.body, ambient));
   }
-  if (ts.isModuleBlock(body)) return f.updateModuleBlock(body, statements(body.statements, ambient));
+  if (ts.isModuleBlock(body)) {
+    // An ambient body that declares its exports exports only those (TypeScript's binder).
+    const declares = body.statements.some((st) => ts.isExportDeclaration(st) || ts.isExportAssignment(st));
+    return f.updateModuleBlock(body, statements(body.statements, ambient && !declares));
+  }
   return body;
 }
 
