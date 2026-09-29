@@ -413,3 +413,11 @@ No real agent, no spending. No `wingfoil` command in the build phase.
   the approver (`in-review → approved`, `Approver:`/`Reason:` trailers, only `status` changed). Matches.
 - Its reason is requirements 1.12's review decision, 2026-09-29: the check format, the content and
   unchanged kinds, `commits.json` and S2's two checks accepted; requirements 1.12 approved.
+
+### Delivery
+
+- Merged into main with `--no-ff` → `faf9033`.
+- `npx wingfoil memory submit task-035-check-format-and-content-checks` → `e5ecdee`. Declared: `approved →
+  done`, one commit `wf(task): submit <id>`. Observed: exit 0, 1 file, diff limited to `status: approved` →
+  `status: done`. Matches (N9).
+- Not the last task of W8: the wave's "Ends with" is checked after task-038 (W8 decision 1).
