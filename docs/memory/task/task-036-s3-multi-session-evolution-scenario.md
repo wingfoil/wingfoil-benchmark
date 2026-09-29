@@ -350,3 +350,11 @@ No real agent, no spending. No `wingfoil` command in the build phase.
   by the approver (`in-review → approved`, `Approver:`/`Reason:` trailers, only `status` changed). Matches.
 - Its reason is the review decision, 2026-09-29: S3@1.0 accepted — prompts, five suites with decisions
   named D1–D5, D3's revision check, hold-out additions — and the test timeouts raised.
+
+### Delivery
+
+- Merged into main with `--no-ff` → `2f9f222`.
+- `npx wingfoil memory submit task-036-s3-multi-session-evolution-scenario` → `cd1c41e`. Declared: `approved →
+  done`, one commit `wf(task): submit <id>`. Observed: exit 0, 1 file, diff limited to `status: approved` →
+  `status: done`. Matches (N9).
+- Not the last task of W8: the wave's "Ends with" is checked after task-038 (W8 decision 1).
