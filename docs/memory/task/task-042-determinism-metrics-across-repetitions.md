@@ -2,7 +2,7 @@
 id: task-042-determinism-metrics-across-repetitions
 type: task
 title: "Determinism metrics across repetitions"
-status: in-progress
+status: in-review
 release: v0.1
 wave: W10
 features: [F4.5]
