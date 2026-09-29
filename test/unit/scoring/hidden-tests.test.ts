@@ -58,6 +58,9 @@ describe('suiteTestFiles and suiteCommand (REQ-SCO-02)', () => {
       'oracle/first/data.json',
       'oracle/all/z.test.ts',
       'oracle/checks/decision.yaml',
+      // The fixture's vendored third-party files (dl-002): data, not tests.
+      'oracle/first/vendor/cases.json',
+      'oracle/first/examples.json',
     ]);
     const scenario = loadScenario(root, 'S9', '1.0');
     if (!scenario.ok) throw new Error(JSON.stringify(scenario.issues));
@@ -94,6 +97,9 @@ describe('runSuite (REQ-SCO-01)', () => {
       'oracle/first/a.test.ts',
       'oracle/all/b.test.ts',
       'oracle/checks/decision.yaml',
+      // The fixture's vendored third-party files (dl-002): data, not tests.
+      'oracle/first/vendor/cases.json',
+      'oracle/first/examples.json',
     ]);
     const scenario = loadScenario(root, 'S9', '1.0');
     if (!scenario.ok) throw new Error(JSON.stringify(scenario.issues));

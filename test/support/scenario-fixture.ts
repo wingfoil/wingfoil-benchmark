@@ -4,6 +4,9 @@ import { dirname, join } from 'node:path';
 import { onTestFinished } from 'vitest';
 import { stringify } from 'yaml';
 
+/** The SHA-256 of no bytes: the `sha256` pin of a vendored fixture file, written empty. */
+export const EMPTY_SHA256 = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
+
 /** A scenario.yaml that declares every field of REQ-FMT-04, with `steps` steps. */
 export function completeScenarioYaml(id = 'S9', version = '1.0', steps = 2): Record<string, unknown> {
   return {
@@ -23,12 +26,22 @@ export function completeScenarioYaml(id = 'S9', version = '1.0', steps = 2): Rec
         { id: 'all', dir: 'oracle/all', after_steps: stepNumbers(steps).reverse() },
       ],
       checks: ['oracle/checks/decision.yaml'],
+      // One entry of each pin (dl-002): a git source by its commit, a document's extract by the
+      // sha256 of the file as vendored — here an empty file, as every fixture file is written.
       third_party: [
         {
           name: 'conformance-suite',
           url: 'https://example.org/suite.git',
           commit: 'a'.repeat(40),
           license: 'Apache-2.0',
+          files: ['oracle/first/vendor/cases.json'],
+        },
+        {
+          name: 'specification-examples',
+          url: 'https://example.org/spec#examples',
+          sha256: EMPTY_SHA256,
+          license: 'LicenseRef-Example',
+          files: ['oracle/first/examples.json'],
         },
       ],
     },
@@ -52,6 +65,8 @@ export const COMPLETE_FILES = [
   'prompts/01.md',
   'prompts/02.md',
   'oracle/first/a.test.ts',
+  'oracle/first/vendor/cases.json',
+  'oracle/first/examples.json',
   'oracle/all/b.test.ts',
   'oracle/checks/decision.yaml',
 ];

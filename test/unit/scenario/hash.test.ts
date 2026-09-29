@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import { loadScenario, scenarioHash } from '../../../src/scenario/index.js';
 import { repoPath } from '../../support/paths.js';
-import { tempDir } from '../../support/scenario-fixture.js';
+import { tempDir, writeScenario } from '../../support/scenario-fixture.js';
 
 /** A copy of T3's version directory in a fresh place. */
 function copy(): string {
@@ -75,5 +75,12 @@ describe('scenarioHash (REQ-FMT-09)', () => {
     const dir = copy();
     const result = loadScenario(join(dir, '..', '..'), 'T3', '1.0');
     expect(result.ok && result.value.hash).toBe(scenarioHash(dir));
+  });
+
+  it('covers a vendored third-party file, whatever its pin (dl-002)', () => {
+    const dir = join(writeScenario(), 'S9', '1.0');
+    const before = scenarioHash(dir);
+    writeFileSync(join(dir, 'oracle', 'first', 'vendor', 'cases.json'), '[]\n');
+    expect(scenarioHash(dir)).not.toBe(before);
   });
 });

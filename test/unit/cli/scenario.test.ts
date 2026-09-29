@@ -173,6 +173,17 @@ describe('bench scenario validate (REQ-CLI-04, REQ-CLI-10)', () => {
     );
   });
 
+  it('refuses third-party material changed after it was pinned, naming the entry (dl-002)', async () => {
+    delete process.env.BENCH_HOLDOUT_PATH;
+    const root = repo();
+    writeFileSync(join(root, 'scenarios', 'S9', '1.0', 'oracle', 'first', 'examples.json'), '{}\n');
+    expect(await run(root, 'scenario', 'validate', 'S9@1.0')).toEqual({
+      code: 1,
+      stdout: '',
+      stderr: "oracle.third_party[1].sha256: does not match 'oracle/first/examples.json'\n",
+    });
+  });
+
   it("reports the scenario's own issues as campaign validate does", async () => {
     const root = tempDir('bench-repo-');
     writeScenarioAt(join(root, 'scenarios'), { ...completeScenarioYaml(), profiles: [] }, COMPLETE_FILES);

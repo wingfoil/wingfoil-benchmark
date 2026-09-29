@@ -131,11 +131,60 @@ const suites = z.array(suite).superRefine((list, ctx) => {
   });
 });
 
-const thirdParty = z.strictObject({
-  name: z.string().min(1),
-  url: z.url({ protocol: SOURCE_PROTOCOL, error: 'must be an http(s), git or ssh URL' }),
-  commit: z.string().regex(/^[0-9a-f]{40}$/, 'must be a 40-character commit SHA'),
-  license: z.string().refine(isSpdxExpression, 'must be an SPDX license identifier or expression'),
+/** Relative paths with no two spellings of the same one (`a/b`, `./a/b`). */
+const distinctPaths = z
+  .array(relativePath)
+  .refine((paths) => new Set(paths.map(samePathKey)).size === paths.length, 'must not contain duplicates');
+
+/**
+ * Third-party material vendored into the oracle (dl-002, REQ-FMT-04): the `files` it vendors, their
+ * license — an SPDX expression, a `LicenseRef-` for a license the SPDX list lacks — and exactly one pin:
+ * the `commit` of a git source, or else the `sha256` of the one file it vendors, so that `sha256sum`
+ * checks it. Where the files lie, and whether they still match their `sha256`, is checked by the loader,
+ * which has the directory.
+ */
+const thirdParty = z
+  .strictObject({
+    name: z.string().min(1),
+    url: z.url({ protocol: SOURCE_PROTOCOL, error: 'must be an http(s), git or ssh URL' }),
+    commit: z
+      .string()
+      .regex(/^[0-9a-f]{40}$/, 'must be a 40-character commit SHA')
+      .optional(),
+    sha256: z
+      .string()
+      .regex(/^[0-9a-f]{64}$/, 'must be a 64-character SHA-256 in lowercase hex')
+      .optional(),
+    license: z.string().refine(isSpdxExpression, 'must be an SPDX license identifier or expression'),
+    files: distinctPaths.min(1),
+  })
+  .superRefine((entry, ctx) => {
+    if (entry.commit === undefined && entry.sha256 === undefined) {
+      ctx.addIssue({ code: 'custom', path: [], message: 'must be pinned by commit or by sha256' });
+    } else if (entry.commit !== undefined && entry.sha256 !== undefined) {
+      ctx.addIssue({ code: 'custom', path: [], message: 'must be pinned by commit or by sha256, not both' });
+    } else if (entry.sha256 !== undefined && entry.files.length > 1) {
+      ctx.addIssue({ code: 'custom', path: ['files'], message: 'must name one file when pinned by sha256' });
+    }
+  });
+
+/** Every vendored file under one entry: two licenses for the same bytes cannot both be right. */
+const thirdParties = z.array(thirdParty).superRefine((list, ctx) => {
+  const owner = new Map<string, number>();
+  list.forEach((entry, index) => {
+    entry.files.forEach((file, position) => {
+      const key = samePathKey(file);
+      const earlier = owner.get(key);
+      if (earlier === undefined) owner.set(key, index);
+      else if (earlier < index) {
+        ctx.addIssue({
+          code: 'custom',
+          path: [index, 'files', position],
+          message: `is vendored by oracle.third_party[${earlier}] too`,
+        });
+      }
+    });
+  });
 });
 
 /** REQ-FMT-04: the `scenario.yaml` of `scenarios/<id>/<version>/`. Unknown keys are rejected. */
@@ -184,7 +233,7 @@ export const scenarioSchema = z.strictObject({
         'must not contain duplicates',
       )
       .default([]),
-    third_party: z.array(thirdParty).default([]),
+    third_party: thirdParties.default([]),
   }),
   holdout: z.boolean(),
 });
@@ -203,6 +252,18 @@ export interface Suite {
   readonly afterSteps: readonly number[];
 }
 
+/**
+ * Loaded third-party material (dl-002): its source, its license, the absolute files it vendors, and
+ * its one pin — a commit, or the sha256 the loader has checked the file against.
+ */
+export interface ThirdParty {
+  readonly name: string;
+  readonly url: string;
+  readonly license: string;
+  readonly pin: { readonly commit: string } | { readonly sha256: string };
+  readonly files: readonly string[];
+}
+
 /** A loaded scenario version, with every path resolved to an absolute one. */
 export interface Scenario {
   readonly id: string;
@@ -218,7 +279,8 @@ export interface Scenario {
     /** The suites of hidden tests (dl-001), in declaration order, each with its steps in ascending order. */
     readonly suites: readonly Suite[];
     readonly checks: readonly string[];
-    readonly thirdParty: readonly ScenarioFile['oracle']['third_party'][number][];
+    /** The third-party material vendored into the suites (dl-002), in declaration order. */
+    readonly thirdParty: readonly ThirdParty[];
   };
   readonly holdout: boolean;
   /**
