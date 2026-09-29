@@ -47,7 +47,9 @@ function tally(report: SuiteReport): Record<string, number> {
 const COUNTED = { pointer: 12, patch: 92 + 16, 'merge-patch': 15 };
 const DISABLED = { pointer: 0, patch: 3 + 1, 'merge-patch': 0 };
 
-describe('S1@1.0 (F6.1)', () => {
+// The hidden tests really run, one Node process per suite and snapshot: seconds, not milliseconds, and
+// more under a full run's load (as S2's and S3's).
+describe('S1@1.0 (F6.1)', { timeout: 120_000 }, () => {
   let scenario: Scenario;
   beforeAll(() => {
     scenario = s1();
