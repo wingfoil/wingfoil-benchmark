@@ -288,3 +288,9 @@ task-033 reuses the helper with its hold-out reference (decision 5).
   fields checked, one commit `wf(task): submit <id>` with no bracket and no body. Observed: exit 0,
   empty stderr, 1 file, diff limited to `status: draft` → `status: pending`. Matches (subject without
   transition: N9).
+- `npx wingfoil memory approve … [pending → backlog]` → `dbdd07b`, run by the approver.
+- Design committed by hand on `task/task-032-s1-conformance-scenario` (`de408e2`), so that `submit`
+  carries only the state change (N13).
+- `npx wingfoil memory submit task-032-s1-conformance-scenario` → `b390c36`. Declared: `backlog →
+  in-progress`, one commit `wf(task): submit <id>`. Observed: exit 0, empty stderr, 1 file, diff limited
+  to `status: backlog` → `status: in-progress`. Matches (N9).
