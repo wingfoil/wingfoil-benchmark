@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -18,6 +18,8 @@ import { runSuite } from './hidden-tests.js';
 import { holdoutHash, holdoutSuites } from './holdout.js';
 import type { SuiteReport, TestResult } from './hidden-tests.js';
 import type { ScoringImage } from './image.js';
+import { measuredFiles, qualityInContainer } from './quality.js';
+import type { MQ2Score, QualityRunner } from './quality.js';
 import { rebuildSnapshots } from './snapshot.js';
 
 /** The version of the scoring rules (adr-004): it rises when a rule changes, not when a key is added. */
@@ -77,7 +79,15 @@ export interface ScoreFile {
   readonly scenario: string;
   readonly version: string;
   readonly scenario_hash: string;
-  readonly scorer: { readonly image: string; readonly tsx: string; readonly typescript: string };
+  readonly scorer: {
+    readonly image: string;
+    readonly tsx: string;
+    readonly typescript: string;
+    readonly eslint: string;
+    readonly typescript_eslint: string;
+    readonly jscpd: string;
+    readonly c8: string;
+  };
   /** The public suites on the seed (REQ-SCO-12, task-039). */
   readonly seed: SeedScore;
   readonly steps: readonly StepScore[];
@@ -91,6 +101,8 @@ export interface ScoreFile {
   readonly m_f2?: MF2Score;
   /** M-D3 from the seed (REQ-SCO-12, task-039). */
   readonly m_d3: MD3Score;
+  /** M-Q2 on the files the run changed (REQ-SCO-04, task-041). */
+  readonly m_q2: MQ2Score;
   /** M-K1 and M-K2 per step and for the run (F4.3, task-029). */
   readonly cost: CostScore;
   /** The run's mark (F3.6), as the runner recorded it: `null`, or the capabilities its harness lacked. */
@@ -132,6 +144,8 @@ export interface ScoreRequest {
   readonly containerPrefix: string;
   /** By default, none given: `not configured`. */
   readonly holdout?: HoldoutInput;
+  /** What measures M-Q2; by default the scoring image's quality.mjs in a container (task-041). */
+  readonly quality?: QualityRunner;
 }
 
 /** A group of suites scored together: the public ones, or a hold-out's, which nothing may repeat. */
@@ -197,12 +211,22 @@ export async function scoreRun(request: ScoreRequest): Promise<Result<ScoreFile>
     if (!decisions.ok) return decisions;
     const nextChange = mF2(publicScore.value.steps as StepScore[], cost.value);
     const seed = publicScore.value.seed as SeedScore;
+    const quality = await staticQuality(request, final, snapshots.value);
+    if (!quality.ok) return quality;
     return ok({
       score_version: SCORE_VERSION,
       scenario: run.scenario,
       version: run.version,
       scenario_hash: run.scenarioHash,
-      scorer: { image: request.image.tag, tsx: request.image.tsx, typescript: request.image.typescript },
+      scorer: {
+        image: request.image.tag,
+        tsx: request.image.tsx,
+        typescript: request.image.typescript,
+        eslint: request.image.eslint,
+        typescript_eslint: request.image.typescriptEslint,
+        jscpd: request.image.jscpd,
+        c8: request.image.c8,
+      },
       seed,
       steps: publicScore.value.steps as StepScore[],
       final,
@@ -211,6 +235,7 @@ export async function scoreRun(request: ScoreRequest): Promise<Result<ScoreFile>
       ...(decisions.value === undefined ? {} : { m_f1: decisions.value }),
       ...(nextChange === undefined ? {} : { m_f2: nextChange }),
       m_d3: mD3(seed, final),
+      m_q2: quality.value,
       cost: cost.value,
       expected_failure:
         run.expectedFailure === undefined ? null : { missing: [...run.expectedFailure.missing] },
@@ -218,6 +243,37 @@ export async function scoreRun(request: ScoreRequest): Promise<Result<ScoreFile>
   } finally {
     rmSync(workDir, { recursive: true, force: true });
   }
+}
+
+/**
+ * M-Q2 (REQ-SCO-04 as amended in 1.16): on the final snapshot, the files the run changed from the seed
+ * less the setup's, measured by the image; not reached without a final snapshot, not applicable when the
+ * run changed no source file.
+ */
+async function staticQuality(
+  request: ScoreRequest,
+  final: FinalScore,
+  snapshots: ReadonlyMap<number, string>,
+): Promise<Result<MQ2Score>> {
+  if ('not_reached' in final) return ok({ not_reached: true });
+  const snapshot = snapshots.get(final.step) as string;
+  const patch = join(request.runDir, 'setup', 'diff.patch');
+  const files = measuredFiles({
+    seedDir: request.scenario.seedDir,
+    snapshot,
+    setupPatch: existsSync(patch) ? readFileSync(patch, 'utf8') : '',
+  });
+  if (files.measured.length === 0) return ok({ not_applicable: true });
+  const run =
+    request.quality ??
+    qualityInContainer({
+      docker: request.docker,
+      image: request.image.tag,
+      containerPrefix: request.containerPrefix,
+    });
+  const measure = await run({ snapshot, files });
+  if (!measure.ok) return measure;
+  return ok({ measured: files.measured, coverage_targets: files.coverageTargets, ...measure.value });
 }
 
 /** Scores a group of suites on a run's snapshots: every step bound to one, then the final snapshot. */

@@ -129,3 +129,31 @@ scoring image for M-E1's directive checks (F4.8, REQ-SCO-05 as amended in requir
     violation. An exit other than 0 is an oracle error naming the step, as a suite's is.
 19. **Checks that read text run in the scorer's process**, not in a container: content, unchanged
     (task-035) and dependencies. Neither they nor the AST script run anything of the agent's.
+
+## Amendment 3 (W9 task-041, 2026-09-29; accepted at its review, `11d69f4`)
+
+What [task-041](../task/task-041-static-quality-metrics.md) added to the scoring image for M-Q2 (F4.2,
+REQ-SCO-04 as amended in requirements 1.16):
+
+20. **The image pins M-Q2's tools** with the same lockfile, and `score.json`'s `scorer` records each:
+    - `eslint` 10.11.0, `@eslint/js` 10.0.1 and `typescript-eslint` 8.70.1, the repository's own lint
+      versions. The scorer records `eslint` and `typescript_eslint`;
+    - `jscpd` 5.3.3. It is a Rust binary shipped as per-platform optional packages, and the lockfile
+      lists them all. `npm ci` installs the image's own, `jscpd-linux-x64-gnu`;
+    - `c8` 12.0.0.
+
+    The repository pins jscpd and c8 as devDependencies too, so that the local scoring double runs the
+    same tools.
+21. **M-Q2 runs in the image**, through its script `/opt/score/quality.mjs` and its lint configuration
+    `/opt/score/eslint.config.mjs`.
+    - It uses one container per run, on the final snapshot, with no mount and no network. The snapshot
+      is copied to `/score/snapshot`.
+    - The run is bounded by `timeout 600`, and the project's tests by 300 s of their own.
+    - **Unlike every other part of scoring, it runs the agent's code outside a hidden suite:** the
+      project's `npm test`, under c8. REQ-SCO-01's isolation is what makes that acceptable.
+    - An exit other than 0 is an oracle error. The tests failing, or being killed, is not an oracle
+      error: it is recorded.
+22. **What M-Q2 measures is decided on the host** from the seed, the final snapshot and the setup's
+    stored patch. Every path the setup touched is left out, whatever the harness. The image is given
+    the file lists and decides nothing about which files count.
+

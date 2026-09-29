@@ -399,6 +399,80 @@ describe('aggregateExecution (F5.1, REQ-FMT-07)', () => {
     });
   });
 
+  describe('M-Q2, static quality (REQ-SCO-04, task-041)', () => {
+    const quality = (findings: number, covered: number, max: number) => ({
+      m_q2: {
+        measured: ['src/a.ts'],
+        coverage_targets: ['src/a.ts'],
+        lint: { findings, lines: 100 },
+        complexity: { functions: 4, sum: 4 * max - 2, max },
+        duplication: { duplicated_lines: 10, lines: 100 },
+        coverage: { covered, total: 50, tests: 'passed' },
+      },
+    });
+
+    it('keeps each indicator apart, as integer pairs with their runs, and no composite', () => {
+      const dir = execution([
+        { arm: 'baseline', r: 1, steps: [[s('a', 1, 1)]], continuity: quality(2, 40, 3) },
+        { arm: 'baseline', r: 2, steps: [[s('a', 1, 1)]], continuity: quality(5, 20, 6) },
+        { arm: 'baseline', r: 3, steps: ['not reached'], continuity: { m_q2: { not_reached: true } } },
+        { arm: 'baseline', r: 4, steps: [[s('a', 1, 1)]], continuity: { m_q2: { not_applicable: true } } },
+      ]);
+      const [group] = aggregate(dir).groups;
+      const runs = [name('baseline', 1), name('baseline', 2)];
+      expect(group?.metrics.m_q2).toEqual({
+        lint: {
+          n: 2,
+          runs,
+          values: [
+            { findings: 2, lines: 100 },
+            { findings: 5, lines: 100 },
+          ],
+          min: { findings: 2, lines: 100 },
+          max: { findings: 5, lines: 100 },
+        },
+        complexity_mean: {
+          n: 2,
+          runs,
+          values: [
+            { sum: 10, functions: 4 },
+            { sum: 22, functions: 4 },
+          ],
+          min: { sum: 10, functions: 4 },
+          max: { sum: 22, functions: 4 },
+        },
+        complexity_max: { n: 2, runs, values: [3, 6], min: 3, max: 6 },
+        duplication: {
+          n: 2,
+          runs,
+          values: [
+            { duplicated_lines: 10, lines: 100 },
+            { duplicated_lines: 10, lines: 100 },
+          ],
+          min: { duplicated_lines: 10, lines: 100 },
+          max: { duplicated_lines: 10, lines: 100 },
+        },
+        coverage: {
+          n: 2,
+          runs,
+          values: [
+            { covered: 40, total: 50 },
+            { covered: 20, total: 50 },
+          ],
+          min: { covered: 20, total: 50 },
+          max: { covered: 40, total: 50 },
+        },
+        not_reached: [name('baseline', 3)],
+        not_applicable: [name('baseline', 4)],
+      });
+    });
+
+    it('adds none for runs scored before task-041', () => {
+      const [group] = aggregate(execution([{ arm: 'baseline', steps: [[s('a', 1, 1)]] }])).groups;
+      expect(group?.metrics).not.toHaveProperty('m_q2');
+    });
+  });
+
   describe('continuity and regressions from the seed (REQ-SCO-12, task-039)', () => {
     const seed = (passed: number) => ({ suites: [], m_q1: { passed, total: 4 } });
     const respected = (id: string) => ({ id, outcome: 'respected', failed: [] });

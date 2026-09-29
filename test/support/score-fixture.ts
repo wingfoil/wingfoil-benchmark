@@ -291,6 +291,14 @@ export const CANCEL: Files = {
     "export function cancel(order: Order): Order {\n  return { ...order, status: 'cancelled' };\n}\n",
 };
 
+/** What the image's quality.mjs says of any snapshot, in the scoring double (task-041). */
+export const QUALITY = {
+  lint: { findings: 1, lines: 10 },
+  complexity: { functions: 1, sum: 1, max: 1 },
+  duplication: { duplicated_lines: 0, lines: 10 },
+  coverage: { covered: 0, total: 6, tests: 'none' },
+};
+
 /** T3's one hidden test, as the reporter names it. */
 export const T3_TEST = {
   file: 'oracle/public/cancel.test.ts',
@@ -345,6 +353,10 @@ export function scoringDocker(
     },
     exec: (container, command) => {
       recorded.execs.push({ container, command: [...command] });
+      // The image's static-quality measure (task-041) says the same of every snapshot here.
+      if (command.some((argument) => argument.includes('quality.mjs'))) {
+        return Promise.resolve({ code: 0, stdout: `${JSON.stringify(QUALITY)}\n`, stderr: '' });
+      }
       return Promise.resolve(judge(snapshots.get(container) ?? '', command));
     },
     remove: (container) => {

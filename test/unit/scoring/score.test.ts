@@ -10,6 +10,7 @@ import type { Census, HoldoutInput } from '../../../src/scoring/index.js';
 import { loadHoldoutAdditions } from '../../../src/scenario/index.js';
 import {
   CANCEL,
+  QUALITY,
   HOLDOUT_SECRET,
   HOLDOUT_TESTS,
   judgeT3,
@@ -42,6 +43,10 @@ const IMAGE = {
   context: '',
   tsx: '4.23.15',
   typescript: '6.0.3',
+  eslint: '10.11.0',
+  typescriptEslint: '8.70.1',
+  jscpd: '5.3.3',
+  c8: '12.0.0',
 };
 
 async function score(
@@ -81,7 +86,16 @@ describe('scoreRun (F4.1, REQ-SCO-01–03)', () => {
         scenario: 'T3',
         version: '1.0',
         scenario_hash: fixture.scenario.hash,
-        scorer: { image: 'bench-score:0123456789ab', tsx: '4.23.15', typescript: '6.0.3' },
+        // The tools M-Q2 measures with (task-041), beside the ones the hidden tests and the AST use.
+        scorer: {
+          image: 'bench-score:0123456789ab',
+          tsx: '4.23.15',
+          typescript: '6.0.3',
+          eslint: '10.11.0',
+          typescript_eslint: '8.70.1',
+          jscpd: '5.3.3',
+          c8: '12.0.0',
+        },
         // The public suites on the seed, with its own verdicts (task-039): M-D3 reads them.
         seed: {
           suites: [
@@ -131,19 +145,23 @@ describe('scoreRun (F4.1, REQ-SCO-01–03)', () => {
         m_f2: { steps: [{ n: 2, cost_eur: 0.1, m_q1: { passed: 1, total: 1 } }] },
         // M-D3 (task-039): the one test failed on the seed, so nothing it passed there can regress.
         m_d3: { count: 0, tests: [] },
+        // M-Q2 (task-041): on the one source file the run changed, as the image's quality.mjs said.
+        m_q2: { measured: ['src/orders.ts'], coverage_targets: ['src/orders.ts'], ...QUALITY },
         // Not marked (F3.6): the key is there, so aggregation never infers it from an absent one.
         expected_failure: null,
         // M-K1 and M-K2 (F4.3): their own tests are in cost.test.ts.
         cost: expect.objectContaining({ usd_to_eur: 0.5, run: expect.objectContaining({ turns: 9 }) }),
       },
     });
-    // The census on the seed, then steps 1 and 2; the final snapshot is step 2's, already scored.
+    // The census on the seed, then steps 1 and 2; the final snapshot is step 2's, already scored. Then
+    // M-Q2 on the final snapshot, in a container of its own (task-041).
     expect(recorded.copies.map((copy) => copy.split(' -> ')[0])).toEqual([
       fixture.scenario.seedDir,
       expect.stringMatching(/01$/),
       expect.stringMatching(/02$/),
+      expect.stringMatching(/02$/),
     ]);
-    expect(recorded.removes).toHaveLength(3);
+    expect(recorded.removes).toHaveLength(4);
   });
 
   it('records the steps a run never reached, and no final snapshot, when it stopped early', async () => {
@@ -160,6 +178,7 @@ describe('scoreRun (F4.1, REQ-SCO-01–03)', () => {
     expect(result.ok && result.value.seed.m_q1).toEqual({ passed: 0, total: 1 });
     expect(result.ok && result.value.m_d3).toEqual({ not_reached: true });
     expect(result.ok && result.value.m_f2).toEqual({ steps: [{ n: 2, not_reached: true }] });
+    expect(result.ok && result.value.m_q2).toEqual({ not_reached: true });
   });
 
   it('counts a census test a snapshot never reported as failed: a killed file hides its tests', async () => {
@@ -286,9 +305,18 @@ describe('scoreSummary', () => {
         scenario: 'T3',
         version: '1.0',
         scenario_hash: 'h',
-        scorer: { image: 'i', tsx: 't', typescript: 'ts' },
+        scorer: {
+          image: 'i',
+          tsx: 't',
+          typescript: 'ts',
+          eslint: 'e',
+          typescript_eslint: 'te',
+          jscpd: 'j',
+          c8: 'c',
+        },
         seed: { suites: [] },
         m_d3: { count: 0, tests: [] },
+        m_q2: { not_applicable: true as const },
         holdout: { scored: false, reason: 'none declared' },
         cost: NO_COST,
         expected_failure: null,
@@ -310,9 +338,18 @@ describe('scoreSummary', () => {
         scenario: 'T0',
         version: '1.0',
         scenario_hash: 'h',
-        scorer: { image: 'i', tsx: 't', typescript: 'ts' },
+        scorer: {
+          image: 'i',
+          tsx: 't',
+          typescript: 'ts',
+          eslint: 'e',
+          typescript_eslint: 'te',
+          jscpd: 'j',
+          c8: 'c',
+        },
         seed: { suites: [] },
         m_d3: { count: 0, tests: [] },
+        m_q2: { not_applicable: true as const },
         steps: [{ n: 1, suites: [] }],
         final: { step: 1, suites: [] },
         holdout: { scored: false, reason: 'none declared' },
@@ -353,6 +390,7 @@ describe('checks in score.json (REQ-SCO-06, task-035)', () => {
       'checks',
       'm_f2',
       'm_d3',
+      'm_q2',
       'cost',
       'expected_failure',
     ]);
@@ -390,9 +428,18 @@ describe('checks in score.json (REQ-SCO-06, task-035)', () => {
       scenario: 'T3',
       version: '1.0',
       scenario_hash: 'h',
-      scorer: { image: 'i', tsx: 't', typescript: 'ts' },
+      scorer: {
+        image: 'i',
+        tsx: 't',
+        typescript: 'ts',
+        eslint: 'e',
+        typescript_eslint: 'te',
+        jscpd: 'j',
+        c8: 'c',
+      },
       seed: { suites: [] },
       m_d3: { count: 0, tests: [] },
+      m_q2: { not_applicable: true as const },
       steps: [{ n: 1, suites: [] }],
       final: { step: 1, suites: [] },
       holdout: { scored: false, reason: 'none declared' },
@@ -537,9 +584,18 @@ describe('scoreRun with the hold-out (task-028, F3.5, REQ-SCO-09)', () => {
       scenario: 'T3',
       version: '1.0',
       scenario_hash: 'h',
-      scorer: { image: 'i', tsx: 't', typescript: 'ts' },
+      scorer: {
+        image: 'i',
+        tsx: 't',
+        typescript: 'ts',
+        eslint: 'e',
+        typescript_eslint: 'te',
+        jscpd: 'j',
+        c8: 'c',
+      },
       seed: { suites: [] },
       m_d3: { count: 0, tests: [] },
+      m_q2: { not_applicable: true as const },
       steps: [
         { n: 1, suites: [{ id: 'a', passed: 1, total: 1, failed: [] }], m_q1: { passed: 1, total: 1 } },
       ],
@@ -623,5 +679,25 @@ describe('continuity and regressions in score.json (REQ-SCO-12, task-039)', () =
       ok: false,
       issues: [{ path: 'oracle.decisions[D1]', message: "has no public hidden test named 'D1: …'" }],
     });
+  });
+});
+
+describe('M-Q2 in score.json (REQ-SCO-04, task-041)', () => {
+  it('is not applicable for a run that changed no source file, and measures nothing', async () => {
+    const fixture = await storedRun({ steps: [{}, { 'NOTES.md': 'Nothing to change.\n' }] });
+    const { result, recorded } = await score(fixture);
+    expect(result.ok && result.value.m_q2).toEqual({ not_applicable: true });
+    expect(recorded.execs.some((exec) => exec.command.some((part) => part.includes('quality.mjs')))).toBe(
+      false,
+    );
+  });
+
+  it('leaves out the files the setup wrote, whatever the run did to them', async () => {
+    const fixture = await storedRun({
+      setup: { 'CLAUDE.md': 'The manual.\n', 'tools/harness.js': 'module.exports = 1;\n' },
+      steps: [{ 'tools/harness.js': 'module.exports = 2;\n' }, CANCEL],
+    });
+    const { result } = await score(fixture);
+    expect(result.ok && result.value.m_q2).toMatchObject({ measured: ['src/orders.ts'] });
   });
 });

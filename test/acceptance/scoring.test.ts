@@ -124,11 +124,17 @@ describe('scoring.feature', { timeout: 120_000 }, () => {
     expect(recorded.creates.length).toBeGreaterThan(0);
     for (const create of recorded.creates) {
       expect(create.image).toMatch(/^bench-score:/);
-      expect(create.readOnly).toEqual([
-        { source: join(fixture.scenario.dir, 'oracle', 'public'), target: '/score/oracle/public' },
-      ]);
+      // M-Q2's container (task-041) reads the snapshot alone: no oracle is mounted in it.
+      expect(create.readOnly).toEqual(
+        create.name.endsWith('-quality')
+          ? []
+          : [{ source: join(fixture.scenario.dir, 'oracle', 'public'), target: '/score/oracle/public' }],
+      );
     }
-    expect(recorded.copies.every((copy) => copy.endsWith(':/score/seed'))).toBe(true);
+    // Each snapshot where the suites import it from; M-Q2's copy of the final one where its script reads it.
+    expect(
+      recorded.copies.every((copy) => copy.endsWith(':/score/seed') || copy.endsWith(':/score/snapshot')),
+    ).toBe(true);
     expect(recorded.removes).toHaveLength(recorded.creates.length);
 
     // And M-Q1 is recorded for the final snapshot and for every step that defines tests
@@ -252,6 +258,56 @@ describe('scoring.feature', { timeout: 120_000 }, () => {
     ]);
   });
 
+  it('@F4.2 Static quality is reported per indicator', async () => {
+    // Given a run of S8, its reference — a seed with tests, which the reference extends — stored as the
+    // runner stores one
+    const reference = repoPath('test/fixtures/reference/S8');
+    const run = await storedRun({ scenario: 'S8', steps: referenceFiles(reference) });
+
+    // When the run is scored — the image's quality.mjs run with the same pinned tools on this machine
+    const { code, stdout } = await benchScoreLocally(run.root);
+    expect(code, stdout).toBe(0);
+    const score = JSON.parse(readFileSync(join(run.runDir, 'score.json'), 'utf8')) as {
+      m_q2: Record<string, unknown>;
+      scorer: Record<string, string>;
+    };
+
+    // Then M-Q2 records, for the files changed by the run: lint findings per 1,000 lines, mean and
+    // maximum cyclomatic complexity, duplicated-line percentage, and test coverage — as the integers
+    // each is a ratio of
+    const m = score.m_q2 as {
+      measured: string[];
+      coverage_targets: string[];
+      lint: { findings: number; lines: number };
+      complexity: { functions: number; sum: number; max: number };
+      duplication: { duplicated_lines: number; lines: number };
+      coverage: { covered: number; total: number; tests: string };
+    };
+    expect(m.measured).toContain('test/list.test.ts');
+    expect(m.measured).toContain('src/domain/import.ts');
+    expect(m.coverage_targets).not.toContain('test/list.test.ts');
+    expect(m.lint.lines).toBeGreaterThan(0);
+    expect(m.complexity.functions).toBeGreaterThan(0);
+    expect(m.complexity.max).toBeGreaterThanOrEqual(1);
+    expect(m.duplication.lines).toBe(m.lint.lines);
+    expect(m.coverage).toMatchObject({ tests: 'passed' });
+    expect(m.coverage.covered).toBeGreaterThan(0);
+    expect(m.coverage.covered).toBeLessThanOrEqual(m.coverage.total);
+
+    // And no composite score is produced
+    expect(Object.keys(m)).toEqual([
+      'measured',
+      'coverage_targets',
+      'lint',
+      'complexity',
+      'duplication',
+      'coverage',
+    ]);
+    expect(Object.keys(score.scorer)).toEqual(
+      expect.arrayContaining(['eslint', 'typescript_eslint', 'jscpd', 'c8']),
+    );
+  }, 600_000);
+
   it('@F4.4 Break-even is computed only when quality is not worse', async () => {
     // Given the wingfoil arm's M-Q1 is not lower than the baseline's on S3 — both cancel orders at step 2
     // And the wingfoil arm's mean step cost is lower than the baseline's — 0.0375 EUR against 0.075
@@ -314,6 +370,9 @@ describe('scoring.feature', { timeout: 120_000 }, () => {
     });
     // And nothing that passed on S3's seed, which has no code, can regress (M-D3)
     expect(recorded?.m_d3).toEqual({ count: 0, tests: [] });
+    // And a project with no tests covers nothing, its changed files still counted (M-Q2, task-041)
+    expect(recorded?.m_q2).toMatchObject({ coverage: { covered: 0 } });
+    expect((recorded?.m_q2 as { coverage: { total: number } }).coverage.total).toBeGreaterThan(0);
   }, 600_000);
 
   it('@F4.7 A silent revision counts as a failure', async () => {
