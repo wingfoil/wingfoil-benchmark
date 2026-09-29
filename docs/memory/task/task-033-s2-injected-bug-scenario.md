@@ -2,7 +2,7 @@
 id: task-033-s2-injected-bug-scenario
 type: task
 title: "S2 injected-bug scenario"
-status: backlog
+status: approved
 release: v0.1
 wave: W7
 features: [F6.2]
@@ -77,11 +77,142 @@ Preliminary classification (confirmed in the design phase).
   regression suites green throughout; the false report's documented behaviour green on the seed.
   **red-first**
 - REQ-SCO-06 — the checks are patterns on content, with no harness path or format. **red-first**
-  (declared and validated; scored in W8)
+  (declared and validated; scored in W8) — **moved to W8 with their format (design, confirmed)**
 
 ## Design
 
-<!-- Modules, interfaces, data formats touched; decisions taken and their reasons. -->
+**What this section does not say.** S2's answer key is hold-out content (S2.md §6): which report is
+which defect, where each defect is, and what its fix is. This section and the build notes name the
+defect *kinds* only, as S2.md does. The key is in `WingFoil2-Benchmark-HoldOut`, and this task records
+only that repository's commit and counts.
+
+**Classification confirmed**, with one change, confirmed by the approver below: the content-checks
+criterion (REQ-SCO-06) moves to W8. The outline's criterion is automated as in task-032, in
+`test/acceptance/` (S2 joins the rows) and in `test/docker/`.
+
+### A change to W7 decision 6: S2's content checks are written in W8, with their format
+
+**Confirmed by the approver, 2026-09-29, in the session, before the build.** It is recorded in the
+release element's W7 carry-overs to W8 when the wave is verified.
+
+Decision 6 has task-033 declare the false-report and duplicate checks as `oracle.checks`, and F4.8 (W8)
+score them. The design found that **no check format exists**:
+
+- `oracle.checks` is a list of paths, and REQ-SCO-06 says what a check does, not how its file is
+  written.
+- Writing S2's checks now would fix a format before F4.8, the feature that runs checks, has designed
+  one. If F4.8 then chose otherwise, S2's files would have to change.
+- One of the two checks is not a pattern check at all: "the related code was not changed" (S2.md §6) is
+  a check on the diff.
+
+S2@1.0 stays changeable until calibration (decision 3), so **F4.8's task writes S2's two checks, and
+their format, into S2@1.0 in W8**. W7 scores what hidden tests measure (decision 6's second half,
+unchanged). `oracle.checks` is `[]` in S2@1.0 for now. If the approver prefers decision 6 as it
+stands, this task defines a provisional YAML format (`kind`, `step`, `patterns`) and W8 amends it.
+
+### `scenarios/S2/1.0/`
+
+```
+scenario.yaml
+seed/            package.json, tsconfig.json, .gitignore, README.md, src/*.ts, test/*.test.ts
+prompts/         01.md 02.md 03.md
+oracle/regression/    *.test.mts   — the rules, correct on the seed; after steps 1, 2, 3
+oracle/reports-1/     *.test.mts   — the three step-1 symptoms; after steps 1, 2, 3
+oracle/reports-2/     *.test.mts   — the two real step-2 symptoms; after steps 2, 3
+oracle/false-report/  *.test.mts   — the documented behaviour behind the false report; after steps 2, 3
+oracle/reports-3/     *.test.mts   — the step-3 symptom, and the duplicate's; after step 3
+```
+
+The card: `categories: {primary: D, secondary: [F]}`, `profiles: [solo-developer, code-reviewer,
+team-developer]`, `gqm: [Q-D1, Q-D2, Q-D3, Q-F1]`, `capabilities: []` (§7), `holdout: true`, no
+`third_party`.
+
+The bindings follow the questions:
+
+- A symptom is scored from its report's step on, so a fix that a later step breaks shows.
+- `reports-1` at step 3 is the duplicate's outcome ("the step-1 fix is still in place").
+- `regression` at every step is M-D3.
+- `false-report` from step 2 on is M-D2's outcome half: the documented behaviour still holds.
+
+### The seed (§3, K1, K3)
+
+- **The module:** about 1,100–1,300 lines of TypeScript in `src/`, one file per area — catalogue
+  (products and SKUs), stock, orders and their lines, discounts, VAT, shipping, cancellation — and
+  `src/index.ts`, the public API the hidden tests call (§4). Money is integer cents; dates are ISO
+  strings, compared as calendar dates in UTC.
+- **The six defects**, one of each kind S2.md §3 lists: arithmetic or rounding, a boundary,
+  state not restored on cancellation, a rule interaction, lookup normalisation, and a date boundary.
+  No name, comment or file hints at one. Where they are is the answer key's.
+- **`README.md`** documents the business rules: every rule a report touches, the false report's
+  rule among them, and others besides, so that the README does not point at the reported areas.
+- **The visible suite, `test/*.test.ts`:** it passes on the seed, covers the rules only in part, and
+  catches no defect. It runs with `"test": "node --test test/"`, with no install: the pinned image's
+  Node 22.23 strips TypeScript types natively. The seed therefore uses erasable syntax only, and imports
+  with `.ts` extensions (`allowImportingTsExtensions`, `noEmit` in its `tsconfig.json`). tsx, in
+  scoring, loads the same files. Both are checked in the build, on the pinned image.
+- **`.gitignore`** as in S1. One initial commit is the runner's (K3, REQ-RUN-05).
+
+### The prompts (§5)
+
+Three batches of user reports: symptoms in a user's words, with the numbers a user would see (an
+order's total, a date), and never a cause, a file or a function. Each prompt asks the agent to handle
+the reports and says nothing about rejecting, deduplicating or keeping records (§5). The false report
+contradicts a rule the README documents. The duplicate restates a step-1 report in other words and
+from another user.
+
+### The suites — conventions (adr-004 decision 10, and the leak scan)
+
+- **Imports:** every test imports `../../seed/src/index.js` inside the test.
+- **Names:** every test is registered unconditionally. Its `describe` is its kind — `defect`,
+  `duplicate`, `false report` or `rule` — and its name is a template literal with a report or rule
+  number. A later metric can then read M-D1, M-D2 and M-D3 from the `failed` lists in `score.json` by
+  kind, with no mapping file.
+- **Literals:** every literal in an oracle file is at least 8 characters of *its own* data. The
+  suites use SKUs, product names and customers of their own, disjoint from the README's and the
+  visible suite's, so the leak scan stays meaningful. The regression suite is written anew; it is not a
+  copy of the visible suite, which the agent can edit and whose literals are in the seed.
+- **Behaviour on the seed:**
+  - each `defect` and `duplicate` test fails on the seed and passes after its fix (M-D1 counts a
+    defect as fixed when its own test passes);
+  - `rule` and `false report` tests pass on the seed. That is their point, not an accident: adr-004
+    decision 10 is about tests passing on the seed by accident.
+
+### Hold-out (§6, K2, decision 5) — in `WingFoil2-Benchmark-HoldOut`
+
+- **`scenarios/S2/1.0/<suite-id>/`:**
+  - variant tests per defect, in the suite of its report;
+  - an extended regression suite under `regression/`;
+  - **the answer key**, one `key.md` per report suite. It names each defect's report, file, function,
+    and wrong and right expressions, with the code identifiers and the wrong constants **in double
+    quotes**. That way the leak scan, which reads the hold-out's quoted strings, checks that no report
+    and no seed comment carries them. That is S2.md §8's check against the answer key.
+- **`reference/S2/01…03/`:** the files each step's fixes rewrite. They are outside `scenarios/`, where
+  `checkHoldoutRoot` looks, and they are the answer key in code.
+- **What the leak scan cannot see** — words under 8 characters, numbers — gets a review of the three
+  prompts against the key, done in the build and recorded without the key's content.
+
+### Tests
+
+- **Unit, `test/unit/scenarios/s2.test.ts`**, with the local scoring double of task-032. Without a
+  hold-out:
+  - the card, the suites and their bindings;
+  - the visible suite passes on the seed with `node --test` (the host's Node 22.21 strips types too);
+  - on the seed, every `defect` and `duplicate` test fails, and every `rule` and `false report` test
+    passes;
+  - the names are unique.
+
+  With the hold-out (`BENCH_HOLDOUT_PATH`, else the sibling checkout, else skipped with the reason, as
+  in task-032's Docker test):
+  - each reference step turns its reports' tests green and keeps every earlier one green, with every
+    `rule` and `false report` test green throughout;
+  - the visible suite still passes after step 3;
+  - the hold-out's variants pass on the reference and fail on the seed.
+- **Acceptance:** `READY` gains `S2`. The outline test runs without a hold-out, since its snapshots
+  are the seed.
+- **Docker:** "W7: S2", as S1's test, with the fake replaying the hold-out's reference, in the three
+  arms. It is skipped with the reason when no hold-out is configured. Every suite passes at step 3,
+  and M-Q1 per step is recorded in the build notes.
+- **Validation:** `bench scenario validate S2@1.0 --holdout …`, its line in the build notes.
 
 ## Execution notes
 
@@ -96,3 +227,101 @@ Preliminary classification (confirmed in the design phase).
   fields checked, one commit `wf(task): submit <id>` with no bracket and no body. Observed: exit 0,
   empty stderr, 1 file, diff limited to `status: draft` → `status: pending`. Matches (subject without
   transition: N9).
+- `npx wingfoil memory approve … [pending → backlog]` → `ad9164e`, run by the approver.
+- Design committed by hand on `task/task-033-s2-injected-bug-scenario` (`8c5f3ff`), so that `submit`
+  carries only the state change (N13).
+- `npx wingfoil memory submit task-033-s2-injected-bug-scenario` → `6f7cb1e`. Declared: `backlog →
+  in-progress`, one commit `wf(task): submit <id>`. Observed: exit 0, empty stderr, 1 file, diff limited
+  to `status: backlog` → `status: in-progress`. Matches (N9).
+- `npx wingfoil memory submit task-033-s2-injected-bug-scenario` → `0eb728b`. Declared: `in-progress →
+  in-review`, one commit `wf(task): submit <id>`. Observed: exit 0, empty stderr, 1 file, diff limited to
+  `status: in-progress` → `status: in-review`. Matches (N9).
+
+### Build
+
+These notes name the defect kinds only. The answer key, the reference fixes and the variants are in
+`WingFoil2-Benchmark-HoldOut` at `141e0e7`.
+
+Commits: `b83a8fe` (the approver's confirmation that the checks go to W8); `c32b22e` (the tests, red:
+there is no S2 at that commit); `d3c2c93` (S2@1.0). The tests were written alongside the content, not
+before it, and committed first; they are red at their own commit.
+
+**`scenarios/S2/1.0/`:**
+
+- **The seed:** 1,019 lines of TypeScript in 15 files of `src/`, plus 156 lines of visible tests in
+  `test/`. S2.md asks for "about 1,000–1,500".
+  - The areas S2.md lists — catalogue, stock, orders, discounts and coupons, VAT, shipping,
+    cancellation — plus invoices, receipts and back-office reports.
+  - The six injected defects, one of each kind.
+  - The README lists every business rule, in plain text. A first draft bolded the rules a report
+    touches, among a few others; the bold was removed, since it pointed at the reported areas.
+- **The seed's own tests:** `npm test` runs `node --test "test/*.test.ts"`. Node 22 does not take a
+  directory as a `--test` argument (the design's `test/` failed with `MODULE_NOT_FOUND`), but it takes
+  a glob.
+  - In the pinned run image (`node:22-bookworm@sha256:dd5847a0…`, Node 22.23.2), read-only and with no
+    network: 14/14, exit 0, types stripped natively.
+  - Its `tsconfig.json` has `allowImportingTsExtensions`, `noEmit` and `erasableSyntaxOnly`. The
+    benchmark's `tsc` passes on it.
+- **The prompts:** three batches of reports — 3; 2 plus the false one; 1 plus the duplicate — in
+  users' and colleagues' words.
+- **The suites:** 16 `rule` tests, and 3 + 2 + 1 `defect` tests, one per real report (M-D1 has six).
+  There is 1 `false report` test and 1 `duplicate` test. `oracle.checks` is `[]` (W8).
+
+**What the build found:**
+
+- **The leak scan and the API's own words.** The first regression suite quoted `'standard'`,
+  `'super-reduced'`, `'ORD-0001'`, and a status. They are the API's values, so they are in the seed, and
+  `bench scenario validate` flagged the prompts and 9 seed files.
+  - The suites now take a VAT class from its rate through the exported `VAT_RATES`, match order
+    numbers with a regular expression, and check a status by its effects.
+  - Every other literal is the suites' own: SKUs, names, customers, coupon codes and dates that
+    appear nowhere in the seed or the prompts.
+- **The answer key checked against the reports** (S2.md §8). Each defect's cause is written in double
+  quotes in the hold-out's `key.md`, one per report suite: seven causes. Validation with the hold-out
+  reads them.
+  - Appending one of them to a copy of prompt 2 made `bench scenario validate` fail with
+    `steps[1].prompt_file: holds a literal of the hold-out file reports-2/key.md`, exit 1, printing
+    nothing of the key.
+  - What the scan cannot see — the numbers and short words of the reports — was reviewed against the
+    key. The reports quote what a user sees: amounts, a date, a coupon code, a product code. None names a
+    file, a function, a comparison, a rounding or a cause.
+- **The reference as scored** (local double, and in Docker):
+  - on the seed: `rule` 16/16, `false report` 1/1, every `defect` and `duplicate` test failing;
+  - after the reference's step 1: `reports-1` 3/3;
+  - after step 2: `reports-2` 2/2;
+  - after step 3: `reports-3` 2/2;
+  - every earlier suite still green at each step, the visible suite still 14/14 after step 3, and the
+    final snapshot 24/24.
+- **The hold-out:** 8 files — 3 keys, 4 variant files, 1 extended regression suite — with 17 tests, and
+  6 reference files in 3 steps.
+  - On the last reference snapshot, every hold-out test passes.
+  - On the seed, each report suite's variants have failures, and the regression and false-report
+    additions pass.
+  - `bench scenario validate S2@1.0 --holdout ../WingFoil2-Benchmark-HoldOut` → `scenario S2@1.0 is
+    valid (hold-out: 8 files)`.
+
+**Checks:**
+
+- `npm test`: 862/862 (+7). The @F6.x outline now runs S1 and S2: validate, dry-run in the three arms,
+  scored for real. Coverage 99.42% statements, 95.72% branches.
+- `npm run lint`: clean.
+- `npm run test:docker`: **11/11**, no container and no `dry-` image left. The two new W7 tests run S2
+  in baseline, baseline-docs and wingfoil with the fake replaying the hold-out's reference:
+  - `regression` 16/16 at every step; `reports-1` 3/3 from step 1; `reports-2` 2/2 and `false-report`
+    1/1 from step 2; `reports-3` 2/2 at step 3; final 24/24;
+  - hold-out counts all passing, and no hold-out name in the output.
+
+  They are skipped, saying why, when no hold-out is configured.
+
+**For the release element, when W7 is verified:** the W8 carry-over "F4.8's task writes S2's two
+content checks, and their format, into S2@1.0" — the approver's decision of 2026-09-29.
+
+No real agent, no spending. No `wingfoil` command in the build phase.
+
+### Review and approval
+
+- `npx wingfoil memory approve task-033-s2-injected-bug-scenario --reason "…"` → `8c6aebd`, run by the
+  approver (`in-review → approved`, `Approver:`/`Reason:` trailers, only `status` changed). Matches.
+- Its reason records the review decisions, 2026-09-29: S2@1.0 accepted — the seed, the reports, the
+  suites by report — and the content checks moved to W8 with their format.
+
