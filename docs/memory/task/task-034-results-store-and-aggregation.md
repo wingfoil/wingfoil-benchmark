@@ -31,6 +31,10 @@ Scope of F5.1 (experiment design §4.6):
   - **hold-out** results apart from public ones (REQ-SCO-09), with `holdout.scored: false` shown as
     "not scored", never as zero;
   - `n = 1` is marked preliminary with no variance; with `n ≥ 3`, the range (min–max).
+- **Regressions (M-D3), added by task-032's design:** the tests of a suite that failed at a step and not
+  at an earlier step bound to the same suite — S1's Patch suite after step 4 against step 3 (Q-D3),
+  S2's seed and regression suites — read from each step's `failed` list in `score.json`. To be confirmed
+  in this task's design.
 - **What the aggregate covers in W7:** the metrics `score.json` holds today — M-Q1 per suite, step and
   final, public and hold-out, and M-K1/M-K2 — grouped by scenario version, arm and model. Metrics of
   W8–W10 join the same structure later. Per-category rows and "beyond variance" are the site's reading
