@@ -280,7 +280,9 @@ describe('dependencies checks (REQ-SCO-05, R1)', () => {
     ]);
   });
 
-  it('reads a missing or broken package.json as no dependencies', async () => {
+  it('reads a missing or broken package.json, or one without a dependencies object, as no dependencies', async () => {
+    const none = await scored(r1([1], []), [{ files: { 'package.json': '{ "dependencies": null }\n' } }]);
+    expect(none[0]?.steps).toEqual([{ n: 1, passed: true, violations: 0, found: [] }]);
     const checks = await scored(r1([1, 2], []), [
       { files: { 'package.json': '{ not json' } },
       { files: { 'package.json': null } },
@@ -399,6 +401,33 @@ describe("ast checks (REQ-SCO-05, R2–R4), through the scoring image's script",
   it('finds nothing in a directory the step does not have', async () => {
     const checks = await scored(ast('r4', ['throw'], 'src/missing'), [{ files: { 'n.md': 'x\n' } }]);
     expect(checks[0]?.steps).toEqual([{ n: 1, passed: true, violations: 0, found: [] }]);
+  });
+
+  it('is an oracle error when the script prints something that is not a finding', async () => {
+    const { runDir, snapshots } = await run([{ files: { 'n.md': 'x\n' } }]);
+    const garbled = astInContainer({
+      docker: {
+        ...localScoringDocker(),
+        exec: () => Promise.resolve({ code: 0, stdout: 'not json\n{"id":1}\n', stderr: '' }),
+      },
+      image: 'local',
+      containerPrefix: 'checks',
+    });
+    expect(await scoreChecks({ checks: [ast('r4', ['throw'])], runDir, snapshots, ast: garbled })).toEqual({
+      ok: false,
+      issues: [
+        { path: 'step 01', message: 'AST output line 1 is not a finding' },
+        { path: 'step 01', message: 'AST output line 2 is not a finding' },
+      ],
+    });
+  });
+
+  it('is an issue when a scenario has ast checks and nothing runs them', async () => {
+    const { runDir, snapshots } = await run([{ files: { 'n.md': 'x\n' } }]);
+    expect(await scoreChecks({ checks: [ast('r4', ['throw'])], runDir, snapshots })).toEqual({
+      ok: false,
+      issues: [{ path: 'oracle.checks', message: 'has ast checks, and nothing was given to run them' }],
+    });
   });
 
   it('is an oracle error, naming the step, when the script fails', async () => {
