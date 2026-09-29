@@ -371,4 +371,4 @@ approver on 2026-09-29; review decision of the approver at that task's review, 2
 The traceability matrix (1.0) is unaffected: REQ-SCO-05 already traces to F4.8.
 
 Source: [task-037](../memory/task/task-037-directive-checks-and-tool-neutral-governance-metrics.md), design
-confirmed by the approver on 2026-09-29; review decision at that task's review.
+confirmed by the approver on 2026-09-29; review decision of the approver at that task's review, 2026-09-29 (`926cc3b`).

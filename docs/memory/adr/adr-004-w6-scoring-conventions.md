@@ -115,7 +115,7 @@ and W8 must follow:
     scored` for a version that expects one. A version whose `holdout:` disagrees with the additions is
     not scored.
 
-## Amendment 2 (W8 task-037, 2026-09-29; accepted at its review)
+## Amendment 2 (W8 task-037, 2026-09-29; accepted at its review, `926cc3b`)
 
 What [task-037](../task/task-037-directive-checks-and-tool-neutral-governance-metrics.md) added to the
 scoring image for M-E1's directive checks (F4.8, REQ-SCO-05 as amended in requirements 1.13):

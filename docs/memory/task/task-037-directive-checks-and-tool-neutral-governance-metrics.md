@@ -304,3 +304,11 @@ No real agent, no spending. No `wingfoil` command in the build phase.
   scenarios green in `test/acceptance/scoring.test.ts`.
 - **For the approver's review decision:** requirements 1.13 (REQ-SCO-05, REQ-SCO-06) and adr-004
   amendment 2 (the image pins TypeScript and runs the AST checks).
+
+### Approval
+
+- `npx wingfoil memory approve task-037-directive-checks-and-tool-neutral-governance-metrics --reason "…"` →
+  `926cc3b`, run by the approver (`in-review → approved`, `Approver:`/`Reason:` trailers, only `status`
+  changed). Matches.
+- Its reason is the review decision, 2026-09-29, of requirements 1.13 and adr-004 amendment 2: M-E1's
+  directive checks accepted, the AST in the scoring image.
