@@ -38,7 +38,7 @@ Waves and features from [07_sequencer.md](../../01_vision/07_sequencer.md) 1.1. 
 | W4 — Scenario hygiene | F3.5 hold-out integration · F3.2 validator and leak scan · F3.4 scenario versioning | — | a scenario validated, with its oracle kept outside the container || **2026-09-28** |
 | W5 — Cost control | F3.3 dry run · F1.2 cost estimate · F1.3 budget guard | — | a campaign refuses to start above the ceiling | **2026-09-28** |
 | W6 — First scores | F4.1 hidden-test oracle · F4.3 cost metrics · F3.6 expected failures | — | pass/fail and cost per run, with expected failures marked | **2026-09-28** |
-| W7 — First content | F6.1 S1 conformance · F6.2 S2 injected bugs · F5.1 results store | — | S1 and S2 scored in all three arms | — |
+| W7 — First content | F6.1 S1 conformance · F6.2 S2 injected bugs · F5.1 results store | — | S1 and S2 scored in all three arms | **2026-09-29** |
 | W8 — Continuity and governance | F6.3 S3 multi-session evolution · F6.8 S8 directive compliance · F4.8 tool-neutral governance metrics | — | S3 and S8 scored | — |
 | W9 — Quality | F4.2 static quality · F4.7 next-change cost · F4.4 setup/step split and break-even | — | the full quality and cost picture per run | — |
 | W10 — Determinism and findings | F4.5 determinism metric · F5.3 run detail · F5.4 finding note | F4.5 | determinism measured, and a first finding note ready for WingFoil | — |
@@ -364,10 +364,92 @@ missing Resolution written. No spending: **1.0415 USD** reported in all so far
 - **W11 (F5.8):** the method page states adr-004's counting rules, what a hold-out result is, and each
   harness's gaps (`provides: false`) and expected failures.
 
+### W7 — verified 2026-09-29
+
+**"S1 and S2 scored in all three arms."** Verified offline, with the fake agent, as the W7 plan phase
+decided (task-031, decision 4); no real-agent half (`real-agent-check` not taken).
+
+- **By hand, on main** (`40f1280`, the built CLI), in a temporary repository holding S1@1.0, S2@1.0 and
+  the benchmark's own arms. The fake replays S1's reference (`test/fixtures/reference/S1/`) and S2's (the
+  hold-out's `reference/S2/`, W7 decision 5), with WingFoil `3df305e` built from the clone:
+  - `bench scenario validate S1@1.0 --holdout …` → `valid (hold-out: 3 files)`; `S2@1.0` → `valid
+    (hold-out: 8 files)`;
+  - six dry runs, S1 and S2 in baseline, baseline-docs and wingfoil: each `completed, 0.0000 USD`;
+  - `bench campaign run` of both in the three arms (campaign `27e28fe609f6`) → `6 runs completed, 0
+    failed`; the wingfoil runs record `harness.commit` `3df305ea198d…`;
+  - `bench score 27e28fe609f6/1 --holdout ../WingFoil2-Benchmark-HoldOut` → exit 0:
+    - S1 in each arm: `step 01 12/12, step 02 105/108, step 03 108/108, step 04 123/123, final 135/135;
+      hold-out final 33/33` — Pointer after step 1, and the Patch suite rising from step 2 to step 3 as
+      S1.md §6 expects;
+    - S2 in each arm: `step 01 19/19, step 02 22/22, step 03 24/24, final 24/24; hold-out final 17/17` —
+      each report's tests green from its step on, the rules and the false report's behaviour kept;
+    - then `aggregate: results/27e28fe609f6/1/aggregate.json (6 groups, 0 slices)`.
+  - **The aggregate:** six groups, one per scenario and arm, each `n` 1 and `preliminary`. No loss, and
+    the hold-out scored. Step-to-step regressions are all 0. No dry run is named. Aggregated again: the
+    same bytes. No `bench-` container left.
+- **Acceptance:** `scenarios.feature`'s @F6.1/@F6.2 outline (S1 and S2 rows: validated, dry-run in the
+  three arms, their hidden tests really run by the local scoring double) and @F3.6's "published as a
+  loss", `results.feature` @F5.1 (two scenarios), all green. `npm test` 877/877 (coverage 99.17%), lint
+  clean, `npm run test:bin` 5/5, `npm run test:docker` 11/11. The W7 Docker tests run S1 and S2 in the
+  three arms through the real scoring image, with the hold-out.
+
+| Task | Feature | Delivered |
+|---|---|---|
+| [task-031](../task/task-031-third-party-oracle-material-pinned-by-commit-or-sha256.md) | — (dl-002) | third-party material pinned by `commit` or `sha256`, its files in a suite, the `sha256` checked on every load; S1's full SHA |
+| [task-032](../task/task-032-s1-conformance-scenario.md) | F6.1 | S1@1.0: seed, four prompts, three suites on vendored and pinned material, its licenses; the reference and the local scoring double |
+| [task-033](../task/task-033-s2-injected-bug-scenario.md) | F6.2 | S2@1.0: seed with six injected defects, three batches of reports, five suites by report; its answer key in the hold-out |
+| [task-034](../task/task-034-results-store-and-aggregation.md) | F5.1 | `aggregate.json` from committed files: groups and slices, every value with its runs and `n`, losses, the hold-out apart |
+
+Decisions taken during W7:
+
+- the plan-phase decisions in task-031 (seven). Decision 6 was changed by the approver on 2026-09-29:
+  S2's content checks and their format are F4.8's, in W8;
+- [dl-002](../decision-log/dl-002-third-party-oracle-material-without-a-git-commit.md) implemented;
+- requirements 1.10 (REQ-FMT-04) and 1.11 (REQ-CLI-06), scenario specs README 1.2, S1.md 1.2;
+- the review points of task-032 to task-034, recorded in each task:
+  - frozen inputs for `resolvePointer` and `applyPatch` only;
+  - the RFC examples under BSD-3-Clause;
+  - losses in aggregation: an expected failure keeps what it measured, a final not reached counts as
+    nothing passed.
+
+Hold-out content: `WingFoil2-Benchmark-HoldOut` `dc21873` (S1) and `141e0e7` (S2), never in this
+repository. No bug. No spending: **1.0415 USD** reported in all so far
+([v0.1 ledger](../../calibration/v0.1-ledger.md)).
+
+**Due before the phases and waves that need them:**
+
+- **W8 (F4.8):** F4.8's task writes S2's two content checks — the false report's code left unchanged,
+  and the duplicate recognised in step 3's files or commits — into S2@1.0, **with the check format**,
+  which no requirement fixes yet (REQ-SCO-06). S2@1.0 is not registered until calibration, so that is not
+  a new version. The approver's decision of 2026-09-29.
+- **W8 (S3, S8 authoring), what W7 learned:**
+  - an oracle file quotes no word the API or the seed also uses — the leak scan takes every quoted
+    string of 8 characters or more for an expected value;
+  - vendored data uses short keys;
+  - `scenarios/*/*/` is outside prettier, since a version is hashed over its bytes;
+  - Node 22's `--test` takes a glob, not a directory, and strips types for a seed with no install;
+  - the local scoring double (`test/support/local-scoring.ts`, tsx 4.23.15 as the scoring image pins it)
+    and `referenceScript` serve S3 and S8 as they did S1 and S2;
+  - READY in the outline test gains S3 and S8.
+- **W9 (quality):**
+  - **M-D3 as the experiment design defines it** (hidden tests that passed on the seed and fail at the
+    end) needs each test's result on the seed in `score.json`. W7 aggregates only the step-to-step
+    regressions (the approver's decision at task-034).
+  - M-K3 and M-K4 join the aggregate's `cost`.
+- **Calibration (plan-003 step 3):**
+  - the real-agent dry runs of S1 and S2 in every arm, and S1 on Opus 5 for the slice;
+  - then S1@1.0 and S2@1.0 are **registered** (W7 decision 3). Until then a difficulty change is not a
+    new version.
+- **W11 (F5.8, F5.5):**
+  - the method page publishes `oracle/licenses/NOTICE.md` (Apache-2.0, BSD-3-Clause IETF) and the
+    aggregate's rules: every value with its runs and `n`, losses, a hold-out "not scored";
+  - the site reads "beyond variance" and categories from `aggregate.json`;
+  - S2's answer key is never published.
+
 ## Release checklist
 
 - [x] release-planning: scope approved (planning → in-development, `8c5c7e6`; plan: plan-003)
-- [ ] delivery: W1–W11 done, every wave's "Ends with" verified (W1 done: task-001, task-002, task-003; W2 done: task-004, task-005, task-006, task-007; W3 done: task-011, task-012, task-013, task-014, task-015; W4 done: task-016, task-017, task-018, task-020, task-019; W5 done: task-021, task-022, task-023, task-024, task-025; W6 done: task-026, task-027, task-028, task-029, task-030)
+- [ ] delivery: W1–W11 done, every wave's "Ends with" verified (W1 done: task-001, task-002, task-003; W2 done: task-004, task-005, task-006, task-007; W3 done: task-011, task-012, task-013, task-014, task-015; W4 done: task-016, task-017, task-018, task-020, task-019; W5 done: task-021, task-022, task-023, task-024, task-025; W6 done: task-026, task-027, task-028, task-029, task-030; W7 done: task-031, task-032, task-033, task-034)
 - [ ] calibration: dry runs in every arm, budget revised (`docs/calibration/v0.1.md`)
 - [ ] validation: acceptance green on the fake agent, coverage > 80%, lint clean, one real-agent end-to-end run
 - [ ] campaign: reference campaign published (campaign: —)
