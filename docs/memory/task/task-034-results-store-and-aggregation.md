@@ -228,3 +228,55 @@ Recorded in `rel-v0-1`'s W7 section, with the carry-overs to W8 and W9.
 - `npx wingfoil memory submit task-034-results-store-and-aggregation` → `e466401`. Declared: `backlog →
   in-progress`, one commit `wf(task): submit <id>`. Observed: exit 0, empty stderr, 1 file, diff limited
   to `status: backlog` → `status: in-progress`. Matches (N9).
+
+### Build
+
+Commits:
+
+- `b10eaa2`: the tests, red — no `aggregateExecution`, and F5.1's acceptance missing, which traceability
+  reported.
+- `0e757ab`: `src/results/aggregate.ts` and `bench score`'s aggregation.
+- `559905d`: requirements 1.11.
+
+**As designed**, with these points found in the build:
+
+- **`results/` reads `score.json` with a schema of its own.** REQ-ARC-02 lets `results` (the middle
+  layer) never import `scoring` (the top), so it reads the file as it reads `run.json`. The schema
+  covers only what aggregation uses.
+- **The group order** is a sort on the joined key (scenario, version, arm, model, NUL-separated), which
+  orders as the parts do. The first version had a comparator with an unreachable branch.
+- **The traceability matrix is not edited.** It is approved at 1.0. F5.1's row already names REQ-FMT-06
+  and REQ-FMT-07, and REQ-CLI-06's feature column in requirements 1.11 gains F5.1.
+- **`storedRun` writes several runs** — arm, repetition, and a `dry-runs/<n>` execution — into one
+  repository. Its `campaign.yaml` now names the default model, and a dry run's gets `dry-run.yaml`.
+- **Expectations that changed with the aggregate line:** four exact-output tests of `bench score` (unit,
+  acceptance @F3.5 and @F3.6) and W6's Docker test, which now also checks the aggregate of its real run.
+
+**Checks:**
+
+- `npm test`: 877/877 (+15). Coverage 99.17% statements, 94.89% branches, 100% lines.
+- `npm run lint`: clean.
+- `npm run test:bin`: 5/5.
+- `npm run test:docker`: 11/11, with no container and no `dry-` image left.
+
+**A rehearsal of the W7 wave check**, on this branch's built CLI, in a temporary repository with S1, S2
+and the benchmark's arms. The fake replays S1's reference and the hold-out's S2 reference, from one
+script, and `BENCH_WINGFOIL_REPO` points at `../WingFoil2`.
+
+1. Six dry runs, S1 and S2 in the three arms: `completed, 0.0000 USD` each (`results/dry-runs/1`–`6`).
+2. `bench campaign validate` → `campaign 27e28fe609f6 is valid (2 scenarios, 3 arms)`.
+3. `bench campaign run` → `6 runs completed, 0 failed`, cost 0.
+4. `bench score 27e28fe609f6/1 --holdout ../WingFoil2-Benchmark-HoldOut` → six lines, exit 0:
+   - S1: `step 01 12/12, step 02 105/108, step 03 108/108, step 04 123/123, final 135/135; hold-out final
+     33/33` in each arm;
+   - S2: `step 01 19/19, step 02 22/22, step 03 24/24, final 24/24; hold-out final 17/17` in each arm;
+   - then `aggregate: results/27e28fe609f6/1/aggregate.json (6 groups, 0 slices)`.
+5. The aggregate: six groups, each `n` 1 and `preliminary`, with no loss and the hold-out scored. The
+   regressions are all 0 — S1's `patch` at steps 3 and 4, and S2's suites from step to step. The file
+   names no dry run.
+6. Scored again: the same bytes. No `bench-` container left.
+
+The official check is made on main once this task is merged (kanban-delivery, deliver phase).
+
+No real agent, no spending. No `wingfoil` command in the build phase.
+
