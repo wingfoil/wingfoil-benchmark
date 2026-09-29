@@ -294,3 +294,8 @@ Commits on `task/task-040-setup-cost-and-break-even`:
     cost;
   - that baseline-docs is compared with the baseline too.
 - No new bug and no new decision-log. No WingFoil usage note. No spending.
+- Build notes committed by hand (`7f7b2a6`), then `node_modules/.bin/wingfoil memory submit
+  task-040-setup-cost-and-break-even` in the worktree → `6638349`.
+  - Declared: `in-progress → in-review`, one commit `wf(task): submit <id>`.
+  - Observed: exit 0, 1 file, and a diff limited to `status: in-progress` → `status: in-review`.
+    Matches.
