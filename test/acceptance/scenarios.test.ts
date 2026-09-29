@@ -439,12 +439,14 @@ describe('scenarios.feature', () => {
         // When the maintainer dry-runs it in each of the three arms — the agent and the containers
         // doubled, the workspace's git real, so that the run stores patches a snapshot is rebuilt from
         const run = doubles({ commits: { '3df305e': WINGFOIL_SHA }, onRunOnce: fakeBuild });
+        const git = gitCli(systemProcess);
         const dryRun = await cli(root, ['scenario', 'dry-run', `${id}@1.0`, '--arm', arm], {
           docker: run.docker,
           agent: run.agent,
-          git: gitCli(systemProcess),
+          // The WingFoil clone is doubled too: its commit and its archive come from the doubles.
+          git: { ...git, resolveCommit: run.git.resolveCommit, archive: run.git.archive },
         });
-        expect(dryRun.code).toBe(0);
+        expect(dryRun).toMatchObject({ code: 0, stderr: '' });
         // Then every arm has a recorded dry-run cost
         const execution = join(root, 'results', 'dry-runs', String(index + 1));
         const record = JSON.parse(
@@ -463,5 +465,5 @@ describe('scenarios.feature', () => {
         expect(scored.stdout).toMatch(new RegExp(`^${id}@1\\.0 ${arm} fake-model r1: step 01 `));
       }
     }
-  });
+  }, 120_000); // The hidden tests really run, three suites on every snapshot of every arm: seconds.
 });
