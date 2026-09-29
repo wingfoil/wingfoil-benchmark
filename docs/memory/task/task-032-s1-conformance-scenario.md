@@ -294,3 +294,69 @@ task-033 reuses the helper with its hold-out reference (decision 5).
 - `npx wingfoil memory submit task-032-s1-conformance-scenario` → `b390c36`. Declared: `backlog →
   in-progress`, one commit `wf(task): submit <id>`. Observed: exit 0, empty stderr, 1 file, diff limited
   to `status: backlog` → `status: in-progress`. Matches (N9).
+
+### Build
+
+Test-first: `285e8b6` (red: the S1 unit tests and the @F6.x outline failing, with no S1 to load), then
+`1025f2c` (S1@1.0, its licenses, the reference), then `8f4583b` (a fix to the Docker test's clean-up).
+Hold-out additions: `dc21873` in `WingFoil2-Benchmark-HoldOut`.
+
+**`scenarios/S1/1.0/`**, as designed:
+
+- `json-patch-tests`: `tests.json` and `spec_tests.json`, taken with `git show 2a928f9044aa…:<file>`.
+  Their `git hash-object` equals the commit's blobs (`ae1f7f0…`, `c160535…`).
+- The RFC examples transcribed with Python's `json`: `rfc6901-section5.json` (`026f4312…`) and
+  `rfc7386-appendix-a.json` (`d763694f…`), each pinned by that `sha256`.
+- `oracle/licenses/`: `Apache-2.0.txt` (the ASF's own text, `cfc7749b…`), `BSD-3-Clause-IETF.txt` (the
+  TLP 4.e text with both RFCs' copyright lines and the attribution TLP 4.d asks for), and `NOTICE.md`.
+
+**What the build found:**
+
+- **The leak scan shaped the data's keys.** Every quoted string of 8 characters or more in an oracle file
+  is a literal, so the transcriptions use `doc`, `cases`, `pointer`, `value`, `target`, `patch` and
+  `result`. `"document"` or `"expected"` would have matched the prompts ("JSON document", "did not
+  expect"). The suites' names are template literals, or words under 8 characters. `bench scenario
+  validate S1@1.0 --holdout ../WingFoil2-Benchmark-HoldOut` → `scenario S1@1.0 is valid (hold-out: 3
+  files)`, first time.
+- **`.prettierignore` gains `scenarios/*/*/`.** A scenario version is hashed over its bytes and holds
+  vendored files as they were published. `prettier --check` would have refused upstream's `tests.json`,
+  and `--write` would have changed it and its hash. `scenarios/leak-scan.yaml` stays formatted.
+- **The acceptance test's git.** The runner doubles fake git, so their patches are not ones scoring can
+  rebuild a snapshot from. The outline test therefore runs the dry runs with the real git for the
+  workspace, and doubles only the WingFoil clone's `resolveCommit` and `archive`. The scoring then runs
+  S1's hidden tests for real, through the local double. It takes about 7 s, so its timeout is 120 s.
+- **The local scoring double copies**, never links, the suite and the snapshot. Node resolves a test's
+  relative import from the real path, so a linked suite would import the scenario's own seed.
+- **The reference as scored:**
+  - Pointer: 12/12 after step 1.
+  - Patch: **105/108** after step 2. Step 2 does not check the operations' members, so three cases fail:
+    `missing 'value' parameter to add`, `… to replace`, `unrecognized op should fail`. **108/108** after
+    step 3, and still 108/108 after step 4.
+  - Merge Patch: 15/15.
+  - On the seed, every suite 0/N with 4 `disabled` cases skipped and uncounted; the names are unique.
+  - A mutating `applyPatch` fails at least every Patch case whose result is an object.
+- **The hold-out additions**: 33 tests (pointer 15, patch 8, merge-patch 10). Run with the image's
+  reporter from their `.holdout` mounts, they pass 0 on the seed and 33 on the reference's step 4.
+  Here: their counts and commit only.
+- **The seed's test script** in the pinned run image (`node:22-bookworm@sha256:dd5847a0…`, Node
+  22.23.2), read-only and with no network: `npm test` → `# tests 0`, exit 0.
+- **The Docker test's clean-up**: the W7 tests build dry-run images only, and `afterEach` still removed
+  the previous test's `image`, a second time ("No such image" on stderr, harmless). `image` is now reset
+  once it is removed.
+
+**Checks:**
+
+- `npm test`: 855/855 (+13). Coverage 99.42% statements, 95.72% branches, 100% functions and lines.
+- `npm run lint`: clean (the oracle's `.mts` files and the reference included).
+- `npm run test:docker`: **9/9**, no container and no `dry-` image left. The two W7 tests:
+  - S1 dry-run in **baseline**, **baseline-docs** and **wingfoil** (WingFoil `3df305e` from the clone),
+    with the fake replaying the reference, and scored by the real scoring image: `pointer 12/12`;
+    `patch` 105/108 → 108/108 → 108/108; `merge-patch 15/15`; final 135/135.
+  - With the hold-out configured, its final counts are all passing, and no hold-out name is in the
+    output.
+  - `.test.mts` reading its data through `import.meta.url` works under the image's tsx 4.23.15.
+
+The **license confirmation** (dl-002) is in the Design section and in `oracle/licenses/NOTICE.md`.
+
+No real agent, no spending. No `wingfoil` command in the build phase.
+
