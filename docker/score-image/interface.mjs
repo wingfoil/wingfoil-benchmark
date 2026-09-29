@@ -6,9 +6,11 @@
 // Each file is parsed with the pinned compiler's parser alone (no program, no type check, no tsconfig).
 // Every exported declaration is one entry, `<file>: <signature>`: the declaration with its bodies and
 // initializers removed, printed by the compiler's printer without comments, its whitespace collapsed. A
-// class keeps its members that are not private; a `const` whose value is a function literal keeps the
-// literal's parameters and return type. A file that does not parse is one entry, `<file>: (does not
-// parse)`. The entries are printed sorted by code unit, without duplicates, one JSON string per line.
+// class keeps its members that are not private, and a private parameter property is a plain parameter;
+// an overload's implementation is left out; a namespace keeps its exported members. A value that is a
+// function or class literal, behind parentheses or `satisfies` or as a default export, keeps its
+// parameters and types; one asserted `as T` has the type T. A file that does not parse is one entry,
+// `<file>: (does not parse)`. The entries are printed sorted by code unit, without duplicates, one JSON string per line.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import ts from 'typescript';
@@ -30,19 +32,53 @@ const isPrivate = (member) =>
   (member.name !== undefined && ts.isPrivateIdentifier(member.name));
 const EMPTY = f.createBlock([]);
 
-/** A constructor's parameters without `private`: the parameter is public, the property it makes is not. */
+/** The modifiers a parameter property takes; a private one is no property of the interface. */
+const PROPERTY = new Set([
+  ts.SyntaxKind.PrivateKeyword,
+  ts.SyntaxKind.ReadonlyKeyword,
+  ts.SyntaxKind.OverrideKeyword,
+]);
+
+/** A constructor's parameters: a private parameter property is a plain parameter, since it is public. */
 function publicParameters(parameters) {
   return parameters.map((p) =>
-    f.updateParameterDeclaration(
-      p,
-      p.modifiers?.filter((m) => m.kind !== ts.SyntaxKind.PrivateKeyword),
-      p.dotDotDotToken,
-      p.name,
-      p.questionToken,
-      p.type,
-      p.initializer,
-    ),
+    hasModifier(p, ts.SyntaxKind.PrivateKeyword)
+      ? f.updateParameterDeclaration(
+          p,
+          p.modifiers?.filter((m) => !PROPERTY.has(m.kind)),
+          p.dotDotDotToken,
+          p.name,
+          p.questionToken,
+          p.type,
+          p.initializer,
+        )
+      : p,
   );
+}
+
+/**
+ * The names of the overloaded functions or methods among `nodes`: those declared without a body. Their
+ * implementation, which has one, is hidden from callers.
+ */
+function overloaded(nodes) {
+  return new Set(
+    nodes
+      .filter((n) => (ts.isFunctionDeclaration(n) || ts.isMethodDeclaration(n)) && n.body === undefined)
+      .map((n) => n.name?.getText()),
+  );
+}
+const isImplementation = (node, names) =>
+  (ts.isFunctionDeclaration(node) || ts.isMethodDeclaration(node)) &&
+  node.body !== undefined &&
+  names.has(node.name?.getText());
+
+/** A class's members as the interface sees them. */
+function members(list) {
+  const names = overloaded(list);
+  return list
+    .filter((m) => !isImplementation(m, names))
+    .map(member)
+    .filter((m) => m !== undefined);
 }
 
 /** A class member as the interface sees it: no body, no initializer; undefined when it is private. */
@@ -83,8 +119,28 @@ function member(m) {
   return m;
 }
 
-/** A variable's value as the interface sees it: a function literal with an empty body, or nothing. */
-function value(initializer) {
+/** An expression without the parentheses and `satisfies` around it, which change no signature. */
+function unwrapped(expression) {
+  let e = expression;
+  while (e !== undefined && (ts.isParenthesizedExpression(e) || ts.isSatisfiesExpression(e)))
+    e = e.expression;
+  return e;
+}
+
+/** The type an expression is asserted to have (`as T`, `<T>`), which is what its users see. */
+function asserted(expression) {
+  let e = expression;
+  while (e !== undefined && ts.isParenthesizedExpression(e)) e = e.expression;
+  return e !== undefined &&
+    (ts.isAsExpression(e) || ts.isTypeAssertionExpression(e)) &&
+    !ts.isConstTypeReference(e.type)
+    ? e.type
+    : undefined;
+}
+
+/** A value as the interface sees it: a function literal with an empty body, a class without bodies, or nothing. */
+function value(expression) {
+  const initializer = unwrapped(expression);
   if (initializer === undefined) return undefined;
   if (ts.isArrowFunction(initializer)) {
     return f.updateArrowFunction(
@@ -109,16 +165,39 @@ function value(initializer) {
       EMPTY,
     );
   }
+  if (ts.isClassExpression(initializer)) {
+    return f.updateClassExpression(
+      initializer,
+      initializer.modifiers,
+      initializer.name,
+      initializer.typeParameters,
+      initializer.heritageClauses,
+      members(initializer.members),
+    );
+  }
   return undefined;
+}
+
+/** A namespace's body as the interface sees it: its exported members, nested namespaces included. */
+function namespaceBody(body) {
+  if (body === undefined) return undefined;
+  if (ts.isModuleDeclaration(body)) {
+    return f.updateModuleDeclaration(body, body.modifiers, body.name, namespaceBody(body.body));
+  }
+  if (ts.isModuleBlock(body)) return f.updateModuleBlock(body, statements(body.statements));
+  return body;
 }
 
 /** The statement as the interface sees it, or undefined when it exports nothing. */
 function signature(statement) {
   if (ts.isExportDeclaration(statement)) return statement;
   if (ts.isExportAssignment(statement)) {
-    return ts.isIdentifier(statement.expression)
-      ? statement
-      : f.updateExportAssignment(statement, statement.modifiers, f.createIdentifier('…'));
+    if (ts.isIdentifier(statement.expression)) return statement;
+    return f.updateExportAssignment(
+      statement,
+      statement.modifiers,
+      value(statement.expression) ?? f.createIdentifier('…'),
+    );
   }
   if (!isExported(statement)) return undefined;
   if (ts.isFunctionDeclaration(statement)) {
@@ -140,7 +219,7 @@ function signature(statement) {
       statement.name,
       statement.typeParameters,
       statement.heritageClauses,
-      statement.members.map(member).filter((m) => m !== undefined),
+      members(statement.members),
     );
   }
   if (ts.isVariableStatement(statement)) {
@@ -150,23 +229,38 @@ function signature(statement) {
       statement.modifiers,
       f.updateVariableDeclarationList(
         list,
-        list.declarations.map((d) =>
-          f.updateVariableDeclaration(
+        list.declarations.map((d) => {
+          const type = d.type ?? asserted(d.initializer);
+          return f.updateVariableDeclaration(
             d,
             d.name,
             d.exclamationToken,
-            d.type,
-            d.type === undefined ? value(d.initializer) : undefined,
-          ),
-        ),
+            type,
+            type === undefined ? value(d.initializer) : undefined,
+          );
+        }),
       ),
     );
   }
   if (ts.isModuleDeclaration(statement)) {
-    return f.updateModuleDeclaration(statement, statement.modifiers, statement.name, undefined);
+    return f.updateModuleDeclaration(
+      statement,
+      statement.modifiers,
+      statement.name,
+      namespaceBody(statement.body),
+    );
   }
   // Interfaces, type aliases, enums and `export import`: what they declare is their signature.
   return statement;
+}
+
+/** The statements of a file or a namespace as the interface sees them: an overload's implementation left out. */
+function statements(list) {
+  const names = overloaded(list);
+  return list
+    .filter((statement) => !isImplementation(statement, names))
+    .map(signature)
+    .filter((node) => node !== undefined);
 }
 
 function entriesOf(file) {
@@ -174,11 +268,9 @@ function entriesOf(file) {
   const kind = file.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
   const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, kind);
   if (source.parseDiagnostics.length > 0) return [`${file}: (does not parse)`];
-  return source.statements.flatMap((statement) => {
-    const node = signature(statement);
-    if (node === undefined) return [];
+  return statements(source.statements).map((node) => {
     const printed = printer.printNode(ts.EmitHint.Unspecified, node, source).replace(/\s+/g, ' ').trim();
-    return [`${file}: ${printed}`];
+    return `${file}: ${printed}`;
   });
 }
 
