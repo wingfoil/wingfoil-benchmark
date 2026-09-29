@@ -372,7 +372,8 @@ Commits on `task/task-042-determinism-metrics-across-repetitions`:
 - **W10 decisions held.**
   - Decision 4: `SCORE_VERSION` and `AGGREGATE_VERSION` stay 1, since `determinism` and `m_r` are new
     keys.
-  - Decision 5: the image changed once, here, with no new package.
+  - Decision 5: the image changed only here, with no new package (twice within the task, the second
+    time for the review's fix).
   - The three design choices the approver confirmed: an entry names its file, the whole final snapshot
     is read, and a final not reached is left out and listed.
 - **For the wave check (decision 2):** the synthetic repetition needs its altered step patch **and**
@@ -389,11 +390,116 @@ Commits on `task/task-042-determinism-metrics-across-repetitions`:
   - the runs compared, and that a final not reached is left out;
   - the pins compared, and that no threshold is applied.
 - No new bug and no new decision-log. No WingFoil usage note. No spending.
+- **This first review was the building session's own.** The three independent reviews and their
+  fixes follow, below.
 - Build notes committed by hand (`1719181`), then `node_modules/.bin/wingfoil memory submit
   task-042-determinism-metrics-across-repetitions` in the worktree → `345fb12`.
   - Declared: `in-progress → in-review`, one commit `wf(task): submit <id>`.
   - Observed: exit 0, 1 file, and a diff limited to `status: in-progress` → `status: in-review`.
     Matches.
+
+### Independent review and send-back
+
+The first review above was the building session's own. Before approving, the approver asked whether
+an independent agent had reviewed the work; none had. A fresh agent then reviewed the branch
+read-only, against the Design, requirements 1.17 and @F4.5. It found no error in the M-R arithmetic,
+the pins, a final not reached, or older score files. It found:
+
+1. **An error in `interface.mjs`, from deviation 2 of the build.** Removing only `private` from
+   `constructor(private readonly x: number)` left `readonly x`, which declares a *public* property. Two
+   different interfaces then gave the same entry.
+2. **Namespaces recorded by name only:** their exported members were lost, and `A.B` printed as `A`.
+3. **Entries added or thinned:**
+   - an overload's implementation was an entry of its own, although TypeScript hides it;
+   - `as T`, `satisfies`, a class expression and a default-exported arrow each lost their signature.
+4. **Missing tests:**
+   - the scenario hash as a differing pin;
+   - a group mixing older and newer score files;
+   - the line's `pins differ` suffix;
+   - @error's S2 in the baseline arm, where the Gherkin says wingfoil.
+5. **For the approver:** harness files written *during the steps* count in M-R3. The approver chose on
+   2026-09-29 to keep the approved rule (the setup's paths only, tool-neutral). The W11 method page
+   states it, and calibration checks it on real runs.
+6. **Known and shared with M-Q2 since task-041:**
+   - `filesUnder` follows symlinks;
+   - `patchPaths` misses an unquoted path with a space;
+   - the file list is one argument.
+
+   None is new here. They are listed for calibration, which runs real agents.
+
+The approver sent the task back (`92c449a`, `in-review → in-progress`). Then:
+
+- `179d981` `test(scoring)` (red): 5 `interface.mjs` tests failing. The tests of item 4 passed at once:
+  the code was right, the tests were missing.
+- `9b4266a` `fix(scoring)`: `interface.mjs`.
+  - A private parameter property loses `private`, `readonly` and `override`.
+  - A namespace keeps its exported members, recursively.
+  - An overload's implementation is left out, among functions and class methods alike.
+  - A value is unwrapped from parentheses and `satisfies`, and read if it is a function or a class. A
+    value asserted `as T` has the type T.
+  - A default export of a function or class literal is read the same way.
+- `c5366e4` `docs(requirements)`: REQ-SCO-05 (1.17) names those rules.
+
+**Second independent review, of the fix alone** (`92c449a..c5366e4`), by another fresh agent. It
+found errors in the fix:
+
+1. **A regression.** Overloads were keyed by name alone, so a static member and an instance member of
+   the same name made one overload set. `static create(a: string)` with its implementation hid the
+   instance method `create()`, and a `static m()` beside `abstract m()` was hidden the same way.
+2. **An overloaded constructor's implementation** was still an entry.
+3. **An ambient namespace** (`declare namespace`) lost every member, since its members are exported
+   without the keyword.
+4. **A quoted name and a plain one** (`'m'` and `m`) were two names.
+5. **`as T` was not read** behind `satisfies` or on a default export.
+6. **A non-exported overload set with an exported implementation** gives no entry. TypeScript rejects
+   that code (TS2383), so it is left as it is.
+
+Its first run of `test:docker` was stopped part-way: the image had changed under it. Then:
+
+- `8d2fefe` `test(scoring)` (red): 4 `interface.mjs` tests failing.
+- `8392513` `fix(scoring)`:
+  - overloads are keyed by the name's value and by static-ness;
+  - constructors count as overloadable;
+  - an `ambient` flag keeps every member of a `declare` namespace, nested ones included;
+  - `asserted` looks through `satisfies`, and a default export with an asserted type prints
+    `export default … as T;`.
+- `ee6f2be` `docs(requirements)`: REQ-SCO-05 (1.17) names constructors, static members and ambient
+  namespaces.
+
+**Third independent review, of `8392513` alone**, by a third fresh agent. It checked the static
+keys, constructors in class expressions, `export declare class`, nested ambient namespaces, the flag
+not leaking into class members or regular namespaces, and six assertion forms. It found:
+
+1. **A regression of `8392513`.** A constructor has no name, so it was keyed `default`, like a method
+   named `default`. One then hid the other:
+   `constructor(a: string); constructor(a: any) {} default() {…}` lost `default()`.
+2. **An ambient namespace holding `export {}`** exports only what it names (TypeScript's binder), but
+   its other members were kept.
+3. **Key text that can collide:**
+   - a method literally named `'static foo'` against a static `foo`;
+   - `['foo']` against `foo`;
+   - spacing inside computed keys.
+
+   These are contrived and never crash, so they are left as they are.
+
+Then:
+
+- `2ff4fff` `test(scoring)` (red): 2 tests failing;
+- `f2a688c` `fix(scoring)`: a constructor's key is `constructor`, which no method can be named, and a
+  block that declares its exports turns the ambient flag off;
+- `52ee93d` `docs(requirements)`: REQ-SCO-05 (1.17) names that last rule.
+
+The third fix is two small rules, each with its test. A fourth review is not made; that is the
+approver's call.
+
+**Checks after the fixes:**
+
+- `npm test`: 1043/1043, coverage 99.01%;
+- `interface-script.test.ts`: 13/13;
+- lint and typecheck clean;
+- `npm run test:docker` on the final image (`52ee93d`): 16/16 in 393 s. S8 in the three arms reads its
+  interface through the real `interface.mjs`, and no `bench-` container is left. Two earlier runs were
+  stopped part-way, because the image changed under them; their containers were removed.
 
 ### WingFoil commands (declared vs observed)
 
