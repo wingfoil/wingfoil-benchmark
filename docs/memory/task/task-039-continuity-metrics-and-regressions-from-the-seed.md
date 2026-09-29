@@ -452,3 +452,12 @@ Commits on `task/task-039-continuity-metrics-and-regressions-from-the-seed`:
 - The review decision of requirements 1.14 and traceability 1.1 is the approver's reason: "requirements
   1.14 (REQ-FMT-04, REQ-SCO-12) and traceability 1.1 accepted". Each amendment's "Source" line names
   `f11113a`.
+
+### Delivery
+
+- `git merge --no-ff task/task-039-…` on main → `58ae7e9`.
+- `npx wingfoil memory submit task-039-continuity-metrics-and-regressions-from-the-seed` on main →
+  `7e65306`.
+  - Declared: `approved → done`, one commit.
+  - Observed: exit 0, 1 file, and a diff limited to `status: approved` → `status: done`. Matches.
+- First task of W9. The wave check waits for task-041 (W9 decision 1).
