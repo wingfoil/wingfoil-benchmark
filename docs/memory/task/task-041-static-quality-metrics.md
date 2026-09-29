@@ -320,3 +320,8 @@ Commits on `task/task-041-static-quality-metrics`:
   - coverage from `npm test` under c8, whether the tests pass or fail;
   - the files measured, and the setup's files left out.
 - No new bug and no new decision-log. No WingFoil usage note. No spending.
+- Build notes committed by hand (`4b66a14`), then `node_modules/.bin/wingfoil memory submit
+  task-041-static-quality-metrics` in the worktree → `06526f6`.
+  - Declared: `in-progress → in-review`, one commit `wf(task): submit <id>`.
+  - Observed: exit 0, 1 file, and a diff limited to `status: in-progress` → `status: in-review`.
+    Matches.
