@@ -286,6 +286,11 @@ Commits:
 
 **Checks:**
 
-- `npm test`: 936/936 (+14), then 939 with the coverage tests. Coverage 98.96% statements, 99.77%
-  lines; `ast.ts` and `check-text.ts` are at 100% of lines, `checks.ts` at 100%.
+- `npm test`: 939/939 (+17). Coverage 99.11% statements, 94.46% branches, 99.91% lines; `ast.ts`,
+  `checks.ts` and `check-text.ts` at 100% of lines.
 - `npm run typecheck` and `npm run lint`: clean.
+- `npm run test:bin`: 5/5.
+- `npm run test:docker`: 14/14 (+1), with no `bench-` container left. The image was rebuilt with
+  TypeScript; S1, S2 and S3 score as before with it.
+
+No real agent, no spending. No `wingfoil` command in the build phase.
