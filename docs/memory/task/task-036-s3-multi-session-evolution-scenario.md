@@ -343,3 +343,10 @@ No real agent, no spending. No `wingfoil` command in the build phase.
   - the prompts' text (`scenarios/S3/1.0/prompts/`);
   - the D3 test in `bookings` on a period off the hour (the design's choice);
   - the timeouts raised in S1's unit tests and the outline test.
+
+### Approval
+
+- `npx wingfoil memory approve task-036-s3-multi-session-evolution-scenario --reason "…"` → `1813e8c`, run
+  by the approver (`in-review → approved`, `Approver:`/`Reason:` trailers, only `status` changed). Matches.
+- Its reason is the review decision, 2026-09-29: S3@1.0 accepted — prompts, five suites with decisions
+  named D1–D5, D3's revision check, hold-out additions — and the test timeouts raised.
