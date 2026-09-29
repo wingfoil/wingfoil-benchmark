@@ -438,3 +438,8 @@ Commits on `task/task-039-continuity-metrics-and-regressions-from-the-seed`:
   - M-D3 from the seed, public tests only;
   - that a final not reached is a loss for M-F1 and M-D3.
 - No new bug and no new decision-log. No WingFoil usage note. No spending.
+- Build notes committed by hand (`a6c23a2`), then `node_modules/.bin/wingfoil memory submit
+  task-039-continuity-metrics-and-regressions-from-the-seed` in the worktree → `30cf8d2`.
+  - Declared: `in-progress → in-review`, one commit `wf(task): submit <id>`.
+  - Observed: exit 0, 1 file, and a diff limited to `status: in-progress` → `status: in-review`.
+    Matches.
