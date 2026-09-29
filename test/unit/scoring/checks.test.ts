@@ -4,7 +4,8 @@ import { describe, expect, it } from 'vitest';
 
 import { gitCli, systemProcess } from '../../../src/core/index.js';
 import type { Check } from '../../../src/core/index.js';
-import { scoreChecks } from '../../../src/scoring/index.js';
+import { astInContainer, scoreChecks } from '../../../src/scoring/index.js';
+import { localScoringDocker } from '../../support/local-scoring.js';
 import { tempDir } from '../../support/scenario-fixture.js';
 
 /**
@@ -14,6 +15,9 @@ import { tempDir } from '../../support/scenario-fixture.js';
  */
 
 const git = gitCli(systemProcess);
+
+/** The AST checks' runner, on this machine: the scoring image's script, with the devDependency TypeScript. */
+const AST = astInContainer({ docker: localScoringDocker(), image: 'local', containerPrefix: 'checks' });
 
 /** What a step writes (a file's content, or `null` to delete it), and the messages it committed with. */
 interface Step {
@@ -94,7 +98,7 @@ function unchanged(steps: number[] = [1]): Check {
 
 async function scored(check: Check, steps: readonly Step[], options?: { withoutMessages?: boolean }) {
   const { runDir, snapshots } = await run(steps, options);
-  const result = scoreChecks({ checks: [check], runDir, snapshots });
+  const result = await scoreChecks({ checks: [check], runDir, snapshots, ast: AST });
   if (!result.ok) throw new Error(JSON.stringify(result.issues));
   return result.value;
 }
@@ -189,7 +193,7 @@ describe('content checks (REQ-SCO-06)', () => {
   it("is an issue, not a failed check, when a step's patch is missing", async () => {
     const { runDir, snapshots } = await run([{ files: { 'n.md': 'revised\n' } }]);
     rmSync(join(runDir, 'steps', '01', 'diff.patch'));
-    expect(scoreChecks({ checks: [content([['revised']])], runDir, snapshots })).toEqual({
+    expect(await scoreChecks({ checks: [content([['revised']])], runDir, snapshots })).toEqual({
       ok: false,
       issues: [{ path: 'steps/01/diff.patch', message: 'is missing' }],
     });
@@ -197,7 +201,7 @@ describe('content checks (REQ-SCO-06)', () => {
 
   it('refuses a run stored before steps recorded their commit messages, rather than guess', async () => {
     const { runDir, snapshots } = await run([{ files: { 'n.md': 'revised\n' } }], { withoutMessages: true });
-    expect(scoreChecks({ checks: [content([['revised']])], runDir, snapshots })).toEqual({
+    expect(await scoreChecks({ checks: [content([['revised']])], runDir, snapshots })).toEqual({
       ok: false,
       issues: [
         {
@@ -245,5 +249,171 @@ describe('unchanged checks (REQ-SCO-06 as amended)', () => {
   it('needs no commit messages: a run stored before task-035 is still scored', async () => {
     const checks = await scored(unchanged(), [{ files: {} }], { withoutMessages: true });
     expect(checks[0]?.steps).toEqual([{ n: 1, passed: true }]);
+  });
+});
+
+describe('dependencies checks (REQ-SCO-05, R1)', () => {
+  const r1 = (steps: number[] = [1], seedDependencies: string[] = ['zod']): Check => ({
+    id: 'r1',
+    file: '/oracle/checks/r1.yaml',
+    kind: 'dependencies',
+    steps,
+    seedDependencies,
+  });
+  const manifest = (dependencies: Record<string, string>, devDependencies: Record<string, string> = {}) =>
+    `${JSON.stringify({ name: 'x', dependencies, devDependencies })}\n`;
+
+  it('counts each runtime dependency the seed did not have, by name', async () => {
+    const checks = await scored(r1([1, 2]), [
+      { files: { 'package.json': manifest({ zod: '2.0.0' }, { vitest: '1.0.0' }) } },
+      { files: { 'package.json': manifest({ zod: '1.0.0', uuid: '9.0.0', nanoid: '5.0.0' }) } },
+    ]);
+    expect(checks).toEqual([
+      {
+        id: 'r1',
+        kind: 'dependencies',
+        steps: [
+          { n: 1, passed: true, violations: 0, found: [] },
+          { n: 2, passed: false, violations: 2, found: [{ dependency: 'nanoid' }, { dependency: 'uuid' }] },
+        ],
+      },
+    ]);
+  });
+
+  it('reads a missing or broken package.json as no dependencies', async () => {
+    const checks = await scored(r1([1, 2], []), [
+      { files: { 'package.json': '{ not json' } },
+      { files: { 'package.json': null } },
+    ]);
+    expect(checks[0]?.steps).toEqual([
+      { n: 1, passed: true, violations: 0, found: [] },
+      { n: 2, passed: true, violations: 0, found: [] },
+    ]);
+  });
+});
+
+describe("ast checks (REQ-SCO-05, R2–R4), through the scoring image's script", { timeout: 60_000 }, () => {
+  const ast = (id: string, rules: string[], dir = 'src/domain'): Check =>
+    ({ id, file: `/oracle/checks/${id}.yaml`, kind: 'ast', steps: [1], dir, rules }) as Check;
+
+  const DOMAIN = [
+    "import { randomUUID as uuid } from 'node:crypto';",
+    "import * as nodeCrypto from 'crypto';",
+    '',
+    '/** Documented. */',
+    'export function documented(): number {',
+    '  return Date.now();',
+    '}',
+    '',
+    'export function bare(): Date {',
+    '  // throw new Error("in a comment")',
+    '  const text = "throw here, and Math.random() too";',
+    '  return new Date();',
+    '}',
+    '',
+    'export const arrow = (): string => uuid();',
+    '',
+    '/** Documented arrow. */',
+    'export const documentedArrow = (): number => Math.random();',
+    '',
+    'export const notAFunction = 42;',
+    '',
+    'function internal(): void {',
+    "  throw new Error(nodeCrypto.randomBytes(4).toString('hex'));",
+    '}',
+    '',
+    'export default function (): Date {',
+    '  internal();',
+    '  return new Date(0);',
+    '}',
+    '',
+    "export const legit = new Date('2027-01-01T00:00:00Z');",
+    'export const also = globalThis.crypto.getRandomValues(new Uint8Array(1)) && crypto.randomUUID();',
+    '',
+  ].join('\n');
+
+  it('counts each rule where it is, only under the directory, with file and line, in order', async () => {
+    const checks = await scored(ast('r2', ['undocumented-export']), [
+      {
+        files: {
+          'src/domain/model.ts': DOMAIN,
+          'src/domain/model.test.ts': 'export function t() { throw new Error(); }\n',
+          'src/domain/types.d.ts': 'export declare function d(): void;\n',
+          'src/index.ts': 'export function outside() { throw new Error(); }\n',
+        },
+      },
+    ]);
+    expect(checks[0]?.steps).toEqual([
+      {
+        n: 1,
+        passed: false,
+        violations: 3,
+        found: [
+          { file: 'src/domain/model.ts', line: 9, rule: 'undocumented-export' },
+          { file: 'src/domain/model.ts', line: 15, rule: 'undocumented-export' },
+          { file: 'src/domain/model.ts', line: 26, rule: 'undocumented-export' },
+        ],
+      },
+    ]);
+  });
+
+  it('counts the wall clock and randomness together for one directive, and throw apart', async () => {
+    const { runDir, snapshots } = await run([{ files: { 'src/domain/model.ts': DOMAIN } }]);
+    const result = await scoreChecks({
+      checks: [ast('r3', ['wall-clock', 'randomness']), ast('r4', ['throw'])],
+      runDir,
+      snapshots,
+      ast: AST,
+    });
+    if (!result.ok) throw new Error(JSON.stringify(result.issues));
+    expect(result.value.map((check) => [check.id, check.steps[0]])).toEqual([
+      [
+        'r3',
+        {
+          n: 1,
+          passed: false,
+          violations: 7,
+          found: [
+            { file: 'src/domain/model.ts', line: 6, rule: 'wall-clock' },
+            { file: 'src/domain/model.ts', line: 12, rule: 'wall-clock' },
+            { file: 'src/domain/model.ts', line: 15, rule: 'randomness' },
+            { file: 'src/domain/model.ts', line: 18, rule: 'randomness' },
+            { file: 'src/domain/model.ts', line: 23, rule: 'randomness' },
+            { file: 'src/domain/model.ts', line: 32, rule: 'randomness' },
+            { file: 'src/domain/model.ts', line: 32, rule: 'randomness' },
+          ],
+        },
+      ],
+      [
+        'r4',
+        {
+          n: 1,
+          passed: false,
+          violations: 1,
+          found: [{ file: 'src/domain/model.ts', line: 23, rule: 'throw' }],
+        },
+      ],
+    ]);
+  });
+
+  it('finds nothing in a directory the step does not have', async () => {
+    const checks = await scored(ast('r4', ['throw'], 'src/missing'), [{ files: { 'n.md': 'x\n' } }]);
+    expect(checks[0]?.steps).toEqual([{ n: 1, passed: true, violations: 0, found: [] }]);
+  });
+
+  it('is an oracle error, naming the step, when the script fails', async () => {
+    const { runDir, snapshots } = await run([{ files: { 'n.md': 'x\n' } }]);
+    const failing = astInContainer({
+      docker: {
+        ...localScoringDocker(),
+        exec: () => Promise.resolve({ code: 2, stdout: '', stderr: 'boom' }),
+      },
+      image: 'local',
+      containerPrefix: 'checks',
+    });
+    expect(await scoreChecks({ checks: [ast('r4', ['throw'])], runDir, snapshots, ast: failing })).toEqual({
+      ok: false,
+      issues: [{ path: 'step 01', message: 'the AST checks exited with code 2: boom' }],
+    });
   });
 });
