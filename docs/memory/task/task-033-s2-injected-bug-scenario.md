@@ -77,7 +77,7 @@ Preliminary classification (confirmed in the design phase).
   regression suites green throughout; the false report's documented behaviour green on the seed.
   **red-first**
 - REQ-SCO-06 — the checks are patterns on content, with no harness path or format. **red-first**
-  (declared and validated; scored in W8) — **proposed in the design: written in W8 with their format**
+  (declared and validated; scored in W8) — **moved to W8 with their format (design, confirmed)**
 
 ## Design
 
@@ -86,11 +86,14 @@ which defect, where each defect is, and what its fix is. This section and the bu
 defect *kinds* only, as S2.md does. The key is in `WingFoil2-Benchmark-HoldOut`, and this task records
 only that repository's commit and counts.
 
-**Classification confirmed**, with one change, proposed below for the approver: the content-checks
+**Classification confirmed**, with one change, confirmed by the approver below: the content-checks
 criterion (REQ-SCO-06) moves to W8. The outline's criterion is automated as in task-032, in
 `test/acceptance/` (S2 joins the rows) and in `test/docker/`.
 
-### A proposed change to W7 decision 6: S2's content checks are written in W8, with their format
+### A change to W7 decision 6: S2's content checks are written in W8, with their format
+
+**Confirmed by the approver, 2026-09-29, in the session, before the build.** It is recorded in the
+release element's W7 carry-overs to W8 when the wave is verified.
 
 Decision 6 has task-033 declare the false-report and duplicate checks as `oracle.checks`, and F4.8 (W8)
 score them. The design found that **no check format exists**:
