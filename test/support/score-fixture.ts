@@ -68,6 +68,13 @@ export async function storedRun(
      * the scenario is the existing fixture's.
      */
     decisions?: string;
+    /**
+     * What the setup's `usage` records in `run.json` (task-040); by default an agentless setup's zeros,
+     * as every v0.1 setup is (adr-003 decision 11).
+     */
+    setupUsage?: StepRecord['usage'];
+    /** The manual's tokens `run.json` records (REQ-RUN-12); by default 3, and `null` for none recorded. */
+    manualTokens?: number | null;
     /** A run stored before steps recorded their commit messages (task-035): no `commits.json`. */
     withoutMessages?: boolean;
     /**
@@ -180,7 +187,24 @@ export async function storedRun(
         arm,
         model,
         repetition,
-        setup: { duration_ms: 1, commit: await git.head(workspace), tree: setupTree },
+        ...(options.manualTokens === null
+          ? {}
+          : {
+              manual: {
+                file: 'CLAUDE.md',
+                sha256: 'm'.repeat(64),
+                bytes: 4 * (options.manualTokens ?? 3),
+                tokens: options.manualTokens ?? 3,
+                method: 'bytes-div-4',
+                method_version: 1,
+              },
+            }),
+        setup: {
+          duration_ms: 1,
+          usage: options.setupUsage ?? NO_USAGE,
+          commit: await git.head(workspace),
+          tree: setupTree,
+        },
         outcome,
         steps,
       },
@@ -228,6 +252,18 @@ export interface StepRecord {
   readonly interventions?: number;
   readonly costBoundUsd?: number;
 }
+
+/** An agentless setup's usage: every figure zero. */
+const NO_USAGE: StepRecord['usage'] = {
+  inputTokens: 0,
+  outputTokens: 0,
+  cacheCreationInputTokens: 0,
+  cacheReadInputTokens: 0,
+  costUsd: 0,
+  costEur: 0,
+  turns: 0,
+  durationMs: 0,
+};
 
 /** Step `n`'s usage by default: every figure a multiple of `n`, at the fixture's rate of 0.5 EUR/USD. */
 export function usageOf(n: number): StepRecord['usage'] {

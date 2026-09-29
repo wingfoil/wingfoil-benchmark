@@ -31,6 +31,10 @@ interface RunSpec {
   readonly scoredHash?: string;
   /** score.json's `checks` (task-035); absent, the run was scored before checks were. */
   readonly checks?: readonly unknown[];
+  /** score.json's `cost.setup` (task-040): M-K3, or not recorded; absent, it was scored before it. */
+  readonly setup?: { readonly costEur: number; readonly wallTimeMs?: number; readonly manualTokens?: number } | 'not recorded';
+  /** Each reached step's cost in euro, in `cost.steps` (task-029); by default none listed. */
+  readonly stepCosts?: readonly number[];
   /** score.json's `seed`, `m_f1`, `m_f2` and `m_d3` (task-039); absent, it was scored before them. */
   readonly continuity?: Readonly<Record<string, unknown>>;
 }
@@ -112,8 +116,27 @@ function execution(runs: readonly RunSpec[], pins = 'models:\n  default: model-a
         ...run.continuity,
         cost: {
           usd_to_eur: 0.5,
-          steps: [],
+          steps: (run.stepCosts ?? []).map((stepEur, index) =>
+            run.steps[index] === 'not reached'
+              ? { n: index + 1, not_reached: true }
+              : { n: index + 1, outcome: 'completed', ...figures(stepEur, true) },
+          ),
           run: figures(eur, run.costReported ?? true),
+          ...(run.setup === undefined
+            ? {}
+            : {
+                setup:
+                  run.setup === 'not recorded'
+                    ? { not_recorded: true }
+                    : {
+                        tokens: { input: 0, output: 0, cache_creation: 0, cache_read: 0 },
+                        cost_usd: run.setup.costEur * 2,
+                        cost_eur: run.setup.costEur,
+                        wall_time_ms: run.setup.wallTimeMs ?? 100,
+                        turns: 0,
+                        ...(run.setup.manualTokens === undefined ? {} : { manual_tokens: run.setup.manualTokens }),
+                      },
+              }),
         },
         expected_failure: run.expectedFailure === undefined ? null : { missing: run.expectedFailure },
       }),
@@ -256,6 +279,124 @@ describe('aggregateExecution (F5.1, REQ-FMT-07)', () => {
       { suite: 'p', step: 2, value: { n: 1, runs: [name('baseline')], values: [0] } },
       { suite: 'p', step: 3, value: { n: 1, runs: [name('baseline')], values: [1] } },
     ]);
+  });
+
+  describe('M-K3, the setup, in the cost of a group (task-040)', () => {
+    it("keeps the setup's cost, wall time and manual tokens of the runs that recorded them", () => {
+      const dir = execution([
+        { arm: 'wingfoil', r: 1, steps: [[s('a', 1, 1)]], setup: { costEur: 0, wallTimeMs: 2000, manualTokens: 463 } },
+        { arm: 'wingfoil', r: 2, steps: [[s('a', 1, 1)]], setup: { costEur: 0.5, wallTimeMs: 3000, manualTokens: 463 } },
+        { arm: 'wingfoil', r: 3, steps: [[s('a', 1, 1)]], setup: 'not recorded' },
+      ]);
+      const [group] = aggregate(dir).groups;
+      const runs = [name('wingfoil', 1), name('wingfoil', 2)];
+      expect(group?.metrics.cost).toMatchObject({
+        setup_cost_eur: { n: 2, runs, values: [0, 0.5], min: 0, max: 0.5 },
+        setup_wall_time_ms: { n: 2, runs, values: [2000, 3000], min: 2000, max: 3000 },
+        manual_tokens: { n: 2, runs, values: [463, 463], min: 463, max: 463 },
+      });
+    });
+
+    it('adds none of them for runs scored before task-040', () => {
+      const [group] = aggregate(execution([{ arm: 'baseline', steps: [[s('a', 1, 1)]] }])).groups;
+      expect(group?.metrics.cost).not.toHaveProperty('setup_cost_eur');
+      expect(group?.metrics.cost).not.toHaveProperty('manual_tokens');
+    });
+  });
+
+  describe('M-K4, break-even (experiment design §4.2, REQ-SCO-08, task-040)', () => {
+    const baseline = (r = 1, model?: string): RunSpec => ({
+      arm: 'baseline',
+      r,
+      ...(model === undefined ? {} : { model }),
+      steps: [[s('a', 1, 1)], [s('a', 2, 2)]],
+      stepCosts: [0.2, 0.2],
+      setup: { costEur: 0 },
+    });
+    const arm = (overrides: Partial<RunSpec> = {}): RunSpec => ({
+      arm: 'wingfoil',
+      steps: [[s('a', 1, 1)], [s('a', 2, 2)]],
+      stepCosts: [0.1, 0.1],
+      setup: { costEur: 0.3 },
+      ...overrides,
+    });
+
+    it("is the arm's setup cost over the difference in mean step cost, when its quality is not lower", () => {
+      const file = aggregate(execution([baseline(), arm()]));
+      expect(file.break_even).toEqual([
+        {
+          scenario: 'T3',
+          version: '1.0',
+          model: 'model-a',
+          arm: 'wingfoil',
+          value: 3,
+          setup_cost_eur: { arm: 0.3 },
+          mean_step_cost_eur: { baseline: 0.2, arm: 0.1 },
+          final_m_q1: { baseline: 1, arm: 1 },
+          runs: { baseline: [name('baseline')], arm: [name('wingfoil')] },
+          n: { baseline: 1, arm: 1 },
+        },
+      ]);
+    });
+
+    it('is 0 for an arm cheaper per step whose setup cost nothing, as every v0.1 setup does', () => {
+      const [entry] = aggregate(execution([baseline(), arm({ setup: { costEur: 0 } })])).break_even;
+      expect(entry?.value).toBe(0);
+    });
+
+    it('is "not applicable" when the arm\'s final M-Q1 is lower, whatever its cost', () => {
+      const lower = arm({ steps: [[s('a', 1, 1)], [s('a', 1, 2)]] });
+      expect(aggregate(execution([baseline(), lower])).break_even[0]?.value).toBe('not applicable');
+    });
+
+    it('counts a final not reached as a pass rate of 0, a loss', () => {
+      const unfinished = arm({ steps: [[s('a', 1, 1)], 'not reached'], stepCosts: [0.1, 0] });
+      const [entry] = aggregate(execution([baseline(), unfinished])).break_even;
+      expect(entry).toMatchObject({ value: 'not applicable', final_m_q1: { baseline: 1, arm: 0 } });
+    });
+
+    it('is "never" when the arm\'s mean step cost is not lower, equal included', () => {
+      expect(aggregate(execution([baseline(), arm({ stepCosts: [0.2, 0.2] })])).break_even[0]?.value).toBe('never');
+      expect(aggregate(execution([baseline(), arm({ stepCosts: [0.3, 0.3] })])).break_even[0]?.value).toBe('never');
+    });
+
+    it('averages over the runs of each group, and over every reached step', () => {
+      const file = aggregate(
+        execution([
+          baseline(1),
+          { ...baseline(2), stepCosts: [0.4, 0.4] },
+          arm({ r: 1, setup: { costEur: 0.2 } }),
+          arm({ r: 2, setup: { costEur: 0.4 } }),
+        ]),
+      );
+      expect(file.break_even[0]).toMatchObject({
+        value: 1.5,
+        setup_cost_eur: { arm: 0.3 },
+        mean_step_cost_eur: { baseline: 0.3, arm: 0.1 },
+        n: { baseline: 2, arm: 2 },
+      });
+    });
+
+    it('pairs baseline-docs with the baseline too, and a slice within its own model', () => {
+      const file = aggregate(
+        execution([
+          baseline(),
+          arm({ arm: 'baseline-docs', setup: { costEur: 0 } }),
+          baseline(1, 'model-b'),
+          arm({ model: 'model-b' }),
+        ]),
+      );
+      expect(file.break_even.map((entry) => [entry.model, entry.arm, entry.value])).toEqual([
+        ['model-a', 'baseline-docs', 0],
+        ['model-b', 'wingfoil', 3],
+      ]);
+    });
+
+    it('leaves out an arm with no baseline on its model, or whose setup cost was not recorded', () => {
+      expect(aggregate(execution([arm()])).break_even).toEqual([]);
+      expect(aggregate(execution([baseline(), arm({ setup: 'not recorded' })])).break_even).toEqual([]);
+      expect(aggregate(execution([baseline(), arm({ setup: undefined })])).break_even).toEqual([]);
+    });
   });
 
   describe('continuity and regressions from the seed (REQ-SCO-12, task-039)', () => {

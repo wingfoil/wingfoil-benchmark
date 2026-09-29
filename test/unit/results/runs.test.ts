@@ -79,6 +79,26 @@ describe('readStoredRun (task-027)', () => {
     });
   });
 
+  it("reads the setup's duration and usage, and the manual's tokens (M-K3, task-040)", () => {
+    const usage = {
+      inputTokens: 1,
+      outputTokens: 2,
+      cacheCreationInputTokens: 3,
+      cacheReadInputTokens: 4,
+      costUsd: 0.5,
+      costEur: 0.25,
+      turns: 6,
+      durationMs: 7,
+    };
+    const dir = run(tempDir('bench-results-'), 'r', {
+      ...RECORD,
+      manual: { file: 'CLAUDE.md', sha256: 's', bytes: 40, tokens: 10, method: 'bytes-div-4', method_version: 1 },
+      setup: { ...RECORD.setup, usage },
+    });
+    const result = readStoredRun(dir);
+    expect(result.ok && result.value).toMatchObject({ setup: { durationMs: 3, usage }, manualTokens: 10 });
+  });
+
   it('reads the expected-failure mark of a run, and its absence (F3.6)', () => {
     const root = tempDir('bench-results-');
     const marked = run(root, 'a', { ...RECORD, expected_failure: { missing: ['workflow-engine'] } });
@@ -99,6 +119,9 @@ describe('readStoredRun (task-027)', () => {
     const result = readStoredRun(dir);
     expect(result.ok && result.value).toMatchObject({ steps: [{ n: 1 }, { n: 2 }] });
     expect(result.ok && result.value.setupTree).toBeUndefined();
+    // Nor a setup's usage, nor a manual: M-K3 says it was not recorded (task-040).
+    expect(result.ok && result.value.setup).toBeUndefined();
+    expect(result.ok && result.value.manualTokens).toBeUndefined();
     expect(result.ok && result.value.steps[0]?.tree).toBeUndefined();
   });
 

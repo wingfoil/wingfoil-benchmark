@@ -59,6 +59,15 @@ describe('costMetrics (F4.3, M-K1, M-K2)', () => {
           turns: 9,
           interventions: 1,
         },
+        // M-K3 (task-040): the agentless setup, its wall time from run.json, and the manual's tokens.
+        setup: {
+          tokens: { input: 0, output: 0, cache_creation: 0, cache_read: 0 },
+          cost_usd: 0,
+          cost_eur: 0,
+          wall_time_ms: 1,
+          turns: 0,
+          manual_tokens: 3,
+        },
       },
     });
   });
@@ -128,5 +137,34 @@ describe('costMetrics (F4.3, M-K1, M-K2)', () => {
     const first = JSON.stringify(await cost(fixture));
     writeFileSync(join(fixture.runDir, 'unrelated.txt'), readFileSync(join(fixture.runDir, 'run.json')));
     expect(JSON.stringify(await cost(fixture))).toBe(first);
+  });
+
+  describe('M-K3, the setup (REQ-RUN-03, task-040)', () => {
+    it("records the setup's usage and cost apart from the run's, its wall time from the setup's duration", async () => {
+      const fixture = await storedRun({ steps: [{}, CANCEL], setupUsage: { ...usageOf(3), durationMs: 99 } });
+      const result = await cost(fixture);
+      expect(result.ok && result.value.setup).toEqual({
+        tokens: { input: 30, output: 300, cache_creation: 3000, cache_read: 30000 },
+        cost_usd: 0.3,
+        cost_eur: 0.15,
+        wall_time_ms: 1,
+        turns: 9,
+        manual_tokens: 3,
+      });
+      // The run is still the sum of its steps.
+      expect(result.ok && result.value.run).toMatchObject({ cost_usd: 0.3, turns: 9 });
+    });
+
+    it('says the setup was not recorded for a run stored without it, and leaves out a manual not recorded', async () => {
+      const fixture = await storedRun({ steps: [{}, CANCEL], manualTokens: null });
+      const noManual = await cost(fixture);
+      expect(noManual.ok && noManual.value.setup).not.toHaveProperty('manual_tokens');
+
+      const file = join(fixture.runDir, 'run.json');
+      const { setup: _setup, ...record } = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>;
+      writeFileSync(file, JSON.stringify(record));
+      const noSetup = await cost(fixture);
+      expect(noSetup.ok && noSetup.value.setup).toEqual({ not_recorded: true });
+    });
   });
 });
