@@ -79,7 +79,8 @@ export function createTaskList(options: TaskListOptions): TaskList {
     add(input) {
       const checked = checkNewTask(input);
       if (!checked.ok) return checked;
-      if (titleTaken(checked.value.title)) return err('duplicate', `there is already a task "${checked.value.title}"`);
+      if (titleTaken(checked.value.title))
+        return err('duplicate', `there is already a task "${checked.value.title}"`);
       added += 1;
       const task = createTask(checked.value, `t-${added}`, options.now());
       tasks.set(task.id, task);
@@ -97,7 +98,8 @@ export function createTaskList(options: TaskListOptions): TaskList {
       if (!title.ok) return title;
       const target = title.value;
       const found = find(key);
-      if (found.ok && titleTaken(target, found.value.id)) return err('duplicate', `there is already a task "${target}"`);
+      if (found.ok && titleTaken(target, found.value.id))
+        return err('duplicate', `there is already a task "${target}"`);
       return change(key, (task) => ok(renameTask(task, target)));
     },
     tag(key, tag) {

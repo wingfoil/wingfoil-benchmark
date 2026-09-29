@@ -59,7 +59,8 @@ export function createTaskList(): TaskList {
 
   return {
     add(input) {
-      if (titleTaken(input.title.trim())) return err('duplicate', `there is already a task "${input.title.trim()}"`);
+      if (titleTaken(input.title.trim()))
+        return err('duplicate', `there is already a task "${input.title.trim()}"`);
       added += 1;
       const task = createTask(input, `t-${added}`);
       tasks.set(task.id, task);
@@ -75,7 +76,8 @@ export function createTaskList(): TaskList {
     rename(key, newTitle) {
       const target = newTitle.trim();
       const found = find(key);
-      if (found.ok && titleTaken(target, found.value.id)) return err('duplicate', `there is already a task "${target}"`);
+      if (found.ok && titleTaken(target, found.value.id))
+        return err('duplicate', `there is already a task "${target}"`);
       return change(key, (task) => ok(renameTask(task, target)));
     },
     tag(key, tag) {

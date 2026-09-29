@@ -13,7 +13,10 @@ describe('task list', () => {
     const list = createTodoList();
     const task = valueOf(list.add({ title: '  Buy milk ' }));
     const { title, priority, tags, status } = task;
-    assert.deepEqual({ title, priority, tags, status }, { title: 'Buy milk', priority: 'normal', tags: [], status: 'open' });
+    assert.deepEqual(
+      { title, priority, tags, status },
+      { title: 'Buy milk', priority: 'normal', tags: [], status: 'open' },
+    );
     assert.equal(typeof task.id, 'string');
     assert.equal(list.openCount(), 1);
   });

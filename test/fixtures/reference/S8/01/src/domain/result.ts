@@ -9,8 +9,7 @@ export type TodoErrorCode = 'not-found' | 'duplicate' | 'invalid-state';
 
 /** The outcome of an operation that can fail: its value, or the reason it failed. */
 export type Result<T, E = TodoError> =
-  | { readonly ok: true; readonly value: T }
-  | { readonly ok: false; readonly error: E };
+  { readonly ok: true; readonly value: T } | { readonly ok: false; readonly error: E };
 
 /**
  * A successful result.
