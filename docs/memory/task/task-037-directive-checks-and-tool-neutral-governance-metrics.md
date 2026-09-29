@@ -2,7 +2,7 @@
 id: task-037-directive-checks-and-tool-neutral-governance-metrics
 type: task
 title: "Directive checks and tool-neutral governance metrics"
-status: backlog
+status: in-progress
 release: v0.1
 wave: W8
 features: [F4.8]
