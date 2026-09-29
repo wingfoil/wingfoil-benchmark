@@ -497,7 +497,32 @@ describe('runs in a real container', () => {
     ]);
   }
 
+  async function s3InArm(root: string, arm: string, execution: number): Promise<void> {
+    const { suites, score } = await scoredInArm(root, 'S3', arm, execution);
+    // Each feature's suite from the step that introduces it, all passing, and kept to the last step.
+    expect(suites.map((step) => Object.keys(step))).toEqual([
+      ['bookings'],
+      ['bookings', 'availability'],
+      ['bookings', 'availability', 'discount'],
+      ['bookings', 'availability', 'discount', 'hourly'],
+      ['bookings', 'availability', 'discount', 'hourly', 'cancellation'],
+    ]);
+    for (const step of suites) {
+      for (const tally of Object.values(step)) expect(tally).toMatch(/^(\d+)\/\1$/);
+    }
+    expect(score.final.m_q1.passed).toBe(score.final.m_q1.total);
+    // D3's revision recorded at step 4 (task-036, REQ-SCO-06).
+    expect(score.checks).toEqual([
+      {
+        id: 'd3-revision',
+        kind: 'content',
+        steps: [{ n: 4, passed: true, where: { file: 'DECISIONS.md' } }],
+      },
+    ]);
+  }
+
   const s1Reference = repoPath('test/fixtures/reference/S1');
+  const s3Reference = repoPath('test/fixtures/reference/S3');
   const withClone = () => {
     process.env.BENCH_WINGFOIL_REPO = clone;
     return dryRunProfileYaml().harnesses as Record<string, unknown>;
@@ -530,6 +555,19 @@ describe('runs in a real container', () => {
       const root = scenarioRepository('S2', s2Reference, withClone());
       await s2InArm(root, 'baseline-docs', 1);
       await s2InArm(root, 'wingfoil', 2);
+    },
+  );
+
+  it('W8 (task-036): S3 in the baseline arm, scored by its real oracle', async () => {
+    await s3InArm(scenarioRepository('S3', s3Reference, {}), 'baseline', 1);
+  });
+
+  it.skipIf(!existsSync(join(clone, '.git')))(
+    'W8 (task-036): S3 in the baseline-docs and wingfoil arms, scored by its real oracle',
+    async () => {
+      const root = scenarioRepository('S3', s3Reference, withClone());
+      await s3InArm(root, 'baseline-docs', 1);
+      await s3InArm(root, 'wingfoil', 2);
     },
   );
 
