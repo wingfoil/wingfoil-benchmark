@@ -393,4 +393,4 @@ confirmed by the approver on 2026-09-29; review decision of the approver at that
 The traceability matrix is amended in 1.1: REQ-SCO-12 joins Q-D3, Q-F1, Q-F2, F4.1 and F4.7.
 
 Source: [task-039](../memory/task/task-039-continuity-metrics-and-regressions-from-the-seed.md), design
-confirmed by the approver on 2026-09-29; review decision of the approver at that task's review.
+confirmed by the approver on 2026-09-29; review decision of the approver at that task's review, 2026-09-29 (`f11113a`).

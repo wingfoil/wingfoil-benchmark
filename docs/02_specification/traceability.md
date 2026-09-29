@@ -141,4 +141,4 @@ Q-F1's "S2 step 3" is unchanged: S2's duplicate is a content check (task-035), a
 decision.
 
 Source: [task-039](../memory/task/task-039-continuity-metrics-and-regressions-from-the-seed.md), design
-confirmed by the approver on 2026-09-29; review decision of the approver at that task's review.
+confirmed by the approver on 2026-09-29; review decision of the approver at that task's review, 2026-09-29 (`f11113a`).
