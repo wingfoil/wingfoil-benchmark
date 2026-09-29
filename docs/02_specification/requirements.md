@@ -409,4 +409,4 @@ confirmed by the approver on 2026-09-29; review decision of the approver at that
 The traceability matrix is unaffected: REQ-SCO-08 already traces to F4.4 and G-X1.
 
 Source: [task-040](../memory/task/task-040-setup-cost-and-break-even.md), design confirmed by the
-approver on 2026-09-29; review decision of the approver at that task's review.
+approver on 2026-09-29; review decision of the approver at that task's review, 2026-09-29 (`44389e9`).
