@@ -396,3 +396,13 @@ Commits:
     at steps 2 and 3.
 
 No real agent, no spending. No `wingfoil` command in the build phase.
+
+### Review
+
+- `npx wingfoil memory submit task-035-check-format-and-content-checks` → `21c86db`. Declared:
+  `in-progress → in-review`, one commit `wf(task): submit <id>`. Observed: exit 0, 1 file, diff limited to
+  `status: in-progress` → `status: in-review`. Matches (subject without transition: N9).
+- Traceability: `features: []`, since F4.8 is declared by task-037 (W8 decision 1). The `acceptance` and
+  `requirements` fields are as scoped, with REQ-RUN-05, REQ-FMT-06 and REQ-RES-06 added in the design.
+- **For the approver's review decision:** requirements 1.12 (REQ-SCO-06, REQ-RUN-05, REQ-FMT-04, -06,
+  -08, REQ-RES-06), and S2@1.0's two checks (not a new version: S2 is not registered, W7 decision 3).
