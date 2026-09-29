@@ -2,7 +2,7 @@
 id: task-043-run-detail-and-side-by-side-comparison
 type: task
 title: "Run detail and side-by-side comparison"
-status: draft
+status: pending
 release: v0.1
 wave: W10
 features: [F5.3]
