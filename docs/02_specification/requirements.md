@@ -354,4 +354,4 @@ The traceability matrix (1.0) is unaffected: REQ-SCO-06 already traces to F4.7 a
 F2.2.
 
 Source: [task-035](../memory/task/task-035-check-format-and-content-checks.md), design confirmed by the
-approver on 2026-09-29; review decision at that task's review.
+approver on 2026-09-29; review decision of the approver at that task's review, 2026-09-29 (`a1feaf4`).

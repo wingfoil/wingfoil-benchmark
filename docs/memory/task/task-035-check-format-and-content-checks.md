@@ -406,3 +406,10 @@ No real agent, no spending. No `wingfoil` command in the build phase.
   `requirements` fields are as scoped, with REQ-RUN-05, REQ-FMT-06 and REQ-RES-06 added in the design.
 - **For the approver's review decision:** requirements 1.12 (REQ-SCO-06, REQ-RUN-05, REQ-FMT-04, -06,
   -08, REQ-RES-06), and S2@1.0's two checks (not a new version: S2 is not registered, W7 decision 3).
+
+### Approval
+
+- `npx wingfoil memory approve task-035-check-format-and-content-checks --reason "…"` → `a1feaf4`, run by
+  the approver (`in-review → approved`, `Approver:`/`Reason:` trailers, only `status` changed). Matches.
+- Its reason is requirements 1.12's review decision, 2026-09-29: the check format, the content and
+  unchanged kinds, `commits.json` and S2's two checks accepted; requirements 1.12 approved.
