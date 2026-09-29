@@ -398,6 +398,35 @@ describe("ast checks (REQ-SCO-05, R2–R4), through the scoring image's script",
     ]);
   });
 
+  it("takes an overload's TSDoc for its function, and never an empty /**/ comment for TSDoc", async () => {
+    const checks = await scored(ast('r2', ['undocumented-export']), [
+      {
+        files: {
+          'src/domain/parse.ts': [
+            '/** Parses a number or a string. */',
+            'export function parse(value: number): number;',
+            'export function parse(value: string): number;',
+            'export function parse(value: number | string): number {',
+            '  return Number(value);',
+            '}',
+            '',
+            '/**/',
+            'export function empty(): void {}',
+            '',
+          ].join('\n'),
+        },
+      },
+    ]);
+    expect(checks[0]?.steps).toEqual([
+      {
+        n: 1,
+        passed: false,
+        violations: 1,
+        found: [{ file: 'src/domain/parse.ts', line: 9, rule: 'undocumented-export' }],
+      },
+    ]);
+  });
+
   it('finds nothing in a directory the step does not have', async () => {
     const checks = await scored(ast('r4', ['throw'], 'src/missing'), [{ files: { 'n.md': 'x\n' } }]);
     expect(checks[0]?.steps).toEqual([{ n: 1, passed: true, violations: 0, found: [] }]);

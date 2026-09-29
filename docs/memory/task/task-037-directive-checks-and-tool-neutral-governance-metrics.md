@@ -238,3 +238,54 @@ No real agent and no spending.
 - `npx wingfoil memory submit task-037-directive-checks-and-tool-neutral-governance-metrics` → `5d2a0cb`.
   Declared: `backlog → in-progress`, one commit `wf(task): submit <id>`. Observed: exit 0, 1 file, diff
   limited to `status: backlog` → `status: in-progress`. Matches (N9).
+
+### Build
+
+Commits:
+
+- `e1dc44f`: the tests, red (7 failing, and the scoring checks' file not loading).
+- `3a62146`: requirements 1.13.
+- `3fe6d6e`: adr-004 amendment 2.
+- `1c1061a`: the implementation.
+- `99da4e9`: three tests for the branches the first full run left uncovered, then one for overloads and
+  `/**/` (below).
+
+**As designed**, with these points found in the build:
+
+- **The @F4.8 format-neutrality scenario was green from the start.** task-035 had already delivered
+  its behaviour: D3's content check, on S3's reference with its step 4 recorded as a WingFoil
+  decision-log or as `NOTES.md`. The criterion is therefore **characterization**, not red-first. The
+  test is new, and it stands on S3@1.0 itself.
+- **`dependenciesOf` lives in `core/check-text.ts`.** The loader reads the seed's dependencies with it
+  and scoring reads the snapshot's, so both read `package.json` the same way.
+- **`scoreChecks` is `async`.** It groups a step's `ast` checks into one runner call, so one container
+  per step, as designed. A scenario with `ast` checks and no runner is an issue on `oracle.checks`.
+  S2's, S3's and the fixtures' callers now `await` it.
+- **The image:**
+  - `docker/score-image/package.json` pins `typescript: 6.0.3`, and its lockfile was regenerated with
+    `npm install --package-lock-only`. Only the `typescript` entry is added.
+  - The Dockerfile copies `ast-checks.mjs`. The tag changes, as its content hash.
+  - The local scoring double maps `/opt/score/ast-checks.mjs` to the file in the repository, and
+    resolves `typescript` from the devDependency: the same version, so the unit tests parse as the image
+    does.
+- **What the script counts, each point a unit test:**
+  - an overloaded function is documented when any of its declarations is;
+  - a TSDoc block is `/**`, never `/**/`;
+  - a string or a comment holding `throw` or `Math.random()` is not counted;
+  - `new Date(x)` is not counted, and `new Date()` is;
+  - `crypto` random functions are counted through `crypto.`, `globalThis.crypto.`, a namespace or
+    default import, or a named import under any alias.
+- **The acceptance @F4.8 "per rule and per step"** runs on T3 with R1–R4 as four checks over `src/`, via
+  `bench score` with the local scoring double. The hidden test and the AST really run there. The
+  counts per step are R1 `[1, 1]`, R2 `[1, 1]`, R3 `[1, 2]` and R4 `[0, 1]`. R2 fires at step 1
+  because T3's seed `ship` has no TSDoc: a seed that breaks a rule is visible as such, and task-038's S8
+  seed must comply (S8.md §3).
+- **Docker, "W8 (task-037)":** the same run scored by the real image, where TypeScript 6.0.3 is recorded
+  in `scorer`. Step 1's randomness is `crypto.randomUUID()`, counted, and the same counts come out.
+  `found` names `src/guard.ts:3 throw`.
+
+**Checks:**
+
+- `npm test`: 936/936 (+14), then 939 with the coverage tests. Coverage 98.96% statements, 99.77%
+  lines; `ast.ts` and `check-text.ts` are at 100% of lines, `checks.ts` at 100%.
+- `npm run typecheck` and `npm run lint`: clean.
