@@ -2,7 +2,7 @@
 id: task-038-s8-directive-compliance-scenario
 type: task
 title: "S8 directive compliance scenario"
-status: pending
+status: backlog
 release: v0.1
 wave: W8
 features: [F6.8]
