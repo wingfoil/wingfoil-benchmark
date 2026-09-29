@@ -329,4 +329,4 @@ REQ-CLI-06's feature column gains F5.1. The traceability matrix (1.0) is left as
 REQ-FMT-06 and REQ-FMT-07, which the aggregate implements.
 
 Source: [task-034](../memory/task/task-034-results-store-and-aggregation.md), review decision of the
-approver at that task's review.
+approver at that task's review, 2026-09-29 (`45a5e31`).

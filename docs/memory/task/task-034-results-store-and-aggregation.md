@@ -283,3 +283,13 @@ The official check is made on main once this task is merged (kanban-delivery, de
 
 No real agent, no spending. No `wingfoil` command in the build phase.
 
+### Review and approval
+
+- `npx wingfoil memory approve task-034-results-store-and-aggregation --reason "…"` → `45a5e31`, run by
+  the approver (`in-review → approved`, `Approver:`/`Reason:` trailers, only `status` changed). Matches.
+- Its reason records the review decisions, 2026-09-29, and is requirements 1.11's review decision:
+  - `aggregate.json` accepted;
+  - losses as designed: an expected failure keeps its measured values and is marked, and a final not
+    reached counts as nothing passed;
+  - M-D3 step to step here, the full M-D3 (tests that passed on the seed) carried to W9.
+
