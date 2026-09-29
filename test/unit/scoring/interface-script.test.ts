@@ -131,4 +131,46 @@ describe('interface.mjs (M-R2, REQ-SCO-05, task-042)', { timeout: 60_000 }, () =
       'e.ts: export default (a: number): number => { };',
     ]);
   });
+
+  it('tells a static member from an instance one of the same name, and a quoted name from a plain one, among overloads', () => {
+    const root = snapshot({
+      'c.ts':
+        'export class C {\n  static create(a: string): C;\n  static create(a: unknown): C {\n    return new C();\n  }\n' +
+        '  create(): void {}\n}\n' +
+        "export class K {\n  'm'(): void;\n  m(): void {}\n}\n",
+    });
+    expect(entries(root, ['c.ts'])).toEqual([
+      'c.ts: export class C { static create(a: string): C; create(): void; }',
+      "c.ts: export class K { 'm'(): void; }",
+    ]);
+  });
+
+  it("leaves out an overloaded constructor's implementation", () => {
+    const root = snapshot({
+      'p.ts':
+        'export class P {\n  constructor(a: string);\n  constructor(a: number);\n  constructor(private a: unknown) {}\n}\n',
+    });
+    expect(entries(root, ['p.ts'])).toEqual([
+      'p.ts: export class P { constructor(a: string); constructor(a: number); }',
+    ]);
+  });
+
+  it('keeps every member of an ambient namespace, which exports them without the keyword', () => {
+    const root = snapshot({
+      'dn.ts': 'export declare namespace DN {\n  function g(): void;\n  const k: number;\n}\n',
+    });
+    expect(entries(root, ['dn.ts'])).toEqual([
+      'dn.ts: export declare namespace DN { function g(): void; const k: number; }',
+    ]);
+  });
+
+  it('gives a default export or a value asserted as T, behind satisfies too, the type T', () => {
+    const root = snapshot({
+      's.ts': 'export const s = (y as T) satisfies U;\nexport default {} as Config;\n',
+    });
+    expect(entries(root, ['s.ts'])).toEqual([
+      's.ts: export const s: T;',
+      's.ts: export default … as Config;',
+    ]);
+  });
 });
