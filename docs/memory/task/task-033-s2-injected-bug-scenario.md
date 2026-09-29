@@ -2,7 +2,7 @@
 id: task-033-s2-injected-bug-scenario
 type: task
 title: "S2 injected-bug scenario"
-status: in-review
+status: approved
 release: v0.1
 wave: W7
 features: [F6.2]
