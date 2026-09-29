@@ -294,3 +294,13 @@ Commits:
   TypeScript; S1, S2 and S3 score as before with it.
 
 No real agent, no spending. No `wingfoil` command in the build phase.
+
+### Review
+
+- `npx wingfoil memory submit task-037-directive-checks-and-tool-neutral-governance-metrics` → `4502acf`.
+  Declared: `in-progress → in-review`, one commit `wf(task): submit <id>`. Observed: exit 0, 1 file, diff
+  limited to `status: in-progress` → `status: in-review`. Matches (N9).
+- Traceability: `features: [F4.8]`, completed here (task-035 delivered its first half); both @F4.8
+  scenarios green in `test/acceptance/scoring.test.ts`.
+- **For the approver's review decision:** requirements 1.13 (REQ-SCO-05, REQ-SCO-06) and adr-004
+  amendment 2 (the image pins TypeScript and runs the AST checks).
