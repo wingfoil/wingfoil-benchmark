@@ -60,7 +60,8 @@ export async function storedRun(
     checks?: Readonly<Record<string, string>>;
     /**
      * A scenario of the repository's own `scenarios/` to store a run of, in place of the fixture T3
-     * (task-039), such as `S3`: its steps are then its reference's. With `into`, the one already there.
+     * (task-039), such as `S3`: its steps are then its reference's. With `into`, the one already there,
+     * or copied in when the repository has none (task-042).
      */
     scenario?: string;
     /**
@@ -93,7 +94,8 @@ export async function storedRun(
 ): Promise<StoredRunFixture> {
   const root = options.into?.root ?? tempDir('bench-score-repo-');
   const id = options.scenario ?? 'T3';
-  if (options.into === undefined) {
+  // With `into`, a scenario the repository does not hold yet is copied in beside the others (task-042).
+  if (options.into === undefined || !existsSync(join(root, 'scenarios', id))) {
     const source = id === 'T3' ? repoPath('test/fixtures/scenarios/T3') : repoPath(`scenarios/${id}`);
     cpSync(source, join(root, 'scenarios', id), { recursive: true });
     addChecks(join(root, 'scenarios', 'T3', '1.0'), options.checks ?? {});
@@ -299,6 +301,9 @@ export const QUALITY = {
   coverage: { covered: 0, total: 6, tests: 'none' },
 };
 
+/** What the image's interface.mjs says of any snapshot, in the scoring double (task-042). */
+export const INTERFACE = ['src/orders.ts: export function cancel(order: Order): Order;'];
+
 /** T3's one hidden test, as the reporter names it. */
 export const T3_TEST = {
   file: 'oracle/public/cancel.test.ts',
@@ -356,6 +361,11 @@ export function scoringDocker(
       // The image's static-quality measure (task-041) says the same of every snapshot here.
       if (command.some((argument) => argument.includes('quality.mjs'))) {
         return Promise.resolve({ code: 0, stdout: `${JSON.stringify(QUALITY)}\n`, stderr: '' });
+      }
+      // And its public-interface extraction (task-042).
+      if (command.some((argument) => argument.includes('interface.mjs'))) {
+        const stdout = INTERFACE.map((entry) => `${JSON.stringify(entry)}\n`).join('');
+        return Promise.resolve({ code: 0, stdout, stderr: '' });
       }
       return Promise.resolve(judge(snapshots.get(container) ?? '', command));
     },

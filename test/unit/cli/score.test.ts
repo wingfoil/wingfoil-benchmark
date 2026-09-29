@@ -51,7 +51,7 @@ describe('bench score (REQ-CLI-06)', () => {
       // T3 declares hold-out additions, and none was given: the line says so (F3.5).
       stdout:
         'T3@1.0 baseline fake-model r1: step 01 0/1, step 02 1/1, final 1/1; hold-out not scored\n' +
-        'aggregate: results/abcdef012345/1/aggregate.json (1 group, 0 slices)\n',
+        'aggregate: results/abcdef012345/1/aggregate.json (1 group, 0 slices; determinism measured in 0, n = 1 in 1)\n',
       stderr: '',
     });
     expect(existsSync(join(fixture.runDir, 'score.json'))).toBe(true);
@@ -168,7 +168,7 @@ describe('bench score (REQ-CLI-06)', () => {
       code: 0,
       stdout:
         'T3@1.0 baseline fake-model r1: step 01 0/1, step 02 1/1, final 1/1; hold-out final 1/2\n' +
-        'aggregate: results/abcdef012345/1/aggregate.json (1 group, 0 slices)\n',
+        'aggregate: results/abcdef012345/1/aggregate.json (1 group, 0 slices; determinism measured in 0, n = 1 in 1)\n',
       stderr: '',
     });
     const stored = readFileSync(join(fixture.runDir, 'score.json'), 'utf8');
@@ -204,7 +204,7 @@ describe('bench score (REQ-CLI-06)', () => {
     // With none given, a version that declares none says nothing of a hold-out.
     expect((await score(again, EXECUTION)).stdout).toBe(
       'T3@1.0 baseline fake-model r1: step 01 0/1, step 02 1/1, final 1/1\n' +
-        'aggregate: results/abcdef012345/1/aggregate.json (1 group, 0 slices)\n',
+        'aggregate: results/abcdef012345/1/aggregate.json (1 group, 0 slices; determinism measured in 0, n = 1 in 1)\n',
     );
     rmSync(empty, { recursive: true, force: true });
   });

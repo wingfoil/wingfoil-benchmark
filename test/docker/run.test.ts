@@ -138,7 +138,7 @@ describe('runs in a real container', () => {
     // hold-out's two tests, apart: none after step 1, one after step 2.
     expect(output).toBe(
       'T3@1.0 baseline fake-model r1: step 01 0/1, step 02 1/1, final 1/1; hold-out final 1/2\n' +
-        `aggregate: results/${image}/1/aggregate.json (1 group, 0 slices)\n`,
+        `aggregate: results/${image}/1/aggregate.json (1 group, 0 slices; determinism measured in 0, n = 1 in 1)\n`,
     );
     const runDir = join(root, 'results', image, '1', 'runs', 'T3@1.0', 'baseline', 'fake-model', 'r1');
     const scoreFile = join(runDir, 'score.json');
@@ -565,6 +565,15 @@ describe('runs in a real container', () => {
     const quality = score.m_q2 as { lint: { lines: number }; coverage: { covered: number } };
     expect(quality.lint.lines).toBeGreaterThan(0);
     expect(quality.coverage.covered).toBeGreaterThan(0);
+    // M-R2's and M-R3's inputs (task-042): the interface read by the real image's interface.mjs, and
+    // paths that leave the setup's files out, whatever the arm wrote.
+    const determinism = (score as unknown as { determinism: { interface: string[]; paths: string[] } })
+      .determinism;
+    expect(determinism.interface.length).toBeGreaterThan(0);
+    expect(determinism.interface.every((entry) => !entry.endsWith('(does not parse)'))).toBe(true);
+    expect(determinism.paths.some((path) => path.startsWith('.wingfoil/') || path === 'CLAUDE.md')).toBe(
+      false,
+    );
     expect(score.scorer).toMatchObject({
       eslint: '10.11.0',
       typescript_eslint: '8.70.1',

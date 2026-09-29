@@ -52,7 +52,7 @@ describe('results.feature', () => {
     const scored = await benchScore(campaign.root, EXECUTION);
     expect(scored.code).toBe(0);
     expect(scored.stdout).toMatch(
-      /aggregate: results\/abcdef012345\/1\/aggregate\.json \(2 groups, 0 slices\)\n$/,
+      /aggregate: results\/abcdef012345\/1\/aggregate\.json \(2 groups, 0 slices; determinism measured in 1, n = 1 in 1\)\n$/,
     );
 
     // When the maintainer opens any aggregate value in the results store
