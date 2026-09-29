@@ -141,3 +141,18 @@ Classified in the design phase.
 
 <!-- What happened while building: deviations, blockers, follow-ups (filed as elements, never left
      here). For every `wingfoil` command: declared vs observed behaviour. -->
+
+### WingFoil commands (declared vs observed)
+
+- `npx wingfoil memory add --type task --title "…"` for task-042 (`921cb08`), task-043 (`f2abfd6`) and
+  task-044 (`3c336ad`).
+  - Declared: one commit `wf(task): add <id>`, and one new file from the template with `status:
+    draft`. The id is `task-{n}-{slug}`.
+  - Observed: exit 0 each time, and exactly that commit with 1 file. Matches.
+- Content filled and committed by hand in `docs(task): scope the W10 tasks of release v0.1` (`12970d2`),
+  so that `submit` carries only the state change (usage note N13).
+- `npx wingfoil memory submit <id>` for task-042 (`f5b6f90`), task-043 (`83ae055`) and task-044
+  (`dad336b`).
+  - Declared: `draft → pending`, required fields checked, one commit `wf(task): submit <id>`.
+  - Observed: exit 0 each time, 1 file, and a diff limited to `status: draft` → `status: pending`.
+    Matches (the subject names no transition: N9).
