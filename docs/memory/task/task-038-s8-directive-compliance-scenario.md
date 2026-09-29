@@ -406,3 +406,11 @@ No real agent, no spending. No `wingfoil` command in the build phase.
 - `npx wingfoil memory approve task-038-s8-directive-compliance-scenario --reason "…"` → `0f48cae`, run by
   the approver (`in-review → approved`, `Approver:`/`Reason:` trailers, only `status` changed). Matches.
 - Its reason is the review decision, 2026-09-29, of S8@1.0 and of S8.md 1.1.
+
+### Delivery
+
+- Merged into main with `--no-ff` → `90ad579`.
+- `npx wingfoil memory submit task-038-s8-directive-compliance-scenario` → `c86f58e`. Declared: `approved →
+  done`, one commit `wf(task): submit <id>`. Observed: exit 0, 1 file, diff limited to `status: approved` →
+  `status: done`. Matches (N9).
+- The last task of W8: the wave's "Ends with" is checked on main next, and recorded in rel-v0-1.
