@@ -389,7 +389,7 @@ describe('runs in a real container', () => {
     steps: { n: number; suites: { id: string; passed: number; total: number }[] }[];
     final: { m_q1: { passed: number; total: number } };
     holdout: { scored: boolean; final?: { m_q1: { passed: number; total: number } } };
-    checks: { id: string; steps: { n: number; passed?: boolean; where?: unknown }[] }[];
+    checks: { id: string; steps: { n: number; passed?: boolean; where?: unknown; violations?: number }[] }[];
   }
 
   /**
@@ -523,7 +523,55 @@ describe('runs in a real container', () => {
     ]);
   }
 
+  async function s8InArm(root: string, arm: string, execution: number): Promise<void> {
+    const { suites, score } = await scoredInArm(root, 'S8', arm, execution);
+    // Each feature's suite from its step, all passing, and the seed's own behaviour kept throughout.
+    expect(suites.map((step) => Object.keys(step))).toEqual([
+      ['core', 'ids'],
+      ['core', 'ids', 'timestamps'],
+      ['core', 'ids', 'timestamps', 'validation'],
+      ['core', 'ids', 'timestamps', 'validation', 'bulk-import'],
+    ]);
+    for (const step of suites) {
+      for (const tally of Object.values(step)) expect(tally).toMatch(/^(\d+)\/\1$/);
+    }
+    // M-E1 (task-037): the reference breaks no rule, at any step, R2–R4 counted by the image's TypeScript.
+    expect(score.checks.map((check) => [check.id, check.steps.map((step) => step.violations)])).toEqual([
+      ['r1-no-new-dependency', [0, 0, 0, 0]],
+      ['r2-tsdoc-on-exports', [0, 0, 0, 0]],
+      ['r3-no-clock-or-randomness', [0, 0, 0, 0]],
+      ['r4-no-throw', [0, 0, 0, 0]],
+    ]);
+    // K3, dl-005: the rules reach only baseline-docs, as PROJECT_RULES.md, and wingfoil, as directives.
+    const setup = readFileSync(
+      join(
+        root,
+        'results',
+        'dry-runs',
+        String(execution),
+        'runs',
+        'S8@1.0',
+        arm,
+        'fake-model',
+        'r1',
+        'setup',
+        'diff.patch',
+      ),
+      'utf8',
+    );
+    const rules = {
+      baseline: [false, false],
+      'baseline-docs': [true, false],
+      wingfoil: [false, true],
+    }[arm];
+    expect([
+      setup.includes('+### No new runtime dependency'),
+      setup.includes('r1-no-new-dependency.md'),
+    ]).toEqual(rules);
+  }
+
   const s1Reference = repoPath('test/fixtures/reference/S1');
+  const s8Reference = repoPath('test/fixtures/reference/S8');
   const s3Reference = repoPath('test/fixtures/reference/S3');
   const withClone = () => {
     process.env.BENCH_WINGFOIL_REPO = clone;
@@ -617,6 +665,19 @@ describe('runs in a real container', () => {
     });
     expect(containers).not.toMatch(/^bench-/m);
   });
+
+  it('W8 (task-038): S8 in the baseline arm, scored by its real oracle and its directive checks', async () => {
+    await s8InArm(scenarioRepository('S8', s8Reference, {}), 'baseline', 1);
+  });
+
+  it.skipIf(!existsSync(join(clone, '.git')))(
+    'W8 (task-038): S8 in the baseline-docs and wingfoil arms, its rules delivered to each as K3 says',
+    async () => {
+      const root = scenarioRepository('S8', s8Reference, withClone());
+      await s8InArm(root, 'baseline-docs', 1);
+      await s8InArm(root, 'wingfoil', 2);
+    },
+  );
 
   it.skipIf(!existsSync(join(clone, '.git')))(
     "W3: the same scenario in the baseline, baseline-docs and wingfoil arms — @F2.6, REQ-RUN-17, @F2.5's generator",
