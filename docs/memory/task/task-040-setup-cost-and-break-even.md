@@ -218,3 +218,13 @@ older execution aggregates as before.
 
 <!-- What happened while building: deviations, blockers, follow-ups (filed as elements, never left
      here). For every `wingfoil` command: declared vs observed behaviour. -->
+
+### WingFoil commands (declared vs observed)
+
+- `memory approve … [pending → backlog]` → `20e0fc9`, run by the approver. The W9 plan phase's commands
+  are recorded in task-039.
+- Design committed by hand (`ed45383`), then `node_modules/.bin/wingfoil memory submit
+  task-040-setup-cost-and-break-even` in the task's worktree → `d02a36c`.
+  - Declared: `backlog → in-progress`, one commit `wf(task): submit <id>`.
+  - Observed: exit 0, 1 file, and a diff limited to `status: backlog` → `status: in-progress`.
+    Matches.
