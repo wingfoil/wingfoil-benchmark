@@ -233,6 +233,9 @@ from another user.
 - `npx wingfoil memory submit task-033-s2-injected-bug-scenario` → `6f7cb1e`. Declared: `backlog →
   in-progress`, one commit `wf(task): submit <id>`. Observed: exit 0, empty stderr, 1 file, diff limited
   to `status: backlog` → `status: in-progress`. Matches (N9).
+- `npx wingfoil memory submit task-033-s2-injected-bug-scenario` → `0eb728b`. Declared: `in-progress →
+  in-review`, one commit `wf(task): submit <id>`. Observed: exit 0, empty stderr, 1 file, diff limited to
+  `status: in-progress` → `status: in-review`. Matches (N9).
 
 ### Build
 
