@@ -388,6 +388,11 @@ Commits on `task/task-042-determinism-metrics-across-repetitions`:
   - the runs compared, and that a final not reached is left out;
   - the pins compared, and that no threshold is applied.
 - No new bug and no new decision-log. No WingFoil usage note. No spending.
+- Build notes committed by hand (`1719181`), then `node_modules/.bin/wingfoil memory submit
+  task-042-determinism-metrics-across-repetitions` in the worktree → `345fb12`.
+  - Declared: `in-progress → in-review`, one commit `wf(task): submit <id>`.
+  - Observed: exit 0, 1 file, and a diff limited to `status: in-progress` → `status: in-review`.
+    Matches.
 
 ### WingFoil commands (declared vs observed)
 
