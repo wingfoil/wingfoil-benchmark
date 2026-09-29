@@ -9,7 +9,7 @@ import { loadScenario } from '../../src/scenario/index.js';
 import { scoreChecks } from '../../src/scoring/index.js';
 import { localScoringDocker } from '../support/local-scoring.js';
 import { repoPath } from '../support/paths.js';
-import { referenceRun } from '../support/reference.js';
+import { referenceFiles, referenceRun } from '../support/reference.js';
 import { CANCEL, EXECUTION, scoringDocker, storedRun } from '../support/score-fixture.js';
 
 const NO_AGENT: AgentPort = {
@@ -50,6 +50,36 @@ async function benchScore(root: string) {
     root,
   );
   return { code, stdout, recorded };
+}
+
+/**
+ * Two runs of S3 stored from its reference (task-039), in one execution, and scored by `bench score`
+ * with the local scoring double, the hidden tests really run: r1 as the reference wrote it, r2 with
+ * step 4's record of the D3 revision taken back out (DECISIONS.md as step 1 wrote it), its code the
+ * same. Their `score.json` files, r1's then r2's. Scored once for the three @F4.7 scenarios.
+ */
+let s3Scores: Promise<readonly Record<string, unknown>[]> | undefined;
+function scoredS3Runs(): Promise<readonly Record<string, unknown>[]> {
+  s3Scores ??= (async () => {
+    const reference = repoPath('test/fixtures/reference/S3');
+    const steps = referenceFiles(reference);
+    const recorded = await storedRun({ scenario: 'S3', steps });
+    const [first] = steps;
+    const silent = steps.map((files, index) =>
+      index === 3 ? { ...files, 'DECISIONS.md': first?.['DECISIONS.md'] ?? null } : files,
+    );
+    const unrecorded = await storedRun({
+      scenario: 'S3',
+      steps: silent,
+      into: { root: recorded.root, repetition: 2 },
+    });
+    const { code, stdout } = await benchScoreLocally(recorded.root);
+    if (code !== 0) throw new Error(stdout);
+    return [recorded.runDir, unrecorded.runDir].map(
+      (runDir) => JSON.parse(readFileSync(join(runDir, 'score.json'), 'utf8')) as Record<string, unknown>,
+    );
+  })();
+  return s3Scores;
 }
 
 // T3 stands in for S1 until W7: two steps, one suite scored after both. Its one hidden test fails on
@@ -196,6 +226,64 @@ describe('scoring.feature', { timeout: 120_000 }, () => {
       ],
     ]);
   });
+
+  it('@F4.7 Next-change cost is attributed to later steps', async () => {
+    // When a run of S3 is scored — the reference, each step at the fixture's cost of 0.05 EUR times its number
+    const [recorded] = await scoredS3Runs();
+
+    // Then M-F2 records the cost and the M-Q1 pass rate of steps 2 to 5
+    expect(recorded?.m_f2).toEqual({
+      steps: [
+        { n: 2, cost_eur: 0.1, m_q1: { passed: 16, total: 16 } },
+        { n: 3, cost_eur: 0.15, m_q1: { passed: 20, total: 20 } },
+        { n: 4, cost_eur: 0.2, m_q1: { passed: 30, total: 30 } },
+        { n: 5, cost_eur: 0.25, m_q1: { passed: 37, total: 37 } },
+      ],
+    });
+  }, 600_000);
+
+  it('@F4.7 Decision consistency counts explicit revisions as consistent', async () => {
+    // Given after step 4 of S3 whole-day bookings still behave as before
+    // And the repository records that the "whole days only" decision was revised — the reference's
+    // DECISIONS.md at step 4
+    const [recorded] = await scoredS3Runs();
+
+    // When M-F1 is computed
+    // Then decision D3 counts as consistent
+    expect(recorded?.m_f1).toEqual({
+      consistent: 5,
+      total: 5,
+      decisions: [
+        { id: 'D1', outcome: 'respected', failed: [] },
+        { id: 'D2', outcome: 'respected', failed: [] },
+        { id: 'D3', outcome: 'revised', failed: [], check: 'd3-revision' },
+        { id: 'D4', outcome: 'respected', failed: [] },
+        { id: 'D5', outcome: 'respected', failed: [] },
+      ],
+    });
+    // And nothing that passed on S3's seed, which has no code, can regress (M-D3)
+    expect(recorded?.m_d3).toEqual({ count: 0, tests: [] });
+  }, 600_000);
+
+  it('@F4.7 A silent revision counts as a failure', async () => {
+    // Given after step 4 of S3 whole-day bookings still behave as before — the same code
+    // And nothing in the repository records the revision of "whole days only"
+    const [, unrecorded] = await scoredS3Runs();
+    const final = unrecorded?.final as { m_q1: unknown };
+    expect(final.m_q1).toEqual({ passed: 37, total: 37 });
+
+    // When M-F1 is computed
+    // Then decision D3 counts as a failure
+    expect(unrecorded?.m_f1).toEqual(
+      expect.objectContaining({
+        consistent: 4,
+        total: 5,
+        decisions: expect.arrayContaining([
+          { id: 'D3', outcome: 'failed', failed: [], check: 'd3-revision' },
+        ]),
+      }),
+    );
+  }, 600_000);
 
   it("@F4.8 Governance checks do not depend on a harness's format", async () => {
     // Given two runs of S3 that record the D3 revision, one in a WingFoil decision-log and one in a

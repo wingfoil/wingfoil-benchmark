@@ -10,6 +10,8 @@ import type { HoldoutAdditions } from '../scenario/index.js';
 import { astInContainer } from './ast.js';
 import { scoreChecks } from './checks.js';
 import type { CheckScore } from './checks.js';
+import { mD3, mF1, mF2 } from './continuity.js';
+import type { MD3Score, MF1Score, MF2Score } from './continuity.js';
 import { costMetrics } from './cost.js';
 import type { CostScore } from './cost.js';
 import { runSuite } from './hidden-tests.js';
@@ -42,6 +44,12 @@ export type StepScore<S extends SuiteTally = SuiteScore> =
   | { readonly n: number; readonly suites: readonly S[]; readonly m_q1?: Tally }
   | { readonly n: number; readonly not_reached: true };
 
+/** The public suites on the seed, with the seed's own verdicts (REQ-SCO-12): what M-D3 is measured from. */
+export interface SeedScore<S extends SuiteTally = SuiteScore> {
+  readonly suites: readonly S[];
+  readonly m_q1?: Tally;
+}
+
 /** The final snapshot, scored against every suite, or that the run did not complete. */
 export type FinalScore<S extends SuiteTally = SuiteScore> =
   | { readonly step: number; readonly suites: readonly S[]; readonly m_q1?: Tally }
@@ -70,11 +78,19 @@ export interface ScoreFile {
   readonly version: string;
   readonly scenario_hash: string;
   readonly scorer: { readonly image: string; readonly tsx: string; readonly typescript: string };
+  /** The public suites on the seed (REQ-SCO-12, task-039). */
+  readonly seed: SeedScore;
   readonly steps: readonly StepScore[];
   readonly final: FinalScore;
   readonly holdout: HoldoutScore;
   /** The scenario's checks on their steps (REQ-SCO-06, task-035); empty when it declares none. */
   readonly checks: readonly CheckScore[];
+  /** M-F1 (REQ-SCO-12, task-039); absent for a scenario that lists no decision. */
+  readonly m_f1?: MF1Score;
+  /** M-F2 (REQ-SCO-12, task-039); absent for a scenario of one step. */
+  readonly m_f2?: MF2Score;
+  /** M-D3 from the seed (REQ-SCO-12, task-039). */
+  readonly m_d3: MD3Score;
   /** M-K1 and M-K2 per step and for the run (F4.3, task-029). */
   readonly cost: CostScore;
   /** The run's mark (F3.6), as the runner recorded it: `null`, or the capabilities its harness lacked. */
@@ -82,11 +98,20 @@ export interface ScoreFile {
 }
 
 /**
- * The census of each suite (task-027 Design): its hidden tests, as `file > name > path` keys, taken on
- * the seed — or why it could not be. By scenario hash (or hold-out hash) and suite id, shared by every
- * run a `bench score` scores, since it depends only on the seed and the oracle.
+ * A suite's census (task-027 Design): its hidden tests, as `file > name > path` keys, sorted; and those
+ * of them the seed itself does not pass (task-039), which M-D3 is measured from.
  */
-export type Census = Map<string, Result<readonly string[]>>;
+export interface CensusEntry {
+  readonly keys: readonly string[];
+  readonly failedOnSeed: readonly string[];
+}
+
+/**
+ * The census of each suite, taken on the seed — or why it could not be. By scenario hash (or hold-out
+ * hash) and suite id, shared by every run a `bench score` scores, since it depends only on the seed and
+ * the oracle.
+ */
+export type Census = Map<string, Result<CensusEntry>>;
 
 /** The hold-out a run is scored with: its additions, or why there is none (task-028). */
 export type HoldoutInput =
@@ -167,16 +192,25 @@ export async function scoreRun(request: ScoreRequest): Promise<Result<ScoreFile>
       }),
     });
     if (!checks.ok) return checks;
+    const final = publicScore.value.final as FinalScore;
+    const decisions = mF1(scenario.oracle.decisions, publicScore.value.tests, final, checks.value);
+    if (!decisions.ok) return decisions;
+    const nextChange = mF2(publicScore.value.steps as StepScore[], cost.value);
+    const seed = publicScore.value.seed as SeedScore;
     return ok({
       score_version: SCORE_VERSION,
       scenario: run.scenario,
       version: run.version,
       scenario_hash: run.scenarioHash,
       scorer: { image: request.image.tag, tsx: request.image.tsx, typescript: request.image.typescript },
+      seed,
       steps: publicScore.value.steps as StepScore[],
-      final: publicScore.value.final as FinalScore,
+      final,
       holdout: holdoutScore,
       checks: checks.value,
+      ...(decisions.value === undefined ? {} : { m_f1: decisions.value }),
+      ...(nextChange === undefined ? {} : { m_f2: nextChange }),
+      m_d3: mD3(seed, final),
       cost: cost.value,
       expected_failure:
         run.expectedFailure === undefined ? null : { missing: [...run.expectedFailure.missing] },
@@ -206,20 +240,37 @@ function groupScorer(request: ScoreRequest, snapshots: ReadonlyMap<number, strin
 
   return async (
     group: Group,
-  ): Promise<Result<{ steps: StepScore<SuiteTally>[]; final: FinalScore<SuiteTally> }>> => {
+  ): Promise<
+    Result<{
+      seed: SeedScore<SuiteTally>;
+      tests: readonly string[];
+      steps: StepScore<SuiteTally>[];
+      final: FinalScore<SuiteTally>;
+    }>
+  > => {
+    // Every suite's census first: the seed is scored whether or not the run reached a step (task-039).
+    const censuses = new Map<string, CensusEntry>();
+    const seedSuites: SuiteTally[] = [];
+    for (const entry of group.entries) {
+      const census = await censusOf(request.census, group, entry, scenario.seedDir, (snapshot) =>
+        suiteRun(group, entry, snapshot),
+      );
+      if (!census.ok) return census;
+      censuses.set(entry.suite.id, census.value);
+      const { keys, failedOnSeed } = census.value;
+      const counts = { id: entry.suite.id, passed: keys.length - failedOnSeed.length, total: keys.length };
+      seedSuites.push(group.confidential ? counts : ({ ...counts, failed: failedOnSeed } as SuiteScore));
+    }
     // One result per step and suite: the final snapshot is a step's, and is not run twice.
     const scored = new Map<string, SuiteTally>();
     const scoreEntry = async (n: number, entry: Group['entries'][number]): Promise<Result<SuiteTally>> => {
       const key = `${n}#${entry.suite.id}`;
       const known = scored.get(key);
       if (known !== undefined) return ok(known);
-      const census = await censusOf(request.census, group, entry, scenario.seedDir, (snapshot) =>
-        suiteRun(group, entry, snapshot),
-      );
-      if (!census.ok) return census;
+      const census = censuses.get(entry.suite.id) as CensusEntry;
       const report = await suiteRun(group, entry, snapshots.get(n) as string);
       if (!report.ok) return report;
-      const result = tally(group, entry.suite, census.value, report.value, n);
+      const result = tally(group, entry.suite, census.keys, report.value, n);
       if (result.ok) scored.set(key, result.value);
       return result;
     };
@@ -253,7 +304,8 @@ function groupScorer(request: ScoreRequest, snapshots: ReadonlyMap<number, strin
       if (!suites.ok) return suites;
       final = { step: last, suites: suites.value, ...mQ1(suites.value) };
     }
-    return ok({ steps, final });
+    const tests = [...censuses.values()].flatMap((census) => census.keys).sort(byCodeUnit);
+    return ok({ seed: { suites: seedSuites, ...mQ1(seedSuites) }, tests, steps, final });
   };
 }
 
@@ -290,7 +342,7 @@ async function censusOf(
   entry: Group['entries'][number],
   seedDir: string,
   runOn: (snapshotDir: string) => Promise<Result<SuiteReport>>,
-): Promise<Result<readonly string[]>> {
+): Promise<Result<CensusEntry>> {
   const key = `${group.confidential ? 'holdout' : 'public'}#${group.version}#${entry.suite.id}`;
   const known = cache.get(key);
   if (known !== undefined) return known;
@@ -300,7 +352,7 @@ async function censusOf(
   return census;
 }
 
-function takeCensus(group: Group, suite: Suite, report: SuiteReport): Result<readonly string[]> {
+function takeCensus(group: Group, suite: Suite, report: SuiteReport): Result<CensusEntry> {
   const path = suitePath(group, suite);
   const [file] = report.failedFiles;
   if (file !== undefined) {
@@ -319,7 +371,9 @@ function takeCensus(group: Group, suite: Suite, report: SuiteReport): Result<rea
       : `two hidden tests are named '${repeated}' on the seed`;
     return fail([{ path, message }]);
   }
-  return ok([...keys].sort(byCodeUnit));
+  const passing = new Set(report.tests.filter((test) => test.status === 'pass').map(keyOf));
+  const sorted = [...keys].sort(byCodeUnit);
+  return ok({ keys: sorted, failedOnSeed: sorted.filter((key) => !passing.has(key)) });
 }
 
 function tally(
@@ -373,7 +427,11 @@ export function scoreSummary(score: ScoreFile): string {
     score.expected_failure === null
       ? ''
       : `; expected failure (missing ${score.expected_failure.missing.join(', ')})`;
-  return `${line}${holdoutPart(score.holdout, tallied)}${checksPart(score.checks)}${marked}`;
+  const consistency =
+    score.m_f1 === undefined || 'not_reached' in score.m_f1
+      ? ''
+      : `; M-F1 ${score.m_f1.consistent}/${score.m_f1.total}`;
+  return `${line}${holdoutPart(score.holdout, tallied)}${checksPart(score.checks)}${consistency}${marked}`;
 }
 
 /** What the summary line says of the checks: passed over scored, across checks and steps, or nothing. */

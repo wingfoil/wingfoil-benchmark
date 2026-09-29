@@ -1,7 +1,7 @@
 # Traceability (v0.1)
 
-**Version:** 1.0
-**Date:** 2026-09-22
+**Version:** 1.1
+**Date:** 2026-09-29
 **Status:** Approved
 **Traces to:** [06_features.md](../01_vision/06_features.md) 1.2, [07_sequencer.md](../01_vision/07_sequencer.md) 1.1, [09_experiment-design.md](../01_vision/09_experiment-design.md) 1.1, [scenarios/](scenarios/), [acceptance/](acceptance/), [requirements.md](requirements.md)
 
@@ -30,10 +30,10 @@ Only questions that are active in v0.1 are listed. Q-E2, Q-E3 (v0.2), G-A, G-B (
 | Q-C2 cost of development | S1 | M-K1, M-K2 | scoring.feature @F4.3; runner.feature @F2.3 | REQ-RUN-09, REQ-SCO-* |
 | Q-D1 real defects fixed | S2 steps 1–3 | M-D1 | scoring.feature @F4.1 | REQ-SCO-01, REQ-SCO-02 |
 | Q-D2 non-defects rejected | S2 step 2 (false), step 3 (duplicate) | M-D2 | scoring.feature @F4.8 (content check) | REQ-SCO-06 |
-| Q-D3 regressions | S2, S1 step 4 (S1 1.1) | M-D3 | scoring.feature @F4.1 | REQ-SCO-02 |
+| Q-D3 regressions | S2, S1 step 4 (S1 1.1) | M-D3 | scoring.feature @F4.1 | REQ-SCO-02, REQ-SCO-12 |
 | Q-E1 directives respected | S8 steps 1–4 | M-E1 | scoring.feature @F4.8 | REQ-SCO-05 |
-| Q-F1 decisions respected or revised | S3 (D1–D5), S2 step 3 | M-F1 | scoring.feature @F4.7 | REQ-SCO-06 |
-| Q-F2 next-change cost | S3 steps 2–5, S1 step 4 | M-F2 | scoring.feature @F4.7 | REQ-RUN-09 |
+| Q-F1 decisions respected or revised | S3 (D1–D5), S2 step 3 | M-F1 | scoring.feature @F4.7 | REQ-SCO-06, REQ-SCO-12 |
+| Q-F2 next-change cost | S3 steps 2–5, S1 step 4 | M-F2 | scoring.feature @F4.7 | REQ-RUN-09, REQ-SCO-12 |
 | G-X1 cost of the harness | all | M-K3, M-K4 | runner.feature @F2.5; scoring.feature @F4.4 | REQ-RUN-03, REQ-SCO-08 |
 | G-X2 determinism | S1 × 3 repetitions | M-R1–M-R3 | scoring.feature @F4.5 | REQ-SCO-05, REQ-SCO-07 |
 | (model sensitivity, T14) | S1 Opus 5 slice | all of the above, as a separate comparison | campaign.feature @F1.1 (`models` slices) | REQ-FMT-01 |
@@ -58,12 +58,12 @@ Only questions that are active in v0.1 are listed. Q-E2, Q-E3 (v0.2), G-A, G-B (
 | F3.4 scenario versioning | J3.8 | scenarios.feature | REQ-FMT-09 | W4 |
 | F3.5 hold-out integration | J2.5, J3.4 | scenarios.feature; runner.feature | REQ-ARC-03; REQ-CLI-10; REQ-SCO-09 | W4 |
 | F3.6 expected failures | vision | scenarios.feature | REQ-FMT-10; REQ-SCO-10 | W6 |
-| F4.1 hidden-test oracle | J2.5 | scoring.feature | REQ-SCO-01, 02, 03 | W6 |
+| F4.1 hidden-test oracle | J2.5 | scoring.feature | REQ-SCO-01, 02, 03, 12 | W6 |
 | F4.2 static quality | J2.5 | scoring.feature | REQ-SCO-04 | W9 |
 | F4.3 cost metrics | J2.5 | scoring.feature | REQ-RUN-09 | W6 |
 | F4.4 setup/step split, break-even | J5.3 | scoring.feature | REQ-RUN-03; REQ-SCO-08 | W9 |
 | F4.5 determinism | J2.6 | scoring.feature | REQ-SCO-05, 07 | W10 |
-| F4.7 continuity metrics | vision | scoring.feature | REQ-SCO-06; REQ-RUN-09 | W9 |
+| F4.7 continuity metrics | vision | scoring.feature | REQ-SCO-06, 12; REQ-RUN-09 | W9 |
 | F4.8 tool-neutral governance | J5.2, J6.1 | scoring.feature | REQ-SCO-05, 06 | W8 |
 | F5.1 results store | J2.7 | results.feature | REQ-FMT-06, 07; REQ-RES-01, 06 | W7 |
 | F5.3 run detail | J2.7, J4.2 | results.feature | REQ-CLI-08; REQ-RES-06 | W10 |
@@ -126,3 +126,19 @@ All four findings accepted (2026-09-22):
    this limit. Container-level network logging is a possible later addition.
 3. REQ-FMT-01 makes the baseline arm mandatory (requirements 1.1).
 4. Q-D3 added to S1's card (S1 1.1).
+
+## Amendment 1.1 (delivery, W9 task-039, 2026-09-29)
+
+REQ-SCO-12 (requirements 1.14) joins:
+
+- Q-D3, for M-D3 from the seed's own verdicts;
+- Q-F1 and Q-F2, for M-F1 and M-F2;
+- F4.7;
+- F4.1. M-D3 has no feature of its own in v0.1, and this matrix already traces Q-D3 to
+  `scoring.feature` @F4.1.
+
+Q-F1's "S2 step 3" is unchanged: S2's duplicate is a content check (task-035), and S2 lists no
+decision.
+
+Source: [task-039](../memory/task/task-039-continuity-metrics-and-regressions-from-the-seed.md), design
+confirmed by the approver on 2026-09-29; review decision of the approver at that task's review, 2026-09-29 (`f11113a`).

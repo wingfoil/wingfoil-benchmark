@@ -26,6 +26,13 @@ function filesUnder(dir: string): string[] {
     });
 }
 
+/** Each step of the reference in `dir` as the files it writes, by workspace path: a stored run's steps. */
+export function referenceFiles(dir: string): Record<string, Buffer>[] {
+  return referenceSteps(dir).map((stepDir) =>
+    Object.fromEntries(filesUnder(stepDir).map((file) => [relative(stepDir, file), readFileSync(file)])),
+  );
+}
+
 /** A path as a single-quoted shell word. */
 function quoted(text: string): string {
   return `'${text.replaceAll("'", `'\\''`)}'`;

@@ -1,6 +1,6 @@
 # Requirements (v0.1)
 
-**Version:** 1.13
+**Version:** 1.14
 **Date:** 2026-09-29
 **Status:** Approved
 **Traces to:** [acceptance/](acceptance/) (all v0.1 features), [scenarios/](scenarios/) (K1–K5), [09_experiment-design.md](../01_vision/09_experiment-design.md), [07_sequencer.md](../01_vision/07_sequencer.md) v0.1
@@ -39,7 +39,7 @@ All human-authored files are YAML, validated by Zod schemas in `core`. All machi
 | REQ-FMT-01 | **Campaign file** (`campaigns/<name>.yaml`), which lives in `campaigns/`, beside `scenarios/` and `results/`. It holds:<br>• `harnesses`: arm → `{tool, version, commit?}`, one entry per arm **except** `baseline` and `baseline-docs`, which run the plain agent and must have none (added in 1.2; until W3 this list is fixed, then it follows each arm's `requires`, REQ-FMT-05)<br>• `scenarios`: `[{id, version}]`<br>• `arms`<br>• `agent: {name, version}`<br>• `models`: `{default, slices?}`, where each slice is `{model, scenarios, arms, repetitions}` for the Opus comparison (shape fixed in 1.2)<br>• `repetitions`: per scenario<br>• `approver_policy`: a version<br>• `caps: {step_time_s, step_tokens, run_cost_eur}`<br>• `budget: {warn_eur, ceiling_eur}`<br>• `currency: {usd_to_eur}`<br>A campaign must include the **baseline** arm (added in 1.1, threat T7). The scenario seed is not a campaign field: `scenario@version` pins it (1.2). | F1.1, F1.3, T7 |
 | REQ-FMT-02 | **Campaign identity:** SHA-256 of the campaign file canonicalized (parsed, keys sorted, re-serialized as JSON), shortened to 12 hex characters. An execution of a campaign is `<campaign-id>/<n>`, with `n` counting executions. | F1.1 |
 | REQ-FMT-03 | A harness `version` must be a released version (semver, optionally `v`-prefixed, with optional prerelease and build metadata) or a commit SHA of 7 to 40 hex characters. A branch name, a range or `latest` is rejected. When `version` is a SHA and `commit` is also given, `commit` is a 40-character SHA that starts with `version` (added in 1.2). | F1.1 (error path) |
-| REQ-FMT-04 | **Scenario file** (`scenarios/<id>/<version>/scenario.yaml`). It holds:<br>• `id`, `version`<br>• `categories: {primary, secondary[]}`, `profiles[]`, `gqm[]`, `capabilities[]`<br>• `seed`: a directory<br>• `steps[]`: `{n, prompt_file}`<br>• `oracle`: `suites[]` as `{id, dir, after_steps[]}`, each suite of hidden tests declared once with the steps after which it is scored (changed in 1.7, dl-001); `checks[]`, the paths of its check files (REQ-SCO-06; changed in 1.12); `third_party[]` as `{name, url, commit \| sha256, license, files[]}`, the material vendored into a suite and pinned by exactly one of the two (changed in 1.10, dl-002)<br>• `holdout`: whether additions are expected<br>Beside it, optionally, `arms/<arm>/`: the scenario's configuration for that arm, found by the arm's name with no field in the file (added in 1.6, dl-005). Neither the seed nor a prompt may contain it or lie in it. | F3.1 |
+| REQ-FMT-04 | **Scenario file** (`scenarios/<id>/<version>/scenario.yaml`). It holds:<br>• `id`, `version`<br>• `categories: {primary, secondary[]}`, `profiles[]`, `gqm[]`, `capabilities[]`<br>• `seed`: a directory<br>• `steps[]`: `{n, prompt_file}`<br>• `oracle`: `suites[]` as `{id, dir, after_steps[]}`, each suite of hidden tests declared once with the steps after which it is scored (changed in 1.7, dl-001); `checks[]`, the paths of its check files (REQ-SCO-06; changed in 1.12); `decisions[]` as `{id, revised_by?}`, the decisions M-F1 checks, each tested by the public hidden tests whose name starts with `<id>:`, and, when the scenario revises it, the content check that records the revision (REQ-SCO-12; added in 1.14); `third_party[]` as `{name, url, commit \| sha256, license, files[]}`, the material vendored into a suite and pinned by exactly one of the two (changed in 1.10, dl-002)<br>• `holdout`: whether additions are expected<br>Beside it, optionally, `arms/<arm>/`: the scenario's configuration for that arm, found by the arm's name with no field in the file (added in 1.6, dl-005). Neither the seed nor a prompt may contain it or lie in it. | F3.1 |
 | REQ-FMT-05 | **Arm definition** (`arms/<arm>/arm.yaml`). It holds: `name`, `setup` (script), `manual` (the operating manual file), `environment` (files copied into the workspace), `mcp` (optional config), `requires` (the harness tool), and `provides` (REQ-FMT-10; added in 1.9). | F2.5, F2.7 |
 | REQ-FMT-06 | **Results layout:** `results/<campaign-id>/<n>/`. It contains:<br>• `campaign.yaml`, a copy<br>• `runs/<scenario>@<ver>/<arm>/<model>/r<k>/`, holding `run.json`, `setup/{log.txt, diff.patch}`, `steps/<NN>/{usage.json, transcript.jsonl, diff.patch, commits.json}` and `score.json`<br>• `aggregate.json`<br>`<NN>` is the step number in two digits, the same form REQ-RUN-05 uses in a commit message, so a scenario has **at most 99 steps** (1.4). | F5.1 |
 | REQ-FMT-07 | `aggregate.json` stores every value together with the list of run paths it was computed from, and its `n`. | F5.1, experiment design §4.6 |
@@ -100,6 +100,7 @@ One binary, `bench`, run with `npx bench`. Exit codes: `0` success, `1` failure,
 | REQ-SCO-08 | Break-even follows experiment design §4.2, with the "not applicable" and "never" cases. | F4.4 |
 | REQ-SCO-09 | Hold-out results are stored separately from public results in `score.json`. | F3.5 |
 | REQ-SCO-10 | **Expected failures:** a run **of an arm with a harness** (`requires`) is marked `expected failure` when the scenario's `capabilities` are not all provided by the arm (REQ-FMT-10); baseline arms are the reference and are never marked (1.9). The missing capabilities are named. The run is still executed and scored, and it counts as a loss in aggregation. | F3.6 |
+| REQ-SCO-12 | **Continuity metrics and regressions from the seed** (experiment design §4.1, §4.3; added in 1.14). `score.json` records:<br>• `seed`: the public suites on the seed, with the seed's own verdicts;<br>• **M-F1**, for each decision of `oracle.decisions`, on the final snapshot: `respected` when all its public tests pass; `revised` when they pass and its `revised_by` check passed at that check's last step; otherwise `failed`, a revision nothing records included. M-F1 is the share respected or revised. A declared decision with no public test is an oracle error. Absent for a scenario with no decision;<br>• **M-F2**: each step after the first, with its API-equivalent cost in euro and its M-Q1;<br>• **M-D3**: the public hidden tests that passed on the seed and fail on the final snapshot.<br>M-F1 and M-D3 are "not reached" when the final snapshot is. In aggregation, such a run is a loss: no decision consistent, and every test that passed on the seed regressed. | F4.7, F4.1 |
 
 ## 6. Results and site (REQ-RES)
 
@@ -372,3 +373,24 @@ The traceability matrix (1.0) is unaffected: REQ-SCO-05 already traces to F4.8.
 
 Source: [task-037](../memory/task/task-037-directive-checks-and-tool-neutral-governance-metrics.md), design
 confirmed by the approver on 2026-09-29; review decision of the approver at that task's review, 2026-09-29 (`926cc3b`).
+
+### Amendment 1.14 (delivery, W9 task-039, 2026-09-29)
+
+- **REQ-FMT-04:** `oracle.decisions` lists the decisions M-F1 checks.
+  - A decision's tests are found by the name the scenario already gives them, `<id>: …`, as S3's do.
+  - `revised_by` names the content check that records its revision, when the scenario revises it.
+  - A check's file name was not made part of the format: it is an explicit field instead.
+- **REQ-SCO-12 (new):** the continuity metrics (F4.7) and the full M-D3 (W7's carry-over).
+  - M-F1: a decision the scenario revises by construction counts as consistent only when the
+    revision is recorded. An agent that ignores the change keeps the decision's tests green, and loses
+    on that step's own tests and on the decision. This was the approver's choice at design, 2026-09-29.
+  - M-F2 reads what `score.json` already holds.
+  - M-D3 reads the seed's verdicts. Scoring already computed them for the census, then dropped them.
+  - Hold-out tests stay counts only (REQ-SCO-09) and enter neither metric.
+  - REQ-SCO-11 is not reused: it was retired in 1.1.
+- The score and aggregate versions stay 1. Every metric is a new key.
+
+The traceability matrix is amended in 1.1: REQ-SCO-12 joins Q-D3, Q-F1, Q-F2, F4.1 and F4.7.
+
+Source: [task-039](../memory/task/task-039-continuity-metrics-and-regressions-from-the-seed.md), design
+confirmed by the approver on 2026-09-29; review decision of the approver at that task's review, 2026-09-29 (`f11113a`).

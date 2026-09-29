@@ -31,6 +31,8 @@ interface RunSpec {
   readonly scoredHash?: string;
   /** score.json's `checks` (task-035); absent, the run was scored before checks were. */
   readonly checks?: readonly unknown[];
+  /** score.json's `seed`, `m_f1`, `m_f2` and `m_d3` (task-039); absent, it was scored before them. */
+  readonly continuity?: Readonly<Record<string, unknown>>;
 }
 
 const tally = (suites: readonly Suite[]) => ({
@@ -107,6 +109,7 @@ function execution(runs: readonly RunSpec[], pins = 'models:\n  default: model-a
                   },
                 },
         ...(run.checks === undefined ? {} : { checks: run.checks }),
+        ...run.continuity,
         cost: {
           usd_to_eur: 0.5,
           steps: [],
@@ -253,6 +256,146 @@ describe('aggregateExecution (F5.1, REQ-FMT-07)', () => {
       { suite: 'p', step: 2, value: { n: 1, runs: [name('baseline')], values: [0] } },
       { suite: 'p', step: 3, value: { n: 1, runs: [name('baseline')], values: [1] } },
     ]);
+  });
+
+  describe('continuity and regressions from the seed (REQ-SCO-12, task-039)', () => {
+    const seed = (passed: number) => ({ suites: [], m_q1: { passed, total: 4 } });
+    const respected = (id: string) => ({ id, outcome: 'respected', failed: [] });
+
+    it('keeps M-F1 as a share and per decision, counting a final not reached as nothing consistent', () => {
+      const dir = execution([
+        {
+          arm: 'baseline',
+          r: 1,
+          steps: [[s('a', 1, 1)]],
+          continuity: {
+            m_f1: {
+              consistent: 2,
+              total: 2,
+              decisions: [respected('D1'), { id: 'D3', outcome: 'revised', failed: [], check: 'd3-revision' }],
+            },
+          },
+        },
+        {
+          arm: 'baseline',
+          r: 2,
+          steps: [[s('a', 1, 1)]],
+          continuity: {
+            m_f1: {
+              consistent: 1,
+              total: 2,
+              decisions: [respected('D1'), { id: 'D3', outcome: 'failed', failed: [], check: 'd3-revision' }],
+            },
+          },
+        },
+        { arm: 'baseline', r: 3, steps: ['not reached'], continuity: { m_f1: { not_reached: true } } },
+      ]);
+      const [group] = aggregate(dir).groups;
+      const runs = [name('baseline', 1), name('baseline', 2), name('baseline', 3)];
+      expect(group?.metrics.m_f1).toEqual({
+        share: {
+          n: 3,
+          runs,
+          values: [
+            { passed: 2, total: 2 },
+            { passed: 1, total: 2 },
+            { passed: 0, total: 2 },
+          ],
+          min: { passed: 0, total: 2 },
+          max: { passed: 2, total: 2 },
+        },
+        decisions: [
+          {
+            id: 'D1',
+            consistent: {
+              n: 3,
+              runs,
+              values: [
+                { passed: 1, total: 1 },
+                { passed: 1, total: 1 },
+                { passed: 0, total: 1 },
+              ],
+              min: { passed: 0, total: 1 },
+              max: { passed: 1, total: 1 },
+            },
+            outcomes: { respected: 2, revised: 0, failed: 0 },
+          },
+          {
+            id: 'D3',
+            consistent: {
+              n: 3,
+              runs,
+              values: [
+                { passed: 1, total: 1 },
+                { passed: 0, total: 1 },
+                { passed: 0, total: 1 },
+              ],
+              min: { passed: 0, total: 1 },
+              max: { passed: 1, total: 1 },
+            },
+            outcomes: { respected: 0, revised: 1, failed: 1 },
+          },
+        ],
+        not_reached: [name('baseline', 3)],
+      });
+    });
+
+    it('keeps M-F2 per step after the first: its cost and its M-Q1, with the runs that never reached it', () => {
+      const dir = execution([
+        {
+          arm: 'baseline',
+          r: 1,
+          steps: [[s('a', 1, 1)], [s('a', 1, 1)]],
+          continuity: { m_f2: { steps: [{ n: 2, cost_eur: 0.25, m_q1: { passed: 1, total: 1 } }] } },
+        },
+        {
+          arm: 'baseline',
+          r: 2,
+          steps: [[s('a', 1, 1)], 'not reached'],
+          continuity: { m_f2: { steps: [{ n: 2, not_reached: true }] } },
+        },
+      ]);
+      const [group] = aggregate(dir).groups;
+      expect(group?.metrics.m_f2).toEqual({
+        steps: [
+          {
+            step: 2,
+            cost_eur: { n: 1, runs: [name('baseline', 1)], values: [0.25] },
+            m_q1: { n: 1, runs: [name('baseline', 1)], values: [{ passed: 1, total: 1 }] },
+            not_reached: [name('baseline', 2)],
+          },
+        ],
+      });
+    });
+
+    it("keeps M-D3 per run; a final not reached loses every test that passed on the seed", () => {
+      const dir = execution([
+        {
+          arm: 'baseline',
+          r: 1,
+          steps: [[s('a', 1, 1)]],
+          continuity: { seed: seed(3), m_d3: { count: 1, tests: ['x > t1'] } },
+        },
+        {
+          arm: 'baseline',
+          r: 2,
+          steps: ['not reached'],
+          continuity: { seed: seed(3), m_d3: { not_reached: true } },
+        },
+      ]);
+      const [group] = aggregate(dir).groups;
+      expect(group?.metrics.m_d3).toEqual({
+        value: { n: 2, runs: [name('baseline', 1), name('baseline', 2)], values: [1, 3], min: 1, max: 3 },
+        not_reached: [name('baseline', 2)],
+      });
+    });
+
+    it('adds none of them for runs scored before task-039, which still aggregate', () => {
+      const [group] = aggregate(execution([{ arm: 'baseline', steps: [[s('a', 1, 1)]] }])).groups;
+      expect(group?.metrics).not.toHaveProperty('m_f1');
+      expect(group?.metrics).not.toHaveProperty('m_f2');
+      expect(group?.metrics).not.toHaveProperty('m_d3');
+    });
   });
 
   it('keeps each check per step as a tally of one, with its runs, and the runs that never reached it (task-035)', () => {

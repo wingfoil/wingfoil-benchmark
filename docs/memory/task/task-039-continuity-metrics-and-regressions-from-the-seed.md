@@ -2,12 +2,12 @@
 id: task-039-continuity-metrics-and-regressions-from-the-seed
 type: task
 title: "Continuity metrics and regressions from the seed"
-status: backlog
+status: approved
 release: v0.1
 wave: W9
 features: [F4.7]
 acceptance: [scoring.feature]
-requirements: [REQ-SCO-02, REQ-SCO-03, REQ-SCO-06, REQ-RUN-09, REQ-FMT-04, REQ-FMT-07]
+requirements: [REQ-SCO-02, REQ-SCO-03, REQ-SCO-06, REQ-SCO-12, REQ-RUN-09, REQ-FMT-04, REQ-FMT-07]
 ---
 
 ## Context
@@ -137,19 +137,201 @@ Out of scope:
 
 ## Acceptance criteria
 
-<!-- Classified in the design phase. -->
+Classified in the design phase.
 
-- `scoring.feature` @F4.7 "Next-change cost is attributed to later steps"
-- `scoring.feature` @F4.7 "Decision consistency counts explicit revisions as consistent"
-- `scoring.feature` @F4.7 @error "A silent revision counts as a failure"
-- Experiment design §4.1 M-D3: a hidden test that passed on the seed and fails at the end is counted;
-  one that failed on the seed is not
-- REQ-SCO-03: the same run scored twice gives the same `score.json` bytes
-- REQ-FMT-07: M-F1, M-F2 and M-D3 in `aggregate.json`, each with its runs and `n`
+- `scoring.feature` @F4.7 "Next-change cost is attributed to later steps": `score.json`'s `m_f2` holds
+  steps 2 to 5 of S3, each with its cost and its M-Q1. **red-first**
+- `scoring.feature` @F4.7 "Decision consistency counts explicit revisions as consistent": S3's
+  reference, scored through the local scoring double. D3 is `revised`, and M-F1 is 5/5. **red-first**
+- `scoring.feature` @F4.7 @error "A silent revision counts as a failure": the same reference without
+  step 4's record. Its D3 tests all pass and `d3-revision` fails, so D3 is `failed`, and M-F1 is 4/5.
+  **red-first**
+- REQ-FMT-04 as amended: `oracle.decisions` is validated. The validator refuses:
+  - an id that is not unique;
+  - a `revised_by` that names no content check;
+  - a revision check that is not scored after the step it revises.
+
+  **red-first**
+- Scoring refuses a declared decision that has no public test in the census, naming the decision.
+  **red-first**
+- Experiment design §4.1 M-D3: a public hidden test that passed on the seed and fails on the final
+  snapshot is counted, and one that already failed on the seed is not. `score.json` records the seed's
+  own tally per suite. **red-first**
+- M-F1 and M-D3 are `not reached` when the final snapshot is. **red-first**
+- Scenarios with no `decisions` get no `m_f1` key; S1, S2 and S8 are the ones today. **characterization**
+- REQ-SCO-03: the same run scored twice gives the same `score.json` bytes, with the new keys.
+  **characterization**
+- REQ-FMT-07: M-F1 (per decision and as a share), M-F2 per step, and M-D3 are in `aggregate.json`, each
+  with its runs and `n`. A final not reached counts as a loss, as task-034 decided. **red-first**
+- An older `score.json` without the new keys still aggregates. **characterization**
 
 ## Design
 
-<!-- Modules, interfaces, data formats touched; decisions taken and their reasons. -->
+Three findings shaped this design:
+
+- **The seed's pass/fail is already computed, then dropped.** `censusOf` runs every suite, public and
+  hold-out, on the seed exactly once per `bench score`. It keeps only the keys of the tests that ran. The
+  seed's verdicts cost nothing more to keep: the same report gives them.
+- **A decision's name alone cannot say how it is revised.** The `D<n>:` names give the outcome half.
+  But which check records D3's revision is a fact about the scenario, and nothing in the check file or
+  the test names states it. Inferring it, for example from a check id starting `d3-`, would make a file
+  name part of the format.
+- **M-F2 is a reading of what `score.json` already holds:** `cost.steps` and each step's `m_q1`.
+  Nothing new is measured. It is written as its own key only so that the metric has a name that
+  aggregation and the site can point to.
+
+### The decisions an oracle lists (REQ-FMT-04 as amended)
+
+`scenario.yaml`'s `oracle` gains an optional list, empty by default:
+
+```yaml
+oracle:
+  decisions:
+    - { id: D1 }
+    - { id: D2 }
+    - { id: D3, revised_by: d3-revision }
+    - { id: D4 }
+    - { id: D5 }
+```
+
+- `id` matches `^[A-Z][A-Za-z0-9]*$` and is unique. A decision's tests are the public hidden tests
+  whose **last name element starts with `<id>:`**, as S3's already do. A test that names no decision is
+  an ordinary test.
+- `revised_by`, when given, is the id of a `content` check of the same scenario. The scenario states
+  that its steps revise this decision, and that check is the record of the revision.
+- The loader refuses an unknown or non-content `revised_by`, and an id declared twice.
+- Scoring refuses a decision with no test in the public census:
+  `oracle.decisions[D6] has no public hidden test named 'D6: …'`. It cannot be checked at validation,
+  since a test's name exists only when its suite runs.
+- **S3@1.0's `scenario.yaml` gains the five lines above.** S3@1.0 is not registered, and no stored
+  result carries its hash (W8 decision 4), so this is not a new version. The hash changes, and the
+  `scenarios.feature` outline and the Docker tests pick it up. Nothing else in S3 changes.
+
+### M-F1 (experiment design §4.3)
+
+For each declared decision, on the **final** snapshot, with only public tests (hold-out results are
+counts, REQ-SCO-09):
+
+| The decision's tests | `revised_by` | Its check at its last step | Outcome |
+|---|---|---|---|
+| all pass | none | — | `respected` |
+| all pass | a check | passed | `revised` |
+| all pass | a check | failed or not reached | `failed` (a silent revision) |
+| any fails | either | — | `failed` |
+
+A decision with `revised_by` is one the scenario revises **by construction**: S3's step 4 asks for
+hourly rentals. Its tests assert what must survive the revision, so a run whose tests pass but that
+records nothing has revised it silently. Choice 1 below is about this row.
+
+```json
+"m_f1": {
+  "consistent": 5, "total": 5,
+  "decisions": [
+    { "id": "D1", "outcome": "respected", "failed": [] },
+    { "id": "D3", "outcome": "revised", "failed": [], "check": "d3-revision" }
+  ]
+}
+```
+
+- `failed` lists the decision's failing test keys, in `score.json`'s usual form.
+- `m_f1` is `{ "not_reached": true }` when the final snapshot is not reached.
+- `m_f1` is absent when the scenario declares no decision. Absent keeps the older `score.json` files
+  and the scenarios without decisions alike.
+
+### M-F2 (experiment design §4.3)
+
+```json
+"m_f2": { "steps": [ { "n": 2, "cost_eur": 0.12, "m_q1": { "passed": 16, "total": 16 } } ] }
+```
+
+- It covers each step after the first, with the step's `cost_eur` from `cost.steps` and its `m_q1`
+  from `steps`.
+- A step not reached is `{ "n": 3, "not_reached": true }`.
+- A step no suite scores has no `m_q1`, as in `steps`.
+- It is written for every scenario with more than one step, and is absent for a single-step scenario.
+- "Attributed to the code left by the previous steps" is the metric's meaning, not a computation. The
+  method page says so (W11).
+
+### M-D3 from the seed (experiment design §4.1)
+
+- **The census becomes `{ keys, failedOnSeed }`** per suite. `Census` is the exported cache type, used
+  by `cli/score.ts` and the unit tests. Its value changes shape, and nothing else about it changes.
+  `failedOnSeed` is the counted census keys the seed's report does not pass.
+- **`score.json` gains `seed`,** the public suites on the seed, in `final`'s shape:
+  `{ suites: [{ id, passed, total, failed }], m_q1 }`. The hold-out's seed is not added (see below).
+- **`m_d3`** is `{ count, tests }`:
+  - `tests` are the public keys that passed on the seed and fail on the final snapshot, sorted;
+  - it is `{ "not_reached": true }` when the final snapshot is not.
+- **The hold-out is left out of M-D3.** A hold-out regression could only be a count, and none of v0.1's
+  hold-outs is scored on the seed by design. S2's regressions are public: its seed suite and its
+  regression suite (S2.md §6).
+- **W7's step-to-step regressions stay as they are,** in the aggregate. `m_d3` is the metric §4.1
+  defines. The step-to-step view is a diagnostic beside it.
+
+### Aggregation (REQ-FMT-07)
+
+The reader schema in `src/results/aggregate.ts` takes `seed`, `m_f1`, `m_f2` and `m_d3` as optional.
+`Group.metrics` gains:
+
+- **`m_f1`** (only when some run of the group has it):
+  - `share`, a `Value<Tally>` (consistent over total);
+  - per decision, `consistent`, a `Value<Tally>` of one per run, like checks;
+  - the counts of each outcome;
+  - `not_reached`.
+
+  A final not reached **counts as 0 consistent** in `share`, and is also listed as `not_reached`,
+  as task-034 counts a loss's M-Q1.
+- **`m_f2`:** per step after the first, `cost_eur` as a `Value<number>` and `m_q1` as a
+  `Value<Tally>`, with `not_reached`. It reads `cost.steps`, which the reader schema now parses
+  (optional, since older files have it too).
+- **`m_d3`:** a `Value<number>` of regressions per run. For a final not reached, the value is
+  **every test that passed on the seed**, taken from the run's `seed` (a loss), and the run is listed
+  in `not_reached`.
+
+`SCORE_VERSION` and `AGGREGATE_VERSION` stay 1 (W9 decision 5). Every value is a new key, and no
+existing value changes how it is computed.
+
+### Modules
+
+- `src/core/scenario.ts`: the `decisions` schema and the `Decision` type on `Scenario.oracle`.
+- `src/scenario/load.ts`: `revised_by` resolved against the loaded checks.
+- `src/scoring/score.ts`: the census's new value, `seed`.
+- `src/scoring/continuity.ts` (new): three pure functions. `mF1(scenario, final, checks)`,
+  `mF2(steps, cost)`, `mD3(seed, final)`. No container and no clock.
+- `src/results/aggregate.ts`: the reader schema and three aggregators.
+- `scoreSummary` gains `; M-F1 5/5` when there is an `m_f1`, and `; M-D3 0` always when the final
+  snapshot was reached.
+- Tests: unit tests per function; `test/acceptance/scoring.test.ts` @F4.7 ×3, on S3's reference through
+  the local scoring double, like the @F6.x outline; the outline's S3 row gains M-F1 5/5 and M-D3 0.
+
+### Requirements 1.14
+
+- **REQ-FMT-04:** `oracle.decisions`.
+- **REQ-SCO-12 (new):** the continuity metrics and M-D3:
+  - M-F1's four rows;
+  - M-F2 as the reading of steps 2 to n;
+  - M-D3 from the seed's public results;
+  - a final not reached, in `score.json` and in aggregation.
+- **Traceability 1.1** (an amendment to the approved 1.0):
+  - REQ-SCO-12 joins the rows of Q-F1, Q-F2 and Q-D3 in §1;
+  - it joins F4.7's and F4.1's rows in §2. M-D3 is not F4.7's metric, and in v0.1 it has no feature of
+    its own. The matrix already traces Q-D3 to `scoring.feature` @F4.1.
+
+### Choices to confirm
+
+1. **A declared revision that is not recorded counts as a failure**, even when the agent did not revise
+   the decision at all. S3 revises D3 by construction (step 4 asks for hourly rentals). An agent that
+   ignored the request keeps D3's tests green, and loses on `hourly`'s M-Q1 and on D3.
+   - *Alternative:* count `respected` when nothing was revised. That needs a way to tell "not revised"
+     from "revised silently", such as "the hourly suite fails". A second rule per decision, bound to one
+     suite.
+2. **Decisions are declared in `scenario.yaml`**, with their revision check, and S3@1.0 gains five
+   lines, with no new version.
+   - *Alternative:* infer them from the `D<n>:` names, with a naming rule linking D3 to `d3-revision`.
+     No format change, but a check file's name becomes part of the format.
+3. **M-D3 on public tests only**, with `seed` recorded for the public suites.
+   - *Alternative:* a hold-out M-D3 as a count. It costs little, but v0.1 has no hold-out test that is
+     scored on the seed by design.
 
 ## Execution notes
 
@@ -170,3 +352,103 @@ Out of scope:
   - Declared: `draft → pending`, required fields checked, one commit `wf(task): submit <id>`.
   - Observed: exit 0 each time, 1 file, and a diff limited to `status: draft` → `status: pending`.
     Matches (the subject names no transition: N9).
+- `memory approve` of the three W9 tasks `[pending → backlog]`, run by the approver: task-039
+  (`7bbc1b2`), task-040 (`20e0fc9`) and task-041 (`4347df5`).
+- Design committed by hand (`de038bc`), then `node_modules/.bin/wingfoil memory submit
+  task-039-continuity-metrics-and-regressions-from-the-seed` in the task's worktree → `e80a344`.
+  - Declared: `backlog → in-progress`, one commit `wf(task): submit <id>`.
+  - Observed: exit 0, 1 file, and a diff limited to `status: backlog` → `status: in-progress`.
+    Matches.
+
+### Build
+
+Commits on `task/task-039-continuity-metrics-and-regressions-from-the-seed`:
+
+- `a8f4d4a` `test(scoring)` (red): 26 failing tests.
+  - `oracle.decisions` loaded and validated;
+  - `mF1`, `mF2` and `mD3`;
+  - `seed`, `m_f1`, `m_f2` and `m_d3` in `score.json`, and the three in `aggregate.json`;
+  - the three `scoring.feature` @F4.7 scenarios, on S3's reference.
+- `833dff2` `test(scoring)`: the requirement's id, REQ-SCO-12 (see the deviations).
+- `bd50a4f` `docs(requirements)`: requirements 1.14 and traceability 1.1.
+- `035fcca` `feat(scoring)`: the implementation.
+- `8ce2d2b` `feat(scenarios)`: S3@1.0 lists D1–D5, with D3 revised by `d3-revision`.
+
+**Deviations from the Design:**
+
+1. **REQ-SCO-12, not REQ-SCO-11.** REQ-SCO-11 was retired in requirements 1.1: it moved to REQ-RUN-17
+   at the traceability review. A retired id is not reused.
+2. **M-D3 is not in the summary line; M-F1 is.** An `; M-D3 0` on every run's line would change the
+   expected output of the CLI, bin, Docker and acceptance tests, and it says nothing a reader needs
+   there. M-D3 is in `score.json` and in the aggregate.
+3. **M-D3 needs no census keys.** A census test either passed or failed on the seed. So the tests that
+   passed there and fail at the end are the final's `failed` keys less the seed's `failed` keys, suite
+   by suite.
+4. **The aggregate's M-F2 reads `m_f2`,** not `cost.steps`. That is the same data, already paired with
+   the step's M-Q1.
+5. **One validation was dropped: "a revision check not scored after the step it revises".** The
+   scenario never names the step that revises a decision, so there is nothing to compare the check's
+   steps with. M-F1 reads the check at its last step instead.
+6. **The `scenarios.feature` outline is unchanged.** Its dry runs replay nothing, so S3's values are
+   not the reference's there. The @F4.7 scenarios score S3's reference itself, through the local
+   scoring double, and assert M-F1 5/5, M-D3 0 and M-F2 for steps 2–5. The outline still scores S3
+   with its decisions, and it would fail if a decision had no test.
+7. **The seed is scored whatever the run reached.** Every public suite's census now comes first, then
+   the steps. A run that reached no step costs one container, the census, which is shared and cached
+   per `bench score`. The test "scores nothing for a run that reached no step" became "scores only the
+   seed …".
+8. **Test support:**
+   - `storedRun` takes `scenario`, to store a run of a real scenario, and `decisions`, for T3;
+   - `reference.ts` gains `referenceFiles`, a reference's steps as files;
+   - the four `ScoreFile` literals of the summary tests gain `seed` and `m_d3`.
+
+**Checks:**
+
+- `npm run typecheck` clean, and `npm run lint` clean: ESLint and Prettier.
+- `npm test`: 975/975, coverage 99.12% (`continuity.ts` 100% of lines).
+- `npm run test:bin`: 5/5.
+- `scoring.feature` @F4.7, all three scenarios, on S3's reference with the hidden tests really run:
+  - the reference: M-F1 5/5 with D3 `revised`, M-D3 0, and M-F2 steps 2–5 at 16/16, 20/20, 30/30,
+    37/37;
+  - step 4's `DECISIONS.md` taken back: the final is still 37/37, and M-F1 is 4/5 with D3 `failed`.
+- `npm run test:docker`: 16/16 (552 s), run after `npm test`, never alongside it. It covers the W7 and
+  W8 tests of S1, S2, S3 and S8 through the real scoring image, S3 now with its decisions.
+
+### Review
+
+- **Traceability.**
+  - `features: [F4.7]`: all three @F4.7 scenarios have tests titled as the gate requires, and
+    `traceability.test.ts` is green.
+  - `acceptance: [scoring.feature]`.
+  - `requirements`: REQ-SCO-12 is new; REQ-FMT-04 and REQ-SCO-06 are the ones M-F1 reads; REQ-SCO-02
+    and -03 hold as before; REQ-RUN-09 is M-F2's cost; REQ-FMT-07 covers the aggregate's values.
+- **The Context said "S3@1.0 is not changed".** The design, which the approver confirmed, changed
+  that: S3@1.0 gains `oracle.decisions`. Its hash changes. No stored result carries the old one, and S3
+  is registered only at calibration (W8 decision 4).
+- **W9 decision 5 held.** `SCORE_VERSION` and `AGGREGATE_VERSION` stay 1. Every metric is a new key,
+  and the aggregate still reads a `score.json` without them (a characterization test).
+- **Amendments for the approver's review decision:**
+  - requirements 1.14: REQ-FMT-04 and REQ-SCO-12;
+  - traceability 1.1.
+
+  Their "Source" lines get the approval commit's hash once approved.
+- **For W11 (F5.8), the method page states:**
+  - M-F1's four rows, and that a revision the scenario asks for counts only when recorded;
+  - that M-F2 is a reading of the later steps, not a computed attribution;
+  - M-D3 from the seed, public tests only;
+  - that a final not reached is a loss for M-F1 and M-D3.
+- No new bug and no new decision-log. No WingFoil usage note. No spending.
+- Build notes committed by hand (`a6c23a2`), then `node_modules/.bin/wingfoil memory submit
+  task-039-continuity-metrics-and-regressions-from-the-seed` in the worktree → `30cf8d2`.
+  - Declared: `in-progress → in-review`, one commit `wf(task): submit <id>`.
+  - Observed: exit 0, 1 file, and a diff limited to `status: in-progress` → `status: in-review`.
+    Matches.
+
+### Approval
+
+- `memory approve … [in-review → approved]` → `f11113a`, run by the approver in the task's worktree.
+  - Declared: `in-review → approved`, one commit with an `Approver:` and a `Reason:` line.
+  - Observed: exactly that, with 1 file.
+- The review decision of requirements 1.14 and traceability 1.1 is the approver's reason: "requirements
+  1.14 (REQ-FMT-04, REQ-SCO-12) and traceability 1.1 accepted". Each amendment's "Source" line names
+  `f11113a`.

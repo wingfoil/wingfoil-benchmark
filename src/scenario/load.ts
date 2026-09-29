@@ -14,7 +14,7 @@ import {
   satisfies,
   scenarioSchema,
 } from '../core/index.js';
-import type { Check, Issue, Result, Scenario, ScenarioFile, ThirdParty } from '../core/index.js';
+import type { Check, Decision, Issue, Result, Scenario, ScenarioFile, ThirdParty } from '../core/index.js';
 
 import { scenarioHash } from './hash.js';
 
@@ -62,7 +62,40 @@ export function loadScenario(scenariosRoot: string, id: string, version: string)
   if (issues.length === 0) issues.push(...vendoredIssues(spec, dir));
   if (issues.length > 0) return fail(issues);
   const checks = loadChecks(spec, dir);
-  return checks.ok ? ok(toScenario(spec, dir, arms.declared, checks.value)) : checks;
+  if (!checks.ok) return checks;
+  const decisions = loadDecisions(spec, checks.value);
+  return decisions.ok ? ok(toScenario(spec, dir, arms.declared, checks.value, decisions.value)) : decisions;
+}
+
+/**
+ * The decisions of `oracle.decisions` (REQ-FMT-04 as amended in 1.14, task-039): each id once, and a
+ * `revised_by` that names a content check of the scenario, the only kind that reads a record. Whether
+ * a decision has a test is known only when its suites run: that is scoring's (REQ-SCO-12).
+ */
+function loadDecisions(spec: ScenarioFile, checks: readonly Check[]): Result<Decision[]> {
+  const issues: Issue[] = [];
+  spec.oracle.decisions.forEach(({ id, revised_by: revisedBy }, index) => {
+    const at = `oracle.decisions[${index}]`;
+    const earlier = spec.oracle.decisions.findIndex((other) => other.id === id);
+    if (earlier < index)
+      issues.push({ path: at, message: `repeats the id '${id}' of oracle.decisions[${earlier}]` });
+    if (revisedBy === undefined) return;
+    const check = checks.find((candidate) => candidate.id === revisedBy);
+    if (check === undefined) {
+      issues.push({ path: `${at}.revised_by`, message: `names no check of oracle.checks: '${revisedBy}'` });
+    } else if (check.kind !== 'content') {
+      issues.push({
+        path: `${at}.revised_by`,
+        message: `names the ${check.kind} check '${revisedBy}': a revision is recorded by a content check`,
+      });
+    }
+  });
+  if (issues.length > 0) return fail(issues);
+  return ok(
+    spec.oracle.decisions.map(({ id, revised_by: revisedBy }) =>
+      revisedBy === undefined ? { id } : { id, revisedBy },
+    ),
+  );
 }
 
 /** A check file's name: its id, in kebab case, then `.yaml`. */
@@ -373,6 +406,7 @@ function toScenario(
   dir: string,
   arms: readonly Declared[],
   checks: readonly Check[],
+  decisions: readonly Decision[],
 ): Scenario {
   return {
     id: spec.id,
@@ -400,6 +434,7 @@ function toScenario(
           files: files.map((file) => resolve(dir, file)),
         }),
       ),
+      decisions,
     },
     holdout: spec.holdout,
     hash: scenarioHash(dir),

@@ -15,6 +15,7 @@ export type {
   Check,
   CheckFile,
   ContentCheck,
+  Decision,
   DependenciesCheck,
   Profile,
   Region,
