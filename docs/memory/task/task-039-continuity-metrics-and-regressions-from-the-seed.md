@@ -352,3 +352,10 @@ existing value changes how it is computed.
   - Declared: `draft → pending`, required fields checked, one commit `wf(task): submit <id>`.
   - Observed: exit 0 each time, 1 file, and a diff limited to `status: draft` → `status: pending`.
     Matches (the subject names no transition: N9).
+- `memory approve` of the three W9 tasks `[pending → backlog]`, run by the approver: task-039
+  (`7bbc1b2`), task-040 (`20e0fc9`) and task-041 (`4347df5`).
+- Design committed by hand (`de038bc`), then `node_modules/.bin/wingfoil memory submit
+  task-039-continuity-metrics-and-regressions-from-the-seed` in the task's worktree → `e80a344`.
+  - Declared: `backlog → in-progress`, one commit `wf(task): submit <id>`.
+  - Observed: exit 0, 1 file, and a diff limited to `status: backlog` → `status: in-progress`.
+    Matches.
