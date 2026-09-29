@@ -67,5 +67,13 @@ Preliminary classification (confirmed in the design phase).
 
 ## Execution notes
 
-<!-- What happened while building: deviations, blockers, follow-ups (filed as elements, never left
-     here). For every `wingfoil` command: declared vs observed behaviour. -->
+### WingFoil commands (declared vs observed)
+
+- `npx wingfoil memory add --type task --title "…"` → `73fbca2`. Declared: one commit
+  `wf(task): add <id>`, one new file from the template, `status: draft`, id from `task-{n}-{slug}`.
+  Observed: exit 0, exactly that commit, 1 file, body identical to the template. Matches.
+- Content filled and committed by hand in `docs(task): scope the W8 tasks of release v0.1` (`b8df60c`),
+  so that `submit` carries only the state change (usage note N13).
+- `npx wingfoil memory submit task-036-s3-multi-session-evolution-scenario` → `aeedd31`. Declared: `draft → pending`, required fields checked, one
+  commit `wf(task): submit <id>`. Observed: exit 0, 1 file, diff limited to `status: draft` →
+  `status: pending`. Matches (subject without transition: N9).
