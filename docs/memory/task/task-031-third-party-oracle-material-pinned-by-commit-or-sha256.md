@@ -300,3 +300,12 @@ unaffected.
 
 No `wingfoil` command was run in the build phase. No real agent, no spending.
 
+### Review and approval
+
+- `npx wingfoil memory approve task-031-third-party-oracle-material-pinned-by-commit-or-sha256 --reason
+  "…"` → `312c4c1`, run by the approver (`in-review → approved`, `Approver:`/`Reason:` trailers, only
+  `status` changed). Matches. Its reason ("dl-002 implemented; requirements 1.10, scenario specs README
+  1.2 and S1.md 1.2 accepted") is the recorded review decision of the three amendments, 2026-09-29.
+- The two build deviations (the order of the checks, the fixture's two files in one suite) were accepted
+  with the task.
+

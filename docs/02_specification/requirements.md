@@ -315,4 +315,4 @@ task's review, 2026-09-28 (`96d7d1f`).
 The traceability matrix is unaffected: REQ-FMT-04 still serves F3.1.
 
 Source: [task-031](../memory/task/task-031-third-party-oracle-material-pinned-by-commit-or-sha256.md),
-review decision of the approver at that task's review.
+review decision of the approver at that task's review, 2026-09-29 (`312c4c1`).

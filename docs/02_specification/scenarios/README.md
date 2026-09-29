@@ -99,4 +99,4 @@ Source: [task-011](../../memory/task/task-011-wingfoil-in-the-run-container-spik
   requirements 1.10).
 
 Source: [task-031](../../memory/task/task-031-third-party-oracle-material-pinned-by-commit-or-sha256.md),
-review decision of the approver at that task's review.
+review decision of the approver at that task's review, 2026-09-29 (`312c4c1`).
