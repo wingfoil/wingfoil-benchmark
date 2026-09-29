@@ -40,7 +40,7 @@ Waves and features from [07_sequencer.md](../../01_vision/07_sequencer.md) 1.1. 
 | W6 — First scores | F4.1 hidden-test oracle · F4.3 cost metrics · F3.6 expected failures | — | pass/fail and cost per run, with expected failures marked | **2026-09-28** |
 | W7 — First content | F6.1 S1 conformance · F6.2 S2 injected bugs · F5.1 results store | — | S1 and S2 scored in all three arms | **2026-09-29** |
 | W8 — Continuity and governance | F6.3 S3 multi-session evolution · F6.8 S8 directive compliance · F4.8 tool-neutral governance metrics | — | S3 and S8 scored | **2026-09-29** |
-| W9 — Quality | F4.2 static quality · F4.7 next-change cost · F4.4 setup/step split and break-even | — | the full quality and cost picture per run | — |
+| W9 — Quality | F4.2 static quality · F4.7 next-change cost · F4.4 setup/step split and break-even | — | the full quality and cost picture per run | **2026-09-29** |
 | W10 — Determinism and findings | F4.5 determinism metric · F5.3 run detail · F5.4 finding note | F4.5 | determinism measured, and a first finding note ready for WingFoil | — |
 | W11 — Publish | F5.5 landing page · F5.8 method page · F5.6 manual publish | — | first preliminary result public; repository public | — |
 
@@ -543,10 +543,121 @@ reported in all so far ([v0.1 ledger](../../calibration/v0.1-ledger.md)).
     randomness is counted;
   - S8's four directives, published as rules.
 
+### W9 — verified 2026-09-29
+
+**"The full quality and cost picture per run."** Verified offline, with the fake agent, as the W9 plan
+phase decided (task-039, decision 4). There is no real-agent half: `real-agent-check` was not taken.
+The fake cannot give each arm a cost of its own: its script is keyed by scenario and step, not by arm,
+so decision 4's "synthetic usage per arm" could not be carried by the fake. On 2026-09-29 the approver
+chose a declared synthetic execution instead (the second bullet).
+
+- **Execution 1, by hand, on main** (`0b0c126`, the built CLI), in a temporary repository holding S1@1.0,
+  S2@1.0, S3@1.0, S8@1.0 and the benchmark's arms. The fake replays each reference, S2's from the
+  hold-out, and WingFoil `3df305e` is built from the clone.
+  - `bench scenario validate` → valid for all four (hold-out: 3, 8, 4 and 4 files).
+  - Twelve dry runs, four scenarios in three arms, each `completed, 0.0000 USD`.
+  - `bench campaign validate` → `campaign 400aa6f6ca02 is valid (4 scenarios, 3 arms)`. `bench campaign
+    run` → `12 runs completed, 0 failed`, cost 0.
+  - `bench score 400aa6f6ca02/1 --holdout ../WingFoil2-Benchmark-HoldOut` → exit 0, in 7 min 42 s. M-Q1,
+    the hold-out and the checks are as in W7 and W8. S3's line adds `M-F1 5/5`. Then `aggregate: … (12
+    groups, 0 slices)`.
+  - **The picture per run**, the same in every arm, since the fake replays the same references:
+
+    | | S1 | S2 | S3 | S8 |
+    |---|---|---|---|---|
+    | seed (M-Q1) | 0/135 | 17/24 | 0/37 | 6/23 |
+    | M-D3 | 0 | 0 | 0 | 0 |
+    | M-F1 | — | — | 5/5 (D3 `revised`) | — |
+    | M-F2 | steps 2–4 | steps 2–3 | steps 2–5 | steps 2–4 |
+    | M-Q2 files | 4 | 6 | 2 | 6 |
+    | lint findings / lines | 0/179 | 0/530 | 0/183 | 0/502 |
+    | complexity (sum/functions, max) | 76/17, 11 | 117/49, 13 | 51/21, 6 | 105/57, 7 |
+    | duplicated lines | 0 | 0 | 0 | 0 |
+    | coverage | 0/179 | 501/530 | 0/183 | 388/425 |
+
+    - M-K3: every setup is 0 EUR. It takes 0.1–0.2 s in baseline and baseline-docs, and 1.2–1.4 s in
+      wingfoil. The manual is 120, 158 and 463 tokens (baseline, baseline-docs, wingfoil).
+    - M-K4 is `never` for every arm: 0 against 0.
+    - S1's and S3's seeds have no tests, so they cover nothing (W9 decision 3).
+  - Scored again: the same bytes for all 12 `score.json` and the aggregate, M-Q2's coverage from S2's
+    and S8's own tests included. No `bench-` container is left.
+- **Execution 2, declared synthetic** (the approver's choice, 2026-09-29): the same stored runs, not yet
+  scored, copied as `400aa6f6ca02/2`. Each arm's cost is rewritten before `bench score`:
+  - baseline 0.10 EUR per step;
+  - baseline-docs 0.12 EUR;
+  - wingfoil 0.05 EUR, with a setup of 0.30 EUR.
+
+  S1's wingfoil run was cut before its last step. `bench score` → exit 0. The aggregate's
+  `break_even`:
+  - **6** for wingfoil on S2, S3 and S8: 0.30 ÷ (0.10 − 0.05);
+  - **`not applicable`** for wingfoil on S1: its final was not reached, so its final M-Q1 is 0 against
+    1. It is a loss, and M-D3 and M-Q2 say "not reached";
+  - **`never`** for baseline-docs on all four: 0.12 is not lower than 0.10.
+
+  The per-group `cost` holds M-K3 (`setup_cost_eur` 0.3 for wingfoil), and M-F2 its steps at 0.05.
+- **Acceptance:** all are green.
+  - `scoring.feature` @F4.2, @F4.4 ×2 and @F4.7 ×3, with the @F4.1 to @F4.8 scenarios still green;
+  - `npm test` 1011/1011 (coverage 99.07%), lint clean, `npm run test:bin` 5/5;
+  - `npm run test:docker` 16/16, with the W6 and S3 tests rerun after task-041's `da7a3cb`. The real
+    image's ESLint, jscpd and c8 score S3 and S8 in the three arms.
+
+| Task | Feature | Delivered |
+|---|---|---|
+| [task-039](../task/task-039-continuity-metrics-and-regressions-from-the-seed.md) | F4.7 | `oracle.decisions`; M-F1 (respected, revised with its check, failed); M-F2; M-D3 from the seed's own verdicts; `seed` in `score.json` |
+| [task-040](../task/task-040-setup-cost-and-break-even.md) | F4.4 | M-K3 in `cost.setup` from `run.json`; M-K4 as the aggregate's `break_even`, each arm against the baseline of its model |
+| [task-041](../task/task-041-static-quality-metrics.md) | F4.2 | M-Q2 in the scoring image: `lint-rules.mjs`, complexity per function, jscpd, c8 over `npm test`; the files the run changed less the setup's |
+
+Decisions taken during W9:
+
+- the plan-phase decisions in task-039 (seven), with the approver's four choices:
+  - three tasks, one per feature;
+  - M-K4 literally, a v0.1 number being 0;
+  - coverage from the project's own tests;
+  - an offline wave check;
+- decision 4 changed at the wave check (above);
+- the design choices confirmed by the approver:
+  - task-039: a declared revision counts only when recorded; decisions declared in `scenario.yaml`;
+    M-D3 on public tests;
+  - task-040: every arm but the baseline paired with it; quality on the final M-Q1; an expected
+    failure from what it measured;
+  - task-041: two published rule sets; `npm test` under c8, passing or not; the setup's files left out;
+- requirements 1.14 (REQ-FMT-04, REQ-SCO-12, new), 1.15 (REQ-SCO-08, REQ-FMT-07) and 1.16 (REQ-SCO-04);
+  traceability 1.1; adr-004 amendment 3;
+- S3@1.0 lists its decisions (not registered, no stored result: not a new version).
+
+No bug, no new decision-log, no hold-out change. No spending: **1.0415 USD** reported in all so far
+([v0.1 ledger](../../calibration/v0.1-ledger.md)).
+
+**Due before the phases and waves that need them:**
+
+- **W10 (F4.5, determinism):**
+  - M-R1 can be read from `score.json` as it is: each suite's total and its `failed` keys, per
+    repetition, the census being the same for one scenario version;
+  - M-R2 can reuse the image's parser (`ast-checks.mjs`, W8);
+  - M-R3's "harness files" can be the setup's paths, as M-Q2 leaves them out (task-041).
+- **Calibration (plan-003 step 3):**
+  - the real per-arm costs give M-K4 its first real values, and M-Q2 its first on code an agent
+    wrote;
+  - scoring time: 7 min 42 s for 12 runs of the references here, most of it hidden suites and M-Q2's
+    tests. The campaign's 21 runs plus the slice need it budgeted;
+  - an agent's own tests may be nondeterministic, and M-Q2's coverage with them (task-041's review).
+    Score one calibration run twice to see it.
+- **Before the reference campaign:** the scoring image is rebuilt from `docker/score-image/`, whose tag
+  changed in task-041. jscpd's platform package must install for the host that builds it.
+- **W11 (F5.8, the method page)** states what each task's review listed:
+  - M-F1's rows, and that a revision the scenario asks for counts only when recorded;
+  - that M-F2 is a reading;
+  - M-D3 from the seed;
+  - M-K4's rules, and that a v0.1 number is 0 or a special case, the harness's overhead being in each
+    step's cost;
+  - M-Q2's rule sets, complexity per function, jscpd's 50 tokens, coverage from `npm test`, and the
+    files measured;
+  - that a final not reached is a loss.
+
 ## Release checklist
 
 - [x] release-planning: scope approved (planning → in-development, `8c5c7e6`; plan: plan-003)
-- [ ] delivery: W1–W11 done, every wave's "Ends with" verified (W1 done: task-001, task-002, task-003; W2 done: task-004, task-005, task-006, task-007; W3 done: task-011, task-012, task-013, task-014, task-015; W4 done: task-016, task-017, task-018, task-020, task-019; W5 done: task-021, task-022, task-023, task-024, task-025; W6 done: task-026, task-027, task-028, task-029, task-030; W7 done: task-031, task-032, task-033, task-034; W8 done: task-035, task-036, task-037, task-038)
+- [ ] delivery: W1–W11 done, every wave's "Ends with" verified (W1 done: task-001, task-002, task-003; W2 done: task-004, task-005, task-006, task-007; W3 done: task-011, task-012, task-013, task-014, task-015; W4 done: task-016, task-017, task-018, task-020, task-019; W5 done: task-021, task-022, task-023, task-024, task-025; W6 done: task-026, task-027, task-028, task-029, task-030; W7 done: task-031, task-032, task-033, task-034; W8 done: task-035, task-036, task-037, task-038; W9 done: task-039, task-040, task-041)
 - [ ] calibration: dry runs in every arm, budget revised (`docs/calibration/v0.1.md`)
 - [ ] validation: acceptance green on the fake agent, coverage > 80%, lint clean, one real-agent end-to-end run
 - [ ] campaign: reference campaign published (campaign: —)
