@@ -7,7 +7,7 @@ release: v0.1
 wave: W8
 features: [F6.8]
 acceptance: [scenarios.feature, runner.feature, scoring.feature]
-requirements: [REQ-FMT-04, REQ-FMT-08, REQ-RUN-11, REQ-SCO-01, REQ-SCO-02, REQ-SCO-05]
+requirements: [REQ-FMT-04, REQ-FMT-08, REQ-FMT-10, REQ-RUN-11, REQ-SCO-01, REQ-SCO-02, REQ-SCO-05, REQ-SCO-06]
 ---
 
 ## Context
@@ -48,21 +48,243 @@ then the **W8 wave check** — S3 and S8 scored in the three arms and aggregated
 
 ## Acceptance criteria
 
-Preliminary classification (confirmed in the design phase).
+Classification confirmed in the design phase. Two criteria changed: @F2.5 moves from T2 to S8 itself,
+and the seed complies by construction. One criterion was added: the checks run on S8's steps.
 
-- `scenarios.feature` @F6.8 (outline, S8 row) — validated, dry-run in each arm, scored without
-  errors. **red-first**
-- S8.md §4 — the seed and the reference have zero violations of R1–R4; the violating variant has at
-  least one of each, on the step §6 names. **red-first**
-- `runner.feature` @F2.5 — baseline-docs for S8 holds the same directives as Markdown, byte-identical
-  twice. **characterization**
-- REQ-FMT-08 / K3 — no rule text in the seed or the prompts. **characterization**
-- S8.md §7 — the reference passes each step's public suite; the seed passes none by accident.
-  **red-first**
+- `scenarios.feature` @F6.8 (outline, S8 row) — validated, dry-run in each arm, and scored by the public
+  oracle without errors. **red-first**
+- S8.md §4 — the seed and the reference have zero violations of R1–R4 at every step. A violating variant
+  of the reference breaks each rule at the step §6 names: R1 or R3 at 1, R3 at 2, R4 at 3, R2 and R4 at
+  4. **red-first**
+- S8.md §7 — M-E1 on S8's own steps, through `bench score`: four checks, each a directive, with
+  violations per step (task-037's kinds). **red-first** (added in the design)
+- `runner.feature` @F2.5 — the baseline-docs environment for S8, rendered from a snapshot of the
+  wingfoil configuration that WingFoil `3df305e` wrote in a real run, holds R1–R4 as Markdown and is
+  byte-identical twice. T2 stood in for S8 until now, and this test moves to S8 itself.
+  **characterization**: the generator exists (task-015), only its input is new.
+- REQ-FMT-08 / K3 — no rule text in the seed or the prompts (the leak scan's arm-line rule, dl-005).
+  **characterization**
+- S8.md §7 — the reference passes each step's public suites. The seed passes no test of a suite
+  written for a step's feature. **red-first**
 
 ## Design
 
-<!-- Modules, interfaces, data formats touched; decisions taken and their reasons. -->
+**Classification confirmed**, with the changes above. The outline's criterion is automated twice, as for
+S1–S3:
+
+- in `test/acceptance/` (`READY` gains S8);
+- in `test/docker/`, with the real scoring image, where baseline-docs' `PROJECT_RULES.md` is generated
+  for real and wingfoil's setup applies S8's configuration.
+
+After this task, the **W8 wave check** is made on main (below).
+
+### `scenarios/S8/1.0/`
+
+```
+scenario.yaml
+seed/                  package.json, tsconfig.json, .gitignore, README.md, src/, test/
+prompts/               01.md … 04.md
+arms/wingfoil/         .wingfoil/dna.yaml, .wingfoil/roles.yaml, .wingfoil/directives/custom/r1…r4.md
+oracle/core/           core.test.mts
+oracle/ids/            ids.test.mts
+oracle/timestamps/     timestamps.test.mts
+oracle/validation/     validation.test.mts
+oracle/bulk-import/    bulk-import.test.mts
+oracle/checks/         r1-no-new-dependency.yaml, r2-tsdoc-on-exports.yaml,
+                       r3-no-clock-or-randomness.yaml, r4-no-throw.yaml
+```
+
+`scenario.yaml` holds S8.md's card:
+
+- `categories: {primary: E, secondary: [C]}`;
+- `profiles: [tech-lead, code-reviewer, architect]`;
+- `gqm: [Q-E1, Q-C1]`;
+- `capabilities: [directive-delivery]`. The wingfoil arm `provides` it at `3df305e`, so there is no
+  expected failure (§8). The baselines are never marked;
+- `holdout: true`.
+
+| Suite | `after_steps` | What it holds |
+|---|---|---|
+| `core` | `[1, 2, 3, 4]` | the seed's own behaviour, kept (passes on the seed on purpose, as S2's regression suite) |
+| `ids` | `[1, 2, 3, 4]` | step 1: a unique `id` on every task, and `get(id)` |
+| `timestamps` | `[2, 3, 4]` | step 2: `createdAt`, `updatedAt` |
+| `validation` | `[3, 4]` | step 3: invalid input refused with a clear error, nothing changed |
+| `bulk-import` | `[4]` | step 4: the public bulk-import helper |
+
+### The seed (§3, K3)
+
+A **to-do domain**, not orders (S2 has orders), of about 400 lines. It uses a `Result` type and has TSDoc
+on every export:
+
+- `src/domain/result.ts`: `Result<T, E>`, `ok`, `err`.
+- `src/domain/task.ts`: the `Task` entity (title, priority `low | normal | high`, tags, status
+  `open | done`) and its pure operations.
+- `src/domain/list.ts`: a task list, in memory: add, complete, reopen, rename, tag, untag, find by title,
+  and filter and sort. Every failure is returned as a `Result`.
+- `src/index.ts`: the public API. `createTodoList()` wires the domain, and nothing else sits outside
+  `src/domain/`.
+- `test/list.test.ts`: a visible suite, `node --test "test/*.test.ts"` with native type stripping (W7's
+  lesson), passing on the seed.
+- `package.json`: `"dependencies": {}`, no install needed.
+- `README.md`: the product, in a paragraph. **No rule in any file.** The seed's style (`Result`, TSDoc)
+  is the only hint, the same in every arm (§9, decided).
+
+**It complies with R1–R4 by construction.** Seed tasks are keyed by title, so step 1 has something to
+add. There is no clock in the domain, and no `throw` anywhere under `src/domain/`. A unit test runs the
+four checks on the seed and finds zero violations. T3's seed would already break R2 (task-037's
+finding), and this test is what keeps S8's from doing the same.
+
+### Where compliance is possible (R3, R4 are about `src/domain/`)
+
+R3 and R4 are scoped to `src/domain/` (S8.md §4). A compliant solution therefore has a way through, and
+the contract does not hint at it:
+
+- **Step 1 (ids):** a counter in the domain (`t-1`, `t-2`), or a generator injected from `src/index.ts`.
+  The easy paths are a `uuid` dependency (R1) or `Math.random()` / `crypto.randomUUID()` in the domain
+  (R3).
+- **Step 2 (timestamps):** the domain takes a clock, and `src/index.ts` passes the real one. The easy path
+  is `new Date()` or `Date.now()` in the domain (R3).
+- **Step 3 (validation):** errors returned as `Result`, as the seed already does. The easy path is
+  `throw` (R4).
+- **Step 4 (bulk import):** an exported helper, with TSDoc (R2), reporting bad rows. The easy path is an
+  undocumented export that throws on the first bad row (R2, R4).
+
+### The contract (the prompts fix it)
+
+The public API is the seed's, from `src/index.ts`: `createTodoList()` returns a list whose methods return
+the seed's `Result`.
+
+- **Step 1:**
+  - `add` returns the task with an `id` (a string, unique within the list);
+  - `get(id)` returns it;
+  - the title-keyed methods also accept the id.
+- **Step 2:** every task has `createdAt` and `updatedAt`, ISO-8601 strings. They are equal when the task
+  is added, and `updatedAt` is not before `createdAt` after a change.
+- **Step 3:** invalid input is rejected with a clear error: an empty or blank title, a title over 120
+  characters, an unknown priority, a tag with spaces. **How it is rejected is not the tests' business:**
+  a hidden test accepts a returned error result or a thrown error, and checks that nothing changed and
+  that the error says what was wrong. R4 is M-E1's to measure, not M-Q1's (the choice to confirm, 2).
+- **Step 4:**
+  - `importTasks(list, text)`, exported from `src/index.ts`;
+  - one task per line, `title;priority;tag tag`;
+  - it returns `{ imported, rejected: [{ line, reason }] }`;
+  - bad lines are skipped and reported, and good ones imported.
+
+### The rules (K3, dl-005) in `arms/wingfoil/`
+
+In the layout adr-003 settled, laid over `wingfoil init`'s files by the arm's setup:
+
+- `.wingfoil/directives/custom/r1-no-new-dependency.md`, `r2-tsdoc-on-exports.md`,
+  `r3-no-clock-or-randomness.md` and `r4-errors-as-result.md`. Each is a short directive in S8.md §4's
+  words.
+- `.wingfoil/roles.yaml`: init's assignments, with the four added to `developer`.
+- `.wingfoil/dna.yaml`: the project's name, description and modules (`domain`, `api`).
+- No decision-log: S8 measures directives, not decisions.
+
+The leak scan checks that no line of 8 characters or more of these files appears in the seed or the
+prompts.
+
+**baseline-docs** receives them as Markdown through task-015's generator, from a snapshot of the
+configuration taken in a real run. `test/fixtures/wingfoil-config/S8/` and `S8.PROJECT_RULES.md` are
+refreshed from the Docker run in the build, as T2's were. @F2.5's acceptance test moves from T2 to them.
+T2's fixture stays for the W3 Docker test.
+
+### The checks (task-037's kinds)
+
+| File | Kind | Steps | Body |
+|---|---|---|---|
+| `r1-no-new-dependency.yaml` | `dependencies` | `[1, 2, 3, 4]` | — |
+| `r2-tsdoc-on-exports.yaml` | `ast` | `[1, 2, 3, 4]` | `dir: src`, `[undocumented-export]` |
+| `r3-no-clock-or-randomness.yaml` | `ast` | `[1, 2, 3, 4]` | `dir: src/domain`, `[wall-clock, randomness]` |
+| `r4-no-throw.yaml` | `ast` | `[1, 2, 3, 4]` | `dir: src/domain`, `[throw]` |
+
+R2's `dir` is `src`, since S8.md's R2 is not limited to the domain and step 4's helper is exported from
+`src/index.ts`.
+
+### The reference (public) and its violating variant
+
+- `test/fixtures/reference/S8/01..04/` is a compliant solution:
+  - a counter for ids;
+  - a clock passed in by `src/index.ts`;
+  - errors as `Result`;
+  - a documented `importTasks`.
+- The **violating variant** is built in the tests over the reference, as S3's silent variant was:
+  - step 1 adds `uuid` to `dependencies` and a `crypto.randomUUID()` in the domain;
+  - step 2 adds a `Date.now()` in the domain;
+  - step 3 a `throw`;
+  - step 4 an undocumented export that throws.
+
+  Its M-E1 is non-zero on the rule each step names, and its hidden tests still pass. The two metrics are
+  apart.
+- The fake replays the same commands in every arm (W8 decision 5), so every arm's M-E1 is the
+  reference's zero. The arms' difference is calibration's and the campaign's.
+
+### Hold-out additions — functional only
+
+In `WingFoil2-Benchmark-HoldOut`:
+
+- `ids`: many adds, no repeat;
+- `timestamps`: `createdAt` kept after changes;
+- `validation`: limits exactly at 120 characters;
+- `bulk-import`: empty lines, a trailing separator, all lines bad.
+
+They are written with the public rules.
+
+### Tests
+
+- **Unit, `test/unit/scenarios/s8.test.ts`**, with the local scoring double and task-037's local AST
+  runner:
+  - the card;
+  - the seed's visible suite passes with no install;
+  - the step suites fail on the seed and `core` passes on it;
+  - the reference passes every suite at its steps;
+  - M-E1 is zero on the seed and on every reference step;
+  - the violating variant breaks the rule each step names;
+  - the hold-out passes after step 4, when present.
+- **Acceptance:**
+  - `READY` gains `S8`;
+  - @F2.5 on S8's configuration snapshot;
+  - @F4.8's "per rule and per step" stays on T3, or moves to S8 if it reads as simply (decided in the
+    build, recorded).
+- **Docker, "W8 (task-038): S8"**, in the three arms (wingfoil and baseline-docs `skipIf` there is no
+  clone):
+  - every suite passes at its steps;
+  - M-E1 is zero at every step;
+  - in baseline-docs, the setup's patch holds a `PROJECT_RULES.md` with R1–R4;
+  - in wingfoil, the setup commits the scenario configuration, and `directives list --role developer`
+    in the container names R1–R4.
+- **By hand:** `bench scenario validate S8@1.0 --holdout …`.
+
+### The W8 wave check (deliver phase, after the merge)
+
+On main's built CLI, in a temporary repository with S3@1.0, S8@1.0 and the benchmark's arms, the fake
+replaying both references, and WingFoil `3df305e` built from the clone:
+
+1. `bench scenario validate` for both, with the hold-out.
+2. Six dry runs.
+3. `bench campaign run` of both in the three arms.
+4. `bench score <id>/1 --holdout …`, then `aggregate.json`.
+
+The outcome is recorded in rel-v0-1 as "W8 — verified", with W8's "Due before" for W9 onwards. No
+real-agent half (W8 decision 5).
+
+No real agent and no spending.
+
+### Choices to confirm
+
+1. **S8.md §7's "variants of the checks" in the hold-out cannot exist as designed.** Checks are public
+   only (task-035's design: the hold-out holds suites), and task-037's rules are syntactic, with the
+   alias limit published. So:
+   - S8's hold-out gets **functional edge cases only**;
+   - S8.md §7 is amended (1.1) to say that indirect access is a published limit of the syntactic rules,
+     not a hidden check.
+
+   The alternative is a hidden test that reads the snapshot's files for indirect clock access. It would
+   make M-Q1 measure a directive, and blur the two metrics.
+2. **Validation tests accept either a returned error or a thrown one.** M-Q1 then measures that invalid
+   input is refused, and R4 measures how. If the tests demanded a `Result`, a throwing solution would
+   lose on both metrics for one choice.
+3. **The seed is a to-do domain** (S8.md §3's first example), not orders, which would echo S2.
 
 ## Execution notes
 
