@@ -7,6 +7,7 @@ import type { DockerPort, GitPort, Result, Scenario, Suite } from '../core/index
 import type { StoredRun } from '../results/index.js';
 import type { HoldoutAdditions } from '../scenario/index.js';
 
+import { astInContainer } from './ast.js';
 import { scoreChecks } from './checks.js';
 import type { CheckScore } from './checks.js';
 import { costMetrics } from './cost.js';
@@ -68,7 +69,7 @@ export interface ScoreFile {
   readonly scenario: string;
   readonly version: string;
   readonly scenario_hash: string;
-  readonly scorer: { readonly image: string; readonly tsx: string };
+  readonly scorer: { readonly image: string; readonly tsx: string; readonly typescript: string };
   readonly steps: readonly StepScore[];
   readonly final: FinalScore;
   readonly holdout: HoldoutScore;
@@ -155,10 +156,15 @@ export async function scoreRun(request: ScoreRequest): Promise<Result<ScoreFile>
       if (!scored.ok) return scored;
       holdoutScore = { scored: true, hash, steps: scored.value.steps, final: scored.value.final };
     }
-    const checks = scoreChecks({
+    const checks = await scoreChecks({
       checks: scenario.oracle.checks,
       runDir: request.runDir,
       snapshots: snapshots.value,
+      ast: astInContainer({
+        docker: request.docker,
+        image: request.image.tag,
+        containerPrefix: request.containerPrefix,
+      }),
     });
     if (!checks.ok) return checks;
     return ok({
@@ -166,7 +172,7 @@ export async function scoreRun(request: ScoreRequest): Promise<Result<ScoreFile>
       scenario: run.scenario,
       version: run.version,
       scenario_hash: run.scenarioHash,
-      scorer: { image: request.image.tag, tsx: request.image.tsx },
+      scorer: { image: request.image.tag, tsx: request.image.tsx, typescript: request.image.typescript },
       steps: publicScore.value.steps as StepScore[],
       final: publicScore.value.final as FinalScore,
       holdout: holdoutScore,

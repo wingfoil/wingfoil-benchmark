@@ -206,4 +206,62 @@ describe('loading check files (REQ-SCO-06, task-035)', () => {
     );
     expect(issuesOf(root)).toEqual([]);
   });
+
+  it("loads a dependencies check with the seed's runtime dependencies, by name, sorted", () => {
+    const root = scenarioWith(
+      { 'oracle/checks/r1.yaml': 'kind: dependencies\nsteps: [1, 2]\n' },
+      {
+        'seed/package.json':
+          '{ "dependencies": { "zod": "1.0.0", "yaml": "2.0.0" }, "devDependencies": { "tsx": "4" } }\n',
+      },
+    );
+    const result = loadScenario(root, 'S9', '1.0');
+    if (!result.ok) throw new Error(JSON.stringify(result.issues));
+    expect(result.value.oracle.checks).toEqual([
+      {
+        id: 'r1',
+        file: join(root, 'S9', '1.0', 'oracle/checks/r1.yaml'),
+        kind: 'dependencies',
+        steps: [1, 2],
+        seedDependencies: ['yaml', 'zod'],
+      },
+    ]);
+  });
+
+  it('gives a seed with no package.json no runtime dependency', () => {
+    const result = loadScenario(
+      scenarioWith({ 'oracle/checks/r1.yaml': 'kind: dependencies\nsteps: [1]\n' }),
+      'S9',
+      '1.0',
+    );
+    if (!result.ok) throw new Error(JSON.stringify(result.issues));
+    expect(result.value.oracle.checks[0]).toMatchObject({ kind: 'dependencies', seedDependencies: [] });
+  });
+
+  it('loads an ast check: its directory in the snapshot and its rules (REQ-SCO-05)', () => {
+    const root = scenarioWith({
+      'oracle/checks/r3.yaml': 'kind: ast\nsteps: [1]\ndir: src/domain\nrules: [wall-clock, randomness]\n',
+    });
+    const result = loadScenario(root, 'S9', '1.0');
+    if (!result.ok) throw new Error(JSON.stringify(result.issues));
+    expect(result.value.oracle.checks[0]).toEqual({
+      id: 'r3',
+      file: join(root, 'S9', '1.0', 'oracle/checks/r3.yaml'),
+      kind: 'ast',
+      steps: [1],
+      dir: 'src/domain',
+      rules: ['wall-clock', 'randomness'],
+    });
+  });
+
+  it('refuses an ast check with an unknown rule, no rule, a rule twice, or a directory outside', () => {
+    const paths = (body: string) =>
+      issuesOf(scenarioWith({ 'oracle/checks/a.yaml': `kind: ast\nsteps: [1]\n${body}` })).map(
+        (issue) => issue.path,
+      );
+    expect(paths('dir: src\nrules: [sleep]\n')).toEqual(['oracle.checks[0].rules[0]']);
+    expect(paths('dir: src\nrules: []\n')).toEqual(['oracle.checks[0].rules']);
+    expect(paths('dir: src\nrules: [throw, throw]\n')).toEqual(['oracle.checks[0].rules']);
+    expect(paths('dir: ../src\nrules: [throw]\n')).toEqual(['oracle.checks[0].dir']);
+  });
 });

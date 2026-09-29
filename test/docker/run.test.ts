@@ -8,6 +8,7 @@ import { main } from '../../src/cli/index.js';
 import { dryRunProfileYaml, priceCampaign, writeDryRunProfile } from '../support/dry-run-fixture.js';
 import { repoPath } from '../support/paths.js';
 import { referenceScript } from '../support/reference.js';
+import { CANCEL, EXECUTION, storedRun } from '../support/score-fixture.js';
 import { tempDir } from '../support/scenario-fixture.js';
 
 /**
@@ -143,12 +144,13 @@ describe('runs in a real container', () => {
     const scoreFile = join(runDir, 'score.json');
     const first = readFileSync(scoreFile);
     const score = JSON.parse(first.toString('utf8')) as {
-      scorer: { image: string; tsx: string };
+      scorer: { image: string; tsx: string; typescript: string };
       steps: { suites: { failed: string[] }[] }[];
     };
     expect(score.scorer).toEqual({
       image: expect.stringMatching(/^bench-score:[0-9a-f]{12}$/),
       tsx: '4.23.15',
+      typescript: '6.0.3',
     });
     expect(score.steps[0]?.suites[0]?.failed).toEqual([
       'oracle/public/cancel.test.ts > cancelling an order > marks a pending order as cancelled',
@@ -570,6 +572,51 @@ describe('runs in a real container', () => {
       await s3InArm(root, 'wingfoil', 2);
     },
   );
+
+  it('W8 (task-037): directive checks scored by the real image — R1 on the host, R2–R4 by its TypeScript', async () => {
+    // A run of T3 stored as the runner stores one, with R1–R4 as checks over its src/: a dependency
+    // and randomness in step 1, the wall clock and a throw in step 2; T3's seed already breaks R2.
+    const fixture = await storedRun({
+      checks: {
+        'oracle/checks/r1.yaml': 'kind: dependencies\nsteps: [1, 2]\n',
+        'oracle/checks/r2.yaml': 'kind: ast\nsteps: [1, 2]\ndir: src\nrules: [undocumented-export]\n',
+        'oracle/checks/r3.yaml': 'kind: ast\nsteps: [1, 2]\ndir: src\nrules: [wall-clock, randomness]\n',
+        'oracle/checks/r4.yaml': 'kind: ast\nsteps: [1, 2]\ndir: src\nrules: [throw]\n',
+      },
+      steps: [
+        {
+          'package.json': '{ "name": "t3", "dependencies": { "uuid": "9.0.1" } }\n',
+          'src/ids.ts':
+            '/** A new id. */\nexport function newId(): string {\n  return crypto.randomUUID();\n}\n',
+        },
+        {
+          ...CANCEL,
+          'src/clock.ts': '/** Now. */\nexport function now(): number {\n  return Date.now();\n}\n',
+          'src/guard.ts': "/** Refuses. */\nexport function refuse(): never {\n  throw new Error('no');\n}\n",
+        },
+      ],
+    });
+    let output = '';
+    const io = { stdout: (text: string) => (output += text), stderr: (text: string) => (output += text) };
+
+    expect(await main(['score', EXECUTION], io, undefined, fixture.root)).toBe(0);
+    const score = JSON.parse(readFileSync(join(fixture.runDir, 'score.json'), 'utf8')) as {
+      scorer: { typescript: string };
+      checks: { id: string; steps: { n: number; violations: number; found: unknown[] }[] }[];
+    };
+    expect(score.scorer.typescript).toBe('6.0.3');
+    expect(score.checks.map((check) => [check.id, check.steps.map((step) => step.violations)])).toEqual([
+      ['r1', [1, 1]],
+      ['r2', [1, 1]],
+      ['r3', [1, 2]],
+      ['r4', [0, 1]],
+    ]);
+    expect(score.checks[3]?.steps[1]?.found).toEqual([{ file: 'src/guard.ts', line: 3, rule: 'throw' }]);
+    const containers = execFileSync('docker', ['ps', '--all', '--format', '{{.Names}}'], {
+      encoding: 'utf8',
+    });
+    expect(containers).not.toMatch(/^bench-/m);
+  });
 
   it.skipIf(!existsSync(join(clone, '.git')))(
     "W3: the same scenario in the baseline, baseline-docs and wingfoil arms — @F2.6, REQ-RUN-17, @F2.5's generator",

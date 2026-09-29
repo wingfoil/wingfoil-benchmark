@@ -140,7 +140,7 @@ describe('S3@1.0 (F6.3)', { timeout: 240_000 }, () => {
   it("passes D3's check when step 4 records the revision, and fails a silent step 4", async () => {
     const d3 = async (edit?: (n: number, workspace: string) => void) => {
       const { runDir, snapshots } = await referenceRun(scenario.seedDir, REFERENCE, edit);
-      const result = scoreChecks({ checks: scenario.oracle.checks, runDir, snapshots });
+      const result = await scoreChecks({ checks: scenario.oracle.checks, runDir, snapshots });
       if (!result.ok) throw new Error(JSON.stringify(result.issues));
       return result.value[0]?.steps;
     };

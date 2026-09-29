@@ -35,7 +35,13 @@ const NO_COST = {
   },
 };
 
-const IMAGE = { tag: 'bench-score:0123456789ab', dockerfile: '', context: '', tsx: '4.23.15' };
+const IMAGE = {
+  tag: 'bench-score:0123456789ab',
+  dockerfile: '',
+  context: '',
+  tsx: '4.23.15',
+  typescript: '6.0.3',
+};
 
 async function score(
   fixture: Awaited<ReturnType<typeof storedRun>>,
@@ -74,7 +80,7 @@ describe('scoreRun (F4.1, REQ-SCO-01–03)', () => {
         scenario: 'T3',
         version: '1.0',
         scenario_hash: fixture.scenario.hash,
-        scorer: { image: 'bench-score:0123456789ab', tsx: '4.23.15' },
+        scorer: { image: 'bench-score:0123456789ab', tsx: '4.23.15', typescript: '6.0.3' },
         steps: [
           {
             n: 1,
@@ -254,7 +260,7 @@ describe('scoreSummary', () => {
         scenario: 'T3',
         version: '1.0',
         scenario_hash: 'h',
-        scorer: { image: 'i', tsx: 't' },
+        scorer: { image: 'i', tsx: 't', typescript: 'ts' },
         holdout: { scored: false, reason: 'none declared' },
         cost: NO_COST,
         expected_failure: null,
@@ -276,7 +282,7 @@ describe('scoreSummary', () => {
         scenario: 'T0',
         version: '1.0',
         scenario_hash: 'h',
-        scorer: { image: 'i', tsx: 't' },
+        scorer: { image: 'i', tsx: 't', typescript: 'ts' },
         steps: [{ n: 1, suites: [] }],
         final: { step: 1, suites: [] },
         holdout: { scored: false, reason: 'none declared' },
@@ -351,7 +357,7 @@ describe('checks in score.json (REQ-SCO-06, task-035)', () => {
       scenario: 'T3',
       version: '1.0',
       scenario_hash: 'h',
-      scorer: { image: 'i', tsx: 't' },
+      scorer: { image: 'i', tsx: 't', typescript: 'ts' },
       steps: [{ n: 1, suites: [] }],
       final: { step: 1, suites: [] },
       holdout: { scored: false, reason: 'none declared' },
@@ -496,7 +502,7 @@ describe('scoreRun with the hold-out (task-028, F3.5, REQ-SCO-09)', () => {
       scenario: 'T3',
       version: '1.0',
       scenario_hash: 'h',
-      scorer: { image: 'i', tsx: 't' },
+      scorer: { image: 'i', tsx: 't', typescript: 'ts' },
       steps: [
         { n: 1, suites: [{ id: 'a', passed: 1, total: 1, failed: [] }], m_q1: { passed: 1, total: 1 } },
       ],

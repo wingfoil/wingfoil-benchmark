@@ -305,6 +305,44 @@ describe('aggregateExecution (F5.1, REQ-FMT-07)', () => {
     ]);
   });
 
+  it("keeps a directive check's violations per step as a value with its runs (M-E1, task-037)", () => {
+    const step = (n: number, violations: number) => ({
+      n,
+      passed: violations === 0,
+      violations,
+      found: Array.from({ length: violations }, () => ({ dependency: 'x' })),
+    });
+    const dir = execution([
+      { arm: 'baseline', r: 1, steps: [[s('a', 1, 1)]], checks: [{ id: 'r1', kind: 'dependencies', steps: [step(1, 2)] }] },
+      { arm: 'baseline', r: 2, steps: [[s('a', 1, 1)]], checks: [{ id: 'r1', kind: 'dependencies', steps: [step(1, 0)] }] },
+    ]);
+    const [group] = aggregate(dir).groups;
+    const runs = [name('baseline', 1), name('baseline', 2)];
+    expect(group?.metrics.checks).toEqual([
+      {
+        id: 'r1',
+        kind: 'dependencies',
+        steps: [
+          {
+            step: 1,
+            passed: {
+              n: 2,
+              runs,
+              values: [
+                { passed: 0, total: 1 },
+                { passed: 1, total: 1 },
+              ],
+              min: { passed: 0, total: 1 },
+              max: { passed: 1, total: 1 },
+            },
+            violations: { n: 2, runs, values: [2, 0], min: 0, max: 2 },
+            not_reached: [],
+          },
+        ],
+      },
+    ]);
+  });
+
   it('lists no check for a group none of whose runs has one', () => {
     const [group] = aggregate(execution([{ arm: 'baseline', steps: [[s('a', 1, 1)]], checks: [] }])).groups;
     expect(group?.metrics.checks).toEqual([]);

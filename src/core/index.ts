@@ -9,10 +9,13 @@ export {
   scenarioSchema,
 } from './scenario.js';
 export type {
+  AstCheck,
+  AstRule,
   Category,
   Check,
   CheckFile,
   ContentCheck,
+  DependenciesCheck,
   Profile,
   Region,
   Scenario,
@@ -22,7 +25,7 @@ export type {
   UnchangedCheck,
 } from './scenario.js';
 export { ARM_NAME, armSchema } from './arm.js';
-export { foldText, linesOf, satisfies } from './check-text.js';
+export { dependenciesOf, foldText, linesOf, satisfies } from './check-text.js';
 export { leakScanSchema } from './leak-scan.js';
 export type { LeakScanDeclarations } from './leak-scan.js';
 export type { Arm, ArmFile } from './arm.js';

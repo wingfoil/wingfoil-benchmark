@@ -1,6 +1,6 @@
 # Requirements (v0.1)
 
-**Version:** 1.12
+**Version:** 1.13
 **Date:** 2026-09-29
 **Status:** Approved
 **Traces to:** [acceptance/](acceptance/) (all v0.1 features), [scenarios/](scenarios/) (K1–K5), [09_experiment-design.md](../01_vision/09_experiment-design.md), [07_sequencer.md](../01_vision/07_sequencer.md) v0.1
@@ -94,8 +94,8 @@ One binary, `bench`, run with `npx bench`. Exit codes: `0` success, `1` failure,
 | REQ-SCO-02 | Hidden tests use Node's built-in `node:test`, with `tsx` to load the snapshot's TypeScript. They are independent of whatever test tool the agent chose. | F4.1 |
 | REQ-SCO-03 | Scoring is deterministic: the same snapshot and oracle version give identical `score.json`. No wall clock or randomness enters a metric. Timestamps are only recorded as metadata. | F4.1 |
 | REQ-SCO-04 | Static quality (M-Q2): ESLint with the **benchmark's** fixed configuration, not the project's; complexity from ESLint's `complexity` data; duplication with jscpd; coverage from the project's own tests under c8, or 0 if there are none. All are pinned in the scoring image. | F4.2 |
-| REQ-SCO-05 | AST checks (M-E1 R2–R4, M-R2 public interface) use the TypeScript compiler API. R1 compares `dependencies` with the seed's. | F4.8, F4.5 |
-| REQ-SCO-06 | **Format-neutral content checks** (S2 duplicate, S3 D3 revision, and later M-E3). A check is a YAML file of the oracle, named `<id>.yaml`, lying in no suite, with its `kind` and the `steps` it is scored at (changed in 1.12):<br>• `content`: groups of case-insensitive substrings, whitespace folded; it passes at a step when every group matches in one place, the lines the step added to one git-tracked text file or one of the step's commit messages (REQ-RUN-05). The validator refuses one that its step's prompt satisfies;<br>• `unchanged`: regions of seed files, as 1-based line ranges; it passes at a step when each region's seed lines still stand, one after the other, in the same file.<br>A check never checks paths or file formats of a specific harness, and reads text only: it runs in the scorer's process, not in a scoring container (REQ-SCO-01 isolates running a snapshot's code). `score.json` records each check per step: passed, with where a content check matched, failed, or not reached. | F4.7, F4.8 |
+| REQ-SCO-05 | AST checks (M-E1 R2–R4, M-R2 public interface) use the TypeScript compiler API. R1 compares `dependencies` with the seed's. The directive checks of M-E1 are two kinds of REQ-SCO-06's check file (changed in 1.13):<br>• `dependencies`: one violation per runtime dependency name the step's `package.json` has and the seed's has not; devDependencies and version changes are none;<br>• `ast`: a `dir` of the snapshot and `rules` from a fixed catalogue — `undocumented-export` (an exported function with no TSDoc block before it), `wall-clock` (`Date.now()`, `new Date()` with no argument), `randomness` (`Math.random()`, Node's `crypto` random functions), `throw`. They match syntax, not types, in the `.ts`/`.tsx`/`.mts`/`.cts` files under `dir`, test and declaration files left out. The AST runs in the scoring container, with the TypeScript its image pins, which `score.json` records.<br>A directive check records, per step, its violations and where each is (file and line, or the dependency's name); it passes with none. | F4.8, F4.5 |
+| REQ-SCO-06 | **Format-neutral content checks** (S2 duplicate, S3 D3 revision, and later M-E3). A check is a YAML file of the oracle, named `<id>.yaml`, lying in no suite, with its `kind` and the `steps` it is scored at (changed in 1.12):<br>• `content`: groups of case-insensitive substrings, whitespace folded; it passes at a step when every group matches in one place, the lines the step added to one git-tracked text file or one of the step's commit messages (REQ-RUN-05). The validator refuses one that its step's prompt satisfies;<br>• `unchanged`: regions of seed files, as 1-based line ranges; it passes at a step when each region's seed lines still stand, one after the other, in the same file;<br>• `dependencies` and `ast`: the directive checks of REQ-SCO-05 (added in 1.13).<br>A check never checks paths or file formats of a specific harness, and reads text only: it runs in the scorer's process, not in a scoring container (REQ-SCO-01 isolates running a snapshot's code). `score.json` records each check per step: passed, with where a content check matched, failed, or not reached. | F4.7, F4.8 |
 | REQ-SCO-07 | Determinism metrics (M-R1–M-R3) are computed only for groups with n ≥ 2 runs sharing all pins. Otherwise the result is `n = 1` and no value. | F4.5 |
 | REQ-SCO-08 | Break-even follows experiment design §4.2, with the "not applicable" and "never" cases. | F4.4 |
 | REQ-SCO-09 | Hold-out results are stored separately from public results in `score.json`. | F3.5 |
@@ -355,3 +355,20 @@ F2.2.
 
 Source: [task-035](../memory/task/task-035-check-format-and-content-checks.md), design confirmed by the
 approver on 2026-09-29; review decision of the approver at that task's review, 2026-09-29 (`a1feaf4`).
+
+### Amendment 1.13 (delivery, W8 task-037, 2026-09-29)
+
+- **REQ-SCO-05:** M-E1's directives are check files of two kinds.
+  - `dependencies` counts the runtime dependency names added since the seed.
+  - `ast` counts four syntactic rules in the TypeScript files under a directory of the snapshot, test
+    and declaration files left out, with the TypeScript the scoring image pins.
+  - Violations are recorded per step with their place, and a check passes with none.
+  - The catalogue's words follow S8.md §4's rules. `randomness` includes Node's `crypto` random
+    functions, because R3 says "no randomness" and `crypto.randomUUID()` is step 1's easiest path around
+    `Math.random()`. That was the approver's choice at design, 2026-09-29.
+- **REQ-SCO-06:** its kinds list points to REQ-SCO-05 for the two directive kinds.
+
+The traceability matrix (1.0) is unaffected: REQ-SCO-05 already traces to F4.8.
+
+Source: [task-037](../memory/task/task-037-directive-checks-and-tool-neutral-governance-metrics.md), design
+confirmed by the approver on 2026-09-29; review decision of the approver at that task's review, 2026-09-29 (`926cc3b`).
