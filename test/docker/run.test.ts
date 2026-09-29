@@ -542,6 +542,18 @@ describe('runs in a real container', () => {
       ['r3-no-clock-or-randomness', [0, 0, 0, 0]],
       ['r4-no-throw', [0, 0, 0, 0]],
     ]);
+    // M-Q2 (task-041) by the real image's ESLint, jscpd and c8: S8's own tests, extended by the
+    // reference, run under c8 in the container, with no network.
+    expect(score.m_q2).toMatchObject({ coverage: { tests: 'passed' } });
+    const quality = score.m_q2 as { lint: { lines: number }; coverage: { covered: number } };
+    expect(quality.lint.lines).toBeGreaterThan(0);
+    expect(quality.coverage.covered).toBeGreaterThan(0);
+    expect(score.scorer).toMatchObject({
+      eslint: '10.11.0',
+      typescript_eslint: '8.70.1',
+      jscpd: '5.3.3',
+      c8: '12.0.0',
+    });
     // K3, dl-005: the rules reach only baseline-docs, as PROJECT_RULES.md, and wingfoil, as directives.
     const setup = readFileSync(
       join(

@@ -24,6 +24,27 @@ describe('scoringImage (REQ-SCO-01, REQ-SCO-02)', () => {
     expect(existsSync(repoPath('docker/score-image/ast-checks.mjs'))).toBe(true);
   });
 
+  it("pins M-Q2's tools, the lint ones at the repository's own versions (task-041, REQ-SCO-04)", () => {
+    const pinned = JSON.parse(readFileSync(repoPath('package.json'), 'utf8')) as {
+      devDependencies: Record<string, string>;
+    };
+    const image = scoringImage(REPO_ROOT);
+    expect([image.eslint, image.typescriptEslint, image.jscpd, image.c8]).toEqual([
+      pinned.devDependencies.eslint,
+      pinned.devDependencies['typescript-eslint'],
+      pinned.devDependencies.jscpd,
+      pinned.devDependencies.c8,
+    ]);
+    expect(image.jscpd).toBe('5.3.3');
+    expect(image.c8).toBe('12.0.0');
+    for (const file of ['quality.mjs', 'eslint.config.mjs']) {
+      expect(existsSync(repoPath(`docker/score-image/${file}`))).toBe(true);
+    }
+    expect(readFileSync(repoPath('docker/score-image/Dockerfile'), 'utf8')).toMatch(
+      /COPY .*quality\.mjs.*eslint\.config\.mjs/,
+    );
+  });
+
   it('changes its tag when anything in its directory changes, the reporter included', () => {
     const copy = tempDir('bench-package-');
     cpSync(repoPath('docker/score-image'), join(copy, 'docker', 'score-image'), { recursive: true });
