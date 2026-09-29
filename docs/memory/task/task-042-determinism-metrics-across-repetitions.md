@@ -296,6 +296,99 @@ step only.
 <!-- What happened while building: deviations, blockers, follow-ups (filed as elements, never left
      here). For every `wingfoil` command: declared vs observed behaviour. -->
 
+### Build
+
+Commits on `task/task-042-determinism-metrics-across-repetitions`:
+
+- `94bf7e0` `test(scoring)` (red):
+  - `m_r` in the aggregate: the pairs and means, `n = 1`, a final not reached, pins that differ, two
+    empty sets, and older score files;
+  - `interface.mjs` run on this machine;
+  - `determinismPaths`, `interfaceFiles` and `parseInterface`;
+  - `determinism` in `score.json`, and the interface's container;
+  - `scoring.feature` @F4.5 ×2 on S1's reference and variants, and on S2;
+  - the aggregate line's determinism counts;
+  - the Docker suite's S8 test through the real image.
+- `7169551` `feat(scoring)`: the implementation. It also holds two tests the first coverage run asked
+  for (`interface.ts` at 89%): `interfaceInContainer`'s error path, and a line that is not JSON.
+- `b4a6d52` `docs(docker)`: the image's header comment.
+- `2658d6b` `docs(requirements)`: requirements 1.17 and adr-004 amendment 4.
+
+**Deviations from the Design:**
+
+1. **`bench score`'s aggregate line** reads `(<groups>, <slices>; determinism measured in <k>, n = 1 in
+   <m>)`, and adds `, pins differ in <p>` only when some group's pins differ. A group of no reached run
+   counts as `n = 1`. The Design said only that the line counts them. Four existing expectations of the
+   line were updated: `cli/score.test.ts` ×3, `results.feature` @F5.1, and the W6 Docker test.
+2. **`interface.mjs` drops `private` from a constructor's parameters**, since the parameter is public
+   and the property it makes is not. It gives `constructor(readonly x: number)`, as the Design's example
+   has it. The spike's printer kept `private`.
+3. **A default export of an expression that is not a name** is the entry `export default …;`. The
+   expression can be a whole object literal, which is a value, not a signature.
+4. **`storedRun` copies a scenario the repository lacks, even with `into`**, so that S1's three
+   repetitions and S2's run share one execution.
+5. **Existing tests that described every scoring container were updated**, as in task-041:
+   - @F4.1: M-R2's container mounts no oracle;
+   - `score.test.ts`: one more container in the census-and-steps test, `determinism` in the key order,
+     and in the summary tests' `ScoreFile` literals.
+
+`quality.ts` now exports `filesUnder` and `patchPaths`, which `determinism.ts` reuses. The helper
+`canonicalJson` of `core` compares the `scorer` pins.
+
+**Checks:**
+
+- `npm run typecheck` clean, and `npm run lint` clean: ESLint and Prettier.
+- `npm test`: 1031/1031, coverage 99.01% (`determinism.ts` and `interface.ts` 100% of lines).
+- `interface.mjs` on the host (`interface-script.test.ts`): 4/4.
+  - the signatures of functions, classes, variables, interfaces, types and enums;
+  - re-exports, default exports and overloads, sorted and without duplicates;
+  - a file that does not parse;
+  - the same entries for the same code in another layout.
+- `npm run test:bin`: 5/5.
+- `scoring.feature` @F4.5 through the local double, in one execution: S1 × 3 in the wingfoil arm and
+  S2 × 1. r2's merge patch keeps nulls behind a new parameter, and r3 adds a notes file and a lockfile.
+  - M-R1 is the census less r2's failing tests;
+  - M-R2 has the pairs `(k−1)/(k+1)`, `k/k` and `(k−1)/(k+1)`, `k` being the reference's entries;
+  - M-R3 differs by r3's notes only: the lockfile and `CLAUDE.md` are left out;
+  - the keys are `n`, `runs`, `not_reached`, `m_r1`, `m_r2` and `m_r3`, with no threshold;
+  - S2's group is `{ n: 1 }` with no value, and the line says `n = 1 in 1`.
+- `npm run test:docker`: 16/16 in 843 s, the new image built on its first use. The S8 test in the
+  three arms reads a non-empty interface through the real image's `interface.mjs`, with no file that
+  does not parse, and paths without `.wingfoil/` or `CLAUDE.md`. The W6 test's `scorer` is unchanged,
+  as no package was added. No `bench-` container is left.
+
+### Review
+
+- **Traceability.**
+  - `features: [F4.5]`: both @F4.5 scenarios have their tests, and `traceability.test.ts` is green.
+  - `acceptance: [scoring.feature]`.
+  - `requirements`:
+    - REQ-SCO-05 and REQ-SCO-07 are amended (1.17);
+    - REQ-SCO-09: hold-out tests stay out of M-R1, which reads only the public suites;
+    - REQ-SCO-03: the interface's entries and the paths are sorted, and the same code in another layout
+      gives the same entries;
+    - REQ-FMT-07: each M-R value has its runs and `n`, and older score files still aggregate.
+- **W10 decisions held.**
+  - Decision 4: `SCORE_VERSION` and `AGGREGATE_VERSION` stay 1, since `determinism` and `m_r` are new
+    keys.
+  - Decision 5: the image changed once, here, with no new package.
+  - The three design choices the approver confirmed: an entry names its file, the whole final snapshot
+    is read, and a final not reached is left out and listed.
+- **For the wave check (decision 2):** the synthetic repetition needs its altered step patch **and**
+  its recorded trees rewritten, or `rebuildSnapshots` refuses it (Design, "For the wave check").
+- **A note for calibration.** M-R3's generated paths include any `build/`, `dist/` or `coverage/`
+  directory at any depth, so a hand-written `src/build/` is left out too. REQ-SCO-07 lists them; the
+  first real runs show whether the list needs a change, which would be a rule change.
+- **For the approver's review decision:** requirements 1.17 (REQ-SCO-05, REQ-SCO-07) and adr-004
+  amendment 4.
+- **For W11 (F5.8), the method page states:**
+  - M-R2 read from syntax, an entry naming its file, what an entry is;
+  - M-R3's paths, the setup's and the generated ones left out, and that the seed's files raise the
+    similarity;
+  - the runs compared, and that a final not reached is left out;
+  - the pins compared, and that no threshold is applied.
+- No new bug and no new decision-log. No WingFoil usage note. No spending.
+
 ### WingFoil commands (declared vs observed)
 
 - `npx wingfoil memory add --type task --title "…"` for task-042 (`921cb08`), task-043 (`f2abfd6`) and
