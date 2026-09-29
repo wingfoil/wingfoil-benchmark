@@ -222,3 +222,9 @@ Recorded in `rel-v0-1`'s W7 section, with the carry-overs to W8 and W9.
   fields checked, one commit `wf(task): submit <id>` with no bracket and no body. Observed: exit 0,
   empty stderr, 1 file, diff limited to `status: draft` → `status: pending`. Matches (subject without
   transition: N9).
+- `npx wingfoil memory approve … [pending → backlog]` → `dc3dc4f`, run by the approver.
+- Design committed by hand on `task/task-034-results-store-and-aggregation` (`9f2f75a`), so that `submit`
+  carries only the state change (N13).
+- `npx wingfoil memory submit task-034-results-store-and-aggregation` → `e466401`. Declared: `backlog →
+  in-progress`, one commit `wf(task): submit <id>`. Observed: exit 0, empty stderr, 1 file, diff limited
+  to `status: backlog` → `status: in-progress`. Matches (N9).
