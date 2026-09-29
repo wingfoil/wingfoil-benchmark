@@ -264,3 +264,71 @@ No real agent and no spending (W8 decision 5).
 - `npx wingfoil memory submit task-036-s3-multi-session-evolution-scenario` → `5cbd956`. Declared:
   `backlog → in-progress`, one commit `wf(task): submit <id>`. Observed: exit 0, 1 file, diff limited to
   `status: backlog` → `status: in-progress`. Matches (N9).
+
+### Build
+
+Commits:
+
+- `27536f8`: the tests, red — S3 missing, and the outline's S3 row.
+- `2cc9107`: S3@1.0 and its public reference.
+- Hold-out `15f6d29`: four files of additions (below).
+
+**As designed**, with these points found in the build:
+
+- **The suites, in census counts.**
+
+  | Suite | Tests |
+  |---|---|
+  | `bookings` | 11 |
+  | `availability` | 5 |
+  | `discount` | 4 |
+  | `hourly` | 10 |
+  | `cancellation` | 7 |
+
+  That is 37 in all. Every decision has named tests: D1 and D2 in `bookings` (and D1 in `discount`,
+  `hourly` and `cancellation`), D3 in `bookings` and `hourly`, D4 in `bookings`, `availability` and
+  `hourly`, D5 in `cancellation` only.
+- **No D2 test in `availability`.** The design's table had one ("D2 on its query"). The query returns
+  ids, not times, so there is nothing of D2's to check in its answer. D2 is checked on every period the
+  API returns, in `bookings` and `hourly`.
+- **The leak scan found two describe names:** `'availability'` and `'cancellation'`, words of prompts 2
+  and 1. They became `'free equipment'` and `'cancelling a booking'`. In the hold-out, the suite names
+  in backticks in the header comments were quoted strings too, and are now plain words.
+- **The reference's step-4 code has no word of revision.** A first version commented `// D3, revised:`
+  next to an error message saying "whole days". D3's check matched it, so the silent variant passed,
+  which is exactly S3.md §9's known limit (a comment counts). The comment now says only what the code
+  does, and the record is in `DECISIONS.md` alone. The silent variants fail:
+  - step 4 leaving `DECISIONS.md` as step 1 wrote it;
+  - step 4 deleting it.
+- **The reference is generated from one template**, with blocks per step, so the five versions of
+  `src/rentals.ts` cannot drift apart. The template is not kept, since the five files are what is
+  reviewed.
+- **The hold-out additions**, in counts:
+
+  | Suite | Tests | What they check |
+  |---|---|---|
+  | `bookings` | 3 | a month end; a `+02:00` midnight refused (D2); back-to-back at midnight UTC |
+  | `discount` | 2 | exactly 2 and 3 days; a week across a month end |
+  | `hourly` | 10 | the mixed day and hourly overlap matrix |
+  | `cancellation` | 2 | exactly 24 hours, and one second short |
+
+  After step 5 they all pass, and on the seed none does.
+- **Two timeouts raised, test code only:**
+  - S1's unit tests had no `describe` timeout, so they had Vitest's default of 5 s, while S2's had 120 s
+    for the same kind of real runs. With S3's tests in the same run, four of them timed out; this is
+    also what the task-035 build saw once. They now have 120 s, as S2's do.
+  - The @F6.x outline test took 173 s alone with S1–S3, and more than its 240 s under a full run. Its
+    limit is now 600 s, which leaves room for S8.
+
+**Checks:**
+
+- `bench scenario validate S3@1.0 --holdout ../WingFoil2-Benchmark-HoldOut` on the built CLI →
+  `scenario S3@1.0 is valid (hold-out: 4 files)`. Without the hold-out: `(hold-out: not configured)`.
+- `npm test`: 922/922 (+8). Coverage 99.08% statements, 94.73% branches, 99.9% lines.
+- `npm run typecheck` and `npm run lint`: clean.
+- `npm run test:docker -- -t S3`: 2/2. S3 ran in baseline, baseline-docs and wingfoil, scored by the real
+  image. Each suite passed at its steps, and D3's check passed at step 4 on `DECISIONS.md`.
+- `npm run test:bin`: 5/5.
+- `npm run test:docker`: 13/13 (+2), with no `bench-` container left.
+
+No real agent, no spending. No `wingfoil` command in the build phase.
