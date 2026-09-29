@@ -2,7 +2,7 @@
 id: task-032-s1-conformance-scenario
 type: task
 title: "S1 conformance scenario"
-status: approved
+status: done
 release: v0.1
 wave: W7
 features: [F6.1]
