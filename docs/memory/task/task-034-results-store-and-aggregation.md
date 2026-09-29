@@ -228,6 +228,9 @@ Recorded in `rel-v0-1`'s W7 section, with the carry-overs to W8 and W9.
 - `npx wingfoil memory submit task-034-results-store-and-aggregation` → `e466401`. Declared: `backlog →
   in-progress`, one commit `wf(task): submit <id>`. Observed: exit 0, empty stderr, 1 file, diff limited
   to `status: backlog` → `status: in-progress`. Matches (N9).
+- `npx wingfoil memory submit task-034-results-store-and-aggregation` → `0481397`. Declared: `in-progress →
+  in-review`, one commit `wf(task): submit <id>`. Observed: exit 0, empty stderr, 1 file, diff limited to
+  `status: in-progress` → `status: in-review`. Matches (N9).
 
 ### Build
 
