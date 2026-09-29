@@ -518,3 +518,12 @@ approver's call.
   in the worktree of branch `task/task-042-determinism-metrics-across-repetitions`.
   - Declared: `backlog → in-progress`, one commit `wf(task): submit <id>`.
   - Observed: exit 0, 1 file, a diff limited to `status: backlog` → `status: in-progress`. Matches.
+- `memory reject … [in-review → in-progress]` → `92c449a`, run by the approver in the task's worktree.
+  - Declared: `in-review → in-progress`, one commit with `Approver:` and `Reason:` lines.
+  - Observed: that commit, which also added a `rejection_reason:` field to the front matter.
+- After the fixes, the notes were committed by hand (`a3c7171`), then `node_modules/.bin/wingfoil memory
+  submit task-042-determinism-metrics-across-repetitions` → `ae03625`.
+  - Declared: `in-progress → in-review`, one commit `wf(task): submit <id>`.
+  - Observed: exit 0 and 1 file. The diff also **removes the `rejection_reason:` field**, not only the
+    status. `memory history` still shows the reject with its approver and reason, so nothing is lost
+    from the trail; the field reads as "an open rejection". It matches, with that side effect noted.
