@@ -24,6 +24,8 @@ describe('runs in a real container', () => {
     for (const built of [image, ...images.splice(0)]) {
       if (built !== '') execFileSync('docker', ['image', 'rm', '--force', built], { encoding: 'utf8' });
     }
+    // Removed once: a later test that builds through `images` only must not remove it again.
+    image = '';
   });
 
   it('runs from a campaign file and leaves the workspace behind, with no container', async () => {
