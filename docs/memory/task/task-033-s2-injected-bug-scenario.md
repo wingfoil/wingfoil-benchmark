@@ -318,3 +318,10 @@ content checks, and their format, into S2@1.0" — the approver's decision of 20
 
 No real agent, no spending. No `wingfoil` command in the build phase.
 
+### Review and approval
+
+- `npx wingfoil memory approve task-033-s2-injected-bug-scenario --reason "…"` → `8c6aebd`, run by the
+  approver (`in-review → approved`, `Approver:`/`Reason:` trailers, only `status` changed). Matches.
+- Its reason records the review decisions, 2026-09-29: S2@1.0 accepted — the seed, the reports, the
+  suites by report — and the content checks moved to W8 with their format.
+
