@@ -2,7 +2,7 @@
 id: task-039-continuity-metrics-and-regressions-from-the-seed
 type: task
 title: "Continuity metrics and regressions from the seed"
-status: backlog
+status: in-progress
 release: v0.1
 wave: W9
 features: [F4.7]
