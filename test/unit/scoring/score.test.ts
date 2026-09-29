@@ -574,7 +574,7 @@ describe('expected failures in score.json (F3.6, REQ-SCO-10)', () => {
   });
 });
 
-describe('continuity and regressions in score.json (REQ-SCO-11, task-039)', () => {
+describe('continuity and regressions in score.json (REQ-SCO-12, task-039)', () => {
   /** T3's one test, named for decision D1 as S3 names its decision tests. */
   const D1_TEST = {
     file: T3_TEST.file,

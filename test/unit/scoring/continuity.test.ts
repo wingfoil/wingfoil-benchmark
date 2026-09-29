@@ -11,7 +11,7 @@ import type {
 } from '../../../src/scoring/index.js';
 
 /**
- * The continuity metrics and M-D3 (REQ-SCO-11, task-039): M-F1 from the decisions an oracle lists,
+ * The continuity metrics and M-D3 (REQ-SCO-12, task-039): M-F1 from the decisions an oracle lists,
  * M-F2 as a reading of steps 2 to n, and M-D3 from the seed's own verdicts. Pure functions of what
  * scoring already has: no container, no clock.
  */
@@ -44,7 +44,7 @@ const DECISIONS = [{ id: 'D1' }, { id: 'D3', revisedBy: 'd3-revision' }];
 const RECORDED = revision([{ n: 4, passed: true, where: { file: 'NOTES.md' } }]);
 const SILENT = revision([{ n: 4, passed: false }]);
 
-describe('mF1: decision consistency (experiment design §4.3, REQ-SCO-11)', () => {
+describe('mF1: decision consistency (experiment design §4.3, REQ-SCO-12)', () => {
   it('respects a decision whose tests all pass, and revises one whose revision check passed too', () => {
     expect(mF1(DECISIONS, TESTS, finalFailing(PLAIN), [RECORDED])).toEqual({
       ok: true,
@@ -123,7 +123,7 @@ function figures(eur: number): CostFigures {
   };
 }
 
-describe('mF2: next-change cost (experiment design §4.3, REQ-SCO-11)', () => {
+describe('mF2: next-change cost (experiment design §4.3, REQ-SCO-12)', () => {
   const steps: StepScore[] = [
     { n: 1, suites: [{ id: 'a', passed: 1, total: 2, failed: ['x'] }], m_q1: { passed: 1, total: 2 } },
     { n: 2, suites: [{ id: 'a', passed: 2, total: 2, failed: [] }], m_q1: { passed: 2, total: 2 } },
@@ -156,7 +156,7 @@ describe('mF2: next-change cost (experiment design §4.3, REQ-SCO-11)', () => {
   });
 });
 
-describe('mD3: regressions from the seed (experiment design §4.1, REQ-SCO-11)', () => {
+describe('mD3: regressions from the seed (experiment design §4.1, REQ-SCO-12)', () => {
   const seed: SeedScore = {
     suites: [
       { id: 'bookings', passed: 2, total: 4, failed: [D1_QUOTE, D3_DAY] },

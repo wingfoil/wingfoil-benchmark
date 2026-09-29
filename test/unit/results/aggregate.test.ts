@@ -258,7 +258,7 @@ describe('aggregateExecution (F5.1, REQ-FMT-07)', () => {
     ]);
   });
 
-  describe('continuity and regressions from the seed (REQ-SCO-11, task-039)', () => {
+  describe('continuity and regressions from the seed (REQ-SCO-12, task-039)', () => {
     const seed = (passed: number) => ({ suites: [], m_q1: { passed, total: 4 } });
     const respected = (id: string) => ({ id, outcome: 'respected', failed: [] });
 
