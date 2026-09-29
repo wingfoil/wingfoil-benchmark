@@ -1,6 +1,6 @@
 # Requirements (v0.1)
 
-**Version:** 1.15
+**Version:** 1.16
 **Date:** 2026-09-29
 **Status:** Approved
 **Traces to:** [acceptance/](acceptance/) (all v0.1 features), [scenarios/](scenarios/) (K1–K5), [09_experiment-design.md](../01_vision/09_experiment-design.md), [07_sequencer.md](../01_vision/07_sequencer.md) v0.1
@@ -93,7 +93,7 @@ One binary, `bench`, run with `npx bench`. Exit codes: `0` success, `1` failure,
 | REQ-SCO-01 | Scoring runs in its own container, from a copy of each step snapshot, with the oracle mounted **read-only** and **no network** (added in 1.8). It never uses a run container. Each snapshot is rebuilt from what the run stored (REQ-RUN-05) and checked against the tree the run recorded. | F4.1 |
 | REQ-SCO-02 | Hidden tests use Node's built-in `node:test`, with `tsx` to load the snapshot's TypeScript. They are independent of whatever test tool the agent chose. | F4.1 |
 | REQ-SCO-03 | Scoring is deterministic: the same snapshot and oracle version give identical `score.json`. No wall clock or randomness enters a metric. Timestamps are only recorded as metadata. | F4.1 |
-| REQ-SCO-04 | Static quality (M-Q2): ESLint with the **benchmark's** fixed configuration, not the project's; complexity from ESLint's `complexity` data; duplication with jscpd; coverage from the project's own tests under c8, or 0 if there are none. All are pinned in the scoring image. | F4.2 |
+| REQ-SCO-04 | Static quality (M-Q2): ESLint with the **benchmark's** fixed configuration, not the project's; complexity from ESLint's `complexity` data; duplication with jscpd; coverage from the project's own tests under c8, or 0 if there are none. All are pinned in the scoring image (made precise in 1.16):<br>• **the files measured** are the source files (`.ts .tsx .mts .cts .js .jsx .mjs .cjs`, not `.d.ts`, not under `node_modules/`) that the final snapshot adds or changes from the seed, less every path the setup's stored patch touches. Tests are measured, but are not coverage targets. With none, M-Q2 is "not applicable"; with no final snapshot, "not reached";<br>• **the configuration** is `@eslint/js` recommended plus `typescript-eslint` recommended, not type-checked. Each function's complexity is read from `complexity` at 0, which is never counted as a finding; a file that does not parse is one finding;<br>• **coverage** is the lines of the coverage targets that c8 saw run while the project's `npm test` ran, counted whether its tests pass or fail. It is 0 covered when there is no `test` script, and the tests' outcome is recorded;<br>• `score.json` records each indicator as the integers it is a ratio of: lint findings and lines, functions and the sum and maximum of their complexity, duplicated lines and lines, covered and total lines. There is no composite. | F4.2 |
 | REQ-SCO-05 | AST checks (M-E1 R2–R4, M-R2 public interface) use the TypeScript compiler API. R1 compares `dependencies` with the seed's. The directive checks of M-E1 are two kinds of REQ-SCO-06's check file (changed in 1.13):<br>• `dependencies`: one violation per runtime dependency name the step's `package.json` has and the seed's has not; devDependencies and version changes are none;<br>• `ast`: a `dir` of the snapshot and `rules` from a fixed catalogue — `undocumented-export` (an exported function with no TSDoc block before it), `wall-clock` (`Date.now()`, `new Date()` with no argument), `randomness` (`Math.random()`, Node's `crypto` random functions), `throw`. They match syntax, not types, in the `.ts`/`.tsx`/`.mts`/`.cts` files under `dir`, test and declaration files left out. The AST runs in the scoring container, with the TypeScript its image pins, which `score.json` records.<br>A directive check records, per step, its violations and where each is (file and line, or the dependency's name); it passes with none. | F4.8, F4.5 |
 | REQ-SCO-06 | **Format-neutral content checks** (S2 duplicate, S3 D3 revision, and later M-E3). A check is a YAML file of the oracle, named `<id>.yaml`, lying in no suite, with its `kind` and the `steps` it is scored at (changed in 1.12):<br>• `content`: groups of case-insensitive substrings, whitespace folded; it passes at a step when every group matches in one place, the lines the step added to one git-tracked text file or one of the step's commit messages (REQ-RUN-05). The validator refuses one that its step's prompt satisfies;<br>• `unchanged`: regions of seed files, as 1-based line ranges; it passes at a step when each region's seed lines still stand, one after the other, in the same file;<br>• `dependencies` and `ast`: the directive checks of REQ-SCO-05 (added in 1.13).<br>A check never checks paths or file formats of a specific harness, and reads text only: it runs in the scorer's process, not in a scoring container (REQ-SCO-01 isolates running a snapshot's code). `score.json` records each check per step: passed, with where a content check matched, failed, or not reached. | F4.7, F4.8 |
 | REQ-SCO-07 | Determinism metrics (M-R1–M-R3) are computed only for groups with n ≥ 2 runs sharing all pins. Otherwise the result is `n = 1` and no value. | F4.5 |
@@ -410,3 +410,21 @@ The traceability matrix is unaffected: REQ-SCO-08 already traces to F4.4 and G-X
 
 Source: [task-040](../memory/task/task-040-setup-cost-and-break-even.md), design confirmed by the
 approver on 2026-09-29; review decision of the approver at that task's review, 2026-09-29 (`44389e9`).
+
+### Amendment 1.16 (delivery, W9 task-041, 2026-09-29)
+
+- **REQ-SCO-04:** M-Q2 made precise.
+  - Which files count: "the files changed by the run" (experiment design §4.1) are the source files
+    the final snapshot adds or changes from the seed. Whatever the setup touched is left out, which
+    keeps the measure tool-neutral with no list of any harness's paths.
+  - The ESLint configuration is two published rule sets, and complexity is read per function.
+  - Coverage comes from the project's own `npm test` under c8, whether its tests pass or fail.
+  - Indicators are stored as integer pairs, and there is no composite.
+
+  These were the approver's choices at design, 2026-09-29. Coverage from `npm test` follows W9
+  decision 3.
+
+The traceability matrix is unaffected: REQ-SCO-04 already traces to F4.2 and Q-C1.
+
+Source: [task-041](../memory/task/task-041-static-quality-metrics.md), design confirmed by the
+approver on 2026-09-29; review decision of the approver at that task's review.
