@@ -307,3 +307,11 @@ Commits on `task/task-040-setup-cost-and-break-even`:
   - Observed: exactly that, with 1 file.
 - The review decision of requirements 1.15 is the approver's reason: "requirements 1.15 (REQ-SCO-08,
   REQ-FMT-07) accepted". The amendment's "Source" line names `44389e9`.
+
+### Delivery
+
+- `git merge --no-ff task/task-040-setup-cost-and-break-even` on main → `94f8e4b`.
+- `npx wingfoil memory submit task-040-setup-cost-and-break-even` on main → `980c573`.
+  - Declared: `approved → done`, one commit.
+  - Observed: exit 0, 1 file, and a diff limited to `status: approved` → `status: done`. Matches.
+- Second task of W9. The wave check waits for task-041.
