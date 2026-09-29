@@ -7,6 +7,8 @@ import type { DockerPort, GitPort, Result, Scenario, Suite } from '../core/index
 import type { StoredRun } from '../results/index.js';
 import type { HoldoutAdditions } from '../scenario/index.js';
 
+import { scoreChecks } from './checks.js';
+import type { CheckScore } from './checks.js';
 import { costMetrics } from './cost.js';
 import type { CostScore } from './cost.js';
 import { runSuite } from './hidden-tests.js';
@@ -70,6 +72,8 @@ export interface ScoreFile {
   readonly steps: readonly StepScore[];
   readonly final: FinalScore;
   readonly holdout: HoldoutScore;
+  /** The scenario's checks on their steps (REQ-SCO-06, task-035); empty when it declares none. */
+  readonly checks: readonly CheckScore[];
   /** M-K1 and M-K2 per step and for the run (F4.3, task-029). */
   readonly cost: CostScore;
   /** The run's mark (F3.6), as the runner recorded it: `null`, or the capabilities its harness lacked. */
@@ -118,6 +122,7 @@ interface Group {
  * completed — every suite. A suite's total is its census on the seed; its passed tests are the census
  * tests the snapshot reports passing; every other census test fails (adr-004). The hold-out's suites
  * are scored the same way, in containers of their own, and reported apart in counts only (task-028).
+ * Then the scenario's checks, on the same snapshots and the step's stored files (task-035).
  */
 export async function scoreRun(request: ScoreRequest): Promise<Result<ScoreFile>> {
   const { run, scenario } = request;
@@ -150,6 +155,12 @@ export async function scoreRun(request: ScoreRequest): Promise<Result<ScoreFile>
       if (!scored.ok) return scored;
       holdoutScore = { scored: true, hash, steps: scored.value.steps, final: scored.value.final };
     }
+    const checks = scoreChecks({
+      checks: scenario.oracle.checks,
+      runDir: request.runDir,
+      snapshots: snapshots.value,
+    });
+    if (!checks.ok) return checks;
     return ok({
       score_version: SCORE_VERSION,
       scenario: run.scenario,
@@ -159,6 +170,7 @@ export async function scoreRun(request: ScoreRequest): Promise<Result<ScoreFile>
       steps: publicScore.value.steps as StepScore[],
       final: publicScore.value.final as FinalScore,
       holdout: holdoutScore,
+      checks: checks.value,
       cost: cost.value,
       expected_failure:
         run.expectedFailure === undefined ? null : { missing: [...run.expectedFailure.missing] },
@@ -355,7 +367,14 @@ export function scoreSummary(score: ScoreFile): string {
     score.expected_failure === null
       ? ''
       : `; expected failure (missing ${score.expected_failure.missing.join(', ')})`;
-  return `${line}${holdoutPart(score.holdout, tallied)}${marked}`;
+  return `${line}${holdoutPart(score.holdout, tallied)}${checksPart(score.checks)}${marked}`;
+}
+
+/** What the summary line says of the checks: passed over scored, across checks and steps, or nothing. */
+function checksPart(checks: readonly CheckScore[]): string {
+  const scored = checks.flatMap((check) => check.steps).filter((step) => 'passed' in step);
+  if (scored.length === 0) return '';
+  return `; checks ${scored.filter((step) => 'passed' in step && step.passed).length}/${scored.length}`;
 }
 
 /** What the summary line says of the hold-out: its final M-Q1, that it was not scored, or nothing. */

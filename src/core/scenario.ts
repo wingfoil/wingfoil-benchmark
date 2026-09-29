@@ -187,6 +187,52 @@ const thirdParties = z.array(thirdParty).superRefine((list, ctx) => {
   });
 });
 
+/** The steps a check is scored at: ascending, each once. Whether the scenario has them is the loader's. */
+const checkSteps = z
+  .array(z.number().int().min(1))
+  .min(1)
+  .refine(
+    (steps) => steps.every((n, index) => index === 0 || n > (steps[index - 1] as number)),
+    'must be in ascending order, each step once',
+  );
+
+/** A pattern of a content check: a plain substring, with something besides whitespace. */
+const pattern = z.string().refine((text) => text.trim() !== '', 'must not be empty');
+
+/**
+ * A content check (REQ-SCO-06 as amended in 1.12): groups of case-insensitive substrings, every group
+ * matched in one place — the lines a step added to one text file, or one of its commit messages.
+ */
+const contentCheck = z.strictObject({
+  kind: z.literal('content'),
+  steps: checkSteps,
+  patterns: z.array(z.array(pattern).min(1)).min(1),
+});
+
+/** A range of a seed file's lines, 1-based and inclusive. Whether the file has them is the loader's. */
+const region = z.strictObject({
+  file: relativePath,
+  lines: z
+    .tuple([z.number().int(), z.number().int()])
+    .refine(([from, to]) => from >= 1 && from <= to, 'must be [from, to], with 1 ≤ from ≤ to'),
+});
+
+/** An unchanged check (REQ-SCO-06 as amended in 1.12): seed regions that must still stand at a step. */
+const unchangedCheck = z.strictObject({
+  kind: z.literal('unchanged'),
+  steps: checkSteps,
+  regions: z.array(region).min(1),
+});
+
+/**
+ * A check file of `oracle.checks` (REQ-SCO-06 as amended in 1.12, task-035): its `kind`, the steps it is
+ * scored at, and what the kind needs. Its id is its file's name.
+ */
+export const checkFileSchema = z.discriminatedUnion('kind', [contentCheck, unchangedCheck]);
+
+/** A check file as parsed, with seed-relative region paths. */
+export type CheckFile = z.infer<typeof checkFileSchema>;
+
 /** REQ-FMT-04: the `scenario.yaml` of `scenarios/<id>/<version>/`. Unknown keys are rejected. */
 export const scenarioSchema = z.strictObject({
   id: z.string().regex(SCENARIO_ID, 'must look like S1, M2 or T0'),
@@ -264,6 +310,36 @@ export interface ThirdParty {
   readonly files: readonly string[];
 }
 
+/** What a loaded check is, whatever its kind: its id, its absolute file, and the steps it is scored at. */
+interface CheckBase {
+  readonly id: string;
+  readonly file: string;
+  readonly steps: readonly number[];
+}
+
+/** A loaded content check: its groups of patterns, as written. */
+export interface ContentCheck extends CheckBase {
+  readonly kind: 'content';
+  readonly patterns: readonly (readonly string[])[];
+}
+
+/** A seed region as loaded: its seed-relative path, its range, and the seed's own lines in it. */
+export interface Region {
+  readonly path: string;
+  readonly from: number;
+  readonly to: number;
+  readonly lines: readonly string[];
+}
+
+/** A loaded unchanged check: its regions, with the lines each must still hold. */
+export interface UnchangedCheck extends CheckBase {
+  readonly kind: 'unchanged';
+  readonly regions: readonly Region[];
+}
+
+/** A loaded check (REQ-SCO-06 as amended in 1.12). */
+export type Check = ContentCheck | UnchangedCheck;
+
 /** A loaded scenario version, with every path resolved to an absolute one. */
 export interface Scenario {
   readonly id: string;
@@ -278,7 +354,8 @@ export interface Scenario {
   readonly oracle: {
     /** The suites of hidden tests (dl-001), in declaration order, each with its steps in ascending order. */
     readonly suites: readonly Suite[];
-    readonly checks: readonly string[];
+    /** The checks (REQ-SCO-06), each read from its file, in declaration order. */
+    readonly checks: readonly Check[];
     /** The third-party material vendored into the suites (dl-002), in declaration order. */
     readonly thirdParty: readonly ThirdParty[];
   };

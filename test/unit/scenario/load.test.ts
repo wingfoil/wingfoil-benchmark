@@ -57,7 +57,7 @@ describe('loadScenario', () => {
       dir,
       seedDir,
       ...oracle.suites.map((suite) => suite.dir),
-      ...oracle.checks,
+      ...oracle.checks.map((check) => check.file),
       ...steps.map((s) => s.promptPath),
     ];
     expect(all.filter((path) => !isAbsolute(path))).toEqual([]);
@@ -69,7 +69,15 @@ describe('loadScenario', () => {
     const result = loadScenario(root, 'S9', '1.0');
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.value.oracle.checks).toEqual([join(root, 'S9', '1.0', 'oracle/checks/decision.yaml')]);
+    expect(result.value.oracle.checks).toEqual([
+      {
+        id: 'decision',
+        file: join(root, 'S9', '1.0', 'oracle/checks/decision.yaml'),
+        kind: 'content',
+        steps: [1],
+        patterns: [['revised', 'superseded'], ['decision']],
+      },
+    ]);
     expect(result.value.oracle.thirdParty[0]?.license).toBe('Apache-2.0');
     expect(result.value.holdout).toBe(true);
     expect(result.value.dir).toBe(join(root, 'S9', '1.0'));

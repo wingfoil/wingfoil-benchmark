@@ -326,7 +326,9 @@ describe('runCampaign', () => {
       `head ${workspace}`,
       `tree ${workspace} HEAD`,
       `patch ${workspace} ${tree(1)} ${tree(2)}`,
+      `messages ${workspace} ${'commit-1'.padEnd(40, '0')}`,
       `commit ${workspace} step 01 --allow-empty`,
+      `head ${workspace}`,
       `tree ${workspace} HEAD`,
       `patch ${workspace} ${tree(2)} ${tree(3)}`,
     ]);
@@ -353,6 +355,38 @@ describe('runCampaign', () => {
     expect(patch).toContain('[redacted]');
     // `C` is a value of the container's environment and must survive untouched.
     expect(patch).toContain('ANTHROPIC_AUTH_TOKEN=');
+  });
+
+  it('records the messages of the commits made during each step, from the snapshot before it, scrubbed (task-035)', async () => {
+    const token = 'sk-ant-oat01-SECRET';
+    const { checked } = checkedCampaign();
+    const ports = doubles({
+      messagesOf: (_directory, from) =>
+        from === 'commit-1'.padEnd(40, '0')
+          ? ['Add cancellation', `Record the decision\n\nToken: ${token}`]
+          : [],
+    });
+
+    const summary = await runCampaign(checked, {
+      ...ports,
+      containerEnv: { ANTHROPIC_AUTH_TOKEN: token },
+      secrets: [token],
+    });
+
+    const output = summary.runs[0]?.outputDir ?? '';
+    const workspace = summary.runs[0]?.workspace ?? '';
+    // Step 1 from the setup's commit, step 2 from step 1's: each step's own commits, and never the
+    // runner's step commit, which is made after they are read.
+    expect(ports.recorded.gitCalls.filter((call) => call.startsWith('messages '))).toEqual([
+      `messages ${workspace} ${'commit-1'.padEnd(40, '0')}`,
+      `messages ${workspace} ${'commit-2'.padEnd(40, '0')}`,
+    ]);
+    expect(JSON.parse(readFileSync(join(output, 'steps', '01', 'commits.json'), 'utf8'))).toEqual({
+      messages: ['Add cancellation', 'Record the decision\n\nToken: [redacted]'],
+    });
+    expect(JSON.parse(readFileSync(join(output, 'steps', '02', 'commits.json'), 'utf8'))).toEqual({
+      messages: [],
+    });
   });
 
   it('keeps what a failed step spent, instead of throwing the evidence away', async () => {
@@ -950,12 +984,11 @@ describe('the setup phase (REQ-RUN-03, adr-003)', () => {
     const summary = await runCampaign(checked, ports);
 
     const workspace = summary.runs[0]?.workspace ?? '';
-    expect(ports.recorded.gitCalls.filter((call) => !/^(patch|tree) /.test(call))).toEqual([
+    expect(ports.recorded.gitCalls.filter((call) => !/^(patch|tree|messages|head) /.test(call))).toEqual([
       `init ${workspace}`,
       `commit ${workspace} seed`,
       `identity ${workspace} Benchmark Approver <approver@benchmark.localhost>`,
       `commit ${workspace} setup --allow-empty`,
-      `head ${workspace}`,
       `commit ${workspace} step 01 --allow-empty`,
       `commit ${workspace} step 02 --allow-empty`,
     ]);
@@ -1014,7 +1047,7 @@ describe('the setup phase (REQ-RUN-03, adr-003)', () => {
       setup: { duration_ms: number; usage: Record<string, number>; commit: string };
       steps: unknown[];
     };
-    expect(record.setup.commit).toBe('5e7a9c0ffee5e7a9c0ffee5e7a9c0ffee5e7a9c0');
+    expect(record.setup.commit).toBe('commit-1'.padEnd(40, '0'));
     expect(record.setup.duration_ms).toBeGreaterThanOrEqual(0);
     expect(Object.values(record.setup.usage).every((value) => value === 0)).toBe(true);
     expect(record.steps).toHaveLength(2);
@@ -1052,10 +1085,14 @@ describe('the setup phase (REQ-RUN-03, adr-003)', () => {
       `head ${workspace}`,
       `tree ${workspace} HEAD`,
       `patch ${workspace} ${tree(1)} ${tree(2)}`,
+      `messages ${workspace} ${'commit-1'.padEnd(40, '0')}`,
       `commit ${workspace} step 01 --allow-empty`,
+      `head ${workspace}`,
       `tree ${workspace} HEAD`,
       `patch ${workspace} ${tree(2)} ${tree(3)}`,
+      `messages ${workspace} ${'commit-2'.padEnd(40, '0')}`,
       `commit ${workspace} step 02 --allow-empty`,
+      `head ${workspace}`,
       `tree ${workspace} HEAD`,
       `patch ${workspace} ${tree(3)} ${tree(4)}`,
     ]);

@@ -54,6 +54,13 @@ export async function storedRun(
     /** What each step records beside its snapshot (task-029); by default {@link usageOf}. */
     record?: (n: number) => StepRecord;
     /**
+     * Check files added to T3 before it is loaded (task-035), by path in the version directory, each
+     * listed in `oracle.checks`. Not with `into`: the scenario is the existing fixture's.
+     */
+    checks?: Readonly<Record<string, string>>;
+    /** A run stored before steps recorded their commit messages (task-035): no `commits.json`. */
+    withoutMessages?: boolean;
+    /**
      * Another run in an existing fixture's repository (task-034): its root, and where the run goes — by
      * default the fixture's execution, arm, model and repetition. A `dry-runs/<n>` execution records its
      * pins as a dry run's.
@@ -70,6 +77,7 @@ export async function storedRun(
   const root = options.into?.root ?? tempDir('bench-score-repo-');
   if (options.into === undefined) {
     cpSync(repoPath('test/fixtures/scenarios/T3'), join(root, 'scenarios', 'T3'), { recursive: true });
+    addChecks(join(root, 'scenarios', 'T3', '1.0'), options.checks ?? {});
   }
   const execution = options.into?.execution ?? EXECUTION;
   const arm = options.into?.arm ?? 'baseline';
@@ -100,9 +108,11 @@ export async function storedRun(
   let previous = setupTree;
   for (const [index, step] of options.steps.entries()) {
     const number = String(index + 1).padStart(2, '0');
+    const messages: string[] = [];
     if (Array.isArray(step)) {
       for (const [commit, files] of (step as readonly Files[]).entries()) {
         write(workspace, files);
+        messages.push(`agent ${number}.${commit + 1}`);
         await git.commitAll(workspace, `agent ${number}.${commit + 1}`, { allowEmpty: true });
       }
     } else write(workspace, step as Files);
@@ -110,6 +120,12 @@ export async function storedRun(
     const tree = await git.tree(workspace, 'HEAD');
     mkdirSync(join(runDir, 'steps', number), { recursive: true });
     writeFileSync(join(runDir, 'steps', number, 'diff.patch'), await git.patchOf(workspace, previous, tree));
+    if (options.withoutMessages !== true) {
+      writeFileSync(
+        join(runDir, 'steps', number, 'commits.json'),
+        `${JSON.stringify({ messages }, undefined, 2)}\n`,
+      );
+    }
     const record = recordOf(index + 1);
     writeFileSync(
       join(runDir, 'steps', number, 'usage.json'),
@@ -159,6 +175,18 @@ export async function storedRun(
     )}\n`,
   );
   return { root, executionDir, runDir, scenario, workspace };
+}
+
+/** Write `checks` into the version directory `dir` and list them in its `oracle.checks`. */
+function addChecks(dir: string, checks: Readonly<Record<string, string>>): void {
+  const paths = Object.keys(checks);
+  if (paths.length === 0) return;
+  write(dir, checks);
+  const yaml = join(dir, 'scenario.yaml');
+  writeFileSync(
+    yaml,
+    readFileSync(yaml, 'utf8').replace('holdout: true', `  checks: [${paths.join(', ')}]\nholdout: true`),
+  );
 }
 
 /** What a step records beside its snapshot: its usage, outcome, interventions and cost bound. */

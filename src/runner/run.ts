@@ -89,6 +89,8 @@ export interface StepResult {
   readonly interventions: readonly Intervention[];
   /** The tree of the step's commit (task-027): what scoring checks the snapshot it rebuilds against. */
   readonly tree?: string;
+  /** The step's commit, which the next step's commit messages are read from (task-035). */
+  readonly commit?: string;
   readonly error?: string;
   /**
    * For a step whose last invocation was killed at `step_time_s` and reported no cost (task-024, C3):
@@ -485,6 +487,7 @@ async function executeRun(context: RunContext, options: RunnerOptions): Promise<
     if (setup.code !== undefined) throw new Error(setupFailure(arm, setup.code, outputDir));
     const mcpConfig = arm.mcpPath === undefined ? undefined : MCP_CONFIG;
     let previousTree = setup.tree as string;
+    let previousCommit = setup.commit as string;
     for (const step of scenario.steps) {
       const result = await executeStep(
         step,
@@ -498,11 +501,13 @@ async function executeRun(context: RunContext, options: RunnerOptions): Promise<
           spent: spentEur(steps, plan.pins),
           pins: plan.pins,
           previousTree,
+          previousCommit,
           ...(mcpConfig === undefined ? {} : { mcpConfig }),
         },
         options,
       );
       if (result !== CAP_REACHED && result.tree !== undefined) previousTree = result.tree;
+      if (result !== CAP_REACHED && result.commit !== undefined) previousCommit = result.commit;
       // Nothing was left of the run's cost cap to start the step with (task-024).
       if (result === CAP_REACHED) return record({ ...identity, setup, steps, outcome: 'cap reached' }, plan);
       // Recorded first, then failed: what the step spent and said is stored either way. A step that
@@ -625,6 +630,8 @@ interface StepContext {
   readonly pins: RunPins;
   /** The tree of the snapshot before this step — the setup's, or the previous step's — its patch starts from. */
   readonly previousTree: string;
+  /** The commit of that snapshot: the step's own commits are those made after it (task-035). */
+  readonly previousCommit: string;
   /** The arm's MCP configuration in the container, on every invocation of the step. */
   readonly mcpConfig?: string;
 }
@@ -712,8 +719,19 @@ async function executeStep(
   context: StepContext,
   options: RunnerOptions,
 ): Promise<StepResult | typeof CAP_REACHED> {
-  const { container, workspace, outputDir, scenario, model, policy, spent, pins, previousTree, mcpConfig } =
-    context;
+  const {
+    container,
+    workspace,
+    outputDir,
+    scenario,
+    model,
+    policy,
+    spent,
+    pins,
+    previousTree,
+    previousCommit,
+    mcpConfig,
+  } = context;
   const mcp = mcpConfig === undefined ? {} : { mcpConfig };
   const number = stepNumber(step.n);
   let prompt: string;
@@ -878,11 +896,20 @@ async function executeStep(
     going = settle(resumed, `resume ${intervention} of step ${number}`, sessionCostUsd + left);
   }
 
+  // What the agent and its harness committed during the step, read before the step commit so that the
+  // runner's own is never among them (task-035): a content check reads commit messages (REQ-SCO-06).
+  const messages = await options.git.messagesSince(workspace, previousCommit);
   // Every step leaves a snapshot to score, including a step that changed nothing (REQ-RUN-05), and
   // only one, however many interventions it took.
   await options.git.commitAll(workspace, `step ${number}`, { allowEmpty: true });
+  const commit = await options.git.head(workspace);
   const stepDir = join(outputDir, 'steps', number);
   mkdirSync(stepDir, { recursive: true });
+  // Scrubbed like the patch: a message can quote what the agent's environment holds.
+  writeFileSync(
+    join(stepDir, 'commits.json'),
+    `${JSON.stringify({ messages: messages.map((message) => scrub(message, options.secrets ?? [])) }, undefined, 2)}\n`,
+  );
   // From the previous snapshot, not the last commit: an agent that commits during its step (the
   // wingfoil arm's does) would otherwise leave its own commits out of the patch (bug-007).
   const tree = await options.git.tree(workspace, 'HEAD');
@@ -903,6 +930,7 @@ async function executeStep(
     transcript,
     interventions,
     tree,
+    commit,
     ...(costBoundUsd === undefined ? {} : { costBoundUsd }),
   };
   return error === undefined ? { ...result, outcome } : { ...result, outcome: 'failed', error };

@@ -377,7 +377,11 @@ describe('runner.feature', () => {
       `tree ${workspace} HEAD`,
       `patch ${workspace} ${tree(1)} ${tree(2)}`,
       ...stepNumbers(steps).flatMap((n) => [
+        // The step's own commit messages (task-035), from the snapshot before it, read before the
+        // step commit so that the runner's own is never among them.
+        `messages ${workspace} ${`commit-${n}`.padEnd(40, '0')}`,
         `commit ${workspace} step ${String(n).padStart(2, '0')} --allow-empty`,
+        `head ${workspace}`,
         `tree ${workspace} HEAD`,
         `patch ${workspace} ${tree(n + 1)} ${tree(n + 2)}`,
       ]),

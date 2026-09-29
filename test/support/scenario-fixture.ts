@@ -72,6 +72,16 @@ export const COMPLETE_FILES = [
 ];
 
 /**
+ * What a complete scenario's check holds (REQ-SCO-06, task-035): a content check on step 1 (every fixture has one), two groups
+ * that must match in the same place. Every other fixture file is written empty.
+ */
+export const DECISION_CHECK =
+  'kind: content\nsteps: [1]\npatterns:\n  - [revised, superseded]\n  - [decision]\n';
+
+/** The fixture files written with content, by path. */
+const CONTENTS: Readonly<Record<string, string>> = { 'oracle/checks/decision.yaml': DECISION_CHECK };
+
+/**
  * A fresh temporary directory, removed when the current test finishes. `register` receives the
  * cleanup; it defaults to Vitest's `onTestFinished`.
  */
@@ -81,7 +91,10 @@ export function tempDir(prefix: string, register: (cleanup: () => void) => void 
   return dir;
 }
 
-/** Write the scenario version directory `<root>/<id>/<version>/`; `files` are created empty. */
+/**
+ * Write the scenario version directory `<root>/<id>/<version>/`; `files` are created empty, except the
+ * complete scenario's check, which holds {@link DECISION_CHECK}.
+ */
 export function writeScenarioAt(
   root: string,
   yaml: Record<string, unknown> | string = completeScenarioYaml(),
@@ -94,7 +107,7 @@ export function writeScenarioAt(
   writeFileSync(join(dir, 'scenario.yaml'), typeof yaml === 'string' ? yaml : stringify(yaml));
   for (const file of files) {
     mkdirSync(dirname(join(dir, file)), { recursive: true });
-    writeFileSync(join(dir, file), '');
+    writeFileSync(join(dir, file), CONTENTS[file] ?? '');
   }
 }
 

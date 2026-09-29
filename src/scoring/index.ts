@@ -20,5 +20,7 @@ export { holdoutHash, holdoutSuites } from './holdout.js';
 export type { HoldoutSuite } from './holdout.js';
 export { rebuildSnapshots } from './snapshot.js';
 export type { RebuildRequest } from './snapshot.js';
+export { addedText, scoreChecks } from './checks.js';
+export type { CheckRequest, CheckScore, CheckStepScore, CheckWhere } from './checks.js';
 export { costMetrics } from './cost.js';
 export type { CostFigures, CostRequest, CostScore, StepCost, Tokens } from './cost.js';

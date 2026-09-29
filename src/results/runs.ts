@@ -142,6 +142,28 @@ export function readStepUsage(runDir: string, n: number): Result<StepUsage> {
     : fail(parsed.issues.map((issue) => ({ ...issue, path: issue.path === file ? file : `${file}.${issue.path}` })));
 }
 
+const stepCommitsSchema = z.object({ messages: z.array(z.string()) });
+
+/**
+ * Step `n`'s commit messages, from its `commits.json` (task-035): what the agent and its harness
+ * committed during the step, oldest first; `undefined` when the run was stored before steps recorded
+ * them. Issues name the file, relative to the run.
+ */
+export function readStepCommits(runDir: string, n: number): Result<readonly string[] | undefined> {
+  const file = `steps/${String(n).padStart(2, '0')}/commits.json`;
+  if (!existsSync(join(runDir, file))) return ok(undefined);
+  let data: unknown;
+  try {
+    data = JSON.parse(readFileSync(join(runDir, file), 'utf8'));
+  } catch (error) {
+    return fail([{ path: file, message: `cannot be read: ${(error as Error).message}` }]);
+  }
+  const parsed = parseWith(stepCommitsSchema, data, file);
+  return parsed.ok
+    ? ok(parsed.value.messages)
+    : fail(parsed.issues.map((issue) => ({ ...issue, path: issue.path === file ? file : `${file}.${issue.path}` })));
+}
+
 /** The files an execution's pins are copied to, beside its runs: a campaign's, or a dry run's (task-021). */
 const PINS_FILES = ['campaign.yaml', 'dry-run.yaml'] as const;
 

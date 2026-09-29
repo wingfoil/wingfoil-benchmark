@@ -1,15 +1,15 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import type { Scenario } from '../../../src/core/index.js';
 import { loadScenario } from '../../../src/scenario/index.js';
-import { runSuite } from '../../../src/scoring/index.js';
+import { runSuite, scoreChecks } from '../../../src/scoring/index.js';
 import type { SuiteReport } from '../../../src/scoring/index.js';
 import { localScoringDocker } from '../../support/local-scoring.js';
 import { repoPath } from '../../support/paths.js';
-import { referenceSnapshot } from '../../support/reference.js';
+import { referenceRun, referenceSnapshot } from '../../support/reference.js';
 
 /**
  * The hold-out, where S2's answer key and reference fixes are (W7 decision 5): BENCH_HOLDOUT_PATH, else
@@ -74,13 +74,16 @@ describe('S2@1.0 (F6.2)', { timeout: 120_000 }, () => {
     scenario = s2();
   });
 
-  it("declares S2.md's card: D and F, its questions, no capability, a hold-out, no checks yet (W8)", () => {
+  it("declares S2.md's card: D and F, its questions, no capability, a hold-out, and its two checks", () => {
     expect(scenario.categories).toEqual({ primary: 'D', secondary: ['F'] });
     expect(scenario.profiles).toEqual(['solo-developer', 'code-reviewer', 'team-developer']);
     expect(scenario.gqm).toEqual(['Q-D1', 'Q-D2', 'Q-D3', 'Q-F1']);
     expect(scenario.capabilities).toEqual([]);
     expect(scenario.holdout).toBe(true);
-    expect(scenario.oracle.checks).toEqual([]);
+    expect(scenario.oracle.checks.map(({ id, kind, steps }) => [id, kind, steps])).toEqual([
+      ['duplicate', 'content', [3]],
+      ['false-report', 'unchanged', [2, 3]],
+    ]);
     expect(scenario.oracle.thirdParty).toEqual([]);
     expect(scenario.steps.map((step) => step.n)).toEqual([1, 2, 3]);
   });
@@ -148,6 +151,43 @@ describe('S2@1.0 (F6.2)', { timeout: 120_000 }, () => {
         );
         expect(results, `step ${step}`).toEqual(expected[step]);
       }
+    });
+
+    // The content checks of S2.md §6 (task-035): the duplicate recognised in step 3's files or commits,
+    // and the code behind the false report left as it was.
+    async function checksOf(edit?: (n: number, workspace: string) => void) {
+      const { runDir, snapshots } = await referenceRun(scenario.seedDir, REFERENCE, edit);
+      const result = scoreChecks({ checks: scenario.oracle.checks, runDir, snapshots });
+      if (!result.ok) throw new Error(JSON.stringify(result.issues));
+      return Object.fromEntries(
+        result.value.map((check) => [
+          check.id,
+          check.steps.map((step) => ('passed' in step ? step.passed : null)),
+        ]),
+      );
+    }
+
+    it('passes both checks on the reference, at every step they apply to', async () => {
+      expect(await checksOf()).toEqual({ duplicate: [true], 'false-report': [true, true] });
+    });
+
+    it('fails the duplicate check when step 3 records nothing about the duplicate', async () => {
+      const silent = await checksOf((n, workspace) => {
+        if (n === 3) rmSync(join(workspace, 'NOTES.md'), { force: true });
+      });
+      expect(silent.duplicate).toEqual([false]);
+    });
+
+    it('fails the false-report check when step 2 "fixes" the VAT on shipping', async () => {
+      const fixed = await checksOf((n, workspace) => {
+        if (n !== 2) return;
+        const tax = join(workspace, 'src', 'tax.ts');
+        writeFileSync(
+          tax,
+          readFileSync(tax, 'utf8').replace('return percentOf(shipping, VAT_RATES.standard);', 'return 0;'),
+        );
+      });
+      expect(fixed['false-report']).toEqual([false, false]);
     });
 
     it("keeps the seed's visible suite green after the last fix", () => {
