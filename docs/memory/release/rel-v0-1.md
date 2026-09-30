@@ -41,7 +41,7 @@ Waves and features from [07_sequencer.md](../../01_vision/07_sequencer.md) 1.1. 
 | W7 — First content | F6.1 S1 conformance · F6.2 S2 injected bugs · F5.1 results store | — | S1 and S2 scored in all three arms | **2026-09-29** |
 | W8 — Continuity and governance | F6.3 S3 multi-session evolution · F6.8 S8 directive compliance · F4.8 tool-neutral governance metrics | — | S3 and S8 scored | **2026-09-29** |
 | W9 — Quality | F4.2 static quality · F4.7 next-change cost · F4.4 setup/step split and break-even | — | the full quality and cost picture per run | **2026-09-29** |
-| W10 — Determinism and findings | F4.5 determinism metric · F5.3 run detail · F5.4 finding note | F4.5 | determinism measured, and a first finding note ready for WingFoil | — |
+| W10 — Determinism and findings | F4.5 determinism metric · F5.3 run detail · F5.4 finding note | F4.5 | determinism measured, and a first finding note ready for WingFoil | **2026-09-30** |
 | W11 — Publish | F5.5 landing page · F5.8 method page · F5.6 manual publish | — | first preliminary result public; repository public | — |
 
 The "Verified" column records, for each wave, the evidence that its "Ends with" holds (kanban-delivery,
@@ -654,10 +654,123 @@ No bug, no new decision-log, no hold-out change. No spending: **1.0415 USD** rep
     files measured;
   - that a final not reached is a loss.
 
+### W10 — verified 2026-09-30
+
+**"Determinism measured, and a first finding note ready for WingFoil."** Verified offline, with the fake
+agent and a declared synthetic execution, as the W10 plan phase decided (task-042, decision 2). There
+is no real-agent half: `real-agent-check` was not taken. The first note comes from the synthetic
+execution, is marked synthetic here, and is **not** handed to WingFoil. The first real note comes from
+calibration or the reference campaign.
+
+- **Execution 1, by hand, on main** (`13d6c23`, the built CLI), in a temporary repository holding
+  S1@1.0, S2@1.0 and the benchmark's arms. The fake replays each reference, S2's from the hold-out, and
+  WingFoil `3df305e` is built from the clone.
+  - `bench scenario validate` → valid for both (hold-out: 3 and 8 files).
+  - Six dry runs, two scenarios in three arms, each `completed, 0.0000 USD`.
+  - `bench campaign validate` → `campaign cb46676b5881 is valid (2 scenarios, 3 arms)`. `bench campaign
+    run` (S1 × 3, S2 × 1) → `12 runs completed, 0 failed`, cost 0.
+  - `bench score cb46676b5881/1 --holdout ../WingFoil2-Benchmark-HoldOut` → exit 0. The aggregate line
+    reads `(6 groups, 0 slices; determinism measured in 3, n = 1 in 3)`.
+    - **S1, in each arm, the fake's three identical repetitions:** M-R1 135/135, M-R2 1 (9 interface
+      entries in every pair), M-R3 1 (8 paths in every pair). The wingfoil arm's setup files are not
+      among its paths.
+    - **S2, in each arm:** `m_r` is `{ n: 1 }`, with no value.
+  - Scored again (348 s): the same bytes for all 12 `score.json` and the aggregate.
+- **Execution 2, declared synthetic** (the approver's choice, 2026-09-29): the stored runs of execution
+  1, unscored, copied as `cb46676b5881/2`. Two of S1's wingfoil repetitions are altered at step 4 by
+  a script:
+  - r2's `src/merge-patch.ts` keeps nulls behind a new parameter;
+  - r3 gains `NOTES.md` and a `package-lock.json`.
+
+  For each, the snapshots are rebuilt from the seed with the stored patches, and every recorded tree is
+  checked. Then step 4's `diff.patch` and its `run.json` tree are rewritten, as `rebuildSnapshots`
+  checks them. `bench score` → exit 0 in 417 s. S1's wingfoil group, checked by hand:
+  - **M-R1** 130/135: r2's five merge-patch tests fail, and only in r2;
+  - **M-R2** 0.8667: the pairs are 8/10, 9/9 and 8/10, since r2's `applyMergePatch` signature differs;
+  - **M-R3** 0.9259: the pairs are 8/8, 8/9 and 8/9, since r3's `NOTES.md` counts and its lockfile, a
+    generated path, does not;
+  - no threshold is applied. The baseline and baseline-docs groups stay at 1, and S2 at `n = 1`.
+- **Run detail:**
+  - `bench run compare cb46676b5881/2/runs/S1@1.0/wingfoil/fake-model/r1 …/r2` shows the steps side by
+    side: step 04 123/123 against 118/123, final 135/135 against 130/135, hold-out 33/33 against 29/33;
+  - `bench run show …/r2` lists the five failing merge-patch tests at step 04 and on the final snapshot.
+- **The first finding note (synthetic):** `bench finding cb46676b5881/2 --scenario S1@1.0 --metric M-R
+  --arms wingfoil,baseline --as decision-log` → `findings/cb46676b5881-2-s1-1.0-m-r-baseline+wingfoil.md`,
+  in the temporary repository only.
+  - It holds the campaign, the WingFoil commit `3df305ea198d…` with its three runs, S1@1.0 and its hash,
+    the runs, and M-R per arm as above.
+  - It holds the links, and the decision-log block with its facts filled in.
+  - Asked again with the arms the other way round, it is refused (`exists already`). Removed and written
+    again, it gives the same SHA-256.
+  - Its reproduction's first step holds: the execution's `campaign.yaml`, copied into `campaigns/`,
+    validates as the same campaign `cb46676b5881`.
+- **Acceptance:** all are green.
+  - `scoring.feature` @F4.5 ×2 and `results.feature` @F5.3 ×2 and @F5.4;
+  - `npm test` 1099/1099 on task-044's branch (coverage 98.82%), lint clean, `npm run test:bin` 7/7;
+  - `npm run test:docker` 16/16, run on its own after each task.
+- No `bench-` container is left.
+
+| Task | Feature | Delivered |
+|---|---|---|
+| [task-042](../task/task-042-determinism-metrics-across-repetitions.md) | F4.5 | `determinism` in `score.json` (paths, and the interface by the image's `interface.mjs`); `m_r` per group: M-R1, M-R2 and M-R3 with their pairs, `n = 1`, and pins that differ |
+| [task-043](../task/task-043-run-detail-and-side-by-side-comparison.md) | F5.3 | `bench run show` and `bench run compare`: the readable transcript, not reached, cost bounds, read-only |
+| [task-044](../task/task-044-finding-note-export.md) | F5.4 | `bench finding`: a metric catalogue over the aggregate, a note named from its inputs and never overwritten, a WingFoil section shaped as the pinned template |
+
+Decisions taken during W10:
+
+- the plan-phase decisions in task-042 (six), with the approver's three choices:
+  - three tasks, one per feature;
+  - an offline wave check with a declared synthetic execution;
+  - run detail as text;
+- the design choices confirmed by the approver:
+  - task-042: an interface entry names its file and is read from syntax; the whole final snapshot is
+    read; a final not reached is left out;
+  - task-043: a condensed transcript with `--full`; a run named by directory or by aggregate name;
+    compare on any two runs of one scenario version;
+  - task-044: `--as` required; an id from the inputs, and an existing note refused; no date;
+- requirements 1.17 (REQ-SCO-05, -07), 1.18 (REQ-CLI-08) and 1.19 (REQ-CLI-07, REQ-RES-05); adr-004
+  amendment 4.
+
+**How W10 was reviewed.** From task-042 on, each task was reviewed by fresh, read-only agents before
+`in-review`. The first review of task-042 was the building session's own; the approver asked for an
+independent one and sent the task back.
+
+- **Reviews:** task-042 had three rounds, task-043 two, task-044 two.
+- **What they found:**
+  - bugs that tests had not caught, among them a private parameter property printed as public, and a
+    reproduction that could not run;
+  - two regressions in the fixes themselves.
+- Each finding was fixed test-first and recorded in its task's notes.
+
+No bug, no new decision-log, no hold-out change. No spending: **1.0415 USD** reported in all so far
+([v0.1 ledger](../../calibration/v0.1-ledger.md)).
+
+**Due before the phases and waves that need them:**
+
+- **Calibration (plan-003 step 3):**
+  - M-R's first real values: an agent's repetitions differ where the fake's cannot;
+  - watch M-R3's generated paths (`build/`, `dist/`, `coverage/` at any depth, lockfiles) against what
+    agents commit. A change is a scoring rule change (adr-004);
+  - harness files written during the steps (e.g. `.wingfoil/memory/…`) count in M-R3. Only the setup's
+    are left out, whatever the harness (the approver's choice of 2026-09-29, task-042's review). See
+    whether the arms' step files move M-R3;
+  - the first real finding note, handed to WingFoil by the maintainer.
+- **W11 (F5.6):** transcripts are git-ignored. A run read from a clone shows "transcript not on disk"
+  until the release's transcripts are fetched.
+- **W11 (F5.8, the method page)** states:
+  - M-R1 on public tests;
+  - M-R2 read from syntax, an entry naming its file, what an entry is;
+  - M-R3's paths, the setup's and the generated ones left out, and that the seed's files raise the
+    similarity;
+  - the runs compared (a final not reached left out), the pins compared, and that no threshold is
+    applied;
+  - that harness files written during the steps count in M-R3;
+  - what a finding note is, and that one is filed in WingFoil by hand.
+
 ## Release checklist
 
 - [x] release-planning: scope approved (planning → in-development, `8c5c7e6`; plan: plan-003)
-- [ ] delivery: W1–W11 done, every wave's "Ends with" verified (W1 done: task-001, task-002, task-003; W2 done: task-004, task-005, task-006, task-007; W3 done: task-011, task-012, task-013, task-014, task-015; W4 done: task-016, task-017, task-018, task-020, task-019; W5 done: task-021, task-022, task-023, task-024, task-025; W6 done: task-026, task-027, task-028, task-029, task-030; W7 done: task-031, task-032, task-033, task-034; W8 done: task-035, task-036, task-037, task-038; W9 done: task-039, task-040, task-041)
+- [ ] delivery: W1–W11 done, every wave's "Ends with" verified (W1 done: task-001, task-002, task-003; W2 done: task-004, task-005, task-006, task-007; W3 done: task-011, task-012, task-013, task-014, task-015; W4 done: task-016, task-017, task-018, task-020, task-019; W5 done: task-021, task-022, task-023, task-024, task-025; W6 done: task-026, task-027, task-028, task-029, task-030; W7 done: task-031, task-032, task-033, task-034; W8 done: task-035, task-036, task-037, task-038; W9 done: task-039, task-040, task-041; W10 done: task-042, task-043, task-044)
 - [ ] calibration: dry runs in every arm, budget revised (`docs/calibration/v0.1.md`)
 - [ ] validation: acceptance green on the fake agent, coverage > 80%, lint clean, one real-agent end-to-end run
 - [ ] campaign: reference campaign published (campaign: —)
