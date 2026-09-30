@@ -189,6 +189,106 @@ No ADR: nothing about scoring, the image or the runner changes.
 <!-- What happened while building: deviations, blockers, follow-ups (filed as elements, never left
      here). For every `wingfoil` command: declared vs observed behaviour. -->
 
+### Build
+
+Commits on `task/task-043-run-detail-and-side-by-side-comparison`:
+
+- `1cb9178` `test(results)` (red):
+  - `readableTranscript`;
+  - `readRunDetail` and `resolveRun`;
+  - both commands through `main`: unscored, stopped early, refusals, only reading;
+  - `results.feature` @F5.3 ×2 on S3's reference in two arms.
+- `6266bd9` `feat(results)`: `src/results/detail.ts`, `src/agents/transcript.ts`, `src/cli/show.ts`, the
+  routing and `USAGE`. It also holds `show-render.test.ts`, rendering tests the first coverage run asked
+  for.
+- `e96c80e` `docs(requirements)`: requirements 1.18 (REQ-CLI-08).
+
+**Deviations from the Design, found while building:**
+
+1. **A run's name comes from its layout, not from the working directory.** It is
+   `<campaign>/<n>/runs/…/r<k>` whenever the directory is laid out so. From the built CLI, whose working
+   directory is the repository, the first version printed the full path.
+2. **The acceptance test caches the commands' output, not the paths.** `tempDir` removes the
+   repository when the test that made it ends, and the second @F5.3 scenario found it gone.
+3. **`USAGE` gained two lines.** The three tests that match it whole were updated: `main.test.ts` ×2 and
+   the bin test.
+
+### Independent reviews and their fixes
+
+Following the lesson of task-042, a fresh read-only agent reviewed the branch before `in-review`. It
+confirmed:
+
+- the fields read match what the runner and the scorer write;
+- nothing writes;
+- the layering holds (REQ-ARC-02).
+
+It found:
+
+1. **Against an acceptance criterion:** an unscored run that stopped early did not show the scenario's
+   later steps as "not reached", and the test covering it was weak.
+2. **Against the Design:**
+   - compare's totals lacked tokens, turns and time;
+   - the transcript read a session ending in `is_error` as "success";
+   - the transcript dropped the result's text, which is where a question to the approver is.
+3. **Misleading figures:** a step killed at its cap showed 0 USD, not its bound; two columns could
+   share a label; EUR and USD mixed with nothing said.
+4. **Crashes and gaps:**
+   - a `null` transcript line, a malformed `commits.json` or an unreadable `score.json` made the whole
+     command fail;
+   - a stale `score.json` (another scenario hash) was shown as the run's;
+   - the agent's version and the expected-failure mark were not shown;
+   - the run's name was taken from any `X/N/runs/…` path;
+   - an unknown `--flag` was read as a run.
+
+Fixed test-first: `a57f092` (red, 9 tests), `219bd71`, `01ae367` (REQ-CLI-08). The scenario's step
+count comes from `scenarios/`, used only when its hash is the run's. Mixed units stay, as the Design has
+them, and are said under the table.
+
+A second fresh agent reviewed that fix alone. It found nothing blocking, and all nine claims held. It
+found:
+
+- a scored step killed at its cap lost its `≤`;
+- a scenario file the hash cannot read made the command throw;
+- a resumed step's reported cost was hidden behind "not reported";
+- the user's text was never cut;
+- the file name appeared twice in a score's issue;
+- compare did not say why a run is not scored.
+
+Fixed test-first: `d9ffced` (red, 3 tests), `a3548dc`, `d45d5ea` (REQ-CLI-08). The result's text still
+repeats the last assistant text when both exist. The second review advised keeping it, since for a
+question the result is the only place the text appears.
+
+**Checks after the fixes:**
+
+- `npm test`: 1079/1079, coverage 98.87%; `detail.ts`, `transcript.ts` 100% of lines, `show.ts` 98.8%;
+- `npm run test:bin`: 6/6, `bench run show` and `bench run compare` through the built CLI;
+- lint and typecheck clean;
+- `npm run test:docker` on `d45d5ea`, on its own: 16/16 in 812 s, no `bench-` container left. It holds no
+  test of its own for F5.3: the commands read stored files, which the other suites cover. One earlier run was stopped: `npm test` and `test:bin` had been run
+  beside it, against the rule (and `test:bin` rebuilds `dist/`). Its container was removed, and the
+  suite was run again on its own.
+
+### Review
+
+- **Traceability.**
+  - `features: [F5.3]`: both @F5.3 scenarios have their tests, and `traceability.test.ts` is green.
+  - `acceptance: [results.feature]`.
+  - `requirements`:
+    - REQ-CLI-08 is amended (1.18);
+    - REQ-RES-06: a transcript not on disk is stated;
+    - REQ-FMT-06: the layout is read, and a run is named from it.
+- **W10 decisions held:**
+  - decision 3: text on standard output;
+  - decision 5: no change to the scoring image.
+- The three design choices the approver confirmed: a condensed transcript with `--full`, a run named by
+  directory or by aggregate name, and compare on any two runs of one scenario version.
+- **For task-044:** a finding note can link a run by its aggregate name. `bench run show <name>` and
+  `bench run compare <name> <name>` open it from the repository's root.
+- **For W11 (F5.6):** transcripts are git-ignored. A run read from a clone shows "transcript not on
+  disk" until the release's transcripts are fetched.
+- **For the approver's review decision:** requirements 1.18 (REQ-CLI-08).
+- No new bug and no new decision-log. No WingFoil usage note. No spending.
+
 ### WingFoil commands (declared vs observed)
 
 - Plan phase: see [task-042](task-042-determinism-metrics-across-repetitions.md) (`f2abfd6` add,
