@@ -2,7 +2,7 @@
 id: task-047-manual-publish-and-transcript-assets
 type: task
 title: "Manual publish and transcript assets"
-status: draft
+status: pending
 release: v0.1
 wave: W11
 features: [F5.6]
