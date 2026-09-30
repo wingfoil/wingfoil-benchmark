@@ -297,3 +297,7 @@ question the result is the only place the text appears.
   in the worktree of branch `task/task-043-run-detail-and-side-by-side-comparison`.
   - Declared: `backlog → in-progress`, one commit `wf(task): submit <id>`.
   - Observed: exit 0, 1 file, a diff limited to `status: backlog` → `status: in-progress`. Matches.
+- Build and review notes committed by hand (`507aaf6`), then `node_modules/.bin/wingfoil memory submit
+  task-043-run-detail-and-side-by-side-comparison` in the worktree → `7aa9cc5`.
+  - Declared: `in-progress → in-review`, one commit `wf(task): submit <id>`.
+  - Observed: exit 0, 1 file, a diff limited to `status: in-progress` → `status: in-review`. Matches.
