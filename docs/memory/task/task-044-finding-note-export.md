@@ -217,6 +217,96 @@ No ADR.
 <!-- What happened while building: deviations, blockers, follow-ups (filed as elements, never left
      here). For every `wingfoil` command: declared vs observed behaviour. -->
 
+### Build
+
+Commits on `task/task-044-finding-note-export`:
+
+- `1881350` `test(results)` (red):
+  - `findingNote` on an aggregated execution of T3 (a baseline run, two wingfoil runs with a harness
+    commit);
+  - every metric of the catalogue;
+  - the two WingFoil shapes, the refusals and the same bytes twice;
+  - the command through `main`;
+  - `results.feature` @F5.4.
+- `ae4b35b` `test(results)`: the WingFoil section keeps the template's own `##` headings
+  inside its fenced block, so it pastes as it is. Two assertions of the first commit assumed `####`.
+- `29865be` `feat(results)`: `src/results/finding.ts`, `src/cli/finding.ts`, the routing and `USAGE`.
+  It also holds `finding-values.test.ts`, which covers the metrics' other forms on a hand-built
+  aggregate, and the bin test.
+- `74e83e7` `docs(requirements)`: requirements 1.19 (REQ-CLI-07, REQ-RES-05).
+
+**A choice made while building:** @F5.4's "nothing is written to the WingFoil repository" is checked on
+the test's own repository. Nothing but the one note appears or changes there, and the command is given
+no path to WingFoil. Comparing the real WingFoil repository beside this one would be flaky, since other
+sessions work in it.
+
+### Independent reviews and their fixes
+
+A fresh read-only agent reviewed the branch before `in-review`. It confirmed:
+
+- every metric reads the right field of the aggregate;
+- the id cannot leave `findings/`;
+- the bytes are deterministic;
+- the layering holds.
+
+It found:
+
+1. **A wingfoil run whose `run.json` failed a stricter reader was dropped in silence**, and the note
+   said WingFoil never ran.
+2. **The pasted block ran each arm's label into the list before it** (CommonMark's lazy continuation).
+3. **A final not reached was not stated** for M-D3 (where it counts as a loss of every test the seed
+   passed), M-F1 and the hold-out's unscored runs.
+4. **Smaller:**
+   - the bug template's Triage section was missing;
+   - `title: ""` would blank the title `memory add --title` sets;
+   - the reproduction was placeholders;
+   - `../1` and `dry-runs/1` were accepted;
+   - two arm orders gave two notes, and an arm could be named twice;
+   - the existence check and the write could race.
+
+Fixed test-first: `e323494` (red), `550158b`, `c31d1bc` (requirements).
+
+A second fresh agent reviewed that fix alone. It confirmed seven of its eight claims, and found:
+
+1. **The reproduction's first step could not run:** `bench campaign run` loads only a file under
+   `campaigns/`, and the note named the execution's copy under `results/`.
+2. **A decision-log's facts sat under the last arm's heading.**
+3. **The hold-out's final not reached and a check's step not reached were not stated.**
+4. **Smaller:**
+   - the same id could hold different bytes, depending on the order of the arms;
+   - scenario hashes that disagreed were joined without saying so.
+
+Fixed test-first: `4f5c316` (red), `5803aa6`, `55bd35b` (requirements). The reproduction now copies the
+campaign file back into `campaigns/`; its id is its content's, so it runs as the same campaign, with
+`--allow-spending`. The arms are sorted in the whole note. A third review is not made: the last fix is
+small and tested, and that is the approver's call.
+
+**Checks after the fixes:**
+
+- `npm test`: 1099/1099, coverage 98.82% (`finding.ts` 99.2% of lines);
+- `npm run test:bin`: 7/7, `bench finding` through the built CLI in the fixture's own directory;
+- lint and typecheck clean;
+- `npm run test:docker` on `55bd35b`, on its own: 16/16 in 780 s, no `bench-` container left. It holds no
+  test of F5.4, which reads stored files only.
+
+### Review
+
+- **Traceability.**
+  - `features: [F5.4]`: the @F5.4 scenario has its test, and `traceability.test.ts` is green.
+  - `acceptance: [results.feature]`.
+  - `requirements`:
+    - REQ-CLI-07 and REQ-RES-05 are amended (1.19);
+    - REQ-FMT-07: the values read carry their runs and `n`.
+- **W10 decisions held:**
+  - decision 3: the links are `bench run show` and `bench run compare`;
+  - decision 5: no change to the scoring image.
+- The three design choices the approver confirmed: `--as` required, an id from the inputs with an
+  existing note refused, and no date.
+- **For the wave check (decision 2):** the first note is written from the declared synthetic
+  execution, is marked synthetic, and is not handed to WingFoil.
+- **For the approver's review decision:** requirements 1.19 (REQ-CLI-07, REQ-RES-05).
+- No new bug and no new decision-log. No WingFoil usage note. No spending.
+
 ### WingFoil commands (declared vs observed)
 
 - Plan phase: see [task-042](task-042-determinism-metrics-across-repetitions.md) (`3c336ad` add,
