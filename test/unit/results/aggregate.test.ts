@@ -37,6 +37,14 @@ interface RunSpec {
   readonly stepCosts?: readonly number[];
   /** score.json's `seed`, `m_f1`, `m_f2` and `m_d3` (task-039); absent, it was scored before them. */
   readonly continuity?: Readonly<Record<string, unknown>>;
+  /** score.json's `determinism` (task-042); absent, it was scored before it. */
+  readonly determinism?: { readonly interface: readonly string[]; readonly paths: readonly string[] } | 'not reached';
+  /** The harness commit run.json records (REQ-RUN-14), for an arm that requires one. */
+  readonly harnessCommit?: string;
+  /** The scoring image score.json's `scorer` names; by default `bench-score:x`. */
+  readonly scorerImage?: string;
+  /** The scenario hash run.json and score.json both record; by default `sha256:<scenario>`. */
+  readonly scenarioHash?: string;
 }
 
 const tally = (suites: readonly Suite[]) => ({
@@ -71,10 +79,11 @@ function execution(runs: readonly RunSpec[], pins = 'models:\n  default: model-a
       JSON.stringify({
         scenario,
         version: '1.0',
-        scenario_hash: `sha256:${scenario}`,
+        scenario_hash: run.scenarioHash ?? `sha256:${scenario}`,
         arm: run.arm,
         model,
         repetition: run.r ?? 1,
+        ...(run.harnessCommit === undefined ? {} : { harness: { tool: 'wingfoil', commit: run.harnessCommit } }),
         outcome: final === 'not reached' ? 'failed' : 'completed',
         steps: [],
       }),
@@ -86,8 +95,8 @@ function execution(runs: readonly RunSpec[], pins = 'models:\n  default: model-a
         score_version: 1,
         scenario,
         version: '1.0',
-        scenario_hash: run.scoredHash ?? `sha256:${scenario}`,
-        scorer: { image: 'bench-score:x', tsx: '4.23.15' },
+        scenario_hash: run.scoredHash ?? run.scenarioHash ?? `sha256:${scenario}`,
+        scorer: { image: run.scorerImage ?? 'bench-score:x', tsx: '4.23.15' },
         steps: run.steps.map((step, index) =>
           step === 'not reached'
             ? { n: index + 1, not_reached: true }
@@ -114,6 +123,14 @@ function execution(runs: readonly RunSpec[], pins = 'models:\n  default: model-a
                 },
         ...(run.checks === undefined ? {} : { checks: run.checks }),
         ...run.continuity,
+        ...(run.determinism === undefined
+          ? {}
+          : {
+              determinism:
+                run.determinism === 'not reached'
+                  ? { not_reached: true }
+                  : { interface: run.determinism.interface, paths: run.determinism.paths },
+            }),
         cost: {
           usd_to_eur: 0.5,
           steps: (run.stepCosts ?? []).map((stepEur, index) =>
@@ -279,6 +296,137 @@ describe('aggregateExecution (F5.1, REQ-FMT-07)', () => {
       { suite: 'p', step: 2, value: { n: 1, runs: [name('baseline')], values: [0] } },
       { suite: 'p', step: 3, value: { n: 1, runs: [name('baseline')], values: [1] } },
     ]);
+  });
+
+  describe('M-R1–M-R3, determinism across repetitions (experiment design §4.5, REQ-SCO-07, task-042)', () => {
+    const A = 'oracle/a.test.ts > a';
+    const B = 'oracle/b.test.ts > b';
+    const INTERFACE = ['src/x.ts: export function x(): void;', 'src/y.ts: export const y;'];
+    const PATHS = ['package.json', 'src/x.ts', 'src/y.ts'];
+    const rep = (r: number, overrides: Partial<RunSpec> = {}): RunSpec => ({
+      arm: 'wingfoil',
+      r,
+      steps: [[s('a', 2, 3, ['oracle/c.test.ts > c'])]],
+      determinism: { interface: INTERFACE, paths: PATHS },
+      ...overrides,
+    });
+
+    it('gives each metric with its runs and n, from every pair of repetitions, and no threshold', () => {
+      const dir = execution([
+        rep(1),
+        rep(2, {
+          steps: [[s('a', 1, 3, ['oracle/c.test.ts > c', A])]],
+          determinism: {
+            interface: ['src/x.ts: export function x(n: number): void;', 'src/y.ts: export const y;'],
+            paths: PATHS,
+          },
+        }),
+        rep(3, {
+          steps: [[s('a', 1, 3, ['oracle/c.test.ts > c', B])]],
+          determinism: { interface: INTERFACE, paths: [...PATHS, 'NOTES.md'] },
+        }),
+      ]);
+      const [group] = aggregate(dir).groups;
+      const runs = [name('wingfoil', 1), name('wingfoil', 2), name('wingfoil', 3)];
+      expect(group?.metrics.m_r).toEqual({
+        n: 3,
+        runs,
+        not_reached: [],
+        // c fails in all three, A and B in one each: one test of three has the same verdict everywhere.
+        m_r1: { agree: 1, total: 3 },
+        m_r2: {
+          mean: 0.5556,
+          pairs: [
+            { runs: [runs[0], runs[1]], intersection: 1, union: 3 },
+            { runs: [runs[0], runs[2]], intersection: 2, union: 2 },
+            { runs: [runs[1], runs[2]], intersection: 1, union: 3 },
+          ],
+        },
+        m_r3: {
+          mean: 0.8333,
+          pairs: [
+            { runs: [runs[0], runs[1]], intersection: 3, union: 3 },
+            { runs: [runs[0], runs[2]], intersection: 3, union: 4 },
+            { runs: [runs[1], runs[2]], intersection: 3, union: 4 },
+          ],
+        },
+      });
+    });
+
+    it('gives no value to a group of one run, and says n = 1', () => {
+      const [group] = aggregate(execution([rep(1)])).groups;
+      expect(group?.metrics.m_r).toEqual({ n: 1, runs: [name('wingfoil', 1)], not_reached: [] });
+    });
+
+    it('leaves a repetition whose final was not reached out of every metric, and lists it', () => {
+      const dir = execution([
+        rep(1),
+        rep(2),
+        rep(3, { steps: ['not reached'], final: 'not reached', determinism: 'not reached' }),
+      ]);
+      const [group] = aggregate(dir).groups;
+      expect(group?.metrics.m_r).toMatchObject({
+        n: 2,
+        runs: [name('wingfoil', 1), name('wingfoil', 2)],
+        not_reached: [name('wingfoil', 3)],
+        m_r1: { agree: 3, total: 3 },
+        m_r2: { mean: 1 },
+        m_r3: { mean: 1 },
+      });
+      const lone = aggregate(execution([rep(1), rep(2, { steps: ['not reached'], final: 'not reached' })]));
+      expect(lone.groups[0]?.metrics.m_r).toEqual({
+        n: 1,
+        runs: [name('wingfoil', 1)],
+        not_reached: [name('wingfoil', 2)],
+      });
+    });
+
+    it('gives no value when the runs differ in a pin they record, and names the pins', () => {
+      const dir = execution([
+        rep(1, { harnessCommit: 'aaaa' }),
+        rep(2, { harnessCommit: 'bbbb', scorerImage: 'bench-score:y' }),
+      ]);
+      const [group] = aggregate(dir).groups;
+      expect(group?.metrics.m_r).toEqual({
+        n: 2,
+        runs: [name('wingfoil', 1), name('wingfoil', 2)],
+        not_reached: [],
+        pins_differ: ['harness_commit', 'scorer'],
+      });
+    });
+
+    it('gives no value when the runs ran different versions of the scenario, and names the hash', () => {
+      const [group] = aggregate(execution([rep(1), rep(2, { scenarioHash: 'sha256:other' })])).groups;
+      expect(group?.metrics.m_r).toMatchObject({ n: 2, pins_differ: ['scenario_hash'] });
+      expect(group?.metrics.m_r).not.toHaveProperty('m_r1');
+    });
+
+    it('gives M-R1 alone when some runs were scored before task-042 and others after', () => {
+      const [group] = aggregate(execution([rep(1), { ...rep(2), determinism: undefined } as RunSpec])).groups;
+      expect(group?.metrics.m_r).toEqual({
+        n: 2,
+        runs: [name('wingfoil', 1), name('wingfoil', 2)],
+        not_reached: [],
+        m_r1: { agree: 3, total: 3 },
+      });
+    });
+
+    it('counts two empty sets as alike', () => {
+      const empty = { interface: [], paths: [] };
+      const [group] = aggregate(execution([rep(1, { determinism: empty }), rep(2, { determinism: empty })])).groups;
+      expect(group?.metrics.m_r).toMatchObject({ m_r2: { mean: 1 }, m_r3: { mean: 1 } });
+    });
+
+    it('gives M-R1 alone for runs scored before task-042, never a zero', () => {
+      const older = (r: number): RunSpec => ({ arm: 'wingfoil', r, steps: [[s('a', 2, 3, ['oracle/c.test.ts > c'])]] });
+      const [group] = aggregate(execution([older(1), older(2)])).groups;
+      expect(group?.metrics.m_r).toEqual({
+        n: 2,
+        runs: [name('wingfoil', 1), name('wingfoil', 2)],
+        not_reached: [],
+        m_r1: { agree: 3, total: 3 },
+      });
+    });
   });
 
   describe('M-K3, the setup, in the cost of a group (task-040)', () => {

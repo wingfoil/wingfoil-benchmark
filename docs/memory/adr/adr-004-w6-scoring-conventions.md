@@ -157,3 +157,21 @@ REQ-SCO-04 as amended in requirements 1.16):
     stored patch. Every path the setup touched is left out, whatever the harness. The image is given
     the file lists and decides nothing about which files count.
 
+## Amendment 4 (W10 task-042, 2026-09-29; accepted at its review, `e04310a`)
+
+What [task-042](../task/task-042-determinism-metrics-across-repetitions.md) added to the scoring image
+for M-R2 (F4.5, REQ-SCO-05 as amended in requirements 1.17):
+
+23. **The image extracts the public interface** through its script `/opt/score/interface.mjs`, with the
+    TypeScript it already pins. There is no new package, so `score.json`'s `scorer` gains no key. The
+    image's tag changes, as it does for any change to its directory.
+    - It uses one container per run, on the final snapshot, with no mount and no network. The snapshot
+      is copied to `/score/snapshot`.
+    - The run is bounded by `timeout 300`. It parses files and runs nothing of the agent's.
+    - An exit other than 0 is an oracle error.
+    - No container is started when the final snapshot has no TypeScript source to read.
+24. **Which files M-R2 reads, and M-R3's paths, are decided on the host** from the final snapshot and
+    the setup's stored patch, as M-Q2's files are (decision 22). The image is given the file list.
+25. **M-R1–M-R3 are computed by aggregation**, from what each `score.json` holds. No container runs
+    there. `aggregate_version` stays 1: `m_r` is a new key of each group's metrics.
+

@@ -111,8 +111,16 @@ function aggregate(executionDir: string, name: string, failed: number, io: Io): 
   writeAggregate(executionDir, aggregated.value);
   const { groups, slices } = aggregated.value;
   const count = (n: number, noun: string) => `${n} ${noun}${n === 1 ? '' : 's'}`;
+  // Determinism (task-042): the groups it was measured in, those of one run, and those whose pins differ.
+  const all = [...groups, ...slices].map((group) => group.metrics.m_r);
+  const measured = all.filter((m) => m.n >= 2 && m.pins_differ === undefined).length;
+  const single = all.filter((m) => m.n < 2).length;
+  const differ = all.filter((m) => m.pins_differ !== undefined).length;
+  const determinism =
+    `determinism measured in ${measured}, n = 1 in ${single}` +
+    (differ === 0 ? '' : `, pins differ in ${differ}`);
   io.stdout(
-    `aggregate: ${name}/${AGGREGATE_FILE} (${count(groups.length, 'group')}, ${count(slices.length, 'slice')})\n`,
+    `aggregate: ${name}/${AGGREGATE_FILE} (${count(groups.length, 'group')}, ${count(slices.length, 'slice')}; ${determinism})\n`,
   );
   return EXIT.ok;
 }

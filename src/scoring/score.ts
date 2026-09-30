@@ -20,6 +20,10 @@ import type { SuiteReport, TestResult } from './hidden-tests.js';
 import type { ScoringImage } from './image.js';
 import { measuredFiles, qualityInContainer } from './quality.js';
 import type { MQ2Score, QualityRunner } from './quality.js';
+import { determinismPaths, interfaceFiles } from './determinism.js';
+import type { DeterminismScore } from './determinism.js';
+import { interfaceInContainer } from './interface.js';
+import type { InterfaceRunner } from './interface.js';
 import { rebuildSnapshots } from './snapshot.js';
 
 /** The version of the scoring rules (adr-004): it rises when a rule changes, not when a key is added. */
@@ -103,6 +107,8 @@ export interface ScoreFile {
   readonly m_d3: MD3Score;
   /** M-Q2 on the files the run changed (REQ-SCO-04, task-041). */
   readonly m_q2: MQ2Score;
+  /** M-R2's and M-R3's inputs on the final snapshot (REQ-SCO-07 as amended in 1.17, task-042). */
+  readonly determinism: DeterminismScore;
   /** M-K1 and M-K2 per step and for the run (F4.3, task-029). */
   readonly cost: CostScore;
   /** The run's mark (F3.6), as the runner recorded it: `null`, or the capabilities its harness lacked. */
@@ -146,6 +152,8 @@ export interface ScoreRequest {
   readonly holdout?: HoldoutInput;
   /** What measures M-Q2; by default the scoring image's quality.mjs in a container (task-041). */
   readonly quality?: QualityRunner;
+  /** What reads M-R2's interface; by default the scoring image's interface.mjs in a container (task-042). */
+  readonly interfaces?: InterfaceRunner;
 }
 
 /** A group of suites scored together: the public ones, or a hold-out's, which nothing may repeat. */
@@ -213,6 +221,8 @@ export async function scoreRun(request: ScoreRequest): Promise<Result<ScoreFile>
     const seed = publicScore.value.seed as SeedScore;
     const quality = await staticQuality(request, final, snapshots.value);
     if (!quality.ok) return quality;
+    const determinism = await determinismOf(request, final, snapshots.value);
+    if (!determinism.ok) return determinism;
     return ok({
       score_version: SCORE_VERSION,
       scenario: run.scenario,
@@ -236,6 +246,7 @@ export async function scoreRun(request: ScoreRequest): Promise<Result<ScoreFile>
       ...(nextChange === undefined ? {} : { m_f2: nextChange }),
       m_d3: mD3(seed, final),
       m_q2: quality.value,
+      determinism: determinism.value,
       cost: cost.value,
       expected_failure:
         run.expectedFailure === undefined ? null : { missing: [...run.expectedFailure.missing] },
@@ -274,6 +285,37 @@ async function staticQuality(
   const measure = await run({ snapshot, files });
   if (!measure.ok) return measure;
   return ok({ measured: files.measured, coverage_targets: files.coverageTargets, ...measure.value });
+}
+
+/**
+ * M-R2's and M-R3's inputs (REQ-SCO-07 as amended in 1.17, task-042): the final snapshot's paths less the
+ * setup's and the generated ones, and the public interface of its TypeScript sources among them, read
+ * by the image; none read when there is no such source. Not reached without a final snapshot.
+ */
+async function determinismOf(
+  request: ScoreRequest,
+  final: FinalScore,
+  snapshots: ReadonlyMap<number, string>,
+): Promise<Result<DeterminismScore>> {
+  if ('not_reached' in final) return ok({ not_reached: true });
+  const snapshot = snapshots.get(final.step) as string;
+  const patch = join(request.runDir, 'setup', 'diff.patch');
+  const paths = determinismPaths({
+    snapshot,
+    setupPatch: existsSync(patch) ? readFileSync(patch, 'utf8') : '',
+  });
+  const files = interfaceFiles(paths);
+  if (files.length === 0) return ok({ interface: [], paths });
+  const run =
+    request.interfaces ??
+    interfaceInContainer({
+      docker: request.docker,
+      image: request.image.tag,
+      containerPrefix: request.containerPrefix,
+    });
+  const entries = await run({ snapshot, files });
+  if (!entries.ok) return entries;
+  return ok({ interface: entries.value, paths });
 }
 
 /** Scores a group of suites on a run's snapshots: every step bound to one, then the final snapshot. */

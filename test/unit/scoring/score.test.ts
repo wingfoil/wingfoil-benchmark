@@ -10,6 +10,7 @@ import type { Census, HoldoutInput } from '../../../src/scoring/index.js';
 import { loadHoldoutAdditions } from '../../../src/scenario/index.js';
 import {
   CANCEL,
+  INTERFACE,
   QUALITY,
   HOLDOUT_SECRET,
   HOLDOUT_TESTS,
@@ -147,6 +148,9 @@ describe('scoreRun (F4.1, REQ-SCO-01–03)', () => {
         m_d3: { count: 0, tests: [] },
         // M-Q2 (task-041): on the one source file the run changed, as the image's quality.mjs said.
         m_q2: { measured: ['src/orders.ts'], coverage_targets: ['src/orders.ts'], ...QUALITY },
+        // M-R2's and M-R3's inputs (task-042): the final snapshot's interface, as the image's
+        // interface.mjs said, and its paths, less the setup's CLAUDE.md.
+        determinism: { interface: INTERFACE, paths: ['README.md', 'src/orders.ts'] },
         // Not marked (F3.6): the key is there, so aggregation never infers it from an absent one.
         expected_failure: null,
         // M-K1 and M-K2 (F4.3): their own tests are in cost.test.ts.
@@ -154,14 +158,16 @@ describe('scoreRun (F4.1, REQ-SCO-01–03)', () => {
       },
     });
     // The census on the seed, then steps 1 and 2; the final snapshot is step 2's, already scored. Then
-    // M-Q2 on the final snapshot, in a container of its own (task-041).
+    // M-Q2 on the final snapshot, in a container of its own (task-041), and its interface in another
+    // (task-042).
     expect(recorded.copies.map((copy) => copy.split(' -> ')[0])).toEqual([
       fixture.scenario.seedDir,
       expect.stringMatching(/01$/),
       expect.stringMatching(/02$/),
       expect.stringMatching(/02$/),
+      expect.stringMatching(/02$/),
     ]);
-    expect(recorded.removes).toHaveLength(4);
+    expect(recorded.removes).toHaveLength(5);
   });
 
   it('records the steps a run never reached, and no final snapshot, when it stopped early', async () => {
@@ -179,6 +185,7 @@ describe('scoreRun (F4.1, REQ-SCO-01–03)', () => {
     expect(result.ok && result.value.m_d3).toEqual({ not_reached: true });
     expect(result.ok && result.value.m_f2).toEqual({ steps: [{ n: 2, not_reached: true }] });
     expect(result.ok && result.value.m_q2).toEqual({ not_reached: true });
+    expect(result.ok && result.value.determinism).toEqual({ not_reached: true });
   });
 
   it('counts a census test a snapshot never reported as failed: a killed file hides its tests', async () => {
@@ -317,6 +324,7 @@ describe('scoreSummary', () => {
         seed: { suites: [] },
         m_d3: { count: 0, tests: [] },
         m_q2: { not_applicable: true as const },
+        determinism: { not_reached: true as const },
         holdout: { scored: false, reason: 'none declared' },
         cost: NO_COST,
         expected_failure: null,
@@ -350,6 +358,7 @@ describe('scoreSummary', () => {
         seed: { suites: [] },
         m_d3: { count: 0, tests: [] },
         m_q2: { not_applicable: true as const },
+        determinism: { not_reached: true as const },
         steps: [{ n: 1, suites: [] }],
         final: { step: 1, suites: [] },
         holdout: { scored: false, reason: 'none declared' },
@@ -391,6 +400,7 @@ describe('checks in score.json (REQ-SCO-06, task-035)', () => {
       'm_f2',
       'm_d3',
       'm_q2',
+      'determinism',
       'cost',
       'expected_failure',
     ]);
@@ -440,6 +450,7 @@ describe('checks in score.json (REQ-SCO-06, task-035)', () => {
       seed: { suites: [] },
       m_d3: { count: 0, tests: [] },
       m_q2: { not_applicable: true as const },
+      determinism: { not_reached: true as const },
       steps: [{ n: 1, suites: [] }],
       final: { step: 1, suites: [] },
       holdout: { scored: false, reason: 'none declared' },
@@ -596,6 +607,7 @@ describe('scoreRun with the hold-out (task-028, F3.5, REQ-SCO-09)', () => {
       seed: { suites: [] },
       m_d3: { count: 0, tests: [] },
       m_q2: { not_applicable: true as const },
+      determinism: { not_reached: true as const },
       steps: [
         { n: 1, suites: [{ id: 'a', passed: 1, total: 1, failed: [] }], m_q1: { passed: 1, total: 1 } },
       ],
@@ -699,5 +711,42 @@ describe('M-Q2 in score.json (REQ-SCO-04, task-041)', () => {
     });
     const { result } = await score(fixture);
     expect(result.ok && result.value.m_q2).toMatchObject({ measured: ['src/orders.ts'] });
+  });
+});
+
+describe('determinism in score.json (M-R2, M-R3, task-042)', () => {
+  it("records the final snapshot's paths less the setup's, and reads no interface without a TypeScript source", async () => {
+    const fixture = await storedRun({
+      setup: { 'CLAUDE.md': 'The manual.\n', '.wingfoil/dna.yaml': 'x: 1\n' },
+      steps: [{ 'src/orders.ts': null, 'NOTES.md': 'Notes.\n', 'package-lock.json': '{}\n' }, {}],
+    });
+    const { result, recorded } = await score(fixture);
+    expect(result.ok && result.value.determinism).toEqual({
+      interface: [],
+      paths: ['NOTES.md', 'README.md'],
+    });
+    expect(recorded.execs.some((exec) => exec.command.some((part) => part.includes('interface.mjs')))).toBe(
+      false,
+    );
+  });
+
+  it('reads the interface in a scoring container of its own, with no mount, removed afterwards', async () => {
+    const fixture = await storedRun({ steps: [{}, CANCEL] });
+    const { recorded } = await score(fixture);
+    const exec = recorded.execs.find((candidate) =>
+      candidate.command.some((part) => part.includes('interface.mjs')),
+    );
+    expect(exec?.command).toEqual([
+      'timeout',
+      '--kill-after=10',
+      '300',
+      'node',
+      '/opt/score/interface.mjs',
+      'snapshot',
+      JSON.stringify(['src/orders.ts']),
+    ]);
+    const create = recorded.creates.find((request) => request.name.endsWith('-interface'));
+    expect(create).toMatchObject({ readOnly: [] });
+    expect(recorded.removes).toContain(exec?.container);
   });
 });

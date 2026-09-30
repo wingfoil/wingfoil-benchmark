@@ -11,7 +11,15 @@ import { localScoringDocker } from '../support/local-scoring.js';
 import { repoPath } from '../support/paths.js';
 import { referenceFiles, referenceRun } from '../support/reference.js';
 import { CANCEL, EXECUTION, scoringDocker, storedRun, usageOf } from '../support/score-fixture.js';
+import { tempDir } from '../support/scenario-fixture.js';
 import type { Files } from '../support/score-fixture.js';
+
+/** A pairwise Jaccard similarity, as aggregate.json's `m_r` holds it (task-042). */
+interface Jaccard {
+  mean: number;
+  pairs: { runs: string[]; intersection: number; union: number }[];
+}
+type MR = { n: number; runs: string[]; m_r1?: unknown; m_r2?: Jaccard; m_r3?: Jaccard };
 
 const NO_AGENT: AgentPort = {
   runStep: () => Promise.reject(new Error('scoring runs no agent')),
@@ -107,6 +115,59 @@ async function breakEvenOf(options: { stepEur: number; setupEur: number; wingfoi
   return aggregate.break_even.find((entry) => entry.arm === 'wingfoil');
 }
 
+/**
+ * Three repetitions of S1 in the wingfoil arm, stored from its reference (task-042), and one run of S2
+ * in the same arm, in one execution scored and aggregated by `bench score` with the local scoring
+ * double: r1 as the reference wrote it; r2 with step 4's merge patch keeping `null` members, behind a
+ * parameter of its own, so that some hidden tests fail and one export changes; r3 with a notes file and
+ * a lockfile beside the reference's code. The aggregate, the output, and r1's and r2's `score.json`.
+ */
+const KEEPS_NULLS =
+  '/** JSON Merge Patch (RFC 7386), keeping explicit nulls unless told otherwise. */\n\n' +
+  'function isObject(value: unknown): value is Record<string, unknown> {\n' +
+  "  return value !== null && typeof value === 'object' && !Array.isArray(value);\n}\n\n" +
+  '/** `target` merged with `patch`. */\n' +
+  'export function applyMergePatch(target: unknown, patch: unknown, keepNulls = true): unknown {\n' +
+  '  if (!isObject(patch)) return structuredClone(patch);\n' +
+  '  const result: Record<string, unknown> = isObject(target) ? { ...target } : {};\n' +
+  '  for (const [key, value] of Object.entries(patch)) {\n' +
+  '    if (value === null && !keepNulls) Reflect.deleteProperty(result, key);\n' +
+  '    else result[key] = value === null ? null : applyMergePatch(result[key], value, keepNulls);\n' +
+  '  }\n  return result;\n}\n';
+let s1Repetitions:
+  | Promise<{ aggregate: Record<string, unknown>; stdout: string; scores: Record<string, unknown>[] }>
+  | undefined;
+function scoredS1Repetitions() {
+  s1Repetitions ??= (async () => {
+    const steps = referenceFiles(repoPath('test/fixtures/reference/S1'));
+    const withStep4 = (files: Files) =>
+      steps.map((step, index) => (index === 3 ? { ...step, ...files } : step));
+    const root = tempDir('bench-score-repo-');
+    const at = (repetition: number) => ({ root, arm: 'wingfoil', repetition });
+    const r1 = await storedRun({ scenario: 'S1', steps, into: at(1) });
+    const r2 = await storedRun({
+      scenario: 'S1',
+      steps: withStep4({ 'src/merge-patch.ts': KEEPS_NULLS }),
+      into: at(2),
+    });
+    await storedRun({
+      scenario: 'S1',
+      steps: withStep4({ 'NOTES.md': 'Merge patch done.\n', 'package-lock.json': '{}\n' }),
+      into: at(3),
+    });
+    await storedRun({ scenario: 'S2', steps: [{}, {}, {}], into: { root, arm: 'wingfoil' } });
+    const { code, stdout } = await benchScoreLocally(root);
+    if (code !== 0) throw new Error(stdout);
+    const read = (file: string) => JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>;
+    return {
+      aggregate: read(join(r1.executionDir, 'aggregate.json')),
+      stdout,
+      scores: [r1.runDir, r2.runDir].map((runDir) => read(join(runDir, 'score.json'))),
+    };
+  })();
+  return s1Repetitions;
+}
+
 // T3 stands in for S1 until W7: two steps, one suite scored after both. Its one hidden test fails on
 // the seed and after step 1 (which changed nothing), and passes after step 2 (which cancels orders).
 describe('scoring.feature', { timeout: 120_000 }, () => {
@@ -124,9 +185,9 @@ describe('scoring.feature', { timeout: 120_000 }, () => {
     expect(recorded.creates.length).toBeGreaterThan(0);
     for (const create of recorded.creates) {
       expect(create.image).toMatch(/^bench-score:/);
-      // M-Q2's container (task-041) reads the snapshot alone: no oracle is mounted in it.
+      // M-Q2's container (task-041) and M-R2's (task-042) read the snapshot alone: no oracle is mounted.
       expect(create.readOnly).toEqual(
-        create.name.endsWith('-quality')
+        create.name.endsWith('-quality') || create.name.endsWith('-interface')
           ? []
           : [{ source: join(fixture.scenario.dir, 'oracle', 'public'), target: '/score/oracle/public' }],
       );
@@ -333,6 +394,68 @@ describe('scoring.feature', { timeout: 120_000 }, () => {
     const dearer = await breakEvenOf({ stepEur: 0.1, setupEur: 0.3, wingfoilSteps: [{}, CANCEL] });
     expect(dearer).toMatchObject({ value: 'never', mean_step_cost_eur: { baseline: 0.075, arm: 0.15 } });
   });
+
+  it('@F4.5 Determinism is measured across repetitions', async () => {
+    // Given 3 completed repetitions of S1 in the wingfoil arm with the same pins
+    // When determinism is computed
+    const { aggregate, scores } = await scoredS1Repetitions();
+    const groups = aggregate.groups as {
+      scenario: string;
+      arm: string;
+      runs: string[];
+      metrics: { m_r: MR };
+    }[];
+    const group = groups.find((candidate) => candidate.scenario === 'S1' && candidate.arm === 'wingfoil');
+    const m = group?.metrics.m_r as MR;
+    expect(m.n).toBe(3);
+    expect(m.runs).toEqual(group?.runs);
+
+    // Then M-R1 is the share of hidden tests with the same verdict in all 3 repetitions — r2's failing
+    // tests are the only ones that disagree
+    const [, r2] = scores as [
+      unknown,
+      { final: { suites: { failed: string[] }[]; m_q1: { total: number } } },
+    ];
+    const disagree = r2.final.suites.flatMap((suite) => suite.failed).length;
+    expect(disagree).toBeGreaterThan(0);
+    expect(m.m_r1).toEqual({ agree: r2.final.m_q1.total - disagree, total: r2.final.m_q1.total });
+
+    // And M-R2 is the mean pairwise Jaccard similarity of the public interfaces — r2 changed one export
+    const [r1] = scores as [{ determinism: { interface: string[] } }];
+    expect(r1.determinism.interface).toContain(
+      'src/merge-patch.ts: export function applyMergePatch(target: unknown, patch: unknown): unknown;',
+    );
+    const k = r1.determinism.interface.length;
+    const pairs = (m.m_r2 as Jaccard).pairs;
+    expect(pairs.map((p) => [p.intersection, p.union])).toEqual([
+      [k - 1, k + 1],
+      [k, k],
+      [k - 1, k + 1],
+    ]);
+    expect((m.m_r2 as Jaccard).mean).toBe(Math.round((((2 * (k - 1)) / (k + 1) + 1) / 3) * 1e4) / 1e4);
+
+    // And M-R3 is the mean pairwise Jaccard similarity of the file-path sets, excluding generated and
+    // harness files — r3's notes count, its lockfile and every run's CLAUDE.md do not
+    const paths = (m.m_r3 as Jaccard).pairs.map((p) => p.union - p.intersection);
+    expect(paths).toEqual([0, 1, 1]);
+
+    // And no threshold of equivalence is applied
+    expect(Object.keys(m)).toEqual(['n', 'runs', 'not_reached', 'm_r1', 'm_r2', 'm_r3']);
+  }, 900_000);
+
+  it('@F4.5 Determinism is not computed from a single repetition', async () => {
+    // Given 1 completed repetition of S2 in the wingfoil arm
+    // When determinism is computed
+    const { aggregate, stdout } = await scoredS1Repetitions();
+    const groups = aggregate.groups as { scenario: string; runs: string[]; metrics: { m_r: MR } }[];
+    const group = groups.find((candidate) => candidate.scenario === 'S2');
+
+    // Then no determinism value is produced for S2
+    expect(group?.metrics.m_r).toEqual({ n: 1, runs: group?.runs, not_reached: [] });
+
+    // And the report states "n = 1"
+    expect(stdout).toContain('determinism measured in 1, n = 1 in 1)');
+  }, 900_000);
 
   it('@F4.7 Next-change cost is attributed to later steps', async () => {
     // When a run of S3 is scored — the reference, each step at the fixture's cost of 0.05 EUR times its number

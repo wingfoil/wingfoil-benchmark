@@ -60,7 +60,7 @@ function byCodeUnit(a: string, b: string): number {
 }
 
 /** Every file under `root`, relative and with `/`, `node_modules/` not entered. */
-function filesUnder(root: string): string[] {
+export function filesUnder(root: string): string[] {
   const found: string[] = [];
   const walk = (directory: string): void => {
     for (const name of readdirSync(directory)) {
@@ -75,7 +75,7 @@ function filesUnder(root: string): string[] {
 }
 
 /** The paths a stored patch touches, on either side: `diff --git a/<path> b/<path>`, quoted or not. */
-function patchPaths(patch: string): Set<string> {
+export function patchPaths(patch: string): Set<string> {
   const paths = new Set<string>();
   for (const line of patch.split('\n')) {
     const quoted = /^diff --git "a\/(.*)" "b\/(.*)"$/.exec(line);

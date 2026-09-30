@@ -32,3 +32,7 @@ export { mD3, mF1, mF2 } from './continuity.js';
 export type { DecisionOutcome, DecisionScore, MD3Score, MF1Score, MF2Score } from './continuity.js';
 export { measuredFiles, parseQuality, qualityInContainer } from './quality.js';
 export type { MQ2Score, QualityFiles, QualityMeasure, QualityRunner } from './quality.js';
+export { determinismPaths, interfaceFiles } from './determinism.js';
+export type { DeterminismScore } from './determinism.js';
+export { interfaceInContainer, parseInterface } from './interface.js';
+export type { InterfaceRunner } from './interface.js';
