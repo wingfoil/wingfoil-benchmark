@@ -1,6 +1,6 @@
 # Requirements (v0.1)
 
-**Version:** 1.17
+**Version:** 1.18
 **Date:** 2026-09-29
 **Status:** Approved
 **Traces to:** [acceptance/](acceptance/) (all v0.1 features), [scenarios/](scenarios/) (K1–K5), [09_experiment-design.md](../01_vision/09_experiment-design.md), [07_sequencer.md](../01_vision/07_sequencer.md) v0.1
@@ -60,7 +60,7 @@ One binary, `bench`, run with `npx bench`. Exit codes: `0` success, `1` failure,
 | REQ-CLI-05 | `bench scenario dry-run <id>@<version> --arm <arm> [--model <id>]` | F3.3 |
 | REQ-CLI-06 | `bench score <campaign-id>/<n> [--holdout <path>]`; `bench score dry-runs/<n>` scores a dry run, whose `score.json` stays with it (added in 1.8). When every run of a campaign execution is scored, it writes the execution's `aggregate.json` (REQ-FMT-06, REQ-FMT-07); it never aggregates a dry run (added in 1.11) | F4.*, F5.1 |
 | REQ-CLI-07 | `bench finding <campaign-id>/<n> --scenario … --metric … --arms …`. It writes `findings/<id>.md`. | F5.4 |
-| REQ-CLI-08 | `bench run show <run-path>` and `bench run compare <run-path> <run-path>` | F5.3 |
+| REQ-CLI-08 | `bench run show <run-path>` and `bench run compare <run-path> <run-path>` (made precise in 1.18):<br>• **a `<run>`** is a directory holding a `run.json`, or a run's name under `results/` as `aggregate.json` writes it (`<campaign-id>/<n>/runs/<scenario>@<ver>/<arm>/<model>/r<k>`, or `dry-runs/<n>/runs/…`). Anything else is refused, naming it (exit 1); a wrong number of arguments is a usage error (exit 2). Both commands only read;<br>• **`bench run show <run> [--full]`** prints, as Markdown on standard output: the run's identity and the pins it records; each step's session, outcome, token usage, cost, interventions with the approver's replies, commit messages, transcript and diff; then the test results of its `score.json`, or "not scored". A step the run never reached reads "not reached": the steps are the scenario version's, from `scenarios/` when it holds the version the run ran. A step killed at its time cap shows what it reported, if anything, and its cost bound. The transcript is the agent's text whole, the user's on one line, each tool call on one line, and each tool result's first 5 lines, or all of them with `--full`, errors said; the session's result and its text. A transcript that is not on disk (REQ-RES-06) is stated, never an error. A `score.json` that cannot be read, or scores another version, is stated and the run is shown unscored;<br>• **`bench run compare <run> <run>`** takes two runs of the same scenario version (scenario, version and hash) and refuses any other pair, naming both (exit 1). It prints a table with one row per step, each run's cost (EUR when scored, USD otherwise), M-Q1 and interventions, a cost bound as `≤`, then the final snapshot's M-Q1, the hold-out's final counts, the checks passed, and the totals: cost and interventions in the table, and each run's tokens, turns and time under it. Two runs with the same arm and repetition are told apart by their model, or as A and B; mixed EUR and USD columns are said. | F5.3 |
 | REQ-CLI-09 | `bench site build <campaign-id>/<n>` writes to `site/`. `bench site publish` deploys it; publishing only ever happens through this command. | F5.5, F5.6, F5.8 |
 | REQ-CLI-10 | The hold-out path can also come from `BENCH_HOLDOUT_PATH`. It is never read by `campaign run`. | F3.5, F2.1 |
 
@@ -448,3 +448,21 @@ The traceability matrix is unaffected: REQ-SCO-05 and REQ-SCO-07 already trace t
 Source: [task-042](../memory/task/task-042-determinism-metrics-across-repetitions.md), design
 confirmed by the approver on 2026-09-29; review decision of the approver at that task's review,
 2026-09-30 (`e04310a`), after three independent reviews.
+
+### Amendment 1.18 (delivery, W10 task-043, 2026-09-30)
+
+- **REQ-CLI-08:** the `<run>` forms, `--full`, what each command prints, the refusals, and that both
+  only read. These were the approver's choices at design, 2026-09-30:
+  - the transcript is condensed by default;
+  - a run is named by its directory or by its aggregate name;
+  - `compare` takes any two runs of one scenario version.
+
+  The independent review of task-043 added the scenario's steps for an unscored run, cost bounds, the
+  totals of tokens, turns and time, telling runs apart, errors in a transcript, and an unreadable score.
+
+The traceability matrix is unaffected: REQ-CLI-08 already traces to F5.3.
+
+Source: [task-043](../memory/task/task-043-run-detail-and-side-by-side-comparison.md), design
+confirmed by the approver on 2026-09-30; review decision of the approver at that task's review,
+2026-09-30 (`8d431a0`), after two independent reviews.
+

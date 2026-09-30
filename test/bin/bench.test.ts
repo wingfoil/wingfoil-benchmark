@@ -9,6 +9,7 @@ import { completeCampaignYaml } from '../support/campaign-fixture.js';
 import { priceCampaign } from '../support/dry-run-fixture.js';
 import { REPO_ROOT, repoPath } from '../support/paths.js';
 import { tempDir } from '../support/scenario-fixture.js';
+import { CANCEL, storedRun } from '../support/score-fixture.js';
 
 /**
  * The built command line. Not part of `npm test`: it needs `npm run build`. Run it with
@@ -98,7 +99,23 @@ describe('the built bench command', () => {
     const { status, stderr } = bench();
     expect(status).toBe(2);
     expect(stderr).toMatch(
-      /^usage: bench campaign validate <file>\n\s+bench campaign estimate <file>\n\s+bench campaign run <file> \[--allow-spending\]\n\s+bench scenario validate <id>@<version> \[--holdout <path>\]\n\s+bench scenario dry-run <id>@<version> --arm <arm> \[--model <id>\] \[--allow-spending\]\n\s+bench score <campaign-id>\/<n>\|dry-runs\/<n> \[--holdout <path>\]\n$/,
+      /^usage: bench campaign validate <file>\n\s+bench campaign estimate <file>\n\s+bench campaign run <file> \[--allow-spending\]\n\s+bench scenario validate <id>@<version> \[--holdout <path>\]\n\s+bench scenario dry-run <id>@<version> --arm <arm> \[--model <id>\] \[--allow-spending\]\n\s+bench score <campaign-id>\/<n>\|dry-runs\/<n> \[--holdout <path>\]\n\s+bench run show <run> \[--full\]\n\s+bench run compare <run> <run>\n$/,
     );
+  });
+
+  it('shows a stored run and compares two, reading only (F5.3, task-043)', async () => {
+    const base = await storedRun({ steps: [{}, CANCEL] });
+    const other = await storedRun({ steps: [CANCEL], into: { root: base.root, arm: 'wingfoil' } });
+
+    const shown = bench('run', 'show', base.runDir);
+    expect(shown.status).toBe(0);
+    expect(shown.stdout).toMatch(/^# Run abcdef012345\/1\/runs\/T3@1\.0\/baseline\/fake-model\/r1\n/);
+    expect(shown.stdout).toContain('## Test results\n\nnot scored\n');
+
+    const compared = bench('run', 'compare', base.runDir, other.runDir);
+    expect(compared.status).toBe(0);
+    expect(compared.stdout).toContain('| 02 | 0.2000 USD | — | 1 | not reached | — | — |');
+
+    expect(bench('run', 'show').status).toBe(2);
   });
 });

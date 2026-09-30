@@ -19,3 +19,5 @@ export type {
   Tally,
   Value,
 } from './aggregate.js';
+export { readRunDetail, resolveRun } from './detail.js';
+export type { RunDetail, ScoreView, StepDetail } from './detail.js';
