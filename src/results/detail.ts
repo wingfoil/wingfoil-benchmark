@@ -232,7 +232,9 @@ export function readRunDetail(runDir: string): Result<RunDetail> {
     const read = readJson(join(runDir, SCORE_FILE), SCORE_FILE);
     const scored = read.ok ? parseWith(scoreSchema, read.value, SCORE_FILE) : read;
     if (!scored.ok) {
-      scoreIssue = `${SCORE_FILE} ${scored.issues.map((issue) => `${issue.path}: ${issue.message}`).join('; ')}`;
+      scoreIssue = scored.issues
+        .map((issue) => `${issue.path === SCORE_FILE ? SCORE_FILE : `${SCORE_FILE} ${issue.path}`}: ${issue.message}`)
+        .join('; ');
     } else if (scored.value.scenario_hash !== undefined && scored.value.scenario_hash !== run.scenario_hash) {
       scoreIssue = `${SCORE_FILE} scores another version of the scenario than the run ran`;
     } else score = scored.value;

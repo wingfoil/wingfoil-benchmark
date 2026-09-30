@@ -87,7 +87,12 @@ export function readableTranscript(lines: readonly string[], options: { readonly
     }
     for (const block of blocksOf(event)) {
       if (block.type === 'text' && typeof block.text === 'string') {
-        out.push(`- ${event.type}: ${block.text}`);
+        // The user's text can be a long prompt or a summary: on one line, unless full.
+        out.push(
+          event.type === 'user' && !options.full
+            ? cut(`- user: ${block.text.replace(/\s*\n\s*/g, ' ')}`)
+            : `- ${event.type}: ${block.text}`,
+        );
       } else if (block.type === 'tool_use') {
         out.push(cut(`- tool ${block.name ?? '?'}: ${JSON.stringify(block.input ?? {})}`));
       } else if (block.type === 'tool_result') {

@@ -56,8 +56,13 @@ const isFlag = (argument: string) => argument.startsWith('--');
  * the run ran: what tells an unscored run's unreached steps (task-043's review). Otherwise unknown.
  */
 function stepCountOf(root: string, run: RunDetail): number | undefined {
-  const scenario = loadScenario(join(root, 'scenarios'), run.scenario, run.version);
-  return scenario.ok && scenario.value.hash === run.scenarioHash ? scenario.value.steps.length : undefined;
+  try {
+    const scenario = loadScenario(join(root, 'scenarios'), run.scenario, run.version);
+    return scenario.ok && scenario.value.hash === run.scenarioHash ? scenario.value.steps.length : undefined;
+  } catch {
+    // A scenario that cannot be read (a file the hash cannot open) leaves the steps the run recorded.
+    return undefined;
+  }
 }
 
 function usage(io: Io): number {
@@ -130,13 +135,23 @@ export function showRun(run: RunDetail, full: boolean, stepCount?: number): stri
   return `${out.join('\n')}\n`;
 }
 
+/**
+ * What a step's session reported it cost; for a step killed at its time cap (task-024), what it
+ * reported before, if anything, and the most it can have cost.
+ */
+function reportedCost(step: StepDetail): string {
+  const reported = step.usage.costUsd;
+  if (step.costBoundUsd === undefined) return usd(reported);
+  return `${reported > 0 ? `${usd(reported)} reported` : 'not reported'}, at most ${usd(step.costBoundUsd)}`;
+}
+
 function showStep(run: RunDetail, step: StepDetail, full: boolean): string[] {
   const u = step.usage;
   const costEur = stepCostEur(run.score, step.n);
   const out = [
     `- session: ${step.session ?? '—'}, outcome: ${step.outcome}`,
     `- tokens: input ${u.inputTokens}, output ${u.outputTokens}, cache creation ${u.cacheCreationInputTokens}, cache read ${u.cacheReadInputTokens}`,
-    `- cost: ${step.costBoundUsd === undefined ? usd(u.costUsd) : `not reported, at most ${usd(step.costBoundUsd)}`}${costEur === undefined ? '' : `, ${eur(costEur)}`}, ${u.turns} turns, ${(u.durationMs / 1000).toFixed(1)} s`,
+    `- cost: ${reportedCost(step)}${costEur === undefined ? '' : `, ${eur(costEur)}`}, ${u.turns} turns, ${(u.durationMs / 1000).toFixed(1)} s`,
   ];
   const replies = run.interventions.filter((intervention) => intervention.step === step.n);
   out.push(`- interventions: ${step.interventions === 0 ? 'none' : step.interventions}`);
@@ -226,7 +241,7 @@ export function compareRuns(a: RunDetail, b: RunDetail, stepCount?: number): str
   const out = ['# Compare', ''];
   runs.forEach((run, index) => {
     out.push(
-      `- ${labels[index]}: ${run.name}, ${run.model}, ${run.outcome}${run.score === undefined ? ', not scored' : ''}`,
+      `- ${labels[index]}: ${run.name}, ${run.model}, ${run.outcome}${run.score === undefined ? `, not scored${run.scoreIssue === undefined ? '' : `: ${run.scoreIssue}`}` : ''}`,
     );
   });
   const header = labels.flatMap((label) => [`${label} cost`, `${label} M-Q1`, `${label} interventions`]);
@@ -239,7 +254,7 @@ export function compareRuns(a: RunDetail, b: RunDetail, stepCount?: number): str
       const costEur = stepCostEur(run.score, n);
       return [
         costEur !== undefined
-          ? eur(costEur)
+          ? `${step.costBoundUsd === undefined ? '' : '≤ '}${eur(costEur)}`
           : step.costBoundUsd === undefined
             ? usd(step.usage.costUsd)
             : `≤ ${usd(step.costBoundUsd)}`,
@@ -284,7 +299,7 @@ export function compareRuns(a: RunDetail, b: RunDetail, stepCount?: number): str
     const eurTotal = run.score?.cost?.run?.cost_eur;
     const bounded = run.steps.some((step) => step.costBoundUsd !== undefined);
     const usdTotal = run.steps.reduce((sum, step) => sum + (step.costBoundUsd ?? step.usage.costUsd), 0);
-    const cost = eurTotal !== undefined ? eur(eurTotal) : `${bounded ? '≤ ' : ''}${usd(usdTotal)}`;
+    const cost = `${bounded ? '≤ ' : ''}${eurTotal !== undefined ? eur(eurTotal) : usd(usdTotal)}`;
     return [cost, '—', String(run.steps.reduce((sum, step) => sum + step.interventions, 0))];
   });
   out.push(`| total | ${totals.join(' | ')} |`, '');
