@@ -15,6 +15,7 @@ interface Block {
   readonly name?: string;
   readonly input?: unknown;
   readonly content?: unknown;
+  readonly is_error?: boolean;
 }
 
 interface Event {
@@ -24,6 +25,8 @@ interface Event {
   readonly num_turns?: number;
   readonly stop_reason?: string;
   readonly total_cost_usd?: number;
+  readonly is_error?: boolean;
+  readonly result?: unknown;
 }
 
 /** A tool result's text: a string, or the text of its blocks. */
@@ -43,28 +46,39 @@ function blocksOf(event: Event): Block[] {
 
 /**
  * A step's transcript as a reader follows it (F5.3, task-043), from Claude Code's stream-json, one event
- * per line: the assistant's text whole; each tool call as its name and its input on one line; each tool
- * result as its first lines, or all of them with `full`; the session's result. System events and
- * thinking are left out. A line that is not an event it knows is kept as it is, cut to one line.
+ * per line: the assistant's and the user's text whole; each tool call as its name and its input on one
+ * line; each tool result as its first lines, or all of them with `full`, an error said; the session's
+ * result, an error said, and its text. System events and thinking are left out. A line that is not an event it knows is kept as it is, cut to one line.
  */
 export function readableTranscript(lines: readonly string[], options: { readonly full: boolean }): string[] {
   const out: string[] = [];
+  const quoted = (text: string, mark: string) => {
+    const all = text.replace(/\n+$/, '').split('\n');
+    const shown = options.full ? all : all.slice(0, RESULT_LINES);
+    for (const line of shown) out.push(`  ${mark} ${line}`);
+    if (shown.length < all.length) out.push(`  ${mark} … ${all.length - shown.length} more lines`);
+  };
   for (const line of lines) {
     if (line.trim() === '') continue;
-    let event: Event;
+    let parsed: unknown;
     try {
-      event = JSON.parse(line) as Event;
+      parsed = JSON.parse(line);
     } catch {
+      parsed = undefined;
+    }
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
       out.push(cut(`- ? ${line}`));
       continue;
     }
+    const event = parsed as Event;
     if (event.type === 'system') continue;
     if (event.type === 'result') {
       const cost =
         typeof event.total_cost_usd === 'number' ? `${event.total_cost_usd.toFixed(4)} USD` : '? USD';
-      out.push(
-        `- result: ${event.subtype ?? '?'}, ${event.stop_reason ?? '?'}, ${event.num_turns ?? '?'} turns, ${cost}`,
-      );
+      const outcome = event.is_error === true ? `error (${event.subtype ?? '?'})` : (event.subtype ?? '?');
+      out.push(`- result: ${outcome}, ${event.stop_reason ?? '?'}, ${event.num_turns ?? '?'} turns, ${cost}`);
+      // The session's last words: where a question or a request for approval is, when it ends on one.
+      if (typeof event.result === 'string' && event.result !== '') quoted(event.result, '<');
       continue;
     }
     if (event.type !== 'assistant' && event.type !== 'user') {
@@ -72,15 +86,13 @@ export function readableTranscript(lines: readonly string[], options: { readonly
       continue;
     }
     for (const block of blocksOf(event)) {
-      if (block.type === 'text' && event.type === 'assistant' && typeof block.text === 'string') {
-        out.push(`- assistant: ${block.text}`);
+      if (block.type === 'text' && typeof block.text === 'string') {
+        out.push(`- ${event.type}: ${block.text}`);
       } else if (block.type === 'tool_use') {
         out.push(cut(`- tool ${block.name ?? '?'}: ${JSON.stringify(block.input ?? {})}`));
       } else if (block.type === 'tool_result') {
-        const text = resultText(block.content).replace(/\n+$/, '').split('\n');
-        const kept = options.full ? text : text.slice(0, RESULT_LINES);
-        for (const shown of kept) out.push(`  > ${shown}`);
-        if (kept.length < text.length) out.push(`  > … ${text.length - kept.length} more lines`);
+        const text = resultText(block.content);
+        quoted(block.is_error === true ? `(error) ${text}` : text, '>');
       }
     }
   }

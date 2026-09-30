@@ -31,7 +31,10 @@ const runSchema = z.object({
   arm: z.string(),
   model: z.string(),
   repetition: z.number().int(),
-  agent: z.union([z.string(), z.object({ name: z.string() }).passthrough()]).optional(),
+  agent: z
+    .union([z.string(), z.object({ name: z.string(), version: z.string().optional() }).passthrough()])
+    .optional(),
+  expected_failure: z.object({ missing: z.array(z.string()) }).passthrough().optional(),
   approver_policy: z.string().optional(),
   manual: z.object({ tokens: z.number() }).passthrough().optional(),
   harness: z.object({ tool: z.string(), commit: z.string() }).passthrough().optional(),
@@ -46,6 +49,7 @@ const runSchema = z.object({
         outcome: z.string(),
         interventions: z.number().int(),
         usage,
+        cost_bound_usd: z.number().optional(),
       })
       .passthrough(),
   ),
@@ -67,6 +71,7 @@ const snapshot = z.object({
 /** What the run detail reads of a `score.json`: every key it shows, each optional but the snapshots. */
 const scoreSchema = z
   .object({
+    scenario_hash: z.string().optional(),
     steps: z.array(snapshot),
     final: snapshot,
     holdout: z
@@ -113,10 +118,12 @@ export interface StepDetail {
   readonly outcome: string;
   readonly interventions: number;
   readonly usage: StepUsage;
+  /** For a step killed at its time cap that reported no cost: the most it can have cost (task-024). */
+  readonly costBoundUsd?: number;
   /** `diff.patch`, when stored. */
   readonly patch?: string;
-  /** `commits.json`'s messages, when stored (task-035). */
-  readonly messages?: readonly string[];
+  /** `commits.json`'s messages, when stored (task-035); `unreadable` when it is not their form. */
+  readonly messages?: readonly string[] | 'unreadable';
   /** `transcript.jsonl`'s lines; absent when not on disk (git-ignored, REQ-RES-06). */
   readonly transcript?: readonly string[];
 }
@@ -135,7 +142,10 @@ export interface RunDetail {
   readonly repetition: number;
   readonly outcome: string;
   readonly error?: string;
+  /** The agent's name and version, as the campaign pinned them. */
   readonly agent?: string;
+  /** The capabilities the run's harness lacked (F3.6), when it was marked an expected failure. */
+  readonly expectedFailure?: readonly string[];
   readonly approverPolicy?: string;
   readonly harness?: { readonly tool: string; readonly commit: string };
   readonly manualTokens?: number;
@@ -143,6 +153,8 @@ export interface RunDetail {
   readonly steps: readonly StepDetail[];
   readonly interventions: readonly { readonly step: number; readonly kind: string; readonly reply: string }[];
   readonly score?: ScoreView;
+  /** Why a stored `score.json` is not shown: it cannot be read, or scores another version. */
+  readonly scoreIssue?: string;
 }
 
 /** The results directory of the repository at `root`. */
@@ -175,6 +187,16 @@ function linesOf(file: string): string[] | undefined {
     .filter((line) => line !== '');
 }
 
+const commitsSchema = z.object({ messages: z.array(z.string()) });
+
+/** A step's commit messages; `undefined` when not stored, `unreadable` when not in their form. */
+function commitsOf(file: string): readonly string[] | 'unreadable' | undefined {
+  if (!existsSync(file)) return undefined;
+  const read = readJson(file, 'commits.json');
+  const parsed = read.ok ? commitsSchema.safeParse(read.value) : undefined;
+  return parsed?.success === true ? parsed.data.messages : 'unreadable';
+}
+
 /**
  * A run's name as `aggregate.json` writes it, from where the run lies (REQ-FMT-06):
  * `<campaign-id>/<n>/runs/<scenario>@<ver>/<arm>/<model>/r<k>`, or `dry-runs/<n>/runs/…` — whatever the
@@ -183,7 +205,12 @@ function linesOf(file: string): string[] | undefined {
 function nameOf(runDir: string): { name: string; origin: RunDetail['origin'] } {
   const parts = resolve(runDir).split(sep);
   const runs = parts.length - 5;
-  if (runs < 2 || parts[runs] !== 'runs') return { name: runDir, origin: {} };
+  const laidOut =
+    runs >= 2 &&
+    parts[runs] === 'runs' &&
+    /^[1-9]\d*$/.test(parts[runs - 1] as string) &&
+    /^r[1-9]\d*$/.test(parts[parts.length - 1] as string);
+  if (!laidOut) return { name: runDir, origin: {} };
   const [owner, execution] = [parts[runs - 2] as string, parts[runs - 1] as string];
   const tail = parts.slice(runs - 2).join('/');
   return owner === 'dry-runs'
@@ -199,22 +226,22 @@ export function readRunDetail(runDir: string): Result<RunDetail> {
   if (!parsed.ok) return fail(parsed.issues.map((issue) => ({ ...issue, path: `${RUN_FILE}.${issue.path}` })));
   const run = parsed.value;
   let score: ScoreView | undefined;
+  let scoreIssue: string | undefined;
   if (existsSync(join(runDir, SCORE_FILE))) {
+    // A score that cannot be shown leaves the run to be shown, and says why (the run is what was asked).
     const read = readJson(join(runDir, SCORE_FILE), SCORE_FILE);
-    if (!read.ok) return read;
-    const scored = parseWith(scoreSchema, read.value, SCORE_FILE);
-    if (!scored.ok) return fail(scored.issues.map((issue) => ({ ...issue, path: `${SCORE_FILE}.${issue.path}` })));
-    score = scored.value;
+    const scored = read.ok ? parseWith(scoreSchema, read.value, SCORE_FILE) : read;
+    if (!scored.ok) {
+      scoreIssue = `${SCORE_FILE} ${scored.issues.map((issue) => `${issue.path}: ${issue.message}`).join('; ')}`;
+    } else if (scored.value.scenario_hash !== undefined && scored.value.scenario_hash !== run.scenario_hash) {
+      scoreIssue = `${SCORE_FILE} scores another version of the scenario than the run ran`;
+    } else score = scored.value;
   }
   const { name, origin } = nameOf(runDir);
   const steps = run.steps.map((step): StepDetail => {
     const dir = join(runDir, 'steps', String(step.n).padStart(2, '0'));
     const patch = join(dir, 'diff.patch');
-    const commits = readJson(join(dir, 'commits.json'), 'commits.json');
-    const messages =
-      existsSync(join(dir, 'commits.json')) && commits.ok
-        ? (commits.value as { messages?: string[] }).messages
-        : undefined;
+    const messages = commitsOf(join(dir, 'commits.json'));
     const transcript = linesOf(join(dir, 'transcript.jsonl'));
     return {
       n: step.n,
@@ -222,12 +249,16 @@ export function readRunDetail(runDir: string): Result<RunDetail> {
       outcome: step.outcome,
       interventions: step.interventions,
       usage: step.usage,
+      ...(step.cost_bound_usd === undefined ? {} : { costBoundUsd: step.cost_bound_usd }),
       ...(existsSync(patch) ? { patch: readFileSync(patch, 'utf8') } : {}),
       ...(messages === undefined ? {} : { messages }),
       ...(transcript === undefined ? {} : { transcript }),
     };
   });
-  const agent = typeof run.agent === 'string' ? run.agent : run.agent?.name;
+  const agent =
+    typeof run.agent === 'string' || run.agent === undefined
+      ? run.agent
+      : [run.agent.name, run.agent.version].filter((part) => part !== undefined).join(' ');
   return ok({
     dir: runDir,
     name,
@@ -241,6 +272,7 @@ export function readRunDetail(runDir: string): Result<RunDetail> {
     outcome: run.outcome,
     ...(run.error === undefined ? {} : { error: run.error }),
     ...(agent === undefined ? {} : { agent }),
+    ...(run.expected_failure === undefined ? {} : { expectedFailure: run.expected_failure.missing }),
     ...(run.approver_policy === undefined ? {} : { approverPolicy: run.approver_policy }),
     ...(run.harness === undefined ? {} : { harness: { tool: run.harness.tool, commit: run.harness.commit } }),
     ...(run.manual === undefined ? {} : { manualTokens: run.manual.tokens }),
@@ -255,5 +287,6 @@ export function readRunDetail(runDir: string): Result<RunDetail> {
     steps,
     interventions: run.interventions ?? [],
     ...(score === undefined ? {} : { score }),
+    ...(scoreIssue === undefined ? {} : { scoreIssue }),
   });
 }

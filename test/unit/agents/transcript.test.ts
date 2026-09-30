@@ -98,6 +98,7 @@ describe('readableTranscript (F5.3, task-043)', () => {
     expect(lines('completed')).toEqual([
       '- assistant: ready',
       expect.stringMatching(/^- result: success, end_turn, 1 turns, /),
+      '  < ready',
     ]);
     expect(lines('truncated-no-result').at(-1)).toMatch(/^- assistant: /);
   });

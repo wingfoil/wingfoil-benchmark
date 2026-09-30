@@ -1,5 +1,8 @@
+import { join } from 'node:path';
+
 import { readableTranscript } from '../agents/index.js';
 import { readRunDetail, resolveRun } from '../results/index.js';
+import { loadScenario } from '../scenario/index.js';
 import type { RunDetail, ScoreView, StepDetail } from '../results/index.js';
 
 import { EXIT, report, USAGE } from './shared.js';
@@ -13,14 +16,14 @@ export function runCommand(argv: readonly string[], io: Io, root: string): numbe
   if (verb === 'show') {
     const full = rest.includes(FULL_FLAG);
     const runs = rest.filter((argument) => argument !== FULL_FLAG);
-    if (runs.length !== 1 || rest.length - runs.length > 1) return usage(io);
+    if (runs.length !== 1 || rest.length - runs.length > 1 || runs.some(isFlag)) return usage(io);
     const detail = open(root, runs[0] as string);
     if (!detail.ok) return report(detail.issues, io);
-    io.stdout(showRun(detail.value, full));
+    io.stdout(showRun(detail.value, full, stepCountOf(root, detail.value)));
     return EXIT.ok;
   }
   if (verb === 'compare') {
-    if (rest.length !== 2) return usage(io);
+    if (rest.length !== 2 || rest.some(isFlag)) return usage(io);
     const [a, b] = rest.map((argument) => open(root, argument));
     if (!a?.ok) return report(a?.issues ?? [], io);
     if (!b?.ok) return report(b?.issues ?? [], io);
@@ -40,10 +43,21 @@ export function runCommand(argv: readonly string[], io: Io, root: string): numbe
         io,
       );
     }
-    io.stdout(compareRuns(left, right));
+    io.stdout(compareRuns(left, right, stepCountOf(root, left)));
     return EXIT.ok;
   }
   return usage(io);
+}
+
+const isFlag = (argument: string) => argument.startsWith('--');
+
+/**
+ * How many steps the run's scenario version has, from `scenarios/` when it is there and is the version
+ * the run ran: what tells an unscored run's unreached steps (task-043's review). Otherwise unknown.
+ */
+function stepCountOf(root: string, run: RunDetail): number | undefined {
+  const scenario = loadScenario(join(root, 'scenarios'), run.scenario, run.version);
+  return scenario.ok && scenario.value.hash === run.scenarioHash ? scenario.value.steps.length : undefined;
 }
 
 function usage(io: Io): number {
@@ -66,9 +80,12 @@ const pad = (n: number) => String(n).padStart(2, '0');
 const ratio = (t: { passed: number; total: number } | undefined) =>
   t === undefined ? '—' : `${t.passed}/${t.total}`;
 
-/** Every step number of the run: those it recorded, and those its score says it never reached. */
-function stepNumbers(...runs: readonly RunDetail[]): number[] {
-  const numbers = new Set<number>();
+/**
+ * Every step number of the runs: the scenario's, when known, those they recorded, and those their scores
+ * say they never reached.
+ */
+function stepNumbers(count: number | undefined, ...runs: readonly RunDetail[]): number[] {
+  const numbers = new Set<number>(Array.from({ length: count ?? 0 }, (_, index) => index + 1));
   for (const run of runs) {
     for (const step of run.steps) numbers.add(step.n);
     for (const step of run.score?.steps ?? []) if (step.n !== undefined) numbers.add(step.n);
@@ -81,7 +98,7 @@ function stepCostEur(score: ScoreView | undefined, n: number): number | undefine
 }
 
 /** The run detail as Markdown (REQ-CLI-08 as amended in 1.18). */
-export function showRun(run: RunDetail, full: boolean): string {
+export function showRun(run: RunDetail, full: boolean, stepCount?: number): string {
   const out: string[] = [`# Run ${run.name}`, ''];
   if (run.origin.campaign !== undefined)
     out.push(`- campaign: ${run.origin.campaign}, execution ${run.origin.execution}`);
@@ -93,19 +110,23 @@ export function showRun(run: RunDetail, full: boolean): string {
     out.push(`- agent: ${run.agent ?? '—'}, approver policy: ${run.approverPolicy ?? '—'}`);
   }
   if (run.harness !== undefined) out.push(`- harness: ${run.harness.tool} ${run.harness.commit}`);
+  if (run.expectedFailure !== undefined) {
+    out.push(`- expected failure: missing ${run.expectedFailure.join(', ')}`);
+  }
   if (run.manualTokens !== undefined) out.push(`- manual: ${run.manualTokens} tokens`);
   if (run.setup !== undefined) {
     out.push(
       `- setup: ${run.setup.durationMs ?? '?'} ms, ${run.setup.costUsd === undefined ? '? USD' : usd(run.setup.costUsd)}`,
     );
   }
-  for (const n of stepNumbers(run)) {
+  for (const n of stepNumbers(stepCount, run)) {
     out.push('', `## Step ${pad(n)}`, '');
     const step = run.steps.find((candidate) => candidate.n === n);
     if (step === undefined) out.push('not reached');
     else out.push(...showStep(run, step, full));
   }
-  out.push('', '## Test results', '', ...(run.score === undefined ? ['not scored'] : testResults(run.score)));
+  const unscored = run.scoreIssue === undefined ? 'not scored' : `not scored: ${run.scoreIssue}`;
+  out.push('', '## Test results', '', ...(run.score === undefined ? [unscored] : testResults(run.score)));
   return `${out.join('\n')}\n`;
 }
 
@@ -115,12 +136,13 @@ function showStep(run: RunDetail, step: StepDetail, full: boolean): string[] {
   const out = [
     `- session: ${step.session ?? '—'}, outcome: ${step.outcome}`,
     `- tokens: input ${u.inputTokens}, output ${u.outputTokens}, cache creation ${u.cacheCreationInputTokens}, cache read ${u.cacheReadInputTokens}`,
-    `- cost: ${usd(u.costUsd)}${costEur === undefined ? '' : `, ${eur(costEur)}`}, ${u.turns} turns, ${(u.durationMs / 1000).toFixed(1)} s`,
+    `- cost: ${step.costBoundUsd === undefined ? usd(u.costUsd) : `not reported, at most ${usd(step.costBoundUsd)}`}${costEur === undefined ? '' : `, ${eur(costEur)}`}, ${u.turns} turns, ${(u.durationMs / 1000).toFixed(1)} s`,
   ];
   const replies = run.interventions.filter((intervention) => intervention.step === step.n);
   out.push(`- interventions: ${step.interventions === 0 ? 'none' : step.interventions}`);
   for (const reply of replies) out.push(`  - ${reply.kind}: ${reply.reply}`);
-  if (step.messages !== undefined) {
+  if (step.messages === 'unreadable') out.push('- commits: unreadable');
+  else if (step.messages !== undefined) {
     out.push(`- commits: ${step.messages.length === 0 ? 'none' : step.messages.join('; ')}`);
   }
   out.push('', '### Transcript', '');
@@ -189,11 +211,18 @@ function qualityOf(m: Readonly<Record<string, unknown>>): string {
 }
 
 /** Two runs of one scenario version side by side (REQ-CLI-08): a row per step, the final and the totals. */
-export function compareRuns(a: RunDetail, b: RunDetail): string {
+export function compareRuns(a: RunDetail, b: RunDetail, stepCount?: number): string {
   const runs = [a, b];
   const labels = runs.map((run) => `${run.arm} r${run.repetition}`);
-  if (labels[0] === labels[1])
-    runs.forEach((run, index) => (labels[index] = `${run.arm} ${run.model} r${run.repetition}`));
+  if (labels[0] === labels[1]) {
+    // The same arm and repetition: the model tells them apart, or else A and B do (two executions).
+    runs.forEach((run, index) => {
+      labels[index] =
+        a.model === b.model
+          ? `${run.arm} r${run.repetition} (${index === 0 ? 'A' : 'B'})`
+          : `${run.arm} ${run.model} r${run.repetition}`;
+    });
+  }
   const out = ['# Compare', ''];
   runs.forEach((run, index) => {
     out.push(
@@ -202,14 +231,18 @@ export function compareRuns(a: RunDetail, b: RunDetail): string {
   });
   const header = labels.flatMap((label) => [`${label} cost`, `${label} M-Q1`, `${label} interventions`]);
   out.push('', `| step | ${header.join(' | ')} |`, `|${' --- |'.repeat(header.length + 1)}`);
-  for (const n of stepNumbers(a, b)) {
+  for (const n of stepNumbers(stepCount, a, b)) {
     const cells = runs.flatMap((run) => {
       const step = run.steps.find((candidate) => candidate.n === n);
       if (step === undefined) return ['not reached', '—', '—'];
       const scored = run.score?.steps.find((candidate) => candidate.n === n);
       const costEur = stepCostEur(run.score, n);
       return [
-        costEur === undefined ? usd(step.usage.costUsd) : eur(costEur),
+        costEur !== undefined
+          ? eur(costEur)
+          : step.costBoundUsd === undefined
+            ? usd(step.usage.costUsd)
+            : `≤ ${usd(step.costBoundUsd)}`,
         ratio(scored?.m_q1),
         String(step.interventions),
       ];
@@ -249,12 +282,23 @@ export function compareRuns(a: RunDetail, b: RunDetail): string {
   );
   const totals = runs.flatMap((run) => {
     const eurTotal = run.score?.cost?.run?.cost_eur;
-    const cost =
-      eurTotal === undefined
-        ? usd(run.steps.reduce((sum, step) => sum + step.usage.costUsd, 0))
-        : eur(eurTotal);
+    const bounded = run.steps.some((step) => step.costBoundUsd !== undefined);
+    const usdTotal = run.steps.reduce((sum, step) => sum + (step.costBoundUsd ?? step.usage.costUsd), 0);
+    const cost = eurTotal !== undefined ? eur(eurTotal) : `${bounded ? '≤ ' : ''}${usd(usdTotal)}`;
     return [cost, '—', String(run.steps.reduce((sum, step) => sum + step.interventions, 0))];
   });
-  out.push(`| total | ${totals.join(' | ')} |`);
+  out.push(`| total | ${totals.join(' | ')} |`, '');
+  if ((a.score === undefined) !== (b.score === undefined)) {
+    out.push('costs are in EUR where a run is scored and in USD where it is not', '');
+  }
+  runs.forEach((run, index) => {
+    const sum = (pick: (step: StepDetail) => number) =>
+      run.steps.reduce((total, step) => total + pick(step), 0);
+    out.push(
+      `- ${labels[index]} totals: tokens input ${sum((step) => step.usage.inputTokens)}, output ${sum((step) => step.usage.outputTokens)}, ` +
+        `cache creation ${sum((step) => step.usage.cacheCreationInputTokens)}, cache read ${sum((step) => step.usage.cacheReadInputTokens)}; ` +
+        `${sum((step) => step.usage.turns)} turns; ${(sum((step) => step.usage.durationMs) / 1000).toFixed(1)} s`,
+    );
+  });
   return `${out.join('\n')}\n`;
 }
