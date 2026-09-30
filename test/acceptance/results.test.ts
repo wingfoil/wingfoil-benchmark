@@ -1,10 +1,11 @@
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { join, relative } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import type { AgentPort } from '../../src/agents/index.js';
 import { main } from '../../src/cli/index.js';
 import { gitCli, systemProcess } from '../../src/core/index.js';
+import { aggregatedExecution, WINGFOIL_COMMIT } from '../support/finding-fixture.js';
 import { localScoringDocker } from '../support/local-scoring.js';
 import { repoPath } from '../support/paths.js';
 import { referenceFiles } from '../support/reference.js';
@@ -108,6 +109,33 @@ function s3RunDetails() {
   return s3Arms;
 }
 
+/** `bench <argv>` in `root`, with the scoring double. */
+async function benchScoreLike(root: string, argv: readonly string[]) {
+  let stdout = '';
+  let stderr = '';
+  const code = await main(
+    [...argv],
+    { stdout: (text) => (stdout += text), stderr: (text) => (stderr += text) },
+    { docker: scoringDocker().docker, git: gitCli(systemProcess), agent: NO_AGENT },
+    root,
+  );
+  return { code, stdout, stderr };
+}
+
+/** Every file under `dir`, relative, with its bytes: what a command wrote there shows as a difference. */
+function snapshotTree(dir: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  const walk = (at: string) => {
+    for (const name of readdirSync(at)) {
+      const path = join(at, name);
+      if (statSync(path).isDirectory()) walk(path);
+      else out[relative(dir, path)] = readFileSync(path, 'base64');
+    }
+  };
+  walk(dir);
+  return out;
+}
+
 describe('results.feature', () => {
   it('@F5.1 Every aggregate links to the runs behind it', async () => {
     // Given a scored campaign
@@ -170,6 +198,50 @@ describe('results.feature', () => {
     expect(stdout).toContain('| final | — | 37/37 | — | — | 37/37 | — |');
     expect(stdout).toContain('| total | 0.3000 EUR | — | 0 | 0.7500 EUR | — | 10 |');
   }, 600_000);
+
+  it('@F5.4 A finding note is ready to become a WingFoil bug or decision-log', async () => {
+    // Given the maintainer selects a difference between arms in a scored campaign — M-Q1 of T3, where
+    // one wingfoil repetition does not cancel orders
+    const { root } = await aggregatedExecution();
+    const before = snapshotTree(root);
+
+    // When the maintainer exports it as a finding note
+    const { code, stdout } = await benchScoreLike(root, [
+      'finding',
+      EXECUTION,
+      '--scenario',
+      'T3@1.0',
+      '--metric',
+      'M-Q1',
+      '--arms',
+      'baseline,wingfoil',
+      '--as',
+      'decision-log',
+    ]);
+    expect(code).toBe(0);
+
+    // Then the note contains the campaign identity, the WingFoil commit, the scenario and version, the
+    // runs involved, the metric values, and links to the run details
+    const file = stdout.replace(/^finding: /, '').trim();
+    const note = readFileSync(join(root, file), 'utf8');
+    expect(note).toContain('- campaign: abcdef012345, execution 1, model fake-model');
+    expect(note).toContain(WINGFOIL_COMMIT);
+    expect(note).toMatch(/- T3@1\.0 \(sha256:/);
+    expect(note).toContain('abcdef012345/1/runs/T3@1.0/wingfoil/fake-model/r2');
+    expect(note).toContain('- final M-Q1: 1/1 (r1), 0/1 (r2); range 0/1–1/1');
+    expect(note).toContain('`bench run show abcdef012345/1/runs/T3@1.0/baseline/fake-model/r1`');
+    expect(note).toContain('## For WingFoil: decision-log');
+
+    // And the note is written as a file in the benchmark repository
+    expect(file).toMatch(/^findings\/[a-z0-9.+-]+\.md$/);
+    expect(existsSync(join(root, file))).toBe(true);
+
+    // And nothing is written to the WingFoil repository — nor anywhere but that one file: the command
+    // is given no path to WingFoil, and the repository it runs in changes by the note alone
+    const after = snapshotTree(root);
+    expect(Object.keys(after).filter((path) => !(path in before))).toEqual([file]);
+    expect(Object.fromEntries(Object.entries(after).filter(([path]) => path !== file))).toEqual(before);
+  });
 
   it('@F5.1 Dry runs never enter campaign results', async () => {
     // Given dry runs and campaign runs of S1 exist — T3 standing in for S1
