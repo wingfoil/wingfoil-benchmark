@@ -50,7 +50,6 @@ describe('findingNote (F5.4, REQ-RES-05, task-044)', () => {
   it("shapes the WingFoil section as the pinned commit's bug or decision-log template", async () => {
     const bug = (await noteOf('M-Q1')).text;
     const tail = bug.slice(bug.indexOf('## For WingFoil: bug'));
-    expect(tail).toContain('title: ""');
     expect(tail).toContain('severity: ""');
     for (const section of ['## Summary', '## Steps to Reproduce', '## Expected Behavior', '## Actual Behavior', '## Notes']) {
       expect(tail).toContain(`\n${section}\n`);

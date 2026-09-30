@@ -12,6 +12,9 @@ const FINDINGS = 'findings';
 
 const SHAPES: readonly FindingShape[] = ['bug', 'decision-log'];
 
+/** A campaign execution, `<campaign-id>/<n>`: the id is 12 hex digits (REQ-FMT-02), so never a path. */
+const CAMPAIGN_EXECUTION = /^[0-9a-f]{12}\/[1-9]\d*$/;
+
 /**
  * `bench finding <campaign-id>/<n> --scenario <id>@<version> --metric <metric> --arms <arm>,… --as
  * bug|decision-log` (REQ-CLI-07 as amended in 1.19, F5.4): writes `findings/<id>.md` and nothing else,
@@ -35,9 +38,12 @@ export function findingCommand(argv: readonly string[], io: Io, root: string): n
   const metric = options.get('--metric');
   const arms = (options.get('--arms') ?? '').split(',').filter((arm) => arm !== '');
   const shape = options.get('--as') as FindingShape | undefined;
+  if (execution !== undefined && /^dry-runs\/[1-9]\d*$/.test(execution)) {
+    return report([{ path: execution, message: 'a dry run is never aggregated (REQ-RES-01)' }], io);
+  }
   if (
     execution === undefined ||
-    !/^[^/]+\/[1-9]\d*$/.test(execution) ||
+    !CAMPAIGN_EXECUTION.test(execution) ||
     scenario === null ||
     metric === undefined ||
     arms.length === 0 ||
@@ -56,12 +62,17 @@ export function findingCommand(argv: readonly string[], io: Io, root: string): n
   });
   if (!note.ok) return report(note.issues, io);
   const path = `${FINDINGS}/${note.value.id}.md`;
-  // A note the maintainer may have edited is never overwritten (the approver's choice 2).
-  if (existsSync(join(root, path))) {
-    return report([{ path, message: 'exists already; it is never overwritten' }], io);
+  // A note the maintainer may have edited is never overwritten (the approver's choice 2): the write
+  // itself refuses an existing file, so nothing can slip in between a check and it.
+  try {
+    mkdirSync(join(root, FINDINGS), { recursive: true });
+    writeFileSync(join(root, path), note.value.text, { flag: 'wx' });
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    return code === 'EEXIST' && existsSync(join(root, path))
+      ? report([{ path, message: 'exists already; it is never overwritten' }], io)
+      : report([{ path: FINDINGS, message: `cannot be written: ${(error as Error).message}` }], io);
   }
-  mkdirSync(join(root, FINDINGS), { recursive: true });
-  writeFileSync(join(root, path), note.value.text);
   io.stdout(`finding: ${path}\n`);
   return EXIT.ok;
 }

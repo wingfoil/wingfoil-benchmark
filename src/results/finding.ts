@@ -1,12 +1,12 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { z } from 'zod';
 
 import { fail, ok } from '../core/index.js';
 import type { Result } from '../core/index.js';
 
 import { AGGREGATE_FILE } from './aggregate.js';
 import type { AggregateFile, BreakEven, Group, Tally, Value } from './aggregate.js';
-import { readRunDetail } from './detail.js';
 
 /** The metrics a finding note reads (REQ-CLI-07 as amended in 1.19), each from one place of the aggregate. */
 export const METRICS = [
@@ -87,7 +87,10 @@ function metricLines(metric: Metric, group: Group, aggregate: AggregateFile): st
     }
     case 'M-Q1-holdout':
       return m.holdout.scored
-        ? [`- hold-out final M-Q1: ${valueText(m.holdout.final.m_q1, tally)}`]
+        ? [
+            `- hold-out final M-Q1: ${valueText(m.holdout.final.m_q1, tally)}`,
+            ...m.holdout.not_scored.map((entry) => `- hold-out not scored: ${entry.run} (${entry.reason})`),
+          ]
         : [`- hold-out: not scored (${m.holdout.reason})`];
     case 'M-Q2': {
       const q = m.m_q2;
@@ -103,7 +106,15 @@ function metricLines(metric: Metric, group: Group, aggregate: AggregateFile): st
       ];
     }
     case 'M-D3':
-      return m.m_d3 === undefined ? [NOT_MEASURED] : [`- M-D3: ${valueText(m.m_d3.value, count)}`];
+      return m.m_d3 === undefined
+        ? [NOT_MEASURED]
+        : [
+            `- M-D3: ${valueText(m.m_d3.value, count)}`,
+            // A final not reached loses every test the seed passed (task-039): said, not a plain figure.
+            ...(m.m_d3.not_reached.length === 0
+              ? []
+              : [`- final not reached, a loss of every test the seed passed: ${m.m_d3.not_reached.join(', ')}`]),
+          ];
     case 'M-F1':
       if (m.m_f1 === undefined) return [NOT_MEASURED];
       return [
@@ -112,6 +123,9 @@ function metricLines(metric: Metric, group: Group, aggregate: AggregateFile): st
           (d) =>
             `- ${d.id}: ${valueText(d.consistent, tally)}; respected ${d.outcomes.respected}, revised ${d.outcomes.revised}, failed ${d.outcomes.failed}`,
         ),
+        ...(m.m_f1.not_reached.length === 0
+          ? []
+          : [`- final not reached, nothing consistent: ${m.m_f1.not_reached.join(', ')}`]),
       ];
     case 'M-F2':
       if (m.m_f2 === undefined) return [NOT_MEASURED];
@@ -136,7 +150,7 @@ function metricLines(metric: Metric, group: Group, aggregate: AggregateFile): st
         `- wall time: ${valueText(m.cost.wall_time_ms, seconds)}`,
       ];
     case 'M-K3':
-      if (m.cost.setup_cost_eur === undefined) return [NOT_MEASURED];
+      if (m.cost.setup_cost_eur === undefined) return ['- setup not recorded for this arm'];
       return [
         `- setup cost: ${valueText(m.cost.setup_cost_eur, eur)}`,
         `- setup time: ${valueText(m.cost.setup_wall_time_ms, seconds)}`,
@@ -192,9 +206,27 @@ function determinismLines(group: Group): string[] {
   ];
 }
 
+const recordSchema = z.object({
+  scenario_hash: z.string(),
+  harness: z.object({ tool: z.string(), commit: z.string() }).optional(),
+});
+
+/** What a note reads of a run's `run.json`: its scenario hash and its harness; or why it cannot. */
+function readRecord(file: string, label: string): Result<z.infer<typeof recordSchema>> {
+  try {
+    const parsed = recordSchema.safeParse(JSON.parse(readFileSync(file, 'utf8')));
+    if (parsed.success) return ok(parsed.data);
+    return fail([{ path: label, message: `does not record ${parsed.error.issues.map((i) => i.path.join('.')).join(', ')}` }]);
+  } catch (error) {
+    return fail([{ path: label, message: `cannot be read: ${(error as Error).message}` }]);
+  }
+}
+
 /** The note's file name, from its inputs (the approver's choice 2): the same finding, the same name. */
 function idOf(campaign: string, execution: string, request: FindingRequest): string {
-  return [campaign, execution, request.scenario, request.version, request.metric, request.arms.join('+')]
+  // The arms sorted: the same finding has one name whatever the order it was asked in.
+  const arms = [...request.arms].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  return [campaign, execution, request.scenario, request.version, request.metric, arms.join('+')]
     .join('-')
     .toLowerCase()
     .replace(/[^a-z0-9.+-]/g, '-');
@@ -228,6 +260,8 @@ export function findingNote(request: FindingRequest): Result<FindingNote> {
     const known = [...new Set(aggregate.groups.map((g) => `${g.scenario}@${g.version}`))].join(', ');
     return fail([{ path: '--scenario', message: `${version} is not in the execution (${known})` }]);
   }
+  const twice = request.arms.find((arm, index) => request.arms.indexOf(arm) !== index);
+  if (twice !== undefined) return fail([{ path: '--arms', message: `${twice} is named twice` }]);
   const groups: Group[] = [];
   for (const arm of request.arms) {
     const group = ofVersion.find((g) => g.arm === arm);
@@ -241,29 +275,47 @@ export function findingNote(request: FindingRequest): Result<FindingNote> {
   const campaign = aggregate.campaign;
   const execution = String(aggregate.execution);
   const runDir = (run: string) => join(request.executionDir, run.split('/').slice(2).join('/'));
-  const details = groups.flatMap((group) =>
-    group.runs.flatMap((run) => {
-      const detail = readRunDetail(runDir(run));
-      return detail.ok ? [{ run, detail: detail.value }] : [];
-    }),
-  );
-  const hash = details[0]?.detail.scenarioHash ?? 'unknown';
+  // The two things the aggregate lacks, from each run's record; a record that cannot be read refuses the
+  // note, which would otherwise say WingFoil never ran (task-044's review).
+  const hashes = new Set<string>();
   const commits = new Map<string, string[]>();
-  for (const { run, detail } of details) {
-    if (detail.harness?.tool === WINGFOIL) commits.set(detail.harness.commit, [...(commits.get(detail.harness.commit) ?? []), run]);
+  for (const run of groups.flatMap((group) => group.runs)) {
+    const record = readRecord(join(runDir(run), 'run.json'), `${run}/run.json`);
+    if (!record.ok) return record;
+    hashes.add(record.value.scenario_hash);
+    const harness = record.value.harness;
+    if (harness?.tool === WINGFOIL) commits.set(harness.commit, [...(commits.get(harness.commit) ?? []), run]);
   }
+  const hash = [...hashes].join(', ');
   const values = groups.flatMap((group) => ['', `### ${group.arm}`, '', ...metricLines(metric, group, aggregate)]);
-  const actual = groups.flatMap((group) => [`${group.arm}:`, ...metricLines(metric, group, aggregate)]);
+  // Each arm under a heading of its own: a label after a list would be read as part of its last item.
+  const actual = groups.flatMap((group, index) => [
+    ...(index === 0 ? [] : ['']),
+    `### ${group.arm}`,
+    '',
+    ...metricLines(metric, group, aggregate),
+  ]);
   const aggregatePath = `results/${campaign}/${execution}/${AGGREGATE_FILE}`;
   const preliminary = groups.some((group) => group.preliminary);
   const id = idOf(campaign, execution, request);
-  const command =
-    `bench finding ${campaign}/${execution} --scenario ${version} --metric ${metric} ` +
-    `--arms ${request.arms.join(',')} --as ${request.as}`;
+  // Rerunning the campaign makes a new execution: its number is the one `bench campaign run` prints.
+  const reproduce = [
+    `\`bench campaign run results/${campaign}/${execution}/campaign.yaml\``,
+    `\`bench score ${campaign}/<n>\``,
+    `\`bench finding ${campaign}/<n> --scenario ${version} --metric ${metric} --arms ${request.arms.join(',')} --as ${request.as}\``,
+  ];
+  const links = [
+    ...groups.flatMap((group) => group.runs.map((run) => `- \`bench run show ${run}\``)),
+    ...groups.flatMap((a, i) =>
+      groups.slice(i + 1).map((b) => `- \`bench run compare ${a.runs[0] ?? ''} ${b.runs[0] ?? ''}\``),
+    ),
+  ];
   const facts = [
     `- Benchmark campaign ${campaign}, execution ${execution}, model ${aggregate.model}${preliminary ? ' (preliminary: a group of one run)' : ''}.`,
     `- WingFoil commit: ${commits.size === 0 ? 'none of these arms ran WingFoil' : [...commits.keys()].join(', ')}.`,
     `- Finding note: findings/${id}.md; aggregate: ${aggregatePath}.`,
+    `- The runs, in the benchmark repository:`,
+    ...links.map((link) => `  ${link}`),
   ];
 
   const lines = [
@@ -297,25 +349,21 @@ export function findingNote(request: FindingRequest): Result<FindingNote> {
     '',
     '## Links',
     '',
-    ...groups.flatMap((group) => group.runs.map((run) => `- \`bench run show ${run}\``)),
-    ...groups.flatMap((a, i) =>
-      groups.slice(i + 1).map((b) => `- \`bench run compare ${a.runs[0] ?? ''} ${b.runs[0] ?? ''}\``),
-    ),
+    ...links,
     `- ${aggregatePath}`,
     '',
     `## For WingFoil: ${request.as}`,
     '',
-    `To paste into the element \`wingfoil memory add --type ${request.as}\` creates, whose template is that of WingFoil ${TEMPLATE_COMMIT}. What is marked "to fill" is the maintainer's.`,
+    `To paste into the element \`wingfoil memory add --type ${request.as} --title "…"\` creates, whose template is that of WingFoil ${TEMPLATE_COMMIT}: the front matter's fields below, then the body. What is marked "to fill" is the maintainer's.`,
     '',
-    ...(request.as === 'bug' ? bugBlock(actual, facts, command) : decisionLogBlock(actual, facts)),
+    ...(request.as === 'bug' ? bugBlock(actual, facts, reproduce) : decisionLogBlock(actual, facts)),
   ];
   return ok({ id, text: `${lines.join('\n')}\n` });
 }
 
-function bugBlock(actual: readonly string[], facts: readonly string[], command: string): string[] {
+function bugBlock(actual: readonly string[], facts: readonly string[], reproduce: readonly string[]): string[] {
   return [
     '```yaml',
-    'title: ""              # to fill',
     'severity: ""           # to fill: critical | high | medium | low',
     '```',
     '',
@@ -326,9 +374,9 @@ function bugBlock(actual: readonly string[], facts: readonly string[], command: 
     '',
     '## Steps to Reproduce',
     '',
-    '1. In the WingFoil benchmark, run the campaign named below: `bench campaign run <its campaign file>`.',
-    '2. Score it: `bench score <campaign-id>/<n>`.',
-    `3. Export this finding: \`${command}\`.`,
+    `1. In the WingFoil benchmark, rerun the campaign: ${reproduce[0]}. It prints its execution, \`<n>\`.`,
+    `2. Score that execution: ${reproduce[1]}.`,
+    `3. Export this finding from it: ${reproduce[2]}.`,
     '',
     '## Expected Behavior',
     '',
@@ -341,6 +389,10 @@ function bugBlock(actual: readonly string[], facts: readonly string[], command: 
     '## Notes',
     '',
     ...facts,
+    '',
+    '## Triage & Execution Notes',
+    '',
+    '<!-- to fill: at triage, as WingFoil\'s template asks. -->',
     '```',
   ];
 }
@@ -348,7 +400,6 @@ function bugBlock(actual: readonly string[], facts: readonly string[], command: 
 function decisionLogBlock(actual: readonly string[], facts: readonly string[]): string[] {
   return [
     '```yaml',
-    'title: ""              # to fill',
     'context: "benchmark finding"',
     '```',
     '',

@@ -44,6 +44,14 @@ function execution(wingfoil: Record<string, unknown>): string {
       ...metrics,
     },
   });
+  // Each run's record: what the note reads besides the aggregate (its scenario hash and harness).
+  for (const run of RUNS) {
+    for (const arm of ['baseline', 'wingfoil']) {
+      const runDir = join(dir, run.split('/').slice(2).join('/').replace('/wingfoil/', `/${arm}/`));
+      mkdirSync(runDir, { recursive: true });
+      writeFileSync(join(runDir, 'run.json'), JSON.stringify({ scenario_hash: 'sha256:s3' }));
+    }
+  }
   writeFileSync(
     join(dir, 'aggregate.json'),
     JSON.stringify({
@@ -95,7 +103,7 @@ describe('findingNote, every form of a metric (task-044)', () => {
     expect(values(dir, 'M-F1')).toContain('- D3: 0/1 (r1); respected 0, revised 0, failed 1');
     expect(values(dir, 'M-F2')).toContain(`- step 02: cost 0.1000 EUR (r1); M-Q1 no value; not reached: ${RUNS[1]}`);
     expect(values(dir, 'M-K1')).toContain(`- cost is a bound for: ${RUNS[0]}`);
-    expect(values(dir, 'M-K3')).toContain('not measured for this scenario');
+    expect(values(dir, 'M-K3')).toContain('- setup not recorded for this arm');
     expect(values(dir, 'M-K4')).toContain('- wingfoil: no break-even (no baseline, or a setup cost not recorded)');
     expect(values(dir, 'M-E1')).toContain('- r1, step 01: violations 2 (r1)');
     expect(values(dir, 'M-R')).toContain('- wingfoil: pins differ (scorer): no value');
