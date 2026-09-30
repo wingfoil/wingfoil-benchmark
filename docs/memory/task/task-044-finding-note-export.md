@@ -315,3 +315,7 @@ small and tested, and that is the approver's call.
   of branch `task/task-044-finding-note-export`.
   - Declared: `backlog → in-progress`, one commit `wf(task): submit <id>`.
   - Observed: exit 0, 1 file, a diff limited to `status: backlog` → `status: in-progress`. Matches.
+- Build and review notes committed by hand (`b6a0882`), then `node_modules/.bin/wingfoil memory submit
+  task-044-finding-note-export` in the worktree → `feaff55`.
+  - Declared: `in-progress → in-review`, one commit `wf(task): submit <id>`.
+  - Observed: exit 0, 1 file, a diff limited to `status: in-progress` → `status: in-review`. Matches.
