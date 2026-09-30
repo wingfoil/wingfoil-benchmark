@@ -1,3 +1,5 @@
+import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { findingNote, METRICS } from '../../../src/results/index.js';
@@ -111,4 +113,51 @@ describe('findingNote (F5.4, REQ-RES-05, task-044)', () => {
     expect(missing.ok).toBe(false);
     expect(!missing.ok && missing.issues[0]?.message).toContain('aggregate.json');
   });
+
+  it('keeps each arm apart in the pasted block, with the template\'s sections in order and its Triage section', async () => {
+    const bug = (await noteOf('M-D3')).text;
+    const block = bug.slice(bug.indexOf('```markdown'));
+    const headings = block.split('\n').filter((line) => line.startsWith('## '));
+    expect(headings).toEqual([
+      '## Summary',
+      '## Steps to Reproduce',
+      '## Expected Behavior',
+      '## Actual Behavior',
+      '## Notes',
+      '## Triage & Execution Notes',
+    ]);
+    expect(block).toContain('\n\n### baseline\n\n- M-D3:');
+    expect(block).toContain('\n\n### wingfoil\n\n- M-D3:');
+    // Filled in: the campaign file the execution copied, and the commands with this finding's options.
+    expect(block).toContain('`bench campaign run results/abcdef012345/1/campaign.yaml`');
+    expect(block).toContain('`bench score abcdef012345/<n>`');
+    expect(block).toContain(
+      '`bench finding abcdef012345/<n> --scenario T3@1.0 --metric M-D3 --arms baseline,wingfoil --as bug`',
+    );
+    expect(block).toContain('`bench run show abcdef012345/1/runs/T3@1.0/wingfoil/fake-model/r1`');
+    // The title is `memory add`'s, which needs it: the note does not blank it.
+    expect(bug).toContain('`wingfoil memory add --type bug --title "…"`');
+    expect(bug).not.toContain('title: ""');
+    expect(bug).toContain('severity: ""');
+  });
+
+  it('names the same finding the same whatever the order of the arms, and refuses an arm named twice', async () => {
+    const { executionDir } = await aggregatedExecution();
+    const one = findingNote({ executionDir, ...REQUEST, metric: 'M-Q1', arms: ['wingfoil', 'baseline'] });
+    expect(one.ok && one.value.id).toBe('abcdef012345-1-t3-1.0-m-q1-baseline+wingfoil');
+    expect(findingNote({ executionDir, ...REQUEST, metric: 'M-Q1', arms: ['wingfoil', 'wingfoil'] })).toEqual({
+      ok: false,
+      issues: [{ path: '--arms', message: 'wingfoil is named twice' }],
+    });
+  });
+
+  it("refuses a run whose record cannot be read, rather than say WingFoil never ran", async () => {
+    const { executionDir } = await aggregatedExecution();
+    const run = join(executionDir, 'runs', 'T3@1.0', 'wingfoil', 'fake-model', 'r2', 'run.json');
+    writeFileSync(run, '{');
+    const note = findingNote({ executionDir, ...REQUEST, metric: 'M-Q1' });
+    expect(note.ok).toBe(false);
+    expect(!note.ok && note.issues[0]?.path).toBe('abcdef012345/1/runs/T3@1.0/wingfoil/fake-model/r2/run.json');
+  });
 });
+

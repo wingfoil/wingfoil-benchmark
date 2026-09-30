@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -51,5 +51,30 @@ describe('bench finding (REQ-CLI-07, F5.4, task-044)', () => {
     const notAggregated = await bench(root, 'finding', 'abcdef012345/7', ...ARGS);
     expect(notAggregated.code).toBe(1);
     expect(existsSync(join(root, 'findings'))).toBe(false);
+  });
+
+  it('takes a campaign execution only: a dry run is never aggregated, and a path is no execution', async () => {
+    const { root } = await aggregatedExecution();
+    const dry = await bench(root, 'finding', 'dry-runs/1', ...ARGS);
+    expect(dry).toMatchObject({
+      code: 1,
+      stderr: 'dry-runs/1: a dry run is never aggregated (REQ-RES-01)\n',
+    });
+    expect((await bench(root, 'finding', '../1', ...ARGS)).code).toBe(2);
+    const unknownArm = await bench(
+      root,
+      'finding',
+      EXECUTION,
+      ...ARGS.map((arg) => (arg === 'baseline,wingfoil' ? 'x' : arg)),
+    );
+    expect(unknownArm.code).toBe(1);
+  });
+
+  it('never overwrites, even when the note appears between the check and the write, and says a findings file', async () => {
+    const { root } = await aggregatedExecution();
+    writeFileSync(join(root, 'findings'), 'not a directory');
+    const blocked = await bench(root, 'finding', EXECUTION, ...ARGS);
+    expect(blocked.code).toBe(1);
+    expect(blocked.stderr).toMatch(/^findings: /);
   });
 });

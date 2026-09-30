@@ -120,4 +120,19 @@ describe('findingNote, every form of a metric (task-044)', () => {
     const note = findingNote({ executionDir: dir, scenario: 'S3', version: '1.0', metric: 'M-Q1', arms: ['wingfoil'], as: 'bug' });
     expect(note.ok).toBe(false);
   });
+
+  it("states a final not reached for M-D3 and M-F1, the hold-out's runs not scored, and a setup not recorded", () => {
+    const dir = execution({
+      m_d3: { value: value([0, 5]), not_reached: [RUNS[1]] },
+      m_f1: { share: value([{ passed: 5, total: 5 }]), decisions: [], not_reached: [RUNS[1]] },
+      holdout: { scored: true, not_scored: [{ run: RUNS[1], reason: 'not configured' }], steps: [], final: snapshot },
+    });
+    expect(values(dir, 'M-D3')).toContain(
+      `- final not reached, a loss of every test the seed passed: ${RUNS[1]}`,
+    );
+    expect(values(dir, 'M-F1')).toContain(`- final not reached, nothing consistent: ${RUNS[1]}`);
+    expect(values(dir, 'M-Q1-holdout')).toContain(`- hold-out not scored: ${RUNS[1]} (not configured)`);
+    expect(values(dir, 'M-K3')).toContain('- setup not recorded for this arm');
+  });
 });
+
