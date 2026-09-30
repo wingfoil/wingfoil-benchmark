@@ -101,4 +101,43 @@ describe('readableTranscript (F5.3, task-043)', () => {
     ]);
     expect(lines('truncated-no-result').at(-1)).toMatch(/^- assistant: /);
   });
+
+  it("says an error: a result with is_error, a tool result that failed, and keeps the result's text", () => {
+    const lines = readableTranscript(
+      [
+        event({
+          type: 'user',
+          message: { content: [{ type: 'tool_result', is_error: true, content: 'command not found' }] },
+        }),
+        event({ type: 'user', message: { content: 'Continue, please.' } }),
+        event({
+          type: 'result',
+          subtype: 'success',
+          is_error: true,
+          num_turns: 1,
+          stop_reason: 'stop_sequence',
+          total_cost_usd: 0,
+          result: 'Failed to authenticate.\nAPI Error: 401',
+        }),
+        'null',
+      ],
+      { full: false },
+    );
+    expect(lines).toEqual([
+      '  > (error) command not found',
+      '- user: Continue, please.',
+      '- result: error (success), stop_sequence, 1 turns, 0.0000 USD',
+      '  < Failed to authenticate.',
+      '  < API Error: 401',
+      '- ? null',
+    ]);
+  });
+
+  it("shows the question a session ended on, which only its result holds (W2 spike's sessions)", () => {
+    const lines = readableTranscript(
+      readFileSync(repoPath('test/fixtures/sessions/question.jsonl'), 'utf8').trim().split('\n'),
+      { full: false },
+    );
+    expect(lines[1]).toMatch(/^ {2}< What specifically needs to be cached/);
+  });
 });

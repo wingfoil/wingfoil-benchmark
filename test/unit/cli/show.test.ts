@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import type { AgentPort } from '../../../src/agents/index.js';
 import { main } from '../../../src/cli/index.js';
 import { gitCli, systemProcess } from '../../../src/core/index.js';
-import { CANCEL, EXECUTION, scoringDocker, storedRun } from '../../support/score-fixture.js';
+import { CANCEL, EXECUTION, scoringDocker, storedRun, usageOf } from '../../support/score-fixture.js';
 import { repoPath } from '../../support/paths.js';
 
 const NO_AGENT: AgentPort = {
@@ -117,5 +117,74 @@ describe('bench run compare (REQ-CLI-08, F5.3, task-043)', () => {
   it('is a usage error without exactly two runs', async () => {
     const base = await storedRun({ steps: [{}, CANCEL] });
     expect((await bench(base.root, 'run', 'compare', base.runDir)).code).toBe(2);
+  });
+
+  it("reads a run that stopped early, unscored, as not having reached the scenario's other steps", async () => {
+    const base = await storedRun({ steps: [CANCEL] });
+    const other = await storedRun({ steps: [CANCEL], into: { root: base.root, repetition: 2 } });
+    const shown = await bench(base.root, 'run', 'show', base.runDir);
+    expect(shown.stdout).toContain('## Step 02\n\nnot reached\n');
+    const compared = await bench(base.root, 'run', 'compare', base.runDir, other.runDir);
+    expect(compared.stdout).toContain('| 02 | not reached | — | — | not reached | — | — |');
+  });
+
+  it("totals each run's tokens, turns and time under the table", async () => {
+    const base = await storedRun({ steps: [{}, CANCEL] });
+    const other = await storedRun({ steps: [{}, CANCEL], into: { root: base.root, repetition: 2 } });
+    const { stdout } = await bench(base.root, 'run', 'compare', base.runDir, other.runDir);
+    expect(stdout).toContain(
+      '- baseline r1 totals: tokens input 30, output 300, cache creation 3000, cache read 30000; 9 turns; 3.0 s',
+    );
+  });
+
+  it('counts a step killed at its time cap at the bound the budget counted, and says so', async () => {
+    const base = await storedRun({
+      steps: [{}, CANCEL],
+      record: (n) => ({
+        usage: { ...usageOf(n), costUsd: 0, costEur: 0 },
+        ...(n === 2 ? { costBoundUsd: 0.3 } : {}),
+      }),
+    });
+    const other = await storedRun({ steps: [{}, CANCEL], into: { root: base.root, repetition: 2 } });
+    const shown = await bench(base.root, 'run', 'show', base.runDir);
+    expect(shown.stdout).toContain('- cost: not reported, at most 0.3000 USD');
+    const compared = await bench(base.root, 'run', 'compare', base.runDir, other.runDir);
+    expect(compared.stdout).toContain('| 02 | ≤ 0.3000 USD |');
+    expect(compared.stdout).toContain('| total | ≤ 0.3000 USD |');
+  });
+
+  it('tells two runs apart that share arm, model and repetition, and says when the costs mix units', async () => {
+    const base = await storedRun({ steps: [{}, CANCEL] });
+    const other = await storedRun({
+      steps: [{}, CANCEL],
+      into: { root: base.root, execution: 'abcdef012345/2' },
+    });
+    expect((await bench(base.root, 'score', EXECUTION)).code).toBe(0);
+    const { stdout } = await bench(base.root, 'run', 'compare', base.runDir, other.runDir);
+    expect(stdout).toContain('| step | baseline r1 (A) cost |');
+    expect(stdout).toContain('| baseline r1 (B) cost |');
+    expect(stdout).toContain('costs are in EUR where a run is scored and in USD where it is not');
+  });
+
+  it('is a usage error with a flag it does not know', async () => {
+    const base = await storedRun({ steps: [{}, CANCEL] });
+    expect((await bench(base.root, 'run', 'show', '--foo', base.runDir)).code).toBe(2);
+    expect((await bench(base.root, 'run', 'compare', '--full', base.runDir, base.runDir)).code).toBe(2);
+  });
+
+  it('shows a run whose score cannot be read, or scores another version, as unscored and says why', async () => {
+    const base = await storedRun({ steps: [{}, CANCEL] });
+    writeFileSync(join(base.runDir, 'score.json'), '{"steps": "no"}');
+    const broken = await bench(base.root, 'run', 'show', base.runDir);
+    expect(broken.code).toBe(0);
+    expect(broken.stdout).toMatch(/## Test results\n\nnot scored: score\.json /);
+    writeFileSync(
+      join(base.runDir, 'score.json'),
+      JSON.stringify({ scenario_hash: 'sha256:other', steps: [], final: { not_reached: true } }),
+    );
+    const stale = await bench(base.root, 'run', 'show', base.runDir);
+    expect(stale.stdout).toContain('not scored: score.json scores another version of the scenario');
+    writeFileSync(join(base.runDir, 'steps', '01', 'commits.json'), '{"messages": "x"}');
+    expect((await bench(base.root, 'run', 'show', base.runDir)).stdout).toContain('- commits: unreadable');
   });
 });

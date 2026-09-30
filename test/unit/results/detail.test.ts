@@ -85,4 +85,28 @@ describe('resolveRun (task-043)', () => {
     });
     expect(resolveRun(fixture.root, join(fixture.root, 'elsewhere')).ok).toBe(false);
   });
+
+  it('keeps the agent\'s version and the expected-failure mark, pins the record holds', async () => {
+    const fixture = await storedRun({ steps: [{}, CANCEL] });
+    withRecord(fixture.runDir, {
+      agent: { name: 'claude-code', version: '2.1.0' },
+      expected_failure: { missing: ['directive-delivery'] },
+    });
+    const detail = readRunDetail(fixture.runDir);
+    expect(detail.ok && detail.value).toMatchObject({
+      agent: 'claude-code 2.1.0',
+      expectedFailure: ['directive-delivery'],
+    });
+  });
+
+  it('names a run by its layout only when it ends in r<k> under <n>/runs', () => {
+    const dir = join(tempDir('bench-detail-shape-'), 'x', 'notanumber', 'runs', 'a', 'b', 'c', 'd');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, 'run.json'),
+      JSON.stringify({ scenario: 'T3', version: '1.0', scenario_hash: 'h', arm: 'a', model: 'm', repetition: 1, outcome: 'completed', steps: [] }),
+    );
+    expect(readRunDetail(dir).ok && (readRunDetail(dir) as { value: { name: string } }).value.name).toBe(dir);
+  });
 });
+
