@@ -310,3 +310,11 @@ question the result is the only place the text appears.
 - The review decision of requirements 1.18 is the approver's reason: "task-043 accepted after two
   independent reviews; requirements 1.18 (REQ-CLI-08) accepted". It names `8d431a0`.
 
+
+### Delivery
+
+- `git merge --no-ff task/task-043-run-detail-and-side-by-side-comparison` on main → `70ab168`.
+- `npx wingfoil memory submit task-043-run-detail-and-side-by-side-comparison` on main → `a6ce308`.
+  - Declared: `approved → done`, one commit.
+  - Observed: exit 0, 1 file, a diff limited to `status: approved` → `status: done`. Matches.
+- Second task of W10. The wave check follows task-044.
