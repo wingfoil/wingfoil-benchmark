@@ -89,6 +89,9 @@ function metricLines(metric: Metric, group: Group, aggregate: AggregateFile): st
       return m.holdout.scored
         ? [
             `- hold-out final M-Q1: ${valueText(m.holdout.final.m_q1, tally)}`,
+            ...(m.holdout.final.not_reached.length === 0
+              ? []
+              : [`- hold-out final not reached: ${m.holdout.final.not_reached.join(', ')}`]),
             ...m.holdout.not_scored.map((entry) => `- hold-out not scored: ${entry.run} (${entry.reason})`),
           ]
         : [`- hold-out: not scored (${m.holdout.reason})`];
@@ -165,7 +168,8 @@ function metricLines(metric: Metric, group: Group, aggregate: AggregateFile): st
       return directive.flatMap((check) =>
         check.steps.map(
           (step) =>
-            `- ${check.id}, step ${String(step.step).padStart(2, '0')}: violations ${valueText(step.violations, count)}`,
+            `- ${check.id}, step ${String(step.step).padStart(2, '0')}: violations ${valueText(step.violations, count)}` +
+            (step.not_reached.length === 0 ? '' : `; not reached: ${step.not_reached.join(', ')}`),
         ),
       );
     }
@@ -222,10 +226,13 @@ function readRecord(file: string, label: string): Result<z.infer<typeof recordSc
   }
 }
 
+function byCodeUnit(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
 /** The note's file name, from its inputs (the approver's choice 2): the same finding, the same name. */
 function idOf(campaign: string, execution: string, request: FindingRequest): string {
-  // The arms sorted: the same finding has one name whatever the order it was asked in.
-  const arms = [...request.arms].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  const arms = [...request.arms].sort(byCodeUnit);
   return [campaign, execution, request.scenario, request.version, request.metric, arms.join('+')]
     .join('-')
     .toLowerCase()
@@ -262,8 +269,10 @@ export function findingNote(request: FindingRequest): Result<FindingNote> {
   }
   const twice = request.arms.find((arm, index) => request.arms.indexOf(arm) !== index);
   if (twice !== undefined) return fail([{ path: '--arms', message: `${twice} is named twice` }]);
+  // The arms in one order, whatever order they were asked in: the same finding, the same bytes.
+  const arms = [...request.arms].sort(byCodeUnit);
   const groups: Group[] = [];
-  for (const arm of request.arms) {
+  for (const arm of arms) {
     const group = ofVersion.find((g) => g.arm === arm);
     if (group === undefined) {
       const known = ofVersion.map((g) => g.arm).join(', ');
@@ -286,7 +295,7 @@ export function findingNote(request: FindingRequest): Result<FindingNote> {
     const harness = record.value.harness;
     if (harness?.tool === WINGFOIL) commits.set(harness.commit, [...(commits.get(harness.commit) ?? []), run]);
   }
-  const hash = [...hashes].join(', ');
+  const hash = hashes.size === 1 ? [...hashes].join('') : `its runs disagree: ${[...hashes].join(', ')}`;
   const values = groups.flatMap((group) => ['', `### ${group.arm}`, '', ...metricLines(metric, group, aggregate)]);
   // Each arm under a heading of its own: a label after a list would be read as part of its last item.
   const actual = groups.flatMap((group, index) => [
@@ -300,9 +309,10 @@ export function findingNote(request: FindingRequest): Result<FindingNote> {
   const id = idOf(campaign, execution, request);
   // Rerunning the campaign makes a new execution: its number is the one `bench campaign run` prints.
   const reproduce = [
-    `\`bench campaign run results/${campaign}/${execution}/campaign.yaml\``,
+    `\`cp results/${campaign}/${execution}/campaign.yaml campaigns/${campaign}.yaml\``,
+    `\`bench campaign run campaigns/${campaign}.yaml --allow-spending\``,
     `\`bench score ${campaign}/<n>\``,
-    `\`bench finding ${campaign}/<n> --scenario ${version} --metric ${metric} --arms ${request.arms.join(',')} --as ${request.as}\``,
+    `\`bench finding ${campaign}/<n> --scenario ${version} --metric ${metric} --arms ${arms.join(',')} --as ${request.as}\``,
   ];
   const links = [
     ...groups.flatMap((group) => group.runs.map((run) => `- \`bench run show ${run}\``)),
@@ -319,7 +329,7 @@ export function findingNote(request: FindingRequest): Result<FindingNote> {
   ];
 
   const lines = [
-    `# Finding: ${metric} on ${version} — ${request.arms.join(', ')}`,
+    `# Finding: ${metric} on ${version} — ${arms.join(', ')}`,
     '',
     '## Campaign',
     '',
@@ -374,9 +384,10 @@ function bugBlock(actual: readonly string[], facts: readonly string[], reproduce
     '',
     '## Steps to Reproduce',
     '',
-    `1. In the WingFoil benchmark, rerun the campaign: ${reproduce[0]}. It prints its execution, \`<n>\`.`,
-    `2. Score that execution: ${reproduce[1]}.`,
-    `3. Export this finding from it: ${reproduce[2]}.`,
+    `1. In the WingFoil benchmark, put the campaign file back where campaigns live: ${reproduce[0]}. Its id is its content's, so it runs as the same campaign.`,
+    `2. Rerun it, which spends: ${reproduce[1]}. It prints its new execution, \`<n>\`.`,
+    `3. Score that execution, with \`--holdout <path>\` when the hold-out is wanted: ${reproduce[2]}.`,
+    `4. Export this finding from it: ${reproduce[3]}.`,
     '',
     '## Expected Behavior',
     '',
@@ -406,9 +417,11 @@ function decisionLogBlock(actual: readonly string[], facts: readonly string[]): 
     '```markdown',
     '## Context',
     '',
-    ...actual,
+    '### The campaign',
     '',
     ...facts,
+    '',
+    ...actual,
     '',
     '## Decision',
     '',
