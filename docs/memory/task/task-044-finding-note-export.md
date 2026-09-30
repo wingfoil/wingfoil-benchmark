@@ -216,3 +216,12 @@ No ADR.
 
 <!-- What happened while building: deviations, blockers, follow-ups (filed as elements, never left
      here). For every `wingfoil` command: declared vs observed behaviour. -->
+
+### WingFoil commands (declared vs observed)
+
+- Plan phase: see [task-042](task-042-determinism-metrics-across-repetitions.md) (`3c336ad` add,
+  `dad336b` submit, `2c0b243` approve).
+- `node_modules/.bin/wingfoil memory submit task-044-finding-note-export` (`de29c8e`), in the worktree
+  of branch `task/task-044-finding-note-export`.
+  - Declared: `backlog → in-progress`, one commit `wf(task): submit <id>`.
+  - Observed: exit 0, 1 file, a diff limited to `status: backlog` → `status: in-progress`. Matches.
