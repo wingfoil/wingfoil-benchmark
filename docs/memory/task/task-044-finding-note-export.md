@@ -328,3 +328,11 @@ small and tested, and that is the approver's call.
 - The review decision of requirements 1.19 is the approver's reason: "task-044 accepted after two
   independent reviews; requirements 1.19 (REQ-CLI-07, REQ-RES-05) accepted". It names `586e042`.
 
+
+### Delivery
+
+- `git merge --no-ff task/task-044-finding-note-export` on main → `8ec9210`.
+- `npx wingfoil memory submit task-044-finding-note-export` on main → `510a326`.
+  - Declared: `approved → done`, one commit.
+  - Observed: exit 0, 1 file, a diff limited to `status: approved` → `status: done`. Matches.
+- Last task of W10. The wave check follows, recorded in rel-v0-1.
