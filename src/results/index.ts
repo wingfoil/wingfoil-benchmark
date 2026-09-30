@@ -21,3 +21,5 @@ export type {
 } from './aggregate.js';
 export { readRunDetail, resolveRun } from './detail.js';
 export type { RunDetail, ScoreView, StepDetail } from './detail.js';
+export { findingNote, METRICS } from './finding.js';
+export type { FindingNote, FindingRequest, FindingShape, Metric } from './finding.js';

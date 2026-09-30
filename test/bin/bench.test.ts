@@ -9,6 +9,7 @@ import { completeCampaignYaml } from '../support/campaign-fixture.js';
 import { priceCampaign } from '../support/dry-run-fixture.js';
 import { REPO_ROOT, repoPath } from '../support/paths.js';
 import { tempDir } from '../support/scenario-fixture.js';
+import { aggregatedExecution } from '../support/finding-fixture.js';
 import { CANCEL, storedRun } from '../support/score-fixture.js';
 
 /**
@@ -99,7 +100,7 @@ describe('the built bench command', () => {
     const { status, stderr } = bench();
     expect(status).toBe(2);
     expect(stderr).toMatch(
-      /^usage: bench campaign validate <file>\n\s+bench campaign estimate <file>\n\s+bench campaign run <file> \[--allow-spending\]\n\s+bench scenario validate <id>@<version> \[--holdout <path>\]\n\s+bench scenario dry-run <id>@<version> --arm <arm> \[--model <id>\] \[--allow-spending\]\n\s+bench score <campaign-id>\/<n>\|dry-runs\/<n> \[--holdout <path>\]\n\s+bench run show <run> \[--full\]\n\s+bench run compare <run> <run>\n$/,
+      /^usage: bench campaign validate <file>\n\s+bench campaign estimate <file>\n\s+bench campaign run <file> \[--allow-spending\]\n\s+bench scenario validate <id>@<version> \[--holdout <path>\]\n\s+bench scenario dry-run <id>@<version> --arm <arm> \[--model <id>\] \[--allow-spending\]\n\s+bench score <campaign-id>\/<n>\|dry-runs\/<n> \[--holdout <path>\]\n\s+bench run show <run> \[--full\]\n\s+bench run compare <run> <run>\n\s+bench finding <campaign-id>\/<n> --scenario <id>@<version> --metric <metric> --arms <arm>,… --as bug\|decision-log\n$/,
     );
   });
 
@@ -117,5 +118,28 @@ describe('the built bench command', () => {
     expect(compared.stdout).toContain('| 02 | 0.2000 USD | — | 1 | not reached | — | — |');
 
     expect(bench('run', 'show').status).toBe(2);
+  });
+
+  it('writes a finding note from an aggregated execution, in the working directory only (F5.4, task-044)', async () => {
+    const { root } = await aggregatedExecution();
+    const stdout = execFileSync(
+      process.execPath,
+      [
+        join(REPO_ROOT, 'dist/cli/main.js'),
+        'finding',
+        'abcdef012345/1',
+        '--scenario',
+        'T3@1.0',
+        '--metric',
+        'M-R',
+        '--arms',
+        'wingfoil',
+        '--as',
+        'bug',
+      ],
+      { cwd: root, encoding: 'utf8' },
+    );
+    expect(stdout).toBe('finding: findings/abcdef012345-1-t3-1.0-m-r-wingfoil.md\n');
+    expect(statSync(join(root, 'findings', 'abcdef012345-1-t3-1.0-m-r-wingfoil.md')).isFile()).toBe(true);
   });
 });
