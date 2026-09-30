@@ -2,7 +2,7 @@
 id: task-044-finding-note-export
 type: task
 title: "Finding note export"
-status: approved
+status: done
 release: v0.1
 wave: W10
 features: [F5.4]
