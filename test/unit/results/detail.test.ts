@@ -23,7 +23,7 @@ describe('readRunDetail (F5.3, task-043)', () => {
     });
     writeFileSync(join(fixture.runDir, 'steps', '01', 'transcript.jsonl'), '{"type":"system"}\n{"type":"result"}\n');
 
-    const detail = readRunDetail(fixture.runDir, fixture.root);
+    const detail = readRunDetail(fixture.runDir);
 
     if (!detail.ok) throw new Error(JSON.stringify(detail.issues));
     const run = detail.value;
@@ -55,16 +55,16 @@ describe('readRunDetail (F5.3, task-043)', () => {
   it('reads the score when there is one, and a dry run as one', async () => {
     const fixture = await storedRun({ steps: [CANCEL, CANCEL], into: { root: tempDir('bench-detail-'), execution: 'dry-runs/2' } });
     writeFileSync(join(fixture.runDir, 'score.json'), JSON.stringify({ score_version: 1, steps: [], final: { not_reached: true } }));
-    const detail = readRunDetail(fixture.runDir, fixture.root);
+    const detail = readRunDetail(fixture.runDir);
     expect(detail.ok && detail.value.origin).toEqual({ dryRun: true, execution: '2' });
     expect(detail.ok && detail.value.score).toMatchObject({ final: { not_reached: true } });
   });
 
   it('refuses a directory with no run in it, and a run.json that is not JSON', () => {
     const empty = tempDir('bench-detail-empty-');
-    expect(readRunDetail(empty, empty)).toEqual({ ok: false, issues: [{ path: 'run.json', message: expect.stringContaining('cannot be read') }] });
+    expect(readRunDetail(empty)).toEqual({ ok: false, issues: [{ path: 'run.json', message: expect.stringContaining('cannot be read') }] });
     writeFileSync(join(empty, 'run.json'), '{');
-    expect(readRunDetail(empty, empty).ok).toBe(false);
+    expect(readRunDetail(empty).ok).toBe(false);
   });
 });
 

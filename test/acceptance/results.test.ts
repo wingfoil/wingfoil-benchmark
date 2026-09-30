@@ -67,8 +67,15 @@ async function benchLocally(root: string, ...argv: string[]) {
  * arm the same. The baseline's step 1 keeps a transcript, a session the real agent produced, and step 2
  * one intervention with the approver's reply.
  */
-let s3Arms: Promise<{ root: string; baseline: string; wingfoil: string }> | undefined;
-function scoredS3Arms() {
+let s3Arms: Promise<{ show: Output; compare: Output }> | undefined;
+interface Output {
+  readonly code: number;
+  readonly stdout: string;
+  readonly stderr: string;
+}
+function s3RunDetails() {
+  // Both commands run here, once: the repository is a temporary directory, removed when the test that
+  // made it finishes.
   s3Arms ??= (async () => {
     const steps = referenceFiles(repoPath('test/fixtures/reference/S3'));
     const baseline = await storedRun({ scenario: 'S3', steps });
@@ -93,7 +100,10 @@ function scoredS3Arms() {
     );
     const scored = await benchLocally(baseline.root, 'score', EXECUTION);
     if (scored.code !== 0) throw new Error(scored.stdout + scored.stderr);
-    return { root: baseline.root, baseline: baseline.runDir, wingfoil: wingfoil.runDir };
+    return {
+      show: await benchLocally(baseline.root, 'run', 'show', baseline.runDir),
+      compare: await benchLocally(baseline.root, 'run', 'compare', wingfoil.runDir, baseline.runDir),
+    };
   })();
   return s3Arms;
 }
@@ -128,9 +138,8 @@ describe('results.feature', () => {
 
   it('@F5.3 Run detail shows everything about one run', async () => {
     // When the maintainer opens the detail of one run — S3's baseline run
-    const { root, baseline } = await scoredS3Arms();
-    const { code, stdout } = await benchLocally(root, 'run', 'show', baseline);
-    expect(code).toBe(0);
+    const { code, stdout, stderr } = (await s3RunDetails()).show;
+    expect(code, stderr).toBe(0);
 
     // Then it shows the transcript of every step — step 1's, the real agent's session; the others are
     // not on disk, which it says
@@ -149,9 +158,8 @@ describe('results.feature', () => {
 
   it('@F5.3 Two arms of the same scenario can be compared side by side', async () => {
     // When the maintainer compares the wingfoil and baseline runs of S3
-    const { root, baseline, wingfoil } = await scoredS3Arms();
-    const { code, stdout } = await benchLocally(root, 'run', 'compare', wingfoil, baseline);
-    expect(code).toBe(0);
+    const { code, stdout, stderr } = (await s3RunDetails()).compare;
+    expect(code, stderr).toBe(0);
 
     // Then their steps are shown side by side, with cost and pass rate per step
     expect(stdout).toContain(
