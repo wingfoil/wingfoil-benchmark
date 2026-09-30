@@ -301,3 +301,12 @@ question the result is the only place the text appears.
   task-043-run-detail-and-side-by-side-comparison` in the worktree → `7aa9cc5`.
   - Declared: `in-progress → in-review`, one commit `wf(task): submit <id>`.
   - Observed: exit 0, 1 file, a diff limited to `status: in-progress` → `status: in-review`. Matches.
+
+### Approval
+
+- `memory approve … [in-review → approved]` → `8d431a0`, run by the approver in the task's worktree.
+  - Declared: `in-review → approved`, one commit with an `Approver:` and a `Reason:` line.
+  - Observed: exactly that, with 1 file.
+- The review decision of requirements 1.18 is the approver's reason: "task-043 accepted after two
+  independent reviews; requirements 1.18 (REQ-CLI-08) accepted". It names `8d431a0`.
+

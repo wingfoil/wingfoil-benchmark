@@ -463,5 +463,6 @@ confirmed by the approver on 2026-09-29; review decision of the approver at that
 The traceability matrix is unaffected: REQ-CLI-08 already traces to F5.3.
 
 Source: [task-043](../memory/task/task-043-run-detail-and-side-by-side-comparison.md), design
-confirmed by the approver on 2026-09-30.
+confirmed by the approver on 2026-09-30; review decision of the approver at that task's review,
+2026-09-30 (`8d431a0`), after two independent reviews.
 
