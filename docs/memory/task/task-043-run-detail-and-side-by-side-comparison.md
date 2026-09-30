@@ -188,3 +188,12 @@ No ADR: nothing about scoring, the image or the runner changes.
 
 <!-- What happened while building: deviations, blockers, follow-ups (filed as elements, never left
      here). For every `wingfoil` command: declared vs observed behaviour. -->
+
+### WingFoil commands (declared vs observed)
+
+- Plan phase: see [task-042](task-042-determinism-metrics-across-repetitions.md) (`f2abfd6` add,
+  `83ae055` submit, `2e43db6` approve).
+- `node_modules/.bin/wingfoil memory submit task-043-run-detail-and-side-by-side-comparison` (`6c43d11`),
+  in the worktree of branch `task/task-043-run-detail-and-side-by-side-comparison`.
+  - Declared: `backlog → in-progress`, one commit `wf(task): submit <id>`.
+  - Observed: exit 0, 1 file, a diff limited to `status: backlog` → `status: in-progress`. Matches.
