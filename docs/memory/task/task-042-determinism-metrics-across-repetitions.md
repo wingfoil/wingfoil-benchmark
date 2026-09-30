@@ -537,3 +537,11 @@ approver's call.
   accepted after three independent reviews; requirements 1.17 (REQ-SCO-05, REQ-SCO-07) and adr-004
   amendment 4 accepted". Both name `e04310a`.
 
+
+### Delivery
+
+- `git merge --no-ff task/task-042-determinism-metrics-across-repetitions` on main → `2f75449`.
+- `npx wingfoil memory submit task-042-determinism-metrics-across-repetitions` on main → `ed10106`.
+  - Declared: `approved → done`, one commit.
+  - Observed: exit 0, 1 file, and a diff limited to `status: approved` → `status: done`. Matches.
+- First task of W10. The wave check follows task-044, as W10 decision 1 says.
