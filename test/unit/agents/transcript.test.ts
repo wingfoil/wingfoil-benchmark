@@ -141,4 +141,13 @@ describe('readableTranscript (F5.3, task-043)', () => {
     );
     expect(lines[1]).toMatch(/^ {2}< What specifically needs to be cached/);
   });
+
+  it("cuts the user's text to one line unless full", () => {
+    const long = ['first', 'x'.repeat(300), 'third'].join('\n');
+    const user = event({ type: 'user', message: { content: long } });
+    expect(readableTranscript([user], { full: false })).toEqual([
+      `- user: first ${'x'.repeat(300)} third`.slice(0, 199) + '…',
+    ]);
+    expect(readableTranscript([user], { full: true })).toEqual([`- user: ${long}`]);
+  });
 });

@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -186,5 +186,38 @@ describe('bench run compare (REQ-CLI-08, F5.3, task-043)', () => {
     expect(stale.stdout).toContain('not scored: score.json scores another version of the scenario');
     writeFileSync(join(base.runDir, 'steps', '01', 'commits.json'), '{"messages": "x"}');
     expect((await bench(base.root, 'run', 'show', base.runDir)).stdout).toContain('- commits: unreadable');
+  });
+
+  it("marks a scored bounded step with ≤ too, and says a stale score's reason in compare", async () => {
+    const base = await storedRun({
+      steps: [{}, CANCEL],
+      record: (n) => ({ usage: usageOf(n), ...(n === 2 ? { costBoundUsd: 0.5 } : {}) }),
+    });
+    expect((await bench(base.root, 'score', EXECUTION)).code).toBe(0);
+    const other = await storedRun({ steps: [{}, CANCEL], into: { root: base.root, repetition: 2 } });
+    writeFileSync(join(other.runDir, 'score.json'), '{"steps": "no"}');
+    const { stdout } = await bench(base.root, 'run', 'compare', base.runDir, other.runDir);
+    expect(stdout).toMatch(/\| 02 \| ≤ \d+\.\d{4} EUR \|/);
+    expect(stdout).toMatch(/\| total \| ≤ \d+\.\d{4} EUR \|/);
+    expect(stdout).toContain(', not scored: score.json steps: ');
+    const shown = await bench(base.root, 'run', 'show', other.runDir);
+    expect(shown.stdout).not.toContain('score.json score.json');
+  });
+
+  it('shows what a resumed step reported before its bound, and a run whose scenario cannot be read', async () => {
+    const base = await storedRun({
+      steps: [{}, CANCEL],
+      record: (n) => ({ usage: usageOf(n), ...(n === 2 ? { costBoundUsd: 1 } : {}) }),
+    });
+    const shown = await bench(base.root, 'run', 'show', base.runDir);
+    expect(shown.stdout).toContain('- cost: 0.2000 USD reported, at most 1.0000 USD');
+    chmodSync(join(base.root, 'scenarios', 'T3', '1.0', 'seed', 'README.md'), 0o000);
+    try {
+      const unreadable = await bench(base.root, 'run', 'show', base.runDir);
+      expect(unreadable.code).toBe(0);
+      expect(unreadable.stdout).toContain('## Step 02');
+    } finally {
+      chmodSync(join(base.root, 'scenarios', 'T3', '1.0', 'seed', 'README.md'), 0o644);
+    }
   });
 });
