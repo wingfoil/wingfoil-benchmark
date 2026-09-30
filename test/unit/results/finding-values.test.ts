@@ -142,5 +142,16 @@ describe('findingNote, every form of a metric (task-044)', () => {
     expect(values(dir, 'M-Q1-holdout')).toContain(`- hold-out not scored: ${RUNS[1]} (not configured)`);
     expect(values(dir, 'M-K3')).toContain('- setup not recorded for this arm');
   });
+
+  it("states a hold-out final not reached, and a check's step not reached", () => {
+    const dir = execution({
+      holdout: { scored: true, not_scored: [], steps: [], final: { ...snapshot, not_reached: [RUNS[1]] } },
+      checks: [
+        { id: 'r1', kind: 'ast', steps: [{ step: 2, passed: value([]), violations: value([0]), not_reached: [RUNS[1]] }] },
+      ],
+    });
+    expect(values(dir, 'M-Q1-holdout')).toContain(`- hold-out final not reached: ${RUNS[1]}`);
+    expect(values(dir, 'M-E1')).toContain(`- r1, step 02: violations 0 (r1); not reached: ${RUNS[1]}`);
+  });
 });
 

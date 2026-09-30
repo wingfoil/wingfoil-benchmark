@@ -128,7 +128,10 @@ describe('findingNote (F5.4, REQ-RES-05, task-044)', () => {
     expect(block).toContain('\n\n### baseline\n\n- M-D3:');
     expect(block).toContain('\n\n### wingfoil\n\n- M-D3:');
     // Filled in: the campaign file the execution copied, and the commands with this finding's options.
-    expect(block).toContain('`bench campaign run results/abcdef012345/1/campaign.yaml`');
+    // A campaign file must lie in campaigns/ (loadCampaign); its id is its content's, so the copy runs
+    // as the same campaign, in a new execution.
+    expect(block).toContain('`cp results/abcdef012345/1/campaign.yaml campaigns/abcdef012345.yaml`');
+    expect(block).toContain('`bench campaign run campaigns/abcdef012345.yaml --allow-spending`');
     expect(block).toContain('`bench score abcdef012345/<n>`');
     expect(block).toContain(
       '`bench finding abcdef012345/<n> --scenario T3@1.0 --metric M-D3 --arms baseline,wingfoil --as bug`',
@@ -157,6 +160,25 @@ describe('findingNote (F5.4, REQ-RES-05, task-044)', () => {
     const note = findingNote({ executionDir, ...REQUEST, metric: 'M-Q1' });
     expect(note.ok).toBe(false);
     expect(!note.ok && note.issues[0]?.path).toBe('abcdef012345/1/runs/T3@1.0/wingfoil/fake-model/r2/run.json');
+  });
+
+  it('keeps the facts of a decision-log under a heading of their own, and gives the same bytes whatever the order of the arms', async () => {
+    const { executionDir } = await aggregatedExecution();
+    const dl = findingNote({ executionDir, ...REQUEST, metric: 'M-Q1', as: 'decision-log' });
+    const text = dl.ok ? dl.value.text : '';
+    const block = text.slice(text.indexOf('```markdown'));
+    const headings = block.split('\n').filter((line) => line.startsWith('#'));
+    expect(headings).toEqual([
+      '## Context',
+      '### The campaign',
+      '### baseline',
+      '### wingfoil',
+      '## Decision',
+      '## Rationale',
+      '## Actions',
+    ]);
+    const reordered = findingNote({ executionDir, ...REQUEST, metric: 'M-Q1', as: 'decision-log', arms: ['wingfoil', 'baseline'] });
+    expect(reordered).toEqual(dl);
   });
 });
 
