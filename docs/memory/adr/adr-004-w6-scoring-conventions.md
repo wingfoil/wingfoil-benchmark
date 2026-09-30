@@ -157,7 +157,7 @@ REQ-SCO-04 as amended in requirements 1.16):
     stored patch. Every path the setup touched is left out, whatever the harness. The image is given
     the file lists and decides nothing about which files count.
 
-## Amendment 4 (W10 task-042, 2026-09-29)
+## Amendment 4 (W10 task-042, 2026-09-29; accepted at its review, `e04310a`)
 
 What [task-042](../task/task-042-determinism-metrics-across-repetitions.md) added to the scoring image
 for M-R2 (F4.5, REQ-SCO-05 as amended in requirements 1.17):

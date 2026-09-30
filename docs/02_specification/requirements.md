@@ -446,4 +446,5 @@ approver on 2026-09-29; review decision of the approver at that task's review, 2
 The traceability matrix is unaffected: REQ-SCO-05 and REQ-SCO-07 already trace to F4.5.
 
 Source: [task-042](../memory/task/task-042-determinism-metrics-across-repetitions.md), design
-confirmed by the approver on 2026-09-29.
+confirmed by the approver on 2026-09-29; review decision of the approver at that task's review,
+2026-09-30 (`e04310a`), after three independent reviews.

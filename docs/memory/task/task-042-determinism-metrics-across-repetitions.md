@@ -527,3 +527,13 @@ approver's call.
   - Observed: exit 0 and 1 file. The diff also **removes the `rejection_reason:` field**, not only the
     status. `memory history` still shows the reject with its approver and reason, so nothing is lost
     from the trail; the field reads as "an open rejection". It matches, with that side effect noted.
+
+### Approval
+
+- `memory approve … [in-review → approved]` → `e04310a`, run by the approver in the task's worktree.
+  - Declared: `in-review → approved`, one commit with an `Approver:` and a `Reason:` line.
+  - Observed: exactly that, with 1 file.
+- The review decision of requirements 1.17 and adr-004 amendment 4 is the approver's reason: "task-042
+  accepted after three independent reviews; requirements 1.17 (REQ-SCO-05, REQ-SCO-07) and adr-004
+  amendment 4 accepted". Both name `e04310a`.
+
