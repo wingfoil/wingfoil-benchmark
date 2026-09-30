@@ -16,7 +16,9 @@ describe('findingNote (F5.4, REQ-RES-05, task-044)', () => {
   it("names the note from its inputs, and writes REQ-RES-05's sections in order", async () => {
     const note = await noteOf('M-Q1');
     expect(note.id).toBe('abcdef012345-1-t3-1.0-m-q1-baseline+wingfoil');
-    const headings = note.text.split('\n').filter((line) => line.startsWith('#'));
+    // The headings of the note itself: the WingFoil section's own are inside its fenced block.
+    const outside = note.text.split('```')[0] ?? '';
+    const headings = outside.split('\n').filter((line) => line.startsWith('#'));
     expect(headings).toEqual([
       '# Finding: M-Q1 on T3@1.0 — baseline, wingfoil',
       '## Campaign',
@@ -49,12 +51,14 @@ describe('findingNote (F5.4, REQ-RES-05, task-044)', () => {
     expect(tail).toContain('title: ""');
     expect(tail).toContain('severity: ""');
     for (const section of ['## Summary', '## Steps to Reproduce', '## Expected Behavior', '## Actual Behavior', '## Notes']) {
-      expect(tail).toContain(section.replace('## ', '#### '));
+      expect(tail).toContain(`\n${section}\n`);
     }
     expect(tail).toContain('<!-- to fill:');
     const dl = (await noteOf('M-Q1', { as: 'decision-log' } as never)).text;
     const dlTail = dl.slice(dl.indexOf('## For WingFoil: decision-log'));
-    for (const section of ['Context', 'Decision', 'Rationale', 'Actions']) expect(dlTail).toContain(`#### ${section}`);
+    for (const section of ['Context', 'Decision', 'Rationale', 'Actions']) {
+      expect(dlTail).toContain(`\n## ${section}\n`);
+    }
     expect(dlTail).not.toContain('severity');
   });
 
