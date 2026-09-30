@@ -486,5 +486,6 @@ confirmed by the approver on 2026-09-30; review decision of the approver at that
 The traceability matrix is unaffected: REQ-CLI-07 and REQ-RES-05 already trace to F5.4.
 
 Source: [task-044](../memory/task/task-044-finding-note-export.md), design confirmed by the approver on
-2026-09-30.
+2026-09-30; review decision of the approver at that task's review, 2026-09-30 (`586e042`), after two
+independent reviews.
 
