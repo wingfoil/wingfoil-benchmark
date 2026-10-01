@@ -204,6 +204,15 @@ All three confirmed by the approver as proposed, 2026-10-01.
 3. **A test pins the list of anchors and their sources:** a statement owed by a wave cannot silently drop.
    - *Alternative:* the test checks a few key phrases only; the list lives in this task's notes.
 
+### After the reviews
+
+- A link of the text to material the execution does not publish (an arm or a scenario it did not run) is
+  left as its label. The converter resolves each link as it renders it, so no second parser has to agree.
+- A link is kept only to a relative page or an `https` address: never `/…`, never `//host`.
+- "This execution" also lists each arm's declared harness capabilities (`provides`, from its runs), each
+  arm's own harness commits, the slices with their arms and repetitions, and the spending with the slices
+  apart and setup costs said to be left out.
+
 ## Execution notes
 
 <!-- What happened while building: deviations, blockers, follow-ups (filed as elements, never left
@@ -216,3 +225,39 @@ All three confirmed by the approver as proposed, 2026-10-01.
 - `node_modules/.bin/wingfoil memory submit task-046-method-page` in the task's worktree, after the design
   (`f52f514`) and the approver's confirmation of its choices: `backlog → in-progress`, one commit, 1 file, a
   diff limited to `status`. Matches.
+
+### Build
+
+- **The prose** was drafted by a separate agent from the sources, with a source per anchor, and reviewed
+  here before it entered the repository. Its doubts were settled:
+  - the killed step ending the run is task-024's recorded deviation from REQ-RUN-08: true of the code;
+  - each harness's `provides` is now generated from the runs, not quoted from `arms/wingfoil/arm.yaml` at
+    `3df305e`;
+  - execution-specific sentences were made general or named as the v0.1 reference campaign's.
+- `ce10c9e` (red), `ea226ad` `feat(site)`: `site-content/method.md` (81 anchors), `src/site/markdown.ts`,
+  `src/site/method.ts`, `material/`, the statements test; `9e2eb6c` (red), `d7fb8d7`: the declared
+  capabilities; `4f71160`: long hashes wrap (after a look at W10's execution in a browser); `be8603f`:
+  requirements 1.21.
+- **W10's execution** `cb46676b5881/2` builds 15 pages, its three manuals matching the SHA-256 its runs
+  recorded; the method page and the notice were checked in a browser for width and links.
+- **Checks on the last commit:** `npm test` 1173/1173, coverage 98.5%, lint clean, `npm run test:bin` 8/8.
+  `test:docker` not run: nothing of the runner or the scoring image changed.
+
+### Review
+
+Each round by a fresh, read-only agent; each finding fixed test-first.
+
+- **First review** (code and prose against every source): the text linked material the execution does not
+  publish; `//host` links accepted; the converter's private marker could come from the text; spending mixed
+  the slices; REQ-RES-02's list of what the site reads incomplete; harness commits matched by tool, not arm;
+  a file under a scenario's `arms/` crashed; the prose missed when a range is shown; T10's commit read as
+  current; test gaps. It confirmed every W2–W10 "W11 (F5.8)" item on the page, and the prose against the
+  code (the approver's replies and limit, the caps, the counting, M-R3's paths, M-K4). Fixed in `d2e4e30`,
+  `eeb6b1e`.
+- **Second review** (the fixes): material links with an anchor or `./` missed; a table cell split wrongly
+  after an unmatched backtick (a regression of the first fix); a dangling link under `arms/`; `/…` links.
+  Fixed in `e5bacf6`, `0afd527`.
+- **Third review** (the second round's fixes): the separate link list paired backticks across blocks where
+  the renderer pairs them per block, so a link could be missed (latent: no current text triggers it); an
+  empty material page name. Fixed in `a2d86b2`, `23360a7` by letting the converter resolve each link.
+
