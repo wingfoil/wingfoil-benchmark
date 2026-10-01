@@ -1,6 +1,17 @@
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 
 import { fail, ok } from '../core/index.js';
 import type { Issue, ProcessPort, Result } from '../core/index.js';
@@ -93,9 +104,39 @@ export async function packTranscripts(
   }
   if (paths.length === 0) return fail([{ path: where, message: 'has no transcript on disk to pack' }]);
 
+  // The transcripts are copied aside first: what is checked for secrets is what is packed (task-047's
+  // second review), whatever changes on disk meanwhile.
+  const copies = mkdtempSync(join(tmpdir(), 'bench-transcripts-'));
+  try {
+    for (const path of paths) {
+      mkdirSync(dirname(join(copies, path)), { recursive: true });
+      copyFileSync(join(executionDir, path), join(copies, path));
+    }
+    return await packCopies(root, executionDir, copies, aggregate, { paths, runs, withTranscripts, runsWithout }, options);
+  } finally {
+    rmSync(copies, { recursive: true, force: true });
+  }
+}
+
+/** The pack of the transcripts copied into `copies`: the checks, the archive and the records. */
+async function packCopies(
+  root: string,
+  executionDir: string,
+  copies: string,
+  aggregate: AggregateFile,
+  found: {
+    readonly paths: readonly string[];
+    readonly runs: readonly string[];
+    readonly withTranscripts: readonly string[];
+    readonly runsWithout: readonly string[];
+  },
+  options: { readonly process: ProcessPort; readonly secrets: readonly KnownSecret[] },
+): Promise<Result<TranscriptPack>> {
+  const { paths, runs, withTranscripts, runsWithout } = found;
+  const relativeRun = (run: string) => run.split('/').slice(2).join('/');
   const issues: Issue[] = [];
   for (const path of paths) {
-    readFileSync(join(executionDir, path), 'utf8')
+    readFileSync(join(copies, path), 'utf8')
       .split('\n')
       .forEach((line, index) => {
         if (ANTHROPIC_SECRET.test(line)) {
@@ -128,15 +169,15 @@ export async function packTranscripts(
   const relativeArchive = `${RELEASES}/${release}/${TRANSCRIPTS_ASSET}`;
   const archive = join(root, relativeArchive);
   mkdirSync(join(root, RELEASES, release), { recursive: true });
-  // Written under another name and renamed once whole: a failed tar leaves no archive behind.
+  // Written under another name, and renamed into place last, once its records are written: a failed tar
+  // leaves no archive behind, and the archive in place always matches its records.
   const partial = `${archive}.partial`;
-  const tar = await options.process.run('tar', [...REPRODUCIBLE, '-cf', partial, '-C', executionDir, ...[...paths].sort()]);
+  const tar = await options.process.run('tar', [...REPRODUCIBLE, '-cf', partial, '-C', copies, ...[...paths].sort()]);
   if (tar.code !== 0) {
     rmSync(partial, { force: true });
     return fail([{ path: relativeArchive, message: `tar failed: ${tar.stderr.trim()}` }]);
   }
-  renameSync(partial, archive);
-  const sha256 = createHash('sha256').update(readFileSync(archive)).digest('hex');
+  const sha256 = createHash('sha256').update(readFileSync(partial)).digest('hex');
 
   for (const [run, record] of records) {
     const holds = withTranscripts.includes(run);
@@ -147,5 +188,6 @@ export async function packTranscripts(
     else delete record.transcripts;
     writeFileSync(join(executionDir, relativeRun(run), 'run.json'), `${JSON.stringify(record, undefined, 2)}\n`);
   }
+  renameSync(partial, archive);
   return ok({ release, archive: relativeArchive, sha256, transcripts: paths.length, runsWithout });
 }

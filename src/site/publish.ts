@@ -1,13 +1,4 @@
-import {
-  cpSync,
-  existsSync,
-  lstatSync,
-  mkdtempSync,
-  readdirSync,
-  readFileSync,
-  rmSync,
-  statSync,
-} from 'node:fs';
+import { cpSync, existsSync, lstatSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 
@@ -38,15 +29,21 @@ const EXECUTION_DIR = /^[0-9a-f]{12}$/;
 
 /**
  * The settings every publishing git command runs with, whatever the maintainer's configuration says: no
- * ignore file can leave a page out, no line-ending conversion can change its bytes, no hook can run.
+ * ignore file can leave a page out, no attributes file (and so no filter, `ident` or line-ending rule) nor
+ * line-ending conversion can change its bytes, no hook or monitor can run. The clone is made with no
+ * template, so no `info/attributes` comes with it either (task-047's second review).
  */
 const FIXED = [
   '-c',
   'core.excludesFile=/dev/null',
   '-c',
+  'core.attributesFile=/dev/null',
+  '-c',
   'core.autocrlf=false',
   '-c',
   'core.hooksPath=/dev/null',
+  '-c',
+  'core.fsmonitor=false',
 ];
 
 /** Every file under `dir`, relative, with its bytes; and every entry that is a link, which is refused. */
@@ -69,11 +66,11 @@ function filesOf(dir: string): { files: Map<string, Buffer>; links: string[] } {
 /** The executions built under a site directory: each `<campaign-id>/<n>/`, in order. */
 function builtExecutions(site: string): string[] {
   return readdirSync(site)
-    .filter((name) => EXECUTION_DIR.test(name) && statSync(join(site, name)).isDirectory())
+    .filter((name) => EXECUTION_DIR.test(name) && lstatSync(join(site, name)).isDirectory())
     .sort()
     .flatMap((campaign) =>
       readdirSync(join(site, campaign))
-        .filter((n) => /^[1-9]\d*$/.test(n) && statSync(join(site, campaign, n)).isDirectory())
+        .filter((n) => /^[1-9]\d*$/.test(n) && lstatSync(join(site, campaign, n)).isDirectory())
         .sort((a, b) => Number(a) - Number(b))
         .map((n) => `${campaign}/${n}`),
     );
@@ -199,7 +196,7 @@ export async function publishSite(
     // The maintainer's own identity, from this repository's configuration
     const name = (await port.git(['config', 'user.name'], root)).stdout.trim();
     const email = (await port.git(['config', 'user.email'], root)).stdout.trim();
-    const created = await port.git(['init', '--quiet', work], scratch);
+    const created = await port.git([...FIXED, 'init', '--quiet', '--template=', work], scratch);
     if (created.code !== 0) return fail([{ path: 'git init', message: created.stderr.trim() }]);
     const added = await step(['remote', 'add', 'origin', address]);
     if (!added.ok) return added;
