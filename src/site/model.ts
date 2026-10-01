@@ -69,7 +69,11 @@ export interface SiteModel {
 
 const runRecord = z.object({ scenario_hash: z.string() });
 
-const value = z.object({ n: z.number(), runs: z.array(z.string()), values: z.array(z.unknown()) });
+/** A `Value` (REQ-FMT-07) whose runs' figures are `figure`s. */
+const valueOf = <T extends z.ZodType>(figure: T) =>
+  z.object({ n: z.number(), runs: z.array(z.string()), values: z.array(figure) });
+const tally = valueOf(z.object({ passed: z.number(), total: z.number() }));
+const number = valueOf(z.number());
 
 /**
  * A group as far as the site reads it (task-045's second review): every path `readMetric` and the pages
@@ -85,23 +89,26 @@ const groupShape = z.object({
   losses: z.array(z.object({ run: z.string(), reason: z.string() })),
   metrics: z.object({
     m_q1: z.object({
-      final: z.object({ m_q1: value, suites: z.array(z.object({ id: z.string(), value })) }),
+      final: z.object({ m_q1: tally, suites: z.array(z.object({ id: z.string(), value: tally })) }),
     }),
     holdout: z.union([
       z.object({ scored: z.literal(false) }),
-      z.object({ scored: z.literal(true), final: z.object({ m_q1: value }) }),
+      z.object({ scored: z.literal(true), final: z.object({ m_q1: tally }) }),
     ]),
-    cost: z.object({ cost_eur: value }),
-    checks: z.array(
-      z.object({
-        kind: z.string(),
-        steps: z.array(
-          z.object({ step: z.number(), not_reached: z.array(z.string()), violations: value.optional() }),
-        ),
-      }),
-    ),
-    m_d3: z.object({ value }).optional(),
-    m_f1: z.object({ share: value }).optional(),
+    cost: z.object({ cost_eur: number }),
+    // Absent from an aggregate written before task-035: M-E1 then reads "not measured".
+    checks: z
+      .array(
+        z.object({
+          kind: z.string(),
+          steps: z.array(
+            z.object({ step: z.number(), not_reached: z.array(z.string()), violations: number.optional() }),
+          ),
+        }),
+      )
+      .optional(),
+    m_d3: z.object({ value: number }).optional(),
+    m_f1: z.object({ share: tally }).optional(),
   }),
 });
 

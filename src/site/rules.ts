@@ -117,12 +117,14 @@ export function readMetric(id: MetricId, group: Group): Figures | undefined {
       return value === undefined ? undefined : { runs: value.runs, values: value.values.map(share) };
     }
     case 'M-E1': {
-      const directives = metrics.checks.filter((check) => DIRECTIVE_KINDS.includes(check.kind));
+      const directives = (metrics.checks ?? []).filter((check) => DIRECTIVE_KINDS.includes(check.kind));
       if (directives.length === 0) return undefined;
       const sums = new Map<string, number>();
       const unreached: { run: string; step: number }[] = [];
-      const listed = new Set<string>();
+      // A run must be listed by every directive check: one a check never lists was scored without it.
+      const listedByAll = new Set<string>(group.runs);
       for (const check of directives) {
+        const listed = new Set<string>();
         for (const step of check.steps) {
           step.violations?.runs.forEach((run, index) => {
             listed.add(run);
@@ -133,11 +135,12 @@ export function readMetric(id: MetricId, group: Group): Figures | undefined {
             unreached.push({ run, step: step.step });
           }
         }
+        for (const run of [...listedByAll]) if (!listed.has(run)) listedByAll.delete(run);
       }
       // Each run once, in the order of the group's runs: at the first step it did not reach, or with no
       // step when no directive check step lists it (task-045's second review). Either way it is not counted.
       const lost = group.runs.flatMap((run) => {
-        if (!listed.has(run)) return [{ run }];
+        if (!listedByAll.has(run)) return [{ run }];
         const steps = unreached.filter((entry) => entry.run === run).map((entry) => entry.step);
         return steps.length === 0 ? [] : [{ run, step: Math.min(...steps) }];
       });
