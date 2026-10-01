@@ -242,3 +242,9 @@ Five rounds by fresh, read-only agents, each finding fixed test-first.
 - The approval is the review decision of requirements 1.22 and traceability 1.2, recorded in their
   amendments' source lines.
 
+
+### Delivery
+
+- `git merge --no-ff task/task-047-…` on main, then `node_modules/.bin/wingfoil memory submit task-047-…` on
+  main: `approved → done`, one commit, 1 file, a diff limited to `status`. Matches. No dependency changed.
+- W11's offline wave check follows, recorded in rel-v0-1 (W11 decision 2).
