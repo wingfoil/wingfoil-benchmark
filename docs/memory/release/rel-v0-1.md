@@ -42,7 +42,7 @@ Waves and features from [07_sequencer.md](../../01_vision/07_sequencer.md) 1.1. 
 | W8 — Continuity and governance | F6.3 S3 multi-session evolution · F6.8 S8 directive compliance · F4.8 tool-neutral governance metrics | — | S3 and S8 scored | **2026-09-29** |
 | W9 — Quality | F4.2 static quality · F4.7 next-change cost · F4.4 setup/step split and break-even | — | the full quality and cost picture per run | **2026-09-29** |
 | W10 — Determinism and findings | F4.5 determinism metric · F5.3 run detail · F5.4 finding note | F4.5 | determinism measured, and a first finding note ready for WingFoil | **2026-09-30** |
-| W11 — Publish | F5.5 landing page · F5.8 method page · F5.6 manual publish | — | first preliminary result public; repository public | — |
+| W11 — Publish | F5.5 landing page · F5.8 method page · F5.6 manual publish | — | first preliminary result public; repository public | offline half **2026-10-01**; public half due at plan-003 step 6 |
 
 The "Verified" column records, for each wave, the evidence that its "Ends with" holds (kanban-delivery,
 deliver phase).
@@ -767,10 +767,98 @@ No bug, no new decision-log, no hold-out change. No spending: **1.0415 USD** rep
   - that harness files written during the steps count in M-R3;
   - what a finding note is, and that one is filed in WingFoil by hand.
 
+### W11 — offline half verified 2026-10-01
+
+**"First preliminary result public; repository public."** Only the release's steps 3–6 can make this true,
+so W11 is checked in two halves (W11 decision 2, task-045). The **offline half** is checked here, with the
+fake agent and no spending. The **public half** is checked at plan-003 step 6. There, the approver makes the
+repository public and enables Pages, and the reference campaign is built, published and its transcripts
+attached.
+
+- **Setup:** a temporary repository on main's built CLI (`c18c87a`), holding W10's executions
+  `cb46676b5881/1` (the fake's replay) and `/2` (declared synthetic, W10) with their scenarios, plus
+  main's `arms/` and `site-content/`.
+- **`bench site build`** on both executions writes 15 pages each:
+  - the landing page;
+  - seven category pages;
+  - the method page;
+  - six material pages: three manuals, the S1 notice and two licences.
+
+  /2's headline reads: "wingfoil is better in 0, worse in 1 and the same in 3 of 4 comparisons across
+  categories C and D (preliminary: n = 1 in D)". S1's wingfoil cell reads M-Q1 98.8%, n = 3, range
+  96.3%–100.0%, −1.2 pp, worse within variance. That matches by hand: (135 + 130 + 135) / 405, and 130/135.
+  The manuals match the SHA-256 their runs recorded. A second build of both gives the same bytes.
+- **`bench transcripts pack cb46676b5881/2`**:
+  - it packs 45 transcripts into `releases/cb46676b5881-2/transcripts.tar.gz`, and packing again gives the
+    same SHA-256;
+  - each run's `run.json` records the asset;
+  - with a transcript removed, `bench run show` says "transcript not on disk; in release cb46676b5881-2,
+    asset transcripts.tar.gz";
+  - the `gh release` command is printed and not run.
+- **Publishing:**
+  - `bench site publish` to a local bare repository is refused: "is not a GitHub repository: its
+    visibility cannot be read". Nothing is pushed.
+  - Then, **declared:** `publishSite`'s own code, with its probe stubbed as public, pushes to the bare
+    repository. `gh-pages` holds exactly `site/` (32 files, byte for byte) in one commit, `site: publish
+    cb46676b5881/1, cb46676b5881/2`. Publishing again says it is already published.
+  - The probe alone, against the real `git@github.com:wingfoil/wingfoil-benchmark.git`: "cannot be read
+    anonymously: it is private, or unreachable". An authenticated `git ls-remote` reads it at the same
+    moment, so the probe is not lent the maintainer's credentials. Nothing here could push.
+- **Acceptance:** `results.feature` @F5.5 ×3, @F5.8 and @F5.6 ×2 are green.
+  - `npm test` 1194/1194 on task-047's branch (coverage 98.1%), lint clean, `npm run test:bin` 8/8.
+  - `test:docker` was not run in W11: nothing of the runner or the scoring image changed.
+
+| Task | Feature | Delivered |
+|---|---|---|
+| [task-045](../task/task-045-site-build-and-landing-page.md) | F5.5 | `bench site build`: landing and category pages, the category map, a generated headline, one chart |
+| [task-048](../task/task-048-test-timeouts-for-fixture-heavy-tests.md) | — | bug-008: a 60 s test timeout, so the suite passes under load |
+| [task-046](../task/task-046-method-page.md) | F5.8 | the method page: `site-content/method.md` with sourced anchors, generated pins and budget, published material |
+| [task-047](../task/task-047-manual-publish-and-transcript-assets.md) | F5.6 | `bench site publish` and `bench transcripts pack` |
+
+Decisions taken during W11:
+
+- **The plan-phase decisions in task-045 (six)**, with the approver's four choices: three tasks, a split
+  wave check, generated headline and rows, and REQ-RES-06 in task-047.
+- **The design choices confirmed by the approver:**
+  - task-045: D's row is M-Q1 and M-D3; n = 1 counts, marked preliminary; the chart shows M-Q1;
+  - task-046: `method.md` with a converter of its own; material pages; an anchor list with sources;
+  - task-047: a fresh-build comparison; `gh-pages` with history; an anonymous probe.
+- **During review:** M-E1 is not comparable when a run did not reach a directive check's step.
+- **bug-008 and task-048** (the approver's choice): a task of its own, before task-046.
+- **Requirements** 1.20, 1.21 and 1.22, and traceability 1.2.
+
+**How W11 was reviewed.** Every task was reviewed by fresh, read-only agents, and each fix again:
+
+- task-045 three rounds, task-048 one, task-046 three, task-047 five;
+- task-047's rounds found real security holes, each shown locally without contacting any remote:
+  - a private repository read as public;
+  - a `site/.git` redirecting the push;
+  - a remote `.gitattributes` running the maintainer's filters;
+- task-046's first round checked every published statement against its source and the code.
+
+One bug (bug-008, fixed by task-048). No decision-log. No hold-out change. No spending: **1.0415 USD**
+reported in all so far ([v0.1 ledger](../../calibration/v0.1-ledger.md)).
+
+**Due before the phases that need them:**
+
+- **The public half (plan-003 step 6), the approver's:**
+  - make `wingfoil/wingfoil-benchmark` public, and enable Pages on `gh-pages`;
+  - build the reference campaign's execution, then `bench site publish`;
+  - `bench transcripts pack <id>/<n>` and the `gh release create` it prints;
+  - record it here and fill W11's "Verified" cell.
+- **Calibration and the reference campaign:**
+  - the method page's "This execution" reads the real pins, among them the released WingFoil's
+    `provides`;
+  - its text names the v0.1 reference campaign's shape (only S1 repeated): re-read it if the campaign
+    changes;
+  - `harness-gaps` and T10 describe the development pin `3df305e`.
+- **Before publishing**, re-read `site-content/method.md` against the requirements as they stand; the
+  statements test pins the anchors, not their wording.
+
 ## Release checklist
 
 - [x] release-planning: scope approved (planning → in-development, `8c5c7e6`; plan: plan-003)
-- [ ] delivery: W1–W11 done, every wave's "Ends with" verified (W1 done: task-001, task-002, task-003; W2 done: task-004, task-005, task-006, task-007; W3 done: task-011, task-012, task-013, task-014, task-015; W4 done: task-016, task-017, task-018, task-020, task-019; W5 done: task-021, task-022, task-023, task-024, task-025; W6 done: task-026, task-027, task-028, task-029, task-030; W7 done: task-031, task-032, task-033, task-034; W8 done: task-035, task-036, task-037, task-038; W9 done: task-039, task-040, task-041; W10 done: task-042, task-043, task-044)
+- [ ] delivery: W1–W11 done, every wave's "Ends with" verified (W1 done: task-001, task-002, task-003; W2 done: task-004, task-005, task-006, task-007; W3 done: task-011, task-012, task-013, task-014, task-015; W4 done: task-016, task-017, task-018, task-020, task-019; W5 done: task-021, task-022, task-023, task-024, task-025; W6 done: task-026, task-027, task-028, task-029, task-030; W7 done: task-031, task-032, task-033, task-034; W8 done: task-035, task-036, task-037, task-038; W9 done: task-039, task-040, task-041; W10 done: task-042, task-043, task-044; W11 done: task-045, task-048, task-046, task-047, its public half due at plan-003 step 6)
 - [ ] calibration: dry runs in every arm, budget revised (`docs/calibration/v0.1.md`)
 - [ ] validation: acceptance green on the fake agent, coverage > 80%, lint clean, one real-agent end-to-end run
 - [ ] campaign: reference campaign published (campaign: —)
