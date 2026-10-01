@@ -175,11 +175,35 @@ describe('reading a metric from a group', () => {
     });
   });
 
+  it('names a run that one directive check lists and another does not as not comparable', () => {
+    const partial = {
+      ...group,
+      metrics: {
+        ...group.metrics,
+        checks: [
+          {
+            id: 'a',
+            kind: 'ast',
+            steps: [{ step: 1, violations: { n: 2, runs: ['r1', 'r2'], values: [1, 0] }, not_reached: [] }],
+          },
+          {
+            id: 'b',
+            kind: 'dependencies',
+            steps: [{ step: 1, violations: { n: 1, runs: ['r2'], values: [3] }, not_reached: [] }],
+          },
+        ],
+      },
+    } as unknown as Group;
+    expect(readMetric('M-E1', partial)).toEqual({ runs: ['r2'], values: [3], unreached: [{ run: 'r1' }] });
+  });
+
   it('reads a metric the group lacks as not measured', () => {
     expect(readMetric('M-F1', group)).toBeUndefined();
     expect(readMetric('M-D3', group)).toBeUndefined();
     const noDirective = { ...group, metrics: { ...group.metrics, checks: [] } } as unknown as Group;
     expect(readMetric('M-E1', noDirective)).toBeUndefined();
+    const noChecks = { ...group, metrics: { ...group.metrics, checks: undefined } } as unknown as Group;
+    expect(readMetric('M-E1', noChecks)).toBeUndefined();
   });
 });
 

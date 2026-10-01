@@ -136,6 +136,16 @@ describe('bench site build (REQ-CLI-09 as amended in 1.20, task-045)', () => {
     expect(built.stdout).toContain('Against the baseline, wingfoil has no comparison');
   }, 120_000);
 
+  it('still builds an aggregate written before checks existed (task-035): M-E1 reads not measured', async () => {
+    const { root, executionDir } = await siteExecution();
+    const file = join(executionDir, 'aggregate.json');
+    const old = JSON.parse(readFileSync(file, 'utf8')) as { groups: { metrics: Record<string, unknown> }[] };
+    for (const group of old.groups) delete group.metrics.checks;
+    writeFileSync(file, JSON.stringify(old));
+    const built = await benchSite(root, 'site', 'build', EXECUTION);
+    expect(built.code, built.stderr).toBe(0);
+  }, 120_000);
+
   it('gives the same bytes from the same aggregate, and leaves another execution pages as they are', async () => {
     const { root } = await siteExecution();
     expect((await benchSite(root, 'site', 'build', EXECUTION)).code).toBe(0);
@@ -233,6 +243,16 @@ describe('bench site build (REQ-CLI-09 as amended in 1.20, task-045)', () => {
     writeFileSync(aggregate, keptAggregate.replace('"metrics":', '"not_metrics":'));
     expect((await benchSite(root, 'site', 'build', EXECUTION)).stderr).toContain(
       'results/abcdef012345/1/aggregate.json: is not an aggregate this site reads: groups.0.metrics',
+    );
+
+    // A value of the wrong kind where the site reads a tally (task-045's third review)
+    const tally = JSON.parse(keptAggregate) as {
+      groups: { metrics: { m_q1: { final: { m_q1: { values: unknown[] } } } } }[];
+    };
+    (tally.groups[0] as (typeof tally.groups)[0]).metrics.m_q1.final.m_q1.values = [null];
+    writeFileSync(aggregate, JSON.stringify(tally));
+    expect((await benchSite(root, 'site', 'build', EXECUTION)).stderr).toContain(
+      'is not an aggregate this site reads: groups.0.metrics.m_q1.final.m_q1.values.0',
     );
 
     // An execution not aggregated
