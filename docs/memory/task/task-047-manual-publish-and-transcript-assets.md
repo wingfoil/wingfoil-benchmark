@@ -232,3 +232,5 @@ Five rounds by fresh, read-only agents, each finding fixed test-first.
 - **Fourth:** a write failing part way cut a record short; `attr.tree` (git ≥ 2.46). `d81edea`, `1b271f4`.
 - **Fifth:** no blocking defect; a restore that fails was not named, an empty release directory could
   remain. `fd6cec0`, `25f50fe`.
+- `node_modules/.bin/wingfoil memory submit task-047-…` after the notes: `in-progress → in-review`, one
+  commit, 1 file, a diff limited to `status`. Matches.
