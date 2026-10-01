@@ -2,7 +2,15 @@ import type { Category } from '../core/index.js';
 import type { Group, Tally } from '../results/index.js';
 
 import type { CategoryRow, MetricRow, ScenarioRow, SiteModel } from './model.js';
-import { CATEGORY_MAP, formatDelta, formatFigure, headlineSentence, notCoveredSentence } from './rules.js';
+import {
+  CATEGORY_MAP,
+  formatDelta,
+  formatFigure,
+  headlineSentence,
+  notCoveredSentence,
+  readMetric,
+  summarize,
+} from './rules.js';
 import type { ArmValue } from './model.js';
 import type { Comparison, MetricId, Summary } from './rules.js';
 
@@ -98,12 +106,16 @@ function nOf(metric: MetricId, summary: Summary): string {
 /** One value; on the landing page, labelled with its metric, so that a cell reads on its own. */
 function valueHtml(metric: MetricId, value: ArmValue, labelled = false): string {
   const label = labelled ? `<span class="metric">${metric}</span> ` : '';
-  if (value.summary === undefined) return `<div class="value">${label}not measured</div>`;
+  const note = value.note === undefined ? '' : `<span class="note">${e(value.note)}</span>`;
+  if (value.summary === undefined)
+    return `<div class="value">${label}${note === '' ? 'not measured' : note}</div>`;
   const figure = `${label}${e(formatFigure(metric, value.summary.mean))} ${nOf(metric, value.summary)}`;
   const comparison = value.comparison;
-  if (comparison === undefined) return `<div class="value">${figure}</div>`;
-  const certainty =
-    comparison.certainty === 'preliminary' ? '' : ` <span class="certainty">${comparison.certainty}</span>`;
+  if (comparison === undefined) return `<div class="value">${figure}${note === '' ? '' : ` ${note}`}</div>`;
+  // The badge already says preliminary when this value is a single run; otherwise the certainty does,
+  // the baseline's single run included (task-045's review).
+  const badged = comparison.certainty === 'preliminary' && value.summary.n === 1;
+  const certainty = badged ? '' : ` <span class="certainty">${comparison.certainty}</span>`;
   return (
     `<div class="value">${figure} <span class="delta">${e(formatDelta(metric, comparison.delta))}</span> ` +
     `${outcomeHtml(comparison)}${certainty}</div>`
@@ -127,7 +139,8 @@ function holdoutHtml(group: Group | undefined, labelled = false): string {
   const holdout = group.metrics.holdout;
   if (!holdout.scored)
     return `<div class="value">${label}<span class="holdout">hold-out</span> not scored</div>`;
-  return `<div class="value">${label}<span class="holdout">hold-out</span> ${e(tallies(holdout.final.m_q1.values))}</div>`;
+  const value = holdout.final.m_q1;
+  return `<div class="value">${label}<span class="holdout">hold-out</span> ${e(tallies(value.values))} <span class="n">n = ${value.n}</span></div>`;
 }
 
 /** A group's losses (REQ-SCO-10): each run, and why — an expected failure names the missing capability. */
@@ -222,9 +235,12 @@ const CHART = {
 };
 
 /** An arm's fill in the chart: the first arm plain, every other one hatched as well as coloured. */
-function armFill(armIndex: number): string {
-  return armIndex === 0 ? ' class="bar arm-0"' : ` class="bar" fill="url(#hatch-${armIndex})"`;
+function armFill(base: string, armIndex: number): string {
+  return armIndex === 0 ? ` class="${base} arm-0"` : ` class="${base}" fill="url(#hatch-${armIndex})"`;
 }
+
+/** The stylesheet's arm colours: arms past the last reuse them, with hatching of their own angle. */
+const ARM_COLOURS = 4;
 
 /**
  * The landing page's one chart (the approver's choice 3): M-Q1 on the final snapshot, per covered
@@ -246,7 +262,7 @@ function chartSvg(model: SiteModel): string {
       .map(
         (_, index) =>
           `<pattern id="hatch-${index + 1}" width="6" height="6" patternUnits="userSpaceOnUse" ` +
-          `patternTransform="rotate(${45 * (index + 1)})"><rect class="arm-${index + 1}" width="6" height="6"/>` +
+          `patternTransform="rotate(${(45 * (index + 1)) % 180})"><rect class="arm-${(index + 1) % ARM_COLOURS}" width="6" height="6"/>` +
           '<line class="hatch" x1="0" y1="0" x2="0" y2="6"/></pattern>',
       ),
     '</defs>',
@@ -254,7 +270,7 @@ function chartSvg(model: SiteModel): string {
   let legendX = CHART.left;
   model.arms.forEach((arm, armIndex) => {
     parts.push(
-      `<rect${armFill(armIndex)} x="${legendX}" y="${CHART.legend - 11}" width="14" height="14"/>`,
+      `<rect${armFill('swatch', armIndex)} x="${legendX}" y="${CHART.legend - 11}" width="14" height="14"/>`,
       `<text class="arm" x="${legendX + 20}" y="${CHART.legend}">${e(arm)}</text>`,
     );
     legendX += 20 + 7 * arm.length + 24;
@@ -267,17 +283,19 @@ function chartSvg(model: SiteModel): string {
   );
   scenarios.forEach(({ category, scenario }, index) => {
     const x0 = CHART.left + CHART.groupGap / 2 + index * (groupWidth + CHART.groupGap);
-    const m_q1 = scenario.metrics.find((metric) => metric.entry.id === 'M-Q1');
     model.arms.forEach((arm, armIndex) => {
       const middle = x0 + armIndex * (CHART.bar + CHART.gap) + CHART.bar / 2;
-      const summary = m_q1?.values.find((value) => value.arm === arm)?.summary;
+      // Every group has M-Q1, whatever its category's map reads (task-045's review): E and F are charted too.
+      const group = scenario.groups.find((candidate) => candidate.arm === arm);
+      const figures = group === undefined ? undefined : readMetric('M-Q1', group);
+      const summary = figures === undefined || figures.values.length === 0 ? undefined : summarize(figures);
       if (summary === undefined) {
         parts.push(`<text class="n" x="${middle}" y="${y(0) + 14}" text-anchor="middle">not measured</text>`);
         return;
       }
       const top = y(summary.mean);
       parts.push(
-        `<rect${armFill(armIndex)} x="${middle - CHART.bar / 2}" y="${round(top)}" ` +
+        `<rect${armFill('bar', armIndex)} x="${middle - CHART.bar / 2}" y="${round(top)}" ` +
           `width="${CHART.bar}" height="${round(y(0) - top)}"><title>${e(`${arm}: ${formatFigure('M-Q1', summary.mean)}, n = ${summary.n}`)}</title></rect>`,
         ...(summary.n >= 2
           ? [
@@ -297,6 +315,10 @@ function chartSvg(model: SiteModel): string {
     `style="max-width: ${width}px" role="img" aria-label="M-Q1 on the final snapshot, per arm and scenario">\n` +
     `${parts.join('\n')}\n</svg>`
   );
+}
+
+function runs(count: number): string {
+  return `${count} run${count === 1 ? '' : 's'}`;
 }
 
 function round(value: number): number {
@@ -325,7 +347,8 @@ export function landingPage(model: SiteModel): string {
     `<p class="legend">Each value is the mean of its runs, with its n; n = 1 is preliminary; a range is shown from ` +
     `n = 3. Deltas are against the baseline. ` +
     `<a href="method.html">How to read these results</a>.</p>\n` +
-    `<p class="meta">Campaign ${e(model.campaign)}, execution ${model.execution}: ${model.runs} run${model.runs === 1 ? '' : 's'}.</p>\n`;
+    `<p class="meta">Campaign ${e(model.campaign)}, execution ${model.execution}: ${runs(model.runs)} of ${e(model.model)}` +
+    `${model.sliceRuns === 0 ? '' : `; ${runs(model.sliceRuns)} of other models, reported apart`}.</p>\n`;
   return page(title(model), body, 2);
 }
 
@@ -469,6 +492,7 @@ th, td { border-top: 1px solid var(--line); padding: 0.5rem; text-align: left; v
 .axis, .whisker { stroke: var(--ink); stroke-width: 1; }
 .bar { stroke: var(--ink); stroke-width: 1; }
 .hatch { stroke: var(--paper); stroke-width: 2; }
+.swatch { stroke: var(--ink); stroke-width: 1; }
 .arm-0 { fill: var(--arm-0); }
 .arm-1 { fill: var(--arm-1); }
 .arm-2 { fill: var(--arm-2); }

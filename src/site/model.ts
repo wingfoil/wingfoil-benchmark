@@ -4,12 +4,12 @@ import { z } from 'zod';
 
 import { CATEGORIES, fail, ok } from '../core/index.js';
 import type { Category, Issue, Result } from '../core/index.js';
-import { AGGREGATE_FILE } from '../results/index.js';
+import { AGGREGATE_FILE, AGGREGATE_VERSION } from '../results/index.js';
 import type { AggregateFile, Group } from '../results/index.js';
 import { loadScenario } from '../scenario/index.js';
 
 import { CATEGORY_MAP, compare, readMetric, summarize } from './rules.js';
-import type { Comparison, MapEntry, Summary } from './rules.js';
+import type { Comparison, Figures, MapEntry, Summary } from './rules.js';
 
 const BASELINE = 'baseline';
 
@@ -27,6 +27,8 @@ export interface ArmValue {
   /** Undefined: the group does not measure it, or the arm has no run of the scenario. */
   readonly summary?: Summary;
   readonly comparison?: Comparison;
+  /** Why there is no value or no comparison: M-E1 not comparable (the approver's choice of 2026-10-01). */
+  readonly note?: string;
 }
 
 /** One metric of the category map on one scenario, in every arm. */
@@ -57,13 +59,32 @@ export interface SiteModel {
   readonly model: string;
   /** The baseline first, then by name. */
   readonly arms: readonly string[];
+  /** The runs of the campaign's model, and those of the slices, reported apart (T14). */
   readonly runs: number;
+  readonly sliceRuns: number;
   readonly categories: readonly CategoryRow[];
   readonly comparisons: readonly Comparison[];
   readonly slices: readonly Group[];
 }
 
 const runRecord = z.object({ scenario_hash: z.string() });
+
+const groupShape = z.object({
+  scenario: z.string(),
+  version: z.string(),
+  arm: z.string(),
+  runs: z.array(z.string()),
+});
+
+/** What the site needs an aggregate to be before it reads it: its shape, not every value (task-045's review). */
+const aggregateShape = z.object({
+  aggregate_version: z.number().int(),
+  campaign: z.string(),
+  execution: z.number().int(),
+  model: z.string(),
+  groups: z.array(groupShape),
+  slices: z.array(groupShape),
+});
 
 function byCodeUnit(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
@@ -91,14 +112,26 @@ export function siteModel(root: string, execution: string): Result<SiteModel> {
   if (!existsSync(file)) {
     return fail([{ path: where, message: `has no ${AGGREGATE_FILE}: score it first (bench score)` }]);
   }
-  let aggregate: AggregateFile;
+  const at = `${where}/${AGGREGATE_FILE}`;
+  let parsed: unknown;
   try {
-    aggregate = JSON.parse(readFileSync(file, 'utf8')) as AggregateFile;
+    parsed = JSON.parse(readFileSync(file, 'utf8'));
   } catch (error) {
+    return fail([{ path: at, message: `cannot be read: ${(error as Error).message}` }]);
+  }
+  const shape = aggregateShape.safeParse(parsed);
+  if (!shape.success) {
+    const first = shape.error.issues[0];
+    const detail = first === undefined ? '' : `: ${first.path.join('.')} ${first.message}`;
+    return fail([{ path: at, message: `is not an aggregate this site reads${detail}` }]);
+  }
+  if (shape.data.aggregate_version !== AGGREGATE_VERSION) {
+    const version = shape.data.aggregate_version;
     return fail([
-      { path: `${where}/${AGGREGATE_FILE}`, message: `cannot be read: ${(error as Error).message}` },
+      { path: at, message: `has aggregate_version ${version}; this site reads version ${AGGREGATE_VERSION}` },
     ]);
   }
+  const aggregate = parsed as AggregateFile;
 
   const all = [...aggregate.groups, ...aggregate.slices];
   const versions = [...new Set(all.map((group) => `${group.scenario}@${group.version}`))].sort(byCodeUnit);
@@ -148,22 +181,10 @@ export function siteModel(root: string, execution: string): Result<SiteModel> {
     const rows = primary.map((info): ScenarioRow => {
       const own = groups.filter((group) => isOf(group, info)).sort((a, b) => armOrder(a.arm, b.arm));
       const map = (CATEGORY_MAP as Partial<Record<Category, readonly MapEntry[]>>)[category] ?? [];
-      const metrics = map.map((entry): MetricRow => {
-        const base = own.find((group) => group.arm === BASELINE);
-        const baseFigures = base === undefined ? undefined : readMetric(entry.id, base);
-        const values = arms.map((arm): ArmValue => {
-          const group = own.find((candidate) => candidate.arm === arm);
-          const figures = group === undefined ? undefined : readMetric(entry.id, group);
-          if (figures === undefined || figures.values.length === 0) return { arm };
-          if (arm === BASELINE || baseFigures === undefined || baseFigures.values.length === 0) {
-            return { arm, summary: summarize(figures) };
-          }
-          const result = compare(entry.better, baseFigures, figures);
-          const comparison: Comparison = { category, metric: entry.id, arm, ...result };
-          comparisons.push(comparison);
-          return { arm, summary: result.other, comparison };
-        });
-        return { entry, values };
+      const metrics = map.map((entry) => {
+        const made = metricRow(category, entry, own, arms);
+        comparisons.push(...made.comparisons);
+        return made.row;
       });
       return { scenario: info, metrics, groups: own };
     });
@@ -171,16 +192,61 @@ export function siteModel(root: string, execution: string): Result<SiteModel> {
     return { category, scenarios: rows, secondary };
   });
 
+  const count = (list: readonly Group[]) => list.reduce((sum, group) => sum + group.runs.length, 0);
   return ok({
     campaign: aggregate.campaign,
     execution: aggregate.execution,
     model: aggregate.model,
     arms,
-    runs: all.reduce((sum, group) => sum + group.runs.length, 0),
+    runs: count(groups),
+    sliceRuns: count(aggregate.slices),
     categories,
     comparisons,
     slices: aggregate.slices,
   });
+}
+
+/** `r2 did not reach step 3; …`: the runs that make M-E1 not comparable. */
+function unreachedText(unreached: Figures['unreached']): string {
+  return (unreached ?? [])
+    .map((entry) => `${entry.run.split('/').at(-1) ?? entry.run} did not reach step ${entry.step}`)
+    .join('; ');
+}
+
+/**
+ * One metric of a category's map on one scenario's groups, in every arm, and the comparisons it makes:
+ * each arm but the baseline against the baseline. A metric a side lacks is no comparison; one a side
+ * cannot compare (M-E1 with a run that did not reach a directive check's step) is none either, and the
+ * page says why.
+ */
+export function metricRow(
+  category: Category,
+  entry: MapEntry,
+  groups: readonly Group[],
+  arms: readonly string[],
+): { row: MetricRow; comparisons: Comparison[] } {
+  const comparisons: Comparison[] = [];
+  const base = groups.find((group) => group.arm === BASELINE);
+  const baseFigures = base === undefined ? undefined : readMetric(entry.id, base);
+  const baseLost = (baseFigures?.unreached ?? []).length > 0;
+  const values = arms.map((arm): ArmValue => {
+    const group = groups.find((candidate) => candidate.arm === arm);
+    const figures = group === undefined ? undefined : readMetric(entry.id, group);
+    if (figures === undefined) return { arm };
+    if ((figures.unreached ?? []).length > 0) {
+      return { arm, note: `not comparable: ${unreachedText(figures.unreached)}` };
+    }
+    if (figures.values.length === 0) return { arm };
+    const summary = summarize(figures);
+    if (arm === BASELINE) return { arm, summary };
+    if (baseLost) return { arm, summary, note: 'no comparison: the baseline is not comparable' };
+    if (baseFigures === undefined || baseFigures.values.length === 0) return { arm, summary };
+    const result = compare(entry.better, baseFigures, figures);
+    const comparison: Comparison = { category, metric: entry.id, arm, ...result };
+    comparisons.push(comparison);
+    return { arm, summary: result.other, comparison };
+  });
+  return { row: { entry, values }, comparisons };
 }
 
 function isOf(group: Group, info: ScenarioInfo): boolean {

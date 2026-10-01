@@ -85,6 +85,7 @@ function model(): SiteModel {
     model: 'm',
     arms: ['baseline', 'wingfoil'],
     runs: 9,
+    sliceRuns: 3,
     categories: [c, d],
     comparisons: [comparison],
     slices: [group('wingfoil', { model: 'other-model' })],
@@ -102,7 +103,12 @@ describe('the pages, from a hand-built model (task-045)', () => {
     // The chart's whisker shows the range of three runs; the second arm is hatched, not only coloured
     expect(page).toContain('<line class="whisker"');
     expect(page).toContain('fill="url(#hatch-1)"');
-    expect(page).toContain('Campaign abcdef012345, execution 1: 9 runs.');
+    // One class attribute per element: a second one is dropped by the browser, and the first arm's fill with it
+    expect(page).not.toMatch(/class="[^"]*" class=/);
+    expect(page).toContain('<rect class="bar arm-0"');
+    expect(page).toContain(
+      'Campaign abcdef012345, execution 1: 9 runs of m; 3 runs of other models, reported apart.',
+    );
   });
 
   it('lists a scenario on its secondary categories pages, without covering them', () => {
@@ -200,7 +206,9 @@ describe('the pages, from a hand-built model (task-045)', () => {
     expect(page).toContain(
       '<span class="holdout">hold-out</span> 1/2, 2/2, 2/2 <span class="n">n = 3</span>',
     );
-    expect(page).toContain('<span class="metric">M-Q1</span> not comparable: r1 did not reach step 2</div>');
+    expect(page).toContain(
+      '<span class="metric">M-Q1</span> <span class="note">not comparable: r1 did not reach step 2</span></div>',
+    );
   });
 
   it('escapes every value from the aggregate or a scenario on every page', () => {

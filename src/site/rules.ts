@@ -44,11 +44,19 @@ export const CATEGORY_MAP: Readonly<Record<MappedCategory, readonly MapEntry[]>>
   F: [{ id: 'M-F1', label: 'earlier decisions respected or explicitly revised', better: 'higher' }],
 };
 
-/** Each run's figure of one metric, in the order of `runs`. */
+/**
+ * Each run's figure of one metric, in the order of `runs`; and, for M-E1, the runs that did not reach a
+ * step a directive check scores, which make the metric not comparable (the approver's choice of
+ * 2026-10-01, task-045's review).
+ */
 export interface Figures {
   readonly runs: readonly string[];
   readonly values: readonly number[];
+  readonly unreached?: readonly { readonly run: string; readonly step: number }[];
 }
+
+/** The check kinds that count violations (REQ-SCO-05 and -06, task-037): M-E1's. */
+const DIRECTIVE_KINDS: readonly string[] = ['ast', 'dependencies'];
 
 /** One side of a comparison: its `n`, the mean of its runs' figures, their range, and the runs. */
 export interface Summary {
@@ -108,17 +116,28 @@ export function readMetric(id: MetricId, group: Group): Figures | undefined {
       return value === undefined ? undefined : { runs: value.runs, values: value.values.map(share) };
     }
     case 'M-E1': {
-      const sums = new Map<string, number>();
-      for (const check of metrics.checks) {
+      const directives = metrics.checks.filter((check) => DIRECTIVE_KINDS.includes(check.kind));
+      if (directives.length === 0) return undefined;
+      const sums = new Map<string, number>(group.runs.map((run) => [run, 0]));
+      const unreached: { run: string; step: number }[] = [];
+      for (const check of directives) {
         for (const step of check.steps) {
           step.violations?.runs.forEach((run, index) => {
             sums.set(run, (sums.get(run) ?? 0) + (step.violations?.values[index] ?? 0));
           });
+          for (const run of step.not_reached) unreached.push({ run, step: step.step });
         }
       }
-      if (sums.size === 0) return undefined;
-      const runs = group.runs.filter((run) => sums.has(run));
-      return { runs, values: runs.map((run) => sums.get(run) ?? 0) };
+      const lost = new Set(unreached.map((entry) => entry.run));
+      const runs = group.runs.filter((run) => !lost.has(run));
+      const figures = { runs, values: runs.map((run) => sums.get(run) ?? 0) };
+      if (unreached.length === 0) return figures;
+      // Each run once, at the first step it did not reach, in the order of the group's runs.
+      const first = group.runs.flatMap((run) => {
+        const steps = unreached.filter((entry) => entry.run === run).map((entry) => entry.step);
+        return steps.length === 0 ? [] : [{ run, step: Math.min(...steps) }];
+      });
+      return { ...figures, unreached: first };
     }
   }
 }
@@ -217,11 +236,18 @@ export function formatFigure(id: MetricId, value: number): string {
   return String(Math.round(value * 100) / 100);
 }
 
-/** A delta of `id`: signed (`+`, `−`, or `±` for none), shares in percentage points. */
+/**
+ * A delta of `id`: signed (`+`, `−`, or `±` for none), shares in percentage points. A difference that would
+ * round to nothing keeps two significant digits, so that "better" never sits beside a zero.
+ */
 export function formatDelta(id: MetricId, delta: number): string {
   const sign = delta > 0 ? '+' : delta < 0 ? '−' : '±';
   const size = Math.abs(delta);
-  if (SHARES.includes(id)) return `${sign}${(size * 100).toFixed(1)} pp`;
-  if (id === 'M-K1') return `${sign}${size.toFixed(4)} EUR`;
+  const fixed = (value: number, digits: number) => {
+    const text = value.toFixed(digits);
+    return value !== 0 && Number(text) === 0 ? value.toPrecision(2) : text;
+  };
+  if (SHARES.includes(id)) return `${sign}${fixed(size * 100, 1)} pp`;
+  if (id === 'M-K1') return `${sign}${fixed(size, 4)} EUR`;
   return `${sign}${String(Math.round(size * 100) / 100)}`;
 }
