@@ -2,7 +2,7 @@
 id: task-046-method-page
 type: task
 title: "Method page"
-status: in-review
+status: approved
 release: v0.1
 wave: W11
 features: [F5.8]
