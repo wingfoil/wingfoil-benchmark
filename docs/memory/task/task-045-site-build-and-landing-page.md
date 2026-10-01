@@ -298,6 +298,8 @@ No ADR.
 
 ### Choices to confirm
 
+All three confirmed by the approver as proposed, 2026-10-01.
+
 1. **D's row is M-Q1 on S2's final snapshot and M-D3; M-D1 and M-D2 are not named metrics in v0.1.** The
    defect tests are counted inside M-Q1, and each suite's tally (`reports-1`–`reports-3`,
    `false-report`) is on D's page. This narrows W11 decision 3, which listed M-D1 for D. The method page
