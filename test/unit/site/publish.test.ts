@@ -130,6 +130,11 @@ describe('what publish pushes (task-047 review)', () => {
         recursive: true,
       });
     }
+    symlinkSync('/nonexistent', join(site, 'abcdefabcdef'));
+    const dangling = await benchPublish(root, probeSaying(true), 'site', 'publish');
+    expect(dangling.code).toBe(1);
+    expect(dangling.stderr).toContain('site/abcdefabcdef: is a link');
+    rmSync(join(site, 'abcdefabcdef'));
     symlinkSync(join(site, 'style.css'), join(site, 'linked.css'));
     const linked = await benchPublish(root, probeSaying(true), 'site', 'publish');
     expect(linked.code).toBe(1);
@@ -142,7 +147,14 @@ describe('what publish pushes (task-047 review)', () => {
     const config = join(tempDir('bench-global-'), 'gitconfig');
     const excludes = `${config}.ignore`;
     writeFileSync(excludes, 'index.html\n*.css\n');
-    writeFileSync(config, `[core]\n\texcludesFile = ${excludes}\n\tautocrlf = true\n`);
+    const attributes = `${config}.attributes`;
+    writeFileSync(attributes, '*.html filter=rewrite ident\n');
+    writeFileSync(
+      config,
+      `[core]\n\texcludesFile = ${excludes}\n\tautocrlf = true\n\tattributesFile = ${attributes}\n` +
+        '[filter "rewrite"]\n\tclean = sed s/Benchmark/REWRITTEN/\n\tsmudge = cat\n' +
+        `[init]\n\ttemplateDir = ${tempDir('bench-template-')}\n`,
+    );
     process.env.GIT_CONFIG_GLOBAL = config;
     try {
       expect((await benchPublish(root, probeSaying(true), 'site', 'publish')).code).toBe(0);
@@ -196,9 +208,11 @@ describe('the visibility probe', () => {
       expect(env).toMatchObject({ NETRC: undefined, CURL_HOME: undefined, GIT_CONFIG_PARAMETERS: undefined });
       expect(env.HOME).toBe(probeCwd);
       expect(readdirSync(probeCwd)).toEqual([]);
+      rmSync(probeCwd, { recursive: true, force: true });
     } finally {
       process.chdir(cwd);
-      for (const key of Object.keys(process.env)) if (!(key in saved)) delete process.env[key];
+      for (const key of Object.keys(process.env))
+        if (!(key in saved)) Reflect.deleteProperty(process.env, key);
     }
   });
 
