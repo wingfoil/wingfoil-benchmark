@@ -118,6 +118,10 @@ describe('bench transcripts pack (REQ-RES-06 as amended in 1.22, task-047)', () 
     symlinkSync('/etc/hostname', file);
     const refused = await benchSite(root, 'transcripts', 'pack', EXECUTION);
     expect(refused.code).toBe(1);
+    // ... and one that leads nowhere
+    rmSync(file);
+    symlinkSync('/nonexistent', file);
+    expect((await benchSite(root, 'transcripts', 'pack', EXECUTION)).stderr).toContain('is not a regular file');
     expect(refused.stderr).toContain('runs/TC@1.0/baseline/fake-model/r1/steps/01/transcript.jsonl: is not a regular file');
     expect(existsSync(join(root, ARCHIVE))).toBe(false);
   }, 120_000);
@@ -126,18 +130,21 @@ describe('bench transcripts pack (REQ-RES-06 as amended in 1.22, task-047)', () 
     const { root, executionDir } = await withTranscripts();
     const first = join(executionDir, RUN('TC', 'baseline'), 'run.json');
     const before = readFileSync(first, 'utf8');
-    const locked = join(executionDir, RUN('TD', 'wingfoil'), 'run.json');
-    chmodSync(locked, 0o444);
+    // Its directory read-only: no new file can be written there, as a full disk would refuse one
+    const locked = join(executionDir, RUN('TD', 'wingfoil'));
+    const lockedRecord = readFileSync(join(locked, 'run.json'), 'utf8');
+    chmodSync(locked, 0o555);
     try {
       const refused = await benchSite(root, 'transcripts', 'pack', EXECUTION);
       expect(refused.code).toBe(1);
       expect(refused.stderr).toContain('runs/TD@1.0/wingfoil/fake-model/r1/run.json: cannot be written');
     } finally {
-      chmodSync(locked, 0o644);
+      chmodSync(locked, 0o755);
     }
+    expect(readFileSync(join(locked, 'run.json'), 'utf8')).toBe(lockedRecord);
     expect(readFileSync(first, 'utf8')).toBe(before);
     expect(existsSync(join(root, ARCHIVE))).toBe(false);
-    expect(readdirSync(join(root, 'releases', 'abcdef012345-1'))).toEqual([]);
+    expect(existsSync(join(root, 'releases'))).toBe(false);
   }, 120_000);
 
   it('refuses what it cannot pack', async () => {

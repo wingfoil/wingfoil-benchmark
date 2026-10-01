@@ -214,8 +214,11 @@ describe('what publish runs (task-047 third review)', () => {
       },
     });
     await port.git(['status'], '/tmp');
-    expect(seen[0]).toMatchObject({ GIT_ATTR_SOURCE: undefined, GIT_ATTR_NOSYSTEM: '1' });
-    expect(Object.hasOwn(seen[0] ?? {}, 'GIT_ATTR_SOURCE')).toBe(true);
+    // Attributes are read from the empty tree only: not the worktree's, the environment's or attr.tree's
+    expect(seen[0]).toMatchObject({
+      GIT_ATTR_SOURCE: '4b825dc642cb6eb9a060e54bf8d69288fbee4904',
+      GIT_ATTR_NOSYSTEM: '1',
+    });
   });
 });
 
