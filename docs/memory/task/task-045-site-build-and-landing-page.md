@@ -2,7 +2,7 @@
 id: task-045-site-build-and-landing-page
 type: task
 title: "Site build and landing page"
-status: in-review
+status: approved
 release: v0.1
 wave: W11
 features: [F5.5]
