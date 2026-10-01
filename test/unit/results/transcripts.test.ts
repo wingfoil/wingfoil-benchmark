@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -88,6 +88,27 @@ describe('bench transcripts pack (REQ-RES-06 as amended in 1.22, task-047)', () 
     } finally {
       delete process.env.BENCH_AGENT_TOKEN_FILE;
     }
+  }, 120_000);
+
+  it('writes nothing when a run record cannot be read, and drops the record of a run that has no transcript left', async () => {
+    const { root, executionDir } = await withTranscripts();
+    const broken = join(executionDir, RUN('TF', 'wingfoil'), 'run.json');
+    const kept = readFileSync(broken, 'utf8');
+    writeFileSync(broken, '{');
+    const before = readFileSync(join(executionDir, RUN('TC', 'baseline'), 'run.json'), 'utf8');
+    const refused = await benchSite(root, 'transcripts', 'pack', EXECUTION);
+    expect(refused.code).toBe(1);
+    expect(refused.stderr).toContain('runs/TF@1.0/wingfoil/fake-model/r1/run.json: cannot be read');
+    expect(existsSync(join(root, ARCHIVE))).toBe(false);
+    expect(readFileSync(join(executionDir, RUN('TC', 'baseline'), 'run.json'), 'utf8')).toBe(before);
+    writeFileSync(broken, kept);
+
+    expect((await benchSite(root, 'transcripts', 'pack', EXECUTION)).code).toBe(0);
+    rmSync(join(executionDir, RUN('TD', 'wingfoil'), 'steps', '01', 'transcript.jsonl'));
+    expect((await benchSite(root, 'transcripts', 'pack', EXECUTION)).code).toBe(0);
+    const record = JSON.parse(readFileSync(join(executionDir, RUN('TD', 'wingfoil'), 'run.json'), 'utf8')) as Record<string, unknown>;
+    expect(record.transcripts).toBeUndefined();
+    expect(readdirSync(join(root, 'releases', 'abcdef012345-1'))).toEqual(['transcripts.tar.gz']);
   }, 120_000);
 
   it('refuses what it cannot pack', async () => {

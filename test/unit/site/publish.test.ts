@@ -1,8 +1,18 @@
-import { appendFileSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import {
+  appendFileSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { join, relative } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-import { githubHttpsUrl, publishCli } from '../../../src/core/index.js';
+import { anonymousGit, githubHttpsUrl, publishCli } from '../../../src/core/index.js';
 import type { ProcessPort } from '../../../src/core/index.js';
 import { tempDir } from '../../support/scenario-fixture.js';
 import { benchPublish, gitIn, probeSaying, publishableSite } from '../../support/site-fixture.js';
@@ -100,6 +110,47 @@ describe('bench site publish (REQ-CLI-09, REQ-RES-04 as amended in 1.22, task-04
   }, 120_000);
 });
 
+describe('what publish pushes (task-047 review)', () => {
+  it('refuses anything under site/ that no fresh build gives: a page, a directory, .git, .gitignore, a link', async () => {
+    const { root, bare } = await publishableSite();
+    const site = join(root, 'site');
+    for (const [path, content] of [
+      ['evil.html', 'x'],
+      ['stray/a.html', 'x'],
+      ['abcdef012345/c.html', 'x'],
+      ['.gitignore', 'abcdef012345/1/index.html\n'],
+      ['.git/config', '[remote "origin"]\n\turl = /elsewhere\n'],
+    ] as const) {
+      mkdirSync(join(site, path, '..'), { recursive: true });
+      writeFileSync(join(site, path), content);
+      const refused = await benchPublish(root, probeSaying(true), 'site', 'publish');
+      expect(refused.code, path).toBe(1);
+      expect(refused.stderr).toContain(`site/${path}: is not part of a fresh build`);
+      rmSync(join(site, path.split('/')[0] as string), { recursive: true });
+    }
+    symlinkSync(join(site, 'style.css'), join(site, 'linked.css'));
+    const linked = await benchPublish(root, probeSaying(true), 'site', 'publish');
+    expect(linked.code).toBe(1);
+    expect(linked.stderr).toContain('site/linked.css: is a link');
+    expect(refs(bare)).toBe('');
+  }, 240_000);
+
+  it("pushes every file whatever the maintainer's git ignores", async () => {
+    const { root, bare } = await publishableSite();
+    const config = join(tempDir('bench-global-'), 'gitconfig');
+    const excludes = `${config}.ignore`;
+    writeFileSync(excludes, 'index.html\n*.css\n');
+    writeFileSync(config, `[core]\n\texcludesFile = ${excludes}\n\tautocrlf = true\n`);
+    process.env.GIT_CONFIG_GLOBAL = config;
+    try {
+      expect((await benchPublish(root, probeSaying(true), 'site', 'publish')).code).toBe(0);
+    } finally {
+      delete process.env.GIT_CONFIG_GLOBAL;
+    }
+    expect(published(bare)).toEqual(tree(join(root, 'site')));
+  }, 120_000);
+});
+
 describe('the visibility probe', () => {
   it('reads GitHub remotes as their anonymous https address, and nothing else', () => {
     expect(githubHttpsUrl('git@github.com:wingfoil/wingfoil-benchmark.git')).toBe(
@@ -109,6 +160,44 @@ describe('the visibility probe', () => {
     expect(githubHttpsUrl('https://github.com/o/r')).toBe('https://github.com/o/r.git');
     expect(githubHttpsUrl('/tmp/bare')).toBeUndefined();
     expect(githubHttpsUrl('git@gitlab.com:o/r.git')).toBeUndefined();
+  });
+
+  it("gives git no configuration at all to read: not the repository's, the environment's, the home's or netrc's", async () => {
+    const repository = tempDir('bench-probe-repo-');
+    gitIn(repository, 'init', '--quiet');
+    gitIn(repository, 'config', 'url./tmp/elsewhere.insteadOf', 'https://github.com/');
+    const saved = { ...process.env };
+    Object.assign(process.env, {
+      GIT_CONFIG_COUNT: '1',
+      GIT_CONFIG_KEY_0: 'credential.helper',
+      GIT_CONFIG_VALUE_0: 'store',
+      GIT_CONFIG_PARAMETERS: "'url./tmp/x.insteadof'='https://github.com/'",
+      NETRC: join(repository, 'netrc'),
+      CURL_HOME: repository,
+    });
+    const cwd = process.cwd();
+    process.chdir(repository);
+    try {
+      const { cwd: probeCwd, env } = anonymousGit();
+      const listed = execFileSync('git', ['-c', 'credential.helper=', 'config', '--list', '--show-origin'], {
+        cwd: probeCwd,
+        env: Object.fromEntries(
+          Object.entries({ ...process.env, ...env }).filter(
+            (entry): entry is [string, string] => entry[1] !== undefined,
+          ),
+        ),
+        encoding: 'utf8',
+      });
+      expect(listed.split('\n').filter((line) => line !== '' && !line.startsWith('command line:'))).toEqual(
+        [],
+      );
+      expect(env).toMatchObject({ NETRC: undefined, CURL_HOME: undefined, GIT_CONFIG_PARAMETERS: undefined });
+      expect(env.HOME).toBe(probeCwd);
+      expect(readdirSync(probeCwd)).toEqual([]);
+    } finally {
+      process.chdir(cwd);
+      for (const key of Object.keys(process.env)) if (!(key in saved)) delete process.env[key];
+    }
   });
 
   it('asks anonymously, with no configuration that could lend it credentials, and refuses on any failure', async () => {
@@ -127,7 +216,13 @@ describe('the visibility probe', () => {
       },
     });
     expect((await publishCli(answering(0)).isPublic('git@github.com:o/r.git')).ok).toBe(true);
-    expect(calls[0]?.args).toEqual(['ls-remote', '--heads', 'https://github.com/o/r.git']);
+    expect(calls[0]?.args).toEqual([
+      '-c',
+      'credential.helper=',
+      'ls-remote',
+      '--heads',
+      'https://github.com/o/r.git',
+    ]);
     expect(calls[0]?.env).toMatchObject({
       GIT_CONFIG_GLOBAL: '/dev/null',
       GIT_CONFIG_NOSYSTEM: '1',
