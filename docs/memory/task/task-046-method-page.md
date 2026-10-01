@@ -263,3 +263,11 @@ Each round by a fresh, read-only agent; each finding fixed test-first.
 
 - `node_modules/.bin/wingfoil memory submit task-046-method-page` after the notes: `in-progress →
   in-review`, one commit, 1 file, a diff limited to `status`. Matches.
+
+### Approval
+
+- `npx wingfoil memory approve task-046-method-page --reason "…"`, run by the approver in the task's
+  worktree on 2026-10-01 (`469ceb5`): `in-review → approved`, with the approver and the reason. Matches.
+- The approval is the review decision of requirements 1.21 (REQ-RES-02), recorded in its amendment's source
+  line.
+

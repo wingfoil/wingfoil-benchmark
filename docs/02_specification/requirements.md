@@ -537,5 +537,6 @@ independent reviews.
 
 The traceability matrix is unaffected: REQ-RES-02 already traces to F5.8.
 
-Source: [task-046](../memory/task/task-046-method-page.md), design confirmed by the approver on 2026-10-01.
+Source: [task-046](../memory/task/task-046-method-page.md), design confirmed by the approver on 2026-10-01;
+review decision of the approver at that task's review, 2026-10-01 (`469ceb5`), after three independent reviews.
 
