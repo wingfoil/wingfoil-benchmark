@@ -422,3 +422,14 @@ Each round by a fresh, read-only agent, its findings fixed test-first.
   (`4612992`), after the build notes (`bae6e34`).
   - Declared: `in-progress → in-review`, one commit `wf(task): submit <id>`.
   - Observed: exit 0, 1 file, a diff limited to `status: in-progress` → `status: in-review`. Matches.
+
+### Approval
+
+- `npx wingfoil memory approve task-045-site-build-and-landing-page --reason "…"`, run by the approver in the
+  task's worktree on 2026-10-01 (`433828f`).
+  - Declared: `in-review → approved` by the approver role, with the reason, in one commit
+    `wf(task): approve <id> [in-review → approved]`.
+  - Observed: that commit; `memory history` records `operation: approve`, the approver and the reason.
+    Matches.
+- The approval is the review decision of requirements 1.20 (REQ-CLI-09, REQ-RES-02, REQ-RES-03), recorded
+  in its amendment's source line.

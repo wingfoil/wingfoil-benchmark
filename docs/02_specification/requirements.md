@@ -514,4 +514,5 @@ independent reviews.
 The traceability matrix is unaffected: REQ-CLI-09, REQ-RES-02 and REQ-RES-03 already trace to F5.5.
 
 Source: [task-045](../memory/task/task-045-site-build-and-landing-page.md), design confirmed by the approver on
-2026-10-01.
+2026-10-01; review decision of the approver at that task's review, 2026-10-01 (`433828f`), after three
+independent reviews.
