@@ -9,6 +9,7 @@ import { parseScenarioArguments, validateScenario } from './scenario.js';
 import { scoreCommand } from './score.js';
 import { findingCommand } from './finding.js';
 import { runCommand } from './show.js';
+import { siteCommand } from './site.js';
 import { checkSpending, count, EXIT, portsFor, report, SPENDING_FLAG, USAGE } from './shared.js';
 import type { Io, Ports } from './shared.js';
 
@@ -36,6 +37,7 @@ export async function main(
   if (argv[0] === 'score') return scoreCommand(argv.slice(1), io, ports, root);
   if (argv[0] === 'run') return runCommand(argv.slice(1), io, root);
   if (argv[0] === 'finding') return findingCommand(argv.slice(1), io, root);
+  if (argv[0] === 'site') return siteCommand(argv.slice(1), io, root);
   const [noun, verb, file, ...extra] = argv;
   // The flag belongs to `run`: accepting it on `validate` would say it means something there.
   const allowSpending = verb === 'run' && extra.includes(SPENDING_FLAG);

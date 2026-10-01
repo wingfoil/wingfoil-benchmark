@@ -10,6 +10,7 @@ import { priceCampaign } from '../support/dry-run-fixture.js';
 import { REPO_ROOT, repoPath } from '../support/paths.js';
 import { tempDir } from '../support/scenario-fixture.js';
 import { aggregatedExecution } from '../support/finding-fixture.js';
+import { siteExecution } from '../support/site-fixture.js';
 import { CANCEL, storedRun } from '../support/score-fixture.js';
 
 /**
@@ -100,7 +101,7 @@ describe('the built bench command', () => {
     const { status, stderr } = bench();
     expect(status).toBe(2);
     expect(stderr).toMatch(
-      /^usage: bench campaign validate <file>\n\s+bench campaign estimate <file>\n\s+bench campaign run <file> \[--allow-spending\]\n\s+bench scenario validate <id>@<version> \[--holdout <path>\]\n\s+bench scenario dry-run <id>@<version> --arm <arm> \[--model <id>\] \[--allow-spending\]\n\s+bench score <campaign-id>\/<n>\|dry-runs\/<n> \[--holdout <path>\]\n\s+bench run show <run> \[--full\]\n\s+bench run compare <run> <run>\n\s+bench finding <campaign-id>\/<n> --scenario <id>@<version> --metric <metric> --arms <arm>,… --as bug\|decision-log\n$/,
+      /^usage: bench campaign validate <file>\n\s+bench campaign estimate <file>\n\s+bench campaign run <file> \[--allow-spending\]\n\s+bench scenario validate <id>@<version> \[--holdout <path>\]\n\s+bench scenario dry-run <id>@<version> --arm <arm> \[--model <id>\] \[--allow-spending\]\n\s+bench score <campaign-id>\/<n>\|dry-runs\/<n> \[--holdout <path>\]\n\s+bench run show <run> \[--full\]\n\s+bench run compare <run> <run>\n\s+bench finding <campaign-id>\/<n> --scenario <id>@<version> --metric <metric> --arms <arm>,… --as bug\|decision-log\n\s+bench site build <campaign-id>\/<n>\n$/,
     );
   });
 
@@ -141,5 +142,19 @@ describe('the built bench command', () => {
     );
     expect(stdout).toBe('finding: findings/abcdef012345-1-t3-1.0-m-r-wingfoil.md\n');
     expect(statSync(join(root, 'findings', 'abcdef012345-1-t3-1.0-m-r-wingfoil.md')).isFile()).toBe(true);
+  });
+
+  it('builds the site from an aggregated execution, into site/ of the working directory (F5.5, task-045)', async () => {
+    const { root } = await siteExecution();
+    const stdout = execFileSync(
+      process.execPath,
+      [join(REPO_ROOT, 'dist/cli/main.js'), 'site', 'build', 'abcdef012345/1'],
+      {
+        cwd: root,
+        encoding: 'utf8',
+      },
+    );
+    expect(stdout).toMatch(/^site: site\/abcdef012345\/1\/ \(9 pages\)\n/);
+    expect(statSync(join(root, 'site', 'abcdef012345', '1', 'index.html')).isFile()).toBe(true);
   });
 });
