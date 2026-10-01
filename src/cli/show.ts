@@ -161,8 +161,14 @@ function showStep(run: RunDetail, step: StepDetail, full: boolean): string[] {
     out.push(`- commits: ${step.messages.length === 0 ? 'none' : step.messages.join('; ')}`);
   }
   out.push('', '### Transcript', '');
-  if (step.transcript === undefined) out.push('transcript not on disk');
-  else out.push(...readableTranscript(step.transcript, { full }));
+  if (step.transcript === undefined) {
+    const asset = run.transcriptsAsset;
+    out.push(
+      asset === undefined
+        ? 'transcript not on disk'
+        : `transcript not on disk; in release ${asset.release}, asset ${asset.asset}`,
+    );
+  } else out.push(...readableTranscript(step.transcript, { full }));
   out.push('', '### Diff', '');
   if (step.patch === undefined || step.patch === '') out.push('no change');
   else out.push('```diff', step.patch.replace(/\n$/, ''), '```');

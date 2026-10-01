@@ -22,4 +22,6 @@ export type {
 export { readRunDetail, resolveRun } from './detail.js';
 export type { RunDetail, ScoreView, StepDetail } from './detail.js';
 export { findingNote, METRICS } from './finding.js';
+export { packTranscripts, RELEASES, TRANSCRIPTS_ASSET } from './transcripts.js';
+export type { KnownSecret, TranscriptPack } from './transcripts.js';
 export type { FindingNote, FindingRequest, FindingShape, Metric } from './finding.js';

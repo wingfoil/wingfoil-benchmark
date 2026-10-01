@@ -22,9 +22,14 @@ export interface SiteBuild {
  * Build the site of the aggregated execution `<campaign-id>/<n>` into `site/` of `root` (REQ-CLI-09 and
  * REQ-RES-02 as amended in 1.20 and 1.21, task-045 and task-046): `site/<campaign-id>/<n>/` is replaced whole, and
  * `site/index.html` and `site/style.css` are rewritten; another execution's directory is left as it is,
- * so its permanent URL keeps its pages. Nothing is written when the model refuses.
+ * so its permanent URL keeps its pages. Nothing is written when the model refuses. `siteDir` is `site/` of
+ * `root`, or another directory to build into (task-047: publishing compares `site/` with a fresh build).
  */
-export function buildSite(root: string, execution: string): Result<SiteBuild> {
+export function buildSite(
+  root: string,
+  execution: string,
+  siteDir: string = join(root, SITE),
+): Result<SiteBuild> {
   const model = siteModel(root, execution);
   if (!model.ok) return model;
   const method = methodPages(root, execution, model.value);
@@ -39,11 +44,11 @@ export function buildSite(root: string, execution: string): Result<SiteBuild> {
     ...[...method.value.material].map(([name, text]): [string, string] => [`material/${name}`, text]),
   ];
   const directory = `${SITE}/${model.value.campaign}/${model.value.execution}/`;
-  const target = join(root, directory);
+  const target = join(siteDir, model.value.campaign, String(model.value.execution));
   rmSync(target, { recursive: true, force: true });
   mkdirSync(join(target, 'material'), { recursive: true });
   for (const [name, text] of pages) writeFileSync(join(target, name), text);
-  writeFileSync(join(root, SITE, 'index.html'), rootPage(model.value));
-  writeFileSync(join(root, SITE, 'style.css'), STYLE);
+  writeFileSync(join(siteDir, 'index.html'), rootPage(model.value));
+  writeFileSync(join(siteDir, 'style.css'), STYLE);
   return ok({ directory, pages: pages.length, headlines: plainHeadlines(model.value) });
 }

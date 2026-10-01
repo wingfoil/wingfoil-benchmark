@@ -4,7 +4,7 @@ import { claudeCodeAgent, loadAgentToken, loadFakeScript } from '../agents/index
 import type { AgentPort } from '../agents/index.js';
 import { fakeAgent } from '../agents/index.js';
 import { dockerCli, gitCli, systemProcess } from '../core/index.js';
-import type { DockerPort, GitPort, Issue, Result } from '../core/index.js';
+import type { DockerPort, GitPort, Issue, PublishPort, Result } from '../core/index.js';
 import type { RunPins } from '../runner/index.js';
 
 /** Where the command writes its output; the bin passes the process streams, tests capture them. */
@@ -23,6 +23,8 @@ export interface Ports {
   readonly docker: DockerPort;
   readonly git: GitPort;
   readonly agent: AgentPort;
+  /** Publishing's git and visibility probe (task-047); the system's when not given. */
+  readonly publish?: PublishPort;
 }
 
 /** The command line's usage, printed on `--help` and on a usage error. */
@@ -36,7 +38,9 @@ export const USAGE =
   '       bench run show <run> [--full]\n' +
   '       bench run compare <run> <run>\n' +
   '       bench finding <campaign-id>/<n> --scenario <id>@<version> --metric <metric> --arms <arm>,… --as bug|decision-log\n' +
-  '       bench site build <campaign-id>/<n>\n';
+  '       bench site build <campaign-id>/<n>\n' +
+  '       bench site publish [--remote <name>]\n' +
+  '       bench transcripts pack <campaign-id>/<n>\n';
 
 /** REQ-CLI exit codes. */
 export const EXIT = { ok: 0, failure: 1, usage: 2 } as const;

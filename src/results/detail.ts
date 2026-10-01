@@ -38,6 +38,7 @@ const runSchema = z.object({
   approver_policy: z.string().optional(),
   manual: z.object({ tokens: z.number() }).passthrough().optional(),
   harness: z.object({ tool: z.string(), commit: z.string() }).passthrough().optional(),
+  transcripts: z.object({ release: z.string(), asset: z.string() }).passthrough().optional(),
   setup: z.object({ duration_ms: z.number().optional(), usage: usage.optional() }).passthrough().optional(),
   outcome: z.string(),
   error: z.string().optional(),
@@ -148,6 +149,8 @@ export interface RunDetail {
   readonly expectedFailure?: readonly string[];
   readonly approverPolicy?: string;
   readonly harness?: { readonly tool: string; readonly commit: string };
+  /** The release asset that holds its transcripts (REQ-RES-06 as amended in 1.22), once packed. */
+  readonly transcriptsAsset?: { readonly release: string; readonly asset: string };
   readonly manualTokens?: number;
   readonly setup?: { readonly durationMs?: number; readonly costUsd?: number };
   readonly steps: readonly StepDetail[];
@@ -277,6 +280,9 @@ export function readRunDetail(runDir: string): Result<RunDetail> {
     ...(run.expected_failure === undefined ? {} : { expectedFailure: run.expected_failure.missing }),
     ...(run.approver_policy === undefined ? {} : { approverPolicy: run.approver_policy }),
     ...(run.harness === undefined ? {} : { harness: { tool: run.harness.tool, commit: run.harness.commit } }),
+    ...(run.transcripts === undefined
+      ? {}
+      : { transcriptsAsset: { release: run.transcripts.release, asset: run.transcripts.asset } }),
     ...(run.manual === undefined ? {} : { manualTokens: run.manual.tokens }),
     ...(run.setup === undefined
       ? {}

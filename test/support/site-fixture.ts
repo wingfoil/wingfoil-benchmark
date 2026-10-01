@@ -1,11 +1,12 @@
+import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import type { AgentPort } from '../../src/agents/index.js';
 import { main } from '../../src/cli/index.js';
-import { gitCli, systemProcess } from '../../src/core/index.js';
-import type { ProcessResult } from '../../src/core/index.js';
+import { fail, gitCli, ok, publishCli, systemProcess } from '../../src/core/index.js';
+import type { ProcessResult, PublishPort } from '../../src/core/index.js';
 
 import { repoPath } from './paths.js';
 import { tempDir } from './scenario-fixture.js';
@@ -152,4 +153,55 @@ export function completeExecution(
       writeFileSync(file, `${JSON.stringify(run, undefined, 2)}\n`);
     }
   }
+}
+
+/** A visibility probe for tests: public, or private (task-047). No test reaches GitHub. */
+export function probeSaying(isPublic: boolean): PublishPort['isPublic'] {
+  return () =>
+    Promise.resolve(
+      isPublic ? ok(true as const) : fail([{ path: 'origin', message: 'the probe says private' }]),
+    );
+}
+
+/** `bench <argv>` in `root`, with the publish port's git real and its visibility probe `isPublic`. */
+export async function benchPublish(root: string, isPublic: PublishPort['isPublic'], ...argv: string[]) {
+  let stdout = '';
+  let stderr = '';
+  const code = await main(
+    argv,
+    { stdout: (text) => (stdout += text), stderr: (text) => (stderr += text) },
+    {
+      docker: scoringDocker(judge).docker,
+      git: gitCli(systemProcess),
+      agent: NO_AGENT,
+      publish: { ...publishCli(systemProcess), isPublic },
+    },
+    root,
+  );
+  return { code, stdout, stderr };
+}
+
+/** git in `cwd`, failing loudly; for the fixture's own setup. */
+export function gitIn(cwd: string, ...args: string[]): string {
+  return execFileSync('git', args, { cwd, encoding: 'utf8' });
+}
+
+/**
+ * A built site in a repository whose `origin` is a local bare repository (task-047): the stored
+ * execution of {@link siteExecution}, built, and the root made a git repository with one commit.
+ */
+export async function publishableSite(): Promise<{ root: string; bare: string; executionDir: string }> {
+  const { root, executionDir } = await siteExecution();
+  const built = await benchSite(root, 'site', 'build', EXECUTION);
+  if (built.code !== 0) throw new Error(built.stderr);
+  const bare = tempDir('bench-pages-remote-');
+  gitIn(bare, 'init', '--bare', '--quiet');
+  gitIn(root, 'init', '--quiet');
+  gitIn(root, 'config', 'user.name', 'Fixture Maintainer');
+  gitIn(root, 'config', 'user.email', 'maintainer@example.test');
+  writeFileSync(join(root, '.gitignore'), '/site/\n/releases/\n');
+  gitIn(root, 'add', '-A');
+  gitIn(root, 'commit', '--quiet', '-m', 'results');
+  gitIn(root, 'remote', 'add', 'origin', bare);
+  return { root, bare, executionDir };
 }
