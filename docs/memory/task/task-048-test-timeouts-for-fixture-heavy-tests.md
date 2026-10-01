@@ -77,6 +77,8 @@ No requirement and no ADR changes.
 
 ### Choices to confirm
 
+All three confirmed by the approver as proposed, 2026-10-01.
+
 1. **One global `testTimeout` of 60 s,** not an explicit timeout on each of the ~20 tests. A new test that
    builds stored runs is covered without anyone remembering.
    - *Alternative:* explicit timeouts per test, the default left at 5 s. A fast unit test that hangs fails
