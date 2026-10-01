@@ -12,10 +12,11 @@ export interface MarkdownOptions {
   /** Generated HTML for a placeholder comment `<!-- name -->`, by name. Trusted: the build's own. */
   readonly blocks?: Readonly<Record<string, string>>;
   /**
-   * Link targets to rewrite, by the target as written (a licence file to its page); `null` drops the link
-   * and keeps its label (a page the build did not write).
+   * Each link target as written, resolved as it is rendered: a new target (a licence file to its page),
+   * `null` to drop the link and keep its label (a page the build did not write), or `undefined` to keep it.
+   * Called by the renderer itself, so no other parser has to agree with it (task-046's third review).
    */
-  readonly links?: Readonly<Record<string, string | null>>;
+  readonly resolve?: (target: string) => string | null | undefined;
 }
 
 export interface RenderedMarkdown {
@@ -35,7 +36,7 @@ export function renderMarkdown(text: string, options: MarkdownOptions = {}): Ren
   const lines = withoutFrontMatter(text.replace(/\r\n/g, '\n')).split('\n');
   const anchors: string[] = [];
   const out: string[] = [];
-  const inline = (source: string) => renderInline(source, options.links ?? {});
+  const inline = (source: string) => renderInline(source, options.resolve ?? (() => undefined));
   /** A block's text and its anchor, if it ends with one. */
   const anchored = (source: string): [string, string] => {
     const match = ANCHOR.exec(source);
@@ -193,16 +194,8 @@ function safeTarget(target: string): boolean {
   return /^https:\/\/[^\s"<>]+$/.test(target) || /^(?!\/)[A-Za-z0-9._/#-]+$/.test(target);
 }
 
-/** Every link target of `text`, outside code spans, as the converter reads them (task-046's second review). */
-export function linkTargets(text: string): string[] {
-  return text
-    .split(/(`[^`]*`)/)
-    .filter((_, index) => index % 2 === 0)
-    .flatMap((part) => [...part.matchAll(LINK)].map((match) => match[2] as string));
-}
-
 /** Inline code first, its content left as it is; then links, strong and emphasis on escaped text. */
-function renderInline(source: string, links: Readonly<Record<string, string | null>>): string {
+function renderInline(source: string, resolve: (target: string) => string | null | undefined): string {
   // The private-use character marks a link while the rest is escaped: none may come from the text.
   return source
     .replace(/\uE000/g, '')
@@ -211,8 +204,9 @@ function renderInline(source: string, links: Readonly<Record<string, string | nu
       if (index % 2 === 1) return `<code>${escapeHtml(part.slice(1, -1))}</code>`;
       const linked: string[] = [];
       const withLinks = part.replace(LINK, (_, label: string, target: string) => {
-        const href = Object.hasOwn(links, target) ? links[target] : target;
-        const kept = href !== null && href !== undefined && safeTarget(href);
+        const resolved = resolve(target);
+        const href = resolved === undefined ? target : resolved;
+        const kept = href !== null && safeTarget(href);
         linked.push(kept ? `<a href="${escapeHtml(href)}">${escapeHtml(label)}</a>` : escapeHtml(label));
         return `\uE000${linked.length - 1}\uE000`;
       });

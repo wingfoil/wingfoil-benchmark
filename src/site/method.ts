@@ -7,7 +7,7 @@ import type { CampaignFile, Issue, Result } from '../core/index.js';
 
 import type { Group } from '../results/index.js';
 
-import { linkTargets, renderMarkdown } from './markdown.js';
+import { renderMarkdown } from './markdown.js';
 import type { SiteModel } from './model.js';
 import { escapeHtml, materialPage, methodShell } from './render.js';
 
@@ -100,13 +100,12 @@ export function methodPages(root: string, execution: string, model: SiteModel): 
   // A page the text links to that this execution does not publish (an arm or a scenario it did not run)
   // is named, not linked (task-046's review).
   const text = readFileSync(prose, 'utf8');
-  const unwritten = linkTargets(text).filter((target) => {
-    const page = /^(?:\.\/)?material\/([^#]+)/.exec(target)?.[1];
-    return page !== undefined && !material.has(page);
-  });
   const rendered = renderMarkdown(text, {
     blocks: { execution: executionHtml, material: `<ul>\n${links}</ul>` },
-    links: Object.fromEntries(unwritten.map((target) => [target, null])),
+    resolve: (target) => {
+      const page = /^(?:\.\/)?material\/([^#]*)/.exec(target)?.[1];
+      return page !== undefined && !material.has(page) ? null : undefined;
+    },
   });
   return ok({ method: methodShell(model, rendered.html), material });
 }
@@ -151,7 +150,9 @@ export function publishedMaterial(
     const texts = listFiles(licences).filter((file) => file.endsWith('.txt'));
     const rename = Object.fromEntries(texts.map((file) => [file, licencePage(file)]));
     if (existsSync(join(licences, 'NOTICE.md'))) {
-      const notice = renderMarkdown(readFileSync(join(licences, 'NOTICE.md'), 'utf8'), { links: rename });
+      const notice = renderMarkdown(readFileSync(join(licences, 'NOTICE.md'), 'utf8'), {
+        resolve: (target) => (Object.hasOwn(rename, target) ? rename[target] : undefined),
+      });
       pages.set(
         `notice-${lower}.html`,
         materialPage(`Third-party material of ${id}@${version}`, notice.html),
