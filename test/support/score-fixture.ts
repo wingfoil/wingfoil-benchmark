@@ -65,6 +65,11 @@ export async function storedRun(
      */
     scenario?: string;
     /**
+     * T3 copied under another id, with its own categories (task-045): a stand-in for a scenario of
+     * another category. With `decisions`, its oracle lists them. With `into`, the one already there.
+     */
+    variant?: { readonly id: string; readonly primary: string };
+    /**
      * The decisions T3's oracle lists (task-039), as the YAML of `oracle.decisions`. Not with `into`:
      * the scenario is the existing fixture's.
      */
@@ -93,14 +98,17 @@ export async function storedRun(
   } = { steps: [] },
 ): Promise<StoredRunFixture> {
   const root = options.into?.root ?? tempDir('bench-score-repo-');
-  const id = options.scenario ?? 'T3';
+  const id = options.variant?.id ?? options.scenario ?? 'T3';
   // With `into`, a scenario the repository does not hold yet is copied in beside the others (task-042).
   if (options.into === undefined || !existsSync(join(root, 'scenarios', id))) {
-    const source = id === 'T3' ? repoPath('test/fixtures/scenarios/T3') : repoPath(`scenarios/${id}`);
+    const source =
+      id === 'T3' || options.variant !== undefined
+        ? repoPath('test/fixtures/scenarios/T3')
+        : repoPath(`scenarios/${id}`);
     cpSync(source, join(root, 'scenarios', id), { recursive: true });
-    addChecks(join(root, 'scenarios', 'T3', '1.0'), options.checks ?? {});
-    if (options.decisions !== undefined)
-      addDecisions(join(root, 'scenarios', 'T3', '1.0'), options.decisions);
+    if (options.variant !== undefined) renameVariant(join(root, 'scenarios', id, '1.0'), options.variant);
+    addChecks(join(root, 'scenarios', id, '1.0'), options.checks ?? {});
+    if (options.decisions !== undefined) addDecisions(join(root, 'scenarios', id, '1.0'), options.decisions);
   }
   const execution = options.into?.execution ?? EXECUTION;
   const arm = options.into?.arm ?? 'baseline';
@@ -215,6 +223,17 @@ export async function storedRun(
     )}\n`,
   );
   return { root, executionDir, runDir, scenario, workspace };
+}
+
+/** Give the copy of T3 in the version directory `dir` its own id and primary category (task-045). */
+function renameVariant(dir: string, variant: { readonly id: string; readonly primary: string }): void {
+  const yaml = join(dir, 'scenario.yaml');
+  writeFileSync(
+    yaml,
+    readFileSync(yaml, 'utf8')
+      .replace(/^id: T3$/m, `id: ${variant.id}`)
+      .replace(/^  primary: C$/m, `  primary: ${variant.primary}`),
+  );
 }
 
 /** Write `checks` into the version directory `dir` and list them in its `oracle.checks`. */

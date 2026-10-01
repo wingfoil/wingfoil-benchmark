@@ -6,10 +6,18 @@ import type { AgentPort } from '../../src/agents/index.js';
 import { main } from '../../src/cli/index.js';
 import { gitCli, systemProcess } from '../../src/core/index.js';
 import { aggregatedExecution, WINGFOIL_COMMIT } from '../support/finding-fixture.js';
+import { benchSite, siteExecution } from '../support/site-fixture.js';
 import { localScoringDocker } from '../support/local-scoring.js';
 import { repoPath } from '../support/paths.js';
 import { referenceFiles } from '../support/reference.js';
-import { CANCEL, EXECUTION, scoringDocker, storedRun, usageOf } from '../support/score-fixture.js';
+import {
+  CANCEL,
+  EXECUTION,
+  HOLDOUT_SECRET,
+  scoringDocker,
+  storedRun,
+  usageOf,
+} from '../support/score-fixture.js';
 
 const NO_AGENT: AgentPort = {
   runStep: () => Promise.reject(new Error('scoring runs no agent')),
@@ -136,6 +144,40 @@ function snapshotTree(dir: string): Record<string, string> {
   return out;
 }
 
+/**
+ * The site built from {@link siteExecution} (task-045): the build's output, and every file it wrote under
+ * `site/` with its text. Built once and kept as text: the repository is a temporary directory, removed
+ * when the test that made it finishes.
+ */
+let builtSite: Promise<{ build: Output; files: Record<string, string>; holdout: string }> | undefined;
+function siteBuilt() {
+  builtSite ??= (async () => {
+    const { root, holdout } = await siteExecution();
+    const build = await benchSite(root, 'site', 'build', EXECUTION);
+    const files = existsSync(join(root, 'site')) ? snapshotTree(join(root, 'site')) : {};
+    const text = Object.fromEntries(
+      Object.entries(files).map(([path, bytes]) => [path, Buffer.from(bytes, 'base64').toString('utf8')]),
+    );
+    return { build, files: text, holdout };
+  })();
+  return builtSite;
+}
+
+/** The landing page of the site's execution. */
+async function landing(): Promise<string> {
+  const { build, files } = await siteBuilt();
+  expect(build.code, build.stderr).toBe(0);
+  return files['abcdef012345/1/index.html'] ?? '';
+}
+
+/** A landing page's row for `category`: from its opening tag to the next row's. */
+function rowOf(page: string, category: string): string {
+  const start = page.indexOf(`<tr id="category-${category}"`);
+  if (start < 0) return '';
+  const end = page.indexOf('</tr>', start);
+  return page.slice(start, end);
+}
+
 describe('results.feature', () => {
   it('@F5.1 Every aggregate links to the runs behind it', async () => {
     // Given a scored campaign
@@ -241,6 +283,74 @@ describe('results.feature', () => {
     const after = snapshotTree(root);
     expect(Object.keys(after).filter((path) => !(path in before))).toEqual([file]);
     expect(Object.fromEntries(Object.entries(after).filter(([path]) => path !== file))).toEqual(before);
+  });
+
+  it('@F5.5 The landing page answers the question at a glance', async () => {
+    // Given a scored campaign — TC, TD and TF standing in for C, D and F, in two arms
+    // When the site is built
+    const page = await landing();
+
+    // Then the landing page states that harnesses are compared, not models, and names the model
+    expect(page).toContain('Harness, not model');
+    expect(page).toContain('<strong>fake-model</strong>');
+
+    // And it shows a headline sentence and one chart comparing the arms
+    expect(page).toContain(
+      '<p class="headline">Against the baseline, <strong>wingfoil</strong> is better in 1, worse in 1 and ' +
+        'the same in 3 of 5 comparisons across categories C, D and F (preliminary: n = 1 in C, D and F).</p>',
+    );
+    expect(page.match(/<svg /g)).toHaveLength(1);
+    const chart = page.slice(page.indexOf('<svg '), page.indexOf('</svg>'));
+    for (const arm of ['baseline', 'wingfoil']) expect(chart).toContain(`>${arm}<`);
+
+    // And it shows one row per category, with the delta per arm
+    for (const category of ['A', 'B', 'C', 'D', 'E', 'F', 'G']) expect(rowOf(page, category)).not.toBe('');
+    const d = rowOf(page, 'D');
+    expect(d).toContain('M-Q1');
+    expect(d).toContain('−100.0 pp');
+  });
+
+  it('@F5.5 Losses, ties and gaps are as visible as wins', async () => {
+    // Given a campaign where the wingfoil arm loses in category D and wins in category F
+    // When the site is built
+    const page = await landing();
+    const { files } = await siteBuilt();
+
+    // Then category D shows the loss with the same prominence as the win in category F
+    const loss = /<span class="outcome" data-outcome="worse">[^<]*<\/span>/.exec(rowOf(page, 'D'))?.[0];
+    const win = /<span class="outcome" data-outcome="better">[^<]*<\/span>/.exec(rowOf(page, 'F'))?.[0];
+    expect(loss).toBe('<span class="outcome" data-outcome="worse">▼ worse</span>');
+    expect(win).toBe('<span class="outcome" data-outcome="better">▲ better</span>');
+    // the same element and class, and no style that tells them apart
+    expect(files['style.css']).toBeDefined();
+    expect(files['style.css']).not.toMatch(/data-outcome|better|worse/);
+
+    // And categories A, B and G are listed as "not covered in this campaign"
+    for (const category of ['A', 'B', 'G']) {
+      expect(rowOf(page, category)).toContain('not covered in this campaign');
+    }
+  });
+
+  it('@F5.5 Preliminary results are labelled', async () => {
+    // Given a category whose results come from a single repetition — every stand-in has one run per arm
+    // When the site is built
+    const page = await landing();
+    const { files, holdout } = await siteBuilt();
+
+    // Then that category carries a "preliminary" badge and shows "n = 1"
+    for (const category of ['C', 'D', 'F']) {
+      const row = rowOf(page, category);
+      expect(row).toContain('<span class="badge">preliminary</span>');
+      expect(row).toContain('n = 1');
+    }
+
+    // And results from hold-out additions are marked as such
+    expect(rowOf(page, 'C')).toContain('<span class="holdout">hold-out</span> 1/2');
+    // ... and only their counts are published: no hold-out test's name, nor where the hold-out lives
+    for (const text of Object.values(files)) {
+      expect(text).not.toContain(HOLDOUT_SECRET);
+      expect(text).not.toContain(holdout);
+    }
   });
 
   it('@F5.1 Dry runs never enter campaign results', async () => {
