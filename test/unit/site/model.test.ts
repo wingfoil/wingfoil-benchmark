@@ -91,4 +91,14 @@ describe('a metric row (task-045, after its independent review)', () => {
     );
     expect(comparisons[0]).toMatchObject({ outcome: 'worse', delta: 3 });
   });
+
+  it('says why a run with no directive check score is not comparable', () => {
+    const group = s8('wingfoil', [0]);
+    const unscored = { ...group, runs: [...group.runs, 'x/1/runs/S8@1.0/wingfoil/m/r2'] } as Group;
+    const { row } = metricRow('E', M_E1, [s8('baseline', [2]), unscored], ['baseline', 'wingfoil']);
+    expect(row.values[1]).toEqual({
+      arm: 'wingfoil',
+      note: 'not comparable: r2 was not scored with the directive checks',
+    });
+  });
 });

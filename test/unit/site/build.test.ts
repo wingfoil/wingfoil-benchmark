@@ -3,7 +3,7 @@ import { join, relative } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { escapeHtml } from '../../../src/site/render.js';
-import { EXECUTION } from '../../support/score-fixture.js';
+import { CANCEL, EXECUTION, storedRun } from '../../support/score-fixture.js';
 import { benchSite, siteExecution } from '../../support/site-fixture.js';
 
 /** Every file under `dir`, relative, with its text. */
@@ -113,6 +113,29 @@ describe('bench site build (REQ-CLI-09 as amended in 1.20, task-045)', () => {
     );
   }, 120_000);
 
+  it('makes M-E1 not comparable end to end when a run stopped before a directive check step', async () => {
+    // TE stands in for S8 (E): a dependencies check at steps 1 and 2; wingfoil's run stops after step 1
+    const checks = { 'oracle/checks/deps.yaml': 'kind: dependencies\nsteps: [1, 2]\n' };
+    const base = await storedRun({ variant: { id: 'TE', primary: 'E' }, checks, steps: [{}, CANCEL] });
+    await storedRun({
+      variant: { id: 'TE', primary: 'E' },
+      steps: [{}],
+      into: { root: base.root, arm: 'wingfoil' },
+    });
+    expect((await benchSite(base.root, 'score', EXECUTION)).code).toBe(0);
+    const built = await benchSite(base.root, 'site', 'build', EXECUTION);
+    expect(built.code, built.stderr).toBe(0);
+    const landing = readFileSync(join(base.root, 'site', 'abcdef012345', '1', 'index.html'), 'utf8');
+    const row = landing.slice(
+      landing.indexOf('<tr id="category-E"'),
+      landing.indexOf('</tr>', landing.indexOf('<tr id="category-E"')),
+    );
+    expect(row).toContain('<span class="note">not comparable: r1 did not reach step 2</span>');
+    expect(row).not.toContain('data-outcome');
+    // No comparison, so no count in the headline
+    expect(built.stdout).toContain('Against the baseline, wingfoil has no comparison');
+  }, 120_000);
+
   it('gives the same bytes from the same aggregate, and leaves another execution pages as they are', async () => {
     const { root } = await siteExecution();
     expect((await benchSite(root, 'site', 'build', EXECUTION)).code).toBe(0);
@@ -178,6 +201,7 @@ describe('bench site build (REQ-CLI-09 as amended in 1.20, task-045)', () => {
 
     // An aggregate that cannot be read
     const aggregate = join(executionDir, 'aggregate.json');
+    const keptAggregate = readFileSync(aggregate, 'utf8');
     writeFileSync(aggregate, 'not json');
     expect((await benchSite(root, 'site', 'build', EXECUTION)).stderr).toContain(
       'results/abcdef012345/1/aggregate.json: cannot be read',
@@ -203,6 +227,12 @@ describe('bench site build (REQ-CLI-09 as amended in 1.20, task-045)', () => {
     );
     expect((await benchSite(root, 'site', 'build', EXECUTION)).stderr).toContain(
       'has aggregate_version 2; this site reads version 1',
+    );
+
+    // A group without the metrics the site reads (task-045's second review)
+    writeFileSync(aggregate, keptAggregate.replace('"metrics":', '"not_metrics":'));
+    expect((await benchSite(root, 'site', 'build', EXECUTION)).stderr).toContain(
+      'results/abcdef012345/1/aggregate.json: is not an aggregate this site reads: groups.0.metrics',
     );
 
     // An execution not aggregated

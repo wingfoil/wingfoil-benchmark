@@ -166,6 +166,15 @@ describe('reading a metric from a group', () => {
     });
   });
 
+  it('names a run no directive check step lists — scored before the check existed — as not comparable', () => {
+    const three = { ...group, runs: ['r1', 'r2', 'r3'] } as unknown as Group;
+    expect(readMetric('M-E1', three)).toEqual({
+      runs: ['r1', 'r2'],
+      values: [1, 2],
+      unreached: [{ run: 'r3' }],
+    });
+  });
+
   it('reads a metric the group lacks as not measured', () => {
     expect(readMetric('M-F1', group)).toBeUndefined();
     expect(readMetric('M-D3', group)).toBeUndefined();
@@ -224,5 +233,9 @@ describe('numbers', () => {
     // A difference that rounds to nothing is shown with enough digits to be seen
     expect(formatDelta('M-Q1', 0.0004)).toBe('+0.040 pp');
     expect(formatDelta('M-K1', -0.00002)).toBe('−0.000020 EUR');
+    // ... counts too, and never in exponent notation (task-045's second review)
+    expect(formatDelta('M-E1', 0.004)).toBe('+0.0040');
+    expect(formatDelta('M-K1', 3e-7)).toBe('+0.00000030 EUR');
+    expect(formatDelta('M-E1', 1.5)).toBe('+1.5');
   });
 });

@@ -240,12 +240,20 @@ describe('the pages, from a hand-built model (task-045)', () => {
     }
   });
 
-  it('gives every arm a fill, however many there are', () => {
+  it('gives every arm a fill, and eight arms eight different hatchings and colours', () => {
     const m = model();
-    const arms = ['baseline', 'a1', 'a2', 'a3', 'a4', 'a5'];
+    const arms = ['baseline', 'a1', 'a2', 'a3', 'a4', 'a5', 'a6', 'a7', 'a8'];
     const page = landingPage({ ...m, arms });
-    for (const index of [1, 2, 3, 4, 5]) {
-      expect(page).toMatch(new RegExp(`<pattern id="hatch-${index}"[^>]*><rect class="arm-${index % 4}"`));
-    }
+    const pairs = [1, 2, 3, 4, 5, 6, 7, 8].map((index) => {
+      const match = new RegExp(
+        `<pattern id="hatch-${index}"[^>]*patternTransform="rotate\\((\\d+)\\)"><rect class="(arm-\\d)"`,
+      ).exec(page);
+      expect(match, `hatch-${index}`).not.toBeNull();
+      return `${match?.[1]} ${match?.[2]}`;
+    });
+    // The first seven hatched arms differ from each other and from the plain first arm's colour alone;
+    // the eighth repeats the first, and the legend's names still tell them apart
+    expect(new Set(pairs.slice(0, 7)).size).toBe(7);
+    expect(pairs[7]).toBe(pairs[0]);
   });
 });
