@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { fail, ok } from '../core/index.js';
@@ -111,18 +111,41 @@ export async function packTranscripts(
   if (issues.length > 0) return fail(issues);
 
   const release = `${aggregate.campaign}-${aggregate.execution}`;
+  // Every run record is read before anything is written: a pack either completes or changes nothing.
+  const records = new Map<string, Record<string, unknown>>();
+  for (const run of runs) {
+    const file = join(executionDir, relativeRun(run), 'run.json');
+    try {
+      const record: unknown = JSON.parse(readFileSync(file, 'utf8'));
+      if (record === null || typeof record !== 'object' || Array.isArray(record)) throw new Error('not an object');
+      records.set(run, record as Record<string, unknown>);
+    } catch (error) {
+      issues.push({ path: `${relativeRun(run)}/run.json`, message: `cannot be read: ${(error as Error).message}` });
+    }
+  }
+  if (issues.length > 0) return fail(issues);
+
   const relativeArchive = `${RELEASES}/${release}/${TRANSCRIPTS_ASSET}`;
   const archive = join(root, relativeArchive);
   mkdirSync(join(root, RELEASES, release), { recursive: true });
-  const tar = await options.process.run('tar', [...REPRODUCIBLE, '-cf', archive, '-C', executionDir, ...[...paths].sort()]);
-  if (tar.code !== 0) return fail([{ path: relativeArchive, message: `tar failed: ${tar.stderr.trim()}` }]);
+  // Written under another name and renamed once whole: a failed tar leaves no archive behind.
+  const partial = `${archive}.partial`;
+  const tar = await options.process.run('tar', [...REPRODUCIBLE, '-cf', partial, '-C', executionDir, ...[...paths].sort()]);
+  if (tar.code !== 0) {
+    rmSync(partial, { force: true });
+    return fail([{ path: relativeArchive, message: `tar failed: ${tar.stderr.trim()}` }]);
+  }
+  renameSync(partial, archive);
   const sha256 = createHash('sha256').update(readFileSync(archive)).digest('hex');
 
-  for (const run of withTranscripts) {
-    const file = join(executionDir, relativeRun(run), 'run.json');
-    const record = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>;
-    record.transcripts = { release, asset: TRANSCRIPTS_ASSET, sha256 };
-    writeFileSync(file, `${JSON.stringify(record, undefined, 2)}\n`);
+  for (const [run, record] of records) {
+    const holds = withTranscripts.includes(run);
+    const stale = (record.transcripts as { release?: unknown } | undefined)?.release === release;
+    if (!holds && !stale) continue;
+    if (holds) record.transcripts = { release, asset: TRANSCRIPTS_ASSET, sha256 };
+    // A run whose transcripts are gone no longer points at this release's asset.
+    else delete record.transcripts;
+    writeFileSync(join(executionDir, relativeRun(run), 'run.json'), `${JSON.stringify(record, undefined, 2)}\n`);
   }
   return ok({ release, archive: relativeArchive, sha256, transcripts: paths.length, runsWithout });
 }

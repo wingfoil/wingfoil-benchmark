@@ -48,7 +48,7 @@ export type {
 } from './ports/docker.js';
 export { gitCli } from './ports/git.js';
 export type { GitPort } from './ports/git.js';
-export { githubHttpsUrl, publishCli } from './ports/publish.js';
+export { anonymousGit, githubHttpsUrl, publishCli } from './ports/publish.js';
 export type { PublishPort } from './ports/publish.js';
 export { processFailure, reasonOf, systemProcess } from './ports/process.js';
 export type { ProcessPort, ProcessResult } from './ports/process.js';

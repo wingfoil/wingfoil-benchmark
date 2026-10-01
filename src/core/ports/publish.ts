@@ -1,3 +1,8 @@
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
+import process from 'node:process';
+
 import { fail, ok } from '../result.js';
 import type { Result } from '../result.js';
 
@@ -24,19 +29,37 @@ export function githubHttpsUrl(remote: string): string | undefined {
 }
 
 /**
- * The environment of the visibility probe: no configuration file (so no credential helper and no
- * `url.<base>.insteadOf` turning https back into ssh with the maintainer's keys), no prompt, and an askpass
- * that answers nothing. A private repository then cannot be read, and the probe fails.
+ * Where and how the visibility probe runs git (task-047's review): in an empty directory that is also its
+ * home, with no configuration file of the system, the user, the repository or the environment
+ * (`GIT_CONFIG_PARAMETERS`, `GIT_CONFIG_COUNT` and its keys), no netrc, no prompt and an askpass that
+ * answers nothing. Nothing can lend it credentials or rewrite its address, so a private repository cannot
+ * be read and the probe fails. The caller removes the directory.
  */
-const ANONYMOUS = {
-  GIT_CONFIG_GLOBAL: '/dev/null',
-  GIT_CONFIG_NOSYSTEM: '1',
-  GIT_TERMINAL_PROMPT: '0',
-  GIT_ASKPASS: 'true',
-  SSH_ASKPASS: undefined,
-  GIT_DIR: undefined,
-  GIT_WORK_TREE: undefined,
-};
+export function anonymousGit(): { cwd: string; env: Record<string, string | undefined> } {
+  const cwd = mkdtempSync(join(tmpdir(), 'bench-probe-'));
+  const configured = Object.keys(process.env).filter((key) => /^GIT_CONFIG_(KEY|VALUE)_\d+$/.test(key));
+  return {
+    cwd,
+    env: {
+      ...Object.fromEntries(configured.map((key) => [key, undefined])),
+      HOME: cwd,
+      XDG_CONFIG_HOME: cwd,
+      GIT_CEILING_DIRECTORIES: dirname(cwd),
+      GIT_CONFIG_GLOBAL: '/dev/null',
+      GIT_CONFIG_NOSYSTEM: '1',
+      GIT_CONFIG: undefined,
+      GIT_CONFIG_PARAMETERS: undefined,
+      GIT_CONFIG_COUNT: undefined,
+      GIT_TERMINAL_PROMPT: '0',
+      GIT_ASKPASS: 'true',
+      SSH_ASKPASS: undefined,
+      NETRC: undefined,
+      CURL_HOME: undefined,
+      GIT_DIR: undefined,
+      GIT_WORK_TREE: undefined,
+    },
+  };
+}
 
 /** The variables that would point git at the host repository instead of `cwd`. */
 const HOST_REPOSITORY = {
@@ -51,21 +74,28 @@ const HOST_REPOSITORY = {
 const PROBE_MS = 30_000;
 
 /** The publish port over the system's processes. */
-export function publishCli(process: ProcessPort): PublishPort {
+export function publishCli(port: ProcessPort): PublishPort {
   return {
     async isPublic(remote) {
       const url = githubHttpsUrl(remote);
       if (url === undefined) {
         return fail([{ path: remote, message: 'is not a GitHub repository: its visibility cannot be read' }]);
       }
-      const answer = await process.run('git', ['ls-remote', '--heads', url], {
-        env: ANONYMOUS,
-        timeoutMs: PROBE_MS,
-      });
+      const { cwd, env } = anonymousGit();
+      let answer;
+      try {
+        answer = await port.run('git', ['-c', 'credential.helper=', 'ls-remote', '--heads', url], {
+          cwd,
+          env,
+          timeoutMs: PROBE_MS,
+        });
+      } finally {
+        rmSync(cwd, { recursive: true, force: true });
+      }
       return answer.code === 0
         ? ok(true)
         : fail([{ path: url, message: 'cannot be read anonymously: it is private, or unreachable' }]);
     },
-    git: (args, cwd) => process.run('git', args, { cwd, env: HOST_REPOSITORY }),
+    git: (args, cwd) => port.run('git', args, { cwd, env: HOST_REPOSITORY }),
   };
 }

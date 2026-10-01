@@ -126,7 +126,9 @@ describe('what publish pushes (task-047 review)', () => {
       const refused = await benchPublish(root, probeSaying(true), 'site', 'publish');
       expect(refused.code, path).toBe(1);
       expect(refused.stderr).toContain(`site/${path}: is not part of a fresh build`);
-      rmSync(join(site, path.split('/')[0] as string), { recursive: true });
+      rmSync(join(site, path.startsWith('abcdef012345/') ? path : (path.split('/')[0] as string)), {
+        recursive: true,
+      });
     }
     symlinkSync(join(site, 'style.css'), join(site, 'linked.css'));
     const linked = await benchPublish(root, probeSaying(true), 'site', 'publish');
