@@ -232,7 +232,7 @@ function renameVariant(dir: string, variant: { readonly id: string; readonly pri
     yaml,
     readFileSync(yaml, 'utf8')
       .replace(/^id: T3$/m, `id: ${variant.id}`)
-      .replace(/^  primary: C$/m, `  primary: ${variant.primary}`),
+      .replace(/^ {2}primary: C$/m, `  primary: ${variant.primary}`),
   );
 }
 

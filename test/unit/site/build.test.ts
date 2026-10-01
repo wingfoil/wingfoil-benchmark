@@ -147,6 +147,26 @@ describe('bench site build (REQ-CLI-09 as amended in 1.20, task-045)', () => {
     expect(missing.code).toBe(1);
     expect(missing.stderr).toContain('TD@1.0');
 
+    // A run whose record cannot be read
+    const record = join(executionDir, 'runs', 'TC@1.0', 'wingfoil', 'fake-model', 'r1', 'run.json');
+    const kept = readFileSync(record, 'utf8');
+    writeFileSync(record, '{');
+    const unreadable = await benchSite(root, 'site', 'build', EXECUTION);
+    expect(unreadable.code).toBe(1);
+    expect(unreadable.stderr).toContain(
+      'abcdef012345/1/runs/TC@1.0/wingfoil/fake-model/r1/run.json: cannot be read',
+    );
+    writeFileSync(record, '{}');
+    expect((await benchSite(root, 'site', 'build', EXECUTION)).stderr).toContain('records no scenario_hash');
+    writeFileSync(record, kept);
+
+    // An aggregate that cannot be read
+    const aggregate = join(executionDir, 'aggregate.json');
+    writeFileSync(aggregate, 'not json');
+    expect((await benchSite(root, 'site', 'build', EXECUTION)).stderr).toContain(
+      'results/abcdef012345/1/aggregate.json: cannot be read',
+    );
+
     // An execution not aggregated
     rmSync(join(executionDir, 'aggregate.json'));
     const unscored = await benchSite(root, 'site', 'build', EXECUTION);
