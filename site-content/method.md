@@ -163,7 +163,7 @@ A category is covered when one of the execution's scenarios has it as its main c
 
 M-D1 (defects fixed) and M-D2 (false or duplicate reports rejected) are not reported on their own in v0.1. S2's defect tests are counted in M-Q1, and each of S2's suites has its own tally on category D's page. {#m-d1-m-d2}
 
-Each arm other than the baseline is compared with the baseline of the same scenario version and model, metric by metric. A value is the mean of its runs. It is *better* or *worse* when the means differ, by the metric's direction (higher is better for M-Q1 and M-F1; lower for M-K1, M-D3 and M-E1), and *the same* when they are equal. A metric one side lacks reads "not measured" and is no comparison. {#comparisons}
+Each arm other than the baseline is compared with the baseline of the same scenario version and model, metric by metric. A value is the mean of its runs, shown with its `n` and, from 3 runs, its range (the chart's whisker shows it from 2). It is *better* or *worse* when the means differ, by the metric's direction (higher is better for M-Q1 and M-F1; lower for M-K1, M-D3 and M-E1), and *the same* when they are equal. A metric one side lacks reads "not measured" and is no comparison. {#comparisons}
 
 A difference is *beyond variance* only when both sides have at least 3 runs and their ranges (lowest to highest) do not overlap. Otherwise it is *within variance*. No claim of statistical significance is made in v0.1. {#beyond-variance}
 
@@ -204,7 +204,7 @@ These threats were listed before any run, each with what is done about it.
 - **T7, model or agent change over time.** Mitigation: the model and agent version are pinned; the baseline is rerun in every campaign; across campaigns only differences are compared. {#threat-t7}
 - **T8, few runs, because of the budget.** Mitigation: preliminary labels; no claim of significance in v0.1. {#threat-t8}
 - **T9, the approver policy favours some tools**, for example tools that ask more questions. Mitigation: one versioned policy for every arm; interventions reported per arm. {#threat-t9}
-- **T10, gaps in the harness.** The WingFoil under development (v0.2 pre-release, commit `3df305e`) has no workflow engine; its workflows are followed by hand. Mitigation: expected failures, published as losses; the public campaign runs on the latest released WingFoil. {#threat-t10}
+- **T10, gaps in the harness.** At design time, the WingFoil under development (v0.2 pre-release, commit `3df305e`) had no workflow engine; its workflows were followed by hand. Mitigation: expected failures, published as losses; the public campaign runs on the latest released WingFoil. {#threat-t10}
 - **T11, the tests capture the specification only partly.** Mitigation: several metrics per goal; a rubric judge from v0.3. {#threat-t11}
 - **T12, unequal setup effort across tools.** Mitigation: setup from official documentation only, scripted and published, with deviations published. {#threat-t12}
 - **T13, looking up answers.** With internet access, an agent may fetch public material that overlaps the tests, for example S1's official conformance suite. Mitigation: web requests recorded and reported per arm (shell network use is not seen); hold-out tests added to public ones; fictional domains (S4) where lookup cannot help. Access is the same for every arm. {#threat-t13}

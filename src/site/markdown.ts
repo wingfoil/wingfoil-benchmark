@@ -11,8 +11,11 @@ import { escapeHtml } from './render.js';
 export interface MarkdownOptions {
   /** Generated HTML for a placeholder comment `<!-- name -->`, by name. Trusted: the build's own. */
   readonly blocks?: Readonly<Record<string, string>>;
-  /** Link targets to rewrite, by the target as written (a licence file to its page). */
-  readonly links?: Readonly<Record<string, string>>;
+  /**
+   * Link targets to rewrite, by the target as written (a licence file to its page); `null` drops the link
+   * and keeps its label (a page the build did not write).
+   */
+  readonly links?: Readonly<Record<string, string | null>>;
 }
 
 export interface RenderedMarkdown {
@@ -159,10 +162,20 @@ function list(
   return [`<ul>\n${items.map((item) => `${item}\n`).join('')}</ul>`, index];
 }
 
-/** A table row's cells, without its outer pipes. */
+/** A table row's cells, without its outer pipes; a pipe inside a code span stays in its cell. */
 function cells(line: string): string[] {
   const inner = line.trim().replace(/^\|/, '').replace(/\|$/, '');
-  return inner.split('|').map((cell) => cell.trim());
+  const out: string[] = [];
+  let cell = '';
+  let code = false;
+  for (const char of inner) {
+    if (char === '`') code = !code;
+    if (char === '|' && !code) {
+      out.push(cell.trim());
+      cell = '';
+    } else cell += char;
+  }
+  return [...out, cell.trim()];
 }
 
 /** The text without a leading front matter block (`---` … `---`), as directives have. */
@@ -174,23 +187,24 @@ function withoutFrontMatter(text: string): string {
 
 const LINK = /\[([^\]]*)\]\(((?:[^()\s]|\([^()\s]*\))*)\)/g;
 
-/** A link target the site keeps: a relative page, or an `https` address. */
+/** A link target the site keeps: a relative page (never `//host`, which leaves the site), or an `https` address. */
 function safeTarget(target: string): boolean {
-  return /^https:\/\/[^\s"<>]+$/.test(target) || /^[A-Za-z0-9._/#-]+$/.test(target);
+  return /^https:\/\/[^\s"<>]+$/.test(target) || /^(?!\/\/)[A-Za-z0-9._/#-]+$/.test(target);
 }
 
 /** Inline code first, its content left as it is; then links, strong and emphasis on escaped text. */
-function renderInline(source: string, links: Readonly<Record<string, string>>): string {
+function renderInline(source: string, links: Readonly<Record<string, string | null>>): string {
+  // The private-use character marks a link while the rest is escaped: none may come from the text.
   return source
+    .replace(/\uE000/g, '')
     .split(/(`[^`]*`)/)
     .map((part, index) => {
       if (index % 2 === 1) return `<code>${escapeHtml(part.slice(1, -1))}</code>`;
       const linked: string[] = [];
       const withLinks = part.replace(LINK, (_, label: string, target: string) => {
-        const href = links[target] ?? target;
-        linked.push(
-          safeTarget(href) ? `<a href="${escapeHtml(href)}">${escapeHtml(label)}</a>` : escapeHtml(label),
-        );
+        const href = Object.hasOwn(links, target) ? links[target] : target;
+        const kept = href !== null && href !== undefined && safeTarget(href);
+        linked.push(kept ? `<a href="${escapeHtml(href)}">${escapeHtml(label)}</a>` : escapeHtml(label));
         return `\uE000${linked.length - 1}\uE000`;
       });
       return escapeHtml(withLinks)

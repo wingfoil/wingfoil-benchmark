@@ -99,7 +99,7 @@ describe('the method page (F5.8, task-046)', () => {
       join(executionDir, 'campaign.yaml'),
       siteCampaign(['TC', 'TD', 'TF']).replace(
         'models:\n  default: fake-model\n',
-        'models:\n  default: fake-model\n  slices:\n    - { model: other-model, scenarios: [TC] }\n',
+        'models:\n  default: fake-model\n  slices:\n    - { model: other-model, scenarios: [TC], arms: [baseline], repetitions: 1 }\n',
       ),
     );
     for (const id of ['TC', 'TD', 'TF']) {
@@ -114,15 +114,18 @@ describe('the method page (F5.8, task-046)', () => {
       slices: unknown[];
     };
     const first = aggregate.groups[0] as (typeof aggregate.groups)[0];
-    aggregate.slices = [{ ...first, model: 'other-model' }];
+    aggregate.slices = [{ ...(JSON.parse(JSON.stringify(first)) as object), model: 'other-model' }];
     first.metrics.cost.bound = [first.runs[0] as string];
     writeFileSync(file, JSON.stringify(aggregate));
-    expect((await benchSite(root, 'site', 'build', EXECUTION)).code).toBe(0);
+    const built = await benchSite(root, 'site', 'build', EXECUTION);
+    expect(built.code, built.stderr).toBe(0);
     const method = readFileSync(join(root, PAGE, 'method.html'), 'utf8');
     expect(method).toContain(
       '<th scope="row">Harnesses</th><td>wingfoil 3df305e; commits recorded by its runs: c0ffee</td>',
     );
-    expect(method).toContain('<th scope="row">Other models (slices)</th><td>other-model on TC</td>');
+    expect(method).toContain(
+      '<th scope="row">Other models (slices)</th><td>other-model on TC, in baseline, 1 repetition each</td>',
+    );
     expect(method).toContain(
       '<p id="spending">6 aggregated runs of fake-model cost 0.9000 EUR in all. 1 aggregated run of other ' +
         'models, reported apart, cost 0.1500 EUR. Setup costs (M-K3) are not included. For 1 run the cost is ' +

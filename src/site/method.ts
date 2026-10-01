@@ -1,9 +1,11 @@
 import { createHash } from 'node:crypto';
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { campaignSchema, fail, ok, parseWith, readYamlFile } from '../core/index.js';
 import type { CampaignFile, Issue, Result } from '../core/index.js';
+
+import type { Group } from '../results/index.js';
 
 import { renderMarkdown } from './markdown.js';
 import type { SiteModel } from './model.js';
@@ -95,8 +97,15 @@ export function methodPages(root: string, execution: string, model: SiteModel): 
     .sort()
     .map((name) => `<li><a href="material/${e(name)}">${e(materialTitle(name))}</a></li>\n`)
     .join('');
-  const rendered = renderMarkdown(readFileSync(prose, 'utf8'), {
+  // A page the text links to that this execution does not publish (an arm or a scenario it did not run)
+  // is named, not linked (task-046's review).
+  const text = readFileSync(prose, 'utf8');
+  const unwritten = [...text.matchAll(/\]\((material\/[^)\s]+)\)/g)]
+    .map((match) => match[1] as string)
+    .filter((target) => !material.has(target.slice('material/'.length)));
+  const rendered = renderMarkdown(text, {
     blocks: { execution: executionHtml, material: `<ul>\n${links}</ul>` },
+    links: Object.fromEntries(unwritten.map((target) => [target, null])),
   });
   return ok({ method: methodShell(model, rendered.html), material });
 }
@@ -126,6 +135,7 @@ export function publishedMaterial(
     const dir = join(root, 'scenarios', id, version);
     const lower = id.toLowerCase();
     const directives = listFiles(join(dir, 'arms'))
+      .filter((arm) => statSync(join(dir, 'arms', arm)).isDirectory())
       .flatMap((arm) =>
         listFiles(join(dir, 'arms', arm, '.wingfoil', 'directives', 'custom')).map((file) =>
           join(dir, 'arms', arm, '.wingfoil', 'directives', 'custom', file),
@@ -179,8 +189,9 @@ function executionSection(
     .map(([name, harness]) => {
       const commits = [
         ...new Set(
+          // `harnesses` is keyed by arm (REQ-FMT-01): each arm's own runs' commits (task-046's review).
           model.records.flatMap((record) =>
-            record.harness?.tool === harness.tool ? [record.harness.commit] : [],
+            record.arm === name && record.harness?.tool === harness.tool ? [record.harness.commit] : [],
           ),
         ),
       ].sort();
@@ -212,26 +223,37 @@ function executionSection(
     ),
   ].sort();
   const slices = campaign.models.slices ?? [];
-  const groups = [...modelGroups(model)];
-  const total = groups.reduce(
-    (sum, group) => sum + group.metrics.cost.cost_eur.values.reduce((a, b) => a + b, 0),
-    0,
+  const cost = (groups: readonly Group[]) =>
+    groups.reduce((sum, group) => sum + group.metrics.cost.cost_eur.values.reduce((a, b) => a + b, 0), 0);
+  const main = model.categories.flatMap((category) =>
+    category.scenarios.flatMap((scenario) => scenario.groups),
   );
-  const bound = groups.flatMap((group) => group.metrics.cost.bound);
-  const runs = model.runs + model.sliceRuns;
+  const bound = [...main, ...model.slices].flatMap((group) => group.metrics.cost.bound);
+  const runs = (count: number) => `${count} aggregated run${count === 1 ? '' : 's'}`;
   const spending =
-    `${runs} run${runs === 1 ? '' : 's'} of ${e(model.model)}${model.sliceRuns === 0 ? '' : ' and its slices'} ` +
-    `cost ${total.toFixed(4)} EUR in all.` +
+    `${runs(model.runs)} of ${e(model.model)} cost ${cost(main).toFixed(4)} EUR in all.` +
+    (model.sliceRuns === 0
+      ? ''
+      : ` ${runs(model.sliceRuns)} of other models, reported apart, cost ${cost(model.slices).toFixed(4)} EUR.`) +
+    ' Setup costs (M-K3) are not included.' +
     (bound.length === 0
       ? ''
-      : ` For ${bound.length} of them the cost is a bound, not a report: ${bound.map(e).join(', ')}.`);
+      : ` For ${bound.length} run${bound.length === 1 ? '' : 's'} the cost is a bound, not a report: ${bound.map(e).join(', ')}.`);
   return (
     '<h3 id="pins">Pins</h3>\n<table>\n<tbody>\n' +
     row('Agent', `${e(campaign.agent.name)} ${e(campaign.agent.version)}`) +
     row('Model', e(campaign.models.default)) +
     row(
       'Other models (slices)',
-      slices.length === 0 ? 'none' : slices.map((slice) => e(JSON.stringify(slice))).join('<br>'),
+      slices.length === 0
+        ? 'none'
+        : slices
+            .map(
+              (slice) =>
+                `${e(slice.model)} on ${slice.scenarios.map(e).join(', ')}, in ${slice.arms.map(e).join(', ')}, ` +
+                `${slice.repetitions} repetition${slice.repetitions === 1 ? '' : 's'} each`,
+            )
+            .join('<br>'),
     ) +
     row('Harnesses', harnesses.length === 0 ? 'none' : harnesses.join('<br>')) +
     row('Harness capabilities', capabilities(model)) +
@@ -272,10 +294,4 @@ function capabilities(model: SiteModel): string {
     return declared.map((text) => `${e(arm)}: ${e(text)}`);
   });
   return lines.length === 0 ? 'none declared by the runs' : lines.join('<br>');
-}
-
-/** The model's groups and slices. */
-function* modelGroups(model: SiteModel) {
-  for (const row of model.categories) for (const scenario of row.scenarios) yield* scenario.groups;
-  yield* model.slices;
 }
