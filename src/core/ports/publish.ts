@@ -63,6 +63,9 @@ export function anonymousGit(): { cwd: string; env: Record<string, string | unde
 
 /** The variables that would point git at the host repository instead of `cwd`. */
 const HOST_REPOSITORY = {
+  // No attribute source but the tree itself: not one named by the environment, not the system's file.
+  GIT_ATTR_SOURCE: undefined,
+  GIT_ATTR_NOSYSTEM: '1',
   GIT_DIR: undefined,
   GIT_WORK_TREE: undefined,
   GIT_INDEX_FILE: undefined,

@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import {
   copyFileSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -97,12 +98,17 @@ export async function packTranscripts(
     const steps = join(executionDir, relativeRun(run), 'steps');
     const own = (existsSync(steps) ? readdirSync(steps).sort() : [])
       .map((step) => `${relativeRun(run)}/steps/${step}/${TRANSCRIPT}`)
-      .filter((path) => existsSync(join(executionDir, path)));
+      .filter((path) => present(join(executionDir, path)));
     if (own.length === 0) runsWithout.push(run);
     else withTranscripts.push(run);
     paths.push(...own);
   }
   if (paths.length === 0) return fail([{ path: where, message: 'has no transcript on disk to pack' }]);
+  // A link would pack what it points to (task-047's third review): only regular files are transcripts.
+  const irregular = paths.filter((path) => !lstatSync(join(executionDir, path)).isFile());
+  if (irregular.length > 0) {
+    return fail(irregular.map((path) => ({ path, message: 'is not a regular file: a transcript is never a link' })));
+  }
 
   // The transcripts are copied aside first: what is checked for secrets is what is packed (task-047's
   // second review), whatever changes on disk meanwhile.
@@ -154,10 +160,13 @@ async function packCopies(
   const release = `${aggregate.campaign}-${aggregate.execution}`;
   // Every run record is read before anything is written: a pack either completes or changes nothing.
   const records = new Map<string, Record<string, unknown>>();
+  const originals = new Map<string, string>();
   for (const run of runs) {
     const file = join(executionDir, relativeRun(run), 'run.json');
     try {
-      const record: unknown = JSON.parse(readFileSync(file, 'utf8'));
+      const text = readFileSync(file, 'utf8');
+      originals.set(run, text);
+      const record: unknown = JSON.parse(text);
       if (record === null || typeof record !== 'object' || Array.isArray(record)) throw new Error('not an object');
       records.set(run, record as Record<string, unknown>);
     } catch (error) {
@@ -179,6 +188,9 @@ async function packCopies(
   }
   const sha256 = createHash('sha256').update(readFileSync(partial)).digest('hex');
 
+  // The records, then the archive: a record that cannot be written puts back those already written and
+  // removes the partial archive, so a failed pack changes nothing (task-047's third review).
+  const written: string[] = [];
   for (const [run, record] of records) {
     const holds = withTranscripts.includes(run);
     const stale = (record.transcripts as { release?: unknown } | undefined)?.release === release;
@@ -186,8 +198,30 @@ async function packCopies(
     if (holds) record.transcripts = { release, asset: TRANSCRIPTS_ASSET, sha256 };
     // A run whose transcripts are gone no longer points at this release's asset.
     else delete record.transcripts;
-    writeFileSync(join(executionDir, relativeRun(run), 'run.json'), `${JSON.stringify(record, undefined, 2)}\n`);
+    try {
+      writeFileSync(join(executionDir, relativeRun(run), 'run.json'), `${JSON.stringify(record, undefined, 2)}\n`);
+      written.push(run);
+    } catch (error) {
+      for (const done of written) {
+        writeFileSync(join(executionDir, relativeRun(done), 'run.json'), originals.get(done) ?? '');
+      }
+      rmSync(partial, { force: true });
+      return fail([
+        { path: `${relativeRun(run)}/run.json`, message: `cannot be written: ${(error as Error).message}` },
+      ]);
+    }
   }
   renameSync(partial, archive);
   return ok({ release, archive: relativeArchive, sha256, transcripts: paths.length, runsWithout });
 }
+
+/** Whether `path` is there, a link that leads nowhere included (`existsSync` follows links). */
+function present(path: string): boolean {
+  try {
+    lstatSync(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+

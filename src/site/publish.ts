@@ -63,6 +63,21 @@ function filesOf(dir: string): { files: Map<string, Buffer>; links: string[] } {
   return { files, links };
 }
 
+/** The entries under `dir` that are neither a file, a directory nor a link: a pipe, a socket, a device. */
+function specialEntries(dir: string): string[] {
+  const out: string[] = [];
+  const walk = (at: string) => {
+    for (const name of readdirSync(at).sort()) {
+      const path = join(at, name);
+      const entry = lstatSync(path);
+      if (entry.isDirectory()) walk(path);
+      else if (!entry.isFile() && !entry.isSymbolicLink()) out.push(relative(dir, path));
+    }
+  };
+  walk(dir);
+  return out;
+}
+
 /** The executions built under a site directory: each `<campaign-id>/<n>/`, in order. */
 function builtExecutions(site: string): string[] {
   return readdirSync(site)
@@ -160,6 +175,15 @@ export async function publishSite(
   if (!existsSync(join(root, SITE)) || !lstatSync(join(root, SITE)).isDirectory()) {
     return fail([{ path: SITE, message: 'not built: run bench site build <campaign-id>/<n> first' }]);
   }
+  const special = specialEntries(join(root, SITE));
+  if (special.length > 0) {
+    return fail(
+      special.map((path) => ({
+        path: `${SITE}/${path}`,
+        message: 'is not a regular file: a published site holds files only',
+      })),
+    );
+  }
   const scratch = mkdtempSync(join(tmpdir(), 'bench-publish-'));
   try {
     // What is checked is what is pushed: a copy, which a build running meanwhile cannot change.
@@ -202,13 +226,15 @@ export async function publishSite(
     if (!added.ok) return added;
     const fetched = await port.git([...FIXED, 'fetch', '--quiet', 'origin', PAGES_BRANCH], work);
     const hadBranch = fetched.code === 0;
-    const checkout = hadBranch
-      ? await step(['checkout', '--quiet', '-B', PAGES_BRANCH, 'FETCH_HEAD'])
-      : await step(['checkout', '--quiet', '--orphan', PAGES_BRANCH]);
-    if (!checkout.ok) return checkout;
-    for (const entry of readdirSync(work)) {
-      if (entry !== '.git') rmSync(join(work, entry), { recursive: true, force: true });
+    // Nothing of the remote branch is checked out — no `.gitattributes` of its can name a filter, and no
+    // filter runs (task-047's third review): the branch points at what was fetched, the index starts empty,
+    // and the copy is staged into it, so the commit's tree is exactly the copy.
+    if (hadBranch) {
+      const moved = await step(['update-ref', `refs/heads/${PAGES_BRANCH}`, 'FETCH_HEAD']);
+      if (!moved.ok) return moved;
     }
+    const pointed = await step(['symbolic-ref', 'HEAD', `refs/heads/${PAGES_BRANCH}`]);
+    if (!pointed.ok) return pointed;
     cpSync(copy, work, { recursive: true });
     const staged = await step(['add', '--all', '--force']);
     if (!staged.ok) return staged;
