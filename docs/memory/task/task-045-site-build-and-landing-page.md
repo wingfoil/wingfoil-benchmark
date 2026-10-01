@@ -339,3 +339,13 @@ All three confirmed by the approver as proposed, 2026-10-01.
   - Declared: `draft → pending`, required fields checked, one commit `wf(task): submit <id>`.
   - Observed: exit 0 each time, 1 file, and a diff limited to `status: draft` → `status: pending`.
     Matches (the subject names no transition: N9).
+- `npx wingfoil memory approve <id> --reason "…"` for task-045 (`255e74d`), task-046 (`0008e2c`) and
+  task-047 (`2f19583`), run by the approver on main on 2026-10-01.
+  - Declared: `pending → backlog` by the approver role, with the reason, in one commit
+    `wf(task): approve <id> [pending → backlog]`.
+  - Observed: three commits as declared. `memory history task-045-…` records `operation: approve`, the
+    approver and the reason. Matches.
+- `node_modules/.bin/wingfoil memory submit task-045-site-build-and-landing-page` in the task's worktree
+  (`1820f61`), after the design (`3a235a8`) and the approver's confirmation of its choices (`b163cd9`).
+  - Declared: `backlog → in-progress`, one commit `wf(task): submit <id>`.
+  - Observed: exit 0, 1 file, a diff limited to `status: backlog` → `status: in-progress`. Matches.
