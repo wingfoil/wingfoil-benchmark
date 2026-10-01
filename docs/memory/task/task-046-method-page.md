@@ -190,6 +190,8 @@ No ADR.
 
 ### Choices to confirm
 
+All three confirmed by the approver as proposed, 2026-10-01.
+
 1. **The prose lives in `site-content/method.md`, rendered by a small converter of its own,** which also
    renders the manuals, directives and `NOTICE.md`. The method reads as a document and changes as one.
    - *Alternative A:* a pinned Markdown package (for example `marked`) as a runtime dependency: less code,
