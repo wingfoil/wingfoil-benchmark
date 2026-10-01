@@ -47,3 +47,13 @@ notes) and passed on the rerun.
 A `testTimeout` in `vitest.config.ts` that suits a test building stored runs with git, and an explicit
 timeout on the slowest ones, as the tests that score real scenarios already have (`600_000`). Then
 `npm test` several times under load to confirm it.
+
+## Resolution
+
+Fixed by [task-048](../task/task-048-test-timeouts-for-fixture-heavy-tests.md) (`5dd1340`), in W11 of
+release v0.1: `vitest.config.ts` sets `testTimeout` and `hookTimeout` to 60 s, five times the slowest
+default-timed test measured at load average 48–56 (11 s); the @F6.x scenario check, which took 634 s
+against its own 600 s, gets 20 minutes. Three consecutive `npm test` runs with coverage then passed
+1142/1142 at load averages between 21 and 45. WingFoil has no link from a bug to the task that fixes it
+(bug-005), so it is recorded here.
+

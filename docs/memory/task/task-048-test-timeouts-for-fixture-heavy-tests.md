@@ -108,3 +108,31 @@ All three confirmed by the approver as proposed, 2026-10-01.
 - `npx wingfoil memory submit` for bug-008 (`1334317`) and task-048 (`a5e43b7`).
   - Declared: `draft → pending`, one commit each.
   - Observed: exit 0, 1 file each, a diff limited to `status: draft` → `status: pending`. Matches.
+- `node_modules/.bin/wingfoil memory submit task-048-test-timeouts-for-fixture-heavy-tests` in the task's
+  worktree, after the design (`5fb2ec3`) and the approver's confirmation of its choices.
+  - Declared: `backlog → in-progress`, one commit. Observed: exit 0, 1 file, `status: backlog` →
+    `status: in-progress`. Matches.
+
+### Build
+
+- `5dd1340` `fix(test)`: `vitest.config.ts` gains `testTimeout: 60_000` and `hookTimeout: 60_000`; the @F6.x
+  scenario check gets `1_200_000`, its comment both measures. No `src/` file and no other test changed.
+- **Three consecutive `npm test` runs with coverage** on that commit, each `1142 passed`, coverage 98.79%:
+  - run 1, load average 45.3 at its start and 33.0 at its end;
+  - run 2, 33.0 → 36.7;
+  - run 3, 36.7 → 20.8.
+- Lint clean. `test:bin` and `test:docker` not run: their configurations already set their own timeouts
+  (`120_000`, `600_000`) and nothing they run changed.
+
+### Review
+
+A fresh, read-only agent reviewed the branch against bug-008 and the Design: no bug, no deviation.
+
+- It confirmed from vitest 5.0.1's runner that a per-test or per-describe timeout always wins over the
+  config's, and every explicit one in the default config's files is at least 60 s, so none is lowered.
+- It confirmed every test on bug-008's list is covered.
+- A nit: `hookTimeout` changes nothing today, since every hook is synchronous. Its reason is now in the
+  comment.
+- A test gap the Design accepts: the scoring tests' own timeouts are still sized for an idle machine; the
+  three loaded runs cover them.
+
