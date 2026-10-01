@@ -149,5 +149,5 @@ F5.6 gains REQ-CLI-11 (`bench transcripts pack`, requirements 1.22) and REQ-RES-
 become release assets there (W11 plan-phase decision 4).
 
 Source: [task-047](../memory/task/task-047-manual-publish-and-transcript-assets.md), design confirmed by the
-approver on 2026-10-01.
+approver on 2026-10-01; review decision of the approver at that task's review, 2026-10-01 (`39cb104`).
 

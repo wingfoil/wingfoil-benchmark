@@ -234,3 +234,11 @@ Five rounds by fresh, read-only agents, each finding fixed test-first.
   remain. `fd6cec0`, `25f50fe`.
 - `node_modules/.bin/wingfoil memory submit task-047-…` after the notes: `in-progress → in-review`, one
   commit, 1 file, a diff limited to `status`. Matches.
+
+### Approval
+
+- `npx wingfoil memory approve task-047-… --reason "…"`, run by the approver in the task's worktree on
+  2026-10-01 (`39cb104`): `in-review → approved`, with the approver and the reason. Matches.
+- The approval is the review decision of requirements 1.22 and traceability 1.2, recorded in their
+  amendments' source lines.
+

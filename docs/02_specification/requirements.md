@@ -564,5 +564,6 @@ review decision of the approver at that task's review, 2026-10-01 (`469ceb5`), a
 The traceability matrix (1.2) gains REQ-CLI-11 and REQ-RES-06 for F5.6: the transcripts become release assets there.
 
 Source: [task-047](../memory/task/task-047-manual-publish-and-transcript-assets.md), design confirmed by the
-approver on 2026-10-01.
+approver on 2026-10-01; review decision of the approver at that task's review, 2026-10-01 (`39cb104`), after five
+independent reviews.
 
