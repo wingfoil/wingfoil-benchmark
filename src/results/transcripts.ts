@@ -177,6 +177,7 @@ async function packCopies(
 
   const relativeArchive = `${RELEASES}/${release}/${TRANSCRIPTS_ASSET}`;
   const archive = join(root, relativeArchive);
+  const createdReleases = !existsSync(join(root, RELEASES));
   mkdirSync(join(root, RELEASES, release), { recursive: true });
   // Written under another name, and renamed into place last, once its records are written: a failed tar
   // leaves no archive behind, and the archive in place always matches its records.
@@ -184,12 +185,14 @@ async function packCopies(
   const tar = await options.process.run('tar', [...REPRODUCIBLE, '-cf', partial, '-C', copies, ...[...paths].sort()]);
   if (tar.code !== 0) {
     rmSync(partial, { force: true });
+    if (createdReleases) rmSync(join(root, RELEASES), { recursive: true, force: true });
     return fail([{ path: relativeArchive, message: `tar failed: ${tar.stderr.trim()}` }]);
   }
   const sha256 = createHash('sha256').update(readFileSync(partial)).digest('hex');
 
-  // The records, then the archive: a record that cannot be written puts back those already written and
-  // removes the partial archive, so a failed pack changes nothing (task-047's third review).
+  // The records, then the archive. Each record is written beside itself and renamed into place, so it is
+  // never left cut short; one that cannot be written puts back those already written and removes the
+  // partial archive, so a failed pack changes nothing (task-047's third and fourth reviews).
   const written: string[] = [];
   for (const [run, record] of records) {
     const holds = withTranscripts.includes(run);
@@ -198,18 +201,17 @@ async function packCopies(
     if (holds) record.transcripts = { release, asset: TRANSCRIPTS_ASSET, sha256 };
     // A run whose transcripts are gone no longer points at this release's asset.
     else delete record.transcripts;
-    try {
-      writeFileSync(join(executionDir, relativeRun(run), 'run.json'), `${JSON.stringify(record, undefined, 2)}\n`);
-      written.push(run);
-    } catch (error) {
+    const file = join(executionDir, relativeRun(run), 'run.json');
+    const replaced = replaceFile(file, `${JSON.stringify(record, undefined, 2)}\n`);
+    if (!replaced.ok) {
       for (const done of written) {
-        writeFileSync(join(executionDir, relativeRun(done), 'run.json'), originals.get(done) ?? '');
+        replaceFile(join(executionDir, relativeRun(done), 'run.json'), originals.get(done) ?? '');
       }
       rmSync(partial, { force: true });
-      return fail([
-        { path: `${relativeRun(run)}/run.json`, message: `cannot be written: ${(error as Error).message}` },
-      ]);
+      if (createdReleases) rmSync(join(root, RELEASES), { recursive: true, force: true });
+      return fail([{ path: `${relativeRun(run)}/run.json`, message: `cannot be written: ${replaced.issues[0]?.message ?? ''}` }]);
     }
+    written.push(run);
   }
   renameSync(partial, archive);
   return ok({ release, archive: relativeArchive, sha256, transcripts: paths.length, runsWithout });
@@ -222,6 +224,19 @@ function present(path: string): boolean {
     return true;
   } catch {
     return false;
+  }
+}
+
+/** Replace `file` by `text` through a file beside it, renamed into place: whole, or not at all. */
+function replaceFile(file: string, text: string): Result<true> {
+  const next = `${file}.next`;
+  try {
+    writeFileSync(next, text);
+    renameSync(next, file);
+    return ok(true);
+  } catch (error) {
+    rmSync(next, { force: true });
+    return fail([{ path: file, message: (error as Error).message }]);
   }
 }
 
