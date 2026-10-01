@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import {
   appendFileSync,
+  existsSync,
   mkdirSync,
   readdirSync,
   readFileSync,
@@ -163,6 +164,59 @@ describe('what publish pushes (task-047 review)', () => {
     }
     expect(published(bare)).toEqual(tree(join(root, 'site')));
   }, 120_000);
+});
+
+describe('what publish runs (task-047 third review)', () => {
+  it("runs no filter of the maintainer's, even when the remote gh-pages names one in its .gitattributes", async () => {
+    const { root, bare } = await publishableSite();
+    const other = tempDir('bench-pages-other-');
+    gitIn(other, 'clone', '--quiet', bare, '.');
+    gitIn(other, 'checkout', '--quiet', '--orphan', 'gh-pages');
+    writeFileSync(join(other, '.gitattributes'), '*.html filter=spy\n');
+    writeFileSync(join(other, 'old.html'), 'old\n');
+    gitIn(other, 'add', '-A');
+    gitIn(other, '-c', 'user.name=x', '-c', 'user.email=x@x', 'commit', '--quiet', '-m', 'old');
+    gitIn(other, 'push', '--quiet', 'origin', 'gh-pages');
+
+    const home = tempDir('bench-spy-');
+    const marker = join(home, 'ran');
+    const config = join(home, 'gitconfig');
+    writeFileSync(
+      config,
+      `[filter "spy"]\n\tclean = touch ${marker} && cat\n\tsmudge = touch ${marker} && cat\n\trequired = true\n`,
+    );
+    process.env.GIT_CONFIG_GLOBAL = config;
+    try {
+      const out = await benchPublish(root, probeSaying(true), 'site', 'publish');
+      expect(out.code, out.stderr).toBe(0);
+    } finally {
+      delete process.env.GIT_CONFIG_GLOBAL;
+    }
+    expect(existsSync(marker)).toBe(false);
+    expect(published(bare)).toEqual(tree(join(root, 'site')));
+  }, 120_000);
+
+  it('refuses a special file under site/, before copying anything', async () => {
+    const { root, bare } = await publishableSite();
+    execFileSync('mkfifo', [join(root, 'site', 'pipe')]);
+    const refused = await benchPublish(root, probeSaying(true), 'site', 'publish');
+    expect(refused.code).toBe(1);
+    expect(refused.stderr).toContain('site/pipe: is not a regular file');
+    expect(refs(bare)).toBe('');
+  }, 120_000);
+
+  it("gives publishing's git no attribute source of the environment's, nor the system's", async () => {
+    const seen: (Readonly<Record<string, string | undefined>> | undefined)[] = [];
+    const port = publishCli({
+      run: (_command, _args, options) => {
+        seen.push(options?.env);
+        return Promise.resolve({ code: 0, stdout: '', stderr: '' });
+      },
+    });
+    await port.git(['status'], '/tmp');
+    expect(seen[0]).toMatchObject({ GIT_ATTR_SOURCE: undefined, GIT_ATTR_NOSYSTEM: '1' });
+    expect(Object.hasOwn(seen[0] ?? {}, 'GIT_ATTR_SOURCE')).toBe(true);
+  });
 });
 
 describe('the visibility probe', () => {

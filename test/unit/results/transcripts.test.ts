@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -109,6 +109,35 @@ describe('bench transcripts pack (REQ-RES-06 as amended in 1.22, task-047)', () 
     const record = JSON.parse(readFileSync(join(executionDir, RUN('TD', 'wingfoil'), 'run.json'), 'utf8')) as Record<string, unknown>;
     expect(record.transcripts).toBeUndefined();
     expect(readdirSync(join(root, 'releases', 'abcdef012345-1'))).toEqual(['transcripts.tar.gz']);
+  }, 120_000);
+
+  it('refuses a transcript that is a link, never packing what it points to', async () => {
+    const { root, executionDir } = await withTranscripts();
+    const file = join(executionDir, RUN('TC', 'baseline'), 'steps', '01', 'transcript.jsonl');
+    rmSync(file);
+    symlinkSync('/etc/hostname', file);
+    const refused = await benchSite(root, 'transcripts', 'pack', EXECUTION);
+    expect(refused.code).toBe(1);
+    expect(refused.stderr).toContain('runs/TC@1.0/baseline/fake-model/r1/steps/01/transcript.jsonl: is not a regular file');
+    expect(existsSync(join(root, ARCHIVE))).toBe(false);
+  }, 120_000);
+
+  it('changes nothing when a record cannot be written: no archive, no partial file, every record as it was', async () => {
+    const { root, executionDir } = await withTranscripts();
+    const first = join(executionDir, RUN('TC', 'baseline'), 'run.json');
+    const before = readFileSync(first, 'utf8');
+    const locked = join(executionDir, RUN('TD', 'wingfoil'), 'run.json');
+    chmodSync(locked, 0o444);
+    try {
+      const refused = await benchSite(root, 'transcripts', 'pack', EXECUTION);
+      expect(refused.code).toBe(1);
+      expect(refused.stderr).toContain('runs/TD@1.0/wingfoil/fake-model/r1/run.json: cannot be written');
+    } finally {
+      chmodSync(locked, 0o644);
+    }
+    expect(readFileSync(first, 'utf8')).toBe(before);
+    expect(existsSync(join(root, ARCHIVE))).toBe(false);
+    expect(readdirSync(join(root, 'releases', 'abcdef012345-1'))).toEqual([]);
   }, 120_000);
 
   it('refuses what it cannot pack', async () => {
