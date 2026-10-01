@@ -418,3 +418,7 @@ Each round by a fresh, read-only agent, its findings fixed test-first.
   listed by one directive check and not another counted as comparable; a figure of the wrong kind still
   threw. It confirmed the shape against `src/results/aggregate.ts` field by field, and against every real
   aggregate of W8–W10. Fixed in `944fc9f` (red), `a4701e1`, `5da79fc`.
+- `node_modules/.bin/wingfoil memory submit task-045-site-build-and-landing-page` in the task's worktree
+  (`4612992`), after the build notes (`bae6e34`).
+  - Declared: `in-progress → in-review`, one commit `wf(task): submit <id>`.
+  - Observed: exit 0, 1 file, a diff limited to `status: in-progress` → `status: in-review`. Matches.
