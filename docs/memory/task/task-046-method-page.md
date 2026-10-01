@@ -261,3 +261,5 @@ Each round by a fresh, read-only agent; each finding fixed test-first.
   the renderer pairs them per block, so a link could be missed (latent: no current text triggers it); an
   empty material page name. Fixed in `a2d86b2`, `23360a7` by letting the converter resolve each link.
 
+- `node_modules/.bin/wingfoil memory submit task-046-method-page` after the notes: `in-progress →
+  in-review`, one commit, 1 file, a diff limited to `status`. Matches.
