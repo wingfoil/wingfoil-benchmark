@@ -3,7 +3,6 @@ import type { Group, Tally } from '../results/index.js';
 
 import type { CategoryRow, MetricRow, ScenarioRow, SiteModel } from './model.js';
 import {
-  CATEGORY_MAP,
   formatDelta,
   formatFigure,
   headlineSentence,
@@ -436,45 +435,14 @@ function scenarioSection(scenario: ScenarioRow): string {
   return html;
 }
 
-/**
- * The method page: what task-045's rules are. task-046 writes the rest of it (F5.8): arms, controls,
- * protocol, approver policy, validity threats, pins and budget.
- */
-export function methodPage(model: SiteModel): string {
-  const map = (Object.entries(CATEGORY_MAP) as [Category, (typeof CATEGORY_MAP)['C']][])
-    .map(
-      ([category, entries]) =>
-        `<tr><th scope="row">${e(categoryHeading(category))}</th><td>${entries
-          .map((entry) => `${entry.id}: ${e(entry.label)} (${entry.better} is better)`)
-          .join('<br>')}</td></tr>\n`,
-    )
-    .join('');
-  const body =
-    `<p><a href="index.html">← ${e(title(model))}</a></p>\n<h1>How to read the results</h1>\n` +
-    `<p>Campaign ${e(model.campaign)}, execution ${model.execution}, model ${e(model.model)}.</p>\n` +
-    '<h2>Categories and their metrics</h2>\n' +
-    '<p>Each category is measured by fixed metrics, from its goal in the experiment design. A category is ' +
-    'covered when a scenario of the campaign has it as its primary category.</p>\n' +
-    `<table class="map">\n<tbody>\n${map}</tbody>\n</table>\n` +
-    '<p>M-D1 and M-D2 are not reported apart in v0.1: S2’s defect tests are counted in M-Q1, and each ' +
-    'suite’s tally is on category D’s page.</p>\n' +
-    '<h2>Comparisons</h2>\n<ul>\n' +
-    '<li>Each arm is compared with the baseline, on the same scenario version and model, metric by metric.</li>\n' +
-    '<li>A value is the mean of its runs’ figures, shown with its n, and with its range from n = 3.</li>\n' +
-    '<li>An arm is <em>better</em> or <em>worse</em> when the means differ, in the metric’s direction, and the ' +
-    '<em>same</em> when they are equal. Wins, losses and ties are shown alike.</li>\n' +
-    '<li>A difference is <em>beyond variance</em> only when both arms have n ≥ 3 and their ranges do not overlap; ' +
-    'otherwise it is <em>within variance</em>, or <em>preliminary</em> when either arm has a single run.</li>\n' +
-    '<li>A metric an arm did not measure reads “not measured”, and is no comparison.</li>\n' +
-    '<li>A run that did not reach its final snapshot, and an expected failure, count as losses.</li>\n' +
-    '</ul>\n<h2>The headline</h2>\n' +
-    '<p>One sentence per arm, generated from the comparisons alone: how many are better, worse and the same, ' +
-    'across which categories, and where a single run makes them preliminary. Nothing on the site is written ' +
-    'by hand about a result.</p>\n' +
-    '<h2>Hold-out results</h2>\n' +
-    '<p>Hidden tests kept outside the public repository are reported as counts only, marked hold-out, apart ' +
-    'from the public ones. Their content is never published.</p>\n';
-  return page(`Method — ${title(model)}`, body, 2);
+/** The method page around its rendered text (task-046): a link back to the landing page, then the text. */
+export function methodShell(model: SiteModel, html: string): string {
+  return page(`Method — ${title(model)}`, `<p><a href="index.html">← ${e(title(model))}</a></p>\n${html}`, 2);
+}
+
+/** A page of published material, under `material/` (task-046): a link back to the method page, then its body. */
+export function materialPage(heading: string, html: string): string {
+  return page(heading, `<p><a href="../method.html">← How the benchmark works</a></p>\n${html}`, 3);
 }
 
 /** `site/index.html`: a link to the execution built last, without a script. */

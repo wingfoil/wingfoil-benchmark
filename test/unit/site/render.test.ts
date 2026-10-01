@@ -40,7 +40,7 @@ function group(
   } as unknown as Group;
 }
 
-const S1 = { id: 'S1', version: '1.0', primary: 'C' as const, secondary: ['D' as const] };
+const S1 = { id: 'S1', version: '1.0', primary: 'C' as const, secondary: ['D' as const], hash: 'sha256:s1' };
 
 /** A model of S1 in two arms with three runs each: wingfoil's M-Q1 apart from the baseline's, its cost not measured. */
 function model(): SiteModel {
@@ -86,6 +86,7 @@ function model(): SiteModel {
     arms: ['baseline', 'wingfoil'],
     runs: 9,
     sliceRuns: 3,
+    records: [],
     categories: [c, d],
     comparisons: [comparison],
     slices: [group('wingfoil', { model: 'other-model' })],
@@ -134,7 +135,7 @@ describe('the pages, from a hand-built model (task-045)', () => {
       secondary: [],
       scenarios: [
         {
-          scenario: { id: 'S3', version: '1.0', primary: 'F', secondary: [] },
+          scenario: { id: 'S3', version: '1.0', primary: 'F', secondary: [], hash: 'sha256:s3' },
           groups: [group('baseline'), group('wingfoil')],
           metrics: [
             { entry: CATEGORY_MAP.F[0] as MapEntry, values: [{ arm: 'baseline' }, { arm: 'wingfoil' }] },

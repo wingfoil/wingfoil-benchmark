@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import { escapeHtml } from '../../../src/site/render.js';
 import { CANCEL, EXECUTION, storedRun } from '../../support/score-fixture.js';
-import { benchSite, siteExecution } from '../../support/site-fixture.js';
+import { benchSite, completeExecution, siteExecution } from '../../support/site-fixture.js';
 
 /** Every file under `dir`, relative, with its text. */
 function tree(dir: string): Record<string, string> {
@@ -36,19 +36,21 @@ describe('bench site build (REQ-CLI-09 as amended in 1.20, task-045)', () => {
       'abcdef012345/1/category-f.html',
       'abcdef012345/1/category-g.html',
       'abcdef012345/1/index.html',
+      'abcdef012345/1/material/manual-baseline.html',
+      'abcdef012345/1/material/manual-wingfoil.html',
       'abcdef012345/1/method.html',
       'index.html',
       'style.css',
     ]);
     // It prints what it wrote and the headline
-    expect(built.stdout).toContain('site: site/abcdef012345/1/ (9 pages)\n');
+    expect(built.stdout).toContain('site: site/abcdef012345/1/ (11 pages)\n');
     expect(built.stdout).toContain('Against the baseline, wingfoil is better in 1, worse in 1');
 
     // Static: no script anywhere, every page linked to the one stylesheet
     for (const [path, text] of Object.entries(files)) {
       expect(text, path).not.toMatch(/<script/i);
       if (path.endsWith('.html'))
-        expect(text, path).toMatch(/<link rel="stylesheet" href="(\.\.\/\.\.\/)?style\.css">/);
+        expect(text, path).toMatch(/<link rel="stylesheet" href="(\.\.\/)*style\.css">/);
     }
     // The root page leads to the execution built last, without a script
     expect(files['index.html']).toContain('<meta http-equiv="refresh" content="0; url=abcdef012345/1/">');
@@ -94,7 +96,7 @@ describe('bench site build (REQ-CLI-09 as amended in 1.20, task-045)', () => {
     ]) {
       expect(method).toContain(text);
     }
-    expect(method).toContain('M-D1 and M-D2 are not reported apart in v0.1');
+    expect(method).toContain('are not reported on their own in v0.1');
   }, 120_000);
 
   it('counts the campaign model runs on the landing page, and the slices apart', async () => {
@@ -122,6 +124,7 @@ describe('bench site build (REQ-CLI-09 as amended in 1.20, task-045)', () => {
       steps: [{}],
       into: { root: base.root, arm: 'wingfoil' },
     });
+    completeExecution(base.root, base.executionDir, ['TE']);
     expect((await benchSite(base.root, 'score', EXECUTION)).code).toBe(0);
     const built = await benchSite(base.root, 'site', 'build', EXECUTION);
     expect(built.code, built.stderr).toBe(0);
