@@ -41,15 +41,54 @@ Out of scope:
 
 ## Acceptance criteria
 
-Classified in the design phase.
+Classified in the design phase. Both are **characterization**: the tests exist and pass on an idle machine;
+what changes is the time they are given.
 
-- REQ-NFR-04: the suite passes on a loaded machine; every test bug-008 lists passes in three consecutive
-  `npm test` runs with coverage under load.
+- REQ-NFR-04: every test bug-008 lists passes in three consecutive `npm test` runs with coverage under load.
 - `results.feature` @F5.5 ×3 pass under load (task-045's).
 
 ## Design
 
-<!-- Modules, interfaces, data formats touched; decisions taken and their reasons. -->
+**Measured** on 2026-10-01, `npx vitest run --coverage --testTimeout=600000 --reporter=json` on main
+`ee96cf0`, load average 48–56 throughout (another repository's jest workers):
+
+- 66 of 1142 tests took more than 5 s. Most have a timeout of their own (the scenario and scoring tests,
+  `{ timeout: 240_000 }` per describe or `600_000` per test), sized for an idle machine.
+- **The tests with no timeout of their own** (bug-008's list) took at most 11.0 s: `finding.test.ts`'s
+  slowest 11.0 s, @F5.5's first 9.1 s (it builds the shared site), the others 4.7–7.9 s.
+- **One test with a timeout of its own failed:** `scenarios.feature` "@F6.1 @F6.2 @F6.3 @F6.8 Each v0.1
+  scenario is ready for a campaign", 634 s against its 600 s. Its comment measures 173 s alone on an idle
+  machine. It is in bug-008's list too (it failed in the first runs), though not for the 5 s default.
+
+**The change:**
+
+- `vitest.config.ts`: `testTimeout: 60_000` and `hookTimeout: 60_000`, with a comment naming bug-008 and
+  the measurement: five times the slowest default-timed test under load. A test that hangs still fails,
+  in a minute.
+- The @F6.x test: `1_200_000` (20 minutes), its comment updated with both measures (173 s idle, 634 s at
+  load 50).
+- No other test changes; the tests with their own timeouts keep them. `vitest.bin.config.ts`
+  (`120_000`) and `vitest.docker.config.ts` (`600_000`) already set theirs.
+
+**Verification:** three consecutive `npm test` runs with coverage, each with its load average recorded,
+then bug-008's Resolution.
+
+No requirement and no ADR changes.
+
+### Choices to confirm
+
+1. **One global `testTimeout` of 60 s,** not an explicit timeout on each of the ~20 tests. A new test that
+   builds stored runs is covered without anyone remembering.
+   - *Alternative:* explicit timeouts per test, the default left at 5 s. A fast unit test that hangs fails
+     sooner, but the next fixture-heavy test repeats bug-008.
+2. **The @F6.x test gets 20 minutes,** and stays one test. It matches the Gherkin outline's single title,
+   which the traceability gate checks.
+   - *Alternative:* one test per scenario (S1, S2, S3, S8), each with its own budget. Shorter budgets, but
+     four titles where the gate expects one, so the gate would change too.
+3. **"Done" is three passing loaded runs, recorded with their load:** the load is other sessions', and
+   cannot be set.
+   - *Alternative:* a synthetic load (a CPU burner beside the run). Reproducible, but it is not the load
+     that showed the bug.
 
 ## Execution notes
 
