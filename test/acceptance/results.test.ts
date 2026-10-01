@@ -355,6 +355,30 @@ describe('results.feature', () => {
     }
   });
 
+  it('@F5.8 The method page explains how to read the results', async () => {
+    // When the site is built
+    const { files } = await siteBuilt();
+    const method = files['abcdef012345/1/method.html'] ?? '';
+
+    // Then the method page describes the arms, the controls, the run protocol, the approver policy, the
+    // validity threats, the pins and the budget, in plain language
+    for (const anchor of [
+      'arms',
+      'baseline-docs-control',
+      'how-a-run-goes',
+      'neutral-approver',
+      'approver-decision',
+      'validity-threats',
+      'pins',
+      'budget',
+    ]) {
+      expect(method, anchor).toContain(`id="${anchor}"`);
+    }
+    // ... the pins and the budget being this execution's own
+    expect(method).toContain('<th scope="row">Approver policy</th><td>v1</td>');
+    expect(method).toContain('<th scope="row">Budget ceiling</th><td>20 EUR</td>');
+  });
+
   it('@F5.1 Dry runs never enter campaign results', async () => {
     // Given dry runs and campaign runs of S1 exist — T3 standing in for S1
     const campaign = await scoredCampaign();

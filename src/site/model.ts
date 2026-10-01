@@ -19,6 +19,18 @@ export interface ScenarioInfo {
   readonly version: string;
   readonly primary: Category;
   readonly secondary: readonly Category[];
+  /** Its content hash (REQ-FMT-09), the one every run of it recorded. */
+  readonly hash: string;
+}
+
+/** What a run's `run.json` records that the method page states (task-046): its manual and its harness. */
+export interface RunRecord {
+  readonly run: string;
+  readonly arm: string;
+  readonly manual?: { readonly sha256: string; readonly tokens: number };
+  readonly harness?: { readonly tool: string; readonly commit: string };
+  /** What the arm declared of its harness (REQ-FMT-10), as the run recorded it. */
+  readonly provides?: Readonly<Record<string, boolean>>;
 }
 
 /** One arm's value of one metric: its summary and, but for the baseline, its comparison. */
@@ -65,9 +77,16 @@ export interface SiteModel {
   readonly categories: readonly CategoryRow[];
   readonly comparisons: readonly Comparison[];
   readonly slices: readonly Group[];
+  /** Every run's record, groups' then slices', in the aggregate's order. */
+  readonly records: readonly RunRecord[];
 }
 
-const runRecord = z.object({ scenario_hash: z.string() });
+const runRecord = z.object({
+  scenario_hash: z.string(),
+  manual: z.object({ sha256: z.string(), tokens: z.number() }).optional(),
+  harness: z.object({ tool: z.string(), commit: z.string() }).optional(),
+  provides: z.record(z.string(), z.boolean()).optional(),
+});
 
 /** A `Value` (REQ-FMT-07) whose runs' figures are `figure`s. */
 const valueOf = <T extends z.ZodType>(figure: T) =>
@@ -136,8 +155,9 @@ function armOrder(a: string, b: string): number {
 
 /**
  * The site's model of the aggregated execution `results/<execution>` in `root` (REQ-CLI-09 as amended in
- * 1.20): it reads `aggregate.json`, each run's `run.json` for its scenario hash, and each scenario's
- * `scenario.yaml` under `scenarios/` for its categories. A scenario missing, or changed since its runs,
+ * 1.20): it reads `aggregate.json`, each run's `run.json` (its scenario hash, manual, harness and
+ * capabilities) and each scenario's `scenario.yaml` under `scenarios/` for its categories; the method page
+ * reads the rest (task-046). A scenario missing, or changed since its runs,
  * is refused. It reads nothing else: no oracle file, no hold-out, no transcript. Pure reading.
  */
 export function siteModel(root: string, execution: string): Result<SiteModel> {
@@ -172,6 +192,7 @@ export function siteModel(root: string, execution: string): Result<SiteModel> {
   const all = [...aggregate.groups, ...aggregate.slices];
   const versions = [...new Set(all.map((group) => `${group.scenario}@${group.version}`))].sort(byCodeUnit);
   const scenarios = new Map<string, ScenarioInfo>();
+  const records = new Map<string, RunRecord>();
   const issues: Issue[] = [];
   for (const key of versions) {
     const [id, version] = key.split('@') as [string, string];
@@ -182,12 +203,19 @@ export function siteModel(root: string, execution: string): Result<SiteModel> {
       continue;
     }
     const recorded = new Set<string>();
-    for (const run of all
-      .filter((group) => `${group.scenario}@${group.version}` === key)
-      .flatMap((g) => g.runs)) {
-      const hash = recordedHash(executionDir, run);
-      if (!hash.ok) return hash;
-      recorded.add(hash.value);
+    for (const group of all.filter((candidate) => `${candidate.scenario}@${candidate.version}` === key)) {
+      for (const run of group.runs) {
+        const record = readRecord(executionDir, run);
+        if (!record.ok) return record;
+        recorded.add(record.value.scenario_hash);
+        records.set(run, {
+          run,
+          arm: group.arm,
+          ...(record.value.manual === undefined ? {} : { manual: record.value.manual }),
+          ...(record.value.harness === undefined ? {} : { harness: record.value.harness }),
+          ...(record.value.provides === undefined ? {} : { provides: record.value.provides }),
+        });
+      }
     }
     const other = [...recorded].filter((hash) => hash !== loaded.value.hash).sort(byCodeUnit);
     if (other.length > 0) {
@@ -204,6 +232,7 @@ export function siteModel(root: string, execution: string): Result<SiteModel> {
       version,
       primary: loaded.value.categories.primary,
       secondary: loaded.value.categories.secondary,
+      hash: loaded.value.hash,
     });
   }
   if (issues.length > 0) return fail(issues);
@@ -239,6 +268,7 @@ export function siteModel(root: string, execution: string): Result<SiteModel> {
     categories,
     comparisons,
     slices: aggregate.slices,
+    records: all.flatMap((group) => group.runs.flatMap((run) => records.get(run) ?? [])),
   });
 }
 
@@ -294,12 +324,12 @@ function isOf(group: Group, info: ScenarioInfo): boolean {
   return group.scenario === info.id && group.version === info.version;
 }
 
-/** The scenario hash a run recorded in its `run.json`; the run is named by its aggregate name. */
-function recordedHash(executionDir: string, run: string): Result<string> {
+/** What a run recorded in its `run.json`; the run is named by its aggregate name. */
+function readRecord(executionDir: string, run: string): Result<z.output<typeof runRecord>> {
   const file = join(executionDir, ...run.split('/').slice(2), 'run.json');
   try {
     const parsed = runRecord.safeParse(JSON.parse(readFileSync(file, 'utf8')));
-    if (parsed.success) return ok(parsed.data.scenario_hash);
+    if (parsed.success) return ok(parsed.data);
     return fail([{ path: `${run}/run.json`, message: 'records no scenario_hash' }]);
   } catch (error) {
     return fail([{ path: `${run}/run.json`, message: `cannot be read: ${(error as Error).message}` }]);

@@ -154,7 +154,7 @@ describe('the built bench command', () => {
         encoding: 'utf8',
       },
     );
-    expect(stdout).toMatch(/^site: site\/abcdef012345\/1\/ \(9 pages\)\n/);
+    expect(stdout).toMatch(/^site: site\/abcdef012345\/1\/ \(11 pages\)\n/);
     expect(statSync(join(root, 'site', 'abcdef012345', '1', 'index.html')).isFile()).toBe(true);
   });
 });
