@@ -162,6 +162,8 @@ No ADR.
 
 ### Choices to confirm
 
+All three confirmed by the approver as proposed, 2026-10-01.
+
 1. **`publish` rebuilds every execution under `site/` and refuses any difference:** what is pushed is, byte
    for byte, what the committed results give, as @F5.6 asks.
    - *Alternative:* push `site/` as it is, after checking only that it exists. Faster, but a stale or
