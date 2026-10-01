@@ -155,8 +155,9 @@ function armOrder(a: string, b: string): number {
 
 /**
  * The site's model of the aggregated execution `results/<execution>` in `root` (REQ-CLI-09 as amended in
- * 1.20): it reads `aggregate.json`, each run's `run.json` for its scenario hash, and each scenario's
- * `scenario.yaml` under `scenarios/` for its categories. A scenario missing, or changed since its runs,
+ * 1.20): it reads `aggregate.json`, each run's `run.json` (its scenario hash, manual, harness and
+ * capabilities) and each scenario's `scenario.yaml` under `scenarios/` for its categories; the method page
+ * reads the rest (task-046). A scenario missing, or changed since its runs,
  * is refused. It reads nothing else: no oracle file, no hold-out, no transcript. Pure reading.
  */
 export function siteModel(root: string, execution: string): Result<SiteModel> {

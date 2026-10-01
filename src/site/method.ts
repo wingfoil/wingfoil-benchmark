@@ -7,7 +7,7 @@ import type { CampaignFile, Issue, Result } from '../core/index.js';
 
 import type { Group } from '../results/index.js';
 
-import { renderMarkdown } from './markdown.js';
+import { linkTargets, renderMarkdown } from './markdown.js';
 import type { SiteModel } from './model.js';
 import { escapeHtml, materialPage, methodShell } from './render.js';
 
@@ -100,9 +100,10 @@ export function methodPages(root: string, execution: string, model: SiteModel): 
   // A page the text links to that this execution does not publish (an arm or a scenario it did not run)
   // is named, not linked (task-046's review).
   const text = readFileSync(prose, 'utf8');
-  const unwritten = [...text.matchAll(/\]\((material\/[^)\s]+)\)/g)]
-    .map((match) => match[1] as string)
-    .filter((target) => !material.has(target.slice('material/'.length)));
+  const unwritten = linkTargets(text).filter((target) => {
+    const page = /^(?:\.\/)?material\/([^#]+)/.exec(target)?.[1];
+    return page !== undefined && !material.has(page);
+  });
   const rendered = renderMarkdown(text, {
     blocks: { execution: executionHtml, material: `<ul>\n${links}</ul>` },
     links: Object.fromEntries(unwritten.map((target) => [target, null])),
@@ -135,7 +136,7 @@ export function publishedMaterial(
     const dir = join(root, 'scenarios', id, version);
     const lower = id.toLowerCase();
     const directives = listFiles(join(dir, 'arms'))
-      .filter((arm) => statSync(join(dir, 'arms', arm)).isDirectory())
+      .filter((arm) => isDirectory(join(dir, 'arms', arm)))
       .flatMap((arm) =>
         listFiles(join(dir, 'arms', arm, '.wingfoil', 'directives', 'custom')).map((file) =>
           join(dir, 'arms', arm, '.wingfoil', 'directives', 'custom', file),
@@ -166,6 +167,15 @@ export function publishedMaterial(
 
 function licencePage(file: string): string {
   return `licence-${file.replace(/\.txt$/, '').toLowerCase()}.html`;
+}
+
+/** Whether `path` is a directory: false for a file, and for a link that leads nowhere. */
+function isDirectory(path: string): boolean {
+  try {
+    return statSync(path).isDirectory();
+  } catch {
+    return false;
+  }
 }
 
 /** A directory's entries, sorted; none when it does not exist. */

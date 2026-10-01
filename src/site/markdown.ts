@@ -168,8 +168,9 @@ function cells(line: string): string[] {
   const out: string[] = [];
   let cell = '';
   let code = false;
-  for (const char of inner) {
-    if (char === '`') code = !code;
+  for (const [index, char] of [...inner].entries()) {
+    // A backtick opens a code span only when another closes it, as the inline renderer reads it.
+    if (char === '`' && (code || inner.includes('`', index + 1))) code = !code;
     if (char === '|' && !code) {
       out.push(cell.trim());
       cell = '';
@@ -187,9 +188,17 @@ function withoutFrontMatter(text: string): string {
 
 const LINK = /\[([^\]]*)\]\(((?:[^()\s]|\([^()\s]*\))*)\)/g;
 
-/** A link target the site keeps: a relative page (never `//host`, which leaves the site), or an `https` address. */
+/** A link target the site keeps: a relative page (never `/…` nor `//host`), or an `https` address. */
 function safeTarget(target: string): boolean {
-  return /^https:\/\/[^\s"<>]+$/.test(target) || /^(?!\/\/)[A-Za-z0-9._/#-]+$/.test(target);
+  return /^https:\/\/[^\s"<>]+$/.test(target) || /^(?!\/)[A-Za-z0-9._/#-]+$/.test(target);
+}
+
+/** Every link target of `text`, outside code spans, as the converter reads them (task-046's second review). */
+export function linkTargets(text: string): string[] {
+  return text
+    .split(/(`[^`]*`)/)
+    .filter((_, index) => index % 2 === 0)
+    .flatMap((part) => [...part.matchAll(LINK)].map((match) => match[2] as string));
 }
 
 /** Inline code first, its content left as it is; then links, strong and emphasis on escaped text. */
