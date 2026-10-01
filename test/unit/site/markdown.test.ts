@@ -66,4 +66,23 @@ describe('the site Markdown subset (task-046)', () => {
     expect(result.html).toBe('<h1 id="r1">R1</h1>\n<p id="text">Text</p>\n');
     expect(result.anchors).toEqual(['r1', 'text']);
   });
+
+  it('refuses a protocol-relative link, and drops a link the build has no page for (task-046 review)', () => {
+    expect(html('[x](//evil.example/a)\n')).toBe('<p>x</p>\n');
+    expect(
+      renderMarkdown('[m](material/manual-x.html) and [n](material/y.html)\n', {
+        links: { 'material/manual-x.html': null },
+      }).html,
+    ).toBe('<p>m and <a href="material/y.html">n</a></p>\n');
+  });
+
+  it("keeps the text whatever it holds, the converter's own markers included", () => {
+    expect(html('a \uE0000\uE000 [l](b.html)\n')).toBe('<p>a 0 <a href="b.html">l</a></p>\n');
+  });
+
+  it('keeps a pipe inside a code span within its table cell', () => {
+    expect(html('| a | b |\n|---|---|\n| `x|y` | z |\n')).toContain(
+      '<tr><td><code>x|y</code></td><td>z</td></tr>',
+    );
+  });
 });

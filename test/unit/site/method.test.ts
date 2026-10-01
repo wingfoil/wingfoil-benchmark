@@ -1,11 +1,12 @@
-import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, cpSync, existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { publishedMaterial } from '../../../src/site/method.js';
 import { repoPath } from '../../support/paths.js';
 import { EXECUTION } from '../../support/score-fixture.js';
-import { benchSite, sha256Of, siteExecution } from '../../support/site-fixture.js';
+import { tempDir } from '../../support/scenario-fixture.js';
+import { benchSite, sha256Of, siteCampaign, siteExecution } from '../../support/site-fixture.js';
 
 const PAGE = join('site', 'abcdef012345', '1');
 
@@ -40,7 +41,10 @@ describe('the method page (F5.8, task-046)', () => {
     expect(section).toContain('<th scope="row">Budget ceiling</th><td>20 EUR</td>');
     expect(section).toContain('<th scope="row">Rate</th><td>0.5 EUR per USD</td>');
     // Six runs at the fixture's 0.05 + 0.10 EUR each
-    expect(section).toContain('<p id="spending">6 runs of fake-model cost 0.9000 EUR in all.</p>');
+    expect(section).toContain(
+      '<p id="spending">6 aggregated runs of fake-model cost 0.9000 EUR in all. Setup costs (M-K3) are not included.</p>',
+    );
+    expect(section).not.toMatch(/<th scope="row">Scoring image<\/th><td>not recorded/);
   }, 120_000);
 
   it('publishes each arm manual, rendered, and refuses one that differs from what its runs recorded', async () => {
@@ -75,6 +79,63 @@ describe('the method page (F5.8, task-046)', () => {
     expect(method).toContain(
       '<th scope="row">Harness capabilities</th><td>wingfoil: directive-delivery offered; workflow-engine not offered</td>',
     );
+  }, 120_000);
+
+  it('links only to material pages the build wrote', async () => {
+    const { root } = await siteExecution();
+    expect((await benchSite(root, 'site', 'build', EXECUTION)).code).toBe(0);
+    const method = readFileSync(join(root, PAGE, 'method.html'), 'utf8');
+    const targets = [...method.matchAll(/href="(material\/[^"]+)"/g)].map((match) => match[1] as string);
+    expect(targets.length).toBeGreaterThan(0);
+    for (const target of targets) expect(existsSync(join(root, PAGE, target)), target).toBe(true);
+    // baseline-docs ran no run, S1 and S8 are not in the execution: named, not linked
+    expect(method).not.toContain('material/manual-baseline-docs.html');
+    expect(method).not.toContain('material/directives-s8.html');
+  }, 120_000);
+
+  it('states the harness commits, the slices and the runs whose cost is a bound, the slices apart', async () => {
+    const { root, executionDir } = await siteExecution();
+    writeFileSync(
+      join(executionDir, 'campaign.yaml'),
+      siteCampaign(['TC', 'TD', 'TF']).replace(
+        'models:\n  default: fake-model\n',
+        'models:\n  default: fake-model\n  slices:\n    - { model: other-model, scenarios: [TC] }\n',
+      ),
+    );
+    for (const id of ['TC', 'TD', 'TF']) {
+      const file = join(executionDir, 'runs', `${id}@1.0`, 'wingfoil', 'fake-model', 'r1', 'run.json');
+      const run = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>;
+      run.harness = { tool: 'wingfoil', commit: 'c0ffee' };
+      writeFileSync(file, JSON.stringify(run));
+    }
+    const file = join(executionDir, 'aggregate.json');
+    const aggregate = JSON.parse(readFileSync(file, 'utf8')) as {
+      groups: { metrics: { cost: { bound: string[] } }; runs: string[] }[];
+      slices: unknown[];
+    };
+    const first = aggregate.groups[0] as (typeof aggregate.groups)[0];
+    aggregate.slices = [{ ...first, model: 'other-model' }];
+    first.metrics.cost.bound = [first.runs[0] as string];
+    writeFileSync(file, JSON.stringify(aggregate));
+    expect((await benchSite(root, 'site', 'build', EXECUTION)).code).toBe(0);
+    const method = readFileSync(join(root, PAGE, 'method.html'), 'utf8');
+    expect(method).toContain(
+      '<th scope="row">Harnesses</th><td>wingfoil 3df305e; commits recorded by its runs: c0ffee</td>',
+    );
+    expect(method).toContain('<th scope="row">Other models (slices)</th><td>other-model on TC</td>');
+    expect(method).toContain(
+      '<p id="spending">6 aggregated runs of fake-model cost 0.9000 EUR in all. 1 aggregated run of other ' +
+        'models, reported apart, cost 0.1500 EUR. Setup costs (M-K3) are not included. For 1 run the cost is ' +
+        'a bound, not a report: abcdef012345/1/runs/TC@1.0/baseline/fake-model/r1.</p>',
+    );
+  }, 120_000);
+
+  it('refuses a repository without the method text', async () => {
+    const { root } = await siteExecution();
+    rmSync(join(root, 'site-content'), { recursive: true });
+    const refused = await benchSite(root, 'site', 'build', EXECUTION);
+    expect(refused.code).toBe(1);
+    expect(refused.stderr).toContain('site-content/method.md: not found');
   }, 120_000);
 
   it('says when the runs recorded no manual, and still publishes it', async () => {
@@ -128,6 +189,13 @@ describe('the published material of S1 and S8', () => {
     expect(apache).toContain('<pre>');
     expect(apache).toContain('Apache License');
     expect(pages.get('licence-bsd-3-clause-ietf.html')).toContain('<pre>');
+  });
+
+  it('reads only directories under a scenario arms/, a file there left alone', () => {
+    const root = tempDir('bench-material-');
+    cpSync(repoPath('scenarios/S8'), join(root, 'scenarios', 'S8'), { recursive: true });
+    writeFileSync(join(root, 'scenarios', 'S8', '1.0', 'arms', 'README.md'), 'notes\n');
+    expect(() => publishedMaterial(root, [{ id: 'S8', version: '1.0' }])).not.toThrow();
   });
 
   it('publishes nothing of S2, whose answer key is hold-out content', () => {
