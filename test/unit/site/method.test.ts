@@ -31,6 +31,8 @@ describe('the method page (F5.8, task-046)', () => {
       `<th scope="row">Manuals</th><td>baseline: sha256:${sha256Of(join(root, 'arms', 'baseline', 'manual.md'))}, 3 tokens<br>`,
     );
     expect(section).toContain('<th scope="row">Scoring image</th>');
+    // What each arm's runs declared of their harness (REQ-FMT-10): nothing, in the fixture
+    expect(section).toContain('<th scope="row">Harness capabilities</th><td>none declared by the runs</td>');
     expect(section).toContain('<th scope="row">Step time cap</th><td>600 s</td>');
     expect(section).toContain('<th scope="row">Step token cap</th><td>1000000 tokens</td>');
     expect(section).toContain('<th scope="row">Run cost cap</th><td>5 EUR</td>');
@@ -58,6 +60,21 @@ describe('the method page (F5.8, task-046)', () => {
     expect(changed.code).toBe(1);
     expect(changed.stderr).toContain('arms/wingfoil/manual.md');
     expect(changed.stderr).toContain('differs from the manual its runs recorded');
+  }, 120_000);
+
+  it("lists each arm's declared harness capabilities, as its runs recorded them", async () => {
+    const { root, executionDir } = await siteExecution();
+    for (const id of ['TC', 'TD', 'TF']) {
+      const file = join(executionDir, 'runs', `${id}@1.0`, 'wingfoil', 'fake-model', 'r1', 'run.json');
+      const run = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>;
+      run.provides = { 'workflow-engine': false, 'directive-delivery': true };
+      writeFileSync(file, JSON.stringify(run));
+    }
+    expect((await benchSite(root, 'site', 'build', EXECUTION)).code).toBe(0);
+    const method = readFileSync(join(root, PAGE, 'method.html'), 'utf8');
+    expect(method).toContain(
+      '<th scope="row">Harness capabilities</th><td>wingfoil: directive-delivery offered; workflow-engine not offered</td>',
+    );
   }, 120_000);
 
   it('says when the runs recorded no manual, and still publishes it', async () => {
