@@ -316,6 +316,25 @@ All three confirmed by the approver as proposed, 2026-10-01.
    - *Alternative:* each category's first metric, normalised to the baseline (arm ÷ baseline). One bar per
      category, but a ratio hides the units and fails when the baseline is 0 (M-E1, M-D3).
 
+### After the reviews
+
+The independent reviews changed the design in these places, each test-first:
+
+- **M-E1 not comparable** (the approver's choice, 2026-10-01): a run that did not reach a step a directive
+  check (`ast`, `dependencies`) scores, or that no such step lists, makes M-E1 "not comparable" for its
+  arm: no outcome and no headline count; when it is the baseline's, each arm says "no comparison". Before,
+  a lost run summed fewer steps and looked better, while M-Q1, M-F1 and M-D3 count a loss as the worst
+  figure.
+- **The chart** reads M-Q1 from every covered scenario's groups, not from the category map, which has
+  none for E and F.
+- **The aggregate** is checked against every path and figure the site reads before it is read, and its
+  `aggregate_version` must be 1. `checks` may be missing, as in an aggregate written before task-035: M-E1
+  then reads "not measured". W7's real execution `27e28fe609f6/1`, aggregated before task-035, builds.
+- **The landing page:** each value labelled with its metric in its arm's cell (after a look at W10's
+  execution); a preliminary comparison marked when the value itself has n > 1; the hold-out with its n; the
+  campaign model's runs counted apart from the slices'; a delta that rounds to nothing keeps two
+  significant digits in fixed notation; a legend names the arms, seven hatchings tell them apart.
+
 ## Execution notes
 
 <!-- What happened while building: deviations, blockers, follow-ups (filed as elements, never left
@@ -349,3 +368,53 @@ All three confirmed by the approver as proposed, 2026-10-01.
   (`1820f61`), after the design (`3a235a8`) and the approver's confirmation of its choices (`b163cd9`).
   - Declared: `backlog → in-progress`, one commit `wf(task): submit <id>`.
   - Observed: exit 0, 1 file, a diff limited to `status: backlog` → `status: in-progress`. Matches.
+
+### Build
+
+Commits on `task/task-045-site-build-and-landing-page`:
+
+- `56de8c6` `test(site)` (red): the rules (map, comparison, certainty, headline, numbers), the build (pages,
+  static, root page, refusals, same bytes, another execution left), the category and method pages,
+  `results.feature` @F5.5 ×3 on T3 stand-ins TC, TD and TF (categories C, D and F, a loss in D and a win in
+  F, the hold-out scored), `test:bin`. The fixture `storedRun` gained `variant` (T3 under another id and
+  primary category); its existing callers are unchanged.
+- `3674bfa` `feat(site)`: `src/site/` (`rules`, `model`, `render`, `build`), `src/cli/site.ts`, `USAGE`,
+  `/site/` git-ignored. A first `.gitignore` line `site/` ignored `src/site/` too; it was anchored before
+  the commit was amended, and the reviews checked it with `git check-ignore`.
+- `a518b87` `docs(requirements)`: requirements 1.20.
+- `e583840` `fix(site)`: after building W10's execution `cb46676b5881/2` and looking at it in a browser:
+  labels that overlapped, a table wider than the page, and the first arm's bars black (a second `class`
+  attribute).
+
+**Checks on the last commit:** `npm test` 1142/1142, coverage 98.79% (`src/site` above 95% of lines), lint
+clean, `npm run test:bin` 8/8. `test/unit/results/finding.test.ts` (task-044, untouched here) once failed
+under the full suite's load and passed on the rerun and alone: a timing flake, not a change of this task.
+`npm run test:docker` was not run: nothing of the runner, the scoring image or Docker changed.
+
+**W10's executions** build: `cb46676b5881/1` and `/2` → 9 pages each; /2's headline reads "wingfoil is
+better in 0, worse in 1 and the same in 3 of 4 comparisons across categories C and D (preliminary: n = 1 in
+D)": r2's five failing merge-patch tests make S1's mean M-Q1 lower, within variance.
+
+### Review
+
+Each round by a fresh, read-only agent, its findings fixed test-first.
+
+- **First review** (the whole branch, against the Design, requirements 1.20 and @F5.5): 12 findings.
+  - Bugs: the chart had no bars for E and F; M-E1 rewarded a run that stopped early; a malformed aggregate
+    crashed the command.
+  - Deviations: a preliminary comparison unmarked when the arm had n > 1; "prints its pages" (it prints a
+    count: the requirement was reworded).
+  - Test gaps: the chart's bars, escaping on rendered pages, a lower-is-better metric with a loss.
+  - Nits: a delta rounding to zero beside "better", arms past four without a fill, slices in the run count,
+    the hold-out without its n.
+  - M-E1's rule went to the approver (2026-10-01): **not comparable**. Fixed in `d6aa816` (red), `feea89d`,
+    `46b93c7`.
+- **Second review** (the fixes alone): 8 of 12 confirmed; a group without `metrics` still crashed; counts'
+  deltas and tiny ones (exponent notation) not covered by the digits rule; the eighth hatching repeated the
+  first's angle and colour already at the fifth; a run no directive check step lists counted as 0
+  violations; no end-to-end M-E1 test. Fixed in `7b2c5f9` (red), `c11feff`, `7b269f4`.
+- **Third review** (the second round's fixes alone): the new shape check refused aggregates written before
+  task-035, which have no `checks` (found on W7's real execution in a sibling session's scratchpad); a run
+  listed by one directive check and not another counted as comparable; a figure of the wrong kind still
+  threw. It confirmed the shape against `src/results/aggregate.ts` field by field, and against every real
+  aggregate of W8–W10. Fixed in `944fc9f` (red), `a4701e1`, `5da79fc`.
