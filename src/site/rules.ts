@@ -52,7 +52,8 @@ export const CATEGORY_MAP: Readonly<Record<MappedCategory, readonly MapEntry[]>>
 export interface Figures {
   readonly runs: readonly string[];
   readonly values: readonly number[];
-  readonly unreached?: readonly { readonly run: string; readonly step: number }[];
+  /** A run with no `step` is one no directive check step lists: scored before the check existed. */
+  readonly unreached?: readonly { readonly run: string; readonly step?: number }[];
 }
 
 /** The check kinds that count violations (REQ-SCO-05 and -06, task-037): M-E1's. */
@@ -118,26 +119,32 @@ export function readMetric(id: MetricId, group: Group): Figures | undefined {
     case 'M-E1': {
       const directives = metrics.checks.filter((check) => DIRECTIVE_KINDS.includes(check.kind));
       if (directives.length === 0) return undefined;
-      const sums = new Map<string, number>(group.runs.map((run) => [run, 0]));
+      const sums = new Map<string, number>();
       const unreached: { run: string; step: number }[] = [];
+      const listed = new Set<string>();
       for (const check of directives) {
         for (const step of check.steps) {
           step.violations?.runs.forEach((run, index) => {
+            listed.add(run);
             sums.set(run, (sums.get(run) ?? 0) + (step.violations?.values[index] ?? 0));
           });
-          for (const run of step.not_reached) unreached.push({ run, step: step.step });
+          for (const run of step.not_reached) {
+            listed.add(run);
+            unreached.push({ run, step: step.step });
+          }
         }
       }
-      const lost = new Set(unreached.map((entry) => entry.run));
-      const runs = group.runs.filter((run) => !lost.has(run));
-      const figures = { runs, values: runs.map((run) => sums.get(run) ?? 0) };
-      if (unreached.length === 0) return figures;
-      // Each run once, at the first step it did not reach, in the order of the group's runs.
-      const first = group.runs.flatMap((run) => {
+      // Each run once, in the order of the group's runs: at the first step it did not reach, or with no
+      // step when no directive check step lists it (task-045's second review). Either way it is not counted.
+      const lost = group.runs.flatMap((run) => {
+        if (!listed.has(run)) return [{ run }];
         const steps = unreached.filter((entry) => entry.run === run).map((entry) => entry.step);
         return steps.length === 0 ? [] : [{ run, step: Math.min(...steps) }];
       });
-      return { ...figures, unreached: first };
+      const out = new Set(lost.map((entry) => entry.run));
+      const runs = group.runs.filter((run) => !out.has(run));
+      const figures = { runs, values: runs.map((run) => sums.get(run) ?? 0) };
+      return lost.length === 0 ? figures : { ...figures, unreached: lost };
     }
   }
 }
@@ -243,11 +250,19 @@ export function formatFigure(id: MetricId, value: number): string {
 export function formatDelta(id: MetricId, delta: number): string {
   const sign = delta > 0 ? '+' : delta < 0 ? '−' : '±';
   const size = Math.abs(delta);
-  const fixed = (value: number, digits: number) => {
-    const text = value.toFixed(digits);
-    return value !== 0 && Number(text) === 0 ? value.toPrecision(2) : text;
-  };
   if (SHARES.includes(id)) return `${sign}${fixed(size * 100, 1)} pp`;
   if (id === 'M-K1') return `${sign}${fixed(size, 4)} EUR`;
-  return `${sign}${String(Math.round(size * 100) / 100)}`;
+  // A count to two places, without trailing zeros; one that would show as zero keeps its digits.
+  const shown = Number(size.toFixed(2));
+  return `${sign}${shown === 0 && size !== 0 ? fixed(size, 2) : String(shown)}`;
+}
+
+/**
+ * `value` to `digits` decimal places; a value that would show as zero gets the places its first two
+ * significant digits need, in fixed notation, never an exponent (task-045's second review).
+ */
+function fixed(value: number, digits: number): string {
+  const text = value.toFixed(digits);
+  if (value === 0 || Number(text) !== 0) return text;
+  return value.toFixed(Math.min(100, 1 - Math.floor(Math.log10(value))));
 }

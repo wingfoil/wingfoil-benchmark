@@ -69,11 +69,40 @@ export interface SiteModel {
 
 const runRecord = z.object({ scenario_hash: z.string() });
 
+const value = z.object({ n: z.number(), runs: z.array(z.string()), values: z.array(z.unknown()) });
+
+/**
+ * A group as far as the site reads it (task-045's second review): every path `readMetric` and the pages
+ * read, so that an aggregate of another shape is refused rather than thrown on.
+ */
 const groupShape = z.object({
   scenario: z.string(),
   version: z.string(),
   arm: z.string(),
+  model: z.string(),
   runs: z.array(z.string()),
+  n: z.number(),
+  losses: z.array(z.object({ run: z.string(), reason: z.string() })),
+  metrics: z.object({
+    m_q1: z.object({
+      final: z.object({ m_q1: value, suites: z.array(z.object({ id: z.string(), value })) }),
+    }),
+    holdout: z.union([
+      z.object({ scored: z.literal(false) }),
+      z.object({ scored: z.literal(true), final: z.object({ m_q1: value }) }),
+    ]),
+    cost: z.object({ cost_eur: value }),
+    checks: z.array(
+      z.object({
+        kind: z.string(),
+        steps: z.array(
+          z.object({ step: z.number(), not_reached: z.array(z.string()), violations: value.optional() }),
+        ),
+      }),
+    ),
+    m_d3: z.object({ value }).optional(),
+    m_f1: z.object({ share: value }).optional(),
+  }),
 });
 
 /** What the site needs an aggregate to be before it reads it: its shape, not every value (task-045's review). */
@@ -209,7 +238,12 @@ export function siteModel(root: string, execution: string): Result<SiteModel> {
 /** `r2 did not reach step 3; …`: the runs that make M-E1 not comparable. */
 function unreachedText(unreached: Figures['unreached']): string {
   return (unreached ?? [])
-    .map((entry) => `${entry.run.split('/').at(-1) ?? entry.run} did not reach step ${entry.step}`)
+    .map((entry) => {
+      const run = entry.run.split('/').at(-1) ?? entry.run;
+      return entry.step === undefined
+        ? `${run} was not scored with the directive checks`
+        : `${run} did not reach step ${entry.step}`;
+    })
     .join('; ');
 }
 

@@ -239,8 +239,19 @@ function armFill(base: string, armIndex: number): string {
   return armIndex === 0 ? ` class="${base} arm-0"` : ` class="${base}" fill="url(#hatch-${armIndex})"`;
 }
 
-/** The stylesheet's arm colours: arms past the last reuse them, with hatching of their own angle. */
-const ARM_COLOURS = 4;
+/**
+ * Each hatched arm's angle and colour, in order: seven distinct pairs. An eighth hatched arm repeats the
+ * first, and the legend's names still tell them apart (task-045's second review).
+ */
+const HATCHES: readonly (readonly [number, number])[] = [
+  [45, 1],
+  [135, 2],
+  [0, 3],
+  [90, 1],
+  [45, 2],
+  [135, 3],
+  [0, 1],
+];
 
 /**
  * The landing page's one chart (the approver's choice 3): M-Q1 on the final snapshot, per covered
@@ -262,7 +273,7 @@ function chartSvg(model: SiteModel): string {
       .map(
         (_, index) =>
           `<pattern id="hatch-${index + 1}" width="6" height="6" patternUnits="userSpaceOnUse" ` +
-          `patternTransform="rotate(${(45 * (index + 1)) % 180})"><rect class="arm-${(index + 1) % ARM_COLOURS}" width="6" height="6"/>` +
+          `patternTransform="rotate(${hatch(index)[0]})"><rect class="arm-${hatch(index)[1]}" width="6" height="6"/>` +
           '<line class="hatch" x1="0" y1="0" x2="0" y2="6"/></pattern>',
       ),
     '</defs>',
@@ -315,6 +326,10 @@ function chartSvg(model: SiteModel): string {
     `style="max-width: ${width}px" role="img" aria-label="M-Q1 on the final snapshot, per arm and scenario">\n` +
     `${parts.join('\n')}\n</svg>`
   );
+}
+
+function hatch(index: number): readonly [number, number] {
+  return HATCHES[index % HATCHES.length] as readonly [number, number];
 }
 
 function runs(count: number): string {
