@@ -96,7 +96,7 @@ describe('the pages, from a hand-built model (task-045)', () => {
     const page = landingPage(model());
     expect(page).toContain('<span class="range">range 10.0%–30.0%</span>');
     expect(page).toContain('<span class="certainty">beyond variance</span>');
-    expect(page).toContain('<div class="value">not measured</div>');
+    expect(page).toContain('<div class="value"><span class="metric">M-K1</span> not measured</div>');
     expect(page).toContain('loss: r3: expected failure (missing workflow-engine)');
     expect(page).toContain('<span class="holdout">hold-out</span> not scored');
     // The chart's whisker shows the range of three runs; the second arm is hatched, not only coloured

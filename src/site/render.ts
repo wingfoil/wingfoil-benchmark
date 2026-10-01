@@ -95,9 +95,11 @@ function nOf(metric: MetricId, summary: Summary): string {
   return `<span class="n">n = ${summary.n}</span>${badge}${range}`;
 }
 
-function valueHtml(metric: MetricId, value: ArmValue): string {
-  if (value.summary === undefined) return '<div class="value">not measured</div>';
-  const figure = `${e(formatFigure(metric, value.summary.mean))} ${nOf(metric, value.summary)}`;
+/** One value; on the landing page, labelled with its metric, so that a cell reads on its own. */
+function valueHtml(metric: MetricId, value: ArmValue, labelled = false): string {
+  const label = labelled ? `<span class="metric">${metric}</span> ` : '';
+  if (value.summary === undefined) return `<div class="value">${label}not measured</div>`;
+  const figure = `${label}${e(formatFigure(metric, value.summary.mean))} ${nOf(metric, value.summary)}`;
   const comparison = value.comparison;
   if (comparison === undefined) return `<div class="value">${figure}</div>`;
   const certainty =
@@ -119,11 +121,13 @@ function tallies(values: readonly Tally[]): string {
 }
 
 /** A group's hold-out final counts, marked; or that the hold-out was not scored. */
-function holdoutHtml(group: Group | undefined): string {
+function holdoutHtml(group: Group | undefined, labelled = false): string {
   if (group === undefined) return '';
+  const label = labelled ? '<span class="metric">M-Q1</span> ' : '';
   const holdout = group.metrics.holdout;
-  if (!holdout.scored) return '<div class="value"><span class="holdout">hold-out</span> not scored</div>';
-  return `<div class="value"><span class="holdout">hold-out</span> ${e(tallies(holdout.final.m_q1.values))}</div>`;
+  if (!holdout.scored)
+    return `<div class="value">${label}<span class="holdout">hold-out</span> not scored</div>`;
+  return `<div class="value">${label}<span class="holdout">hold-out</span> ${e(tallies(holdout.final.m_q1.values))}</div>`;
 }
 
 /** A group's losses (REQ-SCO-10): each run, and why — an expected failure names the missing capability. */
@@ -141,42 +145,46 @@ function categoryHeading(category: Category): string {
   return `${category} — ${CATEGORY_GOALS[category].name}`;
 }
 
-/** One category's row of the landing page: all of it in one `<tr>`. */
+/**
+ * One category's row of the landing page, all of it in one `<tr>`: the category and its scenarios, then
+ * a cell per arm, each value labelled with its metric.
+ */
 function rowHtml(model: SiteModel, row: CategoryRow): string {
-  const head = `<th scope="row"><a href="${categoryFile(row.category)}">${e(categoryHeading(row.category))}</a></th>`;
+  const link = `<a href="${categoryFile(row.category)}">${e(categoryHeading(row.category))}</a>`;
   if (row.scenarios.length === 0) {
-    return `<tr id="category-${row.category}" class="not-covered">${head}<td colspan="${model.arms.length + 2}">${NOT_COVERED}</td></tr>\n`;
+    return (
+      `<tr id="category-${row.category}" class="not-covered"><th scope="row">${link}</th>` +
+      `<td colspan="${model.arms.length}">${NOT_COVERED}</td></tr>\n`
+    );
   }
-  const scenarios = row.scenarios
+  const names = row.scenarios
     .map(
       (scenario) => `<div class="value">${e(`${scenario.scenario.id}@${scenario.scenario.version}`)}</div>`,
     )
     .join('');
-  const metricNames = row.scenarios
-    .map((scenario) =>
-      scenario.metrics.length === 0
-        ? '<div class="value">no metric of the category map yet</div>'
-        : scenario.metrics.map((metric) => `<div class="value">${metric.entry.id}</div>`).join('') +
-          '<div class="value">hold-out M-Q1</div>',
+  const cells = model.arms
+    .map(
+      (arm) =>
+        `<td>${row.scenarios.map((scenario) => armCell(scenario, arm, row.scenarios.length > 1)).join('')}</td>`,
     )
     .join('');
-  const cells = model.arms
-    .map((arm) => {
-      const content = row.scenarios.map((scenario) => armCell(scenario, arm)).join('');
-      return `<td>${content}</td>`;
-    })
-    .join('');
-  return `<tr id="category-${row.category}">${head}<td>${scenarios}</td><td>${metricNames}</td>${cells}</tr>\n`;
+  return `<tr id="category-${row.category}"><th scope="row">${link}${names}</th>${cells}</tr>\n`;
 }
 
-function armCell(scenario: ScenarioRow, arm: string): string {
+/** An arm's values on one scenario: each metric of the map, the hold-out, the losses. */
+function armCell(scenario: ScenarioRow, arm: string, named: boolean): string {
   const group = scenario.groups.find((candidate) => candidate.arm === arm);
+  const name = named
+    ? `<div class="scenario">${e(`${scenario.scenario.id}@${scenario.scenario.version}`)}</div>`
+    : '';
+  if (scenario.metrics.length === 0)
+    return `${name}<div class="value">no metric of the category map yet</div>`;
   const metrics = scenario.metrics
     .map((metric: MetricRow) =>
-      valueHtml(metric.entry.id, metric.values.find((v) => v.arm === arm) ?? { arm }),
+      valueHtml(metric.entry.id, metric.values.find((v) => v.arm === arm) ?? { arm }, true),
     )
     .join('');
-  return metrics + (scenario.metrics.length === 0 ? '' : holdoutHtml(group)) + lossesHtml(group);
+  return name + metrics + holdoutHtml(group, true) + lossesHtml(group);
 }
 
 function headlines(model: SiteModel, emphasis: (text: string) => string): string[] {
@@ -201,23 +209,37 @@ function notCovered(model: SiteModel): Category[] {
   return model.categories.filter((row) => row.scenarios.length === 0).map((row) => row.category);
 }
 
-const CHART = { width: 640, height: 220, top: 20, bottom: 50, left: 40, bar: 28, gap: 6, groupGap: 28 };
+const CHART = {
+  width: 640,
+  height: 250,
+  legend: 24,
+  top: 44,
+  bottom: 44,
+  left: 40,
+  bar: 44,
+  gap: 10,
+  groupGap: 36,
+};
+
+/** An arm's fill in the chart: the first arm plain, every other one hatched as well as coloured. */
+function armFill(armIndex: number): string {
+  return armIndex === 0 ? ' class="bar arm-0"' : ` class="bar" fill="url(#hatch-${armIndex})"`;
+}
 
 /**
  * The landing page's one chart (the approver's choice 3): M-Q1 on the final snapshot, per covered
- * category's scenario, a bar per arm with its range as a whisker, its value as text and its `n` beneath.
- * The arms are told apart by label and pattern as well as colour.
+ * category's scenario, a bar per arm with its value above it, its range as a whisker from n = 2 and its
+ * `n` beneath. A legend names the arms; they are told apart by hatching as well as colour.
  */
 function chartSvg(model: SiteModel): string {
   const scenarios = model.categories.flatMap((row) =>
     row.scenarios.map((scenario) => ({ category: row.category, scenario })),
   );
   const plot = CHART.height - CHART.top - CHART.bottom;
-  const groupWidth = model.arms.length * (CHART.bar + CHART.gap);
+  const groupWidth = model.arms.length * (CHART.bar + CHART.gap) - CHART.gap;
   const width = Math.max(CHART.width, CHART.left + scenarios.length * (groupWidth + CHART.groupGap));
   const y = (share: number) => CHART.top + plot * (1 - share);
   const parts: string[] = [
-    // Each arm but the first also gets its own hatching: never told apart by colour alone.
     '<defs>',
     ...model.arms
       .slice(1)
@@ -229,6 +251,14 @@ function chartSvg(model: SiteModel): string {
       ),
     '</defs>',
   ];
+  let legendX = CHART.left;
+  model.arms.forEach((arm, armIndex) => {
+    parts.push(
+      `<rect${armFill(armIndex)} x="${legendX}" y="${CHART.legend - 11}" width="14" height="14"/>`,
+      `<text class="arm" x="${legendX + 20}" y="${CHART.legend}">${e(arm)}</text>`,
+    );
+    legendX += 20 + 7 * arm.length + 24;
+  });
   parts.push(
     `<line class="axis" x1="${CHART.left}" y1="${y(0)}" x2="${width}" y2="${y(0)}"/>`,
     `<text class="tick" x="${CHART.left - 4}" y="${y(1) + 4}" text-anchor="end">100%</text>`,
@@ -239,36 +269,33 @@ function chartSvg(model: SiteModel): string {
     const x0 = CHART.left + CHART.groupGap / 2 + index * (groupWidth + CHART.groupGap);
     const m_q1 = scenario.metrics.find((metric) => metric.entry.id === 'M-Q1');
     model.arms.forEach((arm, armIndex) => {
-      const x = x0 + armIndex * (CHART.bar + CHART.gap);
+      const middle = x0 + armIndex * (CHART.bar + CHART.gap) + CHART.bar / 2;
       const summary = m_q1?.values.find((value) => value.arm === arm)?.summary;
-      const label = `<text class="arm" x="${x + CHART.bar / 2}" y="${y(0) + 14}" text-anchor="middle">${e(arm)}</text>`;
       if (summary === undefined) {
-        parts.push(
-          label,
-          `<text class="n" x="${x + CHART.bar / 2}" y="${y(0) + 26}" text-anchor="middle">not measured</text>`,
-        );
+        parts.push(`<text class="n" x="${middle}" y="${y(0) + 14}" text-anchor="middle">not measured</text>`);
         return;
       }
       const top = y(summary.mean);
       parts.push(
-        `<rect class="bar${armIndex === 0 ? ' arm-0' : ''}"${armIndex === 0 ? '' : ` fill="url(#hatch-${armIndex})"`} x="${x}" y="${round(top)}" width="${CHART.bar}" height="${round(y(0) - top)}"/>`,
+        `<rect${armFill(armIndex)} x="${middle - CHART.bar / 2}" y="${round(top)}" ` +
+          `width="${CHART.bar}" height="${round(y(0) - top)}"><title>${e(`${arm}: ${formatFigure('M-Q1', summary.mean)}, n = ${summary.n}`)}</title></rect>`,
         ...(summary.n >= 2
           ? [
-              `<line class="whisker" x1="${x + CHART.bar / 2}" y1="${round(y(summary.max))}" x2="${x + CHART.bar / 2}" y2="${round(y(summary.min))}"/>`,
+              `<line class="whisker" x1="${middle}" y1="${round(y(summary.max))}" x2="${middle}" y2="${round(y(summary.min))}"/>`,
             ]
           : []),
-        `<text class="figure" x="${x + CHART.bar / 2}" y="${round(top - 4)}" text-anchor="middle">${e(formatFigure('M-Q1', summary.mean))}</text>`,
-        label,
-        `<text class="n" x="${x + CHART.bar / 2}" y="${y(0) + 26}" text-anchor="middle">n = ${summary.n}</text>`,
+        `<text class="figure" x="${middle}" y="${round(Math.min(top, y(summary.max)) - 4)}" text-anchor="middle">${e(formatFigure('M-Q1', summary.mean))}</text>`,
+        `<text class="n" x="${middle}" y="${y(0) + 14}" text-anchor="middle">n = ${summary.n}</text>`,
       );
     });
     parts.push(
-      `<text class="scenario" x="${x0 + groupWidth / 2}" y="${y(0) + 42}" text-anchor="middle">${e(`${category} · ${scenario.scenario.id}@${scenario.scenario.version}`)}</text>`,
+      `<text class="scenario" x="${x0 + groupWidth / 2}" y="${y(0) + 32}" text-anchor="middle">${e(`${category} · ${scenario.scenario.id}@${scenario.scenario.version}`)}</text>`,
     );
   });
   return (
-    `<svg xmlns="http://www.w3.org/2000/svg" class="chart" viewBox="0 0 ${width} ${CHART.height}" role="img" ` +
-    `aria-label="M-Q1 on the final snapshot, per arm and scenario">\n${parts.join('\n')}\n</svg>`
+    `<svg xmlns="http://www.w3.org/2000/svg" class="chart" viewBox="0 0 ${width} ${CHART.height}" ` +
+    `style="max-width: ${width}px" role="img" aria-label="M-Q1 on the final snapshot, per arm and scenario">\n` +
+    `${parts.join('\n')}\n</svg>`
   );
 }
 
@@ -290,12 +317,11 @@ export function landingPage(model: SiteModel): string {
     (gaps === '' ? '' : `<p class="gaps">${e(gaps)}</p>\n`) +
     `<figure>\n${chartSvg(model)}\n<figcaption>M-Q1: the share of public hidden tests passed on the final snapshot, ` +
     `per arm, with the range of its runs and their n.</figcaption>\n</figure>\n` +
-    '<table class="categories">\n<thead><tr><th scope="col">Category</th><th scope="col">Scenario</th>' +
-    '<th scope="col">Metric</th>' +
+    '<div class="scroll">\n<table class="categories">\n<thead><tr><th scope="col">Category</th>' +
     model.arms.map((arm) => `<th scope="col">${e(arm)}</th>`).join('') +
     '</tr></thead>\n<tbody>\n' +
     model.categories.map((row) => rowHtml(model, row)).join('') +
-    '</tbody>\n</table>\n' +
+    '</tbody>\n</table>\n</div>\n' +
     `<p class="legend">Each value is the mean of its runs, with its n; n = 1 is preliminary; a range is shown from ` +
     `n = 3. Deltas are against the baseline. ` +
     `<a href="method.html">How to read these results</a>.</p>\n` +
@@ -432,7 +458,9 @@ main { max-width: 72rem; margin: 0 auto; padding: 1rem; }
 table { border-collapse: collapse; width: 100%; }
 th, td { border-top: 1px solid var(--line); padding: 0.5rem; text-align: left; vertical-align: top; }
 .headline { font-size: 1.15rem; }
-.value { white-space: nowrap; }
+.value { margin-bottom: 0.25rem; }
+.metric, .scenario { font-weight: 600; }
+.scroll { overflow-x: auto; }
 .n, .range, .certainty, .delta, .holdout { font-size: 0.85rem; }
 .badge, .holdout { border: 1px solid var(--line); border-radius: 0.25rem; padding: 0 0.25rem; }
 .outcome { font-weight: 600; }
@@ -445,5 +473,4 @@ th, td { border-top: 1px solid var(--line); padding: 0.5rem; text-align: left; v
 .arm-1 { fill: var(--arm-1); }
 .arm-2 { fill: var(--arm-2); }
 .arm-3 { fill: var(--arm-3); }
-@media (max-width: 40rem) { table, tbody, tr, th, td { display: block; } }
 `;
