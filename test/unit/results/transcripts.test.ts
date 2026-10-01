@@ -145,6 +145,17 @@ describe('bench transcripts pack (REQ-RES-06 as amended in 1.22, task-047)', () 
     expect(readFileSync(first, 'utf8')).toBe(before);
     expect(existsSync(join(root, ARCHIVE))).toBe(false);
     expect(existsSync(join(root, 'releases'))).toBe(false);
+
+    // With another release's assets already there, only this release's directory goes, theirs stay
+    mkdirSync(join(root, 'releases', 'other-1'), { recursive: true });
+    writeFileSync(join(root, 'releases', 'other-1', 'transcripts.tar.gz'), 'theirs');
+    chmodSync(locked, 0o555);
+    try {
+      expect((await benchSite(root, 'transcripts', 'pack', EXECUTION)).code).toBe(1);
+    } finally {
+      chmodSync(locked, 0o755);
+    }
+    expect(readdirSync(join(root, 'releases'))).toEqual(['other-1']);
   }, 120_000);
 
   it('refuses what it cannot pack', async () => {
