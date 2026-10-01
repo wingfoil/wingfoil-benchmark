@@ -234,6 +234,7 @@ function executionSection(
       slices.length === 0 ? 'none' : slices.map((slice) => e(JSON.stringify(slice))).join('<br>'),
     ) +
     row('Harnesses', harnesses.length === 0 ? 'none' : harnesses.join('<br>')) +
+    row('Harness capabilities', capabilities(model)) +
     row('Approver policy', e(campaign.approver_policy)) +
     row('Scenarios', scenarios.join('<br>')) +
     row('Scoring image', scorers.length === 0 ? 'not recorded' : scorers.map(e).join('<br>')) +
@@ -248,6 +249,29 @@ function executionSection(
     '</tbody>\n</table>\n<h3>Spending</h3>\n' +
     `<p id="spending">${spending}</p>\n`
   );
+}
+
+/**
+ * Each arm's declared harness capabilities (REQ-FMT-10), as its runs recorded them: every distinct
+ * declaration, arms in the site's order, capabilities by name.
+ */
+function capabilities(model: SiteModel): string {
+  const lines = model.arms.flatMap((arm) => {
+    const declared = [
+      ...new Set(
+        model.records
+          .filter((record) => record.arm === arm && record.provides !== undefined)
+          .map((record) =>
+            Object.entries(record.provides ?? {})
+              .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+              .map(([name, offered]) => `${name} ${offered ? 'offered' : 'not offered'}`)
+              .join('; '),
+          ),
+      ),
+    ];
+    return declared.map((text) => `${e(arm)}: ${e(text)}`);
+  });
+  return lines.length === 0 ? 'none declared by the runs' : lines.join('<br>');
 }
 
 /** The model's groups and slices. */

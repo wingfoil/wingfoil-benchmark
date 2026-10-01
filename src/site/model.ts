@@ -29,6 +29,8 @@ export interface RunRecord {
   readonly arm: string;
   readonly manual?: { readonly sha256: string; readonly tokens: number };
   readonly harness?: { readonly tool: string; readonly commit: string };
+  /** What the arm declared of its harness (REQ-FMT-10), as the run recorded it. */
+  readonly provides?: Readonly<Record<string, boolean>>;
 }
 
 /** One arm's value of one metric: its summary and, but for the baseline, its comparison. */
@@ -83,6 +85,7 @@ const runRecord = z.object({
   scenario_hash: z.string(),
   manual: z.object({ sha256: z.string(), tokens: z.number() }).optional(),
   harness: z.object({ tool: z.string(), commit: z.string() }).optional(),
+  provides: z.record(z.string(), z.boolean()).optional(),
 });
 
 /** A `Value` (REQ-FMT-07) whose runs' figures are `figure`s. */
@@ -209,6 +212,7 @@ export function siteModel(root: string, execution: string): Result<SiteModel> {
           arm: group.arm,
           ...(record.value.manual === undefined ? {} : { manual: record.value.manual }),
           ...(record.value.harness === undefined ? {} : { harness: record.value.harness }),
+          ...(record.value.provides === undefined ? {} : { provides: record.value.provides }),
         });
       }
     }
