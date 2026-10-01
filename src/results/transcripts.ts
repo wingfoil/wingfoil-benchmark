@@ -178,14 +178,20 @@ async function packCopies(
   const relativeArchive = `${RELEASES}/${release}/${TRANSCRIPTS_ASSET}`;
   const archive = join(root, relativeArchive);
   const createdReleases = !existsSync(join(root, RELEASES));
+  const createdRelease = !existsSync(join(root, RELEASES, release));
+  /** What a failed pack takes back: the directories it created, and nothing else. */
+  const undo = () => {
+    rmSync(partial, { force: true });
+    if (createdReleases) rmSync(join(root, RELEASES), { recursive: true, force: true });
+    else if (createdRelease) rmSync(join(root, RELEASES, release), { recursive: true, force: true });
+  };
   mkdirSync(join(root, RELEASES, release), { recursive: true });
   // Written under another name, and renamed into place last, once its records are written: a failed tar
   // leaves no archive behind, and the archive in place always matches its records.
   const partial = `${archive}.partial`;
   const tar = await options.process.run('tar', [...REPRODUCIBLE, '-cf', partial, '-C', copies, ...[...paths].sort()]);
   if (tar.code !== 0) {
-    rmSync(partial, { force: true });
-    if (createdReleases) rmSync(join(root, RELEASES), { recursive: true, force: true });
+    undo();
     return fail([{ path: relativeArchive, message: `tar failed: ${tar.stderr.trim()}` }]);
   }
   const sha256 = createHash('sha256').update(readFileSync(partial)).digest('hex');
@@ -204,12 +210,16 @@ async function packCopies(
     const file = join(executionDir, relativeRun(run), 'run.json');
     const replaced = replaceFile(file, `${JSON.stringify(record, undefined, 2)}\n`);
     if (!replaced.ok) {
-      for (const done of written) {
-        replaceFile(join(executionDir, relativeRun(done), 'run.json'), originals.get(done) ?? '');
-      }
-      rmSync(partial, { force: true });
-      if (createdReleases) rmSync(join(root, RELEASES), { recursive: true, force: true });
-      return fail([{ path: `${relativeRun(run)}/run.json`, message: `cannot be written: ${replaced.issues[0]?.message ?? ''}` }]);
+      // A record that cannot be put back is named: it would point at an archive that is gone.
+      const unrestored = written.filter(
+        (done) => !replaceFile(join(executionDir, relativeRun(done), 'run.json'), originals.get(done) ?? '').ok,
+      );
+      undo();
+      return fail([
+        ...unrestored.map((done) => ({
+          path: `${relativeRun(done)}/run.json`,
+          message: 'cannot be put back: it records an archive this failed pack removed',
+        })),{ path: `${relativeRun(run)}/run.json`, message: `cannot be written: ${replaced.issues[0]?.message ?? ''}` }]);
     }
     written.push(run);
   }
@@ -235,7 +245,11 @@ function replaceFile(file: string, text: string): Result<true> {
     renameSync(next, file);
     return ok(true);
   } catch (error) {
-    rmSync(next, { force: true });
+    try {
+      rmSync(next, { recursive: true, force: true });
+    } catch {
+      // Nothing more can be done for a file beside the record: the failure is reported below.
+    }
     return fail([{ path: file, message: (error as Error).message }]);
   }
 }
