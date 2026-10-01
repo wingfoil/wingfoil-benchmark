@@ -433,3 +433,12 @@ Each round by a fresh, read-only agent, its findings fixed test-first.
     Matches.
 - The approval is the review decision of requirements 1.20 (REQ-CLI-09, REQ-RES-02, REQ-RES-03), recorded
   in its amendment's source line.
+
+### Delivery
+
+- `git merge --no-ff task/task-045-site-build-and-landing-page` on main (`a519b3e`), then `npm ci` and
+  `npm run build` on main.
+- `node_modules/.bin/wingfoil memory submit task-045-site-build-and-landing-page` on main (`c18708d`).
+  - Declared: `approved → done`, one commit `wf(task): submit <id>`.
+  - Observed: exit 0, 1 file, a diff limited to `status: approved` → `status: done`. Matches.
+- W11's "Ends with" is not checked here: its offline half follows task-047 (W11 decision 2).
