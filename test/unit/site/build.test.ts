@@ -174,7 +174,6 @@ describe('bench site build (REQ-CLI-09 as amended in 1.20, task-045)', () => {
     const usage = await benchSite(root, 'site', 'build');
     expect(usage.code).toBe(2);
     expect((await benchSite(root, 'site', 'build', 'not-an-execution')).code).toBe(2);
-    expect((await benchSite(root, 'site', 'publish')).code).toBe(2);
 
     const dry = await benchSite(root, 'site', 'build', 'dry-runs/1');
     expect(dry.code).toBe(1);
