@@ -1,7 +1,7 @@
 # Traceability (v0.1)
 
-**Version:** 1.1
-**Date:** 2026-09-29
+**Version:** 1.2
+**Date:** 2026-10-01
 **Status:** Approved
 **Traces to:** [06_features.md](../01_vision/06_features.md) 1.2, [07_sequencer.md](../01_vision/07_sequencer.md) 1.1, [09_experiment-design.md](../01_vision/09_experiment-design.md) 1.1, [scenarios/](scenarios/), [acceptance/](acceptance/), [requirements.md](requirements.md)
 
@@ -69,7 +69,7 @@ Only questions that are active in v0.1 are listed. Q-E2, Q-E3 (v0.2), G-A, G-B (
 | F5.3 run detail | J2.7, J4.2 | results.feature | REQ-CLI-08; REQ-RES-06 | W10 |
 | F5.4 finding note | J4.3 | results.feature | REQ-CLI-07; REQ-RES-05 | W10 |
 | F5.5 landing page | J1, J6.2 | results.feature | REQ-RES-02, 03; REQ-CLI-09 | W11 |
-| F5.6 manual publish | J2.8 | results.feature | REQ-RES-04; REQ-CLI-09 | W11 |
+| F5.6 manual publish | J2.8 | results.feature | REQ-RES-04, 06; REQ-CLI-09, 11 | W11 |
 | F5.8 method page | J5.4 | results.feature | REQ-RES-02 | W11 |
 | F6.1 S1 | — | scenarios.feature (outline) | scenarios/S1.md; REQ-FMT-04 | W7 |
 | F6.2 S2 | — | scenarios.feature (outline) | scenarios/S2.md; REQ-FMT-04 | W7 |
@@ -142,3 +142,12 @@ decision.
 
 Source: [task-039](../memory/task/task-039-continuity-metrics-and-regressions-from-the-seed.md), design
 confirmed by the approver on 2026-09-29; review decision of the approver at that task's review, 2026-09-29 (`f11113a`).
+
+## Amendment 1.2 (delivery, W11 task-047, 2026-10-01)
+
+F5.6 gains REQ-CLI-11 (`bench transcripts pack`, requirements 1.22) and REQ-RES-06, whose transcripts
+become release assets there (W11 plan-phase decision 4).
+
+Source: [task-047](../memory/task/task-047-manual-publish-and-transcript-assets.md), design confirmed by the
+approver on 2026-10-01.
+
