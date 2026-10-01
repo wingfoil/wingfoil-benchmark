@@ -1,4 +1,12 @@
-import { appendFileSync, cpSync, existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  appendFileSync,
+  cpSync,
+  existsSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -91,6 +99,19 @@ describe('the method page (F5.8, task-046)', () => {
     // baseline-docs ran no run, S1 and S8 are not in the execution: named, not linked
     expect(method).not.toContain('material/manual-baseline-docs.html');
     expect(method).not.toContain('material/directives-s8.html');
+
+    // A link with an anchor, or written from ./, to material that exists or does not
+    const prose = join(root, 'site-content', 'method.md');
+    appendFileSync(
+      prose,
+      '\n[w](material/manual-wingfoil.html#this-arm) [d](./material/manual-baseline-docs.html)\n',
+    );
+    expect((await benchSite(root, 'site', 'build', EXECUTION)).code).toBe(0);
+    const again = readFileSync(join(root, PAGE, 'method.html'), 'utf8');
+    expect(again).toContain('<a href="material/manual-wingfoil.html#this-arm">w</a>');
+    expect(again).toContain(
+      '<p>w d</p>'.replace('w d', '<a href="material/manual-wingfoil.html#this-arm">w</a> d'),
+    );
   }, 120_000);
 
   it('states the harness commits, the slices and the runs whose cost is a bound, the slices apart', async () => {
@@ -198,6 +219,13 @@ describe('the published material of S1 and S8', () => {
     const root = tempDir('bench-material-');
     cpSync(repoPath('scenarios/S8'), join(root, 'scenarios', 'S8'), { recursive: true });
     writeFileSync(join(root, 'scenarios', 'S8', '1.0', 'arms', 'README.md'), 'notes\n');
+    expect(() => publishedMaterial(root, [{ id: 'S8', version: '1.0' }])).not.toThrow();
+  });
+
+  it('leaves a dangling link under a scenario arms/ alone', () => {
+    const root = tempDir('bench-material-');
+    cpSync(repoPath('scenarios/S8'), join(root, 'scenarios', 'S8'), { recursive: true });
+    symlinkSync(join(root, 'nowhere'), join(root, 'scenarios', 'S8', '1.0', 'arms', 'gone'));
     expect(() => publishedMaterial(root, [{ id: 'S8', version: '1.0' }])).not.toThrow();
   });
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { renderMarkdown } from '../../../src/site/markdown.js';
+import { linkTargets, renderMarkdown } from '../../../src/site/markdown.js';
 
 const html = (text: string, blocks: Record<string, string> = {}) => renderMarkdown(text, { blocks }).html;
 
@@ -83,6 +83,20 @@ describe('the site Markdown subset (task-046)', () => {
   it('keeps a pipe inside a code span within its table cell', () => {
     expect(html('| a | b |\n|---|---|\n| `x|y` | z |\n')).toContain(
       '<tr><td><code>x|y</code></td><td>z</td></tr>',
+    );
+  });
+
+  it('lists the link targets as the converter reads them, and refuses a root-absolute link (second review)', () => {
+    expect(linkTargets('[a](material/x.html#top) [b](./material/y.html) `[c](z.html)`\n')).toEqual([
+      'material/x.html#top',
+      './material/y.html',
+    ]);
+    expect(html('[x](/etc/passwd)\n')).toBe('<p>x</p>\n');
+  });
+
+  it('splits a table row on a pipe after an unmatched backtick', () => {
+    expect(html("| a | b |\n|---|---|\n| it's a ` tick | two |\n")).toContain(
+      '<tr><td>it&#39;s a ` tick</td><td>two</td></tr>',
     );
   });
 });
