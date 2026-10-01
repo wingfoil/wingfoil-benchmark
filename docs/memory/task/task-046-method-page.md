@@ -271,3 +271,9 @@ Each round by a fresh, read-only agent; each finding fixed test-first.
 - The approval is the review decision of requirements 1.21 (REQ-RES-02), recorded in its amendment's source
   line.
 
+
+### Delivery
+
+- `git merge --no-ff task/task-046-method-page` on main, then `node_modules/.bin/wingfoil memory submit
+  task-046-method-page` on main: `approved → done`, one commit, 1 file, a diff limited to `status`. Matches.
+  No dependency changed. W11's wave check follows task-047 (W11 decision 2).
