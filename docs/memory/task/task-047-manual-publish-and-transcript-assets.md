@@ -188,3 +188,20 @@ All three confirmed by the approver as proposed, 2026-10-01.
 - `node_modules/.bin/wingfoil memory submit task-047-…` in the task's worktree, after the design (`4a03225`)
   and the approver's confirmation of its choices: `backlog → in-progress`, one commit, 1 file, a diff
   limited to `status`. Matches.
+
+### Review (in progress, 2026-10-01)
+
+- First review: probe readable through repo config, `GIT_CONFIG_*`, netrc; `site/.git` redirecting the push;
+  stray files pushed; ignore files changing the tree; a check/copy race; a non-atomic pack. Fixed in
+  `91cd2e2` (tests before it).
+- Second review: attributes file, fsmonitor and init template; a dangling link crashing the check; pack
+  scanning and tarring different bytes. Fixed in `ad55307` (tests before it).
+- **Third review, open — to fix next, test-first:**
+  1. a `.gitattributes` on the fetched `gh-pages` runs the maintainer's filter at `checkout` (can hang):
+     stop checking out, use `update-ref` / `reset --soft FETCH_HEAD` and stage into an empty index;
+  2. `GIT_ATTR_SOURCE` passes through and the system attributes file is not disabled: set
+     `GIT_ATTR_SOURCE: undefined`, `GIT_ATTR_NOSYSTEM: '1'` in `HOST_REPOSITORY`;
+  3. a write failure while recording leaves `.partial` and records out of step: try/catch, remove the
+     partial, turn throws into `fail`;
+  4. a symlinked `transcript.jsonl` has its target packed: refuse non-regular files;
+  5. tests for 1–4; FIFOs in `site/` refused (nit).
