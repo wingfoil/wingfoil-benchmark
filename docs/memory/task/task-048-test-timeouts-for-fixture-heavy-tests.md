@@ -136,3 +136,5 @@ A fresh, read-only agent reviewed the branch against bug-008 and the Design: no 
 - A test gap the Design accepts: the scoring tests' own timeouts are still sized for an idle machine; the
   three loaded runs cover them.
 
+- `node_modules/.bin/wingfoil memory submit task-048-…` after the notes: `in-progress → in-review`, one commit,
+  1 file, a diff limited to `status`. Matches.
