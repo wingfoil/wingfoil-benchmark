@@ -138,3 +138,9 @@ A fresh, read-only agent reviewed the branch against bug-008 and the Design: no 
 
 - `node_modules/.bin/wingfoil memory submit task-048-…` after the notes: `in-progress → in-review`, one commit,
   1 file, a diff limited to `status`. Matches.
+
+### Approval
+
+- `npx wingfoil memory approve task-048-… --reason "…"`, run by the approver in the task's worktree on
+  2026-10-01 (`1b84038`): `in-review → approved`, with the approver and the reason in `memory history`.
+  Matches. No requirement changed, so there is no review decision to record.
