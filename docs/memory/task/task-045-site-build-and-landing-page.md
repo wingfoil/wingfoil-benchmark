@@ -128,24 +128,191 @@ Out of scope:
 
 ## Acceptance criteria
 
-Classified in the design phase.
+Classified in the design phase. Everything here is new behaviour: no `site` module exists.
 
 - `results.feature` @F5.5 "The landing page answers the question at a glance": "harness, not model" with
   the model's name, a headline sentence and one chart comparing the arms, one row per category with the
-  delta per arm.
+  delta per arm. **red-first**
 - `results.feature` @F5.5 "Losses, ties and gaps are as visible as wins": a loss in D and a win in F with the
-  same prominence; A, B and G "not covered in this campaign".
+  same markup and weight; A, B and G "not covered in this campaign". **red-first**
 - `results.feature` @F5.5 "Preliminary results are labelled": a single-repetition category carries
-  `preliminary` and "n = 1"; hold-out results are marked.
-- REQ-RES-02: static HTML and CSS, no client framework, one page per category, the execution's pages
-  under `/<campaign-id>/<n>/`.
-- REQ-CLI-09: an execution that is unknown or not aggregated is refused, naming it.
-- REQ-NFR-05: the same aggregate gives the same site bytes; no date.
-- Nothing unpublishable reaches `site/`: no answer key, no hold-out content, no transcript.
+  `preliminary` and "n = 1"; hold-out results are marked. **red-first**
+- REQ-RES-02: static HTML and CSS, no script, one page per category, the execution's pages under
+  `site/<campaign-id>/<n>/`, another execution's pages left as they are. **red-first**
+- REQ-CLI-09: an execution that is unknown, a dry run, or not aggregated is refused, naming it; a scenario
+  of the aggregate missing from `scenarios/`, or whose hash differs from its runs', is refused. **red-first**
+- REQ-RES-03 as amended: the category map, the outcome of each comparison, the headline's grammar and the
+  chart follow the rules of the Design. **red-first**
+- Expected failures and other losses are shown as losses, with their reason. **red-first**
+- REQ-NFR-05: the same aggregate gives the same site bytes; no date. **red-first**
+- Nothing unpublishable reaches `site/`: no answer key, no hold-out content beyond its counts, no
+  transcript, no hold-out path. **red-first**
 
 ## Design
 
-<!-- Modules, interfaces, data formats touched; decisions taken and their reasons. -->
+Four findings shaped this design:
+
+- **The aggregate holds every number, but not the categories.** A group per scenario version, arm and model
+  holds each metric as a `Value` with its runs and `n` (REQ-FMT-07), `preliminary` when n = 1, its losses
+  with their reasons (expected failures among them), the hold-out as counts, and `break_even`. The
+  categories are the scenario's (`scenario.yaml`, `categories: { primary, secondary }`). The site reads them
+  from `scenarios/<id>/<version>/` with `loadScenario`, and checks `scenarioHash` against the
+  `scenario_hash` the runs recorded in `run.json`: a scenario changed since the runs is refused, not
+  silently mislabelled. W7's "the site reads categories from `aggregate.json`" is met this way, without
+  changing the aggregate.
+- **M-D1 and M-D2 are not in the aggregate, and nothing says which suites are defects.** S2's defect tests
+  are its `reports-1`–`reports-3` suites and its false report the `false-report` suite and a check
+  (task-033), but the scenario format has no key naming a suite's metric. M-Q1 on S2's final snapshot
+  includes the six defect tests; each suite's tally is in the aggregate.
+- **v0.1's covered categories each have one primary scenario:** C S1, D S2, E S8, F S3. Only S1 has
+  repetitions, so C is the only category with a range; D, E and F are n = 1 and preliminary.
+- **Metrics point both ways.** M-Q1 and M-F1 are better higher; M-K1, M-D3 and M-E1 are better lower. A
+  delta's sign alone never says who won.
+
+### The command (REQ-CLI-09 as amended in 1.20)
+
+```
+bench site build <campaign-id>/<n>
+```
+
+- `<campaign-id>/<n>` is an execution under `results/` holding `aggregate.json`. A dry run, an unknown
+  execution, or one not aggregated is refused (exit 1), naming it.
+- It writes `site/<campaign-id>/<n>/`, replaced whole, and `site/index.html` and `site/style.css`.
+  Another execution's directory under `site/` is left as it is, so its permanent URL keeps its pages.
+  `site/` is git-ignored: the site is rebuilt from the committed aggregates, and published by task-047.
+- It prints the pages written and the headline.
+
+### The pages (REQ-RES-02 as amended in 1.20)
+
+- `site/index.html`: a plain link page to the execution built last (`<meta http-equiv="refresh">` and a
+  link; no script).
+- `site/<campaign-id>/<n>/index.html`: the landing page.
+- `site/<campaign-id>/<n>/category-<c>.html`, one per category A–G. An uncovered category's page says so,
+  and which release plans it (from the experiment design's goals table, held as a constant).
+- `site/<campaign-id>/<n>/method.html`: the method page. This task writes a first version holding the rules
+  below; task-046 writes the rest.
+- `site/style.css`: one stylesheet. HTML is written by string templates with every value escaped. There is
+  no client framework and no script.
+
+### The landing page (REQ-RES-03 as amended in 1.20)
+
+In this order:
+
+1. "Harness, not model": the arms compared, and the model's name (`aggregate.json`'s `model`).
+2. The headline sentence (below) and its chart.
+3. One row per category A–G. A covered row shows, for each metric of the category's map, the baseline's
+   value and each other arm's value with its delta and outcome. An uncovered row reads "not covered in this
+   campaign".
+4. Every value carries its `n`; n = 1 carries the `preliminary` badge; n ≥ 3 shows the range (min–max).
+   A run that is a loss is counted as one (REQ-SCO-10), and an expected failure is named as one, with the
+   missing capability.
+5. Each scenario's hold-out final counts beside its public ones, marked "hold-out", or "hold-out not
+   scored".
+6. The campaign id, the execution, the runs' count, and links to the category pages and the method page.
+
+Wins, losses and ties share one markup: the same element, size and weight, told apart by a word ("better",
+"worse", "same") and a symbol, never by colour alone.
+
+### The category map
+
+| Category | Scenario (v0.1) | Metrics, in order | Better |
+|---|---|---|---|
+| C | S1 | M-Q1 on the final snapshot · M-K1 (EUR) | higher · lower |
+| D | S2 | M-Q1 on the final snapshot (the defect tests among its suites) · M-D3 | higher · lower |
+| E | S8 | M-E1 (violations, summed over the directive checks' steps) | lower |
+| F | S3 | M-F1 (share of decisions respected or revised) | higher |
+
+A category is covered when the execution has a group whose scenario's primary category it is. A scenario's
+secondary categories are listed on those categories' pages, and do not make a category covered. The map is
+a constant of the site module, stated on the method page.
+
+### Each comparison's outcome
+
+For each covered category, each metric of its map, and each arm but the baseline, against the baseline of
+the same scenario version and model:
+
+- the value is the mean of the runs' figures (a share for a tally), shown with the runs' range;
+- **better** or **worse** when the means differ, by the metric's direction; **same** when they are equal;
+- **beyond variance** is added only when both groups have n ≥ 3 and their ranges do not overlap
+  (experiment design §4.6); otherwise a difference is marked "within variance" (n ≥ 2) or `preliminary`
+  (n = 1);
+- a metric the group lacks reads "not measured", and is no comparison.
+
+### The headline
+
+Generated from the comparisons, and nothing else, one sentence per arm but the baseline, arms in order:
+
+> Against the baseline, **wingfoil** is better in 2, worse in 3 and the same in 1 of 6 comparisons across
+> categories C, D, E and F (preliminary: n = 1 in D, E and F).
+
+Wins and losses are named in the same sentence with the same weight. No adjective is chosen by the
+numbers. Categories not covered are named after it: "A, B and G are not covered in this campaign."
+
+### The chart
+
+One inline SVG, with no script: M-Q1 on the final snapshot, per covered category's scenario, one bar per arm
+with its range as a whisker and its `n` beneath. M-Q1 is the one metric every scenario has, on the same
+scale (0–100% of public hidden tests). Each bar carries its value as text, and the arms are told apart by
+label and pattern as well as colour.
+
+### Order and determinism (REQ-NFR-05)
+
+Categories A–G; arms with the baseline first, then by name; metrics in the map's order; runs as the
+aggregate lists them. Numbers are formatted by one function (shares to one decimal place, EUR to four).
+No date anywhere. The same aggregate and scenarios give the same bytes.
+
+### What never reaches `site/`
+
+The site reads only `aggregate.json`, the runs' `run.json` for the scenario hash, and each scenario's
+`scenario.yaml`. It never reads an oracle's files, the hold-out repository, or a transcript, so S2's answer
+key and the hold-out's content cannot be written. A test greps the built site for the hold-out's path and
+for each hold-out test's name.
+
+### Modules
+
+- `src/site/` (new; REQ-ARC-02: `cli` → `site` → `results`, `scenario`, `core`):
+  - `model.ts`: `siteModel(executionDir, scenariosDir)` reads the aggregate, the runs' hashes and the
+    scenarios, and returns the pages' data, or the refusals. Pure reading;
+  - `rules.ts`: `CATEGORY_MAP`, the comparison's outcome, the headline sentence;
+  - `render.ts`: the HTML of each page and the SVG chart, escaped; `style.css`;
+  - `build.ts`: writes `site/<id>/<n>/` (replaced), `site/index.html` and `site/style.css`.
+- `src/cli/site.ts` (new): `bench site build`. `src/cli/run.ts` routes it; `USAGE` gains the line.
+- `.gitignore` gains `site/`.
+- Tests:
+  - unit tests of the rules on hand-built values: each direction, a tie, n = 1, n ≥ 3 with and without
+    overlap, "not measured";
+  - the headline's grammar, with zero, one and several comparisons of each outcome;
+  - the model's refusals; the pages' escaping; the same bytes twice; another execution's directory left;
+  - `results.feature` @F5.5 ×3 through `main`, on stored executions of the T fixtures given categories,
+    scored with the scoring double and aggregated, with a declared loss in D and a win in F;
+  - `npm run test:bin`: `bench site build` through the built CLI.
+
+### Requirements 1.20
+
+- **REQ-CLI-09:** `bench site build`'s argument, its refusals, what it writes and leaves.
+- **REQ-RES-02:** the pages and their paths, `site/index.html`, no script, `site/` git-ignored.
+- **REQ-RES-03:** the category map, the comparison's outcome, the headline's grammar, the chart, the
+  markers.
+
+No ADR.
+
+### Choices to confirm
+
+1. **D's row is M-Q1 on S2's final snapshot and M-D3; M-D1 and M-D2 are not named metrics in v0.1.** The
+   defect tests are counted inside M-Q1, and each suite's tally (`reports-1`–`reports-3`,
+   `false-report`) is on D's page. This narrows W11 decision 3, which listed M-D1 for D. The method page
+   says so.
+   - *Alternative:* an optional `metric:` key on a scenario's oracle suite (REQ-FMT), S2's suites tagged
+     M-D1 and M-D2, and the site reading it. M-D1 is named, but the scenario format and S2's hash change
+     before calibration, and the aggregate's reader learns the tag.
+2. **A difference at n = 1 counts as better or worse in the headline,** marked `preliminary`; "beyond
+   variance" only at n ≥ 3 with ranges apart. In v0.1, D, E and F are n = 1, so they still speak, labelled.
+   - *Alternative:* a difference without n ≥ 3 counts as "no conclusion", not as a win or a loss. Stricter,
+     but v0.1's headline would then compare C alone.
+3. **The chart is M-Q1 per arm for each covered category's scenario,** with whiskers. It is the one metric
+   on one scale everywhere; each category's own metrics are in its row.
+   - *Alternative:* each category's first metric, normalised to the baseline (arm ÷ baseline). One bar per
+     category, but a ratio hides the units and fails when the baseline is 0 (M-E1, M-D3).
 
 ## Execution notes
 
