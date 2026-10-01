@@ -97,6 +97,22 @@ describe('bench site build (REQ-CLI-09 as amended in 1.20, task-045)', () => {
     expect(method).toContain('M-D1 and M-D2 are not reported apart in v0.1');
   }, 120_000);
 
+  it('counts the campaign model runs on the landing page, and the slices apart', async () => {
+    const { root, executionDir } = await siteExecution();
+    const file = join(executionDir, 'aggregate.json');
+    const aggregate = JSON.parse(readFileSync(file, 'utf8')) as {
+      groups: { model: string }[];
+      slices: unknown[];
+    };
+    aggregate.slices = [{ ...aggregate.groups[0], model: 'other-model' }];
+    writeFileSync(file, JSON.stringify(aggregate));
+    expect((await benchSite(root, 'site', 'build', EXECUTION)).code).toBe(0);
+    const landing = readFileSync(join(root, 'site', 'abcdef012345', '1', 'index.html'), 'utf8');
+    expect(landing).toContain(
+      'Campaign abcdef012345, execution 1: 6 runs of fake-model; 1 run of other models, reported apart.',
+    );
+  }, 120_000);
+
   it('gives the same bytes from the same aggregate, and leaves another execution pages as they are', async () => {
     const { root } = await siteExecution();
     expect((await benchSite(root, 'site', 'build', EXECUTION)).code).toBe(0);
@@ -165,6 +181,28 @@ describe('bench site build (REQ-CLI-09 as amended in 1.20, task-045)', () => {
     writeFileSync(aggregate, 'not json');
     expect((await benchSite(root, 'site', 'build', EXECUTION)).stderr).toContain(
       'results/abcdef012345/1/aggregate.json: cannot be read',
+    );
+
+    // An aggregate of another shape, or of another version
+    writeFileSync(aggregate, '{"aggregate_version":1}');
+    const shapeless = await benchSite(root, 'site', 'build', EXECUTION);
+    expect(shapeless.code).toBe(1);
+    expect(shapeless.stderr).toContain(
+      'results/abcdef012345/1/aggregate.json: is not an aggregate this site reads',
+    );
+    writeFileSync(
+      aggregate,
+      JSON.stringify({
+        aggregate_version: 2,
+        campaign: 'x',
+        execution: 1,
+        model: 'm',
+        groups: [],
+        slices: [],
+      }),
+    );
+    expect((await benchSite(root, 'site', 'build', EXECUTION)).stderr).toContain(
+      'has aggregate_version 2; this site reads version 1',
     );
 
     // An execution not aggregated

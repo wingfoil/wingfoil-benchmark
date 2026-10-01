@@ -120,4 +120,124 @@ describe('the pages, from a hand-built model (task-045)', () => {
     expect(c).toContain('loss: expected failure (missing workflow-engine)');
     expect(c).toContain('pointer 1/2, 2/2, 2/2');
   });
+
+  it('charts M-Q1 for every covered scenario, whatever its category map reads (E and F included)', () => {
+    const m = model();
+    const f: CategoryRow = {
+      category: 'F',
+      secondary: [],
+      scenarios: [
+        {
+          scenario: { id: 'S3', version: '1.0', primary: 'F', secondary: [] },
+          groups: [group('baseline'), group('wingfoil')],
+          metrics: [
+            { entry: CATEGORY_MAP.F[0] as MapEntry, values: [{ arm: 'baseline' }, { arm: 'wingfoil' }] },
+          ],
+        },
+      ],
+    };
+    const page = landingPage({ ...m, categories: [...m.categories, f] });
+    const chart = page.slice(page.indexOf('<svg '), page.indexOf('</svg>'));
+    // Two scenarios (C's S1 and F's S3), two arms: four bars, each with its figure; no "not measured"
+    expect(chart.match(/<rect class="bar/g)).toHaveLength(4);
+    expect(chart).not.toContain('not measured');
+    expect(chart).toContain('F · S3@1.0');
+  });
+
+  it('marks a comparison preliminary even when the arm itself has more than one run', () => {
+    const m = model();
+    const one = { runs: ['a'], values: [0.5] };
+    const three = { runs: ['d', 'e', 'f'], values: [0.8, 0.9, 1] };
+    const result = compare('higher', one, three);
+    const comparison = { category: 'C', metric: 'M-Q1' as const, arm: 'wingfoil', ...result };
+    const c = m.categories[0] as CategoryRow;
+    const scenario = c.scenarios[0] as CategoryRow['scenarios'][number];
+    const row: CategoryRow = {
+      ...c,
+      scenarios: [
+        {
+          ...scenario,
+          metrics: [
+            {
+              entry: CATEGORY_MAP.C[0] as MapEntry,
+              values: [
+                { arm: 'baseline', summary: summarize(one) },
+                { arm: 'wingfoil', summary: result.other, comparison },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    const page = landingPage({ ...m, categories: [row], comparisons: [comparison] });
+    expect(page).toContain(
+      '<span class="outcome" data-outcome="better">▲ better</span> <span class="certainty">preliminary</span>',
+    );
+  });
+
+  it('gives each hold-out value its n, and shows a note in place of a value', () => {
+    const m = model();
+    const c = m.categories[0] as CategoryRow;
+    const scenario = c.scenarios[0] as CategoryRow['scenarios'][number];
+    const row: CategoryRow = {
+      ...c,
+      scenarios: [
+        {
+          ...scenario,
+          metrics: [
+            {
+              entry: CATEGORY_MAP.C[0] as MapEntry,
+              values: [
+                { arm: 'baseline', note: 'not comparable: r1 did not reach step 2' },
+                { arm: 'wingfoil' },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    const page = landingPage({ ...m, categories: [row] });
+    expect(page).toContain(
+      '<span class="holdout">hold-out</span> 1/2, 2/2, 2/2 <span class="n">n = 3</span>',
+    );
+    expect(page).toContain('<span class="metric">M-Q1</span> not comparable: r1 did not reach step 2</div>');
+  });
+
+  it('escapes every value from the aggregate or a scenario on every page', () => {
+    const m = model();
+    const hostile = '<b>&"x\'';
+    const escaped = '&lt;b&gt;&amp;&quot;x&#39;';
+    const bad = group(hostile, {
+      losses: [{ run: `abcdef012345/1/runs/S1@1.0/${hostile}/m/r1`, reason: hostile }],
+    });
+    const c = m.categories[0] as CategoryRow;
+    const scenario = c.scenarios[0] as CategoryRow['scenarios'][number];
+    const row: CategoryRow = {
+      ...c,
+      scenarios: [
+        { ...scenario, scenario: { ...scenario.scenario, id: hostile }, groups: [bad], metrics: [] },
+      ],
+    };
+    const odd: SiteModel = {
+      ...m,
+      model: hostile,
+      campaign: hostile,
+      arms: [hostile],
+      categories: [row],
+      slices: [],
+    };
+    for (const page of [landingPage(odd), categoryPage(odd, row)]) {
+      expect(page).not.toContain('<b>');
+      expect(page).toContain(escaped);
+    }
+  });
+
+  it('gives every arm a fill, however many there are', () => {
+    const m = model();
+    const arms = ['baseline', 'a1', 'a2', 'a3', 'a4', 'a5'];
+    const page = landingPage({ ...m, arms });
+    for (const index of [1, 2, 3, 4, 5]) {
+      expect(page).toMatch(new RegExp(`<pattern id="hatch-${index}"[^>]*><rect class="arm-${index % 4}"`));
+    }
+  });
 });

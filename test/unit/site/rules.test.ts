@@ -105,11 +105,11 @@ describe('reading a metric from a group', () => {
           id: 'a',
           kind: 'ast',
           steps: [
-            { step: 1, violations: { n: 2, runs: ['r1', 'r2'], values: [1, 0] } },
-            { step: 2, violations: { n: 1, runs: ['r2'], values: [2] } },
+            { step: 1, violations: { n: 2, runs: ['r1', 'r2'], values: [1, 0] }, not_reached: [] },
+            { step: 2, violations: { n: 1, runs: ['r2'], values: [2] }, not_reached: [] },
           ],
         },
-        { id: 'b', kind: 'content', steps: [{ step: 1 }] },
+        { id: 'b', kind: 'content', steps: [{ step: 1, not_reached: [] }] },
       ],
     },
   } as unknown as Group;
@@ -122,8 +122,48 @@ describe('reading a metric from a group', () => {
     expect(readMetric('M-K1', group)).toEqual({ runs: ['r1', 'r2'], values: [0.1, 0.3] });
   });
 
-  it('reads M-E1 as each run violations, summed over every directive check step it reached', () => {
+  it('reads M-E1 as each run violations, summed over every step of its directive checks (ast, dependencies)', () => {
     expect(readMetric('M-E1', group)).toEqual({ runs: ['r1', 'r2'], values: [1, 2] });
+  });
+
+  it('names the runs that did not reach a directive check step: M-E1 is not comparable for them', () => {
+    const lost = {
+      ...group,
+      metrics: {
+        ...group.metrics,
+        checks: [
+          {
+            id: 'a',
+            kind: 'dependencies',
+            steps: [
+              { step: 1, violations: { n: 2, runs: ['r1', 'r2'], values: [1, 0] }, not_reached: [] },
+              { step: 2, violations: { n: 1, runs: ['r2'], values: [2] }, not_reached: ['r1'] },
+            ],
+          },
+        ],
+      },
+    } as unknown as Group;
+    expect(readMetric('M-E1', lost)).toEqual({
+      runs: ['r2'],
+      values: [2],
+      unreached: [{ run: 'r1', step: 2 }],
+    });
+    // A directive check no run reached still makes M-E1 not comparable, never "not measured"
+    const none = {
+      ...group,
+      metrics: {
+        ...group.metrics,
+        checks: [{ id: 'a', kind: 'ast', steps: [{ step: 1, not_reached: ['r1', 'r2'] }] }],
+      },
+    } as unknown as Group;
+    expect(readMetric('M-E1', none)).toEqual({
+      runs: [],
+      values: [],
+      unreached: [
+        { run: 'r1', step: 1 },
+        { run: 'r2', step: 1 },
+      ],
+    });
   });
 
   it('reads a metric the group lacks as not measured', () => {
@@ -181,5 +221,8 @@ describe('numbers', () => {
     expect(formatDelta('M-F1', 0.25)).toBe('+25.0 pp');
     expect(formatDelta('M-K1', 0)).toBe('±0.0000 EUR');
     expect(formatDelta('M-D3', 2)).toBe('+2');
+    // A difference that rounds to nothing is shown with enough digits to be seen
+    expect(formatDelta('M-Q1', 0.0004)).toBe('+0.040 pp');
+    expect(formatDelta('M-K1', -0.00002)).toBe('−0.000020 EUR');
   });
 });

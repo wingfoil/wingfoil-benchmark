@@ -302,6 +302,8 @@ describe('results.feature', () => {
     expect(page.match(/<svg /g)).toHaveLength(1);
     const chart = page.slice(page.indexOf('<svg '), page.indexOf('</svg>'));
     for (const arm of ['baseline', 'wingfoil']) expect(chart).toContain(`>${arm}<`);
+    // a bar per arm for each of the three covered categories' scenarios, F's included
+    expect(chart.match(/<rect class="bar/g)).toHaveLength(6);
 
     // And it shows one row per category, with the delta per arm
     for (const category of ['A', 'B', 'C', 'D', 'E', 'F', 'G']) expect(rowOf(page, category)).not.toBe('');
