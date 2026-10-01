@@ -101,7 +101,7 @@ describe('the built bench command', () => {
     const { status, stderr } = bench();
     expect(status).toBe(2);
     expect(stderr).toMatch(
-      /^usage: bench campaign validate <file>\n\s+bench campaign estimate <file>\n\s+bench campaign run <file> \[--allow-spending\]\n\s+bench scenario validate <id>@<version> \[--holdout <path>\]\n\s+bench scenario dry-run <id>@<version> --arm <arm> \[--model <id>\] \[--allow-spending\]\n\s+bench score <campaign-id>\/<n>\|dry-runs\/<n> \[--holdout <path>\]\n\s+bench run show <run> \[--full\]\n\s+bench run compare <run> <run>\n\s+bench finding <campaign-id>\/<n> --scenario <id>@<version> --metric <metric> --arms <arm>,… --as bug\|decision-log\n\s+bench site build <campaign-id>\/<n>\n$/,
+      /^usage: bench campaign validate <file>\n\s+bench campaign estimate <file>\n\s+bench campaign run <file> \[--allow-spending\]\n\s+bench scenario validate <id>@<version> \[--holdout <path>\]\n\s+bench scenario dry-run <id>@<version> --arm <arm> \[--model <id>\] \[--allow-spending\]\n\s+bench score <campaign-id>\/<n>\|dry-runs\/<n> \[--holdout <path>\]\n\s+bench run show <run> \[--full\]\n\s+bench run compare <run> <run>\n\s+bench finding <campaign-id>\/<n> --scenario <id>@<version> --metric <metric> --arms <arm>,… --as bug\|decision-log\n\s+bench site build <campaign-id>\/<n>\n\s+bench site publish \[--remote <name>\]\n\s+bench transcripts pack <campaign-id>\/<n>\n$/,
     );
   });
 

@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -6,7 +7,13 @@ import type { AgentPort } from '../../src/agents/index.js';
 import { main } from '../../src/cli/index.js';
 import { gitCli, systemProcess } from '../../src/core/index.js';
 import { aggregatedExecution, WINGFOIL_COMMIT } from '../support/finding-fixture.js';
-import { benchSite, siteExecution } from '../support/site-fixture.js';
+import {
+  benchPublish,
+  benchSite,
+  probeSaying,
+  publishableSite,
+  siteExecution,
+} from '../support/site-fixture.js';
 import { localScoringDocker } from '../support/local-scoring.js';
 import { repoPath } from '../support/paths.js';
 import { referenceFiles } from '../support/reference.js';
@@ -378,6 +385,53 @@ describe('results.feature', () => {
     expect(method).toContain('<th scope="row">Approver policy</th><td>v1</td>');
     expect(method).toContain('<th scope="row">Budget ceiling</th><td>20 EUR</td>');
   });
+
+  it('@F5.6 Publishing is explicit', async () => {
+    // Given the site was built from a scored campaign
+    const { root, bare } = await publishableSite();
+    // When the maintainer does not request publishing — building again, and every other command it ran
+    expect((await benchSite(root, 'site', 'build', EXECUTION)).code).toBe(0);
+
+    // Then nothing is published: the remote holds no branch at all
+    expect(execFileSync('git', ['for-each-ref'], { cwd: bare, encoding: 'utf8' })).toBe('');
+  }, 120_000);
+
+  it('@F5.6 Publishing deploys exactly the built site', async () => {
+    // Given the site was built from a scored campaign
+    const { root, bare, executionDir } = await publishableSite();
+    // When the maintainer requests publishing — the repository public, as the probe says
+    const published = await benchPublish(root, probeSaying(true), 'site', 'publish');
+    expect(published.code, published.stderr).toBe(0);
+
+    // Then the built site is deployed to GitHub Pages: gh-pages holds exactly site/
+    const files = execFileSync('git', ['ls-tree', '-r', '--name-only', 'gh-pages'], {
+      cwd: bare,
+      encoding: 'utf8',
+    })
+      .trim()
+      .split('\n');
+    expect(files).toEqual(Object.keys(snapshotTree(join(root, 'site'))).sort());
+    const landing = execFileSync('git', ['show', 'gh-pages:abcdef012345/1/index.html'], {
+      cwd: bare,
+      encoding: 'utf8',
+    });
+    expect(landing).toBe(readFileSync(join(root, 'site', 'abcdef012345', '1', 'index.html'), 'utf8'));
+
+    // And the published pages show the same numbers as the results store for that campaign: TD's M-Q1
+    const aggregate = JSON.parse(readFileSync(join(executionDir, 'aggregate.json'), 'utf8')) as {
+      groups: {
+        scenario: string;
+        arm: string;
+        metrics: { m_q1: { final: { m_q1: { values: { passed: number; total: number }[] } } } };
+      }[];
+    };
+    for (const arm of ['baseline', 'wingfoil']) {
+      const group = aggregate.groups.find((g) => g.scenario === 'TD' && g.arm === arm);
+      const tally = group?.metrics.m_q1.final.m_q1.values[0];
+      const share = `${(((tally?.passed ?? 0) / (tally?.total ?? 1)) * 100).toFixed(1)}%`;
+      expect(rowOf(landing, 'D'), arm).toContain(`<span class="metric">M-Q1</span> ${share}`);
+    }
+  }, 120_000);
 
   it('@F5.1 Dry runs never enter campaign results', async () => {
     // Given dry runs and campaign runs of S1 exist — T3 standing in for S1
