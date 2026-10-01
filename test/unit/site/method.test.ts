@@ -104,14 +104,12 @@ describe('the method page (F5.8, task-046)', () => {
     const prose = join(root, 'site-content', 'method.md');
     appendFileSync(
       prose,
-      '\n[w](material/manual-wingfoil.html#this-arm) [d](./material/manual-baseline-docs.html)\n',
+      '\n[w](material/manual-wingfoil.html#this-arm) [d](./material/manual-baseline-docs.html) [e](material/#x)\n',
     );
     expect((await benchSite(root, 'site', 'build', EXECUTION)).code).toBe(0);
     const again = readFileSync(join(root, PAGE, 'method.html'), 'utf8');
     expect(again).toContain('<a href="material/manual-wingfoil.html#this-arm">w</a>');
-    expect(again).toContain(
-      '<p>w d</p>'.replace('w d', '<a href="material/manual-wingfoil.html#this-arm">w</a> d'),
-    );
+    expect(again).toContain('<p><a href="material/manual-wingfoil.html#this-arm">w</a> d e</p>');
   }, 120_000);
 
   it('states the harness commits, the slices and the runs whose cost is a bound, the slices apart', async () => {

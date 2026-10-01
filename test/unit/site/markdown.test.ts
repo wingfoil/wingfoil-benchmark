@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { linkTargets, renderMarkdown } from '../../../src/site/markdown.js';
+import { renderMarkdown } from '../../../src/site/markdown.js';
 
 const html = (text: string, blocks: Record<string, string> = {}) => renderMarkdown(text, { blocks }).html;
 
@@ -71,7 +71,7 @@ describe('the site Markdown subset (task-046)', () => {
     expect(html('[x](//evil.example/a)\n')).toBe('<p>x</p>\n');
     expect(
       renderMarkdown('[m](material/manual-x.html) and [n](material/y.html)\n', {
-        links: { 'material/manual-x.html': null },
+        resolve: (target) => (target === 'material/manual-x.html' ? null : undefined),
       }).html,
     ).toBe('<p>m and <a href="material/y.html">n</a></p>\n');
   });
@@ -86,11 +86,19 @@ describe('the site Markdown subset (task-046)', () => {
     );
   });
 
-  it('lists the link targets as the converter reads them, and refuses a root-absolute link (second review)', () => {
-    expect(linkTargets('[a](material/x.html#top) [b](./material/y.html) `[c](z.html)`\n')).toEqual([
-      'material/x.html#top',
-      './material/y.html',
-    ]);
+  it('resolves each link target as it renders it, and refuses a root-absolute link (third review)', () => {
+    const seen: string[] = [];
+    const resolve = (target: string) => {
+      seen.push(target);
+      return target.startsWith('material/gone') ? null : undefined;
+    };
+    // An unmatched backtick in an earlier block does not hide a later link
+    expect(
+      renderMarkdown('A stray ` tick.\n\nSee [m](material/gone.html) and [k](kept.html) `code`.\n', {
+        resolve,
+      }).html,
+    ).toBe('<p>A stray ` tick.</p>\n<p>See m and <a href="kept.html">k</a> <code>code</code>.</p>\n');
+    expect(seen).toEqual(['material/gone.html', 'kept.html']);
     expect(html('[x](/etc/passwd)\n')).toBe('<p>x</p>\n');
   });
 
