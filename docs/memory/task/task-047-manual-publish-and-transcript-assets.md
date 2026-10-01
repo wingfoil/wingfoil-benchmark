@@ -180,3 +180,11 @@ All three confirmed by the approver as proposed, 2026-10-01.
 
 <!-- What happened while building: deviations, blockers, follow-ups (filed as elements, never left
      here). For every `wingfoil` command: declared vs observed behaviour. -->
+
+### WingFoil commands (declared vs observed)
+
+- `npx wingfoil memory approve task-047-… --reason "…"`, by the approver on main on 2026-10-01 (`2f19583`):
+  `pending → backlog`. Matches.
+- `node_modules/.bin/wingfoil memory submit task-047-…` in the task's worktree, after the design (`4a03225`)
+  and the approver's confirmation of its choices: `backlog → in-progress`, one commit, 1 file, a diff
+  limited to `status`. Matches.
