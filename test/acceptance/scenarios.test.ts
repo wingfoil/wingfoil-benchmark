@@ -481,5 +481,7 @@ describe('scenarios.feature', () => {
         expect(scored.stdout).toMatch(new RegExp(`^${id}@1\\.0 ${arm} fake-model r1: step 01 `));
       }
     }
-  }, 600_000); // The hidden tests really run, every suite on every snapshot of every arm: minutes (173 s alone with S1–S3).
+    // The hidden tests really run, every suite on every snapshot of every arm: minutes — 173 s alone with
+    // S1–S3 on an idle machine, 634 s with S1–S8 at load average 50 (bug-008, task-048).
+  }, 1_200_000);
 });
