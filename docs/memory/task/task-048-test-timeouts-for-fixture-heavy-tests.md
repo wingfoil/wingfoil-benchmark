@@ -55,3 +55,15 @@ Classified in the design phase.
 
 <!-- What happened while building: deviations, blockers, follow-ups (filed as elements, never left
      here). For every `wingfoil` command: declared vs observed behaviour. -->
+
+### WingFoil commands (declared vs observed)
+
+- `npx wingfoil memory add --type bug --title "…"` (`cad94cd`) and `npx wingfoil memory add --type task
+  --title "…"` (`ff0e1cc`), on main.
+  - Declared: one commit `wf(<type>): add <id>` and one file from the template, `status: draft`.
+  - Observed: exit 0 each, that commit with 1 file. Matches. The bug's scaffold says `memory submit`
+    "replaces these placeholder comments with real content"; the content was written by hand first
+    (`a7e6022`), so nothing was left for it to replace.
+- `npx wingfoil memory submit` for bug-008 (`1334317`) and task-048 (`a5e43b7`).
+  - Declared: `draft → pending`, one commit each.
+  - Observed: exit 0, 1 file each, a diff limited to `status: draft` → `status: pending`. Matches.
