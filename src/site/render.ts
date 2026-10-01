@@ -463,6 +463,8 @@ body { margin: 0; background: var(--paper); color: var(--ink); font: 16px/1.5 sy
 main { max-width: 72rem; margin: 0 auto; padding: 1rem; }
 table { border-collapse: collapse; width: 100%; }
 th, td { border-top: 1px solid var(--line); padding: 0.5rem; text-align: left; vertical-align: top; }
+td { overflow-wrap: anywhere; }
+pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 .headline { font-size: 1.15rem; }
 .value { margin-bottom: 0.25rem; }
 .metric, .scenario { font-weight: 600; }
