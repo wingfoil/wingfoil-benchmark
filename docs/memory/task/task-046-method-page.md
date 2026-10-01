@@ -81,19 +81,126 @@ Out of scope:
 
 ## Acceptance criteria
 
-Classified in the design phase.
+Classified in the design phase. Everything here is new behaviour: task-045's `method.html` holds only the
+site's reporting rules.
 
 - `results.feature` @F5.8 "The method page explains how to read the results": the arms, the controls, the
   run protocol, the approver policy, the validity threats, the pins and the budget, in plain language.
-- Every statement of rel-v0-1's "W11 (F5.8)" lists (W2–W10) and task-045's rules is on the page.
-- The execution's pins and budget are read from its files, not written by hand.
-- The operating manuals, the baseline-docs table, S8's directives and `NOTICE.md` are published; S2's
-  answer key and the hold-out's content are not.
-- REQ-NFR-05: the same inputs give the same bytes; no date.
+  **red-first**
+- Every statement of rel-v0-1's "W11 (F5.8)" lists (W2–W10) and task-045's rules is on the page, each found
+  by its anchor. **red-first**
+- The execution's pins and budget are read from its files, not written by hand. **red-first**
+- The operating manuals, the baseline-docs table, S8's directives and `NOTICE.md` with its two licence texts
+  are published; a manual or a directive that differs from what the runs recorded is refused; S2's answer
+  key and the hold-out's content are not published. **red-first**
+- REQ-NFR-05: the same inputs give the same bytes; no date. **red-first**
 
 ## Design
 
-<!-- Modules, interfaces, data formats touched; decisions taken and their reasons. -->
+Three findings shaped this design:
+
+- **Most of the page does not change with an execution.** The arms, the controls, the protocol, the
+  approver policy, the threats, each metric's rule and the W2–W10 statements are the benchmark's method. Only
+  the pins, the budget and the spending are the execution's: they are in its `campaign.yaml` (the agent and
+  its version, the model and the slices' models, the harnesses and their commits, the approver policy, the
+  caps, the budget, the rate) and in its runs' `run.json` and `score.json` (each run's harness commit,
+  scenario hash, manual's SHA-256 and tokens, the scorer image), and its spending in `aggregate.json`.
+- **What the page publishes is Markdown already:** the three manuals (`arms/<arm>/manual.md`), S8's four
+  directives (`scenarios/S8/1.0/arms/wingfoil/.wingfoil/directives/custom/*.md`), `NOTICE.md` (S1's
+  `oracle/licenses/`). The licence texts are plain text.
+- **What the runs recorded can be checked.** `run.json` records each manual's SHA-256 (REQ-RUN-12); the
+  scenario hash covers S8's directives and S1's `NOTICE.md`. A manual changed since the runs is refused, as
+  task-045 refuses a changed scenario.
+
+### The prose: `site-content/method.md`
+
+The method's prose is one Markdown file, versioned in the repository beside the code (`site-content/`,
+not `site/`, which is git-ignored output). It is written for a non-technical reader, with a section per
+subject and an anchor per statement:
+
+1. **What is compared:** harness, not model; the arms (experiment design §2), what baseline-docs controls
+   (T3) and the baseline-docs table (task-015's "same information" table, with its source).
+2. **How a run goes:** the protocol (§3): one container per run, fresh sessions per step, the neutral
+   approver and its classifier (dl-004), the decision always the approver's and the agent only executing it
+   (REQ-RUN-17), caps (a session may run one turn past the cost cap; how a killed step is counted;
+   `step_tokens` checked between invocations), web use seen only through `WebFetch`/`WebSearch`
+   (REQ-RUN-10).
+3. **What is measured:** each metric in plain words, with its rules from W6–W10 (adr-004's counting, a
+   hold-out result, M-Q2's rule sets and files measured, the checks and their four kinds, content checks on
+   added lines, the syntactic rules' limits, M-F1's rows and recorded revisions, M-F2 a reading, M-D3 from
+   the seed, M-K4's rules, M-R1–M-R3 and their limits, a final not reached is a loss, expected failures and
+   each harness's gaps).
+4. **How to read the results:** task-045's rules (the category map, the comparisons, beyond variance, the
+   headline, M-E1 not comparable, M-D1/M-D2 not apart), the aggregate's rules (every value with its runs and
+   `n`), a finding note and that one is filed in WingFoil by hand.
+5. **What could be wrong:** the validity threats T1–T14 (§5), each with its mitigation.
+6. **This execution:** generated (below).
+7. **Published material:** links to the pages below.
+
+The build reads the file and renders it with a small Markdown converter of the subset the file uses:
+headings with `{#anchor}`, paragraphs, lists, tables, inline code, emphasis, links. Every text node is
+escaped. The same converter renders the manuals, the directives and `NOTICE.md`.
+
+### Generated: "This execution"
+
+From the execution's files, never by hand:
+
+- **Pins:** the agent and its version; the campaign's model and each slice's; each harness with its version
+  and the distinct commits its runs recorded; the approver policy; the scenarios with their versions and
+  hashes; the scorer image(s) the scores record; the arms with their manuals' SHA-256 and tokens.
+- **Budget:** the caps (`step_time_s`, `step_tokens`, `run_cost_eur`), `warn_eur` and `ceiling_eur`, and
+  the rate `usd_to_eur`.
+- **Spending:** the execution's total cost in EUR (the sum of its runs' M-K1, with the runs whose cost is a
+  bound named), and its runs' count, slices apart.
+
+### The published material
+
+Under `site/<campaign-id>/<n>/material/`, linked from the method page:
+
+- `manual-<arm>.html`, one per arm of the execution; refused when `arms/<arm>/manual.md`'s SHA-256 differs
+  from the one its runs recorded;
+- `directives-s8.html`: S8's four directives, when S8 is in the execution;
+- `notice-s1.html`, `licence-apache-2.0.html`, `licence-bsd-3-clause-ietf.html`, when S1 is in it.
+
+Nothing else of a scenario's `oracle/` or of the hold-out is read.
+
+### Keeping the page in step
+
+A test lists every anchor the method page must hold, each with its source (a requirement, an ADR, a
+decision-log, or a wave's "Due before" line in rel-v0-1). A statement removed from `method.md`, or one the
+list adds, fails it. The same test checks each anchor is unique.
+
+### Modules
+
+- `site-content/method.md` (new).
+- `src/site/markdown.ts` (new): the converter, escaping every text.
+- `src/site/method.ts` (new): reads `method.md`, the execution's pins and budget, and the published
+  material, with the refusals; returns the method page and the material pages. `render.ts`'s `methodPage`
+  is replaced by it; `build.ts` writes `material/`.
+- Tests: the converter (each construct, escaping, an unknown construct as text); the generated section on
+  the site fixture; the material pages and the refusals; @F5.8 through `main`; the anchors' list; the same
+  bytes twice.
+
+### Requirements 1.21
+
+- **REQ-RES-02:** the method page's sections, the generated "This execution", the material pages, the
+  manual refused when it differs.
+
+No ADR.
+
+### Choices to confirm
+
+1. **The prose lives in `site-content/method.md`, rendered by a small converter of its own,** which also
+   renders the manuals, directives and `NOTICE.md`. The method reads as a document and changes as one.
+   - *Alternative A:* a pinned Markdown package (for example `marked`) as a runtime dependency: less code,
+     but a new dependency whose HTML options must be set so that nothing passes unescaped.
+   - *Alternative B:* the prose as HTML strings in TypeScript, the published files shown as preformatted
+     text: no converter, but the method buried in code.
+2. **The material gets pages of its own under `material/`,** linked from the method page, rather than inline:
+   the method page stays readable, and each manual can be read whole.
+   - *Alternative:* everything inline on one long method page.
+3. **A test pins the list of anchors and their sources:** a statement owed by a wave cannot silently drop.
+   - *Alternative:* the test checks a few key phrases only; the list lives in this task's notes.
 
 ## Execution notes
 
