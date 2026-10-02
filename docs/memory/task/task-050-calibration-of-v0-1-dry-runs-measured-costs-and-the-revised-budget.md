@@ -178,3 +178,4 @@ campaign's file is plan-003 step 5's.
   steps 0.4117 (30 turns, 197 s), 0.6142 (19 turns, 319 s), 0.3749 (17 turns, 288 s), 0.1820 USD (14 turns,
   60 s); scored: **final 135/135, hold-out 33/33**, the same per-step tallies as the baseline. No token stored.
   Stage 1 spent 4.4735 €; the 5.52 € left of the ceiling cover the wingfoil dry run's 4 € cap, so it starts.
+- dry run 2 (failed) scored: steps 12/12, 108/108, 108/108 (step 03's snapshot taken after the api_error), step 04 and final **not reached**.
