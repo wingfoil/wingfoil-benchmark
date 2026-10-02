@@ -783,7 +783,7 @@ describe('runs in a real container', () => {
         ),
       ).toBe(true);
       expect(readFileSync(join(run('wingfoil'), '.wingfoil', 'dna.yaml'), 'utf8')).toMatch(
-        /name: Benchmark Approver\n\s+email: approver@benchmark\.localhost\n\s+roles:\n\s+- approver/,
+        /name: Benchmark Approver\n\s+email: approver@benchmark\.localhost\n\s+roles: \[approver\]/,
       );
       // …and absent from the baseline arm, which ran the same scenario.
       expect(existsSync(join(run('baseline'), '.wingfoil'))).toBe(false);
@@ -816,9 +816,14 @@ describe('runs in a real container', () => {
         readFileSync(join(root, 'arms', 'baseline-docs', 'manual.md'), 'utf8'),
       );
 
-      // F2.7 (task-049): the manual's sequence works against v0.2.2 — submitting a document whose body is
-      // not committed is refused by its write guard, and the manual's "commit that file, then submit" is not.
-      expect(readFileSync(join(run('wingfoil'), 'guard.txt'), 'utf8')).toContain('refusing to commit');
+      // F2.7 (task-049): the manual's sequence works against v0.2.2 — the document's body written, then
+      // `submit`, which carries it (only `approve`, `reject` and `deprecate` refuse uncommitted changes).
+      expect(git('wingfoil', 'show', '--format=%s', '--stat', 'HEAD~3')).toMatch(
+        /^wf\(decision-log\): submit dl-002-orders-are-cancelled-not-deleted\n/,
+      );
+      expect(git('wingfoil', 'show', 'HEAD~3', '--', 'docs/memory/decision-log')).toContain(
+        '+A cancelled order keeps its history.',
+      );
 
       // REQ-RUN-17: the agent's approval, as the declared member, accepted by WingFoil.
       const approval = git('wingfoil', 'log', '--grep=approve dl-002', '--format=%an <%ae>%n%b');
@@ -829,7 +834,6 @@ describe('runs in a real container', () => {
         'step 01',
         'wf(decision-log): approve dl-002-orders-are-cancelled-not-deleted [pending → approved]',
         'wf(decision-log): submit dl-002-orders-are-cancelled-not-deleted',
-        'docs: dl-002-orders-are-cancelled-not-deleted',
         'wf(decision-log): add dl-002-orders-are-cancelled-not-deleted',
         'setup',
         'wf(dna): add team.members Benchmark Approver',
