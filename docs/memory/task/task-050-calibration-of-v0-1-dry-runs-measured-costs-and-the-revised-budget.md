@@ -303,3 +303,11 @@ cost note. `bench scenario validate S1@1.0 --holdout …` must pass.
 
   Step 5 moves one arm off the maximum (baseline-docs: 7 public and 5 hold-out `createPatch` pairs lost); the
   wingfoil run cost 88 % of its 5 € cap.
+
+### Stage 3 — the Opus 5 slice on S1
+
+- Estimate: Opus 5 is 2.5× Sonnet 5 per token ($5/$25 against $2/$10 per MTok, the claude-api reference cached
+  2026-09-25), so stage 1b's 8.46 € gives about **21 €** (wingfoil about 11 €). The campaign as measured: about
+  39 € for its 18 Sonnet runs, about 60 € with the slice in three arms, against the 30 € target.
+- **The approver's consent, 2026-10-02, in chat:** S1 × baseline, baseline-docs, wingfoil on Opus 5
+  (`--model claude-opus-5`), cap **13 €** per run, ceiling **25 €**. `run_cost_eur: 13` in the profile, its own commit.
