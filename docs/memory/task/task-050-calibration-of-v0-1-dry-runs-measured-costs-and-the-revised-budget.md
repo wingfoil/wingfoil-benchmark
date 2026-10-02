@@ -209,3 +209,10 @@ campaign's file is plan-003 step 5's.
   | 11 | S8 | baseline | 1.0483 € | 23/23 | 7/7 | 12/16 | — |
   | 12 | S8 | baseline-docs | 1.4840 € | 23/23 | 6/7 | **16/16** | — |
   | 13 | S8 | wingfoil | 1.4464 € (failed) | not reached | not reached | 12/12 (steps 1–3) | — |
+- **The two `api_error`s, from the step 03 transcripts:** dry run 2 — HTTP **429**, "This request would exceed
+  your account's rate limit" (`error: rate_limit`): the subscription's rate limit, the first observed shape of
+  it, classified by the runner as a plain failure. Dry run 13 — "Can't reach the API server — check your
+  internet or DNS (EAI_AGAIN)" after one `api_retry`: the network.
+- **The approver's decisions, 2026-10-02, in chat:** re-run S8 wingfoil within stage 2 (cap 5 €, ceiling 30 €);
+  the 429 becomes **bug-010**, fixed by a task of its own before the campaign; **S1 is made harder** before its
+  registration (task-050's Context: a difficulty change made here, the scenario's dry runs then run again).
