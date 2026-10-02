@@ -320,3 +320,7 @@ cost note. `bench scenario validate S1@1.0 --holdout …` must pass.
 - **Opus 5 cost 6.8× the Sonnet 5 baseline** (13.02 € against 1.91 €), not the 2.5× of the per-token prices:
   and 3.6× the tokens on the same steps (12.68 M against 3.51 M in dry run 15). The slice's estimate from stage 1b
   was wrong by that factor.
+- **The approver's consent, 2026-10-02, in chat:** one more Opus 5 dry run, **S1 wingfoil**, cap **35 €** (its
+  ceiling, one run; expected about 30 €, 2.3× the Opus baseline as wingfoil was 2.3× the baseline on Sonnet), and
+  for it `step_time_s` **3600** (Opus's baseline spent 1644 s of 1800 on one step). Both in the profile, their
+  own commit; the step time is a value the report revisits for the campaign.
