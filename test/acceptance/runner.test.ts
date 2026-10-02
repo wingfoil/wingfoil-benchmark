@@ -220,7 +220,7 @@ describe('runner.feature', () => {
   });
 
   it("@F2.5 The baseline-docs environment is generated from the wingfoil arm's configuration", () => {
-    // Given the wingfoil arm's configuration for S8: a snapshot WingFoil 3df305e wrote in a real run, with
+    // Given the wingfoil arm's configuration for S8: a snapshot WingFoil v0.2.2 wrote in a real run, with
     // S8's rules (test/fixtures/wingfoil-config/README.md; task-038, T2 stood in for S8 until W8)
     const root = repoPath('test/fixtures/wingfoil-config/S8');
     const files = new Map(
