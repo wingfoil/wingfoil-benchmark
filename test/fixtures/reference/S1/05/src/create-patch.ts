@@ -10,7 +10,8 @@ function isObject(value: unknown): value is Record<string, unknown> {
 
 function equal(a: unknown, b: unknown): boolean {
   if (a === b) return true;
-  if (Array.isArray(a) && Array.isArray(b)) return a.length === b.length && a.every((item, i) => equal(item, b[i]));
+  if (Array.isArray(a) && Array.isArray(b))
+    return a.length === b.length && a.every((item, i) => equal(item, b[i]));
   if (isObject(a) && isObject(b)) {
     const keys = Object.keys(a);
     return keys.length === Object.keys(b).length && keys.every((key) => key in b && equal(a[key], b[key]));
@@ -27,10 +28,14 @@ function token(key: string | number): string {
 function diffArray(from: readonly unknown[], to: readonly unknown[], path: string, ops: Operation[]): void {
   const n = from.length;
   const m = to.length;
-  const lcs: number[][] = Array.from({ length: n + 1 }, () => new Array<number>(m + 1).fill(0));
+  // lcs[i * (m + 1) + j]: the longest common run of equal items in from[i..] and to[j..].
+  const lcs = new Array<number>((n + 1) * (m + 1)).fill(0);
+  const at2 = (i: number, j: number): number => lcs[i * (m + 1) + j] ?? 0;
   for (let i = n - 1; i >= 0; i--)
     for (let j = m - 1; j >= 0; j--)
-      lcs[i]![j] = equal(from[i], to[j]) ? lcs[i + 1]![j + 1]! + 1 : Math.max(lcs[i + 1]![j]!, lcs[i]![j + 1]!);
+      lcs[i * (m + 1) + j] = equal(from[i], to[j])
+        ? at2(i + 1, j + 1) + 1
+        : Math.max(at2(i + 1, j), at2(i, j + 1));
   let i = 0;
   let j = 0;
   let at = 0;
@@ -39,12 +44,12 @@ function diffArray(from: readonly unknown[], to: readonly unknown[], path: strin
       i++;
       j++;
       at++;
-    } else if (i < n && j < m && lcs[i + 1]![j + 1] === lcs[i]![j]) {
+    } else if (i < n && j < m && at2(i + 1, j + 1) === at2(i, j)) {
       diff(from[i], to[j], `${path}/${at}`, ops);
       i++;
       j++;
       at++;
-    } else if (j < m && (i === n || lcs[i]![j + 1]! >= lcs[i + 1]![j]!)) {
+    } else if (j < m && (i === n || at2(i, j + 1) >= at2(i + 1, j))) {
       ops.push({ op: 'add', path: `${path}/${at}`, value: structuredClone(to[j]) });
       j++;
       at++;
@@ -58,7 +63,8 @@ function diffArray(from: readonly unknown[], to: readonly unknown[], path: strin
 function diff(from: unknown, to: unknown, path: string, ops: Operation[]): void {
   if (equal(from, to)) return;
   if (isObject(from) && isObject(to)) {
-    for (const key of Object.keys(from)) if (!(key in to)) ops.push({ op: 'remove', path: `${path}/${token(key)}` });
+    for (const key of Object.keys(from))
+      if (!(key in to)) ops.push({ op: 'remove', path: `${path}/${token(key)}` });
     for (const [key, value] of Object.entries(to)) {
       if (key in from) diff(from[key], value, `${path}/${token(key)}`, ops);
       else ops.push({ op: 'add', path: `${path}/${token(key)}`, value: structuredClone(value) });
