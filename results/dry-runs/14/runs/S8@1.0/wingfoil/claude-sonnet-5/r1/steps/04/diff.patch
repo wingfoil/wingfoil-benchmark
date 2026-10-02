@@ -1,0 +1,232 @@
+diff --git a/docs/memory/decision-log/dl-004-importtasks-takes-an-optional-now-defaulting-to-the-wall-clock-outside-src-domain.md b/docs/memory/decision-log/dl-004-importtasks-takes-an-optional-now-defaulting-to-the-wall-clock-outside-src-domain.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..23efb8c87bcedfa5c84a92a0c6fc7a38ce19a3f7
+--- /dev/null
++++ b/docs/memory/decision-log/dl-004-importtasks-takes-an-optional-now-defaulting-to-the-wall-clock-outside-src-domain.md
+@@ -0,0 +1,44 @@
++---
++id: dl-004-importtasks-takes-an-optional-now-defaulting-to-the-wall-clock-outside-src-domain
++type: decision-log
++title: "importTasks takes an optional now, defaulting to the wall clock outside src/domain"
++status: approved
++---
++
++## Context
++
++The request asks for `importTasks(list, text)`, a bulk-import helper exported from `src/index.ts` that
++calls `list.add` once per non-blank line. `list.add` requires a `now`, per `dl-002`: `TaskList`'s
++mutating methods take `now` as a parameter rather than reading the clock themselves, because
++`r3-no-clock-or-randomness` forbids reading the clock under `src/domain/`. `importTasks` itself sits
++outside `src/domain/` (in a new `src/importTasks.ts`, re-exported from `src/index.ts`), the same place
++`dl-002` already names as free to read the real clock on behalf of the domain. The two-argument
++signature in the request leaves no obvious place for a caller to supply `now` explicitly, and the
++`testing` directive asks for deterministic tests, including for this helper.
++
++## Decision
++
++`importTasks(list, text, now = new Date().toISOString())`: a third, optional parameter. Calling it as
++`importTasks(list, text)` — the signature asked for — reads the real wall clock once per call and
++stamps every task imported by that call with the same `now`, consistent with `list.add` treating `now`
++as a single point in time per call. Tests (and any other caller that wants a fixed time) pass `now`
++explicitly instead of relying on the default.
++
++Parsing rejects a line that does not split into exactly 3 `;`-separated fields with a fixed reason of
++its own. For a line that does split into 3 fields, the parsed `title`/`priority`/`tags` are passed
++straight to `list.add`, and its `Result` error message (for an invalid title, an unknown priority, a
++duplicate title — tags built from whitespace-split fields cannot fail `validateTag`) becomes the
++`reason` reported for that line, rather than re-implementing those checks in `src/importTasks.ts`.
++
++## Consequences
++
++- `importTasks` can read the real clock, but only outside `src/domain/`, the same boundary `dl-002`
++  already draws; `src/domain/` stays exactly as constrained as before.
++- A caller matching the exact request (`importTasks(list, text)`) is unaffected; the new parameter is
++  additive and optional.
++- Validation wording for a rejected line (other than the "wrong number of fields" case) comes from
++  `src/domain/validation.ts` via `list.add`'s error message, so a future change to that wording changes
++  `importTasks`'s rejection reasons too — intentional, per `dl-003`'s single-source-of-validation goal.
++- As with `now` elsewhere (`dl-002`), nothing here checks that an explicitly passed `now` is a
++  well-formed ISO-8601 string.
++</content>
+diff --git a/docs/memory/task/task-004-add-importtasks-bulk-import-helper-to-src-index.ts.md b/docs/memory/task/task-004-add-importtasks-bulk-import-helper-to-src-index.ts.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..fa01a64df72f7944f5f9eed5e21619834bfc545e
+--- /dev/null
++++ b/docs/memory/task/task-004-add-importtasks-bulk-import-helper-to-src-index.ts.md
+@@ -0,0 +1,37 @@
++---
++id: task-004-add-importtasks-bulk-import-helper-to-src-index.ts
++type: task
++title: "Add importTasks bulk-import helper to src/index.ts"
++status: approved
++---
++
++## Request
++
++Teams migrating from spreadsheets need to bulk-import tasks. Add a public helper
++`importTasks(list, text)`, exported from `src/index.ts`, where `text` holds one task per line as
++`title;priority;tags` (priority may be empty for `normal`; tags are space-separated; blank lines are
++skipped). It adds every valid line to `list` and returns `{ imported, rejected }`, where `rejected`
++lists every line that could not be added as `{ line, reason }`, `line` counting from 1.
++
++## What was done
++
++- Added `src/importTasks.ts`, exporting `importTasks(list, text, now?)` and the `ImportResult` /
++  `RejectedLine` types. It is not under `src/domain/` because it reads the wall clock (via a defaulted
++  `now` parameter) when the caller does not supply one, which `r3-no-clock-or-randomness` forbids inside
++  `src/domain/`.
++- `src/index.ts` now re-exports `importTasks`, `ImportResult` and `RejectedLine`.
++- Parsing splits `text` on lines, skips blank ones (not counted as imported or rejected, but line
++  numbers still count them), and requires each non-blank line to split into exactly 3 `;`-separated
++  fields; a line that does not is rejected with a fixed reason rather than reaching `list.add`.
++- Field-level validation (empty/too-long title, unknown priority, tag with a space, duplicate title) is
++  not duplicated here: the parsed `title`/`priority`/`tags` are handed to `list.add`, and a rejection's
++  `reason` is `list.add`'s own `Result` error message, keeping validation in one place per `dl-003`.
++- Added `test/importTasks.test.ts`: a happy path (mixed priorities/tags/blank lines), a path covering a
++  malformed line, an invalid priority, and a duplicate title (checking exact line numbers and reasons),
++  and a test that the default `now` produces a well-formed ISO-8601 timestamp without asserting an exact
++  value (keeping the test deterministic per the `testing` directive).
++- `npm test` passes (23/23).
++
++## Follow-ups / risks
++
++- See decision-log `dl-004` for the `now` parameter and clock-reading placement.
+diff --git a/src/importTasks.ts b/src/importTasks.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..854755d8a7dad61097a05dcb71af2b8bca11efab
+--- /dev/null
++++ b/src/importTasks.ts
+@@ -0,0 +1,54 @@
++import type { NewTask, Priority } from './domain/task.ts';
++import type { TaskList } from './domain/list.ts';
++
++/** A line of `importTasks`'s input that could not be added, and why. */
++export interface RejectedLine {
++  readonly line: number;
++  readonly reason: string;
++}
++
++/** The outcome of `importTasks`: how many tasks were added, and every line that was not. */
++export interface ImportResult {
++  readonly imported: number;
++  readonly rejected: readonly RejectedLine[];
++}
++
++/**
++ * Adds every task described in `text` to `list`, one per line, as `title;priority;tags`: `priority`
++ * may be empty for a normal task, and `tags` is zero or more tags separated by spaces (for example
++ * `Renew the insurance;high;admin money`). Blank lines are skipped. Every task added shares the same
++ * `now`, the current time unless given.
++ *
++ * @param list - the task list to add to
++ * @param text - the tasks to import, one per line
++ * @param now - the current time, as an ISO-8601 date-time string, for every task added
++ */
++export function importTasks(list: TaskList, text: string, now: string = new Date().toISOString()): ImportResult {
++  let imported = 0;
++  const rejected: RejectedLine[] = [];
++
++  const lines = text.split(/\r?\n/);
++  for (const [index, line] of lines.entries()) {
++    if (line.trim() === '') continue;
++
++    const fields = line.split(';');
++    if (fields.length !== 3) {
++      rejected.push({ line: index + 1, reason: 'line must have the form "title;priority;tags"' });
++      continue;
++    }
++
++    const [title, priorityField, tagsField] = fields;
++    const trimmedPriority = priorityField.trim();
++    const input: NewTask = {
++      title,
++      priority: trimmedPriority === '' ? undefined : (trimmedPriority as Priority),
++      tags: tagsField.trim() === '' ? [] : tagsField.trim().split(/\s+/),
++    };
++
++    const result = list.add(input, now);
++    if (result.ok) imported += 1;
++    else rejected.push({ line: index + 1, reason: result.error.message });
++  }
++
++  return { imported, rejected };
++}
+diff --git a/src/index.ts b/src/index.ts
+index d645db5250ea48852a8de1629640e42619a985c8..b26cc3e8eb791e6f2ef8e6425a6d18cddf629907 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -7,6 +7,8 @@ export { summarize } from './domain/summary.ts';
+ export type { Summary } from './domain/summary.ts';
+ export { PRIORITIES } from './domain/task.ts';
+ export type { NewTask, Priority, Status, Task } from './domain/task.ts';
++export { importTasks } from './importTasks.ts';
++export type { ImportResult, RejectedLine } from './importTasks.ts';
+ 
+ /**
+  * A new, empty task list for the app, kept in memory.
+diff --git a/test/importTasks.test.ts b/test/importTasks.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..70550b0d41a46289a47d38860da5926c6e7e2d63
+--- /dev/null
++++ b/test/importTasks.test.ts
+@@ -0,0 +1,60 @@
++import assert from 'node:assert/strict';
++import { describe, it } from 'node:test';
++
++import { createTodoList, importTasks } from '../src/index.ts';
++
++const T1 = '2024-01-01T00:00:00.000Z';
++
++describe('importTasks', () => {
++  it('imports every valid line, defaulting an empty priority to normal', () => {
++    const list = createTodoList();
++    const result = importTasks(
++      list,
++      'Renew the insurance;high;admin money\nWalk the dog;;\nBuy milk;low;errand',
++      T1,
++    );
++
++    assert.deepEqual(result, { imported: 3, rejected: [] });
++    assert.deepEqual(
++      list.list().map((task) => ({ title: task.title, priority: task.priority, tags: task.tags })),
++      [
++        { title: 'Renew the insurance', priority: 'high', tags: ['admin', 'money'] },
++        { title: 'Walk the dog', priority: 'normal', tags: [] },
++        { title: 'Buy milk', priority: 'low', tags: ['errand'] },
++      ],
++    );
++  });
++
++  it('skips blank lines without counting them as rejected', () => {
++    const list = createTodoList();
++    const result = importTasks(list, '\nBuy milk;;\n\nWalk the dog;;\n', T1);
++
++    assert.equal(result.imported, 2);
++    assert.deepEqual(result.rejected, []);
++  });
++
++  it('rejects a malformed line, a line with invalid input, and a duplicate title, keeping their line numbers', () => {
++    const list = createTodoList();
++    const result = importTasks(
++      list,
++      ['Buy milk;;errand', 'not enough fields', 'Walk the dog;urgent;', 'Buy milk;;errand'].join('\n'),
++      T1,
++    );
++
++    assert.equal(result.imported, 1);
++    assert.deepEqual(result.rejected, [
++      { line: 2, reason: 'line must have the form "title;priority;tags"' },
++      { line: 3, reason: 'priority must be one of low, normal, high, not "urgent"' },
++      { line: 4, reason: 'there is already a task "Buy milk"' },
++    ]);
++  });
++
++  it('defaults to the current time when none is given', () => {
++    const list = createTodoList();
++    importTasks(list, 'Buy milk;;');
++
++    const [task] = list.list();
++    assert.match(task.createdAt, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
++    assert.equal(task.updatedAt, task.createdAt);
++  });
++});

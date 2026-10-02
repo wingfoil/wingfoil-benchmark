@@ -216,3 +216,11 @@ campaign's file is plan-003 step 5's.
 - **The approver's decisions, 2026-10-02, in chat:** re-run S8 wingfoil within stage 2 (cap 5 €, ceiling 30 €);
   the 429 becomes **bug-010**, fixed by a task of its own before the campaign; **S1 is made harder** before its
   registration (task-050's Context: a difficulty change made here, the scenario's dry runs then run again).
+- bug-010 filed on main (`5e8a6ef`, pending `03a64e9`).
+- **S8@1.0 wingfoil, re-run** (`results/dry-runs/14`, 17:3x–17:51): completed, **2.4921 USD (2.2058 €)** — steps
+  0.6953, 0.6121, 0.5461, 0.6386 USD; interventions 1, 1, 1, 1. No token stored. Scored: steps 11/11, **11/14,
+  16/19, 20/23, final 20/23, hold-out 5/7**; **checks 16/16**. The only run so far below the reference on hidden
+  tests, and with baseline-docs the only one to keep all four rules. Stage 2 spent 15.06 € of 30 €.
+- **The approver's decision, 2026-10-02, in chat:** S1 is made harder by **a step 5, `createPatch(from, to)`**,
+  scored by a property (applying the generated patch to `from` gives `to`) on a fixed corpus of document pairs,
+  with further pairs in the hold-out; within this task, design first.
