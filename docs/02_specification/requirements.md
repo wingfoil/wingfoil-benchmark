@@ -576,5 +576,5 @@ independent reviews.
 
 The traceability matrix is unaffected.
 
-Source: [task-049](../memory/task/task-049-wingfoil-v0-2-2-as-the-harness-under-test.md); review decision
-pending at that task's review.
+Source: [task-049](../memory/task/task-049-wingfoil-v0-2-2-as-the-harness-under-test.md), design confirmed by the
+approver on 2026-10-02; review decision of the approver at that task's review, 2026-10-02 (`cd062e2`).

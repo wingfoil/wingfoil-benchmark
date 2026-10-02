@@ -132,7 +132,7 @@ What the spike found, in one line each:
   re-checked for the release actually pinned, by re-running `spikes/task-011/p6-mcp.sh` against it.
 - WingFoil friction met on the way is in the usage-notes inbox, N30–N34.
 
-## Amendment 1 (calibration task-049, 2026-10-02)
+## Amendment 1 (calibration task-049, 2026-10-02; accepted at its review, `cd062e2`)
 
 The WingFoil under test becomes the released **v0.2.2** (`12537b62`), the version the reference campaign
 pins ([task-049](../task/task-049-wingfoil-v0-2-2-as-the-harness-under-test.md)).
@@ -150,6 +150,4 @@ pins ([task-049](../task/task-049-wingfoil-v0-2-2-as-the-harness-under-test.md))
   only tidy.
 - **v0.2.2's write guard** refuses the memory transitions `approve`, `reject` and `deprecate` on a document
   with uncommitted changes; `submit` carries them. The manual's sequence is unaffected and stays as it is.
-
-Review decision pending at task-049's review.
 

@@ -269,3 +269,11 @@ which W3's setup runs in the same script.
 - `npx wingfoil memory submit task-049-…` (in-progress → in-review), on the task branch — declared: moves
   `status` and commits the file. Observed: `9b1618f wf(task): submit …`, `status: in-review`; the body
   committed first (`980ef39`).
+
+### Approval
+
+The approver's `memory approve` (in-review → approved), `cd062e2`: `memory history` records
+`operation: approve`, the approver and the reason. With it, the review decision of requirements 1.23,
+scenarios README 1.3 and adr-003 amendment 1 (`cd062e2`). `memory history` also printed two lines
+`fatal: path '…task-049….md' exists on disk, but not in '<sha>'` to stderr before its JSON — commits of the
+history walk where the file did not exist yet; the JSON was complete.

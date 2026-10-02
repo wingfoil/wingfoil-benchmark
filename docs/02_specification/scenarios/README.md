@@ -113,5 +113,5 @@ review decision of the approver at that task's review, 2026-09-29 (`312c4c1`).
   read from the committed `dna.yaml`, a write guard on the memory transitions `approve`, `reject` and
   `deprecate`, and `dna add`, which the setup now uses for the Benchmark Approver.
 
-Source: [task-049](../../memory/task/task-049-wingfoil-v0-2-2-as-the-harness-under-test.md); review decision
-pending at that task's review.
+Source: [task-049](../../memory/task/task-049-wingfoil-v0-2-2-as-the-harness-under-test.md), review decision of
+the approver at that task's review, 2026-10-02 (`cd062e2`).
