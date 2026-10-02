@@ -1,0 +1,237 @@
+diff --git a/README.md b/README.md
+index 7364ccce79df378db0fcc7151d7e10c7b3faf56c..5c3d385d3485026df6209558ac069698cf7458a1 100644
+--- a/README.md
++++ b/README.md
+@@ -70,6 +70,11 @@ nothing is ever left half-patched. Notable points of the specification:
+   Pointer of the location the operation works on, `move` and `copy` also take a `from` pointer, and
+   `add`, `replace` and `test` a `value`. Members that the operation does not define are ignored, so
+   `{ op: 'add', path: '/a', value: 1, comment: 'why' }` is a valid operation.
++- A patch is a JSON document, so a `value` the operation does use has to hold a JSON value, all
++  the way down. `undefined`, `NaN`, an infinity, a function, a symbol, a bigint, a hole in an
++  array, an object of another kind such as a `Date` or a `Map`, and a value that contains itself
++  are not JSON values: a patch carrying one is rejected, rather than written into the document for
++  the next `JSON.stringify` to drop or change. The error message names the place inside `value`.
+ - `add` inserts before an array index, where the token `-` means after the last element, and against
+   an object it adds the member or replaces the value it already has. The container of the target has
+   to exist: adding at `/a/b` fails when there is no `/a`.
+diff --git a/src/apply.ts b/src/apply.ts
+index 72435e1776ca12c3bd01146e23679a74c7fe5fa1..33de96a43ed49e9d98c6d046e4cc4371772acbeb 100644
+--- a/src/apply.ts
++++ b/src/apply.ts
+@@ -2,6 +2,7 @@
+ 
+ import {
+   cloneJson,
++  findNonJsonValue,
+   isJsonObject,
+   jsonEquals,
+   setMember,
+@@ -368,9 +369,17 @@ function readValue(members: JsonObject, context: Context): JsonValue {
+     throw invalidPatch(context, 'has no "value" member');
+   }
+   const value = members.value;
+-  if (value === undefined) {
+-    // Not a JSON value, so no document can hold it, and no test can match it.
+-    throw invalidPatch(context, 'has a "value" member that is undefined');
++  // A patch is a JSON document (RFC 6902 § 3), so its "value" member holds a
++  // JSON value and nothing else: no document can hold anything else, and no
++  // test can match it. Checking the whole value, not just its top, keeps a
++  // stray `undefined` or Date from being written somewhere inside a document.
++  const nonJson = findNonJsonValue(value);
++  if (nonJson !== undefined) {
++    const where = nonJson.tokens.length === 0 ? '' : ` at ${quote(formatPointer(nonJson.tokens))}`;
++    throw invalidPatch(
++      context,
++      `has a "value" member that is not a JSON value: ${nonJson.description}${where}`,
++    );
+   }
+   return value;
+ }
+diff --git a/src/json.ts b/src/json.ts
+index 221924729a63da6bff6f4e9022df9df145b200a5..f6de3df69e4a4a14f685f409f13378238feb5b7f 100644
+--- a/src/json.ts
++++ b/src/json.ts
+@@ -21,6 +21,94 @@ export function isJsonObject(value: JsonValue): value is JsonObject {
+   return typeof value === 'object' && value !== null && !Array.isArray(value);
+ }
+ 
++/** Something inside a value that the JSON data model does not have. */
++export interface NonJsonValue {
++  /** How to name what was found in an error message, e.g. `undefined`. */
++  readonly description: string;
++  /** The reference tokens that lead to it from the value that was checked. */
++  readonly tokens: readonly string[];
++}
++
++/**
++ * Looks for a part of `value` that is not a JSON value and describes the first
++ * one it finds, or returns `undefined` if the whole value belongs to the JSON
++ * data model.
++ *
++ * The data model has objects, arrays, strings, finite numbers, `true`, `false`
++ * and `null`, and nothing else. `undefined`, `NaN`, an infinity, a function, a
++ * symbol, a bigint, a hole in an array, an object of some other kind such as a
++ * `Date` or a `Map`, and a value that contains itself are all outside it: no
++ * JSON document can hold one, and writing one into a document would only mean
++ * losing or changing it the next time the document is serialized.
++ */
++export function findNonJsonValue(value: unknown): NonJsonValue | undefined {
++  return search(value, [], new Set());
++}
++
++/**
++ * Searches `value` depth first. `tokens` is the path walked so far, and
++ * `enclosing` holds the objects and arrays that `value` is inside of, which is
++ * what tells a value that contains itself from one that merely holds the same
++ * object twice.
++ */
++function search(
++  value: unknown,
++  tokens: string[],
++  enclosing: Set<object>,
++): NonJsonValue | undefined {
++  const found = (description: string): NonJsonValue => ({ description, tokens: [...tokens] });
++
++  if (value === null || typeof value === 'boolean' || typeof value === 'string') {
++    return undefined;
++  }
++  if (typeof value === 'number') {
++    // JSON has no notation for NaN or for an infinity.
++    return Number.isFinite(value) ? undefined : found(String(value));
++  }
++  if (typeof value !== 'object') {
++    return found(value === undefined ? 'undefined' : `a ${typeof value}`);
++  }
++  if (enclosing.has(value)) {
++    return found('a value that contains itself');
++  }
++
++  enclosing.add(value);
++  try {
++    if (Array.isArray(value)) {
++      for (let index = 0; index < value.length; index++) {
++        tokens.push(String(index));
++        // A hole is not an element holding anything: JSON has no way to write
++        // one, and serializing it would turn it into null.
++        const nonJson = index in value ? search(value[index], tokens, enclosing) : found('a hole');
++        tokens.pop();
++        if (nonJson !== undefined) {
++          return nonJson;
++        }
++      }
++      return undefined;
++    }
++
++    // Only a plain object is a JSON object. A Date, a Map or a RegExp is an
++    // object to JavaScript but holds its contents somewhere the data model
++    // cannot see, so copying one would leave an empty object behind.
++    const kind = Object.prototype.toString.call(value);
++    if (kind !== '[object Object]') {
++      return found(`a ${kind.slice('[object '.length, -1)}`);
++    }
++    for (const member of Object.keys(value)) {
++      tokens.push(member);
++      const nonJson = search((value as Record<string, unknown>)[member], tokens, enclosing);
++      tokens.pop();
++      if (nonJson !== undefined) {
++        return nonJson;
++      }
++    }
++    return undefined;
++  } finally {
++    enclosing.delete(value);
++  }
++}
++
+ /** Gives `object` the member `member`, replacing it if it is already there. */
+ export function setMember(object: JsonObject, member: string, value: JsonValue): void {
+   // A plain assignment to "__proto__" would run the setter inherited from
+diff --git a/test/apply-patch.test.ts b/test/apply-patch.test.ts
+index b77689f9e1396908f2a36f3c0486d294a4368af0..8fd0ad4d74b3294758e56f848eab01e14614db7b 100644
+--- a/test/apply-patch.test.ts
++++ b/test/apply-patch.test.ts
+@@ -752,7 +752,83 @@ describe('invalid patches', () => {
+   test('a "value" member must hold a JSON value', () => {
+     assert.throws(() => apply({}, [{ op: 'add', path: '/a', value: undefined }]), {
+       code: 'invalid-patch',
+-      message: 'Invalid JSON Patch: operation 0 ("add") has a "value" member that is undefined',
++      message:
++        'Invalid JSON Patch: operation 0 ("add") has a "value" member that is not a JSON value: undefined',
++    });
++  });
++
++  test('a "value" member must hold a JSON value through and through', () => {
++    const cyclic: Record<string, unknown> = {};
++    cyclic.self = cyclic;
++    const cases: Array<[value: unknown, detail: string]> = [
++      [undefined, 'undefined'],
++      [Number.NaN, 'NaN'],
++      [Number.POSITIVE_INFINITY, 'Infinity'],
++      [Number.NEGATIVE_INFINITY, '-Infinity'],
++      [() => 1, 'a function'],
++      [Symbol('s'), 'a symbol'],
++      [1n, 'a bigint'],
++      [new Date(0), 'a Date'],
++      [new Map([['k', 1]]), 'a Map'],
++      [/re/, 'a RegExp'],
++      [{ b: undefined }, 'undefined at "/b"'],
++      [{ b: [1, { c: new Date(0) }] }, 'a Date at "/b/1/c"'],
++      [[1, Number.NaN], 'NaN at "/1"'],
++      [[1, , 3], 'a hole at "/1"'],
++      [{ 'a/b': { '~': undefined } }, 'undefined at "/a~1b/~0"'],
++      [cyclic, 'a value that contains itself at "/self"'],
++    ];
++    for (const [value, detail] of cases) {
++      for (const op of ['add', 'replace', 'test']) {
++        assert.throws(
++          () => apply({ a: 1 }, [{ op, path: '/a', value }]),
++          {
++            code: 'invalid-patch',
++            index: 0,
++            message: `Invalid JSON Patch: operation 0 ("${op}") has a "value" member that is not a JSON value: ${detail}`,
++          },
++          `${op}: ${detail}`,
++        );
++      }
++    }
++  });
++
++  test('a "value" member may hold any JSON value, however deeply nested', () => {
++    const value: JsonValue = {
++      nothing: null,
++      flags: [true, false],
++      numbers: [0, -0, 1.5, -2, 1e21, Number.MAX_SAFE_INTEGER],
++      names: ['', 'a/b', '~'],
++      nested: { list: [{}, [], { deep: [{ deeper: null }] }] },
++    };
++    assert.deepEqual(applyPatch({}, [{ op: 'add', path: '/a', value }]), { a: value });
++    // Holding the same object twice is not holding a value that contains itself.
++    const shared = { s: 1 };
++    assert.deepEqual(apply({}, [{ op: 'add', path: '/a', value: [shared, shared] }]), {
++      a: [{ s: 1 }, { s: 1 }],
++    });
++    // An object with a prototype is still an object, and so is one without.
++    const inherited = Object.create({ inherited: 'no' }) as Record<string, JsonValue>;
++    inherited.own = 'yes';
++    const bare = Object.assign(Object.create(null) as Record<string, JsonValue>, { own: 'yes' });
++    for (const object of [inherited, bare]) {
++      assert.deepEqual(apply({}, [{ op: 'add', path: '/a', value: object }]), {
++        a: { own: 'yes' },
++      });
++    }
++  });
++
++  test('a "value" member that the operation ignores is not checked', () => {
++    // RFC 6902 § 4: members an operation does not define are ignored, so they
++    // do not have to be JSON values either.
++    const ignored = { value: () => 1 };
++    assert.deepEqual(apply({ a: 1, b: 2 }, [{ op: 'remove', path: '/b', ...ignored }]), { a: 1 });
++    assert.deepEqual(apply({ a: 1 }, [{ op: 'move', from: '/a', path: '/b', ...ignored }]), {
++      b: 1,
++    });
++    assert.deepEqual(apply({ a: 1 }, [{ op: 'copy', from: '/a', path: '/b', ...ignored }]), {
++      a: 1,
++      b: 1,
+     });
+   });
+ 

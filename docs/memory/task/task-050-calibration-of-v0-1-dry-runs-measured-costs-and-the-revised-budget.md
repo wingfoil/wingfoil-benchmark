@@ -311,3 +311,12 @@ cost note. `bench scenario validate S1@1.0 --holdout …` must pass.
   39 € for its 18 Sonnet runs, about 60 € with the slice in three arms, against the 30 € target.
 - **The approver's consent, 2026-10-02, in chat:** S1 × baseline, baseline-docs, wingfoil on Opus 5
   (`--model claude-opus-5`), cap **13 €** per run, ceiling **25 €**. `run_cost_eur: 13` in the profile, its own commit.
+- **Stage 3 ran** 20:36–21:39 and stopped after its first dry run, by its own rule (13.02 € spent; a second 13 €
+  cap would pass the 25 € ceiling). **S1@1.0 baseline on Opus 5** (`results/dry-runs/18`): **cap reached during
+  step 05**, **14.7150 USD (13.0243 €)** — steps 1.6819 (37 turns, 383 s), 3.8850 (47 turns, 784 s), **6.4676**
+  (62 turns, 1644 s, near the 1800 s step cap), 1.0510 (22 turns), 1.6296 USD (23 turns, stopped at the cap);
+  tokens per step 1.39 M, 3.29 M, 6.48 M, 0.75 M, 0.76 M. No token stored. Scored: steps 1–5 at the maximum
+  (153/153 at step 5), **final not reached** (the run ended at its cap), hold-out not reached.
+- **Opus 5 cost 6.8× the Sonnet 5 baseline** (13.02 € against 1.91 €), not the 2.5× of the per-token prices:
+  about 2.5× the tokens on the same steps as well (12.7 M against about 3.8 M). The slice's estimate from stage 1b
+  was wrong by that factor.
