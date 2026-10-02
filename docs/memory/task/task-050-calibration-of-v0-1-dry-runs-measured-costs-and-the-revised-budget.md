@@ -163,3 +163,9 @@ campaign's file is plan-003 step 5's.
   the profile, its own commit.
 - **Found:** `.gitignore`'s `runs/` ignores every directory named `runs`, `results/**/runs/` included, so no run
   record would ever be committed. The approver's choice: bug-009, fixed within this task (it blocks choice 3).
+- bug-009 approved by the approver (`d0c5952` on main); fixed here: red test `7591845`, `/runs/` `315a996`;
+  dry run 1's records committed `dbeb4d8`. Its Resolution is written at review.
+- **S1@1.0 baseline-docs** (`results/dry-runs/2`, 10:51–11:06): **failed at step 03 with `api_error`**, after
+  12 turns and 152 s; **1.2206 USD (1.0803 €)** — steps 0.4598 (35 turns, 416 s), 0.5699 (24 turns, 282 s),
+  0.1908 USD. No `sk-ant-` and no token literal stored. Not re-run: a re-run needs the approver's consent.
+  Stage 1 spent so far 3.0725 € of about 10 €; the wingfoil dry run not started.
