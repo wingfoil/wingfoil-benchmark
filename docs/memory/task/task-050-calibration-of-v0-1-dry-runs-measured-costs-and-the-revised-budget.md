@@ -274,3 +274,6 @@ cost note. `bench scenario validate S1@1.0 --holdout …` must pass.
    a stricter, structural check (every operation at a location that differs), harder to state for arrays.
 3. `patch` and `merge-patch` re-run after step 5 as regression (recommended), or not.
 4. About 30 public and 15 hold-out pairs.
+
+**Confirmed by the approver, 2026-10-02:** P1 through the suite's own applier; P2 as a per-pair length bound;
+`patch` and `merge-patch` re-run after step 5; about 30 public and 15 hold-out pairs.
