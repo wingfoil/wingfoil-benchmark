@@ -169,3 +169,6 @@ campaign's file is plan-003 step 5's.
   12 turns and 152 s; **1.2206 USD (1.0803 €)** — steps 0.4598 (35 turns, 416 s), 0.5699 (24 turns, 282 s),
   0.1908 USD. No `sk-ant-` and no token literal stored. Not re-run: a re-run needs the approver's consent.
   Stage 1 spent so far 3.0725 € of about 10 €; the wingfoil dry run not started.
+- **The approver's consent, 2026-10-02, in chat:** re-run S1@1.0 in baseline-docs (cap 4 €) before the wingfoil
+  dry run. With it, stage 1's worst case is about 11.07 € against the ceiling of about 10 €; the wingfoil dry
+  run starts only if what is left of the ceiling covers its cap, or with a new consent.
