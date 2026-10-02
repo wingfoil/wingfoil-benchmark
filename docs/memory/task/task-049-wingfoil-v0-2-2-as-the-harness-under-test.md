@@ -7,7 +7,7 @@ release: v0.1
 wave: calibration
 features: [F2.6, F3.6]
 acceptance: [runner.feature, scenarios.feature]
-requirements: [REQ-RUN-14, REQ-FMT-10, REQ-SCO-10]
+requirements: [REQ-RUN-14, REQ-FMT-10, REQ-SCO-10, REQ-RES-05]
 ---
 
 ## Context
@@ -182,7 +182,7 @@ Commits on `task/task-049-wingfoil-v0-2-2-as-the-harness-under-test`:
   `TEMPLATE_COMMIT` `v0.2.2 (12537b62)`.
 - `35146b2`: the design corrected, choice 1 withdrawn.
 - `c905c8a`: scenarios README 1.3, requirements 1.23, adr-003 amendment 1. `936b225`: T10.
-- the S8 snapshot refreshed (below).
+- `71e9b48`: the S8 snapshot refreshed (below).
 
 **The write guard, as observed — the design's reading was wrong.** The first Docker run (red, 09:20) failed
 in the fake's step with exit 1 and no message. Reproduced on the host with `wingfoil@0.2.2` from npm, in a
@@ -230,3 +230,39 @@ re-dumped the file — and `S8.PROJECT_RULES.md` came out byte-identical; @F2.5 
 - `npm run lint`: clean.
 
 **Inbox:** N35 (v0.2.2 answers N33; the write guard's verbs worth a line in WingFoil's docs).
+- `npm test` (with coverage, after the Docker suite, never beside it): **76 files, 1194 tests**, 247 s;
+  coverage 98.1 % statements, 90.8 % branches, 99.02 % functions, 99.22 % lines.
+
+### Review
+
+**Independent review** by a fresh read-only agent on the branch against the Design, the confirmed choices,
+the amendments, @F2.6 and @F3.6, and traceability (2026-10-02). No blocker; its findings and their outcome:
+
+1. *should-fix* — K5's row still said "today `3df305e`" beside the new v0.2.2 sentence. **Fixed:** "during
+   development `3df305e`; from calibration the release `v0.2.2`".
+2. *should-fix* — amendment 1.3 said the capabilities were "observed in the runner's container" and
+   `tools/list` "unanswered". **Fixed:** the MCP requests went to the `wingfoil@0.2.2` package; `tools/list`
+   answers "Method not found"; the container shows setup, directive commands and approval.
+3. *should-fix* — step 4's "already declared" branch is run by no test (every scenario configuration has
+   `members: []`), and its grep relied on `dna show`'s default output. **Fixed in part:** `--format json`
+   makes the format explicit. **Not covered by a repository test:** a scenario configuration declaring the
+   approver would change scenario content for a test's sake. Checked on the host instead, with
+   `wingfoil@0.2.2` and step 4 cut from `setup.sh`: in a project that already declares the approver it exits 0
+   and commits nothing; in a fresh `init`-ed project it commits `wf(dna): add team.members Benchmark
+   Approver`; run again there, it commits nothing.
+4. *nit* — two loud failures of `dna add` (another member named "Benchmark Approver"; no `approver` role)
+   undocumented. **Fixed:** step 4's comment names them; both fail the setup under `set -e`.
+5. *nit* — the `HEAD~3` lookup ran before the history assertion. **Fixed:** `log --grep='submit dl-002' -1 -p`,
+   as the approval check does.
+6. *nit* — adr-003 amendment 1 recorded no review decision. **Fixed:** "pending at task-049's review".
+7. *nit* — `requirements` lacked REQ-RES-05, which the task amends. **Fixed.** (F5.4 is not added to
+   `features`: the task delivers no part of it, and only a unit test reads the constant.)
+8. *nit* — the S8 snapshot's commit missing from the Build list. **Fixed:** `71e9b48`.
+9. *nit* — two edited lines past the files' wrap width. **Fixed.**
+10. *nit* — stale wording elsewhere: the experiment design's T10 in the present tense (left, as the Design
+    records); "write guard" made precise as "of the memory transitions" in the amendments. **Fixed** for the
+    latter.
+
+After the fixes: `npm run lint` clean; the arms, finding and site unit tests 130/130; the W3 Docker test green
+on v0.2.2 (the setup and the test it changed). The S1–S8 Docker tests were not re-run for `--format json`,
+which W3's setup runs in the same script.

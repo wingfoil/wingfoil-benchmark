@@ -148,6 +148,8 @@ pins ([task-049](../task/task-049-wingfoil-v0-2-2-as-the-harness-under-test.md))
   v0.2.2 provides and which commits by itself, only when no member has the Benchmark Approver's e-mail.
   v0.2.2 reads approval authority from the `dna.yaml` committed at `HEAD`, so the commit is required, not
   only tidy.
-- **v0.2.2's write guard** refuses `approve`, `reject` and `deprecate` on a document with uncommitted
-  changes; `submit` carries them. The manual's sequence is unaffected and stays as it is.
+- **v0.2.2's write guard** refuses the memory transitions `approve`, `reject` and `deprecate` on a document
+  with uncommitted changes; `submit` carries them. The manual's sequence is unaffected and stays as it is.
+
+Review decision pending at task-049's review.
 

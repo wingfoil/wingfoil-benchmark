@@ -18,7 +18,7 @@ what differs from them.
 | K2 | Visibility | All four scenarios are **public**, so that they can be rerun without the hold-out. Each one also has **hold-out additions** (extra tests, variants), kept in the private repository (T13). Fully hold-out scenarios start in v0.3. |
 | K3 | Project rules | A scenario's rules (directives, decisions to follow) live **only in the arm's environment**: none in baseline, Markdown in baseline-docs, WingFoil directives and Memory in wingfoil. The seed carries no `CONTRIBUTING.md` with rules. |
 | K4 | Cost sizing | The per-run target of the experiment design (§6, about 1.2 € on Sonnet 5) is **indicative, with a loose gate**, until dry runs (F3.3) provide real data. The budget is then revised. Step counts below are sized with that target in mind. |
-| K5 | WingFoil under test | Scenarios and the runner are developed against the **WingFoil 0.2 pre-release** in the WingFoil repository, pinned to a commit when the arm is built (today `3df305e`). Compared with the v0.1 release it adds `memory submit/approve/reject/deprecate/history`, `directive create/assign/remove`, read-only MCP Resources and MCP Prompts that load role directives (mutating MCP Tools come in a later build; amended in 1.1). It still has **no workflow engine**. Note: WingFoil's `package.json` still says `0.1.0`, so the version string does not identify the build. The commit does. The first public campaign still runs on the latest *released* WingFoil (sequencer decision 3): from calibration on, the wingfoil arm runs **v0.2.2** (`12537b62`), which offers the same capabilities, still with no workflow engine and no MCP Tools (amended in 1.3). |
+| K5 | WingFoil under test | Scenarios and the runner are developed against the **WingFoil 0.2 pre-release** in the WingFoil repository, pinned to a commit when the arm is built (during development `3df305e`; from calibration the release `v0.2.2`, amended in 1.3). Compared with the v0.1 release it adds `memory submit/approve/reject/deprecate/history`, `directive create/assign/remove`, read-only MCP Resources and MCP Prompts that load role directives (mutating MCP Tools come in a later build; amended in 1.1). It still has **no workflow engine**. Note: WingFoil's `package.json` still says `0.1.0`, so the version string does not identify the build. The commit does. The first public campaign still runs on the latest *released* WingFoil (sequencer decision 3): from calibration on, the wingfoil arm runs **v0.2.2** (`12537b62`), which offers the same capabilities, still with no workflow engine and no MCP Tools (amended in 1.3). |
 
 ## 2. What a scenario spec contains
 
@@ -104,12 +104,14 @@ review decision of the approver at that task's review, 2026-09-29 (`312c4c1`).
 ### Amendment 1.3 (calibration, task-049, 2026-10-02)
 
 - **K5:** the WingFoil under test from calibration on is the released **v0.2.2** (`12537b62`), the version
-  the reference campaign pins, and no longer the development pin `3df305e`. Read from the tag and observed in
-  the runner's container: directives by role and the memory life cycle as before; no workflow engine (only
-  `workflow list`); no MCP Tools (Resources and role Prompts only, `tools/list` unanswered). The wingfoil arm's
-  `provides` keep their four values. What v0.2.2 adds that the arm meets: approval authority read from the
-  committed `dna.yaml`, a write guard on `approve`, `reject` and `deprecate`, and `dna add`, which the setup
-  now uses for the Benchmark Approver.
+  the reference campaign pins, and no longer the development pin `3df305e`. Read from the tag: directives by
+  role and the memory life cycle as before; no workflow engine (only `workflow list`); no MCP Tools
+  (Resources and role Prompts only). The MCP requests sent to `wingfoil mcp` of the `wingfoil@0.2.2` package
+  confirm it: `tools/list` answers "Method not found" (task-049's notes). The runner's container, in the
+  Docker tests, shows the setup, the directive commands and the approval working on the tag's build. The
+  wingfoil arm's `provides` keep their four values. What v0.2.2 adds that the arm meets: approval authority
+  read from the committed `dna.yaml`, a write guard on the memory transitions `approve`, `reject` and
+  `deprecate`, and `dna add`, which the setup now uses for the Benchmark Approver.
 
 Source: [task-049](../../memory/task/task-049-wingfoil-v0-2-2-as-the-harness-under-test.md); review decision
 pending at that task's review.

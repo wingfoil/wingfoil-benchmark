@@ -818,10 +818,7 @@ describe('runs in a real container', () => {
 
       // F2.7 (task-049): the manual's sequence works against v0.2.2 — the document's body written, then
       // `submit`, which carries it (only `approve`, `reject` and `deprecate` refuse uncommitted changes).
-      expect(git('wingfoil', 'show', '--format=%s', '--stat', 'HEAD~3')).toMatch(
-        /^wf\(decision-log\): submit dl-002-orders-are-cancelled-not-deleted\n/,
-      );
-      expect(git('wingfoil', 'show', 'HEAD~3', '--', 'docs/memory/decision-log')).toContain(
+      expect(git('wingfoil', 'log', '--grep=submit dl-002', '-1', '-p', '--format=%s')).toContain(
         '+A cancelled order keeps its history.',
       );
 
