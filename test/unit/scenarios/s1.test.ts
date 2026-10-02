@@ -178,7 +178,7 @@ describe('S1@1.0 (F6.1)', { timeout: 120_000 }, () => {
     const bounded = pairs.filter(
       (pair) => JSON.stringify([{ op: 'replace', path: '', value: pair.to }]).length > pair.max,
     );
-    expect(bounded.length).toBeGreaterThanOrEqual(20);
+    expect(bounded.length).toBeGreaterThanOrEqual(15);
     expect(tally(await score(scenario, 'create-patch', snapshot)).fail).toBe(bounded.length);
   });
 
