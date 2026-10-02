@@ -277,3 +277,11 @@ The approver's `memory approve` (in-review → approved), `cd062e2`: `memory his
 scenarios README 1.3 and adr-003 amendment 1 (`cd062e2`). `memory history` also printed two lines
 `fatal: path '…task-049….md' exists on disk, but not in '<sha>'` to stderr before its JSON — commits of the
 history walk where the file did not exist yet; the JSON was complete.
+
+### Delivery
+
+Merged into `main` with `--no-ff` (`089f0a8`). `npx wingfoil memory submit task-049-…` (approved → done) —
+declared: moves `status` and commits the file. Observed: `07d0fe1 wf(task): submit …`, `status: done`. The
+items of `rel-v0-1` "before the reference campaign" it settles — `provides` re-assessed beside the MCP probe,
+the S8 snapshot refreshed with the released WingFoil — are recorded in calibration's report
+(`docs/calibration/v0.1.md`, task-050).
