@@ -134,13 +134,12 @@ excepted (`results/**/transcript.jsonl` is git-ignored); the ledger lines; `docs
 campaign file the estimate reads is quoted in the report with its command, and not committed: the reference
 campaign's file is plan-003 step 5's.
 
-### Choices to confirm
+### Choices confirmed by the approver (2026-10-02)
 
-1. **The caps:** `step_time_s` 1800 and `step_tokens` 20 000 000, as guards that should not bind before the
-   cost cap; or tighter values now.
-2. **The rate:** the ECB reference rate of 2026-10-01, 0.8851; or another source or date.
-3. **Dry runs committed** under `results/dry-runs/` (REQ-RES-01 stores them there; nothing has been stored
-   there yet in this repository), so the report's numbers can be checked against them.
+1. **The caps** as proposed: `step_time_s` 1800 and `step_tokens` 20 000 000, guards that should not bind
+   before the cost cap; the report gives each step's time and tokens for the campaign's values.
+2. **The rate:** the ECB reference rate of 2026-10-01, `usd_to_eur` 0.8851.
+3. **Dry runs committed** under `results/dry-runs/`, transcripts excepted, each checked for the token first.
 
 ## Execution notes
 
