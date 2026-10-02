@@ -383,6 +383,8 @@ describe('runs in a real container', () => {
 
   /** The WingFoil clone the WingFoil under test is built from (REQ-RUN-14): the one next to this repository. */
   const clone = process.env.BENCH_WINGFOIL_REPO ?? repoPath('../WingFoil2');
+  /** The WingFoil the reference campaign runs, the latest released (task-049): what these tests build. */
+  const WINGFOIL_UNDER_TEST = 'v0.2.2';
 
   /** The hold-out repository, when this machine has one (K2): S1's additions, S2's answer key. */
   const holdoutRepo = process.env.BENCH_HOLDOUT_PATH ?? repoPath('../WingFoil2-Benchmark-HoldOut');
@@ -613,7 +615,7 @@ describe('runs in a real container', () => {
   const s3Reference = repoPath('test/fixtures/reference/S3');
   const withClone = () => {
     process.env.BENCH_WINGFOIL_REPO = clone;
-    return dryRunProfileYaml().harnesses as Record<string, unknown>;
+    return { wingfoil: { tool: 'wingfoil', version: WINGFOIL_UNDER_TEST } };
   };
 
   it('W7 (task-032): S1 in the baseline arm, scored by its real oracle', async () => {
@@ -742,7 +744,7 @@ describe('runs in a real container', () => {
         output: expect.stringContaining('3 runs completed, 0 failed'),
       });
       image = /campaign ([0-9a-f]{12})/.exec(output)?.[1] ?? '';
-      const sha = execFileSync('git', ['-C', clone, 'rev-parse', '3df305e^{commit}'], {
+      const sha = execFileSync('git', ['-C', clone, 'rev-parse', `${WINGFOIL_UNDER_TEST}^{commit}`], {
         encoding: 'utf8',
       }).trim();
       const run = (arm: string) =>
@@ -752,7 +754,7 @@ describe('runs in a real container', () => {
       const git = (arm: string, ...args: string[]) =>
         execFileSync('git', ['-C', run(arm), '-c', 'safe.directory=*', ...args], { encoding: 'utf8' }).trim();
 
-      // Given the campaign pins wingfoil@3df305e, when the runner sets up the wingfoil arm, then the
+      // Given the campaign pins wingfoil@v0.2.2, when the runner sets up the wingfoil arm, then the
       // WingFoil installed in the container is built from that commit…
       const record = JSON.parse(readFileSync(join(out('wingfoil'), 'run.json'), 'utf8')) as {
         harness: { commit: string; tarball_sha256: string };
@@ -814,6 +816,10 @@ describe('runs in a real container', () => {
         readFileSync(join(root, 'arms', 'baseline-docs', 'manual.md'), 'utf8'),
       );
 
+      // F2.7 (task-049): the manual's sequence works against v0.2.2 — submitting a document whose body is
+      // not committed is refused by its write guard, and the manual's "commit that file, then submit" is not.
+      expect(readFileSync(join(run('wingfoil'), 'guard.txt'), 'utf8')).toContain('refusing to commit');
+
       // REQ-RUN-17: the agent's approval, as the declared member, accepted by WingFoil.
       const approval = git('wingfoil', 'log', '--grep=approve dl-002', '--format=%an <%ae>%n%b');
       expect(approval).toContain('Benchmark Approver <approver@benchmark.localhost>');
@@ -823,9 +829,10 @@ describe('runs in a real container', () => {
         'step 01',
         'wf(decision-log): approve dl-002-orders-are-cancelled-not-deleted [pending → approved]',
         'wf(decision-log): submit dl-002-orders-are-cancelled-not-deleted',
+        'docs: dl-002-orders-are-cancelled-not-deleted',
         'wf(decision-log): add dl-002-orders-are-cancelled-not-deleted',
         'setup',
-        'chore(wingfoil): declare the Benchmark Approver',
+        'wf(dna): add team.members Benchmark Approver',
         'chore(wingfoil): apply the scenario configuration',
         'chore(wingfoil): initialize .wingfoil/ with the Kanban template (P5.1.1)',
         'seed',

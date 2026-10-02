@@ -40,7 +40,14 @@ describe('the operating manuals (F2.7)', () => {
     expect(manual('wingfoil')).toContain('wingfoil memory approve');
   });
 
-  it('mention no MCP Tool, since WingFoil 3df305e has none (adr-003 decision 13)', () => {
+  it('tell the wingfoil agent to commit a document before submitting it (WingFoil v0.2.2 refuses otherwise)', () => {
+    // v0.2.2's write guard refuses `memory submit` on a document with uncommitted changes (task-049).
+    const submits = [...manual('wingfoil').matchAll(/commit that file, then\s+`wingfoil memory submit <id>`/g)];
+    expect(submits).toHaveLength(2);
+    expect(manual('wingfoil')).not.toMatch(/in the file it creates, then `wingfoil memory submit/);
+  });
+
+  it('mention no MCP Tool, since WingFoil v0.2.2 has none (adr-003 decision 13, re-checked in task-049)', () => {
     expect(manual('wingfoil')).not.toMatch(/MCP tools?\b/i);
   });
 
