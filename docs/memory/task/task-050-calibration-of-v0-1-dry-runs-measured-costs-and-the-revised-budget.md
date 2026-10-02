@@ -76,9 +76,78 @@ line ticked at delivery.
 
 ## Design
 
-<!-- Modules, interfaces, data formats touched; decisions taken and their reasons. -->
+### The profile — `scenarios/dry-run.yaml`
+
+```yaml
+# The benchmark's dry-run profile (task-021, REQ-CLI-05), written by calibration (task-050). The pins
+# are those the v0.1 reference campaign is to carry, so that its estimate reads these dry runs.
+harnesses:
+  wingfoil: { tool: wingfoil, version: v0.2.2 }   # task-049; the runner resolves it to 12537b62
+agent: { name: claude-code, version: 2.1.280 }    # REQ-RUN-16 as amended; the approver, 2026-10-02
+models: { default: claude-sonnet-5 }              # the slice's dry runs: --model claude-opus-5
+approver_policy: v1
+caps: { step_time_s: 1800, step_tokens: 20000000, run_cost_eur: 2.5 }
+currency: { usd_to_eur: 0.8851 }                  # ECB reference rate of 2026-10-01: 1 EUR = 1.1298 USD
+```
+
+- **`run_cost_eur: 2.5`** is stage 1's consented cap. A stage whose consent sets another cap changes this
+  line in its own commit before it starts; every dry run keeps the copy it ran with
+  (`results/dry-runs/<n>/dry-run.yaml`), so each run's cap stays readable.
+- **`step_time_s: 1800`** (30 minutes). It is a guard against a hung session, not a budget: the cost cap
+  bounds spending. W3's real wingfoil step on T2 took 50 turns; S1–S8 steps are larger, and a load average up
+  to about 57 on this machine slows the container. A step killed at its cap counts at its bound (task-024) and
+  is reported, so the report will say if 1800 s cut a step short.
+- **`step_tokens: 20000000`.** It counts every token kind, cache reads included (task-024), so on a real
+  session it grows with turns × context. It is set so as not to bind before the cost cap (2.50 € ≈ 2.82 USD
+  buys several million cache-read tokens); the report states each step's tokens, from which the campaign's
+  value is proposed.
+- **`usd_to_eur: 0.8851`**, 1 / 1.1298, the ECB's euro reference rate of 2026-10-01 (the latest published when
+  the profile was written; `eurofxref-daily.xml`). The ledger's W3 line had used about 0.92; costs in USD are
+  kept beside the EUR, so a later rate re-prices them without re-running.
+
+### Running a stage
+
+From this task's worktree, one dry run at a time (the machine is shared), on the task branch:
+
+```bash
+BENCH_AGENT_TOKEN_FILE=~/.claude/bench-token BENCH_WINGFOIL_REPO=/home/robypomper/Workspaces/WingFoil2 \
+  npx bench scenario dry-run S1@1.0 --arm baseline --allow-spending
+```
+
+then `--arm baseline-docs`, `--arm wingfoil`. `~/.claude/bench-token` is the token file W3's wave check used
+(`claude setup-token`); its content is never read here. After each dry run, before the next:
+
+- the printed cost and outcome checked against `results/dry-runs/<n>/` (each step's cost, `run.json`'s
+  pins: agent 2.1.280, model, harness `12537b62` for wingfoil, `dry_run: true`);
+- `grep` of the stored files for the token's `sk-ant-` shape (the runner already scrubs it);
+- a ledger line: date, `task-050`, `dry run`, the consent (stage and commit), model, cap, cost in USD and EUR,
+  source `results/dry-runs/<n>`;
+- a stage that reaches its consented ceiling stops, even with dry runs left.
+
+Then `bench score dry-runs/<n> --holdout ../WingFoil2-Benchmark-HoldOut` (no spending). S1 in the wingfoil arm
+is scored twice into a copy, to compare M-Q2.
+
+### What is committed
+
+`scenarios/dry-run.yaml`; `results/dry-runs/<n>/` as the runner and the scorer write them, transcripts
+excepted (`results/**/transcript.jsonl` is git-ignored); the ledger lines; `docs/calibration/v0.1.md`. The draft
+campaign file the estimate reads is quoted in the report with its command, and not committed: the reference
+campaign's file is plan-003 step 5's.
+
+### Choices to confirm
+
+1. **The caps:** `step_time_s` 1800 and `step_tokens` 20 000 000, as guards that should not bind before the
+   cost cap; or tighter values now.
+2. **The rate:** the ECB reference rate of 2026-10-01, 0.8851; or another source or date.
+3. **Dry runs committed** under `results/dry-runs/` (REQ-RES-01 stores them there; nothing has been stored
+   there yet in this repository), so the report's numbers can be checked against them.
 
 ## Execution notes
 
 - `npx wingfoil memory add --type task --title "Calibration of v0.1: dry runs, measured costs and the revised
   budget"` — declared: creates the element at `draft` and commits it. Observed: `2ab69d0 wf(task): add …`.
+- `npx wingfoil memory submit task-050-…` (draft → pending) — declared: moves `status` and commits the file.
+  Observed: `d5d1f3b wf(task): submit …`; the body committed first (`3ee70a4`).
+- The approver's `memory approve` (pending → backlog), `5494e1f`, with the reason "Calibration accepted;
+  consent to stage 1: S1 in baseline, baseline-docs and wingfoil on Sonnet 5, 2.50 EUR cap per run, 7.50 EUR
+  ceiling" — **stage 1's consent**.
