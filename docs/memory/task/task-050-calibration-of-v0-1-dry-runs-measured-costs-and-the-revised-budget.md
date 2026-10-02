@@ -179,3 +179,11 @@ campaign's file is plan-003 step 5's.
   60 s); scored: **final 135/135, hold-out 33/33**, the same per-step tallies as the baseline. No token stored.
   Stage 1 spent 4.4735 €; the 5.52 € left of the ceiling cover the wingfoil dry run's 4 € cap, so it starts.
 - dry run 2 (failed) scored: steps 12/12, 108/108, 108/108 (step 03's snapshot taken after the api_error), step 04 and final **not reached**.
+- **S1@1.0 wingfoil** (`results/dry-runs/4`, 14:00–14:26): completed, **3.7455 USD (3.3152 €)** — steps 0.5981
+  (42 turns, 237 s), 0.9805 (41 turns, 374 s), 1.7069 (42 turns, 765 s), 0.4600 USD (31 turns, 167 s); 1.73 M to
+  3.42 M tokens a step; harness `12537b62`; interventions 1, 0, 1, 1. No token stored. Scored: **final 135/135,
+  hold-out 33/33**, the same tallies as the other arms.
+- **Scored twice** (W9's carry-over): the two `score.json` byte-identical — M-Q2 coverage 280/313 with the
+  agent's own tests passing both times, lint 0 findings. One pair, not a proof of determinism.
+- **Stage 1 done:** 4 dry runs, **7.79 €** (8.80 USD) against the ceiling of about 10 €. Measured S1 costs per
+  completed run: baseline 1.99 €, baseline-docs 1.40 €, wingfoil 3.32 €.

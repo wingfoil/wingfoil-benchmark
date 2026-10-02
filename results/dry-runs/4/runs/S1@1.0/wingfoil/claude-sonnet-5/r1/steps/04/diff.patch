@@ -1,0 +1,174 @@
+diff --git a/docs/memory/task/task-004-implement-json-merge-patch-rfc-7386-applymergepatch.md b/docs/memory/task/task-004-implement-json-merge-patch-rfc-7386-applymergepatch.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..a24331e4161778ef8b1e0eed21f41da161f3e62f
+--- /dev/null
++++ b/docs/memory/task/task-004-implement-json-merge-patch-rfc-7386-applymergepatch.md
+@@ -0,0 +1,45 @@
++---
++id: task-004-implement-json-merge-patch-rfc-7386-applymergepatch
++type: task
++title: "Implement JSON Merge Patch (RFC 7386) applyMergePatch"
++status: approved
++---
++
++## Request
++
++Some clients send partial updates in the simpler JSON Merge Patch format (RFC 7386) rather than
++JSON Patch (RFC 6902). Export `applyMergePatch(target, patch)` from `src/index.ts` that applies a
++merge patch to a target JSON document and returns the merged document.
++
++## What I did
++
++- Test-first, since this is new behaviour: added 17 tests to `src/index.test.ts` covering every
++  RFC 7386 Appendix A example (replacing/adding a member, `null` removing a member, scalar/array
++  values replacing each other wholesale, recursive merging of nested objects, arrays replaced
++  wholesale rather than merged element-wise, a non-object patch — `null`, a scalar, or an array —
++  replacing the target entirely, and building up nested objects from an empty target while pruning
++  a nested `null`), plus two tests for non-mutation of the target (including of a nested object the
++  patch doesn't touch). Confirmed all 17 failed against the unmodified code (import error, since
++  `applyMergePatch` did not exist yet).
++- Implemented `applyMergePatch` in `src/index.ts` directly from the RFC 7386 §2 pseudocode: if
++  `patch` is not a JSON object, it replaces the target outright; otherwise each member of `patch`
++  is merged into a shallow copy of `target` (or into `{}` if `target` isn't an object), recursing
++  into `applyMergePatch` for non-null values and deleting the member when the patch value is
++  `null`. Reused the existing `isRecord` helper already shared by `applyPatch`.
++- Kept the project's immutability invariant (recorded in dl-002 for `applyPatch`, and flagged there
++  as something a future JSON Merge Patch feature should keep): `target` is never mutated, since
++  every level of the recursion builds a new object via `{ ...target }`/`{}` rather than writing
++  into the input. A nested object the patch doesn't touch is carried over by reference (same as
++  `applyPatch` does for untouched parts of a document), which is safe precisely because nothing
++  ever mutates in place.
++- Ran `node --test`: 62/62 passing (45 pre-existing + 17 new).
++- Type-checked `src/index.ts` in isolation against the project's strict `tsconfig.json`, using a
++  temporary, uncommitted `typescript` install (same approach as dl-001/task-003): clean. Did not
++  add `typescript`, `@types/node`, or a typecheck script to the project. No linter is configured in
++  this project (no ESLint config present), so there was nothing to run there.
++
++## Files changed
++
++- `src/index.ts`: added and exported `applyMergePatch`.
++- `src/index.test.ts`: added RFC 7386 Appendix A example tests and two non-mutation tests;
++  imports `applyMergePatch`.
+diff --git a/src/index.test.ts b/src/index.test.ts
+index 7fd227f184eb865f27ba925a8beeba1bd9fd3a8d..69991f34966682897093c921fefecf40a246f6f7 100644
+--- a/src/index.test.ts
++++ b/src/index.test.ts
+@@ -1,6 +1,6 @@
+ import { test } from "node:test";
+ import assert from "node:assert/strict";
+-import { applyPatch, resolvePointer } from "./index.ts";
++import { applyMergePatch, applyPatch, resolvePointer } from "./index.ts";
+ 
+ // Document from RFC 6901 §5.
+ const rfcDocument = {
+@@ -268,3 +268,79 @@ test("an add operation can add a null value, distinct from a missing 'value' mem
+   const result = applyPatch(document, [{ op: "add", path: "/baz", value: null }]);
+   assert.deepEqual(result, { foo: "bar", baz: null });
+ });
++
++// applyMergePatch — RFC 7386 Appendix A examples.
++
++test("A: replaces an existing member's value", () => {
++  assert.deepEqual(applyMergePatch({ a: "b" }, { a: "c" }), { a: "c" });
++});
++
++test("A: adds a new member", () => {
++  assert.deepEqual(applyMergePatch({ a: "b" }, { b: "c" }), { a: "b", b: "c" });
++});
++
++test("A: a null value removes an existing member", () => {
++  assert.deepEqual(applyMergePatch({ a: "b" }, { a: null }), {});
++});
++
++test("A: a null value removes an existing member, leaving the others untouched", () => {
++  assert.deepEqual(applyMergePatch({ a: "b", b: "c" }, { a: null }), { b: "c" });
++});
++
++test("A: a scalar patch value replaces an array value wholesale", () => {
++  assert.deepEqual(applyMergePatch({ a: ["b"] }, { a: "c" }), { a: "c" });
++});
++
++test("A: an array patch value replaces a scalar value wholesale", () => {
++  assert.deepEqual(applyMergePatch({ a: "c" }, { a: ["b"] }), { a: ["b"] });
++});
++
++test("A: merges nested objects recursively, applying a nested null removal", () => {
++  assert.deepEqual(applyMergePatch({ a: { b: "c" } }, { a: { b: "d", c: null } }), { a: { b: "d" } });
++});
++
++test("A: an array value is replaced wholesale, not merged element-wise", () => {
++  assert.deepEqual(applyMergePatch({ a: [{ b: "c" }] }, { a: [1] }), { a: [1] });
++});
++
++test("A: an array patch replaces an array target wholesale", () => {
++  assert.deepEqual(applyMergePatch(["a", "b"], ["c", "d"]), ["c", "d"]);
++});
++
++test("A: an array patch replaces a non-array target wholesale", () => {
++  assert.deepEqual(applyMergePatch({ a: "b" }, ["c"]), ["c"]);
++});
++
++test("A: a null patch replaces the whole target with null", () => {
++  assert.deepEqual(applyMergePatch({ a: "foo" }, null), null);
++});
++
++test("A: a scalar patch replaces the whole target", () => {
++  assert.deepEqual(applyMergePatch({ a: "foo" }, "bar"), "bar");
++});
++
++test("A: a null-valued member already in the target is left alone when the patch doesn't touch it", () => {
++  assert.deepEqual(applyMergePatch({ e: null }, { a: 1 }), { e: null, a: 1 });
++});
++
++test("A: a non-object target is discarded in favor of an object patch", () => {
++  assert.deepEqual(applyMergePatch([1, 2], { a: "b", c: null }), { a: "b" });
++});
++
++test("A: building up nested objects from an empty target, pruning a nested null", () => {
++  assert.deepEqual(applyMergePatch({}, { a: { bb: { ccc: null } } }), { a: { bb: {} } });
++});
++
++test("does not mutate the target document", () => {
++  const target = { a: { b: "c" }, d: "e" };
++  const snapshot = structuredClone(target);
++  applyMergePatch(target, { a: { b: "f" }, d: null });
++  assert.deepEqual(target, snapshot);
++});
++
++test("does not mutate a nested object the patch doesn't touch", () => {
++  const nested = { b: "c" };
++  const target = { a: nested, d: "e" };
++  const result = applyMergePatch(target, { d: "f" }) as Record<string, unknown>;
++  assert.equal(result.a, nested);
++});
+diff --git a/src/index.ts b/src/index.ts
+index f3593d8b034211ac893be95290a3ba242ee10fef..03de016145e299f9aecbd8943dadb484dfd1b220 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -288,3 +288,26 @@ export function applyPatch(document: unknown, patch: unknown): unknown {
+ 
+   return patch.reduce((current, raw, index) => applyOperation(current, raw, index), document);
+ }
++
++/**
++ * Applies a JSON Merge Patch (RFC 7386) to a target JSON document and returns the merged
++ * document as a new value; `target` is never mutated. Per RFC 7386 §2: if `patch` is not an
++ * object, it replaces `target` entirely; otherwise each member of `patch` is merged into
++ * `target` recursively, and a member whose value is `null` removes the corresponding member
++ * from `target` instead of setting it.
++ */
++export function applyMergePatch(target: unknown, patch: unknown): unknown {
++  if (!isRecord(patch)) {
++    return patch;
++  }
++
++  const merged: Record<string, unknown> = isRecord(target) ? { ...target } : {};
++  for (const [member, value] of Object.entries(patch)) {
++    if (value === null) {
++      delete merged[member];
++    } else {
++      merged[member] = applyMergePatch(merged[member], value);
++    }
++  }
++  return merged;
++}
