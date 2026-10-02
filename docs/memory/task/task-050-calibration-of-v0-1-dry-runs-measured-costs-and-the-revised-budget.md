@@ -277,3 +277,18 @@ cost note. `bench scenario validate S1@1.0 --holdout …` must pass.
 
 **Confirmed by the approver, 2026-10-02:** P1 through the suite's own applier; P2 as a per-pair length bound;
 `patch` and `merge-patch` re-run after step 5; about 30 public and 15 hold-out pairs.
+
+### S1's step 5 — build
+
+- Red `8b8cb31`; the step, its suite and the reference `9845c78`; the hold-out's 15 pairs in the private
+  repository (`432db90` there); S1 1.3, traceability 1.3, adr-004's note `6b11f2d`. The test's threshold of
+  bounded pairs set to 15 (17 of the 30 are a small change in a large document, all bounded).
+- Checked: `bench scenario validate S1@1.0 --holdout …` valid (leak scan clean, hold-out 5 files); the seed fails
+  the 30 public and 15 hold-out pairs, the reference's step 5 passes all 45 (a local run of both suites);
+  `test/unit/scenarios/s1.test.ts` 15/15; `test/acceptance/scoring.test.ts`, `scenarios.test.ts` and
+  `test/unit/results` 117/117; the S1 Docker tests 2/2 (baseline; baseline-docs and wingfoil).
+
+### Stage 1b — S1@1.0 with step 5
+
+- **The approver's consent, 2026-10-02, in chat:** S1 × baseline, baseline-docs, wingfoil on Sonnet 5, cap **5 €**
+  per run (the profile's, unchanged), ceiling **13 €** (expected 8–9 €).
