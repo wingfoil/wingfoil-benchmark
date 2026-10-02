@@ -475,7 +475,9 @@ describe('runs in a real container', () => {
     expect(suites[1]?.patch).not.toBe('108/108');
     expect(suites[2]).toEqual({ patch: '108/108' });
     expect(suites[3]).toEqual({ patch: '108/108', 'merge-patch': '15/15' });
-    expect(score.final.m_q1).toEqual({ passed: 135, total: 135 });
+    // createPatch after step 5 (task-050), Patch and Merge Patch kept.
+    expect(suites[4]).toEqual({ patch: '108/108', 'merge-patch': '15/15', 'create-patch': '30/30' });
+    expect(score.final.m_q1).toEqual({ passed: 165, total: 165 });
   }
 
   async function s2InArm(root: string, arm: string, execution: number): Promise<void> {
