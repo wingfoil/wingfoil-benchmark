@@ -1,0 +1,172 @@
+diff --git a/src/index.ts b/src/index.ts
+index 6dceb77c5bac39d8912b421c14b0bf5bb2ef8a03..6db6532f531aa82df7d1795faf37f38e04485fb4 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -26,6 +26,7 @@ export interface Booking {
+   start: string;
+   end: string;
+   total: number;
++  cancelledAt: string | null;
+ }
+ 
+ export interface AvailabilityQuery {
+@@ -34,6 +35,11 @@ export interface AvailabilityQuery {
+   kind?: EquipmentKind;
+ }
+ 
++export interface Cancellation {
++  bookingId: string;
++  refund: number;
++}
++
+ const MS_PER_HOUR = 60 * 60 * 1000;
+ const MS_PER_DAY = 24 * MS_PER_HOUR;
+ 
+@@ -81,10 +87,19 @@ function overlaps(aStart: string, aEnd: string, bStart: string, bEnd: string): b
+   return Date.parse(aStart) < Date.parse(bEnd) && Date.parse(aEnd) > Date.parse(bStart);
+ }
+ 
++function parseDate(iso: string): number {
++  const ms = Date.parse(iso);
++  if (Number.isNaN(ms)) {
++    throw new Error(`Invalid date: ${iso}`);
++  }
++  return ms;
++}
++
+ export interface RentalService {
+   addEquipment(item: Equipment): void;
+   quote(request: RentalRequest): Quote;
+   book(request: RentalRequest): Booking;
++  cancel(bookingId: string, at: string): Cancellation;
+   availability(query: AvailabilityQuery): string[];
+ }
+ 
+@@ -100,6 +115,14 @@ export function createRentalService(): RentalService {
+     return item;
+   }
+ 
++  function getBooking(bookingId: string): Booking {
++    const booking = bookings.find((candidate) => candidate.id === bookingId);
++    if (!booking) {
++      throw new Error(`Unknown booking: ${bookingId}`);
++    }
++    return booking;
++  }
++
+   function priceFor(item: Equipment, start: string, end: string): number {
+     const { startMs, hours } = hoursBetween(start, end);
+ 
+@@ -134,17 +157,33 @@ export function createRentalService(): RentalService {
+       const total = priceFor(item, start, end);
+ 
+       const clashes = bookings.some(
+-        (booking) => booking.itemId === itemId && overlaps(start, end, booking.start, booking.end),
++        (booking) =>
++          booking.cancelledAt === null &&
++          booking.itemId === itemId &&
++          overlaps(start, end, booking.start, booking.end),
+       );
+       if (clashes) {
+         throw new Error(`Item ${itemId} is already booked for part of that period`);
+       }
+ 
+-      const booking: Booking = { id: crypto.randomUUID(), itemId, start, end, total };
++      const booking: Booking = { id: crypto.randomUUID(), itemId, start, end, total, cancelledAt: null };
+       bookings.push(booking);
+       return booking;
+     },
+ 
++    cancel(bookingId, at) {
++      const booking = getBooking(bookingId);
++      if (booking.cancelledAt !== null) {
++        throw new Error(`Booking ${bookingId} is already cancelled`);
++      }
++
++      const atMs = parseDate(at);
++      const refund = atMs < parseDate(booking.start) ? booking.total : 0;
++
++      booking.cancelledAt = at;
++      return { bookingId, refund };
++    },
++
+     availability({ start, end, kind }) {
+       daysBetween(start, end);
+ 
+@@ -154,7 +193,8 @@ export function createRentalService(): RentalService {
+           continue;
+         }
+         const isBooked = bookings.some(
+-          (booking) => booking.itemId === item.id && overlaps(start, end, booking.start, booking.end),
++          (booking) =>
++            booking.cancelledAt === null && booking.itemId === item.id && overlaps(start, end, booking.start, booking.end),
+         );
+         if (!isBooked) {
+           ids.push(item.id);
+diff --git a/test/index.test.ts b/test/index.test.ts
+index 6a3fddbd9906eb5349cf46e1fe13c7c8410c41f0..b37eaa1799da5d70719fc152f5203094e0f99ec0 100644
+--- a/test/index.test.ts
++++ b/test/index.test.ts
+@@ -261,6 +261,62 @@ test('availability returns ids of any kind when kind is omitted', () => {
+   assert.deepEqual(ids, ['b1', 's1']);
+ });
+ 
++test('cancel before the booking starts gives a full refund', () => {
++  const service = createRentalService();
++  service.addEquipment(board('b1', 1000));
++  const booking = service.book({ itemId: 'b1', start: '2024-06-02T00:00:00Z', end: '2024-06-04T00:00:00Z' });
++
++  const cancellation = service.cancel(booking.id, '2024-06-01T00:00:00Z');
++
++  assert.deepEqual(cancellation, { bookingId: booking.id, refund: 2000 });
++});
++
++test('cancel after the booking has started gives no refund', () => {
++  const service = createRentalService();
++  service.addEquipment(board('b1', 1000));
++  const booking = service.book({ itemId: 'b1', start: '2024-06-01T00:00:00Z', end: '2024-06-03T00:00:00Z' });
++
++  const cancellation = service.cancel(booking.id, '2024-06-02T00:00:00Z');
++
++  assert.deepEqual(cancellation, { bookingId: booking.id, refund: 0 });
++});
++
++test('cancel frees the equipment so the period can be rebooked', () => {
++  const service = createRentalService();
++  service.addEquipment(board('b1'));
++  const booking = service.book({ itemId: 'b1', start: '2024-06-01T00:00:00Z', end: '2024-06-05T00:00:00Z' });
++
++  service.cancel(booking.id, '2024-05-30T00:00:00Z');
++
++  const ids = service.availability({ start: '2024-06-01T00:00:00Z', end: '2024-06-05T00:00:00Z' });
++  assert.deepEqual(ids, ['b1']);
++  assert.doesNotThrow(() => service.book({ itemId: 'b1', start: '2024-06-01T00:00:00Z', end: '2024-06-05T00:00:00Z' }));
++});
++
++test('cancel throws for an unknown booking', () => {
++  const service = createRentalService();
++
++  assert.throws(() => service.cancel('missing', '2024-06-01T00:00:00Z'));
++});
++
++test('cancel throws when the booking is already cancelled', () => {
++  const service = createRentalService();
++  service.addEquipment(board('b1'));
++  const booking = service.book({ itemId: 'b1', start: '2024-06-01T00:00:00Z', end: '2024-06-02T00:00:00Z' });
++
++  service.cancel(booking.id, '2024-05-30T00:00:00Z');
++
++  assert.throws(() => service.cancel(booking.id, '2024-05-31T00:00:00Z'));
++});
++
++test('cancel throws for an invalid date string', () => {
++  const service = createRentalService();
++  service.addEquipment(board('b1'));
++  const booking = service.book({ itemId: 'b1', start: '2024-06-01T00:00:00Z', end: '2024-06-02T00:00:00Z' });
++
++  assert.throws(() => service.cancel(booking.id, 'not-a-date'));
++});
++
+ test('availability throws for an invalid period', () => {
+   const service = createRentalService();
+   service.addEquipment(board('b1'));

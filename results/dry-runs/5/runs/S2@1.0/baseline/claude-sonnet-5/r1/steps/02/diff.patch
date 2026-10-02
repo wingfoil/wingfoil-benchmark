@@ -1,0 +1,70 @@
+diff --git a/src/coupons.ts b/src/coupons.ts
+index 4b7df8e652e5d52033abb2ea07d763007ccce283..496aed7828812115eb643d5d3378af00c2d6948f 100644
+--- a/src/coupons.ts
++++ b/src/coupons.ts
+@@ -74,7 +74,7 @@ export class Coupons {
+     const coupon = this.#coupons.get(canonicalCode(code));
+     if (coupon === undefined) throw new CouponError(code, 'unknown code');
+     if (compareDates(date, coupon.validFrom) < 0) throw new CouponError(coupon.code, 'not valid yet');
+-    if (compareDates(date, coupon.validUntil) >= 0) throw new CouponError(coupon.code, 'expired');
++    if (compareDates(date, coupon.validUntil) > 0) throw new CouponError(coupon.code, 'expired');
+     if (amount < coupon.minimumCents) throw new CouponError(coupon.code, 'order below the minimum amount');
+     if (coupon.singleUse && this.#usedBy.has(coupon.code)) throw new CouponError(coupon.code, 'already used');
+     return coupon;
+diff --git a/src/pricing.ts b/src/pricing.ts
+index 3d07b8e66d51d75411d7694eb6b4d79c95913fee..8ce9e1076b8d57416c9bedbd02263a0b60b05cda 100644
+--- a/src/pricing.ts
++++ b/src/pricing.ts
+@@ -55,8 +55,11 @@ export function priceOrder(inputs: readonly LineInput[], coupon?: Coupon): Price
+   const afterVolume = gross.map((amount, index) => amount - (volume[index] ?? 0));
+   const volumeTotal = sum(volume);
+ 
++  const subtotalAfterVolume = grossTotal - volumeTotal;
+   const couponTotal =
+-    coupon === undefined ? 0 : capped(couponDiscount(coupon, grossTotal), volumeTotal, grossTotal);
++    coupon === undefined
++      ? 0
++      : capped(couponDiscount(coupon, subtotalAfterVolume), volumeTotal, grossTotal);
+   const couponShares = allocate(couponTotal, afterVolume);
+ 
+   const lines = inputs.map(({ product, quantity }, index): PricedLine => {
+diff --git a/test/coupons.test.ts b/test/coupons.test.ts
+index 1fdc2519dc031050b1b5593605af611816478518..c06df9e2b58183d7ab3ea1cb2870c8574ed87b6a 100644
+--- a/test/coupons.test.ts
++++ b/test/coupons.test.ts
+@@ -26,11 +26,12 @@ describe('coupons', () => {
+     assert.throws(() => orders.quote({ customer: 'c-1', date: '2026-06-01', lines: [{ sku: 'PEN-4', quantity: 1 }], coupon: 'FIVEOFF' }), CouponError);
+   });
+ 
+-  it('refuses a coupon before its first day and after its last', () => {
++  it('refuses a coupon before its first day and after its last, but allows it on its last day', () => {
+     const { orders } = shop();
+     const request = { customer: 'c-1', lines: [{ sku: 'PEN-4', quantity: 1 }], coupon: 'SPRING' };
+     assert.throws(() => orders.quote({ ...request, date: '2026-02-28' }), CouponError);
+     assert.throws(() => orders.quote({ ...request, date: '2026-04-01' }), CouponError);
++    assert.equal(orders.quote({ ...request, date: '2026-03-31' }).totals.couponDiscountCents, 200);
+   });
+ 
+   it('lets a single-use coupon be used once', () => {
+diff --git a/test/orders.test.ts b/test/orders.test.ts
+index 5772d79edcd2a1eab4c94da9b2fb58fdabca5d2a..2dca2e1da5652f581c3981539179464855e399c2 100644
+--- a/test/orders.test.ts
++++ b/test/orders.test.ts
+@@ -58,6 +58,17 @@ describe('orders', () => {
+     assert.equal(order.totals.goodsCents, 4500);
+   });
+ 
++  it('applies a percentage coupon after the volume discount, not before', () => {
++    const s = shop();
++    s.catalog.add({ sku: 'BOOK-1', name: 'Notebook', priceCents: 500, vatClass: 'standard', weightGrams: 150 });
++    s.inventory.restock('BOOK-1', 20);
++    s.coupons.add({ code: 'TENOFF', kind: 'percent', value: 10, validFrom: '2026-01-01', validUntil: '2026-12-31' });
++    const order = s.orders.place({ customer: 'c-1', date: '2026-03-02', lines: [{ sku: 'BOOK-1', quantity: 12 }], coupon: 'TENOFF' });
++    assert.equal(order.totals.volumeDiscountCents, 600);
++    assert.equal(order.totals.couponDiscountCents, 540);
++    assert.equal(order.totals.goodsCents, 4860);
++  });
++
+   it('merges two lines of the same product', () => {
+     const { orders } = shop();
+     const order = orders.place({ customer: 'c-1', date: '2026-03-02', lines: [{ sku: 'TEA-7', quantity: 1 }, { sku: 'TEA-7', quantity: 3 }] });

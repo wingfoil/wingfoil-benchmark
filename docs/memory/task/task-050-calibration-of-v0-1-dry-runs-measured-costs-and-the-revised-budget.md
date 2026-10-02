@@ -193,3 +193,19 @@ campaign's file is plan-003 step 5's.
 - **The approver's consent, 2026-10-02, in chat:** stage 2 — S2, S3, S8 × baseline, baseline-docs, wingfoil on
   Sonnet 5 — with a cap of **5 €** per run and a ceiling of **30 €** (expected about 20 €). A dry run starts only
   while the stage's spending plus its cap stays within the ceiling. S1's difficulty is decided after stage 2.
+- **Stage 2 ran** 14:30–16:03, one dry run at a time (`results/dry-runs/5`–`13`); **12.86 €** against the 30 €
+  ceiling. Eight completed; **S8 wingfoil failed at step 03 with `api_error`** (`results/dry-runs/13`, 1.4464 €),
+  the second `api_error` at a step 03 (dry run 2). No `sk-ant-` and no token literal stored. Scored with the
+  hold-out:
+
+  | Dry run | Scenario | Arm | Cost | Final hidden | Hold-out | Checks | M-F1 |
+  |---|---|---|---|---|---|---|---|
+  | 5 | S2 | baseline | 0.9374 € | 24/24 | 17/17 | 2/3 | — |
+  | 6 | S2 | baseline-docs | 1.4142 € | 24/24 | 17/17 | 2/3 | — |
+  | 7 | S2 | wingfoil | 1.4194 € | 24/24 | 17/17 | **3/3** | — |
+  | 8 | S3 | baseline | 0.8413 € | 35/37 | 16/17 | 0/1 | 3/5 |
+  | 9 | S3 | baseline-docs | 1.9732 € | 34/37 | 16/17 | 0/1 | 3/5 |
+  | 10 | S3 | wingfoil | 2.2925 € | 34/37 | 16/17 | **1/1** | **4/5** |
+  | 11 | S8 | baseline | 1.0483 € | 23/23 | 7/7 | 12/16 | — |
+  | 12 | S8 | baseline-docs | 1.4840 € | 23/23 | 6/7 | **16/16** | — |
+  | 13 | S8 | wingfoil | 1.4464 € (failed) | not reached | not reached | 12/12 (steps 1–3) | — |

@@ -1,0 +1,254 @@
+diff --git a/README.md b/README.md
+index 1888be200ceb879a1bd54f1692e1db030cce1a8b..b9d031daa842ae5ff928648df65a924052e159dd 100644
+--- a/README.md
++++ b/README.md
+@@ -22,6 +22,9 @@ const booking = service.book({ itemId: 'board-1', start: '2026-07-01T00:00:00.00
+ 
+ const freeBoards = service.availability({ start: '2026-07-01T00:00:00.000Z', end: '2026-07-03T00:00:00.000Z', kind: 'board' });
+ // the sorted ids of the boards with no booking overlapping that period
++
++const cancellation = service.cancel(booking.id, '2026-06-20T00:00:00.000Z');
++// cancellation.refund === 3000, the booking's full total; board-1 is free again for that period
+ ```
+ 
+ Rules that apply throughout:
+@@ -36,9 +39,12 @@ Rules that apply throughout:
+ - A rental of 3 days or more costs 10% less than its full price (days × dailyPrice), rounded to the
+   nearest cent. Both `quote` and `book` return this reduced total. The long-stay discount does not apply
+   to hourly rentals.
++- Cancelling a booking refunds its full total and releases the equipment it held; a booking can only be
++  cancelled once.
+ 
+ `quote` and `book` throw for an unknown item or a period the rules above do not allow; `book` also throws
+ when the item is not free for the whole period. `availability` takes a `{ start, end, kind }` query,
+ `kind` being optional, and returns the sorted ids of the equipment of that kind (or of any kind when
+ none is given) that is free for the whole period; it throws for a period the rules above do not allow.
+-Cancellation is not implemented yet.
++`cancel(bookingId, at)` cancels the booking at the time `at` and returns `{ bookingId, refund }`; it
++throws for an unknown booking, an invalid `at`, or a booking already cancelled.
+diff --git a/docs/memory/decision-log/dl-004-cancellation-full-refund-at-recorded-but-not-used-to-prorate.md b/docs/memory/decision-log/dl-004-cancellation-full-refund-at-recorded-but-not-used-to-prorate.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..02d781217058f6f02126070300eaabfb9aa6b5eb
+--- /dev/null
++++ b/docs/memory/decision-log/dl-004-cancellation-full-refund-at-recorded-but-not-used-to-prorate.md
+@@ -0,0 +1,48 @@
++---
++id: dl-004-cancellation-full-refund-at-recorded-but-not-used-to-prorate
++type: decision-log
++title: "Cancellation: full refund, at recorded but not used to prorate"
++status: approved
++---
++
++## Context
++
++"Customers ask us to cancel their bookings" specifies `cancel(bookingId, at)` returning
++`{ bookingId, refund }`, that a cancelled booking no longer holds its equipment, and that a booking can
++only be cancelled once — but not how `refund` is computed, nor what role `at` plays in that computation.
++No cancellation-fee or proration policy exists anywhere in `README.md` or prior memory. dl-001 already
++anticipated the parameter: cancellation "will need 'now' at cancellation time, which will have to be
++threaded in explicitly (e.g. as a parameter) to keep honoring the determinism directive" — i.e. `at`
++exists so `cancel` never calls `Date.now()` itself, not because a specific refund formula was implied.
++
++## Decision
++
++- **Refund amount**: the booking's full `total`. No tiered or prorated refund (e.g. based on how close
++  `at` is to the booking's start) was introduced, since no such policy was requested anywhere; inventing
++  one would be a product decision this change is not asking for.
++- **Role of `at`**: recorded as the booking's new `cancelledAt` field (validated with the existing
++  `parseIsoDateTime`, the same boundary check `start`/`end` get), not used to vary the refund. This
++  satisfies "cancels the booking at the time `at`" literally (the instant is part of the booking's
++  state) while keeping the determinism directive's "no wall-clock" rule: the caller supplies "now"
++  instead of the service reading the clock.
++- **Freeing equipment**: `isFree` now also requires `cancelledAt === undefined` on top of the existing
++  overlap check, so a cancelled booking is immediately excluded from both `book`'s overlap check and
++  `availability`, for any period — not just from `at` onward. There is no partial/in-progress booking
++  state in this in-memory model, so "no longer holds its equipment" means a full, immediate release.
++- **One cancellation only**: `cancel` throws `Booking <id> is already cancelled` when `cancelledAt` is
++  already set, mirroring the `Unknown item`/`Item <id> cannot be rented by the hour` error style. An
++  unknown `bookingId` throws `Unknown booking: <id>` the same way.
++- **Representation**: `bookings[index]` is replaced with a new object (`{ ...booking, cancelledAt: at }`)
++  rather than mutated in place, keeping the existing immutable-update style used by `addEquipment`.
++
++## Consequences
++
++- `refund` is always equal to the original `total`; a future request for cancellation fees or
++  time-based proration would change only the `cancel` method, using `at` (already threaded through) to
++  compare against the booking's `start`/`end`.
++- `Booking` gained an optional `cancelledAt` field; nothing currently reads it except `isFree` and
++  `cancel`'s own already-cancelled check, so it carries no observable effect beyond those two paths and
++  the value echoed implicitly through `refund`.
++- Cancelling a booking well after its period has ended is still accepted and still refunds in full,
++  since no "already used" or expiry rule was requested; this would need to be revisited if the school
++  ever wants to disallow or discount cancellation after the rental period.
+diff --git a/docs/memory/task/task-005-let-customers-cancel-bookings.md b/docs/memory/task/task-005-let-customers-cancel-bookings.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..ae6939c1e251b10ed00b308fb41e23dc149efd33
+--- /dev/null
++++ b/docs/memory/task/task-005-let-customers-cancel-bookings.md
+@@ -0,0 +1,40 @@
++---
++id: task-005-let-customers-cancel-bookings
++type: task
++title: "Let customers cancel bookings"
++status: approved
++---
++
++## Request
++
++Plans change, and customers ask us to cancel their bookings. Add `cancel(bookingId, at)` to the rental
++service: it cancels the booking at the time `at` and returns `{ bookingId, refund }`, the amount given
++back to the customer. A cancelled booking no longer holds its equipment, and a booking can only be
++cancelled once.
++
++## What was done
++
++- Added `cancel(bookingId, at)` to `RentalService` in `src/index.ts`, returning a new `Cancellation`
++  type (`{ bookingId, refund }`).
++- `Booking` gained an optional `cancelledAt` field, set on cancellation; `isFree` now also excludes
++  bookings with `cancelledAt` set, so a cancelled booking immediately stops blocking `book` and
++  `availability` for its item.
++- `cancel` validates `at` with the existing `parseIsoDateTime` boundary check, throws `Unknown booking:
++  <id>` for an unknown id, and throws `Booking <id> is already cancelled` if `cancelledAt` is already
++  set.
++- Refund is the booking's full `total`; no proration or cancellation fee was introduced, since none was
++  requested. See
++  `dl-004-cancellation-full-refund-at-recorded-but-not-used-to-prorate` (submitted, pending approval)
++  for the reasoning on the refund amount and the role of `at`.
++- Test-first: added 6 new tests (full refund on cancel, equipment freed for re-booking the same period,
++  equipment freed for `availability`, unknown booking, already-cancelled booking, invalid `at`),
++  confirmed they failed against the pre-change code (`service.cancel is not a function`), then
++  implemented until all 35 tests in `test/rental-service.test.ts` pass (`node --test`).
++- Updated `README.md`: documented the cancellation rule and `cancel`'s signature/errors, added a
++  `cancel` call to the usage example, and removed the "Cancellation is not implemented yet" line.
++
++## Notes
++
++No cancellation-fee or time-based proration policy was requested; `cancel` always refunds the full
++total regardless of how close `at` is to the booking's start or end. A future request for such a policy
++would only need to change `cancel`, which already has `at` and the booking's `start`/`end` on hand.
+diff --git a/src/index.ts b/src/index.ts
+index 55c0f9d28a5eb616abcb9e74f6aa4b640b6606fb..cbd002e2e263c51d314772fc9dce7a2fc460bb8f 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -53,6 +53,15 @@ export interface Booking {
+    * day, otherwise the daily price after the long-stay discount if it applies.
+    */
+   readonly total: number;
++  /** When this booking was cancelled, as an ISO-8601 string. Absent while the booking stands. */
++  readonly cancelledAt?: string;
++}
++
++/** The result of cancelling a booking. */
++export interface Cancellation {
++  readonly bookingId: string;
++  /** The amount given back to the customer, in integer euro cents. */
++  readonly refund: number;
+ }
+ 
+ /** The booking desk's rental module: equipment, quotes and bookings, kept in memory. */
+@@ -70,6 +79,11 @@ export interface RentalService {
+    * that is free for the whole period. Throws for an invalid period.
+    */
+   availability(query: AvailabilityQuery): string[];
++  /**
++   * Cancels a booking at the given time, freeing the equipment it held. Throws for an unknown
++   * booking, an invalid `at`, or a booking already cancelled.
++   */
++  cancel(bookingId: string, at: string): Cancellation;
+ }
+ 
+ const MS_PER_HOUR = 60 * 60 * 1000;
+@@ -160,7 +174,9 @@ export function createRentalService(): RentalService {
+   function isFree(itemId: string, startTime: number, endTime: number): boolean {
+     return !bookings.some(
+       (existing) =>
+-        existing.itemId === itemId && periodsOverlap(startTime, endTime, Date.parse(existing.start), Date.parse(existing.end)),
++        existing.itemId === itemId &&
++        existing.cancelledAt === undefined &&
++        periodsOverlap(startTime, endTime, Date.parse(existing.start), Date.parse(existing.end)),
+     );
+   }
+ 
+@@ -204,5 +220,19 @@ export function createRentalService(): RentalService {
+       }
+       return ids.sort();
+     },
++
++    cancel(bookingId, at) {
++      parseIsoDateTime(at, 'at');
++      const index = bookings.findIndex((booking) => booking.id === bookingId);
++      if (index === -1) {
++        throw new Error(`Unknown booking: ${bookingId}`);
++      }
++      const booking = bookings[index]!;
++      if (booking.cancelledAt !== undefined) {
++        throw new Error(`Booking ${bookingId} is already cancelled`);
++      }
++      bookings[index] = { ...booking, cancelledAt: at };
++      return { bookingId, refund: booking.total };
++    },
+   };
+ }
+diff --git a/test/rental-service.test.ts b/test/rental-service.test.ts
+index c1ced80858c2fb32e8c46e7e9c6cb0dc28c99477..ca7e19b794f107762c2c5f7b1619c9faacf706ab 100644
+--- a/test/rental-service.test.ts
++++ b/test/rental-service.test.ts
+@@ -277,3 +277,58 @@ test('availability throws for an invalid period', () => {
+ 
+   assert.throws(() => service.availability({ start: '2026-07-01T08:15:00.000Z', end: '2026-07-02T00:00:00.000Z' }));
+ });
++
++test('cancel refunds the full total and echoes the booking id', () => {
++  const service = createRentalService();
++  service.addEquipment(board('board-1', 1000));
++  const booking = service.book({ itemId: 'board-1', start: '2026-07-01T00:00:00.000Z', end: '2026-07-04T00:00:00.000Z' });
++
++  const cancellation = service.cancel(booking.id, '2026-06-20T00:00:00.000Z');
++
++  assert.deepEqual(cancellation, { bookingId: booking.id, refund: booking.total });
++});
++
++test('cancel frees the equipment for booking the same period again', () => {
++  const service = createRentalService();
++  service.addEquipment(board('board-1', 1500));
++  const booking = service.book({ itemId: 'board-1', start: '2026-07-01T00:00:00.000Z', end: '2026-07-03T00:00:00.000Z' });
++
++  service.cancel(booking.id, '2026-06-20T00:00:00.000Z');
++  const second = service.book({ itemId: 'board-1', start: '2026-07-01T00:00:00.000Z', end: '2026-07-03T00:00:00.000Z' });
++
++  assert.equal(second.itemId, 'board-1');
++});
++
++test('cancel frees the equipment for availability', () => {
++  const service = createRentalService();
++  service.addEquipment(board('board-1', 1500));
++  const booking = service.book({ itemId: 'board-1', start: '2026-07-01T00:00:00.000Z', end: '2026-07-03T00:00:00.000Z' });
++
++  service.cancel(booking.id, '2026-06-20T00:00:00.000Z');
++  const available = service.availability({ start: '2026-07-01T00:00:00.000Z', end: '2026-07-03T00:00:00.000Z', kind: 'board' });
++
++  assert.deepEqual(available, ['board-1']);
++});
++
++test('cancel throws for an unknown booking', () => {
++  const service = createRentalService();
++
++  assert.throws(() => service.cancel('nope', '2026-06-20T00:00:00.000Z'));
++});
++
++test('cancel throws when the booking is already cancelled', () => {
++  const service = createRentalService();
++  service.addEquipment(board('board-1', 1500));
++  const booking = service.book({ itemId: 'board-1', start: '2026-07-01T00:00:00.000Z', end: '2026-07-03T00:00:00.000Z' });
++  service.cancel(booking.id, '2026-06-20T00:00:00.000Z');
++
++  assert.throws(() => service.cancel(booking.id, '2026-06-21T00:00:00.000Z'));
++});
++
++test('cancel throws when at is not a valid ISO-8601 date-time', () => {
++  const service = createRentalService();
++  service.addEquipment(board('board-1', 1500));
++  const booking = service.book({ itemId: 'board-1', start: '2026-07-01T00:00:00.000Z', end: '2026-07-03T00:00:00.000Z' });
++
++  assert.throws(() => service.cancel(booking.id, 'not-a-date'));
++});
