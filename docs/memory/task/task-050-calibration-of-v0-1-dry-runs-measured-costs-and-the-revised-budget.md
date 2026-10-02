@@ -324,3 +324,7 @@ cost note. `bench scenario validate S1@1.0 --holdout …` must pass.
   ceiling, one run; expected about 30 €, 2.3× the Opus baseline as wingfoil was 2.3× the baseline on Sonnet), and
   for it `step_time_s` **3600** (Opus's baseline spent 1644 s of 1800 on one step). Both in the profile, their
   own commit; the step time is a value the report revisits for the campaign.
+- **The approver's request, 2026-10-02, in chat:** at the end of calibration, the report gains a section
+  **"Hypotheses for v0.2"** — explicit, falsifiable expectations for WingFoil with its workflow engine, written
+  before v0.2 runs on the same registered scenario versions (cost against the baseline, M-F1, S2's and S8's
+  checks, expected failures), as the defence against T1.
