@@ -150,3 +150,16 @@ campaign's file is plan-003 step 5's.
 - The approver's `memory approve` (pending → backlog), `5494e1f`, with the reason "Calibration accepted;
   consent to stage 1: S1 in baseline, baseline-docs and wingfoil on Sonnet 5, 2.50 EUR cap per run, 7.50 EUR
   ceiling" — **stage 1's consent**.
+
+### Stage 1
+
+- **S1@1.0 baseline** (`results/dry-runs/1`, 10:17–10:45): completed, **2.2508 USD (1.9922 €)** — steps 0.1760
+  (12 turns, 82 s), 0.5299 (16 turns, 777 s), 1.3611 (22 turns, 771 s), 0.1838 USD (11 turns, 69 s); tokens per
+  step 0.35 M, 0.79 M, 1.15 M, 0.39 M. Pins as profiled; no `sk-ant-` and no token literal in the stored files.
+  Ledger `b22033d`.
+- **The approver's consent, 2026-10-02, in chat:** the cap for stage 1's two remaining dry runs raised to **4 €**
+  each, the stage's ceiling to about **10 €** (1.99 € spent + 2 × 4 €), since S1 in baseline already cost 80 % of
+  the 2.50 € cap and W3 measured the wingfoil arm at about five times the baseline on T2. `run_cost_eur: 4` in
+  the profile, its own commit.
+- **Found:** `.gitignore`'s `runs/` ignores every directory named `runs`, `results/**/runs/` included, so no run
+  record would ever be committed. The approver's choice: bug-009, fixed within this task (it blocks choice 3).
