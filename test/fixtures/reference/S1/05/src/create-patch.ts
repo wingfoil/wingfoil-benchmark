@@ -14,7 +14,10 @@ function equal(a: unknown, b: unknown): boolean {
     return a.length === b.length && a.every((item, i) => equal(item, b[i]));
   if (isObject(a) && isObject(b)) {
     const keys = Object.keys(a);
-    return keys.length === Object.keys(b).length && keys.every((key) => key in b && equal(a[key], b[key]));
+    return (
+      keys.length === Object.keys(b).length &&
+      keys.every((key) => Object.hasOwn(b, key) && equal(a[key], b[key]))
+    );
   }
   return false;
 }
@@ -64,9 +67,9 @@ function diff(from: unknown, to: unknown, path: string, ops: Operation[]): void 
   if (equal(from, to)) return;
   if (isObject(from) && isObject(to)) {
     for (const key of Object.keys(from))
-      if (!(key in to)) ops.push({ op: 'remove', path: `${path}/${token(key)}` });
+      if (!Object.hasOwn(to, key)) ops.push({ op: 'remove', path: `${path}/${token(key)}` });
     for (const [key, value] of Object.entries(to)) {
-      if (key in from) diff(from[key], value, `${path}/${token(key)}`, ops);
+      if (Object.hasOwn(from, key)) diff(from[key], value, `${path}/${token(key)}`, ops);
       else ops.push({ op: 'add', path: `${path}/${token(key)}`, value: structuredClone(value) });
     }
     return;

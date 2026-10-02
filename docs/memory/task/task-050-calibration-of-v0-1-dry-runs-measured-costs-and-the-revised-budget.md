@@ -24,7 +24,8 @@ delivers no feature (`features: []`): its products are a profile, measurements a
   `claude-code` **2.1.280** (REQ-RUN-16 as amended; the approver's choice of 2026-10-02, and the version the
   reference campaign is to pin, so that its estimate reads these costs); model `claude-sonnet-5`, with
   `claude-opus-5` given by `--model` for the slice; approver policy `v1`; the caps and the rate (design phase).
-- **15 dry runs**, each stored under `results/dry-runs/<n>/` (REQ-RES-01) and committed, transcripts excepted
+- **15 dry runs** (as planned; in the event **19**, see the Execution notes: two failures re-run, S1's three
+  Sonnet dry runs repeated after its step 5, and the Opus slice dry-run in two arms), each stored under `results/dry-runs/<n>/` (REQ-RES-01) and committed, transcripts excepted
   (git-ignored), each a line of the [v0.1 ledger](../../calibration/v0.1-ledger.md):
   S1, S2, S3, S8 × baseline, baseline-docs, wingfoil on Sonnet 5 (12), and S1 × the three arms on Opus 5 (3;
   task-021 decision 2: no cost is scaled between models).
@@ -282,7 +283,7 @@ cost note. `bench scenario validate S1@1.0 --holdout …` must pass.
 
 - Red `8b8cb31`; the step, its suite and the reference `9845c78`; the hold-out's 15 pairs in the private
   repository (`432db90` there); S1 1.3, traceability 1.3, adr-004's note `6b11f2d`. The test's threshold of
-  bounded pairs set to 15 (17 of the 30 are a small change in a large document, all bounded).
+  bounded pairs set to 15 (19 of the 30 are bounded: the 17 small changes in a large document and the two equal-document pairs).
 - Checked: `bench scenario validate S1@1.0 --holdout …` valid (leak scan clean, hold-out 5 files); the seed fails
   the 30 public and 15 hold-out pairs, the reference's step 5 passes all 45 (a local run of both suites);
   `test/unit/scenarios/s1.test.ts` 15/15; `test/acceptance/scoring.test.ts`, `scenarios.test.ts` and
@@ -328,7 +329,39 @@ cost note. `bench scenario validate S1@1.0 --holdout …` must pass.
   **"Hypotheses for v0.2"** — explicit, falsifiable expectations for WingFoil with its workflow engine, written
   before v0.2 runs on the same registered scenario versions (cost against the baseline, M-F1, S2's and S8's
   checks, expected failures), as the defence against T1.
-- **S1@1.0 wingfoil on Opus 5** (`results/dry-runs/19`, 21:43–23:09): completed, **24.0758 USD (21.3094 €)** —
+- **S1@1.0 wingfoil on Opus 5** (`results/dry-runs/19`, 21:49–23:09, started after its consent's commit `4928340`): completed, **24.0758 USD (21.3094 €)** —
   steps 3.0117 (62 turns, 623 s), 6.1785 (64 turns, 1167 s), 5.6707 (69 turns, 1201 s), 3.6906 (59 turns, 796 s),
   5.5243 USD (62 turns, 981 s); 24.88 M tokens; two neutral-approver interventions. No token stored. Scored:
   **final 165/165, hold-out 48/48**. Calibration's dry runs are done.
+- **The Opus slice as dry-run:** baseline (stopped at its 13 € cap) and wingfoil (completed). Opus baseline-docs
+  and a completed Opus baseline were not run: after stage 3 stopped by its ceiling rule, the approver consented to
+  the wingfoil dry run alone (2026-10-02). Whether the slice needs them depends on the revised budget's option: none
+  with option A or B; with option C, their consent first.
+
+### Review
+
+**Checks:** `npm test` 77 files, **1200 tests**, coverage 98.1 % statements, 90.8 % branches; `npm run lint` clean;
+`bench scenario validate S1@1.0 --holdout …` valid; S1's hash unchanged by the lint fix (the estimate still reads
+dry runs 15–19); the S1 Docker tests 2/2 before it.
+
+**Independent review** by a fresh read-only agent on the branch (2026-10-02): no blocker. Its findings and outcome:
+
+1. *should-fix* — §6: the longest Sonnet step was 901 s (S1 wingfoil step 3), not 777 s. **Fixed.**
+2. *should-fix* — §6: the largest Sonnet step used 4.9 M tokens, not 3.4 M. **Fixed.**
+3. *should-fix* — §5's margin rested on completed-against-failed pairs; the like-for-like evidence (S1's steps 1–4 run
+   twice per arm) shows −23 %, +35 %, +16 %. **Fixed:** quoted, and the ceilings re-set at about +35 % (A 85 €,
+   B 55 €, C 120 €), the warnings at about +10 %.
+4. *should-fix* — step 5's bound in effect asks for a shift-aware (LCS) array diff, which the prompt does not state
+   (baseline-docs' index-wise diff lost seven pairs, two of them small arrays). **Fixed:** said in S1.md §6 and the
+   report's §8; the pairs and the prompt are unchanged (S1's hash).
+5. *should-fix* — the Context's 15 dry runs and three Opus arms against the 19 run and the slice in two arms.
+   **Fixed:** the Context says so, and a note above records what the slice was dry-run with and why.
+6. *should-fix* — §9 quoted values the untracked draft did not hold. **Fixed:** the draft aligned (cap 30 €,
+   65/85 €); §9 says it shows option A.
+7. *nits* — turns "1.5× to 2.5×"; the cost per token's rise (1.9×, 2.3×) beside the list price; S8 "public hidden
+   tests"; §1 names the slice's two arms; S1.md §2 softened; 19 bounded pairs, not 17; dry run 19 started 21:49,
+   after its consent; the reference's `in` replaced by `Object.hasOwn`; the ESLint override narrowed to the applier.
+   **Fixed.** S1.md's card ("3 arms × 1") is amended when the approver chooses the slice's option. The applier's
+   `__proto__` and move-to-itself edge cases are in no pair, and the file is not edited (S1's hash): future pairs avoid
+   such keys. Two consent commits (`5f4b5eb`, `e37dee2`) carry no `Approver:` line; the consents are in the notes they
+   commit, and the history is not rewritten.
