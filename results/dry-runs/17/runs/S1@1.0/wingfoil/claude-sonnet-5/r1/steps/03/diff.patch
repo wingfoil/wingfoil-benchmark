@@ -1,0 +1,287 @@
+diff --git a/docs/memory/decision-log/dl-003-json-patch-proto-member-names-are-ordinary-rfc-6902-members.md b/docs/memory/decision-log/dl-003-json-patch-proto-member-names-are-ordinary-rfc-6902-members.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..ef1102e9614970d3887b92a88464bd812fd580b4
+--- /dev/null
++++ b/docs/memory/decision-log/dl-003-json-patch-proto-member-names-are-ordinary-rfc-6902-members.md
+@@ -0,0 +1,62 @@
++---
++id: dl-003-json-patch-proto-member-names-are-ordinary-rfc-6902-members
++type: decision-log
++title: "JSON Patch __proto__ member names are ordinary RFC 6902 members"
++status: approved
++---
++
++## Context
++
++dl-002 (still pending/unapproved) decided that `add`, `replace`, `move` and `copy` should refuse any
++target whose last reference token is `__proto__`, reasoning that writing through it onto a plain
++object's inherited accessor would pollute `Object.prototype`. That reasoning does not hold up:
++
++- `parent["__proto__"] = value` invokes the inherited `__proto__` accessor's *setter*, which
++  reassigns `parent`'s own `[[Prototype]]` internal slot. It never touches the actual object bound
++  to the global `Object.prototype`, and it never creates a member on `parent` at all — `value` is
++  simply discarded, and `JSON.stringify(parent)` afterwards no longer even reflects whatever
++  `parent` is supposed to contain if that was its only member. Verified empirically: after
++  `({}).__proto__ = { polluted: true }`, `Object.keys` is `[]`, `JSON.stringify` is `"{}"`, and
++  `({}).polluted` elsewhere is still `undefined`.
++- The one pattern that genuinely reaches the real `Object.prototype` — resolving `target["__proto__"]`
++  as a *read* (which, for a plain object with no own `__proto__` property, yields the actual
++  `Object.prototype`) and then mutating what comes back — was already blocked, independently of the
++  guard, because `resolveToken`/`navigateToParent` require `Object.prototype.hasOwnProperty` to
++  succeed at every intermediate pointer segment, and a plain object never has `__proto__` as an own
++  property.
++
++RFC 6902 does not reserve `__proto__`, or any other member name. Rejecting it was therefore an
++implementation-specific restriction beyond the standard, and it produced exactly the kind of
++surprise the standard doesn't predict: a structurally valid patch, targeting an ordinary (if
++unusually named) object member, failing for a reason the RFC gives no basis for.
++
++## Decision
++
++- `add`, `replace`, `move` and `copy` write object members via `Object.defineProperty(parent, token,
++  { value, writable: true, enumerable: true, configurable: true })` (a shared `setOwnProperty`
++  helper) instead of bracket assignment (`parent[token] = value`). `defineProperty` always creates a
++  genuine own data property regardless of `token`'s value, exactly as `JSON.parse` does when it
++  parses a literal `"__proto__"` key, so a member literally named `__proto__` is now stored, read
++  back, replaced, moved, copied, removed, `JSON.stringify`d, and compared by `test`'s deep-equality
++  exactly like any other member name, through the existing `hasOwnProperty`-gated read/delete paths
++  — no other function needed to change.
++- `guardAgainstPrototypePollution` and its four call sites (in `applyAdd`, `applyReplace`,
++  `applyMove`, `applyCopy`) are removed; there is no longer a special case for `__proto__` as a
++  *target* member name.
++- The existing protection against the dangerous pattern — treating `target["__proto__"]` as a
++  readable/traversable *intermediate* step when it is not an own property — is unchanged, because it
++  was never the guard's doing: it falls out of `resolveToken`/`navigateToParent` already requiring
++  `hasOwnProperty` at every step before returning a value.
++
++## Consequences
++
++- A patch that targets, moves, copies, or removes a member literally named `__proto__` behaves like
++  any other member name, including when the document originates from `JSON.parse` (which creates
++  `__proto__` as an ordinary own property, not a prototype assignment).
++- `Object.prototype` is never reachable for mutation through `applyPatch`: not through this fix (an
++  own-property write never touches it), and not through the pre-existing read-side guard (an
++  intermediate `__proto__` segment still only resolves if it is an own property, which it never is
++  on a plain object whose prototype was set the normal way).
++- This supersedes the `__proto__`-handling portion of dl-002 before dl-002 was ever approved; the
++  rest of dl-002 (root-path behaviour, upfront shape validation, atomicity, deep-cloning patch
++  values) is unaffected and still applies.
+diff --git a/docs/memory/task/task-003-audit-applypatch-for-rfc-6902-conformance.md b/docs/memory/task/task-003-audit-applypatch-for-rfc-6902-conformance.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..8cbbe96ed0277307d3453509807f8f140f4fd9ae
+--- /dev/null
++++ b/docs/memory/task/task-003-audit-applypatch-for-rfc-6902-conformance.md
+@@ -0,0 +1,77 @@
++---
++id: task-003-audit-applypatch-for-rfc-6902-conformance
++type: task
++title: "Audit applyPatch for RFC 6902 conformance"
++status: approved
++---
++
++## Request
++
++Users of `applyPatch` reported surprising results: some patches they consider invalid are accepted,
++some edge cases give unexpected results, and failures don't always behave the way the RFC reads.
++Review how patches are checked and applied, and make the behaviour conform to RFC 6902 in every
++case, errors included.
++
++## What was done
++
++- Validated the implementation against the RFC 6902 text itself (fetched from
++  rfc-editor.org) and against the community conformance fixtures from
++  `json-patch/json-patch-tests` (`spec_tests.json`'s RFC Appendix A examples, and the broader
++  `tests.json` suite covering array bounds, leading-zero indices, missing `value`/`from`,
++  malformed pointers, unrecognized `op`, escape-sequence edge cases, root-document replace, and
++  copy/move independence). All 108 non-disabled cases from both fixtures passed before any code
++  change, which ruled out the six operations' core add/remove/replace/move/copy/test semantics,
++  array-index/`-`-token handling, and the upfront shape validation as sources of the reported
++  surprises.
++- Found the actual defect in the `__proto__` handling added by task-002/dl-002: `addToParent` and
++  `replaceInParent` wrote object members with plain bracket assignment (`parent[token] = value`),
++  then a `guardAgainstPrototypePollution` check unconditionally rejected any `add`/`replace`/`move`/
++  `copy` whose target's last reference token was `__proto__`. RFC 6902 does not reserve that member
++  name, so rejecting it is a non-conformant extra restriction; and the premise behind it was wrong in
++  two ways once checked empirically against the JS spec:
++  - `parent["__proto__"] = value` never reaches the real `Object.prototype`: it only invokes the
++    inherited `__proto__` accessor's setter, which reassigns `parent`'s own `[[Prototype]]`. The
++    value is not stored as a member at all; `JSON.stringify(parent)` after such an assignment
++    produces `{}`, silently losing the data. So the guard was blocking a case that was already
++    harmless to the rest of the document (and to `Object.prototype` globally) but would have
++    produced a confusing, silently-wrong result for the caller rather than the output RFC 6902
++    expects.
++  - The one genuinely dangerous pattern — reading `target["__proto__"]` as an intermediate pointer
++    segment and then mutating what comes back, which for a literal `{}` is the real
++    `Object.prototype` — was already blocked independently, because `resolveToken`/`navigateToParent`
++    require `hasOwnProperty` on every intermediate step and a plain object never has `__proto__` as
++    an *own* property.
++  - Fix: replaced the bracket assignment in both functions with `Object.defineProperty(parent,
++    token, { value, writable: true, enumerable: true, configurable: true })` (factored into a
++    shared `setOwnProperty` helper) and removed `guardAgainstPrototypePollution` and its four call
++    sites entirely. `defineProperty` always creates a genuine own data property regardless of name,
++    exactly like `JSON.parse` does for a literal `"__proto__"` key, so `"__proto__"` now round-trips
++    like any other member name (readable via `resolveToken`'s existing `hasOwnProperty` check,
++    deletable via `removeFromParent`'s existing `delete`, visible to `Object.keys` in `deepEqual`)
++    with no change needed anywhere else, and with no path to mutating the real `Object.prototype`.
++  - Verified empirically (`node -e`) that bracket assignment leaves `Object.prototype` untouched but
++    drops the data, and that `defineProperty` neither touches `Object.prototype` nor drops the data.
++  - Replaced the old single test ("refuses to add `__proto__`") with six tests in
++    `src/jsonPatch.test.ts`: `add`/`replace`/`move`/`copy`/`remove` all correctly handling a member
++    literally named `__proto__` (including round-tripping through `JSON.stringify`/`JSON.parse` and
++    confirming `Object.prototype` is never polluted), plus a kept characterization test confirming
++    that navigating *through* a non-own `__proto__` as an intermediate pointer segment still fails to
++    resolve (the real guard against the dangerous pattern, which was already correct and unchanged).
++  - Recorded the reasoning and the reversal of the earlier (still-pending, unapproved) `__proto__`
++    decision from dl-002 as
++    dl-003-json-patch-proto-member-names-are-ordinary-rfc-6902-members.
++- Left the rest of dl-002's decisions (root-path behaviour for `remove`/`move`'s `from`, upfront
++  patch-shape validation, clone-based atomicity, deep-cloning values taken from the patch) unchanged:
++  they matched the RFC text, the community test suite, and extensive manual adversarial tracing
++  (array index ABNF incl. leading zeros and `-`, object-vs-array target-type errors, `move`'s
++  proper-prefix restriction, `copy`/`move` independence, pointer escape-sequence ordering, numeric
++  vs. string equality in `test`) with no divergence found.
++
++## Verification
++
++- `npm test` — 57/57 passing (was 52 pre-existing minus the one removed test, plus 6 new tests for
++  the `__proto__` fix).
++- `npm run typecheck` — no errors.
++- Ran the full community conformance suites (`spec_tests.json`, `tests.json` from
++  `json-patch/json-patch-tests`) against `applyPatch` directly: 16/16 and 92/92 of the non-disabled
++  cases pass, both before and after this change.
+diff --git a/src/jsonPatch.test.ts b/src/jsonPatch.test.ts
+index 8345e220348a5d0e0df2cf0a74cf3165b4606c65..1a6a6549d6a3f25f86fe16a7c223adebb0d3c8ff 100644
+--- a/src/jsonPatch.test.ts
++++ b/src/jsonPatch.test.ts
+@@ -217,9 +217,59 @@ test("leaves the document untouched when a later operation in the patch fails",
+   assert.deepEqual(document, snapshot);
+ });
+ 
+-test("refuses to add a '__proto__' member, to avoid prototype pollution", () => {
++test("add: accepts a member literally named '__proto__', without polluting Object.prototype", () => {
++  const document = { foo: "bar" };
++  const result = applyPatch(document, [
++    { op: "add", path: "/__proto__", value: { polluted: true } },
++  ]) as Record<string, unknown>;
++  assert.deepEqual(JSON.parse(JSON.stringify(result)), JSON.parse('{"foo":"bar","__proto__":{"polluted":true}}'));
++  assert.equal(Object.prototype.hasOwnProperty.call(result, "__proto__"), true);
++  assert.deepEqual(result.__proto__, { polluted: true });
++  assert.equal(({} as Record<string, unknown>).polluted, undefined);
++});
++
++test("replace: accepts a member literally named '__proto__', without polluting Object.prototype", () => {
++  const document = JSON.parse('{"__proto__": 1}') as Record<string, unknown>;
++  const result = applyPatch(document, [{ op: "replace", path: "/__proto__", value: 2 }]) as Record<
++    string,
++    unknown
++  >;
++  assert.equal(Object.prototype.hasOwnProperty.call(result, "__proto__"), true);
++  assert.equal(result.__proto__, 2);
++  assert.equal(({} as Record<string, unknown>).polluted, undefined);
++});
++
++test("move: moves a value into a member literally named '__proto__'", () => {
++  const document = { foo: 1 };
++  const result = applyPatch(document, [{ op: "move", from: "/foo", path: "/__proto__" }]) as Record<
++    string,
++    unknown
++  >;
++  assert.equal(Object.prototype.hasOwnProperty.call(result, "__proto__"), true);
++  assert.equal(result.__proto__, 1);
++  assert.equal(({} as Record<string, unknown>).polluted, undefined);
++});
++
++test("copy: copies a value into a member literally named '__proto__'", () => {
++  const document = { foo: 1 };
++  const result = applyPatch(document, [{ op: "copy", from: "/foo", path: "/__proto__" }]) as Record<
++    string,
++    unknown
++  >;
++  assert.equal(Object.prototype.hasOwnProperty.call(result, "__proto__"), true);
++  assert.equal(result.__proto__, 1);
++  assert.equal(({} as Record<string, unknown>).polluted, undefined);
++});
++
++test("remove: removes a member literally named '__proto__' without touching Object.prototype", () => {
++  const document = JSON.parse('{"__proto__": 1, "foo": "bar"}') as Record<string, unknown>;
++  const result = applyPatch(document, [{ op: "remove", path: "/__proto__" }]);
++  assert.deepEqual(result, { foo: "bar" });
++  assert.equal(({} as Record<string, unknown>).polluted, undefined);
++});
++
++test("navigating through an inherited (non-own) '__proto__' reference never resolves", () => {
+   const document = { foo: "bar" };
+   assert.throws(() => applyPatch(document, [{ op: "add", path: "/__proto__/polluted", value: true }]), Error);
+-  assert.throws(() => applyPatch(document, [{ op: "add", path: "/__proto__", value: { polluted: true } }]), Error);
+   assert.equal(({} as Record<string, unknown>).polluted, undefined);
+ });
+diff --git a/src/jsonPatch.ts b/src/jsonPatch.ts
+index 015039eb095bfe515ecfe8533011cdb62ccdaade..5a4ab72d20433085e3d1b249503b3a813c8411a6 100644
+--- a/src/jsonPatch.ts
++++ b/src/jsonPatch.ts
+@@ -78,10 +78,11 @@ function navigateToParent(document: unknown, tokens: readonly string[]): unknown
+   return tokens.reduce(resolveToken, document);
+ }
+ 
+-function guardAgainstPrototypePollution(token: string, path: string): void {
+-  if (token === "__proto__") {
+-    throw new Error(`JSON Patch operation refused: "__proto__" is not an allowed member name (in "${path}")`);
+-  }
++function setOwnProperty(parent: Record<string, unknown>, token: string, value: unknown): void {
++  // Bracket assignment would invoke the inherited `__proto__` accessor instead of
++  // creating an own member named "__proto__", silently dropping the value; defineProperty
++  // always creates a genuine own data property, exactly as JSON.parse does.
++  Object.defineProperty(parent, token, { value, writable: true, enumerable: true, configurable: true });
+ }
+ 
+ function applyAdd(document: unknown, path: string, value: unknown): unknown {
+@@ -91,7 +92,6 @@ function applyAdd(document: unknown, path: string, value: unknown): unknown {
+     return clonedValue;
+   }
+   const lastToken = tokens[tokens.length - 1];
+-  guardAgainstPrototypePollution(lastToken, path);
+   const parent = navigateToParent(document, tokens.slice(0, -1));
+   addToParent(parent, lastToken, clonedValue, path);
+   return document;
+@@ -107,7 +107,7 @@ function addToParent(parent: unknown, token: string, value: unknown, path: strin
+     return;
+   }
+   if (isJsonObject(parent)) {
+-    parent[token] = value;
++    setOwnProperty(parent, token, value);
+     return;
+   }
+   throw new Error(`JSON Patch "add" failed: cannot add a member into ${typeof parent} at "${path}"`);
+@@ -150,7 +150,6 @@ function applyReplace(document: unknown, path: string, value: unknown): unknown
+     return clonedValue;
+   }
+   const lastToken = tokens[tokens.length - 1];
+-  guardAgainstPrototypePollution(lastToken, path);
+   const parent = navigateToParent(document, tokens.slice(0, -1));
+   replaceInParent(parent, lastToken, clonedValue, path);
+   return document;
+@@ -169,7 +168,7 @@ function replaceInParent(parent: unknown, token: string, value: unknown, path: s
+     if (!Object.prototype.hasOwnProperty.call(parent, token)) {
+       throw new Error(`JSON Patch "replace" failed: no member "${token}" in "${path}"`);
+     }
+-    parent[token] = value;
++    setOwnProperty(parent, token, value);
+     return;
+   }
+   throw new Error(`JSON Patch "replace" failed: cannot replace a member of ${typeof parent} at "${path}"`);
+@@ -197,7 +196,6 @@ function applyMove(document: unknown, path: string, from: string): unknown {
+     return value;
+   }
+   const lastPathToken = pathTokens[pathTokens.length - 1];
+-  guardAgainstPrototypePollution(lastPathToken, path);
+   const pathParent = navigateToParent(document, pathTokens.slice(0, -1));
+   addToParent(pathParent, lastPathToken, value, path);
+   return document;
+@@ -210,7 +208,6 @@ function applyCopy(document: unknown, path: string, from: string): unknown {
+     return value;
+   }
+   const lastToken = tokens[tokens.length - 1];
+-  guardAgainstPrototypePollution(lastToken, path);
+   const parent = navigateToParent(document, tokens.slice(0, -1));
+   addToParent(parent, lastToken, value, path);
+   return document;

@@ -292,3 +292,14 @@ cost note. `bench scenario validate S1@1.0 --holdout …` must pass.
 
 - **The approver's consent, 2026-10-02, in chat:** S1 × baseline, baseline-docs, wingfoil on Sonnet 5, cap **5 €**
   per run (the profile's, unchanged), ceiling **13 €** (expected 8–9 €).
+- **Stage 1b ran** 19:08–20:25 (`results/dry-runs/15`–`17`), all three completed; **8.46 €** of 13 €. No token
+  stored. Scored with the hold-out:
+
+  | Dry run | Arm | Cost | Turns (steps 1–5) | Step 5 | Final hidden | Hold-out |
+  |---|---|---|---|---|---|---|
+  | 15 | baseline | 1.9103 € (2.1583 USD) | 17/14/22/16/18 | 153/153 | 165/165 | 48/48 |
+  | 16 | baseline-docs | 2.1432 € (2.4214 USD) | 23/23/26/18/16 | **146/153** | **158/165** | **43/48** |
+  | 17 | wingfoil | **4.4102 €** (4.9827 USD) | 46/36/57/41/35 | 153/153 | 165/165 | 48/48 |
+
+  Step 5 moves one arm off the maximum (baseline-docs: 7 public and 5 hold-out `createPatch` pairs lost); the
+  wingfoil run cost 88 % of its 5 € cap.

@@ -1,0 +1,229 @@
+diff --git a/README.md b/README.md
+index 44f8e2c3bb12c73b216fbaa1f0157f052f204187..1fdb823723285455016e7f1ae61587cd1b3c4daa 100644
+--- a/README.md
++++ b/README.md
+@@ -52,3 +52,19 @@ applyMergePatch({ a: "b", c: { d: 1 } }, { a: "z", c: { d: null } });
+ 
+ A `null` value in the patch removes the corresponding member from the target. Any non-object patch
+ (including arrays) replaces the target wholesale.
++
++### `createPatch(from, to)`
++
++Computes a [JSON Patch](https://www.rfc-editor.org/rfc/rfc6902) that turns `from` into `to` when
++applied with `applyPatch`. Neither input is modified. The patch only contains operations for the
++parts of the document that actually changed.
++
++```ts
++import { createPatch } from "json-toolkit";
++
++createPatch({ foo: "bar" }, { foo: "baz" });
++// [{ op: "replace", path: "/foo", value: "baz" }]
++```
++
++Array elements are compared by index: elements common to both arrays are diffed recursively, and
++any extra elements are added or removed at the end.
+diff --git a/src/index.ts b/src/index.ts
+index 00c57557085d25b91969d5b5c676ee6725d43ef4..6967366d7638535dfe3bb948c0142dffe32281ff 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -42,6 +42,10 @@ function unescapeToken(token: string, pointer: string): string {
+   return token.replace(/~1/g, "/").replace(/~0/g, "~");
+ }
+ 
++function escapeToken(token: string): string {
++  return token.replace(/~/g, "~0").replace(/\//g, "~1");
++}
++
+ function step(current: unknown, token: string, pointer: string): unknown {
+   if (Array.isArray(current)) {
+     const index = arrayIndex(token);
+@@ -364,6 +368,81 @@ function assertSafeObjectKey(token: string, pointer: string): void {
+   }
+ }
+ 
++/**
++ * Computes a JSON Patch (RFC 6902) that turns `from` into `to` when applied.
++ *
++ * Neither input is modified. The patch only contains operations for the parts of the
++ * document that actually differ.
++ *
++ * @param from - The document the patch will be applied to.
++ * @param to - The document the patch should produce.
++ * @returns A JSON Patch which, applied to `from` via {@link applyPatch}, yields a document
++ *   deeply equal to `to`.
++ */
++export function createPatch(from: unknown, to: unknown): JsonPatch {
++  return diffValues(from, to, "");
++}
++
++function diffValues(from: unknown, to: unknown, path: string): JsonPatchOperation[] {
++  if (jsonEqual(from, to)) {
++    return [];
++  }
++
++  if (Array.isArray(from) && Array.isArray(to)) {
++    return diffArrays(from, to, path);
++  }
++
++  if (isJsonObject(from) && isJsonObject(to)) {
++    return diffObjects(from, to, path);
++  }
++
++  return [{ op: "replace", path, value: structuredClone(to) }];
++}
++
++function diffObjects(
++  from: Record<string, unknown>,
++  to: Record<string, unknown>,
++  path: string,
++): JsonPatchOperation[] {
++  const operations: JsonPatchOperation[] = [];
++
++  for (const key of Object.keys(from)) {
++    if (!Object.prototype.hasOwnProperty.call(to, key)) {
++      operations.push({ op: "remove", path: `${path}/${escapeToken(key)}` });
++    }
++  }
++
++  for (const key of Object.keys(to)) {
++    const childPath = `${path}/${escapeToken(key)}`;
++    if (Object.prototype.hasOwnProperty.call(from, key)) {
++      operations.push(...diffValues(from[key], to[key], childPath));
++    } else {
++      operations.push({ op: "add", path: childPath, value: structuredClone(to[key]) });
++    }
++  }
++
++  return operations;
++}
++
++function diffArrays(from: unknown[], to: unknown[], path: string): JsonPatchOperation[] {
++  const operations: JsonPatchOperation[] = [];
++  const commonLength = Math.min(from.length, to.length);
++
++  for (let index = 0; index < commonLength; index++) {
++    operations.push(...diffValues(from[index], to[index], `${path}/${index}`));
++  }
++
++  for (let index = from.length - 1; index >= to.length; index--) {
++    operations.push({ op: "remove", path: `${path}/${index}` });
++  }
++
++  for (let index = from.length; index < to.length; index++) {
++    operations.push({ op: "add", path: `${path}/${index}`, value: structuredClone(to[index]) });
++  }
++
++  return operations;
++}
++
+ /**
+  * Applies a JSON Merge Patch (RFC 7386) to a JSON document.
+  *
+diff --git a/test/createPatch.test.ts b/test/createPatch.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..a0d7c322c36534a31567f953a6b7034112151e2f
+--- /dev/null
++++ b/test/createPatch.test.ts
+@@ -0,0 +1,102 @@
++import assert from "node:assert/strict";
++import { test } from "node:test";
++import { applyPatch, createPatch } from "../src/index.ts";
++
++test("produces an empty patch for equal documents", () => {
++  const patch = createPatch({ foo: "bar" }, { foo: "bar" });
++  assert.deepEqual(patch, []);
++});
++
++test("describes a single changed value, not the whole document", () => {
++  const from = { foo: "bar", untouched: { a: 1, b: [1, 2, 3] } };
++  const to = { foo: "baz", untouched: { a: 1, b: [1, 2, 3] } };
++  const patch = createPatch(from, to);
++  assert.deepEqual(patch, [{ op: "replace", path: "/foo", value: "baz" }]);
++});
++
++test("describes an added object member", () => {
++  const patch = createPatch({ foo: "bar" }, { foo: "bar", baz: "qux" });
++  assert.deepEqual(patch, [{ op: "add", path: "/baz", value: "qux" }]);
++});
++
++test("describes a removed object member", () => {
++  const patch = createPatch({ foo: "bar", baz: "qux" }, { foo: "bar" });
++  assert.deepEqual(patch, [{ op: "remove", path: "/baz" }]);
++});
++
++test("localizes a change nested deep within the document", () => {
++  const from = { a: { b: { c: 1, untouched: "x" } } };
++  const to = { a: { b: { c: 2, untouched: "x" } } };
++  const patch = createPatch(from, to);
++  assert.deepEqual(patch, [{ op: "replace", path: "/a/b/c", value: 2 }]);
++});
++
++test("describes a changed array element", () => {
++  const patch = createPatch({ foo: ["a", "b", "c"] }, { foo: ["a", "x", "c"] });
++  assert.deepEqual(patch, [{ op: "replace", path: "/foo/1", value: "x" }]);
++});
++
++test("describes array elements appended at the end", () => {
++  const patch = createPatch({ foo: ["a", "b"] }, { foo: ["a", "b", "c", "d"] });
++  assert.deepEqual(patch, [
++    { op: "add", path: "/foo/2", value: "c" },
++    { op: "add", path: "/foo/3", value: "d" },
++  ]);
++});
++
++test("describes array elements removed from the end", () => {
++  const patch = createPatch({ foo: ["a", "b", "c", "d"] }, { foo: ["a", "b"] });
++  assert.deepEqual(patch, [
++    { op: "remove", path: "/foo/3" },
++    { op: "remove", path: "/foo/2" },
++  ]);
++});
++
++test("replaces a value whose type changed", () => {
++  const patch = createPatch({ foo: { a: 1 } }, { foo: ["a", "b"] });
++  assert.deepEqual(patch, [{ op: "replace", path: "/foo", value: ["a", "b"] }]);
++});
++
++test("escapes '~' and '/' in member names", () => {
++  const patch = createPatch({}, { "a/b~c": 1 });
++  assert.deepEqual(patch, [{ op: "add", path: "/a~1b~0c", value: 1 }]);
++});
++
++test("does not mutate either input", () => {
++  const from = { foo: "bar", list: [1, 2, 3] };
++  const to = { foo: "baz", list: [1, 2, 3, 4] };
++  const fromSnapshot = structuredClone(from);
++  const toSnapshot = structuredClone(to);
++  createPatch(from, to);
++  assert.deepEqual(from, fromSnapshot);
++  assert.deepEqual(to, toSnapshot);
++});
++
++test("does not alias values between 'to' and the patch", () => {
++  const to = { baz: { shared: true } };
++  const patch = createPatch({}, to) as [{ op: "add"; path: string; value: { shared: boolean } }];
++  to.baz.shared = false;
++  assert.equal(patch[0].value.shared, true);
++});
++
++test("round-trips a complex change through applyPatch", () => {
++  const from = {
++    name: "widget",
++    tags: ["a", "b", "c"],
++    meta: { version: 1, nested: { keep: true } },
++  };
++  const to = {
++    name: "widget",
++    tags: ["a", "x", "c", "d"],
++    meta: { version: 2, nested: { keep: true }, extra: "new" },
++  };
++  const patch = createPatch(from, to);
++  assert.deepEqual(applyPatch(from, patch), to);
++});
++
++test("round-trips when a member is removed and the document otherwise differs", () => {
++  const from = { a: 1, b: { removed: true }, c: [1, 2] };
++  const to = { a: 2, c: [1] };
++  const patch = createPatch(from, to);
++  assert.deepEqual(applyPatch(from, patch), to);
++});

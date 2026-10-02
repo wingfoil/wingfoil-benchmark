@@ -1,0 +1,134 @@
+diff --git a/src/index.test.ts b/src/index.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..a84a0dc24f92c951900d87595db68a45d7bc7f96
+--- /dev/null
++++ b/src/index.test.ts
+@@ -0,0 +1,77 @@
++import { test } from 'node:test';
++import assert from 'node:assert/strict';
++import { resolvePointer } from './index.ts';
++
++// Example document from RFC 6901, section 5.
++const document = {
++  foo: ['bar', 'baz'],
++  '': 0,
++  'a/b': 1,
++  'c%d': 2,
++  'e^f': 3,
++  'g|h': 4,
++  'i\\j': 5,
++  'k"l': 6,
++  ' ': 7,
++  'm~n': 8,
++};
++
++test('RFC 6901 section 5 examples', () => {
++  assert.deepEqual(resolvePointer(document, ''), document);
++  assert.deepEqual(resolvePointer(document, '/foo'), ['bar', 'baz']);
++  assert.equal(resolvePointer(document, '/foo/0'), 'bar');
++  assert.equal(resolvePointer(document, '/'), 0);
++  assert.equal(resolvePointer(document, '/a~1b'), 1);
++  assert.equal(resolvePointer(document, '/c%d'), 2);
++  assert.equal(resolvePointer(document, '/e^f'), 3);
++  assert.equal(resolvePointer(document, '/g|h'), 4);
++  assert.equal(resolvePointer(document, '/i\\j'), 5);
++  assert.equal(resolvePointer(document, '/k"l'), 6);
++  assert.equal(resolvePointer(document, '/ '), 7);
++  assert.equal(resolvePointer(document, '/m~0n'), 8);
++});
++
++test('resolves nested values', () => {
++  const doc = { a: { b: { c: [1, 2, { d: 'deep' }] } } };
++  assert.equal(resolvePointer(doc, '/a/b/c/2/d'), 'deep');
++});
++
++test('array index "0" and multi-digit indices are valid', () => {
++  const doc = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
++  assert.equal(resolvePointer(doc, '/0'), 0);
++  assert.equal(resolvePointer(doc, '/11'), 11);
++});
++
++test('throws on pointer missing leading slash', () => {
++  assert.throws(() => resolvePointer({ a: 1 }, 'a'));
++});
++
++test('throws on invalid escape sequence', () => {
++  assert.throws(() => resolvePointer({ a: 1 }, '/a~'));
++  assert.throws(() => resolvePointer({ a: 1 }, '/a~2'));
++});
++
++test('throws on unknown object property', () => {
++  assert.throws(() => resolvePointer({ a: 1 }, '/b'));
++});
++
++test('throws on array index with leading zero', () => {
++  assert.throws(() => resolvePointer([1, 2, 3], '/01'));
++});
++
++test('throws on "-" array index (no value to resolve to)', () => {
++  assert.throws(() => resolvePointer([1, 2, 3], '/-'));
++});
++
++test('throws on out-of-bounds array index', () => {
++  assert.throws(() => resolvePointer([1, 2, 3], '/3'));
++});
++
++test('throws when indexing into a primitive', () => {
++  assert.throws(() => resolvePointer({ a: 1 }, '/a/b'));
++  assert.throws(() => resolvePointer(null, '/a'));
++});
++
++test('does not treat inherited properties as resolvable', () => {
++  assert.throws(() => resolvePointer({ a: 1 }, '/toString'));
++});
+diff --git a/src/index.ts b/src/index.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..48e4e4b1aa1d4afb65de6226ade67320878d9391
+--- /dev/null
++++ b/src/index.ts
+@@ -0,0 +1,45 @@
++/**
++ * Resolves a JSON Pointer (RFC 6901) against a JSON document.
++ *
++ * @throws Error if `pointer` is not a syntactically valid JSON Pointer, or if
++ *   it does not resolve to a value within `document`.
++ */
++export function resolvePointer(document: unknown, pointer: string): unknown {
++  if (pointer === '') {
++    return document;
++  }
++  if (pointer[0] !== '/') {
++    throw new Error(`Invalid JSON Pointer: ${JSON.stringify(pointer)}`);
++  }
++
++  let current = document;
++  for (const rawToken of pointer.split('/').slice(1)) {
++    current = step(current, decodeToken(rawToken, pointer));
++  }
++  return current;
++}
++
++function decodeToken(rawToken: string, pointer: string): string {
++  if (/~(?![01])/.test(rawToken)) {
++    throw new Error(`Invalid JSON Pointer: ${JSON.stringify(pointer)}`);
++  }
++  return rawToken.replace(/~1/g, '/').replace(/~0/g, '~');
++}
++
++function step(current: unknown, token: string): unknown {
++  if (Array.isArray(current)) {
++    if (!/^(?:0|[1-9][0-9]*)$/.test(token) || Number(token) >= current.length) {
++      throw new Error(`JSON Pointer does not resolve to a value: index ${JSON.stringify(token)} not found`);
++    }
++    return current[Number(token)];
++  }
++
++  if (current !== null && typeof current === 'object') {
++    if (!Object.prototype.hasOwnProperty.call(current, token)) {
++      throw new Error(`JSON Pointer does not resolve to a value: property ${JSON.stringify(token)} not found`);
++    }
++    return (current as Record<string, unknown>)[token];
++  }
++
++  throw new Error(`JSON Pointer does not resolve to a value: cannot index into ${JSON.stringify(current)}`);
++}
