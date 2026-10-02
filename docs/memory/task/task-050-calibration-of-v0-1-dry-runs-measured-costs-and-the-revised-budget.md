@@ -328,3 +328,7 @@ cost note. `bench scenario validate S1@1.0 --holdout …` must pass.
   **"Hypotheses for v0.2"** — explicit, falsifiable expectations for WingFoil with its workflow engine, written
   before v0.2 runs on the same registered scenario versions (cost against the baseline, M-F1, S2's and S8's
   checks, expected failures), as the defence against T1.
+- **S1@1.0 wingfoil on Opus 5** (`results/dry-runs/19`, 21:43–23:09): completed, **24.0758 USD (21.3094 €)** —
+  steps 3.0117 (62 turns, 623 s), 6.1785 (64 turns, 1167 s), 5.6707 (69 turns, 1201 s), 3.6906 (59 turns, 796 s),
+  5.5243 USD (62 turns, 981 s); 24.88 M tokens; two neutral-approver interventions. No token stored. Scored:
+  **final 165/165, hold-out 48/48**. Calibration's dry runs are done.

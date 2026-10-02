@@ -1,0 +1,512 @@
+diff --git a/README.md b/README.md
+index 529422d2754a9018794907652138c9374852d2f9..53116877a384c0e022ce3e21ada12dd8aa9de7bc 100644
+--- a/README.md
++++ b/README.md
+@@ -64,16 +64,20 @@ and since nothing is ever written to the document handed in, it is left as it wa
+ 
+ - `InvalidPatchError` — the patch is not a valid JSON Patch, whatever document it is applied to: it
+   is not an array of operations, an operation has no known `op` or lacks a member that `op` needs,
+-  a `path` or `from` is not a JSON Pointer, a `value` is not a JSON value, a `remove` targets the
+-  whole document, or a `move` would move a value into one of its own children. The whole patch is
+-  checked for these before any of it is applied, so a mistake in the last operation is reported as
+-  one.
++  a `path` or `from` is not a JSON Pointer, a `value` is not a JSON value, a `remove` or the `from`
++  of a `move` targets the whole document, or a `move` would move a value into one of its own
++  children. The whole patch is checked for these before any of it is applied, so a mistake in the
++  last operation is reported as one.
+ - `PatchOperationError` — the patch is valid, but an operation failed against this document: the
+   location it names does not exist, an `add` names an array index past the end of the array, or a
+   location's parent is a string, number, boolean or `null`.
+ - `TestFailedError` — a `test` found a value different from the one it was given. It derives from
+   `PatchOperationError`, so a caller using a patch as a conditional update can catch a failed
+-  precondition apart from every other failure.
++  precondition apart from every other failure. A `test` whose `path` leads nowhere is the plain
++  `PatchOperationError` above, not this: RFC 6902, section 4.1 makes `add` the one operation that
++  ignores a pointer that does not resolve, so for every other operation — `test` included — a
++  location the document has not got stays a failure to resolve, and only a value that is there and
++  differs is a failed precondition.
+ 
+ All three derive from `JsonPatchError`, so one `catch` covers any failure of a patch.
+ 
+@@ -83,10 +87,11 @@ array indices that match RFC 6901's `array-index`, and no path created along the
+ their own: it is the position after the last element of an array, which is where `add`, `move` and
+ `copy` append, and nowhere for the operations that need their target to exist.
+ 
+-Values outside the JSON data model — `undefined`, a function, `NaN`, a class instance, a cycle — are
+-not documents or patch values. The types rule them out; a document that holds one anyway raises a
+-`TypeError`, naming the location where it was found, rather than being copied into a result that no
+-longer serialises.
++Values outside the JSON data model — `undefined`, a function, `NaN`, a class instance, a cycle, the
++hole of a sparse array — are not documents or patch values. The types rule them out; a document that
++holds one anyway raises a `TypeError`, naming the location where it was found, rather than being
++copied into a result that no longer serialises. A hole is refused rather than closed up or read as
++`null`, because either reading would quietly change which element every index after it refers to.
+ 
+ ## Working on the library
+ 
+diff --git a/docs/memory/decision-log/dl-008-array-holes-a-sparse-array-is-refused-not-closed-up-or-read-as-null.md b/docs/memory/decision-log/dl-008-array-holes-a-sparse-array-is-refused-not-closed-up-or-read-as-null.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..99cfb8b37e774d4e847b1a69cfcad7ded1701264
+--- /dev/null
++++ b/docs/memory/decision-log/dl-008-array-holes-a-sparse-array-is-refused-not-closed-up-or-read-as-null.md
+@@ -0,0 +1,73 @@
++---
++id: dl-008-array-holes-a-sparse-array-is-refused-not-closed-up-or-read-as-null
++type: decision-log
++title: "Array holes: a sparse array is refused, not closed up or read as null"
++status: pending
++---
++
++# Array holes: a sparse array is refused, not closed up or read as null
++
++## Context
++
++A JavaScript array can have holes — `[1, , 3]`, `const a = [1, 2]; a.length = 4`, `new Array(2)` —
++and a hole is not an element with a value, it is an index the array has no own property for. The JSON
++data model has no such thing: RFC 8259 arrays are sequences of values, and dl-004 made `cloneJson`
++the place where a value JavaScript admits and JSON does not is refused.
++
++`cloneJson` and `checkPatch` both walked their arrays with `Array.prototype.forEach` and
++`Array.prototype.map`, which **skip holes**. Nothing refused a hole, and nothing copied one either,
++so a hole silently disappeared:
++
++- `applyPatch({ a: [1, , 3] }, [])` returned `{ a: [1, 3] }` — the array one element shorter, and
++  every element after the hole answering to a different index, so `/a/1` in the same patch resolved
++  to `3`. The library's one promise, that the result is the document the patch describes, was broken
++  before the first operation ran.
++- a patch that was itself a sparse array — `[, { "op": "remove", "path": "/a" }]` — kept its hole
++  through `checkPatch`, and `applyPatch` then read `op` off `undefined`: a bare
++  `TypeError: Cannot read properties of undefined`, outside the `JsonPatchError` hierarchy the
++  README promises covers any failure of a patch.
++
++Three readings were available:
++
++- **close the hole up** — what the code did, by accident;
++- **read a hole as `null`**, which is what `JSON.stringify` does (`JSON.stringify([1, , 3])` is
++  `"[1,null,3]"`);
++- **refuse it**, as a value outside the JSON data model.
++
++## Decision
++
++A hole is refused. `cloneJson` walks an array by index and raises the `TypeError` of dl-004, naming
++the hole's own location — `the value at "/a/1" is a hole in a sparse array, which a JSON document
++cannot hold` — and `checkPatch` visits every index of the patch with `Array.from`, so a hole there is
++reported as `InvalidPatchError`: `operation 0 is not an object, but undefined`.
++
++**Refusing beats closing up**, which is data loss: the caller handed in an array of three elements
++and got two back, with no error, and a patch written against the indices they could see addressed
++other elements than they meant. There is no reading of RFC 6902 under which a patch may renumber a
++part of the document it does not touch.
++
++**Refusing beats `null`**, even though `JSON.stringify` chooses `null`, because a hole is the absence
++of a value and `null` is a value: a document round-tripped through this toolkit would gain members
++that a `test` could then find equal to `null`, and a caller who put a hole there by accident — a
++`length` assignment, an `Array(n)` never filled in — would never hear about it. dl-004 already
++refuses `[undefined]` rather than turning it into `[null]`; a hole is the same mistake written
++differently, and it gets the same answer.
++
++**It is the clone that refuses, not each operation.** dl-004 made `cloneJson` the data-model
++boundary, and the boundary is where this belongs: no array holes survive into a document or into an
++operation's `value`, so nothing downstream — the walk of a pointer, the equality of section 4.6 —
++has to consider them.
++
++## Consequences
++
++- A document or a patch `value` holding a sparse array now raises instead of being silently rewritten.
++  A caller who was relying on the old behaviour was losing elements; the message names the index of
++  the hole, so the fix is to fill it in or to shorten the array.
++- A sparse patch array fails as `InvalidPatchError`, inside `JsonPatchError`, so `catch
++  (e) { if (e instanceof JsonPatchError) … }` is again enough to catch every failure of a patch.
++- `jsonEquals` compares with `Array.prototype.every`, which skips holes too, and would have found
++  `[1, , 3]` equal to `[1, 999, 3]`. It is unreachable now that no hole can enter a document or a
++  checked operation, and it stays unreachable as long as `cloneJson` remains the only way in — which
++  is the point of dl-004's boundary.
++- `cloneJson` costs one `Object.hasOwn` per array element. A dense array — every array that came out
++  of `JSON.parse` — pays that and nothing else.
+diff --git a/docs/memory/decision-log/dl-009-a-test-that-cannot-resolve-its-path-is-a-patchoperationerror-not-a-testfailederror.md b/docs/memory/decision-log/dl-009-a-test-that-cannot-resolve-its-path-is-a-patchoperationerror-not-a-testfailederror.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..a8782c40411154f2b5133ccf5eead5e46e9c88fc
+--- /dev/null
++++ b/docs/memory/decision-log/dl-009-a-test-that-cannot-resolve-its-path-is-a-patchoperationerror-not-a-testfailederror.md
+@@ -0,0 +1,60 @@
++---
++id: dl-009-a-test-that-cannot-resolve-its-path-is-a-patchoperationerror-not-a-testfailederror
++type: decision-log
++title: "A test that cannot resolve its path is a PatchOperationError, not a TestFailedError"
++status: pending
++---
++
++# A test that cannot resolve its path is a PatchOperationError, not a TestFailedError
++
++## Context
++
++Callers report being surprised by a failed patch, and this is the case behind most of it. RFC 6902,
++section 4.6 says of `test` only that "the target location MUST be equal to the `value` value for the
++operation to be considered successful" — and, unlike sections 4.2 to 4.5, it never says the target
++location must exist. Read on its own, that sentence makes
++`{ "op": "test", "path": "/lock", "value": "mine" }` against a document with no `/lock` an
++unsuccessful test, which under dl-005 would be a `TestFailedError` — the precondition a caller
++retries on. The toolkit raises a plain `PatchOperationError` instead, which such a caller lets
++through to its alerting.
++
++Both classes terminate the patch, as section 5 requires, so this is not a question of whether the
++patch applies. It is a question of which `catch` a caller's retry sits in, and `TestFailedError`
++derives from `PatchOperationError`, so the two cannot both be right.
++
++## Decision
++
++The classification stands: a `test` whose `path` does not resolve raises `PatchOperationError`, and
++`TestFailedError` is kept for a location that is there and holds a different value. The README now
++says so, and says why, where the surprise is.
++
++**Section 4.1 settles it by exception.** It is `add`, and only `add`, that the RFC excuses from
++pointer resolution: "Although the pointer's error handling algorithm will thus be invoked, this
++specification defines the error handling behavior for `add` pointers to ignore that error and add the
++value as specified." Spelling that out for one operation says what the others do. RFC 6901, section 7
++makes a pointer that references a nonexistent value an error condition; for `test`, nothing overrides
++it, so a location the document has not got is a failure to resolve and not a comparison that came out
++false. There is no value there to be unequal to anything.
++
++**It is also the more useful of the two for the callers who meet it.** A `test` is written against a
++location the author believes exists; a `test` that cannot find it usually means the patch is pointed
++at the wrong document or the wrong version of one, which is the "the document is not what the patch
++assumed" case of dl-005, not the "retry" case. A caller who does want to treat absence as a failed
++precondition can write `{ "op": "test", "path": "/lock", "value": null }` only if absence and `null`
++are the same to them — they are not here, which is the whole reason dl-001 made `resolvePointer`
++throw instead of returning a fallback.
++
++**Changing it would be a breaking change for no gain**, and dl-005 says moving a condition between
++these classes is exactly that. A caller catching `TestFailedError` to retry would begin retrying
++against a document that cannot satisfy the patch at all.
++
++## Consequences
++
++- The surprise is answered in the README rather than in the code: the `TestFailedError` entry now
++  states the boundary and cites section 4.1 for it, so a caller reading the error list is told before
++  they meet the error.
++- A caller who wants one `catch` for "the patch did not apply to this document" already has it:
++  `PatchOperationError` covers both, since `TestFailedError` derives from it. Only a caller who wants
++  to distinguish them has to care, and they are the caller this decision is for.
++- If a service ever genuinely needs "absent or different" as one condition, it belongs in a named
++  entry point or an operation of its own, not in a widened `TestFailedError`.
+diff --git a/docs/memory/task/task-003-review-how-patches-are-checked-and-applied-against-rfc-6902.md b/docs/memory/task/task-003-review-how-patches-are-checked-and-applied-against-rfc-6902.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..926fd798dac355224247fbee44a10d600fc4f837
+--- /dev/null
++++ b/docs/memory/task/task-003-review-how-patches-are-checked-and-applied-against-rfc-6902.md
+@@ -0,0 +1,134 @@
++---
++id: task-003-review-how-patches-are-checked-and-applied-against-rfc-6902
++type: task
++title: "Review how patches are checked and applied against RFC 6902"
++status: pending
++---
++
++# Review how patches are checked and applied against RFC 6902
++
++## Request
++
++Users of `applyPatch` report surprising results: some patches they consider invalid are accepted,
++some edge cases give results they did not expect, and a patch that fails does not always behave the
++way they read the standard. Review how patches are checked and applied, and make the behaviour
++conform to RFC 6902 in every case, errors included.
++
++## What was done
++
++A review rather than a feature, so it started by establishing where the behaviour already conforms,
++to keep the changes to what is genuinely wrong.
++
++### What the review found conformant
++
++Measured, not assumed:
++
++- the 108 cases of the two community conformance suites for RFC 6902 (`json-patch/json-patch-tests`,
++  `tests.json` and `spec_tests.json`) pass, compared with object member order treated as
++  insignificant, as section 4.6 requires;
++- 300,000 differential cases against an independent implementation written straight from the RFC
++  text — random documents to depth 3 and patches of one or two operations, with paths drawn from the
++  document's own pointers and from a list of near-misses (`/-`, `/01`, `/-1`, past-the-end indices,
++  escapes) — diverge nowhere, neither in result nor in whether the patch failed;
++- 200,000 cases over the invalid-patch space (missing, mistyped and unknown `op`, `path`, `from` and
++  `value` members; values outside the data model) hold two invariants: `InvalidPatchError` is raised
++  for a patch independently of the document it is applied to, as dl-005 requires, and neither the
++  document nor the patch handed in is ever modified;
++- the normative requirements of sections 3 to 4.6 were walked one by one against `checkPatch`; all of
++  them were already enforced, including the three that implementations in the wild commonly relax —
++  no location created along the way, `add` bounded at one past the end of an array, and `-` refused
++  by every operation that needs its target to exist.
++
++A cross-check against the `rfc6902` package on npm diverged in 16 ways, every one of them that
++package being the lenient or incorrect side: it reads a non-`array-index` token on an array as index
++0, lets `add` write past the end of an array, and refuses `add`, `replace` and `copy` at the root of
++a document that is not an object. The toolkit is right in all 16.
++
++So the reported surprises are not, in the main, non-conformance. Two of the three are a genuine bug,
++and the third is a reading of section 4.6 that the RFC does not support; both are addressed below.
++
++### The bugs found and fixed
++
++**Array holes were silently swallowed, in the document and in the patch** (dl-008). `cloneJson` and
++`checkPatch` walked arrays with `forEach` and `map`, which skip holes. `applyPatch({ a: [1, , 3] },
++[])` returned `{ a: [1, 3] }`: an array one element shorter than the one handed in, with every index
++after the hole renumbered, so `/a/1` in the same patch addressed `3`. A patch that was itself sparse
++kept its hole through `checkPatch` and made `applyPatch` read `op` off `undefined` — a bare
++`TypeError`, outside the `JsonPatchError` hierarchy the README promises covers any failure of a
++patch. A hole is now refused as the value outside the JSON data model that it is: a `TypeError`
++naming the hole's location for a document, an `InvalidPatchError` for a patch's `value`, and
++`operation 0 is not an object, but undefined` for a hole in the patch array itself.
++
++**A location that does not exist read two different ways.** dl-005 has `unresolved()` in
++`src/json-patch.ts` phrase such a failure "as the pointer module phrases it, so that a failure reads
++the same whether the walk or the last reference token was what went wrong", and it did not: the walk
++produced `JSON Pointer "/a/b" does not resolve: …` and the last token produced `"/a" does not
++resolve: …`. The same condition now reads the same way wherever the walk stopped.
++
++### The surprise that was not a bug
++
++**A `test` whose `path` leads nowhere raises `PatchOperationError`, not `TestFailedError`** (dl-009).
++Section 4.6 never says the target of a `test` must exist, which read on its own makes a missing
++location an unsuccessful test; but section 4.1 excuses `add`, and only `add`, from the pointer error
++handling of RFC 6901, section 7, and that exception says what the other operations do. The
++classification stands — changing it would be the breaking change dl-005 warns about, and would send
++callers into a retry loop against a document that cannot satisfy the patch — and the README now
++states the boundary, with the citation, in the `TestFailedError` entry where callers meet it.
++
++### Code
++
++- `src/json-document.ts` — `cloneArray` walks every index and refuses a hole.
++- `src/json-patch-operation.ts` — `checkPatch` visits every index of the patch with `Array.from`.
++- `src/json-patch.ts` — `unresolved()` phrases a location that does not resolve as the pointer module
++  does.
++
++### Tests
++
++`test/json-patch.test.ts`, 182 cases, nine more than before, red before green:
++
++- a hole in the array of operations, written three ways (`[, op]`, `Array(2)`, an array extended past
++  its last element), is an `InvalidPatchError`;
++- a `value` holding a sparse array, directly or nested, is an `InvalidPatchError`;
++- a document holding a sparse array is a `TypeError`, the message names the hole's own location
++  (`/a/1`) and not the element after it, and the refusal happens rather than the indices after the
++  hole shifting under the rest of the patch;
++- a location that does not exist is phrased the same way whether the walk or the last reference token
++  was what failed;
++- five more pairs for the equality table of section 4.6 — an object or an array against a value of
++  another type — which covers the last reachable branch of `jsonEquals`.
++
++### Documentation
++
++`README.md`: the hole of a sparse array joins the list of values outside the JSON data model, with
++why it is refused rather than closed up or read as `null`; the `TestFailedError` entry states where
++its boundary with `PatchOperationError` runs and cites section 4.1 for it; the `InvalidPatchError`
++entry now also mentions the `from` of a `move` targeting the whole document, which dl-006 decided and
++the list had left out.
++
++## Decisions recorded
++
++- dl-008 — a sparse array is refused, not closed up and not read as `null`.
++- dl-009 — a `test` that cannot resolve its path stays a `PatchOperationError`.
++
++## Verification
++
++- `npm test` — 182 tests, 182 pass, 0 fail (139 for JSON Patch, 43 for JSON Pointer).
++- `npm run typecheck` — no errors, sources and tests.
++- `npm run build` — emits `dist/`.
++- `node --test --experimental-test-coverage` — 99.7% of lines, 99.0% of branches; the three
++  uncovered lines are the `throw cause` rethrows that guard against an error neither the pointer
++  module nor `cloneJson` can raise.
++- The conformance suites, the two fuzzers and the cross-check described above, re-run after the fix.
++
++## Follow-ups
++
++- The community conformance suites and the differential fuzzer live outside the repository, so
++  nothing guards against a regression in them. Vendoring `json-patch-tests` as a test fixture would —
++  it is small and declares itself public domain, but taking a third-party file into the repository is
++  a call for whoever owns the licensing, so it is left as a proposal.
++- `cloneJson` and `jsonEquals` recurse once per level of nesting, so a document a few thousand levels
++  deep raises `RangeError: Maximum call stack size exceeded` rather than anything the error hierarchy
++  names. No configuration file or API payload is anything like that deep, and making either iterative
++  is a rewrite, not a fix; recorded here so the limit is known.
++- Still no linter, and `package.json` still declares no `main` or `exports`: both follow-ups of
++  task-001 and task-002 stand.
+diff --git a/src/json-document.ts b/src/json-document.ts
+index 9228486f48a964bb16ff17e4f6e06e056ac9251d..cf48de6f92e16b8b60c7b2d5850ce7f78d758fbf 100644
+--- a/src/json-document.ts
++++ b/src/json-document.ts
+@@ -89,11 +89,19 @@ function clone(value: unknown, at: string[], ancestors: Set<object>): JsonValue
+ 
+ function cloneArray(value: readonly unknown[], at: string[], ancestors: Set<object>): JsonArray {
+   const copy: JsonArray = [];
+-  value.forEach((element, index) => {
++  // Every index is visited, holes included. `forEach` skips them, which would
++  // close a sparse array up: the copy would be shorter than the original and
++  // every element after the hole would answer to a different index.
++  for (let index = 0; index < value.length; index++) {
+     at.push(String(index));
+-    copy.push(clone(element, at, ancestors));
++    if (!Object.hasOwn(value, index)) {
++      // A hole holds no value at all, which is as far outside the JSON data
++      // model as the `undefined` an explicit element would have to be.
++      throw notJson(at, 'a hole in a sparse array');
++    }
++    copy.push(clone(value[index], at, ancestors));
+     at.pop();
+-  });
++  }
+   return copy;
+ }
+ 
+diff --git a/src/json-patch-operation.ts b/src/json-patch-operation.ts
+index dbd366d951bfc41c1a67f6987e2ecb3da174f556..d766388824ed20c3375699fb2f383324419b9495 100644
+--- a/src/json-patch-operation.ts
++++ b/src/json-patch-operation.ts
+@@ -104,7 +104,12 @@ export function checkPatch(patch: JsonPatch): CheckedOperation[] {
+       `a JSON Patch must be an array of operations, not ${describeJson(patch)}`,
+     );
+   }
+-  return (patch as readonly unknown[]).map((operation, index) => checkOperation(operation, index));
++  // `Array.from` rather than `map`, which skips the holes of a sparse array
++  // and would leave one in the checked operations. A hole is not an operation
++  // object, so it is reported as the operation that is not there.
++  return Array.from(patch as readonly unknown[], (operation, index) =>
++    checkOperation(operation, index),
++  );
+ }
+ 
+ function checkOperation(operation: unknown, index: number): CheckedOperation {
+diff --git a/src/json-patch.ts b/src/json-patch.ts
+index cad6b902959d0a889e43b4d559696a99e8106a6c..a5a89bed9458ce3fac6a98c3aa392fd348099b9a 100644
+--- a/src/json-patch.ts
++++ b/src/json-patch.ts
+@@ -340,7 +340,7 @@ function describeParent(target: Location): string {
+  * walk or the last reference token was what went wrong.
+  */
+ function unresolved(target: Location, detail: string): string {
+-  return `${quote(target.pointer)} does not resolve: ${detail}`;
++  return `JSON Pointer ${quote(target.pointer)} does not resolve: ${detail}`;
+ }
+ 
+ function failed(
+diff --git a/test/json-patch.test.ts b/test/json-patch.test.ts
+index 2737c2f269ef8bca7cf7c8c97be7779e80d1fe36..10920f110f97e326263c48d7379c92ecea774676 100644
+--- a/test/json-patch.test.ts
++++ b/test/json-patch.test.ts
+@@ -501,6 +501,10 @@ describe('applyPatch', () => {
+       [1, 2],
+       [1, '1'],
+       [[], {}],
++      [{}, null],
++      [{ a: 1 }, 1],
++      [{ a: 1 }, 'a'],
++      [[1], 1],
+       [[1], [1, 2]],
+       [[1, 2], [2, 1]],
+       [{ a: 1 }, { a: 1, b: 2 }],
+@@ -738,6 +742,29 @@ describe('applyPatch', () => {
+       assert.deepEqual(document, { a: 1 });
+     });
+ 
++    it('rejects a hole in the array of operations, which is no operation at all', () => {
++      // A sparse array has no value at the hole, so it is not an array of
++      // operation objects; the failure has to stay inside JsonPatchError.
++      const sparse = [{ op: 'remove', path: '/a' }];
++      sparse[2] = { op: 'remove', path: '/a' };
++
++      for (const patch of [[, { op: 'remove', path: '/a' }], Array(2), sparse]) {
++        assert.throws(() => applyUntyped({ a: 1 }, patch), InvalidPatchError);
++      }
++    });
++
++    it('rejects a "value" that holds a sparse array, whose hole is no JSON value', () => {
++      const sparse = [1];
++      sparse[2] = 3;
++
++      for (const value of [[, 1], Array(2), sparse, { a: sparse }]) {
++        assert.throws(
++          () => applyUntyped({ a: 1 }, [{ op: 'add', path: '/b', value }]),
++          InvalidPatchError,
++        );
++      }
++    });
++
+     it('cannot see a duplicate member, which parsing the patch has already resolved', () => {
+       // RFC 6902, appendix A.13 is an invalid patch because its operation has
+       // two "op" members. applyPatch takes a parsed patch, in which JSON's
+@@ -751,7 +778,20 @@ describe('applyPatch', () => {
+ 
+   describe('documents that are outside the JSON data model', () => {
+     it('are refused, rather than patched into something that is not JSON', () => {
+-      for (const document of [undefined, () => 1, Number.NaN, new Date(0), [undefined]]) {
++      const grown = [1, 2];
++      grown.length = 4;
++
++      for (const document of [
++        undefined,
++        () => 1,
++        Number.NaN,
++        new Date(0),
++        [undefined],
++        [, 1],
++        Array(2),
++        grown,
++        { a: [, 1] },
++      ]) {
+         assert.throws(
+           () => applyPatch(document as unknown as JsonValue, []),
+           (error: unknown) => {
+@@ -762,6 +802,32 @@ describe('applyPatch', () => {
+         );
+       }
+     });
++
++    it('name the location of the hole in a sparse array, not the element after it', () => {
++      const sparse = [1];
++      sparse[2] = 3;
++
++      assert.throws(
++        () => applyPatch({ a: sparse } as unknown as JsonValue, []),
++        (error: unknown) => {
++          assert.ok(error instanceof TypeError);
++          assert.match(error.message, /"\/a\/1"/);
++          return true;
++        },
++      );
++    });
++
++    it('are refused rather than silently closing up, which would shift every index after the hole', () => {
++      const sparse = ['a'];
++      sparse[2] = 'c';
++
++      // Closing the hole up would make "/2" resolve to nothing and "/1" resolve
++      // to "c", so the rest of the patch would address the wrong elements.
++      assert.throws(
++        () => applyPatch({ a: sparse } as unknown as JsonValue, [{ op: 'test', path: '/a/2', value: 'c' }]),
++        TypeError,
++      );
++    });
+   });
+ 
+   describe('member names that reach JavaScript machinery', () => {
+@@ -865,6 +931,22 @@ describe('applyPatch', () => {
+       );
+     });
+ 
++    it('phrase a location that does not exist the same way, wherever the walk stopped', () => {
++      // The same condition — the patch names a location the document has not
++      // got — whether it is the walk that stops short or the last reference
++      // token that names nothing.
++      for (const path of ['/a/b', '/a']) {
++        assert.throws(
++          () => applyPatch({}, [{ op: 'remove', path }]),
++          (error: unknown) => {
++            assert.ok(error instanceof PatchOperationError);
++            assert.match(error.message, /JSON Pointer "[^"]*" does not resolve: /);
++            return true;
++          },
++        );
++      }
++    });
++
+     it('report a pointer failure as a patch error, keeping the cause', () => {
+       for (const patch of [
+         // The pointer is not one: the patch is invalid.
