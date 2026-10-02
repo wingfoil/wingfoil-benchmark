@@ -66,9 +66,10 @@ Classified in the design phase.
 - REQ-RUN-14 — a released version resolves to a commit of the clone and builds. **Characterization**:
   `resolveCommit` already takes a tag, and REQ-FMT-03 already accepts `v0.2.2`; the Docker tests show
   the build of the tag.
-- The wingfoil manual's commands work against v0.2.2 (F2.7, REQ-RUN-17). **Red-first**: a fake step that
-  writes a task's body and then follows the manual is refused by v0.2.2's write guard as the manual reads
-  today (choice 1).
+- The wingfoil manual's commands work against v0.2.2 (F2.7, REQ-RUN-17). **Characterization**: the fake's
+  wingfoil step writes the decision-log's body, then submits and approves as the manual says; the Docker
+  test reads the body in the `submit` commit. (First designed red-first on a wrong reading of v0.2.2, see
+  choice 1.)
 
 ## Design
 
@@ -93,10 +94,13 @@ does that, and its output is the evidence for `mcp-tools: false`, not the source
 1. **Approval authority is read from the `dna.yaml` committed at `HEAD`** (`approval-authority.ts`). The
    setup already commits the Benchmark Approver ("declare the Benchmark Approver"), so the agent's
    `memory approve` after "Approved. Proceed." keeps working. The Docker test shows it.
-2. **A write refuses a target with modifications it does not own** (`write-guard.ts`, WingFoil's dl-080):
-   `memory submit` refuses a document whose body is edited and not committed. The manual says "write what
-   you did in the file it creates, then `wingfoil memory submit <id>`" — exactly the sequence v0.2.2
-   refuses. That is choice 1.
+2. **A write refuses a target with modifications it does not own** (`write-guard.ts`, WingFoil's dl-080).
+   **Corrected in the build:** this design first read it as refusing `memory submit` on an edited body.
+   It does not: `memory-transition.ts` says `submit` "is entitled to carry content and is therefore not
+   guarded"; only `approve`, `reject` and `deprecate` refuse. Observed on `wingfoil@0.2.2`: a body edited
+   and not committed rides in `wf(decision-log): submit …`; `approve` on an edited document is refused,
+   "… commit or stash these changes first". The manual's "write …, then `submit`" works as it stands, and
+   its `approve` follows a reply, with nothing edited in between.
 
 `init --template Kanban` still works with no terminal, commits by itself and writes the same files (only a
 commented example in `dna.yaml` differs). `npm ci` + `npm pack` from the archive build through `prepack`;
@@ -107,9 +111,8 @@ moved from `docs/self/.wingfoil/memory/templates/` to `.wingfoil/memory/template
 ### Changes
 
 - **`arms/wingfoil/arm.yaml`:** the comment names v0.2.2 and the evidence; values unchanged.
-- **`arms/wingfoil/manual.md`:** choice 1.
-- **`arms/wingfoil/setup.sh`:** choice 2, step 4 by `wingfoil dna add team.members`. Its SHA-256 changes, which is fine: no campaign execution
-  exists yet, and the site refuses an execution only against a manual its runs recorded.
+- **`arms/wingfoil/manual.md`:** unchanged (choice 1, withdrawn).
+- **`arms/wingfoil/setup.sh`:** choice 2, step 4 by `wingfoil dna add team.members`.
 - **Fixtures that pin the WingFoil under test** (not those that use `3df305e` as a sample SHA):
   `test/fixtures/campaigns/arms.yaml` and `test/support/dry-run-fixture.ts` pin `v0.2.2`, so every Docker
   test with the clone (W3, S1–S3 and S8 in baseline-docs and wingfoil) builds and runs the tag. W3's test
@@ -118,9 +121,11 @@ moved from `docs/self/.wingfoil/memory/templates/` to `.wingfoil/memory/template
   a dry run of S8@1.0 in baseline-docs with the fake replaying the reference, WingFoil now v0.2.2; its
   README names v0.2.2.
 - **A fake step that follows the manual** (`test/fixtures/fake-script-arms.json`, the wingfoil arm's step):
-  `memory add`, a line written to the task's body, then the manual's own sequence to `submit`, and
-  `approve` after the reply. Red against today's manual, green with choice 1.
+  `memory add`, a line written to the decision-log's body, `submit`, and `approve` after the reply.
 - **`test/unit/arms/load.test.ts`, `manuals.test.ts`:** K5's facts and "no MCP Tool" name v0.2.2.
+- **Fixtures, as built:** the Docker tests pin v0.2.2 through `test/fixtures/campaigns/arms.yaml` and their
+  own `WINGFOIL_UNDER_TEST`, which `withClone()` returns; `test/support/dry-run-fixture.ts` keeps `3df305e`,
+  since the unit tests' doubles resolve that pin (a deviation from the list above).
 - **The finding note's template commit** (`src/results/finding.ts`, REQ-RES-05): choice 3.
 - **Statements of the pin** — amendments, each with a raised version and a review decision:
   - `docs/02_specification/scenarios/README.md` 1.3: K5 names v0.2.2 as the WingFoil the campaign
@@ -134,13 +139,13 @@ moved from `docs/self/.wingfoil/memory/templates/` to `.wingfoil/memory/template
 
 ### Choices confirmed by the approver (2026-10-02)
 
-1. **The manual and the write guard: the manual is corrected.** v0.2.2 refuses `submit` on a body not yet
-   committed, and the manual prescribed exactly that sequence. In "While you work", both the task line and
-   the decision-log line read "…, commit that file, then `wingfoil memory submit <id>`". Only the sequence
-   is added, not WingFoil's reason; no commit message is prescribed; `approve` is unchanged (nothing is
-   edited after the reply); the baseline manuals are untouched. Set aside: (b) leaving the manual, which
-   would bill the arm for a manual known to be wrong. The approver asked for the wording first and accepted
-   it as proposed.
+1. **The manual and the write guard — withdrawn in the build (the approver, 2026-10-02): the manual stays as
+   it is.** The build found that v0.2.2 does not refuse `submit` on an edited body (the design's reading,
+   corrected above); the approver chose to leave the manual unchanged over adding a line about `approve`
+   or keeping the superfluous step. What had been confirmed, on the wrong reading: in "While you work",
+   the task line and the decision-log line were to read "…, commit that file, then `wingfoil memory submit
+   <id>`" (`bb9ce5e`), and a red unit test for that wording was committed (`d42f334`) and then removed
+   (`1c87f9f`).
 2. **The approver member: WingFoil's own verb.** The setup declares the Benchmark Approver with
    `wingfoil dna add team.members --value "Benchmark Approver" --entry-email approver@benchmark.localhost
    --entry-roles approver`, which commits itself, still only when no member has that e-mail (a scenario's
