@@ -318,5 +318,5 @@ cost note. `bench scenario validate S1@1.0 --holdout …` must pass.
   tokens per step 1.39 M, 3.29 M, 6.48 M, 0.75 M, 0.76 M. No token stored. Scored: steps 1–5 at the maximum
   (153/153 at step 5), **final not reached** (the run ended at its cap), hold-out not reached.
 - **Opus 5 cost 6.8× the Sonnet 5 baseline** (13.02 € against 1.91 €), not the 2.5× of the per-token prices:
-  about 2.5× the tokens on the same steps as well (12.7 M against about 3.8 M). The slice's estimate from stage 1b
+  and 3.6× the tokens on the same steps (12.68 M against 3.51 M in dry run 15). The slice's estimate from stage 1b
   was wrong by that factor.
