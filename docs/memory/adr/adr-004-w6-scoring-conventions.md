@@ -92,7 +92,8 @@ designing shape them:
 - **W11 (F5.8):** the method page states decisions 6 to 9 and 11: how M-Q1 is counted and what a
   snapshot that did not load or was killed scores.
 - **Cost:** one container per suite and snapshot, plus a census per suite; for S1's four steps and three
-  suites that is about a dozen containers per run, each a few seconds.
+  suites that is about a dozen containers per run, each a few seconds; S1 1.3 (task-050) has five
+  steps and four suites, so a few more.
 
 ## Amendment 1 (W6 task-028, 2026-09-28; accepted at its review, `e1d2802`)
 

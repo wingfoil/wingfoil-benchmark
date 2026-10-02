@@ -1,7 +1,7 @@
 # Traceability (v0.1)
 
-**Version:** 1.2
-**Date:** 2026-10-01
+**Version:** 1.3
+**Date:** 2026-10-02
 **Status:** Approved
 **Traces to:** [06_features.md](../01_vision/06_features.md) 1.2, [07_sequencer.md](../01_vision/07_sequencer.md) 1.1, [09_experiment-design.md](../01_vision/09_experiment-design.md) 1.1, [scenarios/](scenarios/), [acceptance/](acceptance/), [requirements.md](requirements.md)
 
@@ -30,10 +30,10 @@ Only questions that are active in v0.1 are listed. Q-E2, Q-E3 (v0.2), G-A, G-B (
 | Q-C2 cost of development | S1 | M-K1, M-K2 | scoring.feature @F4.3; runner.feature @F2.3 | REQ-RUN-09, REQ-SCO-* |
 | Q-D1 real defects fixed | S2 steps 1–3 | M-D1 | scoring.feature @F4.1 | REQ-SCO-01, REQ-SCO-02 |
 | Q-D2 non-defects rejected | S2 step 2 (false), step 3 (duplicate) | M-D2 | scoring.feature @F4.8 (content check) | REQ-SCO-06 |
-| Q-D3 regressions | S2, S1 step 4 (S1 1.1) | M-D3 | scoring.feature @F4.1 | REQ-SCO-02, REQ-SCO-12 |
+| Q-D3 regressions | S2, S1 steps 4–5 (S1 1.1, 1.3) | M-D3 | scoring.feature @F4.1 | REQ-SCO-02, REQ-SCO-12 |
 | Q-E1 directives respected | S8 steps 1–4 | M-E1 | scoring.feature @F4.8 | REQ-SCO-05 |
 | Q-F1 decisions respected or revised | S3 (D1–D5), S2 step 3 | M-F1 | scoring.feature @F4.7 | REQ-SCO-06, REQ-SCO-12 |
-| Q-F2 next-change cost | S3 steps 2–5, S1 step 4 | M-F2 | scoring.feature @F4.7 | REQ-RUN-09, REQ-SCO-12 |
+| Q-F2 next-change cost | S3 steps 2–5, S1 steps 4–5 | M-F2 | scoring.feature @F4.7 | REQ-RUN-09, REQ-SCO-12 |
 | G-X1 cost of the harness | all | M-K3, M-K4 | runner.feature @F2.5; scoring.feature @F4.4 | REQ-RUN-03, REQ-SCO-08 |
 | G-X2 determinism | S1 × 3 repetitions | M-R1–M-R3 | scoring.feature @F4.5 | REQ-SCO-05, REQ-SCO-07 |
 | (model sensitivity, T14) | S1 Opus 5 slice | all of the above, as a separate comparison | campaign.feature @F1.1 (`models` slices) | REQ-FMT-01 |
@@ -151,3 +151,10 @@ become release assets there (W11 plan-phase decision 4).
 Source: [task-047](../memory/task/task-047-manual-publish-and-transcript-assets.md), design confirmed by the
 approver on 2026-10-01; review decision of the approver at that task's review, 2026-10-01 (`39cb104`).
 
+## Amendment 1.3 (calibration, task-050, 2026-10-02)
+
+Q-D3 and Q-F2 read S1's step 5 as well as its step 4 (S1 1.3: `createPatch`, and Patch and Merge Patch run
+again after it). No feature, acceptance or requirement changes.
+
+Source: [task-050](../memory/task/task-050-calibration-of-v0-1-dry-runs-measured-costs-and-the-revised-budget.md);
+review decision pending at that task's review.
