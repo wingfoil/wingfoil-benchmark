@@ -46,10 +46,11 @@ export interface FindingNote {
 }
 
 /**
- * The WingFoil commit the finding's WingFoil section follows the templates of: the pinned v0.2
- * pre-release (sequencer decision 3, amended in 1.1), `docs/self/.wingfoil/memory/templates/` there.
+ * The WingFoil the finding's WingFoil section follows the templates of: the release the reference
+ * campaign runs (sequencer decision 3, amended in 1.1; task-049), `.wingfoil/memory/templates/` there.
+ * Its `bug` and `decision-log` templates are those of the development pin `3df305e`, byte for byte.
  */
-const TEMPLATE_COMMIT = '3df305e';
+const TEMPLATE_COMMIT = 'v0.2.2 (12537b62)';
 
 /** The harness tool whose commit the note names (REQ-RUN-14). */
 const WINGFOIL = 'wingfoil';
