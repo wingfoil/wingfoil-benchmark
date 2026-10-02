@@ -58,13 +58,99 @@ Out of scope:
 Classified in the design phase.
 
 - `runner.feature` @F2.6 "The WingFoil under test is the version pinned by the campaign" — with a released
-  version as the pin.
-- `scenarios.feature` @F3.6 — expected failures read the re-assessed `provides`.
-- REQ-RUN-14 — a released version (REQ-FMT-03) resolves to a commit of the clone and builds.
+  version as the pin. **Red-first** in the Docker test (W3's), which pins `v0.2.2` and expects the run to
+  record `12537b62…`, the tag's commit; **characterization** in the acceptance test, whose doubles resolve
+  any pin (the Gherkin keeps its example `3df305e`: a value, not the pin).
+- `scenarios.feature` @F3.6 — expected failures read `provides`. **Characterization**: v0.2.2 offers what
+  `3df305e` offered (below), so no expected failure moves; the unit test of K5's facts names v0.2.2.
+- REQ-RUN-14 — a released version resolves to a commit of the clone and builds. **Characterization**:
+  `resolveCommit` already takes a tag, and REQ-FMT-03 already accepts `v0.2.2`; the Docker tests show
+  the build of the tag.
+- The wingfoil manual's commands work against v0.2.2 (F2.7, REQ-RUN-17). **Red-first**: a fake step that
+  writes a task's body and then follows the manual is refused by v0.2.2's write guard as the manual reads
+  today (choice 1).
 
 ## Design
 
-<!-- Modules, interfaces, data formats touched; decisions taken and their reasons. -->
+### What v0.2.2 is, against `3df305e` (read from the tag, 2026-10-02)
+
+Read through `git show v0.2.2:…` in the WingFoil clone; nothing written there. `v0.2.2` is
+`12537b627ce0517222da762e8fa90997a1208a4b` (2026-09-29); `3df305e` is its ancestor, older than v0.2.0.
+
+| Capability (`provides`) | `3df305e` | v0.2.2 | Evidence at the tag |
+|---|---|---|---|
+| `directive-delivery` | true | **true**, unchanged | the `<role>-session` MCP Prompts and `wingfoil directives list --role`; `src/mcp/prompt.ts` and `server.ts` identical |
+| `memory-lifecycle` | true | **true** | `memory add/submit/approve/reject/deprecate/history/search`, same shape; `add --set` is new |
+| `workflow-engine` | false | **false** | only `workflow list`; the module says "there is no workflow engine yet"; README plans it for 0.3 |
+| `mcp-tools` | false | **false** | `server.ts` registers Resources and Prompts only; tool registration exists in `registrar.ts` but nothing calls it outside tests ("Tools are … v0.4 scope") |
+
+So `arms/wingfoil/arm.yaml` keeps its four values; its comment names v0.2.2. adr-003 asks decision 13 to
+be re-checked for the release pinned, **by re-running `spikes/task-011/p6-mcp.sh` against it**: the build
+does that, and its output is the evidence for `mcp-tools: false`, not the source reading alone.
+
+**What did change and touches the arm** — both new in v0.2.2, both refusals with exit 1:
+
+1. **Approval authority is read from the `dna.yaml` committed at `HEAD`** (`approval-authority.ts`). The
+   setup already commits the Benchmark Approver ("declare the Benchmark Approver"), so the agent's
+   `memory approve` after "Approved. Proceed." keeps working. The Docker test shows it.
+2. **A write refuses a target with modifications it does not own** (`write-guard.ts`, WingFoil's dl-080):
+   `memory submit` refuses a document whose body is edited and not committed. The manual says "write what
+   you did in the file it creates, then `wingfoil memory submit <id>`" — exactly the sequence v0.2.2
+   refuses. That is choice 1.
+
+`init --template Kanban` still works with no terminal, commits by itself and writes the same files (only a
+commented example in `dna.yaml` differs). `npm ci` + `npm pack` from the archive build through `prepack`;
+the build side now also downloads `wingfoil@0.2.1` (a devDependency, `wingfoil-released`), which the
+runner's build container fetches like any other. The `bug` and `decision-log` templates are unchanged; they
+moved from `docs/self/.wingfoil/memory/templates/` to `.wingfoil/memory/templates/`.
+
+### Changes
+
+- **`arms/wingfoil/arm.yaml`:** the comment names v0.2.2 and the evidence; values unchanged.
+- **`arms/wingfoil/manual.md`:** choice 1. Its SHA-256 changes, which is fine: no campaign execution
+  exists yet, and the site refuses an execution only against a manual its runs recorded.
+- **Fixtures that pin the WingFoil under test** (not those that use `3df305e` as a sample SHA):
+  `test/fixtures/campaigns/arms.yaml` and `test/support/dry-run-fixture.ts` pin `v0.2.2`, so every Docker
+  test with the clone (W3, S1–S3 and S8 in baseline-docs and wingfoil) builds and runs the tag. W3's test
+  resolves `v0.2.2^{commit}`.
+- **`test/fixtures/wingfoil-config/S8/` and `S8.PROJECT_RULES.md`:** refreshed as task-038 took them, from
+  a dry run of S8@1.0 in baseline-docs with the fake replaying the reference, WingFoil now v0.2.2; its
+  README names v0.2.2.
+- **A fake step that follows the manual** (`test/fixtures/fake-script-arms.json`, the wingfoil arm's step):
+  `memory add`, a line written to the task's body, then the manual's own sequence to `submit`, and
+  `approve` after the reply. Red against today's manual, green with choice 1.
+- **`test/unit/arms/load.test.ts`, `manuals.test.ts`:** K5's facts and "no MCP Tool" name v0.2.2.
+- **The finding note's template commit** (`src/results/finding.ts`, REQ-RES-05): choice 3.
+- **Statements of the pin** — amendments, each with a raised version and a review decision:
+  - `docs/02_specification/scenarios/README.md` 1.3: K5 names v0.2.2 as the WingFoil the campaign
+    runs, and that it has no workflow engine and no MCP Tools either;
+  - `site-content/method.md`: T10 keeps "at design time … `3df305e`" and adds that v0.2.2, which the
+    campaign runs, has no workflow engine either (its source unchanged: the threat table); `harness-gaps`
+    says nothing of a pin and stays;
+  - adr-003: an amendment recording decision 13 re-checked on v0.2.2.
+- **Unchanged:** `vendor/` and its managing WingFoil; the Gherkin examples; unit fixtures' sample SHAs;
+  `src/runner/harness.ts` (it already resolves a tag).
+
+### Choices to confirm
+
+1. **The manual and the write guard.** v0.2.2 refuses `submit` on a body not yet committed, and the
+   manual prescribes exactly that sequence.
+   - **(a) Recommended:** the manual says "write …, commit it, then `wingfoil memory submit <id>`". The
+     manual is the arm's setup from the harness's own documentation (T12), and v0.2.2's refusal names the
+     same remedy; a manual that leads into a refusal would bill the arm for a wrong manual, not for the
+     tool.
+   - (b) Leave the manual as it is: the agent meets the refusal and recovers. That measures the friction a
+     user of v0.2.2 meets, at the price of a manual known to be wrong.
+2. **The approver member in `dna.yaml`.** v0.2.2 has a verb for it, `wingfoil dna add team.members …
+   --entry-roles approver`, which commits itself; usage note N33 said there was none.
+   - **(a) Recommended:** keep the setup's script, which works whatever the pin and already commits. Note
+     in the inbox that N33 is answered by v0.2.2.
+   - (b) Use the verb: the setup then uses only WingFoil's commands, but depends on v0.2.2's syntax.
+3. **The finding note's template commit** (REQ-RES-05 names `3df305e`).
+   - **(a) Recommended:** the WingFoil the campaign pins, `v0.2.2` (`12537b62`), from its
+     `.wingfoil/memory/templates/`. The templates are byte-identical, so the note's text changes only in the
+     commit it names. REQ-RES-05 is amended (requirements 1.23).
+   - (b) Keep `3df305e`: no amendment, but the note names a commit the campaign never ran.
 
 ## Execution notes
 
@@ -72,3 +158,7 @@ Classified in the design phase.
   the element from the template at `draft` and commits it. Observed: `1dc614b wf(task): add …`, the element
   at `draft`. The slug reads `v0-2-2`: the managing WingFoil (`3df305e`) turns a `.` into `-`; v0.2.2 keeps it
   (its changelog, task-110). Existing ids are untouched either way.
+- `npx wingfoil memory submit task-049-…` (draft → pending) — declared: moves `status` and commits the file.
+  Observed: `1343027 wf(task): submit …`, `status: pending`; the body had been committed first (`2176e1c`).
+- The approver's `memory approve` (pending → backlog), `59869f5`: `memory history` records
+  `operation: approve`, the approver and the reason.
