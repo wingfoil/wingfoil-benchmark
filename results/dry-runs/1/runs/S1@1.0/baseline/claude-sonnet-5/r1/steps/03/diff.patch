@@ -1,0 +1,70 @@
+diff --git a/src/index.ts b/src/index.ts
+index bfdf0d0c315eec815ff503c8216338dab4115da4..24fb6071f8b7a6b9d1de7149c66228bb8b449712 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -64,6 +64,25 @@ function isJsonObject(value: JsonValue): value is { [key: string]: JsonValue } {
+   return typeof value === "object" && value !== null && !Array.isArray(value);
+ }
+ 
++/**
++ * Sets an object member as a plain, own, enumerable data property.
++ *
++ * A plain assignment (`parent[key] = value`) is unsafe for a key like
++ * `"__proto__"`: when no own property by that name exists yet, it invokes
++ * `Object.prototype`'s inherited accessor and rewrites the object's
++ * prototype instead of creating a member named `"__proto__"`. JSON Pointer
++ * member names carry no special meaning, so every key must be set the same
++ * way.
++ */
++function setMember(parent: { [key: string]: JsonValue }, key: string, value: JsonValue): void {
++  Object.defineProperty(parent, key, {
++    value,
++    writable: true,
++    enumerable: true,
++    configurable: true,
++  });
++}
++
+ export type AddOperation = { op: "add"; path: string; value: JsonValue };
+ export type RemoveOperation = { op: "remove"; path: string };
+ export type ReplaceOperation = { op: "replace"; path: string; value: JsonValue };
+@@ -183,7 +202,7 @@ function applyAdd(root: JsonValue, path: string, value: JsonValue): JsonValue {
+     const index = parseArrayIndex(lastToken, parent.length, true);
+     parent.splice(index, 0, clonedValue);
+   } else if (isJsonObject(parent)) {
+-    parent[lastToken] = clonedValue;
++    setMember(parent, lastToken, clonedValue);
+   } else {
+     throw new Error("JSON Pointer cannot descend into a non-container value");
+   }
+@@ -228,7 +247,7 @@ function applyReplace(root: JsonValue, path: string, value: JsonValue): JsonValu
+     if (!Object.prototype.hasOwnProperty.call(parent, lastToken)) {
+       throw new Error(`JSON Pointer references a nonexistent member: ${JSON.stringify(lastToken)}`);
+     }
+-    parent[lastToken] = clonedValue;
++    setMember(parent, lastToken, clonedValue);
+   } else {
+     throw new Error("JSON Pointer cannot descend into a non-container value");
+   }
+diff --git a/test/index.test.ts b/test/index.test.ts
+index 68ba4eb3dcbfca956b4a64abee274faeb958d881..f6f3937676288f268f4cd88c666399bdc9118c58 100644
+--- a/test/index.test.ts
++++ b/test/index.test.ts
+@@ -236,3 +236,17 @@ test("throws when a required member is missing", () => {
+   assert.throws(() => applyPatch({}, [{ op: "move", path: "/a" }]));
+   assert.throws(() => applyPatch({}, [{ op: "add", value: 1 }]));
+ });
++
++test("add: treats '__proto__' as an ordinary member name", () => {
++  const result = applyPatch({}, [{ op: "add", path: "/__proto__", value: { polluted: true } }]);
++  assert.equal(Object.prototype.hasOwnProperty.call(result, "__proto__"), true);
++  assert.deepEqual((result as { __proto__: unknown }).__proto__, { polluted: true });
++  assert.equal(Object.getPrototypeOf(result), Object.prototype);
++});
++
++test("replace: treats '__proto__' as an ordinary member name", () => {
++  const document = JSON.parse('{"__proto__": 1}');
++  const result = applyPatch(document, [{ op: "replace", path: "/__proto__", value: 2 }]);
++  assert.equal(Object.prototype.hasOwnProperty.call(result, "__proto__"), true);
++  assert.equal((result as { __proto__: unknown }).__proto__, 2);
++});
