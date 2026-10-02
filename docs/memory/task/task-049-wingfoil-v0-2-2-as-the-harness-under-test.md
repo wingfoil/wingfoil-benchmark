@@ -107,7 +107,8 @@ moved from `docs/self/.wingfoil/memory/templates/` to `.wingfoil/memory/template
 ### Changes
 
 - **`arms/wingfoil/arm.yaml`:** the comment names v0.2.2 and the evidence; values unchanged.
-- **`arms/wingfoil/manual.md`:** choice 1. Its SHA-256 changes, which is fine: no campaign execution
+- **`arms/wingfoil/manual.md`:** choice 1.
+- **`arms/wingfoil/setup.sh`:** choice 2, step 4 by `wingfoil dna add team.members`. Its SHA-256 changes, which is fine: no campaign execution
   exists yet, and the site refuses an execution only against a manual its runs recorded.
 - **Fixtures that pin the WingFoil under test** (not those that use `3df305e` as a sample SHA):
   `test/fixtures/campaigns/arms.yaml` and `test/support/dry-run-fixture.ts` pin `v0.2.2`, so every Docker
@@ -131,26 +132,24 @@ moved from `docs/self/.wingfoil/memory/templates/` to `.wingfoil/memory/template
 - **Unchanged:** `vendor/` and its managing WingFoil; the Gherkin examples; unit fixtures' sample SHAs;
   `src/runner/harness.ts` (it already resolves a tag).
 
-### Choices to confirm
+### Choices confirmed by the approver (2026-10-02)
 
-1. **The manual and the write guard.** v0.2.2 refuses `submit` on a body not yet committed, and the
-   manual prescribes exactly that sequence.
-   - **(a) Recommended:** the manual says "write …, commit it, then `wingfoil memory submit <id>`". The
-     manual is the arm's setup from the harness's own documentation (T12), and v0.2.2's refusal names the
-     same remedy; a manual that leads into a refusal would bill the arm for a wrong manual, not for the
-     tool.
-   - (b) Leave the manual as it is: the agent meets the refusal and recovers. That measures the friction a
-     user of v0.2.2 meets, at the price of a manual known to be wrong.
-2. **The approver member in `dna.yaml`.** v0.2.2 has a verb for it, `wingfoil dna add team.members …
-   --entry-roles approver`, which commits itself; usage note N33 said there was none.
-   - **(a) Recommended:** keep the setup's script, which works whatever the pin and already commits. Note
-     in the inbox that N33 is answered by v0.2.2.
-   - (b) Use the verb: the setup then uses only WingFoil's commands, but depends on v0.2.2's syntax.
-3. **The finding note's template commit** (REQ-RES-05 names `3df305e`).
-   - **(a) Recommended:** the WingFoil the campaign pins, `v0.2.2` (`12537b62`), from its
-     `.wingfoil/memory/templates/`. The templates are byte-identical, so the note's text changes only in the
-     commit it names. REQ-RES-05 is amended (requirements 1.23).
-   - (b) Keep `3df305e`: no amendment, but the note names a commit the campaign never ran.
+1. **The manual and the write guard: the manual is corrected.** v0.2.2 refuses `submit` on a body not yet
+   committed, and the manual prescribed exactly that sequence. In "While you work", both the task line and
+   the decision-log line read "…, commit that file, then `wingfoil memory submit <id>`". Only the sequence
+   is added, not WingFoil's reason; no commit message is prescribed; `approve` is unchanged (nothing is
+   edited after the reply); the baseline manuals are untouched. Set aside: (b) leaving the manual, which
+   would bill the arm for a manual known to be wrong. The approver asked for the wording first and accepted
+   it as proposed.
+2. **The approver member: WingFoil's own verb.** The setup declares the Benchmark Approver with
+   `wingfoil dna add team.members --value "Benchmark Approver" --entry-email approver@benchmark.localhost
+   --entry-roles approver`, which commits itself, still only when no member has that e-mail (a scenario's
+   configuration may bring one, and v0.2.2 refuses a duplicate name). The setup then uses WingFoil's
+   commands only; it depends on v0.2.2's syntax, which is the pin. The inbox records that v0.2.2 answers
+   N33. Set aside: (a) keeping the script.
+3. **The finding note's template commit: v0.2.2** (`12537b62`), its `.wingfoil/memory/templates/`. The
+   templates are byte-identical to `3df305e`'s, so the note changes only in the commit it names.
+   REQ-RES-05 is amended (requirements 1.23). Set aside: (b) keeping `3df305e`.
 
 ## Execution notes
 
