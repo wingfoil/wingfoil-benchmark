@@ -187,3 +187,9 @@ campaign's file is plan-003 step 5's.
   agent's own tests passing both times, lint 0 findings. One pair, not a proof of determinism.
 - **Stage 1 done:** 4 dry runs, **7.79 €** (8.80 USD) against the ceiling of about 10 €. Measured S1 costs per
   completed run: baseline 1.99 €, baseline-docs 1.40 €, wingfoil 3.32 €.
+
+### Stage 2
+
+- **The approver's consent, 2026-10-02, in chat:** stage 2 — S2, S3, S8 × baseline, baseline-docs, wingfoil on
+  Sonnet 5 — with a cap of **5 €** per run and a ceiling of **30 €** (expected about 20 €). A dry run starts only
+  while the stage's spending plus its cap stays within the ceiling. S1's difficulty is decided after stage 2.
