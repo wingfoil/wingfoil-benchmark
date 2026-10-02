@@ -2,7 +2,7 @@
 id: task-049-wingfoil-v0-2-2-as-the-harness-under-test
 type: task
 title: "WingFoil v0.2.2 as the harness under test"
-status: in-review
+status: approved
 release: v0.1
 wave: calibration
 features: [F2.6, F3.6]
