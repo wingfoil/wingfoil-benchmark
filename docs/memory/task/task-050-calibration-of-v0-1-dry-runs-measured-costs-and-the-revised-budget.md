@@ -2,7 +2,7 @@
 id: task-050-calibration-of-v0-1-dry-runs-measured-costs-and-the-revised-budget
 type: task
 title: "Calibration of v0.1: dry runs, measured costs and the revised budget"
-status: backlog
+status: in-progress
 release: v0.1
 wave: calibration
 features: []
