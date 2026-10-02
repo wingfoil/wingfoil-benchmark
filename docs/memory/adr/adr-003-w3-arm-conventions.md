@@ -131,3 +131,23 @@ What the spike found, in one line each:
   Decisions 1–5 are written for any commit; decision 13 is specific to `3df305e` and is to be
   re-checked for the release actually pinned, by re-running `spikes/task-011/p6-mcp.sh` against it.
 - WingFoil friction met on the way is in the usage-notes inbox, N30–N34.
+
+## Amendment 1 (calibration task-049, 2026-10-02; accepted at its review, `cd062e2`)
+
+The WingFoil under test becomes the released **v0.2.2** (`12537b62`), the version the reference campaign
+pins ([task-049](../task/task-049-wingfoil-v0-2-2-as-the-harness-under-test.md)).
+
+- **Decision 13, re-checked on v0.2.2: it holds.** The server declares `resources` and `prompts` only;
+  `tools/list` answers "Method not found"; the seven role Prompts and the Resources `wingfoil://dna`,
+  `wingfoil://workflows`, `wingfoil://memory/{type}[/{id}]`, `wingfoil://dna/{section}`,
+  `wingfoil://workflows/{name}` are those of `3df305e`. `p6-mcp.sh` could not be re-run as it stands — the
+  probes' chain fixes `3df305e` and the `0.1.0` tarball's name — so its six requests were sent to
+  `wingfoil mcp` of the `wingfoil@0.2.2` package, in a project `init --template Kanban` made; task-049's
+  Execution notes hold the output.
+- **The setup's approver member (decisions 6, 8):** declared with `wingfoil dna add team.members`, which
+  v0.2.2 provides and which commits by itself, only when no member has the Benchmark Approver's e-mail.
+  v0.2.2 reads approval authority from the `dna.yaml` committed at `HEAD`, so the commit is required, not
+  only tidy.
+- **v0.2.2's write guard** refuses the memory transitions `approve`, `reject` and `deprecate` on a document
+  with uncommitted changes; `submit` carries them. The manual's sequence is unaffected and stays as it is.
+

@@ -40,7 +40,7 @@ describe('the operating manuals (F2.7)', () => {
     expect(manual('wingfoil')).toContain('wingfoil memory approve');
   });
 
-  it('mention no MCP Tool, since WingFoil 3df305e has none (adr-003 decision 13)', () => {
+  it('mention no MCP Tool, since WingFoil v0.2.2 has none (adr-003 decision 13, re-checked in task-049)', () => {
     expect(manual('wingfoil')).not.toMatch(/MCP tools?\b/i);
   });
 

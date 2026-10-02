@@ -225,7 +225,7 @@ const STATEMENTS: readonly (readonly [string, string])[] = [
   ['threat-t9', 'experiment design §5 T9'],
   [
     'threat-t10',
-    'experiment design §5 T10 and decision 6 (amendment 1.1); scenarios/README K5 (sequencer decision 3: public campaign on the latest released WingFoil)',
+    'experiment design §5 T10 and decision 6 (amendment 1.1); scenarios/README K5 (sequencer decision 3: public campaign on the latest released WingFoil; v0.2.2 and its capabilities, amendment 1.3)',
   ],
   ['threat-t11', 'experiment design §5 T11'],
   ['threat-t12', 'experiment design §5 T12'],

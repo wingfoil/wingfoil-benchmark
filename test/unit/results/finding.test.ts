@@ -51,6 +51,8 @@ describe('findingNote (F5.4, REQ-RES-05, task-044)', () => {
     const bug = (await noteOf('M-Q1')).text;
     const tail = bug.slice(bug.indexOf('## For WingFoil: bug'));
     expect(tail).toContain('severity: ""');
+    // The templates of the WingFoil the campaign runs, the latest released (task-049, REQ-RES-05 1.23).
+    expect(tail).toContain('whose template is that of WingFoil v0.2.2 (12537b62):');
     for (const section of ['## Summary', '## Steps to Reproduce', '## Expected Behavior', '## Actual Behavior', '## Notes']) {
       expect(tail).toContain(`\n${section}\n`);
     }

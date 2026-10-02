@@ -27,21 +27,14 @@ if [ -d "$HOME/scenario" ]; then
 fi
 
 # 4. The approver member, after the scenario's configuration, which may bring its own dna.yaml; added
-#    only if it is not there yet. WingFoil has no verb for it (usage note N33).
-node - <<'JS'
-const fs = require('node:fs');
-const yaml = require(`${process.env.HOME}/wingfoil/node_modules/js-yaml`);
-const file = '.wingfoil/dna.yaml';
-const dna = yaml.load(fs.readFileSync(file, 'utf8'));
-const email = 'approver@benchmark.localhost';
-dna.team.members = dna.team.members ?? [];
-if (!dna.team.members.some((member) => String(member.email).toLowerCase() === email)) {
-  dna.team.members.push({ name: 'Benchmark Approver', email, roles: ['approver'] });
-  fs.writeFileSync(file, yaml.dump(dna, { lineWidth: -1 }));
-}
-JS
-if ! git diff --quiet -- .wingfoil/dna.yaml; then
-  git add .wingfoil/dna.yaml
-  git commit --quiet --message "chore(wingfoil): declare the Benchmark Approver"
+#    only if no member has its e-mail yet. `dna add` commits by itself (WingFoil v0.2.2; usage note N33
+#    asked for this verb), and v0.2.2 reads approval authority from the committed dna.yaml. The team is
+#    read whole first, as JSON: `grep -q` closing a pipe early would fail it under pipefail. A scenario's
+#    dna.yaml naming another member "Benchmark Approver", or with no `approver` role, makes `dna add`
+#    refuse, and the setup fail.
+team="$(wingfoil --format json dna show team)"
+if ! grep -qi '"approver@benchmark\.localhost"' <<< "$team"; then
+  wingfoil dna add team.members --value "Benchmark Approver" --entry-email approver@benchmark.localhost \
+    --entry-roles approver > /dev/null
 fi
 echo "setup done: $(git log --format=%s | head -n 3 | tr '\n' '|')"
