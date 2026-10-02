@@ -224,3 +224,53 @@ campaign's file is plan-003 step 5's.
 - **The approver's decision, 2026-10-02, in chat:** S1 is made harder by **a step 5, `createPatch(from, to)`**,
   scored by a property (applying the generated patch to `from` gives `to`) on a fixed corpus of document pairs,
   with further pairs in the hold-out; within this task, design first.
+
+### S1's step 5 — design (to confirm before any change to `scenarios/S1/1.0/`)
+
+S1@1.0 has no campaign result, and dry runs never freeze a version (`recordedHashes` skips `results/dry-runs`),
+so it can still change. Its hash changes with it: dry runs 1–4 keep the old `scenario_hash`, are no longer
+counted by the estimate (`latestDryRun` needs the current hash) nor re-scorable, and stay as ledger evidence.
+S1's three Sonnet dry runs run again on the new version (stage 1b), and stage 3 (Opus) runs on it.
+
+**The step.** `prompts/05.md`, in a product owner's voice like the others: clients want to send only what
+changed; export `createPatch(from, to)` from `src/index.ts`, returning a JSON Patch (RFC 6902) that turns `from`
+into `to`; it must not mutate its inputs; the patch describes what changed, not the whole document again. No
+list of cases, as in step 3.
+
+**The suite** `oracle/create-patch/` (`after_steps: [5]`), written by the benchmark, so no `third_party` entry:
+
+- `pairs.json`: about 30 pairs `{from, to, max}` — object keys added, removed, changed; nested objects; arrays
+  with insertions, deletions and reorderings at the start, middle and end; type changes (object ↔ array ↔
+  scalar); `null` and empty containers; keys needing Pointer escapes (`~`, `/`); equal documents (an empty
+  patch). Short keys and values, so the leak scan finds nothing of 8 characters or more in a prompt or the seed.
+- `create-patch.test.mts`, adr-004's conventions (code imported inside each test, names unique,
+  `#${index}`-style, inputs deep-frozen and compared afterwards), one test per pair checking:
+  - **P1, round trip:** applying the returned patch to `from` gives `to`, applied by **the suite's own
+    applier** (`applier.mjs` beside the test, RFC 6902, strict), not the agent's `applyPatch`, so step 5
+    scores `createPatch` alone and an invalid operation fails;
+  - **P2, locality:** the patch's JSON is at most `max` characters, `max` being per pair and generous (about
+    twice a minimal patch's length) on pairs built as a small change in a large document, so the trivial
+    `[{ "op": "replace", "path": "", "value": to }]` fails them while any reasonable diff passes;
+  - inputs not mutated.
+- **Regression:** `patch` and `merge-patch` also run after step 5 (`after_steps: [2, 3, 4, 5]`, `[4, 5]`).
+- **Hold-out** (private repository, `scenarios/S1/1.0/create-patch/`): about 15 more pairs of the same kinds,
+  larger and deeper, using the public applier through `../create-patch/`.
+
+**Reference:** `test/fixtures/reference/S1/05/src/{create-patch.ts, index.ts}`, passing every public and
+hold-out pair; its README names `05/`.
+
+**What else changes:** `test/unit/scenarios/s1.test.ts` (steps, suites, counts, the reference's step 5);
+`test/docker/run.test.ts` `s1InArm` (a fifth tally, final 135 + N); `test/acceptance/scoring.test.ts` where it
+assumes step 4 is last; S1.md amendment 1.3 (card, §4, §5, §6); traceability's Q-D3 and Q-F2 rows; adr-004's
+cost note. `bench scenario validate S1@1.0 --holdout …` must pass.
+
+**Cost:** one more step per S1 run, about +0.3–0.6 € on the S1 costs measured (1.40–3.32 €).
+
+**Choices to confirm:**
+
+1. P1 through the suite's own applier (recommended), or through the agent's `applyPatch`, which would also
+   charge step 5 with any bug of step 2–3.
+2. P2 as a per-pair length bound (recommended); or no locality check (the trivial patch then scores full); or
+   a stricter, structural check (every operation at a location that differs), harder to state for arrays.
+3. `patch` and `merge-patch` re-run after step 5 as regression (recommended), or not.
+4. About 30 public and 15 hold-out pairs.
