@@ -266,3 +266,6 @@ the amendments, @F2.6 and @F3.6, and traceability (2026-10-02). No blocker; its 
 After the fixes: `npm run lint` clean; the arms, finding and site unit tests 130/130; the W3 Docker test green
 on v0.2.2 (the setup and the test it changed). The S1–S8 Docker tests were not re-run for `--format json`,
 which W3's setup runs in the same script.
+- `npx wingfoil memory submit task-049-…` (in-progress → in-review), on the task branch — declared: moves
+  `status` and commits the file. Observed: `9b1618f wf(task): submit …`, `status: in-review`; the body
+  committed first (`980ef39`).
