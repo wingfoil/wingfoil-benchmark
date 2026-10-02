@@ -365,3 +365,4 @@ dry runs 15–19); the S1 Docker tests 2/2 before it.
    `__proto__` and move-to-itself edge cases are in no pair, and the file is not edited (S1's hash): future pairs avoid
    such keys. Two consent commits (`5f4b5eb`, `e37dee2`) carry no `Approver:` line; the consents are in the notes they
    commit, and the history is not rewritten.
+- `npx wingfoil memory submit task-050-…` (in-progress → in-review) — declared: moves `status` and commits the file. Observed: `2ad4591`, `status: in-review`; the body committed first (`273f38c`).
