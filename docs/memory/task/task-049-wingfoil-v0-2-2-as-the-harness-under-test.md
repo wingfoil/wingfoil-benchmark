@@ -166,3 +166,67 @@ moved from `docs/self/.wingfoil/memory/templates/` to `.wingfoil/memory/template
   Observed: `1343027 wf(task): submit …`, `status: pending`; the body had been committed first (`2176e1c`).
 - The approver's `memory approve` (pending → backlog), `59869f5`: `memory history` records
   `operation: approve`, the approver and the reason.
+- `npx wingfoil memory submit task-049-…` (backlog → in-progress), on the task branch in its own worktree —
+  declared: moves `status` and commits the file. Observed: `d381827 wf(task): submit …`, `status: in-progress`.
+
+### Build
+
+Commits on `task/task-049-wingfoil-v0-2-2-as-the-harness-under-test`:
+
+- `d42f334` (red): the Docker tests pin v0.2.2; the fake meets a write guard on `submit`; a manual test for
+  "commit that file, then submit"; the setup's approver by `dna add`.
+- `1c87f9f` (red, corrected): after the finding below, the manual test removed and the fake writing the body
+  before `submit`; the `dna.yaml` `dna add` writes (`roles: [approver]`); the finding note naming v0.2.2.
+- `6f4b9e0`: `arms/wingfoil/setup.sh` step 4 by `wingfoil dna add team.members` (the team read whole
+  first, since `grep -q` closing a pipe early would fail it under `pipefail`); `arm.yaml`'s comment;
+  `TEMPLATE_COMMIT` `v0.2.2 (12537b62)`.
+- `35146b2`: the design corrected, choice 1 withdrawn.
+- `c905c8a`: scenarios README 1.3, requirements 1.23, adr-003 amendment 1. `936b225`: T10.
+- the S8 snapshot refreshed (below).
+
+**The write guard, as observed — the design's reading was wrong.** The first Docker run (red, 09:20) failed
+in the fake's step with exit 1 and no message. Reproduced on the host with `wingfoil@0.2.2` from npm, in a
+project `init --template Kanban` made, the Benchmark Approver added by `dna add`:
+
+- `memory add` of a decision-log, a line appended to its body, `memory submit` → **exit 0**, `draft → pending`;
+  the commit `wf(decision-log): submit …` carries the status *and* the body line;
+- the fake's second `submit` (after a `git commit` that found nothing to commit) → `illegal transition
+  pending -> (none)`, exit 1: what had failed the Docker step;
+- a line appended again, then `memory approve` → refused: "refusing to commit docs/memory/decision-log/…:
+  it carries uncommitted modifications this transition does not own [git status ' M'] — the body. … commit or
+  stash these changes first, then retry."
+
+`memory-transition.ts` at the tag says so: `submit` "is entitled to carry content and is therefore not
+guarded". The design had generalised from `write-guard.ts`'s header. Put to the approver, who withdrew
+choice 1: the manual stays as it is.
+
+**Decision 13 re-checked (adr-003).** `spikes/task-011/p6-mcp.sh` fixes `3df305e` in `lib.sh` and the
+`0.1.0` tarball's name in `p2-install.sh`, so it cannot run on v0.2.2 as it stands; its six requests were
+sent to `wingfoil mcp` of `wingfoil@0.2.2` in an `init`-ed project:
+
+```
+initialize: server={"name":"wingfoil","version":"0.2.2"} capabilities=resources,prompts
+tools (0):  ERROR {"code":-32601,"message":"Method not found"}
+prompts (7): developer-session, reviewer-session, qa-session, architect-session, product-owner-session, tech-lead-session, approver-session
+resources (2): wingfoil://dna, wingfoil://workflows
+resource templates (4): wingfoil://memory/{type}, wingfoil://memory/{type}/{id}, wingfoil://dna/{section}, wingfoil://workflows/{name}
+```
+
+The npm package is the CI publication of the tag (v0.2.2's changelog: trusted publishing from `wingfoil/wingfoil`);
+the runner builds the tag from the clone, which the Docker tests then ran.
+
+**The S8 snapshot**, taken as task-038 took it: a dry run of S8@1.0 in baseline-docs, the fake replaying the
+reference, WingFoil v0.2.2 built from the clone, through a temporary test file deleted afterwards. Only
+`S8/.wingfoil/dna.yaml` changed — `dna add` keeps `init`'s comments and flow style where the former script
+re-dumped the file — and `S8.PROJECT_RULES.md` came out byte-identical; @F2.5 passes on it.
+
+**Tests** (load average 17–56 from other repositories' sessions throughout):
+
+- `npx vitest run -c vitest.docker.config.ts … -t "W3"`: red at 09:20 (as above), green at 09:31 (79 s): the
+  run records `12537b62…`, the setup log names it, the approver's commit as the declared member,
+  `wf(dna): add team.members Benchmark Approver` in the history, the body in the `submit` commit.
+- `npm run test:docker`: **16/16**, 1027 s — S1, S2, S3 and S8 in baseline-docs and wingfoil with v0.2.2
+  built from the tag.
+- `npm run lint`: clean.
+
+**Inbox:** N35 (v0.2.2 answers N33; the write guard's verbs worth a line in WingFoil's docs).
