@@ -172,3 +172,9 @@ campaign's file is plan-003 step 5's.
 - **The approver's consent, 2026-10-02, in chat:** re-run S1@1.0 in baseline-docs (cap 4 €) before the wingfoil
   dry run. With it, stage 1's worst case is about 11.07 € against the ceiling of about 10 €; the wingfoil dry
   run starts only if what is left of the ceiling covers its cap, or with a new consent.
+- dry run 1 scored (`b27aaad`): S1 baseline — steps 12/12, 108/108, 108/108, 123/123, **final 135/135**,
+  **hold-out 33/33**; patch already complete at step 2.
+- **S1@1.0 baseline-docs, re-run** (`results/dry-runs/3`, 13:44–13:59): completed, **1.5829 USD (1.4010 €)** —
+  steps 0.4117 (30 turns, 197 s), 0.6142 (19 turns, 319 s), 0.3749 (17 turns, 288 s), 0.1820 USD (14 turns,
+  60 s); scored: **final 135/135, hold-out 33/33**, the same per-step tallies as the baseline. No token stored.
+  Stage 1 spent 4.4735 €; the 5.52 € left of the ceiling cover the wingfoil dry run's 4 € cap, so it starts.
