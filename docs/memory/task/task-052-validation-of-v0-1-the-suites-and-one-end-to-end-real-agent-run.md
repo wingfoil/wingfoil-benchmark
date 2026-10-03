@@ -275,3 +275,5 @@ Its findings and their outcome:
 5. *nit*: "Nothing in the chain went wrong" overstated. **Fixed:** "Every step of the chain behaved as declared".
 6. *nit*: the suites' figures have no stored output. **Kept as is:** the figures are quoted from the runs on
    `92b1bf8`, and the branch changes no code, so they apply to it.
+- `npx wingfoil memory submit task-052-…` (in-progress → in-review) — declared: moves `status` and commits the file.
+  Observed: `8849f4f wf(task): submit …`, `status: in-review`; the body committed first (`90fbe85`).
