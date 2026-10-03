@@ -394,3 +394,4 @@ dry runs 15–19); the S1 Docker tests 2/2 before it.
      baseline-docs, H8 on the mean with per-scenario values; the manual's approval rule quoted; the neutral control's
      cost with its assumption (about 40 € at one step an instance, 100–200 € at a whole scenario run); "extending
      F7.3"; one ambiguous sentence reworded. **Fixed.**
+- The approver's `memory reject` (in-review → in-progress), `c4b83f4`, to apply the second review's findings above.
