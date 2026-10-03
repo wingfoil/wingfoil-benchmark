@@ -175,3 +175,4 @@ and complete. Its findings and outcome:
 **Known limit:** whether "Continue." resumes a session whose very first request was rejected — whether Claude Code
 keeps the prompt before the API call — is not observed; such a resume may find no prompt to continue.
 
+- `npx wingfoil memory submit task-051-…` (in-progress → in-review) — observed: `c82766f`, `status: in-review`.
