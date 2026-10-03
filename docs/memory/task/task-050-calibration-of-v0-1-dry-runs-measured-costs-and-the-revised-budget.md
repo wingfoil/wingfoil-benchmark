@@ -2,12 +2,13 @@
 id: task-050-calibration-of-v0-1-dry-runs-measured-costs-and-the-revised-budget
 type: task
 title: "Calibration of v0.1: dry runs, measured costs and the revised budget"
-status: in-review
+status: in-progress
 release: v0.1
 wave: calibration
 features: []
 acceptance: []
 requirements: [REQ-CLI-05, REQ-RES-01, REQ-RUN-08, REQ-RUN-16, REQ-NFR-06]
+rejection_reason: "Apply the second independent review's findings on the report's additions"
 ---
 
 ## Context
@@ -374,3 +375,22 @@ dry runs 15–19); the S1 Docker tests 2/2 before it.
   rule; §10 the decision-logs to file after v0.1; §11 H8–H10, the levels of delegation and the neutral control. The
   figures were re-read against the per-run classification before the commit.
 - `npx wingfoil memory submit task-050-…` (in-progress → in-review), again — observed: `d525984`, `status: in-review`; the body committed first (`66548e5`). The additions were checked against the per-run classification by this session, not by a second independent review.
+- **Independent review of the additions** (`66548e5`), a fresh read-only agent at the approver's request
+  (2026-10-03): no blocker; it reproduced the shares and the round trips exactly on their stated rules. Its findings
+  and outcome:
+  1. *should-fix* — §8 said S8 is at its maximum on hidden tests. **Fixed:** only S2 is; S8 differs for wingfoil.
+  2. *should-fix* — the shares' basis: per-message output counts in the stream are partial (63–71 % of reported
+     costs priced), so output and thinking are unattributed. **Fixed:** the basis stated, with the shares when output
+     is spread by visible output (orientation about 3 points down, recording up to 6 up), and lever 1 at about −10 %
+     on that basis.
+  3. *should-fix* — lever 1 described v0.3 as injecting role context; WingFoil's design (adr-012, spec-016 §2.8) has
+     the bootstrap send the agent to fetch the `{role}-session` Prompt, unverified for any agent CLI. **Fixed:** the
+     mechanism described as designed, and the lever conditional on that verification.
+  4. *should-fix* — H1's estimate does not reach its own 1.5× threshold on S1 (about −13 % there). **Fixed:** said in
+     the row.
+  5. *should-fix* — the −28 to −34 % range's bounds unstated. **Fixed:** low end half the recording; high end plus
+     about 90 % of the round trips outside recording.
+  6. *nits* — exploration recomputed with its rule stated (14/35/13/15 %, Opus 25 %); ratios 1.5× and 1.3× against
+     baseline-docs, H8 on the mean with per-scenario values; the manual's approval rule quoted; the neutral control's
+     cost with its assumption (about 40 € at one step an instance, 100–200 € at a whole scenario run); "extending
+     F7.3"; one ambiguous sentence reworded. **Fixed.**
