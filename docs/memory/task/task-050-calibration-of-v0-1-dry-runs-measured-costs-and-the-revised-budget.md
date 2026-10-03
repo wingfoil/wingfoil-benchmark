@@ -394,3 +394,4 @@ dry runs 15–19); the S1 Docker tests 2/2 before it.
      cost with its assumption (about 40 € at one step an instance, 100–200 € at a whole scenario run); "extending
      F7.3"; one ambiguous sentence reworded. **Fixed.**
 - The approver's `memory reject` (in-review → in-progress), `c4b83f4`, to apply the second review's findings above.
+- `npx wingfoil memory submit task-050-…` (in-progress → in-review), after the second review — observed: `fbabb55`, `status: in-review`.
