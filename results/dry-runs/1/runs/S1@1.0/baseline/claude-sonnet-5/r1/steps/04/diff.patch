@@ -1,0 +1,118 @@
+diff --git a/src/index.ts b/src/index.ts
+index 24fb6071f8b7a6b9d1de7149c66228bb8b449712..14412f41e3833bd67be097b2d1aecc263ebdce5d 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -287,6 +287,31 @@ function applyTest(root: JsonValue, path: string, value: JsonValue): JsonValue {
+   return root;
+ }
+ 
++/**
++ * Applies a JSON Merge Patch (RFC 7386) to a JSON document, returning the
++ * resulting document as a new value. Neither `target` nor `patch` is
++ * mutated.
++ */
++export function applyMergePatch(target: JsonValue, patch: JsonValue): JsonValue {
++  if (!isJsonObject(patch)) {
++    return structuredClone(patch);
++  }
++
++  const result: { [key: string]: JsonValue } = isJsonObject(target) ? structuredClone(target) : {};
++
++  for (const key of Object.keys(patch)) {
++    const value = patch[key];
++    if (value === null) {
++      delete result[key];
++    } else {
++      const current = Object.prototype.hasOwnProperty.call(result, key) ? result[key] : null;
++      setMember(result, key, applyMergePatch(current, value));
++    }
++  }
++
++  return result;
++}
++
+ function isProperPrefix(from: string, path: string): boolean {
+   const fromTokens = parsePointer(from);
+   const pathTokens = parsePointer(path);
+diff --git a/test/index.test.ts b/test/index.test.ts
+index f6f3937676288f268f4cd88c666399bdc9118c58..b9cd34db10676ef687746b8eec25b7f379657e67 100644
+--- a/test/index.test.ts
++++ b/test/index.test.ts
+@@ -1,6 +1,6 @@
+ import { test } from "node:test";
+ import assert from "node:assert/strict";
+-import { resolvePointer, applyPatch } from "../src/index.ts";
++import { resolvePointer, applyPatch, applyMergePatch } from "../src/index.ts";
+ 
+ // Example document from RFC 6901, section 5.
+ const document = {
+@@ -250,3 +250,69 @@ test("replace: treats '__proto__' as an ordinary member name", () => {
+   assert.equal(Object.prototype.hasOwnProperty.call(result, "__proto__"), true);
+   assert.equal((result as { __proto__: unknown }).__proto__, 2);
+ });
++
++// JSON Merge Patch (RFC 7386)
++
++test("merge patch: RFC 7386 section 1 example", () => {
++  const target = {
++    a: "b",
++    c: {
++      d: "e",
++      f: "g",
++    },
++  };
++  const patch = {
++    a: "z",
++    c: {
++      f: null,
++    },
++  };
++  assert.deepEqual(applyMergePatch(target, patch), {
++    a: "z",
++    c: {
++      d: "e",
++    },
++  });
++});
++
++// RFC 7386 appendix A test cases.
++const appendixCases: Array<{ target: unknown; patch: unknown; result: unknown }> = [
++  { target: { a: "b" }, patch: { a: "c" }, result: { a: "c" } },
++  { target: { a: "b" }, patch: { b: "c" }, result: { a: "b", b: "c" } },
++  { target: { a: "b" }, patch: { a: null }, result: {} },
++  { target: { a: "b", b: "c" }, patch: { a: null }, result: { b: "c" } },
++  { target: { a: ["b"] }, patch: { a: "c" }, result: { a: "c" } },
++  { target: { a: "c" }, patch: { a: ["b"] }, result: { a: ["b"] } },
++  { target: { a: { b: "c" } }, patch: { a: { b: "d", c: null } }, result: { a: { b: "d" } } },
++  { target: { a: [{ b: "c" }] }, patch: { a: [1] }, result: { a: [1] } },
++  { target: ["a", "b"], patch: ["c", "d"], result: ["c", "d"] },
++  { target: { a: "b" }, patch: ["c"], result: ["c"] },
++  { target: { a: "foo" }, patch: null, result: null },
++  { target: { a: "foo" }, patch: "bar", result: "bar" },
++  { target: { e: null }, patch: { a: 1 }, result: { e: null, a: 1 } },
++  { target: [1, 2], patch: { a: "b", c: null }, result: { a: "b" } },
++  { target: {}, patch: { a: { bb: {} } }, result: { a: { bb: {} } } },
++];
++
++test("merge patch: RFC 7386 appendix A test cases", () => {
++  for (const { target, patch, result } of appendixCases) {
++    assert.deepEqual(applyMergePatch(target as never, patch as never), result);
++  }
++});
++
++test("merge patch: does not mutate the input target or patch", () => {
++  const target = { a: { b: 1 }, c: 2 };
++  const patch = { a: { b: null, d: 3 }, c: 4 };
++  const result = applyMergePatch(target, patch);
++  assert.deepEqual(target, { a: { b: 1 }, c: 2 });
++  assert.deepEqual(patch, { a: { b: null, d: 3 }, c: 4 });
++  assert.deepEqual(result, { a: { d: 3 }, c: 4 });
++});
++
++test("merge patch: treats '__proto__' as an ordinary member name", () => {
++  const patch = JSON.parse('{"__proto__": {"polluted": true}}');
++  const result = applyMergePatch({}, patch);
++  assert.equal(Object.prototype.hasOwnProperty.call(result, "__proto__"), true);
++  assert.deepEqual((result as { __proto__: unknown }).__proto__, { polluted: true });
++  assert.equal(Object.getPrototypeOf(result), Object.prototype);
++});

@@ -18,6 +18,16 @@ export default tseslint.config(
     languageOptions: { globals: { URL: 'readonly', console: 'readonly', process: 'readonly' } },
   },
   {
+    // A scenario version is hashed over its bytes (REQ-FMT-09): an oracle file is not edited after its version has
+    // been dry-run, so two strict style rules give way for S1's create-patch applier (task-050), which indexes paths it
+    // has checked and deletes the member a patch names.
+    files: ['scenarios/S1/1.0/oracle/create-patch/applier.mts'],
+    rules: {
+      '@typescript-eslint/no-non-null-assertion': 'off',
+      '@typescript-eslint/no-dynamic-delete': 'off',
+    },
+  },
+  {
     files: ['src/**/*.{ts,mts,cts,tsx}'],
     plugins: { bench: { rules: { 'module-boundaries': moduleBoundaries } } },
     rules: { 'bench/module-boundaries': ['error', { srcRoot: join(import.meta.dirname, 'src') }] },

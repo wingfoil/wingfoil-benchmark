@@ -1,0 +1,154 @@
+diff --git a/docs/memory/decision-log/dl-003-reject-json-pointer-tokens-with-a-bare-unescaped-tilde.md b/docs/memory/decision-log/dl-003-reject-json-pointer-tokens-with-a-bare-unescaped-tilde.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..58b227b25326d26f2cb90458a7cd15b2f32894ed
+--- /dev/null
++++ b/docs/memory/decision-log/dl-003-reject-json-pointer-tokens-with-a-bare-unescaped-tilde.md
+@@ -0,0 +1,38 @@
++---
++id: dl-003-reject-json-pointer-tokens-with-a-bare-unescaped-tilde
++type: decision-log
++title: "Reject JSON Pointer tokens with a bare, unescaped tilde"
++status: approved
++---
++
++## Context
++
++RFC 6901 §3 defines a reference token's grammar as `*( unescaped / escaped )`, where `unescaped`
++is every character except `/` and `~`, and `escaped` is exactly the two-character sequence `"~0"`
++or `"~1"`. A `~` that is not immediately followed by `0` or `1` therefore has no production in the
++grammar at all — it is a syntax error, not a literal character. `decodeToken` (`src/index.ts`,
++shared by `resolvePointer` and every `applyPatch` operation via `parsePointer`) previously decoded
++tokens with two unconditional `.replace()` passes (`~1` → `/`, then `~0` → `~`) and never checked
++for this case, so pointers like `/foo~bar`, `/foo~2`, or a trailing `/foo~` were silently accepted
++and treated as containing a literal `~`, instead of being rejected.
++
++## Decision
++
++`decodeToken` now tests the raw (pre-decode) token against `/~(?![01])/` and throws before
++decoding if it matches, instead of only transforming known-good escapes. This is the single
++tokenizing entry point for every pointer-consuming code path (`resolvePointer`'s `step` reduction,
++and `opAdd`/`opRemove`/`opReplace`/`opMove`/`opCopy`/`opTest`, all of which route through
++`parsePointer`), so the fix applies uniformly to both `path` and `from` members without touching
++any operation-specific code.
++
++## Consequences
++
++- A JSON Pointer containing a bare `~` (mid-token, trailing, or followed by anything other than
++  `0`/`1`) is now a thrown error everywhere a pointer is accepted — `resolvePointer` and all six
++  `applyPatch` operations — rather than being silently accepted with the `~` taken literally.
++  Any caller that was relying on the old lenient behaviour (e.g. passing an un-escaped `~` and
++  expecting it to address a key containing a literal `~`) will now see that rejected; per RFC 6901
++  such callers were already producing invalid pointers and must escape `~` as `~0`.
++  - Future additions to pointer handling (e.g. if the project ever adds URI Fragment Identifier
++    Representation support, which RFC 6901 §6 defines separately) should keep validating against
++    the same ABNF rather than re-introducing a blind-replace decoder.
+diff --git a/docs/memory/task/task-003-fix-json-pointer-tilde-escape-validation-in-applypatch-resolvepointer.md b/docs/memory/task/task-003-fix-json-pointer-tilde-escape-validation-in-applypatch-resolvepointer.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..a40e31d7d5c7bf972c9f5d2d702e747bbb5701eb
+--- /dev/null
++++ b/docs/memory/task/task-003-fix-json-pointer-tilde-escape-validation-in-applypatch-resolvepointer.md
+@@ -0,0 +1,52 @@
++---
++id: task-003-fix-json-pointer-tilde-escape-validation-in-applypatch-resolvepointer
++type: task
++title: "Fix JSON Pointer tilde-escape validation in applyPatch/resolvePointer"
++status: approved
++---
++
++## Request
++
++Reports that `applyPatch` accepts some patches users consider invalid, produces unexpected
++results on some edge cases, and does not always fail the way the standard says it should. Review
++how patches are checked and applied, and bring the behaviour in line with RFC 6902 (and the RFC
++6901 JSON Pointer syntax it depends on) in every case, including error cases.
++
++## What I did
++
++- Re-verified the existing implementation against: every RFC 6902 §A example, the full
++  `json-patch/json-patch-tests` community conformance suite (92 cases covering out-of-bounds
++  indices, `1e0`/leading-zero rejection, missing/`null` members, aliasing on `copy`, etc. — all
++  passing already), and a battery of additional hand-written edge cases (root operations, `move`
++  self-reference, `-0`/`0` equality, sparse validation ordering). All of that passed before any
++  change, so the defect was elsewhere.
++- Found the actual gap in `decodeToken` (`src/index.ts`), shared by every pointer-consuming
++  operation via `parsePointer`: RFC 6901 §3's ABNF only allows `~` inside a reference token as the
++  first character of the two-character escapes `~0` and `~1` — a bare `~` not followed by `0` or
++  `1` is not part of the grammar at all and must be a syntax error. The old implementation just
++  ran two blind `.replace()` passes, so a pointer like `/foo~bar`, `/foo~2`, or a trailing
++  `/foo~` was silently accepted and treated as containing a literal `~`, instead of being rejected
++  as a malformed JSON Pointer. This matches all three symptoms in the report: an objectively
++  invalid patch was accepted, its result (treating `~` literally) was not what a user reading the
++  grammar would expect, and a patch that *should* fail against a malformed pointer did not.
++  Confirmed empirically that the old code accepted `/foo~bar`, `/foo~`, `/foo~2`, `/foo~~`, both
++  via `resolvePointer` and via `applyPatch`'s `add`.
++- Fixed by validating the raw (pre-decode) token against `/~(?![01])/` in `decodeToken` and
++  throwing before decoding; this is the single tokenizing entry point used by `resolvePointer` and
++  every `op*` function (`opAdd`/`opRemove`/`opReplace` via `parsePointer`, `opMove`/`opCopy`/
++  `opTest` via `resolvePointer`/`parsePointer` on both `path` and `from`), so the fix applies
++  uniformly with one change.
++- Test-first: added three red cases to `src/index.test.ts` (bare `~` mid-token, trailing `~` with
++  nothing after it, `~` followed by a digit other than `0`/`1`), confirmed they failed against the
++  unmodified code (`node --test`: 3 failing), then implemented the fix and confirmed green (45/45).
++  Re-ran the full community conformance suite (92/92) and the RFC §A examples afterwards: no
++  regressions.
++- Type-checked `src/index.ts` in isolation against the project's strict `tsconfig.json` options,
++  using a temporary, uncommitted `typescript` install (same approach as dl-001/task-002): clean.
++  Did not add `typescript`, `@types/node`, or a typecheck script to the project.
++
++## Files changed
++
++- `src/index.ts`: `decodeToken` now validates that every `~` in a reference token is immediately
++  followed by `0` or `1` before decoding, throwing otherwise.
++- `src/index.test.ts`: added three tests for the rejected malformed-escape cases.
+diff --git a/src/index.test.ts b/src/index.test.ts
+index f7bc70e8ad51cfa8598df3f8cdc7cf53598d84eb..7fd227f184eb865f27ba925a8beeba1bd9fd3a8d 100644
+--- a/src/index.test.ts
++++ b/src/index.test.ts
+@@ -63,6 +63,22 @@ test("rejects a pointer that descends into a scalar", () => {
+   assert.throws(() => resolvePointer(rfcDocument, "/foo/0/bar"));
+ });
+ 
++// RFC 6901 §3's ABNF only allows "~" within a reference token as part of the two-character
++// escape sequences "~0" and "~1"; a "~" not immediately followed by "0" or "1" is not covered by
++// the grammar at all and is a syntax error, not a literal "~".
++
++test("rejects a '~' not followed by '0' or '1'", () => {
++  assert.throws(() => resolvePointer({ "foo~bar": 1 }, "/foo~bar"));
++});
++
++test("rejects a trailing '~' with nothing following it", () => {
++  assert.throws(() => resolvePointer({ "foo~": 1 }, "/foo~"));
++});
++
++test("rejects a '~' followed by a digit other than '0' or '1'", () => {
++  assert.throws(() => resolvePointer({ "foo~2": 1 }, "/foo~2"));
++});
++
+ // applyPatch — RFC 6902 examples (§A) plus boundary and validation cases.
+ 
+ test("A.1 adds an object member", () => {
+diff --git a/src/index.ts b/src/index.ts
+index a480a17839f358e50d04f9076e4f4a8948f9e2de..f3593d8b034211ac893be95290a3ba242ee10fef 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -1,8 +1,20 @@
++/**
++ * Per RFC 6901 §3's ABNF, "~" may only appear in a reference token as the first character of the
++ * two-character escape sequences "~0" and "~1"; a "~" not followed by "0" or "1" is not part of
++ * the grammar at all.
++ */
++const UNESCAPED_TILDE = /~(?![01])/;
++
+ /**
+  * Decodes a single reference token per RFC 6901 §3: first "~1" becomes "/",
+  * then "~0" becomes "~" (in that order, so "~01" decodes to "~1").
++ *
++ * @throws {Error} if `token` contains a "~" not followed by "0" or "1".
+  */
+ function decodeToken(token: string): string {
++  if (UNESCAPED_TILDE.test(token)) {
++    throw new Error(`Invalid JSON Pointer reference token: "${token}" has a "~" not followed by "0" or "1"`);
++  }
+   return token.replace(/~1/g, "/").replace(/~0/g, "~");
+ }
+ 

@@ -1,0 +1,212 @@
+diff --git a/README.md b/README.md
+index 56e751c93e50f5965f7edd56eeebe929715f7012..01b6b9243b117c6d4785016aae0395f1825b604f 100644
+--- a/README.md
++++ b/README.md
+@@ -16,6 +16,9 @@ const quote = service.quote({ itemId: 'board-1', start: '2026-07-01T00:00:00.000
+ // quote.total === 3000
+ 
+ const booking = service.book({ itemId: 'board-1', start: '2026-07-01T00:00:00.000Z', end: '2026-07-03T00:00:00.000Z' });
++
++const freeBoards = service.availability({ start: '2026-07-01T00:00:00.000Z', end: '2026-07-03T00:00:00.000Z', kind: 'board' });
++// the sorted ids of the boards with no booking overlapping that period
+ ```
+ 
+ Rules that apply throughout:
+@@ -27,4 +30,7 @@ Rules that apply throughout:
+ - The same item cannot be booked twice for overlapping periods.
+ 
+ `quote` and `book` throw for an unknown item or a period the rules above do not allow; `book` also throws
+-when the item is not free for the whole period. Cancellation is not implemented yet.
++when the item is not free for the whole period. `availability` takes a `{ start, end, kind }` query,
++`kind` being optional, and returns the sorted ids of the equipment of that kind (or of any kind when
++none is given) that is free for the whole period; it throws for a period the rules above do not allow.
++Cancellation is not implemented yet.
+diff --git a/docs/memory/task/task-002-add-availability-query-to-rental-service.md b/docs/memory/task/task-002-add-availability-query-to-rental-service.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..821535f5049551ef15dda7e56fb952fc1a011ea0
+--- /dev/null
++++ b/docs/memory/task/task-002-add-availability-query-to-rental-service.md
+@@ -0,0 +1,33 @@
++---
++id: task-002-add-availability-query-to-rental-service
++type: task
++title: "Add availability(query) to rental service"
++status: approved
++---
++
++## Request
++
++Add `availability(query)` to the rental service, where `query` is `{ start, end, kind }` and `kind` is
++optional. It returns the ids of the equipment of that kind, or of any kind when none is given, that is
++free for the whole period, sorted.
++
++## What was done
++
++- Added `AvailabilityQuery` (`start`, `end`, optional `kind`) and `availability(query): string[]` to
++  `RentalService` in `src/index.ts`.
++- `availability` validates the period with the same midnight-UTC/whole-day rules as `quote` and `book`
++  (extracted into a shared `validatePeriod` helper), filters equipment by `kind` when given, keeps only
++  items with no booking overlapping the period, and returns their ids sorted (default string sort).
++- Extracted the booking-overlap check used by `book` into a shared `isFree(itemId, startTime, endTime)`
++  helper so `book` and `availability` share one implementation.
++- Test-first: added failing tests for the happy path (filtering by kind, excluding a partially-booked
++  item), no-kind-given, an item whose booking doesn't overlap the query period, and an invalid period,
++  confirmed they failed against the pre-change code, then implemented until all 16 tests in
++  `test/rental-service.test.ts` pass (`node --test`).
++- Documented `availability` in `README.md` alongside the existing `quote`/`book` example and rules
++  paragraph.
++
++## Notes
++
++No new dependencies, booking-id scheme, or validation rule was introduced beyond what dl-001 already
++settled; this change only adds a read path on top of the existing equipment/booking state.
+diff --git a/src/index.ts b/src/index.ts
+index 40280ce0e26fe3debc7785fa4cf5f3f6184760af..9454323c5d94e5ead928ef4394288224ece016db 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -27,6 +27,16 @@ export interface Quote {
+   readonly total: number;
+ }
+ 
++/** A request for the equipment free for a period. */
++export interface AvailabilityQuery {
++  /** Start of the period, midnight UTC, as an ISO-8601 string. */
++  readonly start: string;
++  /** End of the period: midnight UTC of the day after its last day. */
++  readonly end: string;
++  /** Restricts the result to this kind; every kind is considered when omitted. */
++  readonly kind?: EquipmentKind;
++}
++
+ /** A confirmed rental of an item for a period. */
+ export interface Booking {
+   readonly id: string;
+@@ -47,6 +57,11 @@ export interface RentalService {
+    * overlaps a booking already on that item.
+    */
+   book(request: RentalRequest): Booking;
++  /**
++   * Lists the ids, sorted, of the equipment of the given kind (or of any kind when none is given)
++   * that is free for the whole period. Throws for an invalid period.
++   */
++  availability(query: AvailabilityQuery): string[];
+ }
+ 
+ const MS_PER_DAY = 24 * 60 * 60 * 1000;
+@@ -86,13 +101,25 @@ export function createRentalService(): RentalService {
+     return item;
+   }
+ 
+-  function priceRequest(item: Equipment, request: RentalRequest): { startTime: number; endTime: number; total: number } {
++  function validatePeriod(request: { start: string; end: string }): { startTime: number; endTime: number; days: number } {
+     const startTime = parseMidnightUtc(request.start, 'start');
+     const endTime = parseMidnightUtc(request.end, 'end');
+     const days = countWholeDays(startTime, endTime);
++    return { startTime, endTime, days };
++  }
++
++  function priceRequest(item: Equipment, request: RentalRequest): { startTime: number; endTime: number; total: number } {
++    const { startTime, endTime, days } = validatePeriod(request);
+     return { startTime, endTime, total: days * item.dailyPrice };
+   }
+ 
++  function isFree(itemId: string, startTime: number, endTime: number): boolean {
++    return !bookings.some(
++      (existing) =>
++        existing.itemId === itemId && periodsOverlap(startTime, endTime, Date.parse(existing.start), Date.parse(existing.end)),
++    );
++  }
++
+   return {
+     addEquipment(item) {
+       equipmentById.set(item.id, { ...item });
+@@ -108,12 +135,7 @@ export function createRentalService(): RentalService {
+       const item = requireEquipment(request.itemId);
+       const { startTime, endTime, total } = priceRequest(item, request);
+ 
+-      const hasConflict = bookings.some(
+-        (existing) =>
+-          existing.itemId === request.itemId &&
+-          periodsOverlap(startTime, endTime, Date.parse(existing.start), Date.parse(existing.end)),
+-      );
+-      if (hasConflict) {
++      if (!isFree(request.itemId, startTime, endTime)) {
+         throw new Error(`Item ${request.itemId} is already booked for part of that period`);
+       }
+ 
+@@ -127,5 +149,16 @@ export function createRentalService(): RentalService {
+       bookings.push(booking);
+       return booking;
+     },
++
++    availability(query) {
++      const { startTime, endTime } = validatePeriod(query);
++      const ids: string[] = [];
++      for (const item of equipmentById.values()) {
++        if ((query.kind === undefined || item.kind === query.kind) && isFree(item.id, startTime, endTime)) {
++          ids.push(item.id);
++        }
++      }
++      return ids.sort();
++    },
+   };
+ }
+diff --git a/test/rental-service.test.ts b/test/rental-service.test.ts
+index 841c1d99fce5f63b21ccb8f02c2f5b6539df6707..880915a8ff84424635ccd2f29b00958d9c1beb52 100644
+--- a/test/rental-service.test.ts
++++ b/test/rental-service.test.ts
+@@ -109,3 +109,54 @@ test('book allows overlapping periods on different items', () => {
+ 
+   assert.equal(second.itemId, 'board-2');
+ });
++
++function sail(id: string, dailyPrice: number) {
++  return { id, kind: 'sail' as const, dailyPrice };
++}
++
++test('availability lists the free ids of a kind, sorted, excluding items booked for part of the period', () => {
++  const service = createRentalService();
++  service.addEquipment(board('board-2', 1500));
++  service.addEquipment(board('board-1', 1500));
++  service.addEquipment(sail('sail-1', 1000));
++  service.book({ itemId: 'board-2', start: '2026-07-01T00:00:00.000Z', end: '2026-07-03T00:00:00.000Z' });
++
++  const available = service.availability({
++    start: '2026-07-01T00:00:00.000Z',
++    end: '2026-07-03T00:00:00.000Z',
++    kind: 'board',
++  });
++
++  assert.deepEqual(available, ['board-1']);
++});
++
++test('availability returns ids of any kind when none is given, sorted', () => {
++  const service = createRentalService();
++  service.addEquipment(sail('sail-1', 1000));
++  service.addEquipment(board('board-1', 1500));
++
++  const available = service.availability({ start: '2026-07-01T00:00:00.000Z', end: '2026-07-03T00:00:00.000Z' });
++
++  assert.deepEqual(available, ['board-1', 'sail-1']);
++});
++
++test('availability includes an item whose booking does not overlap the period', () => {
++  const service = createRentalService();
++  service.addEquipment(board('board-1', 1500));
++  service.book({ itemId: 'board-1', start: '2026-07-03T00:00:00.000Z', end: '2026-07-05T00:00:00.000Z' });
++
++  const available = service.availability({
++    start: '2026-07-01T00:00:00.000Z',
++    end: '2026-07-03T00:00:00.000Z',
++    kind: 'board',
++  });
++
++  assert.deepEqual(available, ['board-1']);
++});
++
++test('availability throws for an invalid period', () => {
++  const service = createRentalService();
++  service.addEquipment(board('board-1', 1500));
++
++  assert.throws(() => service.availability({ start: '2026-07-01T08:00:00.000Z', end: '2026-07-02T00:00:00.000Z' }));
++});

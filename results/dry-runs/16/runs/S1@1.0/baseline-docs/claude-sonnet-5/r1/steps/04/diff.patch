@@ -1,0 +1,175 @@
+diff --git a/README.md b/README.md
+index 273c9242c9cfdfaabebfff11ca41784fe9094bea..44f8e2c3bb12c73b216fbaa1f0157f052f204187 100644
+--- a/README.md
++++ b/README.md
+@@ -37,3 +37,18 @@ Throws if `patch` is not a valid JSON Patch (e.g. an operation is missing a requ
+ an unknown `op`), or if applying one of its operations fails (e.g. it targets a location that does
+ not exist, a `move` would relocate a value into one of its own children, or a `test` operation does
+ not match).
++
++### `applyMergePatch(target, patch)`
++
++Applies a [JSON Merge Patch](https://www.rfc-editor.org/rfc/rfc7386) to a JSON document and returns
++the merged document. `target` is left untouched; the result is a new value.
++
++```ts
++import { applyMergePatch } from "json-toolkit";
++
++applyMergePatch({ a: "b", c: { d: 1 } }, { a: "z", c: { d: null } });
++// { a: "z", c: {} }
++```
++
++A `null` value in the patch removes the corresponding member from the target. Any non-object patch
++(including arrays) replaces the target wholesale.
+diff --git a/src/index.ts b/src/index.ts
+index eed639f5f62323530c43cd197cb4dab2123f4897..00c57557085d25b91969d5b5c676ee6725d43ef4 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -364,6 +364,43 @@ function assertSafeObjectKey(token: string, pointer: string): void {
+   }
+ }
+ 
++/**
++ * Applies a JSON Merge Patch (RFC 7386) to a JSON document.
++ *
++ * The input target is left untouched; the merged document is returned as a new value.
++ *
++ * @param target - The JSON document to apply the patch to.
++ * @param patch - The JSON Merge Patch document.
++ * @returns The result of merging `patch` into `target`.
++ */
++export function applyMergePatch(target: unknown, patch: unknown): unknown {
++  if (!isJsonObject(patch)) {
++    return structuredClone(patch);
++  }
++
++  const result: Record<string, unknown> = isJsonObject(target)
++    ? (structuredClone(target) as Record<string, unknown>)
++    : {};
++
++  for (const [key, value] of Object.entries(patch)) {
++    if (value === null) {
++      delete result[key];
++    } else {
++      setProperty(result, key, applyMergePatch(getProperty(result, key), value));
++    }
++  }
++
++  return result;
++}
++
++function getProperty(object: Record<string, unknown>, key: string): unknown {
++  return Object.prototype.hasOwnProperty.call(object, key) ? object[key] : undefined;
++}
++
++function setProperty(object: Record<string, unknown>, key: string, value: unknown): void {
++  Object.defineProperty(object, key, { value, writable: true, enumerable: true, configurable: true });
++}
++
+ function jsonEqual(a: unknown, b: unknown): boolean {
+   if (a === b) {
+     return true;
+diff --git a/test/applyMergePatch.test.ts b/test/applyMergePatch.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..dc3c3d8095da3435f46949c94d70232dfa8412a8
+--- /dev/null
++++ b/test/applyMergePatch.test.ts
+@@ -0,0 +1,98 @@
++import assert from "node:assert/strict";
++import { test } from "node:test";
++import { applyMergePatch } from "../src/index.ts";
++
++// Examples below are taken from RFC 7386 Appendix A unless noted otherwise.
++
++test("A.1 replaces a value", () => {
++  assert.deepEqual(applyMergePatch({ a: "b" }, { a: "c" }), { a: "c" });
++});
++
++test("A.2 adds a value", () => {
++  assert.deepEqual(applyMergePatch({ a: "b" }, { b: "c" }), { a: "b", b: "c" });
++});
++
++test("A.3 removes a value", () => {
++  assert.deepEqual(applyMergePatch({ a: "b" }, { a: null }), {});
++});
++
++test("A.4 removes one of several values", () => {
++  assert.deepEqual(applyMergePatch({ a: "b", b: "c" }, { a: null }), { b: "c" });
++});
++
++test("A.5 replaces an array with a scalar", () => {
++  assert.deepEqual(applyMergePatch({ a: ["b"] }, { a: "c" }), { a: "c" });
++});
++
++test("A.6 replaces a scalar with an array", () => {
++  assert.deepEqual(applyMergePatch({ a: "c" }, { a: ["b"] }), { a: ["b"] });
++});
++
++test("A.7 merges nested objects, dropping a nested null member", () => {
++  const document = { a: { b: "c" } };
++  const result = applyMergePatch(document, { a: { b: "d", c: null } });
++  assert.deepEqual(result, { a: { b: "d" } });
++});
++
++test("A.8 replaces an array of objects with an array of scalars", () => {
++  const document = { a: [{ b: "c" }] };
++  const result = applyMergePatch(document, { a: [1] });
++  assert.deepEqual(result, { a: [1] });
++});
++
++test("A.9 replaces an array wholesale", () => {
++  assert.deepEqual(applyMergePatch(["a", "b"], ["c", "d"]), ["c", "d"]);
++});
++
++test("A.10 replaces an object with an array", () => {
++  assert.deepEqual(applyMergePatch({ a: "b" }, ["c"]), ["c"]);
++});
++
++test("A.11 replaces any value with null", () => {
++  assert.equal(applyMergePatch({ a: "foo" }, null), null);
++});
++
++test("A.12 replaces an object with a string", () => {
++  assert.equal(applyMergePatch({ a: "foo" }, "bar"), "bar");
++});
++
++test("A.13 ignores a null member that has no counterpart in the target", () => {
++  assert.deepEqual(applyMergePatch({ e: null }, { a: 1 }), { e: null, a: 1 });
++});
++
++test("A.14 replaces an array with an object, dropping a null member", () => {
++  assert.deepEqual(applyMergePatch([1, 2], { a: "b", c: null }), { a: "b" });
++});
++
++test("A.15 builds up nested objects, dropping an empty descendant", () => {
++  assert.deepEqual(applyMergePatch({}, { a: { bb: { ccc: null } } }), { a: { bb: {} } });
++});
++
++test("does not mutate the input target", () => {
++  const target = { a: { b: 1 }, list: [1, 2, 3] };
++  const snapshot = structuredClone(target);
++  applyMergePatch(target, { a: { b: 2 }, c: 3 });
++  assert.deepEqual(target, snapshot);
++});
++
++test("does not alias values between the patch and the result", () => {
++  const patch = { baz: { shared: true } };
++  const result = applyMergePatch({ foo: "bar" }, patch) as { baz: { shared: boolean } };
++  (patch.baz as { shared: boolean }).shared = false;
++  assert.equal(result.baz.shared, true);
++});
++
++test("does not alias untouched nested values from the target", () => {
++  const target = { kept: { shared: true } };
++  const result = applyMergePatch(target, { other: 1 }) as { kept: { shared: boolean } };
++  result.kept.shared = false;
++  assert.equal(target.kept.shared, true);
++});
++
++test("does not let a patch pollute the object prototype", () => {
++  const patch = JSON.parse('{"__proto__":{"polluted":true}}') as Record<string, unknown>;
++  const result = applyMergePatch({}, patch) as Record<string, unknown>;
++  assert.equal(({} as Record<string, unknown>).polluted, undefined);
++  assert.equal(Object.getPrototypeOf(result), Object.prototype);
++  assert.deepEqual(result.__proto__, { polluted: true });
++});

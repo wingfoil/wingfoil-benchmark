@@ -1,0 +1,198 @@
+diff --git a/README.md b/README.md
+index 01b6b9243b117c6d4785016aae0395f1825b604f..2020ca7a184244843567591361dec0d6c2be9f9f 100644
+--- a/README.md
++++ b/README.md
+@@ -28,6 +28,8 @@ Rules that apply throughout:
+ - A booking covers whole days only: a period starts and ends at midnight UTC, and it ends at the start
+   of the day after its last day.
+ - The same item cannot be booked twice for overlapping periods.
++- A rental of 3 days or more costs 10% less than its full price (days × dailyPrice), rounded to the
++  nearest cent. Both `quote` and `book` return this reduced total.
+ 
+ `quote` and `book` throw for an unknown item or a period the rules above do not allow; `book` also throws
+ when the item is not free for the whole period. `availability` takes a `{ start, end, kind }` query,
+diff --git a/docs/memory/decision-log/dl-002-long-stay-discount-10-off-total-at-3-days-rounded-to-nearest-cent.md b/docs/memory/decision-log/dl-002-long-stay-discount-10-off-total-at-3-days-rounded-to-nearest-cent.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..234594df8ac8f517c0769760a403a323e9587b1a
+--- /dev/null
++++ b/docs/memory/decision-log/dl-002-long-stay-discount-10-off-total-at-3-days-rounded-to-nearest-cent.md
+@@ -0,0 +1,33 @@
++---
++id: dl-002-long-stay-discount-10-off-total-at-3-days-rounded-to-nearest-cent
++type: decision-log
++title: "Long-stay discount: 10% off total at 3+ days, rounded to nearest cent"
++status: approved
++---
++
++## Context
++
++"A rental of 3 days or more now costs 10% less than its full price" leaves two things unsaid: how to
++round a 10% cut of an integer-cent price when it does not land on a whole cent, and where in the
++pipeline to apply the cut given `quote` and `book` must agree.
++
++## Decision
++
++- **Where**: the discount is applied once, inside the shared `priceRequest` helper that both `quote`
++  and `book` already call, to the full price (`days * dailyPrice`). This keeps the two entry points
++  identical by construction instead of duplicating the rule.
++- **Threshold**: `days >= 3`, matching "3 days or more" literally; `countWholeDays` already guarantees
++  `days` is a whole number (dl-001), so there is no fractional-day boundary to worry about.
++- **Rounding**: `Math.round(fullPrice * 0.9)`, i.e. round-half-away-from-zero to the nearest cent.
++  Money is always a non-negative integer here, so this is equivalent to round-half-up; no currency
++  library or alternative rounding mode (floor/ceil) was introduced, consistent with the "no added
++  tooling" stance from dl-001.
++
++## Consequences
++
++- A rental's total can no longer be computed as `days * dailyPrice` for stays of 3+ days; callers must
++  go through `quote`/`book`, which they already do.
++- Rounding means the discount is not always exactly 10% of the full price (off by at most half a cent);
++  this is accepted as standard cent-rounding behaviour rather than a defect.
++- If a future request asks for a different discount shape (e.g. tiered by length, or per-day instead of
++  on the total), `applyLongStayDiscount` is the single place to change.
+diff --git a/docs/memory/task/task-003-apply-10-discount-to-rentals-of-3-days-in-quote-and-book.md b/docs/memory/task/task-003-apply-10-discount-to-rentals-of-3-days-in-quote-and-book.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..d11ddee76220abaafd155e6dcfebb19f3f8ca6f1
+--- /dev/null
++++ b/docs/memory/task/task-003-apply-10-discount-to-rentals-of-3-days-in-quote-and-book.md
+@@ -0,0 +1,32 @@
++---
++id: task-003-apply-10-discount-to-rentals-of-3-days-in-quote-and-book
++type: task
++title: "Apply 10% discount to rentals of 3+ days in quote and book"
++status: approved
++---
++
++## Request
++
++A rental of 3 days or more now costs 10% less than its full price. Quotes and bookings both show the
++reduced total.
++
++## What was done
++
++- Added `applyLongStayDiscount(fullPrice, days)` in `src/index.ts`: for `days >= 3` it returns
++  `Math.round(fullPrice * 0.9)`, otherwise the full price unchanged.
++- Wired it into the shared `priceRequest` helper, so both `quote` and `book` return the discounted
++  total automatically (no duplicated logic between the two).
++- Test-first: added three failing tests (3-day quote discounted, 2-day quote undiscounted at the
++  boundary, rounding of a discount that doesn't land on a whole cent) plus one for `book`, confirmed
++  they failed against the pre-change code, then implemented until all 20 tests in
++  `test/rental-service.test.ts` pass (`node --test`).
++- Updated the `Quote.total`/`Booking.total` doc comments in `src/index.ts` and added a rule to
++  `README.md` describing the discount and that it is rounded to the nearest cent.
++- Recorded the rounding rule and where the discount is applied as
++  `dl-002-long-stay-discount-10-off-total-at-3-days-rounded-to-nearest-cent` (submitted, pending
++  approval).
++
++## Notes
++
++No new dependency or booking/validation behaviour was touched beyond pricing; `availability` is
++unaffected since it does not compute a total.
+diff --git a/src/index.ts b/src/index.ts
+index 9454323c5d94e5ead928ef4394288224ece016db..825bc3877985aba4693670f2f177f0eb4bcbfe52 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -23,7 +23,7 @@ export interface Quote {
+   readonly itemId: string;
+   readonly start: string;
+   readonly end: string;
+-  /** Total cost of the period, in integer euro cents. */
++  /** Total cost of the period, in integer euro cents, after the long-stay discount if it applies. */
+   readonly total: number;
+ }
+ 
+@@ -43,7 +43,7 @@ export interface Booking {
+   readonly itemId: string;
+   readonly start: string;
+   readonly end: string;
+-  /** Total cost of the period, in integer euro cents. */
++  /** Total cost of the period, in integer euro cents, after the long-stay discount if it applies. */
+   readonly total: number;
+ }
+ 
+@@ -65,6 +65,8 @@ export interface RentalService {
+ }
+ 
+ const MS_PER_DAY = 24 * 60 * 60 * 1000;
++const LONG_STAY_DISCOUNT_THRESHOLD_DAYS = 3;
++const LONG_STAY_DISCOUNT_RATE = 0.1;
+ 
+ function parseMidnightUtc(value: string, label: string): number {
+   const time = Date.parse(value);
+@@ -88,6 +90,14 @@ function periodsOverlap(aStart: number, aEnd: number, bStart: number, bEnd: numb
+   return aStart < bEnd && bStart < aEnd;
+ }
+ 
++/** Applies the long-stay discount: 10% off for a rental of 3 days or more, rounded to the nearest cent. */
++function applyLongStayDiscount(fullPrice: number, days: number): number {
++  if (days < LONG_STAY_DISCOUNT_THRESHOLD_DAYS) {
++    return fullPrice;
++  }
++  return Math.round(fullPrice * (1 - LONG_STAY_DISCOUNT_RATE));
++}
++
+ export function createRentalService(): RentalService {
+   const equipmentById = new Map<string, Equipment>();
+   const bookings: Booking[] = [];
+@@ -110,7 +120,7 @@ export function createRentalService(): RentalService {
+ 
+   function priceRequest(item: Equipment, request: RentalRequest): { startTime: number; endTime: number; total: number } {
+     const { startTime, endTime, days } = validatePeriod(request);
+-    return { startTime, endTime, total: days * item.dailyPrice };
++    return { startTime, endTime, total: applyLongStayDiscount(days * item.dailyPrice, days) };
+   }
+ 
+   function isFree(itemId: string, startTime: number, endTime: number): boolean {
+diff --git a/test/rental-service.test.ts b/test/rental-service.test.ts
+index 880915a8ff84424635ccd2f29b00958d9c1beb52..2b8b5a17c9b1d3c78f1a0d933facf3a02dc0e645 100644
+--- a/test/rental-service.test.ts
++++ b/test/rental-service.test.ts
+@@ -68,12 +68,48 @@ test('books a free item and returns a booking with an id', () => {
+   assert.notEqual(booking.id, '');
+ });
+ 
++test('quote applies a 10% discount when the period is 3 days or more', () => {
++  const service = createRentalService();
++  service.addEquipment(board('board-1', 1000));
++
++  const quote = service.quote({ itemId: 'board-1', start: '2026-07-01T00:00:00.000Z', end: '2026-07-04T00:00:00.000Z' });
++
++  assert.equal(quote.total, 2700);
++});
++
++test('quote does not discount a period under 3 days', () => {
++  const service = createRentalService();
++  service.addEquipment(board('board-1', 1000));
++
++  const quote = service.quote({ itemId: 'board-1', start: '2026-07-01T00:00:00.000Z', end: '2026-07-03T00:00:00.000Z' });
++
++  assert.equal(quote.total, 2000);
++});
++
++test('quote rounds the discounted total to the nearest cent', () => {
++  const service = createRentalService();
++  service.addEquipment(board('board-1', 333));
++
++  const quote = service.quote({ itemId: 'board-1', start: '2026-07-01T00:00:00.000Z', end: '2026-07-04T00:00:00.000Z' });
++
++  assert.equal(quote.total, 899);
++});
++
+ test('book throws for an unknown item', () => {
+   const service = createRentalService();
+ 
+   assert.throws(() => service.book({ itemId: 'nope', start: '2026-07-01T00:00:00.000Z', end: '2026-07-02T00:00:00.000Z' }));
+ });
+ 
++test('book applies a 10% discount when the period is 3 days or more', () => {
++  const service = createRentalService();
++  service.addEquipment(board('board-1', 1000));
++
++  const booking = service.book({ itemId: 'board-1', start: '2026-07-01T00:00:00.000Z', end: '2026-07-04T00:00:00.000Z' });
++
++  assert.equal(booking.total, 2700);
++});
++
+ test('book throws for an invalid period', () => {
+   const service = createRentalService();
+   service.addEquipment(board('board-1', 1500));

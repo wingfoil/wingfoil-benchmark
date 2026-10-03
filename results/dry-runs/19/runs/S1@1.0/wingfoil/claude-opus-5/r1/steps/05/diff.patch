@@ -1,0 +1,1446 @@
+diff --git a/README.md b/README.md
+index 259b0ce1f1a2424bb4f552429faae0fe26d801b2..d9b94e3fc0f58f5e86714b5c446aada361ef7987 100644
+--- a/README.md
++++ b/README.md
+@@ -93,6 +93,78 @@ holds one anyway raises a `TypeError`, naming the location where it was found, r
+ copied into a result that no longer serialises. A hole is refused rather than closed up or read as
+ `null`, because either reading would quietly change which element every index after it refers to.
+ 
++### JSON Patch diff — `createPatch(from, to)`
++
++Produces the [JSON Patch](https://www.rfc-editor.org/rfc/rfc6902) that turns one version of a
++document into another, so that a client that has both can send what changed instead of the whole new
++version.
++
++```ts
++import { applyPatch, createPatch } from 'json-toolkit';
++
++const from = { name: 'config', tags: ['a', 'b'], retries: 1 };
++const to = { name: 'config', tags: ['a', 'b'], retries: 3 };
++
++createPatch(from, to); // [{ op: 'replace', path: '/retries', value: 3 }]
++applyPatch(from, createPatch(from, to)); // { name: 'config', tags: ['a', 'b'], retries: 3 }
++```
++
++`applyPatch(from, createPatch(from, to))` is `to`, for any two JSON documents. That is the one thing
++the patch always does; everything below is about what it does *not* contain.
++
++**It names only the locations the two versions disagree about.** Objects are compared member by
++member and arrays element by element, as deep as the two documents go, and a subtree they share stops
++the comparison where it starts — so no operation ever carries a value both versions already have.
++Two documents that are equal as JSON give an empty patch, and two that differ in one member deep
++inside give one operation naming it:
++
++```ts
++createPatch({ a: { b: { c: 1 }, d: 2 } }, { a: { b: { c: 9 }, d: 2 } });
++// [{ op: 'replace', path: '/a/b/c', value: 9 }]
++```
++
++**Arrays are compared as sequences, not position by position.** An element both versions hold is kept
++wherever it has moved to, so an insertion at the front of a thousand elements is one `add` and not a
++thousand `replace`s, and a change inside one element is an operation inside that element:
++
++```ts
++createPatch({ items: ['a', 'b'] }, { items: ['z', 'a', 'b'] });
++// [{ op: 'add', path: '/items/0', value: 'z' }]
++
++createPatch([{ id: 'a', n: 1 }, { id: 'b', n: 2 }], [{ id: 'b', n: 2 }]);
++// [{ op: 'remove', path: '/0' }]
++```
++
++An element added at the end of an array is added at `-`, the position after the last one. The indices
++of the other operations are those of the array *as the patch is applied*, which the operations
++themselves shift: two `remove`s of neighbouring elements name the same index twice.
++
++**`add`, `remove` and `replace`, and no other operation.** A value that moved is described as a
++`remove` and an `add` rather than a `move`, and a value that appears twice as two `add`s rather than a
++`copy`: both would have to be hunted for across the document, and neither makes the patch say
++anything the three plain operations do not. There is no `test` either — the patch states what changed,
++not what the document must look like first. A caller who wants a precondition prepends their own
++`test`, which is the conditional update RFC 6902, section 5 describes.
++
++The patch is not the shortest one that could do the job: a document that lost a hundred members gives
++a hundred `remove`s, where a single `replace` of their parent would have been one operation. That is
++the trade this entry point makes — it never sends a value the two versions share, and a `replace` of
++the parent would send all the members that stayed.
++
++Taking a diff cannot fail, and there is no error to catch: any two JSON documents differ in a way
++these three operations express, so — as with `applyMergePatch` — no class is published for a failure
++that does not exist. Values outside the JSON data model are refused as everywhere else, by the same
++`TypeError`, which says whether it was `from` or `to` that held one.
++
++Both documents are left alone, and the patch shares nothing with either: its values are copies, so
++changing the patch afterwards cannot change the document it came from, and changing that document
++cannot change the patch. The same two documents always give the same patch, whatever order their
++members were written in.
++
++Comparing two arrays costs a table of one cell per pair of elements between their common ends, so two
++long arrays that differ in the middle are the expensive case; an append, a single insertion or one
++changed element costs a walk.
++
+ ### JSON Merge Patch — `applyMergePatch(target, patch)`
+ 
+ Applies a [JSON Merge Patch](https://www.rfc-editor.org/rfc/rfc7386) — not a list of operations but a
+diff --git a/docs/memory/decision-log/dl-013-createpatch-describes-only-what-changed-which-is-not-the-shortest-patch.md b/docs/memory/decision-log/dl-013-createpatch-describes-only-what-changed-which-is-not-the-shortest-patch.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..f00bd4205278071cdb32ad54611f12ec6cb8de5d
+--- /dev/null
++++ b/docs/memory/decision-log/dl-013-createpatch-describes-only-what-changed-which-is-not-the-shortest-patch.md
+@@ -0,0 +1,77 @@
++---
++id: dl-013-createpatch-describes-only-what-changed-which-is-not-the-shortest-patch
++type: decision-log
++title: "createPatch describes only what changed, which is not the shortest patch"
++status: approved
++---
++
++# createPatch describes only what changed, which is not the shortest patch
++
++## Context
++
++`createPatch(from, to)` has to return a patch that turns one document into the other, and that
++requirement alone is met by one operation: `{ "op": "replace", "path": "", "value": to }`. The reason
++the entry point exists is the rest of the request — a client that has both versions should send what
++changed, not the whole new version — so the interesting question is not whether the patch applies but
++what it is allowed to contain. That has to be settled before the algorithm, because two sensible
++objectives pull in opposite directions:
++
++- **the fewest operations** — the patch is shortest when a location whose contents changed a lot is
++  replaced whole, so `{ "a": { "x": 1, "y": 2, "z": 3 } }` becoming `{ "a": { "x": 9, "y": 8, "z": 3 } }`
++  is one `replace` of `/a` rather than two of `/a/x` and `/a/y`;
++- **the least data** — the patch carries nothing the two versions already agree on, so the same change
++  is two operations, and `z` is not sent again.
++
++Minimising operations is what several diff implementations do, and it is the wrong objective here. It
++licenses exactly what the request rules out: a document that differs in one small place but whose
++parent is large enough gets sent again under the name of a `replace`. The whole-document `replace`
++above is only the extreme of that, and no rule that permits the small case forbids it in principle.
++
++## Decision
++
++The patch names only the locations the two versions disagree about, and carries no value they share.
++`createPatch` walks the two documents together, and at each location:
++
++- **values that are equal as JSON produce nothing.** Equality is RFC 6902, section 4.6's, the one
++  `test` uses, which is why it moved out of `json-patch.ts` into `json-value.ts` under dl-007 as a
++  shared internal rather than being read a second time. An unchanged subtree, however large, stops the
++  walk where it starts: this is the one test that keeps the patch to what changed.
++- **two objects are compared member by member.** A member only the first has is a `remove`, a member
++  only the second has is an `add` carrying that member's value, and a member both have is compared in
++  its turn. There is no size at which the comparison gives up and replaces the parent.
++- **two arrays are compared element by element**, which is dl-014.
++- **anything else is a `replace`** of the location with the new value: two values of different kinds,
++  or two scalars, have nothing inside them to tell apart. At the root that is a `replace` of `""`,
++  which RFC 6902 allows and dl-006 kept.
++
++**The patch is therefore not the shortest one that would work, and that is the trade.** A document
++that lost a hundred members gives a hundred `remove`s where one `replace` of their parent would have
++done, and two unrelated objects at one location give a `remove` per old member and an `add` per new
++one. In both cases the single `replace` would have to carry every member that stayed; the operations
++are more numerous, and the data on the wire is not larger. The README says so in those terms, so that
++a caller counting operations is not surprised.
++
++**Member names are visited in sorted order.** Operations on distinct members of one object do not
++depend on each other, so any order would apply, and the order `Object.keys` gives is the order the
++members happened to be written in — which would make the patch depend on how a document was built and
++not on what it holds. Sorting by code unit, with no locale in it, is what the determinism directive
++asks for and what dl-012 means by comparing documents as JSON and not as text: two documents that are
++equal as JSON give the same patch, character for character.
++
++**Nothing is `test`ed, `move`d or `copy`ed** — see dl-015 — and the patch is a fresh array of plain
++operation objects, so a caller may add to it.
++
++## Consequences
++
++- A patch for two versions that differ in one place is one operation naming that place, whatever the
++  size of the documents around it, which is the behaviour the request asked for and the README
++  promises.
++- A caller who wants the shortest patch rather than the smallest payload does not get it here. If a
++  service ever needs that — a transport where the operation count dominates — it is a second,
++  explicitly named entry point, as dl-004 answers the same shape of question about structural sharing.
++- The patch depends on the two documents alone, so it can be cached, logged and compared as a value.
++  The tests assert the exact patch for each case, which only holds because of the sorted order above.
++- The walk is proportional to the two documents, plus the cost of comparing the values it meets. Two
++  large documents that differ everywhere are compared twice over — once to find the difference, once
++  by the array alignment of dl-014 — which is the cost of a diff and not of a patch; the entry point
++  that applies a patch is unaffected.
+diff --git a/docs/memory/decision-log/dl-014-arrays-are-diffed-as-an-edit-script-over-their-elements.md b/docs/memory/decision-log/dl-014-arrays-are-diffed-as-an-edit-script-over-their-elements.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..366b658242672948e1ce93cb83a344a3514dd047
+--- /dev/null
++++ b/docs/memory/decision-log/dl-014-arrays-are-diffed-as-an-edit-script-over-their-elements.md
+@@ -0,0 +1,96 @@
++---
++id: dl-014-arrays-are-diffed-as-an-edit-script-over-their-elements
++type: decision-log
++title: "Arrays are diffed as an edit script over their elements"
++status: approved
++---
++
++# Arrays are diffed as an edit script over their elements
++
++## Context
++
++dl-013 settled that `createPatch` carries no value the two versions share. For objects that is
++straightforward — a member is named, and the two versions either have it or not. Arrays are the hard
++case, and the one the request is really about, because an element is named by its *position*, and a
++single insertion moves every position after it.
++
++Three readings were available:
++
++- **replace the array whole** when it is not equal. One operation, and the whole new array on the
++  wire: this is "sending the whole document again" for the part of a document most likely to be long,
++  and dl-013 rules it out.
++- **compare position by position** — `/0` against `/0`, `/1` against `/1`, then add or remove the
++  tail. Cheap, and wrong in the common case: prepending one element to a thousand rewrites all
++  thousand, because every element is now compared with its neighbour. A log or a list of records
++  usually grows at one end and is read as a sequence, not as a mapping from index to value.
++- **compare as a sequence**, matching the elements the two versions have in common wherever they sit,
++  and naming only the elements added, removed and changed.
++
++RFC 6902 has nothing to say about any of this — it defines what a patch means, not how one is found —
++so this is the toolkit's choice, and it is the one place in this feature where there is a real
++algorithm rather than a reading of a specification.
++
++## Decision
++
++Two arrays are aligned as an edit script over their elements, and the operations follow the script.
++
++**An element the two versions share is kept wherever it has moved to.** The alignment counts a
++removal, an addition and a changed element as one step each, a shared element as none, and takes an
++alignment of the fewest steps. So one insertion at the front of a long array is one `add`, one
++element changed in place is an operation inside that element, and an element that moved is not
++resent.
++
++**The elements the two arrays begin and end with in common are matched first**, and only what is left
++between them is aligned. That is what makes the ordinary cases — an append, a single insertion, one
++changed element — a walk down the two arrays rather than a table, and it costs nothing in quality:
++there is always an alignment of the fewest steps that matches those elements.
++
++**What is left is aligned with a table of one cell per pair of elements**, holding the least number of
++steps that turns a prefix of one into a prefix of the other, and the script is read back out of it.
++Cells are 4 bytes (`Int32Array`), because this is where a diff of two long arrays spends its memory.
++Two long arrays that differ in the middle are therefore the expensive case, and the README says so.
++
++**An aligned pair that is not equal is compared in its turn, not replaced.** That is dl-013 applied
++one level down: two records that differ in one field give an operation naming that field. The
++alignment counts such a pair as one step even though it may produce several operations — it is an
++estimate made before the comparison it would have to run, and a cheap one; what it decides is which
++elements are paired, not what is sent for a pair.
++
++**Where two alignments cost the same, the choice is fixed**: an element equal on both sides is kept,
++then a removal, then an addition, and a changed element last. A tie is the normal case rather than the
++exception — a swap, a replaced element, a shifted list all offer several scripts of the same cost —
++so without a stated order the patch would depend on how the table happens to be read. With it, two
++documents always give the same patch, as dl-013 requires.
++
++**The indices in the patch are those of the array as the patch is applied, not of either version.**
++The operations shift the elements after them, so they are emitted in order while a cursor and a
++length are carried along: the cursor is where the element the next step is about has come to sit, a
++removal leaves it where it is because the tail has moved down, and an addition moves it past the
++element just inserted. Everything below the cursor is already what the second version has, and no
++later operation reaches below it, so an element the walk has passed is settled. Two `remove`s of
++neighbouring elements therefore name the same index twice, which reads like a bug and is not; the
++README says it, and a test asserts it.
++
++**An element added at the end of an array is added at `-`.** RFC 6902, section 4.1 gives `-` the
++meaning "the position after the last element", which is exactly what an append is; writing the length
++as an index would say the same thing in a form that looks like an off-by-one. Every other index is
++written out.
++
++## Consequences
++
++- Appending to a long array, inserting into it, dropping an element from the front or changing one
++  field of one record are all one or two operations, independent of the length of the array. That is
++  the request's "one small place" for the shape of document where it matters most.
++- Comparing two arrays whose middles differ costs time and memory proportional to the product of
++  their lengths. A caller diffing two arrays of ten thousand mismatched elements will feel it; the
++  answer, as in dl-004 and dl-013, is a separate entry point with a different trade, not a cheaper
++  alignment here that would quietly resend data.
++- A reordering is described as removals and additions. The `move` operation would say it in one
++  operation, and dl-015 says why it is not used.
++- The patch's array indices only make sense applied in order, from the document the diff was taken
++  against. That is already true of any JSON Patch — section 5 makes a patch a sequence — but it is
++  worth stating here, because a reader who takes one operation out of the middle of a patch and
++  applies it alone will land somewhere else.
++- The alignment is the one part of the toolkit that is a choice rather than a reading of an RFC. It
++  can be changed — a different tie-break, a different estimate for a changed pair — without changing
++  what any patch means, as long as the tests that assert exact patches are updated with it.
+diff --git a/docs/memory/decision-log/dl-015-createpatch-emits-add-remove-and-replace-no-move-copy-or-test.md b/docs/memory/decision-log/dl-015-createpatch-emits-add-remove-and-replace-no-move-copy-or-test.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..1301286a956d552f73056ff0c19bd4e36bd46c42
+--- /dev/null
++++ b/docs/memory/decision-log/dl-015-createpatch-emits-add-remove-and-replace-no-move-copy-or-test.md
+@@ -0,0 +1,65 @@
++---
++id: dl-015-createpatch-emits-add-remove-and-replace-no-move-copy-or-test
++type: decision-log
++title: "createPatch emits add, remove and replace: no move, copy or test"
++status: approved
++---
++
++# createPatch emits add, remove and replace: no move, copy or test
++
++## Context
++
++`applyPatch` implements six operations, and a patch `createPatch` produces is free to use any of
++them. Three of the six are there for cases a diff could plausibly detect:
++
++- `move`, for a value that is at a different location in the second version — the reordering of an
++  array that dl-014 describes as a removal and an addition, or a member renamed in an object;
++- `copy`, for a value that appears in the second version where another value already equal to it
++  sits;
++- `test`, which a patch uses to state what the document must look like before it is applied, and which
++  dl-005 and dl-009 treat as the idiom RFC 6902 offers for a conditional update.
++
++A client sending a change over the network has a reason to want each: `move` and `copy` would make a
++reordering or a duplication shorter, and `test` would make the patch safe to apply to a document that
++has changed in the meantime.
++
++## Decision
++
++`createPatch` emits `add`, `remove` and `replace`, and nothing else.
++
++**`move` and `copy` are not emitted because finding them is a search, not a comparison.** Both ask a
++question about a value that is somewhere *else*: for `move`, is this removed value the same as that
++added one; for `copy`, is this added value already in the document. Answering either means comparing
++values across the whole document rather than at the location the walk has reached, which is a
++different algorithm with its own cost, and the answer is a guess about intent — two records that
++happen to be equal are not evidence that one was moved. What they would buy is a shorter patch, which
++dl-013 has already declined to optimise for: the removal and the addition carry the value once, and
++`move` would carry it not at all, so the saving is real but small next to a diff that is already down
++to what changed. The cases where it is not small — a long array reordered wholesale — are the cases
++where the guess is least reliable.
++
++**`test` is not emitted because the patch states what changed, not what the document must be.** The
++request asks for the change between two versions; a precondition is a different thing, and one whose
++shape only the caller knows. The obvious reading — a `test` for every location the patch touches —
++would roughly double the patch, make every operation's old value travel alongside its new one, and
++turn a patch that is sent once into one that fails for a reason the sender cannot anticipate. A caller
++who wants a conditional update prepends their own `test` to the patch, which is why the patch is
++returned as a fresh array they own; `TestFailedError` is then theirs to catch, as dl-005 intends. The
++README says this where a reader will look for it.
++
++**Nothing in this decision is about what the patch means.** A patch of `add`, `remove` and `replace`
++applies exactly as one that used all six would, by RFC 6902; the other three operations are shorthand,
++and this entry point does not write in shorthand.
++
++## Consequences
++
++- A reordered array gives removals and additions, and a renamed member gives a `remove` and an `add`
++  carrying the value. Both are longer than they could be, and neither is wrong.
++- A caller can tell what the patch does by reading it: three operations, each naming one location,
++  with no `from` to follow and no precondition to check. That is worth something to the services that
++  log patches.
++- Detecting a `move` or a `copy` is a compatible addition later: it would shorten patches without
++  changing what they mean, so it belongs behind an option or in a named entry point of its own, and
++  the tests that assert exact patches say which ones it would change.
++- A caller who needs a conditional update has to write the `test` themselves. That is one line and the
++  only place they can decide what the precondition is; the toolkit guessing it would be worse.
+diff --git a/docs/memory/decision-log/dl-016-createpatch-copies-both-documents-and-publishes-no-error-class.md b/docs/memory/decision-log/dl-016-createpatch-copies-both-documents-and-publishes-no-error-class.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..f7f796bd3d5566fa3532c422a6b3f463281433ce
+--- /dev/null
++++ b/docs/memory/decision-log/dl-016-createpatch-copies-both-documents-and-publishes-no-error-class.md
+@@ -0,0 +1,73 @@
++---
++id: dl-016-createpatch-copies-both-documents-and-publishes-no-error-class
++type: decision-log
++title: "createPatch copies both documents and publishes no error class"
++status: approved
++---
++
++# createPatch copies both documents and publishes no error class
++
++## Context
++
++`createPatch` is the third entry point to take two JSON documents, and the first to return a *patch*
++rather than a document. Two settled questions have to be answered again for it, and one is new.
++
++dl-004 and dl-010 fixed the immutability contract: an entry point is a pure function of its
++arguments, nothing it returns is entangled with anything it was given, and `cloneJson` is the one
++place where the JSON data model is enforced. What `createPatch` returns is a patch, and the values in
++that patch come from the second document — so the question dl-010 answered for the patch argument of
++`applyMergePatch` comes back with the sides swapped: a naive diff returns operations whose `value`
++members *are* the subtrees of the document handed in.
++
++dl-011 decided that `applyMergePatch` publishes no error class, because RFC 7386 gives a merge patch
++no way to be invalid. Whether the same holds here has to be checked rather than assumed: a diff takes
++two documents, and might have found a pair it could not describe.
++
++The new question is what the data-model check does with a diff's *first* argument, which the patch
++never carries a value from.
++
++## Decision
++
++**Both documents are copied with `cloneJson` before anything is compared, and the patch is built out
++of the copies.** So an operation's `value` is a copy of a copy of nothing the caller holds: changing
++the second document afterwards cannot change a patch already taken, and changing the patch cannot
++change the document. Neither argument is read again after it is copied, so neither can be modified.
++This is dl-004's contract and dl-010's reasoning, applied to the direction a diff runs in.
++
++**The copy of the first document is taken too, and only read.** It is thrown away, like the copy of
++the target that dl-010 takes for a merge patch that replaces it, and for the same reason: `cloneJson`
++is the data-model boundary, and the boundary does not move with what an argument happens to contain.
++`createPatch({ a: undefined }, 1)` raises rather than returning a `replace` of the root — a caller who
++hands in a document the toolkit cannot hold should hear about it whichever side of the comparison it is
++on, and not only when the diff happens to look at the offending value. A check that walked the
++document without copying it would do, and there is no such function in the toolkit: dl-004 made the
++copy the check, and inventing a second way in to save an allocation here would put the boundary in two
++places.
++
++**`cloneJson`'s `TypeError` is re-thrown with the argument named**, as `applyMergePatch` does:
++`the "from" document is not a JSON value: …` or `the "to" document is not a JSON value: …`, with the
++original as `cause`. The names are quoted because `from` and `to` are ordinary English words, and an
++unquoted "the from document" reads as a typo.
++
++**No error class is published, and `createPatch` cannot fail.** Any two JSON values have a difference
++that `add`, `remove` and `replace` can express — the extreme being a `replace` of the root — so there
++is no pair the diff has to refuse, no pointer handed in to parse, and no precondition. The one throw is
++dl-004's `TypeError` for something that is not a JSON document at all, which dl-011 already settled is
++a programming error on the caller's side rather than a failure of the operation. A caller diffs without
++a `try`/`catch`; the patch they get is for `applyPatch` to accept, and `InvalidPatchError` is not
++reachable from a patch this function built.
++
++## Consequences
++
++- The three entry points have one contract between them: pure functions of their arguments, nothing
++  shared with what they return, `TypeError` and nothing else for a value outside the JSON data model.
++  A caller guards once, around any of them.
++- A diff costs a copy of both documents on top of the comparison. The copy of the first is pure
++  overhead for the diff itself and pays for the data-model check; as in dl-004 and dl-010, the answer
++  if it ever matters is a separate entry point, not a weaker boundary.
++- `createPatch` has no error of its own to document, so the README states the absence, as it does for
++  `applyMergePatch`: a reader who expects a `createPatch` failure mode by analogy with `applyPatch`
++  will not find one.
++- The patch is a fresh array of plain objects the caller owns. They may extend it — dl-015 expects them
++  to, when they want a `test` — and `applyPatch` copies every value out of it again, so a patch handed
++  straight back is not entangled with the document it produces either.
+diff --git a/docs/memory/task/task-005-produce-a-json-patch-between-two-documents-createpatch.md b/docs/memory/task/task-005-produce-a-json-patch-between-two-documents-createpatch.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..08b60c8e45f9ed2439674557f8b3c32f305918c3
+--- /dev/null
++++ b/docs/memory/task/task-005-produce-a-json-patch-between-two-documents-createpatch.md
+@@ -0,0 +1,116 @@
++---
++id: task-005-produce-a-json-patch-between-two-documents-createpatch
++type: task
++title: "Produce a JSON Patch between two documents createPatch"
++status: approved
++---
++
++# Produce a JSON Patch between two documents createPatch
++
++## Request
++
++Our clients now want to send only what changed between two versions of a JSON document, instead of the
++whole new version: add a way to produce such a change as a JSON Patch (RFC 6902), exported as
++`createPatch(from, to)` from `src/index.ts`. It returns a patch that turns `from` into `to` when
++applied, and must not mutate either input. The patch should describe what changed and nothing more:
++when two versions differ in one small place, sending the whole document again is not acceptable.
++
++## What was done
++
++Test-first, red before green: `test/json-patch-diff.test.ts` was written and run against a missing
++`createPatch` — `SyntaxError: The requested module '../src/index.ts' does not provide an export named
++'createPatch'` — then `src/json-patch-diff.ts` was added until all 111 cases passed. The 239 cases of
++the earlier tasks were kept green throughout.
++
++The request fixes what the patch must *do* — apply to `from` and give `to` — in one sentence, and the
++work is in the sentence after it, which says what the patch may not contain. Both halves are asserted
++in the tests: every case checks that `applyPatch(from, createPatch(from, to))` is `to`, and the cases
++that matter also assert the exact patch, operation by operation, because "nothing more" is only
++visible in what the patch does not say.
++
++### Code
++
++- `src/json-patch-diff.ts` — `createPatch`, the recursive comparison of two documents, the member-by-
++  member comparison of two objects, the element-by-element alignment of two arrays with the walk that
++  turns it into operations, and the copy that names which of the two documents was not a JSON value.
++- `src/index.ts` — publishes `createPatch`, next to `applyPatch` whose patches it produces.
++- `src/json-value.ts`, `src/json-patch.ts` — `jsonEquals`, the equality of RFC 6902, section 4.6, moved
++  out of `json-patch.ts`, where only `test` used it, into the data-model module as a shared internal
++  (dl-007). The diff asks that question of every pair of values it considers, and one reading of the
++  section in the library is the point of that decision. Committed on its own, before the feature.
++
++`createPatch` copies both documents, then walks them together: values equal as JSON produce nothing,
++two objects are compared member by member in sorted order, two arrays are aligned as an edit script
++over their elements, and anything else is a `replace` of the location — at the root included. The
++patch holds `add`, `remove` and `replace` only, in the order they must be applied, and its array
++indices are those of the document as the patch is applied, which the operations themselves shift.
++
++### Tests
++
++`test/json-patch-diff.test.ts`, 111 cases: documents equal as JSON, including the same document twice
++and members written in a different order, giving an empty patch; thirteen pairs of roots whose kind or
++value changes, each one `replace` of `""`; the members of an object added, removed, replaced, set to
++`null` — which a merge patch cannot do — told apart from absent, descended into rather than replaced,
++created whole, named in a fixed order, escaped as JSON Pointer escapes them, named with the empty
++string, with `-`, with `__proto__` and with `toString`; the elements of an array appended at `-`,
++inserted at the front and in the middle, removed from either end and from the middle, replaced,
++descended into, shifted without being rewritten, and moved without being resent, with duplicates,
++nested arrays, an array emptied and an empty array filled; the patch carrying nothing the two
++documents share, using no operation but the three, being JSON itself and being the same patch every
++time; both documents left alone and sharing nothing with the patch in either direction; nine kinds of
++value outside the JSON data model refused in either document, with the message naming which one and
++keeping the cause, a cycle refused as well, and the refusal standing even when the other document
++would have settled the comparison on its own; and
++a table of thirty-one documents of every shape, each turned into each of the others — 961 patches, all
++of which `applyPatch` turns the one into the other with.
++
++### Documentation
++
++`README.md` gained a "JSON Patch diff" building block, between "JSON Patch" and "JSON Merge Patch":
++the round-trip property first, then what the patch leaves out and why, how arrays are compared and
++what that means for the indices, the three operations it uses and the three it does not, the shortest-
++patch trade it declines, the immutability contract, and the cost of comparing two long arrays. Every
++example in it and in the module's doc comment was run as written.
++
++## Decisions recorded
++
++- dl-013 — the patch names only the locations the two versions disagree about and carries no value they
++  share; fewest operations is rejected as the objective, because it licenses resending a parent whose
++  members have not changed. Members are visited in sorted order so the patch is a function of the two
++  documents alone.
++- dl-014 — two arrays are aligned as an edit script over their elements: the elements they share are
++  kept wherever they moved to, the common ends are matched before the table, an aligned pair is
++  compared rather than replaced, ties are broken in a fixed order, indices are counted as the patch is
++  applied, and an append is written at `-`.
++- dl-015 — `add`, `remove` and `replace` only: `move` and `copy` would need a search across the
++  document and a guess about intent, and `test` states a precondition that is the caller's to write.
++- dl-016 — both documents are copied up front, the patch is built out of the copies, the copy of the
++  first is taken for the data-model check and thrown away, the `TypeError` names which document was not
++  JSON, and no error class is published because any two JSON values have a difference.
++
++## Verification
++
++- `npm test` — 350 tests, 350 pass, 0 fail (111 for the diff, 239 for the three earlier blocks).
++- `npm run typecheck` — no errors, sources and tests.
++- `npm run build` — emits `dist/`, `createPatch` included.
++- `tsc -p tsconfig.test.json --noUnusedLocals --noUnusedParameters` reports nothing.
++- The README's five examples and the module's doc-comment example were run as written and produce the
++  documented results.
++- Two sanity runs outside the test suite, on documents larger than a unit test: one element changed in
++  the middle of a 5 000-element array of objects gives one `replace` naming that element's member, and
++  one element inserted at the front of the same array gives one `add` — in tens of milliseconds, most
++  of it the copy of the two documents.
++
++## Follow-ups
++
++- The follow-ups of the earlier tasks stand: no linter, `package.json` still declares no `main` or
++  `exports`, and `dist/*.d.ts` keeps the `.ts` import extensions that `dist/*.js` has rewritten.
++- Two long arrays that differ in the middle cost a table of one cell per pair of elements (dl-014). No
++  caller has arrays of that size today; if one appears, the thing to add is an entry point with a
++  different trade, not a cheaper alignment that would quietly resend data.
++- `move` and `copy` detection, and an option to emit `test` operations, are both compatible additions
++  that dl-015 leaves open. Each needs a caller asking for it before it is worth the search it costs.
++- The toolkit can now produce a JSON Patch between two documents but not a JSON Merge Patch. The
++  converse of task-004 — a merge patch between two documents, which is a much simpler walk with the
++  format's limits (no explicit `null`, arrays replaced whole) — is the obvious next building block if
++  clients that send merge patches want the same thing.
+diff --git a/src/index.ts b/src/index.ts
+index b979c4862023fb09432d57fd8bfc2026b34b7e96..e3cd56d8d861360342430d91e7da45e71a6665c6 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -1,5 +1,6 @@
+ export { applyMergePatch } from './json-merge-patch.ts';
+ export { applyPatch } from './json-patch.ts';
++export { createPatch } from './json-patch-diff.ts';
+ export {
+   InvalidPatchError,
+   JsonPatchError,
+diff --git a/src/json-patch-diff.ts b/src/json-patch-diff.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..390aff4de781d82d1791d9e55f5527d71a8cfa07
+--- /dev/null
++++ b/src/json-patch-diff.ts
+@@ -0,0 +1,317 @@
++/**
++ * The JSON Patch of RFC 6902 (https://www.rfc-editor.org/rfc/rfc6902) read the
++ * other way round: given two versions of a document, the operations that turn
++ * the first into the second.
++ *
++ * The patch describes what changed and nothing more. A value the two versions
++ * have in common is never carried by an operation, however deep it sits: an
++ * object is compared member by member, an array element by element, and only a
++ * location the two versions disagree about appears in the patch.
++ */
++
++import { cloneJson } from './json-document.ts';
++import type { PatchOperation } from './json-patch-operation.ts';
++import { formatPointer } from './json-pointer.ts';
++import { isJsonObject, jsonEquals } from './json-value.ts';
++import type { JsonArray, JsonObject, JsonValue } from './json-value.ts';
++
++/**
++ * Produces a JSON Patch that turns one JSON document into another.
++ *
++ * ```ts
++ * const from = { name: 'config', tags: ['a', 'b'], retries: 1 };
++ * const to = { name: 'config', tags: ['a', 'b'], retries: 3 };
++ *
++ * createPatch(from, to); // [{ op: 'replace', path: '/retries', value: 3 }]
++ * applyPatch(from, createPatch(from, to)); // equal to `to`
++ * ```
++ *
++ * The patch holds `add`, `remove` and `replace` operations only, in the order
++ * they must be applied, and carries no part of the documents the two versions
++ * agree on. Two documents that are equal as JSON give an empty patch.
++ *
++ * Both documents are left alone, and the patch shares nothing with either: it
++ * is built out of copies, so changing one afterwards leaves the others as they
++ * were.
++ *
++ * @param from - The document the patch is to be applied to.
++ * @param to - The document it is to produce.
++ * @returns A patch that turns `from` into `to`, as a fresh array.
++ * @throws {TypeError} If `from` or `to` is not a JSON value. The types rule that
++ * out; it is a programming error, not a patch that could not be produced.
++ */
++export function createPatch(from: JsonValue, to: JsonValue): PatchOperation[] {
++  // Both are copied up front: the values the patch carries are taken out of the
++  // copy of `to`, so they are nobody else's, and the copy is where the JSON data
++  // model is enforced — for `from` as well, whose copy is only read, because a
++  // document the toolkit cannot hold is a mistake a caller should hear about
++  // whichever side of the comparison it is on.
++  const before = copy(from, 'from');
++  const after = copy(to, 'to');
++
++  const patch: PatchOperation[] = [];
++  diff(before, after, [], patch);
++  return patch;
++}
++
++/**
++ * Appends to `patch` the operations that turn `from` into `to` at the location
++ * `at` leads to, which both documents have.
++ *
++ * @param at - The reference tokens leading to the two values, as a stack the
++ * walk pushes to and pops from.
++ */
++function diff(from: JsonValue, to: JsonValue, at: string[], patch: PatchOperation[]): void {
++  if (jsonEquals(from, to)) {
++    // Nothing changed here, so nothing is said about it. This is the one test
++    // that keeps the patch to what changed: every unchanged subtree, however
++    // large, stops the walk where it starts.
++    return;
++  }
++
++  if (isJsonObject(from) && isJsonObject(to)) {
++    diffObject(from, to, at, patch);
++  } else if (Array.isArray(from) && Array.isArray(to)) {
++    diffArray(from, to, at, patch);
++  } else {
++    // Two values of different kinds, or two scalars: there is nothing inside
++    // them to tell apart, so the location takes the new value whole.
++    patch.push({ op: 'replace', path: formatPointer(at), value: to });
++  }
++}
++
++/**
++ * Compares two objects member by member: a member only the first has is
++ * removed, a member only the second has is added, and a member both have is
++ * itself compared.
++ */
++function diffObject(from: JsonObject, to: JsonObject, at: string[], patch: PatchOperation[]): void {
++  for (const name of memberNames(from, to)) {
++    at.push(name);
++    if (!Object.hasOwn(to, name)) {
++      patch.push({ op: 'remove', path: formatPointer(at) });
++    } else if (!Object.hasOwn(from, name)) {
++      patch.push({ op: 'add', path: formatPointer(at), value: to[name] });
++    } else {
++      diff(from[name], to[name], at, patch);
++    }
++    at.pop();
++  }
++}
++
++/**
++ * The names of every member of either object, each once, in a fixed order.
++ *
++ * Own members only, as everywhere in the toolkit, which is what `Object.keys`
++ * gives: a name JavaScript keeps on `Object.prototype` is a member of a
++ * document only when the document has it of its own.
++ *
++ * The order is sorted rather than the order the members were written in, so
++ * that the patch is a function of the two documents and of nothing else.
++ * Operations on distinct members of one object do not depend on each other, so
++ * any order would apply; this one is the same for any two documents that are
++ * equal as JSON.
++ */
++function memberNames(from: JsonObject, to: JsonObject): string[] {
++  return [...new Set([...Object.keys(from), ...Object.keys(to)])].sort();
++}
++
++/**
++ * Compares two arrays element by element, as an edit script: the elements they
++ * share are left alone, wherever they have moved to, and only the elements
++ * added, removed and changed are named.
++ *
++ * Indices are those of the array *being patched*, which the operations
++ * themselves shift, so they are counted as the patch grows rather than taken
++ * from either version.
++ */
++function diffArray(from: JsonArray, to: JsonArray, at: string[], patch: PatchOperation[]): void {
++  const prefix = commonPrefix(from, to);
++  const suffix = commonSuffix(from, to, prefix);
++
++  // `cursor` is where the element the next step is about sits once the
++  // operations so far have been applied, and `length` is the length they have
++  // left the array with. Everything below `cursor` is already what `to` has;
++  // everything from it on is still the tail of `from`. The steps come in order,
++  // and a step at `cursor` moves nothing below it, so an element the walk has
++  // passed is settled for good.
++  let cursor = prefix;
++  let length = from.length;
++
++  const steps = alignment(
++    from.slice(prefix, from.length - suffix),
++    to.slice(prefix, to.length - suffix),
++  );
++  for (const step of steps) {
++    switch (step.kind) {
++      case 'keep':
++        cursor++;
++        break;
++
++      case 'change':
++        at.push(String(cursor));
++        diff(step.from, step.to, at, patch);
++        at.pop();
++        cursor++;
++        break;
++
++      case 'add':
++        // An element added at the end of the array is added at "-", the
++        // position after the last one of RFC 6902, section 4.1.
++        at.push(cursor === length ? '-' : String(cursor));
++        patch.push({ op: 'add', path: formatPointer(at), value: step.value });
++        at.pop();
++        cursor++;
++        length++;
++        break;
++
++      case 'remove':
++        at.push(String(cursor));
++        patch.push({ op: 'remove', path: formatPointer(at) });
++        at.pop();
++        // The elements after the one removed have moved down by one, so the
++        // next element to consider is at the index just used.
++        length--;
++        break;
++    }
++  }
++}
++
++/** One element of an edit script, aligning an array with another. */
++type EditStep =
++  /** The element is in both arrays, and needs no operation. */
++  | { readonly kind: 'keep' }
++  /** The element is in both, with a value to compare in its turn. */
++  | { readonly kind: 'change'; readonly from: JsonValue; readonly to: JsonValue }
++  /** The element is only in the second array, and is added. */
++  | { readonly kind: 'add'; readonly value: JsonValue }
++  /** The element is only in the first array, and is removed. */
++  | { readonly kind: 'remove' };
++
++/** How many elements the two arrays begin with in common. */
++function commonPrefix(from: JsonArray, to: JsonArray): number {
++  const shorter = Math.min(from.length, to.length);
++  let count = 0;
++  while (count < shorter && jsonEquals(from[count], to[count])) {
++    count++;
++  }
++  return count;
++}
++
++/** How many they end with in common, of those the prefix has not claimed. */
++function commonSuffix(from: JsonArray, to: JsonArray, prefix: number): number {
++  const left = Math.min(from.length, to.length) - prefix;
++  let count = 0;
++  while (
++    count < left &&
++    jsonEquals(from[from.length - 1 - count], to[to.length - 1 - count])
++  ) {
++    count++;
++  }
++  return count;
++}
++
++/**
++ * Aligns two sequences of elements with as few steps as possible, counting a
++ * removal, an addition and a changed element as one step each and a shared
++ * element as none.
++ *
++ * So an element the two sequences share is kept wherever it has moved to, and a
++ * single insertion in a long array is one step rather than a rewrite of
++ * everything after it. Only the elements the two ends do not already match are
++ * aligned here, which is what keeps a table out of the common cases — an
++ * append, or one element changed in place.
++ */
++function alignment(from: JsonArray, to: JsonArray): EditStep[] {
++  const width = to.length + 1;
++  // `cost[i * width + j]` is the least number of steps that turns the first `i`
++  // elements of `from` into the first `j` of `to`. One 4-byte cell per pair of
++  // elements is what the alignment costs in memory, and the only reason the two
++  // ends are matched first.
++  const cost = new Int32Array((from.length + 1) * width);
++  for (let i = 1; i <= from.length; i++) {
++    cost[i * width] = i;
++  }
++  for (let j = 1; j <= to.length; j++) {
++    cost[j] = j;
++  }
++
++  for (let i = 1; i <= from.length; i++) {
++    for (let j = 1; j <= to.length; j++) {
++      const aligned =
++        cost[(i - 1) * width + (j - 1)] + (jsonEquals(from[i - 1], to[j - 1]) ? 0 : 1);
++      cost[i * width + j] = Math.min(
++        aligned,
++        cost[(i - 1) * width + j] + 1,
++        cost[i * width + (j - 1)] + 1,
++      );
++    }
++  }
++
++  return trace(from, to, cost, width);
++}
++
++/**
++ * Reads the steps back out of the table, from the end of both sequences to
++ * their start, and returns them in the order they are to be applied.
++ *
++ * Several alignments usually cost the same, and the one taken is fixed: an
++ * element equal on both sides is kept, then a removal, then an addition, and a
++ * changed element last. Two documents therefore always give the same patch.
++ */
++function trace(from: JsonArray, to: JsonArray, cost: Int32Array, width: number): EditStep[] {
++  const steps: EditStep[] = [];
++  let i = from.length;
++  let j = to.length;
++
++  while (i > 0 || j > 0) {
++    const here = cost[i * width + j];
++    if (
++      i > 0 &&
++      j > 0 &&
++      cost[(i - 1) * width + (j - 1)] === here &&
++      jsonEquals(from[i - 1], to[j - 1])
++    ) {
++      steps.push({ kind: 'keep' });
++      i--;
++      j--;
++    } else if (i > 0 && cost[(i - 1) * width + j] + 1 === here) {
++      steps.push({ kind: 'remove' });
++      i--;
++    } else if (j > 0 && cost[i * width + (j - 1)] + 1 === here) {
++      steps.push({ kind: 'add', value: to[j - 1] });
++      j--;
++    } else {
++      // What is left is a changed element, which has one on each side: a cell
++      // of the first row is only ever reached by an addition, and one of the
++      // first column only by a removal, so both branches above have already
++      // answered for them.
++      steps.push({ kind: 'change', from: from[i - 1], to: to[j - 1] });
++      i--;
++      j--;
++    }
++  }
++
++  return steps.reverse();
++}
++
++/**
++ * Copies one of the two documents, naming it if it is not a JSON value.
++ *
++ * Both arguments are documents, so {@link cloneJson}'s message — which locates
++ * the value it refused within the one it was given — would not say which of the
++ * two the caller has to fix.
++ */
++function copy(document: JsonValue, argument: 'from' | 'to'): JsonValue {
++  try {
++    return cloneJson(document);
++  } catch (cause) {
++    if (cause instanceof TypeError) {
++      throw new TypeError(
++        `the ${JSON.stringify(argument)} document is not a JSON value: ${cause.message}`,
++        { cause },
++      );
++    }
++    throw cause;
++  }
++}
+diff --git a/src/json-patch.ts b/src/json-patch.ts
+index a5a89bed9458ce3fac6a98c3aa392fd348099b9a..4c397a77b6a0c97f2318361b4941d538a0d89120 100644
+--- a/src/json-patch.ts
++++ b/src/json-patch.ts
+@@ -10,7 +10,7 @@ import { PatchOperationError, TestFailedError } from './json-patch-errors.ts';
+ import { checkPatch } from './json-patch-operation.ts';
+ import type { CheckedOperation, JsonPatch, Location } from './json-patch-operation.ts';
+ import { formatPointer, JsonPointerError, parseArrayIndex, resolveTokens } from './json-pointer.ts';
+-import { describeJson, isJsonObject } from './json-value.ts';
++import { describeJson, isJsonObject, jsonEquals } from './json-value.ts';
+ import type { JsonArray, JsonObject, JsonValue } from './json-value.ts';
+ 
+ /**
+@@ -288,33 +288,6 @@ function requireMember(
+   return object[name];
+ }
+ 
+-/**
+- * Compares two JSON values as RFC 6902, section 4.6 defines equality: the same
+- * kind, and, for an object, the same set of members whatever their order.
+- */
+-function jsonEquals(left: JsonValue, right: JsonValue): boolean {
+-  if (Array.isArray(left) || Array.isArray(right)) {
+-    if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) {
+-      return false;
+-    }
+-    return left.every((element, index) => jsonEquals(element, right[index]));
+-  }
+-
+-  if (isJsonObject(left) || isJsonObject(right)) {
+-    if (!isJsonObject(left) || !isJsonObject(right)) {
+-      return false;
+-    }
+-    const names = Object.keys(left);
+-    return (
+-      names.length === Object.keys(right).length &&
+-      names.every((name) => Object.hasOwn(right, name) && jsonEquals(left[name], right[name]))
+-    );
+-  }
+-
+-  // Strings, numbers and the three literals: equal when they are the same value.
+-  return left === right;
+-}
+-
+ function lastToken(location: Location): string {
+   return location.tokens[location.tokens.length - 1];
+ }
+diff --git a/src/json-value.ts b/src/json-value.ts
+index 0241857471ae703a3e8b3f45f9f5909cef842aff..172d9aee2b7f25bbcb2c724b0c883a2727d83232 100644
+--- a/src/json-value.ts
++++ b/src/json-value.ts
+@@ -25,6 +25,39 @@ export function isJsonObject(value: unknown): value is JsonObject {
+   return typeof value === 'object' && value !== null && !Array.isArray(value);
+ }
+ 
++/**
++ * Compares two JSON values as RFC 6902, section 4.6 defines equality: the same
++ * kind, and, for an object, the same set of members whatever their order.
++ * JavaScript's coercions take no part in it, so `1` and `"1"`, or `null`,
++ * `false`, `0` and `""`, are all different.
++ *
++ * Shared with the other modules of the toolkit, which both need one reading of
++ * that section: a `test` operation asks it of a location, and a diff asks it of
++ * every pair of values it considers. It is not part of the published API.
++ */
++export function jsonEquals(left: JsonValue, right: JsonValue): boolean {
++  if (Array.isArray(left) || Array.isArray(right)) {
++    if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) {
++      return false;
++    }
++    return left.every((element, index) => jsonEquals(element, right[index]));
++  }
++
++  if (isJsonObject(left) || isJsonObject(right)) {
++    if (!isJsonObject(left) || !isJsonObject(right)) {
++      return false;
++    }
++    const names = Object.keys(left);
++    return (
++      names.length === Object.keys(right).length &&
++      names.every((name) => Object.hasOwn(right, name) && jsonEquals(left[name], right[name]))
++    );
++  }
++
++  // Strings, numbers and the three literals: equal when they are the same value.
++  return left === right;
++}
++
+ /**
+  * Names the kind of a value, for use in a message: `null`, `a string`,
+  * `an array`, `an object`.
+diff --git a/test/json-patch-diff.test.ts b/test/json-patch-diff.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..e3c96a39208e5cabaffd835db6d47ccd1e0c7304
+--- /dev/null
++++ b/test/json-patch-diff.test.ts
+@@ -0,0 +1,475 @@
++import assert from 'node:assert/strict';
++import { describe, it } from 'node:test';
++
++import { applyPatch, createPatch } from '../src/index.ts';
++import type { JsonArray, JsonObject, JsonPatch, JsonValue, PatchOperation } from '../src/index.ts';
++
++/** Diffs documents the types reject, to check they are refused at run time. */
++function createUntyped(from: unknown, to: unknown): JsonPatch {
++  return createPatch(from as JsonValue, to as JsonValue);
++}
++
++/**
++ * Checks the one thing a patch must always do — turn `from` into `to` — and
++ * returns it, so that a test can go on to say what it contains.
++ */
++function patchTurning(from: JsonValue, to: JsonValue): JsonPatch {
++  const patch = createPatch(from, to);
++  assert.deepEqual(applyPatch(from, patch), to, `the patch does not turn the one document into the other`);
++  return patch;
++}
++
++/** The `value` an operation carries, for the tests that change it afterwards. */
++function operationValue(operation: PatchOperation): JsonObject {
++  return (operation as { value: JsonValue }).value as JsonObject;
++}
++
++/** A separate document equal to the one given, as a service would receive it. */
++function copyOf(document: JsonValue): JsonValue {
++  return JSON.parse(JSON.stringify(document)) as JsonValue;
++}
++
++describe('createPatch', () => {
++  describe('two documents that are equal as JSON', () => {
++    const equal: ReadonlyArray<readonly [string, JsonValue]> = [
++      ['the same scalar', 42],
++      ['null', null],
++      ['the empty string', ''],
++      ['an empty object', {}],
++      ['an empty array', []],
++      ['a nested document', { a: [1, { b: 'c' }], d: null }],
++    ];
++
++    for (const [what, document] of equal) {
++      it(`gives an empty patch for ${what}`, () => {
++        assert.deepEqual(patchTurning(document, copyOf(document)), []);
++      });
++    }
++
++    it('gives an empty patch for the very same document', () => {
++      const document: JsonValue = { a: { b: [1, 2] } };
++      assert.deepEqual(createPatch(document, document), []);
++    });
++
++    it('ignores the order the members were written in', () => {
++      assert.deepEqual(createPatch({ a: 1, b: 2 }, { b: 2, a: 1 }), []);
++    });
++  });
++
++  describe('a change at the root', () => {
++    it('replaces the whole document when its kind changes', () => {
++      assert.deepEqual(patchTurning({ a: 1 }, [1]), [{ op: 'replace', path: '', value: [1] }]);
++    });
++
++    const roots: ReadonlyArray<readonly [JsonValue, JsonValue]> = [
++      [1, 2],
++      ['a', 'b'],
++      [true, false],
++      [null, 0],
++      [0, null],
++      [1, '1'],
++      [0, false],
++      [{ a: 1 }, 'text'],
++      ['text', { a: 1 }],
++      [[1], { 0: 1 }],
++      [{ 0: 1 }, [1]],
++      [[], {}],
++      [{}, []],
++    ];
++
++    for (const [from, to] of roots) {
++      it(`turns ${JSON.stringify(from)} into ${JSON.stringify(to)} with one replace`, () => {
++        assert.deepEqual(patchTurning(from, to), [{ op: 'replace', path: '', value: to }]);
++      });
++    }
++  });
++
++  describe('the members of an object', () => {
++    it('adds a member the first document has not got', () => {
++      assert.deepEqual(patchTurning({ a: 1 }, { a: 1, b: 2 }), [
++        { op: 'add', path: '/b', value: 2 },
++      ]);
++    });
++
++    it('removes a member the second document has not got', () => {
++      assert.deepEqual(patchTurning({ a: 1, b: 2 }, { a: 1 }), [{ op: 'remove', path: '/b' }]);
++    });
++
++    it('replaces a member whose value changed', () => {
++      assert.deepEqual(patchTurning({ a: 1, b: 2 }, { a: 1, b: 3 }), [
++        { op: 'replace', path: '/b', value: 3 },
++      ]);
++    });
++
++    it('sets a member to null, which a merge patch could not', () => {
++      assert.deepEqual(patchTurning({ a: 1 }, { a: null }), [
++        { op: 'replace', path: '/a', value: null },
++      ]);
++    });
++
++    it('tells a member that is null from one that is absent', () => {
++      assert.deepEqual(patchTurning({ a: null }, {}), [{ op: 'remove', path: '/a' }]);
++      assert.deepEqual(patchTurning({}, { a: null }), [{ op: 'add', path: '/a', value: null }]);
++    });
++
++    it('descends into a nested object instead of replacing it', () => {
++      const from: JsonValue = { a: { b: { c: 1, d: 2 }, e: 3 } };
++      const to: JsonValue = { a: { b: { c: 9, d: 2 }, e: 3 } };
++
++      assert.deepEqual(patchTurning(from, to), [{ op: 'replace', path: '/a/b/c', value: 9 }]);
++    });
++
++    it('creates a nested object as one value, not member by member', () => {
++      assert.deepEqual(patchTurning({}, { a: { b: { c: 1 } } }), [
++        { op: 'add', path: '/a', value: { b: { c: 1 } } },
++      ]);
++    });
++
++    it('names the members in a fixed order, whatever order the documents list them in', () => {
++      const expected: JsonPatch = [
++        { op: 'remove', path: '/a' },
++        { op: 'add', path: '/b', value: 2 },
++        { op: 'replace', path: '/c', value: 4 },
++      ];
++
++      assert.deepEqual(patchTurning({ c: 3, a: 1 }, { c: 4, b: 2 }), expected);
++      assert.deepEqual(patchTurning({ a: 1, c: 3 }, { b: 2, c: 4 }), expected);
++    });
++
++    it('escapes the member names that a JSON Pointer escapes', () => {
++      assert.deepEqual(patchTurning({ 'a/b': 1, 'c~d': 1 }, { 'a/b': 2, 'c~d': 2 }), [
++        { op: 'replace', path: '/a~1b', value: 2 },
++        { op: 'replace', path: '/c~0d', value: 2 },
++      ]);
++    });
++
++    it('points at a member named with the empty string', () => {
++      assert.deepEqual(patchTurning({ '': 1 }, { '': 2 }), [{ op: 'replace', path: '/', value: 2 }]);
++    });
++
++    it('points at a member named "-", which is a name and not an array position', () => {
++      assert.deepEqual(patchTurning({ '-': 1 }, { '-': 2 }), [
++        { op: 'replace', path: '/-', value: 2 },
++      ]);
++    });
++
++    it('treats a member named "__proto__" as an ordinary member', () => {
++      const to = JSON.parse('{"__proto__": {"a": 1}}') as JsonObject;
++      const patch = patchTurning({}, to);
++
++      assert.deepEqual(patch, [{ op: 'add', path: '/__proto__', value: { a: 1 } }]);
++      const result = applyPatch({}, patch) as JsonObject;
++      assert.deepEqual(Object.getPrototypeOf(result), Object.prototype);
++      assert.deepEqual(Object.keys(result), ['__proto__']);
++    });
++
++    it('treats a name JavaScript keeps on Object.prototype as an ordinary member', () => {
++      assert.deepEqual(patchTurning({}, { toString: 'x' }), [
++        { op: 'add', path: '/toString', value: 'x' },
++      ]);
++      assert.deepEqual(patchTurning({ toString: 'x' }, {}), [{ op: 'remove', path: '/toString' }]);
++    });
++  });
++
++  describe('the elements of an array', () => {
++    it('appends an element at the end of the array', () => {
++      assert.deepEqual(patchTurning([1, 2], [1, 2, 3]), [{ op: 'add', path: '/-', value: 3 }]);
++    });
++
++    it('appends several elements at the end of the array', () => {
++      assert.deepEqual(patchTurning([1], [1, 2, 3]), [
++        { op: 'add', path: '/-', value: 2 },
++        { op: 'add', path: '/-', value: 3 },
++      ]);
++    });
++
++    it('inserts an element at the front of the array', () => {
++      assert.deepEqual(patchTurning([1, 2, 3], [0, 1, 2, 3]), [
++        { op: 'add', path: '/0', value: 0 },
++      ]);
++    });
++
++    it('inserts an element in the middle of the array', () => {
++      assert.deepEqual(patchTurning([1, 2, 3], [1, 2, 9, 3]), [
++        { op: 'add', path: '/2', value: 9 },
++      ]);
++    });
++
++    it('removes an element from the front of the array', () => {
++      assert.deepEqual(patchTurning([0, 1, 2, 3], [1, 2, 3]), [{ op: 'remove', path: '/0' }]);
++    });
++
++    it('removes an element from the middle of the array', () => {
++      assert.deepEqual(patchTurning([1, 2, 3], [1, 3]), [{ op: 'remove', path: '/1' }]);
++    });
++
++    it('removes the last element of the array', () => {
++      assert.deepEqual(patchTurning([1, 2, 3], [1, 2]), [{ op: 'remove', path: '/2' }]);
++    });
++
++    it('removes several elements, naming the index each removal leaves behind', () => {
++      assert.deepEqual(patchTurning([1, 2, 3, 4], [1, 4]), [
++        { op: 'remove', path: '/1' },
++        { op: 'remove', path: '/1' },
++      ]);
++    });
++
++    it('replaces an element that changed', () => {
++      assert.deepEqual(patchTurning([1, 2, 3], [1, 9, 3]), [
++        { op: 'replace', path: '/1', value: 9 },
++      ]);
++    });
++
++    it('descends into an element instead of replacing it', () => {
++      const from: JsonValue = [{ id: 'a', count: 1 }, { id: 'b', count: 2 }];
++      const to: JsonValue = [{ id: 'a', count: 1 }, { id: 'b', count: 3 }];
++
++      assert.deepEqual(patchTurning(from, to), [{ op: 'replace', path: '/1/count', value: 3 }]);
++    });
++
++    it('does not rewrite the elements an insertion shifted', () => {
++      const from: JsonValue = ['a', 'b', 'c', 'd', 'e', 'f'];
++      const to: JsonValue = ['z', 'a', 'b', 'c', 'd', 'e', 'f'];
++
++      assert.deepEqual(patchTurning(from, to), [{ op: 'add', path: '/0', value: 'z' }]);
++    });
++
++    it('combines a removal, a shift and a change in one patch', () => {
++      const from: JsonValue = [
++        { id: 'a', n: 1 },
++        { id: 'b', n: 2 },
++        { id: 'c', n: 3 },
++      ];
++      const to: JsonValue = [
++        { id: 'b', n: 2 },
++        { id: 'c', n: 30 },
++      ];
++
++      assert.deepEqual(patchTurning(from, to), [
++        { op: 'remove', path: '/0' },
++        { op: 'replace', path: '/1/n', value: 30 },
++      ]);
++    });
++
++    it('keeps the elements that moved rather than resending them', () => {
++      const from: JsonValue = [1, 2, 3, 4, 5, 6, 7, 8];
++      const to: JsonValue = [2, 3, 4, 5, 6, 7, 8, 9];
++      const patch = patchTurning(from, to);
++
++      assert.deepEqual(patch, [{ op: 'remove', path: '/0' }, { op: 'add', path: '/-', value: 9 }]);
++    });
++
++    it('handles equal elements that appear more than once', () => {
++      assert.deepEqual(patchTurning(['a', 'a', 'a'], ['a', 'a']), [{ op: 'remove', path: '/2' }]);
++      assert.deepEqual(patchTurning(['a', 'a'], ['a', 'a', 'a']), [
++        { op: 'add', path: '/-', value: 'a' },
++      ]);
++    });
++
++    it('descends into an array nested in an array', () => {
++      assert.deepEqual(patchTurning([[1, 2], [3]], [[1, 2], [3, 4]]), [
++        { op: 'add', path: '/1/-', value: 4 },
++      ]);
++    });
++
++    it('replaces an element whose kind changed', () => {
++      assert.deepEqual(patchTurning([{ a: 1 }], [[1]]), [{ op: 'replace', path: '/0', value: [1] }]);
++    });
++
++    it('empties an array element by element', () => {
++      assert.deepEqual(patchTurning([1, 2], []), [
++        { op: 'remove', path: '/0' },
++        { op: 'remove', path: '/0' },
++      ]);
++    });
++
++    it('fills an empty array element by element', () => {
++      assert.deepEqual(patchTurning([], [1, 2]), [
++        { op: 'add', path: '/-', value: 1 },
++        { op: 'add', path: '/-', value: 2 },
++      ]);
++    });
++  });
++
++  describe('the patch it returns', () => {
++    it('carries nothing the two documents have in common', () => {
++      const shared: JsonValue = {
++        description: 'a long value that has not changed and must not be sent again',
++        items: [1, 2, 3, 4, 5],
++      };
++
++      assert.deepEqual(patchTurning({ shared, counter: 1 }, { shared, counter: 2 }), [
++        { op: 'replace', path: '/counter', value: 2 },
++      ]);
++    });
++
++    it('uses add, remove and replace, and no other operation', () => {
++      const from: JsonValue = {
++        kept: { a: 1 },
++        moved: { b: 2 },
++        list: [{ c: 3 }, { d: 4 }],
++        gone: 5,
++      };
++      const to: JsonValue = {
++        kept: { a: 1 },
++        elsewhere: { b: 2 },
++        list: [{ d: 4 }, { c: 3 }],
++        added: 6,
++      };
++
++      for (const operation of patchTurning(from, to)) {
++        assert.ok(
++          operation.op === 'add' || operation.op === 'remove' || operation.op === 'replace',
++          `unexpected operation ${JSON.stringify(operation.op)}`,
++        );
++      }
++    });
++
++    it('is a JSON document itself, ready to be sent as one', () => {
++      const patch = createPatch({ a: 1 }, { a: 2, b: [null, { c: 'd' }] });
++
++      assert.deepEqual(JSON.parse(JSON.stringify(patch)) as JsonValue, patch as unknown as JsonValue);
++    });
++
++    it('is the same patch every time, for the same two documents', () => {
++      const from: JsonValue = { a: [1, 2, 3], b: { c: 1 }, d: 1 };
++      const to: JsonValue = { a: [1, 9, 3, 4], b: {}, e: 2 };
++
++      assert.deepEqual(createPatch(from, to), createPatch(from, to));
++    });
++  });
++
++  describe('the documents it was given', () => {
++    it('leaves both of them alone', () => {
++      const from: JsonObject = { a: 1, b: { c: [1, 2] } };
++      const to: JsonObject = { a: 2, b: { c: [1] }, d: 3 };
++
++      patchTurning(from, to);
++
++      assert.deepEqual(from, { a: 1, b: { c: [1, 2] } });
++      assert.deepEqual(to, { a: 2, b: { c: [1] }, d: 3 });
++    });
++
++    it('shares nothing with the second document', () => {
++      const to: JsonObject = { added: { deep: [1] } };
++      const patch = createPatch({}, to);
++      const serialised = JSON.stringify(patch);
++
++      ((to['added'] as JsonObject)['deep'] as JsonArray).push(2);
++
++      assert.equal(JSON.stringify(patch), serialised);
++    });
++
++    it('cannot be changed by changing the patch afterwards', () => {
++      const to: JsonObject = { added: { deep: 1 } };
++      const patch = createPatch({}, to);
++
++      operationValue(patch[0])['deep'] = 99;
++
++      assert.deepEqual(to, { added: { deep: 1 } });
++    });
++  });
++
++  describe('a document that is not a JSON value', () => {
++    const foreign: ReadonlyArray<readonly [string, unknown]> = [
++      ['undefined', undefined],
++      ['a function', () => 1],
++      ['NaN', Number.NaN],
++      ['an infinity', Number.POSITIVE_INFINITY],
++      ['a Date', new Date(0)],
++      ['a symbol', Symbol('s')],
++      ['a bigint', 10n],
++      ['a hole in a sparse array', [1, , 3]],
++      ['an object with a prototype of its own', Object.create({ inherited: 1 })],
++    ];
++
++    for (const [what, value] of foreign) {
++      it(`refuses ${what} in the first document, naming it`, () => {
++        assert.throws(
++          () => createUntyped({ a: value }, { a: 1 }),
++          (error: unknown) => {
++            assert.ok(error instanceof TypeError);
++            assert.match(error.message, /^the "from" document is not a JSON value: /);
++            assert.ok(error.cause instanceof TypeError);
++            return true;
++          },
++        );
++      });
++
++      it(`refuses ${what} in the second document, naming it`, () => {
++        assert.throws(
++          () => createUntyped({ a: 1 }, { a: value }),
++          (error: unknown) => {
++            assert.ok(error instanceof TypeError);
++            assert.match(error.message, /^the "to" document is not a JSON value: /);
++            return true;
++          },
++        );
++      });
++    }
++
++    it('refuses a cycle', () => {
++      const cyclic: Record<string, unknown> = {};
++      cyclic['self'] = cyclic;
++
++      assert.throws(() => createUntyped({}, cyclic), TypeError);
++    });
++
++    it('refuses it even when the other document would have answered the question', () => {
++      // The data model is checked whatever the two documents turn out to be, so
++      // a caller hears about a document the toolkit cannot hold even when the
++      // diff would not have looked at the value in it.
++      assert.throws(() => createUntyped({ a: undefined }, 1), TypeError);
++      assert.throws(() => createUntyped(1, { a: undefined }), TypeError);
++    });
++  });
++
++  describe('documents of every shape, turned into one another', () => {
++    const documents: readonly JsonValue[] = [
++      null,
++      0,
++      1,
++      -1.5,
++      '',
++      'text',
++      true,
++      false,
++      {},
++      [],
++      { a: 1 },
++      { a: null },
++      { a: 1, b: 2 },
++      { b: 2, a: 1 },
++      { a: { b: 1 } },
++      { a: { b: 2 } },
++      { a: [] },
++      { a: [1] },
++      { a: [1, 2] },
++      { a: [2, 1] },
++      [1],
++      [1, 2],
++      [2, 1],
++      [1, 2, 3],
++      [{ a: 1 }],
++      [{ a: 2 }],
++      [{ a: 1 }, { b: 2 }],
++      [[1], [2]],
++      { users: [{ id: 1, tags: ['a'] }, { id: 2, tags: [] }], count: 2 },
++      { users: [{ id: 2, tags: ['a', 'b'] }], count: 1 },
++      { '': { '/': ['~'] } },
++    ];
++
++    for (const from of documents) {
++      it(`turns ${JSON.stringify(from)} into any of the others`, () => {
++        for (const to of documents) {
++          const patch = createPatch(from, to);
++          assert.deepEqual(
++            applyPatch(from, patch),
++            to,
++            `${JSON.stringify(from)} + ${JSON.stringify(patch)} is not ${JSON.stringify(to)}`,
++          );
++        }
++      });
++    }
++  });
++});

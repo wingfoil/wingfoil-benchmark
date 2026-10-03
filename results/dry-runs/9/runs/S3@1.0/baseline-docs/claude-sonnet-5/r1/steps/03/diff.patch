@@ -1,0 +1,104 @@
+diff --git a/README.md b/README.md
+index a861938ad93aeed914f1a36519fadbb2a59dfe27..c66feec5d4cfa489e369ffeda528b49a6bd358c9 100644
+--- a/README.md
++++ b/README.md
+@@ -11,6 +11,8 @@ of its booking desk, written in TypeScript with no runtime dependency.
+ - `addEquipment({ id, kind, dailyPrice })` registers a board or sail, priced per day in euro cents.
+ - `quote({ itemId, start, end })` returns the cost of renting an item for a period, without booking it.
+ - `book({ itemId, start, end })` books the item for the period and returns the booking, including its id.
++- A rental of 3 days or more costs 10% less than its full price, rounded to the nearest cent. Both
++  `quote` and `book` return the reduced total.
+ - `availability({ start, end, kind })` returns the sorted ids of the equipment of `kind`, or of any kind
+   when `kind` is omitted, that is free for the whole period.
+ 
+diff --git a/src/index.ts b/src/index.ts
+index dff4e557e27bd6b0b3be7b18a272dae4bf068be9..8135fbcacc91e4664a56ad234f1ed07423b1c8d9 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -1,4 +1,6 @@
+ const MS_PER_DAY = 24 * 60 * 60 * 1000;
++const LONG_RENTAL_DISCOUNT_DAYS = 3;
++const LONG_RENTAL_DISCOUNT_RATE = 0.1;
+ 
+ /** The kind of equipment the school rents out. */
+ export type EquipmentKind = 'board' | 'sail';
+@@ -108,6 +110,15 @@ function assertValidEquipment(item: Equipment): void {
+   }
+ }
+ 
++/** Rentals of 3 days or more cost 10% less than their full price, rounded to the nearest cent. */
++function priceForDays(dailyPrice: number, days: number): number {
++  const fullPrice = dailyPrice * days;
++  if (days < LONG_RENTAL_DISCOUNT_DAYS) {
++    return fullPrice;
++  }
++  return Math.round(fullPrice * (1 - LONG_RENTAL_DISCOUNT_RATE));
++}
++
+ function parsePeriod(start: string, end: string): { startMs: number; endMs: number; days: number } {
+   const startMs = parseMidnightUtc(start, 'start');
+   const endMs = parseMidnightUtc(end, 'end');
+@@ -138,7 +149,7 @@ export function createRentalService(): RentalService {
+   function priceRequest(request: RentalRequest): { startMs: number; endMs: number; total: number } {
+     const item = getEquipment(request.itemId);
+     const { startMs, endMs, days } = parsePeriod(request.start, request.end);
+-    return { startMs, endMs, total: item.dailyPrice * days };
++    return { startMs, endMs, total: priceForDays(item.dailyPrice, days) };
+   }
+ 
+   function isFreeFor(itemId: string, startMs: number, endMs: number): boolean {
+diff --git a/test/rental-service.test.ts b/test/rental-service.test.ts
+index afaa08966ad60ddd16bcd0f90135729aeb17682d..a58b4c80e1e551be7f20a759c2b71768298318cf 100644
+--- a/test/rental-service.test.ts
++++ b/test/rental-service.test.ts
+@@ -6,13 +6,13 @@ test('quotes a rental at the daily price for the number of days', () => {
+   const service = createRentalService();
+   service.addEquipment({ id: 'board-1', kind: 'board', dailyPrice: 1500 });
+ 
+-  const quote = service.quote({ itemId: 'board-1', start: '2024-06-01', end: '2024-06-04' });
++  const quote = service.quote({ itemId: 'board-1', start: '2024-06-01', end: '2024-06-03' });
+ 
+   assert.deepEqual(quote, {
+     itemId: 'board-1',
+     start: '2024-06-01',
+-    end: '2024-06-04',
+-    total: 4500,
++    end: '2024-06-03',
++    total: 3000,
+   });
+ });
+ 
+@@ -36,6 +36,33 @@ test('quote throws for an unknown item', () => {
+   assert.throws(() => service.quote({ itemId: 'missing', start: '2024-06-01', end: '2024-06-02' }));
+ });
+ 
++test('quote applies a 10% discount for a rental of 3 days or more', () => {
++  const service = createRentalService();
++  service.addEquipment({ id: 'board-1', kind: 'board', dailyPrice: 1500 });
++
++  const quote = service.quote({ itemId: 'board-1', start: '2024-06-01', end: '2024-06-04' });
++
++  assert.equal(quote.total, 4050);
++});
++
++test('quote rounds the discounted total to the nearest cent', () => {
++  const service = createRentalService();
++  service.addEquipment({ id: 'sail-1', kind: 'sail', dailyPrice: 1999 });
++
++  const quote = service.quote({ itemId: 'sail-1', start: '2024-06-01', end: '2024-06-04' });
++
++  assert.equal(quote.total, 5397);
++});
++
++test('book applies a 10% discount for a rental of 3 days or more', () => {
++  const service = createRentalService();
++  service.addEquipment({ id: 'board-1', kind: 'board', dailyPrice: 1500 });
++
++  const booking = service.book({ itemId: 'board-1', start: '2024-06-01', end: '2024-06-04' });
++
++  assert.equal(booking.total, 4050);
++});
++
+ test('book throws for an unknown item', () => {
+   const service = createRentalService();
+ 

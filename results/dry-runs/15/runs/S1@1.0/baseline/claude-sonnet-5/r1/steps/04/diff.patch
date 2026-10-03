@@ -1,0 +1,141 @@
+diff --git a/src/index.ts b/src/index.ts
+index 8fd99c5150fb829cccb2161eac872b19edb19e2e..27a7980a651fcc98a9a9be8b3bb6c4f6c173dfa0 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -260,3 +260,25 @@ function deepEqual(a: unknown, b: unknown): boolean {
+ function isPlainObject(value: unknown): value is Record<string, unknown> {
+   return value !== null && typeof value === 'object' && !Array.isArray(value);
+ }
++
++/**
++ * Applies a JSON Merge Patch (RFC 7386) to a target JSON document and
++ * returns the merged document. Neither `target` nor `patch` is mutated.
++ */
++export function applyMergePatch(target: unknown, patch: unknown): unknown {
++  if (!isPlainObject(patch)) {
++    return structuredClone(patch);
++  }
++
++  const result: Record<string, unknown> = isPlainObject(target) ? structuredClone(target) : {};
++
++  for (const [key, value] of Object.entries(patch)) {
++    if (value === null) {
++      delete result[key];
++    } else {
++      setMember(result, key, applyMergePatch(result[key], value));
++    }
++  }
++
++  return result;
++}
+diff --git a/src/merge-patch.test.ts b/src/merge-patch.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..efe4ef7d6502086b8566b099fdbf60794bee0383
+--- /dev/null
++++ b/src/merge-patch.test.ts
+@@ -0,0 +1,105 @@
++import { test } from 'node:test';
++import assert from 'node:assert/strict';
++import { applyMergePatch } from './index.ts';
++
++// Examples from RFC 7386, appendix A.
++
++test('A. add a member', () => {
++  assert.deepEqual(applyMergePatch({ a: 'b' }, { a: 'c' }), { a: 'c' });
++});
++
++test('A. add a new member', () => {
++  assert.deepEqual(applyMergePatch({ a: 'b' }, { b: 'c' }), { a: 'b', b: 'c' });
++});
++
++test('A. remove a member via null', () => {
++  assert.deepEqual(applyMergePatch({ a: 'b' }, { a: null }), {});
++});
++
++test('A. remove one of several members', () => {
++  assert.deepEqual(applyMergePatch({ a: 'b', b: 'c' }, { a: null }), { b: 'c' });
++});
++
++test('A. replace an array wholesale with a scalar', () => {
++  assert.deepEqual(applyMergePatch({ a: ['b'] }, { a: 'c' }), { a: 'c' });
++});
++
++test('A. replace a scalar wholesale with an array', () => {
++  assert.deepEqual(applyMergePatch({ a: 'c' }, { a: ['b'] }), { a: ['b'] });
++});
++
++test('A. merges nested objects and removes a nested member', () => {
++  const target = { a: { b: 'c' } };
++  const patch = { a: { b: 'd', c: null } };
++  assert.deepEqual(applyMergePatch(target, patch), { a: { b: 'd' } });
++});
++
++test('A. arrays are replaced wholesale, not merged element-wise', () => {
++  const target = { a: [{ b: 'c' }] };
++  const patch = { a: [1] };
++  assert.deepEqual(applyMergePatch(target, patch), { a: [1] });
++});
++
++test('A. an array patch at the root replaces the whole document', () => {
++  assert.deepEqual(applyMergePatch(['a', 'b'], ['c', 'd']), ['c', 'd']);
++});
++
++test('A. an array patch replaces an object target entirely', () => {
++  assert.deepEqual(applyMergePatch({ a: 'b' }, ['c']), ['c']);
++});
++
++test('A. a null patch at the root yields null', () => {
++  assert.equal(applyMergePatch({ a: 'foo' }, null), null);
++});
++
++test('A. a scalar patch at the root replaces the whole document', () => {
++  assert.equal(applyMergePatch({ a: 'foo' }, 'bar'), 'bar');
++});
++
++test('A. a null member in the target is left alone, unrelated member added', () => {
++  assert.deepEqual(applyMergePatch({ e: null }, { a: 1 }), { e: null, a: 1 });
++});
++
++test('A. an array target is replaced entirely by an object patch', () => {
++  assert.deepEqual(applyMergePatch([1, 2], { a: 'b', c: null }), { a: 'b' });
++});
++
++test('A. building up a nested object from an empty target', () => {
++  assert.deepEqual(applyMergePatch({}, { a: { bb: {} } }), { a: { bb: {} } });
++});
++
++test('does not mutate the input target or patch', () => {
++  const target = { a: { b: [1, 2, 3] }, c: 'keep' };
++  const patch = { a: { d: 'added' }, c: null };
++  const targetSnapshot = structuredClone(target);
++  const patchSnapshot = structuredClone(patch);
++
++  applyMergePatch(target, patch);
++
++  assert.deepEqual(target, targetSnapshot);
++  assert.deepEqual(patch, patchSnapshot);
++});
++
++test('does not alias nested values from the patch', () => {
++  const result = applyMergePatch({}, { a: { nested: [1, 2] } }) as any;
++  result.a.nested.push(3);
++  assert.deepEqual(result.a.nested, [1, 2, 3]);
++
++  const again = applyMergePatch({}, { a: { nested: [1, 2] } }) as any;
++  assert.deepEqual(again.a.nested, [1, 2]);
++});
++
++test('does not alias nested values from the target', () => {
++  const nested = [1, 2];
++  const target = { a: nested, b: 'x' };
++  const result = applyMergePatch(target, { b: 'y' }) as any;
++  result.a.push(3);
++  assert.deepEqual(nested, [1, 2]);
++});
++
++test('ignores prototype pollution attempts via "__proto__"', () => {
++  const result = applyMergePatch({}, JSON.parse('{"__proto__": {"polluted": true}}')) as any;
++  assert.equal(({} as any).polluted, undefined);
++  assert.equal(Object.prototype.hasOwnProperty.call(result, '__proto__'), true);
++  assert.deepEqual(result.__proto__, { polluted: true });
++});

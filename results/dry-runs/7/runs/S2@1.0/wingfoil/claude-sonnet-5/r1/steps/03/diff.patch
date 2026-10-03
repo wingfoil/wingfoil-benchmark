@@ -1,0 +1,113 @@
+diff --git a/docs/memory/task/task-005-fix-single-use-coupon-not-returned-on-cancel-confirm-free-shipping-at-50-already-fixed.md b/docs/memory/task/task-005-fix-single-use-coupon-not-returned-on-cancel-confirm-free-shipping-at-50-already-fixed.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..a7e14f067b342bf6d5492eb167615b0dae1bdfc8
+--- /dev/null
++++ b/docs/memory/task/task-005-fix-single-use-coupon-not-returned-on-cancel-confirm-free-shipping-at-50-already-fixed.md
+@@ -0,0 +1,65 @@
++---
++id: task-005-fix-single-use-coupon-not-returned-on-cancel-confirm-free-shipping-at-50-already-fixed
++type: task
++title: "fix single-use coupon not returned on cancel; confirm free-shipping-at-50 already fixed"
++status: pending
++---
++
++Two reports came in about the order service. Handled each against the business rules in
++`README.md`.
++
++## 1. Customer (Paolo): one-time welcome code refused as already used, after cancelling and
++   reordering
++
++Paolo placed an order with his single-use welcome coupon, cancelled it the same day (wrong size),
++then placed a corrected order with the same code — refused as already used.
++
++Cause: `OrderService.cancel` in `src/orders.ts` called `this.#coupons.giveBack(order.coupon,
++order.customer)`, passing the *customer's name*. But `Coupons.use` (called from `OrderService.place`)
++records usage keyed by the *order id* (`this.#usedBy.set(coupon.code, order)` where `order` is the
++order id passed in as `id`). `Coupons.giveBack` only releases the coupon when its stored value matches
++the identifier passed in (`this.#usedBy.get(canonical) === order`), so passing the customer name
++instead of the order id never matched, and a cancelled order's single-use coupon was never freed —
++contradicting the README ("Cancelling it returns its units and gives back its coupon, if the coupon
++was single-use.").
++
++Fix: `src/orders.ts` — `cancel()` now calls `this.#coupons.giveBack(order.coupon, order.id)`, matching
++the identifier `use()` stores.
++
++Test added: `test/coupons.test.ts` — "gives a single-use coupon back when the order that used it is
++cancelled, so it can be used again": places an order with a single-use coupon, cancels it, asserts
++`coupons.usedBy(...)` is `undefined`, then places a second order with the same coupon and asserts the
++discount applies. Red before the fix (coupon stayed marked as used), green after.
++
++## 2. Support: customer charged €4.90 delivery on an order whose goods came to exactly €50.00
++
++Investigated against `src/shipping.ts` (`shippingCost`) and `src/pricing.ts` (`goodsCents`), which
++together implement the README's free-shipping rule ("goods come to €50.00 or more, after every
++discount and before VAT").
++
++Finding: this exact boundary bug already exists as task-002
++(`docs/memory/task/task-002-fix-free-shipping-boundary-at-exactly-50-euro.md`) and was already fixed
++in an earlier change to `src/shipping.ts` (`goods >= FREE_SHIPPING_FROM_CENTS`, not `>`), with a
++passing regression test in `test/orders.test.ts` ("ships free when the goods come to exactly the
++free-shipping amount"). `npm test` confirms this test currently passes.
++
++I also checked the case this new report doesn't rule out — a coupon bringing the goods down to
++exactly €50.00, rather than no discount at all — since coupon proration (`allocate` in `src/money.ts`)
++could in principle introduce a rounding mismatch at the boundary. It doesn't: `allocate` guarantees its
++shares sum to the coupon total exactly, so `goodsCents` (gross − volume discount − coupon) lands on
++exactly the same value whether or not a coupon is involved. Confirmed with a probe and added as a
++regression test: `test/coupons.test.ts` — "ships free when a coupon brings the goods down to exactly
++the free-shipping amount" (6 × €10.00 mug with a €10.00 fixed coupon = exactly €50.00 of goods).
++Characterization test: it already passed before this change, confirming the behaviour the customer is
++missing is not currently reproducible.
++
++No change made to `src/shipping.ts` or `src/pricing.ts` for this report: the code already matches the
++README. The customer-facing answer is that this should already be fixed; if she was charged on an
++order placed before the earlier fix shipped, that explains the one-off charge, and placing the same
++order today would ship free. If support can get the order date or ID, that would confirm whether it
++predates the fix or whether something else is going on that this investigation didn't reproduce.
++
++## Verification
++
++`npm test` — 21/21 passing (1 new test was red before the `src/orders.ts` fix, green after; 1 new
++test for report 2 was green before and after, as expected for already-fixed behaviour).
+diff --git a/src/orders.ts b/src/orders.ts
+index 0c0b1ae889c9df13dffa9de7ed1924a4e8b09afd..a029a93fd6f94a43d5ecd351af29cda4d205ab99 100644
+--- a/src/orders.ts
++++ b/src/orders.ts
+@@ -153,7 +153,7 @@ export class OrderService {
+       throw new OrderStateError(`order ${id} can no longer be cancelled`);
+     }
+     for (const line of order.lines) this.#inventory.release(line.sku, line.quantity, id);
+-    if (order.coupon !== undefined) this.#coupons.giveBack(order.coupon, order.customer);
++    if (order.coupon !== undefined) this.#coupons.giveBack(order.coupon, order.id);
+     const cancelled: Order = { ...order, status: 'cancelled', cancelledOn: date };
+     this.#orders.set(id, cancelled);
+     return cancelled;
+diff --git a/test/coupons.test.ts b/test/coupons.test.ts
+index 33526f9a5782798601e3be607fd90621dd4eacb6..ac81e7bba17ed9a884fa442e5b395b80685d7bcf 100644
+--- a/test/coupons.test.ts
++++ b/test/coupons.test.ts
+@@ -57,4 +57,24 @@ describe('coupons', () => {
+     assert.equal(coupons.usedBy('ONCE'), 'ORD-0001');
+     assert.throws(() => orders.place({ customer: 'c-2', date: '2026-05-05', lines: [{ sku: 'PEN-4', quantity: 1 }], coupon: 'ONCE' }), CouponError);
+   });
++
++  it('ships free when a coupon brings the goods down to exactly the free-shipping amount', () => {
++    const { catalog, orders, coupons, inventory } = shop();
++    catalog.add({ sku: 'MUG-01', name: 'Enamel mug', priceCents: 1000, vatClass: 'standard', weightGrams: 300 });
++    inventory.restock('MUG-01', 20);
++    coupons.add({ code: 'FIX1000', kind: 'fixed', value: 1000, validFrom: '2026-01-01', validUntil: '2026-12-31' });
++    const order = orders.place({ customer: 'c-1', date: '2026-03-02', lines: [{ sku: 'MUG-01', quantity: 6 }], coupon: 'FIX1000' });
++    assert.equal(order.totals.goodsCents, 5000);
++    assert.equal(order.totals.shippingCents, 0);
++  });
++
++  it('gives a single-use coupon back when the order that used it is cancelled, so it can be used again', () => {
++    const { orders, coupons } = shop();
++    coupons.add({ code: 'WELCOME', kind: 'fixed', value: 100, validFrom: '2026-01-01', validUntil: '2026-12-31', singleUse: true });
++    const first = orders.place({ customer: 'c-1', date: '2026-05-05', lines: [{ sku: 'PEN-4', quantity: 1 }], coupon: 'WELCOME' });
++    orders.cancel(first.id, '2026-05-05');
++    assert.equal(coupons.usedBy('WELCOME'), undefined);
++    const second = orders.place({ customer: 'c-1', date: '2026-05-05', lines: [{ sku: 'PEN-4', quantity: 1 }], coupon: 'WELCOME' });
++    assert.equal(second.totals.couponDiscountCents, 100);
++  });
+ });

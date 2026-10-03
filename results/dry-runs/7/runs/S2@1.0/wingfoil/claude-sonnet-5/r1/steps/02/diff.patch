@@ -1,0 +1,160 @@
+diff --git a/docs/memory/decision-log/dl-001-keep-vat-on-shipping-anna-s-report-is-not-a-bug.md b/docs/memory/decision-log/dl-001-keep-vat-on-shipping-anna-s-report-is-not-a-bug.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..c558a665836c1c23ef4d240bc28a6c0464796917
+--- /dev/null
++++ b/docs/memory/decision-log/dl-001-keep-vat-on-shipping-anna-s-report-is-not-a-bug.md
+@@ -0,0 +1,38 @@
++---
++id: dl-001-keep-vat-on-shipping-anna-s-report-is-not-a-bug
++type: decision-log
++title: "keep VAT on shipping; Anna's report is not a bug"
++status: pending
++---
++
++## Context
++
++A customer, Anna, reported that her receipt charges VAT on delivery (€1.08 on €4.90 of shipping) and
++argued that delivery is a service, not goods, so it should not carry VAT. This arrived alongside two
++genuine bugs (coupon/volume-discount stacking, inclusive coupon expiry), bundled as one batch of
++"reports about the order service".
++
++`README.md` (the authoritative business rules for this service) states explicitly: "Shipping is
++subject to VAT at the standard rate (22%), shown on its own line of the receipt," and "The order total
++is goods + shipping + VAT on goods + VAT on shipping." The code (`src/tax.ts: shippingVat`,
++`src/pricing.ts`) implements exactly this, and it is already covered by an existing passing test
++(`test/orders.test.ts`, "prices a small order"). €4.90 × 22% = €1.078, which rounds half up to €1.08 —
++precisely the amount Anna saw.
++
++## Decision
++
++Treat Anna's report as a mismatch between her expectation and the documented, intentional business
++rule, not as a defect. No code change was made for this report. The repository instructs that when
++code and the README disagree the README is right; here code and README agree with each other, so there
++is nothing to reconcile unilaterally.
++
++## Consequences
++
++- No change to `src/tax.ts` or `src/pricing.ts` for this report; existing tests continue to cover the
++  behaviour.
++- Whether delivery should in fact be VAT-exempt is a tax/product policy question (and may have a real
++  legal answer depending on jurisdiction), not something to decide inside a bug-fix task. If the
++  business wants to change this, it needs a deliberate rule change to the README's VAT section plus a
++  corresponding code change, not a silent fix.
++- The customer-facing answer is: the current VAT treatment of shipping is correct per policy, not an
++  error on the order.
+diff --git a/docs/memory/task/task-004-fix-coupon-stacking-order-and-inclusive-coupon-expiry-clarify-shipping-vat-is-by-design.md b/docs/memory/task/task-004-fix-coupon-stacking-order-and-inclusive-coupon-expiry-clarify-shipping-vat-is-by-design.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..6fe08e35bf85c78e75e313d1e67020cf395025ed
+--- /dev/null
++++ b/docs/memory/task/task-004-fix-coupon-stacking-order-and-inclusive-coupon-expiry-clarify-shipping-vat-is-by-design.md
+@@ -0,0 +1,54 @@
++---
++id: task-004-fix-coupon-stacking-order-and-inclusive-coupon-expiry-clarify-shipping-vat-is-by-design
++type: task
++title: "fix coupon stacking order and inclusive coupon expiry; clarify shipping VAT is by design"
++status: pending
++---
++
++Three reports came in about the order service. Handled each against the business rules in
++`README.md`.
++
++## 1. Finance: volume discount + percentage coupon gives too much off
++
++12 notebooks at €5.00 with a 10% coupon priced to €48.00 of goods instead of the expected €48.60.
++
++Cause: `priceOrder` in `src/pricing.ts` computed the coupon's percentage on the order's gross total,
++before the volume discount, instead of on the subtotal after volume discounts as the README requires
++("a coupon ... applies to the order's subtotal after volume discounts"). For the example: gross
++€60.00, volume discount €6.00 (10% of €60.00), coupon wrongly taken as 10% of €60.00 = €6.00 instead
++of 10% of €54.00 = €5.40, giving €48.00 instead of €48.60.
++
++Fix: `couponDiscount` is now computed on `grossTotal - volumeTotal` (the post-volume-discount
++subtotal) rather than on `grossTotal`. The 50%-of-gross cap in `capped()` is unchanged, since that cap
++is explicitly on the gross amount.
++
++Test added: `test/coupons.test.ts` — "applies a percentage coupon to the subtotal after volume
++discount, not before", reproducing the finance example (12 units, volume discount, percent coupon)
++and asserting goods come to 4860 cents.
++
++## 2. Customer (Luca): coupon AUTUMN, valid until 30 November, refused as expired on 30 November
++
++Cause: `Coupons.redeemable` in `src/coupons.ts` rejected a coupon when `date >= validUntil`, i.e. on
++the last valid day itself, contradicting the README ("valid from its first day to its last day, both
++included").
++
++Fix: changed the comparison to `date > validUntil` so the last day is accepted.
++
++Test added: `test/coupons.test.ts` — "is valid through its last day, inclusive", placing an order on
++a coupon's `validUntil` date and asserting the coupon discount applies.
++
++## 3. Customer (Anna): VAT charged on shipping (€1.08 on €4.90)
++
++Checked against the README: "Shipping is subject to VAT at the standard rate (22%), shown on its own
++line of the receipt." €4.90 × 22% = €1.078, rounded half up to €1.08 — exactly what Anna saw, and
++exactly what the documented business rule calls for. This is existing, already-tested behaviour
++(`test/orders.test.ts`, "prices a small order"), not a defect.
++
++No code change made for this report. Per the repository's rule that the README is authoritative when
++it and the code disagree, charging VAT on shipping is correct as specified; changing it would require
++a product/business decision to amend the VAT rule itself, which is out of scope for a bug fix and not
++something to decide unilaterally.
++
++## Verification
++
++`npm test` — 19/19 passing (2 new tests were red before the pricing.ts/coupons.ts fixes, green after).
+diff --git a/src/coupons.ts b/src/coupons.ts
+index 4b7df8e652e5d52033abb2ea07d763007ccce283..496aed7828812115eb643d5d3378af00c2d6948f 100644
+--- a/src/coupons.ts
++++ b/src/coupons.ts
+@@ -74,7 +74,7 @@ export class Coupons {
+     const coupon = this.#coupons.get(canonicalCode(code));
+     if (coupon === undefined) throw new CouponError(code, 'unknown code');
+     if (compareDates(date, coupon.validFrom) < 0) throw new CouponError(coupon.code, 'not valid yet');
+-    if (compareDates(date, coupon.validUntil) >= 0) throw new CouponError(coupon.code, 'expired');
++    if (compareDates(date, coupon.validUntil) > 0) throw new CouponError(coupon.code, 'expired');
+     if (amount < coupon.minimumCents) throw new CouponError(coupon.code, 'order below the minimum amount');
+     if (coupon.singleUse && this.#usedBy.has(coupon.code)) throw new CouponError(coupon.code, 'already used');
+     return coupon;
+diff --git a/src/pricing.ts b/src/pricing.ts
+index 3d07b8e66d51d75411d7694eb6b4d79c95913fee..68386f5440526e2099146a17017e42b8f8c592bb 100644
+--- a/src/pricing.ts
++++ b/src/pricing.ts
+@@ -55,8 +55,9 @@ export function priceOrder(inputs: readonly LineInput[], coupon?: Coupon): Price
+   const afterVolume = gross.map((amount, index) => amount - (volume[index] ?? 0));
+   const volumeTotal = sum(volume);
+ 
++  const afterVolumeTotal = grossTotal - volumeTotal;
+   const couponTotal =
+-    coupon === undefined ? 0 : capped(couponDiscount(coupon, grossTotal), volumeTotal, grossTotal);
++    coupon === undefined ? 0 : capped(couponDiscount(coupon, afterVolumeTotal), volumeTotal, grossTotal);
+   const couponShares = allocate(couponTotal, afterVolume);
+ 
+   const lines = inputs.map(({ product, quantity }, index): PricedLine => {
+diff --git a/test/coupons.test.ts b/test/coupons.test.ts
+index 1fdc2519dc031050b1b5593605af611816478518..33526f9a5782798601e3be607fd90621dd4eacb6 100644
+--- a/test/coupons.test.ts
++++ b/test/coupons.test.ts
+@@ -33,6 +33,23 @@ describe('coupons', () => {
+     assert.throws(() => orders.quote({ ...request, date: '2026-04-01' }), CouponError);
+   });
+ 
++  it('applies a percentage coupon to the subtotal after volume discount, not before', () => {
++    const { catalog, orders, inventory } = shop();
++    catalog.add({ sku: 'NTB-1', name: 'Notebook', priceCents: 500, vatClass: 'standard', weightGrams: 150 });
++    inventory.restock('NTB-1', 20);
++    const order = orders.place({ customer: 'c-1', date: '2026-03-15', lines: [{ sku: 'NTB-1', quantity: 12 }], coupon: 'SPRING' });
++    assert.equal(order.totals.volumeDiscountCents, 600);
++    assert.equal(order.totals.couponDiscountCents, 540);
++    assert.equal(order.totals.goodsCents, 4860);
++  });
++
++  it('is valid through its last day, inclusive', () => {
++    const { orders, coupons } = shop();
++    coupons.add({ code: 'AUTUMN', kind: 'percent', value: 10, validFrom: '2026-09-01', validUntil: '2026-11-30' });
++    const order = orders.place({ customer: 'c-1', date: '2026-11-30', lines: [{ sku: 'PEN-4', quantity: 1 }], coupon: 'AUTUMN' });
++    assert.equal(order.totals.couponDiscountCents, 200);
++  });
++
+   it('lets a single-use coupon be used once', () => {
+     const { orders, coupons } = shop();
+     coupons.add({ code: 'ONCE', kind: 'fixed', value: 100, validFrom: '2026-01-01', validUntil: '2026-12-31', singleUse: true });

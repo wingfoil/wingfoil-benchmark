@@ -49,4 +49,8 @@ and the root `runs/` are.
 
 ## Resolution
 
-<!-- Filled by the task that fixes it. -->
+Fixed in [task-050](../task/task-050-calibration-of-v0-1-dry-runs-measured-costs-and-the-revised-budget.md):
+`.gitignore` reads `/runs/`, anchored to the root, with its reason (`315a996`), after a test that fixes the rule —
+a campaign's and a dry run's records under `results/**/runs/` are not ignored, their transcripts and the root
+`runs/` are (`test/unit/results/ignored-files.test.ts`, red `7591845`). Calibration's dry runs are the first run
+records committed (`results/dry-runs/1`–`19`).

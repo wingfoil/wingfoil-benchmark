@@ -44,8 +44,10 @@ function tally(report: SuiteReport): Record<string, number> {
 }
 
 /** The census of each suite (adr-004): what its tests count on any snapshot. */
-const COUNTED = { pointer: 12, patch: 92 + 16, 'merge-patch': 15 };
-const DISABLED = { pointer: 0, patch: 3 + 1, 'merge-patch': 0 };
+const COUNTED = { pointer: 12, patch: 92 + 16, 'merge-patch': 15, 'create-patch': 30 };
+const DISABLED = { pointer: 0, patch: 3 + 1, 'merge-patch': 0, 'create-patch': 0 };
+/** The suites scored up to step 4, before `createPatch` (task-050). */
+const UP_TO_STEP_4 = ['pointer', 'patch', 'merge-patch'] as const;
 
 // The hidden tests really run, one Node process per suite and snapshot: seconds, not milliseconds, and
 // more under a full run's load (as S2's and S3's).
@@ -61,14 +63,15 @@ describe('S1@1.0 (F6.1)', { timeout: 120_000 }, () => {
     expect(scenario.gqm).toEqual(['Q-C1', 'Q-C2', 'Q-D3', 'G-X1', 'G-X2']);
     expect(scenario.capabilities).toEqual([]);
     expect(scenario.holdout).toBe(true);
-    expect(scenario.steps.map((step) => step.n)).toEqual([1, 2, 3, 4]);
+    expect(scenario.steps.map((step) => step.n)).toEqual([1, 2, 3, 4, 5]);
   });
 
-  it('binds Pointer to step 1, Patch to steps 2–4 and Merge Patch to step 4 (§6)', () => {
+  it('binds Pointer to step 1, Patch to steps 2–5, Merge Patch to steps 4–5 and createPatch to step 5 (§6)', () => {
     expect(scenario.oracle.suites.map(({ id, afterSteps }) => ({ id, afterSteps }))).toEqual([
       { id: 'pointer', afterSteps: [1] },
-      { id: 'patch', afterSteps: [2, 3, 4] },
-      { id: 'merge-patch', afterSteps: [4] },
+      { id: 'patch', afterSteps: [2, 3, 4, 5] },
+      { id: 'merge-patch', afterSteps: [4, 5] },
+      { id: 'create-patch', afterSteps: [5] },
     ]);
   });
 
@@ -143,11 +146,40 @@ describe('S1@1.0 (F6.1)', { timeout: 120_000 }, () => {
     expect(three).toMatchObject({ pass: COUNTED.patch, fail: 0 });
   });
 
-  it('passes every suite after the reference step 4: no regression, and Merge Patch', async () => {
+  it('passes every suite up to step 4 after the reference step 4: no regression, and Merge Patch', async () => {
     const snapshot = referenceSnapshot(scenario.seedDir, REFERENCE, 4);
+    for (const id of UP_TO_STEP_4) {
+      expect(tally(await score(scenario, id, snapshot))).toMatchObject({ pass: COUNTED[id], fail: 0 });
+    }
+  });
+
+  it('passes every suite after the reference step 5: no regression, and every createPatch pair (task-050)', async () => {
+    const snapshot = referenceSnapshot(scenario.seedDir, REFERENCE, 5);
     for (const [id, counted] of Object.entries(COUNTED)) {
       expect(tally(await score(scenario, id, snapshot))).toMatchObject({ pass: counted, fail: 0 });
     }
+  });
+
+  it('fails the pairs whose bound a whole-document replace passes, when createPatch replaces the root (P2)', async () => {
+    const snapshot = referenceSnapshot(scenario.seedDir, REFERENCE, 5);
+    const index = join(snapshot, 'src', 'index.ts');
+    writeFileSync(
+      index,
+      readFileSync(index, 'utf8').replace(
+        /export \{ createPatch \} from '\.\/create-patch\.js';/,
+        'export function createPatch(_from: unknown, to: unknown): unknown {\n' +
+          "  return [{ op: 'replace', path: '', value: to }];\n" +
+          '}',
+      ),
+    );
+    const pairs = JSON.parse(
+      readFileSync(join(scenario.dir, 'oracle/create-patch/pairs.json'), 'utf8'),
+    ) as Pair[];
+    const bounded = pairs.filter(
+      (pair) => JSON.stringify([{ op: 'replace', path: '', value: pair.to }]).length > pair.max,
+    );
+    expect(bounded.length).toBeGreaterThanOrEqual(15);
+    expect(tally(await score(scenario, 'create-patch', snapshot)).fail).toBe(bounded.length);
   });
 
   it('fails the Patch cases with a result when applyPatch mutates its input (§4, the non-mutation check)', async () => {
@@ -174,6 +206,11 @@ describe('S1@1.0 (F6.1)', { timeout: 120_000 }, () => {
     expect(tally(await score(scenario, 'patch', snapshot)).fail).toBeGreaterThanOrEqual(mutable);
   });
 });
+
+interface Pair {
+  readonly to: unknown;
+  readonly max: number;
+}
 
 interface Case {
   readonly doc?: unknown;

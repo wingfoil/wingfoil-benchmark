@@ -1,0 +1,153 @@
+diff --git a/src/index.ts b/src/index.ts
+index 97b67d605ba9c3776b9f70bbaaa18176cbf026b1..6dceb77c5bac39d8912b421c14b0bf5bb2ef8a03 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -4,6 +4,7 @@ export interface Equipment {
+   id: string;
+   kind: EquipmentKind;
+   dailyPrice: number;
++  hourlyPrice?: number;
+ }
+ 
+ export interface RentalRequest {
+@@ -33,7 +34,8 @@ export interface AvailabilityQuery {
+   kind?: EquipmentKind;
+ }
+ 
+-const MS_PER_DAY = 24 * 60 * 60 * 1000;
++const MS_PER_HOUR = 60 * 60 * 1000;
++const MS_PER_DAY = 24 * MS_PER_HOUR;
+ 
+ function parseUtcMidnight(iso: string): number {
+   const ms = Date.parse(iso);
+@@ -55,6 +57,26 @@ function daysBetween(start: string, end: string): number {
+   return (endMs - startMs) / MS_PER_DAY;
+ }
+ 
++function parseOnHour(iso: string): number {
++  const ms = Date.parse(iso);
++  if (Number.isNaN(ms)) {
++    throw new Error(`Invalid date: ${iso}`);
++  }
++  if (ms % MS_PER_HOUR !== 0) {
++    throw new Error(`Period must start and end on the hour: ${iso}`);
++  }
++  return ms;
++}
++
++function hoursBetween(start: string, end: string): { startMs: number; hours: number } {
++  const startMs = parseOnHour(start);
++  const endMs = parseOnHour(end);
++  if (endMs <= startMs) {
++    throw new Error(`Period end must be after its start: ${start} - ${end}`);
++  }
++  return { startMs, hours: (endMs - startMs) / MS_PER_HOUR };
++}
++
+ function overlaps(aStart: string, aEnd: string, bStart: string, bEnd: string): boolean {
+   return Date.parse(aStart) < Date.parse(bEnd) && Date.parse(aEnd) > Date.parse(bStart);
+ }
+@@ -79,7 +101,19 @@ export function createRentalService(): RentalService {
+   }
+ 
+   function priceFor(item: Equipment, start: string, end: string): number {
+-    const days = daysBetween(start, end);
++    const { startMs, hours } = hoursBetween(start, end);
++
++    if (hours < 24) {
++      if (item.hourlyPrice === undefined) {
++        throw new Error(`Item ${item.id} cannot be rented by the hour`);
++      }
++      return hours * item.hourlyPrice;
++    }
++
++    if (hours % 24 !== 0 || startMs % MS_PER_DAY !== 0) {
++      throw new Error(`Period must start and end at UTC midnight: ${start} - ${end}`);
++    }
++    const days = hours / 24;
+     const fullPrice = days * item.dailyPrice;
+     return days >= 3 ? fullPrice * 0.9 : fullPrice;
+   }
+diff --git a/test/index.test.ts b/test/index.test.ts
+index a1a65d936f912de2fd5ab5f6b7e81e311f306134..6a3fddbd9906eb5349cf46e1fe13c7c8410c41f0 100644
+--- a/test/index.test.ts
++++ b/test/index.test.ts
+@@ -2,8 +2,8 @@ import { test } from 'node:test';
+ import assert from 'node:assert/strict';
+ import { createRentalService } from '../src/index.ts';
+ 
+-function board(id: string, dailyPrice = 2000) {
+-  return { id, kind: 'board' as const, dailyPrice };
++function board(id: string, dailyPrice = 2000, hourlyPrice?: number) {
++  return { id, kind: 'board' as const, dailyPrice, hourlyPrice };
+ }
+ 
+ test('quotes a one day rental', () => {
+@@ -145,6 +145,67 @@ test('different items can be booked for the same period', () => {
+   assert.doesNotThrow(() => service.book({ itemId: 'b2', start: '2024-06-01T00:00:00Z', end: '2024-06-05T00:00:00Z' }));
+ });
+ 
++test('quotes an hourly rental', () => {
++  const service = createRentalService();
++  service.addEquipment(board('b1', 2000, 300));
++
++  const quote = service.quote({ itemId: 'b1', start: '2024-06-01T10:00:00Z', end: '2024-06-01T13:00:00Z' });
++
++  assert.equal(quote.total, 900);
++});
++
++test('hourly rental does not get the multi day discount', () => {
++  const service = createRentalService();
++  service.addEquipment(board('b1', 2000, 300));
++
++  const quote = service.quote({ itemId: 'b1', start: '2024-06-01T00:00:00Z', end: '2024-06-01T23:00:00Z' });
++
++  assert.equal(quote.total, 23 * 300);
++});
++
++test('quote throws when renting by the hour an item without an hourly price', () => {
++  const service = createRentalService();
++  service.addEquipment(board('b1', 2000));
++
++  assert.throws(() => service.quote({ itemId: 'b1', start: '2024-06-01T10:00:00Z', end: '2024-06-01T13:00:00Z' }));
++});
++
++test('quote throws when an hourly period does not start or end on the hour', () => {
++  const service = createRentalService();
++  service.addEquipment(board('b1', 2000, 300));
++
++  assert.throws(() => service.quote({ itemId: 'b1', start: '2024-06-01T10:30:00Z', end: '2024-06-01T13:00:00Z' }));
++  assert.throws(() => service.quote({ itemId: 'b1', start: '2024-06-01T10:00:00Z', end: '2024-06-01T13:30:00Z' }));
++});
++
++test('a full day rental still requires UTC midnight and uses the daily price', () => {
++  const service = createRentalService();
++  service.addEquipment(board('b1', 2000, 300));
++
++  assert.throws(() => service.quote({ itemId: 'b1', start: '2024-06-01T10:00:00Z', end: '2024-06-02T10:00:00Z' }));
++
++  const quote = service.quote({ itemId: 'b1', start: '2024-06-01T00:00:00Z', end: '2024-06-02T00:00:00Z' });
++  assert.equal(quote.total, 2000);
++});
++
++test('books an hourly rental', () => {
++  const service = createRentalService();
++  service.addEquipment(board('b1', 2000, 300));
++
++  const booking = service.book({ itemId: 'b1', start: '2024-06-01T10:00:00Z', end: '2024-06-01T13:00:00Z' });
++
++  assert.equal(booking.total, 900);
++});
++
++test('hourly bookings clash with overlapping periods on the same item', () => {
++  const service = createRentalService();
++  service.addEquipment(board('b1', 2000, 300));
++  service.book({ itemId: 'b1', start: '2024-06-01T10:00:00Z', end: '2024-06-01T13:00:00Z' });
++
++  assert.throws(() => service.book({ itemId: 'b1', start: '2024-06-01T12:00:00Z', end: '2024-06-01T14:00:00Z' }));
++  assert.doesNotThrow(() => service.book({ itemId: 'b1', start: '2024-06-01T13:00:00Z', end: '2024-06-01T14:00:00Z' }));
++});
++
+ function sail(id: string, dailyPrice = 1000) {
+   return { id, kind: 'sail' as const, dailyPrice };
+ }

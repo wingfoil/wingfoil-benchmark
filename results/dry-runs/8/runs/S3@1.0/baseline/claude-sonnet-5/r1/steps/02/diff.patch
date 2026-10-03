@@ -1,0 +1,120 @@
+diff --git a/src/index.ts b/src/index.ts
+index d3bf9b4839a5325a4891c1052d74fb8fe15188dc..50f2a6f6fed503d2e06878c97e1640bc3a0d61fa 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -27,6 +27,12 @@ export interface Booking {
+   total: number;
+ }
+ 
++export interface AvailabilityQuery {
++  start: string;
++  end: string;
++  kind?: EquipmentKind;
++}
++
+ const MS_PER_DAY = 24 * 60 * 60 * 1000;
+ 
+ function parseUtcMidnight(iso: string): number {
+@@ -57,6 +63,7 @@ export interface RentalService {
+   addEquipment(item: Equipment): void;
+   quote(request: RentalRequest): Quote;
+   book(request: RentalRequest): Booking;
++  availability(query: AvailabilityQuery): string[];
+ }
+ 
+ export function createRentalService(): RentalService {
+@@ -101,5 +108,23 @@ export function createRentalService(): RentalService {
+       bookings.push(booking);
+       return booking;
+     },
++
++    availability({ start, end, kind }) {
++      daysBetween(start, end);
++
++      const ids: string[] = [];
++      for (const item of equipment.values()) {
++        if (kind && item.kind !== kind) {
++          continue;
++        }
++        const isBooked = bookings.some(
++          (booking) => booking.itemId === item.id && overlaps(start, end, booking.start, booking.end),
++        );
++        if (!isBooked) {
++          ids.push(item.id);
++        }
++      }
++      return ids.sort();
++    },
+   };
+ }
+diff --git a/test/index.test.ts b/test/index.test.ts
+index 84266a9be9bfe4a7c1bb768b5e1d0d7dea86648e..208997b0f2520ea87d3a80acbdde2130d8297a5b 100644
+--- a/test/index.test.ts
++++ b/test/index.test.ts
+@@ -117,3 +117,66 @@ test('different items can be booked for the same period', () => {
+ 
+   assert.doesNotThrow(() => service.book({ itemId: 'b2', start: '2024-06-01T00:00:00Z', end: '2024-06-05T00:00:00Z' }));
+ });
++
++function sail(id: string, dailyPrice = 1000) {
++  return { id, kind: 'sail' as const, dailyPrice };
++}
++
++test('availability returns all item ids when none are booked', () => {
++  const service = createRentalService();
++  service.addEquipment(board('b2'));
++  service.addEquipment(board('b1'));
++
++  const ids = service.availability({ start: '2024-06-01T00:00:00Z', end: '2024-06-05T00:00:00Z' });
++
++  assert.deepEqual(ids, ['b1', 'b2']);
++});
++
++test('availability excludes items booked for an overlapping period', () => {
++  const service = createRentalService();
++  service.addEquipment(board('b1'));
++  service.addEquipment(board('b2'));
++  service.book({ itemId: 'b1', start: '2024-06-01T00:00:00Z', end: '2024-06-05T00:00:00Z' });
++
++  const ids = service.availability({ start: '2024-06-03T00:00:00Z', end: '2024-06-06T00:00:00Z' });
++
++  assert.deepEqual(ids, ['b2']);
++});
++
++test('availability includes items booked for a back to back, non-overlapping period', () => {
++  const service = createRentalService();
++  service.addEquipment(board('b1'));
++  service.book({ itemId: 'b1', start: '2024-06-01T00:00:00Z', end: '2024-06-05T00:00:00Z' });
++
++  const ids = service.availability({ start: '2024-06-05T00:00:00Z', end: '2024-06-07T00:00:00Z' });
++
++  assert.deepEqual(ids, ['b1']);
++});
++
++test('availability filters by kind when given', () => {
++  const service = createRentalService();
++  service.addEquipment(board('b1'));
++  service.addEquipment(sail('s1'));
++
++  const ids = service.availability({ start: '2024-06-01T00:00:00Z', end: '2024-06-02T00:00:00Z', kind: 'sail' });
++
++  assert.deepEqual(ids, ['s1']);
++});
++
++test('availability returns ids of any kind when kind is omitted', () => {
++  const service = createRentalService();
++  service.addEquipment(board('b1'));
++  service.addEquipment(sail('s1'));
++
++  const ids = service.availability({ start: '2024-06-01T00:00:00Z', end: '2024-06-02T00:00:00Z' });
++
++  assert.deepEqual(ids, ['b1', 's1']);
++});
++
++test('availability throws for an invalid period', () => {
++  const service = createRentalService();
++  service.addEquipment(board('b1'));
++
++  assert.throws(() => service.availability({ start: '2024-06-02T00:00:00Z', end: '2024-06-01T00:00:00Z' }));
++  assert.throws(() => service.availability({ start: '2024-06-01T10:00:00Z', end: '2024-06-02T00:00:00Z' }));
++});

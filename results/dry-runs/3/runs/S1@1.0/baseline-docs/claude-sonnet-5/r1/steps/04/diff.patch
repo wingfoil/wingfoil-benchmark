@@ -1,0 +1,159 @@
+diff --git a/README.md b/README.md
+index 7b975e12919d539bdd04ba2926fb6eff9e5d3770..11aeadab8633b3d8c5b1dbc5fed9dc768b7dac9f 100644
+--- a/README.md
++++ b/README.md
+@@ -41,6 +41,23 @@ applyPatch(document, [{ op: "add", path: "/baz", value: "qux" }]);
+ Throws if `patch` is not a syntactically valid JSON Patch, or if one of its operations fails (for
+ example, a `test` operation whose value does not match, or a `remove` of a path that does not exist).
+ 
++### `applyMergePatch(target, patch)`
++
++Applies a [JSON Merge Patch](https://www.rfc-editor.org/rfc/rfc7386) to a JSON document and returns the
++merged document as a new value, leaving `target` unmodified.
++
++```ts
++import { applyMergePatch } from "json-toolkit";
++
++const target = { foo: "bar", baz: { qux: 1 } };
++
++applyMergePatch(target, { baz: { qux: null } }); // { foo: "bar", baz: {} }
++```
++
++A `null` in `patch` removes the corresponding member; an object in `patch` is merged recursively;
++any other value (including an array) replaces the corresponding member wholesale. A non-object
++`patch` replaces `target` entirely.
++
+ ## Development
+ 
+ - `npm test` runs the test suite.
+diff --git a/src/index.ts b/src/index.ts
+index 8284172a3802ffa451afeb8b6895d5d568c1e115..0b29dade81405ee56f7ca0095af249465b142915 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -300,6 +300,26 @@ function arrayIndex(token: string): number {
+   return Number(token);
+ }
+ 
++/**
++ * Applies a JSON Merge Patch (RFC 7386) to a JSON document and returns the
++ * resulting document as a new value. `target` is not mutated.
++ */
++export function applyMergePatch(target: JsonValue, patch: JsonValue): JsonValue {
++  if (patch === null || typeof patch !== "object" || Array.isArray(patch)) {
++    return structuredClone(patch);
++  }
++
++  const merged: JsonObject = target !== null && typeof target === "object" && !Array.isArray(target) ? { ...target } : {};
++  for (const [key, value] of Object.entries(patch)) {
++    if (value === null) {
++      delete merged[key];
++    } else {
++      merged[key] = applyMergePatch(merged[key] ?? null, value);
++    }
++  }
++  return merged;
++}
++
+ function deepEqual(a: JsonValue, b: JsonValue): boolean {
+   if (a === b) {
+     return true;
+diff --git a/test/merge-patch.test.ts b/test/merge-patch.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..af0223df225a11a02b6639a9d293314f1699d291
+--- /dev/null
++++ b/test/merge-patch.test.ts
+@@ -0,0 +1,94 @@
++import { test } from "node:test";
++import assert from "node:assert/strict";
++
++import { applyMergePatch, type JsonValue } from "../src/index.ts";
++
++// Examples are drawn from RFC 7386, Appendix A, unless noted otherwise.
++
++test("A.1: replacing a member's value", () => {
++  assert.deepEqual(applyMergePatch({ a: "b" }, { a: "c" }), { a: "c" });
++});
++
++test("A.2: adding a new member", () => {
++  assert.deepEqual(applyMergePatch({ a: "b" }, { b: "c" }), { a: "b", b: "c" });
++});
++
++test("A.3: a null value removes an existing member", () => {
++  assert.deepEqual(applyMergePatch({ a: "b" }, { a: null }), {});
++});
++
++test("A.4: a null value removes only the targeted member", () => {
++  assert.deepEqual(applyMergePatch({ a: "b", b: "c" }, { a: null }), { b: "c" });
++});
++
++test("A.5: a scalar patch value replaces an array wholesale", () => {
++  assert.deepEqual(applyMergePatch({ a: ["b"] }, { a: "c" }), { a: "c" });
++});
++
++test("A.6: an array patch value replaces a scalar wholesale", () => {
++  assert.deepEqual(applyMergePatch({ a: "c" }, { a: ["b"] }), { a: ["b"] });
++});
++
++test("A.7: nested objects are merged member-by-member", () => {
++  const target: JsonValue = { a: { b: "c" } };
++  const patch: JsonValue = { a: { b: "d", c: null } };
++  assert.deepEqual(applyMergePatch(target, patch), { a: { b: "d" } });
++});
++
++test("A.8: arrays are replaced wholesale, never merged element-by-element", () => {
++  const target: JsonValue = { a: [{ b: "c" }] };
++  const patch: JsonValue = { a: [1] };
++  assert.deepEqual(applyMergePatch(target, patch), { a: [1] });
++});
++
++test("A.9: a top-level array patch replaces the whole document", () => {
++  assert.deepEqual(applyMergePatch(["a", "b"], ["c", "d"]), ["c", "d"]);
++});
++
++test("A.10: a top-level array patch replaces a top-level object target", () => {
++  assert.deepEqual(applyMergePatch({ a: "b" }, ["c"]), ["c"]);
++});
++
++test("A.11: a null patch replaces the whole document with null", () => {
++  assert.equal(applyMergePatch({ a: "foo" }, null), null);
++});
++
++test("A.12: a scalar patch replaces the whole document", () => {
++  assert.equal(applyMergePatch({ a: "foo" }, "bar"), "bar");
++});
++
++test("A.13: an existing null member is left untouched by an unrelated addition", () => {
++  assert.deepEqual(applyMergePatch({ e: null }, { a: 1 }), { e: null, a: 1 });
++});
++
++test("A.14: a nested null member removes only the innermost target, pruning no ancestors", () => {
++  const patch: JsonValue = { a: { bb: { ccc: null } } };
++  assert.deepEqual(applyMergePatch({}, patch), { a: { bb: {} } });
++});
++
++test("a non-object target is discarded when the patch is an object", () => {
++  assert.deepEqual(applyMergePatch("scalar", { a: "b" }), { a: "b" });
++});
++
++test("applyMergePatch does not mutate the input target", () => {
++  const target: JsonValue = { a: { b: "c" } };
++  const original = structuredClone(target);
++  applyMergePatch(target, { a: { b: "d" } });
++  assert.deepEqual(target, original);
++});
++
++test("applyMergePatch does not mutate the input patch", () => {
++  const target: JsonValue = { a: "b" };
++  const patch: JsonValue = { a: { nested: true } };
++  const original = structuredClone(patch);
++  applyMergePatch(target, patch);
++  assert.deepEqual(patch, original);
++});
++
++test("the result shares no structure with the patch, so later mutation of one does not affect the other", () => {
++  const target: JsonValue = {};
++  const patch: JsonValue = { a: { nested: ["x"] } };
++  const result = applyMergePatch(target, patch) as { a: { nested: string[] } };
++  result.a.nested.push("y");
++  assert.deepEqual(patch, { a: { nested: ["x"] } });
++});
