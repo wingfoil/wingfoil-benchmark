@@ -176,3 +176,10 @@ and complete. Its findings and outcome:
 keeps the prompt before the API call — is not observed; such a resume may find no prompt to continue.
 
 - `npx wingfoil memory submit task-051-…` (in-progress → in-review) — observed: `c82766f`, `status: in-review`.
+
+### Approval
+
+The approver's `memory approve` (in-review → approved), `1c95652`: `memory history` records `operation: approve`, the
+approver and the reason — the two design corrections accepted (the deadline moved by the waits; the waits recorded
+apart from the interventions), requirements 1.24 accepted.
+

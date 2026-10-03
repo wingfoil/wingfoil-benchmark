@@ -592,4 +592,4 @@ approver on 2026-10-02; review decision of the approver at that task's review, 2
 The traceability matrix is unaffected: REQ-RUN-13 already traces to F1.3.
 
 Source: [task-051](../memory/task/task-051-a-429-rate-limit-rejection-recognised-as-the-subscription-s-limit.md), design
-confirmed by the approver on 2026-10-03; review decision pending at that task's review.
+confirmed by the approver on 2026-10-03; review decision of the approver at that task's review, 2026-10-03 (`1c95652`).
