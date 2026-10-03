@@ -65,9 +65,10 @@ export interface StepOutcome {
   readonly error?: string;
   /**
    * How the session stopped short, when the agent says so (task-024): at its cost cap
-   * (`--max-budget-usd`), or at the subscription's quota (REQ-RUN-13). Not a failure.
+   * (`--max-budget-usd`), at the subscription's quota (REQ-RUN-13), or at its rate limit, which the runner waits
+   * out (REQ-RUN-13 as amended in 1.24, task-051). Not a failure.
    */
-  readonly stop?: 'cap reached' | 'quota exhausted';
+  readonly stop?: 'cap reached' | 'quota exhausted' | 'rate limited';
   /**
    * The session's final assistant message, which the neutral approver classifies (REQ-RUN-06).
    * Whether it is waiting is the approver's reading, not the agent's: no field of the protocol says so.
