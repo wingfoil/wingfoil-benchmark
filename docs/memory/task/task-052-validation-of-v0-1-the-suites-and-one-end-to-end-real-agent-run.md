@@ -167,13 +167,12 @@ One run, cap 3 €, ceiling 3 €, about 0.84 € expected. A run that fails, or
 ledger line, is filed as a bug when the chain is at fault, and **is not re-run** without a new consent. A rate limit
 is waited out by the runner (task-051).
 
-### Choices to confirm with the approver
+### Choices confirmed by the approver (2026-10-03)
 
 1. **Where it lives:** committed (`campaigns/v0-1-validation.yaml`, `results/d032e3e98de3/1/`), run in the main
-   checkout and copied to the branch, as above, against keeping it outside the repository as W3 did.
-2. **The cap:** 3 € per run and 3 € ceiling, the consented figures, against option A's 30 €. `warn_eur` 2.
-3. **The pack:** run after the records are committed, so that the committed `run.json` carries no field naming a
-   release that will not exist.
+   checkout and copied to the branch, as above.
+2. **The cap:** 3 € per run, 3 € ceiling, `warn_eur` 2 — the consented figures, not option A's 30 €.
+3. **The pack:** run after the records are committed; the committed `run.json` carries no `transcripts` field.
 
 ## Execution notes
 
