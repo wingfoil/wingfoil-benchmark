@@ -109,3 +109,41 @@ publishing an incomplete one.
 
 - `npx wingfoil memory add --type task --title "A 429 rate-limit rejection recognised as the subscription's limit"`
   — declared: creates the element at `draft` and commits it. Observed: `ab9a41f wf(task): add …`.
+- `npx wingfoil memory submit task-051-…` (draft → pending), `a706003`; the approver's `memory approve` (pending →
+  backlog), `0544627`, with its reason; `memory submit` (backlog → in-progress), `dfad4fd`, on the task branch in its
+  own worktree.
+
+### Build
+
+- `6da8171` (red): the adapter's tests — the reconstructed 429 read as `rate limited`, and each of its signs alone
+  (status 429, "rate limit" in the text, a `rate_limit` error, the `assistant` event's error); the runner's tests —
+  a rate-limited step waited out and resumed with "Continue." in the same session, `quota exhausted` after the four
+  waits (2, 5, 15, 30 minutes), the step's time cap moved by the waits, and `run.json`'s `rate_limit_waits` apart
+  from the interventions. The task-024 test that read `errors: ["rate_limit_error: quota"]` as `quota exhausted` now
+  reads the usage limit only from "usage limit": a `rate_limit` error is a rate limit, waited out.
+- `958fc82`: `subscriptionLimitOf` (usage limit or rate limit) in place of `isQuotaExhausted`; `readSession` keeps the
+  latest `assistant` event's `error`; the outcome `rate limited`; the runner's `waitOut`, with an injected `sleep` and
+  clock, `RATE_LIMIT_WAITS_S` and `RATE_LIMIT_MESSAGE`, the step's deadline moved by each wait, the cost cap checked
+  before each resume; `rate_limit_waits` in `run.json`.
+- `4a21721`: requirements 1.24, REQ-RUN-13 made precise; the method page's statement `{#rate-limit}` with its source.
+
+**Two corrections to the Design, found in the build:**
+
+1. **`step_time_s` is the step's, not an invocation's.** The design said the waits fall between invocations and so
+   outside `step_time_s`; the runner in fact computes one deadline for the whole step. The waits would have eaten it
+   (52 minutes against 3600 s, the resume killed at once). The deadline is now moved by each wait; a test fixes it.
+2. **The waits are not recorded as interventions.** The confirmed choice reads "an intervention of its own kind,
+   `rate limit`, never counted with the approver's". They are recorded instead as `rate_limit_waits` beside the
+   step, and the resumes are not in `interventions` at all: the intervention list and its count are what M-K2 and the
+   policy's cap read (REQ-RUN-07), and a separate record keeps every intervention metric untouched without a new
+   kind for them to exclude. REQ-RUN-07 is therefore unchanged; REQ-RUN-13 says the message is not an intervention.
+   **To confirm at review.**
+
+- `bafa04b`: the cost cap checked **before** a wait — a run with nothing left of its cap ends the step at the cap
+  without waiting (found writing the test of that branch, which coverage showed uncovered).
+
+**Tests:** `npm test` 77 files, 1206 tests before the last fix, coverage 98.01 % statements, 90.8 % branches;
+`npm run lint` clean; the runner and agent tests 189/189 after it.
+
+**The fixture** is reconstructed from bug-010's quoted fields (the transcript was lost with task-050's worktree); the
+test says so.
