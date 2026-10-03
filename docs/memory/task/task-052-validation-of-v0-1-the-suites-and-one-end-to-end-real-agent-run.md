@@ -178,3 +178,10 @@ is waited out by the runner (task-051).
 
 - `npx wingfoil memory add --type task --title "Validation of v0.1: the suites and one end-to-end real-agent run"`
   — declared: creates the element at `draft` and commits it. Observed: `98a9f7c wf(task): add …`.
+- `npx wingfoil memory submit task-052-…` (draft → pending), `f9f0a0f`; the approver's `memory approve` (pending →
+  backlog), `92b1bf8` — the consent to the run's spending (cap 3 €, ceiling 3 €).
+- Handoff: the calibration session (task-049/050/051) confirmed on 2026-10-03 that it holds nothing for task-052 and
+  gave the token file's path, the commands it used and the ledger's format; it leaves this task to this session.
+- `npx wingfoil memory submit task-052-…` (backlog → in-progress) — declared: moves `status` and commits the file.
+  Observed: `6fe9e35 wf(task): submit …`, `status: in-progress`, on the task branch in its own worktree
+  (`../WingFoil2-Benchmark-task-052`, its own `npm ci`); the Design committed first (`987b794`, `9099a8b`).
