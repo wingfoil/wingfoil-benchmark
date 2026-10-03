@@ -283,3 +283,13 @@ Its findings and their outcome:
 The approver's `memory approve` (in-review → approved), `4ead1a1`: "Validation of v0.1 accepted: suites green on main
 (1212 tests, 98.03% coverage, lint clean, Docker 16/16); S3@1.0 baseline run d032e3e98de3/1 completed, scored, shown,
 site built, pack checked, 1.0064 USD in the ledger".
+
+### Delivery
+
+Before the merge, `git status --ignored` listed in the main checkout; its 22 untracked copies (the campaign file and
+`results/d032e3e98de3/1/` without the transcripts, including the `run.json` the pack had rewritten) removed, the five
+git-ignored transcripts kept, as `releases/d032e3e98de3-1/` and `site/`. Merged into `main` with `--no-ff`
+(`65de6f2`); the transcripts still in place after it. `npx wingfoil memory submit task-052-…` (approved → done) —
+declared: moves `status` and commits the file. Observed: `fd89b0d wf(task): submit …`, `status: done`. `rel-v0-1`'s
+validation line ticked. Next: the reference campaign (plan-003 step 5), with option A's budget and the approver's
+consent.
