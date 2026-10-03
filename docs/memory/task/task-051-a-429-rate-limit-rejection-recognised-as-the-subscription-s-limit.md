@@ -2,7 +2,7 @@
 id: task-051-a-429-rate-limit-rejection-recognised-as-the-subscription-s-limit
 type: task
 title: "A 429 rate-limit rejection recognised as the subscription's limit"
-status: backlog
+status: in-progress
 release: v0.1
 wave: validation
 features: [F1.3]
