@@ -404,3 +404,11 @@ the approver and the reason — **revised budget option A** (the Opus slice redu
 report (status Approved, §5), in S1.md and traceability.md's review decisions, and in S1.md 1.4 (the slice in the card).
 bug-010's approval, run in this task's worktree by mistake (`ea21256`), was moved to main as `86327a2` at the
 approver's request and dropped from this branch's tip.
+
+### Delivery
+
+Merged into `main` with `--no-ff` (`d1f348a`). `npx wingfoil memory submit task-050-…` (approved → done) — declared:
+moves `status` and commits the file. Observed: `ba8fdc3 wf(task): submit …`, `status: done`. `rel-v0-1`'s calibration
+line ticked. Next, before any real-agent run: bug-010's task; then validation (plan-003 step 4) and the reference
+campaign (step 5) with option A's budget, each with the approver's consent.
+
