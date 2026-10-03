@@ -183,3 +183,9 @@ The approver's `memory approve` (in-review → approved), `1c95652`: `memory his
 approver and the reason — the two design corrections accepted (the deadline moved by the waits; the waits recorded
 apart from the interventions), requirements 1.24 accepted.
 
+
+### Delivery
+
+Merged into `main` with `--no-ff` (`f68efc3`). `npx wingfoil memory submit task-051-…` (approved → done) — observed:
+`ecf8a77 wf(task): submit …`, `status: done`. bug-010 is fixed; next, validation (plan-003 step 4), the first real-agent
+run after calibration, with the approver's consent.
