@@ -2,7 +2,7 @@
 id: task-052-validation-of-v0-1-the-suites-and-one-end-to-end-real-agent-run
 type: task
 title: "Validation of v0.1: the suites and one end-to-end real-agent run"
-status: pending
+status: backlog
 release: v0.1
 wave: validation
 features: []
