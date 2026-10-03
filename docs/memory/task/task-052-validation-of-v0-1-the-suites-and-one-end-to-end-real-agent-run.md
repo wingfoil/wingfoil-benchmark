@@ -201,3 +201,41 @@ is waited out by the runner (task-051).
   EUR/USD` from `results/dry-runs/8`. Both as at design.
 - `BENCH_AGENT_TOKEN_FILE=$HOME/.claude/bench-token systemd-inhibit --what=sleep node dist/cli/main.js campaign run
   campaigns/v0-1-validation.yaml --allow-spending`, consent `92b1bf8`.
+  **Completed**, 22:34–22:41 (6.5 min): `campaign d032e3e98de3, execution 1`, `1 run completed, 0 failed`, `cost:
+  1.0064 USD, 0.8908 EUR` — below the 3 € cap; the estimate was 0.8413 € (+6 %).
+- `run.json` checked: `outcome: completed`, agent `claude-code 2.1.280`, `claude-sonnet-5`, policy `v1`, S3@1.0's
+  hash `sha256:1c12448d…` (the one dry run 8 has), the manual `CLAUDE.md` 120 tokens; no interventions; no rate-limit
+  waits (so the `--max-budget-usd`-on-resume question of rel-v0-1 is **not observed**: no resume happened). Steps:
+
+  | Step | Cost USD | Turns | Time | Tokens (all kinds) |
+  |---|---|---|---|---|
+  | 01 | 0.1524 | 11 | 78.0 s | 0.32 M |
+  | 02 | 0.0982 | 10 | 37.8 s | 0.23 M |
+  | 03 | 0.1235 | 12 | 41.2 s | 0.32 M |
+  | 04 | 0.3524 | 22 | 133.1 s | 0.79 M |
+  | 05 | 0.2799 | 15 | 93.6 s | 0.56 M |
+
+  The sum of the steps' `costUsd` × 0.8851 = 0.8908 €, the printed figure. No step near `step_time_s` 3600 or
+  `step_tokens` 20 M.
+- `bench score d032e3e98de3/1 --holdout ../WingFoil2-Benchmark-HoldOut`: `step 01 11/11, step 02 16/16, step 03
+  20/20, step 04 30/30, step 05 34/37, final 34/37; hold-out final 16/17; checks 0/1; M-F1 3/5`; `aggregate.json`
+  written. Against dry run 8 (the same scenario, arm and model): final 35/37 there, 34/37 here (both fail D5's
+  cancellation tests, here one more); hold-out 16/17 both; `d3-revision` failed at step 4 both; M-F1 3/5 both. A
+  reference, not an equality: the agent's work differs from run to run.
+- `bench run show d032e3e98de3/1/runs/S3@1.0/baseline/claude-sonnet-5/r1`: the pins, each step's session, tokens,
+  cost (0.1524 … 0.2799 USD), turns and time as in `run.json`, the commits, transcript and diff, and the test results.
+- `bench site build d032e3e98de3/1`: `site: site/d032e3e98de3/1/ (10 pages)`, "A, B, C, D, E and G are not covered
+  in this campaign"; files: `index.html`, `category-a…g.html`, `method.html`, `material/manual-baseline.html`, plus
+  `site/index.html` and `site/style.css`. Opened in the browser pane: the landing reads M-Q1 **91.9 %** (34/37),
+  n = 1, M-F1 60.0 % (3/5) "preliminary", hold-out 16/17 — as `aggregate.json`; the method page renders. (The pane
+  shows files as `data:` snapshots without the relative `../../style.css`; the link resolves on disk.) Not published.
+- Token check before the commit: `grep -rl "sk-ant-"` and the fixed-string search for the token file's value over
+  `results/d032e3e98de3/1/` (transcripts included) and `site/`: no file. Records copied to the branch without
+  `transcript.jsonl` and committed with the ledger line (`9d33738`; total 76.2187 USD).
+- `BENCH_AGENT_TOKEN_FILE=… bench transcripts pack d032e3e98de3/1`, in the main checkout after the commit:
+  `releases/d032e3e98de3-1/transcripts.tar.gz (5 transcripts, sha256:31e47a2c…)`, the five steps' transcripts in
+  it; the `gh release create …` command printed as "not run here", and `gh release view d032e3e98de3-1` → "release
+  not found". With the token file set it checked the value too: without it, it says "checked for the shape of an
+  Anthropic key only". Packed three times, the same sha256 each time. The uncommitted `run.json` in the main
+  checkout now carries `transcripts: {release: d032e3e98de3-1, …}`; the committed one does not (choice 3).
+- Nothing in the chain went wrong: no bug filed.
