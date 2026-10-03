@@ -170,6 +170,8 @@ and complete. Its findings and outcome:
    cap at a rate limit, and the time cap with time used before the wait (the earlier test was vacuous: the doubles
    run no command; it now asserts the resume's 10 s).
 
+**After the fixes:** `npm test` 77 files, **1212 tests**, coverage 98.03 % statements, 90.87 % branches; lint clean.
+
 **Known limit:** whether "Continue." resumes a session whose very first request was rejected — whether Claude Code
 keeps the prompt before the API call — is not observed; such a resume may find no prompt to continue.
 
