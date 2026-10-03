@@ -2,7 +2,7 @@
 id: dl-007-claude-5-5-models-for-the-v0-2-campaign
 type: decision-log
 title: "Claude 5.5 models for the v0.2 campaign"
-status: draft
+status: pending
 ---
 
 ## Context
