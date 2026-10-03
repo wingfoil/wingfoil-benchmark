@@ -157,4 +157,4 @@ Q-D3 and Q-F2 read S1's step 5 as well as its step 4 (S1 1.3: `createPatch`, and
 again after it). No feature, acceptance or requirement changes.
 
 Source: [task-050](../memory/task/task-050-calibration-of-v0-1-dry-runs-measured-costs-and-the-revised-budget.md);
-review decision pending at that task's review.
+review decision of the approver at that task's review, 2026-10-03 (`721321f`).

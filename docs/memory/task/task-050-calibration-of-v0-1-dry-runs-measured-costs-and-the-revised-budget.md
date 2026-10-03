@@ -395,3 +395,12 @@ dry runs 15–19); the S1 Docker tests 2/2 before it.
      F7.3"; one ambiguous sentence reworded. **Fixed.**
 - The approver's `memory reject` (in-review → in-progress), `c4b83f4`, to apply the second review's findings above.
 - `npx wingfoil memory submit task-050-…` (in-progress → in-review), after the second review — observed: `fbabb55`, `status: in-review`.
+
+### Approval
+
+The approver's `memory approve` (in-review → approved), `721321f`: `memory history` records `operation: approve`,
+the approver and the reason — **revised budget option A** (the Opus slice reduced to wingfoil, `warn_eur` 65,
+`ceiling_eur` 85, `run_cost_eur` 30), S1 1.3 and traceability 1.3 accepted, S1–S3 and S8 registered. Recorded in the
+report (status Approved, §5), in S1.md and traceability.md's review decisions, and in S1.md 1.4 (the slice in the card).
+bug-010's approval, run in this task's worktree by mistake (`ea21256`), was moved to main as `86327a2` at the
+approver's request and dropped from this branch's tip.
