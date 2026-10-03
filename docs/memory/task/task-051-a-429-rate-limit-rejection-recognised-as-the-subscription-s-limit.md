@@ -49,11 +49,70 @@ runner's tests.
 
 ## Acceptance criteria
 
-<!-- Classified in the design phase. -->
+- The observed 429 shape is recognised (adapter, `readSession`). **Red-first**: today it reads `failed: api_error`.
+- The documented usage-limit shape still gives `quota exhausted` (`test/unit/agents/claude-code.test.ts`, task-024).
+  **Characterization.**
+- What the runner does with a rate-limited step (choice 1). **Red-first**, with the fake agent and an injected wait.
+- `campaign.feature` @F1.3 and the caps tests stay green. **Characterization.**
 
 ## Design
 
-<!-- Modules, interfaces, data formats touched; decisions taken and their reasons. -->
+### What was observed, and what the fixture is
+
+Dry run 2's step 03 (S1@1.0 baseline-docs, Claude Code 2.1.280, Sonnet 5) ended on these events, as bug-010 quotes
+them: an `assistant` event with `"error":"rate_limit"`, then a `result` with `"is_error":true`,
+`"api_error_status":429`, `"result":"API Error: Request rejected (429) · This request would exceed your account's
+rate limit. Please try again later."`, `"terminal_reason":"api_error"`. The transcript itself was lost with
+task-050's worktree; **the fixture is reconstructed from those fields** (the ones the adapter reads), and says so. The
+same dry run, re-run minutes later, completed: the limit was transient.
+
+### Detection (adapter)
+
+`readSession` keeps the latest `assistant` event's `error`. A `result` with `is_error: true` is:
+
+- **the usage limit** (`quota exhausted`, REQ-RUN-13 as written) when its text says "usage limit" — the documented
+  shape, unchanged;
+- **a rate limit** when `api_error_status` is 429, or its text says "rate limit", or its `errors` or the preceding
+  `assistant` event's `error` say `rate_limit`.
+
+`isQuotaExhausted` becomes a classifier returning `usage limit`, `rate limit` or nothing; its tests keep the
+documented shapes.
+
+### What the runner does with a rate limit — the runner cannot finish an interrupted execution
+
+A campaign's execution has no way to be continued: after a run ends `quota exhausted`, the campaign stops starting
+runs, and finishing it means a new execution from its first run (about 60 € with the revised budget's option A) or
+publishing an incomplete one.
+
+### Choices to confirm
+
+1. **What a rate-limited step does.**
+   - **(b) Recommended: wait and resume, bounded.** The step's outcome is `rate limited`; the runner waits — 2, 5, 15
+     and 30 minutes, about 52 minutes at most — and resumes the same session (`--resume <session-id>`) with a fixed
+     message, "Continue.", recorded as an intervention of its own kind (`rate limit`), never counted with the
+     approver's. After the last wait the step ends `quota exhausted`, as today. It keeps an execution whole through a
+     transient limit like dry run 2's. The waits fall between invocations, so `step_time_s` (per invocation) does not
+     count them; cost is read as for any resume (the session's running total). It changes REQ-RUN-13 and REQ-RUN-07
+     (requirements 1.24), and the method page says how a rate limit is handled.
+   - (a) Treat a rate limit as the usage limit: `quota exhausted`, the campaign stops. Smallest change, REQ-RUN-13 as
+     written, but a transient burst during a night's campaign stops it, and finishing costs a new execution.
+   - (c) (a), plus `bench campaign run --continue <id>/<n>`, which finishes an execution and skips its completed runs.
+     The most general (a network failure or a killed run too), and the largest: execution identity, the budget across
+     two sittings, aggregation of runs made at different times.
+2. **The waits** (if b): 2/5/15/30 minutes, or other values; and whether the bound is a constant of the runner or a
+   campaign pin (`caps.rate_limit_wait_s`). Recommended: a constant now, recorded in `run.json` with each wait.
+
+### Changes (with b)
+
+- `src/agents/claude-code.ts`: the classifier, `readSession` tracking the `assistant` error, the outcome
+  `rate limited`.
+- `src/agents/port.ts`, `src/runner/run.ts`: the step's loop waits and resumes on `rate limited` (an injected
+  sleeper, so tests do not wait), the intervention kind `rate limit`, `quota exhausted` after the bound.
+- `run.json`: each wait recorded (when, how long, the invocation it followed).
+- Tests: the reconstructed 429 in the adapter's unit tests; the runner's caps tests with a fake that answers 429 then
+  completes, and one that answers 429 every time.
+- Requirements 1.24: REQ-RUN-13 (a rate limit waited out, the usage limit as today), REQ-RUN-07 (the `rate limit`
+  intervention); the method page's statement of it (`site-content/method.md`).
 
 ## Execution notes
 
