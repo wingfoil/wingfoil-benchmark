@@ -2,12 +2,13 @@
 id: task-050-calibration-of-v0-1-dry-runs-measured-costs-and-the-revised-budget
 type: task
 title: "Calibration of v0.1: dry runs, measured costs and the revised budget"
-status: in-review
+status: in-progress
 release: v0.1
 wave: calibration
 features: []
 acceptance: []
 requirements: [REQ-CLI-05, REQ-RES-01, REQ-RUN-08, REQ-RUN-16, REQ-NFR-06]
+rejection_reason: "Add to the report: cost breakdown by process phase, the manual's process stated, saturation rule, H8-H10, neutral control"
 ---
 
 ## Context
