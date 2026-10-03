@@ -73,6 +73,7 @@ const STATEMENTS: readonly (readonly [string, string])[] = [
     'step-tokens-between-invocations',
     'rel-v0-1 W5 Due before; task-024 Design "The step caps" and Known limits',
   ],
+  ['rate-limit', 'REQ-RUN-13 (amended 1.24); bug-010; task-051 Design and its confirmed choices'],
   ['web-use', 'REQ-RUN-10; experiment design §3.2 and §5 T13; rel-v0-1 W2 item via task-046 Context'],
   [
     'harness-gaps',

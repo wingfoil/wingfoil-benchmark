@@ -1,7 +1,7 @@
 # Requirements (v0.1)
 
-**Version:** 1.23
-**Date:** 2026-10-02
+**Version:** 1.24
+**Date:** 2026-10-03
 **Status:** Approved
 **Traces to:** [acceptance/](acceptance/) (all v0.1 features), [scenarios/](scenarios/) (K1–K5), [09_experiment-design.md](../01_vision/09_experiment-design.md), [07_sequencer.md](../01_vision/07_sequencer.md) v0.1
 
@@ -80,7 +80,7 @@ One binary, `bench`, run with `npx bench`. Exit codes: `0` success, `1` failure,
 | REQ-RUN-09 | Usage is taken from the stream-json result events: tokens by kind, cost in USD converted with the campaign's rate, turns and duration. The API-equivalent cost is recorded whatever the billing (sequencer decision 1). | F2.3, M-K1 |
 | REQ-RUN-10 | Web use is recorded from tool-use events named `WebFetch` or `WebSearch`. Network use through shell commands is **not** detected, and the method page states this limit. | T13 |
 | REQ-RUN-11 | `baseline-docs` environment generator: a pure function of the wingfoil arm's configuration and the scenario. The output is deterministic, with sorted keys and fixed templates. | F2.5, T3 |
-| REQ-RUN-13 | **Subscription quota** (requirements decision 2): when a session fails because the subscription's usage limit is reached, the step's outcome is `quota exhausted`. The campaign stops starting new runs, and the runs already completed are kept. The API-equivalent cost cap (REQ-RUN-08) keeps working as a proxy budget. | F1.3, sequencer decision 1 |
+| REQ-RUN-13 | **Subscription quota** (requirements decision 2): when a session fails because the subscription's usage limit is reached, the step's outcome is `quota exhausted`. The campaign stops starting new runs, and the runs already completed are kept. The API-equivalent cost cap (REQ-RUN-08) keeps working as a proxy budget. Made precise in 1.24: when the session is rejected by the account's **rate limit** (HTTP 429, "rate limit" in the result, or a `rate_limit` error), the step is not failed: the runner waits 2, 5, 15 and 30 minutes — a constant of the runner — and after each resumes the step's session with the fixed message `Continue.`, which is not an intervention (REQ-RUN-07); the waits do not count against `step_time_s`, and `run.json` records them per step as `rate_limit_waits` (`after_invocation`, `waited_s`). A rate limit still in force after the last wait ends the step `quota exhausted`, as above. | F1.3, sequencer decision 1 |
 | REQ-RUN-14 | **WingFoil under test:** the wingfoil arm's setup installs WingFoil from a tarball built by the runner, with `npm pack` from a clean `git archive` of the pinned commit. It is never taken from `vendor/` (the managing WingFoil) nor from the host's `PATH`. Its dependencies are installed at the versions of the `package-lock.json` of that same commit, never resolved from the ranges in `package.json` (added in 1.5). It is invoked as `wingfoil`, never through `npx`, which does not resolve to the installed build and may fetch a published release instead (added in 1.5). The tarball's commit is recorded in `run.json`. | F2.6 |
 | REQ-RUN-15 | **Agent authentication (amended 1.3):** by default the runner passes a **long-lived token** of the maintainer's Claude subscription (`claude setup-token`) into the container in the environment variable `ANTHROPIC_AUTH_TOKEN`, read at run time from a file outside the repository. `ANTHROPIC_API_KEY` is not interchangeable with it. Whitespace is stripped from a credential before it is passed, and a malformed one is refused before a session starts. Mounting the credential file read-only stays a **documented variant**: it requires the run image to create the agent's configuration directory owned by the container user, because mounting the file alone makes Docker create that directory owned by root, where the agent cannot keep the session state `--resume` needs. REQ-NFR-01 applies to either form. | F2.3, REQ-NFR-01 |
 | REQ-RUN-16 | **Agent version:** Claude Code is pinned per campaign (`agent.version`). v0.1 development and dry runs use **2.1.221** (requirements decision 4). | F1.1, T7 |
@@ -578,3 +578,16 @@ The traceability matrix is unaffected.
 
 Source: [task-049](../memory/task/task-049-wingfoil-v0-2-2-as-the-harness-under-test.md), design confirmed by the
 approver on 2026-10-02; review decision of the approver at that task's review, 2026-10-02 (`cd062e2`).
+
+### Amendment 1.24 (validation, task-051, 2026-10-03)
+
+- **REQ-RUN-13:** a rate-limit rejection (HTTP 429) is waited out — 2, 5, 15 and 30 minutes, the step's session
+  resumed with `Continue.` after each — before the step ends `quota exhausted`; the waits are outside `step_time_s`
+  and recorded in `run.json` apart from the approver's interventions. Calibration's dry run 2 ended on a transient
+  429 that the runner read as a failure (bug-010); the same dry run, re-run minutes later, completed. The approver's
+  choices at design, 2026-10-03: wait and resume, bounded; the waits a constant of the runner.
+
+The traceability matrix is unaffected: REQ-RUN-13 already traces to F1.3.
+
+Source: [task-051](../memory/task/task-051-a-429-rate-limit-rejection-recognised-as-the-subscription-s-limit.md), design
+confirmed by the approver on 2026-10-03; review decision pending at that task's review.

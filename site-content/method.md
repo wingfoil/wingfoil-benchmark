@@ -62,6 +62,8 @@ A step killed at its time cap reports no cost. It is counted at its upper bound:
 
 The token cap is checked between the agent's invocations, not during one. A step whose tokens exceed the cap is not resumed after its current session. Within one session, only the cost cap bounds it. {#step-tokens-between-invocations}
 
+When the subscription's rate limit rejects a session (HTTP 429), the step is not failed: the runner waits 2, 5, 15 and then 30 minutes, resuming the same session with the message "Continue." after each wait. The waits do not count against the step's time cap, and they are recorded with the step, apart from the approver's interventions. If the limit still holds after the last wait, the step ends as when the subscription's usage limit is reached: the run ends there, and the campaign starts no further run. {#rate-limit}
+
 The agent's web use is recorded from its web tools, `WebFetch` and `WebSearch`. Network use through shell commands (for example `curl`, or installing packages) is not detected. Reported web use is therefore a lower bound. {#web-use}
 
 Each arm with a harness declares the harness capabilities it offers, each as true or false. A false entry is a known gap, and anything not declared counts as not offered. The baseline arms have no harness and declare nothing. The declaration is reassessed whenever the pinned WingFoil changes, and what this execution's runs declared is listed under [This execution](#this-execution). {#harness-gaps}
