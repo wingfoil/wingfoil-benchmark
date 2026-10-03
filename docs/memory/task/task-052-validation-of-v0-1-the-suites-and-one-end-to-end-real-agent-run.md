@@ -277,3 +277,9 @@ Its findings and their outcome:
    `92b1bf8`, and the branch changes no code, so they apply to it.
 - `npx wingfoil memory submit task-052-…` (in-progress → in-review) — declared: moves `status` and commits the file.
   Observed: `8849f4f wf(task): submit …`, `status: in-review`; the body committed first (`90fbe85`).
+
+### Approval
+
+The approver's `memory approve` (in-review → approved), `4ead1a1`: "Validation of v0.1 accepted: suites green on main
+(1212 tests, 98.03% coverage, lint clean, Docker 16/16); S3@1.0 baseline run d032e3e98de3/1 completed, scored, shown,
+site built, pack checked, 1.0064 USD in the ledger".
