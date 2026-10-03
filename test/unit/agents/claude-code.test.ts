@@ -119,12 +119,14 @@ describe('reading a session (REQ-RUN-09)', () => {
   });
 
   it('reads a session the subscription quota stopped as quota exhausted (REQ-RUN-13, unverified shape)', () => {
-    for (const event of [
-      '{"type":"result","is_error":true,"terminal_reason":"api_error","result":"Claude AI usage limit reached|1760000000"}',
-      '{"type":"result","is_error":true,"terminal_reason":"api_error","errors":["rate_limit_error: quota"]}',
-    ]) {
-      expect(readSession([event], RATE).outcome).toBe('quota exhausted');
-    }
+    expect(
+      readSession(
+        [
+          '{"type":"result","is_error":true,"terminal_reason":"api_error","result":"Claude AI usage limit reached|1760000000"}',
+        ],
+        RATE,
+      ).outcome,
+    ).toBe('quota exhausted');
     // Another API error is a failure, as before.
     expect(
       readSession(
@@ -132,6 +134,34 @@ describe('reading a session (REQ-RUN-09)', () => {
         RATE,
       ).outcome,
     ).toBe('failed');
+  });
+
+  // bug-010, task-051: the 429 calibration's dry run 2 ended on (Claude Code 2.1.280), reconstructed from the fields
+  // bug-010 quotes — the transcript itself was lost with task-050's worktree.
+  const RATE_LIMITED_ASSISTANT =
+    '{"type":"assistant","error":"rate_limit","message":{"id":"m","role":"assistant","content":[{"type":"text","text":"API Error"}]}}';
+  const RATE_LIMITED_RESULT =
+    '{"type":"result","subtype":"success","is_error":true,"api_error_status":429,"session_id":"s",' +
+    '"result":"API Error: Request rejected (429) · This request would exceed your account\'s rate limit. Please try again later.",' +
+    '"terminal_reason":"api_error"}';
+
+  it('reads the observed 429 as rate limited, not as a failure (bug-010)', () => {
+    const session = readSession([RATE_LIMITED_ASSISTANT, RATE_LIMITED_RESULT], RATE);
+    expect(session.outcome).toBe('rate limited');
+    expect(session.error).toBeUndefined();
+  });
+
+  it('reads a rate limit from any one of its signs: the status, the text, an error, the assistant event', () => {
+    const result = (fields: string) =>
+      `{"type":"result","is_error":true,"terminal_reason":"api_error",${fields}}`;
+    for (const lines of [
+      [result('"api_error_status":429,"result":"rejected"')],
+      [result('"result":"This request would exceed your account\'s rate limit."')],
+      [result('"errors":["rate_limit_error"]')],
+      [RATE_LIMITED_ASSISTANT, result('"result":"API Error"')],
+    ]) {
+      expect(readSession(lines, RATE).outcome).toBe('rate limited');
+    }
   });
 
   it('reports the stop of the session through the port', async () => {

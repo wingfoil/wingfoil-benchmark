@@ -106,7 +106,7 @@ export function doubles(
     /** Why the invocation's session failed, if it did: the agent reports it rather than throwing. */
     errorOf?: (request: AgentRequest) => string | undefined;
     /** How the agent says the session stopped short (task-024): its cost cap, or the quota. */
-    stopOf?: (request: AgentRequest) => 'cap reached' | 'quota exhausted' | undefined;
+    stopOf?: (request: AgentRequest) => 'cap reached' | 'quota exhausted' | 'rate limited' | undefined;
     /** The session's final assistant message, which the approver classifies; by default none. */
     messageOf?: (request: AgentRequest) => string | undefined;
     /** What a patch holds; by default a line naming the directory and the two trees. */
