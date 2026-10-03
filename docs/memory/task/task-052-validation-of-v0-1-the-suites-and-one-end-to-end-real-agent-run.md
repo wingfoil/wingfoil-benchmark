@@ -185,3 +185,19 @@ is waited out by the runner (task-051).
 - `npx wingfoil memory submit task-052-…` (backlog → in-progress) — declared: moves `status` and commits the file.
   Observed: `6fe9e35 wf(task): submit …`, `status: in-progress`, on the task branch in its own worktree
   (`../WingFoil2-Benchmark-task-052`, its own `npm ci`); the Design committed first (`987b794`, `9099a8b`).
+
+### Build — the suites on `main` (`92b1bf8`), 2026-10-03
+
+- `npm test`: **77 files, 1212 tests passed**; coverage **98.03 % statements**, 90.87 % branches, 98.76 % functions,
+  99.17 % lines; 190 s.
+- `npm run lint`: clean (ESLint, then Prettier "All matched files use Prettier code style!").
+- `npm run test:docker`: **1 file, 16 tests passed, none skipped** (the WingFoil clone at `v0.2.2` and the hold-out
+  present); 973 s; no container left behind.
+
+### Build — the real-agent run
+
+- In the main checkout, `npm run build`, the campaign file copied there untracked: `campaign validate` →
+  `campaign d032e3e98de3 is valid (1 scenario, 1 arm)`; `campaign estimate` → `0.9505 USD, 0.8413 EUR at 0.8851
+  EUR/USD` from `results/dry-runs/8`. Both as at design.
+- `BENCH_AGENT_TOKEN_FILE=$HOME/.claude/bench-token systemd-inhibit --what=sleep node dist/cli/main.js campaign run
+  campaigns/v0-1-validation.yaml --allow-spending`, consent `92b1bf8`.
