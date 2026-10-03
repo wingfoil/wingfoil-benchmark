@@ -373,3 +373,4 @@ dry runs 15–19); the S1 Docker tests 2/2 before it.
   and the cost by lever (role context at start, linked sessions, a workflow for agents: estimates); §8 the saturation
   rule; §10 the decision-logs to file after v0.1; §11 H8–H10, the levels of delegation and the neutral control. The
   figures were re-read against the per-run classification before the commit.
+- `npx wingfoil memory submit task-050-…` (in-progress → in-review), again — observed: `d525984`, `status: in-review`; the body committed first (`66548e5`). The additions were checked against the per-run classification by this session, not by a second independent review.
