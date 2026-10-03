@@ -84,25 +84,16 @@ A campaign's execution has no way to be continued: after a run ends `quota exhau
 runs, and finishing it means a new execution from its first run (about 60 € with the revised budget's option A) or
 publishing an incomplete one.
 
-### Choices to confirm
+### Choices confirmed by the approver (2026-10-03)
 
-1. **What a rate-limited step does.**
-   - **(b) Recommended: wait and resume, bounded.** The step's outcome is `rate limited`; the runner waits — 2, 5, 15
-     and 30 minutes, about 52 minutes at most — and resumes the same session (`--resume <session-id>`) with a fixed
-     message, "Continue.", recorded as an intervention of its own kind (`rate limit`), never counted with the
-     approver's. After the last wait the step ends `quota exhausted`, as today. It keeps an execution whole through a
-     transient limit like dry run 2's. The waits fall between invocations, so `step_time_s` (per invocation) does not
-     count them; cost is read as for any resume (the session's running total). It changes REQ-RUN-13 and REQ-RUN-07
-     (requirements 1.24), and the method page says how a rate limit is handled.
-   - (a) Treat a rate limit as the usage limit: `quota exhausted`, the campaign stops. Smallest change, REQ-RUN-13 as
-     written, but a transient burst during a night's campaign stops it, and finishing costs a new execution.
-   - (c) (a), plus `bench campaign run --continue <id>/<n>`, which finishes an execution and skips its completed runs.
-     The most general (a network failure or a killed run too), and the largest: execution identity, the budget across
-     two sittings, aggregation of runs made at different times.
-2. **The waits** (if b): 2/5/15/30 minutes, or other values; and whether the bound is a constant of the runner or a
-   campaign pin (`caps.rate_limit_wait_s`). Recommended: a constant now, recorded in `run.json` with each wait.
+1. **(b) Wait and resume, bounded.** A rate-limited step's invocation is followed by waits of 2, 5, 15 and 30 minutes
+   (about 52 at most), each followed by a resume of the same session with the fixed message "Continue.", recorded as an
+   intervention of its own kind, `rate limit`, never counted with the approver's. After the last wait the step ends
+   `quota exhausted`. Requirements 1.24 amends REQ-RUN-13 and REQ-RUN-07; the method page says so. Set aside: (a) a
+   rate limit treated as the usage limit; (c) `campaign run --continue`.
+2. **The waits are a constant of the runner**, each one recorded in `run.json`. Set aside: a campaign pin.
 
-### Changes (with b)
+### Changes
 
 - `src/agents/claude-code.ts`: the classifier, `readSession` tracking the `assistant` error, the outcome
   `rate limited`.
