@@ -1,0 +1,205 @@
+diff --git a/src/index.test.ts b/src/index.test.ts
+index 984db8fa8cd6e5f796d685be3716d350bc8b08ed..07749a5b7316636fedcf140d3d5f0429050e1108 100644
+--- a/src/index.test.ts
++++ b/src/index.test.ts
+@@ -4,7 +4,7 @@ import { createRentalService } from './index.ts';
+ 
+ function service() {
+   const svc = createRentalService();
+-  svc.addEquipment({ id: 'board-1', kind: 'board', dailyPrice: 2500 });
++  svc.addEquipment({ id: 'board-1', kind: 'board', dailyPrice: 2500, hourlyPrice: 400 });
+   svc.addEquipment({ id: 'sail-1', kind: 'sail', dailyPrice: 1500 });
+   return svc;
+ }
+@@ -37,11 +37,6 @@ test('quote throws for unknown item', () => {
+   assert.throws(() => svc.quote({ itemId: 'nope', start: '2026-07-01T00:00:00.000Z', end: '2026-07-02T00:00:00.000Z' }));
+ });
+ 
+-test('quote throws when period is not whole days', () => {
+-  const svc = service();
+-  assert.throws(() => svc.quote({ itemId: 'board-1', start: '2026-07-01T00:00:00.000Z', end: '2026-07-01T12:00:00.000Z' }));
+-});
+-
+ test('quote throws when start is not midnight UTC', () => {
+   const svc = service();
+   assert.throws(() => svc.quote({ itemId: 'board-1', start: '2026-07-01T06:00:00.000Z', end: '2026-07-02T06:00:00.000Z' }));
+@@ -121,5 +116,48 @@ test('availability includes items whose booking is back-to-back, not overlapping
+ 
+ test('availability throws for an invalid period', () => {
+   const svc = service();
+-  assert.throws(() => svc.availability({ start: '2026-07-01T06:00:00.000Z', end: '2026-07-02T00:00:00.000Z' }));
++  assert.throws(() => svc.availability({ start: '2026-07-01T06:30:00.000Z', end: '2026-07-02T00:00:00.000Z' }));
++});
++
++test('quote computes total for an hourly rental', () => {
++  const svc = service();
++  const quote = svc.quote({ itemId: 'board-1', start: '2026-07-01T10:00:00.000Z', end: '2026-07-01T13:00:00.000Z' });
++  assert.equal(quote.total, 1200);
++});
++
++test('quote throws for an hourly rental when the item has no hourly price', () => {
++  const svc = service();
++  assert.throws(() =>
++    svc.quote({ itemId: 'sail-1', start: '2026-07-01T10:00:00.000Z', end: '2026-07-01T13:00:00.000Z' }),
++  );
++});
++
++test('quote throws when an hourly rental does not start or end on the hour', () => {
++  const svc = service();
++  assert.throws(() =>
++    svc.quote({ itemId: 'board-1', start: '2026-07-01T10:30:00.000Z', end: '2026-07-01T13:00:00.000Z' }),
++  );
++  assert.throws(() =>
++    svc.quote({ itemId: 'board-1', start: '2026-07-01T10:00:00.000Z', end: '2026-07-01T13:30:00.000Z' }),
++  );
++});
++
++test('quote does not apply the long-rental discount to hourly rentals', () => {
++  const svc = service();
++  const quote = svc.quote({ itemId: 'board-1', start: '2026-07-01T00:00:00.000Z', end: '2026-07-01T23:00:00.000Z' });
++  assert.equal(quote.total, 23 * 400);
++});
++
++test('book works for an hourly rental', () => {
++  const svc = service();
++  const booking = svc.book({ itemId: 'board-1', start: '2026-07-01T10:00:00.000Z', end: '2026-07-01T13:00:00.000Z' });
++  assert.equal(booking.total, 1200);
++});
++
++test('book treats an hourly booking as overlapping a daily booking on the same item', () => {
++  const svc = service();
++  svc.book({ itemId: 'board-1', start: '2026-07-01T00:00:00.000Z', end: '2026-07-02T00:00:00.000Z' });
++  assert.throws(() =>
++    svc.book({ itemId: 'board-1', start: '2026-07-01T10:00:00.000Z', end: '2026-07-01T13:00:00.000Z' }),
++  );
+ });
+diff --git a/src/index.ts b/src/index.ts
+index b71f5c93d59403ff6cbe2444769fc43250976634..d4ae1e25c20ee66dc685993eeb40851c5747849c 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -4,6 +4,7 @@ export interface Equipment {
+   id: string;
+   kind: EquipmentKind;
+   dailyPrice: number;
++  hourlyPrice?: number;
+ }
+ 
+ export interface RentalRequest {
+@@ -28,6 +29,7 @@ export interface Booking {
+ }
+ 
+ const DAY_MS = 24 * 60 * 60 * 1000;
++const HOUR_MS = 60 * 60 * 1000;
+ 
+ function isMidnightUtc(date: Date): boolean {
+   return (
+@@ -38,26 +40,51 @@ function isMidnightUtc(date: Date): boolean {
+   );
+ }
+ 
+-function parsePeriod(start: string, end: string): { startMs: number; endMs: number; days: number } {
++function isOnTheHourUtc(date: Date): boolean {
++  return date.getUTCMinutes() === 0 && date.getUTCSeconds() === 0 && date.getUTCMilliseconds() === 0;
++}
++
++interface Period {
++  startMs: number;
++  endMs: number;
++  unit: 'day' | 'hour';
++  count: number;
++}
++
++function parsePeriod(start: string, end: string): Period {
+   const startDate = new Date(start);
+   const endDate = new Date(end);
+ 
+   if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
+     throw new Error('Invalid period: start and end must be valid ISO-8601 dates.');
+   }
+-  if (!isMidnightUtc(startDate) || !isMidnightUtc(endDate)) {
+-    throw new Error('Invalid period: start and end must fall at midnight UTC.');
+-  }
+ 
+   const startMs = startDate.getTime();
+   const endMs = endDate.getTime();
+   const spanMs = endMs - startMs;
+ 
+-  if (spanMs <= 0 || spanMs % DAY_MS !== 0) {
++  if (spanMs <= 0) {
++    throw new Error('Invalid period: end must be after start.');
++  }
++
++  if (spanMs < DAY_MS) {
++    if (!isOnTheHourUtc(startDate) || !isOnTheHourUtc(endDate)) {
++      throw new Error('Invalid period: start and end must fall on the hour UTC.');
++    }
++    if (spanMs % HOUR_MS !== 0) {
++      throw new Error('Invalid period: end must be a whole number of hours after start.');
++    }
++    return { startMs, endMs, unit: 'hour', count: spanMs / HOUR_MS };
++  }
++
++  if (!isMidnightUtc(startDate) || !isMidnightUtc(endDate)) {
++    throw new Error('Invalid period: start and end must fall at midnight UTC.');
++  }
++  if (spanMs % DAY_MS !== 0) {
+     throw new Error('Invalid period: end must be a whole number of days after start.');
+   }
+ 
+-  return { startMs, endMs, days: spanMs / DAY_MS };
++  return { startMs, endMs, unit: 'day', count: spanMs / DAY_MS };
+ }
+ 
+ function periodsOverlap(aStart: number, aEnd: number, bStart: number, bEnd: number): boolean {
+@@ -67,9 +94,16 @@ function periodsOverlap(aStart: number, aEnd: number, bStart: number, bEnd: numb
+ const LONG_RENTAL_DAYS = 3;
+ const LONG_RENTAL_DISCOUNT = 0.1;
+ 
+-function computeTotal(days: number, dailyPrice: number): number {
+-  const fullPrice = days * dailyPrice;
+-  if (days >= LONG_RENTAL_DAYS) {
++function computeTotal(period: Period, item: Equipment): number {
++  if (period.unit === 'hour') {
++    if (item.hourlyPrice === undefined) {
++      throw new Error(`Item ${item.id} cannot be rented by the hour.`);
++    }
++    return period.count * item.hourlyPrice;
++  }
++
++  const fullPrice = period.count * item.dailyPrice;
++  if (period.count >= LONG_RENTAL_DAYS) {
+     return Math.round(fullPrice * (1 - LONG_RENTAL_DISCOUNT));
+   }
+   return fullPrice;
+@@ -107,18 +141,19 @@ export function createRentalService(): RentalService {
+ 
+   function quote(request: RentalRequest): Quote {
+     const item = getEquipmentOrThrow(request.itemId);
+-    const { days } = parsePeriod(request.start, request.end);
++    const period = parsePeriod(request.start, request.end);
+     return {
+       itemId: request.itemId,
+       start: request.start,
+       end: request.end,
+-      total: computeTotal(days, item.dailyPrice),
++      total: computeTotal(period, item),
+     };
+   }
+ 
+   function book(request: RentalRequest): Booking {
+     const item = getEquipmentOrThrow(request.itemId);
+-    const { startMs, endMs, days } = parsePeriod(request.start, request.end);
++    const period = parsePeriod(request.start, request.end);
++    const { startMs, endMs } = period;
+ 
+     const existing = bookings.get(item.id) ?? [];
+     for (const existingBooking of existing) {
+@@ -134,7 +169,7 @@ export function createRentalService(): RentalService {
+       itemId: item.id,
+       start: request.start,
+       end: request.end,
+-      total: computeTotal(days, item.dailyPrice),
++      total: computeTotal(period, item),
+     };
+ 
+     existing.push(newBooking);

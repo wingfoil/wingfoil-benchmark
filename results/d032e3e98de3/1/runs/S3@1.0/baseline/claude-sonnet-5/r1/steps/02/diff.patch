@@ -1,0 +1,90 @@
+diff --git a/src/index.test.ts b/src/index.test.ts
+index fa6d40e272bb9ee8f1ffd7d1128a2ca389a000fb..4bfae9bb1bcc6ec9ba0cd57ea3372ed5ccac237c 100644
+--- a/src/index.test.ts
++++ b/src/index.test.ts
+@@ -74,3 +74,34 @@ test('different items can be booked for the same period', () => {
+   const sailBooking = svc.book({ itemId: 'sail-1', start: '2026-07-01T00:00:00.000Z', end: '2026-07-02T00:00:00.000Z' });
+   assert.equal(sailBooking.itemId, 'sail-1');
+ });
++
++test('availability returns all equipment ids, sorted, when nothing is booked', () => {
++  const svc = service();
++  const ids = svc.availability({ start: '2026-07-01T00:00:00.000Z', end: '2026-07-02T00:00:00.000Z' });
++  assert.deepEqual(ids, ['board-1', 'sail-1']);
++});
++
++test('availability filters by kind when given', () => {
++  const svc = service();
++  const ids = svc.availability({ start: '2026-07-01T00:00:00.000Z', end: '2026-07-02T00:00:00.000Z', kind: 'sail' });
++  assert.deepEqual(ids, ['sail-1']);
++});
++
++test('availability excludes items booked for part of the period', () => {
++  const svc = service();
++  svc.book({ itemId: 'board-1', start: '2026-07-01T00:00:00.000Z', end: '2026-07-03T00:00:00.000Z' });
++  const ids = svc.availability({ start: '2026-07-02T00:00:00.000Z', end: '2026-07-04T00:00:00.000Z' });
++  assert.deepEqual(ids, ['sail-1']);
++});
++
++test('availability includes items whose booking is back-to-back, not overlapping', () => {
++  const svc = service();
++  svc.book({ itemId: 'board-1', start: '2026-07-01T00:00:00.000Z', end: '2026-07-03T00:00:00.000Z' });
++  const ids = svc.availability({ start: '2026-07-03T00:00:00.000Z', end: '2026-07-04T00:00:00.000Z' });
++  assert.deepEqual(ids, ['board-1', 'sail-1']);
++});
++
++test('availability throws for an invalid period', () => {
++  const svc = service();
++  assert.throws(() => svc.availability({ start: '2026-07-01T06:00:00.000Z', end: '2026-07-02T00:00:00.000Z' }));
++});
+diff --git a/src/index.ts b/src/index.ts
+index 988f83eb501613d0230e0ab303b6059ede245fed..e024f4223e0b3629bc86c7268d504fa460c2f0b6 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -64,10 +64,17 @@ function periodsOverlap(aStart: number, aEnd: number, bStart: number, bEnd: numb
+   return aStart < bEnd && bStart < aEnd;
+ }
+ 
++export interface AvailabilityQuery {
++  start: string;
++  end: string;
++  kind?: EquipmentKind;
++}
++
+ export interface RentalService {
+   addEquipment(item: Equipment): void;
+   quote(request: RentalRequest): Quote;
+   book(request: RentalRequest): Booking;
++  availability(query: AvailabilityQuery): string[];
+ }
+ 
+ export function createRentalService(): RentalService {
+@@ -125,5 +132,27 @@ export function createRentalService(): RentalService {
+     return newBooking;
+   }
+ 
+-  return { addEquipment, quote, book };
++  function availability(query: AvailabilityQuery): string[] {
++    const { startMs, endMs } = parsePeriod(query.start, query.end);
++
++    const available: string[] = [];
++    for (const item of equipment.values()) {
++      if (query.kind !== undefined && item.kind !== query.kind) {
++        continue;
++      }
++      const existing = bookings.get(item.id) ?? [];
++      const isFree = existing.every((existingBooking) => {
++        const existingStartMs = new Date(existingBooking.start).getTime();
++        const existingEndMs = new Date(existingBooking.end).getTime();
++        return !periodsOverlap(startMs, endMs, existingStartMs, existingEndMs);
++      });
++      if (isFree) {
++        available.push(item.id);
++      }
++    }
++
++    return available.sort();
++  }
++
++  return { addEquipment, quote, book, availability };
+ }
