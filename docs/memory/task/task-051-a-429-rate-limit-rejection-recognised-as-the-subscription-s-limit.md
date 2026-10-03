@@ -98,12 +98,12 @@ publishing an incomplete one.
 - `src/agents/claude-code.ts`: the classifier, `readSession` tracking the `assistant` error, the outcome
   `rate limited`.
 - `src/agents/port.ts`, `src/runner/run.ts`: the step's loop waits and resumes on `rate limited` (an injected
-  sleeper, so tests do not wait), the intervention kind `rate limit`, `quota exhausted` after the bound.
+  sleeper, so tests do not wait), `quota exhausted` after the bound. (As built: no intervention kind — correction 2.)
 - `run.json`: each wait recorded (when, how long, the invocation it followed).
 - Tests: the reconstructed 429 in the adapter's unit tests; the runner's caps tests with a fake that answers 429 then
   completes, and one that answers 429 every time.
-- Requirements 1.24: REQ-RUN-13 (a rate limit waited out, the usage limit as today), REQ-RUN-07 (the `rate limit`
-  intervention); the method page's statement of it (`site-content/method.md`).
+- Requirements 1.24: REQ-RUN-13 (a rate limit waited out, the usage limit as today), with cross-references in
+  REQ-RUN-07 and REQ-RUN-08 (as built: correction 2); the method page's statement of it (`site-content/method.md`).
 
 ## Execution notes
 
@@ -129,9 +129,9 @@ publishing an incomplete one.
 
 **Two corrections to the Design, found in the build:**
 
-1. **`step_time_s` is the step's, not an invocation's.** The design said the waits fall between invocations and so
-   outside `step_time_s`; the runner in fact computes one deadline for the whole step. The waits would have eaten it
-   (52 minutes against 3600 s, the resume killed at once). The deadline is now moved by each wait; a test fixes it.
+1. **`step_time_s` is the step's, not an invocation's.** The design did not address it, assuming the waits fell
+   outside the time cap; the runner in fact computes one deadline for the whole step, and the waits would have eaten
+   it (52 minutes against, e.g., the 3600 s of the dry-run profile: the resume killed at once). The deadline is now moved by each wait; a test fixes it.
 2. **The waits are not recorded as interventions.** The confirmed choice reads "an intervention of its own kind,
    `rate limit`, never counted with the approver's". They are recorded instead as `rate_limit_waits` beside the
    step, and the resumes are not in `interventions` at all: the intervention list and its count are what M-K2 and the
@@ -147,3 +147,29 @@ publishing an incomplete one.
 
 **The fixture** is reconstructed from bug-010's quoted fields (the transcript was lost with task-050's worktree); the
 test says so.
+
+### Review
+
+**Independent review** by a fresh read-only agent on the branch (2026-10-03): no blocker; correction 2 judged correct
+and complete. Its findings and outcome:
+
+1. *should-fix* — the token cap was not checked before a rate limit's resume (REQ-RUN-08, the method page's
+   `{#step-tokens-between-invocations}`). **Fixed:** checked with the cost cap, before any wait; a test.
+2. *should-fix* — `intervention` numbering became incoherent when rate-limit and approver resumes mixed (1, 1, 3, 2),
+   and the fake agent indexes its scripted resumes by it. **Fixed:** the field is the step's resume number of any
+   kind, passed by both loops (`invocations.length`; unchanged without a rate limit); port.ts says so; a test.
+3. *should-fix* — the fake agent replayed a recorded 429 as completed. **Fixed:** it replays `rate limited`; the
+   reconstructed fixture `test/fixtures/sessions/rate-limited.jsonl` and a test.
+4. *should-fix* — the text and assistant-error signs applied to any error. **Fixed:** they count for an API error only
+   (`terminal_reason: api_error` or an `api_error_status`); status 429 stays unconditional; a test with a tool's
+   "rate limit".
+5. *nits* — the four waits per step (said in REQ-RUN-13 and the method page); the session-id check in the wait loop;
+   the classifier called once; the assistant's error reset after a result; `bench run show` lists the waits;
+   REQ-RUN-07 and REQ-RUN-08 cross-reference REQ-RUN-13; the Design's Changes list marked as built; correction 1's
+   wording. **Fixed.** Missing tests added: a rate limit on an approver's resume, a usage limit after a wait, the token
+   cap at a rate limit, and the time cap with time used before the wait (the earlier test was vacuous: the doubles
+   run no command; it now asserts the resume's 10 s).
+
+**Known limit:** whether "Continue." resumes a session whose very first request was rejected — whether Claude Code
+keeps the prompt before the API call — is not observed; such a resume may find no prompt to continue.
+

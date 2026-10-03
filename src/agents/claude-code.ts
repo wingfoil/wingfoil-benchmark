@@ -66,9 +66,11 @@ export function subscriptionLimitOf(
   const errors = Array.isArray(event.errors) ? event.errors.map(String) : [];
   const text = [typeof event.result === 'string' ? event.result : '', ...errors].join('\n');
   if (/usage limit/i.test(text)) return 'usage limit';
-  if (event.api_error_status === 429 || /rate[ _]limit/i.test(text) || assistantError === 'rate_limit') {
-    return 'rate limit';
-  }
+  if (event.api_error_status === 429) return 'rate limit';
+  // The text and the assistant's error count only for an API error: a tool's or a scenario's "rate limit" is not
+  // the account's (task-051's review).
+  const apiError = event.terminal_reason === 'api_error' || event.api_error_status !== undefined;
+  if (apiError && (/rate[ _]limit/i.test(text) || assistantError === 'rate_limit')) return 'rate limit';
   return undefined;
 }
 
@@ -167,11 +169,14 @@ export function readSession(lines: readonly string[], usdToEur: number): Session
     if (typeof event.session_id === 'string') sessionId = event.session_id;
     finalMessage = typeof event.result === 'string' ? event.result : undefined;
     const reason = typeof event.terminal_reason === 'string' ? event.terminal_reason : 'unknown';
+    const limit = subscriptionLimitOf(event, assistantError);
+    // An error echoed by this result is not the next invocation's to read.
+    assistantError = undefined;
     if (reason === BUDGET_EXHAUSTED) {
       stop = 'cap reached';
-    } else if (subscriptionLimitOf(event, assistantError) === 'usage limit') {
+    } else if (limit === 'usage limit') {
       stop = 'quota exhausted';
-    } else if (subscriptionLimitOf(event, assistantError) === 'rate limit') {
+    } else if (limit === 'rate limit') {
       stop = 'rate limited';
     } else if (event.is_error !== false || reason !== COMPLETED) {
       failures.push(

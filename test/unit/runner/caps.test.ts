@@ -321,17 +321,22 @@ describe('a rate limit, waited out (REQ-RUN-13 as amended in 1.24, bug-010, task
     expect(summary.outcome).toBe('quota exhausted');
   });
 
-  it("does not count a wait against the step's time cap", async () => {
-    // A 60 s step time: without moving the step's deadline by the wait, the resume would be killed at once.
+  it("does not count a wait against the step's time cap, and keeps what was used before it", async () => {
+    // A 60 s step: the session works 50 s, meets the rate limit, waits 120 s; its resume has the 10 s left, not
+    // nothing (the deadline moved by the wait) and not 60 s (the time used before it kept).
     const checked = campaign({ step_time_s: 60 });
+    const time = clock();
     let sessions = 0;
     const ports = doubles({
+      onStep: (request) => {
+        if (invocationOf(request) === 0 && request.step === 1) time.state.now += 50_000;
+        else void request.run(['true']);
+      },
       stopOf: () => {
         sessions += 1;
         return sessions === 1 ? 'rate limited' : undefined;
       },
     });
-    const time = clock();
     const summary = await runCampaign(checked, { ...ports, now: time.now, sleep: time.sleep });
 
     expect(summary.runs[0]?.steps[0]?.outcome).toBe('completed');
@@ -339,7 +344,55 @@ describe('a rate limit, waited out (REQ-RUN-13 as amended in 1.24, bug-010, task
       .map((exec) => exec.command)
       .filter((command) => command[0] === 'timeout')
       .map((command) => Number(command[3]));
-    expect(timeouts.every((seconds) => seconds > 0 && seconds <= 60)).toBe(true);
+    expect(timeouts[0]).toBe(10);
+  });
+
+  it('does not resume a step over its token cap: it ends at the token cap, without waiting', async () => {
+    const checked = campaign({ step_tokens: 1000 });
+    const ports = doubles({ stopOf: () => 'rate limited', usageOf: () => usage(0.1, 5000) });
+    const time = clock();
+    const summary = await runCampaign(checked, { ...ports, now: time.now, sleep: time.sleep });
+
+    expect(time.state.waits).toEqual([]);
+    expect(ports.recorded.resumes).toHaveLength(0);
+    expect(summary.runs[0]?.steps[0]?.outcome).toBe('token cap reached');
+  });
+
+  it("numbers every resume of a step in order, an approver's reply and a rate limit's alike", async () => {
+    const checked = campaign();
+    const ports = doubles({
+      // Step 1: the session asks a question; the approver's reply meets the rate limit; after the wait, done.
+      messageOf: (request) => (request.step === 1 && invocationOf(request) === 0 ? 'Which one?' : undefined),
+      stopOf: (request) => (request.step === 1 && invocationOf(request) === 1 ? 'rate limited' : undefined),
+    });
+    const time = clock();
+    const summary = await runCampaign(checked, { ...ports, now: time.now, sleep: time.sleep });
+
+    const step1 = ports.recorded.resumes.filter((resume) => resume.step === 1);
+    expect(step1.map((resume) => [resume.intervention, resume.reply === 'Continue.'])).toEqual([
+      [1, false],
+      [2, true],
+    ]);
+    expect(summary.runs[0]?.steps[0]?.interventions).toHaveLength(1);
+    expect(summary.runs[0]?.steps[0]?.rateLimitWaits).toEqual([{ afterInvocation: 2, waitedS: 120 }]);
+    expect(summary.runs[0]?.steps[0]?.outcome).toBe('completed');
+  });
+
+  it('ends quota exhausted when the resume after a wait meets the usage limit', async () => {
+    const checked = campaign();
+    let sessions = 0;
+    const ports = doubles({
+      stopOf: () => {
+        sessions += 1;
+        return sessions === 1 ? 'rate limited' : 'quota exhausted';
+      },
+    });
+    const time = clock();
+    const summary = await runCampaign(checked, { ...ports, now: time.now, sleep: time.sleep });
+
+    expect(time.state.waits).toEqual([120_000]);
+    expect(summary.runs[0]?.steps.map((step) => step.outcome)).toEqual(['quota exhausted']);
+    expect(summary.outcome).toBe('quota exhausted');
   });
 
   it('neither waits nor resumes once the run has spent its cost cap: the step ends at the cap', async () => {

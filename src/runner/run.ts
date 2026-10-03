@@ -858,6 +858,7 @@ async function executeStep(
       typeof result !== 'string' &&
       !killed &&
       result.error === undefined &&
+      result.sessionId === sessionId &&
       result.stop === 'rate limited'
     ) {
       invocations.push(result);
@@ -865,6 +866,15 @@ async function executeStep(
       if (waitS === undefined) {
         outcome = 'quota exhausted';
         options.log?.(`step ${number}: rate limit after ${rateLimitWaits.length} waits: quota exhausted`);
+        return false;
+      }
+      // step_tokens (REQ-RUN-08): a step over its token cap is not resumed after its current session, whatever
+      // stopped it (task-051's review).
+      if (tokensOf(stepUsage(invocations)) > pins.caps.step_tokens) {
+        outcome = 'token cap reached';
+        options.log?.(
+          `step ${number}: token cap reached (${pins.caps.step_tokens}) at the rate limit, not resumed`,
+        );
         return false;
       }
       // Nothing left of the run's cost cap: no resume would be started, so there is nothing to wait for.
@@ -948,7 +958,8 @@ async function executeStep(
       options.agent.resume({
         scenarioId: scenario.id,
         step: step.n,
-        intervention,
+        // Which resume of the step, of any kind: the approver's number unless a rate limit's resume came first.
+        intervention: invocations.length,
         sessionId,
         reply,
         remainingCostUsd: left,

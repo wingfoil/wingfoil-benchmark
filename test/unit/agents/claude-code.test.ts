@@ -164,6 +164,14 @@ describe('reading a session (REQ-RUN-09)', () => {
     }
   });
 
+  it("does not read a tool's or a scenario's rate limit as the account's: the text counts for an API error only", () => {
+    const lines = [
+      RATE_LIMITED_ASSISTANT.replace('"error":"rate_limit",', ''),
+      '{"type":"result","is_error":true,"terminal_reason":"tool_error","result":"GitHub API rate limit exceeded"}',
+    ];
+    expect(readSession(lines, RATE).outcome).toBe('failed');
+  });
+
   it('reports the stop of the session through the port', async () => {
     const stream =
       '{"type":"result","subtype":"error_max_budget_usd","is_error":true,"terminal_reason":"budget_exhausted","total_cost_usd":0.04,"session_id":"s"}\n';

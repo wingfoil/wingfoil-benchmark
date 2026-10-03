@@ -51,6 +51,7 @@ const runSchema = z.object({
         interventions: z.number().int(),
         usage,
         cost_bound_usd: z.number().optional(),
+        rate_limit_waits: z.array(z.object({ after_invocation: z.number().int(), waited_s: z.number() })).optional(),
       })
       .passthrough(),
   ),
@@ -121,6 +122,8 @@ export interface StepDetail {
   readonly usage: StepUsage;
   /** For a step killed at its time cap that reported no cost: the most it can have cost (task-024). */
   readonly costBoundUsd?: number;
+  /** A rate limit's waits (task-051), as `run.json` records them. */
+  readonly rateLimitWaits?: readonly { readonly afterInvocation: number; readonly waitedS: number }[];
   /** `diff.patch`, when stored. */
   readonly patch?: string;
   /** `commits.json`'s messages, when stored (task-035); `unreadable` when it is not their form. */
@@ -255,6 +258,14 @@ export function readRunDetail(runDir: string): Result<RunDetail> {
       interventions: step.interventions,
       usage: step.usage,
       ...(step.cost_bound_usd === undefined ? {} : { costBoundUsd: step.cost_bound_usd }),
+      ...(step.rate_limit_waits === undefined
+        ? {}
+        : {
+            rateLimitWaits: step.rate_limit_waits.map((wait) => ({
+              afterInvocation: wait.after_invocation,
+              waitedS: wait.waited_s,
+            })),
+          }),
       ...(existsSync(patch) ? { patch: readFileSync(patch, 'utf8') } : {}),
       ...(messages === undefined ? {} : { messages }),
       ...(transcript === undefined ? {} : { transcript }),
