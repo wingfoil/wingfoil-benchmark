@@ -156,6 +156,10 @@ function showStep(run: RunDetail, step: StepDetail, full: boolean): string[] {
   const replies = run.interventions.filter((intervention) => intervention.step === step.n);
   out.push(`- interventions: ${step.interventions === 0 ? 'none' : step.interventions}`);
   for (const reply of replies) out.push(`  - ${reply.kind}: ${reply.reply}`);
+  // A rate limit's waits (task-051), apart from the approver's interventions.
+  for (const wait of step.rateLimitWaits ?? []) {
+    out.push(`- rate-limit wait: ${wait.waitedS} s after invocation ${wait.afterInvocation}`);
+  }
   if (step.messages === 'unreadable') out.push('- commits: unreadable');
   else if (step.messages !== undefined) {
     out.push(`- commits: ${step.messages.length === 0 ? 'none' : step.messages.join('; ')}`);

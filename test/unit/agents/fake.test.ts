@@ -129,6 +129,22 @@ describe('the scripted fake agent', () => {
     expect(outcome.transcript.length).toBeGreaterThan(0);
   });
 
+  it('replays a recorded rate limit as a stop, not as a completed step (task-051)', async () => {
+    // test/fixtures/sessions/rate-limited.jsonl: bug-010's 429, reconstructed from the fields the bug quotes.
+    const dir = tempDir('bench-replay-');
+    copyFileSync(repoPath('test/fixtures/sessions/rate-limited.jsonl'), join(dir, 'session.jsonl'));
+    const file = join(dir, 'script.json');
+    writeFileSync(file, JSON.stringify({ T0: { '1': { commands: ['true'], events: 'session.jsonl' } } }));
+    const script = loadFakeScript(file);
+    expect(script.ok).toBe(true);
+    if (!script.ok) return;
+
+    const outcome = await fakeAgent(script.value, { dir, usdToEur: 0.92 }).runStep(request(1, exec().run));
+
+    expect(outcome.stop).toBe('rate limited');
+    expect(outcome.error).toBeUndefined();
+  });
+
   it('reports a recorded session it cannot read, rather than replaying nothing', async () => {
     const dir = tempDir('bench-replay-');
     const file = join(dir, 'script.json');

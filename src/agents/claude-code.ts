@@ -26,9 +26,10 @@ export interface Session {
   readonly transcript: readonly string[];
   /**
    * `cap reached`: the session stopped at its `--max-budget-usd` (task-024, C1); `quota exhausted`: at
-   * the subscription's usage limit (REQ-RUN-13). Neither is a failure: both are stops the runner reads.
+   * the subscription's usage limit (REQ-RUN-13); `rate limited`: rejected by the account's rate limit, which the
+   * runner waits out (REQ-RUN-13 as amended in 1.24, task-051). None is a failure: all are stops the runner reads.
    */
-  readonly outcome: 'completed' | 'failed' | 'cap reached' | 'quota exhausted';
+  readonly outcome: 'completed' | 'failed' | 'cap reached' | 'quota exhausted' | 'rate limited';
   readonly error?: string;
   /**
    * The final assistant message: the `result` field of the last result event. In every untrimmed
@@ -44,16 +45,33 @@ const COMPLETED = 'completed';
 /** What Claude Code 2.1.280 says when `--max-budget-usd` stopped a session (task-024, C1). */
 const BUDGET_EXHAUSTED = 'budget_exhausted';
 
+/** Which of the subscription's limits stopped a session (REQ-RUN-13 as amended in 1.24). */
+export type SubscriptionLimit = 'usage limit' | 'rate limit';
+
 /**
- * Whether a failed `result` event says the subscription's usage limit was reached (REQ-RUN-13). **Not
- * observed**: provoking it would take the subscription's whole limit (task-024). It matches what the
- * agent is documented to write — "usage limit" in the result text, or a `rate_limit` error.
+ * Which of the subscription's limits a failed `result` event says stopped the session, if any.
+ *
+ * - **The usage limit** — "usage limit" in its text: the documented shape (task-024), **not observed**, since
+ *   provoking it would take the subscription's whole limit.
+ * - **A rate limit** — HTTP status 429, "rate limit" in its text, or a `rate_limit` error in its `errors` or in the
+ *   `assistant` event before it (`assistantError`). The shape Claude Code 2.1.280 wrote in calibration's dry run 2
+ *   (bug-010): an `assistant` event with `error: rate_limit`, then a `result` with `api_error_status` 429, "This
+ *   request would exceed your account's rate limit. Please try again later." and `terminal_reason: api_error`.
  */
-export function isQuotaExhausted(event: Readonly<Record<string, unknown>>): boolean {
-  if (event.is_error !== true) return false;
+export function subscriptionLimitOf(
+  event: Readonly<Record<string, unknown>>,
+  assistantError?: string,
+): SubscriptionLimit | undefined {
+  if (event.is_error !== true) return undefined;
   const errors = Array.isArray(event.errors) ? event.errors.map(String) : [];
   const text = [typeof event.result === 'string' ? event.result : '', ...errors].join('\n');
-  return /usage limit|rate_limit/i.test(text);
+  if (/usage limit/i.test(text)) return 'usage limit';
+  if (event.api_error_status === 429) return 'rate limit';
+  // The text and the assistant's error count only for an API error: a tool's or a scenario's "rate limit" is not
+  // the account's (task-051's review).
+  const apiError = event.terminal_reason === 'api_error' || event.api_error_status !== undefined;
+  if (apiError && (/rate[ _]limit/i.test(text) || assistantError === 'rate_limit')) return 'rate limit';
+  return undefined;
 }
 
 const ZERO: SessionUsage = {
@@ -113,7 +131,9 @@ export function readSession(lines: readonly string[], usdToEur: number): Session
   let results = 0;
   let finalMessage: string | undefined;
   const failures: string[] = [];
-  let stop: 'cap reached' | 'quota exhausted' | undefined;
+  let stop: 'cap reached' | 'quota exhausted' | 'rate limited' | undefined;
+  /** The latest `assistant` event's `error`, which a `result` that follows it may only echo (bug-010). */
+  let assistantError: string | undefined;
 
   for (const line of lines) {
     let event: Record<string, unknown>;
@@ -137,6 +157,10 @@ export function readSession(lines: readonly string[], usdToEur: number): Session
         error: 'a line of the session is not an object',
       };
     }
+    if (event.type === 'assistant') {
+      assistantError = typeof event.error === 'string' ? event.error : undefined;
+      continue;
+    }
     if (event.type !== 'result') continue;
     results += 1;
     usage = add(usage, event, usdToEur);
@@ -145,10 +169,15 @@ export function readSession(lines: readonly string[], usdToEur: number): Session
     if (typeof event.session_id === 'string') sessionId = event.session_id;
     finalMessage = typeof event.result === 'string' ? event.result : undefined;
     const reason = typeof event.terminal_reason === 'string' ? event.terminal_reason : 'unknown';
+    const limit = subscriptionLimitOf(event, assistantError);
+    // An error echoed by this result is not the next invocation's to read.
+    assistantError = undefined;
     if (reason === BUDGET_EXHAUSTED) {
       stop = 'cap reached';
-    } else if (isQuotaExhausted(event)) {
+    } else if (limit === 'usage limit') {
       stop = 'quota exhausted';
+    } else if (limit === 'rate limit') {
+      stop = 'rate limited';
     } else if (event.is_error !== false || reason !== COMPLETED) {
       failures.push(
         event.is_error !== false && reason === COMPLETED ? `is_error ${String(event.is_error)}` : reason,
@@ -295,7 +324,9 @@ export function claudeCodeAgent(options: AdapterOptions): AgentPort {
       usage: session.usage,
       transcript: session.transcript,
       ...(session.outcome === 'failed' ? { error: session.error ?? 'the session failed' } : {}),
-      ...(session.outcome === 'cap reached' || session.outcome === 'quota exhausted'
+      ...(session.outcome === 'cap reached' ||
+      session.outcome === 'quota exhausted' ||
+      session.outcome === 'rate limited'
         ? { stop: session.outcome }
         : {}),
       ...(session.finalMessage === undefined ? {} : { finalMessage: session.finalMessage }),

@@ -29,11 +29,14 @@ export interface StepRequest {
 export interface ResumeRequest {
   readonly scenarioId: string;
   readonly step: number;
-  /** Which intervention of the step this is: 1, 2, 3. */
+  /**
+   * Which resume of the step this is, 1-based, whatever prompted it: an approver's reply or a rate limit's wait
+   * (task-051). Without a rate limit it is the approver's intervention number: 1, 2, 3.
+   */
   readonly intervention: number;
   /** The session to resume: the step's own. */
   readonly sessionId: string;
-  /** The policy's reply, sent as the prompt of the resumed session. */
+  /** The policy's reply, or the rate limit's fixed message, sent as the prompt of the resumed session. */
   readonly reply: string;
   /** What is left of the run's cost cap, in USD, after the step so far (REQ-RUN-04). */
   readonly remainingCostUsd: number;
@@ -65,9 +68,10 @@ export interface StepOutcome {
   readonly error?: string;
   /**
    * How the session stopped short, when the agent says so (task-024): at its cost cap
-   * (`--max-budget-usd`), or at the subscription's quota (REQ-RUN-13). Not a failure.
+   * (`--max-budget-usd`), at the subscription's quota (REQ-RUN-13), or at its rate limit, which the runner waits
+   * out (REQ-RUN-13 as amended in 1.24, task-051). Not a failure.
    */
-  readonly stop?: 'cap reached' | 'quota exhausted';
+  readonly stop?: 'cap reached' | 'quota exhausted' | 'rate limited';
   /**
    * The session's final assistant message, which the neutral approver classifies (REQ-RUN-06).
    * Whether it is waiting is the approver's reading, not the agent's: no field of the protocol says so.

@@ -264,3 +264,166 @@ describe('subscription quota (REQ-RUN-13, task-024)', () => {
     expect(ports.recorded.creates).toHaveLength(2);
   });
 });
+
+describe('a rate limit, waited out (REQ-RUN-13 as amended in 1.24, bug-010, task-051)', () => {
+  /** A clock the waits move, so that no test waits and the step's time cap can be seen to follow them. */
+  function clock() {
+    const state = { now: 0, waits: [] as number[] };
+    return {
+      state,
+      now: () => state.now,
+      sleep: (ms: number) => {
+        state.waits.push(ms);
+        state.now += ms;
+        return Promise.resolve();
+      },
+    };
+  }
+
+  it('waits, resumes the same session with a fixed message, and goes on; the wait is not an intervention', async () => {
+    const checked = campaign();
+    let sessions = 0;
+    const ports = doubles({
+      stopOf: () => {
+        sessions += 1;
+        // Step 1's session meets the rate limit; its resume and step 2 go through.
+        return sessions === 1 ? 'rate limited' : undefined;
+      },
+    });
+    const time = clock();
+    const summary = await runCampaign(checked, { ...ports, now: time.now, sleep: time.sleep });
+
+    expect(summary.runs.map((run) => run.outcome)).toEqual(['completed']);
+    const [step1, step2] = summary.runs[0]?.steps ?? [];
+    expect(step1?.outcome).toBe('completed');
+    expect(step2?.outcome).toBe('completed');
+    expect(time.state.waits).toEqual([120_000]);
+    expect(ports.recorded.resumes).toHaveLength(1);
+    expect(ports.recorded.resumes[0]).toMatchObject({ step: 1, reply: 'Continue.' });
+    expect(ports.recorded.resumes[0]?.sessionId).toBe(ports.recorded.steps[0]?.sessionId);
+    expect(step1?.interventions).toEqual([]);
+    expect(step1?.rateLimitWaits).toEqual([{ afterInvocation: 1, waitedS: 120 }]);
+  });
+
+  it('gives up after its last wait: the step ends quota exhausted, and so do the run and the campaign', async () => {
+    const checked = campaign({}, { repetitions: { S1: 2 } });
+    const ports = doubles({ stopOf: () => 'rate limited' });
+    const time = clock();
+    const summary = await runCampaign(checked, { ...ports, now: time.now, sleep: time.sleep });
+
+    expect(time.state.waits).toEqual([120_000, 300_000, 900_000, 1_800_000]);
+    expect(ports.recorded.resumes).toHaveLength(4);
+    expect(summary.runs.map((run) => run.outcome)).toEqual(['quota exhausted']);
+    expect(summary.runs[0]?.steps.map((step) => step.outcome)).toEqual(['quota exhausted']);
+    expect(summary.runs[0]?.steps[0]?.rateLimitWaits?.map((wait) => wait.waitedS)).toEqual([
+      120, 300, 900, 1800,
+    ]);
+    expect(summary.outcome).toBe('quota exhausted');
+  });
+
+  it("does not count a wait against the step's time cap, and keeps what was used before it", async () => {
+    // A 60 s step: the session works 50 s, meets the rate limit, waits 120 s; its resume has the 10 s left, not
+    // nothing (the deadline moved by the wait) and not 60 s (the time used before it kept).
+    const checked = campaign({ step_time_s: 60 });
+    const time = clock();
+    let sessions = 0;
+    const ports = doubles({
+      onStep: (request) => {
+        if (invocationOf(request) === 0 && request.step === 1) time.state.now += 50_000;
+        else void request.run(['true']);
+      },
+      stopOf: () => {
+        sessions += 1;
+        return sessions === 1 ? 'rate limited' : undefined;
+      },
+    });
+    const summary = await runCampaign(checked, { ...ports, now: time.now, sleep: time.sleep });
+
+    expect(summary.runs[0]?.steps[0]?.outcome).toBe('completed');
+    const timeouts = ports.recorded.execs
+      .map((exec) => exec.command)
+      .filter((command) => command[0] === 'timeout')
+      .map((command) => Number(command[3]));
+    expect(timeouts[0]).toBe(10);
+  });
+
+  it('does not resume a step over its token cap: it ends at the token cap, without waiting', async () => {
+    const checked = campaign({ step_tokens: 1000 });
+    const ports = doubles({ stopOf: () => 'rate limited', usageOf: () => usage(0.1, 5000) });
+    const time = clock();
+    const summary = await runCampaign(checked, { ...ports, now: time.now, sleep: time.sleep });
+
+    expect(time.state.waits).toEqual([]);
+    expect(ports.recorded.resumes).toHaveLength(0);
+    expect(summary.runs[0]?.steps[0]?.outcome).toBe('token cap reached');
+  });
+
+  it("numbers every resume of a step in order, an approver's reply and a rate limit's alike", async () => {
+    const checked = campaign();
+    const ports = doubles({
+      // Step 1: the session asks a question; the approver's reply meets the rate limit; after the wait, done.
+      messageOf: (request) => (request.step === 1 && invocationOf(request) === 0 ? 'Which one?' : undefined),
+      stopOf: (request) => (request.step === 1 && invocationOf(request) === 1 ? 'rate limited' : undefined),
+    });
+    const time = clock();
+    const summary = await runCampaign(checked, { ...ports, now: time.now, sleep: time.sleep });
+
+    const step1 = ports.recorded.resumes.filter((resume) => resume.step === 1);
+    expect(step1.map((resume) => [resume.intervention, resume.reply === 'Continue.'])).toEqual([
+      [1, false],
+      [2, true],
+    ]);
+    expect(summary.runs[0]?.steps[0]?.interventions).toHaveLength(1);
+    expect(summary.runs[0]?.steps[0]?.rateLimitWaits).toEqual([{ afterInvocation: 2, waitedS: 120 }]);
+    expect(summary.runs[0]?.steps[0]?.outcome).toBe('completed');
+  });
+
+  it('ends quota exhausted when the resume after a wait meets the usage limit', async () => {
+    const checked = campaign();
+    let sessions = 0;
+    const ports = doubles({
+      stopOf: () => {
+        sessions += 1;
+        return sessions === 1 ? 'rate limited' : 'quota exhausted';
+      },
+    });
+    const time = clock();
+    const summary = await runCampaign(checked, { ...ports, now: time.now, sleep: time.sleep });
+
+    expect(time.state.waits).toEqual([120_000]);
+    expect(summary.runs[0]?.steps.map((step) => step.outcome)).toEqual(['quota exhausted']);
+    expect(summary.outcome).toBe('quota exhausted');
+  });
+
+  it('neither waits nor resumes once the run has spent its cost cap: the step ends at the cap', async () => {
+    const checked = campaign({ run_cost_eur: 3 });
+    const ports = doubles({ stopOf: () => 'rate limited', usageOf: () => usage(3) });
+    const time = clock();
+    const summary = await runCampaign(checked, { ...ports, now: time.now, sleep: time.sleep });
+
+    expect(time.state.waits).toEqual([]);
+    expect(ports.recorded.resumes).toHaveLength(0);
+    expect(summary.runs[0]?.steps.map((step) => step.outcome)).toEqual(['cap reached']);
+    expect(summary.runs[0]?.outcome).toBe('cap reached');
+  });
+
+  it("records each wait in run.json, beside the step, apart from the approver's interventions", async () => {
+    const checked = campaign();
+    let sessions = 0;
+    const ports = doubles({
+      stopOf: () => {
+        sessions += 1;
+        return sessions === 1 ? 'rate limited' : undefined;
+      },
+    });
+    const time = clock();
+    const summary = await runCampaign(checked, { ...ports, now: time.now, sleep: time.sleep });
+    const record = JSON.parse(readFileSync(join(summary.runs[0]?.outputDir ?? '', 'run.json'), 'utf8')) as {
+      steps: { rate_limit_waits?: unknown; interventions: number }[];
+      interventions: unknown[];
+    };
+    expect(record.steps[0]?.rate_limit_waits).toEqual([{ after_invocation: 1, waited_s: 120 }]);
+    expect(record.steps[0]?.interventions).toBe(0);
+    expect(record.interventions).toEqual([]);
+  });
+});

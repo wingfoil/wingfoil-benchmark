@@ -49,4 +49,10 @@ recognise the observed shape (`api_error_status` 429, or "rate limit" in the tex
 
 ## Resolution
 
-<!-- Filled by the task that fixes it. -->
+Fixed in [task-051](../task/task-051-a-429-rate-limit-rejection-recognised-as-the-subscription-s-limit.md): the
+adapter reads the observed shape — `api_error_status` 429, "rate limit" in the text, or a `rate_limit` error in the
+result or the `assistant` event before it — as a **rate limit** (`subscriptionLimitOf`, `958fc82`), and the runner
+waits it out: 2, 5, 15 and 30 minutes, the step's session resumed with "Continue." after each, the step ending
+`quota exhausted` only after the last wait (requirements 1.24, REQ-RUN-13). The documented usage-limit shape is read
+as before. Tests: red `6da8171`; the fixture reconstructed from the fields quoted above, the transcript having been
+lost with task-050's worktree.

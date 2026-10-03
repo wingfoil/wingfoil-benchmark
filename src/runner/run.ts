@@ -49,6 +49,26 @@ export interface RunnerOptions {
    * the WingFoil under test is built from it by SHA (REQ-RUN-14).
    */
   readonly harnessSources?: Readonly<Record<string, string>>;
+  /** Waits `ms` milliseconds: a rate limit's waits (task-051). Injected so that tests do not wait. */
+  readonly sleep?: (ms: number) => Promise<void>;
+  /** The clock a step's time cap is read from, in milliseconds; `performance.now` unless injected (task-051). */
+  readonly now?: () => number;
+}
+
+/**
+ * A rate limit's waits, in seconds (REQ-RUN-13 as amended in 1.24, task-051): after each, the step's session is
+ * resumed with {@link RATE_LIMIT_MESSAGE}; after the last, the step ends `quota exhausted`. About 52 minutes in all,
+ * a constant of the runner (the approver's choice), each wait recorded in `run.json`.
+ */
+export const RATE_LIMIT_WAITS_S: readonly number[] = [120, 300, 900, 1800];
+
+/** What a session the rate limit stopped is resumed with: no scenario's prompt, no approver's reply. */
+export const RATE_LIMIT_MESSAGE = 'Continue.';
+
+/** One wait of a rate-limited step: after which of the step's invocations, and for how long. */
+export interface RateLimitWait {
+  readonly afterInvocation: number;
+  readonly waitedS: number;
 }
 
 /** One reply of the neutral approver (REQ-RUN-07): the step, what was asked for, and what was sent. */
@@ -98,6 +118,8 @@ export interface StepResult {
    * `--max-budget-usd` the invocation was given. The budget counts this, never less.
    */
   readonly costBoundUsd?: number;
+  /** The rate limit's waits the step went through (task-051), when there were any. */
+  readonly rateLimitWaits?: readonly RateLimitWait[];
 }
 
 /**
@@ -760,10 +782,13 @@ async function executeStep(
   // step_time_s (REQ-RUN-08, task-024): every command of every invocation runs under `timeout`, with
   // what is left of the step's time. A killed session reports nothing (C3), so the kill is read here,
   // from the exit code, whatever the agent then says.
-  const deadline = performance.now() + pins.caps.step_time_s * 1000;
+  const now = options.now ?? (() => performance.now());
+  const sleep = options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+  // A rate limit's waits move the deadline by as long: the cap bounds the agent's working time (task-051).
+  let deadline = now() + pins.caps.step_time_s * 1000;
   let killed = false;
   const run = async (command: readonly string[]) => {
-    const seconds = Math.ceil((deadline - performance.now()) / 1000);
+    const seconds = Math.ceil((deadline - now()) / 1000);
     if (seconds <= 0) {
       killed = true;
       return { code: TIMED_OUT, stdout: '', stderr: `step ${number}: time cap reached` };
@@ -793,6 +818,7 @@ async function executeStep(
   const sessionId = randomUUID();
   const invocations: StepOutcome[] = [];
   const interventions: Intervention[] = [];
+  const rateLimitWaits: RateLimitWait[] = [];
   let error: string | undefined;
   let outcome: StepOutcomeKind = 'completed';
   let costBoundUsd: number | undefined;
@@ -812,14 +838,75 @@ async function executeStep(
     }
     error = invocationError(result, sessionId, name);
     if (error === undefined && result.stop !== undefined) {
-      outcome = result.stop;
-      options.log?.(`step ${number}: ${result.stop}`);
+      // `waitOut` resumes a rate-limited invocation before it reaches here; one that does was not waited out.
+      outcome = result.stop === 'rate limited' ? 'quota exhausted' : result.stop;
+      options.log?.(`step ${number}: ${outcome}`);
       return false;
     }
     return error === undefined;
   };
 
-  let going = settle(
+  /**
+   * An invocation the rate limit stopped (task-051): waited out and resumed, up to the last wait, after which the
+   * step ends `quota exhausted`. Whatever the last invocation reports is then settled as any other.
+   */
+  const waitOut = async (first: StepOutcome | string, name: string, bound: number): Promise<boolean> => {
+    let result = first;
+    let label = name;
+    let cap = bound;
+    while (
+      typeof result !== 'string' &&
+      !killed &&
+      result.error === undefined &&
+      result.sessionId === sessionId &&
+      result.stop === 'rate limited'
+    ) {
+      invocations.push(result);
+      const waitS = RATE_LIMIT_WAITS_S[rateLimitWaits.length];
+      if (waitS === undefined) {
+        outcome = 'quota exhausted';
+        options.log?.(`step ${number}: rate limit after ${rateLimitWaits.length} waits: quota exhausted`);
+        return false;
+      }
+      // step_tokens (REQ-RUN-08): a step over its token cap is not resumed after its current session, whatever
+      // stopped it (task-051's review).
+      if (tokensOf(stepUsage(invocations)) > pins.caps.step_tokens) {
+        outcome = 'token cap reached';
+        options.log?.(
+          `step ${number}: token cap reached (${pins.caps.step_tokens}) at the rate limit, not resumed`,
+        );
+        return false;
+      }
+      // Nothing left of the run's cost cap: no resume would be started, so there is nothing to wait for.
+      const left = remaining(pins, spent + stepUsage(invocations).costEur);
+      if (left <= 0) {
+        outcome = 'cap reached';
+        options.log?.(`step ${number}: cap reached at the rate limit, not resumed`);
+        return false;
+      }
+      options.log?.(`step ${number}: rate limited, waiting ${waitS} s before resuming`);
+      rateLimitWaits.push({ afterInvocation: invocations.length, waitedS: waitS });
+      await sleep(waitS * 1000);
+      deadline += waitS * 1000;
+      cap = stepUsage(invocations).costUsd + left;
+      label = `rate-limit resume ${rateLimitWaits.length} of step ${number}`;
+      result = await invoke(() =>
+        options.agent.resume({
+          scenarioId: scenario.id,
+          step: step.n,
+          intervention: invocations.length,
+          sessionId,
+          reply: RATE_LIMIT_MESSAGE,
+          remainingCostUsd: left,
+          ...mcp,
+          run,
+        }),
+      );
+    }
+    return settle(result, label, cap);
+  };
+
+  let going = await waitOut(
     await invoke(() =>
       options.agent.runStep({
         scenarioId: scenario.id,
@@ -871,7 +958,8 @@ async function executeStep(
       options.agent.resume({
         scenarioId: scenario.id,
         step: step.n,
-        intervention,
+        // Which resume of the step, of any kind: the approver's number unless a rate limit's resume came first.
+        intervention: invocations.length,
         sessionId,
         reply,
         remainingCostUsd: left,
@@ -893,7 +981,7 @@ async function executeStep(
           `below the ${sessionCostUsd} USD already reported; kept the larger`,
       );
     }
-    going = settle(resumed, `resume ${intervention} of step ${number}`, sessionCostUsd + left);
+    going = await waitOut(resumed, `resume ${intervention} of step ${number}`, sessionCostUsd + left);
   }
 
   // What the agent and its harness committed during the step, read before the step commit so that the
@@ -932,6 +1020,7 @@ async function executeStep(
     tree,
     commit,
     ...(costBoundUsd === undefined ? {} : { costBoundUsd }),
+    ...(rateLimitWaits.length === 0 ? {} : { rateLimitWaits }),
   };
   return error === undefined ? { ...result, outcome } : { ...result, outcome: 'failed', error };
 }
@@ -1083,6 +1172,15 @@ function record(run: RunResult, plan: RunPlan): RunResult {
           ...(step.costBoundUsd === undefined
             ? {}
             : { cost_reported: false, cost_bound_usd: step.costBoundUsd }),
+          // A rate limit's waits (task-051), apart from the approver's interventions below.
+          ...(step.rateLimitWaits === undefined
+            ? {}
+            : {
+                rate_limit_waits: step.rateLimitWaits.map((wait) => ({
+                  after_invocation: wait.afterInvocation,
+                  waited_s: wait.waitedS,
+                })),
+              }),
         })),
         // Every reply of the neutral approver, with its step, kind and text (REQ-RUN-07): what M-K2
         // counts in W6, under the policy version named above.
