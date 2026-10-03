@@ -342,6 +342,18 @@ describe('a rate limit, waited out (REQ-RUN-13 as amended in 1.24, bug-010, task
     expect(timeouts.every((seconds) => seconds > 0 && seconds <= 60)).toBe(true);
   });
 
+  it('neither waits nor resumes once the run has spent its cost cap: the step ends at the cap', async () => {
+    const checked = campaign({ run_cost_eur: 3 });
+    const ports = doubles({ stopOf: () => 'rate limited', usageOf: () => usage(3) });
+    const time = clock();
+    const summary = await runCampaign(checked, { ...ports, now: time.now, sleep: time.sleep });
+
+    expect(time.state.waits).toEqual([]);
+    expect(ports.recorded.resumes).toHaveLength(0);
+    expect(summary.runs[0]?.steps.map((step) => step.outcome)).toEqual(['cap reached']);
+    expect(summary.runs[0]?.outcome).toBe('cap reached');
+  });
+
   it("records each wait in run.json, beside the step, apart from the approver's interventions", async () => {
     const checked = campaign();
     let sessions = 0;

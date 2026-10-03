@@ -867,16 +867,17 @@ async function executeStep(
         options.log?.(`step ${number}: rate limit after ${rateLimitWaits.length} waits: quota exhausted`);
         return false;
       }
+      // Nothing left of the run's cost cap: no resume would be started, so there is nothing to wait for.
+      const left = remaining(pins, spent + stepUsage(invocations).costEur);
+      if (left <= 0) {
+        outcome = 'cap reached';
+        options.log?.(`step ${number}: cap reached at the rate limit, not resumed`);
+        return false;
+      }
       options.log?.(`step ${number}: rate limited, waiting ${waitS} s before resuming`);
       rateLimitWaits.push({ afterInvocation: invocations.length, waitedS: waitS });
       await sleep(waitS * 1000);
       deadline += waitS * 1000;
-      const left = remaining(pins, spent + stepUsage(invocations).costEur);
-      if (left <= 0) {
-        outcome = 'cap reached';
-        options.log?.(`step ${number}: cap reached before resuming from the rate limit`);
-        return false;
-      }
       cap = stepUsage(invocations).costUsd + left;
       label = `rate-limit resume ${rateLimitWaits.length} of step ${number}`;
       result = await invoke(() =>
