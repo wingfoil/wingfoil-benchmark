@@ -2,13 +2,12 @@
 id: task-050-calibration-of-v0-1-dry-runs-measured-costs-and-the-revised-budget
 type: task
 title: "Calibration of v0.1: dry runs, measured costs and the revised budget"
-status: in-progress
+status: in-review
 release: v0.1
 wave: calibration
 features: []
 acceptance: []
 requirements: [REQ-CLI-05, REQ-RES-01, REQ-RUN-08, REQ-RUN-16, REQ-NFR-06]
-rejection_reason: "Apply the second independent review's findings on the report's additions"
 ---
 
 ## Context
