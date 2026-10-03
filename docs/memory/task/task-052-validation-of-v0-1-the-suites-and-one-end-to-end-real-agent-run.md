@@ -143,6 +143,8 @@ worktree. The records are committed on the task branch:
    `results/d032e3e98de3/1/` except the transcripts, which are ignored and stay. Otherwise git refuses to merge
    over untracked files. The merge then brings the committed records back. Before removing anything,
    `git status --ignored` is listed.
+8. At delivery, rel-v0-1's `validation` checklist line is ticked, citing the suites' figures, campaign
+   `d032e3e98de3/1`, its cost and the ledger, as calibration's line was (`86c6512`).
 
 ### What is checked, against what
 
@@ -157,9 +159,10 @@ worktree. The records are committed on the task branch:
 | `transcripts pack` | **Token check:** both the shape and the value passed.<br>**Tarball:** its list holds the run's step transcripts; its sha256 is printed in `run.json`'s field.<br>**Release:** the `gh` command printed, not run; no GitHub release exists. |
 | ledger | one line: `2026-10-0x \| task-052 \| validation: S3@1.0 baseline \| task-052 pending → backlog, 92b1bf8 \| Sonnet 5 (Claude Code 2.1.280) \| 3 € \| X USD (Y €; steps …) \| results/d032e3e98de3/1`, and the total updated |
 
-One more check, taken only if the run gives the chance: rel-v0-1 still has an open question about what Claude
-Code's `--max-budget-usd` compares against when a session resumes. A resume happens here only if a rate limit is
-waited out. If one occurs, its `run.json` and transcript are read for the answer. No resume is forced to get it.
+rel-v0-1 lists two checks for validation: whether a resumed Sonnet 5 session stays on Sonnet, and what Claude Code's
+`--max-budget-usd` compares against when a session resumes. Both are already settled. W3 settled the first, and
+task-024's spike in W5 settled the second: a resume's cap is compared with what the resume itself spends. This run
+adds nothing to either unless a rate limit makes it resume, and no resume is forced.
 
 ### Spending and failure
 
@@ -178,8 +181,11 @@ is waited out by the runner (task-051).
 
 - `npx wingfoil memory add --type task --title "Validation of v0.1: the suites and one end-to-end real-agent run"`
   — declared: creates the element at `draft` and commits it. Observed: `98a9f7c wf(task): add …`.
-- `npx wingfoil memory submit task-052-…` (draft → pending), `f9f0a0f`; the approver's `memory approve` (pending →
-  backlog), `92b1bf8` — the consent to the run's spending (cap 3 €, ceiling 3 €).
+- `npx wingfoil memory submit task-052-…` (draft → pending) — declared: moves `status` and commits the file.
+  Observed: `f9f0a0f wf(task): submit …`, `status: pending`.
+- The approver's `npx wingfoil memory approve task-052-…` (pending → backlog) — declared: moves `status` and commits
+  with the approver and the reason. Observed: `92b1bf8 wf(task): approve … [pending → backlog]`, `status: backlog`.
+  It is the consent to the run's spending (cap 3 €, ceiling 3 €).
 - Handoff: the calibration session (task-049/050/051) confirmed on 2026-10-03 that it holds nothing for task-052 and
   gave the token file's path, the commands it used and the ledger's format; it leaves this task to this session.
 - `npx wingfoil memory submit task-052-…` (backlog → in-progress) — declared: moves `status` and commits the file.
@@ -204,8 +210,10 @@ is waited out by the runner (task-051).
   **Completed**, 22:34–22:41 (6.5 min): `campaign d032e3e98de3, execution 1`, `1 run completed, 0 failed`, `cost:
   1.0064 USD, 0.8908 EUR` — below the 3 € cap; the estimate was 0.8413 € (+6 %).
 - `run.json` checked: `outcome: completed`, agent `claude-code 2.1.280`, `claude-sonnet-5`, policy `v1`, S3@1.0's
-  hash `sha256:1c12448d…` (the one dry run 8 has), the manual `CLAUDE.md` 120 tokens; no interventions; no rate-limit
-  waits (so the `--max-budget-usd`-on-resume question of rel-v0-1 is **not observed**: no resume happened). Steps:
+  hash `sha256:1c12448d…` (the one dry run 8 has), the manual `CLAUDE.md` 120 tokens, sha256 `e3408598…` (the same as dry run 8's); no `dry_run` field (a campaign run carries
+  `campaign: d032e3e98de3` instead); no interventions; no rate-limit
+  waits (no resume happened, so the run adds nothing to rel-v0-1's two resume checks; both were settled earlier, W3 and
+  task-024). Steps:
 
   | Step | Cost USD | Turns | Time | Tokens (all kinds) |
   |---|---|---|---|---|
@@ -238,4 +246,32 @@ is waited out by the runner (task-051).
   not found". With the token file set it checked the value too: without it, it says "checked for the shape of an
   Anthropic key only". Packed three times, the same sha256 each time. The uncommitted `run.json` in the main
   checkout now carries `transcripts: {release: d032e3e98de3-1, …}`; the committed one does not (choice 3).
-- Nothing in the chain went wrong: no bug filed.
+- Every step of the chain behaved as declared: no bug filed.
+
+### Review
+
+**Independent review** by a fresh read-only agent on the branch and the main checkout's untracked execution
+(2026-10-03): no blocker. It recomputed every figure in the notes from `run.json`, `usage.json` and `score.json`
+(step costs, turns, times, tokens, 1.0064 USD × 0.8851 = 0.8908 €, +5.9 % over the estimate; the scores against dry
+run 8; the site's 91.9 %, 60.0 %, 16/17). It also checked:
+
+- `diff -r` of the committed records against the main checkout's: they differ only by the five transcripts and the
+  pack's `transcripts` field; no transcript is tracked;
+- the campaign file's pins against `scenarios/dry-run.yaml` and the consent;
+- `campaign validate` and `campaign estimate`, re-run;
+- the tarball's sha256, and that the tarball was written after the records' commit;
+- the ledger line's format, its consent commit and its total;
+- `sk-ant-`: found in no committed file.
+
+Its findings and their outcome:
+
+1. *should-fix*: the notes called the `--max-budget-usd`-on-resume question open, but rel-v0-1 records it as
+   settled by task-024's spike, and the "stays on Sonnet" check as settled by W3. **Fixed** in the Design and the
+   notes.
+2. *should-fix*: no planned close-out of rel-v0-1's `validation` checklist line. **Fixed:** delivery step 8.
+3. *nit*: two `wingfoil` command notes (draft → pending, the approval) lacked the declared/observed form. **Fixed.**
+4. *nit*: the Design's checks "`dry_run` false" and "the manual's sha256" were not recorded. **Fixed:** a campaign
+   run has no `dry_run` field; the manual's sha256 equals dry run 8's.
+5. *nit*: "Nothing in the chain went wrong" overstated. **Fixed:** "Every step of the chain behaved as declared".
+6. *nit*: the suites' figures have no stored output. **Kept as is:** the figures are quoted from the runs on
+   `92b1bf8`, and the branch changes no code, so they apply to it.
