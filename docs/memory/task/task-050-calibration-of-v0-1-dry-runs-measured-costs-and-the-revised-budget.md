@@ -412,3 +412,13 @@ moves `status` and commits the file. Observed: `ba8fdc3 wf(task): submit …`, `
 line ticked. Next, before any real-agent run: bug-010's task; then validation (plan-003 step 4) and the reference
 campaign (step 5) with option A's budget, each with the approver's consent.
 
+
+### After delivery
+
+- **The dry runs' transcripts are lost.** Removing this task's worktree with `git worktree remove --force`
+  (2026-10-03, after `86c6512`) deleted its git-ignored files with it: the 19 dry runs' `transcript.jsonl` and the
+  runner's workspaces under `runs/`. The committed records (`run.json`, `score.json`, `usage.json`, patches,
+  `commits.json`) are intact, and dry-run transcripts are not release assets (REQ-RES-06 packs a campaign's).
+  The report's analyses of the transcripts (§7, the cost by phase; the two `api_error`s) were made, and reviewed
+  twice, before the loss; they can no longer be re-run from the raw data. bug-010's fixture (task-051) is
+  reconstructed from the fields bug-010 quotes. The approver chose to record it here only.
