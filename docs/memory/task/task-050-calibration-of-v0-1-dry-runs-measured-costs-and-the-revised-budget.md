@@ -367,3 +367,10 @@ dry runs 15–19); the S1 Docker tests 2/2 before it.
    such keys. Two consent commits (`5f4b5eb`, `e37dee2`) carry no `Approver:` line; the consents are in the notes they
    commit, and the history is not rewritten.
 - `npx wingfoil memory submit task-050-…` (in-progress → in-review) — declared: moves `status` and commits the file. Observed: `2ad4591`, `status: in-review`; the body committed first (`273f38c`).
+- The approver's `memory reject` (in-review → in-progress), `5063a25`, to add to the report what the
+  discussion of 2026-10-03 produced. Added: §7 "Where the wingfoil arm's cost goes" (the transcripts of dry runs 7,
+  10, 14, 17, 19 classed by tool call: orientation 12–19 %, recording 15–24 %, approval round trips 5–10 %; no MCP
+  call; the developer's directives about 1 300 tokens), the statement that the arm's process is the manual's choice,
+  and the cost by lever (role context at start, linked sessions, a workflow for agents: estimates); §8 the saturation
+  rule; §10 the decision-logs to file after v0.1; §11 H8–H10, the levels of delegation and the neutral control. The
+  figures were re-read against the per-run classification before the commit.
