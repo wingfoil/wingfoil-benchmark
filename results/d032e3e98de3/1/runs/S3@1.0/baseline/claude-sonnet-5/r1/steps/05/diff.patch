@@ -1,0 +1,154 @@
+diff --git a/src/index.test.ts b/src/index.test.ts
+index 07749a5b7316636fedcf140d3d5f0429050e1108..646adb54500c8d486ddd8ad573c893cdcaba6464 100644
+--- a/src/index.test.ts
++++ b/src/index.test.ts
+@@ -161,3 +161,46 @@ test('book treats an hourly booking as overlapping a daily booking on the same i
+     svc.book({ itemId: 'board-1', start: '2026-07-01T10:00:00.000Z', end: '2026-07-01T13:00:00.000Z' }),
+   );
+ });
++
++test('cancel before the rental starts gives a full refund', () => {
++  const svc = service();
++  const booking = svc.book({ itemId: 'board-1', start: '2026-07-01T00:00:00.000Z', end: '2026-07-05T00:00:00.000Z' });
++  const cancellation = svc.cancel(booking.id, '2026-06-30T00:00:00.000Z');
++  assert.deepEqual(cancellation, { bookingId: booking.id, refund: booking.total });
++});
++
++test('cancel after the rental ends gives no refund', () => {
++  const svc = service();
++  const booking = svc.book({ itemId: 'board-1', start: '2026-07-01T00:00:00.000Z', end: '2026-07-05T00:00:00.000Z' });
++  const cancellation = svc.cancel(booking.id, '2026-07-06T00:00:00.000Z');
++  assert.equal(cancellation.refund, 0);
++});
++
++test('cancel partway through the rental gives a prorated refund for the unused time', () => {
++  const svc = service();
++  const booking = svc.book({ itemId: 'board-1', start: '2026-07-01T00:00:00.000Z', end: '2026-07-05T00:00:00.000Z' });
++  const cancellation = svc.cancel(booking.id, '2026-07-02T00:00:00.000Z');
++  assert.equal(cancellation.refund, Math.round(booking.total * (3 / 4)));
++});
++
++test('cancel frees up the equipment for the cancelled period', () => {
++  const svc = service();
++  const booking = svc.book({ itemId: 'board-1', start: '2026-07-01T00:00:00.000Z', end: '2026-07-05T00:00:00.000Z' });
++  svc.cancel(booking.id, '2026-06-30T00:00:00.000Z');
++  const ids = svc.availability({ start: '2026-07-01T00:00:00.000Z', end: '2026-07-05T00:00:00.000Z' });
++  assert.ok(ids.includes('board-1'));
++  const rebooked = svc.book({ itemId: 'board-1', start: '2026-07-01T00:00:00.000Z', end: '2026-07-05T00:00:00.000Z' });
++  assert.equal(rebooked.itemId, 'board-1');
++});
++
++test('cancel throws when called twice for the same booking', () => {
++  const svc = service();
++  const booking = svc.book({ itemId: 'board-1', start: '2026-07-01T00:00:00.000Z', end: '2026-07-05T00:00:00.000Z' });
++  svc.cancel(booking.id, '2026-06-30T00:00:00.000Z');
++  assert.throws(() => svc.cancel(booking.id, '2026-06-30T00:00:00.000Z'));
++});
++
++test('cancel throws for an unknown booking id', () => {
++  const svc = service();
++  assert.throws(() => svc.cancel('nope', '2026-06-30T00:00:00.000Z'));
++});
+diff --git a/src/index.ts b/src/index.ts
+index d4ae1e25c20ee66dc685993eeb40851c5747849c..203a5a1695c5cd91bf396dbffd63d4cb1ba6fc94 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -28,6 +28,11 @@ export interface Booking {
+   total: number;
+ }
+ 
++export interface Cancellation {
++  bookingId: string;
++  refund: number;
++}
++
+ const DAY_MS = 24 * 60 * 60 * 1000;
+ const HOUR_MS = 60 * 60 * 1000;
+ 
+@@ -119,12 +124,14 @@ export interface RentalService {
+   addEquipment(item: Equipment): void;
+   quote(request: RentalRequest): Quote;
+   book(request: RentalRequest): Booking;
++  cancel(bookingId: string, at: string): Cancellation;
+   availability(query: AvailabilityQuery): string[];
+ }
+ 
+ export function createRentalService(): RentalService {
+   const equipment = new Map<string, Equipment>();
+   const bookings = new Map<string, Booking[]>();
++  const cancelledIds = new Set<string>();
+   let nextBookingId = 1;
+ 
+   function getEquipmentOrThrow(itemId: string): Equipment {
+@@ -157,6 +164,9 @@ export function createRentalService(): RentalService {
+ 
+     const existing = bookings.get(item.id) ?? [];
+     for (const existingBooking of existing) {
++      if (cancelledIds.has(existingBooking.id)) {
++        continue;
++      }
+       const existingStartMs = new Date(existingBooking.start).getTime();
+       const existingEndMs = new Date(existingBooking.end).getTime();
+       if (periodsOverlap(startMs, endMs, existingStartMs, existingEndMs)) {
+@@ -178,6 +188,44 @@ export function createRentalService(): RentalService {
+     return newBooking;
+   }
+ 
++  function findBookingOrThrow(bookingId: string): Booking {
++    for (const existing of bookings.values()) {
++      const found = existing.find((b) => b.id === bookingId);
++      if (found) {
++        return found;
++      }
++    }
++    throw new Error(`Unknown booking: ${bookingId}`);
++  }
++
++  function computeRefund(booking: Booking, atMs: number): number {
++    const startMs = new Date(booking.start).getTime();
++    const endMs = new Date(booking.end).getTime();
++    if (atMs <= startMs) {
++      return booking.total;
++    }
++    if (atMs >= endMs) {
++      return 0;
++    }
++    const remainingFraction = (endMs - atMs) / (endMs - startMs);
++    return Math.round(booking.total * remainingFraction);
++  }
++
++  function cancel(bookingId: string, at: string): Cancellation {
++    const booking = findBookingOrThrow(bookingId);
++    if (cancelledIds.has(bookingId)) {
++      throw new Error(`Booking ${bookingId} is already cancelled.`);
++    }
++
++    const atDate = new Date(at);
++    if (Number.isNaN(atDate.getTime())) {
++      throw new Error('Invalid cancellation: at must be a valid ISO-8601 date.');
++    }
++
++    cancelledIds.add(bookingId);
++    return { bookingId, refund: computeRefund(booking, atDate.getTime()) };
++  }
++
+   function availability(query: AvailabilityQuery): string[] {
+     const { startMs, endMs } = parsePeriod(query.start, query.end);
+ 
+@@ -188,6 +236,9 @@ export function createRentalService(): RentalService {
+       }
+       const existing = bookings.get(item.id) ?? [];
+       const isFree = existing.every((existingBooking) => {
++        if (cancelledIds.has(existingBooking.id)) {
++          return true;
++        }
+         const existingStartMs = new Date(existingBooking.start).getTime();
+         const existingEndMs = new Date(existingBooking.end).getTime();
+         return !periodsOverlap(startMs, endMs, existingStartMs, existingEndMs);
+@@ -200,5 +251,5 @@ export function createRentalService(): RentalService {
+     return available.sort();
+   }
+ 
+-  return { addEquipment, quote, book, availability };
++  return { addEquipment, quote, book, cancel, availability };
+ }
