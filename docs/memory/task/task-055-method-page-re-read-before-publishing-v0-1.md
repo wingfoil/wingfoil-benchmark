@@ -2,7 +2,7 @@
 id: task-055-method-page-re-read-before-publishing-v0-1
 type: task
 title: "Method page re-read before publishing v0.1"
-status: in-progress
+status: in-review
 release: v0.1
 wave: campaign
 features: [F5.8]
