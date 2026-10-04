@@ -16,6 +16,9 @@ v0.1 runs on **Claude Sonnet 5** (`claude-sonnet-5`), with an **Opus 5** (`claud
 (`claude-sonnet-5-5`) and **Opus 5.5** (`claude-opus-5-5`). This decision covers which models v0.2 runs on. The v0.1
 campaign is not changed: its estimate, budget and consent are all on the 5 models.
 
+Added by the approver on 2026-10-04: **Haiku 4.5** (`claude-haiku-4-5`) as a *weak model*, to see whether a harness
+helps a weaker model more than a stronger one.
+
 **Prices** (USD per million tokens, Anthropic first-party API rates; cache writes at 1.25× input):
 
 | Model | Input | Output | Cache write | Cache read |
@@ -24,6 +27,7 @@ campaign is not changed: its estimate, budget and consent are all on the 5 model
 | **Sonnet 5.5** | 2.00 | 10.00 | 2.50 | 0.20 |
 | Opus 5 | 5.00 | 25.00 | 6.25 | 0.50 |
 | **Opus 5.5** | 4.00 | 20.00 | 5.00 | **0.20** |
+| **Haiku 4.5** | 1.00 | 5.00 | 1.25 | 0.10 |
 
 These prices are checked against the reported costs: recomputing the calibration dry runs' recorded tokens with them gives the cost
 the agent reported (dry run 19, Opus 5: 24.06 against 24.08 USD; dry run 15, Sonnet 5: 2.158 against 2.158 USD).
@@ -41,6 +45,19 @@ So:
 - The price per token is not the price per run. Opus 5.5 defaults to effort `medium` where Opus 5 defaults to
   `high`, and Sonnet 5.5's effort levels are recalibrated. What Claude Code sends, and how many turns and tokens a
   run takes, change with the model. The figures above are bounds at equal tokens, not an estimate.
+
+**Haiku 4.5 as a weak model.**
+
+- **Price:** exactly half of Sonnet 5's on every kind of token. The 18 Sonnet runs of execution `c82a5e74885b/1`
+  (39.05 USD) would cost **19.49 USD (about 17 €)** with the same tokens.
+- **Tokens:** a weaker model may take more turns, retries and re-reads, so the real cost is likely higher. Only a
+  dry run can say.
+- **Context:** 200 K tokens against Sonnet's 1 M. S1's long steps, the wingfoil arm's above all, may be compacted
+  often, and that changes how the agent works.
+- **The floor:** if Haiku does not finish S1 in any arm, a comparison reads "everyone fails" and says nothing of the
+  harness. As a reference model it is therefore unsuitable.
+- **Its value is as a slice:** T14 (model sensitivity) is about this case. A process harness such as WingFoil may
+  narrow the gap between a weak and a strong model, which a hypothesis can state before the runs.
 
 **What a model change costs the benchmark:**
 
@@ -70,6 +87,11 @@ So:
   match, so the slice compares across both model and generation, which T14 counts as a confound.
 - **D. Postpone to v0.3.** v0.2 already changes the arms and WingFoil's version. Adding the model would be a third
   variable in the same release.
+- **E. A weak-model slice on Haiku 4.5 (beside A, B or C).**
+  - **Runs:** S1 and S3 in baseline and wingfoil, 4 runs: S1 is the longest scenario, S3 tests continuity.
+  - **Calibration:** 4 dry runs first.
+  - **Cost:** about 10 € for the slice and its dry runs together, at half of Sonnet's cost per run, to be measured.
+  - **It answers:** does the wingfoil arm's gain over the baseline grow when the model is weaker?
 
 ## Proposal
 
@@ -80,7 +102,10 @@ So:
 2. A **bridge slice** in the v0.2 campaign: S1 × {baseline, wingfoil on WingFoil v0.2.2} on Sonnet 5.5, so that
    v0.1 → v0.2 is compared on one model. Its size is set by calibration.
 3. If calibration shows that Sonnet 5.5 costs more per run than the budget allows, fall back to **C**.
-4. The amendment goes through the experiment design (§6, model and slice) and calibration §11 (H1–H5 restated on
+4. **E is added**: the Haiku 4.5 slice, with its hypothesis written before the runs (calibration §11, as **H6**:
+   the wingfoil arm's gain over the baseline on S1 and S3, measured by M-Q1 and M-F1, is larger on Haiku 4.5 than
+   on the default model). The slice is dropped if Haiku's dry runs do not finish S1 in any arm.
+5. The amendment goes through the experiment design (§6, model and slice) and calibration §11 (H1–H5 restated on
    the model they read), with a raised version and the review decision recorded.
 
 ## Consequences
@@ -91,3 +116,27 @@ So:
 - The site shows the model of every number. v0.1's Sonnet 5 results and v0.2's Sonnet 5.5 results are compared only
   through the bridge.
 - If v0.2 keeps Sonnet 5 (option A or C), H1–H5 are unaffected and this decision-log records why.
+- The Haiku slice is shown as a separate comparison (T14), never mixed into the default model's headline.
+- **Observed models are recorded.** The runner records, per invocation, which models the agent actually used, with
+  their tokens and cost, read from the `result` event's `modelUsage`
+  ([task-054](../task/task-054-observed-models-recorded-per-invocation.md)). In `c82a5e74885b/1`, Claude Code already
+  called Haiku 4.5 for its own work beside Sonnet (0.06 USD). A slice's model can then be checked rather than
+  assumed.
+
+## Not decided here: model routing by WingFoil
+
+WingFoil is to let a workflow run its phases on different models, chosen by the phase's kind or complexity. When
+that is designed on WingFoil's side, a **decision-log of its own** settles how the benchmark measures it. It must
+answer:
+
+- **The mechanism.** Does WingFoil choose the model inside the session the runner starts (a subagent, an MCP
+  command)? Then the runner only reads the models from `modelUsage` (task-054). Or does WingFoil start the sessions
+  itself? Then the runner gives up control of the steps: calibration §10's "arm where the harness launches the
+  agent", with new rules for caps and cost.
+- **Separating the effect.** Two arms: `wingfoil` on a fixed model, which isolates the process, and
+  `wingfoil-routed`, which measures routing as a feature. The difference between them is routing's effect. Against
+  the baseline, quality and cost are read together, since "same quality, less cost" is what routing claims.
+- **Pins.** The routing configuration becomes a pin of the arm (REQ-NFR-02), and the campaign lists the models
+  allowed.
+- **The estimate.** Its key becomes (scenario, arm, model profile) instead of (scenario, arm, model); the dry run
+  measures the mixed cost as it is.
