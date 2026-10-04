@@ -133,6 +133,27 @@ describe('step_time_s (task-024)', () => {
     expect(record.steps[0]).not.toHaveProperty('error');
   });
 
+  it("records a step whose output reached the port's bound as failed, its cost as a bound (bug-011)", async () => {
+    const agent = commandAgent(
+      () => ['claude', '-p', 'long'],
+      () => ({ error: "the agent's output passed the port's output bound; its usage is not known" }),
+    );
+    const ports = doubles({
+      execResultOf: (command) =>
+        command[4] === 'claude'
+          ? { code: 1, stdout: '', stderr: 'output bound of 4096 bytes reached', outputBounded: true }
+          : undefined,
+    });
+    const summary = await runCampaign(campaign({ step_time_s: 60, run_cost_eur: 5 }), { ...ports, agent });
+    const run = summary.runs[0];
+
+    expect(run?.outcome).toBe('failed');
+    expect(run?.steps.map((step) => step.outcome)).toEqual(['failed']);
+    const record = runJson(run?.outputDir) as { error: string; steps: Record<string, unknown>[] };
+    expect(record.steps[0]).toMatchObject({ outcome: 'failed', cost_reported: false, cost_bound_usd: 5 });
+    expect(record.error).toMatch(/output bound/);
+  });
+
   it('reads an agent that throws on the killed command — as the fake does — as the time cap, not a failure', async () => {
     const agent: AgentPort = {
       runStep: async (request) => {
@@ -148,6 +169,26 @@ describe('step_time_s (task-024)', () => {
     const summary = await runCampaign(campaign(), { ...ports, agent });
     expect(summary.runs[0]?.steps[0]?.outcome).toBe('time cap reached');
     expect(summary.runs[0]?.error).toBeUndefined();
+  });
+
+  it('keeps the cost bound of a bounded step when the agent throws on it (bug-011)', async () => {
+    const agent: AgentPort = {
+      runStep: async (request) => {
+        const result = await request.run(['claude', '-p', 'long']);
+        throw new Error(`claude failed with code ${result.code}`);
+      },
+      resume: () => Promise.reject(new Error('no resume')),
+    };
+    const ports = doubles({
+      execResultOf: (command) =>
+        command[4] === 'claude'
+          ? { code: 1, stdout: '', stderr: 'output bound of 4096 bytes reached', outputBounded: true }
+          : undefined,
+    });
+    const summary = await runCampaign(campaign({ run_cost_eur: 5 }), { ...ports, agent });
+    const record = runJson(summary.runs[0]?.outputDir) as { error: string; steps: Record<string, unknown>[] };
+    expect(record.steps[0]).toMatchObject({ outcome: 'failed', cost_reported: false, cost_bound_usd: 5 });
+    expect(record.error).toMatch(/output bound/);
   });
 
   it('runs no command once the step has no time left', async () => {

@@ -787,6 +787,8 @@ async function executeStep(
   // A rate limit's waits move the deadline by as long: the cap bounds the agent's working time (task-051).
   let deadline = now() + pins.caps.step_time_s * 1000;
   let killed = false;
+  /** Whether the port stopped reading an invocation's output at its bound (bug-011): its cost is not known. */
+  let bounded = false;
   const run = async (command: readonly string[]) => {
     const seconds = Math.ceil((deadline - now()) / 1000);
     if (seconds <= 0) {
@@ -801,16 +803,23 @@ async function executeStep(
       ...command,
     ]);
     if (result.code === TIMED_OUT || result.code === KILLED) killed = true;
+    if (result.outputBounded === true) bounded = true;
     return result;
   };
   /** One invocation; a throw is the agent's failure unless the invocation was killed at the time cap. */
   const invoke = async (call: () => Promise<StepOutcome>): Promise<StepOutcome | string> => {
     killed = false;
+    bounded = false;
     try {
       return await call();
     } catch (failure) {
       // What a killed invocation reported is nothing: its cost is counted at its bound (settle).
       if (killed) return { sessionId, usage: NO_USAGE, transcript: [] };
+      // A bounded invocation is a failure, but its cost is counted at its bound all the same (bug-011).
+      if (bounded) {
+        const error = `${reasonOf(failure)}; the agent's output passed the port's output bound`;
+        return { sessionId, usage: NO_USAGE, transcript: [], error };
+      }
       return reasonOf(failure);
     }
   };
@@ -834,6 +843,12 @@ async function executeStep(
       outcome = 'time cap reached';
       costBoundUsd = bound;
       options.log?.(`step ${number}: time cap reached (${pins.caps.step_time_s} s)`);
+      return false;
+    }
+    if (bounded) {
+      // A failure, but one whose cost the agent never reported: it counts at its bound, as a killed one does.
+      costBoundUsd = bound;
+      error = result.error ?? "the agent's output passed the port's output bound";
       return false;
     }
     error = invocationError(result, sessionId, name);

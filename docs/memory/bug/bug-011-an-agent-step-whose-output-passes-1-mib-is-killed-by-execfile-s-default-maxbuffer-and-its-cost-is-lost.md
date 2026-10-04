@@ -65,4 +65,20 @@ Sonnet) and 5.67 USD (wingfoil, Opus).
 
 ## Resolution
 
-<!-- Filled when fixed: the task, the commit, and how it was verified. -->
+Fixed by [task-053](../task/task-053-agent-and-process-output-not-bounded-at-1-mib.md):
+
+- `1110370`: every process output read whole up to 256 MiB, reaching the bound reported as `outputBounded` and
+  never as a timeout; the adapter fails a bounded step by name.
+- `0b87a9b`: the runner counts a bounded step's cost at its bound (`cost_reported: false`, `cost_bound_usd`), and
+  `processFailure` quotes only the end of a long output.
+- `21e7b2d`: the same when the agent throws on a bounded result.
+
+Verified by:
+
+- unit tests: a 3 MiB output read whole, a small injected bound reported, the adapter's message, and the runner's
+  record;
+- an independent review and a re-review;
+- `npm test` 1219 tests, coverage 98.04 %; `test:docker` 16/16.
+
+The three failed runs are re-run with the whole campaign, as execution `c82a5e74885b/2` (campaign-001, sent back
+`1ab1d67`).

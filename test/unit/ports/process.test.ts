@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { gitCli, processFailure, systemProcess } from '../../../src/core/index.js';
+import { createSystemProcess, gitCli, processFailure, systemProcess } from '../../../src/core/index.js';
 import type { ProcessPort } from '../../../src/core/index.js';
 
 describe('the system process port', () => {
@@ -87,10 +87,47 @@ describe('the system process port, with a time limit (bug-003)', () => {
   });
 });
 
+describe('the system process port, with a long output (bug-011)', () => {
+  it('reads an output well over the 1 MiB Node buffers by default whole', async () => {
+    const bytes = 3 * 1024 * 1024;
+    const result = await systemProcess.run(process.execPath, [
+      '-e',
+      `process.stdout.write("x".repeat(${bytes}))`,
+    ]);
+    expect(result.code).toBe(0);
+    expect(result.stdout.length).toBe(bytes);
+    expect(result.outputBounded).toBeUndefined();
+  });
+
+  it('says so when an output reaches the bound, and does not call it a timeout', async () => {
+    const port = createSystemProcess({ maxOutputBytes: 4096 });
+    const result = await port.run(process.execPath, ['-e', 'process.stdout.write("x".repeat(65536))'], {
+      timeoutMs: 30_000,
+    });
+    expect(result.outputBounded).toBe(true);
+    expect(result.timedOut).toBeUndefined();
+    expect(result.code).not.toBe(0);
+    expect(result.stderr).toMatch(/output bound of 4096 bytes reached/);
+  });
+
+  it('bounds the error output as well', async () => {
+    const port = createSystemProcess({ maxOutputBytes: 4096 });
+    const result = await port.run(process.execPath, ['-e', 'process.stderr.write("x".repeat(65536))']);
+    expect(result.outputBounded).toBe(true);
+  });
+});
+
 describe('processFailure', () => {
   it('names the command and what it said', () => {
     const error = processFailure('docker', ['start', 'x'], { code: 2, stdout: '', stderr: 'boom\n' });
     expect(error.message).toBe('docker start x failed with code 2:\nboom');
+  });
+
+  it('quotes only the end of a long output, where the bound is named (bug-011)', () => {
+    const stderr = `${'x'.repeat(100_000)}\noutput bound of 4096 bytes reached`;
+    const error = processFailure('git', ['diff'], { code: 1, stdout: '', stderr, outputBounded: true });
+    expect(error.message.length).toBeLessThan(5000);
+    expect(error.message).toMatch(/…x+\noutput bound of 4096 bytes reached$/);
   });
 
   it('falls back to the standard output when there is no error output', () => {

@@ -311,13 +311,23 @@ function resumeLine(request: ResumeRequest): string[] {
  */
 export function claudeCodeAgent(options: AdapterOptions): AgentPort {
   async function invoke(
-    run: (command: readonly string[]) => Promise<{ stdout: string }>,
+    run: (command: readonly string[]) => Promise<{ stdout: string; outputBounded?: true }>,
     command: readonly string[],
   ): Promise<StepOutcome> {
     const result = await run(command);
     const lines = scrub(result.stdout, [options.token])
       .split('\n')
       .filter((line) => line.trim() !== '');
+    // A stream the port stopped reading ends mid-line and has no `result`: its usage is not known, and the
+    // step is failed by what happened to it, not by the cut line (bug-011). The lines read are the evidence.
+    if (result.outputBounded === true) {
+      return {
+        sessionId: '',
+        usage: ZERO,
+        transcript: lines,
+        error: "the agent's output passed the port's output bound; its usage is not known",
+      };
+    }
     const session = readSession(lines, options.usdToEur);
     return {
       sessionId: session.sessionId,

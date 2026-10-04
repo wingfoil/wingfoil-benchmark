@@ -457,6 +457,27 @@ describe('the Claude Code adapter (REQ-RUN-04)', () => {
     expect(outcome.finalMessage).toContain('Are you sure');
   });
 
+  it("fails a step whose output reached the port's bound by name, not as invalid JSON (bug-011)", async () => {
+    const lines = recorded('completed.jsonl');
+    // What the port hands back when it stopped reading: the stream cut in the middle of a line.
+    const cut = `${lines.slice(0, -1).join('\n')}\n${(lines.at(-1) ?? '').slice(0, 40)}`;
+    const outcome = await claudeCodeAgent({ token: 'x', usdToEur: RATE }).runStep(
+      request(() =>
+        Promise.resolve({
+          code: 1,
+          stdout: cut,
+          stderr: 'output bound of 4096 bytes reached',
+          outputBounded: true,
+        }),
+      ),
+    );
+    expect(outcome.error).toMatch(/the agent's output passed the port's output bound/);
+    expect(outcome.error).not.toMatch(/not valid JSON/);
+    expect(outcome.usage.costUsd).toBe(0);
+    // The lines that were read stay: they are the evidence of what the step did.
+    expect(outcome.transcript.length).toBe(lines.length);
+  });
+
   it('reports a failed session with what it spent, rather than throwing it away', async () => {
     const exec = runner(recorded('failed-subtype-success.jsonl').join('\n'));
 
