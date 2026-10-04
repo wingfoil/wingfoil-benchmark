@@ -2,11 +2,12 @@
 id: campaign-001-v0-1-reference-campaign
 type: campaign
 title: "v0.1 reference campaign"
-status: scored
+status: running
 release: v0.1
 campaign_file: campaigns/v0-1-reference.yaml
 campaign_id: c82a5e74885b
 wingfoil_commit: 12537b627ce0517222da762e8fa90997a1208a4b # v0.2.2
+rejection_reason: "Sent back by the approver: 3 of 19 runs failed at S1 step 03 from bug-011 (agent output cut at 1 MiB); fix bug-011, then re-run the full campaign as a new execution with a new spending consent"
 ---
 
 ## Purpose
