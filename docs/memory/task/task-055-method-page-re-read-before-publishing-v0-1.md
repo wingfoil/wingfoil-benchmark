@@ -52,12 +52,36 @@ its own.
 
 ## Acceptance criteria
 
-<!-- One line per criterion (Gherkin scenario or requirement), each classified as red-first
-     (new behaviour: a failing test precedes the code) or characterization (existing behaviour). -->
+- Every new statement has its anchor, and the statements test (`test/unit/site/method-statements.test.ts`) lists it
+  with its source. **Red-first:** the test names the anchors before the prose has them.
+- The existing anchors are all kept, with no anchor renamed. **Characterization:** the statements test as it is.
+- The built method page of `c82a5e74885b/2` reads the new statements, and its "This execution" section reads the
+  real pins. Checked by hand in the browser pane, and recorded.
+- `results.feature` @F5.8 stays green. **Characterization.**
 
 ## Design
 
-<!-- Modules, interfaces, data formats touched; decisions taken and their reasons. -->
+The re-read, item by item. Each item either changes the page or is stated as not needing a change.
+
+| # | Item | Finding on re-read | Change |
+|---|---|---|---|
+| 1 | Requirements 1.20 → 1.25 | 1.23 (the finding note's template at v0.2.2): the page says "shaped as a WingFoil bug or decision record", still true. 1.24 (rate limit): `#rate-limit` already states it. 1.25 (observed models): not on the page | item 4 below |
+| 1b | task-053 (bug-011), the output bound | not on the page. A step whose output passes the runner's bound is failed and counted at its upper bound, as a killed step is | one sentence added to `#killed-step`: "The same holds for a step whose output passes the runner's 256 MiB bound." |
+| 2a | The campaign's shape | `#preliminary` ("repeats only S1") and the M-R line ("only S1 has repetitions (three)") match the campaign as it ran | none |
+| 2b | `harness-gaps` and T10 | `#harness-gaps` is general and true. T10 names `3df305e` as the pin *at design time*, and v0.2.2 as the public campaign's: both true, and the history is the point of T10 | none |
+| 2c | "This execution" | the built page (`site/c82a5e74885b/2/method.html`) reads agent 2.1.280, Sonnet 5, the Opus slice "on S1, in wingfoil", WingFoil v0.2.2 with commit `12537b62` and its `provides`, the four scenario hashes, the scoring image, the manuals and the budget | none; re-checked on the rebuilt page |
+| 3a | The slice covers one arm | `#model-slices` and T14 speak of "a comparison slice" without saying that in v0.1 it is one run of S1 in the wingfoil arm. It therefore compares models *within* the wingfoil arm, not the harness's effect on Opus | `#model-slices`: in v0.1 the slice is one run of S1 in the wingfoil arm, read against the same arm's runs on the main model. T14's mitigation gains "(in v0.1, the wingfoil arm only, for its cost)" |
+| 3b | The wingfoil arm's process is the manual's | the manual asks for a task per request and a decision-log per design decision, each submitted and approved. Its reading and writing are in the arm's cost (the M-K1 finding of campaign-001). Not on the page | a new statement, `{#wingfoil-manual-process}`, after `#operating-manuals`: what the wingfoil manual asks the agent to record, and that the arm's cost and turns include that process. A lighter use of WingFoil would cost less; the manual is the one published |
+| 4 | Auxiliary models | Claude Code called Haiku 4.5 for its own work (0.19 USD in `c82a5e74885b/2`) | a new statement, `{#auxiliary-models}`, after `#harness-not-model`: the agent may call a smaller model for its own work; the models each step used are recorded with the run; their cost is in the arm's cost |
+| 5 | Execution `/1` | the method page describes the method, not one execution's history. `/1` is not published, and its story (bug-011) belongs in v0.1's release notes | none on this page; the release notes (plan-003 step 6) mention it |
+
+**Files:**
+
+- `site-content/method.md`;
+- `test/unit/site/method-statements.test.ts`: two new anchors with their sources (the wingfoil manual; REQ-RUN-09 as
+  amended in 1.25).
+
+No generator change.
 
 ## Execution notes
 
