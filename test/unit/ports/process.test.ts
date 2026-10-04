@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { gitCli, processFailure, systemProcess } from '../../../src/core/index.js';
+import { createSystemProcess, gitCli, processFailure, systemProcess } from '../../../src/core/index.js';
 import type { ProcessPort } from '../../../src/core/index.js';
 
 describe('the system process port', () => {
@@ -84,6 +84,36 @@ describe('the system process port, with a time limit (bug-003)', () => {
     });
     expect(result.code).not.toBe(0);
     expect(result.timedOut).toBeUndefined();
+  });
+});
+
+describe('the system process port, with a long output (bug-011)', () => {
+  it('reads an output well over the 1 MiB Node buffers by default whole', async () => {
+    const bytes = 3 * 1024 * 1024;
+    const result = await systemProcess.run(process.execPath, [
+      '-e',
+      `process.stdout.write("x".repeat(${bytes}))`,
+    ]);
+    expect(result.code).toBe(0);
+    expect(result.stdout.length).toBe(bytes);
+    expect(result.outputBounded).toBeUndefined();
+  });
+
+  it('says so when an output reaches the bound, and does not call it a timeout', async () => {
+    const port = createSystemProcess({ maxOutputBytes: 4096 });
+    const result = await port.run(process.execPath, ['-e', 'process.stdout.write("x".repeat(65536))'], {
+      timeoutMs: 30_000,
+    });
+    expect(result.outputBounded).toBe(true);
+    expect(result.timedOut).toBeUndefined();
+    expect(result.code).not.toBe(0);
+    expect(result.stderr).toMatch(/output bound of 4096 bytes reached/);
+  });
+
+  it('bounds the error output as well', async () => {
+    const port = createSystemProcess({ maxOutputBytes: 4096 });
+    const result = await port.run(process.execPath, ['-e', 'process.stderr.write("x".repeat(65536))']);
+    expect(result.outputBounded).toBe(true);
   });
 });
 
