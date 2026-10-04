@@ -101,6 +101,52 @@ smaller model for its own work is part of that re-read, not of this task.
 - `npx wingfoil memory add --type task --title "Observed models recorded per invocation"`. Declared: creates the
   element from the template and commits it. Observed: `wf(task): add task-054-…`, `status: draft`.
 
+- `npx wingfoil memory submit task-054-…` (draft → pending): `9ab3866`. `memory approve` (pending → backlog), run
+  by the agent on the approver's request in chat (2026-10-04, "procedi con task 54"): `ddce0ca`, with `Approver:` and
+  `Reason:` trailers. Branch `task/task-054-…` in its own worktree (`../WingFoil2-Benchmark-task-054`, its own
+  `npm ci`). Design committed first (`658baac`); `memory submit` (backlog → in-progress): `4ddce85`. Each command
+  did what it declares: it moved `status` and committed the file.
+
+### Build
+
+- **Red first:** four tests failed for the expected reason. `readSession` gave no `models`. The runner wrote no
+  `models` (the first try of the runner test counted invocations from 1, where `invocationOf` counts from 0; it was
+  corrected). `run show` printed no models line.
+- **Then green** (`04e13b5`):
+  - `ModelUsage`, `foldModels` and `modelsOf` in the adapter;
+  - `StepOutcome.models`, passed on by the adapter and the fake;
+  - the runner's fold and `run.json`'s step `models`;
+  - `detail.ts`'s schema and `run show`'s line;
+  - requirements 1.25.
+- `npm test`: 77 files, 1223 tests; coverage 98.04 % statements. `npm run lint`: clean. `npm run test:bin`: 8/8.
+
+### Review
+
+An independent, read-only agent reviewed `main...04e13b5`. It found no blocker. It read all 80 step transcripts of
+`c82a5e74885b/1`:
+
+- in the 19 steps with a resume, every `modelUsage` key is non-decreasing and none disappears, so the largest
+  reading is right;
+- no step spans two sessions;
+- in every step, the sum of `costUSD` over the keys equals `total_cost_usd`.
+
+| # | Finding | Severity | Outcome |
+|---|---|---|---|
+| 1 | The Design called the fixture's two Haiku keys two models; they are one model, under an alias and a dated id | should-fix | **Fixed** (`d305ca8`): Design and REQ-RUN-09, "per key" |
+| 2 | The Context's scope moved (fold instead of sum; the method-page sentence) without being listed | should-fix | **Fixed** (`d305ca8`): the deviations below, for the approver |
+| 3 | The adapter's and the fake's passing of `models` untested | should-fix | **Fixed** (`d305ca8`): a test of each |
+| 4 | The `readSession` test cannot tell the largest reading from the last | nit | **Fixed** (`d305ca8`): a `foldModels` unit test |
+| 5 | A step's tokens leave out the auxiliary model's (pre-existing) | nit, out of scope | **Filed** as bug-012, on `main` |
+| 6 | An invocation from a foreign session is folded in | nit | **Comment** in `run.ts` (`d305ca8`) |
+| 7 | `models` is camelCase and has no EUR figure, undocumented | nit | **Fixed** (`d305ca8`): REQ-RUN-09 states both |
+| 8 | `run compare` does not show models | nit | Left: not asked for |
+
+A **re-review** of `d305ca8`: clean. Its one nit, to give the deviations a `##` section, is left: the template's
+sections are fixed.
+
+After the fixes: `npm test` 77 files, **1225 tests**; coverage **98.04 %** statements, 90.93 % branches, 98.77 %
+functions, 99.18 % lines. `npm run lint`: clean.
+
 ### Deviations from the Context, for the approver
 
 - **Fold, not sum.** The Context says the models are "summed over the step's invocations … tokens added". The
