@@ -198,8 +198,37 @@ It reports `aggregate.json (12 groups, 1 slice; determinism measured in 3, n = 1
 
 ## Results review
 
-<!-- Anomalies, runs to rerun, and whether the results are publishable. -->
+The approver accepted the results of `c82a5e74885b/2` (scored → reviewed, `5f3c2fc`): "Results of c82a5e74885b/2
+accepted: 19/19 runs, 61.38 EUR; /1 kept as bug-011's record, not published".
+
+What was shown at review:
+
+- **S1 (n = 3):** M-Q1 baseline 99.8 %, baseline-docs 98.0 %, wingfoil 98.4 % (range 95.8–100 %), every difference
+  within variance. M-K1: wingfoil 3.82 € against the baseline's 2.47 €.
+- **S2:** every arm 24/24; checks 3/3 for wingfoil, 2/3 for the others.
+- **S3:** D3's revision recorded and M-F1 4/5 only in wingfoil.
+- **S8:** baseline-docs and wingfoil keep every rule (16/16), the baseline 12/16; wingfoil reaches 23/23 here (20/23
+  in `/1`).
+- **Run-to-run spread:** `/1` and `/2` give different figures on the same S1 runs. With n = 3 the S1 signal is weak.
+
+The site built locally (`site/c82a5e74885b/2/`, not published) reads: "Against the baseline, wingfoil is better in 2,
+worse in 2 and the same in 2 of 6 comparisons across categories C, D, E and F (preliminary: n = 1 in D, E and F)".
+`/2` is the execution to publish; `/1` is not published.
 
 ## Findings
 
-<!-- Finding notes produced (F5.4) and where they went in WingFoil. -->
+Exported with `bench finding` (REQ-CLI-07, REQ-RES-05). The note is written only in this repository; filing it in
+WingFoil is the approver's.
+
+- **[M-K1 on S1@1.0, baseline against wingfoil](../../../findings/c82a5e74885b-2-s1-1.0-m-k1-baseline+wingfoil.md)**, as
+  a **decision-log** for WingFoil:
+  - **Cost:** the wingfoil arm costs 3.62–4.12 € a run against the baseline's 1.72–3.79 €, a mean of ×1.55, with no
+    gain in M-Q1 on S1.
+  - **Tokens:** most of the extra cost is cache reads, 9.0–10.8 M a run against 2.9–10.0 M. That is the process's
+    reading: its documents, its memory, its tasks.
+  - **Not exported, as supporting evidence:** the same ratio on the other scenarios, at n = 1 and therefore
+    preliminary: S2 ×1.96, S3 ×2.26, S8 ×1.70.
+  - **Not exported for want of a defect:** the wingfoil arm's advantages are positives (S2's checks, S3's
+    continuity, S8's rules).
+  - It is the measured baseline of calibration §11's **H1** ("the engine lowers the process's overhead"), which
+    v0.2 is to test.
