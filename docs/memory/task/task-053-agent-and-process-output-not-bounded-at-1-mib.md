@@ -2,7 +2,7 @@
 id: task-053-agent-and-process-output-not-bounded-at-1-mib
 type: task
 title: "Agent and process output not bounded at 1 MiB"
-status: draft
+status: pending
 release: v0.1
 wave: campaign
 features: [F2.3]
