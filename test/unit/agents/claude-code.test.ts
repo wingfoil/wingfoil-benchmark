@@ -2,7 +2,13 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-import { claudeCodeAgent, loadAgentToken, readSession, scrub } from '../../../src/agents/index.js';
+import {
+  claudeCodeAgent,
+  foldModels,
+  loadAgentToken,
+  readSession,
+  scrub,
+} from '../../../src/agents/index.js';
 import type { ProcessResult } from '../../../src/core/index.js';
 import { repoPath } from '../../support/paths.js';
 import { tempDir } from '../../support/scenario-fixture.js';
@@ -198,6 +204,50 @@ describe('reading a session (REQ-RUN-09)', () => {
     // `null` parses, so the JSON guard alone lets it through and the next property access throws.
     expect(readSession(['null'], RATE).outcome).toBe('failed');
     expect(readSession(['null'], RATE).error).toMatch(/not an object/);
+  });
+
+  it("reads the models a session used from modelUsage, each at the session's latest total (task-054)", () => {
+    // P6's modelUsage keeps P4's entry under the alias and adds its own under the dated id; a key reported
+    // twice is the session's running total, so the largest is kept and nothing is counted twice.
+    const both = readSession([...recorded('question.jsonl'), ...recorded('resumed.jsonl')], RATE);
+    expect(both.models).toEqual({
+      'claude-haiku-4-5': {
+        inputTokens: 10,
+        outputTokens: 393,
+        cacheCreationInputTokens: 2895,
+        cacheReadInputTokens: 17560,
+        costUsd: 0.00734975,
+      },
+      'claude-haiku-4-5-20251001': {
+        inputTokens: 98,
+        outputTokens: 4967,
+        cacheCreationInputTokens: 6399,
+        cacheReadInputTokens: 278256,
+        costUsd: 0.06075735000000001,
+      },
+    });
+  });
+
+  it('folds two readings field by field, keeping the largest and a key only one of them has', () => {
+    const at = (output: number, costUsd: number) => ({
+      inputTokens: 1,
+      outputTokens: output,
+      cacheCreationInputTokens: 2,
+      cacheReadInputTokens: output * 10,
+      costUsd,
+    });
+    // A grown key is its later reading, not the sum of both; a key the later reading lacks is kept.
+    expect(foldModels({ a: at(100, 0.5), z: at(7, 0.01) }, { a: at(140, 0.7) })).toEqual({
+      a: at(140, 0.7),
+      z: at(7, 0.01),
+    });
+    expect(Object.keys(foldModels({ z: at(1, 0) }, { a: at(1, 0) }))).toEqual(['a', 'z']);
+  });
+
+  it('reports no models for a session whose results carry no modelUsage', () => {
+    expect(
+      readSession(['{"type":"result","is_error":false,"terminal_reason":"completed"}'], RATE).models,
+    ).toEqual({});
   });
 
   it('reports a line that is not JSON rather than skipping it', () => {
@@ -449,6 +499,13 @@ describe('the Claude Code adapter (REQ-RUN-04)', () => {
 
     expect(outcome.transcript.join('\n')).not.toContain(token);
     expect(outcome.error).toMatch(/is_error true/);
+  });
+
+  it('passes the models the session reported on to the runner (task-054)', async () => {
+    const exec = runner(recorded('question.jsonl').join('\n'));
+    const outcome = await claudeCodeAgent({ token: 'x', usdToEur: RATE }).runStep(request(exec.run));
+    expect(Object.keys(outcome.models ?? {})).toEqual(['claude-haiku-4-5']);
+    expect(outcome.models?.['claude-haiku-4-5']?.outputTokens).toBe(393);
   });
 
   it('passes the final message of a step on, for the approver to read', async () => {

@@ -153,6 +153,15 @@ function showStep(run: RunDetail, step: StepDetail, full: boolean): string[] {
     `- tokens: input ${u.inputTokens}, output ${u.outputTokens}, cache creation ${u.cacheCreationInputTokens}, cache read ${u.cacheReadInputTokens}`,
     `- cost: ${reportedCost(step)}${costEur === undefined ? '' : `, ${eur(costEur)}`}, ${u.turns} turns, ${(u.durationMs / 1000).toFixed(1)} s`,
   ];
+  // The models the agent reported using (task-054): the run's own, and any it called for its own work.
+  const models = Object.entries(step.models ?? {});
+  if (models.length > 0) {
+    const listed = models.map(
+      ([key, m]) =>
+        `${key} (output ${m.outputTokens}, cache read ${m.cacheReadInputTokens}, ${usd(m.costUsd)})`,
+    );
+    out.push(`- models: ${listed.join(', ')}`);
+  }
   const replies = run.interventions.filter((intervention) => intervention.step === step.n);
   out.push(`- interventions: ${step.interventions === 0 ? 'none' : step.interventions}`);
   for (const reply of replies) out.push(`  - ${reply.kind}: ${reply.reply}`);

@@ -55,6 +55,31 @@ describe('bench run show (REQ-CLI-08, F5.3, task-043)', () => {
     expect(stdout).toContain('transcript not on disk');
     expect(stdout).toContain('```diff\ndiff --git a/src/orders.ts b/src/orders.ts');
     expect(stdout).toContain('## Test results\n\nnot scored\n');
+    // A run stored before task-054 recorded no models: nothing is said of them.
+    expect(stdout).not.toContain('- models:');
+  });
+
+  it("lists the models each step reported, the run's own and any other (task-054)", async () => {
+    const model = (output: number, costUsd: number) => ({
+      inputTokens: 1,
+      outputTokens: output,
+      cacheCreationInputTokens: 10,
+      cacheReadInputTokens: 100,
+      costUsd,
+    });
+    const fixture = await storedRun({
+      steps: [{}, CANCEL],
+      record: (n) => ({
+        usage: usageOf(n),
+        models: { 'claude-haiku-4-5-20251001': model(16, 0.0012), 'claude-sonnet-5': model(2000, 0.85) },
+      }),
+    });
+    const { code, stdout } = await bench(fixture.root, 'run', 'show', fixture.runDir);
+    expect(code).toBe(0);
+    expect(stdout).toContain(
+      '- models: claude-haiku-4-5-20251001 (output 16, cache read 100, 0.0012 USD), ' +
+        'claude-sonnet-5 (output 2000, cache read 100, 0.8500 USD)',
+    );
   });
 
   it('shows a scored run that stopped early: the steps it never reached, and its test results', async () => {

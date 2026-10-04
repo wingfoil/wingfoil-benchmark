@@ -19,10 +19,69 @@ export interface SessionUsage {
   readonly durationMs: number;
 }
 
+/** What one model did in a session, as the `result` event's `modelUsage` reports it (task-054). */
+export interface ModelUsage {
+  readonly inputTokens: number;
+  readonly outputTokens: number;
+  readonly cacheCreationInputTokens: number;
+  readonly cacheReadInputTokens: number;
+  readonly costUsd: number;
+}
+
+/** The models a session used, by the key the agent reports them under: its own model and any it calls. */
+export type ModelsUsage = Readonly<Record<string, ModelUsage>>;
+
+/**
+ * Two readings of one session's models, folded: **field by field, the largest**. `modelUsage` is the session's
+ * running total, as `total_cost_usd` is, so a resume reports what earlier invocations did again; summing it would
+ * count them twice (task-054). The keys come out sorted (REQ-NFR-05).
+ */
+export function foldModels(a: ModelsUsage, b: ModelsUsage): ModelsUsage {
+  const out: Record<string, ModelUsage> = {};
+  for (const key of [...new Set([...Object.keys(a), ...Object.keys(b)])].sort()) {
+    const x = a[key];
+    const y = b[key];
+    if (x === undefined || y === undefined) {
+      const only = x ?? y;
+      if (only !== undefined) out[key] = only;
+      continue;
+    }
+    out[key] = {
+      inputTokens: Math.max(x.inputTokens, y.inputTokens),
+      outputTokens: Math.max(x.outputTokens, y.outputTokens),
+      cacheCreationInputTokens: Math.max(x.cacheCreationInputTokens, y.cacheCreationInputTokens),
+      cacheReadInputTokens: Math.max(x.cacheReadInputTokens, y.cacheReadInputTokens),
+      costUsd: Math.max(x.costUsd, y.costUsd),
+    };
+  }
+  return out;
+}
+
+/** A `result` event's `modelUsage`, read loosely: a model with a field missing counts it as zero. */
+function modelsOf(event: Record<string, unknown>): ModelsUsage {
+  const reported = event.modelUsage;
+  if (typeof reported !== 'object' || reported === null) return {};
+  const out: Record<string, ModelUsage> = {};
+  for (const [key, value] of Object.entries(reported as Record<string, unknown>)) {
+    if (typeof value !== 'object' || value === null) continue;
+    const usage = value as Record<string, unknown>;
+    out[key] = {
+      inputTokens: numberOf(usage.inputTokens),
+      outputTokens: numberOf(usage.outputTokens),
+      cacheCreationInputTokens: numberOf(usage.cacheCreationInputTokens),
+      cacheReadInputTokens: numberOf(usage.cacheReadInputTokens),
+      costUsd: numberOf(usage.costUSD),
+    };
+  }
+  return out;
+}
+
 /** What one session, or one step's worth of sessions, amounted to. */
 export interface Session {
   readonly sessionId: string;
   readonly usage: SessionUsage;
+  /** The models the session reported using, with what each did (task-054); empty when none was reported. */
+  readonly models: ModelsUsage;
   readonly transcript: readonly string[];
   /**
    * `cap reached`: the session stopped at its `--max-budget-usd` (task-024, C1); `quota exhausted`: at
@@ -127,6 +186,7 @@ function add(total: SessionUsage, event: Record<string, unknown>, usdToEur: numb
  */
 export function readSession(lines: readonly string[], usdToEur: number): Session {
   let usage = ZERO;
+  let models: ModelsUsage = {};
   let sessionId = '';
   let results = 0;
   let finalMessage: string | undefined;
@@ -143,6 +203,7 @@ export function readSession(lines: readonly string[], usdToEur: number): Session
       return {
         sessionId,
         usage,
+        models,
         transcript: lines,
         outcome: 'failed',
         error: `a line of the session is not valid JSON: ${(error as Error).message}`,
@@ -152,6 +213,7 @@ export function readSession(lines: readonly string[], usdToEur: number): Session
       return {
         sessionId,
         usage,
+        models,
         transcript: lines,
         outcome: 'failed',
         error: 'a line of the session is not an object',
@@ -164,6 +226,7 @@ export function readSession(lines: readonly string[], usdToEur: number): Session
     if (event.type !== 'result') continue;
     results += 1;
     usage = add(usage, event, usdToEur);
+    models = foldModels(models, modelsOf(event));
     // The session the agent *ended in*, not the one it was asked for: the init event echoes the
     // `--session-id` the runner passed, so reading that would compare an id with itself.
     if (typeof event.session_id === 'string') sessionId = event.session_id;
@@ -189,6 +252,7 @@ export function readSession(lines: readonly string[], usdToEur: number): Session
     return {
       sessionId,
       usage,
+      models,
       transcript: lines,
       outcome: 'failed',
       error: 'the session ended with no result event',
@@ -196,9 +260,17 @@ export function readSession(lines: readonly string[], usdToEur: number): Session
   }
   const message = finalMessage === undefined ? {} : { finalMessage };
   if (failures.length > 0) {
-    return { sessionId, usage, transcript: lines, outcome: 'failed', error: failures.join(', '), ...message };
+    return {
+      sessionId,
+      usage,
+      models,
+      transcript: lines,
+      outcome: 'failed',
+      error: failures.join(', '),
+      ...message,
+    };
   }
-  return { sessionId, usage, transcript: lines, outcome: stop ?? 'completed', ...message };
+  return { sessionId, usage, models, transcript: lines, outcome: stop ?? 'completed', ...message };
 }
 
 /** What a scrubbed secret is replaced with, so that its absence is visible rather than silent. */
@@ -332,6 +404,7 @@ export function claudeCodeAgent(options: AdapterOptions): AgentPort {
     return {
       sessionId: session.sessionId,
       usage: session.usage,
+      ...(Object.keys(session.models).length === 0 ? {} : { models: session.models }),
       transcript: session.transcript,
       ...(session.outcome === 'failed' ? { error: session.error ?? 'the session failed' } : {}),
       ...(session.outcome === 'cap reached' ||

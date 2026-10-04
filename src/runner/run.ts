@@ -3,8 +3,8 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { scrub } from '../agents/index.js';
-import type { AgentPort, SessionUsage, StepOutcome } from '../agents/index.js';
+import { foldModels, scrub } from '../agents/index.js';
+import type { AgentPort, ModelsUsage, SessionUsage, StepOutcome } from '../agents/index.js';
 import { approverPolicy, approximateTokens, reasonOf, TOKEN_METHOD, WORKSPACE } from '../core/index.js';
 import type {
   ApproverPolicy,
@@ -103,6 +103,8 @@ export interface StepResult {
   readonly sessionId: string;
   /** The step's invocations together: their work summed, and the session's latest cost. */
   readonly usage: SessionUsage;
+  /** The models the step's session reported using (task-054), at its latest totals; absent when none was. */
+  readonly models?: ModelsUsage;
   /** The invocations' transcripts, in order: a resume does not replay earlier turns (decision 10). */
   readonly transcript: readonly string[];
   readonly outcome: StepOutcomeKind;
@@ -1023,6 +1025,9 @@ async function executeStep(
   // What the step cost across its invocations, and the whole of what they said (REQ-RUN-09,
   // REQ-FMT-06). The transcript is git-ignored and scrubbed by the adapter (REQ-NFR-01, REQ-RES-06).
   const usage = stepUsage(invocations);
+  // One session's running totals per model, folded as the adapter folds them within an invocation (task-054). An
+  // invocation that answered from another session has already failed the step; its models are folded in all the same.
+  const models = invocations.map((invocation) => invocation.models ?? {}).reduce(foldModels, {});
   const transcript = invocations.flatMap((invocation) => invocation.transcript);
   writeFileSync(join(stepDir, 'usage.json'), `${JSON.stringify(usage, undefined, 2)}\n`);
   writeFileSync(join(stepDir, 'transcript.jsonl'), transcript.map((line) => `${line}\n`).join(''));
@@ -1030,6 +1035,7 @@ async function executeStep(
     n: step.n,
     sessionId: invocations[0]?.sessionId ?? sessionId,
     usage,
+    ...(Object.keys(models).length === 0 ? {} : { models }),
     transcript,
     interventions,
     tree,
@@ -1182,6 +1188,8 @@ function record(run: RunResult, plan: RunPlan): RunResult {
           outcome: step.outcome,
           interventions: step.interventions.length,
           usage: step.usage,
+          // The models the agent reported using (task-054): the run's own, and any it called for its own work.
+          ...(step.models === undefined ? {} : { models: step.models }),
           ...(step.tree === undefined ? {} : { tree: step.tree }),
           // A step killed at its time cap reported no cost: what it can have cost at most (task-024).
           ...(step.costBoundUsd === undefined

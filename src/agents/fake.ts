@@ -102,6 +102,9 @@ function outcomeOf(replayed: Session | undefined, sessionId: string): StepOutcom
   return {
     sessionId,
     usage: replayed?.usage ?? NO_USAGE,
+    ...(replayed === undefined || Object.keys(replayed.models).length === 0
+      ? {}
+      : { models: replayed.models }),
     transcript: replayed?.transcript ?? [],
     // A replayed failure is a failure. Without this every acceptance test runs through an agent
     // that cannot report one, and a failing step is untestable in every wave that uses the fake.
