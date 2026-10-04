@@ -158,3 +158,18 @@ comment.
 - **The method page's sentence** ("Claude Code may use a smaller model for its own work") moves out of this task,
   into the method page's re-read before publishing, which W11 left due.
 
+### Approval
+
+The approver asked in chat (2026-10-04, "Si procedi") for the agent to run `memory approve` (in-review → approved):
+`7f59c20`, "Observed models recorded per step from modelUsage (largest reading per key); 1225 tests, 98.04%, Docker
+16/16, independent review clean; the two deviations from the Context accepted". With it, the review decision of
+requirements 1.25.
+
+### Delivery
+
+- Merged into `main` with `--no-ff` (`cfc9274`).
+- `npx wingfoil memory submit task-054-…` (approved → done). Declared: moves `status` and commits the file.
+  Observed: `status: done`.
+- The worktree held only rebuildable ignored files (`coverage/`, `dist/`), so it was removed, and the branch
+  deleted.
+

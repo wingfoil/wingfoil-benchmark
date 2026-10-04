@@ -607,4 +607,4 @@ confirmed by the approver on 2026-10-03; review decision of the approver at that
 The traceability matrix is unaffected: REQ-RUN-09 already traces to F2.3.
 
 Source: [task-054](../memory/task/task-054-observed-models-recorded-per-invocation.md), design written by the agent
-on the approver's request, 2026-10-04; review decision of the approver at that task's review.
+on the approver's request, 2026-10-04; review decision of the approver at that task's review, 2026-10-04 (`7f59c20`).
