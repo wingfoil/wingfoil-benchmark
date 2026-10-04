@@ -153,3 +153,20 @@ After the fixes: `npm test` 77 files, **1219 tests**; coverage **98.04 %** state
 functions, 99.18 % lines. `npm run lint`: clean.
 - `npm run test:docker` on `0b87a9b`: **16/16**, none skipped, 425 s; no container left behind. `21e7b2d` changes
   only the runner's catch path for a bounded invocation, which no Docker test reaches; its unit tests cover it.
+
+### Approval
+
+The approver asked in chat (2026-10-04, "Approva e mergia task 53") for the agent to run `memory approve`
+(in-review → approved): `8f74800`, "bug-011 fixed: output read whole up to 256 MiB, the bound reported and its cost
+counted at the bound; 1219 tests, 98.04%, Docker 16/16, independent review clean".
+
+### Delivery
+
+- Merged into `main` with `--no-ff` (`7fad7b8`).
+- `npx wingfoil memory submit task-053-…` (approved → done). Declared: moves `status` and commits the file.
+  Observed: `0c80042`, `status: done`.
+- The worktree held only `coverage/` and `dist/` among its ignored files, both rebuilt from the sources, so it was
+  removed, and the branch deleted.
+- bug-011 stays `approved`. A bug has no transition to a fixed state, which is bug-005. Its Resolution names this
+  task.
+
