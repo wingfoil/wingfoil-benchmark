@@ -2,7 +2,7 @@
 id: task-054-observed-models-recorded-per-invocation
 type: task
 title: "Observed models recorded per invocation"
-status: in-progress
+status: in-review
 release: v0.1
 wave: campaign
 features: [F2.3]
