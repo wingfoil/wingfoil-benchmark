@@ -2,7 +2,7 @@
 id: dl-009-benchmark-findings-linked-to-wingfoil-both-ways-and-verified-by-the-next-campaign
 type: decision-log
 title: "Benchmark findings linked to WingFoil both ways and verified by the next campaign"
-status: draft
+status: pending
 ---
 
 ## Context
