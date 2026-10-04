@@ -141,6 +141,19 @@ exit 0. `aggregate: results/c82a5e74885b/1/aggregate.json (12 groups, 1 slice; d
 The records are committed without the transcripts, which are git-ignored and stay in the main checkout.
 `transcripts pack` waits for publishing.
 
+**Sent back** by the approver (scored → running, `1ab1d67`): 3 of 19 runs failed from bug-011. Before the re-run:
+
+- bug-011 was fixed by task-053 (merged `7fad7b8`);
+- task-054 (merged `cfc9274`) records the models each step used, so that the re-run shows them.
+
+**Execution `c82a5e74885b/2`**, the whole campaign again, on main's built CLI (`3a1704c`, 1225 tests green).
+
+- **Spending consent:** the approver in chat, 2026-10-04: "riesegui la campagna completa".
+- **Estimate:** 60.32 € (68.15 USD), as for `/1`.
+- **Budget:** the campaign file's per execution: warn 65 €, ceiling 85 €, run cap 30 €. With `/1`'s 41.22 €, the
+  campaign as a whole may come to about 101 €. That is above the 85 € approved for one execution, and was stated
+  to the approver before the consent.
+
 ## Results review
 
 <!-- Anomalies, runs to rerun, and whether the results are publishable. -->
