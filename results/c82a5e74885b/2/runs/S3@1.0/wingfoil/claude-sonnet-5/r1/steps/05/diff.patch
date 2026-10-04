@@ -1,0 +1,230 @@
+diff --git a/docs/memory/decision-log/dl-006-refund-in-full-before-a-rental-starts-nothing-after.md b/docs/memory/decision-log/dl-006-refund-in-full-before-a-rental-starts-nothing-after.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..0ff926e70f3ef27297538ad8d9f4e134b1a9b380
+--- /dev/null
++++ b/docs/memory/decision-log/dl-006-refund-in-full-before-a-rental-starts-nothing-after.md
+@@ -0,0 +1,40 @@
++---
++id: dl-006-refund-in-full-before-a-rental-starts-nothing-after
++type: decision-log
++title: "Refund in full before a rental starts, nothing after"
++status: approved
++---
++
++## Context
++
++`cancel(bookingId, at)` must return `{ bookingId, refund }`. Unlike dl-001/dl-003's whole-day rule or
++dl-004's discount, this request does not state a refund schedule (no cancellation fee, no proration
++rule). dl-002 deliberately left cancellation and "any refund logic implementing [a cancellation policy]"
++out of scope; that policy was never written down anywhere this session can read, since each session only
++inherits the repository itself. `at` is passed in explicitly rather than read from the clock, consistent
++with the determinism directive and with how `book`/`quote` already take `start`/`end` as parameters
++instead of calling `Date.now()`.
++
++## Decision
++
++Take `at`'s relation to the booking's own period as the one signal available, rather than inventing a
++multi-tier fee schedule that wasn't asked for: refund the full `total` when `at` is strictly before the
++booking's `startMs`, and refund `0` once `at` is at or after `startMs` (the rental has begun, or is
++already over). This is the simplest rule that gives `at` an actual effect instead of being purely a log
++timestamp, and it mirrors a common real-world policy (cancel ahead of time, get your money back;
++cancelling once the gear is out the door does not undo that). Cancelling still always frees the
++equipment's booked period, regardless of `at` or the refund outcome, matching the request's "no longer
++holds its equipment" literally and unconditionally.
++
++## Consequences
++
++- A customer who cancels any time before their rental starts is made whole; a customer who cancels during
++  or after it gets nothing back — there is no partial/prorated refund for a rental cancelled partway
++  through.
++- A booking's period and item are looked up via new `bookingPeriods`/`bookings` maps keyed by booking id
++  (the latter replacing the previous plain array), keeping `cancel` O(1) instead of scanning all bookings.
++- If the school later wants a different schedule (e.g. a cancellation fee, or a grace window after
++  booking), only the one-line `refund` computation in `cancel` changes; nothing else in `book`/`quote`/
++  `availability` depends on it.
++- A second `cancel` on the same booking throws rather than returning a stale or zero refund again, so
++  "cancelled once" is enforced at the API boundary, not left to the caller to avoid.
+diff --git a/docs/memory/task/task-005-let-customers-cancel-a-booking.md b/docs/memory/task/task-005-let-customers-cancel-a-booking.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..8e7c7cd3537b44e84270dcb083db8ce9b8f567fa
+--- /dev/null
++++ b/docs/memory/task/task-005-let-customers-cancel-a-booking.md
+@@ -0,0 +1,32 @@
++---
++id: task-005-let-customers-cancel-a-booking
++type: task
++title: "Let customers cancel a booking"
++status: pending
++---
++
++## Request
++
++Add `cancel(bookingId, at)` to the rental service: it cancels the booking at the time `at` and returns
++`{ bookingId, refund }`, the amount given back to the customer. A cancelled booking no longer holds its
++equipment, and a booking can only be cancelled once.
++
++## What was done
++
++- Added `cancel(bookingId: string, at: string): Cancellation` to `RentalService`, with a new exported
++  `Cancellation` interface (`{ bookingId, refund }`).
++- `createRentalService` now keeps bookings in a `Map<string, Booking>` (instead of an array) plus a
++  parallel `bookingPeriods` map and a `cancelledBookingIds` set, so `cancel` can look up a booking's item
++  and period in O(1) and reject a second cancellation.
++- `cancel` validates the booking exists and isn't already cancelled, parses `at` as an ISO-8601 timestamp
++  (same rejection as `parsePeriod`), then removes the booking's period from `bookedPeriods` so the item is
++  immediately free again for `availability` and `book`.
++- Refund policy (see dl-006): the full total when `at` is before the rental's start, nothing once the
++  rental has started.
++- Tests added first (red, then green): full refund before start, no refund after start, equipment freed
++  after cancellation (re-bookable, visible in `availability`), double cancellation rejected, unknown
++  booking rejected.
++
++## Verification
++
++`node --test`: 31/31 passing (26 pre-existing + 5 new).
+diff --git a/src/index.test.ts b/src/index.test.ts
+index d35100dff415762c8a3b91040a7522bd7b7e0941..7823556aefdb0cc399a936b53af92aea5e66665a 100644
+--- a/src/index.test.ts
++++ b/src/index.test.ts
+@@ -242,3 +242,51 @@ test('an hourly booking blocks an overlapping hourly availability slot', () => {
+ 
+   assert.deepEqual(available, []);
+ });
++
++test('cancelling before a rental starts refunds its full total', () => {
++  const service = createRentalService();
++  service.addEquipment(board());
++  const booking = service.book({ itemId: 'board-1', start: '2024-06-01T00:00:00Z', end: '2024-06-02T00:00:00Z' });
++
++  const result = service.cancel(booking.id, '2024-05-30T00:00:00Z');
++
++  assert.deepEqual(result, { bookingId: booking.id, refund: 2500 });
++});
++
++test('cancelling after a rental has started refunds nothing', () => {
++  const service = createRentalService();
++  service.addEquipment(board());
++  const booking = service.book({ itemId: 'board-1', start: '2024-06-01T00:00:00Z', end: '2024-06-02T00:00:00Z' });
++
++  const result = service.cancel(booking.id, '2024-06-01T12:00:00Z');
++
++  assert.deepEqual(result, { bookingId: booking.id, refund: 0 });
++});
++
++test('a cancelled booking no longer holds its equipment', () => {
++  const service = createRentalService();
++  service.addEquipment(board());
++  const booking = service.book({ itemId: 'board-1', start: '2024-06-01T00:00:00Z', end: '2024-06-02T00:00:00Z' });
++
++  service.cancel(booking.id, '2024-05-30T00:00:00Z');
++
++  const available = service.availability({ start: '2024-06-01T00:00:00Z', end: '2024-06-02T00:00:00Z' });
++  assert.deepEqual(available, ['board-1']);
++  const rebooked = service.book({ itemId: 'board-1', start: '2024-06-01T00:00:00Z', end: '2024-06-02T00:00:00Z' });
++  assert.equal(rebooked.itemId, 'board-1');
++});
++
++test('rejects cancelling a booking twice', () => {
++  const service = createRentalService();
++  service.addEquipment(board());
++  const booking = service.book({ itemId: 'board-1', start: '2024-06-01T00:00:00Z', end: '2024-06-02T00:00:00Z' });
++  service.cancel(booking.id, '2024-05-30T00:00:00Z');
++
++  assert.throws(() => service.cancel(booking.id, '2024-05-30T00:00:00Z'));
++});
++
++test('rejects cancelling an unknown booking', () => {
++  const service = createRentalService();
++
++  assert.throws(() => service.cancel('missing', '2024-05-30T00:00:00Z'));
++});
+diff --git a/src/index.ts b/src/index.ts
+index bb1abb1c31f84a9c7332ba1fa8c3117990547988..d8bb15176b23b3cdd906754b0220d51fa0c07d83 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -36,6 +36,13 @@ export interface Booking extends Quote {
+   id: string;
+ }
+ 
++/** The outcome of cancelling a booking. */
++export interface Cancellation {
++  bookingId: string;
++  /** Amount given back to the customer, in integer euro cents. */
++  refund: number;
++}
++
+ /** A query for equipment free over a period, optionally restricted to one kind. */
+ export interface AvailabilityQuery {
+   /** Start of the period: an ISO-8601 UTC timestamp at midnight, or on the hour for a sub-day period. */
+@@ -53,6 +60,12 @@ export interface RentalService {
+   book(request: RentalRequest): Booking;
+   /** Ids, sorted, of the equipment of that kind (or any kind) free for the whole period. */
+   availability(query: AvailabilityQuery): string[];
++  /**
++   * Cancels a booking as of `at` (an ISO-8601 UTC timestamp), freeing its equipment. Refunds the full
++   * total when cancelled before the rental's start, and nothing once it has started. Throws for an
++   * unknown booking or one already cancelled.
++   */
++  cancel(bookingId: string, at: string): Cancellation;
+ }
+ 
+ interface Period {
+@@ -95,7 +108,9 @@ function priceFor(days: number, dailyPrice: number): number {
+ export function createRentalService(): RentalService {
+   const equipment = new Map<string, Equipment>();
+   const bookedPeriods = new Map<string, Period[]>();
+-  const bookings: Booking[] = [];
++  const bookings = new Map<string, Booking>();
++  const bookingPeriods = new Map<string, Period>();
++  const cancelledBookingIds = new Set<string>();
+ 
+   function requireEquipment(itemId: string): Equipment {
+     const item = equipment.get(itemId);
+@@ -149,13 +164,14 @@ export function createRentalService(): RentalService {
+       bookedPeriods.set(request.itemId, periods);
+ 
+       const booking: Booking = {
+-        id: `booking-${bookings.length + 1}`,
++        id: `booking-${bookings.size + 1}`,
+         itemId: request.itemId,
+         start: request.start,
+         end: request.end,
+         total,
+       };
+-      bookings.push(booking);
++      bookings.set(booking.id, booking);
++      bookingPeriods.set(booking.id, period);
+       return booking;
+     },
+ 
+@@ -177,5 +193,30 @@ export function createRentalService(): RentalService {
+       }
+       return ids.sort();
+     },
++
++    cancel(bookingId, at) {
++      const booking = bookings.get(bookingId);
++      if (!booking) {
++        throw new Error(`unknown booking: ${bookingId}`);
++      }
++      if (cancelledBookingIds.has(bookingId)) {
++        throw new Error(`booking ${bookingId} is already cancelled`);
++      }
++      const atMs = Date.parse(at);
++      if (Number.isNaN(atMs)) {
++        throw new Error('at must be an ISO-8601 timestamp');
++      }
++
++      const period = bookingPeriods.get(bookingId)!;
++      cancelledBookingIds.add(bookingId);
++      const periods = bookedPeriods.get(booking.itemId) ?? [];
++      bookedPeriods.set(
++        booking.itemId,
++        periods.filter((booked) => booked !== period),
++      );
++
++      const refund = atMs < period.startMs ? booking.total : 0;
++      return { bookingId, refund };
++    },
+   };
+ }

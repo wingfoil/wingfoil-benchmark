@@ -1,0 +1,328 @@
+diff --git a/README.md b/README.md
+index 10687211dccba704a34399eb0d375bd5538d27d8..bc2e62e08aa9779d64e4621fd72170d859559d06 100644
+--- a/README.md
++++ b/README.md
+@@ -59,3 +59,19 @@ applyMergePatch(document, {
+   author: { email: null },
+ }); // { title: "Published", tags: ["a", "b", "c"], author: { name: "Alex" } }
+ ```
++
++### `createPatch(from, to)`
++
++Computes a [JSON Patch](https://www.rfc-editor.org/rfc/rfc6902) (RFC 6902) that turns `from` into `to`
++when applied with `applyPatch`. It does not mutate `from` or `to`, and the patch describes only the
++object members and array elements that actually changed, rather than replacing whole documents or
++containers wholesale.
++
++```ts
++import { createPatch } from "json-toolkit";
++
++const from = { title: "Draft", tags: ["a", "b"] };
++const to = { title: "Published", tags: ["a", "b"] };
++
++createPatch(from, to); // [{ op: "replace", path: "/title", value: "Published" }]
++```
+diff --git a/docs/memory/decision-log/dl-004-json-patch-diff-strategy-for-createpatch.md b/docs/memory/decision-log/dl-004-json-patch-diff-strategy-for-createpatch.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..62392be1788d9fd50a7810dd279c61cd9cdaa4ad
+--- /dev/null
++++ b/docs/memory/decision-log/dl-004-json-patch-diff-strategy-for-createpatch.md
+@@ -0,0 +1,68 @@
++---
++id: dl-004-json-patch-diff-strategy-for-createpatch
++type: decision-log
++title: "JSON Patch diff strategy for createPatch"
++status: approved
++---
++
++## Context
++
++RFC 6902 defines how a JSON Patch is applied, but not how one is produced from two documents; there is
++no standard to defer to, unlike `resolvePointer` (dl-001), `applyPatch` (dl-002) and `applyMergePatch`
++(dl-003). `createPatch` is built on `applyPatch`'s existing operation set and on `resolvePointer`'s
++reference-token escaping, so the diff only needs to decide what operations to emit, not how they
++behave once applied. The request's acceptance bar is "describe what changed, and nothing more" — not
++a globally minimal patch, since that would require a full edit-distance search over arbitrary
++reorderings.
++
++## Decision
++
++- **Recursive structural diff, not edit-distance minimization**: two values are compared by shape —
++  both plain objects, both arrays, or neither — and the smaller of those three cases is handled
++  specifically; anything else (a type change, or two unequal scalars) becomes a single `replace` at
++  that path. This keeps the diff linear in document size, at the cost of not detecting moves: an
++  element relocated within an array or an object is emitted as a remove-plus-add/replace pair, not a
++  `move` operation. Given the request's examples (a changed field, not a reordering), this trade-off
++  favours predictability over a smaller byte count in the rare case a move would be shorter.
++- **Objects diff by key membership, then recurse per shared key**: a key present in `from` but absent
++  from `to` becomes `remove`; a key present in `to` but absent from `from` becomes `add` with a
++  deep-cloned value; a key present in both recurses structurally instead of always emitting `replace`,
++  so a change nested arbitrarily deep produces one operation at the deepest differing path, not a
++  `replace` of the whole containing object.
++- **Arrays diff by common-prefix index, not by longest-common-subsequence**: indices `0` up to
++  `min(from.length, to.length) - 1` are compared pairwise and recursed into; any extra trailing `from`
++  indices are removed (highest index first, so earlier removals never invalidate later ones); any
++  extra trailing `to` indices are appended with `add` (lowest index first, matching how each insertion
++  shifts the array that `applyPatch` is replaying against). This correctly produces a minimal patch for
++  the common case of appending/truncating a tail or changing an element in place, but — like the
++  object case above — does not detect an insertion/deletion in the middle of an array, which would
++  shift every later index and read as a wall of per-index `replace` operations instead of one `add`.
++  An LCS-based array diff would handle that case too, but was judged unwarranted complexity for a
++  first version given no caller has asked for it yet.
++- **Root pointer (`""`) as a replace target**: when `from` and `to` are both scalars, or differ in
++  kind at the top level (e.g. an object becoming an array), the patch is a single
++  `[{ op: "replace", path: "", value: to }]`, consistent with dl-002's decision that `replace` at the
++  root pointer replaces the whole document.
++- **Emitted values are deep-cloned, mirroring `applyPatch` and `applyMergePatch`**: every `value` an
++  operation carries (`add`, `replace`) is `structuredClone`d from `to` before being placed in the
++  patch, so the returned patch shares no mutable reference with `to`, and neither `from` nor `to` is
++  read destructively. This is the same "must not mutate its input" guarantee dl-002 and dl-003 already
++  give, applied to a function whose output is a patch rather than a document.
++- **Key order follows `Object.keys`, not a sorted or declared order**: removes are emitted in `from`'s
++  key order, adds and recursions in `to`'s key order. This satisfies the `determinism` directive
++  (no reliance on unordered iteration) because `Object.keys` order on plain objects is itself
++  deterministic (insertion order per the spec), not because the output is sorted; two calls with the
++  same inputs always produce byte-identical patches.
++
++## Consequences
++
++- Callers get a patch proportional to the size of the actual change for the common cases (field edits,
++  tail append/truncate on arrays, added/removed object members), satisfying "sending the whole document
++  again is not acceptable" without the complexity of a general diff/edit-distance algorithm.
++- A rename, reorder, or middle-of-array insertion/deletion produces a larger patch than a human would
++  write by hand (remove+add instead of move, or a cascade of replaces instead of one insert). If a
++  future caller needs byte-minimal patches for those cases, that requires a move-detection or
++  LCS-based pass layered on top of (or instead of) this algorithm — a deliberate scope cut, not an
++  oversight.
++- `createPatch(from, to)` composed with `applyPatch(from, patch)` is guaranteed to reproduce `to`
++  (deep-equal), but `createPatch` is not guaranteed to be the unique or shortest patch doing so.
+diff --git a/docs/memory/task/task-005-implement-createpatch-rfc-6902-diff.md b/docs/memory/task/task-005-implement-createpatch-rfc-6902-diff.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..bdc2c563722ca1c9357a04a3712645aa25497b5b
+--- /dev/null
++++ b/docs/memory/task/task-005-implement-createpatch-rfc-6902-diff.md
+@@ -0,0 +1,48 @@
++---
++id: task-005-implement-createpatch-rfc-6902-diff
++type: task
++title: "Implement createPatch RFC 6902 diff"
++status: approved
++---
++
++## Request
++
++Clients want to send only what changed between two versions of a JSON document, instead of the whole
++new version. Add `createPatch(from, to)`, exported from `src/index.ts`, that returns a JSON Patch
++(RFC 6902) which turns `from` into `to` when applied with the existing `applyPatch`. It must not
++mutate either input, and must describe only what changed — not replace the whole document when a
++small part of it changed.
++
++## What was done
++
++- Wrote failing tests first (`src/index.test.ts`), confirmed they failed because `createPatch` did not
++  exist yet (red), then implemented the function (green).
++- Added `createPatch` to `src/index.ts`: a recursive structural diff over `from`/`to` that reuses the
++  module's existing `deepEqual`, `isMergeableObject` and reference-token escaping. Plain objects diff
++  by key membership (`remove` for a key dropped, `add` for a key gained, recurse for a shared key);
++  arrays diff by common-prefix index with trailing `remove`/`add` for length changes; anything else
++  (a type change, or two unequal scalars) becomes a single `replace`, including at the root pointer
++  `""` when `from`/`to` differ at the top level. Values placed into `add`/`replace` operations are
++  `structuredClone`d so the returned patch cannot alias a value from `to`.
++- The design choices (why structural diff rather than edit-distance/LCS minimization, the array
++  tail-diff strategy, root-replace, cloning, and key-order determinism) are recorded in
++  `dl-004-json-patch-diff-strategy-for-createpatch` (submitted for approval alongside this task).
++- Added tests covering: equal documents (empty patch), scalar and type-changing root replace, a single
++  changed object member leaving the rest of the document out of the patch, added/removed object
++  members, reference-token escaping in generated paths, recursion into nested objects, in-place array
++  element replacement, array append/truncate, a scalar replacing an array (wholesale replace, not an
++  element diff), round-tripping `createPatch` through `applyPatch` to reproduce `to`, non-mutation of
++  both inputs, and non-aliasing of patch values with `to`.
++- Updated `README.md` with a `createPatch` section (signature, behaviour, example), per the
++  documentation directive.
++- Ran `npm run typecheck` (clean) and `npm test` (93/93 passing, including the 14 new `createPatch`
++  tests).
++
++## Acceptance
++
++- `createPatch` is exported from `src/index.ts`.
++- `applyPatch(from, createPatch(from, to))` deep-equals `to` for every tested case, including nested
++  objects, arrays, and root-level type changes.
++- Neither `from` nor `to` is mutated by `createPatch` (test: `does not mutate its inputs`).
++- A single changed field produces a patch with one operation targeting that field, not a replacement
++  of the whole document (test: `describes only the changed member, not the whole document`).
+diff --git a/src/index.test.ts b/src/index.test.ts
+index 0d62432ca6fa003fb296b66f646f9a36bc3c5548..1750d2e6e5627c60e79fe072604c763f42d5a8ab 100644
+--- a/src/index.test.ts
++++ b/src/index.test.ts
+@@ -1,6 +1,6 @@
+ import { test } from "node:test";
+ import assert from "node:assert/strict";
+-import { applyMergePatch, applyPatch, resolvePointer } from "./index.ts";
++import { applyMergePatch, applyPatch, createPatch, resolvePointer } from "./index.ts";
+ import type { JsonPatchOperation } from "./index.ts";
+ 
+ const document = {
+@@ -430,3 +430,91 @@ test("does not let the returned document alias a value from the patch", () => {
+ 
+   assert.equal(nestedPatchValue.count, 1);
+ });
++
++test("createPatch: returns an empty patch for equal documents", () => {
++  assert.deepEqual(createPatch({ a: 1 }, { a: 1 }), []);
++});
++
++test("createPatch: returns a replace at the root pointer for differing scalars", () => {
++  assert.deepEqual(createPatch(1, 2), [{ op: "replace", path: "", value: 2 }]);
++});
++
++test("createPatch: returns a replace at the root pointer when the root type changes", () => {
++  assert.deepEqual(createPatch({ a: 1 }, [1, 2]), [{ op: "replace", path: "", value: [1, 2] }]);
++});
++
++test("createPatch: describes only the changed member, not the whole document", () => {
++  const from = { title: "Draft", tags: ["a", "b"], author: { name: "Alex" } };
++  const to = { title: "Published", tags: ["a", "b"], author: { name: "Alex" } };
++
++  assert.deepEqual(createPatch(from, to), [{ op: "replace", path: "/title", value: "Published" }]);
++});
++
++test("createPatch: adds a new object member", () => {
++  assert.deepEqual(createPatch({ a: 1 }, { a: 1, b: 2 }), [{ op: "add", path: "/b", value: 2 }]);
++});
++
++test("createPatch: removes a missing object member", () => {
++  assert.deepEqual(createPatch({ a: 1, b: 2 }, { a: 1 }), [{ op: "remove", path: "/b" }]);
++});
++
++test("createPatch: escapes ~ and / in object member names", () => {
++  assert.deepEqual(createPatch({}, { "a/b~c": 1 }), [{ op: "add", path: "/a~1b~0c", value: 1 }]);
++});
++
++test("createPatch: recurses into nested objects", () => {
++  const from = { nested: { deeper: { value: 1 }, other: "x" } };
++  const to = { nested: { deeper: { value: 2 }, other: "x" } };
++
++  assert.deepEqual(createPatch(from, to), [{ op: "replace", path: "/nested/deeper/value", value: 2 }]);
++});
++
++test("createPatch: replaces a changed array element in place", () => {
++  assert.deepEqual(createPatch([1, 2, 3], [1, 9, 3]), [{ op: "replace", path: "/1", value: 9 }]);
++});
++
++test("createPatch: appends new array elements", () => {
++  assert.deepEqual(createPatch([1, 2], [1, 2, 3, 4]), [
++    { op: "add", path: "/2", value: 3 },
++    { op: "add", path: "/3", value: 4 },
++  ]);
++});
++
++test("createPatch: removes trailing array elements", () => {
++  assert.deepEqual(createPatch([1, 2, 3, 4], [1, 2]), [
++    { op: "remove", path: "/3" },
++    { op: "remove", path: "/2" },
++  ]);
++});
++
++test("createPatch: a scalar replacing an array is a wholesale replace, not an element diff", () => {
++  assert.deepEqual(createPatch([1, 2], "x"), [{ op: "replace", path: "", value: "x" }]);
++});
++
++test("createPatch: the resulting patch applies cleanly to turn from into to", () => {
++  const from = { title: "Draft", tags: ["a", "b"], list: [1, 2, 3], author: { name: "Alex" } };
++  const to = { title: "Published", tags: ["a", "b", "c"], list: [1, 9], author: { email: "a@b.c" } };
++
++  assert.deepEqual(applyPatch(from, createPatch(from, to)), to);
++});
++
++test("createPatch: does not mutate its inputs", () => {
++  const from = { a: 1, nested: { value: 1 } };
++  const to = { a: 2, nested: { value: 1 }, b: [1, 2] };
++  const fromSnapshot = JSON.parse(JSON.stringify(from));
++  const toSnapshot = JSON.parse(JSON.stringify(to));
++
++  createPatch(from, to);
++
++  assert.deepEqual(from, fromSnapshot);
++  assert.deepEqual(to, toSnapshot);
++});
++
++test("createPatch: does not let the patch alias a value from to", () => {
++  const nestedValue = { count: 1 };
++  const patch = createPatch({}, { added: nestedValue }) as { op: string; path: string; value: { count: number } }[];
++
++  patch[0].value.count = 42;
++
++  assert.equal(nestedValue.count, 1);
++});
+diff --git a/src/index.ts b/src/index.ts
+index 294ec9f25b6ff7b097ebea14210a991b84bb7097..187ee3bef4d672c54310b8792afae789deafbad1 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -319,3 +319,67 @@ export function applyMergePatch(target: unknown, patch: unknown): unknown {
+   }
+   return result;
+ }
++
++function escapeToken(token: string): string {
++  return token.replace(/~/g, "~0").replace(/\//g, "~1");
++}
++
++function diffArrays(path: string, from: unknown[], to: unknown[], ops: JsonPatchOperation[]): void {
++  const common = Math.min(from.length, to.length);
++  for (let index = 0; index < common; index++) {
++    diffValues(`${path}/${index}`, from[index], to[index], ops);
++  }
++  for (let index = from.length - 1; index >= to.length; index--) {
++    ops.push({ op: "remove", path: `${path}/${index}` });
++  }
++  for (let index = from.length; index < to.length; index++) {
++    ops.push({ op: "add", path: `${path}/${index}`, value: structuredClone(to[index]) });
++  }
++}
++
++function diffObjects(
++  path: string,
++  from: Record<string, unknown>,
++  to: Record<string, unknown>,
++  ops: JsonPatchOperation[],
++): void {
++  for (const key of Object.keys(from)) {
++    if (!Object.prototype.hasOwnProperty.call(to, key)) {
++      ops.push({ op: "remove", path: `${path}/${escapeToken(key)}` });
++    }
++  }
++  for (const key of Object.keys(to)) {
++    const childPath = `${path}/${escapeToken(key)}`;
++    if (!Object.prototype.hasOwnProperty.call(from, key)) {
++      ops.push({ op: "add", path: childPath, value: structuredClone(to[key]) });
++    } else {
++      diffValues(childPath, from[key], to[key], ops);
++    }
++  }
++}
++
++function diffValues(path: string, from: unknown, to: unknown, ops: JsonPatchOperation[]): void {
++  if (deepEqual(from, to)) {
++    return;
++  }
++  if (Array.isArray(from) && Array.isArray(to)) {
++    diffArrays(path, from, to, ops);
++    return;
++  }
++  if (isMergeableObject(from) && isMergeableObject(to)) {
++    diffObjects(path, from, to, ops);
++    return;
++  }
++  ops.push({ op: "replace", path, value: structuredClone(to) });
++}
++
++/**
++ * Computes a JSON Patch (RFC 6902) that, when applied to `from` with
++ * `applyPatch`, produces `to`. Neither `from` nor `to` is mutated, and the
++ * patch describes only the members and array elements that actually changed.
++ */
++export function createPatch(from: unknown, to: unknown): JsonPatchOperation[] {
++  const ops: JsonPatchOperation[] = [];
++  diffValues("", from, to, ops);
++  return ops;
++}

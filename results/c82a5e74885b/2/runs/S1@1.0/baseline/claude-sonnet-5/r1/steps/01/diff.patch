@@ -1,0 +1,147 @@
+diff --git a/src/index.ts b/src/index.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..7af5a546484066a6ea4f7f717e404d2603c10bc6
+--- /dev/null
++++ b/src/index.ts
+@@ -0,0 +1,53 @@
++export type JsonValue =
++  | string
++  | number
++  | boolean
++  | null
++  | JsonValue[]
++  | { [key: string]: JsonValue };
++
++/**
++ * Resolves a JSON Pointer (RFC 6901) against a JSON document.
++ *
++ * Throws if `pointer` is not a syntactically valid JSON Pointer, or if it
++ * does not resolve to a value within `document`.
++ */
++export function resolvePointer(document: JsonValue, pointer: string): JsonValue {
++  if (pointer === '') {
++    return document;
++  }
++
++  if (pointer[0] !== '/') {
++    throw new Error(`Invalid JSON Pointer "${pointer}": must be empty or start with "/"`);
++  }
++
++  const tokens = pointer.split('/').slice(1).map((rawToken) => {
++    if (/~(?![01])/.test(rawToken)) {
++      throw new Error(`Invalid JSON Pointer "${pointer}": malformed escape sequence in "${rawToken}"`);
++    }
++    return rawToken.replace(/~1/g, '/').replace(/~0/g, '~');
++  });
++
++  let current = document;
++  for (const token of tokens) {
++    if (Array.isArray(current)) {
++      if (!/^(0|[1-9][0-9]*)$/.test(token)) {
++        throw new Error(`Cannot resolve JSON Pointer "${pointer}": "${token}" is not a valid array index`);
++      }
++      const index = Number(token);
++      if (index >= current.length) {
++        throw new Error(`Cannot resolve JSON Pointer "${pointer}": index ${index} is out of bounds`);
++      }
++      current = current[index];
++    } else if (typeof current === 'object' && current !== null) {
++      if (!Object.prototype.hasOwnProperty.call(current, token)) {
++        throw new Error(`Cannot resolve JSON Pointer "${pointer}": no member "${token}"`);
++      }
++      current = (current as { [key: string]: JsonValue })[token];
++    } else {
++      throw new Error(`Cannot resolve JSON Pointer "${pointer}": cannot descend into a ${typeof current}`);
++    }
++  }
++
++  return current;
++}
+diff --git a/test/index.test.ts b/test/index.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..fec3095afc0a3510bf670f865092f5c2c7da5988
+--- /dev/null
++++ b/test/index.test.ts
+@@ -0,0 +1,82 @@
++import { test } from 'node:test';
++import assert from 'node:assert/strict';
++import { resolvePointer, type JsonValue } from '../src/index.ts';
++
++// The example document and pointers from RFC 6901, Section 5.
++const rfcDocument: JsonValue = {
++  foo: ['bar', 'baz'],
++  '': 0,
++  'a/b': 1,
++  'c%d': 2,
++  'e^f': 3,
++  'g|h': 4,
++  'i\\j': 5,
++  'k"l': 6,
++  ' ': 7,
++  'm~n': 8,
++};
++
++test('RFC 6901 section 5 examples', () => {
++  assert.deepEqual(resolvePointer(rfcDocument, ''), rfcDocument);
++  assert.deepEqual(resolvePointer(rfcDocument, '/foo'), ['bar', 'baz']);
++  assert.equal(resolvePointer(rfcDocument, '/foo/0'), 'bar');
++  assert.equal(resolvePointer(rfcDocument, '/'), 0);
++  assert.equal(resolvePointer(rfcDocument, '/a~1b'), 1);
++  assert.equal(resolvePointer(rfcDocument, '/c%d'), 2);
++  assert.equal(resolvePointer(rfcDocument, '/e^f'), 3);
++  assert.equal(resolvePointer(rfcDocument, '/g|h'), 4);
++  assert.equal(resolvePointer(rfcDocument, '/i\\j'), 5);
++  assert.equal(resolvePointer(rfcDocument, '/k"l'), 6);
++  assert.equal(resolvePointer(rfcDocument, '/ '), 7);
++  assert.equal(resolvePointer(rfcDocument, '/m~0n'), 8);
++});
++
++test('resolves nested paths through objects and arrays', () => {
++  const document: JsonValue = {
++    a: { b: [{ c: 'deep' }, 'other'] },
++  };
++  assert.equal(resolvePointer(document, '/a/b/0/c'), 'deep');
++  assert.equal(resolvePointer(document, '/a/b/1'), 'other');
++});
++
++test('the "~01" escape decodes as a literal "~1" token', () => {
++  const document: JsonValue = { '~1': 'tilde-one' };
++  assert.equal(resolvePointer(document, '/~01'), 'tilde-one');
++});
++
++test('empty pointer returns the whole document, including primitives', () => {
++  assert.equal(resolvePointer('hello', ''), 'hello');
++  assert.equal(resolvePointer(null, ''), null);
++  assert.equal(resolvePointer(42, ''), 42);
++});
++
++test('rejects pointers that do not start with "/"', () => {
++  assert.throws(() => resolvePointer({}, 'foo'));
++  assert.throws(() => resolvePointer({}, 'a/b'));
++});
++
++test('rejects malformed escape sequences', () => {
++  assert.throws(() => resolvePointer({}, '/foo~'));
++  assert.throws(() => resolvePointer({}, '/foo~2'));
++});
++
++test('rejects unknown object members', () => {
++  assert.throws(() => resolvePointer({ a: 1 }, '/b'));
++});
++
++test('rejects non-existent and malformed array indices', () => {
++  const document: JsonValue = { arr: ['x', 'y'] };
++  assert.throws(() => resolvePointer(document, '/arr/2'));
++  assert.throws(() => resolvePointer(document, '/arr/-'));
++  assert.throws(() => resolvePointer(document, '/arr/01'));
++  assert.throws(() => resolvePointer(document, '/arr/-1'));
++  assert.throws(() => resolvePointer(document, '/arr/x'));
++});
++
++test('rejects descending into a primitive value', () => {
++  const document: JsonValue = { a: 'string', b: 1, c: true, d: null };
++  assert.throws(() => resolvePointer(document, '/a/x'));
++  assert.throws(() => resolvePointer(document, '/b/x'));
++  assert.throws(() => resolvePointer(document, '/c/x'));
++  assert.throws(() => resolvePointer(document, '/d/x'));
++});

@@ -1,0 +1,164 @@
+diff --git a/docs/memory/decision-log/dl-003-safe-object-member-writes-via-object.defineproperty-in-applypatch.md b/docs/memory/decision-log/dl-003-safe-object-member-writes-via-object.defineproperty-in-applypatch.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..7b855caa04ae6ece7d123ff9305784e816f2e26a
+--- /dev/null
++++ b/docs/memory/decision-log/dl-003-safe-object-member-writes-via-object.defineproperty-in-applypatch.md
+@@ -0,0 +1,44 @@
++---
++id: dl-003-safe-object-member-writes-via-object.defineproperty-in-applypatch
++type: decision-log
++title: "Safe object-member writes via Object.defineProperty in applyPatch"
++status: approved
++---
++
++## Context
++
++RFC 6902 §4.1 ("add") and §4.3 ("replace") require that, when the target is an object member, the
++operation create or overwrite that exact member. `addAt`/`replaceAt` implemented this with plain
++property assignment, `container[key] = value`. For almost every `key` this is a real, own, enumerable
++data property, matching the RFC. But JavaScript objects inherit an accessor property named
++`__proto__` from `Object.prototype`; assigning through that name with `=` does not create an own
++member, it calls the accessor's setter and replaces the object's internal prototype. A patch such as
++`{ op: "add", path: "/foo/__proto__", value: { "polluted": true } }` therefore applied without error,
++yet `foo` never gained a member named `"__proto__"` — `Object.keys`, `JSON.stringify`, and a
++follow-up `resolvePointer`/`test` on `/foo/__proto__` all disagreed with what the patch said it did,
++while reads of unrelated members on `foo` could start resolving through the new prototype.
++
++## Decision
++
++Introduced `setMember(container, key, value)`, which writes via `Object.defineProperty(container,
++key, { value, writable: true, enumerable: true, configurable: true })`, and used it for both `add`'s
++and `replace`'s object-member case in place of bracket assignment. `Object.defineProperty` always
++defines an own property with the literal name given, regardless of whether that name collides with an
++inherited accessor, so the result now matches RFC 6902 for every member name, including
++`"__proto__"`, `"constructor"`, and similarly-named members.
++
++No other write path needed the same treatment:
++- `remove`'s `delete container[key]` only ever acts on an own property (`removeAt` checks
++  `hasOwnProperty` first) and deleting an own data property is unaffected by this issue.
++- Every read path (`resolveToken`, used by `resolvePointer`, `test`, and the source lookup for
++  `copy`/`move`) already gates on `hasOwnProperty` before returning a value, so it was never at risk
++  of resolving through the inherited accessor.
++- Array containers validate the key as a numeric index or `"-"` before any write, so a key like
++  `"__proto__"` is rejected before reaching an assignment.
++
++## Consequences
++
++- `applyPatch` now treats every string as a legitimate object member name, including ones that
++  collide with inherited `Object.prototype` accessors; callers relying on the old (incorrect) silent
++  prototype mutation, if any existed, will now see the member actually added/replaced instead.
++- The fix is local to `addAt`/`replaceAt`; no public type or function signature changed.
+diff --git a/docs/memory/task/task-003-fix-applypatch-object-member-writes-to-avoid-prototype-interception.md b/docs/memory/task/task-003-fix-applypatch-object-member-writes-to-avoid-prototype-interception.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..dac5f2b80dcd5b5a4e27a2d8a2c6b3f28bf6ac18
+--- /dev/null
++++ b/docs/memory/task/task-003-fix-applypatch-object-member-writes-to-avoid-prototype-interception.md
+@@ -0,0 +1,49 @@
++---
++id: task-003-fix-applypatch-object-member-writes-to-avoid-prototype-interception
++type: task
++title: "Fix applyPatch object-member writes to avoid prototype interception"
++status: approved
++---
++
++## Request
++
++Users of `applyPatch` report surprising results: some patches they consider invalid are accepted,
++some edge cases give results they did not expect, and a patch that fails does not always behave the
++way they read RFC 6902. Review how patches are checked and applied, and make the behaviour conform to
++RFC 6902 in every case, errors included.
++
++## What was done
++
++Re-read RFC 6902 (sections 3-5 and every Appendix A example) against the current implementation and
++ran both the official examples and a battery of ad hoc edge cases (array move direction, root
++operations, non-canonical indices, extra/ignored members, `test` type/order sensitivity, immutability)
++through `applyPatch`. All of those matched the RFC.
++
++One real conformance gap was found and fixed: `addAt` and `replaceAt` wrote object members with plain
++property assignment (`container[key] = value`). For the ordinary case this is a real, own, enumerable
++member as RFC 6902 §4.1/§4.3 require. But for `key === '__proto__'`, plain assignment does not create
++an own member at all — it invokes `Object.prototype`'s inherited `__proto__` accessor and reassigns
++the object's prototype instead. The patch was silently accepted (no throw) yet the resulting document
++did not actually gain the member the operation named: it was absent from `Object.keys`, from
++`JSON.stringify`, and from any later `resolvePointer`/`test` on that path — while unrelated property
++reads on the object could pick up values through the new prototype chain. This is exactly the
++"patch applies without error but the result is not what RFC 6902 describes" complaint.
++
++Fix: added a `setMember` helper that writes an object member with `Object.defineProperty(container,
++key, { value, writable: true, enumerable: true, configurable: true })`, which always creates a real
++own data property regardless of its name, and used it in both `addAt` and `replaceAt` in place of the
++bracket assignment. `removeAt`'s `delete container[key]` and all read paths (`resolveToken`) were
++already gated by `hasOwnProperty`, so they needed no change: they never resolved through the
++inherited accessor and were not affected.
++
++Added two regression tests to `test/apply-patch.test.ts`:
++- `add` creates a literal `"__proto__"` member instead of altering the object prototype.
++- `replace` overwrites a literal `"__proto__"` member without altering the object prototype.
++
++Confirmed red against the pre-fix `src/index.ts` (the `add` case failed; `replace` already happened
++to be safe once the member pre-existed as a real own property, since plain assignment to an existing
++own data property does not re-invoke the inherited accessor — only object creation through `add` was
++exploitable). Confirmed green after the fix, and confirmed the full suite (37 tests) and
++`tsc --noEmit` are clean.
++
++See `dl-003` for the design decision behind the `setMember` helper.
+diff --git a/src/index.ts b/src/index.ts
+index bbd7adc3f990e391e136eda62d841345fa579780..352e887f2e3946ad5cebf2c575cfb5132ac5ae97 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -260,12 +260,21 @@ function addAt(container: unknown, key: string, value: unknown, pointer: string)
+     return;
+   }
+   if (isJsonObject(container)) {
+-    container[key] = value;
++    setMember(container, key, value);
+     return;
+   }
+   throw new Error(`JSON Patch "add" failed at "${pointer}": cannot add into ${typeof container}.`);
+ }
+ 
++/**
++ * Sets an object member by its literal name, including names such as `__proto__` that would
++ * otherwise be intercepted by `Object.prototype`'s inherited accessor instead of creating a real,
++ * own, enumerable member.
++ */
++function setMember(container: Record<string, unknown>, key: string, value: unknown): void {
++  Object.defineProperty(container, key, { value, writable: true, enumerable: true, configurable: true });
++}
++
+ function removeAt(container: unknown, key: string, pointer: string): unknown {
+   if (Array.isArray(container)) {
+     const index = parseArrayIndex(key, pointer);
+@@ -298,7 +307,7 @@ function replaceAt(container: unknown, key: string, value: unknown, pointer: str
+     if (!Object.prototype.hasOwnProperty.call(container, key)) {
+       throw new Error(`JSON Patch "replace" failed at "${pointer}": no member "${key}".`);
+     }
+-    container[key] = value;
++    setMember(container, key, value);
+     return;
+   }
+   throw new Error(`JSON Patch "replace" failed at "${pointer}": cannot replace into ${typeof container}.`);
+diff --git a/test/apply-patch.test.ts b/test/apply-patch.test.ts
+index c5d324055ed85ca035e0f739c687c890ebd1d6a5..e71212f369820a256c223bece80a814ab071db9d 100644
+--- a/test/apply-patch.test.ts
++++ b/test/apply-patch.test.ts
+@@ -133,3 +133,18 @@ test('rejects a "move" operation missing "from"', () => {
+ test('rejects an operation whose "path" is not syntactically valid', () => {
+   assert.throws(() => applyPatch({}, [{ op: 'add', path: 'foo', value: 1 }]));
+ });
++
++test('add creates a literal "__proto__" member instead of altering the object prototype', () => {
++  const result = applyPatch({}, [{ op: 'add', path: '/__proto__', value: { polluted: true } }]) as object;
++  assert.equal(Object.prototype.hasOwnProperty.call(result, '__proto__'), true);
++  assert.deepEqual(JSON.parse(JSON.stringify(result)), { ['__proto__']: { polluted: true } });
++  assert.equal(({} as Record<string, unknown>).polluted, undefined);
++});
++
++test('replace overwrites a literal "__proto__" member without altering the object prototype', () => {
++  const document: Record<string, unknown> = {};
++  Object.defineProperty(document, '__proto__', { value: 1, enumerable: true, configurable: true, writable: true });
++  const result = applyPatch(document, [{ op: 'replace', path: '/__proto__', value: 2 }]) as object;
++  assert.equal(Object.prototype.hasOwnProperty.call(result, '__proto__'), true);
++  assert.deepEqual(JSON.parse(JSON.stringify(result)), { ['__proto__']: 2 });
++});

@@ -1,0 +1,698 @@
+diff --git a/README.md b/README.md
+index ff92be649ff3f610b38798b3310751534d032814..5898d37dd809b2ffd464ddbecc454fee26a2ac36 100644
+--- a/README.md
++++ b/README.md
+@@ -3,3 +3,20 @@
+ A small TypeScript library, with no runtime dependency, of building blocks for our services that store,
+ exchange and update JSON: configuration files, API payloads and stored records. It is imported by the
+ other projects of the team, so its behaviour must follow the published standards it implements.
++
++## Usage
++
++### `resolvePointer(document, pointer)`
++
++Resolves a [JSON Pointer](https://www.rfc-editor.org/rfc/rfc6901) (RFC 6901) against a JSON document
++and returns the value it refers to. Throws if the pointer is not syntactically valid, or if it does not
++resolve to a value within the document.
++
++```ts
++import { resolvePointer } from "json-toolkit";
++
++const document = { foo: ["bar", "baz"] };
++
++resolvePointer(document, "/foo/0"); // "bar"
++resolvePointer(document, ""); // the whole document
++```
+diff --git a/docs/memory/decision-log/dl-001-json-pointer-resolution-rules-for-resolvepointer.md b/docs/memory/decision-log/dl-001-json-pointer-resolution-rules-for-resolvepointer.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..89274036ab751f7ffcda1aeeec8ee5c009990a09
+--- /dev/null
++++ b/docs/memory/decision-log/dl-001-json-pointer-resolution-rules-for-resolvepointer.md
+@@ -0,0 +1,39 @@
++---
++id: dl-001-json-pointer-resolution-rules-for-resolvepointer
++type: decision-log
++title: "JSON Pointer resolution rules for resolvePointer"
++status: approved
++---
++
++## Context
++
++RFC 6901 leaves a few behaviours to the implementer's judgement, and `resolvePointer` is the
++foundation other json-toolkit features will call, so these choices need to be fixed now rather than
++redecided per caller.
++
++## Decision
++
++- **Escape order**: unescape each raw reference token by replacing `~1` with `/` first, then `~0`
++  with `~`. Doing it in the other order mis-decodes a token like `~01`, which must decode to the two
++  literal characters `~1`, not `/0`.
++- **Syntax validation before unescaping**: a raw token containing a `~` not immediately followed by
++  `0` or `1` is rejected as an invalid pointer, matching the RFC's ABNF (`escaped = "~" ("0" / "1")`)
++  instead of silently passing it through.
++- **Array vs. object traversal**: when the current value is an array, the token must match
++  `^(?:0|[1-9][0-9]*)$` (no leading zeros, no `-`) and the index must be within bounds, or the pointer
++  throws as unresolved — RFC 6901 permits `-` only for operations that create a new value (e.g. JSON
++  Patch `add`), not for resolving an existing one. When the current value is a plain object, resolution
++  uses an own-property check (`Object.prototype.hasOwnProperty`), not the `in` operator, so inherited
++  properties (e.g. `toString`) never resolve.
++- **Falsy values are valid results**: `false`, `null`, `0`, and `""` are legitimate values a pointer
++  can resolve to; only a missing member/index or a type mismatch (object/array expected) throws.
++- **Scope**: only the plain string representation of a JSON Pointer (RFC 6901 §5) is supported, not
++  the URI fragment identifier representation (§6), since the request only specified "a JSON Pointer
++  string."
++
++## Consequences
++
++- Later features that use JSON Pointer (e.g. an eventual JSON Patch implementation) can call
++  `resolvePointer` directly and rely on these resolution semantics without re-deriving them.
++- If a future feature needs the URI fragment form, it must decode the `#`-prefixed, percent-encoded
++  representation into a plain pointer string before calling `resolvePointer`.
+diff --git a/docs/memory/task/task-001-implement-json-pointer-rfc-6901-resolvepointer.md b/docs/memory/task/task-001-implement-json-pointer-rfc-6901-resolvepointer.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..03e9112d997d7ba86fb3abf3eeb52a9641720189
+--- /dev/null
++++ b/docs/memory/task/task-001-implement-json-pointer-rfc-6901-resolvepointer.md
+@@ -0,0 +1,38 @@
++---
++id: task-001-implement-json-pointer-rfc-6901-resolvepointer
++type: task
++title: "Implement JSON Pointer (RFC 6901) resolvePointer"
++status: approved
++---
++
++## Request
++
++Implement JSON Pointer (RFC 6901). Export `resolvePointer(document, pointer)` from `src/index.ts`,
++resolving a JSON Pointer string against a JSON document and returning the referenced value. It throws
++when the pointer is not syntactically valid, or when it does not resolve to a value in the document.
++This is the first of a few features that build on each other; later features will call this function.
++
++## What was done
++
++- Wrote `src/index.test.ts` first (red): happy-path cases (whole-document, object member, nested
++  member, array index, falsy values `false`/`null`/`0`, `~0`/`~1` unescaping, unescaped special
++  characters) and error-path cases (non-string pointer, pointer not starting with `/`, missing member,
++  out-of-bounds/malformed array index, `-` array index, traversal through a scalar, invalid escape
++  sequence). Confirmed all 15 tests failed before any implementation existed.
++- Implemented `resolvePointer` in `src/index.ts` per RFC 6901 section 3-4: splits the pointer on `/`,
++  validates each raw reference token's `~` escapes before unescaping (`~1` → `/` then `~0` → `~`, in
++  that order), and walks the document distinguishing array traversal (strict `0`/`[1-9][0-9]*` index
++  syntax, no `-`, bounds-checked) from object traversal (own-property check only). Ran the suite again:
++  all 15 tests pass (green).
++- Added `typescript` as a devDependency (tsconfig.json already declared strict/declaration/outDir
++  settings but no compiler was installed) and `typecheck`/`build` npm scripts. `tsc --noEmit` passes
++  with no errors under `strict`. Excluded `src/**/*.test.ts` from the tsconfig `include` set so the
++  library build doesn't try to emit test files; Node's native TypeScript stripping still runs them
++  directly via `node --test` (no test-specific type definitions needed).
++- Documented `resolvePointer` with a usage example in `README.md` and a doc comment on the exported
++  function.
++
++## Verification
++
++- `npm test` — 15/15 passing.
++- `npm run typecheck` — no errors.
+diff --git a/package-lock.json b/package-lock.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..8d0cf7c6e2908942295398ad29c160091c75c27d
+--- /dev/null
++++ b/package-lock.json
+@@ -0,0 +1,390 @@
++{
++  "name": "json-toolkit",
++  "version": "0.1.0",
++  "lockfileVersion": 3,
++  "requires": true,
++  "packages": {
++    "": {
++      "name": "json-toolkit",
++      "version": "0.1.0",
++      "devDependencies": {
++        "typescript": "^7.0.2"
++      }
++    },
++    "node_modules/@typescript/typescript-aix-ppc64": {
++      "version": "7.0.2",
++      "resolved": "https://registry.npmjs.org/@typescript/typescript-aix-ppc64/-/typescript-aix-ppc64-7.0.2.tgz",
++      "integrity": "sha512-MTKKkWB7p/0E9xi1d1tHtZ5PiLkGEMIq88pK2CubZjOsLtYTLqhgIgi6zepFa+9GHZ6h05NMCkQxGKiPXMxXtQ==",
++      "cpu": [
++        "ppc64"
++      ],
++      "dev": true,
++      "license": "Apache-2.0",
++      "optional": true,
++      "os": [
++        "aix"
++      ],
++      "engines": {
++        "node": ">=16.20.0"
++      }
++    },
++    "node_modules/@typescript/typescript-darwin-arm64": {
++      "version": "7.0.2",
++      "resolved": "https://registry.npmjs.org/@typescript/typescript-darwin-arm64/-/typescript-darwin-arm64-7.0.2.tgz",
++      "integrity": "sha512-gowzar9MwS/aRWp6f3a4KUqzRjAZjOsmGNCM6LcTgXum+dBfgsBVMN+AgvOCCbguXyick6LJhpBszxMebJ8syA==",
++      "cpu": [
++        "arm64"
++      ],
++      "dev": true,
++      "license": "Apache-2.0",
++      "optional": true,
++      "os": [
++        "darwin"
++      ],
++      "engines": {
++        "node": ">=16.20.0"
++      }
++    },
++    "node_modules/@typescript/typescript-darwin-x64": {
++      "version": "7.0.2",
++      "resolved": "https://registry.npmjs.org/@typescript/typescript-darwin-x64/-/typescript-darwin-x64-7.0.2.tgz",
++      "integrity": "sha512-SZ9xZInqApNlNGc9s0W1VSsktYSOe9cFqNOIqmN1Gs8SmkjKZYFt017G4VwPxASInODuAdbTW7sXiFUf893RgA==",
++      "cpu": [
++        "x64"
++      ],
++      "dev": true,
++      "license": "Apache-2.0",
++      "optional": true,
++      "os": [
++        "darwin"
++      ],
++      "engines": {
++        "node": ">=16.20.0"
++      }
++    },
++    "node_modules/@typescript/typescript-freebsd-arm64": {
++      "version": "7.0.2",
++      "resolved": "https://registry.npmjs.org/@typescript/typescript-freebsd-arm64/-/typescript-freebsd-arm64-7.0.2.tgz",
++      "integrity": "sha512-W5NH4y/J0plIIS5b2xvTEkU7JFxyqdMAOgf+Ilhl0vHQXKO5dZoxd+C/jEtq56c4F3wk71RB4BMRQ2XdI+bwYQ==",
++      "cpu": [
++        "arm64"
++      ],
++      "dev": true,
++      "license": "Apache-2.0",
++      "optional": true,
++      "os": [
++        "freebsd"
++      ],
++      "engines": {
++        "node": ">=16.20.0"
++      }
++    },
++    "node_modules/@typescript/typescript-freebsd-x64": {
++      "version": "7.0.2",
++      "resolved": "https://registry.npmjs.org/@typescript/typescript-freebsd-x64/-/typescript-freebsd-x64-7.0.2.tgz",
++      "integrity": "sha512-UMGDx5sTpzNw3WiPebH7l90IWfJggEd+egHt/q6p7/Cm3zqoV7VxkGXt+3DxPIw8CcmvAB0j3sVVfbhX+M4Tpw==",
++      "cpu": [
++        "x64"
++      ],
++      "dev": true,
++      "license": "Apache-2.0",
++      "optional": true,
++      "os": [
++        "freebsd"
++      ],
++      "engines": {
++        "node": ">=16.20.0"
++      }
++    },
++    "node_modules/@typescript/typescript-linux-arm": {
++      "version": "7.0.2",
++      "resolved": "https://registry.npmjs.org/@typescript/typescript-linux-arm/-/typescript-linux-arm-7.0.2.tgz",
++      "integrity": "sha512-gffT3xPz9sR7j/YJExkyPntrI0P2EP9XbOyWzth2/Gs0RstK+90RBcO0ncXoXy/beYll1SXw846Nf2zdnEz0QQ==",
++      "cpu": [
++        "arm"
++      ],
++      "dev": true,
++      "license": "Apache-2.0",
++      "optional": true,
++      "os": [
++        "linux"
++      ],
++      "engines": {
++        "node": ">=16.20.0"
++      }
++    },
++    "node_modules/@typescript/typescript-linux-arm64": {
++      "version": "7.0.2",
++      "resolved": "https://registry.npmjs.org/@typescript/typescript-linux-arm64/-/typescript-linux-arm64-7.0.2.tgz",
++      "integrity": "sha512-Qh4eU4/y3yDjnfjjyPYihMj5/ODIlmt+Bzu17OI+fiSRDW57QmU5SiN63exPRNJPKUzcc1INa1NXdrJ+MqHjUQ==",
++      "cpu": [
++        "arm64"
++      ],
++      "dev": true,
++      "license": "Apache-2.0",
++      "optional": true,
++      "os": [
++        "linux"
++      ],
++      "engines": {
++        "node": ">=16.20.0"
++      }
++    },
++    "node_modules/@typescript/typescript-linux-loong64": {
++      "version": "7.0.2",
++      "resolved": "https://registry.npmjs.org/@typescript/typescript-linux-loong64/-/typescript-linux-loong64-7.0.2.tgz",
++      "integrity": "sha512-uEHck9i8hoAzXPiYRib1O7miOnz23SxIeVl6F4LXox+qov1K35jHcEW6VHKvZI+pyvl7fZEP4MCU5LYvIq1GuQ==",
++      "cpu": [
++        "loong64"
++      ],
++      "dev": true,
++      "license": "Apache-2.0",
++      "optional": true,
++      "os": [
++        "linux"
++      ],
++      "engines": {
++        "node": ">=16.20.0"
++      }
++    },
++    "node_modules/@typescript/typescript-linux-mips64el": {
++      "version": "7.0.2",
++      "resolved": "https://registry.npmjs.org/@typescript/typescript-linux-mips64el/-/typescript-linux-mips64el-7.0.2.tgz",
++      "integrity": "sha512-R4KvAMnE43W5Qeqb0Ly56O3mWMWIAgsMyz36DCaycd5nbg/9kzm0liw3JocfRqyJY0KPmzFjbswozXyW0DnIYA==",
++      "cpu": [
++        "mips64el"
++      ],
++      "dev": true,
++      "license": "Apache-2.0",
++      "optional": true,
++      "os": [
++        "linux"
++      ],
++      "engines": {
++        "node": ">=16.20.0"
++      }
++    },
++    "node_modules/@typescript/typescript-linux-ppc64": {
++      "version": "7.0.2",
++      "resolved": "https://registry.npmjs.org/@typescript/typescript-linux-ppc64/-/typescript-linux-ppc64-7.0.2.tgz",
++      "integrity": "sha512-DORx5b3sd/4S7eayxm4FQv+A7CrkUIGRaHiwI8oiHTAI1fAPWhF4J0vAlkC8biAlHSVVwxMQ3tjZ2/DVbnQiiA==",
++      "cpu": [
++        "ppc64"
++      ],
++      "dev": true,
++      "license": "Apache-2.0",
++      "optional": true,
++      "os": [
++        "linux"
++      ],
++      "engines": {
++        "node": ">=16.20.0"
++      }
++    },
++    "node_modules/@typescript/typescript-linux-riscv64": {
++      "version": "7.0.2",
++      "resolved": "https://registry.npmjs.org/@typescript/typescript-linux-riscv64/-/typescript-linux-riscv64-7.0.2.tgz",
++      "integrity": "sha512-wf0jqEDOjrPRnKwYRyyJDRo11KMbvMFrU+q4zqKyChODBzvlkbhNQfKvLxQCcwTpdDaXSHZTVuh0JoCrKCUMHQ==",
++      "cpu": [
++        "riscv64"
++      ],
++      "dev": true,
++      "license": "Apache-2.0",
++      "optional": true,
++      "os": [
++        "linux"
++      ],
++      "engines": {
++        "node": ">=16.20.0"
++      }
++    },
++    "node_modules/@typescript/typescript-linux-s390x": {
++      "version": "7.0.2",
++      "resolved": "https://registry.npmjs.org/@typescript/typescript-linux-s390x/-/typescript-linux-s390x-7.0.2.tgz",
++      "integrity": "sha512-IkwJc3L7yhytWd/ewjyxNDfOmswCm9GWMJT/ue/dU4aZNbwZeYAetq42VyLmsmSjvoX7z74X6ZaYCtzAr0EuGw==",
++      "cpu": [
++        "s390x"
++      ],
++      "dev": true,
++      "license": "Apache-2.0",
++      "optional": true,
++      "os": [
++        "linux"
++      ],
++      "engines": {
++        "node": ">=16.20.0"
++      }
++    },
++    "node_modules/@typescript/typescript-linux-x64": {
++      "version": "7.0.2",
++      "resolved": "https://registry.npmjs.org/@typescript/typescript-linux-x64/-/typescript-linux-x64-7.0.2.tgz",
++      "integrity": "sha512-EYdf2cNg7rgCWJnxCdJ+F3V39O8ihb37eHAu1LK8oAFizgTQbPOK7zHHXbPt8rX24COqODXeI3sIf0fCXG7H/A==",
++      "cpu": [
++        "x64"
++      ],
++      "dev": true,
++      "license": "Apache-2.0",
++      "optional": true,
++      "os": [
++        "linux"
++      ],
++      "engines": {
++        "node": ">=16.20.0"
++      }
++    },
++    "node_modules/@typescript/typescript-netbsd-arm64": {
++      "version": "7.0.2",
++      "resolved": "https://registry.npmjs.org/@typescript/typescript-netbsd-arm64/-/typescript-netbsd-arm64-7.0.2.tgz",
++      "integrity": "sha512-+polYF4MF04aPpO5FTkHran9yUQDSXqy5GiSDKpsll5jy3l3+g9QLhpf39T+ePtefhXLOGrLl0QIjkQP6VnelA==",
++      "cpu": [
++        "arm64"
++      ],
++      "dev": true,
++      "license": "Apache-2.0",
++      "optional": true,
++      "os": [
++        "netbsd"
++      ],
++      "engines": {
++        "node": ">=16.20.0"
++      }
++    },
++    "node_modules/@typescript/typescript-netbsd-x64": {
++      "version": "7.0.2",
++      "resolved": "https://registry.npmjs.org/@typescript/typescript-netbsd-x64/-/typescript-netbsd-x64-7.0.2.tgz",
++      "integrity": "sha512-8YIT0EHM/3dq10ZOVF/A7pc/YSMtbcecct4rWtexrnSCHOPcpC2KTLXfTCR6vDpnSiY12heNb1GiN/wu+T/FyA==",
++      "cpu": [
++        "x64"
++      ],
++      "dev": true,
++      "license": "Apache-2.0",
++      "optional": true,
++      "os": [
++        "netbsd"
++      ],
++      "engines": {
++        "node": ">=16.20.0"
++      }
++    },
++    "node_modules/@typescript/typescript-openbsd-arm64": {
++      "version": "7.0.2",
++      "resolved": "https://registry.npmjs.org/@typescript/typescript-openbsd-arm64/-/typescript-openbsd-arm64-7.0.2.tgz",
++      "integrity": "sha512-APT8+ClYnuYm1u9+kgGXoMj2VzWzcymwh2gNSQVySHfkRDGOTVkoWLjCmOQSaO+PoqQ57B0flRp9SA+7GnnkzQ==",
++      "cpu": [
++        "arm64"
++      ],
++      "dev": true,
++      "license": "Apache-2.0",
++      "optional": true,
++      "os": [
++        "openbsd"
++      ],
++      "engines": {
++        "node": ">=16.20.0"
++      }
++    },
++    "node_modules/@typescript/typescript-openbsd-x64": {
++      "version": "7.0.2",
++      "resolved": "https://registry.npmjs.org/@typescript/typescript-openbsd-x64/-/typescript-openbsd-x64-7.0.2.tgz",
++      "integrity": "sha512-yX7s+Q0Dln0Dt9tEzZsAjXXR/+ytBM7AlglaqyeMPxQszJ1JhlJdZ6jLA+IzldHtflX81em7lDao1xXu+aRRkg==",
++      "cpu": [
++        "x64"
++      ],
++      "dev": true,
++      "license": "Apache-2.0",
++      "optional": true,
++      "os": [
++        "openbsd"
++      ],
++      "engines": {
++        "node": ">=16.20.0"
++      }
++    },
++    "node_modules/@typescript/typescript-sunos-x64": {
++      "version": "7.0.2",
++      "resolved": "https://registry.npmjs.org/@typescript/typescript-sunos-x64/-/typescript-sunos-x64-7.0.2.tgz",
++      "integrity": "sha512-dLJDGaLZ1D4HPQn62u1n8mBDkJREwMsAkCdkwd4Ieqw+x3TUyTsqY0YiBCtE6H6OzzgGk3iuZ3vFWRS+E8/d1g==",
++      "cpu": [
++        "x64"
++      ],
++      "dev": true,
++      "license": "Apache-2.0",
++      "optional": true,
++      "os": [
++        "sunos"
++      ],
++      "engines": {
++        "node": ">=16.20.0"
++      }
++    },
++    "node_modules/@typescript/typescript-win32-arm64": {
++      "version": "7.0.2",
++      "resolved": "https://registry.npmjs.org/@typescript/typescript-win32-arm64/-/typescript-win32-arm64-7.0.2.tgz",
++      "integrity": "sha512-Gyl1Vy6OsWesLzmq+EP0Fb7b4Nid5232AvcA2SFcdYreldpNtYFFofPjnt62y9hQy7VTaZp65ICJjuAQRaVcIQ==",
++      "cpu": [
++        "arm64"
++      ],
++      "dev": true,
++      "license": "Apache-2.0",
++      "optional": true,
++      "os": [
++        "win32"
++      ],
++      "engines": {
++        "node": ">=16.20.0"
++      }
++    },
++    "node_modules/@typescript/typescript-win32-x64": {
++      "version": "7.0.2",
++      "resolved": "https://registry.npmjs.org/@typescript/typescript-win32-x64/-/typescript-win32-x64-7.0.2.tgz",
++      "integrity": "sha512-0BQ3HkAHHlKLSp1qRvf3SUhGpGsDuhB/jgFw75guyqbxJqEaS0Cw/VFO8i2nHglJUzQCRtMMR/IBAKE3ETMC4g==",
++      "cpu": [
++        "x64"
++      ],
++      "dev": true,
++      "license": "Apache-2.0",
++      "optional": true,
++      "os": [
++        "win32"
++      ],
++      "engines": {
++        "node": ">=16.20.0"
++      }
++    },
++    "node_modules/typescript": {
++      "version": "7.0.2",
++      "resolved": "https://registry.npmjs.org/typescript/-/typescript-7.0.2.tgz",
++      "integrity": "sha512-8FYau96o3NKOhbjKi/qNvG/W5jhzxkbdm5sj9AbZ/5T5sWqn3hJgLfGx27sRKZWTvyzCP8dLRBTf5tBTSRVUNA==",
++      "dev": true,
++      "license": "Apache-2.0",
++      "bin": {
++        "tsc": "bin/tsc"
++      },
++      "engines": {
++        "node": ">=16.20.0"
++      },
++      "optionalDependencies": {
++        "@typescript/typescript-aix-ppc64": "7.0.2",
++        "@typescript/typescript-darwin-arm64": "7.0.2",
++        "@typescript/typescript-darwin-x64": "7.0.2",
++        "@typescript/typescript-freebsd-arm64": "7.0.2",
++        "@typescript/typescript-freebsd-x64": "7.0.2",
++        "@typescript/typescript-linux-arm": "7.0.2",
++        "@typescript/typescript-linux-arm64": "7.0.2",
++        "@typescript/typescript-linux-loong64": "7.0.2",
++        "@typescript/typescript-linux-mips64el": "7.0.2",
++        "@typescript/typescript-linux-ppc64": "7.0.2",
++        "@typescript/typescript-linux-riscv64": "7.0.2",
++        "@typescript/typescript-linux-s390x": "7.0.2",
++        "@typescript/typescript-linux-x64": "7.0.2",
++        "@typescript/typescript-netbsd-arm64": "7.0.2",
++        "@typescript/typescript-netbsd-x64": "7.0.2",
++        "@typescript/typescript-openbsd-arm64": "7.0.2",
++        "@typescript/typescript-openbsd-x64": "7.0.2",
++        "@typescript/typescript-sunos-x64": "7.0.2",
++        "@typescript/typescript-win32-arm64": "7.0.2",
++        "@typescript/typescript-win32-x64": "7.0.2"
++      }
++    }
++  }
++}
+diff --git a/package.json b/package.json
+index 5f1f12a7edbf25e1ade5481dc7f359ede03d0df5..528fce6047e465f20945965c720b42265a50f187 100644
+--- a/package.json
++++ b/package.json
+@@ -5,6 +5,11 @@
+   "description": "Building blocks for services that store, exchange and update JSON documents.",
+   "type": "module",
+   "scripts": {
+-    "test": "node --test"
++    "test": "node --test",
++    "typecheck": "tsc --noEmit",
++    "build": "tsc"
++  },
++  "devDependencies": {
++    "typescript": "^7.0.2"
+   }
+ }
+diff --git a/src/index.test.ts b/src/index.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..ef6ba1b6769d5f75e110c2f4f88cb9adeb5bfa05
+--- /dev/null
++++ b/src/index.test.ts
+@@ -0,0 +1,92 @@
++import { test } from "node:test";
++import assert from "node:assert/strict";
++import { resolvePointer } from "./index.ts";
++
++const document = {
++  foo: ["bar", "baz"],
++  "": 0,
++  "a/b": 1,
++  "c%d": 2,
++  "e^f": 3,
++  "g|h": 4,
++  "i\\j": 5,
++  "k\"l": 6,
++  " ": 7,
++  "m~n": 8,
++  nested: { deeper: { value: "found" } },
++  flag: false,
++  nil: null,
++};
++
++test("empty pointer resolves to the whole document", () => {
++  assert.equal(resolvePointer(document, ""), document);
++});
++
++test("resolves a top-level object member", () => {
++  assert.deepEqual(resolvePointer(document, "/foo"), ["bar", "baz"]);
++});
++
++test("resolves a nested object member", () => {
++  assert.equal(resolvePointer(document, "/nested/deeper/value"), "found");
++});
++
++test("resolves an array element by index", () => {
++  assert.equal(resolvePointer(document, "/foo/0"), "bar");
++  assert.equal(resolvePointer(document, "/foo/1"), "baz");
++});
++
++test("resolves falsy values (false, null, 0) as valid results", () => {
++  assert.equal(resolvePointer(document, "/flag"), false);
++  assert.equal(resolvePointer(document, "/nil"), null);
++  assert.equal(resolvePointer(document, "/"), 0);
++});
++
++test("unescapes ~1 to / and ~0 to ~ in reference tokens", () => {
++  assert.equal(resolvePointer(document, "/a~1b"), 1);
++  assert.equal(resolvePointer(document, "/m~0n"), 8);
++});
++
++test("resolves members whose names need no escaping", () => {
++  assert.equal(resolvePointer(document, "/c%d"), 2);
++  assert.equal(resolvePointer(document, "/e^f"), 3);
++  assert.equal(resolvePointer(document, "/g|h"), 4);
++  assert.equal(resolvePointer(document, "/i\\j"), 5);
++  assert.equal(resolvePointer(document, "/k\"l"), 6);
++  assert.equal(resolvePointer(document, "/ "), 7);
++});
++
++test("throws when a pointer does not start with /", () => {
++  assert.throws(() => resolvePointer(document, "foo"));
++});
++
++test("throws when the pointer is not a string", () => {
++  // @ts-expect-error exercising runtime validation of a non-string input
++  assert.throws(() => resolvePointer(document, 42));
++});
++
++test("throws when an object member does not exist", () => {
++  assert.throws(() => resolvePointer(document, "/missing"));
++});
++
++test("throws when an array index is out of bounds", () => {
++  assert.throws(() => resolvePointer(document, "/foo/2"));
++});
++
++test("throws when an array index has a leading zero or is not a number", () => {
++  assert.throws(() => resolvePointer(document, "/foo/01"));
++  assert.throws(() => resolvePointer(document, "/foo/a"));
++});
++
++test("throws when using - to index an array (no such element)", () => {
++  assert.throws(() => resolvePointer(document, "/foo/-"));
++});
++
++test("throws when traversing through a scalar value", () => {
++  assert.throws(() => resolvePointer(document, "/flag/x"));
++  assert.throws(() => resolvePointer(document, "/nil/x"));
++});
++
++test("throws on an invalid escape sequence", () => {
++  assert.throws(() => resolvePointer(document, "/a~2b"));
++  assert.throws(() => resolvePointer(document, "/trailing~"));
++});
+diff --git a/src/index.ts b/src/index.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..583a004f90f935354cda80163dd995a1d63f4719
+--- /dev/null
++++ b/src/index.ts
+@@ -0,0 +1,55 @@
++/**
++ * Resolves a JSON Pointer (RFC 6901) against a JSON document and returns the
++ * value it refers to.
++ *
++ * @throws if `pointer` is not a syntactically valid JSON Pointer, or if it
++ * does not resolve to a value within `document`.
++ */
++export function resolvePointer(document: unknown, pointer: string): unknown {
++  if (typeof pointer !== "string") {
++    throw new TypeError("JSON Pointer must be a string");
++  }
++  if (pointer === "") {
++    return document;
++  }
++  if (pointer[0] !== "/") {
++    throw new Error(`Invalid JSON Pointer: ${JSON.stringify(pointer)}`);
++  }
++
++  let current: unknown = document;
++
++  for (const rawToken of pointer.split("/").slice(1)) {
++    if (/~(?![01])/.test(rawToken)) {
++      throw new Error(`Invalid JSON Pointer: ${JSON.stringify(pointer)}`);
++    }
++    const token = rawToken.replace(/~1/g, "/").replace(/~0/g, "~");
++
++    if (Array.isArray(current)) {
++      if (!/^(?:0|[1-9][0-9]*)$/.test(token)) {
++        throw new Error(
++          `JSON Pointer ${JSON.stringify(pointer)} does not resolve to a value`,
++        );
++      }
++      const index = Number(token);
++      if (index >= current.length) {
++        throw new Error(
++          `JSON Pointer ${JSON.stringify(pointer)} does not resolve to a value`,
++        );
++      }
++      current = current[index];
++    } else if (typeof current === "object" && current !== null) {
++      if (!Object.prototype.hasOwnProperty.call(current, token)) {
++        throw new Error(
++          `JSON Pointer ${JSON.stringify(pointer)} does not resolve to a value`,
++        );
++      }
++      current = (current as Record<string, unknown>)[token];
++    } else {
++      throw new Error(
++        `JSON Pointer ${JSON.stringify(pointer)} does not resolve to a value`,
++      );
++    }
++  }
++
++  return current;
++}
+diff --git a/tsconfig.json b/tsconfig.json
+index fcd97f5ddbf1cb248969ba1e85bc3d6da5f12237..8dedab80bff38bdb02989fa2b8b111000e928518 100644
+--- a/tsconfig.json
++++ b/tsconfig.json
+@@ -8,5 +8,6 @@
+     "outDir": "dist",
+     "skipLibCheck": true
+   },
+-  "include": ["src"]
++  "include": ["src"],
++  "exclude": ["src/**/*.test.ts"]
+ }

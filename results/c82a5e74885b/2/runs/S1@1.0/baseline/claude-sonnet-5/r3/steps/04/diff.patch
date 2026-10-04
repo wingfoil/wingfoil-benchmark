@@ -1,0 +1,114 @@
+diff --git a/src/index.ts b/src/index.ts
+index 7dda7e7342a2ec66d593ec8029f2995bef91ad31..c75c8e5d52cc9ec9d14edb23b316e2ea4e90344c 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -297,3 +297,27 @@ export function applyPatch(document: unknown, patch: unknown): unknown {
+   }
+   return box.value;
+ }
++
++function isMergeableObject(value: unknown): value is Record<string, unknown> {
++  return typeof value === "object" && value !== null && !Array.isArray(value);
++}
++
++function mergePatch(target: unknown, patch: unknown): unknown {
++  if (!isMergeableObject(patch)) {
++    return patch;
++  }
++  const result: Record<string, unknown> = isMergeableObject(target) ? { ...target } : {};
++  for (const key of Object.keys(patch)) {
++    const value = patch[key];
++    if (value === null) {
++      delete result[key];
++    } else {
++      result[key] = mergePatch(result[key], value);
++    }
++  }
++  return result;
++}
++
++export function applyMergePatch(target: unknown, patch: unknown): unknown {
++  return mergePatch(toJsonValue(target), toJsonValue(patch));
++}
+diff --git a/test/apply-merge-patch.test.ts b/test/apply-merge-patch.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..66221bc2ea2b2bfe859e72fcbd62517f293d9a15
+--- /dev/null
++++ b/test/apply-merge-patch.test.ts
+@@ -0,0 +1,76 @@
++import { test } from "node:test";
++import assert from "node:assert/strict";
++import { applyMergePatch } from "../src/index.ts";
++
++test("does not mutate the input document", () => {
++  const doc = { a: "b" };
++  const result = applyMergePatch(doc, { a: "c" });
++  assert.deepEqual(doc, { a: "b" });
++  assert.deepEqual(result, { a: "c" });
++});
++
++test("RFC 7386 A.1 replacing a member value", () => {
++  assert.deepEqual(applyMergePatch({ a: "b" }, { a: "c" }), { a: "c" });
++});
++
++test("RFC 7386 A.2 adding a member value", () => {
++  assert.deepEqual(applyMergePatch({ a: "b" }, { b: "c" }), { a: "b", b: "c" });
++});
++
++test("RFC 7386 A.3 removing a member value with null", () => {
++  assert.deepEqual(applyMergePatch({ a: "b" }, { a: null }), {});
++});
++
++test("RFC 7386 A.4 removing one of several member values", () => {
++  assert.deepEqual(applyMergePatch({ a: "b", b: "c" }, { a: null }), { b: "c" });
++});
++
++test("RFC 7386 A.5 replacing an array with a scalar", () => {
++  assert.deepEqual(applyMergePatch({ a: ["b"] }, { a: "c" }), { a: "c" });
++});
++
++test("RFC 7386 A.6 replacing a scalar with an array", () => {
++  assert.deepEqual(applyMergePatch({ a: "c" }, { a: ["b"] }), { a: ["b"] });
++});
++
++test("RFC 7386 A.7 merging nested objects", () => {
++  assert.deepEqual(applyMergePatch({ a: { b: "c" } }, { a: { b: "d", c: null } }), { a: { b: "d" } });
++});
++
++test("RFC 7386 A.8 arrays are replaced wholesale, not merged", () => {
++  assert.deepEqual(applyMergePatch({ a: [{ b: "c" }] }, { a: [1] }), { a: [1] });
++});
++
++test("RFC 7386 A.9 replacing an array with another array", () => {
++  assert.deepEqual(applyMergePatch(["a", "b"], ["c", "d"]), ["c", "d"]);
++});
++
++test("RFC 7386 A.10 replacing an object with an array", () => {
++  assert.deepEqual(applyMergePatch({ a: "b" }, ["c"]), ["c"]);
++});
++
++test("RFC 7386 A.11 replacing anything with a null", () => {
++  assert.equal(applyMergePatch({ a: "foo" }, null), null);
++});
++
++test("RFC 7386 A.12 replacing anything with a scalar", () => {
++  assert.equal(applyMergePatch({ a: "foo" }, "bar"), "bar");
++});
++
++test("RFC 7386 A.13 null member values survive in the patch target", () => {
++  assert.deepEqual(applyMergePatch({ e: null }, { a: 1 }), { e: null, a: 1 });
++});
++
++test("RFC 7386 A.14 merge patch applied to a non-object target", () => {
++  assert.deepEqual(applyMergePatch([1, 2], { a: "b", c: null }), { a: "b" });
++});
++
++test("RFC 7386 A.15 merging nested null removals", () => {
++  assert.deepEqual(applyMergePatch({}, { a: { bb: { ccc: null } } }), { a: { bb: {} } });
++});
++
++test("rejects a target or patch containing non-JSON values", () => {
++  assert.throws(() => applyMergePatch(new Date(), {}));
++  assert.throws(() => applyMergePatch({}, { a: undefined }));
++  assert.throws(() => applyMergePatch({}, { a: NaN }));
++});

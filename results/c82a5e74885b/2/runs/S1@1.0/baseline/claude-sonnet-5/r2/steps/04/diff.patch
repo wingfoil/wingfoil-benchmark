@@ -1,0 +1,144 @@
+diff --git a/src/index.test.ts b/src/index.test.ts
+index a6d21e7ceaa41a2efbfa794d59c8f497bfb7e951..61d4f5b6c5aee5021329345619902880dad2eb08 100644
+--- a/src/index.test.ts
++++ b/src/index.test.ts
+@@ -1,6 +1,6 @@
+ import { test } from "node:test";
+ import assert from "node:assert/strict";
+-import { applyPatch, resolvePointer } from "./index.ts";
++import { applyMergePatch, applyPatch, resolvePointer } from "./index.ts";
+ 
+ const document = {
+   foo: ["bar", "baz"],
+@@ -390,3 +390,86 @@ test("RFC 6902 A.16: adding an array value", () => {
+   const result = applyPatch(doc, [{ op: "add", path: "/foo/-", value: ["abc", "def"] }]);
+   assert.deepEqual(result, { foo: ["bar", ["abc", "def"]] });
+ });
++
++// applyMergePatch
++
++test("RFC 7386 A.1: replaces an existing member", () => {
++  assert.deepEqual(applyMergePatch({ a: "b" }, { a: "c" }), { a: "c" });
++});
++
++test("RFC 7386 A.2: adds a new member", () => {
++  assert.deepEqual(applyMergePatch({ a: "b" }, { b: "c" }), { a: "b", b: "c" });
++});
++
++test("RFC 7386 A.3: a null value removes the member", () => {
++  assert.deepEqual(applyMergePatch({ a: "b" }, { a: null }), {});
++});
++
++test("RFC 7386 A.4: a null value removes an existing member, leaving the rest", () => {
++  assert.deepEqual(applyMergePatch({ a: "b", b: "c" }, { a: null }), { b: "c" });
++});
++
++test("RFC 7386 A.5: an array in the patch replaces the array in the target wholesale", () => {
++  assert.deepEqual(applyMergePatch({ a: ["b"] }, { a: "c" }), { a: "c" });
++});
++
++test("RFC 7386 A.6: a string in the target is replaced by an array in the patch", () => {
++  assert.deepEqual(applyMergePatch({ a: "c" }, { a: ["b"] }), { a: ["b"] });
++});
++
++test("RFC 7386 A.7: merges nested objects recursively", () => {
++  assert.deepEqual(applyMergePatch({ a: { b: "c" } }, { a: { b: "d", c: null } }), {
++    a: { b: "d" },
++  });
++});
++
++test("RFC 7386 A.8: an array of objects in the patch replaces the array wholesale", () => {
++  assert.deepEqual(applyMergePatch({ a: [{ b: "c" }] }, { a: [1] }), { a: [1] });
++});
++
++test("RFC 7386 A.9: a patch array replaces a target array", () => {
++  assert.deepEqual(applyMergePatch(["a", "b"], ["c", "d"]), ["c", "d"]);
++});
++
++test("RFC 7386 A.10: a patch array replaces a target object", () => {
++  assert.deepEqual(applyMergePatch({ a: "b" }, ["c"]), ["c"]);
++});
++
++test("RFC 7386 A.11: a null patch replaces the whole target with null", () => {
++  assert.equal(applyMergePatch({ a: "foo" }, null), null);
++});
++
++test("RFC 7386 A.12: a string patch replaces the whole target", () => {
++  assert.equal(applyMergePatch({ a: "foo" }, "bar"), "bar");
++});
++
++test("RFC 7386 A.13: a null-valued member in the target is left alone when the patch adds a sibling", () => {
++  assert.deepEqual(applyMergePatch({ e: null }, { a: 1 }), { e: null, a: 1 });
++});
++
++test("RFC 7386 A.14: a non-object target is discarded in favor of an empty object before merging", () => {
++  assert.deepEqual(applyMergePatch([1, 2], { a: "b", c: null }), { a: "b" });
++});
++
++test("RFC 7386 A.15: null removals apply recursively, even into newly-created objects", () => {
++  assert.deepEqual(applyMergePatch({}, { a: { bb: { ccc: null } } }), { a: { bb: {} } });
++});
++
++test("does not mutate the target or the patch", () => {
++  const target = { a: { b: "c" }, d: "e" };
++  const patch = { a: { b: "d", c: null }, d: null };
++  const result = applyMergePatch(target, patch);
++  assert.deepEqual(result, { a: { b: "d" } });
++  assert.deepEqual(target, { a: { b: "c" }, d: "e" });
++  assert.deepEqual(patch, { a: { b: "d", c: null }, d: null });
++});
++
++test("'__proto__' is merged as a plain data member, not the object's prototype", () => {
++  const patch = JSON.parse('{"__proto__": {"polluted": true}}');
++  const result = applyMergePatch({ foo: "bar" }, patch) as Record<string, unknown>;
++  assert.deepEqual(Object.keys(result), ["foo", "__proto__"]);
++  assert.equal(Object.prototype.hasOwnProperty.call(result, "__proto__"), true);
++  assert.equal(Object.getPrototypeOf(result), Object.prototype);
++  assert.equal(JSON.stringify(result), '{"foo":"bar","__proto__":{"polluted":true}}');
++  assert.equal((Object.prototype as Record<string, unknown>).polluted, undefined);
++});
+diff --git a/src/index.ts b/src/index.ts
+index 5846dd5d76737f50d0bab4f610fec54bbd2bc2af..8ab6acf0388dc9538c98bc3b7e120621ac50b50c 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -31,6 +31,31 @@ export function resolvePointer(document: JsonValue, pointer: string): JsonValue
+   return current;
+ }
+ 
++export type JsonMergePatch = JsonValue;
++
++export function applyMergePatch(target: JsonValue, patch: JsonMergePatch): JsonValue {
++  return mergePatch(target, patch);
++}
++
++function mergePatch(target: JsonValue | undefined, patch: JsonValue): JsonValue {
++  if (!isObject(patch)) {
++    return structuredClone(patch);
++  }
++
++  const result: { [key: string]: JsonValue } = isObject(target) ? structuredClone(target) : {};
++  for (const key of Object.keys(patch)) {
++    const value = patch[key];
++    if (value === null) {
++      if (hasOwn(result, key)) {
++        delete result[key];
++      }
++    } else {
++      setMember(result, key, mergePatch(hasOwn(result, key) ? result[key] : undefined, value));
++    }
++  }
++  return result;
++}
++
+ export function applyPatch(document: JsonValue, patch: JsonPatch): JsonValue {
+   if (!Array.isArray(patch)) {
+     throw new Error("A JSON Patch must be an array of operations");
+@@ -188,7 +213,7 @@ function arrayIndex(token: string, length: number, allowAppend: boolean): number
+   return index;
+ }
+ 
+-function isObject(value: JsonValue): value is { [key: string]: JsonValue } {
++function isObject(value: JsonValue | undefined): value is { [key: string]: JsonValue } {
+   return value !== null && typeof value === "object" && !Array.isArray(value);
+ }
+ 

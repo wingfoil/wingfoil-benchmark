@@ -1,0 +1,204 @@
+diff --git a/src/index.test.ts b/src/index.test.ts
+index 77a0a256b3b89cdbb0b1404bbb066532b041b11e..f0408144599cc41aa87fdfc6d3fdb6c5bf37212c 100644
+--- a/src/index.test.ts
++++ b/src/index.test.ts
+@@ -8,6 +8,7 @@ import {
+   JsonValue,
+   JsonPatchOperation,
+   applyMergePatch,
++  createPatch,
+ } from "./index.js";
+ 
+ // Document from RFC 6901, section 5.
+@@ -356,3 +357,93 @@ test("treats '__proto__' as an ordinary member name", () => {
+   assert.deepEqual(result, JSON.parse('{"__proto__":{"polluted":true}}'));
+   assert.equal(({} as { polluted?: boolean }).polluted, undefined);
+ });
++
++// createPatch (diffing two documents into a JSON Patch, RFC 6902).
++
++test("returns an empty patch for two equal documents", () => {
++  assert.deepEqual(createPatch({ foo: "bar" }, { foo: "bar" }), []);
++});
++
++test("does not mutate its input documents", () => {
++  const from: JsonValue = { foo: "bar" };
++  const to: JsonValue = { foo: "baz", qux: 1 };
++  createPatch(from, to);
++  assert.deepEqual(from, { foo: "bar" });
++  assert.deepEqual(to, { foo: "baz", qux: 1 });
++});
++
++test("describes an added object member as a single 'add' operation", () => {
++  const patch = createPatch({ foo: "bar" }, { foo: "bar", baz: "qux" });
++  assert.deepEqual(patch, [{ op: "add", path: "/baz", value: "qux" }]);
++});
++
++test("describes a removed object member as a single 'remove' operation", () => {
++  const patch = createPatch({ foo: "bar", baz: "qux" }, { foo: "bar" });
++  assert.deepEqual(patch, [{ op: "remove", path: "/baz" }]);
++});
++
++test("describes a changed object member as a single 'replace' operation", () => {
++  const patch = createPatch({ foo: "bar" }, { foo: "baz" });
++  assert.deepEqual(patch, [{ op: "replace", path: "/foo", value: "baz" }]);
++});
++
++test("describes a change deep in the document without replacing the whole subtree", () => {
++  const from = { a: { b: 1, c: 2 }, unrelated: [1, 2, 3] };
++  const to = { a: { b: 5, c: 2 }, unrelated: [1, 2, 3] };
++  assert.deepEqual(createPatch(from, to), [{ op: "replace", path: "/a/b", value: 5 }]);
++});
++
++test("escapes '~' and '/' in member names used as JSON Pointer tokens", () => {
++  const patch = createPatch({}, { "a/b~c": 1 });
++  assert.deepEqual(patch, [{ op: "add", path: "/a~1b~0c", value: 1 }]);
++});
++
++test("describes an array insertion in the middle as a single 'add' operation", () => {
++  const patch = createPatch({ items: [1, 4] }, { items: [1, 2, 3, 4] });
++  assert.deepEqual(patch, [
++    { op: "add", path: "/items/1", value: 2 },
++    { op: "add", path: "/items/2", value: 3 },
++  ]);
++});
++
++test("describes an array removal in the middle as a single 'remove' operation", () => {
++  const patch = createPatch({ items: [1, 2, 3, 4] }, { items: [1, 4] });
++  assert.deepEqual(patch, [
++    { op: "remove", path: "/items/1" },
++    { op: "remove", path: "/items/1" },
++  ]);
++});
++
++test("describes a single changed array element as a single 'replace' operation", () => {
++  const patch = createPatch({ items: [1, 2, 3] }, { items: [1, 5, 3] });
++  assert.deepEqual(patch, [{ op: "replace", path: "/items/1", value: 5 }]);
++});
++
++test("replaces the whole document when its type changes", () => {
++  assert.deepEqual(createPatch({ foo: "bar" }, [1, 2, 3]), [{ op: "replace", path: "", value: [1, 2, 3] }]);
++  assert.deepEqual(createPatch(1, "one"), [{ op: "replace", path: "", value: "one" }]);
++});
++
++test("the resulting patch applies cleanly and reproduces the target document", () => {
++  const from: JsonValue = {
++    name: "widget",
++    tags: ["a", "b", "c"],
++    meta: { version: 1, active: true },
++    extra: "to be removed",
++  };
++  const to: JsonValue = {
++    name: "widget",
++    tags: ["a", "x", "b", "c", "y"],
++    meta: { version: 2, active: true },
++    added: "new",
++  };
++  const patch = createPatch(from, to);
++  assert.deepEqual(applyPatch(from, patch), to);
++});
++
++test("a value added by the patch is independent of the 'to' document it came from", () => {
++  const to: JsonValue = { foo: { bar: 1 } };
++  const patch = createPatch({}, to);
++  (to.foo as { bar: number }).bar = 2;
++  assert.deepEqual(applyPatch({}, patch), { foo: { bar: 1 } });
++});
+diff --git a/src/index.ts b/src/index.ts
+index bab46c6e1006b57dc5e4ce04195c509d820ceda9..42f525352df6a614b60d90c423356c086a1471fc 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -354,6 +354,93 @@ function cloneValue(value: JsonValue): JsonValue {
+   return value;
+ }
+ 
++/**
++ * Computes a JSON Patch (RFC 6902) that turns `from` into `to` when applied with
++ * {@link applyPatch}.
++ *
++ * The patch describes only what changed: unchanged object members and array elements are
++ * left out, and a change nested deep in the document is described at that depth instead of
++ * replacing an ancestor subtree wholesale.
++ *
++ * Neither `from` nor `to` is mutated.
++ */
++export function createPatch(from: JsonValue, to: JsonValue): JsonPatchOperation[] {
++  return diffValues(from, to, "");
++}
++
++function diffValues(from: JsonValue, to: JsonValue, path: string): JsonPatchOperation[] {
++  if (deepEqual(from, to)) {
++    return [];
++  }
++  if (isJsonObject(from) && isJsonObject(to)) {
++    return diffObjects(from, to, path);
++  }
++  if (Array.isArray(from) && Array.isArray(to)) {
++    return diffArrays(from, to, path);
++  }
++  return [{ op: "replace", path, value: cloneValue(to) }];
++}
++
++function diffObjects(from: ObjectContainer, to: ObjectContainer, path: string): JsonPatchOperation[] {
++  const ops: JsonPatchOperation[] = [];
++  for (const key of Object.keys(from)) {
++    if (!Object.prototype.hasOwnProperty.call(to, key)) {
++      ops.push({ op: "remove", path: `${path}/${escapeToken(key)}` });
++    }
++  }
++  for (const key of Object.keys(to)) {
++    const childPath = `${path}/${escapeToken(key)}`;
++    if (!Object.prototype.hasOwnProperty.call(from, key)) {
++      ops.push({ op: "add", path: childPath, value: cloneValue(to[key]) });
++    } else {
++      ops.push(...diffValues(from[key], to[key], childPath));
++    }
++  }
++  return ops;
++}
++
++/**
++ * Diffs two arrays by matching their common leading and trailing elements, then describing
++ * the differing middle section: changed elements in the overlap are diffed recursively, and
++ * any remaining elements are added to or removed from `from`'s side of that section.
++ */
++function diffArrays(from: JsonValue[], to: JsonValue[], path: string): JsonPatchOperation[] {
++  let prefix = 0;
++  while (prefix < from.length && prefix < to.length && deepEqual(from[prefix], to[prefix])) {
++    prefix++;
++  }
++
++  let suffix = 0;
++  while (
++    suffix < from.length - prefix &&
++    suffix < to.length - prefix &&
++    deepEqual(from[from.length - 1 - suffix], to[to.length - 1 - suffix])
++  ) {
++    suffix++;
++  }
++
++  const fromMid = from.slice(prefix, from.length - suffix);
++  const toMid = to.slice(prefix, to.length - suffix);
++  const overlap = Math.min(fromMid.length, toMid.length);
++
++  const ops: JsonPatchOperation[] = [];
++  for (let i = 0; i < overlap; i++) {
++    ops.push(...diffValues(fromMid[i], toMid[i], `${path}/${prefix + i}`));
++  }
++  for (let i = overlap; i < toMid.length; i++) {
++    ops.push({ op: "add", path: `${path}/${prefix + i}`, value: cloneValue(toMid[i]) });
++  }
++  for (let i = overlap; i < fromMid.length; i++) {
++    ops.push({ op: "remove", path: `${path}/${prefix + overlap}` });
++  }
++  return ops;
++}
++
++/** Escapes "~" and "/" in a JSON Pointer token, the inverse of {@link unescapeToken}. */
++function escapeToken(token: string): string {
++  return token.replace(/~/g, "~0").replace(/\//g, "~1");
++}
++
+ /**
+  * Applies a JSON Merge Patch (RFC 7386) to a target JSON document and returns the merged
+  * document.

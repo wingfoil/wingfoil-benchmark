@@ -1,0 +1,341 @@
+diff --git a/README.md b/README.md
+index f5b0a7a0695c5796bc74924ec61b6b5f61b56477..b87bca5c57436278d167d6187ec20a676601c905 100644
+--- a/README.md
++++ b/README.md
+@@ -33,6 +33,21 @@ applyPatch({ foo: ['bar', 'baz'] }, [{ op: 'add', path: '/foo/1', value: 'qux' }
+ // => { foo: ['bar', 'qux', 'baz'] }
+ ```
+ 
++### JSON Patch diffing
++
++`createPatch(from, to)` compares two JSON documents and returns a [JSON
++Patch](https://www.rfc-editor.org/rfc/rfc6902) that turns `from` into `to` when applied with
++`applyPatch`. It describes only what changed — object members that were added, removed or changed,
++and the differing span of an array — instead of replacing the whole document. `from` and `to` are
++left untouched.
++
++```ts
++import { createPatch } from 'json-toolkit';
++
++createPatch({ foo: 'bar', baz: 1 }, { foo: 'bar', baz: 2 });
++// => [{ op: 'replace', path: '/baz', value: 2 }]
++```
++
+ ### JSON Merge Patch (RFC 7386)
+ 
+ `applyMergePatch(target, patch)` applies a [JSON Merge Patch](https://www.rfc-editor.org/rfc/rfc7386)
+diff --git a/src/index.test.ts b/src/index.test.ts
+index e97c17ab2ff1dadd16f67297086774f7071c309b..da998beff7a1efdd061080bb97f10f833829ad82 100644
+--- a/src/index.test.ts
++++ b/src/index.test.ts
+@@ -7,6 +7,7 @@ import {
+   applyPatch,
+   JsonPatchError,
+   applyMergePatch,
++  createPatch,
+ } from './index.ts';
+ 
+ test('resolvePointer is exported from the package entry point', () => {
+@@ -28,3 +29,7 @@ test('JsonPatchError is exported from the package entry point', () => {
+ test('applyMergePatch is exported from the package entry point', () => {
+   assert.deepEqual(applyMergePatch({ a: 1 }, { a: 2 }), { a: 2 });
+ });
++
++test('createPatch is exported from the package entry point', () => {
++  assert.deepEqual(createPatch({ a: 1 }, { a: 2 }), [{ op: 'replace', path: '/a', value: 2 }]);
++});
+diff --git a/src/index.ts b/src/index.ts
+index fdb57b4bea4946218aab64e83fd4edf281559d59..7e8a6b14db65e84aab8bf5d66d6766f505032510 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -11,3 +11,4 @@ export type {
+   JsonPatchTestOperation,
+ } from './json-patch.ts';
+ export { applyMergePatch } from './json-merge-patch.ts';
++export { createPatch } from './json-diff.ts';
+diff --git a/src/json-diff.test.ts b/src/json-diff.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..787303a318c750339504639f49161933d76daf5f
+--- /dev/null
++++ b/src/json-diff.test.ts
+@@ -0,0 +1,122 @@
++import test from 'node:test';
++import assert from 'node:assert/strict';
++
++import { createPatch } from './json-diff.ts';
++import { applyPatch } from './json-patch.ts';
++import type { JsonValue } from './json-pointer.ts';
++
++function deepFreeze<T extends JsonValue>(value: T): T {
++  if (Array.isArray(value)) {
++    value.forEach(deepFreeze);
++  } else if (value !== null && typeof value === 'object') {
++    Object.values(value).forEach(deepFreeze);
++  }
++  return Object.freeze(value);
++}
++
++test('returns an empty patch when the documents are equal', () => {
++  const document = deepFreeze({ foo: 'bar', baz: [1, 2] });
++  assert.deepEqual(createPatch(document, { foo: 'bar', baz: [1, 2] }), []);
++});
++
++test('describes a changed object member with a single "replace" operation', () => {
++  const from = deepFreeze({ foo: 'bar', baz: 1 });
++  const to = deepFreeze({ foo: 'bar', baz: 2 });
++  assert.deepEqual(createPatch(from, to), [{ op: 'replace', path: '/baz', value: 2 }]);
++});
++
++test('describes an added object member with an "add" operation', () => {
++  const from = deepFreeze({ foo: 'bar' });
++  const to = deepFreeze({ foo: 'bar', baz: 1 });
++  assert.deepEqual(createPatch(from, to), [{ op: 'add', path: '/baz', value: 1 }]);
++});
++
++test('describes a removed object member with a "remove" operation', () => {
++  const from = deepFreeze({ foo: 'bar', baz: 1 });
++  const to = deepFreeze({ foo: 'bar' });
++  assert.deepEqual(createPatch(from, to), [{ op: 'remove', path: '/baz' }]);
++});
++
++test('describes a change nested deep in the document at its own path', () => {
++  const from = deepFreeze({ foo: { bar: { baz: 1 } } });
++  const to = deepFreeze({ foo: { bar: { baz: 2 } } });
++  assert.deepEqual(createPatch(from, to), [{ op: 'replace', path: '/foo/bar/baz', value: 2 }]);
++});
++
++test('describes an appended array element with an "add" operation', () => {
++  const from = deepFreeze({ foo: [1, 2] });
++  const to = deepFreeze({ foo: [1, 2, 3] });
++  assert.deepEqual(createPatch(from, to), [{ op: 'add', path: '/foo/2', value: 3 }]);
++});
++
++test('describes a removed trailing array element with a "remove" operation', () => {
++  const from = deepFreeze({ foo: [1, 2, 3] });
++  const to = deepFreeze({ foo: [1, 2] });
++  assert.deepEqual(createPatch(from, to), [{ op: 'remove', path: '/foo/2' }]);
++});
++
++test('describes a changed array element with a "replace" operation at its index', () => {
++  const from = deepFreeze({ foo: [1, 2, 3] });
++  const to = deepFreeze({ foo: [1, 99, 3] });
++  assert.deepEqual(createPatch(from, to), [{ op: 'replace', path: '/foo/1', value: 99 }]);
++});
++
++test('describes an element inserted in the middle of an array', () => {
++  const from = deepFreeze([1, 2, 3]);
++  const to = deepFreeze([1, 99, 2, 3]);
++  assert.deepEqual(createPatch(from, to), [{ op: 'add', path: '/1', value: 99 }]);
++});
++
++test('describes an element removed from the middle of an array', () => {
++  const from = deepFreeze([1, 2, 3]);
++  const to = deepFreeze([1, 3]);
++  assert.deepEqual(createPatch(from, to), [{ op: 'remove', path: '/1' }]);
++});
++
++test('describes a type change at the root with a single "replace" operation', () => {
++  const from = deepFreeze({ foo: 'bar' });
++  const to = deepFreeze(['foo', 'bar']);
++  assert.deepEqual(createPatch(from, to), [{ op: 'replace', path: '', value: ['foo', 'bar'] }]);
++});
++
++test('does not mutate the input documents', () => {
++  const from = deepFreeze({ foo: [1, 2], bar: { baz: 1 } });
++  const to = deepFreeze({ foo: [1, 2, 3], bar: { baz: 2 }, qux: 1 });
++  const fromSnapshot = JSON.parse(JSON.stringify(from));
++  const toSnapshot = JSON.parse(JSON.stringify(to));
++  createPatch(from, to);
++  assert.deepEqual(from, fromSnapshot);
++  assert.deepEqual(to, toSnapshot);
++});
++
++test('the patch does not share references with "to"', () => {
++  const from = deepFreeze({ foo: 1 });
++  const to = deepFreeze({ foo: 1, bar: { baz: 1 } });
++  const [operation] = createPatch(from, to) as [{ op: 'add'; path: string; value: { baz: number } }];
++  assert.notEqual(operation.value, (to as { bar: { baz: number } }).bar);
++});
++
++test('treats "__proto__" as a plain member name, not an accessor, when cloning an added value', () => {
++  const from = deepFreeze({});
++  const to = deepFreeze({ foo: JSON.parse('{"__proto__":{"polluted":true}}') }) as JsonValue;
++  const [operation] = createPatch(from, to) as [{ op: 'add'; path: string; value: JsonValue }];
++  assert.equal(Object.prototype.hasOwnProperty.call(operation.value, '__proto__'), true);
++  assert.deepEqual(JSON.parse(JSON.stringify(operation.value)), { ['__proto__']: { polluted: true } });
++  assert.equal(Object.getPrototypeOf(operation.value), Object.prototype);
++  assert.equal(({} as { polluted?: boolean }).polluted, undefined);
++});
++
++test('applying the computed patch to "from" reproduces "to"', () => {
++  const cases: { from: JsonValue; to: JsonValue }[] = [
++    { from: { a: 1, b: 2, c: 3 }, to: { a: 1, c: 4, d: 5 } },
++    { from: [1, 2, 3, 4, 5], to: [1, 99, 3, 4, 6, 5] },
++    { from: { items: [{ id: 1 }, { id: 2 }], name: 'old' }, to: { items: [{ id: 1, flag: true }], name: 'new' } },
++    { from: 'foo', to: { foo: 'bar' } },
++    { from: [], to: [1, 2, 3] },
++    { from: [1, 2, 3], to: [] },
++  ];
++  for (const { from, to } of cases) {
++    const patch = createPatch(deepFreeze(structuredClone(from)), deepFreeze(structuredClone(to)));
++    assert.deepEqual(applyPatch(from, patch), to);
++  }
++});
+diff --git a/src/json-diff.ts b/src/json-diff.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..09a1e2dfaae7c3847ed055f3ddeb5833bf0ee73c
+--- /dev/null
++++ b/src/json-diff.ts
+@@ -0,0 +1,152 @@
++import type { JsonValue } from './json-pointer.ts';
++import type {
++  JsonPatchOperation,
++  JsonPatchAddOperation,
++  JsonPatchRemoveOperation,
++  JsonPatchReplaceOperation,
++} from './json-patch.ts';
++
++/**
++ * Computes a JSON Patch (RFC 6902) that turns `from` into `to` when applied via
++ * `applyPatch`. The patch describes only what changed between the two documents;
++ * `from` and `to` are left untouched.
++ */
++export function createPatch(from: JsonValue, to: JsonValue): JsonPatchOperation[] {
++  const patch: JsonPatchOperation[] = [];
++  diffValues(from, to, [], patch);
++  return patch;
++}
++
++function diffValues(from: JsonValue, to: JsonValue, path: readonly string[], patch: JsonPatchOperation[]): void {
++  if (deepEqual(from, to)) {
++    return;
++  }
++  if (isJsonObject(from) && isJsonObject(to)) {
++    diffObjects(from, to, path, patch);
++  } else if (Array.isArray(from) && Array.isArray(to)) {
++    diffArrays(from, to, path, patch);
++  } else {
++    patch.push(replaceOp(path, to));
++  }
++}
++
++function diffObjects(
++  from: { [key: string]: JsonValue },
++  to: { [key: string]: JsonValue },
++  path: readonly string[],
++  patch: JsonPatchOperation[],
++): void {
++  for (const key of Object.keys(from)) {
++    if (!Object.prototype.hasOwnProperty.call(to, key)) {
++      patch.push(removeOp([...path, key]));
++    }
++  }
++  for (const key of Object.keys(to)) {
++    if (!Object.prototype.hasOwnProperty.call(from, key)) {
++      patch.push(addOp([...path, key], to[key] as JsonValue));
++    } else {
++      diffValues(from[key] as JsonValue, to[key] as JsonValue, [...path, key], patch);
++    }
++  }
++}
++
++/**
++ * Diffs two arrays by matching their common leading and trailing elements, then
++ * describing only the differing middle span with per-index replacements plus a run of
++ * removals or additions for any length difference. This keeps the patch proportional to
++ * the actual change instead of rewriting the whole array.
++ */
++function diffArrays(from: JsonValue[], to: JsonValue[], path: readonly string[], patch: JsonPatchOperation[]): void {
++  const maxCommon = Math.min(from.length, to.length);
++
++  let prefixLen = 0;
++  while (prefixLen < maxCommon && deepEqual(from[prefixLen] as JsonValue, to[prefixLen] as JsonValue)) {
++    prefixLen++;
++  }
++
++  let suffixLen = 0;
++  while (
++    suffixLen < maxCommon - prefixLen &&
++    deepEqual(from[from.length - 1 - suffixLen] as JsonValue, to[to.length - 1 - suffixLen] as JsonValue)
++  ) {
++    suffixLen++;
++  }
++
++  const fromMid = from.slice(prefixLen, from.length - suffixLen);
++  const toMid = to.slice(prefixLen, to.length - suffixLen);
++  const overlap = Math.min(fromMid.length, toMid.length);
++
++  for (let i = 0; i < overlap; i++) {
++    diffValues(fromMid[i] as JsonValue, toMid[i] as JsonValue, [...path, String(prefixLen + i)], patch);
++  }
++  for (let i = overlap; i < fromMid.length; i++) {
++    patch.push(removeOp([...path, String(prefixLen + overlap)]));
++  }
++  for (let i = overlap; i < toMid.length; i++) {
++    patch.push(addOp([...path, String(prefixLen + i)], toMid[i] as JsonValue));
++  }
++}
++
++function addOp(path: readonly string[], value: JsonValue): JsonPatchAddOperation {
++  return { op: 'add', path: toPointer(path), value: cloneValue(value) };
++}
++
++function removeOp(path: readonly string[]): JsonPatchRemoveOperation {
++  return { op: 'remove', path: toPointer(path) };
++}
++
++function replaceOp(path: readonly string[], value: JsonValue): JsonPatchReplaceOperation {
++  return { op: 'replace', path: toPointer(path), value: cloneValue(value) };
++}
++
++function toPointer(tokens: readonly string[]): string {
++  return tokens.map((token) => `/${token.replace(/~/g, '~0').replace(/\//g, '~1')}`).join('');
++}
++
++function isJsonObject(value: JsonValue): value is { [key: string]: JsonValue } {
++  return value !== null && typeof value === 'object' && !Array.isArray(value);
++}
++
++function deepEqual(a: JsonValue, b: JsonValue): boolean {
++  if (a === b) {
++    return true;
++  }
++  if (Array.isArray(a) && Array.isArray(b)) {
++    return a.length === b.length && a.every((item, i) => deepEqual(item, b[i] as JsonValue));
++  }
++  if (a !== null && b !== null && typeof a === 'object' && typeof b === 'object') {
++    const aKeys = Object.keys(a);
++    const bKeys = Object.keys(b);
++    return (
++      aKeys.length === bKeys.length &&
++      aKeys.every((key) =>
++        Object.prototype.hasOwnProperty.call(b, key) &&
++        deepEqual((a as { [key: string]: JsonValue })[key] as JsonValue, (b as { [key: string]: JsonValue })[key] as JsonValue),
++      )
++    );
++  }
++  return false;
++}
++
++function cloneValue(value: JsonValue): JsonValue {
++  if (Array.isArray(value)) {
++    return value.map(cloneValue);
++  }
++  if (value !== null && typeof value === 'object') {
++    const clone: { [key: string]: JsonValue } = {};
++    for (const key of Object.keys(value)) {
++      setMember(clone, key, cloneValue(value[key] as JsonValue));
++    }
++    return clone;
++  }
++  return value;
++}
++
++/**
++ * Sets an own, enumerable member on a plain object, bypassing any inherited accessor
++ * (e.g. "__proto__") so that a member name is always treated as plain string data,
++ * never as an instruction to the object's internals.
++ */
++function setMember(container: { [key: string]: JsonValue }, key: string, value: JsonValue): void {
++  Object.defineProperty(container, key, { value, writable: true, enumerable: true, configurable: true });
++}

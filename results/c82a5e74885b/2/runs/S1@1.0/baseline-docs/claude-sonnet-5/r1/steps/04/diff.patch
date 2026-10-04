@@ -1,0 +1,141 @@
+diff --git a/src/index.test.ts b/src/index.test.ts
+index 7904498a1eaada1b4001cae6114581c3f2a8df9f..77a0a256b3b89cdbb0b1404bbb066532b041b11e 100644
+--- a/src/index.test.ts
++++ b/src/index.test.ts
+@@ -1,6 +1,14 @@
+ import { test } from "node:test";
+ import assert from "node:assert/strict";
+-import { resolvePointer, JsonPointerError, applyPatch, JsonPatchError, JsonValue, JsonPatchOperation } from "./index.js";
++import {
++  resolvePointer,
++  JsonPointerError,
++  applyPatch,
++  JsonPatchError,
++  JsonValue,
++  JsonPatchOperation,
++  applyMergePatch,
++} from "./index.js";
+ 
+ // Document from RFC 6901, section 5.
+ const document = {
+@@ -270,3 +278,81 @@ test("rejects a 'move' operation missing its 'from'", () => {
+     JsonPatchError,
+   );
+ });
++
++// JSON Merge Patch (RFC 7386). Examples are taken from RFC 7386, Appendix A, unless noted otherwise.
++
++test("does not mutate its input target or patch", () => {
++  const target: JsonValue = { a: { b: "c" } };
++  const patch: JsonValue = { a: { b: "d", c: null } };
++  const result = applyMergePatch(target, patch);
++  assert.deepEqual(target, { a: { b: "c" } });
++  assert.deepEqual(patch, { a: { b: "d", c: null } });
++  assert.deepEqual(result, { a: { b: "d" } });
++});
++
++test("replaces an existing member", () => {
++  assert.deepEqual(applyMergePatch({ a: "b" }, { a: "c" }), { a: "c" });
++});
++
++test("adds a new member", () => {
++  assert.deepEqual(applyMergePatch({ a: "b" }, { b: "c" }), { a: "b", b: "c" });
++});
++
++test("a null value removes an existing member", () => {
++  assert.deepEqual(applyMergePatch({ a: "b" }, { a: null }), {});
++});
++
++test("a null value for a member leaves the other members untouched", () => {
++  assert.deepEqual(applyMergePatch({ a: "b", b: "c" }, { a: null }), { b: "c" });
++});
++
++test("a scalar patch value replaces an array", () => {
++  assert.deepEqual(applyMergePatch({ a: ["b"] }, { a: "c" }), { a: "c" });
++});
++
++test("an array patch value replaces a scalar", () => {
++  assert.deepEqual(applyMergePatch({ a: "c" }, { a: ["b"] }), { a: ["b"] });
++});
++
++test("merges nested objects member by member, deleting null members", () => {
++  assert.deepEqual(applyMergePatch({ a: { b: "c" } }, { a: { b: "d", c: null } }), { a: { b: "d" } });
++});
++
++test("an array value in the patch replaces the whole array, without merging elements", () => {
++  assert.deepEqual(applyMergePatch({ a: [{ b: "c" }] }, { a: [1] }), { a: [1] });
++});
++
++test("an array patch applied to an array target replaces it wholesale", () => {
++  assert.deepEqual(applyMergePatch(["a", "b"], ["c", "d"]), ["c", "d"]);
++});
++
++test("an array patch applied to an object target replaces it wholesale", () => {
++  assert.deepEqual(applyMergePatch({ a: "b" }, ["c"]), ["c"]);
++});
++
++test("a null patch replaces the whole target", () => {
++  assert.equal(applyMergePatch({ a: "foo" }, null), null);
++});
++
++test("a scalar patch replaces the whole target", () => {
++  assert.equal(applyMergePatch({ a: "foo" }, "bar"), "bar");
++});
++
++test("a null member in the target survives when the patch adds an unrelated member", () => {
++  assert.deepEqual(applyMergePatch({ e: null }, { a: 1 }), { e: null, a: 1 });
++});
++
++test("merges nested objects recursively, pruning members left empty by a null leaf", () => {
++  assert.deepEqual(applyMergePatch({}, { a: { bb: { ccc: null } } }), { a: { bb: {} } });
++});
++
++test("treats a non-object target as empty when the patch is an object", () => {
++  assert.deepEqual(applyMergePatch("not an object", { a: "b" }), { a: "b" });
++});
++
++test("treats '__proto__' as an ordinary member name", () => {
++  const result = applyMergePatch({}, JSON.parse('{"__proto__":{"polluted":true}}') as JsonValue);
++  assert.equal(Object.prototype.hasOwnProperty.call(result, "__proto__"), true);
++  assert.deepEqual(result, JSON.parse('{"__proto__":{"polluted":true}}'));
++  assert.equal(({} as { polluted?: boolean }).polluted, undefined);
++});
+diff --git a/src/index.ts b/src/index.ts
+index 6b096dc6b43031662e3db52fc39e35b43815ab5f..bab46c6e1006b57dc5e4ce04195c509d820ceda9 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -354,6 +354,34 @@ function cloneValue(value: JsonValue): JsonValue {
+   return value;
+ }
+ 
++/**
++ * Applies a JSON Merge Patch (RFC 7386) to a target JSON document and returns the merged
++ * document.
++ *
++ * Neither `target` nor `patch` is mutated; a new document is returned instead.
++ */
++export function applyMergePatch(target: JsonValue, patch: JsonValue): JsonValue {
++  if (!isJsonObject(patch)) {
++    return cloneValue(patch);
++  }
++
++  const result: ObjectContainer = isJsonObject(target) ? (cloneValue(target) as ObjectContainer) : {};
++  for (const key of Object.keys(patch)) {
++    const patchValue = patch[key];
++    if (patchValue === null) {
++      delete result[key];
++    } else {
++      const currentValue = Object.prototype.hasOwnProperty.call(result, key) ? result[key] : null;
++      setMember(result, key, applyMergePatch(currentValue, patchValue));
++    }
++  }
++  return result;
++}
++
++function isJsonObject(value: JsonValue): value is ObjectContainer {
++  return value !== null && typeof value === "object" && !Array.isArray(value);
++}
++
+ function deepEqual(a: JsonValue, b: JsonValue): boolean {
+   if (a === b) {
+     return true;

@@ -1,0 +1,123 @@
+diff --git a/src/index.ts b/src/index.ts
+index a174765b287f07de28cc56df27e3714f0a0ff8de..f412f57edb2ad97e84f2fd7c28521fbf46b050e1 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -29,10 +29,17 @@ export interface Booking {
+   total: number;
+ }
+ 
++export interface AvailabilityQuery {
++  start: string;
++  end: string;
++  kind?: EquipmentKind;
++}
++
+ export interface RentalService {
+   addEquipment(item: Equipment): void;
+   quote(request: RentalRequest): Quote;
+   book(request: RentalRequest): Booking;
++  availability(query: AvailabilityQuery): string[];
+ }
+ 
+ const MS_PER_DAY = 24 * 60 * 60 * 1000;
+@@ -94,15 +101,17 @@ export function createRentalService(): RentalService {
+     };
+   }
+ 
++  function isItemFree(itemId: string, start: string, end: string): boolean {
++    return bookings.every(
++      (booking) => booking.itemId !== itemId || !periodsOverlap(start, end, booking.start, booking.end),
++    );
++  }
++
+   function book(request: RentalRequest): Booking {
+     const item = getEquipment(request.itemId);
+     const days = countWholeDays(request.start, request.end);
+ 
+-    const isFree = bookings.every(
+-      (booking) => booking.itemId !== request.itemId
+-        || !periodsOverlap(request.start, request.end, booking.start, booking.end),
+-    );
+-    if (!isFree) {
++    if (!isItemFree(request.itemId, request.start, request.end)) {
+       throw new Error(`Item ${request.itemId} is not free for the requested period`);
+     }
+ 
+@@ -117,5 +126,19 @@ export function createRentalService(): RentalService {
+     return booking;
+   }
+ 
+-  return { addEquipment, quote, book };
++  function availability(query: AvailabilityQuery): string[] {
++    countWholeDays(query.start, query.end);
++    const ids: string[] = [];
++    for (const item of equipment.values()) {
++      if (query.kind && item.kind !== query.kind) {
++        continue;
++      }
++      if (isItemFree(item.id, query.start, query.end)) {
++        ids.push(item.id);
++      }
++    }
++    return ids.sort();
++  }
++
++  return { addEquipment, quote, book, availability };
+ }
+diff --git a/test/index.test.ts b/test/index.test.ts
+index c04abd3848b79db79ba95bce7765f8b013b4bfd9..850ac88b3001b7d07c2fd4867eca480552251eb1 100644
+--- a/test/index.test.ts
++++ b/test/index.test.ts
+@@ -115,3 +115,52 @@ test('tracks bookings independently per item', () => {
+ 
+   assert.doesNotThrow(() => service.book({ itemId: 's1', start: '2026-07-01T00:00:00.000Z', end: '2026-07-05T00:00:00.000Z' }));
+ });
++
++test('availability lists all equipment free for the period, sorted', () => {
++  const service = createRentalService();
++  service.addEquipment(board('b2'));
++  service.addEquipment(board('b1'));
++  service.addEquipment({ id: 's1', kind: 'sail', dailyPrice: 800 });
++
++  const ids = service.availability({ start: '2026-07-01T00:00:00.000Z', end: '2026-07-02T00:00:00.000Z' });
++
++  assert.deepEqual(ids, ['b1', 'b2', 's1']);
++});
++
++test('availability filters by kind when given', () => {
++  const service = createRentalService();
++  service.addEquipment(board('b1'));
++  service.addEquipment({ id: 's1', kind: 'sail', dailyPrice: 800 });
++
++  const ids = service.availability({ start: '2026-07-01T00:00:00.000Z', end: '2026-07-02T00:00:00.000Z', kind: 'sail' });
++
++  assert.deepEqual(ids, ['s1']);
++});
++
++test('availability excludes items booked for an overlapping period', () => {
++  const service = createRentalService();
++  service.addEquipment(board('b1'));
++  service.addEquipment(board('b2'));
++  service.book({ itemId: 'b1', start: '2026-07-01T00:00:00.000Z', end: '2026-07-05T00:00:00.000Z' });
++
++  const ids = service.availability({ start: '2026-07-03T00:00:00.000Z', end: '2026-07-06T00:00:00.000Z' });
++
++  assert.deepEqual(ids, ['b2']);
++});
++
++test('availability includes items whose booking ends exactly when the query starts', () => {
++  const service = createRentalService();
++  service.addEquipment(board('b1'));
++  service.book({ itemId: 'b1', start: '2026-07-01T00:00:00.000Z', end: '2026-07-05T00:00:00.000Z' });
++
++  const ids = service.availability({ start: '2026-07-05T00:00:00.000Z', end: '2026-07-06T00:00:00.000Z' });
++
++  assert.deepEqual(ids, ['b1']);
++});
++
++test('availability rejects an invalid period', () => {
++  const service = createRentalService();
++  service.addEquipment(board('b1'));
++
++  assert.throws(() => service.availability({ start: '2026-07-02T00:00:00.000Z', end: '2026-07-01T00:00:00.000Z' }));
++});

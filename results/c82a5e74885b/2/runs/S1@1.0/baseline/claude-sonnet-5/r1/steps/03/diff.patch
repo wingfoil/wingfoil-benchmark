@@ -1,0 +1,82 @@
+diff --git a/src/index.ts b/src/index.ts
+index 43469d7356e7ea77d73dc3f822f3143386780ce9..4bd6c89347a85559f0d59afc16ec5f798b389f46 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -168,7 +168,7 @@ function applyAdd(root: JsonValue, path: string, value: JsonValue): JsonValue {
+     const index = parseArrayIndex(key, parent.length, path, true);
+     parent.splice(index, 0, deepClone(value));
+   } else if (typeof parent === 'object' && parent !== null) {
+-    (parent as Record<string, JsonValue>)[key] = deepClone(value);
++    setMember(parent as Record<string, JsonValue>, key, deepClone(value));
+   } else {
+     throw new Error(`Invalid JSON Patch: cannot add to "${path}", parent is not a container`);
+   }
+@@ -208,7 +208,7 @@ function applyReplace(root: JsonValue, path: string, value: JsonValue): JsonValu
+     if (!Object.prototype.hasOwnProperty.call(parent, key)) {
+       throw new Error(`Invalid JSON Patch: cannot replace "${path}", no member "${key}"`);
+     }
+-    (parent as Record<string, JsonValue>)[key] = deepClone(value);
++    setMember(parent as Record<string, JsonValue>, key, deepClone(value));
+   } else {
+     throw new Error(`Invalid JSON Patch: cannot replace "${path}", parent is not a container`);
+   }
+@@ -246,13 +246,20 @@ function deepClone(value: JsonValue): JsonValue {
+   if (typeof value === 'object' && value !== null) {
+     const result: { [key: string]: JsonValue } = {};
+     for (const key of Object.keys(value)) {
+-      result[key] = deepClone(value[key]);
++      setMember(result, key, deepClone(value[key]));
+     }
+     return result;
+   }
+   return value;
+ }
+ 
++// Plain assignment (`obj[key] = value`) is trapped by the inherited `Object.prototype.__proto__`
++// accessor when `key` is "__proto__", setting the object's prototype instead of a data member.
++// JSON Pointer member names are arbitrary strings, so "__proto__" must be a regular member.
++function setMember(obj: Record<string, JsonValue>, key: string, value: JsonValue): void {
++  Object.defineProperty(obj, key, { value, writable: true, enumerable: true, configurable: true });
++}
++
+ function deepEqual(a: JsonValue, b: JsonValue): boolean {
+   if (a === b) {
+     return true;
+diff --git a/test/index.test.ts b/test/index.test.ts
+index 3a8995d37c76173ffb4919a46f464f306d7a7df9..a08d3150377c79fd4df455e6b0e8bb78b75ff333 100644
+--- a/test/index.test.ts
++++ b/test/index.test.ts
+@@ -286,3 +286,33 @@ test('add rejects an out-of-bounds array index', () => {
+   const patch: JsonPatchOperation[] = [{ op: 'add', path: '/foo/5', value: 3 }];
+   assert.throws(() => applyPatch(document, patch));
+ });
++
++test('add can create a member literally named "__proto__" without polluting Object.prototype', () => {
++  const document: JsonValue = {};
++  const patch: JsonPatchOperation[] = [{ op: 'add', path: '/__proto__', value: { polluted: true } }];
++  const result = applyPatch(document, patch) as Record<string, JsonValue>;
++  assert.equal(Object.prototype.hasOwnProperty.call(result, '__proto__'), true);
++  assert.deepEqual(result['__proto__'], { polluted: true });
++  assert.equal(({} as Record<string, unknown>).polluted, undefined);
++});
++
++test('a "__proto__" member untouched by the patch survives application', () => {
++  const document = JSON.parse('{"__proto__": {"kept": true}, "safe": 1}') as JsonValue;
++  const patch: JsonPatchOperation[] = [{ op: 'replace', path: '/safe', value: 2 }];
++  const result = applyPatch(document, patch) as Record<string, JsonValue>;
++  assert.equal(Object.prototype.hasOwnProperty.call(result, '__proto__'), true);
++  assert.deepEqual(result['__proto__'], { kept: true });
++});
++
++test('replace and remove work on a member literally named "__proto__"', () => {
++  const document = JSON.parse('{"__proto__": 1}') as JsonValue;
++  const replaced = applyPatch(document, [{ op: 'replace', path: '/__proto__', value: 2 }]) as Record<
++    string,
++    JsonValue
++  >;
++  assert.equal(Object.prototype.hasOwnProperty.call(replaced, '__proto__'), true);
++  assert.equal(replaced['__proto__'], 2);
++
++  const removed = applyPatch(document, [{ op: 'remove', path: '/__proto__' }]) as Record<string, JsonValue>;
++  assert.equal(Object.prototype.hasOwnProperty.call(removed, '__proto__'), false);
++});

@@ -1,0 +1,226 @@
+diff --git a/README.md b/README.md
+index d9ca84107490adbdf4b0b2945e6fd726478b4457..f5b0a7a0695c5796bc74924ec61b6b5f61b56477 100644
+--- a/README.md
++++ b/README.md
+@@ -32,3 +32,18 @@ import { applyPatch } from 'json-toolkit';
+ applyPatch({ foo: ['bar', 'baz'] }, [{ op: 'add', path: '/foo/1', value: 'qux' }]);
+ // => { foo: ['bar', 'qux', 'baz'] }
+ ```
++
++### JSON Merge Patch (RFC 7386)
++
++`applyMergePatch(target, patch)` applies a [JSON Merge Patch](https://www.rfc-editor.org/rfc/rfc7386)
++to a JSON document and returns the merged document as a new value, leaving `target` and `patch`
++untouched. Object members of `patch` are merged into `target` recursively; a `null` member removes the
++corresponding member from the result. Any other `patch` value (including an array) replaces `target`
++wholesale.
++
++```ts
++import { applyMergePatch } from 'json-toolkit';
++
++applyMergePatch({ foo: 'bar', baz: { qux: 1 } }, { baz: { qux: null, quux: 2 } });
++// => { foo: 'bar', baz: { quux: 2 } }
++```
+diff --git a/src/index.test.ts b/src/index.test.ts
+index fbee830c541ea57d6feb0fc1cbdf767f18af66dc..e97c17ab2ff1dadd16f67297086774f7071c309b 100644
+--- a/src/index.test.ts
++++ b/src/index.test.ts
+@@ -1,7 +1,13 @@
+ import test from 'node:test';
+ import assert from 'node:assert/strict';
+ 
+-import { resolvePointer, JsonPointerError, applyPatch, JsonPatchError } from './index.ts';
++import {
++  resolvePointer,
++  JsonPointerError,
++  applyPatch,
++  JsonPatchError,
++  applyMergePatch,
++} from './index.ts';
+ 
+ test('resolvePointer is exported from the package entry point', () => {
+   assert.equal(resolvePointer({ a: 1 }, '/a'), 1);
+@@ -18,3 +24,7 @@ test('applyPatch is exported from the package entry point', () => {
+ test('JsonPatchError is exported from the package entry point', () => {
+   assert.throws(() => applyPatch({ a: 1 }, [{ op: 'remove', path: '/b' }]), JsonPatchError);
+ });
++
++test('applyMergePatch is exported from the package entry point', () => {
++  assert.deepEqual(applyMergePatch({ a: 1 }, { a: 2 }), { a: 2 });
++});
+diff --git a/src/index.ts b/src/index.ts
+index 9ff17af2fa3893fc4f5980306f48e1fac24219e5..fdb57b4bea4946218aab64e83fd4edf281559d59 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -10,3 +10,4 @@ export type {
+   JsonPatchCopyOperation,
+   JsonPatchTestOperation,
+ } from './json-patch.ts';
++export { applyMergePatch } from './json-merge-patch.ts';
+diff --git a/src/json-merge-patch.test.ts b/src/json-merge-patch.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..d35d7ca0e2bbd09ad5da7e8c2c4290012bb4bbdc
+--- /dev/null
++++ b/src/json-merge-patch.test.ts
+@@ -0,0 +1,101 @@
++import test from 'node:test';
++import assert from 'node:assert/strict';
++
++import { applyMergePatch } from './json-merge-patch.ts';
++import type { JsonValue } from './json-pointer.ts';
++
++function deepFreeze<T extends JsonValue>(value: T): T {
++  if (Array.isArray(value)) {
++    value.forEach(deepFreeze);
++  } else if (value !== null && typeof value === 'object') {
++    Object.values(value).forEach(deepFreeze);
++  }
++  return Object.freeze(value);
++}
++
++// Test cases from RFC 7386 appendix A.
++const RFC_EXAMPLES: { target: JsonValue; patch: JsonValue; result: JsonValue }[] = [
++  { target: { a: 'b' }, patch: { a: 'c' }, result: { a: 'c' } },
++  { target: { a: 'b' }, patch: { b: 'c' }, result: { a: 'b', b: 'c' } },
++  { target: { a: 'b' }, patch: { a: null }, result: {} },
++  { target: { a: 'b', b: 'c' }, patch: { a: null }, result: { b: 'c' } },
++  { target: { a: ['b'] }, patch: { a: 'c' }, result: { a: 'c' } },
++  { target: { a: 'c' }, patch: { a: ['b'] }, result: { a: ['b'] } },
++  { target: { a: { b: 'c' } }, patch: { a: { b: 'd', c: null } }, result: { a: { b: 'd' } } },
++  { target: { a: [{ b: 'c' }] }, patch: { a: [1] }, result: { a: [1] } },
++  { target: ['a', 'b'], patch: ['c', 'd'], result: ['c', 'd'] },
++  { target: { a: 'b' }, patch: ['c'], result: ['c'] },
++  { target: { a: 'foo' }, patch: null, result: null },
++  { target: { a: 'foo' }, patch: 'bar', result: 'bar' },
++  { target: { e: null }, patch: { a: 1 }, result: { e: null, a: 1 } },
++  { target: [1, 2], patch: { a: 'b', c: null }, result: { a: 'b' } },
++  { target: {}, patch: { a: { bb: { ccc: null } } }, result: { a: { bb: {} } } },
++];
++
++for (const [i, { target, patch, result }] of RFC_EXAMPLES.entries()) {
++  test(`RFC 7386 appendix A example ${i + 1}: ${JSON.stringify(target)} + ${JSON.stringify(patch)}`, () => {
++    assert.deepEqual(applyMergePatch(deepFreeze(target), deepFreeze(patch)), result);
++  });
++}
++
++test('merges nested objects recursively instead of overwriting them', () => {
++  const target = deepFreeze({ a: { b: 1, c: 2 }, d: 1 });
++  const result = applyMergePatch(target, { a: { c: 3, e: 4 } });
++  assert.deepEqual(result, { a: { b: 1, c: 3, e: 4 }, d: 1 });
++});
++
++test('adds a new nested member when the target does not have the parent object', () => {
++  const target = deepFreeze({ a: 1 });
++  const result = applyMergePatch(target, { b: { c: 1 } });
++  assert.deepEqual(result, { a: 1, b: { c: 1 } });
++});
++
++test('a null in the patch removes a deeply nested member', () => {
++  const target = deepFreeze({ a: { b: { c: 1, d: 2 } } });
++  const result = applyMergePatch(target, { a: { b: { c: null } } });
++  assert.deepEqual(result, { a: { b: { d: 2 } } });
++});
++
++test('a null for a member absent from the target is a no-op', () => {
++  const target = deepFreeze({ a: 1 });
++  const result = applyMergePatch(target, { b: null });
++  assert.deepEqual(result, { a: 1 });
++});
++
++test('does not mutate the input target or patch', () => {
++  const target = deepFreeze({ foo: { bar: 1 }, baz: 2 });
++  const patch = deepFreeze({ foo: { bar: 2 }, baz: null });
++  const targetSnapshot = JSON.parse(JSON.stringify(target));
++  const patchSnapshot = JSON.parse(JSON.stringify(patch));
++  applyMergePatch(target, patch);
++  assert.deepEqual(target, targetSnapshot);
++  assert.deepEqual(patch, patchSnapshot);
++});
++
++test('the result does not share references with the input target', () => {
++  const target = deepFreeze({ foo: { bar: 1 }, baz: { qux: 1 } });
++  const result = applyMergePatch(target, { foo: { bar: 2 } }) as {
++    foo: { bar: number };
++    baz: { qux: number };
++  };
++  assert.notEqual(result.baz, target.baz);
++  assert.deepEqual(result.baz, { qux: 1 });
++});
++
++test('treats "__proto__" as a plain member name, not an accessor', () => {
++  const target = deepFreeze({});
++  const patch = deepFreeze(JSON.parse('{"__proto__":{"polluted":true}}')) as JsonValue;
++  const result = applyMergePatch(target, patch) as {
++    [key: string]: JsonValue;
++  };
++  assert.equal(Object.prototype.hasOwnProperty.call(result, '__proto__'), true);
++  assert.deepEqual(JSON.parse(JSON.stringify(result)), { ['__proto__']: { polluted: true } });
++  assert.equal(Object.getPrototypeOf(result), Object.prototype);
++  assert.equal(({} as { polluted?: boolean }).polluted, undefined);
++});
++
++test('does not drop or act on an input document member literally named "__proto__"', () => {
++  const target = deepFreeze(JSON.parse('{"__proto__":{"x":1},"foo":"bar"}')) as JsonValue;
++  const result = applyMergePatch(target, { foo: 'baz' });
++  assert.deepEqual(JSON.parse(JSON.stringify(result)), { ['__proto__']: { x: 1 }, foo: 'baz' });
++});
+diff --git a/src/json-merge-patch.ts b/src/json-merge-patch.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..cd1e68ca1530790ed79acf712e9a88482b134b66
+--- /dev/null
++++ b/src/json-merge-patch.ts
+@@ -0,0 +1,54 @@
++import type { JsonValue } from './json-pointer.ts';
++
++/**
++ * Applies a JSON Merge Patch (RFC 7386) to a JSON document and returns the resulting
++ * document as a new value. The input document and patch are left untouched.
++ */
++export function applyMergePatch(target: JsonValue, patch: JsonValue): JsonValue {
++  return mergePatch(target, patch);
++}
++
++function mergePatch(target: JsonValue | undefined, patch: JsonValue): JsonValue {
++  if (!isJsonObject(patch)) {
++    return cloneValue(patch);
++  }
++  const result: { [key: string]: JsonValue } = isJsonObject(target)
++    ? (cloneValue(target) as { [key: string]: JsonValue })
++    : {};
++  for (const key of Object.keys(patch)) {
++    const value = patch[key] as JsonValue;
++    if (value === null) {
++      delete result[key];
++    } else {
++      setMember(result, key, mergePatch(result[key], value));
++    }
++  }
++  return result;
++}
++
++function isJsonObject(value: JsonValue | undefined): value is { [key: string]: JsonValue } {
++  return value !== null && value !== undefined && typeof value === 'object' && !Array.isArray(value);
++}
++
++function cloneValue(value: JsonValue): JsonValue {
++  if (Array.isArray(value)) {
++    return value.map(cloneValue);
++  }
++  if (value !== null && typeof value === 'object') {
++    const clone: { [key: string]: JsonValue } = {};
++    for (const key of Object.keys(value)) {
++      setMember(clone, key, cloneValue(value[key] as JsonValue));
++    }
++    return clone;
++  }
++  return value;
++}
++
++/**
++ * Sets an own, enumerable member on a plain object, bypassing any inherited accessor
++ * (e.g. "__proto__") so that a member name is always treated as plain string data,
++ * never as an instruction to the object's internals.
++ */
++function setMember(container: { [key: string]: JsonValue }, key: string, value: JsonValue): void {
++  Object.defineProperty(container, key, { value, writable: true, enumerable: true, configurable: true });
++}

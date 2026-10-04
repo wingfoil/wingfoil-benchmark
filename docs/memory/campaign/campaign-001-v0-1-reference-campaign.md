@@ -154,6 +154,49 @@ The records are committed without the transcripts, which are git-ignored and sta
   campaign as a whole may come to about 101 €. That is above the 85 € approved for one execution, and was stated
   to the approver before the consent.
 
+**Execution `c82a5e74885b/2`, outcome:**
+
+- Ran 2026-10-04 08:33 → 14:44 (6.2 h), with the same command and variables as `/1`. The CLI: `19 runs completed, 0
+  failed`, `cost: 69.3517 USD, 61.3832 EUR at 0.8851 EUR/USD, API-equivalent`.
+  - The estimate was 60.32 €, so +1.8 %. The ceiling is 85 €.
+  - Together with `/1`'s 41.22 €, the campaign has cost **102.61 €** in all, as stated before the consent.
+- No rate-limit wait, no cap reached, no container left behind. Interventions only in the wingfoil arm (2–4 a run;
+  3 in the Opus run).
+- **The Opus 5 slice:** 26.2846 USD (23.26 €) in 73.8 min, below its 30 € cap. Calibration's dry run 19 was 24.08
+  USD.
+- **bug-011's fix at work:** two step transcripts passed 1 MiB and were read whole, S1 baseline r3 (1.07 MB) and the
+  Opus run (1.94 MB). Both would have failed in `/1`.
+- **Models observed** (task-054), summed over the steps: `claude-sonnet-5` 42.90 USD, `claude-opus-5` 26.27 USD, and
+  `claude-haiku-4-5-20251001` **0.19 USD**, which Claude Code called for its own work in several Sonnet runs.
+
+| Run | Cost USD | Minutes |
+|---|---|---|
+| S1 baseline r1 / r2 / r3 | 1.9474 / 2.1351 / 4.2813 | 16.4 / 17.8 / 27.7 |
+| S1 baseline-docs r1 / r2 / r3 | 2.4754 / 2.7111 / 2.3330 | 19.8 / 19.3 / 18.7 |
+| S1 wingfoil r1 / r2 / r3 | 4.0869 / 4.6537 / 4.1996 | 28.0 / 32.4 / 29.6 |
+| S2 baseline / baseline-docs / wingfoil | 0.9412 / 1.0894 / 1.8451 | 5.9 / 6.5 / 9.3 |
+| S3 baseline / baseline-docs / wingfoil | 0.9997 / 2.0273 / 2.2624 | 6.5 / 12.6 / 13.0 |
+| S8 baseline / baseline-docs / wingfoil | 1.3162 / 1.5239 / 2.2383 | 8.2 / 9.7 / 13.4 |
+| S1 wingfoil **Opus 5** | 26.2846 | 73.8 |
+| **Total** | **69.3517 (61.3832 €)** | |
+
+Each run is a line of the [v0.1 ledger](../../calibration/v0.1-ledger.md), whose total is now 192.1459 USD.
+
+**Token check** on `results/c82a5e74885b/2/`: no `sk-ant-` shape, and no match for the token file's value.
+
+**Scoring:** `node dist/cli/main.js score c82a5e74885b/2 --holdout ../WingFoil2-Benchmark-HoldOut`, 5 min 6 s, exit 0.
+It reports `aggregate.json (12 groups, 1 slice; determinism measured in 3, n = 1 in 10)`.
+
+| Scenario | baseline | baseline-docs | wingfoil |
+|---|---|---|---|
+| S1 r1 / r2 / r3: final (hold-out) | 164/165 (45/48), 165/165 (48/48), 165/165 (48/48) | 164/165 (45/48), 163/165 (45/48), 158/165 (43/48) | 164/165 (45/48), 158/165 (43/48), 165/165 (48/48) |
+| S2 | 24/24 (17/17), checks 2/3 | 24/24 (17/17), checks 2/3 | 24/24 (17/17), checks 3/3 |
+| S3 | 34/37 (16/17), checks 0/1, M-F1 3/5 | 35/37 (16/17), checks 0/1, M-F1 3/5 | 35/37 (16/17), checks 1/1, M-F1 4/5 |
+| S8 | 23/23 (6/7), checks 12/16 | 23/23 (6/7), checks 16/16 | 23/23 (6/7), checks 16/16 |
+| S1, Opus 5 (wingfoil) | | | 165/165 (48/48) |
+
+`/2` is the execution proposed for publication. `/1` stays committed as the record of bug-011, and is not published.
+
 ## Results review
 
 <!-- Anomalies, runs to rerun, and whether the results are publishable. -->

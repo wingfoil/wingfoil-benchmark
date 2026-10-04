@@ -1,0 +1,215 @@
+diff --git a/README.md b/README.md
+index 39fe416c0cc375f82b8b72b98bc3320db1ab8e2e..b17a003e2e66fffb3b33c90b7b8742dc6913d1f1 100644
+--- a/README.md
++++ b/README.md
+@@ -53,6 +53,20 @@ applyMergePatch(target, { a: 'z', c: { f: null } });
+ // { a: 'z', c: { d: 'e' } }
+ ```
+ 
++### `createPatch(from, to)`
++
++Computes a [JSON Patch](https://www.rfc-editor.org/rfc/rfc6902) describing the difference between
++two JSON documents: applying the returned patch to `from` with `applyPatch` produces a document
++equal to `to`. It does not mutate `from` or `to`, and the patch only addresses the parts of the
++document that changed.
++
++```ts
++import { createPatch } from 'json-toolkit';
++
++createPatch({ foo: 'bar', baz: 1 }, { foo: 'bar', baz: 2 });
++// [{ op: 'replace', path: '/baz', value: 2 }]
++```
++
+ ## Development
+ 
+ - `npm test` runs the test suite.
+diff --git a/src/index.test.ts b/src/index.test.ts
+index 5ce741d8478bb45e326afa0e0d970702ad1baaae..1a93991f207b9f2c27dab70b92a9c0eb5dffbe8f 100644
+--- a/src/index.test.ts
++++ b/src/index.test.ts
+@@ -1,6 +1,14 @@
+ import { test } from 'node:test';
+ import assert from 'node:assert/strict';
+-import { resolvePointer, applyPatch, applyMergePatch, JsonPatchError, type JsonPatchOperation } from './index.ts';
++import {
++  resolvePointer,
++  applyPatch,
++  applyMergePatch,
++  createPatch,
++  JsonPatchError,
++  type JsonPatchOperation,
++  type JsonValue,
++} from './index.ts';
+ 
+ // Example document from RFC 6901 §5.
+ const document = {
+@@ -349,3 +357,94 @@ test('does not mutate the patch document', () => {
+   applyMergePatch({}, patch);
+   assert.deepEqual(patch, snapshot);
+ });
++
++// createPatch
++
++test('two identical documents produce an empty patch', () => {
++  assert.deepEqual(createPatch({ foo: 'bar' }, { foo: 'bar' }), []);
++});
++
++test('a changed member produces a single "replace" operation', () => {
++  const patch = createPatch({ foo: 'bar', baz: 1 }, { foo: 'bar', baz: 2 });
++  assert.deepEqual(patch, [{ op: 'replace', path: '/baz', value: 2 }]);
++});
++
++test('a new member produces an "add" operation', () => {
++  const patch = createPatch({ foo: 'bar' }, { foo: 'bar', baz: 'qux' });
++  assert.deepEqual(patch, [{ op: 'add', path: '/baz', value: 'qux' }]);
++});
++
++test('a removed member produces a "remove" operation', () => {
++  const patch = createPatch({ foo: 'bar', baz: 'qux' }, { foo: 'bar' });
++  assert.deepEqual(patch, [{ op: 'remove', path: '/baz' }]);
++});
++
++test('a change nested deep within objects is addressed by its own path', () => {
++  const patch = createPatch({ a: { b: { c: 1, d: 'keep' } } }, { a: { b: { c: 2, d: 'keep' } } });
++  assert.deepEqual(patch, [{ op: 'replace', path: '/a/b/c', value: 2 }]);
++});
++
++test('an object member name containing "/" and "~" is escaped in the path', () => {
++  const patch = createPatch({ 'a/b': 1, 'c~d': 2 }, { 'a/b': 1, 'c~d': 3 });
++  assert.deepEqual(patch, [{ op: 'replace', path: '/c~0d', value: 3 }]);
++});
++
++test('an element changed in place within an array produces a "replace" at its index', () => {
++  const patch = createPatch({ foo: ['a', 'b', 'c'] }, { foo: ['a', 'x', 'c'] });
++  assert.deepEqual(patch, [{ op: 'replace', path: '/foo/1', value: 'x' }]);
++});
++
++test('an array grown at the end produces "add" operations appending at "-"', () => {
++  const patch = createPatch({ foo: ['a'] }, { foo: ['a', 'b', 'c'] });
++  assert.deepEqual(patch, [
++    { op: 'add', path: '/foo/-', value: 'b' },
++    { op: 'add', path: '/foo/-', value: 'c' },
++  ]);
++});
++
++test('an array shrunk at the end produces "remove" operations', () => {
++  const patch = createPatch({ foo: ['a', 'b', 'c'] }, { foo: ['a'] });
++  assert.deepEqual(patch, [
++    { op: 'remove', path: '/foo/1' },
++    { op: 'remove', path: '/foo/1' },
++  ]);
++});
++
++test('completely different values at the root produce a single "replace" at the root', () => {
++  const patch = createPatch({ foo: 'bar' }, ['foo', 'bar']);
++  assert.deepEqual(patch, [{ op: 'replace', path: '', value: ['foo', 'bar'] }]);
++});
++
++test('describes only what changed, not the whole document', () => {
++  const from = { a: 1, b: 2, c: 3, d: { e: 4, f: 5 } };
++  const to = { a: 1, b: 2, c: 3, d: { e: 4, f: 6 } };
++  const patch = createPatch(from, to);
++  assert.deepEqual(patch, [{ op: 'replace', path: '/d/f', value: 6 }]);
++});
++
++test('does not mutate either input document', () => {
++  const from = { foo: ['a', 'b'], nested: { x: 1 } };
++  const to = { foo: ['a', 'c'], nested: { x: 2 }, bar: 'new' };
++  const fromSnapshot = JSON.parse(JSON.stringify(from));
++  const toSnapshot = JSON.parse(JSON.stringify(to));
++  createPatch(from, to);
++  assert.deepEqual(from, fromSnapshot);
++  assert.deepEqual(to, toSnapshot);
++});
++
++test('applying the created patch to "from" reproduces "to"', () => {
++  const cases: [JsonValue, JsonValue][] = [
++    [{ foo: 'bar' }, { foo: 'bar' }],
++    [{ a: 1, b: 2 }, { a: 1, c: 3 }],
++    [{ a: { b: [1, 2, 3] } }, { a: { b: [1, 2] } }],
++    [{ a: { b: [1] } }, { a: { b: [1, 2, 3] } }],
++    [{ a: [{ x: 1 }, { x: 2 }] }, { a: [{ x: 1 }, { x: 3 }] }],
++    [[1, 2, 3], [1, 2, 3, 4]],
++    ['a', 'b'],
++    [{ foo: 'bar' }, { foo: 'bar' }],
++  ];
++  for (const [from, to] of cases) {
++    const patch = createPatch(from, to);
++    assert.deepEqual(applyPatch(from, patch), to);
++  }
++});
+diff --git a/src/index.ts b/src/index.ts
+index c80d101eb65632e6de41cf0a6f6cb23e408e718e..63bb5debf0e1a9d2f138509046f6aa2f93bd2d99 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -342,3 +342,70 @@ export function applyMergePatch(target: JsonValue, patch: JsonValue): JsonValue
+   }
+   return result;
+ }
++
++/** Escapes a single reference token for use in a JSON Pointer, as the inverse of {@link unescapeToken}. */
++function escapeToken(token: string): string {
++  return token.replace(/~/g, '~0').replace(/\//g, '~1');
++}
++
++/** Appends the operations that turn `from` into `to` at `path` to `ops`, recursing into containers. */
++function diffValues(path: string, from: JsonValue, to: JsonValue, ops: JsonPatchOperation[]): void {
++  if (deepEqual(from, to)) {
++    return;
++  }
++  if (isJsonObject(from) && isJsonObject(to)) {
++    diffObjects(path, from, to, ops);
++    return;
++  }
++  if (Array.isArray(from) && Array.isArray(to)) {
++    diffArrays(path, from, to, ops);
++    return;
++  }
++  ops.push({ op: 'replace', path, value: to });
++}
++
++function diffObjects(
++  path: string,
++  from: { [key: string]: JsonValue },
++  to: { [key: string]: JsonValue },
++  ops: JsonPatchOperation[],
++): void {
++  for (const key of Object.keys(from)) {
++    if (!Object.prototype.hasOwnProperty.call(to, key)) {
++      ops.push({ op: 'remove', path: `${path}/${escapeToken(key)}` });
++    }
++  }
++  for (const key of Object.keys(to)) {
++    const childPath = `${path}/${escapeToken(key)}`;
++    if (Object.prototype.hasOwnProperty.call(from, key)) {
++      diffValues(childPath, from[key], to[key], ops);
++    } else {
++      ops.push({ op: 'add', path: childPath, value: to[key] });
++    }
++  }
++}
++
++/** Diffs the common prefix of `from` and `to` element by element, then trims or appends the tail. */
++function diffArrays(path: string, from: JsonValue[], to: JsonValue[], ops: JsonPatchOperation[]): void {
++  const common = Math.min(from.length, to.length);
++  for (let i = 0; i < common; i++) {
++    diffValues(`${path}/${i}`, from[i], to[i], ops);
++  }
++  for (let i = from.length; i > common; i--) {
++    ops.push({ op: 'remove', path: `${path}/${common}` });
++  }
++  for (let i = common; i < to.length; i++) {
++    ops.push({ op: 'add', path: `${path}/-`, value: to[i] });
++  }
++}
++
++/**
++ * Computes a JSON Patch (RFC 6902) describing the difference between two JSON documents: applying
++ * the returned patch to `from` with {@link applyPatch} produces a document equal to `to`. Neither
++ * `from` nor `to` is mutated. The patch only addresses the parts of the document that changed.
++ */
++export function createPatch(from: JsonValue, to: JsonValue): JsonPatchOperation[] {
++  const ops: JsonPatchOperation[] = [];
++  diffValues('', from, to, ops);
++  return ops;
++}

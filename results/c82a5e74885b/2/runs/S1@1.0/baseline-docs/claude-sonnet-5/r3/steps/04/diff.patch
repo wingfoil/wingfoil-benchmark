@@ -1,0 +1,156 @@
+diff --git a/README.md b/README.md
+index b9f1990637e408e1dbfb4812f739f722c5f3126f..39fe416c0cc375f82b8b72b98bc3320db1ab8e2e 100644
+--- a/README.md
++++ b/README.md
+@@ -37,6 +37,22 @@ applyPatch(document, [{ op: 'add', path: '/baz', value: 'qux' }]);
+ // { foo: 'bar', baz: 'qux' }
+ ```
+ 
++### `applyMergePatch(target, patch)`
++
++Applies a [JSON Merge Patch](https://www.rfc-editor.org/rfc/rfc7386) to a target JSON document and
++returns the merged document as a new value; it does not mutate `target` or `patch`. Object members
++of `patch` are merged into `target` recursively; a `null` member removes the corresponding member
++from `target`. Any other patch value, including an array, replaces the corresponding target value
++wholesale.
++
++```ts
++import { applyMergePatch } from 'json-toolkit';
++
++const target = { a: 'b', c: { d: 'e', f: 'g' } };
++applyMergePatch(target, { a: 'z', c: { f: null } });
++// { a: 'z', c: { d: 'e' } }
++```
++
+ ## Development
+ 
+ - `npm test` runs the test suite.
+diff --git a/src/index.test.ts b/src/index.test.ts
+index e8d7ce8db024e7df3cf466c7caefe7341cae5fdf..5ce741d8478bb45e326afa0e0d970702ad1baaae 100644
+--- a/src/index.test.ts
++++ b/src/index.test.ts
+@@ -1,6 +1,6 @@
+ import { test } from 'node:test';
+ import assert from 'node:assert/strict';
+-import { resolvePointer, applyPatch, JsonPatchError, type JsonPatchOperation } from './index.ts';
++import { resolvePointer, applyPatch, applyMergePatch, JsonPatchError, type JsonPatchOperation } from './index.ts';
+ 
+ // Example document from RFC 6901 §5.
+ const document = {
+@@ -272,3 +272,80 @@ test('rejects a "move" operation missing "from"', () => {
+     JsonPatchError,
+   );
+ });
++
++// Examples from RFC 7386 Appendix A.
++test('A: replaces an existing member', () => {
++  assert.deepEqual(applyMergePatch({ a: 'b' }, { a: 'c' }), { a: 'c' });
++});
++
++test('A: adds a new member', () => {
++  assert.deepEqual(applyMergePatch({ a: 'b' }, { b: 'c' }), { a: 'b', b: 'c' });
++});
++
++test('A: a null value removes an existing member', () => {
++  assert.deepEqual(applyMergePatch({ a: 'b' }, { a: null }), {});
++});
++
++test('A: a null value removes an existing member, leaving the others untouched', () => {
++  assert.deepEqual(applyMergePatch({ a: 'b', b: 'c' }, { a: null }), { b: 'c' });
++});
++
++test('A: a scalar patch value replaces an array member wholesale', () => {
++  assert.deepEqual(applyMergePatch({ a: ['b'] }, { a: 'c' }), { a: 'c' });
++});
++
++test('A: an array patch value replaces a scalar member wholesale', () => {
++  assert.deepEqual(applyMergePatch({ a: 'c' }, { a: ['b'] }), { a: ['b'] });
++});
++
++test('A: nested objects are merged member by member', () => {
++  assert.deepEqual(applyMergePatch({ a: { b: 'c' } }, { a: { b: 'd', c: null } }), { a: { b: 'd' } });
++});
++
++test('A: an array member is replaced wholesale, never merged element by element', () => {
++  assert.deepEqual(applyMergePatch({ a: [{ b: 'c' }] }, { a: [1] }), { a: [1] });
++});
++
++test('A: a patch that is itself an array replaces the whole target', () => {
++  assert.deepEqual(applyMergePatch(['a', 'b'], ['c', 'd']), ['c', 'd']);
++});
++
++test('A: an array patch replaces an object target wholesale', () => {
++  assert.deepEqual(applyMergePatch({ a: 'b' }, ['c']), ['c']);
++});
++
++test('A: a null patch replaces the whole target with null', () => {
++  assert.equal(applyMergePatch({ a: 'foo' }, null), null);
++});
++
++test('A: a scalar patch replaces the whole target', () => {
++  assert.equal(applyMergePatch({ a: 'foo' }, 'bar'), 'bar');
++});
++
++test('A: a null member value is added as-is when there is no existing member to remove', () => {
++  assert.deepEqual(applyMergePatch({ e: null }, { a: 1 }), { e: null, a: 1 });
++});
++
++test('A: an array target is discarded in favour of the object patch', () => {
++  assert.deepEqual(applyMergePatch([1, 2], { a: 'b', c: null }), { a: 'b' });
++});
++
++test('A: nested objects are created as needed, and null members within them are dropped', () => {
++  assert.deepEqual(applyMergePatch({}, { a: { bb: { ccc: null } } }), { a: { bb: {} } });
++});
++
++// Additional coverage beyond the RFC's own examples.
++
++test('does not mutate the target document', () => {
++  const target = { a: { b: 'c' }, d: ['e'] };
++  const snapshot = JSON.parse(JSON.stringify(target));
++  applyMergePatch(target, { a: { b: null, f: 'g' }, d: ['h'] });
++  assert.deepEqual(target, snapshot);
++});
++
++test('does not mutate the patch document', () => {
++  const patch = { a: { b: 'c' } };
++  const snapshot = JSON.parse(JSON.stringify(patch));
++  applyMergePatch({}, patch);
++  assert.deepEqual(patch, snapshot);
++});
+diff --git a/src/index.ts b/src/index.ts
+index 8153ac0116f46b6e5502c6ed68797f030dd65d1e..c80d101eb65632e6de41cf0a6f6cb23e408e718e 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -314,3 +314,31 @@ export function applyPatch(document: JsonValue, patch: JsonPatchOperation[]): Js
+   }
+   return result;
+ }
++
++/** Narrows `value` to a JSON object, as opposed to an array, scalar, or `null`. */
++function isJsonObject(value: JsonValue): value is { [key: string]: JsonValue } {
++  return typeof value === 'object' && value !== null && !Array.isArray(value);
++}
++
++/**
++ * Applies a JSON Merge Patch (RFC 7386) to a target JSON document, returning the merged document
++ * as a new value; neither `target` nor `patch` is mutated.
++ *
++ * Object members of `patch` are merged into `target` recursively; a `null` member removes the
++ * corresponding member from `target`. Any other patch value (including an array) replaces the
++ * corresponding target value wholesale.
++ */
++export function applyMergePatch(target: JsonValue, patch: JsonValue): JsonValue {
++  if (!isJsonObject(patch)) {
++    return patch;
++  }
++  const result: { [key: string]: JsonValue } = isJsonObject(target) ? { ...target } : {};
++  for (const [key, value] of Object.entries(patch)) {
++    if (value === null) {
++      delete result[key];
++    } else {
++      result[key] = applyMergePatch(result[key], value);
++    }
++  }
++  return result;
++}

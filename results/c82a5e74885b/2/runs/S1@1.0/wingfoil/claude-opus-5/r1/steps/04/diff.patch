@@ -1,0 +1,806 @@
+diff --git a/README.md b/README.md
+index 18b0d78b4461434e11a387de0cbb5b111acd7ac1..30bbecbd558a8bdc3b053bf2b7d71366f6a63f4c 100644
+--- a/README.md
++++ b/README.md
+@@ -128,6 +128,53 @@ Three operations are rejected as `invalid-patch`, because no document could sati
+   "no document" to return. Rejecting them is this library's choice, taken so that the alternative —
+   inventing a `null` — cannot silently turn a lost document into a present one.
+ 
++### JSON Merge Patch — `applyMergePatch(target, patch)`
++
++Applies a [JSON Merge Patch](https://www.rfc-editor.org/rfc/rfc7386) — the format of
++`application/merge-patch+json`, in which the patch is a document shaped like the one it changes — and
++returns the merged document. It is the format for the partial updates clients send when they can
++simply describe the document they want.
++
++```ts
++import { applyMergePatch } from 'json-toolkit';
++
++const stored = { name: 'disk', labels: { tier: 'cold', region: 'eu' }, sizes: [1, 2] };
++
++applyMergePatch(stored, {
++  labels: { tier: 'hot', region: null }, // merged member by member; null removes "region"
++  sizes: [3],                            // an array is replaced whole, never merged
++}); // { name: 'disk', labels: { tier: 'hot' }, sizes: [3] }
++
++stored; // unchanged
++```
++
++The rule is the `MergePatch` algorithm of RFC 7386 § 2, applied recursively: an object patch merges
++into an object target, member by member — a member the target lacks is added, one it has is merged
++into, and one the patch sets to `null` is removed — while a patch that is **not** an object replaces
++the target entirely, and an object patch applied to a non-object target discards it and starts from
++an empty object.
++
++As with `applyPatch`, the result is a **new value**: neither `target` nor `patch` is changed, and
++nothing is shared between the three.
++
++**Merging cannot fail**, so `applyMergePatch` throws nothing and has no error class: RFC 7386 gives
++every pair of JSON values a result. Removing a member that is not there removes nothing; adding one
++the target lacks adds it. The format pays for that simplicity by what it cannot express:
++
++| it cannot                                 | because                                                      |
++| ----------------------------------------- | ------------------------------------------------------------ |
++| set a member to `null`                    | `null` means "remove this member"                            |
++| change one element of an array            | a non-object patch replaces its target, so arrays go whole   |
++| state a precondition, or demand a member exist | there is nothing in the format to say it with           |
++
++Use `applyPatch` when an update needs any of those three: a `test` operation, an array index, or an
++explicit `null`.
++
++RFC 7386 is obsoleted by [RFC 7396](https://www.rfc-editor.org/rfc/rfc7396), which reprints it with
++the indentation of the § 2 pseudo-code fixed — in RFC 7386 `return Target` is misaligned into the
++loop over the patch's members. The two agree on the algorithm and on every example of their appendix
++A, and `applyMergePatch` conforms to both.
++
+ ## Development
+ 
+ ```sh
+diff --git a/docs/memory/decision-log/dl-003-shape-and-semantics-of-applymergepatch-a-total-function-shared-json-value-internals.md b/docs/memory/decision-log/dl-003-shape-and-semantics-of-applymergepatch-a-total-function-shared-json-value-internals.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..2593ef44f5dd2e01fabe0d90d186a0a03f480023
+--- /dev/null
++++ b/docs/memory/decision-log/dl-003-shape-and-semantics-of-applymergepatch-a-total-function-shared-json-value-internals.md
+@@ -0,0 +1,110 @@
++---
++id: dl-003-shape-and-semantics-of-applymergepatch-a-total-function-shared-json-value-internals
++type: decision-log
++title: "Shape and semantics of applyMergePatch: a total function, shared JSON-value internals"
++status: approved
++---
++
++# Shape and semantics of `applyMergePatch`: a total function, shared JSON-value internals
++
++## Context
++
++`applyMergePatch(target, patch)` is the third building block of the library and the second that
++changes a document. RFC 7386 is a short specification — one page of pseudo-code — and most of what
++there is to decide is how it sits next to the two features already here. `dl-001` settled reading a
++document and `dl-002` settled changing one with a JSON Patch; a merge patch is a second way of
++changing one, so the questions are which of those answers carry over and which the format itself
++contradicts.
++
++One of them it does contradict: RFC 6902 is a format whose operations fail, and `dl-002` is largely
++about naming the failures. RFC 7386 defines a result for *every* pair of JSON values. There is
++nothing to report, so the two features cannot have the same shape, and a caller choosing between them
++is choosing between "tell me when the document is not what I expected" and "merge whatever I send".
++
++A merge patch also arrives from outside the process, as the body of a `PATCH` request with the media
++type `application/merge-patch+json`, which is what makes the question of run-time validation arise at
++all.
++
++## Decision
++
++**No error class, and no way to fail.** `applyMergePatch` throws nothing: it has no
++`JsonMergePatchError` and no `reason`. The RFC's algorithm is total, so a third error class would
++have no reason to name, and a caller would have to catch something that cannot be thrown. Removing a
++member that is not there removes nothing, and merging an object into a number discards the number;
++neither is an error, both are what § 2 says. The README names the three things the format therefore
++cannot express — setting a member to `null`, addressing an array element, stating a precondition —
++and points a caller who needs one of them at `applyPatch`.
++
++This also answers run-time validation, which `dl-002` imposed on a patch because an unknown `op` or a
++malformed pointer had to be caught before anything was applied. A merge patch has no vocabulary to
++get wrong: every JSON value is a valid merge patch. So `patch` is typed `JsonValue` and nothing is
++checked; a payload straight out of `JSON.parse` is passed in without a cast exactly as a JSON Patch
++is, but for the opposite reason — not because it is validated, but because there is nothing to
++validate.
++
++**The result is a new value, as `dl-002` has it.** The merge builds its result beside its inputs:
++neither `target` nor `patch` is touched, and the result shares no object or array with either, so the
++three can be changed afterwards without affecting each other. This is the one promise the two update
++features make identically, and it is worth more here than in `applyPatch`: `applyPatch` copies to be
++atomic, while a merge cannot fail and copies only so that callers can keep holding their inputs.
++Values coming from the patch are deep-copied on their way in, which is what stops a stored document
++from ending up sharing structure with a request body.
++
++Atomicity needs no mechanism here. `applyPatch` returns the copy "only once every operation has
++succeeded"; a merge has no step that can fail, so the question does not arise.
++
++**`cloneJson`, `isJsonObject` and `setMember` move to `src/json-value.ts`.** They were private to
++`src/json-patch.ts`; a merge patch needs all three, with exactly the same meaning. `task-002` left
++this as the expected shape — "`src/message.ts` is the place for message rendering a third feature
++would otherwise copy" — and the same argument applies to the operations on a JSON value, so they go
++next to the type they operate on rather than being imported from one feature by another. In
++particular there is now one implementation of "write a member with `Object.defineProperty` so that
++`__proto__` is a plain member", instead of a second one that could drift from it.
++
++**Reading a member is an own-member read.** The recursion asks what the target holds at a name, with
++`Object.hasOwn`, as RFC 6901 § 4 evaluation does and as `applyPatch` does. Plain `target[name]` would
++mostly give the same answers through the prototype chain — `{}` would appear to have a `toString`
++member to merge into, and a `__proto__` naming `Object.prototype` — and the merge would still produce
++the right document for the wrong reason, until it did not. Since merge patches commonly come from
++outside the service, the strict read is also what keeps a patch naming `__proto__` an ordinary member
++write.
++
++**An absent target is the recursion's own case, not an exported one.** The public function takes a
++`JsonValue`; the internal `merge` takes `JsonValue | undefined`, because the recursion reaches names
++the target does not declare, which is how a patch adds a member. "Not an object" already covers that
++case in § 2, so it needs no branch — only a type that admits it.
++
++**`undefined` means "absent" at every level.** `undefined` is not a JSON value, so the RFC says
++nothing about it, and the type signature already excludes it; but JavaScript callers build patches by
++hand and reach it by accident. A patch member holding `undefined` is passed over, as though the patch
++did not mention that name — which is how `dl-002` reads an operation's missing `value` — and a whole
++patch of `undefined` leaves the target as it is. Uniform in one sentence, and it keeps a non-JSON
++value from being returned as a document.
++
++**Member order is the one the RFC prints, and is tested.** Members the target already had keep their
++place and new ones are appended, which is what copying the target and then writing the patch's
++members gives, and what the § 3 example shows. RFC 7386 § 2 says order is not expected to be
++preserved, so this is not conformance but determinism: the result of a merge is the same document in
++the same order every time, which the project's determinism directive asks for and which lets the
++tests compare JSON text.
++
++**Public surface: `applyMergePatch` alone.** No `JsonMergePatch` type is exported, because it would
++be an alias for `JsonValue` and name nothing new; `dl-001` keeps the surface at what is used.
++
++## Consequences
++
++- The library now has two update features with deliberately different shapes: one that validates and
++  fails in three ways, one that cannot fail. The README says which to reach for, because the choice
++  is a caller's and cannot be made for them in the types.
++- `src/json-value.ts` is no longer types-only. A fourth feature finds `cloneJson`, `isJsonObject` and
++  `setMember` there, and should add to it rather than re-deriving them.
++- `src/json-patch.ts` imports those three instead of declaring them; its behaviour is unchanged, and
++  its 73 tests pass as they did, which is what makes the move safe to assert.
++- Because nothing is thrown, a caller cannot learn from `applyMergePatch` that their patch did not
++  apply the way they meant. A service that must refuse such an update has to compare documents itself,
++  or use a JSON Patch with a `test`.
++- Adding an error later — say a strict mode that rejects a patch setting a member to `null` — would be
++  a new function or an option, not a change to this one: callers are being told in the documentation
++  that this one does not throw.
++- `jsonEquals` stays private to `src/json-patch.ts`. A merge needs no equality, and `task-002` already
++  records that a diff feature is what would move it.
+diff --git a/docs/memory/task/task-004-implement-json-merge-patch-applymergepatch-rfc-7386.md b/docs/memory/task/task-004-implement-json-merge-patch-applymergepatch-rfc-7386.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..57365c16073f81079376758ccb104ad36d9710f0
+--- /dev/null
++++ b/docs/memory/task/task-004-implement-json-merge-patch-applymergepatch-rfc-7386.md
+@@ -0,0 +1,90 @@
++---
++id: task-004-implement-json-merge-patch-applymergepatch-rfc-7386
++type: task
++title: "Implement JSON Merge Patch applyMergePatch (RFC 7386)"
++status: approved
++---
++
++# Implement JSON Merge Patch `applyMergePatch` (RFC 7386)
++
++## Request
++
++Some clients send partial updates in the simpler JSON Merge Patch format: implement it as specified in
++RFC 7386, exporting `applyMergePatch(target, patch)` from `src/index.ts`. It applies a merge patch to
++a target JSON document and returns the merged document.
++
++## What was done
++
++Test first: `test/json-merge-patch.test.ts` was written against a function that did not exist (red —
++the suite failed to load), then `src/json-merge-patch.ts` was added until it passed (green), then the
++member read was tightened to own members only and the recursion given its own internal function, with
++the suite green throughout.
++
++- `src/json-merge-patch.ts` — new: `applyMergePatch`, and the internal `merge` that is the
++  `MergePatch(Target, Patch)` pseudo-code of § 2 on a target that may be absent, plus `memberOf` for
++  the own-member read.
++- `src/json-value.ts` — `cloneJson`, `isJsonObject` and `setMember` moved here from
++  `src/json-patch.ts`, unchanged, so both update features share one copy; the module is no longer
++  types-only and says so in its doc comment.
++- `src/json-patch.ts` — imports those three from `src/json-value.ts`; no behaviour change.
++- `src/index.ts` — adds `applyMergePatch` to the public surface. No new type or error class is
++  exported: a merge patch is any `JsonValue`, and merging cannot fail.
++- `test/json-merge-patch.test.ts` — 35 tests: the 15 cases of the RFC's appendix A verbatim, the
++  examples in its § 1 and § 3 prose, the patch as a whole, recursion, the result being a new value,
++  `__proto__` and inherited properties, and the non-JSON `undefined`.
++- `README.md` — a feature section with usage, the rule in a paragraph, the three things the format
++  cannot express with a pointer to `applyPatch` for each, and the note on RFC 7396.
++
++Behaviour, following the `MergePatch` algorithm of RFC 7386 § 2:
++
++- a patch that is not an object replaces the target entirely — including `null`, which replaces the
++  whole document rather than removing anything, and an array, which is never merged element-wise;
++- an object patch merged into an object target adds the members the target lacks, merges recursively
++  into those it has, and removes those the patch sets to `null`; a `null` for a member that is not
++  there removes nothing;
++- an object patch applied to a non-object target (a string, a number, `null`, an array) discards the
++  target and merges into an empty object, so nothing of it survives;
++- members the target already had keep their place and new ones are appended, which is the order the
++  RFC's § 3 example prints;
++- a member named `__proto__` is an ordinary member, read with `Object.hasOwn` and written with
++  `Object.defineProperty`; an inherited `toString` is not a member, so a patch can neither merge into
++  it nor remove it;
++- the result is a new value: `target` and `patch` are untouched and share nothing with it, so a stored
++  document never ends up sharing structure with a request body;
++- `undefined` means "absent" at every level — a patch member holding it is passed over, and a patch
++  that is `undefined` leaves the target as it is.
++
++The RFC the request names, RFC 7386, is obsoleted by RFC 7396. The two were diffed: RFC 7396 reprints
++RFC 7386 with the indentation of the § 2 pseudo-code fixed — in RFC 7386 `return Target` is misaligned
++into the loop over the patch's members, which read literally would return after the first one — and
++with the whitespace of the examples tidied. The algorithm, the prose and all 15 appendix A cases are
++identical. The implementation follows the corrected layout and so conforms to both; the README says
++this, so a reader who looks RFC 7386 up and finds it obsolete knows why.
++
++## Verification
++
++- `npm test` — 135 tests, 135 pass, 0 fail (35 new for JSON Merge Patch; the 100 for JSON Pointer and
++  JSON Patch unchanged and still passing after the helpers moved out of `src/json-patch.ts`).
++- `npm run typecheck` — clean, sources and tests, `strict` on.
++- `npm run build` — clean; `dist/index.js` was imported and exercised with the README's merge example
++  and with the README's six-operation JSON Patch, confirming both features work from the built output.
++- The README example was run as written, and prints what it claims, target included.
++- Red was observed before green: the first run of the new suite failed on the missing export, and no
++  test was written to fail artificially.
++
++## Decisions recorded
++
++- `dl-003-shape-and-semantics-of-applymergepatch-a-total-function-shared-json-value-internals` — no
++  error class and nothing thrown, hence no run-time validation of the patch; the new-value promise
++  kept from `dl-002`; the move of `cloneJson` / `isJsonObject` / `setMember` into `src/json-value.ts`;
++  own-member reads; `undefined` as "absent"; member order as determinism rather than conformance; and
++  the public surface staying at `applyMergePatch` alone.
++
++## Follow-up for the next features
++
++- `src/json-value.ts` is now where the operations on a JSON value live: a fourth feature adds to it
++  rather than re-deriving `cloneJson` or `setMember`.
++- A merge-patch *diff* (the document that turns one JSON document into another) is the natural
++  counterpart, and would reuse `jsonEquals`, still private to `src/json-patch.ts`.
++- If a caller ever needs to know whether a merge changed anything, that is a second entry point
++  returning that fact, not an error on this one: `applyMergePatch` is documented as never throwing.
+diff --git a/src/index.ts b/src/index.ts
+index 237a9a294b7709da4f30b553a9079c2c97cdf4fb..e543e5b25d4848aa392a8e498b9df5a7c69c1fd4 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -13,3 +13,4 @@ export {
+   type JsonPatchErrorReason,
+   type JsonPatchOperation,
+ } from './json-patch.ts';
++export { applyMergePatch } from './json-merge-patch.ts';
+diff --git a/src/json-merge-patch.ts b/src/json-merge-patch.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..a84f54e2e2ba145f90c311e26ee5267350e75c44
+--- /dev/null
++++ b/src/json-merge-patch.ts
+@@ -0,0 +1,101 @@
++/**
++ * JSON Merge Patch, as specified in [RFC 7386](https://www.rfc-editor.org/rfc/rfc7386).
++ *
++ * A merge patch is not a list of operations like a JSON Patch (RFC 6902) but a document that looks
++ * like the one it changes: its members are merged into the target, member by member and recursively,
++ * and a member holding `null` removes the member of that name. Anything that is not an object
++ * replaces the target outright. That is the whole format -- the price of its simplicity is that it
++ * cannot set a member to `null`, address an array element, or state a precondition.
++ *
++ * The algorithm implemented here is the `MergePatch` pseudo-code of § 2. RFC 7396 obsoletes RFC 7386
++ * to correct the indentation of that pseudo-code, which in RFC 7386 puts `return Target` inside the
++ * loop over the patch's members; the two RFCs agree on everything else, including the test cases of
++ * their appendix A, so this module follows both as RFC 7396 prints them.
++ *
++ * @module
++ */
++
++import {
++  cloneJson,
++  isJsonObject,
++  setMember,
++  type JsonObject,
++  type JsonValue,
++} from './json-value.ts';
++
++/**
++ * Applies a JSON Merge Patch to a JSON document and returns the merged document.
++ *
++ * The result is a new value: `target` is left untouched, and no part of it, nor of `patch`, is
++ * shared with the result, so the three can be changed afterwards without affecting each other.
++ *
++ * Merging cannot fail. Every pair of JSON values has a result, so -- unlike {@link applyPatch} --
++ * this function throws nothing and has no error class: a patch that mentions members the target
++ * does not have adds them, and one that removes members that are not there removes nothing. A
++ * caller who needs an update to be refused when the document is not as expected wants a JSON Patch
++ * with a `test` operation instead.
++ *
++ * @param target the JSON document to merge into.
++ * @param patch the merge patch: a JSON document shaped like `target`, as RFC 7386 § 1 describes it.
++ * Any JSON value is accepted, so a patch parsed from a `application/merge-patch+json` payload can be
++ * passed in as it is.
++ * @returns the merged document, as a new value.
++ *
++ * @example
++ * applyMergePatch(
++ *   { title: 'Goodbye!', author: { givenName: 'John', familyName: 'Doe' } },
++ *   { title: 'Hello!', author: { familyName: null } },
++ * ); // { title: 'Hello!', author: { givenName: 'John' } }
++ */
++export function applyMergePatch(target: JsonValue, patch: JsonValue): JsonValue {
++  if (patch === undefined) {
++    // Not a JSON value, so there is no patch to apply: the target stands, copied like any result.
++    return cloneJson(target);
++  }
++  return merge(target, patch);
++}
++
++/**
++ * The `MergePatch(Target, Patch)` of RFC 7386 § 2, on a target that may be absent.
++ *
++ * The recursion reaches a member the target does not declare -- which is how a patch adds one --
++ * and "not an object" covers that case as it covers a string or a number, so the absent target
++ * needs no case of its own, only a type that admits it.
++ */
++function merge(target: JsonValue | undefined, patch: JsonValue): JsonValue {
++  if (!isJsonObject(patch)) {
++    // "If the patch is anything other than an object, the result will always be to replace the
++    // entire target with the entire patch" (§ 1). The copy is what keeps the patch out of the
++    // result, so that changing one afterwards cannot change the other.
++    return cloneJson(patch);
++  }
++
++  // "if Target is not an Object: Target = {}" (§ 2): a target that has no members cannot be merged
++  // into, and the patch's members are all that is left of it.
++  const merged: JsonObject =
++    target !== undefined && isJsonObject(target) ? (cloneJson(target) as JsonObject) : {};
++
++  for (const [member, value] of Object.entries(patch)) {
++    if (value === null) {
++      // A null member removes the member of that name; one the target does not declare is already
++      // absent, which the RFC's own `{} + {"a":{"bb":{"ccc":null}}}` case relies on.
++      delete merged[member];
++    } else if (value !== undefined) {
++      // A member holding `undefined` is not a member of a JSON document, so it is passed over
++      // rather than merged: the patch simply does not mention that name.
++      setMember(merged, member, merge(memberOf(merged, member), value));
++    }
++  }
++  return merged;
++}
++
++/**
++ * The value `object` holds as its `name` member, or `undefined` when it declares no such member.
++ *
++ * Own members only, as RFC 6901 § 4 evaluation does and as the rest of the library has it: what the
++ * prototype chain offers under a name -- `toString`, or `__proto__` on a document that does not
++ * declare it -- is not a member of the JSON document, so it is nothing to merge into.
++ */
++function memberOf(object: JsonObject, name: string): JsonValue | undefined {
++  return Object.hasOwn(object, name) ? object[name] : undefined;
++}
+diff --git a/src/json-patch.ts b/src/json-patch.ts
+index dd7ff4e09dbc22c8af3158c98e52b9827d1edfcc..a1342bfb45f126323930e4de9e6287bc1ec8e50d 100644
+--- a/src/json-patch.ts
++++ b/src/json-patch.ts
+@@ -21,7 +21,13 @@ import {
+   parsePointer,
+   resolveTokens,
+ } from './json-pointer.ts';
+-import type { JsonObject, JsonValue } from './json-value.ts';
++import {
++  cloneJson,
++  isJsonObject,
++  setMember,
++  type JsonObject,
++  type JsonValue,
++} from './json-value.ts';
+ import { count, describeType, preview, quote } from './message.ts';
+ 
+ /** Why applying a JSON Patch failed. */
+@@ -541,27 +547,6 @@ function describeOperation(prepared: PreparedOperation): string {
+ 
+ // --- JSON values ----------------------------------------------------------------------------
+ 
+-/**
+- * Deep-copies a JSON value, so that the copy shares no object or array with the original.
+- *
+- * Members are defined rather than assigned, so that a document declaring `__proto__` -- as
+- * `JSON.parse` lets it -- keeps it as the plain member it is instead of changing the copy's
+- * prototype.
+- */
+-function cloneJson(value: JsonValue): JsonValue {
+-  if (Array.isArray(value)) {
+-    return value.map(cloneJson);
+-  }
+-  if (isJsonObject(value)) {
+-    const copy: JsonObject = {};
+-    for (const [member, held] of Object.entries(value)) {
+-      setMember(copy, member, cloneJson(held));
+-    }
+-    return copy;
+-  }
+-  return value;
+-}
+-
+ /**
+  * Whether two JSON values are equal in the sense of RFC 6902 § 4.6.
+  *
+@@ -592,24 +577,3 @@ function jsonEquals(left: JsonValue, right: JsonValue): boolean {
+   }
+   return left === right;
+ }
+-
+-/** Whether `value` is a JSON object, as opposed to an array, `null` or a primitive. */
+-function isJsonObject(value: JsonValue): value is JsonObject {
+-  return typeof value === 'object' && value !== null && !Array.isArray(value);
+-}
+-
+-/**
+- * Writes `value` as the `name` member of `object`.
+- *
+- * Defining the property rather than assigning it is what makes a member named `__proto__` an
+- * ordinary member: assigning that name would set the prototype instead, and the member would not
+- * exist at all.
+- */
+-function setMember(object: JsonObject, name: string, value: JsonValue): void {
+-  Object.defineProperty(object, name, {
+-    value,
+-    writable: true,
+-    enumerable: true,
+-    configurable: true,
+-  });
+-}
+diff --git a/src/json-value.ts b/src/json-value.ts
+index bc5fcc4c6316a6eb65eccc1667f72b667883e27e..0d3aa42634f4ac07fba07ef99021dc3df4188dfa 100644
+--- a/src/json-value.ts
++++ b/src/json-value.ts
+@@ -1,3 +1,13 @@
++/**
++ * The JSON values this library works on, and the handful of operations every feature needs on one.
++ *
++ * The operations live here, next to the type, because the features share them: copying a value and
++ * writing a member are the same thing whether a patch or a merge patch is being applied, and both
++ * must treat a member named `__proto__` as the plain member JSON says it is.
++ *
++ * @module
++ */
++
+ /**
+  * A value that can appear in a JSON document, i.e. anything `JSON.parse` can return.
+  *
+@@ -8,3 +18,45 @@ export type JsonValue = null | boolean | number | string | JsonValue[] | JsonObj
+ 
+ /** A JSON object: an unordered set of name/value members. */
+ export type JsonObject = { [member: string]: JsonValue };
++
++/** Whether `value` is a JSON object, as opposed to an array, `null` or a primitive. */
++export function isJsonObject(value: JsonValue): value is JsonObject {
++  return typeof value === 'object' && value !== null && !Array.isArray(value);
++}
++
++/**
++ * Deep-copies a JSON value, so that the copy shares no object or array with the original.
++ *
++ * Members are defined rather than assigned, so that a document declaring `__proto__` -- as
++ * `JSON.parse` lets it -- keeps it as the plain member it is instead of changing the copy's
++ * prototype.
++ */
++export function cloneJson(value: JsonValue): JsonValue {
++  if (Array.isArray(value)) {
++    return value.map(cloneJson);
++  }
++  if (isJsonObject(value)) {
++    const copy: JsonObject = {};
++    for (const [member, held] of Object.entries(value)) {
++      setMember(copy, member, cloneJson(held));
++    }
++    return copy;
++  }
++  return value;
++}
++
++/**
++ * Writes `value` as the `name` member of `object`.
++ *
++ * Defining the property rather than assigning it is what makes a member named `__proto__` an
++ * ordinary member: assigning that name would set the prototype instead, and the member would not
++ * exist at all.
++ */
++export function setMember(object: JsonObject, name: string, value: JsonValue): void {
++  Object.defineProperty(object, name, {
++    value,
++    writable: true,
++    enumerable: true,
++    configurable: true,
++  });
++}
+diff --git a/test/json-merge-patch.test.ts b/test/json-merge-patch.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..8f826def77affc6d5e4b387dbd8fa9d2a38bf2b2
+--- /dev/null
++++ b/test/json-merge-patch.test.ts
+@@ -0,0 +1,278 @@
++import { test } from 'node:test';
++import assert from 'node:assert/strict';
++
++import { applyMergePatch, type JsonObject, type JsonValue } from '../src/index.ts';
++
++/**
++ * Asserts that merging `patch` into `target` yields `expected`, without touching either input.
++ *
++ * Every case goes through here, because RFC 7386 has no failure modes to assert instead: the two
++ * things a caller can observe of a merge are the result and that its inputs are left alone.
++ */
++function assertMerges(target: JsonValue, patch: JsonValue, expected: JsonValue): JsonValue {
++  const targetBefore = structuredClone(target);
++  const patchBefore = structuredClone(patch);
++  const result = applyMergePatch(target, patch);
++  assert.deepEqual(result, expected);
++  assert.deepEqual(target, targetBefore, 'applyMergePatch must not change the target');
++  assert.deepEqual(patch, patchBefore, 'applyMergePatch must not change the patch');
++  return result;
++}
++
++// --- RFC 7386 appendix A: the specification's own test cases, verbatim -----------------------
++
++test('A: replaces the value of a member the target has', () => {
++  assertMerges({ a: 'b' }, { a: 'c' }, { a: 'c' });
++});
++
++test('A: adds a member the target does not have', () => {
++  assertMerges({ a: 'b' }, { b: 'c' }, { a: 'b', b: 'c' });
++});
++
++test('A: null removes a member, leaving an empty object', () => {
++  assertMerges({ a: 'b' }, { a: null }, {});
++});
++
++test('A: null removes one member and leaves the others', () => {
++  assertMerges({ a: 'b', b: 'c' }, { a: null }, { b: 'c' });
++});
++
++test('A: a value replaces an array wholesale', () => {
++  assertMerges({ a: ['b'] }, { a: 'c' }, { a: 'c' });
++});
++
++test('A: an array replaces a value wholesale', () => {
++  assertMerges({ a: 'c' }, { a: ['b'] }, { a: ['b'] });
++});
++
++test('A: merges into a nested object, replacing and removing', () => {
++  assertMerges({ a: { b: 'c' } }, { a: { b: 'd', c: null } }, { a: { b: 'd' } });
++});
++
++test('A: an array in the patch replaces an array of objects', () => {
++  assertMerges({ a: [{ b: 'c' }] }, { a: [1] }, { a: [1] });
++});
++
++test('A: an array patch replaces an array target', () => {
++  assertMerges(['a', 'b'], ['c', 'd'], ['c', 'd']);
++});
++
++test('A: an array patch replaces an object target', () => {
++  assertMerges({ a: 'b' }, ['c'], ['c']);
++});
++
++test('A: a null patch replaces the whole document', () => {
++  assertMerges({ a: 'foo' }, null, null);
++});
++
++test('A: a string patch replaces the whole document', () => {
++  assertMerges({ a: 'foo' }, 'bar', 'bar');
++});
++
++test('A: a null the patch does not mention is kept', () => {
++  assertMerges({ e: null }, { a: 1 }, { e: null, a: 1 });
++});
++
++test('A: an object patch discards a non-object target, nulls removing nothing', () => {
++  assertMerges([1, 2], { a: 'b', c: null }, { a: 'b' });
++});
++
++test('A: null removes a member that is not there, creating the objects above it', () => {
++  assertMerges({}, { a: { bb: { ccc: null } } }, { a: { bb: {} } });
++});
++
++// --- RFC 7386 § 1 and § 3: the examples in the specification's prose -------------------------
++
++test('§ 1 changes one member and removes a nested one', () => {
++  assertMerges(
++    { a: 'b', c: { d: 'e', f: 'g' } },
++    { a: 'z', c: { f: null } },
++    { a: 'z', c: { d: 'e' } },
++  );
++});
++
++test('§ 3 replaces, adds, removes a nested member and replaces an array', () => {
++  const result = assertMerges(
++    {
++      title: 'Goodbye!',
++      author: { givenName: 'John', familyName: 'Doe' },
++      tags: ['example', 'sample'],
++      content: 'This will be unchanged',
++    },
++    {
++      title: 'Hello!',
++      phoneNumber: '+01-123-456-7890',
++      author: { familyName: null },
++      tags: ['example'],
++    },
++    {
++      title: 'Hello!',
++      author: { givenName: 'John' },
++      tags: ['example'],
++      content: 'This will be unchanged',
++      phoneNumber: '+01-123-456-7890',
++    },
++  );
++  // The RFC prints the result with the added member last: members the target already had keep their
++  // place, and a new one goes at the end.
++  assert.equal(
++    JSON.stringify(result),
++    '{"title":"Hello!","author":{"givenName":"John"},"tags":["example"],' +
++      '"content":"This will be unchanged","phoneNumber":"+01-123-456-7890"}',
++  );
++});
++
++// --- the patch as a whole --------------------------------------------------------------------
++
++test('an empty object patch changes nothing', () => {
++  assertMerges({ a: 'b', c: [1, { d: null }] }, {}, { a: 'b', c: [1, { d: null }] });
++});
++
++test('a patch of a number, a boolean or an object replaces any target', () => {
++  assertMerges({ a: 'b' }, 42, 42);
++  assertMerges(['a'], false, false);
++  assertMerges(null, { a: 'b' }, { a: 'b' });
++  assertMerges(7, { a: 'b' }, { a: 'b' });
++  assertMerges('text', {}, {});
++});
++
++test('a target of any type is discarded by an object patch', () => {
++  // "if Target is not an Object: Target = {}": everything the target held is gone, including what
++  // the patch does not mention.
++  assertMerges(null, { a: 1 }, { a: 1 });
++  assertMerges(true, { a: 1 }, { a: 1 });
++  assertMerges(['keep?'], { a: 1 }, { a: 1 });
++});
++
++test('merging is recursive to any depth', () => {
++  assertMerges(
++    { a: { b: { c: { d: 'deep', e: 'gone' } } } },
++    { a: { b: { c: { d: 'deeper', e: null, f: 'new' } } } },
++    { a: { b: { c: { d: 'deeper', f: 'new' } } } },
++  );
++});
++
++test('an object patch replaces a nested non-object target', () => {
++  assertMerges({ a: 'b' }, { a: { c: 'd' } }, { a: { c: 'd' } });
++});
++
++test('null removes a member whatever it holds', () => {
++  assertMerges(
++    { object: { a: 1 }, array: [1], none: null, number: 0, text: '' },
++    { object: null, array: null, none: null, number: null, text: null },
++    {},
++  );
++});
++
++test('a merge patch cannot set a member to null, only remove it', () => {
++  // The limitation RFC 7386 § 1 states: a patch using explicit nulls cannot be expressed.
++  assertMerges({ a: 1 }, { a: null }, {});
++});
++
++test('members are merged in the order the patch lists them', () => {
++  const result = applyMergePatch({ b: 1 }, { c: 2, a: 3 });
++  assert.equal(JSON.stringify(result), '{"b":1,"c":2,"a":3}');
++});
++
++// --- the result is a new value ---------------------------------------------------------------
++
++test('the result shares nothing with the target', () => {
++  const target: JsonObject = { kept: { deep: [1, 2] }, replaced: 'old' };
++  const result = applyMergePatch(target, { replaced: 'new' }) as JsonObject;
++
++  assert.notEqual(result, target);
++  assert.notEqual(result['kept'], target['kept']);
++  (result['kept'] as JsonObject)['deep'] = ['changed'];
++  assert.deepEqual(target, { kept: { deep: [1, 2] }, replaced: 'old' });
++});
++
++test('the result shares nothing with the patch', () => {
++  const patch: JsonObject = { added: { deep: [1, 2] } };
++  const result = applyMergePatch({}, patch) as JsonObject;
++
++  assert.notEqual(result['added'], patch['added']);
++  (result['added'] as JsonObject)['deep'] = ['changed'];
++  assert.deepEqual(patch, { added: { deep: [1, 2] } });
++});
++
++test('a non-object patch is returned as a copy, not as itself', () => {
++  const patch: JsonValue = [1, { a: 'b' }];
++  const result = applyMergePatch({ a: 'b' }, patch);
++
++  assert.deepEqual(result, patch);
++  assert.notEqual(result, patch);
++  (result as JsonValue[]).push('appended');
++  assert.deepEqual(patch, [1, { a: 'b' }]);
++});
++
++test('an unchanged target is returned as a copy, not as itself', () => {
++  const target: JsonObject = { a: 'b' };
++  const result = applyMergePatch(target, {});
++
++  assert.deepEqual(result, target);
++  assert.notEqual(result, target);
++});
++
++// --- members are member names, not property lookups ------------------------------------------
++
++test('a patch member named __proto__ is written as a plain member', () => {
++  const patch = JSON.parse('{"__proto__": {"polluted": true}}') as JsonValue;
++  const result = applyMergePatch({ a: 'b' }, patch) as JsonObject;
++
++  assert.deepEqual(Object.keys(result).sort(), ['__proto__', 'a']);
++  assert.equal(Object.getPrototypeOf(result), Object.prototype);
++  assert.deepEqual(Object.getOwnPropertyDescriptor(result, '__proto__')?.value, {
++    polluted: true,
++  });
++  assert.equal(({} as { polluted?: unknown }).polluted, undefined);
++});
++
++test('a target member named __proto__ is merged into and removed like any other', () => {
++  const target = JSON.parse('{"__proto__": {"a": 1, "b": 2}}') as JsonValue;
++  const merged = applyMergePatch(target, JSON.parse('{"__proto__": {"b": null, "c": 3}}'));
++  assert.deepEqual(Object.getOwnPropertyDescriptor(merged, '__proto__')?.value, { a: 1, c: 3 });
++  assert.equal(Object.getPrototypeOf(merged), Object.prototype);
++
++  const removed = applyMergePatch(target, JSON.parse('{"__proto__": null}'));
++  assert.deepEqual(Object.keys(removed as JsonObject), []);
++});
++
++test('an inherited property is not a member the patch can remove or merge into', () => {
++  // `toString` is not a member of `{}`, so a null for it removes nothing and an object for it adds
++  // the member rather than merging with `Object.prototype.toString`.
++  assertMerges({}, { toString: null }, {});
++  const result = applyMergePatch({}, { toString: { a: 1 } }) as JsonObject;
++  assert.deepEqual(Object.keys(result), ['toString']);
++  assert.deepEqual(result['toString'], { a: 1 });
++});
++
++// --- values that are not JSON ----------------------------------------------------------------
++
++test('a member holding undefined is treated as absent from the patch', () => {
++  // `undefined` is not a JSON value, so a JavaScript caller writing it means "no such member",
++  // which is how `applyPatch` reads an operation's missing `value` too.
++  const patch = { a: undefined, b: 'set' } as unknown as JsonValue;
++  assert.deepEqual(applyMergePatch({ a: 'kept' }, patch), { a: 'kept', b: 'set' });
++});
++
++test('an undefined patch is no patch, and leaves the target as it is', () => {
++  const target: JsonObject = { a: 'b' };
++  const result = applyMergePatch(target, undefined as unknown as JsonValue);
++  assert.deepEqual(result, { a: 'b' });
++  assert.notEqual(result, target);
++});
++
++// --- the library's documented example --------------------------------------------------------
++
++test('the README example merges a partial update from a client', () => {
++  const stored = {
++    name: 'disk',
++    labels: { tier: 'cold', region: 'eu' },
++    sizes: [1, 2],
++  };
++  assertMerges(
++    stored,
++    { labels: { tier: 'hot', region: null }, sizes: [3] },
++    { name: 'disk', labels: { tier: 'hot' }, sizes: [3] },
++  );
++});

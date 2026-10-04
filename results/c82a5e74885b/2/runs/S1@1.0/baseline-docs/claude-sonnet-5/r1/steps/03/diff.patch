@@ -1,0 +1,86 @@
+diff --git a/src/index.test.ts b/src/index.test.ts
+index 16d4af4f3cadf756e683eb5d8aa2583ca1b93366..7904498a1eaada1b4001cae6114581c3f2a8df9f 100644
+--- a/src/index.test.ts
++++ b/src/index.test.ts
+@@ -226,6 +226,26 @@ test("applies several operations in sequence, each seeing the previous result",
+   assert.deepEqual(result, { items: [20, 3, 4] });
+ });
+ 
++test("treats '__proto__' as an ordinary member name for 'add', 'test' and 'remove'", () => {
++  const added = applyPatch({}, [{ op: "add", path: "/__proto__", value: { polluted: true } }]);
++  assert.equal(Object.prototype.hasOwnProperty.call(added, "__proto__"), true);
++  assert.deepEqual(added, JSON.parse('{"__proto__":{"polluted":true}}'));
++  assert.equal(({} as { polluted?: boolean }).polluted, undefined);
++
++  const tested = applyPatch(added, [{ op: "test", path: "/__proto__", value: { polluted: true } }]);
++  assert.deepEqual(tested, added);
++
++  const removed = applyPatch(added, [{ op: "remove", path: "/__proto__" }]);
++  assert.deepEqual(removed, {});
++});
++
++test("preserves and clones a document member literally named '__proto__'", () => {
++  const document = JSON.parse('{"__proto__":"value","foo":1}') as JsonValue;
++  const result = applyPatch(document, []);
++  assert.equal(Object.prototype.hasOwnProperty.call(result, "__proto__"), true);
++  assert.deepEqual(result, document);
++});
++
+ test("rejects a patch that is not an array", () => {
+   assert.throws(() => applyPatch({ foo: "bar" }, { op: "add", path: "/baz", value: 1 } as unknown as JsonPatchOperation[]), JsonPatchError);
+ });
+diff --git a/src/index.ts b/src/index.ts
+index 110b78c839ed81077952edeb246b7859a02f2f6e..6b096dc6b43031662e3db52fc39e35b43815ab5f 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -278,6 +278,23 @@ function isProperPrefix(prefixTokens: string[], tokens: string[]): boolean {
+   return prefixTokens.length < tokens.length && prefixTokens.every((token, index) => token === tokens[index]);
+ }
+ 
++/**
++ * Sets an own, enumerable data member on `container`.
++ *
++ * Member names are arbitrary strings in the JSON data model, including names like
++ * `"__proto__"` that are special-cased by plain property assignment in JavaScript
++ * (which would set the object's prototype instead of a data member, or silently do
++ * nothing). `Object.defineProperty` bypasses that special case.
++ */
++function setMember(container: ObjectContainer, key: string, value: JsonValue): void {
++  Object.defineProperty(container, key, {
++    value,
++    writable: true,
++    enumerable: true,
++    configurable: true,
++  });
++}
++
+ function insertAt(container: JsonValue[] | ObjectContainer, key: number | string, value: JsonValue, path: string): void {
+   if (Array.isArray(container)) {
+     const index = key as number;
+@@ -287,7 +304,7 @@ function insertAt(container: JsonValue[] | ObjectContainer, key: number | string
+     container.splice(index, 0, value);
+     return;
+   }
+-  container[key as string] = value;
++  setMember(container, key as string, value);
+ }
+ 
+ function removeAt(container: JsonValue[] | ObjectContainer, key: number | string, path: string): JsonValue {
+@@ -320,7 +337,7 @@ function replaceAt(container: JsonValue[] | ObjectContainer, key: number | strin
+   if (!Object.prototype.hasOwnProperty.call(container, objectKey)) {
+     throw new JsonPatchError(`Cannot replace path "${path}": member "${objectKey}" does not exist.`);
+   }
+-  container[objectKey] = value;
++  setMember(container, objectKey, value);
+ }
+ 
+ function cloneValue(value: JsonValue): JsonValue {
+@@ -330,7 +347,7 @@ function cloneValue(value: JsonValue): JsonValue {
+   if (value !== null && typeof value === "object") {
+     const result: ObjectContainer = {};
+     for (const key of Object.keys(value)) {
+-      result[key] = cloneValue(value[key]);
++      setMember(result, key, cloneValue(value[key]));
+     }
+     return result;
+   }

@@ -1,0 +1,154 @@
+diff --git a/docs/memory/task/task-003-fix-json-patch-rfc-6902-conformance-bugs.md b/docs/memory/task/task-003-fix-json-patch-rfc-6902-conformance-bugs.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..1a299360a1578b045f79fb6c71886f3e4dd10909
+--- /dev/null
++++ b/docs/memory/task/task-003-fix-json-patch-rfc-6902-conformance-bugs.md
+@@ -0,0 +1,54 @@
++---
++id: task-003-fix-json-patch-rfc-6902-conformance-bugs
++type: task
++title: "Fix JSON Patch RFC 6902 conformance bugs"
++status: pending
++---
++
++## Request
++
++Users of `applyPatch` report surprising results: some patches they consider invalid are accepted, some
++edge cases give results they did not expect, and a patch that fails does not always behave the way they
++read the standard. Review how patches are checked and applied, and make the behaviour conform to
++RFC 6902 in every case, errors included.
++
++## What was done
++
++Reviewed `validateOperation`, `addAt`, `removeAt`, `replaceAt`, and `applyOperation` in `src/index.ts`
++against RFC 6902 and dl-002, and probed them with the RFC appendix A examples plus additional edge
++cases (root-path operations, `__proto__`-named members, shared/mutated `value` references, move
++self-targets and array-append targets, malformed operations). Found and fixed two conformance bugs;
++everything else probed (validation ordering, array index rules, `move`'s remove-then-add sequencing,
++`test`'s deep-equality, atomicity on failure) already matched the RFC and dl-002.
++
++- **`add` silently dropped a member named `"__proto__"`.** `addAt`'s object branch wrote new members
++  with plain property assignment (`parent[lastToken] = value`). For a brand-new member named
++  `"__proto__"`, that expression does not create an own property at all: it invokes
++  `Object.prototype`'s `__proto__` accessor, which either repoints the object's own prototype (when
++  `value` is itself an object or `null`) or is silently ignored (otherwise). Either way, `add` reported
++  success but the member was never actually added — `JSON.stringify` of the result showed `{}`. Fixed
++  by creating the member with `Object.defineProperty(parent, lastToken, { value, writable: true,
++  enumerable: true, configurable: true })`, which always creates a real own data property regardless of
++  its name. (`replace`'s existing assignment was already safe, since `replace` only ever touches a
++  member that `step` has already confirmed exists as an own property, so the own-property lookup always
++  shadows the prototype accessor before any assignment happens.)
++- **`add` and `replace` aliased the operation's `value` into the result instead of cloning it.** dl-002
++  already decided that "every operation... deep-clones the value it inserts," specifically to prevent a
++  value aliasing two locations, but only `copy` actually did so (`structuredClone(value)` before calling
++  `addAt`). `add` and `replace` passed `operation.value` straight through. Passing the same literal
++  `value` to two `add` operations in one patch, or mutating the `value` object after calling
++  `applyPatch`, visibly changed the already-returned result — a direct violation of the "`document` is
++  never mutated" / no-aliasing guarantee the README and dl-002 both promise, extended here to the
++  patch's own input values. Fixed by cloning with `structuredClone(operation.value)` at the two call
++  sites in `applyOperation` for `add` and `replace`. `move` needed no change: the value it re-inserts
++  comes from removing it from the working clone, so it is already a uniquely-held reference with no
++  other alias to protect against.
++- Added failing-first regression tests to `src/index.test.ts` for both bugs (a member literally named
++  `__proto__` via `add` and `replace`; `add`'s and `replace`'s value no longer aliased after the call,
++  including two `add` operations sharing one literal) before applying each fix.
++
++## Verification
++
++- `npm test`: 43/43 passing (was 38/38 before this task; 5 new tests added, all were red before their
++  matching fix and green after).
++- `npm run typecheck`: no errors.
+diff --git a/src/index.test.ts b/src/index.test.ts
+index 3ce59c24c4e384596eab0b78f2f56fd9a267dabe..c23bc373cfdc718c6bf67a2e38bedf35dd90b000 100644
+--- a/src/index.test.ts
++++ b/src/index.test.ts
+@@ -189,6 +189,31 @@ test('copy duplicates a value without aliasing it', () => {
+   assert.notEqual(result.other, result.foo);
+ });
+ 
++test('"add" clones its value, so the same literal used twice is not aliased', () => {
++  const shared = { x: 1 };
++  const result = applyPatch({}, [
++    { op: 'add', path: '/a', value: shared },
++    { op: 'add', path: '/b', value: shared },
++  ]) as { a: { x: number }; b: { x: number } };
++  assert.notEqual(result.a, result.b);
++  (result.a as { x: number }).x = 999;
++  assert.equal(result.b.x, 1);
++});
++
++test('"add" clones its value, so mutating the caller\'s value afterwards has no effect', () => {
++  const value: { x: number } = { x: 1 };
++  const result = applyPatch({}, [{ op: 'add', path: '/a', value }]) as { a: { x: number } };
++  value.x = 999;
++  assert.equal(result.a.x, 1);
++});
++
++test('"replace" clones its value, so mutating the caller\'s value afterwards has no effect', () => {
++  const value: { x: number } = { x: 1 };
++  const result = applyPatch({ a: 0 }, [{ op: 'replace', path: '/a', value }]) as { a: { x: number } };
++  value.x = 999;
++  assert.equal(result.a.x, 1);
++});
++
+ test('does not mutate the input document', () => {
+   const document = { foo: ['bar', 'baz'] };
+   const snapshot = structuredClone(document);
+@@ -247,3 +272,25 @@ test('rejects moving a value into one of its own children', () => {
+     JsonPointerError,
+   );
+ });
++
++// Object members named like prototype internals must behave as plain data members.
++
++test('"add" can add a member literally named "__proto__"', () => {
++  const result = applyPatch({}, [{ op: 'add', path: '/__proto__', value: { polluted: true } }]) as Record<
++    string,
++    unknown
++  >;
++  assert.equal(Object.prototype.hasOwnProperty.call(result, '__proto__'), true);
++  assert.deepEqual(result.__proto__, { polluted: true });
++  assert.equal(({} as Record<string, unknown>).polluted, undefined);
++});
++
++test('"replace" on a member literally named "__proto__" replaces its own value', () => {
++  const document = JSON.parse('{"__proto__": 1}') as Record<string, unknown>;
++  const result = applyPatch(document, [{ op: 'replace', path: '/__proto__', value: 2 }]) as Record<
++    string,
++    unknown
++  >;
++  assert.equal(Object.prototype.hasOwnProperty.call(result, '__proto__'), true);
++  assert.equal(result.__proto__, 2);
++});
+diff --git a/src/index.ts b/src/index.ts
+index e33880affdef4f0d162abbf4026055f1e1a6c3d1..74cce29ba4d8fa853ab25725eb63607603093ffe 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -137,13 +137,13 @@ function validateOperation(rawOperation: unknown): JsonPatchOperation {
+ function applyOperation(box: { doc: unknown }, operation: JsonPatchOperation): void {
+   switch (operation.op) {
+     case 'add':
+-      addAt(box, operation.path, operation.value);
++      addAt(box, operation.path, structuredClone(operation.value));
+       return;
+     case 'remove':
+       removeAt(box, operation.path);
+       return;
+     case 'replace':
+-      replaceAt(box, operation.path, operation.value);
++      replaceAt(box, operation.path, structuredClone(operation.value));
+       return;
+     case 'move': {
+       const value = resolvePointer(box.doc, operation.from as string);
+@@ -199,7 +199,10 @@ function addAt(box: { doc: unknown }, pointer: string, value: unknown): void {
+   }
+ 
+   if (typeof parent === 'object' && parent !== null) {
+-    (parent as Record<string, unknown>)[lastToken] = value;
++    // Plain assignment would invoke Object.prototype's "__proto__" accessor instead of creating an
++    // own member, silently dropping the add (or repointing the object's prototype); defineProperty
++    // always creates a real own data property regardless of the member name.
++    Object.defineProperty(parent, lastToken, { value, writable: true, enumerable: true, configurable: true });
+     return;
+   }
+ 

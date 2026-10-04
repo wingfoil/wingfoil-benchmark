@@ -1,0 +1,171 @@
+diff --git a/README.md b/README.md
+index 9933574c1cc9173e5dc366147475f4cc2d76f78b..fbd1a834b7f973d7a5f7e41990b7b5ae3038ebf5 100644
+--- a/README.md
++++ b/README.md
+@@ -13,11 +13,13 @@ of its booking desk, written in TypeScript with no runtime dependency.
+ - `quote({ itemId, start, end })` returns the cost of renting an item for a period, without booking it.
+ - `book({ itemId, start, end })` books the item for the period and returns the booking, including its
+   `id`.
++- `availability({ start, end, kind })` returns the ids, sorted, of the equipment of `kind` (or of any
++  kind when `kind` is omitted) that is free for the whole period.
+ 
+ A period is a pair of UTC midnight ISO-8601 timestamps: it starts at midnight on its first day and ends
+-at midnight on the day after its last day. `quote` and `book` throw for an unknown item or a period that
+-does not fit this shape; `book` also throws if the item is already booked for part of that period.
+-Cancellation is not implemented yet.
++at midnight on the day after its last day. `quote`, `book` and `availability` throw for a period that
++does not fit this shape; `quote` and `book` also throw for an unknown item, and `book` throws if the item
++is already booked for part of that period. Cancellation is not implemented yet.
+ 
+ ## Development
+ 
+diff --git a/src/index.ts b/src/index.ts
+index 926a4fcb121bf2bb02d9a48937c378dcddbe695b..b5eae5e51fe27a3cf67166513d052f02405f12a2 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -1,2 +1,11 @@
+ export { createRentalService } from './rentalService.js';
+-export type { Equipment, EquipmentKind, RentalRequest, Quote, Booking, RentalService } from './rentalService.js';
++export type {
++  Equipment,
++  EquipmentKind,
++  Period,
++  RentalRequest,
++  AvailabilityQuery,
++  Quote,
++  Booking,
++  RentalService,
++} from './rentalService.js';
+diff --git a/src/rentalService.ts b/src/rentalService.ts
+index babe7a461079576c90344bd7f22a66b2f2cad908..5239f2924adb6ec8e4858215f48c7fd9de324cc6 100644
+--- a/src/rentalService.ts
++++ b/src/rentalService.ts
+@@ -14,15 +14,24 @@ export interface Equipment {
+   dailyPrice: number;
+ }
+ 
+-/** A request to quote or book an item for a period. */
+-export interface RentalRequest {
+-  itemId: string;
++/** A span of time between two UTC midnight ISO-8601 timestamps. */
++export interface Period {
+   /** Start of the period, as a UTC midnight ISO-8601 string. */
+   start: string;
+   /** End of the period (the day after its last day), as a UTC midnight ISO-8601 string. */
+   end: string;
+ }
+ 
++/** A request to quote or book an item for a period. */
++export interface RentalRequest extends Period {
++  itemId: string;
++}
++
++/** A request for the equipment free for a period, optionally restricted to one kind. */
++export interface AvailabilityQuery extends Period {
++  kind?: EquipmentKind;
++}
++
+ /** The cost of renting an item for a period, without booking it. */
+ export interface Quote {
+   itemId: string;
+@@ -47,6 +56,8 @@ export interface RentalService {
+   addEquipment(item: Equipment): void;
+   quote(request: RentalRequest): Quote;
+   book(request: RentalRequest): Booking;
++  /** Ids, sorted, of the equipment of the given kind (or any kind) free for the whole period. */
++  availability(query: AvailabilityQuery): string[];
+ }
+ 
+ /** A booking as kept internally, with its period also parsed to milliseconds for overlap checks. */
+@@ -76,11 +87,11 @@ export function createRentalService(): RentalService {
+     return Date.parse(value);
+   }
+ 
+-  function parsePeriod(request: RentalRequest): { startMs: number; endMs: number; days: number } {
+-    const startMs = parseMidnightUtc(request.start);
+-    const endMs = parseMidnightUtc(request.end);
++  function parsePeriod(period: Period): { startMs: number; endMs: number; days: number } {
++    const startMs = parseMidnightUtc(period.start);
++    const endMs = parseMidnightUtc(period.end);
+     if (endMs <= startMs) {
+-      throw new Error(`Invalid period: "${request.start}" to "${request.end}" is empty or inverted`);
++      throw new Error(`Invalid period: "${period.start}" to "${period.end}" is empty or inverted`);
+     }
+     return { startMs, endMs, days: (endMs - startMs) / MS_PER_DAY };
+   }
+@@ -121,5 +132,15 @@ export function createRentalService(): RentalService {
+       bookings.push(booking);
+       return { id: booking.id, itemId: booking.itemId, start: booking.start, end: booking.end, total: booking.total };
+     },
++
++    availability(query) {
++      const { startMs, endMs } = parsePeriod(query);
++
++      return Array.from(equipment.values())
++        .filter((item) => !query.kind || item.kind === query.kind)
++        .filter((item) => !bookings.some((b) => b.itemId === item.id && overlaps(startMs, endMs, b)))
++        .map((item) => item.id)
++        .sort();
++    },
+   };
+ }
+diff --git a/test/rentalService.test.ts b/test/rentalService.test.ts
+index 4a9f2bc2084fba2194225de4af0f6d85d35e8221..24ac481e62a1a854b07021d87559712835ea85f6 100644
+--- a/test/rentalService.test.ts
++++ b/test/rentalService.test.ts
+@@ -107,3 +107,55 @@ test('book allows the same period on two different items', () => {
+ 
+   assert.equal(sailBooking.itemId, 'sail-1');
+ });
++
++test('availability returns the ids of every item free for the period, sorted', () => {
++  const service = createRentalService();
++  service.addEquipment({ id: 'board-2', kind: 'board', dailyPrice: 1500 });
++  service.addEquipment({ id: 'board-1', kind: 'board', dailyPrice: 1500 });
++  service.addEquipment({ id: 'sail-1', kind: 'sail', dailyPrice: 800 });
++
++  const ids = service.availability({ start: '2024-06-01', end: '2024-06-04' });
++
++  assert.deepEqual(ids, ['board-1', 'board-2', 'sail-1']);
++});
++
++test('availability filters by kind when one is given', () => {
++  const service = createRentalService();
++  service.addEquipment({ id: 'board-1', kind: 'board', dailyPrice: 1500 });
++  service.addEquipment({ id: 'sail-1', kind: 'sail', dailyPrice: 800 });
++
++  const ids = service.availability({ start: '2024-06-01', end: '2024-06-04', kind: 'sail' });
++
++  assert.deepEqual(ids, ['sail-1']);
++});
++
++test('availability excludes an item booked for part of the period', () => {
++  const service = serviceWithBoard();
++  service.addEquipment({ id: 'board-2', kind: 'board', dailyPrice: 1500 });
++  service.book({ itemId: 'board-1', start: '2024-06-02', end: '2024-06-03' });
++
++  const ids = service.availability({ start: '2024-06-01', end: '2024-06-04' });
++
++  assert.deepEqual(ids, ['board-2']);
++});
++
++test('availability includes an item whose booking ends the day the period starts', () => {
++  const service = serviceWithBoard();
++  service.book({ itemId: 'board-1', start: '2024-05-30', end: '2024-06-01' });
++
++  const ids = service.availability({ start: '2024-06-01', end: '2024-06-04' });
++
++  assert.deepEqual(ids, ['board-1']);
++});
++
++test('availability throws when the period does not start and end at midnight UTC', () => {
++  const service = serviceWithBoard();
++
++  assert.throws(() => service.availability({ start: '2024-06-01T10:00:00Z', end: '2024-06-02' }));
++});
++
++test('availability throws when the period is empty or inverted', () => {
++  const service = serviceWithBoard();
++
++  assert.throws(() => service.availability({ start: '2024-06-02', end: '2024-06-01' }));
++});

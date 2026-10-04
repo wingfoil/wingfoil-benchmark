@@ -1,0 +1,243 @@
+diff --git a/README.md b/README.md
+index 1b094e468d5c0dfd0e7a5d71bc93d158eefa1d2e..18b0d78b4461434e11a387de0cbb5b111acd7ac1 100644
+--- a/README.md
++++ b/README.md
+@@ -116,11 +116,17 @@ Points RFC 6902 leaves easy to get wrong, and which this implementation observes
+ - a `test` on a location that holds nothing fails rather than erring: it is a question, and a
+   document holding nothing there is an answer of "no";
+ - members an operation does not define are ignored (§ 4), so an `add` carrying a `from` is not an
+-  error, and the `from` plays no part.
++  error; the `from` plays no part and is not even checked for being a pointer;
++- a reference token is a member name, not a property lookup: a patch reaches `__proto__` only on a
++  document that declares that member, and writes it as the plain member it is.
+ 
+-Two operations are rejected as `invalid-patch` because no document could satisfy them: removing or
+-moving the whole document (`path: ""`, which would leave no document at all), and moving a value
+-into one of its own children (§ 4.4).
++Three operations are rejected as `invalid-patch`, because no document could satisfy them:
++
++- moving a value into one of its own children, which § 4.4 forbids outright;
++- removing the whole document (`remove` with `path: ""`), and moving it away (`move` with
++  `from: ""`). RFC 6902 defines neither: a document cannot be absent, and `applyPatch` has no
++  "no document" to return. Rejecting them is this library's choice, taken so that the alternative —
++  inventing a `null` — cannot silently turn a lost document into a present one.
+ 
+ ## Development
+ 
+diff --git a/docs/memory/task/task-003-audit-applypatch-against-rfc-6902-and-pin-its-conformance.md b/docs/memory/task/task-003-audit-applypatch-against-rfc-6902-and-pin-its-conformance.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..9d644b37941e8cc4cae5e4f83b2b47c4feea06fd
+--- /dev/null
++++ b/docs/memory/task/task-003-audit-applypatch-against-rfc-6902-and-pin-its-conformance.md
+@@ -0,0 +1,126 @@
++---
++id: task-003-audit-applypatch-against-rfc-6902-and-pin-its-conformance
++type: task
++title: "Audit applyPatch against RFC 6902 and pin its conformance"
++status: pending
++---
++
++# Audit `applyPatch` against RFC 6902 and pin its conformance
++
++## Request
++
++Users of `applyPatch` report surprising results: patches they consider invalid being accepted, edge
++cases giving results they did not expect, and failures not behaving the way they read the standard.
++Review how patches are checked and applied, and make the behaviour conform to RFC 6902 in every
++case, errors included.
++
++## What was done
++
++The reported symptoms were treated as a conformance question and answered with evidence rather than
++with a guess at which line was wrong. **No behavioural defect was found: `applyPatch` already
++conforms to RFC 6902, in its operations and in the conditions under which it fails.** The source of
++`src/json-patch.ts` is therefore unchanged. What the audit did produce is the two things that were
++genuinely missing — tests pinning the corners nothing covered, and a README paragraph that
++described the behaviour wrongly.
++
++### How conformance was established
++
++Five independent checks, each able to fail on its own:
++
++1. **RFC 6902 appendix A** — every example in the specification, already in the suite (A.1–A.16),
++   re-read against the published text of the RFC rather than from memory.
++2. **The canonical `json-patch-tests` suite** (the vectors at `jsonpatch.com`, Apache-2.0): 91 of 91
++   cases pass, counting the records that carry neither `expected` nor `error` and so must leave the
++   document unchanged.
++3. **Differential testing against three independent implementations** — `json8-patch`, `rfc6902` and
++   `fast-json-patch` — over more than 100 000 randomly generated multi-operation patches, with
++   documents and pointers that included escaped tokens (`~0`, `~1`), members named `__proto__`,
++   `toString`, `a/b` and `a~b`, and root (`""`) paths. Every divergence found was a case where a
++   reference is the lax one and `applyPatch` is right: `rfc6902` cannot patch a document root at
++   all, `fast-json-patch` accepts a `move` whose destination index is past the end of the array it
++   has just shortened, and `json8-patch` lets a `copy` whose `from` location does not exist pass as
++   a silent no-op, where § 4.5 requires it to exist.
++4. **An implementation written from scratch off the RFC text**, kept deliberately naive (and
++   deriving `replace` from § 4.3's "remove followed by add" rather than from a direct write), then
++   diffed exhaustively: 63 882 single-operation and 163 056 two-operation cases over a fixed
++   universe of documents and pointers. Zero differences — in outcome *and* in which of the three
++   failure modes was reported.
++5. **Property checks** over 30 000 generated cases: the document and the patch are never mutated,
++   and no object or array of either is ever reachable from the result.
++
++Two further checks of the checking itself: a cross-product of 1 755 operation shapes confirming that
++each of the six operations requires exactly the members RFC 6902 § 4 says it does and ignores every
++other one however malformed; and `node --test --experimental-test-coverage`, which leaves only three
++defensive `throw error` re-throws uncovered.
++
++### Where the surprise actually comes from
++
++Every symptom in the request maps to a place where the RFC says something that is easy to read the
++other way, and where this implementation follows the RFC:
++
++- *"patches they consider invalid are accepted"* — § 4 requires that members not defined for an
++  operation "MUST be ignored", so an `add` carrying a `from` is valid and the `from` is not even
++  parsed. Likewise `move` from a location to itself, and `copy` into a child of its own source,
++  which only `move` is forbidden (§ 4.4) to do.
++- *"edge cases give results they did not expect"* — § 4.4 makes `move` a `remove` followed by an
++  `add`, so a destination index inside the same array is counted after the element has gone:
++  `/0` to `/2` in `[1,2,3]` gives `[2,3,1]`, and `/0` to `/3` fails. Appendix A.7 is this exact
++  case. On an object, `-` and `0` are plain member names, not indices.
++- *"a patch that fails does not behave the way they read the standard"* — a `test` whose location
++  holds nothing reports `test-failed`, not an operation error: § 4.6 makes success mean "the target
++  location is equal to the value", and § 5 lists "`test` operation failure" among the error
++  conditions. A caller distinguishing a lost race from a bad patch depends on that.
++
++The only behaviour in the library that RFC 6902 does not settle one way or the other is the
++rejection of `remove` with `path: ""` and of `move` with `from: ""`. The RFC has no notion of an
++absent document and `applyPatch` returns a `JsonValue`, so there is nothing to return; the
++alternatives in the wild are `undefined` (`json8-patch`) and `null` (`fast-json-patch`), either of
++which turns a lost document into a present one. The existing choice — reject, as `invalid-patch` —
++was kept and is now documented as a choice rather than as something the RFC requires.
++
++### Changes
++
++- `test/json-patch.test.ts` — seven characterization tests (the behaviour exists; they were expected
++  to pass on their first run, and did), covering what the suite left unpinned: every token being a
++  member name on an object (`-`, `0`, `01`, `""`); only the § 4 array-index form naming an element on
++  an array, across all five operations that reach one (`00`, `01`, `1e0`, `+1`, `-0`, `" 1"`, `1.0`,
++  `0x1`, `length`); escaped tokens decoded in `from` as well as in `path`, with `~01` decoding to
++  `~1` and not to `/`; `move` and `copy` targeting the whole document; an undefined member being
++  ignored even when malformed; a patch being unable to reach an object prototype through
++  `/__proto__/...` or `/constructor/prototype/...`; and a `move` whose `add` half fails after its
++  `remove` half succeeded leaving the document whole.
++- `README.md` — the paragraph on the rejected operations said both of them used `path: ""`, when
++  `move` is rejected on its `from`. Rewritten to name the three rejections correctly, to separate
++  the one § 4.4 mandates from the two the RFC leaves open, and to say why the open ones are
++  rejected. Two bullets gained the facts the new tests pin: that an ignored member is not validated
++  either, and that a pointer reaches `__proto__` only where the document declares it.
++- `src/` — unchanged.
++
++## Verification
++
++- `npm test` — 100 tests, 100 pass, 0 fail (93 before, 7 added).
++- `npm run typecheck` — clean, sources and tests, `strict` on.
++- `npm run build` — clean; the rebuilt `dist/` is byte-identical to the committed one, confirming no
++  source changed.
++- The external checks above were re-run after the edits: 91/91 canonical cases, 63 882 exhaustive
++  single-operation cases with 0 differences, 0 problems in the operation-shape cross-product.
++- The README's worked example and the JSON Pointer example above it were run as written and print
++  what they claim.
++
++## Decisions recorded
++
++None. No new decision was taken: the audit confirms the behaviour `dl-002` already describes, and
++the one point it touches — rejecting `remove`/`move` of the whole document — is that document's
++decision, now also stated in the README as a choice rather than an RFC requirement.
++
++## Follow-up
++
++- `dl-002-shape-and-semantics-of-applypatch-errors-immutability-and-rfc-6902-strictness` and
++  `task-002-implement-json-patch-applypatch-rfc-6902` are both still `pending`. The behaviour they
++  describe is now independently verified, which is the evidence an approver would want.
++- The canonical `json-patch-tests` vectors are Apache-2.0 and were used from a scratch directory,
++  not vendored. If the team wants them run in CI, that is a dev dependency and an attribution to
++  add deliberately, not a side effect of this audit.
++- Equality of numbers is JavaScript's, so two integers beyond 2^53 that `JSON.parse` has rounded to
++  the same double compare equal under `test`. That is a property of `JsonValue` being built on JS
++  numbers, not of the patch code, and it would have to be answered for the whole library at once.
+diff --git a/test/json-patch.test.ts b/test/json-patch.test.ts
+index 0ba99be09dc27a7eee614167cdb832d7d902edd0..2e28c30e0a1863be136d1386998f566b9ec6aea4 100644
+--- a/test/json-patch.test.ts
++++ b/test/json-patch.test.ts
+@@ -638,3 +638,80 @@ test('keeps the pointer failure that explains an invalid "path" as the error cau
+   assert.equal(error.cause.reason, 'invalid-pointer');
+   assert.doesNotMatch(error.message, /\.\./, 'the quoted message must not double the full stop');
+ });
++
++// --- conformance corners ----------------------------------------------------------------------
++// The points of RFC 6902 that the operation-by-operation tests above leave implicit, and that an
++// implementation can get wrong without any of them noticing.
++
++test('every token on an object is a member name, "-" and digits included', () => {
++  // Only an array gives "-" and the digit strings their RFC 6901 § 4 meaning. On an object they are
++  // ordinary member names, so a patch must not treat them as indices there.
++  assertPatches({}, [{ op: 'add', path: '/-', value: 1 }], { '-': 1 });
++  assertPatches({}, [{ op: 'add', path: '/0', value: 1 }], { '0': 1 });
++  assertPatches({ '-': 1, '0': 2 }, [{ op: 'remove', path: '/-' }], { '0': 2 });
++  assertPatches({ '01': 1 }, [{ op: 'replace', path: '/01', value: 2 }], { '01': 2 });
++  assertPatches({ '': 1 }, [{ op: 'test', path: '/', value: 1 }], { '': 1 });
++});
++
++test('on an array only the array-index form of RFC 6901 § 4 names an element', () => {
++  // A token that is not "0" or digits without a leading zero names no element, whatever JavaScript
++  // would coerce it to; "-" is left out because RFC 6902 § 4.1 gives it a meaning for "add".
++  for (const token of ['00', '01', '1e0', '+1', '-0', ' 1', '1 ', '1.0', '0x1', 'length']) {
++    assertFails([1, 2, 3], [{ op: 'add', path: `/${token}`, value: 9 }], 'operation-failed');
++    assertFails([1, 2, 3], [{ op: 'remove', path: `/${token}` }], 'operation-failed');
++    assertFails([1, 2, 3], [{ op: 'replace', path: `/${token}`, value: 9 }], 'operation-failed');
++    assertFails([1, 2, 3], [{ op: 'copy', from: `/${token}`, path: '/0' }], 'operation-failed');
++    assertFails([1, 2, 3], [{ op: 'test', path: `/${token}`, value: 1 }], 'test-failed');
++  }
++});
++
++test('escaped reference tokens are decoded in "path" and in "from" alike', () => {
++  assertPatches({}, [{ op: 'add', path: '/a~1b', value: 1 }], { 'a/b': 1 });
++  assertPatches({}, [{ op: 'add', path: '/a~0b', value: 1 }], { 'a~b': 1 });
++  assertPatches({ 'a/b': 1 }, [{ op: 'move', from: '/a~1b', path: '/c' }], { c: 1 });
++  assertPatches({ 'a~b': 1 }, [{ op: 'copy', from: '/a~0b', path: '/c' }], { 'a~b': 1, c: 1 });
++  assertPatches({ 'a/b': 1, c: 2 }, [{ op: 'remove', path: '/a~1b' }], { c: 2 });
++  // "~01" is the two characters "~1", not "/": unescaping replaces "~1" before "~0".
++  assertPatches({ '~1': 1, '/': 2 }, [{ op: 'remove', path: '/~01' }], { '/': 2 });
++});
++
++test('move and copy can target the whole document', () => {
++  assertPatches({ a: { b: 1 } }, [{ op: 'move', from: '/a', path: '' }], { b: 1 });
++  assertPatches({ a: 1 }, [{ op: 'copy', from: '/a', path: '' }], 1);
++  assertPatches({ a: 1 }, [{ op: 'copy', from: '', path: '' }], { a: 1 });
++});
++
++test('a member the operation does not define is ignored, malformed or not', () => {
++  // RFC 6902 § 4 has an undefined member ignored "as if [it] did not appear in the object", so its
++  // contents are never validated either: a "from" on an "add" is not parsed as a JSON Pointer.
++  assertPatches({ a: 1 }, [{ op: 'add', path: '/b', value: 2, from: 'not-a-pointer' }], {
++    a: 1,
++    b: 2,
++  });
++  assertPatches({ a: 1, b: 2 }, [{ op: 'remove', path: '/b', from: '/a~b' }], { a: 1 });
++  assertPatches({ a: 1 }, [{ op: 'test', path: '/a', value: 1, from: 7 }], { a: 1 });
++  const moveWithValue = [{ op: 'move', from: '/a', path: '/b', value: undefined }];
++  assertPatches({ a: 1 }, moveWithValue as unknown as JsonValue, { b: 1 });
++});
++
++test('a patch cannot reach an object prototype through its pointers', () => {
++  // "/__proto__" resolves only on a document that declares that member, so the classic pollution
++  // route -- walking into Object.prototype and writing there -- is a failed operation instead.
++  for (const operation of [
++    { op: 'add', path: '/__proto__/polluted', value: true },
++    { op: 'replace', path: '/__proto__/polluted', value: true },
++    { op: 'copy', from: '/a', path: '/__proto__/polluted' },
++    { op: 'move', from: '/a', path: '/__proto__/polluted' },
++    { op: 'add', path: '/constructor/prototype/polluted', value: true },
++  ] as JsonValue[]) {
++    assertFails({ a: 1 }, [operation], 'operation-failed');
++  }
++  assert.equal(({} as { polluted?: boolean }).polluted, undefined);
++});
++
++test('a move whose add fails leaves the document whole, not half-moved', () => {
++  // The remove half of § 4.4 has already run when the add half fails. Because the operations run on
++  // a copy, § 5 still holds: the document keeps the value the move was taking out of it.
++  assertFails({ a: 1, b: [] }, [{ op: 'move', from: '/a', path: '/b/3' }], 'operation-failed');
++  assertFails({ a: 1, b: 1 }, [{ op: 'move', from: '/a', path: '/b/c' }], 'operation-failed');
++});

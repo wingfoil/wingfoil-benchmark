@@ -1,0 +1,255 @@
+diff --git a/README.md b/README.md
+index ff92be649ff3f610b38798b3310751534d032814..9604fed4656bf504d8cbb3a32f184beadae0c0c9 100644
+--- a/README.md
++++ b/README.md
+@@ -3,3 +3,20 @@
+ A small TypeScript library, with no runtime dependency, of building blocks for our services that store,
+ exchange and update JSON: configuration files, API payloads and stored records. It is imported by the
+ other projects of the team, so its behaviour must follow the published standards it implements.
++
++## API
++
++### `resolvePointer(document, pointer)`
++
++Resolves a [JSON Pointer](https://www.rfc-editor.org/rfc/rfc6901) (RFC 6901) against a JSON document and
++returns the value it refers to.
++
++```ts
++import { resolvePointer } from 'json-toolkit';
++
++resolvePointer({ foo: ['bar', 'baz'] }, '/foo/0'); // 'bar'
++resolvePointer({ foo: ['bar', 'baz'] }, ''); // { foo: ['bar', 'baz'] }
++```
++
++Throws an error when `pointer` is not a syntactically valid JSON Pointer, or when it does not resolve to
++a value in `document` (e.g. a missing member, an out-of-bounds array index, or indexing into a scalar).
+diff --git a/docs/memory/decision-log/dl-001-resolvepointer-error-semantics-and-native-ts-execution.md b/docs/memory/decision-log/dl-001-resolvepointer-error-semantics-and-native-ts-execution.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..5076a0cc7a614b82dcf78b78f5c3cd4ffe1d575c
+--- /dev/null
++++ b/docs/memory/decision-log/dl-001-resolvepointer-error-semantics-and-native-ts-execution.md
+@@ -0,0 +1,45 @@
++---
++id: dl-001-resolvepointer-error-semantics-and-native-ts-execution
++type: decision-log
++title: "resolvePointer error semantics and native TS execution"
++status: approved
++---
++
++## Context
++
++Implementing `resolvePointer(document, pointer)` (RFC 6901) raised two choices not fully pinned down
++by the task description: (1) exactly which cases count as "does not resolve to a value" and must
++throw, since RFC 6901 leaves some of this to the implementer; (2) how to run and test TypeScript
++source in a package that ships no build step and no test framework beyond `node --test`.
++
++## Decision
++
++1. **Error semantics.** `resolvePointer` throws in every case where RFC 6901 does not guarantee a
++   value, not only on clear syntax errors:
++   - Pointer syntax: non-empty pointers not starting with `/` throw (invalid pointer).
++   - Array indices: only `0` or a non-zero-leading digit sequence is accepted; `-` (RFC 6901's
++     "nonexistent element after the last array element") and out-of-bounds indices throw, since
++     neither names an existing value.
++   - Object members: a missing key throws.
++   - Indexing into a scalar (string, number, boolean, null) with a remaining token throws.
++   This is stricter than "return undefined on miss," matching the task's explicit requirement that
++   the function throws when the pointer "does not resolve to a value of the document."
++
++2. **Native TypeScript execution.** No build step, `ts-node`, or test framework was added. Node 22.23
++   (this project's runtime) runs `.ts` files directly via its built-in type-stripping, enabled by
++   default, so `node --test` (already the `test` script in `package.json`) executes
++   `test/index.test.ts` straight from source. Relative imports in source/tests use the real `.ts`
++   extension (e.g. `from '../src/index.ts'`), since Node's ESM resolver does not substitute
++   extensions. `typescript` was installed ad hoc (not saved to `package.json`) only to run
++   `tsc --noEmit` as a one-off strict-mode type check.
++
++## Consequences
++
++- Follow-on features that build on `resolvePointer` can rely on it throwing rather than returning
++  `undefined`/`null` for any unresolvable pointer; callers that want a non-throwing lookup must wrap
++  it in `try`/`catch`.
++- The test suite only runs on a Node version with type-stripping on by default (22.x here); if the
++  project later needs to run on an older Node, or adds a bundler/build step, this choice should be
++  revisited.
++- `typescript` is not yet a declared dependency; anyone wanting `tsc` type-checking locally must
++  install it themselves until/unless a future change adds it (and a lint/typecheck script) formally.
+diff --git a/docs/memory/task/task-001-implement-json-pointer-rfc-6901-resolvepointer.md b/docs/memory/task/task-001-implement-json-pointer-rfc-6901-resolvepointer.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..5949c61e729dacff2ff24987863ea0a3ddb5b115
+--- /dev/null
++++ b/docs/memory/task/task-001-implement-json-pointer-rfc-6901-resolvepointer.md
+@@ -0,0 +1,38 @@
++---
++id: task-001-implement-json-pointer-rfc-6901-resolvepointer
++type: task
++title: "Implement JSON Pointer (RFC 6901) resolvePointer"
++status: approved
++---
++
++## Request
++
++Implement JSON Pointer (RFC 6901). Export `resolvePointer(document, pointer)` from `src/index.ts`,
++resolving a JSON Pointer string against a JSON document. It throws when the pointer is not
++syntactically valid, or when it does not resolve to a value in the document. This is the first of
++several features that build on each other; later ones will use `resolvePointer`.
++
++## What was done
++
++- Added `src/index.ts` exporting `resolvePointer(document, pointer)`:
++  - Empty string resolves to the whole document.
++  - Non-empty pointers must start with `/`; reference tokens are split on `/` and unescaped
++    (`~1` → `/`, then `~0` → `~`, per RFC 6901 §3).
++  - Object members are looked up by exact (unescaped) key; missing members throw.
++  - Array elements are looked up by canonical index (`0` or a non-zero-leading digit sequence);
++    `-`, leading zeroes, and out-of-bounds indices all throw, since none resolve to a value.
++  - Indexing into a scalar (string, number, boolean, null) throws.
++- Added `test/index.test.ts` (`node:test`), covering the RFC 6901 §5 worked example (including every
++  escaped-key case) plus the error paths above. Wrote the tests first, confirmed they failed with no
++  implementation present (module-not-found), then implemented `resolvePointer` until all 10 passed.
++- Documented the function in `README.md` under a new "API" section with a usage example.
++- Ran `npx tsc --noEmit` (TypeScript installed ad hoc, not added as a dependency) to confirm the
++  strict-mode types check cleanly; no linter is configured in this repository yet.
++
++## Notes for follow-on features
++
++- `node --test` runs `.ts` test files directly (Node 22's native type-stripping is on by default);
++  no build step or ts-node is needed. Relative imports must use the real `.ts` extension
++  (e.g. `from '../src/index.ts'`), since Node's ESM resolver does not do extension substitution.
++- No `typescript` devDependency exists in `package.json` yet; `tsc` was only used locally to verify
++  types, not wired into any script.
+diff --git a/src/index.ts b/src/index.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..3786f489fefaa11916f774f9bc32df151ac91f25
+--- /dev/null
++++ b/src/index.ts
+@@ -0,0 +1,57 @@
++const ARRAY_INDEX = /^(?:0|[1-9][0-9]*)$/;
++
++/**
++ * Resolves a JSON Pointer (RFC 6901) against a JSON document.
++ *
++ * @param document - The JSON document to resolve the pointer against.
++ * @param pointer - A JSON Pointer string, e.g. `"/foo/0"`. The empty string refers to the whole document.
++ * @returns The value the pointer refers to.
++ * @throws {Error} If `pointer` is not syntactically a valid JSON Pointer, or does not resolve to a value in `document`.
++ */
++export function resolvePointer(document: unknown, pointer: string): unknown {
++  return parsePointer(pointer).reduce<unknown>(
++    (value, token) => resolveToken(value, token, pointer),
++    document,
++  );
++}
++
++function parsePointer(pointer: string): string[] {
++  if (typeof pointer !== 'string') {
++    throw new TypeError('A JSON Pointer must be a string.');
++  }
++  if (pointer === '') {
++    return [];
++  }
++  if (!pointer.startsWith('/')) {
++    throw new Error(`Invalid JSON Pointer "${pointer}": must be empty or start with "/".`);
++  }
++  return pointer.split('/').slice(1).map(unescapeToken);
++}
++
++function unescapeToken(token: string): string {
++  return token.replace(/~1/g, '/').replace(/~0/g, '~');
++}
++
++function resolveToken(value: unknown, token: string, pointer: string): unknown {
++  if (Array.isArray(value)) {
++    if (!ARRAY_INDEX.test(token)) {
++      throw new Error(`Invalid JSON Pointer "${pointer}": "${token}" is not a valid array index.`);
++    }
++    const index = Number(token);
++    if (index >= value.length) {
++      throw new Error(`JSON Pointer "${pointer}" does not resolve to a value: index ${index} is out of bounds.`);
++    }
++    return value[index];
++  }
++  if (isJsonObject(value)) {
++    if (!Object.prototype.hasOwnProperty.call(value, token)) {
++      throw new Error(`JSON Pointer "${pointer}" does not resolve to a value: no member "${token}".`);
++    }
++    return value[token];
++  }
++  throw new Error(`JSON Pointer "${pointer}" does not resolve to a value: cannot index into ${typeof value}.`);
++}
++
++function isJsonObject(value: unknown): value is Record<string, unknown> {
++  return typeof value === 'object' && value !== null && !Array.isArray(value);
++}
+diff --git a/test/index.test.ts b/test/index.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..e6cbc79c393746b734218ad92b6d729d8745e3b8
+--- /dev/null
++++ b/test/index.test.ts
+@@ -0,0 +1,66 @@
++import { test } from 'node:test';
++import assert from 'node:assert/strict';
++import { resolvePointer } from '../src/index.ts';
++
++// Document from RFC 6901 §5.
++const document = {
++  foo: ['bar', 'baz'],
++  '': 0,
++  'a/b': 1,
++  'c%d': 2,
++  'e^f': 3,
++  'g|h': 4,
++  'i\\j': 5,
++  'k"l': 6,
++  ' ': 7,
++  'm~n': 8,
++};
++
++test('empty pointer resolves to the whole document', () => {
++  assert.deepEqual(resolvePointer(document, ''), document);
++});
++
++test('resolves a top-level member', () => {
++  assert.deepEqual(resolvePointer(document, '/foo'), ['bar', 'baz']);
++});
++
++test('resolves an array element by index', () => {
++  assert.equal(resolvePointer(document, '/foo/0'), 'bar');
++  assert.equal(resolvePointer(document, '/foo/1'), 'baz');
++});
++
++test('resolves members needing escape decoding', () => {
++  assert.equal(resolvePointer(document, '/'), 0);
++  assert.equal(resolvePointer(document, '/a~1b'), 1);
++  assert.equal(resolvePointer(document, '/c%d'), 2);
++  assert.equal(resolvePointer(document, '/e^f'), 3);
++  assert.equal(resolvePointer(document, '/g|h'), 4);
++  assert.equal(resolvePointer(document, '/i\\j'), 5);
++  assert.equal(resolvePointer(document, '/k"l'), 6);
++  assert.equal(resolvePointer(document, '/ '), 7);
++  assert.equal(resolvePointer(document, '/m~0n'), 8);
++});
++
++test('rejects a pointer that does not start with "/"', () => {
++  assert.throws(() => resolvePointer(document, 'foo'));
++});
++
++test('rejects an out-of-bounds array index', () => {
++  assert.throws(() => resolvePointer(document, '/foo/2'));
++});
++
++test('rejects "-" as an array index, since it names no value', () => {
++  assert.throws(() => resolvePointer(document, '/foo/-'));
++});
++
++test('rejects a non-canonical array index', () => {
++  assert.throws(() => resolvePointer(document, '/foo/01'));
++});
++
++test('rejects indexing into a scalar', () => {
++  assert.throws(() => resolvePointer(document, '/foo/0/bar'));
++});
++
++test('rejects a member that does not exist', () => {
++  assert.throws(() => resolvePointer(document, '/missing'));
++});

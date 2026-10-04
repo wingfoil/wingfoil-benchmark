@@ -1,0 +1,230 @@
+diff --git a/src/index.ts b/src/index.ts
+index c75c8e5d52cc9ec9d14edb23b316e2ea4e90344c..509d741082e945cd8fd3c485ec4d75cd211cd189 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -321,3 +321,122 @@ function mergePatch(target: unknown, patch: unknown): unknown {
+ export function applyMergePatch(target: unknown, patch: unknown): unknown {
+   return mergePatch(toJsonValue(target), toJsonValue(patch));
+ }
++
++type Operation =
++  | { op: "add"; path: string; value: unknown }
++  | { op: "remove"; path: string }
++  | { op: "replace"; path: string; value: unknown };
++
++function escapeToken(token: string): string {
++  return token.replace(/~/g, "~0").replace(/\//g, "~1");
++}
++
++function toPointer(tokens: string[]): string {
++  return tokens.map((token) => `/${escapeToken(token)}`).join("");
++}
++
++function isPlainObjectValue(value: unknown): value is Record<string, unknown> {
++  return value !== null && typeof value === "object" && !Array.isArray(value);
++}
++
++function computeLcsMatches(from: unknown[], to: unknown[]): Array<[number, number]> {
++  const n = from.length;
++  const m = to.length;
++  const dp: number[][] = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0));
++  for (let i = n - 1; i >= 0; i--) {
++    for (let j = m - 1; j >= 0; j--) {
++      dp[i][j] = deepEqual(from[i], to[j]) ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
++    }
++  }
++  const matches: Array<[number, number]> = [];
++  let i = 0;
++  let j = 0;
++  while (i < n && j < m) {
++    if (deepEqual(from[i], to[j]) && dp[i][j] === dp[i + 1][j + 1] + 1) {
++      matches.push([i, j]);
++      i++;
++      j++;
++    } else if (dp[i + 1][j] >= dp[i][j + 1]) {
++      i++;
++    } else {
++      j++;
++    }
++  }
++  return matches;
++}
++
++function objectDiff(
++  pathTokens: string[],
++  from: Record<string, unknown>,
++  to: Record<string, unknown>,
++  ops: Operation[],
++): void {
++  for (const key of Object.keys(from)) {
++    if (Object.prototype.hasOwnProperty.call(to, key)) {
++      diffValues([...pathTokens, key], from[key], to[key], ops);
++    } else {
++      ops.push({ op: "remove", path: toPointer([...pathTokens, key]) });
++    }
++  }
++  for (const key of Object.keys(to)) {
++    if (!Object.prototype.hasOwnProperty.call(from, key)) {
++      ops.push({ op: "add", path: toPointer([...pathTokens, key]), value: to[key] });
++    }
++  }
++}
++
++function arrayDiff(pathTokens: string[], from: unknown[], to: unknown[], ops: Operation[]): void {
++  const matches = computeLcsMatches(from, to);
++  let fi = 0;
++  let ti = 0;
++  let currentIndex = 0;
++
++  const processGap = (mi: number, mj: number): void => {
++    const delCount = mi - fi;
++    const insCount = mj - ti;
++    const common = Math.min(delCount, insCount);
++    for (let k = 0; k < common; k++) {
++      diffValues([...pathTokens, String(currentIndex + k)], from[fi + k], to[ti + k], ops);
++    }
++    for (let k = common; k < delCount; k++) {
++      ops.push({ op: "remove", path: toPointer([...pathTokens, String(currentIndex + common)]) });
++    }
++    for (let k = common; k < insCount; k++) {
++      ops.push({ op: "add", path: toPointer([...pathTokens, String(currentIndex + k)]), value: to[ti + k] });
++    }
++    currentIndex += insCount;
++    fi = mi;
++    ti = mj;
++  };
++
++  for (const [mi, mj] of matches) {
++    processGap(mi, mj);
++    currentIndex += 1;
++    fi = mi + 1;
++    ti = mj + 1;
++  }
++  processGap(from.length, to.length);
++}
++
++function diffValues(pathTokens: string[], from: unknown, to: unknown, ops: Operation[]): void {
++  if (deepEqual(from, to)) {
++    return;
++  }
++  if (Array.isArray(from) && Array.isArray(to)) {
++    arrayDiff(pathTokens, from, to, ops);
++    return;
++  }
++  if (isPlainObjectValue(from) && isPlainObjectValue(to)) {
++    objectDiff(pathTokens, from, to, ops);
++    return;
++  }
++  ops.push({ op: "replace", path: toPointer(pathTokens), value: to });
++}
++
++export function createPatch(from: unknown, to: unknown): Operation[] {
++  const fromValue = toJsonValue(from);
++  const toValue = toJsonValue(to);
++  const ops: Operation[] = [];
++  diffValues([], fromValue, toValue, ops);
++  return ops;
++}
+diff --git a/test/create-patch.test.ts b/test/create-patch.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..a6de453950c8649d771406f4e71f5b98cbc53137
+--- /dev/null
++++ b/test/create-patch.test.ts
+@@ -0,0 +1,97 @@
++import { test } from "node:test";
++import assert from "node:assert/strict";
++import { applyPatch, createPatch } from "../src/index.ts";
++
++function assertRoundTrip(from: unknown, to: unknown): void {
++  const patch = createPatch(from, to);
++  assert.deepEqual(applyPatch(from, patch), to);
++}
++
++test("does not mutate either input", () => {
++  const from = { a: 1, nested: { b: 2 } };
++  const to = { a: 2, nested: { b: 2 } };
++  createPatch(from, to);
++  assert.deepEqual(from, { a: 1, nested: { b: 2 } });
++  assert.deepEqual(to, { a: 2, nested: { b: 2 } });
++});
++
++test("no changes produces an empty patch", () => {
++  assert.deepEqual(createPatch({ a: 1, b: [1, 2] }, { a: 1, b: [1, 2] }), []);
++});
++
++test("replacing a member value", () => {
++  const patch = createPatch({ a: "b" }, { a: "c" });
++  assert.deepEqual(patch, [{ op: "replace", path: "/a", value: "c" }]);
++  assertRoundTrip({ a: "b" }, { a: "c" });
++});
++
++test("adding a member value", () => {
++  const patch = createPatch({ a: "b" }, { a: "b", c: "d" });
++  assert.deepEqual(patch, [{ op: "add", path: "/c", value: "d" }]);
++  assertRoundTrip({ a: "b" }, { a: "b", c: "d" });
++});
++
++test("removing a member value", () => {
++  const patch = createPatch({ a: "b", c: "d" }, { a: "b" });
++  assert.deepEqual(patch, [{ op: "remove", path: "/c" }]);
++  assertRoundTrip({ a: "b", c: "d" }, { a: "b" });
++});
++
++test("only describes what changed deep inside a document", () => {
++  const from = { a: "unchanged", nested: { x: 1, y: 2 }, list: [1, 2, 3] };
++  const to = { a: "unchanged", nested: { x: 1, y: 99 }, list: [1, 2, 3] };
++  const patch = createPatch(from, to);
++  assert.deepEqual(patch, [{ op: "replace", path: "/nested/y", value: 99 }]);
++  assertRoundTrip(from, to);
++});
++
++test("appending an array element", () => {
++  const patch = createPatch({ a: [1, 2] }, { a: [1, 2, 3] });
++  assert.deepEqual(patch, [{ op: "add", path: "/a/2", value: 3 }]);
++  assertRoundTrip({ a: [1, 2] }, { a: [1, 2, 3] });
++});
++
++test("removing a trailing array element", () => {
++  const patch = createPatch({ a: [1, 2, 3] }, { a: [1, 2] });
++  assert.deepEqual(patch, [{ op: "remove", path: "/a/2" }]);
++  assertRoundTrip({ a: [1, 2, 3] }, { a: [1, 2] });
++});
++
++test("inserting an array element in the middle", () => {
++  const patch = createPatch({ a: ["x", "z"] }, { a: ["x", "y", "z"] });
++  assert.deepEqual(patch, [{ op: "add", path: "/a/1", value: "y" }]);
++  assertRoundTrip({ a: ["x", "z"] }, { a: ["x", "y", "z"] });
++});
++
++test("replacing a single array element in place", () => {
++  const patch = createPatch({ a: ["x", "y", "z"] }, { a: ["x", "w", "z"] });
++  assert.deepEqual(patch, [{ op: "replace", path: "/a/1", value: "w" }]);
++  assertRoundTrip({ a: ["x", "y", "z"] }, { a: ["x", "w", "z"] });
++});
++
++test("diffs a nested field inside an array element instead of replacing it wholesale", () => {
++  const from = { items: [{ id: 1, name: "foo" }, { id: 2, name: "bar" }] };
++  const to = { items: [{ id: 1, name: "foo" }, { id: 2, name: "baz" }] };
++  const patch = createPatch(from, to);
++  assert.deepEqual(patch, [{ op: "replace", path: "/items/1/name", value: "baz" }]);
++  assertRoundTrip(from, to);
++});
++
++test("replacing an array with a scalar", () => {
++  const patch = createPatch({ a: [1, 2] }, { a: "scalar" });
++  assert.deepEqual(patch, [{ op: "replace", path: "/a", value: "scalar" }]);
++  assertRoundTrip({ a: [1, 2] }, { a: "scalar" });
++});
++
++test("replacing the whole document at the root", () => {
++  assert.deepEqual(createPatch({ a: 1 }, [1, 2]), [{ op: "replace", path: "", value: [1, 2] }]);
++  assertRoundTrip({ a: 1 }, [1, 2]);
++  assertRoundTrip(1, { a: 1 });
++  assertRoundTrip(null, 1);
++});
++
++test("rejects a from or to document containing non-JSON values", () => {
++  assert.throws(() => createPatch(new Date(), {}));
++  assert.throws(() => createPatch({}, { a: undefined }));
++  assert.throws(() => createPatch({}, { a: NaN }));
++});

@@ -1,0 +1,137 @@
+diff --git a/docs/memory/task/task-003-audit-applypatch-for-rfc-6902-conformance.md b/docs/memory/task/task-003-audit-applypatch-for-rfc-6902-conformance.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..d34ccc1feca4e6fa45fb431e96414e4f3b6d280e
+--- /dev/null
++++ b/docs/memory/task/task-003-audit-applypatch-for-rfc-6902-conformance.md
+@@ -0,0 +1,58 @@
++---
++id: task-003-audit-applypatch-for-rfc-6902-conformance
++type: task
++title: "Audit applyPatch for RFC 6902 conformance"
++status: pending
++---
++
++## Request
++
++Users of `applyPatch` reported surprising results: patches they considered invalid were said to be
++accepted, some edge cases gave unexpected results, and failing patches were said not to always behave
++the way RFC 6902 reads. Asked to review how patches are checked and applied, and make the behaviour
++conform to RFC 6902 in every case, errors included.
++
++## What was done
++
++Audited `applyPatch`/`resolvePointer` in `src/index.ts` against RFC 6902 through four independent
++checks:
++
++1. Line-by-line manual review of `parsePointer`, `walk`, `locate`, `readMember`/`insertMember`/
++   `setMember`/`deleteMember`, `deepEqual`, `isProperPrefix`, `validateOperation` and `applyOperation`
++   against both RFC 6902 and the already-approved `dl-002` decisions.
++2. ~35 handcrafted adversarial probes (aliasing/mutation checks, scientific-notation and negative
++   array indices, case-sensitive op names, root-pointer add/remove/replace/move/copy/test, duplicate
++   or spurious operation members, `move` into its own descendant, etc.).
++3. The official `json-patch/json-patch-tests` conformance suite (`tests.json` + `spec_tests.json`,
++   which encodes every RFC 6902 Appendix A example): 108 non-disabled cases, run against `applyPatch`
++   directly — 0 failures.
++4. A full re-read of the RFC 6902 text (fetched from rfc-editor.org), cross-checking every normative
++   "MUST"/"MUST NOT" and every Appendix A example against the implementation.
++
++**Outcome: no RFC 6902 nonconformance was found.** The implementation already matches the standard in
++every case checked, including the error paths (missing/invalid `path`, `value`, `from`; wrong `op`;
++non-array patch; out-of-bounds or malformed array indices; `move` into a descendant; `test` failures;
++tolerance of unrecognised operation members per §4).
++
++The one discrepancy found was cosmetic, not a conformance bug: `dl-002`'s bullet on cloning says `move`
++should `structuredClone` the relocated value like `copy`/`add` do, but the code moves the original
++reference. This has no observable effect — the moved value already lives inside `applyPatch`'s own
++private clone of `document` (made once, up front), so relocating it within that clone can never alias
++the caller's `document`/`patch` inputs or the returned result in a way that matters. Deliberately left
++unchanged: adding a clone there would be pure overhead with no behavioural difference, and forcing a
++test to "prove" it would mean fabricating one that can't actually fail — not done, per the project's
++testing directive.
++
++Added 12 characterization tests to `src/index.test.ts` (all passing on first run, confirming already-
++correct behaviour) to lock in the cases above and guard against regressions: missing-but-falsy `value`,
++explicit `null` vs. missing `value`, ignored/spurious operation members (Appendix A.11), case-sensitive
++`op` matching, scientific-notation/negative/double-leading-zero array indices, root-pointer `replace`
++on a scalar document, root-pointer `test`, root-pointer `copy` `from`, and the exact RFC Appendix A.7
++and A.16 examples. `npm test` (60/60) and `npm run typecheck` both pass.
++
++## Consequences
++
++- `applyPatch` can be relied upon as RFC 6902-conformant; this is now backed by the official conformance
++  suite's full case list plus the new characterization tests, not just the original hand-written tests.
++- If the report of "surprising results" that prompted this review was based on a specific patch, it
++  wasn't reproduced by this audit — a concrete example would be needed to investigate further.
+diff --git a/src/index.test.ts b/src/index.test.ts
+index 44415c2b6c29e380983ef27b627c2e1ef165961e..e7c3388cdd0a712c3af1d88b664cd11149824971 100644
+--- a/src/index.test.ts
++++ b/src/index.test.ts
+@@ -276,3 +276,68 @@ test('throws when "move" is missing "from"', () => {
+   // @ts-expect-error exercising runtime validation of a malformed operation
+   assert.throws(() => applyPatch({ a: 1 }, [{ op: "move", path: "/b" }]));
+ });
++
++test('throws when "value" is missing even though it would be falsy (RFC 6902 §4.6)', () => {
++  // @ts-expect-error exercising runtime validation of a malformed operation
++  assert.throws(() => applyPatch([false], [{ op: "test", path: "/0" }]));
++});
++
++test("accepts an explicit null value, distinct from a missing value", () => {
++  const result = applyPatch({ a: 1 }, [{ op: "add", path: "/a", value: null }]);
++  assert.deepEqual(result, { a: null });
++});
++
++test("ignores members not defined for the operation (RFC 6902 §4, Appendix A.11)", () => {
++  const result = applyPatch(
++    { foo: "bar" },
++    // @ts-expect-error exercising runtime tolerance of an unrecognised member
++    [{ op: "add", path: "/baz", value: "qux", xyz: 123 }],
++  );
++  assert.deepEqual(result, { foo: "bar", baz: "qux" });
++});
++
++test('throws on an "op" name that only differs by case', () => {
++  // @ts-expect-error exercising runtime validation of a malformed operation
++  assert.throws(() => applyPatch({ a: 1 }, [{ op: "ADD", path: "/a", value: 2 }]));
++});
++
++test('throws when an array index is given in scientific notation ("1e0")', () => {
++  assert.throws(() => applyPatch([1, 2, 3], [{ op: "test", path: "/1e0", value: 2 }]));
++});
++
++test('throws when an array index is negative ("-1")', () => {
++  assert.throws(() => applyPatch([1, 2], [{ op: "add", path: "/-1", value: 3 }]));
++});
++
++test('throws when an array index has two leading zeros ("00")', () => {
++  assert.throws(() => applyPatch([1, 2, 3], [{ op: "test", path: "/00", value: 1 }]));
++});
++
++test("replaces a top-level scalar document at the root pointer", () => {
++  const result = applyPatch("foo", [{ op: "replace", path: "", value: "bar" }]);
++  assert.equal(result, "bar");
++});
++
++test('"test" at the root pointer compares the whole document', () => {
++  const result = applyPatch({ foo: 1 }, [{ op: "test", path: "", value: { foo: 1 } }]);
++  assert.deepEqual(result, { foo: 1 });
++});
++
++test('"copy" with "from" as the root pointer copies the whole document', () => {
++  const result = applyPatch({ foo: 1 }, [{ op: "copy", from: "", path: "/bar" }]);
++  assert.deepEqual(result, { foo: 1, bar: { foo: 1 } });
++});
++
++test("moves an array element to another position, matching RFC 6902 Appendix A.7", () => {
++  const result = applyPatch({ foo: ["all", "grass", "cows", "eat"] }, [
++    { op: "move", from: "/foo/1", path: "/foo/3" },
++  ]);
++  assert.deepEqual(result, { foo: ["all", "cows", "eat", "grass"] });
++});
++
++test("add: inserting an array value nests it rather than spreading it (RFC 6902 Appendix A.16)", () => {
++  const result = applyPatch({ foo: ["bar"] }, [
++    { op: "add", path: "/foo/-", value: ["abc", "def"] },
++  ]);
++  assert.deepEqual(result, { foo: ["bar", ["abc", "def"]] });
++});

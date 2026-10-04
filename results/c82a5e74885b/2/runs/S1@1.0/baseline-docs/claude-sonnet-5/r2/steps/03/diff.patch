@@ -1,0 +1,88 @@
+diff --git a/src/json-patch.test.ts b/src/json-patch.test.ts
+index af8207c75fa9f36de26d9e1bcae07d1a85f27759..4af110f4203c018b08a4f78ad3f9ecc922465c08 100644
+--- a/src/json-patch.test.ts
++++ b/src/json-patch.test.ts
+@@ -59,6 +59,23 @@ test('add: rejects a path whose parent does not exist', () => {
+   );
+ });
+ 
++test('add: treats "__proto__" as a plain member name, not an accessor', () => {
++  const document = deepFreeze({});
++  const result = applyPatch(document, [
++    { op: 'add', path: '/__proto__', value: { polluted: true } },
++  ]) as { [key: string]: JsonValue };
++  assert.equal(Object.prototype.hasOwnProperty.call(result, '__proto__'), true);
++  assert.deepEqual(JSON.parse(JSON.stringify(result)), { ['__proto__']: { polluted: true } });
++  assert.equal(Object.getPrototypeOf(result), Object.prototype);
++  assert.equal(({} as { polluted?: boolean }).polluted, undefined);
++});
++
++test('does not drop or act on an input document member literally named "__proto__"', () => {
++  const document = deepFreeze(JSON.parse('{"__proto__":{"x":1},"foo":"bar"}')) as JsonValue;
++  const result = applyPatch(document, [{ op: 'replace', path: '/foo', value: 'baz' }]);
++  assert.deepEqual(JSON.parse(JSON.stringify(result)), { ['__proto__']: { x: 1 }, foo: 'baz' });
++});
++
+ test('remove: deletes an object member', () => {
+   const document = deepFreeze({ foo: 'bar', baz: 'qux' });
+   const result = applyPatch(document, [{ op: 'remove', path: '/baz' }]);
+@@ -107,6 +124,13 @@ test('replace: rejects a missing object member', () => {
+   );
+ });
+ 
++test('replace: treats an existing "__proto__" member as plain data, not an accessor', () => {
++  const document = deepFreeze(JSON.parse('{"__proto__":{"x":1}}')) as JsonValue;
++  const result = applyPatch(document, [{ op: 'replace', path: '/__proto__', value: { x: 2 } }]);
++  assert.equal(Object.prototype.hasOwnProperty.call(result, '__proto__'), true);
++  assert.deepEqual(JSON.parse(JSON.stringify(result)), { ['__proto__']: { x: 2 } });
++});
++
+ test('replace: rejects the "-" array index, which never refers to an existing element', () => {
+   const document = deepFreeze({ foo: [1, 2] });
+   assert.throws(
+diff --git a/src/json-patch.ts b/src/json-patch.ts
+index c34c02df436d7d13b5989b4e5faab86eb24d53bb..a233084ae5a8765d8434d7eee87a9da440dc73d0 100644
+--- a/src/json-patch.ts
++++ b/src/json-patch.ts
+@@ -127,7 +127,7 @@ function addAt(root: JsonValue, tokens: readonly string[], value: JsonValue): Js
+     const index = lastToken === '-' ? parent.length : toInsertIndex(lastToken, parent.length);
+     parent.splice(index, 0, value);
+   } else if (parent !== null && typeof parent === 'object') {
+-    (parent as { [key: string]: JsonValue })[lastToken] = value;
++    setMember(parent as { [key: string]: JsonValue }, lastToken, value);
+   } else {
+     throw new JsonPatchError(`Cannot add a member to a non-container value at "${lastToken}".`);
+   }
+@@ -170,7 +170,7 @@ function replaceAt(root: JsonValue, tokens: readonly string[], value: JsonValue)
+     if (!Object.prototype.hasOwnProperty.call(container, lastToken)) {
+       throw new JsonPatchError(`Member "${lastToken}" does not exist.`);
+     }
+-    container[lastToken] = value;
++    setMember(container, lastToken, value);
+   } else {
+     throw new JsonPatchError(`Cannot replace a member of a non-container value at "${lastToken}".`);
+   }
+@@ -225,13 +225,22 @@ function cloneValue(value: JsonValue): JsonValue {
+   if (value !== null && typeof value === 'object') {
+     const clone: { [key: string]: JsonValue } = {};
+     for (const key of Object.keys(value)) {
+-      clone[key] = cloneValue(value[key] as JsonValue);
++      setMember(clone, key, cloneValue(value[key] as JsonValue));
+     }
+     return clone;
+   }
+   return value;
+ }
+ 
++/**
++ * Sets an own, enumerable member on a plain object, bypassing any inherited accessor
++ * (e.g. "__proto__") so that a member name is always treated as plain string data,
++ * never as an instruction to the object's internals.
++ */
++function setMember(container: { [key: string]: JsonValue }, key: string, value: JsonValue): void {
++  Object.defineProperty(container, key, { value, writable: true, enumerable: true, configurable: true });
++}
++
+ function deepEqual(a: JsonValue, b: JsonValue): boolean {
+   if (a === b) {
+     return true;

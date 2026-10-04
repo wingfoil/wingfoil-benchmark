@@ -1,0 +1,293 @@
+diff --git a/README.md b/README.md
+index 187cf3df25020a5358308a78bc0e608ec7af2e8b..50efbdcd2023c04d89e9c9461ac3cd34fc71264a 100644
+--- a/README.md
++++ b/README.md
+@@ -43,3 +43,23 @@ Throws a `JsonPatchError` when `patch` is not a well-formed JSON Patch (not an a
+ Throws a `JsonPointerError` when an operation's `path` or `from` is not a valid JSON Pointer, or does
+ not resolve to a value where the operation requires one to already exist (e.g. the target of `remove`,
+ or the parent of `add`).
++
++### `applyMergePatch(target, patch)`
++
++Applies a [JSON Merge Patch](https://www.rfc-editor.org/rfc/rfc7386) (RFC 7386) to a target JSON
++document and returns the merged document as a new value; `target` is never mutated.
++
++```ts
++import { applyMergePatch } from 'json-toolkit';
++
++const target = { a: 'b', c: { d: 'e', f: 'g' } };
++
++applyMergePatch(target, { a: 'z', c: { f: null } }); // => { a: 'z', c: { d: 'e' } }
++target; // => { a: 'b', c: { d: 'e', f: 'g' } } — unchanged
++```
++
++A `patch` that is a JSON object is merged into `target` member by member: a member set to `null` is
++removed from the result, and any other member overwrites or (if both sides are objects) recursively
++merges into the corresponding member of `target`. A `patch` that is not a JSON object - including an
++array, or `null` - replaces the whole of `target`. Unlike `applyPatch`, `applyMergePatch` has no
++failure mode of its own: every JSON value is a valid merge patch.
+diff --git a/docs/memory/decision-log/dl-003-json-merge-patch-no-new-error-type-immutable-clone-and-proto-safety.md b/docs/memory/decision-log/dl-003-json-merge-patch-no-new-error-type-immutable-clone-and-proto-safety.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..ee53fe15efdc75c86b3106487a8ea0f12e52431b
+--- /dev/null
++++ b/docs/memory/decision-log/dl-003-json-merge-patch-no-new-error-type-immutable-clone-and-proto-safety.md
+@@ -0,0 +1,46 @@
++---
++id: dl-003-json-merge-patch-no-new-error-type-immutable-clone-and-proto-safety
++type: decision-log
++title: "JSON Merge Patch: no new error type, immutable clone, and __proto__ safety"
++status: approved
++---
++
++## Context
++
++`applyMergePatch` implements RFC 7386, a second, independent way of expressing a partial update
++alongside `applyPatch` (RFC 6902, dl-002). Unlike JSON Patch, RFC 7386 defines no failure mode: every
++JSON value is a valid merge patch, and the merge algorithm it specifies (§2) always produces a result.
++The project's existing JSON Patch code also set precedents worth either reusing or deliberately
++departing from: immutability via `structuredClone`, and safe handling of a member literally named
++`__proto__` (dl-002).
++
++## Decision
++
++- Do not add a `JsonMergePatchError` or reuse `JsonPatchError`/`JsonPointerError`: `applyMergePatch`
++  never throws. RFC 7386's algorithm is total over all JSON values - a non-object patch simply replaces
++  the target, and a non-object target being merged into is simply discarded in favour of `{}` before
++  merging proceeds - so inventing an error type would mean inventing failure modes the RFC doesn't have.
++- Guarantee immutability the same way `applyPatch` does: `structuredClone` the target once (when it is
++  an object worth preserving) and clone any patch value that is copied into the result verbatim (a
++  non-object patch, or a member value that isn't itself merged further). This keeps the two entry
++  points of the library consistent for callers that mix both styles of patch.
++- Reuse the `__proto__`-safety approach from `applyPatch`'s `addAt`: write members with
++  `Object.defineProperty` rather than plain assignment, and read a member for the recursive-merge case
++  with an explicit `hasOwnProperty` check rather than a plain property read. Plain assignment or a plain
++  read of a key named `__proto__` on a freshly-created `{}` would route through `Object.prototype`'s
++  `__proto__` accessor instead of treating it as an ordinary member name, exactly as dl-002 already
++  found for `applyPatch`'s `add`. Removal uses the plain `delete` operator, which is safe here: it only
++  ever removes an existing *own* property (one the clone or a prior `defineProperty` call created) and
++  is a no-op otherwise, so it never reaches the inherited accessor.
++
++## Consequences
++
++- Callers cannot distinguish "malformed input" from a valid merge, because there is no such distinction
++  to make; a caller that wants to reject a patch shape it doesn't trust (e.g. refuse a top-level array)
++  must check that itself before calling `applyMergePatch`.
++- Like `applyPatch`, every call clones the whole target rather than only the touched branches; the same
++  correctness-first trade-off from dl-002 applies here, for the same reason (no stated performance
++  requirement).
++- Tests that exercise the literal member name `__proto__` must build the patch object via `JSON.parse`
++  rather than an object literal: `{ __proto__: value }` as source syntax sets the object's prototype
++  instead of creating an own enumerable property, which would silently test the wrong thing.
+diff --git a/docs/memory/task/task-004-implement-json-merge-patch-rfc-7386.md b/docs/memory/task/task-004-implement-json-merge-patch-rfc-7386.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..ace6e97ccd2d8b4cd344c57b4052484aba02019e
+--- /dev/null
++++ b/docs/memory/task/task-004-implement-json-merge-patch-rfc-7386.md
+@@ -0,0 +1,35 @@
++---
++id: task-004-implement-json-merge-patch-rfc-7386
++type: task
++title: "Implement JSON Merge Patch (RFC 7386)"
++status: approved
++---
++
++## What was done
++
++Added `applyMergePatch(target, patch)` to `src/index.ts`, implementing the RFC 7386 merge algorithm:
++
++- A `patch` that is a JSON object merges into `target` member by member, recursing into members that
++  are objects on both sides, deleting members whose patch value is `null`, and otherwise overwriting.
++- A `patch` that is not a JSON object (array, string, number, boolean, or `null`) replaces `target`
++  entirely.
++- `target` is never mutated (cloned via `structuredClone`, consistent with `applyPatch`); every value
++  copied into the result is likewise cloned so the result never aliases the target or the patch.
++- Members named literally `__proto__` are read/written/deleted safely (via `hasOwnProperty` reads and
++  `Object.defineProperty` writes), reusing the approach already used by `applyPatch`'s `add`.
++
++No new error type was introduced: RFC 7386 has no failure mode, so `applyMergePatch` never throws (see
++dl-003 for the rationale, and for the `structuredClone`/`__proto__` precedents it reuses from dl-002).
++
++Testing followed red-green: added failing tests calling the not-yet-exported `applyMergePatch` first
++(confirmed the import itself failed), then implemented the function until all tests passed. Test
++coverage: all RFC 7386 Appendix A worked examples, plus immutability of the target, non-aliasing of
++both target- and patch-derived values in the result, and the `__proto__` edge case (add and remove).
++
++Updated `README.md` with the new `applyMergePatch` section, documented the same way as the existing
++`resolvePointer`/`applyPatch` entries.
++
++## Verification
++
++- `npm run typecheck` - passes.
++- `npm test` - 62/62 tests pass (sections added at the end of `src/index.test.ts`).
+diff --git a/src/index.test.ts b/src/index.test.ts
+index c23bc373cfdc718c6bf67a2e38bedf35dd90b000..f08ee05c8e926c7ccdd8a71ef74b162f19462757 100644
+--- a/src/index.test.ts
++++ b/src/index.test.ts
+@@ -1,7 +1,7 @@
+ import { test } from 'node:test';
+ import assert from 'node:assert/strict';
+ 
+-import { resolvePointer, JsonPointerError, applyPatch, JsonPatchError } from './index.ts';
++import { resolvePointer, JsonPointerError, applyPatch, JsonPatchError, applyMergePatch } from './index.ts';
+ 
+ // The document and expected resolutions below are the worked example from RFC 6901 §5.
+ const rfcExample = {
+@@ -294,3 +294,101 @@ test('"replace" on a member literally named "__proto__" replaces its own value',
+   assert.equal(Object.prototype.hasOwnProperty.call(result, '__proto__'), true);
+   assert.equal(result.__proto__, 2);
+ });
++
++// RFC 7386 appendix A test cases.
++
++test('A. replacing a member value', () => {
++  assert.deepEqual(applyMergePatch({ a: 'b' }, { a: 'c' }), { a: 'c' });
++});
++
++test('A. adding a member', () => {
++  assert.deepEqual(applyMergePatch({ a: 'b' }, { b: 'c' }), { a: 'b', b: 'c' });
++});
++
++test('A. removing a member with a null value', () => {
++  assert.deepEqual(applyMergePatch({ a: 'b' }, { a: null }), {});
++});
++
++test('A. removing one member while keeping another', () => {
++  assert.deepEqual(applyMergePatch({ a: 'b', b: 'c' }, { a: null }), { b: 'c' });
++});
++
++test('A. an array member is replaced wholesale, not merged', () => {
++  assert.deepEqual(applyMergePatch({ a: ['b'] }, { a: 'c' }), { a: 'c' });
++  assert.deepEqual(applyMergePatch({ a: 'c' }, { a: ['b'] }), { a: ['b'] });
++});
++
++test('A. nested objects are merged recursively', () => {
++  assert.deepEqual(applyMergePatch({ a: { b: 'c' } }, { a: { b: 'd', c: null } }), { a: { b: 'd' } });
++});
++
++test('A. an array of objects is replaced wholesale', () => {
++  assert.deepEqual(applyMergePatch({ a: [{ b: 'c' }] }, { a: [1] }), { a: [1] });
++});
++
++test('A. an array patch replaces an array target wholesale', () => {
++  assert.deepEqual(applyMergePatch(['a', 'b'], ['c', 'd']), ['c', 'd']);
++});
++
++test('A. an array patch replaces an object target wholesale', () => {
++  assert.deepEqual(applyMergePatch({ a: 'b' }, ['c']), ['c']);
++});
++
++test('A. a null patch replaces the whole target with null', () => {
++  assert.equal(applyMergePatch({ a: 'foo' }, null), null);
++});
++
++test('A. a string patch replaces the whole target', () => {
++  assert.equal(applyMergePatch({ a: 'foo' }, 'bar'), 'bar');
++});
++
++test('A. a null member value is added when the target is not an object', () => {
++  assert.deepEqual(applyMergePatch({ e: null }, { a: 1 }), { e: null, a: 1 });
++});
++
++test('A. merging into a non-object target discards it and starts from an empty object', () => {
++  assert.deepEqual(applyMergePatch([1, 2], { a: 'b', c: null }), { a: 'b' });
++});
++
++test('A. a deeply nested null prunes an object down to its remaining ancestors', () => {
++  assert.deepEqual(applyMergePatch({}, { a: { bb: { ccc: null } } }), { a: { bb: {} } });
++});
++
++// Additional coverage.
++
++test('does not mutate the target document', () => {
++  const target = { a: { b: 'c' }, d: ['e'] };
++  const snapshot = structuredClone(target);
++  applyMergePatch(target, { a: { b: 'f' }, d: ['g'] });
++  assert.deepEqual(target, snapshot);
++});
++
++test('does not alias nested values from the target into the result', () => {
++  const target = { a: { b: 'c' } };
++  const result = applyMergePatch(target, { d: 1 }) as { a: { b: string } };
++  result.a.b = 'mutated';
++  assert.equal(target.a.b, 'c');
++});
++
++test('does not alias nested values from the patch into the result', () => {
++  const nested = { x: 1 };
++  const patch = { a: nested };
++  const result = applyMergePatch({}, patch) as { a: { x: number } };
++  nested.x = 999;
++  assert.equal(result.a.x, 1);
++});
++
++test('can add a member literally named "__proto__"', () => {
++  const patch = JSON.parse('{"__proto__": {"polluted": true}}') as Record<string, unknown>;
++  const result = applyMergePatch({}, patch) as Record<string, unknown>;
++  assert.equal(Object.prototype.hasOwnProperty.call(result, '__proto__'), true);
++  assert.deepEqual(result.__proto__, { polluted: true });
++  assert.equal(({} as Record<string, unknown>).polluted, undefined);
++});
++
++test('can remove a member literally named "__proto__"', () => {
++  const target = JSON.parse('{"__proto__": 1, "a": "b"}') as Record<string, unknown>;
++  const patch = JSON.parse('{"__proto__": null}') as Record<string, unknown>;
++  const result = applyMergePatch(target, patch) as Record<string, unknown>;
++  assert.deepEqual(result, { a: 'b' });
++});
+diff --git a/src/index.ts b/src/index.ts
+index 74cce29ba4d8fa853ab25725eb63607603093ffe..7edeb81f1d7172f380cd3bb0f0262da747a96ddb 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -245,6 +245,52 @@ function replaceAt(box: { doc: unknown }, pointer: string, value: unknown): void
+   (parent as Record<string, unknown>)[lastToken] = value;
+ }
+ 
++/**
++ * Applies a JSON Merge Patch, as specified in RFC 7386, to a target JSON document and returns the
++ * merged document as a new value; `target` is never mutated.
++ *
++ * A `patch` that is a JSON object is merged into `target` member by member: a member set to `null` is
++ * removed from the result, and any other member overwrites or (if both sides are objects) recursively
++ * merges into the corresponding member of `target`. A `patch` that is not a JSON object - including an
++ * array, or `null` - replaces the whole of `target`.
++ */
++export function applyMergePatch(target: unknown, patch: unknown): unknown {
++  if (!isJsonObject(patch)) {
++    return structuredClone(patch);
++  }
++
++  const result: Record<string, unknown> = isJsonObject(target)
++    ? (structuredClone(target) as Record<string, unknown>)
++    : {};
++
++  for (const key of Object.keys(patch)) {
++    const value = patch[key];
++    if (value === null) {
++      delete result[key];
++    } else {
++      setMember(result, key, applyMergePatch(getMember(result, key), value));
++    }
++  }
++
++  return result;
++}
++
++function isJsonObject(value: unknown): value is Record<string, unknown> {
++  return typeof value === 'object' && value !== null && !Array.isArray(value);
++}
++
++// Reads an own member only: a plain read of an absent key named "__proto__" would otherwise return
++// Object.prototype itself, since that name is also an inherited accessor on every plain object.
++function getMember(object: Record<string, unknown>, key: string): unknown {
++  return Object.prototype.hasOwnProperty.call(object, key) ? object[key] : undefined;
++}
++
++// Plain assignment would invoke Object.prototype's "__proto__" accessor instead of creating an own
++// member, silently repointing the object's prototype instead of setting a member named "__proto__".
++function setMember(object: Record<string, unknown>, key: string, value: unknown): void {
++  Object.defineProperty(object, key, { value, writable: true, enumerable: true, configurable: true });
++}
++
+ function deepEqual(a: unknown, b: unknown): boolean {
+   if (a === b) {
+     return true;

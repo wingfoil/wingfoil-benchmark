@@ -1,0 +1,124 @@
+# Project rules
+
+This file is generated from the wingfoil arm's configuration for this scenario. It holds the
+project's description, its rules and the decisions already taken.
+
+## Project
+
+Methodology: Kanban
+
+- Methodologies: Kanban, Specification by Example (BDD), TDD
+
+## Rules
+
+### Code Quality
+
+#### Directive — Code Quality
+
+Applies to every role that writes or changes code.
+
+- The linter reports no errors; warnings are triaged before a change is merged.
+- Prefer small, single-responsibility functions and modules; keep complexity low.
+- No dead code and no commented-out blocks.
+- Match the style, naming and idioms of the surrounding code.
+- Give public interfaces explicit types and validate external input at system boundaries.
+- Keep each commit to one logical change with a descriptive message.
+
+> Built-in WingFoil directive template. It cannot be removed. To adapt it, create
+> `directives/custom/code-quality.md` with `id: code-quality`: a custom directive with the same id takes
+> precedence over this one, and `wingfoil directives list` reports the override.
+
+### Determinism
+
+#### Determinism
+
+No wall-clock, randomness, or unordered iteration in context-building paths; prefer declared config.
+
+<!-- Tailor this rule to your project's needs. Directives are auto-loaded per role (roles.yaml). -->
+
+### Documentation versioning
+
+#### Documentation versioning
+
+Bump a document version only on the first edit after it was committed; update its date when bumping.
+
+<!-- Tailor this rule to your project's needs. Directives are auto-loaded per role (roles.yaml). -->
+
+### Documentation
+
+#### Directive — Documentation
+
+Applies to every role.
+
+- Document every user-facing command and feature before it ships.
+- Update the affected documentation in the same change that alters behaviour.
+- Every public or exported API element carries a doc comment.
+- Record decisions in project memory (ADRs for architectural decisions, decision-logs for product and process decisions), not scattered through the codebase.
+- Keep cross-references between documents intact.
+- Document why, not only what.
+
+> Built-in WingFoil directive template. It cannot be removed. To adapt it, create
+> `directives/custom/documentation.md` with `id: documentation`: a custom directive with the same id takes
+> precedence over this one, and `wingfoil directives list` reports the override.
+
+### Secret hygiene
+
+#### Secret hygiene
+
+Never commit credentials or secrets; the repository is the single source of truth and is shared.
+
+<!-- Tailor this rule to your project's needs. Directives are auto-loaded per role (roles.yaml). -->
+
+### Testing
+
+#### Directive — Testing
+
+Applies to developers and QA.
+
+- Test first: write a failing test before the implementation (red, green, refactor).
+- Classify each acceptance criterion before testing it: red-first when the behaviour is new, characterization when the behaviour already exists and the test is expected to pass on its first run. Never fabricate a failing test or add dead code to force one.
+- Every behaviour has at least one happy-path test and one edge- or error-path test.
+- Keep coverage at or above the threshold the project declares; coverage must not regress.
+- Tests are deterministic and isolated: no reliance on external services, wall-clock time or randomness.
+
+> Built-in WingFoil directive template. It cannot be removed. To adapt it, create
+> `directives/custom/testing.md` with `id: testing`: a custom directive with the same id takes
+> precedence over this one, and `wingfoil directives list` reports the override.
+
+## Process
+
+### adr-ingest
+
+Capture an ADR on demand
+
+1. **capture**
+
+### bug-ingest
+
+Capture a bug on demand
+
+1. **capture**
+
+### decision-log-ingest
+
+Capture a decision-log on demand
+
+1. **capture**
+
+### kanban-delivery
+
+Kanban delivery loop
+
+1. **plan** — Select the next slice of work to deliver.
+2. **build** — Implement the work test-first (TDD).
+3. **review** — Review against the directives; run unit + acceptance tests.
+4. **deliver** — Integrate the completed work.
+
+### sw-life-cycle
+
+The end-to-end software life cycle
+
+1. **inception**
+2. **specification**
+3. **delivery**
+4. **sunset**

@@ -1,0 +1,59 @@
+diff --git a/src/coupons.ts b/src/coupons.ts
+index 4b7df8e652e5d52033abb2ea07d763007ccce283..496aed7828812115eb643d5d3378af00c2d6948f 100644
+--- a/src/coupons.ts
++++ b/src/coupons.ts
+@@ -74,7 +74,7 @@ export class Coupons {
+     const coupon = this.#coupons.get(canonicalCode(code));
+     if (coupon === undefined) throw new CouponError(code, 'unknown code');
+     if (compareDates(date, coupon.validFrom) < 0) throw new CouponError(coupon.code, 'not valid yet');
+-    if (compareDates(date, coupon.validUntil) >= 0) throw new CouponError(coupon.code, 'expired');
++    if (compareDates(date, coupon.validUntil) > 0) throw new CouponError(coupon.code, 'expired');
+     if (amount < coupon.minimumCents) throw new CouponError(coupon.code, 'order below the minimum amount');
+     if (coupon.singleUse && this.#usedBy.has(coupon.code)) throw new CouponError(coupon.code, 'already used');
+     return coupon;
+diff --git a/src/pricing.ts b/src/pricing.ts
+index 3d07b8e66d51d75411d7694eb6b4d79c95913fee..1521a9b7f8f7751dd05c0b4a97554dcf95557420 100644
+--- a/src/pricing.ts
++++ b/src/pricing.ts
+@@ -54,9 +54,12 @@ export function priceOrder(inputs: readonly LineInput[], coupon?: Coupon): Price
+   const grossTotal = sum(gross);
+   const afterVolume = gross.map((amount, index) => amount - (volume[index] ?? 0));
+   const volumeTotal = sum(volume);
++  const subtotalAfterVolume = grossTotal - volumeTotal;
+ 
+   const couponTotal =
+-    coupon === undefined ? 0 : capped(couponDiscount(coupon, grossTotal), volumeTotal, grossTotal);
++    coupon === undefined
++      ? 0
++      : capped(couponDiscount(coupon, subtotalAfterVolume), volumeTotal, grossTotal);
+   const couponShares = allocate(couponTotal, afterVolume);
+ 
+   const lines = inputs.map(({ product, quantity }, index): PricedLine => {
+diff --git a/test/coupons.test.ts b/test/coupons.test.ts
+index 1fdc2519dc031050b1b5593605af611816478518..1717651b5042ac9c6403b79bd448139bce088929 100644
+--- a/test/coupons.test.ts
++++ b/test/coupons.test.ts
+@@ -33,6 +33,23 @@ describe('coupons', () => {
+     assert.throws(() => orders.quote({ ...request, date: '2026-04-01' }), CouponError);
+   });
+ 
++  it('applies a percentage coupon to the subtotal after the volume discount, not the gross amount', () => {
++    const { orders, catalog, inventory } = shop();
++    catalog.add({ sku: 'NTB-1', name: 'Notebook', priceCents: 500, vatClass: 'standard', weightGrams: 80 });
++    inventory.restock('NTB-1', 20);
++    const order = orders.place({ customer: 'c-1', date: '2026-03-15', lines: [{ sku: 'NTB-1', quantity: 12 }], coupon: 'spring' });
++    // 12 * €5.00 = €60.00 gross; 10% volume discount = €6.00, subtotal €54.00; 10% coupon off €54.00 = €5.40.
++    assert.equal(order.totals.volumeDiscountCents, 600);
++    assert.equal(order.totals.couponDiscountCents, 540);
++    assert.equal(order.totals.goodsCents, 4860);
++  });
++
++  it('lets a coupon be used on its last valid day', () => {
++    const { orders } = shop();
++    const order = orders.quote({ customer: 'c-1', date: '2026-03-31', lines: [{ sku: 'PEN-4', quantity: 1 }], coupon: 'SPRING' });
++    assert.equal(order.totals.couponDiscountCents, 200);
++  });
++
+   it('lets a single-use coupon be used once', () => {
+     const { orders, coupons } = shop();
+     coupons.add({ code: 'ONCE', kind: 'fixed', value: 100, validFrom: '2026-01-01', validUntil: '2026-12-31', singleUse: true });

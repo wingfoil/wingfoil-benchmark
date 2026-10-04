@@ -1,0 +1,136 @@
+diff --git a/src/index.ts b/src/index.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..32a3154756d0e5439a9da7077321e676996b5869
+--- /dev/null
++++ b/src/index.ts
+@@ -0,0 +1,50 @@
++export function resolvePointer(document: unknown, pointer: string): unknown {
++  if (typeof pointer !== "string") {
++    throw new Error("JSON Pointer must be a string");
++  }
++  if (pointer === "") {
++    return document;
++  }
++  if (pointer[0] !== "/") {
++    throw new Error(`Invalid JSON Pointer: ${pointer}`);
++  }
++
++  const tokens = pointer.split("/").slice(1).map(unescapeToken);
++
++  let current = document;
++  for (const token of tokens) {
++    if (Array.isArray(current)) {
++      const index = parseArrayIndex(token, current.length);
++      current = current[index];
++    } else if (current !== null && typeof current === "object") {
++      if (!Object.prototype.hasOwnProperty.call(current, token)) {
++        throw new Error(`JSON Pointer does not resolve: no member "${token}"`);
++      }
++      current = (current as Record<string, unknown>)[token];
++    } else {
++      throw new Error(
++        `JSON Pointer does not resolve: cannot descend into non-object value with token "${token}"`,
++      );
++    }
++  }
++
++  return current;
++}
++
++function unescapeToken(token: string): string {
++  return token.replace(/~1/g, "/").replace(/~0/g, "~");
++}
++
++function parseArrayIndex(token: string, length: number): number {
++  if (token === "-") {
++    throw new Error('JSON Pointer does not resolve: "-" refers to a nonexistent array element');
++  }
++  if (!/^(0|[1-9][0-9]*)$/.test(token)) {
++    throw new Error(`Invalid JSON Pointer array index: "${token}"`);
++  }
++  const index = Number(token);
++  if (index >= length) {
++    throw new Error(`JSON Pointer does not resolve: array index ${index} out of bounds`);
++  }
++  return index;
++}
+diff --git a/test/index.test.ts b/test/index.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..57327e9c0f9379ac4e7a61f456fa11f4b9ad50f6
+--- /dev/null
++++ b/test/index.test.ts
+@@ -0,0 +1,74 @@
++import { test } from "node:test";
++import assert from "node:assert/strict";
++import { resolvePointer } from "../src/index.ts";
++
++const rfcExample = {
++  foo: ["bar", "baz"],
++  "": 0,
++  "a/b": 1,
++  "c%d": 2,
++  "e^f": 3,
++  "g|h": 4,
++  "i\\j": 5,
++  "k\"l": 6,
++  " ": 7,
++  "m~n": 8,
++};
++
++test("RFC 6901 appendix A examples", () => {
++  assert.deepEqual(resolvePointer(rfcExample, ""), rfcExample);
++  assert.deepEqual(resolvePointer(rfcExample, "/foo"), ["bar", "baz"]);
++  assert.equal(resolvePointer(rfcExample, "/foo/0"), "bar");
++  assert.equal(resolvePointer(rfcExample, "/foo/1"), "baz");
++  assert.equal(resolvePointer(rfcExample, "/"), 0);
++  assert.equal(resolvePointer(rfcExample, "/a~1b"), 1);
++  assert.equal(resolvePointer(rfcExample, "/c%d"), 2);
++  assert.equal(resolvePointer(rfcExample, "/e^f"), 3);
++  assert.equal(resolvePointer(rfcExample, "/g|h"), 4);
++  assert.equal(resolvePointer(rfcExample, "/i\\j"), 5);
++  assert.equal(resolvePointer(rfcExample, "/k\"l"), 6);
++  assert.equal(resolvePointer(rfcExample, "/ "), 7);
++  assert.equal(resolvePointer(rfcExample, "/m~0n"), 8);
++});
++
++test("resolves nested objects and arrays", () => {
++  const doc = { a: { b: [{ c: 42 }] } };
++  assert.equal(resolvePointer(doc, "/a/b/0/c"), 42);
++});
++
++test("throws on missing object member", () => {
++  assert.throws(() => resolvePointer({ a: 1 }, "/b"));
++});
++
++test("throws on out-of-bounds array index", () => {
++  assert.throws(() => resolvePointer([1, 2], "/2"));
++});
++
++test("throws on '-' array index", () => {
++  assert.throws(() => resolvePointer([1, 2], "/-"));
++});
++
++test("throws on leading zero array index", () => {
++  assert.throws(() => resolvePointer([1, 2], "/01"));
++});
++
++test("throws on non-numeric array index", () => {
++  assert.throws(() => resolvePointer([1, 2], "/foo"));
++});
++
++test("throws when descending into a primitive", () => {
++  assert.throws(() => resolvePointer({ a: 1 }, "/a/b"));
++});
++
++test("throws on pointer not starting with /", () => {
++  assert.throws(() => resolvePointer({ a: 1 }, "a"));
++});
++
++test("resolves root pointer for primitives", () => {
++  assert.equal(resolvePointer(42, ""), 42);
++  assert.equal(resolvePointer(null, ""), null);
++});
++
++test("throws when non-empty pointer applied to primitive root", () => {
++  assert.throws(() => resolvePointer(42, "/a"));
++});

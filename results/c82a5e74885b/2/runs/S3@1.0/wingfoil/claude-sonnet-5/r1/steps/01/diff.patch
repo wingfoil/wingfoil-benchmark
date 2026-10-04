@@ -1,0 +1,347 @@
+diff --git a/docs/memory/decision-log/dl-001-validate-whole-day-utc-periods-via-millisecond-midnight-modulo.md b/docs/memory/decision-log/dl-001-validate-whole-day-utc-periods-via-millisecond-midnight-modulo.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..a9dc7e8c68a24045decf1ac6fa578f0d4e2eed47
+--- /dev/null
++++ b/docs/memory/decision-log/dl-001-validate-whole-day-utc-periods-via-millisecond-midnight-modulo.md
+@@ -0,0 +1,29 @@
++---
++id: dl-001-validate-whole-day-utc-periods-via-millisecond-midnight-modulo
++type: decision-log
++title: "Validate whole-day UTC periods via millisecond-midnight modulo"
++status: approved
++---
++
++## Context
++
++Rule 3 requires bookings to cover whole UTC days only: a period must start and end at midnight UTC, with
++`end` being the start of the day after the last rented day. `quote` and `book` both need to reject any
++period that doesn't fit this shape, before computing a duration in days.
++
++## Decision
++
++Parse `start`/`end` with `Date.parse` (rejecting unparseable strings), then require
++`timestamp % 86_400_000 === 0` for both. Unix time has no leap seconds, so every UTC midnight is exactly
++a multiple of one day in milliseconds — this check is both necessary and sufficient to confirm midnight
++UTC, without manual string parsing or a date library. Also require `end > start`, so the shortest
++bookable period is one whole day. The number of days is then `(endMs - startMs) / 86_400_000`, always a
++whole number once the modulo check passes.
++
++## Consequences
++
++- No date-handling dependency was needed, keeping the module dependency-free as required.
++- Both plain date strings (`"2024-06-01"`) and explicit midnight timestamps
++  (`"2024-06-01T00:00:00Z"`) are accepted, since both parse to the same UTC midnight instant.
++- Any non-midnight time (e.g. partial days, timezone-offset strings that don't land on UTC midnight) is
++  rejected by construction.
+diff --git a/docs/memory/decision-log/dl-002-generate-booking-ids-deterministically-no-cancellation-yet.md b/docs/memory/decision-log/dl-002-generate-booking-ids-deterministically-no-cancellation-yet.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..4c2f08cb8f03501bf90981bc53215eba9e6407ca
+--- /dev/null
++++ b/docs/memory/decision-log/dl-002-generate-booking-ids-deterministically-no-cancellation-yet.md
+@@ -0,0 +1,31 @@
++---
++id: dl-002-generate-booking-ids-deterministically-no-cancellation-yet
++type: decision-log
++title: "Generate booking ids deterministically, no cancellation yet"
++status: approved
++---
++
++## Context
++
++`book(request)` must return a booking `id`. The determinism directive forbids randomness or wall-clock
++reliance in the service's logic. Separately, the request explicitly describes a cancellation policy
++(rule 5) but says not to implement cancellation yet.
++
++## Decision
++
++Generate ids as `booking-<n>`, where `n` is the 1-based count of bookings made so far on that service
++instance (`bookings.length + 1`), rather than a UUID or a timestamp-based id. This keeps booking creation
++fully deterministic and dependency-free. Cancellation itself (and any refund logic implementing rule 5)
++was left out of this change entirely: no `cancel` method, no stored cancellation state. The rule is only
++reflected as a comment-free scope boundary — nothing in the current API models it, since adding an unused
++hook for it now would be speculative.
++
++## Consequences
++
++- Booking ids are stable and predictable for a given sequence of calls, which also makes tests
++  deterministic without needing to mock `Date.now` or a random source.
++- Ids are only unique within one service instance (the service is in-memory and per-process, so this
++  matches the current scope); a future persistence layer will need its own id strategy.
++- Implementing cancellation later will require adding a `cancel` operation and deciding how a cancelled
++  booking affects the overlap check in `book` (a cancelled booking's period should presumably free up the
++  slot); that design is deferred, not decided here.
+diff --git a/docs/memory/task/task-001-add-rental-module-createrentalservice.md b/docs/memory/task/task-001-add-rental-module-createrentalservice.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..d40f5cafe07dbdd6dccf7388373ee0ff6526400b
+--- /dev/null
++++ b/docs/memory/task/task-001-add-rental-module-createrentalservice.md
+@@ -0,0 +1,40 @@
++---
++id: task-001-add-rental-module-createrentalservice
++type: task
++title: "Add rental module createRentalService"
++status: approved
++---
++
++## Request
++
++Export `createRentalService()` from `src/index.ts`: an in-memory rental service for the booking desk,
++covering equipment catalogue, quoting and booking, per the school's rules (integer cents, UTC ISO-8601
++whole-day periods, no double-booking). Cancellation is explicitly out of scope for this request.
++
++## What was done
++
++- Added `src/index.ts` exporting `createRentalService()`, returning `{ addEquipment, quote, book }`
++  backed by in-memory `Map`/array state (equipment catalogue, booked periods per item, booking list).
++- `addEquipment(item)` validates `kind` is `'board' | 'sail'` and `dailyPrice` is a non-negative integer
++  (cents), per rule 1.
++- A shared `parsePeriod`/`resolveQuote` path validates: the item exists, both `start` and `end` parse as
++  ISO-8601 timestamps, both fall exactly at UTC midnight (`ms % DAY_MS === 0`, true for any UTC midnight
++  under Unix time), and `end` is strictly after `start` — enforcing whole-day-only periods (rule 3).
++- `quote(request)` returns `{ itemId, start, end, total }` with `total = days * dailyPrice`.
++- `book(request)` re-runs the same validation, additionally checks the new period against the item's
++  already-booked periods for overlap (half-open interval comparison, so back-to-back bookings are
++  allowed), then records the period and returns a `Booking` with a deterministic incrementing id
++  (`booking-<n>`, no randomness/wall-clock per the determinism directive).
++- Did not implement cancellation, as instructed; the cancellation policy (rule 5) is documented in the
++  decision log for future work.
++- Added `src/index.test.ts` (red-first: written and run before the implementation existed, confirmed
++  failing, then made green) covering: happy-path quoting and booking, unknown item for both `quote` and
++  `book`, non-midnight period, non-advancing period, overlapping bookings, back-to-back non-overlapping
++  bookings, unknown equipment kind, and invalid `dailyPrice`.
++- Verified with `npm test` (Node's built-in `node --test`, which natively type-strips `.ts` files on
++  Node 22.23 — no build step or extra dependency needed): all 10 tests pass.
++- Confirmed `src/index.ts` itself type-checks cleanly under the project's `strict` `tsconfig.json` (using
++  a scratch TypeScript install, not added to the repo). The only `tsc` errors are pre-existing project
++  setup gaps in `src/index.test.ts` (no `@types/node`, and `tsconfig.json` lacks
++  `allowImportingTsExtensions` for the `.ts`-suffixed relative import) that predate this change and are
++  unrelated to runtime correctness; left untouched since adding dependencies/tooling wasn't requested.
+diff --git a/src/index.test.ts b/src/index.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..d30e1627eee6ef8cf91169d4e597d5a9b00a69d0
+--- /dev/null
++++ b/src/index.test.ts
+@@ -0,0 +1,95 @@
++import { test } from 'node:test';
++import assert from 'node:assert/strict';
++
++import { createRentalService } from './index.ts';
++
++function board() {
++  return { id: 'board-1', kind: 'board' as const, dailyPrice: 2500 };
++}
++
++test('quotes a multi-day rental in integer cents', () => {
++  const service = createRentalService();
++  service.addEquipment(board());
++
++  const result = service.quote({ itemId: 'board-1', start: '2024-06-01T00:00:00Z', end: '2024-06-04T00:00:00Z' });
++
++  assert.deepEqual(result, {
++    itemId: 'board-1',
++    start: '2024-06-01T00:00:00Z',
++    end: '2024-06-04T00:00:00Z',
++    total: 7500,
++  });
++});
++
++test('books an item and returns a booking id alongside the quote', () => {
++  const service = createRentalService();
++  service.addEquipment(board());
++
++  const booking = service.book({ itemId: 'board-1', start: '2024-06-01T00:00:00Z', end: '2024-06-02T00:00:00Z' });
++
++  assert.equal(typeof booking.id, 'string');
++  assert.ok(booking.id.length > 0);
++  assert.deepEqual(
++    { itemId: booking.itemId, start: booking.start, end: booking.end, total: booking.total },
++    { itemId: 'board-1', start: '2024-06-01T00:00:00Z', end: '2024-06-02T00:00:00Z', total: 2500 },
++  );
++});
++
++test('rejects a quote for an unknown item', () => {
++  const service = createRentalService();
++
++  assert.throws(() => service.quote({ itemId: 'missing', start: '2024-06-01T00:00:00Z', end: '2024-06-02T00:00:00Z' }));
++});
++
++test('rejects a booking for an unknown item', () => {
++  const service = createRentalService();
++
++  assert.throws(() => service.book({ itemId: 'missing', start: '2024-06-01T00:00:00Z', end: '2024-06-02T00:00:00Z' }));
++});
++
++test('rejects a period that does not start and end at midnight UTC', () => {
++  const service = createRentalService();
++  service.addEquipment(board());
++
++  assert.throws(() => service.quote({ itemId: 'board-1', start: '2024-06-01T12:00:00Z', end: '2024-06-02T12:00:00Z' }));
++});
++
++test('rejects a period whose end is not after its start', () => {
++  const service = createRentalService();
++  service.addEquipment(board());
++
++  assert.throws(() => service.quote({ itemId: 'board-1', start: '2024-06-01T00:00:00Z', end: '2024-06-01T00:00:00Z' }));
++});
++
++test('rejects overlapping bookings for the same item', () => {
++  const service = createRentalService();
++  service.addEquipment(board());
++  service.book({ itemId: 'board-1', start: '2024-06-01T00:00:00Z', end: '2024-06-05T00:00:00Z' });
++
++  assert.throws(() =>
++    service.book({ itemId: 'board-1', start: '2024-06-03T00:00:00Z', end: '2024-06-06T00:00:00Z' }),
++  );
++});
++
++test('allows back-to-back bookings that do not overlap', () => {
++  const service = createRentalService();
++  service.addEquipment(board());
++  service.book({ itemId: 'board-1', start: '2024-06-01T00:00:00Z', end: '2024-06-03T00:00:00Z' });
++
++  const second = service.book({ itemId: 'board-1', start: '2024-06-03T00:00:00Z', end: '2024-06-05T00:00:00Z' });
++
++  assert.equal(second.itemId, 'board-1');
++});
++
++test('rejects equipment with an unknown kind', () => {
++  const service = createRentalService();
++
++  assert.throws(() => service.addEquipment({ id: 'x', kind: 'kite' as never, dailyPrice: 100 }));
++});
++
++test('rejects equipment with a negative or non-integer daily price', () => {
++  const service = createRentalService();
++
++  assert.throws(() => service.addEquipment({ id: 'x', kind: 'sail', dailyPrice: -1 }));
++  assert.throws(() => service.addEquipment({ id: 'y', kind: 'sail', dailyPrice: 10.5 }));
++});
+diff --git a/src/index.ts b/src/index.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..3cd647cfa53e1c56fe1dd58c67be29231ab69034
+--- /dev/null
++++ b/src/index.ts
+@@ -0,0 +1,122 @@
++const DAY_MS = 24 * 60 * 60 * 1000;
++
++/** A board or a sail that the school can rent out. */
++export interface Equipment {
++  id: string;
++  kind: 'board' | 'sail';
++  /** Cost of one day of rental, in integer euro cents. */
++  dailyPrice: number;
++}
++
++/** A request to quote or book one item for a period. */
++export interface RentalRequest {
++  itemId: string;
++  /** Start of the period, an ISO-8601 UTC timestamp at midnight. */
++  start: string;
++  /** End of the period, an ISO-8601 UTC timestamp at midnight, exclusive. */
++  end: string;
++}
++
++/** The cost of renting an item for a period. */
++export interface Quote {
++  itemId: string;
++  start: string;
++  end: string;
++  /** Total cost, in integer euro cents. */
++  total: number;
++}
++
++/** A confirmed rental of an item for a period. */
++export interface Booking extends Quote {
++  id: string;
++}
++
++/** An in-memory rental desk: equipment catalogue, quoting and booking. */
++export interface RentalService {
++  addEquipment(item: Equipment): void;
++  quote(request: RentalRequest): Quote;
++  book(request: RentalRequest): Booking;
++}
++
++interface Period {
++  startMs: number;
++  endMs: number;
++}
++
++function parsePeriod(start: string, end: string): Period {
++  const startMs = Date.parse(start);
++  const endMs = Date.parse(end);
++  if (Number.isNaN(startMs) || Number.isNaN(endMs)) {
++    throw new Error('start and end must be ISO-8601 timestamps');
++  }
++  if (startMs % DAY_MS !== 0 || endMs % DAY_MS !== 0) {
++    throw new Error('a booking period must start and end at midnight UTC');
++  }
++  if (endMs <= startMs) {
++    throw new Error('a booking period must cover at least one whole day');
++  }
++  return { startMs, endMs };
++}
++
++function overlaps(a: Period, b: Period): boolean {
++  return a.startMs < b.endMs && b.startMs < a.endMs;
++}
++
++/** Creates a rental service that keeps its catalogue and bookings in memory. */
++export function createRentalService(): RentalService {
++  const equipment = new Map<string, Equipment>();
++  const bookedPeriods = new Map<string, Period[]>();
++  const bookings: Booking[] = [];
++
++  function requireEquipment(itemId: string): Equipment {
++    const item = equipment.get(itemId);
++    if (!item) {
++      throw new Error(`unknown item: ${itemId}`);
++    }
++    return item;
++  }
++
++  function resolveQuote(request: RentalRequest): { item: Equipment; period: Period; total: number } {
++    const item = requireEquipment(request.itemId);
++    const period = parsePeriod(request.start, request.end);
++    const days = (period.endMs - period.startMs) / DAY_MS;
++    return { item, period, total: days * item.dailyPrice };
++  }
++
++  return {
++    addEquipment(item) {
++      if (item.kind !== 'board' && item.kind !== 'sail') {
++        throw new Error(`unknown equipment kind: ${item.kind}`);
++      }
++      if (!Number.isInteger(item.dailyPrice) || item.dailyPrice < 0) {
++        throw new Error('dailyPrice must be a non-negative integer number of cents');
++      }
++      equipment.set(item.id, item);
++    },
++
++    quote(request) {
++      const { total } = resolveQuote(request);
++      return { itemId: request.itemId, start: request.start, end: request.end, total };
++    },
++
++    book(request) {
++      const { period, total } = resolveQuote(request);
++      const periods = bookedPeriods.get(request.itemId) ?? [];
++      if (periods.some((booked) => overlaps(booked, period))) {
++        throw new Error(`item ${request.itemId} is not free for that period`);
++      }
++      periods.push(period);
++      bookedPeriods.set(request.itemId, periods);
++
++      const booking: Booking = {
++        id: `booking-${bookings.length + 1}`,
++        itemId: request.itemId,
++        start: request.start,
++        end: request.end,
++        total,
++      };
++      bookings.push(booking);
++      return booking;
++    },
++  };
++}

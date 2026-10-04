@@ -1,0 +1,105 @@
+diff --git a/src/index.ts b/src/index.ts
+index 4bd6c89347a85559f0d59afc16ec5f798b389f46..64d7fc27ff570b0ed75a00b1599e6a44c7aa5b1e 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -48,6 +48,35 @@ export function applyPatch(document: JsonValue, patch: JsonPatchOperation[]): Js
+   return result;
+ }
+ 
++/**
++ * Applies a JSON Merge Patch (RFC 7386) to `target` and returns the result
++ * as a new value, without mutating `target` or `patch`.
++ */
++export function applyMergePatch(target: JsonValue, patch: JsonValue): JsonValue {
++  if (!isJsonObject(patch)) {
++    return deepClone(patch);
++  }
++
++  const base = isJsonObject(target) ? target : {};
++  const result: { [key: string]: JsonValue } = {};
++  for (const key of Object.keys(base)) {
++    setMember(result, key, deepClone(base[key]));
++  }
++  for (const key of Object.keys(patch)) {
++    const value = patch[key];
++    if (value === null) {
++      delete result[key];
++    } else {
++      setMember(result, key, applyMergePatch(result[key] ?? null, value));
++    }
++  }
++  return result;
++}
++
++function isJsonObject(value: JsonValue): value is { [key: string]: JsonValue } {
++  return typeof value === 'object' && value !== null && !Array.isArray(value);
++}
++
+ function parsePointer(pointer: string): string[] {
+   if (pointer[0] !== '/') {
+     throw new Error(`Invalid JSON Pointer "${pointer}": must be empty or start with "/"`);
+diff --git a/test/index.test.ts b/test/index.test.ts
+index a08d3150377c79fd4df455e6b0e8bb78b75ff333..cfba514d5d9440748ebb0d74f9b821d5c67362ed 100644
+--- a/test/index.test.ts
++++ b/test/index.test.ts
+@@ -1,6 +1,6 @@
+ import { test } from 'node:test';
+ import assert from 'node:assert/strict';
+-import { applyPatch, resolvePointer, type JsonPatchOperation, type JsonValue } from '../src/index.ts';
++import { applyMergePatch, applyPatch, resolvePointer, type JsonPatchOperation, type JsonValue } from '../src/index.ts';
+ 
+ // The example document and pointers from RFC 6901, Section 5.
+ const rfcDocument: JsonValue = {
+@@ -316,3 +316,52 @@ test('replace and remove work on a member literally named "__proto__"', () => {
+   const removed = applyPatch(document, [{ op: 'remove', path: '/__proto__' }]) as Record<string, JsonValue>;
+   assert.equal(Object.prototype.hasOwnProperty.call(removed, '__proto__'), false);
+ });
++
++// The test cases from RFC 7386, Appendix A.
++test('RFC 7386 appendix A examples', () => {
++  const cases: Array<{ target: JsonValue; patch: JsonValue; result: JsonValue }> = [
++    { target: { a: 'b' }, patch: { a: 'c' }, result: { a: 'c' } },
++    { target: { a: 'b' }, patch: { b: 'c' }, result: { a: 'b', b: 'c' } },
++    { target: { a: 'b' }, patch: { a: null }, result: {} },
++    { target: { a: 'b', b: 'c' }, patch: { a: null }, result: { b: 'c' } },
++    { target: { a: ['b'] }, patch: { a: 'c' }, result: { a: 'c' } },
++    { target: { a: 'c' }, patch: { a: ['b'] }, result: { a: ['b'] } },
++    {
++      target: { a: { b: 'c' } },
++      patch: { a: { b: 'd', c: null } },
++      result: { a: { b: 'd' } },
++    },
++    { target: { a: [{ b: 'c' }] }, patch: { a: [1] }, result: { a: [1] } },
++    { target: ['a', 'b'], patch: ['c', 'd'], result: ['c', 'd'] },
++    { target: { a: 'b' }, patch: ['c'], result: ['c'] },
++    { target: { a: 'foo' }, patch: null, result: null },
++    { target: { a: 'foo' }, patch: 'bar', result: 'bar' },
++    { target: { e: null }, patch: { a: 1 }, result: { e: null, a: 1 } },
++    { target: [1, 2], patch: { a: 'b', c: null }, result: { a: 'b' } },
++    { target: {}, patch: { a: { bb: { ccc: null } } }, result: { a: { bb: {} } } },
++  ];
++
++  for (const { target, patch, result } of cases) {
++    assert.deepEqual(applyMergePatch(target, patch), result);
++  }
++});
++
++test('does not mutate the target or the patch', () => {
++  const target: JsonValue = { a: { b: 'c' }, d: 'e' };
++  const patch: JsonValue = { a: { b: 'f', g: null }, h: 'i' };
++  const targetCopy = JSON.parse(JSON.stringify(target));
++  const patchCopy = JSON.parse(JSON.stringify(patch));
++
++  applyMergePatch(target, patch);
++
++  assert.deepEqual(target, targetCopy);
++  assert.deepEqual(patch, patchCopy);
++});
++
++test('merging into a member literally named "__proto__" does not pollute Object.prototype', () => {
++  const patch = JSON.parse('{"__proto__": {"polluted": true}}') as JsonValue;
++  const result = applyMergePatch({}, patch) as Record<string, JsonValue>;
++  assert.equal(Object.prototype.hasOwnProperty.call(result, '__proto__'), true);
++  assert.deepEqual(result['__proto__'], { polluted: true });
++  assert.equal(({} as Record<string, unknown>).polluted, undefined);
++});
