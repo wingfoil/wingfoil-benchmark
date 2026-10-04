@@ -200,6 +200,34 @@ describe('reading a session (REQ-RUN-09)', () => {
     expect(readSession(['null'], RATE).error).toMatch(/not an object/);
   });
 
+  it("reads the models a session used from modelUsage, each at the session's latest total (task-054)", () => {
+    // P6's modelUsage keeps P4's entry under the alias and adds its own under the dated id; a key reported
+    // twice is the session's running total, so the largest is kept and nothing is counted twice.
+    const both = readSession([...recorded('question.jsonl'), ...recorded('resumed.jsonl')], RATE);
+    expect(both.models).toEqual({
+      'claude-haiku-4-5': {
+        inputTokens: 10,
+        outputTokens: 393,
+        cacheCreationInputTokens: 2895,
+        cacheReadInputTokens: 17560,
+        costUsd: 0.00734975,
+      },
+      'claude-haiku-4-5-20251001': {
+        inputTokens: 98,
+        outputTokens: 4967,
+        cacheCreationInputTokens: 6399,
+        cacheReadInputTokens: 278256,
+        costUsd: 0.06075735000000001,
+      },
+    });
+  });
+
+  it('reports no models for a session whose results carry no modelUsage', () => {
+    expect(
+      readSession(['{"type":"result","is_error":false,"terminal_reason":"completed"}'], RATE).models,
+    ).toEqual({});
+  });
+
   it('reports a line that is not JSON rather than skipping it', () => {
     const session = readSession(['not json'], RATE);
     expect(session.outcome).toBe('failed');

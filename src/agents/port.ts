@@ -1,4 +1,4 @@
-import type { SessionUsage } from './claude-code.js';
+import type { ModelsUsage, SessionUsage } from './claude-code.js';
 import type { ProcessResult } from '../core/index.js';
 
 /**
@@ -58,6 +58,11 @@ export interface StepOutcome {
    * what the agent reports on a resume. A fresh session's total is its own cost.
    */
   readonly usage: SessionUsage;
+  /**
+   * The models the session reported using, by the key the agent gives them, each at the session's running total
+   * (task-054). Absent when the agent reported none.
+   */
+  readonly models?: ModelsUsage;
   /** Every event of the step's stream, already scrubbed (REQ-NFR-01). */
   readonly transcript: readonly string[];
   /**

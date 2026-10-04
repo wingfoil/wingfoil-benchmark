@@ -172,6 +172,7 @@ export async function storedRun(
       ...(record.costBoundUsd === undefined
         ? {}
         : { cost_reported: false, cost_bound_usd: record.costBoundUsd }),
+      ...(record.models === undefined ? {} : { models: record.models }),
     });
     previous = tree;
   }
@@ -271,6 +272,19 @@ export interface StepRecord {
   };
   readonly outcome?: string;
   readonly interventions?: number;
+  /** The models the step's session reported (task-054); absent, as in every run stored before it. */
+  readonly models?: Readonly<
+    Record<
+      string,
+      {
+        inputTokens: number;
+        outputTokens: number;
+        cacheCreationInputTokens: number;
+        cacheReadInputTokens: number;
+        costUsd: number;
+      }
+    >
+  >;
   readonly costBoundUsd?: number;
 }
 

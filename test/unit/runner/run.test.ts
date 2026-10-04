@@ -11,6 +11,7 @@ import {
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
+import type { ModelsUsage } from '../../../src/agents/index.js';
 import { checkCampaign, runCampaign } from '../../../src/runner/index.js';
 import { completeCampaignYaml, writeRepo } from '../../support/campaign-fixture.js';
 import { doubles, invocationOf } from '../../support/runner-doubles.js';
@@ -419,6 +420,44 @@ describe('runCampaign', () => {
     expect(record.steps).toHaveLength(1);
     // The run stops at the failed step: step 2 never ran.
     expect(ports.recorded.steps).toHaveLength(1);
+  });
+
+  it("records each step's observed models, sorted, a resume's at the session's latest total (task-054)", async () => {
+    const { checked } = checkedCampaign();
+    const model = (output: number, costUsd: number) => ({
+      inputTokens: 1,
+      outputTokens: output,
+      cacheCreationInputTokens: 2,
+      cacheReadInputTokens: 3,
+      costUsd,
+    });
+    const ports = doubles({
+      // Step 1 asks once: its resume reports the session's running totals, larger for the run's model.
+      messageOf: (request) => (request.step === 1 && invocationOf(request) === 0 ? 'Which one?' : undefined),
+      modelsOf: (request): ModelsUsage | undefined => {
+        if (request.step !== 1) return undefined;
+        return invocationOf(request) === 0
+          ? { 'claude-sonnet-5': model(100, 0.5), 'claude-haiku-4-5-20251001': model(7, 0.01) }
+          : { 'claude-sonnet-5': model(140, 0.7) };
+      },
+    });
+
+    const summary = await runCampaign(checked, ports);
+
+    const output = summary.runs[0]?.outputDir ?? '';
+    const record = JSON.parse(readFileSync(join(output, 'run.json'), 'utf8')) as {
+      steps: { models?: Record<string, unknown> }[];
+    };
+    expect(record.steps[0]?.models).toEqual({
+      'claude-haiku-4-5-20251001': model(7, 0.01),
+      'claude-sonnet-5': model(140, 0.7),
+    });
+    expect(Object.keys(record.steps[0]?.models ?? {})).toEqual([
+      'claude-haiku-4-5-20251001',
+      'claude-sonnet-5',
+    ]);
+    // A step whose agent reported no models records none.
+    expect(record.steps[1]).not.toHaveProperty('models');
   });
 
   it('fails the run when a step prompt cannot be read', async () => {

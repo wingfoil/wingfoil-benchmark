@@ -21,6 +21,15 @@ const usage = z.object({
   durationMs: z.number(),
 });
 
+/** One model a step reported using (task-054), as `run.json` records it. */
+const modelUsage = z.object({
+  inputTokens: z.number(),
+  outputTokens: z.number(),
+  cacheCreationInputTokens: z.number(),
+  cacheReadInputTokens: z.number(),
+  costUsd: z.number(),
+});
+
 /** What the run detail reads of a `run.json` (REQ-FMT-06): the record the runner writes, loosely. */
 const runSchema = z.object({
   campaign: z.string().optional(),
@@ -50,6 +59,7 @@ const runSchema = z.object({
         outcome: z.string(),
         interventions: z.number().int(),
         usage,
+        models: z.record(z.string(), modelUsage).optional(),
         cost_bound_usd: z.number().optional(),
         rate_limit_waits: z.array(z.object({ after_invocation: z.number().int(), waited_s: z.number() })).optional(),
       })
@@ -120,6 +130,8 @@ export interface StepDetail {
   readonly outcome: string;
   readonly interventions: number;
   readonly usage: StepUsage;
+  /** The models the step reported using (task-054); absent in runs stored before it. */
+  readonly models?: Readonly<Record<string, z.infer<typeof modelUsage>>>;
   /** For a step killed at its time cap that reported no cost: the most it can have cost (task-024). */
   readonly costBoundUsd?: number;
   /** A rate limit's waits (task-051), as `run.json` records them. */
@@ -257,6 +269,7 @@ export function readRunDetail(runDir: string): Result<RunDetail> {
       outcome: step.outcome,
       interventions: step.interventions,
       usage: step.usage,
+      ...(step.models === undefined ? {} : { models: step.models }),
       ...(step.cost_bound_usd === undefined ? {} : { costBoundUsd: step.cost_bound_usd }),
       ...(step.rate_limit_waits === undefined
         ? {}

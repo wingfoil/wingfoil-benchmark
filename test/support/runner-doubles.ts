@@ -109,6 +109,8 @@ export function doubles(
     stopOf?: (request: AgentRequest) => 'cap reached' | 'quota exhausted' | 'rate limited' | undefined;
     /** The session's final assistant message, which the approver classifies; by default none. */
     messageOf?: (request: AgentRequest) => string | undefined;
+    /** The models an invocation's session reports (task-054); absent by default, as the trivial fake's. */
+    modelsOf?: (request: AgentRequest) => StepOutcome['models'];
     /** What a patch holds; by default a line naming the directory and the two trees. */
     patchOf?: (directory: string, from: string, to: string) => string;
     /** The messages of the commits a step made (task-035); by default none. */
@@ -290,6 +292,7 @@ export function doubles(
     const error = options.errorOf?.(request);
     const message = options.messageOf?.(request);
     const stop = options.stopOf?.(request);
+    const models = options.modelsOf?.(request);
     return Promise.resolve({
       sessionId: options.sessionOf?.(request) ?? request.sessionId,
       usage: options.usageOf?.(request) ?? NO_USAGE,
@@ -299,6 +302,7 @@ export function doubles(
       ...(error === undefined ? {} : { error }),
       ...(stop === undefined ? {} : { stop }),
       ...(message === undefined ? {} : { finalMessage: message }),
+      ...(models === undefined ? {} : { models }),
     });
   };
   const agent: AgentPort = {
