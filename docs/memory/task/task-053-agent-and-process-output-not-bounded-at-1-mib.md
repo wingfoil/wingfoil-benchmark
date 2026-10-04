@@ -104,3 +104,50 @@ at the end, so it is kept.
 - `npx wingfoil memory add --type task --title "Agent and process output not bounded at 1 MiB"`. Declared:
   creates the element from the template and commits it. Observed: `fe5c5e2 wf(task): add task-053-…`, `status:
   draft`, the template's fields empty.
+- `npx wingfoil memory submit task-053-…` (draft → pending). Declared: moves `status` and commits the file.
+  Observed: `fd7a601 wf(task): submit …`, `status: pending`; the body committed first (`dc3527e`).
+- `npx wingfoil memory approve task-053-… --reason "…"` (pending → backlog), run by the agent on the approver's
+  request in chat (2026-10-04: "procedi con il bug 11 e la sua risoluzione"). Declared: moves `status`, records
+  approver and reason. Observed: `187bbc9 … [pending → backlog]`, with `Approver:` and `Reason:` trailers.
+- Branch `task/task-053-…` in its own worktree (`../WingFoil2-Benchmark-task-053`, its own `npm ci`). Design
+  committed first (`013208d`). Then `npx wingfoil memory submit task-053-…` (backlog → in-progress). Observed:
+  `e5d2496`, `status: in-progress`, on the task branch.
+
+### Build
+
+- **Red first:**
+  - `test/unit/ports/process.test.ts`: a 3 MiB output gets 1 048 576 characters, not 3 MiB, and
+    `createSystemProcess` does not exist;
+  - `test/unit/agents/claude-code.test.ts`: a bounded stream reads "a line of the session is not valid JSON".
+- **Then green** (`1110370`):
+  - `MAX_OUTPUT_BYTES` 256 MiB and `createSystemProcess` in the port, `outputBounded` and the note in `stderr`;
+  - the adapter fails a bounded step by name, keeping the lines it read.
+- `npm test`: 77 files, 1216 tests; coverage 98.04 % statements. `npm run lint`: clean. `npm run test:bin`: 8/8.
+  `npm run test:docker` on `1110370`: 16/16, with the runner changes of `0b87a9b` landing during the run. It is run
+  again on the final commit (below).
+
+### Review
+
+An independent, read-only agent reviewed `main...1110370` against the Design, bug-011 and REQ-RUN-04/08/09.
+It found no blocker. Checked against Node 22.21 directly:
+
+- the error is `code: 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER'`, with `killed` undefined;
+- `maxBuffer` counts bytes, but the string kept is at most `maxBuffer` characters, below V8's longest string.
+
+| # | Finding | Severity | Outcome |
+|---|---|---|---|
+| 1 | A bounded step's cost was still recorded as a reported 0, which contradicts the Design ("as a session killed at its time cap") | should-fix | **Fixed** (`0b87a9b`): the runner reads `outputBounded` from the exec result and counts the step at its bound (`cost_reported: false`, `cost_bound_usd`); a runner test |
+| 2 | bug-011's Resolution empty | should-fix | **Fixed** at the end of this task |
+| 3 | Comment and Design said Node sets `killed` on this error | nit | **Fixed** (`0b87a9b`) |
+| 4 | The step's snapshot is taken while a bounded agent may still be writing | nit | **Written into the Design** (`0b87a9b`); not handled, being unreachable at 256 MiB |
+| 5 | `processFailure` could quote a stderr of up to 256 MiB | nit | **Fixed** (`0b87a9b`): its last 4 096 characters; a test |
+| 6 | A bounded setup is named in `log.txt`, not in `run.json` | nit | Accepted as is |
+
+A **re-review** of `0b87a9b` by the same agent: clean. Its two nits:
+
+- an adapter that *throws* on a bounded result would lose the cost bound. **Fixed** (`21e7b2d`), with a test. The
+  error names the bound;
+- the runner's default error string is not the adapter's. Cosmetic, left.
+
+After the fixes: `npm test` 77 files, **1219 tests**; coverage **98.04 %** statements, 90.89 % branches, 98.76 %
+functions, 99.18 % lines. `npm run lint`: clean.
