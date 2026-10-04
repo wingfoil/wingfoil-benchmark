@@ -151,3 +151,5 @@ A **re-review** of `0b87a9b` by the same agent: clean. Its two nits:
 
 After the fixes: `npm test` 77 files, **1219 tests**; coverage **98.04 %** statements, 90.89 % branches, 98.76 %
 functions, 99.18 % lines. `npm run lint`: clean.
+- `npm run test:docker` on `0b87a9b`: **16/16**, none skipped, 425 s; no container left behind. `21e7b2d` changes
+  only the runner's catch path for a bounded invocation, which no Docker test reaches; its unit tests cover it.
