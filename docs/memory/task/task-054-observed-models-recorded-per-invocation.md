@@ -147,6 +147,9 @@ sections are fixed.
 After the fixes: `npm test` 77 files, **1225 tests**; coverage **98.04 %** statements, 90.93 % branches, 98.77 %
 functions, 99.18 % lines. `npm run lint`: clean.
 
+`npm run test:docker` on `04e13b5`: **16/16**, none skipped, 444 s. `d305ca8` changes only tests, documents and a
+comment.
+
 ### Deviations from the Context, for the approver
 
 - **Fold, not sum.** The Context says the models are "summed over the step's invocations … tokens added". The
