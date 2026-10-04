@@ -87,3 +87,50 @@ No generator change.
 
 - `npx wingfoil memory add --type task --title "Method page re-read before publishing v0.1"`. Declared: creates the
   element from the template and commits it. Observed: `wf(task): add task-055-…`, `status: draft`.
+- `npx wingfoil memory submit task-055-…` (draft → pending), `ec53aae`; `memory approve` (pending → backlog), run by the
+  agent on the approver's request in chat (2026-10-04, "Si procedi con il task per method.md"), `7f62369`. Branch in
+  its own worktree (`../WingFoil2-Benchmark-task-055`, its own `npm ci`); Design committed first; `memory submit`
+  (backlog → in-progress). Each command did what it declares.
+
+### Build
+
+- **Red first:** the statements test named `auxiliary-models` and `wingfoil-manual-process` before the prose had
+  them, and failed ("holds every statement it owes").
+- **Then green** (`1350bad`): the prose of Design items 1b, 3a, 3b and 4, and the test's sources for the new and
+  changed anchors.
+- **The site rebuilt** on `c82a5e74885b/2` in the worktree (16 pages) and read in the browser pane over a local
+  HTTP server:
+  - the method page shows the new statements under their anchors;
+  - "This execution" reads the pins of Design item 2c;
+  - the landing page and category C load.
+- `npm test`: 77 files, 1225 tests; coverage 98.04 %. `npm run lint`: clean.
+
+### Review
+
+An independent, read-only agent checked the whole page against its sources and the recorded results. Among its
+checks:
+
+- Haiku 4.5 in 5 of 86 steps, 0.27 % of the cost;
+- the runner's path for a bounded step;
+- the slice: one Opus run.
+
+It found no blocker, and no other statement contradicting how the campaign ran.
+
+| # | Finding | Severity | Outcome |
+|---|---|---|---|
+| 1 | The 256 MiB sentence implied that the work before the bound is scored like a killed step's; its snapshot is not reliable, and the run fails | should-fix | **Fixed** (`4253600`): a failed step, counted at its bound, the run ends |
+| 2 | The manual's process not said to be the manual's choice, not WingFoil's requirement (calibration §7) | should-fix | **Fixed** (`4253600`) |
+| 3 | "A lighter use would cost less" stated as fact, unmeasured | should-fix | **Fixed** (`4253600`): "could cost less …; v0.1 measures only this one" |
+| 4 | The arm's tokens are the run's model's only, while its cost includes the auxiliary model's (bug-012) | should-fix | **Fixed** (`4253600`) |
+| 5–9 | The approval round trip; "for its cost"; "a stronger model"; T14's wording; "beside the run's model" | nit | **Fixed** (`4253600`) |
+| 10 | T13 named S4 without "a later scenario" (pre-existing) | nit | **Fixed** (`4253600`) |
+| 11 | Execution `/1` not mentioned on the page | nit | Left, as the Design reasons: the release notes say it |
+
+A **re-review** of `4253600`: clean. Its three wording nits were fixed:
+
+- the approval is asked only when the work needs one;
+- the round trips, not "waiting";
+- the full slice "would have cost too much for v0.1's budget", since it never ran.
+
+`npm test` after the fixes: 1225 tests, green.
+
