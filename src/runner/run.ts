@@ -1025,7 +1025,8 @@ async function executeStep(
   // What the step cost across its invocations, and the whole of what they said (REQ-RUN-09,
   // REQ-FMT-06). The transcript is git-ignored and scrubbed by the adapter (REQ-NFR-01, REQ-RES-06).
   const usage = stepUsage(invocations);
-  // One session's running totals per model, folded as the adapter folds them within an invocation (task-054).
+  // One session's running totals per model, folded as the adapter folds them within an invocation (task-054). An
+  // invocation that answered from another session has already failed the step; its models are folded in all the same.
   const models = invocations.map((invocation) => invocation.models ?? {}).reduce(foldModels, {});
   const transcript = invocations.flatMap((invocation) => invocation.transcript);
   writeFileSync(join(stepDir, 'usage.json'), `${JSON.stringify(usage, undefined, 2)}\n`);

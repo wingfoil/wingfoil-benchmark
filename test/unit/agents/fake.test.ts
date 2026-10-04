@@ -109,6 +109,9 @@ describe('the scripted fake agent', () => {
     expect(outcome.usage.costUsd).toBeCloseTo(0.009874, 10);
     expect(outcome.transcript).toHaveLength(4);
     expect(runner.commands).toEqual([['sh', '-c', 'true']]);
+    // And the models it reports, as the real agent's (task-054).
+    expect(Object.keys(outcome.models ?? {})).toEqual(['claude-haiku-4-5']);
+    expect(outcome.models?.['claude-haiku-4-5']?.costUsd).toBeCloseTo(0.009874, 10);
   });
 
   it('reports a replayed session that failed, instead of calling the step a success', async () => {

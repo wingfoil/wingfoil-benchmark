@@ -65,9 +65,13 @@ models. It is small, and it changes no score.
 - it is **the session's running total**, like `total_cost_usd`, and unlike `usage`, which is the invocation's own.
   For example, step 01: the first result's `outputTokens` is 22 935, the resume's `usage.output_tokens` is 2 105, and
   its `modelUsage` reports 25 040;
-- the keys are what Claude Code reports: the run's model (`claude-sonnet-5`), and models it uses for its own work,
-  under an alias or a dated id (`claude-haiku-4-5`, `claude-haiku-4-5-20251001`, both in one fixture). They are kept
-  as reported, not normalised: the record says what the agent said.
+- the keys are what Claude Code reports, kept as reported and not normalised: the record says what the agent said.
+  - In `c82a5e74885b/1` they are the run's model (`claude-sonnet-5`) and a model Claude Code calls for its own work
+    (`claude-haiku-4-5-20251001`).
+  - **One model can appear under two keys.** The spike's fixtures (an older Claude Code) report the run's own model
+    as `claude-haiku-4-5` in a session and as `claude-haiku-4-5-20251001` in its resume, the alias key holding the
+    first invocation's figures and the dated key the resume's own (review, finding 1).
+  - "The session's latest total" therefore holds **per key**. Two keys are not proof of two models.
 
 **Changes:**
 
@@ -96,3 +100,12 @@ smaller model for its own work is part of that re-read, not of this task.
 
 - `npx wingfoil memory add --type task --title "Observed models recorded per invocation"`. Declared: creates the
   element from the template and commits it. Observed: `wf(task): add task-054-…`, `status: draft`.
+
+### Deviations from the Context, for the approver
+
+- **Fold, not sum.** The Context says the models are "summed over the step's invocations … tokens added". The
+  Design takes the largest reading per key instead. `modelUsage` turned out to be a running total, and summing it
+  would count every resume's earlier invocations twice. The real transcripts bear this out (review).
+- **The method page's sentence** ("Claude Code may use a smaller model for its own work") moves out of this task,
+  into the method page's re-read before publishing, which W11 left due.
+
