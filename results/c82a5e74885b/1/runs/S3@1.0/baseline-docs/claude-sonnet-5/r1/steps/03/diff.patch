@@ -1,0 +1,143 @@
+diff --git a/README.md b/README.md
+index 9813c68eda2b07206b0790f40b022b9568a2bd8e..650b6d914ce261a9320ee22189ab3f8cee44fd2c 100644
+--- a/README.md
++++ b/README.md
+@@ -27,9 +27,11 @@ const booking = desk.book(quote);
+ ```
+ 
+ Rules: prices are integer euro cents; times are UTC ISO-8601 strings; a booking covers whole days,
+-from midnight to midnight; the same item cannot be booked twice for overlapping periods. `quote` and
+-`book` throw for an unknown item or a disallowed period, and `book` also throws when the item is
+-already booked for part of the period.
++from midnight to midnight; the same item cannot be booked twice for overlapping periods. A rental of
++3 days or more costs 10% less than its full price (daily price times the number of days), rounded to
++the nearest cent; this discount applies to both quotes and bookings. `quote` and `book` throw for an
++unknown item or a disallowed period, and `book` also throws when the item is already booked for part
++of the period.
+ 
+ To see what can still be rented, ask for availability:
+ 
+diff --git a/src/pricing.ts b/src/pricing.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..3b41a11cb1b13e1bffa17adc27885d878cb8b048
+--- /dev/null
++++ b/src/pricing.ts
+@@ -0,0 +1,15 @@
++const LONG_RENTAL_THRESHOLD_DAYS = 3;
++const LONG_RENTAL_DISCOUNT = 0.1;
++
++/**
++ * Prices a rental of the given number of whole days at the given daily price. Rentals of
++ * {@link LONG_RENTAL_THRESHOLD_DAYS} days or more are discounted by {@link LONG_RENTAL_DISCOUNT},
++ * rounded to the nearest cent.
++ */
++export function priceForDays(dailyPrice: number, days: number): number {
++  const fullPrice = dailyPrice * days;
++  if (days < LONG_RENTAL_THRESHOLD_DAYS) {
++    return fullPrice;
++  }
++  return Math.round(fullPrice * (1 - LONG_RENTAL_DISCOUNT));
++}
+diff --git a/src/rental-service.test.ts b/src/rental-service.test.ts
+index 4d5f19fddb2ac18b781a3aab97cdfdaee6a762e3..7a0179d8e24366484910a83e61041dd66a0d6eb9 100644
+--- a/src/rental-service.test.ts
++++ b/src/rental-service.test.ts
+@@ -20,17 +20,56 @@ test('quotes a single day rental at the item\'s daily price', () => {
+   });
+ });
+ 
+-test('quotes a multi-day rental as the daily price times the number of days', () => {
++test('quotes a multi-day rental below the long-rental threshold as the daily price times the number of days', () => {
+   const service = createRentalService();
+   service.addEquipment({ id: 'sail-1', kind: 'sail', dailyPrice: 1500 });
+ 
+   const result = service.quote({
+     itemId: 'sail-1',
+     start: '2024-06-01T00:00:00.000Z',
++    end: '2024-06-03T00:00:00.000Z',
++  });
++
++  assert.equal(result.total, 3000);
++});
++
++test('quotes a 3-day rental at 10% off the full price', () => {
++  const service = createRentalService();
++  service.addEquipment({ id: 'board-1', kind: 'board', dailyPrice: 2500 });
++
++  const result = service.quote({
++    itemId: 'board-1',
++    start: '2024-06-01T00:00:00.000Z',
+     end: '2024-06-04T00:00:00.000Z',
+   });
+ 
+-  assert.equal(result.total, 4500);
++  assert.equal(result.total, 6750); // 3 * 2500 = 7500, minus 10% = 6750
++});
++
++test('quotes a 2-day rental at full price, below the long-rental threshold', () => {
++  const service = createRentalService();
++  service.addEquipment({ id: 'board-1', kind: 'board', dailyPrice: 2000 });
++
++  const result = service.quote({
++    itemId: 'board-1',
++    start: '2024-06-01T00:00:00.000Z',
++    end: '2024-06-03T00:00:00.000Z',
++  });
++
++  assert.equal(result.total, 4000);
++});
++
++test('quotes a long rental at 10% off, rounded to the nearest cent', () => {
++  const service = createRentalService();
++  service.addEquipment({ id: 'board-1', kind: 'board', dailyPrice: 333 });
++
++  const result = service.quote({
++    itemId: 'board-1',
++    start: '2024-06-01T00:00:00.000Z',
++    end: '2024-06-04T00:00:00.000Z',
++  });
++
++  assert.equal(result.total, 899); // 3 * 333 = 999, minus 10% = 899.1, rounded to 899
+ });
+ 
+ test('quote throws for an unknown item', () => {
+@@ -102,6 +141,19 @@ test('books an item and returns a booking with an id', () => {
+   assert.ok(booking.id.length > 0);
+ });
+ 
++test('books a 3-day rental at 10% off the full price', () => {
++  const service = createRentalService();
++  service.addEquipment({ id: 'board-1', kind: 'board', dailyPrice: 2000 });
++
++  const booking = service.book({
++    itemId: 'board-1',
++    start: '2024-06-01T00:00:00.000Z',
++    end: '2024-06-04T00:00:00.000Z',
++  });
++
++  assert.equal(booking.total, 5400); // 3 * 2000 = 6000, minus 10% = 5400
++});
++
+ test('book throws for an unknown item', () => {
+   const service = createRentalService();
+ 
+diff --git a/src/rental-service.ts b/src/rental-service.ts
+index 25d7da3cb36c1c5b7fd64442d13d7623b42766e0..21f334c4d4422806d87a32e3061fca34e7cda55b 100644
+--- a/src/rental-service.ts
++++ b/src/rental-service.ts
+@@ -1,5 +1,6 @@
+ import type { AvailabilityQuery, Booking, Equipment, Quote, RentalRequest, RentalService } from './types.ts';
+ import { parsePeriod } from './period.ts';
++import { priceForDays } from './pricing.ts';
+ import { validateAvailabilityQuery, validateEquipment } from './validation.ts';
+ 
+ /** Creates a rental service that keeps equipment, quotes and bookings in memory. */
+@@ -18,7 +19,7 @@ export function createRentalService(): RentalService {
+ 
+   function priceFor(item: Equipment, start: string, end: string): { total: number; startMs: number; endMs: number } {
+     const { startMs, endMs, days } = parsePeriod(start, end);
+-    return { total: days * item.dailyPrice, startMs, endMs };
++    return { total: priceForDays(item.dailyPrice, days), startMs, endMs };
+   }
+ 
+   function overlapsExistingBooking(itemId: string, startMs: number, endMs: number): boolean {

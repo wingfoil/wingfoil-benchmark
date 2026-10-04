@@ -1,0 +1,380 @@
+diff --git a/README.md b/README.md
+index 6128525e20c4663bda4ad8cb84b5cfffd4b6dd04..0a4767b68568cb881f5975e14392e775294aed5a 100644
+--- a/README.md
++++ b/README.md
+@@ -36,6 +36,20 @@ applyPatch(document, [{ op: 'add', path: '/baz', value: 'qux' }]); // { foo: 'ba
+ document; // unchanged: { foo: 'bar' }
+ ```
+ 
++`createPatch(from, to)` computes a JSON Patch that turns `from` into `to` when applied with
++`applyPatch`, without mutating either argument. The patch only describes what changed: unchanged
++object members and array elements are left out, so a small change does not require resending the
++whole document.
++
++```ts
++import { createPatch, applyPatch } from 'json-toolkit';
++
++const from = { title: 'Hello!', tags: ['a', 'b'] };
++const to = { title: 'Hello!', tags: ['a', 'b', 'c'] };
++createPatch(from, to); // [{ op: 'add', path: '/tags/-', value: 'c' }]
++applyPatch(from, createPatch(from, to)); // deep-equal to `to`
++```
++
+ ### JSON Merge Patch (RFC 7386)
+ 
+ `applyMergePatch(target, patch)` applies a [JSON Merge Patch](https://www.rfc-editor.org/rfc/rfc7386)
+diff --git a/docs/memory/decision-log/dl-004-createpatch-array-diff-index-aligned-no-move-lcs-detection.md b/docs/memory/decision-log/dl-004-createpatch-array-diff-index-aligned-no-move-lcs-detection.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..51aa51d4a87b4cdb1552ff354a76a7ad74fa8200
+--- /dev/null
++++ b/docs/memory/decision-log/dl-004-createpatch-array-diff-index-aligned-no-move-lcs-detection.md
+@@ -0,0 +1,49 @@
++---
++id: dl-004-createpatch-array-diff-index-aligned-no-move-lcs-detection
++type: decision-log
++title: "createPatch array diff: index-aligned, no move/LCS detection"
++status: pending
++---
++
++## Context
++
++`createPatch(from, to)` (task-005) needs a strategy for diffing two arrays at the same path. RFC
++6902 does not prescribe one: it defines what `add`/`remove`/`replace`/`move`/`copy` do once chosen,
++not how a diff should choose between them. Two broad options existed:
++
++1. **Index-aligned diff**: compare `from[i]` to `to[i]` for the common length, then append or
++   remove the trailing elements of whichever side is longer. Simple, and already matches how
++   `diffObjects` treats members: no attempt to detect that an element merely moved.
++2. **Content-aware diff** (e.g. an LCS-based alignment, as `diff`/`fast-json-patch` use, possibly
++   emitting `move`): finds the smallest edit script for insertions/deletions/moves anywhere in the
++   array, not only at the end.
++
++Option 2 produces a strictly smaller patch when an element is inserted, removed, or reordered in
++the middle of an array — the exact case this task's "describe only what changed" requirement cares
++about. But it is a materially larger algorithm (an LCS or similar alignment, plus matching rules
++for *which* values count as "the same element" when they are objects that also changed slightly),
++and it is not needed for this library's actual use case so far: configuration files, API payloads
++and stored records, where `README.md`'s examples (and task-005's own) show arrays mostly growing or
++shrinking at the end (e.g. `tags`), not being reordered.
++
++## Decision
++
++`createPatch` aligns array elements by index (see `diffArrays` in `src/index.ts`): it diffs the
++common-length prefix recursively, then emits a trailing `add` (at `path/-`) for each extra element
++if `to` is longer, or a trailing `remove` (highest index first) for each extra element if `from` is
++longer. No `move` is ever emitted by `createPatch`, and no attempt is made to detect that an
++element was inserted or removed before the end of the array.
++
++## Consequences
++
++- A pure trailing append or removal — the common case this project's own documents exhibit — still
++  produces a minimal, single-operation patch per element.
++- An insertion, removal, or reorder in the *middle* of an array produces a patch with one
++  `replace` per shifted index from that point to the end of the common length, plus a trailing
++  `add`/`remove`, rather than the single `add`/`remove`/`move` a content-aware diff would produce.
++  This is correct (`applyPatch(from, createPatch(from, to))` always deep-equals `to`, and is
++  covered by a round-trip assertion in every `createPatch` test) but not minimal in that case.
++- If a client's real workload turns out to reorder or insert into the middle of large arrays
++  often enough for this to matter, revisit with a content-aware (LCS/move-aware) array diff then;
++  doing so now would be speculative complexity against an access pattern this project does not yet
++  have evidence of.
+diff --git a/docs/memory/task/task-005-implement-json-patch-rfc-6902-createpatch-diff.md b/docs/memory/task/task-005-implement-json-patch-rfc-6902-createpatch-diff.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..b3df5c41f4d07fba4cf139f49b8a272e2dee27fc
+--- /dev/null
++++ b/docs/memory/task/task-005-implement-json-patch-rfc-6902-createpatch-diff.md
+@@ -0,0 +1,62 @@
++---
++id: task-005-implement-json-patch-rfc-6902-createpatch-diff
++type: task
++title: "Implement JSON Patch (RFC 6902) createPatch (diff)"
++status: pending
++---
++
++## Request
++
++Clients want to send only what changed between two versions of a JSON document, instead of the
++whole new version. Add `createPatch(from, to)`, exported from `src/index.ts`, that returns a JSON
++Patch (RFC 6902) which turns `from` into `to` when applied, without mutating either argument. The
++patch must describe only what changed, not the whole document, for small changes.
++
++## What was done
++
++Added `createPatch(from, to)` to `src/index.ts`, built on the `isObject`, `deepClone` and
++`deepEqual` helpers already used by `applyPatch`/`applyMergePatch`. It is a structural diff: a
++private `diffValues(path, from, to, patch)` walks `from` and `to` together —
++
++- if the two values are deep-equal (per the existing `deepEqual`), nothing is emitted;
++- if both are objects, `diffObjects` emits a `remove` for each member only `from` has, an `add`
++  (with a deep-cloned value) for each member only `to` has, and recurses into members both sides
++  have, at that member's own path;
++- if both are arrays, `diffArrays` recurses index-by-index over the common length, then appends
++  (`add` at `path/-`) `to`'s extra trailing elements if it is longer, or removes (`remove`)
++  `from`'s extra trailing elements, highest index first, if it is shorter;
++- otherwise (a JSON type change at this path, or two different scalars) it emits a single
++  `replace` at `path` with a deep-cloned `to`. This also covers the whole-document case
++  (`path: ""`), reusing the `replace`-at-root behaviour decided in dl-002.
++
++A new `escapeToken`/`childPath` pair builds each child path, escaping `~` and `/` in object member
++names (`~` → `~0` first, then `/` → `~1`, the exact inverse of `parsePointer`'s unescaping order),
++so a patch produced by `createPatch` always resolves correctly through `resolvePointer`/
++`applyPatch` even when a member name itself contains JSON Pointer special characters.
++
++Followed the project's test-first directive: added tests to `src/index.test.ts` and confirmed red
++(`createPatch` did not exist) before implementing. Added 13 new cases, all new behaviour: an
++empty patch for equal documents, add/remove/replace of a single member, recursion into a nested
++object, trailing array append/remove, a combined in-place-change-plus-trailing-removal case,
++whole-document replace on a type change, escaping of `~`/`/` in member names, non-mutation of
++`from`/`to`, and non-aliasing of an inserted value with `to`. Every case except the last two
++(mutation/aliasing) also asserts the actual contract — `applyPatch(from, createPatch(from, to))`
++deep-equals `to` — via a small `assertTurnsFromIntoTo` helper, since the computed shape of the
++patch is secondary to that round trip. `node --test`: 73/73 (60 pre-existing + 13 new).
++
++Verified `src/index.ts` (the file actually published, per `dist`) still compiles with zero errors
++under the existing strict `tsconfig.json`, using a `typescript` install already cached locally from
++an earlier task's temporary install (not added as a dependency, consistent with dl-001).
++
++Documented `createPatch` in `README.md`, directly under `applyPatch`, since both belong to the
++same RFC 6902 feature.
++
++Recorded the array-diffing strategy as a decision-log (see below), since it is a real algorithmic
++choice with a user-visible consequence (patch size/shape for array edits other than a pure
++trailing append/removal) rather than something RFC 6902 dictates.
++
++## Follow-ups
++
++- dl-001's decision to defer `tsc` typechecking of test files still applies; this change was
++  verified the same way.
++- See the new decision-log for the array-diffing trade-off and why it was accepted as-is for now.
+diff --git a/src/index.test.ts b/src/index.test.ts
+index 3ab4f849c6d45f3d03f5ebd8881f8656a0276106..180a000ba664c2f52f8a23f271bc6ef6eb1ef077 100644
+--- a/src/index.test.ts
++++ b/src/index.test.ts
+@@ -1,6 +1,6 @@
+ import { test } from 'node:test';
+ import assert from 'node:assert/strict';
+-import { applyMergePatch, applyPatch, resolvePointer } from './index.ts';
++import { applyMergePatch, applyPatch, createPatch, resolvePointer, type JsonValue } from './index.ts';
+ 
+ // The document and pointers below are the worked example from RFC 6901 section 5.
+ const document = {
+@@ -341,3 +341,106 @@ test('the result does not share structure with the patch', () => {
+   result.a.b = 'mutated';
+   assert.equal(patch.a.b, 'c');
+ });
++
++// createPatch computes a JSON Patch (RFC 6902) between two documents. Each case below also
++// checks that applying the computed patch to `from` actually reproduces `to`, since that round
++// trip is createPatch's real contract.
++function assertTurnsFromIntoTo(from: JsonValue, to: JsonValue): void {
++  assert.deepEqual(applyPatch(from, createPatch(from, to)), to);
++}
++
++test('returns an empty patch for two deeply equal documents', () => {
++  assert.deepEqual(createPatch({ a: 1, b: [1, 2] }, { a: 1, b: [1, 2] }), []);
++});
++
++test('adds a new object member', () => {
++  const from = { a: 1 };
++  const to = { a: 1, b: 2 };
++  assert.deepEqual(createPatch(from, to), [{ op: 'add', path: '/b', value: 2 }]);
++  assertTurnsFromIntoTo(from, to);
++});
++
++test('removes an object member', () => {
++  const from = { a: 1, b: 2 };
++  const to = { a: 1 };
++  assert.deepEqual(createPatch(from, to), [{ op: 'remove', path: '/b' }]);
++  assertTurnsFromIntoTo(from, to);
++});
++
++test('replaces a changed scalar member', () => {
++  const from = { a: 1 };
++  const to = { a: 2 };
++  assert.deepEqual(createPatch(from, to), [{ op: 'replace', path: '/a', value: 2 }]);
++  assertTurnsFromIntoTo(from, to);
++});
++
++test('recurses into nested objects, touching only the member that changed', () => {
++  const from = { a: { b: 1, c: 2 } };
++  const to = { a: { b: 1, c: 3 } };
++  assert.deepEqual(createPatch(from, to), [{ op: 'replace', path: '/a/c', value: 3 }]);
++  assertTurnsFromIntoTo(from, to);
++});
++
++test('appends array elements', () => {
++  const from = { a: [1, 2] };
++  const to = { a: [1, 2, 3] };
++  assert.deepEqual(createPatch(from, to), [{ op: 'add', path: '/a/-', value: 3 }]);
++  assertTurnsFromIntoTo(from, to);
++});
++
++test('removes trailing array elements', () => {
++  const from = { a: [1, 2, 3] };
++  const to = { a: [1, 2] };
++  assert.deepEqual(createPatch(from, to), [{ op: 'remove', path: '/a/2' }]);
++  assertTurnsFromIntoTo(from, to);
++});
++
++test('replaces a changed array element in place', () => {
++  const from = { a: [1, 2, 3] };
++  const to = { a: [1, 9, 3] };
++  assert.deepEqual(createPatch(from, to), [{ op: 'replace', path: '/a/1', value: 9 }]);
++  assertTurnsFromIntoTo(from, to);
++});
++
++test('combines an in-place change with a trailing removal in the same array', () => {
++  const from = { a: [{ x: 1 }, { x: 2 }, { x: 3 }] };
++  const to = { a: [{ x: 9 }, { x: 2 }] };
++  assert.deepEqual(createPatch(from, to), [
++    { op: 'replace', path: '/a/0/x', value: 9 },
++    { op: 'remove', path: '/a/2' },
++  ]);
++  assertTurnsFromIntoTo(from, to);
++});
++
++test('replaces the whole document when its JSON type changes', () => {
++  const from = { a: 1 };
++  const to = [1, 2];
++  assert.deepEqual(createPatch(from, to), [{ op: 'replace', path: '', value: [1, 2] }]);
++  assertTurnsFromIntoTo(from, to);
++});
++
++test('escapes "~" and "/" in member names used as pointer tokens', () => {
++  const from = {};
++  const to = { 'a/b': 1, 'c~d': 2 };
++  const patch = createPatch(from, to);
++  assert.deepEqual(
++    new Set(patch.map((operation) => operation.path)),
++    new Set(['/a~1b', '/c~0d']),
++  );
++  assertTurnsFromIntoTo(from, to);
++});
++
++test('does not mutate "from" or "to"', () => {
++  const from = { a: 1, b: [1, 2] };
++  const to = { a: 2, b: [1, 2, 3] };
++  createPatch(from, to);
++  assert.deepEqual(from, { a: 1, b: [1, 2] });
++  assert.deepEqual(to, { a: 2, b: [1, 2, 3] });
++});
++
++test('an inserted value does not share structure with "to"', () => {
++  const to = { a: { x: 1 } };
++  const [operation] = createPatch({}, to) as [{ op: 'add'; path: string; value: { x: number } }];
++  operation.value.x = 2;
++  assert.equal(to.a.x, 1);
++});
+diff --git a/src/index.ts b/src/index.ts
+index c1da3625e077a24ca937e117100945f4ecd3dd97..d5cf780d403f2d674dcfc34e2b034af4d14cf04d 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -325,6 +325,108 @@ export function applyPatch(document: JsonValue, patch: JsonPatchOperation[]): Js
+   return operations.reduce<JsonValue>((current, operation) => applyOperation(current, operation), deepClone(document));
+ }
+ 
++/**
++ * Escapes a single JSON Pointer reference token, the inverse of the
++ * unescaping `parsePointer` performs (RFC 6901 section 4): "~" becomes
++ * "~0" first, then "/" becomes "~1", so that a literal "~1" already
++ * present in the token round-trips instead of being read back as an
++ * escape sequence.
++ */
++function escapeToken(token: string): string {
++  return token.replace(/~/g, '~0').replace(/\//g, '~1');
++}
++
++/** Appends a reference token to a JSON Pointer, escaping it first. */
++function childPath(path: string, token: string): string {
++  return `${path}/${escapeToken(token)}`;
++}
++
++/**
++ * Diffs the members of two objects at `path`, per the strategy described
++ * on `createPatch`: a member only `from` has is removed, a member only
++ * `to` has is added (with a cloned value, so the patch never shares
++ * structure with `to`), and a member both sides have is diffed
++ * recursively at its own path.
++ */
++function diffObjects(
++  path: string,
++  from: { [member: string]: JsonValue },
++  to: { [member: string]: JsonValue },
++  patch: JsonPatchOperation[],
++): void {
++  for (const member of Object.keys(from)) {
++    if (!Object.prototype.hasOwnProperty.call(to, member)) {
++      patch.push({ op: 'remove', path: childPath(path, member) });
++    }
++  }
++  for (const member of Object.keys(to)) {
++    if (Object.prototype.hasOwnProperty.call(from, member)) {
++      diffValues(childPath(path, member), from[member], to[member], patch);
++    } else {
++      patch.push({ op: 'add', path: childPath(path, member), value: deepClone(to[member]) });
++    }
++  }
++}
++
++/**
++ * Diffs the elements of two arrays at `path`, per the strategy described
++ * on `createPatch`: elements are lined up by index; the common prefix is
++ * diffed recursively, then `to`'s extra elements (if it is longer) are
++ * appended, or `from`'s extra elements (if it is longer) are removed,
++ * highest index first so an earlier removal never shifts a later one.
++ */
++function diffArrays(path: string, from: JsonValue[], to: JsonValue[], patch: JsonPatchOperation[]): void {
++  const common = Math.min(from.length, to.length);
++  for (let index = 0; index < common; index++) {
++    diffValues(childPath(path, String(index)), from[index], to[index], patch);
++  }
++  for (let index = common; index < to.length; index++) {
++    patch.push({ op: 'add', path: `${path}/-`, value: deepClone(to[index]) });
++  }
++  for (let index = from.length - 1; index >= common; index--) {
++    patch.push({ op: 'remove', path: childPath(path, String(index)) });
++  }
++}
++
++/**
++ * Diffs `from` against `to` at `path`, appending the operations needed
++ * to turn the former into the latter to `patch`. See `createPatch`.
++ */
++function diffValues(path: string, from: JsonValue, to: JsonValue, patch: JsonPatchOperation[]): void {
++  if (deepEqual(from, to)) {
++    return;
++  }
++  if (isObject(from) && isObject(to)) {
++    diffObjects(path, from, to, patch);
++  } else if (Array.isArray(from) && Array.isArray(to)) {
++    diffArrays(path, from, to, patch);
++  } else {
++    patch.push({ op: 'replace', path, value: deepClone(to) });
++  }
++}
++
++/**
++ * Computes a JSON Patch (RFC 6902) that turns `from` into `to` when
++ * applied via `applyPatch`. Does not mutate `from` or `to`.
++ *
++ * The result is a structural diff, not a byte- or text-level one: it
++ * walks `from` and `to` together, member by member for objects and
++ * index by index for arrays, and only emits an operation where the two
++ * sides actually differ at that path. A value is replaced wholesale only
++ * where there is no finer-grained description left: a change of JSON
++ * type at that path (e.g. an object becoming an array), or a scalar that
++ * differs from its counterpart. Because array elements are compared by
++ * index rather than by identity or content, an insertion or deletion in
++ * the middle of an array is reported as a run of per-index "replace"
++ * operations followed by a trailing "add"/"remove", rather than the
++ * single, shorter operation a move-aware diff could produce.
++ */
++export function createPatch(from: JsonValue, to: JsonValue): JsonPatchOperation[] {
++  const patch: JsonPatchOperation[] = [];
++  diffValues('', from, to, patch);
++  return patch;
++}
++
+ /**
+  * Merges a JSON Merge Patch object into `target`, per RFC 7386 section 2:
+  * a `null` member removes the corresponding member of `target`, any other

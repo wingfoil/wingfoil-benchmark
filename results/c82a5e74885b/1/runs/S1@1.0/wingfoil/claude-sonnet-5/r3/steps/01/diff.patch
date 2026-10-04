@@ -1,0 +1,363 @@
+diff --git a/docs/memory/decision-log/dl-001-add-typescript-toolchain-and-shared-jsonvalue-type-for-json-pointer.md b/docs/memory/decision-log/dl-001-add-typescript-toolchain-and-shared-jsonvalue-type-for-json-pointer.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..e8055087f42ad8c7e945e39d8639ee4101feb327
+--- /dev/null
++++ b/docs/memory/decision-log/dl-001-add-typescript-toolchain-and-shared-jsonvalue-type-for-json-pointer.md
+@@ -0,0 +1,39 @@
++---
++id: dl-001-add-typescript-toolchain-and-shared-jsonvalue-type-for-json-pointer
++type: decision-log
++title: "Add TypeScript toolchain and shared JsonValue type for JSON Pointer"
++status: pending
++---
++
++## Context
++
++The repository had a `tsconfig.json` (strict, NodeNext, declaration output) but no `typescript`
++devDependency and no way to actually run `tsc`. Node 22's native TypeScript execution let
++`node --test` run `src/*.test.ts` directly, but that only strips types — it never type-checks.
++The code-quality directive requires public interfaces to carry explicit types and that static checks
++report no errors, which isn't meaningfully satisfiable without a working `tsc`. Separately,
++`resolvePointer` needed a type for "any value that can appear in a parsed JSON document," and the
++README says this is the first of several pointer-based features that build on each other.
++
++## Decision
++
++- Added `typescript` and `@types/node` as devDependencies, plus `typecheck` (`tsc --noEmit`) and
++  `build` (`tsc`) npm scripts.
++- Set `rewriteRelativeImportExtensions: true` and `rootDir: "src"` in `tsconfig.json` so relative
++  imports can keep the `.ts` extension Node's native execution needs, while `tsc`'s build output still
++  gets `.js` extensions; added `types: ["node"]` so `node:test`/`node:assert` resolve.
++- Defined and exported `JsonValue` (recursive `string | number | boolean | null | JsonValue[] |
++  { [key: string]: JsonValue }`) from `src/index.ts` instead of using `unknown`/`any`, so
++  `resolvePointer` and the features planned next share one JSON value type.
++- `resolvePointer` throws plain `Error`s with descriptive messages rather than a custom error
++  subclass; nothing in this feature yet needs to distinguish "invalid pointer syntax" from
++  "pointer does not resolve" programmatically.
++
++## Consequences
++
++- `npm run typecheck` and `npm run build` now work and pass cleanly; `npm test` continues to run the
++  `.ts` sources directly via Node's native execution, unaffected by the build output.
++- Later features that need to tell a syntax error apart from a resolution failure will have to
++  introduce distinct error types then; today's change does not preclude it.
++- `JsonValue` is a load-bearing export now: changing its shape later is a breaking change for whatever
++  consumes it.
+diff --git a/docs/memory/task/task-001-implement-rfc-6901-json-pointer-resolvepointer.md b/docs/memory/task/task-001-implement-rfc-6901-json-pointer-resolvepointer.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..faeba01c5cf963e776089673351d4227c7b7f211
+--- /dev/null
++++ b/docs/memory/task/task-001-implement-rfc-6901-json-pointer-resolvepointer.md
+@@ -0,0 +1,38 @@
++---
++id: task-001-implement-rfc-6901-json-pointer-resolvepointer
++type: task
++title: "Implement RFC 6901 JSON Pointer resolvePointer"
++status: pending
++---
++
++## Request
++
++Implement JSON Pointer (RFC 6901) and export `resolvePointer(document, pointer)` from `src/index.ts`.
++It must return the value a pointer refers to, and throw when the pointer is syntactically invalid or
++does not resolve to a value in the document. First of a series of features that build on each other.
++
++## What was done
++
++- Wrote `src/index.test.ts` first (red), covering the RFC 6901 §5 worked example (including every
++  escaped-character case: `~0`, `~1`, and the members that need no escaping), plus error paths:
++  malformed escape, pointer not starting with `/`, missing member, non-numeric array index, leading-zero
++  array index, out-of-bounds array index, descending into a scalar, and a non-string pointer. Confirmed
++  the suite failed with the module missing.
++- Implemented `src/index.ts` (green): exports `JsonValue` (recursive JSON value type) and
++  `resolvePointer`. Splits the pointer into tokens on `/`, unescapes `~1` before `~0` (decode order
++  matters, otherwise `~01` corrupts), validates each array token against the RFC's `array-index` ABNF
++  (`0` or a non-zero-leading digit sequence), and walks the document token by token, throwing a plain
++  `Error` on any invalid syntax or unresolved path.
++- `npm test` (Node's native TS execution): 14/14 passing, 100% line/branch/function coverage
++  (`--experimental-test-coverage`).
++- Added `typescript` and `@types/node` as devDependencies (none existed; `tsc --noEmit` could not even
++  run), and `typecheck`/`build` scripts. Extended `tsconfig.json` with `types: ["node"]`,
++  `rewriteRelativeImportExtensions: true` and `rootDir: "src"` so the same `.ts`-extension relative
++  imports that Node's native TS execution requires also satisfy `tsc`'s module resolution, while
++  `tsc`'s build output still rewrites them to `.js`. `npm run typecheck` and `npm run build` both pass
++  cleanly on the new code.
++
++## Follow-up for later features
++
++`JsonValue` is exported from `src/index.ts` for reuse by the pointer-based features planned next
++(get/set/patch-style operations), so they share one JSON value type instead of redefining it.
+diff --git a/package-lock.json b/package-lock.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..9afa39bf8b58347818183dfda713a0247caf666e
+--- /dev/null
++++ b/package-lock.json
+@@ -0,0 +1,81 @@
++{
++  "name": "json-toolkit",
++  "version": "0.1.0",
++  "lockfileVersion": 3,
++  "requires": true,
++  "packages": {
++    "": {
++      "name": "json-toolkit",
++      "version": "0.1.0",
++      "devDependencies": {
++        "@types/node": "^26.6.4",
++        "typescript": "^7.0.2"
++      }
++    },
++    "node_modules/@types/node": {
++      "version": "26.6.4",
++      "resolved": "https://registry.npmjs.org/@types/node/-/node-26.6.4.tgz",
++      "integrity": "sha512-ldVPDCzj7fsaGZrLB0NuHuTvJcsNasysBAqMolr/cgxrLd1xbqxIr3XJiPnHHJUCxj5sNF1vnRj9aWnrVh5Jcg==",
++      "license": "MIT",
++      "dependencies": {
++        "undici-types": "~8.9.0"
++      }
++    },
++    "node_modules/@typescript/typescript-linux-x64": {
++      "version": "7.0.2",
++      "resolved": "https://registry.npmjs.org/@typescript/typescript-linux-x64/-/typescript-linux-x64-7.0.2.tgz",
++      "integrity": "sha512-EYdf2cNg7rgCWJnxCdJ+F3V39O8ihb37eHAu1LK8oAFizgTQbPOK7zHHXbPt8rX24COqODXeI3sIf0fCXG7H/A==",
++      "cpu": [
++        "x64"
++      ],
++      "license": "Apache-2.0",
++      "optional": true,
++      "os": [
++        "linux"
++      ],
++      "engines": {
++        "node": ">=16.20.0"
++      }
++    },
++    "node_modules/typescript": {
++      "version": "7.0.2",
++      "resolved": "https://registry.npmjs.org/typescript/-/typescript-7.0.2.tgz",
++      "integrity": "sha512-8FYau96o3NKOhbjKi/qNvG/W5jhzxkbdm5sj9AbZ/5T5sWqn3hJgLfGx27sRKZWTvyzCP8dLRBTf5tBTSRVUNA==",
++      "license": "Apache-2.0",
++      "bin": {
++        "tsc": "bin/tsc"
++      },
++      "engines": {
++        "node": ">=16.20.0"
++      },
++      "optionalDependencies": {
++        "@typescript/typescript-aix-ppc64": "7.0.2",
++        "@typescript/typescript-darwin-arm64": "7.0.2",
++        "@typescript/typescript-darwin-x64": "7.0.2",
++        "@typescript/typescript-freebsd-arm64": "7.0.2",
++        "@typescript/typescript-freebsd-x64": "7.0.2",
++        "@typescript/typescript-linux-arm": "7.0.2",
++        "@typescript/typescript-linux-arm64": "7.0.2",
++        "@typescript/typescript-linux-loong64": "7.0.2",
++        "@typescript/typescript-linux-mips64el": "7.0.2",
++        "@typescript/typescript-linux-ppc64": "7.0.2",
++        "@typescript/typescript-linux-riscv64": "7.0.2",
++        "@typescript/typescript-linux-s390x": "7.0.2",
++        "@typescript/typescript-linux-x64": "7.0.2",
++        "@typescript/typescript-netbsd-arm64": "7.0.2",
++        "@typescript/typescript-netbsd-x64": "7.0.2",
++        "@typescript/typescript-openbsd-arm64": "7.0.2",
++        "@typescript/typescript-openbsd-x64": "7.0.2",
++        "@typescript/typescript-sunos-x64": "7.0.2",
++        "@typescript/typescript-win32-arm64": "7.0.2",
++        "@typescript/typescript-win32-x64": "7.0.2"
++      }
++    },
++    "node_modules/undici-types": {
++      "version": "8.9.0",
++      "resolved": "https://registry.npmjs.org/undici-types/-/undici-types-8.9.0.tgz",
++      "integrity": "sha512-KTDyRTYX8sWmKXAikPHHSyc63CRPETMctyjKFupcC6OBLXT3xsN0e9aF7m+mIXutFWpUXuedtowG7iLOzp0kQg==",
++      "license": "MIT"
++    }
++  }
++}
+diff --git a/package.json b/package.json
+index 5f1f12a7edbf25e1ade5481dc7f359ede03d0df5..dce48d1f18d1a4d6f797d5c187845eca391333be 100644
+--- a/package.json
++++ b/package.json
+@@ -5,6 +5,12 @@
+   "description": "Building blocks for services that store, exchange and update JSON documents.",
+   "type": "module",
+   "scripts": {
+-    "test": "node --test"
++    "test": "node --test",
++    "typecheck": "tsc --noEmit",
++    "build": "tsc"
++  },
++  "devDependencies": {
++    "@types/node": "^26.6.4",
++    "typescript": "^7.0.2"
+   }
+ }
+diff --git a/src/index.test.ts b/src/index.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..923ccebaafc2373b9e08ce23dd2bb460830af50c
+--- /dev/null
++++ b/src/index.test.ts
+@@ -0,0 +1,79 @@
++import test from 'node:test';
++import assert from 'node:assert/strict';
++import { resolvePointer } from './index.ts';
++
++// Document from RFC 6901, section 5.
++const document = {
++  foo: ['bar', 'baz'],
++  '': 0,
++  'a/b': 1,
++  'c%d': 2,
++  'e^f': 3,
++  'g|h': 4,
++  'i\\j': 5,
++  'k"l': 6,
++  ' ': 7,
++  'm~n': 8,
++};
++
++test('resolves the whole document for the empty pointer', () => {
++  assert.deepEqual(resolvePointer(document, ''), document);
++});
++
++test('resolves a top-level member', () => {
++  assert.deepEqual(resolvePointer(document, '/foo'), ['bar', 'baz']);
++});
++
++test('resolves an array element by index', () => {
++  assert.equal(resolvePointer(document, '/foo/0'), 'bar');
++});
++
++test('resolves the member with the empty-string name', () => {
++  assert.equal(resolvePointer(document, '/'), 0);
++});
++
++test('unescapes ~1 to / and ~0 to ~', () => {
++  assert.equal(resolvePointer(document, '/a~1b'), 1);
++  assert.equal(resolvePointer(document, '/m~0n'), 8);
++});
++
++test('resolves members whose names need no escaping', () => {
++  assert.equal(resolvePointer(document, '/c%d'), 2);
++  assert.equal(resolvePointer(document, '/e^f'), 3);
++  assert.equal(resolvePointer(document, '/g|h'), 4);
++  assert.equal(resolvePointer(document, '/i\\j'), 5);
++  assert.equal(resolvePointer(document, '/k"l'), 6);
++  assert.equal(resolvePointer(document, '/ '), 7);
++});
++
++test('rejects a pointer that is neither empty nor starting with /', () => {
++  assert.throws(() => resolvePointer(document, 'foo'));
++});
++
++test('rejects a pointer that is not a string', () => {
++  assert.throws(() => resolvePointer(document, 42 as unknown as string));
++});
++
++test('rejects a pointer with a malformed escape sequence', () => {
++  assert.throws(() => resolvePointer(document, '/foo~2'));
++});
++
++test('rejects a pointer to a member that does not exist', () => {
++  assert.throws(() => resolvePointer(document, '/missing'));
++});
++
++test('rejects a pointer with a non-numeric array index', () => {
++  assert.throws(() => resolvePointer(document, '/foo/bar'));
++});
++
++test('rejects a pointer with an array index that has a leading zero', () => {
++  assert.throws(() => resolvePointer(document, '/foo/01'));
++});
++
++test('rejects a pointer with an out-of-bounds array index', () => {
++  assert.throws(() => resolvePointer(document, '/foo/2'));
++});
++
++test('rejects a pointer that descends into a scalar value', () => {
++  assert.throws(() => resolvePointer(document, '/foo/0/bar'));
++});
+diff --git a/src/index.ts b/src/index.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..e2bffa7b398551d902c6b6263e285d9bbbe10154
+--- /dev/null
++++ b/src/index.ts
+@@ -0,0 +1,62 @@
++/** Any value that can appear in a parsed JSON document. */
++export type JsonValue =
++  | string
++  | number
++  | boolean
++  | null
++  | JsonValue[]
++  | { [key: string]: JsonValue };
++
++/** Splits a JSON Pointer into its unescaped reference tokens, per RFC 6901 section 3-4. */
++function parsePointer(pointer: string): string[] {
++  if (pointer === '') {
++    return [];
++  }
++  if (!pointer.startsWith('/')) {
++    throw new Error(`Invalid JSON Pointer: "${pointer}" must be empty or start with "/"`);
++  }
++  return pointer.split('/').slice(1).map(unescapeToken);
++}
++
++function unescapeToken(token: string): string {
++  if (/~(?![01])/.test(token)) {
++    throw new Error(`Invalid JSON Pointer: malformed escape sequence in token "${token}"`);
++  }
++  // Order matters: a literal "~" is encoded as "~0" and "/" as "~1", so "~1"
++  // must be unescaped first or "~01" would wrongly decode to "/".
++  return token.replace(/~1/g, '/').replace(/~0/g, '~');
++}
++
++function resolveToken(current: JsonValue, token: string): JsonValue {
++  if (Array.isArray(current)) {
++    if (!/^(0|[1-9][0-9]*)$/.test(token)) {
++      throw new Error(`Invalid JSON Pointer: "${token}" is not a valid array index`);
++    }
++    const index = Number(token);
++    if (index >= current.length) {
++      throw new Error(`JSON Pointer does not resolve: index ${index} is out of bounds`);
++    }
++    return current[index];
++  }
++  if (current !== null && typeof current === 'object') {
++    if (!Object.prototype.hasOwnProperty.call(current, token)) {
++      throw new Error(`JSON Pointer does not resolve: no member named "${token}"`);
++    }
++    return (current as { [key: string]: JsonValue })[token];
++  }
++  throw new Error(`JSON Pointer does not resolve: cannot descend into a ${typeof current} value`);
++}
++
++/**
++ * Resolves a JSON Pointer (RFC 6901) against a JSON document and returns the value it refers to.
++ *
++ * @throws {Error} if `pointer` is not a syntactically valid JSON Pointer, or if it does not
++ * resolve to a value within `document`.
++ */
++export function resolvePointer(document: JsonValue, pointer: string): JsonValue {
++  if (typeof pointer !== 'string') {
++    throw new Error('Invalid JSON Pointer: must be a string');
++  }
++  const tokens = parsePointer(pointer);
++  return tokens.reduce(resolveToken, document);
++}
+diff --git a/tsconfig.json b/tsconfig.json
+index fcd97f5ddbf1cb248969ba1e85bc3d6da5f12237..34c3eaefa1a11ffe483e1b0bea9ccfb700b48c89 100644
+--- a/tsconfig.json
++++ b/tsconfig.json
+@@ -6,7 +6,10 @@
+     "strict": true,
+     "declaration": true,
+     "outDir": "dist",
+-    "skipLibCheck": true
++    "rootDir": "src",
++    "skipLibCheck": true,
++    "types": ["node"],
++    "rewriteRelativeImportExtensions": true
+   },
+   "include": ["src"]
+ }

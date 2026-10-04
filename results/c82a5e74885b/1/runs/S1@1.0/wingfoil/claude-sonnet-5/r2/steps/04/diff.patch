@@ -1,0 +1,230 @@
+diff --git a/README.md b/README.md
+index 8260e721796050677657a636842dc6ceca2074a6..6128525e20c4663bda4ad8cb84b5cfffd4b6dd04 100644
+--- a/README.md
++++ b/README.md
+@@ -35,3 +35,20 @@ const document = { foo: 'bar' };
+ applyPatch(document, [{ op: 'add', path: '/baz', value: 'qux' }]); // { foo: 'bar', baz: 'qux' }
+ document; // unchanged: { foo: 'bar' }
+ ```
++
++### JSON Merge Patch (RFC 7386)
++
++`applyMergePatch(target, patch)` applies a [JSON Merge Patch](https://www.rfc-editor.org/rfc/rfc7386)
++to a target JSON document and returns the merged document as a new value, without mutating `target`
++or `patch`. A `patch` object is merged into `target` member by member, recursively; a member whose
++patch value is `null` is removed; a `patch` that is not an object (including `null` itself) replaces
++`target` wholesale.
++
++```ts
++import { applyMergePatch } from 'json-toolkit';
++
++const target = { title: 'Goodbye!', author: { name: 'Jane' }, tags: ['a', 'b'] };
++applyMergePatch(target, { author: { name: null, email: 'jane@example.com' }, tags: ['c'] });
++// { title: 'Goodbye!', author: { email: 'jane@example.com' }, tags: ['c'] }
++target; // unchanged
++```
+diff --git a/docs/memory/task/task-004-implement-json-merge-patch-rfc-7386-applymergepatch.md b/docs/memory/task/task-004-implement-json-merge-patch-rfc-7386-applymergepatch.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..5d4b55522a79062046c4b4334938aa920d8a5c2a
+--- /dev/null
++++ b/docs/memory/task/task-004-implement-json-merge-patch-rfc-7386-applymergepatch.md
+@@ -0,0 +1,46 @@
++---
++id: task-004-implement-json-merge-patch-rfc-7386-applymergepatch
++type: task
++title: "Implement JSON Merge Patch RFC 7386 applyMergePatch"
++status: pending
++---
++
++## Request
++
++Some clients send partial updates in the simpler JSON Merge Patch format (RFC 7386) rather than
++JSON Patch (RFC 6902). Implement it, exported as `applyMergePatch(target, patch)` from
++`src/index.ts`, applying a merge patch to a target JSON document and returning the merged
++document.
++
++## What was done
++
++Added `applyMergePatch` to `src/index.ts`, implementing the recursive algorithm of RFC 7386
++section 2 (Figure 1): a `patch` that is not a JSON object replaces `target` wholesale (this also
++covers `patch: null`, which the RFC uses to mean "replace with null", as distinct from a `null`
++*member* of a patch object, which means "remove this member"); otherwise, each member of `patch` is
++merged into `target` — a `null`-valued member removes the corresponding member of `target`, any
++other value is merged recursively (or, for non-object values, inserted after cloning so the result
++never shares structure with `patch`). This reuses the `isObject` and `deepClone` helpers already in
++the file (used by `applyPatch`), keeping the merge logic in a small private `mergeInto` helper.
++
++Following the project's test-first directive, added tests for every worked example in RFC 7386
++appendix A before writing the implementation (confirmed red: `applyMergePatch` did not exist yet),
++then implemented until they passed. Also added tests, parallel to existing `applyPatch` coverage,
++that `applyMergePatch` does not mutate `target` or `patch`, and that its result shares no mutable
++structure with either (so a later mutation of the result cannot leak back into the caller's inputs).
++
++Verified `src/index.ts` still compiles with zero errors under the existing strict `tsconfig.json`
++(temporary, uncommitted `typescript` install, same approach as dl-001), since `tsc` cannot currently
++typecheck the test file. `node --test` passes 60/60 (41 pre-existing + 19 new tests covering every
++RFC 7386 appendix A example plus the mutation/aliasing guarantees).
++
++Documented the new function in `README.md`, alongside the existing JSON Pointer and JSON Patch
++sections.
++
++## Follow-ups
++
++- dl-001's decision to defer `tsc` typechecking of test files still applies; this change was
++  verified the same way.
++- No new decision-log was needed: RFC 7386's algorithm is unambiguous, and the cloning strategy
++  follows the precedent already set by dl-002/dl-003 for `applyPatch` (never let the result of an
++  `apply*` function share mutable structure with either its document/target or its patch argument).
+diff --git a/src/index.test.ts b/src/index.test.ts
+index ede45250d0d79218a1af42e99f6ed105b8bc09b2..3ab4f849c6d45f3d03f5ebd8881f8656a0276106 100644
+--- a/src/index.test.ts
++++ b/src/index.test.ts
+@@ -1,6 +1,6 @@
+ import { test } from 'node:test';
+ import assert from 'node:assert/strict';
+-import { applyPatch, resolvePointer } from './index.ts';
++import { applyMergePatch, applyPatch, resolvePointer } from './index.ts';
+ 
+ // The document and pointers below are the worked example from RFC 6901 section 5.
+ const document = {
+@@ -248,3 +248,96 @@ test('throws when removing the whole document', () => {
+ test('throws when an operation targets a missing object member', () => {
+   assert.throws(() => applyPatch({ foo: 'bar' }, [{ op: 'remove', path: '/baz' }]));
+ });
++
++// The target/patch/result triples below are the worked examples from RFC 7386 appendix A,
++// exercised through applyMergePatch.
++
++test('replaces an existing member (RFC 7386 A)', () => {
++  assert.deepEqual(applyMergePatch({ a: 'b' }, { a: 'c' }), { a: 'c' });
++});
++
++test('adds a new member (RFC 7386 A)', () => {
++  assert.deepEqual(applyMergePatch({ a: 'b' }, { b: 'c' }), { a: 'b', b: 'c' });
++});
++
++test('a null value removes the member from a single-member document (RFC 7386 A)', () => {
++  assert.deepEqual(applyMergePatch({ a: 'b' }, { a: null }), {});
++});
++
++test('a null value removes the member, keeping its siblings (RFC 7386 A)', () => {
++  assert.deepEqual(applyMergePatch({ a: 'b', b: 'c' }, { a: null }), { b: 'c' });
++});
++
++test('a scalar patch value replaces an array wholesale (RFC 7386 A)', () => {
++  assert.deepEqual(applyMergePatch({ a: ['b'] }, { a: 'c' }), { a: 'c' });
++});
++
++test('an array patch value replaces a scalar wholesale (RFC 7386 A)', () => {
++  assert.deepEqual(applyMergePatch({ a: 'c' }, { a: ['b'] }), { a: ['b'] });
++});
++
++test('merges nested objects member by member (RFC 7386 A)', () => {
++  const result = applyMergePatch({ a: { b: 'c' } }, { a: { b: 'd', c: null } });
++  assert.deepEqual(result, { a: { b: 'd' } });
++});
++
++test('an array patch value replaces an array of objects wholesale, not element-wise (RFC 7386 A)', () => {
++  const result = applyMergePatch({ a: [{ b: 'c' }] }, { a: [1] });
++  assert.deepEqual(result, { a: [1] });
++});
++
++test('an array patch replaces an array target wholesale (RFC 7386 A)', () => {
++  assert.deepEqual(applyMergePatch(['a', 'b'], ['c', 'd']), ['c', 'd']);
++});
++
++test('an array patch replaces an object target wholesale (RFC 7386 A)', () => {
++  assert.deepEqual(applyMergePatch({ a: 'b' }, ['c']), ['c']);
++});
++
++test('a null patch replaces the whole document with null (RFC 7386 A)', () => {
++  assert.equal(applyMergePatch({ a: 'foo' }, null), null);
++});
++
++test('a scalar patch replaces the whole document (RFC 7386 A)', () => {
++  assert.equal(applyMergePatch({ a: 'foo' }, 'bar'), 'bar');
++});
++
++test('a null-valued member already in the target is preserved, siblings are added (RFC 7386 A)', () => {
++  assert.deepEqual(applyMergePatch({ e: null }, { a: 1 }), { e: null, a: 1 });
++});
++
++test('an object patch against a non-object target ignores the target, keeping only non-null patch members (RFC 7386 A)', () => {
++  assert.deepEqual(applyMergePatch([1, 2], { a: 'b', c: null }), { a: 'b' });
++});
++
++test('a deeply-nested null prunes down to the innermost empty object (RFC 7386 A)', () => {
++  assert.deepEqual(applyMergePatch({}, { a: { bb: { ccc: null } } }), { a: { bb: {} } });
++});
++
++test('does not mutate the target document', () => {
++  const target = { a: { b: 'c' } };
++  applyMergePatch(target, { a: { b: 'd' } });
++  assert.deepEqual(target, { a: { b: 'c' } });
++});
++
++test('does not mutate the patch document', () => {
++  const patch = { a: { b: 'd' } };
++  applyMergePatch({ a: { b: 'c' } }, patch);
++  assert.deepEqual(patch, { a: { b: 'd' } });
++});
++
++test('the result does not share structure with the target', () => {
++  const target = { a: { b: 'c' }, d: ['e'] };
++  const result = applyMergePatch(target, { f: 'g' }) as { a: { b: string }; d: string[] };
++  result.a.b = 'mutated';
++  result.d.push('mutated');
++  assert.equal(target.a.b, 'c');
++  assert.deepEqual(target.d, ['e']);
++});
++
++test('the result does not share structure with the patch', () => {
++  const patch = { a: { b: 'c' } };
++  const result = applyMergePatch({}, patch) as { a: { b: string } };
++  result.a.b = 'mutated';
++  assert.equal(patch.a.b, 'c');
++});
+diff --git a/src/index.ts b/src/index.ts
+index bd584571755c62e69f34f4c910015e67ad23646b..c1da3625e077a24ca937e117100945f4ecd3dd97 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -324,3 +324,39 @@ export function applyPatch(document: JsonValue, patch: JsonPatchOperation[]): Js
+   const operations = patch.map((operation, index) => validateOperation(operation, index));
+   return operations.reduce<JsonValue>((current, operation) => applyOperation(current, operation), deepClone(document));
+ }
++
++/**
++ * Merges a JSON Merge Patch object into `target`, per RFC 7386 section 2:
++ * a `null` member removes the corresponding member of `target`, any other
++ * member is merged recursively, and members `target` does not have are
++ * added. `target` is already owned by the caller (a clone, or freshly
++ * created here) and may be mutated in place.
++ */
++function mergeInto(target: JsonValue, patch: { [member: string]: JsonValue }): JsonValue {
++  const result = isObject(target) ? target : {};
++  for (const [member, value] of Object.entries(patch)) {
++    if (value === null) {
++      delete result[member];
++    } else {
++      result[member] = isObject(value) ? mergeInto(result[member], value) : deepClone(value);
++    }
++  }
++  return result;
++}
++
++/**
++ * Applies a JSON Merge Patch (RFC 7386) to a target JSON document, and
++ * returns the merged document as a new value. Does not mutate `target`
++ * or `patch`.
++ *
++ * Per RFC 7386 section 2, a `patch` that is not itself a JSON object
++ * replaces `target` wholesale (this also covers `patch: null`, which
++ * removes the whole document by replacing it with `null`); otherwise,
++ * `patch`'s members are merged into `target` recursively.
++ */
++export function applyMergePatch(target: JsonValue, patch: JsonValue): JsonValue {
++  if (!isObject(patch)) {
++    return deepClone(patch);
++  }
++  return mergeInto(deepClone(target), patch);
++}

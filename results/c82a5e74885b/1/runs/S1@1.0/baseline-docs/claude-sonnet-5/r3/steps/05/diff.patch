@@ -1,0 +1,244 @@
+diff --git a/src/index.ts b/src/index.ts
+index 4435890c63dc3ef7c65fbe845c2054848a67888d..4485f7e84c716cfb89aa57a0ea7c2056edca3d80 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -1,4 +1,4 @@
+ export { resolvePointer } from "./json-pointer.ts";
+-export { applyPatch } from "./json-patch.ts";
++export { applyPatch, createPatch } from "./json-patch.ts";
+ export type { JsonPatchOperation } from "./json-patch.ts";
+ export { applyMergePatch } from "./json-merge-patch.ts";
+diff --git a/src/json-patch.test.ts b/src/json-patch.test.ts
+index 32e41d51da719dafae072953347f7f7a0f4d538d..f53f4371d4bdf68bd67c5be7726ccdbb720b88c4 100644
+--- a/src/json-patch.test.ts
++++ b/src/json-patch.test.ts
+@@ -1,6 +1,6 @@
+ import { test } from "node:test";
+ import assert from "node:assert/strict";
+-import { applyPatch, type JsonPatchOperation } from "./json-patch.ts";
++import { applyPatch, createPatch, type JsonPatchOperation } from "./json-patch.ts";
+ 
+ // The examples from RFC 6902 Appendix A.
+ 
+@@ -234,3 +234,92 @@ test('removing a "__proto__" member deletes the own property and leaves the prot
+   assert.deepEqual(Object.keys(result as object), []);
+   assert.equal(Object.getPrototypeOf(result), Object.prototype);
+ });
++
++// createPatch
++
++test("createPatch returns an empty patch for two equal documents", () => {
++  assert.deepEqual(createPatch({ foo: "bar" }, { foo: "bar" }), []);
++});
++
++test("createPatch describes an added object member", () => {
++  const patch = createPatch({ foo: "bar" }, { foo: "bar", baz: "qux" });
++  assert.deepEqual(patch, [{ op: "add", path: "/baz", value: "qux" }]);
++});
++
++test("createPatch describes a removed object member", () => {
++  const patch = createPatch({ foo: "bar", baz: "qux" }, { foo: "bar" });
++  assert.deepEqual(patch, [{ op: "remove", path: "/baz" }]);
++});
++
++test("createPatch describes a replaced scalar member", () => {
++  const patch = createPatch({ foo: "bar" }, { foo: "baz" });
++  assert.deepEqual(patch, [{ op: "replace", path: "/foo", value: "baz" }]);
++});
++
++test("createPatch recurses into unchanged nesting to find a single changed leaf", () => {
++  const from = { a: { b: { c: 1, untouched: "same" } }, d: "same" };
++  const to = { a: { b: { c: 2, untouched: "same" } }, d: "same" };
++  assert.deepEqual(createPatch(from, to), [{ op: "replace", path: "/a/b/c", value: 2 }]);
++});
++
++test("createPatch describes elements appended to an array", () => {
++  const patch = createPatch({ items: [1, 2] }, { items: [1, 2, 3, 4] });
++  assert.deepEqual(patch, [
++    { op: "add", path: "/items/-", value: 3 },
++    { op: "add", path: "/items/-", value: 4 },
++  ]);
++});
++
++test("createPatch describes elements removed from the end of an array", () => {
++  const patch = createPatch({ items: [1, 2, 3, 4] }, { items: [1, 2] });
++  assert.deepEqual(patch, [
++    { op: "remove", path: "/items/3" },
++    { op: "remove", path: "/items/2" },
++  ]);
++});
++
++test("createPatch recurses into an array element that changed in place", () => {
++  const from = { items: [{ name: "a" }, { name: "b" }] };
++  const to = { items: [{ name: "a" }, { name: "c" }] };
++  assert.deepEqual(createPatch(from, to), [{ op: "replace", path: "/items/1/name", value: "c" }]);
++});
++
++test("createPatch replaces the whole value when its type changes", () => {
++  assert.deepEqual(createPatch({ foo: [1, 2] }, { foo: { bar: 1 } }), [
++    { op: "replace", path: "/foo", value: { bar: 1 } },
++  ]);
++});
++
++test("createPatch replaces the whole document at the root when it changes shape entirely", () => {
++  assert.deepEqual(createPatch({ foo: "bar" }, [1, 2, 3]), [{ op: "replace", path: "", value: [1, 2, 3] }]);
++});
++
++test("createPatch escapes \"/\" and \"~\" in member names", () => {
++  const patch = createPatch({}, { "a/b~c": 1 });
++  assert.deepEqual(patch, [{ op: "add", path: "/a~1b~0c", value: 1 }]);
++});
++
++test("createPatch applied to `from` with applyPatch produces `to`", () => {
++  const from = { name: "a", tags: ["x", "y"], meta: { count: 1 } };
++  const to = { name: "a", tags: ["x", "y", "z"], meta: { count: 2, note: "new" } };
++  const patch = createPatch(from, to);
++  assert.deepEqual(applyPatch(from, patch), to);
++});
++
++test("createPatch does not mutate either input", () => {
++  const from = { foo: { bar: [1, 2, 3] } };
++  const to = { foo: { bar: [1, 2, 3, 4] }, baz: "new" };
++  const fromSnapshot = structuredClone(from);
++  const toSnapshot = structuredClone(to);
++  createPatch(from, to);
++  assert.deepEqual(from, fromSnapshot);
++  assert.deepEqual(to, toSnapshot);
++});
++
++test("createPatch does not alias values from `to` in add or replace operations", () => {
++  const to = { foo: { bar: [1, 2] } };
++  const patch = createPatch({}, to);
++  const addOp = patch[0] as { op: "add"; path: string; value: { bar: number[] } };
++  addOp.value.bar.push(3);
++  assert.deepEqual(to.foo.bar, [1, 2]);
++});
+diff --git a/src/json-patch.ts b/src/json-patch.ts
+index 216dbdd42cd2cf48fa2b2a0e8c746142b8a574bb..9d836bef919b37a4b14f2bba55b109ee5052e2f4 100644
+--- a/src/json-patch.ts
++++ b/src/json-patch.ts
+@@ -5,7 +5,7 @@
+  * another.
+  */
+ 
+-import { ARRAY_INDEX_PATTERN, parsePointer, resolvePointer, step } from "./json-pointer.ts";
++import { ARRAY_INDEX_PATTERN, escapeToken, parsePointer, resolvePointer, step } from "./json-pointer.ts";
+ 
+ /** Adds or replaces a member of an object, or inserts an element into an array, at `path`. */
+ export type AddOperation = { op: "add"; path: string; value: unknown };
+@@ -241,3 +241,68 @@ export function applyPatch(document: unknown, patch: readonly JsonPatchOperation
+   const operations = patch.map((raw, index) => parseOperation(raw, index));
+   return operations.reduce((current, operation) => applyOperation(current, operation), structuredClone(document));
+ }
++
++/** Diffs the common indices of two arrays in place, then the length difference at the tail. */
++function diffArrays(from: readonly unknown[], to: readonly unknown[], path: string, ops: JsonPatchOperation[]): void {
++  const commonLength = Math.min(from.length, to.length);
++  for (let index = 0; index < commonLength; index++) {
++    diffValues(from[index], to[index], `${path}/${index}`, ops);
++  }
++  for (let index = from.length - 1; index >= commonLength; index--) {
++    ops.push({ op: "remove", path: `${path}/${index}` });
++  }
++  for (let index = commonLength; index < to.length; index++) {
++    ops.push({ op: "add", path: `${path}/-`, value: structuredClone(to[index]) });
++  }
++}
++
++/** Diffs two plain objects member by member: removals, then additions and recursive changes. */
++function diffObjects(
++  from: Record<string, unknown>,
++  to: Record<string, unknown>,
++  path: string,
++  ops: JsonPatchOperation[],
++): void {
++  for (const member of Object.keys(from)) {
++    if (!Object.prototype.hasOwnProperty.call(to, member)) {
++      ops.push({ op: "remove", path: `${path}/${escapeToken(member)}` });
++    }
++  }
++  for (const member of Object.keys(to)) {
++    const memberPath = `${path}/${escapeToken(member)}`;
++    if (Object.prototype.hasOwnProperty.call(from, member)) {
++      diffValues(from[member], to[member], memberPath, ops);
++    } else {
++      ops.push({ op: "add", path: memberPath, value: structuredClone(to[member]) });
++    }
++  }
++}
++
++/** Appends the operations that turn the value at `path` in `from` into the one in `to`. */
++function diffValues(from: unknown, to: unknown, path: string, ops: JsonPatchOperation[]): void {
++  if (deepEqual(from, to)) {
++    return;
++  }
++  if (Array.isArray(from) && Array.isArray(to)) {
++    diffArrays(from, to, path, ops);
++  } else if (isPlainObject(from) && isPlainObject(to)) {
++    diffObjects(from, to, path, ops);
++  } else {
++    ops.push({ op: "replace", path, value: structuredClone(to) });
++  }
++}
++
++/**
++ * Computes a JSON Patch that turns `from` into `to`, as specified in RFC 6902.
++ *
++ * @param from - The document the patch starts from.
++ * @param to - The document the patch produces.
++ * @returns An ordered sequence of operations that, applied to `from` with {@link applyPatch},
++ *   yields a document deep-equal to `to`. Parts of the documents that are already equal are not
++ *   mentioned; neither `from` nor `to` is modified.
++ */
++export function createPatch(from: unknown, to: unknown): JsonPatchOperation[] {
++  const ops: JsonPatchOperation[] = [];
++  diffValues(from, to, "", ops);
++  return ops;
++}
+diff --git a/src/json-pointer.test.ts b/src/json-pointer.test.ts
+index e5720b8c24739befa203d44b6a6f2a19ee56b679..4f415a39b27ecdd85c8056f0db51121a9640db7b 100644
+--- a/src/json-pointer.test.ts
++++ b/src/json-pointer.test.ts
+@@ -1,6 +1,6 @@
+ import { test } from "node:test";
+ import assert from "node:assert/strict";
+-import { resolvePointer } from "./json-pointer.ts";
++import { escapeToken, resolvePointer } from "./json-pointer.ts";
+ 
+ // The example document and pointers from RFC 6901 section 5.
+ const rfcExample = {
+@@ -82,3 +82,14 @@ test("throws when indexing into a primitive value", () => {
+ test("throws when indexing into null", () => {
+   assert.throws(() => resolvePointer({ foo: null }, "/foo/bar"), /cannot index into/);
+ });
++
++test("escapeToken escapes ~ before / so the result round-trips through parsePointer", () => {
++  const token = "a/b~c";
++  const escaped = escapeToken(token);
++  assert.equal(escaped, "a~1b~0c");
++  assert.deepEqual(resolvePointer({ [token]: "value" }, `/${escaped}`), "value");
++});
++
++test("escapeToken leaves a token with no special characters unchanged", () => {
++  assert.equal(escapeToken("foo"), "foo");
++});
+diff --git a/src/json-pointer.ts b/src/json-pointer.ts
+index dafea9757d30fe6f5ea364d5c9af769ade710d37..06ebc8820367225b9bc944102540b3103d46c950 100644
+--- a/src/json-pointer.ts
++++ b/src/json-pointer.ts
+@@ -33,6 +33,15 @@ function unescapeToken(token: string, pointer: string): string {
+   return token.replace(/~[01]/g, (match) => (match === "~0" ? "~" : "/"));
+ }
+ 
++/**
++ * Escapes a single reference token for embedding in a JSON Pointer string, per RFC 6901
++ * section 3: "~" becomes "~0" and "/" becomes "~1". This is the inverse of the unescaping
++ * {@link parsePointer} performs.
++ */
++export function escapeToken(token: string): string {
++  return token.replace(/~/g, "~0").replace(/\//g, "~1");
++}
++
+ /**
+  * Looks up a single reference token in the current value, per RFC 6901 section 4.
+  *

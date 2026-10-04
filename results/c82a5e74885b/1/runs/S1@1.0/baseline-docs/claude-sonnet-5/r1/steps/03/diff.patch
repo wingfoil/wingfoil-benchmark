@@ -1,0 +1,103 @@
+diff --git a/src/index.ts b/src/index.ts
+index 2f67b8ab9c200c82b848e1e4ec4d4e214305322b..2511fbe15eca25cd8e75e3cb6e73068dc3ec7aeb 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -99,6 +99,23 @@ export function resolvePointer(document: JsonValue, pointer: string): JsonValue
+   return navigate(document, splitPointer(pointer)) as JsonValue;
+ }
+ 
++/**
++ * Sets an object member by name, treating `key` as a plain string rather than
++ * a JS property accessor. A bare `container[key] = value` would, for
++ * `key === "__proto__"`, invoke `Object.prototype`'s `__proto__` setter and
++ * change `container`'s prototype instead of creating a member named
++ * "__proto__" — a prototype-pollution hazard for a library that applies
++ * patches to untrusted JSON.
++ */
++function setMember(container: Record<string, JsonValue>, key: string, value: JsonValue): void {
++  Object.defineProperty(container, key, {
++    value,
++    writable: true,
++    enumerable: true,
++    configurable: true,
++  });
++}
++
+ function cloneJson(value: JsonValue): JsonValue {
+   if (Array.isArray(value)) {
+     return value.map(cloneJson);
+@@ -107,7 +124,7 @@ function cloneJson(value: JsonValue): JsonValue {
+   if (isObject(value)) {
+     const clone: Record<string, JsonValue> = {};
+     for (const key of Object.keys(value)) {
+-      clone[key] = cloneJson(value[key]);
++      setMember(clone, key, cloneJson(value[key]));
+     }
+     return clone;
+   }
+@@ -149,7 +166,7 @@ function addAt(root: JsonValue, path: string, value: JsonValue): JsonValue {
+   if (Array.isArray(container)) {
+     container.splice(arrayInsertionIndex(container, key), 0, cloneJson(value));
+   } else if (isObject(container)) {
+-    container[key] = cloneJson(value);
++    setMember(container, key, cloneJson(value));
+   } else {
+     throw new Error(`Cannot add a member at "${path}": target is not an array or object`);
+   }
+@@ -185,7 +202,7 @@ function replaceAt(root: JsonValue, path: string, value: JsonValue): JsonValue {
+     container[arrayIndex(container, key)] = cloneJson(value);
+   } else if (isObject(container)) {
+     assertObjectMember(container, key);
+-    container[key] = cloneJson(value);
++    setMember(container, key, cloneJson(value));
+   } else {
+     throw new Error(`Cannot replace the member at "${path}": target is not an array or object`);
+   }
+diff --git a/test/index.test.ts b/test/index.test.ts
+index 44310215d004db9aa86a1b1538674cf14664d10c..3738c27430372986bde9a358a6c5f628d0907f3e 100644
+--- a/test/index.test.ts
++++ b/test/index.test.ts
+@@ -1,6 +1,6 @@
+ import assert from "node:assert/strict";
+ import { test } from "node:test";
+-import { applyPatch, resolvePointer } from "../src/index.ts";
++import { applyPatch, resolvePointer, type JsonValue } from "../src/index.ts";
+ 
+ const rfcExample = {
+   foo: ["bar", "baz"],
+@@ -299,3 +299,35 @@ test("rejects a move operation missing its from member", () => {
+   // @ts-expect-error exercising runtime validation of a boundary input
+   assert.throws(() => applyPatch({ foo: "bar" }, [{ op: "move", path: "/baz" }]));
+ });
++
++test("adds a member named __proto__ as a literal member, without altering the object's prototype", () => {
++  const document = { foo: "bar" };
++  const result = applyPatch(document, [{ op: "add", path: "/__proto__", value: { polluted: true } }]) as Record<
++    string,
++    JsonValue
++  >;
++  assert.equal(Object.getPrototypeOf(result), Object.prototype);
++  assert.equal(Object.prototype.hasOwnProperty.call(result, "__proto__"), true);
++  assert.deepEqual(result.__proto__, { polluted: true });
++  assert.equal(({} as Record<string, unknown>).polluted, undefined);
++});
++
++test("replaces an existing literal __proto__ member, without altering the object's prototype", () => {
++  const document = JSON.parse('{"__proto__": 1, "foo": "bar"}');
++  const result = applyPatch(document, [{ op: "replace", path: "/__proto__", value: { polluted: true } }]) as Record<
++    string,
++    JsonValue
++  >;
++  assert.equal(Object.getPrototypeOf(result), Object.prototype);
++  assert.deepEqual(result.__proto__, { polluted: true });
++});
++
++test("clones a literal __proto__ member without altering the clone's prototype", () => {
++  const document = JSON.parse('{"__proto__": {"already": "there"}, "foo": "bar"}');
++  const result = applyPatch(document, [{ op: "replace", path: "/foo", value: "changed" }]) as Record<
++    string,
++    JsonValue
++  >;
++  assert.equal(Object.getPrototypeOf(result), Object.prototype);
++  assert.deepEqual(result.__proto__, { already: "there" });
++});

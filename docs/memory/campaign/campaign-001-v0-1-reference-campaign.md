@@ -88,7 +88,57 @@ that fails is a ledger line and is not re-run without a new consent; a re-run is
 
 ## Execution
 
-<!-- Execution id(s) `<campaign-id>/<n>`, outcomes, caps reached, reruns. -->
+**Spending consent:** the approver's `memory approve` (pending → approved), `1800b1d`, 2026-10-03: "Reference campaign
+c82a5e74885b approved: 19 runs (option A), estimate 60.32 EUR, warn 65, ceiling 85, run cap 30". Then `memory submit`
+(approved → running), `86bc355`.
+
+**Execution `c82a5e74885b/1`**, from the main checkout, on main's built CLI (`86bc355`):
+
+- First start, 23:31: refused before any spending, `BENCH_WINGFOIL_REPO: is not set`. The campaign file holds a
+  harness, so the WingFoil clone must be named, as calibration did (task-050); validation's campaign had no
+  harness and did not need it. Restarted with `BENCH_WINGFOIL_REPO=/home/robypomper/Workspaces/WingFoil2`.
+- Ran 2026-10-03 23:32 → 2026-10-04 05:31 (6.0 h). The CLI: `19 runs`, `16 runs completed, 3 failed`, `cost: 46.5755
+  USD, 41.2240 EUR at 0.8851 EUR/USD, API-equivalent` (estimate 60.32 €; ceiling 85 €). Exit status 1, from the
+  failed runs.
+- No rate-limit wait, no cap reached, no container left behind. Interventions only in the wingfoil arm (0–5 a run)
+  and in S2 baseline-docs (1).
+- **Three runs failed at S1's step 03:** S1 baseline r1 and r3 (Sonnet 5), and the Opus 5 slice. The step's
+  stream-json output passed 1 MiB, and `execFile`'s default `maxBuffer` cut it: the transcript ends mid-line, and
+  "a line of the session is not valid JSON". The step's cost was never reported. This is
+  [bug-011](../bug/bug-011-an-agent-step-whose-output-passes-1-mib-is-killed-by-execfile-s-default-maxbuffer-and-its-cost-is-lost.md).
+  The approver was told at the first failure. The campaign was not stopped (the agent's own attempt was refused by
+  its permissions; the approver did not stop it), so it ran to its end.
+
+| Run | Outcome | Cost USD (EUR) |
+|---|---|---|
+| S1 baseline r1 / r2 / r3 | **failed** step 03 / completed / **failed** step 03 | 0.8886 / 2.7781 / 0.7217 |
+| S1 baseline-docs r1 / r2 / r3 | completed ×3 | 2.1439 / 2.6097 / 2.7259 |
+| S1 wingfoil r1 / r2 / r3 | completed ×3 | 4.3926 / 3.7877 / 4.1672 |
+| S2 baseline / baseline-docs / wingfoil | completed ×3 | 1.0786 / 1.2089 / 1.7521 |
+| S3 baseline / baseline-docs / wingfoil | completed ×3 | 1.0411 / 1.9103 / 2.5269 |
+| S8 baseline / baseline-docs / wingfoil | completed ×3 | 1.0907 / 1.8500 / 2.3718 |
+| S1 wingfoil **Opus 5** r1 | **failed** step 03 | 7.5295 |
+| **Total reported** | 16 completed, 3 failed | **46.5755 (41.2240 €)**, plus the three unreported step 03s |
+
+Each run is a line of the [v0.1 ledger](../../calibration/v0.1-ledger.md).
+
+**Token check** on the stored files (`results/c82a5e74885b/`): no `sk-ant-` shape and no match for the token file's
+value (file names only printed: none).
+
+**Scoring:** `node dist/cli/main.js score c82a5e74885b/1 --holdout ../WingFoil2-Benchmark-HoldOut`, 4 min 31 s,
+exit 0. `aggregate: results/c82a5e74885b/1/aggregate.json (12 groups, 1 slice; determinism measured in 2, n = 1 in
+11)`. Final hidden tests, hold-out and checks:
+
+| Scenario | baseline | baseline-docs | wingfoil |
+|---|---|---|---|
+| S1 (r1, r2, r3) | not reached, 164/165 (45/48), not reached | 158/165 (43/48) ×3 | 165/165 (48/48), 158/165 (43/48) ×2 |
+| S2 | 24/24 (17/17), checks 2/3 | 24/24 (17/17), checks 2/3 | 24/24 (17/17), checks 3/3 |
+| S3 | 34/37 (16/17), checks 0/1, M-F1 3/5 | 34/37 (16/17), checks 0/1, M-F1 3/5 | 34/37 (16/17), checks 1/1, M-F1 4/5 |
+| S8 | 23/23 (7/7), checks 12/16 | 23/23 (6/7), checks 16/16 | 20/23 (6/7), checks 16/16 |
+| S1, Opus 5 (wingfoil) | | | not reached |
+
+The records are committed without the transcripts, which are git-ignored and stay in the main checkout.
+`transcripts pack` waits for publishing.
 
 ## Results review
 

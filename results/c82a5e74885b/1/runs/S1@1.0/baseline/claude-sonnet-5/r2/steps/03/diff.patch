@@ -1,0 +1,60 @@
+diff --git a/src/index.ts b/src/index.ts
+index 51e198ecd6226afb8160c9e2397ac7bcf73e46a4..3923066bb57549f17d1501eb9d06a7ad3b6c88a4 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -106,6 +106,15 @@ function resolveContainer(document: unknown, pointer: string, tokens: string[]):
+   return current;
+ }
+ 
++/**
++ * Sets an object member by its literal name, bypassing JavaScript's special
++ * handling of inherited accessors such as "__proto__": JSON Pointer tokens
++ * are opaque strings and must never be treated as anything else.
++ */
++function setMember(container: object, token: string, value: unknown): void {
++  Object.defineProperty(container, token, { value, writable: true, enumerable: true, configurable: true });
++}
++
+ function addMember(container: unknown, token: string, value: unknown, pointer: string): void {
+   if (Array.isArray(container)) {
+     if (token === "-") {
+@@ -121,7 +130,7 @@ function addMember(container: unknown, token: string, value: unknown, pointer: s
+     }
+     container.splice(index, 0, value);
+   } else if (typeof container === "object" && container !== null) {
+-    (container as Record<string, unknown>)[token] = value;
++    setMember(container, token, value);
+   } else {
+     throw new Error(`JSON Patch "add" operation failed: cannot add to a non-object, non-array value at "${pointer}"`);
+   }
+@@ -163,7 +172,7 @@ function replaceMember(container: unknown, token: string, value: unknown, pointe
+     if (!Object.prototype.hasOwnProperty.call(container, token)) {
+       throw new Error(`JSON Patch "replace" operation failed: no member "${token}" at "${pointer}"`);
+     }
+-    (container as Record<string, unknown>)[token] = value;
++    setMember(container, token, value);
+   } else {
+     throw new Error(
+       `JSON Patch "replace" operation failed: cannot replace inside a non-object, non-array value at "${pointer}"`,
+diff --git a/test/apply-patch.test.ts b/test/apply-patch.test.ts
+index 808cff2611e1e9b19744833b4fa6e2cd66b7fa9e..2e40548c32ea0745ee5743749f7d8daa976ad67e 100644
+--- a/test/apply-patch.test.ts
++++ b/test/apply-patch.test.ts
+@@ -171,3 +171,17 @@ test("fails when an operation is missing required members", () => {
+ test("fails on an unknown operation name", () => {
+   assert.throws(() => applyPatch({}, [{ op: "frobnicate", path: "/a", value: 1 }]));
+ });
++
++test("add: treats '__proto__' as an ordinary member name, not a prototype assignment", () => {
++  const result = applyPatch({}, [{ op: "add", path: "/__proto__", value: { polluted: "yes" } }]) as any;
++  assert.deepEqual(result, { ["__proto__"]: { polluted: "yes" } });
++  assert.equal(Object.getPrototypeOf(result), Object.prototype);
++  assert.equal(Object.prototype.hasOwnProperty.call(result, "__proto__"), true);
++  assert.deepEqual(({} as any).polluted, undefined);
++});
++
++test("replace: updates a prior '__proto__' member without touching the real prototype", () => {
++  const withMember = applyPatch({}, [{ op: "add", path: "/__proto__", value: 1 }]);
++  const result = applyPatch(withMember, [{ op: "replace", path: "/__proto__", value: 2 }]);
++  assert.deepEqual(result, { ["__proto__"]: 2 } as any);
++});

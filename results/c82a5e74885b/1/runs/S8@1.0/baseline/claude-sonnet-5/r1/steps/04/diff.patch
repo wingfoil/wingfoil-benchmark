@@ -1,0 +1,132 @@
+diff --git a/src/domain/import.ts b/src/domain/import.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..f90ec4dec653d4d6cc77fa03a07946c711b72f6a
+--- /dev/null
++++ b/src/domain/import.ts
+@@ -0,0 +1,51 @@
++import type { TaskList } from './list.ts';
++import type { Priority } from './task.ts';
++
++/** A line from a bulk import that could not be added, and why. */
++export interface RejectedLine {
++  readonly line: number;
++  readonly reason: string;
++}
++
++/** The outcome of a bulk import: how many tasks were added, and which lines were not. */
++export interface ImportResult {
++  readonly imported: number;
++  readonly rejected: readonly RejectedLine[];
++}
++
++/**
++ * Adds every task described in `text` to `list`. Each non-blank line holds one task, as
++ * `title;priority;tags`: the priority may be left empty for a normal one, and the tags are
++ * separated by spaces. Blank lines are skipped. A line is rejected for the same reasons
++ * {@link TaskList.add} would refuse it (an invalid title, priority or tag, or a duplicate title),
++ * or for not having the `title;priority;tags` shape.
++ *
++ * @param list - the task list to add to
++ * @param text - the lines to import, one task per line
++ */
++export function importTasks(list: TaskList, text: string): ImportResult {
++  const rejected: RejectedLine[] = [];
++  let imported = 0;
++
++  const lines = text.split(/\r?\n/);
++  for (let index = 0; index < lines.length; index++) {
++    const line = lines[index];
++    if (line.trim() === '') continue;
++
++    const parts = line.split(';');
++    if (parts.length !== 3) {
++      rejected.push({ line: index + 1, reason: 'expected "title;priority;tags"' });
++      continue;
++    }
++
++    const [title, priorityPart, tagsPart] = parts;
++    const priority = priorityPart.trim() === '' ? undefined : (priorityPart.trim() as Priority);
++    const tags = tagsPart.trim() === '' ? [] : tagsPart.trim().split(/\s+/);
++
++    const result = list.add({ title, priority, tags });
++    if (result.ok) imported++;
++    else rejected.push({ line: index + 1, reason: result.error.message });
++  }
++
++  return { imported, rejected };
++}
+diff --git a/src/index.ts b/src/index.ts
+index d645db5250ea48852a8de1629640e42619a985c8..ad328f6a5904f91502741ffb1c118b12ffa4e80e 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -1,6 +1,8 @@
+ import { createTaskList } from './domain/list.ts';
+ import type { TaskList } from './domain/list.ts';
+ 
++export { importTasks } from './domain/import.ts';
++export type { ImportResult, RejectedLine } from './domain/import.ts';
+ export type { TaskFilter, TaskList } from './domain/list.ts';
+ export type { Result, TodoError, TodoErrorCode } from './domain/result.ts';
+ export { summarize } from './domain/summary.ts';
+diff --git a/test/import.test.ts b/test/import.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..3b046eb72f7065e69042989da087e2b6544e83bc
+--- /dev/null
++++ b/test/import.test.ts
+@@ -0,0 +1,56 @@
++import assert from 'node:assert/strict';
++import { describe, it } from 'node:test';
++
++import { createTodoList, importTasks } from '../src/index.ts';
++
++describe('bulk import', () => {
++  it('imports every valid line, defaulting priority and splitting tags on spaces', () => {
++    const list = createTodoList();
++    const result = importTasks(
++      list,
++      'Renew the insurance;high;admin money\nWater the plants;;\nBuy milk;normal;',
++    );
++    assert.deepEqual(result, { imported: 3, rejected: [] });
++
++    const tasks = list.list();
++    assert.deepEqual(
++      tasks.map((task) => [task.title, task.priority, task.tags]),
++      [
++        ['Renew the insurance', 'high', ['admin', 'money']],
++        ['Buy milk', 'normal', []],
++        ['Water the plants', 'normal', []],
++      ],
++    );
++  });
++
++  it('skips blank lines without affecting line numbers', () => {
++    const list = createTodoList();
++    const result = importTasks(list, '\nBuy milk;;\n\nBuy milk;;\n');
++    assert.equal(result.imported, 1);
++    assert.deepEqual(result.rejected, [{ line: 4, reason: 'there is already a task "Buy milk"' }]);
++  });
++
++  it('rejects a line that is not title;priority;tags', () => {
++    const list = createTodoList();
++    const result = importTasks(list, 'Buy milk;normal');
++    assert.equal(result.imported, 0);
++    assert.deepEqual(result.rejected, [{ line: 1, reason: 'expected "title;priority;tags"' }]);
++  });
++
++  it('rejects an invalid title or priority, and a duplicate title, importing everything else', () => {
++    const list = createTodoList();
++    const result = importTasks(
++      list,
++      [';normal;', 'Buy milk;urgent;', 'Buy milk;;', 'Buy milk;;'].join('\n'),
++    );
++    assert.equal(result.imported, 1);
++    assert.deepEqual(
++      result.rejected.map((rejection) => rejection.line),
++      [1, 2, 4],
++    );
++    assert.deepEqual(
++      list.list().map((task) => task.title),
++      ['Buy milk'],
++    );
++  });
++});

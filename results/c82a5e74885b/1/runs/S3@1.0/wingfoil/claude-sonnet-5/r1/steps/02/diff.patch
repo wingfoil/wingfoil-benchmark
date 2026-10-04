@@ -1,0 +1,196 @@
+diff --git a/docs/memory/decision-log/dl-002-availability-reuses-period-validation-and-overlap-rules-sorts-ids-ascending.md b/docs/memory/decision-log/dl-002-availability-reuses-period-validation-and-overlap-rules-sorts-ids-ascending.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..1eda55d806fed3ed4863d60d630a243cf01781ba
+--- /dev/null
++++ b/docs/memory/decision-log/dl-002-availability-reuses-period-validation-and-overlap-rules-sorts-ids-ascending.md
+@@ -0,0 +1,35 @@
++---
++id: dl-002-availability-reuses-period-validation-and-overlap-rules-sorts-ids-ascending
++type: decision-log
++title: "availability() reuses period validation and overlap rules, sorts ids ascending"
++status: approved
++---
++
++## Context
++
++The desk needs `availability(query)` on `createRentalService()` to see at a glance which equipment of a
++kind (or any kind) is free for a whole period. It had to fit the storage model and interval semantics
++already decided in dl-001.
++
++## Decision
++
++- **Period validation**: `availability` validates `start`/`end` with the existing `wholeDaysBetween`
++  helper, the same one `quote`/`book` use. An invalid period (not whole UTC days, or `end` not after
++  `start`) throws rather than returning an empty list, matching `quote`/`book`'s behaviour for the same
++  input errors.
++- **"Free for the whole period"**: an item is free when none of its existing bookings overlaps the query
++  period, reusing the half-open `overlaps` check from dl-001. A booking ending exactly when the query
++  starts (or starting exactly when it ends) does not block the item, consistent with back-to-back
++  bookings being allowed.
++- **`kind` filter**: when `kind` is given, only equipment of that kind is considered; when omitted, every
++  kind is considered. No validation is added for an invalid `kind` string beyond what TypeScript's type
++  already guarantees, since (unlike `addEquipment`) this is an internal desk query, not data that gets
++  stored.
++- **Result order**: ids are returned sorted with the default string sort (ascending), so the result is
++  deterministic regardless of `Map` insertion order, per the project's determinism directive.
++
++## Consequences
++
++- Behaviour stays consistent with `quote`/`book`: the same period is valid or invalid everywhere in the
++  service.
++- Callers get a deterministic, directly displayable list without needing to sort client-side.
+diff --git a/docs/memory/task/task-002-add-availability-query-to-rental-service.md b/docs/memory/task/task-002-add-availability-query-to-rental-service.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..e3667f79038474386a28cfa8d06e51180ca672f8
+--- /dev/null
++++ b/docs/memory/task/task-002-add-availability-query-to-rental-service.md
+@@ -0,0 +1,26 @@
++---
++id: task-002-add-availability-query-to-rental-service
++type: task
++title: "Add availability query to rental service"
++status: approved
++---
++
++## Request
++
++Add `availability(query)` to `createRentalService()`'s `RentalService`, where `query` is
++`{ start, end, kind }` with `kind` optional. It returns the sorted ids of the equipment of that kind, or
++of any kind when none is given, that is free for the whole period.
++
++## What was done
++
++- Added failing tests first (red) in `src/index.test.ts`: a kind-filtered query excluding a booked item, a
++  query with no `kind` covering every kind, a back-to-back booking not blocking the following period
++  (consistent with the existing half-open interval semantics), and an invalid (non-whole-day) period
++  throwing.
++- Implemented `availability(query)` in `src/index.ts` (green): validates the period with the existing
++  `wholeDaysBetween` (reused from `quote`/`book`, so the same whole-UTC-day rule applies), filters
++  equipment by `kind` when given, excludes any item with a booking overlapping the query period using the
++  existing `overlaps` half-open check, and returns the remaining ids sorted.
++- Added `AvailabilityQuery` to the exported types and extended `RentalService` with `availability`; updated
++  the service's doc comment to mention availability.
++- All 16 tests pass (`node --test`); no new dependency was added.
+diff --git a/src/index.test.ts b/src/index.test.ts
+index 69389a2d566eaa3778ff006b4ed16aecc5173361..5bd2760cbbb3edbcb87e736959403330dbb27a63 100644
+--- a/src/index.test.ts
++++ b/src/index.test.ts
+@@ -164,3 +164,66 @@ test('addEquipment rejects a non-integer daily price', () => {
+ 
+   assert.throws(() => service.addEquipment({ id: 'board-1', kind: 'board', dailyPrice: 19.99 }));
+ });
++
++test('availability returns the free items of a kind, sorted', () => {
++  const service = createRentalService();
++  service.addEquipment({ id: 'board-2', kind: 'board', dailyPrice: 2000 });
++  service.addEquipment({ id: 'board-1', kind: 'board', dailyPrice: 2000 });
++  service.addEquipment({ id: 'sail-1', kind: 'sail', dailyPrice: 1500 });
++  service.book({
++    itemId: 'board-2',
++    start: '2024-06-01T00:00:00.000Z',
++    end: '2024-06-03T00:00:00.000Z',
++  });
++
++  const ids = service.availability({
++    start: '2024-06-01T00:00:00.000Z',
++    end: '2024-06-03T00:00:00.000Z',
++    kind: 'board',
++  });
++
++  assert.deepEqual(ids, ['board-1']);
++});
++
++test('availability returns free items of any kind when none is given', () => {
++  const service = createRentalService();
++  service.addEquipment({ id: 'sail-1', kind: 'sail', dailyPrice: 1500 });
++  service.addEquipment({ id: 'board-1', kind: 'board', dailyPrice: 2000 });
++
++  const ids = service.availability({
++    start: '2024-06-01T00:00:00.000Z',
++    end: '2024-06-03T00:00:00.000Z',
++  });
++
++  assert.deepEqual(ids, ['board-1', 'sail-1']);
++});
++
++test('availability treats a back-to-back booking as not blocking the next period', () => {
++  const service = createRentalService();
++  service.addEquipment({ id: 'board-1', kind: 'board', dailyPrice: 2000 });
++  service.book({
++    itemId: 'board-1',
++    start: '2024-06-01T00:00:00.000Z',
++    end: '2024-06-04T00:00:00.000Z',
++  });
++
++  const ids = service.availability({
++    start: '2024-06-04T00:00:00.000Z',
++    end: '2024-06-06T00:00:00.000Z',
++    kind: 'board',
++  });
++
++  assert.deepEqual(ids, ['board-1']);
++});
++
++test('availability throws when the period is not whole days', () => {
++  const service = createRentalService();
++  service.addEquipment({ id: 'board-1', kind: 'board', dailyPrice: 2000 });
++
++  assert.throws(() =>
++    service.availability({
++      start: '2024-06-01T10:00:00.000Z',
++      end: '2024-06-02T00:00:00.000Z',
++    })
++  );
++});
+diff --git a/src/index.ts b/src/index.ts
+index 6e2fb2cac42ffa65dbd7d24dabe474fe92c7320e..b14dcf59559547f8e6cd14ad5d2ad9032c83fb3b 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -34,11 +34,19 @@ export interface Booking {
+   total: number;
+ }
+ 
+-/** The rental desk service: register equipment, quote and book rentals. */
++/** A request for the equipment free over a whole-day period, optionally restricted to one kind. */
++export interface AvailabilityQuery {
++  start: string;
++  end: string;
++  kind?: EquipmentKind;
++}
++
++/** The rental desk service: register equipment, quote and book rentals, and check availability. */
+ export interface RentalService {
+   addEquipment(item: Equipment): void;
+   quote(request: RentalRequest): Quote;
+   book(request: RentalRequest): Booking;
++  availability(query: AvailabilityQuery): string[];
+ }
+ 
+ function isUtcMidnight(date: Date): boolean {
+@@ -132,5 +140,25 @@ export function createRentalService(): RentalService {
+     return booking;
+   }
+ 
+-  return { addEquipment, quote, book };
++  function availability(query: AvailabilityQuery): string[] {
++    wholeDaysBetween(query.start, query.end);
++    const start = new Date(query.start);
++    const end = new Date(query.end);
++    const ids: string[] = [];
++    for (const item of equipment.values()) {
++      if (query.kind !== undefined && item.kind !== query.kind) {
++        continue;
++      }
++      const bookings = bookingsByItem.get(item.id) ?? [];
++      const isBooked = bookings.some((booking) =>
++        overlaps(start, end, new Date(booking.start), new Date(booking.end))
++      );
++      if (!isBooked) {
++        ids.push(item.id);
++      }
++    }
++    return ids.sort();
++  }
++
++  return { addEquipment, quote, book, availability };
+ }

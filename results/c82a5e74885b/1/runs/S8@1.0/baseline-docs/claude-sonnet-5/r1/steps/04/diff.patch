@@ -1,0 +1,108 @@
+diff --git a/src/index.ts b/src/index.ts
+index e9eb87a4a99b3c656a15adec3a68a7b6b86f75b6..77875eca16831214da5f7de7bde468fc310baf3c 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -1,6 +1,6 @@
+ import { createTaskList } from './domain/list.ts';
+ import type { TaskFilter } from './domain/list.ts';
+-import type { NewTask, Task } from './domain/task.ts';
++import type { NewTask, Priority, Task } from './domain/task.ts';
+ import type { Result } from './domain/result.ts';
+ 
+ export type { TaskFilter } from './domain/list.ts';
+@@ -55,3 +55,46 @@ export function createTodoList(clock: Clock = systemClock): TaskList {
+     openCount: () => tasks.openCount(),
+   };
+ }
++
++/** A line of a bulk import that could not be added, and why. */
++export interface RejectedLine {
++  readonly line: number;
++  readonly reason: string;
++}
++
++/** The outcome of a bulk import: how many tasks were added, and every line that was not. */
++export interface ImportResult {
++  readonly imported: number;
++  readonly rejected: readonly RejectedLine[];
++}
++
++/**
++ * Bulk-imports tasks into `list` from `text`, one task per line, as `title;priority;tags`: the priority
++ * may be left empty for a normal one, and the tags are separated by spaces. Blank lines are skipped.
++ *
++ * @param list - the task list to add the tasks to
++ * @param text - the tasks to import, one per line
++ */
++export function importTasks(list: TaskList, text: string): ImportResult {
++  const rejected: RejectedLine[] = [];
++  let imported = 0;
++  const lines = text.split('\n');
++  for (const [index, rawLine] of lines.entries()) {
++    const line = rawLine.trim();
++    if (line === '') continue;
++    const [title = '', priorityField = '', ...rest] = line.split(';');
++    const priority = priorityField.trim();
++    const tags = rest.join(';').trim().split(/\s+/).filter((tag) => tag !== '');
++    const added = list.add({
++      title,
++      priority: priority === '' ? undefined : (priority as Priority),
++      tags,
++    });
++    if (added.ok) {
++      imported += 1;
++    } else {
++      rejected.push({ line: index + 1, reason: added.error.message });
++    }
++  }
++  return { imported, rejected };
++}
+diff --git a/test/list.test.ts b/test/list.test.ts
+index 1477afa9316eb9bf928073c352120e1f1aa978f2..1c400f54cdb564827f51e218c060f720bf724b02 100644
+--- a/test/list.test.ts
++++ b/test/list.test.ts
+@@ -1,7 +1,7 @@
+ import assert from 'node:assert/strict';
+ import { describe, it } from 'node:test';
+ 
+-import { createTodoList, summarize } from '../src/index.ts';
++import { createTodoList, importTasks, summarize } from '../src/index.ts';
+ 
+ function valueOf<T>(result: { ok: true; value: T } | { ok: false; error: unknown }): T {
+   if (!result.ok) assert.fail(JSON.stringify(result.error));
+@@ -197,6 +197,35 @@ describe('input validation', () => {
+   });
+ });
+ 
++describe('bulk import', () => {
++  it('imports every valid line, skipping blank lines', () => {
++    const list = createTodoList();
++    const result = importTasks(
++      list,
++      ['Renew the insurance;high;admin money', '', 'Buy milk;;', 'Water the plants'].join('\n'),
++    );
++    assert.deepEqual(result, { imported: 3, rejected: [] });
++    assert.deepEqual(
++      list.list().map((task) => ({ title: task.title, priority: task.priority, tags: task.tags })),
++      [
++        { title: 'Renew the insurance', priority: 'high', tags: ['admin', 'money'] },
++        { title: 'Buy milk', priority: 'normal', tags: [] },
++        { title: 'Water the plants', priority: 'normal', tags: [] },
++      ],
++    );
++  });
++
++  it('reports each line that could not be added, with its reason, counting from 1', () => {
++    const list = createTodoList();
++    const result = importTasks(list, ['Buy milk', 'Buy milk;odd', '   ', 'Call the plumber;urgent'].join('\n'));
++    assert.equal(result.imported, 1);
++    assert.equal(result.rejected.length, 2);
++    assert.equal(result.rejected[0].line, 2);
++    assert.equal(typeof result.rejected[0].reason, 'string');
++    assert.equal(result.rejected[1].line, 4);
++  });
++});
++
+ describe('task timestamps', () => {
+   it('stamps a new task with its creation time, as both createdAt and updatedAt', () => {
+     const list = createTodoList(fakeClock(['2024-01-01T00:00:00.000Z']));

@@ -1,0 +1,79 @@
+diff --git a/src/json-patch.test.ts b/src/json-patch.test.ts
+index 14716f3d039b18b2795358afc1bfde23d6072254..32e41d51da719dafae072953347f7f7a0f4d538d 100644
+--- a/src/json-patch.test.ts
++++ b/src/json-patch.test.ts
+@@ -204,3 +204,33 @@ test("a value of null is a valid add value, not a missing one", () => {
+   const result = applyPatch({}, [{ op: "add", path: "/foo", value: null }]);
+   assert.deepEqual(result, { foo: null });
+ });
++
++// "__proto__" is just another member name in a JSON document: adding, replacing or removing it
++// must not reach through to the object's prototype.
++
++test('adding a "__proto__" member creates an own property instead of changing the prototype', () => {
++  const result = applyPatch({}, [{ op: "add", path: "/__proto__", value: { polluted: true } }]) as Record<
++    string,
++    unknown
++  >;
++  assert.deepEqual(Object.keys(result), ["__proto__"]);
++  assert.equal(Object.getPrototypeOf(result), Object.prototype);
++  assert.equal(JSON.stringify(result), JSON.stringify({ ["__proto__"]: { polluted: true } }));
++  assert.deepEqual(({} as Record<string, unknown>).polluted, undefined);
++});
++
++test('replacing a "__proto__" member updates the own property instead of changing the prototype', () => {
++  const document: Record<string, unknown> = {};
++  Object.defineProperty(document, "__proto__", { value: 1, writable: true, enumerable: true, configurable: true });
++  const result = applyPatch(document, [{ op: "replace", path: "/__proto__", value: 2 }]);
++  assert.equal(Object.getPrototypeOf(result), Object.prototype);
++  assert.equal(JSON.stringify(result), JSON.stringify({ ["__proto__"]: 2 }));
++});
++
++test('removing a "__proto__" member deletes the own property and leaves the prototype intact', () => {
++  const document: Record<string, unknown> = {};
++  Object.defineProperty(document, "__proto__", { value: 1, writable: true, enumerable: true, configurable: true });
++  const result = applyPatch(document, [{ op: "remove", path: "/__proto__" }]);
++  assert.deepEqual(Object.keys(result as object), []);
++  assert.equal(Object.getPrototypeOf(result), Object.prototype);
++});
+diff --git a/src/json-patch.ts b/src/json-patch.ts
+index 9859fdb75a70a46057bb5310009d575f8e6b9a64..216dbdd42cd2cf48fa2b2a0e8c746142b8a574bb 100644
+--- a/src/json-patch.ts
++++ b/src/json-patch.ts
+@@ -38,6 +38,18 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
+   return typeof value === "object" && value !== null && !Array.isArray(value);
+ }
+ 
++/**
++ * Sets an object member by name, as a plain own property.
++ *
++ * A member named "__proto__" set through a normal assignment (`object[member] = value`) is
++ * intercepted by `Object.prototype`'s accessor of that name and changes `object`'s prototype
++ * instead of creating a member, which is not how RFC 6902 operations treat member names.
++ * `Object.defineProperty` bypasses that accessor and always creates a regular own property.
++ */
++function setMember(object: Record<string, unknown>, member: string, value: unknown): void {
++  Object.defineProperty(object, member, { value, writable: true, enumerable: true, configurable: true });
++}
++
+ function requireString(value: unknown, member: string, index: number): string {
+   if (typeof value !== "string") {
+     throw new Error(`Invalid JSON Patch: operation ${index} is missing its "${member}" string member`);
+@@ -113,7 +125,7 @@ function add(document: unknown, path: string, value: unknown): unknown {
+   if (Array.isArray(parent)) {
+     parent.splice(insertIndex(parent, lastToken, path), 0, value);
+   } else if (isPlainObject(parent)) {
+-    parent[lastToken] = value;
++    setMember(parent, lastToken, value);
+   } else {
+     throw new Error(`"${path}" does not resolve: cannot add into a non-object, non-array value`);
+   }
+@@ -145,7 +157,7 @@ function replace(document: unknown, path: string, value: unknown): unknown {
+   if (Array.isArray(parent)) {
+     parent[Number(lastToken)] = value;
+   } else {
+-    (parent as Record<string, unknown>)[lastToken] = value;
++    setMember(parent as Record<string, unknown>, lastToken, value);
+   }
+   return document;
+ }

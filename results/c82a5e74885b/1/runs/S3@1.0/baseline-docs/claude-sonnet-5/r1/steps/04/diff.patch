@@ -1,0 +1,403 @@
+diff --git a/README.md b/README.md
+index 650b6d914ce261a9320ee22189ab3f8cee44fd2c..76afeda9cb0476917b3e67f1b09b036dfa88d70e 100644
+--- a/README.md
++++ b/README.md
+@@ -13,7 +13,7 @@ import { createRentalService } from './src/index.ts';
+ 
+ const desk = createRentalService();
+ 
+-desk.addEquipment({ id: 'board-1', kind: 'board', dailyPrice: 2500 }); // cents
++desk.addEquipment({ id: 'board-1', kind: 'board', dailyPrice: 2500, hourlyPrice: 400 }); // cents
+ 
+ const quote = desk.quote({
+   itemId: 'board-1',
+@@ -24,14 +24,23 @@ const quote = desk.quote({
+ 
+ const booking = desk.book(quote);
+ // => { id: '1', itemId: 'board-1', start: ..., end: ..., total: 5000 }
++
++const hourlyQuote = desk.quote({
++  itemId: 'board-1',
++  start: '2024-06-01T13:00:00.000Z',
++  end: '2024-06-01T16:00:00.000Z',
++});
++// => { itemId: 'board-1', start: '2024-06-01T13:00:00.000Z', end: '2024-06-01T16:00:00.000Z', total: 1200 }
+ ```
+ 
+ Rules: prices are integer euro cents; times are UTC ISO-8601 strings; a booking covers whole days,
+-from midnight to midnight; the same item cannot be booked twice for overlapping periods. A rental of
+-3 days or more costs 10% less than its full price (daily price times the number of days), rounded to
+-the nearest cent; this discount applies to both quotes and bookings. `quote` and `book` throw for an
+-unknown item or a disallowed period, and `book` also throws when the item is already booked for part
+-of the period.
++from midnight to midnight, or a period shorter than a day that starts and ends on the hour; the same
++item cannot be booked twice for overlapping periods. A rental of 3 days or more costs 10% less than
++its full price (daily price times the number of days), rounded to the nearest cent; this discount
++applies to both quotes and bookings. A rental shorter than a day is priced at the item's hourly price
++for each hour instead; an item without an `hourlyPrice` cannot be rented by the hour. `quote` and
++`book` throw for an unknown item or a disallowed period, and `book` also throws when the item is
++already booked for part of the period.
+ 
+ To see what can still be rented, ask for availability:
+ 
+diff --git a/src/period.ts b/src/period.ts
+index 551c2cb4bc07b08a7685e61dcf7f56aa726ddffd..b7a4360c36edb974f93f6d4e95d6e96893d3d491 100644
+--- a/src/period.ts
++++ b/src/period.ts
+@@ -1,43 +1,70 @@
+-const MS_PER_DAY = 24 * 60 * 60 * 1000;
++const MS_PER_HOUR = 60 * 60 * 1000;
++const MS_PER_DAY = 24 * MS_PER_HOUR;
+ 
+-/** A validated rental period: both ends at UTC midnight, spanning whole days. */
+-export interface Period {
++/** A validated rental period of whole days, from UTC midnight to UTC midnight. */
++export interface DayPeriod {
++  unit: 'day';
+   startMs: number;
+   endMs: number;
+   days: number;
+ }
+ 
++/** A validated rental period shorter than a day, starting and ending on the hour. */
++export interface HourPeriod {
++  unit: 'hour';
++  startMs: number;
++  endMs: number;
++  hours: number;
++}
++
++/** A validated rental period: either whole days, or less than a day and on the hour. */
++export type Period = DayPeriod | HourPeriod;
++
+ /**
+- * Parses and validates a rental period. Throws when either bound is not a valid UTC-midnight
+- * ISO-8601 timestamp, or when the end is not strictly after the start.
++ * Parses and validates a rental period. Throws when either bound is not a valid ISO-8601
++ * timestamp on the hour, when the end is not strictly after the start, or when the period is
++ * a day or longer but is not whole days starting at UTC midnight.
+  */
+ export function parsePeriod(start: string, end: string): Period {
+-  const startMs = parseUtcMidnight(start, 'start');
+-  const endMs = parseUtcMidnight(end, 'end');
++  const startMs = parseOnTheHour(start, 'start');
++  const endMs = parseOnTheHour(end, 'end');
+ 
+   if (endMs <= startMs) {
+     throw new Error(`Invalid period: end (${end}) must be after start (${start})`);
+   }
+ 
+-  return { startMs, endMs, days: (endMs - startMs) / MS_PER_DAY };
++  const durationMs = endMs - startMs;
++
++  if (durationMs < MS_PER_DAY) {
++    return { unit: 'hour', startMs, endMs, hours: durationMs / MS_PER_HOUR };
++  }
++
++  if (durationMs % MS_PER_DAY === 0 && isMidnight(startMs)) {
++    return { unit: 'day', startMs, endMs, days: durationMs / MS_PER_DAY };
++  }
++
++  throw new Error(
++    `Invalid period: ${start} to ${end} must be whole days starting at UTC midnight, or less than a day and on the hour`,
++  );
+ }
+ 
+-function parseUtcMidnight(value: string, field: string): number {
++function parseOnTheHour(value: string, field: string): number {
+   const ms = Date.parse(value);
+   if (Number.isNaN(ms)) {
+     throw new Error(`Invalid ${field}: ${value} is not a valid ISO-8601 date`);
+   }
+ 
+   const date = new Date(ms);
+-  const isMidnight =
+-    date.getUTCHours() === 0 &&
+-    date.getUTCMinutes() === 0 &&
+-    date.getUTCSeconds() === 0 &&
+-    date.getUTCMilliseconds() === 0;
+-
+-  if (!isMidnight) {
+-    throw new Error(`Invalid ${field}: ${value} must be at UTC midnight`);
++  const isOnTheHour =
++    date.getUTCMinutes() === 0 && date.getUTCSeconds() === 0 && date.getUTCMilliseconds() === 0;
++
++  if (!isOnTheHour) {
++    throw new Error(`Invalid ${field}: ${value} must be on the hour`);
+   }
+ 
+   return ms;
+ }
++
++function isMidnight(ms: number): boolean {
++  return new Date(ms).getUTCHours() === 0;
++}
+diff --git a/src/pricing.ts b/src/pricing.ts
+index 3b41a11cb1b13e1bffa17adc27885d878cb8b048..c9138fcf1ec66465304b247982d1ff3ed1b712c7 100644
+--- a/src/pricing.ts
++++ b/src/pricing.ts
+@@ -13,3 +13,8 @@ export function priceForDays(dailyPrice: number, days: number): number {
+   }
+   return Math.round(fullPrice * (1 - LONG_RENTAL_DISCOUNT));
+ }
++
++/** Prices a rental of the given number of whole hours at the given hourly price. */
++export function priceForHours(hourlyPrice: number, hours: number): number {
++  return hourlyPrice * hours;
++}
+diff --git a/src/rental-service.test.ts b/src/rental-service.test.ts
+index 7a0179d8e24366484910a83e61041dd66a0d6eb9..4484d021565a0ea630ee5f8267be140fcd668b1b 100644
+--- a/src/rental-service.test.ts
++++ b/src/rental-service.test.ts
+@@ -358,3 +358,168 @@ test('availability throws for an invalid kind', () => {
+     kind: 'kite',
+   } as never));
+ });
++
++test('addEquipment accepts an item with an hourly price', () => {
++  const service = createRentalService();
++
++  assert.doesNotThrow(() =>
++    service.addEquipment({ id: 'board-1', kind: 'board', dailyPrice: 2500, hourlyPrice: 400 }),
++  );
++});
++
++test('addEquipment throws for a non-integer hourly price', () => {
++  const service = createRentalService();
++
++  assert.throws(() =>
++    service.addEquipment({ id: 'x', kind: 'board', dailyPrice: 2500, hourlyPrice: 4.5 }),
++  );
++});
++
++test('addEquipment throws for a negative hourly price', () => {
++  const service = createRentalService();
++
++  assert.throws(() =>
++    service.addEquipment({ id: 'x', kind: 'board', dailyPrice: 2500, hourlyPrice: -1 }),
++  );
++});
++
++test('quotes an hourly rental at the item\'s hourly price times the number of hours', () => {
++  const service = createRentalService();
++  service.addEquipment({ id: 'board-1', kind: 'board', dailyPrice: 2500, hourlyPrice: 400 });
++
++  const result = service.quote({
++    itemId: 'board-1',
++    start: '2024-06-01T13:00:00.000Z',
++    end: '2024-06-01T16:00:00.000Z',
++  });
++
++  assert.deepEqual(result, {
++    itemId: 'board-1',
++    start: '2024-06-01T13:00:00.000Z',
++    end: '2024-06-01T16:00:00.000Z',
++    total: 1200,
++  });
++});
++
++test('quotes a 1-hour rental at the item\'s hourly price', () => {
++  const service = createRentalService();
++  service.addEquipment({ id: 'board-1', kind: 'board', dailyPrice: 2500, hourlyPrice: 400 });
++
++  const result = service.quote({
++    itemId: 'board-1',
++    start: '2024-06-01T13:00:00.000Z',
++    end: '2024-06-01T14:00:00.000Z',
++  });
++
++  assert.equal(result.total, 400);
++});
++
++test('quote throws for an hourly rental on an item without an hourly price', () => {
++  const service = createRentalService();
++  service.addEquipment({ id: 'board-1', kind: 'board', dailyPrice: 2500 });
++
++  assert.throws(() =>
++    service.quote({
++      itemId: 'board-1',
++      start: '2024-06-01T13:00:00.000Z',
++      end: '2024-06-01T16:00:00.000Z',
++    }),
++  );
++});
++
++test('quote throws for a sub-day period that does not start and end on the hour', () => {
++  const service = createRentalService();
++  service.addEquipment({ id: 'board-1', kind: 'board', dailyPrice: 2500, hourlyPrice: 400 });
++
++  assert.throws(() =>
++    service.quote({
++      itemId: 'board-1',
++      start: '2024-06-01T13:30:00.000Z',
++      end: '2024-06-01T16:00:00.000Z',
++    }),
++  );
++});
++
++test('quote throws for a 24-hour period that is not midnight-to-midnight', () => {
++  const service = createRentalService();
++  service.addEquipment({ id: 'board-1', kind: 'board', dailyPrice: 2500, hourlyPrice: 400 });
++
++  assert.throws(() =>
++    service.quote({
++      itemId: 'board-1',
++      start: '2024-06-01T13:00:00.000Z',
++      end: '2024-06-02T13:00:00.000Z',
++    }),
++  );
++});
++
++test('books an hourly rental and returns a booking priced by the hour', () => {
++  const service = createRentalService();
++  service.addEquipment({ id: 'board-1', kind: 'board', dailyPrice: 2500, hourlyPrice: 400 });
++
++  const booking = service.book({
++    itemId: 'board-1',
++    start: '2024-06-01T13:00:00.000Z',
++    end: '2024-06-01T16:00:00.000Z',
++  });
++
++  assert.equal(booking.total, 1200);
++  assert.equal(typeof booking.id, 'string');
++});
++
++test('book throws for an hourly rental on an item without an hourly price', () => {
++  const service = createRentalService();
++  service.addEquipment({ id: 'board-1', kind: 'board', dailyPrice: 2500 });
++
++  assert.throws(() =>
++    service.book({
++      itemId: 'board-1',
++      start: '2024-06-01T13:00:00.000Z',
++      end: '2024-06-01T16:00:00.000Z',
++    }),
++  );
++});
++
++test('an hourly booking blocks overlapping hourly and daily bookings of the same item', () => {
++  const service = createRentalService();
++  service.addEquipment({ id: 'board-1', kind: 'board', dailyPrice: 2500, hourlyPrice: 400 });
++  service.book({
++    itemId: 'board-1',
++    start: '2024-06-01T13:00:00.000Z',
++    end: '2024-06-01T16:00:00.000Z',
++  });
++
++  assert.throws(() =>
++    service.book({
++      itemId: 'board-1',
++      start: '2024-06-01T15:00:00.000Z',
++      end: '2024-06-01T18:00:00.000Z',
++    }),
++  );
++  assert.throws(() =>
++    service.book({
++      itemId: 'board-1',
++      start: '2024-06-01T00:00:00.000Z',
++      end: '2024-06-02T00:00:00.000Z',
++    }),
++  );
++});
++
++test('availability excludes an item with an hourly booking overlapping the queried hours', () => {
++  const service = createRentalService();
++  service.addEquipment({ id: 'board-1', kind: 'board', dailyPrice: 2500, hourlyPrice: 400 });
++  service.addEquipment({ id: 'board-2', kind: 'board', dailyPrice: 2500, hourlyPrice: 400 });
++  service.book({
++    itemId: 'board-1',
++    start: '2024-06-01T13:00:00.000Z',
++    end: '2024-06-01T16:00:00.000Z',
++  });
++
++  const result = service.availability({
++    start: '2024-06-01T14:00:00.000Z',
++    end: '2024-06-01T15:00:00.000Z',
++    kind: 'board',
++  });
++
++  assert.deepEqual(result, ['board-2']);
++});
+diff --git a/src/rental-service.ts b/src/rental-service.ts
+index 21f334c4d4422806d87a32e3061fca34e7cda55b..892225c76844cd75737fc237421d449fc38d3299 100644
+--- a/src/rental-service.ts
++++ b/src/rental-service.ts
+@@ -1,6 +1,6 @@
+ import type { AvailabilityQuery, Booking, Equipment, Quote, RentalRequest, RentalService } from './types.ts';
+ import { parsePeriod } from './period.ts';
+-import { priceForDays } from './pricing.ts';
++import { priceForDays, priceForHours } from './pricing.ts';
+ import { validateAvailabilityQuery, validateEquipment } from './validation.ts';
+ 
+ /** Creates a rental service that keeps equipment, quotes and bookings in memory. */
+@@ -18,8 +18,16 @@ export function createRentalService(): RentalService {
+   }
+ 
+   function priceFor(item: Equipment, start: string, end: string): { total: number; startMs: number; endMs: number } {
+-    const { startMs, endMs, days } = parsePeriod(start, end);
+-    return { total: priceForDays(item.dailyPrice, days), startMs, endMs };
++    const period = parsePeriod(start, end);
++
++    if (period.unit === 'day') {
++      return { total: priceForDays(item.dailyPrice, period.days), startMs: period.startMs, endMs: period.endMs };
++    }
++
++    if (item.hourlyPrice === undefined) {
++      throw new Error(`Item ${item.id} cannot be rented by the hour`);
++    }
++    return { total: priceForHours(item.hourlyPrice, period.hours), startMs: period.startMs, endMs: period.endMs };
+   }
+ 
+   function overlapsExistingBooking(itemId: string, startMs: number, endMs: number): boolean {
+diff --git a/src/types.ts b/src/types.ts
+index b50b9079ac15fa38b71a2fd14acf418fc2b18f47..dfc8a45f1f79a33cea1f99bc6a281ca5c94a3239 100644
+--- a/src/types.ts
++++ b/src/types.ts
+@@ -7,22 +7,27 @@ export interface Equipment {
+   kind: EquipmentKind;
+   /** Price of one day of rental, in integer euro cents. */
+   dailyPrice: number;
++  /** Price of one hour of rental, in integer euro cents. Without it, the item cannot be rented by the hour. */
++  hourlyPrice?: number;
+ }
+ 
+-/** A request to price or book an item for a period of whole UTC days. */
++/**
++ * A request to price or book an item for a period that is either whole UTC days (midnight to
++ * midnight), or less than a day and on the hour.
++ */
+ export interface RentalRequest {
+   itemId: string;
+-  /** ISO-8601 UTC timestamp at midnight: the first day of the period. */
++  /** ISO-8601 UTC timestamp: the start of the period, at midnight or on the hour. */
+   start: string;
+-  /** ISO-8601 UTC timestamp at midnight: the start of the day after the last day of the period. */
++  /** ISO-8601 UTC timestamp: the end of the period, at midnight or on the hour. */
+   end: string;
+ }
+ 
+ /** A request to find equipment free for a whole period, optionally restricted to one kind. */
+ export interface AvailabilityQuery {
+-  /** ISO-8601 UTC timestamp at midnight: the first day of the period. */
++  /** ISO-8601 UTC timestamp: the start of the period, at midnight or on the hour. */
+   start: string;
+-  /** ISO-8601 UTC timestamp at midnight: the start of the day after the last day of the period. */
++  /** ISO-8601 UTC timestamp: the end of the period, at midnight or on the hour. */
+   end: string;
+   /** Restricts the search to this kind of equipment; searches every kind when omitted. */
+   kind?: EquipmentKind;
+diff --git a/src/validation.ts b/src/validation.ts
+index 71eda1681d5c3456b2175c6323dfa602222f4de8..b3180cfd11e7f37edbdc9398fffc406fa1d2d9ea 100644
+--- a/src/validation.ts
++++ b/src/validation.ts
+@@ -13,6 +13,10 @@ export function validateEquipment(item: Equipment): void {
+   if (!Number.isInteger(item.dailyPrice) || item.dailyPrice < 0) {
+     throw new Error('Equipment dailyPrice must be a non-negative integer number of cents');
+   }
++
++  if (item.hourlyPrice !== undefined && (!Number.isInteger(item.hourlyPrice) || item.hourlyPrice < 0)) {
++    throw new Error('Equipment hourlyPrice must be a non-negative integer number of cents');
++  }
+ }
+ 
+ /** Validates an availability query at the system boundary. Throws when the kind is invalid. */

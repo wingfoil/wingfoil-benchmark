@@ -1,0 +1,347 @@
+diff --git a/src/domain/list.ts b/src/domain/list.ts
+index ee4c2fec76c29a0531109ed1c2351010dfc9978e..d267aca8ea14532879d816b8668c3fe5d9aaa45a 100644
+--- a/src/domain/list.ts
++++ b/src/domain/list.ts
+@@ -13,17 +13,18 @@ export interface TaskFilter {
+ /**
+  * The task list: tasks by id, each id unique and stable across a rename; also indexed by title, each
+  * title once. Every change returns the task as it now is. The methods that take a title accept a
+- * task's id as well.
++ * task's id as well. The methods that change a task take `now`, the current moment as an ISO-8601
++ * date-time string, to stamp its `updatedAt` (and, for `add`, its `createdAt` too).
+  */
+ export interface TaskList {
+-  add(input: NewTask): Result<Task>;
++  add(input: NewTask, now: string): Result<Task>;
+   get(id: string): Result<Task>;
+   find(titleOrId: string): Result<Task>;
+-  complete(titleOrId: string): Result<Task>;
+-  reopen(titleOrId: string): Result<Task>;
+-  rename(titleOrId: string, newTitle: string): Result<Task>;
+-  tag(titleOrId: string, tag: string): Result<Task>;
+-  untag(titleOrId: string, tag: string): Result<Task>;
++  complete(titleOrId: string, now: string): Result<Task>;
++  reopen(titleOrId: string, now: string): Result<Task>;
++  rename(titleOrId: string, newTitle: string, now: string): Result<Task>;
++  tag(titleOrId: string, tag: string, now: string): Result<Task>;
++  untag(titleOrId: string, tag: string, now: string): Result<Task>;
+   remove(titleOrId: string): Result<Task>;
+   list(filter?: TaskFilter): readonly Task[];
+   openCount(): number;
+@@ -66,29 +67,29 @@ export function createTaskList(): TaskList {
+   };
+ 
+   return {
+-    add(input) {
++    add(input, now) {
+       const title = input.title.trim();
+       if (idByTitle.has(title)) return err('duplicate', `there is already a task "${title}"`);
+-      const task = createTask(input, String(nextId++));
++      const task = createTask(input, String(nextId++), now);
+       tasksById.set(task.id, task);
+       idByTitle.set(task.title, task.id);
+       return ok(task);
+     },
+     get,
+     find,
+-    complete: (titleOrId) => change(titleOrId, completeTask),
+-    reopen: (titleOrId) => change(titleOrId, reopenTask),
+-    rename(titleOrId, newTitle) {
++    complete: (titleOrId, now) => change(titleOrId, (task) => completeTask(task, now)),
++    reopen: (titleOrId, now) => change(titleOrId, (task) => reopenTask(task, now)),
++    rename(titleOrId, newTitle, now) {
+       const found = find(titleOrId);
+       if (!found.ok) return found;
+       const target = newTitle.trim();
+       if (target !== found.value.title && idByTitle.has(target)) {
+         return err('duplicate', `there is already a task "${target}"`);
+       }
+-      return store(found.value, renameTask(found.value, target));
++      return store(found.value, renameTask(found.value, target, now));
+     },
+-    tag: (titleOrId, tag) => change(titleOrId, (task) => ok(addTag(task, tag))),
+-    untag: (titleOrId, tag) => change(titleOrId, (task) => ok(removeTag(task, tag))),
++    tag: (titleOrId, tag, now) => change(titleOrId, (task) => ok(addTag(task, tag, now))),
++    untag: (titleOrId, tag, now) => change(titleOrId, (task) => ok(removeTag(task, tag, now))),
+     remove(titleOrId) {
+       const found = find(titleOrId);
+       if (found.ok) {
+diff --git a/src/domain/task.ts b/src/domain/task.ts
+index f68c6d1d9560f23ff60eb79d054d46df54cca0aa..fb67cac259b0e4179f2379b3c8299e238dc4b53c 100644
+--- a/src/domain/task.ts
++++ b/src/domain/task.ts
+@@ -17,6 +17,10 @@ export interface Task {
+   readonly priority: Priority;
+   readonly tags: readonly string[];
+   readonly status: Status;
++  /** When the task was added, as an ISO-8601 date-time string. */
++  readonly createdAt: string;
++  /** When the task was last completed, reopened, renamed, tagged or untagged, as an ISO-8601 date-time string. */
++  readonly updatedAt: string;
+ }
+ 
+ /** What it takes to add a task: a title, and optionally a priority and tags. */
+@@ -27,69 +31,78 @@ export interface NewTask {
+ }
+ 
+ /**
+- * A new open task. Its priority is `normal` unless given; its tags keep the order given, each once.
++ * A new open task. Its priority is `normal` unless given; its tags keep the order given, each once. Its
++ * `createdAt` and `updatedAt` are both `now`.
+  *
+  * @param input - the task's title, priority and tags
+  * @param id - the task's unique id, assigned by the list
++ * @param now - the current moment, as an ISO-8601 date-time string
+  */
+-export function createTask(input: NewTask, id: string): Task {
++export function createTask(input: NewTask, id: string, now: string): Task {
+   return {
+     id,
+     title: input.title.trim(),
+     priority: input.priority ?? 'normal',
+     tags: unique(input.tags ?? []),
+     status: 'open',
++    createdAt: now,
++    updatedAt: now,
+   };
+ }
+ 
+ /**
+- * The task, done. A task already done cannot be completed again.
++ * The task, done, its `updatedAt` set to `now`. A task already done cannot be completed again.
+  *
+  * @param task - an open task
++ * @param now - the current moment, as an ISO-8601 date-time string
+  */
+-export function completeTask(task: Task): Result<Task> {
++export function completeTask(task: Task, now: string): Result<Task> {
+   if (task.status === 'done') return err('invalid-state', `"${task.title}" is already done`);
+-  return ok({ ...task, status: 'done' });
++  return ok({ ...task, status: 'done', updatedAt: now });
+ }
+ 
+ /**
+- * The task, open again. Only a task that is done can be reopened.
++ * The task, open again, its `updatedAt` set to `now`. Only a task that is done can be reopened.
+  *
+  * @param task - a task that is done
++ * @param now - the current moment, as an ISO-8601 date-time string
+  */
+-export function reopenTask(task: Task): Result<Task> {
++export function reopenTask(task: Task, now: string): Result<Task> {
+   if (task.status === 'open') return err('invalid-state', `"${task.title}" is still open`);
+-  return ok({ ...task, status: 'open' });
++  return ok({ ...task, status: 'open', updatedAt: now });
+ }
+ 
+ /**
+- * The task under a new title.
++ * The task under a new title, its `updatedAt` set to `now`.
+  *
+  * @param task - the task to rename
+  * @param title - its new title
++ * @param now - the current moment, as an ISO-8601 date-time string
+  */
+-export function renameTask(task: Task, title: string): Task {
+-  return { ...task, title: title.trim() };
++export function renameTask(task: Task, title: string, now: string): Task {
++  return { ...task, title: title.trim(), updatedAt: now };
+ }
+ 
+ /**
+- * The task with one more tag; a tag it already has is not added twice.
++ * The task with one more tag, its `updatedAt` set to `now`; a tag it already has is not added twice.
+  *
+  * @param task - the task to tag
+  * @param tag - the tag to add
++ * @param now - the current moment, as an ISO-8601 date-time string
+  */
+-export function addTag(task: Task, tag: string): Task {
+-  return { ...task, tags: unique([...task.tags, tag]) };
++export function addTag(task: Task, tag: string, now: string): Task {
++  return { ...task, tags: unique([...task.tags, tag]), updatedAt: now };
+ }
+ 
+ /**
+- * The task without a tag; a tag it does not have changes nothing.
++ * The task without a tag, its `updatedAt` set to `now`; a tag it does not have changes nothing else.
+  *
+  * @param task - the task to untag
+  * @param tag - the tag to remove
++ * @param now - the current moment, as an ISO-8601 date-time string
+  */
+-export function removeTag(task: Task, tag: string): Task {
+-  return { ...task, tags: task.tags.filter((existing) => existing !== tag) };
++export function removeTag(task: Task, tag: string, now: string): Task {
++  return { ...task, tags: task.tags.filter((existing) => existing !== tag), updatedAt: now };
+ }
+ 
+ /**
+diff --git a/src/index.ts b/src/index.ts
+index d645db5250ea48852a8de1629640e42619a985c8..e9eb87a4a99b3c656a15adec3a68a7b6b86f75b6 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -1,16 +1,57 @@
+ import { createTaskList } from './domain/list.ts';
+-import type { TaskList } from './domain/list.ts';
++import type { TaskFilter } from './domain/list.ts';
++import type { NewTask, Task } from './domain/task.ts';
++import type { Result } from './domain/result.ts';
+ 
+-export type { TaskFilter, TaskList } from './domain/list.ts';
++export type { TaskFilter } from './domain/list.ts';
+ export type { Result, TodoError, TodoErrorCode } from './domain/result.ts';
+ export { summarize } from './domain/summary.ts';
+ export type { Summary } from './domain/summary.ts';
+ export { PRIORITIES } from './domain/task.ts';
+ export type { NewTask, Priority, Status, Task } from './domain/task.ts';
+ 
++/** Where to read the current moment from, as an ISO-8601 date-time string. */
++export type Clock = () => string;
++
++const systemClock: Clock = () => new Date().toISOString();
++
++/**
++ * The task list the app's screens use: like the domain's task list, but it reads `createdAt` and
++ * `updatedAt` from a clock instead of taking them as arguments.
++ */
++export interface TaskList {
++  add(input: NewTask): Result<Task>;
++  get(id: string): Result<Task>;
++  find(titleOrId: string): Result<Task>;
++  complete(titleOrId: string): Result<Task>;
++  reopen(titleOrId: string): Result<Task>;
++  rename(titleOrId: string, newTitle: string): Result<Task>;
++  tag(titleOrId: string, tag: string): Result<Task>;
++  untag(titleOrId: string, tag: string): Result<Task>;
++  remove(titleOrId: string): Result<Task>;
++  list(filter?: TaskFilter): readonly Task[];
++  openCount(): number;
++}
++
+ /**
+- * A new, empty task list for the app, kept in memory.
++ * A new, empty task list for the app, kept in memory. Stamps each task it adds or changes with the
++ * current moment, read from `clock` (the real clock, by default).
++ *
++ * @param clock - where to read the current moment from; defaults to the real clock
+  */
+-export function createTodoList(): TaskList {
+-  return createTaskList();
++export function createTodoList(clock: Clock = systemClock): TaskList {
++  const tasks = createTaskList();
++  return {
++    add: (input) => tasks.add(input, clock()),
++    get: (id) => tasks.get(id),
++    find: (titleOrId) => tasks.find(titleOrId),
++    complete: (titleOrId) => tasks.complete(titleOrId, clock()),
++    reopen: (titleOrId) => tasks.reopen(titleOrId, clock()),
++    rename: (titleOrId, newTitle) => tasks.rename(titleOrId, newTitle, clock()),
++    tag: (titleOrId, tag) => tasks.tag(titleOrId, tag, clock()),
++    untag: (titleOrId, tag) => tasks.untag(titleOrId, tag, clock()),
++    remove: (titleOrId) => tasks.remove(titleOrId),
++    list: (filter) => tasks.list(filter),
++    openCount: () => tasks.openCount(),
++  };
+ }
+diff --git a/test/list.test.ts b/test/list.test.ts
+index 5e343c249eab1b96dd8394d641af0990b91b822a..ddb241e8ea32c11878b6ed2bfe21d21c9a50123a 100644
+--- a/test/list.test.ts
++++ b/test/list.test.ts
+@@ -8,11 +8,28 @@ function valueOf<T>(result: { ok: true; value: T } | { ok: false; error: unknown
+   return result.value;
+ }
+ 
++function fakeClock(times: readonly string[]): () => string {
++  let index = 0;
++  return () => {
++    const time = times[index];
++    index += 1;
++    return time;
++  };
++}
++
+ describe('task list', () => {
+   it('adds an open task with a normal priority by default', () => {
+     const list = createTodoList();
+     const task = valueOf(list.add({ title: '  Buy milk ' }));
+-    assert.deepEqual(task, { id: task.id, title: 'Buy milk', priority: 'normal', tags: [], status: 'open' });
++    assert.deepEqual(task, {
++      id: task.id,
++      title: 'Buy milk',
++      priority: 'normal',
++      tags: [],
++      status: 'open',
++      createdAt: task.createdAt,
++      updatedAt: task.createdAt,
++    });
+     assert.equal(typeof task.id, 'string');
+     assert.notEqual(task.id, '');
+     assert.equal(list.openCount(), 1);
+@@ -103,3 +120,66 @@ describe('task list', () => {
+     assert.deepEqual([summary.open, summary.done], [2, 1]);
+   });
+ });
++
++describe('task timestamps', () => {
++  it('stamps a new task with its creation time, as both createdAt and updatedAt', () => {
++    const list = createTodoList(fakeClock(['2024-01-01T00:00:00.000Z']));
++    const task = valueOf(list.add({ title: 'Buy milk' }));
++    assert.equal(task.createdAt, '2024-01-01T00:00:00.000Z');
++    assert.equal(task.updatedAt, '2024-01-01T00:00:00.000Z');
++  });
++
++  it('updates updatedAt, and keeps createdAt, on every change', () => {
++    const list = createTodoList(
++      fakeClock([
++        '2024-01-01T00:00:00.000Z', // add
++        '2024-01-02T00:00:00.000Z', // complete
++        '2024-01-03T00:00:00.000Z', // reopen
++        '2024-01-04T00:00:00.000Z', // rename
++        '2024-01-05T00:00:00.000Z', // tag
++        '2024-01-06T00:00:00.000Z', // untag
++      ]),
++    );
++    const created = valueOf(list.add({ title: 'Water the plants' }));
++    assert.equal(created.createdAt, '2024-01-01T00:00:00.000Z');
++
++    const completed = valueOf(list.complete(created.id));
++    assert.equal(completed.updatedAt, '2024-01-02T00:00:00.000Z');
++    assert.equal(completed.createdAt, created.createdAt);
++
++    const reopened = valueOf(list.reopen(created.id));
++    assert.equal(reopened.updatedAt, '2024-01-03T00:00:00.000Z');
++    assert.equal(reopened.createdAt, created.createdAt);
++
++    const renamed = valueOf(list.rename(created.id, 'Water the garden'));
++    assert.equal(renamed.updatedAt, '2024-01-04T00:00:00.000Z');
++    assert.equal(renamed.createdAt, created.createdAt);
++
++    const tagged = valueOf(list.tag(created.id, 'garden'));
++    assert.equal(tagged.updatedAt, '2024-01-05T00:00:00.000Z');
++    assert.equal(tagged.createdAt, created.createdAt);
++
++    const untagged = valueOf(list.untag(created.id, 'garden'));
++    assert.equal(untagged.updatedAt, '2024-01-06T00:00:00.000Z');
++    assert.equal(untagged.createdAt, created.createdAt);
++  });
++
++  it('does not update updatedAt when a change is refused', () => {
++    const list = createTodoList(fakeClock(['2024-01-01T00:00:00.000Z', '2024-01-02T00:00:00.000Z']));
++    const created = valueOf(list.add({ title: 'Water the plants' }));
++    const completed = valueOf(list.complete(created.id));
++    assert.equal(completed.updatedAt, '2024-01-02T00:00:00.000Z');
++
++    const again = list.complete(created.id);
++    assert.equal(again.ok, false);
++    assert.equal(valueOf(list.get(created.id)).updatedAt, '2024-01-02T00:00:00.000Z');
++  });
++
++  it('stamps tasks with a real, current moment when no clock is given', () => {
++    const before = new Date().toISOString();
++    const list = createTodoList();
++    const task = valueOf(list.add({ title: 'Buy milk' }));
++    const after = new Date().toISOString();
++    assert.ok(task.createdAt >= before && task.createdAt <= after);
++  });
++});

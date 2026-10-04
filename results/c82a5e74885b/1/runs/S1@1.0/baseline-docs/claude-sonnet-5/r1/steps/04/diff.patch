@@ -1,0 +1,110 @@
+diff --git a/src/index.ts b/src/index.ts
+index 2511fbe15eca25cd8e75e3cb6e73068dc3ec7aeb..6b5802ae8f1bf6eacc694d3f460aab5784c69a61 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -316,3 +316,31 @@ export function applyPatch(document: JsonValue, patch: JsonPatchOperation[]): Js
+   }
+   return result;
+ }
++
++/**
++ * Applies a JSON Merge Patch (RFC 7386) to a target JSON document.
++ *
++ * @param target - The JSON document to patch.
++ * @param patch - The merge patch document.
++ * @returns The result of merging `patch` into `target`: a member of `patch` set to `null` removes the
++ *   corresponding member of the result, a member whose value is a JSON object is merged recursively, and
++ *   any other value replaces the target wholly. Neither `target` nor `patch` is mutated.
++ */
++export function applyMergePatch(target: JsonValue, patch: JsonValue): JsonValue {
++  if (!isObject(patch)) {
++    return cloneJson(patch);
++  }
++
++  const result: Record<string, JsonValue> = isObject(target) ? (cloneJson(target) as Record<string, JsonValue>) : {};
++
++  for (const key of Object.keys(patch)) {
++    const value = patch[key];
++    if (value === null) {
++      delete result[key];
++    } else {
++      setMember(result, key, applyMergePatch(result[key], value));
++    }
++  }
++
++  return result;
++}
+diff --git a/test/index.test.ts b/test/index.test.ts
+index 3738c27430372986bde9a358a6c5f628d0907f3e..6a9119338baa861b003e3bbd5d7a7e08395b9a81 100644
+--- a/test/index.test.ts
++++ b/test/index.test.ts
+@@ -1,6 +1,6 @@
+ import assert from "node:assert/strict";
+ import { test } from "node:test";
+-import { applyPatch, resolvePointer, type JsonValue } from "../src/index.ts";
++import { applyMergePatch, applyPatch, resolvePointer, type JsonValue } from "../src/index.ts";
+ 
+ const rfcExample = {
+   foo: ["bar", "baz"],
+@@ -331,3 +331,61 @@ test("clones a literal __proto__ member without altering the clone's prototype",
+   assert.equal(Object.getPrototypeOf(result), Object.prototype);
+   assert.deepEqual(result.__proto__, { already: "there" });
+ });
++
++// applyMergePatch — RFC 7386
++
++const mergePatchExamples: Array<{ target: JsonValue; patch: JsonValue; result: JsonValue }> = [
++  { target: { a: "b" }, patch: { a: "c" }, result: { a: "c" } },
++  { target: { a: "b" }, patch: { b: "c" }, result: { a: "b", b: "c" } },
++  { target: { a: "b" }, patch: { a: null }, result: {} },
++  { target: { a: "b", b: "c" }, patch: { a: null }, result: { b: "c" } },
++  { target: { a: ["b"] }, patch: { a: "c" }, result: { a: "c" } },
++  { target: { a: "c" }, patch: { a: ["b"] }, result: { a: ["b"] } },
++  { target: { a: { b: "c" } }, patch: { a: { b: "d", c: null } }, result: { a: { b: "d" } } },
++  { target: { a: [{ b: "c" }] }, patch: { a: [1] }, result: { a: [1] } },
++  { target: ["a", "b"], patch: ["c", "d"], result: ["c", "d"] },
++  { target: { a: "b" }, patch: ["c"], result: ["c"] },
++  { target: { a: "foo" }, patch: null, result: null },
++  { target: { a: "foo" }, patch: "bar", result: "bar" },
++  { target: { e: null }, patch: { a: 1 }, result: { e: null, a: 1 } },
++  { target: [1, 2], patch: { a: "b", c: null }, result: { a: "b" } },
++  { target: {}, patch: { a: { bb: { ccc: null } } }, result: { a: { bb: {} } } },
++];
++
++for (const { target, patch, result } of mergePatchExamples) {
++  test(`merge-patches ${JSON.stringify(target)} with ${JSON.stringify(patch)} into ${JSON.stringify(result)}`, () => {
++    assert.deepEqual(applyMergePatch(target, patch), result);
++  });
++}
++
++test("merges nested objects recursively, adding new members alongside existing ones", () => {
++  const target = { title: "Goodbye!", author: { givenName: "John", familyName: "Doe" } };
++  const patch = { author: { familyName: null, nickname: "Jonny" }, tags: ["example"] };
++  const result = applyMergePatch(target, patch);
++  assert.deepEqual(result, { title: "Goodbye!", author: { givenName: "John", nickname: "Jonny" }, tags: ["example"] });
++});
++
++test("does not mutate the input target", () => {
++  const target = { a: { b: "c" }, list: [1, 2] };
++  const snapshot = JSON.parse(JSON.stringify(target));
++  applyMergePatch(target, { a: { b: null, d: "e" }, list: [3] });
++  assert.deepEqual(target, snapshot);
++});
++
++test("does not mutate the input patch", () => {
++  const patch = { a: { b: "c" } };
++  const snapshot = JSON.parse(JSON.stringify(patch));
++  const result = applyMergePatch({ a: { b: "x" } }, patch) as Record<string, JsonValue>;
++  (result.a as Record<string, JsonValue>).b = "mutated";
++  assert.deepEqual(patch, snapshot);
++});
++
++test("adds a member named __proto__ as a literal member, without altering the object's prototype", () => {
++  const target = { foo: "bar" };
++  const patch = JSON.parse('{"__proto__": {"polluted": true}}');
++  const result = applyMergePatch(target, patch) as Record<string, JsonValue>;
++  assert.equal(Object.getPrototypeOf(result), Object.prototype);
++  assert.equal(Object.prototype.hasOwnProperty.call(result, "__proto__"), true);
++  assert.deepEqual(result.__proto__, { polluted: true });
++  assert.equal(({} as Record<string, unknown>).polluted, undefined);
++});

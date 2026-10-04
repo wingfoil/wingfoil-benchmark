@@ -1,0 +1,222 @@
+diff --git a/README.md b/README.md
+index 5758263eb957d3344f1ec14b8fbc4f4567301dd1..e8dfd91aa44f636be8a1217195b74925b019d6d2 100644
+--- a/README.md
++++ b/README.md
+@@ -46,6 +46,25 @@ It throws when `patch` is not a syntactically valid JSON Patch document (for exa
+ `from` that doesn't resolve within the document, a `test` whose `value` doesn't match, or a `move`
+ whose `from` is a proper prefix of its `path`.
+ 
++### JSON Merge Patch (RFC 7386)
++
++`applyMergePatch(target, patch)` applies a [JSON Merge Patch](https://www.rfc-editor.org/rfc/rfc7386) —
++a partial JSON document describing the changes to make — to a target JSON document and returns the
++merged document. It never mutates `target`, `patch`, or any value reachable from either.
++
++```ts
++import { applyMergePatch } from 'json-toolkit';
++
++const target = { name: 'Alice', role: 'admin' };
++
++applyMergePatch(target, { role: 'member', nickname: null });
++// => { name: 'Alice', role: 'member' }, and `target` is unchanged
++```
++
++A `null` value in `patch` removes the corresponding member of `target`; an object value is merged
++into it recursively; any other value — including an array — replaces it wholesale. If `patch` itself
++is not an object, it replaces `target` entirely.
++
+ ## Development
+ 
+ - `npm test` runs the test suite.
+diff --git a/src/index.ts b/src/index.ts
+index 35d053022f77eb0b6f51491d449a129613697048..af70a8672e0b049c9eafaf8e055ffbd04c68a514 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -240,6 +240,60 @@ function parseOperation(raw: unknown, index: number): Operation {
+  * of its operations fails (e.g. a "test" mismatch, or a path that does not
+  * resolve within the document).
+  */
++/**
++ * A JSON value that is an object (as opposed to an array, which RFC 7386
++ * treats as an opaque scalar to be replaced wholesale, never merged).
++ */
++function isJsonObject(value: unknown): value is Record<string, unknown> {
++  return value !== null && typeof value === 'object' && !Array.isArray(value);
++}
++
++/**
++ * Reads an own member by name, without falling through to inherited
++ * accessors such as `Object.prototype`'s `__proto__` getter for a container
++ * that has no own member of that name yet.
++ */
++function ownMember(container: Record<string, unknown>, key: string): unknown {
++  return Object.prototype.hasOwnProperty.call(container, key) ? container[key] : undefined;
++}
++
++/**
++ * Merges `patch`'s members into `base` in place, per RFC 7386: a `null`
++ * member value removes the corresponding member of `base`, an object member
++ * value is merged recursively, and any other value replaces it wholesale.
++ */
++function mergeInto(base: Record<string, unknown>, patch: Record<string, unknown>): void {
++  for (const key of Object.keys(patch)) {
++    const patchValue = ownMember(patch, key);
++    if (patchValue === null) {
++      delete base[key];
++      continue;
++    }
++    if (isJsonObject(patchValue)) {
++      const existing = ownMember(base, key);
++      const nested = isJsonObject(existing) ? existing : {};
++      mergeInto(nested, patchValue);
++      setMember(base, key, nested);
++    } else {
++      setMember(base, key, structuredClone(patchValue));
++    }
++  }
++}
++
++/**
++ * Applies a JSON Merge Patch (RFC 7386) to a JSON document and returns the
++ * resulting document as a new value. It never mutates `target`, `patch`, or
++ * any value reachable from either.
++ */
++export function applyMergePatch(target: unknown, patch: unknown): unknown {
++  if (!isJsonObject(patch)) {
++    return structuredClone(patch);
++  }
++  const result: Record<string, unknown> = isJsonObject(target) ? structuredClone(target) : {};
++  mergeInto(result, patch);
++  return result;
++}
++
+ export function applyPatch(document: unknown, patch: readonly unknown[]): unknown {
+   if (!Array.isArray(patch)) {
+     throw new TypeError('JSON Patch must be an array of operations');
+diff --git a/test/apply-merge-patch.test.ts b/test/apply-merge-patch.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..d3725fd9ae3ef21d2887f2c8b44fcf4fe9a95307
+--- /dev/null
++++ b/test/apply-merge-patch.test.ts
+@@ -0,0 +1,121 @@
++import { test } from 'node:test';
++import assert from 'node:assert/strict';
++import { applyMergePatch } from '../src/index.ts';
++
++// The example test cases from RFC 7386 appendix A.
++
++test('A.1: replaces a member value', () => {
++  assert.deepEqual(applyMergePatch({ a: 'b' }, { a: 'c' }), { a: 'c' });
++});
++
++test('A.2: adds a member', () => {
++  assert.deepEqual(applyMergePatch({ a: 'b' }, { b: 'c' }), { a: 'b', b: 'c' });
++});
++
++test('A.3: a null value removes a member', () => {
++  assert.deepEqual(applyMergePatch({ a: 'b' }, { a: null }), {});
++});
++
++test('A.4: a null value removes only the targeted member', () => {
++  assert.deepEqual(applyMergePatch({ a: 'b', b: 'c' }, { a: null }), { b: 'c' });
++});
++
++test('A.5: a scalar patch value replaces an array wholesale', () => {
++  assert.deepEqual(applyMergePatch({ a: ['b'] }, { a: 'c' }), { a: 'c' });
++});
++
++test('A.6: an array patch value replaces a scalar wholesale', () => {
++  assert.deepEqual(applyMergePatch({ a: 'c' }, { a: ['b'] }), { a: ['b'] });
++});
++
++test('A.7: merges nested objects recursively', () => {
++  assert.deepEqual(applyMergePatch({ a: { b: 'c' } }, { a: { b: 'd', c: null } }), { a: { b: 'd' } });
++});
++
++test('A.8: an array patch value replaces an array of objects wholesale', () => {
++  assert.deepEqual(applyMergePatch({ a: [{ b: 'c' }] }, { a: [1] }), { a: [1] });
++});
++
++test('A.9: an array patch replaces an array target wholesale', () => {
++  assert.deepEqual(applyMergePatch(['a', 'b'], ['c', 'd']), ['c', 'd']);
++});
++
++test('A.10: an array patch replaces an object target wholesale', () => {
++  assert.deepEqual(applyMergePatch({ a: 'b' }, ['c']), ['c']);
++});
++
++test('A.11: a null patch replaces the whole document with null', () => {
++  assert.equal(applyMergePatch({ a: 'foo' }, null), null);
++});
++
++test('A.12: a scalar patch replaces the whole document', () => {
++  assert.equal(applyMergePatch({ a: 'foo' }, 'bar'), 'bar');
++});
++
++test('A.13: a null member value in the target is left alone when untouched', () => {
++  assert.deepEqual(applyMergePatch({ e: null }, { a: 1 }), { e: null, a: 1 });
++});
++
++test('A.14: merging into a non-object target discards it and starts from an empty object', () => {
++  assert.deepEqual(applyMergePatch([1, 2], { a: 'b', c: null }), { a: 'b' });
++});
++
++test('A.15: removing a member of a newly created nested object leaves it empty', () => {
++  assert.deepEqual(applyMergePatch({}, { a: { bb: { ccc: null } } }), { a: { bb: {} } });
++});
++
++// Additional coverage beyond the RFC appendix.
++
++test('does not mutate the target document', () => {
++  const target = { a: { b: 'c' }, list: [1, 2, 3] };
++  const snapshot = structuredClone(target);
++  applyMergePatch(target, { a: { b: 'd' }, list: null });
++  assert.deepEqual(target, snapshot);
++});
++
++test('does not mutate the patch document', () => {
++  const patch = { a: { b: 'c' } };
++  const snapshot = structuredClone(patch);
++  applyMergePatch({}, patch);
++  assert.deepEqual(patch, snapshot);
++});
++
++test('does not let the returned document alias the target', () => {
++  const target = { a: { b: 'c' } };
++  const result = applyMergePatch(target, {}) as { a: { b: string } };
++  assert.deepEqual(result, target);
++  assert.notEqual(result.a, target.a);
++});
++
++test('does not let the returned document alias the patch', () => {
++  const patch = { a: { b: 'c' } };
++  const result = applyMergePatch({}, patch) as { a: { b: string } };
++  patch.a.b = 'mutated';
++  assert.equal(result.a.b, 'c');
++});
++
++test('leaves an untouched nested member of the target unaliased', () => {
++  const target = { a: { b: 'c' }, keep: { d: 'e' } };
++  const result = applyMergePatch(target, { a: { b: 'f' } }) as { keep: { d: string } };
++  assert.deepEqual(result.keep, { d: 'e' });
++  assert.notEqual(result.keep, target.keep);
++});
++
++test('sets a member literally named "__proto__" without altering the object prototype', () => {
++  // Built via JSON.parse, like a patch received over the wire, since the
++  // "__proto__: value" object-literal syntax sets a prototype instead of
++  // creating an own property of that name.
++  const patch = JSON.parse('{"__proto__":{"polluted":true}}');
++  const result = applyMergePatch({}, patch) as Record<string, unknown>;
++  assert.equal(Object.getPrototypeOf(result), Object.prototype);
++  assert.deepEqual(Object.keys(result), ['__proto__']);
++  assert.deepEqual(result.__proto__, { polluted: true });
++  assert.equal(Object.prototype.hasOwnProperty.call({}, 'polluted'), false);
++});
++
++test('merges into an existing member literally named "__proto__" without altering the object prototype', () => {
++  const target = applyMergePatch({}, JSON.parse('{"__proto__":{"a":1}}')) as Record<string, unknown>;
++  const result = applyMergePatch(target, JSON.parse('{"__proto__":{"b":2}}')) as Record<string, unknown>;
++  assert.equal(Object.getPrototypeOf(result), Object.prototype);
++  assert.deepEqual(result.__proto__, { a: 1, b: 2 });
++});

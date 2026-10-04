@@ -1,0 +1,216 @@
+diff --git a/README.md b/README.md
+index 37896eec7ddc256465e18d11ab6a022965ce14c3..38ac8c85ae99644dca43b0fd9656ae03372d878b 100644
+--- a/README.md
++++ b/README.md
+@@ -93,9 +93,10 @@ carrying a `"description"` of its own still applies.
+ 
+ A few points that RFC 6902 settles and that are easy to get wrong:
+ 
+-- `path` may be the empty pointer, the document itself: `add`, `replace` and `copy` then return a new
+-  document, and `test` compares the whole of it. `remove` is the exception — removing the document
+-  leaves no JSON value to return, so it is rejected as an invalid patch, as is a `move` out of it.
++- `path` may be the empty pointer, the document itself: `add`, `replace`, `copy` and `move` then
++  return a new document, and `test` compares the whole of it. `remove` is the exception — removing
++  the document would leave no JSON value to return, a case RFC 6902 does not settle, so it is
++  rejected as an invalid patch.
+ - In `add`, and only in `add`, an array accepts the token `-`: the value is appended. An index is
+   accepted up to the array's length, where it also appends; beyond that it names no position.
+   Everywhere else `-` names no value, and an index must address an element the array holds.
+diff --git a/docs/memory/decision-log/dl-006-move-onto-the-same-location-is-a-no-op-which-legalises-an-empty-from-and-path.md b/docs/memory/decision-log/dl-006-move-onto-the-same-location-is-a-no-op-which-legalises-an-empty-from-and-path.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..1e444709627e6f5ce1d1ac51818e5694ae78179a
+--- /dev/null
++++ b/docs/memory/decision-log/dl-006-move-onto-the-same-location-is-a-no-op-which-legalises-an-empty-from-and-path.md
+@@ -0,0 +1,9 @@
++---
++id: dl-006-move-onto-the-same-location-is-a-no-op-which-legalises-an-empty-from-and-path
++type: decision-log
++title: "Move onto the same location is a no-op, which legalises an empty from and path"
++status: draft
++---
++
++<!-- decision-log body. `wingfoil memory add` copies this scaffold verbatim; `memory submit` replaces
++     these placeholder comments with real content and fills the required frontmatter fields. -->
+diff --git a/docs/memory/task/task-003-review-and-conform-applypatch-to-rfc-6902.md b/docs/memory/task/task-003-review-and-conform-applypatch-to-rfc-6902.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..0d7286b4865fc2db3cb28ed746058c9cd22d6546
+--- /dev/null
++++ b/docs/memory/task/task-003-review-and-conform-applypatch-to-rfc-6902.md
+@@ -0,0 +1,9 @@
++---
++id: task-003-review-and-conform-applypatch-to-rfc-6902
++type: task
++title: "Review and conform applyPatch to RFC 6902"
++status: draft
++---
++
++<!-- task body. `wingfoil memory add` copies this scaffold verbatim; `memory submit` replaces
++     these placeholder comments with real content and fills the required frontmatter fields. -->
+diff --git a/src/json-patch.ts b/src/json-patch.ts
+index 2cf816cba2bf03293cfa22e74b188fe64941c868..7c5e0eaa3a1715298c556c924f35b093bc40b41f 100644
+--- a/src/json-patch.ts
++++ b/src/json-patch.ts
+@@ -268,9 +268,8 @@ function replace(document: JsonValue, path: Location, value: JsonValue, fail: Fa
+  * positions in the array the removal leaves behind.
+  */
+ function move(document: JsonValue, from: Location, path: Location, fail: Fail): JsonValue {
+-  if (from.tokens.length === 0) {
+-    throw fail('invalid-patch', 'cannot move the whole document; "from" must name a value in it');
+-  }
++  // The empty pointer is a proper prefix of every other pointer, so this one rule also rejects a
++  // move of the document into any location inside itself.
+   if (isProperPrefix(from.tokens, path.tokens)) {
+     throw fail(
+       'invalid-patch',
+@@ -279,7 +278,17 @@ function move(document: JsonValue, from: Location, path: Location, fail: Fail):
+   }
+ 
+   // Read before removing: afterwards the value is no longer in the document, but still intact.
++  // "from" must name a value whether or not the move goes on to change anything.
+   const value = valueAt(document, from, fail);
++
++  // Removing a value and adding it straight back where it was leaves the document as it was. Saying
++  // so outright is what lets "from" and "path" both be the empty pointer, the one move onto the
++  // document itself: a location is not a proper prefix of itself, so section 4.4 allows it, and
++  // short-circuiting means no removal of the whole document has to be given a result.
++  if (sameLocation(from, path)) {
++    return document;
++  }
++
+   return add(remove(document, from, fail), path, value, fail);
+ }
+ 
+@@ -379,6 +388,14 @@ function isProperPrefix(prefix: readonly string[], tokens: readonly string[]): b
+   return prefix.length < tokens.length && prefix.every((token, index) => token === tokens[index]);
+ }
+ 
++/** Reports whether two locations name the same value, i.e. resolve to the same reference tokens. */
++function sameLocation(one: Location, other: Location): boolean {
++  return (
++    one.tokens.length === other.tokens.length &&
++    one.tokens.every((token, index) => token === other.tokens[index])
++  );
++}
++
+ /** Narrows the `op` member of an operation to one of the six names RFC 6902 defines. */
+ function isOperationName(op: unknown): op is OperationName {
+   return typeof op === 'string' && (OPERATIONS as readonly string[]).includes(op);
+@@ -459,6 +476,21 @@ const PREVIEW_LENGTH = 80;
+ 
+ /** Renders a JSON value for an error message, keeping the message a readable length. */
+ function preview(value: JsonValue): string {
+-  const text = JSON.stringify(value);
++  const text = serialise(value);
+   return text.length <= PREVIEW_LENGTH ? text : `${text.slice(0, PREVIEW_LENGTH)}…`;
+ }
++
++/**
++ * Serialises a value for an error message, without ever failing itself.
++ *
++ * A message is built on the way out of a failure, so it must not raise a second error in place of
++ * the first. A value JSON cannot represent — which `JsonValue` forbids, but a JavaScript caller can
++ * still hand over — is named by its kind rather than serialised.
++ */
++function serialise(value: JsonValue): string {
++  try {
++    return JSON.stringify(value) ?? describe(value);
++  } catch {
++    return describe(value);
++  }
++}
+diff --git a/test/json-patch.test.ts b/test/json-patch.test.ts
+index da09dec6d98876878b05719e33fb85b251e2dd45..8720f2ba59cb6874f5d6115e1a2b74c521dc4d38 100644
+--- a/test/json-patch.test.ts
++++ b/test/json-patch.test.ts
+@@ -298,18 +298,41 @@ test('move rejects a "from" that does not exist', () => {
+ test('move rejects a "from" that contains "path": a value cannot be moved into itself', () => {
+   assertFails({ a: { b: 1 } }, [{ op: 'move', from: '/a', path: '/a/b' }], 'invalid-patch', 0);
+   assertFails({ a: { b: 1 } }, [{ op: 'move', from: '/a', path: '/a/b/c' }], 'invalid-patch', 0);
++
++  // The document contains every location but itself, so moving it anywhere inside itself is the
++  // same rule: the empty pointer is a proper prefix of every other pointer.
+   assertFails({ a: 1 }, [{ op: 'move', from: '', path: '/a' }], 'invalid-patch', 0);
++  assertFails({ a: { b: 1 } }, [{ op: 'move', from: '', path: '/a/b' }], 'invalid-patch', 0);
+ 
+-  // A location is not a proper prefix of itself: moving a value onto itself changes nothing.
+-  assert.deepEqual(applyPatch({ a: { b: 1 } }, [{ op: 'move', from: '/a', path: '/a' }]), {
+-    a: { b: 1 },
+-  });
+   // Nor is a sibling whose name merely starts with the same characters.
+   assert.deepEqual(applyPatch({ a: 1, ab: 2 }, [{ op: 'move', from: '/a', path: '/ab' }]), {
+     ab: 1,
+   });
+ });
+ 
++test('move onto the location it starts from changes nothing, up to the whole document', () => {
++  // RFC 6902, section 4.4: a location is not a proper prefix of itself, so the operation is allowed,
++  // and it removes a value only to add it straight back. That holds for the document itself, whose
++  // pointer is the one case where the removal has no result of its own to hand on.
++  assert.deepEqual(applyPatch({ a: { b: 1 } }, [{ op: 'move', from: '/a', path: '/a' }]), {
++    a: { b: 1 },
++  });
++  assert.deepEqual(applyPatch([1, 2, 3], [{ op: 'move', from: '/1', path: '/1' }]), [1, 2, 3]);
++
++  for (const document of [{ a: 1 }, [1, 2], { a: [{ b: null }] }, 'text', 0, false, null]) {
++    assert.deepEqual(
++      applyPatch(document as JsonValue, [{ op: 'move', from: '', path: '' }]),
++      document,
++      `expected move "" to "" to leave ${JSON.stringify(document)} as it was`,
++    );
++  }
++});
++
++test('move requires "from" to exist, even when it names the same location as "path"', () => {
++  assertFails({ a: 1 }, [{ op: 'move', from: '/b', path: '/b' }], 'unresolved', 0);
++  assertFails([1], [{ op: 'move', from: '/1', path: '/1' }], 'unresolved', 0);
++});
++
+ test('copy leaves "from" in place and adds a value at "path"', () => {
+   assert.deepEqual(applyPatch({ a: 1 }, [{ op: 'copy', from: '/a', path: '/b' }]), { a: 1, b: 1 });
+   assert.deepEqual(applyPatch([1], [{ op: 'copy', from: '/0', path: '/-' }]), [1, 1]);
+@@ -327,6 +350,23 @@ test('copy deep-copies the value, so the two locations are independent', () => {
+   assert.deepEqual(result, { a: { list: [1] }, b: { list: [1, 2] } });
+ });
+ 
++test('an array index in a target must not exceed the array length, whichever operation adds there', () => {
++  // RFC 6902, section 4.1: the index an addition names "MUST NOT be greater than the number of
++  // elements in the array". "move" and "copy" add, so the same bound holds for their "path".
++  assert.deepEqual(applyPatch([1, 2], [{ op: 'copy', from: '/0', path: '/2' }]), [1, 2, 1]);
++  assertFails([1, 2], [{ op: 'copy', from: '/0', path: '/3' }], 'unresolved', 0);
++  assertFails([], [{ op: 'copy', from: '', path: '/1' }], 'unresolved', 0);
++  assertFails([1, 2, 3], [{ op: 'move', from: '/0', path: '/3' }], 'unresolved', 0);
++});
++
++test('a reference token is never read from a string: a string holds no members', () => {
++  // RFC 6901, section 4: a token addresses a member of an object or an element of an array. A
++  // string is neither, so "/0" and "/length" name nothing in one.
++  assertFails('abc', [{ op: 'test', path: '/0', value: 'a' }], 'unresolved', 0);
++  assertFails({ a: 'abc' }, [{ op: 'replace', path: '/a/0', value: 'x' }], 'unresolved', 0);
++  assertFails({ a: 'abc' }, [{ op: 'copy', from: '/a/length', path: '/n' }], 'unresolved', 0);
++});
++
+ test('copy rejects a "from" that does not exist', () => {
+   assertFails({ a: 1 }, [{ op: 'copy', from: '/b', path: '/c' }], 'unresolved', 0);
+   assertFails([1], [{ op: 'copy', from: '/-', path: '/0' }], 'unresolved', 0);
+@@ -374,6 +414,21 @@ test('test fails on a value that merely looks alike', () => {
+   }
+ });
+ 
++test('test reports a failed comparison as a JsonPatchError, whatever the value it was given', () => {
++  // The message is built on the way out of a failure, so rendering a value JSON cannot represent —
++  // which `JsonValue` forbids, but a JavaScript caller can still hand over — must not raise a
++  // second error in place of the first.
++  for (const value of [() => 1, 10n, Symbol('ten'), undefined]) {
++    assertFails(
++      { a: 1 },
++      [{ op: 'test', path: '/a', value }],
++      value === undefined ? 'invalid-patch' : 'test-failed',
++      0,
++      `expected a JsonPatchError for a test against ${String(value)}`,
++    );
++  }
++});
++
+ test('test reports a target that does not exist as unresolved, not as a failed comparison', () => {
+   assertFails({ a: 1 }, [{ op: 'test', path: '/b', value: 1 }], 'unresolved', 0);
+   assertFails({}, [{ op: 'test', path: '/toString', value: 1 }], 'unresolved', 0);

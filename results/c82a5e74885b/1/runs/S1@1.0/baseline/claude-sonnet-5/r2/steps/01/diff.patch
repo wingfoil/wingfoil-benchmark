@@ -1,0 +1,163 @@
+diff --git a/src/index.ts b/src/index.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..90e8a44bf63fd9d3c4c9ada968da3348f7a4cf77
+--- /dev/null
++++ b/src/index.ts
+@@ -0,0 +1,53 @@
++const ARRAY_INDEX = /^(?:0|[1-9][0-9]*)$/;
++
++function unescapeToken(rawToken: string): string {
++  if (/~(?![01])/.test(rawToken)) {
++    throw new Error(`Invalid JSON Pointer: invalid escape sequence in token "${rawToken}"`);
++  }
++  return rawToken.replace(/~1/g, "/").replace(/~0/g, "~");
++}
++
++/**
++ * Resolves a JSON Pointer (RFC 6901) against a JSON document.
++ */
++export function resolvePointer(document: unknown, pointer: string): unknown {
++  if (typeof pointer !== "string") {
++    throw new Error("Invalid JSON Pointer: pointer must be a string");
++  }
++  if (pointer === "") {
++    return document;
++  }
++  if (pointer[0] !== "/") {
++    throw new Error(`Invalid JSON Pointer: "${pointer}" must be empty or start with "/"`);
++  }
++
++  let current: unknown = document;
++
++  for (const rawToken of pointer.slice(1).split("/")) {
++    const token = unescapeToken(rawToken);
++
++    if (Array.isArray(current)) {
++      if (!ARRAY_INDEX.test(token)) {
++        throw new Error(`Invalid JSON Pointer: "${token}" is not a valid array index`);
++      }
++      const index = Number(token);
++      if (index >= current.length) {
++        throw new Error(
++          `JSON Pointer "${pointer}" does not resolve to a value: index ${index} is out of bounds`,
++        );
++      }
++      current = current[index];
++    } else if (typeof current === "object" && current !== null) {
++      if (!Object.prototype.hasOwnProperty.call(current, token)) {
++        throw new Error(`JSON Pointer "${pointer}" does not resolve to a value: no member "${token}"`);
++      }
++      current = (current as Record<string, unknown>)[token];
++    } else {
++      throw new Error(
++        `JSON Pointer "${pointer}" does not resolve to a value: cannot descend into a non-object, non-array value`,
++      );
++    }
++  }
++
++  return current;
++}
+diff --git a/test/index.test.ts b/test/index.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..bba8a9373bd7600995e612bda09fdd00a38c1ff2
+--- /dev/null
++++ b/test/index.test.ts
+@@ -0,0 +1,98 @@
++import { test } from "node:test";
++import assert from "node:assert/strict";
++import { resolvePointer } from "../src/index.ts";
++
++// Example document from RFC 6901, section 5.
++const document = {
++  foo: ["bar", "baz"],
++  "": 0,
++  "a/b": 1,
++  "c%d": 2,
++  "e^f": 3,
++  "g|h": 4,
++  "i\\j": 5,
++  "k\"l": 6,
++  " ": 7,
++  "m~n": 8,
++};
++
++test("whole document for the empty pointer", () => {
++  assert.deepEqual(resolvePointer(document, ""), document);
++});
++
++test("RFC 6901 section 5 examples", () => {
++  assert.deepEqual(resolvePointer(document, "/foo"), ["bar", "baz"]);
++  assert.equal(resolvePointer(document, "/foo/0"), "bar");
++  assert.equal(resolvePointer(document, "/"), 0);
++  assert.equal(resolvePointer(document, "/a~1b"), 1);
++  assert.equal(resolvePointer(document, "/c%d"), 2);
++  assert.equal(resolvePointer(document, "/e^f"), 3);
++  assert.equal(resolvePointer(document, "/g|h"), 4);
++  assert.equal(resolvePointer(document, "/i\\j"), 5);
++  assert.equal(resolvePointer(document, "/k\"l"), 6);
++  assert.equal(resolvePointer(document, "/ "), 7);
++  assert.equal(resolvePointer(document, "/m~0n"), 8);
++});
++
++test("resolves nested structures", () => {
++  const nested = { a: { b: [{ c: 42 }] } };
++  assert.equal(resolvePointer(nested, "/a/b/0/c"), 42);
++});
++
++test("resolves falsy and null values", () => {
++  const doc = { a: 0, b: false, c: "", d: null };
++  assert.equal(resolvePointer(doc, "/a"), 0);
++  assert.equal(resolvePointer(doc, "/b"), false);
++  assert.equal(resolvePointer(doc, "/c"), "");
++  assert.equal(resolvePointer(doc, "/d"), null);
++});
++
++test("array index '0' and multi-digit indices", () => {
++  const doc = { a: Array.from({ length: 12 }, (_, i) => i) };
++  assert.equal(resolvePointer(doc, "/a/0"), 0);
++  assert.equal(resolvePointer(doc, "/a/11"), 11);
++});
++
++test("throws when pointer is not a string", () => {
++  assert.throws(() => resolvePointer({}, null as unknown as string));
++  assert.throws(() => resolvePointer({}, 5 as unknown as string));
++});
++
++test("throws when pointer does not start with /", () => {
++  assert.throws(() => resolvePointer({ a: 1 }, "a"));
++  assert.throws(() => resolvePointer({ a: 1 }, "a/b"));
++});
++
++test("throws on malformed escape sequences", () => {
++  assert.throws(() => resolvePointer({ a: 1 }, "/~"));
++  assert.throws(() => resolvePointer({ a: 1 }, "/~2"));
++  assert.throws(() => resolvePointer({ a: 1 }, "/a~"));
++});
++
++test("throws when a member is missing", () => {
++  assert.throws(() => resolvePointer({ a: 1 }, "/b"));
++});
++
++test("throws when an array index is out of bounds", () => {
++  assert.throws(() => resolvePointer({ a: [1, 2] }, "/a/2"));
++});
++
++test("throws on leading-zero or non-numeric array indices", () => {
++  assert.throws(() => resolvePointer({ a: [1, 2] }, "/a/01"));
++  assert.throws(() => resolvePointer({ a: [1, 2] }, "/a/-1"));
++  assert.throws(() => resolvePointer({ a: [1, 2] }, "/a/foo"));
++});
++
++test("throws on the '-' array index, which does not resolve to a value", () => {
++  assert.throws(() => resolvePointer({ a: [1, 2] }, "/a/-"));
++});
++
++test("throws when descending into a primitive", () => {
++  assert.throws(() => resolvePointer({ a: 1 }, "/a/b"));
++  assert.throws(() => resolvePointer({ a: null }, "/a/b"));
++});
++
++test("decodes ~01 as a literal tilde followed by '1', not a slash", () => {
++  const doc = { "~1": "literal" };
++  assert.equal(resolvePointer(doc, "/~01"), "literal");
++});

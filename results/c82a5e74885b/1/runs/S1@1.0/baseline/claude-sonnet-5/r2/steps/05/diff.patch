@@ -1,0 +1,207 @@
+diff --git a/src/index.ts b/src/index.ts
+index d37baa3b97f4cb333c0187b7dfc22842ed74d5fb..c9d211cc9f6ae879ee4fcbcf6438ad7d68fba645 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -319,3 +319,86 @@ function mergePatch(target: unknown, patch: unknown): unknown {
+ export function applyMergePatch(target: unknown, patch: unknown): unknown {
+   return mergePatch(structuredClone(target), patch);
+ }
++
++function escapeToken(token: string): string {
++  return token.replace(/~/g, "~0").replace(/\//g, "~1");
++}
++
++function diffArrays(
++  from: unknown[],
++  to: unknown[],
++  path: string,
++  patch: JsonPatchOperation[],
++): void {
++  let prefix = 0;
++  while (prefix < from.length && prefix < to.length && deepEqual(from[prefix], to[prefix])) {
++    prefix++;
++  }
++  let suffix = 0;
++  while (
++    suffix < from.length - prefix &&
++    suffix < to.length - prefix &&
++    deepEqual(from[from.length - 1 - suffix], to[to.length - 1 - suffix])
++  ) {
++    suffix++;
++  }
++
++  const fromMid = from.slice(prefix, from.length - suffix);
++  const toMid = to.slice(prefix, to.length - suffix);
++  const common = Math.min(fromMid.length, toMid.length);
++
++  for (let i = 0; i < common; i++) {
++    diffValues(fromMid[i], toMid[i], `${path}/${prefix + i}`, patch);
++  }
++  for (let i = fromMid.length - 1; i >= common; i--) {
++    patch.push({ op: "remove", path: `${path}/${prefix + i}` });
++  }
++  for (let i = common; i < toMid.length; i++) {
++    patch.push({ op: "add", path: `${path}/${prefix + i}`, value: structuredClone(toMid[i]) });
++  }
++}
++
++function diffObjects(
++  from: Record<string, unknown>,
++  to: Record<string, unknown>,
++  path: string,
++  patch: JsonPatchOperation[],
++): void {
++  for (const key of Object.keys(from)) {
++    if (!Object.prototype.hasOwnProperty.call(to, key)) {
++      patch.push({ op: "remove", path: `${path}/${escapeToken(key)}` });
++    }
++  }
++  for (const key of Object.keys(to)) {
++    const childPath = `${path}/${escapeToken(key)}`;
++    if (!Object.prototype.hasOwnProperty.call(from, key)) {
++      patch.push({ op: "add", path: childPath, value: structuredClone(to[key]) });
++    } else {
++      diffValues(from[key], to[key], childPath, patch);
++    }
++  }
++}
++
++function diffValues(from: unknown, to: unknown, path: string, patch: JsonPatchOperation[]): void {
++  if (deepEqual(from, to)) {
++    return;
++  }
++  if (Array.isArray(from) && Array.isArray(to)) {
++    diffArrays(from, to, path, patch);
++  } else if (isJsonObject(from) && isJsonObject(to)) {
++    diffObjects(from, to, path, patch);
++  } else {
++    patch.push({ op: "replace", path, value: structuredClone(to) });
++  }
++}
++
++/**
++ * Computes a JSON Patch (RFC 6902) that turns `from` into `to` when applied,
++ * describing only what changed rather than replacing whole values. Neither
++ * input is mutated.
++ */
++export function createPatch(from: unknown, to: unknown): JsonPatchOperation[] {
++  const patch: JsonPatchOperation[] = [];
++  diffValues(from, to, "", patch);
++  return patch;
++}
+diff --git a/test/create-patch.test.ts b/test/create-patch.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..fff7bf40d8c1a26712039c43c875f44f55b215b4
+--- /dev/null
++++ b/test/create-patch.test.ts
+@@ -0,0 +1,110 @@
++import { test } from "node:test";
++import assert from "node:assert/strict";
++import { applyPatch, createPatch } from "../src/index.ts";
++
++test("does not mutate the input documents", () => {
++  const from = { a: 1, b: [1, 2, 3] };
++  const to = { a: 1, b: [1, 2, 4] };
++  const fromCopy = structuredClone(from);
++  const toCopy = structuredClone(to);
++
++  createPatch(from, to);
++
++  assert.deepEqual(from, fromCopy);
++  assert.deepEqual(to, toCopy);
++});
++
++test("returns an empty patch for identical documents", () => {
++  assert.deepEqual(createPatch({ a: 1, b: [1, 2] }, { a: 1, b: [1, 2] }), []);
++});
++
++test("describes only the member that changed, not the whole document", () => {
++  const from = { a: 1, b: 2, c: 3 };
++  const to = { a: 1, b: 20, c: 3 };
++  assert.deepEqual(createPatch(from, to), [{ op: "replace", path: "/b", value: 20 }]);
++});
++
++test("adds a new object member", () => {
++  const result = createPatch({ a: 1 }, { a: 1, b: 2 });
++  assert.deepEqual(result, [{ op: "add", path: "/b", value: 2 }]);
++});
++
++test("removes a missing object member", () => {
++  const result = createPatch({ a: 1, b: 2 }, { a: 1 });
++  assert.deepEqual(result, [{ op: "remove", path: "/b" }]);
++});
++
++test("recurses into nested objects", () => {
++  const from = { a: { b: { c: 1 } } };
++  const to = { a: { b: { c: 2 } } };
++  assert.deepEqual(createPatch(from, to), [{ op: "replace", path: "/a/b/c", value: 2 }]);
++});
++
++test("escapes '/' and '~' in member names", () => {
++  const result = createPatch({}, { "a/b": 1, "c~d": 2 });
++  assert.deepEqual(result.sort((a, b) => a.path.localeCompare(b.path)), [
++    { op: "add", path: "/a~1b", value: 1 },
++    { op: "add", path: "/c~0d", value: 2 },
++  ]);
++});
++
++test("array: replaces a single changed element in place", () => {
++  const result = createPatch({ a: [1, 2, 3] }, { a: [1, 20, 3] });
++  assert.deepEqual(result, [{ op: "replace", path: "/a/1", value: 20 }]);
++});
++
++test("array: appends new elements", () => {
++  const result = createPatch({ a: [1, 2] }, { a: [1, 2, 3, 4] });
++  assert.deepEqual(result, [
++    { op: "add", path: "/a/2", value: 3 },
++    { op: "add", path: "/a/3", value: 4 },
++  ]);
++});
++
++test("array: removes trailing elements", () => {
++  const result = createPatch({ a: [1, 2, 3, 4] }, { a: [1, 2] });
++  assert.deepEqual(result, [
++    { op: "remove", path: "/a/3" },
++    { op: "remove", path: "/a/2" },
++  ]);
++});
++
++test("array: inserts an element in the middle", () => {
++  const result = createPatch({ a: [1, 2, 4] }, { a: [1, 2, 3, 4] });
++  assert.deepEqual(result, [{ op: "add", path: "/a/2", value: 3 }]);
++});
++
++test("array: removes an element from the middle", () => {
++  const result = createPatch({ a: [1, 2, 3, 4] }, { a: [1, 3, 4] });
++  assert.deepEqual(result, [{ op: "remove", path: "/a/1" }]);
++});
++
++test("replaces a value whose type changed", () => {
++  assert.deepEqual(createPatch({ a: { b: 1 } }, { a: [1, 2] }), [
++    { op: "replace", path: "/a", value: [1, 2] },
++  ]);
++});
++
++test("replaces the whole document when the root itself changed type", () => {
++  assert.deepEqual(createPatch({ a: 1 }, [1, 2]), [{ op: "replace", path: "", value: [1, 2] }]);
++});
++
++test("the produced patch applies cleanly to turn 'from' into 'to'", () => {
++  const cases: [unknown, unknown][] = [
++    [{ a: 1, b: [1, 2, 3] }, { a: 2, b: [1, 2, 3, 4] }],
++    [{ foo: { bar: "baz" } }, { foo: { bar: "qux" }, extra: true }],
++    [[1, 2, 3], [3, 2, 1]],
++    [{ a: [{ x: 1 }, { x: 2 }] }, { a: [{ x: 1 }, { x: 3 }] }],
++  ];
++  for (const [from, to] of cases) {
++    const patch = createPatch(from, to);
++    assert.deepEqual(applyPatch(from, patch), to);
++  }
++});
++
++test("a value produced by the patch is not aliased to the 'to' input", () => {
++  const to = { a: { b: 1 } };
++  const result = createPatch({}, to);
++  (to.a as any).b = 2;
++  assert.deepEqual(result, [{ op: "add", path: "/a", value: { b: 1 } }]);
++});

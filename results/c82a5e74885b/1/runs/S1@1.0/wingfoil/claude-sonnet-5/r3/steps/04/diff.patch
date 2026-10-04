@@ -1,0 +1,185 @@
+diff --git a/docs/memory/task/task-004-implement-json-merge-patch-rfc-7386.md b/docs/memory/task/task-004-implement-json-merge-patch-rfc-7386.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..bbe4a3fef02994a7e84f228b0606fb71cf312b2f
+--- /dev/null
++++ b/docs/memory/task/task-004-implement-json-merge-patch-rfc-7386.md
+@@ -0,0 +1,40 @@
++---
++id: task-004-implement-json-merge-patch-rfc-7386
++type: task
++title: "Implement JSON Merge Patch (RFC 7386)"
++status: approved
++---
++
++## Request
++
++A client sends partial updates in JSON Merge Patch format (RFC 7386), simpler than the already
++implemented JSON Patch (RFC 6902). Export `applyMergePatch(target, patch)` from `src/index.ts`,
++applying a merge patch to a target JSON document and returning the merged document.
++
++## What was done
++
++- Added `applyMergePatch(target: JsonValue, patch: JsonValue): JsonValue` to `src/index.ts`,
++  implementing the RFC 7386 section 2 algorithm directly: if `patch` is not a JSON object, it
++  replaces the target wholesale (at any recursion depth, including the top level); otherwise each
++  member of `patch` is merged into a clone of `target` (or a fresh object if `target` is not itself
++  an object), recursing for nested object values and deleting the target member when the patch value
++  is `null`.
++- Added a small `isJsonObject` helper (true for a non-null, non-array `object`) shared by the merge
++  logic, mirroring the existing `Array.isArray` / `typeof` checks already used elsewhere in the file.
++- Reused the existing `clone` and `setMember` helpers (from the RFC 6902 `applyPatch` work, see
++  dl-003) so `applyMergePatch` gets the same guarantees for free: the input `target` is never
++  mutated, and a member literally named `"__proto__"` is read and written as an ordinary own
++  property rather than being routed through the legacy `Object.prototype.__proto__` accessor.
++- Added tests to `src/index.test.ts`: an immutability/no-aliasing check, all of RFC 7386 appendix A's
++  worked examples (labelled as such), one additional edge case (removing a member absent from the
++  target is a no-op), and a `"__proto__"` member safety test matching the style of the existing
++  `applyPatch` ones. The `"__proto__"` test needed its patch object built via `JSON.parse` rather
++  than an object literal, since `{ __proto__: ... }` as a literal sets the literal's own prototype
++  instead of creating an own property — the literal form passed by accident (no own `"__proto__"` key
++  was ever produced) until the test was changed to parse JSON, which is also how the equivalent
++  `applyPatch` test already builds its fixture.
++- Verified with `npm run typecheck` and `npm test`: all 74 tests pass (18 new), no type errors.
++
++No decision-log entry was needed: RFC 7386's merge algorithm is unambiguous as written, and the two
++implementation choices with real latitude (immutability, `"__proto__"` write safety) just reuse the
++helpers and reasoning already recorded in dl-003 for `applyPatch`/`clone`.
+diff --git a/src/index.test.ts b/src/index.test.ts
+index d3d1a96ed4a6ad48f7e758a9e149f0a7a03ba0e8..523d2d9db68960ad09d289d6307dce6bda3ecf65 100644
+--- a/src/index.test.ts
++++ b/src/index.test.ts
+@@ -1,6 +1,6 @@
+ import test from 'node:test';
+ import assert from 'node:assert/strict';
+-import { applyPatch, resolvePointer, type JsonValue } from './index.ts';
++import { applyMergePatch, applyPatch, resolvePointer, type JsonValue } from './index.ts';
+ 
+ // Document from RFC 6901, section 5.
+ const document = {
+@@ -309,3 +309,93 @@ test('applies multiple operations in sequence', () => {
+   ]);
+   assert.deepEqual(result, { a: 10 });
+ });
++
++// applyMergePatch — RFC 7386.
++// Cases labelled "RFC 7386 appendix A" reproduce that section's worked examples verbatim.
++
++test('does not mutate the input target and returns a new value', () => {
++  const original = { a: 1, nested: { b: 2 } };
++  const result = applyMergePatch(original, { nested: { b: 99 } }) as {
++    a: number;
++    nested: { b: number };
++  };
++  assert.deepEqual(original, { a: 1, nested: { b: 2 } });
++  assert.equal(result.nested.b, 99);
++  assert.notEqual(result, original);
++  assert.notEqual(result.nested, original.nested);
++});
++
++test('RFC 7386 appendix A: replaces an existing member', () => {
++  assert.deepEqual(applyMergePatch({ a: 'b' }, { a: 'c' }), { a: 'c' });
++});
++
++test('RFC 7386 appendix A: adds a new member', () => {
++  assert.deepEqual(applyMergePatch({ a: 'b' }, { b: 'c' }), { a: 'b', b: 'c' });
++});
++
++test('RFC 7386 appendix A: a null value removes the only member', () => {
++  assert.deepEqual(applyMergePatch({ a: 'b' }, { a: null }), {});
++});
++
++test('RFC 7386 appendix A: a null value removes one member among several', () => {
++  assert.deepEqual(applyMergePatch({ a: 'b', b: 'c' }, { a: null }), { b: 'c' });
++});
++
++test('RFC 7386 appendix A: a scalar patch value replaces an array member wholesale', () => {
++  assert.deepEqual(applyMergePatch({ a: ['b'] }, { a: 'c' }), { a: 'c' });
++});
++
++test('RFC 7386 appendix A: an array patch value replaces a scalar member wholesale', () => {
++  assert.deepEqual(applyMergePatch({ a: 'c' }, { a: ['b'] }), { a: ['b'] });
++});
++
++test('RFC 7386 appendix A: merges nested objects recursively', () => {
++  assert.deepEqual(applyMergePatch({ a: { b: 'c' } }, { a: { b: 'd', c: null } }), {
++    a: { b: 'd' },
++  });
++});
++
++test('RFC 7386 appendix A: an array member is replaced, not merged element-wise', () => {
++  assert.deepEqual(applyMergePatch({ a: [{ b: 'c' }] }, { a: [1] }), { a: [1] });
++});
++
++test('RFC 7386 appendix A: a top-level array patch replaces the whole target', () => {
++  assert.deepEqual(applyMergePatch(['a', 'b'], ['c', 'd']), ['c', 'd']);
++});
++
++test('RFC 7386 appendix A: a top-level array patch replaces an object target', () => {
++  assert.deepEqual(applyMergePatch({ a: 'b' }, ['c']), ['c']);
++});
++
++test('RFC 7386 appendix A: a top-level null patch replaces the whole target', () => {
++  assert.equal(applyMergePatch({ a: 'foo' }, null), null);
++});
++
++test('RFC 7386 appendix A: a top-level scalar patch replaces the whole target', () => {
++  assert.equal(applyMergePatch({ a: 'foo' }, 'bar'), 'bar');
++});
++
++test('RFC 7386 appendix A: a member whose value is null is preserved when untouched by the patch', () => {
++  assert.deepEqual(applyMergePatch({ e: null }, { a: 1 }), { e: null, a: 1 });
++});
++
++test('RFC 7386 appendix A: an array target is discarded in favor of the merged patch object', () => {
++  assert.deepEqual(applyMergePatch([1, 2], { a: 'b', c: null }), { a: 'b' });
++});
++
++test('RFC 7386 appendix A: removing a member leaves a nested empty object rather than deleting it', () => {
++  assert.deepEqual(applyMergePatch({}, { a: { bb: { ccc: null } } }), { a: { bb: {} } });
++});
++
++test('removing a member that does not exist in the target is a no-op', () => {
++  assert.deepEqual(applyMergePatch({ a: 1 }, { b: null }), { a: 1 });
++});
++
++test('merges a member literally named "__proto__" without altering the object\'s prototype', () => {
++  const patch = JSON.parse('{"__proto__":{"polluted":true}}') as JsonValue;
++  const result = applyMergePatch({ a: 1 }, patch) as Record<string, unknown>;
++  assert.deepEqual(Object.keys(result), ['a', '__proto__']);
++  assert.deepEqual(result['__proto__'], { polluted: true });
++  assert.equal(Object.getPrototypeOf(result), Object.prototype);
++  assert.equal((Object.prototype as Record<string, unknown>).polluted, undefined);
++});
+diff --git a/src/index.ts b/src/index.ts
+index 99d32d2ee9b6c7712436976f3908a06641eb4438..758c608bc552c625f80388b068f41e45ccbda51a 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -279,3 +279,28 @@ export function applyPatch(document: JsonValue, patch: JsonPatch): JsonValue {
+     clone(document),
+   );
+ }
++
++/** Returns `true` if `value` is a JSON object: neither an array nor `null`. */
++function isJsonObject(value: JsonValue): value is { [key: string]: JsonValue } {
++  return value !== null && typeof value === 'object' && !Array.isArray(value);
++}
++
++/**
++ * Applies a JSON Merge Patch (RFC 7386) to a target JSON document and returns the merged document
++ * as a new value; `target` is left unmodified.
++ */
++export function applyMergePatch(target: JsonValue, patch: JsonValue): JsonValue {
++  if (!isJsonObject(patch)) {
++    return clone(patch);
++  }
++  const result: { [key: string]: JsonValue } = isJsonObject(target) ? clone(target) : {};
++  for (const key of Object.keys(patch)) {
++    const value = patch[key];
++    if (value === null) {
++      delete result[key];
++    } else {
++      setMember(result, key, applyMergePatch(result[key], value));
++    }
++  }
++  return result;
++}

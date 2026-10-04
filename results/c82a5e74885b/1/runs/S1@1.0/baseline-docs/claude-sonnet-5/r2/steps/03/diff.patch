@@ -1,0 +1,87 @@
+diff --git a/src/index.ts b/src/index.ts
+index e2a874f82ba6550121b6f5b567fc8bf9b3416775..35d053022f77eb0b6f51491d449a129613697048 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -86,6 +86,15 @@ function locate(holder: DocumentHolder, pointer: string): { container: JsonConta
+   throw new Error(`Invalid JSON Patch: "${pointer}" does not reference a location within the document`);
+ }
+ 
++/**
++ * Sets an object member by name, including names such as "__proto__" that
++ * plain assignment would misinterpret as rewiring the object's prototype
++ * instead of creating a member with that literal name.
++ */
++function setMember(container: Record<string, unknown>, key: string, value: unknown): void {
++  Object.defineProperty(container, key, { value, writable: true, enumerable: true, configurable: true });
++}
++
+ function arrayIndexForAdd(container: unknown[], key: string, pointer: string): number {
+   if (key === '-') {
+     return container.length;
+@@ -111,7 +120,7 @@ function applyAdd(holder: DocumentHolder, pointer: string, value: unknown): void
+     container.splice(arrayIndexForAdd(container, key, pointer), 0, value);
+     return;
+   }
+-  container[key] = value;
++  setMember(container, key, value);
+ }
+ 
+ function applyRemove(holder: DocumentHolder, pointer: string): unknown {
+@@ -140,7 +149,7 @@ function applyReplace(holder: DocumentHolder, pointer: string, value: unknown):
+   if (Array.isArray(container)) {
+     container[Number(key)] = value;
+   } else {
+-    container[key] = value;
++    setMember(container, key, value);
+   }
+ }
+ 
+diff --git a/test/apply-patch.test.ts b/test/apply-patch.test.ts
+index ec85cf43dacd0fb7c72d79e6198da61f8a918eea..3dae648c090f364f88a7395fde7122e669357be3 100644
+--- a/test/apply-patch.test.ts
++++ b/test/apply-patch.test.ts
+@@ -1,6 +1,6 @@
+ import { test } from 'node:test';
+ import assert from 'node:assert/strict';
+-import { applyPatch } from '../src/index.ts';
++import { applyPatch, resolvePointer } from '../src/index.ts';
+ 
+ // The examples from RFC 6902 appendix A.
+ 
+@@ -84,6 +84,12 @@ test('A.15: test fails when comparing a string to a number', () => {
+   assert.throws(() => applyPatch(document, [{ op: 'test', path: '/~01', value: '10' }]));
+ });
+ 
++test('A.14: ~ escape ordering lets "/~01" address the member "~1"', () => {
++  const document = { '/': 9, '~1': 10 };
++  const result = applyPatch(document, [{ op: 'test', path: '/~01', value: 10 }]);
++  assert.deepEqual(result, document);
++});
++
+ test('A.16: adds an array value as a single element', () => {
+   const document = { foo: ['bar'] };
+   const result = applyPatch(document, [{ op: 'add', path: '/foo/-', value: ['abc', 'def'] }]);
+@@ -238,3 +244,23 @@ test('rejects "move" missing "from"', () => {
+ test('rejects "copy" missing "from"', () => {
+   assert.throws(() => applyPatch({}, [{ op: 'copy', path: '/foo' }] as unknown as []));
+ });
++
++test('adds a member literally named "__proto__" without altering the object prototype', () => {
++  const document = {};
++  const result = applyPatch(document, [{ op: 'add', path: '/__proto__', value: { polluted: true } }]) as Record<
++    string,
++    unknown
++  >;
++  assert.equal(Object.getPrototypeOf(result), Object.prototype);
++  assert.deepEqual(Object.keys(result), ['__proto__']);
++  assert.deepEqual(resolvePointer(result, '/__proto__'), { polluted: true });
++  assert.equal(Object.prototype.hasOwnProperty.call({}, 'polluted'), false);
++});
++
++test('replaces a member literally named "__proto__" without altering the object prototype', () => {
++  const document = applyPatch({}, [{ op: 'add', path: '/__proto__', value: 1 }]);
++  const result = applyPatch(document, [{ op: 'replace', path: '/__proto__', value: 2 }]);
++  assert.equal(Object.getPrototypeOf(result), Object.prototype);
++  assert.deepEqual(result, resolvePointer(result, ''));
++  assert.equal(resolvePointer(result, '/__proto__'), 2);
++});

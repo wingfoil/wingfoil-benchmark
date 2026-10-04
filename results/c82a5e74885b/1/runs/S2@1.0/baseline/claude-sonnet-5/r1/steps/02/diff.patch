@@ -1,0 +1,68 @@
+diff --git a/src/coupons.ts b/src/coupons.ts
+index 4b7df8e652e5d52033abb2ea07d763007ccce283..496aed7828812115eb643d5d3378af00c2d6948f 100644
+--- a/src/coupons.ts
++++ b/src/coupons.ts
+@@ -74,7 +74,7 @@ export class Coupons {
+     const coupon = this.#coupons.get(canonicalCode(code));
+     if (coupon === undefined) throw new CouponError(code, 'unknown code');
+     if (compareDates(date, coupon.validFrom) < 0) throw new CouponError(coupon.code, 'not valid yet');
+-    if (compareDates(date, coupon.validUntil) >= 0) throw new CouponError(coupon.code, 'expired');
++    if (compareDates(date, coupon.validUntil) > 0) throw new CouponError(coupon.code, 'expired');
+     if (amount < coupon.minimumCents) throw new CouponError(coupon.code, 'order below the minimum amount');
+     if (coupon.singleUse && this.#usedBy.has(coupon.code)) throw new CouponError(coupon.code, 'already used');
+     return coupon;
+diff --git a/src/pricing.ts b/src/pricing.ts
+index 3d07b8e66d51d75411d7694eb6b4d79c95913fee..2fde3faa71eb626890de6c64049edeb4d4e81cd5 100644
+--- a/src/pricing.ts
++++ b/src/pricing.ts
+@@ -55,8 +55,9 @@ export function priceOrder(inputs: readonly LineInput[], coupon?: Coupon): Price
+   const afterVolume = gross.map((amount, index) => amount - (volume[index] ?? 0));
+   const volumeTotal = sum(volume);
+ 
++  const subtotalAfterVolume = grossTotal - volumeTotal;
+   const couponTotal =
+-    coupon === undefined ? 0 : capped(couponDiscount(coupon, grossTotal), volumeTotal, grossTotal);
++    coupon === undefined ? 0 : capped(couponDiscount(coupon, subtotalAfterVolume), volumeTotal, grossTotal);
+   const couponShares = allocate(couponTotal, afterVolume);
+ 
+   const lines = inputs.map(({ product, quantity }, index): PricedLine => {
+diff --git a/test/coupons.test.ts b/test/coupons.test.ts
+index 1fdc2519dc031050b1b5593605af611816478518..7ab0f8ae6bd586d00366929d32d8238ec5610414 100644
+--- a/test/coupons.test.ts
++++ b/test/coupons.test.ts
+@@ -7,6 +7,8 @@ function shop() {
+   const s = createShop();
+   s.catalog.add({ sku: 'PEN-4', name: 'Fountain pen', priceCents: 2000, vatClass: 'standard', weightGrams: 50 });
+   s.inventory.restock('PEN-4', 20);
++  s.catalog.add({ sku: 'NOTE-1', name: 'Notebook', priceCents: 500, vatClass: 'standard', weightGrams: 100 });
++  s.inventory.restock('NOTE-1', 20);
+   s.coupons.add({ code: 'SPRING', kind: 'percent', value: 10, validFrom: '2026-03-01', validUntil: '2026-03-31' });
+   s.coupons.add({ code: 'FIVEOFF', kind: 'fixed', value: 500, validFrom: '2026-01-01', validUntil: '2026-12-31', minimumCents: 3000 });
+   return s;
+@@ -26,11 +28,25 @@ describe('coupons', () => {
+     assert.throws(() => orders.quote({ customer: 'c-1', date: '2026-06-01', lines: [{ sku: 'PEN-4', quantity: 1 }], coupon: 'FIVEOFF' }), CouponError);
+   });
+ 
+-  it('refuses a coupon before its first day and after its last', () => {
++  it('refuses a coupon before its first day and after its last, but accepts it on its last day', () => {
+     const { orders } = shop();
+     const request = { customer: 'c-1', lines: [{ sku: 'PEN-4', quantity: 1 }], coupon: 'SPRING' };
+     assert.throws(() => orders.quote({ ...request, date: '2026-02-28' }), CouponError);
+     assert.throws(() => orders.quote({ ...request, date: '2026-04-01' }), CouponError);
++    assert.doesNotThrow(() => orders.quote({ ...request, date: '2026-03-31' }));
++  });
++
++  it('applies a percentage coupon after the volume discount, not on top of the full gross', () => {
++    const { orders } = shop();
++    const order = orders.place({
++      customer: 'c-1',
++      date: '2026-03-15',
++      lines: [{ sku: 'NOTE-1', quantity: 12 }],
++      coupon: 'SPRING',
++    });
++    assert.equal(order.totals.volumeDiscountCents, 600);
++    assert.equal(order.totals.couponDiscountCents, 540);
++    assert.equal(order.totals.goodsCents, 4860);
+   });
+ 
+   it('lets a single-use coupon be used once', () => {

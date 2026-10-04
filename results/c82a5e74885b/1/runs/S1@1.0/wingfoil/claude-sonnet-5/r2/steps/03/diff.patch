@@ -1,0 +1,204 @@
+diff --git a/docs/memory/decision-log/dl-003-json-patch-explicit-move-prefix-check-patch-values-cloned-on-insert.md b/docs/memory/decision-log/dl-003-json-patch-explicit-move-prefix-check-patch-values-cloned-on-insert.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..d4dab058cbad09d80d945a29b702080c90adefb5
+--- /dev/null
++++ b/docs/memory/decision-log/dl-003-json-patch-explicit-move-prefix-check-patch-values-cloned-on-insert.md
+@@ -0,0 +1,53 @@
++---
++id: dl-003-json-patch-explicit-move-prefix-check-patch-values-cloned-on-insert
++type: decision-log
++title: "JSON Patch: explicit move prefix check, patch values cloned on insert"
++status: pending
++---
++
++## Context
++
++A conformance review of `applyPatch` (task-003) found two places where the implementation relied
++on incidental behaviour of mutable JavaScript objects/arrays instead of directly encoding what RFC
++6902 requires, which let it diverge from the standard in edge cases:
++
++1. RFC 6902 section 4.4 requires that a `move`'s `from` location is not a proper prefix of its
++   `path` location (a location cannot be moved into one of its own children). The previous
++   implementation applied `move` as a literal "remove" followed by "add" and trusted the "add" to
++   fail on its own, because the removed location's parent would no longer exist. This happens to
++   hold for objects (removing a key leaves no trace of it), but not for arrays: removing an element
++   shifts later elements down by one index, so the "add" can coincidentally find a real, unrelated
++   element at the same index and succeed instead of failing.
++2. dl-002 decided that `copy` must deep-clone the value it reads from the document, so a copy never
++   shares structure with its source and a later operation on one cannot silently mutate the other.
++   The same hazard exists for `add` and `replace`, just with a different source: their `value` comes
++   from the caller's `patch` argument, not from the document. Without cloning, a later operation in
++   the same patch that mutates an inserted value also mutates the object embedded in the caller's
++   `patch` array, which `applyPatch`'s contract never promised to leave alone but which is just as
++   surprising as the `copy` case dl-002 already ruled on.
++
++## Decision
++
++- `applyMove` now checks, before removing anything, whether `from`'s JSON Pointer reference tokens
++  are a *proper* prefix of `path`'s (strictly shorter, and equal token-for-token over that shorter
++  length). If so, it throws immediately. Equal pointers (`from === path`, a no-op move) and the
++  reverse direction (moving a descendant up to replace one of its ancestors) are both still
++  allowed, since neither is forbidden by section 4.4.
++- `validateOperation` now deep-clones `value` for `add`, `replace` and `test` operations when it
++  builds the validated `JsonPatchOperation`, before any `apply*` function sees it. This is the only
++  place an operation's `value` is read out of the caller-supplied `patch`, so a single clone there
++  guarantees every value `applyAdd`/`applyReplace` ever inserts into the document is independent of
++  the `patch` argument. `applyCopy` keeps its own `deepClone` call from dl-002, since it clones a
++  value read from the *document* (a different aliasing hazard, unrelated to the patch argument).
++
++## Consequences
++
++- A `move` whose `from` is a proper prefix of `path` always throws, regardless of container type,
++  matching RFC 6902 section 4.4 exactly instead of only in the cases where it happened to fail on
++  its own.
++- Callers can mutate an `applyPatch` result freely without risk of also mutating objects still
++  referenced by the `patch` array they passed in, for every operation that inserts a value
++  (`add`, `replace`, `move`, `copy`), not only `copy`.
++- `test` operations now also clone `value` on parse, even though they never insert it into the
++  document; this is a negligible cost and keeps `validateOperation`'s three `value`-bearing cases
++  (`add`, `replace`, `test`) uniform rather than special-casing `test`.
+diff --git a/docs/memory/task/task-003-fix-rfc-6902-applypatch-conformance-bugs.md b/docs/memory/task/task-003-fix-rfc-6902-applypatch-conformance-bugs.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..5f841aede891dd2c9c3593ad7172265485e382b9
+--- /dev/null
++++ b/docs/memory/task/task-003-fix-rfc-6902-applypatch-conformance-bugs.md
+@@ -0,0 +1,52 @@
++---
++id: task-003-fix-rfc-6902-applypatch-conformance-bugs
++type: task
++title: "Fix RFC 6902 applyPatch conformance bugs"
++status: pending
++---
++
++## Request
++
++Users of `applyPatch` reported surprising results: some patches they considered invalid were
++accepted, some edge cases gave results they did not expect, and a patch that fails did not always
++behave the way they read RFC 6902. Review how patches are checked and applied, and make the
++behaviour conform to RFC 6902 in every case, errors included.
++
++## What was done
++
++Audited every operation (`add`, `remove`, `replace`, `move`, `copy`, `test`) and the shared
++validation/pointer-resolution helpers in `src/index.ts` against RFC 6902, including the worked
++examples in appendix A and the operation semantics in section 4. Found and fixed two conformance
++bugs:
++
++1. **`move` accepted some patches that move a location into one of its own children.** RFC 6902
++   section 4.4 explicitly forbids this ("The 'from' location MUST NOT be a proper prefix of the
++   'path' location"). `applyMove` relied on this failing naturally, because the "add" step can no
++   longer find the (already removed) parent. That holds for objects, but not for arrays: removing
++   an array element shifts later elements down by one index, so the "add" can land on a different,
++   still-existing element at the same numeric index instead of failing. For example, moving
++   `/a/0` to `/a/0/z` in `{"a": [{"x": 1}, {"y": 2}]}` removed index 0 (shifting `{"y": 2}` down to
++   index 0), then successfully added member `z` to that unrelated, shifted-down element — silently
++   producing `{"a": [{"y": 2, "z": {"x": 1}}]}` instead of throwing. Fixed by checking explicitly,
++   before mutating anything, whether `from`'s pointer tokens are a proper prefix of `path`'s.
++2. **Inserted values aliased the caller's `patch` argument.** `applyAdd`/`applyReplace` inserted
++   an operation's `value` by reference. If a later operation in the same patch mutated that
++   inserted structure (e.g. appending to an array just added), it silently mutated the value object
++   embedded in the caller's own `patch` array too — the same aliasing hazard already identified and
++   fixed for `copy` in dl-002, just for a different source (the patch, not the document). Fixed by
++   cloning an operation's `value` once, in `validateOperation`, before it ever reaches an `apply*`
++   function.
++
++Added regression tests for both: moving an array element into its own child despite reindexing,
++moving to the same location (must still succeed, it is not a *proper* prefix), moving a descendant
++up to replace an ancestor (must still succeed, direction matters), and mutating an `applyPatch`
++result not leaking into the `value` object passed in the original patch for both `add` and root
++`replace`.
++
++All 35 pre-existing tests plus 6 new ones pass (`node --test`, 41/41).
++
++## Follow-ups
++
++- dl-001's decision to defer `tsc` typechecking of test files still applies; this change was
++  verified the same way (by `node --test`, source compiles under strict `tsconfig.json`).
++- See dl-003 for the reasoning behind both fixes.
+diff --git a/src/index.test.ts b/src/index.test.ts
+index 9c55231737effe6b451ba780266fa470ff830339..ede45250d0d79218a1af42e99f6ed105b8bc09b2 100644
+--- a/src/index.test.ts
++++ b/src/index.test.ts
+@@ -162,6 +162,43 @@ test('copy duplicates the value instead of sharing a reference', () => {
+   assert.deepEqual(result.foo.copy, ['baz', 'qux']);
+ });
+ 
++test('throws when moving a value into one of its own children', () => {
++  assert.throws(() => applyPatch({ a: { b: 1 } }, [{ op: 'move', from: '/a', path: '/a/b/c' }]));
++});
++
++test('throws when moving an array element into one of its own children, even though removing it shifts later elements into its former slot', () => {
++  // Without an explicit check, removing /a/0 shifts {y: 2} down to index 0, so the
++  // subsequent "add" at /a/0/z would land on that unrelated, still-existing element
++  // instead of failing as RFC 6902 section 4.4 requires.
++  assert.throws(() =>
++    applyPatch({ a: [{ x: 1 }, { y: 2 }] }, [{ op: 'move', from: '/a/0', path: '/a/0/z' }]),
++  );
++});
++
++test('allows moving a value to its own location', () => {
++  const result = applyPatch({ a: { b: 1 } }, [{ op: 'move', from: '/a', path: '/a' }]);
++  assert.deepEqual(result, { a: { b: 1 } });
++});
++
++test('allows moving a descendant up to replace one of its ancestors', () => {
++  const result = applyPatch({ a: { b: { c: 1 } } }, [{ op: 'move', from: '/a/b', path: '/a' }]);
++  assert.deepEqual(result, { a: { c: 1 } });
++});
++
++test('add does not share structure with the value given in the patch', () => {
++  const value = { x: 1 };
++  const result = applyPatch({}, [{ op: 'add', path: '/foo', value }]) as { foo: { x: number } };
++  result.foo.x = 2;
++  assert.equal(value.x, 1);
++});
++
++test('replace of the whole document does not share structure with the value given in the patch', () => {
++  const value = { x: 1 };
++  const result = applyPatch({ foo: 'bar' }, [{ op: 'replace', path: '', value }]) as { x: number };
++  result.x = 2;
++  assert.equal(value.x, 1);
++});
++
+ test('replaces the whole document when the path is empty', () => {
+   const result = applyPatch({ foo: 'bar' }, [{ op: 'replace', path: '', value: { baz: 'qux' } }]);
+   assert.deepEqual(result, { baz: 'qux' });
+diff --git a/src/index.ts b/src/index.ts
+index 44cec0d990bd8a97e35e98b777bb459f19de8485..bd584571755c62e69f34f4c910015e67ad23646b 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -216,11 +216,20 @@ function applyReplace(document: JsonValue, path: string, value: JsonValue): Json
+ 
+ /**
+  * Applies a "move" operation (RFC 6902 section 4.4): a "remove" at
+- * `from` followed by an "add" at `path` of the removed value. Moving a
+- * location into one of its own descendants fails naturally, because the
+- * "add" can no longer find its (already removed) parent.
++ * `from` followed by an "add" at `path` of the removed value. RFC 6902
++ * requires that `from` not be a proper prefix of `path` (a location
++ * cannot be moved into one of its own children); this is checked
++ * explicitly; relying on the "add" to fail naturally after the "remove"
++ * is not enough, because removing an array element shifts later indices
++ * down, which can make the "add" land on an unrelated, still-existing
++ * location instead of failing.
+  */
+ function applyMove(document: JsonValue, path: string, from: string): JsonValue {
++  const fromTokens = parsePointer(from);
++  const pathTokens = parsePointer(path);
++  if (fromTokens.length < pathTokens.length && fromTokens.every((token, index) => token === pathTokens[index])) {
++    throw new Error(`Invalid JSON Patch: "move" cannot move "${from}" into one of its own children ("${path}").`);
++  }
+   const value = resolvePointer(document, from);
+   const afterRemove = applyRemove(document, from);
+   return applyAdd(afterRemove, path, value);
+@@ -265,7 +274,9 @@ function validateOperation(value: unknown, index: number): JsonPatchOperation {
+       if (!('value' in operation)) {
+         throw new Error(`Invalid JSON Patch: operation ${index} ("${operation.op}") must have a "value" member.`);
+       }
+-      return { op: operation.op, path: operation.path, value: operation.value as JsonValue };
++      // Cloned so the result never shares structure with the `patch` argument: an "add" or
++      // "replace" elsewhere in the same patch could otherwise mutate the caller's own value.
++      return { op: operation.op, path: operation.path, value: deepClone(operation.value as JsonValue) };
+     case 'remove':
+       return { op: 'remove', path: operation.path };
+     case 'move':

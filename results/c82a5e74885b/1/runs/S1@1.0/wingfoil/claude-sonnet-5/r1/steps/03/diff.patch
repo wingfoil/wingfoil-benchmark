@@ -1,0 +1,118 @@
+diff --git a/docs/memory/task/task-003-audit-applypatch-for-rfc-6902-conformance.md b/docs/memory/task/task-003-audit-applypatch-for-rfc-6902-conformance.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..d345c64407dcdd3d4d1de97b23505f626db44191
+--- /dev/null
++++ b/docs/memory/task/task-003-audit-applypatch-for-rfc-6902-conformance.md
+@@ -0,0 +1,64 @@
++---
++id: task-003-audit-applypatch-for-rfc-6902-conformance
++type: task
++title: "Audit applyPatch for RFC 6902 conformance"
++status: pending
++---
++
++## What was done
++
++Users reported that `applyPatch` sometimes accepts patches they consider invalid, produces
++surprising results on edge cases, and that failed patches don't always behave the way the RFC 6902
++text reads. Audited `src/index.ts` (both `resolvePointer`/RFC 6901 and `applyPatch`/RFC 6902) end to
++end against the standard, rather than assuming the existing `task-002`/`dl-002` implementation notes
++were complete, since a decision log records an intent, not a proof.
++
++Verification performed:
++
++- Re-read RFC 6902 in full (fetched the current RFC text directly, rather than relying on recollection)
++  section by section — document structure (§3), all six operations (§4.1–§4.6), and error handling
++  (§5) — and traced each normative "MUST"/"MUST NOT" statement against the corresponding code path in
++  `parseOperation`, `applyOperation`, `writeAt`, `resolveArrayIndex`, and `assertNotProperPrefix`.
++- Downloaded the community-maintained RFC 6902 conformance suite
++  (`json-patch/json-patch-tests`, `tests.json`, 95 cases) and ran every enabled case directly against
++  `applyPatch` with a proper structural deep-equal (not a naive `JSON.stringify` compare, which gives
++  false positives on object key order). Result: 92/92 enabled cases pass; the 3 remaining cases are
++  disabled by the suite itself (JS can't represent a JSON document with a duplicate "op" key, or a
++  bare scalar document distinct from `null`/object/array, as the kind of input this API takes).
++- Manually probed further cases not in that suite: `null` as a value for every operation, `move`/
++  `copy` with `from` or `path` at the document root, prototype-pollution-shaped keys (`__proto__`)
++  for `add`/`replace`/`remove`, copy-then-mutate aliasing in both directions (does rewriting the
++  destination or the source after a `copy` leak into the other, given the module's copy-on-write
++  strategy never deep-clones), and atomicity (a patch with one valid and one malformed operation must
++  leave the input document completely untouched and throw, never partially apply).
++- Type-checked `src/index.ts` against the project's strict `tsconfig.json` (no errors).
++
++No behavioral deviation from RFC 6902 was found. `applyPatch` already implements every operation,
++boundary condition, and error path correctly, including the implementation choices `dl-002` called
++out as RFC-silent (sequential `move` semantics, no deep-clone on `copy`, `-` restricted to the last
++token of an `add`-flavoured write). The user-visible "surprising results" were not reproducible
++against the current code.
++
++Added seven regression tests to `src/index.test.ts` to lock in correctness that was previously only
++verified ad hoc (characterization tests — behavior already existed and these pass on their first
++run, per the testing directive's classification):
++
++- `test` ignoring object member order (RFC 6902 §4.6's explicit "ordering is irrelevant").
++- `copy` then mutating the destination, and `copy` then mutating the source, each leaving the other
++  side untouched — the strongest evidence that the no-deep-clone decision in `dl-002` is safe.
++- `-` used at a nested array path (not just at the top level, as the RFC's own A.16 example has it).
++- A later malformed operation in a patch voids the whole patch and leaves the input document
++  untouched, even when earlier operations in the same patch were individually valid.
++
++`npm test` passes (47/47). No change to `src/index.ts` itself, `README.md`, or any public behavior —
++nothing there needed to change.
++
++## Follow-ups (not done here, out of scope)
++
++- The community conformance suite was run ad hoc from a locally downloaded copy, not checked into the
++  repo or wired into CI; the project doesn't have a mechanism for pinning/vendoring third-party
++  fixtures yet. If this project wants durable protection against regressions on the full suite (not
++  just the cases hand-picked into `src/index.test.ts`), that fixture should be vendored and loaded by
++  a test, as its own follow-up.
++- Same pre-existing gaps noted in task-001/task-002: no `typescript`/`@types/node` devDependencies or
++  `typecheck` script wired into `package.json`.
+diff --git a/src/index.test.ts b/src/index.test.ts
+index 14b8b788f43a6b512f4a58fd376267c4d007d92d..f32ec798aff6db9c78723b33dcbd2c6e1b173f20 100644
+--- a/src/index.test.ts
++++ b/src/index.test.ts
+@@ -275,3 +275,43 @@ test("rejects removing a member that does not exist", () => {
+ test("rejects replacing a member that does not exist", () => {
+   assert.throws(() => applyPatch({ a: 1 }, [{ op: "replace", path: "/b", value: 2 }]));
+ });
++
++test("test op ignores object member order, per RFC 6902 §4.6", () => {
++  const document = { a: { x: 1, y: 2 } };
++  assert.deepEqual(applyPatch(document, [{ op: "test", path: "/a", value: { y: 2, x: 1 } }]), document);
++});
++
++test("copying a value then mutating the destination leaves the source untouched", () => {
++  const document = { foo: { bar: { baz: [{ boo: "net" }] } } };
++  assert.deepEqual(
++    applyPatch(document, [
++      { op: "copy", from: "/foo", path: "/bak" },
++      { op: "replace", path: "/bak/bar/baz/0/boo", value: "qux" },
++    ]),
++    { foo: { bar: { baz: [{ boo: "net" }] } }, bak: { bar: { baz: [{ boo: "qux" }] } } },
++  );
++});
++
++test("copying a value then mutating the source leaves the destination untouched", () => {
++  const document = { foo: { bar: { baz: [{ boo: "net" }] } } };
++  assert.deepEqual(
++    applyPatch(document, [
++      { op: "copy", from: "/foo", path: "/bak" },
++      { op: "replace", path: "/foo/bar/baz/0/boo", value: "qux" },
++    ]),
++    { foo: { bar: { baz: [{ boo: "qux" }] } }, bak: { bar: { baz: [{ boo: "net" }] } } },
++  );
++});
++
++test("appends with '-' at a nested array path", () => {
++  assert.deepEqual(
++    applyPatch({ foo: [1, [2, 3]] }, [{ op: "add", path: "/foo/1/-", value: 4 }]),
++    { foo: [1, [2, 3, 4]] },
++  );
++});
++
++test("rejects the whole patch when a later operation is malformed, even if earlier ones would apply", () => {
++  const document = { a: 1 };
++  assert.throws(() => applyPatch(document, [{ op: "add", path: "/b", value: 2 }, { op: "frobnicate", path: "/c" }]));
++  assert.deepEqual(document, { a: 1 });
++});

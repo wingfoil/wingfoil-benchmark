@@ -1,0 +1,160 @@
+diff --git a/src/index.ts b/src/index.ts
+index ecbd6742aeeb0d9a1b761ffdb7371046c1cb3206..4435890c63dc3ef7c65fbe845c2054848a67888d 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -1,3 +1,4 @@
+ export { resolvePointer } from "./json-pointer.ts";
+ export { applyPatch } from "./json-patch.ts";
+ export type { JsonPatchOperation } from "./json-patch.ts";
++export { applyMergePatch } from "./json-merge-patch.ts";
+diff --git a/src/json-merge-patch.test.ts b/src/json-merge-patch.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..247488cfd652589d825b2d02334d853fce8fd4cf
+--- /dev/null
++++ b/src/json-merge-patch.test.ts
+@@ -0,0 +1,80 @@
++import { test } from "node:test";
++import assert from "node:assert/strict";
++import { applyMergePatch } from "./json-merge-patch.ts";
++
++// The examples from RFC 7386 Appendix A.
++
++const rfcVectors: [unknown, unknown, unknown][] = [
++  [{ a: "b" }, { a: "c" }, { a: "c" }],
++  [{ a: "b" }, { b: "c" }, { a: "b", b: "c" }],
++  [{ a: "b" }, { a: null }, {}],
++  [{ a: "b", b: "c" }, { a: null }, { b: "c" }],
++  [{ a: ["b"] }, { a: "c" }, { a: "c" }],
++  [{ a: "c" }, { a: ["b"] }, { a: ["b"] }],
++  [{ a: { b: "c" } }, { a: { b: "d", c: null } }, { a: { b: "d" } }],
++  [{ a: [{ b: "c" }] }, { a: [1] }, { a: [1] }],
++  [["a", "b"], ["c", "d"], ["c", "d"]],
++  [{ a: "b" }, ["c"], ["c"]],
++  [{ a: "foo" }, null, null],
++  [{ a: "foo" }, "bar", "bar"],
++  [{ e: null }, { a: 1 }, { e: null, a: 1 }],
++  [[1, 2], { a: "b", c: null }, { a: "b" }],
++  [{}, { a: { bb: { ccc: null } } }, { a: { bb: {} } }],
++];
++
++for (const [target, patch, expected] of rfcVectors) {
++  test(`merges ${JSON.stringify(target)} with ${JSON.stringify(patch)}`, () => {
++    assert.deepEqual(applyMergePatch(target, patch), expected);
++  });
++}
++
++test("merges nested objects recursively without touching sibling members", () => {
++  const target = { title: "Goodbye!", author: { name: "John" }, tags: ["a", "b"] };
++  const patch = { author: { name: "Jane" } };
++  assert.deepEqual(applyMergePatch(target, patch), {
++    title: "Goodbye!",
++    author: { name: "Jane" },
++    tags: ["a", "b"],
++  });
++});
++
++test("adds a new nested member when the target lacks it", () => {
++  assert.deepEqual(applyMergePatch({}, { a: { b: 1 } }), { a: { b: 1 } });
++});
++
++test("removing a member that does not exist is a no-op", () => {
++  assert.deepEqual(applyMergePatch({ a: "b" }, { c: null }), { a: "b" });
++});
++
++test("does not mutate the target or the patch", () => {
++  const target = { a: { b: "c" } };
++  const patch = { a: { b: "d", c: null }, e: null };
++  const targetSnapshot = structuredClone(target);
++  const patchSnapshot = structuredClone(patch);
++  applyMergePatch(target, patch);
++  assert.deepEqual(target, targetSnapshot);
++  assert.deepEqual(patch, patchSnapshot);
++});
++
++// "__proto__" is just another member name in a JSON document: merging it must not reach through
++// to the object's prototype. A JS object literal with a `__proto__` key sets the object's
++// prototype instead of creating that property, so these patches are built with `JSON.parse`,
++// which (unlike object literal syntax) always creates a plain own property, as it would when a
++// patch arrives over the wire.
++
++test('merging a "__proto__" member creates an own property instead of changing the prototype', () => {
++  const patch = JSON.parse('{"__proto__":{"polluted":true}}');
++  const result = applyMergePatch({}, patch) as Record<string, unknown>;
++  assert.deepEqual(Object.keys(result), ["__proto__"]);
++  assert.equal(Object.getPrototypeOf(result), Object.prototype);
++  assert.equal(JSON.stringify(result), JSON.stringify({ ["__proto__"]: { polluted: true } }));
++  assert.equal(({} as Record<string, unknown>).polluted, undefined);
++});
++
++test('a "__proto__" member already on the target is read as a plain value, not the prototype', () => {
++  const target = JSON.parse('{"__proto__":{"a":1}}');
++  const patch = JSON.parse('{"__proto__":{"b":2}}');
++  const result = applyMergePatch(target, patch) as Record<string, unknown>;
++  assert.equal(Object.getPrototypeOf(result), Object.prototype);
++  assert.equal(JSON.stringify(result), JSON.stringify({ ["__proto__"]: { a: 1, b: 2 } }));
++});
+diff --git a/src/json-merge-patch.ts b/src/json-merge-patch.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..6b36dc9ac1e9d81c4a1726255869b63e717d0962
+--- /dev/null
++++ b/src/json-merge-patch.ts
+@@ -0,0 +1,59 @@
++/**
++ * JSON Merge Patch, as specified in RFC 7386 (https://www.rfc-editor.org/rfc/rfc7386).
++ *
++ * A JSON Merge Patch describes changes to a JSON document using a document that mirrors the
++ * shape of the target: object members are merged recursively, a `null` member value removes the
++ * corresponding target member, and any other value (including an array) replaces it wholesale.
++ */
++
++function isPlainObject(value: unknown): value is Record<string, unknown> {
++  return typeof value === "object" && value !== null && !Array.isArray(value);
++}
++
++/**
++ * Reads an object member by name, as a plain own property.
++ *
++ * A member named "__proto__" read through a normal access (`object[member]`) is intercepted by
++ * `Object.prototype`'s accessor of that name when `object` has no own property of that name,
++ * returning the object's prototype instead of `undefined`. Checking `hasOwnProperty` first avoids
++ * that.
++ */
++function getMember(object: Record<string, unknown>, member: string): unknown {
++  return Object.prototype.hasOwnProperty.call(object, member) ? object[member] : undefined;
++}
++
++/**
++ * Sets an object member by name, as a plain own property.
++ *
++ * A member named "__proto__" set through a normal assignment (`object[member] = value`) is
++ * intercepted by `Object.prototype`'s accessor of that name and changes `object`'s prototype
++ * instead of creating a member. `Object.defineProperty` bypasses that accessor and always creates
++ * a regular own property.
++ */
++function setMember(object: Record<string, unknown>, member: string, value: unknown): void {
++  Object.defineProperty(object, member, { value, writable: true, enumerable: true, configurable: true });
++}
++
++/**
++ * Applies a JSON Merge Patch to a target JSON document, as specified in RFC 7386 section 2.
++ *
++ * @param target - The JSON document to patch.
++ * @param patch - The merge patch to apply.
++ * @returns The merged document; neither `target` nor `patch` is modified. If `patch` is not a
++ *   JSON object, it replaces `target` entirely.
++ */
++export function applyMergePatch(target: unknown, patch: unknown): unknown {
++  if (!isPlainObject(patch)) {
++    return structuredClone(patch);
++  }
++  const result: Record<string, unknown> = isPlainObject(target) ? { ...target } : {};
++  for (const member of Object.keys(patch)) {
++    const value = patch[member];
++    if (value === null) {
++      delete result[member];
++    } else {
++      setMember(result, member, applyMergePatch(getMember(result, member), value));
++    }
++  }
++  return result;
++}
