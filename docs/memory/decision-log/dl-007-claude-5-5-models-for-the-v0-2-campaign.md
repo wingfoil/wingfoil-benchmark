@@ -87,11 +87,21 @@ So:
   match, so the slice compares across both model and generation, which T14 counts as a confound.
 - **D. Postpone to v0.3.** v0.2 already changes the arms and WingFoil's version. Adding the model would be a third
   variable in the same release.
-- **E. A weak-model slice on Haiku 4.5 (beside A, B or C).**
-  - **Runs:** S1 and S3 in baseline and wingfoil, 4 runs: S1 is the longest scenario, S3 tests continuity.
-  - **Calibration:** 4 dry runs first.
-  - **Cost:** about 10 € for the slice and its dry runs together, at half of Sonnet's cost per run, to be measured.
-  - **It answers:** does the wingfoil arm's gain over the baseline grow when the model is weaker?
+- **E. A model ladder, read per step (beside A, B or C).** Widened by the approver on 2026-10-04: in production a
+  frontier model is not used for everything, for its cost, so the benchmark must show where a cheaper model is
+  enough.
+  - **The rungs:** Haiku 4.5, the default model and the Opus slice, one model per run.
+  - **Runs:** S1 and S3 in baseline and wingfoil on Haiku 4.5, 4 runs, beside the default model's runs of the same
+    campaign. S1 is the longest scenario and its steps are distinct phases (implement, refactor, test, review); S3
+    tests continuity. The Opus rung keeps the slice's shape (option B: three arms).
+  - **Calibration:** 4 dry runs on Haiku first.
+  - **Cost:** about 10 € for the Haiku runs and their dry runs, at half of Sonnet's cost per run, to be measured.
+  - **Read per step:** each step's hidden tests and checks against its cost, per rung. task-054 records which models
+    each step used. The ladder shows in which phases the cheap model keeps the quality and in which it falls.
+  - **It answers:**
+    - does the wingfoil arm's gain over the baseline grow when the model is weaker (H6)?
+    - which phases a cheaper model can take: the evidence that model routing needs
+      ([dl-008](dl-008-model-configurations-and-the-cost-quality-frontier.md)).
 
 ## Proposal
 
@@ -102,9 +112,10 @@ So:
 2. A **bridge slice** in the v0.2 campaign: S1 × {baseline, wingfoil on WingFoil v0.2.2} on Sonnet 5.5, so that
    v0.1 → v0.2 is compared on one model. Its size is set by calibration.
 3. If calibration shows that Sonnet 5.5 costs more per run than the budget allows, fall back to **C**.
-4. **E is added**: the Haiku 4.5 slice, with its hypothesis written before the runs (calibration §11, as **H6**:
-   the wingfoil arm's gain over the baseline on S1 and S3, measured by M-Q1 and M-F1, is larger on Haiku 4.5 than
-   on the default model). The slice is dropped if Haiku's dry runs do not finish S1 in any arm.
+4. **E is added**: the model ladder, with its hypothesis written before the runs (calibration §11, as **H6**: the
+   wingfoil arm's gain over the baseline on S1 and S3, measured by M-Q1 and M-F1, is larger on Haiku 4.5 than on the
+   default model). Its per-step reading is published as the first data of the cost-quality frontier (dl-008). The
+   Haiku rung is dropped if Haiku's dry runs do not finish S1 in any arm.
 5. The amendment goes through the experiment design (§6, model and slice) and calibration §11 (H1–H5 restated on
    the model they read), with a raised version and the review decision recorded.
 
@@ -116,27 +127,19 @@ So:
 - The site shows the model of every number. v0.1's Sonnet 5 results and v0.2's Sonnet 5.5 results are compared only
   through the bridge.
 - If v0.2 keeps Sonnet 5 (option A or C), H1–H5 are unaffected and this decision-log records why.
-- The Haiku slice is shown as a separate comparison (T14), never mixed into the default model's headline.
+- The ladder is shown as a separate comparison (T14), never mixed into the default model's headline.
 - **Observed models are recorded.** The runner records, per invocation, which models the agent actually used, with
   their tokens and cost, read from the `result` event's `modelUsage`
   ([task-054](../task/task-054-observed-models-recorded-per-invocation.md)). In `c82a5e74885b/1`, Claude Code already
   called Haiku 4.5 for its own work beside Sonnet (0.06 USD). A slice's model can then be checked rather than
   assumed.
 
-## Not decided here: model routing by WingFoil
+## Not decided here: model configurations and routing
 
-WingFoil is to let a workflow run its phases on different models, chosen by the phase's kind or complexity. When
-that is designed on WingFoil's side, a **decision-log of its own** settles how the benchmark measures it. It must
-answer:
+Mixing models in one run is a separate question:
 
-- **The mechanism.** Does WingFoil choose the model inside the session the runner starts (a subagent, an MCP
-  command)? Then the runner only reads the models from `modelUsage` (task-054). Or does WingFoil start the sessions
-  itself? Then the runner gives up control of the steps: calibration §10's "arm where the harness launches the
-  agent", with new rules for caps and cost.
-- **Separating the effect.** Two arms: `wingfoil` on a fixed model, which isolates the process, and
-  `wingfoil-routed`, which measures routing as a feature. The difference between them is routing's effect. Against
-  the baseline, quality and cost are read together, since "same quality, less cost" is what routing claims.
-- **Pins.** The routing configuration becomes a pin of the arm (REQ-NFR-02), and the campaign lists the models
-  allowed.
-- **The estimate.** Its key becomes (scenario, arm, model profile) instead of (scenario, arm, model); the dry run
-  measures the mixed cost as it is.
+- by a harness that routes phases to models, as WingFoil is to do;
+- or by hand, with Claude Code's subagents on a cheaper model.
+
+It is in [dl-008](dl-008-model-configurations-and-the-cost-quality-frontier.md), which took over this section's
+routing note on 2026-10-04.
