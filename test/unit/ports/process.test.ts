@@ -123,6 +123,13 @@ describe('processFailure', () => {
     expect(error.message).toBe('docker start x failed with code 2:\nboom');
   });
 
+  it('quotes only the end of a long output, where the bound is named (bug-011)', () => {
+    const stderr = `${'x'.repeat(100_000)}\noutput bound of 4096 bytes reached`;
+    const error = processFailure('git', ['diff'], { code: 1, stdout: '', stderr, outputBounded: true });
+    expect(error.message.length).toBeLessThan(5000);
+    expect(error.message).toMatch(/…x+\noutput bound of 4096 bytes reached$/);
+  });
+
   it('falls back to the standard output when there is no error output', () => {
     const error = processFailure('git', ['init'], { code: 1, stdout: 'bad\n', stderr: '' });
     expect(error.message).toMatch(/bad$/);

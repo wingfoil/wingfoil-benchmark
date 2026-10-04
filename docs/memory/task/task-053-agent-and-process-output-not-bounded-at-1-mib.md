@@ -68,8 +68,8 @@ campaign-cycle's `approve-spend`.
   - the result carries `outputBounded: true`;
   - its `stderr` ends with "output bound of N bytes reached";
   - its `code` is 1, as for any failure;
-  - it is **never** `timedOut`. Node sets `killed` in this case too, which today would read as a timeout whenever a
-    time limit is set.
+  - it is **never** `timedOut`. It is told apart by Node's error code, `ERR_CHILD_PROCESS_STDIO_MAXBUFFER`, before the
+    timeout is read.
 - Streaming the output to a file (`spawn`) was considered and not chosen:
   - it would change every caller of a port that returns strings;
   - the transcript is already held in memory to be scrubbed and parsed;
@@ -81,16 +81,23 @@ campaign-cycle's `approve-spend`.
 - When `outputBounded` is set, the step fails with "the agent's output passed the port's output bound; its usage
   is not known". The transcript keeps the lines that were read, so the evidence stays, and `readSession` is not
   asked to parse a cut line.
-- The cost stays unknown, as in a session killed at its time cap. This task does not make it up.
+- The cost stays unknown, as in a session killed at its time cap. This task does not make it up. The runner counts
+  it at its bound, as it does a killed session: `cost_reported: false` and `cost_bound_usd` in `run.json` (from the
+  independent review, finding 1).
 
-**3. Not changed:**
+**3. `processFailure`** quotes at most the last 4 096 characters of a failed command's output. A bounded `git diff`
+or setup could otherwise put 256 MiB into an error message and `run.json` (review, finding 5). The bound's note is
+at the end, so it is kept.
 
-- The runner, the caps, the fake agent and the results format.
+**4. Not changed:**
+
+- The caps, the fake agent and the results format.
 - A `docker exec` client stopped by the bound may leave the agent running inside the container until the run's
-  container is removed. That happens when the run ends, which a failed step causes at once. With a 256 MiB bound
-  this is no longer a case a campaign meets; it is written down here, not handled.
+  container is removed. That happens when the run ends, which a failed step causes. Until then the runner still takes
+  the step's snapshot (`diff.patch`) while the agent may be writing, so that snapshot is not reliable (review,
+  finding 4). With a 256 MiB bound this is no longer a case a campaign meets; it is written down here, not handled.
 
-**4. bug-011's Resolution** names this task's commits.
+**5. bug-011's Resolution** names this task's commits.
 
 ## Execution notes
 

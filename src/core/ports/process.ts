@@ -56,8 +56,8 @@ export function createSystemProcess(options: { maxOutputBytes?: number } = {}): 
             killSignal: 'SIGKILL',
           },
           (error, stdout, stderr) => {
-            // Node stops a process whose output reaches the bound, and marks it `killed` as it does a timeout:
-            // it is told apart by its code, and said, so that a cut output is never read as a bad one.
+            // Node stops a process whose output reaches the bound and gives its error this code (not `killed`):
+            // it is said, so that a cut output is never read as a bad one.
             if ((error as { code?: unknown } | null)?.code === OUTPUT_BOUND_REACHED) {
               const note = `output bound of ${String(maxOutputBytes)} bytes reached`;
               resolve({ code: 1, stdout, stderr: stderr ? `${stderr}\n${note}` : note, outputBounded: true });
@@ -97,10 +97,13 @@ export function reasonOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-/** The error a port raises when its command fails: what ran, and what it said. */
+/** The most of a failed command's output an error message quotes: its end, where the bound's note is. */
+const QUOTED_OUTPUT_CHARS = 4096;
+
+/** The error a port raises when its command fails: what ran, and what it said (its end, when it said a lot). */
 export function processFailure(command: string, args: readonly string[], result: ProcessResult): Error {
   const what = [command, ...args].join(' ');
-  return new Error(
-    `${what} failed with code ${result.code}:\n${result.stderr.trim() || result.stdout.trim()}`,
-  );
+  const said = result.stderr.trim() || result.stdout.trim();
+  const quoted = said.length > QUOTED_OUTPUT_CHARS ? `…${said.slice(-QUOTED_OUTPUT_CHARS)}` : said;
+  return new Error(`${what} failed with code ${result.code}:\n${quoted}`);
 }
