@@ -815,6 +815,11 @@ async function executeStep(
     } catch (failure) {
       // What a killed invocation reported is nothing: its cost is counted at its bound (settle).
       if (killed) return { sessionId, usage: NO_USAGE, transcript: [] };
+      // A bounded invocation is a failure, but its cost is counted at its bound all the same (bug-011).
+      if (bounded) {
+        const error = `${reasonOf(failure)}; the agent's output passed the port's output bound`;
+        return { sessionId, usage: NO_USAGE, transcript: [], error };
+      }
       return reasonOf(failure);
     }
   };

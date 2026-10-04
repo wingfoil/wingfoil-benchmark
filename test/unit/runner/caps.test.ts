@@ -171,6 +171,26 @@ describe('step_time_s (task-024)', () => {
     expect(summary.runs[0]?.error).toBeUndefined();
   });
 
+  it('keeps the cost bound of a bounded step when the agent throws on it (bug-011)', async () => {
+    const agent: AgentPort = {
+      runStep: async (request) => {
+        const result = await request.run(['claude', '-p', 'long']);
+        throw new Error(`claude failed with code ${result.code}`);
+      },
+      resume: () => Promise.reject(new Error('no resume')),
+    };
+    const ports = doubles({
+      execResultOf: (command) =>
+        command[4] === 'claude'
+          ? { code: 1, stdout: '', stderr: 'output bound of 4096 bytes reached', outputBounded: true }
+          : undefined,
+    });
+    const summary = await runCampaign(campaign({ run_cost_eur: 5 }), { ...ports, agent });
+    const record = runJson(summary.runs[0]?.outputDir) as { error: string; steps: Record<string, unknown>[] };
+    expect(record.steps[0]).toMatchObject({ outcome: 'failed', cost_reported: false, cost_bound_usd: 5 });
+    expect(record.error).toMatch(/output bound/);
+  });
+
   it('runs no command once the step has no time left', async () => {
     // The agent thinks for 20 ms of a 1 ms step before its first command.
     const agent: AgentPort = {
