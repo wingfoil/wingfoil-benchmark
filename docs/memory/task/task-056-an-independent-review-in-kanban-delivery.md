@@ -166,3 +166,7 @@ dl-006 (a WingFoil configuration change that implements an approver's decision, 
   `illegal transition approved -> backlog for type 'task'`, exit 1, no commit. Declared: `approve` takes the
   state's approval edge. Observed: refused, rightly, but the message names `backlog`, a target `approve` never
   reaches from `approved` (usage note N49).
+- Merged into main with `--no-ff` → `286968f`.
+- `npx wingfoil memory submit task-056-…` on main → `cfb80b6`. Declared: `approved → done`, one commit. Observed:
+  exit 0, JSON `{"from": "approved", "to": "done"}`, one file, diff limited to `status`. Matches.
+- Worktree removed after `git status --ignored`: only `coverage/` and `node_modules/`, both regenerable.
