@@ -8,6 +8,7 @@ wave: W4
 features: []
 acceptance: []
 requirements: [REQ-RUN-04, REQ-RUN-02]
+fixes: [bug-006-claude-code-s-auto-memory-can-carry-state-between-the-steps-of-a-run]
 ---
 
 ## Context

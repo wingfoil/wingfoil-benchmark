@@ -8,6 +8,7 @@ wave: W2
 features: []
 acceptance: []
 requirements: [REQ-ARC-05]
+fixes: [bug-001-phase-include-names-a-file-path-instead-of-the-workflow]
 ---
 
 ## Context

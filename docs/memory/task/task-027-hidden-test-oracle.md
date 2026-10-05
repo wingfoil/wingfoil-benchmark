@@ -8,6 +8,7 @@ wave: W6
 features: [F4.1]
 acceptance: [scoring.feature]
 requirements: [REQ-CLI-06, REQ-SCO-01, REQ-SCO-02, REQ-SCO-03, REQ-FMT-06, REQ-ARC-01, REQ-ARC-02, REQ-ARC-04]
+fixes: [bug-007-a-stored-patch-leaves-out-the-commits-made-between-two-snapshots]
 ---
 
 ## Context

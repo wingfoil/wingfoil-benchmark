@@ -74,6 +74,72 @@ export function startedFeatures(taskDir: string): Set<string> {
   return features;
 }
 
+/** The front matter fields the bug link check reads, from a task or a bug. */
+interface LinkedElement {
+  readonly id: string;
+  readonly status?: string;
+  readonly fixes?: readonly string[];
+  readonly fixed_by?: string;
+}
+
+/**
+ * Every element of `dir` by id, read from its front matter, files in name order. A file without an id, or repeating
+ * an id already read, is reported in `problems` and left out.
+ */
+function readElements(dir: string, problems: string[]): Map<string, LinkedElement> {
+  const elements = new Map<string, LinkedElement>();
+  for (const name of readdirSync(dir)
+    .filter((n) => n.endsWith('.md'))
+    .sort()) {
+    const frontmatter = FRONTMATTER.exec(readFileSync(join(dir, name), 'utf8'))?.[1];
+    const element = parse(frontmatter ?? '') as LinkedElement | null;
+    if (!element?.id) problems.push(`${name} has no id`);
+    else if (elements.has(element.id)) problems.push(`${name} repeats the id ${element.id}`);
+    else elements.set(element.id, element);
+  }
+  return elements;
+}
+
+/** A task's `fixes` as a list: empty when absent, and when it is not a list (reported by the caller). */
+function fixesOf(task: LinkedElement): readonly string[] {
+  return Array.isArray(task.fixes) ? task.fixes : [];
+}
+
+/**
+ * Where a task's `fixes` and a bug's `fixed_by` disagree (bug-005, task-058): a `fixes` that is not a list, or an
+ * entry naming no bug; a `fixed_by` naming no task, or a task that does not list the bug; a `fixed` bug without
+ * `fixed_by` or whose task is not `done`; a `done` task whose bug is neither `fixed` nor `deprecated`; an element
+ * without an id, or two with one id. Empty when the links agree.
+ */
+export function bugLinkProblems(taskDir: string, bugDir: string): string[] {
+  const problems: string[] = [];
+  const tasks = readElements(taskDir, problems);
+  const bugs = readElements(bugDir, problems);
+  for (const task of tasks.values()) {
+    if (task.fixes !== undefined && !Array.isArray(task.fixes))
+      problems.push(`${task.id} has a fixes that is not a list`);
+    for (const bugId of fixesOf(task)) {
+      const bug = bugs.get(bugId);
+      if (!bug) problems.push(`${task.id} fixes ${bugId}, which does not exist`);
+      else if (task.status === 'done' && bug.status !== 'fixed' && bug.status !== 'deprecated')
+        problems.push(`${task.id} is done but ${bugId} is ${bug.status}, not fixed`);
+    }
+  }
+  for (const bug of bugs.values()) {
+    if (bug.fixed_by === undefined) {
+      if (bug.status === 'fixed') problems.push(`${bug.id} is fixed but names no fixed_by task`);
+      continue;
+    }
+    const task = tasks.get(bug.fixed_by);
+    if (!task) problems.push(`${bug.id} is fixed_by ${bug.fixed_by}, which does not exist`);
+    else if (!fixesOf(task).includes(bug.id))
+      problems.push(`${bug.id} is fixed_by ${task.id}, whose fixes does not list it`);
+    else if (bug.status === 'fixed' && task.status !== 'done')
+      problems.push(`${bug.id} is fixed by ${task.id}, which is ${task.status}, not done`);
+  }
+  return problems;
+}
+
 /** Modifiers after which a test does not verify anything. */
 const NOT_VERIFYING = new Set(['skip', 'todo', 'skipIf', 'runIf', 'fails']);
 

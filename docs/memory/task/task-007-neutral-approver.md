@@ -8,6 +8,7 @@ wave: W2
 features: [F2.4]
 acceptance: [runner.feature]
 requirements: [REQ-RUN-06, REQ-RUN-07, REQ-RUN-17]
+fixes: [bug-004-session-cost-is-cumulative-so-summing-it-double-counts]
 ---
 
 ## Context

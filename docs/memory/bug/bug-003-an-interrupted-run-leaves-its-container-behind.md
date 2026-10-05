@@ -2,7 +2,8 @@
 id: bug-003-an-interrupted-run-leaves-its-container-behind
 type: bug
 title: "An interrupted run leaves its container behind"
-status: approved
+status: fixed
+fixed_by: task-010-an-interrupted-run-s-container-is-cleared-or-reported
 ---
 
 ## Context

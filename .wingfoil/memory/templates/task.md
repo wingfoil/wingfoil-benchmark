@@ -8,6 +8,7 @@ wave: ""              # e.g. W1
 features: []          # e.g. [F1.1, F3.1]
 acceptance: []        # e.g. [campaign.feature, scenarios.feature]
 requirements: []      # e.g. [REQ-FMT-01, REQ-FMT-02]
+fixes: []             # optional: the bugs this task fixes, e.g. [bug-005-a-bug-cannot-name-…]
 ---
 
 ## Context

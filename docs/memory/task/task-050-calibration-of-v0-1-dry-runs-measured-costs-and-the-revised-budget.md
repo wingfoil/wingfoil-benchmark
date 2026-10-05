@@ -8,6 +8,7 @@ wave: calibration
 features: []
 acceptance: []
 requirements: [REQ-CLI-05, REQ-RES-01, REQ-RUN-08, REQ-RUN-16, REQ-NFR-06]
+fixes: [bug-009-the-runs-ignore-rule-also-ignores-every-run-record-under-results-which-req-res-06-says-are-committed]
 ---
 
 ## Context

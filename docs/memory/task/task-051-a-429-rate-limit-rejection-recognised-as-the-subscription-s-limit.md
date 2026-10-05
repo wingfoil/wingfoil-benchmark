@@ -8,6 +8,7 @@ wave: validation
 features: [F1.3]
 acceptance: [campaign.feature]
 requirements: [REQ-RUN-13]
+fixes: [bug-010-a-429-rate-limit-rejection-fails-the-run-as-an-api-error-instead-of-being-recognised-as-the-subscription-s-limit]
 ---
 
 ## Context
