@@ -8,6 +8,7 @@ wave: W3
 features: []
 acceptance: []
 requirements: [REQ-NFR-03, REQ-RUN-02]
+fixes: [bug-003-an-interrupted-run-leaves-its-container-behind]
 ---
 
 ## Context
