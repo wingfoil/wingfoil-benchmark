@@ -883,7 +883,7 @@ published execution ([campaign-001](../campaign/campaign-001-v0-1-reference-camp
 - [x] validation: acceptance green on the fake agent, coverage > 80%, lint clean, one real-agent end-to-end run — task-052 (on `92b1bf8`: `npm test` 1212 tests, coverage 98.03 % statements, lint clean, Docker 16/16; S3@1.0 baseline on Sonnet 5, campaign `d032e3e98de3/1`: completed, 1.0064 USD (0.8908 €), final 34/37, hold-out 16/17, scored, shown, site built locally, transcripts pack checked without a release; a line of the [ledger](../../calibration/v0.1-ledger.md); approved `4ead1a1`, merged `65de6f2`)
 - [x] campaign: reference campaign published (campaign: [campaign-001](../campaign/campaign-001-v0-1-reference-campaign.md), `c82a5e74885b/2`: 19/19 runs, 61.38 €, the Opus slice 23.26 €; `/1` not published, bug-011 fixed by task-053; task-054 and task-055 before publishing; one finding, M-K1 on S1; published `7ef4c55`)
 - [x] publishing: tag `v0.1`, repository public, site published, release notes, transcripts attached (repository public 2026-10-05; site at <https://wingfoil.github.io/wingfoil-benchmark/c82a5e74885b/2/>; transcripts release `c82a5e74885b-2`; tag `v0.1` on `6c57494` and release `v0.1` with [docs/releases/v0.1.md](../../releases/v0.1.md); releasing → released `137269b`, its reason's paste typo corrected before the push at the approver's request)
-- [ ] retrospective: section below written; WingFoil usage notes handed to the approver
+- [x] retrospective: section below written; WingFoil usage notes handed to the approver (N1–N48, 2026-10-05; the M-K1 finding filed in WingFoil as dl-147; actions bug-013..015, dl-010..014)
 
 ## Retrospective
 
@@ -1001,7 +1001,8 @@ They join, for v0.2's planning:
 - `features` as a conditional requirement (task-004);
 - `run compare` without models (task-054);
 - S1 1.1 stating step 5's shift-aware diff (calibration §8);
-- a lighter wingfoil manual, measured (calibration §7);
+- a lighter wingfoil manual, measured (calibration §7); v0.2's wingfoil arm manual started from WingFoil's
+  `docs/agents.md` at the pinned tag (N43);
 - resuming after a first-request rate limit, unobserved (task-051).
 
 ### WingFoil usage notes handed to the approver
@@ -1018,7 +1019,7 @@ retrospective. It is untracked and never cleaned. This release added N36–N48:
 | N40 | approver decisions without a transition |
 | N41 | a gate commits on any branch |
 | N42 | role context not delivered at session start |
-| N43 | no recommended agent manual |
+| N43 | the agents' guide (`docs/agents.md`, in v0.2.2) sets rules but no level of process; the arm's manual did not start from it (corrected on the approver's pointer) |
 | N44 | the tarball's bin not executable |
 | N45 | copied configuration loses its approval provenance |
 | N46 | `init`'s subject carries a plan id |
