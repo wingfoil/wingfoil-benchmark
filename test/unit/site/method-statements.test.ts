@@ -21,6 +21,10 @@ const STATEMENTS: readonly (readonly [string, string])[] = [
     'experiment design §1 (object, comparison "with the agent and model fixed"); REQ-RES-03 ("harness, not model"); experiment design §5 T14 (cross-model shown apart)',
   ],
   [
+    'auxiliary-models',
+    'REQ-RUN-09 as amended in 1.25 (models observed from `modelUsage`); task-054 Context and its deviation (the sentence moved to this re-read); campaign-001 execution 2 (Haiku 4.5, 0.19 USD); task-055 Design item 4',
+  ],
+  [
     'arms',
     'experiment design §2 Arms table; REQ-RUN-12 (manual copied as `CLAUDE.md`); task-015 Design (`PROJECT_RULES.md`); arms/baseline-docs/manual.md',
   ],
@@ -35,6 +39,10 @@ const STATEMENTS: readonly (readonly [string, string])[] = [
   [
     'operating-manuals',
     'experiment design §2 parity rules (operating manuals); REQ-RUN-12; task-014 Design decision 2 (`ceil(UTF-8 bytes ÷ 4)`); rel-v0-1 W3 Due before ("publishes the three manuals"); task-046 Design "The published material"',
+  ],
+  [
+    'wingfoil-manual-process',
+    'arms/wingfoil/manual.md (a task per request, a decision-log per design decision, each submitted and approved); calibration v0.1 §7 and §10 (the process is the manual’s choice); campaign-001 Findings (M-K1 on S1); task-055 Design item 3b',
   ],
   [
     'identical-prompts',
@@ -67,7 +75,7 @@ const STATEMENTS: readonly (readonly [string, string])[] = [
   ],
   [
     'killed-step',
-    'rel-v0-1 W5 Due before; task-024 Design "The step caps" (upper bound = the `--max-budget-usd` given) and "Deviation from the Design" (a time-capped step ends the run in practice)',
+    'rel-v0-1 W5 Due before; task-024 Design "The step caps" (upper bound = the `--max-budget-usd` given) and "Deviation from the Design" (a time-capped step ends the run in practice); task-053 Design (a step whose output passes the 256 MiB bound counted at its bound, bug-011)',
   ],
   [
     'step-tokens-between-invocations',
@@ -204,7 +212,7 @@ const STATEMENTS: readonly (readonly [string, string])[] = [
   ],
   [
     'model-slices',
-    'experiment design §5 T14 and §6; rel-v0-1 W5 Due before (W7 item); REQ-RES-03 (slices’ runs counted apart); REQ-RES-02 (slices apart)',
+    'experiment design §5 T14 and §6; rel-v0-1 W5 Due before (W7 item); REQ-RES-03 (slices’ runs counted apart); REQ-RES-02 (slices apart); calibration v0.1 §5 option A (the slice reduced to the wingfoil arm, approved `721321f`)',
   ],
   [
     'finding-notes',
@@ -231,7 +239,7 @@ const STATEMENTS: readonly (readonly [string, string])[] = [
   ['threat-t11', 'experiment design §5 T11'],
   ['threat-t12', 'experiment design §5 T12'],
   ['threat-t13', 'experiment design §5 T13; REQ-RUN-10 (shell network use not seen)'],
-  ['threat-t14', 'experiment design §5 T14 and §6'],
+  ['threat-t14', 'experiment design §5 T14 and §6; calibration v0.1 §5 option A (wingfoil arm only)'],
   ['this-execution', 'task-046 Design "Generated: ’This execution’"'],
   [
     'published-material',

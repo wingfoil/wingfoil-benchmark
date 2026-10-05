@@ -6,6 +6,8 @@ This benchmark measures where a harness for AI coding agents makes a difference.
 
 The benchmark compares harnesses, not models. In one comparison the agent (Claude Code), its version and the model are the same in every arm. Only the harness and the files that come with it change. Runs on a second model are a separate comparison and are never mixed with same-model results. {#harness-not-model}
 
+The agent may also call a smaller model for its own work, beside the run's model: in v0.1, Claude Code called Haiku 4.5 now and then, for a small share of the cost. The models each step used, with their tokens and cost, are recorded with the run. Their cost is part of the arm's cost; the arm's token counts are the run's model's only. {#auxiliary-models}
+
 There are three arms: {#arms}
 
 - **baseline**: the agent, the starting project (the *seed*) and a short operating manual. It is the plain agent and the reference for every comparison.
@@ -31,6 +33,8 @@ What counts as "the same information": every kind of content in the wingfoil arm
 | WingFoil's own settings, record templates and workflow settings | no | the tool's own mechanics |
 
 Each arm has one fixed operating manual. It is copied into the project as `CLAUDE.md`, the file the agent reads first. It maps what a step asks for to the harness's commands. A longer manual is also more context, so each manual's size is measured (in tokens, approximated as the file's bytes divided by 4) and reported for every run. The three manuals are published: [baseline](material/manual-baseline.html), [baseline-docs](material/manual-baseline-docs.html), [wingfoil](material/manual-wingfoil.html). {#operating-manuals}
+
+The wingfoil manual sets the process the agent follows with WingFoil. WingFoil itself does not require this process: the manual chose it, as a disciplined use of WingFoil. Before changing code, the agent reads its role's rules and the approved decisions. While it works, it records each request as a task and each design decision as a decision record, submits them and, when its work needs an approval, asks for it and stops; once the neutral approver replies, it runs the approval itself. That reading, writing and the approval round trips are part of the wingfoil arm's cost, turns and time. A lighter use of WingFoil could cost less, and a stricter one more; v0.1 measures only this one. The results measure WingFoil as this manual uses it, and the manual is published so that the process can be judged with them. {#wingfoil-manual-process}
 
 Every step's request (its *prompt*) is the same text in every arm, and names no harness. A scan checks each scenario for this before it runs: a prompt that names a harness or tool, or a seed or prompt that contains an expected value or a hidden test's name, is refused. {#identical-prompts}
 
@@ -58,7 +62,7 @@ Every step has a time cap and a token cap, and every run has a cost cap. When a 
 
 The run's cost cap is passed to the agent, which stops by itself, at most one turn past the cap. A session can therefore spend a little more than the cap. In a test, a session capped at 0.04 USD stopped at 0.0419 USD. The real cost is recorded as reported. {#cost-cap-one-turn}
 
-A step killed at its time cap reports no cost. It is counted at its upper bound: the most it was allowed to spend, which is what was left of the run's cost cap. The budget therefore never counts less than may have been spent. Since that bound is everything left of the run's cost cap, the run then ends. The work done before the kill is kept and scored. {#killed-step}
+A step killed at its time cap reports no cost. It is counted at its upper bound: the most it was allowed to spend, which is what was left of the run's cost cap. The budget therefore never counts less than may have been spent. Since that bound is everything left of the run's cost cap, the run then ends. The work done before the kill is kept and scored. A step whose session output (the stream the runner reads from the agent) passes the runner's bound of 256 MiB is a failed step: its cost is not reported, so it too is counted at its upper bound, and the run ends there. {#killed-step}
 
 The token cap is checked between the agent's invocations, not during one. A step whose tokens exceed the cap is not resumed after its current session. Within one session, only the cost cap bounds it. {#step-tokens-between-invocations}
 
@@ -187,7 +191,7 @@ When the hold-out was not scored (for example, not configured), the hold-out rea
 
 S2's answer key (where each injected defect is, and what it is) is kept only in the private hold-out and is never published. The public scenario describes the kinds of defect only. The site never reads the hidden tests' files, the hold-out or the agents' transcripts. {#answer-key-unpublished}
 
-Results from a second model (the Opus 5 comparison slice) are reported apart from the main model's, never mixed with them. {#model-slices}
+Results from a second model (the Opus 5 comparison slice) are reported apart from the main model's, never mixed with them. In v0.1 the slice is one run of S1 in the wingfoil arm only, because a slice in every arm would have cost too much for v0.1's budget. It is read against the same arm's runs on the main model: it shows how the wingfoil arm fares on Opus 5, not how the harness's effect changes with the model. {#model-slices}
 
 A *finding note* is a Markdown file the maintainer generates from one execution, for one scenario, metric and set of arms. It holds fixed sections: the campaign, the WingFoil commit, the scenario and version, the runs, the metric values, and links to each run. Missing values are stated, never invented. It ends with a section shaped as a WingFoil bug or decision record, with the facts filled in and the judgement left to the maintainer. The note is written only into the benchmark's repository; the maintainer files it in WingFoil by hand. Finding notes are not on this site. {#finding-notes}
 
@@ -209,8 +213,8 @@ These threats were listed before any run, each with what is done about it.
 - **T10, gaps in the harness.** At design time, the WingFoil under development (v0.2 pre-release, commit `3df305e`) had no workflow engine; its workflows were followed by hand. Mitigation: expected failures, published as losses; the public campaign runs on the latest released WingFoil, v0.2.2, which has no workflow engine either. {#threat-t10}
 - **T11, the tests capture the specification only partly.** Mitigation: several metrics per goal; a rubric judge from v0.3. {#threat-t11}
 - **T12, unequal setup effort across tools.** Mitigation: setup from official documentation only, scripted and published, with deviations published. {#threat-t12}
-- **T13, looking up answers.** With internet access, an agent may fetch public material that overlaps the tests, for example S1's official conformance suite. Mitigation: web requests recorded and reported per arm (shell network use is not seen); hold-out tests added to public ones; fictional domains (S4) where lookup cannot help. Access is the same for every arm. {#threat-t13}
-- **T14, the harness's effect may depend on the model.** Mitigation: a comparison slice on a second model (Opus 5), shown as a separate comparison, never mixed with same-model results. {#threat-t14}
+- **T13, looking up answers.** With internet access, an agent may fetch public material that overlaps the tests, for example S1's official conformance suite. Mitigation: web requests recorded and reported per arm (shell network use is not seen); hold-out tests added to public ones; fictional domains (a later scenario, S4) where lookup cannot help. Access is the same for every arm. {#threat-t13}
+- **T14, the harness's effect may depend on the model.** Mitigation: a comparison slice on a second model (Opus 5), shown as a separate comparison, never mixed with same-model results. In v0.1 it covers the wingfoil arm only, because a slice in every arm would have cost too much for v0.1's budget, so v0.1 does not yet test whether the harness's effect depends on the model. {#threat-t14}
 
 ## This execution {#this-execution}
 
