@@ -232,6 +232,14 @@ WingFoil is the approver's.
     continuity, S8's rules).
   - It is the measured baseline of calibration §11's **H1** ("the engine lowers the process's overhead"), which
     v0.2 is to test.
+  - **Filed in WingFoil** on 2026-10-05, with the approver's consent, by WingFoil's note-ingest session, following
+    dl-009:
+    - `dl-147-a-request-run-through-wingfoil-s-process-costs-about-1.5-times-a-plain-agent-run-…` (`afdcb37d`,
+      submitted `0d5781b7`), state `in-discussion`. Its ratification is deferred to WingFoil's v0.3 retrospective.
+    - It links the note's permalink at `v0.1`, the category C page, the wingfoil arm's manual and calibration §11.
+    - Its Actions state the verification: M-K1 on S1 measured again in the v0.2 reference campaign (H1, ratio
+      below 1.5).
+    - The way back is the line under the note's title, written by hand, as dl-009 says.
 
 ## Publication
 
