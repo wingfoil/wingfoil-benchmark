@@ -155,3 +155,5 @@ trailers; README in the same commit, as the task's "Done" names both.
 
 - `npx wingfoil memory submit task-057-…` → `c4aa59c`. Declared: `in-progress → in-review`, one commit. Observed: exit
   0, JSON `{"from": "in-progress", "to": "in-review"}`, one file, diff limited to `status`. Matches.
+- The approver's `memory approve task-057-… --reason "…"` → `2462fb2`, run from this worktree (`in-review →
+  approved`, `Approver:`/`Reason:` trailers with the drafted reason, only `status` changed). Matches.
