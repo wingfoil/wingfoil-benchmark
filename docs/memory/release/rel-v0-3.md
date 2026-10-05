@@ -14,6 +14,8 @@ features: []          # from docs/01_vision/07_sequencer.md
 
 ## Scope
 
+Carried from v0.2's triage (2026-10-05): [dl-013](../decision-log/dl-013-saturation-levels-of-delegation-and-an-external-neutral-control.md), saturation, levels of delegation and an external neutral control, deferred here because v0.2 adds no scenario.
+
 <!-- Waves and features; for v0.2+, links to the release's specification documents. -->
 
 ## Release checklist

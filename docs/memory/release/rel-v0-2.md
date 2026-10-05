@@ -19,7 +19,8 @@ glance").
 
 The reference campaign runs the v0.1 scenarios (S1, S2, S3, S8) in every arm. Each harness is pinned to its latest
 release at the time of the campaign. Its shape, models and budget are set at calibration (dl-007, dl-012, triaged
-below). A first sizing, Sonnet only, five arms, v0.1's repetitions: 30 runs, roughly 55–65 €
+below). A first sizing, Sonnet only, seven arms (a docs control per harness, decided at triage), v0.1's repetitions: about 42
+runs, roughly 75–85 €
 ([plan-004](../../plans/plan-004-release-v0-2.md)).
 
 Categories covered: C, D, E and F, as in v0.1. A, B and G remain not covered (v0.3).
@@ -36,10 +37,19 @@ in this release-planning phase (`release-cycle` › release-planning).
 | W13 — OpenSpec and contests | F7.1 OpenSpec arm · F7.2 setup contest process | — | OpenSpec runs, and a setup can be contested | — |
 | W14 — Comparison and Dana | F5.2 campaign comparison · F5.7 profile filter and stable URLs · F1.4 resumable campaign | — | a second public campaign compared with the first | — |
 
-### Triage of what v0.1 left (proposed, for the approver)
+### Triage of what v0.1 left
 
-Every element below is `pending`. The proposal says what to decide and where the work lands. The approver approves,
-rejects or defers each one; the outcome is recorded here.
+**Decided by the approver in chat on 2026-10-05: "triage come proposto".** Each approval was run by the agent at the
+approver's request, with a reason saying so:
+
+- **approved:** dl-011 `8488c61`, dl-014 `63c41d4`, dl-009 `9c405e3`, dl-007 `e09918a`, dl-008 `76a45aa`, dl-012
+  `4b53a08`, dl-010 `42b05a0`;
+- **bugs accepted for fixing:** bug-014 `c2682ac`, bug-015 `6743518`, bug-012 `abc441c`, bug-013 `62645b4`;
+- **already approved since v0.1:** bug-005; its fix is planned in W12;
+- **deferred to v0.3:** dl-013, left `pending` and carried to rel-v0-3. A reject would have sent it back to `draft`,
+  which says something else.
+
+The tables below are the proposal as approved.
 
 **1. Process, before delivery starts** (tasks at the head of W12):
 
@@ -69,7 +79,19 @@ rejects or defers each one; the outcome is recorded here.
 | [bug-012](../bug/bug-012-a-step-s-tokens-leave-out-the-models-claude-code-calls-for-its-own-work.md) auxiliary-model tokens | **fix before calibration**: tokens summed over `modelUsage`; REQ-RUN-09 amended; comparisons across campaigns read tokens | W13 |
 | [bug-013](../bug/bug-013-a-running-campaign-cannot-be-stopped-cleanly-and-keeps-spending-after-systematic-failures.md) no stop, no fail-fast | **fix with F1.4** (resumable campaign): a clean stop, a fail-fast rule, a resume without repeating completed runs | W14 |
 
-**4. Open questions for the approver:**
+**4. The approver's answers (2026-10-05):**
+
+- **A docs control per competitor (T3): yes.** Each harness arm gets its own docs control, generated from that arm's
+  configuration as baseline-docs is from wingfoil's. "More context, not the harness" is then controlled per harness.
+  The arms become seven: baseline, then wingfoil, Spec Kit and OpenSpec, each with its docs control. The first sizing
+  grows to about 42 runs, roughly 75–85 € before slices, to be replaced by calibration. The generator, the arms'
+  names and parity rules are part of this phase's specification.
+- **The Spec Kit arm follows its process through its skills (option 1),** started by the runner like every arm.
+  When WingFoil has its workflow engine, the engine-led option (2) is taken up for both tools, so that two
+  engine-led harnesses are compared under the same new runner rules.
+- **WingFoil for the campaign:** not changed, so the default stands, the latest WingFoil release at the campaign.
+
+The questions as they were put:
 
 - **A docs control per competitor (T3)?** v0.1's baseline-docs is generated from the wingfoil arm's configuration.
   Either one docs control stays (cheaper), or each competitor gets its own (fairer: "more context" is controlled per
