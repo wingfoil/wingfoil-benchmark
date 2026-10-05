@@ -2,7 +2,7 @@
 id: rel-v0-2
 type: release
 title: "v0.2"
-status: planning
+status: in-development
 version: v0.2
 waves: [W12, W13, W14]
 features: [F7.4, F7.1, F7.2, F5.2, F5.7, F1.4]
