@@ -75,7 +75,9 @@ Two fields that say one thing could drift, so a test holds them together.
 1. a task's `fixes` entry that names no existing bug;
 2. a bug's `fixed_by` that names no existing task, or a task whose `fixes` does not list the bug;
 3. a bug in `fixed` without `fixed_by`, or whose `fixed_by` task is not `done`;
-4. a `done` task's `fixes` entry whose bug is neither `fixed` nor `deprecated`.
+4. a `done` task's `fixes` entry whose bug is neither `fixed` nor `deprecated`;
+5. a `fixes` that is not a list, an element without an id, two elements with one id (each would otherwise hide a
+   link from rules 1–4).
 
 Unit tests on temporary directories cover each rule, red first. The repository test is green before the migration
 (no element carries a link yet), red as soon as a done task declares a bug still `approved`, and green again once
@@ -104,8 +106,10 @@ branch. task-058 itself declares `fixes: [bug-005-…]`; bug-005 moves to `fixed
 
 ### `kanban-delivery` (version 4)
 
-The `deliver` phase adds: after `approved → done`, each bug in the task's `fixes` gets `fixed_by` by hand and then
-`approved → fixed` by `submit`. The `design` phase adds: a task that fixes bugs declares them in `fixes`.
+The `deliver` phase adds: after `approved → done`, each bug in the task's `fixes` gets `fixed_by` and a Resolution
+section naming the task by hand, and then `approved → fixed` by `submit`. Between the task's `done` and its bugs'
+`fixed`, the repository test is red by design (rule 4); the reverse order would break rule 3. The deliver text says
+so, so that a red run at that commit is not read as a regression. The `design` phase adds: a task that fixes bugs declares them in `fixes`.
 
 ### Done
 
@@ -175,3 +179,21 @@ The `.wingfoil/` change (`memory.yaml`, the two templates, `kanban-delivery` 4) 
 5. `npm test`: 77 files, 1233/1233 (eight new), coverage 98.04 % statements, 90.93 % branches (the check lives in
    `test/support`, outside coverage's `src/`); `npm run lint` clean. `test:bin`/`test:docker` not run: no CLI,
    runner, image or scoring change.
+
+### Review
+
+- **Round 1** (independent read-only Explore subagent, on `e6ded8c`): nothing blocking. It verified the ten
+  bug → task pairs against each bug's Resolution, every hash of the notes, the searches, `memory history`, the
+  trailers, lint and the traceability tests, and found the Design's two fields justified (the acceptance criterion
+  reads the bug's history; bug-005 asks for both directions). Findings and outcomes:
+  1. should-fix — a scalar `fixes: bug-1-a` was iterated per character, with junk messages, and `includes` became a
+     substring match. **Fixed** red-first: `fixesOf` reads only a list, and a non-list is reported ("has a fixes that
+     is not a list"); a unit test.
+  2. nit — a duplicate id overwrote the first element, and an element without an id was skipped, both silently.
+     **Fixed** red-first: both are reported ("repeats the id", "has no id"); a unit test.
+  3. nit — the deliver text said nothing of the bug's Resolution section, which bug-005 lacks. **Fixed:** the deliver
+     text and the Design ask for it in the `fixed by` commit.
+  4. nit — main is red between the task's `done` and its bugs' `fixed`. **Fixed:** said in the deliver text and the
+     Design, as by design (the reverse order breaks rule 3).
+  Not verified by the reviewer: the full-suite count, and the red step of `f3d1ef9` (test and code in one commit).
+  This round's two new tests were run red before the code (2 failed, 19 passed), then green (21/21).
