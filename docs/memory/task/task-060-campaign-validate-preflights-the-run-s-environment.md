@@ -140,3 +140,12 @@ module later.
   7. nit — README said "not set" only. **Fixed:** "or names the wrong kind of path".
   8. nit — a harness tool without a table row is skipped silently. **Fixed:** a comment on the table and a test that
      pins it (`wingfoil` only) and shows an unknown tool is not listed.
+- **Round 2** (a new independent read-only Explore subagent, on `2f4ff00`): **clean**. It verified the eight
+  outcomes, ran the CLI tests (66/66) also under a hostile shell environment, `tsc`, and found the Design's `campaign
+  run` section matching the code and the test isolation sound. Two cosmetic nits, **not changed**: a docstring in
+  `run.ts` breaks mid-sentence after the inserted clause, and `scenario.ts`'s re-export sits between imports; a code
+  change would only re-open the suites.
+- Final checks on `2f4ff00`: `npm run lint` clean; `npm test` 78 files, 1249/1249, coverage 98.03 % statements,
+  90.78 % branches (`preflight.ts` 100 % statements, 87.87 % branches); `npm run test:bin` 8/8; `npm run
+  test:docker` 16/16. An earlier full run under load average ~90 had one unrelated failure (`@F4.8 Directive
+  violations…`, scoring), green alone and in this run.
