@@ -111,6 +111,34 @@ describe('bug link check', () => {
     ).toEqual(['task-1-a is done but bug-1-a is approved, not fixed']);
   });
 
+  it('reports a fixes that is not a list, and does not read it as one', () => {
+    expect(
+      problemsOf({
+        tasks: { 'task-1-a': ['status: done', 'fixes: bug-1-a'] },
+        bugs: { 'bug-1-a': ['status: fixed', 'fixed_by: task-1-a'] },
+      }),
+    ).toEqual([
+      'task-1-a has a fixes that is not a list',
+      'bug-1-a is fixed_by task-1-a, whose fixes does not list it',
+    ]);
+  });
+
+  it('reports an element without an id, and two elements with the same id', () => {
+    const root = tempDir('bench-bug-links-ids-');
+    mkdirSync(join(root, 'task'));
+    mkdirSync(join(root, 'bug'));
+    writeFileSync(join(root, 'task', 'a.md'), ['---', 'id: task-1-a', 'status: done', '---', ''].join('\n'));
+    writeFileSync(
+      join(root, 'task', 'b.md'),
+      ['---', 'id: task-1-a', 'status: backlog', '---', ''].join('\n'),
+    );
+    writeFileSync(join(root, 'bug', 'c.md'), ['---', 'status: fixed', '---', ''].join('\n'));
+    expect(bugLinkProblems(join(root, 'task'), join(root, 'bug'))).toEqual([
+      'b.md repeats the id task-1-a',
+      'c.md has no id',
+    ]);
+  });
+
   it('reads front matter with CRLF line endings', () => {
     const root = tempDir('bench-bug-links-crlf-');
     mkdirSync(join(root, 'task'));
