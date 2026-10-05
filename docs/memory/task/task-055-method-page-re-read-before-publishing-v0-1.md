@@ -134,3 +134,16 @@ A **re-review** of `4253600`: clean. Its three wording nits were fixed:
 
 `npm test` after the fixes: 1225 tests, green.
 
+### Approval
+
+The approver asked in chat (2026-10-05, "Si procedi, approva e mergia task 55") for the agent to run `memory
+approve` (in-review → approved): `f664534`, "Method page re-read against the campaign as it ran: auxiliary models, the
+manual's process, the slice's one arm, the output bound; independent review clean".
+
+### Delivery
+
+- Merged into `main` with `--no-ff` (`330de4f`).
+- `npx wingfoil memory submit task-055-…` (approved → done). Observed: `status: done`.
+- The worktree's ignored files were `coverage/`, `dist/` and `site/`, all rebuilt from the sources. It was removed,
+  and the branch deleted.
+
