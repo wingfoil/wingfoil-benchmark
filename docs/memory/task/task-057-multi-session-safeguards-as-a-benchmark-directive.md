@@ -33,7 +33,50 @@ README's development section points to it.
 
 ## Design
 
-<!-- Written in the task's design phase. -->
+dl-014 was approved as option **B** at rel-v0-2's triage (`63c41d4`: "option B, the multi-session rules as a
+benchmark directive, a task in W12"). Option C's tooling stays with WingFoil as usage notes N40 and N41.
+
+### Classification of the acceptance criteria
+
+**Characterization** by command: no product code changes. Before the change (`1abb503`) `directives list --role`
+gives developer `[code-quality, documentation, testing, determinism, doc-versioning, security-secrets]`, reviewer
+`[code-review, documentation, doc-versioning, security-secrets, traceability]`, qa `[documentation, testing,
+doc-versioning, security-secrets]`, approver `[documentation, doc-versioning, security-secrets]`. After it, every
+role lists `multi-session` too, and nothing else changes.
+
+### The directive
+
+`.wingfoil/directives/custom/multi-session.md`, `id: multi-session`, `kind: custom`, in the shape of the other
+custom directives (front matter, a title, the rules). Its rules are dl-014 B's five, each with the reason v0.1 met:
+
+1. one linked worktree per session (`git worktree add`), with its own `npm ci` and never a `node_modules` symlink;
+   no branch switch in a shared checkout;
+2. no history rewrite of `main` once any branch is based on it;
+3. every approval command (`memory approve` / `reject`) run, or handed over, with an explicit `cd` to the checkout
+   of the branch that should receive it; a handed-over command carries a drafted reason, not a placeholder (task-056,
+   usage note N50);
+4. real-agent runs from the main checkout, so that their ignored transcripts outlive task branches; `git status
+   --ignored` listed before removing a worktree, and no `git clean`;
+5. a consent or decision given in chat recorded with the approver's name, the date and the chat's words.
+
+Plus the practice dl-014's Context implies and the delivery prompts repeat: check the other sessions, announce the
+files a session touches, and commit as soon as a change is complete.
+
+### Binding
+
+Under `global:` in `.wingfoil/roles.yaml`: the rules concern whoever works the repository, the approver included
+(rule 3 is the approver's as much as the agent's), and `global` is how the existing cross-role rules
+(`security-secrets`, `doc-versioning`) are bound. Every role then lists it, which the acceptance criterion asks.
+
+### README
+
+The Development section gains a short paragraph: several sessions work the repository, and the rules are the
+`multi-session` directive, read with `npx wingfoil directives list`.
+
+### Commit
+
+One `chore(wingfoil)` commit for the directive and the binding, with dl-014's approval as `Approver:`/`Reason:`
+trailers; README in the same commit, as the task's "Done" names both.
 
 ## Execution notes
 
