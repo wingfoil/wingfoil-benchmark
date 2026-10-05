@@ -3,6 +3,7 @@ id: bug-004-session-cost-is-cumulative-so-summing-it-double-counts
 type: bug
 title: "Session cost is cumulative, so summing it double-counts"
 status: approved
+fixed_by: task-007-neutral-approver
 ---
 
 ## Context
