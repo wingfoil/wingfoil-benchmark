@@ -2,7 +2,7 @@
 id: dl-013-saturation-levels-of-delegation-and-an-external-neutral-control
 type: decision-log
 title: "Saturation, levels of delegation and an external neutral control"
-status: draft
+status: pending
 ---
 
 ## Context
