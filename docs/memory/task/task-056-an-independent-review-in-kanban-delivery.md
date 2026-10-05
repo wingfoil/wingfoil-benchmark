@@ -61,11 +61,14 @@ in the review phase's **description**, as dl-011 B says, and not as a `checks` e
 - **`version: 3`**, and the header comment says what version 3 adds and that it implements dl-011 B.
 - **`review`'s description** keeps what must hold (tests, coverage, lint, traceability, declared-vs-observed notes)
   and adds who reviews and how:
-  - an independent, read-only agent (a fresh session or subagent, not the one that built the task, without write
-    tools) reviews the task's branch against its Design, the requirements it names and its acceptance scenarios;
+  - an independent, read-only agent (a fresh session or subagent, not the one that built the task, with no
+    file-editing tools; it may run read-only and test commands) reviews the task's branch against its Design, the requirements it names and its acceptance scenarios;
   - every finding is fixed on the branch or recorded as a bug or decision-log (the `code-review` directive's rule);
-  - each fix is reviewed again, by an independent agent, until a round finds nothing to fix;
-  - the rounds, their reviewer and the outcome of every finding are recorded in the task's Review notes;
+  - each fix is reviewed again, by an independent agent, until a round finds nothing left to fix and every finding
+    is fixed or recorded as an element;
+  - the rounds, their reviewer and the outcome of every finding are recorded in a `### Review` subsection of the
+    task's Execution notes, one entry per round (the template has no such section, and v0.1's tasks used four
+    different headings for it);
   - a task is not submitted `in-progress → in-review` on a self-review.
 - The `fallback` (back to `build`, `in-progress`) is unchanged: a rejection by the approver starts a new round of
   build and independent review.
@@ -83,10 +86,15 @@ dl-006 (a WingFoil configuration change that implements an approver's decision, 
 
 ## Execution notes
 
-- `npx wingfoil memory add --type task --title "An independent review in kanban-delivery"`. Declared: creates the element from the template and
-  commits it. Observed: `wf(task): add task-056-an-independent-review-in-kanban-delivery`, `status: draft`.
-- First `memory submit` refused: "missing required field on submit: requirements". The task serves no product
+- `npx wingfoil memory add --type task --title "An independent review in kanban-delivery"` → `4d97360`. Declared: creates the element from the template and
+  commits it. Observed: `wf(task): add task-056-an-independent-review-in-kanban-delivery`, `status: draft`. Matches.
+- First `memory submit` refused: "missing required field on submit: requirements". Declared: `submit` validates the
+  type's required fields before the transition. Observed: refused, no commit. Matches; the friction is that the task serves no product
   requirement; [REQ-NFR-04] is the nearest, as task-052 did (WingFoil usage notes N17, N21: a required field cannot say "none").
+- `npx wingfoil memory submit task-056-…` → `d2c47b2`, on main after `8d18233`. Declared: `draft → pending`, one
+  commit. Observed: one commit, diff limited to `status`. Matches.
+- The approver's `memory approve task-056-…` → `0a86309` (`pending → backlog`, the subject names the transition).
+  Matches.
 
 ### WingFoil commands (declared vs observed)
 
@@ -105,3 +113,21 @@ dl-006 (a WingFoil configuration change that implements an approver's decision, 
    header comment and the review phase's description, as in the Design; plan-004's delivery rule points to it.
 2. No code changed. `npm test`: 77 files, 1225/1225 tests, coverage 98.04 % statements, 90.93 % branches; `npm run
    lint` clean. `test:bin` and `test:docker` not run: no CLI, runner, image or scoring change.
+
+### Review
+
+- **Round 1** (independent read-only agent, a fresh Explore subagent with no file-editing tools, on `93bf44e`): no
+  blocking finding; it re-ran `workflow list` on both checkouts and confirmed the two-line diff, the trailers and
+  plan-004's pointer. Findings and outcomes:
+  1. should-fix — "A task is not submitted on a self-review" did not say which submit (the workflow has four).
+     **Fixed:** "not submitted for review (in-progress → in-review)".
+  2. should-fix — "the task's Review notes" named no section (the template has none; v0.1 used four headings).
+     **Fixed:** "a `### Review` subsection of the task's Execution notes, one entry per round", in the workflow and
+     the Design.
+  3. nit — "read-only … without write tools" could be read as forbidding test commands, which the `code-review`
+     directive requires. **Fixed:** "no file-editing tools; it may run read-only and test commands".
+  4. nit — "until a round finds nothing to fix" left unclear whether recorded findings end the loop. **Fixed:**
+     "until a round finds nothing left to fix and every finding is fixed or recorded as an element".
+  5. nit — the Execution notes lacked the `memory add` hash and the main-side submit and approve. **Fixed:** added.
+  After the fixes, `workflow list`: exit 0, 19 565 bytes, still a two-line diff from main (version and the review
+  description).
