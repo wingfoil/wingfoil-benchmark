@@ -3,6 +3,7 @@ id: bug-010-a-429-rate-limit-rejection-fails-the-run-as-an-api-error-instead-of-
 type: bug
 title: "A 429 rate-limit rejection fails the run as an api_error instead of being recognised as the subscription's limit"
 status: approved
+fixed_by: task-051-a-429-rate-limit-rejection-recognised-as-the-subscription-s-limit
 ---
 
 ## Context
