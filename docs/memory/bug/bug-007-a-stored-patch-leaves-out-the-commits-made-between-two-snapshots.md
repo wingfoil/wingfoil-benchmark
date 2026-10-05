@@ -3,6 +3,7 @@ id: bug-007-a-stored-patch-leaves-out-the-commits-made-between-two-snapshots
 type: bug
 title: "A stored patch leaves out the commits made between two snapshots"
 status: approved
+fixed_by: task-027-hidden-test-oracle
 ---
 
 ## Context
