@@ -84,3 +84,21 @@ trailers; README in the same commit, as the task's "Done" names both.
   commits it. Observed: `wf(task): add task-057-multi-session-safeguards-as-a-benchmark-directive`, `status: draft`.
 - First `memory submit` refused: "missing required field on submit: requirements". The task serves no product
   requirement; [REQ-NFR-01, REQ-NFR-02] is the nearest, as task-052 did (WingFoil usage notes N17, N21: a required field cannot say "none").
+
+### WingFoil commands (declared vs observed)
+
+- `npx wingfoil memory submit task-057-…` → `c25f926`, in the linked worktree
+  `WingFoil2-Benchmark-task-057` with its own `npm ci`. Declared: `backlog → in-progress`, one commit. Observed: exit
+  0, JSON `{"from": "backlog", "to": "in-progress"}`, one file, diff limited to `status`. Matches.
+- `npx wingfoil directives list --role <role>` for developer, reviewer, qa, approver, product-owner, before (`1abb503`)
+  and after (`ffb2caf`): exit 0, empty stderr. After, each role lists `multi-session` and nothing else changed; its entry
+  reads `"global": true`, `"assignment": "global (all roles)"`, `"roles": []`. Declared (`roles.yaml`'s header:
+  "Global directives apply to every role"): a global directive is listed for every role. Observed: as declared.
+  Matches.
+
+### Build
+
+1. `ffb2caf` (`chore(wingfoil)`, dl-014's approval as trailers): `.wingfoil/directives/custom/multi-session.md`, its
+   `global` binding in `roles.yaml`, and README's Development paragraph.
+2. No code changed. `npm test` 1225/1225, coverage 98.04 % statements, 90.93 % branches; `npm run lint` clean.
+   `test:bin`/`test:docker` not run: no CLI, runner, image or scoring change.
