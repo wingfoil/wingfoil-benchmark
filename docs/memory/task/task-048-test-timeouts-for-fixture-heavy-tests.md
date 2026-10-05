@@ -8,6 +8,7 @@ wave: W11
 features: [F5.5]
 acceptance: [results.feature]
 requirements: [REQ-NFR-04]
+fixes: [bug-008-tests-that-build-stored-runs-rely-on-vitest-s-5-s-default-and-time-out-under-load]
 ---
 
 ## Context

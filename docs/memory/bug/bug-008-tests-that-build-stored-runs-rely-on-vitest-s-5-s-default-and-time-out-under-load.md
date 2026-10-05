@@ -3,6 +3,7 @@ id: bug-008-tests-that-build-stored-runs-rely-on-vitest-s-5-s-default-and-time-o
 type: bug
 title: "Tests that build stored runs rely on vitest's 5 s default and time out under load"
 status: approved
+fixed_by: task-048-test-timeouts-for-fixture-heavy-tests
 ---
 
 ## Context
