@@ -16,7 +16,8 @@ export const HOLDOUT_VARIABLE = 'BENCH_HOLDOUT_PATH';
 /**
  * The local clone each harness tool is built from (REQ-RUN-14), by tool. The preflight and the spending checks read
  * this one table, so that they cannot name different variables; v0.1 builds WingFoil only, and each competitor arm
- * adds its row.
+ * adds its row. A tool without a row is not listed by the preflight (its build then fails on its own), so a new
+ * harness arm adds its row with its builder: test/unit/cli/preflight.test.ts pins the table.
  */
 export const HARNESS_SOURCE_VARIABLES = { wingfoil: 'BENCH_WINGFOIL_REPO' } as const;
 

@@ -129,7 +129,9 @@ function estimateCommand(file: string, io: Io): number {
 
 /**
  * REQ-CLI-03: `bench campaign run <file>` executes the campaign, one session per step (F2.2). Before
- * anything is built, the budget guard (F1.3, task-023 Design): no estimate or an estimate above
+ * anything is built: first the preflight (bug-014, task-060), every variable the runs need, so that a missing
+ * credential or clone is refused before the ceiling and the spending flag; then the budget guard (F1.3, task-023
+ * Design): no estimate or an estimate above
  * `ceiling_eur` refuses, with no override; then a real agent only with {@link SPENDING_FLAG}; then above
  * `warn_eur` the maintainer confirms on a terminal. It prints its estimate before and its cost after
  * (REQ-NFR-06).

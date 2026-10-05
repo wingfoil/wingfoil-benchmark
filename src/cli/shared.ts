@@ -124,7 +124,8 @@ export interface Spending {
  * refused and up to what — then its credential, then the WingFoil clone when a WingFoil harness is
  * built. Whenever the agent is not the free one, the credential is required — with injected ports
  * too, because the container's environment is the runner's business, not the port's; requiring it
- * only for real ports left the whole credential path untested.
+ * only for real ports left the whole credential path untested. Since task-060, `campaign run`'s preflight refuses a
+ * missing credential or clone first; these checks stay as the second line of defence, and as `scenario dry-run`'s.
  */
 export function checkSpending(
   pins: RunPins,

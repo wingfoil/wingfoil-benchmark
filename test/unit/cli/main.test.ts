@@ -63,9 +63,10 @@ describe('bench campaign validate', () => {
   });
 
   it('uses the singular for one scenario and one arm', async () => {
+    vi.stubEnv('BENCH_FAKE_SCRIPT', '');
     const { stdout } = await run('campaign', 'validate', repoPath('test/fixtures/campaigns/smoke.yaml'));
     expect(stdout).toMatch(
-      / is valid \(1 scenario, 1 arm\)\nrequires BENCH_FAKE_SCRIPT \(fake agent script, for run\): (set|missing)\n$/,
+      / is valid \(1 scenario, 1 arm\)\nrequires BENCH_FAKE_SCRIPT \(fake agent script, for run\): missing\n$/,
     );
   });
 
@@ -160,8 +161,8 @@ describe('bench campaign run', () => {
     vi.stubEnv('BENCH_AGENT_TOKEN_FILE', '');
     vi.stubEnv('BENCH_WINGFOIL_REPO', '');
     const ports = doubles();
+    vi.stubEnv('BENCH_HOLDOUT_PATH', '');
     const { code, stdout, stderr } = await runWith(ports, 'campaign', 'run', file, '--allow-spending');
-    vi.unstubAllEnvs();
     expect(code).toBe(1);
     expect(stdout).toBe('');
     expect(stderr.trimEnd().split('\n')).toEqual([
@@ -169,6 +170,30 @@ describe('bench campaign run', () => {
       'BENCH_WINGFOIL_REPO: is not set: it names the local WingFoil clone the WingFoil under test is built from',
     ]);
     expect(ports.recorded.builds).toEqual([]);
+    // The hold-out is scoring's: unset, it never stops a run.
+    expect(stderr).not.toContain('BENCH_HOLDOUT_PATH');
+  });
+
+  it('does not refuse a path of this machine that the injected ports never use', async () => {
+    stubMachine();
+    const { file } = writeRepo(completeCampaignYaml());
+    priceCampaign(file);
+    vi.stubEnv('BENCH_WINGFOIL_REPO', '/clones/wingfoil');
+    const ports = doubles();
+    const { code } = await runWith(ports, 'campaign', 'run', file, '--allow-spending');
+    expect(code).toBe(0);
+    expect(ports.recorded.gitCalls[0]).toBe('resolve /clones/wingfoil 3df305e');
+  });
+
+  it("prints no token file's content, whatever it validates or refuses", async () => {
+    stubMachine();
+    const { file } = writeRepo(completeCampaignYaml());
+    const validated = await run('campaign', 'validate', file);
+    vi.stubEnv('BENCH_WINGFOIL_REPO', join(tempDir('bench-nodir-'), 'missing'));
+    const refused = await run('campaign', 'run', file, '--allow-spending');
+    expect(refused.stderr).toMatch(/^BENCH_WINGFOIL_REPO: is invalid: /);
+    for (const output of [validated.stdout, validated.stderr, refused.stdout, refused.stderr])
+      expect(output).not.toContain('NOT-A-TOKEN');
   });
 
   it('refuses a requirement that is set to the wrong thing, before the estimate, with the real ports', async () => {

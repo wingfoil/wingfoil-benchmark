@@ -22,9 +22,21 @@ describe('the built bench command', () => {
     execFileSync('npm', ['run', 'build'], { cwd: REPO_ROOT, encoding: 'utf8' });
   }, 120_000);
 
+  /** Runs `npx bench`, with `env` added to the inherited environment. */
   function bench(...args: string[]): { status: number; stdout: string; stderr: string } {
+    return benchWith({}, ...args);
+  }
+
+  function benchWith(
+    env: Record<string, string>,
+    ...args: string[]
+  ): { status: number; stdout: string; stderr: string } {
     try {
-      const stdout = execFileSync('npx', ['bench', ...args], { cwd: REPO_ROOT, encoding: 'utf8' });
+      const stdout = execFileSync('npx', ['bench', ...args], {
+        cwd: REPO_ROOT,
+        encoding: 'utf8',
+        env: { ...process.env, ...env },
+      });
       return { status: 0, stdout, stderr: '' };
     } catch (error) {
       const failure = error as { status: number; stdout: string; stderr: string };
@@ -46,10 +58,17 @@ describe('the built bench command', () => {
   });
 
   it('validates the trivial campaign through npx', () => {
-    const { status, stdout } = bench('campaign', 'validate', repoPath('test/fixtures/campaigns/smoke.yaml'));
+    const { status, stdout } = benchWith(
+      { BENCH_FAKE_SCRIPT: '' },
+      'campaign',
+      'validate',
+      repoPath('test/fixtures/campaigns/smoke.yaml'),
+    );
     expect({ status, stdout }).toEqual({
       status: 0,
-      stdout: 'campaign 9491f7cd4bb7 is valid (1 scenario, 1 arm)\n',
+      stdout:
+        'campaign 9491f7cd4bb7 is valid (1 scenario, 1 arm)\n' +
+        'requires BENCH_FAKE_SCRIPT (fake agent script, for run): missing\n',
     });
   });
 
@@ -87,7 +106,9 @@ describe('the built bench command', () => {
     priceCampaign(file, 130);
 
     for (const flags of [[], ['--allow-spending']]) {
-      expect(bench('campaign', 'run', file, ...flags)).toEqual({
+      // The fake agent's script is there, so that the ceiling is what refuses (bug-014's preflight comes first).
+      const script = { BENCH_FAKE_SCRIPT: repoPath('test/fixtures/fake-script.json') };
+      expect(benchWith(script, 'campaign', 'run', file, ...flags)).toEqual({
         status: 1,
         stdout: 'estimate: 130.0000 USD, 130.0000 EUR at 1 EUR/USD, API-equivalent\n',
         stderr:

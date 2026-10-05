@@ -71,11 +71,25 @@ missing variable is information for the maintainer before `run`, which refuses.
 
 ### `campaign run`
 
-Right after `checkCampaign`, **before the estimate**: every requirement needed by `run` that is missing or invalid
-is reported at once, each as `<variable>: not started: <kind> is missing|invalid…`, exit 1, nothing built or spent.
-`BENCH_FAKE_SCRIPT` is skipped when ports are injected (the tests' doubles need no script, as `portsFor` already
-assumes). The later checks (`--allow-spending`, the credential's content, the WingFoil clone in `checkSpending`)
-stay where they are, as a second line of defence; with the preflight passed they find what they need.
+Right after `checkCampaign`, **before the estimate**: every requirement needed by `run` is checked, and all unmet
+ones are reported at once, exit 1, nothing built or spent:
+
+- a **missing** variable is always refused, with the wording the later checks already used, `<variable>: is not
+  set: <what it names>` (one `PURPOSES` table, which `checkSpending` and `portsFor` now read too), so that
+  `scenario dry-run`'s tests and every message a maintainer has seen stay the same;
+- a variable that names the **wrong kind of path** is refused, `<variable>: is invalid: <path> <problem>`, only with
+  the real ports: injected ports (the tests' doubles) use no path of this machine, as `/clones/wingfoil` in the
+  existing tests shows;
+- `BENCH_FAKE_SCRIPT` is skipped when ports are injected (the doubles need no script, as `portsFor` assumes).
+
+This **moves the environment ahead of the budget guard**: W5 decision 5's order was the spending flag, then the
+credential, then the clone, all after the estimate and the ceiling. A real-agent campaign without its credential is
+now refused before the ceiling and before `--allow-spending`. The three existing tests about those later refusals
+(`refuses to spend before anything runs…`, `refuses the ceiling before it asks for the spending flag…`, `refuses to
+spend without an explicit opt-in…`) therefore get a machine with what the runs need (`stubMachine()`), their
+assertions unchanged; and the bin test of W5's "Ends with" gets the fake agent's script, so that the ceiling is what
+refuses. The later checks (`--allow-spending`, the credential's content, the WingFoil clone in `checkSpending`)
+stay where they are, as a second line of defence and as `scenario dry-run`'s checks.
 
 Requirements needed by `score` never stop `run`: scoring is a separate command, which already refuses without its
 hold-out.
@@ -102,3 +116,27 @@ module later.
 
 - `npx wingfoil memory add --type task --title "Campaign validate preflights the run's environment"`. Declared: creates the element from the template and
   commits it. Observed: `wf(task): add task-060-campaign-validate-preflights-the-run-s-environment`, `status: draft`.
+
+### Review
+
+- **Round 1** (independent read-only Explore subagent, on `dd82ffe`; no full suite, the machine loaded): not clean.
+  It ran `tsc` and the CLI, dry-run and campaign acceptance tests (100, green), and read `test:bin`'s cases.
+  Findings and outcomes:
+  1. **blocking** — `test:bin` fails twice: `validate`'s exact stdout now has a `requires` line, and W5's "Ends
+     with" runs a fake campaign with real ports and no script, so the preflight refuses before the ceiling.
+     Confirmed by the `test:bin` run (2 failed). **Fixed:** the bin helper passes an environment; the validate case
+     expects the `requires BENCH_FAKE_SCRIPT … missing` line, and the ceiling case gets the fake script.
+  2. should-fix — the Design's messages and "invalid always refused" no longer matched the build, and the new order
+     (environment before the ceiling and the flag) was unsaid. **Fixed:** the Design's `campaign run` section says
+     all three, and why the three existing tests got `stubMachine()` with unchanged assertions.
+  3. should-fix — `runCampaignCommand`'s and `checkSpending`'s docstrings did not mention the preflight. **Fixed.**
+  4. should-fix — the planned "no content is printed" test was missing. **Fixed:** `validate` and a refused `run`
+     against a stubbed token file; no output contains its content.
+  5. should-fix — untested branches. **Fixed:** an invalid path with injected ports is not refused (the run
+     completes and resolves `/clones/wingfoil`); an unreadable token file is invalid (skipped as root); an unset
+     hold-out never appears in `run`'s refusal.
+  6. nit — the singular `validate` test depended on the shell's `BENCH_FAKE_SCRIPT`, and one test unstubbed inline.
+     **Fixed:** stubbed empty, `missing` asserted; the inline unstub removed (a file-level `afterEach` does it).
+  7. nit — README said "not set" only. **Fixed:** "or names the wrong kind of path".
+  8. nit — a harness tool without a table row is skipped silently. **Fixed:** a comment on the table and a test that
+     pins it (`wingfoil` only) and shows an unknown tool is not listed.

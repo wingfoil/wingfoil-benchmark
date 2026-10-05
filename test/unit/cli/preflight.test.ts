@@ -1,9 +1,13 @@
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { campaignRequirements, formatRequirement } from '../../../src/cli/preflight.js';
+import {
+  campaignRequirements,
+  formatRequirement,
+  HARNESS_SOURCE_VARIABLES,
+} from '../../../src/cli/preflight.js';
 import { checkCampaign } from '../../../src/runner/index.js';
 import type { CheckedCampaign } from '../../../src/runner/index.js';
 import { completeCampaignYaml, writeRepo } from '../../support/campaign-fixture.js';
@@ -73,6 +77,33 @@ describe('campaign requirements', () => {
         state: 'invalid',
         problem: `${join(dir, 'no-such-holdout')} does not exist`,
       }),
+    ]);
+  });
+
+  it.skipIf(process.getuid?.() === 0)('says invalid for a token file that exists but cannot be read', () => {
+    const { token } = machine();
+    chmodSync(token, 0o000);
+    expect(campaignRequirements(complete(), { BENCH_AGENT_TOKEN_FILE: token })[0]).toEqual(
+      expect.objectContaining({ state: 'invalid', problem: `${token} is not a readable file` }),
+    );
+  });
+
+  it('builds the clone of WingFoil only: a harness tool without a row is not listed, until its arm adds one', () => {
+    expect(HARNESS_SOURCE_VARIABLES).toEqual({ wingfoil: 'BENCH_WINGFOIL_REPO' });
+    // A campaign check refuses a harness no arm requires, so the extra tool is added after it.
+    const checked = complete();
+    const spec = checked.campaign.spec;
+    const withOther: CheckedCampaign = {
+      ...checked,
+      campaign: {
+        ...checked.campaign,
+        spec: { ...spec, harnesses: { ...spec.harnesses, other: { tool: 'other-tool', version: '1.0.0' } } },
+      },
+    };
+    expect(campaignRequirements(withOther, {}).map((r) => r.variable)).toEqual([
+      'BENCH_AGENT_TOKEN_FILE',
+      'BENCH_WINGFOIL_REPO',
+      'BENCH_HOLDOUT_PATH',
     ]);
   });
 

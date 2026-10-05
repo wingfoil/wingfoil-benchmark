@@ -110,7 +110,8 @@ It then lists what the campaign's runs need from the machine, one `requires` lin
 | `BENCH_WINGFOIL_REPO` | the local WingFoil clone the harness is built from | `run` | a `wingfoil` harness |
 | `BENCH_HOLDOUT_PATH` | the hold-out (or `--holdout`) | `score` | a scenario that declares one |
 
-`run` refuses, before its estimate and naming every one, when a variable it needs is not set.
+`run` refuses, before its estimate and naming every one, when a variable it needs is not set, or names the wrong
+kind of path.
 `run` executes every scenario × arm × repetition with the default model, then each model slice's
 scenarios × arms × repetitions with the slice's model: one Docker image per campaign, one container per
 run, whose only mount is that run's fresh workspace (a copy of the scenario seed, made a git
