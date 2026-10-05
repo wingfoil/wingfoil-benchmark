@@ -209,3 +209,5 @@ The `.wingfoil/` change (`memory.yaml`, the two templates, `kanban-delivery` 4) 
 
 - `npx wingfoil memory submit task-058-…` → `d9c0701`. Declared: `in-progress → in-review`, one commit. Observed: exit
   0, JSON `from`/`to` as declared, one file, diff limited to `status`. Matches.
+- The approver's `memory approve task-058-… --reason "…"` → `d16bae4`, run from this worktree (`in-review →
+  approved`, `Approver:`/`Reason:` trailers with the drafted reason, only `status` changed). Matches.
