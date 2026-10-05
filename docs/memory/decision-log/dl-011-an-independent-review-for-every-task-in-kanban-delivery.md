@@ -2,7 +2,7 @@
 id: dl-011-an-independent-review-for-every-task-in-kanban-delivery
 type: decision-log
 title: "An independent review for every task in kanban-delivery"
-status: draft
+status: pending
 ---
 
 ## Context
