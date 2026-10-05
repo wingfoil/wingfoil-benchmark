@@ -42,7 +42,7 @@ Waves and features from [07_sequencer.md](../../01_vision/07_sequencer.md) 1.1. 
 | W8 — Continuity and governance | F6.3 S3 multi-session evolution · F6.8 S8 directive compliance · F4.8 tool-neutral governance metrics | — | S3 and S8 scored | **2026-09-29** |
 | W9 — Quality | F4.2 static quality · F4.7 next-change cost · F4.4 setup/step split and break-even | — | the full quality and cost picture per run | **2026-09-29** |
 | W10 — Determinism and findings | F4.5 determinism metric · F5.3 run detail · F5.4 finding note | F4.5 | determinism measured, and a first finding note ready for WingFoil | **2026-09-30** |
-| W11 — Publish | F5.5 landing page · F5.8 method page · F5.6 manual publish | — | first preliminary result public; repository public | offline half **2026-10-01**; public half due at plan-003 step 6 |
+| W11 — Publish | F5.5 landing page · F5.8 method page · F5.6 manual publish | — | first preliminary result public; repository public | offline half **2026-10-01**; public half **2026-10-05** |
 
 The "Verified" column records, for each wave, the evidence that its "Ends with" holds (kanban-delivery,
 deliver phase).
@@ -855,14 +855,34 @@ reported in all so far ([v0.1 ledger](../../calibration/v0.1-ledger.md)).
 - **Before publishing**, re-read `site-content/method.md` against the requirements as they stand; the
   statements test pins the anchors, not their wording.
 
+### W11 — public half verified 2026-10-05
+
+**"First preliminary result public; repository public."** Verified at plan-003 step 6, on the reference campaign's
+published execution ([campaign-001](../campaign/campaign-001-v0-1-reference-campaign.md), `c82a5e74885b/2`).
+
+- **The repository is public:** the approver made `wingfoil/wingfoil-benchmark` public on 2026-10-05, and an
+  anonymous `git ls-remote` read it. `main` was pushed by the approver.
+- **The site is published:**
+  - the approver approved publishing (`7ef4c55`), then ran `bench site publish`, which created `gh-pages`
+    (`9df8424`) from `site/` holding `c82a5e74885b/2` alone;
+  - Pages serves it at <https://wingfoil.github.io/wingfoil-benchmark/c82a5e74885b/2/>, and the landing page and the
+    method page answer 200.
+- **The transcripts are attached:**
+  - `bench transcripts pack c82a5e74885b/2` (token file set, so the value was checked as well as the shape) packed
+    86 transcripts, 6 656 064 bytes, sha256 `21bec72d…148ccb`;
+  - the approver created the release `c82a5e74885b-2` with it. The asset downloaded from GitHub has the same
+    sha256;
+  - the 19 `run.json` the pack rewrote were committed after that, not before.
+- The method page was re-read before publishing (task-055), as W11 left due.
+
 ## Release checklist
 
 - [x] release-planning: scope approved (planning → in-development, `8c5c7e6`; plan: plan-003)
-- [ ] delivery: W1–W11 done, every wave's "Ends with" verified (W1 done: task-001, task-002, task-003; W2 done: task-004, task-005, task-006, task-007; W3 done: task-011, task-012, task-013, task-014, task-015; W4 done: task-016, task-017, task-018, task-020, task-019; W5 done: task-021, task-022, task-023, task-024, task-025; W6 done: task-026, task-027, task-028, task-029, task-030; W7 done: task-031, task-032, task-033, task-034; W8 done: task-035, task-036, task-037, task-038; W9 done: task-039, task-040, task-041; W10 done: task-042, task-043, task-044; W11 done: task-045, task-048, task-046, task-047, its public half due at plan-003 step 6)
+- [x] delivery: W1–W11 done, every wave's "Ends with" verified (W1 done: task-001, task-002, task-003; W2 done: task-004, task-005, task-006, task-007; W3 done: task-011, task-012, task-013, task-014, task-015; W4 done: task-016, task-017, task-018, task-020, task-019; W5 done: task-021, task-022, task-023, task-024, task-025; W6 done: task-026, task-027, task-028, task-029, task-030; W7 done: task-031, task-032, task-033, task-034; W8 done: task-035, task-036, task-037, task-038; W9 done: task-039, task-040, task-041; W10 done: task-042, task-043, task-044; W11 done: task-045, task-048, task-046, task-047, its public half verified 2026-10-05)
 - [x] calibration: dry runs in every arm, budget revised (`docs/calibration/v0.1.md`) — task-049 (WingFoil v0.2.2 as the harness under test), task-050 (19 dry runs, 74.17 USD; S1 made harder, step 5; revised budget option A: Opus slice in the wingfoil arm, warn 65 €, ceiling 85 €, cap 30 €; S1–S3, S8 registered; approved `721321f`, merged `d1f348a`)
 - [x] validation: acceptance green on the fake agent, coverage > 80%, lint clean, one real-agent end-to-end run — task-052 (on `92b1bf8`: `npm test` 1212 tests, coverage 98.03 % statements, lint clean, Docker 16/16; S3@1.0 baseline on Sonnet 5, campaign `d032e3e98de3/1`: completed, 1.0064 USD (0.8908 €), final 34/37, hold-out 16/17, scored, shown, site built locally, transcripts pack checked without a release; a line of the [ledger](../../calibration/v0.1-ledger.md); approved `4ead1a1`, merged `65de6f2`)
-- [ ] campaign: reference campaign published (campaign: —)
-- [ ] publishing: tag `v0.1`, repository public, site published, release notes, transcripts attached
+- [x] campaign: reference campaign published (campaign: [campaign-001](../campaign/campaign-001-v0-1-reference-campaign.md), `c82a5e74885b/2`: 19/19 runs, 61.38 €, the Opus slice 23.26 €; `/1` not published, bug-011 fixed by task-053; task-054 and task-055 before publishing; one finding, M-K1 on S1; published `7ef4c55`)
+- [ ] publishing: tag `v0.1`, repository public, site published, release notes, transcripts attached (done: repository public, site published at wingfoil.github.io/wingfoil-benchmark, transcripts release `c82a5e74885b-2`, release notes [docs/releases/v0.1.md](../../releases/v0.1.md); due: tag and release `v0.1`)
 - [ ] retrospective: section below written; WingFoil usage notes handed to the approver
 
 ## Retrospective
