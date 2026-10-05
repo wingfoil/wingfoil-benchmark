@@ -77,8 +77,9 @@ Two fields that say one thing could drift, so a test holds them together.
 3. a bug in `fixed` without `fixed_by`, or whose `fixed_by` task is not `done`;
 4. a `done` task's `fixes` entry whose bug is neither `fixed` nor `deprecated`.
 
-Unit tests on temporary directories cover each rule, red first; then the repository test, which is red until the
-migration below is done.
+Unit tests on temporary directories cover each rule, red first. The repository test is green before the migration
+(no element carries a link yet), red as soon as a done task declares a bug still `approved`, and green again once
+that bug is `fixed`: the migration's first pair shows it.
 
 ### Migration (the ten bugs)
 
@@ -122,3 +123,55 @@ The `.wingfoil/` change (`memory.yaml`, the two templates, `kanban-delivery` 4) 
   commits it. Observed: `wf(task): add task-058-a-fixed-state-and-a-fixes-link-for-bugs`, `status: draft`.
 - First `memory submit` refused: "missing required field on submit: requirements". The task serves no product
   requirement; [REQ-NFR-02] is the nearest, as task-052 did (WingFoil usage notes N17, N21: a required field cannot say "none").
+
+### WingFoil commands (declared vs observed)
+
+- `npx wingfoil memory submit task-058-…` → `f7ab092`, in the linked worktree `WingFoil2-Benchmark-task-058` with its
+  own `npm ci`. Declared: `backlog → in-progress`, one commit. Observed: exit 0, JSON `from`/`to` as declared, one
+  file, diff limited to `status`. Matches.
+- The new machine, probed first in a throwaway clone of the branch (`scratchpad`, deleted after):
+  - `memory add --type bug --title "Probe"`: the template's `# fixed_by: …` comment line is copied verbatim into the
+    new bug's front matter. Declared: the scaffold is copied verbatim. Matches.
+  - `memory submit` on an `approved` bug: `approved → fixed`, one commit `wf(bug): submit <id>`. Declared
+    (`memory.yaml`'s header): `submit` walks `sequence`, and `approved` is not a gate. Matches.
+  - A second `submit` on the `fixed` bug: refused, exit 1, `illegal transition fixed -> pending for type 'bug'`.
+    Refusing is right; the message names `pending`, the sequence's first gate, not a successor (usage note N49,
+    reproduced).
+- `npx wingfoil memory submit <bug>` ×10 on this branch, each after its link commit:
+
+  | Bug | Task | Link commit | Submit | Transition |
+  |---|---|---|---|---|
+  | bug-001 | task-008 | `5490700` | `b3d50c1` | approved → fixed |
+  | bug-002 | task-009 | `bc66560` | `fa714c3` | approved → fixed |
+  | bug-003 | task-010 | `b5d3b92` | `d4fa301` | approved → fixed |
+  | bug-004 | task-007 | `f6f6a90` | `191cd8b` | approved → fixed |
+  | bug-006 | task-019 | `87622a3` | `001f023` | approved → fixed |
+  | bug-007 | task-027 | `e9bcad8` | `1b80925` | approved → fixed |
+  | bug-008 | task-048 | `0f0042e` | `c5a7af0` | approved → fixed |
+  | bug-009 | task-050 | `a2258c2` | `e595755` | approved → fixed |
+  | bug-010 | task-051 | `3c16529` | `6285e0f` | approved → fixed |
+  | bug-011 | task-053 | `3622cfa` | `5a990e4` | approved → fixed |
+
+  Declared: one commit each, `status` only. Observed: exit 0 each, one file and one line changed each (the
+  `fixed_by` line written just before is kept). Matches.
+- `npx wingfoil memory search --type bug --status approved` after the migration: bug-005, bug-012, bug-013, bug-014,
+  bug-015. `--status fixed`: the ten above. Declared: filter by type and status. Matches; this is the task's "Done"
+  except bug-005, which moves in the deliver phase.
+- `npx wingfoil memory history bug-004-…`: its last entries are `f6f6a90` "docs(bug): bug-004 fixed by task-007"
+  (operation `null`, a content commit) and `191cd8b` `submit`, `approved → fixed`. The acceptance criterion's "with
+  its task named" is read there. Declared: one entry per commit touching the file. Matches (stderr still carries
+  N7's `fatal: path … exists on disk, but not in 'd5a31a4…'`).
+- `npx wingfoil workflow list` after `kanban-delivery` 4: exit 0, no warning.
+
+### Build
+
+1. `f3d1ef9` `test(traceability)`: `bugLinkProblems` in `test/support/traceability.ts`, seven unit tests on temporary
+   directories and the repository test, written first and red (`bugLinkProblems is not a function`), then green.
+2. `6664cb6` `chore(wingfoil)` (trailers from task-058's backlog approval): the bug machine, the templates' `fixes` and
+   `fixed_by`, `kanban-delivery` 4.
+3. The repository test red on purpose: with `fixes` added to task-008 alone, it reported "task-008-… is done but
+   bug-001-… is approved, not fixed"; green after bug-001's link commit and submit.
+4. The ten pairs above, then task-058's own `fixes: [bug-005-…]`.
+5. `npm test`: 77 files, 1233/1233 (eight new), coverage 98.04 % statements, 90.93 % branches (the check lives in
+   `test/support`, outside coverage's `src/`); `npm run lint` clean. `test:bin`/`test:docker` not run: no CLI,
+   runner, image or scoring change.
