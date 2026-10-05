@@ -150,3 +150,8 @@ trailers; README in the same commit, as the task's "Done" names both.
   `ae41e68`, nothing reachable from origin/main) and rule 2's text.
 - Final checks on `6ddf65f`: `npm test` 1225/1225, coverage 98.04 % statements, 90.93 % branches; `npm run lint`
   clean.
+
+### Review and approval
+
+- `npx wingfoil memory submit task-057-…` → `c4aa59c`. Declared: `in-progress → in-review`, one commit. Observed: exit
+  0, JSON `{"from": "in-progress", "to": "in-review"}`, one file, diff limited to `status`. Matches.
