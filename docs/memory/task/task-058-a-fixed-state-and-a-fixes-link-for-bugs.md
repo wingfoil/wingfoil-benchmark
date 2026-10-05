@@ -8,6 +8,7 @@ wave: W12
 features: []
 acceptance: []
 requirements: [REQ-NFR-02]
+fixes: [bug-005-a-bug-cannot-name-the-task-that-fixes-it-and-never-closes]
 ---
 
 ## Context
