@@ -111,10 +111,10 @@ is reviewed against WingFoil's `docs/agents.md` at the pinned tag (N43).
 
 ## Release checklist
 
-- [ ] release-planning: scope approved, triage recorded, specification amended for the new features, W12 tasks
-  created (plan: [plan-004](../../plans/plan-004-release-v0-2.md)) — done so far: triage recorded (`c304315`);
-  specification approved and merged (`149745f`: experiment design 1.2, requirements 1.26, acceptance 1.1,
-  traceability 1.4, after three independent reviews); due: the W12 tasks, then the scope gate
+- [x] release-planning: scope approved (planning → in-development, `5f68d97`, 2026-10-05); triage recorded
+  (`c304315`); specification approved and merged (`149745f`: experiment design 1.2, requirements 1.26, acceptance 1.1,
+  traceability 1.4, after three independent reviews); W12 tasks task-056 to task-067 in the backlog (plan:
+  [plan-004](../../plans/plan-004-release-v0-2.md))
 - [ ] delivery: W12–W14 done, every wave's "Ends with" verified
 - [ ] calibration: dry runs in every arm, budget revised (`docs/calibration/v0.2.md`)
 - [ ] validation: acceptance green on the fake agent, coverage > 80 %, lint clean, the real-agent validation dl-010
