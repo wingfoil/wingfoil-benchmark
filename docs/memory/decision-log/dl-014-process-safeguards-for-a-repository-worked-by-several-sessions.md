@@ -2,7 +2,7 @@
 id: dl-014-process-safeguards-for-a-repository-worked-by-several-sessions
 type: decision-log
 title: "Process safeguards for a repository worked by several sessions"
-status: pending
+status: approved
 ---
 
 ## Context
