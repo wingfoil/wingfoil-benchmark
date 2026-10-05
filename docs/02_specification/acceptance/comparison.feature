@@ -1,6 +1,6 @@
 # Acceptance — Campaign comparison and Dana's views (v0.2)
 # Traces to: F5.2, F5.7 · J2 step 6, J5 steps 1 and 5 · experiment design 1.2 §4.6, §5 T7, T14, T15
-# Version: 1.0 (draft) · Status: in review (2026-10-05)
+# Version: 1.0 · Status: Approved (2026-10-05)
 
 Feature: A campaign compared with an earlier one, and filtered views with permanent links
   As the maintainer, and as Dana who evaluates adoption

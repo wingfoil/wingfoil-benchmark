@@ -1,8 +1,8 @@
 # Requirements (v0.1, v0.2)
 
-**Version:** 1.26 (draft for review: v0.2's release-planning)
+**Version:** 1.26
 **Date:** 2026-10-05
-**Status:** Approved (1.25); 1.26 in review
+**Status:** Approved
 **Traces to:** [acceptance/](acceptance/) (the v0.1 and v0.2 features), [scenarios/](scenarios/) (K1–K5), [09_experiment-design.md](../01_vision/09_experiment-design.md), [07_sequencer.md](../01_vision/07_sequencer.md) v0.1; v0.2: [rel-v0-2](../memory/release/rel-v0-2.md)
 
 ---
@@ -622,7 +622,7 @@ The traceability matrix is unaffected: REQ-RUN-09 already traces to F2.3.
 Source: [task-054](../memory/task/task-054-observed-models-recorded-per-invocation.md), design written by the agent
 on the approver's request, 2026-10-04; review decision of the approver at that task's review, 2026-10-04 (`7f59c20`).
 
-### Amendment 1.26 (v0.2 release-planning, 2026-10-05, in review)
+### Amendment 1.26 (v0.2 release-planning, 2026-10-05)
 
 The v0.2 features (rel-v0-2: F7.4, F7.1, F7.2, F5.2, F5.7, F1.4), the approver's triage of 2026-10-05, and the
 approver's decisions on the specification review of the same day ("come raccomandato").
@@ -676,6 +676,5 @@ Not in this amendment, each with its own task and amendment:
 - dl-007's models (the campaign file, at calibration).
 
 Source: [rel-v0-2](../memory/release/rel-v0-2.md) triage and answers (2026-10-05);
-[X_competitor-landscape-2026-10-05.md](../01_vision/X_competitor-landscape-2026-10-05.md); review decision of the
-approver: pending.
+[X_competitor-landscape-2026-10-05.md](../01_vision/X_competitor-landscape-2026-10-05.md); review decision: the approver's review decision in chat, 2026-10-05 ("ok prosegui"), after three independent reviews.
 

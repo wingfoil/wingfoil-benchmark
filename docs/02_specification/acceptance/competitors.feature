@@ -1,6 +1,6 @@
 # Acceptance — Competitors (v0.2)
 # Traces to: F7.4, F7.1, F7.2 · J6 steps 1–3 · experiment design 1.2 §2 (parity rules), §5 T1, T3, T12, T15
-# Version: 1.0 (draft) · Status: in review (2026-10-05)
+# Version: 1.0 · Status: Approved (2026-10-05)
 
 Feature: Competitor arms admitted by published criteria and set up under the same rules
   As Avery, who audits and compares tools

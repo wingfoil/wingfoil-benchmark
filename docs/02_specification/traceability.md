@@ -1,8 +1,8 @@
 # Traceability (v0.1, v0.2)
 
-**Version:** 1.4 (draft for review: v0.2)
+**Version:** 1.4
 **Date:** 2026-10-05
-**Status:** Approved (1.3); 1.4 in review
+**Status:** Approved
 **Traces to:** [06_features.md](../01_vision/06_features.md) 1.2, [07_sequencer.md](../01_vision/07_sequencer.md) 1.1, [09_experiment-design.md](../01_vision/09_experiment-design.md) 1.1, [scenarios/](scenarios/), [acceptance/](acceptance/), [requirements.md](requirements.md)
 
 ---
@@ -166,7 +166,7 @@ again after it). No feature, acceptance or requirement changes.
 Source: [task-050](../memory/task/task-050-calibration-of-v0-1-dry-runs-measured-costs-and-the-revised-budget.md);
 review decision of the approver at that task's review, 2026-10-03 (`721321f`).
 
-## Amendment 1.4 (v0.2 release-planning, 2026-10-05, in review)
+## Amendment 1.4 (v0.2 release-planning, 2026-10-05)
 
 **§1:** Q-E2 and Q-E3 are deferred with no scenario scheduled (experiment design 1.2).
 
@@ -183,5 +183,5 @@ review decision of the approver at that task's review, 2026-10-03 (`721321f`).
 - T15 (tool drift) is added.
 
 Source: [rel-v0-2](../memory/release/rel-v0-2.md) and the approver's decisions on the specification review
-(2026-10-05); review decision of the approver: pending.
+(2026-10-05); review decision: the approver's review decision in chat, 2026-10-05 ("ok prosegui"), after three independent reviews.
 

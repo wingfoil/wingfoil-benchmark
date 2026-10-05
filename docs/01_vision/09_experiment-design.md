@@ -1,8 +1,8 @@
 # Experiment Design (GQM) — WingFoil Benchmark
 
-**Version:** 1.2 (draft for review: v0.2's release-planning)
+**Version:** 1.2
 **Date:** 2026-10-05
-**Status:** Approved (1.1); 1.2 in review
+**Status:** Approved
 **Traces to:** [06_features.md](06_features.md) (F2.4, F2.7, F4.x, F7.4), [07_sequencer.md](07_sequencer.md) (decisions 1–3), [03_is-isnot.md](03_is-isnot.md) 1.1; input: [X_competitor-landscape-2026-09-22.md](X_competitor-landscape-2026-09-22.md), [X_competitor-landscape-2026-10-05.md](X_competitor-landscape-2026-10-05.md) (1.2)
 
 ---
@@ -297,7 +297,7 @@ The 30 € target above did not hold, and stays as the record of v0.1's plan.
    `package.json` version had not been bumped. The WingFoil under development is now the **v0.2
    pre-release, pinned to commit `3df305e`**. Its only relevant gap is the missing **workflow engine**.
    Source: scenario-specs review (2026-09-22), [../02_specification/scenarios/README.md](../02_specification/scenarios/README.md) K5.
-7. **Amendment 1.2 (v0.2 release-planning, 2026-10-05, in review).**
+7. **Amendment 1.2 (v0.2 release-planning, 2026-10-05).** Approved: the approver's review decision in chat, 2026-10-05 ("ok prosegui"), after three independent reviews.
    - **§1:** the comparison is with the baseline and, for each harness, with its own docs control. Q-E2 and Q-E3 are
      deferred.
    - **§2:**

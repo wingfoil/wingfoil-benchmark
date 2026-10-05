@@ -1,6 +1,6 @@
 # Acceptance — Campaign (v0.1, v0.2)
 # Traces to: F1.1, F1.2, F1.3, F1.4 (v0.2) · J2 steps 1–2, 4 · experiment design §3 (pins), §6 (budget) · K4 · bug-013, dl-012
-# Version: 1.1 (draft) · Status: Approved (1.0, 2026-09-22); 1.1 in review (2026-10-05)
+# Version: 1.1 · Status: Approved (1.0, 2026-09-22; 1.1, 2026-10-05)
 
 Feature: Campaign definition, cost estimate and budget guard
   As the WingFoil maintainer
@@ -87,7 +87,7 @@ Feature: Campaign definition, cost estimate and budget guard
     And the campaign ends with the outcome "budget exhausted"
     And the completed runs are kept and can be scored
 
-  # Added in 1.1 (v0.2, draft, in review 2026-10-05): F1.4 resumable campaign, bug-013, dl-012.
+  # Added in 1.1 (v0.2, approved 2026-10-05): F1.4 resumable campaign, bug-013, dl-012.
 
   @F1.4
   Scenario: An interrupted campaign stops cleanly
