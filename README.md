@@ -76,7 +76,7 @@ when a scenario of a started task has no test.
 Scenarios live in `scenarios/<id>/<version>/scenario.yaml`. The trivial scenario used by the runner's
 own tests is `test/fixtures/scenarios/T0/1.0/`.
 
-Several sessions work the repository at once. Their rules (one linked worktree each, no rewrite of `main`,
+Several sessions work the repository at once. Their rules (among them: one linked worktree each, no rewrite of `main`,
 approval commands that name their checkout, real-agent runs from the main checkout) are the `multi-session`
 directive: `.wingfoil/directives/custom/multi-session.md`, listed for every role by
 `npx wingfoil directives list --role <role>`.
