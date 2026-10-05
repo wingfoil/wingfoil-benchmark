@@ -152,3 +152,8 @@ dl-006 (a WingFoil configuration change that implements an approver's decision, 
   the place.
 - Final checks on `25f868f`: `npm test` 1225/1225, coverage 98.04 % statements, 90.93 % branches; `npm run lint`
   clean.
+
+### Review and approval
+
+- `npx wingfoil memory submit task-056-…` → `fd83621`. Declared: `in-progress → in-review`, one commit. Observed: exit
+  0, JSON `{"from": "in-progress", "to": "in-review"}`, one commit, one file, diff limited to `status`. Matches.
