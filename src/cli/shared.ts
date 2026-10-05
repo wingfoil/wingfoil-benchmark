@@ -7,6 +7,8 @@ import { dockerCli, gitCli, systemProcess } from '../core/index.js';
 import type { DockerPort, GitPort, Issue, PublishPort, Result } from '../core/index.js';
 import type { RunPins } from '../runner/index.js';
 
+import { FAKE_SCRIPT_VARIABLE, HARNESS_SOURCE_VARIABLES, PURPOSES, TOKEN_VARIABLE } from './preflight.js';
+
 /** Where the command writes its output; the bin passes the process streams, tests capture them. */
 export interface Io {
   readonly stdout: (text: string) => void;
@@ -59,17 +61,11 @@ export const FREE_AGENT = 'fake';
  */
 export const SPENDING_FLAG = '--allow-spending';
 
-/** Where the agent's long-lived token is read from (REQ-RUN-15, requirements 1.3). */
-const TOKEN_VARIABLE = 'BENCH_AGENT_TOKEN_FILE';
-
 /** The variable the agent reads its credential from. `ANTHROPIC_API_KEY` does not work (task-004). */
 const AGENT_TOKEN_VARIABLE = 'ANTHROPIC_AUTH_TOKEN';
 
-/** Where the scripted fake agent reads its script, until W2 records real sessions. */
-const FAKE_SCRIPT_VARIABLE = 'BENCH_FAKE_SCRIPT';
-
-/** The local WingFoil clone the WingFoil under test is built from (REQ-RUN-14). */
-const WINGFOIL_REPO_VARIABLE = 'BENCH_WINGFOIL_REPO';
+/** The local WingFoil clone the WingFoil under test is built from (REQ-RUN-14): the preflight's table. */
+const WINGFOIL_REPO_VARIABLE = HARNESS_SOURCE_VARIABLES.wingfoil;
 
 /**
  * The real ports for what `pins` pins — a campaign or a dry run, already checked — so the agent is
@@ -97,7 +93,9 @@ export function portsFor(pins: RunPins, credential?: Readonly<Record<string, str
   if (script === undefined) {
     return {
       ok: false,
-      issues: [{ path: FAKE_SCRIPT_VARIABLE, message: "is not set: it holds the fake agent's script" }],
+      issues: [
+        { path: FAKE_SCRIPT_VARIABLE, message: `is not set: ${PURPOSES[FAKE_SCRIPT_VARIABLE] ?? ''}` },
+      ],
     };
   }
   const loaded = loadFakeScript(script);
@@ -143,7 +141,7 @@ export function checkSpending(
       issues: [
         {
           path: WINGFOIL_REPO_VARIABLE,
-          message: 'is not set: it names the local WingFoil clone the WingFoil under test is built from',
+          message: `is not set: ${PURPOSES[WINGFOIL_REPO_VARIABLE] ?? ''}`,
         },
       ],
     };
@@ -168,7 +166,7 @@ export function agentCredential(): Result<Readonly<Record<string, string>>> {
   if (file === undefined || file === '') {
     return {
       ok: false,
-      issues: [{ path: TOKEN_VARIABLE, message: "is not set: it names the file holding the agent's token" }],
+      issues: [{ path: TOKEN_VARIABLE, message: `is not set: ${PURPOSES[TOKEN_VARIABLE] ?? ''}` }],
     };
   }
   const token = loadAgentToken(file);

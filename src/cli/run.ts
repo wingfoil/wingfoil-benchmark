@@ -5,6 +5,7 @@ import { checkCampaign, estimateCampaign, formatEstimate, runCampaign, totalLine
 import type { CheckedCampaign } from '../runner/index.js';
 
 import { dryRunCommand } from './dry-run.js';
+import { campaignRequirements, FAKE_SCRIPT_VARIABLE, formatRequirement, refusalOf } from './preflight.js';
 import { parseScenarioArguments, validateScenario } from './scenario.js';
 import { scoreCommand } from './score.js';
 import { findingCommand } from './finding.js';
@@ -93,6 +94,10 @@ function validateCampaign(file: string, io: Io): number {
       }
     }
   }
+  // What the runs need from this machine (bug-014): listed, not refused — the file is valid whatever the
+  // environment of the machine that validates it, and `run` refuses what is missing.
+  for (const requirement of campaignRequirements(result.value))
+    io.stdout(`${formatRequirement(requirement)}\n`);
   return EXIT.ok;
 }
 
@@ -137,6 +142,17 @@ async function runCampaignCommand(
 ): Promise<number> {
   const checked = checkCampaign(file);
   if (!checked.ok) return report(checked.issues, io);
+
+  // What the runs need from this machine, all at once and before the estimate (bug-014): a campaign never gets as far
+  // as its estimate to stop on a variable nobody declared. A missing variable is always refused; a path that names
+  // the wrong thing only with the real ports, since injected ones use no path of this machine (and need no script).
+  const unmet = campaignRequirements(checked.value).filter(
+    (r) =>
+      r.neededBy === 'run' &&
+      (r.state === 'missing' || (r.state === 'invalid' && ports === undefined)) &&
+      !(ports !== undefined && r.variable === FAKE_SCRIPT_VARIABLE),
+  );
+  if (unmet.length > 0) return report(unmet.map(refusalOf), io);
 
   const spec = checked.value.campaign.spec;
   const rate = spec.currency.usd_to_eur;

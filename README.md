@@ -100,6 +100,17 @@ BENCH_AGENT_TOKEN_FILE=<token-file> npx bench campaign run campaigns/<name>.yaml
 `validate` checks the campaign file (`docs/02_specification/requirements.md` REQ-FMT-01): every harness pinned
 to a released version or a commit, the baseline arm present, every scenario it names present under
 `scenarios/<id>/<version>/`. It prints the campaign's identity, the digest that names its results.
+It then lists what the campaign's runs need from the machine, one `requires` line each, `set`, `missing` or
+`invalid` with the reason (bug-014):
+
+| Variable | Names | Needed by | When |
+|---|---|---|---|
+| `BENCH_AGENT_TOKEN_FILE` | the file holding the agent's token | `run` | a real agent |
+| `BENCH_FAKE_SCRIPT` | the fake agent's script | `run` | the fake agent |
+| `BENCH_WINGFOIL_REPO` | the local WingFoil clone the harness is built from | `run` | a `wingfoil` harness |
+| `BENCH_HOLDOUT_PATH` | the hold-out (or `--holdout`) | `score` | a scenario that declares one |
+
+`run` refuses, before its estimate and naming every one, when a variable it needs is not set.
 `run` executes every scenario × arm × repetition with the default model, then each model slice's
 scenarios × arms × repetitions with the slice's model: one Docker image per campaign, one container per
 run, whose only mount is that run's fresh workspace (a copy of the scenario seed, made a git
