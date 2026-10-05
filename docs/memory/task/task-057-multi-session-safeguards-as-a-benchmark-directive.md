@@ -128,7 +128,20 @@ trailers; README in the same commit, as the task's "Done" names both.
   `.gitignore` and `c448a67`), lint, and `directives list`. One optional nit: README's parenthesis read as the full
   list of rules. **Fixed:** "among them:".
 - **Hashes after the rewrite** (2026-10-05, at the approver's request, of task-056's approval and the four local
-  commits above it on main; this branch rebased onto the result). The trees are unchanged; the commits named above
-  were: `1abb503` (base, now `4a0ff36`), `1252a63` (round 1's subject, now `1fcf9b6`), `4b087d7` (round 2's subject,
-  now `6d868d0`). `68c4a80` was task-056's approval with `Reason: <motivo>`, now `c327fed` with a reason. The
+  commits above it on main; this branch rebased onto the result). This branch was based on main when main was
+  rewritten, which rule 2 of the directive forbids: an exception the approver asked for, taken because no other
+  session's branch contained the commits and nothing was pushed, and repaired with `rebase --onto`. Main's replayed
+  commits kept their trees (`1abb503` → `4a0ff36`; `68c4a80`, task-056's approval with `Reason: <motivo>`, →
+  `c327fed` with a reason); this branch's commits differ only by `9578b7a`'s task-056 notes, under it. The commits
+  named above were: `1252a63` (round 1's subject, now `1fcf9b6`), `4b087d7` (round 2's subject, now `6d868d0`). The
   directive's rule on handed-over reasons cites this rewrite.
+- **Round 3** (a new independent read-only Explore subagent, on `aee52b0`): **clean** — no blocking and no
+  should-fix finding. It verified README against the directive, every hash mapping (trees compared), the rule-3
+  sentence against `68c4a80`'s and `c327fed`'s trailers, main's task-056 notes against git, lint, `directives list`
+  and the branch's diff. Nits and outcomes:
+  1. "The trees are unchanged" covered pairs whose trees differ. **Fixed:** main's commits kept their trees; this
+     branch's differ by `9578b7a`.
+  2. The rewrite broke rule 2 while this branch was based on main, unsaid. **Fixed:** named as the approver's
+     exception, repaired with `rebase --onto`.
+  3. The local task-056 branch still held `68c4a80`. **Not changed, the finding is wrong:** the branch points at
+     `ae41e68` (moved with `git branch -f` during the rewrite), and `git branch -a --contains 68c4a80` lists none.
