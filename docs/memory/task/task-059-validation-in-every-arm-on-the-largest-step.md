@@ -36,7 +36,7 @@ this text only relies on.
 
 **Characterization** by command: no product code changes. `workflow list` before (`99302ed`, after task-058's merge):
 exit 0, 19 879 bytes. After: the same, except `release-cycle`'s `"version"` 2 → 3, the `validation` phase's
-`description`, and the `approval` it gains.
+`description` and the `approval` it gains, and (since review round 2) the `calibration` phase's `description`.
 
 ### `release-cycle.yaml` (version 3), the `validation` phase
 
@@ -118,3 +118,11 @@ One `chore(wingfoil)` commit with dl-010's approval as `Approver:`/`Reason:` tra
   2. nit — "lists them since … task-060" is false until task-060 merges. **Fixed:** "once task-060 … is merged".
   3. nit — the Context's Scope keeps the planning-time wording. **Not changed:** it is the text approved at the
      pending → backlog gate; the Design states the refined rule.
+- **Round 3** (a new independent read-only Explore subagent, on `1d3ab51`): nothing blocking. It verified round 2's
+  outcomes (one `transcript.jsonl` per step, written for every adapter, git-ignored and kept in the main checkout;
+  calibration's clause; plan-004 step 3), judged the calibration change in scope (dl-010 B budgets validation from
+  calibration, and the key needs a measure v0.1 lacked), and `workflow list` (four hunks, all in `release-cycle`).
+  Findings and outcomes:
+  1. should-fix — the Design's expected `workflow list` diff left out the calibration description. **Fixed.**
+  2. nit — the header said "from task-060", the description "once task-060 … is merged". **Fixed:** the header
+     says the latter.
