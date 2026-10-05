@@ -19,7 +19,7 @@ records.
 - **Approval commands name their checkout.** Every `memory approve` / `reject`, run or handed over, starts with an
   explicit `cd` to the checkout of the branch that should receive it: on 2026-10-03 bug-010's approval was committed
   on task-050's branch and had to be cherry-picked to main. A handed-over command carries a drafted `--reason`, never
-  a placeholder (task-056 recorded `Reason: <motivo>`).
+  a placeholder: task-056's approval recorded `Reason: <motivo>`, and correcting it took a rewrite of five commits.
 - **Real-agent runs from the main checkout,** so that their git-ignored transcripts outlive task branches. Before
   removing a worktree, list its ignored files (`git status --ignored`) and save what is evidence; never `git clean`.
   `git worktree remove --force` once deleted 19 calibration dry runs' transcripts.

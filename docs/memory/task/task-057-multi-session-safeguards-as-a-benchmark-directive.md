@@ -90,19 +90,19 @@ trailers; README in the same commit, as the task's "Done" names both.
 
 ### WingFoil commands (declared vs observed)
 
-- `npx wingfoil memory submit task-057-…` → `c25f926`, in the linked worktree
+- `npx wingfoil memory submit task-057-…` → `e517cad`, in the linked worktree
   `WingFoil2-Benchmark-task-057` with its own `npm ci`. Declared: `backlog → in-progress`, one commit. Observed: exit
   0, JSON `{"from": "backlog", "to": "in-progress"}`, one file, diff limited to `status`. Matches.
 - `npx wingfoil directives list --role <role>` for developer, reviewer, qa, approver, product-owner (the
   independent review re-ran it for all nine roles of `dna.yaml`), before (`1abb503`)
-  and after (`ffb2caf`): exit 0, empty stderr. After, each role lists `multi-session` and nothing else changed; its entry
+  and after (`03b5ac1`): exit 0, empty stderr. After, each role lists `multi-session` and nothing else changed; its entry
   reads `"global": true`, `"assignment": "global (all roles)"`, `"roles": []`. Declared (`roles.yaml`'s header:
   "Global directives apply to every role"): a global directive is listed for every role. Observed: as declared.
   Matches.
 
 ### Build
 
-1. `ffb2caf` (`chore(wingfoil)`, dl-014's approval as trailers): `.wingfoil/directives/custom/multi-session.md`, its
+1. `03b5ac1` (`chore(wingfoil)`, dl-014's approval as trailers): `.wingfoil/directives/custom/multi-session.md`, its
    `global` binding in `roles.yaml`, and README's Development paragraph.
 2. No code changed. `npm test` 1225/1225, coverage 98.04 % statements, 90.93 % branches; `npm run lint` clean.
    `test:bin`/`test:docker` not run: no CLI, runner, image or scoring change.
@@ -127,3 +127,8 @@ trailers; README in the same commit, as the task's "Done" names both.
   reflog and `86327a2` on main; `5f4b5eb`, `e37dee2` without an `Approver:` line; `68c4a80`'s `Reason: <motivo>`;
   `.gitignore` and `c448a67`), lint, and `directives list`. One optional nit: README's parenthesis read as the full
   list of rules. **Fixed:** "among them:".
+- **Hashes after the rewrite** (2026-10-05, at the approver's request, of task-056's approval and the four local
+  commits above it on main; this branch rebased onto the result). The trees are unchanged; the commits named above
+  were: `1abb503` (base, now `4a0ff36`), `1252a63` (round 1's subject, now `1fcf9b6`), `4b087d7` (round 2's subject,
+  now `6d868d0`). `68c4a80` was task-056's approval with `Reason: <motivo>`, now `c327fed` with a reason. The
+  directive's rule on handed-over reasons cites this rewrite.
