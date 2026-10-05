@@ -2,7 +2,7 @@
 id: task-056-an-independent-review-in-kanban-delivery
 type: task
 title: "An independent review in kanban-delivery"
-status: in-review
+status: approved
 release: v0.2
 wave: W12
 features: []
