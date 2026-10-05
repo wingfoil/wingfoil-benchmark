@@ -72,7 +72,7 @@ The Retrospective also lists smaller items for triage, among them v0.2's wingfoi
 - **Hold-out content** is written only in the private `WingFoil2-Benchmark-HoldOut` repository.
 - **Credentials** never reach disk, logs, transcripts or results (security-secrets).
 - **Several sessions share the repository:** one linked worktree per session, and approval commands run with an
-  explicit `cd` to the branch that should receive them (dl-014, pending).
+  explicit `cd` to the branch that should receive them (dl-014; the `multi-session` directive, task-057).
 
 **A first sizing** of the reference campaign, for step 1 only. It assumes v0.1's shape with two more arms, Sonnet
 only, and no slice. With v0.1's measured mean of about 1.8 € a run, that is 30 runs: S1 × 3 and S2, S3, S8 × 1, in
