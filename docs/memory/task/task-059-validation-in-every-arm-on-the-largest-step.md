@@ -45,12 +45,16 @@ scenario" with dl-010 B:
 
 - all acceptance tests green against the fake agent, coverage above 80 %, lint clean, and the Docker suite
   (`npm run test:docker`) green — plan-004's step 4 already lists it;
-- **one real-agent run per arm of the release's campaign** (in v0.2 the seven arms of experiment design 1.2), each on
-  **the scenario with the largest step**: the step with the largest output and cost in calibration's dry runs, so
-  that each arm's setup and environment and the largest output are exercised once;
-- **each arm's environment preflighted** before any run (`campaign validate`, bug-014);
+- **one real-agent run per arm of the release's campaign** (in v0.2 the seven arms of experiment design 1.2), all on
+  **one scenario shared by every arm, the one with the largest step**: the scenario whose step wrote the largest
+  output in calibration's dry runs, across all arms, the larger cost breaking a tie (one key, one choice, as dl-010's
+  "S1 in three arms"), so that each arm's setup and environment and the largest output are exercised once;
+- **each arm's environment checked** before any run: every variable and path it needs, by `campaign validate` once
+  task-060 (bug-014's fix) makes it list them — the text names the dependency, since today the command checks the
+  campaign file only;
 - the runs are **consented** by the approver before they start, with the model and a ceiling estimated from
-  calibration's dry runs, and **each is a line of the release's spending ledger**;
+  calibration's dry runs (the phase's approval is that consent), **made from the main checkout** (plan-004's delivery
+  rules), and **each is a line of the release's spending ledger**;
 - the difference from a delivery wave check stays as version 2 says it.
 
 The phase gains `approval: { by_role: approver }`: the consent is its gate, as `real-agent-check`'s is in
@@ -86,3 +90,18 @@ One `chore(wingfoil)` commit with dl-010's approval as `Approver:`/`Reason:` tra
 
 1. `69a587c` (`chore(wingfoil)`, dl-010's approval as trailers): `release-cycle` 3 — header comment, the validation
    description and its approval; plan-004's step 4 points to it.
+
+### Review
+
+- **Round 1** (independent read-only Explore subagent, on `bb44537`): nothing blocking. It diffed `workflow list` on
+  both checkouts structurally (only `release-cycle`'s version, validation description and approval), checked the
+  text against dl-010 B, plan-004 step 4 and Constraints, the seven arms and `real-agent-check`'s consent wording,
+  and the trailers against `42b05a0`. Findings and outcomes:
+  1. should-fix — "preflighted (campaign validate)" claimed more than the command does before task-060. **Fixed:**
+     the text names what is checked and that `campaign validate` lists it since task-060, in the description, the
+     header comment and the Design.
+  2. should-fix — "the scenario with the largest step (largest output and cost)" could pick different scenarios per
+     arm, or two by two keys. **Fixed:** one scenario shared by every arm, chosen by the largest step output across
+     all arms, cost breaking a tie.
+  3. nit — the phase's approval meaning was implicit. **Fixed:** "the phase's approval is that consent".
+  4. nit — where the runs are made from was unsaid. **Fixed:** "made from the main checkout".
