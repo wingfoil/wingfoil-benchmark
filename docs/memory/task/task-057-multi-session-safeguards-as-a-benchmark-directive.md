@@ -47,10 +47,12 @@ role lists `multi-session` too, and nothing else changes.
 ### The directive
 
 `.wingfoil/directives/custom/multi-session.md`, `id: multi-session`, `kind: custom`, in the shape of the other
-custom directives (front matter, a title, the rules). Its rules are dl-014 B's five, each with the reason v0.1 met:
+custom directives (front matter, a title, the rules). Its rules are dl-014 B's five, each with the v0.1 incident
+from dl-014's Context that it answers:
 
-1. one linked worktree per session (`git worktree add`), with its own `npm ci` and never a `node_modules` symlink;
-   no branch switch in a shared checkout;
+1. one linked worktree per session (`git worktree add`), with its own `npm ci` and never a `node_modules` symlink
+   (since `c448a67`'s incident `.gitignore` also ignores the link; the remaining risk is a shared install that the
+   other checkout's next `npm ci` replaces); no branch switch in a shared checkout;
 2. no history rewrite of `main` once any branch is based on it;
 3. every approval command (`memory approve` / `reject`) run, or handed over, with an explicit `cd` to the checkout
    of the branch that should receive it; a handed-over command carries a drafted reason, not a placeholder (task-056,
@@ -59,8 +61,9 @@ custom directives (front matter, a title, the rules). Its rules are dl-014 B's f
    --ignored` listed before removing a worktree, and no `git clean`;
 5. a consent or decision given in chat recorded with the approver's name, the date and the chat's words.
 
-Plus the practice dl-014's Context implies and the delivery prompts repeat: check the other sessions, announce the
-files a session touches, and commit as soon as a change is complete.
+Plus a sixth, which answers dl-014's first incident (2026-09-24, a session ran `git checkout -- .wingfoil/` on
+another's modified files): leave other sessions' changes alone, check which sessions are active and say which files
+you touch, and commit a change as soon as it is complete.
 
 ### Binding
 
@@ -90,7 +93,8 @@ trailers; README in the same commit, as the task's "Done" names both.
 - `npx wingfoil memory submit task-057-…` → `c25f926`, in the linked worktree
   `WingFoil2-Benchmark-task-057` with its own `npm ci`. Declared: `backlog → in-progress`, one commit. Observed: exit
   0, JSON `{"from": "backlog", "to": "in-progress"}`, one file, diff limited to `status`. Matches.
-- `npx wingfoil directives list --role <role>` for developer, reviewer, qa, approver, product-owner, before (`1abb503`)
+- `npx wingfoil directives list --role <role>` for developer, reviewer, qa, approver, product-owner (the
+  independent review re-ran it for all nine roles of `dna.yaml`), before (`1abb503`)
   and after (`ffb2caf`): exit 0, empty stderr. After, each role lists `multi-session` and nothing else changed; its entry
   reads `"global": true`, `"assignment": "global (all roles)"`, `"roles": []`. Declared (`roles.yaml`'s header:
   "Global directives apply to every role"): a global directive is listed for every role. Observed: as declared.
@@ -102,3 +106,19 @@ trailers; README in the same commit, as the task's "Done" names both.
    `global` binding in `roles.yaml`, and README's Development paragraph.
 2. No code changed. `npm test` 1225/1225, coverage 98.04 % statements, 90.93 % branches; `npm run lint` clean.
    `test:bin`/`test:docker` not run: no CLI, runner, image or scoring change.
+
+### Review
+
+- **Round 1** (independent read-only Explore subagent, on `1252a63`): no blocking finding; it ran `directives list`
+  for all nine roles in both checkouts (only `multi-session` added, exit 0, empty stderr), checked the five rules
+  against dl-014 B, the trailers against `63c41d4`, and lint. Findings and outcomes:
+  1. should-fix — "Announce and commit" had no source in the repository, and the intro claimed every rule came
+     from v0.1. **Fixed:** the rule cites dl-014's first incident (2026-09-24, `git checkout -- .wingfoil/` on
+     another's files), adds "leave other sessions' changes alone", and the Design names its source.
+  2. nit — "(git commits the link)" is outdated: `.gitignore` now ignores the link. **Fixed:** the remaining risk
+     (a shared install replaced by the other checkout's `npm ci`).
+  3. nit — the Design promised a reason for every rule; rules 3 and 5 had none. **Fixed:** each rule now cites its
+     incident (bug-010's approval on task-050's branch; `5f4b5eb`, `e37dee2`; the 19 transcripts).
+  4. nit — the notes named five of nine roles. **Fixed:** they say the review re-ran it for all nine.
+  5. nit — plan-004's Constraints still said "(dl-014, pending)". **Fixed:** it points to the `multi-session`
+     directive (a status fact, as task-056 changed plan-004's delivery rule).
