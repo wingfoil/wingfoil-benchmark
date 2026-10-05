@@ -2,7 +2,7 @@
 id: bug-015-dry-run-and-scoring-images-accumulate-on-the-host
 type: bug
 title: "Dry-run and scoring images accumulate on the host"
-status: draft
+status: pending
 ---
 
 ## Context
