@@ -74,6 +74,13 @@ rejects or defers each one; the outcome is recorded here.
 - **A docs control per competitor (T3)?** v0.1's baseline-docs is generated from the wingfoil arm's configuration.
   Either one docs control stays (cheaper), or each competitor gets its own (fairer: "more context" is controlled per
   harness, but the run count grows).
+- **How the Spec Kit arm follows its process?** The competitor re-verification of 2026-10-05
+  ([X_competitor-landscape-2026-10-05.md](../../01_vision/X_competitor-landscape-2026-10-05.md)) found that Spec Kit's
+  workflow engine (`specify workflow run`) spawns `claude -p --model …` itself. Two options:
+  - (1) the agent follows Spec Kit's skills, started by the runner as in every arm. This keeps the metering, the caps
+    and the neutral approver as they are, and is proposed for v0.2;
+  - (2) Spec Kit's engine orchestrates the agent: the "harness launches the agent" arm of calibration §7 and dl-008,
+    which needs new runner rules.
 - **Which WingFoil for the campaign?** The latest release at the campaign. If WingFoil's workflow engine is released
   before v0.2's calibration, H1–H5 are tested. Otherwise the campaign runs v0.2.2 again, and H1–H5 wait.
 
