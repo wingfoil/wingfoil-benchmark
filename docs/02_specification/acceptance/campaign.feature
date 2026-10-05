@@ -93,16 +93,21 @@ Feature: Campaign definition, cost estimate and budget guard
   Scenario: An interrupted campaign stops cleanly
     Given a campaign execution with runs still to start
     When the maintainer interrupts it during a run
-    Then the current run is recorded as interrupted and its container is removed
-    And the execution is recorded as stopped, with the runs it holds
+    Then the current run is recorded as interrupted, its step counted at its bound, and its container removed
+    And the execution is recorded as stopped, with why
 
   @F1.4
-  Scenario: A resumed execution runs only what is missing or failed
-    Given a stopped execution with completed, failed and interrupted runs, and runs never started
+  Scenario: A resume re-runs only what infrastructure stopped
+    Given a stopped execution holding a completed run, a run that reached its cost cap, a run failed by the infrastructure, an interrupted run, a run stopped at the subscription's quota and runs never started
     When the maintainer resumes it
-    Then only the failed, interrupted and never-started runs run, in the same execution
-    And a failed run's earlier attempt is kept beside the new one
-    And no completed run is repeated
+    Then only the failed, interrupted, quota-stopped and never-started runs run, in the same execution
+    And the run that reached its cap is not re-run
+    And each earlier attempt is kept beside the new one, and the number of attempts is recorded
+
+  @F1.4 @error
+  Scenario: A resume is refused when it could mix results
+    When the maintainer resumes an execution with a campaign file that changed, or an execution already aggregated
+    Then the resume is refused, naming the reason
 
   @F1.4
   Scenario: A campaign stops itself after the same failure repeats
@@ -114,4 +119,4 @@ Feature: Campaign definition, cost estimate and budget guard
   Scenario: The ceiling covers every execution of a campaign
     Given a campaign whose earlier execution already spent part of its ceiling
     When the maintainer runs or resumes it
-    Then the budget guard compares the ceiling with what every execution spent plus the estimate of what is left
+    Then the budget guard compares the ceiling with what every execution spent plus the highest estimate of what is left

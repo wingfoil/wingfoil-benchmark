@@ -3,12 +3,12 @@
 **Version:** 1.1 (draft for review: v0.2)
 **Date:** 2026-10-05
 **Status:** Approved (1.0); 1.1 in review
-**Traces to:** [07_sequencer.md](../../01_vision/07_sequencer.md) v0.1 (W1–W11), [06_features.md](../../01_vision/06_features.md), [05_journeys.md](../../01_vision/05_journeys.md) J1–J4, [09_experiment-design.md](../../01_vision/09_experiment-design.md)
+**Traces to:** [07_sequencer.md](../../01_vision/07_sequencer.md) v0.1 (W1–W11) and v0.2 (W12–W14), [06_features.md](../../01_vision/06_features.md), [05_journeys.md](../../01_vision/05_journeys.md) J1–J6, [09_experiment-design.md](../../01_vision/09_experiment-design.md)
 
 ---
 
-One `.feature` file per feature area, in Gherkin. The files cover all **33 features of release
-v0.1**.
+One `.feature` file per feature area, in Gherkin. The files cover the **33 features of release
+v0.1** and, from 1.1, the **6 features of release v0.2** (F7.4, F7.1, F7.2, F5.2, F5.7, F1.4).
 
 | File | Features | Journeys |
 |---|---|---|
