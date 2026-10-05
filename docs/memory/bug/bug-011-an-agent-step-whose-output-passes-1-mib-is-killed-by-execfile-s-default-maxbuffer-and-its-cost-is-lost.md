@@ -2,7 +2,7 @@
 id: bug-011-an-agent-step-whose-output-passes-1-mib-is-killed-by-execfile-s-default-maxbuffer-and-its-cost-is-lost
 type: bug
 title: "An agent step whose output passes 1 MiB is killed by execFile's default maxBuffer and its cost is lost"
-status: approved
+status: fixed
 fixed_by: task-053-agent-and-process-output-not-bounded-at-1-mib
 ---
 
