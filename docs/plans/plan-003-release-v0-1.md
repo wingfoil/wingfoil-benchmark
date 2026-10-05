@@ -90,3 +90,31 @@ S1 ([09_experiment-design.md](../01_vision/09_experiment-design.md) 1.1).
   `released` (step 6).
 - **Completion:** `rel-v0-1` is `released` and its Retrospective section is written. The plan then
   moves `active → done`, and the next iteration (`rel-v0-2`) gets its own plan.
+
+## Completion
+
+Closed on 2026-10-05, at the approver's request.
+
+- `rel-v0-1` is `released` (`137269b`), and its Retrospective section is written (`cc404d1`).
+- **Every checkpoint is reached:**
+  - `in-development` at the end of step 1 (`8c5c7e6`);
+  - each wave's "Ends with" recorded, W11's public half on 2026-10-05;
+  - calibration approved (`721321f`);
+  - campaign-001 `published` (`7ef4c55`);
+  - `rel-v0-1` `released`.
+
+**What differed from the plan** is recorded in rel-v0-1 (Release checklist, Retrospective "What to change" item 10)
+and in campaign-001:
+
+- the WingFoil under test became the released v0.2.2 (task-049);
+- the budget was revised to option A (calibration §5): the Opus slice on the wingfoil arm only, 19 runs;
+- the campaign ran twice, because of bug-011;
+- three tasks were added after validation: task-053, task-054 and task-055.
+
+The text above is left as it was approved, as the record of the plan.
+
+**Next:** `rel-v0-2` gets its own plan. Its release-planning triages the pending elements the Retrospective lists:
+
+- bug-005, bug-012 to bug-015;
+- dl-007 to dl-014.
+
