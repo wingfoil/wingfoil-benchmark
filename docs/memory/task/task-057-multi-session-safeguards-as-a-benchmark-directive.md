@@ -7,7 +7,7 @@ release: v0.2
 wave: W12
 features: []
 acceptance: []
-requirements: []
+requirements: [REQ-NFR-01, REQ-NFR-02]
 ---
 
 ## Context
@@ -39,3 +39,5 @@ README's development section points to it.
 
 - `npx wingfoil memory add --type task --title "Multi-session safeguards as a benchmark directive"`. Declared: creates the element from the template and
   commits it. Observed: `wf(task): add task-057-multi-session-safeguards-as-a-benchmark-directive`, `status: draft`.
+- First `memory submit` refused: "missing required field on submit: requirements". The task serves no product
+  requirement; [REQ-NFR-01, REQ-NFR-02] is the nearest, as task-052 did (WingFoil usage notes N17, N21: a required field cannot say "none").

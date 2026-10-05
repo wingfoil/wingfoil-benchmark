@@ -7,7 +7,7 @@ release: v0.2
 wave: W12
 features: []
 acceptance: []
-requirements: []
+requirements: [REQ-NFR-04]
 ---
 
 ## Context
@@ -34,3 +34,5 @@ consented like any real-agent run and recorded in the ledger. plan-004's step 4 
 
 - `npx wingfoil memory add --type task --title "Validation in every arm on the largest step"`. Declared: creates the element from the template and
   commits it. Observed: `wf(task): add task-059-validation-in-every-arm-on-the-largest-step`, `status: draft`.
+- First `memory submit` refused: "missing required field on submit: requirements". The task serves no product
+  requirement; [REQ-NFR-04] is the nearest, as task-052 did (WingFoil usage notes N17, N21: a required field cannot say "none").

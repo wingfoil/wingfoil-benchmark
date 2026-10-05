@@ -7,7 +7,7 @@ release: v0.2
 wave: W12
 features: []
 acceptance: []
-requirements: []
+requirements: [REQ-NFR-02]
 ---
 
 ## Context
@@ -42,3 +42,5 @@ bugs that are not fixed.
 
 - `npx wingfoil memory add --type task --title "A fixed state and a fixes link for bugs"`. Declared: creates the element from the template and
   commits it. Observed: `wf(task): add task-058-a-fixed-state-and-a-fixes-link-for-bugs`, `status: draft`.
+- First `memory submit` refused: "missing required field on submit: requirements". The task serves no product
+  requirement; [REQ-NFR-02] is the nearest, as task-052 did (WingFoil usage notes N17, N21: a required field cannot say "none").

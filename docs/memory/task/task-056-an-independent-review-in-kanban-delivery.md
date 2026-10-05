@@ -7,7 +7,7 @@ release: v0.2
 wave: W12
 features: []
 acceptance: []
-requirements: []
+requirements: [REQ-NFR-04]
 ---
 
 ## Context
@@ -42,3 +42,5 @@ it, and the change recorded in plan-004's delivery rules.
 
 - `npx wingfoil memory add --type task --title "An independent review in kanban-delivery"`. Declared: creates the element from the template and
   commits it. Observed: `wf(task): add task-056-an-independent-review-in-kanban-delivery`, `status: draft`.
+- First `memory submit` refused: "missing required field on submit: requirements". The task serves no product
+  requirement; [REQ-NFR-04] is the nearest, as task-052 did (WingFoil usage notes N17, N21: a required field cannot say "none").
