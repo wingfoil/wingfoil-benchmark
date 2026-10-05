@@ -8,6 +8,7 @@ wave: campaign
 features: [F2.3]
 acceptance: [runner.feature]
 requirements: [REQ-RUN-04, REQ-RUN-08, REQ-RUN-09]
+fixes: [bug-011-an-agent-step-whose-output-passes-1-mib-is-killed-by-execfile-s-default-maxbuffer-and-its-cost-is-lost]
 ---
 
 ## Context
