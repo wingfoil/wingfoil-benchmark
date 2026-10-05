@@ -3,27 +3,36 @@ id: task-061-the-benchmark-s-images-pruned
 type: task
 title: "The benchmark's images pruned"
 status: draft
-release: ""           # e.g. v0.1
-wave: ""              # e.g. W1
-features: []          # e.g. [F1.1, F3.1]
-acceptance: []        # e.g. [campaign.feature, scenarios.feature]
-requirements: []      # e.g. [REQ-FMT-01, REQ-FMT-02]
+release: v0.2
+wave: W12
+features: []
+acceptance: []
+requirements: [REQ-RUN-01]
 ---
 
 ## Context
 
-<!-- Why this task, which wave it belongs to, and what "done" means for the wave's "Ends with". -->
+Fixes [bug-015](../bug/bug-015-dry-run-and-scoring-images-accumulate-on-the-host.md), planned in W12 at
+[rel-v0-2](../release/rel-v0-2.md)'s triage. 47 benchmark images, 12.6 GB, were left on the host after v0.1; v0.2's seven arms build more.
+
+**Scope:** a command, `bench images prune`, removes the images the benchmark built (`dry-*`, campaign images,
+`bench-score:*` other than the current scoring image) that no container uses, and prints what it removed. It never
+removes an image the benchmark did not build. A `--dry-run` lists without removing.
+
+**No real agent, no spending.** **Done** means: tests against the Docker port's fake; one real prune on the host,
+recorded.
 
 ## Acceptance criteria
 
-<!-- One line per criterion (Gherkin scenario or requirement), each classified as red-first
-     (new behaviour: a failing test precedes the code) or characterization (existing behaviour). -->
+- `bench images prune --dry-run` lists only the benchmark's own images and never the current scoring image.
+  **Red-first.**
+- Without `--dry-run` it removes them and prints what it removed. **Red-first.**
 
 ## Design
 
-<!-- Modules, interfaces, data formats touched; decisions taken and their reasons. -->
+<!-- Written in the task's design phase. -->
 
 ## Execution notes
 
-<!-- What happened while building: deviations, blockers, follow-ups (filed as elements, never left
-     here). For every `wingfoil` command: declared vs observed behaviour. -->
+- `npx wingfoil memory add --type task --title "The benchmark's images pruned"`. Declared: creates the element from the template and
+  commits it. Observed: `wf(task): add task-061-the-benchmark-s-images-pruned`, `status: draft`.

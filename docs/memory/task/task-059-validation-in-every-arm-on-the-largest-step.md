@@ -3,27 +3,34 @@ id: task-059-validation-in-every-arm-on-the-largest-step
 type: task
 title: "Validation in every arm on the largest step"
 status: draft
-release: ""           # e.g. v0.1
-wave: ""              # e.g. W1
-features: []          # e.g. [F1.1, F3.1]
-acceptance: []        # e.g. [campaign.feature, scenarios.feature]
-requirements: []      # e.g. [REQ-FMT-01, REQ-FMT-02]
+release: v0.2
+wave: W12
+features: []
+acceptance: []
+requirements: []
 ---
 
 ## Context
 
-<!-- Why this task, which wave it belongs to, and what "done" means for the wave's "Ends with". -->
+Implements [dl-010](../decision-log/dl-010-validation-exercises-every-arm-the-largest-step-and-the-harness-environment.md),
+approved at [rel-v0-2](../release/rel-v0-2.md)'s triage (option B).
+
+**Scope:** `.wingfoil/workflows/custom/release-cycle.yaml` becomes version 3. Its validation phase asks for one
+real-agent run per arm on the scenario with the largest step, each arm's environment preflighted (bug-014), the runs
+consented like any real-agent run and recorded in the ledger. plan-004's step 4 reads it.
+
+**No real agent, no spending** in this task. **Done** means: the workflow at version 3, read by
+`npx wingfoil workflow list`.
 
 ## Acceptance criteria
 
-<!-- One line per criterion (Gherkin scenario or requirement), each classified as red-first
-     (new behaviour: a failing test precedes the code) or characterization (existing behaviour). -->
+- `npx wingfoil workflow list` reads `release-cycle` version 3. **Characterization** by command.
 
 ## Design
 
-<!-- Modules, interfaces, data formats touched; decisions taken and their reasons. -->
+<!-- Written in the task's design phase. -->
 
 ## Execution notes
 
-<!-- What happened while building: deviations, blockers, follow-ups (filed as elements, never left
-     here). For every `wingfoil` command: declared vs observed behaviour. -->
+- `npx wingfoil memory add --type task --title "Validation in every arm on the largest step"`. Declared: creates the element from the template and
+  commits it. Observed: `wf(task): add task-059-validation-in-every-arm-on-the-largest-step`, `status: draft`.

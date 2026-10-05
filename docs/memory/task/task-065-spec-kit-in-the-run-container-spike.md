@@ -3,27 +3,42 @@ id: task-065-spec-kit-in-the-run-container-spike
 type: task
 title: "Spec Kit in the run container spike"
 status: draft
-release: ""           # e.g. v0.1
-wave: ""              # e.g. W1
-features: []          # e.g. [F1.1, F3.1]
-acceptance: []        # e.g. [campaign.feature, scenarios.feature]
-requirements: []      # e.g. [REQ-FMT-01, REQ-FMT-02]
+release: v0.2
+wave: W12
+features: []
+acceptance: []
+requirements: [REQ-RUN-18]
 ---
 
 ## Context
 
-<!-- Why this task, which wave it belongs to, and what "done" means for the wave's "Ends with". -->
+A spike before the Spec Kit arm ([rel-v0-2](../release/rel-v0-2.md), W12, high uncertainty on F7.1).
+
+**Questions:**
+
+1. Does Spec Kit at its pinned version install from a wheel bundle in the run image, and does
+   `specify init --integration claude` work headless (`--here`, `--force`, `--script sh`)?
+2. What does it write into the workspace: skills, `.specify/`, a `CLAUDE.md`? Which of it is project information
+   and which is mechanics (for its docs control)?
+3. Can an agent follow its skills (`/speckit-specify` … `/speckit-implement`) under `claude -p` with the neutral
+   approver, and where do the sessions wait?
+4. Does any step reach for its workflow engine, its own LLM calls or the network?
+
+**First with the fake agent, then one small real run, consented by this task's pending → backlog approval:** at most
+**3 €**, Sonnet 5, S3 step 1 only. A line of `docs/calibration/v0.2-ledger.md`.
+
+**Done** means: the answers with their evidence; the register's entry for Spec Kit updated; the setup script drafted
+for task-066.
 
 ## Acceptance criteria
 
-<!-- One line per criterion (Gherkin scenario or requirement), each classified as red-first
-     (new behaviour: a failing test precedes the code) or characterization (existing behaviour). -->
+<!-- A spike: no Gherkin scenario. Its answers and the ledger line are reviewed. -->
 
 ## Design
 
-<!-- Modules, interfaces, data formats touched; decisions taken and their reasons. -->
+<!-- Written in the task's design phase. -->
 
 ## Execution notes
 
-<!-- What happened while building: deviations, blockers, follow-ups (filed as elements, never left
-     here). For every `wingfoil` command: declared vs observed behaviour. -->
+- `npx wingfoil memory add --type task --title "Spec Kit in the run container spike"`. Declared: creates the element from the template and
+  commits it. Observed: `wf(task): add task-065-spec-kit-in-the-run-container-spike`, `status: draft`.
