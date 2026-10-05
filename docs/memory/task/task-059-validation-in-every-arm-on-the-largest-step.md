@@ -134,3 +134,8 @@ One `chore(wingfoil)` commit with dl-010's approval as `Approver:`/`Reason:` tra
   approval), prettier, and line lengths.
 - Final checks on `f10df2b`: `npm test` 1235/1235, coverage 98.04 % statements, 90.93 % branches; `npm run lint`
   clean. `test:bin`/`test:docker` not run: no CLI, runner, image or scoring change.
+
+### Review and approval
+
+- `npx wingfoil memory submit task-059-…` → `8e752e6`. Declared: `in-progress → in-review`, one commit. Observed: exit
+  0, JSON `from`/`to` as declared, one file, `status` only. Matches.
