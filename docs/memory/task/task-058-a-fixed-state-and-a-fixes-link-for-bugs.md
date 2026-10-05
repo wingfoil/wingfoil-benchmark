@@ -211,3 +211,11 @@ The `.wingfoil/` change (`memory.yaml`, the two templates, `kanban-delivery` 4) 
   0, JSON `from`/`to` as declared, one file, diff limited to `status`. Matches.
 - The approver's `memory approve task-058-… --reason "…"` → `d16bae4`, run from this worktree (`in-review →
   approved`, `Approver:`/`Reason:` trailers with the drafted reason, only `status` changed). Matches.
+- Merged into main with `--no-ff` → `77dd7cf`.
+- `npx wingfoil memory submit task-058-…` on main → `8ed8552` (`approved → done`, one file, `status` only). Matches.
+  The repository test then read, as the deliver text says: "task-058-… is done but bug-005-… is approved, not fixed".
+- bug-005: `fixed_by` and its Resolution section committed by hand → `227793a` ("docs(bug): bug-005 fixed by
+  task-058"); `npx wingfoil memory submit bug-005-…` → `4c5a8c9` (`approved → fixed`, one file, `status` only).
+  Matches. The traceability tests are green again (21/21), and `memory search --type bug --status approved` lists
+  bug-012 to bug-015 only: the task's "Done".
+- Worktree removed after `git status --ignored`: only `coverage/` and `node_modules/`, both regenerable.
