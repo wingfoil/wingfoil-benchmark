@@ -274,8 +274,8 @@ The 30 € target above did not hold, and stays as the record of v0.1's plan.
 - **v0.2's shape** (dl-007, the approver's triage of 2026-10-05):
   - the v0.1 scenarios in seven arms;
   - Sonnet 5.5 by default if its calibration fits, Sonnet 5 otherwise;
-  - a bridge slice re-running v0.1's configuration on the default model, so that v0.1 and v0.2 can be read on one
-    model;
+  - a bridge re-running v0.1's configuration on the default model, as a campaign of its own, so that v0.1 and v0.2
+    can be read on one model;
   - a Haiku 4.5 rung of the model ladder.
 
   A first sizing, Sonnet only and v0.1's repetitions, is about 42 runs and 75–85 €. Calibration replaces it.

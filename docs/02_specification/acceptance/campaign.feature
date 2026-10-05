@@ -120,3 +120,10 @@ Feature: Campaign definition, cost estimate and budget guard
     Given a campaign whose earlier execution already spent part of its ceiling
     When the maintainer runs or resumes it
     Then the budget guard compares the ceiling with what every execution spent plus the highest estimate of what is left
+
+  @F1.4
+  Scenario: Scoring a stopped execution keeps it resumable
+    Given a stopped execution with runs never started
+    When the maintainer scores it
+    Then its runs are scored but the execution is not aggregated, and it can still be resumed
+    And only when the maintainer declares it final is it aggregated, the runs never started listed as not run

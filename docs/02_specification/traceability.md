@@ -45,7 +45,7 @@ Only questions that are active in v0.1 are listed. Q-E2, Q-E3 (deferred in exper
 | F1.1 campaign file | J2.1 | campaign.feature | REQ-FMT-01, 02, 03; REQ-CLI-01; REQ-RUN-16 | W1 |
 | F1.2 cost estimate | J2.2 | campaign.feature | REQ-CLI-02; REQ-NFR-06 | W5 |
 | F1.3 budget guard | J2.2, J2.4 | campaign.feature | REQ-CLI-03; REQ-RUN-08, 13 | W5 |
-| F1.4 resumable campaign (v0.2) | J2.4 | campaign.feature | REQ-FMT-01, 06; REQ-CLI-02, 03; REQ-RUN-19; REQ-NFR-03 | W14 |
+| F1.4 resumable campaign (v0.2) | J2.4 | campaign.feature | REQ-FMT-01, 06; REQ-CLI-02, 03, 06; REQ-RUN-19; REQ-RES-06; REQ-NFR-03 | W14 |
 | F2.1 isolated run | J2.3 | runner.feature | REQ-RUN-01, 02; REQ-CLI-10 | W1 |
 | F2.2 fresh-session steps | vision | runner.feature | REQ-RUN-04, 05 | W2 |
 | F2.3 Claude Code adapter | J2.3, J2.7 | runner.feature | REQ-RUN-04, 09, 15; REQ-ARC-04 | W2 |
@@ -84,7 +84,7 @@ Only questions that are active in v0.1 are listed. Q-E2, Q-E3 (deferred in exper
 
 **Coverage:**
 
-- All 33 v0.1 features have at least one acceptance file and at least one requirement.
+- All 39 features, 33 of v0.1 and 6 of v0.2, have at least one acceptance file and at least one requirement.
 - Requirements that serve no single feature are cross-cutting: REQ-ARC-01/02/05, REQ-NFR-01–05 and
   REQ-CLI-06.
 
