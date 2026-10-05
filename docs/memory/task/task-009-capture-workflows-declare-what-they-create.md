@@ -6,6 +6,7 @@ status: done
 release: v0.1
 wave: W2
 requirements: [REQ-ARC-05]
+fixes: [bug-002-ingest-workflows-declare-no-actions]
 ---
 
 ## Context

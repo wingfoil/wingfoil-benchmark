@@ -3,6 +3,7 @@ id: bug-002-ingest-workflows-declare-no-actions
 type: bug
 title: "The three ingest workflows declare no actions, so nothing knows what they create"
 status: approved
+fixed_by: task-009-capture-workflows-declare-what-they-create
 ---
 
 ## Context
