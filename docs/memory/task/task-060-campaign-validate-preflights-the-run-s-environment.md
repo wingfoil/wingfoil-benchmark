@@ -149,3 +149,8 @@ module later.
   90.78 % branches (`preflight.ts` 100 % statements, 87.87 % branches); `npm run test:bin` 8/8; `npm run
   test:docker` 16/16. An earlier full run under load average ~90 had one unrelated failure (`@F4.8 Directive
   violations…`, scoring), green alone and in this run.
+
+### Review and approval
+
+- `npx wingfoil memory submit task-060-…` → `cbec070`. Declared: `in-progress → in-review`, one commit. Observed: exit
+  0, JSON `from`/`to` as declared, one file, `status` only. Matches.
