@@ -204,3 +204,8 @@ The `.wingfoil/` change (`memory.yaml`, the two templates, `kanban-delivery` 4) 
   rewrap alone would only add a review round.
 - Final checks on `a719d57`: `npm test` 1235/1235, coverage 98.04 % statements, 90.93 % branches; `npm run lint`
   clean.
+
+### Review and approval
+
+- `npx wingfoil memory submit task-058-…` → `d9c0701`. Declared: `in-progress → in-review`, one commit. Observed: exit
+  0, JSON `from`/`to` as declared, one file, diff limited to `status`. Matches.
