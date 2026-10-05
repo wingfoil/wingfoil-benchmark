@@ -71,3 +71,18 @@ One `chore(wingfoil)` commit with dl-010's approval as `Approver:`/`Reason:` tra
   commits it. Observed: `wf(task): add task-059-validation-in-every-arm-on-the-largest-step`, `status: draft`.
 - First `memory submit` refused: "missing required field on submit: requirements". The task serves no product
   requirement; [REQ-NFR-04] is the nearest, as task-052 did (WingFoil usage notes N17, N21: a required field cannot say "none").
+
+### WingFoil commands (declared vs observed)
+
+- `npx wingfoil memory submit task-059-…` → `379a6a7`, in the linked worktree `WingFoil2-Benchmark-task-059` with its
+  own `npm ci`. Declared: `backlog → in-progress`, one commit. Observed: exit 0, JSON `from`/`to` as declared, one
+  file, `status` only. Matches.
+- `npx wingfoil workflow list` before (`99302ed`): exit 0, empty stderr, 19 879 bytes. After (`69a587c`): exit 0, empty
+  stderr. The diff is `release-cycle`'s `"version"` 2 → 3, the `validation` description, and
+  `"approval": {"by_role": "approver"}` on that phase; nothing else. Declared (schema at the pin): `approval` is a
+  phase field. Observed: as declared. Matches.
+
+### Build
+
+1. `69a587c` (`chore(wingfoil)`, dl-010's approval as trailers): `release-cycle` 3 — header comment, the validation
+   description and its approval; plan-004's step 4 points to it.
