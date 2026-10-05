@@ -887,4 +887,143 @@ published execution ([campaign-001](../campaign/campaign-001-v0-1-reference-camp
 
 ## Retrospective
 
-<!-- What went well, what to change, and the WingFoil usage notes handed to WingFoil. -->
+Written on 2026-10-05, at plan-003 step 7 (`release-cycle` › `retrospective`). Three read-only agents mined:
+
+- the Execution notes, Reviews and Approvals of the 55 tasks;
+- campaign-001, the calibration report and the ledger;
+- every bug, decision-log and ADR, and the git history.
+
+**v0.1 in figures:**
+
+| | |
+|---|---|
+| Span and history | 14 days (2026-09-22 → 2026-10-05); 1 320 commits, 73 merges |
+| Work | 55 tasks, all done; 11 waves |
+| Process | 497 WingFoil transitions, 9 of them rejects |
+| Tests | 1 225, coverage 98 % |
+| Real-agent spending | 192.15 USD reported, in the [ledger](../../calibration/v0.1-ledger.md) |
+| The published campaign | `c82a5e74885b/2`: 19/19 runs, 61.38 € against an estimate of 60.32 € |
+
+### What went well
+
+1. **Independent reviews found what the tests missed.** Among the defects:
+   - the agent's token reaching `run.json` (task-006);
+   - a resumed session's cost counted twice (task-007, bug-004);
+   - a private repository read as public, a `site/.git` and a remote `.gitattributes` redirecting the publish
+     (task-047);
+   - a bounded step's cost lost (task-053).
+
+   Mutation testing became the norm after task-005 showed covered but unasserted code.
+2. **Spikes were cheap and decisive.** task-004 (0.13 USD) found that approval requests do not end in "?", which
+   became dl-004. task-011 (0.04 USD) found the reproducible build and the MCP server without Tools. task-024
+   measured the caps.
+3. **The cost estimate held.** Execution 2 came within +1.8 % of its estimate, the Opus slice within +9 %, validation
+   within +6 %. Every real-agent run is a ledger line, and the ledger reconciles.
+4. **Calibration did its job:**
+   - it found S1 saturated (135/135 in every arm) and made it harder (step 5);
+   - it found bug-009 and bug-010 before the campaign;
+   - it wrote falsifiable hypotheses (H1–H10) before v0.2, as a defence against T1.
+5. **The process absorbed a failed execution.** The campaign's reject-back went scored → running (`1ab1d67`), then a
+   fix by its own task (task-053), a full re-run, and publication. Every step of it is in `memory history`
+   (usage note N39).
+6. **The benchmark's own checks caught design errors:** the module-boundary lint (task-002), the traceability test
+   (task-004), the leak scan on its own fixture (task-017), and WingFoil's schema on a fixture (task-015).
+7. **Publishing was reproducible and safe.** The transcripts asset has the same sha256 locally and on GitHub; no
+   credential is in any stored file or in the history; the site holds the published execution only.
+8. **A measured finding for WingFoil,** with the cost broken down by tool call: the wingfoil arm costs ×1.55 the
+   baseline on S1, mostly cache reads from its process. It is H1's baseline for v0.2.
+
+### What to change
+
+1. **Independent review lapsed for four waves.** W3–W6, about 20 tasks, shipped on a self-review. It came back only
+   after the approver sent task-042 back. → **dl-011.**
+2. **Validation was too small** to show the campaign's failure modes: S3 baseline only, so no harness and short
+   outputs. bug-011 and bug-014 surfaced in the campaign instead. → **dl-010.**
+3. **Every bug found after delivery was on the real-agent path,** which the fake agent cannot exercise: bug-009,
+   bug-010, bug-011 and bug-012. → dl-010.
+4. **The budget plan did not hold:**
+   - K4's 30 € target assumed 1.2 € a run, against 1.8 € measured;
+   - Opus was priced at 2.5× Sonnet by list price, against 6.8× measured;
+   - the ceiling was per execution, so the re-run took the campaign to 102.61 € against the 85 € consented for one
+     execution.
+
+   → **dl-012.**
+5. **A failing campaign could not be stopped.** Execution 1 ran 6 h after its failures were systematic, and
+   37.44 USD of completed runs were run again, since no command re-runs only the failed runs. → **bug-013**, dl-012.
+6. **The environment was not preflighted.** The first start was refused for a missing variable that nothing
+   declares. → **bug-014.**
+7. **The multi-session repository cost incidents:**
+   - a session reverted another's files;
+   - a history rewrite hit a live branch;
+   - an approval landed on a task branch;
+   - the dry runs' transcripts were deleted by a worktree removal;
+   - consents in chat were committed without an approver line.
+
+   → **dl-014.**
+8. **Notes were sometimes inaccurate.** W1–W2 Execution notes claimed fixes or results that were not there (task-001,
+   002, 003, 007). Reviews caught them. → dl-011's recorded review rounds.
+9. **The S1 signal is weak.** n = 3, and executions 1 and 2 disagree on the same runs; the other scenarios ran once.
+   → dl-012 (repetitions).
+10. **The plan drifted.** The WingFoil pin moved from the `3df305e` pre-release to v0.2.2 (task-049), the slice to
+    one arm, and the campaign to 19 runs. plan-003's constraints and this element's Goal ("21 runs on Sonnet 5,
+    plus the Opus slice") still read as planned. They are left as written, as the record of the plan; this section
+    and the checklist record what happened.
+11. **Housekeeping:** 47 benchmark images (12.6 GB) accumulated on the host. → **bug-015.**
+
+### Actions recorded
+
+| Element | What |
+|---|---|
+| [bug-013](../bug/bug-013-a-running-campaign-cannot-be-stopped-cleanly-and-keeps-spending-after-systematic-failures.md) | a clean stop and a fail-fast rule for a campaign |
+| [bug-014](../bug/bug-014-a-campaign-does-not-preflight-the-environment-its-harness-needs.md) | `campaign validate` lists and checks the run's environment |
+| [bug-015](../bug/bug-015-dry-run-and-scoring-images-accumulate-on-the-host.md) | the benchmark's images pruned |
+| [dl-010](../decision-log/dl-010-validation-exercises-every-arm-the-largest-step-and-the-harness-environment.md) | validation in every arm, on the largest step |
+| [dl-011](../decision-log/dl-011-an-independent-review-for-every-task-in-kanban-delivery.md) | independent review written into `kanban-delivery` |
+| [dl-012](../decision-log/dl-012-budget-and-estimate-rebased-on-v0-1-s-measurements.md) | budget, estimate margin, campaign-wide ceiling, repetitions, partial re-runs |
+| [dl-013](../decision-log/dl-013-saturation-levels-of-delegation-and-an-external-neutral-control.md) | calibration §10's three items for the next specification |
+| [dl-014](../decision-log/dl-014-process-safeguards-for-a-repository-worked-by-several-sessions.md) | the multi-session rules as a directive |
+
+They join, for v0.2's planning:
+
+- bug-005 (a bug never closes; ten fixed bugs still read `approved`), bug-012 (auxiliary-model tokens);
+- dl-007 (Claude 5.5 models and a model ladder), dl-008 (the cost-quality frontier), dl-009 (findings linked to
+  WingFoil).
+
+**Smaller items for triage at v0.2's planning** (left in task notes, not filed):
+
+- classifier v2 candidates (task-007);
+- an empty seed failing with git's message (task-005);
+- a debug flag for unexpected errors (task-003);
+- a `scenario.yaml` symlink outside its scenario (task-001);
+- path helpers following symlinks and splitting on spaces (task-042, review item 6);
+- the ingest workflows' triage gate (task-009);
+- ADR decisions checked against tasks (task-005);
+- `features` as a conditional requirement (task-004);
+- `run compare` without models (task-054);
+- S1 1.1 stating step 5's shift-aware diff (calibration §8);
+- a lighter wingfoil manual, measured (calibration §7);
+- resuming after a first-request rate limit, unobserved (task-051).
+
+### WingFoil usage notes handed to the approver
+
+`docs/wingfoil-feedback/X_wingfoil-usage-notes.md`, N1–N48, is handed to the approver on 2026-10-05 for WingFoil's own
+retrospective. It is untracked and never cleaned. This release added N36–N48:
+
+| Note | Subject |
+|---|---|
+| N36 | a gate's reason committed verbatim, no echo |
+| N37 | no `memory validate` |
+| N38 | no field values on `memory add` |
+| N39 | positive: the campaign's reject-back |
+| N40 | approver decisions without a transition |
+| N41 | a gate commits on any branch |
+| N42 | role context not delivered at session start |
+| N43 | no recommended agent manual |
+| N44 | the tarball's bin not executable |
+| N45 | copied configuration loses its approval provenance |
+| N46 | `init`'s subject carries a plan id |
+| N47 | `init` refuses the environment's identity |
+| N48 | "illegal transition pending -> (none)" |
+
+The benchmark's finding for WingFoil (M-K1 on S1, a decision-log note) was sent on 2026-10-05 to the WingFoil session
+that ingests notes. Its filing and the way back follow dl-009.
