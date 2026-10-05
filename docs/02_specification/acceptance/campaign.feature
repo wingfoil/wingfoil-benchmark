@@ -1,6 +1,6 @@
-# Acceptance — Campaign (v0.1)
-# Traces to: F1.1, F1.2, F1.3 · J2 steps 1–2, 4 · experiment design §3 (pins), §6 (budget) · K4
-# Version: 1.0 · Status: Approved (2026-09-22)
+# Acceptance — Campaign (v0.1, v0.2)
+# Traces to: F1.1, F1.2, F1.3, F1.4 (v0.2) · J2 steps 1–2, 4 · experiment design §3 (pins), §6 (budget) · K4 · bug-013, dl-012
+# Version: 1.1 · Status: Approved (1.0, 2026-09-22; 1.1, 2026-10-05)
 
 Feature: Campaign definition, cost estimate and budget guard
   As the WingFoil maintainer
@@ -86,3 +86,44 @@ Feature: Campaign definition, cost estimate and budget guard
     Then it does not start
     And the campaign ends with the outcome "budget exhausted"
     And the completed runs are kept and can be scored
+
+  # Added in 1.1 (v0.2, approved 2026-10-05): F1.4 resumable campaign, bug-013, dl-012.
+
+  @F1.4
+  Scenario: An interrupted campaign stops cleanly
+    Given a campaign execution with runs still to start
+    When the maintainer interrupts it during a run
+    Then the current run is recorded as interrupted, its step counted at its bound, and its container removed
+    And the execution is recorded as stopped, with why
+
+  @F1.4
+  Scenario: A resume re-runs only what infrastructure stopped
+    Given a stopped execution holding a completed run, a run that reached its cost cap, a run failed by the infrastructure, an interrupted run, a run stopped at the subscription's quota and runs never started
+    When the maintainer resumes it
+    Then only the failed, interrupted, quota-stopped and never-started runs run, in the same execution
+    And the run that reached its cap is not re-run
+    And each earlier attempt is kept beside the new one, and the number of attempts is recorded
+
+  @F1.4 @error
+  Scenario: A resume is refused when it could mix results
+    When the maintainer resumes an execution with a campaign file that changed, or an execution already aggregated
+    Then the resume is refused, naming the reason
+
+  @F1.4
+  Scenario: A campaign stops itself after the same failure repeats
+    Given a campaign file that stops after 2 runs fail with the same error at the same step
+    When two runs fail that way
+    Then the campaign starts no further run and records why
+
+  @F1.4
+  Scenario: The ceiling covers every execution of a campaign
+    Given a campaign whose earlier execution already spent part of its ceiling
+    When the maintainer runs or resumes it
+    Then the budget guard compares the ceiling with what every execution spent plus the highest estimate of what is left
+
+  @F1.4
+  Scenario: Scoring a stopped execution keeps it resumable
+    Given a stopped execution with runs never started
+    When the maintainer scores it
+    Then its runs are scored but the execution is not aggregated, and it can still be resumed
+    And only when the maintainer declares it final is it aggregated, the runs never started listed as not run

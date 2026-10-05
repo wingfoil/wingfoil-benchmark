@@ -1,22 +1,24 @@
-# Acceptance criteria (v0.1)
+# Acceptance criteria (v0.1, v0.2)
 
-**Version:** 1.0
-**Date:** 2026-09-22
+**Version:** 1.1
+**Date:** 2026-10-05
 **Status:** Approved
-**Traces to:** [07_sequencer.md](../../01_vision/07_sequencer.md) v0.1 (W1–W11), [06_features.md](../../01_vision/06_features.md), [05_journeys.md](../../01_vision/05_journeys.md) J1–J4, [09_experiment-design.md](../../01_vision/09_experiment-design.md)
+**Traces to:** [07_sequencer.md](../../01_vision/07_sequencer.md) v0.1 (W1–W11) and v0.2 (W12–W14), [06_features.md](../../01_vision/06_features.md), [05_journeys.md](../../01_vision/05_journeys.md) J1–J6, [09_experiment-design.md](../../01_vision/09_experiment-design.md)
 
 ---
 
-One `.feature` file per feature area, in Gherkin. The files cover all **33 features of release
-v0.1**.
+One `.feature` file per feature area, in Gherkin. The files cover the **33 features of release
+v0.1** and, from 1.1, the **6 features of release v0.2** (F7.4, F7.1, F7.2, F5.2, F5.7, F1.4).
 
 | File | Features | Journeys |
 |---|---|---|
-| [campaign.feature](campaign.feature) | F1.1, F1.2, F1.3 | J2 |
+| [campaign.feature](campaign.feature) | F1.1, F1.2, F1.3; F1.4 (v0.2) | J2 |
 | [runner.feature](runner.feature) | F2.1–F2.7 | J2 |
 | [scenarios.feature](scenarios.feature) | F3.1–F3.6, F6.1–F6.3, F6.8 | J3 |
 | [scoring.feature](scoring.feature) | F4.1–F4.5, F4.7, F4.8 | J2 |
 | [results.feature](results.feature) | F5.1, F5.3–F5.6, F5.8 | J1, J2, J4 |
+| [competitors.feature](competitors.feature) (v0.2) | F7.4, F7.1, F7.2 | J6 |
+| [comparison.feature](comparison.feature) (v0.2) | F5.2, F5.7 | J2, J5 |
 
 ## Conventions
 
