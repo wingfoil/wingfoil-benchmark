@@ -1,7 +1,7 @@
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { agentCredential, checkCampaign, main, realPorts } from '../../../src/cli/index.js';
 import { doubles } from '../../support/runner-doubles.js';
@@ -9,6 +9,22 @@ import { completeCampaignYaml, writeRepo } from '../../support/campaign-fixture.
 import { priceCampaign, writeStoredDryRun } from '../../support/dry-run-fixture.js';
 import { repoPath } from '../../support/paths.js';
 import { tempDir } from '../../support/scenario-fixture.js';
+
+/**
+ * A machine with what a campaign's runs need (bug-014): a readable token file and a clone directory, stubbed into the
+ * environment, for the tests whose subject is a later check. Unstubbed after each test.
+ */
+function stubMachine(): void {
+  const dir = tempDir('bench-machine-');
+  const token = join(dir, 'token');
+  writeFileSync(token, 'sk-ant-oat01-NOT-A-TOKEN\n');
+  vi.stubEnv('BENCH_AGENT_TOKEN_FILE', token);
+  vi.stubEnv('BENCH_WINGFOIL_REPO', dir);
+}
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 
 async function run(...argv: string[]) {
   return runWith(undefined, ...argv);
@@ -26,6 +42,8 @@ async function runWith(ports: ReturnType<typeof doubles> | undefined, ...argv: s
 describe('bench campaign validate', () => {
   it('prints the identity of a valid campaign and exits 0', async () => {
     const { file } = writeRepo();
+    for (const variable of ['BENCH_AGENT_TOKEN_FILE', 'BENCH_WINGFOIL_REPO', 'BENCH_HOLDOUT_PATH'])
+      vi.stubEnv(variable, '');
     const { code, stdout, stderr } = await run('campaign', 'validate', file);
     expect({ code, stderr }).toEqual({ code: 0, stderr: '' });
     // The complete fixture scenarios declare `workflow-engine`, which the fixture wingfoil arm does not
@@ -36,6 +54,9 @@ describe('bench campaign validate', () => {
           ['S1', 'S2', 'S3', 'S8']
             .map((id) => `expected failure: ${id}@1\\.0 in wingfoil \\(missing workflow-engine\\)\\n`)
             .join('') +
+          'requires BENCH_AGENT_TOKEN_FILE \\(credential file, for run\\): missing\\n' +
+          'requires BENCH_WINGFOIL_REPO \\(harness clone of wingfoil, for run\\): missing\\n' +
+          'requires BENCH_HOLDOUT_PATH \\(hold-out, for score\\): missing\\n' +
           '$',
       ),
     );
@@ -43,7 +64,23 @@ describe('bench campaign validate', () => {
 
   it('uses the singular for one scenario and one arm', async () => {
     const { stdout } = await run('campaign', 'validate', repoPath('test/fixtures/campaigns/smoke.yaml'));
-    expect(stdout).toMatch(/ is valid \(1 scenario, 1 arm\)\n$/);
+    expect(stdout).toMatch(
+      / is valid \(1 scenario, 1 arm\)\nrequires BENCH_FAKE_SCRIPT \(fake agent script, for run\): (set|missing)\n$/,
+    );
+  });
+
+  it('names each missing requirement of a campaign with a harness arm, and says which are set', async () => {
+    const dir = tempDir('bench-validate-env-');
+    vi.stubEnv('BENCH_AGENT_TOKEN_FILE', '');
+    vi.stubEnv('BENCH_WINGFOIL_REPO', dir);
+    vi.stubEnv('BENCH_HOLDOUT_PATH', join(dir, 'missing'));
+    const { code, stdout, stderr } = await run('campaign', 'validate', writeRepo().file);
+    expect({ code, stderr }).toEqual({ code: 0, stderr: '' });
+    expect(stdout.split('\n').filter((line) => line.startsWith('requires '))).toEqual([
+      'requires BENCH_AGENT_TOKEN_FILE (credential file, for run): missing',
+      'requires BENCH_WINGFOIL_REPO (harness clone of wingfoil, for run): set',
+      `requires BENCH_HOLDOUT_PATH (hold-out, for score): invalid, ${join(dir, 'missing')} does not exist`,
+    ]);
   });
 
   it('prints one line per issue and exits 1 on an invalid campaign', async () => {
@@ -111,6 +148,48 @@ describe('bench campaign run', () => {
     };
   }
 
+  it('refuses before the estimate, naming every missing variable, and builds nothing', async () => {
+    const yaml = {
+      ...fakeCampaign(),
+      arms: ['baseline', 'wingfoil'],
+      harnesses: { wingfoil: { tool: 'wingfoil', version: '3df305e' } },
+      agent: { name: 'claude-code', version: '2.1.221' },
+      models: { default: 'claude-sonnet-5' },
+    };
+    const { file } = writeRepo(yaml, ['S1@1.0']);
+    vi.stubEnv('BENCH_AGENT_TOKEN_FILE', '');
+    vi.stubEnv('BENCH_WINGFOIL_REPO', '');
+    const ports = doubles();
+    const { code, stdout, stderr } = await runWith(ports, 'campaign', 'run', file, '--allow-spending');
+    vi.unstubAllEnvs();
+    expect(code).toBe(1);
+    expect(stdout).toBe('');
+    expect(stderr.trimEnd().split('\n')).toEqual([
+      "BENCH_AGENT_TOKEN_FILE: is not set: it names the file holding the agent's token",
+      'BENCH_WINGFOIL_REPO: is not set: it names the local WingFoil clone the WingFoil under test is built from',
+    ]);
+    expect(ports.recorded.builds).toEqual([]);
+  });
+
+  it('refuses a requirement that is set to the wrong thing, before the estimate, with the real ports', async () => {
+    const { file } = writeRepo(
+      {
+        ...fakeCampaign(),
+        arms: ['baseline', 'wingfoil'],
+        harnesses: { wingfoil: { tool: 'wingfoil', version: '3df305e' } },
+      },
+      ['S1@1.0'],
+    );
+    const dir = tempDir('bench-run-env-');
+    const notADirectory = join(dir, 'file');
+    writeFileSync(notADirectory, '');
+    vi.stubEnv('BENCH_FAKE_SCRIPT', notADirectory);
+    vi.stubEnv('BENCH_WINGFOIL_REPO', notADirectory);
+    const { code, stdout, stderr } = await run('campaign', 'run', file);
+    expect({ code, stdout }).toEqual({ code: 1, stdout: '' });
+    expect(stderr).toBe(`BENCH_WINGFOIL_REPO: is invalid: ${notADirectory} is not a directory\n`);
+  });
+
   it('does not pretend the spending flag means anything to validate', async () => {
     const { file } = writeRepo(completeCampaignYaml());
     let stderr = '';
@@ -150,6 +229,7 @@ describe('bench campaign run', () => {
   });
 
   it('refuses to spend before anything runs, not after the image is built', async () => {
+    stubMachine();
     const { file } = writeRepo(completeCampaignYaml());
     priceCampaign(file);
     const ports = doubles();
@@ -354,6 +434,7 @@ describe('bench campaign run', () => {
     });
 
     it('refuses the ceiling before it asks for the spending flag, and asks nothing', async () => {
+      stubMachine();
       const agent = { agent: { name: 'claude-code', version: '2.1.280' } };
       const asked: string[] = [];
       const ask = (question: string) => {
@@ -469,6 +550,7 @@ describe('realPorts', () => {
   }
 
   it('refuses to spend without an explicit opt-in, naming the ceiling it would run against', async () => {
+    stubMachine();
     const yaml = completeCampaignYaml();
     yaml.agent = { name: 'claude-code', version: '2.1.280' };
     const { file } = writeRepo(yaml);
