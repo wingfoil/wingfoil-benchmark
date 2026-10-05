@@ -139,3 +139,5 @@ One `chore(wingfoil)` commit with dl-010's approval as `Approver:`/`Reason:` tra
 
 - `npx wingfoil memory submit task-059-…` → `8e752e6`. Declared: `in-progress → in-review`, one commit. Observed: exit
   0, JSON `from`/`to` as declared, one file, `status` only. Matches.
+- The approver's `memory approve task-059-… --reason "…"` → `ddd8305`, run from this worktree (`in-review →
+  approved`, `Approver:`/`Reason:` trailers with the drafted reason, only `status` changed). Matches.
