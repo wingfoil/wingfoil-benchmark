@@ -2,7 +2,7 @@
 id: task-057-multi-session-safeguards-as-a-benchmark-directive
 type: task
 title: "Multi-session safeguards as a benchmark directive"
-status: pending
+status: backlog
 release: v0.2
 wave: W12
 features: []
