@@ -126,3 +126,11 @@ One `chore(wingfoil)` commit with dl-010's approval as `Approver:`/`Reason:` tra
   1. should-fix — the Design's expected `workflow list` diff left out the calibration description. **Fixed.**
   2. nit — the header said "from task-060", the description "once task-060 … is merged". **Fixed:** the header
      says the latter.
+  After the fixes, `99e4650` and `f10df2b` re-wrapped the header comment and the validation text to 100 columns;
+  `workflow list` output identical before and after `f10df2b`.
+- **Round 4** (a new independent read-only Explore subagent, on `f10df2b`): **clean**, no nit. It verified round 3's
+  outcomes, that the re-wraps change nothing parsed (YAML of `1d3ab51` and HEAD compared as JSON), `workflow list`
+  against main (four paths, all in `release-cycle`: version, calibration and validation descriptions, validation's
+  approval), prettier, and line lengths.
+- Final checks on `f10df2b`: `npm test` 1235/1235, coverage 98.04 % statements, 90.93 % branches; `npm run lint`
+  clean. `test:bin`/`test:docker` not run: no CLI, runner, image or scoring change.
