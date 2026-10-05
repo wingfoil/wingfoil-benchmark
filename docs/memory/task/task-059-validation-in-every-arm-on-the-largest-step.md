@@ -2,7 +2,7 @@
 id: task-059-validation-in-every-arm-on-the-largest-step
 type: task
 title: "Validation in every arm on the largest step"
-status: in-progress
+status: in-review
 release: v0.2
 wave: W12
 features: []
