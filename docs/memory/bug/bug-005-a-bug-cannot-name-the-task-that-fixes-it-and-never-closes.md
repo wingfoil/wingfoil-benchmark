@@ -3,6 +3,7 @@ id: bug-005-a-bug-cannot-name-the-task-that-fixes-it-and-never-closes
 type: bug
 title: "A bug cannot name the task that fixes it, and never closes"
 status: approved
+fixed_by: task-058-a-fixed-state-and-a-fixes-link-for-bugs
 ---
 
 ## Context
@@ -63,3 +64,12 @@ project inventing a field — a question for the WingFoil usage notes, not for t
 
 Per this project's rule, a correction to `.wingfoil/` goes through a bug and a task and never straight
 to main: this is the bug; the task is for v0.2's planning to open.
+
+## Resolution
+
+Fixed by [task-058](../task/task-058-a-fixed-state-and-a-fixes-link-for-bugs.md) (merged in `77dd7cf`): the bug type
+has its own machine, `draft → pending → approved → fixed`, the last edge a plain `submit` in kanban-delivery's
+deliver phase (version 4); a task declares the bugs it fixes in `fixes`, a fixed bug names its task in `fixed_by`,
+and `test/acceptance/traceability.test.ts` holds the two together with the states. The ten bugs fixed in v0.1 were
+moved to `fixed` with their tasks named. A bug closed without a fix stays `deprecated`. Whether WingFoil should offer
+typed links itself is usage note N29.
