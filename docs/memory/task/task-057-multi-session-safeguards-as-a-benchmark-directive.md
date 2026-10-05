@@ -157,3 +157,7 @@ trailers; README in the same commit, as the task's "Done" names both.
   0, JSON `{"from": "in-progress", "to": "in-review"}`, one file, diff limited to `status`. Matches.
 - The approver's `memory approve task-057-… --reason "…"` → `2462fb2`, run from this worktree (`in-review →
   approved`, `Approver:`/`Reason:` trailers with the drafted reason, only `status` changed). Matches.
+- Merged into main with `--no-ff` → `63faea1`.
+- `npx wingfoil memory submit task-057-…` on main → `3d8e939`. Declared: `approved → done`, one commit. Observed: exit 0,
+  one file, diff limited to `status`. Matches.
+- Worktree removed after `git status --ignored`: only `coverage/` and `node_modules/`, both regenerable.
