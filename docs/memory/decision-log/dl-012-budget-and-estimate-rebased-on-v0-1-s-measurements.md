@@ -2,7 +2,7 @@
 id: dl-012-budget-and-estimate-rebased-on-v0-1-s-measurements
 type: decision-log
 title: "Budget and estimate rebased on v0.1's measurements"
-status: draft
+status: pending
 ---
 
 ## Context
