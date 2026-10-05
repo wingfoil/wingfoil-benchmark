@@ -118,7 +118,8 @@ own overhead, which is unknown until calibration. Calibration replaces this figu
 - One branch `task/<id>` per task, in its own linked worktree with its own `npm ci`. Test-first. Merged into `main`
   with `--no-ff` after approval, then `approved → done`.
 - **Every task is reviewed by an independent, read-only agent** against its Design, the requirements and its
-  acceptance scenarios. Each fix is reviewed again until clean, and the rounds are recorded (dl-011).
+  acceptance scenarios. Each fix is reviewed again until clean, and the rounds are recorded (dl-011). Declared in
+  `kanban-delivery` version 3's review phase (task-056).
 - Review findings become elements (bug or decision-log). A change to an approved document is an amendment with a
   raised version and a recorded review decision.
 - Real-agent runs are made from the main checkout, so that their git-ignored transcripts outlive task branches.
