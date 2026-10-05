@@ -2,7 +2,7 @@
 id: bug-005-a-bug-cannot-name-the-task-that-fixes-it-and-never-closes
 type: bug
 title: "A bug cannot name the task that fixes it, and never closes"
-status: approved
+status: fixed
 fixed_by: task-058-a-fixed-state-and-a-fixes-link-for-bugs
 ---
 
