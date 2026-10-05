@@ -2,7 +2,7 @@
 id: task-060-campaign-validate-preflights-the-run-s-environment
 type: task
 title: "Campaign validate preflights the run's environment"
-status: pending
+status: backlog
 release: v0.2
 wave: W12
 features: [F1.1]
