@@ -1,15 +1,48 @@
 # WingFoil Benchmark
 
-Benchmark suite that measures **where WingFoil makes a difference** in AI-assisted software
-development: the same scenarios are executed by AI agents with and without WingFoil (and with
-competing tools), and compared on quality, cost and determinism.
+A benchmark that measures **where a harness for AI coding agents makes a difference**, and where it does not. A
+harness is the process and memory tooling around an agent; the one measured first is
+[WingFoil](https://github.com/wingfoil/wingfoil). The same agent and model work through the same multi-step tasks
+with and without the harness, and the results are compared on quality, cost and determinism, by rules published
+before any run.
 
-> **Status:** inception and specification complete (see [`docs/01_vision/`](docs/01_vision/) and
-> [`docs/02_specification/`](docs/02_specification/)); release v0.1 is in development
-> ([`docs/memory/release/rel-v0-1.md`](docs/memory/release/rel-v0-1.md)). The scenario and campaign
-> formats exist, and `bench campaign run` executes a scenario in a container, one fresh agent session
-> per step, recording what each session cost and what it said. Claude Code can now be the agent; a
-> campaign that names it refuses to start without an explicit opt-in to spend.
+## v0.1: the first preliminary result
+
+- **Results:** <https://wingfoil.github.io/wingfoil-benchmark/c82a5e74885b/2/> *(to confirm once Pages is enabled)*
+- **How it works:** the [method page](https://wingfoil.github.io/wingfoil-benchmark/c82a5e74885b/2/method.html), every
+  rule, its limits included.
+- **Release notes:** [docs/releases/v0.1.md](docs/releases/v0.1.md): what was compared, the results in short, the
+  spending, and the known limits.
+
+v0.1 compares three arms (**baseline**, **baseline-docs** and **wingfoil**, on WingFoil v0.2.2) on four scenarios
+(S1, S2, S3 and S8), with Claude Code and `claude-sonnet-5`, plus one run of S1 on Opus 5. Its results are
+preliminary: only S1 was repeated (three times), and no difference is claimed as significant. Competing harnesses
+(Spec Kit, OpenSpec) are planned for v0.2.
+
+**The benchmark is built by WingFoil's maintainer.** That is threat T1 of the
+[experiment design](docs/01_vision/09_experiment-design.md). The questions, metrics and scenarios were fixed before
+any run, losses are published like wins, and every run's record, its cost and its agent transcript are public, so
+that the results can be checked and contested.
+
+## What is where
+
+| Path | What it holds |
+|---|---|
+| [`docs/01_vision/`](docs/01_vision/) | the product vision, the personas, the features, the release sequencer and the experiment design |
+| [`docs/02_specification/`](docs/02_specification/) | requirements, acceptance scenarios (Gherkin), scenario specifications, traceability |
+| [`docs/calibration/`](docs/calibration/) | the calibration of v0.1 (dry runs, measured costs, budget) and the spending ledger |
+| [`docs/memory/`](docs/memory/) | the project's records, managed with WingFoil: releases, tasks, bugs, decisions, campaigns |
+| [`docs/releases/`](docs/releases/) | release notes |
+| [`scenarios/`](scenarios/) | the scenarios, their seeds, prompts and public hidden tests, per version |
+| [`arms/`](arms/) | each arm's operating manual, setup and configuration |
+| [`campaigns/`](campaigns/) | campaign files; the reference campaign of v0.1 is `v0-1-reference.yaml` |
+| [`results/`](results/) | every execution's records and scores, run by run (transcripts are release assets) |
+| [`findings/`](findings/) | finding notes, generated from results, for WingFoil's maintainer to file |
+| [`site-content/`](site-content/) | the method page's prose; the rest of the site is generated |
+| [`src/`](src/) | the `bench` command: runner, scoring, aggregation, site |
+
+The hold-out tests and S2's answer key live in a separate, private repository, so that public material cannot be
+used to pass them (threats T5 and T13).
 
 ## Tooling
 
@@ -152,6 +185,31 @@ and is scored like any other, and is marked in `run.json` and `score.json` with 
 named — never skipped. `campaign validate` lists them before anything runs. The baseline arms are the
 reference and are never marked. One line per run: `T3@1.0 baseline fake-model r1: step 01 0/1, step 02 1/1, final 1/1;
 hold-out final 1/2`.
+
+```bash
+npx bench run show <campaign-id>/<n>/runs/<scenario>@<ver>/<arm>/<model>/r<k> [--full]
+npx bench run compare <run> <run>
+```
+
+`run show` prints one stored run: its pins, every step's usage, models, commits, diff and test results. `run compare`
+sets two runs side by side, step by step.
+
+```bash
+npx bench finding <campaign-id>/<n> --scenario <id>@<version> --metric <metric> --arms <arm>,… --as bug|decision-log
+```
+
+`finding` writes a finding note under `findings/` from an aggregated execution: the campaign, the WingFoil commit,
+the runs and the metric's values, ending with a block in the shape of a WingFoil bug or decision record.
+
+```bash
+npx bench site build <campaign-id>/<n>
+npx bench site publish [--remote <name>]
+npx bench transcripts pack <campaign-id>/<n>
+```
+
+`site build` writes the static site of an execution into `site/`. `site publish` pushes `site/` to the `gh-pages`
+branch, only when the repository is public and only what a fresh build gives. `transcripts pack` packs an
+execution's transcripts into one release asset and prints the `gh release create` command, which it does not run.
 
 Exit codes: `0` success, `1` failure (one line per problem, or a run that failed), `2` usage error.
 
