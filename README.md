@@ -8,7 +8,7 @@ before any run.
 
 ## v0.1: the first preliminary result
 
-- **Results:** <https://wingfoil.github.io/wingfoil-benchmark/c82a5e74885b/2/> *(to confirm once Pages is enabled)*
+- **Results:** <https://wingfoil.github.io/wingfoil-benchmark/c82a5e74885b/2/>
 - **How it works:** the [method page](https://wingfoil.github.io/wingfoil-benchmark/c82a5e74885b/2/method.html), every
   rule, its limits included.
 - **Release notes:** [docs/releases/v0.1.md](docs/releases/v0.1.md): what was compared, the results in short, the

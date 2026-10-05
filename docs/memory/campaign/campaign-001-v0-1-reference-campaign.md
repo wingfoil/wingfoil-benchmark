@@ -232,3 +232,16 @@ WingFoil is the approver's.
     continuity, S8's rules).
   - It is the measured baseline of calibration §11's **H1** ("the engine lowers the process's overhead"), which
     v0.2 is to test.
+
+## Publication
+
+- **The method page re-read before publishing:** task-055 (merged `330de4f`). The site was then rebuilt on
+  `c82a5e74885b/2` alone: the validation's local build (`d032e3e98de3/1`) was removed from `site/` first, so that it
+  would not be published.
+- **The repository made public** by the approver on 2026-10-05. An anonymous `git ls-remote` read it.
+- **The publish gate:** the approver's `memory approve` (reviewed → published), `7ef4c55`, then `git push origin main`
+  and `bench site publish`, both run by the approver. `gh-pages` was created on the remote (`9df8424`), and Pages was
+  enabled on it.
+- **The site:** <https://wingfoil.github.io/wingfoil-benchmark/c82a5e74885b/2/>. The landing page and the method page
+  answer 200, and the root index links only `c82a5e74885b/2/`.
+
