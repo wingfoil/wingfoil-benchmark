@@ -1,8 +1,8 @@
-# Acceptance criteria (v0.1)
+# Acceptance criteria (v0.1, v0.2)
 
-**Version:** 1.0
-**Date:** 2026-09-22
-**Status:** Approved
+**Version:** 1.1 (draft for review: v0.2)
+**Date:** 2026-10-05
+**Status:** Approved (1.0); 1.1 in review
 **Traces to:** [07_sequencer.md](../../01_vision/07_sequencer.md) v0.1 (W1–W11), [06_features.md](../../01_vision/06_features.md), [05_journeys.md](../../01_vision/05_journeys.md) J1–J4, [09_experiment-design.md](../../01_vision/09_experiment-design.md)
 
 ---
@@ -12,11 +12,13 @@ v0.1**.
 
 | File | Features | Journeys |
 |---|---|---|
-| [campaign.feature](campaign.feature) | F1.1, F1.2, F1.3 | J2 |
+| [campaign.feature](campaign.feature) | F1.1, F1.2, F1.3; F1.4 (v0.2) | J2 |
 | [runner.feature](runner.feature) | F2.1–F2.7 | J2 |
 | [scenarios.feature](scenarios.feature) | F3.1–F3.6, F6.1–F6.3, F6.8 | J3 |
 | [scoring.feature](scoring.feature) | F4.1–F4.5, F4.7, F4.8 | J2 |
 | [results.feature](results.feature) | F5.1, F5.3–F5.6, F5.8 | J1, J2, J4 |
+| [competitors.feature](competitors.feature) (v0.2) | F7.4, F7.1, F7.2 | J6 |
+| [comparison.feature](comparison.feature) (v0.2) | F5.2, F5.7 | J2, J5 |
 
 ## Conventions
 

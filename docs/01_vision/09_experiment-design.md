@@ -1,8 +1,8 @@
 # Experiment Design (GQM) — WingFoil Benchmark
 
-**Version:** 1.1
-**Date:** 2026-09-22
-**Status:** Approved
+**Version:** 1.2 (draft for review: v0.2's release-planning)
+**Date:** 2026-10-05
+**Status:** Approved (1.1); 1.2 in review
 **Traces to:** [06_features.md](06_features.md) (F2.4, F2.7, F4.x, F7.4), [07_sequencer.md](07_sequencer.md) (decisions 1–3), [03_is-isnot.md](03_is-isnot.md) 1.1; input: [X_competitor-landscape-2026-09-22.md](X_competitor-landscape-2026-09-22.md)
 
 ---
@@ -56,13 +56,24 @@ Two goals cut across all categories:
 | **baseline** | the agent, the seed, and a minimal instruction file (the same one-paragraph project description for every arm) | the plain agent |
 | **baseline-docs** | as baseline, plus the **same information** as the wingfoil arm, rendered as free-form Markdown | a control: "more context" versus "a harness" |
 | **wingfoil** | as baseline, plus WingFoil at the campaign's version, initialized and configured, with its MCP server, and the arm's operating manual | the subject |
-| **competitor arms** (v0.2) | as baseline, plus the tool at a pinned version, set up from its official documentation, and the arm's operating manual | fair comparison |
+| **competitor arms** (v0.2: **speckit**, **openspec**) | as baseline, plus the tool at a pinned version, set up from its official documentation, and the arm's operating manual | fair comparison |
+| **docs controls** (v0.2: **speckit-docs**, **openspec-docs**) | as baseline, plus the **same information** as their harness arm, rendered as free-form Markdown; the v0.1 `baseline-docs` stays the wingfoil arm's | a control per harness: "more context" versus "this harness" (1.2) |
 
 **Parity rules:**
 
-- **baseline-docs is generated mechanically** from the wingfoil arm's configuration (DNA,
-  directives, workflow descriptions), with no hand-editing. Parity of information is then a property
-  of the generator, not of good intentions.
+- **Every docs control is generated mechanically** from its harness arm's configuration, as the agent would meet
+  it, with no hand-editing: `baseline-docs` from the wingfoil arm's (DNA, directives, workflow descriptions);
+  `speckit-docs` and `openspec-docs` from their arms' (amended in 1.2). Parity of information is then a property
+  of each generator, not of good intentions, and what each generator renders, and why, is published.
+- **Eligibility** (F7.4, 1.2): a tool gets an arm only when it meets the published criteria. It must run with the
+  campaign's agent and model id; its version must be pinnable; it must run headless in a container; and it must be
+  a workflow harness, not only a standards or prompt pack. A tool that fails is listed as excluded, with its reason.
+- **Setup from official documentation** (T12): each harness is installed and initialized as its documentation says,
+  scripted and published. Every deviation from a tool's defaults is published with the setup. One deviation applies
+  to every tool: **telemetry is turned off**.
+- **The runner starts the agent in every arm** (1.2). A harness whose own engine can start the agent, such as Spec
+  Kit's `specify workflow run`, is followed through the commands or skills it gives the agent. The engine-led mode is
+  taken up for every engine-led harness at once, once WingFoil also has its workflow engine.
 - **Operating manuals** (is/is-not 1.1): one fixed, published file per arm. It maps a step's intent
   to the harness's commands. Its cost counts as setup. Its size in tokens is **reported for every
   arm**, because a longer manual is also more context, and that is a confound.
@@ -150,10 +161,11 @@ Two goals cut across all categories:
 - **M-E1 directive violations:** scripted checks per directive, for example new dependencies, public
   functions without documentation, or wall-clock use in business logic. The metric is violations per
   step.
-- **M-E2 illegal transitions prevented** (from v0.2): the scenario asks for a transition its declared
+- **M-E2 illegal transitions prevented** (from v0.3: no v0.2 scenario asks for a forbidden transition; amended in
+  1.2): the scenario asks for a transition its declared
   process forbids. The metric is whether the final repository shows it happened. It depends only on
   the outcome, not on how the tool stores state.
-- **M-E3 approval reconstructibility** (from v0.2): for each approval event in the scenario, can the
+- **M-E3 approval reconstructibility** (from v0.3, with the scenario that has approval events; amended in 1.2): for each approval event in the scenario, can the
   approver and the reason be found from the repository alone? It is checked by a **scripted,
   format-neutral tool** (experiment-design decision 3): an approval event is reconstructible when
   the approver's identity and a non-empty reason appear in any git-tracked file, or in any commit,
@@ -192,7 +204,7 @@ campaign produces the reference values, and a threshold is proposed only after t
 |---|---|---|---|
 | T1 | **Maintainer bias:** the benchmark is designed by WingFoil's maintainer | construct, conclusion | GQM fixed before any run; losses published equally; tool-neutral metrics (§4.4); scenarios where competitors are strong (S2, S3, S7 for OpenSpec; S6 for Spec Kit); public setups and a contest process (F7.2) |
 | T2 | **Category bias:** WingFoil's unique features sit in category E | construct | E is one category among seven, with no overall score; M-E2 and M-E3 measure outcomes, not formats |
-| T3 | **More context, not harness** | internal | the baseline-docs control, generated mechanically; operating-manual size reported |
+| T3 | **More context, not harness** | internal | a docs control per harness arm, each generated mechanically (1.2); operating-manual size reported |
 | T4 | **Prompt leakage or asymmetry** | internal | identical prompts, a leak scan, and published operating manuals |
 | T5 | **Training contamination:** public seeds and specs may be known to the model | external | the hold-out repository; fictional domains (S4); conformance suites used as oracles, not as seeds |
 | T6 | **Model non-determinism** | conclusion | repetitions where affordable; n shown on every number; preliminary labels |
@@ -201,9 +213,10 @@ campaign produces the reference values, and a threshold is proposed only after t
 | T9 | **Neutral-approver policy favours some tools** (for example, tools that ask more questions) | internal | one versioned policy for every arm; interventions reported per arm |
 | T10 | **Harness capability gap:** the WingFoil under development (v0.2 pre-release, `3df305e`) has no workflow engine; workflows are followed by hand | construct | expected failures (F3.6), published as losses; public campaign on the latest release (sequencer decision 3) |
 | T11 | **Oracle validity:** hidden tests capture the spec only partly | construct | multiple metrics per goal; rubric judge from v0.3 |
-| T12 | **Setup effort unequal across tools** | internal | setup from official documentation only; scripted and published; deviations such as disabled telemetry published |
+| T12 | **Setup effort unequal across tools** | internal | setup from official documentation only; scripted and published; deviations published, telemetry off for every tool (1.2); a setup can be contested (F7.2) |
 | T13 | **Answer lookup:** with internet access, an agent may fetch public material that overlaps the oracle, for example S1's official conformance suite | internal, construct | web requests logged and reported per arm; hold-out tests added to public oracles; fictional domains (S4) where lookup cannot help. Access is the same for every arm, so it is not an arm asymmetry |
-| T14 | **Model sensitivity:** a harness's effect may depend on the model | external | a model-comparison slice with Opus 5 (§6); cross-model numbers are shown as a separate comparison, never mixed with same-model ones |
+| T14 | **Model sensitivity:** a harness's effect may depend on the model | external | model slices (§6): in v0.2 a ladder of models read per step (dl-007, dl-008); cross-model numbers are shown as a separate comparison, never mixed with same-model ones |
+| T15 | **Tool drift:** competitors release every few days, so a result describes one version only (1.2) | external | every harness pinned per campaign and frozen as an artifact; the version is named beside every number; only deltas against each campaign's own baseline are compared across campaigns (T7) |
 
 ---
 
@@ -221,6 +234,22 @@ the cost of every step.
   runs, compared with the matching Sonnet 5 runs. If the dry-run estimate does not fit the budget,
   the slice shrinks to the wingfoil arm only. At least one comparable run is always kept.
 - Total: **21 runs** (18 with Sonnet 5, 3 with Opus 5).
+
+**v0.1 as measured** (calibration v0.1, campaign-001; amended in 1.2 from dl-012): a Sonnet 5 run cost about
+**1.8 €** on average (S1 up to 4.4 €); Opus 5 cost **6.8×** Sonnet, not its 2.5× list-price ratio; the 18 Sonnet runs
+came to 39 € and the published execution to 61.38 € against a 60.32 € estimate. The 30 € target below did not hold
+and is kept as the record of v0.1's plan.
+
+**From v0.2** (dl-012):
+
+- **The estimate** reads every completed dry run of a key and shows the range; from a single dry run it applies a
+  stated margin of 35 %, the run-to-run spread v0.1 measured.
+- **No model is priced from another** by list price: each model of a campaign needs its own dry runs.
+- **The ceiling covers the campaign** across all its executions, so a re-run counts against it.
+- **A comparison is non-preliminary from n ≥ 3** on both sides; the scenarios repeated are chosen at calibration.
+- **v0.2's shape** (dl-007, the approver's triage of 2026-10-05): the v0.1 scenarios in seven arms; Sonnet 5.5 by
+  default if its calibration fits, with a bridge slice re-running v0.1's configuration and a Haiku 4.5 rung of the
+  model ladder. A first sizing, Sonnet only and v0.1's repetitions: about 42 runs, 75–85 €. Calibration replaces it.
 
 With a 30 € target, the Sonnet 5 runs must average **about 1.2 € or less**, leaving room for the
 more expensive Opus 5 slice, dry runs excluded. That is the sizing constraint for the scenarios in
@@ -244,3 +273,14 @@ before any campaign starts.
    `package.json` version had not been bumped. The WingFoil under development is now the **v0.2
    pre-release, pinned to commit `3df305e`**. Its only relevant gap is the missing **workflow engine**.
    Source: scenario-specs review (2026-09-22), [../02_specification/scenarios/README.md](../02_specification/scenarios/README.md) K5.
+7. **Amendment 1.2 (v0.2 release-planning, 2026-10-05, in review).**
+   - §2: the competitor arms named; a docs control per harness arm (the approver's choice at rel-v0-2's triage);
+     eligibility, setup and telemetry as parity rules; the runner starts the agent in every arm (Spec Kit through
+     its skills; the engine-led mode taken up with WingFoil's engine).
+   - §4.4: M-E2 and M-E3 move to v0.3, where a scenario exercises them.
+   - §5: T3, T12, T14 updated; **T15 tool drift** added.
+   - §6: v0.1's measured costs and dl-012's rules; v0.2's shape from dl-007.
+
+   Sources: rel-v0-2 triage (2026-10-05); dl-007, dl-008, dl-012;
+   [X_competitor-landscape-2026-10-05.md](X_competitor-landscape-2026-10-05.md).
+

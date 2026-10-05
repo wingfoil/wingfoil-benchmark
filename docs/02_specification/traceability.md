@@ -1,8 +1,8 @@
-# Traceability (v0.1)
+# Traceability (v0.1, v0.2)
 
-**Version:** 1.3
-**Date:** 2026-10-02
-**Status:** Approved
+**Version:** 1.4 (draft for review: v0.2)
+**Date:** 2026-10-05
+**Status:** Approved (1.3); 1.4 in review
 **Traces to:** [06_features.md](../01_vision/06_features.md) 1.2, [07_sequencer.md](../01_vision/07_sequencer.md) 1.1, [09_experiment-design.md](../01_vision/09_experiment-design.md) 1.1, [scenarios/](scenarios/), [acceptance/](acceptance/), [requirements.md](requirements.md)
 
 ---
@@ -45,6 +45,7 @@ Only questions that are active in v0.1 are listed. Q-E2, Q-E3 (v0.2), G-A, G-B (
 | F1.1 campaign file | J2.1 | campaign.feature | REQ-FMT-01, 02, 03; REQ-CLI-01; REQ-RUN-16 | W1 |
 | F1.2 cost estimate | J2.2 | campaign.feature | REQ-CLI-02; REQ-NFR-06 | W5 |
 | F1.3 budget guard | J2.2, J2.4 | campaign.feature | REQ-CLI-03; REQ-RUN-08, 13 | W5 |
+| F1.4 resumable campaign (v0.2) | J2.4 | campaign.feature | REQ-FMT-01; REQ-CLI-03; REQ-RUN-19 | W14 |
 | F2.1 isolated run | J2.3 | runner.feature | REQ-RUN-01, 02; REQ-CLI-10 | W1 |
 | F2.2 fresh-session steps | vision | runner.feature | REQ-RUN-04, 05 | W2 |
 | F2.3 Claude Code adapter | J2.3, J2.7 | runner.feature | REQ-RUN-04, 09, 15; REQ-ARC-04 | W2 |
@@ -75,6 +76,11 @@ Only questions that are active in v0.1 are listed. Q-E2, Q-E3 (v0.2), G-A, G-B (
 | F6.2 S2 | — | scenarios.feature (outline) | scenarios/S2.md; REQ-FMT-04 | W7 |
 | F6.3 S3 | — | scenarios.feature (outline) | scenarios/S3.md; REQ-FMT-04 | W8 |
 | F6.8 S8 | — | scenarios.feature (outline) | scenarios/S8.md; REQ-FMT-04 | W8 |
+| F5.2 campaign comparison (v0.2) | J2.6 | comparison.feature | REQ-CLI-12; REQ-SCO-13; REQ-RES-07 | W14 |
+| F5.7 profile filter, stable URLs (v0.2) | J5.1, J5.5 | comparison.feature | REQ-RES-08; REQ-RES-02 | W14 |
+| F7.4 eligibility criteria (v0.2) | J6.1 | competitors.feature | REQ-FMT-11; REQ-FMT-01; REQ-RES-09 | W12 |
+| F7.1 competitor arms (v0.2) | J6.1 | competitors.feature | REQ-FMT-05, 12; REQ-RUN-11, 18; REQ-RES-09 | W12 (Spec Kit), W13 (OpenSpec) |
+| F7.2 setup contest process (v0.2) | J6.3 | competitors.feature | REQ-RES-10 | W13 |
 
 **Coverage:**
 
@@ -86,9 +92,9 @@ Only questions that are active in v0.1 are listed. Q-E2, Q-E3 (v0.2), G-A, G-B (
 
 | Threat | Mitigation | Built by (v0.1) |
 |---|---|---|
-| T1 maintainer bias | GQM fixed before runs; losses published equally; tool-neutral metrics; contest process | REQ-RES-03, REQ-SCO-06; contest process F7.2 in **v0.2** |
+| T1 maintainer bias | GQM fixed before runs; losses published equally; tool-neutral metrics; eligibility by published criteria; contest process | REQ-RES-03, REQ-SCO-06; REQ-FMT-11, REQ-RES-09 (v0.2); REQ-RES-10 (v0.2) |
 | T2 category bias | no overall score; outcome-based governance | REQ-RES-03; REQ-SCO-05, 06 |
-| T3 more context, not harness | baseline-docs generated mechanically; manual size recorded | REQ-RUN-11, 12 |
+| T3 more context, not harness | a docs control per harness, generated mechanically; manual size recorded | REQ-RUN-11 (one generator per harness, v0.2), 12 |
 | T4 prompt leakage or asymmetry | identical prompts; leak scan | REQ-FMT-08; runner.feature @F2.7 |
 | T5 training contamination | hold-out additions; purpose-written seeds (S2, S3, S8) | REQ-SCO-09; scenario specs |
 | T6 model non-determinism | repetitions; `n` on every value | REQ-FMT-07; REQ-SCO-07 |
@@ -97,9 +103,10 @@ Only questions that are active in v0.1 are listed. Q-E2, Q-E3 (v0.2), G-A, G-B (
 | T9 approver policy favours some tools | one versioned policy; interventions per arm | REQ-RUN-06, 07 |
 | T10 harness capability gap | expected failures | REQ-FMT-10; REQ-SCO-10 |
 | T11 oracle validity | several metrics per goal | scoring.feature (all); blind judge in **v0.3** |
-| T12 unequal setup effort | scripted setups; setup cost apart | REQ-RUN-03; REQ-FMT-05 |
+| T12 unequal setup effort | scripted setups from official documentation; telemetry off; setups published and contestable; setup cost apart | REQ-RUN-03, 18; REQ-FMT-05; REQ-RES-09, 10 (v0.2) |
 | T13 answer lookup | web requests logged; hold-out additions | REQ-RUN-10 (**partial**: shell network use is not detected); REQ-SCO-09 |
-| T14 model sensitivity | Opus 5 slice as a separate comparison | REQ-FMT-01 (`models` slices) |
+| T14 model sensitivity | model slices as a separate comparison; v0.2 a model ladder (dl-007, dl-008) | REQ-FMT-01 (`models` slices) |
+| T15 tool drift (v0.2) | every harness pinned and frozen; its version beside every number; cross-campaign deltas only | REQ-FMT-03, 12; REQ-SCO-13 |
 
 ## 4. Findings
 
@@ -158,3 +165,18 @@ again after it). No feature, acceptance or requirement changes.
 
 Source: [task-050](../memory/task/task-050-calibration-of-v0-1-dry-runs-measured-costs-and-the-revised-budget.md);
 review decision of the approver at that task's review, 2026-10-03 (`721321f`).
+
+## Amendment 1.4 (v0.2 release-planning, 2026-10-05, in review)
+
+§2 gains the six v0.2 features, with their acceptance (`competitors.feature`, `comparison.feature`, `campaign.feature`
+1.1), their requirements (requirements 1.26) and their waves (W12–W14).
+
+§3:
+
+- T1, T3, T12 and T14 read their v0.2 mitigations;
+- T15 (tool drift) is added, from experiment design 1.2.
+
+M-E2 and M-E3 (Q-E2, Q-E3) stay without a v0.2 scenario: experiment design 1.2 moves them to v0.3.
+
+Source: [rel-v0-2](../memory/release/rel-v0-2.md); review decision of the approver: pending.
+
