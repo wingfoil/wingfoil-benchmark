@@ -87,3 +87,21 @@ dl-006 (a WingFoil configuration change that implements an approver's decision, 
   commits it. Observed: `wf(task): add task-056-an-independent-review-in-kanban-delivery`, `status: draft`.
 - First `memory submit` refused: "missing required field on submit: requirements". The task serves no product
   requirement; [REQ-NFR-04] is the nearest, as task-052 did (WingFoil usage notes N17, N21: a required field cannot say "none").
+
+### WingFoil commands (declared vs observed)
+
+- `npx wingfoil memory submit task-056-…` → `856408a`, in the linked worktree
+  `WingFoil2-Benchmark-task-056` with its own `npm ci`. Declared: `backlog → in-progress`, one commit
+  `wf(task): submit <id>`. Observed: exit 0, JSON `{"from": "backlog", "to": "in-progress"}`, one commit, one file,
+  diff limited to `status`. Matches.
+- `npx wingfoil workflow list`, before the change (at `fd6822e`): exit 0, empty stderr, 18 785 bytes. After
+  (`26b7e3d`): exit 0, empty stderr, 19 368 bytes. The diff is exactly two lines: `kanban-delivery`'s `"version"`
+  2 → 3, and the `review` phase's `description` with the new text. Declared (schema at the pin): `version` is a
+  workflow field and `description` a phase field, both read verbatim. Observed: as declared. Matches.
+
+### Build
+
+1. `26b7e3d` (`chore(wingfoil)`, with dl-011's approval as `Approver:`/`Reason:` trailers): `kanban-delivery` 3 —
+   header comment and the review phase's description, as in the Design; plan-004's delivery rule points to it.
+2. No code changed. `npm test`: 77 files, 1225/1225 tests, coverage 98.04 % statements, 90.93 % branches; `npm run
+   lint` clean. `test:bin` and `test:docker` not run: no CLI, runner, image or scoring change.
