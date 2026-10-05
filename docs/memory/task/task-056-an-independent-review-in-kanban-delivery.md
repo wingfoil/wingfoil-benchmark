@@ -62,7 +62,8 @@ in the review phase's **description**, as dl-011 B says, and not as a `checks` e
 - **`review`'s description** keeps what must hold (tests, coverage, lint, traceability, declared-vs-observed notes)
   and adds who reviews and how:
   - an independent, read-only agent (a fresh session or subagent, not the one that built the task, with no
-    file-editing tools; it may run read-only and test commands) reviews the task's branch against its Design, the requirements it names and its acceptance scenarios;
+    file-editing tools; it may run read-only and test commands) reviews the task's branch against its Design, the
+    requirements it names and its acceptance scenarios;
   - every finding is fixed on the branch or recorded as a bug or decision-log (the `code-review` directive's rule);
   - each fix is reviewed again, by an independent agent, until a round finds nothing left to fix and every finding
     is fixed or recorded as an element;
@@ -70,6 +71,7 @@ in the review phase's **description**, as dl-011 B says, and not as a `checks` e
     task's Execution notes, one entry per round (the template has no such section, and v0.1's tasks used four
     different headings for it);
   - a task is not submitted `in-progress → in-review` on a self-review.
+- The header comment says the same, the Review notes' place included.
 - The `fallback` (back to `build`, `in-progress`) is unchanged: a rejection by the approver starts a new round of
   build and independent review.
 - No other phase changes. `role: reviewer` stays: the independent agent executes as `reviewer` (dna.yaml).
@@ -86,11 +88,13 @@ dl-006 (a WingFoil configuration change that implements an approver's decision, 
 
 ## Execution notes
 
-- `npx wingfoil memory add --type task --title "An independent review in kanban-delivery"` → `4d97360`. Declared: creates the element from the template and
-  commits it. Observed: `wf(task): add task-056-an-independent-review-in-kanban-delivery`, `status: draft`. Matches.
+- `npx wingfoil memory add --type task --title "An independent review in kanban-delivery"` → `4d97360`. Declared:
+  creates the element from the template and commits it. Observed: `wf(task): add
+  task-056-an-independent-review-in-kanban-delivery`, `status: draft`. Matches.
 - First `memory submit` refused: "missing required field on submit: requirements". Declared: `submit` validates the
-  type's required fields before the transition. Observed: refused, no commit. Matches; the friction is that the task serves no product
-  requirement; [REQ-NFR-04] is the nearest, as task-052 did (WingFoil usage notes N17, N21: a required field cannot say "none").
+  type's required fields before the transition. Observed: refused, no commit. Matches; the friction is that the task
+  serves no product requirement; [REQ-NFR-04] is the nearest, as task-052 did (WingFoil usage notes N17, N21: a
+  required field cannot say "none").
 - `npx wingfoil memory submit task-056-…` → `d2c47b2`, on main after `8d18233`. Declared: `draft → pending`, one
   commit. Observed: one commit, diff limited to `status`. Matches.
 - The approver's `memory approve task-056-…` → `0a86309` (`pending → backlog`, the subject names the transition).
@@ -131,3 +135,12 @@ dl-006 (a WingFoil configuration change that implements an approver's decision, 
   5. nit — the Execution notes lacked the `memory add` hash and the main-side submit and approve. **Fixed:** added.
   After the fixes, `workflow list`: exit 0, 19 565 bytes, still a two-line diff from main (version and the review
   description).
+- **Round 2** (a new independent read-only Explore subagent, on `f8e2690`): no blocking finding; it verified the five
+  round-1 outcomes, every hash and transition in the Execution notes, and `workflow list` on both checkouts (exit 0,
+  18 785 vs 19 565 bytes, a two-line diff). Findings and outcomes:
+  1. should-fix — the header comment still said "the task's Review notes". **Fixed:** it names the `### Review`
+     subsection of the Execution notes.
+  2. nit — "not submitted for review (in-progress → in-review) … Then in-progress → in-review" named the transition
+     twice. **Fixed:** "Then, never on a self-review, in-progress → in-review; …".
+  3. nit — lines edited in round 1 ran past the file's 120-column wrap. **Fixed:** re-wrapped.
+  After the fixes, `workflow list`: exit 0, empty stderr, 19 509 bytes, still a two-line diff from main.
