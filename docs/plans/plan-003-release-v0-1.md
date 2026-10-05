@@ -2,7 +2,7 @@
 id: plan-003-release-v0-1
 type: plan
 title: "Release v0.1"
-status: active
+status: done
 workflow: release-cycle
 phase: release-cycle
 ---
