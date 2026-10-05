@@ -141,3 +141,6 @@ One `chore(wingfoil)` commit with dl-010's approval as `Approver:`/`Reason:` tra
   0, JSON `from`/`to` as declared, one file, `status` only. Matches.
 - The approver's `memory approve task-059-… --reason "…"` → `ddd8305`, run from this worktree (`in-review →
   approved`, `Approver:`/`Reason:` trailers with the drafted reason, only `status` changed). Matches.
+- Merged into main with `--no-ff` → `7904ad7`.
+- `npx wingfoil memory submit task-059-…` on main → `6453e49` (`approved → done`, one file, `status` only). Matches.
+- Worktree removed after `git status --ignored`: only `coverage/` and `node_modules/`, both regenerable.
