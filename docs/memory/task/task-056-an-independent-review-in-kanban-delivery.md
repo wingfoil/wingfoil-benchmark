@@ -157,16 +157,19 @@ dl-006 (a WingFoil configuration change that implements an approver's decision, 
 
 - `npx wingfoil memory submit task-056-…` → `fd83621`. Declared: `in-progress → in-review`, one commit. Observed: exit
   0, JSON `{"from": "in-progress", "to": "in-review"}`, one commit, one file, diff limited to `status`. Matches.
-- The approver's `memory approve task-056-… --reason "<motivo>"` → `68c4a80`, run from this worktree
-  (`in-review → approved`, `Approver:`/`Reason:` trailers, only `status` changed). Matches. The recorded reason is
-  the placeholder of the command the agent handed over, left as written; the approval itself was confirmed in chat
-  ("approvato, procedi", 2026-10-05). From now on the handed-over command carries a drafted reason, not a
-  placeholder (usage note N50).
+- The approver's `memory approve task-056-… --reason "<motivo>"`, run from this worktree (`in-review → approved`,
+  `Approver:`/`Reason:` trailers, only `status` changed). Matches. The recorded reason was the placeholder of the
+  command the agent handed over, left as written; the approval itself was confirmed in chat ("approvato, procedi",
+  2026-10-05). **Reason rewritten at the approver's request** ("correggi il commit", then "Riscrivi tu i 5 commit",
+  2026-10-05): the approval commit was amended to carry a reason and the four local commits above it replayed, with
+  identical trees, before anything was pushed (origin/main was at `fd6822e`); task-057's branch was rebased with
+  `--onto`. The approval is now `c327fed` (it was `68c4a80`). From now on the handed-over command carries a drafted
+  reason, not a placeholder (usage note N50; the `multi-session` directive, task-057).
 - The agent's `memory approve`, run at the approver's request after that approval had already landed: refused,
   `illegal transition approved -> backlog for type 'task'`, exit 1, no commit. Declared: `approve` takes the
   state's approval edge. Observed: refused, rightly, but the message names `backlog`, a target `approve` never
   reaches from `approved` (usage note N49).
-- Merged into main with `--no-ff` → `286968f`.
-- `npx wingfoil memory submit task-056-…` on main → `cfb80b6`. Declared: `approved → done`, one commit. Observed:
+- Merged into main with `--no-ff` → `d257ca1` (was `286968f` before the rewrite).
+- `npx wingfoil memory submit task-056-…` on main → `4db9898` (was `cfb80b6`). Declared: `approved → done`, one commit. Observed:
   exit 0, JSON `{"from": "approved", "to": "done"}`, one file, diff limited to `status`. Matches.
 - Worktree removed after `git status --ignored`: only `coverage/` and `node_modules/`, both regenerable.
