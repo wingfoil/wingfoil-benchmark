@@ -46,9 +46,12 @@ scenario" with dl-010 B:
 - all acceptance tests green against the fake agent, coverage above 80 %, lint clean, and the Docker suite
   (`npm run test:docker`) green — plan-004's step 4 already lists it;
 - **one real-agent run per arm of the release's campaign** (in v0.2 the seven arms of experiment design 1.2), all on
-  **one scenario shared by every arm, the one with the largest step**: the scenario whose step wrote the largest
-  output in calibration's dry runs, across all arms, the larger cost breaking a tie (one key, one choice, as dl-010's
-  "S1 in three arms"), so that each arm's setup and environment and the largest output are exercised once;
+  **one scenario shared by every arm, the one with the largest step**: the scenario with the largest step transcript
+  (`transcript.jsonl`, in bytes, which every step writes and the main checkout keeps) in calibration's dry runs,
+  across all arms, the larger cost breaking a tie (one key, one choice, as dl-010's "S1 in three arms"), so that each
+  arm's setup and environment and the largest output are exercised once. Bytes of the stream are bug-011's measure
+  (its 1 MiB bound), not output tokens; calibration v0.1 recorded tokens and time per step but no sizes, so the
+  `calibration` phase now asks for each dry-run step's transcript size, and plan-004's step 3 lists it;
 - **each arm's environment checked** before any run: every variable and path it needs, by `campaign validate` once
   task-060 (bug-014's fix) makes it list them — the text names the dependency, since today the command checks the
   campaign file only;
@@ -105,3 +108,13 @@ One `chore(wingfoil)` commit with dl-010's approval as `Approver:`/`Reason:` tra
      all arms, cost breaking a tie.
   3. nit — the phase's approval meaning was implicit. **Fixed:** "the phase's approval is that consent".
   4. nit — where the runs are made from was unsaid. **Fixed:** "made from the main checkout".
+- **Round 2** (a new independent read-only Explore subagent, on `6a6a5e5`): nothing blocking; it verified round 1's
+  four outcomes, `workflow list` structurally (still three changes, all in `release-cycle`) and prettier. Findings
+  and outcomes:
+  1. should-fix — "the step that wrote the largest output" is not something calibration records (v0.1 has tokens and
+     time per step, no sizes), and "output" could mean bytes or tokens. **Fixed:** the key is the step's
+     `transcript.jsonl` size in bytes (bug-011's measure); the `calibration` phase records it per dry-run step, and
+     plan-004's step 3 lists it. The workflow diff now also touches `calibration`'s description.
+  2. nit — "lists them since … task-060" is false until task-060 merges. **Fixed:** "once task-060 … is merged".
+  3. nit — the Context's Scope keeps the planning-time wording. **Not changed:** it is the text approved at the
+     pending → backlog gate; the Design states the refined rule.
