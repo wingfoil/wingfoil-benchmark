@@ -2,7 +2,7 @@
 id: task-058-a-fixed-state-and-a-fixes-link-for-bugs
 type: task
 title: "A fixed state and a fixes link for bugs"
-status: backlog
+status: in-progress
 release: v0.2
 wave: W12
 features: []
