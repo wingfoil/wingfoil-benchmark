@@ -2,7 +2,7 @@
 id: dl-010-validation-exercises-every-arm-the-largest-step-and-the-harness-environment
 type: decision-log
 title: "Validation exercises every arm, the largest step and the harness environment"
-status: draft
+status: pending
 ---
 
 ## Context
