@@ -3,6 +3,7 @@ id: bug-009-the-runs-ignore-rule-also-ignores-every-run-record-under-results-whi
 type: bug
 title: "The runs/ ignore rule also ignores every run record under results/, which REQ-RES-06 says are committed"
 status: approved
+fixed_by: task-050-calibration-of-v0-1-dry-runs-measured-costs-and-the-revised-budget
 ---
 
 ## Context
