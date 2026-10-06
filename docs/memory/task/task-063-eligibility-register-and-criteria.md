@@ -203,3 +203,5 @@ Docker test of W3 copy the repository's `eligibility/`. Tests that need another 
 
 - `npx wingfoil memory submit task-063-…` → `f559150`. Declared: `in-progress → in-review`, one commit. Observed: exit
   0, JSON `from`/`to` as declared, one file, `status` only. Matches.
+- The approver's `memory approve task-063-… --reason "…"` → `d02dc7c`, run from this worktree (`in-review →
+  approved`, `Approver:`/`Reason:` trailers with the drafted reason, only `status` changed). Matches.
