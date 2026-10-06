@@ -212,3 +212,6 @@ The Design ran them "only if a model fails on 2.1.280". None failed outright, bu
 
 - `npx wingfoil memory submit task-062-…` → `7d4f4be`. Declared: `in-progress → in-review`, one commit. Observed: exit
   0, JSON `from`/`to` as declared, one file, `status` only. Matches.
+- The approver's `memory approve task-062-… --reason "…"` → `3f77ed4`, run from this worktree (`in-review →
+  approved`, `Approver:`/`Reason:` trailers with the drafted reason, only `status` changed). Matches. The approver also
+  approved bug-016 (`231524f`) and dl-015 (`662418a`) on main, and placed dl-015's work in W13 (chat, 2026-10-06).
