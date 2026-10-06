@@ -3,6 +3,7 @@ id: bug-015-dry-run-and-scoring-images-accumulate-on-the-host
 type: bug
 title: "Dry-run and scoring images accumulate on the host"
 status: approved
+fixed_by: task-061-the-benchmark-s-images-pruned
 ---
 
 ## Context
@@ -31,4 +32,9 @@ did not build.
 
 ## Resolution
 
-<!-- Filled when fixed: the task, the commit, and how it was verified. -->
+Fixed by [task-061](../task/task-061-the-benchmark-s-images-pruned.md) (merged in `1a2be49`): `bench images prune
+[--dry-run]` removes the benchmark's own images (`dry-<12 hex>:latest`, `<12 hex>:latest`, `bench-score:<12 hex>`,
+by anchored reference) that no container uses and that are not the current scoring image, and refuses while a named
+benchmark container runs; it is run only when nothing is in progress on the host. Verified by unit tests with a fake
+image port, a Docker test against the daemon, and the real prune of 2026-10-06: 53 tags removed. The space freed was
+small: the tags shared their layers, and "12.6 GB" above summed per-tag sizes (task-061 Execution notes).
