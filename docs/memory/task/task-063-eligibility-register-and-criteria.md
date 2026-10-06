@@ -118,3 +118,31 @@ copies `site-content/`. Tests that need another register write their own.
 
 - `npx wingfoil memory add --type task --title "Eligibility register and criteria"`. Declared: creates the element from the template and
   commits it. Observed: `wf(task): add task-063-eligibility-register-and-criteria`, `status: draft`.
+
+### WingFoil commands (declared vs observed)
+
+- `npx wingfoil memory submit task-063-…` → `2c8fef7`, in the linked worktree `WingFoil2-Benchmark-task-063` with its
+  own `npm ci`. Declared: `backlog → in-progress`, one commit. Observed: exit 0, JSON `from`/`to` as declared, one
+  file, `status` only. Matches.
+
+### Build
+
+1. Versions re-verified on 2026-10-06 before writing the register: `npm view @fission-ai/openspec` 1.14.1 (published
+   2026-10-05 23:28 UTC), `npm view bmad-method` 6.12.1, PyPI `specify-cli` 1.0.13, GitHub `github/spec-kit` latest
+   v1.1.0 (2026-10-02), WingFoil's latest tag v0.2.2 = `12537b62`. OpenSpec is assessed at 1.14.0, the version its
+   documentation was read at; 1.14.1 is not assessed (a campaign pinning it is refused until it is, the rule F7.4
+   adds).
+2. `6334ee2` `test(eligibility)`: the four @F7.4 acceptance tests (`test/acceptance/competitors.test.ts`) and the
+   schema's and check's unit tests, first. Red: three of four acceptance tests and every unit test (no module); the
+   first acceptance test, "A tool admitted at the pinned version can have an arm", passed already, as nothing refused
+   then — it stays as the guard against a check too strict.
+3. `9be7eb5` `feat(eligibility)`: `src/core/eligibility.ts` (`registerSchema`, `eligibilityIssues`,
+   `ELIGIBILITY_CRITERIA`), `src/campaign/register.ts` (`loadRegister`), `checkCampaign`'s call after a clean harness
+   coverage, `src/site/eligibility.ts` and `eligibilityShell`, the landing's link, `eligibility/register.yaml`,
+   `site-content/eligibility.md`. Fixtures: `writeArmsNamed` writes `TEST_REGISTER` (the harness pins the tests use:
+   wingfoil `3df305e`, `v0.2.2`, `abc1234`, `0.2.0`, openspec `1.0.0`) unless the repository has a register; the site
+   fixture copies the repository's `eligibility/`. Two site tests changed: the page list and count (12 pages), and the
+   "no date anywhere" check, which now allows on the eligibility page the dates the register holds — its
+   assessments and their evidence are content, not the build's clock.
+4. `84ce5a8` README: the `eligibility/` directory and what `validate` checks of it.
+5. `npx tsx src/cli/main.ts campaign validate campaigns/v0-1-reference.yaml` (wingfoil `v0.2.2`): valid, as before.
