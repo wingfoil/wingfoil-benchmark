@@ -107,3 +107,33 @@ The setup page (REQ-RES-09's setup half) goes with task-067, since it shows what
 
 - `npx wingfoil memory add --type task --title "Spec Kit arm with project rules rendered"`. Declared: creates the element from the template and
   commits it. Observed: `wf(task): add task-066-spec-kit-arm-with-project-rules-rendered`, `status: draft`.
+
+### WingFoil commands (declared vs observed)
+
+- `npx wingfoil memory submit task-066-…` → `9e5e076`, in the linked worktree `WingFoil2-Benchmark-task-066` with its
+  own `npm ci`. Declared: `backlog → in-progress`, one commit. Observed: exit 0, JSON `from`/`to` as declared, one
+  file, `status` only. Matches.
+
+### Build
+
+1. `def41d4` `test(competitors)`: the two scenarios, red first (`ENOENT … arms/speckit`). `83ad649` fixed the test's
+   way of telling the two arms' requests apart (by order; a step request carries no arm).
+2. `5ce269f` `feat(arms, runner)`: `docs_of` and `telemetry_off` in the schema and `Arm`; `checkCampaign`'s three
+   refusals, naming the arm and the field. (This commit was first made by mistake with a test's message, while a test
+   edit had failed; it was reworded with `--amend` before anything else, local and unpushed.)
+3. `0251ed2` `feat(arms, runner)`: `arms/speckit/` (arm.yaml, setup.sh from task-065's draft, manual.md); `telemetry_off:
+   []` on wingfoil, `docs_of: wingfoil` on baseline-docs; the `speckit` builder (wheel and bundle) and a `.whl` as the
+   package; the arm's telemetry settings in its container's environment; `harness.version` and `telemetry_off` in
+   `run.json`; `TEST_REGISTER` admits speckit v1.1.0, the fixture's harness arm declares `telemetry_off: []`. Both
+   acceptance scenarios green; three runner tests adapted (harness arms written without `telemetry_off`; the harness
+   record's `version`).
+4. `2b88b1e` `feat(cli)`: `BENCH_SPECKIT_REPO` in the preflight's table and purposes; `checkSpending` takes the list of
+   tools the execution builds and gives each its clone (tests first, red: 3 failed); README's variables table.
+5. `285a040` `feat(runner, arms)`: `renderConstitution` (tests first, red), the runner's `RULES_GENERATORS` (speckit →
+   `.specify/memory/constitution.md`) writing the scenario's rules after the setup, keeping `generated/constitution.md`
+   and recording `generated_sha256`; the `CLAUDE.md` merge rule, the record keeping the manual's digest and measuring
+   the whole file (tests first, red: 2 failed); speckit added to the arm and manual tests.
+6. `5f8b708` `test(docker)`: the speckit arm in a real container, run with `BENCH_SPECKIT_REPO` set to the scratchpad's
+   clone at v1.1.0: the builder built the bundle (network for the dependencies), the setup installed it offline and
+   initialized Spec Kit, T2's rule ("No throw") reached the constitution, and the manual is the agent's `CLAUDE.md`
+   (Spec Kit writes none): passed. It skips when the variable is unset, as WingFoil's test skips without its clone.
