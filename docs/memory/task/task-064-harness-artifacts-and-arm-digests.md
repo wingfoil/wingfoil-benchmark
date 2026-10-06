@@ -195,3 +195,8 @@ The Docker suite checks `python3 --version` and `uv --version` in the built imag
   once with an error the summary did not keep; that test alone passed, and a second full run passed 20/20. Recorded as
   an intermittent failure under concurrent Docker builds, cause not established: if it recurs, its output is to be
   kept and the test hardened.
+
+### Review and approval
+
+- `npx wingfoil memory submit task-064-…` → `b4cf822`. Declared: `in-progress → in-review`, one commit. Observed: exit
+  0, JSON `from`/`to` as declared, one file, `status` only. Matches.
