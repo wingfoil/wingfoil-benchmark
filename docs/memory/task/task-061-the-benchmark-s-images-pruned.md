@@ -158,3 +158,8 @@ the exit code is 1 if any failed. `--dry-run` removes nothing. USAGE and README'
   `0d0953b`, 3/3).
 - **The real removal** (the Done's last line) is not made yet: it waits for the approver's go in chat, after a check
   that no campaign, dry run or scoring is in progress on the host (round 1, finding 1).
+
+### Review and approval
+
+- `npx wingfoil memory submit task-061-…` → `2e6678c`. Declared: `in-progress → in-review`, one commit. Observed: exit
+  0, JSON `from`/`to` as declared, one file, `status` only. Matches.
