@@ -111,3 +111,21 @@ manual copy, the setup page; acceptance: the two scenarios; the site's file list
 
 - `npx wingfoil memory add --type task --title "Docs control per harness and harness against its control"`. Declared: creates the element from the template and
   commits it. Observed: `wf(task): add task-067-docs-control-per-harness-and-harness-against-its-control`, `status: draft`.
+- `npx wingfoil memory submit task-067-… --reason "…"` (backlog → in-progress), in the task's worktree after the
+  Design commit. Declared: moves the task to its next state and commits it. Observed: `wf(task): submit
+  task-067-docs-control-per-harness-and-harness-against-its-control`, `status: in-progress`; it refuses nothing on
+  the worktree's branch.
+- Build: red acceptance tests first (7c258fe), then the code (308663f) and the unit tests (d1e35e0).
+  - The docs generator registry (`src/arms/docs-controls.ts`) and the rules generators moved to `src/arms/rules.ts`
+    so that the runner and the site read the same declarations.
+  - `prepareProjectRules` keys its result by docs arm, then scenario; the generated files are under
+    `generated/<scenario>/<docs arm>/`, and the W3 docker test and the unit tests follow the new path.
+  - A docs control's run records the digest of its `PROJECT_RULES.md` as `generated_sha256`.
+  - The test fixture's `baseline-docs` arm now declares `docs_of: wingfoil`, as the repository's does: the
+    name-based check it relied on is gone. A campaign check test now keeps the wingfoil arm in the repository and
+    out of the campaign, so the loader's own `docs_of` check does not answer first.
+  - The setup page shows the setup script HTML-escaped; the acceptance test compares the escaped line.
+- `site-content/method.md`: `{#arms}` lists five arms, `{#baseline-docs-control}` says each harness has its
+  control, `{#operating-manuals}` links the five manuals, new `{#setup-pages}` (its sources in
+  `method-statements.test.ts`).
+- task-068 (the comparison, split from this task) was approved into the W13 backlog by the approver meanwhile.
