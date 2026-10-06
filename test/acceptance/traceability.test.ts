@@ -10,18 +10,19 @@ import {
   bugLinkProblems,
   parseFeatureFile,
   readScenarios,
+  requiredScenarios,
   startedFeatures,
 } from '../support/traceability.js';
 
 describe('acceptance traceability', () => {
   it('every scenario of a started task has an acceptance test named after it', () => {
-    const started = startedFeatures(repoPath('docs/memory/task'));
     const titles = acceptanceTestTitles(repoPath('test/acceptance'));
-    const missing = readScenarios(repoPath('docs/02_specification/acceptance'))
-      .filter((scenario) => scenario.features.some((feature) => started.has(feature)))
-      .map(acceptanceTitle)
-      .filter((title) => !titles.has(title));
-    expect(missing).toEqual([]);
+    const { required, unknown } = requiredScenarios(
+      repoPath('docs/memory/task'),
+      readScenarios(repoPath('docs/02_specification/acceptance')),
+    );
+    expect(unknown).toEqual([]);
+    expect(required.map(acceptanceTitle).filter((title) => !titles.has(title))).toEqual([]);
   });
 });
 
@@ -228,6 +229,57 @@ describe('acceptance test title scan', () => {
       "test('@F9.5 counted', () => {});",
     ].join('\n');
     expect(titlesOf(source)).toEqual(['@F9.5 counted']);
+  });
+});
+
+describe('required scenarios', () => {
+  const SCENARIOS = [
+    { file: 'a.feature', features: ['F9.1'], title: 'One' },
+    { file: 'a.feature', features: ['F9.1'], title: 'Two' },
+    { file: 'a.feature', features: ['F9.2'], title: 'Three' },
+    { file: 'b.feature', features: ['F9.3'], title: 'Four' },
+  ];
+
+  function tasks(...frontmatters: string[][]): string {
+    const dir = tempDir('bench-tasks-');
+    frontmatters.forEach((lines, index) =>
+      writeFileSync(join(dir, `t${index}.md`), ['---', ...lines, '---', ''].join('\n')),
+    );
+    return dir;
+  }
+
+  it("requires every scenario of a started task's features when it names none", () => {
+    const dir = tasks(['status: in-progress', 'features: [F9.1]'], ['status: backlog', 'features: [F9.2]']);
+    expect(requiredScenarios(dir, SCENARIOS).required.map((s) => s.title)).toEqual(['One', 'Two']);
+  });
+
+  it('requires only the scenarios a started task names by file and title', () => {
+    const dir = tasks([
+      'status: in-progress',
+      'features: [F9.1, F9.2]',
+      'acceptance: ["a.feature#Two", "a.feature#Three"]',
+    ]);
+    expect(requiredScenarios(dir, SCENARIOS)).toEqual({
+      required: [SCENARIOS[1], SCENARIOS[2]],
+      unknown: [],
+    });
+  });
+
+  it('reports a named scenario that does not exist, so that a rename cannot drop it silently', () => {
+    const dir = tasks([
+      'status: done',
+      'features: [F9.3]',
+      'acceptance: ["b.feature#Five", "a.feature#Four"]',
+    ]);
+    expect(requiredScenarios(dir, SCENARIOS)).toEqual({
+      required: [],
+      unknown: ['t0.md: b.feature#Five', 't0.md: a.feature#Four'],
+    });
+  });
+
+  it('keeps a feature file named without a scenario as information, as the tasks of v0.1 do', () => {
+    const dir = tasks(['status: done', 'features: [F9.3]', 'acceptance: [b.feature]']);
+    expect(requiredScenarios(dir, SCENARIOS).required.map((s) => s.title)).toEqual(['Four']);
   });
 });
 
