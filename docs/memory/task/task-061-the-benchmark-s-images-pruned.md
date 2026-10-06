@@ -174,3 +174,8 @@ the exit code is 1 if any failed. `--dry-run` removes nothing. USAGE and README'
   also use, so bug-015's "12.6 GB" — 47 tags × about 1.27 GB — counted the same layers many times. The prune removes
   what accumulates (tags, and the ids nothing else holds); the bulk of the disk is elsewhere (untagged images and
   stopped containers that are not the benchmark's, which it rightly leaves).
+- Merged into main with `--no-ff` → `1a2be49`.
+- `npx wingfoil memory submit task-061-…` on main → `b8f2791` (`approved → done`, one file, `status` only). Matches.
+- bug-015: `fixed_by` and its Resolution committed by hand → `623efaa`; `npx wingfoil memory submit bug-015-…` → `7f15dc5`
+  (`approved → fixed`, one file, `status` only). Matches; the traceability tests green.
+- Worktree removed after `git status --ignored`: only `coverage/`, `dist/` and `node_modules/`, all regenerable.
