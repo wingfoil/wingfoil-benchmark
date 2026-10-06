@@ -2,7 +2,7 @@
 id: dl-015-the-effort-the-agent-sends-is-pinned-per-model-by-the-campaign
 type: decision-log
 title: "The effort the agent sends is pinned per model by the campaign"
-status: pending
+status: approved
 ---
 
 ## Context
