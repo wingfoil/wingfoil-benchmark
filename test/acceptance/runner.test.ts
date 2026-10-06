@@ -285,7 +285,7 @@ describe('runner.feature', () => {
     // container is the artefact built from the clone, never anything under vendor/.
     const harnessCopies = ports.recorded.copies.filter((copy) => copy.endsWith(':/home/node/harness.tgz'));
     expect(harnessCopies).toEqual([
-      `${join(root, '.cache', 'harness', 'wingfoil', sha, 'installed.tgz')} -> container-2:/home/node/harness.tgz`,
+      `${join(root, '.cache', 'harnesses', 'wingfoil', sha, 'installed.tgz')} -> container-2:/home/node/harness.tgz`,
     ]);
     expect(ports.recorded.copies.some((copy) => copy.includes('vendor'))).toBe(false);
   });

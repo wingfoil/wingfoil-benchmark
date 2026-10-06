@@ -140,6 +140,10 @@ export const campaignSchema = z.strictObject({
     .strictObject({ warn_eur: positive, ceiling_eur: positive })
     .refine((budget) => budget.warn_eur <= budget.ceiling_eur, 'warn_eur must not exceed ceiling_eur'),
   currency: z.strictObject({ usd_to_eur: positive }),
+  // REQ-FMT-01 as amended (REQ-FMT-13): each arm's digest, 12 hex; absent in v0.1's files, which read as before.
+  arm_digests: z
+    .record(z.string(), z.string().regex(/^[0-9a-f]{12}$/, 'must be 12 hex characters'))
+    .optional(),
 });
 
 /** A campaign file as parsed. */
@@ -161,6 +165,15 @@ export function campaignConsistency(campaign: CampaignFile): Issue[] {
 
   for (const arm of Object.keys(campaign.harnesses).sort()) {
     if (!arms.has(arm)) issue(['harnesses', arm], "is not one of the campaign's arms");
+  }
+  if (campaign.arm_digests !== undefined) {
+    for (const arm of Object.keys(campaign.arm_digests).sort()) {
+      if (!arms.has(arm)) issue(['arm_digests', arm], "is not one of the campaign's arms");
+    }
+    for (const arm of campaign.arms) {
+      if (campaign.arm_digests[arm] === undefined)
+        issue(['arm_digests', arm], 'is required: a campaign that pins arm digests pins every arm');
+    }
   }
   const covered = new Set<string>();
   campaign.models.slices?.forEach((s, index) => {

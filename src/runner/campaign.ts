@@ -1,4 +1,4 @@
-import { loadArm } from '../arms/index.js';
+import { armDigest, loadArm } from '../arms/index.js';
 import { loadCampaign, loadRegister } from '../campaign/index.js';
 import type { Campaign } from '../campaign/index.js';
 import { eligibilityIssues, fail, harnessCoverage, ok } from '../core/index.js';
@@ -59,6 +59,18 @@ export function checkCampaign(file: string): Result<CheckedCampaign> {
       const register = loadRegister(campaign.repoRoot);
       if (register.ok) issues.push(...eligibilityIssues(campaign.spec.harnesses, arms, register.value));
       else if (arms.some((arm) => arm.requires !== undefined)) issues.push(...register.issues);
+    }
+  }
+  // Every arm's files still digest to what the campaign pins (REQ-FMT-01 as amended, REQ-FMT-13, F7.2): a changed arm
+  // is a new campaign, never a silent change under the old identity.
+  for (const arm of arms) {
+    const pinned = campaign.spec.arm_digests?.[arm.name];
+    const actual = pinned === undefined ? undefined : armDigest(campaign.repoRoot, arm.name).slice(0, 12);
+    if (pinned !== undefined && actual !== pinned) {
+      issues.push({
+        path: `arm_digests.${arm.name}`,
+        message: `is ${pinned}, but the arm's files digest to ${actual ?? ''}: the arm changed since the campaign pinned it`,
+      });
     }
   }
   // baseline-docs is generated from the wingfoil arm's configuration (REQ-RUN-11): without the

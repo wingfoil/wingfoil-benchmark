@@ -16,7 +16,7 @@ import type {
   Scenario,
 } from '../core/index.js';
 import { nextExecution } from '../results/index.js';
-import { missingCapabilities } from '../arms/index.js';
+import { armDigest, missingCapabilities } from '../arms/index.js';
 import { prepareWorkspace } from '../scenario/index.js';
 
 import type { CheckedCampaign } from './campaign.js';
@@ -166,6 +166,8 @@ export interface RunResult {
   readonly manual?: ManualRecord;
   /** The harness the arm's setup installed, for an arm that requires one (adr-003 decision 4). */
   readonly harness?: HarnessArtefact;
+  /** The digest of the arm's files when the run started (REQ-FMT-13, REQ-FMT-06 as amended), 64 hex. */
+  readonly armDigest?: string;
   /** What the arm's harness was taken to provide (REQ-FMT-10), for an arm that requires one. */
   readonly provides?: Readonly<Record<string, boolean>>;
   /** The scenario's capabilities the harness lacks (F3.6): the run is executed and scored, and marked. */
@@ -363,6 +365,8 @@ export async function runPlan(plan: RunPlan, options: RunnerOptions): Promise<Ru
     buildArgs: { AGENT_NAME: plan.pins.agent.name, AGENT_VERSION: plan.pins.agent.version },
   });
   // Every harness before any run: an arm never runs without the one it requires (REQ-RUN-14).
+  // Each arm's digest, once, before anything is built: the arm every run of this execution received (REQ-FMT-13).
+  const armDigests = new Map(plan.arms.map((arm) => [arm.name, armDigest(plan.repoRoot, arm.name)]));
   const harnesses = await prepareHarnesses(
     { id: plan.id, repoRoot: plan.repoRoot, arms: plan.arms, harnesses: plan.pins.harnesses },
     options,
@@ -390,6 +394,7 @@ export async function runPlan(plan: RunPlan, options: RunnerOptions): Promise<Ru
         execution,
         resultsDir,
         leftovers,
+        armDigest: armDigests.get(arm.name) ?? armDigest(plan.repoRoot, arm.name),
         ...(arm.requires === undefined ? {} : { harness: harnesses.get(arm.requires) }),
         ...(arm.name === GENERATED_ARM
           ? { projectRules: projectRules.get(`${scenario.id}@${scenario.version}`) }
@@ -427,6 +432,8 @@ interface RunContext {
   readonly leftovers: ReadonlyMap<string, Leftover>;
   /** The harness the arm requires, built for this execution. */
   readonly harness?: HarnessArtefact | undefined;
+  /** The arm's digest, taken once before the execution's first run (REQ-FMT-13). */
+  readonly armDigest: string;
   /** The generated `PROJECT_RULES.md` of the scenario, for the baseline-docs arm (REQ-RUN-11). */
   readonly projectRules?: string | undefined;
 }
@@ -442,6 +449,7 @@ async function executeRun(context: RunContext, options: RunnerOptions): Promise<
   // Decided before anything runs, from the scenario and the arm alone (F3.6, task-030).
   const missing = missingCapabilities(scenario, arm);
   const identity = {
+    armDigest: context.armDigest,
     ...(harness === undefined ? {} : { harness }),
     ...(arm.requires === undefined ? {} : { provides: arm.provides }),
     ...(missing.length === 0 ? {} : { expectedFailure: { missing } }),
@@ -1136,6 +1144,7 @@ function record(run: RunResult, plan: RunPlan): RunResult {
         // What the version's content was when it ran (REQ-FMT-09): a later change is refused, not mixed in.
         scenario_hash: run.scenarioHash,
         arm: run.arm,
+        ...(run.armDigest === undefined ? {} : { arm_digest: run.armDigest }),
         model: run.model,
         repetition: run.repetition,
         agent,
@@ -1162,6 +1171,8 @@ function record(run: RunResult, plan: RunPlan): RunResult {
                 commit: run.harness.commit,
                 tarball_sha256: run.harness.tarballSha256,
                 installed_sha256: run.harness.installedSha256,
+                // The artifact the run installed (REQ-FMT-12, REQ-FMT-06 as amended): for WingFoil, installed_sha256.
+                artifact_sha256: run.harness.installedSha256,
               },
             }),
         // What the harness was taken to provide, and what the scenario needed that it lacks (F3.6): the

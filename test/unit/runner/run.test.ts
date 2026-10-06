@@ -1063,7 +1063,7 @@ describe('the setup phase (REQ-RUN-03, adr-003)', () => {
     expect(ports.recorded.copies.slice(1)).toEqual([
       `${join(root, 'arms', 'wingfoil')} -> container-2:/home/node/arm`,
       `${join(root, 'arms', 'wingfoil', 'mcp.json')} -> container-2:/home/node/mcp.json`,
-      `${join(root, '.cache', 'harness', 'wingfoil', '3df305e'.padEnd(40, '0'), 'installed.tgz')} -> container-2:/home/node/harness.tgz`,
+      `${join(root, '.cache', 'harnesses', 'wingfoil', '3df305e'.padEnd(40, '0'), 'installed.tgz')} -> container-2:/home/node/harness.tgz`,
     ]);
     const wingfoilSteps = ports.recorded.steps.slice(2);
     expect(wingfoilSteps.map((step) => step.mcpConfig)).toEqual([

@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 
 import type { Arm, CampaignFile, DockerPort, GitPort } from '../core/index.js';
 
@@ -78,6 +78,9 @@ function wingfoilBuild(sha: string): string {
   ].join('\n');
 }
 
+/** Where every pinned harness's artifact is cached, from the repository root (REQ-FMT-12; git-ignored). */
+export const HARNESS_CACHE = join('.cache', 'harnesses');
+
 /** The harness tools this runner can build, by the name an arm `requires` (v0.1: WingFoil only). */
 const BUILDERS: Readonly<Record<string, (sha: string) => string>> = { wingfoil: wingfoilBuild };
 
@@ -123,8 +126,8 @@ async function prepare(
   if (sha === undefined)
     throw new Error(`the ${tool} harness pins ${pin}, which is not a commit of ${clone}`);
 
-  const cache = join(target.repoRoot, '.cache', 'harness', tool, sha);
-  const cached = fromCache(cache, tool, sha);
+  const cache = join(target.repoRoot, HARNESS_CACHE, tool, sha);
+  const cached = fromCache(target.repoRoot, cache, tool, sha);
   if (cached !== undefined) return cached;
 
   const build = join(cache, 'build');
@@ -160,14 +163,35 @@ async function prepare(
   return artefactOf(record, installed);
 }
 
-/** A cached artefact, if its record names this tool and commit and its digest still matches. */
-function fromCache(cache: string, tool: string, sha: string): HarnessArtefact | undefined {
+/**
+ * A cached artefact, if its record names this tool and commit; `undefined` when there is none to reuse (no record, an
+ * unreadable one, or another tool's or commit's), so that it is built. A cached file whose bytes no longer match the
+ * digest its record holds is refused, naming it (REQ-FMT-12, F7.1): rebuilding it silently would also hide a
+ * tampered artifact, so the maintainer removes the directory to rebuild.
+ */
+function fromCache(repoRoot: string, cache: string, tool: string, sha: string): HarnessArtefact | undefined {
   const recordFile = join(cache, 'harness.json');
   const installed = join(cache, 'installed.tgz');
   if (!existsSync(recordFile) || !existsSync(installed)) return undefined;
-  const record = JSON.parse(readFileSync(recordFile, 'utf8')) as CacheRecord;
-  if (record.tool !== tool || record.commit !== sha || record.installed_sha256 !== sha256(installed)) {
+  let record: CacheRecord;
+  try {
+    record = JSON.parse(readFileSync(recordFile, 'utf8')) as CacheRecord;
+  } catch {
     return undefined;
+  }
+  if (record.tool !== tool || record.commit !== sha) return undefined;
+  const tarball = readdirSync(cache).find((name) => name !== 'installed.tgz' && name.endsWith('.tgz'));
+  const checks: [string, string][] = [
+    [installed, record.installed_sha256],
+    ...(tarball === undefined ? [] : ([[join(cache, tarball), record.tarball_sha256]] as [string, string][])),
+  ];
+  for (const [file, recorded] of checks) {
+    if (sha256(file) !== recorded) {
+      throw new Error(
+        `the cached harness artifact ${relative(repoRoot, file)} no longer matches its recorded digest: ` +
+          `remove ${relative(repoRoot, cache)}/ to rebuild it`,
+      );
+    }
   }
   return artefactOf(record, installed);
 }
