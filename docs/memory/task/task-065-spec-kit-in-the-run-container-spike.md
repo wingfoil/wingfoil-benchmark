@@ -189,3 +189,7 @@ from the bundle, init, telemetry: none to turn off, said so); the ledger line.
   0, JSON `from`/`to` as declared, one file, `status` only. Matches.
 - The approver's `memory approve task-065-… --reason "…"` → `b0cface`, run from this worktree (`in-review →
   approved`, `Approver:`/`Reason:` trailers with the drafted reason, only `status` changed). Matches.
+- Merged into main with `--no-ff` → `dd15347`.
+- `npx wingfoil memory submit task-065-…` on main → `667499d` (`approved → done`, one file, `status` only). Matches.
+- Worktree removed after `git status --ignored`: only `node_modules/`; the spike's output was written to the main
+  checkout's `spikes/task-065/out/` from the start.
