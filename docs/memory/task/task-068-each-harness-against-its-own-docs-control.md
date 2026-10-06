@@ -5,7 +5,7 @@ title: "Each harness against its own docs control"
 status: pending
 release: v0.2
 wave: W13
-features: [F7.1]
+features: []
 acceptance: []
 requirements: [REQ-SCO-14, REQ-RES-03]
 fixes: []             # optional: the bugs this task fixes, e.g. [bug-005-a-bug-cannot-name-…]
@@ -26,6 +26,9 @@ with" needs; this task delivers the comparison that uses the controls, before v0
 - **the category pages** (REQ-RES-03 as amended in 1.26) show each harness against its control beside the comparison
   with the baseline; an aggregate written before this task reads "not measured";
 - the method page's comparisons paragraph names the second comparison.
+
+It serves F7.1, but `features` stays empty: no `competitors.feature` scenario states this comparison, and a task that
+names a feature and no scenario would require every scenario of the feature (traceability per scenario, task-064).
 
 **No real agent, no spending.** **Done** means: an execution with a harness and its docs control shows the comparison
 in its aggregate and on its category pages; v0.1's published execution still builds, reading "not measured".
