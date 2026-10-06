@@ -66,5 +66,5 @@ for probe in "$@"; do
   esac
 done
 echo "total spent: $(spent) USD"
-TOK="$(tr -d '[:space:]' < "$TOKEN_FILE")"
-echo "files containing the token: $(grep -rlF -- "$TOK" "$OUT" "$SPIKE_DIR" 2>/dev/null | wc -l || true)"
+# The token is read from a descriptor, never put on a command line.
+echo "files containing the token: $(grep -rlFf <(tr -d '[:space:]' < "$TOKEN_FILE") -- "$OUT" "$SPIKE_DIR" 2>/dev/null | wc -l || true)"
