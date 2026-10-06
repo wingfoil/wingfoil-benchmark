@@ -12,6 +12,8 @@ import { hostUser } from './identity.js';
  */
 export interface HarnessArtefact {
   readonly tool: string;
+  /** The version the campaign pins (REQ-FMT-01): a release or a commit, as written. */
+  readonly version?: string;
   /** The full SHA the campaign's pin resolved to in the clone. */
   readonly commit: string;
   readonly tarballSha256: string;
@@ -80,11 +82,35 @@ function wingfoilBuild(sha: string): string {
   ].join('\n');
 }
 
+/**
+ * The build of Spec Kit at `sha`, in the campaign's image (REQ-FMT-12, task-065's B1): its wheel built from the clean
+ * archive, and the wheels of its dependencies downloaded beside it, resolved once here for the image's Python. The
+ * package is the tool's wheel; the installed artifact is the bundle, every wheel flat at its root, which the arm's
+ * setup installs offline. `HOME` is the build directory's, as for WingFoil.
+ */
+function speckitBuild(sha: string): string {
+  return [
+    'set -euo pipefail',
+    `export HOME=${BUILD}/home`,
+    `mkdir -p ${BUILD}/home ${BUILD}/src ${BUILD}/out ${BUILD}/bundle`,
+    `tar -xf ${BUILD}/src.tar -C ${BUILD}/src`,
+    `cd ${BUILD}/src`,
+    `uv build --wheel --out-dir ${BUILD}/bundle`,
+    `uv run --no-project --with pip python -m pip download -q -d ${BUILD}/bundle ${BUILD}/bundle/specify_cli-*.whl`,
+    `cp ${BUILD}/bundle/specify_cli-*.whl ${BUILD}/out/`,
+    `echo ${sha} > ${BUILD}/bundle/.speckit-commit`,
+    `tar -czf ${BUILD}/out/installed.tgz -C ${BUILD}/bundle .`,
+  ].join('\n');
+}
+
 /** Where every pinned harness's artifact is cached, from the repository root (REQ-FMT-12; git-ignored). */
 export const HARNESS_CACHE = join('.cache', 'harnesses');
 
-/** The harness tools this runner can build, by the name an arm `requires` (v0.1: WingFoil only). */
-const BUILDERS: Readonly<Record<string, (sha: string) => string>> = { wingfoil: wingfoilBuild };
+/** The harness tools this runner can build, by the name an arm `requires`. */
+const BUILDERS: Readonly<Record<string, (sha: string) => string>> = {
+  wingfoil: wingfoilBuild,
+  speckit: speckitBuild,
+};
 
 /**
  * Build, or find in the cache, every harness the campaign's arms require, before any run starts
@@ -130,7 +156,7 @@ async function prepare(
 
   const cache = join(target.repoRoot, HARNESS_CACHE, tool, sha);
   const cached = fromCache(target.repoRoot, cache, tool, sha);
-  if (cached !== undefined) return cached;
+  if (cached !== undefined) return { ...cached, version: harness.version };
 
   const build = join(cache, 'build');
   rmSync(build, { recursive: true, force: true });
@@ -149,7 +175,10 @@ async function prepare(
     );
   }
   const out = join(build, 'out');
-  const tarball = readdirSync(out).find((name) => name !== 'installed.tgz' && name.endsWith('.tgz'));
+  // The tool's own package: npm's tarball, or a Python tool's wheel.
+  const tarball = readdirSync(out).find(
+    (name) => name !== 'installed.tgz' && (name.endsWith('.tgz') || name.endsWith('.whl')),
+  );
   if (tarball === undefined) throw new Error(`building ${tool} ${sha} produced no tarball`);
   const installed = join(cache, 'installed.tgz');
   renameSync(join(out, 'installed.tgz'), installed);
@@ -163,7 +192,7 @@ async function prepare(
   };
   writeFileSync(join(cache, 'harness.json'), `${JSON.stringify(record, undefined, 2)}\n`);
   rmSync(build, { recursive: true, force: true });
-  return artefactOf(record, installed);
+  return { ...artefactOf(record, installed), version: harness.version };
 }
 
 /**

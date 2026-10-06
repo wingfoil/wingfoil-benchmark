@@ -42,6 +42,7 @@ describe('loadArm (REQ-FMT-05)', () => {
       mcpPath: join(dir, 'mcp.json'),
       requires: 'wingfoil',
       provides: {},
+      telemetryOff: [],
     });
     expect(isAbsolute(result.value.dir)).toBe(true);
   });

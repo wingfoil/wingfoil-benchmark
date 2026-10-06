@@ -168,6 +168,8 @@ export interface RunResult {
   readonly harness?: HarnessArtefact;
   /** The digest of the arm's files when the run started (REQ-FMT-13, REQ-FMT-06 as amended), 64 hex. */
   readonly armDigest?: string;
+  /** The settings that turned the arm's tool's telemetry off (REQ-RUN-18), for an arm that declares them. */
+  readonly telemetryOff?: readonly string[];
   /** What the arm's harness was taken to provide (REQ-FMT-10), for an arm that requires one. */
   readonly provides?: Readonly<Record<string, boolean>>;
   /** The scenario's capabilities the harness lacks (F3.6): the run is executed and scored, and marked. */
@@ -452,6 +454,7 @@ async function executeRun(context: RunContext, options: RunnerOptions): Promise<
   const missing = missingCapabilities(scenario, arm);
   const identity = {
     armDigest: context.armDigest,
+    ...(arm.telemetryOff === undefined ? {} : { telemetryOff: arm.telemetryOff }),
     ...(harness === undefined ? {} : { harness }),
     ...(arm.requires === undefined ? {} : { provides: arm.provides }),
     ...(missing.length === 0 ? {} : { expectedFailure: { missing } }),
@@ -501,7 +504,8 @@ async function executeRun(context: RunContext, options: RunnerOptions): Promise<
       name: containerName,
       workspace,
       user: CONTAINER_USER,
-      env: { ...AGENT_ENVIRONMENT, ...options.containerEnv },
+      // The arm's telemetry settings (REQ-RUN-18), then the credential: the runner's names win over an arm's.
+      env: { ...telemetryEnvironment(arm), ...AGENT_ENVIRONMENT, ...options.containerEnv },
     });
     await assertOnlyWorkspaceMounted(container, workspace, options);
     await options.docker.start(container);
@@ -1072,6 +1076,16 @@ async function assertOnlyWorkspaceMounted(
   }
 }
 
+/** An arm's `telemetry_off` settings (REQ-RUN-18) as the container's environment: `NAME=value` split at the first `=`. */
+function telemetryEnvironment(arm: Arm): Record<string, string> {
+  return Object.fromEntries(
+    (arm.telemetryOff ?? []).map((setting) => [
+      setting.slice(0, setting.indexOf('=')),
+      setting.slice(setting.indexOf('=') + 1),
+    ]),
+  );
+}
+
 /** Every container of a plan starts with this: the plan's identity, then the execution. */
 function containerPrefix(id: string): string {
   return `bench-${id}-`;
@@ -1147,6 +1161,7 @@ function record(run: RunResult, plan: RunPlan): RunResult {
         scenario_hash: run.scenarioHash,
         arm: run.arm,
         ...(run.armDigest === undefined ? {} : { arm_digest: run.armDigest }),
+        ...(run.telemetryOff === undefined ? {} : { telemetry_off: run.telemetryOff }),
         model: run.model,
         repetition: run.repetition,
         agent,
@@ -1170,6 +1185,7 @@ function record(run: RunResult, plan: RunPlan): RunResult {
           : {
               harness: {
                 tool: run.harness.tool,
+                ...(run.harness.version === undefined ? {} : { version: run.harness.version }),
                 commit: run.harness.commit,
                 tarball_sha256: run.harness.tarballSha256,
                 installed_sha256: run.harness.installedSha256,
