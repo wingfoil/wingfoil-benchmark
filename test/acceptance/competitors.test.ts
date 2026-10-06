@@ -376,7 +376,13 @@ describe('competitors.feature, the docs controls and the setups', () => {
     expect(first.baselineDocs).toContain('### Fake rule');
     expect(first.baselineDocs).not.toContain('Benchmark Approver');
     expect(first.speckitDocs).toContain('### No new runtime dependency');
-    for (const mechanics of ['speckit-specify', 'Spec template', 'name: workflow', 'init-options'])
+    for (const mechanics of [
+      '[PROJECT_NAME]',
+      'speckit-specify',
+      'Spec template',
+      'name: workflow',
+      'init-options',
+    ])
       expect(first.speckitDocs).not.toContain(mechanics);
     // Of the speckit configuration its setup left, the control kept its memory, not its mechanics.
     const kept = join(first.summary.resultsDir, 'generated', 'S1@1.0', 'speckit-docs', 'speckit');

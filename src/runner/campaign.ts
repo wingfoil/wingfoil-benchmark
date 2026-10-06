@@ -90,6 +90,8 @@ export function checkCampaign(file: string): Result<CheckedCampaign> {
   for (const arm of arms) {
     if (arm.docsOf === undefined) continue;
     const source = arms.find((candidate) => candidate.name === arm.docsOf);
+    // In the campaign but refused on its own: its own issue says why, and nothing is generated from it.
+    if (source === undefined && campaign.spec.arms.includes(arm.docsOf)) continue;
     if (source === undefined) {
       issues.push({
         path: 'arms',
