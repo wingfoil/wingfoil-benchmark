@@ -181,9 +181,17 @@ The setup page (REQ-RES-09's setup half) goes with task-067, since it shows what
   the title, the constitution strips it (a byte change of baseline-docs, left to task-067).
 - Final checks on `50e8bf2` with `BENCH_SPECKIT_REPO` set: `npm run lint` clean; `npm test` 86 files, 1323/1323,
   coverage 98.04 % statements, 90.79 % branches; `npm run test:bin` 8/8; `npm run test:docker`: a first run met a
-  failure in task-064's image-port test, which listed the first image and met one another test was removing — two suite
-  runs were then overlapping; fixed in this branch (it picks an image no test builds), and the Docker suite re-run alone
-  passed 21/21, the speckit arm's test included.
+  failure in task-064's image-port test, which listed the first image and met one another test was removing — a race
+  possible within one run, since Docker test files run in parallel, and likelier then because two suite runs
+  overlapped; fixed in this branch (`01d961d`: it picks an image no test builds), and the Docker suite re-run on
+  `01d961d` passed 21/21, the speckit arm's test included. The fix touches `test/docker` only, which `npm test`
+  excludes: the unit and lint results stand.
+
+- **Round 3** (a new independent read-only Explore subagent, on `ae1649c`, for the test fix made after round 2):
+  **clean**. It checked which images the Docker tests remove (campaign, dry-run, the run-image test's), the regex
+  against the host's references (ECR ones not excluded), that the test still checks the id and still skips, and the
+  notes against git. Two nits on these notes — which commit the Docker re-run was on, and that the race needs no
+  overlapping runs — **fixed** above.
 
 ### Review and approval
 
