@@ -163,3 +163,14 @@ the exit code is 1 if any failed. `--dry-run` removes nothing. USAGE and README'
 
 - `npx wingfoil memory submit task-061-…` → `2e6678c`. Declared: `in-progress → in-review`, one commit. Observed: exit
   0, JSON `from`/`to` as declared, one file, `status` only. Matches.
+- The approver's `memory approve task-061-… --reason "…"` → `c503bb6`, run from this worktree (`in-review →
+  approved`, `Approver:`/`Reason:` trailers with the drafted reason, only `status` changed). Matches.
+- **The real prune** (2026-10-06), with the approver's go in chat ("procedi col prune, nessuno sta facendo girare run
+  del benchmark") and no container running on the host: `node dist/cli/main.js images prune` from this branch's
+  build, exit 0, empty stderr, "removed 53 images", `bench-score:6dec5db6f4fa` kept as the current scoring image.
+  Afterwards the host holds none of the benchmark's three kinds but that one. **Space measured, not assumed:**
+  `docker system df` read 37.65 GB of images before and 37.6 GB after (reclaimable 12.58 → 12.1 GB). The tags
+  shared a few image ids whose layers the remaining images (the current scoring image, the spikes' `bench-spike-*`)
+  also use, so bug-015's "12.6 GB" — 47 tags × about 1.27 GB — counted the same layers many times. The prune removes
+  what accumulates (tags, and the ids nothing else holds); the bulk of the disk is elsewhere (untagged images and
+  stopped containers that are not the benchmark's, which it rightly leaves).
