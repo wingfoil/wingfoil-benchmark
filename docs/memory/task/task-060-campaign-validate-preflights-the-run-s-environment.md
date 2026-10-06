@@ -154,3 +154,5 @@ module later.
 
 - `npx wingfoil memory submit task-060-…` → `cbec070`. Declared: `in-progress → in-review`, one commit. Observed: exit
   0, JSON `from`/`to` as declared, one file, `status` only. Matches.
+- The approver's `memory approve task-060-… --reason "…"` → `ad44020`, run from this worktree (`in-review →
+  approved`, `Approver:`/`Reason:` trailers with the drafted reason, only `status` changed). Matches.
