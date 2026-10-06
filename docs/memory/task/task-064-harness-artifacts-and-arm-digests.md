@@ -109,3 +109,27 @@ The Docker suite checks `python3 --version` and `uv --version` in the built imag
   ("Per scenario"): a task may list in `acceptance` the scenarios it delivers, as `competitors.feature#<title>`; the
   test then requires those, and every scenario of a feature only for a task that declares the feature whole. Done in
   this task, red-first; task-064, task-066 and task-067 list their scenarios.
+
+### WingFoil commands (declared vs observed)
+
+- `npx wingfoil memory submit task-064-…`, in the linked worktree `WingFoil2-Benchmark-task-064` with its own `npm
+  ci`. Declared: `backlog → in-progress`, one commit. Observed: exit 0, JSON `from`/`to` as declared, one file,
+  `status` only. Matches.
+
+### Build
+
+1. `786b28f` `test(traceability)`: `requiredScenarios` and its four unit tests, red first (`requiredScenarios is not a
+   function`); with it, the repository test required exactly this task's two scenarios.
+2. The two acceptance tests and the v0.1 characterization (`test(competitors)`), red first: `ENOENT …
+   .cache/harnesses/…/installed.tgz` (the old cache path) and `armDigest is not a function`; v0.1's campaign files
+   already valid.
+3. `8938305` `feat(runner, arms, core)`: the cache under `.cache/harnesses/`, a tampered artifact (the package or the
+   installed one) refused naming it, an unreadable `harness.json` rebuilt; `artifact_sha256` and `arm_digest` in
+   `run.json`, the digests taken once before the execution's first run; `armDigest` (its unit tests came with it);
+   `arm_digests` in the schema, `campaignConsistency` and `checkCampaign`. The harness unit test "rebuilds one that does
+   not" became "refuses one that does not, naming it", the behaviour the scenario asks for.
+4. `c5cd188` `feat(results, docker)`: `harnesses.tar.gz` (tests first, red: 2 failed), the CLI's `harnesses:` line, a
+   missing artifact named, and the `gh release create` command attaching both assets; `uv` 0.12.23 copied into the run
+   image at its pinned digest; `test/docker/run-image.test.ts` checks `python3`, `uv`, `git` and `node` in the built
+   image (passed alone).
+5. README: `arm_digests` under `validate`, the second asset under `transcripts pack`.
