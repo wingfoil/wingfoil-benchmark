@@ -143,6 +143,7 @@ export function completeExecution(
 ): void {
   cpSync(repoPath('arms'), join(root, 'arms'), { recursive: true });
   cpSync(repoPath('site-content'), join(root, 'site-content'), { recursive: true });
+  cpSync(repoPath('eligibility'), join(root, 'eligibility'), { recursive: true });
   writeFileSync(join(executionDir, 'campaign.yaml'), siteCampaign(ids));
   for (const id of ids) {
     for (const arm of ['baseline', 'wingfoil']) {

@@ -1,7 +1,7 @@
 import { loadArm } from '../arms/index.js';
-import { loadCampaign } from '../campaign/index.js';
+import { loadCampaign, loadRegister } from '../campaign/index.js';
 import type { Campaign } from '../campaign/index.js';
-import { fail, harnessCoverage, ok } from '../core/index.js';
+import { eligibilityIssues, fail, harnessCoverage, ok } from '../core/index.js';
 import type { Arm, Issue, Result, Scenario } from '../core/index.js';
 import { versionChange } from '../results/index.js';
 import { loadScenario } from '../scenario/index.js';
@@ -50,7 +50,17 @@ export function checkCampaign(file: string): Result<CheckedCampaign> {
     if (arm.ok) arms.push(arm.value);
     else issues.push({ path: `arms[${index}]`, message: `${name}: ${reasonsOf(arm.issues)}` });
   });
-  if (arms.length === campaign.spec.arms.length) issues.push(...harnessCoverage(campaign.spec, arms));
+  if (arms.length === campaign.spec.arms.length) {
+    const coverage = harnessCoverage(campaign.spec, arms);
+    issues.push(...coverage);
+    // Every harness arm pins a tool the eligibility register admits at that version (REQ-FMT-01, F7.4): checked once
+    // the pins are right, so that a wrong or missing pin is reported once.
+    if (coverage.length === 0) {
+      const register = loadRegister(campaign.repoRoot);
+      if (register.ok) issues.push(...eligibilityIssues(campaign.spec.harnesses, arms, register.value));
+      else if (arms.some((arm) => arm.requires !== undefined)) issues.push(...register.issues);
+    }
+  }
   // baseline-docs is generated from the wingfoil arm's configuration (REQ-RUN-11): without the
   // wingfoil arm there is nothing to generate it from.
   if (campaign.spec.arms.includes('baseline-docs') && !campaign.spec.arms.includes('wingfoil')) {

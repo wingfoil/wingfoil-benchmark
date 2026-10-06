@@ -38,7 +38,8 @@ that the results can be checked and contested.
 | [`campaigns/`](campaigns/) | campaign files; the reference campaign of v0.1 is `v0-1-reference.yaml` |
 | [`results/`](results/) | every execution's records and scores, run by run (transcripts are release assets) |
 | [`findings/`](findings/) | finding notes, generated from results, for WingFoil's maintainer to file |
-| [`site-content/`](site-content/) | the method page's prose; the rest of the site is generated |
+| [`eligibility/`](eligibility/) | the eligibility register: every assessed tool and version, WingFoil included, with its verdict |
+| [`site-content/`](site-content/) | the method and eligibility pages' prose; the rest of the site is generated |
 | [`src/`](src/) | the `bench` command: runner, scoring, aggregation, site |
 
 The hold-out tests and S2's answer key live in a separate, private repository, so that public material cannot be
@@ -98,7 +99,8 @@ BENCH_AGENT_TOKEN_FILE=<token-file> npx bench campaign run campaigns/<name>.yaml
 ```
 
 `validate` checks the campaign file (`docs/02_specification/requirements.md` REQ-FMT-01): every harness pinned
-to a released version or a commit, the baseline arm present, every scenario it names present under
+to a released version or a commit that `eligibility/register.yaml` admits (F7.4), the baseline arm present, every
+scenario it names present under
 `scenarios/<id>/<version>/`. It prints the campaign's identity, the digest that names its results.
 It then lists what the campaign's runs need from the machine, one `requires` line each, `set`, `missing` or
 `invalid` with the reason (bug-014):

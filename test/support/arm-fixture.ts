@@ -1,7 +1,8 @@
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { stringify } from 'yaml';
 
+import { TEST_REGISTER, writeRegister } from './eligibility-fixture.js';
 import { tempDir } from './scenario-fixture.js';
 
 /** A complete arm definition (REQ-FMT-05): every field, the optional ones included. */
@@ -60,6 +61,8 @@ export function writeArmsNamed(
   names: readonly string[] = ['baseline', 'baseline-docs', 'wingfoil'],
 ): string {
   const arms = join(root, 'arms');
+  // A repository with arms gets the register that admits the test pins (F7.4), unless it has one already.
+  if (!existsSync(join(root, 'eligibility', 'register.yaml'))) writeRegister(root, TEST_REGISTER);
   for (const name of names) {
     if (name === 'wingfoil') writeArmAt(arms, name, completeArmYaml(name), COMPLETE_ARM_FILES);
     else writeArmAt(arms, name, plainArmYaml(name), ['setup.sh', 'manual.md']);

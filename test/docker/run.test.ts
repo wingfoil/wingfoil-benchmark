@@ -731,6 +731,8 @@ describe('runs in a real container', () => {
       // The benchmark's own wingfoil arm, not a fixture: its setup is what is under test here.
       cpSync(repoPath('arms/wingfoil'), join(root, 'arms', 'wingfoil'), { recursive: true });
       cpSync(repoPath('arms/baseline-docs'), join(root, 'arms', 'baseline-docs'), { recursive: true });
+      // The repository's register, which admits the WingFoil the fixture campaign pins (v0.2.2, F7.4).
+      cpSync(repoPath('eligibility'), join(root, 'eligibility'), { recursive: true });
       process.env.BENCH_FAKE_SCRIPT = repoPath('test/fixtures/fake-script-arms.json');
       process.env.BENCH_WINGFOIL_REPO = clone;
 
