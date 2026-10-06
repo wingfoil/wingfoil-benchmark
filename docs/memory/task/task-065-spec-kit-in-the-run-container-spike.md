@@ -69,7 +69,8 @@ sh`, `--ignore-agent-tools`, and "no network access is required — bundled asse
    (WebFetch, WebSearch, curl), whether it stops to wait (its final message asking a question, which the neutral
    approver would answer), the files it writes (`specs/…`), and its cost. A secret scan closes the run.
 
-No second real session: if R1 waits, the spike records where and what it asks, which is Q3's answer; the runner's
+The Context's "first with the fake agent" becomes B1 and B2, which run no agent: the scripted fake agent cannot follow
+skills, so it would show nothing a run without an agent does not. No second real session: if R1 waits, the spike records where and what it asks, which is Q3's answer; the runner's
 neutral approver (REQ-RUN-17) answers such waits in the arm.
 
 ### Done
@@ -122,25 +123,54 @@ from the bundle, init, telemetry: none to turn off, said so); the ledger line.
    project rules (task-066). **Mechanics**: the skills, the templates, the scripts, the workflow and its registry,
    the options, integration and manifest files. No `CLAUDE.md`, so the arm's manual and rules do not collide with one.
 3. **Can the agent follow the skills under `claude -p`?** Yes, and it did not wait: one session ran specify → plan →
-   tasks → implement to green tests. It skipped `/speckit-constitution` (the constitution stayed a template) and the
-   optional clarify, analyze and checklist steps beyond the requirements checklist `specify` writes. For the arm: the
-   manual names the steps the runner's step prompts map to; the neutral approver had nothing to answer here, so where
-   Spec Kit would wait is not observed on S3 step 1 (a clarification is its documented place to ask).
+   tasks → implement to green tests. That order was the stand-in instruction's ("specify, then plan, tasks and
+   implement"), so the constitution and the optional clarify, analyze and checklist steps were not asked for and not
+   run; the constitution stayed a template. No neutral approver was wired into R1 (plain `claude -p`), and the session
+   ended without a question. Where Spec Kit would wait is therefore not observed on S3 step 1: its documented place is
+   `speckit-specify`'s `[NEEDS CLARIFICATION]` markers (at most three), and the spec R1 wrote has none. For the arm,
+   the manual maps the step prompts to these skills, and the runner's neutral approver answers any question.
 4. **Workflow engine, own LLM calls, network:** none from Spec Kit. The session never ran `specify` or `specify
    workflow`; its scripts are local shell; install and init ran with `--network none`; no telemetry or analytics in
-   its source. The only network use was the agent's own `npm install --save-dev typescript @types/node`, which every
-   arm's agent may do.
+   its source (the CLI's `self check` and auth helpers can reach GitHub, but neither init nor the session called
+   them). The network the session used was the agent's own npm: `npx tsc -p .` fetched the unrelated `tsc@2.0.4`
+   placeholder package before `npm install --save-dev typescript` and then `npm install --save-dev @types/node` — what
+   any arm's agent may do.
 
 ### For task-066
 
 - `spikes/task-065/setup.sh`: the setup drafted — the bundle extracted from the harness artifact, installed offline,
   `init` with the four flags; no telemetry to turn off, said so.
-- The harness artifact is the bundle, packed as a `.tgz` (REQ-FMT-12): built once per pin by a builder like WingFoil's,
-  in the campaign image, so that pyyaml's wheel matches its Python.
+- The harness artifact is the bundle, packed as a `.tgz` with the wheels flat at its root (REQ-FMT-12): built once per
+  pin by a builder like WingFoil's, in the campaign image (amd64), so that pyyaml's wheel matches its Python.
 - The project rules go into `.specify/memory/constitution.md`, Spec Kit's own place for them.
 
 ### Register and ledger
 
 - `eligibility/register.yaml`: the speckit v1.1.0 entry re-assessed in the run container (each criterion's evidence
-  now observed, not read); verdict admitted, as before.
+  now observed, not read); verdict admitted, as before; its date is today's, unchanged, the spike running the day of
+  the first assessment.
 - `docs/calibration/v0.2-ledger.md`: R1's line; **total so far 1.6473 USD**.
+
+### Review
+
+- **Round 1** (independent read-only Explore subagent, on `4c4a55c`; no spending, the token never read): nothing
+  blocking. It checked the bundle's digests (`sha256sum -c`), B2's 30 untracked files and no `CLAUDE.md`, R1's one
+  result (68 turns, 1.43595 USD, Sonnet 5 only, list basis), the four skills in order, no `specify` call and no web
+  tool, the files written, the green tests, the ceiling, the ledger's sum, the register against its schema, the
+  clone's absence of telemetry, and found no secret. Findings and outcomes:
+  1. should-fix — the session's network use was understated (`npx tsc` fetched `tsc@2.0.4` first; two separate
+     installs). **Fixed** in Q4.
+  2. should-fix — Q3 credited Spec Kit for the order the stand-in instruction gave, and spoke of a neutral approver
+     R1 did not have. **Fixed**, with `speckit-specify`'s clarification markers as the documented place to wait.
+  3. should-fix — the Context's "first with the fake agent" was replaced unsaid. **Fixed:** the Design says why B1
+     and B2 stand for it.
+  4. should-fix — the drafted setup hard-coded `/home/node` and did not `cd` to the workspace, while the runner runs
+     setups with its own `HOME` and `WORKSPACE`. **Fixed:** wingfoil's preamble, `$HOME`, executable, and the
+     bundle's layout and architecture stated.
+  5. should-fix — "PyPI lags behind the tag" lost its fact. **Fixed:** "listed 1.0.13 when assessed".
+  6. nit — "made no network call" under `--network none`. **Fixed:** "ran with --network none".
+  7. nit — R1's file list left out `package.json`, `tsconfig.json`, `package-lock.json`. **Fixed.**
+  8. nit — Done's "a new date": the date is unchanged. **Said so.**
+  9. nit — the script's ceiling check counts the last session only. **Not changed:** one session ran; the script is
+     a spike's, not reused.
+  10. nit — the bundle is amd64 only. **Said so** in "For task-066".
