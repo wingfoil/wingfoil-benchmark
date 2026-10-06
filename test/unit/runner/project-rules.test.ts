@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import { renderProjectRules } from '../../../src/arms/index.js';
 import { checkCampaign, runCampaign } from '../../../src/runner/index.js';
+import { writeArmsNamed } from '../../support/arm-fixture.js';
 import { completeCampaignYaml, writeRepo } from '../../support/campaign-fixture.js';
 import { doubles, fakeBuild } from '../../support/runner-doubles.js';
 
@@ -66,14 +67,21 @@ describe('the baseline-docs environment, generated per scenario (REQ-RUN-11)', (
       ['harness.tgz', 'arm/setup.sh', 'workspace'],
       ['harness.tgz', 'arm/setup.sh', 'workspace'],
     ]);
-    const snapshotWorkspace = join(summary.resultsDir, 'generated', 'S1@1.0', 'build', 'workspace');
+    const snapshotWorkspace = join(
+      summary.resultsDir,
+      'generated',
+      'S1@1.0',
+      'baseline-docs',
+      'build',
+      'workspace',
+    );
     expect(ports.recorded.gitCalls.filter((call) => call.includes(snapshotWorkspace))).toEqual([
       `init ${snapshotWorkspace}`,
       `identity ${snapshotWorkspace} Benchmark Approver <approver@benchmark.localhost>`,
       `commit ${snapshotWorkspace} seed --allow-empty`,
     ]);
     // Kept with the results: the snapshot and what was rendered from it; the build directory is gone.
-    const generated = join(summary.resultsDir, 'generated', 'S1@1.0');
+    const generated = join(summary.resultsDir, 'generated', 'S1@1.0', 'baseline-docs');
     expect(readFileSync(join(generated, 'wingfoil', '.wingfoil', 'dna.yaml'), 'utf8')).toContain(
       'name: Fake',
     );
@@ -122,7 +130,10 @@ describe('the baseline-docs environment, generated per scenario (REQ-RUN-11)', (
 
     const workspace = (arm: string) => summary.runs.find((run) => run.arm === arm)?.workspace ?? '';
     expect(readFileSync(join(workspace('baseline-docs'), 'PROJECT_RULES.md'), 'utf8')).toBe(
-      readFileSync(join(summary.resultsDir, 'generated', 'S1@1.0', 'PROJECT_RULES.md'), 'utf8'),
+      readFileSync(
+        join(summary.resultsDir, 'generated', 'S1@1.0', 'baseline-docs', 'PROJECT_RULES.md'),
+        'utf8',
+      ),
     );
     expect(existsSync(join(workspace('baseline'), 'PROJECT_RULES.md'))).toBe(false);
     expect(existsSync(join(workspace('wingfoil'), 'PROJECT_RULES.md'))).toBe(false);
@@ -173,13 +184,18 @@ describe('the snapshot step, reached without the campaign check', () => {
 
     await expect(
       runCampaign(unchecked, { ...doubles(), harnessSources: { wingfoil: CLONE } }),
-    ).rejects.toThrow('the baseline-docs arm is generated from the wingfoil arm and its harness');
+    ).rejects.toThrow(
+      'the baseline-docs arm is generated from the wingfoil arm, its harness and its docs generator',
+    );
   });
 });
 
 describe('checkCampaign, the baseline-docs arm (REQ-RUN-11)', () => {
   it('rejects a campaign with baseline-docs and no wingfoil arm to generate it from', () => {
-    const result = checkCampaign(writeRepo(campaignYaml(['baseline', 'baseline-docs']), ['S1@1.0']).file);
+    // The wingfoil arm is in the repository, not in the campaign.
+    const { root, file } = writeRepo(campaignYaml(['baseline', 'baseline-docs']), ['S1@1.0']);
+    writeArmsNamed(root, ['wingfoil']);
+    const result = checkCampaign(file);
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.issues).toEqual([
@@ -187,6 +203,23 @@ describe('checkCampaign, the baseline-docs arm (REQ-RUN-11)', () => {
         path: 'arms',
         message:
           "includes baseline-docs, which is generated from the wingfoil arm's configuration: add the wingfoil arm",
+      },
+    ]);
+  });
+});
+
+describe('checkCampaign, a docs control of another harness (REQ-RUN-11, task-067)', () => {
+  it('names the arm speckit-docs is generated from', () => {
+    const { root, file } = writeRepo(campaignYaml(['baseline', 'speckit-docs']), ['S1@1.0']);
+    writeArmsNamed(root, ['speckit']);
+    const result = checkCampaign(file);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.issues).toEqual([
+      {
+        path: 'arms',
+        message:
+          "includes speckit-docs, which is generated from the speckit arm's configuration: add the speckit arm",
       },
     ]);
   });

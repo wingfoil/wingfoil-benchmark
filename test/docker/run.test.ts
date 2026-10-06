@@ -807,7 +807,7 @@ describe('runs in a real container', () => {
 
       // REQ-RUN-11: baseline-docs received T2's wingfoil configuration as Markdown, the same file the
       // results keep, generated from the snapshot the wingfoil arm's own setup made.
-      const generated = join(root, 'results', image, '1', 'generated', 'T2@1.0');
+      const generated = join(root, 'results', image, '1', 'generated', 'T2@1.0', 'baseline-docs');
       const rules = readFileSync(join(run('baseline-docs'), 'PROJECT_RULES.md'), 'utf8');
       expect(rules).toBe(readFileSync(join(generated, 'PROJECT_RULES.md'), 'utf8'));
       expect(rules).toContain('### No throw\n\nFunctions of the domain return a `Result` and never throw.\n');

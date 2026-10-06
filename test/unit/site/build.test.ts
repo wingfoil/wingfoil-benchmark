@@ -39,6 +39,7 @@ describe('bench site build (REQ-CLI-09 as amended in 1.20, task-045)', () => {
       'abcdef012345/1/index.html',
       'abcdef012345/1/material/manual-baseline.html',
       'abcdef012345/1/material/manual-wingfoil.html',
+      'abcdef012345/1/material/setup-wingfoil.html',
       'abcdef012345/1/method.html',
       'index.html',
       'style.css',
