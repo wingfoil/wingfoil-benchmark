@@ -99,5 +99,7 @@ function toArm(spec: ArmFile, dir: string): Arm {
     ...(spec.mcp === undefined ? {} : { mcpPath: resolve(dir, spec.mcp) }),
     ...(spec.requires === undefined ? {} : { requires: spec.requires }),
     provides: spec.provides,
+    ...(spec.docs_of === undefined ? {} : { docsOf: spec.docs_of }),
+    ...(spec.telemetry_off === undefined ? {} : { telemetryOff: spec.telemetry_off }),
   };
 }

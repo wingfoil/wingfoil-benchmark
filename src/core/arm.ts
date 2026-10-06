@@ -36,6 +36,13 @@ export const armSchema = z.strictObject({
   provides: z
     .record(z.string().regex(/^[a-z][a-z0-9]*(-[a-z0-9]+)*$/, 'must be kebab-case'), z.boolean())
     .default({}),
+  /** REQ-FMT-05 as amended: a docs control names the harness arm it is generated from, and requires no tool. */
+  docs_of: z.string().regex(ARM_NAME, 'must be an arm name').optional(),
+  /**
+   * REQ-FMT-05 as amended, REQ-RUN-18: the environment settings, `NAME=value`, that turn a harness's telemetry off,
+   * set in the arm's container; `[]` states the tool has none. Required of an arm that requires a harness.
+   */
+  telemetry_off: z.array(z.string().regex(/^[A-Z_][A-Z0-9_]*=.*$/, 'must be NAME=value')).optional(),
 });
 
 /** An `arm.yaml` as parsed, with relative paths. */
@@ -54,4 +61,8 @@ export interface Arm {
   readonly requires?: string;
   /** The harness capabilities the arm offers, by name (REQ-FMT-10). */
   readonly provides: Readonly<Record<string, boolean>>;
+  /** The harness arm a docs control is generated from (REQ-FMT-05 as amended). */
+  readonly docsOf?: string;
+  /** The settings that turn the arm's tool's telemetry off, `NAME=value` (REQ-RUN-18). */
+  readonly telemetryOff?: readonly string[];
 }
