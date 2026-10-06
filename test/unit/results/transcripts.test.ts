@@ -230,6 +230,26 @@ describe('the harness artifacts beside the transcripts (REQ-CLI-11 as amended, R
     expect(readFileSync(join(executionDir, RUN('TC', 'baseline'), 'run.json'), 'utf8')).toBe(before);
   }, 120_000);
 
+  it('refuses runs that recorded one harness with different digests, or without them', async () => {
+    const cases: [string[], (record: Record<string, string>) => Record<string, string>, string][] = [
+      [['TD'], (record) => ({ ...record, installed_sha256: sha('another build') }), 'the runs with different digests'],
+      [['TC', 'TD'], (record) => ({ ...record, tarball_sha256: 'none' }), 'a run without its digests'],
+    ];
+    for (const [ids, change, reason] of cases) {
+      const { root, executionDir } = await withHarness(true);
+      for (const id of ids) {
+        const file = join(executionDir, RUN(id, 'wingfoil'), 'run.json');
+        const record = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>;
+        record.harness = change(record.harness as Record<string, string>);
+        writeFileSync(file, `${JSON.stringify(record, undefined, 2)}\n`);
+      }
+      const packed = await benchSite(root, 'transcripts', 'pack', EXECUTION);
+      expect(packed.code).toBe(1);
+      expect(packed.stderr).toBe(`.cache/harnesses/wingfoil/${COMMIT}/: is recorded by ${reason}\n`);
+      expect(existsSync(join(root, 'releases'))).toBe(false);
+    }
+  }, 120_000);
+
   it('removes an earlier pack\'s harness asset when the execution now packs none', async () => {
     const { root } = await withHarness(true);
     expect((await benchSite(root, 'transcripts', 'pack', EXECUTION)).code).toBe(0);

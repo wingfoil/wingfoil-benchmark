@@ -176,7 +176,7 @@ async function prepare(
 function fromCache(repoRoot: string, cache: string, tool: string, sha: string): HarnessArtefact | undefined {
   const recordFile = join(cache, 'harness.json');
   const installed = join(cache, 'installed.tgz');
-  if (!existsSync(recordFile) || !existsSync(installed)) return undefined;
+  if (!existsSync(recordFile)) return undefined;
   let record: CacheRecord;
   try {
     record = JSON.parse(readFileSync(recordFile, 'utf8')) as CacheRecord;

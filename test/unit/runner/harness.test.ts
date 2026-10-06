@@ -132,11 +132,17 @@ describe('the WingFoil under test (REQ-RUN-14, adr-003 decisions 1-5)', () => {
       writeFileSync(join(root, cache, file), original);
     }
 
-    // A package that is gone is refused too: the record names it, so nothing guesses which file it was.
-    rmSync(join(root, cache, 'wingfoil-0.1.0.tgz'));
-    await expect(runCampaign(campaign, { ...ports(), harnessSources: { wingfoil: CLONE } })).rejects.toThrow(
-      `the cached harness artifact ${join(cache, 'wingfoil-0.1.0.tgz')} is missing: remove ${cache}/ to rebuild it`,
-    );
+    // A file that is gone is refused too, the installed artifact as the package its record names.
+    for (const file of ['installed.tgz', 'wingfoil-0.1.0.tgz']) {
+      const original = readFileSync(join(root, cache, file));
+      rmSync(join(root, cache, file));
+      await expect(
+        runCampaign(campaign, { ...ports(), harnessSources: { wingfoil: CLONE } }),
+      ).rejects.toThrow(
+        `the cached harness artifact ${join(cache, file)} is missing: remove ${cache}/ to rebuild it`,
+      );
+      writeFileSync(join(root, cache, file), original);
+    }
 
     // An unreadable record means not built: it is built again.
     writeFileSync(join(root, cache, 'harness.json'), '{');

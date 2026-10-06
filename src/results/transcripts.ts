@@ -216,7 +216,12 @@ async function packCopies(
   const sha256 = createHash('sha256').update(readFileSync(partial)).digest('hex');
   // The harness artifacts, checked against what the runs installed and packed aside, before any record is written: a
   // pack either completes or changes nothing, the second asset included.
-  const harnesses = await packHarnesses(root, [...records.values()], harnessesPartial, options.process);
+  let harnesses: Result<HarnessPack | undefined>;
+  try {
+    harnesses = await packHarnesses(root, [...records.values()], harnessesPartial, options.process);
+  } catch (error) {
+    harnesses = fail([{ path: HARNESS_CACHE, message: `cannot be read: ${(error as Error).message}` }]);
+  }
   if (!harnesses.ok) {
     undo();
     return harnesses;
@@ -275,7 +280,8 @@ interface RecordedHarness {
  * The harness artifacts the runs recorded, packed from the cache into `partial` as `<tool>/<commit>/<file>`,
  * reproducibly, their licences inside unchanged, so that a reader can install the bytes the runs installed
  * (REQ-FMT-12). Each cached file is checked against the digest the runs recorded: a cache tampered with, or rebuilt to
- * other bytes, since the runs is refused, naming the file, rather than published. An artifact the cache no longer
+ * other bytes, since the runs is refused, naming the file, rather than published; so are runs that recorded one
+ * harness with different digests, or without them, since nothing then says which bytes they installed. An artifact the cache no longer
  * holds is named, and the others are packed; none at all packs no asset.
  */
 async function packHarnesses(
@@ -284,12 +290,26 @@ async function packHarnesses(
   partial: string,
   process: ProcessPort,
 ): Promise<Result<HarnessPack | undefined>> {
-  const used = new Map<string, RecordedHarness>();
+  // Every run's record of each harness: the digests it installed, which must be one pair per tool and commit.
+  const recordedBy = new Map<string, Set<string>>();
   for (const record of records) {
     const harness = record.harness as RecordedHarness | undefined;
-    if (typeof harness?.tool === 'string' && typeof harness.commit === 'string')
-      used.set(`${harness.tool}/${harness.commit}`, harness);
+    if (typeof harness?.tool !== 'string' || typeof harness.commit !== 'string') continue;
+    const dir = `${harness.tool}/${harness.commit}`;
+    const pair = `${String(harness.installed_sha256)} ${String(harness.tarball_sha256)}`;
+    recordedBy.set(dir, (recordedBy.get(dir) ?? new Set()).add(pair));
   }
+  const used = new Map<string, RecordedHarness>();
+  const disagreeing: Issue[] = [];
+  for (const [dir, pairs] of recordedBy) {
+    const [installed = '', tarball = ''] = [...pairs][0]?.split(' ') ?? [];
+    if (pairs.size > 1) {
+      disagreeing.push({ path: `${HARNESS_CACHE}/${dir}/`, message: 'is recorded by the runs with different digests' });
+    } else if (!/^[0-9a-f]{64}$/.test(installed) || !/^[0-9a-f]{64}$/.test(tarball)) {
+      disagreeing.push({ path: `${HARNESS_CACHE}/${dir}/`, message: 'is recorded by a run without its digests' });
+    } else used.set(dir, { installed_sha256: installed, tarball_sha256: tarball });
+  }
+  if (disagreeing.length > 0) return fail(disagreeing);
   if (used.size === 0) return ok(undefined);
   const cacheRoot = join(root, HARNESS_CACHE);
   const files: string[] = [];
@@ -313,7 +333,7 @@ async function packHarnesses(
       [basename(tarball), recorded.tarball_sha256],
     ];
     for (const [name, digest] of checks) {
-      if (typeof digest === 'string' && sha256Of(join(full, name)) !== digest) {
+      if (sha256Of(join(full, name)) !== digest) {
         issues.push({
           path: `${HARNESS_CACHE}/${dir}/${name}`,
           message: 'is not what the runs installed: its digest differs from the one they recorded',
