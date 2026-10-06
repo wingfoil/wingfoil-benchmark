@@ -187,3 +187,5 @@ from the bundle, init, telemetry: none to turn off, said so); the ledger line.
 
 - `npx wingfoil memory submit task-065-…` → `29cf8ec`. Declared: `in-progress → in-review`, one commit. Observed: exit
   0, JSON `from`/`to` as declared, one file, `status` only. Matches.
+- The approver's `memory approve task-065-… --reason "…"` → `b0cface`, run from this worktree (`in-review →
+  approved`, `Approver:`/`Reason:` trailers with the drafted reason, only `status` changed). Matches.
