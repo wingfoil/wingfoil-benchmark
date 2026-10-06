@@ -11,9 +11,10 @@ Raised by [task-062](../task/task-062-claude-5-5-models-on-the-pinned-agent-spik
 [dl-007](dl-007-claude-5-5-models-for-the-v0-2-campaign.md) (Claude 5.5 models in v0.2).
 
 - Claude Code accepts `--effort <level>` (low, medium, high, xhigh, max): probe P4 ran Opus 5.5 with `--effort high`.
-- Neither 2.1.280 nor 2.1.291 reports the effort it sends, in the stream or in `--debug`'s log. 2.1.291 reads each
-  model's default from a catalogue (`defaultEffort`, `capLevels`), and its `init` event says
-  `per_turn_effort_active: true`: **the default can change without a new agent version**.
+- Neither 2.1.280 nor 2.1.291 reports the effort it sends, in the stream or in `--debug`'s log. 2.1.291's `init`
+  event says `per_turn_effort_active` (true for Sonnet and Opus 5.5, false for Haiku 4.5), and its binary names a
+  per-model `defaultEffort`, `capLevels` and `defaultEffortPinnedAboveServed`: the default is per model, and may be
+  served rather than fixed in the binary — a possibility the names suggest, not an observation.
 - dl-007 notes that Opus 5.5 defaults to `medium` where Opus 5 defaulted to `high`, and that Sonnet 5.5's levels are
   recalibrated: effort moves cost and quality, and today the runner never passes it.
 
