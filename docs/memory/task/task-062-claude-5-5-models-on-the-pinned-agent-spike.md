@@ -2,7 +2,7 @@
 id: task-062-claude-5-5-models-on-the-pinned-agent-spike
 type: task
 title: "Claude 5.5 models on the pinned agent spike"
-status: in-review
+status: approved
 release: v0.2
 wave: W12
 features: []
