@@ -13,8 +13,10 @@ import {
 } from '../scenario/index.js';
 import type { HoldoutAdditions } from '../scenario/index.js';
 
-/** Where the hold-out path comes from when no `--holdout` is given (REQ-CLI-10). */
-export const HOLDOUT_VARIABLE = 'BENCH_HOLDOUT_PATH';
+import { HOLDOUT_VARIABLE } from './preflight.js';
+
+/** Where the hold-out path comes from when no `--holdout` is given (REQ-CLI-10): one name, the preflight's. */
+export { HOLDOUT_VARIABLE };
 
 /** The option that names the hold-out on the command line (REQ-CLI-04). */
 export const HOLDOUT_OPTION = '--holdout';

@@ -4,14 +4,12 @@ import { packTranscripts } from '../results/index.js';
 import type { KnownSecret } from '../results/index.js';
 import { loadAgentToken } from '../agents/index.js';
 
+import { TOKEN_VARIABLE } from './preflight.js';
 import { EXIT, report, USAGE } from './shared.js';
 import type { Io } from './shared.js';
 
 /** A campaign execution, `<campaign-id>/<n>`. */
 const CAMPAIGN_EXECUTION = /^[0-9a-f]{12}\/[1-9]\d*$/;
-
-/** Where the agent's token is read from (REQ-RUN-15): its value must be in no transcript. */
-const TOKEN_VARIABLE = 'BENCH_AGENT_TOKEN_FILE';
 
 /**
  * `bench transcripts pack <campaign-id>/<n>` (REQ-CLI-11 and REQ-RES-06 as amended in 1.22, task-047): packs
