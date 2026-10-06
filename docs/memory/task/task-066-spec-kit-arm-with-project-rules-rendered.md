@@ -184,3 +184,8 @@ The setup page (REQ-RES-09's setup half) goes with task-067, since it shows what
   failure in task-064's image-port test, which listed the first image and met one another test was removing — two suite
   runs were then overlapping; fixed in this branch (it picks an image no test builds), and the Docker suite re-run alone
   passed 21/21, the speckit arm's test included.
+
+### Review and approval
+
+- `npx wingfoil memory submit task-066-…` → `7d0a24b`. Declared: `in-progress → in-review`, one commit. Observed: exit
+  0, JSON `from`/`to` as declared, one file, `status` only. Matches.
