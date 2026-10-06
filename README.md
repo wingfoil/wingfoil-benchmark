@@ -251,6 +251,7 @@ Exit codes: `0` success, `1` failure (one line per problem, or a run that failed
 ```bash
 npm run test:bin     # the built command line
 npm run test:docker  # W1's to W3's runs, a dry run, bug-003's, W6's scoring, the image port; in real Docker
+                     # (the speckit arm's test runs when BENCH_SPECKIT_REPO names a clone of github/spec-kit)
 ```
 
 ## License
