@@ -35,7 +35,7 @@ export interface CheckedDryRun {
   readonly scenario: Scenario;
   /** The arm that runs. */
   readonly arm: Arm;
-  /** Every arm loaded: the one that runs, and the wingfoil arm for baseline-docs (REQ-RUN-11). */
+  /** Every arm loaded: the one that runs, and for a docs control the arm it is generated from (REQ-RUN-11). */
   readonly arms: readonly Arm[];
   readonly model: string;
 }
@@ -44,7 +44,7 @@ export interface CheckedDryRun {
  * Check a dry run before anything is built (F3.3, task-021 Design), in order: the profile
  * (`scenarios/dry-run.yaml` under `root`), the model, the scenario version — its own checks, its
  * immutability against stored campaign results (REQ-FMT-09), the leak scan **without the hold-out**,
- * which a run never reads (REQ-CLI-10) — then the arm, with the arm baseline-docs is generated from,
+ * which a run never reads (REQ-CLI-10) — then the arm, with the arm a docs control is generated from,
  * and the harness coverage of the arms loaded.
  */
 export function checkDryRun(request: DryRunRequest, root: string): Result<CheckedDryRun> {
@@ -76,7 +76,7 @@ export function checkDryRun(request: DryRunRequest, root: string): Result<Checke
   const arms: Arm[] = [];
   const issues: Issue[] = [];
   for (const name of names) {
-    const arm = loadArm(armsRoot, name);
+    const arm = name === request.arm ? requested : loadArm(armsRoot, name);
     if (arm.ok) arms.push(arm.value);
     else {
       const role = name === request.arm ? '--arm' : 'arms';

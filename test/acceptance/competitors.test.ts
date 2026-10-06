@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -10,7 +11,7 @@ import type { RunOnceRequest } from '../../src/core/index.js';
 import { runCampaign } from '../../src/runner/index.js';
 import { escapeHtml } from '../../src/site/render.js';
 import { repoPath } from '../support/paths.js';
-import { doubles } from '../support/runner-doubles.js';
+import { doubles, fakeBuild } from '../support/runner-doubles.js';
 import { completeCampaignYaml, writeRepo } from '../support/campaign-fixture.js';
 import { registerEntry, writeRegister } from '../support/eligibility-fixture.js';
 import { EXECUTION } from '../support/score-fixture.js';
@@ -323,6 +324,32 @@ function controlsCampaign() {
   return repo;
 }
 
+/**
+ * The doubles' one-off containers, with the speckit arm's setup leaving what Spec Kit's init leaves: its constitution
+ * template, its mechanics (a template, a workflow, its init options) and its skills.
+ */
+function speckitSetup(request: RunOnceRequest): void {
+  const build = request.mount.source;
+  const arm = join(build, 'arm', 'arm.yaml');
+  if (!(
+    request.command.join(' ').includes('/build/arm/') && readFileSync(arm, 'utf8').includes('name: speckit')
+  )) {
+    fakeBuild(request);
+    return;
+  }
+  const workspace = join(build, 'workspace');
+  for (const [file, text] of [
+    ['.specify/memory/constitution.md', '# [PROJECT_NAME] Constitution\n\n### [PRINCIPLE_1_NAME]\n'],
+    ['.specify/templates/spec-template.md', '# Spec template\n'],
+    ['.specify/workflows/speckit/workflow.yml', 'name: workflow\n'],
+    ['.specify/init-options.json', '{ "init-options": true }\n'],
+    ['.claude/skills/speckit-specify/SKILL.md', '# speckit-specify\n'],
+  ] as const) {
+    mkdirSync(join(workspace, file, '..'), { recursive: true });
+    writeFileSync(join(workspace, file), text);
+  }
+}
+
 describe('competitors.feature, the docs controls and the setups', () => {
   it('@F7.1 Each harness has its own docs control', async () => {
     // Given each harness arm's configuration, captured by running its own setup
@@ -330,7 +357,7 @@ describe('competitors.feature, the docs controls and the setups', () => {
     const checked = checkCampaign(file);
     if (!checked.ok) throw new Error(JSON.stringify(checked.issues));
     const execute = async () => {
-      const ports = doubles({ commits: { '3df305e': SHA, 'v1.1.0': SPECKIT_SHA } });
+      const ports = doubles({ commits: { '3df305e': SHA, 'v1.1.0': SPECKIT_SHA }, onRunOnce: speckitSetup });
       const summary = await runCampaign(checked.value, {
         ...ports,
         harnessSources: { wingfoil: '/clones/wingfoil', speckit: '/clones/spec-kit' },
@@ -349,15 +376,26 @@ describe('competitors.feature, the docs controls and the setups', () => {
     expect(first.baselineDocs).toContain('### Fake rule');
     expect(first.baselineDocs).not.toContain('Benchmark Approver');
     expect(first.speckitDocs).toContain('### No new runtime dependency');
-    for (const mechanics of ['speckit-specify', 'spec-template', 'workflow.yml', 'init-options'])
+    for (const mechanics of ['speckit-specify', 'Spec template', 'name: workflow', 'init-options'])
       expect(first.speckitDocs).not.toContain(mechanics);
+    // Of the speckit configuration its setup left, the control kept its memory, not its mechanics.
+    const kept = join(first.summary.resultsDir, 'generated', 'S1@1.0', 'speckit-docs', 'speckit');
+    expect(existsSync(join(kept, '.specify', 'memory', 'constitution.md'))).toBe(true);
+    expect(existsSync(join(kept, '.specify', 'templates'))).toBe(false);
+    expect(existsSync(join(kept, '.claude'))).toBe(false);
     // Each docs control's run received its environment and recorded its digest.
     for (const arm of ['baseline-docs', 'speckit-docs']) {
       const run = first.summary.runs.find((r) => r.arm === arm);
       const record = JSON.parse(readFileSync(join(run?.outputDir ?? '', 'run.json'), 'utf8')) as {
         generated_sha256?: string;
       };
-      expect(record.generated_sha256).toMatch(/^[0-9a-f]{64}$/);
+      expect(record.generated_sha256).toBe(
+        createHash('sha256')
+          .update(
+            readFileSync(join(first.summary.resultsDir, 'generated', 'S1@1.0', arm, 'PROJECT_RULES.md')),
+          )
+          .digest('hex'),
+      );
     }
   });
 

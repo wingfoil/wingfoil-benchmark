@@ -5,7 +5,8 @@ import { join } from 'node:path';
 import { campaignSchema, fail, ok, parseWith, readYamlFile } from '../core/index.js';
 import type { Arm, CampaignFile, Issue, Result } from '../core/index.js';
 
-import { docsGeneratorOf, loadArm, rulesGeneratorOf } from '../arms/index.js';
+import { armDigest, docsGeneratorOf, loadArm, rulesGeneratorOf } from '../arms/index.js';
+import type { DocsGenerator } from '../arms/index.js';
 import type { Group } from '../results/index.js';
 
 import { renderMarkdown } from './markdown.js';
@@ -86,7 +87,7 @@ export function methodPages(root: string, execution: string, model: SiteModel): 
     material.set(`manual-${arm}.html`, materialPage(`Operating manual: ${arm}`, renderMarkdown(text).html));
   }
   if (issues.length > 0) return fail(issues);
-  const setups = setupPages(root, model.arms);
+  const setups = setupPages(root, model);
   if (!setups.ok) return setups;
   for (const [name, page] of setups.value) material.set(name, page);
   for (const [name, page] of publishedMaterial(
@@ -128,26 +129,36 @@ function materialTitle(name: string): string {
 
 /**
  * The setup page of each harness arm of the execution (REQ-RES-09, task-067), from the repository's `arms/<arm>/` as
- * the manual pages are: its setup script, its telemetry setting, its manual, its rules generator, its docs control and
- * what that control's generator renders. An arm without a harness (a control) has none.
+ * the manual pages are, and only while it is the arm its runs recorded (their `arm_digest`, REQ-FMT-13): a rebuild
+ * adds links, never a setup that did not run (REQ-RES-02). An arm whose runs recorded no digest (before v0.2) has
+ * none; an arm changed since is refused. A control (an arm without a harness) has none either.
  */
-function setupPages(root: string, names: readonly string[]): Result<ReadonlyMap<string, string>> {
+function setupPages(root: string, model: SiteModel): Result<ReadonlyMap<string, string>> {
   const armsRoot = join(root, 'arms');
   const pages = new Map<string, string>();
   const issues: Issue[] = [];
-  const controls: Arm[] = [];
-  for (const name of listDirectories(armsRoot)) {
+  const arms: Arm[] = [];
+  for (const name of model.arms) {
     const loaded = loadArm(armsRoot, name);
-    if (loaded.ok && loaded.value.docsOf !== undefined) controls.push(loaded.value);
+    if (loaded.ok) arms.push(loaded.value);
+    else issues.push(...loaded.issues.map((issue) => ({ ...issue, path: `arms/${name}/${issue.path}` })));
   }
-  for (const name of names) {
-    const loaded = loadArm(armsRoot, name);
-    if (!loaded.ok) {
-      issues.push(...loaded.issues.map((issue) => ({ ...issue, path: `arms/${name}/${issue.path}` })));
+  if (issues.length > 0) return fail(issues);
+  for (const arm of arms) {
+    if (arm.requires === undefined) continue;
+    const recorded = [
+      ...new Set(model.records.filter((r) => r.arm === arm.name).flatMap((r) => r.armDigest ?? [])),
+    ].sort();
+    if (recorded.length === 0) continue;
+    const digest = armDigest(root, arm.name);
+    const other = recorded.filter((value) => value !== digest);
+    if (other.length > 0) {
+      issues.push({
+        path: `arms/${arm.name}`,
+        message: `(digest ${digest}) differs from the arm its runs recorded (${other.join(', ')})`,
+      });
       continue;
     }
-    const arm = loaded.value;
-    if (arm.requires === undefined) continue;
     pages.set(
       `setup-${arm.name}.html`,
       materialPage(
@@ -155,7 +166,7 @@ function setupPages(root: string, names: readonly string[]): Result<ReadonlyMap<
         setupHtml(
           arm,
           readFileSync(arm.setupPath, 'utf8'),
-          controls.filter((control) => control.docsOf === arm.name).map((control) => control.name),
+          arms.filter((control) => control.docsOf === arm.name).map((control) => control.name),
         ),
       ),
     );
@@ -163,7 +174,8 @@ function setupPages(root: string, names: readonly string[]): Result<ReadonlyMap<
   return issues.length > 0 ? fail(issues) : ok(pages);
 }
 
-function setupHtml(arm: Arm, script: string, controls: readonly string[]): string {
+/** The body of an arm's setup page: `script` is its setup script, `controls` the docs controls of it that ran. */
+export function setupHtml(arm: Arm, script: string, controls: readonly string[]): string {
   const tool = arm.requires ?? '';
   const telemetry = arm.telemetryOff ?? [];
   const rules = rulesGeneratorOf(tool);
@@ -184,23 +196,14 @@ function setupHtml(arm: Arm, script: string, controls: readonly string[]): strin
       (rules === undefined
         ? `<p>The scenario's rules are ${e(tool)}'s own configuration, applied by the setup: no rules generator.</p>`
         : `<p>Written to <code>${e(rules.path)}</code>: ${e(rules.description)}.</p>`),
-    `<h2 id="docs-control">Docs control</h2>\n` +
-      (controls.length === 0 || docs === undefined
-        ? `<p>The ${e(arm.name)} arm has no docs control.</p>`
-        : `<p>${controls.map((control) => `<code>${e(control)}</code>`).join(', ')}: the same agent with the ` +
-          `${e(arm.name)} arm's configuration rendered as documentation, without the harness. Kept from the ` +
-          `configuration: ${docs.kept.map((path) => `<code>${e(path)}/</code>`).join(', ')}.</p>\n` +
-          '<table>\n<thead><tr><th>Content</th><th>Rendered</th><th>Why</th></tr></thead>\n<tbody>\n' +
-          docs.declaration
-            .map(
-              (row) =>
-                `<tr><td>${renderMarkdown(row.kind).html.replace(/^<p>|<\/p>\n?$/g, '')}</td>` +
-                `<td>${row.rendered ? 'yes' : 'no'}</td><td>${e(row.why)}</td></tr>\n`,
-            )
-            .join('') +
-          '</tbody>\n</table>'),
+    `<h2 id="docs-control">Docs control</h2>\n` + docsControlHtml(arm, controls, docs),
     `<h2 id="identity">Git identity</h2>\n<p>Every arm commits as the same git identity, “Benchmark Approver” ` +
-      `(adr-003, decision 7). In a competitor arm it carries no approval authority: it is only a name.</p>`,
+      `(adr-003, decision 7). ` +
+      (tool === 'wingfoil'
+        ? `In the wingfoil arm it is the approver member the setup adds to the project's team: WingFoil accepts the ` +
+          `agent's approvals under it, once the neutral approver has replied (REQ-RUN-17). In a competitor arm it ` +
+          `carries no approval authority.</p>`
+        : `In the ${e(arm.name)} arm, a competitor arm, it carries no approval authority: it is only a name.</p>`),
   ];
   if (tool === 'speckit') {
     parts.push(
@@ -211,12 +214,26 @@ function setupHtml(arm: Arm, script: string, controls: readonly string[]): strin
   return parts.join('\n') + '\n';
 }
 
-function listDirectories(dir: string): string[] {
-  return existsSync(dir)
-    ? readdirSync(dir)
-        .filter((name) => isDirectory(join(dir, name)))
-        .sort()
-    : [];
+function docsControlHtml(arm: Arm, controls: readonly string[], docs: DocsGenerator | undefined): string {
+  if (docs === undefined) return `<p>The ${e(arm.requires ?? '')} harness has no docs generator yet.</p>`;
+  const named =
+    controls.length === 0
+      ? `<p>No docs control of the ${e(arm.name)} arm ran in this execution. Its docs control would get the ` +
+        `${e(arm.name)} arm's configuration rendered as documentation, without the harness.`
+      : `<p>${controls.map((control) => `<code>${e(control)}</code>`).join(', ')}: the same agent with the ` +
+        `${e(arm.name)} arm's configuration rendered as documentation, without the harness.`;
+  return (
+    `${named} Kept from the configuration: ${docs.kept.map((path) => `<code>${e(path)}/</code>`).join(', ')}.</p>\n` +
+    '<table>\n<thead><tr><th>Content</th><th>Rendered</th><th>Why</th></tr></thead>\n<tbody>\n' +
+    docs.declaration
+      .map(
+        (row) =>
+          `<tr><td>${renderMarkdown(row.kind).html.replace(/^<p>|<\/p>\n?$/g, '')}</td>` +
+          `<td>${row.rendered ? 'yes' : 'no'}</td><td>${e(row.why)}</td></tr>\n`,
+      )
+      .join('') +
+    '</tbody>\n</table>'
+  );
 }
 
 /**

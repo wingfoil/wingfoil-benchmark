@@ -17,18 +17,21 @@ export interface DocsGenerator {
   readonly declaration: readonly DeclaredContent[];
 }
 
+/** The placeholders of the constitution template Spec Kit's init leaves: by name, not any bracketed capitals. */
+const SPECKIT_PLACEHOLDER = /\[(?:PROJECT_NAME|PRINCIPLE_\d+_NAME|CONSTITUTION_VERSION|RATIFICATION_DATE)\]/;
+
 /** Where Spec Kit keeps a project's constitution. */
 const CONSTITUTION = '.specify/memory/constitution.md';
 
 /**
  * The speckit-docs generator: the principles of the speckit arm's constitution — the scenario's rules, as its rules
- * generator wrote them (REQ-FMT-14) — as `PROJECT_RULES.md`. A constitution still holding init's placeholders declares
- * no rule: the file then says so, so that the manual it is read through never names a missing file.
+ * generator wrote them (REQ-FMT-14) — as `PROJECT_RULES.md`. A constitution still holding init's own placeholders
+ * (`[PROJECT_NAME]`, `[PRINCIPLE_1_NAME]` …; a rule's text may hold other brackets) declares no rule: the file then says so, so that the manual it is read through never names a missing file.
  */
 export function renderSpeckitDocs(files: ReadonlyMap<string, string>): string {
   const constitution = files.get(CONSTITUTION) ?? '';
   const start = constitution.indexOf('\n### ');
-  if (start < 0 || /\[[A-Z_0-9]+\]/.test(constitution)) {
+  if (start < 0 || SPECKIT_PLACEHOLDER.test(constitution)) {
     return '# Project rules\n\nThis project declares no rules beyond its README.\n';
   }
   return [

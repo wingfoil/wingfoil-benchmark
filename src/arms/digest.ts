@@ -32,8 +32,8 @@ function contentOf({ full, kind }: { full: string; kind: 'file' | 'link' | 'othe
  * order (JavaScript's code-unit order, independent of the locale; the same as byte order for every path an arm has,
  * ASCII), `<path>\0<sha256 of its content>\n`, the path from the repository root. A symbolic link — which the arm
  * loader refuses where it reads — is hashed by its target, so that it cannot change unseen; the Design had it refused,
- * but the digest has no channel for a refusal, and the loader already gives one. A docs control's borrowed manual
- * (REQ-RUN-11) joins it when docs controls borrow one (task-067).
+ * but the digest has no channel for a refusal, and the loader already gives one. A docs control's manual is a copy
+ * of baseline-docs' under its own directory (task-067), so its digest covers it.
  */
 export function armDigest(repoRoot: string, arm: string): string {
   const lines = entriesUnder(repoRoot, posix.join(ARMS, arm))

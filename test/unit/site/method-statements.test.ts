@@ -38,11 +38,11 @@ const STATEMENTS: readonly (readonly [string, string])[] = [
   ],
   [
     'operating-manuals',
-    'experiment design §2 parity rules (operating manuals); REQ-RUN-12; task-014 Design decision 2 (`ceil(UTF-8 bytes ÷ 4)`); rel-v0-1 W3 Due before ("publishes the three manuals"); task-046 Design "The published material"',
+    'experiment design §2 parity rules (operating manuals); REQ-RUN-12; task-014 Design decision 2 (`ceil(UTF-8 bytes ÷ 4)`); rel-v0-1 W3 Due before ("publishes the three manuals"); task-046 Design "The published material"; REQ-FMT-05 and task-067 Design (the speckit and speckit-docs manuals)',
   ],
   [
     'setup-pages',
-    'REQ-RES-09 (each harness arm’s setup published); task-067 Design "The setup pages"; adr-003 decision 7 (the shared git identity)',
+    'REQ-RES-09 (each harness arm’s setup published); task-067 Design "The setup pages"; adr-003 decision 7 (the shared git identity); REQ-RES-02 as amended (a rebuild adds links, never an execution’s values); REQ-FMT-13 (the recorded arm digest)',
   ],
   [
     'wingfoil-manual-process',

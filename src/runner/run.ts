@@ -378,7 +378,7 @@ export async function runPlan(plan: RunPlan, options: RunnerOptions): Promise<Ru
     { id: plan.id, repoRoot: plan.repoRoot, arms: plan.arms, harnesses: plan.pins.harnesses },
     options,
   );
-  // The baseline-docs environment of every scenario, from the wingfoil configuration (REQ-RUN-11).
+  // Every docs control's environment of every scenario, from its harness arm's configuration (REQ-RUN-11).
   const projectRules = await prepareProjectRules(plan, harnesses, resultsDir, options);
 
   const runs: RunResult[] = [];
@@ -442,7 +442,7 @@ interface RunContext {
   readonly harness?: HarnessArtefact | undefined;
   /** The arm's digest, taken once before the execution's first run (REQ-FMT-13). */
   readonly armDigest: string;
-  /** The generated `PROJECT_RULES.md` of the scenario, for the baseline-docs arm (REQ-RUN-11). */
+  /** The generated `PROJECT_RULES.md` of the scenario, for a docs control (REQ-RUN-11). */
   readonly projectRules?: string | undefined;
 }
 
@@ -588,7 +588,7 @@ interface SetupContext {
   readonly harness?: string;
   /** The scenario's configuration for this arm, if it has one (dl-005). */
   readonly scenarioDir?: string | undefined;
-  /** The generated rules of the scenario, for the baseline-docs arm (REQ-RUN-11). */
+  /** The generated rules of the scenario, for a docs control (REQ-RUN-11). */
   readonly projectRules?: string;
   /** Where the scenario declares its project rules (dl-005: the wingfoil arm's configuration), for a generator. */
   readonly rulesSource?: string | undefined;

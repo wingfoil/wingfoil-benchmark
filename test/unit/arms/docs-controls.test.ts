@@ -60,6 +60,13 @@ describe('the docs generators (REQ-RUN-11, task-067)', () => {
     expect(renderSpeckitDocs(new Map())).toBe(none);
   });
 
+  it('keep a rule whose text holds brackets: only init’s own placeholders mean no rules', () => {
+    const constitution = '# Constitution\n\n### Read argv[0]\n\nUse items[1] and [TODO] markers.\n';
+    expect(renderSpeckitDocs(new Map([[CONSTITUTION, constitution]]))).toContain(
+      '### Read argv[0]\n\nUse items[1] and [TODO] markers.\n',
+    );
+  });
+
   it('are the same bytes for the same configuration', () => {
     const files = new Map([[CONSTITUTION, '# C\n\n### Rule\n\nText.\n']]);
     expect(renderSpeckitDocs(files)).toBe(renderSpeckitDocs(new Map(files)));

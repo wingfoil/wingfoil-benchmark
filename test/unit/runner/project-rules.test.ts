@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import { renderProjectRules } from '../../../src/arms/index.js';
 import { checkCampaign, runCampaign } from '../../../src/runner/index.js';
-import { writeArmsNamed } from '../../support/arm-fixture.js';
+import { plainArmYaml, writeArmAt, writeArmsNamed } from '../../support/arm-fixture.js';
 import { completeCampaignYaml, writeRepo } from '../../support/campaign-fixture.js';
 import { doubles, fakeBuild } from '../../support/runner-doubles.js';
 
@@ -220,6 +220,48 @@ describe('checkCampaign, a docs control of another harness (REQ-RUN-11, task-067
         path: 'arms',
         message:
           "includes speckit-docs, which is generated from the speckit arm's configuration: add the speckit arm",
+      },
+    ]);
+  });
+});
+
+describe('two docs controls of the same harness (REQ-RUN-11, task-067)', () => {
+  it('get one environment each, the same bytes, each kept under its own name', async () => {
+    const yaml = campaignYaml(['baseline', 'baseline-docs', 'other-docs', 'wingfoil']);
+    const { checked: campaign } = checked(yaml, ['S1@1.0'], (root) => {
+      writeArmAt(join(root, 'arms'), 'other-docs', { ...plainArmYaml('other-docs'), docs_of: 'wingfoil' }, [
+        'setup.sh',
+        'manual.md',
+      ]);
+    });
+    const ports = doubles();
+
+    const summary = await runCampaign(campaign, { ...ports, harnessSources: { wingfoil: CLONE } });
+
+    const rules = (arm: string) =>
+      readFileSync(join(summary.resultsDir, 'generated', 'S1@1.0', arm, 'PROJECT_RULES.md'), 'utf8');
+    expect(rules('other-docs')).toBe(rules('baseline-docs'));
+    for (const arm of ['baseline-docs', 'other-docs']) {
+      const run = summary.runs.find((r) => r.arm === arm);
+      expect(readFileSync(join(run?.workspace ?? '', 'PROJECT_RULES.md'), 'utf8'), arm).toBe(rules(arm));
+    }
+  });
+});
+
+describe('checkCampaign, a docs control whose arm has no docs generator (task-067)', () => {
+  it('is refused before anything is built, naming what is missing', () => {
+    const yaml = campaignYaml(['baseline', 'plain-docs']);
+    const { root, file } = writeRepo(yaml, ['S1@1.0']);
+    writeArmAt(join(root, 'arms'), 'plain-docs', { ...plainArmYaml('plain-docs'), docs_of: 'baseline' }, [
+      'setup.sh',
+      'manual.md',
+    ]);
+    const result = checkCampaign(file);
+    expect(result.ok ? [] : result.issues).toEqual([
+      {
+        path: 'arms',
+        message:
+          "includes plain-docs, which is generated from the baseline arm's configuration, but baseline has no harness",
       },
     ]);
   });
