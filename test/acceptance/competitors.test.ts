@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { stringify } from 'yaml';
@@ -177,5 +177,107 @@ describe('competitors.feature, artifacts and arm digests', () => {
       const result = checkCampaign(repoPath(join('campaigns', name)));
       expect(result.ok ? name : result.issues).toBe(name);
     }
+  });
+});
+
+const SPECKIT_SHA = 'f1d3a4f8337ebbd3ae22760a9c12e3352b93a175';
+
+/** One run of S1 in the baseline and speckit arms, with the fake agent; the speckit arm is the repository's own. */
+function speckitCampaign(): { root: string; file: string } {
+  const repo = writeRepo(
+    {
+      ...harnessCampaign(),
+      arms: ['baseline', 'speckit'],
+      harnesses: { speckit: { tool: 'speckit', version: 'v1.1.0' } },
+    },
+    ['S1@1.0'],
+  );
+  rmSync(join(repo.root, 'arms', 'speckit'), { recursive: true, force: true });
+  cpSync(repoPath('arms/speckit'), join(repo.root, 'arms', 'speckit'), { recursive: true });
+  return repo;
+}
+
+describe('competitors.feature, the competitor arms', () => {
+  it('@F7.1 A competitor arm runs a scenario under the same rules', async () => {
+    // Given the speckit arm installs Spec Kit from its pinned artifact and initializes it as its documentation says for
+    // Claude Code, and the tool's telemetry is turned off
+    const { root, file } = speckitCampaign();
+    const setup = readFileSync(join(root, 'arms', 'speckit', 'setup.sh'), 'utf8');
+    expect(setup).toContain('tar -xzf "$HOME/harness.tgz"');
+    expect(setup).toContain(
+      'specify init --here --force --integration claude --script sh --ignore-agent-tools',
+    );
+    const checked = checkCampaign(file);
+    if (!checked.ok) throw new Error(JSON.stringify(checked.issues));
+    expect(checked.value.arms.find((arm) => arm.name === 'speckit')?.telemetryOff).toEqual([]);
+    // When the maintainer runs a scenario in the speckit arm with the fake agent; step 1 asks a question
+    const ports = doubles({
+      commits: { 'v1.1.0': SPECKIT_SHA },
+      onRunOnce: build,
+      messageOf: (request) =>
+        'reply' in request || request.step !== 1 ? undefined : 'Which currency do you use?',
+    });
+    const summary = await runCampaign(checked.value, {
+      ...ports,
+      harnessSources: { speckit: '/clones/spec-kit' },
+    });
+    // Then every step runs in a fresh session started by the runner, with the same prompt as in every other arm
+    const steps = (arm: string) => ports.recorded.steps.filter((step) => step.run.includes(`/${arm}/`));
+    expect(steps('speckit').map((step) => step.prompt)).toEqual(steps('baseline').map((step) => step.prompt));
+    expect(new Set(ports.recorded.steps.map((step) => step.sessionId)).size).toBe(
+      ports.recorded.steps.length,
+    );
+    expect(
+      ports.recorded.execs.filter((exec) => exec.command.join(' ') === 'bash /home/node/arm/setup.sh'),
+    ).toHaveLength(2);
+    // And the neutral approver answers the sessions that wait, and no other approval exists in the arm
+    const replies = (arm: string) =>
+      ports.recorded.resumes.filter((r) => r.run.includes(`/${arm}/`)).map((r) => r.reply);
+    expect(replies('speckit')).toEqual(replies('baseline'));
+    expect(replies('speckit')).toHaveLength(1);
+    for (const name of ['setup.sh', 'manual.md', 'arm.yaml'])
+      expect(readFileSync(join(root, 'arms', 'speckit', name), 'utf8')).not.toMatch(/approver|approve /i);
+    // And the run records the tool, its version, the artifact's digest and the arm's digest
+    const speckit = summary.runs.find((run) => run.arm === 'speckit');
+    const record = JSON.parse(readFileSync(join(speckit?.outputDir ?? '', 'run.json'), 'utf8')) as {
+      harness?: Record<string, string>;
+      arm_digest?: string;
+      telemetry_off?: string[];
+    };
+    expect(record.harness).toMatchObject({
+      tool: 'speckit',
+      version: 'v1.1.0',
+      commit: SPECKIT_SHA,
+      artifact_sha256: expect.stringMatching(/^[0-9a-f]{64}$/) as unknown,
+    });
+    expect(record.arm_digest).toBe(armDigest(root, 'speckit'));
+    expect(record.telemetry_off).toEqual([]);
+  });
+
+  it('@F7.1 An arm definition that misses what v0.2 requires is refused', () => {
+    // Given a harness arm that declares no telemetry setting
+    const noTelemetry = speckitCampaign();
+    const yaml = readFileSync(join(noTelemetry.root, 'arms', 'speckit', 'arm.yaml'), 'utf8');
+    writeFileSync(
+      join(noTelemetry.root, 'arms', 'speckit', 'arm.yaml'),
+      yaml.replace(/^telemetry_off:.*\n/m, ''),
+    );
+    // When the maintainer validates a campaign that uses it; Then it is rejected, naming the arm and the field
+    const refused = checkCampaign(noTelemetry.file);
+    expect(refused.ok ? [] : refused.issues).toEqual([
+      {
+        path: 'arms[1]',
+        message:
+          "speckit: telemetry_off is required: a harness arm says how its tool's telemetry is turned off ([] when it has none)",
+      },
+    ]);
+    // Given a docs control whose docs_of names an unknown arm
+    const unknown = writeRepo({ ...completeCampaignYaml(), arms: ['baseline', 'baseline-docs', 'wingfoil'] });
+    const docs = join(unknown.root, 'arms', 'baseline-docs', 'arm.yaml');
+    writeFileSync(docs, `${readFileSync(docs, 'utf8')}docs_of: ghost\n`);
+    const refusedDocs = checkCampaign(unknown.file);
+    expect(refusedDocs.ok ? [] : refusedDocs.issues).toEqual([
+      { path: 'arms[1]', message: "baseline-docs: docs_of names 'ghost', which is not an arm under arms/" },
+    ]);
   });
 });
