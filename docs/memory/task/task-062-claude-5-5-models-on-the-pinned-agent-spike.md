@@ -201,3 +201,9 @@ The Design ran them "only if a model fails on 2.1.280". None failed outright, bu
   3. minor — the closing scan could not tell "no match" from a failed scan, and counted `out/` twice from the main
      checkout. **Fixed:** an empty token or a `grep` error now prints "secret scan failed" and exits 3; `out/` is
      scanned once.
+- **Round 3** (a new independent read-only Explore subagent, on `666de27`): **clean**. It verified round 2's outcomes
+  against the adapter and the raw output, and exercised the new scan alone with a fake token (once-only count, both
+  trees when `out/` is elsewhere, exit 3 on an empty or missing token and on a `grep` error). One nit, **not
+  changed**: `api_error_status`, which the adapter reads and which every result event carries as `null` on both
+  versions, is not named among the fields; it changes nothing on 2.1.291.
+- Final checks on `666de27`: `npm run lint` clean. No code changed: `npm test`, `test:bin`, `test:docker` not run.
