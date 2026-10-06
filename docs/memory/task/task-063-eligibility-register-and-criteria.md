@@ -33,7 +33,86 @@ F7.4, the first feature of W12 ([rel-v0-2](../release/rel-v0-2.md)): the publish
 
 ## Design
 
-<!-- Written in the task's design phase. -->
+### Classification of the acceptance criteria
+
+All four `competitors.feature` @F7.4 scenarios are **red-first**: nothing on `main` reads a register. Their tests go
+in a new `test/acceptance/competitors.test.ts`, one `it` per scenario, titled as the traceability test requires.
+
+### The register (REQ-FMT-11)
+
+`eligibility/register.yaml` at the repository root, outside `arms/`:
+
+```yaml
+criteria: [agent-and-model, pinnable, headless-container, workflow-harness, no-own-llm]   # fixed order, REQ-RES-09
+entries:
+  - tool: wingfoil
+    version: v0.2.2
+    date: 2026-10-06
+    criteria:
+      agent-and-model: { result: pass, evidence: "…" }
+      …                                    # all five, each pass or fail with its evidence
+    verdict: admitted                      # or excluded
+    reason: "…"
+```
+
+- **Schema** in `src/core/eligibility.ts` (strict, as `campaignSchema` and `armSchema`): the five criterion ids fixed
+  in code, each required in every entry; `verdict` `admitted | excluded`; an `admitted` entry must pass all five and
+  an `excluded` one must fail at least one (the verdict follows the criteria, never a choice: T1); one entry per
+  `tool` + `version`.
+- **Loader** `loadRegister(repoRoot)` in `src/campaign/` (a middle module both `runner` and `site` may import), with
+  `readYamlFile` and `parseWith`.
+- **The check** `eligibilityIssues(harnesses, arms, register)` in `src/core/eligibility.ts`, pure, beside
+  `harnessCoverage`. For each arm that requires a harness, with the campaign's pin `{tool, version}`:
+  - no entry for that tool and version → `harnesses.<arm>.version: <tool> <version> is not assessed in
+    eligibility/register.yaml: assess it before a campaign pins it` (T15);
+  - an `excluded` entry → `harnesses.<arm>: <tool> <version> is excluded by the eligibility register: it fails
+    <criterion> (<evidence>)`, one issue per failing criterion — the scenario's "names the tool and the criterion".
+  - The match is on the exact pinned string: a tag and a commit of one release are two assessments, so a campaign
+    names the version the register names.
+- **`checkCampaign`** runs it after `harnessCoverage`, only when that found nothing (a wrong or missing harness is
+  reported once, by the existing rule). A campaign with no harness arm needs no register; one with a harness arm and
+  no register is refused (`eligibility/register.yaml: not found …`). `scenario dry-run`'s profile check is left as is:
+  REQ-FMT-01 is about campaigns, and dry runs are how a version is studied before it is assessed.
+
+### The entries, as of 2026-10-06
+
+Re-verified today on the registries: WingFoil v0.2.2 (`12537b62`, the latest tag), Spec Kit v1.1.0 (GitHub; PyPI
+lags at 1.0.13), OpenSpec 1.14.0 (documented on 2026-10-05; 1.14.1 was published on 2026-10-05 at 23:28 UTC and is
+not assessed), BMAD 6.12.1.
+
+| Tool | Version | Verdict | Evidence base |
+|---|---|---|---|
+| wingfoil | v0.2.2 | admitted | v0.1's campaign ran it with Claude Code in the run container (`c82a5e74885b`); built from a pinned tarball (REQ-RUN-14) |
+| speckit | v1.1.0 | admitted | its documentation (competitor re-verification 2026-10-05); task-065's spike re-assesses it in the run container |
+| openspec | 1.14.0 | admitted | its documentation (2026-10-05); its telemetry is on by default, turned off by the arm's setup (a parity rule, not a criterion) |
+| bmad | 6.12.1 | **excluded** | `headless-container` fails: its planning phases are facilitated dialogues; only `bmad-dev-auto` is documented as unattended |
+
+Each criterion's evidence is a sentence with its source. Spec Kit and OpenSpec are admitted on documentation, said
+so in their evidence; a spike or the arm's own task that finds otherwise amends the entry (a new date). The BMAD
+verdict is a reading of the criteria the approver may contest (F7.2).
+
+### The published criteria and the page (REQ-RES-09, its eligibility half)
+
+- `site-content/eligibility.md`: the five criteria in words, how a tool is assessed (one entry per version, WingFoil
+  too, the verdict follows the criteria), and a `<!-- register -->` placeholder.
+- `bench site build` reads the register (REQ-RES-02 as amended) and writes `eligibility.html`: the text, then a
+  table — tool, version, date, verdict, one column per criterion (pass/fail), and for an excluded tool the reason.
+  The landing page links it beside the method page. A missing `site-content/eligibility.md` or register fails the
+  build, as a missing method page does.
+
+### Fixtures
+
+`writeRepo` (`test/support/campaign-fixture.ts`) writes a register admitting the test pins (wingfoil `3df305e` and
+`v0.2.2`), so that existing tests keep their meaning; the site fixture copies the repository's `eligibility/` as it
+copies `site-content/`. Tests that need another register write their own.
+
+### Tests
+
+- unit: the schema (strict, all five criteria, verdict consistency, duplicates), the check (each message, the
+  harness-coverage precedence, no register needed without harness arms), the loader, the page (the table, the
+  reason, escaping);
+- acceptance: the four scenarios;
+- `npm run test:bin` and `test:docker` at the end (`campaign validate` and `run` change).
 
 ## Execution notes
 
