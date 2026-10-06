@@ -55,10 +55,15 @@ and are few). Of the benchmark's, three are kept:
 - the **current scoring image** (`scoringImage()`'s tag for this checkout);
 - every image **used by a container**, in any state, compared by image id (`docker inspect` of every container's
   `.Image`), since `docker ps` shows an id instead of a name once an image is re-tagged;
-- **all of them, when a benchmark container is running**: a campaign or dry run in progress creates a container
-  per run from its image, and between two runs no container holds it. The command then refuses, naming the running
-  container, rather than guess. (Docker's "created" age cannot stand in: an image built from cache keeps its first
-  date — the host shows `12 days ago` for images built this week.)
+- **all of them, when a named benchmark container (`bench-…`) is running**: the command then refuses, naming it.
+  This guard is **partial**: a campaign, a dry run or a scoring in progress holds no container between two runs, or
+  between its image's build and its first container (and a harness build's `docker run --rm` has a random name), so a
+  prune at that moment would remove an image the next run needs. The command is therefore run **only when nothing is
+  in progress anywhere on the host**: its docstring and the README say so, and the real prune is made with the
+  approver's go after checking that no session runs anything. A lock held by the runner and by `score` would close
+  the gap; it touches the runner, outside this task, and is recorded as a known limit. (Docker's "created" age cannot
+  stand in: an image built from cache keeps its first date — the host shows `12 days ago` for images built this
+  week.)
 
 ### The port
 
@@ -71,7 +76,8 @@ guard). `dockerImagesCli(process)` implements it; `Ports` gains an optional `ima
 
 A pure function, `pruneCandidates(images, used, currentScoring)`, returns the images to remove and those kept with a
 reason. The command prints one line per image, `removed|would remove <reference> (<size>)` or `kept <reference>
-(<reason>)`, then a total (`n images, <size>`). A removal Docker refuses is reported on stderr and the others go on;
+(<reason>)`, then the count (`n images`). No total size: the tags of one build share an image, so per-line sizes
+repeat (53 tags on the host, about 1.1 GB each, are a handful of image ids). A removal Docker refuses is reported on stderr and the others go on;
 the exit code is 1 if any failed. `--dry-run` removes nothing. USAGE and README's commands list it.
 
 ### Tests
@@ -107,3 +113,26 @@ the exit code is 1 if any failed. `--dry-run` removes nothing. USAGE and README'
    scoring image. No other image is listed (the host's `<12 hex>.dkr.ecr.…`, `bench-spike-*`, `busybox` … are
    left alone, as the Design's anchors say). The removal itself waits for the approver's go (it deletes the
    images other sessions' dry runs may still read).
+
+### Review
+
+- **Round 1** (independent read-only Explore subagent, on the build notes' commit; no state-changing Docker command,
+  no full suite): nothing blocking. It checked the anchors against the host's images (37 `dry-*`, 7 campaign, 10
+  scoring; ECR, `bench-spike-*` and the rest unmatched), re-ran the `--dry-run` (53, as recorded), the id forms
+  (`sha256:<64 hex>` in both `images --no-trunc` and `inspect .Image`), tags sharing an id (`image rm` without
+  `--force` only untags), the parsing, the command's paths and the red-first commit. Findings and outcomes:
+  1. should-fix — the "running `bench-` container" refusal does not cover a run in progress between two containers
+     (after the image's build, between runs, between a scoring image's build and its container): a prune then
+     removes an image the next run needs. **Fixed by documenting, not by code:** the Design names the guard partial,
+     the command's docstring and README say to run it only when nothing is in progress on the host, and the real
+     prune waits for the approver's go after checking no session runs anything. A lock held by the runner and by
+     `score` would close the gap; it is a known limit, outside this task's scope (the runner).
+  2. nit — not every benchmark container is named `bench-` (`runOnce` of a harness build or the project rules). **Fixed:**
+     the comment and README say "named", and that such a container's image is still kept by id while it exists.
+  3. nit — the Design promised a total size the code does not print, and per-tag sizes repeat. **Fixed:** the Design
+     says the count only, and why; README says the size is shared by one build's tags.
+  4. nit — test gaps. **Fixed:** a Docker that cannot list → `images: <reason>`, exit 1; a running container that is
+     not the benchmark's does not refuse (its image kept); the Docker test now creates a container of its own from a
+     tagged image and checks `containers()` names its image by the id `list()` gives (3/3), removing it after.
+  5. nit (informational) — a container removed between `ps` and `inspect` makes the command fail without pruning:
+     fail-safe. **Not changed**; noted here.

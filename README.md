@@ -234,8 +234,11 @@ npx bench images prune [--dry-run]
 
 `images prune` removes the images the benchmark built — `dry-<12 hex>:latest` (dry runs), `<12 hex>:latest`
 (campaigns), `bench-score:<12 hex>` (scoring) — that no container uses and that are not the current scoring image,
-and prints each one, those kept and why, and the count. It never touches another image, and refuses while a
-benchmark container (`bench-…`) is running. `--dry-run` lists without removing (bug-015).
+and prints each one, those kept and why, and the count. It never touches another image, and refuses while a named
+benchmark container (`bench-…`) is running. **Run it only when no campaign, dry run or scoring is in progress
+anywhere on the host**: between two runs no container holds a run's image, and removing it fails the next run. The
+size printed per image is the image's, shared by the tags of one build. `--dry-run` lists without removing
+(bug-015).
 
 Exit codes: `0` success, `1` failure (one line per problem, or a run that failed), `2` usage error.
 

@@ -16,7 +16,11 @@ const BENCHMARK_IMAGES: readonly RegExp[] = [
   /^bench-score:[0-9a-f]{12}$/,
 ];
 
-/** Every container the benchmark creates starts with this: a run's (`bench-<id>-`) and a scoring one's. */
+/**
+ * The benchmark's named containers start with this: a run's (`bench-<id>-`) and a scoring one's. The short-lived
+ * `docker run --rm` of a harness build or the project rules has a random name; while it exists, its image is kept by
+ * id like any container's.
+ */
 const BENCHMARK_CONTAINER = 'bench-';
 
 /** What a prune would do: the images to remove, and the benchmark's images it keeps, with why. */
@@ -48,8 +52,10 @@ export function pruneCandidates(
 
 /**
  * `bench images prune [--dry-run]` (bug-015): removes the benchmark's images that nothing needs, and prints each one,
- * those it keeps and why, and the count. It refuses while a benchmark container is running: a campaign or a dry run
- * in progress creates a container per run from its image, and between two runs no container holds it.
+ * those it keeps and why, and the count. It refuses while a benchmark container is running. That guard is partial: a
+ * campaign, a dry run or a scoring in progress holds no container between two runs (or between its image's build and
+ * its first container), so the command is run only when none is in progress anywhere on the host — the README and
+ * the task's Design say so; a lock the runner holds would close the gap.
  */
 export async function imagesCommand(
   argv: readonly string[],

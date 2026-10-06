@@ -111,6 +111,30 @@ describe('bench images prune', () => {
     expect(images.removed).toEqual([]);
   });
 
+  it("prunes while a container that is not the benchmark's runs, keeping that container's image", async () => {
+    const images = fakeImages(IMAGES, [{ name: 'someone-else', imageId: 'sha256:c1', running: true }]);
+    const { code, stdout } = await prune(images, '--dry-run');
+    expect(code).toBe(0);
+    expect(stdout).toContain('kept c82a5e74885b:latest (used by container someone-else)\n');
+    expect(stdout).toMatch(/\nwould remove 3 images\n$/);
+  });
+
+  it('reports a Docker that cannot list, and prunes nothing', async () => {
+    const port: ImagePort = {
+      list: () => Promise.reject(new Error('Cannot connect to the Docker daemon')),
+      containers: () => Promise.resolve([]),
+      remove: () => Promise.reject(new Error('never called')),
+    };
+    let stderr = '';
+    const code = await main(
+      ['images', 'prune'],
+      { stdout: () => undefined, stderr: (text) => (stderr += text) },
+      { images: port } as never,
+    );
+    expect(code).toBe(1);
+    expect(stderr).toBe('images: Cannot connect to the Docker daemon\n');
+  });
+
   it('is a usage error with anything else', async () => {
     for (const argv of [['images'], ['images', 'list'], ['images', 'prune', '--force']]) {
       let stderr = '';
