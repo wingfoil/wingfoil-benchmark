@@ -222,7 +222,10 @@ describe('competitors.feature, the competitor arms', () => {
       harnessSources: { speckit: '/clones/spec-kit' },
     });
     // Then every step runs in a fresh session started by the runner, with the same prompt as in every other arm
-    const steps = (arm: string) => ports.recorded.steps.filter((step) => step.run.includes(`/${arm}/`));
+    // The runs are sequential, baseline's first: the first half of the requests is baseline's, the second speckit's.
+    const half = <T>(all: readonly T[], arm: 'baseline' | 'speckit'): T[] =>
+      arm === 'baseline' ? all.slice(0, all.length / 2) : all.slice(all.length / 2);
+    const steps = (arm: 'baseline' | 'speckit') => half(ports.recorded.steps, arm);
     expect(steps('speckit').map((step) => step.prompt)).toEqual(steps('baseline').map((step) => step.prompt));
     expect(new Set(ports.recorded.steps.map((step) => step.sessionId)).size).toBe(
       ports.recorded.steps.length,
@@ -231,8 +234,7 @@ describe('competitors.feature, the competitor arms', () => {
       ports.recorded.execs.filter((exec) => exec.command.join(' ') === 'bash /home/node/arm/setup.sh'),
     ).toHaveLength(2);
     // And the neutral approver answers the sessions that wait, and no other approval exists in the arm
-    const replies = (arm: string) =>
-      ports.recorded.resumes.filter((r) => r.run.includes(`/${arm}/`)).map((r) => r.reply);
+    const replies = (arm: 'baseline' | 'speckit') => half(ports.recorded.resumes, arm).map((r) => r.reply);
     expect(replies('speckit')).toEqual(replies('baseline'));
     expect(replies('speckit')).toHaveLength(1);
     for (const name of ['setup.sh', 'manual.md', 'arm.yaml'])
