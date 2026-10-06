@@ -111,6 +111,7 @@ It then lists what the campaign's runs need from the machine, one `requires` lin
 | `BENCH_AGENT_TOKEN_FILE` | the file holding the agent's token | `run` | a real agent |
 | `BENCH_FAKE_SCRIPT` | the fake agent's script | `run` | the fake agent |
 | `BENCH_WINGFOIL_REPO` | the local WingFoil clone the harness is built from | `run` | a `wingfoil` harness |
+| `BENCH_SPECKIT_REPO` | the local Spec Kit clone (`github/spec-kit`) the harness is built from | `run` | a `speckit` harness |
 | `BENCH_HOLDOUT_PATH` | the hold-out (or `--holdout`) | `score` | a scenario that declares one |
 
 `run` refuses, before its estimate and naming every one, when a variable it needs is not set, or names the wrong
@@ -203,7 +204,9 @@ An arm with a harness declares the capabilities its harness **provides** (`arms/
 scenario declares the ones it needs. A run whose harness lacks one is an **expected failure**: it runs
 and is scored like any other, and is marked in `run.json` and `score.json` with the missing capability
 named — never skipped. `campaign validate` lists them before anything runs. The baseline arms are the
-reference and are never marked. One line per run: `T3@1.0 baseline fake-model r1: step 01 0/1, step 02 1/1, final 1/1;
+reference and are never marked. A harness arm also declares `telemetry_off`, the `NAME=value` settings that turn its
+tool's telemetry off in its container (`[]` when it has none), and a docs control declares `docs_of`, the harness arm
+it is generated from. One line per run: `T3@1.0 baseline fake-model r1: step 01 0/1, step 02 1/1, final 1/1;
 hold-out final 1/2`.
 
 ```bash
@@ -250,6 +253,7 @@ Exit codes: `0` success, `1` failure (one line per problem, or a run that failed
 ```bash
 npm run test:bin     # the built command line
 npm run test:docker  # W1's to W3's runs, a dry run, bug-003's, W6's scoring, the image port; in real Docker
+                     # (the speckit arm's test runs when BENCH_SPECKIT_REPO names a clone of github/spec-kit)
 ```
 
 ## License

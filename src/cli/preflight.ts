@@ -19,7 +19,10 @@ export const HOLDOUT_VARIABLE = 'BENCH_HOLDOUT_PATH';
  * adds its row. A tool without a row is not listed by the preflight (its build then fails on its own), so a new
  * harness arm adds its row with its builder: test/unit/cli/preflight.test.ts pins the table.
  */
-export const HARNESS_SOURCE_VARIABLES = { wingfoil: 'BENCH_WINGFOIL_REPO' } as const;
+export const HARNESS_SOURCE_VARIABLES = {
+  wingfoil: 'BENCH_WINGFOIL_REPO',
+  speckit: 'BENCH_SPECKIT_REPO',
+} as const;
 
 /** The variable of `tool`'s clone, if this runner builds it. */
 function harnessSourceVariable(tool: string): string | undefined {
@@ -108,6 +111,8 @@ export const PURPOSES: Readonly<Record<string, string>> = {
   [FAKE_SCRIPT_VARIABLE]: "it holds the fake agent's script",
   [HARNESS_SOURCE_VARIABLES.wingfoil]:
     'it names the local WingFoil clone the WingFoil under test is built from',
+  [HARNESS_SOURCE_VARIABLES.speckit]:
+    'it names the local Spec Kit clone the Spec Kit under test is built from',
   [HOLDOUT_VARIABLE]: 'it names the hold-out scoring reads',
 };
 

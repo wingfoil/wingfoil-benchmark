@@ -95,7 +95,7 @@ describe('checkCampaign, arms and harnesses (REQ-FMT-01, REQ-FMT-05, dl-003)', (
     const issues = issuesOf(plainCampaign(['baseline', 'constructor']), (root) =>
       writeFileSync(
         join(root, 'arms', 'constructor', 'arm.yaml'),
-        stringify({ ...plainArmYaml('constructor'), requires: 'openspec' }),
+        stringify({ ...plainArmYaml('constructor'), requires: 'openspec', telemetry_off: [] }),
       ),
     );
     expect(issues).toEqual([
@@ -147,5 +147,48 @@ describe('checkCampaign and the eligibility register (REQ-FMT-01 as amended, F7.
     expect(result.ok ? [] : result.issues).toEqual([
       { path: 'harnesses.wingfoil.tool', message: "is 'speckit', but the arm requires 'wingfoil'" },
     ]);
+  });
+});
+
+describe('what v0.2 asks of an arm definition (REQ-FMT-05 as amended, task-066)', () => {
+  function withArm(name: string, yaml: Record<string, unknown>) {
+    const repo = writeRepo(plainCampaign(['baseline', name]));
+    writeFileSync(join(repo.root, 'arms', name, 'arm.yaml'), stringify({ ...plainArmYaml(name), ...yaml }));
+    const result = checkCampaign(repo.file);
+    return result.ok ? [] : result.issues;
+  }
+
+  it('refuses a docs control that also requires a tool', () => {
+    expect(
+      withArm('notes-docs', { docs_of: 'baseline', requires: 'tool', telemetry_off: [] }),
+    ).toContainEqual({
+      path: 'arms[1]',
+      message: 'notes-docs: docs_of and requires: a docs control runs the plain agent',
+    });
+  });
+
+  it('wants telemetry settings as NAME=value', () => {
+    expect(withArm('notes', { telemetry_off: ['DO_NOT_TRACK'] })).toEqual([
+      {
+        path: 'arms[1]',
+        message: expect.stringMatching(/^notes: telemetry_off\[0\] must be NAME=value/) as unknown,
+      },
+    ]);
+  });
+
+  it("refuses a telemetry setting on a variable the runner or the agent owns: it would change the agent, not the tool's telemetry", () => {
+    for (const setting of [
+      'ANTHROPIC_BASE_URL=x',
+      'ANTHROPIC_AUTH_TOKEN=x',
+      'CLAUDE_CODE_DISABLE_AUTO_MEMORY=0',
+    ]) {
+      const name = setting.slice(0, setting.indexOf('='));
+      expect(withArm('notes', { telemetry_off: ['DO_NOT_TRACK=1', setting] })).toEqual([
+        {
+          path: 'arms[1]',
+          message: `notes: telemetry_off[1] sets ${name}, which the runner or the agent owns: only a tool's own telemetry is set here`,
+        },
+      ]);
+    }
   });
 });

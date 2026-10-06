@@ -191,7 +191,7 @@ async function runCampaignCommand(
   const spending = checkSpending(spec, {
     allowSpending,
     // A campaign with a WingFoil harness needs the clone it is built from, before anything is built.
-    buildsWingfoil: Object.values(spec.harnesses).some((harness) => harness.tool === 'wingfoil'),
+    builds: Object.values(spec.harnesses).map((harness) => harness.tool),
     refusal: {
       path: 'campaign',
       message:

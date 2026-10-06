@@ -1,3 +1,6 @@
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { armDigest, loadArm } from '../arms/index.js';
 import { loadCampaign, loadRegister } from '../campaign/index.js';
 import type { Campaign } from '../campaign/index.js';
@@ -47,8 +50,16 @@ export function checkCampaign(file: string): Result<CheckedCampaign> {
   const arms: Arm[] = [];
   campaign.spec.arms.forEach((name, index) => {
     const arm = loadArm(campaign.armsRoot, name);
-    if (arm.ok) arms.push(arm.value);
-    else issues.push({ path: `arms[${index}]`, message: `${name}: ${reasonsOf(arm.issues)}` });
+    if (!arm.ok) {
+      issues.push({ path: `arms[${index}]`, message: `${name}: ${reasonsOf(arm.issues)}` });
+      return;
+    }
+    // What v0.2 asks of an arm definition (REQ-FMT-05 as amended): a harness arm says how its tool's telemetry is
+    // turned off; a docs control names an existing arm, and requires no tool.
+    const own = armIssues(campaign.armsRoot, arm.value);
+    if (own.length > 0)
+      issues.push(...own.map((message) => ({ path: `arms[${index}]`, message: `${name}: ${message}` })));
+    else arms.push(arm.value);
   });
   if (arms.length === campaign.spec.arms.length) {
     const coverage = harnessCoverage(campaign.spec, arms);
@@ -83,6 +94,36 @@ export function checkCampaign(file: string): Result<CheckedCampaign> {
     });
   }
   return issues.length > 0 ? fail(issues) : ok({ campaign, scenarios, arms });
+}
+
+/**
+ * The variables an arm's `telemetry_off` may not set (REQ-RUN-18, the parity rules): the agent's and the runner's —
+ * the credential, the agent's own settings — which would change the agent every arm shares, not a tool's telemetry.
+ */
+const OWNED_VARIABLES = /^(ANTHROPIC_|CLAUDE_|BENCH_)/;
+
+/** What an arm definition misses of REQ-FMT-05 as amended, one sentence each naming the field. */
+function armIssues(armsRoot: string, arm: Arm): string[] {
+  const issues: string[] = [];
+  if (arm.requires !== undefined && arm.telemetryOff === undefined) {
+    issues.push(
+      "telemetry_off is required: a harness arm says how its tool's telemetry is turned off ([] when it has none)",
+    );
+  }
+  (arm.telemetryOff ?? []).forEach((setting, index) => {
+    const name = setting.slice(0, setting.indexOf('='));
+    if (OWNED_VARIABLES.test(name)) {
+      issues.push(
+        `telemetry_off[${index}] sets ${name}, which the runner or the agent owns: only a tool's own telemetry is set here`,
+      );
+    }
+  });
+  if (arm.docsOf !== undefined) {
+    if (!existsSync(join(armsRoot, arm.docsOf, 'arm.yaml')))
+      issues.push(`docs_of names '${arm.docsOf}', which is not an arm under arms/`);
+    if (arm.requires !== undefined) issues.push('docs_of and requires: a docs control runs the plain agent');
+  }
+  return issues;
 }
 
 /** A loader's issues in one line: `path message; path message`, the path being a field or the file. */

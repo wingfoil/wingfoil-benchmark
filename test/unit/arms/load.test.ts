@@ -18,6 +18,7 @@ describe('loadArm (REQ-FMT-05)', () => {
     ['baseline', undefined],
     ['baseline-docs', undefined],
     ['wingfoil', 'wingfoil'],
+    ['speckit', 'speckit'],
   ])("loads the benchmark's own %s arm", (name, requires) => {
     const result = loadArm(repoPath('arms'), name);
     expect(result.ok).toBe(true);
@@ -42,6 +43,7 @@ describe('loadArm (REQ-FMT-05)', () => {
       mcpPath: join(dir, 'mcp.json'),
       requires: 'wingfoil',
       provides: {},
+      telemetryOff: [],
     });
     expect(isAbsolute(result.value.dir)).toBe(true);
   });

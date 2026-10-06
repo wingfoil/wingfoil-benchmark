@@ -14,6 +14,7 @@ export function completeArmYaml(name = 'wingfoil'): Record<string, unknown> {
     environment: 'environment',
     mcp: 'mcp.json',
     requires: 'wingfoil',
+    telemetry_off: [],
   };
 }
 

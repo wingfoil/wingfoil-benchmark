@@ -29,7 +29,11 @@ describe('the image port against Docker', () => {
   it("names a container's image by the same id list() gives it: the in-use check rests on it", async (context) => {
     // A container of its own, created and never started, from a tagged image already on the host (never pulled);
     // removed after. Skipped, and reported so, on a host without any tagged image.
-    const tagged = (await port.list())[0];
+    // Not an image the benchmark builds: other Docker tests remove theirs (a campaign's, a dry run's) as they end,
+    // and one could vanish between the listing and the create (task-066's suite run met it).
+    const tagged = (await port.list()).find(
+      (image) => !/^(dry-[0-9a-f]{12}|[0-9a-f]{12}|bench-[^:]*):/.test(image.reference),
+    );
     if (tagged === undefined) {
       context.skip();
       return;

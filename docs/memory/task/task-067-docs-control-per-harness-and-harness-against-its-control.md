@@ -14,6 +14,13 @@ requirements: [REQ-RUN-11, REQ-FMT-05, REQ-SCO-14, REQ-RES-03]
 
 F7.1's docs controls ([rel-v0-2](../release/rel-v0-2.md), W12): the approver chose a docs control per harness at the triage (T3).
 
+**Received from task-066 (2026-10-06):** this task also delivers `competitors.feature`'s "Every harness arm's setup is
+published" (REQ-RES-09's setup half: each harness arm's page, which shows what its docs control renders, and states
+that the shared git identity carries no approval authority in a competitor arm, and the speckit bundle's resolution
+of its dependencies at build time), alongside "Each harness has its own docs control". "A scenario's project rules
+reach every arm" waits for W13's OpenSpec arm. List the scenarios in `acceptance` as `competitors.feature#<title>`
+(traceability per scenario, task-064).
+
 **Scope:**
 
 - one docs generator per harness (REQ-RUN-11): `baseline-docs` unchanged, `speckit-docs` new (`openspec-docs` comes

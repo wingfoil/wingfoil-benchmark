@@ -67,9 +67,6 @@ export const SPENDING_FLAG = '--allow-spending';
 /** The variable the agent reads its credential from. `ANTHROPIC_API_KEY` does not work (task-004). */
 const AGENT_TOKEN_VARIABLE = 'ANTHROPIC_AUTH_TOKEN';
 
-/** The local WingFoil clone the WingFoil under test is built from (REQ-RUN-14): the preflight's table. */
-const WINGFOIL_REPO_VARIABLE = HARNESS_SOURCE_VARIABLES.wingfoil;
-
 /**
  * The real ports for what `pins` pins — a campaign or a dry run, already checked — so the agent is
  * chosen by what it pins and is given the currency rate it needs to report a cost. A real agent
@@ -124,39 +121,35 @@ export interface Spending {
 /**
  * The checks every command that runs the agent makes before anything is built, in order (task-021,
  * W5 plan-phase decision 5): a real agent only with {@link SPENDING_FLAG} — `refusal` says what is
- * refused and up to what — then its credential, then the WingFoil clone when a WingFoil harness is
- * built. Whenever the agent is not the free one, the credential is required — with injected ports
+ * refused and up to what — then its credential, then the clone of each harness tool it builds. Whenever the agent is not the free one, the credential is required — with injected ports
  * too, because the container's environment is the runner's business, not the port's; requiring it
  * only for real ports left the whole credential path untested. Since task-060, `campaign run`'s preflight refuses a
  * missing credential or clone first; these checks stay as the second line of defence, and as `scenario dry-run`'s.
  */
 export function checkSpending(
   pins: RunPins,
-  options: { readonly allowSpending: boolean; readonly buildsWingfoil: boolean; readonly refusal: Issue },
+  options: { readonly allowSpending: boolean; readonly builds: readonly string[]; readonly refusal: Issue },
 ): Result<Spending> {
   const agentName = pins.agent.name;
   if (agentName !== FREE_AGENT && !options.allowSpending) return { ok: false, issues: [options.refusal] };
   const credential = agentName === FREE_AGENT ? undefined : agentCredential();
   if (credential !== undefined && !credential.ok) return credential;
-  const wingfoilRepo = process.env[WINGFOIL_REPO_VARIABLE];
-  if (options.buildsWingfoil && (wingfoilRepo === undefined || wingfoilRepo === '')) {
-    return {
-      ok: false,
-      issues: [
-        {
-          path: WINGFOIL_REPO_VARIABLE,
-          message: `is not set: ${PURPOSES[WINGFOIL_REPO_VARIABLE] ?? ''}`,
-        },
-      ],
-    };
+  // The clone of every harness tool the execution builds (REQ-RUN-14, REQ-FMT-12), by the preflight's table.
+  const sources: Record<string, string> = {};
+  for (const tool of [...new Set(options.builds)].sort()) {
+    const variable = (HARNESS_SOURCE_VARIABLES as Readonly<Record<string, string | undefined>>)[tool];
+    if (variable === undefined) continue;
+    const clone = process.env[variable];
+    if (clone === undefined || clone === '') {
+      return { ok: false, issues: [{ path: variable, message: `is not set: ${PURPOSES[variable] ?? ''}` }] };
+    }
+    sources[tool] = clone;
   }
   return {
     ok: true,
     value: {
       ...(credential === undefined ? {} : { credential: credential.value }),
-      ...(options.buildsWingfoil && wingfoilRepo !== undefined
-        ? { harnessSources: { wingfoil: wingfoilRepo } }
-        : {}),
+      ...(Object.keys(sources).length === 0 ? {} : { harnessSources: sources }),
     },
   };
 }

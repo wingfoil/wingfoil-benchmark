@@ -88,8 +88,11 @@ describe('campaign requirements', () => {
     );
   });
 
-  it('builds the clone of WingFoil only: a harness tool without a row is not listed, until its arm adds one', () => {
-    expect(HARNESS_SOURCE_VARIABLES).toEqual({ wingfoil: 'BENCH_WINGFOIL_REPO' });
+  it('builds the clones of WingFoil and Spec Kit: a harness tool without a row is not listed, until its arm adds one', () => {
+    expect(HARNESS_SOURCE_VARIABLES).toEqual({
+      wingfoil: 'BENCH_WINGFOIL_REPO',
+      speckit: 'BENCH_SPECKIT_REPO',
+    });
     // A campaign check refuses a harness no arm requires, so the extra tool is added after it.
     const checked = complete();
     const spec = checked.campaign.spec;
