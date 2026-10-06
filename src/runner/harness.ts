@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join, relative } from 'node:path';
 
 import type { Arm, CampaignFile, DockerPort, GitPort } from '../core/index.js';
 
@@ -42,6 +42,8 @@ export interface HarnessOptions {
 interface CacheRecord {
   readonly tool: string;
   readonly commit: string;
+  /** The tool's own package's file name in the cache, which keeps the name the tool's packing gave it. */
+  readonly tarball: string;
   readonly tarball_sha256: string;
   readonly installed_sha256: string;
 }
@@ -77,6 +79,9 @@ function wingfoilBuild(sha: string): string {
     `tar -czf ${BUILD}/out/installed.tgz -C ${BUILD}/install wingfoil`,
   ].join('\n');
 }
+
+/** Where every pinned harness's artifact is cached, from the repository root (REQ-FMT-12; git-ignored). */
+export const HARNESS_CACHE = join('.cache', 'harnesses');
 
 /** The harness tools this runner can build, by the name an arm `requires` (v0.1: WingFoil only). */
 const BUILDERS: Readonly<Record<string, (sha: string) => string>> = { wingfoil: wingfoilBuild };
@@ -123,8 +128,8 @@ async function prepare(
   if (sha === undefined)
     throw new Error(`the ${tool} harness pins ${pin}, which is not a commit of ${clone}`);
 
-  const cache = join(target.repoRoot, '.cache', 'harness', tool, sha);
-  const cached = fromCache(cache, tool, sha);
+  const cache = join(target.repoRoot, HARNESS_CACHE, tool, sha);
+  const cached = fromCache(target.repoRoot, cache, tool, sha);
   if (cached !== undefined) return cached;
 
   const build = join(cache, 'build');
@@ -152,6 +157,7 @@ async function prepare(
   const record: CacheRecord = {
     tool,
     commit: sha,
+    tarball,
     tarball_sha256: sha256(join(cache, tarball)),
     installed_sha256: sha256(installed),
   };
@@ -160,14 +166,39 @@ async function prepare(
   return artefactOf(record, installed);
 }
 
-/** A cached artefact, if its record names this tool and commit and its digest still matches. */
-function fromCache(cache: string, tool: string, sha: string): HarnessArtefact | undefined {
+/**
+ * A cached artefact, if its record names this tool and commit; `undefined` when there is none to reuse (no record, an
+ * unreadable one, or another tool's or commit's), so that it is built. A cached file — the installed artifact, or the
+ * package its record names — that is missing or whose bytes no longer match the digest its record holds is refused,
+ * naming it (REQ-FMT-12, F7.1): rebuilding it silently would also hide a
+ * tampered artifact, so the maintainer removes the directory to rebuild.
+ */
+function fromCache(repoRoot: string, cache: string, tool: string, sha: string): HarnessArtefact | undefined {
   const recordFile = join(cache, 'harness.json');
   const installed = join(cache, 'installed.tgz');
-  if (!existsSync(recordFile) || !existsSync(installed)) return undefined;
-  const record = JSON.parse(readFileSync(recordFile, 'utf8')) as CacheRecord;
-  if (record.tool !== tool || record.commit !== sha || record.installed_sha256 !== sha256(installed)) {
+  if (!existsSync(recordFile)) return undefined;
+  let record: CacheRecord;
+  try {
+    record = JSON.parse(readFileSync(recordFile, 'utf8')) as CacheRecord;
+  } catch {
     return undefined;
+  }
+  if (record.tool !== tool || record.commit !== sha || typeof record.tarball !== 'string') return undefined;
+  const checks: [string, string][] = [
+    [installed, record.installed_sha256],
+    [join(cache, basename(record.tarball)), record.tarball_sha256],
+  ];
+  for (const [file, recorded] of checks) {
+    const state = !existsSync(file)
+      ? 'is missing'
+      : sha256(file) !== recorded
+        ? 'no longer matches its recorded digest'
+        : '';
+    if (state !== '') {
+      throw new Error(
+        `the cached harness artifact ${relative(repoRoot, file)} ${state}: remove ${relative(repoRoot, cache)}/ to rebuild it`,
+      );
+    }
   }
   return artefactOf(record, installed);
 }

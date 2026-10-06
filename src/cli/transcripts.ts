@@ -37,15 +37,24 @@ export async function transcriptsCommand(
   }
   const packed = await packTranscripts(root, execution, { process, secrets });
   if (!packed.ok) return report(packed.issues, io);
-  const { release, archive, sha256, transcripts, runsWithout } = packed.value;
+  const { release, archive, sha256, transcripts, runsWithout, harnesses } = packed.value;
   io.stdout(`transcripts: ${archive} (${transcripts} transcripts, sha256:${sha256})\n`);
   if (runsWithout.length > 0) {
     io.stdout(
       `${runsWithout.length} run${runsWithout.length === 1 ? ' has' : 's have'} no transcript on disk\n`,
     );
   }
+  if (harnesses?.archive !== undefined) {
+    const n = harnesses.artifacts;
+    io.stdout(
+      `harnesses: ${harnesses.archive} (${n} harness artifact${n === 1 ? '' : 's'}, sha256:${harnesses.sha256 ?? ''})\n`,
+    );
+  }
+  for (const dir of harnesses?.missing ?? [])
+    io.stdout(`harness artifact not in the cache: ${dir} (rebuild it with a campaign run)\n`);
+  const assets = harnesses?.archive === undefined ? archive : `${archive} ${harnesses.archive}`;
   io.stdout(
-    `attach it to the release (not run here):\n  gh release create ${release} ${archive} ` +
+    `attach them to the release (not run here):\n  gh release create ${release} ${assets} ` +
       `--title "Transcripts of ${execution}" --notes "The transcripts of campaign execution ${execution}."\n`,
   );
   if (tokenFile === undefined || tokenFile === '') {

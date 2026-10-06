@@ -357,3 +357,35 @@ describe('campaignId', () => {
     expect(campaignId(changed)).not.toBe(campaignId(completeCampaignYaml()));
   });
 });
+
+describe('arm digests in the campaign file (REQ-FMT-01 as amended, REQ-FMT-13)', () => {
+  const arms = (completeCampaignYaml().arms as string[]) ?? [];
+  const pinned = (digest = 'a'.repeat(12)) => Object.fromEntries(arms.map((arm) => [arm, digest]));
+
+  function issues(armDigests: unknown): string[] {
+    const result = loadCampaign(writeRepo({ ...completeCampaignYaml(), arm_digests: armDigests }).file);
+    return result.ok ? [] : result.issues.map((issue) => `${issue.path} ${issue.message}`);
+  }
+
+  it('wants 12 hex characters per arm', () => {
+    expect(issues({ ...pinned(), baseline: 'ABC' })).toEqual([
+      'arm_digests.baseline must be 12 hex characters',
+    ]);
+  });
+
+  it('wants every arm of the campaign, and no other', () => {
+    const withoutBaseline = Object.fromEntries(
+      Object.entries(pinned()).filter(([arm]) => arm !== 'baseline'),
+    );
+    expect(issues({ ...withoutBaseline, ghost: 'b'.repeat(12) })).toEqual([
+      "arm_digests.ghost is not one of the campaign's arms",
+      'arm_digests.baseline is required: a campaign that pins arm digests pins every arm',
+    ]);
+  });
+
+  it('changes the campaign identity, since the identity hashes the file', () => {
+    const plain = loadCampaign(writeRepo(completeCampaignYaml()).file);
+    const withDigests = loadCampaign(writeRepo({ ...completeCampaignYaml(), arm_digests: pinned() }).file);
+    expect(plain.ok && withDigests.ok && plain.value.id !== withDigests.value.id).toBe(true);
+  });
+});

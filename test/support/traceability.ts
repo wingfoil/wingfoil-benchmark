@@ -61,17 +61,57 @@ export function readScenarios(acceptanceDir: string): GherkinScenario[] {
 const STARTED = new Set(['in-progress', 'in-review', 'approved', 'done']);
 const FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n---/;
 
+/** A task's front matter, as the traceability checks read it. */
+interface TaskFrontMatter {
+  readonly status?: string;
+  readonly features?: string[];
+  readonly acceptance?: string[];
+}
+
+/** Every task of `taskDir` that has started (`in-progress` or later), by file name, in name order. */
+function startedTasks(taskDir: string): [string, TaskFrontMatter][] {
+  return readdirSync(taskDir)
+    .filter((n) => n.endsWith('.md'))
+    .sort()
+    .flatMap((name): [string, TaskFrontMatter][] => {
+      const frontmatter = FRONTMATTER.exec(readFileSync(join(taskDir, name), 'utf8'))?.[1];
+      const task = parse(frontmatter ?? '') as TaskFrontMatter | null;
+      return task?.status && STARTED.has(task.status) ? [[name, task]] : [];
+    });
+}
+
 /** Features of every task that has started (`in-progress` or later). */
 export function startedFeatures(taskDir: string): Set<string> {
-  const features = new Set<string>();
-  for (const name of readdirSync(taskDir)
-    .filter((n) => n.endsWith('.md'))
-    .sort()) {
-    const frontmatter = FRONTMATTER.exec(readFileSync(join(taskDir, name), 'utf8'))?.[1];
-    const task = parse(frontmatter ?? '') as { status?: string; features?: string[] } | null;
-    if (task?.status && STARTED.has(task.status)) task.features?.forEach((feature) => features.add(feature));
+  return new Set(startedTasks(taskDir).flatMap(([, task]) => task.features ?? []));
+}
+
+/**
+ * The scenarios the started tasks require an acceptance test for (task-064, the approver's choice of 2026-10-06): a
+ * task whose `acceptance` names scenarios as `<file>#<title>` requires those; a task that names none requires every
+ * scenario of its `features`, as before. A named scenario that does not exist is reported in `unknown`, so that a
+ * renamed one cannot drop out silently. A bare `<file>.feature` entry stays information, as in v0.1's tasks.
+ */
+export function requiredScenarios(
+  taskDir: string,
+  scenarios: readonly GherkinScenario[],
+): { required: GherkinScenario[]; unknown: string[] } {
+  const required = new Set<GherkinScenario>();
+  const unknown: string[] = [];
+  for (const [name, task] of startedTasks(taskDir)) {
+    const named = (task.acceptance ?? []).filter((entry) => entry.includes('#'));
+    if (named.length === 0) {
+      for (const scenario of scenarios)
+        if (scenario.features.some((feature) => task.features?.includes(feature))) required.add(scenario);
+      continue;
+    }
+    for (const entry of named) {
+      const [file, title] = [entry.slice(0, entry.indexOf('#')), entry.slice(entry.indexOf('#') + 1)];
+      const scenario = scenarios.find((candidate) => candidate.file === file && candidate.title === title);
+      if (scenario === undefined) unknown.push(`${name}: ${entry}`);
+      else required.add(scenario);
+    }
   }
-  return features;
+  return { required: scenarios.filter((scenario) => required.has(scenario)), unknown };
 }
 
 /** The front matter fields the bug link check reads, from a task or a bug. */

@@ -12,7 +12,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join, relative } from 'node:path';
 
 import { fail, ok } from '../core/index.js';
 import type { Issue, ProcessPort, Result } from '../core/index.js';
@@ -51,7 +51,23 @@ export interface TranscriptPack {
   readonly sha256: string;
   readonly transcripts: number;
   readonly runsWithout: readonly string[];
+  /** The harness artifacts the runs installed (REQ-CLI-11 as amended); absent when no run installed one. */
+  readonly harnesses?: HarnessPack;
 }
+
+/** The second asset: the cached artifacts packed, and those the cache no longer holds, by directory. */
+export interface HarnessPack {
+  readonly archive?: string;
+  readonly sha256?: string;
+  readonly artifacts: number;
+  readonly missing: readonly string[];
+}
+
+/** The release asset of the harness artifacts an execution used (REQ-CLI-11 as amended, REQ-FMT-12). */
+export const HARNESSES_ASSET = 'harnesses.tar.gz';
+
+/** Where the runner caches every harness artifact, from the repository root (REQ-FMT-12). */
+const HARNESS_CACHE = join('.cache', 'harnesses');
 
 /** GNU tar's flags for an archive whose bytes depend on its files' content and paths only (REQ-NFR-05). */
 const REPRODUCIBLE = [
@@ -176,12 +192,15 @@ async function packCopies(
   if (issues.length > 0) return fail(issues);
 
   const relativeArchive = `${RELEASES}/${release}/${TRANSCRIPTS_ASSET}`;
+  const harnessesArchive = join(root, RELEASES, release, HARNESSES_ASSET);
+  const harnessesPartial = `${harnessesArchive}.partial`;
   const archive = join(root, relativeArchive);
   const createdReleases = !existsSync(join(root, RELEASES));
   const createdRelease = !existsSync(join(root, RELEASES, release));
   /** What a failed pack takes back: the directories it created, and nothing else. */
   const undo = () => {
     rmSync(partial, { force: true });
+    rmSync(harnessesPartial, { force: true });
     if (createdReleases) rmSync(join(root, RELEASES), { recursive: true, force: true });
     else if (createdRelease) rmSync(join(root, RELEASES, release), { recursive: true, force: true });
   };
@@ -195,6 +214,18 @@ async function packCopies(
     return fail([{ path: relativeArchive, message: `tar failed: ${tar.stderr.trim()}` }]);
   }
   const sha256 = createHash('sha256').update(readFileSync(partial)).digest('hex');
+  // The harness artifacts, checked against what the runs installed and packed aside, before any record is written: a
+  // pack either completes or changes nothing, the second asset included.
+  let harnesses: Result<HarnessPack | undefined>;
+  try {
+    harnesses = await packHarnesses(root, [...records.values()], harnessesPartial, options.process);
+  } catch (error) {
+    harnesses = fail([{ path: HARNESS_CACHE, message: `cannot be read: ${(error as Error).message}` }]);
+  }
+  if (!harnesses.ok) {
+    undo();
+    return harnesses;
+  }
 
   // The records, then the archive. Each record is written beside itself and renamed into place, so it is
   // never left cut short; one that cannot be written puts back those already written and removes the
@@ -224,7 +255,103 @@ async function packCopies(
     written.push(run);
   }
   renameSync(partial, archive);
-  return ok({ release, archive: relativeArchive, sha256, transcripts: paths.length, runsWithout });
+  // The second asset, or none: an earlier pack's is not left beside an execution that now packs none.
+  if (harnesses.value?.archive !== undefined) renameSync(harnessesPartial, harnessesArchive);
+  else rmSync(harnessesArchive, { force: true });
+  return ok({
+    release,
+    archive: relativeArchive,
+    sha256,
+    transcripts: paths.length,
+    runsWithout,
+    ...(harnesses.value === undefined ? {} : { harnesses: harnesses.value }),
+  });
+}
+
+/** What a run records of the harness it installed (REQ-FMT-06 as amended). */
+interface RecordedHarness {
+  readonly tool?: unknown;
+  readonly commit?: unknown;
+  readonly installed_sha256?: unknown;
+  readonly tarball_sha256?: unknown;
+}
+
+/**
+ * The harness artifacts the runs recorded, packed from the cache into `partial` as `<tool>/<commit>/<file>`,
+ * reproducibly, their licences inside unchanged, so that a reader can install the bytes the runs installed
+ * (REQ-FMT-12). Each cached file is checked against the digest the runs recorded: a cache tampered with, or rebuilt to
+ * other bytes, since the runs is refused, naming the file, rather than published; so are runs that recorded one
+ * harness with different digests, or without them, since nothing then says which bytes they installed. An artifact the cache no longer
+ * holds is named, and the others are packed; none at all packs no asset.
+ */
+async function packHarnesses(
+  root: string,
+  records: readonly Record<string, unknown>[],
+  partial: string,
+  process: ProcessPort,
+): Promise<Result<HarnessPack | undefined>> {
+  // Every run's record of each harness: the digests it installed, which must be one pair per tool and commit.
+  const recordedBy = new Map<string, Set<string>>();
+  for (const record of records) {
+    const harness = record.harness as RecordedHarness | undefined;
+    if (typeof harness?.tool !== 'string' || typeof harness.commit !== 'string') continue;
+    const dir = `${harness.tool}/${harness.commit}`;
+    const pair = `${String(harness.installed_sha256)} ${String(harness.tarball_sha256)}`;
+    recordedBy.set(dir, (recordedBy.get(dir) ?? new Set()).add(pair));
+  }
+  const used = new Map<string, RecordedHarness>();
+  const disagreeing: Issue[] = [];
+  for (const [dir, pairs] of recordedBy) {
+    const [installed = '', tarball = ''] = [...pairs][0]?.split(' ') ?? [];
+    if (pairs.size > 1) {
+      disagreeing.push({ path: `${HARNESS_CACHE}/${dir}/`, message: 'is recorded by the runs with different digests' });
+    } else if (!/^[0-9a-f]{64}$/.test(installed) || !/^[0-9a-f]{64}$/.test(tarball)) {
+      disagreeing.push({ path: `${HARNESS_CACHE}/${dir}/`, message: 'is recorded by a run without its digests' });
+    } else used.set(dir, { installed_sha256: installed, tarball_sha256: tarball });
+  }
+  if (disagreeing.length > 0) return fail(disagreeing);
+  if (used.size === 0) return ok(undefined);
+  const cacheRoot = join(root, HARNESS_CACHE);
+  const files: string[] = [];
+  const missing: string[] = [];
+  const issues: Issue[] = [];
+  for (const [dir, recorded] of [...used].sort(([a], [b]) => (a < b ? -1 : 1))) {
+    const full = join(cacheRoot, dir);
+    let tarball: unknown;
+    try {
+      tarball = (JSON.parse(readFileSync(join(full, 'harness.json'), 'utf8')) as { tarball?: unknown }).tarball;
+    } catch {
+      tarball = undefined;
+    }
+    const own = ['harness.json', 'installed.tgz', ...(typeof tarball === 'string' ? [basename(tarball)] : [])];
+    if (typeof tarball !== 'string' || !own.every((name) => existsSync(join(full, name)))) {
+      missing.push(`${HARNESS_CACHE}/${dir}/`);
+      continue;
+    }
+    const checks: [string, unknown][] = [
+      ['installed.tgz', recorded.installed_sha256],
+      [basename(tarball), recorded.tarball_sha256],
+    ];
+    for (const [name, digest] of checks) {
+      if (sha256Of(join(full, name)) !== digest) {
+        issues.push({
+          path: `${HARNESS_CACHE}/${dir}/${name}`,
+          message: 'is not what the runs installed: its digest differs from the one they recorded',
+        });
+      }
+    }
+    files.push(...own.map((name) => `${dir}/${name}`));
+  }
+  if (issues.length > 0) return fail(issues);
+  if (files.length === 0) return ok({ artifacts: 0, missing });
+  const tar = await process.run('tar', [...REPRODUCIBLE, '-cf', partial, '-C', cacheRoot, ...files.sort()]);
+  const archive = relative(root, partial.slice(0, -'.partial'.length));
+  if (tar.code !== 0) return fail([{ path: archive, message: `tar failed: ${tar.stderr.trim()}` }]);
+  return ok({ archive, sha256: sha256Of(partial), artifacts: used.size - missing.length, missing });
+}
+
+function sha256Of(file: string): string {
+  return createHash('sha256').update(readFileSync(file)).digest('hex');
 }
 
 /** Whether `path` is there, a link that leads nowhere included (`existsSync` follows links). */

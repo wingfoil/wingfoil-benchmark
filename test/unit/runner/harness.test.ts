@@ -1,8 +1,9 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { stringify } from 'yaml';
 import { describe, expect, it } from 'vitest';
 
+import { armDigest } from '../../../src/arms/index.js';
 import { checkCampaign, runCampaign } from '../../../src/runner/index.js';
 import type { RunOnceRequest } from '../../../src/core/index.js';
 import { plainArmYaml } from '../../support/arm-fixture.js';
@@ -54,18 +55,19 @@ describe('the WingFoil under test (REQ-RUN-14, adr-003 decisions 1-5)', () => {
     expect(p.recorded.runOnce).toHaveLength(1);
     expect(p.recorded.runOnce[0]?.image).toBe(campaign.campaign.id);
     expect(p.recorded.runOnce[0]?.mount).toEqual({
-      source: join(root, '.cache', 'harness', 'wingfoil', SHA, 'build'),
+      source: join(root, '.cache', 'harnesses', 'wingfoil', SHA, 'build'),
       target: '/build',
     });
     // The build ran before the first container was created.
     expect(p.recorded.creates).toHaveLength(2);
     // The build directory is gone; the artefact and its record stay, keyed by the full SHA.
-    const cache = join(root, '.cache', 'harness', 'wingfoil', SHA);
+    const cache = join(root, '.cache', 'harnesses', 'wingfoil', SHA);
     expect(existsSync(join(cache, 'build'))).toBe(false);
     expect(readFileSync(join(cache, 'installed.tgz'), 'utf8')).toBe('installed');
     expect(JSON.parse(readFileSync(join(cache, 'harness.json'), 'utf8'))).toEqual({
       tool: 'wingfoil',
       commit: SHA,
+      tarball: 'wingfoil-0.1.0.tgz',
       tarball_sha256: expect.stringMatching(/^[0-9a-f]{64}$/),
       installed_sha256: expect.stringMatching(/^[0-9a-f]{64}$/),
     });
@@ -77,14 +79,14 @@ describe('the WingFoil under test (REQ-RUN-14, adr-003 decisions 1-5)', () => {
 
     await runCampaign(campaign, { ...p, harnessSources: { wingfoil: CLONE } });
 
-    const installed = join(root, '.cache', 'harness', 'wingfoil', SHA, 'installed.tgz');
+    const installed = join(root, '.cache', 'harnesses', 'wingfoil', SHA, 'installed.tgz');
     expect(p.recorded.copies.filter((copy) => copy.endsWith('/home/node/harness.tgz'))).toEqual([
       `${installed} -> container-2:/home/node/harness.tgz`,
     ]);
   });
 
   it('records the harness in run.json: the full commit and both digests', async () => {
-    const { checked: campaign } = checked();
+    const { root, checked: campaign } = checked();
     const p = ports();
 
     const summary = await runCampaign(campaign, { ...p, harnessSources: { wingfoil: CLONE } });
@@ -92,17 +94,23 @@ describe('the WingFoil under test (REQ-RUN-14, adr-003 decisions 1-5)', () => {
     const record = (arm: string) =>
       JSON.parse(
         readFileSync(join(summary.runs.find((run) => run.arm === arm)?.outputDir ?? '', 'run.json'), 'utf8'),
-      ) as { harness?: Record<string, string> };
+      ) as { harness?: Record<string, string>; arm_digest?: string };
     expect(record('wingfoil').harness).toEqual({
       tool: 'wingfoil',
       commit: SHA,
       tarball_sha256: expect.stringMatching(/^[0-9a-f]{64}$/),
       installed_sha256: expect.stringMatching(/^[0-9a-f]{64}$/),
+      artifact_sha256: expect.stringMatching(/^[0-9a-f]{64}$/),
     });
+    // The artifact the run installed, under the name REQ-FMT-06 gives every harness: for WingFoil, the installed one.
+    expect(record('wingfoil').harness?.artifact_sha256).toBe(record('wingfoil').harness?.installed_sha256);
     expect(record('baseline').harness).toBeUndefined();
+    // Every run records its arm's digest, all 64 hex (REQ-FMT-13).
+    for (const arm of ['baseline', 'wingfoil']) expect(record(arm).arm_digest).toMatch(/^[0-9a-f]{64}$/);
+    expect(record('wingfoil').arm_digest).toBe(armDigest(root, 'wingfoil'));
   });
 
-  it('reuses a cached artefact whose digest still matches, and rebuilds one that does not', async () => {
+  it('reuses a cached artefact whose digest still matches, and refuses one that does not, naming it', async () => {
     const { root, checked: campaign } = checked();
     await runCampaign(campaign, { ...ports(), harnessSources: { wingfoil: CLONE } });
 
@@ -110,10 +118,37 @@ describe('the WingFoil under test (REQ-RUN-14, adr-003 decisions 1-5)', () => {
     await runCampaign(campaign, { ...again, harnessSources: { wingfoil: CLONE } });
     expect(again.recorded.runOnce).toHaveLength(0);
 
-    writeFileSync(join(root, '.cache', 'harness', 'wingfoil', SHA, 'installed.tgz'), 'tampered');
-    const third = ports();
-    await runCampaign(campaign, { ...third, harnessSources: { wingfoil: CLONE } });
-    expect(third.recorded.runOnce).toHaveLength(1);
+    // A tampered artifact is refused, not silently rebuilt (REQ-FMT-12, task-064): the package and the installed one.
+    const cache = join('.cache', 'harnesses', 'wingfoil', SHA);
+    for (const file of ['wingfoil-0.1.0.tgz', 'installed.tgz']) {
+      const original = readFileSync(join(root, cache, file));
+      writeFileSync(join(root, cache, file), 'tampered');
+      const third = ports();
+      await expect(runCampaign(campaign, { ...third, harnessSources: { wingfoil: CLONE } })).rejects.toThrow(
+        `the cached harness artifact ${join(cache, file)} no longer matches its recorded digest: remove ${cache}/ to rebuild it`,
+      );
+      expect(third.recorded.runOnce).toHaveLength(0);
+      expect(third.recorded.creates).toEqual([]);
+      writeFileSync(join(root, cache, file), original);
+    }
+
+    // A file that is gone is refused too, the installed artifact as the package its record names.
+    for (const file of ['installed.tgz', 'wingfoil-0.1.0.tgz']) {
+      const original = readFileSync(join(root, cache, file));
+      rmSync(join(root, cache, file));
+      await expect(
+        runCampaign(campaign, { ...ports(), harnessSources: { wingfoil: CLONE } }),
+      ).rejects.toThrow(
+        `the cached harness artifact ${join(cache, file)} is missing: remove ${cache}/ to rebuild it`,
+      );
+      writeFileSync(join(root, cache, file), original);
+    }
+
+    // An unreadable record means not built: it is built again.
+    writeFileSync(join(root, cache, 'harness.json'), '{');
+    const fourth = ports();
+    await runCampaign(campaign, { ...fourth, harnessSources: { wingfoil: CLONE } });
+    expect(fourth.recorded.runOnce).toHaveLength(1);
   });
 
   it('does not start a campaign whose pinned commit is not in the clone, naming both', async () => {
