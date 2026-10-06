@@ -145,6 +145,10 @@ manual copy, the setup page; acceptance: the two scenarios; the site's file list
 - `test:docker`'s first run: `images.test.ts` failed once on a race outside this task's code. A container was
   removed between `docker ps` and `docker inspect`. Recorded as bug-017 (pending), and usage note N51 for
   `submit --reason`.
+- Suites at c1d4d8c: `npm run lint` clean; `npm test` 1340 passed, coverage 97.95 % statements, 90.67 % branches;
+  `test:bin` 8 passed; `test:docker` 21 passed (with `BENCH_SPECKIT_REPO`, Spec Kit v1.1.0).
+- `npx wingfoil memory submit task-067-…` (in-progress → in-review). Declared: moves the task to its next state and
+  commits it. Observed: see the next commit, `wf(task): submit …`.
 
 ## Review notes
 
