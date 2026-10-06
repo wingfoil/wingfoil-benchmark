@@ -2,7 +2,7 @@
 id: task-061-the-benchmark-s-images-pruned
 type: task
 title: "The benchmark's images pruned"
-status: approved
+status: done
 release: v0.2
 wave: W12
 features: []
