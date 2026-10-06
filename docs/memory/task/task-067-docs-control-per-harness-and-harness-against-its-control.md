@@ -129,3 +129,54 @@ manual copy, the setup page; acceptance: the two scenarios; the site's file list
   control, `{#operating-manuals}` links the five manuals, new `{#setup-pages}` (its sources in
   `method-statements.test.ts`).
 - task-068 (the comparison, split from this task) was approved into the W13 backlog by the approver meanwhile.
+- Review round 1 fixes (727d59e, b1f5fc5):
+  - setup pages are compared with the runs' recorded `arm_digest`: a changed arm is refused, as a changed manual is,
+    and there is no page for runs that recorded no digest (pre-v0.2);
+  - controls come from the execution's arms;
+  - the identity sentence is stated per arm;
+  - the campaign check now requires the `docs_of` arm to have a harness and a docs generator;
+  - Spec Kit placeholders are matched by name;
+  - registry lookups use own keys only;
+  - stale comments were corrected;
+  - tests were added: two controls of one harness, the setup pages, brackets in a rule, and a speckit capture that
+    leaves Spec Kit's mechanics.
+- Round 2 fix (c1d4d8c): no false "add the arm" next to the `docs_of` arm's own issue. Also the setup sentence
+  in method.md, and the placeholder checked as left out.
+- `test:docker`'s first run: `images.test.ts` failed once on a race outside this task's code. A container was
+  removed between `docker ps` and `docker inspect`. Recorded as bug-017 (pending), and usage note N51 for
+  `submit --reason`.
+
+## Review notes
+
+Independent read-only agents reviewed `git diff main...HEAD` against the Design, REQ-RUN-11, REQ-FMT-05 and
+REQ-RES-09 (setup half), and competitors.feature's two scenarios.
+
+- Round 1 (308663f…b1f5fc5): every Design item implemented, no blocker.
+  - Should-fix:
+    - the placeholder test caught any bracketed capitals in a rule's text;
+    - a `docs_of` arm without a harness or docs generator passed `validate` and failed only in the runner;
+    - setup pages were built from the current repository without checking against what ran, with controls taken
+      from the whole repository;
+    - two unit tests the Design promised were missing (two controls, the setup page);
+    - the speckit capture was not faithful in acceptance, so the "left out" checks were vacuous;
+    - method.md said the identity carries no authority without qualification, which is false for wingfoil.
+  - Nits: stale comments, a double load in dry-run, a false "no docs control" sentence, and the
+    `operating-manuals` statement's sources.
+  - All fixed in 727d59e.
+- Round 2 (727d59e): all round-1 items fixed.
+  - New should-fix A: a regression, a false "add the wingfoil arm" issue when wingfoil is in the campaign but
+    refused on its own. Fixed in c1d4d8c.
+  - New should-fix B: a design point, not changed here.
+  - Nits C (the method.md sentence overclaimed) and E (the placeholder was not asserted as left out): fixed in
+    c1d4d8c.
+  - Nit D (the digest reads every arm file, more than REQ-RES-02's read list names): left as is, since the files
+    are only hashed.
+- Round 3 (c1d4d8c): A, C and E fixed; clean, nothing at should-fix or above.
+  - Remaining nit: no unit test for the "the <tool> harness has no docs generator" wording.
+- B, escalated to the approver: a rebuild after an arm's files change is refused, now for any file under a harness
+  arm (the digest), where before only the manual was checked. It also refuses when a ran arm's `arm.yaml` no longer
+  loads. It applies only to executions whose runs recorded a digest (v0.2 onwards).
+  - F7.2 ("A corrected setup runs as a new campaign and the old one stays published", REQ-RES-10) needs the
+    contested execution to be rebuilt after its arm is corrected.
+  - The task that implements F7.2 must read the arm (setup page and manual) at its recorded state, or leave the
+    pages out instead of refusing. The approver chooses.
