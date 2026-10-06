@@ -51,7 +51,23 @@ export interface TranscriptPack {
   readonly sha256: string;
   readonly transcripts: number;
   readonly runsWithout: readonly string[];
+  /** The harness artifacts the runs installed (REQ-CLI-11 as amended); absent when no run installed one. */
+  readonly harnesses?: HarnessPack;
 }
+
+/** The second asset: the cached artifacts packed, and those the cache no longer holds, by directory. */
+export interface HarnessPack {
+  readonly archive?: string;
+  readonly sha256?: string;
+  readonly artifacts: number;
+  readonly missing: readonly string[];
+}
+
+/** The release asset of the harness artifacts an execution used (REQ-CLI-11 as amended, REQ-FMT-12). */
+export const HARNESSES_ASSET = 'harnesses.tar.gz';
+
+/** Where the runner caches every harness artifact, from the repository root (REQ-FMT-12). */
+const HARNESS_CACHE = join('.cache', 'harnesses');
 
 /** GNU tar's flags for an archive whose bytes depend on its files' content and paths only (REQ-NFR-05). */
 const REPRODUCIBLE = [
@@ -224,7 +240,62 @@ async function packCopies(
     written.push(run);
   }
   renameSync(partial, archive);
-  return ok({ release, archive: relativeArchive, sha256, transcripts: paths.length, runsWithout });
+  const harnesses = await packHarnesses(root, release, [...records.values()], options.process);
+  if (!harnesses.ok) return harnesses;
+  return ok({
+    release,
+    archive: relativeArchive,
+    sha256,
+    transcripts: paths.length,
+    runsWithout,
+    ...(harnesses.value === undefined ? {} : { harnesses: harnesses.value }),
+  });
+}
+
+/**
+ * The harness artifacts the runs recorded (`harness.tool`, `harness.commit`), packed from the cache into
+ * `releases/<release>/harnesses.tar.gz` as `<tool>/<commit>/<file>`, reproducibly, their licences inside unchanged, so
+ * that a reader can install the bytes the runs installed (REQ-FMT-12). An artifact the cache no longer holds is named,
+ * and the others are packed; none at all packs no asset.
+ */
+async function packHarnesses(
+  root: string,
+  release: string,
+  records: readonly Record<string, unknown>[],
+  process: ProcessPort,
+): Promise<Result<HarnessPack | undefined>> {
+  const used = new Set<string>();
+  for (const record of records) {
+    const harness = record.harness as { tool?: unknown; commit?: unknown } | undefined;
+    if (typeof harness?.tool === 'string' && typeof harness.commit === 'string')
+      used.add(`${harness.tool}/${harness.commit}`);
+  }
+  if (used.size === 0) return ok(undefined);
+  const cacheRoot = join(root, HARNESS_CACHE);
+  const files: string[] = [];
+  const missing: string[] = [];
+  for (const dir of [...used].sort()) {
+    const full = join(cacheRoot, dir);
+    const own = existsSync(full)
+      ? readdirSync(full, { withFileTypes: true })
+          .filter((entry) => entry.isFile())
+          .map((entry) => `${dir}/${entry.name}`)
+      : [];
+    if (own.length === 0) missing.push(`${HARNESS_CACHE}/${dir}/`);
+    files.push(...own);
+  }
+  if (files.length === 0) return ok({ artifacts: 0, missing });
+  const relativeArchive = `${RELEASES}/${release}/${HARNESSES_ASSET}`;
+  const archive = join(root, relativeArchive);
+  const partial = `${archive}.partial`;
+  const tar = await process.run('tar', [...REPRODUCIBLE, '-cf', partial, '-C', cacheRoot, ...files.sort()]);
+  if (tar.code !== 0) {
+    rmSync(partial, { force: true });
+    return fail([{ path: relativeArchive, message: `tar failed: ${tar.stderr.trim()}` }]);
+  }
+  renameSync(partial, archive);
+  const sha256 = createHash('sha256').update(readFileSync(archive)).digest('hex');
+  return ok({ archive: relativeArchive, sha256, artifacts: used.size - missing.length, missing });
 }
 
 /** Whether `path` is there, a link that leads nowhere included (`existsSync` follows links). */

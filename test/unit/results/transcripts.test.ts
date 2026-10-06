@@ -167,3 +167,62 @@ describe('bench transcripts pack (REQ-RES-06 as amended in 1.22, task-047)', () 
     expect(none.stderr).toContain('results/abcdef012345/1: has no transcript on disk to pack');
   }, 120_000);
 });
+
+describe('the harness artifacts beside the transcripts (REQ-CLI-11 as amended, REQ-FMT-12, task-064)', () => {
+  const COMMIT = '3df305ea198d7e2ca0da73bfb12b14af865e9922';
+  const HARNESSES = join('releases', 'abcdef012345-1', 'harnesses.tar.gz');
+
+  /** The wingfoil runs record the harness they installed; the cache holds its artifacts. */
+  async function withHarness(cached: boolean) {
+    const fixture = await withTranscripts();
+    for (const id of ['TC', 'TD']) {
+      const file = join(fixture.executionDir, RUN(id, 'wingfoil'), 'run.json');
+      if (!existsSync(file)) continue;
+      const record = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>;
+      record.harness = { tool: 'wingfoil', commit: COMMIT, installed_sha256: 'x', artifact_sha256: 'x' };
+      writeFileSync(file, `${JSON.stringify(record, undefined, 2)}\n`);
+    }
+    if (cached) {
+      const cache = join(fixture.root, '.cache', 'harnesses', 'wingfoil', COMMIT);
+      mkdirSync(cache, { recursive: true });
+      writeFileSync(join(cache, 'installed.tgz'), 'installed');
+      writeFileSync(join(cache, 'wingfoil-0.2.2.tgz'), 'package, its LICENSE inside');
+      writeFileSync(join(cache, 'harness.json'), '{}\n');
+    }
+    return fixture;
+  }
+
+  it('packs the artifacts the runs installed into a second reproducible asset, and the command attaches both', async () => {
+    const { root } = await withHarness(true);
+    const packed = await benchSite(root, 'transcripts', 'pack', EXECUTION);
+    expect(packed.code, packed.stderr).toBe(0);
+    const archive = join(root, HARNESSES);
+    expect(execFileSync('tar', ['-tzf', archive], { encoding: 'utf8' })).toBe(
+      `wingfoil/${COMMIT}/harness.json\nwingfoil/${COMMIT}/installed.tgz\nwingfoil/${COMMIT}/wingfoil-0.2.2.tgz\n`,
+    );
+    const sha = sha256Of(archive);
+    expect(packed.stdout).toContain(`harnesses: ${HARNESSES} (1 harness artifact, sha256:${sha})\n`);
+    expect(packed.stdout).toContain(`gh release create abcdef012345-1 ${ARCHIVE} ${HARNESSES} --title`);
+    rmSync(archive);
+    expect((await benchSite(root, 'transcripts', 'pack', EXECUTION)).code).toBe(0);
+    expect(sha256Of(archive)).toBe(sha);
+  }, 120_000);
+
+  it('names an artifact missing from the cache, and packs no empty asset', async () => {
+    const { root } = await withHarness(false);
+    const packed = await benchSite(root, 'transcripts', 'pack', EXECUTION);
+    expect(packed.code, packed.stderr).toBe(0);
+    expect(packed.stdout).toContain(
+      `harness artifact not in the cache: .cache/harnesses/wingfoil/${COMMIT}/ (rebuild it with a campaign run)\n`,
+    );
+    expect(existsSync(join(root, HARNESSES))).toBe(false);
+    expect(packed.stdout).toContain(`gh release create abcdef012345-1 ${ARCHIVE} --title`);
+  }, 120_000);
+
+  it('packs no second asset for an execution without harness runs', async () => {
+    const { root } = await withTranscripts();
+    const packed = await benchSite(root, 'transcripts', 'pack', EXECUTION);
+    expect(packed.stdout).not.toContain('harness');
+    expect(existsSync(join(root, HARNESSES))).toBe(false);
+  }, 120_000);
+});
