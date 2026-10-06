@@ -2,7 +2,7 @@
 id: task-065-spec-kit-in-the-run-container-spike
 type: task
 title: "Spec Kit in the run container spike"
-status: in-review
+status: approved
 release: v0.2
 wave: W12
 features: []
