@@ -156,3 +156,8 @@ module later.
   0, JSON `from`/`to` as declared, one file, `status` only. Matches.
 - The approver's `memory approve task-060-… --reason "…"` → `ad44020`, run from this worktree (`in-review →
   approved`, `Approver:`/`Reason:` trailers with the drafted reason, only `status` changed). Matches.
+- Merged into main with `--no-ff` → `5119be2`.
+- `npx wingfoil memory submit task-060-…` on main → `0961251` (`approved → done`, one file, `status` only). Matches.
+- bug-014: `fixed_by` and its Resolution committed by hand → `4ce57a3`; `npx wingfoil memory submit bug-014-…` → `c47a410`
+  (`approved → fixed`, one file, `status` only). Matches; the traceability tests green again.
+- Worktree removed after `git status --ignored`: only `coverage/`, `node_modules/` and `dist/`, all regenerable.
