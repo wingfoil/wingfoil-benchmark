@@ -2,7 +2,7 @@
 id: task-068-each-harness-against-its-own-docs-control
 type: task
 title: "Each harness against its own docs control"
-status: pending
+status: backlog
 release: v0.2
 wave: W13
 features: []
