@@ -185,3 +185,13 @@ The Docker suite checks `python3 --version` and `uv --version` in the built imag
      pack, naming the directory (a test for each).
   5. nit — an exception inside the harness pack skipped `undo`. **Fixed:** caught, reported, undone.
   6. nit — the Build notes lacked three commits. **Fixed.**
+- **Round 3** (a new independent read-only Explore subagent, on `b382283`): **clean**. It verified round 2's outcomes
+  (including the rebuild of an interrupted build: no `harness.json`, written last, means not built), every removed
+  line, the two touched test files (25/25), `tsc`, eslint and prettier. Two nits, **not changed**: one run with digests
+  and another without read as "different digests" rather than "without its digests" (refused either way), and a
+  doc-comment line past the print width.
+- Final checks on `b382283`: `npm run lint` clean; `npm test` 84 files, 1304/1304, coverage 98.05 % statements,
+  90.86 % branches; `npm run test:bin` 8/8; `npm run test:docker`: a first run 19/20, the new run-image test failing
+  once with an error the summary did not keep; that test alone passed, and a second full run passed 20/20. Recorded as
+  an intermittent failure under concurrent Docker builds, cause not established: if it recurs, its output is to be
+  kept and the test hardened.
