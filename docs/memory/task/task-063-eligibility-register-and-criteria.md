@@ -96,15 +96,21 @@ verdict is a reading of the criteria the approver may contest (F7.2).
 - `site-content/eligibility.md`: the five criteria in words, how a tool is assessed (one entry per version, WingFoil
   too, the verdict follows the criteria), and a `<!-- register -->` placeholder.
 - `bench site build` reads the register (REQ-RES-02 as amended) and writes `eligibility.html`: the text, then a
-  table — tool, version, date, verdict, one column per criterion (pass/fail), and for an excluded tool the reason.
-  The landing page links it beside the method page. A missing `site-content/eligibility.md` or register fails the
-  build, as a missing method page does.
+  table — tool, version, one column per criterion (pass/fail), the verdict and the reason — then each entry's
+  evidence. **No date**: REQ-RES-02 keeps `site/index.html` the only page with one; an assessment's date stays in the
+  register, and the evidence prose names none. The landing page links it beside the method page. A missing
+  `site-content/eligibility.md` or register fails the build, as a missing method page does.
+- The page reads the repository's register **as it stands when the site is built**, as the method page reads
+  `site-content/method.md`, and says so: every execution's site shows the current assessments, while each campaign
+  was checked, when it ran, against the register of that day. Keeping a per-execution copy is a larger change, not
+  needed by REQ-RES-09.
 
 ### Fixtures
 
-`writeRepo` (`test/support/campaign-fixture.ts`) writes a register admitting the test pins (wingfoil `3df305e` and
-`v0.2.2`), so that existing tests keep their meaning; the site fixture copies the repository's `eligibility/` as it
-copies `site-content/`. Tests that need another register write their own.
+`writeArmsNamed` (`test/support/arm-fixture.ts`), which every test repository with arms goes through, writes a
+register admitting the harness pins the tests use (`TEST_REGISTER`: wingfoil `3df305e`, `v0.2.2`, `abc1234`, `0.2.0`;
+openspec `1.0.0`) unless the repository has one, so that existing tests keep their meaning; the site fixture and the
+Docker test of W3 copy the repository's `eligibility/`. Tests that need another register write their own.
 
 ### Tests
 
@@ -146,3 +152,30 @@ copies `site-content/`. Tests that need another register write their own.
    assessments and their evidence are content, not the build's clock.
 4. `84ce5a8` README: the `eligibility/` directory and what `validate` checks of it.
 5. `npx tsx src/cli/main.ts campaign validate campaigns/v0-1-reference.yaml` (wingfoil `v0.2.2`): valid, as before.
+
+### Review
+
+- **Round 1** (independent read-only Explore subagent, on `6ec8ef2`; targeted tests only, the suites running
+  elsewhere): one blocking finding. It checked REQ-FMT-11's fields, the messages against the scenarios, the page
+  against REQ-RES-09, WingFoil's evidence against `c82a5e74885b` and `12537b62`, today's versions, module boundaries
+  (eslint clean) and the fixtures. Findings and outcomes:
+  1. **blocking** — the Docker test of W3 runs `campaigns/arms.yaml` (wingfoil `v0.2.2`) in a repository with no
+     register, now refused. **Fixed:** it copies the repository's `eligibility/` (which admits `v0.2.2`); the suites
+     re-run below.
+  2. should-fix — `eligibility.html` showed dates (the "Assessed" column, and dates in the evidence prose), against
+     REQ-RES-02's "only `site/index.html` holds a date"; a test had been loosened to allow them. **Fixed** by
+     conforming (option a): no date column, no dates in the evidence prose (they stay in each entry's `date`), and the
+     strict "no date anywhere" test restored.
+  3. should-fix — the page reads the repository's current register at build time, so an older execution's site
+     shows later assessments. **Fixed by stating it:** the Design and the page say the register is the one of the
+     build, and each campaign was checked against its own day's; a per-execution copy is left out (REQ-RES-09 does
+     not ask for it).
+  4. should-fix — `checkCampaign`'s wiring was untested. **Fixed:** an invalid register with a harness arm (reported
+     at its field), an invalid or absent one without (ignored), a wrong pin reported once by harness coverage; and a
+     stray harness on a plain arm in the core check.
+  5. nit — BMAD's exclusion read thin against OpenSpec's admission, both having questions. **Fixed:** the evidence
+     says why they differ (BMAD's facilitations ask for the project's content, which only a person holds; OpenSpec's
+     ask for choices the neutral approver answers), and the reason says it is a reading open to contest (F7.2).
+  6. nit — the site unit tests came with the implementation. **Not changed:** the acceptance scenario for the page
+     was red first, as the notes say.
+  7. nit — the Design named `writeRepo` for the fixture, the build used `writeArmsNamed`. **Fixed** in the Design.

@@ -121,6 +121,8 @@ describe('a campaign against the register', () => {
 
   it('asks nothing of an arm that runs the plain agent, nor of a harness no arm requires', () => {
     expect(eligibilityIssues({}, [{ name: 'baseline' }], register())).toEqual([]);
+    const stray = { baseline: { tool: 'bmad', version: '6.12.1' } };
+    expect(eligibilityIssues(stray, [{ name: 'baseline' }], register())).toEqual([]);
   });
 
   it('refuses a campaign with a harness arm when there is no register', () => {

@@ -27,4 +27,8 @@ arm is built, and to **every** tool, WingFoil included: a tool is admitted by th
 
 ## The register
 
+This is the register as it stands when this site was built, so that every execution's site shows the current
+assessments. Each campaign was checked, when it ran, against the register of that day; an assessment's date is kept in
+[`eligibility/register.yaml`](https://github.com/wingfoil/wingfoil-benchmark/blob/main/eligibility/register.yaml).
+
 <!-- register -->

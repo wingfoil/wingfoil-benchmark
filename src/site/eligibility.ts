@@ -15,18 +15,19 @@ export const ELIGIBILITY_FILE = 'site-content/eligibility.md';
 const e = escapeHtml;
 
 /**
- * The register as the page shows it: one row per assessed tool and version, WingFoil included — its date, each
- * criterion's result, its verdict and its reason — then each entry's evidence, criterion by criterion.
+ * The register as the page shows it: one row per assessed tool and version, WingFoil included — each criterion's
+ * result, its verdict and its reason — then each entry's evidence, criterion by criterion. No date: the landing page
+ * of `site/` is the only page that holds one (REQ-RES-02); an assessment's date stays in the register.
  */
 export function registerHtml(register: Register): string {
   const head =
-    '<tr><th scope="col">Tool</th><th scope="col">Version</th><th scope="col">Assessed</th>' +
+    '<tr><th scope="col">Tool</th><th scope="col">Version</th>' +
     ELIGIBILITY_CRITERIA.map((id) => `<th scope="col">${e(id)}</th>`).join('') +
     '<th scope="col">Verdict</th><th scope="col">Reason</th></tr>';
   const rows = register.entries
     .map(
       (entry) =>
-        `<tr><th scope="row">${e(entry.tool)}</th><td>${e(entry.version)}</td><td>${e(entry.date)}</td>` +
+        `<tr><th scope="row">${e(entry.tool)}</th><td>${e(entry.version)}</td>` +
         ELIGIBILITY_CRITERIA.map((id) => {
           const result = entry.criteria[id].result;
           return `<td class="${result}">${result}</td>`;

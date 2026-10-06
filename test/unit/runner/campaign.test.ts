@@ -111,3 +111,41 @@ describe('checkCampaign, arms and harnesses (REQ-FMT-01, REQ-FMT-05, dl-003)', (
     ]);
   });
 });
+
+describe('checkCampaign and the eligibility register (REQ-FMT-01 as amended, F7.4)', () => {
+  it('reports an invalid register at its fields when a harness arm needs it', () => {
+    const { root, file } = writeRepo(completeCampaignYaml());
+    writeFileSync(join(root, 'eligibility', 'register.yaml'), stringify({ criteria: [], entries: [] }));
+    const result = checkCampaign(file);
+    expect(result.ok ? [] : result.issues).toEqual([
+      {
+        path: 'eligibility/register.yaml: criteria',
+        message:
+          'must be the five published criteria in order: agent-and-model, pinnable, headless-container, workflow-harness, no-own-llm',
+      },
+    ]);
+  });
+
+  it('ignores the register of a campaign without a harness arm, even an invalid one, or none', () => {
+    const yaml = {
+      ...completeCampaignYaml(),
+      arms: ['baseline'],
+      harnesses: {},
+      models: { default: 'claude-sonnet-5' },
+    };
+    const { root, file } = writeRepo(yaml);
+    writeFileSync(join(root, 'eligibility', 'register.yaml'), 'entries: [\n');
+    expect(checkCampaign(file).ok).toBe(true);
+    rmSync(join(root, 'eligibility'), { recursive: true });
+    expect(checkCampaign(file).ok).toBe(true);
+  });
+
+  it('reports a wrong harness pin once, by harness coverage, and not again as unassessed', () => {
+    const yaml = completeCampaignYaml();
+    yaml.harnesses = { wingfoil: { tool: 'speckit', version: '9.9.9' } };
+    const result = checkCampaign(writeRepo(yaml).file);
+    expect(result.ok ? [] : result.issues).toEqual([
+      { path: 'harnesses.wingfoil.tool', message: "is 'speckit', but the arm requires 'wingfoil'" },
+    ]);
+  });
+});

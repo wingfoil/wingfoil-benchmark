@@ -28,7 +28,7 @@ describe('the register as the eligibility page shows it', () => {
       register(registerEntry('wingfoil', 'v0.2.2'), registerEntry('bmad', '6.12.1', ['pinnable'])),
     );
     expect(html).toContain(
-      '<tr><th scope="row">wingfoil</th><td>v0.2.2</td><td>2026-10-06</td>' +
+      '<tr><th scope="row">wingfoil</th><td>v0.2.2</td>' +
         '<td class="pass">pass</td>'.repeat(5) +
         '<td class="verdict admitted">admitted</td><td>passes the five criteria in this fixture</td></tr>',
     );
