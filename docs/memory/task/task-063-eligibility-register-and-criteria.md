@@ -205,3 +205,6 @@ Docker test of W3 copy the repository's `eligibility/`. Tests that need another 
   0, JSON `from`/`to` as declared, one file, `status` only. Matches.
 - The approver's `memory approve task-063-… --reason "…"` → `d02dc7c`, run from this worktree (`in-review →
   approved`, `Approver:`/`Reason:` trailers with the drafted reason, only `status` changed). Matches.
+- Merged into main with `--no-ff` → `e8dfd19`.
+- `npx wingfoil memory submit task-063-…` on main → `823b191` (`approved → done`, one file, `status` only). Matches.
+- Worktree removed after `git status --ignored`: only `coverage/`, `dist/` and `node_modules/`, all regenerable.
