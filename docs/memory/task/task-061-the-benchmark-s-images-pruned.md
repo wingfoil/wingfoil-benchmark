@@ -149,3 +149,12 @@ the exit code is 1 if any failed. `--dry-run` removes nothing. USAGE and README'
   3. nit — a dead `<none>` filter, and a vacuous pass on a host without tagged images. **Fixed:** the first listed
      image, and `context.skip()` otherwise.
   4. nit — two new lines of this file past 120 columns. **Fixed:** re-wrapped.
+- **Round 3** (a new independent read-only Explore subagent, on `0d0953b`): **clean**. It verified round 2's
+  outcomes (the Design's port and test lines, `--pull=never`, `context.skip()` against vitest 5.0.1's types, the
+  re-wraps), `tsc`, prettier and the unit tests (61/61). Two optional nits, **not changed**: the unreachable `return`
+  after `context.skip()` (kept for the type narrowing's reader) and a short re-wrapped line.
+- Final checks on `0d0953b`: `npm run lint` clean; `npm test` 80 files, 1262/1262, coverage 98.06 % statements,
+  90.89 % branches; `npm run test:bin` 8/8; `npm run test:docker` 19/19 (the image port's file re-run alone at
+  `0d0953b`, 3/3).
+- **The real removal** (the Done's last line) is not made yet: it waits for the approver's go in chat, after a check
+  that no campaign, dry run or scoring is in progress on the host (round 1, finding 1).
