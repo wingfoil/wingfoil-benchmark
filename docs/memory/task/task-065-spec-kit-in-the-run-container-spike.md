@@ -111,7 +111,8 @@ from the bundle, init, telemetry: none to turn off, said so); the ledger line.
   restatement of the request as its argument), `speckit-plan`, `speckit-tasks`, `speckit-implement` — ran Spec Kit's
   bash scripts (`setup-plan.sh`, `setup-tasks.sh`, `check-prerequisites.sh`), wrote `specs/001-rental-module/`
   (spec, plan, research, data model, contract, quickstart, a requirements checklist, tasks) and then the code and its
-  tests (15/15 green, `tsc` clean). The secret scan found the token in no file.
+  tests (15/15 green, `tsc` clean, as its last tool results show), changing `package.json` and `tsconfig.json` and
+  adding `package-lock.json`. The secret scan found the token in no file.
 
 ### Answers
 
