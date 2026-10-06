@@ -2,7 +2,7 @@
 id: task-064-harness-artifacts-and-arm-digests
 type: task
 title: "Harness artifacts and arm digests"
-status: in-review
+status: approved
 release: v0.2
 wave: W12
 features: [F7.1, F7.2]
