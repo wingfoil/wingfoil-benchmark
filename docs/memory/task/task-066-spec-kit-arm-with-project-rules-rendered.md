@@ -199,3 +199,6 @@ The setup page (REQ-RES-09's setup half) goes with task-067, since it shows what
   0, JSON `from`/`to` as declared, one file, `status` only. Matches.
 - The approver's `memory approve task-066-… --reason "…"` → `89835a7`, run from this worktree (`in-review →
   approved`, `Approver:`/`Reason:` trailers with the drafted reason, only `status` changed). Matches.
+- Merged into main with `--no-ff` → `43287e0`.
+- `npx wingfoil memory submit task-066-…` on main → `02c78a4` (`approved → done`, one file, `status` only). Matches.
+- Worktree removed after `git status --ignored`: only regenerable directories.
