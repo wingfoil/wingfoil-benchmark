@@ -2,7 +2,7 @@
 id: bug-014-a-campaign-does-not-preflight-the-environment-its-harness-needs
 type: bug
 title: "A campaign does not preflight the environment its harness needs"
-status: approved
+status: fixed
 fixed_by: task-060-campaign-validate-preflights-the-run-s-environment
 ---
 
