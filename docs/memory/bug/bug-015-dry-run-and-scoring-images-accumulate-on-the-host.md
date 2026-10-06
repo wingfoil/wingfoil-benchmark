@@ -2,7 +2,7 @@
 id: bug-015-dry-run-and-scoring-images-accumulate-on-the-host
 type: bug
 title: "Dry-run and scoring images accumulate on the host"
-status: approved
+status: fixed
 fixed_by: task-061-the-benchmark-s-images-pruned
 ---
 
