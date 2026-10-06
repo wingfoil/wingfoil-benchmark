@@ -26,12 +26,18 @@ describe('the image port against Docker', () => {
     }
   });
 
-  it("names a container's image by the same id list() gives it: the in-use check rests on it", async () => {
-    // A container of its own, created and never started, from a tagged image already on the host; removed after.
-    const tagged = (await port.list()).find((image) => !image.reference.startsWith('<'));
-    if (tagged === undefined) return;
+  it("names a container's image by the same id list() gives it: the in-use check rests on it", async (context) => {
+    // A container of its own, created and never started, from a tagged image already on the host (never pulled);
+    // removed after. Skipped, and reported so, on a host without any tagged image.
+    const tagged = (await port.list())[0];
+    if (tagged === undefined) {
+      context.skip();
+      return;
+    }
     const name = `images-port-test-${process.pid}`;
-    execFileSync('docker', ['create', '--name', name, tagged.reference, 'true'], { stdio: 'ignore' });
+    execFileSync('docker', ['create', '--pull=never', '--name', name, tagged.reference, 'true'], {
+      stdio: 'ignore',
+    });
     try {
       const container = (await port.containers()).find((c) => c.name === name);
       expect(container?.imageId).toBe(tagged.id);

@@ -68,8 +68,8 @@ and are few). Of the benchmark's, three are kept:
 ### The port
 
 A new `ImagePort` (`src/core/ports/images.ts`), separate from `DockerPort` so that the runner's doubles do not grow:
-`list()` (reference, id, size), `usedIds()` (the image id of every container, and whether a benchmark container is
-running), `remove(reference)` (`docker image rm <reference>`, never `--force`: Docker's own refusal stays a last
+`list()` (reference, id, size), `containers()` (each container's name, image id and running state),
+`remove(reference)` (`docker image rm <reference>`, never `--force`: Docker's own refusal stays a last
 guard). `dockerImagesCli(process)` implements it; `Ports` gains an optional `images`, as it has `publish`.
 
 ### `bench images prune [--dry-run]`
@@ -77,7 +77,8 @@ guard). `dockerImagesCli(process)` implements it; `Ports` gains an optional `ima
 A pure function, `pruneCandidates(images, used, currentScoring)`, returns the images to remove and those kept with a
 reason. The command prints one line per image, `removed|would remove <reference> (<size>)` or `kept <reference>
 (<reason>)`, then the count (`n images`). No total size: the tags of one build share an image, so per-line sizes
-repeat (53 tags on the host, about 1.1 GB each, are a handful of image ids). A removal Docker refuses is reported on stderr and the others go on;
+repeat (53 tags on the host, about 1.1 GB each, are a handful of image ids). A removal Docker refuses is reported
+on stderr and the others go on;
 the exit code is 1 if any failed. `--dry-run` removes nothing. USAGE and README's commands list it.
 
 ### Tests
@@ -86,7 +87,8 @@ the exit code is 1 if any failed. `--dry-run` removes nothing. USAGE and README'
   scoring image, the id-based in-use check); the command with a fake `ImagePort` (dry run lists without removing;
   removal prints and calls `remove` for exactly the candidates; a refused removal; a running benchmark container
   refuses); the CLI `dockerImagesCli` against a fake `ProcessPort` (arguments parsed, no `--force`).
-- `test:docker`: `list()` and `usedIds()` against the real daemon, read-only.
+- `test:docker`: `list()` and `containers()` against the real daemon; it removes no image, and creates and removes one
+  container of its own (`images-port-test-<pid>`, `--pull=never`) to cross-check the ids.
 - **The real prune on the host**, the Done's last line: `--dry-run` first, recorded; the removal itself only with
   the approver's go in chat, since it deletes about 12 GB that other sessions' dry runs may still read.
 
@@ -127,7 +129,8 @@ the exit code is 1 if any failed. `--dry-run` removes nothing. USAGE and README'
      the command's docstring and README say to run it only when nothing is in progress on the host, and the real
      prune waits for the approver's go after checking no session runs anything. A lock held by the runner and by
      `score` would close the gap; it is a known limit, outside this task's scope (the runner).
-  2. nit — not every benchmark container is named `bench-` (`runOnce` of a harness build or the project rules). **Fixed:**
+  2. nit — not every benchmark container is named `bench-` (`runOnce` of a harness build or the project rules).
+     **Fixed:**
      the comment and README say "named", and that such a container's image is still kept by id while it exists.
   3. nit — the Design promised a total size the code does not print, and per-tag sizes repeat. **Fixed:** the Design
      says the count only, and why; README says the size is shared by one build's tags.
@@ -136,3 +139,13 @@ the exit code is 1 if any failed. `--dry-run` removes nothing. USAGE and README'
      tagged image and checks `containers()` names its image by the id `list()` gives (3/3), removing it after.
   5. nit (informational) — a container removed between `ps` and `inspect` makes the command fail without pruning:
      fail-safe. **Not changed**; noted here.
+- **Round 2** (a new independent read-only Explore subagent, on `41024b9`): nothing blocking; it confirmed round 1's
+  outcomes (the partial guard stated in the Design, the docstring and the README, and acceptable for this task's
+  scope with the real prune waiting for the approver), ran the unit tests (8/8) and `tsc`, and judged the Docker
+  test's own container safe on a shared host. Findings and outcomes:
+  1. should-fix — the Design still named a `usedIds()` method and a read-only Docker test. **Fixed:** `containers()`,
+     and the test's own container.
+  2. nit — `docker create` could pull if a tag vanished meanwhile. **Fixed:** `--pull=never`.
+  3. nit — a dead `<none>` filter, and a vacuous pass on a host without tagged images. **Fixed:** the first listed
+     image, and `context.skip()` otherwise.
+  4. nit — two new lines of this file past 120 columns. **Fixed:** re-wrapped.
