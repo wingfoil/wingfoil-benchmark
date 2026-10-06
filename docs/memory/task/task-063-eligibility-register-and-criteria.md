@@ -148,8 +148,8 @@ Docker test of W3 copy the repository's `eligibility/`. Tests that need another 
    `site-content/eligibility.md`. Fixtures: `writeArmsNamed` writes `TEST_REGISTER` (the harness pins the tests use:
    wingfoil `3df305e`, `v0.2.2`, `abc1234`, `0.2.0`, openspec `1.0.0`) unless the repository has a register; the site
    fixture copies the repository's `eligibility/`. Two site tests changed: the page list and count (12 pages), and the
-   "no date anywhere" check, which now allows on the eligibility page the dates the register holds — its
-   assessments and their evidence are content, not the build's clock.
+   "no date anywhere" check, loosened to allow the register's dates on the eligibility page — **reverted by review
+   round 1** (finding 2): the page now shows no date and the check is main's again.
 4. `84ce5a8` README: the `eligibility/` directory and what `validate` checks of it.
 5. `npx tsx src/cli/main.ts campaign validate campaigns/v0-1-reference.yaml` (wingfoil `v0.2.2`): valid, as before.
 
@@ -179,3 +179,13 @@ Docker test of W3 copy the repository's `eligibility/`. Tests that need another 
   6. nit — the site unit tests came with the implementation. **Not changed:** the acceptance scenario for the page
      was red first, as the notes say.
   7. nit — the Design named `writeRepo` for the fixture, the build used `writeArmsNamed`. **Fixed** in the Design.
+- **Round 2** (a new independent read-only Explore subagent, on `807856a`): not clean. It confirmed findings 1, 3,
+  4, 5 and 7 resolved (W3's pin admitted; the build-time statement accurate and its link the repository's; the new
+  wiring tests meaningful; BMAD's evidence consistent with OpenSpec's and the landscape). Findings and outcomes:
+  1. **blocking** — restoring the strict date check, `807856a` also deleted the tail of `build.test.ts` (the refusals
+     test, the escaping block, the idempotence test's 120 s timeout): an edit anchored on the wrong closing line.
+     **Fixed:** the file is rebuilt from main's, with only this task's changes (the page in the list, 12 pages, the
+     landing's link); its diff against main is those five lines, eslint clean, 9/9.
+  2. should-fix — the Build notes still said the date check allowed the register's dates. **Fixed:** they say round
+     1 reverted it.
+  3. nit — five re-written evidence lines past 120 columns. **Fixed:** re-wrapped.
