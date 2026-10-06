@@ -198,3 +198,8 @@ Docker test of W3 copy the repository's `eligibility/`. Tests that need another 
   (the bin run had found the one count the unit tests do not hold); `npm run test:docker` 18/19 with W6 (scoring)
   failing while a stale earlier run of the suites still competed for Docker — W6 re-run alone: passed. W3, the test
   the register touches, passed.
+
+### Review and approval
+
+- `npx wingfoil memory submit task-063-…` → `f559150`. Declared: `in-progress → in-review`, one commit. Observed: exit
+  0, JSON `from`/`to` as declared, one file, `status` only. Matches.
