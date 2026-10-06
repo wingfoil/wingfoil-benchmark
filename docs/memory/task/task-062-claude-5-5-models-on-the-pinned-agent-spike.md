@@ -215,3 +215,7 @@ The Design ran them "only if a model fails on 2.1.280". None failed outright, bu
 - The approver's `memory approve task-062-… --reason "…"` → `3f77ed4`, run from this worktree (`in-review →
   approved`, `Approver:`/`Reason:` trailers with the drafted reason, only `status` changed). Matches. The approver also
   approved bug-016 (`231524f`) and dl-015 (`662418a`) on main, and placed dl-015's work in W13 (chat, 2026-10-06).
+- Merged into main with `--no-ff` → `dcec089`.
+- `npx wingfoil memory submit task-062-…` on main → `2498a2f` (`approved → done`, one file, `status` only). Matches.
+- Worktree removed after `git status --ignored`: only `node_modules/`; the spike's output was written to the main
+  checkout's `spikes/task-062/out/` from the start, so nothing of it lived in the worktree.
