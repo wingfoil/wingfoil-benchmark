@@ -4,7 +4,7 @@ import { claudeCodeAgent, loadAgentToken, loadFakeScript } from '../agents/index
 import type { AgentPort } from '../agents/index.js';
 import { fakeAgent } from '../agents/index.js';
 import { dockerCli, gitCli, systemProcess } from '../core/index.js';
-import type { DockerPort, GitPort, Issue, PublishPort, Result } from '../core/index.js';
+import type { DockerPort, GitPort, ImagePort, Issue, PublishPort, Result } from '../core/index.js';
 import type { RunPins } from '../runner/index.js';
 
 import { FAKE_SCRIPT_VARIABLE, HARNESS_SOURCE_VARIABLES, PURPOSES, TOKEN_VARIABLE } from './preflight.js';
@@ -27,6 +27,8 @@ export interface Ports {
   readonly agent: AgentPort;
   /** Publishing's git and visibility probe (task-047); the system's when not given. */
   readonly publish?: PublishPort;
+  /** The host's images, for `bench images prune` (task-061); the system's when not given. */
+  readonly images?: ImagePort;
 }
 
 /** The command line's usage, printed on `--help` and on a usage error. */
@@ -42,7 +44,8 @@ export const USAGE =
   '       bench finding <campaign-id>/<n> --scenario <id>@<version> --metric <metric> --arms <arm>,… --as bug|decision-log\n' +
   '       bench site build <campaign-id>/<n>\n' +
   '       bench site publish [--remote <name>]\n' +
-  '       bench transcripts pack <campaign-id>/<n>\n';
+  '       bench transcripts pack <campaign-id>/<n>\n' +
+  '       bench images prune [--dry-run]\n';
 
 /** REQ-CLI exit codes. */
 export const EXIT = { ok: 0, failure: 1, usage: 2 } as const;

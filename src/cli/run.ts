@@ -9,6 +9,7 @@ import { campaignRequirements, FAKE_SCRIPT_VARIABLE, formatRequirement, refusalO
 import { parseScenarioArguments, validateScenario } from './scenario.js';
 import { scoreCommand } from './score.js';
 import { findingCommand } from './finding.js';
+import { imagesCommand } from './images.js';
 import { runCommand } from './show.js';
 import { siteCommand } from './site.js';
 import { transcriptsCommand } from './transcripts.js';
@@ -41,6 +42,7 @@ export async function main(
   if (argv[0] === 'finding') return findingCommand(argv.slice(1), io, root);
   if (argv[0] === 'site') return siteCommand(argv.slice(1), io, root, ports?.publish);
   if (argv[0] === 'transcripts') return transcriptsCommand(argv.slice(1), io, root);
+  if (argv[0] === 'images') return imagesCommand(argv.slice(1), io, ports?.images);
   const [noun, verb, file, ...extra] = argv;
   // The flag belongs to `run`: accepting it on `validate` would say it means something there.
   const allowSpending = verb === 'run' && extra.includes(SPENDING_FLAG);
