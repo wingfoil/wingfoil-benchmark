@@ -101,7 +101,8 @@ The Docker suite checks `python3 --version` and `uv --version` in the built imag
 
 ### Tests
 
-- unit: `requiredScenarios`; `armDigest` (order, nested files, a changed file, a symlink hashed by its target); the schema's `arm_digests` (12 hex, every arm, no other); `checkCampaign`'s mismatch; the cache path,
+- unit: `requiredScenarios`; `armDigest` (order, nested files, a changed file, a symlink hashed by its target); the
+  schema's `arm_digests` (12 hex, every arm, no other); `checkCampaign`'s mismatch; the cache path,
   the tampered artifact's refusal, `artifact_sha256` and `arm_digest` in `run.json`; the pack's second asset;
 - acceptance: the two scenarios, and v0.1's campaign files validating;
 - `test:bin`, `test:docker` (the image changes).
@@ -115,7 +116,8 @@ The Docker suite checks `python3 --version` and `uv --version` in the built imag
   for every @F7.1/@F7.2 scenario of `competitors.feature`, most of them other tasks' (task-066, task-067, W13). Chosen
   ("Per scenario"): a task may list in `acceptance` the scenarios it delivers, as `competitors.feature#<title>`; the
   test then requires those, and every scenario of a feature only for a task that declares the feature whole. Done in
-  this task, red-first; task-064 lists its two scenarios; task-066 and task-067 will each list their own in their design phase.
+  this task, red-first; task-064 lists its two scenarios; task-066 and task-067 will each list their own in their design
+  phase.
 
 ### WingFoil commands (declared vs observed)
 
