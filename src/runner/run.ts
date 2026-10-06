@@ -358,6 +358,9 @@ export async function runPlan(plan: RunPlan, options: RunnerOptions): Promise<Ru
   // Before anything is built: what earlier, interrupted runs of this plan left behind (bug-003).
   const leftovers = await leftBehind(plan, execution, options);
 
+  // Each arm's digest, once, before anything is built or runs: the arm every run of this execution received
+  // (REQ-FMT-13).
+  const armDigests = new Map(plan.arms.map((arm) => [arm.name, armDigest(plan.repoRoot, arm.name)]));
   await options.docker.build({
     dockerfile: join(packageRoot(), RUN_IMAGE_DIRECTORY, 'Dockerfile'),
     context: join(packageRoot(), RUN_IMAGE_DIRECTORY),
@@ -365,8 +368,6 @@ export async function runPlan(plan: RunPlan, options: RunnerOptions): Promise<Ru
     buildArgs: { AGENT_NAME: plan.pins.agent.name, AGENT_VERSION: plan.pins.agent.version },
   });
   // Every harness before any run: an arm never runs without the one it requires (REQ-RUN-14).
-  // Each arm's digest, once, before anything is built: the arm every run of this execution received (REQ-FMT-13).
-  const armDigests = new Map(plan.arms.map((arm) => [arm.name, armDigest(plan.repoRoot, arm.name)]));
   const harnesses = await prepareHarnesses(
     { id: plan.id, repoRoot: plan.repoRoot, arms: plan.arms, harnesses: plan.pins.harnesses },
     options,
@@ -394,7 +395,8 @@ export async function runPlan(plan: RunPlan, options: RunnerOptions): Promise<Ru
         execution,
         resultsDir,
         leftovers,
-        armDigest: armDigests.get(arm.name) ?? armDigest(plan.repoRoot, arm.name),
+        // Taken above for every arm of the plan, which is where `arm` comes from.
+        armDigest: armDigests.get(arm.name) as string,
         ...(arm.requires === undefined ? {} : { harness: harnesses.get(arm.requires) }),
         ...(arm.name === GENERATED_ARM
           ? { projectRules: projectRules.get(`${scenario.id}@${scenario.version}`) }

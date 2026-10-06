@@ -133,3 +133,33 @@ The Docker suite checks `python3 --version` and `uv --version` in the built imag
    image at its pinned digest; `test/docker/run-image.test.ts` checks `python3`, `uv`, `git` and `node` in the built
    image (passed alone).
 5. README: `arm_digests` under `validate`, the second asset under `transcripts pack`.
+
+### Review
+
+- **Round 1** (independent read-only Explore subagent, on `54fd606`; targeted tests only): nothing blocking. It read
+  every removed line of the branch (only the intended path change and the rebuild-to-refusal test), ran five test
+  files (144/144), `tsc` and eslint, and checked traceability's semantics, the cache, the digests, the pack and the
+  image. Findings and outcomes:
+  1. should-fix — a failing `harnesses.tar.gz` came after the records and the transcripts archive were in place,
+     against the module's "a pack either completes or changes nothing". **Fixed:** the harness archive is built aside
+     before any record is written; a failure undoes everything; both archives are renamed in place last.
+  2. should-fix — the pack published whatever the cache held, unchecked against what the runs installed. **Fixed:**
+     each packed file is checked against the runs' `installed_sha256` and `tarball_sha256`, and a mismatch refuses the
+     pack naming the file, writing nothing; the test's records carry real digests.
+  3. should-fix — the package in the cache was found by guess (the first `*.tgz`), so a deleted package went
+     unchecked and a stray `.tgz` could fail a good cache. **Fixed:** `harness.json` records the package's file name
+     (`tarball`); exactly that file is checked, and a missing one is refused as tampered.
+  4. nit — the Design said a symbolic link in an arm is refused; the digest hashes its target. **Kept, and stated** in
+     the code: the digest has no channel for a refusal, and the arm loader refuses links where it reads. A FIFO or a
+     device is now hashed by its kind, never read.
+  5. nit — the sort order was unstated. **Fixed** in the doc comment (code-unit order, locale-independent).
+  6. nit — the notes said task-066 and task-067 list their scenarios; they do not yet. **Corrected:** each lists its
+     own scenarios in its design phase, as this task did.
+  7. nit — the traceability support code parsed task front matter twice. **Fixed:** one `startedTasks` reader.
+  8. nit — a fallback that could not fall through, and a comment placed after the build it said it preceded.
+     **Fixed.**
+  9. nit — a stale `harnesses.tar.gz` stayed when a re-pack had none. **Fixed:** it is removed (a test).
+  10. nit — `HARNESS_CACHE` defined in runner and results, and an ambiguous Dockerfile comment. The constant **stays
+      twice**: `results` may not import `runner` (REQ-ARC-01); the comment is **fixed**.
+  Not tested: a `tar` failure on the second asset alone (the system tar cannot be made to fail there without failing
+  the first); its path is the same `undo` the transcripts' failure takes.

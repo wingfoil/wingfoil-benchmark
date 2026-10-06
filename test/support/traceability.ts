@@ -61,17 +61,28 @@ export function readScenarios(acceptanceDir: string): GherkinScenario[] {
 const STARTED = new Set(['in-progress', 'in-review', 'approved', 'done']);
 const FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n---/;
 
+/** A task's front matter, as the traceability checks read it. */
+interface TaskFrontMatter {
+  readonly status?: string;
+  readonly features?: string[];
+  readonly acceptance?: string[];
+}
+
+/** Every task of `taskDir` that has started (`in-progress` or later), by file name, in name order. */
+function startedTasks(taskDir: string): [string, TaskFrontMatter][] {
+  return readdirSync(taskDir)
+    .filter((n) => n.endsWith('.md'))
+    .sort()
+    .flatMap((name): [string, TaskFrontMatter][] => {
+      const frontmatter = FRONTMATTER.exec(readFileSync(join(taskDir, name), 'utf8'))?.[1];
+      const task = parse(frontmatter ?? '') as TaskFrontMatter | null;
+      return task?.status && STARTED.has(task.status) ? [[name, task]] : [];
+    });
+}
+
 /** Features of every task that has started (`in-progress` or later). */
 export function startedFeatures(taskDir: string): Set<string> {
-  const features = new Set<string>();
-  for (const name of readdirSync(taskDir)
-    .filter((n) => n.endsWith('.md'))
-    .sort()) {
-    const frontmatter = FRONTMATTER.exec(readFileSync(join(taskDir, name), 'utf8'))?.[1];
-    const task = parse(frontmatter ?? '') as { status?: string; features?: string[] } | null;
-    if (task?.status && STARTED.has(task.status)) task.features?.forEach((feature) => features.add(feature));
-  }
-  return features;
+  return new Set(startedTasks(taskDir).flatMap(([, task]) => task.features ?? []));
 }
 
 /**
@@ -86,16 +97,7 @@ export function requiredScenarios(
 ): { required: GherkinScenario[]; unknown: string[] } {
   const required = new Set<GherkinScenario>();
   const unknown: string[] = [];
-  for (const name of readdirSync(taskDir)
-    .filter((n) => n.endsWith('.md'))
-    .sort()) {
-    const frontmatter = FRONTMATTER.exec(readFileSync(join(taskDir, name), 'utf8'))?.[1];
-    const task = parse(frontmatter ?? '') as {
-      status?: string;
-      features?: string[];
-      acceptance?: string[];
-    } | null;
-    if (!task?.status || !STARTED.has(task.status)) continue;
+  for (const [name, task] of startedTasks(taskDir)) {
     const named = (task.acceptance ?? []).filter((entry) => entry.includes('#'));
     if (named.length === 0) {
       for (const scenario of scenarios)

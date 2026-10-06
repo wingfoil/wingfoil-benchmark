@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { stringify } from 'yaml';
 import { describe, expect, it } from 'vitest';
@@ -67,6 +67,7 @@ describe('the WingFoil under test (REQ-RUN-14, adr-003 decisions 1-5)', () => {
     expect(JSON.parse(readFileSync(join(cache, 'harness.json'), 'utf8'))).toEqual({
       tool: 'wingfoil',
       commit: SHA,
+      tarball: 'wingfoil-0.1.0.tgz',
       tarball_sha256: expect.stringMatching(/^[0-9a-f]{64}$/),
       installed_sha256: expect.stringMatching(/^[0-9a-f]{64}$/),
     });
@@ -130,6 +131,12 @@ describe('the WingFoil under test (REQ-RUN-14, adr-003 decisions 1-5)', () => {
       expect(third.recorded.creates).toEqual([]);
       writeFileSync(join(root, cache, file), original);
     }
+
+    // A package that is gone is refused too: the record names it, so nothing guesses which file it was.
+    rmSync(join(root, cache, 'wingfoil-0.1.0.tgz'));
+    await expect(runCampaign(campaign, { ...ports(), harnessSources: { wingfoil: CLONE } })).rejects.toThrow(
+      `the cached harness artifact ${join(cache, 'wingfoil-0.1.0.tgz')} is missing: remove ${cache}/ to rebuild it`,
+    );
 
     // An unreadable record means not built: it is built again.
     writeFileSync(join(root, cache, 'harness.json'), '{');

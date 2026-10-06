@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { basename, join, relative } from 'node:path';
 
 import type { Arm, CampaignFile, DockerPort, GitPort } from '../core/index.js';
 
@@ -42,6 +42,8 @@ export interface HarnessOptions {
 interface CacheRecord {
   readonly tool: string;
   readonly commit: string;
+  /** The tool's own package's file name in the cache, which keeps the name the tool's packing gave it. */
+  readonly tarball: string;
   readonly tarball_sha256: string;
   readonly installed_sha256: string;
 }
@@ -155,6 +157,7 @@ async function prepare(
   const record: CacheRecord = {
     tool,
     commit: sha,
+    tarball,
     tarball_sha256: sha256(join(cache, tarball)),
     installed_sha256: sha256(installed),
   };
@@ -165,8 +168,9 @@ async function prepare(
 
 /**
  * A cached artefact, if its record names this tool and commit; `undefined` when there is none to reuse (no record, an
- * unreadable one, or another tool's or commit's), so that it is built. A cached file whose bytes no longer match the
- * digest its record holds is refused, naming it (REQ-FMT-12, F7.1): rebuilding it silently would also hide a
+ * unreadable one, or another tool's or commit's), so that it is built. A cached file — the installed artifact, or the
+ * package its record names — that is missing or whose bytes no longer match the digest its record holds is refused,
+ * naming it (REQ-FMT-12, F7.1): rebuilding it silently would also hide a
  * tampered artifact, so the maintainer removes the directory to rebuild.
  */
 function fromCache(repoRoot: string, cache: string, tool: string, sha: string): HarnessArtefact | undefined {
@@ -179,17 +183,20 @@ function fromCache(repoRoot: string, cache: string, tool: string, sha: string): 
   } catch {
     return undefined;
   }
-  if (record.tool !== tool || record.commit !== sha) return undefined;
-  const tarball = readdirSync(cache).find((name) => name !== 'installed.tgz' && name.endsWith('.tgz'));
+  if (record.tool !== tool || record.commit !== sha || typeof record.tarball !== 'string') return undefined;
   const checks: [string, string][] = [
     [installed, record.installed_sha256],
-    ...(tarball === undefined ? [] : ([[join(cache, tarball), record.tarball_sha256]] as [string, string][])),
+    [join(cache, basename(record.tarball)), record.tarball_sha256],
   ];
   for (const [file, recorded] of checks) {
-    if (sha256(file) !== recorded) {
+    const state = !existsSync(file)
+      ? 'is missing'
+      : sha256(file) !== recorded
+        ? 'no longer matches its recorded digest'
+        : '';
+    if (state !== '') {
       throw new Error(
-        `the cached harness artifact ${relative(repoRoot, file)} no longer matches its recorded digest: ` +
-          `remove ${relative(repoRoot, cache)}/ to rebuild it`,
+        `the cached harness artifact ${relative(repoRoot, file)} ${state}: remove ${relative(repoRoot, cache)}/ to rebuild it`,
       );
     }
   }

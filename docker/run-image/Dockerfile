@@ -8,7 +8,7 @@
 FROM node:22-bookworm@sha256:dd5847a04b0deee391fa145f1f4c6d214196668b6bcc7988ebed67249f226844
 
 # Python 3.11.2 is the base image's own (`python3 --version` at the digest above, 2026-10-06), for a Python harness's
-# wheel bundle (REQ-RUN-01 as amended, REQ-FMT-12: Spec Kit). uv 0.12.23 installs it, copied from its official image,
+# wheel bundle (REQ-RUN-01 as amended, REQ-FMT-12: Spec Kit). uv 0.12.23 installs that bundle; it is copied from its official image,
 # pinned by the digest `docker buildx imagetools inspect ghcr.io/astral-sh/uv:0.12.23` gave on 2026-10-06.
 COPY --from=ghcr.io/astral-sh/uv:0.12.23@sha256:61d393e44e249f2e4b526b6c7ddcecce245946826e608e11c93ad4f5bba55b21 /uv /uvx /usr/local/bin/
 
