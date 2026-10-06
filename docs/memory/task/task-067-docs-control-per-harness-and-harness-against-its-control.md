@@ -6,8 +6,10 @@ status: backlog
 release: v0.2
 wave: W12
 features: [F7.1]
-acceptance: [competitors.feature]
-requirements: [REQ-RUN-11, REQ-FMT-05, REQ-SCO-14, REQ-RES-03]
+acceptance:
+  - "competitors.feature#Each harness has its own docs control"
+  - "competitors.feature#Every harness arm's setup is published"
+requirements: [REQ-RUN-11, REQ-FMT-05, REQ-RES-09]
 ---
 
 ## Context
@@ -41,7 +43,69 @@ real-agent half decided in W12's plan phase.
 
 ## Design
 
-<!-- Written in the task's design phase. -->
+### Scope, as the approver split it (chat, 2026-10-06: "Dividere")
+
+This task delivers the **speckit-docs control** (its generator, its arm, `docs_of` honoured by the runner for any
+docs control) and the **harness setup pages** received from task-066 (REQ-RES-09's setup half). The comparison of each
+harness with its control in the aggregate and on the category pages (REQ-SCO-14, REQ-RES-03) is
+[task-068](task-068-each-harness-against-its-own-docs-control.md), W13 (`pending`). The Context's scope bullet on it, and
+its acceptance criterion, are therefore not this task's; REQ-SCO-14 and REQ-RES-03 leave this task's requirements,
+REQ-RES-09 joins them.
+
+Scenarios (traceability per scenario): **Each harness has its own docs control** — its wingfoil and speckit rows;
+openspec's comes with W13's arm — and **Every harness arm's setup is published** — for the harness arms that exist.
+Both red-first.
+
+### One docs generator per harness (REQ-RUN-11 as amended)
+
+`src/arms/docs-controls.ts`, a registry by the source arm's tool, each entry a pure function of the source arm's
+configuration as captured by running its setup, and of the scenario, with its declaration:
+
+| Tool | Kept from the capture | Renders | Leaves out |
+|---|---|---|---|
+| wingfoil | `.wingfoil/`, `docs/memory/` | baseline-docs' `renderProjectRules`, unchanged | as today (settings, workflows' mechanics …) |
+| speckit | `.specify/memory/` | the constitution's principles — the scenario's rules — as `PROJECT_RULES.md` | skills, templates, scripts, the workflow and its registry, integration and option files (mechanics) |
+
+A constitution still holding `init`'s placeholders (no rules in the scenario) renders as a one-line `PROJECT_RULES.md`
+saying the project declares no rules beyond its README, so the docs control's manual never points to a missing file.
+Each declaration is data (kind, rendered or not, why), which the setup page publishes.
+
+### The runner, for any docs control
+
+- `prepareProjectRules` snapshots, per scenario, the configuration of every arm a docs control in the campaign names
+  (`docs_of`), with that arm's setup, its harness and its scenario overlay; for a tool with a rules generator
+  (REQ-FMT-14) it applies the generator to the capture as a run does after its setup. It writes
+  `generated/<scenario>/<docs arm>/PROJECT_RULES.md` (the docs arm in the path: two controls would collide).
+- A run of a docs control gets its `PROJECT_RULES.md` and records its digest as `generated_sha256` (REQ-RUN-11).
+- `checkCampaign`: a docs control's `docs_of` arm must be in the campaign (generalizing today's baseline-docs check,
+  its message naming the arm). `scenario dry-run` of a docs control also loads its `docs_of` arm.
+
+### `arms/speckit-docs/` (REQ-FMT-05)
+
+`docs_of: speckit`, no `requires`, a setup that does nothing (as baseline-docs'), and **baseline-docs' manual**,
+copied byte for byte (REQ-RUN-11: a docs control gets that manual; a test holds the two equal, and the arm's digest
+covers the copy).
+
+### The setup pages (REQ-RES-09's setup half)
+
+`material/setup-<arm>.html` for each harness arm of the execution, from the repository's `arms/<arm>/` as the manual
+pages are: its setup script; its `telemetry_off` (or that the tool has none); its manual (linked); its rules generator
+(where it writes and what) or that the tool needs none; its docs control and that generator's declaration; and two
+statements — the shared git identity ("Benchmark Approver", adr-003 decision 7) carries no approval authority in a
+competitor arm, and the speckit bundle resolves its dependencies when it is built (their digests in `SHA256SUMS`).
+The method page links them beside the manuals.
+
+### Method page
+
+`{#arms}` and `{#operating-manuals}` name the speckit and speckit-docs arms; `{#baseline-docs-control}` says each
+harness has its control, generated the same way; a new `{#setup-pages}` sentence (with its statement in
+`method-statements.test.ts`).
+
+### Tests
+
+unit: the two generators and their declarations, `prepareProjectRules` for two controls, the campaign check, the
+manual copy, the setup page; acceptance: the two scenarios; the site's file list gains the setup pages; `test:bin`,
+`test:docker` (W3's baseline-docs path changes).
 
 ## Execution notes
 
