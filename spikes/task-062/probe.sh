@@ -66,5 +66,10 @@ for probe in "$@"; do
   esac
 done
 echo "total spent: $(spent) USD"
-# The token is read from a descriptor, never put on a command line.
-echo "files containing the token: $(grep -rlFf <(tr -d '[:space:]' < "$TOKEN_FILE") -- "$OUT" "$SPIKE_DIR" 2>/dev/null | wc -l || true)"
+# The secret scan: the token is read from a descriptor, never put on a command line; a scan that cannot run says so
+# instead of reporting zero. $OUT is scanned once, also when it lies under the script's directory.
+[ -s "$TOKEN_FILE" ] && [ -n "$(tr -d '[:space:]' < "$TOKEN_FILE" | head -c 1)" ] || { echo "secret scan failed: no token to look for"; exit 3; }
+SCAN=("$OUT"); case "$OUT" in "$SPIKE_DIR"/*) ;; *) SCAN+=("$SPIKE_DIR") ;; esac
+set +e; HITS="$(grep -rlFf <(tr -d '[:space:]' < "$TOKEN_FILE") -- "${SCAN[@]}" 2>/dev/null)"; RC=$?; set -e
+[ "$RC" -le 1 ] || { echo "secret scan failed: grep exited $RC"; exit 3; }
+echo "files containing the token: $(printf '%s' "$HITS" | grep -c . || true)"

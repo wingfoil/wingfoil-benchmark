@@ -137,10 +137,12 @@ The Design ran them "only if a model fails on 2.1.280". None failed outright, bu
    at list (`costBasis: "list"`) on both versions. **2.1.291** (published 2026-10-06) knows all three: list prices
    and the full context windows. What else it changes, seen from these sessions: the `init` event gains
    `per_turn_effort_active` (true for Sonnet and Opus 5.5, false for Haiku 4.5) and `view_mode`; every field the
-   adapter (`src/agents/claude-code.ts`) reads is present — `is_error`, `terminal_reason`, `result`, `errors`,
-   `usage.*`, `num_turns`, `duration_ms`, `session_id`, `total_cost_usd`, `modelUsage.<model>.{inputTokens,
+   adapter (`src/agents/claude-code.ts`) reads on a successful session is present — `is_error`, `terminal_reason`,
+   `result`, `usage.*`, `num_turns`, `duration_ms`, `session_id`, `total_cost_usd`, `modelUsage.<model>.{inputTokens,
    outputTokens, cacheReadInputTokens, cacheCreationInputTokens, costUSD}` — so task-054's folding and bug-012's
-   summing are unaffected; `--max-budget-usd` is accepted by both.
+   summing are unaffected. The error path's fields (the result's `errors`, the assistant event's `error`) appear only
+   when a session fails, which none did: the adapter's error handling on 2.1.291 is **unverified** here, for
+   calibration's first runs to watch. `--max-budget-usd` is accepted by both.
 2. **Which effort, and can the campaign pin it?** Neither version reports the effort it sends: not in the stream
    (`init`, `result`), not in `--debug`'s log. The binary of 2.1.291 names a per-model `defaultEffort`,
    `capLevels`, `supportsXHigh` and `defaultEffortPinnedAboveServed` (read with `grep -a -o` on
@@ -189,3 +191,13 @@ The Design ran them "only if a model fails on 2.1.280". None failed outright, bu
   7. nit — P2's `unrecognized_model` stderr and its cache pattern. **Fixed:** cited, here and in bug-016.
   8. nit — the adapter's fields listed partially. **Fixed:** all of them.
   9. nit — bug-016 cited REQ-RUN-09 for "list price". **Fixed:** dl-007's price table instead.
+  The corrections to bug-016 and dl-015 are on main, `5c4f4a2`.
+- **Round 2** (a new independent read-only Explore subagent, on `56eb85e` and main's `5c4f4a2`): nothing blocking;
+  it verified every new statement against the raw output and both images' binaries, and the new scan's bash.
+  Findings and outcomes:
+  1. nit — "every field the adapter reads is present" overstated: the error path's fields were not exercised.
+     **Fixed:** the success path's fields, and the error path named as unverified.
+  2. nit — the commit of bug-016's and dl-015's corrections was not cited. **Fixed:** `5c4f4a2`.
+  3. minor — the closing scan could not tell "no match" from a failed scan, and counted `out/` twice from the main
+     checkout. **Fixed:** an empty token or a `grep` error now prints "secret scan failed" and exits 3; `out/` is
+     scanned once.
