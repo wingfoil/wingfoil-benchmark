@@ -14,12 +14,22 @@ describe('the operating manuals (F2.7)', () => {
     expect(core.length).toBeGreaterThan(0);
     expect(manual('baseline-docs').startsWith(core)).toBe(true);
     expect(manual('wingfoil').startsWith(core)).toBe(true);
+    expect(manual('speckit').startsWith(core)).toBe(true);
   });
 
   it('give each other arm a section of its own after the core', () => {
     const core = manual('baseline');
     expect(manual('baseline-docs').slice(core.length)).toMatch(/^\n## This arm\n/);
     expect(manual('wingfoil').slice(core.length)).toMatch(/^\n## This arm\n/);
+    expect(manual('speckit').slice(core.length)).toMatch(/^\n## This arm\n/);
+  });
+
+  it("point the speckit arm at Spec Kit's skills and its constitution, and away from its workflow engine", () => {
+    const own = manual('speckit');
+    for (const skill of ['/speckit-specify', '/speckit-plan', '/speckit-tasks', '/speckit-implement'])
+      expect(own).toContain(skill);
+    expect(own).toContain('`.specify/memory/constitution.md`');
+    expect(own).toContain('Never run `specify workflow`');
   });
 
   it('point baseline-docs at the rules its environment carries', () => {
@@ -45,7 +55,7 @@ describe('the operating manuals (F2.7)', () => {
   });
 
   it('leave placeholders behind', () => {
-    for (const arm of ['baseline', 'baseline-docs', 'wingfoil'])
+    for (const arm of ['baseline', 'baseline-docs', 'wingfoil', 'speckit'])
       expect(manual(arm)).not.toMatch(/placeholder|task-014/i);
   });
 });

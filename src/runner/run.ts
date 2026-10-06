@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { foldModels, scrub } from '../agents/index.js';
@@ -16,7 +16,7 @@ import type {
   Scenario,
 } from '../core/index.js';
 import { nextExecution } from '../results/index.js';
-import { armDigest, missingCapabilities } from '../arms/index.js';
+import { armDigest, missingCapabilities, renderConstitution } from '../arms/index.js';
 import { prepareWorkspace } from '../scenario/index.js';
 
 import type { CheckedCampaign } from './campaign.js';
@@ -136,6 +136,10 @@ export interface SetupResult {
   /** The tree of the `setup` commit (task-027), beside its patch, `setup/diff.patch`. */
   readonly tree?: string;
   readonly code?: number;
+  /** The manual as the agent received it, when the tool's setup added its own `CLAUDE.md` (REQ-RUN-12 as amended). */
+  readonly manual?: ManualRecord;
+  /** The digest of what the arm's rules generator wrote (REQ-FMT-14), when it wrote anything. */
+  readonly generatedSha256?: string;
 }
 
 /**
@@ -519,6 +523,7 @@ async function executeRun(context: RunContext, options: RunnerOptions): Promise<
         ...(harness === undefined ? {} : { harness: harness.installed }),
         ...(scenario.armDirs[arm.name] === undefined ? {} : { scenarioDir: scenario.armDirs[arm.name] }),
         ...(context.projectRules === undefined ? {} : { projectRules: context.projectRules }),
+        rulesSource: scenario.armDirs[RULES_SOURCE_ARM],
       },
       options,
     );
@@ -585,6 +590,8 @@ interface SetupContext {
   readonly scenarioDir?: string | undefined;
   /** The generated rules of the scenario, for the baseline-docs arm (REQ-RUN-11). */
   readonly projectRules?: string;
+  /** Where the scenario declares its project rules (dl-005: the wingfoil arm's configuration), for a generator. */
+  readonly rulesSource?: string | undefined;
 }
 
 /**
@@ -596,7 +603,8 @@ interface SetupContext {
  * committed after it.
  */
 async function executeSetup(arm: Arm, context: SetupContext, options: RunnerOptions): Promise<SetupResult> {
-  const { container, workspace, outputDir, seedTree, harness, scenarioDir, projectRules } = context;
+  const { container, workspace, outputDir, seedTree, harness, scenarioDir, projectRules, rulesSource } =
+    context;
   await options.git.configureIdentity(workspace, AGENT_IDENTITY.name, AGENT_IDENTITY.email);
   if (arm.environmentDir !== undefined) copyEnvironment(workspace, arm.environmentDir);
   // The generated part of the arm's environment, like any other environment file (REQ-RUN-11).
@@ -624,6 +632,8 @@ async function executeSetup(arm: Arm, context: SetupContext, options: RunnerOpti
   // Scrubbed like a patch: a setup may print what it was given.
   writeFileSync(join(setupDir, 'log.txt'), scrub(`${result.stdout}${result.stderr}`, options.secrets ?? []));
   if (result.code !== 0) return { durationMs, usage: NO_USAGE, code: result.code };
+  const manualAfter = mergeManual(arm, manual);
+  const generatedSha256 = generateRules(arm, rulesSource, workspace, outputDir);
 
   await options.git.commitAll(workspace, SETUP_COMMIT, { allowEmpty: true });
   const commit = await options.git.head(workspace);
@@ -634,7 +644,79 @@ async function executeSetup(arm: Arm, context: SetupContext, options: RunnerOpti
     join(setupDir, 'diff.patch'),
     scrub(await options.git.patchOf(workspace, seedTree, tree), options.secrets ?? []),
   );
-  return { durationMs, usage: NO_USAGE, commit, tree };
+  return {
+    durationMs,
+    usage: NO_USAGE,
+    commit,
+    tree,
+    ...(manualAfter === undefined ? {} : { manual: manualAfter }),
+    ...(generatedSha256 === undefined ? {} : { generatedSha256 }),
+  };
+}
+
+/** The manual a run's agent read: the merged CLAUDE.md's measure when the setup changed it, else the arm's. */
+function manualOf(run: RunResult): ManualRecord | undefined {
+  return run.setup?.manual ?? run.manual;
+}
+
+/** Where a scenario declares its project rules, once (dl-005): as the wingfoil arm's configuration. */
+const RULES_SOURCE_ARM = 'wingfoil';
+
+/**
+ * The rules generator of each harness that has one (REQ-FMT-14): where the tool keeps a project's rules in the
+ * workspace, and how the scenario's are rendered there.
+ */
+const RULES_GENERATORS: Readonly<
+  Record<
+    string,
+    { readonly path: string; readonly render: (files: ReadonlyMap<string, string>) => string | undefined }
+  >
+> = { speckit: { path: join('.specify', 'memory', 'constitution.md'), render: renderConstitution } };
+
+/** Every file under `dir`, by its path from `dir` with forward slashes. */
+function filesUnder(dir: string, prefix = ''): [string, string][] {
+  return readdirSync(join(dir, prefix), { withFileTypes: true }).flatMap((entry): [string, string][] => {
+    const path = prefix === '' ? entry.name : `${prefix}/${entry.name}`;
+    if (entry.isDirectory()) return filesUnder(dir, path);
+    return entry.isFile() ? [[path, readFileSync(join(dir, path), 'utf8')]] : [];
+  });
+}
+
+/**
+ * The scenario's project rules in the tool's own place (REQ-FMT-14), after its setup wrote its defaults there: written
+ * into the workspace, kept with the run's results under `generated/`, and returned as their digest. Nothing when the
+ * arm's tool has no generator or the scenario declares no rule.
+ */
+function generateRules(
+  arm: Arm,
+  rulesSource: string | undefined,
+  workspace: string,
+  outputDir: string,
+): string | undefined {
+  const generator = arm.requires === undefined ? undefined : RULES_GENERATORS[arm.requires];
+  if (generator === undefined || rulesSource === undefined) return undefined;
+  const text = generator.render(new Map(filesUnder(rulesSource)));
+  if (text === undefined) return undefined;
+  mkdirSync(dirname(join(workspace, generator.path)), { recursive: true });
+  writeFileSync(join(workspace, generator.path), text);
+  mkdirSync(join(outputDir, 'generated'), { recursive: true });
+  writeFileSync(join(outputDir, 'generated', basename(generator.path)), text);
+  return createHash('sha256').update(text).digest('hex');
+}
+
+/**
+ * REQ-RUN-12 as amended: when the tool's setup changed the `CLAUDE.md` the manual was copied to, the manual comes
+ * first and the tool's content follows under a heading naming the tool. The record keeps the manual's digest, which
+ * the site checks against the arm's file, and measures the whole file the agent reads.
+ */
+function mergeManual(arm: Arm, file: string): ManualRecord | undefined {
+  const manual = readFileSync(arm.manualPath, 'utf8');
+  const now = existsSync(file) ? readFileSync(file, 'utf8') : '';
+  if (now === manual) return undefined;
+  const tool = (now.startsWith(manual) ? now.slice(manual.length) : now).trim();
+  const merged = tool === '' ? manual : `${manual.trimEnd()}\n\n## ${arm.requires ?? arm.name}\n\n${tool}\n`;
+  writeFileSync(file, merged);
+  return { ...measure(merged), sha256: measure(manual).sha256 };
 }
 
 /** A manual's size by the fixed approximation, and the digest of the text it was taken from. */
@@ -1166,19 +1248,22 @@ function record(run: RunResult, plan: RunPlan): RunResult {
         repetition: run.repetition,
         agent,
         approver_policy,
-        // The manual the arm ran with, and its size: a confound reported for every arm (REQ-RUN-12).
-        ...(run.manual === undefined
+        // The manual the arm ran with, and its size: a confound reported for every arm (REQ-RUN-12); the whole
+        // CLAUDE.md's when the tool's setup added its own (REQ-RUN-12 as amended).
+        ...(manualOf(run) === undefined
           ? {}
           : {
               manual: {
                 file: MANUAL_FILE,
-                sha256: run.manual.sha256,
-                bytes: run.manual.bytes,
-                tokens: run.manual.tokens,
+                sha256: manualOf(run)?.sha256,
+                bytes: manualOf(run)?.bytes,
+                tokens: manualOf(run)?.tokens,
                 method: TOKEN_METHOD.name,
                 method_version: TOKEN_METHOD.version,
               },
             }),
+        // What the arm's rules generator wrote (REQ-FMT-14), by its digest.
+        ...(run.setup?.generatedSha256 === undefined ? {} : { generated_sha256: run.setup.generatedSha256 }),
         // The harness the arm ran with (REQ-RUN-14, adr-003 decision 4).
         ...(run.harness === undefined
           ? {}
