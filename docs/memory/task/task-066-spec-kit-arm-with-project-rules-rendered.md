@@ -2,7 +2,7 @@
 id: task-066-spec-kit-arm-with-project-rules-rendered
 type: task
 title: "Spec Kit arm with project rules rendered"
-status: in-progress
+status: in-review
 release: v0.2
 wave: W12
 features: [F7.1]
