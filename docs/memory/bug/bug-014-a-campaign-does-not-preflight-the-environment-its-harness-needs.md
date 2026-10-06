@@ -3,6 +3,7 @@ id: bug-014-a-campaign-does-not-preflight-the-environment-its-harness-needs
 type: bug
 title: "A campaign does not preflight the environment its harness needs"
 status: approved
+fixed_by: task-060-campaign-validate-preflights-the-run-s-environment
 ---
 
 ## Context
@@ -33,4 +34,8 @@ that are set. The README's commands section names them.
 
 ## Resolution
 
-<!-- Filled when fixed: the task, the commit, and how it was verified. -->
+Fixed by [task-060](../task/task-060-campaign-validate-preflights-the-run-s-environment.md) (merged in `5119be2`):
+`campaign validate` lists what the runs need from the machine (`BENCH_AGENT_TOKEN_FILE` or `BENCH_FAKE_SCRIPT`, the
+clone of each pinned harness, `BENCH_HOLDOUT_PATH` when a scenario declares a hold-out), each set, missing or
+invalid; `campaign run` refuses every missing one at once, before the estimate. Verified by unit tests with an
+injected environment, the bin suite (W5's ceiling case given the fake script) and the Docker suite.
