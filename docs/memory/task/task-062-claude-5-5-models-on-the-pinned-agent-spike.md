@@ -207,3 +207,8 @@ The Design ran them "only if a model fails on 2.1.280". None failed outright, bu
   changed**: `api_error_status`, which the adapter reads and which every result event carries as `null` on both
   versions, is not named among the fields; it changes nothing on 2.1.291.
 - Final checks on `666de27`: `npm run lint` clean. No code changed: `npm test`, `test:bin`, `test:docker` not run.
+
+### Review and approval
+
+- `npx wingfoil memory submit task-062-…` → `7d4f4be`. Declared: `in-progress → in-review`, one commit. Observed: exit
+  0, JSON `from`/`to` as declared, one file, `status` only. Matches.
