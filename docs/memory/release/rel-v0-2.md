@@ -106,6 +106,16 @@ The questions as they were put:
 - **Which WingFoil for the campaign?** The latest release at the campaign. If WingFoil's workflow engine is released
   before v0.2's calibration, H1–H5 are tested. Otherwise the campaign runs v0.2.2 again, and H1–H5 wait.
 
+**5. Found during W12** (approved by the approver on 2026-10-06, after task-062's spike):
+
+| Element | Decision | Lands in |
+|---|---|---|
+| [dl-015](../decision-log/dl-015-the-effort-the-agent-sends-is-pinned-per-model-by-the-campaign.md) effort pinned per model | **approved, option C** (`662418a`) | **W13**, before calibration (the approver in chat, 2026-10-06: "dl-015 in W13") |
+| [bug-016](../bug/bug-016-a-run-s-cost-is-trusted-when-the-agent-does-not-know-the-model-s-price.md) a cost the agent cannot price is trusted | **approved as a defect** (`231524f`) | to place at W13's plan phase, beside dl-015 (both read `modelUsage` and the agent pin) |
+
+task-062 also recommends pinning Claude Code **2.1.291 or later** for v0.2 (2.1.280 misprices Sonnet 5.5): an input
+for calibration's re-pin.
+
 **Smaller items** left by v0.1's Retrospective are triaged with the W12–W14 task plans; v0.2's wingfoil arm manual
 is reviewed against WingFoil's `docs/agents.md` at the pinned tag (N43).
 
