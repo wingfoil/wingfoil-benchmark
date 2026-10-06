@@ -91,3 +91,65 @@ v0.2's agent pin (and whether the runner should pass `--effort`), for calibratio
 
 - `npx wingfoil memory add --type task --title "Claude 5.5 models on the pinned agent spike"`. Declared: creates the element from the template and
   commits it. Observed: `wf(task): add task-062-claude-5-5-models-on-the-pinned-agent-spike`, `status: draft`.
+
+### WingFoil commands (declared vs observed)
+
+- `npx wingfoil memory submit task-062-…`, in the linked worktree `WingFoil2-Benchmark-task-062` with its own `npm
+  ci`. Declared: `backlog → in-progress`, one commit. Observed: exit 0, JSON `from`/`to` as declared, one file,
+  `status` only. Matches.
+
+### The spike (2026-10-06, from the main checkout)
+
+`BENCH_SPIKE_CONFIRM=1 …/spikes/task-062/probe.sh P1`, then `P2 P3`, then `P4 P5 P6 P7`, with the working directory
+the main checkout and the output in its git-ignored `spikes/task-062/out/`. Seven one-turn sessions, all `success`,
+all answering "OK"; the image of 2.1.291 built from `docker/run-image` (`bench-spike-task-062-agent-2.1.291`). The
+secret scan found the token in no file. **Spent: 0.2113 USD** of the 3.00 USD ceiling (the ledger's first line).
+
+| Probe | Agent | Model | Outcome | Cost (USD) | `costBasis` | Context window | Thinking tokens |
+|---|---|---|---|---|---|---|---|
+| P1 | 2.1.280 | `claude-haiku-4-5` | success, "OK" | 0.0064 | list | 200,000 | 32 |
+| P2 | 2.1.280 | `claude-sonnet-5-5` | success, "OK" | 0.1155 | unknown | 200,000 | 0 |
+| P3 | 2.1.280 | `claude-opus-5-5` | success, "OK" | 0.0238 | list | 1,000,000 | 0 |
+| P4 | 2.1.280 | `claude-opus-5-5` `--effort high` | success, "OK" | 0.0199 | list | 1,000,000 | 0 |
+| P5 | 2.1.291 | `claude-haiku-4-5` | success, "OK" | 0.0068 | list | 200,000 | 33 |
+| P6 | 2.1.291 | `claude-sonnet-5-5` | success, "OK" | 0.0134 | list | 1,000,000 | 0 |
+| P7 | 2.1.291 | `claude-opus-5-5` | success, "OK" | 0.0255 | list | 1,000,000 | 0 |
+
+Every reported cost was recomputed from `modelUsage`'s tokens with dl-007's list prices. All match the model's own
+prices, **except P2**: 0.1155 USD reported against 0.0578 at Sonnet 5.5's list price — exactly Opus 5.5's prices
+applied to Sonnet 5.5's tokens.
+
+### Answers
+
+1. **Does 2.1.280 accept each model id headless?** Yes, all three answer. But **2.1.280 does not know Sonnet 5.5**:
+   it reports `costBasis: "unknown"`, prices its tokens at Opus 5.5's rates (twice Sonnet 5.5's list price), and
+   gives it a 200 000-token context window where 2.1.291 gives 1 000 000 (the binary of 2.1.280 never names
+   `claude-sonnet-5-5`). Haiku 4.5 and Opus 5.5 are priced at list (`costBasis: "list"`) on both versions.
+   **2.1.291** (published 2026-10-06) knows all three: list prices and the full context windows. What else it
+   changes, seen from these sessions: the `init` event gains `per_turn_effort_active: true`; the `result` event and
+   `modelUsage` keep the fields the adapter reads (`total_cost_usd`, `modelUsage.<model>.{inputTokens,
+   outputTokens, cacheReadInputTokens, cacheCreationInputTokens, costUSD}`), so task-054's folding and bug-012's
+   summing are unaffected; `--max-budget-usd` is accepted by both.
+2. **Which effort, and can the campaign pin it?** Neither version reports the effort it sends: not in the stream
+   (`init`, `result`), not in `--debug`'s log. 2.1.291's binary reads a per-model `defaultEffort` from a model
+   catalogue (`capLevels`, `supportsXHigh`, `defaultEffortPinnedAboveServed`), so the default can change without a
+   new agent version. **`--effort <level>` is accepted** (P4, `high`, on Opus 5.5, success), so the campaign *can*
+   pin it — but only if the runner passes it: today it does not.
+3. **Does `modelUsage` report each model?** Yes: one key per model, its tokens and `costUSD`; plus `costBasis`,
+   `contextWindow` and `thinkingTokens`. `costBasis` is the signal that the agent knows the model's price:
+   `unknown` means a cost the benchmark must not trust.
+
+### Recommendation for v0.2's agent pin (for calibration to adopt)
+
+- **Pin Claude Code 2.1.291 or later**, re-pinned at calibration as v0.1 did (task-049): 2.1.280 misprices Sonnet
+  5.5, v0.2's default model (dl-007 B), by a factor of two, and shrinks its context to 200 K.
+- **Pin the effort**: the runner passes `--effort <level>` from the campaign file, one level per model, recorded with
+  the run, so that a change of the agent's server-side default cannot move results between executions. A task of
+  W12–W14 (or calibration's own), proposed to the approver; not done here.
+- **Refuse a cost the agent does not know**: a run whose `modelUsage` reports `costBasis` other than `list` is
+  flagged (its cost is not the list price), so that a pin like 2.1.280 on Sonnet 5.5 cannot pass unnoticed. Filed
+  as [bug-016](../bug/bug-016-a-run-s-cost-is-trusted-when-the-agent-does-not-know-the-model-s-price.md)
+  (`pending`, on main: `819faf1`, `194c074`), for the approver.
+- `npx wingfoil memory add` ×2 and `memory submit` ×2 for those, on main. Declared: `add` creates the element from
+  its template in `draft` with one commit; `submit` takes `draft → pending`. Observed: `f2c854b`, `62f87f3` (add),
+  the bodies by hand in `819faf1`, then `194c074`, `d958c92` (submit, `status` only). Matches.
