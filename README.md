@@ -101,7 +101,8 @@ BENCH_AGENT_TOKEN_FILE=<token-file> npx bench campaign run campaigns/<name>.yaml
 `validate` checks the campaign file (`docs/02_specification/requirements.md` REQ-FMT-01): every harness pinned
 to a released version or a commit that `eligibility/register.yaml` admits (F7.4), the baseline arm present, every
 scenario it names present under
-`scenarios/<id>/<version>/`. It prints the campaign's identity, the digest that names its results.
+`scenarios/<id>/<version>/`, and, when the file pins `arm_digests`, every arm's files unchanged since (REQ-FMT-13).
+It prints the campaign's identity, the digest that names its results.
 It then lists what the campaign's runs need from the machine, one `requires` line each, `set`, `missing` or
 `invalid` with the reason (bug-014):
 
@@ -228,7 +229,9 @@ npx bench transcripts pack <campaign-id>/<n>
 
 `site build` writes the static site of an execution into `site/`. `site publish` pushes `site/` to the `gh-pages`
 branch, only when the repository is public and only what a fresh build gives. `transcripts pack` packs an
-execution's transcripts into one release asset and prints the `gh release create` command, which it does not run.
+execution's transcripts into one release asset and the harness artifacts its runs installed (from
+`.cache/harnesses/`) into a second, `harnesses.tar.gz`, and prints the `gh release create` command, which it does
+not run.
 
 ```bash
 npx bench images prune [--dry-run]
