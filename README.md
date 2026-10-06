@@ -204,7 +204,9 @@ An arm with a harness declares the capabilities its harness **provides** (`arms/
 scenario declares the ones it needs. A run whose harness lacks one is an **expected failure**: it runs
 and is scored like any other, and is marked in `run.json` and `score.json` with the missing capability
 named — never skipped. `campaign validate` lists them before anything runs. The baseline arms are the
-reference and are never marked. One line per run: `T3@1.0 baseline fake-model r1: step 01 0/1, step 02 1/1, final 1/1;
+reference and are never marked. A harness arm also declares `telemetry_off`, the `NAME=value` settings that turn its
+tool's telemetry off in its container (`[]` when it has none), and a docs control declares `docs_of`, the harness arm
+it is generated from. One line per run: `T3@1.0 baseline fake-model r1: step 01 0/1, step 02 1/1, final 1/1;
 hold-out final 1/2`.
 
 ```bash

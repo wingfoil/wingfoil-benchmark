@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { agentCredential, checkCampaign, main, realPorts } from '../../../src/cli/index.js';
+import { checkSpending } from '../../../src/cli/shared.js';
 import { doubles } from '../../support/runner-doubles.js';
 import { completeCampaignYaml, writeRepo } from '../../support/campaign-fixture.js';
 import { priceCampaign, writeStoredDryRun } from '../../support/dry-run-fixture.js';
@@ -740,5 +741,29 @@ describe('a campaign with a Spec Kit harness (task-066)', () => {
     const ports = doubles({ commits: { 'v1.1.0': 'f1d3a4f8337ebbd3ae22760a9c12e3352b93a175' } });
     await runWith(ports, 'campaign', 'run', file);
     expect(ports.recorded.gitCalls[0]).toBe('resolve /clones/spec-kit v1.1.0');
+  });
+});
+
+describe('the clones a campaign with two harnesses needs (task-066)', () => {
+  it('gives the runner both clones, and refuses naming the missing one', () => {
+    const pins = { ...completeCampaignYaml(), agent: { name: 'fake', version: '1.0.0' } } as never;
+    vi.stubEnv('BENCH_WINGFOIL_REPO', '/clones/wingfoil');
+    vi.stubEnv('BENCH_SPECKIT_REPO', '/clones/spec-kit');
+    const both = checkSpending(pins, {
+      allowSpending: false,
+      builds: ['speckit', 'wingfoil', 'speckit'],
+      refusal: { path: 'x', message: 'y' },
+    });
+    expect(both.ok && both.value.harnessSources).toEqual({
+      speckit: '/clones/spec-kit',
+      wingfoil: '/clones/wingfoil',
+    });
+    vi.stubEnv('BENCH_SPECKIT_REPO', '');
+    const missing = checkSpending(pins, {
+      allowSpending: false,
+      builds: ['wingfoil', 'speckit'],
+      refusal: { path: 'x', message: 'y' },
+    });
+    expect(missing.ok ? [] : missing.issues.map((issue) => issue.path)).toEqual(['BENCH_SPECKIT_REPO']);
   });
 });

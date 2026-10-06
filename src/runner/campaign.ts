@@ -96,6 +96,12 @@ export function checkCampaign(file: string): Result<CheckedCampaign> {
   return issues.length > 0 ? fail(issues) : ok({ campaign, scenarios, arms });
 }
 
+/**
+ * The variables an arm's `telemetry_off` may not set (REQ-RUN-18, the parity rules): the agent's and the runner's —
+ * the credential, the agent's own settings — which would change the agent every arm shares, not a tool's telemetry.
+ */
+const OWNED_VARIABLES = /^(ANTHROPIC_|CLAUDE_|BENCH_)/;
+
 /** What an arm definition misses of REQ-FMT-05 as amended, one sentence each naming the field. */
 function armIssues(armsRoot: string, arm: Arm): string[] {
   const issues: string[] = [];
@@ -104,6 +110,14 @@ function armIssues(armsRoot: string, arm: Arm): string[] {
       "telemetry_off is required: a harness arm says how its tool's telemetry is turned off ([] when it has none)",
     );
   }
+  (arm.telemetryOff ?? []).forEach((setting, index) => {
+    const name = setting.slice(0, setting.indexOf('='));
+    if (OWNED_VARIABLES.test(name)) {
+      issues.push(
+        `telemetry_off[${index}] sets ${name}, which the runner or the agent owns: only a tool's own telemetry is set here`,
+      );
+    }
+  });
   if (arm.docsOf !== undefined) {
     if (!existsSync(join(armsRoot, arm.docsOf, 'arm.yaml')))
       issues.push(`docs_of names '${arm.docsOf}', which is not an arm under arms/`);

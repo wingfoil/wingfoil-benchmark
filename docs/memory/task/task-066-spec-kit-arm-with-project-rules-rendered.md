@@ -9,7 +9,7 @@ features: [F7.1]
 acceptance:
   - "competitors.feature#A competitor arm runs a scenario under the same rules"
   - "competitors.feature#An arm definition that misses what v0.2 requires is refused"
-requirements: [REQ-FMT-05, REQ-FMT-14, REQ-RUN-12, REQ-RUN-18, REQ-RES-09]
+requirements: [REQ-FMT-05, REQ-FMT-14, REQ-RUN-12, REQ-RUN-18]
 ---
 
 ## Context
@@ -32,6 +32,10 @@ W12's "Ends with" is checked after task-067.
 
 - `competitors.feature` @F7.1: the speckit row of the outline; the rules reaching the arm without changing the
   scenario; the arm's setup published; the arm-definition errors. **Red-first.**
+- **As delivered** (the Design, "Which scenarios this task delivers"): the speckit row of the outline and the
+  arm-definition errors are this task's; the setup page (REQ-RES-09's setup half, dropped from this task's
+  requirements) goes with task-067, and the rules reaching every arm with W13's OpenSpec task, which completes it.
+  task-067's Context says so.
 
 ## Design
 
@@ -88,7 +92,8 @@ A scenario's project rules stay declared once, as the wingfoil arm's directives 
 speckit arm's setup the runner writes it to the workspace's `.specify/memory/constitution.md` (replacing the template
 `init` left), keeps a copy in the run's results under `generated/constitution.md`, and records `generated_sha256` in
 `run.json`. A scenario without rules leaves the template, and the run records none. The scenario and its hash do not
-change.
+change. The template is Spec Kit's own state after `init`: in S1–S3 the manual sends the agent to a constitution of
+placeholders, as any Spec Kit user starts from; the agent may fill it, which the step's patch shows.
 
 ### Out of this task
 
@@ -125,8 +130,8 @@ The setup page (REQ-RES-09's setup half) goes with task-067, since it shows what
    []` on wingfoil, `docs_of: wingfoil` on baseline-docs; the `speckit` builder (wheel and bundle) and a `.whl` as the
    package; the arm's telemetry settings in its container's environment; `harness.version` and `telemetry_off` in
    `run.json`; `TEST_REGISTER` admits speckit v1.1.0, the fixture's harness arm declares `telemetry_off: []`. Both
-   acceptance scenarios green; three runner tests adapted (harness arms written without `telemetry_off`; the harness
-   record's `version`).
+   acceptance scenarios green. Three runner unit tests stayed red at this commit and at `5ce269f` (harness arms written
+   without `telemetry_off`; the harness record's `version`): they were adapted in `2b88b1e`.
 4. `2b88b1e` `feat(cli)`: `BENCH_SPECKIT_REPO` in the preflight's table and purposes; `checkSpending` takes the list of
    tools the execution builds and gives each its clone (tests first, red: 3 failed); README's variables table.
 5. `285a040` `feat(runner, arms)`: `renderConstitution` (tests first, red), the runner's `RULES_GENERATORS` (speckit →
@@ -137,3 +142,33 @@ The setup page (REQ-RES-09's setup half) goes with task-067, since it shows what
    clone at v1.1.0: the builder built the bundle (network for the dependencies), the setup installed it offline and
    initialized Spec Kit, T2's rule ("No throw") reached the constitution, and the manual is the agent's `CLAUDE.md`
    (Spec Kit writes none): passed. It skips when the variable is unset, as WingFoil's test skips without its clone.
+
+### Review
+
+- **Round 1** (independent read-only Explore subagent, on `0baff74`): nothing blocking. It inspected every removed
+  line (none lost), ran four test files (40/40) and `tsc`, and checked the readers of the new `run.json` fields, the
+  site's manual check, wingfoil's runs under the merge rule, the setup against task-065's draft, the builder against
+  Spec Kit's air-gapped doc, the constitution against its template, the credential's precedence, and the manual's
+  parity with wingfoil's. Findings and outcomes:
+  1. should-fix — the task's Context, criteria and requirements still promised the setup page and the rules
+     scenario; the hand-off lived only in the Design. **Fixed:** REQ-RES-09 dropped from the requirements, an "as
+     delivered" line under the criteria, and task-067's Context records what it receives.
+  2. should-fix — the notes put three test adaptations in the wrong commit. **Fixed:** `2b88b1e`, and the two
+     earlier commits left them red.
+  3. should-fix — promised unit tests were missing. **Fixed:** `docs_of` with `requires`, a bad `NAME=value`, the
+     telemetry settings in the container with the runner's variables winning, the builder's script, `checkSpending`
+     with two tools.
+  4. should-fix — `telemetry_off` could set any variable, the agent's included. **Fixed:** `ANTHROPIC_*`, `CLAUDE_*`
+     and `BENCH_*` are refused, naming the setting (a test).
+  5. should-fix — the merge rule kept the manual twice when a tool wrote before it. **Fixed:** the manual is taken out
+     wherever it lies, and kept once, first (a test).
+  6. nit — the constitution took every directive, baseline-docs only the developer's and global ones. **Fixed:** both
+     read `developerDirectives`, now exported, so each arm gets the same rules.
+  7. nit — single-quoted titles and body headings. **Fixed** by the same reuse: titles read as YAML, headings shifted.
+  8. nit — the "no other approval" check reads the arm's files only, and the shared git identity is named "Benchmark
+     Approver". **Not changed:** adr-003 decision 7 gives every arm that identity; the setup page (task-067) states it
+     carries no authority in a competitor arm.
+  9. nit — the bundle's dependencies are resolved at build time. **Fixed in part:** the bundle carries `SHA256SUMS` of
+     its wheels; the deviation (uv, resolution at build) is for the setup page.
+  10. nit — README lacked the two fields; the template constitution in S1–S3. **Fixed:** README's paragraph and a
+      Design sentence; the docker test's skip without `BENCH_SPECKIT_REPO` stays, as WingFoil's.

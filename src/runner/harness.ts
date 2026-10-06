@@ -98,6 +98,8 @@ function speckitBuild(sha: string): string {
     `uv build --wheel --out-dir ${BUILD}/bundle`,
     `uv run --no-project --with pip python -m pip download -q -d ${BUILD}/bundle ${BUILD}/bundle/specify_cli-*.whl`,
     `cp ${BUILD}/bundle/specify_cli-*.whl ${BUILD}/out/`,
+    // The dependencies were resolved from ranges when the bundle was built: each wheel's digest travels with it.
+    `(cd ${BUILD}/bundle && sha256sum *.whl > SHA256SUMS)`,
     `echo ${sha} > ${BUILD}/bundle/.speckit-commit`,
     `tar -czf ${BUILD}/out/installed.tgz -C ${BUILD}/bundle .`,
   ].join('\n');

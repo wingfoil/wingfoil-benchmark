@@ -105,14 +105,22 @@ function nameOf(entry: unknown): string {
   return typeof entry === 'string' ? text(entry) : text(object(entry).name);
 }
 
-/** The directives the developer role reads: its own and the global ones, by id. */
-function rules(files: ReadonlyMap<string, string>): string[] {
+/**
+ * The directives the developer role reads: its own and the global ones, by id — a scenario's project rules as every
+ * generator reads them (REQ-RUN-11, REQ-FMT-14), so that each arm gets the same rules.
+ */
+export function developerDirectives(files: ReadonlyMap<string, string>): readonly Document[] {
   const roles = yamlOf(files.get('.wingfoil/roles.yaml'));
   const assignments = object(roles.assignments);
   const wanted = new Set([...list(assignments.developer), ...list(roles.global)].map(text));
-  const directives = documents(files, (path) => /^\.wingfoil\/directives\/[^/]+\/[^/]+\.md$/.test(path))
+  return documents(files, (path) => /^\.wingfoil\/directives\/[^/]+\/[^/]+\.md$/.test(path))
     .filter((document) => wanted.has(document.id))
     .sort(byId);
+}
+
+/** The directives the developer role reads, as the Rules section. */
+function rules(files: ReadonlyMap<string, string>): string[] {
+  const directives = developerDirectives(files);
   return directives.length > 0 ? ['## Rules', ...directives.flatMap(render)] : [];
 }
 
@@ -144,7 +152,8 @@ function process(files: ReadonlyMap<string, string>): string[] {
   return blocks.length > 0 ? ['## Process', ...blocks] : [];
 }
 
-interface Document {
+/** A Markdown document of the configuration, its front matter read. */
+export interface Document {
   readonly id: string;
   readonly title: string;
   readonly status: string;
@@ -174,7 +183,7 @@ function render(document: Document): string[] {
 }
 
 /** Every heading outside a code fence, moved {@link HEADING_SHIFT} levels down, to at most six. */
-function shiftHeadings(body: string): string {
+export function shiftHeadings(body: string): string {
   let fenced = false;
   return body
     .split('\n')

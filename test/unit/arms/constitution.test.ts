@@ -6,12 +6,12 @@ import { describe, expect, it } from 'vitest';
 import { renderConstitution } from '../../../src/arms/index.js';
 import { repoPath } from '../../support/paths.js';
 
-const directive = (title: string, body: string) =>
+const directive = (id: string, title: string, body: string, quote = '"') =>
   [
     '---',
-    `id: ${title.toLowerCase().replace(/ /g, '-')}`,
+    `id: ${id}`,
     'type: directive',
-    `title: "${title}"`,
+    `title: ${quote}${title}${quote}`,
     '---',
     '',
     `# ${title}`,
@@ -20,11 +20,30 @@ const directive = (title: string, body: string) =>
     '',
   ].join('\n');
 
+const ROLES = [
+  'assignments:',
+  '  developer:',
+  '    - r1-a',
+  '  reviewer:',
+  '    - r3-review',
+  'global:',
+  '  - r2-b',
+  '',
+].join('\n');
+
 describe("Spec Kit's constitution from a scenario's project rules (REQ-FMT-14)", () => {
-  it('renders each directive as a principle, in path order, its body unchanged and without its front matter', () => {
+  it('renders the directives the developer reads — its own and the global ones — by id, as principles', () => {
     const files = new Map([
-      ['.wingfoil/directives/custom/r2-b.md', directive('Second rule', 'Do the second thing.')],
-      ['.wingfoil/directives/custom/r1-a.md', directive('First rule', 'Do the first thing.\n\nAnd mean it.')],
+      ['.wingfoil/roles.yaml', ROLES],
+      ['.wingfoil/directives/custom/r2-b.md', directive('r2-b', 'Second rule', 'Do the second thing.', "'")],
+      [
+        '.wingfoil/directives/custom/r1-a.md',
+        directive('r1-a', 'First rule', 'Do the first thing.\n\n## Why\n\nMean it.'),
+      ],
+      [
+        '.wingfoil/directives/custom/r3-review.md',
+        directive('r3-review', 'Review rule', 'Only for reviewers.'),
+      ],
       ['.wingfoil/dna.yaml', 'project: {}\n'],
     ]);
     expect(renderConstitution(files)).toBe(
@@ -39,7 +58,9 @@ describe("Spec Kit's constitution from a scenario's project rules (REQ-FMT-14)",
         '',
         'Do the first thing.',
         '',
-        'And mean it.',
+        '##### Why',
+        '',
+        'Mean it.',
         '',
         '### Second rule',
         '',
@@ -49,18 +70,31 @@ describe("Spec Kit's constitution from a scenario's project rules (REQ-FMT-14)",
     );
   });
 
-  it('is undefined for a scenario that declares no rules, so that init leaves its own template', () => {
+  it('is undefined for a scenario that declares no rule the developer reads, so that init leaves its template', () => {
     expect(renderConstitution(new Map([['.wingfoil/dna.yaml', 'project: {}\n']]))).toBeUndefined();
+    expect(
+      renderConstitution(
+        new Map([
+          ['.wingfoil/roles.yaml', ROLES],
+          [
+            '.wingfoil/directives/custom/r3-review.md',
+            directive('r3-review', 'Review rule', 'Only for reviewers.'),
+          ],
+        ]),
+      ),
+    ).toBeUndefined();
   });
 
   it("renders S8's four rules, the same bytes every time", () => {
-    const dir = repoPath('scenarios/S8/1.0/arms/wingfoil/.wingfoil/directives/custom');
-    const files = new Map(
-      readdirSync(dir).map((name) => [
+    const base = repoPath('scenarios/S8/1.0/arms/wingfoil/.wingfoil');
+    const dir = join(base, 'directives', 'custom');
+    const files = new Map([
+      ['.wingfoil/roles.yaml', readFileSync(join(base, 'roles.yaml'), 'utf8')],
+      ...readdirSync(dir).map((name): [string, string] => [
         `.wingfoil/directives/custom/${name}`,
         readFileSync(join(dir, name), 'utf8'),
       ]),
-    );
+    ]);
     const first = renderConstitution(files);
     expect(first).toBe(renderConstitution(new Map([...files].reverse())));
     expect(first?.match(/^### /gm)).toHaveLength(4);

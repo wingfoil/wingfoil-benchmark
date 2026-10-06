@@ -713,7 +713,8 @@ function mergeManual(arm: Arm, file: string): ManualRecord | undefined {
   const manual = readFileSync(arm.manualPath, 'utf8');
   const now = existsSync(file) ? readFileSync(file, 'utf8') : '';
   if (now === manual) return undefined;
-  const tool = (now.startsWith(manual) ? now.slice(manual.length) : now).trim();
+  // The tool's content is what it wrote around the manual, before or after it, the manual itself kept once.
+  const tool = (now.includes(manual) ? now.replace(manual, '\n') : now).trim();
   const merged = tool === '' ? manual : `${manual.trimEnd()}\n\n## ${arm.requires ?? arm.name}\n\n${tool}\n`;
   writeFileSync(file, merged);
   return { ...measure(merged), sha256: measure(manual).sha256 };
