@@ -182,3 +182,8 @@ from the bundle, init, telemetry: none to turn off, said so); the ledger line.
   reads as relative; the date is 2026-10-06, the day of both assessments.
 - Final checks on `eff6ff3`: `npm run lint` clean; the site and eligibility tests (94/94) with the re-assessed
   register. No code changed: the full suite, `test:bin` and `test:docker` not run.
+
+### Review and approval
+
+- `npx wingfoil memory submit task-065-…` → `29cf8ec`. Declared: `in-progress → in-review`, one commit. Observed: exit
+  0, JSON `from`/`to` as declared, one file, `status` only. Matches.
