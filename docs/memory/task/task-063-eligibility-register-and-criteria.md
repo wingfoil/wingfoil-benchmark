@@ -2,7 +2,7 @@
 id: task-063-eligibility-register-and-criteria
 type: task
 title: "Eligibility register and criteria"
-status: in-progress
+status: in-review
 release: v0.2
 wave: W12
 features: [F7.4]
