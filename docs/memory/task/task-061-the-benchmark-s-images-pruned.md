@@ -88,3 +88,22 @@ the exit code is 1 if any failed. `--dry-run` removes nothing. USAGE and README'
 
 - `npx wingfoil memory add --type task --title "The benchmark's images pruned"`. Declared: creates the element from the template and
   commits it. Observed: `wf(task): add task-061-the-benchmark-s-images-pruned`, `status: draft`.
+
+### WingFoil commands (declared vs observed)
+
+- `npx wingfoil memory submit task-061-…` → `9f50872`, in the linked worktree
+  `WingFoil2-Benchmark-task-061` with its own `npm ci`. Declared: `backlog → in-progress`, one commit. Observed:
+  exit 0, JSON `from`/`to` as declared, one file, `status` only. Matches.
+
+### Build
+
+1. `c1bb7ac` `test(cli, ports)`: the port's and the command's tests, written first and red (`dockerImagesCli is
+   not a function`; `Cannot find module '…/src/cli/images.js'`).
+2. `7abc65a` `feat(cli)`: `src/core/ports/images.ts` (`ImagePort`, `dockerImagesCli`), `src/cli/images.ts`
+   (`pruneCandidates`, `imagesCommand`), `main`'s dispatch, `Ports.images`, USAGE (the two exact-usage tests, unit and
+   bin, gain its line), README, and `test/docker/images.test.ts` (read-only against the daemon, 2/2).
+3. **The real prune on the host, `--dry-run`** (2026-10-06, built `dist/` of this branch): exit 0; would remove 53
+   images — 37 `dry-*`, 7 campaign images, 9 old `bench-score:*` — and keeps `bench-score:6dec5db6f4fa`, the current
+   scoring image. No other image is listed (the host's `<12 hex>.dkr.ecr.…`, `bench-spike-*`, `busybox` … are
+   left alone, as the Design's anchors say). The removal itself waits for the approver's go (it deletes the
+   images other sessions' dry runs may still read).
