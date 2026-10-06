@@ -1,4 +1,4 @@
-import { writeFileSync } from 'node:fs';
+import { cpSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -697,5 +697,48 @@ describe('realPorts', () => {
     writeFileSync(file, JSON.stringify({ T0: { '1': { commands: ['true'] } } }));
     const result = withScript(file, () => realPorts(campaign()));
     expect(result.ok && Object.keys(result.value).sort()).toEqual(['agent', 'docker', 'git']);
+  });
+});
+
+describe('a campaign with a Spec Kit harness (task-066)', () => {
+  function speckitYaml(): Record<string, unknown> {
+    return {
+      ...completeCampaignYaml(),
+      arms: ['baseline', 'speckit'],
+      harnesses: { speckit: { tool: 'speckit', version: 'v1.1.0' } },
+      scenarios: [{ id: 'S1', version: '1.0' }],
+      repetitions: { S1: 1 },
+      agent: { name: 'fake', version: '1.0.0' },
+      models: { default: 'fake-model' },
+    };
+  }
+
+  /** A repository whose speckit arm is the benchmark's own. */
+  function speckitRepo() {
+    const repo = writeRepo(speckitYaml(), ['S1@1.0']);
+    rmSync(join(repo.root, 'arms', 'speckit'), { recursive: true, force: true });
+    cpSync(repoPath('arms/speckit'), join(repo.root, 'arms', 'speckit'), { recursive: true });
+    return repo;
+  }
+
+  it('needs BENCH_SPECKIT_REPO, refused before the estimate, naming what it is for', async () => {
+    const { file } = speckitRepo();
+    vi.stubEnv('BENCH_SPECKIT_REPO', '');
+    const ports = doubles();
+    const { code, stderr } = await runWith(ports, 'campaign', 'run', file);
+    expect(code).toBe(1);
+    expect(stderr).toBe(
+      'BENCH_SPECKIT_REPO: is not set: it names the local Spec Kit clone the Spec Kit under test is built from\n',
+    );
+    expect(ports.recorded.runOnce).toEqual([]);
+  });
+
+  it('builds Spec Kit from the clone the variable names', async () => {
+    const { file } = speckitRepo();
+    priceCampaign(file);
+    vi.stubEnv('BENCH_SPECKIT_REPO', '/clones/spec-kit');
+    const ports = doubles({ commits: { 'v1.1.0': 'f1d3a4f8337ebbd3ae22760a9c12e3352b93a175' } });
+    await runWith(ports, 'campaign', 'run', file);
+    expect(ports.recorded.gitCalls[0]).toBe('resolve /clones/spec-kit v1.1.0');
   });
 });

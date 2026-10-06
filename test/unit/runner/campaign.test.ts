@@ -95,7 +95,7 @@ describe('checkCampaign, arms and harnesses (REQ-FMT-01, REQ-FMT-05, dl-003)', (
     const issues = issuesOf(plainCampaign(['baseline', 'constructor']), (root) =>
       writeFileSync(
         join(root, 'arms', 'constructor', 'arm.yaml'),
-        stringify({ ...plainArmYaml('constructor'), requires: 'openspec' }),
+        stringify({ ...plainArmYaml('constructor'), requires: 'openspec', telemetry_off: [] }),
       ),
     );
     expect(issues).toEqual([

@@ -97,6 +97,7 @@ describe('the WingFoil under test (REQ-RUN-14, adr-003 decisions 1-5)', () => {
       ) as { harness?: Record<string, string>; arm_digest?: string };
     expect(record('wingfoil').harness).toEqual({
       tool: 'wingfoil',
+      version: '3df305e',
       commit: SHA,
       tarball_sha256: expect.stringMatching(/^[0-9a-f]{64}$/),
       installed_sha256: expect.stringMatching(/^[0-9a-f]{64}$/),
@@ -177,7 +178,7 @@ describe('the WingFoil under test (REQ-RUN-14, adr-003 decisions 1-5)', () => {
     const { checked: campaign } = checked(yaml, (root) =>
       writeFileSync(
         join(root, 'arms', 'wingfoil', 'arm.yaml'),
-        stringify({ ...plainArmYaml('wingfoil'), requires: 'openspec' }),
+        stringify({ ...plainArmYaml('wingfoil'), requires: 'openspec', telemetry_off: [] }),
       ),
     );
 

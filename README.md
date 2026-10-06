@@ -111,6 +111,7 @@ It then lists what the campaign's runs need from the machine, one `requires` lin
 | `BENCH_AGENT_TOKEN_FILE` | the file holding the agent's token | `run` | a real agent |
 | `BENCH_FAKE_SCRIPT` | the fake agent's script | `run` | the fake agent |
 | `BENCH_WINGFOIL_REPO` | the local WingFoil clone the harness is built from | `run` | a `wingfoil` harness |
+| `BENCH_SPECKIT_REPO` | the local Spec Kit clone (`github/spec-kit`) the harness is built from | `run` | a `speckit` harness |
 | `BENCH_HOLDOUT_PATH` | the hold-out (or `--holdout`) | `score` | a scenario that declares one |
 
 `run` refuses, before its estimate and naming every one, when a variable it needs is not set, or names the wrong

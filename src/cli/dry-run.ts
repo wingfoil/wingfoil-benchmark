@@ -68,7 +68,7 @@ export async function dryRunCommand(
 
   const spending = checkSpending(profile, {
     allowSpending: args.allowSpending,
-    buildsWingfoil: checked.value.arms.some((loaded) => loaded.requires === 'wingfoil'),
+    builds: checked.value.arms.flatMap((loaded) => (loaded.requires === undefined ? [] : [loaded.requires])),
     refusal: {
       path: 'dry run',
       message:
