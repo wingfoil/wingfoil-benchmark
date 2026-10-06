@@ -82,3 +82,65 @@ from the bundle, init, telemetry: none to turn off, said so); the ledger line.
 
 - `npx wingfoil memory add --type task --title "Spec Kit in the run container spike"`. Declared: creates the element from the template and
   commits it. Observed: `wf(task): add task-065-spec-kit-in-the-run-container-spike`, `status: draft`.
+
+### WingFoil commands (declared vs observed)
+
+- `npx wingfoil memory submit task-065-…`, in the linked worktree `WingFoil2-Benchmark-task-065` with its own `npm
+  ci`. Declared: `backlog → in-progress`, one commit. Observed: exit 0, JSON `from`/`to` as declared, one file,
+  `status` only. Matches.
+
+### The spike (2026-10-06, from the main checkout; output in its `spikes/task-065/out/`)
+
+- **B1, the wheel bundle:** in `bench-spike-task-065` (`docker/run-image` with Claude Code 2.1.280, uv 0.12.23, Python
+  3.11.2), from `git archive` of tag v1.1.0 (`f1d3a4f8`): `uv build --wheel`, then `pip download` of its dependencies
+  (through `uv run --with pip`). 14 wheels: `specify_cli-1.1.0` and typer 0.27.2, click 8.5.0, rich 15.0.0, readchar
+  4.2.2, pyyaml 6.0.3 (cp311 manylinux), packaging 26.3, pathspec 1.1.1, json5 0.15.0, markdown-it-py 4.2.0, mdurl
+  0.1.2, pygments 2.21.0, shellingham 1.5.4, annotated-doc 0.0.5; each digest in `out/b1/bundle.sha256`. pyyaml's
+  wheel is platform-specific: the bundle is for this image's Python and architecture, as the air-gapped doc warns.
+- **B2, install and init with `--network none`:** `uv tool install --offline --no-index --find-links /bundle
+  specify-cli` installed the 14 packages and the `specify` executable; `specify init --here --force --integration
+  claude --script sh --ignore-agent-tools` exited 0 in a git copy of S3@1.0's seed and added 30 files, nothing
+  changed: ten skills (`.claude/skills/speckit-{analyze,checklist,clarify,constitution,converge,implement,plan,specify,
+  tasks,taskstoissues}/SKILL.md`), and under `.specify/` a constitution (`memory/constitution.md`, a template of
+  placeholders), five templates, six bash scripts, a workflow (`workflows/speckit/workflow.yml`), its registry,
+  `init-options.json`, `integration.json`, two integration manifests and a `.gitignore`. **No `CLAUDE.md`.**
+- **R1, one real session** (Sonnet 5 on Claude Code 2.1.280, ceiling 3.00 USD): S3 step 1's prompt plus two sentences
+  saying the project follows Spec Kit through its skills. `success`, 68 turns, **1.4360 USD** (`modelUsage`: Sonnet 5
+  only, `costBasis: list`), `terminal_reason: completed`. It invoked the skills in order — `speckit-specify` (with a
+  restatement of the request as its argument), `speckit-plan`, `speckit-tasks`, `speckit-implement` — ran Spec Kit's
+  bash scripts (`setup-plan.sh`, `setup-tasks.sh`, `check-prerequisites.sh`), wrote `specs/001-rental-module/`
+  (spec, plan, research, data model, contract, quickstart, a requirements checklist, tasks) and then the code and its
+  tests (15/15 green, `tsc` clean). The secret scan found the token in no file.
+
+### Answers
+
+1. **Install and init headless:** yes. The pinned tag installs from a wheel bundle, offline, in the run image, and
+   `specify init --here --force --integration claude --script sh --ignore-agent-tools` runs with no terminal and no
+   network. `--integration claude` is required (a non-interactive init otherwise defaults to Copilot).
+2. **What it writes:** the 30 files above. **Project information** (for the docs control, task-067): only the
+   constitution, `.specify/memory/constitution.md`, which init leaves as placeholders — the place for a scenario's
+   project rules (task-066). **Mechanics**: the skills, the templates, the scripts, the workflow and its registry,
+   the options, integration and manifest files. No `CLAUDE.md`, so the arm's manual and rules do not collide with one.
+3. **Can the agent follow the skills under `claude -p`?** Yes, and it did not wait: one session ran specify → plan →
+   tasks → implement to green tests. It skipped `/speckit-constitution` (the constitution stayed a template) and the
+   optional clarify, analyze and checklist steps beyond the requirements checklist `specify` writes. For the arm: the
+   manual names the steps the runner's step prompts map to; the neutral approver had nothing to answer here, so where
+   Spec Kit would wait is not observed on S3 step 1 (a clarification is its documented place to ask).
+4. **Workflow engine, own LLM calls, network:** none from Spec Kit. The session never ran `specify` or `specify
+   workflow`; its scripts are local shell; install and init ran with `--network none`; no telemetry or analytics in
+   its source. The only network use was the agent's own `npm install --save-dev typescript @types/node`, which every
+   arm's agent may do.
+
+### For task-066
+
+- `spikes/task-065/setup.sh`: the setup drafted — the bundle extracted from the harness artifact, installed offline,
+  `init` with the four flags; no telemetry to turn off, said so.
+- The harness artifact is the bundle, packed as a `.tgz` (REQ-FMT-12): built once per pin by a builder like WingFoil's,
+  in the campaign image, so that pyyaml's wheel matches its Python.
+- The project rules go into `.specify/memory/constitution.md`, Spec Kit's own place for them.
+
+### Register and ledger
+
+- `eligibility/register.yaml`: the speckit v1.1.0 entry re-assessed in the run container (each criterion's evidence
+  now observed, not read); verdict admitted, as before.
+- `docs/calibration/v0.2-ledger.md`: R1's line; **total so far 1.6473 USD**.
