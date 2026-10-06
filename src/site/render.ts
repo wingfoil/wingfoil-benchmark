@@ -360,7 +360,8 @@ export function landingPage(model: SiteModel): string {
     '</tbody>\n</table>\n</div>\n' +
     `<p class="legend">Each value is the mean of its runs, with its n; n = 1 is preliminary; a range is shown from ` +
     `n = 3. Deltas are against the baseline. ` +
-    `<a href="method.html">How to read these results</a>.</p>\n` +
+    `<a href="method.html">How to read these results</a>; ` +
+    `<a href="eligibility.html">which tools are eligible, and why</a>.</p>\n` +
     `<p class="meta">Campaign ${e(model.campaign)}, execution ${model.execution}: ${runs(model.runs)} of ${e(model.model)}` +
     `${model.sliceRuns === 0 ? '' : `; ${runs(model.sliceRuns)} of other models, reported apart`}.</p>\n`;
   return page(title(model), body, 2);
@@ -438,6 +439,15 @@ function scenarioSection(scenario: ScenarioRow): string {
 /** The method page around its rendered text (task-046): a link back to the landing page, then the text. */
 export function methodShell(model: SiteModel, html: string): string {
   return page(`Method — ${title(model)}`, `<p><a href="index.html">← ${e(title(model))}</a></p>\n${html}`, 2);
+}
+
+/** The eligibility page around its rendered text (F7.4): a link back to the landing page, then the text. */
+export function eligibilityShell(model: SiteModel, html: string): string {
+  return page(
+    `Eligibility — ${title(model)}`,
+    `<p><a href="index.html">← ${e(title(model))}</a></p>\n${html}`,
+    2,
+  );
 }
 
 /** A page of published material, under `material/` (task-046): a link back to the method page, then its body. */

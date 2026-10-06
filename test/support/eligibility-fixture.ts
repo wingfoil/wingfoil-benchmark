@@ -48,5 +48,14 @@ export function writeRegister(root: string, entries: readonly Record<string, unk
   writeFileSync(join(root, 'eligibility', 'register.yaml'), registerYaml(entries));
 }
 
-/** The register every test repository gets: the WingFoil pins the tests use, admitted. */
-export const TEST_REGISTER = [registerEntry('wingfoil', '3df305e'), registerEntry('wingfoil', 'v0.2.2')];
+/**
+ * The register every test repository with arms gets (`writeArmsNamed`): the harness pins the tests use, admitted, so
+ * that a test about something else is not refused by eligibility. A test about eligibility writes its own.
+ */
+export const TEST_REGISTER = [
+  registerEntry('wingfoil', '3df305e'),
+  registerEntry('wingfoil', 'v0.2.2'),
+  registerEntry('wingfoil', 'abc1234'),
+  registerEntry('wingfoil', '0.2.0'),
+  registerEntry('openspec', '1.0.0'),
+];

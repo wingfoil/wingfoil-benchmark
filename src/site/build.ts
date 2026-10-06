@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { ok } from '../core/index.js';
 import type { Result } from '../core/index.js';
 
+import { eligibilityPage } from './eligibility.js';
 import { methodPages } from './method.js';
 import { siteModel } from './model.js';
 import { categoryFile, categoryPage, landingPage, plainHeadlines, rootPage, STYLE } from './render.js';
@@ -34,6 +35,8 @@ export function buildSite(
   if (!model.ok) return model;
   const method = methodPages(root, execution, model.value);
   if (!method.ok) return method;
+  const eligibility = eligibilityPage(root, model.value);
+  if (!eligibility.ok) return eligibility;
   const pages: [string, string][] = [
     ['index.html', landingPage(model.value)],
     ...model.value.categories.map((row): [string, string] => [
@@ -41,6 +44,7 @@ export function buildSite(
       categoryPage(model.value, row),
     ]),
     ['method.html', method.value.method],
+    ['eligibility.html', eligibility.value],
     ...[...method.value.material].map(([name, text]): [string, string] => [`material/${name}`, text]),
   ];
   const directory = `${SITE}/${model.value.campaign}/${model.value.execution}/`;

@@ -46,6 +46,14 @@ export type {
   RunOnceRequest,
   ScoringContainerRequest,
 } from './ports/docker.js';
+export {
+  ELIGIBILITY_CRITERIA,
+  eligibilityIssues,
+  failingCriteria,
+  REGISTER_FILE,
+  registerSchema,
+} from './eligibility.js';
+export type { Register, RegisterEntry } from './eligibility.js';
 export { dockerImagesCli } from './ports/images.js';
 export type { ContainerInfo, ImageInfo, ImagePort } from './ports/images.js';
 export { gitCli } from './ports/git.js';

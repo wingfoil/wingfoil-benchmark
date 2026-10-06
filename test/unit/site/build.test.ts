@@ -21,7 +21,7 @@ function tree(dir: string): Record<string, string> {
 }
 
 describe('bench site build (REQ-CLI-09 as amended in 1.20, task-045)', () => {
-  it('writes the landing, a page per category A–G, the method page, the root page and the stylesheet', async () => {
+  it('writes the landing, a page per category A–G, the method and eligibility pages, the root page and the stylesheet', async () => {
     const { root } = await siteExecution();
     const built = await benchSite(root, 'site', 'build', EXECUTION);
     expect(built.code, built.stderr).toBe(0);
@@ -35,6 +35,7 @@ describe('bench site build (REQ-CLI-09 as amended in 1.20, task-045)', () => {
       'abcdef012345/1/category-e.html',
       'abcdef012345/1/category-f.html',
       'abcdef012345/1/category-g.html',
+      'abcdef012345/1/eligibility.html',
       'abcdef012345/1/index.html',
       'abcdef012345/1/material/manual-baseline.html',
       'abcdef012345/1/material/manual-wingfoil.html',
@@ -43,7 +44,7 @@ describe('bench site build (REQ-CLI-09 as amended in 1.20, task-045)', () => {
       'style.css',
     ]);
     // It prints what it wrote and the headline
-    expect(built.stdout).toContain('site: site/abcdef012345/1/ (11 pages)\n');
+    expect(built.stdout).toContain('site: site/abcdef012345/1/ (12 pages)\n');
     expect(built.stdout).toContain('Against the baseline, wingfoil is better in 1, worse in 1');
 
     // Static: no script anywhere, every page linked to the one stylesheet
@@ -56,10 +57,11 @@ describe('bench site build (REQ-CLI-09 as amended in 1.20, task-045)', () => {
     expect(files['index.html']).toContain('<meta http-equiv="refresh" content="0; url=abcdef012345/1/">');
     expect(files['index.html']).toContain('<a href="abcdef012345/1/">');
 
-    // The landing links every category page and the method page
+    // The landing links every category page, the method page and the eligibility page
     const landing = files['abcdef012345/1/index.html'] ?? '';
     for (const category of 'abcdefg') expect(landing).toContain(`href="category-${category}.html"`);
     expect(landing).toContain('href="method.html"');
+    expect(landing).toContain('href="eligibility.html"');
     expect(landing).toContain('A, B, E and G are not covered in this campaign.');
   }, 120_000);
 
@@ -165,8 +167,20 @@ describe('bench site build (REQ-CLI-09 as amended in 1.20, task-045)', () => {
     expect(second['0123456789ab/2/index.html']).toBe('an older execution\n');
     delete second['0123456789ab/2/index.html'];
     expect(second).toEqual(first);
-    // No date anywhere
-    for (const text of Object.values(first)) expect(text).not.toMatch(/\b20\d\d-\d\d-\d\d\b/);
+    // No date anywhere, but on the eligibility page the dates the register holds (its assessments and their
+    // evidence): content, not the build's clock
+    const assessed = new Set(
+      readFileSync(join(root, 'eligibility', 'register.yaml'), 'utf8').match(/\b20\d\d-\d\d-\d\d\b/g) ?? [],
+    );
+    for (const [path, text] of Object.entries(first)) {
+      const dates = text.match(/\b20\d\d-\d\d-\d\d\b/g) ?? [];
+      if (path.endsWith('eligibility.html'))
+        expect(
+          dates.filter((date) => !assessed.has(date)),
+          path,
+        ).toEqual([]);
+      else expect(dates, path).toEqual([]);
+    }
   }, 120_000);
 
   it('refuses what it cannot build from, naming it', async () => {
