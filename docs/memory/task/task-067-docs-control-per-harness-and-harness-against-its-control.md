@@ -2,7 +2,7 @@
 id: task-067-docs-control-per-harness-and-harness-against-its-control
 type: task
 title: "Docs control per harness and harness against its control"
-status: in-progress
+status: in-review
 release: v0.2
 wave: W12
 features: [F7.1]
