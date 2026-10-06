@@ -374,7 +374,9 @@ describe('arm digests in the campaign file (REQ-FMT-01 as amended, REQ-FMT-13)',
   });
 
   it('wants every arm of the campaign, and no other', () => {
-    const { baseline: _dropped, ...withoutBaseline } = pinned();
+    const withoutBaseline = Object.fromEntries(
+      Object.entries(pinned()).filter(([arm]) => arm !== 'baseline'),
+    );
     expect(issues({ ...withoutBaseline, ghost: 'b'.repeat(12) })).toEqual([
       "arm_digests.ghost is not one of the campaign's arms",
       'arm_digests.baseline is required: a campaign that pins arm digests pins every arm',
