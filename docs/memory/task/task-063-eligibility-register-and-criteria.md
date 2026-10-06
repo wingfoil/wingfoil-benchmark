@@ -189,3 +189,12 @@ Docker test of W3 copy the repository's `eligibility/`. Tests that need another 
   2. should-fix — the Build notes still said the date check allowed the register's dates. **Fixed:** they say round
      1 reverted it.
   3. nit — five re-written evidence lines past 120 columns. **Fixed:** re-wrapped.
+- **Round 3** (a new independent read-only Explore subagent, on `2f72216`): **clean**. It checked `build.test.ts`
+  against main (only this task's five lines), swept every removed line of the branch (each an intended replacement),
+  and compared the re-wrapped register with `807856a`'s as parsed values (identical). One nit, **not changed**: a few
+  table rows of this file pass 120 columns.
+- Final checks: `npm run lint` clean; `npm test` 83 files, 1285/1285, coverage 98.09 % statements, 90.99 % branches
+  (`register.ts` 100 % statements); `npm run test:bin` 8/8 after `test(bin)`, which gives the site's page count as 12
+  (the bin run had found the one count the unit tests do not hold); `npm run test:docker` 18/19 with W6 (scoring)
+  failing while a stale earlier run of the suites still competed for Docker — W6 re-run alone: passed. W3, the test
+  the register touches, passed.
