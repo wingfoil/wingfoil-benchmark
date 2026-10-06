@@ -3,8 +3,9 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { campaignSchema, fail, ok, parseWith, readYamlFile } from '../core/index.js';
-import type { CampaignFile, Issue, Result } from '../core/index.js';
+import type { Arm, CampaignFile, Issue, Result } from '../core/index.js';
 
+import { DOCS_GENERATORS, loadArm, RULES_GENERATORS } from '../arms/index.js';
 import type { Group } from '../results/index.js';
 
 import { renderMarkdown } from './markdown.js';
@@ -85,6 +86,9 @@ export function methodPages(root: string, execution: string, model: SiteModel): 
     material.set(`manual-${arm}.html`, materialPage(`Operating manual: ${arm}`, renderMarkdown(text).html));
   }
   if (issues.length > 0) return fail(issues);
+  const setups = setupPages(root, model.arms);
+  if (!setups.ok) return setups;
+  for (const [name, page] of setups.value) material.set(name, page);
   for (const [name, page] of publishedMaterial(
     root,
     model.categories.flatMap((row) => row.scenarios.map((s) => s.scenario)),
@@ -113,12 +117,106 @@ export function methodPages(root: string, execution: string, model: SiteModel): 
 /** A material page's title, from its file name. */
 function materialTitle(name: string): string {
   const base = name.replace(/\.html$/, '');
+  if (base.startsWith('setup-')) return `The setup of the ${base.slice('setup-'.length)} arm`;
   if (base.startsWith('manual-')) return `Operating manual of the ${base.slice('manual-'.length)} arm`;
   if (base.startsWith('directives-'))
     return `The directives of ${base.slice('directives-'.length).toUpperCase()}`;
   if (base.startsWith('notice-'))
     return `Third-party material of ${base.slice('notice-'.length).toUpperCase()}`;
   return `Licence: ${base.slice('licence-'.length)}`;
+}
+
+/**
+ * The setup page of each harness arm of the execution (REQ-RES-09, task-067), from the repository's `arms/<arm>/` as
+ * the manual pages are: its setup script, its telemetry setting, its manual, its rules generator, its docs control and
+ * what that control's generator renders. An arm without a harness (a control) has none.
+ */
+function setupPages(root: string, names: readonly string[]): Result<ReadonlyMap<string, string>> {
+  const armsRoot = join(root, 'arms');
+  const pages = new Map<string, string>();
+  const issues: Issue[] = [];
+  const controls: Arm[] = [];
+  for (const name of listDirectories(armsRoot)) {
+    const loaded = loadArm(armsRoot, name);
+    if (loaded.ok && loaded.value.docsOf !== undefined) controls.push(loaded.value);
+  }
+  for (const name of names) {
+    const loaded = loadArm(armsRoot, name);
+    if (!loaded.ok) {
+      issues.push(...loaded.issues.map((issue) => ({ ...issue, path: `arms/${name}/${issue.path}` })));
+      continue;
+    }
+    const arm = loaded.value;
+    if (arm.requires === undefined) continue;
+    pages.set(
+      `setup-${arm.name}.html`,
+      materialPage(
+        `Setup: ${arm.name}`,
+        setupHtml(
+          arm,
+          readFileSync(arm.setupPath, 'utf8'),
+          controls.filter((control) => control.docsOf === arm.name).map((control) => control.name),
+        ),
+      ),
+    );
+  }
+  return issues.length > 0 ? fail(issues) : ok(pages);
+}
+
+function setupHtml(arm: Arm, script: string, controls: readonly string[]): string {
+  const tool = arm.requires ?? '';
+  const telemetry = arm.telemetryOff ?? [];
+  const rules = RULES_GENERATORS[tool];
+  const docs = DOCS_GENERATORS[tool];
+  const parts = [
+    `<p>How the ${e(arm.name)} arm is set up, before its agent starts: the ${e(tool)} harness at the campaign's pin, ` +
+      `from the repository's <code>arms/${e(arm.name)}/</code>.</p>`,
+    `<h2 id="setup-script">Setup script</h2>\n<pre><code>${e(script)}</code></pre>`,
+    `<h2 id="telemetry">Telemetry</h2>\n` +
+      (telemetry.length === 0
+        ? `<p>The pinned ${e(tool)} sends no telemetry: nothing is turned off.</p>`
+        : `<p>Turned off in the agent's environment:</p>\n<ul>\n${telemetry
+            .map((setting) => `<li><code>${e(setting)}</code></li>\n`)
+            .join('')}</ul>`),
+    `<h2 id="manual">Operating manual</h2>\n<p><a href="manual-${e(arm.name)}.html">The operating manual of the ` +
+      `${e(arm.name)} arm</a>, given to its agent.</p>`,
+    `<h2 id="rules">Rules</h2>\n` +
+      (rules === undefined
+        ? `<p>The scenario's rules are ${e(tool)}'s own configuration, applied by the setup: no rules generator.</p>`
+        : `<p>Written to <code>${e(rules.path)}</code>: ${e(rules.description)}.</p>`),
+    `<h2 id="docs-control">Docs control</h2>\n` +
+      (controls.length === 0 || docs === undefined
+        ? `<p>The ${e(arm.name)} arm has no docs control.</p>`
+        : `<p>${controls.map((control) => `<code>${e(control)}</code>`).join(', ')}: the same agent with the ` +
+          `${e(arm.name)} arm's configuration rendered as documentation, without the harness. Kept from the ` +
+          `configuration: ${docs.kept.map((path) => `<code>${e(path)}/</code>`).join(', ')}.</p>\n` +
+          '<table>\n<thead><tr><th>Content</th><th>Rendered</th><th>Why</th></tr></thead>\n<tbody>\n' +
+          docs.declaration
+            .map(
+              (row) =>
+                `<tr><td>${renderMarkdown(row.kind).html.replace(/^<p>|<\/p>\n?$/g, '')}</td>` +
+                `<td>${row.rendered ? 'yes' : 'no'}</td><td>${e(row.why)}</td></tr>\n`,
+            )
+            .join('') +
+          '</tbody>\n</table>'),
+    `<h2 id="identity">Git identity</h2>\n<p>Every arm commits as the same git identity, “Benchmark Approver” ` +
+      `(adr-003, decision 7). In a competitor arm it carries no approval authority: it is only a name.</p>`,
+  ];
+  if (tool === 'speckit') {
+    parts.push(
+      `<h2 id="bundle">Bundle</h2>\n<p>The Spec Kit bundle resolves its dependencies when it is built; their ` +
+        `digests are in its <code>SHA256SUMS</code>, and the run installs only from the bundle.</p>`,
+    );
+  }
+  return parts.join('\n') + '\n';
+}
+
+function listDirectories(dir: string): string[] {
+  return existsSync(dir)
+    ? readdirSync(dir)
+        .filter((name) => isDirectory(join(dir, name)))
+        .sort()
+    : [];
 }
 
 /**

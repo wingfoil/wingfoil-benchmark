@@ -16,14 +16,14 @@ import type {
   Scenario,
 } from '../core/index.js';
 import { nextExecution } from '../results/index.js';
-import { armDigest, missingCapabilities, renderConstitution } from '../arms/index.js';
+import { armDigest, missingCapabilities, RULES_GENERATORS, RULES_SOURCE_ARM } from '../arms/index.js';
 import { prepareWorkspace } from '../scenario/index.js';
 
 import type { CheckedCampaign } from './campaign.js';
 import { campaignKeys } from './estimate.js';
 import { prepareHarnesses } from './harness.js';
 import { AGENT_IDENTITY } from './identity.js';
-import { GENERATED_ARM, prepareProjectRules, PROJECT_RULES } from './project-rules.js';
+import { prepareProjectRules, PROJECT_RULES } from './project-rules.js';
 import type { HarnessArtefact } from './harness.js';
 import { copyEnvironment } from './workspace.js';
 
@@ -404,9 +404,9 @@ export async function runPlan(plan: RunPlan, options: RunnerOptions): Promise<Ru
         // Taken above for every arm of the plan, which is where `arm` comes from.
         armDigest: armDigests.get(arm.name) as string,
         ...(arm.requires === undefined ? {} : { harness: harnesses.get(arm.requires) }),
-        ...(arm.name === GENERATED_ARM
-          ? { projectRules: projectRules.get(`${scenario.id}@${scenario.version}`) }
-          : {}),
+        ...(arm.docsOf === undefined
+          ? {}
+          : { projectRules: projectRules.get(arm.name)?.get(`${scenario.id}@${scenario.version}`) }),
       },
       options,
     );
@@ -633,7 +633,11 @@ async function executeSetup(arm: Arm, context: SetupContext, options: RunnerOpti
   writeFileSync(join(setupDir, 'log.txt'), scrub(`${result.stdout}${result.stderr}`, options.secrets ?? []));
   if (result.code !== 0) return { durationMs, usage: NO_USAGE, code: result.code };
   const manualAfter = mergeManual(arm, manual);
-  const generatedSha256 = generateRules(arm, rulesSource, workspace, outputDir);
+  // What was generated for the arm: a docs control's environment (REQ-RUN-11) or a harness's rules (REQ-FMT-14).
+  const generatedSha256 =
+    projectRules === undefined
+      ? generateRules(arm, rulesSource, workspace, outputDir)
+      : createHash('sha256').update(readFileSync(projectRules)).digest('hex');
 
   await options.git.commitAll(workspace, SETUP_COMMIT, { allowEmpty: true });
   const commit = await options.git.head(workspace);
@@ -658,20 +662,6 @@ async function executeSetup(arm: Arm, context: SetupContext, options: RunnerOpti
 function manualOf(run: RunResult): ManualRecord | undefined {
   return run.setup?.manual ?? run.manual;
 }
-
-/** Where a scenario declares its project rules, once (dl-005): as the wingfoil arm's configuration. */
-const RULES_SOURCE_ARM = 'wingfoil';
-
-/**
- * The rules generator of each harness that has one (REQ-FMT-14): where the tool keeps a project's rules in the
- * workspace, and how the scenario's are rendered there.
- */
-const RULES_GENERATORS: Readonly<
-  Record<
-    string,
-    { readonly path: string; readonly render: (files: ReadonlyMap<string, string>) => string | undefined }
-  >
-> = { speckit: { path: join('.specify', 'memory', 'constitution.md'), render: renderConstitution } };
 
 /** Every file under `dir`, by its path from `dir` with forward slashes. */
 function filesUnder(dir: string, prefix = ''): [string, string][] {

@@ -8,6 +8,7 @@ import { armDigest } from '../../src/arms/index.js';
 import { checkCampaign } from '../../src/cli/index.js';
 import type { RunOnceRequest } from '../../src/core/index.js';
 import { runCampaign } from '../../src/runner/index.js';
+import { escapeHtml } from '../../src/site/render.js';
 import { repoPath } from '../support/paths.js';
 import { doubles } from '../support/runner-doubles.js';
 import { completeCampaignYaml, writeRepo } from '../support/campaign-fixture.js';
@@ -371,7 +372,9 @@ describe('competitors.feature, the docs controls and the setups', () => {
       join(root, 'site', 'abcdef012345', '1', 'material', 'setup-wingfoil.html'),
       'utf8',
     );
-    expect(page).toContain(readFileSync(repoPath('arms/wingfoil/setup.sh'), 'utf8').split('\n')[1] ?? 'x');
+    expect(page).toContain(
+      escapeHtml(readFileSync(repoPath('arms/wingfoil/setup.sh'), 'utf8').split('\n')[1] ?? 'x'),
+    );
     expect(page).toContain('id="telemetry"');
     expect(page).toContain('href="manual-wingfoil.html"');
     expect(page).toContain('id="rules"');

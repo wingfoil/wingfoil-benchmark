@@ -84,14 +84,15 @@ export function checkCampaign(file: string): Result<CheckedCampaign> {
       });
     }
   }
-  // baseline-docs is generated from the wingfoil arm's configuration (REQ-RUN-11): without the
-  // wingfoil arm there is nothing to generate it from.
-  if (campaign.spec.arms.includes('baseline-docs') && !campaign.spec.arms.includes('wingfoil')) {
-    issues.push({
-      path: 'arms',
-      message:
-        "includes baseline-docs, which is generated from the wingfoil arm's configuration: add the wingfoil arm",
-    });
+  // A docs control is generated from the configuration of the arm its docs_of names (REQ-RUN-11): without that arm
+  // there is nothing to generate it from.
+  for (const arm of arms) {
+    if (arm.docsOf !== undefined && !campaign.spec.arms.includes(arm.docsOf)) {
+      issues.push({
+        path: 'arms',
+        message: `includes ${arm.name}, which is generated from the ${arm.docsOf} arm's configuration: add the ${arm.docsOf} arm`,
+      });
+    }
   }
   return issues.length > 0 ? fail(issues) : ok({ campaign, scenarios, arms });
 }

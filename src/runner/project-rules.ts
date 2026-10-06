@@ -1,21 +1,15 @@
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { dirname, join, relative } from 'node:path';
 
-import { renderProjectRules } from '../arms/index.js';
+import { DOCS_GENERATORS, RULES_GENERATORS, RULES_SOURCE_ARM } from '../arms/index.js';
+import type { DocsGenerator } from '../arms/index.js';
 import type { Arm, DockerPort, GitPort, Scenario } from '../core/index.js';
 
 import type { HarnessArtefact } from './harness.js';
 import { AGENT_IDENTITY, hostUser } from './identity.js';
 
-/** The arm whose environment is generated, and the arm it is generated from (REQ-RUN-11). */
-export const GENERATED_ARM = 'baseline-docs';
-export const SOURCE_ARM = 'wingfoil';
-
-/** The file the generator writes, and the baseline-docs manual names (task-014). */
+/** The file every docs generator writes, and the docs controls' manual names (task-014). */
 export const PROJECT_RULES = 'PROJECT_RULES.md';
-
-/** What a snapshot keeps of the wingfoil workspace: its configuration and its Memory. */
-const KEPT = ['.wingfoil', 'docs/memory'];
 
 /** How many lines of a failing snapshot's error output its error keeps. */
 const ERROR_LINES = 5;
@@ -34,56 +28,74 @@ export interface ProjectRulesOptions {
 }
 
 /**
- * The baseline-docs environment of every scenario of a campaign that has the baseline-docs arm
- * (REQ-RUN-11, task-015 Design): for each, a snapshot of the wingfoil arm's configuration — made by the
- * wingfoil arm's own setup, with the campaign's WingFoil and the scenario's `arms/wingfoil/`, in a
- * one-off container of the campaign image — rendered by the generator into `PROJECT_RULES.md`. Both are
- * kept in the execution's results, under `generated/<scenario>@<version>/`. Returns the rules file of
- * each scenario, by `<id>@<version>`; an empty map for a campaign without the arm.
+ * The environment of every docs control of a campaign, for every scenario (REQ-RUN-11 as amended, task-015 Design,
+ * task-067): for each docs control and scenario, a snapshot of the configuration of the arm it is generated from
+ * (`docs_of`) — made by that arm's own setup, with the campaign's harness and the scenario's overlay for that arm, in a
+ * one-off container of the campaign image, the arm's rules generator then applied as a run applies it (REQ-FMT-14) —
+ * rendered by that harness's docs generator into `PROJECT_RULES.md`. Both are kept in the execution's results, under
+ * `generated/<scenario>@<version>/<docs control>/`. Returns the rules file of each docs control and scenario, by arm
+ * then by `<id>@<version>`; an empty map for a campaign without a docs control.
  */
 export async function prepareProjectRules(
   checked: ProjectRulesTarget,
   harnesses: ReadonlyMap<string, HarnessArtefact>,
   resultsDir: string,
   options: ProjectRulesOptions,
-): Promise<ReadonlyMap<string, string>> {
-  const rules = new Map<string, string>();
-  if (!checked.arms.some((arm) => arm.name === GENERATED_ARM)) return rules;
-  const source = checked.arms.find((arm) => arm.name === SOURCE_ARM);
-  const harness = source?.requires === undefined ? undefined : harnesses.get(source.requires);
-  // The campaign check requires the wingfoil arm, and harness coverage its harness; the guard keeps
-  // the types honest if a campaign reached the runner by another path.
-  if (source === undefined || harness === undefined) {
-    throw new Error(`the ${GENERATED_ARM} arm is generated from the ${SOURCE_ARM} arm and its harness`);
+): Promise<ReadonlyMap<string, ReadonlyMap<string, string>>> {
+  const all = new Map<string, Map<string, string>>();
+  for (const control of checked.arms.filter((arm) => arm.docsOf !== undefined)) {
+    const source = checked.arms.find((arm) => arm.name === control.docsOf);
+    const harness = source?.requires === undefined ? undefined : harnesses.get(source.requires);
+    const generator = source?.requires === undefined ? undefined : DOCS_GENERATORS[source.requires];
+    // The campaign check requires the docs_of arm, and harness coverage its harness; the guard keeps the types honest
+    // if a campaign reached the runner by another path.
+    if (source === undefined || harness === undefined || generator === undefined) {
+      throw new Error(
+        `the ${control.name} arm is generated from the ${control.docsOf ?? ''} arm, its harness and its docs generator`,
+      );
+    }
+    const rules = new Map<string, string>();
+    for (const scenario of checked.scenarios) {
+      const key = `${scenario.id}@${scenario.version}`;
+      rules.set(
+        key,
+        await snapshot(
+          key,
+          scenario,
+          { control: control.name, source, harness, generator },
+          { resultsDir, campaignId: checked.id },
+          options,
+        ),
+      );
+    }
+    all.set(control.name, rules);
   }
-  for (const scenario of checked.scenarios) {
-    const key = `${scenario.id}@${scenario.version}`;
-    rules.set(
-      key,
-      await snapshot(key, scenario, source, harness, { resultsDir, campaignId: checked.id }, options),
-    );
-  }
-  return rules;
+  return all;
 }
 
 async function snapshot(
   key: string,
   scenario: Scenario,
-  arm: Arm,
-  harness: HarnessArtefact,
+  arms: {
+    readonly control: string;
+    readonly source: Arm;
+    readonly harness: HarnessArtefact;
+    readonly generator: DocsGenerator;
+  },
   where: { readonly resultsDir: string; readonly campaignId: string },
   options: ProjectRulesOptions,
 ): Promise<string> {
-  const generated = join(where.resultsDir, 'generated', key);
+  const { control, source, harness, generator } = arms;
+  const generated = join(where.resultsDir, 'generated', key, control);
   const build = join(generated, 'build');
   const workspace = join(build, 'workspace');
   rmSync(generated, { recursive: true, force: true });
   mkdirSync(workspace, { recursive: true });
-  cpSync(arm.dir, join(build, 'arm'), { recursive: true });
+  cpSync(source.dir, join(build, 'arm'), { recursive: true });
   cpSync(harness.installed, join(build, 'harness.tgz'));
-  const overlay = scenario.armDirs[SOURCE_ARM];
+  const overlay = scenario.armDirs[source.name];
   if (overlay !== undefined) cpSync(overlay, join(build, 'scenario'), { recursive: true });
-  // The repository the wingfoil arm's runs start from: one commit, and the agent's identity.
+  // The repository the source arm's runs start from: one commit, and the agent's identity.
   await options.git.init(workspace);
   await options.git.configureIdentity(workspace, AGENT_IDENTITY.name, AGENT_IDENTITY.email);
   await options.git.commitAll(workspace, 'seed', { allowEmpty: true });
@@ -92,27 +104,48 @@ async function snapshot(
     image: where.campaignId,
     user: hostUser(),
     mount: { source: build, target: '/build' },
-    command: ['bash', '-c', `export HOME=/build WORKSPACE=/build/workspace && bash /build/arm/${arm.setup}`],
+    command: [
+      'bash',
+      '-c',
+      `export HOME=/build WORKSPACE=/build/workspace && bash /build/arm/${source.setup}`,
+    ],
   });
   if (result.code !== 0) {
     const tail = result.stderr.trimEnd().split('\n').slice(-ERROR_LINES).join('\n');
     throw new Error(
-      `the ${SOURCE_ARM} configuration of ${key} could not be made: the setup failed with code ` +
+      `the ${source.name} configuration of ${key} could not be made: the setup failed with code ` +
         `${result.code}${tail === '' ? '' : `: ${tail}`}`,
     );
   }
+  // The scenario's rules, as a run of the source arm gets them after its setup (REQ-FMT-14).
+  const rulesGenerator = source.requires === undefined ? undefined : RULES_GENERATORS[source.requires];
+  const declared = scenario.armDirs[RULES_SOURCE_ARM];
+  if (rulesGenerator !== undefined && declared !== undefined) {
+    const text = rulesGenerator.render(
+      new Map(
+        filesUnder(declared).map((file) => [
+          relative(declared, file).split('\\').join('/'),
+          readFileSync(file, 'utf8'),
+        ]),
+      ),
+    );
+    if (text !== undefined) {
+      mkdirSync(dirname(join(workspace, rulesGenerator.path)), { recursive: true });
+      writeFileSync(join(workspace, rulesGenerator.path), text);
+    }
+  }
 
-  const kept = join(generated, SOURCE_ARM);
+  const kept = join(generated, source.name);
   const files = new Map<string, string>();
-  for (const path of KEPT) {
+  for (const path of generator.kept) {
     if (!existsSync(join(workspace, path))) continue;
     cpSync(join(workspace, path), join(kept, path), { recursive: true });
     for (const file of filesUnder(join(kept, path)))
-      files.set(relative(kept, file), readFileSync(file, 'utf8'));
+      files.set(relative(kept, file).split('\\').join('/'), readFileSync(file, 'utf8'));
   }
   rmSync(build, { recursive: true, force: true });
   const rules = join(generated, PROJECT_RULES);
-  writeFileSync(rules, renderProjectRules(files));
+  writeFileSync(rules, generator.render(files));
   return rules;
 }
 

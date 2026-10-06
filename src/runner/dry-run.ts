@@ -13,7 +13,6 @@ import {
   scanScenario,
 } from '../scenario/index.js';
 
-import { GENERATED_ARM, SOURCE_ARM } from './project-rules.js';
 import { runPlan } from './run.js';
 import type { RunnerOptions, RunSummary } from './run.js';
 
@@ -70,7 +69,10 @@ export function checkDryRun(request: DryRunRequest, root: string): Result<Checke
   if (leaks.length > 0) return fail(leaks);
 
   const armsRoot = join(root, 'arms');
-  const names = request.arm === GENERATED_ARM ? [request.arm, SOURCE_ARM] : [request.arm];
+  // A docs control is generated from the arm its `docs_of` names, which the dry run loads too (REQ-RUN-11).
+  const requested = loadArm(armsRoot, request.arm);
+  const docsOf = requested.ok ? requested.value.docsOf : undefined;
+  const names = docsOf === undefined ? [request.arm] : [request.arm, docsOf];
   const arms: Arm[] = [];
   const issues: Issue[] = [];
   for (const name of names) {
@@ -79,7 +81,7 @@ export function checkDryRun(request: DryRunRequest, root: string): Result<Checke
     else {
       const role = name === request.arm ? '--arm' : 'arms';
       const why = arm.issues.map((issue) => `${issue.path} ${issue.message}`).join('; ');
-      const source = name === request.arm ? '' : ` (${GENERATED_ARM} is generated from it)`;
+      const source = name === request.arm ? '' : ` (${request.arm} is generated from it)`;
       issues.push({ path: role, message: `${name}${source}: ${why}` });
     }
   }

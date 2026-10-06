@@ -3,3 +3,7 @@ export { renderProjectRules } from './baseline-docs.js';
 export { missingCapabilities } from './capabilities.js';
 export { armDigest } from './digest.js';
 export { renderConstitution } from './constitution.js';
+export { DOCS_GENERATORS, renderSpeckitDocs } from './docs-controls.js';
+export type { DeclaredContent, DocsGenerator } from './docs-controls.js';
+export { RULES_GENERATORS, RULES_SOURCE_ARM } from './rules.js';
+export type { RulesGenerator } from './rules.js';
