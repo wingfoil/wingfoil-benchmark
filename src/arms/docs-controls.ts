@@ -115,3 +115,8 @@ export const DOCS_GENERATORS: Readonly<Record<string, DocsGenerator>> = {
     ],
   },
 };
+
+/** The docs generator of `tool`, if it has one: an own entry only, so that a tool named `constructor` has none. */
+export function docsGeneratorOf(tool: string | undefined): DocsGenerator | undefined {
+  return tool !== undefined && Object.hasOwn(DOCS_GENERATORS, tool) ? DOCS_GENERATORS[tool] : undefined;
+}

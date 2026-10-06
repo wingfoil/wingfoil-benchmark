@@ -21,7 +21,7 @@ export function completeArmYaml(name = 'wingfoil'): Record<string, unknown> {
 /** A plain-agent arm: no environment, no MCP, no harness. */
 export function plainArmYaml(name = 'baseline'): Record<string, unknown> {
   // A docs control names the harness arm it is generated from, as the repository's do (REQ-RUN-11).
-  const docsOf = DOCS_OF[name];
+  const docsOf = Object.hasOwn(DOCS_OF, name) ? DOCS_OF[name] : undefined;
   return {
     name,
     setup: 'setup.sh',

@@ -26,3 +26,8 @@ export const RULES_GENERATORS: Readonly<Record<string, RulesGenerator>> = {
       'after the setup, in place of the template init leaves',
   },
 };
+
+/** The rules generator of `tool`, if it has one: an own entry only, so that a tool named `constructor` has none. */
+export function rulesGeneratorOf(tool: string | undefined): RulesGenerator | undefined {
+  return tool !== undefined && Object.hasOwn(RULES_GENERATORS, tool) ? RULES_GENERATORS[tool] : undefined;
+}

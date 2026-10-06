@@ -277,7 +277,7 @@ describe('competitors.feature, the competitor arms', () => {
     // Given a docs control whose docs_of names an unknown arm
     const unknown = writeRepo({ ...completeCampaignYaml(), arms: ['baseline', 'baseline-docs', 'wingfoil'] });
     const docs = join(unknown.root, 'arms', 'baseline-docs', 'arm.yaml');
-    writeFileSync(docs, `${readFileSync(docs, 'utf8')}docs_of: ghost\n`);
+    writeFileSync(docs, readFileSync(docs, 'utf8').replace('docs_of: wingfoil', 'docs_of: ghost'));
     const refusedDocs = checkCampaign(unknown.file);
     expect(refusedDocs.ok ? [] : refusedDocs.issues).toEqual([
       { path: 'arms[1]', message: "baseline-docs: docs_of names 'ghost', which is not an arm under arms/" },

@@ -1,7 +1,7 @@
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 
-import { DOCS_GENERATORS, RULES_GENERATORS, RULES_SOURCE_ARM } from '../arms/index.js';
+import { docsGeneratorOf, RULES_SOURCE_ARM, rulesGeneratorOf } from '../arms/index.js';
 import type { DocsGenerator } from '../arms/index.js';
 import type { Arm, DockerPort, GitPort, Scenario } from '../core/index.js';
 
@@ -46,7 +46,7 @@ export async function prepareProjectRules(
   for (const control of checked.arms.filter((arm) => arm.docsOf !== undefined)) {
     const source = checked.arms.find((arm) => arm.name === control.docsOf);
     const harness = source?.requires === undefined ? undefined : harnesses.get(source.requires);
-    const generator = source?.requires === undefined ? undefined : DOCS_GENERATORS[source.requires];
+    const generator = docsGeneratorOf(source?.requires);
     // The campaign check requires the docs_of arm, and harness coverage its harness; the guard keeps the types honest
     // if a campaign reached the runner by another path.
     if (source === undefined || harness === undefined || generator === undefined) {
@@ -118,7 +118,7 @@ async function snapshot(
     );
   }
   // The scenario's rules, as a run of the source arm gets them after its setup (REQ-FMT-14).
-  const rulesGenerator = source.requires === undefined ? undefined : RULES_GENERATORS[source.requires];
+  const rulesGenerator = rulesGeneratorOf(source.requires);
   const declared = scenario.armDirs[RULES_SOURCE_ARM];
   if (rulesGenerator !== undefined && declared !== undefined) {
     const text = rulesGenerator.render(

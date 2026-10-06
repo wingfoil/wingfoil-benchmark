@@ -16,7 +16,7 @@ import type {
   Scenario,
 } from '../core/index.js';
 import { nextExecution } from '../results/index.js';
-import { armDigest, missingCapabilities, RULES_GENERATORS, RULES_SOURCE_ARM } from '../arms/index.js';
+import { armDigest, missingCapabilities, RULES_SOURCE_ARM, rulesGeneratorOf } from '../arms/index.js';
 import { prepareWorkspace } from '../scenario/index.js';
 
 import type { CheckedCampaign } from './campaign.js';
@@ -683,7 +683,7 @@ function generateRules(
   workspace: string,
   outputDir: string,
 ): string | undefined {
-  const generator = arm.requires === undefined ? undefined : RULES_GENERATORS[arm.requires];
+  const generator = rulesGeneratorOf(arm.requires);
   if (generator === undefined || rulesSource === undefined) return undefined;
   const text = generator.render(new Map(filesUnder(rulesSource)));
   if (text === undefined) return undefined;

@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { campaignSchema, fail, ok, parseWith, readYamlFile } from '../core/index.js';
 import type { Arm, CampaignFile, Issue, Result } from '../core/index.js';
 
-import { DOCS_GENERATORS, loadArm, RULES_GENERATORS } from '../arms/index.js';
+import { docsGeneratorOf, loadArm, rulesGeneratorOf } from '../arms/index.js';
 import type { Group } from '../results/index.js';
 
 import { renderMarkdown } from './markdown.js';
@@ -166,8 +166,8 @@ function setupPages(root: string, names: readonly string[]): Result<ReadonlyMap<
 function setupHtml(arm: Arm, script: string, controls: readonly string[]): string {
   const tool = arm.requires ?? '';
   const telemetry = arm.telemetryOff ?? [];
-  const rules = RULES_GENERATORS[tool];
-  const docs = DOCS_GENERATORS[tool];
+  const rules = rulesGeneratorOf(tool);
+  const docs = docsGeneratorOf(tool);
   const parts = [
     `<p>How the ${e(arm.name)} arm is set up, before its agent starts: the ${e(tool)} harness at the campaign's pin, ` +
       `from the repository's <code>arms/${e(arm.name)}/</code>.</p>`,

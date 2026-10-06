@@ -2,7 +2,14 @@ import { readFileSync } from 'node:fs';
 
 import { describe, expect, it } from 'vitest';
 
-import { DOCS_GENERATORS, loadArm, RULES_GENERATORS, renderSpeckitDocs } from '../../../src/arms/index.js';
+import {
+  DOCS_GENERATORS,
+  docsGeneratorOf,
+  loadArm,
+  RULES_GENERATORS,
+  rulesGeneratorOf,
+  renderSpeckitDocs,
+} from '../../../src/arms/index.js';
 import { repoPath } from '../../support/paths.js';
 
 const CONSTITUTION = '.specify/memory/constitution.md';
@@ -67,6 +74,16 @@ describe('the docs generators (REQ-RUN-11, task-067)', () => {
       expect([...rendered].sort(), tool).toEqual([false, true]);
       for (const row of generator?.declaration ?? []) expect(row.why.length, row.kind).toBeGreaterThan(0);
     }
+  });
+
+  it('are looked up by own entry only, so a tool named like an Object property has none', () => {
+    for (const tool of ['constructor', 'toString', '__proto__', 'baseline', undefined]) {
+      expect(docsGeneratorOf(tool), String(tool)).toBeUndefined();
+      expect(rulesGeneratorOf(tool), String(tool)).toBeUndefined();
+    }
+    expect(docsGeneratorOf('speckit')).toBe(DOCS_GENERATORS.speckit);
+    expect(rulesGeneratorOf('speckit')).toBe(RULES_GENERATORS.speckit);
+    expect(rulesGeneratorOf('wingfoil')).toBeUndefined();
   });
 
   it('keep the files that the speckit rules generator writes', () => {
