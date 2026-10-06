@@ -37,3 +37,9 @@ digests green; v0.1's campaign files still validate.
 
 - `npx wingfoil memory add --type task --title "Harness artifacts and arm digests"`. Declared: creates the element from the template and
   commits it. Observed: `wf(task): add task-064-harness-artifacts-and-arm-digests`, `status: draft`.
+- **Decision before the design phase (the approver in chat, 2026-10-06):** traceability per scenario. The acceptance
+  traceability test reads features at feature granularity, so a task in progress on F7.1 or F7.2 would need a test
+  for every @F7.1/@F7.2 scenario of `competitors.feature`, most of them other tasks' (task-066, task-067, W13). Chosen
+  ("Per scenario"): a task may list in `acceptance` the scenarios it delivers, as `competitors.feature#<title>`; the
+  test then requires those, and every scenario of a feature only for a task that declares the feature whole. Done in
+  this task, red-first; task-064, task-066 and task-067 list their scenarios.
