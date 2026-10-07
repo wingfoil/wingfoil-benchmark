@@ -14,7 +14,7 @@ import { describe, expect, it } from 'vitest';
 import type { ModelsUsage } from '../../../src/agents/index.js';
 import { checkCampaign, runCampaign } from '../../../src/runner/index.js';
 import { completeCampaignYaml, writeRepo } from '../../support/campaign-fixture.js';
-import { doubles, invocationOf } from '../../support/runner-doubles.js';
+import { doubles, invocationOf, NO_USAGE } from '../../support/runner-doubles.js';
 import { tempDir } from '../../support/scenario-fixture.js';
 
 function campaignYaml(overrides: Record<string, unknown> = {}): Record<string, unknown> {
@@ -458,6 +458,43 @@ describe('runCampaign', () => {
     ]);
     // A step whose agent reported no models records none.
     expect(record.steps[1]).not.toHaveProperty('models');
+  });
+
+  it("counts a step's tokens over every model the session used, at its latest total per model (bug-012)", async () => {
+    const { checked } = checkedCampaign();
+    const model = (output: number) => ({
+      inputTokens: 1,
+      outputTokens: output,
+      cacheCreationInputTokens: 2,
+      cacheReadInputTokens: 3,
+      costUsd: 0.1,
+    });
+    const ports = doubles({
+      messageOf: (request) => (request.step === 1 && invocationOf(request) === 0 ? 'Which one?' : undefined),
+      // Each invocation's own usage: the run's model only, as Claude Code's result event reports it.
+      usageOf: () => ({ ...NO_USAGE, inputTokens: 1, outputTokens: 50 }),
+      modelsOf: (request): ModelsUsage | undefined => {
+        if (request.step !== 1) return undefined;
+        return invocationOf(request) === 0
+          ? { 'claude-sonnet-5': model(100), 'claude-haiku-4-5-20251001': model(7) }
+          : { 'claude-sonnet-5': model(140) };
+      },
+    });
+
+    const summary = await runCampaign(checked, ports);
+
+    const output = summary.runs[0]?.outputDir ?? '';
+    const usageOf = (n: string) =>
+      JSON.parse(readFileSync(join(output, 'steps', n, 'usage.json'), 'utf8')) as Record<string, number>;
+    // Step 1: the session's latest total per model, every model, every kind.
+    expect(usageOf('01')).toMatchObject({
+      inputTokens: 2,
+      outputTokens: 147,
+      cacheCreationInputTokens: 4,
+      cacheReadInputTokens: 6,
+    });
+    // Step 2 reported no models: its tokens are its usage's, as before.
+    expect(usageOf('02')).toMatchObject({ inputTokens: 1, outputTokens: 50 });
   });
 
   it('fails the run when a step prompt cannot be read', async () => {

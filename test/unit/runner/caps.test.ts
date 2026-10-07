@@ -258,6 +258,31 @@ describe('step_tokens (task-024)', () => {
     const summary = await runCampaign(campaign({ step_tokens: 1000 }), ports);
     expect(summary.runs[0]?.steps[0]?.outcome).toBe('token cap reached');
   });
+  it('counts the tokens of every model the session used, not only those its usage reports (bug-012)', async () => {
+    const ports = doubles({
+      messageOf: () => 'Which one?',
+      usageOf: () => ({ ...usage(0.1), inputTokens: 1 }),
+      modelsOf: () => ({
+        'claude-sonnet-5': {
+          inputTokens: 1,
+          outputTokens: 0,
+          cacheCreationInputTokens: 0,
+          cacheReadInputTokens: 0,
+          costUsd: 0.1,
+        },
+        'claude-haiku-4-5-20251001': {
+          inputTokens: 1000,
+          outputTokens: 0,
+          cacheCreationInputTokens: 0,
+          cacheReadInputTokens: 0,
+          costUsd: 0.01,
+        },
+      }),
+    });
+    const summary = await runCampaign(campaign({ step_tokens: 1000 }), ports);
+    expect(ports.recorded.resumes).toEqual([]);
+    expect(summary.runs[0]?.steps[0]?.outcome).toBe('token cap reached');
+  });
 });
 
 describe('the campaign ceiling during the campaign (task-024)', () => {
