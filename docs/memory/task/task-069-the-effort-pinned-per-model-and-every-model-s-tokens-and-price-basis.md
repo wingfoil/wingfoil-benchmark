@@ -152,7 +152,7 @@ cost paragraph).
   - **dl-015:**
     - The adapter's `--effort` was red first.
     - The schema, the run-time refusal (campaign run, dry run, `validate`'s `requires` line) and the runner were
-      written before their tests, in the same step. Their tests came right after. This is a deviation from
+      written before their tests, in the same step. The refusal, runner and CLI tests came right after; the schema's own tests only with the review round 1 fix. This is a deviation from
       test-first.
     - `run show` and the method page's row were also written in the same step as their tests.
     - The Design's rule refusing an effort for a model the campaign does not run was dropped during build, and the
@@ -180,3 +180,41 @@ cost paragraph).
      - a runner test follows `costBasis` into `run.json`.
 - The first full `test:docker` run (before these fixes) failed W2 on step 02's artificial pair. It is the review's
   point 1.
+- Suites at dfb4d65: `npm run lint` clean; `npm test` 1371 passed, coverage 98.02 % statements, 90.83 % branches;
+  `test:bin` 8 passed; `test:docker` 21 passed (W2 included, after the round 1 fix); no `bench-` container left.
+- `npx wingfoil memory submit task-069-…` (in-progress → in-review). Declared: moves the task to its next state and
+  commits it. Observed: see the next commit, `wf(task): submit …`.
+
+## Review notes
+
+Independent read-only agents reviewed `git diff main...HEAD` against the Design, dl-015 C, bug-012, bug-016 and
+requirements 1.27.
+
+- **Round 1** (2bfb88a): all three parts implemented; no blocker.
+  - The checks that came out clean:
+    - the sum over folded models, on the fixtures and on 25 stored steps of `c82a5e74885b/2`;
+    - one session per step;
+    - effort matching;
+    - the fake ignoring `effort`;
+    - `agent` holding the map;
+    - `cost_priced` optional;
+    - no published identity moved.
+  - Should-fix:
+    1. The @F2.4 token expectation was fitted to two unrelated recordings.
+    2. No schema tests for the levels.
+    3. `{#agent-effort}` was false for v0.1 executions.
+    4. The test-first deviation is the approver's call.
+  - Nits:
+    5. three unpriced formats;
+    6. the `mcp` name;
+    7. the `effortRefusal` doc;
+    8. the refusal order in dry run;
+    9. no test from `costBasis` to `run.json`.
+  - All fixed in dfb4d65, except 4, which is disclosed.
+- **Round 2** (dfb4d65): every fix verified. 20 858 + 289 720 is the two real invocations' work, read from the
+  fixtures' result events. No regression. **Clean.**
+  - Two remaining nits were fixed here: a passing `test:docker` run is recorded above, and the deviation wording is
+    precise.
+- **For the approver:** acceptance criterion 1 ("Red-first") is not met for the effort's schema, refusal, runner,
+  `run show` and method row: they were written before their tests (Execution notes). The tests exist and fail
+  without the code.
