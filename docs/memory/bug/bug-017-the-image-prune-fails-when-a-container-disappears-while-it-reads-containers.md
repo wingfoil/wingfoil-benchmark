@@ -2,7 +2,7 @@
 id: bug-017-the-image-prune-fails-when-a-container-disappears-while-it-reads-containers
 type: bug
 title: "The image prune fails when a container disappears while it reads containers"
-status: pending
+status: approved
 # fixed_by: task-…   # set by hand, with the fixing task's id, just before `approved → fixed`
 ---
 
