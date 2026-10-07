@@ -174,16 +174,16 @@ describe('the WingFoil under test (REQ-RUN-14, adr-003 decisions 1-5)', () => {
 
   it('does not start a campaign whose harness tool has no builder, rather than run without it', async () => {
     const yaml = campaignYaml();
-    yaml.harnesses = { wingfoil: { tool: 'openspec', version: '1.0.0' } };
+    yaml.harnesses = { wingfoil: { tool: 'unbuilt', version: '1.0.0' } };
     const { checked: campaign } = checked(yaml, (root) =>
       writeFileSync(
         join(root, 'arms', 'wingfoil', 'arm.yaml'),
-        stringify({ ...plainArmYaml('wingfoil'), requires: 'openspec', telemetry_off: [] }),
+        stringify({ ...plainArmYaml('wingfoil'), requires: 'unbuilt', telemetry_off: [] }),
       ),
     );
 
-    await expect(runCampaign(campaign, { ...ports(), harnessSources: { openspec: CLONE } })).rejects.toThrow(
-      "the harness 'openspec' of arm wingfoil has no builder in this runner",
+    await expect(runCampaign(campaign, { ...ports(), harnessSources: { unbuilt: CLONE } })).rejects.toThrow(
+      "the harness 'unbuilt' of arm wingfoil has no builder in this runner",
     );
   });
 

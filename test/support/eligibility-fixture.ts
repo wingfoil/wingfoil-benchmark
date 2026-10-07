@@ -59,5 +59,7 @@ export const TEST_REGISTER = [
   registerEntry('wingfoil', '0.2.0'),
   registerEntry('openspec', '1.0.0'),
   registerEntry('openspec', '1.14.0'),
+  // A tool the runner has no builder for (task-071: openspec, the earlier example, now has one).
+  registerEntry('unbuilt', '1.0.0'),
   registerEntry('speckit', 'v1.1.0'),
 ];
