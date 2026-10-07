@@ -183,8 +183,8 @@ OpenSpec's commands, so it would show nothing that a run without an agent does n
    - The propose phase ended with a question to go on, which is an approval the approver answers. On resume the
      agent started the apply phase and was part done (3 of 6 tasks) when its budget ran out.
    - `archive` was not reached. What init installed answers most of it: the archive skill
-     (`.claude/skills/openspec-archive-change/SKILL.md`) does not call `openspec archive`. It asks the user to
-     confirm, an approval the neutral approver answers, and archives with `mkdir -p` and `mv`. The CLI's own
+     (`.claude/skills/openspec-archive-change/SKILL.md`) does not call `openspec archive`. It may ask the user to
+     confirm (when artifacts or tasks are incomplete), an approval the neutral approver answers, and archives with `mkdir -p` and `mv`. The CLI's own
      `archive` takes `-y/--yes` ("Skip confirmation prompts"), which matters only if the agent calls it directly.
      task-071's dry run sees it end to end.
 5. **Network and telemetry:**
@@ -206,3 +206,42 @@ OpenSpec's commands, so it would show nothing that a run without an agent does n
 - The register's openspec entry is re-assessed in the run container (2026-10-07, still admitted).
 - `spikes/task-070/setup.sh` is drafted for task-071.
 - The ledger line is written.
+- Suites: `npm run lint` clean; `npm test` 1371 passed (98.02 %). No CLI, runner, image or scoring code changed, so
+  neither `test:bin` nor `test:docker` applies.
+- `npx wingfoil memory submit task-070-…` (in-progress → in-review). Declared: moves the task to its next state and
+  commits it. Observed: see the next commit, `wf(task): submit …`.
+
+## Review notes
+
+Independent read-only agents reviewed `git diff main...HEAD` and the spike outputs in the main checkout's
+`spikes/task-070/out/` against the Context, the Design, REQ-RUN-18, REQ-FMT-05, -12 and -14, and the register's
+criteria.
+
+- **Round 1** (2b4dc1e). Verified from the outputs:
+  - R1 and R2: turns, costs, the same session, its stop reasons, and that `modelUsage` is cumulative;
+  - B2's 15 paths;
+  - B1's integrity;
+  - the telemetry opt-out in the package's source;
+  - the ledger's total;
+  - the secret scans (no credential-looking string in `out/`).
+
+  Six should-fix:
+  1. the ledger row cut off from its table;
+  2. "applied the change" overstated (3 of 6 tasks), and the R2 bullet missing `package.json`/`package-lock.json`;
+  3. archive and `--yes` answerable from the installed skill;
+  4. the setup draft left `openspec` off the agent's PATH;
+  5. the setup draft left telemetry on in the snapshot, whose one-off container carries no environment;
+  6. the resume's reading as part of the consented run, to be said plainly.
+
+  Nits:
+  - the effort measurement's limit;
+  - REQ-FMT-12's wording for task-071;
+  - `operations:`;
+  - two flags;
+  - the reason's folding.
+
+  All were fixed in ca17216.
+- **Round 2** (ca17216): every fix verified. The register YAML parses, the symlink chain resolves, and telemetry is set
+  before `init`. **Clean.** One nit was fixed here: the archive skill's confirmation is conditional.
+- **For the approver:** the resume (R2) counted as part of the one consented run is my reading, made after the
+  consent (see "The consent, read by the implementer"). The spike spent 0.7651 USD of the 3.00 USD ceiling.
