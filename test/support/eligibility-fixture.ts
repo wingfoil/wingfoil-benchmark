@@ -58,5 +58,6 @@ export const TEST_REGISTER = [
   registerEntry('wingfoil', 'abc1234'),
   registerEntry('wingfoil', '0.2.0'),
   registerEntry('openspec', '1.0.0'),
+  registerEntry('openspec', '1.14.0'),
   registerEntry('speckit', 'v1.1.0'),
 ];
