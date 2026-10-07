@@ -33,7 +33,7 @@ in this release-planning phase (`release-cycle` › release-planning).
 
 | Wave | Features | High unc. | Ends with | Verified |
 |---|---|---|---|---|
-| W12 — Eligibility and Spec Kit | F7.4 eligibility criteria · F7.1 Spec Kit arm | F7.1 (headless use of Spec Kit's gates) | Spec Kit runs S1–S3 and S8 under the same rules | — |
+| W12 — Eligibility and Spec Kit | F7.4 eligibility criteria · F7.1 Spec Kit arm | F7.1 (headless use of Spec Kit's gates) | Spec Kit runs S1–S3 and S8 under the same rules | **2026-10-07** |
 | W13 — OpenSpec and contests | F7.1 OpenSpec arm · F7.2 setup contest process | — | OpenSpec runs, and a setup can be contested | — |
 | W14 — Comparison and Dana | F5.2 campaign comparison · F5.7 profile filter and stable URLs · F1.4 resumable campaign | — | a second public campaign compared with the first | — |
 
@@ -118,6 +118,70 @@ for calibration's re-pin.
 
 **Smaller items** left by v0.1's Retrospective are triaged with the W12–W14 task plans; v0.2's wingfoil arm manual
 is reviewed against WingFoil's `docs/agents.md` at the pinned tag (N43).
+
+### W12 — verified 2026-10-07
+
+**"Spec Kit runs S1–S3 and S8 under the same rules."** Verified offline, with the fake agent. The real-agent half is
+task-065's spike: one consented session of S3 step 1 with Spec Kit v1.1.0, 1.4360 USD in the
+[v0.2 ledger](../../calibration/v0.2-ledger.md). No further real-agent run was consented in W12; calibration (plan-004
+step 3) makes the dry runs of every arm on the campaign's models.
+
+- **By hand, on main** (`fe069c9`, the built CLI), in a temporary repository: `git archive main`, without
+  `results/`.
+  - The fake agent replays the public references of S1, S3 and S8 (`test/fixtures/reference/`) and S2's (the
+    hold-out's `reference/S2/`).
+  - WingFoil v0.2.2 is built from the clone. Spec Kit v1.1.0 (`f1d3a4f8`) is built as its bundle.
+  - The dry-run profile, in the temporary repository only, pins the fake agent and both harnesses.
+- **Validation:**
+  - `bench scenario validate` → S1@1.0, S2@1.0, S3@1.0 and S8@1.0 valid with the hold-out.
+  - `bench campaign validate` → `campaign 5d29758156e9 is valid (4 scenarios, 5 arms)`: baseline, baseline-docs,
+    wingfoil, speckit and speckit-docs.
+  - Preflight: `requires` lines for the fake script and the two harness clones, all set.
+- **The runs:**
+  - The first `campaign run` refused to start: `estimate: not available, 20 dry runs missing`, naming each.
+  - 20 dry runs (4 scenarios × 5 arms), each `exit 0`.
+  - `bench campaign run` → `20 runs completed, 0 failed`, cost 0.0000 USD.
+- **`bench score 5d29758156e9/1 --holdout …`** → exit 0, `aggregate.json (20 groups, 0 slices)`. Each scenario
+  scores the same in all five arms, the reference's result:
+  - S1: final 165/165, hold-out 48/48;
+  - S2: final 24/24, hold-out 17/17, checks 3/3;
+  - S3: final 37/37, hold-out 17/17, checks 1/1, M-F1 5/5;
+  - S8: final 23/23, hold-out 7/7, checks 16/16.
+- **The same rules (K3, REQ-FMT-14, REQ-RUN-11).** On S8, each arm's setup patch carries the scenario's four rules
+  R1–R4 in its own format:
+  - baseline: nothing;
+  - wingfoil: the directive files;
+  - speckit: `.specify/memory/constitution.md`, whose principles are R1–R4;
+  - baseline-docs and speckit-docs: `PROJECT_RULES.md`, which carries R1–R4 in both.
+  - Each docs control's `generated_sha256` equals its `generated/S8@1.0/<arm>/PROJECT_RULES.md`.
+  - The speckit runs record `harness` (v1.1.0, commit, tarball and artifact digests), `arm_digest` and
+    `telemetry_off: []`.
+- **The site:**
+  - `bench site build 5d29758156e9/1` → 21 pages, with the five manuals and the two setup pages
+    (`setup-wingfoil.html`, `setup-speckit.html`).
+  - The headline compares speckit and both controls with the baseline.
+  - No `bench-` container is left.
+- **Suites at task-067's merge:**
+  - `npm test` 1340/1340 (coverage 97.95 %), lint clean;
+  - `test:bin` 8/8;
+  - `test:docker` 21/21, Spec Kit's included.
+- **What the fake cannot show:** it replays the same commands in every arm, so every arm scores the reference. Whether
+  Spec Kit's process is followed headless on S1–S3 and S8, and what it costs, is calibration's (task-065 saw it on S3
+  step 1).
+
+| Task | Feature | Delivered |
+|---|---|---|
+| task-056 … task-067 | F7.4 · F7.1 (Spec Kit) | the eligibility register and page; the speckit arm, its bundle and its constitution generator; arm digests and telemetry settings; preflight; image prune; bug fixes from v0.1's triage; a docs control per harness and the setup pages |
+
+**Left for later waves:**
+
+- bug-017 (approved): the image prune fails when a container disappears between `docker ps` and `docker inspect`.
+  Found by task-067's docker run.
+- task-068 (W13 backlog): each harness compared with its own docs control (REQ-SCO-14, REQ-RES-03).
+- task-067 review point B, for the task that delivers F7.2 (REQ-RES-10).
+  - A rebuild is refused once a ran harness arm's files differ from its recorded `arm_digest`.
+  - The contested execution must stay buildable after its arm is corrected: read the arm at its recorded state, or
+    leave its pages out. The approver chooses.
 
 ## Release checklist
 
