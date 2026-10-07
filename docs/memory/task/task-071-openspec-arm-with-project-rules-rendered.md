@@ -2,7 +2,7 @@
 id: task-071-openspec-arm-with-project-rules-rendered
 type: task
 title: "OpenSpec arm with project rules rendered"
-status: pending
+status: backlog
 release: v0.2
 wave: W13
 features: [F7.1]
