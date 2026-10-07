@@ -114,3 +114,72 @@ OpenSpec's commands, so it would show nothing that a run without an agent does n
 
 - `npx wingfoil memory add --type task --title "OpenSpec in the run container spike"`. Declared: creates the element from the template and
   commits it. Observed: `wf(task): add task-070-openspec-in-the-run-container-spike`, `status: draft`. Matches.
+- `npx wingfoil memory submit task-070-…` (backlog → in-progress), after the Design commit. Declared: moves the task
+  to its next state and commits it. Observed: `wf(task): submit task-070-…`, `status: in-progress`. Matches.
+
+### What ran (output in the main checkout's `spikes/task-070/out/`, git-ignored)
+
+- **B1.** The tarball matched the registry's `dist.integrity`.
+  - **Deviation from the Design:** an npm cache filled by `npm install --cache` did not install offline. B2's first
+    try failed with `ENOTCACHED` on `@inquirer/core`'s package metadata.
+  - So the artifact is the **installed tree**, as WingFoil's is: the tarball installed with its dependencies into a
+    prefix, packed as `installed.tgz` (2 files in the bundle with the tarball; `tree.txt` holds the resolved tree).
+- **B2** (`--network none`, `OPENSPEC_TELEMETRY=0`) exited 0. It printed `openspec --version` 1.14.0;
+  `init --help` lists `--tools`, `--profile <core|custom>`, `--force`, `--language`, `--no-animation`.
+  `openspec init --tools claude --profile core --force` added 15 paths:
+  - 6 commands, `.claude/commands/opsx/{apply,archive,explore,propose,sync,update}.md`;
+  - 6 skills, `.claude/skills/openspec-{apply-change,archive-change,explore,propose,sync-specs,update-change}/`;
+  - `openspec/config.yaml` (`schema: spec-driven`, and commented `context:`, `rules:`, `operations:`);
+  - `openspec/specs/.gitkeep` and `openspec/changes/archive/.gitkeep`.
+
+  It noted six more workflows outside the core profile (new, continue, ff, bulk-archive, verify, onboard).
+- Before spending: `claude --help` in the image (2.1.280) lists `--effort <level>` (low, medium, high, xhigh, max).
+- **R1** (spends): one session on S3 step 1, Sonnet 5, `--effort high`, budget 2.50 USD. 22 turns,
+  **0.3630 USD**, `costBasis: list`, completed, no stderr.
+  - It ran the `openspec-propose` skill, then `openspec context`, `new change add-rental-module`, `status`,
+    `instructions proposal|specs|design|tasks`, `list --specs` and `validate --strict`.
+  - It wrote `proposal.md`, `specs/equipment-rental/spec.md` and `tasks.md`, and skipped `design.md` as optional.
+  - It ended asking to go on: "When you're ready, say so and I'll run the apply workflow".
+- **R2** (spends): the same session resumed with `-p "Continue."`, `--effort high`, budget 0.40 USD.
+  - The init event named the same session (`636fca95…`). It ran `openspec-apply-change` and wrote
+    `src/index.ts` and `src/index.test.ts`, then stopped at its budget: `error_max_budget_usd` after 22 turns.
+  - **Session total 0.7651 USD**: the resume spent 0.402, so `--max-budget-usd` bounds the invocation, not the
+    session.
+  - stderr only warned that `~/.claude.json` was missing (the spike's second container, not the runner's).
+- **Secret scans:** 0 files with the token, after R1 and after R2.
+- **Spent: 0.7651 USD** of the 3.00 USD ceiling (the ledger line).
+
+### The answers
+
+1. **Install and init headless:** yes, offline from the installed-tree artifact, with REQ-RUN-18's flags exactly as
+   written.
+2. **What init writes:**
+   - **mechanics:** the six commands, the six skills, the `schema:` line, and the `.gitkeep`s;
+   - **project information:** `openspec/config.yaml`'s `context:` and `rules:` (empty until the scenario's rules are
+     written), and later `openspec/specs/` (the accepted specs) and `openspec/changes/` (the changes, each with
+     `.openspec.yaml`, proposal, specs and tasks).
+
+   No `CLAUDE.md` or `AGENTS.md` is written with `--tools claude`.
+3. **Where the rules go:** `openspec/config.yaml`, `context:` ("constraints that should guide OpenSpec artifacts and
+   workflows"), with per-artifact `rules:`. task-071's generator writes the scenario's rules there.
+4. **Followed headless with the neutral approver:** yes.
+   - The propose phase ended with a question to go on, which is an approval the approver answers. On resume the
+     agent applied the change.
+   - `archive` was not reached (budget), so whether it needs `--yes` with stdin closed is left to task-071's dry run.
+     The register's documentation evidence says it does.
+5. **Network and telemetry:**
+   - Install and init ran with `--network none`.
+   - In the source (`dist/telemetry/opt-out.js`), `OPENSPEC_TELEMETRY` set to anything but an on-value disables
+     both telemetry and the version check against the npm registry.
+   - In R2 the agent itself ran `npm install --save-dev typescript`. That is the agent using the container's network,
+     as in any arm, not OpenSpec.
+- **`--effort` under `--resume`** (task-069's open measurement): accepted on Claude Code 2.1.280. The resume ran in the
+  same session with the flag, and nothing was refused.
+- **Also seen:** `modelUsage` is the session's running total across the resume (R2's 0.7651 includes R1's 0.3630),
+  as task-069 relied on.
+
+### Done
+
+- The register's openspec entry is re-assessed in the run container (2026-10-07, still admitted).
+- `spikes/task-070/setup.sh` is drafted for task-071.
+- The ledger line is written.
