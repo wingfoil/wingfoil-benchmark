@@ -39,12 +39,13 @@ describe('bench site build (REQ-CLI-09 as amended in 1.20, task-045)', () => {
       'abcdef012345/1/index.html',
       'abcdef012345/1/material/manual-baseline.html',
       'abcdef012345/1/material/manual-wingfoil.html',
+      'abcdef012345/1/material/setup-wingfoil.html',
       'abcdef012345/1/method.html',
       'index.html',
       'style.css',
     ]);
     // It prints what it wrote and the headline
-    expect(built.stdout).toContain('site: site/abcdef012345/1/ (12 pages)\n');
+    expect(built.stdout).toContain('site: site/abcdef012345/1/ (13 pages)\n');
     expect(built.stdout).toContain('Against the baseline, wingfoil is better in 1, worse in 1');
 
     // Static: no script anywhere, every page linked to the one stylesheet

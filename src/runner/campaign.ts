@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { armDigest, loadArm } from '../arms/index.js';
+import { armDigest, docsGeneratorOf, loadArm } from '../arms/index.js';
 import { loadCampaign, loadRegister } from '../campaign/index.js';
 import type { Campaign } from '../campaign/index.js';
 import { eligibilityIssues, fail, harnessCoverage, ok } from '../core/index.js';
@@ -84,14 +84,29 @@ export function checkCampaign(file: string): Result<CheckedCampaign> {
       });
     }
   }
-  // baseline-docs is generated from the wingfoil arm's configuration (REQ-RUN-11): without the
-  // wingfoil arm there is nothing to generate it from.
-  if (campaign.spec.arms.includes('baseline-docs') && !campaign.spec.arms.includes('wingfoil')) {
-    issues.push({
-      path: 'arms',
-      message:
-        "includes baseline-docs, which is generated from the wingfoil arm's configuration: add the wingfoil arm",
-    });
+  // A docs control is generated from the configuration of the arm its docs_of names (REQ-RUN-11), by that arm's
+  // tool's docs generator: without that arm, or without a generator, there is nothing to generate it from. Refused
+  // here, before an image is built.
+  for (const arm of arms) {
+    if (arm.docsOf === undefined) continue;
+    const source = arms.find((candidate) => candidate.name === arm.docsOf);
+    // In the campaign but refused on its own: its own issue says why, and nothing is generated from it.
+    if (source === undefined && campaign.spec.arms.includes(arm.docsOf)) continue;
+    if (source === undefined) {
+      issues.push({
+        path: 'arms',
+        message: `includes ${arm.name}, which is generated from the ${arm.docsOf} arm's configuration: add the ${arm.docsOf} arm`,
+      });
+    } else if (docsGeneratorOf(source.requires) === undefined) {
+      issues.push({
+        path: 'arms',
+        message:
+          `includes ${arm.name}, which is generated from the ${source.name} arm's configuration, but ` +
+          (source.requires === undefined
+            ? `${source.name} has no harness`
+            : `the ${source.requires} harness has no docs generator`),
+      });
+    }
   }
   return issues.length > 0 ? fail(issues) : ok({ campaign, scenarios, arms });
 }

@@ -26,11 +26,11 @@ const STATEMENTS: readonly (readonly [string, string])[] = [
   ],
   [
     'arms',
-    'experiment design §2 Arms table; REQ-RUN-12 (manual copied as `CLAUDE.md`); task-015 Design (`PROJECT_RULES.md`); arms/baseline-docs/manual.md',
+    'experiment design §2 Arms table; REQ-RUN-12 (manual copied as `CLAUDE.md`); task-015 Design (`PROJECT_RULES.md`); arms/baseline-docs/manual.md; REQ-FMT-05 and task-067 Design (speckit, speckit-docs)',
   ],
   [
     'baseline-docs-control',
-    'experiment design §2 parity rules and §5 T3; REQ-RUN-11; task-015 Design ("The input is the wingfoil arm’s configuration as the agent meets it", results kept under `generated/`); scenarios/README K3; dl-005 Context',
+    'experiment design §2 parity rules and §5 T3; REQ-RUN-11; task-015 Design ("The input is the wingfoil arm’s configuration as the agent meets it", results kept under `generated/`); scenarios/README K3; dl-005 Context; task-067 Design (a docs control per harness, baseline-docs’ manual)',
   ],
   [
     'baseline-docs-table',
@@ -38,7 +38,11 @@ const STATEMENTS: readonly (readonly [string, string])[] = [
   ],
   [
     'operating-manuals',
-    'experiment design §2 parity rules (operating manuals); REQ-RUN-12; task-014 Design decision 2 (`ceil(UTF-8 bytes ÷ 4)`); rel-v0-1 W3 Due before ("publishes the three manuals"); task-046 Design "The published material"',
+    'experiment design §2 parity rules (operating manuals); REQ-RUN-12; task-014 Design decision 2 (`ceil(UTF-8 bytes ÷ 4)`); rel-v0-1 W3 Due before ("publishes the three manuals"); task-046 Design "The published material"; REQ-FMT-05 and task-067 Design (the speckit and speckit-docs manuals)',
+  ],
+  [
+    'setup-pages',
+    'REQ-RES-09 (each harness arm’s setup published); task-067 Design "The setup pages"; adr-003 decision 7 (the shared git identity); REQ-RES-02 as amended (a rebuild adds links, never an execution’s values); REQ-FMT-13 (the recorded arm digest)',
   ],
   [
     'wingfoil-manual-process',

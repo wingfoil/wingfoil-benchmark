@@ -10,7 +10,8 @@ import {
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-import { publishedMaterial } from '../../../src/site/method.js';
+import { loadArm } from '../../../src/arms/index.js';
+import { publishedMaterial, setupHtml } from '../../../src/site/method.js';
 import { repoPath } from '../../support/paths.js';
 import { EXECUTION } from '../../support/score-fixture.js';
 import { tempDir } from '../../support/scenario-fixture.js';
@@ -235,4 +236,72 @@ describe('the published material of S1 and S8', () => {
       'notice-s1.html',
     ]);
   });
+});
+
+describe('the setup pages (REQ-RES-09, task-067)', () => {
+  function arm(name: string) {
+    const loaded = loadArm(repoPath('arms'), name);
+    if (!loaded.ok) throw new Error(JSON.stringify(loaded.issues));
+    return loaded.value;
+  }
+
+  it('publish the speckit arm: its rules generator, its telemetry, its docs control and its bundle', () => {
+    const speckit = arm('speckit');
+    const page = setupHtml(speckit, 'echo "<setup>"\n', ['speckit-docs']);
+    expect(page).toContain('<pre><code>echo &quot;&lt;setup&gt;&quot;\n</code></pre>');
+    expect(page).toContain('Written to <code>.specify/memory/constitution.md</code>');
+    for (const setting of speckit.telemetryOff ?? [])
+      expect(page).toContain(`<li><code>${setting}</code></li>`);
+    expect(page).toContain('<code>speckit-docs</code>: the same agent');
+    expect(page).toContain('<code>.specify/memory/</code>');
+    expect(page).toContain('<td>skills (<code>.claude/skills/speckit-*</code>)</td><td>no</td>');
+    expect(page).toContain('<td>the constitution&#39;s principles</td><td>yes</td>');
+    expect(page).toContain('In the speckit arm, a competitor arm, it carries no approval authority');
+    expect(page).toContain('id="bundle"');
+    expect(page).toContain('href="manual-speckit.html"');
+  });
+
+  it('publish the wingfoil arm: no rules generator, and the identity as its approver member', () => {
+    const page = setupHtml(arm('wingfoil'), '#!/bin/sh\n', []);
+    expect(page).toContain("The scenario's rules are wingfoil's own configuration");
+    expect(page).toContain('The pinned wingfoil sends no telemetry');
+    expect(page).toContain('No docs control of the wingfoil arm ran in this execution.');
+    expect(page).toContain('it is the approver member the setup adds');
+    expect(page).not.toContain('id="bundle"');
+  });
+
+  it('are refused when the arm changed since its runs recorded it, and absent when they recorded none', async () => {
+    const { root } = await siteExecution();
+    appendFileSync(join(root, 'arms', 'wingfoil', 'setup.sh'), '# changed\n');
+    const refused = await benchSite(root, 'site', 'build', EXECUTION);
+    expect(refused.code).toBe(1);
+    expect(refused.stderr).toMatch(
+      /arms\/wingfoil: \(digest [0-9a-f]{64}\) differs from the arm its runs recorded/,
+    );
+
+    // An execution from before v0.2, whose runs recorded no arm digest: no setup page, the rest built.
+    for (const id of ['TC', 'TD', 'TF']) {
+      const file = join(
+        root,
+        'results',
+        EXECUTION,
+        'runs',
+        `${id}@1.0`,
+        'wingfoil',
+        'fake-model',
+        'r1',
+        'run.json',
+      );
+      if (!existsSync(file)) continue;
+      const run = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>;
+      delete run.arm_digest;
+      writeFileSync(file, `${JSON.stringify(run, undefined, 2)}\n`);
+    }
+    const built = await benchSite(root, 'site', 'build', EXECUTION);
+    expect(built.code, built.stderr).toBe(0);
+    expect(existsSync(join(root, PAGE, 'material', 'setup-wingfoil.html'))).toBe(false);
+    expect(readFileSync(join(root, PAGE, 'method.html'), 'utf8')).not.toContain(
+      'href="material/setup-wingfoil.html"',
+    );
+  }, 120_000);
 });

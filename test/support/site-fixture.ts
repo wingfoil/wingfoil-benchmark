@@ -4,6 +4,7 @@ import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node
 import { join } from 'node:path';
 
 import type { AgentPort } from '../../src/agents/index.js';
+import { armDigest } from '../../src/arms/index.js';
 import { main } from '../../src/cli/index.js';
 import { fail, gitCli, ok, publishCli, systemProcess } from '../../src/core/index.js';
 import type { ProcessResult, PublishPort } from '../../src/core/index.js';
@@ -151,6 +152,8 @@ export function completeExecution(
       if (!existsSync(file)) continue;
       const run = JSON.parse(readFileSync(file, 'utf8')) as { manual: Record<string, unknown> };
       run.manual = { ...run.manual, sha256: sha256Of(join(root, 'arms', arm, 'manual.md')) };
+      // The arm the run recorded (REQ-FMT-13): the repository's, which the setup page is published from.
+      (run as Record<string, unknown>).arm_digest = armDigest(root, arm);
       writeFileSync(file, `${JSON.stringify(run, undefined, 2)}\n`);
     }
   }

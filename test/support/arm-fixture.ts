@@ -20,8 +20,17 @@ export function completeArmYaml(name = 'wingfoil'): Record<string, unknown> {
 
 /** A plain-agent arm: no environment, no MCP, no harness. */
 export function plainArmYaml(name = 'baseline'): Record<string, unknown> {
-  return { name, setup: 'setup.sh', manual: 'manual.md' };
+  // A docs control names the harness arm it is generated from, as the repository's do (REQ-RUN-11).
+  const docsOf = Object.hasOwn(DOCS_OF, name) ? DOCS_OF[name] : undefined;
+  return {
+    name,
+    setup: 'setup.sh',
+    manual: 'manual.md',
+    ...(docsOf === undefined ? {} : { docs_of: docsOf }),
+  };
 }
+
+const DOCS_OF: Readonly<Record<string, string>> = { 'baseline-docs': 'wingfoil', 'speckit-docs': 'speckit' };
 
 /** The files a {@link completeArmYaml} declares, created with some content. */
 export const COMPLETE_ARM_FILES = ['setup.sh', 'manual.md', 'environment/NOTES.md', 'mcp.json'];

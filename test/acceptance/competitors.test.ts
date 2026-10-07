@@ -1,4 +1,5 @@
-import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { stringify } from 'yaml';
@@ -8,8 +9,9 @@ import { armDigest } from '../../src/arms/index.js';
 import { checkCampaign } from '../../src/cli/index.js';
 import type { RunOnceRequest } from '../../src/core/index.js';
 import { runCampaign } from '../../src/runner/index.js';
+import { escapeHtml } from '../../src/site/render.js';
 import { repoPath } from '../support/paths.js';
-import { doubles } from '../support/runner-doubles.js';
+import { doubles, fakeBuild } from '../support/runner-doubles.js';
 import { completeCampaignYaml, writeRepo } from '../support/campaign-fixture.js';
 import { registerEntry, writeRegister } from '../support/eligibility-fixture.js';
 import { EXECUTION } from '../support/score-fixture.js';
@@ -276,10 +278,157 @@ describe('competitors.feature, the competitor arms', () => {
     // Given a docs control whose docs_of names an unknown arm
     const unknown = writeRepo({ ...completeCampaignYaml(), arms: ['baseline', 'baseline-docs', 'wingfoil'] });
     const docs = join(unknown.root, 'arms', 'baseline-docs', 'arm.yaml');
-    writeFileSync(docs, `${readFileSync(docs, 'utf8')}docs_of: ghost\n`);
+    writeFileSync(docs, readFileSync(docs, 'utf8').replace('docs_of: wingfoil', 'docs_of: ghost'));
     const refusedDocs = checkCampaign(unknown.file);
     expect(refusedDocs.ok ? [] : refusedDocs.issues).toEqual([
       { path: 'arms[1]', message: "baseline-docs: docs_of names 'ghost', which is not an arm under arms/" },
     ]);
+  });
+});
+
+const RULE = [
+  '---',
+  'id: r1',
+  'type: directive',
+  'title: "No new runtime dependency"',
+  '---',
+  '',
+  '# No new runtime dependency',
+  '',
+  'Add no package to `dependencies`.',
+  '',
+].join('\n');
+
+/** S1 in every v0.2 arm that exists: the harnesses, their docs controls (the repository's own arms), and the baseline. */
+function controlsCampaign() {
+  const repo = writeRepo(
+    {
+      ...harnessCampaign(),
+      arms: ['baseline', 'wingfoil', 'baseline-docs', 'speckit', 'speckit-docs'],
+      harnesses: {
+        wingfoil: { tool: 'wingfoil', version: '3df305e' },
+        speckit: { tool: 'speckit', version: 'v1.1.0' },
+      },
+    },
+    ['S1@1.0'],
+  );
+  for (const arm of ['baseline-docs', 'speckit', 'speckit-docs']) {
+    rmSync(join(repo.root, 'arms', arm), { recursive: true, force: true });
+    cpSync(repoPath(`arms/${arm}`), join(repo.root, 'arms', arm), { recursive: true });
+  }
+  // The scenario's project rules, declared once as the wingfoil arm's directives (dl-005).
+  const config = join(repo.root, 'scenarios', 'S1', '1.0', 'arms', 'wingfoil', '.wingfoil');
+  mkdirSync(join(config, 'directives', 'custom'), { recursive: true });
+  writeFileSync(join(config, 'roles.yaml'), 'assignments:\n  developer:\n    - r1\n');
+  writeFileSync(join(config, 'directives', 'custom', 'r1.md'), RULE);
+  return repo;
+}
+
+/**
+ * The doubles' one-off containers, with the speckit arm's setup leaving what Spec Kit's init leaves: its constitution
+ * template, its mechanics (a template, a workflow, its init options) and its skills.
+ */
+function speckitSetup(request: RunOnceRequest): void {
+  const build = request.mount.source;
+  const arm = join(build, 'arm', 'arm.yaml');
+  if (!(
+    request.command.join(' ').includes('/build/arm/') && readFileSync(arm, 'utf8').includes('name: speckit')
+  )) {
+    fakeBuild(request);
+    return;
+  }
+  const workspace = join(build, 'workspace');
+  for (const [file, text] of [
+    ['.specify/memory/constitution.md', '# [PROJECT_NAME] Constitution\n\n### [PRINCIPLE_1_NAME]\n'],
+    ['.specify/templates/spec-template.md', '# Spec template\n'],
+    ['.specify/workflows/speckit/workflow.yml', 'name: workflow\n'],
+    ['.specify/init-options.json', '{ "init-options": true }\n'],
+    ['.claude/skills/speckit-specify/SKILL.md', '# speckit-specify\n'],
+  ] as const) {
+    mkdirSync(join(workspace, file, '..'), { recursive: true });
+    writeFileSync(join(workspace, file), text);
+  }
+}
+
+describe('competitors.feature, the docs controls and the setups', () => {
+  it('@F7.1 Each harness has its own docs control', async () => {
+    // Given each harness arm's configuration, captured by running its own setup
+    const { file } = controlsCampaign();
+    const checked = checkCampaign(file);
+    if (!checked.ok) throw new Error(JSON.stringify(checked.issues));
+    const execute = async () => {
+      const ports = doubles({ commits: { '3df305e': SHA, 'v1.1.0': SPECKIT_SHA }, onRunOnce: speckitSetup });
+      const summary = await runCampaign(checked.value, {
+        ...ports,
+        harnessSources: { wingfoil: '/clones/wingfoil', speckit: '/clones/spec-kit' },
+      });
+      const generated = (arm: string) =>
+        readFileSync(join(summary.resultsDir, 'generated', 'S1@1.0', arm, 'PROJECT_RULES.md'), 'utf8');
+      return { baselineDocs: generated('baseline-docs'), speckitDocs: generated('speckit-docs'), summary };
+    };
+    // When each docs environment is generated twice
+    const first = await execute();
+    const second = await execute();
+    // Then both generations are byte-identical
+    expect(second.baselineDocs).toBe(first.baselineDocs);
+    expect(second.speckitDocs).toBe(first.speckitDocs);
+    // And every kind of content the generator declares as rendered appears in it, and no kind it declares as left out
+    expect(first.baselineDocs).toContain('### Fake rule');
+    expect(first.baselineDocs).not.toContain('Benchmark Approver');
+    expect(first.speckitDocs).toContain('### No new runtime dependency');
+    for (const mechanics of [
+      '[PROJECT_NAME]',
+      'speckit-specify',
+      'Spec template',
+      'name: workflow',
+      'init-options',
+    ])
+      expect(first.speckitDocs).not.toContain(mechanics);
+    // Of the speckit configuration its setup left, the control kept its memory, not its mechanics.
+    const kept = join(first.summary.resultsDir, 'generated', 'S1@1.0', 'speckit-docs', 'speckit');
+    expect(existsSync(join(kept, '.specify', 'memory', 'constitution.md'))).toBe(true);
+    expect(existsSync(join(kept, '.specify', 'templates'))).toBe(false);
+    expect(existsSync(join(kept, '.claude'))).toBe(false);
+    // Each docs control's run received its environment and recorded its digest.
+    for (const arm of ['baseline-docs', 'speckit-docs']) {
+      const run = first.summary.runs.find((r) => r.arm === arm);
+      const record = JSON.parse(readFileSync(join(run?.outputDir ?? '', 'run.json'), 'utf8')) as {
+        generated_sha256?: string;
+      };
+      expect(record.generated_sha256).toBe(
+        createHash('sha256')
+          .update(
+            readFileSync(join(first.summary.resultsDir, 'generated', 'S1@1.0', arm, 'PROJECT_RULES.md')),
+          )
+          .digest('hex'),
+      );
+    }
+  });
+
+  it("@F7.1 Every harness arm's setup is published", async () => {
+    const { root } = await siteExecution();
+    // When the maintainer builds the site
+    const build = await benchSite(root, 'site', 'build', EXECUTION);
+    expect(build.code, build.stderr).toBe(0);
+    // Then each harness arm has a setup page with its setup script, its telemetry setting, its operating manual, its
+    // rules and what its docs control renders
+    const page = readFileSync(
+      join(root, 'site', 'abcdef012345', '1', 'material', 'setup-wingfoil.html'),
+      'utf8',
+    );
+    expect(page).toContain(
+      escapeHtml(readFileSync(repoPath('arms/wingfoil/setup.sh'), 'utf8').split('\n')[1] ?? 'x'),
+    );
+    expect(page).toContain('id="telemetry"');
+    expect(page).toContain('href="manual-wingfoil.html"');
+    expect(page).toContain('id="rules"');
+    expect(page).toContain('id="docs-control"');
+    expect(page).toContain('baseline-docs');
+    expect(page).toContain('carries no approval authority');
+    expect(existsSync(join(root, 'site', 'abcdef012345', '1', 'material', 'setup-baseline.html'))).toBe(
+      false,
+    );
+    const method = readFileSync(join(root, 'site', 'abcdef012345', '1', 'method.html'), 'utf8');
+    expect(method).toContain('href="material/setup-wingfoil.html"');
   });
 });

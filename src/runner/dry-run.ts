@@ -13,7 +13,6 @@ import {
   scanScenario,
 } from '../scenario/index.js';
 
-import { GENERATED_ARM, SOURCE_ARM } from './project-rules.js';
 import { runPlan } from './run.js';
 import type { RunnerOptions, RunSummary } from './run.js';
 
@@ -36,7 +35,7 @@ export interface CheckedDryRun {
   readonly scenario: Scenario;
   /** The arm that runs. */
   readonly arm: Arm;
-  /** Every arm loaded: the one that runs, and the wingfoil arm for baseline-docs (REQ-RUN-11). */
+  /** Every arm loaded: the one that runs, and for a docs control the arm it is generated from (REQ-RUN-11). */
   readonly arms: readonly Arm[];
   readonly model: string;
 }
@@ -45,7 +44,7 @@ export interface CheckedDryRun {
  * Check a dry run before anything is built (F3.3, task-021 Design), in order: the profile
  * (`scenarios/dry-run.yaml` under `root`), the model, the scenario version — its own checks, its
  * immutability against stored campaign results (REQ-FMT-09), the leak scan **without the hold-out**,
- * which a run never reads (REQ-CLI-10) — then the arm, with the arm baseline-docs is generated from,
+ * which a run never reads (REQ-CLI-10) — then the arm, with the arm a docs control is generated from,
  * and the harness coverage of the arms loaded.
  */
 export function checkDryRun(request: DryRunRequest, root: string): Result<CheckedDryRun> {
@@ -70,16 +69,19 @@ export function checkDryRun(request: DryRunRequest, root: string): Result<Checke
   if (leaks.length > 0) return fail(leaks);
 
   const armsRoot = join(root, 'arms');
-  const names = request.arm === GENERATED_ARM ? [request.arm, SOURCE_ARM] : [request.arm];
+  // A docs control is generated from the arm its `docs_of` names, which the dry run loads too (REQ-RUN-11).
+  const requested = loadArm(armsRoot, request.arm);
+  const docsOf = requested.ok ? requested.value.docsOf : undefined;
+  const names = docsOf === undefined ? [request.arm] : [request.arm, docsOf];
   const arms: Arm[] = [];
   const issues: Issue[] = [];
   for (const name of names) {
-    const arm = loadArm(armsRoot, name);
+    const arm = name === request.arm ? requested : loadArm(armsRoot, name);
     if (arm.ok) arms.push(arm.value);
     else {
       const role = name === request.arm ? '--arm' : 'arms';
       const why = arm.issues.map((issue) => `${issue.path} ${issue.message}`).join('; ');
-      const source = name === request.arm ? '' : ` (${GENERATED_ARM} is generated from it)`;
+      const source = name === request.arm ? '' : ` (${request.arm} is generated from it)`;
       issues.push({ path: role, message: `${name}${source}: ${why}` });
     }
   }
