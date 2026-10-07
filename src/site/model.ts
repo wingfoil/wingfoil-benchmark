@@ -145,6 +145,9 @@ const groupShape = z.object({
   }),
 });
 
+/** One side of a control comparison (task-068): every figure the page prints. */
+const side = z.object({ n: z.number(), mean: z.number(), min: z.number(), max: z.number() });
+
 /** What the site needs an aggregate to be before it reads it: its shape, not every value (task-045's review). */
 const aggregateShape = z.object({
   aggregate_version: z.number().int(),
@@ -161,7 +164,19 @@ const aggregateShape = z.object({
         version: z.string(),
         harness: z.string(),
         control: z.string(),
-        metrics: z.array(z.object({ metric: z.string() })),
+        metrics: z.array(
+          z.union([
+            z.object({ metric: z.string(), note: z.string() }),
+            z.object({
+              metric: z.string(),
+              outcome: z.enum(['better', 'worse', 'same']),
+              delta: z.number(),
+              certainty: z.enum(['beyond variance', 'within variance', 'preliminary']),
+              harness: side,
+              control: side,
+            }),
+          ]),
+        ),
       }),
     )
     .optional(),

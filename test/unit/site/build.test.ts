@@ -341,8 +341,13 @@ describe('each harness against its own docs control (REQ-SCO-14, REQ-RES-03 as a
     expect(page).toMatch(
       /against baseline-docs[^<]*<\/span> <span class="delta">[^<]*<\/span> <span class="outcome" data-outcome="same">/,
     );
-    // The headline counts the comparisons with the baseline only.
-    expect(built.stdout).not.toContain('against its docs control');
+    // The headline counts the comparisons with the baseline only: the same sentence as before the controls were
+    // paired, and no comparison with a control on the landing page.
+    const landing = readFileSync(join(root, 'site', 'abcdef012345', '1', 'index.html'), 'utf8');
+    expect(landing).not.toContain('against baseline-docs');
+    expect(built.stdout).toContain(
+      'Against the baseline, wingfoil is better in 1, worse in 1 and the same in 3 of 5',
+    );
   }, 240_000);
 
   it('still builds an aggregate written before it: the comparison reads not measured', async () => {
@@ -359,5 +364,26 @@ describe('each harness against its own docs control (REQ-SCO-14, REQ-RES-03 as a
     // Only a harness arm has a docs control: one line per metric of C's map (M-Q1, M-K1), wingfoil's, none for the
     // baseline.
     expect(page.match(/against its docs control/g)?.length).toBe(2);
+  }, 240_000);
+});
+
+describe('an aggregate whose controls are not what the site reads (task-068’s review)', () => {
+  it('is refused, naming the field, before a page is written', async () => {
+    const { root, executionDir } = await siteExecution();
+    const file = join(executionDir, 'aggregate.json');
+    const aggregate = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>;
+    aggregate.controls = [
+      {
+        scenario: 'TC',
+        version: '1.0',
+        harness: 'wingfoil',
+        control: 'baseline-docs',
+        metrics: [{ metric: 'M-Q1', certainty: '<b>x' }],
+      },
+    ];
+    writeFileSync(file, `${JSON.stringify(aggregate, undefined, 2)}\n`);
+    const built = await benchSite(root, 'site', 'build', EXECUTION);
+    expect(built.code).toBe(1);
+    expect(built.stderr).toContain('is not an aggregate this site reads: controls.0.metrics.0');
   }, 240_000);
 });

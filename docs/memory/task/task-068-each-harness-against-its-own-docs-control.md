@@ -119,3 +119,13 @@ on the same scenario version and model. Slices are left out, as the site's compa
   - **the method page:** `{#harness-against-control}` and its statement's sources.
   - **the W3 Docker test:** asserts `docs_of`.
 - Lint found an unused import left by the move (fixed in b5508b8).
+- Review round 1 fixes:
+  - the site checks every field of `controls` it prints, and escapes `outcome` and `certainty`;
+  - the headline test reads `index.html` and the stdout sentence;
+  - the M-E1 note names each run with its arm;
+  - a control group whose runs disagree on `docs_of` pairs nothing;
+  - an ordering test with two harnesses;
+  - method.md no longer lists only two harnesses.
+- **v0.1's published execution** (`c82a5e74885b/1`), built from a `git archive` of this branch with its CLI:
+  17 pages. The headline is the same as main's CLI gives. Only the category pages C–F differ: they gain "against its
+  docs control: not measured" under each wingfoil value (6 lines).

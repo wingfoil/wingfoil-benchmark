@@ -1046,8 +1046,11 @@ function controlComparisons(
   const comparisons: ControlComparison[] = [];
   grouped.forEach((runs, index) => {
     const [first] = runs as [ScoredRun, ...ScoredRun[]];
+    // Paired only when every run of the group records the same docs_of: a group mixing runs from before task-068
+    // with later ones pairs nothing, rather than counting runs that recorded no pairing.
     const harnessArm = first.docsOf;
     if (harnessArm === undefined || first.model !== model) return;
+    if (runs.some((run) => run.docsOf !== harnessArm)) return;
     const control = groups[index] as Group;
     const harness = groups.find(
       (group) =>
@@ -1079,11 +1082,15 @@ function controlMetric(entry: MapEntry, harness: Group, control: Group): Control
   const controlFigures = readMetric(entry.id, control);
   if (harnessFigures === undefined || controlFigures === undefined) return [];
   // M-E1 with a run that did not reach a directive check's step is not comparable, in the site's words.
-  const lost = [...(harnessFigures.unreached ?? []), ...(controlFigures.unreached ?? [])];
+  const lost = [
+    ...(harnessFigures.unreached ?? []).map((entry) => ({ ...entry, arm: harness.arm })),
+    ...(controlFigures.unreached ?? []).map((entry) => ({ ...entry, arm: control.arm })),
+  ];
   if (lost.length > 0) {
+    // Each run named with its arm: both groups have an r1, and the note sits under the harness's value.
     const why = lost
       .map((entry) => {
-        const run = entry.run.split('/').at(-1) ?? entry.run;
+        const run = `${entry.arm} ${entry.run.split('/').at(-1) ?? entry.run}`;
         return entry.step === undefined
           ? `${run} was not scored with the directive checks`
           : `${run} did not reach step ${entry.step}`;

@@ -1010,8 +1010,26 @@ describe('each harness against its own docs control (REQ-SCO-14, task-068)', () 
     );
     expect(file.controls?.[0]?.metrics.find((entry) => entry.metric === 'M-E1')).toEqual({
       metric: 'M-E1',
-      note: 'not comparable: r1 did not reach step 1',
+      note: 'not comparable: baseline-docs r1 did not reach step 1',
     });
+  });
+
+  it('pairs nothing when the control group’s runs disagree on docs_of', () => {
+    expect(aggregate(execution([base, harness(), control(1, 2, 'wingfoil'), control(2, 2, null)])).controls).toEqual([]);
+  });
+
+  it('orders the entries by scenario, version and harness', () => {
+    const speckit: RunSpec = { ...harness(), arm: 'speckit' };
+    const speckitDocs: RunSpec = { ...control(), arm: 'speckit-docs', docsOf: 'speckit' };
+    const other = (spec: RunSpec): RunSpec => ({ ...spec, scenario: 'A1' });
+    const file = aggregate(
+      execution([base, speckit, speckitDocs, harness(), control(), other(base), other(harness()), other(control())]),
+    );
+    expect(file.controls?.map((entry) => `${entry.scenario} ${entry.harness} ${entry.control}`)).toEqual([
+      'A1 wingfoil baseline-docs',
+      'T3 speckit speckit-docs',
+      'T3 wingfoil baseline-docs',
+    ]);
   });
 
   it('is the same bytes aggregated twice', () => {

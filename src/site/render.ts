@@ -136,7 +136,7 @@ function againstHtml(metric: MetricId, value: ArmValue): string {
   if ('note' in compared)
     return `<div class="value against">${label}: <span class="note">${e(compared.note)}</span></div>`;
   const badged = compared.certainty === 'preliminary' && compared.harness.n === 1;
-  const certainty = badged ? '' : ` <span class="certainty">${compared.certainty}</span>`;
+  const certainty = badged ? '' : ` <span class="certainty">${e(compared.certainty)}</span>`;
   return (
     `<div class="value against"><span class="metric">${label}</span> <span class="delta">${e(formatDelta(metric, compared.delta))}</span> ` +
     `${outcomeHtml(compared)}${certainty}</div>`
@@ -146,7 +146,7 @@ function againstHtml(metric: MetricId, value: ArmValue): string {
 /** Wins, losses and ties in one markup: the same element and class, told apart by a word and a symbol. */
 function outcomeHtml(comparison: Pick<Comparison, 'outcome'>): string {
   const symbol = { better: '▲', worse: '▼', same: '=' }[comparison.outcome];
-  return `<span class="outcome" data-outcome="${comparison.outcome}">${symbol} ${comparison.outcome}</span>`;
+  return `<span class="outcome" data-outcome="${e(comparison.outcome)}">${symbol} ${e(comparison.outcome)}</span>`;
 }
 
 function tallies(values: readonly Tally[]): string {
