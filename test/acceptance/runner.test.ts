@@ -519,10 +519,20 @@ describe('runner.feature', () => {
     const record = runRecord(run?.outputDir);
     expect(record.interventions).toEqual([{ step: 1, kind: 'approval', reply: APPROVED }]);
     expect(record.steps).toMatchObject([{ n: 1, outcome: 'completed', interventions: 1 }]);
-    // The step's usage is the session and its resume together, as the parser reads the two streams.
+    // The step's usage is the session and its resume together, as the parser reads the two streams; its tokens are
+    // every model's, at the latest reading per model (bug-012, task-069).
     const both = readSession([...recording('approval.jsonl'), ...recording('completed.jsonl')], rate);
+    const models = Object.values(both.models);
+    const sum = (pick: (m: (typeof models)[number]) => number) =>
+      models.reduce((total, m) => total + pick(m), 0);
     const stepDir = join(run?.outputDir ?? '', 'steps', '01');
-    expect(JSON.parse(readFileSync(join(stepDir, 'usage.json'), 'utf8'))).toEqual(both.usage);
+    expect(JSON.parse(readFileSync(join(stepDir, 'usage.json'), 'utf8'))).toEqual({
+      ...both.usage,
+      inputTokens: sum((m) => m.inputTokens),
+      outputTokens: sum((m) => m.outputTokens),
+      cacheCreationInputTokens: sum((m) => m.cacheCreationInputTokens),
+      cacheReadInputTokens: sum((m) => m.cacheReadInputTokens),
+    });
     expect(readFileSync(join(stepDir, 'transcript.jsonl'), 'utf8')).toBe(
       both.transcript.map((line) => `${line}\n`).join(''),
     );

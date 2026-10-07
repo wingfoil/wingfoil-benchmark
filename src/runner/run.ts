@@ -864,7 +864,13 @@ async function executeStep(
     previousCommit,
     mcpConfig,
   } = context;
-  const mcp = mcpConfig === undefined ? {} : { mcpConfig };
+  // What every invocation of the step carries beside its own fields: the arm's MCP configuration (adr-003 decision 12)
+  // and the effort pinned for the model (dl-015).
+  const effort = pins.agent.effort?.[model];
+  const mcp = {
+    ...(mcpConfig === undefined ? {} : { mcpConfig }),
+    ...(effort === undefined ? {} : { effort }),
+  };
   const number = stepNumber(step.n);
   let prompt: string;
   try {
@@ -1258,6 +1264,8 @@ function record(run: RunResult, plan: RunPlan): RunResult {
         ...(run.telemetryOff === undefined ? {} : { telemetry_off: run.telemetryOff }),
         ...(run.docsOf === undefined ? {} : { docs_of: run.docsOf }),
         model: run.model,
+        // The effort the model ran at (dl-015), `none` included; absent when nothing was pinned.
+        ...(agent.effort?.[run.model] === undefined ? {} : { effort: agent.effort[run.model] }),
         repetition: run.repetition,
         agent,
         approver_policy,

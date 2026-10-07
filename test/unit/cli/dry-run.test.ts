@@ -220,6 +220,22 @@ describe('bench scenario dry-run: the checks before anything is built (task-021 
     expect(p.recorded.builds).toEqual([]);
   });
 
+  it('runs a real agent only at an effort the profile pins for its model (dl-015, task-069)', async () => {
+    const root = repository({ ...dryRunProfileYaml(), agent: { name: 'claude-code', version: '2.1.280' } });
+    const token = join(tempDir('bench-token-'), 'token');
+    writeFileSync(token, 'not-a-real-token\n');
+    vi.stubEnv('BENCH_AGENT_TOKEN_FILE', token);
+    const p = ports();
+    expect(await dryRun(root, ['T3@1.0', '--arm', 'baseline', '--allow-spending'], p)).toEqual({
+      code: 1,
+      stdout: '',
+      stderr:
+        'agent.effort.fake-model: is required for a real agent: the effort it runs fake-model at ' +
+        '(low, medium, high, xhigh, max, none)\n',
+    });
+    expect(p.recorded.builds).toEqual([]);
+  });
+
   it('needs the WingFoil clone for an arm that builds WingFoil', async () => {
     vi.stubEnv('BENCH_WINGFOIL_REPO', '');
     const result = await dryRun(repository(), ['T3@1.0', '--arm', 'wingfoil']);

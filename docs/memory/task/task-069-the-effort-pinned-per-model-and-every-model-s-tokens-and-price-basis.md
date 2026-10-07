@@ -49,8 +49,9 @@ every model, and an unpriced cost cannot pass unnoticed — each with the fake a
   Claude Code's `low`, `medium`, `high`, `xhigh` or `max`, or **`none`**: the runner passes no flag. `none` is for a
   model that takes no effort, such as Haiku 4.5 (dl-015). The dry-run profile picks `agent` from the campaign schema,
   so it gets the same field. The campaign's identity hashes the whole file, so the effort is part of it with no new
-  code. A model named in `effort` must be one of the campaign's models (default or a slice); otherwise the file is
-  refused.
+  code. A model named in `effort` that the campaign does not run is inert, and is not refused. *(Changed in build:
+  the Design first refused it. That adds nothing dl-015 asks for, and would refuse a shared pin list reused across
+  campaigns.)*
 - **Required for a real agent, at run time.** `bench campaign run` and `bench scenario dry-run` with
   `claude-code` refuse, before the estimate and before any build, a model with no effort. The message names the
   model and the field. `campaign validate` prints the same as a `requires` line, as the preflight does (task-060).

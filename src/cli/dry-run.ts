@@ -1,6 +1,6 @@
 import { join, relative } from 'node:path';
 
-import { reasonOf } from '../core/index.js';
+import { effortRefusal, missingEffort, reasonOf } from '../core/index.js';
 import { latestDryRun } from '../results/index.js';
 import { checkDryRun, runDryRun } from '../runner/index.js';
 import type { DryRunRequest } from '../runner/index.js';
@@ -77,6 +77,9 @@ export async function dryRunCommand(
     },
   });
   if (!spending.ok) return report(spending.issues, io);
+  // dl-015: a real agent's dry run runs its model at the profile's pinned effort.
+  const unpinned = missingEffort(profile.agent, [model]);
+  if (unpinned.length > 0) return report(unpinned.map(effortRefusal), io);
   const { credential, harnessSources } = spending.value;
   const resolved = ports ? { ok: true as const, value: ports } : portsFor(profile, credential);
   if (!resolved.ok) return report(resolved.issues, io);

@@ -497,6 +497,32 @@ describe('runCampaign', () => {
     expect(usageOf('02')).toMatchObject({ inputTokens: 1, outputTokens: 50 });
   });
 
+  it('passes the effort pinned for the model on every invocation, and records it (dl-015, task-069)', async () => {
+    const yaml = campaignYaml();
+    yaml.agent = { name: 'fake', version: '1.0.0', effort: { 'fake-model': 'medium' } };
+    const { checked } = checkedCampaign(yaml);
+    const ports = doubles({
+      messageOf: (request) => (request.step === 1 && invocationOf(request) === 0 ? 'Which one?' : undefined),
+    });
+
+    const summary = await runCampaign(checked, ports);
+
+    expect(ports.recorded.steps.map((request) => request.effort)).toEqual(['medium', 'medium']);
+    expect(ports.recorded.resumes.map((request) => request.effort)).toEqual(['medium']);
+    const record = JSON.parse(readFileSync(join(summary.runs[0]?.outputDir ?? '', 'run.json'), 'utf8')) as {
+      effort?: string;
+    };
+    expect(record.effort).toBe('medium');
+
+    // Nothing pinned: no effort passed, none recorded.
+    const plain = doubles();
+    const unpinned = await runCampaign(checkedCampaign().checked, plain);
+    expect(plain.recorded.steps.every((request) => request.effort === undefined)).toBe(true);
+    expect(readFileSync(join(unpinned.runs[0]?.outputDir ?? '', 'run.json'), 'utf8')).not.toContain(
+      '"effort"',
+    );
+  });
+
   it('fails the run when a step prompt cannot be read', async () => {
     const { checked, root } = checkedCampaign();
     rmSync(join(root, 'scenarios', 'S1', '1.0', 'prompts', '01.md'));

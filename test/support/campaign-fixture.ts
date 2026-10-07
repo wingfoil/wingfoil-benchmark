@@ -23,7 +23,12 @@ export function completeCampaignYaml(): Record<string, unknown> {
       { id: 'S8', version: '1.0' },
     ],
     arms: ['baseline', 'baseline-docs', 'wingfoil'],
-    agent: { name: 'claude-code', version: '2.1.221' },
+    // A real agent runs every model at a pinned effort (dl-015, task-069).
+    agent: {
+      name: 'claude-code',
+      version: '2.1.221',
+      effort: { 'claude-sonnet-5': 'high', 'claude-opus-5': 'high' },
+    },
     models: {
       default: 'claude-sonnet-5',
       slices: [

@@ -26,6 +26,9 @@ const BASELINE_ARM = 'baseline';
 /** The agent adapters a campaign may name. Until W2 only `fake` can run (adr-001, default 7). */
 const AGENT_NAMES = ['claude-code', 'fake'] as const;
 
+/** Claude Code's `--effort` levels (dl-015), and `none`: a model that takes no effort gets no flag. */
+export const EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max', 'none'] as const;
+
 /**
  * REQ-FMT-03. A version YAML read as a number (unquoted `0000000` or `12`) is reported as unpinned
  * too, with the same message, rather than as a type error.
@@ -120,6 +123,8 @@ export const campaignSchema = z.strictObject({
   agent: z.strictObject({
     name: z.enum(AGENT_NAMES),
     version: z.string().regex(RELEASE, 'must be a released version such as 2.1.221'),
+    // dl-015, REQ-RUN-16 as amended in 1.27: the effort each model runs at, `none` for no flag.
+    effort: z.record(modelId, z.enum(EFFORT_LEVELS)).optional(),
   }),
   models: z.strictObject({
     default: modelId,
@@ -244,4 +249,22 @@ export function harnessCoverage(
     }
   }
   return issues;
+}
+
+/**
+ * The models a real agent would run with no effort pinned (dl-015, REQ-RUN-16 as amended in 1.27): every one of
+ * `models` the agent's `effort` does not name, for `claude-code`; none for the fake agent. Not a schema rule, so that
+ * a campaign file written before it stays readable as a record; `run` refuses it.
+ */
+export function missingEffort(agent: CampaignFile['agent'], models: readonly string[]): string[] {
+  if (agent.name !== 'claude-code') return [];
+  return [...new Set(models)].filter((model) => agent.effort?.[model] === undefined);
+}
+
+/** How a model with no effort is refused, or listed by `validate`. */
+export function effortRefusal(model: string): Issue {
+  return {
+    path: `agent.effort.${model}`,
+    message: `is required for a real agent: the effort it runs ${model} at (${EFFORT_LEVELS.join(', ')})`,
+  };
 }
