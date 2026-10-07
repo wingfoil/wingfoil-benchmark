@@ -107,3 +107,35 @@ scalar, through the `yaml` library, so quoting is never by hand.
 
 - `npx wingfoil memory add --type task --title "OpenSpec arm with project rules rendered"`. Declared: creates the element from the template and
   commits it. Observed: `wf(task): add task-071-openspec-arm-with-project-rules-rendered`, `status: draft`. Matches.
+- `npx wingfoil memory submit task-071-…` (backlog → in-progress), after the Design commit. Declared: moves the task
+  to its next state and commits it. Observed: `wf(task): submit task-071-…`, `status: in-progress`. Matches.
+- Build:
+  - **Red first:** `test/unit/runner/openspec-arm.test.ts`, seven tests:
+    - the registry build's script;
+    - no git call, and the version-keyed cache;
+    - a tampered artifact refused, and a commit pin refused;
+    - `run.json`'s harness, its commit the tarball's SHA-256;
+    - the rules written into `openspec/config.yaml`'s context, and the case without rules;
+    - the telemetry setting.
+  - **Then the code:**
+    - `src/runner/harness.ts` gains `REGISTRY_PACKAGES`, `registryBuild` and `prepareFromRegistry`. The building
+      and storing is factored into `buildInto`, shared with the clone builds, and `fromCache` takes a match
+      predicate (by commit, or by version).
+    - New `arms/openspec/`, with task-070's setup draft.
+    - `src/arms/openspec.ts` holds `renderOpenSpecConfig`, which writes YAML through the `yaml` library as a block
+      literal, keeping `schema: spec-driven`. `RULES_GENERATORS.openspec` registers it.
+  - `harness.test.ts`'s "no builder" test used openspec as its example of an unbuilt tool. It now uses `unbuilt`,
+    with a test register entry. The test register also admits `openspec 1.14.0`.
+  - **Acceptance:**
+    - The competitor-arm outline now runs both rows, speckit and openspec, in one `it`, because the traceability
+      scanner reads literal titles. Its openspec row was written after the code: a deviation from test-first. The
+      unit tests above were the red ones.
+    - "A scenario's project rules reach every arm without changing the scenario" was red first (traceability).
+      It covers wingfoil, speckit and openspec and the two docs controls that exist. openspec-docs joins with
+      task-072. Its double applies the scenario's `.wingfoil/` overlay in the wingfoil snapshot, as the real setup
+      does, so that baseline-docs renders the scenario's rule.
+  - **Docker:** `test/docker/openspec.test.ts` builds OpenSpec from the npm registry for real. A campaign with the fake
+    agent installs and initializes it and writes the rule into `config.yaml`; the commit equals the tarball's digest,
+    and `telemetry_off` is recorded. It passed on its first run.
+  - **Specification and method page:** requirements 1.28 (REQ-FMT-12 for registry tools). method.md: six arms, and
+    the openspec manual and setup page linked.
