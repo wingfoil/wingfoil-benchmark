@@ -796,9 +796,27 @@ function tokensOf(usage: SessionUsage): number {
   return usage.inputTokens + usage.outputTokens + usage.cacheCreationInputTokens + usage.cacheReadInputTokens;
 }
 
-/** The usage of a step's invocations so far. */
+/**
+ * The usage of a step's invocations so far. Its tokens are every model's (bug-012, REQ-RUN-09 as amended in 1.27):
+ * the result event's `usage` counts the run's model only, while `modelUsage` counts every model the session called,
+ * at the session's running total per key, so the step's figure is the sum over its folded models. A step whose
+ * sessions reported no `modelUsage` keeps the sum of its invocations' `usage`.
+ */
 function stepUsage(invocations: readonly StepOutcome[]): SessionUsage {
-  return invocations.map((invocation) => invocation.usage).reduce(combine, NO_USAGE);
+  const usage = invocations.map((invocation) => invocation.usage).reduce(combine, NO_USAGE);
+  const models = Object.values(
+    invocations.map((invocation) => invocation.models ?? {}).reduce(foldModels, {}),
+  );
+  if (models.length === 0) return usage;
+  const sum = (pick: (model: (typeof models)[number]) => number) =>
+    models.reduce((total, m) => total + pick(m), 0);
+  return {
+    ...usage,
+    inputTokens: sum((m) => m.inputTokens),
+    outputTokens: sum((m) => m.outputTokens),
+    cacheCreationInputTokens: sum((m) => m.cacheCreationInputTokens),
+    cacheReadInputTokens: sum((m) => m.cacheReadInputTokens),
+  };
 }
 
 /** How the policy names a kind in the log. */
@@ -846,7 +864,13 @@ async function executeStep(
     previousCommit,
     mcpConfig,
   } = context;
-  const mcp = mcpConfig === undefined ? {} : { mcpConfig };
+  // What every invocation of the step carries beside its own fields: the arm's MCP configuration (adr-003 decision 12)
+  // and the effort pinned for the model (dl-015).
+  const effort = pins.agent.effort?.[model];
+  const perInvocation = {
+    ...(mcpConfig === undefined ? {} : { mcpConfig }),
+    ...(effort === undefined ? {} : { effort }),
+  };
   const number = stepNumber(step.n);
   let prompt: string;
   try {
@@ -1005,7 +1029,7 @@ async function executeStep(
           sessionId,
           reply: RATE_LIMIT_MESSAGE,
           remainingCostUsd: left,
-          ...mcp,
+          ...perInvocation,
           run,
         }),
       );
@@ -1022,7 +1046,7 @@ async function executeStep(
         model,
         sessionId,
         remainingCostUsd,
-        ...mcp,
+        ...perInvocation,
         run,
       }),
     ),
@@ -1070,7 +1094,7 @@ async function executeStep(
         sessionId,
         reply,
         remainingCostUsd: left,
-        ...mcp,
+        ...perInvocation,
         run,
       }),
     );
@@ -1240,6 +1264,8 @@ function record(run: RunResult, plan: RunPlan): RunResult {
         ...(run.telemetryOff === undefined ? {} : { telemetry_off: run.telemetryOff }),
         ...(run.docsOf === undefined ? {} : { docs_of: run.docsOf }),
         model: run.model,
+        // The effort the model ran at (dl-015), `none` included; absent when nothing was pinned.
+        ...(agent.effort?.[run.model] === undefined ? {} : { effort: agent.effort[run.model] }),
         repetition: run.repetition,
         agent,
         approver_policy,

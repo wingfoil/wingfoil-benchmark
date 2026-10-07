@@ -282,6 +282,7 @@ export interface StepRecord {
         cacheCreationInputTokens: number;
         cacheReadInputTokens: number;
         costUsd: number;
+        costBasis?: string;
       }
     >
   >;

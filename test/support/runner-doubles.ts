@@ -19,7 +19,7 @@ import type {
 } from '../../src/core/index.js';
 
 /** A step that reports no usage, which is what a double does unless a test says otherwise. */
-const NO_USAGE: SessionUsage = {
+export const NO_USAGE: SessionUsage = {
   inputTokens: 0,
   outputTokens: 0,
   cacheCreationInputTokens: 0,

@@ -30,7 +30,15 @@ export { dependenciesOf, foldText, linesOf, satisfies } from './check-text.js';
 export { leakScanSchema } from './leak-scan.js';
 export type { LeakScanDeclarations } from './leak-scan.js';
 export type { Arm, ArmFile } from './arm.js';
-export { campaignConsistency, campaignSchema, harnessCoverage, modelId } from './campaign.js';
+export {
+  campaignConsistency,
+  campaignSchema,
+  EFFORT_LEVELS,
+  effortRefusal,
+  harnessCoverage,
+  missingEffort,
+  modelId,
+} from './campaign.js';
 export { dryRunProfileSchema } from './dry-run.js';
 export type { DryRunProfile } from './dry-run.js';
 export type { ArmRequirement, CampaignFile } from './campaign.js';

@@ -279,10 +279,33 @@ describe('runs in a real container', () => {
       '02': ['approval.jsonl', 'completed.jsonl'],
       '03': ['completed.jsonl'],
     };
+    // Its tokens are every model's, at the latest reading per model (bug-012, task-069). Step 01 replays one real
+    // session (the spike's question and its resume), so they are its two invocations' work; step 02 replays two
+    // recordings of different sessions, so its figure is the rule's.
     for (const [n, files] of Object.entries(expected)) {
       const usage: unknown = JSON.parse(readFileSync(join(outputDir, 'steps', n, 'usage.json'), 'utf8'));
-      expect(usage).toEqual(readSession(files.flatMap(recording), 1).usage);
+      const read = readSession(files.flatMap(recording), 1);
+      const models = Object.values(read.models);
+      const sum = (pick: (m: (typeof models)[number]) => number) =>
+        models.reduce((total, m) => total + pick(m), 0);
+      expect(usage).toEqual({
+        ...read.usage,
+        inputTokens: sum((m) => m.inputTokens),
+        outputTokens: sum((m) => m.outputTokens),
+        cacheCreationInputTokens: sum((m) => m.cacheCreationInputTokens),
+        cacheReadInputTokens: sum((m) => m.cacheReadInputTokens),
+      });
     }
+    const first = JSON.parse(readFileSync(join(outputDir, 'steps', '01', 'usage.json'), 'utf8')) as Record<
+      string,
+      number
+    >;
+    expect(
+      (first.inputTokens ?? 0) +
+        (first.outputTokens ?? 0) +
+        (first.cacheCreationInputTokens ?? 0) +
+        (first.cacheReadInputTokens ?? 0),
+    ).toBe(20_858 + 289_720);
 
     // No container is left.
     const containers = execFileSync('docker', ['ps', '--all', '--format', '{{.Names}}'], {
@@ -298,7 +321,13 @@ describe('runs in a real container', () => {
     cpSync(repoPath('test/fixtures/scenarios'), join(root, 'scenarios'), { recursive: true });
     cpSync(repoPath('test/fixtures/arms'), join(root, 'arms'), { recursive: true });
     cpSync(repoPath('scenarios/leak-scan.yaml'), join(root, 'scenarios', 'leak-scan.yaml'));
-    writeDryRunProfile(root, { ...dryRunProfileYaml(), harnesses: {}, currency: { usd_to_eur: 1 } });
+    // The profile pins an effort (dl-015, task-069): the fake needs none, and the run records it.
+    writeDryRunProfile(root, {
+      ...dryRunProfileYaml(),
+      agent: { name: 'fake', version: '1.0.0', effort: { 'fake-model': 'medium' } },
+      harnesses: {},
+      currency: { usd_to_eur: 1 },
+    });
     process.env.BENCH_FAKE_SCRIPT = repoPath('test/fixtures/fake-script-multi-step.json');
 
     let output = '';
@@ -323,7 +352,7 @@ describe('runs in a real container', () => {
         'utf8',
       ),
     ) as { dry_run: boolean; outcome: string; steps: { usage: { costUsd: number } }[] };
-    expect(record).toMatchObject({ dry_run: true, outcome: 'completed' });
+    expect(record).toMatchObject({ dry_run: true, outcome: 'completed', effort: 'medium' });
     const total = record.steps.reduce((sum, step) => sum + step.usage.costUsd, 0);
     expect(total).toBeGreaterThan(0);
     expect(output).toContain(`completed, ${total.toFixed(4)} USD`);

@@ -28,6 +28,8 @@ const modelUsage = z.object({
   cacheCreationInputTokens: z.number(),
   cacheReadInputTokens: z.number(),
   costUsd: z.number(),
+  // bug-016: how the agent priced it; absent in sessions recorded before Claude Code reported it.
+  costBasis: z.string().optional(),
 });
 
 /** What the run detail reads of a `run.json` (REQ-FMT-06): the record the runner writes, loosely. */
@@ -38,6 +40,7 @@ const runSchema = z.object({
   version: z.string(),
   scenario_hash: z.string(),
   arm: z.string(),
+  effort: z.string().optional(),
   model: z.string(),
   repetition: z.number().int(),
   agent: z
@@ -155,6 +158,8 @@ export interface RunDetail {
   readonly scenarioHash: string;
   readonly arm: string;
   readonly model: string;
+  /** The effort the model ran at (dl-015), when the campaign pinned one. */
+  readonly effort?: string;
   readonly repetition: number;
   readonly outcome: string;
   readonly error?: string;
@@ -297,6 +302,7 @@ export function readRunDetail(runDir: string): Result<RunDetail> {
     scenarioHash: run.scenario_hash,
     arm: run.arm,
     model: run.model,
+    ...(run.effort === undefined ? {} : { effort: run.effort }),
     repetition: run.repetition,
     outcome: run.outcome,
     ...(run.error === undefined ? {} : { error: run.error }),

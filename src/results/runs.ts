@@ -64,6 +64,7 @@ const storedRunSchema = z.object({
       outcome: z.string(),
       interventions: z.number().int(),
       cost_bound_usd: z.number().optional(),
+      models: z.record(z.string(), z.object({ costBasis: z.string().optional() })).optional(),
     }),
   ),
 });
@@ -99,6 +100,11 @@ export interface StoredStep {
   readonly interventions: number;
   /** For a step killed at its time cap that reported no cost: the most it can have cost (task-024). */
   readonly costBoundUsd?: number;
+  /**
+   * The models whose cost the agent could not price (bug-016), as `<model> (<basis>)`: a `costBasis` other than
+   * `list`. Absent when there is none, or when the step recorded no basis.
+   */
+  readonly unpriced?: readonly string[];
 }
 
 /** Read the `run.json` of the run in `runDir`; every issue is named against the file. */
@@ -138,9 +144,21 @@ export function readStoredRun(runDir: string): Result<StoredRun> {
         outcome: step.outcome,
         interventions: step.interventions,
         ...(step.cost_bound_usd === undefined ? {} : { costBoundUsd: step.cost_bound_usd }),
+        ...unpricedOf(step.models),
       })),
     },
   };
+}
+
+/** The step's models priced at a basis other than `list` (bug-016), sorted by key; nothing when there is none. */
+function unpricedOf(models: Readonly<Record<string, { costBasis?: string | undefined }>> | undefined): {
+  unpriced?: string[];
+} {
+  const unpriced = Object.entries(models ?? {})
+    .filter(([, model]) => model.costBasis !== undefined && model.costBasis !== 'list')
+    .map(([key, model]) => `${key} (${model.costBasis ?? ''})`)
+    .sort();
+  return unpriced.length === 0 ? {} : { unpriced };
 }
 
 /** What a step's `usage.json` holds. */

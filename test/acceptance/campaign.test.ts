@@ -201,7 +201,11 @@ describe('campaign.feature', () => {
       'S8@1.0',
     ]);
     expect(campaign.spec.arms).toEqual(['baseline', 'baseline-docs', 'wingfoil']);
-    expect(campaign.spec.agent).toEqual({ name: 'claude-code', version: '2.1.221' });
+    expect(campaign.spec.agent).toEqual({
+      name: 'claude-code',
+      version: '2.1.221',
+      effort: { 'claude-sonnet-5': 'high', 'claude-opus-5': 'high' },
+    });
     expect(campaign.spec.models.default).toBe('claude-sonnet-5');
     expect(campaign.spec.repetitions).toEqual({ S1: 3, S2: 1, S3: 1, S8: 1 });
     expect(campaign.spec.approver_policy).toBe('v1');

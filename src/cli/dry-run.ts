@@ -1,6 +1,6 @@
 import { join, relative } from 'node:path';
 
-import { reasonOf } from '../core/index.js';
+import { effortRefusal, missingEffort, reasonOf } from '../core/index.js';
 import { latestDryRun } from '../results/index.js';
 import { checkDryRun, runDryRun } from '../runner/index.js';
 import type { DryRunRequest } from '../runner/index.js';
@@ -66,6 +66,10 @@ export async function dryRunCommand(
   if (!checked.ok) return report(checked.issues, io);
   const { profile, scenario, arm, model } = checked.value;
 
+  // dl-015: a real agent's dry run runs its model at the profile's pinned effort; refused first, as `campaign run` does.
+  const unpinned = missingEffort(profile.agent, [model]);
+  if (unpinned.length > 0) return report(unpinned.map(effortRefusal), io);
+
   const spending = checkSpending(profile, {
     allowSpending: args.allowSpending,
     builds: checked.value.arms.flatMap((loaded) => (loaded.requires === undefined ? [] : [loaded.requires])),
@@ -90,6 +94,7 @@ export async function dryRunCommand(
     hash: scenario.hash,
     arm: arm.name,
     model,
+    ...(profile.agent.effort?.[model] === undefined ? {} : { effort: profile.agent.effort[model] }),
   });
   io.stdout(
     latest === undefined

@@ -1,6 +1,6 @@
 import { missingCapabilities } from '../arms/index.js';
-import { reasonOf } from '../core/index.js';
-import type { Result } from '../core/index.js';
+import { effortRefusal, missingEffort, reasonOf } from '../core/index.js';
+import type { CampaignFile, Result } from '../core/index.js';
 import { checkCampaign, estimateCampaign, formatEstimate, runCampaign, totalLine } from '../runner/index.js';
 import type { CheckedCampaign } from '../runner/index.js';
 
@@ -100,6 +100,16 @@ function validateCampaign(file: string, io: Io): number {
   // environment of the machine that validates it, and `run` refuses what is missing.
   for (const requirement of campaignRequirements(result.value))
     io.stdout(`${formatRequirement(requirement)}\n`);
+  // The effort a real agent runs each model at (dl-015): listed beside the environment, refused by `run`.
+  const pins = result.value.campaign.spec;
+  if (pins.agent.name === 'claude-code') {
+    for (const model of campaignModels(pins)) {
+      const level = pins.agent.effort?.[model];
+      io.stdout(
+        `requires agent.effort.${model} (the effort a real agent runs it at, for run): ${level ?? 'missing'}\n`,
+      );
+    }
+  }
   return EXIT.ok;
 }
 
@@ -159,6 +169,9 @@ async function runCampaignCommand(
   if (unmet.length > 0) return report(unmet.map(refusalOf), io);
 
   const spec = checked.value.campaign.spec;
+  // dl-015: a real agent runs every model at a pinned effort, refused here before the estimate.
+  const unpinned = missingEffort(spec.agent, campaignModels(spec));
+  if (unpinned.length > 0) return report(unpinned.map(effortRefusal), io);
   const rate = spec.currency.usd_to_eur;
   // What it expects to spend, before anything is built (REQ-NFR-06), and the budget guard's first two
   // refusals (F1.3, task-023): a campaign whose cost is unknown, and one above its ceiling, never start.
@@ -261,4 +274,9 @@ export function realPorts(
   credential?: Readonly<Record<string, string>>,
 ): Result<Ports> {
   return portsFor(campaign.campaign.spec, credential);
+}
+
+/** The campaign's models: the default, then each slice's, once each. */
+function campaignModels(spec: CampaignFile): string[] {
+  return [...new Set([spec.models.default, ...(spec.models.slices ?? []).map((slice) => slice.model)])];
 }

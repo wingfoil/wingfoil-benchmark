@@ -41,6 +41,26 @@ async function runWith(ports: ReturnType<typeof doubles> | undefined, ...argv: s
 }
 
 describe('bench campaign validate', () => {
+  it('lists a model a real agent would run with no effort as missing, and run refuses it (dl-015, task-069)', async () => {
+    const yaml = completeCampaignYaml();
+    yaml.agent = { name: 'claude-code', version: '2.1.221', effort: { 'claude-sonnet-5': 'none' } };
+    const { file } = writeRepo(yaml);
+    const validated = await run('campaign', 'validate', file);
+    expect(validated.stdout).toContain(
+      'requires agent.effort.claude-sonnet-5 (the effort a real agent runs it at, for run): none\n' +
+        'requires agent.effort.claude-opus-5 (the effort a real agent runs it at, for run): missing\n',
+    );
+    stubMachine();
+    const ports = doubles();
+    const refused = await runWith(ports, 'campaign', 'run', file, '--allow-spending');
+    expect(refused.code).toBe(1);
+    expect(refused.stderr).toBe(
+      'agent.effort.claude-opus-5: is required for a real agent: the effort it runs claude-opus-5 at ' +
+        '(low, medium, high, xhigh, max, none)\n',
+    );
+    expect(ports.recorded.builds).toEqual([]);
+  });
+
   it('prints the identity of a valid campaign and exits 0', async () => {
     const { file } = writeRepo();
     for (const variable of ['BENCH_AGENT_TOKEN_FILE', 'BENCH_WINGFOIL_REPO', 'BENCH_HOLDOUT_PATH'])
@@ -58,6 +78,8 @@ describe('bench campaign validate', () => {
           'requires BENCH_AGENT_TOKEN_FILE \\(credential file, for run\\): missing\\n' +
           'requires BENCH_WINGFOIL_REPO \\(harness clone of wingfoil, for run\\): missing\\n' +
           'requires BENCH_HOLDOUT_PATH \\(hold-out, for score\\): missing\\n' +
+          'requires agent\\.effort\\.claude-sonnet-5 \\(the effort a real agent runs it at, for run\\): high\\n' +
+          'requires agent\\.effort\\.claude-opus-5 \\(the effort a real agent runs it at, for run\\): high\\n' +
           '$',
       ),
     );
@@ -82,6 +104,8 @@ describe('bench campaign validate', () => {
       'requires BENCH_AGENT_TOKEN_FILE (credential file, for run): missing',
       'requires BENCH_WINGFOIL_REPO (harness clone of wingfoil, for run): set',
       `requires BENCH_HOLDOUT_PATH (hold-out, for score): invalid, ${join(dir, 'missing')} does not exist`,
+      'requires agent.effort.claude-sonnet-5 (the effort a real agent runs it at, for run): high',
+      'requires agent.effort.claude-opus-5 (the effort a real agent runs it at, for run): high',
     ]);
   });
 
@@ -461,7 +485,7 @@ describe('bench campaign run', () => {
 
     it('refuses the ceiling before it asks for the spending flag, and asks nothing', async () => {
       stubMachine();
-      const agent = { agent: { name: 'claude-code', version: '2.1.280' } };
+      const agent = { agent: { name: 'claude-code', version: '2.1.280', effort: { 'fake-model': 'high' } } };
       const asked: string[] = [];
       const ask = (question: string) => {
         asked.push(question);
@@ -578,7 +602,11 @@ describe('realPorts', () => {
   it('refuses to spend without an explicit opt-in, naming the ceiling it would run against', async () => {
     stubMachine();
     const yaml = completeCampaignYaml();
-    yaml.agent = { name: 'claude-code', version: '2.1.280' };
+    yaml.agent = {
+      name: 'claude-code',
+      version: '2.1.280',
+      effort: { 'claude-sonnet-5': 'high', 'claude-opus-5': 'high' },
+    };
     const { file } = writeRepo(yaml);
     priceCampaign(file);
     let stderr = '';

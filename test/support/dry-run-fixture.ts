@@ -38,6 +38,10 @@ export interface StoredDryRun {
   readonly outcome?: string;
   readonly agent?: { readonly name: string; readonly version: string };
   readonly harnessCommit?: string;
+  /** The effort the dry run recorded (dl-015, task-069); absent, none was pinned. */
+  readonly effort?: string;
+  /** A model of its first step priced at a basis other than list (bug-016), as `[model, basis]`. */
+  readonly unpriced?: readonly [string, string];
 }
 
 /**
@@ -60,13 +64,20 @@ export function writeStoredDryRun(root: string, execution: number, run: StoredDr
       scenario_hash: run.hash,
       arm: run.arm,
       model,
+      ...(run.effort === undefined ? {} : { effort: run.effort }),
       repetition: 1,
       agent: run.agent ?? { name: 'fake', version: '1.0.0' },
       ...(run.harnessCommit === undefined
         ? {}
         : { harness: { tool: 'wingfoil', commit: run.harnessCommit } }),
       outcome: run.outcome ?? 'completed',
-      steps: run.stepCostsUsd.map((costUsd, index) => ({ n: index + 1, usage: { costUsd } })),
+      steps: run.stepCostsUsd.map((costUsd, index) => ({
+        n: index + 1,
+        usage: { costUsd },
+        ...(index === 0 && run.unpriced !== undefined
+          ? { models: { [run.unpriced[0]]: { costUsd, costBasis: run.unpriced[1] } } }
+          : {}),
+      })),
     }),
   );
   return executionDir;
@@ -90,7 +101,8 @@ export function priceCampaign(file: string, usd = 0): void {
       arm,
       model,
       stepCostsUsd: [usd],
-      agent: spec.agent,
+      agent: { name: spec.agent.name, version: spec.agent.version },
+      ...(spec.agent.effort?.[model] === undefined ? {} : { effort: spec.agent.effort[model] }),
     });
     execution += 1;
   }

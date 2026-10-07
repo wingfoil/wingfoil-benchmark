@@ -217,6 +217,7 @@ describe('reading a session (REQ-RUN-09)', () => {
         cacheCreationInputTokens: 2895,
         cacheReadInputTokens: 17560,
         costUsd: 0.00734975,
+        costBasis: 'list',
       },
       'claude-haiku-4-5-20251001': {
         inputTokens: 98,
@@ -224,6 +225,7 @@ describe('reading a session (REQ-RUN-09)', () => {
         cacheCreationInputTokens: 6399,
         cacheReadInputTokens: 278256,
         costUsd: 0.06075735000000001,
+        costBasis: 'list',
       },
     });
   });
@@ -242,6 +244,32 @@ describe('reading a session (REQ-RUN-09)', () => {
       z: at(7, 0.01),
     });
     expect(Object.keys(foldModels({ z: at(1, 0) }, { a: at(1, 0) }))).toEqual(['a', 'z']);
+  });
+
+  it('reads the price basis of each model, so a cost the agent could not price is seen (bug-016)', () => {
+    // unpriced.jsonl is completed-sonnet.jsonl with the model renamed and its basis set as bug-016's probe P2 recorded
+    // it: Claude Code 2.1.280 ran claude-sonnet-5-5 without knowing it, and priced it at another model's list.
+    expect(readSession(recorded('unpriced.jsonl'), RATE).models['claude-sonnet-5-5']?.costBasis).toBe(
+      'unknown',
+    );
+    expect(readSession(recorded('completed-sonnet.jsonl'), RATE).models['claude-sonnet-5']?.costBasis).toBe(
+      'list',
+    );
+  });
+
+  it('folds the price basis keeping one that is not list, and leaves it out when no reading has one', () => {
+    const at = (costBasis?: string) => ({
+      inputTokens: 1,
+      outputTokens: 1,
+      cacheCreationInputTokens: 0,
+      cacheReadInputTokens: 0,
+      costUsd: 0.1,
+      ...(costBasis === undefined ? {} : { costBasis }),
+    });
+    expect(foldModels({ a: at('list') }, { a: at('unknown') }).a?.costBasis).toBe('unknown');
+    expect(foldModels({ a: at('unknown') }, { a: at('list') }).a?.costBasis).toBe('unknown');
+    expect(foldModels({ a: at() }, { a: at('list') }).a?.costBasis).toBe('list');
+    expect(foldModels({ a: at() }, { a: at() }).a).not.toHaveProperty('costBasis');
   });
 
   it('reports no models for a session whose results carry no modelUsage', () => {
@@ -399,6 +427,35 @@ describe('the Claude Code adapter (REQ-RUN-04)', () => {
       '/home/node/mcp.json',
       '--strict-mcp-config',
     ]);
+  });
+
+  it('passes the pinned effort on a step and on a resume, and no flag for none (dl-015, task-069)', async () => {
+    const step = runner(recorded('completed.jsonl').join('\n'));
+    await claudeCodeAgent({ token: 'x', usdToEur: RATE }).runStep({ ...request(step.run), effort: 'high' });
+    const line = step.commands[0] ?? [];
+    expect(line.slice(line.indexOf('--model'), line.indexOf('--model') + 4)).toEqual([
+      '--model',
+      'claude-sonnet-5',
+      '--effort',
+      'high',
+    ]);
+
+    const resumed = runner(recorded('resumed.jsonl').join('\n'));
+    await claudeCodeAgent({ token: 'x', usdToEur: RATE }).resume({
+      scenarioId: 'S1',
+      step: 2,
+      intervention: 1,
+      sessionId: '691b34d4-6948-402b-8804-9f8016feb677',
+      reply: 'Approved. Proceed.',
+      remainingCostUsd: 1.25,
+      effort: 'xhigh',
+      run: resumed.run,
+    });
+    expect(resumed.commands[0]?.slice(-2)).toEqual(['--effort', 'xhigh']);
+
+    const none = runner(recorded('completed.jsonl').join('\n'));
+    await claudeCodeAgent({ token: 'x', usdToEur: RATE }).runStep({ ...request(none.run), effort: 'none' });
+    expect(none.commands[0]).not.toContain('--effort');
   });
 
   it('reports the usage and the session the agent actually used', async () => {
