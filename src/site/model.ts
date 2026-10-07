@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { CATEGORIES, fail, ok } from '../core/index.js';
 import type { Category, Issue, Result } from '../core/index.js';
 import { AGGREGATE_FILE, AGGREGATE_VERSION } from '../results/index.js';
-import type { AggregateFile, Group } from '../results/index.js';
+import type { AggregateFile, ControlComparison, ControlMetric, Group } from '../results/index.js';
 import { loadScenario } from '../scenario/index.js';
 
 import { CATEGORY_MAP, compare, readMetric, summarize } from './rules.js';
@@ -43,6 +43,17 @@ export interface ArmValue {
   readonly comparison?: Comparison;
   /** Why there is no value or no comparison: M-E1 not comparable (the approver's choice of 2026-10-01). */
   readonly note?: string;
+  /** A harness arm against its own docs control (REQ-SCO-14, task-068); absent for any other arm. */
+  readonly against?: AgainstControl;
+}
+
+/**
+ * A harness arm's comparison with its docs control, from the aggregate's `controls`: none recorded ("not measured"),
+ * the control with no value of this metric on both sides ("not measured"), or the metric's comparison or note.
+ */
+export interface AgainstControl {
+  readonly control?: string;
+  readonly metric?: ControlMetric;
 }
 
 /** One metric of the category map on one scenario, in every arm. */
@@ -134,6 +145,9 @@ const groupShape = z.object({
   }),
 });
 
+/** One side of a control comparison (task-068): every figure the page prints. */
+const side = z.object({ n: z.number(), mean: z.number(), min: z.number(), max: z.number() });
+
 /** What the site needs an aggregate to be before it reads it: its shape, not every value (task-045's review). */
 const aggregateShape = z.object({
   aggregate_version: z.number().int(),
@@ -142,6 +156,30 @@ const aggregateShape = z.object({
   model: z.string(),
   groups: z.array(groupShape),
   slices: z.array(groupShape),
+  // Absent before task-068: then each harness against its docs control reads "not measured".
+  controls: z
+    .array(
+      z.object({
+        scenario: z.string(),
+        version: z.string(),
+        harness: z.string(),
+        control: z.string(),
+        metrics: z.array(
+          z.union([
+            z.object({ metric: z.string(), note: z.string() }),
+            z.object({
+              metric: z.string(),
+              outcome: z.enum(['better', 'worse', 'same']),
+              delta: z.number(),
+              certainty: z.enum(['beyond variance', 'within variance', 'preliminary']),
+              harness: side,
+              control: side,
+            }),
+          ]),
+        ),
+      }),
+    )
+    .optional(),
 });
 
 function byCodeUnit(a: string, b: string): number {
@@ -243,6 +281,10 @@ export function siteModel(root: string, execution: string): Result<SiteModel> {
 
   const groups = aggregate.groups;
   const arms = [...new Set(groups.map((group) => group.arm))].sort(armOrder);
+  // A harness arm is one whose runs recorded a harness (REQ-RUN-14): the arms a docs control can be generated from.
+  const harnessArms = new Set(
+    [...records.values()].flatMap((record) => (record.harness === undefined ? [] : [record.arm])),
+  );
   const infos = [...scenarios.values()];
   const comparisons: Comparison[] = [];
   const categories = CATEGORIES.map((category): CategoryRow => {
@@ -253,7 +295,12 @@ export function siteModel(root: string, execution: string): Result<SiteModel> {
       const metrics = map.map((entry) => {
         const made = metricRow(category, entry, own, arms);
         comparisons.push(...made.comparisons);
-        return made.row;
+        const values = made.row.values.map((value) =>
+          harnessArms.has(value.arm) && own.some((group) => group.arm === value.arm)
+            ? { ...value, against: againstControl(aggregate.controls, info, value.arm, entry) }
+            : value,
+        );
+        return { ...made.row, values };
       });
       return { scenario: info, metrics, groups: own };
     });
@@ -338,4 +385,20 @@ function readRecord(executionDir: string, run: string): Result<z.output<typeof r
   } catch (error) {
     return fail([{ path: `${run}/run.json`, message: `cannot be read: ${(error as Error).message}` }]);
   }
+}
+
+/** The comparison of `harness` with its docs control on `entry`, for the scenario version `info` (task-068). */
+export function againstControl(
+  controls: readonly ControlComparison[] | undefined,
+  info: { readonly id: string; readonly version: string },
+  harness: string,
+  entry: MapEntry,
+): AgainstControl {
+  const found = controls?.find(
+    (candidate) =>
+      candidate.scenario === info.id && candidate.version === info.version && candidate.harness === harness,
+  );
+  if (found === undefined) return {};
+  const metric = found.metrics.find((candidate) => candidate.metric === entry.id);
+  return metric === undefined ? { control: found.control } : { control: found.control, metric };
 }

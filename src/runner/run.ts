@@ -174,6 +174,8 @@ export interface RunResult {
   readonly armDigest?: string;
   /** The settings that turned the arm's tool's telemetry off (REQ-RUN-18), for an arm that declares them. */
   readonly telemetryOff?: readonly string[];
+  /** A docs control's harness arm (REQ-RUN-11), which the aggregate pairs it with (REQ-SCO-14, task-068). */
+  readonly docsOf?: string;
   /** What the arm's harness was taken to provide (REQ-FMT-10), for an arm that requires one. */
   readonly provides?: Readonly<Record<string, boolean>>;
   /** The scenario's capabilities the harness lacks (F3.6): the run is executed and scored, and marked. */
@@ -459,6 +461,7 @@ async function executeRun(context: RunContext, options: RunnerOptions): Promise<
   const identity = {
     armDigest: context.armDigest,
     ...(arm.telemetryOff === undefined ? {} : { telemetryOff: arm.telemetryOff }),
+    ...(arm.docsOf === undefined ? {} : { docsOf: arm.docsOf }),
     ...(harness === undefined ? {} : { harness }),
     ...(arm.requires === undefined ? {} : { provides: arm.provides }),
     ...(missing.length === 0 ? {} : { expectedFailure: { missing } }),
@@ -1235,6 +1238,7 @@ function record(run: RunResult, plan: RunPlan): RunResult {
         arm: run.arm,
         ...(run.armDigest === undefined ? {} : { arm_digest: run.armDigest }),
         ...(run.telemetryOff === undefined ? {} : { telemetry_off: run.telemetryOff }),
+        ...(run.docsOf === undefined ? {} : { docs_of: run.docsOf }),
         model: run.model,
         repetition: run.repetition,
         agent,

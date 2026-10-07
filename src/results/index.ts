@@ -9,6 +9,9 @@ export { AGGREGATE_FILE, AGGREGATE_VERSION, aggregateExecution, writeAggregate }
 export type {
   AggregateFile,
   BreakEven,
+  ControlComparison,
+  ControlMetric,
+  ControlSide,
   CheckAggregate,
   Group,
   MRAggregate,
@@ -25,3 +28,15 @@ export { findingNote, METRICS } from './finding.js';
 export { packTranscripts, RELEASES, TRANSCRIPTS_ASSET } from './transcripts.js';
 export type { KnownSecret, TranscriptPack } from './transcripts.js';
 export type { FindingNote, FindingRequest, FindingShape, Metric } from './finding.js';
+export { CATEGORY_MAP, compare, readMetric, summarize } from './compare.js';
+export type {
+  Better,
+  Certainty,
+  Comparison,
+  Figures,
+  MapEntry,
+  MappedCategory,
+  MetricId,
+  Outcome,
+  Summary,
+} from './compare.js';

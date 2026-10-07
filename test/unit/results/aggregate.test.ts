@@ -43,6 +43,8 @@ interface RunSpec {
   readonly harnessCommit?: string;
   /** The scoring image score.json's `scorer` names; by default `bench-score:x`. */
   readonly scorerImage?: string;
+  /** A docs control's `docs_of` (REQ-RUN-11, task-068): the harness arm it was generated from. */
+  readonly docsOf?: string;
   /** The scenario hash run.json and score.json both record; by default `sha256:<scenario>`. */
   readonly scenarioHash?: string;
 }
@@ -84,6 +86,7 @@ function execution(runs: readonly RunSpec[], pins = 'models:\n  default: model-a
         model,
         repetition: run.r ?? 1,
         ...(run.harnessCommit === undefined ? {} : { harness: { tool: 'wingfoil', commit: run.harnessCommit } }),
+        ...(run.docsOf === undefined ? {} : { docs_of: run.docsOf }),
         outcome: final === 'not reached' ? 'failed' : 'completed',
         steps: [],
       }),
@@ -921,5 +924,116 @@ describe('aggregateExecution (F5.1, REQ-FMT-07)', () => {
     writeAggregate(dir, aggregate(dir));
     expect(readFileSync(join(dir, AGGREGATE_FILE), 'utf8')).toBe(first);
     expect(first.endsWith('\n')).toBe(true);
+  });
+});
+
+describe('each harness against its own docs control (REQ-SCO-14, task-068)', () => {
+  const harness = (r = 1, passed = 3, model = 'model-a'): RunSpec => ({
+    arm: 'wingfoil',
+    r,
+    model,
+    harnessCommit: 'abc',
+    steps: [[s('a', passed, 4)]],
+    costEur: 0.4,
+  });
+  const control = (r = 1, passed = 2, docsOf: string | null = 'wingfoil', model = 'model-a'): RunSpec => ({
+    arm: 'baseline-docs',
+    r,
+    model,
+    ...(docsOf === null ? {} : { docsOf }),
+    steps: [[s('a', passed, 4)]],
+    costEur: 0.5,
+  });
+  const base: RunSpec = { arm: 'baseline', steps: [[s('a', 1, 4)]] };
+
+  it('compares the harness with the control its docs_of names, metric by metric, with both groups’ runs', () => {
+    const file = aggregate(execution([base, harness(1), harness(2), control(1), control(2)]));
+    expect(file.controls).toEqual([
+      {
+        scenario: 'T3',
+        version: '1.0',
+        model: 'model-a',
+        harness: 'wingfoil',
+        control: 'baseline-docs',
+        runs: { harness: [name('wingfoil', 1), name('wingfoil', 2)], control: [name('baseline-docs', 1), name('baseline-docs', 2)] },
+        metrics: [
+          {
+            metric: 'M-Q1',
+            outcome: 'better',
+            delta: 0.25,
+            certainty: 'within variance',
+            harness: { n: 2, mean: 0.75, min: 0.75, max: 0.75 },
+            control: { n: 2, mean: 0.5, min: 0.5, max: 0.5 },
+          },
+          {
+            metric: 'M-K1',
+            outcome: 'better',
+            delta: expect.closeTo(-0.1, 9) as number,
+            certainty: 'within variance',
+            harness: { n: 2, mean: 0.4, min: 0.4, max: 0.4 },
+            control: { n: 2, mean: 0.5, min: 0.5, max: 0.5 },
+          },
+        ],
+      },
+    ]);
+  });
+
+  it('pairs nothing for a control whose runs record no docs_of, or whose harness did not run', () => {
+    expect(aggregate(execution([base, harness(), control(1, 2, null)])).controls).toEqual([]);
+    expect(aggregate(execution([base, control()])).controls).toEqual([]);
+  });
+
+  it('leaves slices out, as the site’s comparisons do', () => {
+    const file = aggregate(
+      execution([base, harness(), control(), harness(1, 3, 'model-b'), control(1, 2, 'wingfoil', 'model-b')]),
+    );
+    expect(file.controls?.map((entry) => entry.model)).toEqual(['model-a']);
+  });
+
+  it('says why M-E1 is not compared when a run did not reach a directive check step', () => {
+    const check = (violations: number | 'not reached') => ({
+      id: 'r1',
+      kind: 'dependencies',
+      steps: [
+        violations === 'not reached'
+          ? { n: 1, not_reached: true }
+          : { n: 1, passed: violations === 0, violations, found: [] },
+      ],
+    });
+
+    const file = aggregate(
+      execution([
+        base,
+        { ...harness(), checks: [check(0)] },
+        { ...control(), checks: [check('not reached')] },
+      ]),
+    );
+    expect(file.controls?.[0]?.metrics.find((entry) => entry.metric === 'M-E1')).toEqual({
+      metric: 'M-E1',
+      note: 'not comparable: baseline-docs r1 did not reach step 1',
+    });
+  });
+
+  it('pairs nothing when the control group’s runs disagree on docs_of', () => {
+    expect(aggregate(execution([base, harness(), control(1, 2, 'wingfoil'), control(2, 2, null)])).controls).toEqual([]);
+  });
+
+  it('orders the entries by scenario, version and harness', () => {
+    const speckit: RunSpec = { ...harness(), arm: 'speckit' };
+    const speckitDocs: RunSpec = { ...control(), arm: 'speckit-docs', docsOf: 'speckit' };
+    const other = (spec: RunSpec): RunSpec => ({ ...spec, scenario: 'A1' });
+    const file = aggregate(
+      execution([base, speckit, speckitDocs, harness(), control(), other(base), other(harness()), other(control())]),
+    );
+    expect(file.controls?.map((entry) => `${entry.scenario} ${entry.harness} ${entry.control}`)).toEqual([
+      'A1 wingfoil baseline-docs',
+      'T3 speckit speckit-docs',
+      'T3 wingfoil baseline-docs',
+    ]);
+  });
+
+  it('is the same bytes aggregated twice', () => {
+    const dir = execution([base, harness(), control()]);
+    expect(JSON.stringify(aggregate(dir))).toBe(JSON.stringify(aggregate(dir)));
   });
 });

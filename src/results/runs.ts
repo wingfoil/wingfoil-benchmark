@@ -55,6 +55,7 @@ const storedRunSchema = z.object({
     .optional(),
   manual: z.object({ tokens: z.number() }).optional(),
   harness: z.object({ commit: z.string() }).optional(),
+  docs_of: z.string().optional(),
   expected_failure: z.object({ missing: z.array(z.string()) }).optional(),
   steps: z.array(
     z.object({
@@ -83,6 +84,8 @@ export interface StoredRun {
   readonly manualTokens?: number;
   /** The harness commit the run's arm ran (REQ-RUN-14): a pin M-R compares (task-042). */
   readonly harnessCommit?: string;
+  /** A docs control's harness arm (REQ-RUN-11, task-068); absent in any other run, and in one stored before it. */
+  readonly docsOf?: string;
   /** The capabilities the run's harness lacked (F3.6), when it was marked an expected failure. */
   readonly expectedFailure?: { readonly missing: readonly string[] };
   readonly steps: readonly StoredStep[];
@@ -127,6 +130,7 @@ export function readStoredRun(runDir: string): Result<StoredRun> {
         : { setup: { durationMs: run.setup.duration_ms, usage: run.setup.usage } }),
       ...(run.manual === undefined ? {} : { manualTokens: run.manual.tokens }),
       ...(run.harness === undefined ? {} : { harnessCommit: run.harness.commit }),
+      ...(run.docs_of === undefined ? {} : { docsOf: run.docs_of }),
       ...(run.expected_failure === undefined ? {} : { expectedFailure: run.expected_failure }),
       steps: run.steps.map((step) => ({
         n: step.n,

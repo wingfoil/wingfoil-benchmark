@@ -5,6 +5,8 @@ import { z } from 'zod';
 import { canonicalJson, fail, ok, parseWith, readYamlFile } from '../core/index.js';
 import type { Issue, Result } from '../core/index.js';
 
+import { CATEGORY_MAP, compare, readMetric } from './compare.js';
+import type { Certainty, MapEntry, MetricId, Outcome } from './compare.js';
 import { executionRuns, readStoredRun } from './runs.js';
 
 /** Where an execution's aggregate is stored, beside its runs (REQ-FMT-06). */
@@ -207,6 +209,46 @@ export interface AggregateFile {
   readonly slices: readonly Group[];
   /** M-K4 (REQ-SCO-08, task-040): each arm against the baseline of its scenario version and model. */
   readonly break_even: readonly BreakEven[];
+  /**
+   * Each harness against its own docs control (REQ-SCO-14, task-068). Absent in an aggregate written before it, which
+   * the site reads as "not measured".
+   */
+  readonly controls?: readonly ControlComparison[];
+}
+
+/** One side of a control comparison: its `n`, the mean of its runs' figures and their range. */
+export interface ControlSide {
+  readonly n: number;
+  readonly mean: number;
+  readonly min: number;
+  readonly max: number;
+}
+
+/** One metric of a control comparison: the harness against its control, or why it is not compared. */
+export type ControlMetric =
+  | {
+      readonly metric: MetricId;
+      readonly outcome: Outcome;
+      /** The harness's mean less the control's. */
+      readonly delta: number;
+      readonly certainty: Certainty;
+      readonly harness: ControlSide;
+      readonly control: ControlSide;
+    }
+  | { readonly metric: MetricId; readonly note: string };
+
+/**
+ * A harness arm against the docs control generated from it (REQ-SCO-14), on one scenario version and the campaign's
+ * model: every metric of the category map both groups measure, by the rules the site compares with the baseline.
+ */
+export interface ControlComparison {
+  readonly scenario: string;
+  readonly version: string;
+  readonly model: string;
+  readonly harness: string;
+  readonly control: string;
+  readonly runs: { readonly harness: readonly string[]; readonly control: readonly string[] };
+  readonly metrics: readonly ControlMetric[];
 }
 
 /**
@@ -357,6 +399,8 @@ interface ScoredRun {
   readonly model: string;
   /** The harness commit `run.json` records, for an arm that requires one. */
   readonly harnessCommit?: string;
+  /** The harness arm a docs control's `run.json` records (task-068). */
+  readonly docsOf?: string;
   readonly score: Score;
 }
 
@@ -396,6 +440,7 @@ export function aggregateExecution(executionDir: string): Result<AggregateFile> 
     groups: groups.filter((group) => group.model === model),
     slices: groups.filter((group) => group.model !== model),
     break_even: breakEven(grouped),
+    controls: controlComparisons(grouped, groups, model),
   });
 }
 
@@ -435,6 +480,7 @@ function readScored(executionDir: string, runDir: string, campaign: string, exec
     arm: run.value.arm,
     model: run.value.model,
     ...(run.value.harnessCommit === undefined ? {} : { harnessCommit: run.value.harnessCommit }),
+    ...(run.value.docsOf === undefined ? {} : { docsOf: run.value.docsOf }),
     score: parsed.value,
   });
 }
@@ -981,4 +1027,92 @@ function valueOf<T>(entries: readonly { run: string; value: T }[], compare: (a: 
     if (compare(entry.value, max) > 0) max = entry.value;
   }
   return { ...value, min, max };
+}
+
+/** The category map's metrics, once each, in the map's order (C, D, E, F). */
+const CONTROL_METRICS: readonly MapEntry[] = Object.values(CATEGORY_MAP)
+  .flat()
+  .filter((entry, index, all) => all.findIndex((other) => other.id === entry.id) === index);
+
+/**
+ * REQ-SCO-14 (task-068): each docs control's group whose runs record `docs_of`, against the group of that harness arm
+ * on the same scenario version and the campaign's model. Slices are left out, as the site's comparisons are.
+ */
+function controlComparisons(
+  grouped: readonly ScoredRun[][],
+  groups: readonly Group[],
+  model: string,
+): ControlComparison[] {
+  const comparisons: ControlComparison[] = [];
+  grouped.forEach((runs, index) => {
+    const [first] = runs as [ScoredRun, ...ScoredRun[]];
+    // Paired only when every run of the group records the same docs_of: a group mixing runs from before task-068
+    // with later ones pairs nothing, rather than counting runs that recorded no pairing.
+    const harnessArm = first.docsOf;
+    if (harnessArm === undefined || first.model !== model) return;
+    if (runs.some((run) => run.docsOf !== harnessArm)) return;
+    const control = groups[index] as Group;
+    const harness = groups.find(
+      (group) =>
+        group.arm === harnessArm &&
+        group.scenario === control.scenario &&
+        group.version === control.version &&
+        group.model === control.model,
+    );
+    if (harness === undefined) return;
+    comparisons.push({
+      scenario: control.scenario,
+      version: control.version,
+      model: control.model,
+      harness: harness.arm,
+      control: control.arm,
+      runs: { harness: harness.runs, control: control.runs },
+      metrics: CONTROL_METRICS.flatMap((entry) => controlMetric(entry, harness, control)),
+    });
+  });
+  const byCodeUnit = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+  return comparisons.sort(
+    (a, b) =>
+      byCodeUnit(a.scenario, b.scenario) || byCodeUnit(a.version, b.version) || byCodeUnit(a.harness, b.harness),
+  );
+}
+
+function controlMetric(entry: MapEntry, harness: Group, control: Group): ControlMetric[] {
+  const harnessFigures = readMetric(entry.id, harness);
+  const controlFigures = readMetric(entry.id, control);
+  if (harnessFigures === undefined || controlFigures === undefined) return [];
+  // M-E1 with a run that did not reach a directive check's step is not comparable, in the site's words.
+  const lost = [
+    ...(harnessFigures.unreached ?? []).map((entry) => ({ ...entry, arm: harness.arm })),
+    ...(controlFigures.unreached ?? []).map((entry) => ({ ...entry, arm: control.arm })),
+  ];
+  if (lost.length > 0) {
+    // Each run named with its arm: both groups have an r1, and the note sits under the harness's value.
+    const why = lost
+      .map((entry) => {
+        const run = `${entry.arm} ${entry.run.split('/').at(-1) ?? entry.run}`;
+        return entry.step === undefined
+          ? `${run} was not scored with the directive checks`
+          : `${run} did not reach step ${entry.step}`;
+      })
+      .join('; ');
+    return [{ metric: entry.id, note: `not comparable: ${why}` }];
+  }
+  const result = compare(entry.better, controlFigures, harnessFigures);
+  const side = ({ n, mean, min, max }: { n: number; mean: number; min: number; max: number }): ControlSide => ({
+    n,
+    mean,
+    min,
+    max,
+  });
+  return [
+    {
+      metric: entry.id,
+      outcome: result.outcome,
+      delta: result.delta,
+      certainty: result.certainty,
+      harness: side(result.other),
+      control: side(result.baseline),
+    },
+  ];
 }
