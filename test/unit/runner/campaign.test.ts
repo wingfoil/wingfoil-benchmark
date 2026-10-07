@@ -192,3 +192,28 @@ describe('what v0.2 asks of an arm definition (REQ-FMT-05 as amended, task-066)'
     }
   });
 });
+
+describe('the effort pinned per model (dl-015, task-069)', () => {
+  it('takes every level of Claude Code, and none', () => {
+    for (const level of ['low', 'medium', 'high', 'xhigh', 'max', 'none']) {
+      const yaml = completeCampaignYaml();
+      yaml.agent = { name: 'claude-code', version: '2.1.221', effort: { 'claude-sonnet-5': level } };
+      expect(checkCampaign(writeRepo(yaml, ['S1@1.0', 'S2@1.0', 'S3@1.0', 'S8@1.0']).file).ok, level).toBe(
+        true,
+      );
+    }
+  });
+
+  it('refuses a level Claude Code does not take, naming the model', () => {
+    const yaml = completeCampaignYaml();
+    yaml.agent = { name: 'claude-code', version: '2.1.221', effort: { 'claude-sonnet-5': 'ultra' } };
+    const issues = issuesOf(yaml);
+    expect(issues.map((issue) => issue.path)).toEqual(['agent.effort.claude-sonnet-5']);
+  });
+
+  it('is required of a real agent at run time only: a file without it still validates, as a record', () => {
+    const yaml = completeCampaignYaml();
+    yaml.agent = { name: 'claude-code', version: '2.1.221' };
+    expect(checkCampaign(writeRepo(yaml, ['S1@1.0', 'S2@1.0', 'S3@1.0', 'S8@1.0']).file).ok).toBe(true);
+  });
+});

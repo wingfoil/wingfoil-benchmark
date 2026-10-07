@@ -261,7 +261,7 @@ export function missingEffort(agent: CampaignFile['agent'], models: readonly str
   return [...new Set(models)].filter((model) => agent.effort?.[model] === undefined);
 }
 
-/** How a model with no effort is refused, or listed by `validate`. */
+/** How `run` and `scenario dry-run` refuse a model with no effort. */
 export function effortRefusal(model: string): Issue {
   return {
     path: `agent.effort.${model}`,

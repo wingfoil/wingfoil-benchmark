@@ -107,13 +107,13 @@ export function findDryRun(resultsRoot: string, key: DryRunKey): DryRunLookup {
   return skipped === undefined ? {} : { skipped };
 }
 
-/** `<model>: <basis>` for each model of any step priced at a basis other than `list` (bug-016), sorted. */
+/** `<model> (<basis>)` for each model of any step priced at a basis other than `list` (bug-016), sorted. */
 function unpricedModels(run: StoredRun): string[] {
   const found = new Set<string>();
   for (const step of run.steps ?? []) {
     for (const [model, usage] of Object.entries(step.models ?? {})) {
       const basis = usage.costBasis;
-      if (typeof basis === 'string' && basis !== 'list') found.add(`${model}: ${basis}`);
+      if (typeof basis === 'string' && basis !== 'list') found.add(`${model} (${basis})`);
     }
   }
   return [...found].sort();

@@ -497,6 +497,30 @@ describe('runCampaign', () => {
     expect(usageOf('02')).toMatchObject({ inputTokens: 1, outputTokens: 50 });
   });
 
+  it("records each model's price basis in run.json, one not list kept across a step's resumes (bug-016)", async () => {
+    const { checked } = checkedCampaign();
+    const model = (costBasis: string) => ({
+      inputTokens: 1,
+      outputTokens: 1,
+      cacheCreationInputTokens: 0,
+      cacheReadInputTokens: 0,
+      costUsd: 0.1,
+      costBasis,
+    });
+    const ports = doubles({
+      messageOf: (request) => (request.step === 1 && invocationOf(request) === 0 ? 'Which one?' : undefined),
+      modelsOf: (request): ModelsUsage | undefined =>
+        request.step !== 1
+          ? undefined
+          : { 'claude-sonnet-5-5': model(invocationOf(request) === 0 ? 'unknown' : 'list') },
+    });
+    const summary = await runCampaign(checked, ports);
+    const record = JSON.parse(readFileSync(join(summary.runs[0]?.outputDir ?? '', 'run.json'), 'utf8')) as {
+      steps: { models?: Record<string, { costBasis?: string }> }[];
+    };
+    expect(record.steps[0]?.models?.['claude-sonnet-5-5']?.costBasis).toBe('unknown');
+  });
+
   it('passes the effort pinned for the model on every invocation, and records it (dl-015, task-069)', async () => {
     const yaml = campaignYaml();
     yaml.agent = { name: 'fake', version: '1.0.0', effort: { 'fake-model': 'medium' } };

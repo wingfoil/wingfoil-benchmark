@@ -867,7 +867,7 @@ async function executeStep(
   // What every invocation of the step carries beside its own fields: the arm's MCP configuration (adr-003 decision 12)
   // and the effort pinned for the model (dl-015).
   const effort = pins.agent.effort?.[model];
-  const mcp = {
+  const perInvocation = {
     ...(mcpConfig === undefined ? {} : { mcpConfig }),
     ...(effort === undefined ? {} : { effort }),
   };
@@ -1029,7 +1029,7 @@ async function executeStep(
           sessionId,
           reply: RATE_LIMIT_MESSAGE,
           remainingCostUsd: left,
-          ...mcp,
+          ...perInvocation,
           run,
         }),
       );
@@ -1046,7 +1046,7 @@ async function executeStep(
         model,
         sessionId,
         remainingCostUsd,
-        ...mcp,
+        ...perInvocation,
         run,
       }),
     ),
@@ -1094,7 +1094,7 @@ async function executeStep(
         sessionId,
         reply,
         remainingCostUsd: left,
-        ...mcp,
+        ...perInvocation,
         run,
       }),
     );

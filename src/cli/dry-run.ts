@@ -66,6 +66,10 @@ export async function dryRunCommand(
   if (!checked.ok) return report(checked.issues, io);
   const { profile, scenario, arm, model } = checked.value;
 
+  // dl-015: a real agent's dry run runs its model at the profile's pinned effort; refused first, as `campaign run` does.
+  const unpinned = missingEffort(profile.agent, [model]);
+  if (unpinned.length > 0) return report(unpinned.map(effortRefusal), io);
+
   const spending = checkSpending(profile, {
     allowSpending: args.allowSpending,
     builds: checked.value.arms.flatMap((loaded) => (loaded.requires === undefined ? [] : [loaded.requires])),
@@ -77,9 +81,6 @@ export async function dryRunCommand(
     },
   });
   if (!spending.ok) return report(spending.issues, io);
-  // dl-015: a real agent's dry run runs its model at the profile's pinned effort.
-  const unpinned = missingEffort(profile.agent, [model]);
-  if (unpinned.length > 0) return report(unpinned.map(effortRefusal), io);
   const { credential, harnessSources } = spending.value;
   const resolved = ports ? { ok: true as const, value: ports } : portsFor(profile, credential);
   if (!resolved.ok) return report(resolved.issues, io);

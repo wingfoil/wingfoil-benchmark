@@ -164,3 +164,19 @@ cost paragraph).
     is new.
   - `--effort` under `--resume` is not measured here: no real agent ran. task-070's consented real run passes it and
     records the result.
+- Review round 1 fixes:
+  1. **Step tokens on one real session.** The @F2.4 "answers a question" test and W2's step 01 replay the spike's
+     real pair, `question.jsonl` then `resumed.jsonl`. They now assert 20 858 + 289 720 tokens, its two invocations'
+     work. The replays of two unrelated recordings (@F2.4 approval, W2 step 02) keep the rule's figure, with a
+     comment saying so.
+  2. **Schema tests:** every level and `none` accepted, `ultra` refused naming the model, and a file without effort
+     still valid as a record.
+  3. **`{#agent-effort}`** says the pin is v0.2's and that v0.1 pinned none.
+  4. **Nits:**
+     - the unpriced format is unified as `<model> (<basis>)`;
+     - `mcp` is renamed `perInvocation`;
+     - the `effortRefusal` doc is corrected;
+     - the dry run refuses a missing effort before the spending flag, as `campaign run` does;
+     - a runner test follows `costBasis` into `run.json`.
+- The first full `test:docker` run (before these fixes) failed W2 on step 02's artificial pair. It is the review's
+  point 1.

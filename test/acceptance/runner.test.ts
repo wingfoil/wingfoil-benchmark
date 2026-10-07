@@ -520,7 +520,8 @@ describe('runner.feature', () => {
     expect(record.interventions).toEqual([{ step: 1, kind: 'approval', reply: APPROVED }]);
     expect(record.steps).toMatchObject([{ n: 1, outcome: 'completed', interventions: 1 }]);
     // The step's usage is the session and its resume together, as the parser reads the two streams; its tokens are
-    // every model's, at the latest reading per model (bug-012, task-069).
+    // every model's, at the latest reading per model (bug-012, task-069). These two recordings are two sessions under
+    // one model key, so the figure is the rule's, not a real session's: the real pair is the question's test above.
     const both = readSession([...recording('approval.jsonl'), ...recording('completed.jsonl')], rate);
     const models = Object.values(both.models);
     const sum = (pick: (m: (typeof models)[number]) => number) =>
@@ -565,11 +566,19 @@ describe('runner.feature', () => {
       readFileSync(join(run?.outputDir ?? '', 'steps', '01', 'usage.json'), 'utf8'),
     ) as {
       inputTokens: number;
+      outputTokens: number;
+      cacheCreationInputTokens: number;
+      cacheReadInputTokens: number;
       turns: number;
       costUsd: number;
       costEur: number;
     };
     expect(usage.inputTokens).toBe(10 + 98);
+    // bug-012 (task-069): one real session, so the tokens summed over its models, at their latest total, are its
+    // two invocations' work: 20 858 under the alias the question reported, 289 720 under the dated id of the resume.
+    expect(
+      usage.inputTokens + usage.outputTokens + usage.cacheCreationInputTokens + usage.cacheReadInputTokens,
+    ).toBe(20_858 + 289_720);
     expect(usage.turns).toBe(1 + 12);
     expect(usage.costUsd).toBeCloseTo(0.0681071, 12);
     expect(usage.costEur).toBeCloseTo(0.0681071 * rate, 12);

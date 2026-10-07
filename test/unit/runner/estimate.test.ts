@@ -169,7 +169,7 @@ describe('estimateCampaign (F1.2, task-022)', () => {
           message:
             'T3@1.0 has no completed dry run in arm baseline on model fake-model: run bench scenario dry-run ' +
             'T3@1.0 --arm baseline --model fake-model first (dry run 1: its cost was not priced by the agent, ' +
-            'claude-sonnet-5-5: unknown)',
+            'claude-sonnet-5-5 (unknown))',
         },
       ],
     });

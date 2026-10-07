@@ -8,7 +8,7 @@ The benchmark compares harnesses, not models. In one comparison the agent (Claud
 
 The agent may also call a smaller model for its own work, beside the run's model: in v0.1, Claude Code called Haiku 4.5 now and then, for a small share of the cost. The models each step used, with their tokens and cost, are recorded with the run. Their cost is part of the arm's cost, and so are their tokens: a step's tokens are every model's, and the token cap counts them all. (v0.1's results counted the run's model's tokens only.) When the agent cannot price a model it does not know, its cost is not that model's price: such a run is named on this page, and its dry run does not count for an estimate. {#auxiliary-models}
 
-The agent's effort, how much it thinks before it acts, changes cost and quality. It is pinned per model in the campaign file, the same in every arm, passed on every session and recorded with each run. The table of this execution's pins below shows it. {#agent-effort}
+The agent's effort, how much it thinks before it acts, changes cost and quality. From v0.2 it is pinned per model in the campaign file, the same in every arm, passed on every session and recorded with each run. The table of this execution's pins below shows it; v0.1 pinned none, so the agent's default applied. {#agent-effort}
 
 There are five arms: {#arms}
 

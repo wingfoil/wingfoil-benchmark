@@ -203,7 +203,10 @@ describe('bench scenario dry-run: the checks before anything is built (task-021 
   });
 
   it('runs a real agent only with --allow-spending, then only with its credential', async () => {
-    const root = repository({ ...dryRunProfileYaml(), agent: { name: 'claude-code', version: '2.1.280' } });
+    const root = repository({
+      ...dryRunProfileYaml(),
+      agent: { name: 'claude-code', version: '2.1.280', effort: { 'fake-model': 'high' } },
+    });
     const p = ports();
     expect(await dryRun(root, ['T3@1.0', '--arm', 'baseline'], p)).toEqual({
       code: 1,
@@ -222,11 +225,9 @@ describe('bench scenario dry-run: the checks before anything is built (task-021 
 
   it('runs a real agent only at an effort the profile pins for its model (dl-015, task-069)', async () => {
     const root = repository({ ...dryRunProfileYaml(), agent: { name: 'claude-code', version: '2.1.280' } });
-    const token = join(tempDir('bench-token-'), 'token');
-    writeFileSync(token, 'not-a-real-token\n');
-    vi.stubEnv('BENCH_AGENT_TOKEN_FILE', token);
     const p = ports();
-    expect(await dryRun(root, ['T3@1.0', '--arm', 'baseline', '--allow-spending'], p)).toEqual({
+    // Refused first, before the spending flag and the credential are asked for.
+    expect(await dryRun(root, ['T3@1.0', '--arm', 'baseline'], p)).toEqual({
       code: 1,
       stdout: '',
       stderr:
