@@ -26,6 +26,11 @@ export interface ModelUsage {
   readonly cacheCreationInputTokens: number;
   readonly cacheReadInputTokens: number;
   readonly costUsd: number;
+  /**
+   * How the agent priced it (bug-016): `list` when it knows the model's list price; anything else, such as
+   * `unknown`, means `costUsd` is not that model's price. Absent in sessions recorded before Claude Code reported it.
+   */
+  readonly costBasis?: string;
 }
 
 /** The models a session used, by the key the agent reports them under: its own model and any it calls. */
@@ -52,9 +57,16 @@ export function foldModels(a: ModelsUsage, b: ModelsUsage): ModelsUsage {
       cacheCreationInputTokens: Math.max(x.cacheCreationInputTokens, y.cacheCreationInputTokens),
       cacheReadInputTokens: Math.max(x.cacheReadInputTokens, y.cacheReadInputTokens),
       costUsd: Math.max(x.costUsd, y.costUsd),
+      ...basisOf(x.costBasis, y.costBasis),
     };
   }
   return out;
+}
+
+/** Two readings' price basis: one that is not `list` wins, so a step is flagged when any invocation was (bug-016). */
+function basisOf(a: string | undefined, b: string | undefined): { costBasis?: string } {
+  const basis = [a, b].find((value) => value !== undefined && value !== 'list') ?? a ?? b;
+  return basis === undefined ? {} : { costBasis: basis };
 }
 
 /** A `result` event's `modelUsage`, read loosely: a model with a field missing counts it as zero. */
@@ -71,6 +83,7 @@ function modelsOf(event: Record<string, unknown>): ModelsUsage {
       cacheCreationInputTokens: numberOf(usage.cacheCreationInputTokens),
       cacheReadInputTokens: numberOf(usage.cacheReadInputTokens),
       costUsd: numberOf(usage.costUSD),
+      ...(typeof usage.costBasis === 'string' ? { costBasis: usage.costBasis } : {}),
     };
   }
   return out;

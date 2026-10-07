@@ -216,14 +216,16 @@ describe('reading a session (REQ-RUN-09)', () => {
         outputTokens: 393,
         cacheCreationInputTokens: 2895,
         cacheReadInputTokens: 17560,
-        costUsd: 0.00734975,
+        costUsd: 0.00734975,,
+        costBasis: 'list',
       },
       'claude-haiku-4-5-20251001': {
         inputTokens: 98,
         outputTokens: 4967,
         cacheCreationInputTokens: 6399,
         cacheReadInputTokens: 278256,
-        costUsd: 0.06075735000000001,
+        costUsd: 0.06075735000000001,,
+        costBasis: 'list',
       },
     });
   });
