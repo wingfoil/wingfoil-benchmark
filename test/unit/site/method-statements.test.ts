@@ -22,7 +22,11 @@ const STATEMENTS: readonly (readonly [string, string])[] = [
   ],
   [
     'auxiliary-models',
-    'REQ-RUN-09 as amended in 1.25 (models observed from `modelUsage`); task-054 Context and its deviation (the sentence moved to this re-read); campaign-001 execution 2 (Haiku 4.5, 0.19 USD); task-055 Design item 4',
+    'REQ-RUN-09 as amended in 1.25 (models observed from `modelUsage`) and 1.27 (tokens summed over every model; `costBasis` recorded, an unpriced cost flagged); REQ-RUN-08 as amended in 1.27 (the token cap counts every model); bug-012; bug-016; task-054 Context and its deviation; campaign-001 execution 2 (Haiku 4.5, 0.19 USD); task-055 Design item 4; task-069 Design',
+  ],
+  [
+    'agent-effort',
+    'dl-015 option C; REQ-RUN-16 as amended in 1.27 (the effort pinned per model, recorded, in the identity and the estimate key); task-062 (the effort Claude Code does not report); task-069 Design',
   ],
   [
     'arms',

@@ -298,7 +298,13 @@ describe('runs in a real container', () => {
     cpSync(repoPath('test/fixtures/scenarios'), join(root, 'scenarios'), { recursive: true });
     cpSync(repoPath('test/fixtures/arms'), join(root, 'arms'), { recursive: true });
     cpSync(repoPath('scenarios/leak-scan.yaml'), join(root, 'scenarios', 'leak-scan.yaml'));
-    writeDryRunProfile(root, { ...dryRunProfileYaml(), harnesses: {}, currency: { usd_to_eur: 1 } });
+    // The profile pins an effort (dl-015, task-069): the fake needs none, and the run records it.
+    writeDryRunProfile(root, {
+      ...dryRunProfileYaml(),
+      agent: { name: 'fake', version: '1.0.0', effort: { 'fake-model': 'medium' } },
+      harnesses: {},
+      currency: { usd_to_eur: 1 },
+    });
     process.env.BENCH_FAKE_SCRIPT = repoPath('test/fixtures/fake-script-multi-step.json');
 
     let output = '';
@@ -323,7 +329,7 @@ describe('runs in a real container', () => {
         'utf8',
       ),
     ) as { dry_run: boolean; outcome: string; steps: { usage: { costUsd: number } }[] };
-    expect(record).toMatchObject({ dry_run: true, outcome: 'completed' });
+    expect(record).toMatchObject({ dry_run: true, outcome: 'completed', effort: 'medium' });
     const total = record.steps.reduce((sum, step) => sum + step.usage.costUsd, 0);
     expect(total).toBeGreaterThan(0);
     expect(output).toContain(`completed, ${total.toFixed(4)} USD`);
