@@ -3,6 +3,7 @@ id: bug-012-a-step-s-tokens-leave-out-the-models-claude-code-calls-for-its-own-w
 type: bug
 title: "A step's tokens leave out the models Claude Code calls for its own work"
 status: approved
+fixed_by: task-069-the-effort-pinned-per-model-and-every-model-s-tokens-and-price-basis
 ---
 
 ## Context
@@ -47,4 +48,9 @@ any step's.
 
 ## Resolution
 
-<!-- Filled when fixed: the task, the commit, and how it was verified. -->
+Fixed by [task-069](../task/task-069-the-effort-pinned-per-model-and-every-model-s-tokens-and-price-basis.md) (merged in `73e7f20`). A step's tokens are the sum over the step's folded
+`modelUsage`: each key at the session's latest total, every model, every kind. The same figure is in `usage.json` and
+in the `step_tokens` cap. A session that reported no `modelUsage` keeps its result events' `usage`. REQ-RUN-08 and
+REQ-RUN-09 were amended in requirements 1.27. Verified by unit tests (the step's `usage.json`, the cap), by the @F2.4
+acceptance test, and by the W2 Docker test on the spike's real pair `question.jsonl` → `resumed.jsonl`. The pair's
+20 858 + 289 720 tokens are its two invocations' work. Runs stored before keep their recorded figures.

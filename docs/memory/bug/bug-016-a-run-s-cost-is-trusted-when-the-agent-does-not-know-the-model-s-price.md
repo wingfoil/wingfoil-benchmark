@@ -3,6 +3,7 @@ id: bug-016-a-run-s-cost-is-trusted-when-the-agent-does-not-know-the-model-s-pri
 type: bug
 title: "A run's cost is trusted when the agent does not know the model's price"
 status: approved
+fixed_by: task-069-the-effort-pinned-per-model-and-every-model-s-tokens-and-price-basis
 # fixed_by: task-…   # set by hand, with the fixing task's id, just before `approved → fixed`
 ---
 
@@ -41,4 +42,14 @@ later) avoids the case for the 5.5 models; the check keeps the next model change
 
 ## Resolution
 
-<!-- Filled when fixed: the task, the commit, and how it was verified. -->
+Fixed by [task-069](../task/task-069-the-effort-pinned-per-model-and-every-model-s-tokens-and-price-basis.md) (merged in `73e7f20`). Each model's `costBasis` is read, folded (a basis
+other than `list` wins) and recorded in `run.json`'s step `models`. An unpriced cost is flagged:
+- `run show` names it;
+- `score.json`'s cost holds `cost_priced: false`;
+- the aggregate lists the run as `cost.unpriced`;
+- the method page names it;
+- the estimate skips that dry run as a missing one, with the reason.
+
+REQ-RUN-09 was amended in requirements 1.27. Verified by unit tests, on the new fixture `unpriced.jsonl` (modelled on
+P2) and through the runner into `run.json`. The agent pin itself is calibration's: 2.1.291 or later knows the 5.5
+models (task-062).
