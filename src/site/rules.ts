@@ -1,4 +1,3 @@
-import { CATEGORY_MAP } from '../results/index.js';
 import type { Comparison, MetricId, Outcome } from '../results/index.js';
 
 /**
