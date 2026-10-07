@@ -2,7 +2,7 @@
 id: task-070-openspec-in-the-run-container-spike
 type: task
 title: "OpenSpec in the run container spike"
-status: draft
+status: pending
 release: v0.2
 wave: W13
 features: []
