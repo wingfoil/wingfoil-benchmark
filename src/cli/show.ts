@@ -109,8 +109,20 @@ export function showRun(run: RunDetail, full: boolean, stepCount?: number): stri
     out.push(`- campaign: ${run.origin.campaign}, execution ${run.origin.execution}`);
   if (run.origin.dryRun === true) out.push(`- dry run: execution ${run.origin.execution}`);
   out.push(`- scenario: ${versionOf(run)} (${run.scenarioHash})`);
-  out.push(`- arm: ${run.arm}, model: ${run.model}, repetition: ${run.repetition}`);
+  const effort = run.effort === undefined ? '' : ` at effort ${run.effort}`;
+  out.push(`- arm: ${run.arm}, model: ${run.model}${effort}, repetition: ${run.repetition}`);
   out.push(`- outcome: ${run.outcome}${run.error === undefined ? '' : ` (${run.error})`}`);
+  // bug-016: a cost the agent could not price is not the model's list price.
+  const unpriced = [
+    ...new Set(
+      run.steps.flatMap((step) =>
+        Object.entries(step.models ?? {}).flatMap(([key, m]) =>
+          m.costBasis === undefined || m.costBasis === 'list' ? [] : [`${key} (${m.costBasis})`],
+        ),
+      ),
+    ),
+  ].sort();
+  if (unpriced.length > 0) out.push(`- unpriced: the agent could not price ${unpriced.join(', ')}`);
   if (run.agent !== undefined || run.approverPolicy !== undefined) {
     out.push(`- agent: ${run.agent ?? '—'}, approver policy: ${run.approverPolicy ?? '—'}`);
   }
@@ -158,7 +170,8 @@ function showStep(run: RunDetail, step: StepDetail, full: boolean): string[] {
   if (models.length > 0) {
     const listed = models.map(
       ([key, m]) =>
-        `${key} (output ${m.outputTokens}, cache read ${m.cacheReadInputTokens}, ${usd(m.costUsd)})`,
+        `${key} (output ${m.outputTokens}, cache read ${m.cacheReadInputTokens}, ${usd(m.costUsd)}` +
+        `${m.costBasis === undefined || m.costBasis === 'list' ? '' : `, priced ${m.costBasis}`})`,
     );
     out.push(`- models: ${listed.join(', ')}`);
   }

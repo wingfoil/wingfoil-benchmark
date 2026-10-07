@@ -375,6 +375,16 @@ function executionSection(
     '<h3 id="pins">Pins</h3>\n<table>\n<tbody>\n' +
     row('Agent', `${e(campaign.agent.name)} ${e(campaign.agent.version)}`) +
     row('Model', e(campaign.models.default)) +
+    // dl-015: the effort each model ran at, as the campaign pinned it.
+    row(
+      'Effort',
+      campaign.agent.effort === undefined || Object.keys(campaign.agent.effort).length === 0
+        ? 'not pinned'
+        : Object.entries(campaign.agent.effort)
+            .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+            .map(([model, level]) => `${e(model)}: ${e(level)}`)
+            .join(', '),
+    ) +
     row(
       'Other models (slices)',
       slices.length === 0

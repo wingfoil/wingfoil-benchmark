@@ -91,6 +91,43 @@ describe('showRun (F5.3, task-043)', () => {
     expect(text).toContain('- M-Q2: lint 1/10, complexity 3/2, duplication 0/10, coverage 5/8');
   });
 
+  it('shows the effort the model ran at, and a cost the agent could not price (dl-015, bug-016)', () => {
+    const model = (costBasis?: string) => ({
+      inputTokens: 1,
+      outputTokens: 2,
+      cacheCreationInputTokens: 0,
+      cacheReadInputTokens: 3,
+      costUsd: 0.5,
+      ...(costBasis === undefined ? {} : { costBasis }),
+    });
+    const text = showRun(
+      {
+        ...RICH,
+        effort: 'high',
+        steps: [
+          {
+            n: 1,
+            outcome: 'completed',
+            interventions: 0,
+            usage: USAGE,
+            patch: '',
+            messages: [],
+            models: { 'claude-sonnet-5-5': model('unknown'), 'claude-haiku-4-5': model('list') },
+          },
+        ],
+      },
+      false,
+    );
+    expect(text).toContain('- arm: wingfoil, model: m at effort high, repetition: 2');
+    expect(text).toContain('- unpriced: the agent could not price claude-sonnet-5-5 (unknown)');
+    expect(text).toContain('claude-sonnet-5-5 (output 2, cache read 3, 0.5000 USD, priced unknown)');
+    expect(text).toContain('claude-haiku-4-5 (output 2, cache read 3, 0.5000 USD)');
+    // A run with no effort and every cost priced shows neither.
+    const plain = showRun(RICH, false);
+    expect(plain).toContain('- arm: wingfoil, model: m, repetition: 2');
+    expect(plain).not.toContain('unpriced');
+  });
+
   it('says what a score could not reach or apply', () => {
     const score = {
       ...RICH.score,

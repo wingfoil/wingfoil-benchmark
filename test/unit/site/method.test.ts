@@ -36,6 +36,8 @@ describe('the method page (F5.8, task-046)', () => {
       '<th scope="row">Harnesses</th><td>wingfoil 3df305e; no run recorded a commit</td>',
     );
     expect(section).toContain('<th scope="row">Approver policy</th><td>v1</td>');
+    // dl-015: the fixture's campaign pins no effort.
+    expect(section).toContain('<th scope="row">Effort</th><td>not pinned</td>');
     expect(section).toMatch(/<th scope="row">Scenarios<\/th><td>TC@1\.0 sha256:[0-9a-f]{64}<br>TD@1\.0 /);
     expect(section).toContain(
       `<th scope="row">Manuals</th><td>baseline: sha256:${sha256Of(join(root, 'arms', 'baseline', 'manual.md'))}, 3 tokens<br>`,
@@ -150,6 +152,24 @@ describe('the method page (F5.8, task-046)', () => {
       '<p id="spending">6 aggregated runs of fake-model cost 0.9000 EUR in all. 1 aggregated run of other ' +
         'models, reported apart, cost 0.1500 EUR. Setup costs (M-K3) are not included. For 1 run the cost is ' +
         'a bound, not a report: abcdef012345/1/runs/TC@1.0/baseline/fake-model/r1.</p>',
+    );
+  }, 120_000);
+
+  it('states the effort each model ran at, as the campaign pinned it (dl-015)', async () => {
+    const { root, executionDir } = await siteExecution();
+    const file = join(executionDir, 'campaign.yaml');
+    writeFileSync(
+      file,
+      readFileSync(file, 'utf8').replace(
+        'agent:\n  name: fake\n  version: 1.0.0\n',
+        'agent:\n  name: fake\n  version: 1.0.0\n  effort: { fake-model: high, other: none }\n',
+      ),
+    );
+    expect(readFileSync(file, 'utf8')).toContain('effort:');
+    const built = await benchSite(root, 'site', 'build', EXECUTION);
+    expect(built.code, built.stderr).toBe(0);
+    expect(readFileSync(join(root, PAGE, 'method.html'), 'utf8')).toContain(
+      '<th scope="row">Effort</th><td>fake-model: high, other: none</td>',
     );
   }, 120_000);
 
