@@ -2,7 +2,7 @@
 id: bug-016-a-run-s-cost-is-trusted-when-the-agent-does-not-know-the-model-s-price
 type: bug
 title: "A run's cost is trusted when the agent does not know the model's price"
-status: approved
+status: fixed
 fixed_by: task-069-the-effort-pinned-per-model-and-every-model-s-tokens-and-price-basis
 # fixed_by: task-…   # set by hand, with the fixing task's id, just before `approved → fixed`
 ---
