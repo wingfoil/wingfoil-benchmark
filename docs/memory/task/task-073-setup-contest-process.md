@@ -3,28 +3,45 @@ id: task-073-setup-contest-process
 type: task
 title: "Setup contest process"
 status: draft
-release: ""           # e.g. v0.1
-wave: ""              # e.g. W1
-features: []          # e.g. [F1.1, F3.1]
-acceptance: []        # e.g. [campaign.feature, scenarios.feature]
-requirements: []      # e.g. [REQ-FMT-01, REQ-FMT-02]
+release: v0.2
+wave: W13
+features: [F7.2]
+acceptance:
+  - "competitors.feature#A setup can be contested from its page"
+  - "competitors.feature#A corrected setup runs as a new campaign and the old one stays published"
+requirements: [REQ-RES-10, REQ-RES-02, REQ-FMT-13]
 fixes: []             # optional: the bugs this task fixes, e.g. [bug-005-a-bug-cannot-name-…]
 ---
 
 ## Context
 
-<!-- Why this task, which wave it belongs to, and what "done" means for the wave's "Ends with". -->
+The setup contest process ([rel-v0-2](../release/rel-v0-2.md), W13, F7.2; REQ-RES-10):
+
+- `.github/ISSUE_TEMPLATE/contest-setup.yml` asks for the arm, the setup step, what the tool's official documentation
+  says and the proposed correction; every setup page links it;
+- `site-content/contests.yaml` (`{campaign, arm, issue, followed_by}`), written by the maintainer and read by the site:
+  a contested execution's setup page links its contest and the campaign that followed;
+- **task-067's review point B**, which the approver placed here (2026-10-07): a contested execution must stay
+  buildable after its arm is corrected. Today a rebuild is refused once a ran harness arm's files differ from the
+  `arm_digest` its runs recorded (and the manual's sha256). The approver's choice: **read the arm — setup page and
+  manual — at its recorded state**, from the repository's history, so the old pages stay as they ran and gain the
+  links.
+
+The third F7.2 scenario ("a campaign file whose pinned arm digest no longer matches the arm is refused") was delivered
+by task-064. **No real agent, no spending.** **Done** means: the two scenarios green; a site built after an arm's
+correction keeps the contested execution's setup and manual pages as they ran, with the contest's links.
 
 ## Acceptance criteria
 
-<!-- One line per criterion (Gherkin scenario or requirement), each classified as red-first
-     (new behaviour: a failing test precedes the code) or characterization (existing behaviour). -->
+- `competitors.feature#A setup can be contested from its page`. **Red-first.**
+- `competitors.feature#A corrected setup runs as a new campaign and the old one stays published`. **Red-first**
+  (including the rebuild after the arm's correction, point B).
 
 ## Design
 
-<!-- Modules, interfaces, data formats touched; decisions taken and their reasons. -->
+<!-- Written in the task's design phase. -->
 
 ## Execution notes
 
-<!-- What happened while building: deviations, blockers, follow-ups (filed as elements, never left
-     here). For every `wingfoil` command: declared vs observed behaviour. -->
+- `npx wingfoil memory add --type task --title "Setup contest process"`. Declared: creates the element from the template and
+  commits it. Observed: `wf(task): add task-073-setup-contest-process`, `status: draft`. Matches.
