@@ -133,6 +133,10 @@ on the same scenario version and model. Slices are left out, as the site's compa
   coverage directory (my mistake: a `nohup` chain left running). Its dry-run container
   (`bench-dry-3d36656b8281-…`, the W7 test's) stayed up and failed the next run's W7 and W8 tests. It was removed,
   and `test:docker` ran again alone.
+- Suites at f1016b0: `npm run lint` clean; `npm test` 1352 passed, coverage 98 % statements, 90.78 % branches;
+  `test:bin` 8 passed; `test:docker` 21 passed (alone, after the leftover container was removed).
+- `npx wingfoil memory submit task-068-…` (in-progress → in-review). Declared: moves the task to its next state and
+  commits it. Observed: see the next commit, `wf(task): submit …`.
 
 ## Review notes
 
