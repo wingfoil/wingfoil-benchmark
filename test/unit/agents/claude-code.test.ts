@@ -429,6 +429,35 @@ describe('the Claude Code adapter (REQ-RUN-04)', () => {
     ]);
   });
 
+  it('passes the pinned effort on a step and on a resume, and no flag for none (dl-015, task-069)', async () => {
+    const step = runner(recorded('completed.jsonl').join('\n'));
+    await claudeCodeAgent({ token: 'x', usdToEur: RATE }).runStep({ ...request(step.run), effort: 'high' });
+    const line = step.commands[0] ?? [];
+    expect(line.slice(line.indexOf('--model'), line.indexOf('--model') + 4)).toEqual([
+      '--model',
+      'claude-sonnet-5',
+      '--effort',
+      'high',
+    ]);
+
+    const resumed = runner(recorded('resumed.jsonl').join('\n'));
+    await claudeCodeAgent({ token: 'x', usdToEur: RATE }).resume({
+      scenarioId: 'S1',
+      step: 2,
+      intervention: 1,
+      sessionId: '691b34d4-6948-402b-8804-9f8016feb677',
+      reply: 'Approved. Proceed.',
+      remainingCostUsd: 1.25,
+      effort: 'xhigh',
+      run: resumed.run,
+    });
+    expect(resumed.commands[0]?.slice(-2)).toEqual(['--effort', 'xhigh']);
+
+    const none = runner(recorded('completed.jsonl').join('\n'));
+    await claudeCodeAgent({ token: 'x', usdToEur: RATE }).runStep({ ...request(none.run), effort: 'none' });
+    expect(none.commands[0]).not.toContain('--effort');
+  });
+
   it('reports the usage and the session the agent actually used', async () => {
     const exec = runner(recorded('completed.jsonl').join('\n'));
 
