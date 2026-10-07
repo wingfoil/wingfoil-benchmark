@@ -8,6 +8,7 @@ import { describe, expect, it } from 'vitest';
 import { renderOpenSpecConfig } from '../../../src/arms/index.js';
 import { checkCampaign, runCampaign } from '../../../src/runner/index.js';
 import { completeCampaignYaml, writeRepo } from '../../support/campaign-fixture.js';
+import { registerEntry, TEST_REGISTER, writeRegister } from '../../support/eligibility-fixture.js';
 import { repoPath } from '../../support/paths.js';
 import { doubles } from '../../support/runner-doubles.js';
 
@@ -121,6 +122,24 @@ describe('the OpenSpec harness, built from the npm registry (REQ-FMT-12, REQ-RUN
     );
   });
 
+  it('installs its dependencies without their lifecycle scripts', async () => {
+    const { checked } = openspecRepo(false);
+    const ports = doubles({ onRunOnce: build });
+    await runCampaign(checked, ports);
+    expect(ports.recorded.runOnce[0]?.command.at(-1)).toContain('--ignore-scripts');
+  });
+
+  it('refuses a cached record whose commit is not its tarball digest', async () => {
+    const { root, checked } = openspecRepo(false);
+    await runCampaign(checked, doubles({ onRunOnce: build }));
+    const file = join(root, '.cache', 'harnesses', 'openspec', '1.14.0', 'harness.json');
+    const record = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>;
+    writeFileSync(file, JSON.stringify({ ...record, commit: '0'.repeat(64) }));
+    await expect(runCampaign(checked, doubles({ onRunOnce: build }))).rejects.toThrow(
+      "the cached harness record .cache/harnesses/openspec/1.14.0/harness.json names a commit that is not its tarball's digest",
+    );
+  });
+
   it('refuses a commit pin: the registry has none', async () => {
     const { checked } = openspecRepo(false, {
       tool: 'openspec',
@@ -179,5 +198,30 @@ describe('the openspec arm in a run (REQ-FMT-14, REQ-FMT-05, task-071)', () => {
 describe('renderOpenSpecConfig (REQ-FMT-14, task-071)', () => {
   it('renders nothing for a scenario without developer rules', () => {
     expect(renderOpenSpecConfig(new Map())).toBeUndefined();
+  });
+});
+
+describe('a registry pin that is not a release (task-071 review)', () => {
+  it('is refused: npm would read it as a tag', async () => {
+    const repo = writeRepo(
+      {
+        ...completeCampaignYaml(),
+        arms: ['baseline', 'openspec'],
+        harnesses: { openspec: { tool: 'openspec', version: 'abc1234' } },
+        scenarios: [{ id: 'S1', version: '1.0' }],
+        repetitions: { S1: 1 },
+        agent: { name: 'fake', version: '1.0.0' },
+        models: { default: 'fake-model' },
+      },
+      ['S1@1.0'],
+    );
+    rmSync(join(repo.root, 'arms', 'openspec'), { recursive: true, force: true });
+    cpSync(repoPath('arms/openspec'), join(repo.root, 'arms', 'openspec'), { recursive: true });
+    writeRegister(repo.root, [...TEST_REGISTER, registerEntry('openspec', 'abc1234')]);
+    const checked = checkCampaign(repo.file);
+    if (!checked.ok) throw new Error(JSON.stringify(checked.issues));
+    await expect(runCampaign(checked.value, doubles({ onRunOnce: build }))).rejects.toThrow(
+      'the openspec harness pins abc1234, which is not a released version of openspec',
+    );
   });
 });

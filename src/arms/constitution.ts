@@ -11,14 +11,22 @@ import { developerDirectives, shiftHeadings } from './baseline-docs.js';
  * there.
  */
 
-/** The constitution of the scenario configuration `files` (path → text), or `undefined` when it declares no rule. */
-export function renderConstitution(files: ReadonlyMap<string, string>): string | undefined {
-  const rules = developerDirectives(files).map((directive) => {
+/**
+ * The scenario's rules as the harness generators render them (task-066, task-071): each developer directive's title,
+ * and its body without a leading heading repeating the title, its headings shifted below the rule's.
+ */
+export function developerRules(files: ReadonlyMap<string, string>): { title: string; body: string }[] {
+  return developerDirectives(files).map((directive) => {
     const lines = directive.body.trim().split('\n');
     const repeats = new RegExp(`^#\\s+${directive.title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`);
     const body = (repeats.test(lines[0] ?? '') ? lines.slice(1) : lines).join('\n');
     return { title: directive.title, body: shiftHeadings(body).trim() };
   });
+}
+
+/** The constitution of the scenario configuration `files` (path → text), or `undefined` when it declares no rule. */
+export function renderConstitution(files: ReadonlyMap<string, string>): string | undefined {
+  const rules = developerRules(files);
   if (rules.length === 0) return undefined;
   return [
     '# Project constitution',

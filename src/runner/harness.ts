@@ -126,10 +126,14 @@ function registryBuild(tool: string, spec: string): string {
     `export HOME=${BUILD}/home`,
     `mkdir -p ${BUILD}/home ${BUILD}/out ${BUILD}/install`,
     `npm pack --pack-destination ${BUILD}/out '${spec}'`,
-    `npm install --global --prefix ${BUILD}/install/${tool} --no-audit --no-fund ${BUILD}/out/*.tgz`,
+    // No lifecycle scripts, as for WingFoil's installed tree: the build fetches, it does not run its dependencies.
+    `npm install --global --prefix ${BUILD}/install/${tool} --no-audit --no-fund --ignore-scripts ${BUILD}/out/*.tgz`,
     `tar -czf ${BUILD}/out/installed.tgz -C ${BUILD}/install ${tool}`,
   ].join('\n');
 }
+
+/** A released version, as a registry pin must be (task-071): npm reads anything else as a tag. */
+const RELEASE = /^v?\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
 
 /** The tools fetched from the npm registry by version, with no clone (task-071): their package, by tool. */
 const REGISTRY_PACKAGES: Readonly<Record<string, string>> = { openspec: '@fission-ai/openspec' };
@@ -212,9 +216,20 @@ async function prepareFromRegistry(
     );
   }
   const version = harness.version;
+  if (!RELEASE.test(version)) {
+    throw new Error(`the ${tool} harness pins ${version}, which is not a released version of ${tool}`);
+  }
   const cache = join(target.repoRoot, HARNESS_CACHE, tool, version);
   const cached = fromCache(target.repoRoot, cache, tool, (record) => record.version === version);
-  if (cached !== undefined) return { ...cached, version };
+  if (cached !== undefined) {
+    // Its commit is its tarball's digest: a record saying otherwise was edited, and is refused as a tampered one is.
+    if (cached.commit !== cached.tarballSha256) {
+      throw new Error(
+        `the cached harness record ${relative(target.repoRoot, join(cache, 'harness.json'))} names a commit that is not its tarball's digest: remove ${relative(target.repoRoot, cache)}/ to rebuild it`,
+      );
+    }
+    return { ...cached, version };
+  }
 
   const build = join(cache, 'build');
   rmSync(build, { recursive: true, force: true });

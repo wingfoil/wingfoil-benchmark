@@ -139,3 +139,18 @@ scalar, through the `yaml` library, so quoting is never by hand.
     and `telemetry_off` is recorded. It passed on its first run.
   - **Specification and method page:** requirements 1.28 (REQ-FMT-12 for registry tools). method.md: six arms, and
     the openspec manual and setup page linked.
+- Review round 1 fixes:
+  1. **(should-fix) `transcripts pack` publishes a registry harness.** It looks for an artifact at
+     `.cache/harnesses/<tool>/<commit>/`, and a registry tool is cached by its version. It now also looks at
+     `<tool>/<version>/` when the run recorded a version and that cache's record names the same commit. Red test
+     first; the archive holds `openspec/1.14.0/…`.
+  2. **(nits)**
+     - The registry build installs without lifecycle scripts (`--ignore-scripts`), as WingFoil's installed tree does.
+     - A registry pin must be a released version: one npm would read as a tag is refused.
+     - A cached record whose commit is not its tarball's digest is refused, as a tampered one is.
+     - The rules' extraction is shared by both generators (`developerRules` in `constitution.ts`).
+  3. **Left as is:**
+     - The commit pin of a registry tool is refused at run time, after the image builds, like every other harness
+       error. An earlier refusal would need the campaign check to know the runner's registry.
+     - The openspec context's headings skip a level (the shared shift is three, for the constitution's `###`). The
+       Markdown is valid.

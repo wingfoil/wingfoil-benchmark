@@ -1,6 +1,6 @@
 import { Document, Scalar } from 'yaml';
 
-import { developerDirectives, shiftHeadings } from './baseline-docs.js';
+import { developerRules } from './constitution.js';
 
 /**
  * OpenSpec's project configuration from a scenario's project rules (REQ-FMT-14, task-071). The rules stay declared once,
@@ -17,12 +17,7 @@ const SCHEMA = 'spec-driven';
 
 /** `openspec/config.yaml` for the scenario configuration `files` (path → text), or `undefined` when it declares no rule. */
 export function renderOpenSpecConfig(files: ReadonlyMap<string, string>): string | undefined {
-  const rules = developerDirectives(files).map((directive) => {
-    const lines = directive.body.trim().split('\n');
-    const repeats = new RegExp(`^#\\s+${directive.title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`);
-    const body = (repeats.test(lines[0] ?? '') ? lines.slice(1) : lines).join('\n');
-    return { title: directive.title, body: shiftHeadings(body).trim() };
-  });
+  const rules = developerRules(files);
   if (rules.length === 0) return undefined;
   const context = [
     "The project's rules. Every change follows them.",
