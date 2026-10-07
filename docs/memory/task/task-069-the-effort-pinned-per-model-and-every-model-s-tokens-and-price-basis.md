@@ -2,7 +2,7 @@
 id: task-069-the-effort-pinned-per-model-and-every-model-s-tokens-and-price-basis
 type: task
 title: "The effort pinned per model and every model's tokens and price basis"
-status: in-progress
+status: in-review
 release: v0.2
 wave: W13
 features: []
