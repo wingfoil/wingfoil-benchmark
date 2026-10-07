@@ -816,6 +816,11 @@ describe('runs in a real container', () => {
       expect(existsSync(join(generated, 'wingfoil', '.wingfoil', 'dna.yaml'))).toBe(true);
       expect(existsSync(join(run('baseline-docs'), '.wingfoil'))).toBe(false);
       expect(existsSync(join(run('baseline'), 'PROJECT_RULES.md'))).toBe(false);
+      // REQ-SCO-14 (task-068): baseline-docs records the harness arm it is paired with; no other arm does.
+      const docsOf = (arm: string) =>
+        (JSON.parse(readFileSync(join(out(arm), 'run.json'), 'utf8')) as { docs_of?: string }).docs_of;
+      expect(docsOf('baseline-docs')).toBe('wingfoil');
+      expect(docsOf('wingfoil')).toBeUndefined();
       expect(readFileSync(join(run('baseline-docs'), 'CLAUDE.md'), 'utf8')).toBe(
         readFileSync(join(root, 'arms', 'baseline-docs', 'manual.md'), 'utf8'),
       );

@@ -258,3 +258,47 @@ describe('the pages, from a hand-built model (task-045)', () => {
     expect(pairs[7]).toBe(pairs[0]);
   });
 });
+
+describe('a harness against its docs control on a category page (REQ-SCO-14, task-068)', () => {
+  function withAgainst(
+    against: NonNullable<CategoryRow['scenarios'][number]['metrics'][number]['values'][number]['against']>,
+  ) {
+    const base = model();
+    const [c, ...rest] = base.categories as [CategoryRow, ...CategoryRow[]];
+    const [row] = c.scenarios as [CategoryRow['scenarios'][number]];
+    const [q1, ...metrics] = row.metrics as [CategoryRow['scenarios'][number]['metrics'][number]];
+    const values = q1.values.map((value) => (value.arm === 'wingfoil' ? { ...value, against } : value));
+    return categoryPage(
+      {
+        ...base,
+        categories: [{ ...c, scenarios: [{ ...row, metrics: [{ ...q1, values }, ...metrics] }] }, ...rest],
+      },
+      { ...c, scenarios: [{ ...row, metrics: [{ ...q1, values }, ...metrics] }] },
+    );
+  }
+
+  it('shows the delta, outcome and certainty, a note, or not measured, escaped', () => {
+    const compared = withAgainst({
+      control: 'baseline-docs',
+      metric: {
+        metric: 'M-Q1',
+        outcome: 'worse',
+        delta: -0.25,
+        certainty: 'within variance',
+        harness: { n: 2, mean: 0.5, min: 0.5, max: 0.5 },
+        control: { n: 2, mean: 0.75, min: 0.75, max: 0.75 },
+      },
+    });
+    expect(compared).toContain(
+      '<div class="value against"><span class="metric">against baseline-docs</span> <span class="delta">',
+    );
+    expect(compared).toContain(
+      '<span class="outcome" data-outcome="worse">▼ worse</span> <span class="certainty">within variance</span>',
+    );
+    expect(
+      withAgainst({ control: 'baseline-docs', metric: { metric: 'M-Q1', note: 'not comparable: r2 <x>' } }),
+    ).toContain('against baseline-docs: <span class="note">not comparable: r2 &lt;x&gt;</span>');
+    expect(withAgainst({ control: 'speckit-docs' })).toContain('against speckit-docs: not measured');
+    expect(withAgainst({})).toContain('against its docs control: not measured');
+  });
+});

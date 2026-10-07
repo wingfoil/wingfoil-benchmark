@@ -175,6 +175,8 @@ M-D1 (defects fixed) and M-D2 (false or duplicate reports rejected) are not repo
 
 Each arm other than the baseline is compared with the baseline of the same scenario version and model, metric by metric. A value is the mean of its runs, shown with its `n` and, from 3 runs, its range (the chart's whisker shows it from 2). It is *better* or *worse* when the means differ, by the metric's direction (higher is better for M-Q1 and M-F1; lower for M-K1, M-D3 and M-E1), and *the same* when they are equal. A metric one side lacks reads "not measured" and is no comparison. {#comparisons}
 
+Each harness arm is also compared with its own docs control, the arm generated from its configuration (wingfoil with baseline-docs, speckit with speckit-docs), by the same rules and on the same metrics. A category page shows it under the harness's value, as "against" its control. It separates what the harness does from what its information alone does (threat T3). It is not counted in the headline, which compares with the baseline only. An execution whose controls recorded no pairing reads "not measured". {#harness-against-control}
+
 A difference is *beyond variance* only when both sides have at least 3 runs and their ranges (lowest to highest) do not overlap. Otherwise it is *within variance*. No claim of statistical significance is made in v0.1. {#beyond-variance}
 
 A value from a single run is labelled *preliminary* and has no range. A comparison where either side is a single run is preliminary too, and says so even when the other side has more runs. The v0.1 reference campaign repeats only S1, so its categories D, E and F are preliminary. {#preliminary}

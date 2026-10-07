@@ -181,6 +181,10 @@ const STATEMENTS: readonly (readonly [string, string])[] = [
   ['m-d1-m-d2', 'REQ-RES-03 ("M-D1 and M-D2 are not reported apart in v0.1"); task-045 Choices to confirm 1'],
   ['comparisons', 'REQ-RES-03 (a comparison); task-045 Design "Each comparison’s outcome"'],
   [
+    'harness-against-control',
+    'REQ-SCO-14 (each harness against its own docs control, by the same rules); REQ-RES-03 as amended in 1.26 (the category pages); experiment design §5 T3; task-068 Design',
+  ],
+  [
     'beyond-variance',
     'experiment design §4.6; REQ-RES-03; experiment design §5 T8 (no claim of significance in v0.1)',
   ],

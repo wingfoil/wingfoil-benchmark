@@ -990,6 +990,30 @@ describe('each harness against its own docs control (REQ-SCO-14, task-068)', () 
     expect(file.controls?.map((entry) => entry.model)).toEqual(['model-a']);
   });
 
+  it('says why M-E1 is not compared when a run did not reach a directive check step', () => {
+    const check = (violations: number | 'not reached') => ({
+      id: 'r1',
+      kind: 'dependencies',
+      steps: [
+        violations === 'not reached'
+          ? { n: 1, not_reached: true }
+          : { n: 1, passed: violations === 0, violations, found: [] },
+      ],
+    });
+
+    const file = aggregate(
+      execution([
+        base,
+        { ...harness(), checks: [check(0)] },
+        { ...control(), checks: [check('not reached')] },
+      ]),
+    );
+    expect(file.controls?.[0]?.metrics.find((entry) => entry.metric === 'M-E1')).toEqual({
+      metric: 'M-E1',
+      note: 'not comparable: r1 did not reach step 1',
+    });
+  });
+
   it('is the same bytes aggregated twice', () => {
     const dir = execution([base, harness(), control()]);
     expect(JSON.stringify(aggregate(dir))).toBe(JSON.stringify(aggregate(dir)));
