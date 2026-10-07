@@ -342,6 +342,7 @@ function commandLine(request: StepRequest): string[] {
     '--verbose',
     '--model',
     request.model,
+    ...effortFlag(request.effort),
     '--session-id',
     request.sessionId,
     '--permission-mode',
@@ -352,6 +353,11 @@ function commandLine(request: StepRequest): string[] {
     String(request.remainingCostUsd),
     ...mcpFlags(request.mcpConfig),
   ];
+}
+
+/** The pinned effort as Claude Code's flag (dl-015): none for `none`, or when nothing is pinned. */
+function effortFlag(effort: string | undefined): string[] {
+  return effort === undefined || effort === 'none' ? [] : ['--effort', effort];
 }
 
 /**
@@ -367,7 +373,8 @@ function mcpFlags(config: string | undefined): string[] {
 /**
  * The command line of a resume (REQ-RUN-07), as the W2 spike measured it (P6). It names neither a
  * model nor a session id: the resumed session kept its pinned model without them, and a flag nobody
- * measured together with `--resume` is not one to add by assumption.
+ * measured together with `--resume` is not one to add by assumption. The effort is the exception
+ * (dl-015: on every invocation), measured under `--resume` by task-070's real run.
  */
 function resumeLine(request: ResumeRequest): string[] {
   return [
@@ -385,6 +392,7 @@ function resumeLine(request: ResumeRequest): string[] {
     'project',
     '--max-budget-usd',
     String(request.remainingCostUsd),
+    ...effortFlag(request.effort),
     ...mcpFlags(request.mcpConfig),
   ];
 }
