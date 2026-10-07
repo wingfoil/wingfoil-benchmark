@@ -153,6 +153,23 @@ describe('the method page (F5.8, task-046)', () => {
     );
   }, 120_000);
 
+  it('states the runs whose cost the agent could not price (bug-016)', async () => {
+    const { root, executionDir } = await siteExecution();
+    const file = join(executionDir, 'aggregate.json');
+    const aggregate = JSON.parse(readFileSync(file, 'utf8')) as {
+      groups: { metrics: { cost: { unpriced?: string[] } }; runs: string[] }[];
+    };
+    const first = aggregate.groups[0] as (typeof aggregate.groups)[0];
+    first.metrics.cost.unpriced = [first.runs[0] as string];
+    writeFileSync(file, JSON.stringify(aggregate));
+    const built = await benchSite(root, 'site', 'build', EXECUTION);
+    expect(built.code, built.stderr).toBe(0);
+    expect(readFileSync(join(root, PAGE, 'method.html'), 'utf8')).toContain(
+      'Setup costs (M-K3) are not included. For 1 run the agent could not price the cost, so it is not the ' +
+        "model's list price: abcdef012345/1/runs/TC@1.0/baseline/fake-model/r1.</p>",
+    );
+  }, 120_000);
+
   it('refuses a repository without the method text', async () => {
     const { root } = await siteExecution();
     rmSync(join(root, 'site-content'), { recursive: true });

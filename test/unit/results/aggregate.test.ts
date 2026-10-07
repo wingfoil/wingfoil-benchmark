@@ -27,6 +27,8 @@ interface RunSpec {
   readonly expectedFailure?: readonly string[];
   readonly costEur?: number;
   readonly costReported?: boolean;
+  /** score.json's run `cost_priced: false` (bug-016): the agent could not price a model the run used. */
+  readonly unpriced?: boolean;
   /** The hash score.json records, when it differs from run.json's. */
   readonly scoredHash?: string;
   /** score.json's `checks` (task-035); absent, the run was scored before checks were. */
@@ -141,7 +143,7 @@ function execution(runs: readonly RunSpec[], pins = 'models:\n  default: model-a
               ? { n: index + 1, not_reached: true }
               : { n: index + 1, outcome: 'completed', ...figures(stepEur, true) },
           ),
-          run: figures(eur, run.costReported ?? true),
+          run: { ...figures(eur, run.costReported ?? true), ...(run.unpriced === true ? { cost_priced: false } : {}) },
           ...(run.setup === undefined
             ? {}
             : {
@@ -1035,5 +1037,19 @@ describe('each harness against its own docs control (REQ-SCO-14, task-068)', () 
   it('is the same bytes aggregated twice', () => {
     const dir = execution([base, harness(), control()]);
     expect(JSON.stringify(aggregate(dir))).toBe(JSON.stringify(aggregate(dir)));
+  });
+});
+
+describe('runs whose cost the agent could not price (bug-016, task-069)', () => {
+  it('are listed with the group’s cost, beside the bounded ones; a group with none lists nothing', () => {
+    const [group] = aggregate(
+      execution([
+        { arm: 'baseline', r: 1, steps: [[s('a', 1, 1)]], unpriced: true },
+        { arm: 'baseline', r: 2, steps: [[s('a', 1, 1)]] },
+      ]),
+    ).groups;
+    expect(group?.metrics.cost.unpriced).toEqual([name('baseline', 1)]);
+    const [clean] = aggregate(execution([{ arm: 'baseline', steps: [[s('a', 1, 1)]] }])).groups;
+    expect(clean?.metrics.cost).not.toHaveProperty('unpriced');
   });
 });
