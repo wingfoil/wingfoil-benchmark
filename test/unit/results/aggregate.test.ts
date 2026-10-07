@@ -936,11 +936,11 @@ describe('each harness against its own docs control (REQ-SCO-14, task-068)', () 
     steps: [[s('a', passed, 4)]],
     costEur: 0.4,
   });
-  const control = (r = 1, passed = 2, docsOf: string | undefined = 'wingfoil', model = 'model-a'): RunSpec => ({
+  const control = (r = 1, passed = 2, docsOf: string | null = 'wingfoil', model = 'model-a'): RunSpec => ({
     arm: 'baseline-docs',
     r,
     model,
-    ...(docsOf === undefined ? {} : { docsOf }),
+    ...(docsOf === null ? {} : { docsOf }),
     steps: [[s('a', passed, 4)]],
     costEur: 0.5,
   });
@@ -979,7 +979,7 @@ describe('each harness against its own docs control (REQ-SCO-14, task-068)', () 
   });
 
   it('pairs nothing for a control whose runs record no docs_of, or whose harness did not run', () => {
-    expect(aggregate(execution([base, harness(), control(1, 2, undefined)])).controls).toEqual([]);
+    expect(aggregate(execution([base, harness(), control(1, 2, null)])).controls).toEqual([]);
     expect(aggregate(execution([base, control()])).controls).toEqual([]);
   });
 
@@ -987,7 +987,7 @@ describe('each harness against its own docs control (REQ-SCO-14, task-068)', () 
     const file = aggregate(
       execution([base, harness(), control(), harness(1, 3, 'model-b'), control(1, 2, 'wingfoil', 'model-b')]),
     );
-    expect(file.controls.map((entry) => entry.model)).toEqual(['model-a']);
+    expect(file.controls?.map((entry) => entry.model)).toEqual(['model-a']);
   });
 
   it('is the same bytes aggregated twice', () => {
