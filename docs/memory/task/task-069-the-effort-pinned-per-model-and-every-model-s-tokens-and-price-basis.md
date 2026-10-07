@@ -137,3 +137,30 @@ cost paragraph).
 
 - `npx wingfoil memory add --type task --title "The effort pinned per model and every model's tokens and price basis"`. Declared: creates the element from the template and
   commits it. Observed: `wf(task): add task-069-the-effort-pinned-per-model-and-every-model-s-tokens-and-price-basis`, `status: draft`. Matches.
+- `npx wingfoil memory submit task-069-…` (backlog → in-progress), after the Design commit. Declared: moves the task
+  to its next state and commits it. Observed: `wf(task): submit task-069-…`, `status: in-progress`. Matches.
+- Build:
+  - **bug-012:** red first (the step's `usage.json` and the cap), then `stepUsage` sums the step's folded models.
+    The fixtures confirmed the Design's reading: `modelUsage` is the session's running total across resumes, and
+    `costUSD` summed over the keys equals `total_cost_usd`. `readSession` stays per invocation, on the run's model.
+    The runner applies the rule where it folds a step's invocations. So the @F2.4 acceptance test, which replays
+    two unrelated recordings as one session, now expects the folded models' tokens.
+  - **bug-016:** red first (the basis read and folded; `cost_priced`; `cost.unpriced` and the method page; the
+    estimate), then the code. New fixture `test/fixtures/sessions/unpriced.jsonl`: `completed-sonnet.jsonl` with
+    the model renamed claude-sonnet-5-5 and `costBasis: "unknown"`, as bug-016's P2 recorded it. It is synthetic,
+    and the test says so.
+  - **dl-015:**
+    - The adapter's `--effort` was red first.
+    - The schema, the run-time refusal (campaign run, dry run, `validate`'s `requires` line) and the runner were
+      written before their tests, in the same step. Their tests came right after. This is a deviation from
+      test-first.
+    - `run show` and the method page's row were also written in the same step as their tests.
+    - The Design's rule refusing an effort for a model the campaign does not run was dropped during build, and the
+      Design says so: it would have refused every test campaign whose slices a test removes.
+    - The complete campaign fixture now pins `high` for its two models. `priceCampaign` stores dry runs at the
+      pinned effort.
+  - **Specification:** requirements 1.27 (REQ-RUN-16, REQ-RUN-08, REQ-RUN-09) and its change log. method.md:
+    `{#auxiliary-models}` is corrected (it said the token counts were the run's model's only), and `{#agent-effort}`
+    is new.
+  - `--effort` under `--resume` is not measured here: no real agent ran. task-070's consented real run passes it and
+    records the result.
