@@ -106,3 +106,16 @@ on the same scenario version and model. Slices are left out, as the site's compa
 - `npx wingfoil memory add --type task --title "Each harness against its own docs control"`. Declared: creates the
   element from the template and commits it. Observed: `wf(task): add task-068-each-harness-against-its-own-docs-control`,
   `status: draft`. Matches.
+- `npx wingfoil memory submit task-068-…` (backlog → in-progress), after the Design commit. Declared: moves the task
+  to its next state and commits it. Observed: `wf(task): submit task-068-…`, `status: in-progress`. Matches.
+- Build, test first:
+  - **the aggregate:** red (the four `controls` tests), then the comparison rules moved to
+    `src/results/compare.ts` and `controlComparisons`. One red test was wrong on its own: `undefined` passed to a
+    parameter with a default takes the default. It now uses `null`.
+  - **the run:** red (`docs_of` in run.json), then the runner records it.
+  - **the site:** red (the category page, the older aggregate), then the model's `against` and the page's line.
+    - The site's fixture runs record no `harness`; real ones do (REQ-RUN-14). The two site tests add it to the
+      wingfoil runs, rather than changing the shared fixture that the method tests read.
+  - **the method page:** `{#harness-against-control}` and its statement's sources.
+  - **the W3 Docker test:** asserts `docs_of`.
+- Lint found an unused import left by the move (fixed in b5508b8).
