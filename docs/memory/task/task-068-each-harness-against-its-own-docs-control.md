@@ -129,3 +129,28 @@ on the same scenario version and model. Slices are left out, as the site's compa
 - **v0.1's published execution** (`c82a5e74885b/1`), built from a `git archive` of this branch with its CLI:
   17 pages. The headline is the same as main's CLI gives. Only the category pages C–F differ: they gain "against its
   docs control: not measured" under each wingfoil value (6 lines).
+- The first full `test:docker` run was stopped together with a duplicate suite chain that shared the worktree's
+  coverage directory (my mistake: a `nohup` chain left running). Its dry-run container
+  (`bench-dry-3d36656b8281-…`, the W7 test's) stayed up and failed the next run's W7 and W8 tests. It was removed,
+  and `test:docker` ran again alone.
+
+## Review notes
+
+Independent read-only agents reviewed `git diff main...HEAD` against the Design, REQ-SCO-14 and REQ-RES-03 as
+amended in 1.26.
+
+- Round 1 (b5508b8): design coverage met; the direction is right (delta = harness − control); no blocker.
+  - Should-fix:
+    1. `controls` read from the file was not validated, and `outcome`/`certainty` were printed unescaped;
+    2. the headline test asserted on stdout for a string it never holds;
+    3. the M-E1 note did not say which side's `r1` was meant.
+  - Nits:
+    4. two docs controls of one harness: only the first is shown;
+    5. a group with mixed `docs_of` was decided by its first run;
+    6. v0.1's execution was not built;
+    7. method.md named only two harnesses;
+    8. the determinism test was weak on ordering.
+  - Fixed in f1016b0: 1, 2, 3, 5, 6 (recorded above), 7 and 8.
+  - Item 4 was left: REQ-RUN-11 as amended has one docs generator per harness.
+- Round 2 (f1016b0): every fix verified. The shape accepts what the aggregator writes, and nothing is
+  double-escaped. **Clean.**
