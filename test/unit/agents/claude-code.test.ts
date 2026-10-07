@@ -216,7 +216,7 @@ describe('reading a session (REQ-RUN-09)', () => {
         outputTokens: 393,
         cacheCreationInputTokens: 2895,
         cacheReadInputTokens: 17560,
-        costUsd: 0.00734975,,
+        costUsd: 0.00734975,
         costBasis: 'list',
       },
       'claude-haiku-4-5-20251001': {
@@ -224,7 +224,7 @@ describe('reading a session (REQ-RUN-09)', () => {
         outputTokens: 4967,
         cacheCreationInputTokens: 6399,
         cacheReadInputTokens: 278256,
-        costUsd: 0.06075735000000001,,
+        costUsd: 0.06075735000000001,
         costBasis: 'list',
       },
     });
@@ -249,8 +249,12 @@ describe('reading a session (REQ-RUN-09)', () => {
   it('reads the price basis of each model, so a cost the agent could not price is seen (bug-016)', () => {
     // unpriced.jsonl is completed-sonnet.jsonl with the model renamed and its basis set as bug-016's probe P2 recorded
     // it: Claude Code 2.1.280 ran claude-sonnet-5-5 without knowing it, and priced it at another model's list.
-    expect(readSession(recorded('unpriced.jsonl'), RATE).models['claude-sonnet-5-5']?.costBasis).toBe('unknown');
-    expect(readSession(recorded('completed-sonnet.jsonl'), RATE).models['claude-sonnet-5']?.costBasis).toBe('list');
+    expect(readSession(recorded('unpriced.jsonl'), RATE).models['claude-sonnet-5-5']?.costBasis).toBe(
+      'unknown',
+    );
+    expect(readSession(recorded('completed-sonnet.jsonl'), RATE).models['claude-sonnet-5']?.costBasis).toBe(
+      'list',
+    );
   });
 
   it('folds the price basis keeping one that is not list, and leaves it out when no reading has one', () => {

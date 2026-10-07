@@ -113,6 +113,38 @@ describe('costMetrics (F4.3, M-K1, M-K2)', () => {
     });
   });
 
+  it('says a run whose cost the agent could not price is not priced, and leaves a priced one as it was (bug-016)', async () => {
+    const model = (costBasis?: string) => ({
+      inputTokens: 1,
+      outputTokens: 1,
+      cacheCreationInputTokens: 0,
+      cacheReadInputTokens: 0,
+      costUsd: 0.1,
+      ...(costBasis === undefined ? {} : { costBasis }),
+    });
+    const unpriced = await storedRun({
+      steps: [{}, CANCEL],
+      record: (n) => ({
+        usage: usageOf(n),
+        models: Object.fromEntries([
+          n === 2 ? ['claude-sonnet-5-5', model('unknown')] : ['claude-sonnet-5', model('list')],
+        ]),
+      }),
+    });
+    const result = await cost(unpriced);
+    expect(result.ok && result.value.steps[0]).not.toHaveProperty('cost_priced');
+    expect(result.ok && result.value.steps[1]).toMatchObject({ cost_priced: false });
+    expect(result.ok && result.value.run).toMatchObject({ cost_priced: false, cost_reported: true });
+
+    // No basis recorded (a session before Claude Code reported one), or every basis list: priced, the field absent.
+    const priced = await storedRun({
+      steps: [{}, CANCEL],
+      record: (n) => ({ usage: usageOf(n), models: { m: model(n === 1 ? undefined : 'list') } }),
+    });
+    const fine = await cost(priced);
+    expect(fine.ok && fine.value.run).not.toHaveProperty('cost_priced');
+  });
+
   it('records the steps a run never reached as costing nothing, outside the sums', async () => {
     const fixture = await storedRun({ steps: [CANCEL] });
     const result = await cost(fixture);
