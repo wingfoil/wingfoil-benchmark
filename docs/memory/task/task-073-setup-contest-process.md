@@ -2,7 +2,7 @@
 id: task-073-setup-contest-process
 type: task
 title: "Setup contest process"
-status: pending
+status: backlog
 release: v0.2
 wave: W13
 features: [F7.2]
