@@ -18,6 +18,11 @@ export interface CostFigures {
   readonly cost_eur: number;
   /** False when a step was killed before it could report, and counts at its bound (task-024). */
   readonly cost_reported: boolean;
+  /**
+   * False when the agent could not price a model the step or run used (bug-016): its cost is not that model's list
+   * price. Absent otherwise, and in every score written before it.
+   */
+  readonly cost_priced?: false;
   readonly wall_time_ms: number;
   readonly turns: number;
   readonly interventions: number;
@@ -113,6 +118,7 @@ export function costMetrics(request: CostRequest): Result<CostScore> {
       cost_usd: money(bounded ? (step.costBoundUsd as number) : u.costUsd),
       cost_eur: money(bounded ? (step.costBoundUsd as number) * rate.value : u.costEur),
       cost_reported: step.costBoundUsd === undefined,
+      ...(step.unpriced === undefined ? {} : { cost_priced: false as const }),
       wall_time_ms: u.durationMs,
       turns: u.turns,
       interventions: step.interventions,
@@ -154,6 +160,7 @@ function add(a: CostFigures, b: CostFigures): CostFigures {
     cost_usd: money(a.cost_usd + b.cost_usd),
     cost_eur: money(a.cost_eur + b.cost_eur),
     cost_reported: a.cost_reported && b.cost_reported,
+    ...(a.cost_priced === false || b.cost_priced === false ? { cost_priced: false as const } : {}),
     wall_time_ms: a.wall_time_ms + b.wall_time_ms,
     turns: a.turns + b.turns,
     interventions: a.interventions + b.interventions,
