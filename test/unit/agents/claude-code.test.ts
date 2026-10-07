@@ -244,6 +244,28 @@ describe('reading a session (REQ-RUN-09)', () => {
     expect(Object.keys(foldModels({ z: at(1, 0) }, { a: at(1, 0) }))).toEqual(['a', 'z']);
   });
 
+  it('reads the price basis of each model, so a cost the agent could not price is seen (bug-016)', () => {
+    // unpriced.jsonl is completed-sonnet.jsonl with the model renamed and its basis set as bug-016's probe P2 recorded
+    // it: Claude Code 2.1.280 ran claude-sonnet-5-5 without knowing it, and priced it at another model's list.
+    expect(readSession(recorded('unpriced.jsonl'), RATE).models['claude-sonnet-5-5']?.costBasis).toBe('unknown');
+    expect(readSession(recorded('completed-sonnet.jsonl'), RATE).models['claude-sonnet-5']?.costBasis).toBe('list');
+  });
+
+  it('folds the price basis keeping one that is not list, and leaves it out when no reading has one', () => {
+    const at = (costBasis?: string) => ({
+      inputTokens: 1,
+      outputTokens: 1,
+      cacheCreationInputTokens: 0,
+      cacheReadInputTokens: 0,
+      costUsd: 0.1,
+      ...(costBasis === undefined ? {} : { costBasis }),
+    });
+    expect(foldModels({ a: at('list') }, { a: at('unknown') }).a?.costBasis).toBe('unknown');
+    expect(foldModels({ a: at('unknown') }, { a: at('list') }).a?.costBasis).toBe('unknown');
+    expect(foldModels({ a: at() }, { a: at('list') }).a?.costBasis).toBe('list');
+    expect(foldModels({ a: at() }, { a: at() }).a).not.toHaveProperty('costBasis');
+  });
+
   it('reports no models for a session whose results carry no modelUsage', () => {
     expect(
       readSession(['{"type":"result","is_error":false,"terminal_reason":"completed"}'], RATE).models,
