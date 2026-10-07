@@ -70,6 +70,8 @@ export interface CostAggregate {
   readonly turns: Value<number>;
   readonly interventions: Value<number>;
   readonly bound: readonly string[];
+  /** The runs whose cost the agent could not price (bug-016); absent when there is none. */
+  readonly unpriced?: readonly string[];
   /** M-K3 (task-040), over the runs that recorded their setup; absent when none did. */
   readonly setup_cost_eur?: Value<number>;
   readonly setup_wall_time_ms?: Value<number>;
@@ -289,6 +291,7 @@ const costFigures = z.object({
   cost_usd: z.number(),
   cost_eur: z.number(),
   cost_reported: z.boolean(),
+  cost_priced: z.literal(false).optional(),
   wall_time_ms: z.number(),
   turns: z.number(),
   interventions: z.number(),
@@ -825,6 +828,7 @@ function costOf(runs: readonly ScoredRun[]): CostAggregate {
     turns: of((s) => s.cost.run.turns),
     interventions: of((s) => s.cost.run.interventions),
     bound: runs.filter((run) => !run.score.cost.run.cost_reported).map((run) => run.name),
+    ...unpricedRuns(runs),
     ...setupOf(runs),
   };
 }
@@ -1115,4 +1119,10 @@ function controlMetric(entry: MapEntry, harness: Group, control: Group): Control
       control: side(result.baseline),
     },
   ];
+}
+
+/** The runs whose cost the agent could not price (bug-016), as `cost.unpriced`; nothing when there is none. */
+function unpricedRuns(runs: readonly ScoredRun[]): { unpriced?: string[] } {
+  const unpriced = runs.filter((run) => run.score.cost.run.cost_priced === false).map((run) => run.name);
+  return unpriced.length === 0 ? {} : { unpriced };
 }

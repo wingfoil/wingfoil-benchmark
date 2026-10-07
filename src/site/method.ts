@@ -355,6 +355,7 @@ function executionSection(
     category.scenarios.flatMap((scenario) => scenario.groups),
   );
   const bound = [...main, ...model.slices].flatMap((group) => group.metrics.cost.bound);
+  const unpriced = [...main, ...model.slices].flatMap((group) => group.metrics.cost.unpriced ?? []);
   const runs = (count: number) => `${count} aggregated run${count === 1 ? '' : 's'}`;
   const spending =
     `${runs(model.runs)} of ${e(model.model)} cost ${cost(main).toFixed(4)} EUR in all.` +
@@ -364,7 +365,12 @@ function executionSection(
     ' Setup costs (M-K3) are not included.' +
     (bound.length === 0
       ? ''
-      : ` For ${bound.length} run${bound.length === 1 ? '' : 's'} the cost is a bound, not a report: ${bound.map(e).join(', ')}.`);
+      : ` For ${bound.length} run${bound.length === 1 ? '' : 's'} the cost is a bound, not a report: ${bound.map(e).join(', ')}.`) +
+    // bug-016: a cost the agent could not price is not the model's list price.
+    (unpriced.length === 0
+      ? ''
+      : ` For ${unpriced.length} run${unpriced.length === 1 ? '' : 's'} the agent could not price the cost, so it is ` +
+        `not the model's list price: ${unpriced.map(e).join(', ')}.`);
   return (
     '<h3 id="pins">Pins</h3>\n<table>\n<tbody>\n' +
     row('Agent', `${e(campaign.agent.name)} ${e(campaign.agent.version)}`) +
