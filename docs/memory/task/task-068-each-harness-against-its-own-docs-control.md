@@ -40,7 +40,66 @@ in its aggregate and on its category pages; v0.1's published execution still bui
 
 ## Design
 
-<!-- Written in the task's design phase. -->
+### The pairing, recorded by the run
+
+A docs control's `run.json` records **`docs_of`**, the harness arm its environment was generated from (REQ-RUN-11).
+The aggregator reads only what the execution committed, so the pairing is read from there. A run that does not
+record it, such as v0.1's baseline-docs runs, pairs with nothing, and its comparison reads "not measured".
+
+### The comparison rules move down to `results`
+
+The category map and the comparison rules move from `src/site/rules.ts` to a new `src/results/compare.ts`:
+`MetricId`, `Better`, `MapEntry`, `CATEGORY_MAP`, `Figures`, `Summary`, `Outcome`, `Certainty`, `readMetric`,
+`summarize` and `compare`. `site/rules.ts` re-exports them and keeps the sentences: the headline, "not covered",
+the formats. Two reasons:
+
+- REQ-SCO-14 has the aggregate store this comparison, and `results` sits below `site`;
+- W14's campaign comparison (REQ-SCO-13) reads the same map and rules.
+
+The rules themselves do not change. So "by the same rules" (REQ-SCO-14) is the same code.
+
+### The aggregate: `controls`
+
+`aggregate.json` gains an optional `controls`, so `aggregate_version` stays 1 and a v0.1 aggregate still reads. It
+holds one entry per default-model group of a docs control that records `docs_of`, when its harness arm has a group
+on the same scenario version and model. Slices are left out, as the site's comparisons are.
+
+```json
+{ "scenario": "S8", "version": "1.0", "model": "…", "harness": "wingfoil", "control": "baseline-docs",
+  "runs": { "harness": ["…"], "control": ["…"] },
+  "metrics": [ { "metric": "M-Q1", "outcome": "same", "delta": 0, "certainty": "preliminary",
+                 "harness": { "n": 1, "mean": 1, "min": 1, "max": 1 },
+                 "control": { "n": 1, "mean": 1, "min": 1, "max": 1 } } ] }
+```
+
+- `metrics` holds every metric of the category map (M-Q1, M-K1, M-D3, M-E1, M-F1) that both groups measure.
+- A metric one side cannot compare (M-E1 not comparable) is left out with its note: `{ "metric": "M-E1",
+  "note": "not comparable: …" }`.
+- The harness is the compared side, its control the reference, as the baseline is for every arm.
+- Entries are in the site's order: scenario, version, harness.
+- The aggregate is still deterministic: the same execution gives the same bytes.
+
+### The site
+
+- **Category pages (REQ-RES-03 as amended in 1.26).** Under each metric, a harness arm's line gains a second
+  value, "against <control>", with the same delta, outcome and certainty markup as the comparison with the
+  baseline. A harness arm that ran in the execution with no `controls` entry reads "against its docs control: not
+  measured". A harness arm is one whose runs recorded a `harness` (the site model's records).
+- **The landing page and its headline are unchanged:** the headline counts comparisons with the baseline only. A
+  second headline is not in REQ-RES-03.
+- **The method page:** the comparisons paragraph (`{#comparisons}` or the one that states the comparison rule)
+  names the second comparison. Its statement test gains the source REQ-SCO-14.
+
+### Tests
+
+- **unit:**
+  - `compare.ts` moved, with its tests;
+  - the aggregate's `controls`, including no `docs_of`, no harness group, a slice, and M-E1 not comparable;
+  - the run records `docs_of`;
+  - the category page shows "against" lines, and "not measured" for an old aggregate.
+- **acceptance:** the two criteria.
+- `test:bin`: the site's file list is unchanged.
+- `test:docker`: the run records `docs_of` (W3's test).
 
 ## Execution notes
 
