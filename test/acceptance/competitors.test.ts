@@ -1,5 +1,14 @@
 import { createHash } from 'node:crypto';
-import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 
 import { stringify } from 'yaml';
@@ -184,83 +193,113 @@ describe('competitors.feature, artifacts and arm digests', () => {
 
 const SPECKIT_SHA = 'f1d3a4f8337ebbd3ae22760a9c12e3352b93a175';
 
-/** One run of S1 in the baseline and speckit arms, with the fake agent; the speckit arm is the repository's own. */
-function speckitCampaign(): { root: string; file: string } {
+/** One competitor row of the outline (competitors.feature): its arm, how it is set up, and how its harness is pinned. */
+interface CompetitorRow {
+  readonly arm: 'speckit' | 'openspec';
+  readonly pin: { readonly tool: string; readonly version: string };
+  readonly init: string;
+  readonly telemetryOff: readonly string[];
+  /** What the doubles need to build it: a clone and its commit, or nothing for a registry tool. */
+  readonly sources: Readonly<Record<string, string>>;
+  readonly commits?: Readonly<Record<string, string>>;
+  readonly commit: unknown;
+}
+
+const ROWS: readonly CompetitorRow[] = [
+  {
+    arm: 'speckit',
+    pin: { tool: 'speckit', version: 'v1.1.0' },
+    init: 'specify init --here --force --integration claude --script sh --ignore-agent-tools',
+    telemetryOff: [],
+    sources: { speckit: '/clones/spec-kit' },
+    commits: { 'v1.1.0': SPECKIT_SHA },
+    commit: SPECKIT_SHA,
+  },
+  {
+    arm: 'openspec',
+    pin: { tool: 'openspec', version: '1.14.0' },
+    init: 'openspec init --tools claude --profile core --force',
+    telemetryOff: ['OPENSPEC_TELEMETRY=0'],
+    sources: {},
+    // Fetched from the npm registry by version (task-071): its commit is its tarball's digest.
+    commit: createHash('sha256').update('tarball').digest('hex'),
+  },
+];
+
+/** One run of S1 in the baseline arm and the row's arm, with the fake agent; the arm is the repository's own. */
+function competitorCampaign(row: CompetitorRow): { root: string; file: string } {
   const repo = writeRepo(
-    {
-      ...harnessCampaign(),
-      arms: ['baseline', 'speckit'],
-      harnesses: { speckit: { tool: 'speckit', version: 'v1.1.0' } },
-    },
+    { ...harnessCampaign(), arms: ['baseline', row.arm], harnesses: { [row.arm]: row.pin } },
     ['S1@1.0'],
   );
-  rmSync(join(repo.root, 'arms', 'speckit'), { recursive: true, force: true });
-  cpSync(repoPath('arms/speckit'), join(repo.root, 'arms', 'speckit'), { recursive: true });
+  rmSync(join(repo.root, 'arms', row.arm), { recursive: true, force: true });
+  cpSync(repoPath(`arms/${row.arm}`), join(repo.root, 'arms', row.arm), { recursive: true });
   return repo;
+}
+
+/** The outline's steps for one row. */
+async function runsUnderTheSameRules(row: CompetitorRow): Promise<void> {
+  // Given the arm installs its tool from its pinned artifact and initializes it as its documentation says for Claude
+  // Code, and the tool's telemetry is turned off
+  const { root, file } = competitorCampaign(row);
+  const setup = readFileSync(join(root, 'arms', row.arm, 'setup.sh'), 'utf8');
+  expect(setup, row.arm).toContain('tar -xzf "$HOME/harness.tgz"');
+  expect(setup, row.arm).toContain(row.init);
+  const checked = checkCampaign(file);
+  if (!checked.ok) throw new Error(JSON.stringify(checked.issues));
+  expect(checked.value.arms.find((arm) => arm.name === row.arm)?.telemetryOff, row.arm).toEqual(
+    row.telemetryOff,
+  );
+  // When the maintainer runs a scenario in the arm with the fake agent; step 1 asks a question
+  const ports = doubles({
+    ...(row.commits === undefined ? {} : { commits: row.commits }),
+    onRunOnce: build,
+    messageOf: (request) =>
+      'reply' in request || request.step !== 1 ? undefined : 'Which currency do you use?',
+  });
+  const summary = await runCampaign(checked.value, { ...ports, harnessSources: row.sources });
+  // Then every step runs in a fresh session started by the runner, with the same prompt as in every other arm
+  // The runs are sequential, baseline's first: the first half of the requests is baseline's, the second the arm's.
+  const half = <T>(all: readonly T[], first: boolean): T[] =>
+    first ? all.slice(0, all.length / 2) : all.slice(all.length / 2);
+  const prompts = (first: boolean) => half(ports.recorded.steps, first).map((step) => step.prompt);
+  expect(prompts(false), row.arm).toEqual(prompts(true));
+  expect(new Set(ports.recorded.steps.map((step) => step.sessionId)).size).toBe(ports.recorded.steps.length);
+  expect(
+    ports.recorded.execs.filter((exec) => exec.command.join(' ') === 'bash /home/node/arm/setup.sh'),
+  ).toHaveLength(2);
+  // And the neutral approver answers the sessions that wait, and no other approval exists in the arm
+  const replies = (first: boolean) => half(ports.recorded.resumes, first).map((r) => r.reply);
+  expect(replies(false), row.arm).toEqual(replies(true));
+  expect(replies(false)).toHaveLength(1);
+  for (const name of ['setup.sh', 'manual.md', 'arm.yaml'])
+    expect(readFileSync(join(root, 'arms', row.arm, name), 'utf8'), `${row.arm}/${name}`).not.toMatch(
+      /approver|approve /i,
+    );
+  // And the run records the tool, its version, the artifact's digest and the arm's digest
+  const run = summary.runs.find((r) => r.arm === row.arm);
+  const record = JSON.parse(readFileSync(join(run?.outputDir ?? '', 'run.json'), 'utf8')) as {
+    harness?: Record<string, string>;
+    arm_digest?: string;
+    telemetry_off?: string[];
+  };
+  expect(record.harness, row.arm).toMatchObject({
+    ...row.pin,
+    commit: row.commit,
+    artifact_sha256: expect.stringMatching(/^[0-9a-f]{64}$/) as unknown,
+  });
+  expect(record.arm_digest, row.arm).toBe(armDigest(root, row.arm));
+  expect(record.telemetry_off, row.arm).toEqual(row.telemetryOff);
 }
 
 describe('competitors.feature, the competitor arms', () => {
   it('@F7.1 A competitor arm runs a scenario under the same rules', async () => {
-    // Given the speckit arm installs Spec Kit from its pinned artifact and initializes it as its documentation says for
-    // Claude Code, and the tool's telemetry is turned off
-    const { root, file } = speckitCampaign();
-    const setup = readFileSync(join(root, 'arms', 'speckit', 'setup.sh'), 'utf8');
-    expect(setup).toContain('tar -xzf "$HOME/harness.tgz"');
-    expect(setup).toContain(
-      'specify init --here --force --integration claude --script sh --ignore-agent-tools',
-    );
-    const checked = checkCampaign(file);
-    if (!checked.ok) throw new Error(JSON.stringify(checked.issues));
-    expect(checked.value.arms.find((arm) => arm.name === 'speckit')?.telemetryOff).toEqual([]);
-    // When the maintainer runs a scenario in the speckit arm with the fake agent; step 1 asks a question
-    const ports = doubles({
-      commits: { 'v1.1.0': SPECKIT_SHA },
-      onRunOnce: build,
-      messageOf: (request) =>
-        'reply' in request || request.step !== 1 ? undefined : 'Which currency do you use?',
-    });
-    const summary = await runCampaign(checked.value, {
-      ...ports,
-      harnessSources: { speckit: '/clones/spec-kit' },
-    });
-    // Then every step runs in a fresh session started by the runner, with the same prompt as in every other arm
-    // The runs are sequential, baseline's first: the first half of the requests is baseline's, the second speckit's.
-    const half = <T>(all: readonly T[], arm: 'baseline' | 'speckit'): T[] =>
-      arm === 'baseline' ? all.slice(0, all.length / 2) : all.slice(all.length / 2);
-    const steps = (arm: 'baseline' | 'speckit') => half(ports.recorded.steps, arm);
-    expect(steps('speckit').map((step) => step.prompt)).toEqual(steps('baseline').map((step) => step.prompt));
-    expect(new Set(ports.recorded.steps.map((step) => step.sessionId)).size).toBe(
-      ports.recorded.steps.length,
-    );
-    expect(
-      ports.recorded.execs.filter((exec) => exec.command.join(' ') === 'bash /home/node/arm/setup.sh'),
-    ).toHaveLength(2);
-    // And the neutral approver answers the sessions that wait, and no other approval exists in the arm
-    const replies = (arm: 'baseline' | 'speckit') => half(ports.recorded.resumes, arm).map((r) => r.reply);
-    expect(replies('speckit')).toEqual(replies('baseline'));
-    expect(replies('speckit')).toHaveLength(1);
-    for (const name of ['setup.sh', 'manual.md', 'arm.yaml'])
-      expect(readFileSync(join(root, 'arms', 'speckit', name), 'utf8')).not.toMatch(/approver|approve /i);
-    // And the run records the tool, its version, the artifact's digest and the arm's digest
-    const speckit = summary.runs.find((run) => run.arm === 'speckit');
-    const record = JSON.parse(readFileSync(join(speckit?.outputDir ?? '', 'run.json'), 'utf8')) as {
-      harness?: Record<string, string>;
-      arm_digest?: string;
-      telemetry_off?: string[];
-    };
-    expect(record.harness).toMatchObject({
-      tool: 'speckit',
-      version: 'v1.1.0',
-      commit: SPECKIT_SHA,
-      artifact_sha256: expect.stringMatching(/^[0-9a-f]{64}$/) as unknown,
-    });
-    expect(record.arm_digest).toBe(armDigest(root, 'speckit'));
-    expect(record.telemetry_off).toEqual([]);
+    for (const row of ROWS) await runsUnderTheSameRules(row);
   });
 
   it('@F7.1 An arm definition that misses what v0.2 requires is refused', () => {
     // Given a harness arm that declares no telemetry setting
-    const noTelemetry = speckitCampaign();
+    const noTelemetry = competitorCampaign(ROWS[0] as CompetitorRow);
     const yaml = readFileSync(join(noTelemetry.root, 'arms', 'speckit', 'arm.yaml'), 'utf8');
     writeFileSync(
       join(noTelemetry.root, 'arms', 'speckit', 'arm.yaml'),
@@ -300,19 +339,20 @@ const RULE = [
 ].join('\n');
 
 /** S1 in every v0.2 arm that exists: the harnesses, their docs controls (the repository's own arms), and the baseline. */
-function controlsCampaign() {
+function controlsCampaign(extra: readonly 'openspec'[] = []) {
   const repo = writeRepo(
     {
       ...harnessCampaign(),
-      arms: ['baseline', 'wingfoil', 'baseline-docs', 'speckit', 'speckit-docs'],
+      arms: ['baseline', 'wingfoil', 'baseline-docs', 'speckit', 'speckit-docs', ...extra],
       harnesses: {
         wingfoil: { tool: 'wingfoil', version: '3df305e' },
         speckit: { tool: 'speckit', version: 'v1.1.0' },
+        ...(extra.includes('openspec') ? { openspec: { tool: 'openspec', version: '1.14.0' } } : {}),
       },
     },
     ['S1@1.0'],
   );
-  for (const arm of ['baseline-docs', 'speckit', 'speckit-docs']) {
+  for (const arm of ['baseline-docs', 'speckit', 'speckit-docs', ...extra]) {
     rmSync(join(repo.root, 'arms', arm), { recursive: true, force: true });
     cpSync(repoPath(`arms/${arm}`), join(repo.root, 'arms', arm), { recursive: true });
   }
@@ -351,6 +391,58 @@ function speckitSetup(request: RunOnceRequest): void {
 }
 
 describe('competitors.feature, the docs controls and the setups', () => {
+  it("@F7.1 A scenario's project rules reach every arm without changing the scenario", async () => {
+    // Given a scenario whose project rules are declared once (as the wingfoil arm's directives, dl-005)
+    const { root, file } = controlsCampaign(['openspec']);
+    const scenarioDir = join(root, 'scenarios', 'S1', '1.0');
+    const before = treeOf(scenarioDir);
+    const checked = checkCampaign(file);
+    if (!checked.ok) throw new Error(JSON.stringify(checked.issues));
+    const hash = checked.value.scenarios[0]?.hash;
+    // When it runs in the wingfoil, speckit and openspec arms and in their docs controls (openspec-docs: task-072)
+    // The doubles' wingfoil snapshot also applies the scenario's configuration, as the arm's own setup does.
+    const snapshots = (request: RunOnceRequest) => {
+      speckitSetup(request);
+      const overlay = join(request.mount.source, 'scenario', '.wingfoil');
+      if (existsSync(overlay))
+        cpSync(overlay, join(request.mount.source, 'workspace', '.wingfoil'), { recursive: true });
+    };
+    const ports = doubles({ commits: { '3df305e': SHA, 'v1.1.0': SPECKIT_SHA }, onRunOnce: snapshots });
+    const summary = await runCampaign(checked.value, {
+      ...ports,
+      harnessSources: { wingfoil: '/clones/wingfoil', speckit: '/clones/spec-kit' },
+    });
+    const workspace = (arm: string) =>
+      ports.recorded.creates.find((c) => c.workspace.includes(`/${arm}/`))?.workspace ?? '';
+    // Then each harness arm gets the rules in its tool's own place
+    expect(
+      ports.recorded.copies.some(
+        (copy) => copy.includes('/arms/wingfoil ') && copy.includes(':/home/node/scenario'),
+      ),
+    ).toBe(true);
+    expect(
+      readFileSync(join(workspace('speckit'), '.specify', 'memory', 'constitution.md'), 'utf8'),
+    ).toContain('### No new runtime dependency');
+    expect(readFileSync(join(workspace('openspec'), 'openspec', 'config.yaml'), 'utf8')).toContain(
+      '## No new runtime dependency',
+    );
+    // And each docs control gets them as Markdown; the baseline gets none
+    for (const control of ['baseline-docs', 'speckit-docs'])
+      expect(readFileSync(join(workspace(control), 'PROJECT_RULES.md'), 'utf8'), control).toContain(
+        'No new runtime dependency',
+      );
+    expect(existsSync(join(workspace('baseline'), 'PROJECT_RULES.md'))).toBe(false);
+    // And the scenario's content hash is the one its earlier results recorded: every run recorded the same, and the
+    // scenario's files are as they were
+    for (const run of summary.runs) {
+      const record = JSON.parse(readFileSync(join(run.outputDir, 'run.json'), 'utf8')) as {
+        scenario_hash: string;
+      };
+      expect(record.scenario_hash, run.arm).toBe(hash);
+    }
+    expect(treeOf(scenarioDir)).toEqual(before);
+  });
+
   it('@F7.1 Each harness has its own docs control', async () => {
     // Given each harness arm's configuration, captured by running its own setup
     const { file } = controlsCampaign();
@@ -432,3 +524,17 @@ describe('competitors.feature, the docs controls and the setups', () => {
     expect(method).toContain('href="material/setup-wingfoil.html"');
   });
 });
+
+/** Every file under `dir`, by relative path, with its bytes as text: a tree to compare before and after. */
+function treeOf(dir: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  const walk = (at: string, prefix: string) => {
+    for (const name of readdirSync(at).sort()) {
+      const path = join(at, name);
+      if (statSync(path).isDirectory()) walk(path, `${prefix}${name}/`);
+      else out[`${prefix}${name}`] = readFileSync(path, 'utf8');
+    }
+  };
+  walk(dir, '');
+  return out;
+}
