@@ -93,6 +93,7 @@ export async function dryRunCommand(
     hash: scenario.hash,
     arm: arm.name,
     model,
+    ...(profile.agent.effort?.[model] === undefined ? {} : { effort: profile.agent.effort[model] }),
   });
   io.stdout(
     latest === undefined

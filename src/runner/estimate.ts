@@ -2,7 +2,7 @@ import { relative } from 'node:path';
 
 import { fail, ok } from '../core/index.js';
 import type { Issue, Result, Scenario } from '../core/index.js';
-import { latestDryRun } from '../results/index.js';
+import { findDryRun } from '../results/index.js';
 import type { DryRunRecord } from '../results/index.js';
 
 import type { CheckedCampaign } from './campaign.js';
@@ -54,20 +54,25 @@ export function estimateCampaign(checked: CheckedCampaign): Result<Estimate> {
   const issues: Issue[] = [];
   for (const key of campaignKeys(checked)) {
     const { scenario, arm, model, repetitions } = key;
-    const dryRun = latestDryRun(campaign.resultsRoot, {
+    const effort = campaign.spec.agent.effort?.[model];
+    const lookup = findDryRun(campaign.resultsRoot, {
       id: scenario.id,
       version: scenario.version,
       hash: scenario.hash,
       arm,
       model,
+      ...(effort === undefined ? {} : { effort }),
     });
+    const dryRun = lookup.record;
     const name = `${scenario.id}@${scenario.version}`;
     if (dryRun === undefined) {
       issues.push({
         path: `scenarios[${key.index}]`,
         message:
-          `${name} has no completed dry run in arm ${arm} on model ${model}: run bench scenario dry-run ` +
-          `${name} --arm ${arm} --model ${model} first`,
+          `${name} has no completed dry run in arm ${arm} on model ${model}` +
+          `${effort === undefined ? '' : ` at effort ${effort}`}: run bench scenario dry-run ` +
+          `${name} --arm ${arm} --model ${model} first` +
+          (lookup.skipped === undefined ? '' : ` (${lookup.skipped})`),
       });
       continue;
     }

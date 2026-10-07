@@ -125,6 +125,7 @@ describe('estimateCampaign (F1.2, task-022)', () => {
   it('keys a dry run on the effort the campaign pins for its model, and says why the latest did not count (dl-015)', () => {
     const { root, checked } = campaign({
       arms: ['baseline'],
+      harnesses: {},
       agent: { name: 'fake', version: '1.0.0', effort: { 'fake-model': 'high' } },
     });
     writeStoredDryRun(root, 1, { hash: hashOf(checked), arm: 'baseline', stepCostsUsd: [1], effort: 'low' });
@@ -143,7 +144,7 @@ describe('estimateCampaign (F1.2, task-022)', () => {
     writeStoredDryRun(root, 2, { hash: hashOf(checked), arm: 'baseline', stepCostsUsd: [2], effort: 'high' });
     const counted = estimateCampaign(checked);
     expect(counted.ok && counted.value.lines[0]?.dryRun.execution).toBe(2);
-    const unpinned = campaign({ arms: ['baseline'] });
+    const unpinned = campaign({ arms: ['baseline'], harnesses: {} });
     writeStoredDryRun(unpinned.root, 1, {
       hash: hashOf(unpinned.checked),
       arm: 'baseline',
@@ -153,7 +154,7 @@ describe('estimateCampaign (F1.2, task-022)', () => {
   });
 
   it('refuses a dry run whose cost the agent could not price, as a missing one (bug-016)', () => {
-    const { root, checked } = campaign({ arms: ['baseline'] });
+    const { root, checked } = campaign({ arms: ['baseline'], harnesses: {} });
     writeStoredDryRun(root, 1, {
       hash: hashOf(checked),
       arm: 'baseline',
