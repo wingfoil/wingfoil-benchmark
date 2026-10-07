@@ -124,8 +124,16 @@ OpenSpec's commands, so it would show nothing that a run without an agent does n
     try failed with `ENOTCACHED` on `@inquirer/core`'s package metadata.
   - So the artifact is the **installed tree**, as WingFoil's is: the tarball installed with its dependencies into a
     prefix, packed as `installed.tgz` (2 files in the bundle with the tarball; `tree.txt` holds the resolved tree).
+    For task-071: REQ-FMT-12 names only "an npm tool's `npm pack`". OpenSpec's cached artifact is the tarball plus
+    the installed tree, its dependencies resolved at build time, as `src/runner/harness.ts` already does for
+    WingFoil. But that builder starts from a local clone, so a builder from the registry's tarball is task-071's
+    work.
+  - The first `ENOTCACHED` failure is not kept in `out/` (B2's directory was overwritten by the rerun); it rests on
+    this note. The secret scans' "0 files" and B1's integrity line went to stdout only. The review re-verified both
+    independently.
 - **B2** (`--network none`, `OPENSPEC_TELEMETRY=0`) exited 0. It printed `openspec --version` 1.14.0;
-  `init --help` lists `--tools`, `--profile <core|custom>`, `--force`, `--language`, `--no-animation`.
+  `init --help` lists `--tools`, `--profile <core|custom>`, `--force`, `--language`, `--no-animation`,
+  `--copilot-cloud` and `--no-copilot-cloud`.
   `openspec init --tools claude --profile core --force` added 15 paths:
   - 6 commands, `.claude/commands/opsx/{apply,archive,explore,propose,sync,update}.md`;
   - 6 skills, `.claude/skills/openspec-{apply-change,archive-change,explore,propose,sync-specs,update-change}/`;
@@ -141,13 +149,20 @@ OpenSpec's commands, so it would show nothing that a run without an agent does n
   - It wrote `proposal.md`, `specs/equipment-rental/spec.md` and `tasks.md`, and skipped `design.md` as optional.
   - It ended asking to go on: "When you're ready, say so and I'll run the apply workflow".
 - **R2** (spends): the same session resumed with `-p "Continue."`, `--effort high`, budget 0.40 USD.
-  - The init event named the same session (`636fca95…`). It ran `openspec-apply-change` and wrote
-    `src/index.ts` and `src/index.test.ts`, then stopped at its budget: `error_max_budget_usd` after 22 turns.
+  - The init event named the same session (`636fca95…`). It ran `openspec-apply-change`, wrote `src/index.ts` and
+    `src/index.test.ts`, changed `package.json` and added `package-lock.json` (its own `npm install --save-dev
+    typescript`), then stopped at its budget: `error_max_budget_usd` after 22 turns, with 3 of the 6 boxes of
+    `tasks.md` ticked.
   - **Session total 0.7651 USD**: the resume spent 0.402, so `--max-budget-usd` bounds the invocation, not the
     session.
   - stderr only warned that `~/.claude.json` was missing (the spike's second container, not the runner's).
 - **Secret scans:** 0 files with the token, after R1 and after R2.
 - **Spent: 0.7651 USD** of the 3.00 USD ceiling (the ledger line).
+- **The consent, read by the implementer.** The approver consented at `e8edbd0` to "one run, … S3 step 1". The
+  Design, written after that gate, reads R2 (a resume of the same session) as part of that one run: it is still step
+  1, the runner's neutral approver resumes a session the same way, it is not a relaunch, and it stayed within the
+  ceiling. No gate was asked in between. **This reading is mine, made after the consent, for the approver to confirm
+  at review.** The ledger's row says so too.
 
 ### The answers
 
@@ -161,12 +176,17 @@ OpenSpec's commands, so it would show nothing that a run without an agent does n
 
    No `CLAUDE.md` or `AGENTS.md` is written with `--tools claude`.
 3. **Where the rules go:** `openspec/config.yaml`, `context:` ("constraints that should guide OpenSpec artifacts and
-   workflows"), with per-artifact `rules:`. task-071's generator writes the scenario's rules there.
+   workflows"), with per-artifact `rules:`. task-071's generator writes the scenario's rules there. The file also has
+   a commented `operations:` (apply and archive guidance), and its header asks to keep general project documentation
+   out. Both shape task-071's renderer and task-072's docs control.
 4. **Followed headless with the neutral approver:** yes.
    - The propose phase ended with a question to go on, which is an approval the approver answers. On resume the
-     agent applied the change.
-   - `archive` was not reached (budget), so whether it needs `--yes` with stdin closed is left to task-071's dry run.
-     The register's documentation evidence says it does.
+     agent started the apply phase and was part done (3 of 6 tasks) when its budget ran out.
+   - `archive` was not reached. What init installed answers most of it: the archive skill
+     (`.claude/skills/openspec-archive-change/SKILL.md`) does not call `openspec archive`. It asks the user to
+     confirm, an approval the neutral approver answers, and archives with `mkdir -p` and `mv`. The CLI's own
+     `archive` takes `-y/--yes` ("Skip confirmation prompts"), which matters only if the agent calls it directly.
+     task-071's dry run sees it end to end.
 5. **Network and telemetry:**
    - Install and init ran with `--network none`.
    - In the source (`dist/telemetry/opt-out.js`), `OPENSPEC_TELEMETRY` set to anything but an on-value disables
@@ -174,7 +194,10 @@ OpenSpec's commands, so it would show nothing that a run without an agent does n
    - In R2 the agent itself ran `npm install --save-dev typescript`. That is the agent using the container's network,
      as in any arm, not OpenSpec.
 - **`--effort` under `--resume`** (task-069's open measurement): accepted on Claude Code 2.1.280. The resume ran in the
-  same session with the flag, and nothing was refused.
+  same session with the flag, and nothing was refused. **The limit:** neither stream records the effort level (the
+  init event has no effort field), and R1 and R2 used the same level. So whether `high` took effect on the resume, or
+  merely carried over from the session, is not observable from the run. What was measured is that the flag is
+  accepted.
 - **Also seen:** `modelUsage` is the session's running total across the resume (R2's 0.7651 includes R1's 0.3630),
   as task-069 relied on.
 
