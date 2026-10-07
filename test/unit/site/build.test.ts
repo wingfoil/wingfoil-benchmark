@@ -1,10 +1,20 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { join, relative } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
+import { aggregateExecution, writeAggregate } from '../../../src/results/index.js';
 import { escapeHtml } from '../../../src/site/render.js';
 import { CANCEL, EXECUTION, storedRun } from '../../support/score-fixture.js';
-import { benchSite, completeExecution, siteExecution } from '../../support/site-fixture.js';
+import { benchSite, completeExecution, sha256Of, siteExecution } from '../../support/site-fixture.js';
 
 /** Every file under `dir`, relative, with its text. */
 function tree(dir: string): Record<string, string> {
@@ -274,4 +284,64 @@ describe('escaping', () => {
   it('escapes every character HTML gives a meaning to', () => {
     expect(escapeHtml(`<a href="x">'&'</a>`)).toBe('&lt;a href=&quot;x&quot;&gt;&#39;&amp;&#39;&lt;/a&gt;');
   });
+});
+
+describe('each harness against its own docs control (REQ-SCO-14, REQ-RES-03 as amended in 1.26, task-068)', () => {
+  it('shows the comparison in the aggregate and on the category pages', async () => {
+    const { root, executionDir } = await siteExecution();
+    // The wingfoil runs stored again as baseline-docs runs that record their docs_of: the same results.
+    for (const scenario of readdirSync(join(executionDir, 'runs'))) {
+      const from = join(executionDir, 'runs', scenario, 'wingfoil');
+      const to = join(executionDir, 'runs', scenario, 'baseline-docs');
+      cpSync(from, to, { recursive: true });
+      for (const r of readdirSync(join(to, 'fake-model'))) {
+        const file = join(to, 'fake-model', r, 'run.json');
+        const run = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>;
+        run.arm = 'baseline-docs';
+        run.docs_of = 'wingfoil';
+        delete run.harness;
+        delete run.arm_digest;
+        run.manual = {
+          ...(run.manual as object),
+          sha256: sha256Of(join(root, 'arms', 'baseline-docs', 'manual.md')),
+        };
+        writeFileSync(file, `${JSON.stringify(run, undefined, 2)}\n`);
+      }
+    }
+    const aggregated = aggregateExecution(executionDir);
+    if (!aggregated.ok) throw new Error(JSON.stringify(aggregated.issues));
+    writeAggregate(executionDir, aggregated.value);
+    expect(
+      aggregated.value.controls?.map((entry) => `${entry.scenario} ${entry.harness} ${entry.control}`),
+    ).toEqual(['TC wingfoil baseline-docs', 'TD wingfoil baseline-docs', 'TF wingfoil baseline-docs']);
+    expect(aggregated.value.controls?.[0]?.metrics[0]).toMatchObject({
+      metric: 'M-Q1',
+      outcome: 'same',
+      delta: 0,
+    });
+
+    const built = await benchSite(root, 'site', 'build', EXECUTION);
+    expect(built.code, built.stderr).toBe(0);
+    const page = readFileSync(join(root, 'site', 'abcdef012345', '1', 'category-c.html'), 'utf8');
+    expect(page).toContain('against baseline-docs');
+    expect(page).toMatch(
+      /against baseline-docs[^<]*<\/span> <span class="delta">[^<]*<\/span> <span class="outcome" data-outcome="same">/,
+    );
+    // The headline counts the comparisons with the baseline only.
+    expect(built.stdout).not.toContain('against its docs control');
+  }, 240_000);
+
+  it('still builds an aggregate written before it: the comparison reads not measured', async () => {
+    const { root, executionDir } = await siteExecution();
+    const file = join(executionDir, 'aggregate.json');
+    const aggregate = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>;
+    delete aggregate.controls;
+    writeFileSync(file, `${JSON.stringify(aggregate, undefined, 2)}\n`);
+    const built = await benchSite(root, 'site', 'build', EXECUTION);
+    expect(built.code, built.stderr).toBe(0);
+    const page = readFileSync(join(root, 'site', 'abcdef012345', '1', 'category-c.html'), 'utf8');
+    expect(page).toContain('against its docs control: not measured');
+    // Only a harness arm has a docs control: the baseline's line has none.
+    expect(page.match(/against its docs control/g)?.length).toBe(page.match(/<li>wingfoil: /g)?.length);
+  }, 240_000);
 });
