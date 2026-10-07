@@ -7,7 +7,7 @@ release: v0.2
 wave: W13
 features: []
 acceptance: []
-requirements: []
+requirements: [REQ-RUN-01]
 fixes: []             # optional: the bugs this task fixes, e.g. [bug-005-a-bug-cannot-name-…]
 ---
 
@@ -35,3 +35,6 @@ between the listing and the reading is skipped, and the prune goes on with the c
 
 - `npx wingfoil memory add --type task --title "The image prune tolerates a container removed while it reads"`. Declared: creates the element from the template and
   commits it. Observed: `wf(task): add task-074-the-image-prune-tolerates-a-container-removed-while-it-reads`, `status: draft`. Matches.
+- `npx wingfoil memory submit task-074-…` refused at first: `Error: missing required field on submit: requirements`.
+  Declared: submit fills or checks the required frontmatter. Observed: it refuses an empty `requirements`, naming the
+  field, with no commit. Fixed by naming REQ-RUN-01, as task-061 (the prune) did.
