@@ -266,3 +266,20 @@ describe('checkCampaign, a docs control whose arm has no docs generator (task-06
     ]);
   });
 });
+
+describe('the pairing a docs control records (REQ-SCO-14, task-068)', () => {
+  it('records docs_of in a docs control’s run.json, and in no other run', async () => {
+    const { checked: campaign } = checked();
+    const summary = await runCampaign(campaign, { ...doubles(), harnessSources: { wingfoil: CLONE } });
+
+    const docsOf = (arm: string) => {
+      const run = summary.runs.find((r) => r.arm === arm);
+      return (
+        JSON.parse(readFileSync(join(run?.outputDir ?? '', 'run.json'), 'utf8')) as { docs_of?: string }
+      ).docs_of;
+    };
+    expect(docsOf('baseline-docs')).toBe('wingfoil');
+    expect(docsOf('wingfoil')).toBeUndefined();
+    expect(docsOf('baseline')).toBeUndefined();
+  });
+});
