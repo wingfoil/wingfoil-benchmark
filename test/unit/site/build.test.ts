@@ -286,9 +286,23 @@ describe('escaping', () => {
   });
 });
 
+/** The wingfoil runs recording their harness, as every real one does (REQ-RUN-14): the site's harness arms. */
+function recordHarness(executionDir: string): void {
+  for (const scenario of readdirSync(join(executionDir, 'runs'))) {
+    const dir = join(executionDir, 'runs', scenario, 'wingfoil', 'fake-model');
+    for (const r of readdirSync(dir)) {
+      const file = join(dir, r, 'run.json');
+      const run = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>;
+      run.harness = { tool: 'wingfoil', version: 'v0.2.2', commit: '12537b62' };
+      writeFileSync(file, `${JSON.stringify(run, undefined, 2)}\n`);
+    }
+  }
+}
+
 describe('each harness against its own docs control (REQ-SCO-14, REQ-RES-03 as amended in 1.26, task-068)', () => {
   it('shows the comparison in the aggregate and on the category pages', async () => {
     const { root, executionDir } = await siteExecution();
+    recordHarness(executionDir);
     // The wingfoil runs stored again as baseline-docs runs that record their docs_of: the same results.
     for (const scenario of readdirSync(join(executionDir, 'runs'))) {
       const from = join(executionDir, 'runs', scenario, 'wingfoil');
@@ -333,6 +347,7 @@ describe('each harness against its own docs control (REQ-SCO-14, REQ-RES-03 as a
 
   it('still builds an aggregate written before it: the comparison reads not measured', async () => {
     const { root, executionDir } = await siteExecution();
+    recordHarness(executionDir);
     const file = join(executionDir, 'aggregate.json');
     const aggregate = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>;
     delete aggregate.controls;
@@ -341,7 +356,8 @@ describe('each harness against its own docs control (REQ-SCO-14, REQ-RES-03 as a
     expect(built.code, built.stderr).toBe(0);
     const page = readFileSync(join(root, 'site', 'abcdef012345', '1', 'category-c.html'), 'utf8');
     expect(page).toContain('against its docs control: not measured');
-    // Only a harness arm has a docs control: the baseline's line has none.
-    expect(page.match(/against its docs control/g)?.length).toBe(page.match(/<li>wingfoil: /g)?.length);
+    // Only a harness arm has a docs control: one line per metric of C's map (M-Q1, M-K1), wingfoil's, none for the
+    // baseline.
+    expect(page.match(/against its docs control/g)?.length).toBe(2);
   }, 240_000);
 });

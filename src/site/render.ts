@@ -121,8 +121,30 @@ function valueHtml(metric: MetricId, value: ArmValue, labelled = false): string 
   );
 }
 
+/**
+ * A harness arm against its own docs control (REQ-SCO-14, task-068), in the comparison's markup: the delta, the
+ * outcome and the certainty, as against the baseline; "not measured" when the aggregate holds none.
+ */
+function againstHtml(metric: MetricId, value: ArmValue): string {
+  const against = value.against;
+  if (against === undefined) return '';
+  if (against.control === undefined)
+    return '<div class="value against">against its docs control: not measured</div>';
+  const label = `against ${e(against.control)}`;
+  const compared = against.metric;
+  if (compared === undefined) return `<div class="value against">${label}: not measured</div>`;
+  if ('note' in compared)
+    return `<div class="value against">${label}: <span class="note">${e(compared.note)}</span></div>`;
+  const badged = compared.certainty === 'preliminary' && compared.harness.n === 1;
+  const certainty = badged ? '' : ` <span class="certainty">${compared.certainty}</span>`;
+  return (
+    `<div class="value against"><span class="metric">${label}</span> <span class="delta">${e(formatDelta(metric, compared.delta))}</span> ` +
+    `${outcomeHtml(compared)}${certainty}</div>`
+  );
+}
+
 /** Wins, losses and ties in one markup: the same element and class, told apart by a word and a symbol. */
-function outcomeHtml(comparison: Comparison): string {
+function outcomeHtml(comparison: Pick<Comparison, 'outcome'>): string {
   const symbol = { better: '▲', worse: '▼', same: '=' }[comparison.outcome];
   return `<span class="outcome" data-outcome="${comparison.outcome}">${symbol} ${comparison.outcome}</span>`;
 }
@@ -411,7 +433,7 @@ function scenarioSection(scenario: ScenarioRow): string {
   for (const metric of scenario.metrics) {
     html += `<h3>${metric.entry.id}: ${e(metric.entry.label)} (${metric.entry.better} is better)</h3>\n<ul>\n`;
     for (const value of metric.values)
-      html += `<li>${e(value.arm)}: ${valueHtml(metric.entry.id, value)}</li>\n`;
+      html += `<li>${e(value.arm)}: ${valueHtml(metric.entry.id, value)}${againstHtml(metric.entry.id, value)}</li>\n`;
     html += '</ul>\n';
   }
   html += '<h3>Each suite on the final snapshot</h3>\n<ul>\n';
