@@ -91,3 +91,30 @@ The day runs are light (niced, 2 workers, the touched tests); the full suites ru
 
 - `npx wingfoil memory add --type task --title "OpenSpec docs control and setup page"`. Declared: creates the element from the template and
   commits it. Observed: `wf(task): add task-072-openspec-docs-control-and-setup-page`, `status: draft`. Matches.
+- `npx wingfoil memory submit task-072-…` (backlog → in-progress), after the Design commit. Declared: moves the task
+  to its next state and commits it. Observed: `wf(task): submit task-072-…`, `status: in-progress`. Matches.
+- Build (under dl-016, approved on 2026-10-08: by day only niced runs with 2 workers on the touched tests; the full
+  suites at night):
+  - **Red first:** `test/unit/arms/docs-controls.test.ts`:
+    - openspec in the declarations' loop;
+    - the copies of baseline-docs' manual and setup, for every docs control;
+    - `renderOpenSpecDocs` on task-071's rendered configuration, on none, and its determinism;
+    - the arm loads.
+  - **Then the code:**
+    - `DOCS_GENERATORS.openspec` (kept `openspec/`; render; five declared kinds);
+    - `renderOpenSpecDocs`, which parses `config.yaml` with the `yaml` library and moves each heading one level
+      down under "Rules";
+    - `arms/openspec-docs/`;
+    - speckit-docs and openspec-docs now share the "no rules" text.
+  - **Acceptance:**
+    - "Each harness has its own docs control" gains the openspec row;
+    - "A scenario's project rules reach every arm" gains openspec-docs;
+    - the snapshot double leaves what OpenSpec's init leaves (task-070's B2).
+
+    These assertions were written after the code and passed at once: a deviation from test-first, the same as in
+    task-069 and task-071. The unit tests above were the red ones.
+  - **Unit:** the setup page of openspec (telemetry, rules path, docs control, its declaration, no bundle note).
+  - **Docker:** `test/docker/openspec.test.ts`'s campaign gains openspec-docs. Its real snapshot runs the arm's setup
+    in a one-off container, and its `PROJECT_RULES.md` must hold the rule. Left to the night's run, not run by day.
+  - **method.md:** seven arms; openspec-docs in `{#baseline-docs-control}` and in the manuals' links; the
+    statements' sources.
