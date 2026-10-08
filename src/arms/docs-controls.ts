@@ -1,3 +1,5 @@
+import { parse } from 'yaml';
+
 import { renderProjectRules } from './baseline-docs.js';
 
 /** One kind of content a docs generator declares: whether it renders it, and why (REQ-RUN-11 as amended). */
@@ -32,7 +34,7 @@ export function renderSpeckitDocs(files: ReadonlyMap<string, string>): string {
   const constitution = files.get(CONSTITUTION) ?? '';
   const start = constitution.indexOf('\n### ');
   if (start < 0 || SPECKIT_PLACEHOLDER.test(constitution)) {
-    return '# Project rules\n\nThis project declares no rules beyond its README.\n';
+    return NO_RULES;
   }
   return [
     '# Project rules',
@@ -45,6 +47,43 @@ export function renderSpeckitDocs(files: ReadonlyMap<string, string>): string {
     '',
   ].join('\n');
 }
+
+/** Where OpenSpec keeps a project's configuration, its context holding the scenario's rules (task-071). */
+const OPENSPEC_CONFIG = 'openspec/config.yaml';
+
+/**
+ * The openspec-docs generator (task-072): the context of the openspec arm's configuration — the scenario's rules, as
+ * its rules generator wrote them (REQ-FMT-14, task-071) — as `PROJECT_RULES.md`, in speckit-docs' shape: each rule's
+ * heading one level down, under "Rules". A configuration with no context declares no rule, and the file says so.
+ */
+export function renderOpenSpecDocs(files: ReadonlyMap<string, string>): string {
+  let context: unknown;
+  try {
+    context = (parse(files.get(OPENSPEC_CONFIG) ?? '') as { context?: unknown } | null)?.context;
+  } catch {
+    context = undefined;
+  }
+  const start = typeof context === 'string' ? context.indexOf('## ') : -1;
+  if (typeof context !== 'string' || start < 0) return NO_RULES;
+  // Every heading one level down, so that each rule sits under "Rules" as speckit-docs' do.
+  const rules = context
+    .slice(start)
+    .replace(/^(#+) /gm, '#$1 ')
+    .trimEnd();
+  return [
+    '# Project rules',
+    '',
+    'The rules this project follows. Every change follows them.',
+    '',
+    '## Rules',
+    '',
+    rules,
+    '',
+  ].join('\n');
+}
+
+/** The docs control's file for a project that declares no rules: the manual it is read through names it all the same. */
+const NO_RULES = '# Project rules\n\nThis project declares no rules beyond its README.\n';
 
 /** The docs generator of each harness arm, by its tool: one docs control per harness (T3, the approver's triage). */
 export const DOCS_GENERATORS: Readonly<Record<string, DocsGenerator>> = {
@@ -87,6 +126,33 @@ export const DOCS_GENERATORS: Readonly<Record<string, DocsGenerator>> = {
         kind: '`memory.yaml`, Memory templates, `workflows.yaml`',
         rendered: false,
         why: "the tool's own mechanics",
+      },
+    ],
+  },
+  openspec: {
+    kept: ['openspec'],
+    render: renderOpenSpecDocs,
+    declaration: [
+      {
+        kind: "`config.yaml`'s `context:`",
+        rendered: true,
+        why: "the scenario's rules, which the manual sends the agent to read",
+      },
+      { kind: "`config.yaml`'s `schema:`", rendered: false, why: "the tool's own mechanics" },
+      {
+        kind: 'per-artifact `rules:` and `operations:` guidance',
+        rendered: false,
+        why: "not written by the rules generator; the tool's settings",
+      },
+      {
+        kind: 'commands and skills (`.claude/commands/opsx`, `.claude/skills/openspec-*`)',
+        rendered: false,
+        why: "the tool's own mechanics: how its process is followed",
+      },
+      {
+        kind: 'accepted specs and changes (`openspec/specs`, `openspec/changes`)',
+        rendered: false,
+        why: "empty at setup: the agent's own work, not the project's rules",
       },
     ],
   },

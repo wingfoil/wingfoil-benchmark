@@ -23,6 +23,7 @@ describe('the openspec arm in a real container (task-071)', () => {
     cpSync(repoPath('test/fixtures/scenarios'), join(root, 'scenarios'), { recursive: true });
     cpSync(repoPath('test/fixtures/arms'), join(root, 'arms'), { recursive: true });
     cpSync(repoPath('arms/openspec'), join(root, 'arms', 'openspec'), { recursive: true });
+    cpSync(repoPath('arms/openspec-docs'), join(root, 'arms', 'openspec-docs'), { recursive: true });
     cpSync(repoPath('eligibility'), join(root, 'eligibility'), { recursive: true });
     cpSync(repoPath('test/fixtures/campaigns'), join(root, 'campaigns'), { recursive: true });
     const file = join(root, 'campaigns', 'openspec.yaml');
@@ -31,7 +32,8 @@ describe('the openspec arm in a real container (task-071)', () => {
       file,
       stringify({
         ...yaml,
-        arms: ['baseline', 'openspec'],
+        // task-072: and its docs control, whose snapshot runs the arm's real setup in a one-off container.
+        arms: ['baseline', 'openspec', 'openspec-docs'],
         harnesses: { openspec: { tool: 'openspec', version: '1.14.0' } },
       }),
     );
@@ -45,7 +47,7 @@ describe('the openspec arm in a real container (task-071)', () => {
     });
     expect({ code, output }).toEqual({
       code: 0,
-      output: expect.stringContaining('2 runs completed, 0 failed'),
+      output: expect.stringContaining('3 runs completed, 0 failed'),
     });
     image = /campaign ([0-9a-f]{12})/.exec(output)?.[1] ?? '';
 
@@ -69,6 +71,11 @@ describe('the openspec arm in a real container (task-071)', () => {
     expect(record.harness.commit).toBe(record.harness.tarball_sha256);
     expect(record.generated_sha256).toMatch(/^[0-9a-f]{64}$/);
     expect(record.telemetry_off).toEqual(['OPENSPEC_TELEMETRY=0']);
+    // openspec-docs (task-072): its PROJECT_RULES.md is the context the real snapshot's rules generator wrote.
+    const docs = join(root, 'runs', image, '1', 'T2@1.0', 'openspec-docs', 'fake-model', 'r1', 'workspace');
+    const rules = readFileSync(join(docs, 'PROJECT_RULES.md'), 'utf8');
+    expect(rules).toContain('### No throw\n');
+    expect(rules).not.toContain('spec-driven');
     // The manual is the agent's CLAUDE.md: OpenSpec writes none of its own with --tools claude.
     expect(readFileSync(join(workspace, 'CLAUDE.md'), 'utf8')).toBe(
       readFileSync(repoPath('arms/openspec/manual.md'), 'utf8'),

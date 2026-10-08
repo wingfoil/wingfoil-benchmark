@@ -298,6 +298,17 @@ describe('the setup pages (REQ-RES-09, task-067)', () => {
     expect(page).toContain('href="manual-speckit.html"');
   });
 
+  it('publish the openspec arm: its telemetry, its rules in config.yaml, its docs control (task-072)', () => {
+    const page = setupHtml(arm('openspec'), '#!/bin/sh\n', ['openspec-docs']);
+    expect(page).toContain('<li><code>OPENSPEC_TELEMETRY=0</code></li>');
+    expect(page).toContain('Written to <code>openspec/config.yaml</code>');
+    expect(page).toContain('<code>openspec-docs</code>: the same agent');
+    expect(page).toContain('<code>openspec/</code>');
+    expect(page).toContain('<td><code>config.yaml</code>&#39;s <code>context:</code></td><td>yes</td>');
+    expect(page).toContain('In the openspec arm, a competitor arm, it carries no approval authority');
+    expect(page).not.toContain('id="bundle"');
+  });
+
   it('publish the wingfoil arm: no rules generator, and the identity as its approver member', () => {
     const page = setupHtml(arm('wingfoil'), '#!/bin/sh\n', []);
     expect(page).toContain("The scenario's rules are wingfoil's own configuration");

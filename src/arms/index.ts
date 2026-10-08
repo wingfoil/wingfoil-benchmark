@@ -4,7 +4,7 @@ export { missingCapabilities } from './capabilities.js';
 export { armDigest } from './digest.js';
 export { renderConstitution } from './constitution.js';
 export { renderOpenSpecConfig } from './openspec.js';
-export { DOCS_GENERATORS, docsGeneratorOf, renderSpeckitDocs } from './docs-controls.js';
+export { DOCS_GENERATORS, docsGeneratorOf, renderOpenSpecDocs, renderSpeckitDocs } from './docs-controls.js';
 export type { DeclaredContent, DocsGenerator } from './docs-controls.js';
 export { RULES_GENERATORS, rulesGeneratorOf, RULES_SOURCE_ARM } from './rules.js';
 export type { RulesGenerator } from './rules.js';

@@ -339,7 +339,7 @@ const RULE = [
 ].join('\n');
 
 /** S1 in every v0.2 arm that exists: the harnesses, their docs controls (the repository's own arms), and the baseline. */
-function controlsCampaign(extra: readonly 'openspec'[] = []) {
+function controlsCampaign(extra: readonly ('openspec' | 'openspec-docs')[] = []) {
   const repo = writeRepo(
     {
       ...harnessCampaign(),
@@ -371,9 +371,22 @@ function controlsCampaign(extra: readonly 'openspec'[] = []) {
 function speckitSetup(request: RunOnceRequest): void {
   const build = request.mount.source;
   const arm = join(build, 'arm', 'arm.yaml');
-  if (!(
-    request.command.join(' ').includes('/build/arm/') && readFileSync(arm, 'utf8').includes('name: speckit')
-  )) {
+  const snapshot = request.command.join(' ').includes('/build/arm/');
+  // OpenSpec's init (task-070, B2): its commands, its skills, its configuration with the schema only.
+  if (snapshot && readFileSync(arm, 'utf8').includes('name: openspec\n')) {
+    for (const [file, text] of [
+      ['.claude/commands/opsx/propose.md', '# opsx:propose\n'],
+      ['.claude/skills/openspec-propose/SKILL.md', '# openspec-propose\n'],
+      ['openspec/config.yaml', 'schema: spec-driven\n'],
+      ['openspec/specs/.gitkeep', ''],
+      ['openspec/changes/archive/.gitkeep', ''],
+    ] as const) {
+      mkdirSync(join(build, 'workspace', file, '..'), { recursive: true });
+      writeFileSync(join(build, 'workspace', file), text);
+    }
+    return;
+  }
+  if (!(snapshot && readFileSync(arm, 'utf8').includes('name: speckit'))) {
     fakeBuild(request);
     return;
   }
@@ -393,13 +406,13 @@ function speckitSetup(request: RunOnceRequest): void {
 describe('competitors.feature, the docs controls and the setups', () => {
   it("@F7.1 A scenario's project rules reach every arm without changing the scenario", async () => {
     // Given a scenario whose project rules are declared once (as the wingfoil arm's directives, dl-005)
-    const { root, file } = controlsCampaign(['openspec']);
+    const { root, file } = controlsCampaign(['openspec', 'openspec-docs']);
     const scenarioDir = join(root, 'scenarios', 'S1', '1.0');
     const before = treeOf(scenarioDir);
     const checked = checkCampaign(file);
     if (!checked.ok) throw new Error(JSON.stringify(checked.issues));
     const hash = checked.value.scenarios[0]?.hash;
-    // When it runs in the wingfoil, speckit and openspec arms and in their docs controls (openspec-docs: task-072)
+    // When it runs in the wingfoil, speckit and openspec arms and in their docs controls
     // The doubles' wingfoil snapshot also applies the scenario's configuration, as the arm's own setup does.
     const snapshots = (request: RunOnceRequest) => {
       speckitSetup(request);
@@ -427,7 +440,7 @@ describe('competitors.feature, the docs controls and the setups', () => {
       '## No new runtime dependency',
     );
     // And each docs control gets them as Markdown; the baseline gets none
-    for (const control of ['baseline-docs', 'speckit-docs'])
+    for (const control of ['baseline-docs', 'speckit-docs', 'openspec-docs'])
       expect(readFileSync(join(workspace(control), 'PROJECT_RULES.md'), 'utf8'), control).toContain(
         'No new runtime dependency',
       );
@@ -445,7 +458,7 @@ describe('competitors.feature, the docs controls and the setups', () => {
 
   it('@F7.1 Each harness has its own docs control', async () => {
     // Given each harness arm's configuration, captured by running its own setup
-    const { file } = controlsCampaign();
+    const { file } = controlsCampaign(['openspec', 'openspec-docs']);
     const checked = checkCampaign(file);
     if (!checked.ok) throw new Error(JSON.stringify(checked.issues));
     const execute = async () => {
@@ -456,7 +469,12 @@ describe('competitors.feature, the docs controls and the setups', () => {
       });
       const generated = (arm: string) =>
         readFileSync(join(summary.resultsDir, 'generated', 'S1@1.0', arm, 'PROJECT_RULES.md'), 'utf8');
-      return { baselineDocs: generated('baseline-docs'), speckitDocs: generated('speckit-docs'), summary };
+      return {
+        baselineDocs: generated('baseline-docs'),
+        speckitDocs: generated('speckit-docs'),
+        openspecDocs: generated('openspec-docs'),
+        summary,
+      };
     };
     // When each docs environment is generated twice
     const first = await execute();
@@ -464,6 +482,7 @@ describe('competitors.feature, the docs controls and the setups', () => {
     // Then both generations are byte-identical
     expect(second.baselineDocs).toBe(first.baselineDocs);
     expect(second.speckitDocs).toBe(first.speckitDocs);
+    expect(second.openspecDocs).toBe(first.openspecDocs);
     // And every kind of content the generator declares as rendered appears in it, and no kind it declares as left out
     expect(first.baselineDocs).toContain('### Fake rule');
     expect(first.baselineDocs).not.toContain('Benchmark Approver');
@@ -481,8 +500,15 @@ describe('competitors.feature, the docs controls and the setups', () => {
     expect(existsSync(join(kept, '.specify', 'memory', 'constitution.md'))).toBe(true);
     expect(existsSync(join(kept, '.specify', 'templates'))).toBe(false);
     expect(existsSync(join(kept, '.claude'))).toBe(false);
+    // openspec-docs (task-072): the context's rule, rendered; nothing of the schema, the commands or the skills.
+    expect(first.openspecDocs).toContain('### No new runtime dependency');
+    for (const mechanics of ['spec-driven', 'schema', 'opsx', 'openspec-propose'])
+      expect(first.openspecDocs).not.toContain(mechanics);
+    const keptOpenSpec = join(first.summary.resultsDir, 'generated', 'S1@1.0', 'openspec-docs', 'openspec');
+    expect(existsSync(join(keptOpenSpec, 'openspec', 'config.yaml'))).toBe(true);
+    expect(existsSync(join(keptOpenSpec, '.claude'))).toBe(false);
     // Each docs control's run received its environment and recorded its digest.
-    for (const arm of ['baseline-docs', 'speckit-docs']) {
+    for (const arm of ['baseline-docs', 'speckit-docs', 'openspec-docs']) {
       const run = first.summary.runs.find((r) => r.arm === arm);
       const record = JSON.parse(readFileSync(join(run?.outputDir ?? '', 'run.json'), 'utf8')) as {
         generated_sha256?: string;
