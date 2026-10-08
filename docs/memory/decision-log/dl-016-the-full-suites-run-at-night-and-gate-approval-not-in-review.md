@@ -2,7 +2,7 @@
 id: dl-016-the-full-suites-run-at-night-and-gate-approval-not-in-review
 type: decision-log
 title: "The full suites run at night and gate approval, not in-review"
-status: draft
+status: pending
 ---
 
 ## Context
