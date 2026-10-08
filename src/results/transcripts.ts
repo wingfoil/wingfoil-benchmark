@@ -278,7 +278,8 @@ interface RecordedHarness {
 }
 
 /**
- * The harness artifacts the runs recorded, packed from the cache into `partial` as `<tool>/<commit>/<file>`,
+ * The harness artifacts the runs recorded, packed from the cache into `partial` as `<tool>/<commit>/<file>` (or
+ * `<tool>/<version>/<file>` for a registry tool, cached by its version, task-071),
  * reproducibly, their licences inside unchanged, so that a reader can install the bytes the runs installed
  * (REQ-FMT-12). Each cached file is checked against the digest the runs recorded: a cache tampered with, or rebuilt to
  * other bytes, since the runs is refused, naming the file, rather than published; so are runs that recorded one

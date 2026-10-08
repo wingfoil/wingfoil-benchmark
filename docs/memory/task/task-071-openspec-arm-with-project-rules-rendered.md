@@ -154,3 +154,40 @@ scalar, through the `yaml` library, so quoting is never by hand.
        error. An earlier refusal would need the campaign check to know the runner's registry.
      - The openspec context's headings skip a level (the shared shift is three, for the constitution's `###`). The
        Markdown is valid.
+- Suites at 82ebc3c:
+  - `npm run lint` clean;
+  - `npm test` 1382 of 1383 passed. `@F4.8 Directive violations are counted per rule and per step` timed out at
+    145 s against its 120 s limit with the machine under load. Run alone afterwards (`nice`, 2 workers), it passed.
+    It passed in the earlier full run of this branch too, and this task does not touch scoring;
+  - `test:bin` 8 passed;
+  - `test:docker` 22 passed, the OpenSpec build from the registry included: a fresh cache, so a real build with
+    `--ignore-scripts`. That answers round 2's check that the flag leaves OpenSpec working.
+- The approver asked on 2026-10-08 for the heavy suites to load the machine less. From here on, the daytime runs are
+  niced and limited to 2 workers, and the full suites run at night (dl-016, pending).
+- `npx wingfoil memory submit task-071-…` (in-progress → in-review). Declared: moves the task to its next state and
+  commits it. Observed: see the next commit, `wf(task): submit …`.
+
+## Review notes
+
+Independent read-only agents reviewed `git diff main...HEAD` against the Design, REQ-FMT-05, -12 (1.28), -14 and
+REQ-RUN-18, and competitors.feature's two scenarios.
+
+- **Round 1** (0f737f2): design coverage complete. No behaviour change for wingfoil or speckit. `renderOpenSpecConfig`
+  was fuzzed and gave valid YAML for every input tried.
+  - **Should-fix:** `transcripts pack` could not find a registry harness cached by version, so OpenSpec's artifact
+    would never be published.
+  - **Nits:**
+    1. the commit pin is refused at run time;
+    2. lifecycle scripts ran in the build;
+    3. a non-release pin was not refused;
+    4. the cached commit was not checked against the tarball's digest;
+    5. the rule extraction was duplicated, and its headings skip a level.
+  - Fixed in 82ebc3c: the should-fix, and nits 2, 3, 4 and the duplication. The run-time refusal and the heading
+    level are left as is, with reasons.
+- **Round 2** (82ebc3c): every fix verified. `cachedAt` is a no-op when the commit directory exists, and is
+  digest-checked when it redirects. No regression. **Clean.**
+  - One nit was fixed here: the stale doc comment.
+  - The other, whether `--ignore-scripts` keeps OpenSpec working, is answered by the docker run above.
+- **For the approver:** the acceptance test's openspec row was written after the code (Execution notes). The unit
+  tests were the red ones.
+
