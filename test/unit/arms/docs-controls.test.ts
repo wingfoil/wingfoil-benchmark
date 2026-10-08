@@ -9,6 +9,7 @@ import {
   RULES_GENERATORS,
   rulesGeneratorOf,
   renderOpenSpecConfig,
+  renderConstitution,
   renderOpenSpecDocs,
   renderSpeckitDocs,
 } from '../../../src/arms/index.js';
@@ -148,6 +149,45 @@ describe('the openspec-docs control (REQ-RUN-11, task-072)', () => {
       ].join('\n'),
     );
     expect(renderOpenSpecDocs(new Map([[CONFIG, configured ?? '']]))).toBe(rendered);
+  });
+
+  it('gives the same bytes as speckit-docs for the same rules, subheadings and fenced code included', () => {
+    const rich = [
+      '---',
+      'id: r1',
+      'title: "Errors are values"',
+      '---',
+      '',
+      '# Errors are values',
+      '',
+      'Return them.',
+      '',
+      '## Why',
+      '',
+      'Callers decide.',
+      '',
+      '```sh',
+      '# install nothing',
+      '## not a heading either',
+      '```',
+      '',
+    ].join('\n');
+    const files = new Map([
+      ['.wingfoil/roles.yaml', 'assignments:\n  developer:\n    - r1\n'],
+      ['.wingfoil/directives/custom/r1.md', rich],
+    ]);
+    const openspecDocs = renderOpenSpecDocs(new Map([[CONFIG, renderOpenSpecConfig(files) ?? '']]));
+    const speckitDocs = renderSpeckitDocs(
+      new Map([['.specify/memory/constitution.md', renderConstitution(files) ?? '']]),
+    );
+    expect(openspecDocs).toBe(speckitDocs);
+    expect(openspecDocs).toContain('```sh\n# install nothing\n## not a heading either\n```');
+  });
+
+  it('refuses a configuration that is not YAML, rather than say there are no rules', () => {
+    expect(() => renderOpenSpecDocs(new Map([[CONFIG, 'schema: [unclosed\n']]))).toThrow(
+      'openspec/config.yaml is not YAML',
+    );
   });
 
   it('says the project declares no rules when the configuration has no context, or is missing', () => {
