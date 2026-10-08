@@ -2,7 +2,7 @@
 id: task-072-openspec-docs-control-and-setup-page
 type: task
 title: "OpenSpec docs control and setup page"
-status: backlog
+status: in-progress
 release: v0.2
 wave: W13
 features: [F7.1]
