@@ -41,7 +41,47 @@ and the next task is delivered under it.
 
 ## Design
 
-<!-- Written in the task's design phase. -->
+### kanban-delivery version 5 (dl-016 B)
+
+`.wingfoil/workflows/custom/kanban-delivery.yaml`: `version: 5`, with a header line saying what changed.
+
+- **review phase:**
+  - by day, typecheck, lint and the touched tests, run at the lowest priority (`nice -n 19 ionice -c3`, vitest
+    `--maxWorkers=2`);
+  - the independent review rounds, as in version 3;
+  - the full suites are no longer asked for before in-progress → in-review.
+- **in-review → approved:** the night's full suites (lint, `npm test` with coverage above 80 %, `test:bin`,
+  `test:docker`), green on the task's branch at the commit offered for approval. The run is named in the Review notes
+  by its log (`.cache/nightly/<date>/<branch>.txt`) and the commit it ran on.
+- **A red night:** the approver rejects (in-review → in-progress, the phase's fallback), and the failure is fixed and
+  reviewed again.
+- deliver and real-agent-check are unchanged. `release-cycle`'s validation phase is unchanged: it runs the suites once,
+  at night or in a pause.
+
+### The nightly script, versioned (dl-016's consequence)
+
+- `scripts/nightly-suites.sh` is today's `~/.local/bin/wfb-nightly-suites`, with three changes:
+  - its paths come from the environment, with the current defaults: `WFB_MAIN` (the main checkout), `WFB_OUT`
+    (`$WFB_MAIN/.cache/nightly`), and the harness clones;
+  - its `npm` is whatever `PATH` gives, so that a test can stub it;
+  - it keeps its lock.
+- **README:** a "Nightly suites" section with the crontab line, `0 2 * * * <repo>/scripts/nightly-suites.sh`. The
+  installed copy becomes a one-line wrapper calling the versioned script, so that a change reaches the next night
+  through git.
+
+### Tests
+
+- **Red-first:** `test/unit/scripts/nightly-suites.test.ts` runs the script on a temporary repository with two
+  worktrees (`main`, `task/x`) and one other branch (`other`), and a stub `npm` on `PATH` that records its calls and
+  exits 0, or 1 for `test` on `task/x`. It checks:
+  - one log per main and `task/*` worktree, none for `other`;
+  - the four stages in order;
+  - `summary.txt` with each branch's exit codes (`TEST 1` for `task/x`);
+  - a second run while the lock is held writes "another nightly run is in progress" and runs nothing.
+- **Characterization:** `npx wingfoil workflow list` still loads the workflows with kanban-delivery at version 5.
+
+Under version 4, still in force while this task is built, its suites run at night like any task's. The first task
+delivered under version 5 is the one after this.
 
 ## Execution notes
 
