@@ -118,3 +118,15 @@ The day runs are light (niced, 2 workers, the touched tests); the full suites ru
     in a one-off container, and its `PROJECT_RULES.md` must hold the rule. Left to the night's run, not run by day.
   - **method.md:** seven arms; openspec-docs in `{#baseline-docs-control}` and in the manuals' links; the
     statements' sources.
+- Review round 1 fixes:
+  1. **(should-fix) Headings.** `renderOpenSpecDocs` shifted every `#` line, fenced code and subheadings included,
+     and uncapped. It now moves only the rules' `## ` titles outside fences: the bodies' headings are already shifted
+     by the rules generator. A red test holds openspec-docs **byte-identical to speckit-docs** for the same rules,
+     with a subheading and fenced `#` lines.
+  2. **(nits)**
+     - The start is anchored to a line.
+     - A configuration that is not YAML is refused (with its cause) rather than read as having no rules (red test).
+     - The `rules:`/`operations:` row's "why" is "absent: the rules generator writes the schema and the context
+       only", in line with task-070.
+     - The snapshot double is renamed `harnessSetups`, and its `config.yaml` carries init's commented keys.
+     - `NO_RULES` is declared above both renderers.

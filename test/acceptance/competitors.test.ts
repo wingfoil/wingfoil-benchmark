@@ -368,7 +368,7 @@ function controlsCampaign(extra: readonly ('openspec' | 'openspec-docs')[] = [])
  * The doubles' one-off containers, with the speckit arm's setup leaving what Spec Kit's init leaves: its constitution
  * template, its mechanics (a template, a workflow, its init options) and its skills.
  */
-function speckitSetup(request: RunOnceRequest): void {
+function harnessSetups(request: RunOnceRequest): void {
   const build = request.mount.source;
   const arm = join(build, 'arm', 'arm.yaml');
   const snapshot = request.command.join(' ').includes('/build/arm/');
@@ -377,7 +377,11 @@ function speckitSetup(request: RunOnceRequest): void {
     for (const [file, text] of [
       ['.claude/commands/opsx/propose.md', '# opsx:propose\n'],
       ['.claude/skills/openspec-propose/SKILL.md', '# openspec-propose\n'],
-      ['openspec/config.yaml', 'schema: spec-driven\n'],
+      // Its commented keys too: a commented context is not one.
+      [
+        'openspec/config.yaml',
+        'schema: spec-driven\n\n# context: |\n#   commented\n# rules:\n#   proposal: []\n',
+      ],
       ['openspec/specs/.gitkeep', ''],
       ['openspec/changes/archive/.gitkeep', ''],
     ] as const) {
@@ -415,7 +419,7 @@ describe('competitors.feature, the docs controls and the setups', () => {
     // When it runs in the wingfoil, speckit and openspec arms and in their docs controls
     // The doubles' wingfoil snapshot also applies the scenario's configuration, as the arm's own setup does.
     const snapshots = (request: RunOnceRequest) => {
-      speckitSetup(request);
+      harnessSetups(request);
       const overlay = join(request.mount.source, 'scenario', '.wingfoil');
       if (existsSync(overlay))
         cpSync(overlay, join(request.mount.source, 'workspace', '.wingfoil'), { recursive: true });
@@ -462,7 +466,7 @@ describe('competitors.feature, the docs controls and the setups', () => {
     const checked = checkCampaign(file);
     if (!checked.ok) throw new Error(JSON.stringify(checked.issues));
     const execute = async () => {
-      const ports = doubles({ commits: { '3df305e': SHA, 'v1.1.0': SPECKIT_SHA }, onRunOnce: speckitSetup });
+      const ports = doubles({ commits: { '3df305e': SHA, 'v1.1.0': SPECKIT_SHA }, onRunOnce: harnessSetups });
       const summary = await runCampaign(checked.value, {
         ...ports,
         harnessSources: { wingfoil: '/clones/wingfoil', speckit: '/clones/spec-kit' },
