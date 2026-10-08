@@ -272,12 +272,14 @@ async function packCopies(
 interface RecordedHarness {
   readonly tool?: unknown;
   readonly commit?: unknown;
+  readonly version?: unknown;
   readonly installed_sha256?: unknown;
   readonly tarball_sha256?: unknown;
 }
 
 /**
- * The harness artifacts the runs recorded, packed from the cache into `partial` as `<tool>/<commit>/<file>`,
+ * The harness artifacts the runs recorded, packed from the cache into `partial` as `<tool>/<commit>/<file>` (or
+ * `<tool>/<version>/<file>` for a registry tool, cached by its version, task-071),
  * reproducibly, their licences inside unchanged, so that a reader can install the bytes the runs installed
  * (REQ-FMT-12). Each cached file is checked against the digest the runs recorded: a cache tampered with, or rebuilt to
  * other bytes, since the runs is refused, naming the file, rather than published; so are runs that recorded one
@@ -292,12 +294,15 @@ async function packHarnesses(
 ): Promise<Result<HarnessPack | undefined>> {
   // Every run's record of each harness: the digests it installed, which must be one pair per tool and commit.
   const recordedBy = new Map<string, Set<string>>();
+  // A registry tool (task-071) is cached by its version, its commit being its tarball's digest: where to look too.
+  const versionDir = new Map<string, string>();
   for (const record of records) {
     const harness = record.harness as RecordedHarness | undefined;
     if (typeof harness?.tool !== 'string' || typeof harness.commit !== 'string') continue;
     const dir = `${harness.tool}/${harness.commit}`;
     const pair = `${String(harness.installed_sha256)} ${String(harness.tarball_sha256)}`;
     recordedBy.set(dir, (recordedBy.get(dir) ?? new Set()).add(pair));
+    if (typeof harness.version === 'string') versionDir.set(dir, `${harness.tool}/${harness.version}`);
   }
   const used = new Map<string, RecordedHarness>();
   const disagreeing: Issue[] = [];
@@ -315,7 +320,8 @@ async function packHarnesses(
   const files: string[] = [];
   const missing: string[] = [];
   const issues: Issue[] = [];
-  for (const [dir, recorded] of [...used].sort(([a], [b]) => (a < b ? -1 : 1))) {
+  for (const [recordedDir, recorded] of [...used].sort(([a], [b]) => (a < b ? -1 : 1))) {
+    const dir = cachedAt(cacheRoot, recordedDir, versionDir.get(recordedDir));
     const full = join(cacheRoot, dir);
     let tarball: unknown;
     try {
@@ -348,6 +354,21 @@ async function packHarnesses(
   const archive = relative(root, partial.slice(0, -'.partial'.length));
   if (tar.code !== 0) return fail([{ path: archive, message: `tar failed: ${tar.stderr.trim()}` }]);
   return ok({ archive, sha256: sha256Of(partial), artifacts: used.size - missing.length, missing });
+}
+
+/**
+ * Where the cache holds the artifact a run recorded as `<tool>/<commit>`: there, or, for a registry tool cached by its
+ * version (task-071), `<tool>/<version>` when its record names the same commit. Otherwise the recorded place, which is
+ * then reported missing.
+ */
+function cachedAt(cacheRoot: string, recordedDir: string, byVersion: string | undefined): string {
+  if (existsSync(join(cacheRoot, recordedDir)) || byVersion === undefined) return recordedDir;
+  try {
+    const record = JSON.parse(readFileSync(join(cacheRoot, byVersion, 'harness.json'), 'utf8')) as { commit?: unknown };
+    return record.commit === recordedDir.slice(recordedDir.indexOf('/') + 1) ? byVersion : recordedDir;
+  } catch {
+    return recordedDir;
+  }
 }
 
 function sha256Of(file: string): string {

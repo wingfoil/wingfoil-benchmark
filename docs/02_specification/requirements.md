@@ -1,6 +1,6 @@
 # Requirements (v0.1, v0.2)
 
-**Version:** 1.27
+**Version:** 1.28
 **Date:** 2026-10-07
 **Status:** Approved
 **Traces to:** [acceptance/](acceptance/) (the v0.1 and v0.2 features), [scenarios/](scenarios/) (K1–K5), [09_experiment-design.md](../01_vision/09_experiment-design.md), [07_sequencer.md](../01_vision/07_sequencer.md) v0.1; v0.2: [rel-v0-2](../memory/release/rel-v0-2.md)
@@ -47,7 +47,7 @@ All human-authored files are YAML, validated by Zod schemas in `core`. All machi
 | REQ-FMT-09 | **Scenario versions are immutable.** Results record the content hash of the scenario version they ran. The validator rejects a scenario version whose content no longer matches a hash recorded in stored results. | F3.4 |
 | REQ-FMT-10 | Arm definitions declare `provides`, the harness capabilities the arm offers, as a map of capability to boolean: for example `workflow-engine: false` for the WingFoil v0.2 pre-release. An undeclared capability is not provided (1.9). | F3.6 |
 | REQ-FMT-11 | **Eligibility register** (`eligibility/register.yaml`, outside `arms/`; added in 1.26): one entry per assessed tool and version, `{tool, version, date, criteria, verdict, reason}`. `criteria` holds each of the five published criteria (REQ-RES-09) with `pass` or `fail` and its evidence: runs with the campaign's agent and model id; its version can be pinned and installed reproducibly; it runs headless in a container; it is a workflow harness, not only a standards or prompt pack; it calls no LLM of its own. `verdict` is `admitted` or `excluded`, with the `reason`. **WingFoil is assessed like every tool** (T1). A campaign that pins a version the register has not assessed is refused until it is (T15). | F7.4, T1, T15 |
-| REQ-FMT-12 | **Harness artifacts** (added in 1.26): every pinned harness version is installed from one artifact, built or fetched once and cached in the git-ignored `.cache/harnesses/` (adr-003 decision 2): WingFoil's tarball from a clean `git archive` of its pinned commit (REQ-RUN-14); an npm tool's `npm pack` of the pinned version from the registry; a Python tool's wheel bundle of the pinned version with its dependencies. Its SHA-256 is recorded in each run (REQ-FMT-06), and the artifacts an execution used are attached to its release with its transcripts (REQ-CLI-11), so that a reader can install the same bytes. The third-party licences and notices inside an artifact travel with it, unchanged. | F7.1, T15, J6.2 |
+| REQ-FMT-12 | **Harness artifacts** (added in 1.26): every pinned harness version is installed from one artifact, built or fetched once and cached in the git-ignored `.cache/harnesses/` (adr-003 decision 2): WingFoil's tarball from a clean `git archive` of its pinned commit (REQ-RUN-14); an npm tool's `npm pack` of the pinned version from the registry, with the tree it installs with its dependencies, which is the installed artifact (1.28: an npm cache alone does not install offline), its `commit` in `run.json` being the tarball's SHA-256, since the registry has none, and a commit pin refused; a Python tool's wheel bundle of the pinned version with its dependencies. Its SHA-256 is recorded in each run (REQ-FMT-06), and the artifacts an execution used are attached to its release with its transcripts (REQ-CLI-11), so that a reader can install the same bytes. The third-party licences and notices inside an artifact travel with it, unchanged. | F7.1, T15, J6.2 |
 | REQ-FMT-13 | **Arm digest** (added in 1.26): the SHA-256 of an arm's files, every file under `arms/<arm>/`, and for a docs control also the manual it borrows (REQ-RUN-11), taken in sorted path order as `<path>\0<sha256 of the content>\n` lines; 12 hex characters where a campaign file pins it, all 64 in `run.json`. | F7.2, T12 |
 | REQ-FMT-14 | **Project rules per harness** (added in 1.26): a scenario's project rules stay declared once, in the scenario, as v0.1's are (dl-005: S8's as the wingfoil arm's directives). For every other harness arm, a rules generator renders them, deterministically and outside the scenario's content hash, into the tool's own place for project rules: Spec Kit's constitution (`.specify/memory/constitution.md`), OpenSpec's project context (as its pinned version defines it). Each docs control gets them as Markdown, as `baseline-docs` does. What each generator wrote is kept with the run's results (`generated/`), and its SHA-256 is recorded in `run.json` (`generated_sha256`), so that a change of a generator's code is visible in every run it touched (REQ-NFR-02). The scenario versions, and so their comparison with v0.1, are unchanged. An arm whose generator delivers the rules declares `provides.directive-delivery: true`. | F7.1, F6.8, T3 |
 
@@ -695,3 +695,17 @@ The traceability matrix is unaffected: REQ-RUN-08, -09 and -16 already trace to 
 
 Source: [task-069](../memory/task/task-069-the-effort-pinned-per-model-and-every-model-s-tokens-and-price-basis.md),
 whose scope the approver accepted in chat on 2026-10-07 ("Sì, come proposto"); dl-015, bug-012, bug-016.
+
+### Amendment 1.28 (delivery, W13 task-071, 2026-10-07)
+
+- **REQ-FMT-12:** an npm tool fetched from the registry (OpenSpec) is pinned by its released version, with no clone.
+  Its installed artifact is the registry's tarball installed with its dependencies into a prefix: task-070's spike
+  found that an npm cache alone does not install offline, because the package metadata is missing. It is cached by
+  that version, and the SHA-256 of the tarball stands as its `commit`, its content's identity. A commit pin is
+  refused.
+
+The traceability matrix is unaffected: REQ-FMT-12 already traces to F7.1.
+
+Source: [task-071](../memory/task/task-071-openspec-arm-with-project-rules-rendered.md), from
+[task-070](../memory/task/task-070-openspec-in-the-run-container-spike.md)'s answers; scope accepted by the approver
+at task-071's pending → backlog gate (2026-10-07).

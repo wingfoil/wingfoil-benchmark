@@ -1,6 +1,7 @@
 import { join } from 'node:path';
 
 import { renderConstitution } from './constitution.js';
+import { renderOpenSpecConfig } from './openspec.js';
 
 /** Where a scenario declares its project rules, once (dl-005): as the wingfoil arm's configuration. */
 export const RULES_SOURCE_ARM = 'wingfoil';
@@ -24,6 +25,13 @@ export const RULES_GENERATORS: Readonly<Record<string, RulesGenerator>> = {
     description:
       "the scenario's rules — the directives its developer reads — rendered as the principles of Spec Kit's constitution, " +
       'after the setup, in place of the template init leaves',
+  },
+  openspec: {
+    path: join('openspec', 'config.yaml'),
+    render: renderOpenSpecConfig,
+    description:
+      "the scenario's rules — the directives its developer reads — rendered as the context of OpenSpec's project " +
+      'configuration, after the setup, in place of the file init leaves (its schema kept)',
   },
 };
 

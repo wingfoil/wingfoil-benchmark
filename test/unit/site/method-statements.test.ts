@@ -30,7 +30,7 @@ const STATEMENTS: readonly (readonly [string, string])[] = [
   ],
   [
     'arms',
-    'experiment design §2 Arms table; REQ-RUN-12 (manual copied as `CLAUDE.md`); task-015 Design (`PROJECT_RULES.md`); arms/baseline-docs/manual.md; REQ-FMT-05 and task-067 Design (speckit, speckit-docs)',
+    'experiment design §2 Arms table; REQ-RUN-12 (manual copied as `CLAUDE.md`); task-015 Design (`PROJECT_RULES.md`); arms/baseline-docs/manual.md; REQ-FMT-05 and task-067 Design (speckit, speckit-docs); task-071 Design (openspec)',
   ],
   [
     'baseline-docs-control',
@@ -42,7 +42,7 @@ const STATEMENTS: readonly (readonly [string, string])[] = [
   ],
   [
     'operating-manuals',
-    'experiment design §2 parity rules (operating manuals); REQ-RUN-12; task-014 Design decision 2 (`ceil(UTF-8 bytes ÷ 4)`); rel-v0-1 W3 Due before ("publishes the three manuals"); task-046 Design "The published material"; REQ-FMT-05 and task-067 Design (the speckit and speckit-docs manuals)',
+    'experiment design §2 parity rules (operating manuals); REQ-RUN-12; task-014 Design decision 2 (`ceil(UTF-8 bytes ÷ 4)`); rel-v0-1 W3 Due before ("publishes the three manuals"); task-046 Design "The published material"; REQ-FMT-05 and task-067 Design (the speckit and speckit-docs manuals); task-071 (the openspec manual)',
   ],
   [
     'setup-pages',

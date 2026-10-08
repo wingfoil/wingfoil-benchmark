@@ -14,7 +14,10 @@ export interface HarnessArtefact {
   readonly tool: string;
   /** The version the campaign pins (REQ-FMT-01): a release or a commit, as written. */
   readonly version?: string;
-  /** The full SHA the campaign's pin resolved to in the clone. */
+  /**
+   * The full SHA the campaign's pin resolved to in the clone; for a tool fetched from the npm registry, which has no
+   * commits, the SHA-256 of the registry's tarball, its content's identity (task-071).
+   */
   readonly commit: string;
   readonly tarballSha256: string;
   readonly installedSha256: string;
@@ -44,6 +47,8 @@ export interface HarnessOptions {
 interface CacheRecord {
   readonly tool: string;
   readonly commit: string;
+  /** For a registry tool (task-071): the version it was fetched at, which keys its cache. */
+  readonly version?: string;
   /** The tool's own package's file name in the cache, which keeps the name the tool's packing gave it. */
   readonly tarball: string;
   readonly tarball_sha256: string;
@@ -108,6 +113,31 @@ function speckitBuild(sha: string): string {
 /** Where every pinned harness's artifact is cached, from the repository root (REQ-FMT-12; git-ignored). */
 export const HARNESS_CACHE = join('.cache', 'harnesses');
 
+/**
+ * The build of an npm package fetched from the registry at `version` (REQ-FMT-12, task-071, task-070's B1), in the
+ * campaign's image: `npm pack` (npm checks the registry's integrity itself), then the tarball installed with its
+ * dependencies into a prefix, which is the installed artifact (an npm cache alone does not install offline: its
+ * package metadata is missing). The prefix is packed as the tool's name, so that the arm's setup unpacks it under one
+ * directory. `HOME` is the build directory's, as for every build.
+ */
+function registryBuild(tool: string, spec: string): string {
+  return [
+    'set -euo pipefail',
+    `export HOME=${BUILD}/home`,
+    `mkdir -p ${BUILD}/home ${BUILD}/out ${BUILD}/install`,
+    `npm pack --pack-destination ${BUILD}/out '${spec}'`,
+    // No lifecycle scripts, as for WingFoil's installed tree: the build fetches, it does not run its dependencies.
+    `npm install --global --prefix ${BUILD}/install/${tool} --no-audit --no-fund --ignore-scripts ${BUILD}/out/*.tgz`,
+    `tar -czf ${BUILD}/out/installed.tgz -C ${BUILD}/install ${tool}`,
+  ].join('\n');
+}
+
+/** A released version, as a registry pin must be (task-071): npm reads anything else as a tag. */
+const RELEASE = /^v?\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
+
+/** The tools fetched from the npm registry by version, with no clone (task-071): their package, by tool. */
+const REGISTRY_PACKAGES: Readonly<Record<string, string>> = { openspec: '@fission-ai/openspec' };
+
 /** The harness tools this runner can build, by the name an arm `requires`. */
 const BUILDERS: Readonly<Record<string, (sha: string) => string>> = {
   wingfoil: wingfoilBuild,
@@ -141,6 +171,8 @@ async function prepare(
   // Checked by the campaign or dry-run check (harness coverage); the guard keeps the type honest.
   const harness = target.harnesses[arm.name];
   if (harness === undefined) throw new Error(`arm ${arm.name} requires '${tool}' and pins no harness`);
+  if (Object.hasOwn(REGISTRY_PACKAGES, harness.tool))
+    return prepareFromRegistry(tool, harness, target, options);
   const builder = BUILDERS[harness.tool];
   if (builder === undefined) {
     throw new Error(`the harness '${harness.tool}' of arm ${arm.name} has no builder in this runner`);
@@ -157,23 +189,90 @@ async function prepare(
     throw new Error(`the ${tool} harness pins ${pin}, which is not a commit of ${clone}`);
 
   const cache = join(target.repoRoot, HARNESS_CACHE, tool, sha);
-  const cached = fromCache(target.repoRoot, cache, tool, sha);
+  const cached = fromCache(target.repoRoot, cache, tool, (record) => record.commit === sha);
   if (cached !== undefined) return { ...cached, version: harness.version };
 
   const build = join(cache, 'build');
   rmSync(build, { recursive: true, force: true });
   mkdirSync(build, { recursive: true });
   await options.git.archive(clone, sha, join(build, 'src.tar'));
+  const record = await buildInto(cache, tool, sha, builder(sha), target, options, () => sha);
+  return { ...artefactOf(record, join(cache, 'installed.tgz')), version: harness.version };
+}
+
+/**
+ * A harness fetched from the npm registry (task-071): pinned by its released version, with no clone and no commit to
+ * resolve; cached by that version, and identified in `run.json` by the SHA-256 of the registry's tarball.
+ */
+async function prepareFromRegistry(
+  tool: string,
+  harness: CampaignFile['harnesses'][string],
+  target: HarnessTarget,
+  options: HarnessOptions,
+): Promise<HarnessArtefact> {
+  if (harness.commit !== undefined) {
+    throw new Error(
+      `the ${tool} harness pins commit ${harness.commit}, but ${tool} is fetched from the npm registry by version`,
+    );
+  }
+  const version = harness.version;
+  if (!RELEASE.test(version)) {
+    throw new Error(`the ${tool} harness pins ${version}, which is not a released version of ${tool}`);
+  }
+  const cache = join(target.repoRoot, HARNESS_CACHE, tool, version);
+  const cached = fromCache(target.repoRoot, cache, tool, (record) => record.version === version);
+  if (cached !== undefined) {
+    // Its commit is its tarball's digest: a record saying otherwise was edited, and is refused as a tampered one is.
+    if (cached.commit !== cached.tarballSha256) {
+      throw new Error(
+        `the cached harness record ${relative(target.repoRoot, join(cache, 'harness.json'))} names a commit that is not its tarball's digest: remove ${relative(target.repoRoot, cache)}/ to rebuild it`,
+      );
+    }
+    return { ...cached, version };
+  }
+
+  const build = join(cache, 'build');
+  rmSync(build, { recursive: true, force: true });
+  mkdirSync(build, { recursive: true });
+  const spec = `${REGISTRY_PACKAGES[tool] ?? tool}@${version}`;
+  const record = await buildInto(
+    cache,
+    tool,
+    version,
+    registryBuild(tool, spec),
+    target,
+    options,
+    (tarballSha) => tarballSha,
+    version,
+  );
+  return { ...artefactOf(record, join(cache, 'installed.tgz')), version };
+}
+
+/**
+ * Run `script` in the campaign's image on the build directory under `cache`, then keep its package and its installed
+ * artifact there with their record: `commitOf` names the artifact's commit, given the package's digest.
+ */
+async function buildInto(
+  cache: string,
+  tool: string,
+  label: string,
+  script: string,
+  target: HarnessTarget,
+  options: HarnessOptions,
+  commitOf: (tarballSha256: string) => string,
+  version?: string,
+): Promise<CacheRecord> {
+  const build = join(cache, 'build');
   const result = await options.docker.runOnce({
     image: target.id,
     user: hostUser(),
     mount: { source: build, target: BUILD },
-    command: ['bash', '-c', builder(sha)],
+    command: ['bash', '-c', script],
   });
   if (result.code !== 0) {
     const tail = result.stderr.trimEnd().split('\n').slice(-BUILD_ERROR_LINES).join('\n');
     throw new Error(
-      `building ${tool} ${sha} failed with code ${result.code}${tail === '' ? '' : `: ${tail}`}`,
+      `building ${tool} ${label} failed with code ${result.code}${tail === '' ? '' : `: ${tail}`}`,
     );
   }
   const out = join(build, 'out');
@@ -181,20 +280,22 @@ async function prepare(
   const tarball = readdirSync(out).find(
     (name) => name !== 'installed.tgz' && (name.endsWith('.tgz') || name.endsWith('.whl')),
   );
-  if (tarball === undefined) throw new Error(`building ${tool} ${sha} produced no tarball`);
+  if (tarball === undefined) throw new Error(`building ${tool} ${label} produced no tarball`);
   const installed = join(cache, 'installed.tgz');
   renameSync(join(out, 'installed.tgz'), installed);
   renameSync(join(out, tarball), join(cache, tarball));
+  const tarballSha256 = sha256(join(cache, tarball));
   const record: CacheRecord = {
     tool,
-    commit: sha,
+    commit: commitOf(tarballSha256),
+    ...(version === undefined ? {} : { version }),
     tarball,
-    tarball_sha256: sha256(join(cache, tarball)),
+    tarball_sha256: tarballSha256,
     installed_sha256: sha256(installed),
   };
   writeFileSync(join(cache, 'harness.json'), `${JSON.stringify(record, undefined, 2)}\n`);
   rmSync(build, { recursive: true, force: true });
-  return { ...artefactOf(record, installed), version: harness.version };
+  return record;
 }
 
 /**
@@ -204,7 +305,12 @@ async function prepare(
  * naming it (REQ-FMT-12, F7.1): rebuilding it silently would also hide a
  * tampered artifact, so the maintainer removes the directory to rebuild.
  */
-function fromCache(repoRoot: string, cache: string, tool: string, sha: string): HarnessArtefact | undefined {
+function fromCache(
+  repoRoot: string,
+  cache: string,
+  tool: string,
+  matches: (record: CacheRecord) => boolean,
+): HarnessArtefact | undefined {
   const recordFile = join(cache, 'harness.json');
   const installed = join(cache, 'installed.tgz');
   if (!existsSync(recordFile)) return undefined;
@@ -214,7 +320,7 @@ function fromCache(repoRoot: string, cache: string, tool: string, sha: string): 
   } catch {
     return undefined;
   }
-  if (record.tool !== tool || record.commit !== sha || typeof record.tarball !== 'string') return undefined;
+  if (record.tool !== tool || !matches(record) || typeof record.tarball !== 'string') return undefined;
   const checks: [string, string][] = [
     [installed, record.installed_sha256],
     [join(cache, basename(record.tarball)), record.tarball_sha256],

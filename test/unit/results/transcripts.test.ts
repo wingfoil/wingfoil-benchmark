@@ -216,6 +216,39 @@ describe('the harness artifacts beside the transcripts (REQ-CLI-11 as amended, R
     expect(sha256Of(archive)).toBe(sha);
   }, 120_000);
 
+  it('packs a registry harness from its cache by version, its commit being its tarball digest (task-071)', async () => {
+    const fixture = await withTranscripts();
+    const tarball = sha('npm tarball');
+    for (const id of ['TC', 'TD']) {
+      const file = join(fixture.executionDir, RUN(id, 'wingfoil'), 'run.json');
+      if (!existsSync(file)) continue;
+      const record = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>;
+      record.harness = {
+        tool: 'openspec',
+        version: '1.14.0',
+        commit: tarball,
+        tarball_sha256: tarball,
+        installed_sha256: sha('installed prefix'),
+        artifact_sha256: sha('installed prefix'),
+      };
+      writeFileSync(file, `${JSON.stringify(record, undefined, 2)}\n`);
+    }
+    const cache = join(fixture.root, '.cache', 'harnesses', 'openspec', '1.14.0');
+    mkdirSync(cache, { recursive: true });
+    writeFileSync(join(cache, 'installed.tgz'), 'installed prefix');
+    writeFileSync(join(cache, 'fission-ai-openspec-1.14.0.tgz'), 'npm tarball');
+    writeFileSync(
+      join(cache, 'harness.json'),
+      `${JSON.stringify({ tool: 'openspec', commit: tarball, version: '1.14.0', tarball: 'fission-ai-openspec-1.14.0.tgz' })}\n`,
+    );
+    const packed = await benchSite(fixture.root, 'transcripts', 'pack', EXECUTION);
+    expect(packed.code, packed.stderr).toBe(0);
+    expect(execFileSync('tar', ['-tzf', join(fixture.root, HARNESSES)], { encoding: 'utf8' })).toBe(
+      'openspec/1.14.0/fission-ai-openspec-1.14.0.tgz\nopenspec/1.14.0/harness.json\nopenspec/1.14.0/installed.tgz\n',
+    );
+    expect(packed.stdout).toContain('(1 harness artifact, sha256:');
+  }, 120_000);
+
   it('refuses a cache that is not what the runs installed, naming the file, and writes nothing', async () => {
     const { root, executionDir } = await withHarness(true);
     const before = readFileSync(join(executionDir, RUN('TC', 'baseline'), 'run.json'), 'utf8');
