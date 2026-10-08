@@ -130,3 +130,35 @@ The day runs are light (niced, 2 workers, the touched tests); the full suites ru
        only", in line with task-070.
      - The snapshot double is renamed `harnessSetups`, and its `config.yaml` carries init's commented keys.
      - `NO_RULES` is declared above both renderers.
+
+## Review notes
+
+Independent read-only agents reviewed `git diff main...HEAD` against the Design, REQ-RUN-11, REQ-FMT-05 and
+REQ-RES-09, and competitors.feature's two scenarios. By day no suite ran (dl-016); the reviewers read and typechecked.
+
+- **Round 1** (the build, before 07b7188): design coverage complete. The kept path and the docker test's paths are right.
+  - **Should-fix:** the heading shift touched fenced code and subheadings, and was uncapped, so the control would
+    differ from the harness it stands for.
+  - **Nits:**
+    1. the start was not anchored to a line;
+    2. a YAML error was read as no rules;
+    3. the `rules:`/`operations:` "why";
+    4. the double's name and its `config.yaml`;
+    5. `NO_RULES`'s place.
+  - All fixed in 07b7188. The should-fix's red test holds openspec-docs byte-identical to speckit-docs.
+- **Round 2** (07b7188): every fix verified. Byte-identity holds in general:
+  - a body's headings are always at level 4–6 after the rules generator's shift;
+  - the fence logic is the same as `shiftHeadings`';
+  - the trailing blank lines are trimmed in both;
+  - the YAML round trip is exact.
+
+  **Clean.** Three nits were left, each needing malformed or unusual input; the assumption is LF Markdown with
+  balanced fences:
+  1. trailing spaces on a body heading line are kept by the constitution and stripped by the context (invisible once
+     rendered);
+  2. an unclosed fence in one rule's body carries into the next rule's title;
+  3. CRLF directive files, which `shiftHeadings` already does not handle (pre-existing).
+- **For the approver:** the acceptance assertions for openspec and openspec-docs were written after the code
+  (Execution notes). The unit tests were the red ones.
+- **Suites:** to be run at night (`wfb-nightly-suites`, 02:00). Under kanban-delivery version 4, still in force, the
+  task goes to in-review once the night's log is green.
