@@ -160,5 +160,13 @@ REQ-RES-09, and competitors.feature's two scenarios. By day no suite ran (dl-016
   3. CRLF directive files, which `shiftHeadings` already does not handle (pre-existing).
 - **For the approver:** the acceptance assertions for openspec and openspec-docs were written after the code
   (Execution notes). The unit tests were the red ones.
-- **Suites:** to be run at night (`wfb-nightly-suites`, 02:00). Under kanban-delivery version 4, still in force, the
-  task goes to in-review once the night's log is green.
+- **Suites at 3819b0f**, run on demand on 2026-10-09 at the lowest priority with 2 workers (the 02:00 cron never fired,
+  because the PC sleeps at night, so the approver chose on-demand runs). Log in the main checkout's
+  `.cache/full-suites/2026-10-09-task-072.txt`:
+  - `npm run lint` clean;
+  - `npm test` 1389 passed, coverage 98.03 % statements, 90.8 % branches;
+  - `test:bin` 8 passed;
+  - `test:docker` 22 passed. The openspec-docs control's real snapshot (OpenSpec's setup in a one-off container) gave
+    a `PROJECT_RULES.md` holding the rule.
+- `npx wingfoil memory submit task-072-…` (in-progress → in-review). Declared: moves the task to its next state and
+  commits it. Observed: see the next commit, `wf(task): submit …`.
