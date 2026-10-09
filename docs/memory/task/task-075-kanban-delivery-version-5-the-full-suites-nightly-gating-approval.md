@@ -2,7 +2,7 @@
 id: task-075-kanban-delivery-version-5-the-full-suites-nightly-gating-approval
 type: task
 title: "Kanban delivery version 5: the full suites nightly, gating approval"
-status: approved
+status: done
 release: v0.2
 wave: W13
 features: []          # e.g. [F1.1, F3.1]
