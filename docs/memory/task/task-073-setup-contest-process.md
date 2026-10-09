@@ -194,3 +194,6 @@ and competitors.feature's two F7.2 scenarios. By day only the touched tests ran,
     rebuilt before `site publish`.
   - The GitHub repository needs a `setup-contest` label.
 - **Suites:** run on demand before approval (kanban-delivery version 5).
+- `npx wingfoil memory submit task-073-…` (in-progress → in-review), the first task under kanban-delivery version 5:
+  independent review clean, the touched tests green (niced). The full suites come before approval, on demand.
+  Declared: moves the task to its next state and commits it. Observed: see the next commit.
