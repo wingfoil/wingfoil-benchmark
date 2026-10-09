@@ -166,3 +166,31 @@ A corrected setup is a new campaign:
      - the `setup-contest` label must exist in the GitHub repository (a maintainer's step at publishing);
      - a published site differs from a fresh build until rebuilt (the new Contest section), so `site publish`
        refuses until then. This is expected.
+- Review round 2 (1ec0533): every fix verified, and no regression in the restructured `setupPages` (controls,
+  v0.1 arms, a control changed since its runs). **Clean.** Its minor finding was fixed here: a history copy of a
+  control, or one that failed to load, was not removed. Every copy is now removed in a `finally` over the whole
+  build of the setup pages. Left, as before this task: a v0.1 execution (no digest) whose arm was removed from the
+  working tree is refused, since without a digest the history cannot name a commit.
+
+## Review notes
+
+Independent read-only agents reviewed `git diff main...HEAD` against the Design, REQ-RES-10 and REQ-RES-02 (1.29),
+and competitors.feature's two F7.2 scenarios. By day only the touched tests ran, niced (kanban-delivery version 5).
+
+- **Round 1** (1aee790): design coverage complete; the `ls-tree` parsing and the pathspecs checked in a scratch
+  repository.
+  - **Should-fix:**
+    1. the followed-by link was written even when that execution is not held;
+    2. the history was never tried when the arm or manual was missing from the working tree or failed to load;
+    3. history copies leaked to the temporary directory;
+    4. method.md contradicted itself.
+  - **Nits:** multi-value messages, the form's arm list, the identity test's pin, and the limits listed under
+    "Left" above.
+  - All should-fix fixed in 1ec0533, with red tests for 1 and 2.
+- **Round 2** (1ec0533): every fix verified. **Clean.** One minor leak was fixed afterwards (above).
+- **For the approver:**
+  - Two unit tests were written after the code (Execution notes).
+  - After the merge, every published execution differs from a fresh build (the new Contest section), so it must be
+    rebuilt before `site publish`.
+  - The GitHub repository needs a `setup-contest` label.
+- **Suites:** run on demand before approval (kanban-delivery version 5).

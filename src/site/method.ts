@@ -216,69 +216,81 @@ async function setupPages(
     [...new Set(model.records.filter((r) => r.arm === arm).flatMap((r) => r.armDigest ?? []))].sort();
   // Each arm as it ran: the working tree's when it loads and digests to the recorded value, otherwise the history's.
   const arms = new Map<string, { arm: Arm; found?: RecordedArm }>();
-  for (const name of model.arms) {
-    const recorded = digestsOf(name);
-    const loaded = loadArm(armsRoot, name);
-    if (recorded.length !== 1) {
-      if (loaded.ok) arms.set(name, { arm: loaded.value });
-      else issues.push(...loaded.issues.map((issue) => ({ ...issue, path: `arms/${name}/${issue.path}` })));
-      continue;
-    }
-    const found = await recordedArm(root, name, recorded[0] as string, history);
-    if (found === undefined) {
-      if (loaded.ok && loaded.value.requires === undefined) arms.set(name, { arm: loaded.value });
+  // Every copy of an arm read from the history is removed when the pages are written, whatever happens to it.
+  const cleanups: (() => void)[] = [];
+  try {
+    return await pagesOf();
+  } finally {
+    for (const cleanup of cleanups) cleanup();
+  }
+
+  async function pagesOf(): Promise<Result<ReadonlyMap<string, string>>> {
+    for (const name of model.arms) {
+      const recorded = digestsOf(name);
+      const loaded = loadArm(armsRoot, name);
+      if (recorded.length !== 1) {
+        if (loaded.ok) arms.set(name, { arm: loaded.value });
+        else issues.push(...loaded.issues.map((issue) => ({ ...issue, path: `arms/${name}/${issue.path}` })));
+        continue;
+      }
+      const found = await recordedArm(root, name, recorded[0] as string, history);
+      if (found?.source === 'history') cleanups.push(found.cleanup);
+      if (found === undefined) {
+        if (loaded.ok && loaded.value.requires === undefined) arms.set(name, { arm: loaded.value });
+        else
+          issues.push({
+            path: `arms/${name}`,
+            message: `differs from the arm its runs recorded (${recorded[0] ?? ''}), and no commit of the repository holds it`,
+          });
+        continue;
+      }
+      const fromFound = found.source === 'tree' && loaded.ok ? loaded : loadArm(join(found.dir, '..'), name);
+      if (fromFound.ok) arms.set(name, { arm: fromFound.value, found });
       else
+        issues.push(...fromFound.issues.map((issue) => ({ ...issue, path: `arms/${name}/${issue.path}` })));
+    }
+    const form =
+      contests === undefined ? undefined : `${contests.repository}/issues/new?template=contest-setup.yml`;
+    for (const { arm, found } of arms.values()) {
+      if (arm.requires === undefined) continue;
+      if (digestsOf(arm.name).length === 0) continue;
+      if (digestsOf(arm.name).length > 1) {
         issues.push({
-          path: `arms/${name}`,
-          message: `differs from the arm its runs recorded (${recorded[0] ?? ''}), and no commit of the repository holds it`,
+          path: `arms/${arm.name}`,
+          message: `its runs recorded more than one digest (${digestsOf(arm.name).join(', ')}): the setup that ran is not one`,
         });
-      continue;
-    }
-    const fromFound = found.source === 'tree' && loaded.ok ? loaded : loadArm(join(found.dir, '..'), name);
-    if (fromFound.ok) arms.set(name, { arm: fromFound.value, found });
-    else issues.push(...fromFound.issues.map((issue) => ({ ...issue, path: `arms/${name}/${issue.path}` })));
-  }
-  const form =
-    contests === undefined ? undefined : `${contests.repository}/issues/new?template=contest-setup.yml`;
-  for (const { arm, found } of arms.values()) {
-    if (arm.requires === undefined) continue;
-    if (digestsOf(arm.name).length === 0) continue;
-    if (digestsOf(arm.name).length > 1) {
-      issues.push({
-        path: `arms/${arm.name}`,
-        message: `its runs recorded more than one digest (${digestsOf(arm.name).join(', ')}): the setup that ran is not one`,
-      });
-      continue;
-    }
-    const contest = contests?.contests.find((c) => c.campaign === model.campaign && c.arm === arm.name);
-    const followed =
-      contest !== undefined && existsSync(join(root, 'results', contest.followed_by, 'aggregate.json'));
-    try {
-      pages.set(
-        `setup-${arm.name}.html`,
-        materialPage(
-          `Setup: ${arm.name}`,
-          setupHtml(
-            arm,
-            readFileSync(arm.setupPath, 'utf8'),
-            [...arms.values()]
-              .filter(({ arm: control }) => control.docsOf === arm.name)
-              .map(({ arm: c }) => c.name),
-            {
-              ...(form === undefined ? {} : { form }),
-              ...(contest === undefined
-                ? {}
-                : { contested: { issue: contest.issue, followedBy: contest.followed_by, linked: followed } }),
-              ...(found?.source === 'history' ? { asRanAt: found.commit } : {}),
-            },
+        continue;
+      }
+      const contest = contests?.contests.find((c) => c.campaign === model.campaign && c.arm === arm.name);
+      const followed =
+        contest !== undefined && existsSync(join(root, 'results', contest.followed_by, 'aggregate.json'));
+      {
+        pages.set(
+          `setup-${arm.name}.html`,
+          materialPage(
+            `Setup: ${arm.name}`,
+            setupHtml(
+              arm,
+              readFileSync(arm.setupPath, 'utf8'),
+              [...arms.values()]
+                .filter(({ arm: control }) => control.docsOf === arm.name)
+                .map(({ arm: c }) => c.name),
+              {
+                ...(form === undefined ? {} : { form }),
+                ...(contest === undefined
+                  ? {}
+                  : {
+                      contested: { issue: contest.issue, followedBy: contest.followed_by, linked: followed },
+                    }),
+                ...(found?.source === 'history' ? { asRanAt: found.commit } : {}),
+              },
+            ),
           ),
-        ),
-      );
-    } finally {
-      if (found?.source === 'history') found.cleanup();
+        );
+      }
     }
+    return issues.length > 0 ? fail(issues) : ok(pages);
   }
-  return issues.length > 0 ? fail(issues) : ok(pages);
 }
 
 /** The body of an arm's setup page: `script` is its setup script, `controls` the docs controls of it that ran. */
