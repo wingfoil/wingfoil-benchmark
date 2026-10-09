@@ -3,6 +3,7 @@ id: bug-018-a-directive-check-acceptance-test-times-out-under-the-low-priority-f
 type: bug
 title: "A directive-check acceptance test times out under the low-priority full suites"
 status: approved
+fixed_by: task-075-kanban-delivery-version-5-the-full-suites-nightly-gating-approval
 # fixed_by: task-…   # set by hand, with the fixing task's id, just before `approved → fixed`
 ---
 
@@ -41,3 +42,11 @@ It fails on time, not on an assertion: a run that is right reads red, and approv
 
 Give this test its own limit, with room for the low-priority run (for example 300 s), and say why beside it, as
 bug-008 did for the unit tests (`vitest.config.ts`). A test that hangs still fails.
+
+## Resolution
+
+Fixed by [task-075](../task/task-075-kanban-delivery-version-5-the-full-suites-nightly-gating-approval.md) (merged in `f0a8674
+973a75a`), at the approver's choice of 2026-10-09. The test has its
+own 300 s limit, with its reason beside it; the other tests of the file keep 120 s, and a hang still fails. Verified
+by `scripts/full-suites.sh` on task-075's branch (e4d31b2): green, @F4.8 included, at the lowest priority with 2
+workers.
