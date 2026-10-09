@@ -263,8 +263,12 @@ MIT — see [LICENSE](LICENSE).
 ## Full suites
 
 `scripts/full-suites.sh` runs the full suites — lint, `npm test` with coverage, `test:bin` and `test:docker` — on the
-main checkout and every `task/*` worktree, or only on the branches it is given, one at a time, at the lowest CPU and
-I/O priority with 2 vitest workers. Logs go to `.cache/full-suites/<date>/` (git-ignored), with a `summary.txt`.
+main checkout and every `task/*` worktree, or only on the branches it is given, one at a time, niced and at idle I/O
+priority with 2 vitest workers (the containers `test:docker` starts run under Docker's daemon, at its priority). Each
+branch's log is `.cache/full-suites/<date>/<branch>-<commit>-<time>.txt` (git-ignored), never overwritten, and
+`summary.txt` gets a line per branch: the commit, `DIRTY` when the worktree had changes not committed, each stage's exit
+code. A docker test skips itself when its harness clone is missing (`BENCH_WINGFOIL_REPO`, `BENCH_SPECKIT_REPO`): read
+the log's counts, not only its exit code.
 
 ```sh
 scripts/full-suites.sh                 # main and every task/* worktree
@@ -273,4 +277,3 @@ scripts/full-suites.sh task/task-075-… # one branch
 
 They take tens of minutes and load the machine, so they run on demand when it is free, never from a cron on a machine
 that sleeps (dl-016, task-075). Their green log is what the approver approves a task on (kanban-delivery version 5).
-

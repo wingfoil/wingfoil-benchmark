@@ -80,13 +80,13 @@ the full suites (dl-016 B) stands; only when they run changed.
 
 ### Tests
 
-- **Red-first:** `test/unit/scripts/nightly-suites.test.ts` runs the script on a temporary repository with two
+- **Red-first:** `test/unit/scripts/full-suites.test.ts` runs the script on a temporary repository with two
   worktrees (`main`, `task/x`) and one other branch (`other`), and a stub `npm` on `PATH` that records its calls and
   exits 0, or 1 for `test` on `task/x`. It checks:
   - one log per main and `task/*` worktree, none for `other`, or only the branches named as arguments;
   - the four stages in order;
   - `summary.txt` with each branch's exit codes (`TEST 1` for `task/x`);
-  - a second run while the lock is held writes "another nightly run is in progress" and runs nothing.
+  - a second run while the lock is held writes "another full-suites run is in progress" and runs nothing.
 - **Characterization:** `npx wingfoil workflow list` still loads the workflows with kanban-delivery at version 5.
 
 Under version 4, still in force while this task is built, its suites run at night like any task's. The first task
@@ -116,3 +116,23 @@ delivered under version 5 is the one after this.
   - **Characterization:** `npx wingfoil workflow list` loads the workflows with kanban-delivery at version 5.
   - At delivery, `~/.local/bin/wfb-nightly-suites` (installed on 2026-10-08) is removed, since the versioned script
     replaces it.
+- Review round 1 fixes:
+  1. **(should-fix) The commit and the log.**
+     - The summary names the commit the run started on, captured once, and marks `DIRTY` a worktree with
+       uncommitted changes.
+     - Each log is named `<branch>-<commit>-<hhmmss>.txt`, never overwritten.
+     - The workflow asks for a clean worktree at the commit offered for approval.
+  2. **(nits)**
+     - A worktree it cannot enter, and a branch name that matches none, leave a summary line.
+     - The summary lines also go to stdout.
+     - The suite commands get no stdin and no lock descriptor.
+     - Worktree paths with spaces are read whole.
+     - `BUILD` has its own code.
+     - Relative `WFB_MAIN`/`WFB_OUT` are made absolute, and a run outside a repository says so.
+     - The README says what the priority covers (not dockerd's containers), and that a docker test skips itself
+       without its clone.
+     - The workflow says who runs the suites and when, and that the approval command names the log.
+     - The Design's Tests bullets match the code.
+  3. **Left:** plan-004's mentions of kanban-delivery version 3 (an approved plan, not edited); no suites on main
+     after a merge (dl-016: deliver unchanged).
+
