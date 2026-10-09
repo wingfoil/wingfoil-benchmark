@@ -96,3 +96,23 @@ delivered under version 5 is the one after this.
 
 - `npx wingfoil memory add --type task --title "Kanban delivery version 5: the full suites nightly, gating approval"`. Declared: creates the element from the template and
   commits it. Observed: `wf(task): add task-075-kanban-delivery-version-5-the-full-suites-nightly-gating-approval`, `status: draft`. Matches.
+- `npx wingfoil memory submit task-075-…` (backlog → in-progress) on 2026-10-09, after task-072 went to in-review (the
+  WIP limit). Declared: moves the task to its next state and commits it. Observed: `status: in-progress`. Matches.
+- **The approver's choice of 2026-10-09:** the 02:00 cron never fired, because the PC slept from 00:33 to 06:23. The
+  approver chose on-demand full suites over a timer that wakes the PC, and the crontab line was removed. The Design
+  says so; the Context's "nightly" stands only in the title.
+- Build:
+  - **Red first:** `test/unit/scripts/full-suites.test.ts`, three tests on a temporary repository with worktrees
+    `main`, `task/x` and `other`, and a stub `npm` on `PATH`. They check:
+    - the four stages in order on main and `task/x`, and nothing on `other`;
+    - the summary's exit codes;
+    - only the branches named as arguments;
+    - nothing while the lock is held.
+  - **Then the code:**
+    - `scripts/full-suites.sh` (paths from `WFB_MAIN`/`WFB_OUT`, `nice`/`ionice`, 2 workers, a lock);
+    - `kanban-delivery.yaml` version 5: the review phase's day checks; the full suites' green log, named in the
+      Review notes, as the condition of approval; a red log sending the task back;
+    - the README's "Full suites" section.
+  - **Characterization:** `npx wingfoil workflow list` loads the workflows with kanban-delivery at version 5.
+  - At delivery, `~/.local/bin/wfb-nightly-suites` (installed on 2026-10-08) is removed, since the versioned script
+    replaces it.
