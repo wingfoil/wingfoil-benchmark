@@ -7,12 +7,13 @@ import { z } from 'zod';
 import { campaignSchema, fail, ok, parseWith, readYamlFile } from '../core/index.js';
 import type { Arm, CampaignFile, HistoryPort, Issue, Result } from '../core/index.js';
 
-import { armDigest, docsGeneratorOf, loadArm, rulesGeneratorOf } from '../arms/index.js';
+import { docsGeneratorOf, loadArm, rulesGeneratorOf } from '../arms/index.js';
 import type { DocsGenerator } from '../arms/index.js';
 import type { Group } from '../results/index.js';
 
 import { renderMarkdown } from './markdown.js';
 import { recordedArm, recordedManual } from './recorded.js';
+import type { RecordedArm } from './recorded.js';
 import type { SiteModel } from './model.js';
 import { escapeHtml, materialPage, methodShell } from './render.js';
 
@@ -68,26 +69,34 @@ export async function methodPages(
   const manuals: string[] = [];
   for (const arm of model.arms) {
     const file = `arms/${arm}/manual.md`;
-    if (!existsSync(join(root, file))) {
+    const records = model.records.filter((record) => record.arm === arm);
+    const recorded = [...new Set(records.flatMap((record) => record.manual?.sha256 ?? []))].sort();
+    const present = existsSync(join(root, file));
+    let text = present ? readFileSync(join(root, file), 'utf8') : undefined;
+    // A manual changed or removed since its runs (an accepted contest, task-073): the one they ran with, from the
+    // history. Runs that recorded two manuals (a change mid-execution) are refused, as before.
+    if (recorded.length === 1 && (text === undefined || sha256(text) !== recorded[0])) {
+      text = await recordedManual(root, arm, recorded[0] as string, history);
+      if (text === undefined) {
+        issues.push({
+          path: file,
+          message: present
+            ? `differs from the manual its runs recorded (sha256:${recorded[0]}), and no commit of the repository holds it`
+            : 'not found: its arm ran in this execution, and no commit of the repository holds the manual it ran with',
+        });
+        continue;
+      }
+    }
+    if (text === undefined) {
       issues.push({ path: file, message: 'not found: its arm ran in this execution' });
       continue;
     }
-    let text = readFileSync(join(root, file), 'utf8');
-    let hash = sha256(text);
-    const records = model.records.filter((record) => record.arm === arm);
-    const recorded = [...new Set(records.flatMap((record) => record.manual?.sha256 ?? []))].sort();
+    const hash = sha256(text);
     const other = recorded.filter((value) => value !== hash);
-    // A manual changed since its runs (an accepted contest, task-073): the one they ran with, from the history.
-    const ran = other.length === 1 ? await recordedManual(root, arm, other[0] as string, history) : undefined;
-    if (ran !== undefined && recorded.length === 1) {
-      text = ran;
-      hash = sha256(text);
-    } else if (other.length > 0) {
+    if (other.length > 0) {
       issues.push({
         path: file,
-        message:
-          `(sha256:${hash}) differs from the manual its runs recorded (sha256:${other.join(', sha256:')}), ` +
-          'and no commit of the repository holds it',
+        message: `(sha256:${hash}) differs from the manuals its runs recorded (sha256:${recorded.join(', sha256:')}): they recorded more than one`,
       });
       continue;
     }
@@ -180,7 +189,8 @@ function readContests(root: string): Result<Contests | undefined> {
 /** What a setup page says of contests: where the form is, and the accepted contest of this campaign's arm, if any. */
 export interface SetupContest {
   readonly form?: string;
-  readonly contested?: { readonly issue: string; readonly followedBy: string };
+  /** `linked`: this repository holds the followed execution's aggregated results, so the site can hold its pages. */
+  readonly contested?: { readonly issue: string; readonly followedBy: string; readonly linked: boolean };
   /** The commit of the repository's history the arm was read from, when the working tree no longer holds it. */
   readonly asRanAt?: string;
 }
@@ -202,61 +212,71 @@ async function setupPages(
   const armsRoot = join(root, 'arms');
   const pages = new Map<string, string>();
   const issues: Issue[] = [];
-  const arms: Arm[] = [];
+  const digestsOf = (arm: string) =>
+    [...new Set(model.records.filter((r) => r.arm === arm).flatMap((r) => r.armDigest ?? []))].sort();
+  // Each arm as it ran: the working tree's when it loads and digests to the recorded value, otherwise the history's.
+  const arms = new Map<string, { arm: Arm; found?: RecordedArm }>();
   for (const name of model.arms) {
+    const recorded = digestsOf(name);
     const loaded = loadArm(armsRoot, name);
-    if (loaded.ok) arms.push(loaded.value);
-    else issues.push(...loaded.issues.map((issue) => ({ ...issue, path: `arms/${name}/${issue.path}` })));
+    if (recorded.length !== 1) {
+      if (loaded.ok) arms.set(name, { arm: loaded.value });
+      else issues.push(...loaded.issues.map((issue) => ({ ...issue, path: `arms/${name}/${issue.path}` })));
+      continue;
+    }
+    const found = await recordedArm(root, name, recorded[0] as string, history);
+    if (found === undefined) {
+      if (loaded.ok && loaded.value.requires === undefined) arms.set(name, { arm: loaded.value });
+      else
+        issues.push({
+          path: `arms/${name}`,
+          message: `differs from the arm its runs recorded (${recorded[0] ?? ''}), and no commit of the repository holds it`,
+        });
+      continue;
+    }
+    const fromFound = found.source === 'tree' && loaded.ok ? loaded : loadArm(join(found.dir, '..'), name);
+    if (fromFound.ok) arms.set(name, { arm: fromFound.value, found });
+    else issues.push(...fromFound.issues.map((issue) => ({ ...issue, path: `arms/${name}/${issue.path}` })));
   }
-  if (issues.length > 0) return fail(issues);
   const form =
     contests === undefined ? undefined : `${contests.repository}/issues/new?template=contest-setup.yml`;
-  for (const current of arms) {
-    if (current.requires === undefined) continue;
-    const recorded = [
-      ...new Set(model.records.filter((r) => r.arm === current.name).flatMap((r) => r.armDigest ?? [])),
-    ].sort();
-    if (recorded.length === 0) continue;
-    const found =
-      recorded.length === 1
-        ? await recordedArm(root, current.name, recorded[0] as string, history)
-        : undefined;
-    if (found === undefined) {
+  for (const { arm, found } of arms.values()) {
+    if (arm.requires === undefined) continue;
+    if (digestsOf(arm.name).length === 0) continue;
+    if (digestsOf(arm.name).length > 1) {
       issues.push({
-        path: `arms/${current.name}`,
-        message:
-          `(digest ${armDigest(root, current.name)}) differs from the arm its runs recorded (${recorded.join(', ')}), ` +
-          'and no commit of the repository holds it',
+        path: `arms/${arm.name}`,
+        message: `its runs recorded more than one digest (${digestsOf(arm.name).join(', ')}): the setup that ran is not one`,
       });
       continue;
     }
-    const loaded = found.source === 'tree' ? ok(current) : loadArm(join(found.dir, '..'), current.name);
-    if (!loaded.ok) {
-      issues.push(
-        ...loaded.issues.map((issue) => ({ ...issue, path: `arms/${current.name}/${issue.path}` })),
-      );
-      continue;
-    }
-    const arm = loaded.value;
     const contest = contests?.contests.find((c) => c.campaign === model.campaign && c.arm === arm.name);
-    pages.set(
-      `setup-${arm.name}.html`,
-      materialPage(
-        `Setup: ${arm.name}`,
-        setupHtml(
-          arm,
-          readFileSync(arm.setupPath, 'utf8'),
-          arms.filter((control) => control.docsOf === arm.name).map((control) => control.name),
-          {
-            ...(form === undefined ? {} : { form }),
-            ...(contest === undefined
-              ? {}
-              : { contested: { issue: contest.issue, followedBy: contest.followed_by } }),
-            ...(found.source === 'history' ? { asRanAt: found.commit } : {}),
-          },
+    const followed =
+      contest !== undefined && existsSync(join(root, 'results', contest.followed_by, 'aggregate.json'));
+    try {
+      pages.set(
+        `setup-${arm.name}.html`,
+        materialPage(
+          `Setup: ${arm.name}`,
+          setupHtml(
+            arm,
+            readFileSync(arm.setupPath, 'utf8'),
+            [...arms.values()]
+              .filter(({ arm: control }) => control.docsOf === arm.name)
+              .map(({ arm: c }) => c.name),
+            {
+              ...(form === undefined ? {} : { form }),
+              ...(contest === undefined
+                ? {}
+                : { contested: { issue: contest.issue, followedBy: contest.followed_by, linked: followed } }),
+              ...(found?.source === 'history' ? { asRanAt: found.commit } : {}),
+            },
+          ),
         ),
-      ),
-    );
+      );
+    } finally {
+      if (found?.source === 'history') found.cleanup();
+    }
   }
   return issues.length > 0 ? fail(issues) : ok(pages);
 }
@@ -318,8 +338,11 @@ function contestHtml(contest: SetupContest): string {
     contest.contested === undefined
       ? ''
       : `<p>This setup was contested in <a href="${e(contest.contested.issue)}">${e(contest.contested.issue)}</a>, ` +
-        `and the correction ran as campaign <a href="../../../${e(contest.contested.followedBy)}/index.html">` +
-        `${e(contest.contested.followedBy)}</a>.</p>\n`;
+        'and the correction ran as campaign ' +
+        (contest.contested.linked
+          ? `<a href="../../../${e(contest.contested.followedBy)}/index.html">${e(contest.contested.followedBy)}</a>`
+          : `<code>${e(contest.contested.followedBy)}</code>`) +
+        '.</p>\n';
   const form =
     contest.form === undefined
       ? '<p>This site names no repository to contest this setup in.</p>'

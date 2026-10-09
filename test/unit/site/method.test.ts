@@ -328,7 +328,7 @@ describe('the setup pages (REQ-RES-09, task-067)', () => {
     const refused = await benchSite(root, 'site', 'build', EXECUTION);
     expect(refused.code).toBe(1);
     expect(refused.stderr).toMatch(
-      /arms\/wingfoil: \(digest [0-9a-f]{64}\) differs from the arm its runs recorded/,
+      /arms\/wingfoil: differs from the arm its runs recorded \([0-9a-f]{64}\), and no commit of the repository holds it/,
     );
 
     // An execution from before v0.2, whose runs recorded no arm digest: no setup page, the rest built.

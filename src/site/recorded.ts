@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, posix } from 'node:path';
 
@@ -14,7 +14,13 @@ import type { HistoryPort } from '../core/index.js';
  */
 export type RecordedArm =
   | { readonly source: 'tree'; readonly dir: string }
-  | { readonly source: 'history'; readonly commit: string; readonly dir: string };
+  | {
+      readonly source: 'history';
+      readonly commit: string;
+      readonly dir: string;
+      /** Removes the copy of the arm, once its page is written. */
+      readonly cleanup: () => void;
+    };
 
 export async function recordedArm(
   root: string,
@@ -34,7 +40,12 @@ export async function recordedArm(
       mkdirSync(dirname(target), { recursive: true });
       writeFileSync(target, content.startsWith('link:') ? '' : content);
     }
-    return { source: 'history', commit, dir: join(base, path) };
+    return {
+      source: 'history',
+      commit,
+      dir: join(base, path),
+      cleanup: () => rmSync(base, { recursive: true, force: true }),
+    };
   }
   return undefined;
 }

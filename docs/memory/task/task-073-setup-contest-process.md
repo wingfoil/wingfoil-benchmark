@@ -145,3 +145,24 @@ A corrected setup is a new campaign:
     the manual from the history in a site build.
   - **Specification:** requirements 1.29, which adds `repository` and "as they ran" to REQ-RES-10 and REQ-RES-02.
     method.md's `{#setup-pages}` names the form and the setup as it ran.
+- Review round 1 fixes (red tests first, then the code):
+  1. **The followed campaign** is linked only when this repository holds its aggregated results
+    (`results/<id>/<n>/aggregate.json`), otherwise named. The rule is deterministic, so a fresh build for
+    `checkSiteCopy` gives the same bytes; the Design's "when this site holds them" is read that way.
+  2. **The history is tried when the working tree's arm or manual is missing or does not load,** not only when it
+     differs. Red test: an arm retired with `git rm`.
+  3. **The copy of an arm read from the history is removed** once its page is written.
+  4. **method.md's `{#setup-pages}`** no longer says a page is published only while the working tree holds the arm.
+  5. **(nits)**
+     - Runs that recorded more than one manual or digest are refused with a message that says so, rather than "no
+       commit holds it".
+     - A test ties the form's arm list to the repository's harness arms.
+     - The campaign-identity assertion pins the arm's real digest before the correction.
+     - The task-067 test of the refusal's message follows the new wording.
+  6. **Left:**
+     - binary files under an arm: the process port reads blobs as text, and no arm has one;
+     - a run's untracked or uncommitted arm files, or a shallow clone: the history cannot hold them, and the build
+       is refused, as before;
+     - the `setup-contest` label must exist in the GitHub repository (a maintainer's step at publishing);
+     - a published site differs from a fresh build until rebuilt (the new Contest section), so `site publish`
+       refuses until then. This is expected.
