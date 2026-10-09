@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
   cpSync,
@@ -11,10 +12,11 @@ import {
 } from 'node:fs';
 import { join } from 'node:path';
 
-import { stringify } from 'yaml';
+import { parse, stringify } from 'yaml';
 import { describe, expect, it } from 'vitest';
 
 import { armDigest } from '../../src/arms/index.js';
+import { campaignId } from '../../src/campaign/index.js';
 import { checkCampaign } from '../../src/cli/index.js';
 import type { RunOnceRequest } from '../../src/core/index.js';
 import { runCampaign } from '../../src/runner/index.js';
@@ -568,3 +570,72 @@ function treeOf(dir: string): Record<string, string> {
   walk(dir, '');
   return out;
 }
+
+describe('competitors.feature, contesting a setup (F7.2, REQ-RES-10, task-073)', () => {
+  it('@F7.2 A setup can be contested from its page', async () => {
+    // Given a published setup page
+    const { root } = await siteExecution();
+    expect((await benchSite(root, 'site', 'build', EXECUTION)).code).toBe(0);
+    const page = readFileSync(
+      join(root, 'site', 'abcdef012345', '1', 'material', 'setup-wingfoil.html'),
+      'utf8',
+    );
+    // When a reader follows its contest link
+    const link = /href="([^"]*issues\/new\?template=contest-setup\.yml)"/.exec(page)?.[1];
+    expect(link).toBe('https://github.com/wingfoil/wingfoil-benchmark/issues/new?template=contest-setup.yml');
+    // Then an issue form asks for the arm, the setup step, what the tool's documentation says and the proposed correction
+    const form = parse(readFileSync(repoPath('.github/ISSUE_TEMPLATE/contest-setup.yml'), 'utf8')) as {
+      body: { id?: string; type: string; validations?: { required?: boolean } }[];
+    };
+    const fields = form.body.filter((field) => field.id !== undefined);
+    expect(fields.map((field) => field.id)).toEqual(['arm', 'step', 'documentation', 'correction']);
+    expect(fields.every((field) => field.validations?.required === true)).toBe(true);
+  });
+
+  it('@F7.2 A corrected setup runs as a new campaign and the old one stays published', async () => {
+    // Given a contest the maintainer accepts, and the arm's files corrected (the history holds the arm as it ran)
+    const { root } = await siteExecution();
+    const git = (...args: string[]) =>
+      execFileSync('git', ['-C', root, '-c', 'user.name=t', '-c', 'user.email=t@t', ...args], {
+        encoding: 'utf8',
+      });
+    git('init', '-q', '-b', 'main');
+    git('add', '-A');
+    git('commit', '-q', '-m', 'the campaign as it ran');
+    const setup = join(root, 'arms', 'wingfoil', 'setup.sh');
+    const ran = readFileSync(setup, 'utf8').split('\n')[1] ?? '';
+    writeFileSync(setup, `${readFileSync(setup, 'utf8')}# corrected after the contest\n`);
+    git('commit', '-q', '-am', 'the corrected setup');
+    writeFileSync(
+      join(root, 'site-content', 'contests.yaml'),
+      stringify({
+        repository: 'https://github.com/wingfoil/wingfoil-benchmark',
+        contests: [
+          {
+            campaign: 'abcdef012345',
+            arm: 'wingfoil',
+            issue: 'https://github.com/wingfoil/wingfoil-benchmark/issues/7',
+            followed_by: 'fedcba987654/1',
+          },
+        ],
+      }),
+    );
+    // When the maintainer pins the corrected arm's digest in the campaign file
+    const before = { ...completeCampaignYaml(), arm_digests: { wingfoil: '0'.repeat(12) } };
+    const after = { ...before, arm_digests: { wingfoil: armDigest(root, 'wingfoil').slice(0, 12) } };
+    // Then the campaign has a new identity
+    expect(campaignId(after)).not.toBe(campaignId(before));
+    // And the contested campaign's values stay published, its setup page linking the contest and the campaign that
+    // followed
+    const built = await benchSite(root, 'site', 'build', EXECUTION);
+    expect(built.code, built.stderr).toBe(0);
+    const page = readFileSync(
+      join(root, 'site', 'abcdef012345', '1', 'material', 'setup-wingfoil.html'),
+      'utf8',
+    );
+    expect(page).toContain(escapeHtml(ran));
+    expect(page).not.toContain('corrected after the contest');
+    expect(page).toContain('href="https://github.com/wingfoil/wingfoil-benchmark/issues/7"');
+    expect(page).toContain('href="../../../fedcba987654/1/index.html"');
+  });
+});
