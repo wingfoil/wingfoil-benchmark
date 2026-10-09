@@ -30,11 +30,11 @@ const STATEMENTS: readonly (readonly [string, string])[] = [
   ],
   [
     'arms',
-    'experiment design §2 Arms table; REQ-RUN-12 (manual copied as `CLAUDE.md`); task-015 Design (`PROJECT_RULES.md`); arms/baseline-docs/manual.md; REQ-FMT-05 and task-067 Design (speckit, speckit-docs); task-071 Design (openspec)',
+    'experiment design §2 Arms table; REQ-RUN-12 (manual copied as `CLAUDE.md`); task-015 Design (`PROJECT_RULES.md`); arms/baseline-docs/manual.md; REQ-FMT-05 and task-067 Design (speckit, speckit-docs); task-071 Design (openspec); task-072 Design (openspec-docs)',
   ],
   [
     'baseline-docs-control',
-    'experiment design §2 parity rules and §5 T3; REQ-RUN-11; task-015 Design ("The input is the wingfoil arm’s configuration as the agent meets it", results kept under `generated/`); scenarios/README K3; dl-005 Context; task-067 Design (a docs control per harness, baseline-docs’ manual)',
+    'experiment design §2 parity rules and §5 T3; REQ-RUN-11; task-015 Design ("The input is the wingfoil arm’s configuration as the agent meets it", results kept under `generated/`); scenarios/README K3; dl-005 Context; task-067 Design (a docs control per harness, baseline-docs’ manual); task-072 Design (openspec-docs)',
   ],
   [
     'baseline-docs-table',
@@ -42,7 +42,7 @@ const STATEMENTS: readonly (readonly [string, string])[] = [
   ],
   [
     'operating-manuals',
-    'experiment design §2 parity rules (operating manuals); REQ-RUN-12; task-014 Design decision 2 (`ceil(UTF-8 bytes ÷ 4)`); rel-v0-1 W3 Due before ("publishes the three manuals"); task-046 Design "The published material"; REQ-FMT-05 and task-067 Design (the speckit and speckit-docs manuals); task-071 (the openspec manual)',
+    'experiment design §2 parity rules (operating manuals); REQ-RUN-12; task-014 Design decision 2 (`ceil(UTF-8 bytes ÷ 4)`); rel-v0-1 W3 Due before ("publishes the three manuals"); task-046 Design "The published material"; REQ-FMT-05 and task-067 Design (the speckit and speckit-docs manuals); task-071 (the openspec manual); task-072 (the openspec-docs manual)',
   ],
   [
     'setup-pages',
