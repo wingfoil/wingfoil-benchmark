@@ -50,31 +50,40 @@ and the next task is delivered under it.
     `--maxWorkers=2`);
   - the independent review rounds, as in version 3;
   - the full suites are no longer asked for before in-progress → in-review.
-- **in-review → approved:** the night's full suites (lint, `npm test` with coverage above 80 %, `test:bin`,
+- **in-review → approved:** the full suites, run on demand, (lint, `npm test` with coverage above 80 %, `test:bin`,
   `test:docker`), green on the task's branch at the commit offered for approval. The run is named in the Review notes
-  by its log (`.cache/nightly/<date>/<branch>.txt`) and the commit it ran on.
-- **A red night:** the approver rejects (in-review → in-progress, the phase's fallback), and the failure is fixed and
+  by its log (`.cache/full-suites/<date>/<branch>.txt`) and the commit it ran on.
+- **A red run:** the approver rejects (in-review → in-progress, the phase's fallback), and the failure is fixed and
   reviewed again.
 - deliver and real-agent-check are unchanged. `release-cycle`'s validation phase is unchanged: it runs the suites once,
   at night or in a pause.
 
-### The nightly script, versioned (dl-016's consequence)
+### When the full suites run: on demand, not at night (the approver, 2026-10-09)
 
-- `scripts/nightly-suites.sh` is today's `~/.local/bin/wfb-nightly-suites`, with three changes:
-  - its paths come from the environment, with the current defaults: `WFB_MAIN` (the main checkout), `WFB_OUT`
-    (`$WFB_MAIN/.cache/nightly`), and the harness clones;
-  - its `npm` is whatever `PATH` gives, so that a test can stub it;
-  - it keeps its lock.
-- **README:** a "Nightly suites" section with the crontab line, `0 2 * * * <repo>/scripts/nightly-suites.sh`. The
-  installed copy becomes a one-line wrapper calling the versioned script, so that a change reaches the next night
-  through git.
+dl-016's 02:00 cron never fired, because the PC is suspended at night (00:33–06:23 on 2026-10-09). The approver then
+chose **on demand**: the agent runs the full suites, niced, when the approver says they are on a break, or asks for
+them. They chose this over a timer that wakes the PC from suspend, and the cron entry was removed. Gating approval on
+the full suites (dl-016 B) stands; only when they run changed.
+
+### The script, versioned
+
+- `scripts/full-suites.sh` runs the full suites on main and on every `task/*` worktree (or on the branches named as
+  arguments), one at a time.
+  - Every command is niced (`nice -n 19 ionice -c3`), and vitest has 2 workers.
+  - Logs go to `.cache/full-suites/<date>/<branch>.txt`, with a `summary.txt`.
+  - It holds a lock.
+  - Paths come from the environment (`WFB_MAIN`, `WFB_OUT`, the harness clones), so that a test can point it at a
+    temporary repository.
+- The README gains a "Full suites" section: how and when to run the script, and that it is never left to a cron on a
+  machine that sleeps.
+- `~/.local/bin/wfb-nightly-suites` (installed on 2026-10-08) is removed once the versioned script lands.
 
 ### Tests
 
 - **Red-first:** `test/unit/scripts/nightly-suites.test.ts` runs the script on a temporary repository with two
   worktrees (`main`, `task/x`) and one other branch (`other`), and a stub `npm` on `PATH` that records its calls and
   exits 0, or 1 for `test` on `task/x`. It checks:
-  - one log per main and `task/*` worktree, none for `other`;
+  - one log per main and `task/*` worktree, none for `other`, or only the branches named as arguments;
   - the four stages in order;
   - `summary.txt` with each branch's exit codes (`TEST 1` for `task/x`);
   - a second run while the lock is held writes "another nightly run is in progress" and runs nothing.
