@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import {
   appendFileSync,
   cpSync,
@@ -12,6 +13,7 @@ import { describe, expect, it } from 'vitest';
 
 import { loadArm } from '../../../src/arms/index.js';
 import { publishedMaterial, setupHtml } from '../../../src/site/method.js';
+import { escapeHtml } from '../../../src/site/render.js';
 import { repoPath } from '../../support/paths.js';
 import { EXECUTION } from '../../support/score-fixture.js';
 import { tempDir } from '../../support/scenario-fixture.js';
@@ -351,5 +353,50 @@ describe('the setup pages (REQ-RES-09, task-067)', () => {
     expect(readFileSync(join(root, PAGE, 'method.html'), 'utf8')).not.toContain(
       'href="material/setup-wingfoil.html"',
     );
+  }, 120_000);
+});
+
+describe('the contests and the setup as it ran (REQ-RES-10, REQ-RES-02, task-073)', () => {
+  it('says the setup cannot be contested from a site whose contests file is gone, and refuses one that is not one', async () => {
+    const { root } = await siteExecution();
+    rmSync(join(root, 'site-content', 'contests.yaml'));
+    expect((await benchSite(root, 'site', 'build', EXECUTION)).code).toBe(0);
+    expect(readFileSync(join(root, PAGE, 'material', 'setup-wingfoil.html'), 'utf8')).toContain(
+      'This site names no repository to contest this setup in.',
+    );
+    writeFileSync(
+      join(root, 'site-content', 'contests.yaml'),
+      'repository: http://example.com/x\ncontests: []\n',
+    );
+    const refused = await benchSite(root, 'site', 'build', EXECUTION);
+    expect(refused.code).toBe(1);
+    expect(refused.stderr).toContain(
+      'site-content/contests.yaml: repository: must be https://github.com/<owner>/<repo>',
+    );
+  }, 120_000);
+
+  it('publishes the manual its runs recorded when the working tree holds another, read from the history', async () => {
+    const { root } = await siteExecution();
+    const git = (...args: string[]) =>
+      execFileSync('git', ['-C', root, '-c', 'user.name=t', '-c', 'user.email=t@t', ...args], {
+        encoding: 'utf8',
+      });
+    git('init', '-q', '-b', 'main');
+    git('add', '-A');
+    git('commit', '-q', '-m', 'as it ran');
+    const manual = join(root, 'arms', 'baseline', 'manual.md');
+    const ran = readFileSync(manual, 'utf8');
+    writeFileSync(manual, '# A manual written after the runs\n');
+    const built = await benchSite(root, 'site', 'build', EXECUTION);
+    expect(built.code, built.stderr).toBe(0);
+    const page = readFileSync(join(root, PAGE, 'material', 'manual-baseline.html'), 'utf8');
+    expect(page).not.toContain('written after the runs');
+    expect(page).toContain(escapeHtml(ran.split('\n')[0]?.replace(/^# /, '') ?? 'x'));
+    // Neither the working tree nor the history holds it: refused, as before, saying so.
+    git('commit', '-q', '-am', 'later');
+    rmSync(join(root, '.git'), { recursive: true, force: true });
+    const refused = await benchSite(root, 'site', 'build', EXECUTION);
+    expect(refused.code).toBe(1);
+    expect(refused.stderr).toContain('and no commit of the repository holds it');
   }, 120_000);
 });

@@ -2,14 +2,17 @@ import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { z } from 'zod';
+
 import { campaignSchema, fail, ok, parseWith, readYamlFile } from '../core/index.js';
-import type { Arm, CampaignFile, Issue, Result } from '../core/index.js';
+import type { Arm, CampaignFile, HistoryPort, Issue, Result } from '../core/index.js';
 
 import { armDigest, docsGeneratorOf, loadArm, rulesGeneratorOf } from '../arms/index.js';
 import type { DocsGenerator } from '../arms/index.js';
 import type { Group } from '../results/index.js';
 
 import { renderMarkdown } from './markdown.js';
+import { recordedArm, recordedManual } from './recorded.js';
 import type { SiteModel } from './model.js';
 import { escapeHtml, materialPage, methodShell } from './render.js';
 
@@ -40,7 +43,12 @@ function sha256(text: Buffer | string): string {
  * `model`. Refused: a campaign file that is not one, a method file missing, a manual changed since its runs
  * recorded it.
  */
-export function methodPages(root: string, execution: string, model: SiteModel): Result<MethodPages> {
+export async function methodPages(
+  root: string,
+  execution: string,
+  model: SiteModel,
+  history: HistoryPort,
+): Promise<Result<MethodPages>> {
   const executionDir = join(root, 'results', execution);
   const campaignFile = `results/${execution}/campaign.yaml`;
   const read = readYamlFile(join(executionDir, 'campaign.yaml'));
@@ -64,15 +72,22 @@ export function methodPages(root: string, execution: string, model: SiteModel): 
       issues.push({ path: file, message: 'not found: its arm ran in this execution' });
       continue;
     }
-    const text = readFileSync(join(root, file), 'utf8');
-    const hash = sha256(text);
+    let text = readFileSync(join(root, file), 'utf8');
+    let hash = sha256(text);
     const records = model.records.filter((record) => record.arm === arm);
     const recorded = [...new Set(records.flatMap((record) => record.manual?.sha256 ?? []))].sort();
     const other = recorded.filter((value) => value !== hash);
-    if (other.length > 0) {
+    // A manual changed since its runs (an accepted contest, task-073): the one they ran with, from the history.
+    const ran = other.length === 1 ? await recordedManual(root, arm, other[0] as string, history) : undefined;
+    if (ran !== undefined && recorded.length === 1) {
+      text = ran;
+      hash = sha256(text);
+    } else if (other.length > 0) {
       issues.push({
         path: file,
-        message: `(sha256:${hash}) differs from the manual its runs recorded (sha256:${other.join(', sha256:')})`,
+        message:
+          `(sha256:${hash}) differs from the manual its runs recorded (sha256:${other.join(', sha256:')}), ` +
+          'and no commit of the repository holds it',
       });
       continue;
     }
@@ -87,7 +102,9 @@ export function methodPages(root: string, execution: string, model: SiteModel): 
     material.set(`manual-${arm}.html`, materialPage(`Operating manual: ${arm}`, renderMarkdown(text).html));
   }
   if (issues.length > 0) return fail(issues);
-  const setups = setupPages(root, model);
+  const contests = readContests(root);
+  if (!contests.ok) return contests;
+  const setups = await setupPages(root, model, history, contests.value);
   if (!setups.ok) return setups;
   for (const [name, page] of setups.value) material.set(name, page);
   for (const [name, page] of publishedMaterial(
@@ -127,13 +144,61 @@ function materialTitle(name: string): string {
   return `Licence: ${base.slice('licence-'.length)}`;
 }
 
+/** Where the contests are kept: written by the maintainer, read by the site (REQ-RES-02, REQ-RES-10). */
+export const CONTESTS_FILE = 'site-content/contests.yaml';
+
+const contestsSchema = z.strictObject({
+  repository: z
+    .string()
+    .regex(/^https:\/\/github\.com\/[^/\s]+\/[^/\s]+$/, 'must be https://github.com/<owner>/<repo>'),
+  contests: z.array(
+    z.strictObject({
+      campaign: z.string().regex(/^[0-9a-f]{12}$/, 'must be a campaign id, 12 hex digits'),
+      arm: z.string().min(1),
+      issue: z.string().regex(/^https:\/\//, 'must be the https URL of its issue'),
+      followed_by: z.string().regex(/^[0-9a-f]{12}\/[1-9]\d*$/, 'must be <campaign id>/<execution>'),
+    }),
+  ),
+});
+
+/** The contests file, read; none at all is no form and no contest, and one that is not one is refused, naming it. */
+export type Contests = z.infer<typeof contestsSchema>;
+
+function readContests(root: string): Result<Contests | undefined> {
+  if (!existsSync(join(root, CONTESTS_FILE))) return ok(undefined);
+  const read = readYamlFile(join(root, CONTESTS_FILE));
+  if (!read.ok) return fail(read.issues.map((issue) => ({ ...issue, path: CONTESTS_FILE })));
+  const parsed = parseWith(contestsSchema, read.value, CONTESTS_FILE);
+  if (!parsed.ok) {
+    return fail(
+      parsed.issues.map((issue) => ({ path: CONTESTS_FILE, message: `${issue.path}: ${issue.message}` })),
+    );
+  }
+  return ok(parsed.value);
+}
+
+/** What a setup page says of contests: where the form is, and the accepted contest of this campaign's arm, if any. */
+export interface SetupContest {
+  readonly form?: string;
+  readonly contested?: { readonly issue: string; readonly followedBy: string };
+  /** The commit of the repository's history the arm was read from, when the working tree no longer holds it. */
+  readonly asRanAt?: string;
+}
+
 /**
  * The setup page of each harness arm of the execution (REQ-RES-09, task-067), from the repository's `arms/<arm>/` as
- * the manual pages are, and only while it is the arm its runs recorded (their `arm_digest`, REQ-FMT-13): a rebuild
- * adds links, never a setup that did not run (REQ-RES-02). An arm whose runs recorded no digest (before v0.2) has
- * none; an arm changed since is refused. A control (an arm without a harness) has none either.
+ * the manual pages are, as its runs recorded it (their `arm_digest`, REQ-FMT-13): the working tree when it still is,
+ * otherwise the newest commit of the history whose arm is (task-073), so that a rebuild after an accepted contest shows
+ * the setup that ran (REQ-RES-02). An arm whose runs recorded no digest (before v0.2) has none; an arm that neither
+ * holds is refused. A control (an arm without a harness) has none either. Each page links the contest form and, for a
+ * contested arm, its contest and the campaign that followed (REQ-RES-10).
  */
-function setupPages(root: string, model: SiteModel): Result<ReadonlyMap<string, string>> {
+async function setupPages(
+  root: string,
+  model: SiteModel,
+  history: HistoryPort,
+  contests: Contests | undefined,
+): Promise<Result<ReadonlyMap<string, string>>> {
   const armsRoot = join(root, 'arms');
   const pages = new Map<string, string>();
   const issues: Issue[] = [];
@@ -144,21 +209,36 @@ function setupPages(root: string, model: SiteModel): Result<ReadonlyMap<string, 
     else issues.push(...loaded.issues.map((issue) => ({ ...issue, path: `arms/${name}/${issue.path}` })));
   }
   if (issues.length > 0) return fail(issues);
-  for (const arm of arms) {
-    if (arm.requires === undefined) continue;
+  const form =
+    contests === undefined ? undefined : `${contests.repository}/issues/new?template=contest-setup.yml`;
+  for (const current of arms) {
+    if (current.requires === undefined) continue;
     const recorded = [
-      ...new Set(model.records.filter((r) => r.arm === arm.name).flatMap((r) => r.armDigest ?? [])),
+      ...new Set(model.records.filter((r) => r.arm === current.name).flatMap((r) => r.armDigest ?? [])),
     ].sort();
     if (recorded.length === 0) continue;
-    const digest = armDigest(root, arm.name);
-    const other = recorded.filter((value) => value !== digest);
-    if (other.length > 0) {
+    const found =
+      recorded.length === 1
+        ? await recordedArm(root, current.name, recorded[0] as string, history)
+        : undefined;
+    if (found === undefined) {
       issues.push({
-        path: `arms/${arm.name}`,
-        message: `(digest ${digest}) differs from the arm its runs recorded (${other.join(', ')})`,
+        path: `arms/${current.name}`,
+        message:
+          `(digest ${armDigest(root, current.name)}) differs from the arm its runs recorded (${recorded.join(', ')}), ` +
+          'and no commit of the repository holds it',
       });
       continue;
     }
+    const loaded = found.source === 'tree' ? ok(current) : loadArm(join(found.dir, '..'), current.name);
+    if (!loaded.ok) {
+      issues.push(
+        ...loaded.issues.map((issue) => ({ ...issue, path: `arms/${current.name}/${issue.path}` })),
+      );
+      continue;
+    }
+    const arm = loaded.value;
+    const contest = contests?.contests.find((c) => c.campaign === model.campaign && c.arm === arm.name);
     pages.set(
       `setup-${arm.name}.html`,
       materialPage(
@@ -167,6 +247,13 @@ function setupPages(root: string, model: SiteModel): Result<ReadonlyMap<string, 
           arm,
           readFileSync(arm.setupPath, 'utf8'),
           arms.filter((control) => control.docsOf === arm.name).map((control) => control.name),
+          {
+            ...(form === undefined ? {} : { form }),
+            ...(contest === undefined
+              ? {}
+              : { contested: { issue: contest.issue, followedBy: contest.followed_by } }),
+            ...(found.source === 'history' ? { asRanAt: found.commit } : {}),
+          },
         ),
       ),
     );
@@ -175,7 +262,12 @@ function setupPages(root: string, model: SiteModel): Result<ReadonlyMap<string, 
 }
 
 /** The body of an arm's setup page: `script` is its setup script, `controls` the docs controls of it that ran. */
-export function setupHtml(arm: Arm, script: string, controls: readonly string[]): string {
+export function setupHtml(
+  arm: Arm,
+  script: string,
+  controls: readonly string[],
+  contest: SetupContest = {},
+): string {
   const tool = arm.requires ?? '';
   const telemetry = arm.telemetryOff ?? [];
   const rules = rulesGeneratorOf(tool);
@@ -205,6 +297,7 @@ export function setupHtml(arm: Arm, script: string, controls: readonly string[])
           `carries no approval authority.</p>`
         : `In the ${e(arm.name)} arm, a competitor arm, it carries no approval authority: it is only a name.</p>`),
   ];
+  parts.push(contestHtml(contest));
   if (tool === 'speckit') {
     parts.push(
       `<h2 id="bundle">Bundle</h2>\n<p>The Spec Kit bundle resolves its dependencies when it is built; their ` +
@@ -212,6 +305,28 @@ export function setupHtml(arm: Arm, script: string, controls: readonly string[])
     );
   }
   return parts.join('\n') + '\n';
+}
+
+/** The contest section (REQ-RES-10): the form, and for a contested arm its issue and the campaign that followed. */
+function contestHtml(contest: SetupContest): string {
+  const asRan =
+    contest.asRanAt === undefined
+      ? ''
+      : `<p>This is the setup as it ran, read from commit <code>${e(contest.asRanAt.slice(0, 12))}</code> of the ` +
+        "repository: the arm's files have changed since.</p>\n";
+  const contested =
+    contest.contested === undefined
+      ? ''
+      : `<p>This setup was contested in <a href="${e(contest.contested.issue)}">${e(contest.contested.issue)}</a>, ` +
+        `and the correction ran as campaign <a href="../../../${e(contest.contested.followedBy)}/index.html">` +
+        `${e(contest.contested.followedBy)}</a>.</p>\n`;
+  const form =
+    contest.form === undefined
+      ? '<p>This site names no repository to contest this setup in.</p>'
+      : `<p><a href="${e(contest.form)}">Contest this setup</a>: say which step is not as the tool's official ` +
+        'documentation says, and how to correct it. An accepted correction runs as a new campaign; this one stays ' +
+        'published.</p>';
+  return `<h2 id="contest">Contest</h2>\n${asRan}${contested}${form}`;
 }
 
 function docsControlHtml(arm: Arm, controls: readonly string[], docs: DocsGenerator | undefined): string {
