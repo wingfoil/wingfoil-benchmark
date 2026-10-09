@@ -173,4 +173,10 @@ of 2026-10-09) and dl-016 B. No suite ran during the reviews; the reviewers read
     its 120 s limit. It was the third such timeout in a full run.
   - The approver chose to fix it here: bug-018 (pending), declared in `fixes`. The test now has its own 300 s limit,
     with its reason beside it. No red test was possible: the defect is a limit, and the evidence is the runs.
+- **Round 3** (9876a18, the bug-018 fix): the limit applies to the right test and overrides the describe's, and
+  nothing else changed.
+  - **Should-fix:** the branch lacked bug-018, which is on main, so the traceability test would fail. It was already
+    fixed by merging main into the branch (973a75a), and the traceability test is green there.
+  - **Nit:** the comment overstated the range (121 s was an unniced run under load). Reworded.
+  - **Process note:** bug-018 must be approved before this task's deliver phase can move it to `fixed`.
 

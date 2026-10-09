@@ -317,8 +317,8 @@ describe('scoring.feature', { timeout: 120_000 }, () => {
         ],
       ],
     ]);
-    // bug-018 (task-075): it scores four directive checks through the AST, and takes 121–145 s in the full suites
-    // run at the lowest priority with 2 workers (dl-016): its own limit leaves room for that, and a hang still fails.
+    // bug-018 (task-075): it scores four directive checks through the AST, and can take up to ~145 s in the full
+    // suites, run at the lowest priority with 2 workers (dl-016): its own limit leaves room for that; a hang still fails.
   }, 300_000);
 
   it('@F4.2 Static quality is reported per indicator', async () => {
