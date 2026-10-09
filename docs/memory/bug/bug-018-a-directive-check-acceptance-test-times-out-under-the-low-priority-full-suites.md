@@ -2,7 +2,7 @@
 id: bug-018-a-directive-check-acceptance-test-times-out-under-the-low-priority-full-suites
 type: bug
 title: "A directive-check acceptance test times out under the low-priority full suites"
-status: approved
+status: fixed
 fixed_by: task-075-kanban-delivery-version-5-the-full-suites-nightly-gating-approval
 # fixed_by: task-…   # set by hand, with the fixing task's id, just before `approved → fixed`
 ---
