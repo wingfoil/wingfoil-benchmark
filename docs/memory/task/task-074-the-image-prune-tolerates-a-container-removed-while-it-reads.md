@@ -53,3 +53,12 @@ Delivered under kanban-delivery version 5: the touched tests by day, niced; the 
 - `npx wingfoil memory submit task-074-…` refused at first: `Error: missing required field on submit: requirements`.
   Declared: submit fills or checks the required frontmatter. Observed: it refuses an empty `requirements`, naming the
   field, with no commit. Fixed by naming REQ-RUN-01, as task-061 (the prune) did.
+- `npx wingfoil memory submit task-074-…` (backlog → in-progress), after the Design commit. Declared: moves the task
+  to its next state and commits it. Observed: `status: in-progress`. Matches.
+- Build (kanban-delivery version 5):
+  - **Red first:** a container gone between `ps` and `inspect` is skipped, and the others are read.
+  - **Characterization, green before and after:** any other inspection failure is thrown, including a "no such
+    object" for an id that was not listed.
+  - **Then the code:** `containers()` runs `inspect` through the process port. It reads an exit whose every error
+    line names a listed id as gone, and throws otherwise (`onlyGone`).
+  - The touched tests are green, niced: `test/unit/ports` and the images CLI, 63 tests.
