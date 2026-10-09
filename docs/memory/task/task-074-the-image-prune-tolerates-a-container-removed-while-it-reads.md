@@ -2,7 +2,7 @@
 id: task-074-the-image-prune-tolerates-a-container-removed-while-it-reads
 type: task
 title: "The image prune tolerates a container removed while it reads"
-status: in-progress
+status: in-review
 release: v0.2
 wave: W13
 features: []
