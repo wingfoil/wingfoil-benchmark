@@ -259,3 +259,18 @@ npm run test:docker  # W1's to W3's runs, a dry run, bug-003's, W6's scoring, th
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+## Full suites
+
+`scripts/full-suites.sh` runs the full suites — lint, `npm test` with coverage, `test:bin` and `test:docker` — on the
+main checkout and every `task/*` worktree, or only on the branches it is given, one at a time, at the lowest CPU and
+I/O priority with 2 vitest workers. Logs go to `.cache/full-suites/<date>/` (git-ignored), with a `summary.txt`.
+
+```sh
+scripts/full-suites.sh                 # main and every task/* worktree
+scripts/full-suites.sh task/task-075-… # one branch
+```
+
+They take tens of minutes and load the machine, so they run on demand when it is free, never from a cron on a machine
+that sleeps (dl-016, task-075). Their green log is what the approver approves a task on (kanban-delivery version 5).
+
