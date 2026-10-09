@@ -179,4 +179,10 @@ of 2026-10-09) and dl-016 B. No suite ran during the reviews; the reviewers read
     fixed by merging main into the branch (973a75a), and the traceability test is green there.
   - **Nit:** the comment overstated the range (121 s was an unniced run under load). Reworded.
   - **Process note:** bug-018 must be approved before this task's deliver phase can move it to `fixed`.
+- **Suites at e4d31b2** (`scripts/full-suites.sh`, the approver's go, 2026-10-09), 17 minutes, the worktree clean (no
+  DIRTY, no CHANGED): `LINT 0 TEST 0 BUILD 0 BIN 0 DOCKER 0`. `npm test` 1394 passed, coverage 98.03 % statements,
+  90.8 % branches; `test:bin` 8; `test:docker` 22. @F4.8 passed under its own limit. Log: the main checkout's
+  `.cache/full-suites/2026-10-09/task_task-075-…-e4d31b2-200327.txt`.
+- `npx wingfoil memory submit task-075-…` (in-progress → in-review). Declared: moves the task to its next state and
+  commits it. Observed: see the next commit, `wf(task): submit …`.
 
