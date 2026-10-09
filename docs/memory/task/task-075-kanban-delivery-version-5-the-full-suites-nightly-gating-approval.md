@@ -8,7 +8,8 @@ wave: W13
 features: []          # e.g. [F1.1, F3.1]
 acceptance: []        # e.g. [campaign.feature, scenarios.feature]
 requirements: [REQ-NFR-04]
-fixes: []             # optional: the bugs this task fixes, e.g. [bug-005-a-bug-cannot-name-…]
+fixes:
+  - bug-018-a-directive-check-acceptance-test-times-out-under-the-low-priority-full-suites
 ---
 
 ## Context
@@ -166,3 +167,10 @@ of 2026-10-09) and dl-016 B. No suite ran during the reviews; the reviewers read
   One nit was left: a `git` failure in a worktree reads as clean.
 - **Suites:** to be run on demand (kanban-delivery version 4 still governs this task). Its first real use is
   `scripts/full-suites.sh task/task-075-…` itself.
+- **Suites, first run** (`scripts/full-suites.sh` on 857d398, 2026-10-09, the approver's go), 23 minutes:
+  - `LINT 0 TEST 1 BUILD 0 BIN 0 DOCKER 0`, with `npm test` 1387 of 1388;
+  - the one failure was `@F4.8 Directive violations are counted per rule and per step`, timed out at 135 s against
+    its 120 s limit. It was the third such timeout in a full run.
+  - The approver chose to fix it here: bug-018 (pending), declared in `fixes`. The test now has its own 300 s limit,
+    with its reason beside it. No red test was possible: the defect is a limit, and the evidence is the runs.
+
