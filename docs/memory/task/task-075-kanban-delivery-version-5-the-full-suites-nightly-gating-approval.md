@@ -37,7 +37,7 @@ and the next task is delivered under it.
 - The workflow file's version 5 says what each gate asks for. **Characterization** (the workflow's existing YAML test,
   if any, extended).
 - The versioned script runs on main and on `task/*` worktrees, one at a time, holding a lock, logging under
-  `.cache/nightly/`. **Red-first**, as a shell test with a stubbed `npm`.
+  `.cache/full-suites/` (the Design: on demand, not nightly). **Red-first**, as a shell test with a stubbed `npm`.
 
 ## Design
 
@@ -56,7 +56,7 @@ and the next task is delivered under it.
 - **A red run:** the approver rejects (in-review → in-progress, the phase's fallback), and the failure is fixed and
   reviewed again.
 - deliver and real-agent-check are unchanged. `release-cycle`'s validation phase is unchanged: it runs the suites once,
-  at night or in a pause.
+  in a pause, on demand.
 
 ### When the full suites run: on demand, not at night (the approver, 2026-10-09)
 
