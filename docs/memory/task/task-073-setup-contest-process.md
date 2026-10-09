@@ -2,7 +2,7 @@
 id: task-073-setup-contest-process
 type: task
 title: "Setup contest process"
-status: in-progress
+status: in-review
 release: v0.2
 wave: W13
 features: [F7.2]
