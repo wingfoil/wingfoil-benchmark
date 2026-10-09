@@ -121,3 +121,27 @@ A corrected setup is a new campaign:
 
 - `npx wingfoil memory add --type task --title "Setup contest process"`. Declared: creates the element from the template and
   commits it. Observed: `wf(task): add task-073-setup-contest-process`, `status: draft`. Matches.
+- `npx wingfoil memory submit task-073-…` (backlog → in-progress), after the Design commit. Declared: moves the task
+  to its next state and commits it. Observed: `status: in-progress`. Matches.
+- Build (kanban-delivery version 5: by day only niced runs with 2 workers on the touched tests):
+  - **Red first:**
+    - `test/unit/site/recorded-arm.test.ts`, on a real temporary git repository: `armDigestOf` equals `armDigest`
+      (a symbolic link included), and the arm is read from the working tree, from an older commit, or from nowhere
+      (outside a repository too);
+    - the manual by its sha256;
+    - then both F7.2 scenarios in `test/acceptance/competitors.test.ts`. They were red: no contest link, and the
+      changed arm refused.
+  - **Then the code:**
+    - `src/core/ports/history.ts`, a read-only `HistoryPort` (`git log`, `ls-tree`, `cat-file`) with an isolated
+      environment;
+    - `armDigestOf` in `src/arms/digest.ts`, `armDigest` now built on it;
+    - `src/site/recorded.ts`;
+    - in `methodPages` and `setupPages`, the manual and the arm read as they ran, the contests file read and
+      validated, and a "Contest" section on every setup page;
+    - `buildSite`, `methodPages` and `checkSiteCopy` asynchronous, and the CLI and publish awaiting them;
+    - `.github/ISSUE_TEMPLATE/contest-setup.yml`, an issue form with four required fields;
+    - `site-content/contests.yaml`, with the repository and no contest yet.
+  - **Unit tests written after the code** (a deviation from test-first): the contests file absent or malformed, and
+    the manual from the history in a site build.
+  - **Specification:** requirements 1.29, which adds `repository` and "as they ran" to REQ-RES-10 and REQ-RES-02.
+    method.md's `{#setup-pages}` names the form and the setup as it ran.
