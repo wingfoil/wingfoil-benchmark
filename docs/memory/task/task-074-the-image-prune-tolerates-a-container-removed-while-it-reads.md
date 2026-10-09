@@ -8,7 +8,8 @@ wave: W13
 features: []
 acceptance: []
 requirements: [REQ-RUN-01]
-fixes: []             # optional: the bugs this task fixes, e.g. [bug-005-a-bug-cannot-name-…]
+fixes:
+  - bug-017-the-image-prune-fails-when-a-container-disappears-while-it-reads-containers
 ---
 
 ## Context
@@ -29,7 +30,21 @@ between the listing and the reading is skipped, and the prune goes on with the c
 
 ## Design
 
-<!-- Written in the task's design phase. -->
+`dockerImagesCli().containers()` keeps its single `docker inspect` of every listed id. When a container listed by
+`docker ps` is removed before it is inspected, `inspect` exits 1, still prints the containers it found, and says
+`No such object: <id>` for the missing ones.
+
+- Such an exit is read as the containers that still exist when **every** line of its error output is a "no such
+  object" line for one of the listed ids.
+- Any other failure is thrown, as today.
+- The prune then goes on with the containers that exist, which is right: a container that is gone uses no image.
+
+Tests (unit, with a process double):
+
+- **red-first:** a missing id is skipped, and the others are read;
+- **characterization:** any other `inspect` failure is still thrown.
+
+Delivered under kanban-delivery version 5: the touched tests by day, niced; the full suites before approval.
 
 ## Execution notes
 
