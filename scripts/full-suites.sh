@@ -37,8 +37,10 @@ run() { # $1 = worktree, $2 = branch
     low npm run test:docker; echo "DOCKER $?"
     echo "== end $(date -Is)"
   } > "$log" 2>&1
-  local codes; codes="$(grep -E '^(LINT|TEST|BUILD|BIN|DOCKER) ' "$log" | tr '\n' ' ')"
-  echo "$branch $sha$dirty: $codes(log $(basename "$log"))" | tee -a "$SUMMARY"
+  local codes changed=''; codes="$(grep -E '^(LINT|TEST|BUILD|BIN|DOCKER) [0-9]+$' "$log" | tr '\n' ' ')"
+  # A commit or an edit in the shared worktree during the run: the log no longer names what it tested.
+  [ "$(git rev-parse --short HEAD)" = "$sha" ] && { [ -n "$dirty" ] || [ -z "$(git status --porcelain)" ]; } || changed=' CHANGED'
+  echo "$branch $sha$dirty$changed: $codes(log $(basename "$log"))" | tee -a "$SUMMARY"
 }
 
 wanted() { # the branch is named on the command line, or none is and it is main or a task's

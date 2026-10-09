@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
@@ -45,7 +45,7 @@ const day = (out: string) =>
   join(out, readdirSync(out).find((name) => /^\d{4}-\d{2}-\d{2}$/.test(name)) ?? '');
 
 describe('scripts/full-suites.sh (dl-016, task-075)', () => {
-  it('runs the four stages on main and on every task/* worktree, one at a time, and summarizes their codes', () => {
+  it('runs the five stages on main and on every task/* worktree, one at a time, and summarizes their codes', () => {
     const { out, calls, env } = fixture();
     const run = spawnSync('bash', [SCRIPT], { env, encoding: 'utf8' });
     expect(run.status, run.stderr).toBe(0);
@@ -90,11 +90,15 @@ describe('scripts/full-suites.sh (dl-016, task-075)', () => {
   });
 
   it('says which branches it could not run, and a name that matches no worktree', () => {
-    const { out, env } = fixture();
+    const { root, out, env } = fixture();
     expect(spawnSync('bash', [SCRIPT, 'task/x', 'task/typo'], { env, encoding: 'utf8' }).status).toBe(0);
     expect(readFileSync(join(day(out), 'summary.txt'), 'utf8')).toContain(
       'NOT FOUND task/typo: no worktree has it',
     );
+    // A worktree whose directory is gone cannot be entered: it is named, not silently passed over.
+    rmSync(join(root, 'task-x'), { recursive: true, force: true });
+    expect(spawnSync('bash', [SCRIPT, 'task/x'], { env, encoding: 'utf8' }).status).toBe(0);
+    expect(readFileSync(join(day(out), 'summary.txt'), 'utf8')).toMatch(/^SKIPPED task\/x: cannot enter /m);
   });
 
   it('runs only the branches named as arguments', () => {

@@ -70,7 +70,9 @@ the full suites (dl-016 B) stands; only when they run changed.
 - `scripts/full-suites.sh` runs the full suites on main and on every `task/*` worktree (or on the branches named as
   arguments), one at a time.
   - Every command is niced (`nice -n 19 ionice -c3`), and vitest has 2 workers.
-  - Logs go to `.cache/full-suites/<date>/<branch>.txt`, with a `summary.txt`.
+  - Each log is `.cache/full-suites/<date>/<branch>-<commit>-<hhmmss>.txt`, never overwritten; `summary.txt` gets a
+    line per branch: its commit, `DIRTY`, `CHANGED`, the five stages' codes (lint, test, build, bin, docker) and
+    the log's name.
   - It holds a lock.
   - Paths come from the environment (`WFB_MAIN`, `WFB_OUT`, the harness clones), so that a test can point it at a
     temporary repository.
@@ -84,7 +86,8 @@ the full suites (dl-016 B) stands; only when they run changed.
   worktrees (`main`, `task/x`) and one other branch (`other`), and a stub `npm` on `PATH` that records its calls and
   exits 0, or 1 for `test` on `task/x`. It checks:
   - one log per main and `task/*` worktree, none for `other`, or only the branches named as arguments;
-  - the four stages in order;
+  - the five stages in order;
+  - the `DIRTY` mark, and the `NOT FOUND` and `SKIPPED` lines;
   - `summary.txt` with each branch's exit codes (`TEST 1` for `task/x`);
   - a second run while the lock is held writes "another full-suites run is in progress" and runs nothing.
 - **Characterization:** `npx wingfoil workflow list` still loads the workflows with kanban-delivery at version 5.
@@ -132,7 +135,11 @@ delivered under version 5 is the one after this.
      - The README says what the priority covers (not dockerd's containers), and that a docker test skips itself
        without its clone.
      - The workflow says who runs the suites and when, and that the approval command names the log.
-     - The Design's Tests bullets match the code.
+     - The Design's Tests bullets match the code (completed in round 2).
   3. **Left:** plan-004's mentions of kanban-delivery version 3 (an approved plan, not edited); no suites on main
      after a merge (dl-016: deliver unchanged).
+- Review round 2 nits fixed: the Design's script and test text; the README names the build; the test title; a test
+  for `SKIPPED`; `CHANGED` when the worktree's commit or files change during the run; the codes read only from the
+  script's own `<STAGE> <n>` lines. Left: a `git` failure in a worktree reads as clean (it would also fail the
+  suites, which run `git`).
 
