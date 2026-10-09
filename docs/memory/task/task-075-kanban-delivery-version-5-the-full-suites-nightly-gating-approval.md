@@ -143,3 +143,26 @@ delivered under version 5 is the one after this.
   script's own `<STAGE> <n>` lines. Left: a `git` failure in a worktree reads as clean (it would also fail the
   suites, which run `git`).
 
+
+## Review notes
+
+Independent read-only agents reviewed `git diff main...HEAD` against the Design (with the approver's on-demand choice
+of 2026-10-09) and dl-016 B. No suite ran during the reviews; the reviewers read, typechecked and ran `bash -n`.
+
+- **Round 1** (7ef4933): no blocker.
+  - **Should-fix:**
+    1. the summary's commit could differ from the code tested, with nothing flagging uncommitted changes;
+    2. a same-day rerun overwrote the log an approval names.
+  - **Nits:** silent skips, stdin, paths with spaces, the build's code, the lock inherited by children, relative
+    paths, the README's priority and skip wording, the workflow's who/when, and the stale Design text.
+  - All fixed in 351a973, except plan-004's mention of version 3 (an approved plan) and the absence of suites on main
+    after a merge (dl-016: deliver unchanged).
+- **Round 2** (351a973): every fix verified on bash 5.2.21. **Clean.** Its nits were fixed in the next commit:
+  - the Design text, the README's build, the test title;
+  - a SKIPPED test;
+  - `CHANGED` for a worktree that moves during the run;
+  - codes read only from the script's lines.
+
+  One nit was left: a `git` failure in a worktree reads as clean.
+- **Suites:** to be run on demand (kanban-delivery version 4 still governs this task). Its first real use is
+  `scripts/full-suites.sh task/task-075-…` itself.
