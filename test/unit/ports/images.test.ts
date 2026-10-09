@@ -64,6 +64,20 @@ describe('the image port', () => {
     ]);
   });
 
+  it('reads the older wording, and several missing ids on several lines', async () => {
+    const process = recorder([
+      ok('c1\nc2\nc3\n'),
+      {
+        code: 1,
+        stdout: '/kept\tsha256:aaa\ttrue\n',
+        stderr: 'Error: No such object: c2\nno such object: c3\n',
+      },
+    ]);
+    expect(await dockerImagesCli(process).containers()).toEqual([
+      { name: 'kept', imageId: 'sha256:aaa', running: true },
+    ]);
+  });
+
   it('still fails on any other inspection error', async () => {
     const process = recorder([
       ok('c1\n'),

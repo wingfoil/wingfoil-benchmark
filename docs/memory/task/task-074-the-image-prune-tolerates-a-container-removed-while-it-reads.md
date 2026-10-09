@@ -62,3 +62,23 @@ Delivered under kanban-delivery version 5: the touched tests by day, niced; the 
   - **Then the code:** `containers()` runs `inspect` through the process port. It reads an exit whose every error
     line names a listed id as gone, and throws otherwise (`onlyGone`).
   - The touched tests are green, niced: `test/unit/ports` and the images CLI, 63 tests.
+- The older capitalised wording, and two missing ids on two lines (only the first prefixed), are now tested (review
+  nits).
+- `npx wingfoil memory submit task-074-…` (in-progress → in-review): independent review clean, the touched tests
+  green. The full suites come before approval, on demand. Declared: moves the task and commits it. Observed: see the
+  next commit.
+
+## Review notes
+
+An independent read-only agent reviewed `git diff main...HEAD` against the Design and bug-017. By day only the
+touched tests ran, niced (kanban-delivery version 5).
+
+- **Round 1** (d196b31): **clean.**
+  - It checked against docker/cli's behaviour: the regex is case-insensitive and unanchored, and the id compared is
+    the argument as passed.
+  - stdout still holds the found objects on exit 1.
+  - Any other stderr line still throws, the safe direction for a prune.
+  - No regression in the prune's only caller.
+  - Nits: the older wording and several missing lines are now tested; the short ids in the doubles and the arguments
+    not re-checked are left as they are.
+- **Suites:** run on demand before approval.
