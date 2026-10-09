@@ -63,12 +63,38 @@ describe('scripts/full-suites.sh (dl-016, task-075)', () => {
       'task-x run test:docker',
     ]);
     const logs = day(out);
-    expect(existsSync(join(logs, 'main.txt'))).toBe(true);
-    expect(existsSync(join(logs, 'task_x.txt'))).toBe(true);
-    expect(existsSync(join(logs, 'other.txt'))).toBe(false);
+    // One log per branch and commit: a later run of the same day never overwrites the log an approval names.
+    const names = readdirSync(logs).sort();
+    expect(names.filter((name) => name.startsWith('main-'))).toHaveLength(1);
+    expect(names.filter((name) => name.startsWith('task_x-'))).toHaveLength(1);
+    expect(names.some((name) => name.startsWith('other'))).toBe(false);
     const summary = readFileSync(join(logs, 'summary.txt'), 'utf8');
-    expect(summary).toMatch(/^main [0-9a-f]+: LINT 0 TEST 0 BIN 0 DOCKER 0 $/m);
-    expect(summary).toMatch(/^task\/x [0-9a-f]+: LINT 0 TEST 1 BIN 0 DOCKER 0 $/m);
+    expect(summary).toMatch(
+      /^main [0-9a-f]+: LINT 0 TEST 0 BUILD 0 BIN 0 DOCKER 0 \(log main-[0-9a-f]+-\d{6}\.txt\)$/m,
+    );
+    expect(summary).toMatch(
+      /^task\/x [0-9a-f]+: LINT 0 TEST 1 BUILD 0 BIN 0 DOCKER 0 \(log task_x-[0-9a-f]+-\d{6}\.txt\)$/m,
+    );
+  });
+
+  it('names the commit it started on, and says when the worktree had changes not committed', () => {
+    const { root, out, env } = fixture();
+    writeFileSync(join(root, 'task-x', 'edited.txt'), 'not committed\n');
+    expect(spawnSync('bash', [SCRIPT, 'task/x'], { env, encoding: 'utf8' }).status).toBe(0);
+    const head = execFileSync('git', ['-C', join(root, 'task-x'), 'rev-parse', '--short', 'HEAD'], {
+      encoding: 'utf8',
+    }).trim();
+    expect(readFileSync(join(day(out), 'summary.txt'), 'utf8')).toMatch(
+      new RegExp(`^task/x ${head} DIRTY: LINT 0 TEST 1`, 'm'),
+    );
+  });
+
+  it('says which branches it could not run, and a name that matches no worktree', () => {
+    const { out, env } = fixture();
+    expect(spawnSync('bash', [SCRIPT, 'task/x', 'task/typo'], { env, encoding: 'utf8' }).status).toBe(0);
+    expect(readFileSync(join(day(out), 'summary.txt'), 'utf8')).toContain(
+      'NOT FOUND task/typo: no worktree has it',
+    );
   });
 
   it('runs only the branches named as arguments', () => {
