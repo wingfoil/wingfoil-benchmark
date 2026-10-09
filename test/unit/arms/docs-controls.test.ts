@@ -8,6 +8,9 @@ import {
   loadArm,
   RULES_GENERATORS,
   rulesGeneratorOf,
+  renderOpenSpecConfig,
+  renderConstitution,
+  renderOpenSpecDocs,
   renderSpeckitDocs,
 } from '../../../src/arms/index.js';
 import { repoPath } from '../../support/paths.js';
@@ -73,7 +76,7 @@ describe('the docs generators (REQ-RUN-11, task-067)', () => {
   });
 
   it('exist for every harness arm, each declaring what it renders and what it leaves out', () => {
-    for (const tool of ['wingfoil', 'speckit']) {
+    for (const tool of ['wingfoil', 'speckit', 'openspec']) {
       const generator = DOCS_GENERATORS[tool];
       expect(generator, tool).toBeDefined();
       expect(generator?.kept.length, tool).toBeGreaterThan(0);
@@ -108,11 +111,96 @@ describe('the speckit-docs arm (REQ-FMT-05, task-067)', () => {
     expect(arm.value.requires).toBeUndefined();
   });
 
-  it('gets baseline-docs’ manual and setup, byte for byte', () => {
+  it('gets baseline-docs’ manual and setup, byte for byte, as every docs control does', () => {
     for (const file of ['manual.md', 'setup.sh']) {
-      expect(readFileSync(repoPath(`arms/speckit-docs/${file}`), 'utf8'), file).toBe(
-        readFileSync(repoPath(`arms/baseline-docs/${file}`), 'utf8'),
-      );
+      for (const control of ['speckit-docs', 'openspec-docs'])
+        expect(readFileSync(repoPath(`arms/${control}/${file}`), 'utf8'), `${control}/${file}`).toBe(
+          readFileSync(repoPath(`arms/baseline-docs/${file}`), 'utf8'),
+        );
     }
+  });
+});
+
+describe('the openspec-docs control (REQ-RUN-11, task-072)', () => {
+  const CONFIG = 'openspec/config.yaml';
+  const RULE =
+    '---\nid: r1\ntitle: "No new runtime dependency"\n---\n\n# No new runtime dependency\n\nAdd no package.\n';
+  const configured = renderOpenSpecConfig(
+    new Map([
+      ['.wingfoil/roles.yaml', 'assignments:\n  developer:\n    - r1\n'],
+      ['.wingfoil/directives/custom/r1.md', RULE],
+    ]),
+  );
+
+  it('renders the context the rules generator wrote as the project rules, its rules one level down', () => {
+    const rendered = renderOpenSpecDocs(new Map([[CONFIG, configured ?? '']]));
+    expect(rendered).toBe(
+      [
+        '# Project rules',
+        '',
+        'The rules this project follows. Every change follows them.',
+        '',
+        '## Rules',
+        '',
+        '### No new runtime dependency',
+        '',
+        'Add no package.',
+        '',
+      ].join('\n'),
+    );
+    expect(renderOpenSpecDocs(new Map([[CONFIG, configured ?? '']]))).toBe(rendered);
+  });
+
+  it('gives the same bytes as speckit-docs for the same rules, subheadings and fenced code included', () => {
+    const rich = [
+      '---',
+      'id: r1',
+      'title: "Errors are values"',
+      '---',
+      '',
+      '# Errors are values',
+      '',
+      'Return them.',
+      '',
+      '## Why',
+      '',
+      'Callers decide.',
+      '',
+      '```sh',
+      '# install nothing',
+      '## not a heading either',
+      '```',
+      '',
+    ].join('\n');
+    const files = new Map([
+      ['.wingfoil/roles.yaml', 'assignments:\n  developer:\n    - r1\n'],
+      ['.wingfoil/directives/custom/r1.md', rich],
+    ]);
+    const openspecDocs = renderOpenSpecDocs(new Map([[CONFIG, renderOpenSpecConfig(files) ?? '']]));
+    const speckitDocs = renderSpeckitDocs(
+      new Map([['.specify/memory/constitution.md', renderConstitution(files) ?? '']]),
+    );
+    expect(openspecDocs).toBe(speckitDocs);
+    expect(openspecDocs).toContain('```sh\n# install nothing\n## not a heading either\n```');
+  });
+
+  it('refuses a configuration that is not YAML, rather than say there are no rules', () => {
+    expect(() => renderOpenSpecDocs(new Map([[CONFIG, 'schema: [unclosed\n']]))).toThrow(
+      'openspec/config.yaml is not YAML',
+    );
+  });
+
+  it('says the project declares no rules when the configuration has no context, or is missing', () => {
+    const none = '# Project rules\n\nThis project declares no rules beyond its README.\n';
+    expect(renderOpenSpecDocs(new Map([[CONFIG, 'schema: spec-driven\n']]))).toBe(none);
+    expect(renderOpenSpecDocs(new Map())).toBe(none);
+  });
+
+  it('is the docs control of openspec, without a harness', () => {
+    const arm = loadArm(repoPath('arms'), 'openspec-docs');
+    expect(arm.ok).toBe(true);
+    if (!arm.ok) return;
+    expect(arm.value.docsOf).toBe('openspec');
+    expect(arm.value.requires).toBeUndefined();
   });
 });
