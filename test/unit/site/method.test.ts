@@ -3,12 +3,14 @@ import {
   appendFileSync,
   cpSync,
   existsSync,
+  readdirSync,
   readFileSync,
   rmSync,
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { join } from 'node:path';
+import { parse } from 'yaml';
 import { describe, expect, it } from 'vitest';
 
 import { loadArm } from '../../../src/arms/index.js';
@@ -399,4 +401,42 @@ describe('the contests and the setup as it ran (REQ-RES-10, REQ-RES-02, task-073
     expect(refused.code).toBe(1);
     expect(refused.stderr).toContain('and no commit of the repository holds it');
   }, 120_000);
+});
+
+describe('the setup as it ran, when the working tree no longer has the arm (task-073 review)', () => {
+  it('reads an arm and its manual removed from the working tree from the history', async () => {
+    const { root } = await siteExecution();
+    const git = (...args: string[]) =>
+      execFileSync('git', ['-C', root, '-c', 'user.name=t', '-c', 'user.email=t@t', ...args], {
+        encoding: 'utf8',
+      });
+    git('init', '-q', '-b', 'main');
+    git('add', '-A');
+    git('commit', '-q', '-m', 'as it ran');
+    const script = readFileSync(join(root, 'arms', 'wingfoil', 'setup.sh'), 'utf8');
+    git('rm', '-q', '-r', 'arms/wingfoil');
+    git('commit', '-q', '-m', 'the arm retired');
+    const built = await benchSite(root, 'site', 'build', EXECUTION);
+    expect(built.code, built.stderr).toBe(0);
+    expect(readFileSync(join(root, PAGE, 'material', 'setup-wingfoil.html'), 'utf8')).toContain(
+      escapeHtml(script.split('\n')[1] ?? 'x'),
+    );
+    expect(existsSync(join(root, PAGE, 'material', 'manual-wingfoil.html'))).toBe(true);
+  }, 120_000);
+
+  it('names the arms the contest form offers: every harness arm of the repository', () => {
+    const form = parse(readFileSync(repoPath('.github/ISSUE_TEMPLATE/contest-setup.yml'), 'utf8')) as {
+      body: { id?: string; attributes?: { options?: string[] } }[];
+    };
+    const harnesses = readdirSync(repoPath('arms')).filter((name) => {
+      const loaded = loadArm(repoPath('arms'), name);
+      return loaded.ok && loaded.value.requires !== undefined;
+    });
+    expect(
+      form.body
+        .find((field) => field.id === 'arm')
+        ?.attributes?.options?.slice()
+        .sort(),
+    ).toEqual(harnesses.sort());
+  });
 });

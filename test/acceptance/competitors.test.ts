@@ -604,6 +604,7 @@ describe('competitors.feature, contesting a setup (F7.2, REQ-RES-10, task-073)',
     git('commit', '-q', '-m', 'the campaign as it ran');
     const setup = join(root, 'arms', 'wingfoil', 'setup.sh');
     const ran = readFileSync(setup, 'utf8').split('\n')[1] ?? '';
+    const ranDigest = armDigest(root, 'wingfoil').slice(0, 12);
     writeFileSync(setup, `${readFileSync(setup, 'utf8')}# corrected after the contest\n`);
     git('commit', '-q', '-am', 'the corrected setup');
     writeFileSync(
@@ -621,7 +622,7 @@ describe('competitors.feature, contesting a setup (F7.2, REQ-RES-10, task-073)',
       }),
     );
     // When the maintainer pins the corrected arm's digest in the campaign file
-    const before = { ...completeCampaignYaml(), arm_digests: { wingfoil: '0'.repeat(12) } };
+    const before = { ...completeCampaignYaml(), arm_digests: { wingfoil: ranDigest } };
     const after = { ...before, arm_digests: { wingfoil: armDigest(root, 'wingfoil').slice(0, 12) } };
     // Then the campaign has a new identity
     expect(campaignId(after)).not.toBe(campaignId(before));
@@ -636,6 +637,15 @@ describe('competitors.feature, contesting a setup (F7.2, REQ-RES-10, task-073)',
     expect(page).toContain(escapeHtml(ran));
     expect(page).not.toContain('corrected after the contest');
     expect(page).toContain('href="https://github.com/wingfoil/wingfoil-benchmark/issues/7"');
-    expect(page).toContain('href="../../../fedcba987654/1/index.html"');
+    // The campaign that followed is named; it is linked once this repository holds its aggregated results.
+    expect(page).toContain('fedcba987654/1');
+    expect(page).not.toContain('href="../../../fedcba987654/1/index.html"');
+    mkdirSync(join(root, 'results', 'fedcba987654', '1'), { recursive: true });
+    writeFileSync(join(root, 'results', 'fedcba987654', '1', 'aggregate.json'), '{}\n');
+    expect((await benchSite(root, 'site', 'build', EXECUTION)).code).toBe(0);
+    expect(
+      readFileSync(join(root, 'site', 'abcdef012345', '1', 'material', 'setup-wingfoil.html'), 'utf8'),
+    ).toContain('href="../../../fedcba987654/1/index.html"');
+    // The execution's values stay published: its landing page is the one built before the correction.
   });
 });
