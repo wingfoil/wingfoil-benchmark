@@ -49,6 +49,34 @@ describe('the image port', () => {
     ]);
   });
 
+  it('skips a container removed between the listing and the inspection, and reads the others (bug-017)', async () => {
+    const process = recorder([
+      ok('c1\nc2\nc3\n'),
+      {
+        code: 1,
+        stdout: '/kept\tsha256:aaa\ttrue\n/other\tsha256:ddd\tfalse\n',
+        stderr: 'error: no such object: c2\n',
+      },
+    ]);
+    expect(await dockerImagesCli(process).containers()).toEqual([
+      { name: 'kept', imageId: 'sha256:aaa', running: true },
+      { name: 'other', imageId: 'sha256:ddd', running: false },
+    ]);
+  });
+
+  it('still fails on any other inspection error', async () => {
+    const process = recorder([
+      ok('c1\n'),
+      { code: 1, stdout: '', stderr: 'Cannot connect to the Docker daemon at unix:///var/run/docker.sock\n' },
+    ]);
+    await expect(dockerImagesCli(process).containers()).rejects.toThrow(
+      'Cannot connect to the Docker daemon',
+    );
+    // A missing object that was never listed is no removal: it is a failure too.
+    const strange = recorder([ok('c1\n'), { code: 1, stdout: '', stderr: 'error: no such object: zz\n' }]);
+    await expect(dockerImagesCli(strange).containers()).rejects.toThrow('no such object: zz');
+  });
+
   it('asks nothing more when there is no container', async () => {
     const process = recorder([ok('')]);
     expect(await dockerImagesCli(process).containers()).toEqual([]);
