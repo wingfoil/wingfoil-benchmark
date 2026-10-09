@@ -38,7 +38,7 @@ function repository() {
   return { root, first, firstCommit, second: armDigest(root, 'wingfoil') };
 }
 
-const history = historyCli(systemProcess());
+const history = historyCli(systemProcess);
 
 describe('armDigestOf (REQ-FMT-13, task-073)', () => {
   it('is armDigest over the same files, given as path and content', () => {

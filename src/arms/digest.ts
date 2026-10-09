@@ -36,8 +36,18 @@ function contentOf({ full, kind }: { full: string; kind: 'file' | 'link' | 'othe
  * of baseline-docs' under its own directory (task-067), so its digest covers it.
  */
 export function armDigest(repoRoot: string, arm: string): string {
-  const lines = entriesUnder(repoRoot, posix.join(ARMS, arm))
-    .sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
-    .map((entry) => `${entry.path}\0${sha256(contentOf(entry))}\n`);
+  return armDigestOf(
+    new Map(entriesUnder(repoRoot, posix.join(ARMS, arm)).map((entry) => [entry.path, contentOf(entry)])),
+  );
+}
+
+/**
+ * The same digest over `files`, by repository path, each with what its line hashes: a file's bytes, `link:<target>`
+ * for a symbolic link, `special` for anything else (task-073: an arm read from a commit of the history).
+ */
+export function armDigestOf(files: ReadonlyMap<string, Buffer | string>): string {
+  const lines = [...files]
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([path, content]) => `${path}\0${sha256(content)}\n`);
   return sha256(lines.join(''));
 }
