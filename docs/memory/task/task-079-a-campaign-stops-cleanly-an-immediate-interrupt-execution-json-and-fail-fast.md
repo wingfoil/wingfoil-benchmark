@@ -2,7 +2,7 @@
 id: task-079-a-campaign-stops-cleanly-an-immediate-interrupt-execution-json-and-fail-fast
 type: task
 title: "A campaign stops cleanly: an immediate interrupt, execution.json and fail_fast"
-status: pending
+status: backlog
 release: v0.2
 wave: W14
 features: [F1.4]
