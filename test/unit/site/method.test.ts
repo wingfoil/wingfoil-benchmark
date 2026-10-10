@@ -1,17 +1,21 @@
+import { execFileSync } from 'node:child_process';
 import {
   appendFileSync,
   cpSync,
   existsSync,
+  readdirSync,
   readFileSync,
   rmSync,
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { join } from 'node:path';
+import { parse } from 'yaml';
 import { describe, expect, it } from 'vitest';
 
 import { loadArm } from '../../../src/arms/index.js';
 import { publishedMaterial, setupHtml } from '../../../src/site/method.js';
+import { escapeHtml } from '../../../src/site/render.js';
 import { repoPath } from '../../support/paths.js';
 import { EXECUTION } from '../../support/score-fixture.js';
 import { tempDir } from '../../support/scenario-fixture.js';
@@ -324,7 +328,7 @@ describe('the setup pages (REQ-RES-09, task-067)', () => {
     const refused = await benchSite(root, 'site', 'build', EXECUTION);
     expect(refused.code).toBe(1);
     expect(refused.stderr).toMatch(
-      /arms\/wingfoil: \(digest [0-9a-f]{64}\) differs from the arm its runs recorded/,
+      /arms\/wingfoil: differs from the arm its runs recorded \([0-9a-f]{64}\), and no commit of the repository holds it/,
     );
 
     // An execution from before v0.2, whose runs recorded no arm digest: no setup page, the rest built.
@@ -352,4 +356,87 @@ describe('the setup pages (REQ-RES-09, task-067)', () => {
       'href="material/setup-wingfoil.html"',
     );
   }, 120_000);
+});
+
+describe('the contests and the setup as it ran (REQ-RES-10, REQ-RES-02, task-073)', () => {
+  it('says the setup cannot be contested from a site whose contests file is gone, and refuses one that is not one', async () => {
+    const { root } = await siteExecution();
+    rmSync(join(root, 'site-content', 'contests.yaml'));
+    expect((await benchSite(root, 'site', 'build', EXECUTION)).code).toBe(0);
+    expect(readFileSync(join(root, PAGE, 'material', 'setup-wingfoil.html'), 'utf8')).toContain(
+      'This site names no repository to contest this setup in.',
+    );
+    writeFileSync(
+      join(root, 'site-content', 'contests.yaml'),
+      'repository: http://example.com/x\ncontests: []\n',
+    );
+    const refused = await benchSite(root, 'site', 'build', EXECUTION);
+    expect(refused.code).toBe(1);
+    expect(refused.stderr).toContain(
+      'site-content/contests.yaml: repository: must be https://github.com/<owner>/<repo>',
+    );
+  }, 120_000);
+
+  it('publishes the manual its runs recorded when the working tree holds another, read from the history', async () => {
+    const { root } = await siteExecution();
+    const git = (...args: string[]) =>
+      execFileSync('git', ['-C', root, '-c', 'user.name=t', '-c', 'user.email=t@t', ...args], {
+        encoding: 'utf8',
+      });
+    git('init', '-q', '-b', 'main');
+    git('add', '-A');
+    git('commit', '-q', '-m', 'as it ran');
+    const manual = join(root, 'arms', 'baseline', 'manual.md');
+    const ran = readFileSync(manual, 'utf8');
+    writeFileSync(manual, '# A manual written after the runs\n');
+    const built = await benchSite(root, 'site', 'build', EXECUTION);
+    expect(built.code, built.stderr).toBe(0);
+    const page = readFileSync(join(root, PAGE, 'material', 'manual-baseline.html'), 'utf8');
+    expect(page).not.toContain('written after the runs');
+    expect(page).toContain(escapeHtml(ran.split('\n')[0]?.replace(/^# /, '') ?? 'x'));
+    // Neither the working tree nor the history holds it: refused, as before, saying so.
+    git('commit', '-q', '-am', 'later');
+    rmSync(join(root, '.git'), { recursive: true, force: true });
+    const refused = await benchSite(root, 'site', 'build', EXECUTION);
+    expect(refused.code).toBe(1);
+    expect(refused.stderr).toContain('and no commit of the repository holds it');
+  }, 120_000);
+});
+
+describe('the setup as it ran, when the working tree no longer has the arm (task-073 review)', () => {
+  it('reads an arm and its manual removed from the working tree from the history', async () => {
+    const { root } = await siteExecution();
+    const git = (...args: string[]) =>
+      execFileSync('git', ['-C', root, '-c', 'user.name=t', '-c', 'user.email=t@t', ...args], {
+        encoding: 'utf8',
+      });
+    git('init', '-q', '-b', 'main');
+    git('add', '-A');
+    git('commit', '-q', '-m', 'as it ran');
+    const script = readFileSync(join(root, 'arms', 'wingfoil', 'setup.sh'), 'utf8');
+    git('rm', '-q', '-r', 'arms/wingfoil');
+    git('commit', '-q', '-m', 'the arm retired');
+    const built = await benchSite(root, 'site', 'build', EXECUTION);
+    expect(built.code, built.stderr).toBe(0);
+    expect(readFileSync(join(root, PAGE, 'material', 'setup-wingfoil.html'), 'utf8')).toContain(
+      escapeHtml(script.split('\n')[1] ?? 'x'),
+    );
+    expect(existsSync(join(root, PAGE, 'material', 'manual-wingfoil.html'))).toBe(true);
+  }, 120_000);
+
+  it('names the arms the contest form offers: every harness arm of the repository', () => {
+    const form = parse(readFileSync(repoPath('.github/ISSUE_TEMPLATE/contest-setup.yml'), 'utf8')) as {
+      body: { id?: string; attributes?: { options?: string[] } }[];
+    };
+    const harnesses = readdirSync(repoPath('arms')).filter((name) => {
+      const loaded = loadArm(repoPath('arms'), name);
+      return loaded.ok && loaded.value.requires !== undefined;
+    });
+    expect(
+      form.body
+        .find((field) => field.id === 'arm')
+        ?.attributes?.options?.slice()
+        .sort(),
+    ).toEqual(harnesses.sort());
+  });
 });

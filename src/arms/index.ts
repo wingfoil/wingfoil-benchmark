@@ -1,7 +1,7 @@
 export { loadArm } from './load.js';
 export { renderProjectRules } from './baseline-docs.js';
 export { missingCapabilities } from './capabilities.js';
-export { armDigest } from './digest.js';
+export { armDigest, armDigestOf } from './digest.js';
 export { renderConstitution } from './constitution.js';
 export { renderOpenSpecConfig } from './openspec.js';
 export { DOCS_GENERATORS, docsGeneratorOf, renderOpenSpecDocs, renderSpeckitDocs } from './docs-controls.js';

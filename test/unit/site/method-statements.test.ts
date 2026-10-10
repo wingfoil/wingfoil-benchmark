@@ -46,7 +46,7 @@ const STATEMENTS: readonly (readonly [string, string])[] = [
   ],
   [
     'setup-pages',
-    'REQ-RES-09 (each harness arm’s setup published); task-067 Design "The setup pages"; adr-003 decision 7 (the shared git identity); REQ-RES-02 as amended (a rebuild adds links, never an execution’s values); REQ-FMT-13 (the recorded arm digest)',
+    'REQ-RES-09 (each harness arm’s setup published); task-067 Design "The setup pages"; adr-003 decision 7 (the shared git identity); REQ-RES-02 as amended (a rebuild adds links, never an execution’s values); REQ-FMT-13 (the recorded arm digest); REQ-RES-10 as amended in 1.29 (the contest form, the setup as it ran); task-073 Design',
   ],
   [
     'wingfoil-manual-process',

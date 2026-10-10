@@ -97,7 +97,7 @@ function builtExecutions(site: string): string[] {
  * pages, the stylesheet, and the root page of the execution it leads to — and every byte the same. A link,
  * or any entry no build gives (`.git`, `.gitignore`, a stray page), is refused. Returns the executions.
  */
-export function checkSiteCopy(root: string, dir: string): Result<string[]> {
+export async function checkSiteCopy(root: string, dir: string): Promise<Result<string[]>> {
   const missing = ['index.html', 'style.css'].filter((file) => !existsSync(join(dir, file)));
   const executions = builtExecutions(dir);
   if (missing.length > 0 || executions.length === 0) {
@@ -116,7 +116,7 @@ export function checkSiteCopy(root: string, dir: string): Result<string[]> {
   try {
     for (const execution of executions) {
       const fresh = join(scratch, execution.replace('/', '-'));
-      const built = buildSite(root, execution, fresh);
+      const built = await buildSite(root, execution, fresh);
       if (!built.ok) {
         issues.push(
           ...built.issues.map((issue) => ({
@@ -189,7 +189,7 @@ export async function publishSite(
     // What is checked is what is pushed: a copy, which a build running meanwhile cannot change.
     const copy = join(scratch, 'site');
     cpSync(join(root, SITE), copy, { recursive: true, verbatimSymlinks: true });
-    const checked = checkSiteCopy(root, copy);
+    const checked = await checkSiteCopy(root, copy);
     if (!checked.ok) return checked;
     const executions = checked.value;
 

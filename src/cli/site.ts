@@ -28,7 +28,7 @@ export async function siteCommand(
     return report([{ path: execution, message: 'a dry run is never aggregated (REQ-RES-01)' }], io);
   }
   if (!CAMPAIGN_EXECUTION.test(execution)) return usage(io);
-  const built = buildSite(root, execution);
+  const built = await buildSite(root, execution);
   if (!built.ok) return report(built.issues, io);
   io.stdout(`site: ${built.value.directory} (${built.value.pages} pages)\n`);
   for (const line of built.value.headlines) io.stdout(`${line}\n`);

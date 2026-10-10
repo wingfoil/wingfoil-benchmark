@@ -1,8 +1,8 @@
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { ok } from '../core/index.js';
-import type { Result } from '../core/index.js';
+import { historyCli, ok, systemProcess } from '../core/index.js';
+import type { HistoryPort, Result } from '../core/index.js';
 
 import { eligibilityPage } from './eligibility.js';
 import { methodPages } from './method.js';
@@ -26,14 +26,15 @@ export interface SiteBuild {
  * so its permanent URL keeps its pages. Nothing is written when the model refuses. `siteDir` is `site/` of
  * `root`, or another directory to build into (task-047: publishing compares `site/` with a fresh build).
  */
-export function buildSite(
+export async function buildSite(
   root: string,
   execution: string,
   siteDir: string = join(root, SITE),
-): Result<SiteBuild> {
+  history: HistoryPort = historyCli(systemProcess),
+): Promise<Result<SiteBuild>> {
   const model = siteModel(root, execution);
   if (!model.ok) return model;
-  const method = methodPages(root, execution, model.value);
+  const method = await methodPages(root, execution, model.value, history);
   if (!method.ok) return method;
   const eligibility = eligibilityPage(root, model.value);
   if (!eligibility.ok) return eligibility;
