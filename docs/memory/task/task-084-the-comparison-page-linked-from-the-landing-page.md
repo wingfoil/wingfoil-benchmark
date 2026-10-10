@@ -2,7 +2,7 @@
 id: task-084-the-comparison-page-linked-from-the-landing-page
 type: task
 title: "The comparison page, linked from the landing page"
-status: pending
+status: backlog
 release: v0.2
 wave: W14
 features: [F5.2]
