@@ -2,7 +2,7 @@
 id: task-078-the-wingfoil-cli-directive-bound-globally-with-its-known-behaviours
 type: task
 title: "The wingfoil-cli directive, bound globally, with its known behaviours"
-status: in-progress
+status: approved
 release: v0.2
 wave: W14
 features: []          # e.g. [F1.1, F3.1]
@@ -81,4 +81,54 @@ WingFoil's v0.3 retrospective.
 
 ## Execution notes
 
+- `npx wingfoil memory submit task-078-…` (backlog → in-progress) on 2026-10-10, once task-077 went to in-review.
+  Declared: moves the task to its next state and commits it. Observed: `status: in-progress`. Matches.
+- The branch merges `task/task-077-…` (the notes the directive cites); task-077 is in review and merges first.
+- **Red first:** three tests added to `test/unit/docs/wingfoil-feedback.test.ts` (rules 1–7 word for word, held as a
+  constant copied from WingFoil-Templates (`830dccb` on `main`) and checked identical to WingFoil-UI `1d9348d`; five cells per
+  known-behaviour row and every cited note existing; `wingfoil-cli` in `roles.yaml` `global:`). All three failed
+  before the directive existed; 10 of 10 pass after.
+- `npx wingfoil directive create --name wingfoil-cli`. Declared: creates the directive from the scaffold and commits
+  it. Observed: `wf(directive): create wingfoil-cli`, with `name: wingfoil-cli` and `title: "Wingfoil cli"`. The body
+  and the frontmatter's `name`/`title`/`tags` (as the models') were then written by hand in a `docs(directive)` commit,
+  since no verb writes a body.
+- **Rules 8 and 9** as the Design. **Known behaviours** W-01–W-14 as the Design's seed, each with its note and, where
+  one exists, its WingFoil element (task-077's counterparts).
+- `npx wingfoil directive assign --directive wingfoil-cli --role global`. Declared (help): assigns directives to a
+  role "as the committed dna.yaml declares it". Observed: `error: unknown role 'global' (not defined in dna.yaml)`,
+  exit 1, on `0.2-pre-3df305e` and `0.2.2`. So `roles.yaml`'s `global:` list was edited by hand
+  (`chore(wingfoil): bind wingfoil-cli globally …`), as the Design allowed. Rule 3 then asks for an entry and a note:
+  **F-039** (`New note (task-078).`, gap) and **W-15**.
+- `npx wingfoil directives list --role <r> --format json` for developer, reviewer, qa, architect, product-owner,
+  tech-lead, facilitator and scenario-author: each lists `wingfoil-cli`, and `warnings` is `[]` for all eight.
+- Day checks, niced: `npm run lint` 0, `npx tsc --noEmit -p .` 0, the inbox test 10 of 10.
+- **Review round 1 fixes:** rows W-16 (the bug machine's `fixed` state and `fixes`/`fixed_by`, F-023) and W-17 (no
+  `waiting` states; a plan closed by `submit`, F-009); W-15 also cites F-018; W-11 also cites task-136; the test
+  requires every row to be `W-<nn>` and to name at least one note; the rules' source is WingFoil-Templates' `main` at
+  `830dccb` (the same text as `53090c2`, which is on a side branch). `npx wingfoil …` in these notes runs the same
+  pinned build as rule 1's `npm run -s wingfoil -- …` (`package.json`'s `wingfoil` script).
+
 ## Review notes
+
+An independent read-only agent reviewed the branch against the Design, the two models and dl-163, re-running
+behaviours on the pinned build and F-039 on both builds. No suite ran; the reviewer ran the inbox test, niced.
+
+- **Round 1** (71a1fa1): no blocker.
+  - **Should-fix:**
+    1. rows missing for workarounds this repository uses (F-023's `fixed` state, F-009/no `waiting` states), and F-018
+       beside W-15;
+    2. the test let a row name no note.
+  - **Nits:** W-11 without task-136; the cited Templates commit lives on a side branch; `npx wingfoil` beside rule 1's
+    `npm run -s wingfoil`.
+  - Verified clean: rules 1–7 identical to both models, frontmatter as the models', rules 8–9 accurate, W-01, W-03,
+    W-04, W-12, W-14 and W-15 reproduced, every note and WingFoil element existing, F-039, `roles.yaml` (one line;
+    eight roles with `warnings: []`), red-first order, the Execution notes.
+  - All fixed in the next commit.
+- **Round 2** (b2c65ec): **clean.** W-16 and W-17 checked against `memory.yaml`, the traceability test and
+  `git log -- docs/plans`; the tightened test fails on a row with no note. Two wording nits on W-17 (a `waiting` state
+  can be declared but no verb leaves it; plan-002 records its go as a completion criterion) fixed in the next commit.
+- **Suites:** the diff touches `.wingfoil/`, `docs/` and one unit test file. Lint, typecheck and the inbox test are
+  green; the full suites gate approval (kanban-delivery 5), on demand, unless the approver lets the day checks stand
+  in, as for task-076.
+- `npx wingfoil memory submit task-078-…` (in-progress → in-review). Declared: moves the task to its next state and
+  commits it. Observed: see the next commit, `wf(task): submit …`.

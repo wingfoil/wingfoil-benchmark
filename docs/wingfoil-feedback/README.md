@@ -66,6 +66,7 @@ feedback source (WingFoil task-269). WingFoil cites a note as `<source key>/F-<n
 | [F-036](F-036-init-commit-subject-carries-an-internal-plan-id.md) | init's commit subject carries an internal plan id | defect | open | |
 | [F-037](F-037-approve-accepts-a-placeholder-reason.md) | approve --reason accepts a placeholder as the recorded reason | request | open | |
 | [F-038](F-038-submit-takes-no-reason.md) | submit takes no --reason | request | open | |
+| [F-039](F-039-directive-assign-cannot-bind-a-directive-globally.md) | directive assign cannot bind a directive globally | gap | open | |
 
 ## Context
 
