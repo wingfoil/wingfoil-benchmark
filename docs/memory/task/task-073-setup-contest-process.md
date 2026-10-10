@@ -197,3 +197,14 @@ and competitors.feature's two F7.2 scenarios. By day only the touched tests ran,
 - `npx wingfoil memory submit task-073-…` (in-progress → in-review), the first task under kanban-delivery version 5:
   independent review clean, the touched tests green (niced). The full suites come before approval, on demand.
   Declared: moves the task to its next state and commits it. Observed: see the next commit.
+- **Full suites** (`scripts/full-suites.sh` at 286d194, 2026-10-10 07:13; the worktree clean):
+  `LINT 0 TEST 1 BUILD 0 BIN 0 DOCKER 0`.
+  - `npm test` gave 1404 of 1405. The one failure is `@F5.5 The landing page answers the question at a glance`, timed
+    out at 64 s against the default 60 s while other sessions loaded the machine (load about 30). Run alone right
+    after, niced, it passed. This task does not touch it.
+  - With a failure, vitest printed no coverage table.
+  - `test:bin` 8, `test:docker` 22.
+  - Log: the main checkout's `.cache/full-suites/2026-10-10/task_task-073-setup-contest-process-286d194-071308.txt`.
+  - Earlier runs did not count: one was interrupted by the PC's suspend, and one had a red lint (Prettier on the
+    contest form, fixed in 286d194).
+  - The only commit after 286d194 is this note.
