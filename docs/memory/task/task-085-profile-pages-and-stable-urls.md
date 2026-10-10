@@ -2,7 +2,7 @@
 id: task-085-profile-pages-and-stable-urls
 type: task
 title: "Profile pages and stable URLs"
-status: pending
+status: backlog
 release: v0.2
 wave: W14
 features: [F5.7]
