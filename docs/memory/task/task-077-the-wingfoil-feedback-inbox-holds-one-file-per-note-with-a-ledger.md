@@ -2,7 +2,7 @@
 id: task-077-the-wingfoil-feedback-inbox-holds-one-file-per-note-with-a-ledger
 type: task
 title: "The WingFoil feedback inbox holds one file per note, with a ledger"
-status: approved
+status: done
 release: v0.2
 wave: W14
 features: []          # e.g. [F1.1, F3.1]
