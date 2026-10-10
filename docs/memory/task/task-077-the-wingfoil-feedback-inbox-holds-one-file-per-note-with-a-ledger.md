@@ -2,7 +2,7 @@
 id: task-077-the-wingfoil-feedback-inbox-holds-one-file-per-note-with-a-ledger
 type: task
 title: "The WingFoil feedback inbox holds one file per note, with a ledger"
-status: in-progress
+status: in-review
 release: v0.2
 wave: W14
 features: []          # e.g. [F1.1, F3.1]
@@ -151,4 +151,69 @@ by`; and a Context section with the old file's header (bootstrap context: 2026-0
 
 ## Execution notes
 
+- `npx wingfoil memory submit task-077-…` (backlog → in-progress) on 2026-10-10, once task-076 went to in-review (the
+  WIP limit). Declared: moves the task to its next state and commits it. Observed: `status: in-progress`. Matches.
+- The branch merges `task/task-076-…` (the versioned inbox it splits). task-076 is in review; its own merge into
+  `main` comes first, and this branch then merges `main`.
+- **Red first:** `test/unit/docs/wingfoil-feedback.test.ts`, seven tests after the two models; on the inbox task-076
+  left, four failed (stray file, numbering, ledger, N1–N51 accounted) and three passed vacuously on no notes. One
+  change from the Design: "each N<n> appears exactly once" is read from the notes' first lines and from the README's
+  `### Positive observations` bullets, which open with their N in bold (`- **N5 — …**`); the Context prose may name
+  other Ns freely.
+- **Reproduction**, 2026-10-10, by a script outside the repository (the agent's scratchpad), on two builds: this
+  repository's pinned tarball (`node_modules/.bin/wingfoil`, `0.2-pre-3df305e`, prints `0.1.0`) and `wingfoil@0.2.2`
+  installed from npm into the scratchpad. Each check ran in a fresh scratch repository (`git init`, `init --template
+  Kanban`, a member with the `approver` role added to `dna.yaml` where a gate was needed), with exit codes captured.
+  What each build did is in each note's body. Not reproducible by WingFoil alone, and so stated as observed: N10,
+  N20, N23 (one git identity), N36, N40, N42 and N43 (an agent session), N45. No longer reproducing on `0.2.2`: N2
+  (the scaffold now shows `category`), N7 (history), N13 for `approve` (the write guard), N14 for `team.members`
+  (`dna add`), N30 (`init` lists its templates). They stay `open`: only a sync changes a status (dl-163).
+- **WingFoil counterparts** found in WingFoil's Memory (`~/Workspaces/WingFoil2/docs/04_memory`, read 2026-10-10) and
+  written as sentences in Expected: dl-025, dl-043, dl-054, dl-081, dl-107, dl-108, dl-110, bug-076, bug-077,
+  bug-113, bug-144, bug-145, bug-146, bug-148, task-127, task-136, task-156, task-180, task-210. `answered_by` stays
+  `[]` everywhere.
+- **Merges and kinds** as the Design's mapping, with one change: F-034's first line is `Formerly N44.` only; N34 stays
+  a positive observation and F-034's body says its lockfile half was first noted beside it (the test counts each N
+  once).
+- The old file is deleted in the commit that adds the notes (`cf75fb2`). Its SHA-256 at task-076's commit is
+  `ed4b2365…`.
+- **`release-cycle.yaml` version 4:** the retrospective phase mines the feedback inbox and says that WingFoil friction
+  becomes inbox notes, which WingFoil pulls (dl-163), instead of "hand the WingFoil usage notes to the approver"; a
+  header line records it. The release template's Retrospective comment says the same. `npx wingfoil workflow list`
+  exit 0.
+- Day checks, niced: `npm run lint` 0, `npx tsc --noEmit -p .` 0, the inbox test 7 of 7.
+- **Review round 1 fixes** (see the Review notes):
+  - counterparts added: bug-127 (F-011), bug-140 (F-024), bug-149 (F-026), bug-150 (F-022), bug-151 and task-174
+    (F-025);
+  - this repository's names removed from F-010 (a neutral `x-{slug}` type and title `v1.2`), F-019 and F-027;
+  - the test and the README's rules accept `New note (task-<n>).` as a first line, as WingFoil-Templates' test does,
+    so that notes written after the migration pass; the N1–N51 count reads only the migrated first lines;
+  - F-018 gains its re-run line; F-026 says its two-identity case was not re-run; F-012 keeps N13's frontmatter
+    edits; F-013 keeps N33's `dna show team.members` message; F-004's claim about the commit in `--version` is
+    sourced to dl-163 (WingFoil's build from source) and the npm build's plain `0.2.2`.
+  - Not re-run, besides the list above: N4 (documentation) and N29 (a missing relation), both stated as observed.
+
 ## Review notes
+
+An independent read-only agent reviewed the branch against the Design, dl-163 R4 (strict) and the two models,
+re-running reproductions on both builds itself. No suite ran; the reviewer ran the inbox test, niced.
+
+- **Round 1** (b729f71, re-checked on 79130b3 after main was merged in): no blocker.
+  - **Should-fix:**
+    1. five WingFoil counterparts missed (bug-127, bug-140, bug-149, bug-150, bug-151 with task-174);
+    2. this repository's names in F-010, F-019 and F-027;
+    3. the test refused any note written after the migration (Templates' model accepts `New note (task-<n>).`).
+  - **Nits:** F-018's re-run line, F-026's un-re-run case, F-012's frontmatter edits, F-013's `dna show` message,
+    F-004's unsourced claim, the README pointing at the directive task-078 creates (left: intended).
+  - Verified clean: N1–N51 all accounted for, every F-note faithful to its N, the reproductions (N7, N12/48/49, N13,
+    N30, N38, N41, N46, N51, N2, F-001, F-034), the 19 cited counterparts, the format, the release-cycle change.
+  - All fixed in 25a6ed4.
+- **Round 2** (25a6ed4): **clean.** Each fix verified; the new first-line pattern accepts `New note (task-078).` and
+  `Formerly N3, N4.` and still refuses `Formerly X.`, `New note.`, `New note (bug-012).`; the N1–N51 count stays exact.
+  Nits fixed in the next commit: the README said a new note may name "the task or element" while the test accepts a
+  task only (the README now says task); F-026's continuation line indented; these Review notes written.
+- **Suites:** the diff touches `docs/`, `.wingfoil/` and one unit test file. Lint, typecheck and the inbox test are
+  green; the full suites gate approval (kanban-delivery 5), on demand, unless the approver lets the day checks stand
+  in, as for task-076.
+- `npx wingfoil memory submit task-077-…` (in-progress → in-review). Declared: moves the task to its next state and
+  commits it. Observed: see the next commit, `wf(task): submit …`.
