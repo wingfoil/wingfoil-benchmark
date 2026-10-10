@@ -34,7 +34,7 @@ in this release-planning phase (`release-cycle` › release-planning).
 | Wave | Features | High unc. | Ends with | Verified |
 |---|---|---|---|---|
 | W12 — Eligibility and Spec Kit | F7.4 eligibility criteria · F7.1 Spec Kit arm | F7.1 (headless use of Spec Kit's gates) | Spec Kit runs S1–S3 and S8 under the same rules | **2026-10-07** |
-| W13 — OpenSpec and contests | F7.1 OpenSpec arm · F7.2 setup contest process | — | OpenSpec runs, and a setup can be contested | — |
+| W13 — OpenSpec and contests | F7.1 OpenSpec arm · F7.2 setup contest process | — | OpenSpec runs, and a setup can be contested | **2026-10-10** |
 | W14 — Comparison and Dana | F5.2 campaign comparison · F5.7 profile filter and stable URLs · F1.4 resumable campaign | — | a second public campaign compared with the first | — |
 
 ### Triage of what v0.1 left
@@ -182,6 +182,71 @@ step 3) makes the dry runs of every arm on the campaign's models.
   - A rebuild is refused once a ran harness arm's files differ from its recorded `arm_digest`.
   - The contested execution must stay buildable after its arm is corrected: read the arm at its recorded state, or
     leave its pages out. The approver chooses.
+
+### W13 — verified 2026-10-10
+
+**"OpenSpec runs, and a setup can be contested."** Verified offline, with the fake agent. The real-agent half is
+task-070's spike, one consented session of S3 step 1 and its resume with OpenSpec 1.14.0, 0.7651 USD in the
+[v0.2 ledger](../../calibration/v0.2-ledger.md). No further real-agent run was consented in W13. The run was niced,
+on the approver's go.
+
+- **By hand, on main** (`0b6f2f3`, the built CLI), in a temporary repository from `git archive main`:
+  - the fake agent replays the references of S1, S3 and S8 and the hold-out's S2;
+  - OpenSpec 1.14.0 is built from the npm registry;
+  - the dry-run profile, in the temporary repository only, pins the fake agent and OpenSpec.
+- **Validation:** S1@1.0, S2@1.0, S3@1.0 and S8@1.0 valid with the hold-out. `campaign 6ac40187f98a is valid
+  (4 scenarios, 3 arms)`: baseline, openspec and openspec-docs.
+- **The runs:**
+  - 12 dry runs (4 scenarios × 3 arms), each `exit 0`;
+  - `bench campaign run`: `12 runs completed, 0 failed`.
+  - The openspec runs record:
+    - `harness` `{tool: openspec, version: 1.14.0}`, its commit the npm tarball's SHA-256 (task-071);
+    - `telemetry_off: [OPENSPEC_TELEMETRY=0]`;
+    - a `generated_sha256`.
+- **`bench score 6ac40187f98a/1 --holdout …`:** exit 0, 12 groups. openspec and openspec-docs score each scenario as
+  the reference does:
+  - S1 final 165/165, hold-out 48/48;
+  - S2 final 24/24, hold-out 17/17, checks 3/3;
+  - S3 final 37/37, hold-out 17/17, checks 1/1, M-F1 5/5;
+  - S8 final 23/23, hold-out 7/7, checks 16/16.
+- **The same rules on S8:** the setup patch of each arm carries them in its own place: baseline nothing, openspec
+  `openspec/config.yaml`, openspec-docs `PROJECT_RULES.md`.
+- **The site:** `bench site build 6ac40187f98a/1` gives 18 pages: three manuals, the openspec setup page, and the
+  setup page's "Contest this setup" link to `…/issues/new?template=contest-setup.yml`.
+- **A setup contested** (task-073):
+  - the temporary repository was committed as it ran, then `arms/openspec/setup.sh` was corrected and committed;
+  - `site-content/contests.yaml` was given an accepted contest of `6ac40187f98a`'s openspec arm, followed by
+    `fedcba987654/1`;
+  - the rebuild succeeded. The setup page shows the setup as it ran, read from commit `6fa56d1728be` (the corrected
+    line absent), and links the contest's issue. The campaign that followed is named, not linked: this repository
+    holds no results of it.
+- **Suites:** every W13 task's full suites were green before its approval (kanban-delivery version 5 from task-075).
+  task-073's had one load timeout (@F5.5), which passed when run alone.
+- **What the fake cannot show:** whether OpenSpec's process is followed headless on S1–S3 and S8, and what it costs.
+  That is calibration's: task-070 saw propose, then a partial apply, on S3 step 1.
+
+| Task | Feature | Delivered |
+|---|---|---|
+| task-068 | (F7.1, T3) | each harness against its own docs control, in the aggregate and on the category pages |
+| task-069 | — | dl-015 (effort pinned per model), bug-012 (every model's tokens), bug-016 (an unpriced cost flagged) |
+| task-070 | — | the OpenSpec spike (one consented session and its resume) |
+| task-071 | F7.1 | OpenSpec built from the npm registry, the openspec arm, its rules in `config.yaml` |
+| task-072 | F7.1 | the openspec-docs control, byte-identical to speckit-docs for the same rules |
+| task-073 | F7.2 | the contest form, `contests.yaml`, the arm and manuals read as they ran |
+| task-074 | — | bug-017 (the prune tolerates a container removed meanwhile) |
+| task-075 | — | kanban-delivery version 5 (dl-016): the full suites, on demand, gate approval; `scripts/full-suites.sh`; bug-018 |
+
+Decisions taken during W13:
+
+- dl-016 (option B), with the approver's later choice of on-demand runs over a nightly cron (2026-10-09);
+- the approver's choices for task-070 (the resume counted in the consented run) and task-073 (point B: the arm read
+  as it ran);
+- requirements 1.27 (REQ-RUN-08, -09, -16), 1.28 (REQ-FMT-12) and 1.29 (REQ-RES-10, REQ-RES-02).
+
+Bugs: bug-012, bug-016, bug-017 and bug-018 fixed. Spending: 2.4124 USD in all so far.
+
+**Seen during W13, for later:** acceptance tests time out under other sessions' load (@F4.8 fixed by bug-018;
+@F5.5 once). If it recurs, a bug should raise the slow acceptance tests' limits.
 
 ## Release checklist
 
