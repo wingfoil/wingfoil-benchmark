@@ -3,6 +3,7 @@ id: bug-017-the-image-prune-fails-when-a-container-disappears-while-it-reads-con
 type: bug
 title: "The image prune fails when a container disappears while it reads containers"
 status: approved
+fixed_by: task-074-the-image-prune-tolerates-a-container-removed-while-it-reads
 # fixed_by: task-…   # set by hand, with the fixing task's id, just before `approved → fixed`
 ---
 
@@ -36,3 +37,10 @@ Read containers in a way a removal cannot fail: one `docker ps --all --no-trunc 
 not enough (it gives the image by name), so either inspect each id on its own and skip one that is gone, or retry the
 whole read once when `inspect` reports a missing object. A unit test with a process double whose `inspect` reports a
 missing id holds it.
+
+## Resolution
+
+Fixed by [task-074](../task/task-074-the-image-prune-tolerates-a-container-removed-while-it-reads.md) (merged in `b2e8f6c`). `containers()` still inspects every listed id at once.
+An exit whose every error line says a listed id no longer exists is read as the containers that still exist; any
+other failure is thrown, as before. Verified by unit tests (a missing id, the older wording, several missing ids, any
+other failure) and by the full suites at be1e47a, green.
