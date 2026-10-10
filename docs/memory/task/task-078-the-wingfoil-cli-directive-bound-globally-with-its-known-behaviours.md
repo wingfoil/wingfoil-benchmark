@@ -124,3 +124,11 @@ behaviours on the pinned build and F-039 on both builds. No suite ran; the revie
     W-04, W-12, W-14 and W-15 reproduced, every note and WingFoil element existing, F-039, `roles.yaml` (one line;
     eight roles with `warnings: []`), red-first order, the Execution notes.
   - All fixed in the next commit.
+- **Round 2** (b2c65ec): **clean.** W-16 and W-17 checked against `memory.yaml`, the traceability test and
+  `git log -- docs/plans`; the tightened test fails on a row with no note. Two wording nits on W-17 (a `waiting` state
+  can be declared but no verb leaves it; plan-002 records its go as a completion criterion) fixed in the next commit.
+- **Suites:** the diff touches `.wingfoil/`, `docs/` and one unit test file. Lint, typecheck and the inbox test are
+  green; the full suites gate approval (kanban-delivery 5), on demand, unless the approver lets the day checks stand
+  in, as for task-076.
+- `npx wingfoil memory submit task-078-…` (in-progress → in-review). Declared: moves the task to its next state and
+  commits it. Observed: see the next commit, `wf(task): submit …`.
