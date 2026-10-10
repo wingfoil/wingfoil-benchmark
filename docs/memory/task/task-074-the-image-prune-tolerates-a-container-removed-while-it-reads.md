@@ -82,3 +82,9 @@ touched tests ran, niced (kanban-delivery version 5).
   - Nits: the older wording and several missing lines are now tested; the short ids in the doubles and the arguments
     not re-checked are left as they are.
 - **Suites:** run on demand before approval.
+- **Full suites** (`scripts/full-suites.sh` at be1e47a, 2026-10-10 07:54; the worktree clean):
+  `LINT 0 TEST 0 BUILD 0 BIN 0 DOCKER 0`.
+  - `npm test` 1397 passed, coverage 98.04 % statements and 90.82 % branches; `test:bin` 8; `test:docker` 22.
+  - Log: the main checkout's
+    `.cache/full-suites/2026-10-10/task_task-074-the-image-prune-tolerates-a-container-removed-while-it-reads-be1e47a-075429.txt`.
+  - The only commit after be1e47a is this note.
