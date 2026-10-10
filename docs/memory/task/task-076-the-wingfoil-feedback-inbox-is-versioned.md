@@ -65,4 +65,20 @@ exclude rule hides `docs/wingfoil-feedback/`.
 
 ## Execution notes
 
+- `npx wingfoil memory submit task-076-…` (backlog → in-progress) on 2026-10-10, after the approver approved the three
+  M3 tasks. Declared: moves the task to its next state and commits it. Observed: `status: in-progress`. Matches.
+- **`.git/info/exclude`** (local, never committed): the line `docs/wingfoil-feedback/` removed. The Design named a
+  second line, `X_wingfoil-usage-notes.md`; there was none (the reading that suggested it had listed the directory
+  right after the file). The file is shared by every worktree of this clone.
+- The untracked file copied from the main checkout into the task's worktree, and committed with no edit
+  (`docs(wingfoil-feedback): version the inbox unchanged (dl-163 R1)`):
+  - SHA-256 of the untracked file, of the copy, and of `git show HEAD:docs/wingfoil-feedback/X_wingfoil-usage-notes.md`:
+    `ed4b2365b682049a922079249ae5614a1edef1f8340dfaeca5a222b16cdd9b3b`, all three;
+  - `git ls-files docs/wingfoil-feedback/` lists it;
+  - `git check-ignore -v docs/wingfoil-feedback/X_wingfoil-usage-notes.md` prints nothing, exit 1.
+- Day checks, niced: `npm ci`, `npm run lint` (eslint and Prettier) exit 0, `npx tsc --noEmit -p .` exit 0.
+- **Merge plan:** the main checkout still holds the untracked file, which `git merge` would refuse to overwrite. At
+  delivery it is moved to the scratchpad, the merge brings the tracked file, and the two are compared by SHA-256
+  before the scratchpad copy is removed.
+
 ## Review notes
