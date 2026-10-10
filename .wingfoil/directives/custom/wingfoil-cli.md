@@ -53,3 +53,4 @@ Global. Applies to every role, human or agent, that runs the WingFoil CLI in thi
 | W-12 | `--version` prints `0.1.0`. | Name the build after the tarball (rule 8). | F-005 | |
 | W-13 | No `memory validate`. | `submit` is the first check of required fields; fill them before it. | F-028 | |
 | W-14 | `submit` subjects carry no `[from → to]`. | Read the state from the frontmatter or `git log -p`, not from the subject. | F-008 | dl-054 |
+| W-15 | `directive assign` binds a directive to one role only; `--role global` is refused. | Add the directive to `roles.yaml`'s `global:` list by hand, commit it, and check `directives list --role <r>` for every role. | F-039 | |
