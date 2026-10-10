@@ -2,7 +2,7 @@
 id: task-081-the-estimate-is-a-range-and-the-ceiling-covers-every-execution
 type: task
 title: "The estimate is a range and the ceiling covers every execution"
-status: draft
+status: pending
 release: v0.2
 wave: W14
 features: [F1.2, F1.4]
