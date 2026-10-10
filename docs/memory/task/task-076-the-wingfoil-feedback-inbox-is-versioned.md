@@ -2,7 +2,7 @@
 id: task-076-the-wingfoil-feedback-inbox-is-versioned
 type: task
 title: "The WingFoil feedback inbox is versioned"
-status: approved
+status: done
 release: v0.2
 wave: W14
 features: []          # e.g. [F1.1, F3.1]
