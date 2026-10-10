@@ -151,4 +151,36 @@ by`; and a Context section with the old file's header (bootstrap context: 2026-0
 
 ## Execution notes
 
+- `npx wingfoil memory submit task-077-…` (backlog → in-progress) on 2026-10-10, once task-076 went to in-review (the
+  WIP limit). Declared: moves the task to its next state and commits it. Observed: `status: in-progress`. Matches.
+- The branch merges `task/task-076-…` (the versioned inbox it splits). task-076 is in review; its own merge into
+  `main` comes first, and this branch then merges `main`.
+- **Red first:** `test/unit/docs/wingfoil-feedback.test.ts`, seven tests after the two models; on the inbox task-076
+  left, four failed (stray file, numbering, ledger, N1–N51 accounted) and three passed vacuously on no notes. One
+  change from the Design: "each N<n> appears exactly once" is read from the notes' first lines and from the README's
+  `### Positive observations` bullets, which open with their N in bold (`- **N5 — …**`); the Context prose may name
+  other Ns freely.
+- **Reproduction**, 2026-10-10, by a script outside the repository (the agent's scratchpad), on two builds: this
+  repository's pinned tarball (`node_modules/.bin/wingfoil`, `0.2-pre-3df305e`, prints `0.1.0`) and `wingfoil@0.2.2`
+  installed from npm into the scratchpad. Each check ran in a fresh scratch repository (`git init`, `init --template
+  Kanban`, a member with the `approver` role added to `dna.yaml` where a gate was needed), with exit codes captured.
+  What each build did is in each note's body. Not reproducible by WingFoil alone, and so stated as observed: N10,
+  N20, N23 (one git identity), N36, N40, N42 and N43 (an agent session), N45. No longer reproducing on `0.2.2`: N2
+  (the scaffold now shows `category`), N7 (history), N13 for `approve` (the write guard), N14 for `team.members`
+  (`dna add`), N30 (`init` lists its templates). They stay `open`: only a sync changes a status (dl-163).
+- **WingFoil counterparts** found in WingFoil's Memory (`~/Workspaces/WingFoil2/docs/04_memory`, read 2026-10-10) and
+  written as sentences in Expected: dl-025, dl-043, dl-054, dl-081, dl-107, dl-108, dl-110, bug-076, bug-077,
+  bug-113, bug-144, bug-145, bug-146, bug-148, task-127, task-136, task-156, task-180, task-210. `answered_by` stays
+  `[]` everywhere.
+- **Merges and kinds** as the Design's mapping, with one change: F-034's first line is `Formerly N44.` only; N34 stays
+  a positive observation and F-034's body says its lockfile half was first noted beside it (the test counts each N
+  once).
+- The old file is deleted in the commit that adds the notes (`cf75fb2`). Its SHA-256 at task-076's commit is
+  `ed4b2365…`.
+- **`release-cycle.yaml` version 4:** the retrospective phase mines the feedback inbox and says that WingFoil friction
+  becomes inbox notes, which WingFoil pulls (dl-163), instead of "hand the WingFoil usage notes to the approver"; a
+  header line records it. The release template's Retrospective comment says the same. `npx wingfoil workflow list`
+  exit 0.
+- Day checks, niced: `npm run lint` 0, `npx tsc --noEmit -p .` 0, the inbox test 7 of 7.
+
 ## Review notes
