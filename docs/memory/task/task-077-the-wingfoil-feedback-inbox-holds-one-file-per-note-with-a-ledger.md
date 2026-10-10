@@ -194,3 +194,26 @@ by`; and a Context section with the old file's header (bootstrap context: 2026-0
   - Not re-run, besides the list above: N4 (documentation) and N29 (a missing relation), both stated as observed.
 
 ## Review notes
+
+An independent read-only agent reviewed the branch against the Design, dl-163 R4 (strict) and the two models,
+re-running reproductions on both builds itself. No suite ran; the reviewer ran the inbox test, niced.
+
+- **Round 1** (b729f71, re-checked on 79130b3 after main was merged in): no blocker.
+  - **Should-fix:**
+    1. five WingFoil counterparts missed (bug-127, bug-140, bug-149, bug-150, bug-151 with task-174);
+    2. this repository's names in F-010, F-019 and F-027;
+    3. the test refused any note written after the migration (Templates' model accepts `New note (task-<n>).`).
+  - **Nits:** F-018's re-run line, F-026's un-re-run case, F-012's frontmatter edits, F-013's `dna show` message,
+    F-004's unsourced claim, the README pointing at the directive task-078 creates (left: intended).
+  - Verified clean: N1–N51 all accounted for, every F-note faithful to its N, the reproductions (N7, N12/48/49, N13,
+    N30, N38, N41, N46, N51, N2, F-001, F-034), the 19 cited counterparts, the format, the release-cycle change.
+  - All fixed in 25a6ed4.
+- **Round 2** (25a6ed4): **clean.** Each fix verified; the new first-line pattern accepts `New note (task-078).` and
+  `Formerly N3, N4.` and still refuses `Formerly X.`, `New note.`, `New note (bug-012).`; the N1–N51 count stays exact.
+  Nits fixed in the next commit: the README said a new note may name "the task or element" while the test accepts a
+  task only (the README now says task); F-026's continuation line indented; these Review notes written.
+- **Suites:** the diff touches `docs/`, `.wingfoil/` and one unit test file. Lint, typecheck and the inbox test are
+  green; the full suites gate approval (kanban-delivery 5), on demand, unless the approver lets the day checks stand
+  in, as for task-076.
+- `npx wingfoil memory submit task-077-…` (in-progress → in-review). Declared: moves the task to its next state and
+  commits it. Observed: see the next commit, `wf(task): submit …`.
