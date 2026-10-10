@@ -2,7 +2,7 @@
 id: task-082-preliminary-below-n-3-and-the-harness-version-beside-every-value
 type: task
 title: "Preliminary below n = 3 and the harness version beside every value"
-status: pending
+status: backlog
 release: v0.2
 wave: W14
 features: [F5.5]
