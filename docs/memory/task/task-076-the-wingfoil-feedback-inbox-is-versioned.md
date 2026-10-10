@@ -80,5 +80,20 @@ exclude rule hides `docs/wingfoil-feedback/`.
 - **Merge plan:** the main checkout still holds the untracked file, which `git merge` would refuse to overwrite. At
   delivery it is moved to the scratchpad, the merge brings the tracked file, and the two are compared by SHA-256
   before the scratchpad copy is removed.
+- **Still owed at delivery:** the agent memory note on the untracked inbox is corrected after the merge (the Design's
+  last item).
+- **The approver's question** (the Design): whether lint and typecheck may stand in for the full suites, since the
+  diff is `docs/` only. Asked at the hand-off to approval; the answer goes in the Review notes.
 
 ## Review notes
+
+An independent read-only agent reviewed `git diff main...HEAD` against the Design, dl-163 R1, and a secret scan.
+
+- **Round 1** (d9802fa): **clean**, no blocker, no should-fix.
+  - Checked: the three SHA-256 match; nothing ignores the path (`.gitignore`, `.git/info/exclude`, no global
+    excludes); the diff holds only the notes file and the task element; every Execution-notes claim reproduces; no
+    credential, token or key in the file, and no personal data beyond the git author already in every commit.
+  - **Nits**, both fixed in the next commit: the memory-note correction owed after the merge, and the approver's
+    question on the full suites, were not recorded in the Execution notes.
+- `npx wingfoil memory submit task-076-…` (in-progress → in-review). Declared: moves the task to its next state and
+  commits it. Observed: see the next commit, `wf(task): submit …`.
