@@ -85,7 +85,7 @@ WingFoil's v0.3 retrospective.
   Declared: moves the task to its next state and commits it. Observed: `status: in-progress`. Matches.
 - The branch merges `task/task-077-…` (the notes the directive cites); task-077 is in review and merges first.
 - **Red first:** three tests added to `test/unit/docs/wingfoil-feedback.test.ts` (rules 1–7 word for word, held as a
-  constant copied from WingFoil-Templates `53090c2` and checked identical to WingFoil-UI `1d9348d`; five cells per
+  constant copied from WingFoil-Templates (`830dccb` on `main`) and checked identical to WingFoil-UI `1d9348d`; five cells per
   known-behaviour row and every cited note existing; `wingfoil-cli` in `roles.yaml` `global:`). All three failed
   before the directive existed; 10 of 10 pass after.
 - `npx wingfoil directive create --name wingfoil-cli`. Declared: creates the directive from the scaffold and commits
@@ -102,5 +102,25 @@ WingFoil's v0.3 retrospective.
 - `npx wingfoil directives list --role <r> --format json` for developer, reviewer, qa, architect, product-owner,
   tech-lead, facilitator and scenario-author: each lists `wingfoil-cli`, and `warnings` is `[]` for all eight.
 - Day checks, niced: `npm run lint` 0, `npx tsc --noEmit -p .` 0, the inbox test 10 of 10.
+- **Review round 1 fixes:** rows W-16 (the bug machine's `fixed` state and `fixes`/`fixed_by`, F-023) and W-17 (no
+  `waiting` states; a plan closed by `submit`, F-009); W-15 also cites F-018; W-11 also cites task-136; the test
+  requires every row to be `W-<nn>` and to name at least one note; the rules' source is WingFoil-Templates' `main` at
+  `830dccb` (the same text as `53090c2`, which is on a side branch). `npx wingfoil …` in these notes runs the same
+  pinned build as rule 1's `npm run -s wingfoil -- …` (`package.json`'s `wingfoil` script).
 
 ## Review notes
+
+An independent read-only agent reviewed the branch against the Design, the two models and dl-163, re-running
+behaviours on the pinned build and F-039 on both builds. No suite ran; the reviewer ran the inbox test, niced.
+
+- **Round 1** (71a1fa1): no blocker.
+  - **Should-fix:**
+    1. rows missing for workarounds this repository uses (F-023's `fixed` state, F-009/no `waiting` states), and F-018
+       beside W-15;
+    2. the test let a row name no note.
+  - **Nits:** W-11 without task-136; the cited Templates commit lives on a side branch; `npx wingfoil` beside rule 1's
+    `npm run -s wingfoil`.
+  - Verified clean: rules 1–7 identical to both models, frontmatter as the models', rules 8–9 accurate, W-01, W-03,
+    W-04, W-12, W-14 and W-15 reproduced, every note and WingFoil element existing, F-039, `roles.yaml` (one line;
+    eight roles with `warnings: []`), red-first order, the Execution notes.
+  - All fixed in the next commit.

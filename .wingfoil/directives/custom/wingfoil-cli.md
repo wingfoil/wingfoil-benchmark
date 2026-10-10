@@ -49,8 +49,10 @@ Global. Applies to every role, human or agent, that runs the WingFoil CLI in thi
 | W-08 | No verb parks a started task. | Freeing a WIP slot is a question for the approver, framed in the machine's terms. | F-020 | dl-110, task-180 |
 | W-09 | A gate commits on the branch checked out. | Every approval command starts with the `cd` to the checkout of the branch that should receive it (`multi-session` directive). | F-031 | |
 | W-10 | `dna set` writes scalars only. | Edit lists in `dna.yaml` by hand, commit, then check with `dna show`. | F-013 | dl-081 |
-| W-11 | `workflow list` neither resolves phase includes nor checks actions, roles and `produces`. | Name the workflow in `include`; the repository's tests and the reviewer check the rest. | F-017, F-022 | bug-145, bug-150 |
+| W-11 | `workflow list` neither resolves phase includes nor checks actions, roles and `produces`. | Name the workflow in `include`; the repository's tests and the reviewer check the rest. | F-017, F-022 | bug-145, task-136, bug-150 |
 | W-12 | `--version` prints `0.1.0`. | Name the build after the tarball (rule 8). | F-005 | |
 | W-13 | No `memory validate`. | `submit` is the first check of required fields; fill them before it. | F-028 | |
 | W-14 | `submit` subjects carry no `[from → to]`. | Read the state from the frontmatter or `git log -p`, not from the subject. | F-008 | dl-054 |
-| W-15 | `directive assign` binds a directive to one role only; `--role global` is refused. | Add the directive to `roles.yaml`'s `global:` list by hand, commit it, and check `directives list --role <r>` for every role. | F-039 | |
+| W-15 | `directive assign` binds a directive to one role only; `--role global` is refused. | Add the directive to `roles.yaml`'s `global:` list by hand, commit it, and check `directives list --role <r>` for every role. | F-039, F-018 | |
+| W-16 | The default `bug` machine ends at `approved`, and no field links a bug to the task that fixes it. | The `bug` type adds a `fixed` state, reached by `submit` once the fixing task is done; the bug's `fixed_by` and the task's `fixes` name each other, and the traceability test holds them together. | F-023 | |
+| W-17 | A state no verb leaves (`waiting`) cannot be declared without a workflow engine; a `plan` closes by a plain `submit`, with no approver or reason. | The `task` machine drops WingFoil's `waiting` states; a plan is closed by `submit` only after the approver's go, which the plan's own text records (the first plan was closed by a hand-written commit carrying `Approver:` and `Reason:`). | F-009 | |
