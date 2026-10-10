@@ -2,7 +2,7 @@
 id: task-076-the-wingfoil-feedback-inbox-is-versioned
 type: task
 title: "The WingFoil feedback inbox is versioned"
-status: in-progress
+status: approved
 release: v0.2
 wave: W14
 features: []          # e.g. [F1.1, F3.1]
@@ -65,4 +65,35 @@ exclude rule hides `docs/wingfoil-feedback/`.
 
 ## Execution notes
 
+- `npx wingfoil memory submit task-076-…` (backlog → in-progress) on 2026-10-10, after the approver approved the three
+  M3 tasks. Declared: moves the task to its next state and commits it. Observed: `status: in-progress`. Matches.
+- **`.git/info/exclude`** (local, never committed): the line `docs/wingfoil-feedback/` removed. The Design named a
+  second line, `X_wingfoil-usage-notes.md`; there was none (the reading that suggested it had listed the directory
+  right after the file). The file is shared by every worktree of this clone.
+- The untracked file copied from the main checkout into the task's worktree, and committed with no edit
+  (`docs(wingfoil-feedback): version the inbox unchanged (dl-163 R1)`):
+  - SHA-256 of the untracked file, of the copy, and of `git show HEAD:docs/wingfoil-feedback/X_wingfoil-usage-notes.md`:
+    `ed4b2365b682049a922079249ae5614a1edef1f8340dfaeca5a222b16cdd9b3b`, all three;
+  - `git ls-files docs/wingfoil-feedback/` lists it;
+  - `git check-ignore -v docs/wingfoil-feedback/X_wingfoil-usage-notes.md` prints nothing, exit 1.
+- Day checks, niced: `npm ci`, `npm run lint` (eslint and Prettier) exit 0, `npx tsc --noEmit -p .` exit 0.
+- **Merge plan:** the main checkout still holds the untracked file, which `git merge` would refuse to overwrite. At
+  delivery it is moved to the scratchpad, the merge brings the tracked file, and the two are compared by SHA-256
+  before the scratchpad copy is removed.
+- **Still owed at delivery:** the agent memory note on the untracked inbox is corrected after the merge (the Design's
+  last item).
+- **The approver's question** (the Design): whether lint and typecheck may stand in for the full suites, since the
+  diff is `docs/` only. Asked at the hand-off to approval; the answer goes in the Review notes.
+
 ## Review notes
+
+An independent read-only agent reviewed `git diff main...HEAD` against the Design, dl-163 R1, and a secret scan.
+
+- **Round 1** (d9802fa): **clean**, no blocker, no should-fix.
+  - Checked: the three SHA-256 match; nothing ignores the path (`.gitignore`, `.git/info/exclude`, no global
+    excludes); the diff holds only the notes file and the task element; every Execution-notes claim reproduces; no
+    credential, token or key in the file, and no personal data beyond the git author already in every commit.
+  - **Nits**, both fixed in the next commit: the memory-note correction owed after the merge, and the approver's
+    question on the full suites, were not recorded in the Execution notes.
+- `npx wingfoil memory submit task-076-…` (in-progress → in-review). Declared: moves the task to its next state and
+  commits it. Observed: see the next commit, `wf(task): submit …`.
