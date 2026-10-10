@@ -2,7 +2,7 @@
 id: task-086-the-wingfoil-arm-manual-reviewed-against-wingfoil-s-agents-guide
 type: task
 title: "The wingfoil arm manual reviewed against WingFoil's agents guide"
-status: pending
+status: backlog
 release: v0.2
 wave: W14
 features: []
