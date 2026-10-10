@@ -2,7 +2,7 @@
 id: task-078-the-wingfoil-cli-directive-bound-globally-with-its-known-behaviours
 type: task
 title: "The wingfoil-cli directive, bound globally, with its known behaviours"
-status: in-review
+status: approved
 release: v0.2
 wave: W14
 features: []          # e.g. [F1.1, F3.1]
