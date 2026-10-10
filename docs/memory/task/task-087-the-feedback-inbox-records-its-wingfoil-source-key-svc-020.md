@@ -2,7 +2,7 @@
 id: task-087-the-feedback-inbox-records-its-wingfoil-source-key-svc-020
 type: task
 title: "The feedback inbox records its WingFoil source key, svc-020"
-status: in-progress
+status: approved
 release: v0.2
 wave: W14
 features: []          # e.g. [F1.1, F3.1]
@@ -44,4 +44,24 @@ an independent review; no full suites (the diff is `docs/` only, as task-076).
 
 ## Execution notes
 
+- `npx wingfoil memory submit task-087-…` (backlog → in-progress) on 2026-10-10, after the approver's approval
+  (`689f996`). Declared: moves the task to its next state and commits it. Observed: `status: in-progress`. Matches.
+- svc-020 read on WingFoil's `origin/main` (`git fetch`, then `git show origin/main:docs/04_memory/services/svc-020-…`):
+  `kind: "repository"`, `feedback_inbox: "docs/wingfoil-feedback/"`, `url: "https://github.com/wingfoil/wingfoil-benchmark"`,
+  `status: active`; the head commit `30b268a3` is its approval, pending → active.
+- The README's Source key line changed as the Design says (3 insertions, 2 deletions); `**Last sync:** none` unchanged.
+- Day checks, niced: `npm ci` 0, `npm run lint` 0, `npx tsc --noEmit -p .` 0, the inbox test 10 of 10.
+
 ## Review notes
+
+An independent read-only agent reviewed `git diff main...HEAD` against the Design, WingFoil's svc-020 record on its
+`origin/main` and dl-163.
+
+- **Round 1** (c5bf8b2): **clean.** The full id, `status: active` and `30b268a3` match WingFoil's record; the README
+  keeps dl-163's citation form; `**Last sync:** none` is unchanged; the inbox test 10 of 10.
+  - **Nit, left:** the README names the short `svc-020` as the source key, with the full id beside it. Whether a
+    WingFoil `reported_by:` cites the short or the full id is still open on WingFoil's side (its task-271, backlog);
+    the coordination session asked for `svc-020`. If WingFoil settles on the full id, a later task follows it.
+- **Suites:** the diff is `docs/` only; lint, typecheck and the inbox test stand in, as for task-076.
+- `npx wingfoil memory submit task-087-…` (in-progress → in-review). Declared: moves the task to its next state and
+  commits it. Observed: see the next commit, `wf(task): submit …`.
