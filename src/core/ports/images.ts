@@ -35,6 +35,18 @@ function lines(stdout: string): string[] {
   return stdout.split('\n').filter((line) => line.trim() !== '');
 }
 
+/** Whether every line of `stderr` says one of `ids` no longer exists: what a container removed meanwhile leaves. */
+function onlyGone(stderr: string, ids: readonly string[]): boolean {
+  const said = lines(stderr);
+  return (
+    said.length > 0 &&
+    said.every((line) => {
+      const gone = /no such object: (\S+)/i.exec(line)?.[1];
+      return gone !== undefined && ids.includes(gone);
+    })
+  );
+}
+
 /** The image port that calls the `docker` command line. */
 export function dockerImagesCli(process: ProcessPort): ImagePort {
   async function docker(args: readonly string[]): Promise<ProcessResult> {
@@ -54,8 +66,12 @@ export function dockerImagesCli(process: ProcessPort): ImagePort {
     async containers() {
       const ids = lines((await docker(['ps', '--all', '--quiet', '--no-trunc'])).stdout);
       if (ids.length === 0) return [];
-      const { stdout } = await docker(['inspect', '--format', CONTAINER_FORMAT, ...ids]);
-      return lines(stdout)
+      // A container removed between the listing and the inspection (bug-017): inspect exits 1, prints the others and
+      // names the missing one. That exit is the containers that still exist; any other failure is one.
+      const args = ['inspect', '--format', CONTAINER_FORMAT, ...ids];
+      const result = await process.run('docker', args);
+      if (result.code !== 0 && !onlyGone(result.stderr, ids)) throw processFailure('docker', args, result);
+      return lines(result.stdout)
         .map((line) => line.split('\t'))
         .map(([name = '', imageId = '', running = '']) => ({
           name: name.replace(/^\//, ''),
