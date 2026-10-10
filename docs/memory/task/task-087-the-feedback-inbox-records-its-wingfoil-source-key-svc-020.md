@@ -44,4 +44,12 @@ an independent review; no full suites (the diff is `docs/` only, as task-076).
 
 ## Execution notes
 
+- `npx wingfoil memory submit task-087-…` (backlog → in-progress) on 2026-10-10, after the approver's approval
+  (`689f996`). Declared: moves the task to its next state and commits it. Observed: `status: in-progress`. Matches.
+- svc-020 read on WingFoil's `origin/main` (`git fetch`, then `git show origin/main:docs/04_memory/services/svc-020-…`):
+  `kind: "repository"`, `feedback_inbox: "docs/wingfoil-feedback/"`, `url: "https://github.com/wingfoil/wingfoil-benchmark"`,
+  `status: active`; the head commit `30b268a3` is its approval, pending → active.
+- The README's Source key line changed as the Design says (3 insertions, 2 deletions); `**Last sync:** none` unchanged.
+- Day checks, niced: `npm ci` 0, `npm run lint` 0, `npx tsc --noEmit -p .` 0, the inbox test 10 of 10.
+
 ## Review notes
