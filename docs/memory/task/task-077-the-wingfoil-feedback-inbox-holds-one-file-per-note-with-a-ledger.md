@@ -182,5 +182,15 @@ by`; and a Context section with the old file's header (bootstrap context: 2026-0
   header line records it. The release template's Retrospective comment says the same. `npx wingfoil workflow list`
   exit 0.
 - Day checks, niced: `npm run lint` 0, `npx tsc --noEmit -p .` 0, the inbox test 7 of 7.
+- **Review round 1 fixes** (see the Review notes):
+  - counterparts added: bug-127 (F-011), bug-140 (F-024), bug-149 (F-026), bug-150 (F-022), bug-151 and task-174
+    (F-025);
+  - this repository's names removed from F-010 (a neutral `x-{slug}` type and title `v1.2`), F-019 and F-027;
+  - the test and the README's rules accept `New note (task-<n>).` as a first line, as WingFoil-Templates' test does,
+    so that notes written after the migration pass; the N1–N51 count reads only the migrated first lines;
+  - F-018 gains its re-run line; F-026 says its two-identity case was not re-run; F-012 keeps N13's frontmatter
+    edits; F-013 keeps N33's `dna show team.members` message; F-004's claim about the commit in `--version` is
+    sourced to dl-163 (WingFoil's build from source) and the npm build's plain `0.2.2`.
+  - Not re-run, besides the list above: N4 (documentation) and N29 (a missing relation), both stated as observed.
 
 ## Review notes

@@ -19,4 +19,5 @@ empty list; registering the `tools` capability with no Tools would return one.
 ## Expected
 
 `tools/list` returns an empty list while there are no Tools, and each build publishes which CLI verbs and MCP
-capabilities it offers.
+capabilities it offers. WingFoil bug-151 (closed) and task-174 (done) make `tools/list` answer an empty list in
+a later build.

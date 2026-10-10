@@ -13,7 +13,8 @@ Formerly N13.
 
 In a scratch repository (`git init`, `git config user.name/user.email`, `wingfoil init --template Kanban`, with a member holding the `approver` role added to `dna.yaml`'s `team.members`): `memory add --type bug`, then a line appended to the body without committing it, then
 `memory submit <id>`. The submit commit, subject `wf(bug): submit <id>`, holds the status change **and** the body
-line (2 insertions, 1 deletion). The same with `memory approve`: the uncommitted edit is swept into the approval
+line (2 insertions, 1 deletion). Uncommitted frontmatter edits pass the same way: the post-condition compares
+only `status` with the file on disk. The same with `memory approve`: the uncommitted edit is swept into the approval
 commit, exit 0.
 
 Re-run on 2026-10-10 on `0.2.2`: `approve` (and `reject`, `deprecate`) now refuses, naming the remedy ("refusing to commit …:

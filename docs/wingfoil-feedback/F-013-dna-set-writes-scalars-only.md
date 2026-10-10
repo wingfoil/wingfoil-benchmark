@@ -12,8 +12,8 @@ Formerly N14, N33.
 ## Observed
 
 In a scratch repository (`git init`, `git config user.name/user.email`, `wingfoil init --template Kanban`): `wingfoil dna set modules x` → `E_VALIDATION modules (…): Invalid input: expected array, received
-string`, exit 1; `wingfoil dna set team.members x` → the same for `team.members`. There is no other DNA verb
-(`dna --help` lists `set` and `show`). Adding a module, a path or a team member — the member being what approval
+string`, exit 1; `wingfoil dna set team.members x` → the same for `team.members`. `wingfoil dna show team.members` → `no DNA key named 'team.members'`. There is
+no other DNA verb (`dna --help` lists `set` and `show`). Adding a module, a path or a team member — the member being what approval
 authority rests on — is a hand edit of `dna.yaml` with a hand-written commit and no write-time validation.
 
 Re-run on 2026-10-10 on `0.2.2`: `wingfoil dna add <path> --value … --entry-…` adds an entry to a collection or a list and

@@ -11,7 +11,7 @@ Formerly N11.
 
 ## Observed
 
-With `id_pattern: "rel-{slug}"`, `memory add --type release --title "v0.1"` creates `rel-v0-1`: the slug maps
+With a type whose `id_pattern` is `"x-{slug}"`, `memory add --title "v1.2"` creates `x-v1-2`: the slug maps
 every run of characters outside `[a-z0-9]` to `-`. `add` fills only `{n}` and `{slug}`, so a pattern such as
 `minor-{version}` cannot be produced by the CLI.
 

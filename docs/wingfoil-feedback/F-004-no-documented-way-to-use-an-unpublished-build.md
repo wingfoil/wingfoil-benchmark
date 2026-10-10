@@ -19,4 +19,5 @@ no commit (`0.1.0` on a build of `7a65580`).
 ## Expected
 
 The user docs say how to pin and run an unpublished build, and `--version` names the commit a build was made
-from. Later builds print the commit (`0.2.2 (<sha>…)` for a build from source).
+from. WingFoil's own build from source prints the commit (`0.2.2 (25b513b8…)`, as WingFoil dl-163 records); the
+build published on npm prints `0.2.2` alone.

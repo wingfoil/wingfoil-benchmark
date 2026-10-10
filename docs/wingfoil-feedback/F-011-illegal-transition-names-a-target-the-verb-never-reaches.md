@@ -27,4 +27,4 @@ Re-run on 2026-10-10 on `0.2-pre-3df305e` and `0.2.2`: the messages above.
 ## Expected
 
 The refusal says why in the machine's terms: "`approve` is not legal from `draft`: it is not a gate",
-"`pending` waits for `approve` or `reject`", "`approved` is a final state".
+"`pending` waits for `approve` or `reject`", "`approved` is a final state". WingFoil bug-127 (closed) records the same defect.

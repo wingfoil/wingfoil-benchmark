@@ -12,7 +12,7 @@ Formerly N36.
 ## Observed
 
 Two commands pasted at once ran as one: the second command's leading `cd` ended up at the end of the first
-command's `--reason`, and `memory approve` committed `Reason: … tag v0.1cd`. Nothing showed the reason before the
+command's `--reason`, and `memory approve` committed a reason ending in `…cd`. Nothing showed the reason before the
 commit, and no verb corrects a recorded reason. Unpushed, it was fixed with `git commit --amend`; pushed, the only
 remedies are a history rewrite or a second commit explaining the first.
 

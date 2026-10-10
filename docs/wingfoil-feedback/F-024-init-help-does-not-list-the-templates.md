@@ -18,4 +18,4 @@ and the help lists them, with an example. The note no longer reproduces there.
 
 ## Expected
 
-The help and the error name the templates; `0.2.2` does.
+The help and the error name the templates; `0.2.2` does. WingFoil bug-140 (closed) records this defect.

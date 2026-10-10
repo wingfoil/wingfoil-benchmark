@@ -11,6 +11,8 @@ repository pulls the answer at its own sync.
   (`open | needs-info | captured | resolved | declined | duplicate`), `wingfoil_version` and
   `answered_by`, and a body stating what was observed and what was expected, reproducible with
   WingFoil alone (command, output, version).
+- A note's first body line is `Formerly N<n>.` for a note migrated from the old inbox, or
+  `New note (task-<n>).` for a note written since, naming the task or element that wrote it.
 - This repository writes `open`; `answered_by` and every other status are set only by the sync, from
   what WingFoil published.
 - How notes are written, when the sync runs and what WingFoil cites are the rules of the

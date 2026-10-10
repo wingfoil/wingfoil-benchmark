@@ -19,4 +19,4 @@ path against the type's `path`.
 ## Expected
 
 `workflow list` cross-checks action types, roles and `produces` paths against the Memory schema and the roles,
-and reports what does not resolve.
+and reports what does not resolve. WingFoil bug-150 (closed) records this defect.

@@ -14,8 +14,11 @@ const KINDS = ['defect', 'gap', 'request'];
 const STATUSES = ['open', 'needs-info', 'captured', 'resolved', 'declined', 'duplicate'];
 /** A WingFoil build: `0.2.2`, `0.1.0-7a65580`, or this repository's pinned tarball `0.2-pre-3df305e`. */
 const BUILD = /^\d+\.\d+(?:\.\d+)?(?:-[0-9a-z.]+)*$/;
-/** The first body line names the usage notes the note was migrated from (task-077). */
-const FIRST_LINE = /^\n(Formerly (N\d+(?:, N\d+)*)\.)\n/;
+/**
+ * The first body line names the usage notes the note was migrated from (task-077), or the task that wrote a new
+ * note, as WingFoil-Templates' inbox test accepts.
+ */
+const FIRST_LINE = /^\n(?:Formerly (N\d+(?:, N\d+)*)\.|New note \(task-\d+\)\.)\n/;
 /** The usage notes N1–N51 that the old inbox held, each migrated once. */
 const MIGRATED = 51;
 
@@ -105,7 +108,7 @@ describe('the WingFoil feedback inbox (dl-163)', () => {
     }
   });
 
-  it('opens with the usage notes the note was migrated from', () => {
+  it('opens with the usage notes the note was migrated from, or says it is new', () => {
     for (const note of notes) expect(note.body, note.file).toMatch(FIRST_LINE);
   });
 
@@ -136,7 +139,7 @@ describe('the WingFoil feedback inbox (dl-163)', () => {
   });
 
   it('accounts for every usage note N1–N51 once: in a note, or as a positive observation', () => {
-    const migrated = notes.flatMap((note) => usageNotes(FIRST_LINE.exec(note.body)?.[2] ?? ''));
+    const migrated = notes.flatMap((note) => usageNotes(FIRST_LINE.exec(note.body)?.[1] ?? ''));
     // Each positive observation is a bullet that opens with its usage note in bold: `- **N5 — …**`.
     const positives = section(readme(), '### Positive observations')
       .split('\n')
