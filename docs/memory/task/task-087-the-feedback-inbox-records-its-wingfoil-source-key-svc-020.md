@@ -53,3 +53,15 @@ an independent review; no full suites (the diff is `docs/` only, as task-076).
 - Day checks, niced: `npm ci` 0, `npm run lint` 0, `npx tsc --noEmit -p .` 0, the inbox test 10 of 10.
 
 ## Review notes
+
+An independent read-only agent reviewed `git diff main...HEAD` against the Design, WingFoil's svc-020 record on its
+`origin/main` and dl-163.
+
+- **Round 1** (c5bf8b2): **clean.** The full id, `status: active` and `30b268a3` match WingFoil's record; the README
+  keeps dl-163's citation form; `**Last sync:** none` is unchanged; the inbox test 10 of 10.
+  - **Nit, left:** the README names the short `svc-020` as the source key, with the full id beside it. Whether a
+    WingFoil `reported_by:` cites the short or the full id is still open on WingFoil's side (its task-271, backlog);
+    the coordination session asked for `svc-020`. If WingFoil settles on the full id, a later task follows it.
+- **Suites:** the diff is `docs/` only; lint, typecheck and the inbox test stand in, as for task-076.
+- `npx wingfoil memory submit task-087-…` (in-progress → in-review). Declared: moves the task to its next state and
+  commits it. Observed: see the next commit, `wf(task): submit …`.
