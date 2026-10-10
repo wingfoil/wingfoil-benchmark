@@ -81,4 +81,26 @@ WingFoil's v0.3 retrospective.
 
 ## Execution notes
 
+- `npx wingfoil memory submit task-078-…` (backlog → in-progress) on 2026-10-10, once task-077 went to in-review.
+  Declared: moves the task to its next state and commits it. Observed: `status: in-progress`. Matches.
+- The branch merges `task/task-077-…` (the notes the directive cites); task-077 is in review and merges first.
+- **Red first:** three tests added to `test/unit/docs/wingfoil-feedback.test.ts` (rules 1–7 word for word, held as a
+  constant copied from WingFoil-Templates `53090c2` and checked identical to WingFoil-UI `1d9348d`; five cells per
+  known-behaviour row and every cited note existing; `wingfoil-cli` in `roles.yaml` `global:`). All three failed
+  before the directive existed; 10 of 10 pass after.
+- `npx wingfoil directive create --name wingfoil-cli`. Declared: creates the directive from the scaffold and commits
+  it. Observed: `wf(directive): create wingfoil-cli`, with `name: wingfoil-cli` and `title: "Wingfoil cli"`. The body
+  and the frontmatter's `name`/`title`/`tags` (as the models') were then written by hand in a `docs(directive)` commit,
+  since no verb writes a body.
+- **Rules 8 and 9** as the Design. **Known behaviours** W-01–W-14 as the Design's seed, each with its note and, where
+  one exists, its WingFoil element (task-077's counterparts).
+- `npx wingfoil directive assign --directive wingfoil-cli --role global`. Declared (help): assigns directives to a
+  role "as the committed dna.yaml declares it". Observed: `error: unknown role 'global' (not defined in dna.yaml)`,
+  exit 1, on `0.2-pre-3df305e` and `0.2.2`. So `roles.yaml`'s `global:` list was edited by hand
+  (`chore(wingfoil): bind wingfoil-cli globally …`), as the Design allowed. Rule 3 then asks for an entry and a note:
+  **F-039** (`New note (task-078).`, gap) and **W-15**.
+- `npx wingfoil directives list --role <r> --format json` for developer, reviewer, qa, architect, product-owner,
+  tech-lead, facilitator and scenario-author: each lists `wingfoil-cli`, and `warnings` is `[]` for all eight.
+- Day checks, niced: `npm run lint` 0, `npx tsc --noEmit -p .` 0, the inbox test 10 of 10.
+
 ## Review notes
