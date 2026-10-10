@@ -23,4 +23,4 @@ features: []          # from docs/01_vision/07_sequencer.md
 
 ## Retrospective
 
-<!-- What went well, what to change, and the WingFoil usage notes handed to WingFoil. -->
+<!-- What went well, what to change, and the notes added to the WingFoil feedback inbox. -->
