@@ -2,7 +2,7 @@
 id: task-083-bench-campaign-compare-two-executions-compared-through-each-arm-s-delta
 type: task
 title: "bench campaign compare: two executions compared through each arm's delta"
-status: pending
+status: backlog
 release: v0.2
 wave: W14
 features: [F5.2]
