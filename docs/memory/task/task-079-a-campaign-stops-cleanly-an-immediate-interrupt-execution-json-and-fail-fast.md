@@ -126,7 +126,8 @@ the execution's dates from `execution.json` (REQ-RES-02 as amended, with the sit
 **Build** on `task/task-079` (worktree `../WingFoil2-Benchmark-wt/task-079`, its own `npm ci`):
 - red first: `d3e50ba` (the two acceptance scenarios), `2e9fbc4` (unit: runner, schema, command line); both failed for
   the expected reasons (no `fail_fast` field, runs `failed` instead of `interrupted`, no `execution.json`);
-- `df06b20` the implementation, `81136cd` review round 1's fixes.
+- `df06b20` the implementation, `81136cd` review round 1's fixes, `2369f9c` round 2's, `3f99aa2` round 3's (a
+  reflow).
 - Checks, niced with 2 workers: `tsc --noEmit` clean, `npm run lint` clean, the touched tests green
   (`test/unit/runner`, `test/unit/results`, `test/unit/campaign/load.test.ts`, `test/unit/cli/main.test.ts`,
   `test/unit/cli/dry-run.test.ts`, `test/acceptance/campaign.test.ts`, `test/acceptance/runner.test.ts`,
@@ -170,3 +171,16 @@ clean. Findings and outcomes:
 10. nit: an interrupt during a rate-limited invocation could end the step `quota exhausted` and lose its bound →
     **fixed**, settled as interrupted; tested.
 11. nit: the Execution notes were empty → **fixed**, written above.
+
+**Round 2** — a fresh independent read-only agent (`Plan` subagent), on `ccb2bb7`. Verified the eleven round-1
+outcomes, and checked the whole diff again against REQ-RUN-19, REQ-FMT-06, REQ-NFR-03, REQ-FMT-01, REQ-RUN-08 and both
+scenarios. It judged the accepted race honestly recorded. Verdict: clean, with three nits:
+1. an error after an interrupt was not logged → **fixed**, `run <name>: interrupted (<reason>)` (`2369f9c`);
+2. the default wait's `pause` had no test → **fixed**, exported from `run.ts` (not from the runner's index) and tested
+   with fake timers; a mutation (an uncleared `setTimeout`) makes the test fail;
+3. the README did not say what a second signal leaves behind → **fixed**, one clause.
+
+**Round 3** — a fresh independent read-only agent, on `2369f9c`: the three fixes correct, the tests meaningful, the
+export within the architecture rule (tests may import a module's file). Verdict: clean, with one cosmetic nit: the
+README paragraph was not reflowed → **fixed** in `3f99aa2`, whitespace only (`git diff --word-diff` shows no word
+changed), so no further round.
