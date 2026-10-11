@@ -389,3 +389,29 @@ describe('arm digests in the campaign file (REQ-FMT-01 as amended, REQ-FMT-13)',
     expect(plain.ok && withDigests.ok && plain.value.id !== withDigests.value.id).toBe(true);
   });
 });
+
+describe('fail_fast in the campaign file (REQ-FMT-01 as amended, REQ-RUN-19, task-079)', () => {
+  function issues(failFast: unknown): string[] {
+    const result = loadCampaign(writeRepo({ ...completeCampaignYaml(), fail_fast: failFast }).file);
+    return result.ok ? [] : result.issues.map((issue) => issue.path);
+  }
+
+  it('accepts a positive whole number of runs', () => {
+    expect(issues({ same_error: 2 })).toEqual([]);
+    expect(issues({ same_error: 1 })).toEqual([]);
+  });
+
+  it('refuses zero, a fraction and an unknown key', () => {
+    expect(issues({ same_error: 0 })).toEqual(['fail_fast.same_error']);
+    expect(issues({ same_error: 1.5 })).toEqual(['fail_fast.same_error']);
+    expect(issues({ same_error: 2, same_step: 1 })).toEqual(['fail_fast.same_step']);
+  });
+
+  it('changes the campaign identity', () => {
+    const plain = loadCampaign(writeRepo(completeCampaignYaml()).file);
+    const failFast = loadCampaign(
+      writeRepo({ ...completeCampaignYaml(), fail_fast: { same_error: 2 } }).file,
+    );
+    expect(plain.ok && failFast.ok && plain.value.id !== failFast.value.id).toBe(true);
+  });
+});

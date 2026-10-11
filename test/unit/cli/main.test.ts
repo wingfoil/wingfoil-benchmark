@@ -544,6 +544,58 @@ describe('bench campaign run', () => {
   });
 });
 
+describe('bench campaign run, interrupted (REQ-RUN-19, task-079)', () => {
+  /** S1 once in the baseline arm with the fake agent, priced, so that it starts without a question. */
+  function freeCampaign(repetitions = 2): string {
+    const { file } = writeRepo(
+      {
+        ...completeCampaignYaml(),
+        harnesses: {},
+        arms: ['baseline'],
+        scenarios: [{ id: 'S1', version: '1.0' }],
+        repetitions: { S1: repetitions },
+        agent: { name: 'fake', version: '1.0.0' },
+        models: { default: 'fake-model' },
+      },
+      ['S1@1.0'],
+    );
+    priceCampaign(file);
+    return file;
+  }
+
+  it('turns a SIGINT into a stopped execution, says so, exits 1 and leaves no listener behind', async () => {
+    const listeners = [process.listenerCount('SIGINT'), process.listenerCount('SIGTERM')];
+    const ports = doubles({
+      onStep: () => {
+        process.emit('SIGINT');
+        throw new Error('the agent exited with code 130');
+      },
+    });
+    const { code, stdout } = await runWith(ports, 'campaign', 'run', freeCampaign());
+
+    expect(code).toBe(1);
+    expect(stdout).toContain("interrupt: stopping after the current step's agent is killed\n");
+    expect(stdout).toContain('0 runs completed, 0 failed, 1 interrupted\n');
+    expect(stdout).toContain('campaign ended: interrupted\n');
+    expect(ports.recorded.creates).toHaveLength(1);
+    expect([process.listenerCount('SIGINT'), process.listenerCount('SIGTERM')]).toEqual(listeners);
+  });
+
+  it('stops the same way on SIGTERM', async () => {
+    const ports = doubles({
+      onStep: () => {
+        process.emit('SIGTERM');
+        throw new Error('the agent exited with code 143');
+      },
+    });
+    const { code, stdout } = await runWith(ports, 'campaign', 'run', freeCampaign());
+
+    expect(code).toBe(1);
+    expect(stdout).toContain('campaign ended: interrupted\n');
+    expect(ports.recorded.creates).toHaveLength(1);
+  });
+});
+
 describe('checkCampaign', () => {
   it('loads every scenario the campaign names, in order', () => {
     const { root, file } = writeRepo();
