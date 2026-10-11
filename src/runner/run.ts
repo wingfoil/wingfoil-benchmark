@@ -730,7 +730,8 @@ async function executeRun(context: RunContext, options: RunnerOptions): Promise<
   } catch (error) {
     // Whatever failed once the interrupt removed the container (the setup, a command, the agent) is the interrupt.
     if (interrupted()) {
-      options.log?.(`run ${name}: interrupted`);
+      // Said, not recorded as a failure: what failed after the interrupt removed the container may still matter.
+      options.log?.(`run ${name}: interrupted (${reasonOf(error)})`);
       return record(
         { ...identity, ...(setup === undefined ? {} : { setup }), steps, outcome: 'interrupted' },
         plan,
@@ -1383,7 +1384,7 @@ async function executeStep(
  * Wait `ms` milliseconds, or until `signal` aborts (task-079): the timer is cleared then, so that an interrupted wait
  * keeps no process alive.
  */
-function pause(ms: number, signal: AbortSignal | undefined): Promise<void> {
+export function pause(ms: number, signal: AbortSignal | undefined): Promise<void> {
   return new Promise<void>((resolve) => {
     const done = () => {
       clearTimeout(timer);

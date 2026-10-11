@@ -1,8 +1,9 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { checkCampaign, runCampaign } from '../../../src/runner/index.js';
+import { pause } from '../../../src/runner/run.js';
 import type { SessionUsage } from '../../../src/agents/index.js';
 import { completeCampaignYaml, writeRepo } from '../../support/campaign-fixture.js';
 import { doubles, invocationOf } from '../../support/runner-doubles.js';
@@ -344,5 +345,31 @@ describe('fail_fast (REQ-RUN-19, REQ-NFR-03 as amended, task-079)', () => {
     expect(ports.recorded.creates).toHaveLength(3);
     expect(summary.outcome).toBe('completed');
     expect(existsSync(join(summary.resultsDir, 'execution.json'))).toBe(true);
+  });
+});
+
+describe("the default rate limit wait (task-079's review)", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('clears its timer when interrupted, so that no process is kept alive by it', async () => {
+    vi.useFakeTimers();
+    const interrupt = new AbortController();
+    const waited = pause(1_800_000, interrupt.signal);
+    expect(vi.getTimerCount()).toBe(1);
+
+    interrupt.abort();
+    await waited;
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('ends on its own after its time, without a signal or with one never aborted', async () => {
+    vi.useFakeTimers();
+    const interrupt = new AbortController();
+    const waits = [pause(1000, undefined), pause(1000, interrupt.signal)];
+    await vi.advanceTimersByTimeAsync(1000);
+    await Promise.all(waits);
+    expect(vi.getTimerCount()).toBe(0);
   });
 });

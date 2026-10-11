@@ -178,7 +178,8 @@ session met the subscription's usage limit (`quota exhausted`).
 
 **Stopping a campaign.** The first Ctrl-C (SIGINT) or SIGTERM stops it cleanly: the current step's agent is killed
 with its container at once and counted at its bound, as a step killed at its time cap; the run ends `interrupted`;
-no further run starts (`campaign ended: interrupted`). A second signal ends the process at once. A campaign file
+no further run starts (`campaign ended: interrupted`). A second signal ends the process at once, leaving `execution.json` `running` and possibly the run's container
+(see below). A campaign file
 may also set `fail_fast: {same_error: <k>}`: once *k* runs failed at the same step with the same error, no further
 run starts (`campaign ended: fail_fast`). Without it a failed run never stops the campaign. Each execution records
 its state in `results/<campaign-id>/<n>/execution.json`: `running`, then `completed`, or `stopped` with the reason
