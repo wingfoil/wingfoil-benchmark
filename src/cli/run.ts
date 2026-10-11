@@ -13,7 +13,16 @@ import { imagesCommand } from './images.js';
 import { runCommand } from './show.js';
 import { siteCommand } from './site.js';
 import { transcriptsCommand } from './transcripts.js';
-import { checkSpending, count, EXIT, portsFor, report, SPENDING_FLAG, USAGE } from './shared.js';
+import {
+  checkSpending,
+  count,
+  EXIT,
+  portsFor,
+  report,
+  SPENDING_FLAG,
+  USAGE,
+  withInterrupt,
+} from './shared.js';
 import type { Io, Ports } from './shared.js';
 
 export { agentCredential, EXIT } from './shared.js';
@@ -239,22 +248,26 @@ async function runCampaignCommand(
 
   let summary;
   try {
-    summary = await runCampaign(checked.value, {
-      ...resolved.value,
-      ...(harnessSources === undefined ? {} : { harnessSources }),
-      log: (line) => io.stdout(`${line}\n`),
-      logError: (line) => io.stderr(`${line}\n`),
-      // The credential reaches the container here and nowhere else (REQ-RUN-15, REQ-NFR-01), and
-      // the values to scrub are named rather than taken from the whole environment.
-      ...(credential === undefined ? {} : { containerEnv: credential, secrets: Object.values(credential) }),
-    });
+    // The maintainer's interrupt stops it cleanly (REQ-RUN-19, task-079).
+    summary = await withInterrupt(io, (signal) =>
+      runCampaign(checked.value, {
+        ...resolved.value,
+        ...(harnessSources === undefined ? {} : { harnessSources }),
+        log: (line) => io.stdout(`${line}\n`),
+        logError: (line) => io.stderr(`${line}\n`),
+        // The credential reaches the container here and nowhere else (REQ-RUN-15, REQ-NFR-01), and
+        // the values to scrub are named rather than taken from the whole environment.
+        ...(credential === undefined ? {} : { containerEnv: credential, secrets: Object.values(credential) }),
+        signal,
+      }),
+    );
   } catch (error) {
     // The campaign could not start at all: no Docker daemon, no results directory, no image.
     return report([{ path: 'campaign', message: reasonOf(error) }], io);
   }
   const ended = (outcome: string) => summary.runs.filter((run) => run.outcome === outcome).length;
-  // The runs that stopped at a cap or at the quota, after the usual two counts (task-024).
-  const stopped = (['cap reached', 'quota exhausted'] as const)
+  // The runs that stopped at a cap, at the quota or by an interrupt, after the usual two counts (task-024, task-079).
+  const stopped = (['cap reached', 'quota exhausted', 'interrupted'] as const)
     .filter((outcome) => ended(outcome) > 0)
     .map((outcome) => `, ${ended(outcome)} ${outcome}`)
     .join('');

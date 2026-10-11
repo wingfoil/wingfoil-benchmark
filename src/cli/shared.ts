@@ -179,3 +179,27 @@ export function report(issues: readonly Issue[], io: Io): number {
 export function count(n: number, noun: string): string {
   return `${n} ${noun}${n === 1 ? '' : 's'}`;
 }
+
+/** What a command prints when the maintainer interrupts an execution (REQ-RUN-19, task-079). */
+export const INTERRUPT_LINE = "interrupt: stopping after the current step's agent is killed";
+
+/**
+ * Run `work` with the maintainer's interrupt (REQ-RUN-19, task-079): the first SIGINT or SIGTERM aborts the signal
+ * `work` is given, which stops the execution cleanly. The listeners are `once`, so a second signal gets Node's own
+ * handling and ends the process at once, should the clean stop hang. Both are removed when `work` settles.
+ */
+export async function withInterrupt<T>(io: Io, work: (signal: AbortSignal) => Promise<T>): Promise<T> {
+  const controller = new AbortController();
+  const stop = () => {
+    io.stdout(`${INTERRUPT_LINE}\n`);
+    controller.abort();
+  };
+  process.once('SIGINT', stop);
+  process.once('SIGTERM', stop);
+  try {
+    return await work(controller.signal);
+  } finally {
+    process.removeListener('SIGINT', stop);
+    process.removeListener('SIGTERM', stop);
+  }
+}
