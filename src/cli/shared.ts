@@ -185,12 +185,16 @@ export const INTERRUPT_LINE = "interrupt: stopping after the current step's agen
 
 /**
  * Run `work` with the maintainer's interrupt (REQ-RUN-19, task-079): the first SIGINT or SIGTERM aborts the signal
- * `work` is given, which stops the execution cleanly. The listeners are `once`, so a second signal gets Node's own
- * handling and ends the process at once, should the clean stop hang. Both are removed when `work` settles.
+ * `work` is given, which stops the execution cleanly, and removes both listeners, so that a second signal of either
+ * kind gets Node's own handling and ends the process at once, should the clean stop hang. Both are removed when `work`
+ * settles too.
  */
 export async function withInterrupt<T>(io: Io, work: (signal: AbortSignal) => Promise<T>): Promise<T> {
   const controller = new AbortController();
   const stop = () => {
+    // Both listeners go with the first signal, whichever it is: the next one ends the process.
+    process.removeListener('SIGINT', stop);
+    process.removeListener('SIGTERM', stop);
     io.stdout(`${INTERRUPT_LINE}\n`);
     controller.abort();
   };

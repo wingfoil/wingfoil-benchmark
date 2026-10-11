@@ -430,14 +430,21 @@ export async function runPlan(plan: RunPlan, options: RunnerOptions): Promise<Ru
   try {
     ran = await executeRuns(plan, execution, resultsDir, options);
   } catch (error) {
-    // The execution itself could not go on (no Docker, no image): never left `running`, and the caller still hears it.
-    recordExecution({
-      state: 'stopped',
-      reason: 'error',
-      detail: reasonOf(error),
-      ended: date().toISOString(),
-    });
-    throw error;
+    // A terminal's Ctrl-C also reaches the image build's or a harness build's process: the interrupt, not an error.
+    if (options.signal?.aborted !== true) {
+      // The execution itself could not go on (no Docker, no image): never left `running`, and the caller hears it.
+      recordExecution({
+        state: 'stopped',
+        reason: 'error',
+        detail: reasonOf(error),
+        ended: date().toISOString(),
+      });
+      throw error;
+    }
+    ran = {
+      runs: [],
+      stop: { reason: 'interrupt', detail: `interrupted before any run: ${reasonOf(error)}` },
+    };
   }
   const { stop } = ran;
   const ended = date().toISOString();
@@ -545,7 +552,8 @@ async function executeRuns(
       };
     }
     // fail_fast (REQ-RUN-19): the same error at the same step, exactly, `same_error` times.
-    if (run.outcome === 'failed' && plan.failFast !== undefined) {
+    // Once every planned run has run, there is nothing left to stop: the execution is completed.
+    if (run.outcome === 'failed' && plan.failFast !== undefined && results.length < plan.runs.length) {
       const step = run.failedStep ?? 0;
       const key = `${step}\n${run.error ?? ''}`;
       const count = (failures.get(key) ?? 0) + 1;
@@ -1066,7 +1074,7 @@ async function executeStep(
   // what is left of the step's time. A killed session reports nothing (C3), so the kill is read here,
   // from the exit code, whatever the agent then says.
   const now = options.now ?? (() => performance.now());
-  const sleep = options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+  const sleep = options.sleep ?? ((ms: number) => pause(ms, options.signal));
   // A rate limit's waits move the deadline by as long: the cap bounds the agent's working time (task-051).
   let deadline = now() + pins.caps.step_time_s * 1000;
   let killed = false;
@@ -1183,6 +1191,8 @@ async function executeStep(
     let label = name;
     let cap = bound;
     while (
+      // An invocation the interrupt stopped is settled as interrupted, whatever it said (REQ-RUN-19).
+      interruption === undefined &&
       typeof result !== 'string' &&
       !killed &&
       result.error === undefined &&
@@ -1367,6 +1377,23 @@ async function executeStep(
     ...(rateLimitWaits.length === 0 ? {} : { rateLimitWaits }),
   };
   return error === undefined ? { ...result, outcome } : { ...result, outcome: 'failed', error };
+}
+
+/**
+ * Wait `ms` milliseconds, or until `signal` aborts (task-079): the timer is cleared then, so that an interrupted wait
+ * keeps no process alive.
+ */
+function pause(ms: number, signal: AbortSignal | undefined): Promise<void> {
+  return new Promise<void>((resolve) => {
+    const done = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', done);
+      resolve();
+    };
+    const timer = setTimeout(done, ms);
+    if (signal?.aborted === true) done();
+    else signal?.addEventListener('abort', done, { once: true });
+  });
 }
 
 /** `promise`, or less: it settles as soon as `signal` aborts (task-079), and as it does when there is no signal. */

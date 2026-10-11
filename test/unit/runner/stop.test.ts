@@ -58,9 +58,9 @@ describe('an interrupt (REQ-RUN-19, task-079)', () => {
     const summary = await runCampaign(campaign(), {
       ...ports,
       signal: interrupt.signal,
-      // The wait never ends by itself: only the interrupt can end it.
+      // The wait never ends by itself: only the interrupt, which comes while it is pending, can end it.
       sleep: () => {
-        interrupt.abort();
+        setTimeout(() => interrupt.abort(), 0);
         return new Promise<void>(() => {});
       },
     });
@@ -71,7 +71,41 @@ describe('an interrupt (REQ-RUN-19, task-079)', () => {
     expect(ports.recorded.resumes).toEqual([]);
   });
 
-  it("does not send the approver's reply once interrupted between invocations", async () => {
+  it('kills the agent at once: the container goes while the invocation is still running', async () => {
+    const interrupt = new AbortController();
+    const ports = doubles();
+    let killAgent: ((error: Error) => void) | undefined;
+    const summary = await runCampaign(campaign(), {
+      ...ports,
+      signal: interrupt.signal,
+      // An agent that runs until its container is removed under it, as a real session would until step_time_s.
+      agent: {
+        ...ports.agent,
+        runStep: (request) => {
+          ports.recorded.steps.push(request);
+          setTimeout(() => interrupt.abort(), 0);
+          return new Promise((_, reject) => {
+            killAgent = reject;
+          });
+        },
+      },
+      docker: {
+        ...ports.docker,
+        remove: async (container) => {
+          killAgent?.(new Error('the agent exited with code 137'));
+          return ports.docker.remove(container);
+        },
+      },
+    });
+
+    expect(ports.recorded.removes).toEqual(['container-1']);
+    expect(summary.runs[0]?.outcome).toBe('interrupted');
+    expect(summary.runs[0]?.steps).toEqual([
+      expect.objectContaining({ n: 1, outcome: 'interrupted', costBoundUsd: 3 }),
+    ]);
+  });
+
+  it("sends no approver's reply once interrupted during the invocation that asked, and counts it at its bound", async () => {
     const interrupt = new AbortController();
     const ports = doubles({
       messageOf: () => 'Shall I proceed?',
@@ -84,6 +118,46 @@ describe('an interrupt (REQ-RUN-19, task-079)', () => {
     expect(ports.recorded.resumes).toEqual([]);
     expect(summary.runs[0]?.outcome).toBe('interrupted');
     expect(summary.runs[0]?.steps.map((step) => step.outcome)).toEqual(['interrupted']);
+    expect(summary.runs[0]?.steps[0]?.costBoundUsd).toBe(3);
+  });
+
+  it('starts no invocation once interrupted before it, and counts no bound: none was running', async () => {
+    const interrupt = new AbortController();
+    const ports = doubles({
+      // The step's last command before its session: clearing the agent's auto-memory (bug-006).
+      execResultOf: (command) => {
+        if (command.join(' ').includes('.claude/projects')) interrupt.abort();
+        return undefined;
+      },
+    });
+    const summary = await runCampaign(campaign(), { ...ports, signal: interrupt.signal });
+
+    expect(ports.recorded.steps).toEqual([]);
+    expect(summary.runs[0]?.outcome).toBe('interrupted');
+    expect(summary.runs[0]?.steps.map((step) => step.outcome)).toEqual(['interrupted']);
+    expect(summary.runs[0]?.steps[0]?.costBoundUsd).toBeUndefined();
+  });
+
+  it('settles an invocation the rate limit stopped as interrupted when the interrupt came during it', async () => {
+    const interrupt = new AbortController();
+    const waits: number[] = [];
+    const ports = doubles({
+      stopOf: () => 'rate limited',
+      onStep: () => interrupt.abort(),
+    });
+    const summary = await runCampaign(campaign(), {
+      ...ports,
+      signal: interrupt.signal,
+      sleep: (ms) => {
+        waits.push(ms);
+        return Promise.resolve();
+      },
+    });
+
+    expect(waits).toEqual([]);
+    expect(summary.runs[0]?.steps).toEqual([
+      expect.objectContaining({ outcome: 'interrupted', costBoundUsd: 3 }),
+    ]);
   });
 
   it('starts no next step once interrupted after a step ended, which keeps its own outcome', async () => {
@@ -117,6 +191,26 @@ describe('an interrupt (REQ-RUN-19, task-079)', () => {
     expect(summary.runs.map((run) => run.outcome)).toEqual(['interrupted']);
     expect(ports.recorded.steps).toEqual([]);
     expect(ports.recorded.removes).toEqual(['container-1']);
+  });
+
+  it('records an interrupt that killed a preparation process as the interrupt, not an error', async () => {
+    const interrupt = new AbortController();
+    const ports = doubles();
+    const summary = await runCampaign(campaign(), {
+      ...ports,
+      signal: interrupt.signal,
+      docker: {
+        ...ports.docker,
+        containersNamed: () => {
+          interrupt.abort();
+          return Promise.reject(new Error('docker ps exited with code 130'));
+        },
+      },
+    });
+
+    expect(summary.outcome).toBe('interrupted');
+    expect(summary.runs).toEqual([]);
+    expect(execution(summary.resultsDir)).toMatchObject({ state: 'stopped', reason: 'interrupt' });
   });
 
   it('starts no run when interrupted before the first, and records why', async () => {
@@ -206,18 +300,32 @@ describe('fail_fast (REQ-RUN-19, REQ-NFR-03 as amended, task-079)', () => {
     expect(summary.outcome).toBe('completed');
   });
 
-  it('does not stop for the same error at different steps', async () => {
+  it('does not stop for the same error text at different steps', async () => {
     let run = 0;
     const ports = doubles({
-      errorOf: (request) => {
-        if (request.step === 1 && invocationOf(request) === 0) run += 1;
-        return request.step === (run % 2 === 1 ? 1 : 2) ? 'the same error' : undefined;
+      // A session that fails before naming itself: the run's error is the agent's text alone, whatever the step.
+      onStep: (request) => {
+        if (request.step === 1) run += 1;
+        if (request.step === run) throw new Error('the same error');
       },
     });
+    const summary = await runCampaign(campaign(3, { fail_fast: { same_error: 2 } }), ports);
+
+    expect(summary.runs.map((r) => [r.outcome, r.error, r.failedStep])).toEqual([
+      ['failed', 'the same error', 1],
+      ['failed', 'the same error', 2],
+      ['completed', undefined, undefined],
+    ]);
+    expect(summary.outcome).toBe('completed');
+  });
+
+  it('does not stop after the last planned run: every run ran, and the execution is completed', async () => {
+    const ports = doubles({ errorOf: (request) => (request.step === 1 ? 'the same error' : undefined) });
     const summary = await runCampaign(campaign(2, { fail_fast: { same_error: 2 } }), ports);
 
     expect(summary.runs.map((r) => r.outcome)).toEqual(['failed', 'failed']);
     expect(summary.outcome).toBe('completed');
+    expect(execution(summary.resultsDir)).toMatchObject({ state: 'completed' });
   });
 
   it('counts a failure before step 1 at step 0, and stops after one with same_error 1', async () => {

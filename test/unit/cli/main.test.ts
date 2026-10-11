@@ -565,9 +565,12 @@ describe('bench campaign run, interrupted (REQ-RUN-19, task-079)', () => {
 
   it('turns a SIGINT into a stopped execution, says so, exits 1 and leaves no listener behind', async () => {
     const listeners = [process.listenerCount('SIGINT'), process.listenerCount('SIGTERM')];
+    const afterFirst: number[] = [];
     const ports = doubles({
       onStep: () => {
         process.emit('SIGINT');
+        // Both listeners went with the first signal: a second one, of either kind, ends the process.
+        afterFirst.push(process.listenerCount('SIGINT'), process.listenerCount('SIGTERM'));
         throw new Error('the agent exited with code 130');
       },
     });
@@ -578,6 +581,7 @@ describe('bench campaign run, interrupted (REQ-RUN-19, task-079)', () => {
     expect(stdout).toContain('0 runs completed, 0 failed, 1 interrupted\n');
     expect(stdout).toContain('campaign ended: interrupted\n');
     expect(ports.recorded.creates).toHaveLength(1);
+    expect(afterFirst).toEqual(listeners);
     expect([process.listenerCount('SIGINT'), process.listenerCount('SIGTERM')]).toEqual(listeners);
   });
 
