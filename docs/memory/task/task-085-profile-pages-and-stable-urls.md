@@ -165,3 +165,15 @@ not clean, with one should-fix. Red tests `262fc05`, fixes `1d05327`:
 2. nit: an unreadable `execution.json` was reported twice by publish → **fixed**: once.
 3. nit: `2026-13-45` passed as a date → **fixed**: an ISO timestamp whose own day is the one it names.
 
+**Round 3**: a fresh, independent, read-only agent, on `08b7332`. It checked that `primaryOf` leaves the landing
+page's bytes as they were and reads only what REQ-RES-02 lists, and that the date check accepts every timestamp the
+runner writes. Verdict: not clean, with one should-fix. Red tests `7bef666`, fixes `84f34fd`:
+1. should-fix: a run not run whose scenario could not be read was silently left off every profile page → **fixed**:
+   refused, naming it, as an unreadable scenario of a group is.
+2. nit: de-duplicating by path hid a different issue on the same path → **fixed**: by path and message.
+3. nit: a timestamp with an offset or no zone depended on the machine's time zone → **fixed**: only the UTC form the
+   runner writes.
+4. nit: the round-trip check was untested → **fixed**: `2026-02-30` and an offset timestamp are tested. Both were
+   already refused by the old check, so these pin it.
+5. nit: a malformed `not_run` crashed the build → **fixed**: `aggregateShape` checks it, and the case is tested.
+
