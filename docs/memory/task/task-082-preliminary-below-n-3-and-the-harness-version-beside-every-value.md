@@ -144,3 +144,15 @@ should-fix). All fixed in `d1d329e`; their tests were written with the fixes, ea
    and the control's recomputed certainty.
 9. nit: no style for `.harness` → **fixed**, the smaller size of its neighbours.
 
+**Round 2** — a fresh independent read-only agent, on `873fb15`: the nine round-1 outcomes verified, the whole diff
+read again. Verdict: not clean (one should-fix). All fixed in `97582eb`, tests written with the fixes:
+1. should-fix: the chart's width ignored its legend, which the harness labels made 3–4 times longer: with seven arms
+   the last ones would be clipped → **fixed**: the chart is as wide as its legend; a test with seven arms checks the
+   last legend entry fits, and fails when the width ignores the legend (mutation checked).
+2. nit: a campaign pinned by commit records the commit as the version, giving `wingfoil 3df305e · 3df305e` →
+   **fixed**: a version that is a commit is not shown; tested.
+3. nit: the slice line had no test → **fixed**: a render test.
+4. nit: the pin was read with a loose schema of its own → **fixed**: read with `campaignSchema`, as the method page
+   reads it.
+5. nit: the bars' tooltips named the arm alone → **fixed**: the legend's text.
+
