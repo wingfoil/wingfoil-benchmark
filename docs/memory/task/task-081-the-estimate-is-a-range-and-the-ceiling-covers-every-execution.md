@@ -161,3 +161,9 @@ record. Verdict: clean, with two nits, both **fixed** in `1edad7a`:
    refuses a non-object with its path, and the command-line test covers it; the test was written with the fix.
 2. the spending seed's comment still spoke of a resume only. It now says every execution.
 
+**Round 3**: a fresh, independent, read-only agent, on `1edad7a`. It found both fixes correct, the null case reaching
+the new branch, and every caller type-checked. Verdict: clean, with two optional nits, both **no change**:
+1. a cast in `runsToResume` that is now redundant: harmless.
+2. a `run.json` holding an array passes the object check, and reads as a record with no outcome, as `{}` already does:
+   an edge case outside the review's ask.
+
