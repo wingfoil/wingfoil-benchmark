@@ -167,3 +167,14 @@ the new branch, and every caller type-checked. Verdict: clean, with two optional
 2. a `run.json` holding an array passes the object check, and reads as a record with no outcome, as `{}` already does:
    an edge case outside the review's ask.
 
+### Full suites
+
+`scripts/full-suites.sh task/task-081` on 2026-10-12, at the approver's request ("Avvia la suite"), on `4004bd7` (the
+in-review submit), worktree clean: `LINT 0 TEST 0 BUILD 0 BIN 0 DOCKER 0`. `npm test` 1480 passed, 8 skipped, statement
+coverage 97.72 %; `test:bin` 8/8; `test:docker` 20 passed, 2 skipped. Log:
+`.cache/full-suites/2026-10-12/task_task-081-4004bd7-102150.txt`. The commit after it adds only these notes.
+
+**WingFoil command, declared vs observed:** `npx wingfoil memory submit task-081-…` on the branch: declared
+in-progress → in-review; observed `{"from": "in-progress", "to": "in-review"}`, exit 0, one `wf(task): submit …`
+commit (`4004bd7`). No task was `in-review` on main or on a task branch before it.
+
