@@ -600,6 +600,35 @@ describe('bench campaign run, interrupted (REQ-RUN-19, task-079)', () => {
   });
 });
 
+describe('bench campaign run --resume (REQ-CLI-03 as amended, task-080)', () => {
+  it('wants a campaign execution after --resume, in any order with the spending flag', async () => {
+    const { file } = writeRepo(completeCampaignYaml());
+    for (const argv of [
+      ['--resume'],
+      ['--resume', 'abc'],
+      ['--resume', 'dry-runs/1'],
+      ['--resume', 'abcdef012345/0'],
+      ['--resume', 'abcdef012345/1', '--resume', 'abcdef012345/1'],
+    ]) {
+      expect((await run('campaign', 'run', file, ...argv)).code, argv.join(' ')).toBe(2);
+    }
+    for (const argv of [
+      ['--resume', 'abcdef012345/1', '--allow-spending'],
+      ['--allow-spending', '--resume', 'abcdef012345/1'],
+    ]) {
+      const { code, stderr } = await run('campaign', 'run', file, ...argv);
+      expect(code).toBe(1);
+      expect(stderr).toContain('resuming would mix results');
+    }
+  });
+
+  it('does not take --resume on validate or estimate', async () => {
+    const { file } = writeRepo(completeCampaignYaml());
+    expect((await run('campaign', 'validate', file, '--resume', 'abcdef012345/1')).code).toBe(2);
+    expect((await run('campaign', 'estimate', file, '--resume', 'abcdef012345/1')).code).toBe(2);
+  });
+});
+
 describe('checkCampaign', () => {
   it('loads every scenario the campaign names, in order', () => {
     const { root, file } = writeRepo();
