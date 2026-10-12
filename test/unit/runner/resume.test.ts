@@ -183,14 +183,15 @@ describe('a resume, after the first review (task-080)', () => {
     const file = join(first.resultsDir, 'execution.json');
     writeFileSync(file, JSON.stringify({ ...json(file), state: 'running' }));
     const lines: string[] = [];
+    const errors: string[] = [];
     await runCampaign(
       checked,
-      { ...doubles(), log: (line) => lines.push(line) },
+      { ...doubles(), log: (line) => lines.push(line), logError: (line) => errors.push(line) },
       { resume: first.execution },
     );
 
     expect(lines).toContain('resume: 2 runs to run (1 failed, 1 left no record), 1 run kept (1 completed)');
-    expect(lines.some((line) => line.includes('says it is running'))).toBe(true);
+    expect(errors.some((line) => line.includes('says it is running'))).toBe(true);
   });
 
   it('leaves execution.json as it was when a run record cannot be read', async () => {
@@ -199,7 +200,9 @@ describe('a resume, after the first review (task-080)', () => {
     const record = readFileSync(join(first.resultsDir, 'execution.json'), 'utf8');
     writeFileSync(join(runDir(first.resultsDir, 1), 'run.json'), '{ truncated');
 
-    await expect(runCampaign(checked, doubles(), { resume: first.execution })).rejects.toThrow();
+    await expect(runCampaign(checked, doubles(), { resume: first.execution })).rejects.toThrow(
+      'runs/S1@1.0/baseline/fake-model/r1/run.json cannot be read',
+    );
     expect(readFileSync(join(first.resultsDir, 'execution.json'), 'utf8')).toBe(record);
   });
 
@@ -230,6 +233,22 @@ describe('a resume, after the first review (task-080)', () => {
       ports.recorded.runOnce.filter((request) => request.command.join(' ').includes('/build/arm/')),
     ).toEqual([]);
     expect(readFileSync(rules, 'utf8')).toBe(before);
+  });
+});
+
+describe('a resume, after the second review (task-080)', () => {
+  it('numbers a new attempt after the highest, so that a gap never overwrites one', async () => {
+    const checked = campaign(1);
+    const first = await runCampaign(checked, failing());
+    const dir = runDir(first.resultsDir, 1);
+    mkdirSync(join(dir, 'attempts', '3'), { recursive: true });
+    writeFileSync(join(dir, 'attempts', '3', 'run.json'), '{"outcome":"failed","attempts":3}');
+
+    await runCampaign(checked, doubles(), { resume: first.execution });
+
+    expect(json(join(dir, 'attempts', '3', 'run.json'))).toEqual({ outcome: 'failed', attempts: 3 });
+    expect(json(join(dir, 'attempts', '4', 'run.json'))).toMatchObject({ outcome: 'failed' });
+    expect(json(join(dir, 'run.json'))).toMatchObject({ outcome: 'completed', attempts: 5 });
   });
 });
 

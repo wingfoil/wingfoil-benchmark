@@ -8,7 +8,7 @@ import {
   renameSync,
   writeFileSync,
 } from 'node:fs';
-import { basename, dirname, join } from 'node:path';
+import { basename, dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { foldModels, scrub } from '../agents/index.js';
@@ -468,7 +468,7 @@ export async function runPlan(plan: RunPlan, options: RunnerOptions, resume?: nu
     options.log?.(`${plan.noun} ${plan.id}, execution ${execution}, resumed`);
     // A hard kill leaves `running`; so does an invocation still preparing, which has no container yet to find.
     if (earlier.state === 'running') {
-      options.log?.(
+      options.logError?.(
         `execution ${execution} says it is running: if another invocation is still preparing it, stop this one`,
       );
     }
@@ -549,7 +549,7 @@ function runsToResume(
       runs.push(planned);
       continue;
     }
-    const outcome = String((JSON.parse(readFileSync(file, 'utf8')) as { outcome?: unknown }).outcome);
+    const outcome = String((readRecord(file, resultsDir) as { outcome?: unknown }).outcome);
     if (RUN_AGAIN.has(outcome)) {
       count(outcome);
       runs.push(planned);
@@ -569,8 +569,9 @@ function runsToResume(
 
 /**
  * Refuse to resume an execution that still has a container (task-080): a running one means another invocation may be
- * running it, and two would write the same records; a stopped one was left by a run killed without a record, which
- * would fail again at once and count an attempt that never ran (REQ-FMT-06: `attempts` is the times it ran).
+ * running it, and two would write the same records; a stopped one was left behind by an earlier run of it, and a re-run
+ * of that run would fail again at once and count an attempt that never ran (REQ-FMT-06: `attempts` is the times it
+ * ran).
  */
 async function refuseLeftovers(plan: RunPlan, execution: number, options: RunnerOptions): Promise<void> {
   const prefix = `${containerPrefix(plan.id)}${execution}-`;
@@ -582,8 +583,8 @@ async function refuseLeftovers(plan: RunPlan, execution: number, options: Runner
     left.running
       ? `execution ${execution} of this ${plan.noun} has a running container, ${left.name}: another invocation ` +
           `may be running it. If none is, remove it with: docker rm --force ${left.name}`
-      : `execution ${execution} of this ${plan.noun} still has the container ${left.name}, left by a run killed ` +
-          `without a record (bug-003). Remove it with: docker rm --force ${left.name}`,
+      : `execution ${execution} of this ${plan.noun} still has the container ${left.name}, left behind by an ` +
+          `earlier run of it (bug-003). Remove it with: docker rm --force ${left.name}`,
   );
 }
 
@@ -596,7 +597,7 @@ function recordedSpendingEur(runsDir: string, pins: RunPins): number {
   let total = 0;
   for (const entry of readdirSync(runsDir, { withFileTypes: true, recursive: true })) {
     if (!entry.isFile() || entry.name !== 'run.json') continue;
-    const run = JSON.parse(readFileSync(join(entry.parentPath, entry.name), 'utf8')) as {
+    const run = readRecord(join(entry.parentPath, entry.name), dirname(runsDir)) as {
       steps?: { usage?: { costEur?: number }; cost_bound_usd?: number }[];
     };
     total += spentEur(
@@ -617,15 +618,28 @@ function recordedSpendingEur(runsDir: string, pins: RunPins): number {
 function nextAttempt(outputDir: string): number {
   if (!existsSync(outputDir)) return 1;
   const attemptsDir = join(outputDir, ATTEMPTS);
-  const earlier = existsSync(attemptsDir)
-    ? readdirSync(attemptsDir).filter((name) => /^[1-9]\d*$/.test(name)).length
-    : 0;
+  // The highest number, not the count: a gap must never make an attempt overwrite another.
+  const earlier = Math.max(
+    0,
+    ...(existsSync(attemptsDir) ? readdirSync(attemptsDir) : [])
+      .filter((name) => /^[1-9]\d*$/.test(name))
+      .map(Number),
+  );
   const left = readdirSync(outputDir).filter((name) => name !== ATTEMPTS);
   if (left.length === 0) return earlier + 1;
   const target = join(attemptsDir, String(earlier + 1));
   mkdirSync(target, { recursive: true });
   for (const name of left) renameSync(join(outputDir, name), join(target, name));
   return earlier + 2;
+}
+
+/** A run's `run.json`, or an error naming it under `resultsDir`: a resume reads every one before it starts. */
+function readRecord(file: string, resultsDir: string): unknown {
+  try {
+    return JSON.parse(readFileSync(file, 'utf8'));
+  } catch (error) {
+    throw new Error(`${relative(resultsDir, file)} cannot be read: ${reasonOf(error)}`, { cause: error });
+  }
 }
 
 /** Where a run's earlier attempts lie, under its own directory (REQ-FMT-06 as amended). */
