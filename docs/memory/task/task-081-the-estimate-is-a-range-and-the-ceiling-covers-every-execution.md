@@ -105,4 +105,36 @@ new figures in the red commit, each change named in the Execution notes.
 
 ## Execution notes
 
+**WingFoil commands, declared vs observed:** `npx wingfoil memory submit task-081-…` on main (`5c41c69`), after the
+Design's own commit (`87e197c`, W-01). Declared: backlog → in-progress. Observed: `{"from": "backlog", "to":
+"in-progress"}`, exit 0, one `wf(task): submit …` commit (W-14).
+
+**Build** on `task/task-081` (worktree `../WingFoil2-Benchmark-wt/task-081`, its own `npm ci`):
+- red first, `216cc75`:
+  - the two acceptance scenarios: the W5 estimate test amended to the range, and the new ceiling-across-executions
+    test;
+  - the @F1.3 guard messages amended, their fixture priced by two equal dry runs (`priceCampaign(file, usd, 2)`), so
+    that the scenarios keep their 42 and 130 EUR;
+  - unit tests for `findDryRuns`, the range, the margin, what is left, `campaignSpendingEur` and the in-run ceiling.
+  All failed for the expected reasons.
+- `4aca995`, the implementation and the README. Three test files pinned the old output, and are amended in the same
+  commit, which names them:
+  - `test/unit/runner/estimate.test.ts`: the margin on single dry runs, the range fields;
+  - `test/unit/cli/main.test.ts`: the `budget guard:` line, and the guard messages, whose fixture now prices with two
+    dry runs;
+  - `test/bin/bench.test.ts`: the same.
+  This departs from the Design, which put them in the red commit: their exact text is the implementation's.
+- Checks, niced, with 2 workers: `tsc` clean and `npm run lint` clean. `test/unit` and `test/acceptance` green: 1478
+  passed, 8 skipped.
+
+**Decisions taken in the build, inside the Design:**
+- The guard's messages name its parts: `the budget guard, S + H = G EUR, is above the ceiling, C EUR`, and the same
+  above the warning threshold. The old `the estimate, X EUR` would now be untrue whenever earlier executions spent
+  something.
+- `campaign run` prints the estimate's total line and the guard's lines, not every key's line, as before.
+- The margin is exact in the code (`cost × 1.35`). Tests compare rounded figures, since 1.35 is not exact in binary
+  floating point.
+- `executionSpendingEur` names an unreadable record relative to `results/`. task-080's resume reads records through it
+  now, and its test expectation still holds.
+
 ## Review notes
