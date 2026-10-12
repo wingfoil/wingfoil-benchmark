@@ -88,22 +88,23 @@ export function writeStoredDryRun(root: string, execution: number, run: StoredDr
  * model and its slices (task-022's keys) — so that `campaign run` can estimate it (task-023). A campaign
  * that does not check is left alone: the test is about that.
  */
-export function priceCampaign(file: string, usd = 0): void {
+export function priceCampaign(file: string, usd = 0, dryRuns = 1): void {
   const checked = checkCampaign(file);
   if (!checked.ok) return;
   const { repoRoot, resultsRoot, spec } = checked.value.campaign;
   let execution = nextExecution(resultsRoot, 'dry-runs');
   for (const { scenario, arm, model } of campaignKeys(checked.value)) {
-    writeStoredDryRun(repoRoot, execution, {
-      id: scenario.id,
-      version: scenario.version,
-      hash: scenario.hash,
-      arm,
-      model,
-      stepCostsUsd: [usd],
-      agent: { name: spec.agent.name, version: spec.agent.version },
-      ...(spec.agent.effort?.[model] === undefined ? {} : { effort: spec.agent.effort[model] }),
-    });
-    execution += 1;
+    for (let made = 0; made < dryRuns; made += 1, execution += 1) {
+      writeStoredDryRun(repoRoot, execution, {
+        id: scenario.id,
+        version: scenario.version,
+        hash: scenario.hash,
+        arm,
+        model,
+        stepCostsUsd: [usd],
+        agent: { name: spec.agent.name, version: spec.agent.version },
+        ...(spec.agent.effort?.[model] === undefined ? {} : { effort: spec.agent.effort[model] }),
+      });
+    }
   }
 }

@@ -210,3 +210,48 @@ describe('estimateCampaign (F1.2, task-022)', () => {
     );
   });
 });
+
+describe('the estimate as a range (REQ-CLI-02 as amended in 1.26, task-081)', () => {
+  it('prices a key with several dry runs at their lowest, mean and highest, with no margin', () => {
+    const { root, checked } = campaign({ arms: ['baseline'], harnesses: {} });
+    const hash = hashOf(checked);
+    writeStoredDryRun(root, 1, { hash, arm: 'baseline', stepCostsUsd: [0.5] });
+    writeStoredDryRun(root, 2, { hash, arm: 'baseline', stepCostsUsd: [1.5] });
+    writeStoredDryRun(root, 3, { hash, arm: 'baseline', stepCostsUsd: [1] });
+
+    const result = estimateCampaign(checked);
+    if (!result.ok) throw new Error(JSON.stringify(result.issues));
+
+    expect(result.value).toMatchObject({ lowUsd: 1, meanUsd: 2, highUsd: 3, highEur: 1.5, rate: 0.5 });
+    expect(result.value.lines[0]).toMatchObject({ lowUsd: 0.5, meanUsd: 1, highUsd: 1.5, margin: false });
+    expect(formatEstimate(result.value, root)).toEqual([
+      'T3@1.0 baseline fake-model: low 0.5000, mean 1.0000, high 1.5000 USD × 2 = 3.0000 USD ' +
+        '(3 dry runs: results/dry-runs/3, results/dry-runs/2, results/dry-runs/1)',
+      'estimate: low 1.0000, mean 2.0000, high 3.0000 USD; high 1.5000 EUR at 0.5 EUR/USD, API-equivalent',
+    ]);
+  });
+
+  it('adds a stated 35 % margin to the high figure of a key with one dry run', () => {
+    const { root, checked } = campaign({ arms: ['baseline'], harnesses: {} });
+    writeStoredDryRun(root, 1, { hash: hashOf(checked), arm: 'baseline', stepCostsUsd: [1] });
+
+    const result = estimateCampaign(checked);
+    if (!result.ok) throw new Error(JSON.stringify(result.issues));
+
+    expect(result.value).toMatchObject({ lowUsd: 2, meanUsd: 2, highUsd: 2.7 });
+    expect(formatEstimate(result.value, root)[0]).toBe(
+      'T3@1.0 baseline fake-model: 1.0000 USD + 35 % margin = 1.3500 USD × 2 = 2.7000 USD (1 dry run: results/dry-runs/1)',
+    );
+  });
+
+  it('prices only what is left, and needs no dry run for a key with nothing left', () => {
+    const { root, checked } = campaign();
+    writeStoredDryRun(root, 1, { hash: hashOf(checked), arm: 'baseline', stepCostsUsd: [1] });
+
+    const result = estimateCampaign(checked, new Map([['T3@1.0/baseline/fake-model', 1]]));
+    if (!result.ok) throw new Error(JSON.stringify(result.issues));
+
+    expect(result.value.lines.map((line) => [line.arm, line.repetitions])).toEqual([['baseline', 1]]);
+    expect(result.value.highUsd).toBe(1.35);
+  });
+});

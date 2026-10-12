@@ -27,7 +27,7 @@ afterEach(() => {
  * fake agent, reporting `perStepUsd` for each of T3's two steps.
  */
 async function pricedRepository(
-  arms: Readonly<Record<string, number>>,
+  arms: Readonly<Record<string, number | readonly number[]>>,
 ): Promise<{ root: string; file: string }> {
   const root = tempDir('bench-repo-');
   cpSync(repoPath('test/fixtures/scenarios/T3'), join(root, 'scenarios', 'T3'), { recursive: true });
@@ -49,7 +49,10 @@ async function pricedRepository(
     }),
   );
   vi.stubEnv('BENCH_WINGFOIL_REPO', '/clones/wingfoil');
-  for (const [arm, perStepUsd] of Object.entries(arms)) {
+  for (const [arm, costs] of Object.entries(arms).flatMap(([name, value]) =>
+    (typeof value === 'number' ? [value] : value).map((perStepUsd) => [name, perStepUsd] as const),
+  )) {
+    const perStepUsd = costs;
     const ports = doubles({
       commits: { '3df305e': '3df305ea198d7e2ca0da73bfb12b14af865e9922' },
       onRunOnce: (request) => {
@@ -117,7 +120,8 @@ function budgetedRepository(estimateEur: number, budget: { warn_eur: number; cei
       currency: { usd_to_eur: 1 },
     }),
   );
-  priceCampaign(file, estimateEur);
+  // Two dry runs of the same cost: a range with no margin, so that the guard's figure is the scenario's (task-081).
+  priceCampaign(file, estimateEur, 2);
   return file;
 }
 
@@ -252,21 +256,28 @@ describe('campaign.feature', () => {
   });
 
   it('@F1.2 The cost is estimated before any run starts', async () => {
-    const { file } = await pricedRepository({ baseline: 0.01, wingfoil: 0.05 });
+    // Three dry runs of T3 in the baseline arm, one in wingfoil (REQ-CLI-02 as amended in 1.26, task-081)
+    const { file } = await pricedRepository({ baseline: [0.01, 0.02, 0.03], wingfoil: 0.05 });
     const ports = doubles();
 
     // When the maintainer asks for the campaign's cost estimate
     const result = await estimate(file, ports);
 
-    // Then the estimate lists, per scenario and per arm, the dry-run cost times the repetitions
+    // Then the estimate lists, per scenario and per arm, the dry-run cost times the repetitions: the lowest, the mean
+    // and the highest of its dry runs, or the one dry run with a stated 35 % margin
     expect(result.code).toBe(0);
     const lines = result.stdout.split('\n');
     expect(lines.slice(0, 2)).toEqual([
-      'T3@1.0 baseline fake-model: 0.0200 USD × 3 = 0.0600 USD (results/dry-runs/1)',
-      'T3@1.0 wingfoil fake-model: 0.1000 USD × 3 = 0.3000 USD (results/dry-runs/2)',
+      'T3@1.0 baseline fake-model: low 0.0200, mean 0.0400, high 0.0600 USD × 3 = 0.1800 USD ' +
+        '(3 dry runs: results/dry-runs/3, results/dry-runs/2, results/dry-runs/1)',
+      'T3@1.0 wingfoil fake-model: 0.1000 USD + 35 % margin = 0.1350 USD × 3 = 0.4050 USD ' +
+        '(1 dry run: results/dry-runs/4)',
     ]);
-    // And it shows the total in euro, as an API-equivalent cost
-    expect(lines[2]).toBe('estimate: 0.3600 USD, 0.3312 EUR at 0.92 EUR/USD, API-equivalent');
+    // And it shows the total in euro, as an API-equivalent cost, and the figure the budget guard compares
+    expect(lines.slice(2, 4)).toEqual([
+      'estimate: low 0.3600, mean 0.4200, high 0.5850 USD; high 0.5382 EUR at 0.92 EUR/USD, API-equivalent',
+      'budget guard: 0.0000 + 0.5382 = 0.5382 EUR (warn 30 EUR, ceiling 100 EUR)',
+    ]);
     // And no agent session is started
     expect(ports.recorded.steps).toEqual([]);
     expect(ports.recorded.builds).toEqual([]);
@@ -302,7 +313,7 @@ describe('campaign.feature', () => {
     const declined = doubles();
     const refused = await start(file, declined, ['n']);
     expect(refused.stderr).toContain(
-      'campaign: the estimate, 42.0000 EUR, is above the warning threshold, 30 EUR\n',
+      'campaign: the budget guard, 0.0000 + 42.0000 = 42.0000 EUR, is above the warning threshold, 30 EUR\n',
     );
     expect(refused.questions).toEqual(['Start the campaign? [y/N] ']);
     expect(refused.code).toBe(1);
@@ -330,7 +341,7 @@ describe('campaign.feature', () => {
       // Then the campaign does not start
       expect(result.code).toBe(1);
       expect(result.stderr).toBe(
-        'campaign: not started: the estimate, 130.0000 EUR, is above the ceiling, 100 EUR. No option ' +
+        'campaign: not started: the budget guard, 0.0000 + 130.0000 = 130.0000 EUR, is above the ceiling, 100 EUR. No option ' +
           "overrides it: lower the campaign's cost, or raise ceiling_eur, which makes a new campaign\n",
       );
       expect(result.questions).toEqual([]);
@@ -592,6 +603,50 @@ describe('campaign.feature', () => {
       final: true,
     });
     expect(executionResumable(stored.executionDir).ok).toBe(false);
+  });
+  it('@F1.4 The ceiling covers every execution of a campaign', async () => {
+    // Given a campaign whose earlier execution already spent part of its ceiling: two runs of T3 under a 6.5 EUR
+    // ceiling, each run priced at 2 EUR by two dry runs; the first execution spent 3 EUR, its second run failing
+    const file = budgetedRepository(2, { warn_eur: 6.5, ceiling_eur: 6.5 });
+    writeFileSync(
+      file,
+      readFileSync(file, 'utf8').replace('T3: 1', 'T3: 2').replace('run_cost_eur: 3', 'run_cost_eur: 10'),
+    );
+    const checked = loadCampaign(file);
+    if (!checked.ok) throw new Error(JSON.stringify(checked.issues));
+    let run = 0;
+    const first = await start(
+      file,
+      doubles({
+        usageOf: () => spent(1),
+        onStep: (request) => {
+          if (request.step === 1) run += 1;
+        },
+        errorOf: (request) => (run === 2 && request.step === 1 ? 'the network failed' : undefined),
+      }),
+    );
+    expect(first.stdout).toContain('1 run completed, 1 failed');
+
+    // When the maintainer runs it again
+    const again = doubles();
+    const refused = await start(file, again);
+    // Then the budget guard compares the ceiling with what every execution spent plus the highest estimate of what
+    // is left: 3 EUR spent, 4 EUR for the whole campaign again
+    expect(refused.code).toBe(1);
+    expect(refused.stderr).toContain(
+      'campaign: not started: the budget guard, 3.0000 + 4.0000 = 7.0000 EUR, is above the ceiling, 6.5 EUR',
+    );
+    expect(again.recorded.builds).toEqual([]);
+
+    // When the maintainer resumes it: only the failed run is left, 2 EUR
+    const resumed = doubles();
+    const resume = await start(file, resumed, undefined, '--resume', `${checked.value.id}/1`);
+    expect(resume.stdout).toContain('spent by earlier executions: 3.0000 EUR\n');
+    expect(resume.stdout).toContain(
+      'budget guard: 3.0000 + 2.0000 = 5.0000 EUR (warn 6.5 EUR, ceiling 6.5 EUR)\n',
+    );
+    expect(resume.code).toBe(0);
+    expect(resumed.recorded.creates).toHaveLength(1);
   });
 });
 

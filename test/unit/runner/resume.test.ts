@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { SessionUsage } from '../../../src/agents/index.js';
 import { checkCampaign, checkResume, runCampaign } from '../../../src/runner/index.js';
+import { campaignSpendingEur } from '../../../src/results/index.js';
 import { completeCampaignYaml, writeRepo } from '../../support/campaign-fixture.js';
 import { doubles } from '../../support/runner-doubles.js';
 
@@ -283,5 +284,29 @@ describe('checkResume (REQ-RUN-19, task-080)', () => {
     expect(reasons(`${id}/1`)).toEqual([
       `results/${id}/1 is already aggregated: a resume would change results already published`,
     ]);
+  });
+});
+
+describe('the ceiling across executions (REQ-RUN-08, REQ-CLI-02 as amended, task-081)', () => {
+  it('counts what every execution of the campaign spent, attempts and bounds included', async () => {
+    const checked = campaign(2);
+    const first = await runCampaign(checked, doubles({ usageOf: () => usage(0.25) }));
+    const second = await runCampaign(checked, failing());
+    await runCampaign(checked, doubles({ usageOf: () => usage(0.5) }), { resume: second.execution });
+
+    // First: two runs of two steps at 0.25. Second: two failed runs at 0, then re-run at 0.5 a step.
+    expect(campaignSpendingEur(checked.campaign.resultsRoot, checked.campaign.id, 1)).toBe(3);
+    expect(existsSync(join(runDir(second.resultsDir, 1), 'attempts', '1'))).toBe(true);
+  });
+
+  it('stops starting runs in a new execution once the earlier ones spent the ceiling', async () => {
+    const checked = campaign(2, { budget: { warn_eur: 1, ceiling_eur: 1 } });
+    await runCampaign(checked, doubles({ usageOf: () => usage(0.5) }));
+
+    const ports = doubles();
+    const summary = await runCampaign(checked, ports);
+
+    expect(ports.recorded.creates).toEqual([]);
+    expect(summary.outcome).toBe('budget exhausted');
   });
 });
