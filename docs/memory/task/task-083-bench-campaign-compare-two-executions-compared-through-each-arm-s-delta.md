@@ -118,4 +118,39 @@ of v0.1's reference campaign. The Execution notes record the result.
   and without a counterpart; `only_in`; `pins_differ`; same bytes twice.
 ## Execution notes
 
+**WingFoil commands, declared vs observed:** `npx wingfoil memory submit task-083-…` was run on main (`cfa26d9`), after
+the Design's own commit (`4f2c90d`, W-01). Declared: backlog → in-progress. Observed: `{"from": "backlog", "to":
+"in-progress"}`, exit 0, and one `wf(task): submit …` commit (W-14).
+
+**Build** on `task/task-083` (worktree `../WingFoil2-Benchmark-wt/task-083`, its own `npm ci`):
+- red first:
+  - `480299a` adds the four acceptance scenarios in the new `test/acceptance/comparison.test.ts`. They build two scored
+    executions of TC with the stored-run fixtures.
+  - `296c647` adds the unit tests. All of them failed for the expected reasons: the command does not exist, and
+    neither does `compareExecutions`.
+  - The unit tests then gained a `primaryOf` argument. The module boundary forbids `results` from importing
+    `scenario` (`eslint/module-boundaries.js`), so the command line passes the scenario's primary category as a
+    function. The tests do the same with `loadScenario`.
+- `a74dce6` holds `src/results/campaign-compare.ts`, `src/cli/compare.ts` and the README. The usage text changed, so
+  the two tests that pin it were updated in the same commit.
+- Checks, run niced with 2 workers: `tsc` and `npm run lint` are clean. `test/unit` and `test/acceptance` are green:
+  1494 passed, 8 skipped.
+
+**Done, by hand:** `bench campaign compare c82a5e74885b/1 c82a5e74885b/2`, the two aggregated executions of v0.1's
+reference campaign. It ran from the built CLI in a scratch copy of `results/c82a5e74885b` and `scenarios/`, so that
+no comparison was left in the repository's `results/`.
+- Output: exit 0, `9 groups compared, 0 not compared`, no pin differs (the same campaign file), 14 rows, nothing
+  `only_in`.
+- On S1 (n = 3 a side) wingfoil's M-Q1 delta goes from 0.6404 to −0.0141, a change of −0.6545, `within variance`.
+- Execution 1 is the one bug-013 describes, with two systematic failures at S1 step 03. A large change there is
+  expected.
+- The other scenarios are n = 1: preliminary.
+
+**Decisions taken in the build, inside the Design:**
+- The primary category comes in as `primaryOf`, as above.
+- The file's keys follow the order the code builds them in, not a sort, which is just as deterministic. The unit test
+  checks the same bytes twice.
+- `groups compared` on stdout counts the distinct scenario, arm and model of the rows. The baseline has no row of its
+  own.
+
 ## Review notes
