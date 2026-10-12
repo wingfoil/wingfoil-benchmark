@@ -489,3 +489,37 @@ describe('a profile page with no covered category (REQ-RES-08, task-085)', () =>
     expect(refused.stderr).toContain('site-content/profiles.yaml');
   }, 120_000);
 });
+
+describe('a profile page counts its own runs only, and holds no date (REQ-RES-08, task-085 review)', () => {
+  it('counts the runs of its categories, lists only their runs not run, and shows no date', async () => {
+    const { root, executionDir } = await siteExecution();
+    writeFileSync(
+      join(executionDir, 'execution.json'),
+      JSON.stringify({
+        state: 'stopped',
+        reason: 'interrupt',
+        started: '2026-10-05T12:00:00.000Z',
+        ended: '2026-10-05T13:00:00.000Z',
+        final: true,
+      }),
+    );
+    const aggregateFile = join(executionDir, 'aggregate.json');
+    const aggregate = JSON.parse(readFileSync(aggregateFile, 'utf8')) as Record<string, unknown>;
+    writeFileSync(
+      aggregateFile,
+      JSON.stringify({
+        ...aggregate,
+        not_run: ['TC@1.0/baseline/fake-model/r2', 'TD@1.0/baseline/fake-model/r2'],
+      }),
+    );
+    expect((await benchSite(root, 'site', 'build', EXECUTION)).code).toBe(0);
+    const dir = join(root, 'site', 'abcdef012345', '1');
+    const reviewer = readFileSync(join(dir, 'profile-code-reviewer.html'), 'utf8');
+    // Code reviewer: D and E; the fixture's D has one run a side
+    expect(reviewer).toContain('Campaign abcdef012345, execution 1: 2 runs of fake-model');
+    expect(reviewer).toContain('Not run: <code>TD@1.0/baseline/fake-model/r2</code>.');
+    expect(reviewer).not.toContain('TC@1.0/baseline/fake-model/r2');
+    for (const file of readdirSync(dir).filter((name) => name.endsWith('.html')))
+      expect(readFileSync(join(dir, file), 'utf8'), file).not.toMatch(/20\d\d-\d\d-\d\d/);
+  }, 120_000);
+});

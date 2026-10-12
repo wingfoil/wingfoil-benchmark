@@ -309,10 +309,10 @@ describe('comparison.feature', () => {
     // And the root index lists both executions with the date each ended
     const index = published('index.html');
     expect(index).toContain(
-      '<a href="abcdef012345/1/">campaign abcdef012345, execution 1</a>, ended 2026-10-05T12:00:00.000Z',
+      '<a href="abcdef012345/1/">campaign abcdef012345, execution 1</a>, ended 2026-10-05',
     );
     expect(index).toContain(
-      '<a href="fedcba987654/1/">campaign fedcba987654, execution 1</a>, ended 2026-10-12T12:00:00.000Z',
+      '<a href="fedcba987654/1/">campaign fedcba987654, execution 1</a>, ended 2026-10-12',
     );
   }, 240_000);
 });

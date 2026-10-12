@@ -16,7 +16,16 @@ import { describe, expect, it } from 'vitest';
 import { anonymousGit, githubHttpsUrl, publishCli } from '../../../src/core/index.js';
 import type { ProcessPort } from '../../../src/core/index.js';
 import { tempDir } from '../../support/scenario-fixture.js';
-import { benchPublish, gitIn, probeSaying, publishableSite } from '../../support/site-fixture.js';
+import {
+  benchPublish,
+  benchSite,
+  completeExecution,
+  gitIn,
+  probeSaying,
+  publishableSite,
+  STAND_INS,
+} from '../../support/site-fixture.js';
+import { CANCEL, storedRun } from '../../support/score-fixture.js';
 
 /** Every file under `dir`, relative, with its bytes. */
 function tree(dir: string): Record<string, string> {
@@ -310,4 +319,46 @@ describe('the visibility probe', () => {
     expect(local.ok).toBe(false);
     expect(calls).toHaveLength(2);
   });
+});
+
+describe('bench site publish and permanent URLs (REQ-RES-02, REQ-RES-04 as amended, task-085 review)', () => {
+  it('refuses a stale root index, naming one execution to build again', async () => {
+    const { root } = await publishableSite();
+    writeFileSync(join(root, 'site', 'index.html'), '<!doctype html>\n<p>an older root page</p>\n');
+    const refused = await benchPublish(root, probeSaying(true), 'site', 'publish');
+    expect(refused.code).toBe(1);
+    expect(refused.stderr).toContain(
+      'site/index.html: differs from a fresh build of the results: run bench site build abcdef012345/1\n',
+    );
+  }, 120_000);
+
+  it('refuses to drop from gh-pages an execution it published, which a site/ without it would', async () => {
+    const { root, bare } = await publishableSite();
+    expect((await benchPublish(root, probeSaying(true), 'site', 'publish')).code).toBe(0);
+    const pages = gitIn(bare, 'rev-parse', 'gh-pages');
+    // Another execution, built into a site/ that no longer holds the first: site/ is git-ignored, so a fresh
+    // clone, or rm -rf site/, leaves only what is built again
+    const later = 'fedcba987654/1';
+    const { executionDir } = await storedRun({
+      variant: STAND_INS[0],
+      steps: [{}, CANCEL],
+      into: { root, execution: later },
+    });
+    await storedRun({
+      variant: STAND_INS[0],
+      steps: [{}, CANCEL],
+      into: { root, execution: later, arm: 'wingfoil' },
+    });
+    completeExecution(root, executionDir, ['TC']);
+    expect((await benchSite(root, 'score', later)).code).toBe(0);
+    rmSync(join(root, 'site'), { recursive: true });
+    expect((await benchSite(root, 'site', 'build', later)).code).toBe(0);
+
+    const refused = await benchPublish(root, probeSaying(true), 'site', 'publish');
+    expect(refused.code).toBe(1);
+    expect(refused.stderr).toContain(
+      'gh-pages: publishes abcdef012345/1, which site/ does not hold: build it again (bench site build abcdef012345/1) before publishing',
+    );
+    expect(gitIn(bare, 'rev-parse', 'gh-pages')).toBe(pages);
+  }, 240_000);
 });
