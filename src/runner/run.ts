@@ -464,8 +464,14 @@ export async function runPlan(plan: RunPlan, options: RunnerOptions, resume?: nu
     if (!resumable.ok) throw new Error(resumable.issues.map((i) => `${i.path} ${i.message}`).join('; '));
     earlier = resumable.value;
     // Before its record is touched: another invocation's would be overwritten.
-    await refuseRunning(plan, execution, options);
+    await refuseLeftovers(plan, execution, options);
     options.log?.(`${plan.noun} ${plan.id}, execution ${execution}, resumed`);
+    // A hard kill leaves `running`; so does an invocation still preparing, which has no container yet to find.
+    if (earlier.state === 'running') {
+      options.log?.(
+        `execution ${execution} says it is running: if another invocation is still preparing it, stop this one`,
+      );
+    }
   }
 
   const date = options.date ?? (() => new Date());
@@ -476,14 +482,14 @@ export async function runPlan(plan: RunPlan, options: RunnerOptions, resume?: nu
     if (!('campaign' in plan.origin)) return;
     writeExecutionRecord(resultsDir, { ...fields, started, ...(resumed === undefined ? {} : { resumed }) });
   };
-  recordExecution({ state: 'running' });
-
+  // Read before the record is touched: a run record that cannot be read leaves the execution as it was.
   const { runs: planned, kept } =
     resume === undefined ? { runs: plan.runs, kept: [] } : runsToResume(plan, resultsDir, options);
   const spentBefore = resume === undefined ? 0 : recordedSpendingEur(join(resultsDir, 'runs'), plan.pins);
+  recordExecution({ state: 'running' });
   let ran: { runs: RunResult[]; stop?: { reason: Exclude<StopReason, 'error'>; detail: string } };
   try {
-    ran = await executeRuns(plan, planned, spentBefore, execution, resultsDir, options);
+    ran = await executeRuns(plan, planned, spentBefore, resume !== undefined, execution, resultsDir, options);
   } catch (error) {
     // A terminal's Ctrl-C also reaches the image build's or a harness build's process: the interrupt, not an error.
     if (options.signal?.aborted !== true) {
@@ -549,28 +555,36 @@ function runsToResume(
       runs.push(planned);
     } else kept.push(outcome);
   }
-  const reasons = [...why].map(([label, n]) => `${n} ${label}`).join(', ');
+  const byOutcome = (labels: Iterable<[string, number]>) => {
+    const text = [...labels].map(([label, n]) => `${n} ${label}`).join(', ');
+    return text === '' ? '' : ` (${text})`;
+  };
+  const keptBy = new Map<string, number>();
+  for (const outcome of kept) keptBy.set(outcome, (keptBy.get(outcome) ?? 0) + 1);
   options.log?.(
-    `resume: ${countRuns(runs.length)} to run${reasons === '' ? '' : ` (${reasons})`}, ${countRuns(kept.length)} kept`,
+    `resume: ${countRuns(runs.length)} to run${byOutcome(why)}, ${countRuns(kept.length)} kept${byOutcome(keptBy)}`,
   );
   return { runs, kept };
 }
 
 /**
- * Refuse to resume an execution one of whose containers is running (task-080): another invocation may be running it,
- * and two would write the same records.
+ * Refuse to resume an execution that still has a container (task-080): a running one means another invocation may be
+ * running it, and two would write the same records; a stopped one was left by a run killed without a record, which
+ * would fail again at once and count an attempt that never ran (REQ-FMT-06: `attempts` is the times it ran).
  */
-async function refuseRunning(plan: RunPlan, execution: number, options: RunnerOptions): Promise<void> {
+async function refuseLeftovers(plan: RunPlan, execution: number, options: RunnerOptions): Promise<void> {
   const prefix = `${containerPrefix(plan.id)}${execution}-`;
-  const running = (await options.docker.containersNamed(prefix)).find(
-    (container) => container.running && container.name.startsWith(prefix),
+  const left = (await options.docker.containersNamed(prefix)).find((container) =>
+    container.name.startsWith(prefix),
   );
-  if (running !== undefined) {
-    throw new Error(
-      `execution ${execution} of this ${plan.noun} has a running container, ${running.name}: another invocation ` +
-        `may be running it. If none is, remove it with: docker rm --force ${running.name}`,
-    );
-  }
+  if (left === undefined) return;
+  throw new Error(
+    left.running
+      ? `execution ${execution} of this ${plan.noun} has a running container, ${left.name}: another invocation ` +
+          `may be running it. If none is, remove it with: docker rm --force ${left.name}`
+      : `execution ${execution} of this ${plan.noun} still has the container ${left.name}, left by a run killed ` +
+          `without a record (bug-003). Remove it with: docker rm --force ${left.name}`,
+  );
 }
 
 /**
@@ -622,6 +636,7 @@ async function executeRuns(
   plan: RunPlan,
   planned: readonly PlannedRun[],
   spentBefore: number,
+  resumed: boolean,
   execution: number,
   resultsDir: string,
   options: RunnerOptions,
@@ -644,7 +659,8 @@ async function executeRuns(
     options,
   );
   // Every docs control's environment of every scenario, from its harness arm's configuration (REQ-RUN-11).
-  const projectRules = await prepareProjectRules(plan, harnesses, resultsDir, options);
+  // A resume keeps the generated rules its kept runs ran with (task-080), rather than generating them again.
+  const projectRules = await prepareProjectRules(plan, harnesses, resultsDir, options, resumed);
 
   const results: RunResult[] = [];
   // What the execution spent before, when it is resumed (task-080): a resume never gets a fresh ceiling.

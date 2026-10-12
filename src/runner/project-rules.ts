@@ -33,7 +33,7 @@ export interface ProjectRulesOptions {
  * (`docs_of`) — made by that arm's own setup, with the campaign's harness and the scenario's overlay for that arm, in a
  * one-off container of the campaign image, the arm's rules generator then applied as a run applies it (REQ-FMT-14) —
  * rendered by that harness's docs generator into `PROJECT_RULES.md`. Both are kept in the execution's results, under
- * `generated/<scenario>@<version>/<docs control>/`. Returns the rules file of each docs control and scenario, by arm
+ * `generated/<scenario>@<version>/<docs control>/`; with `reuse`, a resume's, those already there are kept. Returns the rules file of each docs control and scenario, by arm
  * then by `<id>@<version>`; an empty map for a campaign without a docs control.
  */
 export async function prepareProjectRules(
@@ -41,6 +41,7 @@ export async function prepareProjectRules(
   harnesses: ReadonlyMap<string, HarnessArtefact>,
   resultsDir: string,
   options: ProjectRulesOptions,
+  reuse = false,
 ): Promise<ReadonlyMap<string, ReadonlyMap<string, string>>> {
   const all = new Map<string, Map<string, string>>();
   for (const control of checked.arms.filter((arm) => arm.docsOf !== undefined)) {
@@ -63,7 +64,7 @@ export async function prepareProjectRules(
           key,
           scenario,
           { control: control.name, source, harness, generator },
-          { resultsDir, campaignId: checked.id },
+          { resultsDir, campaignId: checked.id, reuse },
           options,
         ),
       );
@@ -82,11 +83,14 @@ async function snapshot(
     readonly harness: HarnessArtefact;
     readonly generator: DocsGenerator;
   },
-  where: { readonly resultsDir: string; readonly campaignId: string },
+  where: { readonly resultsDir: string; readonly campaignId: string; readonly reuse: boolean },
   options: ProjectRulesOptions,
 ): Promise<string> {
   const { control, source, harness, generator } = arms;
   const generated = join(where.resultsDir, 'generated', key, control);
+  // A resumed execution's rules are those its earlier runs ran with (task-080): a setup need not give the same bytes
+  // twice, and runs of one group must not get two.
+  if (where.reuse && existsSync(join(generated, PROJECT_RULES))) return join(generated, PROJECT_RULES);
   const build = join(generated, 'build');
   const workspace = join(build, 'workspace');
   rmSync(generated, { recursive: true, force: true });

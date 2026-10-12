@@ -100,7 +100,17 @@ export async function scoreCommand(
   const record = readExecutionRecord(executionDir);
   if (!record.ok) return report(record.issues, io);
   const state = record.value;
-  if (failed === 0 && state !== undefined && state.state !== 'completed' && state.final !== true && !final) {
+  // One aggregated before its state was recorded (by hand, or before task-080) is aggregated again: it is no longer
+  // resumable, whatever its state says.
+  const aggregated = existsSync(join(executionDir, AGGREGATE_FILE));
+  if (
+    failed === 0 &&
+    state !== undefined &&
+    state.state !== 'completed' &&
+    state.final !== true &&
+    !final &&
+    !aggregated
+  ) {
     const [id] = target.split('/');
     io.stdout(
       `not aggregated: execution ${basename(executionDir)} is ${state.state}` +

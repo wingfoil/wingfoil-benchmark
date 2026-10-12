@@ -111,9 +111,17 @@ export async function packTranscripts(
   const withTranscripts: string[] = [];
   const runsWithout: string[] = [];
   for (const run of runs) {
-    const steps = join(executionDir, relativeRun(run), 'steps');
-    const own = (existsSync(steps) ? readdirSync(steps).sort() : [])
-      .map((step) => `${relativeRun(run)}/steps/${step}/${TRANSCRIPT}`)
+    // The run's earlier attempts first (REQ-CLI-11 as amended in 1.26, task-080), in their order, then its own.
+    const attemptsDir = join(executionDir, relativeRun(run), 'attempts');
+    const attempts = (existsSync(attemptsDir) ? readdirSync(attemptsDir) : [])
+      .filter((name) => /^[1-9]\d*$/.test(name))
+      .sort((a, b) => Number(a) - Number(b))
+      .map((name) => `${relativeRun(run)}/attempts/${name}`);
+    const own = [...attempts, relativeRun(run)]
+      .flatMap((dir) => {
+        const steps = join(executionDir, dir, 'steps');
+        return (existsSync(steps) ? readdirSync(steps).sort() : []).map((step) => `${dir}/steps/${step}/${TRANSCRIPT}`);
+      })
       .filter((path) => present(join(executionDir, path)));
     if (own.length === 0) runsWithout.push(run);
     else withTranscripts.push(run);
