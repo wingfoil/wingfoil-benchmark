@@ -154,3 +154,10 @@ Design's own commit (`87e197c`, W-01). Declared: backlog → in-progress. Observ
 4. nit: a `run.json` of `null` gave a pathless TypeError → **fixed**: named as unreadable.
 5. nit: the guard's failure in `run` lacked `not started:` → **fixed**.
 
+**Round 2**: a fresh, independent, read-only agent, on `b6d0b1a`. It verified the five round-1 outcomes and checked the
+whole diff again against REQ-CLI-02/03 and REQ-RUN-08, the scenarios, and `bench campaign estimate` with an unreadable
+record. Verdict: clean, with two nits, both **fixed** in `1edad7a`:
+1. a `run.json` of `null` read by a resume's selection still gave a pathless TypeError. The runner's `readRecord` now
+   refuses a non-object with its path, and the command-line test covers it; the test was written with the fix.
+2. the spending seed's comment still spoke of a resume only. It now says every execution.
+
