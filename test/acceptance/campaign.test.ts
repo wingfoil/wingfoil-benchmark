@@ -513,7 +513,7 @@ describe('campaign.feature', () => {
     });
   });
 
-  it('@F1.4 @error A resume is refused when it could mix results', async () => {
+  it('@F1.4 A resume is refused when it could mix results', async () => {
     const checked = cappedCampaign(3, 2, 100);
     const stopped = await runCampaign(checked, doubles());
     const target = `${checked.campaign.id}/${stopped.execution}`;

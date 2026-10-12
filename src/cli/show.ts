@@ -111,6 +111,8 @@ export function showRun(run: RunDetail, full: boolean, stepCount?: number): stri
   out.push(`- scenario: ${versionOf(run)} (${run.scenarioHash})`);
   const effort = run.effort === undefined ? '' : ` at effort ${run.effort}`;
   out.push(`- arm: ${run.arm}, model: ${run.model}${effort}, repetition: ${run.repetition}`);
+  // A run that ran more than once (REQ-RUN-19): its earlier attempts lie under its attempts/.
+  if (run.attempts !== undefined && run.attempts > 1) out.push(`- attempts: ${run.attempts}`);
   out.push(`- outcome: ${run.outcome}${run.error === undefined ? '' : ` (${run.error})`}`);
   // bug-016: a cost the agent could not price is not the model's list price.
   const unpriced = [

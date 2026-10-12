@@ -1,5 +1,5 @@
 import { existsSync, rmSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { basename, join, relative } from 'node:path';
 
 import { dockerCli, gitCli, systemProcess } from '../core/index.js';
 import type { DockerPort, GitPort, Issue, Scenario } from '../core/index.js';
@@ -8,8 +8,10 @@ import {
   aggregateExecution,
   DRY_RUNS,
   executionRuns,
+  readExecutionRecord,
   readStoredRun,
   writeAggregate,
+  writeExecutionRecord,
 } from '../results/index.js';
 import { checkHoldoutRoot, loadHoldoutAdditions, loadScenario } from '../scenario/index.js';
 import { scoreRun, scoreSummary, scoringImage, writeScore } from '../scoring/index.js';
@@ -38,11 +40,18 @@ export async function scoreCommand(
   root: string,
 ): Promise<number> {
   const [target, ...rest] = argv;
-  const holdoutOption = rest.length === 2 && rest[0] === HOLDOUT_OPTION ? rest[1] : undefined;
-  if (target === undefined || !TARGET.test(target) || (rest.length > 0 && holdoutOption === undefined)) {
+  const flags = scoreFlags(rest);
+  // `--final` declares a campaign's execution final (REQ-CLI-06 as amended): a dry run is never aggregated.
+  if (
+    target === undefined ||
+    !TARGET.test(target) ||
+    flags === undefined ||
+    (flags.final && target.startsWith(`${DRY_RUNS}/`))
+  ) {
     io.stderr(USAGE);
     return EXIT.usage;
   }
+  const { final, holdout: holdoutOption } = flags;
   const variable = process.env[HOLDOUT_VARIABLE] || undefined;
   const holdout = holdoutOption ?? variable;
   if (holdout !== undefined) {
@@ -86,8 +95,45 @@ export async function scoreCommand(
   }
   // A dry run is never aggregated (REQ-RES-01); a campaign's execution is, once every run is scored (F5.1).
   if (target.startsWith(`${DRY_RUNS}/`)) return failed > 0 ? EXIT.failure : EXIT.ok;
-  return aggregate(executionDir, name, failed, io);
+  // An execution that did not complete is aggregated only once the maintainer declares it final (REQ-CLI-06 as
+  // amended, task-080): scoring it never forecloses a resume. One without execution.json, v0.1's, aggregates as before.
+  const record = readExecutionRecord(executionDir);
+  if (!record.ok) return report(record.issues, io);
+  const state = record.value;
+  if (failed === 0 && state !== undefined && state.state !== 'completed' && state.final !== true && !final) {
+    const [id] = target.split('/');
+    io.stdout(
+      `not aggregated: execution ${basename(executionDir)} is ${state.state}` +
+        `${state.reason === undefined ? '' : ` (${state.reason})`}: resume it with bench campaign run <file> ` +
+        `--resume ${target}, or declare it final with bench score ${id ?? ''}/${basename(executionDir)} --final\n`,
+    );
+    return EXIT.ok;
+  }
+  const code = aggregate(executionDir, name, failed, io);
+  // Recorded once its aggregate is written: final, stopped or not, and never resumed (REQ-RUN-19).
+  if (code === EXIT.ok && final && state !== undefined && state.final !== true) {
+    writeExecutionRecord(executionDir, { ...state, final: true });
+  }
+  return code;
 }
+
+/** `score`'s flags: `--final` and `--holdout <path>`, each at most once, in any order; undefined for anything else. */
+function scoreFlags(argv: readonly string[]): { final: boolean; holdout?: string } | undefined {
+  let final = false;
+  let holdout: string | undefined;
+  for (let index = 0; index < argv.length; index += 1) {
+    const argument = argv[index];
+    if (argument === FINAL_FLAG && !final) final = true;
+    else if (argument === HOLDOUT_OPTION && holdout === undefined && argv[index + 1] !== undefined) {
+      holdout = argv[index + 1];
+      index += 1;
+    } else return undefined;
+  }
+  return { final, ...(holdout === undefined ? {} : { holdout }) };
+}
+
+/** Declares a stopped execution final, to aggregate it as it stands (REQ-CLI-06 as amended). */
+const FINAL_FLAG = '--final';
 
 /**
  * Write the execution's `aggregate.json` when all its runs were scored; otherwise remove one written

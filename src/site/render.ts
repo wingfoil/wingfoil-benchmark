@@ -385,7 +385,11 @@ export function landingPage(model: SiteModel): string {
     `<a href="method.html">How to read these results</a>; ` +
     `<a href="eligibility.html">which tools are eligible, and why</a>.</p>\n` +
     `<p class="meta">Campaign ${e(model.campaign)}, execution ${model.execution}: ${runs(model.runs)} of ${e(model.model)}` +
-    `${model.sliceRuns === 0 ? '' : `; ${runs(model.sliceRuns)} of other models, reported apart`}.</p>\n`;
+    `${model.sliceRuns === 0 ? '' : `; ${runs(model.sliceRuns)} of other models, reported apart`}.</p>\n` +
+    // The runs a stopped execution never started, once it was declared final (REQ-CLI-06 as amended, task-080).
+    (model.notRun === undefined || model.notRun.length === 0
+      ? ''
+      : `<p class="meta">Not run: ${model.notRun.map((run) => `<code>${e(run)}</code>`).join(', ')}.</p>\n`);
   return page(title(model), body, 2);
 }
 
@@ -398,7 +402,7 @@ export function categoryPage(model: SiteModel, row: CategoryRow): string {
   if (row.scenarios.length === 0) {
     body += `<p>${NOT_COVERED}. Planned from release ${e(goal.release)}.</p>\n`;
   }
-  for (const scenario of row.scenarios) body += scenarioSection(scenario);
+  for (const scenario of row.scenarios) body += scenarioSection(model, scenario);
   if (row.secondary.length > 0) {
     body +=
       '<h2>Scenarios that also touch this category</h2>\n<ul>\n' +
@@ -427,7 +431,7 @@ export function categoryPage(model: SiteModel, row: CategoryRow): string {
   return page(`${categoryHeading(row.category)} — ${title(model)}`, body, 2);
 }
 
-function scenarioSection(scenario: ScenarioRow): string {
+function scenarioSection(model: SiteModel, scenario: ScenarioRow): string {
   const name = `${scenario.scenario.id}@${scenario.scenario.version}`;
   let html = `<h2>${e(name)}</h2>\n`;
   for (const metric of scenario.metrics) {
@@ -449,8 +453,11 @@ function scenarioSection(scenario: ScenarioRow): string {
   for (const group of scenario.groups) {
     for (const run of group.runs) {
       const loss = group.losses.find((candidate) => candidate.run === run);
+      // A run that ran more than once says so beside it (REQ-RUN-19, task-080).
+      const attempts = model.records.find((record) => record.run === run)?.attempts ?? 1;
       html +=
         `<li><code>${e(run)}</code> — open with <code>bench run show ${e(run)}</code>` +
+        `${attempts > 1 ? ` — ${attempts} attempts` : ''}` +
         `${loss === undefined ? '' : ` — loss: ${e(loss.reason)}`}</li>\n`;
     }
   }

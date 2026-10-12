@@ -43,6 +43,7 @@ const runSchema = z.object({
   effort: z.string().optional(),
   model: z.string(),
   repetition: z.number().int(),
+  attempts: z.number().int().optional(),
   agent: z
     .union([z.string(), z.object({ name: z.string(), version: z.string().optional() }).passthrough()])
     .optional(),
@@ -161,6 +162,8 @@ export interface RunDetail {
   /** The effort the model ran at (dl-015), when the campaign pinned one. */
   readonly effort?: string;
   readonly repetition: number;
+  /** How many times the run ran (REQ-RUN-19, task-080); absent before v0.2, which ran every run once. */
+  readonly attempts?: number;
   readonly outcome: string;
   readonly error?: string;
   /** The agent's name and version, as the campaign pinned them. */
@@ -304,6 +307,7 @@ export function readRunDetail(runDir: string): Result<RunDetail> {
     model: run.model,
     ...(run.effort === undefined ? {} : { effort: run.effort }),
     repetition: run.repetition,
+    ...(run.attempts === undefined ? {} : { attempts: run.attempts }),
     outcome: run.outcome,
     ...(run.error === undefined ? {} : { error: run.error }),
     ...(agent === undefined ? {} : { agent }),
