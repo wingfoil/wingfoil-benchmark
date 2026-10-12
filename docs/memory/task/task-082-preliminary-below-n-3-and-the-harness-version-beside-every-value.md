@@ -156,3 +156,10 @@ read again. Verdict: not clean (one should-fix). All fixed in `97582eb`, tests w
    reads it.
 5. nit: the bars' tooltips named the arm alone → **fixed**: the legend's text.
 
+**Round 3** — a fresh independent read-only agent, on `97582eb`: the chart's width, the axis and `max-width` follow
+the legend; short legends give the same bytes as before (REQ-NFR-05); the commit-as-version rule has no false
+positive; a campaign file failing its schema gives no pin, and the build then fails on the method page anyway.
+Verdict: clean, with two optional nits, both **no change**:
+1. the commit-pin pattern is written in `rules.ts` and `model.ts`: REQ-FMT-03's form is fixed, and both name it.
+2. no assertion on the bars' `<title>` text: cosmetic, the legend carries T15.
+
