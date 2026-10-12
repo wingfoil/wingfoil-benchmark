@@ -216,3 +216,14 @@ meaningful. Verdict: clean, with one optional nit: a resume names an unreadable 
 while `transcripts pack` says `<path>: cannot be read`. **No change**: the two are different commands' messages, and
 neither is parsed.
 
+### Full suites
+
+`scripts/full-suites.sh task/task-080` on 2026-10-12, at the approver's request ("Avvia la suite"), on `af119a8` (the
+in-review submit), worktree clean: `LINT 0 TEST 0 BUILD 0 BIN 0 DOCKER 0`. `npm test` 1470 passed, 8 skipped, statement
+coverage 97.69 %; `test:bin` 8/8; `test:docker` 20 passed, 2 skipped. Log:
+`.cache/full-suites/2026-10-12/task_task-080-af119a8-094412.txt`. The commit after it adds only these notes.
+
+**WingFoil command, declared vs observed:** `npx wingfoil memory submit task-080-…` on the branch: declared
+in-progress → in-review; observed `{"from": "in-progress", "to": "in-review"}`, exit 0, one `wf(task): submit …`
+commit (`af119a8`). No task was `in-review` on main or on a task branch before it.
+
