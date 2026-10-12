@@ -150,7 +150,9 @@ export function compareExecutions(
   newer: string,
   primaryOf: PrimaryCategory,
 ): Result<CampaignComparison> {
-  // One execution twice is said once, before anything is read.
+  // What a target is, before anything is read; then one execution twice, said once.
+  const invalid = [earlier, newer].map(targetIssue).filter((issue) => issue !== undefined);
+  if (invalid.length > 0) return fail(invalid);
   if (earlier === newer) return fail([{ path: earlier, message: 'is the same execution twice' }]);
   const issues: Issue[] = [];
   const sides = [earlier, newer].map((target) => {
@@ -224,6 +226,13 @@ function named(side: Side): ComparedExecution {
   };
 }
 
+/** Why `target` names no execution of a campaign, if it does not: a dry run, or not `<campaign-id>/<n>`. */
+function targetIssue(target: string): Issue | undefined {
+  if (target.startsWith(`${DRY_RUNS}/`)) return { path: target, message: 'a dry run is never compared' };
+  if (!TARGET.test(target)) return { path: target, message: 'is not an execution of a campaign: <campaign-id>/<n>' };
+  return undefined;
+}
+
 /** What a comparison reads of an aggregate: anything else in it is not its business. */
 const aggregateShape = z
   .object({
@@ -237,10 +246,6 @@ const aggregateShape = z
 
 /** One execution, read: its aggregate, its campaign file and when it ended; or why it cannot be compared. */
 function readSide(root: string, target: string): Result<Side> {
-  if (target.startsWith(`${DRY_RUNS}/`)) return fail([{ path: target, message: 'a dry run is never compared' }]);
-  if (!TARGET.test(target)) {
-    return fail([{ path: target, message: 'is not an execution of a campaign: <campaign-id>/<n>' }]);
-  }
   const dir = join(root, 'results', target);
   const where = `results/${target}`;
   if (!existsSync(dir)) return fail([{ path: where, message: 'does not exist' }]);
@@ -420,6 +425,8 @@ function sideOf(
   const arm = armFigures === undefined || armFigures.values.length === 0 ? undefined : summarize(armFigures);
   const noted = (note: string): NotedSide => (arm === undefined ? { note } : { note, arm: value(arm) });
   if (baseline === undefined) return noted('no baseline');
+  // The arm's own figures first, as the site reads them: an arm not measured is that, whatever its baseline.
+  if (arm === undefined) return noted('not measured');
   const baseFigures = readMetric(metric, baseline);
   if (baseFigures !== undefined && baseFigures.unreached !== undefined && baseFigures.unreached.length > 0) {
     return noted('no comparison: the baseline is not comparable');

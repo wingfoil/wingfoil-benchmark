@@ -26,14 +26,17 @@ export function compareCommand(argv: readonly string[], io: Io, root: string): n
   if (!compared.ok) return report(compared.issues, io);
   const comparison = compared.value;
   const file = writeComparison(root, comparison);
-  // The groups matched in both, baselines included; the rows that compare a change; and what was not compared.
+  // The groups matched in both, baselines included; the rows with a change, and those whose side says why not; and the
+  // groups not compared.
   const groups = comparison.compared.length;
-  const rows = comparison.rows.filter((row) => row.change !== undefined).length;
+  const changed = comparison.rows.filter((row) => row.change !== undefined).length;
+  const noted = comparison.rows.length - changed;
+  const notCompared = comparison.not_compared.length;
   const crossModel = comparison.earlier.model !== comparison.newer.model;
+  const count = (n: number, noun: string) => `${n} ${noun}${n === 1 ? '' : 's'}`;
   io.stdout(
-    `comparison: ${relative(root, file)} (${groups} group${groups === 1 ? '' : 's'} matched, ` +
-      `${rows} row${rows === 1 ? '' : 's'} compared, ${comparison.not_compared.length} not compared` +
-      `${crossModel ? '; cross-model' : ''})\n`,
+    `comparison: ${relative(root, file)} (${count(groups, 'group')} matched, ${count(changed, 'row')} with a change, ` +
+      `${count(noted, 'row')} without, ${count(notCompared, 'group')} not compared${crossModel ? '; cross-model' : ''})\n`,
   );
   for (const pin of comparison.pins_differ)
     io.stdout(`pin differs: ${pin.pin}: ${pin.earlier} → ${pin.newer}\n`);

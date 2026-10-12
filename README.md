@@ -253,7 +253,9 @@ records each execution's delta against its own baseline and the change of that d
 are compared. Each delta carries both sides' `n` and range, and is preliminary unless both sides have at least 3 runs.
 It writes `results/comparisons/<newer-id>-<m>/<earlier-id>-<n>.json` and prints the pins that differ (model, agent,
 effort, harnesses). Rows on two different default models are marked cross-model. A scenario whose content changed is
-not compared, and the comparison names the two hashes. So is a slice with no counterpart. A dry run, an execution not
+not compared, and the comparison names the two hashes; so is one whose hash is unknown, whose category has no map
+of metrics or cannot be read, and a slice with no counterpart. A side with no delta (no baseline, not measured, not
+comparable) says why and keeps the arm's own value, and its row has no change. A dry run, an execution not
 yet aggregated, or one execution twice is refused.
 
 ```bash

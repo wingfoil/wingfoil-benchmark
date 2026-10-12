@@ -365,3 +365,30 @@ describe('compareExecutions, after its second review (task-083)', () => {
     expect(compared(root).rows.map((row) => row.model)).toEqual(['m → n', 'm → n']);
   });
 });
+
+describe('compareExecutions, after its third review (task-083)', () => {
+  it('says what a target is before it says one execution is named twice', () => {
+    const root = tempDir('bench-cmp-');
+    const issues = (target: string) => {
+      const result = compareExecutions(root, target, target, categories);
+      return result.ok ? [] : result.issues.map((issue) => issue.message);
+    };
+    expect(issues('dry-runs/1')).toEqual(['a dry run is never compared', 'a dry run is never compared']);
+    expect(issues('foo')[0]).toBe('is not an execution of a campaign: <campaign-id>/<n>');
+  });
+
+  it('reads an arm with no M-E1 figures as not measured, whatever its baseline', () => {
+    const root = tempDir('bench-cmp-');
+    handBuilt(root, EARLIER, 'm', [
+      { scenario: 'TE', arm: 'baseline', q1: [1], e1: { violations: [], unreached: [1] } },
+      { scenario: 'TE', arm: 'wingfoil', q1: [1] },
+    ]);
+    handBuilt(root, NEWER, 'm', [
+      { scenario: 'TE', arm: 'baseline', q1: [1], e1: { violations: [1] } },
+      { scenario: 'TE', arm: 'wingfoil', q1: [1], e1: { violations: [0] } },
+    ]);
+    const [e1] = compared(root).rows.filter((row) => row.metric === 'M-E1');
+    expect(e1?.earlier).toEqual({ note: 'not measured' });
+  });
+});
+
