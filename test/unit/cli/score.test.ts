@@ -343,3 +343,19 @@ describe('bench score and an execution that did not complete (REQ-CLI-06 as amen
     expect((await score(dry.root, 'dry-runs/1', '--final')).code).toBe(2);
   });
 });
+
+describe('bench score and an execution aggregated before its state said so (task-080 review)', () => {
+  it('aggregates it again rather than suggesting a resume it would refuse', async () => {
+    const fixture = await storedRun({ steps: [{}, CANCEL] });
+    writeFileSync(join(fixture.executionDir, 'aggregate.json'), '{}\n');
+    writeFileSync(
+      join(fixture.executionDir, 'execution.json'),
+      JSON.stringify({ state: 'stopped', reason: 'interrupt', started: '2026-10-12' }),
+    );
+    const { code, stdout } = await score(fixture.root, EXECUTION);
+
+    expect(code).toBe(0);
+    expect(stdout).not.toContain('--resume');
+    expect(readFileSync(join(fixture.executionDir, 'aggregate.json'), 'utf8')).not.toBe('{}\n');
+  });
+});

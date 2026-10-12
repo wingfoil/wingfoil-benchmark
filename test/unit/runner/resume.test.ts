@@ -152,6 +152,87 @@ describe('a resume (REQ-RUN-19, task-080)', () => {
   });
 });
 
+describe('a resume, after the first review (task-080)', () => {
+  it('refuses a stopped container this execution left behind, before counting a phantom attempt', async () => {
+    const checked = campaign(1);
+    const first = await runCampaign(checked, failing());
+    const record = readFileSync(join(first.resultsDir, 'execution.json'), 'utf8');
+    const name = `bench-${checked.campaign.id}-${first.execution}-S1-1.0-baseline-fake-model-r1`;
+    const ports = doubles({ leftovers: [name] });
+
+    await expect(runCampaign(checked, ports, { resume: first.execution })).rejects.toThrow(
+      `docker rm --force ${name}`,
+    );
+    expect(existsSync(join(runDir(first.resultsDir, 1), 'attempts'))).toBe(false);
+    expect(readFileSync(join(first.resultsDir, 'execution.json'), 'utf8')).toBe(record);
+  });
+
+  it('says what it runs and what it keeps, each by outcome, and warns of an execution left running', async () => {
+    const checked = campaign(3);
+    let run = 0;
+    const first = await runCampaign(
+      checked,
+      doubles({
+        onStep: (request) => {
+          if (request.step === 1) run += 1;
+        },
+        errorOf: (request) => (request.step === 1 && run === 2 ? 'the network failed' : undefined),
+      }),
+    );
+    rmSync(join(runDir(first.resultsDir, 3), 'run.json'));
+    const file = join(first.resultsDir, 'execution.json');
+    writeFileSync(file, JSON.stringify({ ...json(file), state: 'running' }));
+    const lines: string[] = [];
+    await runCampaign(
+      checked,
+      { ...doubles(), log: (line) => lines.push(line) },
+      { resume: first.execution },
+    );
+
+    expect(lines).toContain('resume: 2 runs to run (1 failed, 1 left no record), 1 run kept (1 completed)');
+    expect(lines.some((line) => line.includes('says it is running'))).toBe(true);
+  });
+
+  it('leaves execution.json as it was when a run record cannot be read', async () => {
+    const checked = campaign(1);
+    const first = await runCampaign(checked, failing());
+    const record = readFileSync(join(first.resultsDir, 'execution.json'), 'utf8');
+    writeFileSync(join(runDir(first.resultsDir, 1), 'run.json'), '{ truncated');
+
+    await expect(runCampaign(checked, doubles(), { resume: first.execution })).rejects.toThrow();
+    expect(readFileSync(join(first.resultsDir, 'execution.json'), 'utf8')).toBe(record);
+  });
+
+  it("keeps a docs control's generated rules as its kept runs ran with them", async () => {
+    const { file } = writeRepo(
+      {
+        ...completeCampaignYaml(),
+        arms: ['baseline', 'baseline-docs', 'wingfoil'],
+        scenarios: [{ id: 'S1', version: '1.0' }],
+        repetitions: { S1: 1 },
+        agent: { name: 'fake', version: '1.0.0' },
+        models: { default: 'fake-model' },
+        currency: { usd_to_eur: 1 },
+      },
+      ['S1@1.0'],
+    );
+    const checked = checkCampaign(file);
+    if (!checked.ok) throw new Error(JSON.stringify(checked.issues));
+    const clones = { harnessSources: { wingfoil: '/clones/wingfoil' } };
+    const first = await runCampaign(checked.value, { ...failing(), ...clones });
+    const rules = join(first.resultsDir, 'generated', 'S1@1.0', 'baseline-docs', 'PROJECT_RULES.md');
+    const before = readFileSync(rules, 'utf8');
+
+    const ports = doubles();
+    await runCampaign(checked.value, { ...ports, ...clones }, { resume: first.execution });
+
+    expect(
+      ports.recorded.runOnce.filter((request) => request.command.join(' ').includes('/build/arm/')),
+    ).toEqual([]);
+    expect(readFileSync(rules, 'utf8')).toBe(before);
+  });
+});
+
 describe('checkResume (REQ-RUN-19, task-080)', () => {
   it('accepts a stopped or completed execution of the same campaign, not aggregated', async () => {
     const checked = campaign(1);

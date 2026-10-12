@@ -310,3 +310,20 @@ describe('the harness artifacts beside the transcripts (REQ-CLI-11 as amended, R
     expect(existsSync(join(root, HARNESSES))).toBe(false);
   }, 120_000);
 });
+
+describe("bench transcripts pack and earlier attempts (REQ-CLI-11 as amended in 1.26, task-080)", () => {
+  it("packs an earlier attempt's transcripts beside the run's own", async () => {
+    const { root, executionDir } = await withTranscripts();
+    const dir = join(executionDir, RUN('TC', 'baseline'), 'attempts', '1', 'steps', '01');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'transcript.jsonl'), '{"type":"result","result":"earlier"}\n');
+
+    const packed = await benchSite(root, 'transcripts', 'pack', EXECUTION);
+    expect(packed.code, packed.stderr).toBe(0);
+    expect(execFileSync('tar', ['-tzf', join(root, ARCHIVE)], { encoding: 'utf8' })).toBe(
+      'runs/TC@1.0/baseline/fake-model/r1/attempts/1/steps/01/transcript.jsonl\n' +
+        'runs/TC@1.0/baseline/fake-model/r1/steps/01/transcript.jsonl\n' +
+        'runs/TD@1.0/wingfoil/fake-model/r1/steps/01/transcript.jsonl\n',
+    );
+  }, 120_000);
+});
