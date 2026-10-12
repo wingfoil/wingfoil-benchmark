@@ -6,7 +6,7 @@ import { fail, ok } from '../core/index.js';
 import type { Issue, PublishPort, Result } from '../core/index.js';
 
 import { buildSite, SITE } from './build.js';
-import { builtExecutions, rootIndexPage } from './profiles.js';
+import { builtExecutions, rootIndex } from './profiles.js';
 
 /**
  * Publishing the site (F5.6, REQ-RES-04 as amended in 1.22, task-047): `site/` pushed to the remote's
@@ -96,11 +96,15 @@ export async function checkSiteCopy(root: string, dir: string): Promise<Result<s
     message: 'is a link: a published site holds files only',
   }));
   const expected = new Map<string, { bytes: Buffer; execution: string }>();
-  // The root index lists every execution under site/, with the dates their records hold (task-085).
-  expected.set('index.html', {
-    bytes: Buffer.from(rootIndexPage(root, executions), 'utf8'),
-    execution: executions.join(' '),
-  });
+  // The root index lists every execution under site/, with the dates their records hold (task-085); any build rewrites
+  // it, so the remedy names one.
+  const index = rootIndex(root, executions);
+  if (index.ok) {
+    expected.set('index.html', {
+      bytes: Buffer.from(index.value, 'utf8'),
+      execution: executions[executions.length - 1] as string,
+    });
+  } else issues.push(...index.issues);
   const scratch = mkdtempSync(join(tmpdir(), 'bench-site-check-'));
   try {
     for (const execution of executions) {
@@ -210,6 +214,24 @@ export async function publishSite(
     // filter runs (task-047's third review): the branch points at what was fetched, the index starts empty,
     // and the copy is staged into it, so the commit's tree is exactly the copy.
     if (hadBranch) {
+      // A published execution keeps its permanent URL (REQ-RES-02 as amended, task-085): site/ is git-ignored, so one
+      // rebuilt from a fresh clone may lack an execution gh-pages publishes, and pushing it would drop that page.
+      const listed = await step(['ls-tree', '-r', '--name-only', 'FETCH_HEAD']);
+      if (!listed.ok) return listed;
+      const dropped = listed.value
+        .split('\n')
+        .flatMap((path) => /^([0-9a-f]{12}\/[1-9]\d*)\/index\.html$/.exec(path)?.[1] ?? [])
+        .filter((execution) => !executions.includes(execution));
+      if (dropped.length > 0) {
+        return fail(
+          dropped.map((execution) => ({
+            path: PAGES_BRANCH,
+            message:
+              `publishes ${execution}, which site/ does not hold: build it again ` +
+              `(bench site build ${execution}) before publishing`,
+          })),
+        );
+      }
       const moved = await step(['update-ref', `refs/heads/${PAGES_BRANCH}`, 'FETCH_HEAD']);
       if (!moved.ok) return moved;
     }

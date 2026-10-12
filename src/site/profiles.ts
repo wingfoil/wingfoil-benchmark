@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { z } from 'zod';
 
 import { CATEGORIES, fail, ok, parseWith, readYamlFile } from '../core/index.js';
-import type { Category, Result } from '../core/index.js';
+import type { Category, Issue, Result } from '../core/index.js';
 import { readExecutionRecord } from '../results/index.js';
 
 import { escapeHtml as e, page } from './render.js';
@@ -74,28 +74,52 @@ export function builtExecutions(site: string): string[] {
 
 /**
  * `site/index.html` (REQ-RES-02 as amended in 1.26, task-085): every built execution, by campaign then number, linking
- * its permanent URL, with the date it ended read from its `results/<campaign-id>/<n>/execution.json` — never the
- * build's — or that none was recorded (v0.1's executions have none). The only page that holds a date.
+ * its permanent URL, with the day it ended read from its `results/<campaign-id>/<n>/execution.json` — never the
+ * build's — or that none was recorded (v0.1's executions have none). The only page that holds a date. A record that
+ * cannot be read, an end that is not a date, or a built execution whose results are gone is refused, naming it.
  */
-export function rootIndexPage(root: string, executions: readonly string[]): string {
+export function rootIndex(root: string, executions: readonly string[]): Result<string> {
   const sorted = [...executions].sort((a, b) => {
     const [ca, na] = a.split('/') as [string, string];
     const [cb, nb] = b.split('/') as [string, string];
     return ca === cb ? Number(na) - Number(nb) : ca < cb ? -1 : 1;
   });
+  const issues: Issue[] = [];
   const items = sorted.map((execution) => {
     const [campaign, n] = execution.split('/') as [string, string];
-    const record = readExecutionRecord(join(root, 'results', campaign, n));
-    const ended = record.ok ? record.value?.ended : undefined;
+    const dir = join(root, 'results', campaign, n);
+    if (!existsSync(dir)) {
+      issues.push({
+        path: `site/${execution}`,
+        message: `is built, but results/${execution} is gone: remove it from site/, or restore its results`,
+      });
+      return '';
+    }
+    const record = readExecutionRecord(dir);
+    if (!record.ok) {
+      issues.push(...record.issues);
+      return '';
+    }
+    const ended = record.value?.ended;
+    if (ended !== undefined && !/^\d{4}-\d{2}-\d{2}/.test(ended)) {
+      issues.push({
+        path: `results/${execution}/execution.json`,
+        message: `records an end that is not a date: ${ended}`,
+      });
+      return '';
+    }
     return (
       `<li><a href="${e(`${execution}/`)}">${e(`campaign ${campaign}, execution ${n}`)}</a>, ` +
-      `${ended === undefined ? 'end date not recorded' : e(`ended ${ended}`)}</li>\n`
+      `${ended === undefined ? 'end date not recorded' : e(`ended ${ended.slice(0, 10)}`)}</li>\n`
     );
   });
-  return page(
-    'WingFoil Benchmark',
-    '<h1>WingFoil Benchmark</h1>\n<p>Every published campaign execution, each at a permanent address:</p>\n' +
-      `<ul>\n${items.join('')}</ul>\n`,
-    0,
+  if (issues.length > 0) return fail(issues);
+  return ok(
+    page(
+      'WingFoil Benchmark',
+      '<h1>WingFoil Benchmark</h1>\n<p>Every published campaign execution, each at a permanent address:</p>\n' +
+        `<ul>\n${items.join('')}</ul>\n`,
+      0,
+    ),
   );
 }

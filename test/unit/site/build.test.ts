@@ -175,6 +175,8 @@ describe('bench site build (REQ-CLI-09 as amended in 1.20, task-045)', () => {
     const other = join(root, 'site', '0123456789ab', '2');
     mkdirSync(other, { recursive: true });
     writeFileSync(join(other, 'index.html'), 'an older execution\n');
+    // Its results are kept: a built execution whose results are gone is refused (task-085's review)
+    mkdirSync(join(root, 'results', '0123456789ab', '2'), { recursive: true });
     writeFileSync(join(root, 'site', 'abcdef012345', '1', 'stale.html'), 'left by an older build\n');
 
     expect((await benchSite(root, 'site', 'build', EXECUTION)).code).toBe(0);

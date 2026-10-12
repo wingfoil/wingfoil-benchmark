@@ -438,10 +438,25 @@ export function landingPage(
  */
 export function profilePage(model: SiteModel, profile: Pick<ProfileLink, 'name' | 'categories'>): string {
   const mine = (category: string) => profile.categories.includes(category as Category);
+  const categories = model.categories.filter((row) => mine(row.category));
+  // Its counts are its own (task-085's review): the runs of its categories' scenarios, the slices' of them apart, and
+  // the runs not run among them.
+  const versions = new Set(
+    categories.flatMap((row) => row.scenarios.map((s) => `${s.scenario.id}@${s.scenario.version}`)),
+  );
+  const count = (groups: readonly Group[]) =>
+    groups
+      .filter((group) => versions.has(`${group.scenario}@${group.version}`))
+      .reduce((sum, group) => sum + group.runs.length, 0);
   const restricted: SiteModel = {
     ...model,
-    categories: model.categories.filter((row) => mine(row.category)),
+    categories,
     comparisons: model.comparisons.filter((comparison) => mine(comparison.category)),
+    runs: count(categories.flatMap((row) => row.scenarios.flatMap((s) => s.groups))),
+    sliceRuns: count(model.slices),
+    ...(model.notRun === undefined
+      ? {}
+      : { notRun: model.notRun.filter((run) => versions.has(run.split('/')[0] ?? '')) }),
   };
   return page(
     `${profile.name} — ${title(model)}`,

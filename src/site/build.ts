@@ -8,7 +8,7 @@ import { comparisonFile, comparisonPage, crossModel, executionName, readComparis
 import { eligibilityPage } from './eligibility.js';
 import { methodPages } from './method.js';
 import { siteModel } from './model.js';
-import { builtExecutions, loadProfiles, profileFile, rootIndexPage } from './profiles.js';
+import { builtExecutions, loadProfiles, profileFile, rootIndex } from './profiles.js';
 import { categoryFile, categoryPage, landingPage, plainHeadlines, profilePage, STYLE } from './render.js';
 
 /** Where the site is written, in the repository (REQ-ARC-03). */
@@ -76,12 +76,16 @@ export async function buildSite(
     ...[...method.value.material].map(([name, text]): [string, string] => [`material/${name}`, text]),
   ];
   const directory = `${SITE}/${model.value.campaign}/${model.value.execution}/`;
+  // Every execution built under site/, this one included, with the day each ended (REQ-RES-02 as amended,
+  // task-085): read before anything is written, so that a record that cannot be read leaves site/ as it was.
+  const self = `${model.value.campaign}/${model.value.execution}`;
+  const index = rootIndex(root, [...new Set([...builtExecutions(siteDir), self])]);
+  if (!index.ok) return index;
   const target = join(siteDir, model.value.campaign, String(model.value.execution));
   rmSync(target, { recursive: true, force: true });
   mkdirSync(join(target, 'material'), { recursive: true });
   for (const [name, text] of pages) writeFileSync(join(target, name), text);
-  // Every execution built under site/, with the date each ended (REQ-RES-02 as amended, task-085).
-  writeFileSync(join(siteDir, 'index.html'), rootIndexPage(root, builtExecutions(siteDir)));
+  writeFileSync(join(siteDir, 'index.html'), index.value);
   writeFileSync(join(siteDir, 'style.css'), STYLE);
   return ok({ directory, pages: pages.length, headlines: plainHeadlines(model.value) });
 }
