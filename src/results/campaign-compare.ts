@@ -7,7 +7,7 @@ import type { Issue, Result } from '../core/index.js';
 
 import { AGGREGATE_FILE } from './aggregate.js';
 import type { AggregateFile, Group } from './aggregate.js';
-import { CATEGORY_MAP, compare, readMetric } from './compare.js';
+import { CATEGORY_MAP, compare, readMetric, summarize } from './compare.js';
 import type { Certainty, MappedCategory, MetricId } from './compare.js';
 import { DRY_RUNS } from './dry-runs.js';
 import { readExecutionRecord } from './execution.js';
@@ -35,21 +35,35 @@ export interface ComparedSide {
 }
 
 /** One row (REQ-SCO-13): a scenario version, an arm and a model, on one metric of its category's map, in both. */
-export type ComparisonRow = {
+export interface ComparisonRow {
   readonly scenario: string;
   readonly version: string;
   readonly category: string;
   readonly arm: string;
+  /** The groups' model; `<earlier> → <newer>` for a cross-model default row. */
   readonly model: string;
   readonly metric: MetricId;
   /** The default groups of two executions on different default models (T14); never a slice. */
   readonly cross_model: boolean;
-} & (
-  | { readonly earlier: ComparedSide; readonly newer: ComparedSide; readonly change: number }
-  | { readonly note: string }
-);
+  readonly earlier: ComparedSide | NotedSide;
+  readonly newer: ComparedSide | NotedSide;
+  /** The newer delta less the earlier (T7): only when both sides have a delta. */
+  readonly change?: number;
+}
 
-/** A group present in both executions that is not compared, and why. */
+/**
+ * A side without a delta, and why — `no baseline`, `not measured`, or M-E1's `not comparable: …` and `no comparison:
+ * the baseline is not comparable`, in the site's words — with the arm's own value when it has one.
+ */
+export interface NotedSide {
+  readonly note: string;
+  readonly arm?: ComparedValue;
+}
+
+/**
+ * A group that is not compared, and why: a scenario version in both whose hash differs, whose category has no map or
+ * cannot be read; or a slice whose model the other execution has no slice of.
+ */
 export interface NotCompared {
   readonly scenario: string;
   readonly version: string;
@@ -136,13 +150,14 @@ export function compareExecutions(
   newer: string,
   primaryOf: PrimaryCategory,
 ): Result<CampaignComparison> {
+  // One execution twice is said once, before anything is read.
+  if (earlier === newer) return fail([{ path: earlier, message: 'is the same execution twice' }]);
   const issues: Issue[] = [];
   const sides = [earlier, newer].map((target) => {
     const read = readSide(root, target);
     if (!read.ok) issues.push(...read.issues);
     return read.ok ? read.value : undefined;
   });
-  if (earlier === newer && TARGET.test(earlier)) issues.push({ path: earlier, message: 'is the same execution twice' });
   const [before, after] = sides;
   if (issues.length > 0 || before === undefined || after === undefined) return fail(issues);
 
@@ -318,7 +333,13 @@ function compareGroups(
       groups.filter((group) => group.scenario === scenario && group.version === version);
     const earlierHashes = hashesOf(root, of(earlierGroups));
     const newerHashes = hashesOf(root, of(newerGroups));
-    if (earlierHashes.length !== 1 || newerHashes.length !== 1 || earlierHashes[0] !== newerHashes[0]) {
+    // One known hash a side, the same: an unknown hash is no evidence that the content is unchanged.
+    if (
+      earlierHashes.length !== 1 ||
+      newerHashes.length !== 1 ||
+      earlierHashes[0] !== newerHashes[0] ||
+      earlierHashes[0] === 'unknown'
+    ) {
       notCompared(
         `not compared: scenario hash ${earlierHashes.join(', ')} in ${before.target}, ` +
           `${newerHashes.join(', ')} in ${after.target}`,
@@ -346,65 +367,46 @@ function compareGroups(
     }
     const earlierBaseline = earlierBy.get(`${name}/baseline`);
     const newerBaseline = newerBy.get(`${name}/baseline`);
-    const missing = [
-      ...(earlierBaseline === undefined ? [before.target] : []),
-      ...(newerBaseline === undefined ? [after.target] : []),
-    ];
     for (const group of inBoth.filter((candidate) => candidate.arm !== 'baseline')) {
       const counterpart = newerBy.get(key(group)) as Group;
       for (const entry of entries) {
-        const common = {
+        // T7: a delta is taken against the execution's own baseline, or not at all; each side on its own.
+        const earlierSide = sideOf(entry.id, entry.better, group, earlierBaseline);
+        const newerSide = sideOf(entry.id, entry.better, counterpart, newerBaseline);
+        const raw =
+          'delta' in earlierSide && 'delta' in newerSide ? newerSide.delta - earlierSide.delta : undefined;
+        out.rows.push({
           scenario,
           version,
           category,
           arm: group.arm,
-          model: group.model,
+          model: crossModel ? `${group.model} → ${counterpart.model}` : group.model,
           metric: entry.id,
           cross_model: crossModel,
-        };
-        // T7: a delta is taken against the execution's own baseline, or not at all.
-        if (missing.length > 0) {
-          out.rows.push({ ...common, note: `no baseline in ${missing.join(' and ')}` });
-          continue;
-        }
-        const earlierSide = sideOf(entry.id, entry.better, group, earlierBaseline as Group);
-        const newerSide = sideOf(entry.id, entry.better, counterpart, newerBaseline as Group);
-        if (typeof earlierSide === 'string' || typeof newerSide === 'string') {
-          const notes = [
-            ...(typeof earlierSide === 'string' ? [placed(earlierSide, before.target)] : []),
-            ...(typeof newerSide === 'string' ? [placed(newerSide, after.target)] : []),
-          ];
-          out.rows.push({ ...common, note: notes.join('; ') });
-          continue;
-        }
-        const raw = newerSide.delta - earlierSide.delta;
-        out.rows.push({
-          ...common,
           earlier: earlierSide,
           newer: newerSide,
-          change: Math.abs(raw) < EPSILON ? 0 : raw,
+          ...(raw === undefined ? {} : { change: Math.abs(raw) < EPSILON ? 0 : raw }),
         });
       }
     }
   }
 }
 
-/** A side's note, with the execution it is about: `not comparable in <target>: …`. */
-function placed(note: string, target: string): string {
-  const colon = note.indexOf(': ');
-  return colon < 0 ? `${note} in ${target}` : `${note.slice(0, colon)} in ${target}${note.slice(colon)}`;
-}
-
 /**
  * One side of a row: `group` against its own execution's `baseline` on `metric`, by `compare` (REQ-RES-03 as amended);
- * or why there is none, in the site's words: "not measured", or M-E1's "not comparable" when a run did not reach a
- * directive check's step, and "no comparison: the baseline is not comparable" when the baseline's did not.
+ * or why there is none, in the site's words — `no baseline`, `not measured`, M-E1's `not comparable: …` when a run
+ * did not reach a directive check's step and `no comparison: the baseline is not comparable` when the baseline's did
+ * not — with the arm's own value when it has one.
  */
-function sideOf(metric: MetricId, better: 'higher' | 'lower', group: Group, baseline: Group): ComparedSide | string {
+function sideOf(
+  metric: MetricId,
+  better: 'higher' | 'lower',
+  group: Group,
+  baseline: Group | undefined,
+): ComparedSide | NotedSide {
+  const value = ({ n, mean, min, max }: ComparedValue): ComparedValue => ({ n, mean, min, max });
   const armFigures = readMetric(metric, group);
-  const baseFigures = readMetric(metric, baseline);
-  if (armFigures === undefined || baseFigures === undefined) return 'not measured';
-  if (armFigures.unreached !== undefined && armFigures.unreached.length > 0) {
+  if (armFigures !== undefined && armFigures.unreached !== undefined && armFigures.unreached.length > 0) {
     const why = armFigures.unreached
       .map((entry) => {
         const run = entry.run.split('/').at(-1) ?? entry.run;
@@ -413,15 +415,24 @@ function sideOf(metric: MetricId, better: 'higher' | 'lower', group: Group, base
           : `${run} did not reach step ${entry.step}`;
       })
       .join('; ');
-    return `not comparable: ${why}`;
+    return { note: `not comparable: ${why}` };
   }
-  if (baseFigures.unreached !== undefined && baseFigures.unreached.length > 0) {
-    return 'no comparison: the baseline is not comparable';
+  const arm = armFigures === undefined || armFigures.values.length === 0 ? undefined : summarize(armFigures);
+  const noted = (note: string): NotedSide => (arm === undefined ? { note } : { note, arm: value(arm) });
+  if (baseline === undefined) return noted('no baseline');
+  const baseFigures = readMetric(metric, baseline);
+  if (baseFigures !== undefined && baseFigures.unreached !== undefined && baseFigures.unreached.length > 0) {
+    return noted('no comparison: the baseline is not comparable');
   }
-  if (armFigures.values.length === 0 || baseFigures.values.length === 0) return 'not measured';
+  if (armFigures === undefined || baseFigures === undefined) return noted('not measured');
+  if (armFigures.values.length === 0 || baseFigures.values.length === 0) return noted('not measured');
   const result = compare(better, baseFigures, armFigures);
-  const value = ({ n, mean, min, max }: ComparedValue): ComparedValue => ({ n, mean, min, max });
-  return { arm: value(result.other), baseline: value(result.baseline), delta: result.delta, certainty: result.certainty };
+  return {
+    arm: value(result.other),
+    baseline: value(result.baseline),
+    delta: result.delta,
+    certainty: result.certainty,
+  };
 }
 
 /**

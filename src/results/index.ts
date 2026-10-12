@@ -5,6 +5,7 @@ export type {
   ComparedGroup,
   ComparisonRow,
   NotCompared,
+  NotedSide,
   OnlyIn,
   PinDiffers,
   PrimaryCategory,

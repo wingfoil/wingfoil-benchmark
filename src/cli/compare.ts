@@ -26,12 +26,14 @@ export function compareCommand(argv: readonly string[], io: Io, root: string): n
   if (!compared.ok) return report(compared.issues, io);
   const comparison = compared.value;
   const file = writeComparison(root, comparison);
-  // Groups in one unit on both counts, the baselines' included; cross-model when the default models differ (T14).
+  // The groups matched in both, baselines included; the rows that compare a change; and what was not compared.
   const groups = comparison.compared.length;
+  const rows = comparison.rows.filter((row) => row.change !== undefined).length;
   const crossModel = comparison.earlier.model !== comparison.newer.model;
   io.stdout(
-    `comparison: ${relative(root, file)} (${groups} group${groups === 1 ? '' : 's'} compared, ` +
-      `${comparison.not_compared.length} not compared${crossModel ? '; cross-model' : ''})\n`,
+    `comparison: ${relative(root, file)} (${groups} group${groups === 1 ? '' : 's'} matched, ` +
+      `${rows} row${rows === 1 ? '' : 's'} compared, ${comparison.not_compared.length} not compared` +
+      `${crossModel ? '; cross-model' : ''})\n`,
   );
   for (const pin of comparison.pins_differ)
     io.stdout(`pin differs: ${pin.pin}: ${pin.earlier} → ${pin.newer}\n`);
