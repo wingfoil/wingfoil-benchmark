@@ -7,6 +7,15 @@ import { compareExecutions, writeComparison } from '../../../src/results/index.j
 import { benchSite, STAND_INS } from '../../support/site-fixture.js';
 import { CANCEL, storedRun } from '../../support/score-fixture.js';
 import { tempDir } from '../../support/scenario-fixture.js';
+import { loadScenario } from '../../../src/scenario/index.js';
+
+/** The primary category of a scenario version of `root`, as the command line reads it. */
+function primaryOf(root: string) {
+  return (id: string, version: string) => {
+    const scenario = loadScenario(join(root, 'scenarios'), id, version);
+    return scenario.ok ? scenario.value.categories.primary : undefined;
+  };
+}
 
 const EARLIER = '0123456789ab/1';
 const NEWER = 'abcdef012345/1';
@@ -56,7 +65,7 @@ describe('compareExecutions (REQ-SCO-13, task-083)', () => {
   it('refuses a target that names no execution of a campaign, and one that does not exist', () => {
     const root = tempDir('bench-cmp-');
     const issues = (earlier: string, newer: string) => {
-      const result = compareExecutions(root, earlier, newer);
+      const result = compareExecutions(root, earlier, newer, primaryOf(root));
       return result.ok ? [] : result.issues.map((issue) => `${issue.path}: ${issue.message}`);
     };
     expect(issues('abc', NEWER)).toContain('abc: is not an execution of a campaign: <campaign-id>/<n>');
@@ -68,7 +77,7 @@ describe('compareExecutions (REQ-SCO-13, task-083)', () => {
 
   it('says what it does not compare: a slice with no counterpart, and what is on one side only', async () => {
     const root = await executions();
-    const result = compareExecutions(root, EARLIER, NEWER);
+    const result = compareExecutions(root, EARLIER, NEWER, primaryOf(root));
     if (!result.ok) throw new Error(JSON.stringify(result.issues));
 
     expect(result.value.not_compared).toEqual([
@@ -95,7 +104,7 @@ describe('compareExecutions (REQ-SCO-13, task-083)', () => {
 
   it('gives the same bytes for the same two executions', async () => {
     const root = await executions();
-    const result = compareExecutions(root, EARLIER, NEWER);
+    const result = compareExecutions(root, EARLIER, NEWER, primaryOf(root));
     if (!result.ok) throw new Error(JSON.stringify(result.issues));
     const file = writeComparison(root, result.value);
     const first = readFileSync(file, 'utf8');

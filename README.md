@@ -244,6 +244,19 @@ npx bench run compare <run> <run>
 sets two runs side by side, step by step.
 
 ```bash
+npx bench campaign compare <earlier-campaign-id>/<n> <newer-campaign-id>/<m>
+```
+
+`campaign compare` compares two aggregated executions, the earlier first, as you order them. It works group by
+group, where a group is a scenario version and an arm present in both. For each metric of the scenario's category, it
+records each execution's delta against its own baseline and the change of that delta: across campaigns only deltas
+are compared. Each delta carries both sides' `n` and range, and is preliminary unless both sides have at least 3 runs.
+It writes `results/comparisons/<newer-id>-<m>/<earlier-id>-<n>.json` and prints the pins that differ (model, agent,
+effort, harnesses). Rows on two different default models are marked cross-model. A scenario whose content changed is
+not compared, and the comparison names the two hashes. So is a slice with no counterpart. A dry run, an execution not
+yet aggregated, or one execution twice is refused.
+
+```bash
 npx bench finding <campaign-id>/<n> --scenario <id>@<version> --metric <metric> --arms <arm>,… --as bug|decision-log
 ```
 
