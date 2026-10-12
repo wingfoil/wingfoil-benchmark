@@ -129,3 +129,29 @@ Design's own commit (`69fba65`, W-01): declared backlog → in-progress; observe
 - `rootPage`, the `meta` refresh, is removed.
 
 ## Review notes
+
+### Review
+
+**Round 1**: a fresh, independent, read-only agent (a `Plan` subagent), on `dce24b5`. Verdict: not clean (five
+should-fix). Red tests `011b5e2`, fixes `a334268`:
+1. should-fix: an `execution.json` that could not be read was shown as "end date not recorded" → **fixed**:
+   `rootIndex` refuses it, an end that is not a date, and a built execution whose `results/` is gone, naming each.
+   `buildSite` reads all of it before writing anything.
+2. should-fix: the stale-index remedy named every execution, which `site build` does not take → **fixed**: it names
+   one, since any build rewrites the index.
+3. should-fix: no test refused a stale root index → **fixed**.
+4. should-fix: `site/` is git-ignored, so publishing from a fresh clone with only the newer execution built would have
+   removed the earlier execution's pages from `gh-pages`, breaking its permanent URL → **fixed**: publish lists the
+   executions the fetched `gh-pages` holds and refuses to drop one, naming the build to run. The behaviour predates
+   this task, but this task is the one that claims the guarantee.
+5. should-fix: a profile page showed the whole execution's run counts and runs not run → **fixed**: its own runs,
+   slices apart, and its own runs not run. The arm columns stay the execution's, so that every page of an execution
+   shows the same arms.
+6. nit: the full timestamp was printed → **fixed**: the day (`ended 2026-10-05`), checked to be a date.
+7. nit: numeric ordering and date-free profile pages were untested → **fixed**: `/10` after `/2`, and the profile
+   pages checked with an `execution.json` that holds dates.
+8. nit: REQ-RES-04's 1.22 text still speaks of "the root page of the execution it leads to" and of a commit "naming
+   the root page's execution". The 1.26 amendment only says the check accepts the new page kinds. **Recorded** as a
+   follow-up for the approver: a wording amendment of REQ-RES-04 to the root index. The code follows REQ-RES-02 as
+   amended in 1.26, which replaced the `meta` refresh.
+
