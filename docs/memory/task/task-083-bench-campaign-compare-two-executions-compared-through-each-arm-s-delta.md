@@ -212,3 +212,14 @@ the fixes):
 **Round 5**: a fresh, independent, read-only agent, on `794892c`, which changed wording only. It checked both
 statements against `sideOf` and found nothing. Verdict: clean, no findings.
 
+### Full suites
+
+`scripts/full-suites.sh task/task-083` on 2026-10-12, at the approver's request ("Avvia la suite"), on `d19cffb` (the
+in-review submit), worktree clean: `LINT 0 TEST 0 BUILD 0 BIN 0 DOCKER 0`. `npm test` 1507 passed, 8 skipped, statement
+coverage 97.65 %; `test:bin` 8/8; `test:docker` 20 passed, 2 skipped. Log:
+`.cache/full-suites/2026-10-12/task_task-083-d19cffb-121811.txt`. The commit after it adds only these notes.
+
+**WingFoil command, declared vs observed:** `npx wingfoil memory submit task-083-…` on the branch: declared
+in-progress → in-review; observed `{"from": "in-progress", "to": "in-review"}`, exit 0, one `wf(task): submit …`
+commit (`d19cffb`). No task was `in-review` on main or on a task branch before it.
+
