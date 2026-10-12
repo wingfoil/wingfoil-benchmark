@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { stringify } from 'yaml';
 import { describe, expect, it } from 'vitest';
@@ -112,4 +112,223 @@ describe('compareExecutions (REQ-SCO-13, task-083)', () => {
     expect(readFileSync(file, 'utf8')).toBe(first);
     expect(file).toBe(join(root, 'results', 'comparisons', 'abcdef012345-1', '0123456789ab-1.json'));
   }, 240_000);
+});
+
+/** A group of hand-built figures: M-Q1 passed of 1 per run, M-K1 cost per run, and optionally M-E1's check. */
+interface Spec {
+  readonly scenario?: string;
+  readonly arm: string;
+  readonly model?: string;
+  readonly q1: readonly number[];
+  readonly cost?: readonly number[];
+  readonly hash?: string | readonly string[];
+  /** M-E1 per run, and the runs that did not reach the check's step. */
+  readonly e1?: { readonly violations: readonly number[]; readonly unreached?: readonly number[] };
+}
+
+/** An aggregated execution `target` built by hand: its groups, slices and pins, and each run's recorded hash. */
+function handBuilt(
+  root: string,
+  target: string,
+  model: string,
+  specs: readonly Spec[],
+  campaign: Record<string, unknown> = { models: { default: model } },
+): void {
+  const groups = specs.map((spec) => {
+    const scenario = spec.scenario ?? 'TC';
+    const runs = spec.q1.map(
+      (_, index) => `${target}/runs/${scenario}@1.0/${spec.arm}/${spec.model ?? model}/r${index + 1}`,
+    );
+    runs.forEach((run, index) => {
+      const hashes = spec.hash ?? 'sha256:same';
+      const hash = typeof hashes === 'string' ? hashes : hashes[index];
+      mkdirSync(join(root, 'results', run), { recursive: true });
+      writeFileSync(join(root, 'results', run, 'run.json'), JSON.stringify({ scenario_hash: hash }));
+    });
+    const value = <T>(values: readonly T[]) => ({ n: values.length, runs, values });
+    const reached = runs.filter((_, index) => !(spec.e1?.unreached ?? []).includes(index + 1));
+    return {
+      scenario,
+      version: '1.0',
+      arm: spec.arm,
+      model: spec.model ?? model,
+      runs,
+      n: runs.length,
+      metrics: {
+        m_q1: { final: { m_q1: value(spec.q1.map((passed) => ({ passed, total: 1 }))) } },
+        cost: { cost_eur: value(spec.cost ?? spec.q1.map(() => 1)) },
+        checks:
+          spec.e1 === undefined
+            ? []
+            : [
+                {
+                  id: 'rules',
+                  kind: 'ast',
+                  steps: [
+                    {
+                      step: 3,
+                      violations: { n: reached.length, runs: reached, values: spec.e1.violations },
+                      not_reached: runs.filter((run) => !reached.includes(run)),
+                    },
+                  ],
+                },
+              ],
+      },
+    };
+  });
+  const [campaignId, n] = target.split('/') as [string, string];
+  const dir = join(root, 'results', target);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(
+    join(dir, 'aggregate.json'),
+    JSON.stringify({
+      campaign: campaignId,
+      execution: Number(n),
+      model,
+      groups: groups.filter((group) => group.model === model),
+      slices: groups.filter((group) => group.model !== model),
+    }),
+  );
+  writeFileSync(join(dir, 'campaign.yaml'), stringify(campaign));
+}
+
+/** Every scenario's primary category: TC is C, TE is E, TX has none mapped, TU cannot be read. */
+const categories = (id: string) => ({ TC: 'C', TE: 'E', TX: 'B' })[id];
+
+function compared(root: string) {
+  const result = compareExecutions(root, EARLIER, NEWER, categories);
+  if (!result.ok) throw new Error(JSON.stringify(result.issues));
+  return result.value;
+}
+
+describe('compareExecutions over hand-built aggregates (task-083 review)', () => {
+  it('takes each side delta against its own baseline, and the change, by REQ-RES-03 certainty', () => {
+    const root = tempDir('bench-cmp-');
+    handBuilt(root, EARLIER, 'm', [
+      { arm: 'baseline', q1: [0, 0, 1] },
+      { arm: 'wingfoil', q1: [1, 1, 1] },
+    ]);
+    handBuilt(root, NEWER, 'm', [
+      { arm: 'baseline', q1: [1] },
+      { arm: 'wingfoil', q1: [1] },
+    ]);
+    const [q1] = compared(root).rows;
+    expect(q1).toMatchObject({
+      earlier: { delta: expect.closeTo(2 / 3, 9) as number, certainty: 'within variance', arm: { n: 3 }, baseline: { n: 3, min: 0, max: 1 } },
+      newer: { delta: 0, certainty: 'preliminary' },
+      change: expect.closeTo(-2 / 3, 9) as number,
+    });
+  });
+
+  it('reads M-E1 as not comparable where a run did not reach a directive step, as the site does', () => {
+    const root = tempDir('bench-cmp-');
+    handBuilt(root, EARLIER, 'm', [
+      { scenario: 'TE', arm: 'baseline', q1: [1], e1: { violations: [2] } },
+      { scenario: 'TE', arm: 'wingfoil', q1: [1, 1], e1: { violations: [0], unreached: [2] } },
+    ]);
+    handBuilt(root, NEWER, 'm', [
+      { scenario: 'TE', arm: 'baseline', q1: [1], e1: { violations: [], unreached: [1] } },
+      { scenario: 'TE', arm: 'wingfoil', q1: [1], e1: { violations: [1] } },
+    ]);
+    const [e1] = compared(root).rows.filter((row) => row.metric === 'M-E1');
+    expect(e1).toMatchObject({
+      note: expect.stringMatching(/^not comparable: .*r2 did not reach step 3; no comparison: the baseline is not comparable in abcdef012345\/1$/),
+    });
+  });
+
+  it('compares a scenario only when every run of it recorded one hash on each side, the same', () => {
+    const root = tempDir('bench-cmp-');
+    handBuilt(root, EARLIER, 'm', [
+      { arm: 'baseline', q1: [1] },
+      { arm: 'wingfoil', q1: [1], hash: 'sha256:other' },
+    ]);
+    handBuilt(root, NEWER, 'm', [
+      { arm: 'baseline', q1: [1], hash: [] },
+      { arm: 'wingfoil', q1: [1] },
+    ]);
+    const result = compared(root);
+    expect(result.rows).toEqual([]);
+    expect(result.not_compared.map((entry) => entry.reason)).toEqual([
+      `not compared: scenario hash sha256:other, sha256:same in ${EARLIER}, sha256:same, unknown in ${NEWER}`,
+      `not compared: scenario hash sha256:other, sha256:same in ${EARLIER}, sha256:same, unknown in ${NEWER}`,
+    ]);
+  });
+
+  it('lists a slice group on one side only, and a group whose scenario has no category map or cannot be read', () => {
+    const root = tempDir('bench-cmp-');
+    handBuilt(root, EARLIER, 'm', [
+      { arm: 'baseline', q1: [1] },
+      { arm: 'baseline', model: 'opus', q1: [1] },
+      { scenario: 'TX', arm: 'baseline', q1: [1] },
+      { scenario: 'TU', arm: 'baseline', q1: [1] },
+    ]);
+    handBuilt(root, NEWER, 'm', [
+      { arm: 'baseline', q1: [1] },
+      { arm: 'wingfoil', model: 'opus', q1: [1] },
+      { scenario: 'TX', arm: 'baseline', q1: [1] },
+      { scenario: 'TU', arm: 'baseline', q1: [1] },
+    ]);
+    const result = compared(root);
+    expect(result.only_in).toEqual([
+      { execution: EARLIER, scenario: 'TC', version: '1.0', arm: 'baseline', model: 'opus' },
+      { execution: NEWER, scenario: 'TC', version: '1.0', arm: 'wingfoil', model: 'opus' },
+    ]);
+    expect(result.not_compared.map((entry) => `${entry.scenario} ${entry.reason}`)).toEqual([
+      'TX not compared: category B has no map of metrics',
+      'TU not compared: scenario TU@1.0 cannot be read from scenarios/',
+    ]);
+  });
+
+  it('says there is no baseline to take a delta against, rather than not measured', () => {
+    const root = tempDir('bench-cmp-');
+    handBuilt(root, EARLIER, 'm', [{ arm: 'baseline', q1: [1] }, { arm: 'wingfoil', q1: [1] }]);
+    handBuilt(root, NEWER, 'm', [{ arm: 'wingfoil', q1: [1] }]);
+    expect(compared(root).rows.map((row) => ('note' in row ? row.note : ''))).toEqual([
+      `no baseline in ${NEWER}`,
+      `no baseline in ${NEWER}`,
+    ]);
+  });
+
+  it('lists the groups it compared, the baseline included, and every pin that differs', () => {
+    const root = tempDir('bench-cmp-');
+    const campaign = (model: string, digest: string) => ({
+      models: { default: model, slices: [{ model: 'opus' }] },
+      agent: { name: 'claude-code', version: '2.1.291', effort: { [model]: 'high' } },
+      harnesses: { wingfoil: { tool: 'wingfoil', version: 'v0.2.2' } },
+      arm_digests: { baseline: digest },
+    });
+    handBuilt(root, EARLIER, 'm', [{ arm: 'baseline', q1: [1] }], campaign('m', 'aaaaaaaaaaaa'));
+    handBuilt(root, NEWER, 'n', [{ arm: 'baseline', q1: [1] }], campaign('n', 'bbbbbbbbbbbb'));
+    const result = compared(root);
+    expect(result.compared).toEqual([{ scenario: 'TC', version: '1.0', arm: 'baseline', model: 'm → n' }]);
+    expect(result.pins_differ.map((pin) => pin.pin)).toEqual([
+      'models.default',
+      'agent.effort.m',
+      'agent.effort.n',
+      'arm_digests.baseline',
+    ]);
+  });
+
+  it('refuses an execution whose campaign file, execution record or aggregate cannot be read', () => {
+    const root = tempDir('bench-cmp-');
+    handBuilt(root, EARLIER, 'm', [{ arm: 'baseline', q1: [1] }]);
+    handBuilt(root, NEWER, 'm', [{ arm: 'baseline', q1: [1] }]);
+    writeFileSync(join(root, 'results', EARLIER, 'campaign.yaml'), 'models: [');
+    writeFileSync(join(root, 'results', NEWER, 'aggregate.json'), '{"groups": 1}');
+    const result = compareExecutions(root, EARLIER, NEWER, categories);
+    expect(result.ok ? [] : result.issues.map((issue) => issue.path)).toEqual([
+      `results/${EARLIER}/campaign.yaml`,
+      `results/${NEWER}/aggregate.json`,
+    ]);
+  });
+
+  it('gives the same bytes when it compares the same two executions again', () => {
+    const root = tempDir('bench-cmp-');
+    handBuilt(root, EARLIER, 'm', [{ arm: 'baseline', q1: [0, 1] }, { arm: 'wingfoil', q1: [1, 1] }]);
+    handBuilt(root, NEWER, 'm', [{ arm: 'baseline', q1: [1] }, { arm: 'wingfoil', q1: [0] }]);
+    const file = writeComparison(root, compared(root));
+    const first = readFileSync(file, 'utf8');
+    writeComparison(root, compared(root));
+    expect(readFileSync(file, 'utf8')).toBe(first);
+  });
 });
