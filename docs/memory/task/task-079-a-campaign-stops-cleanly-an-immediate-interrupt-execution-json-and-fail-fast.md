@@ -184,3 +184,18 @@ scenarios. It judged the accepted race honestly recorded. Verdict: clean, with t
 export within the architecture rule (tests may import a module's file). Verdict: clean, with one cosmetic nit: the
 README paragraph was not reflowed → **fixed** in `3f99aa2`, whitespace only (`git diff --word-diff` shows no word
 changed), so no further round.
+
+### Full suites
+
+`scripts/full-suites.sh task/task-079` on 2026-10-12, at the approver's request ("Avvia la suite"), on `d5131f9` (the
+in-review submit), worktree clean. All stages were green: `LINT 0 TEST 0 BUILD 0 BIN 0 DOCKER 0`.
+- `npm test`: 1438 passed, 8 skipped; statement coverage 97.75 %.
+- `test:bin`: 8/8.
+- `test:docker`: 20 passed, 2 skipped.
+
+Log: `.cache/full-suites/2026-10-12/task_task-079-d5131f9-065045.txt`. The commit after it adds only these notes.
+
+**WingFoil command, declared vs observed:** `npx wingfoil memory submit task-079-…` on the branch: declared
+in-progress → in-review; observed `{"from": "in-progress", "to": "in-review"}`, exit 0, one `wf(task): submit …`
+commit (`d5131f9`). Before it, no task was `in-review` on main or on any task branch.
+
