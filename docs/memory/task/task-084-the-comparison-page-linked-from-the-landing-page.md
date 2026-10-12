@@ -86,4 +86,34 @@ offline. It is recorded in rel-v0-2 when W14's last task is done, not in this ta
   - no section on a landing page without comparisons.
 ## Execution notes
 
+**WingFoil commands, declared vs observed:** `npx wingfoil memory submit task-084-…` on main (`d93f727`), after the
+Design's own commit (`a9a442f`, W-01). Declared: backlog → in-progress. Observed: `{"from": "backlog", "to":
+"in-progress"}`, exit 0, one `wf(task): submit …` commit (W-14).
+
+**Build** on `task/task-084` (worktree `../WingFoil2-Benchmark-wt/task-084`, its own `npm ci`):
+- red first:
+  - `6fe8e3f`: the acceptance scenario in `test/acceptance/comparison.test.ts`. It builds the site fixture's execution with
+    an earlier execution of TC, compares the two with `bench campaign compare`, and builds the site. The test failed
+    on the landing page's missing link.
+  - `da8efc4`: unit tests in `test/unit/site/comparisons.test.ts`. They failed because the module did not exist.
+    After the red commit, one expectation was corrected before the code was written: `75%` became `75.0%`, the
+    format `formatFigure` gives a share.
+- `596d827`, the implementation:
+  - `src/site/comparisons.ts`: reading, the page, and its name;
+  - `landingPage` takes the links;
+  - `buildSite` reads the comparisons;
+  - `page` in `render.ts` is exported for the new module;
+  - a CSS rule for `.cross-model` and `.change`;
+  - the README.
+- Checks, niced with 2 workers: `tsc` and `npm run lint` clean; `test/unit` and `test/acceptance` green (1516 passed,
+  8 skipped).
+
+**Decisions taken in the build, inside the Design:**
+- `render.ts` takes the landing page's links as plain data (`ComparisonLink`), computed in `build.ts`. `comparisons.ts`
+  imports the page shell from `render.ts`, so the reverse import would be circular.
+- Each side shows `n = <arm> / <baseline>`, and then, once either side has three runs, `range <arm> / <baseline>`, with
+  `—` for a side below three runs.
+- `style.css` gains one rule. Every execution's stylesheet is shared (`site/style.css`), so a rebuild changes its bytes
+  and no execution's values. That is presentation, which REQ-RES-02 as amended allows.
+
 ## Review notes
