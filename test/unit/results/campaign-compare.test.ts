@@ -231,11 +231,12 @@ describe('compareExecutions over hand-built aggregates (task-083 review)', () =>
       { scenario: 'TE', arm: 'wingfoil', q1: [1], e1: { violations: [1] } },
     ]);
     const [e1] = compared(root).rows.filter((row) => row.metric === 'M-E1');
+    // Each side says why it has no delta, and keeps the arm's own value where it has one (task-083's second review)
     expect(e1).toMatchObject({
-      note:
-        'not comparable in 0123456789ab/1: r2 did not reach step 3; ' +
-        'no comparison in abcdef012345/1: the baseline is not comparable',
+      earlier: { note: 'not comparable: r2 did not reach step 3' },
+      newer: { note: 'no comparison: the baseline is not comparable', arm: { n: 1, mean: 1 } },
     });
+    expect(e1).not.toHaveProperty('change');
   });
 
   it('compares a scenario only when every run of it recorded one hash on each side, the same', () => {
@@ -254,6 +255,17 @@ describe('compareExecutions over hand-built aggregates (task-083 review)', () =>
       `not compared: scenario hash sha256:other, sha256:same in ${EARLIER}, sha256:same, unknown in ${NEWER}`,
       `not compared: scenario hash sha256:other, sha256:same in ${EARLIER}, sha256:same, unknown in ${NEWER}`,
     ]);
+  });
+
+  it('does not compare a scenario whose runs recorded no hash on either side', () => {
+    const root = tempDir('bench-cmp-');
+    handBuilt(root, EARLIER, 'm', [{ arm: 'baseline', q1: [1], hash: [] }, { arm: 'wingfoil', q1: [1], hash: [] }]);
+    handBuilt(root, NEWER, 'm', [{ arm: 'baseline', q1: [1], hash: [] }, { arm: 'wingfoil', q1: [1], hash: [] }]);
+    const result = compared(root);
+    expect(result.rows).toEqual([]);
+    expect(result.not_compared[0]?.reason).toBe(
+      `not compared: scenario hash unknown in ${EARLIER}, unknown in ${NEWER}`,
+    );
   });
 
   it('lists a slice group on one side only, and a group whose scenario has no category map or cannot be read', () => {
@@ -285,10 +297,12 @@ describe('compareExecutions over hand-built aggregates (task-083 review)', () =>
     const root = tempDir('bench-cmp-');
     handBuilt(root, EARLIER, 'm', [{ arm: 'baseline', q1: [1] }, { arm: 'wingfoil', q1: [1] }]);
     handBuilt(root, NEWER, 'm', [{ arm: 'wingfoil', q1: [1] }]);
-    expect(compared(root).rows.map((row) => ('note' in row ? row.note : ''))).toEqual([
-      `no baseline in ${NEWER}`,
-      `no baseline in ${NEWER}`,
+    const rows = compared(root).rows;
+    expect(rows.map((row) => [row.earlier, row.newer])).toEqual([
+      [expect.objectContaining({ delta: 0 }), { note: 'no baseline', arm: { n: 1, mean: 1, min: 1, max: 1 } }],
+      [expect.objectContaining({ delta: 0 }), { note: 'no baseline', arm: { n: 1, mean: 1, min: 1, max: 1 } }],
     ]);
+    expect(rows.every((row) => !('change' in row))).toBe(true);
   });
 
   it('lists the groups it compared, the baseline included, and every pin that differs', () => {
@@ -332,5 +346,22 @@ describe('compareExecutions over hand-built aggregates (task-083 review)', () =>
     const first = readFileSync(file, 'utf8');
     writeComparison(root, compared(root));
     expect(readFileSync(file, 'utf8')).toBe(first);
+  });
+});
+
+describe('compareExecutions, after its second review (task-083)', () => {
+  it('names one execution twice once, before reading it', () => {
+    const root = tempDir('bench-cmp-');
+    const result = compareExecutions(root, NEWER, NEWER, categories);
+    expect(result.ok ? [] : result.issues.map((issue) => `${issue.path}: ${issue.message}`)).toEqual([
+      `${NEWER}: is the same execution twice`,
+    ]);
+  });
+
+  it('labels a cross-model default row with both models, as the groups it compares', () => {
+    const root = tempDir('bench-cmp-');
+    handBuilt(root, EARLIER, 'm', [{ arm: 'baseline', q1: [1] }, { arm: 'wingfoil', q1: [1] }]);
+    handBuilt(root, NEWER, 'n', [{ arm: 'baseline', q1: [1] }, { arm: 'wingfoil', q1: [1] }]);
+    expect(compared(root).rows.map((row) => row.model)).toEqual(['m → n', 'm → n']);
   });
 });
