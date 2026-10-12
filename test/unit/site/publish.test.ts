@@ -368,4 +368,13 @@ describe('bench site publish and permanent URLs (REQ-RES-02, REQ-RES-04 as amend
     expect(refused.code).toBe(1);
     expect(refused.stderr.split('\n').filter((line) => line.includes('execution.json'))).toHaveLength(1);
   }, 120_000);
+  it('keeps an issue of the root index that a rebuild did not report, though it names the same path', async () => {
+    const { root, executionDir } = await publishableSite();
+    writeFileSync(join(executionDir, 'execution.json'), '{');
+    rmSync(join(executionDir, 'aggregate.json'));
+    const refused = await benchPublish(root, probeSaying(true), 'site', 'publish');
+    expect(refused.code).toBe(1);
+    expect(refused.stderr).toContain('has no aggregate.json');
+    expect(refused.stderr).toContain('execution.json');
+  }, 120_000);
 });

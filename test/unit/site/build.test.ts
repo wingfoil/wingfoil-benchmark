@@ -548,3 +548,23 @@ describe('a profile page and a scenario that never ran (REQ-RES-08, task-085 sec
     expect(readFileSync(join(dir, 'profile-tech-lead.html'), 'utf8')).not.toContain('TS@1.0');
   }, 120_000);
 });
+
+describe('the runs not run, after the third review (task-085)', () => {
+  it('refuses a build whose runs not run name a scenario it cannot read, or are not run names', async () => {
+    const { root, executionDir } = await siteExecution();
+    const aggregateFile = join(executionDir, 'aggregate.json');
+    const aggregate = JSON.parse(readFileSync(aggregateFile, 'utf8')) as Record<string, unknown>;
+    writeFileSync(
+      aggregateFile,
+      JSON.stringify({ ...aggregate, not_run: ['TX@1.0/baseline/fake-model/r1'] }),
+    );
+    const missing = await benchSite(root, 'site', 'build', EXECUTION);
+    expect(missing.code).toBe(1);
+    expect(missing.stderr).toContain('TX@1.0: cannot be read from scenarios/TX/1.0');
+
+    writeFileSync(aggregateFile, JSON.stringify({ ...aggregate, not_run: ['garbage'] }));
+    const malformed = await benchSite(root, 'site', 'build', EXECUTION);
+    expect(malformed.code).toBe(1);
+    expect(malformed.stderr).toContain('aggregate.json: is not an aggregate this site reads');
+  }, 120_000);
+});

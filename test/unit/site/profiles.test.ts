@@ -95,5 +95,10 @@ describe('the root index (REQ-RES-02 as amended, task-085)', () => {
     expect(paths(['fedcba987654/1'])).toEqual(['site/fedcba987654/1']);
     results(root, 'abcdef012345/2', ended('2026-13-45T00:00:00.000Z'));
     expect(paths(['abcdef012345/2'])).toEqual(['results/abcdef012345/2/execution.json']);
+    // A day the calendar does not have, which Date.parse would move to another; and a timestamp with an offset
+    for (const bad of ['2026-02-30T00:00:00.000Z', '2026-10-13T00:30:00+02:00']) {
+      results(root, 'abcdef012345/3', ended(bad));
+      expect(paths(['abcdef012345/3']), bad).toEqual(['results/abcdef012345/3/execution.json']);
+    }
   });
 });
