@@ -181,13 +181,13 @@ Each arm other than the baseline is compared with the baseline of the same scena
 
 Each harness arm is also compared with its own docs control, the arm generated from its configuration (wingfoil with baseline-docs, speckit with speckit-docs, and so on for each harness), by the same rules and on the same metrics. A category page shows it under the harness's value, as "against" its control. It separates what the harness does from what its information alone does (threat T3). It is not counted in the headline, which compares with the baseline only. An execution whose controls recorded no pairing reads "not measured". {#harness-against-control}
 
-A difference is *beyond variance* only when both sides have at least 3 runs and their ranges (lowest to highest) do not overlap. Otherwise it is *within variance*. No claim of statistical significance is made in v0.1. {#beyond-variance}
+A difference is *beyond variance* only when both sides have at least 3 runs and their ranges (lowest to highest) do not overlap. With at least 3 runs a side and ranges that overlap, it is *within variance*. No claim of statistical significance is made in v0.1. {#beyond-variance}
 
-A value from a single run is labelled *preliminary* and has no range. A comparison where either side is a single run is preliminary too, and says so even when the other side has more runs. The v0.1 reference campaign repeats only S1, so its categories D, E and F are preliminary. {#preliminary}
+A value from a single run is labelled *preliminary* and has no range. A comparison is preliminary unless both sides have at least 3 runs, and says so even when the value beside it has more runs. The v0.1 reference campaign repeats only S1, so its categories D, E and F are preliminary. {#preliminary}
 
 M-E1 is *not comparable* for an arm when one of its runs did not reach a step the rule checks score, or was not scored by them. Such an arm gets no outcome and no count in the headline. When it is the baseline, each other arm reads "no comparison". A run that stopped early would otherwise look better, with fewer steps to break rules in. {#m-e1-not-comparable}
 
-The headline is generated from the comparisons, with no hand-written text. It has one sentence per arm, of the form "Against the baseline, *arm* is better in *b*, worse in *w* and the same in *s* of *n* comparisons across categories …", then the categories where a side is a single run, marked preliminary, then the categories not covered. A difference at n = 1 counts, marked preliminary. {#headline}
+The headline is generated from the comparisons, with no hand-written text. It has one sentence per arm, of the form "Against the baseline, *arm* is better in *b*, worse in *w* and the same in *s* of *n* comparisons across categories …", then the categories where a side has fewer than 3 runs, marked preliminary, then the categories not covered. A preliminary difference counts, marked as such. {#headline}
 
 The landing page's one chart shows M-Q1 on the final snapshot for every covered scenario, one bar per arm, with its value, its `n` and, from two runs, its range. A legend names the arms, and each is told apart by hatching as well as colour. {#chart}
 

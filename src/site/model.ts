@@ -8,8 +8,8 @@ import { AGGREGATE_FILE, AGGREGATE_VERSION } from '../results/index.js';
 import type { AggregateFile, ControlComparison, ControlMetric, Group } from '../results/index.js';
 import { loadScenario } from '../scenario/index.js';
 
-import { CATEGORY_MAP, compare, readMetric, summarize } from './rules.js';
-import type { Comparison, Figures, MapEntry, Summary } from './rules.js';
+import { CATEGORY_MAP, compare, harnessLabel, readMetric, summarize } from './rules.js';
+import type { Comparison, Figures, MapEntry, RecordedHarness, Summary } from './rules.js';
 
 const BASELINE = 'baseline';
 
@@ -28,7 +28,7 @@ export interface RunRecord {
   readonly run: string;
   readonly arm: string;
   readonly manual?: { readonly sha256: string; readonly tokens: number };
-  readonly harness?: { readonly tool: string; readonly commit: string };
+  readonly harness?: RecordedHarness;
   /** What the arm declared of its harness (REQ-FMT-10), as the run recorded it. */
   readonly provides?: Readonly<Record<string, boolean>>;
   /** The arm's digest (REQ-FMT-13), as the run recorded it. */
@@ -94,6 +94,8 @@ export interface SiteModel {
   readonly slices: readonly Group[];
   /** Every run's record, groups' then slices', in the aggregate's order. */
   readonly records: readonly RunRecord[];
+  /** Each harness arm's label, shown beside its values (T15, task-082): `harnessLabel` of its runs' records. */
+  readonly harnesses?: Readonly<Record<string, string>>;
   /** The planned runs that never started, of an execution declared final (REQ-CLI-06 as amended, task-080). */
   readonly notRun?: readonly string[];
 }
@@ -101,7 +103,7 @@ export interface SiteModel {
 const runRecord = z.object({
   scenario_hash: z.string(),
   manual: z.object({ sha256: z.string(), tokens: z.number() }).optional(),
-  harness: z.object({ tool: z.string(), commit: z.string() }).optional(),
+  harness: z.object({ tool: z.string(), version: z.string().optional(), commit: z.string() }).optional(),
   provides: z.record(z.string(), z.boolean()).optional(),
   arm_digest: z.string().optional(),
   attempts: z.number().int().optional(),
@@ -326,6 +328,16 @@ export function siteModel(root: string, execution: string): Result<SiteModel> {
     comparisons,
     slices: aggregate.slices,
     records: all.flatMap((group) => group.runs.flatMap((run) => records.get(run) ?? [])),
+    harnesses: Object.fromEntries(
+      arms.flatMap((arm) => {
+        const label = harnessLabel(
+          groups
+            .filter((group) => group.arm === arm)
+            .flatMap((group) => group.runs.flatMap((run) => records.get(run)?.harness ?? [])),
+        );
+        return label === undefined ? [] : [[arm, label]];
+      }),
+    ),
     ...(aggregate.not_run === undefined ? {} : { notRun: aggregate.not_run }),
   });
 }

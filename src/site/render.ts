@@ -92,6 +92,15 @@ function title(model: SiteModel): string {
   return `WingFoil Benchmark — campaign ${model.campaign}, execution ${model.execution}`;
 }
 
+/**
+ * An arm's name, and beside it the harness its runs recorded (T15, REQ-RES-03 as amended in 1.26, task-082): on every
+ * line and column that carries its values. The baseline and the docs controls have none.
+ */
+function armHtml(model: SiteModel, arm: string): string {
+  const label = model.harnesses?.[arm];
+  return label === undefined ? e(arm) : `${e(arm)} <span class="harness">${e(label)}</span>`;
+}
+
 /** A value's `n`, its `preliminary` badge at n = 1, and its range from n = 3 (experiment design §4.6). */
 function nOf(metric: MetricId, summary: Summary): string {
   const badge = summary.n === 1 ? ' <span class="badge">preliminary</span>' : '';
@@ -376,12 +385,12 @@ export function landingPage(model: SiteModel): string {
     `<figure>\n${chartSvg(model)}\n<figcaption>M-Q1: the share of public hidden tests passed on the final snapshot, ` +
     `per arm, with the range of its runs and their n.</figcaption>\n</figure>\n` +
     '<div class="scroll">\n<table class="categories">\n<thead><tr><th scope="col">Category</th>' +
-    model.arms.map((arm) => `<th scope="col">${e(arm)}</th>`).join('') +
+    model.arms.map((arm) => `<th scope="col">${armHtml(model, arm)}</th>`).join('') +
     '</tr></thead>\n<tbody>\n' +
     model.categories.map((row) => rowHtml(model, row)).join('') +
     '</tbody>\n</table>\n</div>\n' +
-    `<p class="legend">Each value is the mean of its runs, with its n; n = 1 is preliminary; a range is shown from ` +
-    `n = 3. Deltas are against the baseline. ` +
+    `<p class="legend">Each value is the mean of its runs, with its n; a single run is preliminary, and so is a ` +
+    `comparison unless both sides have n ≥ 3; a range is shown from n = 3. Deltas are against the baseline. ` +
     `<a href="method.html">How to read these results</a>; ` +
     `<a href="eligibility.html">which tools are eligible, and why</a>.</p>\n` +
     `<p class="meta">Campaign ${e(model.campaign)}, execution ${model.execution}: ${runs(model.runs)} of ${e(model.model)}` +
@@ -437,7 +446,7 @@ function scenarioSection(model: SiteModel, scenario: ScenarioRow): string {
   for (const metric of scenario.metrics) {
     html += `<h3>${metric.entry.id}: ${e(metric.entry.label)} (${metric.entry.better} is better)</h3>\n<ul>\n`;
     for (const value of metric.values)
-      html += `<li>${e(value.arm)}: ${valueHtml(metric.entry.id, value)}${againstHtml(metric.entry.id, value)}</li>\n`;
+      html += `<li>${armHtml(model, value.arm)}: ${valueHtml(metric.entry.id, value)}${againstHtml(metric.entry.id, value)}</li>\n`;
     html += '</ul>\n';
   }
   html += '<h3>Each suite on the final snapshot</h3>\n<ul>\n';
@@ -445,10 +454,11 @@ function scenarioSection(model: SiteModel, scenario: ScenarioRow): string {
     const suites = group.metrics.m_q1.final.suites
       .map((suite) => `${suite.id} ${tallies(suite.value.values)}`)
       .join('; ');
-    html += `<li>${e(group.arm)}: ${e(suites)}</li>\n`;
+    html += `<li>${armHtml(model, group.arm)}: ${e(suites)}</li>\n`;
   }
   html += '</ul>\n<h3>Hold-out</h3>\n<ul>\n';
-  for (const group of scenario.groups) html += `<li>${e(group.arm)}: ${holdoutHtml(group)}</li>\n`;
+  for (const group of scenario.groups)
+    html += `<li>${armHtml(model, group.arm)}: ${holdoutHtml(group)}</li>\n`;
   html += '</ul>\n<h3>Runs</h3>\n<ul>\n';
   for (const group of scenario.groups) {
     for (const run of group.runs) {

@@ -72,8 +72,8 @@ export interface Summary {
 export type Outcome = 'better' | 'worse' | 'same';
 
 /**
- * How sure a difference is (experiment design §4.6): `beyond variance` only from n ≥ 3 on both sides
- * with ranges apart; `preliminary` when either side is a single run; otherwise `within variance`.
+ * How sure a difference is (experiment design §4.6, REQ-RES-03 as amended in 1.26): `preliminary` unless both sides
+ * have n ≥ 3 (dl-012); then `beyond variance` when their ranges are apart, otherwise `within variance`.
  */
 export type Certainty = 'beyond variance' | 'within variance' | 'preliminary';
 
@@ -182,10 +182,6 @@ export function compare(
   const outcome: Outcome = delta === 0 ? 'same' : delta > 0 === (better === 'higher') ? 'better' : 'worse';
   const apart = arm.min > base.max || arm.max < base.min;
   const certainty: Certainty =
-    base.n === 1 || arm.n === 1
-      ? 'preliminary'
-      : outcome !== 'same' && base.n >= 3 && arm.n >= 3 && apart
-        ? 'beyond variance'
-        : 'within variance';
+    base.n < 3 || arm.n < 3 ? 'preliminary' : outcome !== 'same' && apart ? 'beyond variance' : 'within variance';
   return { outcome, delta, certainty, baseline: base, other: arm };
 }
