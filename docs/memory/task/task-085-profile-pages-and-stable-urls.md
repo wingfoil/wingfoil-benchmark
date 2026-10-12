@@ -155,3 +155,13 @@ should-fix). Red tests `011b5e2`, fixes `a334268`:
    follow-up for the approver: a wording amendment of REQ-RES-04 to the root index. The code follows REQ-RES-02 as
    amended in 1.26, which replaced the `meta` refresh.
 
+**Round 2**: a fresh, independent, read-only agent, on `5a14c6e`. It verified the round-1 outcomes, including that a
+refusal of the index leaves `site/` untouched, and the `gh-pages` refusal coming before any commit or push. Verdict:
+not clean, with one should-fix. Red tests `1d05327`'s parent, fixes `1d05327`:
+1. should-fix: a profile page dropped the runs not run of a scenario that never ran, since only scenarios with groups
+   have a row → **fixed**: the model carries each scenario version's primary category, those of the runs not run
+   included, read from `scenarios/`, and the profile page filters by it. Tested with a scenario of category D that
+   never ran.
+2. nit: an unreadable `execution.json` was reported twice by publish → **fixed**: once.
+3. nit: `2026-13-45` passed as a date → **fixed**: an ISO timestamp whose own day is the one it names.
+
