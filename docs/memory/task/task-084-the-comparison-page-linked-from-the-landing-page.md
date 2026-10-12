@@ -147,3 +147,13 @@ Red tests `56db448`, fixes `5518df9`:
 Verdict: clean, with one optional nit, **no change**. The landing page's links follow file-name order, so `…-10` comes
 before `…-2`. That order is deterministic, and it is the one the Design states.
 
+### Full suites
+
+`scripts/full-suites.sh task/task-084` on 2026-10-12, at the approver's request ("Avvia la suite"), on `1a8e675` (the
+in-review submit), worktree clean: `LINT 0 TEST 0 BUILD 0 BIN 0 DOCKER 0`. `npm test` 1522 passed, 8 skipped, statement coverage 97.63 %; `test:bin` 8/8; `test:docker` 20 passed, 2 skipped. Log: `.cache/full-suites/2026-10-12/task_task-084-1a8e675-192956.txt`. The
+commit after it adds only these notes.
+
+**WingFoil command, declared vs observed:** `npx wingfoil memory submit task-084-…` on the branch: declared
+in-progress → in-review; observed `{"from": "in-progress", "to": "in-review"}`, exit 0, one `wf(task): submit …`
+commit (`1a8e675`). No task was `in-review` on main or on a task branch before it.
+
