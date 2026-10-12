@@ -437,3 +437,21 @@ describe('the harness beside an arm, from the campaign pin when the run recorded
     );
   }, 120_000);
 });
+
+describe('the comparison pages in a build (REQ-RES-07, task-084 review)', () => {
+  it('leaves a landing page without comparisons as it was, and refuses a build over a bad comparison', async () => {
+    const { root } = await siteExecution();
+    expect((await benchSite(root, 'site', 'build', EXECUTION)).code).toBe(0);
+    const landing = readFileSync(join(root, 'site', 'abcdef012345', '1', 'index.html'), 'utf8');
+    expect(landing).not.toContain('Compared with earlier executions');
+
+    const dir = join(root, 'results', 'comparisons', 'abcdef012345-1');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, '0123456789ab-1.json'), '{');
+    const refused = await benchSite(root, 'site', 'build', EXECUTION);
+    expect(refused.code).toBe(1);
+    expect(refused.stderr).toContain('results/comparisons/abcdef012345-1/0123456789ab-1.json');
+    // Nothing was written over the earlier build
+    expect(readFileSync(join(root, 'site', 'abcdef012345', '1', 'index.html'), 'utf8')).toBe(landing);
+  }, 120_000);
+});

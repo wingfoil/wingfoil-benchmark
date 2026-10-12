@@ -326,3 +326,14 @@ describe('the harness beside an arm on the pages (T15, task-082 reviews)', () =>
     expect(Number(last?.[1]) + 7 * `wingfoil (${label})`.length).toBeLessThanOrEqual(width);
   });
 });
+
+describe('the landing page link to a comparison (REQ-RES-07, task-084 review)', () => {
+  it('links each comparison, escaped, marked cross-model where it is', () => {
+    const page = landingPage(model(), [
+      { file: 'compare-x"-1.html', label: 'campaign <x>, execution 1', crossModel: true },
+    ]);
+    expect(page).toContain(
+      '<li><a href="compare-x&quot;-1.html">campaign &lt;x&gt;, execution 1</a> <span class="cross-model">cross-model</span></li>',
+    );
+  });
+});

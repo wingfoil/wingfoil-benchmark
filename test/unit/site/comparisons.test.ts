@@ -67,7 +67,8 @@ describe('the comparison page (REQ-RES-07, task-084)', () => {
     const page = comparisonPage(comparison());
     expect(page).toContain('campaign abcdef012345, execution 2');
     expect(page).toContain('campaign 0123456789ab, execution 1');
-    expect(page).toContain('ended 2026-10-12T10:00:00.000Z');
+    // REQ-RES-02 as amended: only site/index.html holds a date (task-084's review)
+    expect(page).not.toMatch(/20\d\d-\d\d-\d\d/);
     expect(page).toContain('in the order the maintainer chose');
     expect(page).toContain('<li>harnesses.wingfoil: wingfoil v0.2.2 → wingfoil v0.2.3 &lt;b&gt;</li>');
     expect(page).not.toContain('<script');
@@ -96,13 +97,13 @@ describe('the comparison page (REQ-RES-07, task-084)', () => {
       page.indexOf('</tr>', page.indexOf('<td>speckit</td>')),
     );
     expect(row).toContain('no baseline');
-    expect(row).toContain('75.0%');
+    expect(row).toContain('75.0% (n = 1)');
     expect(row).not.toContain('<span class="change">');
   });
 
   it('lists what is not compared and what is on one side only', () => {
     const page = comparisonPage(comparison());
-    expect(page).toContain('S8@1.0 baseline (sonnet): not compared: scenario hash a in x, b in y');
+    expect(page).toContain('<li>S8@1.0 baseline (sonnet): scenario hash a in x, b in y</li>');
     expect(page).toContain('S9@1.0 openspec (sonnet): only in abcdef012345/2');
   });
 
@@ -156,6 +157,74 @@ describe('reading the comparisons of an execution (REQ-RES-02 as amended, task-0
     expect(read.ok ? [] : read.issues.map((issue) => issue.path)).toEqual([
       'results/comparisons/abcdef012345-2/0123456789ab-1.json',
       'results/comparisons/abcdef012345-2/fedcba987654-1.json',
+    ]);
+  });
+});
+
+describe('the comparison page, after its first review (task-084)', () => {
+  it('groups the rows by category, then scenario, arm and model, keeping the metric order', () => {
+    const row = (category: string, scenario: string, arm: string, metric: 'M-Q1' | 'M-K1') => ({
+      ...(comparison().rows[0] as CampaignComparison['rows'][number]),
+      category,
+      scenario,
+      arm,
+      metric,
+    });
+    const page = comparisonPage(
+      comparison({
+        rows: [
+          row('D', 'S2', 'wingfoil', 'M-Q1'),
+          row('C', 'S3', 'wingfoil', 'M-Q1'),
+          row('C', 'S1', 'wingfoil', 'M-Q1'),
+          row('C', 'S1', 'wingfoil', 'M-K1'),
+        ],
+      }),
+    );
+    const order = [
+      ...page.matchAll(
+        /<tr><td>([A-G])<\/td><td>(S\d)@1\.0<\/td><td>wingfoil<\/td><td>[^<]*<\/td><td>(M-..)</g,
+      ),
+    ].map((match) => `${match[1]} ${match[2]} ${match[3]}`);
+    expect(order).toEqual(['C S1 M-Q1', 'C S1 M-K1', 'C S3 M-Q1', 'D S2 M-Q1']);
+  });
+});
+
+describe('reading the comparisons, after the first review (task-084)', () => {
+  function write(root: string, name: string, value: unknown) {
+    const dir = join(root, 'results', 'comparisons', 'abcdef012345-2');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, name), typeof value === 'string' ? value : JSON.stringify(value));
+  }
+  const paths = (root: string) => {
+    const read = readComparisons(root, 'abcdef012345', 2);
+    return read.ok ? [] : read.issues.map((issue) => `${issue.path}: ${issue.message}`);
+  };
+
+  it('refuses an earlier side that names no execution of a campaign, which would name a page outside the site', () => {
+    const root = tempDir('bench-site-cmp-');
+    write(root, '..-1.json', {
+      ...comparison(),
+      earlier: { campaign: '../../../x', execution: 1, model: 's' },
+    });
+    expect(paths(root)).toEqual([
+      'results/comparisons/abcdef012345-2/..-1.json: is not a comparison this site reads',
+    ]);
+  });
+
+  it('refuses a file not named after its earlier execution', () => {
+    const root = tempDir('bench-site-cmp-');
+    write(root, '0123456789ab-1 (copy).json', comparison());
+    expect(paths(root)).toEqual([
+      'results/comparisons/abcdef012345-2/0123456789ab-1 (copy).json: is named for another comparison than 0123456789ab/1: 0123456789ab-1.json',
+    ]);
+  });
+
+  it('refuses a row whose side lacks what the page reads', () => {
+    const root = tempDir('bench-site-cmp-');
+    const [first] = comparison().rows;
+    write(root, '0123456789ab-1.json', { ...comparison(), rows: [{ ...first, earlier: { delta: 1 } }] });
+    expect(paths(root)).toEqual([
+      'results/comparisons/abcdef012345-2/0123456789ab-1.json: is not a comparison this site reads',
     ]);
   });
 });
