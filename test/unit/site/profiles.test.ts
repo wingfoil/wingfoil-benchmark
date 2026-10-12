@@ -93,5 +93,7 @@ describe('the root index (REQ-RES-02 as amended, task-085)', () => {
     };
     expect(paths(['abcdef012345/1'])).toEqual(['results/abcdef012345/1']);
     expect(paths(['fedcba987654/1'])).toEqual(['site/fedcba987654/1']);
+    results(root, 'abcdef012345/2', ended('2026-13-45T00:00:00.000Z'));
+    expect(paths(['abcdef012345/2'])).toEqual(['results/abcdef012345/2/execution.json']);
   });
 });

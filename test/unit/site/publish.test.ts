@@ -361,4 +361,11 @@ describe('bench site publish and permanent URLs (REQ-RES-02, REQ-RES-04 as amend
     );
     expect(gitIn(bare, 'rev-parse', 'gh-pages')).toBe(pages);
   }, 240_000);
+  it('reports an execution record it cannot read once', async () => {
+    const { root, executionDir } = await publishableSite();
+    writeFileSync(join(executionDir, 'execution.json'), '{');
+    const refused = await benchPublish(root, probeSaying(true), 'site', 'publish');
+    expect(refused.code).toBe(1);
+    expect(refused.stderr.split('\n').filter((line) => line.includes('execution.json'))).toHaveLength(1);
+  }, 120_000);
 });

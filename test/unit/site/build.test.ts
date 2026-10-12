@@ -525,3 +525,26 @@ describe('a profile page counts its own runs only, and holds no date (REQ-RES-08
       expect(readFileSync(join(dir, file), 'utf8'), file).not.toMatch(/20\d\d-\d\d-\d\d/);
   }, 120_000);
 });
+
+describe('a profile page and a scenario that never ran (REQ-RES-08, task-085 second review)', () => {
+  it("lists the runs not run of a scenario of its categories, even when none of that scenario's runs ran", async () => {
+    const { root, executionDir } = await siteExecution();
+    // TS — a copy of T3 whose primary category is D — was planned and never started
+    cpSync(join(root, 'scenarios', 'TD'), join(root, 'scenarios', 'TS'), { recursive: true });
+    const yaml = join(root, 'scenarios', 'TS', '1.0', 'scenario.yaml');
+    writeFileSync(yaml, readFileSync(yaml, 'utf8').replace(/^id: TD$/m, 'id: TS'));
+    const aggregateFile = join(executionDir, 'aggregate.json');
+    const aggregate = JSON.parse(readFileSync(aggregateFile, 'utf8')) as Record<string, unknown>;
+    writeFileSync(
+      aggregateFile,
+      JSON.stringify({ ...aggregate, not_run: ['TS@1.0/baseline/fake-model/r1'] }),
+    );
+    const built = await benchSite(root, 'site', 'build', EXECUTION);
+    expect(built.code, built.stderr).toBe(0);
+    const dir = join(root, 'site', 'abcdef012345', '1');
+    expect(readFileSync(join(dir, 'profile-code-reviewer.html'), 'utf8')).toContain(
+      'Not run: <code>TS@1.0/baseline/fake-model/r1</code>.',
+    );
+    expect(readFileSync(join(dir, 'profile-tech-lead.html'), 'utf8')).not.toContain('TS@1.0');
+  }, 120_000);
+});
