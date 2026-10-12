@@ -10,17 +10,48 @@ import type { CampaignComparison, ComparisonRow, MetricId } from '../results/ind
 import { escapeHtml as e, page } from './render.js';
 import { formatDelta, formatFigure } from './rules.js';
 
-/** A comparison file's shape, as far as the page reads it (REQ-CLI-12, task-083): anything else is not its business. */
-const executionShape = z.object({ campaign: z.string(), execution: z.number(), model: z.string() }).loose();
+/**
+ * A comparison file's shape (REQ-CLI-12, task-083), every field the page reads checked: each execution as a campaign's
+ * (`<campaign-id>/<n>`), since the page is named after the earlier one and must stay inside the site (task-084's
+ * review).
+ */
+const executionShape = z
+  .object({
+    campaign: z.string().regex(/^[0-9a-f]{12}$/),
+    execution: z.number().int().positive(),
+    model: z.string(),
+  })
+  .loose();
+const valueShape = z.object({ n: z.number(), mean: z.number(), min: z.number(), max: z.number() });
+const sideShape = z.union([
+  z.object({
+    arm: valueShape,
+    baseline: valueShape,
+    delta: z.number(),
+    certainty: z.enum(['beyond variance', 'within variance', 'preliminary']),
+  }),
+  z.object({ note: z.string(), arm: valueShape.optional() }),
+]);
+const groupShape = { scenario: z.string(), version: z.string(), arm: z.string(), model: z.string() };
 const comparisonShape = z
   .object({
     comparison_version: z.literal(1),
     earlier: executionShape,
     newer: executionShape,
     pins_differ: z.array(z.object({ pin: z.string(), earlier: z.string(), newer: z.string() })),
-    rows: z.array(z.object({ metric: z.string(), cross_model: z.boolean() }).loose()),
-    not_compared: z.array(z.object({ reason: z.string() }).loose()),
-    only_in: z.array(z.object({ execution: z.string() }).loose()),
+    rows: z.array(
+      z.object({
+        ...groupShape,
+        category: z.string(),
+        metric: z.enum(['M-Q1', 'M-K1', 'M-D3', 'M-E1', 'M-F1']),
+        cross_model: z.boolean(),
+        earlier: sideShape,
+        newer: sideShape,
+        change: z.number().optional(),
+      }),
+    ),
+    not_compared: z.array(z.object({ ...groupShape, reason: z.string() })),
+    only_in: z.array(z.object({ ...groupShape, execution: z.string() })),
   })
   .loose();
 
@@ -55,7 +86,15 @@ export function readComparisons(
       issues.push({ path, message: 'is not a comparison this site reads' });
       continue;
     }
-    const { newer } = shape.data;
+    const { newer, earlier } = shape.data;
+    const expected = `${earlier.campaign}-${earlier.execution}.json`;
+    if (name !== expected) {
+      issues.push({
+        path,
+        message: `is named for another comparison than ${earlier.campaign}/${earlier.execution}: ${expected}`,
+      });
+      continue;
+    }
     if (newer.campaign !== campaign || newer.execution !== execution) {
       issues.push({
         path,
@@ -92,7 +131,9 @@ function range(metric: MetricId, value: { n: number; min: number; max: number })
 function sideHtml(metric: MetricId, side: ComparisonRow['earlier']): string {
   if ('note' in side) {
     const kept =
-      side.arm === undefined ? '' : ` <span class="figure">${e(formatFigure(metric, side.arm.mean))}</span>`;
+      side.arm === undefined
+        ? ''
+        : ` <span class="figure">${e(`${formatFigure(metric, side.arm.mean)} (n = ${side.arm.n})`)}</span>`;
     return `<span class="note">${e(side.note)}</span>${kept}`;
   }
   // The arm's n and the baseline's, then their ranges once either has three runs.
@@ -114,13 +155,12 @@ function sideHtml(metric: MetricId, side: ComparisonRow['earlier']): string {
  */
 export function comparisonPage(comparison: CampaignComparison): string {
   const { earlier, newer } = comparison;
-  const ended = (side: CampaignComparison['earlier']) =>
-    side.ended === undefined ? '' : `, ended ${side.ended}`;
   const heading = `${executionName(newer)} against ${executionName(earlier)}`;
   let body =
     `<p><a href="index.html">← ${e(executionName(newer))}</a></p>\n<h1>Comparison: ${e(heading)}</h1>\n` +
-    `<p class="meta">Newer: ${e(executionName(newer))}, on ${e(newer.model)}${e(ended(newer))}. Earlier: ` +
-    `${e(executionName(earlier))}, on ${e(earlier.model)}${e(ended(earlier))}. Compared in the order the maintainer ` +
+    // No date: only site/index.html holds one (REQ-RES-02 as amended; task-084's review).
+    `<p class="meta">Newer: ${e(executionName(newer))}, on ${e(newer.model)}. Earlier: ` +
+    `${e(executionName(earlier))}, on ${e(earlier.model)}. Compared in the order the maintainer ` +
     `chose. Across campaigns only deltas against each execution's own baseline are compared.</p>\n`;
   if (crossModel(comparison)) {
     body +=
@@ -140,7 +180,22 @@ export function comparisonPage(comparison: CampaignComparison): string {
       '<th scope="col">Scenario</th><th scope="col">Arm</th><th scope="col">Model</th><th scope="col">Metric</th>' +
       `<th scope="col">${e(executionName(earlier))}</th><th scope="col">${e(executionName(newer))}</th>` +
       '<th scope="col">Change</th></tr></thead>\n<tbody>\n';
-    for (const row of comparison.rows) {
+    // Grouped by category, then scenario version, arm and model; each group's metrics in the category map's order.
+    const groupOf = (row: ComparisonRow) => [
+      row.category,
+      `${row.scenario}@${row.version}`,
+      row.arm,
+      row.model,
+    ];
+    const rows = comparison.rows
+      .map((row, index) => ({ row, index }))
+      .sort((a, b) => {
+        const [x, y] = [groupOf(a.row), groupOf(b.row)];
+        const differs = x.findIndex((part, at) => part !== y[at]);
+        return differs < 0 ? a.index - b.index : (x[differs] as string) < (y[differs] as string) ? -1 : 1;
+      })
+      .map(({ row }) => row);
+    for (const row of rows) {
       const mark = row.cross_model ? ' <span class="cross-model">cross-model</span>' : '';
       const change =
         row.change === undefined
@@ -160,7 +215,8 @@ export function comparisonPage(comparison: CampaignComparison): string {
       : `<ul>\n${comparison.not_compared
           .map(
             (entry) =>
-              `<li>${e(`${entry.scenario}@${entry.version} ${entry.arm} (${entry.model}): ${entry.reason}`)}</li>\n`,
+              // Under the heading "Not compared", the reason without its own "not compared: ".
+              `<li>${e(`${entry.scenario}@${entry.version} ${entry.arm} (${entry.model}): ${entry.reason.replace(/^not compared: /, '')}`)}</li>\n`,
           )
           .join('')}</ul>\n`;
   body += '<h2>On one side only</h2>\n';
