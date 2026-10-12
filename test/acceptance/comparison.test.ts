@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { stringify } from 'yaml';
 import { describe, expect, it } from 'vitest';
 
-import { benchSite, STAND_INS } from '../support/site-fixture.js';
+import { benchSite, siteCampaign, siteExecution, STAND_INS } from '../support/site-fixture.js';
 import { CANCEL, storedRun } from '../support/score-fixture.js';
 import { tempDir } from '../support/scenario-fixture.js';
 
@@ -187,5 +187,37 @@ describe('comparison.feature', () => {
     expect(itself.code).toBe(1);
     expect(itself.stderr).toContain(`${NEWER}: is the same execution twice`);
     expect(existsSync(join(root, 'results', 'comparisons'))).toBe(false);
+  }, 240_000);
+  it('@F5.2 The comparison is published with the newer execution', async () => {
+    // Given a comparison whose newer side is an execution: the site fixture's, against an earlier execution of TC
+    const { root } = await siteExecution();
+    const variant = STAND_INS[0];
+    await storedRun({ variant, steps: [{}, {}], into: { root, execution: EARLIER } });
+    await storedRun({ variant, steps: [{}, CANCEL], into: { root, execution: EARLIER, arm: 'wingfoil' } });
+    writeFileSync(
+      join(root, 'results', EARLIER, 'campaign.yaml'),
+      siteCampaign(['TC']).replace('  version: 1.0.0', '  version: 0.9.0'),
+    );
+    expect((await benchSite(root, 'score', EARLIER)).code).toBe(0);
+    const compared = await benchSite(root, 'campaign', 'compare', EARLIER, NEWER);
+    expect(compared.code, compared.stderr).toBe(0);
+
+    // When the maintainer builds the site
+    const built = await benchSite(root, 'site', 'build', NEWER);
+    expect(built.code, built.stderr).toBe(0);
+
+    // Then that execution's landing page links its comparison page
+    const dir = join(root, 'site', 'abcdef012345', '1');
+    const landing = readFileSync(join(dir, 'index.html'), 'utf8');
+    expect(landing).toContain('<a href="compare-0123456789ab-1.html">campaign 0123456789ab, execution 1</a>');
+    const page = readFileSync(join(dir, 'compare-0123456789ab-1.html'), 'utf8');
+    // ... which shows, per category and arm, each side's delta, the change, its n and the pins that differ
+    expect(page).toContain('TC@1.0');
+    expect(page).toContain('<td>wingfoil</td>');
+    expect(page).toContain('<td>M-Q1</td>');
+    expect(page).toContain('n = 1');
+    expect(page).toContain('<span class="change">');
+    expect(page).toContain('<li>agent.version: 0.9.0 → 1.0.0</li>');
+    expect(page).not.toContain('<script');
   }, 240_000);
 });
