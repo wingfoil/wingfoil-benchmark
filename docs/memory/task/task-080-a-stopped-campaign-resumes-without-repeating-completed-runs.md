@@ -145,4 +145,37 @@ leftover is reported by its run, as today (bug-003).
 
 ## Execution notes
 
+**WingFoil commands, declared vs observed:**
+- `npx wingfoil memory submit task-080-…` on main (`f1518ab`), after the Design's own commit (`77fe4f6`, W-01):
+  declared backlog → in-progress; observed `{"from": "backlog", "to": "in-progress"}`, exit 0, one
+  `wf(task): submit …` commit (W-14).
+
+**Build** on `task/task-080` (worktree `../WingFoil2-Benchmark-wt/task-080`, its own `npm ci`):
+- red first: `4583ab7` (the three acceptance scenarios), `193667d` (unit tests for the runner, `score`, the command
+  line, `run show`, the site and `not_run`). They failed for the expected reasons: no `--resume`, a new execution
+  instead of the resumed one, an unconditional aggregate, no `plannedRuns`. Five of the new unit tests already passed:
+  they pin behaviour that must not change (a completed execution aggregates, `--resume` is refused on `validate`).
+- `e3ade14` the implementation:
+  - `src/results/execution.ts` holds `execution.json`'s record and `executionResumable`, and `plannedRuns` for
+    `not_run`;
+  - the runner takes `{ resume }` and `checkResume`;
+  - `score` takes `--final`;
+  - `run show` and the site show attempts.
+  The usage text changed on purpose, so the two tests that pin it (`test/unit/cli/main.test.ts`,
+  `test/bin/bench.test.ts`) were updated in the same commit.
+- The bug link check (`test/support/traceability.ts`) required bug-013 to be `fixed` as soon as task-079 was `done`,
+  which the two-task plan cannot meet. The approver chose option A in chat on 2026-10-12 ("A, come proposto"): a bug is
+  due `fixed` only once every task that lists it is done. Red test `4adc477`, fix `cc04b20`; both commits carry
+  `Approver:` and `Reason:`.
+- `b77c80e`: the README on resuming and `--final`.
+- Checks, niced, with 2 workers: `tsc` and `npm run lint` clean. `test/unit` and `test/acceptance` green (1461 tests),
+  run whole once, niced, after the usage text changed.
+
+**Decisions taken in the build, inside the Design:**
+- `not_run` names runs as the campaign plans them (`<scenario>@<version>/<arm>/<model>/r<k>`), without the
+  `<campaign>/<n>/runs/` prefix the groups' run names carry: a run never started has no directory to open.
+- `SiteModel.notRun` is optional, as an aggregate written before it has none.
+- A resume with nothing left to run still builds the image and the harnesses. Kept as it is: one code path, and such a
+  resume is rare.
+
 ## Review notes
