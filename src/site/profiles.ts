@@ -101,10 +101,10 @@ export function rootIndex(root: string, executions: readonly string[]): Result<s
       return '';
     }
     const ended = record.value?.ended;
-    // A day that exists: an ISO timestamp whose own date is the one it names.
+    // A day that exists: a UTC ISO timestamp, as the runner writes it, whose own date is the one it names.
     const real =
       ended === undefined ||
-      (/^\d{4}-\d{2}-\d{2}T/.test(ended) &&
+      (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z$/.test(ended) &&
         !Number.isNaN(Date.parse(ended)) &&
         new Date(ended).toISOString().slice(0, 10) === ended.slice(0, 10));
     if (!real) {

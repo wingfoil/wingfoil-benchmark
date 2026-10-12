@@ -96,6 +96,8 @@ export async function checkSiteCopy(root: string, dir: string): Promise<Result<s
     message: 'is a link: a published site holds files only',
   }));
   const expected = new Map<string, { bytes: Buffer; execution: string }>();
+  /** What a rebuild reported, by path and message: the root index's same issue is not said twice. */
+  const rebuilt = new Set<string>();
 
   const scratch = mkdtempSync(join(tmpdir(), 'bench-site-check-'));
   try {
@@ -103,6 +105,7 @@ export async function checkSiteCopy(root: string, dir: string): Promise<Result<s
       const fresh = join(scratch, execution.replace('/', '-'));
       const built = await buildSite(root, execution, fresh);
       if (!built.ok) {
+        for (const issue of built.issues) rebuilt.add(`${issue.path}\n${issue.message}`);
         issues.push(
           ...built.issues.map((issue) => ({
             ...issue,
@@ -128,8 +131,7 @@ export async function checkSiteCopy(root: string, dir: string): Promise<Result<s
       execution: executions[executions.length - 1] as string,
     });
   } else {
-    const said = new Set(issues.map((issue) => issue.path));
-    issues.push(...index.issues.filter((issue) => !said.has(issue.path)));
+    issues.push(...index.issues.filter((issue) => !rebuilt.has(`${issue.path}\n${issue.message}`)));
   }
   for (const path of [...new Set([...files.keys(), ...expected.keys()])].sort()) {
     const actual = files.get(path);
