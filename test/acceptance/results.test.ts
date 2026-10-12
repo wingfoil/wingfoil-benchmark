@@ -428,6 +428,11 @@ describe('results.feature', () => {
       '<th scope="col">wingfoil <span class="harness">wingfoil 0.2.2 · 12537b6</span></th>',
     );
     expect(c).toContain('<li>wingfoil <span class="harness">wingfoil 0.2.2 · 12537b6</span>: ');
+    // on every line that carries one of its values — the metrics, each suite, the hold-out — and none for the baseline
+    const label = 'wingfoil <span class="harness">wingfoil 0.2.2 · 12537b6</span>';
+    expect(c.split(`<li>${label}: `).length - 1).toBe(c.split('<li>baseline: ').length - 1);
+    expect(c).not.toContain('<li>baseline <span class="harness">');
+    expect(twoLanding).toContain('>wingfoil (wingfoil 0.2.2 · 12537b6)</text>');
   }, 240_000);
 
   it('@F5.8 The method page explains how to read the results', async () => {

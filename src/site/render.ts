@@ -120,8 +120,8 @@ function valueHtml(metric: MetricId, value: ArmValue, labelled = false): string 
   const figure = `${label}${e(formatFigure(metric, value.summary.mean))} ${nOf(metric, value.summary)}`;
   const comparison = value.comparison;
   if (comparison === undefined) return `<div class="value">${figure}${note === '' ? '' : ` ${note}`}</div>`;
-  // The badge already says preliminary when this value is a single run; otherwise the certainty does,
-  // the baseline's single run included (task-045's review).
+  // The badge already says preliminary when this value is a single run; otherwise the certainty does, a side with
+  // fewer than 3 runs included (task-045's review, task-082).
   const badged = comparison.certainty === 'preliminary' && value.summary.n === 1;
   const certainty = badged ? '' : ` <span class="certainty">${comparison.certainty}</span>`;
   return (
@@ -310,11 +310,14 @@ function chartSvg(model: SiteModel): string {
   ];
   let legendX = CHART.left;
   model.arms.forEach((arm, armIndex) => {
+    // The arm's harness beside its name (T15, task-082): the legend names the bars' values.
+    const label = model.harnesses?.[arm];
+    const text = label === undefined ? arm : `${arm} (${label})`;
     parts.push(
       `<rect${armFill('swatch', armIndex)} x="${legendX}" y="${CHART.legend - 11}" width="14" height="14"/>`,
-      `<text class="arm" x="${legendX + 20}" y="${CHART.legend}">${e(arm)}</text>`,
+      `<text class="arm" x="${legendX + 20}" y="${CHART.legend}">${e(text)}</text>`,
     );
-    legendX += 20 + 7 * arm.length + 24;
+    legendX += 20 + 7 * text.length + 24;
   });
   parts.push(
     `<line class="axis" x1="${CHART.left}" y1="${y(0)}" x2="${width}" y2="${y(0)}"/>`,
@@ -432,7 +435,7 @@ export function categoryPage(model: SiteModel, row: CategoryRow): string {
       slices
         .map((group) => {
           const value = group.metrics.m_q1.final.m_q1;
-          return `<li>${e(`${group.arm}, ${group.model}`)}: M-Q1 ${e(tallies(value.values))} (n = ${group.n})</li>\n`;
+          return `<li>${armHtml(model, group.arm)}, ${e(group.model)}: M-Q1 ${e(tallies(value.values))} (n = ${group.n})</li>\n`;
         })
         .join('') +
       '</ul>\n';
@@ -518,7 +521,7 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 .value { margin-bottom: 0.25rem; }
 .metric, .scenario { font-weight: 600; }
 .scroll { overflow-x: auto; }
-.n, .range, .certainty, .delta, .holdout { font-size: 0.85rem; }
+.n, .range, .certainty, .delta, .holdout, .harness { font-size: 0.85rem; }
 .badge, .holdout { border: 1px solid var(--line); border-radius: 0.25rem; padding: 0 0.25rem; }
 .outcome { font-weight: 600; }
 .chart { width: 100%; height: auto; }

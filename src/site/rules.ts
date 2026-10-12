@@ -6,7 +6,7 @@ import type { Comparison, MetricId, Outcome } from '../results/index.js';
  * category map and the comparison rules themselves are `results`' (task-068), re-exported here.
  */
 
-export { CATEGORY_MAP, compare, readMetric, summarize } from '../results/index.js';
+export { CATEGORY_MAP, certaintyOf, compare, readMetric, summarize } from '../results/index.js';
 export type {
   Better,
   Certainty,
@@ -31,7 +31,7 @@ function unique(items: readonly string[]): string[] {
 
 /**
  * The headline for one arm (the approver's choice 2): its better, worse and same comparisons counted
- * with the same weight, the categories they span, and those where a side is a single run. `emphasis`
+ * with the same weight, the categories they span, and those where a side has fewer than 3 runs. `emphasis`
  * marks the arm's name (the page's `<strong>`).
  */
 export function headlineSentence(

@@ -183,7 +183,7 @@ Each harness arm is also compared with its own docs control, the arm generated f
 
 A difference is *beyond variance* only when both sides have at least 3 runs and their ranges (lowest to highest) do not overlap. With at least 3 runs a side and ranges that overlap, it is *within variance*. No claim of statistical significance is made in v0.1. {#beyond-variance}
 
-A value from a single run is labelled *preliminary* and has no range. A comparison is preliminary unless both sides have at least 3 runs, and says so even when the value beside it has more runs. The v0.1 reference campaign repeats only S1, so its categories D, E and F are preliminary. {#preliminary}
+A value from a single run is labelled *preliminary* and has no range. A comparison is preliminary unless both sides have at least 3 runs, and says so even when the value beside it has more runs. The v0.1 reference campaign repeats only S1, so its categories D, E and F are preliminary. These labels are presentation: a site rebuilt under a newer rule labels older results by that rule, and their values do not change. {#preliminary}
 
 M-E1 is *not comparable* for an arm when one of its runs did not reach a step the rule checks score, or was not scored by them. Such an arm gets no outcome and no count in the headline. When it is the baseline, each other arm reads "no comparison". A run that stopped early would otherwise look better, with fewer steps to break rules in. {#m-e1-not-comparable}
 
