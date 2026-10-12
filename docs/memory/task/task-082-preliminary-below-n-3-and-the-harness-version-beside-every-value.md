@@ -111,8 +111,9 @@ c82a5e74885b/2` in the worktree (`site/` is git-ignored, nothing published), giv
 - D, E and F (n = 1) were already preliminary. Their headline parenthesis now reads `(preliminary: n < 3 in D, E and
   F)` for both arms.
 - No v0.1 comparison has n = 2, so none changes certainty.
-- The wingfoil column and every wingfoil line read `wingfoil 12537b6`. v0.1's runs recorded no harness version, only
-  its commit.
+- The wingfoil column and every wingfoil line read `wingfoil 12537b6` at first, since v0.1's runs recorded no
+  harness version, only its commit. After review round 1 they read `wingfoil v0.2.2 · 12537b6`, the version taken
+  from the execution's campaign pin (re-checked the same way).
 
 **Decisions taken in the build, inside the Design:**
 - The value badge stays at n = 1 (REQ-RES-03's unamended "preliminary at n = 1", and the scenario's words). A
