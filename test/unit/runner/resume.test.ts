@@ -289,14 +289,37 @@ describe('checkResume (REQ-RUN-19, task-080)', () => {
 
 describe('the ceiling across executions (REQ-RUN-08, REQ-CLI-02 as amended, task-081)', () => {
   it('counts what every execution of the campaign spent, attempts and bounds included', async () => {
-    const checked = campaign(2);
+    const checked = campaign(2, { currency: { usd_to_eur: 0.5 } });
+    // First: two runs of two steps, each step 0.25 EUR.
     await runCampaign(checked, doubles({ usageOf: () => usage(0.25) }));
-    const second = await runCampaign(checked, failing());
+    // Second: two runs whose step 1 fails after spending 0.25 EUR, then re-run at 0.5 EUR a step.
+    const second = await runCampaign(
+      checked,
+      doubles({
+        usageOf: () => usage(0.25),
+        errorOf: (request) => (request.step === 1 ? 'the network failed' : undefined),
+      }),
+    );
     await runCampaign(checked, doubles({ usageOf: () => usage(0.5) }), { resume: second.execution });
+    // A step killed at its bound: 2 USD at 0.5 EUR/USD counts 1 EUR, above the 0.1 EUR it reported.
+    const file = join(runDir(second.resultsDir, 1), 'run.json');
+    const run = json(file) as { steps: Record<string, unknown>[] };
+    run.steps[0] = { ...run.steps[0], usage: { ...usage(0.1) }, cost_bound_usd: 2 };
+    writeFileSync(file, JSON.stringify(run));
 
-    // First: two runs of two steps at 0.25. Second: two failed runs at 0, then re-run at 0.5 a step.
-    expect(campaignSpendingEur(checked.campaign.resultsRoot, checked.campaign.id, 1)).toBe(3);
-    expect(existsSync(join(runDir(second.resultsDir, 1), 'attempts', '1'))).toBe(true);
+    // 1 (first) + 0.5 (second's attempts) + 1 (bound) + 0.5 (its step 2) + 1 (r2 re-run).
+    expect(campaignSpendingEur(checked.campaign.resultsRoot, checked.campaign.id, 0.5)).toBe(4);
+  });
+
+  it('names a record it cannot read, under results/, a null one included', async () => {
+    const checked = campaign(1);
+    const first = await runCampaign(checked, doubles());
+    const file = join(runDir(first.resultsDir, 1), 'run.json');
+    const name = `${checked.campaign.id}/1/runs/S1@1.0/baseline/fake-model/r1/run.json cannot be read`;
+    for (const text of ['{ truncated', 'null']) {
+      writeFileSync(file, text);
+      expect(() => campaignSpendingEur(checked.campaign.resultsRoot, checked.campaign.id, 1)).toThrow(name);
+    }
   });
 
   it('stops starting runs in a new execution once the earlier ones spent the ceiling', async () => {

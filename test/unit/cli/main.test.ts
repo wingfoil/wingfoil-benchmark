@@ -633,6 +633,50 @@ describe('bench campaign run --resume (REQ-CLI-03 as amended, task-080)', () => 
   });
 });
 
+describe('bench campaign run and an unreadable run record (task-081 review)', () => {
+  function freeCampaign(): string {
+    const { file } = writeRepo(
+      {
+        ...completeCampaignYaml(),
+        harnesses: {},
+        arms: ['baseline'],
+        scenarios: [{ id: 'S1', version: '1.0' }],
+        repetitions: { S1: 1 },
+        agent: { name: 'fake', version: '1.0.0' },
+        models: { default: 'fake-model' },
+      },
+      ['S1@1.0'],
+    );
+    priceCampaign(file);
+    return file;
+  }
+
+  it('refuses a run or a resume, naming the record, rather than crashing', async () => {
+    const file = freeCampaign();
+    expect(
+      (await runWith(doubles({ errorOf: () => 'the network failed' }), 'campaign', 'run', file)).code,
+    ).toBe(1);
+    const checked = checkCampaign(file);
+    if (!checked.ok) throw new Error('invalid');
+    const { id, resultsRoot } = checked.value.campaign;
+    writeFileSync(
+      join(resultsRoot, id, '1', 'runs', 'S1@1.0', 'baseline', 'fake-model', 'r1', 'run.json'),
+      '{',
+    );
+    const record = `${id}/1/runs/S1@1.0/baseline/fake-model/r1/run.json cannot be read`;
+
+    const ports = doubles();
+    const again = await runWith(ports, 'campaign', 'run', file);
+    expect(again.code).toBe(1);
+    expect(again.stderr).toContain(`campaign: not started: ${record}`);
+
+    const resumed = await runWith(ports, 'campaign', 'run', file, '--resume', `${id}/1`);
+    expect(resumed.code).toBe(1);
+    expect(resumed.stderr).toContain(`campaign: not started: ${record}`);
+    expect(ports.recorded.builds).toEqual([]);
+  });
+});
+
 describe('checkCampaign', () => {
   it('loads every scenario the campaign names, in order', () => {
     const { root, file } = writeRepo();
