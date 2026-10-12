@@ -177,3 +177,11 @@ runner writes. Verdict: not clean, with one should-fix. Red tests `7bef666`, fix
    already refused by the old check, so these pin it.
 5. nit: a malformed `not_run` crashed the build → **fixed**: `aggregateShape` checks it, and the case is tested.
 
+**Round 4**: a fresh, independent, read-only agent, on `b3e85fe`, while the machine was loaded (it ran `tsc` and
+`test/unit/site/profiles.test.ts` only, and read the rest).
+- The `not_run` check accepts every name `plannedRuns` writes, and cannot reject a legitimate aggregate.
+- The de-duplication keys on the original messages.
+- The timestamp check matches the runner's form.
+
+Verdict: clean, with no findings.
+
