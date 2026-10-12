@@ -134,7 +134,7 @@ Design's own commit (`87e197c`, W-01). Declared: backlog → in-progress. Observ
 - `campaign run` prints the estimate's total line and the guard's lines, not every key's line, as before.
 - The margin is exact in the code (`cost × 1.35`). Tests compare rounded figures, since 1.35 is not exact in binary
   floating point.
-- `executionSpendingEur` names an unreadable record relative to `results/`. task-080's resume reads records through it
-  now, and its test expectation still holds.
+- `executionSpendingEur` names an unreadable record relative to `results/`. The runner's spending seed reads records
+  through it now, replacing task-080's `recordedSpendingEur`; task-080's test of an unreadable record still holds.
 
 ## Review notes
