@@ -143,8 +143,16 @@ async function start(file: string, ports: Doubles, answers?: string[], ...flags:
   return { code, stdout, stderr, questions };
 }
 
-/** T3 (two steps) in the baseline arm, `repetitions` times, at 1 EUR/USD, with the caps and budget given. */
-function cappedCampaign(runCostEur: number, repetitions: number, ceilingEur: number) {
+/**
+ * T3 (two steps) in the baseline arm, `repetitions` times, at 1 EUR/USD, with the caps and budget given, and any
+ * other field of the campaign file in `extra` (task-079: `fail_fast`).
+ */
+function cappedCampaign(
+  runCostEur: number,
+  repetitions: number,
+  ceilingEur: number,
+  extra: Readonly<Record<string, unknown>> = {},
+) {
   const root = tempDir('bench-repo-');
   cpSync(repoPath('test/fixtures/scenarios/T3'), join(root, 'scenarios', 'T3'), { recursive: true });
   writeArmsNamed(root, ['baseline']);
@@ -163,6 +171,7 @@ function cappedCampaign(runCostEur: number, repetitions: number, ceilingEur: num
       caps: { step_time_s: 60, step_tokens: 1_000_000, run_cost_eur: runCostEur },
       budget: { warn_eur: ceilingEur, ceiling_eur: ceilingEur },
       currency: { usd_to_eur: 1 },
+      ...extra,
     }),
   );
   const checked = checkCampaign(file);
@@ -373,5 +382,70 @@ describe('campaign.feature', () => {
         outcome: 'completed',
       });
     }
+  });
+  it('@F1.4 An interrupted campaign stops cleanly', async () => {
+    // Given a campaign execution with runs still to start: three runs of T3
+    const checked = cappedCampaign(3, 3, 100);
+    const interrupt = new AbortController();
+    const started = new Date('2026-10-11T08:00:00.000Z');
+    const ended = new Date('2026-10-11T08:05:00.000Z');
+    const dates = [started, ended];
+    // When the maintainer interrupts it during a run: the second run's step 1, whose agent the stop kills
+    const ports = doubles({
+      usageOf: () => spent(0.5),
+      onStep: (request) => {
+        if (ports.recorded.creates.length === 2 && request.step === 1) {
+          interrupt.abort();
+          throw new Error('the agent exited with code 137');
+        }
+      },
+    });
+    const summary = await runCampaign(checked, {
+      ...ports,
+      signal: interrupt.signal,
+      date: () => dates.shift() ?? ended,
+    });
+
+    // Then the current run is recorded as interrupted
+    expect(summary.runs.map((run) => run.outcome)).toEqual(['completed', 'interrupted']);
+    const run = JSON.parse(readFileSync(join(summary.runs[1]?.outputDir ?? '', 'run.json'), 'utf8'));
+    expect(run.outcome).toBe('interrupted');
+    // its step counted at its bound — all that was left of the run's 3 EUR cap, at 1 EUR/USD
+    expect(run.steps).toEqual([
+      expect.objectContaining({ n: 1, outcome: 'interrupted', cost_reported: false, cost_bound_usd: 3 }),
+    ]);
+    // and its container removed, once
+    expect(ports.recorded.removes).toEqual(['container-1', 'container-2']);
+    // No further run starts
+    expect(ports.recorded.creates).toHaveLength(2);
+    // And the execution is recorded as stopped, with why
+    expect(summary.outcome).toBe('interrupted');
+    expect(JSON.parse(readFileSync(join(summary.resultsDir, 'execution.json'), 'utf8'))).toEqual({
+      state: 'stopped',
+      reason: 'interrupt',
+      detail: expect.stringContaining('interrupted during run T3@1.0/baseline/fake-model/r2'),
+      started: started.toISOString(),
+      ended: ended.toISOString(),
+    });
+  });
+
+  it('@F1.4 A campaign stops itself after the same failure repeats', async () => {
+    // Given a campaign file that stops after 2 runs fail with the same error at the same step
+    const checked = cappedCampaign(3, 4, 100, { fail_fast: { same_error: 2 } });
+    // When two runs fail that way
+    const ports = doubles({
+      errorOf: (request) => (request.step === 1 ? 'the agent could not reach the API' : undefined),
+    });
+    const summary = await runCampaign(checked, ports);
+
+    // Then the campaign starts no further run
+    expect(ports.recorded.creates).toHaveLength(2);
+    expect(summary.runs.map((run) => run.outcome)).toEqual(['failed', 'failed']);
+    // and records why
+    expect(summary.outcome).toBe('fail_fast');
+    const execution = JSON.parse(readFileSync(join(summary.resultsDir, 'execution.json'), 'utf8'));
+    expect(execution).toMatchObject({ state: 'stopped', reason: 'fail_fast' });
+    expect(execution.detail).toContain('2 runs failed at step 01');
+    expect(execution.detail).toContain('the agent could not reach the API');
   });
 });

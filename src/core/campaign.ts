@@ -149,6 +149,9 @@ export const campaignSchema = z.strictObject({
   arm_digests: z
     .record(z.string(), z.string().regex(/^[0-9a-f]{12}$/, 'must be 12 hex characters'))
     .optional(),
+  // REQ-FMT-01 as amended (REQ-RUN-19): stop starting runs once `same_error` runs failed at the same step with the same
+  // error. Optional: without it, a failed run never stops the campaign (REQ-NFR-03).
+  fail_fast: z.strictObject({ same_error: z.number().int().min(1) }).optional(),
 });
 
 /** A campaign file as parsed. */

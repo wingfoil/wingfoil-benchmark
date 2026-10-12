@@ -53,6 +53,13 @@ export interface RunnerOptions {
   readonly sleep?: (ms: number) => Promise<void>;
   /** The clock a step's time cap is read from, in milliseconds; `performance.now` unless injected (task-051). */
   readonly now?: () => number;
+  /**
+   * The maintainer's interrupt (REQ-RUN-19, task-079): once aborted, the current step's agent is killed with its
+   * container, the run ends `interrupted`, and no further run starts. The command line owns the process's signals.
+   */
+  readonly signal?: AbortSignal;
+  /** The date `execution.json` records (REQ-FMT-06 as amended); `new Date()` unless injected (task-079). */
+  readonly date?: () => Date;
 }
 
 /**
@@ -82,7 +89,8 @@ export interface Intervention {
  * How a step ended. `intervention cap reached`, `time cap reached` and `token cap reached` are not
  * failures: the step ends and is scored as it stands (experiment design §3.5–3.6), and the run goes
  * on. `cap reached` (the run's cost cap) and `quota exhausted` end the run there (task-024, F1.3,
- * REQ-RUN-13), with the step's snapshot kept; only `failed` fails it.
+ * REQ-RUN-13), with the step's snapshot kept; only `failed` fails it. `interrupted` is the maintainer's stop
+ * (REQ-RUN-19, task-079): it ends the run there too, its snapshot kept.
  */
 export type StepOutcomeKind =
   | 'completed'
@@ -91,10 +99,11 @@ export type StepOutcomeKind =
   | 'token cap reached'
   | 'cap reached'
   | 'quota exhausted'
+  | 'interrupted'
   | 'failed';
 
-/** How a run ended: every step done, stopped at its cost cap or at the quota, or failed. */
-export type RunOutcomeKind = 'completed' | 'cap reached' | 'quota exhausted' | 'failed';
+/** How a run ended: every step done, stopped at its cost cap, at the quota or by an interrupt, or failed. */
+export type RunOutcomeKind = 'completed' | 'cap reached' | 'quota exhausted' | 'interrupted' | 'failed';
 
 /** One step, with every invocation of the agent it took: its session and the approver's resumes. */
 export interface StepResult {
@@ -183,6 +192,8 @@ export interface RunResult {
   readonly steps: readonly StepResult[];
   readonly outcome: RunOutcomeKind;
   readonly error?: string;
+  /** For a failed run, the step it failed in, 0 before step 1 (task-079): what `fail_fast` counts by. */
+  readonly failedStep?: number;
 }
 
 /** What a run is pinned to, whether a campaign file or a dry-run profile pins it (task-021). */
@@ -220,6 +231,8 @@ export interface RunPlan {
   readonly origin: { readonly campaign: string } | { readonly dry_run: true };
   /** The campaign's `ceiling_eur`: no run starts once the runs so far have spent it (task-024). */
   readonly ceilingEur?: number;
+  /** The campaign's `fail_fast.same_error` (REQ-RUN-19): no run starts once that many failed the same way. */
+  readonly failFast?: number;
 }
 
 /** What one execution of a campaign or a dry run produced. */
@@ -230,9 +243,10 @@ export interface RunSummary {
   readonly runs: readonly RunResult[];
   /**
    * How the execution ended (task-024): every planned run started, or it stopped starting them —
-   * `budget exhausted` at the ceiling, `quota exhausted` at the subscription's limit (REQ-RUN-13).
+   * `budget exhausted` at the ceiling, `quota exhausted` at the subscription's limit (REQ-RUN-13),
+   * `interrupted` by the maintainer, `fail_fast` after the same failure repeated (REQ-RUN-19, task-079).
    */
-  readonly outcome: 'completed' | 'budget exhausted' | 'quota exhausted';
+  readonly outcome: 'completed' | 'budget exhausted' | 'quota exhausted' | 'interrupted' | 'fail_fast';
   /** Whether every planned run ran and completed. */
   readonly completed: boolean;
 }
@@ -348,13 +362,46 @@ function campaignPlan(checked: CheckedCampaign): RunPlan {
     runs,
     origin: { campaign: campaign.id },
     ceilingEur: campaign.spec.budget.ceiling_eur,
+    ...(campaign.spec.fail_fast === undefined ? {} : { failFast: campaign.spec.fail_fast.same_error }),
   };
+}
+
+/** Why an execution stopped starting runs (REQ-RUN-19, REQ-FMT-06 as amended), as `execution.json` records it. */
+type StopReason = 'interrupt' | 'quota' | 'ceiling' | 'fail_fast' | 'error';
+
+/** An execution's record beside its `campaign.yaml` (REQ-FMT-06 as amended, task-079), in the order it is written. */
+interface ExecutionRecord {
+  readonly state: 'running' | 'stopped' | 'completed';
+  readonly reason?: StopReason;
+  readonly detail?: string;
+  readonly started: string;
+  readonly ended?: string;
+}
+
+/** The summary's outcome for each reason an execution stopped; `error` throws instead of summing up. */
+const STOPPED: Readonly<Record<Exclude<StopReason, 'error'>, Exclude<RunSummary['outcome'], 'completed'>>> = {
+  interrupt: 'interrupted',
+  quota: 'quota exhausted',
+  ceiling: 'budget exhausted',
+  fail_fast: 'fail_fast',
+};
+
+/** A run's name in the log, in a detail and in its paths: `<scenario>@<version>/<arm>/<model>/r<k>`. */
+function runName({ scenario, arm, model, repetition }: PlannedRun): string {
+  return `${scenario.id}@${scenario.version}/${arm.name}/${model}/r${repetition}`;
+}
+
+/** `n` runs, as a sentence counts them. */
+function countRuns(n: number): string {
+  return `${n} ${n === 1 ? 'run' : 'runs'}`;
 }
 
 /**
  * Execute `plan` (REQ-RUN-01, REQ-RUN-02): one image, every harness and generated environment before
  * any run, then one container per run, whose only bind mount is that run's workspace. A failed run
- * does not stop the others (REQ-NFR-03).
+ * does not stop the others (REQ-NFR-03), unless the campaign sets `fail_fast`; an interrupt, the ceiling and the quota
+ * stop it before its next run (REQ-RUN-19). A campaign's execution records its state in `execution.json` from start
+ * to end (REQ-FMT-06 as amended); a dry run is no campaign's execution (REQ-RES-01) and has none.
  */
 export async function runPlan(plan: RunPlan, options: RunnerOptions): Promise<RunSummary> {
   const execution = nextExecution(plan.resultsRoot, plan.key);
@@ -363,6 +410,69 @@ export async function runPlan(plan: RunPlan, options: RunnerOptions): Promise<Ru
   options.log?.(`${plan.noun} ${plan.id}, execution ${execution}`);
   copyFileSync(plan.source.file, join(resultsDir, plan.source.name));
 
+  const date = options.date ?? (() => new Date());
+  const started = date().toISOString();
+  const recordExecution = (fields: Omit<ExecutionRecord, 'started'>) => {
+    if (!('campaign' in plan.origin)) return;
+    const { state, reason, detail, ended } = fields;
+    const record: ExecutionRecord = {
+      state,
+      ...(reason === undefined ? {} : { reason }),
+      ...(detail === undefined ? {} : { detail }),
+      started,
+      ...(ended === undefined ? {} : { ended }),
+    };
+    writeFileSync(join(resultsDir, 'execution.json'), `${JSON.stringify(record, undefined, 2)}\n`);
+  };
+  recordExecution({ state: 'running' });
+
+  let ran: { runs: RunResult[]; stop?: { reason: Exclude<StopReason, 'error'>; detail: string } };
+  try {
+    ran = await executeRuns(plan, execution, resultsDir, options);
+  } catch (error) {
+    // A terminal's Ctrl-C also reaches the image build's or a harness build's process: the interrupt, not an error.
+    if (options.signal?.aborted !== true) {
+      // The execution itself could not go on (no Docker, no image): never left `running`, and the caller hears it.
+      recordExecution({
+        state: 'stopped',
+        reason: 'error',
+        detail: reasonOf(error),
+        ended: date().toISOString(),
+      });
+      throw error;
+    }
+    ran = {
+      runs: [],
+      stop: { reason: 'interrupt', detail: `interrupted before any run: ${reasonOf(error)}` },
+    };
+  }
+  const { stop } = ran;
+  const ended = date().toISOString();
+  if (stop === undefined) recordExecution({ state: 'completed', ended });
+  else {
+    options.log?.(`${plan.noun} ${plan.id}: stopped, ${stop.detail}`);
+    recordExecution({ state: 'stopped', reason: stop.reason, detail: stop.detail, ended });
+  }
+  const outcome = stop === undefined ? 'completed' : STOPPED[stop.reason];
+  return {
+    execution,
+    resultsDir,
+    runs: ran.runs,
+    outcome,
+    completed:
+      outcome === 'completed' &&
+      ran.runs.length === plan.runs.length &&
+      ran.runs.every((run) => run.outcome === 'completed'),
+  };
+}
+
+/** The runs of an execution, and why they stopped before the last one, if they did. */
+async function executeRuns(
+  plan: RunPlan,
+  execution: number,
+  resultsDir: string,
+  options: RunnerOptions,
+): Promise<{ runs: RunResult[]; stop?: { reason: Exclude<StopReason, 'error'>; detail: string } }> {
   // Before anything is built: what earlier, interrupted runs of this plan left behind (bug-003).
   const leftovers = await leftBehind(plan, execution, options);
 
@@ -383,15 +493,29 @@ export async function runPlan(plan: RunPlan, options: RunnerOptions): Promise<Ru
   // Every docs control's environment of every scenario, from its harness arm's configuration (REQ-RUN-11).
   const projectRules = await prepareProjectRules(plan, harnesses, resultsDir, options);
 
-  const runs: RunResult[] = [];
-  let outcome: RunSummary['outcome'] = 'completed';
+  const results: RunResult[] = [];
   let spent = 0;
-  for (const { scenario, arm, model, repetition } of plan.runs) {
+  /** The failed runs so far, by step and error (REQ-RUN-19's `fail_fast`). */
+  const failures = new Map<string, number>();
+  for (const planned of plan.runs) {
+    const { scenario, arm, model, repetition } = planned;
+    // The maintainer's interrupt (REQ-RUN-19): no run starts after it.
+    if (options.signal?.aborted === true) {
+      return {
+        runs: results,
+        stop: { reason: 'interrupt', detail: `interrupted before run ${runName(planned)}` },
+      };
+    }
     // The campaign's ceiling, while it runs (REQ-RUN-08): no run starts once the runs so far spent it.
     if (plan.ceilingEur !== undefined && spent >= plan.ceilingEur) {
-      outcome = 'budget exhausted';
       options.log?.(`${plan.noun} ${plan.id}: budget exhausted, ${spent} of ${plan.ceilingEur} EUR spent`);
-      break;
+      return {
+        runs: results,
+        stop: {
+          reason: 'ceiling',
+          detail: `${spent} of ${plan.ceilingEur} EUR spent before run ${runName(planned)}`,
+        },
+      };
     }
     const run = await executeRun(
       {
@@ -412,22 +536,40 @@ export async function runPlan(plan: RunPlan, options: RunnerOptions): Promise<Ru
       },
       options,
     );
-    runs.push(run);
+    results.push(run);
     spent += spentEur(run.steps, plan.pins);
+    if (run.outcome === 'interrupted') {
+      return {
+        runs: results,
+        stop: { reason: 'interrupt', detail: `interrupted during run ${runName(planned)}` },
+      };
+    }
     // The subscription's quota ends the campaign's runs, not only this one (REQ-RUN-13).
     if (run.outcome === 'quota exhausted') {
-      outcome = 'quota exhausted';
-      break;
+      return {
+        runs: results,
+        stop: { reason: 'quota', detail: `run ${runName(planned)} stopped at the subscription's quota` },
+      };
+    }
+    // fail_fast (REQ-RUN-19): the same error at the same step, exactly, `same_error` times.
+    // Once every planned run has run, there is nothing left to stop: the execution is completed.
+    if (run.outcome === 'failed' && plan.failFast !== undefined && results.length < plan.runs.length) {
+      const step = run.failedStep ?? 0;
+      const key = `${step}\n${run.error ?? ''}`;
+      const count = (failures.get(key) ?? 0) + 1;
+      failures.set(key, count);
+      if (count >= plan.failFast) {
+        return {
+          runs: results,
+          stop: {
+            reason: 'fail_fast',
+            detail: `${countRuns(count)} failed at step ${stepNumber(step)} with: ${run.error ?? ''}`,
+          },
+        };
+      }
     }
   }
-  const completed = outcome === 'completed' && runs.length === plan.runs.length;
-  return {
-    execution,
-    resultsDir,
-    runs,
-    outcome,
-    completed: completed && runs.every((run) => run.outcome === 'completed'),
-  };
+  return { runs: results };
 }
 
 interface RunContext {
@@ -451,7 +593,7 @@ interface RunContext {
 /** One run: its own workspace, its own container, removed whatever happens. */
 async function executeRun(context: RunContext, options: RunnerOptions): Promise<RunResult> {
   const { plan, scenario, arm, model, repetition, execution, resultsDir } = context;
-  const name = `${scenario.id}@${scenario.version}/${arm.name}/${model}/r${repetition}`;
+  const name = runName({ scenario, arm, model, repetition });
   const workspace = join(plan.repoRoot, 'runs', plan.key, String(execution), ...name.split('/'), 'workspace');
   // The workspace is debris to look at (git-ignored); the output is the run's record (REQ-FMT-06).
   const outputDir = join(resultsDir, 'runs', ...name.split('/'));
@@ -482,7 +624,16 @@ async function executeRun(context: RunContext, options: RunnerOptions): Promise<
   const steps: StepResult[] = [];
   let container: string | undefined;
   let setup: SetupResult | undefined;
+  /** The step the run is in, 0 before step 1: where a failure happened (task-079's `fail_fast`). */
+  let current = 0;
+  /** The interrupt's removal of the container (REQ-RUN-19): it kills the step's agent at once. */
+  let removal: Promise<void> | undefined;
+  const kill = () => {
+    if (container !== undefined) removal ??= remove(container, options);
+  };
+  const interrupted = () => options.signal?.aborted === true;
   try {
+    if (interrupted()) throw new Error('interrupted before its container was created');
     // The campaign's validation refuses a version this runner does not implement; this is the type's
     // proof of it, and the guard if a campaign ever reached a run by another path.
     const policy = approverPolicy(plan.pins.approver_policy);
@@ -514,6 +665,8 @@ async function executeRun(context: RunContext, options: RunnerOptions): Promise<
       // The arm's telemetry settings (REQ-RUN-18), then the credential: the runner's names win over an arm's.
       env: { ...telemetryEnvironment(arm), ...AGENT_ENVIRONMENT, ...options.containerEnv },
     });
+    options.signal?.addEventListener('abort', kill, { once: true });
+    if (interrupted()) kill();
     await assertOnlyWorkspaceMounted(container, workspace, options);
     await options.docker.start(container);
     setup = await executeSetup(
@@ -535,6 +688,9 @@ async function executeRun(context: RunContext, options: RunnerOptions): Promise<
     let previousTree = setup.tree as string;
     let previousCommit = setup.commit as string;
     for (const step of scenario.steps) {
+      // No step starts after the maintainer's interrupt (REQ-RUN-19): the steps so far keep their outcomes.
+      if (interrupted()) return record({ ...identity, setup, steps, outcome: 'interrupted' }, plan);
+      current = step.n;
       const result = await executeStep(
         step,
         {
@@ -559,6 +715,9 @@ async function executeRun(context: RunContext, options: RunnerOptions): Promise<
       // Recorded first, then failed: what the step spent and said is stored either way. A step that
       // reached the intervention, time or token cap is not a failure: the run goes on to the next one.
       steps.push(result);
+      // The interrupt killed the step's agent: the step is kept, counted at its bound, and the run ends there.
+      if (result.outcome === 'interrupted')
+        return record({ ...identity, setup, steps, outcome: 'interrupted' }, plan);
       if (result.error !== undefined) {
         throw new Error(`step ${stepNumber(step.n)} of ${scenario.id} failed: ${result.error}`);
       }
@@ -569,14 +728,31 @@ async function executeRun(context: RunContext, options: RunnerOptions): Promise<
     }
     return record({ ...identity, setup, steps, outcome: 'completed' }, plan);
   } catch (error) {
+    // Whatever failed once the interrupt removed the container (the setup, a command, the agent) is the interrupt.
+    if (interrupted()) {
+      // Said, not recorded as a failure: what failed after the interrupt removed the container may still matter.
+      options.log?.(`run ${name}: interrupted (${reasonOf(error)})`);
+      return record(
+        { ...identity, ...(setup === undefined ? {} : { setup }), steps, outcome: 'interrupted' },
+        plan,
+      );
+    }
     const message = reasonOf(error);
     options.logError?.(`run ${name} failed: ${message}`);
     return record(
-      { ...identity, ...(setup === undefined ? {} : { setup }), steps, outcome: 'failed', error: message },
+      {
+        ...identity,
+        ...(setup === undefined ? {} : { setup }),
+        steps,
+        outcome: 'failed',
+        error: message,
+        failedStep: current,
+      },
       plan,
     );
   } finally {
-    if (container !== undefined) await remove(container, options);
+    options.signal?.removeEventListener('abort', kill);
+    if (container !== undefined) await (removal ?? remove(container, options));
   }
 }
 
@@ -899,7 +1075,7 @@ async function executeStep(
   // what is left of the step's time. A killed session reports nothing (C3), so the kill is read here,
   // from the exit code, whatever the agent then says.
   const now = options.now ?? (() => performance.now());
-  const sleep = options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+  const sleep = options.sleep ?? ((ms: number) => pause(ms, options.signal));
   // A rate limit's waits move the deadline by as long: the cap bounds the agent's working time (task-051).
   let deadline = now() + pins.caps.step_time_s * 1000;
   let killed = false;
@@ -922,13 +1098,33 @@ async function executeStep(
     if (result.outputBounded === true) bounded = true;
     return result;
   };
-  /** One invocation; a throw is the agent's failure unless the invocation was killed at the time cap. */
+  /**
+   * Whether the maintainer's interrupt stopped the step (REQ-RUN-19, task-079): `during` an invocation, whose agent
+   * it killed and which counts at its bound, or `between` two, which ends the step at its reported cost.
+   */
+  let interruption: 'during' | 'between' | undefined;
+  const aborted = () => options.signal?.aborted === true;
+  /**
+   * One invocation; a throw is the agent's failure unless the invocation was killed at the time cap or by the
+   * interrupt. None starts after the interrupt.
+   */
   const invoke = async (call: () => Promise<StepOutcome>): Promise<StepOutcome | string> => {
     killed = false;
     bounded = false;
+    if (aborted()) {
+      interruption = 'between';
+      return { sessionId, usage: NO_USAGE, transcript: [] };
+    }
     try {
-      return await call();
+      const result = await call();
+      if (aborted()) interruption = 'during';
+      return result;
     } catch (failure) {
+      // The interrupt removed the container under the agent: not the agent's failure (REQ-RUN-19).
+      if (aborted()) {
+        interruption = 'during';
+        return { sessionId, usage: NO_USAGE, transcript: [] };
+      }
       // What a killed invocation reported is nothing: its cost is counted at its bound (settle).
       if (killed) return { sessionId, usage: NO_USAGE, transcript: [] };
       // A bounded invocation is a failure, but its cost is counted at its bound all the same (bug-011).
@@ -949,6 +1145,16 @@ async function executeStep(
   let costBoundUsd: number | undefined;
   /** What an invocation that ended reports: its stop, its kill, or its failure. */
   const settle = (result: StepOutcome | string, name: string, bound: number): boolean => {
+    // Settled first: once interrupted, whatever the killed invocation said is neither a failure nor a stop.
+    if (interruption !== undefined && typeof result !== 'string') {
+      outcome = 'interrupted';
+      if (interruption === 'during') {
+        invocations.push(result);
+        costBoundUsd = bound;
+      }
+      options.log?.(`step ${number}: interrupted`);
+      return false;
+    }
     if (typeof result === 'string') {
       if (invocations.length === 0) throw new Error(result);
       error = result;
@@ -986,6 +1192,8 @@ async function executeStep(
     let label = name;
     let cap = bound;
     while (
+      // An invocation the interrupt stopped is settled as interrupted, whatever it said (REQ-RUN-19).
+      interruption === undefined &&
       typeof result !== 'string' &&
       !killed &&
       result.error === undefined &&
@@ -1017,7 +1225,13 @@ async function executeStep(
       }
       options.log?.(`step ${number}: rate limited, waiting ${waitS} s before resuming`);
       rateLimitWaits.push({ afterInvocation: invocations.length, waitedS: waitS });
-      await sleep(waitS * 1000);
+      // The interrupt cuts the wait short, and nothing is resumed after it (REQ-RUN-19).
+      await untilAborted(sleep(waitS * 1000), options.signal);
+      if (aborted()) {
+        outcome = 'interrupted';
+        options.log?.(`step ${number}: interrupted during the rate limit's wait`);
+        return false;
+      }
       deadline += waitS * 1000;
       cap = stepUsage(invocations).costUsd + left;
       label = `rate-limit resume ${rateLimitWaits.length} of step ${number}`;
@@ -1056,6 +1270,12 @@ async function executeStep(
 
   // The neutral approver (F2.4). A failed or stopped session is never classified.
   while (going) {
+    // No reply is sent after the interrupt: it would be an intervention for nothing (REQ-RUN-19).
+    if (aborted()) {
+      outcome = 'interrupted';
+      options.log?.(`step ${number}: interrupted`);
+      break;
+    }
     const last = invocations[invocations.length - 1];
     const kind = last?.finalMessage === undefined ? undefined : policy.classify(last.finalMessage);
     if (kind === undefined) break;
@@ -1158,6 +1378,43 @@ async function executeStep(
     ...(rateLimitWaits.length === 0 ? {} : { rateLimitWaits }),
   };
   return error === undefined ? { ...result, outcome } : { ...result, outcome: 'failed', error };
+}
+
+/**
+ * Wait `ms` milliseconds, or until `signal` aborts (task-079): the timer is cleared then, so that an interrupted wait
+ * keeps no process alive.
+ */
+export function pause(ms: number, signal: AbortSignal | undefined): Promise<void> {
+  return new Promise<void>((resolve) => {
+    const done = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', done);
+      resolve();
+    };
+    const timer = setTimeout(done, ms);
+    if (signal?.aborted === true) done();
+    else signal?.addEventListener('abort', done, { once: true });
+  });
+}
+
+/** `promise`, or less: it settles as soon as `signal` aborts (task-079), and as it does when there is no signal. */
+function untilAborted(promise: Promise<void>, signal: AbortSignal | undefined): Promise<void> {
+  if (signal === undefined) return promise;
+  if (signal.aborted) return Promise.resolve();
+  return new Promise<void>((resolve, reject) => {
+    const done = () => resolve();
+    signal.addEventListener('abort', done, { once: true });
+    promise.then(
+      () => {
+        signal.removeEventListener('abort', done);
+        resolve();
+      },
+      (error: unknown) => {
+        signal.removeEventListener('abort', done);
+        reject(error instanceof Error ? error : new Error(String(error)));
+      },
+    );
+  });
 }
 
 /**

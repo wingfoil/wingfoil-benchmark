@@ -2,7 +2,7 @@
 id: task-079-a-campaign-stops-cleanly-an-immediate-interrupt-execution-json-and-fail-fast
 type: task
 title: "A campaign stops cleanly: an immediate interrupt, execution.json and fail_fast"
-status: in-progress
+status: approved
 release: v0.2
 wave: W14
 features: [F1.4]
@@ -118,4 +118,84 @@ the execution's dates from `execution.json` (REQ-RES-02 as amended, with the sit
 
 ## Execution notes
 
+**WingFoil commands, declared vs observed:**
+- `npx wingfoil memory submit task-079-…` on main (`9484bfc`), after the Design's own commit (`43ec4a8`, W-01): declared
+  backlog → in-progress; observed `{"from": "backlog", "to": "in-progress"}`, exit 0, one `wf(task): submit …`
+  commit, no `[from → to]` in its subject (W-14, as known).
+
+**Build** on `task/task-079` (worktree `../WingFoil2-Benchmark-wt/task-079`, its own `npm ci`):
+- red first: `d3e50ba` (the two acceptance scenarios), `2e9fbc4` (unit: runner, schema, command line); both failed for
+  the expected reasons (no `fail_fast` field, runs `failed` instead of `interrupted`, no `execution.json`);
+- `df06b20` the implementation, `81136cd` review round 1's fixes, `2369f9c` round 2's, `3f99aa2` round 3's (a
+  reflow).
+- Checks, niced with 2 workers: `tsc --noEmit` clean, `npm run lint` clean, the touched tests green
+  (`test/unit/runner`, `test/unit/results`, `test/unit/campaign/load.test.ts`, `test/unit/cli/main.test.ts`,
+  `test/unit/cli/dry-run.test.ts`, `test/acceptance/campaign.test.ts`, `test/acceptance/runner.test.ts`,
+  `test/acceptance/traceability.test.ts`, `test/unit/architecture`).
+- Mutation checks of round 1's new tests: removing the abort listener that removes the container makes "kills the
+  agent at once" fail; an `untilAborted` that only checks the signal up front makes "cuts a rate limit wait short"
+  fail.
+
+**Decisions taken in the build, inside the Design:**
+- `execution.json`'s reason `error` (not in REQ-RUN-19's list) records an execution that could not go on; an interrupt
+  that killed a preparation process (a terminal's Ctrl-C reaches `docker build`) is recorded as `interrupt`.
+- `fail_fast` never stops after the last planned run: every run ran, so the execution is `completed`, as the same
+  campaign without `fail_fast` would be.
+- `failedStep` lives on the in-memory `RunResult` only; `run.json` is not extended.
+- The approver loop's check of the signal is defensive: an abort comes from a signal handler, a macrotask, and nothing
+  is awaited between an invocation's end and the next resume except a rate limit's wait, which has its own check.
+- **Known race, accepted:** a terminal's Ctrl-C reaches the `docker exec` client too. If its exit is delivered before
+  the SIGINT handler runs, the invocation is settled as the agent's failure: the step is recorded `failed` at its
+  reported cost instead of `interrupted` at its bound. The run is still `interrupted` (the run's catch reads the
+  signal later) and is re-run by task-080's resume. Only a step's cost bound is at stake; `SIGTERM` from `kill` does
+  not reach the children.
+
 ## Review notes
+
+### Review
+
+**Round 1** — an independent read-only agent (a fresh `Plan` subagent, no editing tools), on `df06b20`. Verdict: not
+clean. Findings and outcomes:
+1. should-fix: the default rate-limit `sleep` kept a 30-minute timer alive after an interrupt → **fixed**, `pause`
+   clears it (`81136cd`).
+2. should-fix: the wait test aborted before the wait was pending → **fixed**, the abort comes asynchronously.
+3. should-fix: no test proved the immediate kill → **fixed**, an agent that runs until its container is removed.
+4. should-fix: the "between invocations" test was a "during" case → **fixed**, retitled with its bound asserted; a real
+   "between" case added (abort while the auto-memory is cleared, before the session).
+5. should-fix: the fail_fast step test passed on the error text alone → **fixed**, the same text at steps 1 and 2.
+6. nit: SIGINT then SIGTERM printed the interrupt twice and did not end the process → **fixed**, both listeners go
+   with the first signal; the test asserts it.
+7. nit: an interrupt during the image or harness build recorded `error` → **fixed**, recorded `interrupt`.
+8. nit: the Ctrl-C race on the `docker exec` client → **accepted and recorded** in the Execution notes.
+9. nit: fail_fast on the last planned run recorded `stopped` → **fixed**, `completed`.
+10. nit: an interrupt during a rate-limited invocation could end the step `quota exhausted` and lose its bound →
+    **fixed**, settled as interrupted; tested.
+11. nit: the Execution notes were empty → **fixed**, written above.
+
+**Round 2** — a fresh independent read-only agent (`Plan` subagent), on `ccb2bb7`. Verified the eleven round-1
+outcomes, and checked the whole diff again against REQ-RUN-19, REQ-FMT-06, REQ-NFR-03, REQ-FMT-01, REQ-RUN-08 and both
+scenarios. It judged the accepted race honestly recorded. Verdict: clean, with three nits:
+1. an error after an interrupt was not logged → **fixed**, `run <name>: interrupted (<reason>)` (`2369f9c`);
+2. the default wait's `pause` had no test → **fixed**, exported from `run.ts` (not from the runner's index) and tested
+   with fake timers; a mutation (an uncleared `setTimeout`) makes the test fail;
+3. the README did not say what a second signal leaves behind → **fixed**, one clause.
+
+**Round 3** — a fresh independent read-only agent, on `2369f9c`: the three fixes correct, the tests meaningful, the
+export within the architecture rule (tests may import a module's file). Verdict: clean, with one cosmetic nit: the
+README paragraph was not reflowed → **fixed** in `3f99aa2`, whitespace only (`git diff --word-diff` shows no word
+changed), so no further round.
+
+### Full suites
+
+`scripts/full-suites.sh task/task-079` on 2026-10-12, at the approver's request ("Avvia la suite"), on `d5131f9` (the
+in-review submit), worktree clean. All stages were green: `LINT 0 TEST 0 BUILD 0 BIN 0 DOCKER 0`.
+- `npm test`: 1438 passed, 8 skipped; statement coverage 97.75 %.
+- `test:bin`: 8/8.
+- `test:docker`: 20 passed, 2 skipped.
+
+Log: `.cache/full-suites/2026-10-12/task_task-079-d5131f9-065045.txt`. The commit after it adds only these notes.
+
+**WingFoil command, declared vs observed:** `npx wingfoil memory submit task-079-…` on the branch: declared
+in-progress → in-review; observed `{"from": "in-progress", "to": "in-review"}`, exit 0, one `wf(task): submit …`
+commit (`d5131f9`). Before it, no task was `in-review` on main or on any task branch.
+

@@ -6,7 +6,7 @@ import { checkDryRun, runDryRun } from '../runner/index.js';
 import type { DryRunRequest } from '../runner/index.js';
 
 import { parseScenarioRef } from './scenario.js';
-import { checkSpending, EXIT, portsFor, report, SPENDING_FLAG, USAGE } from './shared.js';
+import { checkSpending, EXIT, portsFor, report, SPENDING_FLAG, USAGE, withInterrupt } from './shared.js';
 import type { Io, Ports } from './shared.js';
 
 /** `bench scenario dry-run`'s arguments (REQ-CLI-05). */
@@ -104,14 +104,18 @@ export async function dryRunCommand(
 
   let summary;
   try {
-    summary = await runDryRun(checked.value, {
-      ...resolved.value,
-      ...(harnessSources === undefined ? {} : { harnessSources }),
-      log: (line) => io.stdout(`${line}\n`),
-      logError: (line) => io.stderr(`${line}\n`),
-      // The credential reaches the container here and nowhere else (REQ-RUN-15, REQ-NFR-01).
-      ...(credential === undefined ? {} : { containerEnv: credential, secrets: Object.values(credential) }),
-    });
+    // The maintainer's interrupt stops it cleanly, as a campaign's (REQ-RUN-19, task-079).
+    summary = await withInterrupt(io, (signal) =>
+      runDryRun(checked.value, {
+        ...resolved.value,
+        ...(harnessSources === undefined ? {} : { harnessSources }),
+        log: (line) => io.stdout(`${line}\n`),
+        logError: (line) => io.stderr(`${line}\n`),
+        // The credential reaches the container here and nowhere else (REQ-RUN-15, REQ-NFR-01).
+        ...(credential === undefined ? {} : { containerEnv: credential, secrets: Object.values(credential) }),
+        signal,
+      }),
+    );
   } catch (error) {
     // The dry run could not start at all: no Docker daemon, no results directory, no image.
     return report([{ path: 'dry run', message: reasonOf(error) }], io);

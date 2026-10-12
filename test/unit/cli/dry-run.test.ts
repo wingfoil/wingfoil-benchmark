@@ -1,4 +1,4 @@
-import { copyFileSync, cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { stringify } from 'yaml';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -352,6 +352,28 @@ describe('bench scenario dry-run: the run (F3.3, REQ-RES-01, REQ-NFR-06)', () =>
       ports({ failing: { call: 'list', error: 'no daemon' } }),
     );
     expect(result).toMatchObject({ code: 1, stderr: 'dry run: no daemon\n' });
+  });
+});
+
+describe('bench scenario dry-run, interrupted (REQ-RUN-19, task-079)', () => {
+  it('records the run interrupted, writes no execution.json, and leaves no listener behind', async () => {
+    const root = repository();
+    const listeners = process.listenerCount('SIGINT');
+    const { code } = await dryRun(
+      root,
+      ['T3@1.0', '--arm', 'baseline'],
+      ports({
+        onStep: () => {
+          process.emit('SIGINT');
+          throw new Error('the agent exited with code 130');
+        },
+      }),
+    );
+
+    expect(code).toBe(1);
+    expect(runJson(root, 1, 'baseline')).toMatchObject({ outcome: 'interrupted' });
+    expect(existsSync(join(root, 'results', 'dry-runs', '1', 'execution.json'))).toBe(false);
+    expect(process.listenerCount('SIGINT')).toBe(listeners);
   });
 });
 
