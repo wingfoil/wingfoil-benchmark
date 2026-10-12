@@ -455,3 +455,26 @@ describe('the comparison pages in a build (REQ-RES-07, task-084 review)', () => 
     expect(readFileSync(join(root, 'site', 'abcdef012345', '1', 'index.html'), 'utf8')).toBe(landing);
   }, 120_000);
 });
+
+describe('a profile page with no covered category (REQ-RES-08, task-085)', () => {
+  it('names the categories not covered, and makes no comparison', async () => {
+    const { root } = await siteExecution();
+    expect((await benchSite(root, 'site', 'build', EXECUTION)).code).toBe(0);
+    const page = readFileSync(
+      join(root, 'site', 'abcdef012345', '1', 'profile-non-technical-manager.html'),
+      'utf8',
+    );
+    expect(page).toContain('Non-technical manager');
+    expect(page).toContain('A and B are not covered in this campaign.');
+    expect(page).toContain('has no comparison');
+    expect(page).not.toContain('<tr id="category-C"');
+  }, 120_000);
+
+  it('refuses a build without site-content/profiles.yaml, naming it', async () => {
+    const { root } = await siteExecution();
+    rmSync(join(root, 'site-content', 'profiles.yaml'), { force: true });
+    const refused = await benchSite(root, 'site', 'build', EXECUTION);
+    expect(refused.code).toBe(1);
+    expect(refused.stderr).toContain('site-content/profiles.yaml');
+  }, 120_000);
+});
