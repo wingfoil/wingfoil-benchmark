@@ -211,3 +211,8 @@ the counting it replaces.
 3. The "says it is running" warning went to stdout → it goes to the error stream.
 4. `nextAttempt` counted the attempt directories → it numbers after the highest, so that a gap never overwrites one.
 
+**Round 3**: a fresh, independent, read-only agent, on `337ed85`. All four fixes are correct and their tests
+meaningful. Verdict: clean, with one optional nit: a resume names an unreadable record as `<path> cannot be read`,
+while `transcripts pack` says `<path>: cannot be read`. **No change**: the two are different commands' messages, and
+neither is parsed.
+
