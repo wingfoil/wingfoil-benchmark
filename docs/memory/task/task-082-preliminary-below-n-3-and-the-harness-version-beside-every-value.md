@@ -31,12 +31,61 @@ n ≥ 3 rule, is green; v0.1's published execution re-renders with its compariso
 
 ## Acceptance criteria
 
-- `results.feature#Preliminary results are labelled`: classified red-first or characterization in the design phase.
+- `results.feature#Preliminary results are labelled`: **red-first**. The scenario's test exists since W9. It is amended
+  to REQ-RES-03 as amended in 1.26, and fails today:
+  - a comparison whose sides have n = 2 is labelled preliminary, where today it reads "within variance";
+  - each harness arm's version is shown beside its values;
+  - the headline says "n < 3" where it says "n = 1".
+  The scenario's own words (a single repetition gives a "preliminary" badge and "n = 1") hold as they are.
 
 ## Design
 
-<!-- Written in the design phase. -->
+**Fixes:** none.
 
+**1. Certainty** (`src/results/compare.ts`):
+- `compare` labels a comparison `preliminary` unless both sides have **n ≥ 3**: today it does so only when a side has
+  n = 1;
+- `beyond variance` keeps its rule (both n ≥ 3, ranges apart), and `within variance` is then the rest at n ≥ 3;
+- harness against control (REQ-SCO-14, task-068) uses the same function (`aggregate.ts`'s `controls`), so it follows
+  without a change of its own. A test pins it;
+- `aggregate.json`'s per-value `preliminary` flag (a single run, experiment design §4.6) is a property of a value, not
+  of a comparison: it stays as it is, and `aggregate_version` does not change. The certainty it records for control
+  comparisons does change, from the next scoring on.
+
+**2. What the pages say:**
+- a value keeps its `preliminary` badge at n = 1. That is REQ-RES-03's unamended "preliminary at n = 1", and the
+  scenario's words;
+- a comparison that is preliminary while the value has n > 1 already says `preliminary` beside its outcome
+  (task-045). With the new rule, that now includes n = 2;
+- the headline's parenthesis reads `(preliminary: n < 3 in …)`;
+- the landing page's legend reads "a comparison is preliminary unless both sides have n ≥ 3";
+- the method page's statement of the rule, if it states it, is updated the same way.
+
+**3. The harness version beside each arm's values** (T15):
+- read from the runs' records (`run.json` `harness`): the tool, the version when the record has one (v0.2's do), and
+  the commit's first 7 characters, e.g. `wingfoil 12537b6` for v0.1's runs and `speckit 1.1.0 · f1d3a4f` for v0.2's;
+- an arm whose runs recorded more than one harness lists each, sorted. That is determinism's "pins differ" case,
+  which the page then shows instead of hiding;
+- the baseline and the docs controls record no harness and show none;
+- **landing page:** under the arm's name in the table's column header, which sits above every value of the arm;
+- **category pages:** beside the arm's name, on every line that carries one of its values: the metrics, each suite,
+  the hold-out, and "against its docs control";
+- the site model's `RunRecord.harness` gains `version`, optional.
+
+**4. Re-rendering v0.1's published execution** ("Done"): `bench site build c82a5e74885b/2` from the task's worktree
+(`site/` is git-ignored). The Execution notes say which comparisons become preliminary and that the wingfoil arm reads
+`wingfoil 12537b6`. Nothing is published: publishing is plan-004's step 6.
+
+**Tests** (red first, committed apart from the code):
+- **Acceptance:** the amended @F5.5 test. The site fixture's stand-ins get a second wingfoil and baseline run in one
+  category, whose comparisons must read `preliminary` at n = 2; the wingfoil column's header carries its harness; the
+  headline reads `n < 3`.
+- **Unit:**
+  - `compare` at n = 1, 2 and 3, apart and overlapping;
+  - the control comparison at n = 2;
+  - the harness label, with and without a version, and with two commits;
+  - the headline sentence;
+  - the method page's rule, if stated there.
 ## Execution notes
 
 ## Review notes
