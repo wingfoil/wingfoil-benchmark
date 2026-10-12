@@ -1,15 +1,18 @@
 import { missingCapabilities } from '../arms/index.js';
-import { effortRefusal, missingEffort, reasonOf } from '../core/index.js';
+import { effortRefusal, fail, missingEffort, ok, reasonOf } from '../core/index.js';
 import type { CampaignFile, Result } from '../core/index.js';
+import { campaignSpendingEur } from '../results/index.js';
 import {
   checkCampaign,
   checkResume,
   estimateCampaign,
   formatEstimate,
+  guardFigure,
   runCampaign,
+  runsLeftToResume,
   totalLine,
 } from '../runner/index.js';
-import type { CheckedCampaign } from '../runner/index.js';
+import type { CheckedCampaign, Estimate } from '../runner/index.js';
 
 import { dryRunCommand } from './dry-run.js';
 import { campaignRequirements, FAKE_SCRIPT_VARIABLE, formatRequirement, refusalOf } from './preflight.js';
@@ -179,7 +182,37 @@ function estimateCommand(file: string, io: Io): number {
       .map((line) => `${line}\n`)
       .join(''),
   );
+  // The figure the budget guard would compare (REQ-CLI-02 as amended): every execution's spending, plus the estimate.
+  const guard = budgetGuard(checked.value, estimate.value);
+  if (!guard.ok) return report(guard.issues, io);
+  io.stdout(guard.value.lines.map((line) => `${line}\n`).join(''));
   return EXIT.ok;
+}
+
+/**
+ * The budget guard's figure for a campaign (REQ-CLI-02 and REQ-CLI-03 as amended, task-081): what every execution of
+ * the campaign spent plus the high estimate of what is left, and the lines that say so.
+ */
+function budgetGuard(
+  checked: CheckedCampaign,
+  estimate: Estimate,
+): Result<{ readonly eur: number; readonly text: string; readonly lines: readonly string[] }> {
+  const { resultsRoot, id, spec } = checked.campaign;
+  let spent: number;
+  try {
+    spent = campaignSpendingEur(resultsRoot, id, spec.currency.usd_to_eur);
+  } catch (error) {
+    return fail([{ path: 'campaign', message: reasonOf(error) }]);
+  }
+  const figure = guardFigure(spent, estimate);
+  const { warn_eur, ceiling_eur } = spec.budget;
+  return ok({
+    ...figure,
+    lines: [
+      ...(spent > 0 ? [`spent by earlier executions: ${eur(spent)}`] : []),
+      `budget guard: ${figure.text} (warn ${warn_eur} EUR, ceiling ${ceiling_eur} EUR)`,
+    ],
+  });
 }
 
 /**
@@ -222,7 +255,14 @@ async function runCampaignCommand(
   const rate = spec.currency.usd_to_eur;
   // What it expects to spend, before anything is built (REQ-NFR-06), and the budget guard's first two
   // refusals (F1.3, task-023): a campaign whose cost is unknown, and one above its ceiling, never start.
-  const estimate = estimateCampaign(checked.value);
+  // A resume prices what it has left to run only (REQ-CLI-03 as amended, task-081), read from its records.
+  let left: Map<string, number> | undefined;
+  try {
+    left = resume === undefined ? undefined : runsLeftToResume(checked.value, resume.value);
+  } catch (error) {
+    return report([{ path: 'campaign', message: NOT_STARTED + reasonOf(error) }], io);
+  }
+  const estimate = estimateCampaign(checked.value, left);
   if (!estimate.ok) {
     io.stdout(`estimate: not available, ${count(estimate.issues.length, 'dry run')} missing\n`);
     return report(
@@ -230,18 +270,26 @@ async function runCampaignCommand(
       io,
     );
   }
-  io.stdout(`${totalLine(estimate.value.totalUsd, rate, 'estimate')}\n`);
-  const { totalEur } = estimate.value;
+  const formatted = formatEstimate(estimate.value, checked.value.campaign.repoRoot);
+  io.stdout(`${formatted[formatted.length - 1] ?? ''}\n`);
+  // The budget guard's figure (REQ-CLI-03 as amended, task-081): every execution's spending plus the high estimate.
+  const guard = budgetGuard(checked.value, estimate.value);
+  if (!guard.ok)
+    return report(
+      guard.issues.map((issue) => ({ ...issue, message: NOT_STARTED + issue.message })),
+      io,
+    );
+  io.stdout(guard.value.lines.map((line) => `${line}\n`).join(''));
   const { warn_eur, ceiling_eur } = spec.budget;
-  if (totalEur > ceiling_eur) {
+  if (guard.value.eur > ceiling_eur) {
     // No option is read here, and none exists: the ceiling is the campaign file's (acceptance decision 2).
     return report(
       [
         {
           path: 'campaign',
           message:
-            `${NOT_STARTED}the estimate, ${eur(totalEur)}, is above the ceiling, ${ceiling_eur} EUR. No option ` +
-            "overrides it: lower the campaign's cost, or raise ceiling_eur, which makes a new campaign",
+            `${NOT_STARTED}the budget guard, ${guard.value.text}, is above the ceiling, ${ceiling_eur} EUR. No ` +
+            "option overrides it: lower the campaign's cost, or raise ceiling_eur, which makes a new campaign",
         },
       ],
       io,
@@ -266,8 +314,10 @@ async function runCampaignCommand(
   if (!resolved.ok) return report(resolved.issues, io);
 
   // The warning, last, so that nobody confirms what a missing credential would stop a second later.
-  if (totalEur > warn_eur) {
-    io.stderr(`campaign: the estimate, ${eur(totalEur)}, is above the warning threshold, ${warn_eur} EUR\n`);
+  if (guard.value.eur > warn_eur) {
+    io.stderr(
+      `campaign: the budget guard, ${guard.value.text}, is above the warning threshold, ${warn_eur} EUR\n`,
+    );
     if (io.ask === undefined) {
       return report(
         [

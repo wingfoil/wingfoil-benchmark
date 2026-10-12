@@ -2,7 +2,7 @@
 id: task-081-the-estimate-is-a-range-and-the-ceiling-covers-every-execution
 type: task
 title: "The estimate is a range and the ceiling covers every execution"
-status: in-progress
+status: approved
 release: v0.2
 wave: W14
 features: [F1.2, F1.4]
@@ -105,4 +105,76 @@ new figures in the red commit, each change named in the Execution notes.
 
 ## Execution notes
 
+**WingFoil commands, declared vs observed:** `npx wingfoil memory submit task-081-…` on main (`5c41c69`), after the
+Design's own commit (`87e197c`, W-01). Declared: backlog → in-progress. Observed: `{"from": "backlog", "to":
+"in-progress"}`, exit 0, one `wf(task): submit …` commit (W-14).
+
+**Build** on `task/task-081` (worktree `../WingFoil2-Benchmark-wt/task-081`, its own `npm ci`):
+- red first, `216cc75`:
+  - the two acceptance scenarios: the W5 estimate test amended to the range, and the new ceiling-across-executions
+    test;
+  - the @F1.3 guard messages amended, their fixture priced by two equal dry runs (`priceCampaign(file, usd, 2)`), so
+    that the scenarios keep their 42 and 130 EUR;
+  - unit tests for `findDryRuns`, the range, the margin, what is left, `campaignSpendingEur` and the in-run ceiling.
+  All failed for the expected reasons.
+- `4aca995`, the implementation and the README. Three test files pinned the old output, and are amended in the same
+  commit, which names them:
+  - `test/unit/runner/estimate.test.ts`: the margin on single dry runs, the range fields;
+  - `test/unit/cli/main.test.ts`: the `budget guard:` line, and the guard messages, whose fixture now prices with two
+    dry runs;
+  - `test/bin/bench.test.ts`: the same.
+  This departs from the Design, which put them in the red commit: their exact text is the implementation's.
+- Checks, niced, with 2 workers: `tsc` clean and `npm run lint` clean. `test/unit` and `test/acceptance` green: 1478
+  passed, 8 skipped.
+
+**Decisions taken in the build, inside the Design:**
+- The guard's messages name its parts: `the budget guard, S + H = G EUR, is above the ceiling, C EUR`, and the same
+  above the warning threshold. The old `the estimate, X EUR` would now be untrue whenever earlier executions spent
+  something.
+- `campaign run` prints the estimate's total line and the guard's lines, not every key's line, as before.
+- The margin is exact in the code (`cost × 1.35`). Tests compare rounded figures, since 1.35 is not exact in binary
+  floating point.
+- `executionSpendingEur` names an unreadable record relative to `results/`. The runner's spending seed reads records
+  through it now, replacing task-080's `recordedSpendingEur`; task-080's test of an unreadable record still holds.
+
 ## Review notes
+
+### Review
+
+**Round 1**: a fresh, independent, read-only agent (a `Plan` subagent), on `fefb546`. Verdict: not clean. Outcomes:
+1. should-fix: an unreadable `run.json` during `--resume` crashed `campaign run` (`runsLeftToResume` outside any
+   catch) → **fixed**: refused as `campaign: not started: <path> cannot be read`, tested through the command line for
+   a run and a resume (`69a1897`).
+2. should-fix: the spending test claimed attempts and bounds but proved neither (zero-cost attempts, no bound) →
+   **fixed**: attempts that spent, a bound above the reported cost at 0.5 EUR/USD, and an unreadable record named
+   under `results/`. The amended spending test passed on the code as it was, so it pins that behaviour; the unreadable
+   record test was red.
+3. nit: `{} as RunnerOptions` hid any future use of a port → **fixed**: `runsToResume` takes `Pick<RunnerOptions,
+   'log'>`.
+4. nit: a `run.json` of `null` gave a pathless TypeError → **fixed**: named as unreadable.
+5. nit: the guard's failure in `run` lacked `not started:` → **fixed**.
+
+**Round 2**: a fresh, independent, read-only agent, on `b6d0b1a`. It verified the five round-1 outcomes and checked the
+whole diff again against REQ-CLI-02/03 and REQ-RUN-08, the scenarios, and `bench campaign estimate` with an unreadable
+record. Verdict: clean, with two nits, both **fixed** in `1edad7a`:
+1. a `run.json` of `null` read by a resume's selection still gave a pathless TypeError. The runner's `readRecord` now
+   refuses a non-object with its path, and the command-line test covers it; the test was written with the fix.
+2. the spending seed's comment still spoke of a resume only. It now says every execution.
+
+**Round 3**: a fresh, independent, read-only agent, on `1edad7a`. It found both fixes correct, the null case reaching
+the new branch, and every caller type-checked. Verdict: clean, with two optional nits, both **no change**:
+1. a cast in `runsToResume` that is now redundant: harmless.
+2. a `run.json` holding an array passes the object check, and reads as a record with no outcome, as `{}` already does:
+   an edge case outside the review's ask.
+
+### Full suites
+
+`scripts/full-suites.sh task/task-081` on 2026-10-12, at the approver's request ("Avvia la suite"), on `4004bd7` (the
+in-review submit), worktree clean: `LINT 0 TEST 0 BUILD 0 BIN 0 DOCKER 0`. `npm test` 1480 passed, 8 skipped, statement
+coverage 97.72 %; `test:bin` 8/8; `test:docker` 20 passed, 2 skipped. Log:
+`.cache/full-suites/2026-10-12/task_task-081-4004bd7-102150.txt`. The commit after it adds only these notes.
+
+**WingFoil command, declared vs observed:** `npx wingfoil memory submit task-081-…` on the branch: declared
+in-progress → in-review; observed `{"from": "in-progress", "to": "in-review"}`, exit 0, one `wf(task): submit …`
+commit (`4004bd7`). No task was `in-review` on main or on a task branch before it.
+

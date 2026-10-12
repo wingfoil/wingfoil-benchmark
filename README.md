@@ -157,23 +157,26 @@ per step and in total.
 npx bench campaign estimate campaigns/<name>.yaml
 ```
 
-`estimate` prices a campaign before it runs, from its scenarios' dry runs: for every scenario version,
-arm and model the campaign file describes — its model slices included — the latest completed dry run's
-cost times the repetitions, then the total in euro at the campaign's rate, as an API-equivalent cost.
-It starts nothing. A key with no dry run fails the estimate, naming the dry run to make. `campaign run`
-prints the same total before it starts, and what the campaign spent when it ends.
+`estimate` prices a campaign before it runs, from its scenarios' dry runs. For every scenario version, arm and model
+the campaign file describes — its model slices included — it reads every completed dry run and prints the lowest, the
+mean and the highest cost times the repetitions. A key with a single dry run is priced at that cost plus a stated
+margin of 35 %. Then the totals, the highest in euro at the campaign's rate, as an API-equivalent cost. It starts
+nothing. A key with no dry run fails the estimate, naming the dry run to make. A key is never priced from another
+model's dry run. `campaign run` prints the same totals before it starts, and what the campaign spent when it ends.
 
-Before anything is built, `campaign run` applies the **budget guard**: a campaign whose cost cannot be
-estimated does not start, nor does one whose estimate is above its `ceiling_eur` — no option overrides
-the ceiling. Above `warn_eur` it shows the estimate and the threshold and starts only when the
-maintainer answers `y` on a terminal; without a terminal it does not start.
+Before anything is built, `campaign run` applies the **budget guard**. Its figure is what every execution of the
+campaign already spent, earlier attempts included, plus the highest estimate of what is left: the whole campaign for a
+new execution, only the runs a resume will run for `--resume`. Both commands print it as `budget guard: spent +
+estimate = figure`. A campaign whose cost cannot be estimated does not start, nor does one whose figure is above its
+`ceiling_eur` — no option overrides the ceiling. Above `warn_eur` it shows the figure and the threshold and starts only
+when the maintainer answers `y` on a terminal; without a terminal it does not start.
 
 While it runs, the caps hold. Each session is given what is left of the run's `run_cost_eur` as the
 agent's own budget, and stops there: the step and the run end `cap reached`, the step's snapshot kept.
 Every command of a step runs under `timeout` with what is left of `step_time_s`: a step killed there
 ends `time cap reached`, and since a killed session reports no cost, it is counted at the most it can
 have cost. A session whose tokens exceed `step_tokens` is not resumed (`token cap reached`). No run
-starts once the runs so far have spent `ceiling_eur` (`campaign ended: budget exhausted`), nor after a
+starts once the campaign's executions so far have spent `ceiling_eur` (`campaign ended: budget exhausted`), nor after a
 session met the subscription's usage limit (`quota exhausted`).
 
 **Stopping a campaign.** The first Ctrl-C (SIGINT) or SIGTERM stops it cleanly: the current step's agent is killed

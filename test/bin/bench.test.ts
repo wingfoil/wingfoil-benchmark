@@ -103,16 +103,19 @@ describe('the built bench command', () => {
         currency: { usd_to_eur: 1 },
       }),
     );
-    priceCampaign(file, 130);
+    // Two dry runs of the same cost: a range with no margin (task-081).
+    priceCampaign(file, 130, 2);
 
     for (const flags of [[], ['--allow-spending']]) {
       // The fake agent's script is there, so that the ceiling is what refuses (bug-014's preflight comes first).
       const script = { BENCH_FAKE_SCRIPT: repoPath('test/fixtures/fake-script.json') };
       expect(benchWith(script, 'campaign', 'run', file, ...flags)).toEqual({
         status: 1,
-        stdout: 'estimate: 130.0000 USD, 130.0000 EUR at 1 EUR/USD, API-equivalent\n',
+        stdout:
+          'estimate: low 130.0000, mean 130.0000, high 130.0000 USD; high 130.0000 EUR at 1 EUR/USD, API-equivalent\n' +
+          'budget guard: 0.0000 + 130.0000 = 130.0000 EUR (warn 30 EUR, ceiling 100 EUR)\n',
         stderr:
-          'campaign: not started: the estimate, 130.0000 EUR, is above the ceiling, 100 EUR. No option ' +
+          'campaign: not started: the budget guard, 0.0000 + 130.0000 = 130.0000 EUR, is above the ceiling, 100 EUR. No option ' +
           "overrides it: lower the campaign's cost, or raise ceiling_eur, which makes a new campaign\n",
       });
     }

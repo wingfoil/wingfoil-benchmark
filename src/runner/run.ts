@@ -32,13 +32,18 @@ import type {
   Result,
   Scenario,
 } from '../core/index.js';
-import { executionResumable, nextExecution, writeExecutionRecord } from '../results/index.js';
+import {
+  campaignSpendingEur,
+  executionResumable,
+  nextExecution,
+  writeExecutionRecord,
+} from '../results/index.js';
 import type { ExecutionRecord, StopReason } from '../results/index.js';
 import { armDigest, missingCapabilities, RULES_SOURCE_ARM, rulesGeneratorOf } from '../arms/index.js';
 import { prepareWorkspace } from '../scenario/index.js';
 
 import type { CheckedCampaign } from './campaign.js';
-import { campaignKeys } from './estimate.js';
+import { campaignKeys, keyName } from './estimate.js';
 import { prepareHarnesses } from './harness.js';
 import { AGENT_IDENTITY } from './identity.js';
 import { prepareProjectRules, PROJECT_RULES } from './project-rules.js';
@@ -485,7 +490,12 @@ export async function runPlan(plan: RunPlan, options: RunnerOptions, resume?: nu
   // Read before the record is touched: a run record that cannot be read leaves the execution as it was.
   const { runs: planned, kept } =
     resume === undefined ? { runs: plan.runs, kept: [] } : runsToResume(plan, resultsDir, options);
-  const spentBefore = resume === undefined ? 0 : recordedSpendingEur(join(resultsDir, 'runs'), plan.pins);
+  // What every execution of the campaign spent (REQ-RUN-08, REQ-CLI-02 as amended, task-081): neither a resume nor a
+  // new execution gets a fresh ceiling. A dry run is no campaign's execution, and starts from nothing.
+  const spentBefore =
+    'campaign' in plan.origin
+      ? campaignSpendingEur(plan.resultsRoot, plan.key, plan.pins.currency.usd_to_eur)
+      : 0;
   recordExecution({ state: 'running' });
   let ran: { runs: RunResult[]; stop?: { reason: Exclude<StopReason, 'error'>; detail: string } };
   try {
@@ -535,7 +545,7 @@ export async function runPlan(plan: RunPlan, options: RunnerOptions, resume?: nu
 function runsToResume(
   plan: RunPlan,
   resultsDir: string,
-  options: RunnerOptions,
+  options: Pick<RunnerOptions, 'log'>,
 ): { runs: PlannedRun[]; kept: string[] } {
   const runs: PlannedRun[] = [];
   const kept: string[] = [];
@@ -549,7 +559,7 @@ function runsToResume(
       runs.push(planned);
       continue;
     }
-    const outcome = String((readRecord(file, resultsDir) as { outcome?: unknown }).outcome);
+    const outcome = String((readRecord(file, dirname(dirname(resultsDir))) as { outcome?: unknown }).outcome);
     if (RUN_AGAIN.has(outcome)) {
       count(outcome);
       runs.push(planned);
@@ -565,6 +575,21 @@ function runsToResume(
     `resume: ${countRuns(runs.length)} to run${byOutcome(why)}, ${countRuns(kept.length)} kept${byOutcome(keptBy)}`,
   );
   return { runs, kept };
+}
+
+/**
+ * How many runs of each key a resume of execution `execution` would run (task-081), by `keyName`: what the budget guard
+ * prices for a resume (REQ-CLI-03 as amended). Reads the execution's records only; logs and runs nothing.
+ */
+export function runsLeftToResume(checked: CheckedCampaign, execution: number): Map<string, number> {
+  const plan = campaignPlan(checked);
+  const { runs } = runsToResume(plan, join(plan.resultsRoot, plan.key, String(execution)), {});
+  const left = new Map<string, number>();
+  for (const run of runs) {
+    const name = keyName({ scenario: run.scenario, arm: run.arm.name, model: run.model });
+    left.set(name, (left.get(name) ?? 0) + 1);
+  }
+  return left;
 }
 
 /**
@@ -589,29 +614,6 @@ async function refuseLeftovers(plan: RunPlan, execution: number, options: Runner
 }
 
 /**
- * What the runs recorded under `runsDir` spent, in EUR, every attempt included (task-080): each step at what it
- * reported, or at its bound when it was killed before reporting, as the runner counts it (task-024).
- */
-function recordedSpendingEur(runsDir: string, pins: RunPins): number {
-  if (!existsSync(runsDir)) return 0;
-  let total = 0;
-  for (const entry of readdirSync(runsDir, { withFileTypes: true, recursive: true })) {
-    if (!entry.isFile() || entry.name !== 'run.json') continue;
-    const run = readRecord(join(entry.parentPath, entry.name), dirname(runsDir)) as {
-      steps?: { usage?: { costEur?: number }; cost_bound_usd?: number }[];
-    };
-    total += spentEur(
-      (run.steps ?? []).map((step) => ({
-        usage: { ...NO_USAGE, costEur: step.usage?.costEur ?? 0 },
-        ...(step.cost_bound_usd === undefined ? {} : { costBoundUsd: step.cost_bound_usd }),
-      })),
-      pins,
-    );
-  }
-  return total;
-}
-
-/**
  * Make room for a run's new attempt (REQ-FMT-06 as amended, task-080): whatever an earlier one left in `outputDir`
  * moves to `attempts/<k>/`, the next number. Returns the attempt about to run: 1 for a first run.
  */
@@ -633,13 +635,19 @@ function nextAttempt(outputDir: string): number {
   return earlier + 2;
 }
 
-/** A run's `run.json`, or an error naming it under `resultsDir`: a resume reads every one before it starts. */
-function readRecord(file: string, resultsDir: string): unknown {
+/** A run's `run.json`, or an error naming it under `resultsDir` (`results/`): a resume reads every one before it starts. */
+function readRecord(file: string, resultsDir: string): Record<string, unknown> {
+  let record: unknown;
   try {
-    return JSON.parse(readFileSync(file, 'utf8'));
+    record = JSON.parse(readFileSync(file, 'utf8'));
   } catch (error) {
     throw new Error(`${relative(resultsDir, file)} cannot be read: ${reasonOf(error)}`, { cause: error });
   }
+  // A record that parses to anything but an object is no record either (task-081's review).
+  if (record === null || typeof record !== 'object') {
+    throw new Error(`${relative(resultsDir, file)} cannot be read: it is not a run record`);
+  }
+  return record as Record<string, unknown>;
 }
 
 /** Where a run's earlier attempts lie, under its own directory (REQ-FMT-06 as amended). */
@@ -677,7 +685,7 @@ async function executeRuns(
   const projectRules = await prepareProjectRules(plan, harnesses, resultsDir, options, resumed);
 
   const results: RunResult[] = [];
-  // What the execution spent before, when it is resumed (task-080): a resume never gets a fresh ceiling.
+  // What every execution of the campaign spent before this one started or was resumed (task-080, task-081).
   let spent = spentBefore;
   /** The failed runs so far, by step and error (REQ-RUN-19's `fail_fast`). */
   const failures = new Map<string, number>();

@@ -2,7 +2,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-import { latestDryRun } from '../../../src/results/index.js';
+import { findDryRuns, latestDryRun } from '../../../src/results/index.js';
 import { tempDir } from '../../support/scenario-fixture.js';
 
 const KEY = { id: 'S1', version: '1.0', hash: 'sha256:a', arm: 'wingfoil', model: 'm' };
@@ -80,5 +80,30 @@ describe('latestDryRun (task-021)', () => {
 
   it('has none when nothing was dry-run', () => {
     expect(latestDryRun(tempDir('bench-results-'), KEY)).toBeUndefined();
+  });
+});
+
+describe('findDryRuns (REQ-CLI-02 as amended in 1.26, task-081)', () => {
+  it('returns every dry run that counts, newest first, by the rules latestDryRun applies', () => {
+    const root = tempDir('bench-results-');
+    dryRun(root, 1, stored([0.1]));
+    dryRun(root, 2, stored([0.2], { outcome: 'failed' }));
+    dryRun(root, 3, stored([0.3], { scenario_hash: 'sha256:other' }));
+    dryRun(root, 4, stored([0.4]));
+    dryRun(root, 5, stored([0.5]), { model: 'other-model' });
+
+    const found = findDryRuns(root, KEY);
+
+    expect(found.records.map((record) => [record.execution, record.costUsd])).toEqual([
+      [4, 0.4],
+      [1, 0.1],
+    ]);
+    expect(latestDryRun(root, KEY)?.execution).toBe(4);
+  });
+
+  it('never prices a key from another model: none is found', () => {
+    const root = tempDir('bench-results-');
+    dryRun(root, 1, stored([0.1]), { model: 'other-model' });
+    expect(findDryRuns(root, KEY).records).toEqual([]);
   });
 });

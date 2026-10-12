@@ -285,7 +285,10 @@ describe('bench campaign run', () => {
     const ports = doubles();
     const { code, stdout, stderr } = await runWith(ports, 'campaign', 'run', file);
     // The estimate is printed first (REQ-NFR-06); nothing else happens before the refusal.
-    expect({ code, stdout }).toEqual({ code: 1, stdout: expect.stringMatching(/^estimate: [^\n]*\n$/) });
+    expect({ code, stdout }).toEqual({
+      code: 1,
+      stdout: expect.stringMatching(/^estimate: [^\n]*\nbudget guard: [^\n]*\n$/),
+    });
     expect(stderr).toMatch(/spends real money/);
     // Nothing was built and no container was created: the refusal comes first.
     expect(ports.recorded.builds).toEqual([]);
@@ -352,7 +355,7 @@ describe('bench campaign run', () => {
     expect({ code, stderr }).toEqual({ code: 0, stderr: '' });
     // What it expects to spend before anything is built, and what it spent at the end (REQ-NFR-06).
     expect(stdout).toMatch(
-      /^estimate: 0\.0000 USD, 0\.0000 EUR at 0\.92 EUR\/USD, API-equivalent\ncampaign [0-9a-f]{12}, execution 1\n/,
+      /^estimate: low 0\.0000, mean 0\.0000, high 0\.0000 USD; high 0\.0000 EUR at 0\.92 EUR\/USD, API-equivalent\nbudget guard: 0\.0000 \+ 0\.0000 = 0\.0000 EUR \(warn 30 EUR, ceiling 100 EUR\)\ncampaign [0-9a-f]{12}, execution 1\n/,
     );
     expect(stdout).toMatch(/run S1@1\.0\/baseline\/fake-model\/r1\n/);
     expect(stdout).toMatch(
@@ -382,7 +385,7 @@ describe('bench campaign run', () => {
     writeStoredDryRun(root, 1, { id: 'S1', hash, arm: 'baseline', stepCostsUsd: [0.5] });
     const { stdout } = await runWith(doubles(), 'campaign', 'run', file);
     expect(stdout).toMatch(
-      /^estimate: 0\.5000 USD, 0\.4600 EUR at 0\.92 EUR\/USD, API-equivalent\ncampaign /,
+      /^estimate: low 0\.5000, mean 0\.5000, high 0\.6750 USD; high 0\.6210 EUR at 0\.92 EUR\/USD, API-equivalent\nbudget guard: 0\.0000 \+ 0\.6210 = 0\.6210 EUR \(warn 30 EUR, ceiling 100 EUR\)\ncampaign /,
     );
   });
 
@@ -408,7 +411,8 @@ describe('bench campaign run', () => {
       const { file } = writeRepo({ ...fakeCampaign(), budget, currency: { usd_to_eur: 1 }, ...extra }, [
         'S1@1.0',
       ]);
-      priceCampaign(file, estimateEur);
+      // Two dry runs of the same cost: a range with no margin, so that the guard's figure is the test's (task-081).
+      priceCampaign(file, estimateEur, 2);
       return file;
     }
 
@@ -448,7 +452,7 @@ describe('bench campaign run', () => {
       const result = await start(priced(42, { warn_eur: 30, ceiling_eur: 100 }), ports);
       expect(result.code).toBe(1);
       expect(result.stderr).toBe(
-        'campaign: the estimate, 42.0000 EUR, is above the warning threshold, 30 EUR\n' +
+        'campaign: the budget guard, 0.0000 + 42.0000 = 42.0000 EUR, is above the warning threshold, 30 EUR\n' +
           'campaign: not started: a campaign above its warning threshold is confirmed on a terminal\n',
       );
       expect(ports.recorded.builds).toEqual([]);
@@ -493,7 +497,7 @@ describe('bench campaign run', () => {
       };
       const above = await start(priced(130, { warn_eur: 30, ceiling_eur: 100 }, agent), doubles(), ask);
       expect(above.stderr).toMatch(
-        /^campaign: not started: the estimate, 130\.0000 EUR, is above the ceiling/,
+        /^campaign: not started: the budget guard, 0\.0000 \+ 130\.0000 = 130\.0000 EUR, is above the ceiling/,
       );
       // Above the warning threshold, a missing opt-in to spend is refused before any question.
       const warned = await start(priced(42, { warn_eur: 30, ceiling_eur: 100 }, agent), doubles(), ask);
@@ -626,6 +630,57 @@ describe('bench campaign run --resume (REQ-CLI-03 as amended, task-080)', () => 
     const { file } = writeRepo(completeCampaignYaml());
     expect((await run('campaign', 'validate', file, '--resume', 'abcdef012345/1')).code).toBe(2);
     expect((await run('campaign', 'estimate', file, '--resume', 'abcdef012345/1')).code).toBe(2);
+  });
+});
+
+describe('bench campaign run and an unreadable run record (task-081 review)', () => {
+  function freeCampaign(): string {
+    const { file } = writeRepo(
+      {
+        ...completeCampaignYaml(),
+        harnesses: {},
+        arms: ['baseline'],
+        scenarios: [{ id: 'S1', version: '1.0' }],
+        repetitions: { S1: 1 },
+        agent: { name: 'fake', version: '1.0.0' },
+        models: { default: 'fake-model' },
+      },
+      ['S1@1.0'],
+    );
+    priceCampaign(file);
+    return file;
+  }
+
+  it('refuses a run or a resume, naming the record, rather than crashing', async () => {
+    const file = freeCampaign();
+    expect(
+      (await runWith(doubles({ errorOf: () => 'the network failed' }), 'campaign', 'run', file)).code,
+    ).toBe(1);
+    const checked = checkCampaign(file);
+    if (!checked.ok) throw new Error('invalid');
+    const { id, resultsRoot } = checked.value.campaign;
+    writeFileSync(
+      join(resultsRoot, id, '1', 'runs', 'S1@1.0', 'baseline', 'fake-model', 'r1', 'run.json'),
+      '{',
+    );
+    const record = `${id}/1/runs/S1@1.0/baseline/fake-model/r1/run.json cannot be read`;
+
+    const ports = doubles();
+    const again = await runWith(ports, 'campaign', 'run', file);
+    expect(again.code).toBe(1);
+    expect(again.stderr).toContain(`campaign: not started: ${record}`);
+
+    const resumed = await runWith(ports, 'campaign', 'run', file, '--resume', `${id}/1`);
+    expect(resumed.code).toBe(1);
+    expect(resumed.stderr).toContain(`campaign: not started: ${record}`);
+    // A record that parses to null is no record either.
+    writeFileSync(
+      join(resultsRoot, id, '1', 'runs', 'S1@1.0', 'baseline', 'fake-model', 'r1', 'run.json'),
+      'null',
+    );
+    const empty = await runWith(ports, 'campaign', 'run', file, '--resume', `${id}/1`);
+    expect(empty.stderr).toContain(`campaign: not started: ${record}: it is not a run record`);
+    expect(ports.recorded.builds).toEqual([]);
   });
 });
 
