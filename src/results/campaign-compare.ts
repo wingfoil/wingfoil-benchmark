@@ -425,7 +425,8 @@ function sideOf(
   const arm = armFigures === undefined || armFigures.values.length === 0 ? undefined : summarize(armFigures);
   const noted = (note: string): NotedSide => (arm === undefined ? { note } : { note, arm: value(arm) });
   if (baseline === undefined) return noted('no baseline');
-  // The arm's own figures first, as the site reads them: an arm not measured is that, whatever its baseline.
+  // Once there is a baseline, the arm's own figures first, as the site reads them: an arm not measured is that,
+  // whatever its baseline's figures.
   if (arm === undefined) return noted('not measured');
   const baseFigures = readMetric(metric, baseline);
   if (baseFigures !== undefined && baseFigures.unreached !== undefined && baseFigures.unreached.length > 0) {

@@ -255,7 +255,7 @@ It writes `results/comparisons/<newer-id>-<m>/<earlier-id>-<n>.json` and prints 
 effort, harnesses). Rows on two different default models are marked cross-model. A scenario whose content changed is
 not compared, and the comparison names the two hashes; so is one whose hash is unknown, whose category has no map
 of metrics or cannot be read, and a slice with no counterpart. A side with no delta (no baseline, not measured, not
-comparable) says why and keeps the arm's own value, and its row has no change. A dry run, an execution not
+comparable) says why and keeps the arm's own value when it has one, and its row has no change. A dry run, an execution not
 yet aggregated, or one execution twice is refused.
 
 ```bash
