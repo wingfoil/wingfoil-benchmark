@@ -673,6 +673,13 @@ describe('bench campaign run and an unreadable run record (task-081 review)', ()
     const resumed = await runWith(ports, 'campaign', 'run', file, '--resume', `${id}/1`);
     expect(resumed.code).toBe(1);
     expect(resumed.stderr).toContain(`campaign: not started: ${record}`);
+    // A record that parses to null is no record either.
+    writeFileSync(
+      join(resultsRoot, id, '1', 'runs', 'S1@1.0', 'baseline', 'fake-model', 'r1', 'run.json'),
+      'null',
+    );
+    const empty = await runWith(ports, 'campaign', 'run', file, '--resume', `${id}/1`);
+    expect(empty.stderr).toContain(`campaign: not started: ${record}: it is not a run record`);
     expect(ports.recorded.builds).toEqual([]);
   });
 });

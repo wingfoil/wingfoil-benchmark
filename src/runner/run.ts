@@ -636,12 +636,18 @@ function nextAttempt(outputDir: string): number {
 }
 
 /** A run's `run.json`, or an error naming it under `resultsDir` (`results/`): a resume reads every one before it starts. */
-function readRecord(file: string, resultsDir: string): unknown {
+function readRecord(file: string, resultsDir: string): Record<string, unknown> {
+  let record: unknown;
   try {
-    return JSON.parse(readFileSync(file, 'utf8'));
+    record = JSON.parse(readFileSync(file, 'utf8'));
   } catch (error) {
     throw new Error(`${relative(resultsDir, file)} cannot be read: ${reasonOf(error)}`, { cause: error });
   }
+  // A record that parses to anything but an object is no record either (task-081's review).
+  if (record === null || typeof record !== 'object') {
+    throw new Error(`${relative(resultsDir, file)} cannot be read: it is not a run record`);
+  }
+  return record as Record<string, unknown>;
 }
 
 /** Where a run's earlier attempts lie, under its own directory (REQ-FMT-06 as amended). */
@@ -679,7 +685,7 @@ async function executeRuns(
   const projectRules = await prepareProjectRules(plan, harnesses, resultsDir, options, resumed);
 
   const results: RunResult[] = [];
-  // What the execution spent before, when it is resumed (task-080): a resume never gets a fresh ceiling.
+  // What every execution of the campaign spent before this one started or was resumed (task-080, task-081).
   let spent = spentBefore;
   /** The failed runs so far, by step and error (REQ-RUN-19's `fail_fast`). */
   const failures = new Map<string, number>();
