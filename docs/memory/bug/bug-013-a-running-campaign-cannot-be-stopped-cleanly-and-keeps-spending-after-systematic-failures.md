@@ -2,7 +2,7 @@
 id: bug-013-a-running-campaign-cannot-be-stopped-cleanly-and-keeps-spending-after-systematic-failures
 type: bug
 title: "A running campaign cannot be stopped cleanly and keeps spending after systematic failures"
-status: approved
+status: fixed
 fixed_by: task-080-a-stopped-campaign-resumes-without-repeating-completed-runs
 ---
 
