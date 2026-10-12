@@ -26,10 +26,9 @@ export function compareCommand(argv: readonly string[], io: Io, root: string): n
   if (!compared.ok) return report(compared.issues, io);
   const comparison = compared.value;
   const file = writeComparison(root, comparison);
-  const groups = new Set(
-    comparison.rows.map((row) => `${row.scenario}@${row.version}/${row.arm}/${row.model}`),
-  ).size;
-  const crossModel = comparison.rows.some((row) => row.cross_model);
+  // Groups in one unit on both counts, the baselines' included; cross-model when the default models differ (T14).
+  const groups = comparison.compared.length;
+  const crossModel = comparison.earlier.model !== comparison.newer.model;
   io.stdout(
     `comparison: ${relative(root, file)} (${groups} group${groups === 1 ? '' : 's'} compared, ` +
       `${comparison.not_compared.length} not compared${crossModel ? '; cross-model' : ''})\n`,

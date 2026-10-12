@@ -1,12 +1,13 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { z } from 'zod';
 
 import { fail, ok, readYamlFile } from '../core/index.js';
 import type { Issue, Result } from '../core/index.js';
 
 import { AGGREGATE_FILE } from './aggregate.js';
 import type { AggregateFile, Group } from './aggregate.js';
-import { CATEGORY_MAP, certaintyOf, readMetric, summarize } from './compare.js';
+import { CATEGORY_MAP, compare, readMetric } from './compare.js';
 import type { Certainty, MappedCategory, MetricId } from './compare.js';
 import { DRY_RUNS } from './dry-runs.js';
 import { readExecutionRecord } from './execution.js';
@@ -57,12 +58,21 @@ export interface NotCompared {
   readonly reason: string;
 }
 
-/** A default group present in one execution only. */
+/** A group present in one execution only, of the default model or of a slice. */
 export interface OnlyIn {
   readonly execution: string;
   readonly scenario: string;
   readonly version: string;
   readonly arm: string;
+  readonly model: string;
+}
+
+/** A group compared, the baseline's included: its model, or `<earlier> → <newer>` for a cross-model default group. */
+export interface ComparedGroup {
+  readonly scenario: string;
+  readonly version: string;
+  readonly arm: string;
+  readonly model: string;
 }
 
 /** A pin whose value differs between the two executions, as their campaign files state it. */
@@ -89,6 +99,8 @@ export interface CampaignComparison {
   /** Which came first is the maintainer's order (REQ-CLI-12), recorded as such. */
   readonly order: 'maintainer';
   readonly pins_differ: readonly PinDiffers[];
+  /** Every group compared, the baselines' included: what `rows` compares each arm against. */
+  readonly compared: readonly ComparedGroup[];
   readonly rows: readonly ComparisonRow[];
   readonly not_compared: readonly NotCompared[];
   readonly only_in: readonly OnlyIn[];
@@ -134,15 +146,10 @@ export function compareExecutions(
   const [before, after] = sides;
   if (issues.length > 0 || before === undefined || after === undefined) return fail(issues);
 
-  const rows: ComparisonRow[] = [];
-  const notCompared: NotCompared[] = [];
-  const onlyIn: OnlyIn[] = [];
+  const out: Collected = { rows: [], notCompared: [], onlyIn: [], compared: [] };
   const crossModel = before.aggregate.model !== after.aggregate.model;
-  compareGroups(root, before, after, before.aggregate.groups, after.aggregate.groups, crossModel, primaryOf, {
-    rows,
-    notCompared,
-    onlyIn,
-  });
+  const context = { root, before, after, primaryOf, out };
+  compareGroups(context, before.aggregate.groups, after.aggregate.groups, crossModel);
   // Each slice against the other side's slice of its model (REQ-SCO-13), or said not to be compared.
   const models = (groups: readonly Group[]) => new Set(groups.map((group) => group.model));
   const beforeModels = models(before.aggregate.slices);
@@ -150,16 +157,12 @@ export function compareExecutions(
   for (const model of [...new Set([...beforeModels, ...afterModels])].sort()) {
     const mine = (side: Side) => side.aggregate.slices.filter((group) => group.model === model);
     if (beforeModels.has(model) && afterModels.has(model)) {
-      compareGroups(root, before, after, mine(before), mine(after), false, primaryOf, {
-        rows,
-        notCompared,
-        onlyIn: [],
-      });
+      compareGroups(context, mine(before), mine(after), false);
       continue;
     }
     const [present, absent] = beforeModels.has(model) ? [before, after] : [after, before];
     for (const group of mine(present)) {
-      notCompared.push({
+      out.notCompared.push({
         scenario: group.scenario,
         version: group.version,
         arm: group.arm,
@@ -175,9 +178,10 @@ export function compareExecutions(
     newer: named(after),
     order: 'maintainer',
     pins_differ: pinsDiffer(before.pins, after.pins),
-    rows,
-    not_compared: notCompared,
-    only_in: onlyIn,
+    compared: out.compared,
+    rows: out.rows,
+    not_compared: out.notCompared,
+    only_in: out.onlyIn,
   });
 }
 
@@ -205,6 +209,17 @@ function named(side: Side): ComparedExecution {
   };
 }
 
+/** What a comparison reads of an aggregate: anything else in it is not its business. */
+const aggregateShape = z
+  .object({
+    campaign: z.string(),
+    execution: z.number(),
+    model: z.string(),
+    groups: z.array(z.object({}).loose()),
+    slices: z.array(z.object({}).loose()),
+  })
+  .loose();
+
 /** One execution, read: its aggregate, its campaign file and when it ended; or why it cannot be compared. */
 function readSide(root: string, target: string): Result<Side> {
   if (target.startsWith(`${DRY_RUNS}/`)) return fail([{ path: target, message: 'a dry run is never compared' }]);
@@ -216,20 +231,29 @@ function readSide(root: string, target: string): Result<Side> {
   if (!existsSync(dir)) return fail([{ path: where, message: 'does not exist' }]);
   const file = join(dir, AGGREGATE_FILE);
   if (!existsSync(file)) return fail([{ path: where, message: 'is not aggregated: score it first' }]);
-  let aggregate: AggregateFile;
+  let parsed: unknown;
   try {
-    aggregate = JSON.parse(readFileSync(file, 'utf8')) as AggregateFile;
+    parsed = JSON.parse(readFileSync(file, 'utf8'));
   } catch (error) {
     return fail([{ path: `${where}/${AGGREGATE_FILE}`, message: `cannot be read: ${(error as Error).message}` }]);
   }
+  if (!aggregateShape.safeParse(parsed).success) {
+    return fail([{ path: `${where}/${AGGREGATE_FILE}`, message: 'is not an aggregate this comparison reads' }]);
+  }
+  // The pins that differ are listed from it (REQ-SCO-13): a campaign file that cannot be read is refused, never empty.
   const pins = readYamlFile(join(dir, 'campaign.yaml'));
+  if (!pins.ok || pins.value === null || typeof pins.value !== 'object') {
+    const why = pins.ok ? 'it holds no pins' : pins.issues.map((issue) => issue.message).join('; ');
+    return fail([{ path: `${where}/campaign.yaml`, message: `cannot be read: ${why}` }]);
+  }
   const record = readExecutionRecord(dir);
-  const ended = record.ok ? record.value?.ended : undefined;
+  if (!record.ok) return record;
+  const ended = record.value?.ended;
   return ok({
     target,
     dir,
-    aggregate,
-    pins: pins.ok && typeof pins.value === 'object' && pins.value !== null ? (pins.value as Record<string, unknown>) : {},
+    aggregate: parsed as AggregateFile,
+    pins: pins.value as Record<string, unknown>,
     ...(ended === undefined ? {} : { ended }),
   });
 }
@@ -238,19 +262,29 @@ interface Collected {
   readonly rows: ComparisonRow[];
   readonly notCompared: NotCompared[];
   readonly onlyIn: OnlyIn[];
+  readonly compared: ComparedGroup[];
 }
 
-/** Compare the groups of one model on each side: those in both, by scenario version and arm; the rest listed. */
+interface Context {
+  readonly root: string;
+  readonly before: Side;
+  readonly after: Side;
+  readonly primaryOf: PrimaryCategory;
+  readonly out: Collected;
+}
+
+/**
+ * Compare the groups of one model on each side: those in both, by scenario version and arm; the rest listed. A scenario
+ * version is compared only when every run of it recorded one hash on each side, the same; and when its primary
+ * category has a map of metrics.
+ */
 function compareGroups(
-  root: string,
-  before: Side,
-  after: Side,
+  context: Context,
   earlierGroups: readonly Group[],
   newerGroups: readonly Group[],
   crossModel: boolean,
-  primaryOf: PrimaryCategory,
-  out: Collected,
 ): void {
+  const { root, before, after, primaryOf, out } = context;
   const key = (group: Group) => `${group.scenario}@${group.version}/${group.arm}`;
   const newerBy = new Map(newerGroups.map((group) => [key(group), group]));
   const earlierBy = new Map(earlierGroups.map((group) => [key(group), group]));
@@ -260,7 +294,13 @@ function compareGroups(
   ] as const) {
     for (const group of groups) {
       if (!other.has(key(group))) {
-        out.onlyIn.push({ execution: side.target, scenario: group.scenario, version: group.version, arm: group.arm });
+        out.onlyIn.push({
+          execution: side.target,
+          scenario: group.scenario,
+          version: group.version,
+          arm: group.arm,
+          model: group.model,
+        });
       }
     }
   }
@@ -271,27 +311,45 @@ function compareGroups(
       (group) => group.scenario === scenario && group.version === version && newerBy.has(key(group)),
     );
     if (inBoth.length === 0) continue;
-    const earlierHash = hashOf(root, inBoth[0] as Group);
-    const newerHash = hashOf(root, newerBy.get(key(inBoth[0] as Group)) as Group);
-    if (earlierHash !== newerHash) {
-      for (const group of inBoth) {
-        out.notCompared.push({
-          scenario,
-          version,
-          arm: group.arm,
-          model: group.model,
-          reason:
-            `not compared: scenario hash ${earlierHash ?? 'unknown'} in ${before.target}, ` +
-            `${newerHash ?? 'unknown'} in ${after.target}`,
-        });
-      }
+    const notCompared = (reason: string) => {
+      for (const group of inBoth) out.notCompared.push({ scenario, version, arm: group.arm, model: group.model, reason });
+    };
+    const of = (groups: readonly Group[]) =>
+      groups.filter((group) => group.scenario === scenario && group.version === version);
+    const earlierHashes = hashesOf(root, of(earlierGroups));
+    const newerHashes = hashesOf(root, of(newerGroups));
+    if (earlierHashes.length !== 1 || newerHashes.length !== 1 || earlierHashes[0] !== newerHashes[0]) {
+      notCompared(
+        `not compared: scenario hash ${earlierHashes.join(', ')} in ${before.target}, ` +
+          `${newerHashes.join(', ')} in ${after.target}`,
+      );
       continue;
     }
-    const category = primaryOf(scenario, version) ?? '';
-    const entries = CATEGORY_MAP[category as MappedCategory] ?? [];
-    const baseline = (groups: ReadonlyMap<string, Group>) => groups.get(`${name}/baseline`);
-    const earlierBaseline = baseline(earlierBy);
-    const newerBaseline = baseline(newerBy);
+    const category = primaryOf(scenario, version);
+    if (category === undefined) {
+      notCompared(`not compared: scenario ${name} cannot be read from scenarios/`);
+      continue;
+    }
+    const entries = CATEGORY_MAP[category as MappedCategory];
+    if (entries === undefined) {
+      notCompared(`not compared: category ${category} has no map of metrics`);
+      continue;
+    }
+    for (const group of inBoth) {
+      const counterpart = newerBy.get(key(group)) as Group;
+      out.compared.push({
+        scenario,
+        version,
+        arm: group.arm,
+        model: crossModel ? `${group.model} → ${counterpart.model}` : group.model,
+      });
+    }
+    const earlierBaseline = earlierBy.get(`${name}/baseline`);
+    const newerBaseline = newerBy.get(`${name}/baseline`);
+    const missing = [
+      ...(earlierBaseline === undefined ? [before.target] : []),
+      ...(newerBaseline === undefined ? [after.target] : []),
+    ];
     for (const group of inBoth.filter((candidate) => candidate.arm !== 'baseline')) {
       const counterpart = newerBy.get(key(group)) as Group;
       for (const entry of entries) {
@@ -304,10 +362,19 @@ function compareGroups(
           metric: entry.id,
           cross_model: crossModel,
         };
-        const earlierSide = sideOf(entry.id, entry.better, group, earlierBaseline);
-        const newerSide = sideOf(entry.id, entry.better, counterpart, newerBaseline);
-        if (earlierSide === undefined || newerSide === undefined) {
-          out.rows.push({ ...common, note: 'not measured' });
+        // T7: a delta is taken against the execution's own baseline, or not at all.
+        if (missing.length > 0) {
+          out.rows.push({ ...common, note: `no baseline in ${missing.join(' and ')}` });
+          continue;
+        }
+        const earlierSide = sideOf(entry.id, entry.better, group, earlierBaseline as Group);
+        const newerSide = sideOf(entry.id, entry.better, counterpart, newerBaseline as Group);
+        if (typeof earlierSide === 'string' || typeof newerSide === 'string') {
+          const notes = [
+            ...(typeof earlierSide === 'string' ? [placed(earlierSide, before.target)] : []),
+            ...(typeof newerSide === 'string' ? [placed(newerSide, after.target)] : []),
+          ];
+          out.rows.push({ ...common, note: notes.join('; ') });
           continue;
         }
         const raw = newerSide.delta - earlierSide.delta;
@@ -322,39 +389,60 @@ function compareGroups(
   }
 }
 
-/** One side of a row: `group` against its own execution's `baseline` on `metric`; undefined when not measured. */
-function sideOf(
-  metric: MetricId,
-  better: 'higher' | 'lower',
-  group: Group,
-  baseline: Group | undefined,
-): ComparedSide | undefined {
-  if (baseline === undefined) return undefined;
-  const armFigures = readMetric(metric, group);
-  const baseFigures = readMetric(metric, baseline);
-  if (armFigures === undefined || baseFigures === undefined) return undefined;
-  if (armFigures.values.length === 0 || baseFigures.values.length === 0) return undefined;
-  const arm = summarize(armFigures);
-  const base = summarize(baseFigures);
-  const raw = arm.mean - base.mean;
-  const delta = Math.abs(raw) < EPSILON ? 0 : raw;
-  const outcome = delta === 0 ? 'same' : delta > 0 === (better === 'higher') ? 'better' : 'worse';
-  const value = ({ n, mean, min, max }: ComparedValue): ComparedValue => ({ n, mean, min, max });
-  return { arm: value(arm), baseline: value(base), delta, certainty: certaintyOf(base, arm, outcome) };
+/** A side's note, with the execution it is about: `not comparable in <target>: …`. */
+function placed(note: string, target: string): string {
+  const colon = note.indexOf(': ');
+  return colon < 0 ? `${note} in ${target}` : `${note.slice(0, colon)} in ${target}${note.slice(colon)}`;
 }
 
-/** The scenario hash a group's first run recorded (REQ-FMT-09); undefined when it cannot be read. */
-function hashOf(root: string, group: Group): string | undefined {
-  const [run] = group.runs;
-  if (run === undefined) return undefined;
-  try {
-    const record = JSON.parse(readFileSync(join(root, 'results', run, 'run.json'), 'utf8')) as {
-      scenario_hash?: unknown;
-    };
-    return typeof record.scenario_hash === 'string' ? record.scenario_hash : undefined;
-  } catch {
-    return undefined;
+/**
+ * One side of a row: `group` against its own execution's `baseline` on `metric`, by `compare` (REQ-RES-03 as amended);
+ * or why there is none, in the site's words: "not measured", or M-E1's "not comparable" when a run did not reach a
+ * directive check's step, and "no comparison: the baseline is not comparable" when the baseline's did not.
+ */
+function sideOf(metric: MetricId, better: 'higher' | 'lower', group: Group, baseline: Group): ComparedSide | string {
+  const armFigures = readMetric(metric, group);
+  const baseFigures = readMetric(metric, baseline);
+  if (armFigures === undefined || baseFigures === undefined) return 'not measured';
+  if (armFigures.unreached !== undefined && armFigures.unreached.length > 0) {
+    const why = armFigures.unreached
+      .map((entry) => {
+        const run = entry.run.split('/').at(-1) ?? entry.run;
+        return entry.step === undefined
+          ? `${run} was not scored with the directive checks`
+          : `${run} did not reach step ${entry.step}`;
+      })
+      .join('; ');
+    return `not comparable: ${why}`;
   }
+  if (baseFigures.unreached !== undefined && baseFigures.unreached.length > 0) {
+    return 'no comparison: the baseline is not comparable';
+  }
+  if (armFigures.values.length === 0 || baseFigures.values.length === 0) return 'not measured';
+  const result = compare(better, baseFigures, armFigures);
+  const value = ({ n, mean, min, max }: ComparedValue): ComparedValue => ({ n, mean, min, max });
+  return { arm: value(result.other), baseline: value(result.baseline), delta: result.delta, certainty: result.certainty };
+}
+
+/**
+ * Every scenario hash the runs of `groups` recorded (REQ-FMT-09), sorted, once each; `unknown` for a run whose record
+ * cannot be read or names none.
+ */
+function hashesOf(root: string, groups: readonly Group[]): string[] {
+  const hashes = new Set<string>();
+  for (const run of groups.flatMap((group) => group.runs)) {
+    let hash: string | undefined;
+    try {
+      const record = JSON.parse(readFileSync(join(root, 'results', run, 'run.json'), 'utf8')) as {
+        scenario_hash?: unknown;
+      };
+      hash = typeof record.scenario_hash === 'string' ? record.scenario_hash : undefined;
+    } catch {
+      hash = undefined;
+    }
+    hashes.add(hash ?? 'unknown');
+  }
+  return [...hashes].sort();
 }
 
 /** A value of a campaign file at `path`, as a string a person reads; `none` when absent. */
@@ -362,6 +450,10 @@ function pinAt(pins: Record<string, unknown>, path: readonly string[]): string {
   let node: unknown = pins;
   for (const key of path) node = node !== null && typeof node === 'object' ? (node as Record<string, unknown>)[key] : undefined;
   if (node === undefined || node === null) return 'none';
+  // The slices' models, in the file's order.
+  if (Array.isArray(node)) {
+    return node.map((slice) => String((slice as { model?: unknown }).model ?? '')).join(', ') || 'none';
+  }
   if (typeof node === 'object') {
     const { tool, version, commit } = node as { tool?: unknown; version?: unknown; commit?: unknown };
     return [tool, version, commit].filter((part) => part !== undefined).map(String).join(' ');
@@ -383,10 +475,13 @@ function pinsDiffer(before: Record<string, unknown>, after: Record<string, unkno
   const union = (a: readonly string[], b: readonly string[]) => [...new Set([...a, ...b])].sort();
   const paths: string[][] = [
     ['models', 'default'],
+    ['models', 'slices'],
     ['agent', 'name'],
     ['agent', 'version'],
     ...union(effortModels(before), effortModels(after)).map((model) => ['agent', 'effort', model]),
     ...union(keysOf(before, 'harnesses'), keysOf(after, 'harnesses')).map((arm) => ['harnesses', arm]),
+    // An arm's files (REQ-FMT-13): a docs control or the baseline has no harness, and changes through its digest.
+    ...union(keysOf(before, 'arm_digests'), keysOf(after, 'arm_digests')).map((arm) => ['arm_digests', arm]),
   ];
   return paths.flatMap((path) => {
     const [earlier, newer] = [pinAt(before, path), pinAt(after, path)];

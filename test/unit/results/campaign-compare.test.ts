@@ -96,7 +96,7 @@ describe('compareExecutions (REQ-SCO-13, task-083)', () => {
         reason: `not compared: no slice of model other-model in ${NEWER}`,
       },
     ]);
-    expect(result.value.only_in).toEqual([{ execution: NEWER, scenario: 'TD', version: '1.0', arm: 'baseline' }, { execution: NEWER, scenario: 'TD', version: '1.0', arm: 'wingfoil' }]);
+    expect(result.value.only_in).toEqual([{ execution: NEWER, scenario: 'TD', version: '1.0', arm: 'baseline', model: 'fake-model' }, { execution: NEWER, scenario: 'TD', version: '1.0', arm: 'wingfoil', model: 'fake-model' }]);
     // The baseline has no delta of its own: only the other arms' rows, one per metric of C's map
     expect(result.value.rows.map((row) => `${row.arm} ${row.metric}`)).toEqual(['wingfoil M-Q1', 'wingfoil M-K1']);
     expect(result.value.rows.every((row) => row.cross_model === false)).toBe(true);
@@ -232,7 +232,9 @@ describe('compareExecutions over hand-built aggregates (task-083 review)', () =>
     ]);
     const [e1] = compared(root).rows.filter((row) => row.metric === 'M-E1');
     expect(e1).toMatchObject({
-      note: expect.stringMatching(/^not comparable: .*r2 did not reach step 3; no comparison: the baseline is not comparable in abcdef012345\/1$/),
+      note:
+        'not comparable in 0123456789ab/1: r2 did not reach step 3; ' +
+        'no comparison in abcdef012345/1: the baseline is not comparable',
     });
   });
 
