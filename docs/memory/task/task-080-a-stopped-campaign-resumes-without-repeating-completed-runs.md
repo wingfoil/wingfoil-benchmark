@@ -179,3 +179,25 @@ leftover is reported by its run, as today (bug-003).
   resume is rare.
 
 ## Review notes
+
+### Review
+
+**Round 1**: a fresh, independent, read-only agent (a `Plan` subagent), on `e928ace`. Verdict: not clean, with no
+blocker. Outcomes:
+1. should-fix: a resume regenerated a docs control's `generated/` rules, which a later setup may not reproduce byte for
+   byte → **fixed**: a resume keeps the rules already there (`fca1749` red test, `695f48b` fix).
+2. should-fix: a stopped container left behind made the re-run fail at once and counted a phantom attempt → **fixed**:
+   the resume refuses any leftover container of the execution, with the `docker rm` hint, before anything moves. This
+   departs from the Design's "a stopped leftover is reported by its run", which counted attempts that never ran.
+3. should-fix: the earlier attempts' transcripts were neither committed (git-ignored) nor packed. REQ-CLI-11 as amended
+   in 1.26 packs them, and no other task planned it → **fixed** in `transcripts pack`, attempts first, then the run's own.
+4. should-fix: a stopped execution that already had `aggregate.json` was told to resume, which would be refused →
+   **fixed**: it is aggregated again, as an already aggregated execution.
+5. nit: an unreadable `run.json` left `execution.json` `running` → **fixed**: the runs are read before the record is
+   touched.
+6. nit: the log did not break down the kept runs by outcome → **fixed**, and tested.
+7. nit: a deprecated task listing a bug would block the halves rule → **no change**: the task machine has no deprecated
+   or cancelled state (`.wingfoil/memory.yaml`).
+8. nit: a concurrent invocation still preparing has no container to detect → **fixed** as far as it can be: a warning
+   when the execution says `running`.
+
