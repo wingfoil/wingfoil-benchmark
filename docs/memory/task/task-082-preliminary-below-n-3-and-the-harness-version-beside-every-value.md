@@ -88,4 +88,37 @@ n ≥ 3 rule, is green; v0.1's published execution re-renders with its compariso
   - the method page's rule, if stated there.
 ## Execution notes
 
+**WingFoil commands, declared vs observed:** `npx wingfoil memory submit task-082-…` on main (`bde1e21`), after the
+Design's own commit (`8369e7a`, W-01): declared backlog → in-progress; observed `{"from": "backlog", "to":
+"in-progress"}`, exit 0, one `wf(task): submit …` commit (W-14).
+
+**Build** on `task/task-082` (worktree `../WingFoil2-Benchmark-wt/task-082`, its own `npm ci`):
+- red first:
+  - `4509b8c` amends the @F5.5 acceptance tests. The headline reads `n < 3`. A dedicated site of TC has two runs a
+    side, the wingfoil runs recording `wingfoil 0.2.2` at `12537b6`, and must read `preliminary` with the harness
+    beside wingfoil.
+  - It also adds unit tests for `compare` at n = 1, 2 and 3, the control comparison at n = 2 (`aggregate.test.ts`,
+    whose `within variance` at n = 2 is amended), `harnessLabel`, the headline and the method page's rule. All of them
+    failed for the expected reasons.
+- `44a5054` holds the implementation and `site-content/method.md`'s `#preliminary`, `#headline` and
+  `#beyond-variance` paragraphs.
+- Checks, run niced with 2 workers: `tsc` and `npm run lint` are clean; `test/unit` and `test/acceptance` are green
+  (1483 passed, 8 skipped).
+
+**v0.1's published execution re-rendered** ("Done"): `npm run build`, then `node dist/cli/main.js site build
+c82a5e74885b/2` in the worktree (`site/` is git-ignored, nothing published), giving 17 pages.
+- C (S1, n = 3 a side) keeps its four comparisons `within variance`.
+- D, E and F (n = 1) were already preliminary. Their headline parenthesis now reads `(preliminary: n < 3 in D, E and
+  F)` for both arms.
+- No v0.1 comparison has n = 2, so none changes certainty.
+- The wingfoil column and every wingfoil line read `wingfoil 12537b6`. v0.1's runs recorded no harness version, only
+  its commit.
+
+**Decisions taken in the build, inside the Design:**
+- The value badge stays at n = 1 (REQ-RES-03's unamended "preliminary at n = 1", and the scenario's words). A
+  comparison at n = 2 says `preliminary` beside its outcome, as task-045 made a preliminary comparison of a value with
+  n > 1 say.
+- The method page does not describe the harness label. No anchor is added, since `method-statements.test.ts` registers
+  every anchor with its source, and the label is shown where it applies.
+
 ## Review notes
