@@ -32,13 +32,18 @@ import type {
   Result,
   Scenario,
 } from '../core/index.js';
-import { executionResumable, nextExecution, writeExecutionRecord } from '../results/index.js';
+import {
+  campaignSpendingEur,
+  executionResumable,
+  nextExecution,
+  writeExecutionRecord,
+} from '../results/index.js';
 import type { ExecutionRecord, StopReason } from '../results/index.js';
 import { armDigest, missingCapabilities, RULES_SOURCE_ARM, rulesGeneratorOf } from '../arms/index.js';
 import { prepareWorkspace } from '../scenario/index.js';
 
 import type { CheckedCampaign } from './campaign.js';
-import { campaignKeys } from './estimate.js';
+import { campaignKeys, keyName } from './estimate.js';
 import { prepareHarnesses } from './harness.js';
 import { AGENT_IDENTITY } from './identity.js';
 import { prepareProjectRules, PROJECT_RULES } from './project-rules.js';
@@ -485,7 +490,12 @@ export async function runPlan(plan: RunPlan, options: RunnerOptions, resume?: nu
   // Read before the record is touched: a run record that cannot be read leaves the execution as it was.
   const { runs: planned, kept } =
     resume === undefined ? { runs: plan.runs, kept: [] } : runsToResume(plan, resultsDir, options);
-  const spentBefore = resume === undefined ? 0 : recordedSpendingEur(join(resultsDir, 'runs'), plan.pins);
+  // What every execution of the campaign spent (REQ-RUN-08, REQ-CLI-02 as amended, task-081): neither a resume nor a
+  // new execution gets a fresh ceiling. A dry run is no campaign's execution, and starts from nothing.
+  const spentBefore =
+    'campaign' in plan.origin
+      ? campaignSpendingEur(plan.resultsRoot, plan.key, plan.pins.currency.usd_to_eur)
+      : 0;
   recordExecution({ state: 'running' });
   let ran: { runs: RunResult[]; stop?: { reason: Exclude<StopReason, 'error'>; detail: string } };
   try {
@@ -568,6 +578,25 @@ function runsToResume(
 }
 
 /**
+ * How many runs of each key a resume of execution `execution` would run (task-081), by `keyName`: what the budget guard
+ * prices for a resume (REQ-CLI-03 as amended). Reads the execution's records only; logs and runs nothing.
+ */
+export function runsLeftToResume(checked: CheckedCampaign, execution: number): Map<string, number> {
+  const plan = campaignPlan(checked);
+  const { runs } = runsToResume(
+    plan,
+    join(plan.resultsRoot, plan.key, String(execution)),
+    {} as RunnerOptions,
+  );
+  const left = new Map<string, number>();
+  for (const run of runs) {
+    const name = keyName({ scenario: run.scenario, arm: run.arm.name, model: run.model });
+    left.set(name, (left.get(name) ?? 0) + 1);
+  }
+  return left;
+}
+
+/**
  * Refuse to resume an execution that still has a container (task-080): a running one means another invocation may be
  * running it, and two would write the same records; a stopped one was left behind by an earlier run of it, and a re-run
  * of that run would fail again at once and count an attempt that never ran (REQ-FMT-06: `attempts` is the times it
@@ -586,29 +615,6 @@ async function refuseLeftovers(plan: RunPlan, execution: number, options: Runner
       : `execution ${execution} of this ${plan.noun} still has the container ${left.name}, left behind by an ` +
           `earlier run of it (bug-003). Remove it with: docker rm --force ${left.name}`,
   );
-}
-
-/**
- * What the runs recorded under `runsDir` spent, in EUR, every attempt included (task-080): each step at what it
- * reported, or at its bound when it was killed before reporting, as the runner counts it (task-024).
- */
-function recordedSpendingEur(runsDir: string, pins: RunPins): number {
-  if (!existsSync(runsDir)) return 0;
-  let total = 0;
-  for (const entry of readdirSync(runsDir, { withFileTypes: true, recursive: true })) {
-    if (!entry.isFile() || entry.name !== 'run.json') continue;
-    const run = readRecord(join(entry.parentPath, entry.name), dirname(runsDir)) as {
-      steps?: { usage?: { costEur?: number }; cost_bound_usd?: number }[];
-    };
-    total += spentEur(
-      (run.steps ?? []).map((step) => ({
-        usage: { ...NO_USAGE, costEur: step.usage?.costEur ?? 0 },
-        ...(step.cost_bound_usd === undefined ? {} : { costBoundUsd: step.cost_bound_usd }),
-      })),
-      pins,
-    );
-  }
-  return total;
 }
 
 /**

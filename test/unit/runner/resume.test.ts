@@ -290,7 +290,7 @@ describe('checkResume (REQ-RUN-19, task-080)', () => {
 describe('the ceiling across executions (REQ-RUN-08, REQ-CLI-02 as amended, task-081)', () => {
   it('counts what every execution of the campaign spent, attempts and bounds included', async () => {
     const checked = campaign(2);
-    const first = await runCampaign(checked, doubles({ usageOf: () => usage(0.25) }));
+    await runCampaign(checked, doubles({ usageOf: () => usage(0.25) }));
     const second = await runCampaign(checked, failing());
     await runCampaign(checked, doubles({ usageOf: () => usage(0.5) }), { resume: second.execution });
 

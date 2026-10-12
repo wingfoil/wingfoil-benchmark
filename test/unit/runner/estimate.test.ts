@@ -39,6 +39,11 @@ function campaign(extra: Record<string, unknown> = {}): { root: string; checked:
   return { root, checked: checked.value };
 }
 
+/** A figure to 6 decimals: a margin of 35 % is not exact in binary floating point. */
+function round(value: number): number {
+  return Number(value.toFixed(6));
+}
+
 function hashOf(checked: CheckedCampaign): string {
   return checked.scenarios[0]?.hash ?? '';
 }
@@ -54,24 +59,30 @@ describe('estimateCampaign (F1.2, task-022)', () => {
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
+    // One dry run each: its cost, and 35 % above it as the high figure (REQ-CLI-02 as amended in 1.26, task-081).
     expect(
-      result.value.lines.map(({ arm, model, repetitions, unitUsd, costUsd }) => ({
+      result.value.lines.map(({ arm, model, repetitions, unit, lowUsd, highUsd }) => ({
         arm,
         model,
         repetitions,
-        unitUsd,
-        costUsd,
+        unitUsd: unit.lowUsd,
+        lowUsd,
+        highUsd: round(highUsd),
       })),
     ).toEqual([
-      { arm: 'baseline', model: 'fake-model', repetitions: 2, unitUsd: 0.5, costUsd: 1 },
-      { arm: 'wingfoil', model: 'fake-model', repetitions: 2, unitUsd: 1.5, costUsd: 3 },
+      { arm: 'baseline', model: 'fake-model', repetitions: 2, unitUsd: 0.5, lowUsd: 1, highUsd: 1.35 },
+      { arm: 'wingfoil', model: 'fake-model', repetitions: 2, unitUsd: 1.5, lowUsd: 3, highUsd: 4.05 },
     ]);
     // The campaign's rate, whatever rate the dry run's profile had.
-    expect(result.value).toMatchObject({ totalUsd: 4, totalEur: 2, rate: 0.5 });
+    expect({
+      ...result.value,
+      highUsd: round(result.value.highUsd),
+      highEur: round(result.value.highEur),
+    }).toMatchObject({ lowUsd: 4, highUsd: 5.4, highEur: 2.7, rate: 0.5 });
     expect(formatEstimate(result.value, root)).toEqual([
-      'T3@1.0 baseline fake-model: 0.5000 USD × 2 = 1.0000 USD (results/dry-runs/1)',
-      'T3@1.0 wingfoil fake-model: 1.5000 USD × 2 = 3.0000 USD (results/dry-runs/2)',
-      'estimate: 4.0000 USD, 2.0000 EUR at 0.5 EUR/USD, API-equivalent',
+      'T3@1.0 baseline fake-model: 0.5000 USD + 35 % margin = 0.6750 USD × 2 = 1.3500 USD (1 dry run: results/dry-runs/1)',
+      'T3@1.0 wingfoil fake-model: 1.5000 USD + 35 % margin = 2.0250 USD × 2 = 4.0500 USD (1 dry run: results/dry-runs/2)',
+      'estimate: low 4.0000, mean 4.0000, high 5.4000 USD; high 2.7000 EUR at 0.5 EUR/USD, API-equivalent',
     ]);
   });
 
@@ -98,7 +109,7 @@ describe('estimateCampaign (F1.2, task-022)', () => {
     expect(
       result.ok && result.value.lines.map((line) => `${line.arm}/${line.model}×${line.repetitions}`),
     ).toEqual(['baseline/fake-model×2', 'wingfoil/fake-model×2', 'wingfoil/other-model×1']);
-    expect(result.ok && result.value.totalUsd).toBe(9);
+    expect(result.ok && result.value.lowUsd).toBe(9);
   });
 
   it('names every key without a completed dry run of the current content, all at once', () => {
@@ -143,7 +154,7 @@ describe('estimateCampaign (F1.2, task-022)', () => {
     // The same effort counts; a dry run that recorded none counts only for a campaign that pins none.
     writeStoredDryRun(root, 2, { hash: hashOf(checked), arm: 'baseline', stepCostsUsd: [2], effort: 'high' });
     const counted = estimateCampaign(checked);
-    expect(counted.ok && counted.value.lines[0]?.dryRun.execution).toBe(2);
+    expect(counted.ok && counted.value.lines[0]?.dryRuns.map((run) => run.execution)).toEqual([2]);
     const unpinned = campaign({ arms: ['baseline'], harnesses: {} });
     writeStoredDryRun(unpinned.root, 1, {
       hash: hashOf(unpinned.checked),
@@ -193,8 +204,10 @@ describe('estimateCampaign (F1.2, task-022)', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(formatEstimate(result.value, root).slice(0, 2)).toEqual([
-      'T3@1.0 baseline fake-model: 1.0000 USD × 2 = 2.0000 USD (results/dry-runs/1; agent fake 0.9.0, the campaign pins 1.0.0)',
-      'T3@1.0 wingfoil fake-model: 1.0000 USD × 2 = 2.0000 USD (results/dry-runs/2; wingfoil 3df305e, the campaign pins abc1234)',
+      'T3@1.0 baseline fake-model: 1.0000 USD + 35 % margin = 1.3500 USD × 2 = 2.7000 USD ' +
+        '(1 dry run: results/dry-runs/1; agent fake 0.9.0, the campaign pins 1.0.0)',
+      'T3@1.0 wingfoil fake-model: 1.0000 USD + 35 % margin = 1.3500 USD × 2 = 2.7000 USD ' +
+        '(1 dry run: results/dry-runs/2; wingfoil 3df305e, the campaign pins abc1234)',
     ]);
   });
 
@@ -206,7 +219,7 @@ describe('estimateCampaign (F1.2, task-022)', () => {
 
     const result = estimateCampaign(checked);
     expect(result.ok && formatEstimate(result.value, root)[1]).toBe(
-      'T3@1.0 wingfoil fake-model: 1.0000 USD × 2 = 2.0000 USD (results/dry-runs/2)',
+      'T3@1.0 wingfoil fake-model: 1.0000 USD + 35 % margin = 1.3500 USD × 2 = 2.7000 USD (1 dry run: results/dry-runs/2)',
     );
   });
 });
@@ -223,7 +236,10 @@ describe('the estimate as a range (REQ-CLI-02 as amended in 1.26, task-081)', ()
     if (!result.ok) throw new Error(JSON.stringify(result.issues));
 
     expect(result.value).toMatchObject({ lowUsd: 1, meanUsd: 2, highUsd: 3, highEur: 1.5, rate: 0.5 });
-    expect(result.value.lines[0]).toMatchObject({ lowUsd: 0.5, meanUsd: 1, highUsd: 1.5, margin: false });
+    expect(result.value.lines[0]).toMatchObject({
+      unit: { lowUsd: 0.5, meanUsd: 1, highUsd: 1.5 },
+      margin: false,
+    });
     expect(formatEstimate(result.value, root)).toEqual([
       'T3@1.0 baseline fake-model: low 0.5000, mean 1.0000, high 1.5000 USD × 2 = 3.0000 USD ' +
         '(3 dry runs: results/dry-runs/3, results/dry-runs/2, results/dry-runs/1)',
@@ -238,7 +254,7 @@ describe('the estimate as a range (REQ-CLI-02 as amended in 1.26, task-081)', ()
     const result = estimateCampaign(checked);
     if (!result.ok) throw new Error(JSON.stringify(result.issues));
 
-    expect(result.value).toMatchObject({ lowUsd: 2, meanUsd: 2, highUsd: 2.7 });
+    expect([result.value.lowUsd, result.value.meanUsd, round(result.value.highUsd)]).toEqual([2, 2, 2.7]);
     expect(formatEstimate(result.value, root)[0]).toBe(
       'T3@1.0 baseline fake-model: 1.0000 USD + 35 % margin = 1.3500 USD × 2 = 2.7000 USD (1 dry run: results/dry-runs/1)',
     );
@@ -252,6 +268,6 @@ describe('the estimate as a range (REQ-CLI-02 as amended in 1.26, task-081)', ()
     if (!result.ok) throw new Error(JSON.stringify(result.issues));
 
     expect(result.value.lines.map((line) => [line.arm, line.repetitions])).toEqual([['baseline', 1]]);
-    expect(result.value.highUsd).toBe(1.35);
+    expect(round(result.value.highUsd)).toBe(1.35);
   });
 });

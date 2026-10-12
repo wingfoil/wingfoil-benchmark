@@ -1,5 +1,5 @@
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { basename, dirname, join } from 'node:path';
+import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { basename, dirname, join, relative } from 'node:path';
 import { z } from 'zod';
 
 import { fail, ok } from '../core/index.js';
@@ -140,4 +140,45 @@ export function plannedRuns(campaign: unknown): string[] | undefined {
     }
   }
   return names;
+}
+
+/**
+ * What every execution of campaign `campaignId` spent, in EUR at `usdToEur` (REQ-CLI-02 as amended in 1.26, task-081):
+ * the sum of {@link executionSpendingEur} over `results/<campaign-id>/<n>/`.
+ */
+export function campaignSpendingEur(resultsRoot: string, campaignId: string, usdToEur: number): number {
+  const root = join(resultsRoot, campaignId);
+  if (!existsSync(root)) return 0;
+  return readdirSync(root)
+    .filter((name) => /^[1-9]\d*$/.test(name))
+    .reduce((total, name) => total + executionSpendingEur(join(root, name), usdToEur), 0);
+}
+
+/**
+ * What the runs recorded in the execution `executionDir` spent, in EUR, every earlier attempt included (task-080,
+ * task-081): each step at what it reported, or at its bound when it was killed before reporting, as the runner counts
+ * it (task-024). A `run.json` that cannot be read is an error naming it.
+ */
+export function executionSpendingEur(executionDir: string, usdToEur: number): number {
+  const runsDir = join(executionDir, 'runs');
+  if (!existsSync(runsDir)) return 0;
+  let total = 0;
+  for (const entry of readdirSync(runsDir, { withFileTypes: true, recursive: true })) {
+    if (!entry.isFile() || entry.name !== 'run.json') continue;
+    const file = join(entry.parentPath, entry.name);
+    let run: { steps?: { usage?: { costEur?: unknown }; cost_bound_usd?: unknown }[] };
+    try {
+      run = JSON.parse(readFileSync(file, 'utf8')) as typeof run;
+    } catch (error) {
+      throw new Error(`${relative(dirname(dirname(executionDir)), file)} cannot be read: ${(error as Error).message}`, {
+        cause: error,
+      });
+    }
+    for (const step of run.steps ?? []) {
+      const reported = typeof step.usage?.costEur === 'number' ? step.usage.costEur : 0;
+      const bound = typeof step.cost_bound_usd === 'number' ? step.cost_bound_usd * usdToEur : 0;
+      total += Math.max(reported, bound);
+    }
+  }
+  return total;
 }

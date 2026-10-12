@@ -68,12 +68,32 @@ export function latestDryRun(resultsRoot: string, key: DryRunKey): DryRunRecord 
  * an unpriced cost is not one (task-069).
  */
 export function findDryRun(resultsRoot: string, key: DryRunKey): DryRunLookup {
+  const { records, skipped } = findDryRuns(resultsRoot, key);
+  const [record] = records;
+  if (record !== undefined) return { record };
+  return skipped === undefined ? {} : { skipped };
+}
+
+/** Every dry run that counts for a key (task-081), newest first, and why the newest candidate did not, if it did not. */
+export interface DryRunsLookup {
+  readonly records: readonly DryRunRecord[];
+  /** For the newest completed dry run of the version that was skipped: `dry run <n> …`, why. */
+  readonly skipped?: string;
+}
+
+/**
+ * Every dry run that counts for `key` (REQ-CLI-02 as amended in 1.26, task-081), newest first, by
+ * {@link findDryRun}'s rules: marked a dry run, completed, the key's hash, its effort and a priced cost. The model is
+ * part of a dry run's path, so a key is never priced from another model's.
+ */
+export function findDryRuns(resultsRoot: string, key: DryRunKey): DryRunsLookup {
   const root = join(resultsRoot, DRY_RUNS);
-  if (!existsSync(root)) return {};
+  if (!existsSync(root)) return { records: [] };
   const executions = readdirSync(root)
     .filter((name) => EXECUTION.test(name))
     .map(Number)
     .sort((a, b) => b - a);
+  const records: DryRunRecord[] = [];
   let skipped: string | undefined;
   for (const execution of executions) {
     const dir = join(root, String(execution));
@@ -83,28 +103,27 @@ export function findDryRun(resultsRoot: string, key: DryRunKey): DryRunLookup {
     if (run.dry_run !== true || run.outcome !== 'completed' || run.scenario_hash !== key.hash) continue;
     const ran = typeof run.effort === 'string' ? run.effort : 'none';
     if (ran !== (key.effort ?? 'none')) {
-      skipped ??= `dry run ${execution} ran at effort ${ran}`;
+      if (records.length === 0) skipped ??= `dry run ${execution} ran at effort ${ran}`;
       continue;
     }
     const unpriced = unpricedModels(run);
     if (unpriced.length > 0) {
-      skipped ??= `dry run ${execution}: its cost was not priced by the agent, ${unpriced.join(', ')}`;
+      if (records.length === 0)
+        skipped ??= `dry run ${execution}: its cost was not priced by the agent, ${unpriced.join(', ')}`;
       continue;
     }
     const stepCostsUsd = (run.steps ?? []).map((step) => numberOf(step.usage?.costUsd));
     const commit = run.harness?.commit;
-    return {
-      record: {
-        execution,
-        dir,
-        costUsd: stepCostsUsd.reduce((total, cost) => total + cost, 0),
-        stepCostsUsd,
-        agent: { name: String(run.agent?.name), version: String(run.agent?.version) },
-        ...(typeof commit === 'string' ? { harnessCommit: commit } : {}),
-      },
-    };
+    records.push({
+      execution,
+      dir,
+      costUsd: stepCostsUsd.reduce((total, cost) => total + cost, 0),
+      stepCostsUsd,
+      agent: { name: String(run.agent?.name), version: String(run.agent?.version) },
+      ...(typeof commit === 'string' ? { harnessCommit: commit } : {}),
+    });
   }
-  return skipped === undefined ? {} : { skipped };
+  return { records, ...(records.length === 0 && skipped !== undefined ? { skipped } : {}) };
 }
 
 /** `<model> (<basis>)` for each model of any step priced at a basis other than `list` (bug-016), sorted. */
