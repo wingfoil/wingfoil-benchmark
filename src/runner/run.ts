@@ -545,7 +545,7 @@ export async function runPlan(plan: RunPlan, options: RunnerOptions, resume?: nu
 function runsToResume(
   plan: RunPlan,
   resultsDir: string,
-  options: RunnerOptions,
+  options: Pick<RunnerOptions, 'log'>,
 ): { runs: PlannedRun[]; kept: string[] } {
   const runs: PlannedRun[] = [];
   const kept: string[] = [];
@@ -559,7 +559,7 @@ function runsToResume(
       runs.push(planned);
       continue;
     }
-    const outcome = String((readRecord(file, resultsDir) as { outcome?: unknown }).outcome);
+    const outcome = String((readRecord(file, dirname(dirname(resultsDir))) as { outcome?: unknown }).outcome);
     if (RUN_AGAIN.has(outcome)) {
       count(outcome);
       runs.push(planned);
@@ -583,11 +583,7 @@ function runsToResume(
  */
 export function runsLeftToResume(checked: CheckedCampaign, execution: number): Map<string, number> {
   const plan = campaignPlan(checked);
-  const { runs } = runsToResume(
-    plan,
-    join(plan.resultsRoot, plan.key, String(execution)),
-    {} as RunnerOptions,
-  );
+  const { runs } = runsToResume(plan, join(plan.resultsRoot, plan.key, String(execution)), {});
   const left = new Map<string, number>();
   for (const run of runs) {
     const name = keyName({ scenario: run.scenario, arm: run.arm.name, model: run.model });
@@ -639,7 +635,7 @@ function nextAttempt(outputDir: string): number {
   return earlier + 2;
 }
 
-/** A run's `run.json`, or an error naming it under `resultsDir`: a resume reads every one before it starts. */
+/** A run's `run.json`, or an error naming it under `resultsDir` (`results/`): a resume reads every one before it starts. */
 function readRecord(file: string, resultsDir: string): unknown {
   try {
     return JSON.parse(readFileSync(file, 'utf8'));

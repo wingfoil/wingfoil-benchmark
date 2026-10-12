@@ -255,11 +255,14 @@ async function runCampaignCommand(
   const rate = spec.currency.usd_to_eur;
   // What it expects to spend, before anything is built (REQ-NFR-06), and the budget guard's first two
   // refusals (F1.3, task-023): a campaign whose cost is unknown, and one above its ceiling, never start.
-  // A resume prices what it has left to run only (REQ-CLI-03 as amended, task-081).
-  const estimate = estimateCampaign(
-    checked.value,
-    resume === undefined ? undefined : runsLeftToResume(checked.value, resume.value),
-  );
+  // A resume prices what it has left to run only (REQ-CLI-03 as amended, task-081), read from its records.
+  let left: Map<string, number> | undefined;
+  try {
+    left = resume === undefined ? undefined : runsLeftToResume(checked.value, resume.value);
+  } catch (error) {
+    return report([{ path: 'campaign', message: NOT_STARTED + reasonOf(error) }], io);
+  }
+  const estimate = estimateCampaign(checked.value, left);
   if (!estimate.ok) {
     io.stdout(`estimate: not available, ${count(estimate.issues.length, 'dry run')} missing\n`);
     return report(
@@ -271,7 +274,11 @@ async function runCampaignCommand(
   io.stdout(`${formatted[formatted.length - 1] ?? ''}\n`);
   // The budget guard's figure (REQ-CLI-03 as amended, task-081): every execution's spending plus the high estimate.
   const guard = budgetGuard(checked.value, estimate.value);
-  if (!guard.ok) return report(guard.issues, io);
+  if (!guard.ok)
+    return report(
+      guard.issues.map((issue) => ({ ...issue, message: NOT_STARTED + issue.message })),
+      io,
+    );
   io.stdout(guard.value.lines.map((line) => `${line}\n`).join(''));
   const { warn_eur, ceiling_eur } = spec.budget;
   if (guard.value.eur > ceiling_eur) {

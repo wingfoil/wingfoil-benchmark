@@ -167,13 +167,15 @@ export function executionSpendingEur(executionDir: string, usdToEur: number): nu
     if (!entry.isFile() || entry.name !== 'run.json') continue;
     const file = join(entry.parentPath, entry.name);
     let run: { steps?: { usage?: { costEur?: unknown }; cost_bound_usd?: unknown }[] };
+    const unreadable = (reason: string, cause?: unknown) =>
+      new Error(`${relative(dirname(dirname(executionDir)), file)} cannot be read: ${reason}`, { cause });
     try {
       run = JSON.parse(readFileSync(file, 'utf8')) as typeof run;
     } catch (error) {
-      throw new Error(`${relative(dirname(dirname(executionDir)), file)} cannot be read: ${(error as Error).message}`, {
-        cause: error,
-      });
+      throw unreadable((error as Error).message, error);
     }
+    // A record that parses to anything but an object is no record either (task-081's review).
+    if (run === null || typeof run !== 'object') throw unreadable('it is not a run record');
     for (const step of run.steps ?? []) {
       const reported = typeof step.usage?.costEur === 'number' ? step.usage.costEur : 0;
       const bound = typeof step.cost_bound_usd === 'number' ? step.cost_bound_usd * usdToEur : 0;
