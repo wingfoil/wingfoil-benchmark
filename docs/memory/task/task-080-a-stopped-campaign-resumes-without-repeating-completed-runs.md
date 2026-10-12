@@ -2,7 +2,7 @@
 id: task-080-a-stopped-campaign-resumes-without-repeating-completed-runs
 type: task
 title: "A stopped campaign resumes without repeating completed runs"
-status: in-progress
+status: in-review
 release: v0.2
 wave: W14
 features: [F1.4]
