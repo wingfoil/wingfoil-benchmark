@@ -122,3 +122,24 @@ c82a5e74885b/2` in the worktree (`site/` is git-ignored, nothing published), giv
   every anchor with its source, and the label is shown where it applies.
 
 ## Review notes
+
+### Review
+
+**Round 1** — a fresh independent read-only agent (`Plan` subagent), on `4181118`. Verdict: not clean (three
+should-fix). All fixed in `d1d329e`; their tests were written with the fixes, each failing on the code before it:
+1. should-fix: v0.1's runs recorded only a commit, so its pages showed no version although its campaign pins
+   `v0.2.2` → **fixed**: a run without a recorded version takes its arm's pin from the execution's `campaign.yaml`,
+   unless the pin is a commit (`wingfoil v0.2.2 · 12537b6` for v0.1; v0.2's runs record the pin itself). A departure
+   from the Design's "version when the record has one", taken because T15 asks for the version.
+2. should-fix: a stored harness-against-control certainty was shown as recorded, so an aggregate written before this
+   task kept "within variance" at n = 2 → **fixed**: the site reads it with the current rule (`certaintyOf`, the one
+   `compare` uses), as REQ-RES-02 as amended treats labels as presentation.
+3. should-fix: slice lines showed no harness → **fixed**: labels come from every group, slices included.
+4. nit: the chart legend → **fixed**: `wingfoil (wingfoil 0.2.2 · 12537b6)`.
+5. nit: the method page did not say the labels are presentation → **fixed** in `#preliminary`.
+6. nit: the method-statements sources → **fixed** for `beyond-variance`, `preliminary` and `headline`.
+7. nit: three comments → **fixed**.
+8. nit: thin coverage → **fixed**: every wingfoil line labelled, none on the baseline, the legend, the pin fallback
+   and the control's recomputed certainty.
+9. nit: no style for `.harness` → **fixed**, the smaller size of its neighbours.
+
