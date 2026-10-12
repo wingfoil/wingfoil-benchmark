@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { historyCli, ok, systemProcess } from '../core/index.js';
 import type { HistoryPort, Result } from '../core/index.js';
 
+import { comparisonFile, comparisonPage, crossModel, executionName, readComparisons } from './comparisons.js';
 import { eligibilityPage } from './eligibility.js';
 import { methodPages } from './method.js';
 import { siteModel } from './model.js';
@@ -38,14 +39,31 @@ export async function buildSite(
   if (!method.ok) return method;
   const eligibility = eligibilityPage(root, model.value);
   if (!eligibility.ok) return eligibility;
+  // The comparisons whose newer side is this execution (REQ-RES-07, task-084): a page each, linked from the landing page.
+  const comparisons = readComparisons(root, model.value.campaign, model.value.execution);
+  if (!comparisons.ok) return comparisons;
   const pages: [string, string][] = [
-    ['index.html', landingPage(model.value)],
+    [
+      'index.html',
+      landingPage(
+        model.value,
+        comparisons.value.map((comparison) => ({
+          file: comparisonFile(comparison),
+          label: executionName(comparison.earlier),
+          crossModel: crossModel(comparison),
+        })),
+      ),
+    ],
     ...model.value.categories.map((row): [string, string] => [
       categoryFile(row.category),
       categoryPage(model.value, row),
     ]),
     ['method.html', method.value.method],
     ['eligibility.html', eligibility.value],
+    ...comparisons.value.map((comparison): [string, string] => [
+      comparisonFile(comparison),
+      comparisonPage(comparison),
+    ]),
     ...[...method.value.material].map(([name, text]): [string, string] => [`material/${name}`, text]),
   ];
   const directory = `${SITE}/${model.value.campaign}/${model.value.execution}/`;

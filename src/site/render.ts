@@ -74,7 +74,7 @@ export function escapeHtml(text: string): string {
 const e = escapeHtml;
 
 /** A page: its title, its body, and how far it sits below `site/` (for the stylesheet's path). */
-function page(title: string, body: string, depth: number): string {
+export function page(title: string, body: string, depth: number): string {
   return (
     '<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n' +
     '<meta name="viewport" content="width=device-width, initial-scale=1">\n' +
@@ -382,8 +382,18 @@ function round(value: number): number {
   return Math.round(value * 100) / 100;
 }
 
-/** The landing page (REQ-RES-03 as amended in 1.20). */
-export function landingPage(model: SiteModel): string {
+/** A comparison the landing page links (REQ-RES-07, task-084): its page, the earlier execution, and whether cross-model. */
+export interface ComparisonLink {
+  readonly file: string;
+  readonly label: string;
+  readonly crossModel: boolean;
+}
+
+/**
+ * The landing page (REQ-RES-03 as amended in 1.20), and the comparisons whose newer side it is, each linked
+ * (REQ-RES-07): a section only an execution with a comparison has, so that one without keeps its bytes.
+ */
+export function landingPage(model: SiteModel, comparisons: readonly ComparisonLink[] = []): string {
   const strong = (text: string) => `<strong>${e(text)}</strong>`;
   const gaps = notCoveredSentence(notCovered(model));
   const body =
@@ -411,7 +421,19 @@ export function landingPage(model: SiteModel): string {
     (model.notRun === undefined || model.notRun.length === 0
       ? ''
       : `<p class="meta">Not run: ${model.notRun.map((run) => `<code>${e(run)}</code>`).join(', ')}.</p>\n`);
-  return page(title(model), body, 2);
+  const compared =
+    comparisons.length === 0
+      ? ''
+      : '<h2>Compared with earlier executions</h2>\n<ul>\n' +
+        comparisons
+          .map(
+            (link) =>
+              `<li><a href="${e(link.file)}">${e(link.label)}</a>` +
+              `${link.crossModel ? ' <span class="cross-model">cross-model</span>' : ''}</li>\n`,
+          )
+          .join('') +
+        '</ul>\n';
+  return page(title(model), body + compared, 2);
 }
 
 /** One category's page: its goal, its scenarios with each arm's values and runs, or that it is not covered. */
@@ -533,6 +555,7 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 .n, .range, .certainty, .delta, .holdout, .harness { font-size: 0.85rem; }
 .badge, .holdout { border: 1px solid var(--line); border-radius: 0.25rem; padding: 0 0.25rem; }
 .outcome { font-weight: 600; }
+.cross-model, .change { font-weight: 600; }
 .chart { width: 100%; height: auto; }
 .chart text { fill: var(--ink); font-size: 11px; }
 .axis, .whisker { stroke: var(--ink); stroke-width: 1; }

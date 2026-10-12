@@ -247,16 +247,17 @@ sets two runs side by side, step by step.
 npx bench campaign compare <earlier-campaign-id>/<n> <newer-campaign-id>/<m>
 ```
 
-`campaign compare` compares two aggregated executions, the earlier first, as you order them. It works group by
-group, where a group is a scenario version and an arm present in both. For each metric of the scenario's category, it
-records each execution's delta against its own baseline and the change of that delta: across campaigns only deltas
-are compared. Each delta carries both sides' `n` and range, and is preliminary unless both sides have at least 3 runs.
-It writes `results/comparisons/<newer-id>-<m>/<earlier-id>-<n>.json` and prints the pins that differ (model, agent,
+`campaign compare` compares two aggregated executions, the earlier first, as you order them. It works group by group,
+where a group is a scenario version and an arm present in both. For each metric of the scenario's category, it records
+each execution's delta against its own baseline and the change of that delta: across campaigns only deltas are
+compared. Each delta carries both sides' `n` and range, and is preliminary unless both sides have at least 3 runs. It
+writes `results/comparisons/<newer-id>-<m>/<earlier-id>-<n>.json` and prints the pins that differ (model, agent,
 effort, harnesses). Rows on two different default models are marked cross-model. A scenario whose content changed is
-not compared, and the comparison names the two hashes; so is one whose hash is unknown, whose category has no map
-of metrics or cannot be read, and a slice with no counterpart. A side with no delta (no baseline, not measured, not
-comparable) says why and keeps the arm's own value when it has one, and its row has no change. A dry run, an execution not
-yet aggregated, or one execution twice is refused.
+not compared, and the comparison names the two hashes; so is one whose hash is unknown, whose category has no map of
+metrics or cannot be read, and a slice with no counterpart. A side with no delta (no baseline, not measured, not
+comparable) says why and keeps the arm's own value when it has one, and its row has no change. A dry run, an execution
+not yet aggregated, or one execution twice is refused. `site build` publishes each comparison whose newer side is the
+execution it builds as `compare-<earlier-id>-<n>.html`, linked from that execution's landing page.
 
 ```bash
 npx bench finding <campaign-id>/<n> --scenario <id>@<version> --metric <metric> --arms <arm>,… --as bug|decision-log
