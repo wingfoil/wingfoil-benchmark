@@ -1,4 +1,15 @@
 export { nextExecution } from './executions.js';
+export { COMPARISONS, compareExecutions, writeComparison } from './campaign-compare.js';
+export type {
+  CampaignComparison,
+  ComparedGroup,
+  ComparisonRow,
+  NotCompared,
+  NotedSide,
+  OnlyIn,
+  PinDiffers,
+  PrimaryCategory,
+} from './campaign-compare.js';
 export {
   campaignSpendingEur,
   EXECUTION_FILE,
