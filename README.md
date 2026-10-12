@@ -186,15 +186,28 @@ ended: fail_fast`). Without it a failed run never stops the campaign. Each execu
 `quota`, `ceiling`, `fail_fast`, or `error` when the execution itself could not go on) and the dates it started and
 ended. `scenario dry-run` stops the same way, without an `execution.json`.
 
+**Resuming a campaign.** `npx bench campaign run campaigns/<name>.yaml --resume <campaign-id>/<n>` goes on with
+execution *n* rather than starting a new one. It runs only the runs that never started and those that ended `failed`,
+`interrupted` or `quota exhausted`; a run that completed, or reached its cost cap, is never run again, since that
+would select results. Each earlier attempt is kept under its run's `attempts/<k>/`, and `run.json` records
+`attempts`. The execution's ceiling counts what it already spent. A resume is refused when the campaign file changed
+(another campaign identity), when the execution has no `execution.json` (v0.1's), when it is already aggregated, and
+when one of its containers is running.
+
 A run that is killed some other way — a killed process, a closed terminal, a reboot — can leave its container
 behind. The runner never removes a container it did not create: at the start of a campaign it lists
 the ones earlier runs of that campaign left, warns about each with the `docker rm --force` that clears
 it, and fails the run whose container name is still taken, with the same command.
 
 ```bash
-npx bench score <campaign-id>/<n> [--holdout <path>]
+npx bench score <campaign-id>/<n> [--final] [--holdout <path>]
 npx bench score dry-runs/<n>
 ```
+
+An execution whose `execution.json` does not say `completed` is scored but not aggregated, so that it can still be
+resumed. `--final` declares it final: it is aggregated as it stands, `aggregate.json` lists the runs it never started
+under `not_run`, and `execution.json` records `final: true`, after which it can no longer be resumed. An execution
+without `execution.json` (v0.1's) aggregates as before.
 
 `score` scores every run of an execution with its scenario's **hidden tests**, outside every run
 container. Each step's snapshot is rebuilt from what the run stored — the seed, the setup's patch and

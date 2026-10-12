@@ -2,7 +2,7 @@
 id: task-080-a-stopped-campaign-resumes-without-repeating-completed-runs
 type: task
 title: "A stopped campaign resumes without repeating completed runs"
-status: in-progress
+status: approved
 release: v0.2
 wave: W14
 features: [F1.4]
@@ -145,4 +145,85 @@ leftover is reported by its run, as today (bug-003).
 
 ## Execution notes
 
+**WingFoil commands, declared vs observed:**
+- `npx wingfoil memory submit task-080-…` on main (`f1518ab`), after the Design's own commit (`77fe4f6`, W-01):
+  declared backlog → in-progress; observed `{"from": "backlog", "to": "in-progress"}`, exit 0, one
+  `wf(task): submit …` commit (W-14).
+
+**Build** on `task/task-080` (worktree `../WingFoil2-Benchmark-wt/task-080`, its own `npm ci`):
+- red first: `4583ab7` (the three acceptance scenarios), `193667d` (unit tests for the runner, `score`, the command
+  line, `run show`, the site and `not_run`). They failed for the expected reasons: no `--resume`, a new execution
+  instead of the resumed one, an unconditional aggregate, no `plannedRuns`. Five of the new unit tests already passed:
+  they pin behaviour that must not change (a completed execution aggregates, `--resume` is refused on `validate`).
+- `e3ade14` the implementation:
+  - `src/results/execution.ts` holds `execution.json`'s record and `executionResumable`, and `plannedRuns` for
+    `not_run`;
+  - the runner takes `{ resume }` and `checkResume`;
+  - `score` takes `--final`;
+  - `run show` and the site show attempts.
+  The usage text changed on purpose, so the two tests that pin it (`test/unit/cli/main.test.ts`,
+  `test/bin/bench.test.ts`) were updated in the same commit.
+- The bug link check (`test/support/traceability.ts`) required bug-013 to be `fixed` as soon as task-079 was `done`,
+  which the two-task plan cannot meet. The approver chose option A in chat on 2026-10-12 ("A, come proposto"): a bug is
+  due `fixed` only once every task that lists it is done. Red test `4adc477`, fix `cc04b20`; both commits carry
+  `Approver:` and `Reason:`.
+- `b77c80e`: the README on resuming and `--final`.
+- Checks, niced, with 2 workers: `tsc` and `npm run lint` clean. `test/unit` and `test/acceptance` green (1461 tests),
+  run whole once, niced, after the usage text changed.
+
+**Decisions taken in the build, inside the Design:**
+- `not_run` names runs as the campaign plans them (`<scenario>@<version>/<arm>/<model>/r<k>`), without the
+  `<campaign>/<n>/runs/` prefix the groups' run names carry: a run never started has no directory to open.
+- `SiteModel.notRun` is optional, as an aggregate written before it has none.
+- A resume with nothing left to run still builds the image and the harnesses. Kept as it is: one code path, and such a
+  resume is rare.
+
 ## Review notes
+
+### Review
+
+**Round 1**: a fresh, independent, read-only agent (a `Plan` subagent), on `e928ace`. Verdict: not clean, with no
+blocker. Outcomes:
+1. should-fix: a resume regenerated a docs control's `generated/` rules, which a later setup may not reproduce byte for
+   byte → **fixed**: a resume keeps the rules already there (`fca1749` red test, `695f48b` fix).
+2. should-fix: a stopped container left behind made the re-run fail at once and counted a phantom attempt → **fixed**:
+   the resume refuses any leftover container of the execution, with the `docker rm` hint, before anything moves. This
+   departs from the Design's "a stopped leftover is reported by its run", which counted attempts that never ran.
+3. should-fix: the earlier attempts' transcripts were neither committed (git-ignored) nor packed. REQ-CLI-11 as amended
+   in 1.26 packs them, and no other task planned it → **fixed** in `transcripts pack`, attempts first, then the run's own.
+4. should-fix: a stopped execution that already had `aggregate.json` was told to resume, which would be refused →
+   **fixed**: it is aggregated again, as an already aggregated execution.
+5. nit: an unreadable `run.json` left `execution.json` `running` → **fixed**: the runs are read before the record is
+   touched.
+6. nit: the log did not break down the kept runs by outcome → **fixed**, and tested.
+7. nit: a deprecated task listing a bug would block the halves rule → **no change**: the task machine has no deprecated
+   or cancelled state (`.wingfoil/memory.yaml`).
+8. nit: a concurrent invocation still preparing has no container to detect → **fixed** as far as it can be: a warning
+   when the execution says `running`.
+
+**Round 2**: a fresh, independent, read-only agent, on `dd044ba`. It verified the eight round-1 outcomes and checked
+the whole diff again against REQ-RUN-19, REQ-CLI-03/06/11, REQ-FMT-06 and the three scenarios. Verdict: clean, with
+four nits, all **fixed** in `337ed85`. Their tests were written with the fix, not red first; the attempt-gap test fails on
+the counting it replaces.
+1. A stopped leftover's message claimed it was left by a run killed without a record → reworded "left behind by an
+   earlier run of it".
+2. An unreadable `run.json` threw a bare `SyntaxError` → its path under the execution is named, and tested.
+3. The "says it is running" warning went to stdout → it goes to the error stream.
+4. `nextAttempt` counted the attempt directories → it numbers after the highest, so that a gap never overwrites one.
+
+**Round 3**: a fresh, independent, read-only agent, on `337ed85`. All four fixes are correct and their tests
+meaningful. Verdict: clean, with one optional nit: a resume names an unreadable record as `<path> cannot be read`,
+while `transcripts pack` says `<path>: cannot be read`. **No change**: the two are different commands' messages, and
+neither is parsed.
+
+### Full suites
+
+`scripts/full-suites.sh task/task-080` on 2026-10-12, at the approver's request ("Avvia la suite"), on `af119a8` (the
+in-review submit), worktree clean: `LINT 0 TEST 0 BUILD 0 BIN 0 DOCKER 0`. `npm test` 1470 passed, 8 skipped, statement
+coverage 97.69 %; `test:bin` 8/8; `test:docker` 20 passed, 2 skipped. Log:
+`.cache/full-suites/2026-10-12/task_task-080-af119a8-094412.txt`. The commit after it adds only these notes.
+
+**WingFoil command, declared vs observed:** `npx wingfoil memory submit task-080-…` on the branch: declared
+in-progress → in-review; observed `{"from": "in-progress", "to": "in-review"}`, exit 0, one `wf(task): submit …`
+commit (`af119a8`). No task was `in-review` on main or on a task branch before it.
+

@@ -148,20 +148,30 @@ function fixesOf(task: LinkedElement): readonly string[] {
 /**
  * Where a task's `fixes` and a bug's `fixed_by` disagree (bug-005, task-058): a `fixes` that is not a list, or an
  * entry naming no bug; a `fixed_by` naming no task, or a task that does not list the bug; a `fixed` bug without
- * `fixed_by` or whose task is not `done`; a `done` task whose bug is neither `fixed` nor `deprecated`; an element
- * without an id, or two with one id. Empty when the links agree.
+ * `fixed_by` or whose task is not `done`; a `done` task whose bug is neither `fixed` nor `deprecated` once every task
+ * that lists it is done (a bug fixed in halves, task-080); an element without an id, or two with one id. Empty when
+ * the links agree.
  */
 export function bugLinkProblems(taskDir: string, bugDir: string): string[] {
   const problems: string[] = [];
   const tasks = readElements(taskDir, problems);
   const bugs = readElements(bugDir, problems);
+  // A bug may be fixed in halves, by several tasks (task-080, the approver's choice of 2026-10-12): it is due `fixed`
+  // only once every task that lists it is done.
+  const halvesDone = (bugId: string) =>
+    [...tasks.values()].every((other) => !fixesOf(other).includes(bugId) || other.status === 'done');
   for (const task of tasks.values()) {
     if (task.fixes !== undefined && !Array.isArray(task.fixes))
       problems.push(`${task.id} has a fixes that is not a list`);
     for (const bugId of fixesOf(task)) {
       const bug = bugs.get(bugId);
       if (!bug) problems.push(`${task.id} fixes ${bugId}, which does not exist`);
-      else if (task.status === 'done' && bug.status !== 'fixed' && bug.status !== 'deprecated')
+      else if (
+        task.status === 'done' &&
+        halvesDone(bugId) &&
+        bug.status !== 'fixed' &&
+        bug.status !== 'deprecated'
+      )
         problems.push(`${task.id} is done but ${bugId} is ${bug.status}, not fixed`);
     }
   }

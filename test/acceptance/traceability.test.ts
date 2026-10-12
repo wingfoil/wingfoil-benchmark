@@ -112,6 +112,33 @@ describe('bug link check', () => {
     ).toEqual(['task-1-a is done but bug-1-a is approved, not fixed']);
   });
 
+  it('accepts a bug fixed in two halves while the second half is not done (task-080)', () => {
+    expect(
+      problemsOf({
+        tasks: {
+          'task-1-a': ['status: done', 'fixes: [bug-1-a]'],
+          'task-2-b': ['status: in-review', 'fixes: [bug-1-a]'],
+        },
+        bugs: { 'bug-1-a': ['status: approved'] },
+      }),
+    ).toEqual([]);
+  });
+
+  it('reports a bug fixed in two halves once both are done and it is not fixed (task-080)', () => {
+    expect(
+      problemsOf({
+        tasks: {
+          'task-1-a': ['status: done', 'fixes: [bug-1-a]'],
+          'task-2-b': ['status: done', 'fixes: [bug-1-a]'],
+        },
+        bugs: { 'bug-1-a': ['status: approved'] },
+      }),
+    ).toEqual([
+      'task-1-a is done but bug-1-a is approved, not fixed',
+      'task-2-b is done but bug-1-a is approved, not fixed',
+    ]);
+  });
+
   it('reports a fixes that is not a list, and does not read it as one', () => {
     expect(
       problemsOf({

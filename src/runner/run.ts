@@ -1,11 +1,27 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { basename, dirname, join } from 'node:path';
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  writeFileSync,
+} from 'node:fs';
+import { basename, dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { foldModels, scrub } from '../agents/index.js';
 import type { AgentPort, ModelsUsage, SessionUsage, StepOutcome } from '../agents/index.js';
-import { approverPolicy, approximateTokens, reasonOf, TOKEN_METHOD, WORKSPACE } from '../core/index.js';
+import {
+  approverPolicy,
+  approximateTokens,
+  fail,
+  ok,
+  reasonOf,
+  TOKEN_METHOD,
+  WORKSPACE,
+} from '../core/index.js';
 import type {
   ApproverPolicy,
   Arm,
@@ -13,9 +29,11 @@ import type {
   DockerPort,
   GitPort,
   InterventionKind,
+  Result,
   Scenario,
 } from '../core/index.js';
-import { nextExecution } from '../results/index.js';
+import { executionResumable, nextExecution, writeExecutionRecord } from '../results/index.js';
+import type { ExecutionRecord, StopReason } from '../results/index.js';
 import { armDigest, missingCapabilities, RULES_SOURCE_ARM, rulesGeneratorOf } from '../arms/index.js';
 import { prepareWorkspace } from '../scenario/index.js';
 
@@ -170,6 +188,8 @@ export interface RunResult {
   readonly arm: string;
   readonly model: string;
   readonly repetition: number;
+  /** How many times the run ran, this attempt included (REQ-FMT-06 as amended, task-080). */
+  readonly attempts: number;
   readonly workspace: string;
   /** Where this run's output goes: `steps/<NN>/…` under the execution's results (REQ-FMT-06). */
   readonly outputDir: string;
@@ -328,8 +348,35 @@ function stepNumber(step: number): string {
  * campaign, one container per run, whose only bind mount is that run's workspace. A failed run does
  * not stop the campaign (REQ-NFR-03).
  */
-export async function runCampaign(checked: CheckedCampaign, options: RunnerOptions): Promise<RunSummary> {
-  return runPlan(campaignPlan(checked), options);
+export async function runCampaign(
+  checked: CheckedCampaign,
+  options: RunnerOptions,
+  execution: { readonly resume?: number } = {},
+): Promise<RunSummary> {
+  return runPlan(campaignPlan(checked), options, execution.resume);
+}
+
+/**
+ * The execution `target` (`<campaign-id>/<n>`) names, if `checked` may resume it (REQ-RUN-19, task-080): the same
+ * campaign — a changed file is another campaign, whose runs would be mixed in — and an execution that records its
+ * state and is not aggregated. Each refusal names its reason.
+ */
+export function checkResume(checked: CheckedCampaign, target: string): Result<number> {
+  const [id, n] = target.split('/') as [string, string];
+  const { campaign } = checked;
+  if (id !== campaign.id) {
+    return fail([
+      {
+        path: '--resume',
+        message: `the campaign file is campaign ${campaign.id}, not ${id}: resuming would mix results`,
+      },
+    ]);
+  }
+  const resumable = executionResumable(join(campaign.resultsRoot, id, n));
+  if (resumable.ok) return ok(Number(n));
+  return fail(
+    resumable.issues.map((issue) => ({ path: '--resume', message: `${issue.path} ${issue.message}` })),
+  );
 }
 
 /**
@@ -366,18 +413,6 @@ function campaignPlan(checked: CheckedCampaign): RunPlan {
   };
 }
 
-/** Why an execution stopped starting runs (REQ-RUN-19, REQ-FMT-06 as amended), as `execution.json` records it. */
-type StopReason = 'interrupt' | 'quota' | 'ceiling' | 'fail_fast' | 'error';
-
-/** An execution's record beside its `campaign.yaml` (REQ-FMT-06 as amended, task-079), in the order it is written. */
-interface ExecutionRecord {
-  readonly state: 'running' | 'stopped' | 'completed';
-  readonly reason?: StopReason;
-  readonly detail?: string;
-  readonly started: string;
-  readonly ended?: string;
-}
-
 /** The summary's outcome for each reason an execution stopped; `error` throws instead of summing up. */
 const STOPPED: Readonly<Record<Exclude<StopReason, 'error'>, Exclude<RunSummary['outcome'], 'completed'>>> = {
   interrupt: 'interrupted',
@@ -386,9 +421,17 @@ const STOPPED: Readonly<Record<Exclude<StopReason, 'error'>, Exclude<RunSummary[
   fail_fast: 'fail_fast',
 };
 
+/** The outcomes a resume runs again (REQ-RUN-19): the infrastructure's failures and stops, never a result. */
+const RUN_AGAIN: ReadonlySet<string> = new Set(['failed', 'interrupted', 'quota exhausted']);
+
 /** A run's name in the log, in a detail and in its paths: `<scenario>@<version>/<arm>/<model>/r<k>`. */
 function runName({ scenario, arm, model, repetition }: PlannedRun): string {
   return `${scenario.id}@${scenario.version}/${arm.name}/${model}/r${repetition}`;
+}
+
+/** Where a planned run's records go in its execution (REQ-FMT-06). */
+function runOutputDir(resultsDir: string, planned: PlannedRun): string {
+  return join(resultsDir, 'runs', ...runName(planned).split('/'));
 }
 
 /** `n` runs, as a sentence counts them. */
@@ -402,33 +445,51 @@ function countRuns(n: number): string {
  * does not stop the others (REQ-NFR-03), unless the campaign sets `fail_fast`; an interrupt, the ceiling and the quota
  * stop it before its next run (REQ-RUN-19). A campaign's execution records its state in `execution.json` from start
  * to end (REQ-FMT-06 as amended); a dry run is no campaign's execution (REQ-RES-01) and has none.
+ *
+ * With `resume`, execution `resume` goes on instead of a new one (REQ-RUN-19, task-080): only its runs that never
+ * started, failed, were interrupted or met the quota run, each earlier attempt kept under `attempts/<k>/`, and its
+ * ceiling counts what it already spent.
  */
-export async function runPlan(plan: RunPlan, options: RunnerOptions): Promise<RunSummary> {
-  const execution = nextExecution(plan.resultsRoot, plan.key);
+export async function runPlan(plan: RunPlan, options: RunnerOptions, resume?: number): Promise<RunSummary> {
+  const execution = resume ?? nextExecution(plan.resultsRoot, plan.key);
   const resultsDir = join(plan.resultsRoot, plan.key, String(execution));
-  mkdirSync(resultsDir, { recursive: true });
-  options.log?.(`${plan.noun} ${plan.id}, execution ${execution}`);
-  copyFileSync(plan.source.file, join(resultsDir, plan.source.name));
+  let earlier: ExecutionRecord | undefined;
+  if (resume === undefined) {
+    mkdirSync(resultsDir, { recursive: true });
+    options.log?.(`${plan.noun} ${plan.id}, execution ${execution}`);
+    copyFileSync(plan.source.file, join(resultsDir, plan.source.name));
+  } else {
+    // The command line refuses these first, by name (checkResume); the runner never resumes past them either.
+    const resumable = executionResumable(resultsDir);
+    if (!resumable.ok) throw new Error(resumable.issues.map((i) => `${i.path} ${i.message}`).join('; '));
+    earlier = resumable.value;
+    // Before its record is touched: another invocation's would be overwritten.
+    await refuseLeftovers(plan, execution, options);
+    options.log?.(`${plan.noun} ${plan.id}, execution ${execution}, resumed`);
+    // A hard kill leaves `running`; so does an invocation still preparing, which has no container yet to find.
+    if (earlier.state === 'running') {
+      options.logError?.(
+        `execution ${execution} says it is running: if another invocation is still preparing it, stop this one`,
+      );
+    }
+  }
 
   const date = options.date ?? (() => new Date());
-  const started = date().toISOString();
-  const recordExecution = (fields: Omit<ExecutionRecord, 'started'>) => {
+  const now = date().toISOString();
+  const started = earlier?.started ?? now;
+  const resumed = earlier === undefined ? undefined : [...(earlier.resumed ?? []), now];
+  const recordExecution = (fields: Omit<ExecutionRecord, 'started' | 'resumed'>) => {
     if (!('campaign' in plan.origin)) return;
-    const { state, reason, detail, ended } = fields;
-    const record: ExecutionRecord = {
-      state,
-      ...(reason === undefined ? {} : { reason }),
-      ...(detail === undefined ? {} : { detail }),
-      started,
-      ...(ended === undefined ? {} : { ended }),
-    };
-    writeFileSync(join(resultsDir, 'execution.json'), `${JSON.stringify(record, undefined, 2)}\n`);
+    writeExecutionRecord(resultsDir, { ...fields, started, ...(resumed === undefined ? {} : { resumed }) });
   };
+  // Read before the record is touched: a run record that cannot be read leaves the execution as it was.
+  const { runs: planned, kept } =
+    resume === undefined ? { runs: plan.runs, kept: [] } : runsToResume(plan, resultsDir, options);
+  const spentBefore = resume === undefined ? 0 : recordedSpendingEur(join(resultsDir, 'runs'), plan.pins);
   recordExecution({ state: 'running' });
-
   let ran: { runs: RunResult[]; stop?: { reason: Exclude<StopReason, 'error'>; detail: string } };
   try {
-    ran = await executeRuns(plan, execution, resultsDir, options);
+    ran = await executeRuns(plan, planned, spentBefore, resume !== undefined, execution, resultsDir, options);
   } catch (error) {
     // A terminal's Ctrl-C also reaches the image build's or a harness build's process: the interrupt, not an error.
     if (options.signal?.aborted !== true) {
@@ -461,14 +522,135 @@ export async function runPlan(plan: RunPlan, options: RunnerOptions): Promise<Ru
     outcome,
     completed:
       outcome === 'completed' &&
-      ran.runs.length === plan.runs.length &&
-      ran.runs.every((run) => run.outcome === 'completed'),
+      ran.runs.length === planned.length &&
+      [...ran.runs.map((run) => run.outcome), ...kept].every((kind) => kind === 'completed'),
   };
 }
+
+/**
+ * What a resume runs of execution `resultsDir` (REQ-RUN-19), in the plan's order, and the outcomes of the runs it
+ * keeps: a planned run with no `run.json` — never started, or killed before it left one — and one whose outcome is in
+ * {@link RUN_AGAIN} runs; a completed run, and one that reached its cap, never does: that would select results.
+ */
+function runsToResume(
+  plan: RunPlan,
+  resultsDir: string,
+  options: RunnerOptions,
+): { runs: PlannedRun[]; kept: string[] } {
+  const runs: PlannedRun[] = [];
+  const kept: string[] = [];
+  const why = new Map<string, number>();
+  const count = (label: string) => why.set(label, (why.get(label) ?? 0) + 1);
+  for (const planned of plan.runs) {
+    const dir = runOutputDir(resultsDir, planned);
+    const file = join(dir, 'run.json');
+    if (!existsSync(file)) {
+      count(existsSync(dir) ? 'left no record' : 'never started');
+      runs.push(planned);
+      continue;
+    }
+    const outcome = String((readRecord(file, resultsDir) as { outcome?: unknown }).outcome);
+    if (RUN_AGAIN.has(outcome)) {
+      count(outcome);
+      runs.push(planned);
+    } else kept.push(outcome);
+  }
+  const byOutcome = (labels: Iterable<[string, number]>) => {
+    const text = [...labels].map(([label, n]) => `${n} ${label}`).join(', ');
+    return text === '' ? '' : ` (${text})`;
+  };
+  const keptBy = new Map<string, number>();
+  for (const outcome of kept) keptBy.set(outcome, (keptBy.get(outcome) ?? 0) + 1);
+  options.log?.(
+    `resume: ${countRuns(runs.length)} to run${byOutcome(why)}, ${countRuns(kept.length)} kept${byOutcome(keptBy)}`,
+  );
+  return { runs, kept };
+}
+
+/**
+ * Refuse to resume an execution that still has a container (task-080): a running one means another invocation may be
+ * running it, and two would write the same records; a stopped one was left behind by an earlier run of it, and a re-run
+ * of that run would fail again at once and count an attempt that never ran (REQ-FMT-06: `attempts` is the times it
+ * ran).
+ */
+async function refuseLeftovers(plan: RunPlan, execution: number, options: RunnerOptions): Promise<void> {
+  const prefix = `${containerPrefix(plan.id)}${execution}-`;
+  const left = (await options.docker.containersNamed(prefix)).find((container) =>
+    container.name.startsWith(prefix),
+  );
+  if (left === undefined) return;
+  throw new Error(
+    left.running
+      ? `execution ${execution} of this ${plan.noun} has a running container, ${left.name}: another invocation ` +
+          `may be running it. If none is, remove it with: docker rm --force ${left.name}`
+      : `execution ${execution} of this ${plan.noun} still has the container ${left.name}, left behind by an ` +
+          `earlier run of it (bug-003). Remove it with: docker rm --force ${left.name}`,
+  );
+}
+
+/**
+ * What the runs recorded under `runsDir` spent, in EUR, every attempt included (task-080): each step at what it
+ * reported, or at its bound when it was killed before reporting, as the runner counts it (task-024).
+ */
+function recordedSpendingEur(runsDir: string, pins: RunPins): number {
+  if (!existsSync(runsDir)) return 0;
+  let total = 0;
+  for (const entry of readdirSync(runsDir, { withFileTypes: true, recursive: true })) {
+    if (!entry.isFile() || entry.name !== 'run.json') continue;
+    const run = readRecord(join(entry.parentPath, entry.name), dirname(runsDir)) as {
+      steps?: { usage?: { costEur?: number }; cost_bound_usd?: number }[];
+    };
+    total += spentEur(
+      (run.steps ?? []).map((step) => ({
+        usage: { ...NO_USAGE, costEur: step.usage?.costEur ?? 0 },
+        ...(step.cost_bound_usd === undefined ? {} : { costBoundUsd: step.cost_bound_usd }),
+      })),
+      pins,
+    );
+  }
+  return total;
+}
+
+/**
+ * Make room for a run's new attempt (REQ-FMT-06 as amended, task-080): whatever an earlier one left in `outputDir`
+ * moves to `attempts/<k>/`, the next number. Returns the attempt about to run: 1 for a first run.
+ */
+function nextAttempt(outputDir: string): number {
+  if (!existsSync(outputDir)) return 1;
+  const attemptsDir = join(outputDir, ATTEMPTS);
+  // The highest number, not the count: a gap must never make an attempt overwrite another.
+  const earlier = Math.max(
+    0,
+    ...(existsSync(attemptsDir) ? readdirSync(attemptsDir) : [])
+      .filter((name) => /^[1-9]\d*$/.test(name))
+      .map(Number),
+  );
+  const left = readdirSync(outputDir).filter((name) => name !== ATTEMPTS);
+  if (left.length === 0) return earlier + 1;
+  const target = join(attemptsDir, String(earlier + 1));
+  mkdirSync(target, { recursive: true });
+  for (const name of left) renameSync(join(outputDir, name), join(target, name));
+  return earlier + 2;
+}
+
+/** A run's `run.json`, or an error naming it under `resultsDir`: a resume reads every one before it starts. */
+function readRecord(file: string, resultsDir: string): unknown {
+  try {
+    return JSON.parse(readFileSync(file, 'utf8'));
+  } catch (error) {
+    throw new Error(`${relative(resultsDir, file)} cannot be read: ${reasonOf(error)}`, { cause: error });
+  }
+}
+
+/** Where a run's earlier attempts lie, under its own directory (REQ-FMT-06 as amended). */
+const ATTEMPTS = 'attempts';
 
 /** The runs of an execution, and why they stopped before the last one, if they did. */
 async function executeRuns(
   plan: RunPlan,
+  planned: readonly PlannedRun[],
+  spentBefore: number,
+  resumed: boolean,
   execution: number,
   resultsDir: string,
   options: RunnerOptions,
@@ -491,19 +673,21 @@ async function executeRuns(
     options,
   );
   // Every docs control's environment of every scenario, from its harness arm's configuration (REQ-RUN-11).
-  const projectRules = await prepareProjectRules(plan, harnesses, resultsDir, options);
+  // A resume keeps the generated rules its kept runs ran with (task-080), rather than generating them again.
+  const projectRules = await prepareProjectRules(plan, harnesses, resultsDir, options, resumed);
 
   const results: RunResult[] = [];
-  let spent = 0;
+  // What the execution spent before, when it is resumed (task-080): a resume never gets a fresh ceiling.
+  let spent = spentBefore;
   /** The failed runs so far, by step and error (REQ-RUN-19's `fail_fast`). */
   const failures = new Map<string, number>();
-  for (const planned of plan.runs) {
-    const { scenario, arm, model, repetition } = planned;
+  for (const next of planned) {
+    const { scenario, arm, model, repetition } = next;
     // The maintainer's interrupt (REQ-RUN-19): no run starts after it.
     if (options.signal?.aborted === true) {
       return {
         runs: results,
-        stop: { reason: 'interrupt', detail: `interrupted before run ${runName(planned)}` },
+        stop: { reason: 'interrupt', detail: `interrupted before run ${runName(next)}` },
       };
     }
     // The campaign's ceiling, while it runs (REQ-RUN-08): no run starts once the runs so far spent it.
@@ -513,7 +697,7 @@ async function executeRuns(
         runs: results,
         stop: {
           reason: 'ceiling',
-          detail: `${spent} of ${plan.ceilingEur} EUR spent before run ${runName(planned)}`,
+          detail: `${spent} of ${plan.ceilingEur} EUR spent before run ${runName(next)}`,
         },
       };
     }
@@ -527,6 +711,8 @@ async function executeRuns(
         execution,
         resultsDir,
         leftovers,
+        // Whatever an earlier attempt left moves aside first (task-080): 1 for a first run.
+        attempts: nextAttempt(runOutputDir(resultsDir, next)),
         // Taken above for every arm of the plan, which is where `arm` comes from.
         armDigest: armDigests.get(arm.name) as string,
         ...(arm.requires === undefined ? {} : { harness: harnesses.get(arm.requires) }),
@@ -541,19 +727,19 @@ async function executeRuns(
     if (run.outcome === 'interrupted') {
       return {
         runs: results,
-        stop: { reason: 'interrupt', detail: `interrupted during run ${runName(planned)}` },
+        stop: { reason: 'interrupt', detail: `interrupted during run ${runName(next)}` },
       };
     }
     // The subscription's quota ends the campaign's runs, not only this one (REQ-RUN-13).
     if (run.outcome === 'quota exhausted') {
       return {
         runs: results,
-        stop: { reason: 'quota', detail: `run ${runName(planned)} stopped at the subscription's quota` },
+        stop: { reason: 'quota', detail: `run ${runName(next)} stopped at the subscription's quota` },
       };
     }
     // fail_fast (REQ-RUN-19): the same error at the same step, exactly, `same_error` times.
     // Once every planned run has run, there is nothing left to stop: the execution is completed.
-    if (run.outcome === 'failed' && plan.failFast !== undefined && results.length < plan.runs.length) {
+    if (run.outcome === 'failed' && plan.failFast !== undefined && results.length < planned.length) {
       const step = run.failedStep ?? 0;
       const key = `${step}\n${run.error ?? ''}`;
       const count = (failures.get(key) ?? 0) + 1;
@@ -588,6 +774,8 @@ interface RunContext {
   readonly armDigest: string;
   /** The generated `PROJECT_RULES.md` of the scenario, for a docs control (REQ-RUN-11). */
   readonly projectRules?: string | undefined;
+  /** Which attempt of the run this is (REQ-FMT-06 as amended, task-080): 1 unless a resume runs it again. */
+  readonly attempts: number;
 }
 
 /** One run: its own workspace, its own container, removed whatever happens. */
@@ -596,7 +784,7 @@ async function executeRun(context: RunContext, options: RunnerOptions): Promise<
   const name = runName({ scenario, arm, model, repetition });
   const workspace = join(plan.repoRoot, 'runs', plan.key, String(execution), ...name.split('/'), 'workspace');
   // The workspace is debris to look at (git-ignored); the output is the run's record (REQ-FMT-06).
-  const outputDir = join(resultsDir, 'runs', ...name.split('/'));
+  const outputDir = runOutputDir(resultsDir, { scenario, arm, model, repetition });
   const { harness } = context;
   // Decided before anything runs, from the scenario and the arm alone (F3.6, task-030).
   const missing = missingCapabilities(scenario, arm);
@@ -614,6 +802,7 @@ async function executeRun(context: RunContext, options: RunnerOptions): Promise<
     arm: arm.name,
     model,
     repetition,
+    attempts: context.attempts,
     workspace,
     outputDir,
   };
@@ -1524,6 +1713,8 @@ function record(run: RunResult, plan: RunPlan): RunResult {
         // The effort the model ran at (dl-015), `none` included; absent when nothing was pinned.
         ...(agent.effort?.[run.model] === undefined ? {} : { effort: agent.effort[run.model] }),
         repetition: run.repetition,
+        // How many times it ran (REQ-RUN-19): the earlier attempts lie under attempts/<k>/.
+        attempts: run.attempts,
         agent,
         approver_policy,
         // The manual the arm ran with, and its size: a confound reported for every arm (REQ-RUN-12); the whole

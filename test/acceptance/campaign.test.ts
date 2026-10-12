@@ -1,4 +1,4 @@
-import { copyFileSync, cpSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { stringify } from 'yaml';
@@ -6,7 +6,8 @@ import { stringify } from 'yaml';
 import { loadCampaign } from '../../src/campaign/index.js';
 import { checkCampaign, main } from '../../src/cli/index.js';
 import { runCampaign } from '../../src/runner/index.js';
-import { nextExecution } from '../../src/results/index.js';
+import { executionResumable, nextExecution } from '../../src/results/index.js';
+import { gitCli, systemProcess } from '../../src/core/index.js';
 import { writeArmsNamed } from '../support/arm-fixture.js';
 import { completeCampaignYaml, writeRepo } from '../support/campaign-fixture.js';
 import { priceCampaign, writeDryRunProfile } from '../support/dry-run-fixture.js';
@@ -14,6 +15,7 @@ import { repoPath } from '../support/paths.js';
 import { doubles } from '../support/runner-doubles.js';
 import type { Doubles } from '../support/runner-doubles.js';
 import { tempDir } from '../support/scenario-fixture.js';
+import { CANCEL, EXECUTION, scoringDocker, storedRun } from '../support/score-fixture.js';
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -448,4 +450,154 @@ describe('campaign.feature', () => {
     expect(execution.detail).toContain('2 runs failed at step 01');
     expect(execution.detail).toContain('the agent could not reach the API');
   });
+  it('@F1.4 A resume re-runs only what infrastructure stopped', async () => {
+    // Given a stopped execution holding a completed run (r1), a run that reached its cost cap (r2), a run failed by
+    // the infrastructure (r3), an interrupted run (r4), a run stopped at the subscription's quota (r5) and runs never
+    // started (r6, r7)
+    const checked = cappedCampaign(3, 7, 100);
+    let run = 0;
+    const first = doubles({
+      usageOf: (request) => spent(request.step === 1 && run === 2 ? 3.1 : 0.1),
+      onStep: (request) => {
+        if (request.step === 1) run += 1;
+      },
+      stopOf: (request) => {
+        if (request.step !== 1) return undefined;
+        if (run === 2) return 'cap reached';
+        if (run === 5) return 'quota exhausted';
+        return undefined;
+      },
+      errorOf: (request) =>
+        request.step === 1 && (run === 3 || run === 4) ? 'the network failed' : undefined,
+    });
+    const stopped = await runCampaign(checked, first);
+    expect(stopped.runs.map((r) => r.outcome)).toEqual([
+      'completed',
+      'cap reached',
+      'failed',
+      'failed',
+      'quota exhausted',
+    ]);
+    // One execution cannot stop both at the quota and by an interrupt: r4's record says what an interrupt records.
+    const r4 = join(stopped.runs[3]?.outputDir ?? '', 'run.json');
+    writeFileSync(r4, JSON.stringify({ ...JSON.parse(readFileSync(r4, 'utf8')), outcome: 'interrupted' }));
+    const before = (k: number) =>
+      readFileSync(join(stopped.runs[k - 1]?.outputDir ?? '', 'run.json'), 'utf8');
+    const kept = [before(1), before(2)];
+
+    // When the maintainer resumes it
+    const resumed = doubles();
+    const summary = await runCampaign(checked, resumed, { resume: stopped.execution });
+
+    // Then only the failed, interrupted, quota-stopped and never-started runs run, in the same execution
+    expect(summary.execution).toBe(stopped.execution);
+    expect(summary.runs.map((r) => r.outputDir.split('/').at(-1))).toEqual(['r3', 'r4', 'r5', 'r6', 'r7']);
+    expect(resumed.recorded.creates).toHaveLength(5);
+    expect(summary.runs.every((r) => r.outcome === 'completed')).toBe(true);
+    // And the run that reached its cap is not re-run, nor the completed one
+    expect([before(1), before(2)]).toEqual(kept);
+    // And each earlier attempt is kept beside the new one, and the number of attempts is recorded
+    const dir = (k: number) => join(stopped.resultsDir, 'runs', 'T3@1.0', 'baseline', 'fake-model', `r${k}`);
+    const record = (path: string) => JSON.parse(readFileSync(join(path, 'run.json'), 'utf8'));
+    expect(record(join(dir(3), 'attempts', '1'))).toMatchObject({ outcome: 'failed', attempts: 1 });
+    expect(record(join(dir(4), 'attempts', '1'))).toMatchObject({ outcome: 'interrupted' });
+    expect(record(join(dir(5), 'attempts', '1'))).toMatchObject({ outcome: 'quota exhausted', attempts: 1 });
+    for (const k of [3, 4, 5]) expect(record(dir(k))).toMatchObject({ outcome: 'completed', attempts: 2 });
+    for (const k of [6, 7]) {
+      expect(record(dir(k))).toMatchObject({ outcome: 'completed', attempts: 1 });
+      expect(existsSync(join(dir(k), 'attempts'))).toBe(false);
+    }
+    expect(JSON.parse(readFileSync(join(stopped.resultsDir, 'execution.json'), 'utf8'))).toMatchObject({
+      state: 'completed',
+      resumed: [expect.any(String)],
+    });
+  });
+
+  it('@F1.4 A resume is refused when it could mix results', async () => {
+    const checked = cappedCampaign(3, 2, 100);
+    const stopped = await runCampaign(checked, doubles());
+    const target = `${checked.campaign.id}/${stopped.execution}`;
+
+    // When the maintainer resumes an execution with a campaign file that changed
+    const changed = join(checked.campaign.repoRoot, 'campaigns', 'changed.yaml');
+    writeFileSync(
+      changed,
+      readFileSync(checked.campaign.file, 'utf8').replace('run_cost_eur: 3', 'run_cost_eur: 4'),
+    );
+    const ports = doubles();
+    const mixed = await start(changed, ports, undefined, '--resume', target);
+    // Then the resume is refused, naming the reason
+    expect(mixed.code).toBe(1);
+    expect(mixed.stderr).toContain(`is campaign ${loadIdOf(changed)}, not ${checked.campaign.id}`);
+    expect(mixed.stderr).toContain('would mix results');
+
+    // When the maintainer resumes an execution already aggregated
+    writeFileSync(join(stopped.resultsDir, 'aggregate.json'), '{}\n');
+    const aggregated = await start(checked.campaign.file, ports, undefined, '--resume', target);
+    // Then the resume is refused, naming the reason
+    expect(aggregated.code).toBe(1);
+    expect(aggregated.stderr).toContain('is already aggregated');
+    expect(ports.recorded.builds).toEqual([]);
+  });
+
+  it('@F1.4 Scoring a stopped execution keeps it resumable', async () => {
+    // Given a stopped execution with runs never started: two of T3's three planned repetitions ran
+    const stored = await storedRun({ steps: [{}, CANCEL] });
+    await storedRun({ steps: [{}, CANCEL], into: { root: stored.root, repetition: 2 } });
+    writeFileSync(
+      join(stored.executionDir, 'campaign.yaml'),
+      stringify({
+        scenarios: [{ id: 'T3', version: '1.0' }],
+        arms: ['baseline'],
+        repetitions: { T3: 3 },
+        models: { default: 'fake-model' },
+        currency: { usd_to_eur: 0.5 },
+      }),
+    );
+    writeFileSync(
+      join(stored.executionDir, 'execution.json'),
+      JSON.stringify({ state: 'stopped', reason: 'interrupt', started: '2026-10-12T08:00:00.000Z' }),
+    );
+    const score = async (...flags: string[]) => {
+      let stdout = '';
+      let stderr = '';
+      const code = await main(
+        ['score', EXECUTION, ...flags],
+        { stdout: (text) => (stdout += text), stderr: (text) => (stderr += text) },
+        { docker: scoringDocker().docker, git: gitCli(systemProcess), agent: doubles().agent },
+        stored.root,
+      );
+      return { code, stdout, stderr };
+    };
+
+    // When the maintainer scores it
+    const scored = await score();
+
+    // Then its runs are scored but the execution is not aggregated
+    expect(scored.code).toBe(0);
+    expect(scored.stdout).toContain('T3@1.0 baseline fake-model r1');
+    expect(scored.stdout).toContain('T3@1.0 baseline fake-model r2');
+    expect(scored.stdout).toContain('not aggregated: execution 1 is stopped (interrupt)');
+    expect(existsSync(join(stored.executionDir, 'aggregate.json'))).toBe(false);
+    // and it can still be resumed
+    expect(executionResumable(stored.executionDir).ok).toBe(true);
+
+    // And only when the maintainer declares it final is it aggregated, the runs never started listed as not run
+    const final = await score('--final');
+    expect(final.code).toBe(0);
+    const aggregate = JSON.parse(readFileSync(join(stored.executionDir, 'aggregate.json'), 'utf8'));
+    expect(aggregate.not_run).toEqual(['T3@1.0/baseline/fake-model/r3']);
+    expect(JSON.parse(readFileSync(join(stored.executionDir, 'execution.json'), 'utf8'))).toMatchObject({
+      state: 'stopped',
+      final: true,
+    });
+    expect(executionResumable(stored.executionDir).ok).toBe(false);
+  });
 });
+
+/** The identity of the campaign file `file`. */
+function loadIdOf(file: string): string {
+  const loaded = loadCampaign(file);
+  if (!loaded.ok) throw new Error(JSON.stringify(loaded.issues));
+  return loaded.value.id;
+}

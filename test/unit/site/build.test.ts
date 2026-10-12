@@ -387,3 +387,28 @@ describe('an aggregate whose controls are not what the site reads (task-068’s 
     expect(built.stderr).toContain('is not an aggregate this site reads: controls.0.metrics.0');
   }, 240_000);
 });
+
+describe('attempts and runs not run on the site (REQ-RUN-19, REQ-CLI-06 as amended, task-080)', () => {
+  it('puts the attempts beside a run that ran more than once, and lists the runs not run', async () => {
+    const { root, executionDir } = await siteExecution();
+    const runFile = join(executionDir, 'runs', 'TD@1.0', 'wingfoil', 'fake-model', 'r1', 'run.json');
+    writeFileSync(runFile, JSON.stringify({ ...JSON.parse(readFileSync(runFile, 'utf8')), attempts: 2 }));
+    const aggregateFile = join(executionDir, 'aggregate.json');
+    const aggregate = JSON.parse(readFileSync(aggregateFile, 'utf8')) as Record<string, unknown>;
+    writeFileSync(
+      aggregateFile,
+      JSON.stringify({ ...aggregate, not_run: ['TD@1.0/baseline/fake-model/r2'] }),
+    );
+
+    const built = await benchSite(root, 'site', 'build', EXECUTION);
+    expect(built.code, built.stderr).toBe(0);
+
+    const d = readFileSync(join(root, 'site', 'abcdef012345', '1', 'category-d.html'), 'utf8');
+    expect(d).toContain(
+      'bench run show abcdef012345/1/runs/TD@1.0/wingfoil/fake-model/r1</code> — 2 attempts',
+    );
+    expect(d).not.toContain('baseline/fake-model/r1</code> — 1 attempt');
+    const landing = readFileSync(join(root, 'site', 'abcdef012345', '1', 'index.html'), 'utf8');
+    expect(landing).toContain('Not run: <code>TD@1.0/baseline/fake-model/r2</code>');
+  }, 120_000);
+});

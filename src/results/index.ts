@@ -1,4 +1,12 @@
 export { nextExecution } from './executions.js';
+export {
+  EXECUTION_FILE,
+  executionResumable,
+  plannedRuns,
+  readExecutionRecord,
+  writeExecutionRecord,
+} from './execution.js';
+export type { ExecutionRecord, StopReason } from './execution.js';
 export { recordedHashes, versionChange } from './recorded.js';
 export type { RecordedHash } from './recorded.js';
 export { DRY_RUNS, findDryRun, latestDryRun } from './dry-runs.js';

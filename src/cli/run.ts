@@ -1,7 +1,14 @@
 import { missingCapabilities } from '../arms/index.js';
 import { effortRefusal, missingEffort, reasonOf } from '../core/index.js';
 import type { CampaignFile, Result } from '../core/index.js';
-import { checkCampaign, estimateCampaign, formatEstimate, runCampaign, totalLine } from '../runner/index.js';
+import {
+  checkCampaign,
+  checkResume,
+  estimateCampaign,
+  formatEstimate,
+  runCampaign,
+  totalLine,
+} from '../runner/index.js';
 import type { CheckedCampaign } from '../runner/index.js';
 
 import { dryRunCommand } from './dry-run.js';
@@ -53,16 +60,15 @@ export async function main(
   if (argv[0] === 'transcripts') return transcriptsCommand(argv.slice(1), io, root);
   if (argv[0] === 'images') return imagesCommand(argv.slice(1), io, ports?.images);
   const [noun, verb, file, ...extra] = argv;
-  // The flag belongs to `run`: accepting it on `validate` would say it means something there.
-  const allowSpending = verb === 'run' && extra.includes(SPENDING_FLAG);
-  const rest = allowSpending ? extra.filter((argument) => argument !== SPENDING_FLAG) : extra;
-  if (noun !== 'campaign' || !isFileArgument(file) || rest.length > 0) {
+  // The flags belong to `run`: accepting them on `validate` would say they mean something there.
+  const flags = verb === 'run' ? runFlags(extra) : extra.length === 0 ? {} : undefined;
+  if (noun !== 'campaign' || !isFileArgument(file) || flags === undefined) {
     io.stderr(USAGE);
     return EXIT.usage;
   }
   if (verb === 'validate') return validateCampaign(file, io);
   if (verb === 'estimate') return estimateCommand(file, io);
-  if (verb === 'run') return runCampaignCommand(file, io, ports, allowSpending);
+  if (verb === 'run') return runCampaignCommand(file, io, ports, flags.allowSpending === true, flags.resume);
   io.stderr(USAGE);
   return EXIT.usage;
 }
@@ -79,6 +85,34 @@ function scenarioCommand(argv: readonly string[], io: Io, root: string): number 
   if (!result.ok) return report(result.issues, io);
   io.stdout(`${result.line}\n`);
   return EXIT.ok;
+}
+
+/** An execution a resume names: `<campaign-id>/<n>`, as `score` names one (REQ-CLI-03 as amended). */
+const EXECUTION_TARGET = /^[0-9a-f]{12}\/[1-9]\d*$/;
+
+/**
+ * `run`'s flags (REQ-CLI-03 as amended, task-080): {@link SPENDING_FLAG} and `--resume <campaign-id>/<n>`, each at
+ * most once, in any order; undefined for anything else.
+ */
+function runFlags(argv: readonly string[]): { allowSpending?: true; resume?: string } | undefined {
+  let allowSpending: true | undefined;
+  let resume: string | undefined;
+  for (let index = 0; index < argv.length; index += 1) {
+    const argument = argv[index];
+    if (argument === SPENDING_FLAG && allowSpending === undefined) allowSpending = true;
+    else if (
+      argument === '--resume' &&
+      resume === undefined &&
+      EXECUTION_TARGET.test(argv[index + 1] ?? '')
+    ) {
+      resume = argv[index + 1];
+      index += 1;
+    } else return undefined;
+  }
+  return {
+    ...(allowSpending === undefined ? {} : { allowSpending }),
+    ...(resume === undefined ? {} : { resume }),
+  };
 }
 
 /** A file argument: present, not empty, and not an option. */
@@ -162,9 +196,13 @@ async function runCampaignCommand(
   io: Io,
   ports?: Ports,
   allowSpending = false,
+  resumeTarget?: string,
 ): Promise<number> {
   const checked = checkCampaign(file);
   if (!checked.ok) return report(checked.issues, io);
+  // A resume that could mix results is refused first, by its reason (REQ-RUN-19, task-080).
+  const resume = resumeTarget === undefined ? undefined : checkResume(checked.value, resumeTarget);
+  if (resume !== undefined && !resume.ok) return report(resume.issues, io);
 
   // What the runs need from this machine, all at once and before the estimate (bug-014): a campaign never gets as far
   // as its estimate to stop on a variable nobody declared. A missing variable is always refused; a path that names
@@ -250,16 +288,22 @@ async function runCampaignCommand(
   try {
     // The maintainer's interrupt stops it cleanly (REQ-RUN-19, task-079).
     summary = await withInterrupt(io, (signal) =>
-      runCampaign(checked.value, {
-        ...resolved.value,
-        ...(harnessSources === undefined ? {} : { harnessSources }),
-        log: (line) => io.stdout(`${line}\n`),
-        logError: (line) => io.stderr(`${line}\n`),
-        // The credential reaches the container here and nowhere else (REQ-RUN-15, REQ-NFR-01), and
-        // the values to scrub are named rather than taken from the whole environment.
-        ...(credential === undefined ? {} : { containerEnv: credential, secrets: Object.values(credential) }),
-        signal,
-      }),
+      runCampaign(
+        checked.value,
+        {
+          ...resolved.value,
+          ...(harnessSources === undefined ? {} : { harnessSources }),
+          log: (line) => io.stdout(`${line}\n`),
+          logError: (line) => io.stderr(`${line}\n`),
+          // The credential reaches the container here and nowhere else (REQ-RUN-15, REQ-NFR-01), and
+          // the values to scrub are named rather than taken from the whole environment.
+          ...(credential === undefined
+            ? {}
+            : { containerEnv: credential, secrets: Object.values(credential) }),
+          signal,
+        },
+        resume === undefined ? {} : { resume: resume.value },
+      ),
     );
   } catch (error) {
     // The campaign could not start at all: no Docker daemon, no results directory, no image.

@@ -2,7 +2,7 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-import { AGGREGATE_FILE, aggregateExecution, writeAggregate } from '../../../src/results/index.js';
+import { AGGREGATE_FILE, aggregateExecution, plannedRuns, writeAggregate } from '../../../src/results/index.js';
 import { tempDir } from '../../support/scenario-fixture.js';
 
 const CAMPAIGN = 'c0ffee000001';
@@ -1051,5 +1051,36 @@ describe('runs whose cost the agent could not price (bug-016, task-069)', () => 
     expect(group?.metrics.cost.unpriced).toEqual([name('baseline', 1)]);
     const [clean] = aggregate(execution([{ arm: 'baseline', steps: [[s('a', 1, 1)]] }])).groups;
     expect(clean?.metrics.cost).not.toHaveProperty('unpriced');
+  });
+});
+
+describe('the runs not run (REQ-CLI-06 as amended, task-080)', () => {
+  it('lists the planned runs that never started, the slices included, from the execution campaign.yaml', () => {
+    expect(
+      plannedRuns({
+        scenarios: [
+          { id: 'S1', version: '1.0' },
+          { id: 'S2', version: '2.0' },
+        ],
+        arms: ['baseline', 'wingfoil'],
+        repetitions: { S1: 2, S2: 1 },
+        models: {
+          default: 'sonnet',
+          slices: [{ model: 'opus', scenarios: ['S1'], arms: ['wingfoil'], repetitions: 1 }],
+        },
+      }),
+    ).toEqual([
+      'S1@1.0/baseline/sonnet/r1',
+      'S1@1.0/baseline/sonnet/r2',
+      'S1@1.0/wingfoil/sonnet/r1',
+      'S1@1.0/wingfoil/sonnet/r2',
+      'S2@2.0/baseline/sonnet/r1',
+      'S2@2.0/wingfoil/sonnet/r1',
+      'S1@1.0/wingfoil/opus/r1',
+    ]);
+  });
+
+  it('gives no plan for a campaign.yaml that does not name its scenarios, arms and repetitions', () => {
+    expect(plannedRuns({ models: { default: 'fake-model' } })).toBeUndefined();
   });
 });

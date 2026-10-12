@@ -261,3 +261,101 @@ async function storedRunIn(fixture: Awaited<ReturnType<typeof storedRun>>): Prom
   writeFileSync(file, JSON.stringify({ ...record, scenario_hash: scenario.value.hash }));
   return fixture.root;
 }
+
+describe('bench score and an execution that did not complete (REQ-CLI-06 as amended, task-080)', () => {
+  function state(executionDir: string, record: Record<string, unknown>): void {
+    writeFileSync(join(executionDir, 'execution.json'), JSON.stringify(record));
+  }
+
+  it('does not aggregate a running execution either, and exits 0 once every run is scored', async () => {
+    const fixture = await storedRun({ steps: [{}, CANCEL] });
+    state(fixture.executionDir, { state: 'running', started: '2026-10-12T08:00:00.000Z' });
+    const { code, stdout } = await score(fixture.root, EXECUTION);
+
+    expect(code).toBe(0);
+    expect(stdout).toContain('not aggregated: execution 1 is running:');
+    expect(existsSync(join(fixture.executionDir, 'aggregate.json'))).toBe(false);
+  });
+
+  it('aggregates a completed execution, and records nothing more', async () => {
+    const fixture = await storedRun({ steps: [{}, CANCEL] });
+    const record = {
+      state: 'completed',
+      started: '2026-10-12T08:00:00.000Z',
+      ended: '2026-10-12T09:00:00.000Z',
+    };
+    state(fixture.executionDir, record);
+    const { code } = await score(fixture.root, EXECUTION);
+
+    expect(code).toBe(0);
+    expect(existsSync(join(fixture.executionDir, 'aggregate.json'))).toBe(true);
+    expect(JSON.parse(readFileSync(join(fixture.executionDir, 'execution.json'), 'utf8'))).toEqual(record);
+  });
+
+  it('aggregates an execution without execution.json as before, with or without --final, and writes none', async () => {
+    const fixture = await storedRun({ steps: [{}, CANCEL] });
+    for (const flags of [[], ['--final']]) {
+      const { code } = await score(fixture.root, EXECUTION, ...flags);
+      expect(code).toBe(0);
+      expect(existsSync(join(fixture.executionDir, 'aggregate.json'))).toBe(true);
+      expect(existsSync(join(fixture.executionDir, 'execution.json'))).toBe(false);
+    }
+  });
+
+  it('aggregates an execution already declared final without the flag', async () => {
+    const fixture = await storedRun({ steps: [{}, CANCEL] });
+    state(fixture.executionDir, {
+      state: 'stopped',
+      reason: 'interrupt',
+      started: '2026-10-12',
+      final: true,
+    });
+    const { code } = await score(fixture.root, EXECUTION);
+
+    expect(code).toBe(0);
+    expect(existsSync(join(fixture.executionDir, 'aggregate.json'))).toBe(true);
+  });
+
+  it('does not declare final an execution it could not aggregate', async () => {
+    const fixture = await storedRun({ steps: [{}, CANCEL] });
+    state(fixture.executionDir, { state: 'stopped', reason: 'interrupt', started: '2026-10-12' });
+    writeFileSync(join(fixture.executionDir, 'campaign.yaml'), 'models: {}\n');
+    const { code } = await score(fixture.root, EXECUTION, '--final');
+
+    expect(code).toBe(1);
+    expect(JSON.parse(readFileSync(join(fixture.executionDir, 'execution.json'), 'utf8'))).not.toHaveProperty(
+      'final',
+    );
+  });
+
+  it('takes --final before or after --holdout, and refuses it on a dry run', async () => {
+    const fixture = await storedRun({ steps: [{}, CANCEL] });
+    state(fixture.executionDir, { state: 'stopped', reason: 'interrupt', started: '2026-10-12' });
+    const holdout = t3Holdout();
+    expect((await score(fixture.root, EXECUTION, '--final', '--holdout', holdout)).code).toBe(0);
+    expect((await score(fixture.root, EXECUTION, '--holdout', holdout, '--final')).code).toBe(0);
+    expect((await score(fixture.root, EXECUTION, '--final', '--final')).code).toBe(2);
+
+    const dry = await storedRun({
+      steps: [{}, CANCEL],
+      into: { root: fixture.root, execution: 'dry-runs/1' },
+    });
+    expect((await score(dry.root, 'dry-runs/1', '--final')).code).toBe(2);
+  });
+});
+
+describe('bench score and an execution aggregated before its state said so (task-080 review)', () => {
+  it('aggregates it again rather than suggesting a resume it would refuse', async () => {
+    const fixture = await storedRun({ steps: [{}, CANCEL] });
+    writeFileSync(join(fixture.executionDir, 'aggregate.json'), '{}\n');
+    writeFileSync(
+      join(fixture.executionDir, 'execution.json'),
+      JSON.stringify({ state: 'stopped', reason: 'interrupt', started: '2026-10-12' }),
+    );
+    const { code, stdout } = await score(fixture.root, EXECUTION);
+
+    expect(code).toBe(0);
+    expect(stdout).not.toContain('--resume');
+    expect(readFileSync(join(fixture.executionDir, 'aggregate.json'), 'utf8')).not.toBe('{}\n');
+  });
+});

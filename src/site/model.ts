@@ -33,6 +33,8 @@ export interface RunRecord {
   readonly provides?: Readonly<Record<string, boolean>>;
   /** The arm's digest (REQ-FMT-13), as the run recorded it. */
   readonly armDigest?: string;
+  /** How many times the run ran (REQ-RUN-19, task-080), as it recorded it. */
+  readonly attempts?: number;
 }
 
 /** One arm's value of one metric: its summary and, but for the baseline, its comparison. */
@@ -92,6 +94,8 @@ export interface SiteModel {
   readonly slices: readonly Group[];
   /** Every run's record, groups' then slices', in the aggregate's order. */
   readonly records: readonly RunRecord[];
+  /** The planned runs that never started, of an execution declared final (REQ-CLI-06 as amended, task-080). */
+  readonly notRun?: readonly string[];
 }
 
 const runRecord = z.object({
@@ -100,6 +104,7 @@ const runRecord = z.object({
   harness: z.object({ tool: z.string(), commit: z.string() }).optional(),
   provides: z.record(z.string(), z.boolean()).optional(),
   arm_digest: z.string().optional(),
+  attempts: z.number().int().optional(),
 });
 
 /** A `Value` (REQ-FMT-07) whose runs' figures are `figure`s. */
@@ -256,6 +261,7 @@ export function siteModel(root: string, execution: string): Result<SiteModel> {
           ...(record.value.harness === undefined ? {} : { harness: record.value.harness }),
           ...(record.value.provides === undefined ? {} : { provides: record.value.provides }),
           ...(record.value.arm_digest === undefined ? {} : { armDigest: record.value.arm_digest }),
+          ...(record.value.attempts === undefined ? {} : { attempts: record.value.attempts }),
         });
       }
     }
@@ -320,6 +326,7 @@ export function siteModel(root: string, execution: string): Result<SiteModel> {
     comparisons,
     slices: aggregate.slices,
     records: all.flatMap((group) => group.runs.flatMap((run) => records.get(run) ?? [])),
+    ...(aggregate.not_run === undefined ? {} : { notRun: aggregate.not_run }),
   });
 }
 

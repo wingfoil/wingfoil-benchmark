@@ -246,3 +246,16 @@ describe('bench run compare (REQ-CLI-08, F5.3, task-043)', () => {
     }
   });
 });
+
+describe('bench run show and attempts (REQ-RUN-19, task-080)', () => {
+  it('says how many times a run ran, when it ran more than once', async () => {
+    const fixture = await storedRun({ steps: [{}, CANCEL] });
+    const once = await bench(fixture.root, 'run', 'show', fixture.runDir);
+    expect(once.stdout).not.toContain('- attempts:');
+
+    const file = join(fixture.runDir, 'run.json');
+    writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file, 'utf8')), attempts: 3 }));
+    const thrice = await bench(fixture.root, 'run', 'show', fixture.runDir);
+    expect(thrice.stdout).toContain('- attempts: 3');
+  });
+});

@@ -135,7 +135,7 @@ describe('bench campaign validate', () => {
     const { code, stderr } = await run(...argv);
     expect(code).toBe(2);
     expect(stderr).toMatch(
-      /^usage: bench campaign validate <file>\n\s+bench campaign estimate <file>\n\s+bench campaign run <file> \[--allow-spending\]\n\s+bench scenario validate <id>@<version> \[--holdout <path>\]\n\s+bench scenario dry-run <id>@<version> --arm <arm> \[--model <id>\] \[--allow-spending\]\n\s+bench score <campaign-id>\/<n>\|dry-runs\/<n> \[--holdout <path>\]\n\s+bench run show <run> \[--full\]\n\s+bench run compare <run> <run>\n\s+bench finding <campaign-id>\/<n> --scenario <id>@<version> --metric <metric> --arms <arm>,… --as bug\|decision-log\n\s+bench site build <campaign-id>\/<n>\n\s+bench site publish \[--remote <name>\]\n\s+bench transcripts pack <campaign-id>\/<n>\n\s+bench images prune \[--dry-run\]\n$/,
+      /^usage: bench campaign validate <file>\n\s+bench campaign estimate <file>\n\s+bench campaign run <file> \[--resume <campaign-id>\/<n>\] \[--allow-spending\]\n\s+bench scenario validate <id>@<version> \[--holdout <path>\]\n\s+bench scenario dry-run <id>@<version> --arm <arm> \[--model <id>\] \[--allow-spending\]\n\s+bench score <campaign-id>\/<n>\|dry-runs\/<n> \[--final\] \[--holdout <path>\]\n\s+bench run show <run> \[--full\]\n\s+bench run compare <run> <run>\n\s+bench finding <campaign-id>\/<n> --scenario <id>@<version> --metric <metric> --arms <arm>,… --as bug\|decision-log\n\s+bench site build <campaign-id>\/<n>\n\s+bench site publish \[--remote <name>\]\n\s+bench transcripts pack <campaign-id>\/<n>\n\s+bench images prune \[--dry-run\]\n$/,
     );
   });
 
@@ -156,7 +156,7 @@ describe('bench campaign validate', () => {
     const { code, stdout, stderr } = await run(...argv);
     expect({ code, stdout }).toEqual({ code: 2, stdout: '' });
     expect(stderr).toMatch(
-      /^usage: bench campaign validate <file>\n\s+bench campaign estimate <file>\n\s+bench campaign run <file> \[--allow-spending\]\n\s+bench scenario validate <id>@<version> \[--holdout <path>\]\n\s+bench scenario dry-run <id>@<version> --arm <arm> \[--model <id>\] \[--allow-spending\]\n\s+bench score <campaign-id>\/<n>\|dry-runs\/<n> \[--holdout <path>\]\n\s+bench run show <run> \[--full\]\n\s+bench run compare <run> <run>\n\s+bench finding <campaign-id>\/<n> --scenario <id>@<version> --metric <metric> --arms <arm>,… --as bug\|decision-log\n\s+bench site build <campaign-id>\/<n>\n\s+bench site publish \[--remote <name>\]\n\s+bench transcripts pack <campaign-id>\/<n>\n\s+bench images prune \[--dry-run\]\n$/,
+      /^usage: bench campaign validate <file>\n\s+bench campaign estimate <file>\n\s+bench campaign run <file> \[--resume <campaign-id>\/<n>\] \[--allow-spending\]\n\s+bench scenario validate <id>@<version> \[--holdout <path>\]\n\s+bench scenario dry-run <id>@<version> --arm <arm> \[--model <id>\] \[--allow-spending\]\n\s+bench score <campaign-id>\/<n>\|dry-runs\/<n> \[--final\] \[--holdout <path>\]\n\s+bench run show <run> \[--full\]\n\s+bench run compare <run> <run>\n\s+bench finding <campaign-id>\/<n> --scenario <id>@<version> --metric <metric> --arms <arm>,… --as bug\|decision-log\n\s+bench site build <campaign-id>\/<n>\n\s+bench site publish \[--remote <name>\]\n\s+bench transcripts pack <campaign-id>\/<n>\n\s+bench images prune \[--dry-run\]\n$/,
     );
   });
 });
@@ -597,6 +597,35 @@ describe('bench campaign run, interrupted (REQ-RUN-19, task-079)', () => {
     expect(code).toBe(1);
     expect(stdout).toContain('campaign ended: interrupted\n');
     expect(ports.recorded.creates).toHaveLength(1);
+  });
+});
+
+describe('bench campaign run --resume (REQ-CLI-03 as amended, task-080)', () => {
+  it('wants a campaign execution after --resume, in any order with the spending flag', async () => {
+    const { file } = writeRepo(completeCampaignYaml());
+    for (const argv of [
+      ['--resume'],
+      ['--resume', 'abc'],
+      ['--resume', 'dry-runs/1'],
+      ['--resume', 'abcdef012345/0'],
+      ['--resume', 'abcdef012345/1', '--resume', 'abcdef012345/1'],
+    ]) {
+      expect((await run('campaign', 'run', file, ...argv)).code, argv.join(' ')).toBe(2);
+    }
+    for (const argv of [
+      ['--resume', 'abcdef012345/1', '--allow-spending'],
+      ['--allow-spending', '--resume', 'abcdef012345/1'],
+    ]) {
+      const { code, stderr } = await run('campaign', 'run', file, ...argv);
+      expect(code).toBe(1);
+      expect(stderr).toContain('resuming would mix results');
+    }
+  });
+
+  it('does not take --resume on validate or estimate', async () => {
+    const { file } = writeRepo(completeCampaignYaml());
+    expect((await run('campaign', 'validate', file, '--resume', 'abcdef012345/1')).code).toBe(2);
+    expect((await run('campaign', 'estimate', file, '--resume', 'abcdef012345/1')).code).toBe(2);
   });
 });
 

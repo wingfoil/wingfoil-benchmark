@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { basename, dirname, join, relative } from 'node:path';
+import { basename, dirname, join, relative, sep } from 'node:path';
 import { z } from 'zod';
 
 import { canonicalJson, fail, ok, parseWith, readYamlFile } from '../core/index.js';
@@ -7,6 +7,7 @@ import type { Issue, Result } from '../core/index.js';
 
 import { CATEGORY_MAP, compare, readMetric } from './compare.js';
 import type { Certainty, MapEntry, MetricId, Outcome } from './compare.js';
+import { plannedRuns } from './execution.js';
 import { executionRuns, readStoredRun } from './runs.js';
 
 /** Where an execution's aggregate is stored, beside its runs (REQ-FMT-06). */
@@ -216,6 +217,11 @@ export interface AggregateFile {
    * the site reads as "not measured".
    */
   readonly controls?: readonly ControlComparison[];
+  /**
+   * The planned runs that never started (REQ-CLI-06 as amended, task-080), by name: an execution the maintainer
+   * declared final while it was stopped. Absent when every planned run ran, or the plan cannot be read.
+   */
+  readonly not_run?: readonly string[];
 }
 
 /** One side of a control comparison: its `n`, the mean of its runs' figures and their range. */
@@ -435,6 +441,11 @@ export function aggregateExecution(executionDir: string): Result<AggregateFile> 
   const model = parsedPins.value.models.default;
   const grouped = groupRuns(runs);
   const groups = grouped.map(aggregateGroup);
+  // The runs the campaign planned and the execution never started (REQ-CLI-06 as amended): listed, never guessed.
+  const ran = new Set(
+    executionRuns(executionDir).map((runDir) => relative(join(executionDir, 'runs'), runDir).split(sep).join('/')),
+  );
+  const notRun = (plannedRuns(pins.value) ?? []).filter((name) => !ran.has(name));
   return ok({
     aggregate_version: AGGREGATE_VERSION,
     campaign,
@@ -444,6 +455,7 @@ export function aggregateExecution(executionDir: string): Result<AggregateFile> 
     slices: groups.filter((group) => group.model !== model),
     break_even: breakEven(grouped),
     controls: controlComparisons(grouped, groups, model),
+    ...(notRun.length === 0 ? {} : { not_run: notRun }),
   });
 }
 
