@@ -96,7 +96,7 @@ describe('the comparison page (REQ-RES-07, task-084)', () => {
       page.indexOf('</tr>', page.indexOf('<td>speckit</td>')),
     );
     expect(row).toContain('no baseline');
-    expect(row).toContain('75%');
+    expect(row).toContain('75.0%');
     expect(row).not.toContain('<span class="change">');
   });
 

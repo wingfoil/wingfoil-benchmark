@@ -256,7 +256,8 @@ effort, harnesses). Rows on two different default models are marked cross-model.
 not compared, and the comparison names the two hashes; so is one whose hash is unknown, whose category has no map
 of metrics or cannot be read, and a slice with no counterpart. A side with no delta (no baseline, not measured, not
 comparable) says why and keeps the arm's own value when it has one, and its row has no change. A dry run, an execution not
-yet aggregated, or one execution twice is refused.
+yet aggregated, or one execution twice is refused. `site build` publishes each comparison whose newer side is the execution it builds as
+`compare-<earlier-id>-<n>.html`, linked from that execution's landing page.
 
 ```bash
 npx bench finding <campaign-id>/<n> --scenario <id>@<version> --metric <metric> --arms <arm>,… --as bug|decision-log
