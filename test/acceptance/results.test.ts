@@ -5,14 +5,18 @@ import { describe, expect, it } from 'vitest';
 
 import type { AgentPort } from '../../src/agents/index.js';
 import { main } from '../../src/cli/index.js';
+import { armDigest } from '../../src/arms/index.js';
 import { gitCli, systemProcess } from '../../src/core/index.js';
 import { aggregatedExecution, WINGFOIL_COMMIT } from '../support/finding-fixture.js';
 import {
   benchPublish,
   benchSite,
+  completeExecution,
   probeSaying,
   publishableSite,
+  sha256Of,
   siteExecution,
+  STAND_INS,
 } from '../support/site-fixture.js';
 import { localScoringDocker } from '../support/local-scoring.js';
 import { repoPath } from '../support/paths.js';
@@ -185,6 +189,54 @@ function rowOf(page: string, category: string): string {
   return page.slice(start, end);
 }
 
+/**
+ * TC — standing in for C — in the baseline and wingfoil arms with two runs each, the wingfoil runs recording the
+ * WingFoil they installed (task-082), scored and built: every file the build wrote, with its text.
+ */
+async function twoRunsASide(): Promise<Record<string, string>> {
+  const first = await storedRun({ variant: STAND_INS[0], steps: [{}, CANCEL] });
+  const { root, executionDir } = first;
+  await storedRun({ variant: STAND_INS[0], steps: [{}, CANCEL], into: { root, repetition: 2 } });
+  await storedRun({ variant: STAND_INS[0], steps: [{}, {}], into: { root, arm: 'wingfoil' } });
+  await storedRun({
+    variant: STAND_INS[0],
+    steps: [{}, CANCEL],
+    into: { root, arm: 'wingfoil', repetition: 2 },
+  });
+  completeExecution(root, executionDir, ['TC']);
+  for (const arm of ['baseline', 'wingfoil']) {
+    for (const repetition of [1, 2]) {
+      const file = join(executionDir, 'runs', 'TC@1.0', arm, 'fake-model', `r${repetition}`, 'run.json');
+      const run = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>;
+      const manual = {
+        ...(run.manual as Record<string, unknown>),
+        sha256: sha256Of(join(root, 'arms', arm, 'manual.md')),
+      };
+      const harness =
+        arm === 'wingfoil'
+          ? {
+              harness: {
+                tool: 'wingfoil',
+                version: '0.2.2',
+                commit: '12537b627ce0517222da762e8fa90997a1208a4b',
+              },
+            }
+          : {};
+      writeFileSync(file, JSON.stringify({ ...run, manual, arm_digest: armDigest(root, arm), ...harness }));
+    }
+  }
+  const scored = await benchSite(root, 'score', EXECUTION);
+  if (scored.code !== 0) throw new Error(scored.stdout + scored.stderr);
+  const built = await benchSite(root, 'site', 'build', EXECUTION);
+  if (built.code !== 0) throw new Error(built.stdout + built.stderr);
+  return Object.fromEntries(
+    Object.entries(snapshotTree(join(root, 'site'))).map(([path, bytes]) => [
+      path,
+      Buffer.from(bytes, 'base64').toString('utf8'),
+    ]),
+  );
+}
+
 describe('results.feature', () => {
   it('@F5.1 Every aggregate links to the runs behind it', async () => {
     // Given a scored campaign
@@ -304,7 +356,7 @@ describe('results.feature', () => {
     // And it shows a headline sentence and one chart comparing the arms
     expect(page).toContain(
       '<p class="headline">Against the baseline, <strong>wingfoil</strong> is better in 1, worse in 1 and ' +
-        'the same in 3 of 5 comparisons across categories C, D and F (preliminary: n = 1 in C, D and F).</p>',
+        'the same in 3 of 5 comparisons across categories C, D and F (preliminary: n < 3 in C, D and F).</p>',
     );
     expect(page.match(/<svg /g)).toHaveLength(1);
     const chart = page.slice(page.indexOf('<svg '), page.indexOf('</svg>'));
@@ -360,7 +412,28 @@ describe('results.feature', () => {
       expect(text).not.toContain(HOLDOUT_SECRET);
       expect(text).not.toContain(holdout);
     }
-  });
+
+    // REQ-RES-03 as amended in 1.26 (task-082): a comparison is preliminary unless both sides have n ≥ 3 — here two
+    // runs a side — and each harness arm's version is shown beside its values (T15)
+    const two = await twoRunsASide();
+    const twoLanding = two['abcdef012345/1/index.html'] ?? '';
+    const c = two['abcdef012345/1/category-c.html'] ?? '';
+    expect(rowOf(twoLanding, 'C')).not.toContain('<span class="badge">preliminary</span>');
+    expect(rowOf(twoLanding, 'C')).toContain('n = 2');
+    expect(rowOf(twoLanding, 'C')).toContain('<span class="certainty">preliminary</span>');
+    expect(c).not.toContain('within variance');
+    expect(c).toContain('<span class="certainty">preliminary</span>');
+    expect(twoLanding).toContain('(preliminary: n < 3 in C)');
+    expect(twoLanding).toContain(
+      '<th scope="col">wingfoil <span class="harness">wingfoil 0.2.2 · 12537b6</span></th>',
+    );
+    expect(c).toContain('<li>wingfoil <span class="harness">wingfoil 0.2.2 · 12537b6</span>: ');
+    // on every line that carries one of its values — the metrics, each suite, the hold-out — and none for the baseline
+    const label = 'wingfoil <span class="harness">wingfoil 0.2.2 · 12537b6</span>';
+    expect(c.split(`<li>${label}: `).length - 1).toBe(c.split('<li>baseline: ').length - 1);
+    expect(c).not.toContain('<li>baseline <span class="harness">');
+    expect(twoLanding).toContain('>wingfoil (wingfoil 0.2.2 · 12537b6)</text>');
+  }, 240_000);
 
   it('@F5.8 The method page explains how to read the results', async () => {
     // When the site is built

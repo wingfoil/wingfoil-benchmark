@@ -948,6 +948,7 @@ describe('each harness against its own docs control (REQ-SCO-14, task-068)', () 
   });
   const base: RunSpec = { arm: 'baseline', steps: [[s('a', 1, 4)]] };
 
+  // Two runs a side: preliminary, as REQ-RES-03 as amended in 1.26 says of every comparison below n = 3 (task-082).
   it('compares the harness with the control its docs_of names, metric by metric, with both groups’ runs', () => {
     const file = aggregate(execution([base, harness(1), harness(2), control(1), control(2)]));
     expect(file.controls).toEqual([
@@ -963,7 +964,7 @@ describe('each harness against its own docs control (REQ-SCO-14, task-068)', () 
             metric: 'M-Q1',
             outcome: 'better',
             delta: 0.25,
-            certainty: 'within variance',
+            certainty: 'preliminary',
             harness: { n: 2, mean: 0.75, min: 0.75, max: 0.75 },
             control: { n: 2, mean: 0.5, min: 0.5, max: 0.5 },
           },
@@ -971,7 +972,7 @@ describe('each harness against its own docs control (REQ-SCO-14, task-068)', () 
             metric: 'M-K1',
             outcome: 'better',
             delta: expect.closeTo(-0.1, 9) as number,
-            certainty: 'within variance',
+            certainty: 'preliminary',
             harness: { n: 2, mean: 0.4, min: 0.4, max: 0.4 },
             control: { n: 2, mean: 0.5, min: 0.5, max: 0.5 },
           },

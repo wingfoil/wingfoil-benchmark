@@ -2,14 +2,14 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { z } from 'zod';
 
-import { CATEGORIES, fail, ok } from '../core/index.js';
+import { campaignSchema, CATEGORIES, fail, ok, parseWith, readYamlFile } from '../core/index.js';
 import type { Category, Issue, Result } from '../core/index.js';
 import { AGGREGATE_FILE, AGGREGATE_VERSION } from '../results/index.js';
 import type { AggregateFile, ControlComparison, ControlMetric, Group } from '../results/index.js';
 import { loadScenario } from '../scenario/index.js';
 
-import { CATEGORY_MAP, compare, readMetric, summarize } from './rules.js';
-import type { Comparison, Figures, MapEntry, Summary } from './rules.js';
+import { CATEGORY_MAP, certaintyOf, compare, harnessLabel, readMetric, summarize } from './rules.js';
+import type { Comparison, Figures, MapEntry, RecordedHarness, Summary } from './rules.js';
 
 const BASELINE = 'baseline';
 
@@ -28,7 +28,7 @@ export interface RunRecord {
   readonly run: string;
   readonly arm: string;
   readonly manual?: { readonly sha256: string; readonly tokens: number };
-  readonly harness?: { readonly tool: string; readonly commit: string };
+  readonly harness?: RecordedHarness;
   /** What the arm declared of its harness (REQ-FMT-10), as the run recorded it. */
   readonly provides?: Readonly<Record<string, boolean>>;
   /** The arm's digest (REQ-FMT-13), as the run recorded it. */
@@ -94,6 +94,8 @@ export interface SiteModel {
   readonly slices: readonly Group[];
   /** Every run's record, groups' then slices', in the aggregate's order. */
   readonly records: readonly RunRecord[];
+  /** Each harness arm's label, shown beside its values (T15, task-082): `harnessLabel` of its runs' records. */
+  readonly harnesses?: Readonly<Record<string, string>>;
   /** The planned runs that never started, of an execution declared final (REQ-CLI-06 as amended, task-080). */
   readonly notRun?: readonly string[];
 }
@@ -101,7 +103,7 @@ export interface SiteModel {
 const runRecord = z.object({
   scenario_hash: z.string(),
   manual: z.object({ sha256: z.string(), tokens: z.number() }).optional(),
-  harness: z.object({ tool: z.string(), commit: z.string() }).optional(),
+  harness: z.object({ tool: z.string(), version: z.string().optional(), commit: z.string() }).optional(),
   provides: z.record(z.string(), z.boolean()).optional(),
   arm_digest: z.string().optional(),
   attempts: z.number().int().optional(),
@@ -326,6 +328,7 @@ export function siteModel(root: string, execution: string): Result<SiteModel> {
     comparisons,
     slices: aggregate.slices,
     records: all.flatMap((group) => group.runs.flatMap((run) => records.get(run) ?? [])),
+    harnesses: harnessLabels(all, records, pinnedVersions(executionDir)),
     ...(aggregate.not_run === undefined ? {} : { notRun: aggregate.not_run }),
   });
 }
@@ -394,6 +397,50 @@ function readRecord(executionDir: string, run: string): Result<z.output<typeof r
   }
 }
 
+/**
+ * Each arm's harness label (T15, task-082), from the runs of its groups and slices. A run that recorded no version (v0.1's
+ * recorded only the commit) takes the one the campaign file pins for its arm, unless that pin is itself a commit.
+ */
+function harnessLabels(
+  groups: readonly Group[],
+  records: ReadonlyMap<string, RunRecord>,
+  pinned: Readonly<Record<string, string>>,
+): Record<string, string> {
+  const arms = [...new Set(groups.map((group) => group.arm))].sort();
+  return Object.fromEntries(
+    arms.flatMap((arm) => {
+      const harnesses = groups
+        .filter((group) => group.arm === arm)
+        .flatMap((group) => group.runs.flatMap((run) => records.get(run)?.harness ?? []))
+        .map((harness) => {
+          const pin = pinned[arm];
+          return harness.version === undefined && pin !== undefined ? { ...harness, version: pin } : harness;
+        });
+      const label = harnessLabel(harnesses);
+      return label === undefined ? [] : [[arm, label]];
+    }),
+  );
+}
+
+/** A pin that names a commit (REQ-FMT-03): 7 to 40 hex characters. Not a version to show. */
+const COMMIT_PIN = /^[0-9a-f]{7,40}$/;
+
+/**
+ * The version the execution's `campaign.yaml` pins for each harness arm, when it pins one that is not a commit, read
+ * with the campaign file's own schema (REQ-FMT-01), as the method page reads it.
+ */
+function pinnedVersions(executionDir: string): Record<string, string> {
+  const read = readYamlFile(join(executionDir, 'campaign.yaml'));
+  if (!read.ok) return {};
+  const parsed = parseWith(campaignSchema, read.value, 'campaign.yaml');
+  if (!parsed.ok) return {};
+  return Object.fromEntries(
+    Object.entries(parsed.value.harnesses).flatMap(([arm, { version }]) =>
+      COMMIT_PIN.test(version) ? [] : [[arm, version]],
+    ),
+  );
+}
+
 /** The comparison of `harness` with its docs control on `entry`, for the scenario version `info` (task-068). */
 export function againstControl(
   controls: readonly ControlComparison[] | undefined,
@@ -407,5 +454,12 @@ export function againstControl(
   );
   if (found === undefined) return {};
   const metric = found.metrics.find((candidate) => candidate.metric === entry.id);
-  return metric === undefined ? { control: found.control } : { control: found.control, metric };
+  if (metric === undefined) return { control: found.control };
+  // The certainty is presentation (REQ-RES-02 as amended): the current rule's, read from the stored sides, whatever an
+  // older aggregate recorded (task-082's review).
+  if ('note' in metric) return { control: found.control, metric };
+  return {
+    control: found.control,
+    metric: { ...metric, certainty: certaintyOf(metric.control, metric.harness, metric.outcome) },
+  };
 }

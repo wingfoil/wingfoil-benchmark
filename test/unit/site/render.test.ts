@@ -302,3 +302,27 @@ describe('a harness against its docs control on a category page (REQ-SCO-14, tas
     expect(withAgainst({})).toContain('against its docs control: not measured');
   });
 });
+
+describe('the harness beside an arm on the pages (T15, task-082 reviews)', () => {
+  const label = 'wingfoil 0.2.2 · 12537b6';
+
+  it('labels the slice line of a harness arm', () => {
+    const built = { ...model(), harnesses: { wingfoil: label } };
+    const page = categoryPage(built, built.categories[0] as CategoryRow);
+    expect(page).toContain(`<li>wingfoil <span class="harness">${label}</span>, other-model: M-Q1 `);
+  });
+
+  it('makes the chart as wide as its legend, so that no arm is clipped', () => {
+    const arms = ['baseline', 'baseline-docs', 'bmad', 'bmad-docs', 'speckit', 'speckit-docs', 'wingfoil'];
+    const built: SiteModel = {
+      ...model(),
+      arms,
+      harnesses: { bmad: 'bmad 1.0.0 · aaaaaaa', speckit: 'speckit 1.1.0 · f1d3a4f', wingfoil: label },
+    };
+    const page = landingPage(built);
+    const width = Number(/viewBox="0 0 (\d+(?:\.\d+)?) /.exec(page)?.[1]);
+    const last = /<text class="arm" x="(\d+(?:\.\d+)?)" y="\d+">wingfoil \(([^<]*)\)<\/text>/.exec(page);
+    expect(last?.[2]).toBe(label);
+    expect(Number(last?.[1]) + 7 * `wingfoil (${label})`.length).toBeLessThanOrEqual(width);
+  });
+});

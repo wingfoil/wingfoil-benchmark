@@ -72,8 +72,8 @@ export interface Summary {
 export type Outcome = 'better' | 'worse' | 'same';
 
 /**
- * How sure a difference is (experiment design §4.6): `beyond variance` only from n ≥ 3 on both sides
- * with ranges apart; `preliminary` when either side is a single run; otherwise `within variance`.
+ * How sure a difference is (experiment design §4.6, REQ-RES-03 as amended in 1.26): `preliminary` unless both sides
+ * have n ≥ 3 (dl-012); then `beyond variance` when their ranges are apart, otherwise `within variance`.
  */
 export type Certainty = 'beyond variance' | 'within variance' | 'preliminary';
 
@@ -180,12 +180,23 @@ export function compare(
   const raw = arm.mean - base.mean;
   const delta = Math.abs(raw) < EPSILON ? 0 : raw;
   const outcome: Outcome = delta === 0 ? 'same' : delta > 0 === (better === 'higher') ? 'better' : 'worse';
+  return { outcome, delta, certainty: certaintyOf(base, arm, outcome), baseline: base, other: arm };
+}
+
+/** One side's `n` and range: what a comparison's certainty is read from. */
+export interface Spread {
+  readonly n: number;
+  readonly min: number;
+  readonly max: number;
+}
+
+/**
+ * The certainty of a comparison of `arm` against `base` with `outcome` (experiment design §4.6, REQ-RES-03 as amended
+ * in 1.26): `preliminary` unless both sides have n ≥ 3 (dl-012); then `beyond variance` when they differ and their
+ * ranges are apart, otherwise `within variance`. The site applies it to a stored comparison too (task-082's review).
+ */
+export function certaintyOf(base: Spread, arm: Spread, outcome: Outcome): Certainty {
+  if (base.n < 3 || arm.n < 3) return 'preliminary';
   const apart = arm.min > base.max || arm.max < base.min;
-  const certainty: Certainty =
-    base.n === 1 || arm.n === 1
-      ? 'preliminary'
-      : outcome !== 'same' && base.n >= 3 && arm.n >= 3 && apart
-        ? 'beyond variance'
-        : 'within variance';
-  return { outcome, delta, certainty, baseline: base, other: arm };
+  return outcome !== 'same' && apart ? 'beyond variance' : 'within variance';
 }

@@ -2,7 +2,7 @@
 id: task-082-preliminary-below-n-3-and-the-harness-version-beside-every-value
 type: task
 title: "Preliminary below n = 3 and the harness version beside every value"
-status: in-progress
+status: approved
 release: v0.2
 wave: W14
 features: [F5.5]
@@ -88,4 +88,89 @@ n ≥ 3 rule, is green; v0.1's published execution re-renders with its compariso
   - the method page's rule, if stated there.
 ## Execution notes
 
+**WingFoil commands, declared vs observed:** `npx wingfoil memory submit task-082-…` on main (`bde1e21`), after the
+Design's own commit (`8369e7a`, W-01): declared backlog → in-progress; observed `{"from": "backlog", "to":
+"in-progress"}`, exit 0, one `wf(task): submit …` commit (W-14).
+
+**Build** on `task/task-082` (worktree `../WingFoil2-Benchmark-wt/task-082`, its own `npm ci`):
+- red first:
+  - `4509b8c` amends the @F5.5 acceptance tests. The headline reads `n < 3`. A dedicated site of TC has two runs a
+    side, the wingfoil runs recording `wingfoil 0.2.2` at `12537b6`, and must read `preliminary` with the harness
+    beside wingfoil.
+  - It also adds unit tests for `compare` at n = 1, 2 and 3, the control comparison at n = 2 (`aggregate.test.ts`,
+    whose `within variance` at n = 2 is amended), `harnessLabel`, the headline and the method page's rule. All of them
+    failed for the expected reasons.
+- `44a5054` holds the implementation and `site-content/method.md`'s `#preliminary`, `#headline` and
+  `#beyond-variance` paragraphs.
+- Checks, run niced with 2 workers: `tsc` and `npm run lint` are clean; `test/unit` and `test/acceptance` are green
+  (1483 passed, 8 skipped).
+
+**v0.1's published execution re-rendered** ("Done"): `npm run build`, then `node dist/cli/main.js site build
+c82a5e74885b/2` in the worktree (`site/` is git-ignored, nothing published), giving 17 pages.
+- C (S1, n = 3 a side) keeps its four comparisons `within variance`.
+- D, E and F (n = 1) were already preliminary. Their headline parenthesis now reads `(preliminary: n < 3 in D, E and
+  F)` for both arms.
+- No v0.1 comparison has n = 2, so none changes certainty.
+- The wingfoil column and every wingfoil line read `wingfoil 12537b6` at first, since v0.1's runs recorded no
+  harness version, only its commit. After review round 1 they read `wingfoil v0.2.2 · 12537b6`, the version taken
+  from the execution's campaign pin (re-checked the same way).
+
+**Decisions taken in the build, inside the Design:**
+- The value badge stays at n = 1 (REQ-RES-03's unamended "preliminary at n = 1", and the scenario's words). A
+  comparison at n = 2 says `preliminary` beside its outcome, as task-045 made a preliminary comparison of a value with
+  n > 1 say.
+- The method page does not describe the harness label. No anchor is added, since `method-statements.test.ts` registers
+  every anchor with its source, and the label is shown where it applies.
+
 ## Review notes
+
+### Review
+
+**Round 1** — a fresh independent read-only agent (`Plan` subagent), on `4181118`. Verdict: not clean (three
+should-fix). All fixed in `d1d329e`; their tests were written with the fixes, each failing on the code before it:
+1. should-fix: v0.1's runs recorded only a commit, so its pages showed no version although its campaign pins
+   `v0.2.2` → **fixed**: a run without a recorded version takes its arm's pin from the execution's `campaign.yaml`,
+   unless the pin is a commit (`wingfoil v0.2.2 · 12537b6` for v0.1; v0.2's runs record the pin itself). A departure
+   from the Design's "version when the record has one", taken because T15 asks for the version.
+2. should-fix: a stored harness-against-control certainty was shown as recorded, so an aggregate written before this
+   task kept "within variance" at n = 2 → **fixed**: the site reads it with the current rule (`certaintyOf`, the one
+   `compare` uses), as REQ-RES-02 as amended treats labels as presentation.
+3. should-fix: slice lines showed no harness → **fixed**: labels come from every group, slices included.
+4. nit: the chart legend → **fixed**: `wingfoil (wingfoil 0.2.2 · 12537b6)`.
+5. nit: the method page did not say the labels are presentation → **fixed** in `#preliminary`.
+6. nit: the method-statements sources → **fixed** for `beyond-variance`, `preliminary` and `headline`.
+7. nit: three comments → **fixed**.
+8. nit: thin coverage → **fixed**: every wingfoil line labelled, none on the baseline, the legend, the pin fallback
+   and the control's recomputed certainty.
+9. nit: no style for `.harness` → **fixed**, the smaller size of its neighbours.
+
+**Round 2** — a fresh independent read-only agent, on `873fb15`: the nine round-1 outcomes verified, the whole diff
+read again. Verdict: not clean (one should-fix). All fixed in `97582eb`, tests written with the fixes:
+1. should-fix: the chart's width ignored its legend, which the harness labels made 3–4 times longer: with seven arms
+   the last ones would be clipped → **fixed**: the chart is as wide as its legend; a test with seven arms checks the
+   last legend entry fits, and fails when the width ignores the legend (mutation checked).
+2. nit: a campaign pinned by commit records the commit as the version, giving `wingfoil 3df305e · 3df305e` →
+   **fixed**: a version that is a commit is not shown; tested.
+3. nit: the slice line had no test → **fixed**: a render test.
+4. nit: the pin was read with a loose schema of its own → **fixed**: read with `campaignSchema`, as the method page
+   reads it.
+5. nit: the bars' tooltips named the arm alone → **fixed**: the legend's text.
+
+**Round 3** — a fresh independent read-only agent, on `97582eb`: the chart's width, the axis and `max-width` follow
+the legend; short legends give the same bytes as before (REQ-NFR-05); the commit-as-version rule has no false
+positive; a campaign file failing its schema gives no pin, and the build then fails on the method page anyway.
+Verdict: clean, with two optional nits, both **no change**:
+1. the commit-pin pattern is written in `rules.ts` and `model.ts`: REQ-FMT-03's form is fixed, and both name it.
+2. no assertion on the bars' `<title>` text: cosmetic, the legend carries T15.
+
+### Full suites
+
+`scripts/full-suites.sh task/task-082` on 2026-10-12, at the approver's request ("Avvia la suite"), on `4bbdfc5` (the
+in-review submit), worktree clean: `LINT 0 TEST 0 BUILD 0 BIN 0 DOCKER 0`. `npm test` 1487 passed, 8 skipped, statement
+coverage 97.68 %; `test:bin` 8/8; `test:docker` 20 passed, 2 skipped. Log:
+`.cache/full-suites/2026-10-12/task_task-082-4bbdfc5-110620.txt`. The commit after it adds only these notes.
+
+**WingFoil command, declared vs observed:** `npx wingfoil memory submit task-082-…` on the branch: declared
+in-progress → in-review; observed `{"from": "in-progress", "to": "in-review"}`, exit 0, one `wf(task): submit …`
+commit (`4bbdfc5`). No task was `in-review` on main or on a task branch before it.
+

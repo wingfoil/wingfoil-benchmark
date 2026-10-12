@@ -190,11 +190,11 @@ const STATEMENTS: readonly (readonly [string, string])[] = [
   ],
   [
     'beyond-variance',
-    'experiment design §4.6; REQ-RES-03; experiment design §5 T8 (no claim of significance in v0.1)',
+    'experiment design §4.6; REQ-RES-03, as amended in 1.26 (dl-012); experiment design §5 T8 (no claim of significance in v0.1); task-082 Design',
   ],
   [
     'preliminary',
-    'experiment design §4.6; REQ-RES-03 (preliminary comparison marked when the value has n > 1); task-045 Design findings (only S1 repeated; D, E, F n = 1)',
+    'experiment design §4.6; REQ-RES-03 (preliminary comparison marked when the value has n > 1), as amended in 1.26 (preliminary unless both sides have n ≥ 3, dl-012); REQ-RES-02 as amended in 1.26 (labels are presentation); task-045 Design findings (only S1 repeated; D, E, F n = 1); task-082 Design',
   ],
   [
     'm-e1-not-comparable',
@@ -202,7 +202,7 @@ const STATEMENTS: readonly (readonly [string, string])[] = [
   ],
   [
     'headline',
-    'REQ-RES-03 (the headline’s grammar); task-045 W11 plan-phase decision 3 and Design "The headline"; task-045 Choices to confirm 2',
+    'REQ-RES-03 (the headline’s grammar), as amended in 1.26 (n < 3); task-045 W11 plan-phase decision 3 and Design "The headline"; task-045 Choices to confirm 2; task-082 Design',
   ],
   ['chart', 'REQ-RES-03 (the chart); task-045 "After the reviews" (chart reads every covered scenario)'],
   ['same-weight', 'REQ-RES-03 (one markup for every outcome; arm order); task-045 Design "The landing page"'],

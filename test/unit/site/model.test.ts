@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { Group } from '../../../src/results/index.js';
-import { metricRow } from '../../../src/site/model.js';
+import { againstControl, metricRow } from '../../../src/site/model.js';
 import { CATEGORY_MAP } from '../../../src/site/rules.js';
 import type { MapEntry } from '../../../src/site/rules.js';
 
@@ -99,6 +99,36 @@ describe('a metric row (task-045, after its independent review)', () => {
     expect(row.values[1]).toEqual({
       arm: 'wingfoil',
       note: 'not comparable: r2 was not scored with the directive checks',
+    });
+  });
+});
+
+describe('a harness against its control, read with the current rule (task-082 review)', () => {
+  it('relabels a stored comparison by n ≥ 3, whatever certainty an older aggregate recorded', () => {
+    const side = (n: number) => ({ n, mean: 0.5, min: 0.5, max: 0.5 });
+    const controls = [
+      {
+        scenario: 'T3',
+        version: '1.0',
+        model: 'm',
+        harness: 'wingfoil',
+        control: 'baseline-docs',
+        runs: { harness: [], control: [] },
+        metrics: [
+          {
+            metric: 'M-Q1' as const,
+            outcome: 'better' as const,
+            delta: 0.25,
+            certainty: 'within variance' as const,
+            harness: { ...side(2), mean: 0.75, min: 0.75, max: 0.75 },
+            control: side(2),
+          },
+        ],
+      },
+    ];
+    const entry = CATEGORY_MAP.C.find((candidate) => candidate.id === 'M-Q1') as MapEntry;
+    expect(againstControl(controls, { id: 'T3', version: '1.0' }, 'wingfoil', entry).metric).toMatchObject({
+      certainty: 'preliminary',
     });
   });
 });

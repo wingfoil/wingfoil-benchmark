@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { Group } from '../../../src/results/index.js';
 import {
+  harnessLabel,
   CATEGORY_MAP,
   compare,
   formatDelta,
@@ -64,15 +65,17 @@ describe('a comparison against the baseline', () => {
     expect(result.other.mean).toBe(1);
   });
 
-  it('is preliminary when either side is a single run', () => {
+  it('is preliminary unless both sides have n ≥ 3 (REQ-RES-03 as amended in 1.26, task-082)', () => {
     expect(compare('higher', figures(0), figures(1, 1, 1)).certainty).toBe('preliminary');
     expect(compare('higher', figures(0, 0, 0), figures(1)).certainty).toBe('preliminary');
+    expect(compare('higher', figures(0, 0.1), figures(0.3, 0.4)).certainty).toBe('preliminary');
+    expect(compare('higher', figures(0, 0.1, 0.2), figures(0.3, 0.4)).certainty).toBe('preliminary');
+    expect(compare('higher', figures(1, 1), figures(1, 1)).certainty).toBe('preliminary');
   });
 
   it('is beyond variance only when both sides have n ≥ 3 and their ranges do not overlap', () => {
     expect(compare('higher', figures(0, 0.1, 0.2), figures(0.3, 0.4, 0.5)).certainty).toBe('beyond variance');
     expect(compare('higher', figures(0, 0.1, 0.3), figures(0.3, 0.4, 0.5)).certainty).toBe('within variance');
-    expect(compare('higher', figures(0, 0.1), figures(0.3, 0.4)).certainty).toBe('within variance');
   });
 
   it('is the same, and never beyond variance, when the means are equal', () => {
@@ -218,7 +221,7 @@ describe('the headline', () => {
     ];
     expect(headlineSentence('wingfoil', comparisons)).toBe(
       'Against the baseline, wingfoil is better in 1, worse in 1 and the same in 3 of 5 comparisons ' +
-        'across categories C, D and F (preliminary: n = 1 in C, D and F).',
+        'across categories C, D and F (preliminary: n < 3 in C, D and F).',
     );
   });
 
@@ -261,5 +264,31 @@ describe('numbers', () => {
     expect(formatDelta('M-E1', 0.004)).toBe('+0.0040');
     expect(formatDelta('M-K1', 3e-7)).toBe('+0.00000030 EUR');
     expect(formatDelta('M-E1', 1.5)).toBe('+1.5');
+  });
+});
+
+describe('the harness beside an arm (T15, REQ-RES-03 as amended in 1.26, task-082)', () => {
+  const commit = '12537b627ce0517222da762e8fa90997a1208a4b';
+
+  it('names the tool, its version when the run recorded one, and the commit short', () => {
+    expect(harnessLabel([{ tool: 'wingfoil', commit }])).toBe('wingfoil 12537b6');
+    expect(harnessLabel([{ tool: 'speckit', version: '1.1.0', commit: 'f1d3a4f8' }])).toBe(
+      'speckit 1.1.0 · f1d3a4f',
+    );
+    // A campaign pinned by commit records its pin as the version: the commit is not shown twice.
+    expect(harnessLabel([{ tool: 'wingfoil', version: '3df305e', commit: '3df305ea198d' }])).toBe(
+      'wingfoil 3df305e',
+    );
+  });
+
+  it('lists each harness its runs recorded, once and sorted, and none for an arm without one', () => {
+    expect(
+      harnessLabel([
+        { tool: 'wingfoil', commit: 'bbbbbbb1' },
+        { tool: 'wingfoil', commit: 'aaaaaaa1' },
+        { tool: 'wingfoil', commit: 'bbbbbbb1' },
+      ]),
+    ).toBe('wingfoil aaaaaaa, wingfoil bbbbbbb');
+    expect(harnessLabel([])).toBeUndefined();
   });
 });

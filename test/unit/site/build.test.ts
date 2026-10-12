@@ -412,3 +412,28 @@ describe('attempts and runs not run on the site (REQ-RUN-19, REQ-CLI-06 as amend
     expect(landing).toContain('Not run: <code>TD@1.0/baseline/fake-model/r2</code>');
   }, 120_000);
 });
+
+describe('the harness beside an arm, from the campaign pin when the run recorded no version (task-082 review)', () => {
+  it('shows the pinned version of v0.1-like runs, and no version for a pin that is a commit', async () => {
+    const { root, executionDir } = await siteExecution();
+    const commit = '12537b627ce0517222da762e8fa90997a1208a4b';
+    for (const id of ['TC', 'TD', 'TF']) {
+      const file = join(executionDir, 'runs', `${id}@1.0`, 'wingfoil', 'fake-model', 'r1', 'run.json');
+      writeFileSync(
+        file,
+        JSON.stringify({ ...JSON.parse(readFileSync(file, 'utf8')), harness: { tool: 'wingfoil', commit } }),
+      );
+    }
+    const campaign = join(executionDir, 'campaign.yaml');
+    const pinnedByCommit = readFileSync(campaign, 'utf8');
+    expect((await benchSite(root, 'site', 'build', EXECUTION)).code).toBe(0);
+    const header = () => readFileSync(join(root, 'site', 'abcdef012345', '1', 'index.html'), 'utf8');
+    expect(header()).toContain('<th scope="col">wingfoil <span class="harness">wingfoil 12537b6</span></th>');
+
+    writeFileSync(campaign, pinnedByCommit.replace('version: 3df305e', 'version: v0.2.2'));
+    expect((await benchSite(root, 'site', 'build', EXECUTION)).code).toBe(0);
+    expect(header()).toContain(
+      '<th scope="col">wingfoil <span class="harness">wingfoil v0.2.2 · 12537b6</span></th>',
+    );
+  }, 120_000);
+});

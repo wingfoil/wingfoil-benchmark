@@ -38,7 +38,7 @@ export { findingNote, METRICS } from './finding.js';
 export { packTranscripts, RELEASES, TRANSCRIPTS_ASSET } from './transcripts.js';
 export type { KnownSecret, TranscriptPack } from './transcripts.js';
 export type { FindingNote, FindingRequest, FindingShape, Metric } from './finding.js';
-export { CATEGORY_MAP, compare, readMetric, summarize } from './compare.js';
+export { CATEGORY_MAP, certaintyOf, compare, readMetric, summarize } from './compare.js';
 export type {
   Better,
   Certainty,

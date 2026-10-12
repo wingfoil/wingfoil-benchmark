@@ -92,6 +92,15 @@ function title(model: SiteModel): string {
   return `WingFoil Benchmark — campaign ${model.campaign}, execution ${model.execution}`;
 }
 
+/**
+ * An arm's name, and beside it the harness its runs recorded (T15, REQ-RES-03 as amended in 1.26, task-082): on every
+ * line and column that carries its values. The baseline and the docs controls have none.
+ */
+function armHtml(model: SiteModel, arm: string): string {
+  const label = model.harnesses?.[arm];
+  return label === undefined ? e(arm) : `${e(arm)} <span class="harness">${e(label)}</span>`;
+}
+
 /** A value's `n`, its `preliminary` badge at n = 1, and its range from n = 3 (experiment design §4.6). */
 function nOf(metric: MetricId, summary: Summary): string {
   const badge = summary.n === 1 ? ' <span class="badge">preliminary</span>' : '';
@@ -111,8 +120,8 @@ function valueHtml(metric: MetricId, value: ArmValue, labelled = false): string 
   const figure = `${label}${e(formatFigure(metric, value.summary.mean))} ${nOf(metric, value.summary)}`;
   const comparison = value.comparison;
   if (comparison === undefined) return `<div class="value">${figure}${note === '' ? '' : ` ${note}`}</div>`;
-  // The badge already says preliminary when this value is a single run; otherwise the certainty does,
-  // the baseline's single run included (task-045's review).
+  // The badge already says preliminary when this value is a single run; otherwise the certainty does, a side with
+  // fewer than 3 runs included (task-045's review, task-082).
   const badged = comparison.certainty === 'preliminary' && value.summary.n === 1;
   const certainty = badged ? '' : ` <span class="certainty">${comparison.certainty}</span>`;
   return (
@@ -285,7 +294,18 @@ function chartSvg(model: SiteModel): string {
   );
   const plot = CHART.height - CHART.top - CHART.bottom;
   const groupWidth = model.arms.length * (CHART.bar + CHART.gap) - CHART.gap;
-  const width = Math.max(CHART.width, CHART.left + scenarios.length * (groupWidth + CHART.groupGap));
+  // Each arm's legend text, its harness beside its name (T15, task-082), and the room it takes: the chart is as wide
+  // as its legend too, so that no arm's name is clipped (task-082's second review).
+  const legend = model.arms.map((arm) => {
+    const label = model.harnesses?.[arm];
+    return label === undefined ? arm : `${arm} (${label})`;
+  });
+  const legendEnd = legend.reduce((x, text) => x + 20 + 7 * text.length + 24, CHART.left);
+  const width = Math.max(
+    CHART.width,
+    CHART.left + scenarios.length * (groupWidth + CHART.groupGap),
+    legendEnd,
+  );
   const y = (share: number) => CHART.top + plot * (1 - share);
   const parts: string[] = [
     '<defs>',
@@ -301,11 +321,12 @@ function chartSvg(model: SiteModel): string {
   ];
   let legendX = CHART.left;
   model.arms.forEach((arm, armIndex) => {
+    const text = legend[armIndex] ?? arm;
     parts.push(
       `<rect${armFill('swatch', armIndex)} x="${legendX}" y="${CHART.legend - 11}" width="14" height="14"/>`,
-      `<text class="arm" x="${legendX + 20}" y="${CHART.legend}">${e(arm)}</text>`,
+      `<text class="arm" x="${legendX + 20}" y="${CHART.legend}">${e(text)}</text>`,
     );
-    legendX += 20 + 7 * arm.length + 24;
+    legendX += 20 + 7 * text.length + 24;
   });
   parts.push(
     `<line class="axis" x1="${CHART.left}" y1="${y(0)}" x2="${width}" y2="${y(0)}"/>`,
@@ -328,7 +349,7 @@ function chartSvg(model: SiteModel): string {
       const top = y(summary.mean);
       parts.push(
         `<rect${armFill('bar', armIndex)} x="${middle - CHART.bar / 2}" y="${round(top)}" ` +
-          `width="${CHART.bar}" height="${round(y(0) - top)}"><title>${e(`${arm}: ${formatFigure('M-Q1', summary.mean)}, n = ${summary.n}`)}</title></rect>`,
+          `width="${CHART.bar}" height="${round(y(0) - top)}"><title>${e(`${legend[armIndex] ?? arm}: ${formatFigure('M-Q1', summary.mean)}, n = ${summary.n}`)}</title></rect>`,
         ...(summary.n >= 2
           ? [
               `<line class="whisker" x1="${middle}" y1="${round(y(summary.max))}" x2="${middle}" y2="${round(y(summary.min))}"/>`,
@@ -376,12 +397,12 @@ export function landingPage(model: SiteModel): string {
     `<figure>\n${chartSvg(model)}\n<figcaption>M-Q1: the share of public hidden tests passed on the final snapshot, ` +
     `per arm, with the range of its runs and their n.</figcaption>\n</figure>\n` +
     '<div class="scroll">\n<table class="categories">\n<thead><tr><th scope="col">Category</th>' +
-    model.arms.map((arm) => `<th scope="col">${e(arm)}</th>`).join('') +
+    model.arms.map((arm) => `<th scope="col">${armHtml(model, arm)}</th>`).join('') +
     '</tr></thead>\n<tbody>\n' +
     model.categories.map((row) => rowHtml(model, row)).join('') +
     '</tbody>\n</table>\n</div>\n' +
-    `<p class="legend">Each value is the mean of its runs, with its n; n = 1 is preliminary; a range is shown from ` +
-    `n = 3. Deltas are against the baseline. ` +
+    `<p class="legend">Each value is the mean of its runs, with its n; a single run is preliminary, and so is a ` +
+    `comparison unless both sides have n ≥ 3; a range is shown from n = 3. Deltas are against the baseline. ` +
     `<a href="method.html">How to read these results</a>; ` +
     `<a href="eligibility.html">which tools are eligible, and why</a>.</p>\n` +
     `<p class="meta">Campaign ${e(model.campaign)}, execution ${model.execution}: ${runs(model.runs)} of ${e(model.model)}` +
@@ -423,7 +444,7 @@ export function categoryPage(model: SiteModel, row: CategoryRow): string {
       slices
         .map((group) => {
           const value = group.metrics.m_q1.final.m_q1;
-          return `<li>${e(`${group.arm}, ${group.model}`)}: M-Q1 ${e(tallies(value.values))} (n = ${group.n})</li>\n`;
+          return `<li>${armHtml(model, group.arm)}, ${e(group.model)}: M-Q1 ${e(tallies(value.values))} (n = ${group.n})</li>\n`;
         })
         .join('') +
       '</ul>\n';
@@ -437,7 +458,7 @@ function scenarioSection(model: SiteModel, scenario: ScenarioRow): string {
   for (const metric of scenario.metrics) {
     html += `<h3>${metric.entry.id}: ${e(metric.entry.label)} (${metric.entry.better} is better)</h3>\n<ul>\n`;
     for (const value of metric.values)
-      html += `<li>${e(value.arm)}: ${valueHtml(metric.entry.id, value)}${againstHtml(metric.entry.id, value)}</li>\n`;
+      html += `<li>${armHtml(model, value.arm)}: ${valueHtml(metric.entry.id, value)}${againstHtml(metric.entry.id, value)}</li>\n`;
     html += '</ul>\n';
   }
   html += '<h3>Each suite on the final snapshot</h3>\n<ul>\n';
@@ -445,10 +466,11 @@ function scenarioSection(model: SiteModel, scenario: ScenarioRow): string {
     const suites = group.metrics.m_q1.final.suites
       .map((suite) => `${suite.id} ${tallies(suite.value.values)}`)
       .join('; ');
-    html += `<li>${e(group.arm)}: ${e(suites)}</li>\n`;
+    html += `<li>${armHtml(model, group.arm)}: ${e(suites)}</li>\n`;
   }
   html += '</ul>\n<h3>Hold-out</h3>\n<ul>\n';
-  for (const group of scenario.groups) html += `<li>${e(group.arm)}: ${holdoutHtml(group)}</li>\n`;
+  for (const group of scenario.groups)
+    html += `<li>${armHtml(model, group.arm)}: ${holdoutHtml(group)}</li>\n`;
   html += '</ul>\n<h3>Runs</h3>\n<ul>\n';
   for (const group of scenario.groups) {
     for (const run of group.runs) {
@@ -508,7 +530,7 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 .value { margin-bottom: 0.25rem; }
 .metric, .scenario { font-weight: 600; }
 .scroll { overflow-x: auto; }
-.n, .range, .certainty, .delta, .holdout { font-size: 0.85rem; }
+.n, .range, .certainty, .delta, .holdout, .harness { font-size: 0.85rem; }
 .badge, .holdout { border: 1px solid var(--line); border-radius: 0.25rem; padding: 0 0.25rem; }
 .outcome { font-weight: 600; }
 .chart { width: 100%; height: auto; }

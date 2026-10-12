@@ -6,7 +6,7 @@ import type { Comparison, MetricId, Outcome } from '../results/index.js';
  * category map and the comparison rules themselves are `results`' (task-068), re-exported here.
  */
 
-export { CATEGORY_MAP, compare, readMetric, summarize } from '../results/index.js';
+export { CATEGORY_MAP, certaintyOf, compare, readMetric, summarize } from '../results/index.js';
 export type {
   Better,
   Certainty,
@@ -31,7 +31,7 @@ function unique(items: readonly string[]): string[] {
 
 /**
  * The headline for one arm (the approver's choice 2): its better, worse and same comparisons counted
- * with the same weight, the categories they span, and those where a side is a single run. `emphasis`
+ * with the same weight, the categories they span, and those where a side has fewer than 3 runs. `emphasis`
  * marks the arm's name (the page's `<strong>`).
  */
 export function headlineSentence(
@@ -56,7 +56,7 @@ export function headlineSentence(
     `Against the baseline, ${name} is better in ${count('better')}, worse in ${count('worse')} and the same in ` +
     `${count('same')} of ${total} comparison${total === 1 ? '' : 's'} across ` +
     `${categories.length === 1 ? 'category' : 'categories'} ${listed(categories)}` +
-    (preliminary.length === 0 ? '' : ` (preliminary: n = 1 in ${listed(preliminary)})`) +
+    (preliminary.length === 0 ? '' : ` (preliminary: n < 3 in ${listed(preliminary)})`) +
     '.'
   );
 }
@@ -98,4 +98,30 @@ function fixed(value: number, digits: number): string {
   const text = value.toFixed(digits);
   if (value === 0 || Number(text) !== 0) return text;
   return value.toFixed(Math.min(100, 1 - Math.floor(Math.log10(value))));
+}
+
+/** A harness as a run recorded it (REQ-RUN-14, REQ-FMT-06): its tool, its version when recorded, and its commit. */
+export interface RecordedHarness {
+  readonly tool: string;
+  readonly version?: string;
+  readonly commit: string;
+}
+
+/**
+ * The harness an arm's runs recorded, as the pages show it beside the arm's values (T15, REQ-RES-03 as amended in
+ * 1.26, task-082): `<tool> <version> · <commit, 7>`, or `<tool> <commit, 7>` without a version; each distinct one,
+ * sorted, when the runs recorded more than one; undefined for an arm with none (the baseline, a docs control).
+ */
+export function harnessLabel(harnesses: readonly RecordedHarness[]): string | undefined {
+  const labels = [
+    ...new Set(
+      harnesses.map(({ tool, version, commit }) =>
+        // A version that is a commit (a campaign pinned by commit records its pin as written) is not shown twice.
+        version === undefined || /^[0-9a-f]{7,40}$/.test(version)
+          ? `${tool} ${commit.slice(0, 7)}`
+          : `${tool} ${version} · ${commit.slice(0, 7)}`,
+      ),
+    ),
+  ].sort();
+  return labels.length === 0 ? undefined : labels.join(', ');
 }

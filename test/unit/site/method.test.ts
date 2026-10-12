@@ -440,3 +440,14 @@ describe('the setup as it ran, when the working tree no longer has the arm (task
     ).toEqual(harnesses.sort());
   });
 });
+
+describe("the method page's rule for a preliminary comparison (REQ-RES-03 as amended in 1.26, task-082)", () => {
+  const text = readFileSync(repoPath('site-content/method.md'), 'utf8');
+  const paragraph = (anchor: string) => text.split('\n').find((line) => line.endsWith(`{#${anchor}}`)) ?? '';
+
+  it('says a comparison is preliminary unless both sides have at least 3 runs', () => {
+    expect(paragraph('preliminary')).toContain('unless both sides have at least 3 runs');
+    expect(paragraph('headline')).toContain('fewer than 3 runs');
+    expect(paragraph('headline')).not.toContain('a single run, marked preliminary');
+  });
+});
