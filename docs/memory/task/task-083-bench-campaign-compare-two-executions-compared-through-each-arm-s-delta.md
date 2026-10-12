@@ -176,3 +176,20 @@ should-fix). Red tests `3cea613` (hand-built aggregates, fast), fixes `1c5e534`:
 9. nit: pins → **fixed**: `models.slices` and `arm_digests.<arm>` added.
 10. nit: aggregate shape and execution record → **fixed** with 5.
 
+**Round 2** — a fresh independent read-only agent, on `fe1f69d`; it also ran the command on scratch copies of the
+real executions (`c82a5e74885b/1` vs `/2`, `c82a5e74885b/2` vs `d032e3e98de3/1`, `c82a5e74885b/1` vs `d032e3e98de3/1`).
+Verdict: not clean (two should-fix). Red tests `9a71ee2`, fixes `5fd3986`:
+1. should-fix: two unknown hashes still matched → **fixed**: an unknown hash is never compared; tested with both sides
+   unknown.
+2. should-fix: a row with a note dropped both sides' figures, which task-084's page needs → **fixed**: each side is
+   its own — a delta, or `{ note, arm? }` keeping the arm's value — and `change` only when both have a delta.
+3. nit: stdout counted groups with no row as compared → **fixed**: `N groups matched, R rows compared, K not compared`.
+4. nit: no test for both hashes unknown → **fixed** with 1.
+5. nit: `NotCompared`'s comment → **fixed**: it names slices with no counterpart too.
+6. nit: a cross-model row named the earlier model only → **fixed**: `<earlier> → <newer>`, as `compared`.
+7. nit: one unaggregated execution twice was reported three times → **fixed**: "the same execution twice", once,
+   before anything is read.
+
+v0.1's comparison after round 2: `13 groups matched, 12 rows compared, 0 not compared`; the opus slice's two rows
+keep wingfoil's values beside `no baseline` on each side.
+
