@@ -193,3 +193,13 @@ Verdict: not clean (two should-fix). Red tests `9a71ee2`, fixes `5fd3986`:
 v0.1's comparison after round 2: `13 groups matched, 12 rows compared, 0 not compared`; the opus slice's two rows
 keep wingfoil's values beside `no baseline` on each side.
 
+**Round 3** — a fresh independent read-only agent, on `c4d0635`: the round-2 fixes correct, the file deterministic,
+the acceptance assertions still matched. Verdict: not clean, four nits only, all **fixed** in `c9a529d` (their tests with
+the fixes):
+1. `dry-runs/1 dry-runs/1` said "the same execution twice" → what a target is is checked first.
+2. stdout left rows with a note out → `N groups matched, R rows with a change, S rows without, K groups not compared`.
+3. an arm with no M-E1 figures against a baseline not comparable read "no comparison" → `not measured`, the site's
+   order.
+4. the README did not say what a side without a delta records, nor the other reasons not to compare → one sentence
+   each.
+
