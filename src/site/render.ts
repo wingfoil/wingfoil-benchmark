@@ -294,7 +294,18 @@ function chartSvg(model: SiteModel): string {
   );
   const plot = CHART.height - CHART.top - CHART.bottom;
   const groupWidth = model.arms.length * (CHART.bar + CHART.gap) - CHART.gap;
-  const width = Math.max(CHART.width, CHART.left + scenarios.length * (groupWidth + CHART.groupGap));
+  // Each arm's legend text, its harness beside its name (T15, task-082), and the room it takes: the chart is as wide
+  // as its legend too, so that no arm's name is clipped (task-082's second review).
+  const legend = model.arms.map((arm) => {
+    const label = model.harnesses?.[arm];
+    return label === undefined ? arm : `${arm} (${label})`;
+  });
+  const legendEnd = legend.reduce((x, text) => x + 20 + 7 * text.length + 24, CHART.left);
+  const width = Math.max(
+    CHART.width,
+    CHART.left + scenarios.length * (groupWidth + CHART.groupGap),
+    legendEnd,
+  );
   const y = (share: number) => CHART.top + plot * (1 - share);
   const parts: string[] = [
     '<defs>',
@@ -310,9 +321,7 @@ function chartSvg(model: SiteModel): string {
   ];
   let legendX = CHART.left;
   model.arms.forEach((arm, armIndex) => {
-    // The arm's harness beside its name (T15, task-082): the legend names the bars' values.
-    const label = model.harnesses?.[arm];
-    const text = label === undefined ? arm : `${arm} (${label})`;
+    const text = legend[armIndex] ?? arm;
     parts.push(
       `<rect${armFill('swatch', armIndex)} x="${legendX}" y="${CHART.legend - 11}" width="14" height="14"/>`,
       `<text class="arm" x="${legendX + 20}" y="${CHART.legend}">${e(text)}</text>`,
@@ -340,7 +349,7 @@ function chartSvg(model: SiteModel): string {
       const top = y(summary.mean);
       parts.push(
         `<rect${armFill('bar', armIndex)} x="${middle - CHART.bar / 2}" y="${round(top)}" ` +
-          `width="${CHART.bar}" height="${round(y(0) - top)}"><title>${e(`${arm}: ${formatFigure('M-Q1', summary.mean)}, n = ${summary.n}`)}</title></rect>`,
+          `width="${CHART.bar}" height="${round(y(0) - top)}"><title>${e(`${legend[armIndex] ?? arm}: ${formatFigure('M-Q1', summary.mean)}, n = ${summary.n}`)}</title></rect>`,
         ...(summary.n >= 2
           ? [
               `<line class="whisker" x1="${middle}" y1="${round(y(summary.max))}" x2="${middle}" y2="${round(y(summary.min))}"/>`,

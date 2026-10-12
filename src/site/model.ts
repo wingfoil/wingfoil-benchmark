@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { z } from 'zod';
 
-import { CATEGORIES, fail, ok, readYamlFile } from '../core/index.js';
+import { campaignSchema, CATEGORIES, fail, ok, parseWith, readYamlFile } from '../core/index.js';
 import type { Category, Issue, Result } from '../core/index.js';
 import { AGGREGATE_FILE, AGGREGATE_VERSION } from '../results/index.js';
 import type { AggregateFile, ControlComparison, ControlMetric, Group } from '../results/index.js';
@@ -425,16 +425,17 @@ function harnessLabels(
 /** A pin that names a commit (REQ-FMT-03): 7 to 40 hex characters. Not a version to show. */
 const COMMIT_PIN = /^[0-9a-f]{7,40}$/;
 
-/** The version the execution's `campaign.yaml` pins for each harness arm, when it pins one that is not a commit. */
+/**
+ * The version the execution's `campaign.yaml` pins for each harness arm, when it pins one that is not a commit, read
+ * with the campaign file's own schema (REQ-FMT-01), as the method page reads it.
+ */
 function pinnedVersions(executionDir: string): Record<string, string> {
   const read = readYamlFile(join(executionDir, 'campaign.yaml'));
   if (!read.ok) return {};
-  const parsed = z
-    .object({ harnesses: z.record(z.string(), z.object({ version: z.coerce.string() }).loose()) })
-    .safeParse(read.value);
-  if (!parsed.success) return {};
+  const parsed = parseWith(campaignSchema, read.value, 'campaign.yaml');
+  if (!parsed.ok) return {};
   return Object.fromEntries(
-    Object.entries(parsed.data.harnesses).flatMap(([arm, { version }]) =>
+    Object.entries(parsed.value.harnesses).flatMap(([arm, { version }]) =>
       COMMIT_PIN.test(version) ? [] : [[arm, version]],
     ),
   );

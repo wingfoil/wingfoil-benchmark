@@ -275,6 +275,10 @@ describe('the harness beside an arm (T15, REQ-RES-03 as amended in 1.26, task-08
     expect(harnessLabel([{ tool: 'speckit', version: '1.1.0', commit: 'f1d3a4f8' }])).toBe(
       'speckit 1.1.0 · f1d3a4f',
     );
+    // A campaign pinned by commit records its pin as the version: the commit is not shown twice.
+    expect(harnessLabel([{ tool: 'wingfoil', version: '3df305e', commit: '3df305ea198d' }])).toBe(
+      'wingfoil 3df305e',
+    );
   });
 
   it('lists each harness its runs recorded, once and sorted, and none for an arm without one', () => {

@@ -116,7 +116,8 @@ export function harnessLabel(harnesses: readonly RecordedHarness[]): string | un
   const labels = [
     ...new Set(
       harnesses.map(({ tool, version, commit }) =>
-        version === undefined
+        // A version that is a commit (a campaign pinned by commit records its pin as written) is not shown twice.
+        version === undefined || /^[0-9a-f]{7,40}$/.test(version)
           ? `${tool} ${commit.slice(0, 7)}`
           : `${tool} ${version} · ${commit.slice(0, 7)}`,
       ),
