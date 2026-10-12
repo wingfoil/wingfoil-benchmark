@@ -31,12 +31,77 @@ After task-080, whose executions it sums. **Done** means: both scenarios' tests 
 
 ## Acceptance criteria
 
-- `campaign.feature#The cost is estimated before any run starts`: classified red-first or characterization in the design phase.
-- `campaign.feature#The ceiling covers every execution of a campaign`: classified red-first or characterization in the design phase.
+- `campaign.feature#The cost is estimated before any run starts`: **red-first**. The scenario's test exists since W5.
+  Its expectations are amended to REQ-CLI-02 as amended in 1.26 (the lowest, mean and highest of every dry run; one
+  dry run with a stated 35 % margin) and fail today, since the estimate prices the latest dry run only.
+- `campaign.feature#The ceiling covers every execution of a campaign`: **red-first**. Today the guard compares the
+  whole campaign's estimate with the ceiling, and ignores what earlier executions spent.
 
 ## Design
 
-<!-- Written in the design phase. -->
+**Fixes:** none (dl-012 C).
+
+**1. Every dry run of a key** (REQ-CLI-02 as amended):
+- `findDryRuns` (results) returns every dry run that counts for a key, by the rules `findDryRun` applies today
+  (completed, the version's hash, the key's effort, a cost the agent priced), newest first.
+- `findDryRun` and `latestDryRun` become its first element, so the dry-run command's "the latest dry run cost …" is
+  unchanged.
+- A key is never priced from another model's dry run: the model is part of the dry run's path. This already holds and
+  is pinned by a characterization test.
+
+**2. The estimate's figures**, for each key and in total:
+- `low`, `mean` and `high` of its dry runs' costs, times the key's repetitions;
+- **with one dry run**, `low` = `mean` = its cost, and `high` = its cost plus a margin of 35 %
+  (`ESTIMATE_MARGIN = 0.35`). The line says so. With two or more, there is no margin: their spread is the range;
+- `Estimate` carries `lowUsd`, `meanUsd`, `highUsd` and `highEur` (the old `totalUsd` and `totalEur` go), and each
+  line carries its dry runs (their count and directories) and whether the margin applied.
+- **Printed:**
+  - one dry run: `S1@1.0 baseline m: 0.1000 USD + 35 % margin = 0.1350 USD × 3 = 0.4050 USD (1 dry run: results/dry-runs/4)`;
+  - two or more: `S1@1.0 baseline m: low 0.1000, mean 0.1500, high 0.2000 USD × 3 = 0.6000 USD (3 dry runs: results/dry-runs/9, …)`.
+  - the `= …` figure is the line's high times the repetitions. The provenance notes stay; they read the newest dry run.
+  - the total: `estimate: low L, mean M, high H USD; high H' EUR at r EUR/USD, API-equivalent`.
+
+**3. The budget guard's figure** (REQ-CLI-02 and REQ-CLI-03 as amended): what every execution of the campaign spent,
+plus the high estimate of what is left.
+- **Spent:** every `run.json` under `results/<campaign-id>/*/runs/`, earlier attempts included, counted as the runner
+  counts spending: a step at what it reported, or at its bound when it was killed. A new `campaignSpendingEur` in
+  `results/` computes it. The runner's `recordedSpendingEur` (task-080) moves there too, so that the guard and the run
+  count alike. An unreadable record is an error naming its path.
+- **What is left:**
+  - for `run`, every run of the campaign;
+  - for `run --resume`, only the runs the resume will run, per key: the runner's selection (task-080), read without
+    running anything. A key with nothing left needs no dry run.
+- **`estimate` and `run`** both print the spent figure and the guard's: `spent by earlier executions: S EUR` (only when
+  S > 0), then `budget guard: S + H' = G EUR (warn W, ceiling C)`.
+- **`run`** compares `G` with `warn_eur` (confirmation) and `ceiling_eur` (refusal, no override), as it compares the
+  estimate today.
+
+**4. The campaign's ceiling while it runs** (REQ-RUN-08: the campaign "stops starting runs when its cumulative cost
+reaches `ceiling_eur`"):
+- its count starts from what every execution of the campaign spent, not only the resumed one (task-080), so that a new
+  execution of the same file does not get a fresh ceiling either;
+- a dry run is no campaign's execution and starts from zero, as today.
+
+**5. Tests whose figures change by the amendment:** the tests that price a campaign from one stored dry run see a 35 %
+margin. They pin the guard's figures and messages (`test/acceptance/campaign.test.ts` @F1.2 and @F1.3,
+`test/unit/runner/estimate.test.ts`, `test/unit/cli/main.test.ts`, `test/bin/bench.test.ts`), and are amended to the
+new figures in the red commit, each change named in the Execution notes.
+
+**Tests** (red first, committed apart from the code):
+- **Acceptance:**
+  - "The cost is estimated before any run starts": three dry runs of one key and one of another, giving the range
+    line, the margin line and the totals;
+  - "The ceiling covers every execution of a campaign": a first execution spends part of the ceiling. A new `run` is
+    refused once that spending plus the high estimate passes the ceiling. A `--resume` of a stopped execution is
+    guarded on what it has left.
+- **Unit:**
+  - `findDryRuns` order and rules;
+  - the margin;
+  - low, mean and high totals;
+  - another model never priced;
+  - `campaignSpendingEur` with attempts and cost bounds;
+  - the in-run ceiling counting an earlier execution;
+  - the resume's estimate over what is left only.
 
 ## Execution notes
 
