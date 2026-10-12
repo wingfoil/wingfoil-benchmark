@@ -54,7 +54,7 @@ describe('bench site publish (REQ-CLI-09, REQ-RES-04 as amended in 1.22, task-04
 
     expect(published(bare)).toEqual(tree(join(root, 'site')));
     expect(gitIn(bare, 'log', '-1', '--format=%B', 'gh-pages')).toBe(
-      'site: publish abcdef012345/1\n\nThe root page leads to abcdef012345/1/.\n\n',
+      'site: publish abcdef012345/1\n\nThe root index lists 1 execution.\n\n',
     );
     expect(gitIn(root, 'status', '--porcelain', '--ignored') + gitIn(root, 'branch', '-a')).toBe(before);
   }, 120_000);

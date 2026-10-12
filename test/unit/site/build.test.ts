@@ -51,11 +51,17 @@ describe('bench site build (REQ-CLI-09 as amended in 1.20, task-045)', () => {
       'abcdef012345/1/material/manual-wingfoil.html',
       'abcdef012345/1/material/setup-wingfoil.html',
       'abcdef012345/1/method.html',
+      'abcdef012345/1/profile-architect.html',
+      'abcdef012345/1/profile-code-reviewer.html',
+      'abcdef012345/1/profile-non-technical-manager.html',
+      'abcdef012345/1/profile-solo-developer.html',
+      'abcdef012345/1/profile-team-developer.html',
+      'abcdef012345/1/profile-tech-lead.html',
       'index.html',
       'style.css',
     ]);
     // It prints what it wrote and the headline
-    expect(built.stdout).toContain('site: site/abcdef012345/1/ (13 pages)\n');
+    expect(built.stdout).toContain('site: site/abcdef012345/1/ (19 pages)\n');
     expect(built.stdout).toContain('Against the baseline, wingfoil is better in 1, worse in 1');
 
     // Static: no script anywhere, every page linked to the one stylesheet
@@ -64,8 +70,8 @@ describe('bench site build (REQ-CLI-09 as amended in 1.20, task-045)', () => {
       if (path.endsWith('.html'))
         expect(text, path).toMatch(/<link rel="stylesheet" href="(\.\.\/)*style\.css">/);
     }
-    // The root page leads to the execution built last, without a script
-    expect(files['index.html']).toContain('<meta http-equiv="refresh" content="0; url=abcdef012345/1/">');
+    // The root index lists every execution built, without a script or a refresh (REQ-RES-02 as amended, task-085)
+    expect(files['index.html']).not.toContain('http-equiv="refresh"');
     expect(files['index.html']).toContain('<a href="abcdef012345/1/">');
 
     // The landing links every category page, the method page and the eligibility page
@@ -177,6 +183,11 @@ describe('bench site build (REQ-CLI-09 as amended in 1.20, task-045)', () => {
     expect(second['abcdef012345/1/stale.html']).toBeUndefined();
     expect(second['0123456789ab/2/index.html']).toBe('an older execution\n');
     delete second['0123456789ab/2/index.html'];
+    // The root index lists every execution under site/ (REQ-RES-02 as amended, task-085): the other one too
+    expect(second['index.html']).toContain('<a href="0123456789ab/2/">');
+    expect(second['index.html']).toContain('<a href="abcdef012345/1/">');
+    delete second['index.html'];
+    delete first['index.html'];
     expect(second).toEqual(first);
     // No date anywhere
     for (const text of Object.values(first)) expect(text).not.toMatch(/\b20\d\d-\d\d-\d\d\b/);

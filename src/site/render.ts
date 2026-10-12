@@ -389,15 +389,77 @@ export interface ComparisonLink {
   readonly crossModel: boolean;
 }
 
+/** A profile page the landing page links (REQ-RES-08, task-085): its page, the profile's name and its categories. */
+export interface ProfileLink {
+  readonly file: string;
+  readonly name: string;
+  readonly categories: readonly Category[];
+}
+
 /**
- * The landing page (REQ-RES-03 as amended in 1.20), and the comparisons whose newer side it is, each linked
- * (REQ-RES-07): a section only an execution with a comparison has, so that one without keeps its bytes.
+ * The landing page (REQ-RES-03 as amended in 1.20); the comparisons whose newer side it is, each linked (REQ-RES-07), in
+ * a section only an execution with a comparison has; and the profile pages, each linked (REQ-RES-08).
  */
-export function landingPage(model: SiteModel, comparisons: readonly ComparisonLink[] = []): string {
+export function landingPage(
+  model: SiteModel,
+  comparisons: readonly ComparisonLink[] = [],
+  profiles: readonly ProfileLink[] = [],
+): string {
+  const compared =
+    comparisons.length === 0
+      ? ''
+      : '<h2>Compared with earlier executions</h2>\n<ul>\n' +
+        comparisons
+          .map(
+            (link) =>
+              `<li><a href="${e(link.file)}">${e(link.label)}</a>` +
+              `${link.crossModel ? ' <span class="cross-model">cross-model</span>' : ''}</li>\n`,
+          )
+          .join('') +
+        '</ul>\n';
+  const views =
+    profiles.length === 0
+      ? ''
+      : '<h2>Views by profile</h2>\n<ul>\n' +
+        profiles
+          .map(
+            (link) =>
+              `<li><a href="${e(link.file)}">${e(link.name)}</a> (${e(link.categories.join(', '))})</li>\n`,
+          )
+          .join('') +
+        '</ul>\n';
+  return page(title(model), landingContent(model, title(model)) + compared + views, 2);
+}
+
+/**
+ * A profile's page (REQ-RES-08, task-085): the landing page's content restricted to the profile's categories — their
+ * rows, their comparisons and so their headline and chart, and the categories among them not covered — under the
+ * profile's name, with a link back to the landing page. Pre-rendered: no script filters.
+ */
+export function profilePage(model: SiteModel, profile: Pick<ProfileLink, 'name' | 'categories'>): string {
+  const mine = (category: string) => profile.categories.includes(category as Category);
+  const restricted: SiteModel = {
+    ...model,
+    categories: model.categories.filter((row) => mine(row.category)),
+    comparisons: model.comparisons.filter((comparison) => mine(comparison.category)),
+  };
+  return page(
+    `${profile.name} — ${title(model)}`,
+    `<p><a href="index.html">← ${e(title(model))}</a></p>\n` +
+      landingContent(restricted, `${profile.name}: ${profile.categories.join(', ')}`),
+    2,
+  );
+}
+
+/**
+ * The landing page's own content, under `heading` (task-085): the framing, the headline, the chart, one row per
+ * category, the legend and the counts. A profile page is this content over a model restricted to its categories.
+ */
+function landingContent(model: SiteModel, heading: string): string {
   const strong = (text: string) => `<strong>${e(text)}</strong>`;
   const gaps = notCoveredSentence(notCovered(model));
-  const body =
-    `<h1>${e(title(model))}</h1>\n` +
+  return (
+    `<h1>${e(heading)}</h1>\n` +
     `<p class="framing">Harness, not model: every arm runs the same agent with the same model, ${strong(model.model)}. ` +
     `Only the harness around it differs: ${e(model.arms.join(', '))}.</p>\n` +
     headlines(model, strong)
@@ -420,20 +482,8 @@ export function landingPage(model: SiteModel, comparisons: readonly ComparisonLi
     // The runs a stopped execution never started, once it was declared final (REQ-CLI-06 as amended, task-080).
     (model.notRun === undefined || model.notRun.length === 0
       ? ''
-      : `<p class="meta">Not run: ${model.notRun.map((run) => `<code>${e(run)}</code>`).join(', ')}.</p>\n`);
-  const compared =
-    comparisons.length === 0
-      ? ''
-      : '<h2>Compared with earlier executions</h2>\n<ul>\n' +
-        comparisons
-          .map(
-            (link) =>
-              `<li><a href="${e(link.file)}">${e(link.label)}</a>` +
-              `${link.crossModel ? ' <span class="cross-model">cross-model</span>' : ''}</li>\n`,
-          )
-          .join('') +
-        '</ul>\n';
-  return page(title(model), body + compared, 2);
+      : `<p class="meta">Not run: ${model.notRun.map((run) => `<code>${e(run)}</code>`).join(', ')}.</p>\n`)
+  );
 }
 
 /** One category's page: its goal, its scenarios with each arm's values and runs, or that it is not covered. */
@@ -526,17 +576,6 @@ export function eligibilityShell(model: SiteModel, html: string): string {
 /** A page of published material, under `material/` (task-046): a link back to the method page, then its body. */
 export function materialPage(heading: string, html: string): string {
   return page(heading, `<p><a href="../method.html">← How the benchmark works</a></p>\n${html}`, 3);
-}
-
-/** `site/index.html`: a link to the execution built last, without a script. */
-export function rootPage(model: SiteModel): string {
-  const target = `${model.campaign}/${model.execution}/`;
-  return (
-    '<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n' +
-    `<meta http-equiv="refresh" content="0; url=${e(target)}">\n<title>WingFoil Benchmark</title>\n` +
-    '<link rel="stylesheet" href="style.css">\n</head>\n<body>\n<main>\n' +
-    `<p><a href="${e(target)}">${e(title(model))}</a></p>\n</main>\n</body>\n</html>\n`
-  );
 }
 
 /** The one stylesheet. Nothing in it tells a win from a loss (REQ-RES-03): only the words do. */

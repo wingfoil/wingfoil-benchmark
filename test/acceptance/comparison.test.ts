@@ -261,7 +261,7 @@ describe('comparison.feature', () => {
     expect(reviewer).toContain('<tr id="category-E"');
     for (const other of ['A', 'B', 'C', 'F', 'G'])
       expect(reviewer).not.toContain(`<tr id="category-${other}"`);
-    expect(reviewer).toMatch(/<p class="headline">[^<]*<strong>wingfoil<\/strong>[^<]* across category D\./);
+    expect(reviewer).toMatch(/<p class="headline">[^<]*<strong>wingfoil<\/strong>[^<]* across category D \(/);
     expect(reviewer).toContain('E is not covered in this campaign.');
     // And no client-side script is needed to filter
     expect(reviewer).not.toContain('<script');

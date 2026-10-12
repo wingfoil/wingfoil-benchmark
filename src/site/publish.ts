@@ -6,6 +6,7 @@ import { fail, ok } from '../core/index.js';
 import type { Issue, PublishPort, Result } from '../core/index.js';
 
 import { buildSite, SITE } from './build.js';
+import { builtExecutions, rootIndexPage } from './profiles.js';
 
 /**
  * Publishing the site (F5.6, REQ-RES-04 as amended in 1.22, task-047): `site/` pushed to the remote's
@@ -24,8 +25,6 @@ export interface Publication {
   readonly executions: readonly string[];
   readonly unchanged: boolean;
 }
-
-const EXECUTION_DIR = /^[0-9a-f]{12}$/;
 
 /**
  * The settings every publishing git command runs with, whatever the maintainer's configuration says: no
@@ -78,23 +77,11 @@ function specialEntries(dir: string): string[] {
   return out;
 }
 
-/** The executions built under a site directory: each `<campaign-id>/<n>/`, in order. */
-function builtExecutions(site: string): string[] {
-  return readdirSync(site)
-    .filter((name) => EXECUTION_DIR.test(name) && lstatSync(join(site, name)).isDirectory())
-    .sort()
-    .flatMap((campaign) =>
-      readdirSync(join(site, campaign))
-        .filter((n) => /^[1-9]\d*$/.test(n) && lstatSync(join(site, campaign, n)).isDirectory())
-        .sort((a, b) => Number(a) - Number(b))
-        .map((n) => `${campaign}/${n}`),
-    );
-}
-
 /**
  * Check the site in `dir` (a copy of `site/`) against fresh builds, from the results of `root`, of every
  * execution under it: the set of its files must be exactly the union of the builds' — each execution's
- * pages, the stylesheet, and the root page of the execution it leads to — and every byte the same. A link,
+ * pages and the stylesheet — and the root index of those executions (REQ-RES-02 as amended in 1.26, task-085), and
+ * every byte the same. A link,
  * or any entry no build gives (`.git`, `.gitignore`, a stray page), is refused. Returns the executions.
  */
 export async function checkSiteCopy(root: string, dir: string): Promise<Result<string[]>> {
@@ -108,10 +95,12 @@ export async function checkSiteCopy(root: string, dir: string): Promise<Result<s
     path: `${SITE}/${path}`,
     message: 'is a link: a published site holds files only',
   }));
-  const target = /url=([0-9a-f]{12}\/[1-9]\d*)\//.exec(
-    (files.get('index.html') ?? Buffer.alloc(0)).toString('utf8'),
-  )?.[1];
   const expected = new Map<string, { bytes: Buffer; execution: string }>();
+  // The root index lists every execution under site/, with the dates their records hold (task-085).
+  expected.set('index.html', {
+    bytes: Buffer.from(rootIndexPage(root, executions), 'utf8'),
+    execution: executions.join(' '),
+  });
   const scratch = mkdtempSync(join(tmpdir(), 'bench-site-check-'));
   try {
     for (const execution of executions) {
@@ -127,21 +116,12 @@ export async function checkSiteCopy(root: string, dir: string): Promise<Result<s
         continue;
       }
       for (const [path, bytes] of filesOf(fresh).files) {
-        const own =
-          path.startsWith(`${execution}/`) ||
-          path === 'style.css' ||
-          (path === 'index.html' && execution === target);
+        const own = path.startsWith(`${execution}/`) || path === 'style.css';
         if (own) expected.set(path, { bytes, execution });
       }
     }
   } finally {
     rmSync(scratch, { recursive: true, force: true });
-  }
-  if (target === undefined || !executions.includes(target)) {
-    issues.push({
-      path: `${SITE}/index.html`,
-      message: 'leads to no execution under site/: run bench site build',
-    });
   }
   for (const path of [...new Set([...files.keys(), ...expected.keys()])].sort()) {
     const actual = files.get(path);
@@ -244,8 +224,7 @@ export async function publishSite(
       const head = await step(['rev-parse', 'HEAD']);
       return head.ok ? ok({ commit: head.value.trim(), executions, unchanged: true }) : head;
     }
-    const target = /url=([0-9a-f]{12}\/[1-9]\d*\/)/.exec(readFileSync(join(copy, 'index.html'), 'utf8'))?.[1];
-    const message = `site: publish ${executions.join(', ')}\n\nThe root page leads to ${target ?? '?'}.`;
+    const message = `site: publish ${executions.join(', ')}\n\nThe root index lists ${executions.length} execution${executions.length === 1 ? '' : 's'}.`;
     const identity = [
       ...(name === '' ? [] : ['-c', `user.name=${name}`]),
       ...(email === '' ? [] : ['-c', `user.email=${email}`]),

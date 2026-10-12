@@ -8,7 +8,8 @@ import { comparisonFile, comparisonPage, crossModel, executionName, readComparis
 import { eligibilityPage } from './eligibility.js';
 import { methodPages } from './method.js';
 import { siteModel } from './model.js';
-import { categoryFile, categoryPage, landingPage, plainHeadlines, rootPage, STYLE } from './render.js';
+import { builtExecutions, loadProfiles, profileFile, rootIndexPage } from './profiles.js';
+import { categoryFile, categoryPage, landingPage, plainHeadlines, profilePage, STYLE } from './render.js';
 
 /** Where the site is written, in the repository (REQ-ARC-03). */
 export const SITE = 'site';
@@ -42,6 +43,9 @@ export async function buildSite(
   // The comparisons whose newer side is this execution (REQ-RES-07, task-084): a page each, linked from the landing page.
   const comparisons = readComparisons(root, model.value.campaign, model.value.execution);
   if (!comparisons.ok) return comparisons;
+  // The result profiles (REQ-RES-08, task-085): a page each, linked from the landing page.
+  const profiles = loadProfiles(root);
+  if (!profiles.ok) return profiles;
   const pages: [string, string][] = [
     [
       'index.html',
@@ -52,8 +56,13 @@ export async function buildSite(
           label: executionName(comparison.earlier),
           crossModel: crossModel(comparison),
         })),
+        profiles.value.map((profile) => ({ ...profile, file: profileFile(profile) })),
       ),
     ],
+    ...profiles.value.map((profile): [string, string] => [
+      profileFile(profile),
+      profilePage(model.value, profile),
+    ]),
     ...model.value.categories.map((row): [string, string] => [
       categoryFile(row.category),
       categoryPage(model.value, row),
@@ -71,7 +80,8 @@ export async function buildSite(
   rmSync(target, { recursive: true, force: true });
   mkdirSync(join(target, 'material'), { recursive: true });
   for (const [name, text] of pages) writeFileSync(join(target, name), text);
-  writeFileSync(join(siteDir, 'index.html'), rootPage(model.value));
+  // Every execution built under site/, with the date each ended (REQ-RES-02 as amended, task-085).
+  writeFileSync(join(siteDir, 'index.html'), rootIndexPage(root, builtExecutions(siteDir)));
   writeFileSync(join(siteDir, 'style.css'), STYLE);
   return ok({ directory, pages: pages.length, headlines: plainHeadlines(model.value) });
 }
