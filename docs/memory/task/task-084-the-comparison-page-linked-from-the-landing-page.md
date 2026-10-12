@@ -117,3 +117,25 @@ Design's own commit (`a9a442f`, W-01). Declared: backlog → in-progress. Observ
   and no execution's values. That is presentation, which REQ-RES-02 as amended allows.
 
 ## Review notes
+
+### Review
+
+**Round 1**: a fresh, independent, read-only agent (a `Plan` subagent), on `62150ae`. Verdict: not clean (one blocker).
+Red tests `56db448`, fixes `5518df9`:
+1. **blocker:** the page printed each execution's end date, which REQ-RES-02 as amended forbids ("`site/index.html`
+   … is the only page that holds a date") → **fixed**: no date on the page. This corrects the Design's "the date it
+   ended", which contradicted the requirement; the requirement stands.
+2. **should-fix:** an unchecked earlier campaign could name a page outside `site/` (`../../../x`), or crash the
+   build → **fixed**: each execution must be `<campaign-id>/<n>`, and is otherwise refused, naming the file.
+3. **should-fix:** a file not named after its earlier execution (a stray copy) overwrote a page and doubled a link →
+   **fixed**: it is refused.
+4. **should-fix:** rows and lists were not checked beyond a few fields, so a truncated file threw → **fixed**: every
+   field the page reads is checked.
+5. **should-fix:** rows were not grouped by category → **fixed**: a stable sort by category, then scenario, arm and
+   model.
+6. **should-fix (tests):** no test of the build refusing a bad comparison, of a landing page without comparisons, or
+   of the link's escaping → **fixed**, all three.
+7. **nit:** a noted side's kept value had no `n` → **fixed**: `75.0% (n = 1)`.
+8. **nit:** "Not compared" items repeated "not compared:" → **fixed**: the prefix is dropped under that heading.
+9. **nit:** a README line ran over its width → **fixed**: the paragraph is reflowed.
+
