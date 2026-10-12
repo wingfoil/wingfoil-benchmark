@@ -139,3 +139,11 @@ Red tests `56db448`, fixes `5518df9`:
 8. **nit:** "Not compared" items repeated "not compared:" → **fixed**: the prefix is dropped under that heading.
 9. **nit:** a README line ran over its width → **fixed**: the paragraph is reflowed.
 
+**Round 2**: a fresh, independent, read-only agent, on `06ee98c`.
+- It verified the nine round-1 outcomes.
+- It checked the shape against what task-083 writes. The acceptance test runs the real writer and then the build.
+- It checked `site publish`'s fresh-build comparison, which still holds with comparisons.
+
+Verdict: clean, with one optional nit, **no change**. The landing page's links follow file-name order, so `…-10` comes
+before `…-2`. That order is deterministic, and it is the one the Design states.
+
