@@ -95,4 +95,37 @@ F5.7, for Dana (the adoption decider, persona 2), served from this release.
   - `checkSiteCopy` accepting a fresh root index of two executions, and refusing a stale one.
 ## Execution notes
 
+**WingFoil commands, declared vs observed:** `npx wingfoil memory submit task-085-…` on main (`d53eecb`), after the
+Design's own commit (`69fba65`, W-01): declared backlog → in-progress; observed `{"from": "backlog", "to":
+"in-progress"}`, exit 0, one `wf(task): submit …` commit (W-14).
+
+**Build** on `task/task-085` (worktree `../WingFoil2-Benchmark-wt/task-085`, its own `npm ci`):
+- red first:
+  - `9f91e65`: the two acceptance scenarios. The stable-URL one builds and publishes the site fixture's execution, then a
+    second execution of another campaign, both with `execution.json`. Its first line, an earlier execution's pages
+    keeping their bytes, already held. It failed on the root index.
+  - `e35cc06`: unit tests for `profiles.yaml` against the personas table, a malformed file, the root index, a profile
+    with no covered category, and a build without `profiles.yaml`.
+  - After the red commit, the acceptance headline expectation was corrected to the headline's real form, which ends
+    with its "(preliminary: …)" clause.
+- `3d85081`, the implementation:
+  - `site-content/profiles.yaml`;
+  - `src/site/profiles.ts`, holding `loadProfiles`, `rootIndexPage` and `builtExecutions`, the last moved from
+    `publish.ts`;
+  - `profilePage`, plus `landingContent` shared with the landing page;
+  - `buildSite` writes the profile pages and the root index;
+  - `checkSiteCopy` compares `site/index.html` with the root index of the executions it finds;
+  - the README.
+  - Three tests pinned the old behaviour and are amended in the same commit: the build's page list and page count,
+    the root page's `meta` refresh, and the publish commit's message.
+- Checks, niced with 2 workers: `tsc` and `npm run lint` clean, `test/unit` and `test/acceptance` green (1529 passed,
+  8 skipped).
+
+**Decisions taken in the build, inside the Design:**
+- The profile page's heading is `<profile>: <categories>`, and the page links back to the landing page. The
+  "Compared with" and "Views by profile" sections stay on the landing page only.
+- The publish commit says `The root index lists <n> execution(s).`, since there is no longer one execution the root
+  page leads to.
+- `rootPage`, the `meta` refresh, is removed.
+
 ## Review notes
