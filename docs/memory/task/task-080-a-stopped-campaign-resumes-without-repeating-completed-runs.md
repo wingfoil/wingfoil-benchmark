@@ -201,3 +201,13 @@ blocker. Outcomes:
 8. nit: a concurrent invocation still preparing has no container to detect → **fixed** as far as it can be: a warning
    when the execution says `running`.
 
+**Round 2**: a fresh, independent, read-only agent, on `dd044ba`. It verified the eight round-1 outcomes and checked
+the whole diff again against REQ-RUN-19, REQ-CLI-03/06/11, REQ-FMT-06 and the three scenarios. Verdict: clean, with
+four nits, all **fixed** in `337ed85`. Their tests were written with the fix, not red first; the attempt-gap test fails on
+the counting it replaces.
+1. A stopped leftover's message claimed it was left by a run killed without a record → reworded "left behind by an
+   earlier run of it".
+2. An unreadable `run.json` threw a bare `SyntaxError` → its path under the execution is named, and tested.
+3. The "says it is running" warning went to stdout → it goes to the error stream.
+4. `nextAttempt` counted the attempt directories → it numbers after the highest, so that a gap never overwrites one.
+
