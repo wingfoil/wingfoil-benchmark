@@ -138,3 +138,19 @@ Design's own commit (`87e197c`, W-01). Declared: backlog → in-progress. Observ
   through it now, replacing task-080's `recordedSpendingEur`; task-080's test of an unreadable record still holds.
 
 ## Review notes
+
+### Review
+
+**Round 1**: a fresh, independent, read-only agent (a `Plan` subagent), on `fefb546`. Verdict: not clean. Outcomes:
+1. should-fix: an unreadable `run.json` during `--resume` crashed `campaign run` (`runsLeftToResume` outside any
+   catch) → **fixed**: refused as `campaign: not started: <path> cannot be read`, tested through the command line for
+   a run and a resume (`69a1897`).
+2. should-fix: the spending test claimed attempts and bounds but proved neither (zero-cost attempts, no bound) →
+   **fixed**: attempts that spent, a bound above the reported cost at 0.5 EUR/USD, and an unreadable record named
+   under `results/`. The amended spending test passed on the code as it was, so it pins that behaviour; the unreadable
+   record test was red.
+3. nit: `{} as RunnerOptions` hid any future use of a port → **fixed**: `runsToResume` takes `Pick<RunnerOptions,
+   'log'>`.
+4. nit: a `run.json` of `null` gave a pathless TypeError → **fixed**: named as unreadable.
+5. nit: the guard's failure in `run` lacked `not started:` → **fixed**.
+
