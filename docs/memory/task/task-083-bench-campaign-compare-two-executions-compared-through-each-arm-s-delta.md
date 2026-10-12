@@ -203,3 +203,12 @@ the fixes):
 4. the README did not say what a side without a delta records, nor the other reasons not to compare → one sentence
    each.
 
+**Round 4**: a fresh, independent, read-only agent, on `c9a529d`. It verified the four round-3 fixes, including
+`sideOf`'s order against the site's `metricRow`, case by case. Verdict: clean, with two wording nits, both **fixed** in
+`794892c`:
+1. the README now says that a side without a delta keeps the arm's value only when the arm has one;
+2. a comment in `sideOf` now limits its claim to "once there is a baseline".
+
+**Round 5**: a fresh, independent, read-only agent, on `794892c`, which changed wording only. It checked both
+statements against `sideOf` and found nothing. Verdict: clean, no findings.
+
