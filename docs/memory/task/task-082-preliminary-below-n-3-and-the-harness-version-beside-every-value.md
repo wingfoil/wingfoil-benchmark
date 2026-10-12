@@ -163,3 +163,14 @@ Verdict: clean, with two optional nits, both **no change**:
 1. the commit-pin pattern is written in `rules.ts` and `model.ts`: REQ-FMT-03's form is fixed, and both name it.
 2. no assertion on the bars' `<title>` text: cosmetic, the legend carries T15.
 
+### Full suites
+
+`scripts/full-suites.sh task/task-082` on 2026-10-12, at the approver's request ("Avvia la suite"), on `4bbdfc5` (the
+in-review submit), worktree clean: `LINT 0 TEST 0 BUILD 0 BIN 0 DOCKER 0`. `npm test` 1487 passed, 8 skipped, statement
+coverage 97.68 %; `test:bin` 8/8; `test:docker` 20 passed, 2 skipped. Log:
+`.cache/full-suites/2026-10-12/task_task-082-4bbdfc5-110620.txt`. The commit after it adds only these notes.
+
+**WingFoil command, declared vs observed:** `npx wingfoil memory submit task-082-…` on the branch: declared
+in-progress → in-review; observed `{"from": "in-progress", "to": "in-review"}`, exit 0, one `wf(task): submit …`
+commit (`4bbdfc5`). No task was `in-review` on main or on a task branch before it.
+
