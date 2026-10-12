@@ -456,7 +456,12 @@ export function profilePage(model: SiteModel, profile: Pick<ProfileLink, 'name' 
     sliceRuns: count(model.slices),
     ...(model.notRun === undefined
       ? {}
-      : { notRun: model.notRun.filter((run) => versions.has(run.split('/')[0] ?? '')) }),
+      : {
+          notRun: model.notRun.filter((run) => {
+            const primary = model.primaryOf?.[run.split('/')[0] ?? ''];
+            return primary !== undefined && mine(primary);
+          }),
+        }),
   };
   return page(
     `${profile.name} — ${title(model)}`,

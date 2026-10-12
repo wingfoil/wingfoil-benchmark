@@ -96,15 +96,7 @@ export async function checkSiteCopy(root: string, dir: string): Promise<Result<s
     message: 'is a link: a published site holds files only',
   }));
   const expected = new Map<string, { bytes: Buffer; execution: string }>();
-  // The root index lists every execution under site/, with the dates their records hold (task-085); any build rewrites
-  // it, so the remedy names one.
-  const index = rootIndex(root, executions);
-  if (index.ok) {
-    expected.set('index.html', {
-      bytes: Buffer.from(index.value, 'utf8'),
-      execution: executions[executions.length - 1] as string,
-    });
-  } else issues.push(...index.issues);
+
   const scratch = mkdtempSync(join(tmpdir(), 'bench-site-check-'));
   try {
     for (const execution of executions) {
@@ -126,6 +118,18 @@ export async function checkSiteCopy(root: string, dir: string): Promise<Result<s
     }
   } finally {
     rmSync(scratch, { recursive: true, force: true });
+  }
+  // The root index lists every execution under site/, with the dates their records hold (task-085); any build rewrites
+  // it, so the remedy names one. What a rebuild above already reported about a record is not said twice.
+  const index = rootIndex(root, executions);
+  if (index.ok) {
+    expected.set('index.html', {
+      bytes: Buffer.from(index.value, 'utf8'),
+      execution: executions[executions.length - 1] as string,
+    });
+  } else {
+    const said = new Set(issues.map((issue) => issue.path));
+    issues.push(...index.issues.filter((issue) => !said.has(issue.path)));
   }
   for (const path of [...new Set([...files.keys(), ...expected.keys()])].sort()) {
     const actual = files.get(path);

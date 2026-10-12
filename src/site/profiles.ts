@@ -101,7 +101,13 @@ export function rootIndex(root: string, executions: readonly string[]): Result<s
       return '';
     }
     const ended = record.value?.ended;
-    if (ended !== undefined && !/^\d{4}-\d{2}-\d{2}/.test(ended)) {
+    // A day that exists: an ISO timestamp whose own date is the one it names.
+    const real =
+      ended === undefined ||
+      (/^\d{4}-\d{2}-\d{2}T/.test(ended) &&
+        !Number.isNaN(Date.parse(ended)) &&
+        new Date(ended).toISOString().slice(0, 10) === ended.slice(0, 10));
+    if (!real) {
       issues.push({
         path: `results/${execution}/execution.json`,
         message: `records an end that is not a date: ${ended}`,
