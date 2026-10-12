@@ -139,8 +139,9 @@ the Design's own commit (`4f2c90d`, W-01). Declared: backlog → in-progress. Ob
 **Done, by hand:** `bench campaign compare c82a5e74885b/1 c82a5e74885b/2`, the two aggregated executions of v0.1's
 reference campaign. It ran from the built CLI in a scratch copy of `results/c82a5e74885b` and `scenarios/`, so that
 no comparison was left in the repository's `results/`.
-- Output: exit 0, `9 groups compared, 0 not compared`, no pin differs (the same campaign file), 14 rows, nothing
-  `only_in`.
+- Output: exit 0, `9 groups compared, 0 not compared` (13 after review round 1, which counts the baselines'), no pin
+  differs (the same campaign file), 14 rows, nothing `only_in`. After round 1 the opus slice of S1 reads `no baseline
+  in c82a5e74885b/1 and c82a5e74885b/2`: v0.1's slice ran wingfoil only.
 - On S1 (n = 3 a side) wingfoil's M-Q1 delta goes from 0.6404 to −0.0141, a change of −0.6545, `within variance`.
 - Execution 1 is the one bug-013 describes, with two systematic failures at S1 step 03. A large change there is
   expected.
@@ -154,3 +155,24 @@ no comparison was left in the repository's `results/`.
   own.
 
 ## Review notes
+
+### Review
+
+**Round 1** — a fresh independent read-only agent (`Plan` subagent), on `58b5fcd`. Verdict: not clean (seven
+should-fix). Red tests `3cea613` (hand-built aggregates, fast), fixes `1c5e534`:
+1. should-fix: M-E1 compared where the site says "not comparable" → **fixed**: the site's words, per side, and the
+   deltas now by `compare()`.
+2. should-fix: the hash read from one run, and two unreadable hashes counted as equal → **fixed**: every run of the
+   scenario version on each side; compared only with one hash a side, the same; `unknown` named.
+3. should-fix: slice groups on one side vanished → **fixed**: `only_in` carries `model` and lists them.
+4. should-fix: a scenario without a category map or unreadable vanished → **fixed**: `not compared`, saying which.
+5. should-fix: an unreadable `campaign.yaml` read as no pins → **fixed**: refused; so are an unreadable
+   `execution.json` and an aggregate of another shape (finding 10).
+6. should-fix: a missing baseline read "not measured" → **fixed**: `no baseline in <execution>`.
+7. should-fix: the same-bytes test could not fail → **fixed**: two comparisons, compared byte for byte; row
+   arithmetic, pins and `only_in` both ways tested.
+8. nit: stdout counted rows' groups and read cross-model from rows → **fixed**: `compared` lists every group compared,
+   baselines included, and cross-model is the default models'.
+9. nit: pins → **fixed**: `models.slices` and `arm_digests.<arm>` added.
+10. nit: aggregate shape and execution record → **fixed** with 5.
+
