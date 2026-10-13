@@ -189,7 +189,8 @@ Verdict: clean, with no findings.
 ### Full suites, first run: red, task sent back
 
 `scripts/full-suites.sh task/task-085` on 2026-10-13, at the approver's request, on `07bf06e`:
-- `LINT 0 TEST 0 BUILD 0 BIN 1`. The run was stopped at the first red stage, so DOCKER did not run. Log:
+- `LINT 0 TEST 0 BUILD 0 BIN 1`. The script runs every stage whatever the codes; I stopped it by hand once BIN was red,
+  after `test:docker` had started, so there is no DOCKER code. Log, in the main checkout:
   `.cache/full-suites/2026-10-13/task_task-085-07bf06e-083358.txt`.
 - The failing test was `test/bin/bench.test.ts`, which pins the site build's output `(13 pages)`. That is now 19, with
   the six profile pages.
@@ -198,5 +199,17 @@ Verdict: clean, with no findings.
 - The approver rejected the task (in-review → in-progress, `1b07b56`), with the reason above. `e43d11e` amends the count to
   19.
 - `npm run build` and `test:bin` were run alone, niced: 8 passed.
-- The other suite, `test:docker`, reads none of this task's changes: its only matches are agent session resumes.
+- The other suite, `test:docker`, reads none of this task's changes: nothing in it touches the site build or
+  publish, and its only "profile" is the dry-run harness profile.
+
+**Round 5** (after the rejection): a fresh, independent, read-only agent, on `04c3c75`.
+- 19 is the right page count: the 13 earlier pages plus the six profile pages, as `test/unit/site/build.test.ts`
+  already expects.
+- Nothing else in `test/bin` or `test/docker` pins what this task changed.
+- `test:bin` passes, 8/8.
+
+Verdict: clean, with three nits on these notes' wording, all **fixed** here:
+- that the run was stopped by hand;
+- that the log is in the main checkout;
+- what `test:docker`'s matches are.
 
