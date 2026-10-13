@@ -97,6 +97,10 @@ describe('the operating manuals (F2.7)', () => {
     const flat = departures.replace(/\s+/g, ' ');
     expect(flat).toContain('`memory reject`');
     expect(flat).toMatch(/configuration/i);
+    expect(flat).toContain('never edit a file under `.wingfoil/`');
+    expect(manual('wingfoil').replace(/\s+/g, ' ')).toContain(
+      'wingfoil memory search --type decision-log --status approved',
+    );
     // An exit code 2 is the command line's fault: fixed and run again, not reported and left
     expect(own.replace(/\s+/g, ' ')).toMatch(/exit code 2 means your command line is wrong/);
   });

@@ -28,7 +28,8 @@ Before you change any code, read:
 - the decisions already taken: `wingfoil memory search --type decision-log --status approved`.
 
 The same can be read through WingFoil's MCP server: your role's rules as its Prompt
-`developer-session`, the decisions as the resource `wingfoil://memory/decision-log`.
+`developer-session`; the decision-logs as the resource `wingfoil://memory/decision-log`, of which only
+the `approved` ones are decisions taken, each one's text at `wingfoil://memory/decision-log/<id>`.
 
 While you work:
 
@@ -50,8 +51,8 @@ While you work:
   paths before you write, and sets no level of process. This arm asks you to read your role's rules and
   the approved decisions, as above, and to record each request as a task and each design decision as
   a decision-log.
-- **Configuration.** The guide lets an agent change the project's configuration through WingFoil's
-  verbs. Here the configuration belongs to the scenario: never edit a file under `.wingfoil/`, and do
+- **Configuration.** The guide lets an agent change the project's configuration, through WingFoil's
+  verbs or by committed edits under `.wingfoil/`. Here the configuration belongs to the scenario: never edit a file under `.wingfoil/`, and do
   not use the `dna` or `directive` commands that change it.
 - **Approvals.** The guide says an agent never approves or rejects. In this benchmark the decision is
   never yours: it is the reply of a fixed approver, and you only carry it out, which is why your git

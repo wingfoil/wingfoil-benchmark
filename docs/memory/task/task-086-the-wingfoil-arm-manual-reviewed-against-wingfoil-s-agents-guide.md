@@ -134,7 +134,7 @@ the Design's own commit (`3bb0d4e`, W-01). Declared: backlog → in-progress. Ob
 
 **Decisions taken in the build, inside the Design:**
 - The section keeps v0.1's process and approval wording word for word where they are the departures. It adds the
-  guide's rules the old manual lacked: `dna show`, `paths`, invented paths or types, and refusals.
+  guide's rules the old manual lacked: `dna show`, `paths`, invented paths or types, and refusals. (`dna show` and `paths` were removed after review round 1, by the approver's choice C.)
 - The guide's §6 error table, §7 workflows and §8 set-up are not copied: the arm runs no workflow, and it is set up by
   its script.
 
