@@ -33,12 +33,62 @@ manual revised, its departures listed in the method page, the arm's tests green.
 
 ## Acceptance criteria
 
-- The manual's revision and its departures, checked by the arm's existing tests and the reviewer.
+- The manual's revision and its departures, checked by the arm's tests (`test/unit/arms/manuals.test.ts`, amended
+  **red first**: the guide named, its rules present, both departures stated) and by the independent reviewer against
+  WingFoil's `docs/agents.md` at `v0.2.2` (`12537b62`).
 
 ## Design
 
-<!-- Written in the design phase. -->
+**Fixes:** none. Feature: none (a knowledge and arm task, as task-004).
 
+**1. The source.** WingFoil's `docs/agents.md` at tag `v0.2.2` (commit `12537b627ce0`), the build the wingfoil arm
+measures, read from the local clone with `git show v0.2.2:docs/agents.md`. Nothing is written to that repository.
+
+**2. What changes in `arms/wingfoil/manual.md`.** Only its "## This arm" section changes. The common core, the
+baseline manual byte for byte, stays as it is (F2.7's parity rule, tested). The section is rewritten to start from the
+guide and says so: "This section follows WingFoil's guide for AI agents, release 0.2.2". It keeps the guide's order:
+- the mental model in brief: a document's state is its `status:`; moves only through the verbs; one operation, one
+  commit; roles, not people;
+- the guide's rules (§4):
+  - load your role's directives (`wingfoil directives list --role developer`);
+  - read before you write (`wingfoil dna show`, `wingfoil paths`, the approved decisions);
+  - change state only through the verbs, never by editing `status:`, a `wf(...)` commit or `.wingfoil/`;
+  - commit configuration edits before relying on them;
+  - do not bypass a refusal: an exit 1 is a rule speaking, and the agent reports it;
+- reading through the MCP resources, or the CLI;
+- writing with `memory add` and `memory submit`;
+- the CLI called as `wingfoil`, never `npx wingfoil` (adr-003 decision 3, tested).
+
+**3. The departures**, each stated in the manual as a departure from the guide, and why (they are F-033's gap):
+- **the level of process.** The guide sets no level. This arm records each request as a task and each design decision
+  as a decision-log, submitted, as v0.1's manual did. The process is unchanged, so that v0.2 measures the same use of
+  WingFoil as v0.1.
+- **the automated approver** (REQ-RUN-17). The guide says an agent never approves. In this arm the decision is the
+  neutral approver's fixed policy, and the agent carries it out: the agent never approves on its own initiative; it
+  asks and stops; after "Approved. Proceed." it runs `wingfoil memory approve <id> --reason "Approved. Proceed."` for
+  the document it asked about. The arm's configuration gives the container the approver role for that purpose. The
+  wording of this departure keeps v0.1's behaviour exactly.
+
+**4. The method page** (`site-content/method.md`, `#wingfoil-manual-process`): one sentence names the guide and its
+release, and says the manual departs from it in these two places. The statement's registered sources in
+`test/unit/site/method-statements.test.ts` add "task-086 Design". The page's "This execution" section already names
+the manual each execution ran by its SHA-256 (REQ-RUN-12, task-046), so that v0.1's and v0.2's are told apart.
+
+**5. Consequences:**
+- the arm digest of `wingfoil` changes (REQ-FMT-13). No campaign file in `campaigns/` pins it today (v0.1's files
+  have no `arm_digests`), so nothing is refused. v0.2's calibration pins the new digest.
+- The manual grows, measured per run (REQ-RUN-12): its size in tokens before and after is recorded in the Execution
+  notes.
+- baseline-docs and the other controls borrow the baseline-docs manual, not this one: they are untouched.
+- F-033 stays `open`: only a WingFoil sync changes a note's status (the `wingfoil-cli` directive, rule 6).
+
+**Tests** (red first): `manuals.test.ts` asserts that the wingfoil manual:
+- names the guide and its release;
+- states the guide's rules: read before you write, only the verbs, do not bypass a refusal;
+- states both departures, with the approval command only after the reply.
+
+The existing tests stay: the core, `npx`, no MCP Tool, the approval command. The method-statements test checks the
+new sentence's anchor sources.
 ## Execution notes
 
 ## Review notes
