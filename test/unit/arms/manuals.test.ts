@@ -60,7 +60,8 @@ describe('the operating manuals (F2.7)', () => {
   });
 
   it("start the wingfoil arm's section from WingFoil's guide for agents at 0.2.2, and keep its rules (task-086)", () => {
-    const own = manual('wingfoil').slice(manual('baseline').length);
+    // The manual is wrapped Markdown: its words, one space apart.
+    const own = manual('wingfoil').slice(manual('baseline').length).replace(/\s+/g, ' ');
     expect(own).toContain("WingFoil's guide for AI agents, release 0.2.2");
     // The guide's rules (docs/agents.md §4)
     expect(own).toContain('wingfoil directives list --role developer');
@@ -71,7 +72,7 @@ describe('the operating manuals (F2.7)', () => {
   });
 
   it('state where the wingfoil manual departs from the guide, and why (task-086, F-033)', () => {
-    const own = manual('wingfoil').slice(manual('baseline').length);
+    const own = manual('wingfoil').slice(manual('baseline').length).replace(/\s+/g, ' ');
     expect(own).toContain('### Where this arm departs from the guide');
     // The level of process the guide does not set
     expect(own).toMatch(/The guide sets no level of process/);
