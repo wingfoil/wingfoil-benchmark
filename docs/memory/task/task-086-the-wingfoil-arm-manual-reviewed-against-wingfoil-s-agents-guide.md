@@ -2,7 +2,7 @@
 id: task-086-the-wingfoil-arm-manual-reviewed-against-wingfoil-s-agents-guide
 type: task
 title: "The wingfoil arm manual reviewed against WingFoil's agents guide"
-status: in-progress
+status: approved
 release: v0.2
 wave: W14
 features: []
@@ -89,6 +89,100 @@ the manual each execution ran by its SHA-256 (REQ-RUN-12, task-046), so that v0.
 
 The existing tests stay: the core, `npx`, no MCP Tool, the approval command. The method-statements test checks the
 new sentence's anchor sources.
+**6. After review round 1: the approver's choice C (2026-10-13, in chat: "C, come proposto").**
+- What round 1 found: the guide's "read before you write" sent the agent to `wingfoil dna show` and `wingfoil paths`.
+  Their `team` and `paths` are what the docs-control generator leaves out of `PROJECT_RULES.md` (REQ-RUN-11, T3),
+  because the manual never sent the agent to them.
+- What C does: the manual keeps v0.1's reads, the role's rules and the approved decisions, which the docs controls
+  carry as well. This is stated as a departure from the guide. Parity holds by construction, and the generator is
+  untouched.
+- The departures become three:
+  1. what to read and how much to record;
+  2. configuration: the scenario's, never the agent's to change, where the guide lets an agent edit configuration
+     through its verbs;
+  3. approvals: the fixed reply carried out, never `memory reject`; the git identity holds the approver role for that
+     purpose only.
+- The MCP pointer names the role's Prompt `developer-session` and the decisions' resource. v0.1's `wingfoil://dna`
+  goes, for the same reason.
+
 ## Execution notes
 
+**WingFoil commands, declared vs observed:** `npx wingfoil memory submit task-086-…` was run on main (`3ab44cb`), after
+the Design's own commit (`3bb0d4e`, W-01). Declared: backlog → in-progress. Observed: `{"from": "backlog", "to":
+"in-progress"}`, exit 0, and one `wf(task): submit …` commit (W-14). The guide was read with
+`git -C ../WingFoil2 show v0.2.2:docs/agents.md` (tag `v0.2.2` at `12537b627ce0`), which writes nothing there.
+
+**Build** on `task/task-086` (worktree `../WingFoil2-Benchmark-wt/task-086`, its own `npm ci`):
+- red first:
+  - `96ef2ba` adds two tests to `test/unit/arms/manuals.test.ts`: the guide and its release named, its rules present,
+    both departures stated. Both failed.
+  - After that commit, the tests were changed to compare the section's words one space apart. The manual is wrapped
+    Markdown, so a phrase can break across lines.
+- `9113663` holds the manual, the method page's sentence in `#wingfoil-manual-process`, and that statement's added source.
+- Checks, niced, as the memory now asks of a change to what users read:
+  - `tsc` and `npm run lint` clean;
+  - `test/unit` and `test/acceptance` green: 1539 passed, 8 skipped;
+  - `npm run build` and `test:bin`: 8/8.
+
+**Size and digest:**
+- The manual grows from 1850 to 3148 bytes, so from 463 to 787 tokens by the fixed approximation `ceil(bytes ÷ 4)`.
+  After review round 1 it is 3623 bytes, 906 tokens; after round 2, 3782 bytes, 946 tokens
+  (REQ-RUN-12). Every wingfoil run records it.
+- The arm's digest changes (REQ-FMT-13). No file in `campaigns/` pins one.
+- v0.1's published execution recorded the old manual's SHA-256. The method page reads that manual from the
+  repository's history (task-073), so it keeps showing the manual that ran.
+
+**Decisions taken in the build, inside the Design:**
+- The section keeps v0.1's process and approval wording word for word where they are the departures. It adds the
+  guide's rules the old manual lacked: `dna show`, `paths`, invented paths or types, and refusals. (`dna show` and `paths` were removed after review round 1, by the approver's choice C.)
+- The guide's §6 error table, §7 workflows and §8 set-up are not copied: the arm runs no workflow, and it is set up by
+  its script.
+
 ## Review notes
+
+### Review
+
+**Round 1**: a fresh, independent, read-only agent (a `Plan` subagent), on `add12a9`. It read the manual against
+`v0.2.2:docs/agents.md`. Verdict: not clean (four should-fix). One was a parity choice, put to the approver, who chose
+C (Design item 6). Red tests `c337d6b`, fixes `832ab1b`:
+1. should-fix: the manual forbade editing `.wingfoil/`, which the guide allows, without saying so, and dropped the
+   guide's "commit configuration edits" rule → **fixed**: a declared departure. The configuration is the scenario's.
+2. should-fix: the MCP sentence was inaccurate. `paths` has no MCP equivalent, and the directives are a Prompt →
+   **fixed**: the Prompt `developer-session` and the decisions' resource.
+3. should-fix: the method page under-described the change → **fixed**: the three departures, the guide's rules the
+   v0.1 manual lacked, the longer manual, and what that means for a v0.1↔v0.2 comparison.
+4. should-fix (parity, T3): `dna show` and `paths` sent the agent to what the docs controls do not carry → **the
+   approver's choice C**: the manual keeps v0.1's reads, stated as a departure. The docs-control generator is
+   unchanged, and its rationale holds again.
+5. nit: exit code 2 → **fixed**: fix the command and run it again.
+6. nit: `memory reject`, and the approver role of the git identity → **fixed** in the approvals departure.
+7. nit: the order test could pass on the command's own `--reason` → **fixed**: it matches the reply's sentence
+   followed by the command.
+
+**Round 2** — a fresh independent read-only agent, on `e472c4b`: choice C as the Design says (parity with the
+docs-control declaration holds again), the three departures faithful to the guide, the MCP pointer and the exit codes
+per §5–§6, v0.1's approval wording kept. Verdict: not clean (one should-fix), all **fixed** in `2441243`:
+1. should-fix: the method page called "no hand-written state change" new, which v0.1's manual already said → the rules
+   really new: no hand-written `wf(...)` commit, no invented types or roles, a refusal reported.
+2. nit: the decision-log resource holds every non-deprecated one → the manual says only the `approved` ones are
+   decisions, and where each one's text is.
+3. nit: the configuration departure understated the guide → "through its verbs or by committed edits".
+4. nit: no test pinned `.wingfoil/` or the approved read → both pinned (they pin the current text).
+5. nit: the Execution notes still listed `dna show` and `paths` → marked removed by choice C.
+
+**Round 3**: a fresh, independent, read-only agent, on `a4f20e5`. It checked the MCP pointer against §5, the
+configuration departure against §4 rule 6, §6 and §9, and every claim on the method page against v0.1's manual. It
+also checked the size figure. Verdict: clean, with one cosmetic nit, **no change**. One line of the manual is longer
+than the rest, but it renders the same, and rewrapping it would change the manual's bytes, size and digest for nothing.
+
+### Full suites
+
+`scripts/full-suites.sh task/task-086` on 2026-10-13, at the approver's request ("Avvia la suite"), on `1d89150` (the
+in-review submit), worktree clean: `LINT 0 TEST 0 BUILD 0 BIN 0 DOCKER 0`. `npm test` 1541 passed, 8 skipped, statement
+coverage 97.73 %; `test:bin` 8/8; `test:docker` 20 passed, 2 skipped. Log (main checkout):
+`.cache/full-suites/2026-10-13/task_task-086-1d89150-154501.txt`. The commit after it adds only these notes.
+
+**WingFoil command, declared vs observed:** `npx wingfoil memory submit task-086-…` on the branch: declared
+in-progress → in-review; observed `{"from": "in-progress", "to": "in-review"}`, exit 0, one `wf(task): submit …`
+commit (`1d89150`). No task was `in-review` before it.
+

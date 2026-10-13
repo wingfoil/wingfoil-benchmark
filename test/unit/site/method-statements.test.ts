@@ -50,7 +50,7 @@ const STATEMENTS: readonly (readonly [string, string])[] = [
   ],
   [
     'wingfoil-manual-process',
-    'arms/wingfoil/manual.md (a task per request, a decision-log per design decision, each submitted and approved); calibration v0.1 §7 and §10 (the process is the manual’s choice); campaign-001 Findings (M-K1 on S1); task-055 Design item 3b',
+    'arms/wingfoil/manual.md (a task per request, a decision-log per design decision, each submitted and approved); calibration v0.1 §7 and §10 (the process is the manual’s choice); campaign-001 Findings (M-K1 on S1); task-055 Design item 3b; task-086 Design (started from WingFoil’s docs/agents.md at v0.2.2, its three departures, the approver’s choice C; REQ-RUN-12, the manual’s size per run)',
   ],
   [
     'identical-prompts',

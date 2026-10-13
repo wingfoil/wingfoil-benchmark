@@ -58,4 +58,50 @@ describe('the operating manuals (F2.7)', () => {
     for (const arm of ['baseline', 'baseline-docs', 'wingfoil', 'speckit'])
       expect(manual(arm)).not.toMatch(/placeholder|task-014/i);
   });
+
+  it("start the wingfoil arm's section from WingFoil's guide for agents at 0.2.2, and keep its rules (task-086)", () => {
+    // The manual is wrapped Markdown: its words, one space apart.
+    const own = manual('wingfoil').slice(manual('baseline').length).replace(/\s+/g, ' ');
+    expect(own).toContain("WingFoil's guide for AI agents, release 0.2.2");
+    // The guide's rules (docs/agents.md §4)
+    expect(own).toContain('wingfoil directives list --role developer');
+    expect(own).toMatch(/only through (its|the) verbs/);
+    expect(own).toMatch(/exit code 1 is a rule speaking/i);
+  });
+
+  it('state where the wingfoil manual departs from the guide, and why (task-086, F-033)', () => {
+    const own = manual('wingfoil').slice(manual('baseline').length).replace(/\s+/g, ' ');
+    expect(own).toContain('### Where this arm departs from the guide');
+    // The level of process the guide does not set
+    expect(own).toMatch(/sets no level of process/);
+    // The automated approver: the guide says an agent never approves; the decision is the neutral approver's
+    expect(own).toMatch(/The guide says an agent never approves/);
+    // The approval command, only after the reply's own sentence
+    expect(own).toMatch(/If the reply is "Approved\. Proceed\.", run `wingfoil memory approve/);
+  });
+
+  it("send the wingfoil agent to read only what the docs controls also carry (task-086, the approver's choice C)", () => {
+    const own = manual('wingfoil').slice(manual('baseline').length).replace(/\s+/g, ' ');
+    // The role's rules and the approved decisions; not dna show, nor paths, nor the dna resource (REQ-RUN-11, T3)
+    expect(own).not.toContain('wingfoil dna show');
+    expect(own).not.toContain('wingfoil paths');
+    expect(own).not.toContain('wingfoil://dna');
+    expect(own).toContain('`developer-session`');
+    expect(own).toContain('`wingfoil://memory/decision-log`');
+  });
+
+  it('state its three departures from the guide, configuration and rejection included (task-086)', () => {
+    const own = manual('wingfoil').slice(manual('baseline').length);
+    const departures = own.slice(own.indexOf('### Where this arm departs from the guide'));
+    expect(departures.match(/^- \*\*/gm)).toHaveLength(3);
+    const flat = departures.replace(/\s+/g, ' ');
+    expect(flat).toContain('`memory reject`');
+    expect(flat).toMatch(/configuration/i);
+    expect(flat).toContain('never edit a file under `.wingfoil/`');
+    expect(manual('wingfoil').replace(/\s+/g, ' ')).toContain(
+      'wingfoil memory search --type decision-log --status approved',
+    );
+    // An exit code 2 is the command line's fault: fixed and run again, not reported and left
+    expect(own.replace(/\s+/g, ' ')).toMatch(/exit code 2 means your command line is wrong/);
+  });
 });
