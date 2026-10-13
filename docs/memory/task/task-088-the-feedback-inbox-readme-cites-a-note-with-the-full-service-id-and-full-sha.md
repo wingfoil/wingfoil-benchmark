@@ -2,7 +2,7 @@
 id: task-088-the-feedback-inbox-readme-cites-a-note-with-the-full-service-id-and-full-sha
 type: task
 title: "The feedback inbox README cites a note with the full service id and full sha"
-status: backlog
+status: in-progress
 release: v0.2
 wave: W14
 features: []          # e.g. [F1.1, F3.1]
