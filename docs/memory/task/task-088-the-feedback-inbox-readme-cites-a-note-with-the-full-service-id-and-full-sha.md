@@ -53,5 +53,19 @@ coordination session told the element id, the merge sha and the push state. The 
 
 ## Execution notes
 
-<!-- What happened while building: deviations, blockers, follow-ups (filed as elements, never left
-     here). For every `wingfoil` command: declared vs observed behaviour. -->
+- `npx wingfoil memory add --type bug` and `--type task` on 2026-10-13. Declared: create a draft element with the type's
+  scaffold and commit it. Observed: `bug-019-…` and `task-088-…` as drafts, required fields empty (W-02); filled in
+  `docs(…)` commits before `submit` (W-01).
+- `npx wingfoil memory submit` for both (draft → pending). Declared: moves the element to its next state and commits
+  it. Observed: `status: pending` for each, `wf(…): submit …` commits. Matches.
+- The approver approved bug-019 (pending → approved, `effb906`) and task-088 (pending → backlog, `12cf803`).
+- `npx wingfoil memory submit task-088-…` (backlog → in-progress) on main. Declared as above. Observed:
+  `status: in-progress` (`1273ea8`). Matches.
+- Worktree `../WingFoil2-Benchmark-wt/task-088-…` on `task/task-088-…`, its own `npm ci` (exit 0).
+- WingFoil's `## Credit` read on its `origin/main` (`32d8871b`, 2026-10-13); the sentence came with task-271,
+  `9ee64234e12f49178acc03ed7e7c4383fc25d73c`.
+- Red (`d6b36b2`): the inbox test 1 failed, 9 passed: the README lacks the full example.
+- Green (`5aa2030`): the Source key paragraph's last sentence as the Design says (3 insertions, 1 deletion);
+  `**Source key:** svc-020` and `**Last sync:** none` unchanged. The `wingfoil-cli` directive's rule 6 already
+  reads `<service id>/F-<nnn>@<sha>` and is untouched; no other file cites the old form.
+- Day checks, niced: the inbox test 10 of 10, `npm run lint` 0, `npx tsc --noEmit -p .` 0.
