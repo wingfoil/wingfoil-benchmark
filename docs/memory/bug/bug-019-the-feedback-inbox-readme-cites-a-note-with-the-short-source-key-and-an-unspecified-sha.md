@@ -3,6 +3,7 @@ id: bug-019-the-feedback-inbox-readme-cites-a-note-with-the-short-source-key-and
 type: bug
 title: "The feedback inbox README cites a note with the short source key and an unspecified sha"
 status: approved
+fixed_by: task-088-the-feedback-inbox-readme-cites-a-note-with-the-full-service-id-and-full-sha
 # fixed_by: task-…   # set by hand, with the fixing task's id, just before `approved → fixed`
 ---
 
@@ -39,3 +40,10 @@ nit: whether WingFoil cites the short or the full id was then open on WingFoil's
 
 A small task changes the paragraph's last sentence to the full form, with the example above, and keeps `svc-020` as
 the short key. `**Last sync:** none` is unchanged: this is not a sync (directive `wingfoil-cli`, rule 7).
+
+## Resolution
+
+Fixed by [task-088](../task/task-088-the-feedback-inbox-readme-cites-a-note-with-the-full-service-id-and-full-sha.md)
+(merged in `a45fc16`). The README cites a note as `<service id>/F-<nnn>@<sha>`, with the service's full id and the
+full sha, and gives the svc-020 example; `svc-020` stays the short key. The inbox test checks the example and refuses
+the old form.
