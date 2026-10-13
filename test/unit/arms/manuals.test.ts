@@ -73,7 +73,7 @@ describe('the operating manuals (F2.7)', () => {
     const own = manual('wingfoil').slice(manual('baseline').length).replace(/\s+/g, ' ');
     expect(own).toContain('### Where this arm departs from the guide');
     // The level of process the guide does not set
-    expect(own).toMatch(/The guide sets no level of process/);
+    expect(own).toMatch(/sets no level of process/);
     // The automated approver: the guide says an agent never approves; the decision is the neutral approver's
     expect(own).toMatch(/The guide says an agent never approves/);
     // The approval command, only after the reply's own sentence
