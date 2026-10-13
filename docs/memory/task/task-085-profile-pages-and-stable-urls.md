@@ -2,7 +2,7 @@
 id: task-085-profile-pages-and-stable-urls
 type: task
 title: "Profile pages and stable URLs"
-status: in-review
+status: in-progress
 release: v0.2
 wave: W14
 features: [F5.7]
@@ -11,6 +11,7 @@ acceptance:
   - "comparison.feature#A published link keeps showing the same values"
 requirements: [REQ-RES-08, REQ-RES-02, REQ-RES-04]
 fixes: []
+rejection_reason: "Full suites red on 07bf06e: test:bin pins the site build's page count at 13, now 19 with the six profile pages (test/bin/bench.test.ts); back to in-progress to amend the test, review it independently and run the suites again (log task_task-085-07bf06e-083358.txt)."
 ---
 
 ## Context
