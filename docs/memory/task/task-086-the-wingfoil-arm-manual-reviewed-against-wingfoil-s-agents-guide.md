@@ -91,4 +91,34 @@ The existing tests stay: the core, `npx`, no MCP Tool, the approval command. The
 new sentence's anchor sources.
 ## Execution notes
 
+**WingFoil commands, declared vs observed:** `npx wingfoil memory submit task-086-…` was run on main (`3ab44cb`), after
+the Design's own commit (`3bb0d4e`, W-01). Declared: backlog → in-progress. Observed: `{"from": "backlog", "to":
+"in-progress"}`, exit 0, and one `wf(task): submit …` commit (W-14). The guide was read with
+`git -C ../WingFoil2 show v0.2.2:docs/agents.md` (tag `v0.2.2` at `12537b627ce0`), which writes nothing there.
+
+**Build** on `task/task-086` (worktree `../WingFoil2-Benchmark-wt/task-086`, its own `npm ci`):
+- red first:
+  - `96ef2ba` adds two tests to `test/unit/arms/manuals.test.ts`: the guide and its release named, its rules present,
+    both departures stated. Both failed.
+  - After that commit, the tests were changed to compare the section's words one space apart. The manual is wrapped
+    Markdown, so a phrase can break across lines.
+- `9113663` holds the manual, the method page's sentence in `#wingfoil-manual-process`, and that statement's added source.
+- Checks, niced, as the memory now asks of a change to what users read:
+  - `tsc` and `npm run lint` clean;
+  - `test/unit` and `test/acceptance` green: 1539 passed, 8 skipped;
+  - `npm run build` and `test:bin`: 8/8.
+
+**Size and digest:**
+- The manual grows from 1850 to 3148 bytes, so from 463 to 787 tokens by the fixed approximation `ceil(bytes ÷ 4)`
+  (REQ-RUN-12). Every wingfoil run records it.
+- The arm's digest changes (REQ-FMT-13). No file in `campaigns/` pins one.
+- v0.1's published execution recorded the old manual's SHA-256. The method page reads that manual from the
+  repository's history (task-073), so it keeps showing the manual that ran.
+
+**Decisions taken in the build, inside the Design:**
+- The section keeps v0.1's process and approval wording word for word where they are the departures. It adds the
+  guide's rules the old manual lacked: `dna show`, `paths`, invented paths or types, and refusals.
+- The guide's §6 error table, §7 workflows and §8 set-up are not copied: the arm runs no workflow, and it is set up by
+  its script.
+
 ## Review notes
