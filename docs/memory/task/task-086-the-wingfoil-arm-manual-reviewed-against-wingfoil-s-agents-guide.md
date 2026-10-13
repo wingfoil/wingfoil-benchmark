@@ -175,3 +175,14 @@ configuration departure against §4 rule 6, §6 and §9, and every claim on the 
 also checked the size figure. Verdict: clean, with one cosmetic nit, **no change**. One line of the manual is longer
 than the rest, but it renders the same, and rewrapping it would change the manual's bytes, size and digest for nothing.
 
+### Full suites
+
+`scripts/full-suites.sh task/task-086` on 2026-10-13, at the approver's request ("Avvia la suite"), on `1d89150` (the
+in-review submit), worktree clean: `LINT 0 TEST 0 BUILD 0 BIN 0 DOCKER 0`. `npm test` 1541 passed, 8 skipped, statement
+coverage 97.73 %; `test:bin` 8/8; `test:docker` 20 passed, 2 skipped. Log (main checkout):
+`.cache/full-suites/2026-10-13/task_task-086-1d89150-154501.txt`. The commit after it adds only these notes.
+
+**WingFoil command, declared vs observed:** `npx wingfoil memory submit task-086-…` on the branch: declared
+in-progress → in-review; observed `{"from": "in-progress", "to": "in-review"}`, exit 0, one `wf(task): submit …`
+commit (`1d89150`). No task was `in-review` before it.
+
