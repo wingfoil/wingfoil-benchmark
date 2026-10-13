@@ -3,9 +3,20 @@ import { join } from 'node:path';
 import { stringify } from 'yaml';
 import { describe, expect, it } from 'vitest';
 
-import { benchSite, siteCampaign, siteExecution, STAND_INS } from '../support/site-fixture.js';
+import {
+  benchPublish,
+  benchSite,
+  completeExecution,
+  gitIn,
+  probeSaying,
+  publishableSite,
+  siteCampaign,
+  siteExecution,
+  STAND_INS,
+} from '../support/site-fixture.js';
 import { CANCEL, storedRun } from '../support/score-fixture.js';
 import { tempDir } from '../support/scenario-fixture.js';
+import { repoPath } from '../support/paths.js';
 
 const EARLIER = '0123456789ab/1';
 const NEWER = 'abcdef012345/1';
@@ -219,5 +230,89 @@ describe('comparison.feature', () => {
     expect(page).toContain('<span class="change">');
     expect(page).toContain('<li>agent.version: 0.9.0 → 1.0.0</li>');
     expect(page).not.toContain('<script');
+  }, 240_000);
+  it('@F5.7 A result profile filters the landing page', async () => {
+    // Given the result profiles and the categories each one covers
+    const profiles = readFileSync(repoPath('site-content/profiles.yaml'), 'utf8');
+    expect(profiles).toContain('id: code-reviewer');
+    const { root } = await siteExecution();
+
+    // When the site is built
+    const built = await benchSite(root, 'site', 'build', NEWER);
+    expect(built.code, built.stderr).toBe(0);
+
+    // Then each profile has its own page, showing only its categories, with a headline over those categories only
+    const dir = join(root, 'site', 'abcdef012345', '1');
+    const landing = readFileSync(join(dir, 'index.html'), 'utf8');
+    for (const id of [
+      'solo-developer',
+      'code-reviewer',
+      'team-developer',
+      'tech-lead',
+      'non-technical-manager',
+      'architect',
+    ]) {
+      expect(landing).toContain(`<a href="profile-${id}.html">`);
+      expect(existsSync(join(dir, `profile-${id}.html`))).toBe(true);
+    }
+    const reviewer = readFileSync(join(dir, 'profile-code-reviewer.html'), 'utf8');
+    expect(reviewer).toContain('Code reviewer');
+    expect(reviewer).toContain('<tr id="category-D"');
+    expect(reviewer).toContain('<tr id="category-E"');
+    for (const other of ['A', 'B', 'C', 'F', 'G'])
+      expect(reviewer).not.toContain(`<tr id="category-${other}"`);
+    expect(reviewer).toMatch(/<p class="headline">[^<]*<strong>wingfoil<\/strong>[^<]* across category D \(/);
+    expect(reviewer).toContain('E is not covered in this campaign.');
+    // And no client-side script is needed to filter
+    expect(reviewer).not.toContain('<script');
+  }, 240_000);
+
+  it('@F5.7 A published link keeps showing the same values', async () => {
+    // Given an execution published earlier
+    const { root, bare } = await publishableSite();
+    const ended = (target: string, date: string) =>
+      writeFileSync(
+        join(root, 'results', target, 'execution.json'),
+        JSON.stringify({ state: 'completed', started: date, ended: date }),
+      );
+    ended(NEWER, '2026-10-05T12:00:00.000Z');
+    expect((await benchSite(root, 'site', 'build', NEWER)).code).toBe(0);
+    const first = await benchPublish(root, probeSaying(true), 'site', 'publish');
+    expect(first.code, first.stderr).toBe(0);
+    const published = (path: string) => gitIn(bare, 'show', `gh-pages:${path}`);
+    const earlierPages = gitIn(bare, 'ls-tree', '-r', '--name-only', 'gh-pages')
+      .trim()
+      .split('\n')
+      .filter((path) => path.startsWith('abcdef012345/1/'));
+    const before = new Map(earlierPages.map((path) => [path, published(path)]));
+
+    // and a newer execution of another campaign
+    const variant = STAND_INS[0];
+    const later = 'fedcba987654/1';
+    const { executionDir } = await storedRun({
+      variant,
+      steps: [{}, CANCEL],
+      into: { root, execution: later },
+    });
+    await storedRun({ variant, steps: [{}, CANCEL], into: { root, execution: later, arm: 'wingfoil' } });
+    completeExecution(root, executionDir, ['TC']);
+    ended(later, '2026-10-12T12:00:00.000Z');
+    expect((await benchSite(root, 'score', later)).code).toBe(0);
+
+    // When the site is rebuilt and published
+    expect((await benchSite(root, 'site', 'build', later)).code).toBe(0);
+    const second = await benchPublish(root, probeSaying(true), 'site', 'publish');
+    expect(second.code, second.stderr).toBe(0);
+
+    // Then every page of the earlier execution has the same address and shows the same values as before
+    for (const [path, text] of before) expect(published(path), path).toBe(text);
+    // And the root index lists both executions with the date each ended
+    const index = published('index.html');
+    expect(index).toContain(
+      '<a href="abcdef012345/1/">campaign abcdef012345, execution 1</a>, ended 2026-10-05',
+    );
+    expect(index).toContain(
+      '<a href="fedcba987654/1/">campaign fedcba987654, execution 1</a>, ended 2026-10-12',
+    );
   }, 240_000);
 });

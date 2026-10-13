@@ -98,6 +98,11 @@ export interface SiteModel {
   readonly harnesses?: Readonly<Record<string, string>>;
   /** The planned runs that never started, of an execution declared final (REQ-CLI-06 as amended, task-080). */
   readonly notRun?: readonly string[];
+  /**
+   * Each scenario version's primary category, of the groups' and of the runs not run (task-085's review): what a
+   * profile page filters the runs not run by, a scenario that never ran included.
+   */
+  readonly primaryOf?: Readonly<Record<string, Category>>;
 }
 
 const runRecord = z.object({
@@ -187,6 +192,8 @@ const aggregateShape = z.object({
       }),
     )
     .optional(),
+  // The planned runs never started, of a final execution (task-080): each named `<scenario>@<version>/…`.
+  not_run: z.array(z.string().regex(/^[^/@]+@[^/]+\/.+/)).optional(),
 });
 
 function byCodeUnit(a: string, b: string): number {
@@ -287,6 +294,10 @@ export function siteModel(root: string, execution: string): Result<SiteModel> {
   }
   if (issues.length > 0) return fail(issues);
 
+  // The runs not run's scenarios, read as the groups' are: one that cannot be read is refused, never dropped.
+  const primaryOf = primaryCategories(root, scenarios, aggregate.not_run ?? []);
+  if (!primaryOf.ok) return primaryOf;
+
   const groups = aggregate.groups;
   const arms = [...new Set(groups.map((group) => group.arm))].sort(armOrder);
   // A harness arm is one whose runs recorded a harness (REQ-RUN-14): the arms a docs control can be generated from.
@@ -330,6 +341,7 @@ export function siteModel(root: string, execution: string): Result<SiteModel> {
     records: all.flatMap((group) => group.runs.flatMap((run) => records.get(run) ?? [])),
     harnesses: harnessLabels(all, records, pinnedVersions(executionDir)),
     ...(aggregate.not_run === undefined ? {} : { notRun: aggregate.not_run }),
+    primaryOf: primaryOf.value,
   });
 }
 
@@ -439,6 +451,31 @@ function pinnedVersions(executionDir: string): Record<string, string> {
       COMMIT_PIN.test(version) ? [] : [[arm, version]],
     ),
   );
+}
+
+/**
+ * Each scenario version's primary category: those the groups ran, from their scenarios already read, and those of the
+ * runs not run, read from `scenarios/` (task-085's review). A version that cannot be read is refused, as a group's is.
+ */
+function primaryCategories(
+  root: string,
+  read: ReadonlyMap<string, ScenarioInfo>,
+  notRun: readonly string[],
+): Result<Record<string, Category>> {
+  const out: Record<string, Category> = {};
+  const issues: Issue[] = [];
+  for (const [key, info] of read) out[key] = info.primary as Category;
+  for (const key of [...new Set(notRun.map((run) => run.split('/')[0] ?? ''))].sort()) {
+    if (key in out) continue;
+    const [id, version] = key.split('@') as [string, string];
+    const loaded = loadScenario(join(root, 'scenarios'), id, version);
+    if (loaded.ok) out[key] = loaded.value.categories.primary as Category;
+    else {
+      const reason = loaded.issues.map((issue) => issue.message).join('; ');
+      issues.push({ path: key, message: `cannot be read from scenarios/${id}/${version}: ${reason}` });
+    }
+  }
+  return issues.length > 0 ? fail(issues) : ok(out);
 }
 
 /** The comparison of `harness` with its docs control on `entry`, for the scenario version `info` (task-068). */

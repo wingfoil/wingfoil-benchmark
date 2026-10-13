@@ -51,11 +51,17 @@ describe('bench site build (REQ-CLI-09 as amended in 1.20, task-045)', () => {
       'abcdef012345/1/material/manual-wingfoil.html',
       'abcdef012345/1/material/setup-wingfoil.html',
       'abcdef012345/1/method.html',
+      'abcdef012345/1/profile-architect.html',
+      'abcdef012345/1/profile-code-reviewer.html',
+      'abcdef012345/1/profile-non-technical-manager.html',
+      'abcdef012345/1/profile-solo-developer.html',
+      'abcdef012345/1/profile-team-developer.html',
+      'abcdef012345/1/profile-tech-lead.html',
       'index.html',
       'style.css',
     ]);
     // It prints what it wrote and the headline
-    expect(built.stdout).toContain('site: site/abcdef012345/1/ (13 pages)\n');
+    expect(built.stdout).toContain('site: site/abcdef012345/1/ (19 pages)\n');
     expect(built.stdout).toContain('Against the baseline, wingfoil is better in 1, worse in 1');
 
     // Static: no script anywhere, every page linked to the one stylesheet
@@ -64,8 +70,8 @@ describe('bench site build (REQ-CLI-09 as amended in 1.20, task-045)', () => {
       if (path.endsWith('.html'))
         expect(text, path).toMatch(/<link rel="stylesheet" href="(\.\.\/)*style\.css">/);
     }
-    // The root page leads to the execution built last, without a script
-    expect(files['index.html']).toContain('<meta http-equiv="refresh" content="0; url=abcdef012345/1/">');
+    // The root index lists every execution built, without a script or a refresh (REQ-RES-02 as amended, task-085)
+    expect(files['index.html']).not.toContain('http-equiv="refresh"');
     expect(files['index.html']).toContain('<a href="abcdef012345/1/">');
 
     // The landing links every category page, the method page and the eligibility page
@@ -169,6 +175,8 @@ describe('bench site build (REQ-CLI-09 as amended in 1.20, task-045)', () => {
     const other = join(root, 'site', '0123456789ab', '2');
     mkdirSync(other, { recursive: true });
     writeFileSync(join(other, 'index.html'), 'an older execution\n');
+    // Its results are kept: a built execution whose results are gone is refused (task-085's review)
+    mkdirSync(join(root, 'results', '0123456789ab', '2'), { recursive: true });
     writeFileSync(join(root, 'site', 'abcdef012345', '1', 'stale.html'), 'left by an older build\n');
 
     expect((await benchSite(root, 'site', 'build', EXECUTION)).code).toBe(0);
@@ -177,6 +185,11 @@ describe('bench site build (REQ-CLI-09 as amended in 1.20, task-045)', () => {
     expect(second['abcdef012345/1/stale.html']).toBeUndefined();
     expect(second['0123456789ab/2/index.html']).toBe('an older execution\n');
     delete second['0123456789ab/2/index.html'];
+    // The root index lists every execution under site/ (REQ-RES-02 as amended, task-085): the other one too
+    expect(second['index.html']).toContain('<a href="0123456789ab/2/">');
+    expect(second['index.html']).toContain('<a href="abcdef012345/1/">');
+    delete second['index.html'];
+    delete first['index.html'];
     expect(second).toEqual(first);
     // No date anywhere
     for (const text of Object.values(first)) expect(text).not.toMatch(/\b20\d\d-\d\d-\d\d\b/);
@@ -453,5 +466,105 @@ describe('the comparison pages in a build (REQ-RES-07, task-084 review)', () => 
     expect(refused.stderr).toContain('results/comparisons/abcdef012345-1/0123456789ab-1.json');
     // Nothing was written over the earlier build
     expect(readFileSync(join(root, 'site', 'abcdef012345', '1', 'index.html'), 'utf8')).toBe(landing);
+  }, 120_000);
+});
+
+describe('a profile page with no covered category (REQ-RES-08, task-085)', () => {
+  it('names the categories not covered, and makes no comparison', async () => {
+    const { root } = await siteExecution();
+    expect((await benchSite(root, 'site', 'build', EXECUTION)).code).toBe(0);
+    const page = readFileSync(
+      join(root, 'site', 'abcdef012345', '1', 'profile-non-technical-manager.html'),
+      'utf8',
+    );
+    expect(page).toContain('Non-technical manager');
+    expect(page).toContain('A and B are not covered in this campaign.');
+    expect(page).toContain('has no comparison');
+    expect(page).not.toContain('<tr id="category-C"');
+  }, 120_000);
+
+  it('refuses a build without site-content/profiles.yaml, naming it', async () => {
+    const { root } = await siteExecution();
+    rmSync(join(root, 'site-content', 'profiles.yaml'), { force: true });
+    const refused = await benchSite(root, 'site', 'build', EXECUTION);
+    expect(refused.code).toBe(1);
+    expect(refused.stderr).toContain('site-content/profiles.yaml');
+  }, 120_000);
+});
+
+describe('a profile page counts its own runs only, and holds no date (REQ-RES-08, task-085 review)', () => {
+  it('counts the runs of its categories, lists only their runs not run, and shows no date', async () => {
+    const { root, executionDir } = await siteExecution();
+    writeFileSync(
+      join(executionDir, 'execution.json'),
+      JSON.stringify({
+        state: 'stopped',
+        reason: 'interrupt',
+        started: '2026-10-05T12:00:00.000Z',
+        ended: '2026-10-05T13:00:00.000Z',
+        final: true,
+      }),
+    );
+    const aggregateFile = join(executionDir, 'aggregate.json');
+    const aggregate = JSON.parse(readFileSync(aggregateFile, 'utf8')) as Record<string, unknown>;
+    writeFileSync(
+      aggregateFile,
+      JSON.stringify({
+        ...aggregate,
+        not_run: ['TC@1.0/baseline/fake-model/r2', 'TD@1.0/baseline/fake-model/r2'],
+      }),
+    );
+    expect((await benchSite(root, 'site', 'build', EXECUTION)).code).toBe(0);
+    const dir = join(root, 'site', 'abcdef012345', '1');
+    const reviewer = readFileSync(join(dir, 'profile-code-reviewer.html'), 'utf8');
+    // Code reviewer: D and E; the fixture's D has one run a side
+    expect(reviewer).toContain('Campaign abcdef012345, execution 1: 2 runs of fake-model');
+    expect(reviewer).toContain('Not run: <code>TD@1.0/baseline/fake-model/r2</code>.');
+    expect(reviewer).not.toContain('TC@1.0/baseline/fake-model/r2');
+    for (const file of readdirSync(dir).filter((name) => name.endsWith('.html')))
+      expect(readFileSync(join(dir, file), 'utf8'), file).not.toMatch(/20\d\d-\d\d-\d\d/);
+  }, 120_000);
+});
+
+describe('a profile page and a scenario that never ran (REQ-RES-08, task-085 second review)', () => {
+  it("lists the runs not run of a scenario of its categories, even when none of that scenario's runs ran", async () => {
+    const { root, executionDir } = await siteExecution();
+    // TS — a copy of T3 whose primary category is D — was planned and never started
+    cpSync(join(root, 'scenarios', 'TD'), join(root, 'scenarios', 'TS'), { recursive: true });
+    const yaml = join(root, 'scenarios', 'TS', '1.0', 'scenario.yaml');
+    writeFileSync(yaml, readFileSync(yaml, 'utf8').replace(/^id: TD$/m, 'id: TS'));
+    const aggregateFile = join(executionDir, 'aggregate.json');
+    const aggregate = JSON.parse(readFileSync(aggregateFile, 'utf8')) as Record<string, unknown>;
+    writeFileSync(
+      aggregateFile,
+      JSON.stringify({ ...aggregate, not_run: ['TS@1.0/baseline/fake-model/r1'] }),
+    );
+    const built = await benchSite(root, 'site', 'build', EXECUTION);
+    expect(built.code, built.stderr).toBe(0);
+    const dir = join(root, 'site', 'abcdef012345', '1');
+    expect(readFileSync(join(dir, 'profile-code-reviewer.html'), 'utf8')).toContain(
+      'Not run: <code>TS@1.0/baseline/fake-model/r1</code>.',
+    );
+    expect(readFileSync(join(dir, 'profile-tech-lead.html'), 'utf8')).not.toContain('TS@1.0');
+  }, 120_000);
+});
+
+describe('the runs not run, after the third review (task-085)', () => {
+  it('refuses a build whose runs not run name a scenario it cannot read, or are not run names', async () => {
+    const { root, executionDir } = await siteExecution();
+    const aggregateFile = join(executionDir, 'aggregate.json');
+    const aggregate = JSON.parse(readFileSync(aggregateFile, 'utf8')) as Record<string, unknown>;
+    writeFileSync(
+      aggregateFile,
+      JSON.stringify({ ...aggregate, not_run: ['TX@1.0/baseline/fake-model/r1'] }),
+    );
+    const missing = await benchSite(root, 'site', 'build', EXECUTION);
+    expect(missing.code).toBe(1);
+    expect(missing.stderr).toContain('TX@1.0: cannot be read from scenarios/TX/1.0');
+
+    writeFileSync(aggregateFile, JSON.stringify({ ...aggregate, not_run: ['garbage'] }));
+    const malformed = await benchSite(root, 'site', 'build', EXECUTION);
+    expect(malformed.code).toBe(1);
+    expect(malformed.stderr).toContain('aggregate.json: is not an aggregate this site reads');
   }, 120_000);
 });

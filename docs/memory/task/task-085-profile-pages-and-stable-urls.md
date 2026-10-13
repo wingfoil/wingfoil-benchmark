@@ -2,7 +2,7 @@
 id: task-085-profile-pages-and-stable-urls
 type: task
 title: "Profile pages and stable URLs"
-status: in-progress
+status: approved
 release: v0.2
 wave: W14
 features: [F5.7]
@@ -95,4 +95,132 @@ F5.7, for Dana (the adoption decider, persona 2), served from this release.
   - `checkSiteCopy` accepting a fresh root index of two executions, and refusing a stale one.
 ## Execution notes
 
+**WingFoil commands, declared vs observed:** `npx wingfoil memory submit task-085-…` on main (`d53eecb`), after the
+Design's own commit (`69fba65`, W-01): declared backlog → in-progress; observed `{"from": "backlog", "to":
+"in-progress"}`, exit 0, one `wf(task): submit …` commit (W-14).
+
+**Build** on `task/task-085` (worktree `../WingFoil2-Benchmark-wt/task-085`, its own `npm ci`):
+- red first:
+  - `9f91e65`: the two acceptance scenarios. The stable-URL one builds and publishes the site fixture's execution, then a
+    second execution of another campaign, both with `execution.json`. Its first line, an earlier execution's pages
+    keeping their bytes, already held. It failed on the root index.
+  - `e35cc06`: unit tests for `profiles.yaml` against the personas table, a malformed file, the root index, a profile
+    with no covered category, and a build without `profiles.yaml`.
+  - After the red commit, the acceptance headline expectation was corrected to the headline's real form, which ends
+    with its "(preliminary: …)" clause.
+- `3d85081`, the implementation:
+  - `site-content/profiles.yaml`;
+  - `src/site/profiles.ts`, holding `loadProfiles`, `rootIndexPage` and `builtExecutions`, the last moved from
+    `publish.ts`;
+  - `profilePage`, plus `landingContent` shared with the landing page;
+  - `buildSite` writes the profile pages and the root index;
+  - `checkSiteCopy` compares `site/index.html` with the root index of the executions it finds;
+  - the README.
+  - Three tests pinned the old behaviour and are amended in the same commit: the build's page list and page count,
+    the root page's `meta` refresh, and the publish commit's message.
+- Checks, niced with 2 workers: `tsc` and `npm run lint` clean, `test/unit` and `test/acceptance` green (1529 passed,
+  8 skipped).
+
+**Decisions taken in the build, inside the Design:**
+- The profile page's heading is `<profile>: <categories>`, and the page links back to the landing page. The
+  "Compared with" and "Views by profile" sections stay on the landing page only.
+- The publish commit says `The root index lists <n> execution(s).`, since there is no longer one execution the root
+  page leads to.
+- `rootPage`, the `meta` refresh, is removed.
+
 ## Review notes
+
+### Review
+
+**Round 1**: a fresh, independent, read-only agent (a `Plan` subagent), on `dce24b5`. Verdict: not clean (five
+should-fix). Red tests `011b5e2`, fixes `a334268`:
+1. should-fix: an `execution.json` that could not be read was shown as "end date not recorded" → **fixed**:
+   `rootIndex` refuses it, an end that is not a date, and a built execution whose `results/` is gone, naming each.
+   `buildSite` reads all of it before writing anything.
+2. should-fix: the stale-index remedy named every execution, which `site build` does not take → **fixed**: it names
+   one, since any build rewrites the index.
+3. should-fix: no test refused a stale root index → **fixed**.
+4. should-fix: `site/` is git-ignored, so publishing from a fresh clone with only the newer execution built would have
+   removed the earlier execution's pages from `gh-pages`, breaking its permanent URL → **fixed**: publish lists the
+   executions the fetched `gh-pages` holds and refuses to drop one, naming the build to run. The behaviour predates
+   this task, but this task is the one that claims the guarantee.
+5. should-fix: a profile page showed the whole execution's run counts and runs not run → **fixed**: its own runs,
+   slices apart, and its own runs not run. The arm columns stay the execution's, so that every page of an execution
+   shows the same arms.
+6. nit: the full timestamp was printed → **fixed**: the day (`ended 2026-10-05`), checked to be a date.
+7. nit: numeric ordering and date-free profile pages were untested → **fixed**: `/10` after `/2`, and the profile
+   pages checked with an `execution.json` that holds dates.
+8. nit: REQ-RES-04's 1.22 text still speaks of "the root page of the execution it leads to" and of a commit "naming
+   the root page's execution". The 1.26 amendment only says the check accepts the new page kinds. **Recorded** as a
+   follow-up for the approver: a wording amendment of REQ-RES-04 to the root index. The code follows REQ-RES-02 as
+   amended in 1.26, which replaced the `meta` refresh.
+
+**Round 2**: a fresh, independent, read-only agent, on `5a14c6e`. It verified the round-1 outcomes, including that a
+refusal of the index leaves `site/` untouched, and the `gh-pages` refusal coming before any commit or push. Verdict:
+not clean, with one should-fix. Red tests `262fc05`, fixes `1d05327`:
+1. should-fix: a profile page dropped the runs not run of a scenario that never ran, since only scenarios with groups
+   have a row → **fixed**: the model carries each scenario version's primary category, those of the runs not run
+   included, read from `scenarios/`, and the profile page filters by it. Tested with a scenario of category D that
+   never ran.
+2. nit: an unreadable `execution.json` was reported twice by publish → **fixed**: once.
+3. nit: `2026-13-45` passed as a date → **fixed**: an ISO timestamp whose own day is the one it names.
+
+**Round 3**: a fresh, independent, read-only agent, on `08b7332`. It checked that `primaryOf` leaves the landing
+page's bytes as they were and reads only what REQ-RES-02 lists, and that the date check accepts every timestamp the
+runner writes. Verdict: not clean, with one should-fix. Red tests `7bef666`, fixes `84f34fd`:
+1. should-fix: a run not run whose scenario could not be read was silently left off every profile page → **fixed**:
+   refused, naming it, as an unreadable scenario of a group is.
+2. nit: de-duplicating by path hid a different issue on the same path → **fixed**: by path and message.
+3. nit: a timestamp with an offset or no zone depended on the machine's time zone → **fixed**: only the UTC form the
+   runner writes.
+4. nit: the round-trip check was untested → **fixed**: `2026-02-30` and an offset timestamp are tested. Both were
+   already refused by the old check, so these pin it.
+5. nit: a malformed `not_run` crashed the build → **fixed**: `aggregateShape` checks it, and the case is tested.
+
+**Round 4**: a fresh, independent, read-only agent, on `b3e85fe`, while the machine was loaded (it ran `tsc` and
+`test/unit/site/profiles.test.ts` only, and read the rest).
+- The `not_run` check accepts every name `plannedRuns` writes, and cannot reject a legitimate aggregate.
+- The de-duplication keys on the original messages.
+- The timestamp check matches the runner's form.
+
+Verdict: clean, with no findings.
+
+### Full suites, first run: red, task sent back
+
+`scripts/full-suites.sh task/task-085` on 2026-10-13, at the approver's request, on `07bf06e`:
+- `LINT 0 TEST 0 BUILD 0 BIN 1`. The script runs every stage whatever the codes; I stopped it by hand once BIN was red,
+  after `test:docker` had started, so there is no DOCKER code. Log, in the main checkout:
+  `.cache/full-suites/2026-10-13/task_task-085-07bf06e-083358.txt`.
+- The failing test was `test/bin/bench.test.ts`, which pins the site build's output `(13 pages)`. That is now 19, with
+  the six profile pages.
+- The day checks ran `test/unit` and `test/acceptance` but not `test:bin`, so the pinned count went unseen there.
+  The page count in `test/unit/site/build.test.ts` had been amended in `3d85081`; the copy in `test:bin` had not.
+- The approver rejected the task (in-review → in-progress, `1b07b56`), with the reason above. `e43d11e` amends the count to
+  19.
+- `npm run build` and `test:bin` were run alone, niced: 8 passed.
+- The other suite, `test:docker`, reads none of this task's changes: nothing in it touches the site build or
+  publish, and its only "profile" is the dry-run harness profile.
+
+**Round 5** (after the rejection): a fresh, independent, read-only agent, on `04c3c75`.
+- 19 is the right page count: the 13 earlier pages plus the six profile pages, as `test/unit/site/build.test.ts`
+  already expects.
+- Nothing else in `test/bin` or `test/docker` pins what this task changed.
+- `test:bin` passes, 8/8.
+
+Verdict: clean, with three nits on these notes' wording, all **fixed** here:
+- that the run was stopped by hand;
+- that the log is in the main checkout;
+- what `test:docker`'s matches are.
+
+### Full suites
+
+`scripts/full-suites.sh task/task-085` on 2026-10-13, at the approver's request ("Avvia la suite"), on `e64df68` (the
+in-review resubmit), worktree clean: `LINT 0 TEST 0 BUILD 0 BIN 0 DOCKER 0`. `npm test` 1537 passed, 8 skipped, statement
+coverage 97.73 %; `test:bin` 8/8; `test:docker` 20 passed, 2 skipped. Log (main checkout):
+`.cache/full-suites/2026-10-13/task_task-085-e64df68-094320.txt`. The commit after it adds only these notes.
+
+**WingFoil commands, declared vs observed:** `npx wingfoil memory submit task-085-…` on the branch, twice (`07bf06e`,
+then after the approver's reject `1b07b56`, `e64df68`): declared in-progress → in-review each time; observed
+`{"from": "in-progress", "to": "in-review"}`, exit 0, one `wf(task): submit …` commit each. No other task was
+`in-review` before either.
+

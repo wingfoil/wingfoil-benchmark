@@ -6,6 +6,7 @@ import { fail, ok } from '../core/index.js';
 import type { Issue, PublishPort, Result } from '../core/index.js';
 
 import { buildSite, SITE } from './build.js';
+import { builtExecutions, rootIndex } from './profiles.js';
 
 /**
  * Publishing the site (F5.6, REQ-RES-04 as amended in 1.22, task-047): `site/` pushed to the remote's
@@ -24,8 +25,6 @@ export interface Publication {
   readonly executions: readonly string[];
   readonly unchanged: boolean;
 }
-
-const EXECUTION_DIR = /^[0-9a-f]{12}$/;
 
 /**
  * The settings every publishing git command runs with, whatever the maintainer's configuration says: no
@@ -78,23 +77,11 @@ function specialEntries(dir: string): string[] {
   return out;
 }
 
-/** The executions built under a site directory: each `<campaign-id>/<n>/`, in order. */
-function builtExecutions(site: string): string[] {
-  return readdirSync(site)
-    .filter((name) => EXECUTION_DIR.test(name) && lstatSync(join(site, name)).isDirectory())
-    .sort()
-    .flatMap((campaign) =>
-      readdirSync(join(site, campaign))
-        .filter((n) => /^[1-9]\d*$/.test(n) && lstatSync(join(site, campaign, n)).isDirectory())
-        .sort((a, b) => Number(a) - Number(b))
-        .map((n) => `${campaign}/${n}`),
-    );
-}
-
 /**
  * Check the site in `dir` (a copy of `site/`) against fresh builds, from the results of `root`, of every
  * execution under it: the set of its files must be exactly the union of the builds' — each execution's
- * pages, the stylesheet, and the root page of the execution it leads to — and every byte the same. A link,
+ * pages and the stylesheet — and the root index of those executions (REQ-RES-02 as amended in 1.26, task-085), and
+ * every byte the same. A link,
  * or any entry no build gives (`.git`, `.gitignore`, a stray page), is refused. Returns the executions.
  */
 export async function checkSiteCopy(root: string, dir: string): Promise<Result<string[]>> {
@@ -108,16 +95,17 @@ export async function checkSiteCopy(root: string, dir: string): Promise<Result<s
     path: `${SITE}/${path}`,
     message: 'is a link: a published site holds files only',
   }));
-  const target = /url=([0-9a-f]{12}\/[1-9]\d*)\//.exec(
-    (files.get('index.html') ?? Buffer.alloc(0)).toString('utf8'),
-  )?.[1];
   const expected = new Map<string, { bytes: Buffer; execution: string }>();
+  /** What a rebuild reported, by path and message: the root index's same issue is not said twice. */
+  const rebuilt = new Set<string>();
+
   const scratch = mkdtempSync(join(tmpdir(), 'bench-site-check-'));
   try {
     for (const execution of executions) {
       const fresh = join(scratch, execution.replace('/', '-'));
       const built = await buildSite(root, execution, fresh);
       if (!built.ok) {
+        for (const issue of built.issues) rebuilt.add(`${issue.path}\n${issue.message}`);
         issues.push(
           ...built.issues.map((issue) => ({
             ...issue,
@@ -127,21 +115,23 @@ export async function checkSiteCopy(root: string, dir: string): Promise<Result<s
         continue;
       }
       for (const [path, bytes] of filesOf(fresh).files) {
-        const own =
-          path.startsWith(`${execution}/`) ||
-          path === 'style.css' ||
-          (path === 'index.html' && execution === target);
+        const own = path.startsWith(`${execution}/`) || path === 'style.css';
         if (own) expected.set(path, { bytes, execution });
       }
     }
   } finally {
     rmSync(scratch, { recursive: true, force: true });
   }
-  if (target === undefined || !executions.includes(target)) {
-    issues.push({
-      path: `${SITE}/index.html`,
-      message: 'leads to no execution under site/: run bench site build',
+  // The root index lists every execution under site/, with the dates their records hold (task-085); any build rewrites
+  // it, so the remedy names one. What a rebuild above already reported about a record is not said twice.
+  const index = rootIndex(root, executions);
+  if (index.ok) {
+    expected.set('index.html', {
+      bytes: Buffer.from(index.value, 'utf8'),
+      execution: executions[executions.length - 1] as string,
     });
+  } else {
+    issues.push(...index.issues.filter((issue) => !rebuilt.has(`${issue.path}\n${issue.message}`)));
   }
   for (const path of [...new Set([...files.keys(), ...expected.keys()])].sort()) {
     const actual = files.get(path);
@@ -230,6 +220,24 @@ export async function publishSite(
     // filter runs (task-047's third review): the branch points at what was fetched, the index starts empty,
     // and the copy is staged into it, so the commit's tree is exactly the copy.
     if (hadBranch) {
+      // A published execution keeps its permanent URL (REQ-RES-02 as amended, task-085): site/ is git-ignored, so one
+      // rebuilt from a fresh clone may lack an execution gh-pages publishes, and pushing it would drop that page.
+      const listed = await step(['ls-tree', '-r', '--name-only', 'FETCH_HEAD']);
+      if (!listed.ok) return listed;
+      const dropped = listed.value
+        .split('\n')
+        .flatMap((path) => /^([0-9a-f]{12}\/[1-9]\d*)\/index\.html$/.exec(path)?.[1] ?? [])
+        .filter((execution) => !executions.includes(execution));
+      if (dropped.length > 0) {
+        return fail(
+          dropped.map((execution) => ({
+            path: PAGES_BRANCH,
+            message:
+              `publishes ${execution}, which site/ does not hold: build it again ` +
+              `(bench site build ${execution}) before publishing`,
+          })),
+        );
+      }
       const moved = await step(['update-ref', `refs/heads/${PAGES_BRANCH}`, 'FETCH_HEAD']);
       if (!moved.ok) return moved;
     }
@@ -244,8 +252,7 @@ export async function publishSite(
       const head = await step(['rev-parse', 'HEAD']);
       return head.ok ? ok({ commit: head.value.trim(), executions, unchanged: true }) : head;
     }
-    const target = /url=([0-9a-f]{12}\/[1-9]\d*\/)/.exec(readFileSync(join(copy, 'index.html'), 'utf8'))?.[1];
-    const message = `site: publish ${executions.join(', ')}\n\nThe root page leads to ${target ?? '?'}.`;
+    const message = `site: publish ${executions.join(', ')}\n\nThe root index lists ${executions.length} execution${executions.length === 1 ? '' : 's'}.`;
     const identity = [
       ...(name === '' ? [] : ['-c', `user.name=${name}`]),
       ...(email === '' ? [] : ['-c', `user.email=${email}`]),

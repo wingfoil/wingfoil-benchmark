@@ -272,8 +272,13 @@ npx bench site publish [--remote <name>]
 npx bench transcripts pack <campaign-id>/<n>
 ```
 
-`site build` writes the static site of an execution into `site/`. `site publish` pushes `site/` to the `gh-pages`
-branch, only when the repository is public and only what a fresh build gives. `transcripts pack` packs an
+`site build` writes the static site of an execution into `site/<campaign-id>/<n>/`, a permanent address that later
+builds of other executions leave as it is. Besides the landing and category pages, it writes one page per result
+profile of `site-content/profiles.yaml` (a copy of the personas' profiles): the landing page restricted to the
+profile's categories, with its own headline. `site/index.html` lists every execution built, with the day each ended.
+`site publish` pushes `site/` to the `gh-pages`
+branch, only when the repository is public and only what a fresh build gives; it refuses to drop an execution
+`gh-pages` already publishes, so that a permanent address never breaks. `transcripts pack` packs an
 execution's transcripts into one release asset and the harness artifacts its runs installed (from
 `.cache/harnesses/`) into a second, `harnesses.tar.gz`, and prints the `gh release create` command, which it does
 not run.
