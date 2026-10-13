@@ -126,7 +126,7 @@ the Design's own commit (`3bb0d4e`, W-01). Declared: backlog → in-progress. Ob
 
 **Size and digest:**
 - The manual grows from 1850 to 3148 bytes, so from 463 to 787 tokens by the fixed approximation `ceil(bytes ÷ 4)`.
-  After review round 1 it is 3623 bytes, 906 tokens
+  After review round 1 it is 3623 bytes, 906 tokens; after round 2, 3782 bytes, 946 tokens
   (REQ-RUN-12). Every wingfoil run records it.
 - The arm's digest changes (REQ-FMT-13). No file in `campaigns/` pins one.
 - v0.1's published execution recorded the old manual's SHA-256. The method page reads that manual from the
@@ -158,4 +158,15 @@ C (Design item 6). Red tests `c337d6b`, fixes `832ab1b`:
 6. nit: `memory reject`, and the approver role of the git identity → **fixed** in the approvals departure.
 7. nit: the order test could pass on the command's own `--reason` → **fixed**: it matches the reply's sentence
    followed by the command.
+
+**Round 2** — a fresh independent read-only agent, on `e472c4b`: choice C as the Design says (parity with the
+docs-control declaration holds again), the three departures faithful to the guide, the MCP pointer and the exit codes
+per §5–§6, v0.1's approval wording kept. Verdict: not clean (one should-fix), all **fixed** in `2441243`:
+1. should-fix: the method page called "no hand-written state change" new, which v0.1's manual already said → the rules
+   really new: no hand-written `wf(...)` commit, no invented types or roles, a refusal reported.
+2. nit: the decision-log resource holds every non-deprecated one → the manual says only the `approved` ones are
+   decisions, and where each one's text is.
+3. nit: the configuration departure understated the guide → "through its verbs or by committed edits".
+4. nit: no test pinned `.wingfoil/` or the approved read → both pinned (they pin the current text).
+5. nit: the Execution notes still listed `dna show` and `paths` → marked removed by choice C.
 
