@@ -212,3 +212,15 @@ Verdict: clean, with three nits on these notes' wording, all **fixed** here:
 - that the log is in the main checkout;
 - what `test:docker`'s matches are.
 
+### Full suites
+
+`scripts/full-suites.sh task/task-085` on 2026-10-13, at the approver's request ("Avvia la suite"), on `e64df68` (the
+in-review resubmit), worktree clean: `LINT 0 TEST 0 BUILD 0 BIN 0 DOCKER 0`. `npm test` 1537 passed, 8 skipped, statement
+coverage 97.73 %; `test:bin` 8/8; `test:docker` 20 passed, 2 skipped. Log (main checkout):
+`.cache/full-suites/2026-10-13/task_task-085-e64df68-094320.txt`. The commit after it adds only these notes.
+
+**WingFoil commands, declared vs observed:** `npx wingfoil memory submit task-085-…` on the branch, twice (`07bf06e`,
+then after the approver's reject `1b07b56`, `e64df68`): declared in-progress → in-review each time; observed
+`{"from": "in-progress", "to": "in-review"}`, exit 0, one `wf(task): submit …` commit each. No other task was
+`in-review` before either.
+
