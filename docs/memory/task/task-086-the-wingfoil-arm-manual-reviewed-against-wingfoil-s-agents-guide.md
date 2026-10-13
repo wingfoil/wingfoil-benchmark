@@ -140,8 +140,6 @@ the Design's own commit (`3bb0d4e`, W-01). Declared: backlog → in-progress. Ob
 
 ## Review notes
 
-## Review notes
-
 ### Review
 
 **Round 1**: a fresh, independent, read-only agent (a `Plan` subagent), on `add12a9`. It read the manual against
