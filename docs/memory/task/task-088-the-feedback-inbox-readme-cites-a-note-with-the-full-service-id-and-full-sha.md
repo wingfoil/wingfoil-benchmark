@@ -69,3 +69,22 @@ coordination session told the element id, the merge sha and the push state. The 
   `**Source key:** svc-020` and `**Last sync:** none` unchanged. The `wingfoil-cli` directive's rule 6 already
   reads `<service id>/F-<nnn>@<sha>` and is untouched; no other file cites the old form.
 - Day checks, niced: the inbox test 10 of 10, `npm run lint` 0, `npx tsc --noEmit -p .` 0.
+- The Design says "one assertion"; the test adds two `expect` calls in the ledger test, the example present and the old
+  form absent (review round 1, nit 1). The Design is left as approved; this note records the difference.
+
+## Review notes
+
+An independent read-only agent reviewed `git diff main...HEAD` against the Design, bug-019, WingFoil's `## Credit` on
+its `origin/main` (`32d8871b`, sentence from `9ee64234`), svc-020's record and the `wingfoil-cli` directive.
+
+- **Round 1** (d4a8c23): **clean**, two nits.
+  - Checked: the sentence matches WingFoil's text; the example's id is svc-020's record spelled exactly; Source key and
+    Last sync unchanged; rule 6 already says the form, rule 7 holds (no sync); red on main's README, 10 of 10 on HEAD,
+    the red commit first; the notes' shas and counts; no live file keeps the old form; prettier clean.
+  - **Nit 1, recorded:** "one assertion" in the Design against two `expect` calls; recorded in the Execution notes.
+  - **Nit 2, left:** the characterization assertions match the labels `**Source key:**` and `**Last sync:**`, not
+    their values. The criteria ask only that they stay green; `Last sync` changes on purpose at the next sync (rule 7).
+- **Suites:** the diff is `docs/` and one unit test; lint, typecheck and the inbox test stand in, as for task-087. The
+  full suites run if the approver asks.
+- `npx wingfoil memory submit task-088-…` (in-progress → in-review). Declared: moves the task to its next state and
+  commits it. Observed: see the next commit, `wf(task): submit …`.
