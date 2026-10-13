@@ -170,3 +170,8 @@ per §5–§6, v0.1's approval wording kept. Verdict: not clean (one should-fix)
 4. nit: no test pinned `.wingfoil/` or the approved read → both pinned (they pin the current text).
 5. nit: the Execution notes still listed `dna show` and `paths` → marked removed by choice C.
 
+**Round 3**: a fresh, independent, read-only agent, on `a4f20e5`. It checked the MCP pointer against §5, the
+configuration departure against §4 rule 6, §6 and §9, and every claim on the method page against v0.1's manual. It
+also checked the size figure. Verdict: clean, with one cosmetic nit, **no change**. One line of the manual is longer
+than the rest, but it renders the same, and rewrapping it would change the manual's bytes, size and digest for nothing.
+
