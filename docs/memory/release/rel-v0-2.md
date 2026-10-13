@@ -35,7 +35,7 @@ in this release-planning phase (`release-cycle` › release-planning).
 |---|---|---|---|---|
 | W12 — Eligibility and Spec Kit | F7.4 eligibility criteria · F7.1 Spec Kit arm | F7.1 (headless use of Spec Kit's gates) | Spec Kit runs S1–S3 and S8 under the same rules | **2026-10-07** |
 | W13 — OpenSpec and contests | F7.1 OpenSpec arm · F7.2 setup contest process | — | OpenSpec runs, and a setup can be contested | **2026-10-10** |
-| W14 — Comparison and Dana | F5.2 campaign comparison · F5.7 profile filter and stable URLs · F1.4 resumable campaign | — | a second public campaign compared with the first | — |
+| W14 — Comparison and Dana | F5.2 campaign comparison · F5.7 profile filter and stable URLs · F1.4 resumable campaign | — | a second public campaign compared with the first |**2026-10-13** |
 
 ### Triage of what v0.1 left
 
@@ -247,6 +247,78 @@ Bugs: bug-012, bug-016, bug-017 and bug-018 fixed. Spending: 2.4124 USD in all s
 
 **Seen during W13, for later:** acceptance tests time out under other sessions' load (@F4.8 fixed by bug-018;
 @F5.5 once). If it recurs, a bug should raise the slow acceptance tests' limits.
+
+### W14 — verified 2026-10-13
+
+**"A second public campaign compared with the first."** Verified offline, with the fake agent: a second execution of
+one campaign compared with the first, as for W12 and W13. The second real campaign is plan-004's campaign step
+(`campaign-002`, compared with v0.1's `c82a5e74885b/2`), not W14's. No real-agent run was made in W14.
+
+- **By hand, on main** (`7d07542`, the built CLI), in a temporary repository from `git archive main`, without
+  `results/`:
+  - the fake agent replays the public references of S1, S3 and S8 (`test/fixtures/reference/`);
+  - WingFoil v0.2.2 is built from the clone;
+  - the dry-run profile and a campaign of S1, S3 and S8 in baseline, baseline-docs and wingfoil, in the temporary
+    repository only, pin the fake agent and WingFoil.
+- **Validation:** S1@1.0, S3@1.0 and S8@1.0 valid with the hold-out; `campaign a8ff006d2102 is valid (3 scenarios,
+  3 arms)`. 9 dry runs (3 scenarios × 3 arms), each `exit 0`.
+- **A campaign stopped and resumed (F1.4, bug-013):**
+  - execution 1 was interrupted with SIGINT after three runs: `interrupt: stopping after the current step's agent is
+    killed`, then `3 runs completed, 0 failed, 1 interrupted`, `campaign ended: interrupted`, exit 1;
+  - `execution.json` recorded `state: stopped`, `reason: interrupt` and the run it stopped in;
+  - the estimate and the guard were printed before it ran: `budget guard: 0.0000 + 0.0000 = 0.0000 EUR (warn 1 EUR,
+    ceiling 2 EUR)`;
+  - `bench campaign run … --resume a8ff006d2102/1` → `resume: 6 runs to run (1 interrupted, 5 never started), 3 runs
+    kept (3 completed)`, then `6 runs completed, 0 failed`, exit 0;
+  - `execution.json` is `completed`, with one `resumed` time. The interrupted run's first attempt is in `attempts/1/`
+    and its `run.json` records `attempts: 2`.
+- **The second execution:** `bench campaign run` → execution 2, `9 runs completed, 0 failed`.
+- **`bench score a8ff006d2102/<n> --final --holdout …`**, for both: exit 0, 9 groups, `n = 1 in 9`. Every arm scores
+  the reference's result:
+  - S1 final 165/165, hold-out 48/48;
+  - S3 final 37/37, hold-out 17/17, checks 1/1, M-F1 5/5;
+  - S8 final 23/23, hold-out 7/7, checks 16/16.
+- **The comparison (F5.2):** `bench campaign compare a8ff006d2102/1 a8ff006d2102/2` → exit 0,
+  `results/comparisons/a8ff006d2102-2/a8ff006d2102-1.json (9 groups matched, 8 rows with a change, 0 rows without,
+  0 groups not compared)`. No pins differ and nothing is only in one execution. Each row compares the two arms'
+  deltas against their own baseline, each side `n = 1 / 1 preliminary`, the change ±0.
+- **The site (F5.7):** `bench site build a8ff006d2102/2` → 18 pages:
+  - the headline marks every comparison preliminary (`preliminary: n < 3 in C, E and F`);
+  - the landing page links `compare-a8ff006d2102-1.html`, which carries the rows above;
+  - six profile pages (`profile-<id>.html`, from `site-content/profiles.yaml`) are linked from the landing page;
+  - the root `site/index.html` lists `campaign a8ff006d2102, execution 2`, ended 2026-10-13.
+  - No `bench-` container is left.
+- **Suites:** every W14 task's full suites were green on the commit offered for approval. task-085's were red at
+  `test:bin` (the page count) once: rejected, fixed, green on resubmission.
+- **What the fake cannot show:** it replays the same commands in every execution, so every change is ±0. A real
+  comparison, with differing pins and a resumed paid campaign, is the campaign step's.
+
+| Task | Feature | Delivered |
+|---|---|---|
+| task-076 … task-078, task-087 | — | the WingFoil feedback inbox, versioned with one file per note and a ledger (dl-163), its source key svc-020; the `wingfoil-cli` directive |
+| task-079 | F1.4 | a clean stop on an interrupt, `execution.json`, `fail_fast` (bug-013, first half) |
+| task-080 | F1.4 | a resume without repeating completed runs, attempts kept, `score --final` (bug-013, second half) |
+| task-081 | F1.4 (dl-012) | the estimate as a range with a margin; the ceiling covers every execution |
+| task-082 | F5.2 (dl-012) | preliminary below *n* = 3; the harness version beside every value |
+| task-083 | F5.2 | `bench campaign compare`, each arm's delta against its own baseline |
+| task-084 | F5.2 | the comparison page, linked from the landing page |
+| task-085 | F5.7 | profile pages, stable URLs, the root index; publish keeps what gh-pages has |
+| task-086 | — (N43) | the wingfoil arm manual reviewed against WingFoil's guide for AI agents (v0.2.2) |
+
+Decisions taken during W14:
+
+- a bug fixed in halves is due `fixed` once every task that lists it in `fixes` is done (the approver's option A,
+  task-080);
+- task-086: the manual keeps v0.1's reads, declared as a departure from WingFoil's guide (the approver's option C).
+
+Bugs: bug-013 fixed. Spending: none in W14; 2.4124 USD in all so far.
+
+**Left for later:**
+
+- REQ-RES-04's wording still speaks of "the root page of the execution it leads to" (task-085's notes): an amendment
+  for the approver.
+- The feedback inbox's citation form, with the full service id and full sha, as WFCoord asked (2026-10-11): a bug and a
+  task right after this record.
 
 ## Release checklist
 
