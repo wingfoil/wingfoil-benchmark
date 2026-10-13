@@ -132,6 +132,11 @@ describe('the WingFoil feedback inbox (dl-163)', () => {
   it('lists every note in the README ledger as the note says', () => {
     const text = readme();
     expect(text).toMatch(/\*\*Source key:\*\*/);
+    // WingFoil's COLLABORATION.md ## Credit (its task-271): the full service id and the full sha (bug-019).
+    expect(text).toContain(
+      '`svc-020-github-repository-wingfoil-benchmark-the-benchmark-consumer-project-and-its-feedback-inbox/F-001@<full sha>`',
+    );
+    expect(text).not.toContain('<source key>/F-<nnn>@<sha>');
     expect(text).toMatch(/\*\*Last sync:\*\*/);
     const rows = tableAfter(text, '## Ledger');
     expect(rows.map((row) => row.length)).toEqual(notes.map(() => 5));

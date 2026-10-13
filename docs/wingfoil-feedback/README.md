@@ -21,7 +21,9 @@ repository pulls the answer at its own sync.
 
 **Source key:** `svc-020` — the id WingFoil assigned when it registered this repository as a
 feedback source (`svc-020-github-repository-wingfoil-benchmark-the-benchmark-consumer-project-and-its-feedback-inbox`,
-`active` since WingFoil `30b268a3`). WingFoil cites a note as `<source key>/F-<nnn>@<sha>`.
+`active` since WingFoil `30b268a3`). WingFoil cites a note of this inbox as `<service id>/F-<nnn>@<sha>`, with the
+service's full id and the full sha of the commit it read (WingFoil `COLLABORATION.md`, `## Credit`), for example
+`svc-020-github-repository-wingfoil-benchmark-the-benchmark-consumer-project-and-its-feedback-inbox/F-001@<full sha>`.
 
 **Last sync:** none.
 

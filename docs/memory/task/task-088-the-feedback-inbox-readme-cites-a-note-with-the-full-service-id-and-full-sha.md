@@ -2,7 +2,7 @@
 id: task-088-the-feedback-inbox-readme-cites-a-note-with-the-full-service-id-and-full-sha
 type: task
 title: "The feedback inbox README cites a note with the full service id and full sha"
-status: in-progress
+status: approved
 release: v0.2
 wave: W14
 features: []          # e.g. [F1.1, F3.1]
@@ -53,5 +53,38 @@ coordination session told the element id, the merge sha and the push state. The 
 
 ## Execution notes
 
-<!-- What happened while building: deviations, blockers, follow-ups (filed as elements, never left
-     here). For every `wingfoil` command: declared vs observed behaviour. -->
+- `npx wingfoil memory add --type bug` and `--type task` on 2026-10-13. Declared: create a draft element with the type's
+  scaffold and commit it. Observed: `bug-019-…` and `task-088-…` as drafts, required fields empty (W-02); filled in
+  `docs(…)` commits before `submit` (W-01).
+- `npx wingfoil memory submit` for both (draft → pending). Declared: moves the element to its next state and commits
+  it. Observed: `status: pending` for each, `wf(…): submit …` commits. Matches.
+- The approver approved bug-019 (pending → approved, `effb906`) and task-088 (pending → backlog, `12cf803`).
+- `npx wingfoil memory submit task-088-…` (backlog → in-progress) on main. Declared as above. Observed:
+  `status: in-progress` (`1273ea8`). Matches.
+- Worktree `../WingFoil2-Benchmark-wt/task-088-…` on `task/task-088-…`, its own `npm ci` (exit 0).
+- WingFoil's `## Credit` read on its `origin/main` (`32d8871b`, 2026-10-13); the sentence came with task-271,
+  `9ee64234e12f49178acc03ed7e7c4383fc25d73c`.
+- Red (`d6b36b2`): the inbox test 1 failed, 9 passed: the README lacks the full example.
+- Green (`5aa2030`): the Source key paragraph's last sentence as the Design says (3 insertions, 1 deletion);
+  `**Source key:** svc-020` and `**Last sync:** none` unchanged. The `wingfoil-cli` directive's rule 6 already
+  reads `<service id>/F-<nnn>@<sha>` and is untouched; no other file cites the old form.
+- Day checks, niced: the inbox test 10 of 10, `npm run lint` 0, `npx tsc --noEmit -p .` 0.
+- The Design says "one assertion"; the test adds two `expect` calls in the ledger test, the example present and the old
+  form absent (review round 1, nit 1). The Design is left as approved; this note records the difference.
+
+## Review notes
+
+An independent read-only agent reviewed `git diff main...HEAD` against the Design, bug-019, WingFoil's `## Credit` on
+its `origin/main` (`32d8871b`, sentence from `9ee64234`), svc-020's record and the `wingfoil-cli` directive.
+
+- **Round 1** (d4a8c23): **clean**, two nits.
+  - Checked: the sentence matches WingFoil's text; the example's id is svc-020's record spelled exactly; Source key and
+    Last sync unchanged; rule 6 already says the form, rule 7 holds (no sync); red on main's README, 10 of 10 on HEAD,
+    the red commit first; the notes' shas and counts; no live file keeps the old form; prettier clean.
+  - **Nit 1, recorded:** "one assertion" in the Design against two `expect` calls; recorded in the Execution notes.
+  - **Nit 2, left:** the characterization assertions match the labels `**Source key:**` and `**Last sync:**`, not
+    their values. The criteria ask only that they stay green; `Last sync` changes on purpose at the next sync (rule 7).
+- **Suites:** the diff is `docs/` and one unit test; lint, typecheck and the inbox test stand in, as for task-087. The
+  full suites run if the approver asks.
+- `npx wingfoil memory submit task-088-…` (in-progress → in-review). Declared: moves the task to its next state and
+  commits it. Observed: see the next commit, `wf(task): submit …`.
