@@ -58,4 +58,28 @@ describe('the operating manuals (F2.7)', () => {
     for (const arm of ['baseline', 'baseline-docs', 'wingfoil', 'speckit'])
       expect(manual(arm)).not.toMatch(/placeholder|task-014/i);
   });
+
+  it("start the wingfoil arm's section from WingFoil's guide for agents at 0.2.2, and keep its rules (task-086)", () => {
+    const own = manual('wingfoil').slice(manual('baseline').length);
+    expect(own).toContain("WingFoil's guide for AI agents, release 0.2.2");
+    // The guide's rules (docs/agents.md §4)
+    expect(own).toContain('wingfoil directives list --role developer');
+    expect(own).toContain('wingfoil dna show');
+    expect(own).toContain('wingfoil paths');
+    expect(own).toMatch(/only through (its|the) verbs/);
+    expect(own).toMatch(/exit code 1 is a rule speaking/i);
+  });
+
+  it('state where the wingfoil manual departs from the guide, and why (task-086, F-033)', () => {
+    const own = manual('wingfoil').slice(manual('baseline').length);
+    expect(own).toContain('### Where this arm departs from the guide');
+    // The level of process the guide does not set
+    expect(own).toMatch(/The guide sets no level of process/);
+    // The automated approver: the guide says an agent never approves; the decision is the neutral approver's
+    expect(own).toMatch(/The guide says an agent never approves/);
+    const approve = own.indexOf('wingfoil memory approve');
+    const reply = own.indexOf('Approved. Proceed.');
+    expect(reply).toBeGreaterThan(-1);
+    expect(approve).toBeGreaterThan(reply);
+  });
 });
