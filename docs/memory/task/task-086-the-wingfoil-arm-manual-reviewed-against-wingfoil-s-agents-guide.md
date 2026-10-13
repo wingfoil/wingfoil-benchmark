@@ -89,6 +89,22 @@ the manual each execution ran by its SHA-256 (REQ-RUN-12, task-046), so that v0.
 
 The existing tests stay: the core, `npx`, no MCP Tool, the approval command. The method-statements test checks the
 new sentence's anchor sources.
+**6. After review round 1: the approver's choice C (2026-10-13, in chat: "C, come proposto").**
+- What round 1 found: the guide's "read before you write" sent the agent to `wingfoil dna show` and `wingfoil paths`.
+  Their `team` and `paths` are what the docs-control generator leaves out of `PROJECT_RULES.md` (REQ-RUN-11, T3),
+  because the manual never sent the agent to them.
+- What C does: the manual keeps v0.1's reads, the role's rules and the approved decisions, which the docs controls
+  carry as well. This is stated as a departure from the guide. Parity holds by construction, and the generator is
+  untouched.
+- The departures become three:
+  1. what to read and how much to record;
+  2. configuration: the scenario's, never the agent's to change, where the guide lets an agent edit configuration
+     through its verbs;
+  3. approvals: the fixed reply carried out, never `memory reject`; the git identity holds the approver role for that
+     purpose only.
+- The MCP pointer names the role's Prompt `developer-session` and the decisions' resource. v0.1's `wingfoil://dna`
+  goes, for the same reason.
+
 ## Execution notes
 
 **WingFoil commands, declared vs observed:** `npx wingfoil memory submit task-086-…` was run on main (`3ab44cb`), after
