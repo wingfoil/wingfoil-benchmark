@@ -66,3 +66,22 @@ All **characterization**: the behaviour exists and is tested since task-085; thi
   follows 1.29's. 1.22's and 1.26's text unchanged (17 insertions, 3 deletions: the header's two lines and the row).
 - Day checks, niced: prettier on the file; `publish`, `traceability` and `method-statements` tests 46 of 46;
   `npm run lint` 0. No code changed, so no typecheck is needed beyond lint's.
+
+## Review notes
+
+An independent read-only agent reviewed `git diff main...HEAD` against the Design, bug-020, `src/site/publish.ts`,
+`src/site/profiles.ts` and `test/unit/site/publish.test.ts`.
+
+- **Round 1** (859dfbc): **clean**, two nits. Every claim of the 1.30 paragraph holds in the code and its tests; 1.22
+  and 1.26 unchanged; the header and the amendment section as 1.27–1.29; the notes' shas, counts and tests right;
+  46 of 46 re-run; prettier clean. Nothing else in `method.md`, `traceability.md` or the features names the root page.
+  - **Nit 1, fixed** (970631d): an execution without `execution.json`, as v0.1's, is listed with its end date not
+    recorded; the paragraph now says so.
+  - **Nit 2, left for the approver:** REQ-RES-04's 1.22 text says a refused entry is named "and the `bench site
+    build` to run"; for a stray file the code says "remove it, or rebuild site/". It predates this task and is
+    outside bug-020.
+- **Round 2** (970631d): **clean.**
+- **Suites:** the diff is one specification document and the task; prettier, lint and the `publish`, traceability and
+  method-statements tests stand in, as for task-087 and task-088. The full suites run if the approver asks.
+- `npx wingfoil memory submit task-089-…` (in-progress → in-review). Declared: moves the task to its next state and
+  commits it. Observed: see the next commit, `wf(task): submit …`.
