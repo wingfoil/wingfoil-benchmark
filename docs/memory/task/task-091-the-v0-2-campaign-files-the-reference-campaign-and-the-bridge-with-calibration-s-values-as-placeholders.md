@@ -129,8 +129,9 @@ option cannot meet). It is named here so that it is not found at calibration.
   reference's does, so that `agent` is one pin shared whole (criterion 4). The new test 5 of 5; `test/unit/campaign` and
   `traceability` 132 of 132; `npm run lint` 0; `npx tsc --noEmit -p .` 0. CLI output unchanged: no `test:bin`.
 - **The offline verification, on 2026-10-14, 18:37–19:37,** niced, with the worktree's built CLI (`npm run build`).
-  **Deviation from the Design:** the temporary repository came from `git archive` of the task branch's head
-  (`1979daa`), not of main, since main does not hold the files before the merge.
+  **Deviations from the Design:** the CLI was the worktree's build, not the main checkout's, and the temporary
+  repository came from `git archive` of the task branch's head (`1979daa`), not of main: main does not hold the files
+  before the merge.
   - The temporary repository in the scratchpad, `results/` removed, committed. In it only: both campaigns'
     `agent` rewritten to `{name: fake, version: 1.0.0}` (no effort), and `scenarios/dry-run.yaml` pinning the fake
     agent, WingFoil v0.2.2, Spec Kit v1.1.0 and OpenSpec 1.14.0 on `claude-sonnet-5-5`.
@@ -140,7 +141,8 @@ option cannot meet). It is named here so that it is not found at calibration.
     `v0.2.2` present, no `v0.3` tag); `BENCH_SPECKIT_REPO` the Spec Kit clone at `v1.1.0` (`f1d3a4f`); OpenSpec from the
     npm registry.
   - `bench scenario validate` → S1@1.0, S2@1.0, S3@1.0 and S8@1.0 valid with the hold-out.
-  - `bench campaign validate` → `campaign c3bfbd22bc87 is valid (4 scenarios, 7 arms)` (reference) and
+  - `bench campaign validate` (the ids are those of the fake-agent copies, not of the committed files nor of
+    campaign-002) → `campaign c3bfbd22bc87 is valid (4 scenarios, 7 arms)` (reference) and
     `campaign 0cfa0f9dc83f is valid (4 scenarios, 3 arms)` (bridge), each preflight line `set`.
   - `bench campaign run`, both, before any dry run → exit 1, `campaign: not started: its cost cannot be estimated`,
     naming each missing dry run.
@@ -166,3 +168,19 @@ option cannot meet). It is named here so that it is not found at calibration.
     temporary repository was removed; `site build` writes one page per comparison whose newer side is the execution.
   - `docker ps -a --filter name=bench-` → 0 containers left. The worktree unchanged (`git status` clean). The
     temporary repository removed; its logs stay in the session's scratchpad, outside the repository.
+
+## Review notes
+
+An independent read-only agent reviewed `git diff main...HEAD` against the Design, dl-007, dl-015, dl-017,
+experiment design 1.3 §6, REQ-FMT-01, -11, -13, REQ-RUN-16, -19 and the campaign and digest code.
+
+- **Round 1** (8dd7b64): **clean**, four nits. The model ids, the shapes, the shared pins and the seven digests
+  (recomputed) verified; red-first visible (`068a326` the test alone, `1979daa` the files alone); the test not
+  tautological; `test/unit/campaign` 105 of 105; the offline verification meets the third criterion.
+  - **Nit 1, fixed** (`e7fcef4`): the reference's header and its wingfoil comment name dl-017's fallback: v0.2.2 final
+    and no bridge if v0.3 is not released by 2026-10-31. Comments only: the campaign's id is unchanged.
+  - **Nit 2, fixed** (`e7fcef4`): `fail_fast` joins the shared pins in the test, so that calibration cannot set it in one
+    file only.
+  - **Nit 3, fixed:** the Execution notes name both deviations, the worktree's CLI and the archive of the task branch.
+  - **Nit 4, fixed:** the notes say the ids quoted are those of the fake-agent copies.
+- Re-checked after the fixes: `test/unit/campaign` 105 of 105; `npx tsc --noEmit -p .` 0; `npm run lint` 0.
