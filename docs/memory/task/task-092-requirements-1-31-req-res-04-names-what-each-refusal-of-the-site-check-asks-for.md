@@ -2,7 +2,7 @@
 id: task-092-requirements-1-31-req-res-04-names-what-each-refusal-of-the-site-check-asks-for
 type: task
 title: "Requirements 1.31, REQ-RES-04 names what each refusal of the site check asks for"
-status: in-progress
+status: in-review
 release: v0.2
 wave: calibration
 features: [F5.6]
