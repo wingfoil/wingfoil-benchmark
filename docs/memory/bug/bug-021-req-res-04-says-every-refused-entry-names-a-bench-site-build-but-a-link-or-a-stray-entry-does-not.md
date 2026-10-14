@@ -3,6 +3,7 @@ id: bug-021-req-res-04-says-every-refused-entry-names-a-bench-site-build-but-a-l
 type: bug
 title: "REQ-RES-04 says every refused entry names a bench site build, but a link or a stray entry does not"
 status: approved
+fixed_by: task-092-requirements-1-31-req-res-04-names-what-each-refusal-of-the-site-check-asks-for
 # fixed_by: task-…   # set by hand, with the fixing task's id, just before `approved → fixed`
 ---
 
@@ -44,3 +45,10 @@ The 1.26 and 1.30 amendments do not touch that sentence.
 
 A specification amendment, 1.31: REQ-RES-04 gains an "Amended in 1.31" paragraph naming what each of the three
 refusals asks for, and the amendment section records it. No code changes.
+
+## Resolution
+
+Fixed by [task-092](../task/task-092-requirements-1-31-req-res-04-names-what-each-refusal-of-the-site-check-asks-for.md)
+(merged in `bcdff37`): requirements 1.31. Of the three refusals 1.22 names, REQ-RES-04 now says only a difference
+names a `bench site build`; a link is refused as a link, and an entry no build gives is told to be removed or `site/`
+rebuilt. No code changed.
