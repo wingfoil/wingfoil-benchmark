@@ -104,3 +104,7 @@ and `test/unit/site/publish.test.ts`, one round at a time.
   as for task-089. The full suites run if the approver asks.
 - `npx wingfoil memory submit task-092-…` (in-progress → in-review) on the task branch. Declared: moves the task to its
   next state and commits it. Observed: see the next commit, `wf(task): submit …`.
+- The approver approved task-092 (`d3c6cfb`, in-review → approved) on the task branch.
+- Merged on main with `--no-ff` (`bcdff37`).
+- `npx wingfoil memory submit task-092-…` (approved → done) on main. Declared: moves the task to its next state and
+  commits it. Observed: see the next commit, `wf(task): submit …`.
