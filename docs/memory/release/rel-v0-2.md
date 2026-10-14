@@ -326,7 +326,8 @@ Bugs: bug-013 fixed. Spending: none in W14; 2.4124 USD in all so far.
   (`c304315`); specification approved and merged (`149745f`: experiment design 1.2, requirements 1.26, acceptance 1.1,
   traceability 1.4, after three independent reviews); W12 tasks task-056 to task-067 in the backlog (plan:
   [plan-004](../../plans/plan-004-release-v0-2.md))
-- [ ] delivery: W12–W14 done, every wave's "Ends with" verified
+- [x] delivery: W12–W14 done, every wave's "Ends with" verified (W12 2026-10-07, W13 2026-10-10, W14
+  2026-10-13: `894ee03`); task-056 to task-088 done; the approver's go in chat, 2026-10-14
 - [ ] calibration: dry runs in every arm, budget revised (`docs/calibration/v0.2.md`)
 - [ ] validation: acceptance green on the fake agent, coverage > 80 %, lint clean, the real-agent validation dl-010
   decides
