@@ -66,4 +66,6 @@ What B takes on, for calibration to check:
 - `campaigns/v0-2-reference.yaml`'s Haiku slice names `claude-haiku-5-5`, with its effort pin; the bridge runs no Haiku
   slice, so its effort entry for Haiku is inert (task-069) and is aligned only to keep the two pin lists alike. Calibration's dry runs of that slice (S1 and S3 in baseline and wingfoil) are on Haiku
   5.5, under calibration's own consent.
+- Experiment design §6 ("a Haiku 4.5 rung of the model ladder") and plan-004's dl-007 row name Haiku 5.5, by the
+  calibration task.
 - Calibration watches which Haiku Claude Code calls for its own work, in every dry run's `modelUsage`.
