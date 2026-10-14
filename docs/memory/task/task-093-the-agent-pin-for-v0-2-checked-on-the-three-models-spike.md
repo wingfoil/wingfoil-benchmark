@@ -311,3 +311,4 @@ not an estimate; Opus 5.5 at 2.7× Sonnet 5.5, with more turns and output.
   **`medium`** effort instead of the recommended `high`, and what that does to the comparisons with v0.1. Both are
   calibration's to settle with the approver (dl-018, dl-015); the recommended pins above stand as this spike's
   evidence, not as the decision.
+- Merged into main with `--no-ff` → `cd47e6a`.
