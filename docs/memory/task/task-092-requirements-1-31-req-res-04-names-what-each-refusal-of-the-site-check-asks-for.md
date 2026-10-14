@@ -65,11 +65,30 @@ All **characterization**: the behaviour and its tests exist since task-047 and t
   2. a link: `is a link: a published site holds files only`; lines 146 and 151;
   3. an entry no build gives: `is not part of a fresh build of any execution: remove it, or rebuild site/`; line 138.
 
-  All three came with `91cd2e2` on task-047's branch (requirements 1.22), not with task-085: the amendment section
-  says task-047; this task's first criterion says "task-047 and task-085", the second of which brought only the
-  root index's check.
+  All three messages came with task-047 (requirements 1.22): the difference with `aaf2943`, the link and the stray
+  entry with `91cd2e2`, its review fix. Their tests came with task-047 (`63af8fa` for line 108, `88867fa` for 138
+  and 151, `d6db6b7` for 146) and task-085 (`011b5e2` for line 331, the stale root index).
 - Amendment (`ad6f1b9`): REQ-RES-04's row gains "Amended in 1.31"; the header is 1.31 (the date was already
   2026-10-14); "Amendment 1.31" follows 1.30's. 1.22's, 1.26's and 1.30's text unchanged (14 insertions, 2
   deletions: the header's line and the row).
 - Day checks, niced: `publish`, `traceability` and `method-statements` tests 46 of 46; `npm run lint` 0;
   `npx tsc --noEmit -p .` 0. `*.md` is in `.prettierignore`: no prettier check is claimed for the document.
+- Review fix (`43e0e75`): "Amended in 1.31" scoped to the three refusals 1.22 names; the amendment section says "Of those
+  three", and no longer says the tests came with task-047.
+
+## Review notes
+
+An independent read-only agent reviewed `git diff main...HEAD` against the Design, bug-021, `src/site/publish.ts`
+and `test/unit/site/publish.test.ts`, one round at a time.
+
+- **Round 1** (`f353c86`): **not clean**, one blocking finding and two nits.
+  - **Blocking, fixed** (`43e0e75`): "of the check's refusals, only a difference names a `bench site build`" was too
+    broad: `checkSiteCopy`'s "not built: run bench site build <campaign-id>/<n> first" (a copy without `index.html`,
+    `style.css` or an execution, `publish.ts:91`) and 1.30's refusal to drop a published execution
+    (`publish.ts:236`) name one too. The paragraph now speaks of the three refusals 1.22 names.
+  - **Nit 1, left for the approver:** the tests assert the case, not the whole remedy: `publish.test.ts:138` checks
+    "is not part of a fresh build", not "remove it, or rebuild site/"; `:146` and `:151` check "is a link", not "a
+    published site holds files only". The wording 1.31 states rests on `publish.ts:142` and `:96`. Asserting the
+    whole messages is a test change, outside this text-only task's approved design.
+  - **Nit 2, fixed** (this commit): the Execution notes gave `91cd2e2` as the source of all three messages; the
+    difference's came with `aaf2943`, and the test at line 331 with task-085 (`011b5e2`).
