@@ -165,3 +165,7 @@ REQ-FMT-11 and the rest of the three documents.
   experiment design stand in, as for task-087 to task-089. The full suites run if the approver asks.
 - `npx wingfoil memory submit task-090-…` (in-progress → in-review), on the task branch. Declared: moves the task to its
   next state and commits it. Observed: see the next commit, `wf(task): submit …`.
+- The approver approved task-090 (`3f19976`, in-review → approved) on the task branch; merged into main with `--no-ff`
+  (`67d0d77`).
+- `npx wingfoil memory submit task-090-…` (approved → done) on main. Declared: moves the task to its next state and
+  commits it. Observed: see the next commit, `wf(task): submit …`.
