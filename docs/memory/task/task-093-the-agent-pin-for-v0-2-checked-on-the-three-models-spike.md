@@ -299,3 +299,8 @@ not an estimate; Opus 5.5 at 2.7× Sonnet 5.5, with more turns and output.
      only; real runs read the real token file.
 - Final checks on the offered commit: `npm run lint` clean. No product code changed: `npm test`, `test:bin`,
   `test:docker` and the full suites not run (as task-062); they are the approver's to ask for.
+
+### Review and approval
+
+- `npx wingfoil memory submit task-093-…`, in the worktree. Declared: `in-progress → in-review`, one commit.
+  Observed: exit 0, JSON `from`/`to` as declared, `373e820`, one file, `status` only. Matches.
