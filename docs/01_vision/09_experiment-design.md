@@ -1,9 +1,9 @@
 # Experiment Design (GQM) — WingFoil Benchmark
 
-**Version:** 1.2
-**Date:** 2026-10-05
+**Version:** 1.3
+**Date:** 2026-10-14
 **Status:** Approved
-**Traces to:** [06_features.md](06_features.md) (F2.4, F2.7, F4.x, F7.4), [07_sequencer.md](07_sequencer.md) (decisions 1–3), [03_is-isnot.md](03_is-isnot.md) 1.1; input: [X_competitor-landscape-2026-09-22.md](X_competitor-landscape-2026-09-22.md), [X_competitor-landscape-2026-10-05.md](X_competitor-landscape-2026-10-05.md) (1.2)
+**Traces to:** [06_features.md](06_features.md) (F2.4, F2.7, F4.x, F7.4), [07_sequencer.md](07_sequencer.md) (decisions 1–3), [03_is-isnot.md](03_is-isnot.md) 1.1; input: [X_competitor-landscape-2026-09-22.md](X_competitor-landscape-2026-09-22.md), [X_competitor-landscape-2026-10-05.md](X_competitor-landscape-2026-10-05.md) (1.2); [dl-017](../memory/decision-log/dl-017-the-v0-2-campaign-pins-wingfoil-v0-3-beside-a-bridge-on-v0-2-2-one-repetition-per-group.md) (1.3)
 
 ---
 
@@ -271,14 +271,29 @@ The 30 € target above did not hold, and stays as the record of v0.1's plan.
 - **The ceiling covers the campaign** across all its executions, so a re-run counts against it.
 - **A comparison is non-preliminary only from n ≥ 3** on both sides. Which scenarios are repeated is set at
   calibration.
-- **v0.2's shape** (dl-007, the approver's triage of 2026-10-05):
+- **v0.2's shape** (dl-007, the approver's triage of 2026-10-05; amended in 1.3 by dl-017):
   - the v0.1 scenarios in seven arms;
   - Sonnet 5.5 by default if its calibration fits, Sonnet 5 otherwise;
-  - a bridge re-running v0.1's configuration on the default model, as a campaign of its own, so that v0.1 and v0.2
-    can be read on one model;
+  - **the reference campaign pins WingFoil v0.3**, once released and admitted to the eligibility register
+    (REQ-FMT-11), with the wingfoil arm's manual reviewed against v0.3's guide for AI agents. If v0.3 is not released
+    by **2026-10-31**, the reference campaign pins WingFoil v0.2.2 and the bridge is not run, since the reference
+    campaign then holds the same three arms on v0.2.2;
+  - **the bridge**, a campaign of its own, re-runs v0.1's whole configuration: S1, S2, S3 and S8 in baseline,
+    baseline-docs and wingfoil, on **WingFoil v0.2.2** (`12537b62`) with task-086's manual (written against v0.2.2's
+    guide), on the reference campaign's model, Claude Code version, effort and scenario versions. It runs from **the
+    same benchmark commit** as the reference campaign, one after the other, and the commit is recorded in both campaign
+    elements, since the comparison does not list it. It is not cut at calibration to fit the budget;
+  - **repetitions:** v0.1's, S1 × 3 and S2, S3 and S8 × 1, in both campaigns, until WingFoil 1.0 or the benchmark's
+    1.0, whichever comes first. No group is raised to three to leave "preliminary": the rule n ≥ 3 above stands;
   - a Haiku 4.5 rung of the model ladder.
 
-  A first sizing, Sonnet only and v0.1's repetitions, is about 42 runs and 75–85 €. Calibration replaces it.
+  A first sizing, Sonnet only and v0.1's repetitions, is about 42 runs and 75–85 €. With v0.3, the bridge adds 18 runs,
+  about 35–40 € at v0.1's measured cost. Calibration replaces both figures.
+
+  **With v0.3, the comparisons published with v0.2** form a chain of two steps, each changing one group of causes:
+  `c82a5e74885b/2` → bridge (the model, Claude Code, the effort, the manual and the scoring code, WingFoil held at
+  v0.2.2), then bridge → reference campaign (WingFoil v0.2.2 → v0.3 alone). The comparison of v0.2 with v0.1 (F5.2) is
+  read through the bridge. Without v0.3, it compares `c82a5e74885b/2` with the reference campaign directly.
 
 ---
 
@@ -312,4 +327,13 @@ The 30 € target above did not hold, and stays as the record of v0.1's plan.
 
    Sources: rel-v0-2's triage and the approver's decisions on the specification review (2026-10-05); dl-007,
    dl-008, dl-012; [X_competitor-landscape-2026-10-05.md](X_competitor-landscape-2026-10-05.md).
+8. **Amendment 1.3 (v0.2 calibration, 2026-10-14).** Approved: dl-017, option D (`5d7f35b`), the approver's choices in
+   chat of 2026-10-13 and 2026-10-14 ("ok per la proposta sulle campagne"; "x1 fino a wf1.0 o wfb1.0"). Written by
+   task-090.
+   - **§6, v0.2's shape:** the reference campaign pins WingFoil v0.3, with v0.2.2 as the fallback if v0.3 is not
+     released by 2026-10-31; the bridge re-runs v0.1's whole configuration on WingFoil v0.2.2, on the reference
+     campaign's model, Claude Code, effort and scenario versions, from the same benchmark commit; v0.1's repetitions
+     until WingFoil 1.0 or the benchmark's 1.0; the chain of comparisons `c82a5e74885b/2` → bridge → reference campaign.
+
+   Source: [dl-017](../memory/decision-log/dl-017-the-v0-2-campaign-pins-wingfoil-v0-3-beside-a-bridge-on-v0-2-2-one-repetition-per-group.md).
 

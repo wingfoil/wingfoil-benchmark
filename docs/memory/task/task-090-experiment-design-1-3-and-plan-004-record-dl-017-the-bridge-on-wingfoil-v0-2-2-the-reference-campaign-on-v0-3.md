@@ -2,7 +2,7 @@
 id: task-090-experiment-design-1-3-and-plan-004-record-dl-017-the-bridge-on-wingfoil-v0-2-2-the-reference-campaign-on-v0-3
 type: task
 title: "Experiment design 1.3 and plan-004 record dl-017: the bridge on WingFoil v0.2.2, the reference campaign on v0.3"
-status: in-progress
+status: approved
 release: v0.2
 wave: calibration
 features: []
@@ -107,3 +107,61 @@ counts printed. Push only on the approver's go.
 - `npx wingfoil memory add --type task --title … --tags calibration,docs,dl-017` on 2026-10-14, on main. Declared:
   create a draft with the type's scaffold and commit it. Observed: `task-090-…` as a draft (`4fc5314`), required
   fields empty (W-02); filled in a `docs(task)` commit before `submit` (W-01).
+- `npx wingfoil memory submit task-090-…` (draft → pending) on main. Declared: moves the element to its next state and
+  commits it. Observed: `status: pending` (`7ef3f51`). Matches. The approver approved it (`a81d59f`, pending →
+  backlog).
+- `npx wingfoil memory submit task-090-…` (backlog → in-progress) on main. Declared: the same. Observed:
+  `status: in-progress` (`39a131f`). Matches.
+- Worktree `../WingFoil2-Benchmark-wt/task-090`, branch `task/task-090-…`, its own `npm ci` (exit 0).
+- The amendment (`418a103`): experiment design 1.3 (header, Traces to, §6's v0.2 shape, decision 8); plan-004's
+  Constraints line, steps 3 and 5 and a "Calibration and campaign (steps 3 and 5), from dl-017" paragraph; rel-v0-2's
+  "6. Before calibration" table, placed after section 5's task-062 paragraph. 59 insertions, 10 deletions.
+- Day checks, niced: `npm run lint` 0; vitest `--maxWorkers=2` on `method-statements`, `traceability` and `profiles`
+  (the tests that read `docs/` or cite the experiment design), 34 of 34. Prettier: `*.md` is in `.prettierignore`, so
+  the repository's check does not cover these files; forced with `--ignore-path /dev/null` it flags them, as it
+  flags main's experiment design before this change. No reformatting was done, to keep the diff to dl-017. No code
+  changed: `tsc --noEmit` and `test:bin` skipped.
+
+## Review notes
+
+An independent read-only agent reviewed `git diff main...HEAD` against the Design, dl-017, REQ-FMT-01, REQ-SCO-13,
+REQ-FMT-11 and the rest of the three documents.
+
+- **Round 1** (71508a2): **not clean**, one blocking finding and five nits. Figures, shas, the notes' counts and the
+  34 tests verified; the style matches amendment 1.2 and section 5's table.
+  - **Blocking, fixed** (`00750a8`): dl-017 Proposal 3's "scenario versions" was lost (REQ-SCO-13 skips a group whose
+    scenario hash differs). The bridge now shares the reference campaign's model, Claude Code version, effort **and
+    scenario versions**, in §6, decision 8 and plan-004. The task's first criterion omitted it too; the text follows
+    dl-017.
+  - **Nit 2, fixed:** the bridge's cost and the chain of comparisons are stated "with v0.3"; without v0.3, F5.2
+    compares `c82a5e74885b/2` with the reference campaign directly.
+  - **Nit 3, fixed:** plan-004's step 5 checkpoint names both comparisons.
+  - **Nit 4, fixed:** plan-004's repetitions add "whichever comes first" and "no group is raised to three".
+  - **Nit 5, fixed:** rel-v0-2's row says dl-017 widens dl-007's bridge slice.
+  - **Nit 6, left for the v0.3 task:** `site-content/method.md`'s `#threat-t10` says the public campaign runs
+    "WingFoil, v0.2.2", true for v0.1; the task that admits and pins v0.3 should update it.
+- Re-checked after the fixes: `npm run lint` 0; `method-statements`, `traceability`, `profiles` 34 of 34.
+- **Round 2** (df546a4): **not clean**, no blocking finding, two nits. Every round-1 fix verified; the diff faithful to
+  dl-017; the eight shas and the 34 tests verified; wrapping and Markdown fine.
+  - **Nit 1, fixed** (`969fa04`): plan-004's step 5 cell, its checkpoint and the campaign-step paragraph assumed the
+    bridge always runs; they now name it with v0.3, and the direct comparison with `c82a5e74885b/2` without it.
+  - **Nit 2, left as it is:** §6's dl-012 bullet "Which scenarios are repeated is set at calibration" stays the
+    general rule, settled for v0.2 by the repetitions bullet below it; the criteria keep 1.2's text unchanged.
+- **Round 3** (39ab4f2): **not clean**, no blocking finding, two nits and an optional one. 969fa04 verified; the diff
+  faithful to dl-017; the shas verified.
+  - **Nits 1 and 2 and the optional one, fixed** (`3601b31`): step 5's gate reads "spending (each campaign)"; the
+    Constraints line names the fallback (v0.2.2 and no bridge if v0.3 is not released by 2026-10-31); step 3's cell
+    adds the bridge's dry runs "with WingFoil v0.3".
+- **Round 4** (7475243): **not clean**, one nit. 3601b31 verified; every statement about the bridge conditioned on
+  v0.3; the diff faithful to dl-017; the shas verified.
+  - **Nit 1, fixed** (`21940a7`): "spending (each campaign)" read as one consent per campaign, while REQ-FMT-01 (1.26)
+    gives one consent for the main campaign and the bridge together; step 5's gate now reads "spending (the
+    reference campaign and, with v0.3, the bridge, together)".
+- **Round 5** (dfe14af): **clean.** 21940a7 verified against REQ-FMT-01; every point of dl-017's Proposal and
+  Consequences present; the bridge conditioned on v0.3 wherever dl-017 makes it conditional; the notes' shas right;
+  tables and links intact. The items left in rounds 1 and 2 stand.
+- After round 5: `npm run lint` 0; `method-statements`, `traceability`, `profiles` 34 of 34.
+- **Suites:** the diff is three documents and the task; lint and the three tests that read `docs/` or cite the
+  experiment design stand in, as for task-087 to task-089. The full suites run if the approver asks.
+- `npx wingfoil memory submit task-090-…` (in-progress → in-review), on the task branch. Declared: moves the task to its
+  next state and commits it. Observed: see the next commit, `wf(task): submit …`.

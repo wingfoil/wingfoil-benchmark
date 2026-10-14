@@ -116,6 +116,12 @@ The questions as they were put:
 task-062 also recommends pinning Claude Code **2.1.291 or later** for v0.2 (2.1.280 misprices Sonnet 5.5): an input
 for calibration's re-pin.
 
+**6. Before calibration** (approved by the approver on 2026-10-14):
+
+| Element | Decision | Lands in |
+|---|---|---|
+| [dl-017](../decision-log/dl-017-the-v0-2-campaign-pins-wingfoil-v0-3-beside-a-bridge-on-v0-2-2-one-repetition-per-group.md) WingFoil v0.3 for the reference campaign, a bridge on v0.2.2, v0.1's repetitions | **approved, option D** (`5d7f35b`): widens dl-007's bridge slice to v0.1's whole configuration; makes precise the answer of 2026-10-05 on WingFoil for the campaign; v0.2.2 if v0.3 is not released by 2026-10-31, then no bridge | task-090 (experiment design 1.3 §6, plan-004 steps 3 and 5); a task admitting v0.3 before calibration |
+
 **Smaller items** left by v0.1's Retrospective are triaged with the W12–W14 task plans; v0.2's wingfoil arm manual
 is reviewed against WingFoil's `docs/agents.md` at the pinned tag (N43).
 
