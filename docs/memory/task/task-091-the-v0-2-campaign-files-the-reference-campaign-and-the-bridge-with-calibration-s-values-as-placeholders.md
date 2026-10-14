@@ -192,3 +192,7 @@ experiment design 1.3 §6, REQ-FMT-01, -11, -13, REQ-RUN-16, -19 and the campaig
   compare and site build end to end. The full suites run if the approver asks.
 - `npx wingfoil memory submit task-091-…` (in-progress → in-review), on the task branch. Declared: moves the task to its
   next state and commits it. Observed: see the next commit, `wf(task): submit …`.
+- The approver approved task-091 (`4d16c27`, in-review → approved) on the task branch; merged into main with
+  `--no-ff` (`87fb90f`).
+- `npx wingfoil memory submit task-091-…` (approved → done) on main. Declared: moves the task to its next state and
+  commits it. Observed: see the next commit, `wf(task): submit …`.
