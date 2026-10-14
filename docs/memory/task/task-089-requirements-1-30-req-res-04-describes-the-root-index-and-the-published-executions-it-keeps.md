@@ -2,7 +2,7 @@
 id: task-089-requirements-1-30-req-res-04-describes-the-root-index-and-the-published-executions-it-keeps
 type: task
 title: "Requirements 1.30, REQ-RES-04 describes the root index and the published executions it keeps"
-status: pending
+status: backlog
 release: v0.2
 wave: W14
 features: [F5.6]      # e.g. [F1.1, F3.1]
