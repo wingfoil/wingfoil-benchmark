@@ -92,3 +92,15 @@ and `test/unit/site/publish.test.ts`, one round at a time.
     whole messages is a test change, outside this text-only task's approved design.
   - **Nit 2, fixed** (this commit): the Execution notes gave `91cd2e2` as the source of all three messages; the
     difference's came with `aaf2943`, and the test at line 331 with task-085 (`011b5e2`).
+- **Round 2** (`20d8b4a`): **clean**, two nits, both left for the approver:
+  - **Nit 1:** when one execution's rebuild fails, its own pages are not expected, so each is also named "is not part
+    of a fresh build of any execution" beside the "(rebuilding …)" issue (`publish.ts:108-116`, `:142`). 1.31's
+    "an entry no build gives" still holds; changing the message is code, outside this task.
+  - **Nit 2:** a link at a path a build gives (`site/style.css` as a symlink) is refused twice: "is a link"
+    (`:96`) and "differs … run bench site build" (`:147`). 1.31 is said per refusal and holds; the criterion's "no
+    build is named" holds for the link's own refusal only.
+- **Suites:** the diff is one specification document and the task; after round 1's fix the `publish`,
+  `traceability` and `method-statements` tests 46 of 46, `npm run lint` 0 and `npx tsc --noEmit -p .` 0 stand in,
+  as for task-089. The full suites run if the approver asks.
+- `npx wingfoil memory submit task-092-…` (in-progress → in-review) on the task branch. Declared: moves the task to its
+  next state and commits it. Observed: see the next commit, `wf(task): submit …`.
