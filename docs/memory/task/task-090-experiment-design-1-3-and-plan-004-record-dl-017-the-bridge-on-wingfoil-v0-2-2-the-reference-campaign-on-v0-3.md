@@ -147,3 +147,8 @@ REQ-FMT-11 and the rest of the three documents.
     bridge always runs; they now name it with v0.3, and the direct comparison with `c82a5e74885b/2` without it.
   - **Nit 2, left as it is:** §6's dl-012 bullet "Which scenarios are repeated is set at calibration" stays the
     general rule, settled for v0.2 by the repetitions bullet below it; the criteria keep 1.2's text unchanged.
+- **Round 3** (39ab4f2): **not clean**, no blocking finding, two nits and an optional one. 969fa04 verified; the diff
+  faithful to dl-017; the shas verified.
+  - **Nits 1 and 2 and the optional one, fixed** (`3601b31`): step 5's gate reads "spending (each campaign)"; the
+    Constraints line names the fallback (v0.2.2 and no bridge if v0.3 is not released by 2026-10-31); step 3's cell
+    adds the bridge's dry runs "with WingFoil v0.3".
