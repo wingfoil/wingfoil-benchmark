@@ -135,14 +135,15 @@ own overhead, which is unknown until calibration. Calibration replaces this figu
   reference campaign pins v0.2.2, and the bridge is not run.
 - **The bridge** is a campaign of its own: v0.1's configuration (S1, S2, S3 and S8 in baseline, baseline-docs and
   wingfoil) on WingFoil v0.2.2 (`12537b62`) with task-086's manual, on the reference campaign's model, Claude Code
-  version and effort. Calibration adds its dry runs only where the reference campaign has none of the same key: with
-  v0.3, the wingfoil and baseline-docs arms on v0.2.2, 8 dry runs. The revised budget covers both campaigns; the bridge
-  is not cut to fit it.
-- **Repetitions:** v0.1's (S1 × 3, S2, S3 and S8 × 1) in both campaigns, until WingFoil 1.0 or the benchmark's 1.0.
-- **The campaign step** runs the bridge and the reference campaign from the same benchmark commit, one after the
-  other, and records the commit in both campaign elements, since the comparison does not list it. It publishes two
-  comparisons: `c82a5e74885b/2` → bridge (model and tooling, WingFoil held) and bridge → `campaign-002` (WingFoil
-  v0.2.2 → v0.3 alone). F5.2's comparison with `c82a5e74885b/2` is read through the bridge.
+  version, effort and scenario versions. Calibration adds its dry runs only where the reference campaign has none of the
+  same key: with v0.3, the wingfoil and baseline-docs arms on v0.2.2, 8 dry runs. The revised budget covers both
+  campaigns; the bridge is not cut to fit it.
+- **Repetitions:** v0.1's (S1 × 3, S2, S3 and S8 × 1) in both campaigns, until WingFoil 1.0 or the benchmark's 1.0,
+  whichever comes first; no group is raised to three (dl-012's n ≥ 3 stands).
+- **The campaign step** runs the bridge and the reference campaign from the same benchmark commit, one after the other,
+  and records the commit in both campaign elements, since the comparison does not list it. With v0.3, it publishes two
+  comparisons: `c82a5e74885b/2` → bridge (model and tooling, WingFoil held) and bridge → `campaign-002` (WingFoil v0.2.2
+  → v0.3 alone). F5.2's comparison with `c82a5e74885b/2` is read through the bridge.
 
 ## Handoff
 
@@ -160,7 +161,7 @@ own overhead, which is unknown until calibration. Calibration replaces this figu
   - `rel-v0-2` in `in-development`, with the triage done (end of step 1);
   - each wave's "Ends with" recorded (step 2);
   - calibration report approved (step 3);
-  - `campaign-002` `published`, with the comparison to v0.1 (step 5);
+  - `campaign-002` `published`, with the comparisons `c82a5e74885b/2` → bridge → `campaign-002` (step 5, dl-017);
   - `rel-v0-2` `released` (step 6).
 - **Completion:** `rel-v0-2` is `released` and its Retrospective is written. The plan then moves `active → done`, and
   `rel-v0-3` gets its own plan.

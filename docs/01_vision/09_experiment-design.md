@@ -280,20 +280,20 @@ The 30 € target above did not hold, and stays as the record of v0.1's plan.
     campaign then holds the same three arms on v0.2.2;
   - **the bridge**, a campaign of its own, re-runs v0.1's whole configuration: S1, S2, S3 and S8 in baseline,
     baseline-docs and wingfoil, on **WingFoil v0.2.2** (`12537b62`) with task-086's manual (written against v0.2.2's
-    guide), on the reference campaign's model, Claude Code version and effort. It runs from **the same benchmark
-    commit** as the reference campaign, one after the other, and the commit is recorded in both campaign elements,
-    since the comparison does not list it. It is not cut at calibration to fit the budget;
+    guide), on the reference campaign's model, Claude Code version, effort and scenario versions. It runs from **the
+    same benchmark commit** as the reference campaign, one after the other, and the commit is recorded in both campaign
+    elements, since the comparison does not list it. It is not cut at calibration to fit the budget;
   - **repetitions:** v0.1's, S1 × 3 and S2, S3 and S8 × 1, in both campaigns, until WingFoil 1.0 or the benchmark's
     1.0, whichever comes first. No group is raised to three to leave "preliminary": the rule n ≥ 3 above stands;
   - a Haiku 4.5 rung of the model ladder.
 
-  A first sizing, Sonnet only and v0.1's repetitions, is about 42 runs and 75–85 €. The bridge adds 18 runs, about
-  35–40 € at v0.1's measured cost. Calibration replaces both figures.
+  A first sizing, Sonnet only and v0.1's repetitions, is about 42 runs and 75–85 €. With v0.3, the bridge adds 18 runs,
+  about 35–40 € at v0.1's measured cost. Calibration replaces both figures.
 
-  **The comparisons published with v0.2** form a chain of two steps, each changing one group of causes:
+  **With v0.3, the comparisons published with v0.2** form a chain of two steps, each changing one group of causes:
   `c82a5e74885b/2` → bridge (the model, Claude Code, the effort, the manual and the scoring code, WingFoil held at
-  v0.2.2), then bridge → reference campaign (WingFoil v0.2.2 → v0.3 alone). The comparison of v0.2 with v0.1
-  (F5.2) is read through the bridge.
+  v0.2.2), then bridge → reference campaign (WingFoil v0.2.2 → v0.3 alone). The comparison of v0.2 with v0.1 (F5.2) is
+  read through the bridge. Without v0.3, it compares `c82a5e74885b/2` with the reference campaign directly.
 
 ---
 
@@ -332,8 +332,8 @@ The 30 € target above did not hold, and stays as the record of v0.1's plan.
    task-090.
    - **§6, v0.2's shape:** the reference campaign pins WingFoil v0.3, with v0.2.2 as the fallback if v0.3 is not
      released by 2026-10-31; the bridge re-runs v0.1's whole configuration on WingFoil v0.2.2, on the reference
-     campaign's model, Claude Code and effort, from the same benchmark commit; v0.1's repetitions until WingFoil 1.0
-     or the benchmark's 1.0; the chain of comparisons `c82a5e74885b/2` → bridge → reference campaign.
+     campaign's model, Claude Code, effort and scenario versions, from the same benchmark commit; v0.1's repetitions
+     until WingFoil 1.0 or the benchmark's 1.0; the chain of comparisons `c82a5e74885b/2` → bridge → reference campaign.
 
    Source: [dl-017](../memory/decision-log/dl-017-the-v0-2-campaign-pins-wingfoil-v0-3-beside-a-bridge-on-v0-2-2-one-repetition-per-group.md).
 
