@@ -147,3 +147,92 @@ consented), cost, source. The total under the table is updated.
   fields empty (W-02). Matches.
 - The Design by hand, `0978d50`. Then `npx wingfoil memory submit task-093-…`, on main. Declared: `draft →
   pending`, one commit. Observed: exit 0, JSON `from`/`to` as declared, `dba54c4`, one file, `status` only. Matches.
+- The approver's `memory approve task-093-… --reason "…"` → `c241d37` (`pending → backlog`), on main; its reason
+  names the three sessions, their caps and the 9 € in all. Matches.
+- `npx wingfoil memory submit task-093-…`, in the linked worktree `WingFoil2-Benchmark-wt/task-093` with its own
+  `npm ci`. Declared: `backlog → in-progress`, one commit. Observed: exit 0, JSON `from`/`to` as declared, `94b79fa`,
+  one file, `status` only. Matches.
+
+### The spike (2026-10-14, from the main checkout)
+
+`spikes/task-093/probe.sh` (`20337ed`) was run with the main checkout as its working directory, its output in the
+main checkout's git-ignored `spikes/task-093/out/`.
+
+**F1, the release (free).** `latest` **2.1.300** (2026-10-14T14:27Z), `stable` **2.1.292** (2026-10-06): 2.1.300 is
+the candidate, as at design. The npm package ships no CHANGELOG (`out/f1/files.txt`), so it was read from
+`raw.githubusercontent.com/anthropics/claude-code/main/CHANGELOG.md` (`out/f1/changelog-292-300.md`, 2.1.292 to
+2.1.300). The entries that bear on the benchmark:
+
+- **2.1.296:** `/cost`, `--max-budget-usd` and the SDK's cost figures price Sonnet 5.5 cache reads at $0.10 per
+  million tokens, "was $0.20". Anthropic's pricing page (`out/f1/pricing.md`, read the same day) agrees: Sonnet 5.5's
+  cache reads are 0.10, Opus 5.5's 0.20, Haiku 4.5's 0.10. dl-007's table says 0.20 for Sonnet 5.5.
+- **2.1.293:** Claude Haiku 5.5 (`claude-haiku-5-5`) added, the default Haiku on the Anthropic API, 1 M context,
+  0.10 / 0.50 USD per million input / output tokens.
+- **2.1.299:** a fix to a headless run kept going past `--max-budget-usd` by a mod (the runner loads none).
+- Effort: `/effort` in agent view (2.1.299), an `effort` parameter for the Agent tool (2.1.292), faster web
+  searches at `xhigh` and `max` (2.1.295). Nothing changes `--effort` in `-p` mode or the stream-json shape.
+
+**F2, the binary (free).** Image `bench-spike-task-093-agent-2.1.300`, built from `docker/run-image`. `claude
+--version` → `2.1.300 (Claude Code)`; `--help` keeps `--effort <level>`. The binary names `claude-sonnet-5-5` (36),
+`claude-opus-5-5` (55) and `claude-haiku-4-5` (54); `costBasis` takes `list`, `managed` or `unknown`; a model with no
+effort support falls back to `capLevels: ["low","medium","high"]`; the `haiku` alias resolves to `claude-haiku-5-5`
+(`out/f2/strings.txt`, `out/f2/prices-effort.txt`, the commands in `out/f2/command.txt`). The per-model effort table
+could not be read reliably from the minified strings: the sessions answer that instead.
+
+**F3, the rehearsal (free).** `BENCH_SPIKE_FAKE=1 probe.sh P1 P2 P3`, the stub replaying
+`test/fixtures/sessions/completed-sonnet.jsonl`, no token: each command line as designed (P1 without `--effort`, P2
+and P3 with `--effort high`; `--max-budget-usd 2.50`); a planted spent total of 5.10 USD refused P3 ("5.1750 + 2.50
+USD would pass 7.50", exit 2); a fake token planted in `out/fake/P2/` was found (exit 4); an empty token file gave
+"secret scan failed" (exit 3); `READ` passed the three streams through `readSession`. Output in `out/fake/`.
+
+**The sessions (spent).** One each, S3@1.0 step 1, baseline arm, on 2.1.300; every one `success`, `terminal_reason:
+completed`, the adapter's outcome `completed`; each wrote `src/index.ts` (P2 and P3 also a test file). The secret scan
+after each found the token in no file. **Spent: 0.3881 USD** of the 7.50 USD ceiling (three ledger lines).
+
+| Session | Model | Effort | Turns | Cost (USD) | Recomputed | `costBasis` | Context | Thinking tokens | `per_turn_effort_active` |
+|---|---|---|---|---|---|---|---|---|---|
+| P1 | `claude-haiku-4-5` | none | 6 | 0.0318 | 0.0318 | list | 200,000 | 762 | false |
+| P2 | `claude-sonnet-5-5` | `high` | 4 | 0.0970 | 0.0970 at 0.10 cache reads (0.1032 at dl-007's 0.20) | list | 1,000,000 | 1,026 | true |
+| P3 | `claude-opus-5-5` | `high` | 7 | 0.2593 | 0.2593 | list | 1,000,000 | 1,804 | true |
+
+Recomputed from `modelUsage`'s tokens at Anthropic's list prices of 2026-10-14 (input, output, cache write at 1.25×
+input, cache read): every reported cost matches to the last digit.
+
+### Answers
+
+1. **List prices.** Claude Code 2.1.300 prices all three models at list: `costBasis: "list"`, and each cost is the
+   tokens at today's list prices. For Sonnet 5.5 that is the new cache-read price, half dl-007's: any pin before
+   2.1.296 — 2.1.291 (the campaign files' placeholder) and `stable` 2.1.292 included — prices Sonnet 5.5's cache reads
+   at twice the list while still reporting `list`, which bug-016's check cannot see. Filed as
+   [dl-018](../decision-log/dl-018-sonnet-5-5-s-cache-reads-at-half-dl-007-s-price-and-haiku-5-5-beside-the-haiku-4-5-rung.md)
+   (`pending`, on main: `6f4e567`, `dadb48e`, `a7c133f`, `32952c7`), with Haiku 5.5, for the approver.
+2. **Every model's tokens.** `modelUsage` holds one key per model, with every token kind, `costUSD` and `costBasis`,
+   and new fields the adapter ignores harmlessly: `canonicalModel`, `provider`, `maxOutputTokens`,
+   `webSearchRequests`. The three sessions called no second model, so the summing over several keys (bug-012) was not
+   exercised by a real 2.1.300 session here; nor was a Haiku called for Claude Code's own work, which may now be Haiku
+   5.5 (the `haiku` alias). Calibration's longer dry runs are the first to show it.
+3. **Effort.** `--effort high` is accepted on Sonnet 5.5 and Opus 5.5 (`per_turn_effort_active: true`); Haiku 4.5
+   runs without the flag (`per_turn_effort_active: false`; the API does not take an effort on Haiku 4.5). As on
+   2.1.291 (task-062), neither the stream nor `--debug`'s log (31–37 KB a session, no line naming effort) says which
+   level a request carried: that the pinned level reached the request is still not observable, only accepted. The
+   API's defaults: `high` on Sonnet 5.5, `medium` on Opus 5.5.
+4. **The adapter.** `readSession` (built `dist/`, `READ`) reads each stream as a completed step: its usage equals
+   `modelUsage`'s single key, the step's `models` carry `costBasis: "list"`, the cost equals `total_cost_usd`
+   (`out/P*/adapter.json`). Every field it reads on a successful session is present; the error path stays
+   unverified, as after task-062.
+
+**Indicative cost of S3 step 1, baseline:** Haiku 4.5 0.03, Sonnet 5.5 0.10, Opus 5.5 0.26 USD — one sample each,
+not an estimate; Opus 5.5 at 2.7× Sonnet 5.5, with more turns and output.
+
+### Recommended pins (for calibration to adopt with the approver)
+
+- **`agent.version: 2.1.300`**, the exact version, in both v0.2 campaign files and the dry-run profile. Not 2.1.291
+  (the placeholder) nor `stable` 2.1.292: both precede 2.1.296 and overprice Sonnet 5.5, v0.2's default model, on
+  cache reads, the bulk of a run's cost. Not "latest" as a moving tag: a version that moves during calibration would
+  split the dry runs from the campaign (REQ-RUN-16). A later re-pin goes through a task that re-reads the CHANGELOG.
+- **`agent.effort`:** `claude-sonnet-5-5: high`, `claude-opus-5-5: high`, `claude-haiku-4-5: none` — the placeholders
+  confirmed. `high` is Sonnet 5.5's default and v0.1's Sonnet 5 and Opus 5 default, so v0.2 compares with v0.1 at the
+  same nominal level; for Opus 5.5 it is one level above its default (`medium`), stated in the method page by
+  dl-015's C. `none` for Haiku 4.5, which takes no effort.
+- **Watch at calibration:** which Haiku Claude Code calls for its own work (Haiku 4.5 or 5.5) in every dry run's
+  `modelUsage`; the adapter's error path on 2.1.300.
