@@ -2,7 +2,7 @@
 id: bug-021-req-res-04-says-every-refused-entry-names-a-bench-site-build-but-a-link-or-a-stray-entry-does-not
 type: bug
 title: "REQ-RES-04 says every refused entry names a bench site build, but a link or a stray entry does not"
-status: approved
+status: fixed
 fixed_by: task-092-requirements-1-31-req-res-04-names-what-each-refusal-of-the-site-check-asks-for
 # fixed_by: task-…   # set by hand, with the fixing task's id, just before `approved → fixed`
 ---
