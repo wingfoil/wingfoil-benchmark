@@ -59,9 +59,9 @@ The Retrospective also lists smaller items for triage, among them v0.2's wingfoi
 **Constraints:**
 
 - **The harnesses under test** are the latest released versions at the campaign: WingFoil (today v0.2.2, `12537b62`;
-  v0.3 for the reference campaign by dl-017, beside a bridge on v0.2.2; a release with WingFoil's workflow engine tests
-  H1–H5), Spec Kit and OpenSpec. Each is pinned in the campaign file.
-  Development pins a version per tool and re-pins at calibration, as v0.1 did (task-049).
+  v0.3 for the reference campaign by dl-017, beside a bridge on v0.2.2, or v0.2.2 and no bridge if v0.3 is not released
+  by 2026-10-31; a release with WingFoil's workflow engine tests H1–H5), Spec Kit and OpenSpec. Each is pinned in the
+  campaign file. Development pins a version per tool and re-pins at calibration, as v0.1 did (task-049).
 - **Same rules for every arm** (experiment design §2): setup from the tool's official documentation only, scripted
   and published (T12); the same agent, model, prompts and approver policy; each tool's telemetry off (OpenSpec's is
   on by default). A tool that cannot meet them is excluded by F7.4's criteria, with the reason published.
@@ -86,9 +86,9 @@ own overhead, which is unknown until calibration. Calibration replaces this figu
 |---|-------|------|----------|------|
 | 1 | release-planning | product-owner | `rel-v0-2` filled (version, waves, features, Goal, Scope); the triage of the pending elements above; `benchmark-specification` for the new features (requirements, acceptance, scenarios conventions, traceability amended); the W12 tasks | approver: `rel-v0-2` planning → in-development, and each triaged element's gate |
 | 2 | delivery | developer, reviewer | W12 → W14 through `kanban-delivery`, one task at a time, each reviewed by an independent agent; each wave's "Ends with" recorded in `rel-v0-2` | approver: every task pending → backlog and in-review → approved |
-| 3 | calibration | scenario-author | `docs/calibration/v0.2.md`: dry runs of S1, S2, S3 and S8 in every arm (the two new ones included) on the campaign's models, measured costs and each step's transcript size (validation's scenario is the largest, `release-cycle` 3), revised budget, hypotheses restated on the model they read; the bridge's dry runs where the reference campaign has none of the same key (dl-017) | approver: revised budget; approver: every real-agent run |
+| 3 | calibration | scenario-author | `docs/calibration/v0.2.md`: dry runs of S1, S2, S3 and S8 in every arm (the two new ones included) on the campaign's models, measured costs and each step's transcript size (validation's scenario is the largest, `release-cycle` 3), revised budget, hypotheses restated on the model they read; with WingFoil v0.3, the bridge's dry runs where the reference campaign has none of the same key (dl-017) | approver: revised budget; approver: every real-agent run |
 | 4 | validation | qa | acceptance green against the fake agent, coverage above 80 %, lint clean, Docker suite green; real-agent validation as `release-cycle` version 3's validation phase states (dl-010 B: one run per arm on the scenario with the largest step, preflighted and consented) | approver: the real-agent runs |
-| 5 | campaign | scenario-author, qa | the reference campaign through `campaign-cycle` (`campaign-002`) and, with WingFoil v0.3, the bridge, from the same benchmark commit; the comparisons `c82a5e74885b/2` → bridge → `campaign-002` with v0.3, `c82a5e74885b/2` → `campaign-002` without it (F5.2, dl-017); the findings, and the verification of dl-147 (M-K1 on S1, H1) | approver: spending (both campaigns), scored results, publication |
+| 5 | campaign | scenario-author, qa | the reference campaign through `campaign-cycle` (`campaign-002`) and, with WingFoil v0.3, the bridge, from the same benchmark commit; the comparisons `c82a5e74885b/2` → bridge → `campaign-002` with v0.3, `c82a5e74885b/2` → `campaign-002` without it (F5.2, dl-017); the findings, and the verification of dl-147 (M-K1 on S1, H1) | approver: spending (each campaign), scored results, publication |
 | 6 | publishing | tech-lead | tag `v0.2`, site published with the comparison and the new filters, release notes `docs/releases/v0.2.md`, transcripts as release assets | approver: `rel-v0-2` releasing → released |
 | 7 | retrospective | facilitator | `rel-v0-2` Retrospective section; bugs and decision-logs for the benchmark; WingFoil usage notes handed to the approver | approver review |
 
