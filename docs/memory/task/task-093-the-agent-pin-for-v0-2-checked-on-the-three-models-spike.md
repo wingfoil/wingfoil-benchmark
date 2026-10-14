@@ -251,7 +251,7 @@ not an estimate; Opus 5.5 at 2.7× Sonnet 5.5, with more turns and output.
   confirmed. `high` is Sonnet 5.5's default and was Sonnet 5's and Opus 5's (the effort page), so v0.2 runs at v0.1's
   nominal level, which dl-007's bridge and comparison read; for Opus 5.5 it is one level above its default
   (`medium`), stated in the method page by dl-015's C. Sonnet 5.5's levels are recalibrated, so "the same nominal
-  level" is not the same thinking: the comparison with v0.1 says so. `medium`, the page's start for well-specified
+  level" is not the same thinking: the method page must say so beside the levels (dl-015's C). `medium`, the page's start for well-specified
   agentic coding, would be cheaper; choosing it is the approver's, with calibration's dry runs to measure either.
   `none` for Haiku 4.5, which is not among the models that take effort.
 - **Watch at calibration:** which Haiku Claude Code calls for its own work (Haiku 4.5 or 5.5) in every dry run's
@@ -277,8 +277,9 @@ not an estimate; Opus 5.5 at 2.7× Sonnet 5.5, with more turns and output.
   5. nit — the scan ran only at a normal end. **Fixed:** an exit trap scans once a session has started; rehearsed (a
      planted token found after a later error, exit 4). It changes nothing for the three sessions, each of which
      ended normally and was scanned.
-  6. nit — `spent()` counts only result events. **Not changed:** commented in the script; a session cannot be
-     repeated, so an undercount cannot open a second one.
+  6. nit — `spent()` counts only result events. **Not changed:** commented in the script. The total stays bounded
+     whatever `spent()` reports: three sessions, each capped at 2.50 USD and never repeated (its `session.jsonl`
+     exists from the first redirect), so at most the 7.50 USD ceiling.
   7. nit — the rehearsal's console results were not kept. **Fixed:** `out/fake/rehearsal.txt`.
   8. nit — Haiku 5.5's over-100 K prices. **Fixed.**
   9. nit — `capLevels` read as "no effort support"; it is the unknown-model branch. **Fixed.**
@@ -286,3 +287,15 @@ not an estimate; Opus 5.5 at 2.7× Sonnet 5.5, with more turns and output.
       dl-018 (`28c4788`, on main).
   11. nit — two CHANGELOG entries left out (WebFetch's effort, 2.1.299; a gateway's background Haiku 4.5, 2.1.295).
       **Fixed.**
+- **Round 2** (a new independent read-only Explore subagent, on `63571bb`): **clean**. It verified every round-1
+  outcome against the files, every new statement against the effort and pricing pages, the CHANGELOG and task-062's
+  P6 and P7, the exit trap's bash in throwaway shells (exit code kept, one scan, none without a session, SIGTERM
+  scanned), and found no verbatim quote over about 15 words from the external pages. Four optional nits:
+  1. "the comparison with v0.1 says so" read as existing text. **Fixed:** the method page must say so (dl-015's C).
+  2. finding 6's reason aimed at the wrong risk. **Fixed:** the total is bounded by three capped, unrepeatable
+     sessions.
+  3. the 2.1.295 gateway entry is weakly linked to the watch item. **Not changed:** it is hedged.
+  4. in a rehearsal with `BENCH_SPIKE_FAKE_TOKEN` unset the trap's scan exits 1, not 3. **Not changed:** rehearsal
+     only; real runs read the real token file.
+- Final checks on the offered commit: `npm run lint` clean. No product code changed: `npm test`, `test:bin`,
+  `test:docker` and the full suites not run (as task-062); they are the approver's to ask for.
