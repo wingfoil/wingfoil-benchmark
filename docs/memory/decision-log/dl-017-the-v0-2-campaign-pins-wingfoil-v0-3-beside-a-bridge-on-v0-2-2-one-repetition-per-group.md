@@ -2,7 +2,7 @@
 id: dl-017-the-v0-2-campaign-pins-wingfoil-v0-3-beside-a-bridge-on-v0-2-2-one-repetition-per-group
 type: decision-log
 title: "The v0.2 campaign pins WingFoil v0.3, beside a bridge on v0.2.2, with v0.1's repetitions"
-status: pending
+status: approved
 ---
 
 ## Context
