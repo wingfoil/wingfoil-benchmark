@@ -2,7 +2,7 @@
 id: task-090-experiment-design-1-3-and-plan-004-record-dl-017-the-bridge-on-wingfoil-v0-2-2-the-reference-campaign-on-v0-3
 type: task
 title: "Experiment design 1.3 and plan-004 record dl-017: the bridge on WingFoil v0.2.2, the reference campaign on v0.3"
-status: in-review
+status: approved
 release: v0.2
 wave: calibration
 features: []
