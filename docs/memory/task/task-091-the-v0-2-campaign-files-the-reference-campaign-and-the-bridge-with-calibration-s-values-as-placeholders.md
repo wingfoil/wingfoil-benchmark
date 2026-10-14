@@ -2,7 +2,7 @@
 id: task-091-the-v0-2-campaign-files-the-reference-campaign-and-the-bridge-with-calibration-s-values-as-placeholders
 type: task
 title: "The v0.2 campaign files: the reference campaign and the bridge, with calibration's values as placeholders"
-status: in-progress
+status: approved
 release: v0.2
 wave: calibration
 features: []
@@ -115,3 +115,80 @@ option cannot meet). It is named here so that it is not found at calibration.
 - `npx wingfoil memory add --type task --title … --tags calibration,campaign,dl-017,dl-007` on 2026-10-14, on main.
   Declared: create a draft with the type's scaffold and commit it. Observed: `task-091-…` as a draft (`38d156e`),
   required fields empty (W-02); filled in a `docs(task)` commit before `submit` (W-01).
+- `npx wingfoil memory submit task-091-…` (draft → pending) on main. Declared: moves the element to its next state and
+  commits it. Observed: `status: pending` (`045bbde`). Matches. The approver approved it (pending → backlog).
+- `npx wingfoil memory submit task-091-…` (backlog → in-progress) on main. Declared: the same. Observed:
+  `status: in-progress` (`f63f6d5`). Matches.
+- Worktree `../WingFoil2-Benchmark-wt/task-091`, its own `npm ci` (exit 0).
+- **Red** (`068a326`): `test/unit/campaign/v0-2-campaigns.test.ts`, 5 tests, all failing because
+  `checkCampaign` refuses the missing files. Committed alone.
+- **Green** (`1979daa`): `campaigns/v0-2-reference.yaml` and `campaigns/v0-2-bridge.yaml`. The arm digests were
+  computed with `armDigest(repoRoot, arm).slice(0, 12)` on the committed arms: baseline `964b1354526c`, baseline-docs
+  `2ac51091da99`, wingfoil `680b19f27c9f`, speckit `3f2ec815ac70`, speckit-docs `b2fbe79ca773`, openspec
+  `79f81183dbbe`, openspec-docs `52d8775dd78c`. The bridge's `agent.effort` names all three models, as the
+  reference's does, so that `agent` is one pin shared whole (criterion 4). The new test 5 of 5; `test/unit/campaign` and
+  `traceability` 132 of 132; `npm run lint` 0; `npx tsc --noEmit -p .` 0. CLI output unchanged: no `test:bin`.
+- **The offline verification, on 2026-10-14, 18:37–19:37,** niced, with the worktree's built CLI (`npm run build`).
+  **Deviations from the Design:** the CLI was the worktree's build, not the main checkout's, and the temporary
+  repository came from `git archive` of the task branch's head (`1979daa`), not of main: main does not hold the files
+  before the merge.
+  - The temporary repository in the scratchpad, `results/` removed, committed. In it only: both campaigns'
+    `agent` rewritten to `{name: fake, version: 1.0.0}` (no effort), and `scenarios/dry-run.yaml` pinning the fake
+    agent, WingFoil v0.2.2, Spec Kit v1.1.0 and OpenSpec 1.14.0 on `claude-sonnet-5-5`.
+  - `BENCH_FAKE_SCRIPT`: one file replaying the references of S1 (5 steps), S3 (5) and S8 (4) from
+    `test/fixtures/reference/` and S2's (3) from the hold-out's `reference/S2/`, encoded as
+    `test/support/reference.ts` does. `BENCH_HOLDOUT_PATH` the hold-out; `BENCH_WINGFOIL_REPO` `../WingFoil2` (tag
+    `v0.2.2` present, no `v0.3` tag); `BENCH_SPECKIT_REPO` the Spec Kit clone at `v1.1.0` (`f1d3a4f`); OpenSpec from the
+    npm registry.
+  - `bench scenario validate` → S1@1.0, S2@1.0, S3@1.0 and S8@1.0 valid with the hold-out.
+  - `bench campaign validate` (the ids are those of the fake-agent copies, not of the committed files nor of
+    campaign-002) → `campaign c3bfbd22bc87 is valid (4 scenarios, 7 arms)` (reference) and
+    `campaign 0cfa0f9dc83f is valid (4 scenarios, 3 arms)` (bridge), each preflight line `set`.
+  - `bench campaign run`, both, before any dry run → exit 1, `campaign: not started: its cost cannot be estimated`,
+    naming each missing dry run.
+  - **35 dry runs** from the two estimates' refusals, deduplicated, each exit 0 (28 on Sonnet 5.5, 3 on Opus 5.5, 4 on
+    Haiku 4.5), as the Design expected. The bridge needed none of its own: its estimate reads the reference's dry
+    runs (`results/dry-runs/29`, `35`), the same keys while both pin WingFoil v0.2.2. Estimates: 0.0000 USD, the
+    guards `warn 85 EUR, ceiling 100 EUR` and `warn 35 EUR, ceiling 45 EUR`.
+  - `bench campaign run` → reference `49 runs completed, 0 failed`; bridge `18 runs completed, 0 failed`; cost
+    0.0000 USD.
+  - `bench score <id>/1 --final --holdout …` → exit 0: reference `28 groups, 7 slices; determinism measured in 7`;
+    bridge `12 groups, 0 slices; determinism measured in 3`. Every arm scores the reference's result (S8, for
+    example: final 23/23, hold-out 7/7, checks 16/16).
+  - `bench campaign compare 0cfa0f9dc83f/1 c3bfbd22bc87/1` → exit 0,
+    `results/comparisons/c3bfbd22bc87-1/0cfa0f9dc83f-1.json (12 groups matched, 12 rows with a change, 0 rows without,
+    7 groups not compared)`. The JSON: `not_compared` the 7 slice groups ("no slice of model … in 0cfa0f9dc83f/1");
+    `only_in` the 16 groups of the four arms the bridge lacks; `pins_differ` 7: the slices, the speckit and openspec
+    harnesses, and those four arms' digests. No other pin differs: the agent, the model, the effort and WingFoil are
+    shared, as dl-017 requires. The Design had put the four arms under "not compared"; the comparison lists them
+    under `only_in`, as REQ-SCO-13 does.
+  - `bench site build c3bfbd22bc87/1` → exit 0; the headline compares each arm with the baseline, "the same in 6 of 6",
+    preliminary in D, E and F; 32 HTML files under `site/`. **Not checked:** the comparison page
+    (`compare-0cfa0f9dc83f-1.html`, `src/site/build.ts`) was not looked for under `site/c3bfbd22bc87/1/` before the
+    temporary repository was removed; `site build` writes one page per comparison whose newer side is the execution.
+  - `docker ps -a --filter name=bench-` → 0 containers left. The worktree unchanged (`git status` clean). The
+    temporary repository removed; its logs stay in the session's scratchpad, outside the repository.
+
+## Review notes
+
+An independent read-only agent reviewed `git diff main...HEAD` against the Design, dl-007, dl-015, dl-017,
+experiment design 1.3 §6, REQ-FMT-01, -11, -13, REQ-RUN-16, -19 and the campaign and digest code.
+
+- **Round 1** (8dd7b64): **clean**, four nits. The model ids, the shapes, the shared pins and the seven digests
+  (recomputed) verified; red-first visible (`068a326` the test alone, `1979daa` the files alone); the test not
+  tautological; `test/unit/campaign` 105 of 105; the offline verification meets the third criterion.
+  - **Nit 1, fixed** (`e7fcef4`): the reference's header and its wingfoil comment name dl-017's fallback: v0.2.2 final
+    and no bridge if v0.3 is not released by 2026-10-31. Comments only: the campaign's id is unchanged.
+  - **Nit 2, fixed** (`e7fcef4`): `fail_fast` joins the shared pins in the test, so that calibration cannot set it in one
+    file only.
+  - **Nit 3, fixed:** the Execution notes name both deviations, the worktree's CLI and the archive of the task branch.
+  - **Nit 4, fixed:** the notes say the ids quoted are those of the fake-agent copies.
+- Re-checked after the fixes: `test/unit/campaign` 105 of 105; `npx tsc --noEmit -p .` 0; `npm run lint` 0.
+- **Round 2** (0c5bcfd): **clean.** The four fixes verified (the comments leave the campaign's id unchanged:
+  `campaignId` hashes the parsed file); the whole diff still matches the criteria, dl-007, dl-017 and the
+  requirements; the notes' shas right; `test/unit/campaign` 105 of 105.
+- **Suites:** the diff is two campaign files, one unit test and the task; the new test, `test/unit/campaign`,
+  `traceability`, lint and tsc stand in, and the offline verification exercised validate, dry runs, run, score,
+  compare and site build end to end. The full suites run if the approver asks.
+- `npx wingfoil memory submit task-091-…` (in-progress → in-review), on the task branch. Declared: moves the task to its
+  next state and commits it. Observed: see the next commit, `wf(task): submit …`.
