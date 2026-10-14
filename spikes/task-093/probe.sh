@@ -17,6 +17,7 @@ CEILING_USD="7.50"; SESSION_CAP_USD="2.50"
 VERSION="${AGENT_VERSION:-$(cat "$OUT/../candidate.txt" 2>/dev/null || cat "$OUT/candidate.txt" 2>/dev/null || true)}"
 IMAGE="bench-spike-task-093-agent-$VERSION"
 
+# Counts `result` events only: a session killed before its result counts 0 here (review round 1, finding 6).
 spent() { { cat "$OUT"/P*/session.jsonl 2>/dev/null || true; } | node -e 'let s=0;for(const l of require("fs").readFileSync(0,"utf8").split("\n")){try{const e=JSON.parse(l);if(e.type==="result")s+=e.total_cost_usd??0}catch{}}process.stdout.write(s.toFixed(4))'; }
 check() { # refuse a session that could take the total over the ceiling
   local s; s=$(spent); echo "spent so far: $s USD of $CEILING_USD"
@@ -80,6 +81,7 @@ session() { # $1 = session, $2 = model, $3 = effort (none for no flag)
   local env=(-e CLAUDE_CODE_DISABLE_AUTO_MEMORY=1)
   [ -n "$FAKE" ] || env+=(-e ANTHROPIC_AUTH_TOKEN)
   printf '%s\n' "model=$model" "effort=$effort" "cap=$SESSION_CAP_USD" > "$dir/declared.txt"
+  ran=1 # from here the exit trap scans, whatever stops the script
   ANTHROPIC_AUTH_TOKEN="$([ -n "$FAKE" ] || tr -d '[:space:]' < "$TOKEN_FILE")" docker exec -i "${env[@]}" "$C" \
     timeout 1800 "${claude[@]}" -p "$prompt" --output-format stream-json --verbose --model "$model" "${flags[@]}" \
     --session-id "$(cat /proc/sys/kernel/random/uuid)" --permission-mode bypassPermissions \
@@ -126,16 +128,22 @@ scan() { # the token is read from a descriptor, never put on a command line; a s
   [ -z "$hits" ] || { printf '%s\n' "$hits"; exit 4; }
 }
 
+# The closing scan runs on any exit once a session has started (task-093 review round 1, finding 5).
 ran=""
+finish() {
+  local rc=$?; trap - EXIT
+  if [ -n "$ran" ]; then echo "total spent: $(spent) USD"; scan; fi
+  exit "$rc"
+}
+trap finish EXIT
 for stage in "$@"; do
   case "$stage" in
     F1) f1 ;;
     F2) f2 ;;
-    P1) session P1 claude-haiku-4-5 "${P1_EFFORT:-none}"; ran=1 ;;
-    P2) session P2 claude-sonnet-5-5 "${P2_EFFORT:-high}"; ran=1 ;;
-    P3) session P3 claude-opus-5-5 "${P3_EFFORT:-high}"; ran=1 ;;
+    P1) session P1 claude-haiku-4-5 "${P1_EFFORT:-none}" ;;
+    P2) session P2 claude-sonnet-5-5 "${P2_EFFORT:-high}" ;;
+    P3) session P3 claude-opus-5-5 "${P3_EFFORT:-high}" ;;
     READ) read_back ;;
     *) echo "unknown stage $stage"; exit 64 ;;
   esac
 done
-if [ -n "$ran" ]; then echo "total spent: $(spent) USD"; scan; fi
