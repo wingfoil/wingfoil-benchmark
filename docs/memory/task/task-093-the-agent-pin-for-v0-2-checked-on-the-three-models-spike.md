@@ -2,7 +2,7 @@
 id: task-093-the-agent-pin-for-v0-2-checked-on-the-three-models-spike
 type: task
 title: "The agent pin for v0.2 checked on the three models spike"
-status: approved
+status: done
 release: v0.2
 wave: calibration
 features: []
