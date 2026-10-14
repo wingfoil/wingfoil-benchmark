@@ -184,3 +184,11 @@ experiment design 1.3 §6, REQ-FMT-01, -11, -13, REQ-RUN-16, -19 and the campaig
   - **Nit 3, fixed:** the Execution notes name both deviations, the worktree's CLI and the archive of the task branch.
   - **Nit 4, fixed:** the notes say the ids quoted are those of the fake-agent copies.
 - Re-checked after the fixes: `test/unit/campaign` 105 of 105; `npx tsc --noEmit -p .` 0; `npm run lint` 0.
+- **Round 2** (0c5bcfd): **clean.** The four fixes verified (the comments leave the campaign's id unchanged:
+  `campaignId` hashes the parsed file); the whole diff still matches the criteria, dl-007, dl-017 and the
+  requirements; the notes' shas right; `test/unit/campaign` 105 of 105.
+- **Suites:** the diff is two campaign files, one unit test and the task; the new test, `test/unit/campaign`,
+  `traceability`, lint and tsc stand in, and the offline verification exercised validate, dry runs, run, score,
+  compare and site build end to end. The full suites run if the approver asks.
+- `npx wingfoil memory submit task-091-…` (in-progress → in-review), on the task branch. Declared: moves the task to its
+  next state and commits it. Observed: see the next commit, `wf(task): submit …`.
