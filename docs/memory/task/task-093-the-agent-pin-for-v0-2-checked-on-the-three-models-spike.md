@@ -312,3 +312,6 @@ not an estimate; Opus 5.5 at 2.7× Sonnet 5.5, with more turns and output.
   calibration's to settle with the approver (dl-018, dl-015); the recommended pins above stand as this spike's
   evidence, not as the decision.
 - Merged into main with `--no-ff` → `cd47e6a`.
+- `npx wingfoil memory submit task-093-…` on main → `0226e9a` (`approved → done`, one file, `status` only). Matches.
+- Worktree removed after `git status --ignored`: only `node_modules/` and the built `dist/`; the spike's output was
+  written to the main checkout's `spikes/task-093/out/` from the start.
