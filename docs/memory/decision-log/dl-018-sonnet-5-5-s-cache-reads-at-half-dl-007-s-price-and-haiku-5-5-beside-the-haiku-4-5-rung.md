@@ -20,8 +20,9 @@ Found by [task-093](../task/task-093-the-agent-pin-for-v0-2-checked-on-the-three
    - A run's cost is mostly cache reads (dl-007), so the v0.2 campaign on Sonnet 5.5 costs less than the first
      sizing assumed. Calibration measures it in any case; the table is what the estimate's reasoning cites.
    - An agent older than 2.1.296 prices Sonnet 5.5's cache reads at twice the list price while reporting
-     `costBasis: "list"`: bug-016's check cannot see a stale price table. The agent pin is the only guard
-     (task-093 recommends 2.1.300).
+     `costBasis: "list"`: bug-016's check cannot see a stale price table. Observed on 2.1.291: task-062's P6 reported
+     0.0134072 USD with `costBasis: "list"`, exactly its tokens at 0.20 cache reads (0.0123606 at 0.10); for 2.1.292
+     to 2.1.295 it is inferred from the CHANGELOG. The agent pin is the only guard (task-093 recommends 2.1.300).
 2. **Claude Haiku 5.5** (`claude-haiku-5-5`) is released (Claude Code 2.1.293): 1 M context, 0.10 / 0.50 USD per
    million input / output tokens (0.50 / 2.50 over 100 K tokens of prompt), cache reads 0.01. In Claude Code 2.1.300
    the `haiku` alias names it, and it is the default Haiku on the Anthropic API. dl-007 E added **Haiku 4.5** as the
