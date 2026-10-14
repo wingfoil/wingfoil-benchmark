@@ -69,6 +69,7 @@ describe('the v0.2 campaign files (task-091)', () => {
       'approver_policy',
       'caps',
       'currency',
+      'fail_fast',
     ] as const) {
       expect(bridge[field], field).toEqual(reference[field]);
     }
