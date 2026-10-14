@@ -47,5 +47,22 @@ All **characterization**: the behaviour exists and is tested since task-085; thi
 
 ## Execution notes
 
-<!-- What happened while building: deviations, blockers, follow-ups (filed as elements, never left
-     here). For every `wingfoil` command: declared vs observed behaviour. -->
+- `npx wingfoil memory add --type bug` and `--type task` on 2026-10-14. Declared: create a draft with the type's
+  scaffold and commit it. Observed: `bug-020-…` and `task-089-…` as drafts, required fields empty (W-02); filled in
+  `docs(…)` commits before `submit` (W-01).
+- `npx wingfoil memory submit` for both (draft → pending). Declared: moves the element to its next state and commits
+  it. Observed: `status: pending`. Matches. The approver approved bug-020 (`6f38856`) and task-089 (`e3b41ea`).
+- `npx wingfoil memory submit task-089-…` (backlog → in-progress) on main. Observed: `status: in-progress`. Matches.
+- Worktree `../WingFoil2-Benchmark-wt/task-089-…`, its own `npm ci` (exit 0).
+- The three points read against the code and its tests before writing:
+  1. the root index: `checkSiteCopy` compares `site/index.html` with `rootIndex(root, executions)`
+     (`src/site/publish.ts`); test "refuses a stale root index, naming one execution to build again";
+  2. the commit: `site: publish ${executions.join(', ')}` with "The root index lists N execution(s)." in its body;
+     the test at `test/unit/site/publish.test.ts:66` (one execution). No test publishes two executions at once; the
+     text states `[, …]` as 1.22 did, from the code;
+  3. the drop: the `gh-pages` listing before `update-ref`; test "refuses to drop from gh-pages an execution it
+     published, which a site/ without it would".
+- Amendment (`1eba497`): REQ-RES-04's row gains "Amended in 1.30"; the header is 1.30, 2026-10-14; "Amendment 1.30"
+  follows 1.29's. 1.22's and 1.26's text unchanged (17 insertions, 3 deletions: the header's two lines and the row).
+- Day checks, niced: prettier on the file; `publish`, `traceability` and `method-statements` tests 46 of 46;
+  `npm run lint` 0. No code changed, so no typecheck is needed beyond lint's.
