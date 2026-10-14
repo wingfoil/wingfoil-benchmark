@@ -2,7 +2,7 @@
 id: bug-020-req-res-04-still-describes-the-root-page-that-req-res-02-s-1-26-amendment-replaced
 type: bug
 title: "REQ-RES-04 still describes the root page that REQ-RES-02's 1.26 amendment replaced"
-status: approved
+status: fixed
 fixed_by: task-089-requirements-1-30-req-res-04-describes-the-root-index-and-the-published-executions-it-keeps
 # fixed_by: task-…   # set by hand, with the fixing task's id, just before `approved → fixed`
 ---
