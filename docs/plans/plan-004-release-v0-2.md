@@ -59,7 +59,8 @@ The Retrospective also lists smaller items for triage, among them v0.2's wingfoi
 **Constraints:**
 
 - **The harnesses under test** are the latest released versions at the campaign: WingFoil (today v0.2.2, `12537b62`;
-  a release with WingFoil's workflow engine tests H1–H5), Spec Kit and OpenSpec. Each is pinned in the campaign file.
+  v0.3 for the reference campaign by dl-017, beside a bridge on v0.2.2; a release with WingFoil's workflow engine tests
+  H1–H5), Spec Kit and OpenSpec. Each is pinned in the campaign file.
   Development pins a version per tool and re-pins at calibration, as v0.1 did (task-049).
 - **Same rules for every arm** (experiment design §2): setup from the tool's official documentation only, scripted
   and published (T12); the same agent, model, prompts and approver policy; each tool's telemetry off (OpenSpec's is
@@ -85,9 +86,9 @@ own overhead, which is unknown until calibration. Calibration replaces this figu
 |---|-------|------|----------|------|
 | 1 | release-planning | product-owner | `rel-v0-2` filled (version, waves, features, Goal, Scope); the triage of the pending elements above; `benchmark-specification` for the new features (requirements, acceptance, scenarios conventions, traceability amended); the W12 tasks | approver: `rel-v0-2` planning → in-development, and each triaged element's gate |
 | 2 | delivery | developer, reviewer | W12 → W14 through `kanban-delivery`, one task at a time, each reviewed by an independent agent; each wave's "Ends with" recorded in `rel-v0-2` | approver: every task pending → backlog and in-review → approved |
-| 3 | calibration | scenario-author | `docs/calibration/v0.2.md`: dry runs of S1, S2, S3 and S8 in every arm (the two new ones included) on the campaign's models, measured costs and each step's transcript size (validation's scenario is the largest, `release-cycle` 3), revised budget, hypotheses restated on the model they read | approver: revised budget; approver: every real-agent run |
+| 3 | calibration | scenario-author | `docs/calibration/v0.2.md`: dry runs of S1, S2, S3 and S8 in every arm (the two new ones included) on the campaign's models, measured costs and each step's transcript size (validation's scenario is the largest, `release-cycle` 3), revised budget, hypotheses restated on the model they read; the bridge's dry runs where the reference campaign has none of the same key (dl-017) | approver: revised budget; approver: every real-agent run |
 | 4 | validation | qa | acceptance green against the fake agent, coverage above 80 %, lint clean, Docker suite green; real-agent validation as `release-cycle` version 3's validation phase states (dl-010 B: one run per arm on the scenario with the largest step, preflighted and consented) | approver: the real-agent runs |
-| 5 | campaign | scenario-author, qa | the reference campaign through `campaign-cycle` (`campaign-002`); the comparison with v0.1's `c82a5e74885b/2` (F5.2); the findings, and the verification of dl-147 (M-K1 on S1, H1) | approver: spending, scored results, publication |
+| 5 | campaign | scenario-author, qa | the bridge and the reference campaign through `campaign-cycle` (`campaign-002`), from the same benchmark commit; the comparisons `c82a5e74885b/2` → bridge → `campaign-002` (F5.2, dl-017); the findings, and the verification of dl-147 (M-K1 on S1, H1) | approver: spending (both campaigns), scored results, publication |
 | 6 | publishing | tech-lead | tag `v0.2`, site published with the comparison and the new filters, release notes `docs/releases/v0.2.md`, transcripts as release assets | approver: `rel-v0-2` releasing → released |
 | 7 | retrospective | facilitator | `rel-v0-2` Retrospective section; bugs and decision-logs for the benchmark; WingFoil usage notes handed to the approver | approver review |
 
@@ -124,6 +125,24 @@ own overhead, which is unknown until calibration. Calibration replaces this figu
   raised version and a recorded review decision.
 - Real-agent runs are made from the main checkout, so that their git-ignored transcripts outlive task branches.
   `git status --ignored` is checked before removing a worktree.
+
+**Calibration and campaign (steps 3 and 5), from dl-017** (approved `5d7f35b`, 2026-10-14; experiment design 1.3
+§6):
+
+- **Before calibration,** a task admits WingFoil v0.3 to the eligibility register (REQ-FMT-11), reviews the wingfoil
+  arm's manual against v0.3's guide for AI agents (as task-086 did for v0.2.2), checks the arm's setup and the docs
+  control's generator with v0.3, and pins it in the campaign file. If v0.3 is not released by **2026-10-31**, the
+  reference campaign pins v0.2.2, and the bridge is not run.
+- **The bridge** is a campaign of its own: v0.1's configuration (S1, S2, S3 and S8 in baseline, baseline-docs and
+  wingfoil) on WingFoil v0.2.2 (`12537b62`) with task-086's manual, on the reference campaign's model, Claude Code
+  version and effort. Calibration adds its dry runs only where the reference campaign has none of the same key: with
+  v0.3, the wingfoil and baseline-docs arms on v0.2.2, 8 dry runs. The revised budget covers both campaigns; the bridge
+  is not cut to fit it.
+- **Repetitions:** v0.1's (S1 × 3, S2, S3 and S8 × 1) in both campaigns, until WingFoil 1.0 or the benchmark's 1.0.
+- **The campaign step** runs the bridge and the reference campaign from the same benchmark commit, one after the
+  other, and records the commit in both campaign elements, since the comparison does not list it. It publishes two
+  comparisons: `c82a5e74885b/2` → bridge (model and tooling, WingFoil held) and bridge → `campaign-002` (WingFoil
+  v0.2.2 → v0.3 alone). F5.2's comparison with `c82a5e74885b/2` is read through the bridge.
 
 ## Handoff
 
