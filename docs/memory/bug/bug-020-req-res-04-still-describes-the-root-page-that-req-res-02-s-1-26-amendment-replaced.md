@@ -3,6 +3,7 @@ id: bug-020-req-res-04-still-describes-the-root-page-that-req-res-02-s-1-26-amen
 type: bug
 title: "REQ-RES-04 still describes the root page that REQ-RES-02's 1.26 amendment replaced"
 status: approved
+fixed_by: task-089-requirements-1-30-req-res-04-describes-the-root-index-and-the-published-executions-it-keeps
 # fixed_by: task-…   # set by hand, with the fixing task's id, just before `approved → fixed`
 ---
 
@@ -43,3 +44,9 @@ the task-085 block).
 
 A specification amendment, 1.30: REQ-RES-04 gains an "Amended in 1.30" paragraph with the three points above, and the
 amendment section records it. No code changes.
+
+## Resolution
+
+Fixed by [task-089](../task/task-089-requirements-1-30-req-res-04-describes-the-root-index-and-the-published-executions-it-keeps.md)
+(merged in `fc76122`): requirements 1.30. REQ-RES-04 states the root index of every execution, the commit naming every
+execution under `site/`, and the refusal to drop an execution `gh-pages` already publishes. No code changed.
