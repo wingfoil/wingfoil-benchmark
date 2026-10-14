@@ -152,3 +152,8 @@ REQ-FMT-11 and the rest of the three documents.
   - **Nits 1 and 2 and the optional one, fixed** (`3601b31`): step 5's gate reads "spending (each campaign)"; the
     Constraints line names the fallback (v0.2.2 and no bridge if v0.3 is not released by 2026-10-31); step 3's cell
     adds the bridge's dry runs "with WingFoil v0.3".
+- **Round 4** (7475243): **not clean**, one nit. 3601b31 verified; every statement about the bridge conditioned on
+  v0.3; the diff faithful to dl-017; the shas verified.
+  - **Nit 1, fixed** (`21940a7`): "spending (each campaign)" read as one consent per campaign, while REQ-FMT-01 (1.26)
+    gives one consent for the main campaign and the bridge together; step 5's gate now reads "spending (the
+    reference campaign and, with v0.3, the bridge, together)".
