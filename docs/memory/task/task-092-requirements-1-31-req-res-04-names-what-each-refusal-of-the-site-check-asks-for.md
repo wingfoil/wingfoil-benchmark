@@ -53,3 +53,8 @@ All **characterization**: the behaviour and its tests exist since task-047 and t
 - `npx wingfoil memory add --type bug` and `--type task` on 2026-10-14. Declared: create a draft with the type's
   scaffold and commit it. Observed: `bug-021-…` (`33bb905`) and `task-092-…` (`87ab0aa`) as drafts, required fields
   empty (W-02); filled in `docs(…)` commits before `submit` (W-01).
+- `npx wingfoil memory submit` for both (draft → pending). Declared: moves the element to its next state and commits
+  it. Observed: `status: pending` (`310abee`, `f63dfea`), one line changed each. Matches. The approver approved
+  bug-021 (`9260ecd`) and task-092 (`0ac2769`).
+- `npx wingfoil memory submit task-092-…` (backlog → in-progress) on main. Declared: moves the task to its next state
+  and commits it. Observed: see the next commit, `wf(task): submit …`.
