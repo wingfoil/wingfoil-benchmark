@@ -304,3 +304,10 @@ not an estimate; Opus 5.5 at 2.7× Sonnet 5.5, with more turns and output.
 
 - `npx wingfoil memory submit task-093-…`, in the worktree. Declared: `in-progress → in-review`, one commit.
   Observed: exit 0, JSON `from`/`to` as declared, `373e820`, one file, `status` only. Matches.
+- The approver's `memory approve task-093-… --reason "…"` → `41c5e3a`, run from this worktree (`in-review →
+  approved`, `Approver:`/`Reason:` trailers with the drafted reason, only `status` changed). Matches.
+- The approver in chat, 2026-10-14, after the approval: dl-018 not approved as proposed — the weak-model rung moves
+  to **Haiku 5.5** too (option B); and the question whether Sonnet 5.5 and Opus 5.5 should run calibration at
+  **`medium`** effort instead of the recommended `high`, and what that does to the comparisons with v0.1. Both are
+  calibration's to settle with the approver (dl-018, dl-015); the recommended pins above stand as this spike's
+  evidence, not as the decision.
