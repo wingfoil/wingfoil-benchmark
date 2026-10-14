@@ -2,7 +2,7 @@
 id: task-091-the-v0-2-campaign-files-the-reference-campaign-and-the-bridge-with-calibration-s-values-as-placeholders
 type: task
 title: "The v0.2 campaign files: the reference campaign and the bridge, with calibration's values as placeholders"
-status: draft
+status: pending
 release: v0.2
 wave: calibration
 features: []
