@@ -121,6 +121,13 @@ for calibration's re-pin.
 | Element | Decision | Lands in |
 |---|---|---|
 | [dl-017](../decision-log/dl-017-the-v0-2-campaign-pins-wingfoil-v0-3-beside-a-bridge-on-v0-2-2-one-repetition-per-group.md) WingFoil v0.3 for the reference campaign, a bridge on v0.2.2, v0.1's repetitions | **approved, option D** (`5d7f35b`): widens dl-007's bridge slice to v0.1's whole configuration; makes precise the answer of 2026-10-05 on WingFoil for the campaign; v0.2.2 if v0.3 is not released by 2026-10-31, then no bridge | task-090 (experiment design 1.3 §6, plan-004 steps 3 and 5); a task admitting v0.3 before calibration |
+| [dl-018](../decision-log/dl-018-sonnet-5-5-s-cache-reads-at-half-dl-007-s-price-and-haiku-5-5-beside-the-haiku-4-5-rung.md) Sonnet 5.5's cache-read price, Haiku 5.5, the effort | **approved, option B with `medium` effort** (`cb84b61`): dl-007's price table corrected; the weak-model rung on Haiku 5.5; Sonnet 5.5, Opus 5.5 and Haiku 5.5 at `medium` | the calibration task |
+
+[task-093](../task/task-093-the-agent-pin-for-v0-2-checked-on-the-three-models-spike.md)'s spike recommends Claude
+Code **2.1.300** as v0.2's agent pin (0.3881 USD, three ledger lines).
+
+**Calibration waits for WingFoil v0.3** (the approver in chat, 2026-10-14): no tag after v0.2.2 on that day, so
+calibration starts once v0.3 is released and admitted, or on 2026-10-31 with v0.2.2 and no bridge (dl-017).
 
 **Smaller items** left by v0.1's Retrospective are triaged with the W12–W14 task plans; v0.2's wingfoil arm manual
 is reviewed against WingFoil's `docs/agents.md` at the pinned tag (N43).
