@@ -31,6 +31,12 @@ Found by [task-093](../task/task-093-the-agent-pin-for-v0-2-checked-on-the-three
      may go to Haiku 5.5; task-093's short sessions made none, so calibration's dry runs are the first to show it.
      The runner already records every model the agent uses (task-054, bug-012).
 
+3. **The effort levels are calibration's to set** (dl-015: "set at calibration with the approver"). task-093
+   recommended `high` for Sonnet 5.5 and Opus 5.5, v0.1's nominal level. Anthropic's effort page (read 2026-10-14):
+   `high` is Sonnet 5.5's default, `medium` Opus 5.5's and Haiku 5.5's; Sonnet 5.5's levels are recalibrated from
+   Sonnet 5, and the page suggests starting well-specified agentic coding at `medium`. v0.1 passed no effort flag:
+   its runs used the agent's default, unrecorded.
+
 ## Options
 
 - **A. Amend dl-007's price table only.** Sonnet 5.5's cache reads at 0.10; the Haiku 4.5 rung as approved. A hand
@@ -56,7 +62,24 @@ What B takes on, for calibration to check:
   `costUSD` applies the higher tier is for the dry runs' recomputation.
 - **A different weak model.** 1 M context against Haiku 4.5's 200 K, and it takes effort (default `medium`, all five
   levels). Its floor on S1 (dl-007: the rung is dropped if it finishes S1 in no arm) is measured by the dry runs.
-- **Effort pin.** `claude-haiku-5-5` needs a level in `agent.effort` (REQ-RUN-16); `none` was Haiku 4.5's.
+
+**Effort, decided with B by the approver in chat on 2026-10-14: `medium` for all three models** —
+`claude-sonnet-5-5: medium`, `claude-opus-5-5: medium`, `claude-haiku-5-5: medium` — in calibration's dry runs and in
+the campaigns, in place of task-093's `high`. All three run at one level, which is Opus 5.5's and Haiku 5.5's default
+and the effort page's start for well-specified agentic coding, as S1–S3 and S8's steps are; it costs less than `high`.
+
+What the effort changes in the comparisons:
+
+- **Within v0.2, nothing:** arms against the baseline, each harness against its docs control, and bridge →
+  reference campaign all run at the same effort.
+- **v0.1 → v0.2:** the step `c82a5e74885b/2` → bridge already changes the model, Claude Code and the effort
+  (experiment design 1.3 §6); `medium` widens that step's effort change, which the step cannot separate from the
+  model's. It was not zero at `high` either: v0.1's effort was the agent's unrecorded default, and Sonnet 5.5's
+  levels are recalibrated. Without WingFoil v0.3 there is no bridge, and the direct comparison with v0.1 absorbs it.
+- **Opus slice:** Opus 5.5 at its default against v0.1's Opus 5 at its own.
+- **Hypotheses:** H1 and H8, ratios within a campaign, read on bridge → reference at one effort; H10 (saturation on
+  checks) becomes a stricter test at `medium`.
+- **Risk:** lower scores on S1, measured by calibration's dry runs before the campaign.
 
 ## Consequences
 
@@ -68,4 +91,8 @@ What B takes on, for calibration to check:
   5.5, under calibration's own consent.
 - Experiment design §6 ("a Haiku 4.5 rung of the model ladder") and plan-004's dl-007 row name Haiku 5.5, by the
   calibration task.
+- `agent.effort` in both campaign files and in the dry-run profile: `medium` for `claude-sonnet-5-5`,
+  `claude-opus-5-5` and `claude-haiku-5-5` (REQ-RUN-16); calibration's dry runs are keyed on it.
+- The method page names the levels (dl-015's C) and states that the comparison with v0.1 changes the effort with
+  the model and Claude Code.
 - Calibration watches which Haiku Claude Code calls for its own work, in every dry run's `modelUsage`.
