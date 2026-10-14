@@ -121,3 +121,23 @@ counts printed. Push only on the approver's go.
   the repository's check does not cover these files; forced with `--ignore-path /dev/null` it flags them, as it
   flags main's experiment design before this change. No reformatting was done, to keep the diff to dl-017. No code
   changed: `tsc --noEmit` and `test:bin` skipped.
+
+## Review notes
+
+An independent read-only agent reviewed `git diff main...HEAD` against the Design, dl-017, REQ-FMT-01, REQ-SCO-13,
+REQ-FMT-11 and the rest of the three documents.
+
+- **Round 1** (71508a2): **not clean**, one blocking finding and five nits. Figures, shas, the notes' counts and the
+  34 tests verified; the style matches amendment 1.2 and section 5's table.
+  - **Blocking, fixed** (`00750a8`): dl-017 Proposal 3's "scenario versions" was lost (REQ-SCO-13 skips a group whose
+    scenario hash differs). The bridge now shares the reference campaign's model, Claude Code version, effort **and
+    scenario versions**, in §6, decision 8 and plan-004. The task's first criterion omitted it too; the text follows
+    dl-017.
+  - **Nit 2, fixed:** the bridge's cost and the chain of comparisons are stated "with v0.3"; without v0.3, F5.2
+    compares `c82a5e74885b/2` with the reference campaign directly.
+  - **Nit 3, fixed:** plan-004's step 5 checkpoint names both comparisons.
+  - **Nit 4, fixed:** plan-004's repetitions add "whichever comes first" and "no group is raised to three".
+  - **Nit 5, fixed:** rel-v0-2's row says dl-017 widens dl-007's bridge slice.
+  - **Nit 6, left for the v0.3 task:** `site-content/method.md`'s `#threat-t10` says the public campaign runs
+    "WingFoil, v0.2.2", true for v0.1; the task that admits and pins v0.3 should update it.
+- Re-checked after the fixes: `npm run lint` 0; `method-statements`, `traceability`, `profiles` 34 of 34.
