@@ -157,3 +157,11 @@ REQ-FMT-11 and the rest of the three documents.
   - **Nit 1, fixed** (`21940a7`): "spending (each campaign)" read as one consent per campaign, while REQ-FMT-01 (1.26)
     gives one consent for the main campaign and the bridge together; step 5's gate now reads "spending (the
     reference campaign and, with v0.3, the bridge, together)".
+- **Round 5** (dfe14af): **clean.** 21940a7 verified against REQ-FMT-01; every point of dl-017's Proposal and
+  Consequences present; the bridge conditioned on v0.3 wherever dl-017 makes it conditional; the notes' shas right;
+  tables and links intact. The items left in rounds 1 and 2 stand.
+- After round 5: `npm run lint` 0; `method-statements`, `traceability`, `profiles` 34 of 34.
+- **Suites:** the diff is three documents and the task; lint and the three tests that read `docs/` or cite the
+  experiment design stand in, as for task-087 to task-089. The full suites run if the approver asks.
+- `npx wingfoil memory submit task-090-…` (in-progress → in-review), on the task branch. Declared: moves the task to its
+  next state and commits it. Observed: see the next commit, `wf(task): submit …`.
