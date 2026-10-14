@@ -57,4 +57,19 @@ All **characterization**: the behaviour and its tests exist since task-047 and t
   it. Observed: `status: pending` (`310abee`, `f63dfea`), one line changed each. Matches. The approver approved
   bug-021 (`9260ecd`) and task-092 (`0ac2769`).
 - `npx wingfoil memory submit task-092-…` (backlog → in-progress) on main. Declared: moves the task to its next state
-  and commits it. Observed: see the next commit, `wf(task): submit …`.
+  and commits it. Observed: `status: in-progress` (`c32747b`). Matches.
+- Worktree `../WingFoil2-Benchmark-wt/task-092`, branch `task/task-092`, its own `npm ci` (exit 0).
+- The three messages read again before writing (`src/site/publish.ts`, `checkSiteCopy`), with their tests in
+  `test/unit/site/publish.test.ts`:
+  1. a difference: `differs from a fresh build of the results: run bench site build <id>/<n>`; lines 108 and 331;
+  2. a link: `is a link: a published site holds files only`; lines 146 and 151;
+  3. an entry no build gives: `is not part of a fresh build of any execution: remove it, or rebuild site/`; line 138.
+
+  All three came with `91cd2e2` on task-047's branch (requirements 1.22), not with task-085: the amendment section
+  says task-047; this task's first criterion says "task-047 and task-085", the second of which brought only the
+  root index's check.
+- Amendment (`ad6f1b9`): REQ-RES-04's row gains "Amended in 1.31"; the header is 1.31 (the date was already
+  2026-10-14); "Amendment 1.31" follows 1.30's. 1.22's, 1.26's and 1.30's text unchanged (14 insertions, 2
+  deletions: the header's line and the row).
+- Day checks, niced: `publish`, `traceability` and `method-statements` tests 46 of 46; `npm run lint` 0;
+  `npx tsc --noEmit -p .` 0. `*.md` is in `.prettierignore`: no prettier check is claimed for the document.
