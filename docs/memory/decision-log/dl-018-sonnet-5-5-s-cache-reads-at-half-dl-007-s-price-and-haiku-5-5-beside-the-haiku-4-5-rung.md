@@ -12,8 +12,8 @@ Found by [task-093](../task/task-093-the-agent-pin-for-v0-2-checked-on-the-three
 [dl-007](dl-007-claude-5-5-models-for-the-v0-2-campaign.md) was approved (`e09918a`, 2026-10-05):
 
 1. **Sonnet 5.5's cache reads cost 0.10 USD per million tokens, not 0.20.** Anthropic's pricing page
-   (`platform.claude.com/docs/en/about-claude/pricing.md`, read 2026-10-14): "a cache hit costs 5% of the standard
-   input price ($0.20 USD per million tokens on Claude Opus 5.5, $0.10 USD on Claude Sonnet 5.5)". Claude Code's
+   (`platform.claude.com/docs/en/about-claude/pricing.md`, read 2026-10-14) prices a cache hit on Sonnet 5.5 at 5 % of
+   its input price, 0.10 USD per million tokens (Opus 5.5: 0.20). Claude Code's
    CHANGELOG, 2.1.296: `/cost`, `--max-budget-usd` and the SDK's cost figures price Sonnet 5.5 cache reads at $0.10
    (was $0.20). task-093's P2 (Claude Code 2.1.300) reported 0.0969887 USD, which the tokens give at 0.10 and not at
    0.20. dl-007's price table, the starting point of v0.2's budget, says 0.20.
