@@ -107,3 +107,17 @@ counts printed. Push only on the approver's go.
 - `npx wingfoil memory add --type task --title … --tags calibration,docs,dl-017` on 2026-10-14, on main. Declared:
   create a draft with the type's scaffold and commit it. Observed: `task-090-…` as a draft (`4fc5314`), required
   fields empty (W-02); filled in a `docs(task)` commit before `submit` (W-01).
+- `npx wingfoil memory submit task-090-…` (draft → pending) on main. Declared: moves the element to its next state and
+  commits it. Observed: `status: pending` (`7ef3f51`). Matches. The approver approved it (`a81d59f`, pending →
+  backlog).
+- `npx wingfoil memory submit task-090-…` (backlog → in-progress) on main. Declared: the same. Observed:
+  `status: in-progress` (`39a131f`). Matches.
+- Worktree `../WingFoil2-Benchmark-wt/task-090`, branch `task/task-090-…`, its own `npm ci` (exit 0).
+- The amendment (`418a103`): experiment design 1.3 (header, Traces to, §6's v0.2 shape, decision 8); plan-004's
+  Constraints line, steps 3 and 5 and a "Calibration and campaign (steps 3 and 5), from dl-017" paragraph; rel-v0-2's
+  "6. Before calibration" table, placed after section 5's task-062 paragraph. 59 insertions, 10 deletions.
+- Day checks, niced: `npm run lint` 0; vitest `--maxWorkers=2` on `method-statements`, `traceability` and `profiles`
+  (the tests that read `docs/` or cite the experiment design), 34 of 34. Prettier: `*.md` is in `.prettierignore`, so
+  the repository's check does not cover these files; forced with `--ignore-path /dev/null` it flags them, as it
+  flags main's experiment design before this change. No reformatting was done, to keep the diff to dl-017. No code
+  changed: `tsc --noEmit` and `test:bin` skipped.
