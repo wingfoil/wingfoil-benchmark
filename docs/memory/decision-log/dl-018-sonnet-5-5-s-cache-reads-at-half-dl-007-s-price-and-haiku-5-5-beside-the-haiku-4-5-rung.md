@@ -42,13 +42,28 @@ Found by [task-093](../task/task-093-the-agent-pin-for-v0-2-checked-on-the-three
 
 ## Proposal
 
-**A.** The ladder's purpose (T14, dl-007) is a weak model against the default; Haiku 4.5 is that, still served and
-correctly priced on the recommended pin. Haiku 5.5 is a question for v0.3's ladder, when it can be measured. The price
-table is corrected before calibration, so that the revised budget starts from list prices.
+**B**, the approver's choice in chat on 2026-10-14 (A, first proposed here, was not approved): dl-007's price table is
+corrected, and the weak-model rung moves from Haiku 4.5 to **Haiku 5.5**. It is the current Haiku, the one Claude
+Code 2.1.300 names `haiku`, and the campaign then runs the current generation on every rung of the ladder.
+
+What B takes on, for calibration to check:
+
+- **Price not yet observed.** task-093 ran no Haiku 5.5 session, so whether Claude Code 2.1.300 prices it at list
+  (`costBasis`) is unverified. Calibration's dry runs are the first to show it; bug-016's check refuses an unpriced
+  dry run from the estimate.
+- **Two price tiers.** Haiku 5.5 costs five times more on a request whose prompt passes 100 K tokens (0.50 / 2.50
+  against 0.10 / 0.50). Long steps, S1's in the wingfoil arm above all, may cross it; whether the agent's
+  `costUSD` applies the higher tier is for the dry runs' recomputation.
+- **A different weak model.** 1 M context against Haiku 4.5's 200 K, and it takes effort (default `medium`, all five
+  levels). Its floor on S1 (dl-007: the rung is dropped if it finishes S1 in no arm) is measured by the dry runs.
+- **Effort pin.** `claude-haiku-5-5` needs a level in `agent.effort` (REQ-RUN-16); `none` was Haiku 4.5's.
 
 ## Consequences
 
-- dl-007's price table and its Sonnet 5.5 paragraph are amended (A, B, C).
-- With B or C, `campaigns/v0-2-reference.yaml`'s Haiku slice and its effort pin change, and calibration adds Haiku
-  5.5's dry runs (a consent of their own).
+- dl-007's price table and its Sonnet 5.5 paragraph are amended; its option E's rung, its hypothesis on the weak
+  model and its Haiku cost line read Haiku 5.5. A hand edit of dl-007 with `Approver:` and
+  `Reason:` (W-07), by the calibration task.
+- `campaigns/v0-2-reference.yaml`'s Haiku slice names `claude-haiku-5-5`, with its effort pin; the bridge runs no Haiku
+  slice, so its effort entry for Haiku is inert (task-069) and is aligned only to keep the two pin lists alike. Calibration's dry runs of that slice (S1 and S3 in baseline and wingfoil) are on Haiku
+  5.5, under calibration's own consent.
 - Calibration watches which Haiku Claude Code calls for its own work, in every dry run's `modelUsage`.
