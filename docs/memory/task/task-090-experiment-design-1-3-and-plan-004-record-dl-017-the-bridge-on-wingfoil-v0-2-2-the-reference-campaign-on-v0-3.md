@@ -141,3 +141,9 @@ REQ-FMT-11 and the rest of the three documents.
   - **Nit 6, left for the v0.3 task:** `site-content/method.md`'s `#threat-t10` says the public campaign runs
     "WingFoil, v0.2.2", true for v0.1; the task that admits and pins v0.3 should update it.
 - Re-checked after the fixes: `npm run lint` 0; `method-statements`, `traceability`, `profiles` 34 of 34.
+- **Round 2** (df546a4): **not clean**, no blocking finding, two nits. Every round-1 fix verified; the diff faithful to
+  dl-017; the eight shas and the 34 tests verified; wrapping and Markdown fine.
+  - **Nit 1, fixed** (`969fa04`): plan-004's step 5 cell, its checkpoint and the campaign-step paragraph assumed the
+    bridge always runs; they now name it with v0.3, and the direct comparison with `c82a5e74885b/2` without it.
+  - **Nit 2, left as it is:** §6's dl-012 bullet "Which scenarios are repeated is set at calibration" stays the
+    general rule, settled for v0.2 by the repetitions bullet below it; the criteria keep 1.2's text unchanged.
