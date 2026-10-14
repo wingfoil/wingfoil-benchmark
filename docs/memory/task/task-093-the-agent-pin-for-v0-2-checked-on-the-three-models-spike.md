@@ -145,3 +145,5 @@ consented), cost, source. The total under the table is updated.
   "spike,calibration,agent"`, on main. Declared: creates the element from the template in `draft`, one commit.
   Observed: `ff9e9cf` (`wf(task): add task-093-…`), `status: draft`, `tags` written to the frontmatter, the other
   fields empty (W-02). Matches.
+- The Design by hand, `0978d50`. Then `npx wingfoil memory submit task-093-…`, on main. Declared: `draft →
+  pending`, one commit. Observed: exit 0, JSON `from`/`to` as declared, `dba54c4`, one file, `status` only. Matches.
