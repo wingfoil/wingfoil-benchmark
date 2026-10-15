@@ -85,8 +85,10 @@ export async function dryRunCommand(
     },
   });
   if (!spending.ok) return report(spending.issues, io);
-  const { credential, harnessSources } = spending.value;
-  const resolved = ports ? { ok: true as const, value: ports } : portsFor(profile, credential);
+  const { credential, credentialFile, secrets, harnessSources } = spending.value;
+  const resolved = ports
+    ? { ok: true as const, value: ports }
+    : portsFor(profile, credential, credentialFile);
   if (!resolved.ok) return report(resolved.issues, io);
 
   // What it expects to spend, before anything is built (REQ-NFR-06).
@@ -117,6 +119,8 @@ export async function dryRunCommand(
         logError: (line) => io.stderr(`${line}\n`),
         // The credential reaches the container here and nowhere else (REQ-RUN-15, REQ-NFR-01).
         ...(credential === undefined ? {} : { containerEnv: credential, secrets: Object.values(credential) }),
+        // Codex's credential is a file the runner mounts (dl-019); its values are scrubbed all the same.
+        ...(credentialFile === undefined ? {} : { credentialFile, secrets: secrets ?? [] }),
         signal,
       }),
     );
