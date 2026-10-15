@@ -477,4 +477,49 @@ Output in the main checkout's git-ignored `spikes/task-094/out/`.
   `dry-runs/21`, `completed`, five steps, no intervention, `CLAUDE.md`, `claude-sonnet-5-5` priced `list`. 0.2690 USD
   (0.2381 €): steps 0.0615, 0.0412, 0.0404, 0.0656, 0.0603 USD; under the 2 € stop, so the campaign followed. The
   token scan (`grep -rlFf` over the results and workspace, the value never printed): clean. One ledger line.
+- **CC-1, CC-2** (2026-10-15, 14:04–14:08 UTC, `bench campaign run campaigns/x-codex-s3-claude-code.yaml
+  --allow-spending`): the estimate read CC-D (high 0.6428 €); campaign `ae7ce2af99a5/1`, 2 runs completed, 0 failed;
+  every step `completed`, no intervention, priced `list`. r1 0.3376 USD, r2 0.3050 USD, 0.6426 USD in all (0.5688 €).
+  The token scan: clean; no `bench-` container left. Two ledger lines. **Every one of the seven sessions is run.**
+- **Spending:** Claude 0.9116 USD in all (CC-D, CC-1, CC-2; about 0.81 €) of the 9 € consented; Codex 1.0657 USD
+  API-equivalent (P0, CX-D, CX-1, CX-2), 0 € spent, on the Plus plan.
+- **Results committed on main** (`8707559`, as the Design says): both executions, both dry runs, the comparison and
+  the four campaign files (identical to the branch's); transcripts ignored (REQ-RES-06). Both credentials scanned for
+  first: none.
+
+### The comparison (preliminary: n = 2 per agent)
+
+`bench score <execution> --final --holdout ../WingFoil2-Benchmark-HoldOut` for both, then `bench campaign compare
+ae7ce2af99a5/1 e6963fa82f29/1` → `results/comparisons/e6963fa82f29-1/ae7ce2af99a5-1.json` (version 2). The pins that
+differ are only the agent's and the model: `agent.name`, `agent.version`, `agent.effort.*`, `models.default`; so
+M-R across is measured (no note).
+
+| S3@1.0, baseline | Claude Code 2.1.300, Sonnet 5.5 `medium` | Codex 0.162.1, gpt-6.1-sol `medium` | Across agents |
+|---|---|---|---|
+| final public tests | 37/37, 35/37 | 37/37, 37/37 | — |
+| hold-out | 16/17, 16/17 | 17/17, 17/17 | — |
+| checks; M-F1 | 0/1; 4/5, 3/5 | 0/1; 4/5, 4/5 | — |
+| cost per run (€, API-equivalent) | 0.2988, 0.2700 | 0.3157, 0.2668 | — |
+| **M-R1** (tests with one verdict) | 35/37 | 37/37 | 35/37 (pooled four runs) |
+| **M-R2** (interface, Jaccard) | 0.70 (7/10) | 1.00 (8/8) | **0.1381** (four cross pairs: 2/14, 2/14, 2/15, 2/15) |
+| **M-R3** (paths, Jaccard) | 1.00 (6/6) | 0.7143 (5/7) | 0.7143 (four cross pairs, each 5/7) |
+
+- **How the groups are formed** (the brief's question): one execution per agent, the same scenario version (S3@1.0,
+  one hash) and arm (baseline), the same caps, rate and approver policy; the agent (name, version, model, effort) is
+  the pin that varies. Within each agent the two repetitions are a group; across agents M-R1 pools the four runs and
+  M-R2/M-R3 take the four cross pairs.
+- **Did the experiment design need an amendment** (the brief's question): yes, 1.4 §4.5 (written by this task), since
+  1.3 said only that M-R "also apply across agents" and REQ-SCO-07 required every pin to be shared.
+- **Reading, preliminary (n = 2, no "beyond variance" claim, §4.6):**
+  - M-R1: the outcomes agree across agents as much as within Claude; the two tests on which they differ are Claude's
+    r2 failures, not an agent split.
+  - **M-R2 is where the agents part:** the public interfaces the two agents write share 2 of 14–15 entries, against
+    0.70 and 1.00 within each agent. Same tests passed, different code shape: the hidden tests constrain behaviour,
+    not the exported API.
+  - M-R3: the file layout across agents (0.71) is as close as Codex's own two runs, below Claude's 1.00.
+  - Quality and cost are close at n = 2: Codex passed every public and hold-out test, Claude 16/17 on the hold-out in
+    both runs; cost per run 0.27–0.32 € on both, at the same list prices per token (Codex's from the benchmark's
+    table, Claude's from Claude Code).
+  - Disclosure (dl-019 bound 9): Codex's sessions ran on a ChatGPT Plus subscription, its cost the benchmark's own
+    pricing from OpenAI's list (`price-table`); an outside reproduction would likely use an API key.
 
