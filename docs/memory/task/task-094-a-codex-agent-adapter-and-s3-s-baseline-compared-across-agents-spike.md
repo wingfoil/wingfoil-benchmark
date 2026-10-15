@@ -392,3 +392,17 @@ Output in the main checkout's git-ignored `spikes/task-094/out/`.
   9. nit — LOGIN without a candidate. **Fixed** (exit 64).
 - Checks on `06e1a58`: `tsc` and lint clean; unit and acceptance 1617 passed, 8 skipped; the stub rehearsal again
   (clean, the resume reported as the thread total by the stub; the planted token found, exit 4).
+- **Round 3** (a new independent read-only Explore subagent, on `4a5bb5a`): nothing blocking; every round-2 outcome
+  confirmed against the code, the tests and Codex's source. Red tests `cf7e152`, fixes in the commit after it.
+  1. should-fix — READ called a resume at or above the step's total "the thread total", which REQ-RUN-09 1.32 says
+     cannot be told apart. **Fixed:** "consistent with the thread total (a restarted, larger count cannot be
+     excluded)".
+  2. nit — "restarted" decided per `turn.completed`, not once per invocation. **Fixed:** at the first; test.
+  3. nit — a stream with no turn lost its last error's text. **Fixed;** test.
+  4. nit — `pinsDiffer`'s comment displaced. **Fixed.**
+  5. nit — the rate (`currency`) shapes a run as the caps do. **Fixed:** it gates M-R across too; requirements 1.32
+     and experiment design 1.4 say so; test.
+  6. nit — the note tests could pass on an empty list; no approver-policy case. **Fixed.**
+  7. nit — experiment design said "the arms", the code the arms' digests. **Fixed.**
+  8. nit — `probe.sh` P0: the bounds named in a comment, the path in a JS literal, a stale `dist/`, the path mounted
+     as given. **Fixed** (checks `dist/` is newer than `src/`, passes the path as an argument, mounts the real path).
