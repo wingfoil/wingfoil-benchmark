@@ -331,3 +331,42 @@ Output in the main checkout's git-ignored `spikes/task-094/out/`.
 - vitest `--maxWorkers=2`, niced, over `test/unit` and `test/acceptance` (every directory the branch touches):
   103 files, 1599 passed, 8 skipped. `npm run test:bin` 8/8. The full suites (`scripts/full-suites.sh`) are not run:
   they are the approver's to ask for.
+- **Lint was red from `27b03af` to `3933fac`** (an unused binding in `test/unit/site/comparisons.test.ts`): the
+  check's output was cut by a `tail -1` that kept only its last line. Fixed in `3933fac`; lint is read in full since.
+
+### Review (offline work, before any real session)
+
+- **Round 1** (independent read-only Explore subagent, on `bf91c62`; no spending, no credential read): nothing
+  blocking. Red tests `ace2268`, fixes `3933fac`. Findings and outcomes:
+  1. should-fix — a thread total below the previous one clamped to a zero delta. **Fixed:** taken as the
+     invocation's own and added (REQ-RUN-09 1.32 says so); test.
+  2. should-fix — a failed or killed invocation reports no usage, counted as zero. **Stated, not changed:** REQ-RUN-09
+     1.32 calls it a lower bound the caps between invocations cannot see. On the subscription no money rides on it;
+     `step_time_s` still bounds the time.
+  3. should-fix — limits named only by an `error` event, and the end of Codex's retries on a 429, read as failures.
+     **Fixed:** both read (REQ-RUN-13 1.32 worded to the code); tests.
+  4. should-fix — the runner scrubbed patches, logs and messages with the values read at the start only. **Fixed:**
+     `refreshSecrets` re-reads the credential whenever the runner stores something; test.
+  5. should-fix — a credential with nothing to scrub (`{}`) accepted. **Fixed:** refused, "log in first"; test.
+  6. should-fix — `m_r_across` written whatever pins differ. **Fixed:** a note "not measured: pins other than the
+     agent's differ: …" unless only `agent.*` and `models.*` differ; test. Experiment design 1.4 and REQ-SCO-07 1.32
+     say so.
+  7. should-fix — the scan excluded every `auth.json`. **Fixed:** only a rehearsal's fake credential is excluded.
+  8. should-fix — the checkout test followed the path as given, and the directory's mode was not checked.
+     **Fixed:** checked on the real path; the directory must be mode 700 (dl-019 bound 2); tests.
+  9. nit — LOGIN's command would overwrite an existing credential. **Fixed.**
+  10. nit — `minimal` not supported by F1/F2. **Kept:** it is a level of Codex 0.162.1's `ReasoningEffort`
+      (`out/f1/source/codex-rs_protocol_src_openai_models.rs`: none, minimal, low, medium, high, xhigh, max, ultra,
+      persistent, custom); which a model takes is the model's (`gpt-6.1-sol`: low … ultra). The Design listed
+      `minimal` … `xhigh`; `max` and `ultra` are added from the same enum.
+  11. nit — the workspace limit texts (spend cap, out of credits). **Fixed** with 3.
+  12. nit — tests for Codex's retries, a resume without `thread.started`, a resume in another thread. **Added**; they
+      passed at once and stand as characterization.
+  13. nits — `mROf`'s comment displaced, the Codex clear named "auto-memory", REQ-RUN-15's "never read". **Fixed.**
+      The adapter's map of threads is never pruned: kept, one entry per step.
+  14. nit — dl-019 bounds 1 (scope, dates) and 9 (disclosure) are not enforced by code. **Procedural, as dl-019
+      states them:** the runs are this task's seven, from the main checkout, in 2026-11-02 … 06; the disclosure goes to
+      the comparison's record in this task and to the ledger. Nothing in the code refuses a later `codex` campaign: a
+      new decision is the gate (bound 1).
+- Checks on `3933fac`: `tsc` and lint clean; unit and acceptance 1612 passed, 8 skipped; the stub rehearsal again
+  (clean; the planted token found, exit 4).
