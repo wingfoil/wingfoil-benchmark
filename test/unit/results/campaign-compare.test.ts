@@ -102,6 +102,23 @@ describe('compareExecutions (REQ-SCO-13, task-083)', () => {
     expect(result.value.rows.every((row) => row.cross_model === false)).toBe(true);
   }, 240_000);
 
+  it('records M-R across the two executions for each matched group, at comparison_version 2 (REQ-SCO-13 as amended in 1.32)', async () => {
+    const root = await executions();
+    const result = compareExecutions(root, EARLIER, NEWER, primaryOf(root));
+    if (!result.ok) throw new Error(JSON.stringify(result.issues));
+
+    expect(result.value.comparison_version).toBe(2);
+    expect(result.value.m_r_across.map((entry) => `${entry.scenario}@${entry.version}/${entry.arm} ${entry.model}`)).toEqual([
+      'TC@1.0/baseline fake-model',
+      'TC@1.0/wingfoil fake-model',
+    ]);
+    const [baseline] = result.value.m_r_across;
+    expect(baseline?.earlier.n).toBe(1);
+    expect(baseline?.newer.n).toBe(1);
+    expect(baseline?.m_r1?.total).toBeGreaterThan(0);
+    expect(baseline?.m_r2?.pairs).toHaveLength(1);
+  }, 240_000);
+
   it('gives the same bytes for the same two executions', async () => {
     const root = await executions();
     const result = compareExecutions(root, EARLIER, NEWER, primaryOf(root));
