@@ -139,13 +139,26 @@ describe('reading a Codex session (REQ-RUN-09 as amended in 1.32)', () => {
     expect(readCodexSession(lines, { model: MODEL, usdToEur: RATE }).outcome).toBe('completed');
   });
 
-  it('reads a limit named by an error event before a turn that failed with another message', () => {
+  it('reads a limit an error event names when the stream ends with no turn.failed (review 2)', () => {
     const lines = [
       `{"type":"thread.started","thread_id":"${THREAD}"}`,
+      '{"type":"turn.started"}',
       '{"type":"error","message":"You’ve hit your usage limit. Try again later."}',
-      '{"type":"turn.failed","error":{"message":"the turn ended"}}',
     ];
     expect(readCodexSession(lines, { model: MODEL, usdToEur: RATE }).outcome).toBe('quota exhausted');
+  });
+
+  it('does not turn a later failure of the turn into a stop because an earlier error named a limit (review 2)', () => {
+    const lines = [
+      `{"type":"thread.started","thread_id":"${THREAD}"}`,
+      '{"type":"error","message":"rate limit exceeded: Rate limit reached. Retrying."}',
+      '{"type":"error","message":"Reconnecting... 2/5 (stream disconnected before completion)"}',
+      '{"type":"turn.failed","error":{"message":"the context window is full"}}',
+    ];
+    const session = readCodexSession(lines, { model: MODEL, usdToEur: RATE });
+
+    expect(session.outcome).toBe('failed');
+    expect(session.error).toBe('the context window is full');
   });
 
   it.each([

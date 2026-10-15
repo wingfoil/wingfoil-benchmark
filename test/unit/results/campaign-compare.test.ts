@@ -20,12 +20,17 @@ function primaryOf(root: string) {
 const EARLIER = '0123456789ab/1';
 const NEWER = 'abcdef012345/1';
 
-function pins(scenarios: string[], model = 'fake-model', slices: unknown[] = []): string {
+function pins(
+  scenarios: string[],
+  model = 'fake-model',
+  slices: unknown[] = [],
+  agent: Record<string, unknown> = { name: 'claude-code', version: '2.1.291' },
+): string {
   return stringify({
     harnesses: {},
     scenarios: scenarios.map((id) => ({ id, version: '1.0' })),
     arms: ['baseline', 'wingfoil'],
-    agent: { name: 'claude-code', version: '2.1.291' },
+    agent,
     models: { default: model, ...(slices.length === 0 ? {} : { slices }) },
     repetitions: Object.fromEntries(scenarios.map((id) => [id, 1])),
     currency: { usd_to_eur: 0.5 },
@@ -53,7 +58,11 @@ async function executions(): Promise<string> {
   }
   const slice = { model: 'other-model', scenarios: ['TC'], arms: ['baseline', 'wingfoil'], repetitions: 1 };
   writeFileSync(join(root, 'results', EARLIER, 'campaign.yaml'), pins(['TC'], 'fake-model', [slice]));
-  writeFileSync(join(root, 'results', NEWER, 'campaign.yaml'), pins(['TC', 'TD']));
+  // Another agent on the newer side: what M-R across measures (experiment design 1.4 §4.5).
+  writeFileSync(
+    join(root, 'results', NEWER, 'campaign.yaml'),
+    pins(['TC', 'TD'], 'fake-model', [], { name: 'codex', version: '0.162.1' }),
+  );
   for (const target of [EARLIER, NEWER]) {
     const scored = await benchSite(root, 'score', target);
     if (scored.code !== 0) throw new Error(scored.stdout + scored.stderr);
@@ -128,6 +137,16 @@ describe('compareExecutions (REQ-SCO-13, task-083)', () => {
     );
   });
 
+  it.each([
+    [{ agents: ['codex', 'codex'] as const }, "not measured: the same agent, codex, on both sides"],
+    [{ caps: [1, 2] as const }, "not measured: pins other than the agent's differ: caps"],
+  ])('measures M-R across only across two agents, under the same caps and approver (review 2): %o', (pair, note) => {
+    const root = handBuiltPair(pair);
+    const result = compareExecutions(root, EARLIER, NEWER, categories);
+    if (!result.ok) throw new Error(JSON.stringify(result.issues));
+    expect(result.value.m_r_across.map((entry) => entry.note)).toEqual(result.value.m_r_across.map(() => note));
+  });
+
   it('gives the same bytes for the same two executions', async () => {
     const root = await executions();
     const result = compareExecutions(root, EARLIER, NEWER, primaryOf(root));
@@ -140,18 +159,28 @@ describe('compareExecutions (REQ-SCO-13, task-083)', () => {
   }, 240_000);
 });
 
-/** Two hand-built executions of TC's baseline whose campaign files differ in the WingFoil harness's version only. */
-function handBuiltPair({ harness }: { readonly harness: readonly [string, string] }): string {
+/**
+ * Two hand-built executions of TC's baseline, Claude Code against Codex unless `agents` says otherwise, whose campaign
+ * files may differ in the WingFoil harness's version and in their caps.
+ */
+function handBuiltPair({
+  harness = ['v0.2.2', 'v0.2.2'],
+  agents = ['claude-code', 'codex'],
+  caps = [1, 1],
+}: {
+  readonly harness?: readonly [string, string];
+  readonly agents?: readonly [string, string];
+  readonly caps?: readonly [number, number];
+}): string {
   const root = tempDir('bench-cmp-');
-  for (const [target, version] of [
-    [EARLIER, harness[0]],
-    [NEWER, harness[1]],
-  ] as const) {
+  [EARLIER, NEWER].forEach((target, i) => {
     handBuilt(root, target, 'm', [{ arm: 'baseline', q1: [1] }], {
       models: { default: 'm' },
-      harnesses: { wingfoil: { tool: 'wingfoil', version } },
+      agent: { name: agents[i], version: '1.0.0' },
+      harnesses: { wingfoil: { tool: 'wingfoil', version: harness[i] } },
+      caps: { step_time_s: 60, step_tokens: 1000, run_cost_eur: caps[i] },
     });
-  }
+  });
   return root;
 }
 

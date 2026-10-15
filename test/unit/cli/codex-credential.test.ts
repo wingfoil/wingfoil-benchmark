@@ -1,12 +1,23 @@
-import { chmodSync, mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { main } from '../../../src/cli/index.js';
 import { campaignRequirements } from '../../../src/cli/preflight.js';
 import { checkSpending, portsFor } from '../../../src/cli/shared.js';
 import { checkCampaign } from '../../../src/runner/index.js';
 import type { CheckedCampaign } from '../../../src/runner/index.js';
 import { completeCampaignYaml, writeRepo } from '../../support/campaign-fixture.js';
+import { priceCampaign } from '../../support/dry-run-fixture.js';
+import { doubles } from '../../support/runner-doubles.js';
 import { tempDir } from '../../support/scenario-fixture.js';
 
 const CODEX_AGENT = { name: 'codex', version: '0.162.1', effort: { 'gpt-6.1-sol': 'medium' } };
@@ -144,6 +155,19 @@ describe("Codex's credential for a run (REQ-RUN-15, REQ-NFR-01 as amended in 1.3
     expect(spending.ok ? [] : spending.issues.map((issue) => issue.path)).toEqual(['BENCH_CODEX_AUTH_FILE']);
   });
 
+  it('gives the runner the real path of a linked credential, which is what Docker mounts and reports (review 2)', () => {
+    const file = authFile();
+    const link = join(tempDir('bench-codex-link-'), 'auth.json');
+    symlinkSync(file, link);
+    vi.stubEnv('BENCH_CODEX_AUTH_FILE', link);
+    const spending = checkSpending(codexCampaign().campaign.spec, {
+      allowSpending: true,
+      builds: [],
+      refusal: { path: 'x', message: 'y' },
+    });
+    expect(spending.ok && spending.value.credentialFile).toBe(realpathSync(file));
+  });
+
   it('refuses a run whose credential holds no value to scrub, such as the placeholder before the login', () => {
     const file = authFile();
     writeFileSync(file, '{}');
@@ -177,5 +201,60 @@ describe("Codex's credential for a run (REQ-RUN-15, REQ-NFR-01 as amended in 1.3
       },
     });
     expect(commands[0]?.slice(0, 2)).toEqual(['codex', 'exec']);
+  });
+});
+
+describe('bench campaign run with Codex (review 2)', () => {
+  it('scrubs what it stores with the credential as a refresh during the run left it', async () => {
+    const { file } = writeRepo(
+      {
+        ...completeCampaignYaml(),
+        harnesses: {},
+        arms: ['baseline'],
+        scenarios: [{ id: 'S1', version: '1.0' }],
+        repetitions: { S1: 1 },
+        agent: CODEX_AGENT,
+        models: { default: 'gpt-6.1-sol' },
+      },
+      ['S1@1.0'],
+    );
+    priceCampaign(file);
+    const auth = authFile();
+    vi.stubEnv('BENCH_CODEX_AUTH_FILE', auth);
+    const refreshed = 'at-refreshed-by-codex-0000003';
+    let stepped = false;
+    const ports = doubles({
+      // Codex refreshes its credential while the step runs; the step's patch then holds the new value.
+      onStep: () => {
+        writeFileSync(auth, JSON.stringify({ tokens: { access_token: refreshed } }));
+        stepped = true;
+      },
+      patchOf: () => (stepped ? `+token=${refreshed}\n` : '+setup\n'),
+    });
+    let output = '';
+    const io = { stdout: (text: string) => (output += text), stderr: (text: string) => (output += text) };
+
+    const code = await main(['campaign', 'run', file, '--allow-spending'], io, {
+      docker: ports.docker,
+      git: ports.git,
+      agent: ports.agent,
+    });
+
+    expect({ code, output }).toEqual({
+      code: 0,
+      output: expect.stringContaining('1 run completed, 0 failed'),
+    });
+    const results = join(file, '..', '..', 'results');
+    const patches = (dir: string): string[] =>
+      readdirSync(dir, { withFileTypes: true }).flatMap((entry) =>
+        entry.isDirectory()
+          ? patches(join(dir, entry.name))
+          : entry.name === 'diff.patch'
+            ? [readFileSync(join(dir, entry.name), 'utf8')]
+            : [],
+      );
+    const stored = patches(results).join('');
+    expect(stored).toContain('[redacted]');
+    expect(stored).not.toContain(refreshed);
   });
 });
