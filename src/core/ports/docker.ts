@@ -120,7 +120,12 @@ export function dockerCli(process: ProcessPort): DockerPort {
       for (const [name, value] of Object.entries(buildArgs)) args.push('--build-arg', `${name}=${value}`);
       await docker([...args, context]);
     },
-    async create({ image, name, workspace, user, env }) {
+    async create({ image, name, workspace, user, env, mounts }) {
+      for (const { source, target } of mounts ?? []) {
+        if (`${source}${target}`.includes(',') || `${source}${target}`.includes('=')) {
+          throw new Error(`a credential mount's path cannot hold a comma or an equals sign: ${source}`);
+        }
+      }
       // `--mount` takes comma-separated `key=value` pairs, so a path holding either would be read as
       // more options. Refusing is safer than quoting: such a checkout cannot run the benchmark.
       if (workspace.includes(',') || workspace.includes('=')) {
@@ -137,6 +142,11 @@ export function dockerCli(process: ProcessPort): DockerPort {
           WORKSPACE,
           '--mount',
           `type=bind,source=${workspace},target=${WORKSPACE}`,
+          // dl-019: a credential file, read-write, the only mount besides the workspace (REQ-RUN-02).
+          ...(mounts ?? []).flatMap(({ source, target }) => [
+            '--mount',
+            `type=bind,source=${source},target=${target}`,
+          ]),
           // The name alone: `--env NAME` tells Docker to take NAME from this process's environment.
           ...Object.keys(env ?? {}).flatMap((variable) => ['--env', variable]),
           image,
