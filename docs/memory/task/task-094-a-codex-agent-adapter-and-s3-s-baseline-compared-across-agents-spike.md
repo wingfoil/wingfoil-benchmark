@@ -459,4 +459,10 @@ Output in the main checkout's git-ignored `spikes/task-094/out/`.
 - **Where the runs read their files:** a campaign's results go under its file's repository, so the campaign files and
   the dry-run profiles are copied, unchanged, into the main checkout's `campaigns/` (untracked) before the runs, and
   committed on main with the results (as the Design says).
+- **CX-D** (2026-10-15, 13:03–13:08 UTC, from the main checkout with the worktree's build at `3c7d8e8`, `bench scenario
+  dry-run S3@1.0 --arm baseline --profile campaigns/x-codex-s3-codex.dry-run.yaml --allow-spending`): `dry-runs/20`,
+  `completed`, five steps each `completed` in one turn, no intervention, `AGENTS.md` as the manual, every step's
+  model priced `price-table`. 0.3323 USD API-equivalent (0.2941 €): steps 0.0833, 0.0496, 0.0385, 0.0818, 0.0791 USD;
+  37–86 s a step. The secret scan of `results/dry-runs/20` and its workspace: clean. The credential's mtime unchanged:
+  no refresh. No `bench-` container left. One ledger line.
 
