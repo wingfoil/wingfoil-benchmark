@@ -2,7 +2,7 @@
 id: task-094-a-codex-agent-adapter-and-s3-s-baseline-compared-across-agents-spike
 type: task
 title: "A Codex agent adapter and S3's baseline compared across agents spike"
-status: pending
+status: backlog
 release: v0.2
 wave: calibration
 features: []
