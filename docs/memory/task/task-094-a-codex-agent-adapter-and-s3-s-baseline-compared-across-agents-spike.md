@@ -549,3 +549,10 @@ M-R across is measured (no note).
 - `npx wingfoil memory submit task-094-…`, in the worktree. Declared: `in-progress → in-review`, one commit.
   Observed: exit 0, JSON `from`/`to` as declared, `45f3f5b`, one file, `status` only. Matches. The `in-progress` slot
   is free from here.
+- **dl-019's end** (bound 8, the approver, 2026-10-15, after the last Codex session): `codex logout` with the
+  single-file mount failed with "Resource busy (os error 16)": Codex 0.162.1's logout revokes the tokens (best effort,
+  a failure only logged) and then removes `auth.json`, which a single-file bind mount cannot do. Run again with the
+  directory `$HOME/.codex-bench` mounted as `CODEX_HOME`, it completed; the approver then deleted the directory
+  (checked here: it no longer exists; its content was never read). **For a later use of dl-019's mount:** log out with
+  the directory mounted, not the file. The date is in the ledger.
+
