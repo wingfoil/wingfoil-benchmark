@@ -201,7 +201,7 @@ main checkout. Every session is S3@1.0, baseline arm. Order: Codex first (no mon
   as designed, the task stops and asks before CX-D. If CC-D costs more than 2 € (over twice the expectation), it
   stops and asks before CC-1. A run stopped by the plan's quota is recorded, not repeated.
 - **The subscription's end** (WFCoord, 2026-10-15): the Plus subscription is not renewed after 2026-11-13, so every
-  Codex session is planned for 2026-11-02 to 11-06, with no slot after the 13th. Extra credits are bought only for a
+  Codex session is planned for 2026-11-02 to 11-06 (brought forward to 2026-10-15), with no slot after the 13th. Extra credits are bought only for a
   run the approver names as fundamental that finds the quota exhausted: that is new spending, asked for with its
   amount, never assumed by this consent.
 - **The campaign files** `campaigns/x-codex-s3-codex.yaml` and `x-codex-s3-claude-code.yaml`: S3@1.0, `arms:
@@ -365,7 +365,7 @@ Output in the main checkout's git-ignored `spikes/task-094/out/`.
   13. nits — `mROf`'s comment displaced, the Codex clear named "auto-memory", REQ-RUN-15's "never read". **Fixed.**
       The adapter's map of threads is never pruned: kept, one entry per step.
   14. nit — dl-019 bounds 1 (scope, dates) and 9 (disclosure) are not enforced by code. **Procedural, as dl-019
-      states them:** the runs are this task's seven, from the main checkout, in 2026-11-02 … 06; the disclosure goes to
+      states them:** the runs are this task's seven, from the main checkout, in 2026-11-02 … 06 (brought forward to 2026-10-15 by the approver); the disclosure goes to
       the comparison's record in this task and to the ledger. Nothing in the code refuses a later `codex` campaign: a
       new decision is the gate (bound 1).
 - Checks on `3933fac`: `tsc` and lint clean; unit and acceptance 1612 passed, 8 skipped; the stub rehearsal again
