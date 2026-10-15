@@ -143,7 +143,7 @@ container as an environment variable and is scrubbed out of every stored transcr
 spends real money, a campaign naming it refuses to start unless `--allow-spending` is passed.
 
 ```bash
-npx bench scenario dry-run <id>@<version> --arm <arm> [--model <id>] [--allow-spending]
+npx bench scenario dry-run <id>@<version> --arm <arm> [--model <id>] [--profile <file>] [--allow-spending]
 ```
 
 A **dry run** is one real run of a scenario version in one arm, made to measure what it costs. It

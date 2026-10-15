@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 
 import { loadArm } from '../arms/index.js';
 import { canonicalJson, fail, harnessCoverage, modelId, ok } from '../core/index.js';
@@ -23,6 +23,11 @@ export interface DryRunRequest {
   readonly arm: string;
   /** The model; the profile's `models.default` when absent. */
   readonly model?: string;
+  /**
+   * The profile, a file relative to the repository (REQ-CLI-05 as amended in 1.32, task-094);
+   * `scenarios/dry-run.yaml` when absent.
+   */
+  readonly profile?: string;
 }
 
 /** A dry run ready to execute: its profile, its one scenario version, arm and model, and its identity. */
@@ -49,7 +54,8 @@ export interface CheckedDryRun {
  */
 export function checkDryRun(request: DryRunRequest, root: string): Result<CheckedDryRun> {
   const scenariosRoot = join(root, 'scenarios');
-  const profileFile = join(scenariosRoot, DRY_RUN_PROFILE);
+  const profileFile =
+    request.profile === undefined ? join(scenariosRoot, DRY_RUN_PROFILE) : resolve(root, request.profile);
   const profile = loadDryRunProfile(profileFile);
   if (!profile.ok) return profile;
 

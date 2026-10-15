@@ -52,7 +52,7 @@ export const USAGE =
   '       bench campaign run <file> [--resume <campaign-id>/<n>] [--allow-spending]\n' +
   '       bench campaign compare <campaign-id>/<n> <campaign-id>/<n>\n' +
   '       bench scenario validate <id>@<version> [--holdout <path>]\n' +
-  '       bench scenario dry-run <id>@<version> --arm <arm> [--model <id>] [--allow-spending]\n' +
+  '       bench scenario dry-run <id>@<version> --arm <arm> [--model <id>] [--profile <file>] [--allow-spending]\n' +
   '       bench score <campaign-id>/<n>|dry-runs/<n> [--final] [--holdout <path>]\n' +
   '       bench run show <run> [--full]\n' +
   '       bench run compare <run> <run>\n' +

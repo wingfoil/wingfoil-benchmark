@@ -18,9 +18,11 @@ export interface DryRunArguments extends DryRunRequest {
 /** The options that take a value, and the flag. */
 const ARM_OPTION = '--arm';
 const MODEL_OPTION = '--model';
+/** Another profile than `scenarios/dry-run.yaml` (REQ-CLI-05 as amended in 1.32): a spike's own pins. */
+const PROFILE_OPTION = '--profile';
 
 /**
- * `<id>@<version> --arm <arm> [--model <id>] [--allow-spending]`, the options in any order, each at
+ * `<id>@<version> --arm <arm> [--model <id>] [--profile <file>] [--allow-spending]`, the options in any order, each at
  * most once; `undefined` for anything else. `--arm` is required.
  */
 export function parseDryRunArguments(args: readonly string[]): DryRunArguments | undefined {
@@ -36,7 +38,7 @@ export function parseDryRunArguments(args: readonly string[]): DryRunArguments |
       continue;
     }
     const value = rest[index + 1];
-    if (![ARM_OPTION, MODEL_OPTION].includes(option) || values.has(option)) return undefined;
+    if (![ARM_OPTION, MODEL_OPTION, PROFILE_OPTION].includes(option) || values.has(option)) return undefined;
     if (value === undefined || value === '' || value.startsWith('-')) return undefined;
     values.set(option, value);
     index += 1;
@@ -44,11 +46,18 @@ export function parseDryRunArguments(args: readonly string[]): DryRunArguments |
   const arm = values.get(ARM_OPTION);
   if (arm === undefined) return undefined;
   const model = values.get(MODEL_OPTION);
-  return { ...reference, arm, ...(model === undefined ? {} : { model }), allowSpending };
+  const profile = values.get(PROFILE_OPTION);
+  return {
+    ...reference,
+    arm,
+    ...(model === undefined ? {} : { model }),
+    ...(profile === undefined ? {} : { profile }),
+    allowSpending,
+  };
 }
 
 /**
- * REQ-CLI-05: `bench scenario dry-run <id>@<version> --arm <arm> [--model <id>] [--allow-spending]`
+ * REQ-CLI-05: `bench scenario dry-run <id>@<version> --arm <arm> [--model <id>] [--profile <file>] [--allow-spending]`
  * (F3.3). Checks the dry run and whatever spending it needs before anything is built, prints what it
  * expects to spend, runs it, and prints what it spent (REQ-NFR-06). Exit 0 when the run completed.
  */
