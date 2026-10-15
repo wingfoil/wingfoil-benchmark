@@ -406,3 +406,6 @@ Output in the main checkout's git-ignored `spikes/task-094/out/`.
   7. nit — experiment design said "the arms", the code the arms' digests. **Fixed.**
   8. nit — `probe.sh` P0: the bounds named in a comment, the path in a JS literal, a stale `dist/`, the path mounted
      as given. **Fixed** (checks `dist/` is newer than `src/`, passes the path as an argument, mounts the real path).
+- **Round 4** (a new independent read-only Explore subagent, on `26ff6b5`): every round-3 outcome confirmed; one nit.
+  1. nit — P0's freshness check compared one file, while READ loads the adapter. **Fixed:** P0 and READ refuse a
+     `dist/` older than any `src/**/*.ts` (rehearsed: a touched source refused, exit 64; rebuilt, clean).
