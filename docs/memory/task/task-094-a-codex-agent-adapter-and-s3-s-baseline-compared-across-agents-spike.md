@@ -472,4 +472,9 @@ Output in the main checkout's git-ignored `spikes/task-094/out/`.
   r2 0.3015 USD, 0.6581 USD in all (0.5824 €) API-equivalent, 0 € spent. The secret scan of its results and
   workspaces: clean; the credential's mtime unchanged; no `bench-` container left. Two ledger lines. **Every Codex
   session is now run**: P0, CX-D, CX-1, CX-2.
+- **CC-D** (2026-10-15, 14:02–14:04 UTC, `bench scenario dry-run S3@1.0 --arm baseline --profile
+  campaigns/x-codex-s3-claude-code.dry-run.yaml --allow-spending`, `BENCH_AGENT_TOKEN_FILE=$HOME/.claude/bench-token`):
+  `dry-runs/21`, `completed`, five steps, no intervention, `CLAUDE.md`, `claude-sonnet-5-5` priced `list`. 0.2690 USD
+  (0.2381 €): steps 0.0615, 0.0412, 0.0404, 0.0656, 0.0603 USD; under the 2 € stop, so the campaign followed. The
+  token scan (`grep -rlFf` over the results and workspace, the value never printed): clean. One ledger line.
 
