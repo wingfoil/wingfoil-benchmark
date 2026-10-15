@@ -556,3 +556,9 @@ M-R across is measured (no note).
   (checked here: it no longer exists; its content was never read). **For a later use of dl-019's mount:** log out with
   the directory mounted, not the file. The date is in the ledger.
 
+- **Full suites** (`scripts/full-suites.sh task/task-094`, asked by the approver for when the load fell; the first wait
+  was cut by the machine's reboot and restarted; they ran 20:57–21:19 on 2026-10-15) on **`cf451fe`**, the commit
+  offered: `LINT 0 TEST 0 BUILD 0 BIN 0 DOCKER 0`. `npm test` 1625 passed, 8 skipped, coverage 97.71 % (statements);
+  `test:bin` 8/8; `test:docker` 22 passed, 2 skipped (the same two conditional skips as task-085's and task-086's
+  runs, 20 + 2 then; the two new ones are Codex's). Log `.cache/full-suites/2026-10-15/task_task-094-cf451fe-205758.txt`.
+  No `bench-` container left. The commits after `cf451fe` are these notes only.
