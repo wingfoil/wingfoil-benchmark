@@ -562,3 +562,6 @@ M-R across is measured (no note).
   `test:bin` 8/8; `test:docker` 22 passed, 2 skipped (the same two conditional skips as task-085's and task-086's
   runs, 20 + 2 then; the two new ones are Codex's). Log `.cache/full-suites/2026-10-15/task_task-094-cf451fe-205758.txt`.
   No `bench-` container left. The commits after `cf451fe` are these notes only.
+- **The approver in chat, 2026-10-15:** this task and dl-019 reworded to name no other session (`e16bf13` on this
+  branch; `9d511ed` on main, with `Approver:` and `Reason:`). The same kind of mention in earlier elements and commit
+  messages goes through a bug and a task; rewriting history or what is pushed is the approver's.
