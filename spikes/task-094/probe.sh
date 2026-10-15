@@ -38,6 +38,7 @@ secrets() {
 
 fresh_dist() { # P0 and READ load the built dist/: no source file may be newer than it
   [ -f "$REPO/dist/agents/index.js" ] || { echo "no dist/: npm run build"; exit 64; }
+  [ -d "$REPO/src" ] && [ -r "$REPO/src" ] || { echo "no readable src/ to compare dist/ with"; exit 64; }
   # No pipe: under pipefail, find killed by grep -q's early exit would make a stale dist/ pass (review round 5).
   if [ -n "$(find "$REPO/src" -name '*.ts' -newer "$REPO/dist/agents/index.js" -print -quit)" ]; then
     echo "dist/ is older than src/: npm run build"; exit 64

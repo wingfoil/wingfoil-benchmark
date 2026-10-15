@@ -410,7 +410,11 @@ Output in the main checkout's git-ignored `spikes/task-094/out/`.
   1. nit — P0's freshness check compared one file, while READ loads the adapter. **Fixed:** P0 and READ refuse a
      `dist/` older than any `src/**/*.ts` (rehearsed: a touched source refused, exit 64; rebuilt, clean).
 - **Round 5** (a new independent read-only Explore subagent, on `c9c1e7a`): one finding. Under `pipefail`,
-  `find … | grep -q .` lets a stale `dist/` pass once `find` has more than a pipe buffer to write (every source newer,
+  `find … | grep -q .` lets a stale `dist/` pass once `find` has more than one buffered write (about 4 KB) to make (every source newer,
   as after a checkout), since `find` dies of SIGPIPE. **Fixed** with `find … -print -quit` and no pipe; rehearsed with
   every `src/**/*.ts` touched (refused, exit 64) and after a build (clean, exit 0). The round-4 note held only for a
   few newer files.
+- **Round 6** (a new independent read-only Explore subagent, on `1ebc877`): the round-5 fix confirmed; two nits, both
+  **fixed:** `fresh_dist` refuses a missing or unreadable `src/` (where `find` would print nothing), and round 5's note
+  names the buffered write, not a pipe buffer. No blocking or should-fix finding in rounds 4–6: **the offline review
+  is closed** with these two nits fixed. The real sessions and the comparison get their own round before in-review.
