@@ -465,4 +465,11 @@ Output in the main checkout's git-ignored `spikes/task-094/out/`.
   model priced `price-table`. 0.3323 USD API-equivalent (0.2941 €): steps 0.0833, 0.0496, 0.0385, 0.0818, 0.0791 USD;
   37–86 s a step. The secret scan of `results/dry-runs/20` and its workspace: clean. The credential's mtime unchanged:
   no refresh. No `bench-` container left. One ledger line.
+- **CX-1, CX-2** (2026-10-15, 13:51–14:02 UTC; the approver read the plan's usage before it: 5-hour 92 %, weekly 97 %;
+  `bench campaign run campaigns/x-codex-s3-codex.yaml --allow-spending` from the main checkout, the worktree's build
+  at `188b578`): the estimate read CX-D (high 0.7940 €, guard 0.7940 € under the 4 € warning); campaign
+  `e6963fa82f29/1`, 2 runs completed, 0 failed; every step `completed`, no intervention, `price-table`. r1 0.3566 USD,
+  r2 0.3015 USD, 0.6581 USD in all (0.5824 €) API-equivalent, 0 € spent. The secret scan of its results and
+  workspaces: clean; the credential's mtime unchanged; no `bench-` container left. Two ledger lines. **Every Codex
+  session is now run**: P0, CX-D, CX-1, CX-2.
 
