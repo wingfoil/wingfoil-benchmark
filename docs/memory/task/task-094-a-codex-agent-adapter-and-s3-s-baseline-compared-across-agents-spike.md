@@ -568,3 +568,9 @@ M-R across is measured (no note).
 - The approver's `memory approve task-094-… --reason "…"` → `e37bc4e`, run from this worktree (`in-review →
   approved`, `Approver:`/`Reason:` trailers with the drafted reason, only `status` changed). Matches. The approver in
   chat: the earlier, already pushed mentions are left as they are.
+- Merged into main with `--no-ff` → `50a4dfe` (no conflict: the results and campaign files committed on main at
+  `8707559` were the branch's, byte for byte).
+- `npx wingfoil memory submit task-094-…` on main → `d890530` (`approved → done`, one file, `status` only). Matches.
+- Worktree removed after `git status --ignored`: only `node_modules/`, `dist/` and `coverage/`; every run's evidence
+  was written to the main checkout from the start (`spikes/task-094/out/`, `results/`, `runs/`). Branch deleted.
+
