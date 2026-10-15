@@ -370,3 +370,25 @@ Output in the main checkout's git-ignored `spikes/task-094/out/`.
       new decision is the gate (bound 1).
 - Checks on `3933fac`: `tsc` and lint clean; unit and acceptance 1612 passed, 8 skipped; the stub rehearsal again
   (clean; the planted token found, exit 4).
+- **Round 2** (a new independent read-only Explore subagent, on `b234763`): nothing blocking; it confirmed round 1's
+  outcomes but 3 and 6. Red tests `8687fa3`, fixes `06e1a58`. Findings and outcomes:
+  1. should-fix — round 1's limit fix let an earlier `error` event turn a later, unrelated failure into a stop, and
+     still missed a limit named by an `error` with no `turn.failed`. **Fixed** as Codex does (`last_critical_error`):
+     a `turn.failed` is read by its own message; only when none names one does the last `error` event stand; round
+     1's test of the opposite behaviour replaced; tests.
+  2. should-fix — a resume that restarted its count yet ends at or above the step's total cannot be told apart.
+     **Stated:** REQ-RUN-09 1.32 says so, and `probe.sh READ` records which 0.162.1 does (P0's resume).
+  3. should-fix — the runner mounted the path as given while the preflight checked its real path. **Fixed:** the
+     real path is handed to the runner; test.
+  4. should-fix — the M-R across gate let caps or the approver policy differ, and measured two executions of one
+     agent. **Fixed:** the agent's name must differ; harnesses, arm digests, caps and approver policy must be equal
+     (scenarios and repetitions only select groups); tests. The slow comparison test's newer side is now Codex.
+  5. should-fix (coverage) — no CLI-level test that `refreshSecrets` reaches the runner. **Added:** `bench campaign
+     run` with a refresh during the step; it passed at once (characterization).
+  6. nit — P0 did not check a real credential as the preflight does, and accepted `{}`. **Fixed:** both refused before
+     any container (rehearsed with a fake credential: a directory of mode 755 refused; `{}` refused).
+  7. nit — an empty array under `set -u` on old bash. **Fixed.**
+  8. nit — REQ-RUN-15 and REQ-NFR-01 1.32 behind the code (directory mode, real path, re-read values). **Fixed.**
+  9. nit — LOGIN without a candidate. **Fixed** (exit 64).
+- Checks on `06e1a58`: `tsc` and lint clean; unit and acceptance 1617 passed, 8 skipped; the stub rehearsal again
+  (clean, the resume reported as the thread total by the stub; the planted token found, exit 4).
