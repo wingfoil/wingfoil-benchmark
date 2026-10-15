@@ -418,3 +418,6 @@ Output in the main checkout's git-ignored `spikes/task-094/out/`.
   **fixed:** `fresh_dist` refuses a missing or unreadable `src/` (where `find` would print nothing), and round 5's note
   names the buffered write, not a pipe buffer. No blocking or should-fix finding in rounds 4–6: **the offline review
   is closed** with these two nits fixed. The real sessions and the comparison get their own round before in-review.
+- **The approver in chat, 2026-10-15** ("ok per tutte e tre"): departure 3 confirmed (`CODEX_HOME` emptied before
+  every step, but its credential and configuration); `gpt-6.1-sol` at `medium`; Codex 0.162.1 kept unless a newer
+  release is out on the day of the runs, in which case the re-pin is asked first.
