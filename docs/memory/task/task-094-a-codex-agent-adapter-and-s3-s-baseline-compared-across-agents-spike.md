@@ -182,7 +182,7 @@ v0.3 if the approver wants it).
 
 ### The real sessions (the consent is this task's pending → backlog approval)
 
-Planned in the week of **2026-11-02 to 2026-11-06**, before calibration part 2 and the subscription's end, from the
+Planned in the week of **2026-11-02 to 2026-11-06** (brought forward to 2026-10-15 by the approver in chat: see the Execution notes), before calibration part 2 and the subscription's end, from the
 main checkout. Every session is S3@1.0, baseline arm. Order: Codex first (no money), then Claude.
 
 | # | Agent | Model, effort | What | Steps | Cap | Real spending |
@@ -469,7 +469,7 @@ Output in the main checkout's git-ignored `spikes/task-094/out/`.
   `bench campaign run campaigns/x-codex-s3-codex.yaml --allow-spending` from the main checkout, the worktree's build
   at `188b578`): the estimate read CX-D (high 0.7940 €, guard 0.7940 € under the 4 € warning); campaign
   `e6963fa82f29/1`, 2 runs completed, 0 failed; every step `completed`, no intervention, `price-table`. r1 0.3566 USD,
-  r2 0.3015 USD, 0.6581 USD in all (0.5824 €) API-equivalent, 0 € spent. The secret scan of its results and
+  r2 0.3014 USD, 0.6581 USD in all (0.5824 €) API-equivalent, 0 € spent. The secret scan of its results and
   workspaces: clean; the credential's mtime unchanged; no `bench-` container left. Two ledger lines. **Every Codex
   session is now run**: P0, CX-D, CX-1, CX-2.
 - **CC-D** (2026-10-15, 14:02–14:04 UTC, `bench scenario dry-run S3@1.0 --arm baseline --profile
@@ -481,7 +481,7 @@ Output in the main checkout's git-ignored `spikes/task-094/out/`.
   --allow-spending`): the estimate read CC-D (high 0.6428 €); campaign `ae7ce2af99a5/1`, 2 runs completed, 0 failed;
   every step `completed`, no intervention, priced `list`. r1 0.3376 USD, r2 0.3050 USD, 0.6426 USD in all (0.5688 €).
   The token scan: clean; no `bench-` container left. Two ledger lines. **Every one of the seven sessions is run.**
-- **Spending:** Claude 0.9116 USD in all (CC-D, CC-1, CC-2; about 0.81 €) of the 9 € consented; Codex 1.0657 USD
+- **Spending:** Claude 0.9116 USD in all (CC-D, CC-1, CC-2; about 0.81 €) of the 9 € consented; Codex 1.0656 USD
   API-equivalent (P0, CX-D, CX-1, CX-2), 0 € spent, on the Plus plan.
 - **Results committed on main** (`8707559`, as the Design says): both executions, both dry runs, the comparison and
   the four campaign files (identical to the branch's); transcripts ignored (REQ-RES-06). Both credentials scanned for
@@ -514,12 +514,29 @@ M-R across is measured (no note).
   - M-R1: the outcomes agree across agents as much as within Claude; the two tests on which they differ are Claude's
     r2 failures, not an agent split.
   - **M-R2 is where the agents part:** the public interfaces the two agents write share 2 of 14–15 entries, against
-    0.70 and 1.00 within each agent. Same tests passed, different code shape: the hidden tests constrain behaviour,
-    not the exported API.
+    0.70 and 1.00 within each agent. Nearly the same tests passed (all but Claude r2's two), with a different code
+    shape: consistent with hidden tests that constrain behaviour rather than the exported API; n = 2 cannot say more.
   - M-R3: the file layout across agents (0.71) is as close as Codex's own two runs, below Claude's 1.00.
   - Quality and cost are close at n = 2: Codex passed every public and hold-out test, Claude 16/17 on the hold-out in
     both runs; cost per run 0.27–0.32 € on both, at the same list prices per token (Codex's from the benchmark's
     table, Claude's from Claude Code).
-  - Disclosure (dl-019 bound 9): Codex's sessions ran on a ChatGPT Plus subscription, its cost the benchmark's own
-    pricing from OpenAI's list (`price-table`); an outside reproduction would likely use an API key.
+  - Disclosure (dl-019 bound 9): Codex's sessions ran on a ChatGPT Plus subscription; their cost is the benchmark's
+    own pricing from OpenAI's list (`price-table`), flagged as bug-016 requires (both Codex runs are listed under
+    `unpriced` in `results/e6963fa82f29/1/aggregate.json`); an outside reproduction would most likely use an API key,
+    whose routing and limits may differ. The method page bound 9 names does not exist for an execution outside a
+    published campaign: these notes and the ledger carry the disclosure, and a site page, if any, is v0.3's.
+  - "Preliminary" is this reading's label (§4.6, n = 2 per agent); the aggregates' `preliminary: false` counts n = 2 in
+    a group, and says nothing about the comparison across agents.
+- **Round 8** (a new independent read-only Explore subagent, on `212882f`, the real sessions and the comparison): the
+  sessions match the consent (order, pins, no repeat, the 2 € stop), every figure checked against the evidence, no
+  credential pattern in the 125 committed files. Findings, all **fixed**:
+  1. should-fix — CX-2 is 0.3014 USD, not 0.3015 (its steps add to 0.3014168): Codex 1.0656, total 4.7777 USD.
+  2. should-fix — the ledger gave P0 a 3 € ceiling; P0 had `step_time_s` 3600 s and no cost cap (≤ 1 USD expected).
+  3. nit — the disclosure now names routing and limits, the bug-016 flag (`unpriced`), and where it lives (no method
+     page outside a published campaign); the ledger names the API-key caveat.
+  4. nit — **a departure, stated:** CX-1 and CX-2 ran 43 minutes after CX-D, in the same 5-hour window, not a later
+     one as planned. The approver read the usage page first (92 % / 97 %) and said "procedi" to running the campaign
+     at once, as proposed in chat.
+  5. nit — the M-R2 reading softened to "consistent with"; "preliminary" said to be this reading's label.
+  6. nit — the Design's dates point to the brought-forward entry.
 
