@@ -73,6 +73,7 @@ f2() {
 }
 
 login() { # dl-019 bound 3: the approver logs in by hand; this prints the commands and runs nothing
+  [ -n "$VERSION" ] || { echo "no candidate: run F1 first"; exit 64; }
   cat <<EOF
 install -d -m 700 "\$HOME/.codex-bench" && { [ -e "\$HOME/.codex-bench/auth.json" ] || printf '{}' > "\$HOME/.codex-bench/auth.json"; } && chmod 600 "\$HOME/.codex-bench/auth.json"
 docker run --rm -it -e CODEX_HOME=$CODEX_HOME_IN --mount type=bind,source="\$HOME/.codex-bench/auth.json",target=$CODEX_HOME_IN/auth.json $IMAGE codex login --device-auth -c 'cli_auth_credentials_store="file"'
@@ -101,7 +102,12 @@ p0() {
   local fake="at-fake-original-$(od -An -N8 -tx8 /dev/urandom | tr -d ' ')"
   if [ -n "$FAKE" ]; then printf '{"tokens":{"access_token":"%s"}}' "$fake" > "$AUTH_FILE"; chmod 600 "$AUTH_FILE"; fi
   [ -f "$AUTH_FILE" ] || { echo "no credential file at $AUTH_FILE: the approver logs in first (LOGIN)"; exit 64; }
+  if [ -z "$FAKE" ]; then # dl-019 bounds 2, 6 and 7, as the runner's preflight checks them (the built dist/)
+    local problem; problem="$(node --input-type=module -e "const m=await import('$REPO/dist/cli/preflight.js');process.stdout.write(m.codexAuthFile('$AUTH_FILE')??'')")"
+    [ -z "$problem" ] || { echo "credential refused: $problem"; exit 64; }
+  fi
   BEFORE_VALUES="$(secrets)"
+  [ -n "$BEFORE_VALUES" ] || { echo "credential holds no value: log in first (LOGIN)"; exit 64; }
   mkdir -p "$dir"; rm -rf "$dir/workspace"
   cp -r "$REPO/scenarios/S3/1.0/seed" "$dir/workspace"
   cp "$REPO/arms/baseline/manual.md" "$dir/workspace/AGENTS.md"
@@ -143,8 +149,14 @@ read_streams() { # the adapter's own reading of P0's streams, through the built 
     const lines = (f) => { try { return readFileSync(f, 'utf8').split('\n').filter(Boolean); } catch { return []; } };
     const step = readCodexSession(lines('$OUT/P0/session.jsonl'), { model: '$MODEL', usdToEur: 0.8851 });
     const resume = readCodexSession(lines('$OUT/P0/resume.jsonl'), { model: '$MODEL', usdToEur: 0.8851, before: step.totals, threadId: step.threadId });
-    const brief = (s) => ({ outcome: s.outcome, error: s.error, threadId: s.threadId, usage: s.usage, models: s.models, finalMessage: s.finalMessage });
-    writeFileSync('$OUT/P0/adapter.json', JSON.stringify({ step: brief(step), resume: brief(resume) }, null, 2) + '\n');
+    const brief = (s) => ({ outcome: s.outcome, error: s.error, threadId: s.threadId, usage: s.usage, totals: s.totals, models: s.models, finalMessage: s.finalMessage });
+    // Whether 0.162.1's resume reports the thread's total, the step's included, or restarts its count (REQ-RUN-09 1.32).
+    const raw = (f) => { let t; for (const l of lines(f)) { try { const e = JSON.parse(l); if (e.type === 'turn.completed') t = e.usage; } catch {} } return t; };
+    const [a, b] = [raw('$OUT/P0/session.jsonl'), raw('$OUT/P0/resume.jsonl')];
+    const resumeTotal = a === undefined || b === undefined ? 'not observed'
+      : Object.keys(a).every((k) => (b[k] ?? 0) >= a[k]) ? 'the thread total (every field at or above the step\'s)' : 'restarted (a field below the step\'s)';
+    writeFileSync('$OUT/P0/adapter.json', JSON.stringify({ step: brief(step), resume: brief(resume), resumeTotal }, null, 2) + '\n');
+    console.log('READ: the resume reports ' + resumeTotal);
     console.log('READ: step ' + step.outcome + ', ' + step.usage.costUsd.toFixed(4) + ' USD; resume ' + resume.outcome + ', ' + resume.usage.costUsd.toFixed(4) + ' USD (API-equivalent, price-table)');
   "
 }
@@ -155,7 +167,7 @@ scan() { # exit 3 when the scan cannot run, 4 when it finds a value
   local found rc=0
   # Only a rehearsal keeps its (fake) credential under out/; a real one is outside both directories.
   local exclude=(); [ -z "$FAKE" ] || exclude=(--exclude="$(basename "$AUTH_FILE")")
-  found="$(grep -rlFf <(printf '%s\n' "$values") "$OUT" "$SPIKE_DIR" "${exclude[@]}" 2>/dev/null)" || rc=$?
+  found="$(grep -rlFf <(printf '%s\n' "$values") "$OUT" "$SPIKE_DIR" ${exclude[@]+"${exclude[@]}"} 2>/dev/null)" || rc=$?
   [ "$rc" -le 1 ] || { echo "secret scan failed: grep exit $rc"; exit 3; }
   if [ -n "$found" ]; then echo "secret scan: a credential value is in $(echo "$found" | wc -l) file(s):"; echo "$found"; exit 4; fi
   echo "secret scan: clean"

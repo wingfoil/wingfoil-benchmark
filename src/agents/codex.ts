@@ -91,8 +91,11 @@ export function readCodexSession(lines: readonly string[], reading: CodexReading
   let turns = 0;
   let finalMessage: string | undefined;
   let failure: string | undefined;
-  /** A limit an `error` event named: Codex's retries ("Reconnecting…") name none, and are not failures. */
-  let errorLimit: 'quota exhausted' | 'rate limited' | undefined;
+  /**
+   * The last `error` event's message. Codex's retries ("Reconnecting…") are not failures; as Codex itself does
+   * (`last_critical_error`), it stands for the session's failure only when no `turn.failed` names one.
+   */
+  let lastError: string | undefined;
 
   const result = (outcome: CodexSession['outcome'], error?: string): CodexSession => {
     const price = (reading.prices ?? OPENAI_PRICES)[reading.model];
@@ -174,7 +177,7 @@ export function readCodexSession(lines: readonly string[], reading: CodexReading
         break;
       }
       case 'error':
-        if (typeof event.message === 'string') errorLimit = limitOf(event.message) ?? errorLimit;
+        if (typeof event.message === 'string') lastError = event.message;
         break;
       case 'item.completed': {
         const item = (event.item ?? {}) as Record<string, unknown>;
@@ -187,10 +190,14 @@ export function readCodexSession(lines: readonly string[], reading: CodexReading
   }
 
   if (failure !== undefined) {
-    const limit = limitOf(failure) ?? errorLimit;
+    const limit = limitOf(failure);
     return limit === undefined ? result('failed', failure) : result(limit);
   }
-  if (turns === 0) return result('failed', 'the session ended with no turn.completed event');
+  if (turns === 0) {
+    const limit = lastError === undefined ? undefined : limitOf(lastError);
+    if (limit !== undefined) return result(limit);
+    return result('failed', 'the session ended with no turn.completed event');
+  }
   return result('completed');
 }
 

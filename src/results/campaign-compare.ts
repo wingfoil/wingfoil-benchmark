@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { z } from 'zod';
 
-import { fail, ok, readYamlFile } from '../core/index.js';
+import { canonicalJson, fail, ok, readYamlFile } from '../core/index.js';
 import type { Issue, Result } from '../core/index.js';
 
 import { AGGREGATE_FILE, mRAcross, scoredRunsOf } from './aggregate.js';
@@ -184,10 +184,7 @@ export function compareExecutions(
   const out: Collected = { rows: [], notCompared: [], onlyIn: [], compared: [], across: [] };
   const crossModel = before.aggregate.model !== after.aggregate.model;
   const differ = pinsDiffer(before.pins, after.pins);
-  // M-R across is across agents (experiment design 1.4 §4.5): the agent and the models it runs may differ, nothing else.
-  const others = differ.map((d) => d.pin).filter((pin) => !pin.startsWith('agent.') && !pin.startsWith('models.'));
-  const acrossNote =
-    others.length === 0 ? undefined : `not measured: pins other than the agent's differ: ${others.join(', ')}`;
+  const acrossNote = acrossNoteOf(before.pins, after.pins, differ);
   const context = { root, before, after, primaryOf, out, ...(acrossNote === undefined ? {} : { acrossNote }) };
   compareGroups(context, before.aggregate.groups, after.aggregate.groups, crossModel);
   // Each slice against the other side's slice of its model (REQ-SCO-13), or said not to be compared.
@@ -532,6 +529,26 @@ function pinAt(pins: Record<string, unknown>, path: readonly string[]): string {
 }
 
 /** The pins that differ (REQ-SCO-13): the default model, the agent, each model's effort and each arm's harness. */
+/**
+ * Why M-R across is not measured, if it is not (experiment design 1.4 §4.5): it is across two agents, so the agent's
+ * name must differ; the agent's pins and the models it runs may differ, and so may the scenarios a campaign lists and
+ * their repetitions, which only select the groups; the harnesses, the arms' digests, the caps and the approver
+ * policy, which shape a run, may not.
+ */
+function acrossNoteOf(
+  before: Record<string, unknown>,
+  after: Record<string, unknown>,
+  differ: readonly PinDiffers[],
+): string | undefined {
+  const agentName = (pins: Record<string, unknown>) => pinAt(pins, ['agent', 'name']);
+  if (agentName(before) === agentName(after)) return `not measured: the same agent, ${agentName(after)}, on both sides`;
+  const others = [
+    ...differ.map((d) => d.pin).filter((pin) => !pin.startsWith('agent.') && !pin.startsWith('models.')),
+    ...['caps', 'approver_policy'].filter((key) => canonicalJson(before[key] ?? null) !== canonicalJson(after[key] ?? null)),
+  ];
+  return others.length === 0 ? undefined : `not measured: pins other than the agent's differ: ${others.join(', ')}`;
+}
+
 function pinsDiffer(before: Record<string, unknown>, after: Record<string, unknown>): PinDiffers[] {
   const keysOf = (pins: Record<string, unknown>, at: string) => {
     const node = pins[at];

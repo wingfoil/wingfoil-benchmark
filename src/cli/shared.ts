@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, realpathSync } from 'node:fs';
 import { dirname } from 'node:path';
 
 import {
@@ -236,8 +236,9 @@ function codexCredentialFile(): Result<string> {
     };
   }
   const problem = codexAuthFile(file);
+  // The real path: what Docker mounts (an absolute source) and what its inspection reports for the mount check.
   return problem === undefined
-    ? { ok: true, value: file }
+    ? { ok: true, value: realpathSync(file) }
     : { ok: false, issues: [{ path: CODEX_AUTH_VARIABLE, message: `is invalid: ${problem}` }] };
 }
 
