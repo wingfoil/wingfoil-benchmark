@@ -200,6 +200,10 @@ main checkout. Every session is S3@1.0, baseline arm. Order: Codex first (no mon
 - **Stops:** a failed session or run is not repeated without new consent. If P0 fails, or its stream cannot be read
   as designed, the task stops and asks before CX-D. If CC-D costs more than 2 € (over twice the expectation), it
   stops and asks before CC-1. A run stopped by the plan's quota is recorded, not repeated.
+- **The subscription's end** (WFCoord, 2026-10-15): the Plus subscription is not renewed after 2026-11-13, so every
+  Codex session is planned for 2026-11-02 to 11-06, with no slot after the 13th. Extra credits are bought only for a
+  run the approver names as fundamental that finds the quota exhausted: that is new spending, asked for with its
+  amount, never assumed by this consent.
 - **The campaign files** `campaigns/x-codex-s3-codex.yaml` and `x-codex-s3-claude-code.yaml`: S3@1.0, `arms:
   [baseline]`, `repetitions: { S3: 2 }`, the caps above, `step_time_s: 3600`, `step_tokens: 20000000`,
   `usd_to_eur: 0.8851`, approver policy v1. Their results' small files are committed on main after the runs, since
