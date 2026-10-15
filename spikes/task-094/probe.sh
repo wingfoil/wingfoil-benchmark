@@ -36,6 +36,13 @@ secrets() {
     walk(JSON.parse(t));process.stdout.write([...out].join("\n"))' "$AUTH_FILE"
 }
 
+fresh_dist() { # P0 and READ load the built dist/: no source file may be newer than it
+  [ -f "$REPO/dist/agents/index.js" ] || { echo "no dist/: npm run build"; exit 64; }
+  if find "$REPO/src" -name '*.ts' -newer "$REPO/dist/agents/index.js" | grep -q .; then
+    echo "dist/ is older than src/: npm run build"; exit 64
+  fi
+}
+
 f1() {
   mkdir -p "$OUT/f1/source"
   npm view @openai/codex dist-tags --json > "$OUT/f1/dist-tags.json"
@@ -97,13 +104,13 @@ p0() {
   [ -n "$FAKE" ] || [ "${BENCH_SPIKE_CONFIRM:-}" = 1 ] || { echo "P0 runs a real Codex session: BENCH_SPIKE_CONFIRM=1"; exit 64; }
   # A session is never repeated without new consent: its output exists from the first redirect on.
   [ ! -e "$dir/session.jsonl" ] || { echo "P0 already ran ($dir): not repeated"; exit 2; }
+  fresh_dist
   image
   # A fake credential made at run time, so that no value of it is written in this script (the scan reads the script).
   local fake="at-fake-original-$(od -An -N8 -tx8 /dev/urandom | tr -d ' ')"
   if [ -n "$FAKE" ]; then printf '{"tokens":{"access_token":"%s"}}' "$fake" > "$AUTH_FILE"; chmod 600 "$AUTH_FILE"; fi
   [ -f "$AUTH_FILE" ] || { echo "no credential file at $AUTH_FILE: the approver logs in first (LOGIN)"; exit 64; }
   if [ -z "$FAKE" ]; then # dl-019 bounds 2 and 7, as the runner's preflight checks them (the built dist/)
-    [ "$REPO/dist/cli/preflight.js" -nt "$REPO/src/cli/preflight.ts" ] || { echo "dist/ is older than src/: npm run build"; exit 64; }
     local problem; problem="$(node --input-type=module -e "const m=await import('$REPO/dist/cli/preflight.js');process.stdout.write(m.codexAuthFile(process.argv[1])??'')" "$AUTH_FILE")"
     [ -z "$problem" ] || { echo "credential refused: $problem"; exit 64; }
   fi
@@ -145,6 +152,7 @@ p0() {
 }
 
 read_streams() { # the adapter's own reading of P0's streams, through the built dist/
+  fresh_dist
   node --input-type=module -e "
     import { readFileSync, writeFileSync } from 'node:fs';
     const { readCodexSession } = await import('$REPO/dist/agents/index.js');
