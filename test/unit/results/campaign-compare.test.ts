@@ -113,8 +113,8 @@ describe('compareExecutions (REQ-SCO-13, task-083)', () => {
       'TC@1.0/wingfoil fake-model',
     ]);
     const [baseline] = result.value.m_r_across;
-    expect(baseline?.earlier.n).toBe(1);
-    expect(baseline?.newer.n).toBe(1);
+    expect(baseline?.earlier?.n).toBe(1);
+    expect(baseline?.newer?.n).toBe(1);
     expect(baseline?.m_r1?.total).toBeGreaterThan(0);
     expect(baseline?.m_r2?.pairs).toHaveLength(1);
   }, 240_000);

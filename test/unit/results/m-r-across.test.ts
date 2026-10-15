@@ -10,7 +10,7 @@ function run(name: string, failed: string[], api: string[], paths: string[], has
     score: {
       scenario_hash: hash,
       scorer: { image: 'bench-score:x' },
-      final: { n: 3, suites: [{ id: 'public', passed: 4 - failed.length, total: 4, failed }] },
+      final: { step: 3, suites: [{ id: 'public', passed: 4 - failed.length, total: 4, failed }] },
       determinism: { interface: api, paths },
     },
   };
@@ -18,7 +18,7 @@ function run(name: string, failed: string[], api: string[], paths: string[], has
 
 const NOT_REACHED: MRRun = {
   name: 'b/1/S3@1.0/baseline/m/r9',
-  score: { scenario_hash: 'h1', scorer: { image: 'bench-score:x' }, final: { n: 3, not_reached: true } },
+  score: { scenario_hash: 'h1', scorer: { image: 'bench-score:x' }, final: { not_reached: true } },
 };
 
 describe('M-R across two executions (REQ-SCO-07 as amended in 1.32, experiment design 1.4 §4.5)', () => {

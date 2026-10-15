@@ -5,15 +5,16 @@ import { z } from 'zod';
 import { fail, ok, readYamlFile } from '../core/index.js';
 import type { Issue, Result } from '../core/index.js';
 
-import { AGGREGATE_FILE } from './aggregate.js';
-import type { AggregateFile, Group } from './aggregate.js';
+import { AGGREGATE_FILE, mRAcross, scoredRunsOf } from './aggregate.js';
+import type { AggregateFile, Group, MRAcross, MRRun } from './aggregate.js';
 import { CATEGORY_MAP, compare, readMetric, summarize } from './compare.js';
 import type { Certainty, MappedCategory, MetricId } from './compare.js';
 import { DRY_RUNS } from './dry-runs.js';
 import { readExecutionRecord } from './execution.js';
 
 /** The version of the comparison file's shape (REQ-CLI-12). */
-export const COMPARISON_VERSION = 1;
+/** 2 from task-094: `m_r_across` (REQ-SCO-13 as amended in 1.32). */
+export const COMPARISON_VERSION = 2;
 
 /** Where comparisons are written, under `results/` (REQ-CLI-12). */
 export const COMPARISONS = 'comparisons';
@@ -89,6 +90,19 @@ export interface ComparedGroup {
   readonly model: string;
 }
 
+/**
+ * M-R1–M-R3 across the two executions for one matched group (REQ-SCO-07 and REQ-SCO-13 as amended in 1.32): its model,
+ * or `<earlier> → <newer>` for a cross-model default group.
+ */
+export interface AcrossGroup extends Partial<MRAcross> {
+  readonly scenario: string;
+  readonly version: string;
+  readonly arm: string;
+  readonly model: string;
+  /** Why there is no value: a side whose runs' scores cannot be read (the rows need only the aggregates). */
+  readonly note?: string;
+}
+
 /** A pin whose value differs between the two executions, as their campaign files state it. */
 export interface PinDiffers {
   readonly pin: string;
@@ -116,6 +130,8 @@ export interface CampaignComparison {
   /** Every group compared, the baselines' included: what `rows` compares each arm against. */
   readonly compared: readonly ComparedGroup[];
   readonly rows: readonly ComparisonRow[];
+  /** Each matched group's M-R across the two executions (1.32): the agent may be the pin that varies. */
+  readonly m_r_across: readonly AcrossGroup[];
   readonly not_compared: readonly NotCompared[];
   readonly only_in: readonly OnlyIn[];
 }
@@ -131,6 +147,8 @@ const EPSILON = 1e-12;
 interface Side {
   readonly target: string;
   readonly dir: string;
+  /** The scored runs, or why they cannot be read: the rows read the aggregate only, the across-agent M-R these. */
+  readonly runs: readonly MRRun[] | { readonly unreadable: string };
   readonly aggregate: AggregateFile;
   readonly pins: Record<string, unknown>;
   readonly ended?: string;
@@ -163,7 +181,7 @@ export function compareExecutions(
   const [before, after] = sides;
   if (issues.length > 0 || before === undefined || after === undefined) return fail(issues);
 
-  const out: Collected = { rows: [], notCompared: [], onlyIn: [], compared: [] };
+  const out: Collected = { rows: [], notCompared: [], onlyIn: [], compared: [], across: [] };
   const crossModel = before.aggregate.model !== after.aggregate.model;
   const context = { root, before, after, primaryOf, out };
   compareGroups(context, before.aggregate.groups, after.aggregate.groups, crossModel);
@@ -197,6 +215,7 @@ export function compareExecutions(
     pins_differ: pinsDiffer(before.pins, after.pins),
     compared: out.compared,
     rows: out.rows,
+    m_r_across: out.across,
     not_compared: out.notCompared,
     only_in: out.onlyIn,
   });
@@ -269,9 +288,15 @@ function readSide(root: string, target: string): Result<Side> {
   const record = readExecutionRecord(dir);
   if (!record.ok) return record;
   const ended = record.value?.ended;
+  // The scored runs the across-agent M-R reads (1.32): what aggregation read, from the same committed files.
+  const scored = scoredRunsOf(dir);
+  const runs = scored.ok
+    ? scored.value
+    : { unreadable: scored.issues.map((issue) => `${where}/${issue.path} ${issue.message}`)[0] ?? where };
   return ok({
     target,
     dir,
+    runs,
     aggregate: parsed as AggregateFile,
     pins: pins.value as Record<string, unknown>,
     ...(ended === undefined ? {} : { ended }),
@@ -279,6 +304,7 @@ function readSide(root: string, target: string): Result<Side> {
 }
 
 interface Collected {
+  readonly across: AcrossGroup[];
   readonly rows: ComparisonRow[];
   readonly notCompared: NotCompared[];
   readonly onlyIn: OnlyIn[];
@@ -363,11 +389,20 @@ function compareGroups(
     }
     for (const group of inBoth) {
       const counterpart = newerBy.get(key(group)) as Group;
-      out.compared.push({
+      const model = crossModel ? `${group.model} → ${counterpart.model}` : group.model;
+      out.compared.push({ scenario, version, arm: group.arm, model });
+      const earlierRuns = runsOf(before, group);
+      const newerRuns = runsOf(after, counterpart);
+      out.across.push({
         scenario,
         version,
         arm: group.arm,
-        model: crossModel ? `${group.model} → ${counterpart.model}` : group.model,
+        model,
+        ...('unreadable' in earlierRuns
+          ? { note: `not measured: ${earlierRuns.unreadable}` }
+          : 'unreadable' in newerRuns
+            ? { note: `not measured: ${newerRuns.unreadable}` }
+            : mRAcross(earlierRuns, newerRuns)),
       });
     }
     const earlierBaseline = earlierBy.get(`${name}/baseline`);
@@ -395,6 +430,13 @@ function compareGroups(
       }
     }
   }
+}
+
+/** The scored runs of `group` on `side`, by the names the aggregate lists. */
+function runsOf(side: Side, group: Group): MRRun[] | { readonly unreadable: string } {
+  if (!Array.isArray(side.runs)) return side.runs as { readonly unreadable: string };
+  const names = new Set(group.runs);
+  return (side.runs as readonly MRRun[]).filter((run) => names.has(run.name));
 }
 
 /**

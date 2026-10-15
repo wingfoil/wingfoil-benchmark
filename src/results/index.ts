@@ -1,6 +1,7 @@
 export { nextExecution } from './executions.js';
 export { COMPARISONS, compareExecutions, writeComparison } from './campaign-compare.js';
 export type {
+  AcrossGroup,
   CampaignComparison,
   ComparedGroup,
   ComparisonRow,
@@ -26,7 +27,7 @@ export { DRY_RUNS, findDryRun, findDryRuns, latestDryRun } from './dry-runs.js';
 export type { DryRunKey, DryRunRecord, DryRunsLookup } from './dry-runs.js';
 export { executionRate, executionRuns, readStepCommits, readStepUsage, readStoredRun } from './runs.js';
 export type { StepUsage, StoredRun, StoredStep } from './runs.js';
-export { AGGREGATE_FILE, AGGREGATE_VERSION, aggregateExecution, writeAggregate } from './aggregate.js';
+export { AGGREGATE_FILE, AGGREGATE_VERSION, aggregateExecution, mRAcross, scoredRunsOf, writeAggregate } from './aggregate.js';
 export type {
   AggregateFile,
   BreakEven,
@@ -35,7 +36,10 @@ export type {
   ControlSide,
   CheckAggregate,
   Group,
+  MRAcross,
   MRAggregate,
+  MRRun,
+  MRSide,
   RecordedPin,
   Similarity,
   SnapshotAggregate,
