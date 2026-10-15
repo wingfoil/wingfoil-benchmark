@@ -9,7 +9,7 @@ tags: ["security","agent","codex"]
 ## Context
 
 The approver approved, in chat on 2026-10-15, a **Codex agent adapter spike** and a small cross-agent comparison,
-outside the v0.2 reference campaign (plan-004 step 3-bis, agreed with the coordination session WFCoord):
+outside the v0.2 reference campaign (plan-004 step 3-bis, within the approver's planning across projects):
 
 - a `codex` adapter (OpenAI's Codex CLI) behind `src/agents/port.ts`, beside `claude-code` and `fake`;
 - one scenario (S3), the baseline arm only, Claude Code at task-093's pin against Codex, reading M-R1 and M-R2 across
