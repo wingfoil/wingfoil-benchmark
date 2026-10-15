@@ -25,6 +25,11 @@ export interface CreateRequest {
    * the command line, a log or a stored result (REQ-NFR-01).
    */
   readonly env?: Readonly<Record<string, string>>;
+  /**
+   * A credential file mounted read-write besides the workspace (dl-019, REQ-NFR-01 as amended in 1.32): Codex's
+   * `auth.json`, which Codex refreshes in place. The only other mount a run's container may have (REQ-RUN-02).
+   */
+  readonly mounts?: readonly { readonly source: string; readonly target: string }[];
 }
 
 /**

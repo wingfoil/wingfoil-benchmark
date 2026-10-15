@@ -14,7 +14,7 @@ import type { HoldoutAdditions } from './holdout.js';
  */
 
 /** Names in the seed that a run's setup reserves: Claude Code reads the first two, WingFoil the third. */
-const RESERVED_ANYWHERE = ['CLAUDE.md', '.claude', '.wingfoil'];
+const RESERVED_ANYWHERE = ['CLAUDE.md', 'AGENTS.md', '.claude', '.wingfoil'];
 /** Names reserved at the seed's root only: the runner writes the first, the agent would read the second. */
 const RESERVED_AT_ROOT = ['PROJECT_RULES.md', '.mcp.json'];
 

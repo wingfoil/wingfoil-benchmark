@@ -93,10 +93,8 @@ describe("Codex's home in the run container (REQ-RUN-15, REQ-NFR-01 as amended i
 
     const summary = await runCampaign(checked, { ...ports, credentialFile: AUTH });
 
-    expect(summary.failed).toBe(1);
-    expect(readFileSync(join(summary.runs[0]?.outputDir ?? '', 'run.json'), 'utf8')).toContain(
-      'mounts other than its workspace',
-    );
+    expect(summary.runs[0]?.outcome).toBe('failed');
+    expect(summary.runs[0]?.error).toMatch(/mounts other than its workspace: .*\/host-etc/);
   });
 });
 
