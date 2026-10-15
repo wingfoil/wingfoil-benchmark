@@ -1,3 +1,4 @@
+import { codexFileSecrets } from '../agents/index.js';
 import { missingCapabilities } from '../arms/index.js';
 import { effortRefusal, fail, missingEffort, ok, reasonOf } from '../core/index.js';
 import type { CampaignFile, Result } from '../core/index.js';
@@ -150,7 +151,7 @@ function validateCampaign(file: string, io: Io): number {
     io.stdout(`${formatRequirement(requirement)}\n`);
   // The effort a real agent runs each model at (dl-015): listed beside the environment, refused by `run`.
   const pins = result.value.campaign.spec;
-  if (pins.agent.name === 'claude-code') {
+  if (pins.agent.name !== 'fake') {
     for (const model of campaignModels(pins)) {
       const level = pins.agent.effort?.[model];
       io.stdout(
@@ -253,7 +254,11 @@ async function runCampaignCommand(
   const spec = checked.value.campaign.spec;
   // dl-015: a real agent runs every model at a pinned effort, refused here before the estimate.
   const unpinned = missingEffort(spec.agent, campaignModels(spec));
-  if (unpinned.length > 0) return report(unpinned.map(effortRefusal), io);
+  if (unpinned.length > 0)
+    return report(
+      unpinned.map((m) => effortRefusal(m, spec.agent.name)),
+      io,
+    );
   const rate = spec.currency.usd_to_eur;
   // What it expects to spend, before anything is built (REQ-NFR-06), and the budget guard's first two
   // refusals (F1.3, task-023): a campaign whose cost is unknown, and one above its ceiling, never start.
@@ -310,9 +315,9 @@ async function runCampaignCommand(
     },
   });
   if (!spending.ok) return report(spending.issues, io);
-  const { credential, harnessSources } = spending.value;
+  const { credential, credentialFile, secrets, harnessSources } = spending.value;
 
-  const resolved = ports ? { ok: true as const, value: ports } : portsFor(spec, credential);
+  const resolved = ports ? { ok: true as const, value: ports } : portsFor(spec, credential, credentialFile);
   if (!resolved.ok) return report(resolved.issues, io);
 
   // The warning, last, so that nobody confirms what a missing credential would stop a second later.
@@ -352,6 +357,14 @@ async function runCampaignCommand(
           ...(credential === undefined
             ? {}
             : { containerEnv: credential, secrets: Object.values(credential) }),
+          // Codex's credential is a file the runner mounts (dl-019); its values are scrubbed all the same.
+          ...(credentialFile === undefined
+            ? {}
+            : {
+                credentialFile,
+                secrets: secrets ?? [],
+                refreshSecrets: () => codexFileSecrets(credentialFile),
+              }),
           signal,
         },
         resume === undefined ? {} : { resume: resume.value },

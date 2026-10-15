@@ -1,4 +1,5 @@
 import { join, relative } from 'node:path';
+import { codexFileSecrets } from '../agents/index.js';
 
 import { effortRefusal, missingEffort, reasonOf } from '../core/index.js';
 import { latestDryRun } from '../results/index.js';
@@ -17,9 +18,11 @@ export interface DryRunArguments extends DryRunRequest {
 /** The options that take a value, and the flag. */
 const ARM_OPTION = '--arm';
 const MODEL_OPTION = '--model';
+/** Another profile than `scenarios/dry-run.yaml` (REQ-CLI-05 as amended in 1.32): a spike's own pins. */
+const PROFILE_OPTION = '--profile';
 
 /**
- * `<id>@<version> --arm <arm> [--model <id>] [--allow-spending]`, the options in any order, each at
+ * `<id>@<version> --arm <arm> [--model <id>] [--profile <file>] [--allow-spending]`, the options in any order, each at
  * most once; `undefined` for anything else. `--arm` is required.
  */
 export function parseDryRunArguments(args: readonly string[]): DryRunArguments | undefined {
@@ -35,7 +38,7 @@ export function parseDryRunArguments(args: readonly string[]): DryRunArguments |
       continue;
     }
     const value = rest[index + 1];
-    if (![ARM_OPTION, MODEL_OPTION].includes(option) || values.has(option)) return undefined;
+    if (![ARM_OPTION, MODEL_OPTION, PROFILE_OPTION].includes(option) || values.has(option)) return undefined;
     if (value === undefined || value === '' || value.startsWith('-')) return undefined;
     values.set(option, value);
     index += 1;
@@ -43,11 +46,18 @@ export function parseDryRunArguments(args: readonly string[]): DryRunArguments |
   const arm = values.get(ARM_OPTION);
   if (arm === undefined) return undefined;
   const model = values.get(MODEL_OPTION);
-  return { ...reference, arm, ...(model === undefined ? {} : { model }), allowSpending };
+  const profile = values.get(PROFILE_OPTION);
+  return {
+    ...reference,
+    arm,
+    ...(model === undefined ? {} : { model }),
+    ...(profile === undefined ? {} : { profile }),
+    allowSpending,
+  };
 }
 
 /**
- * REQ-CLI-05: `bench scenario dry-run <id>@<version> --arm <arm> [--model <id>] [--allow-spending]`
+ * REQ-CLI-05: `bench scenario dry-run <id>@<version> --arm <arm> [--model <id>] [--profile <file>] [--allow-spending]`
  * (F3.3). Checks the dry run and whatever spending it needs before anything is built, prints what it
  * expects to spend, runs it, and prints what it spent (REQ-NFR-06). Exit 0 when the run completed.
  */
@@ -68,7 +78,11 @@ export async function dryRunCommand(
 
   // dl-015: a real agent's dry run runs its model at the profile's pinned effort; refused first, as `campaign run` does.
   const unpinned = missingEffort(profile.agent, [model]);
-  if (unpinned.length > 0) return report(unpinned.map(effortRefusal), io);
+  if (unpinned.length > 0)
+    return report(
+      unpinned.map((m) => effortRefusal(m, profile.agent.name)),
+      io,
+    );
 
   const spending = checkSpending(profile, {
     allowSpending: args.allowSpending,
@@ -81,8 +95,10 @@ export async function dryRunCommand(
     },
   });
   if (!spending.ok) return report(spending.issues, io);
-  const { credential, harnessSources } = spending.value;
-  const resolved = ports ? { ok: true as const, value: ports } : portsFor(profile, credential);
+  const { credential, credentialFile, secrets, harnessSources } = spending.value;
+  const resolved = ports
+    ? { ok: true as const, value: ports }
+    : portsFor(profile, credential, credentialFile);
   if (!resolved.ok) return report(resolved.issues, io);
 
   // What it expects to spend, before anything is built (REQ-NFR-06).
@@ -113,6 +129,14 @@ export async function dryRunCommand(
         logError: (line) => io.stderr(`${line}\n`),
         // The credential reaches the container here and nowhere else (REQ-RUN-15, REQ-NFR-01).
         ...(credential === undefined ? {} : { containerEnv: credential, secrets: Object.values(credential) }),
+        // Codex's credential is a file the runner mounts (dl-019); its values are scrubbed all the same.
+        ...(credentialFile === undefined
+          ? {}
+          : {
+              credentialFile,
+              secrets: secrets ?? [],
+              refreshSecrets: () => codexFileSecrets(credentialFile),
+            }),
         signal,
       }),
     );

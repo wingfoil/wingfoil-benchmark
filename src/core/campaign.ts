@@ -23,11 +23,31 @@ const FULL_SHA = /^[0-9a-f]{40}$/;
 /** The arm every campaign runs, so that each campaign reruns its own baseline (threat T7). */
 const BASELINE_ARM = 'baseline';
 
-/** The agent adapters a campaign may name. Until W2 only `fake` can run (adr-001, default 7). */
-const AGENT_NAMES = ['claude-code', 'fake'] as const;
+/** The agent adapters a campaign may name: `codex` from task-094 (REQ-FMT-01 as amended in 1.32). */
+const AGENT_NAMES = ['claude-code', 'codex', 'fake'] as const;
 
 /** Claude Code's `--effort` levels (dl-015), and `none`: a model that takes no effort gets no flag. */
 export const EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max', 'none'] as const;
+
+/**
+ * Codex 0.162.1's reasoning efforts (`model_reasoning_effort`), less `persistent` and custom values, and `none` for no
+ * setting (REQ-FMT-01 as amended in 1.32).
+ */
+export const CODEX_EFFORT_LEVELS = [
+  'minimal',
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+  'max',
+  'ultra',
+  'none',
+] as const;
+
+/** The effort levels of each agent; the fake agent takes Claude Code's, as it always has. */
+function effortLevelsOf(agent: string): readonly string[] {
+  return agent === 'codex' ? CODEX_EFFORT_LEVELS : EFFORT_LEVELS;
+}
 
 /**
  * REQ-FMT-03. A version YAML read as a number (unquoted `0000000` or `12`) is reported as unpinned
@@ -120,12 +140,25 @@ export const campaignSchema = z.strictObject({
       'must not contain duplicates',
     )
     .refine((arms) => arms.includes(BASELINE_ARM), `must include the ${BASELINE_ARM} arm`),
-  agent: z.strictObject({
-    name: z.enum(AGENT_NAMES),
-    version: z.string().regex(RELEASE, 'must be a released version such as 2.1.221'),
-    // dl-015, REQ-RUN-16 as amended in 1.27: the effort each model runs at, `none` for no flag.
-    effort: z.record(modelId, z.enum(EFFORT_LEVELS)).optional(),
-  }),
+  agent: z
+    .strictObject({
+      name: z.enum(AGENT_NAMES),
+      version: z.string().regex(RELEASE, 'must be a released version such as 2.1.221'),
+      // dl-015, REQ-RUN-16 as amended in 1.27: the effort each model runs at, `none` for no flag; its levels are the
+      // agent's (1.32).
+      effort: z.record(modelId, z.string()).optional(),
+    })
+    .superRefine((agent, ctx) => {
+      const levels = effortLevelsOf(agent.name);
+      for (const [model, level] of Object.entries(agent.effort ?? {})) {
+        if (levels.includes(level)) continue;
+        ctx.addIssue({
+          code: 'custom',
+          path: ['effort', model],
+          message: `'${level}' is not an effort ${agent.name} takes: ${levels.join(', ')}`,
+        });
+      }
+    }),
   models: z.strictObject({
     default: modelId,
     slices: z.array(slice).optional(),
@@ -260,14 +293,14 @@ export function harnessCoverage(
  * a campaign file written before it stays readable as a record; `run` refuses it.
  */
 export function missingEffort(agent: CampaignFile['agent'], models: readonly string[]): string[] {
-  if (agent.name !== 'claude-code') return [];
+  if (agent.name === 'fake') return [];
   return [...new Set(models)].filter((model) => agent.effort?.[model] === undefined);
 }
 
 /** How `run` and `scenario dry-run` refuse a model with no effort. */
-export function effortRefusal(model: string): Issue {
+export function effortRefusal(model: string, agent = 'claude-code'): Issue {
   return {
     path: `agent.effort.${model}`,
-    message: `is required for a real agent: the effort it runs ${model} at (${EFFORT_LEVELS.join(', ')})`,
+    message: `is required for a real agent: the effort it runs ${model} at (${effortLevelsOf(agent).join(', ')})`,
   };
 }

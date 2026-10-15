@@ -194,6 +194,9 @@ describe('scanScenario (REQ-FMT-08)', () => {
   it.each([
     ['CLAUDE.md'],
     ['docs/CLAUDE.md'],
+    // Codex's manual (REQ-RUN-12 as amended in 1.32), reserved wherever it is, as CLAUDE.md.
+    ['AGENTS.md'],
+    ['docs/AGENTS.md'],
     ['.claude/settings.json'],
     ['sub/.wingfoil/dna.yaml'],
     ['PROJECT_RULES.md'],
@@ -205,7 +208,9 @@ describe('scanScenario (REQ-FMT-08)', () => {
     });
     const reserved = path
       .split('/')
-      .find((part) => ['CLAUDE.md', '.claude', '.wingfoil', 'PROJECT_RULES.md', '.mcp.json'].includes(part));
+      .find((part) =>
+        ['CLAUDE.md', 'AGENTS.md', '.claude', '.wingfoil', 'PROJECT_RULES.md', '.mcp.json'].includes(part),
+      );
     const shown = path.slice(0, path.indexOf(reserved ?? '') + (reserved ?? '').length);
     expect(scanScenario(scenario, DECLARATIONS)).toEqual([
       { path: 'seed', message: `holds ${shown}, which a run's setup reserves` },

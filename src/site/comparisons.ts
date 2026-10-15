@@ -35,7 +35,8 @@ const sideShape = z.union([
 const groupShape = { scenario: z.string(), version: z.string(), arm: z.string(), model: z.string() };
 const comparisonShape = z
   .object({
-    comparison_version: z.literal(1),
+    // 2 adds m_r_across (1.32), which the page does not show; a version-1 comparison still reads.
+    comparison_version: z.union([z.literal(1), z.literal(2)]),
     earlier: executionShape,
     newer: executionShape,
     pins_differ: z.array(z.object({ pin: z.string(), earlier: z.string(), newer: z.string() })),

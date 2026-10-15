@@ -1,9 +1,9 @@
 # Experiment Design (GQM) — WingFoil Benchmark
 
-**Version:** 1.3
-**Date:** 2026-10-14
+**Version:** 1.4
+**Date:** 2026-10-15
 **Status:** Approved
-**Traces to:** [06_features.md](06_features.md) (F2.4, F2.7, F4.x, F7.4), [07_sequencer.md](07_sequencer.md) (decisions 1–3), [03_is-isnot.md](03_is-isnot.md) 1.1; input: [X_competitor-landscape-2026-09-22.md](X_competitor-landscape-2026-09-22.md), [X_competitor-landscape-2026-10-05.md](X_competitor-landscape-2026-10-05.md) (1.2); [dl-017](../memory/decision-log/dl-017-the-v0-2-campaign-pins-wingfoil-v0-3-beside-a-bridge-on-v0-2-2-one-repetition-per-group.md) (1.3)
+**Traces to:** [06_features.md](06_features.md) (F2.4, F2.7, F4.x, F7.4), [07_sequencer.md](07_sequencer.md) (decisions 1–3), [03_is-isnot.md](03_is-isnot.md) 1.1; input: [X_competitor-landscape-2026-09-22.md](X_competitor-landscape-2026-09-22.md), [X_competitor-landscape-2026-10-05.md](X_competitor-landscape-2026-10-05.md) (1.2); [dl-017](../memory/decision-log/dl-017-the-v0-2-campaign-pins-wingfoil-v0-3-beside-a-bridge-on-v0-2-2-one-repetition-per-group.md) (1.3); [task-094](../memory/task/task-094-a-codex-agent-adapter-and-s3-s-baseline-compared-across-agents-spike.md) (1.4)
 
 ---
 
@@ -199,6 +199,19 @@ v0.1. From v0.2 they also apply across agents, once a second agent exists.
 - **M-R3 structure similarity:** the mean pairwise Jaccard similarity of the set of file paths,
   excluding generated and harness files.
 
+**Across agents (made precise in 1.4).** Two executions, one per agent, are compared group by group: the same
+scenario version and the same arm. The agent's name differs, and the agent's pins (its name, version, model and effort) are
+the only pins that may differ between the two executions that shape a run, and they are named: the harnesses, the
+arms' digests, the caps, the approver policy and the rate are the same; when one differs, there is no value. Per-run pins (scenario hash, harness commit, scorer) must be
+equal, as within a group.
+
+- **Within an agent:** each side's own M-R1–M-R3, as above.
+- **Across agents:** M-R1 over the pooled runs of both sides: a hidden test agrees when every run of both sides gives
+  it the same verdict. M-R2 and M-R3 as the mean pairwise Jaccard over the **cross pairs** only, one run from each
+  side, so that the across value is read against each side's within value, not mixed with it.
+- **Reading:** an across value below both within values says the agents differ beyond their own variation. With
+  n < 3 on a side the result is preliminary (§4.6), and no "beyond variance" claim is made. No threshold.
+
 The three are reported separately. "Substantially equivalent" is **not** declared in v0.1: the first
 campaign produces the reference values, and a threshold is proposed only after that.
 
@@ -336,4 +349,13 @@ The 30 € target above did not hold, and stays as the record of v0.1's plan.
      until WingFoil 1.0 or the benchmark's 1.0; the chain of comparisons `c82a5e74885b/2` → bridge → reference campaign.
 
    Source: [dl-017](../memory/decision-log/dl-017-the-v0-2-campaign-pins-wingfoil-v0-3-beside-a-bridge-on-v0-2-2-one-repetition-per-group.md).
+9. **Amendment 1.4 (v0.2, plan-004 step 3-bis, 2026-10-15).** The Codex spike, outside the v0.2 campaign, approved by
+   the approver in chat on 2026-10-15 and at task-094's pending → backlog gate (`de6922f`).
+   - **§4.5:** how M-R1–M-R3 apply across agents: the groups (the same scenario version and arm, the agent's pins the
+     only ones that differ), each side's own values, M-R1 over the pooled runs, M-R2 and M-R3 over the cross pairs.
+     Before 1.4, §4.5 said the metrics "also apply across agents" without saying how, and REQ-SCO-07 computed them only
+     over runs sharing every pin.
+
+   Source: [task-094](../memory/task/task-094-a-codex-agent-adapter-and-s3-s-baseline-compared-across-agents-spike.md);
+   [dl-019](../memory/decision-log/dl-019-the-codex-spike-s-subscription-credential-mounted-read-write-from-a-dedicated-directory-outside-the-repository.md).
 

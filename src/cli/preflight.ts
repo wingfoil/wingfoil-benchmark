@@ -1,4 +1,5 @@
-import { accessSync, constants, existsSync, statSync } from 'node:fs';
+import { accessSync, constants, existsSync, realpathSync, statSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
 
 import type { Issue } from '../core/index.js';
 import type { CheckedCampaign } from '../runner/index.js';
@@ -6,6 +7,12 @@ import { checkHoldoutRoot } from '../scenario/index.js';
 
 /** Where the agent's long-lived token is read from (REQ-RUN-15, requirements 1.3). */
 export const TOKEN_VARIABLE = 'BENCH_AGENT_TOKEN_FILE';
+
+/**
+ * Where Codex's credential file is (dl-019, REQ-RUN-15 as amended in 1.32): the ChatGPT subscription's `auth.json`,
+ * which the runner mounts read-write and never reads but to scrub its values.
+ */
+export const CODEX_AUTH_VARIABLE = 'BENCH_CODEX_AUTH_FILE';
 
 /** Where the scripted fake agent reads its script. */
 export const FAKE_SCRIPT_VARIABLE = 'BENCH_FAKE_SCRIPT';
@@ -53,6 +60,35 @@ const readableFile: Check = (path) => {
   }
 };
 
+/** The nearest directory at or above `dir` holding a `.git` (a repository or a linked worktree), if any. */
+function checkoutOf(dir: string): string | undefined {
+  let current = resolve(dir);
+  for (;;) {
+    if (existsSync(join(current, '.git'))) return current;
+    const parent = dirname(current);
+    if (parent === current) return undefined;
+    current = parent;
+  }
+}
+
+/**
+ * Codex's credential file (dl-019 bounds 2 and 7): a readable regular file, mode 600, in a directory of mode 700,
+ * outside every git checkout — the repository, a worktree, a run's workspace — wherever a link to it is. Its content
+ * is never read here.
+ */
+export const codexAuthFile: Check = (path) => {
+  const readable = readableFile(path);
+  if (readable !== undefined) return readable;
+  // Where the file really is: a link outside every checkout to a file inside one is inside it.
+  const real = realpathSync(path);
+  const mode = statSync(real).mode & 0o777;
+  if (mode !== 0o600) return `${path} must be mode 600, not ${mode.toString(8)}`;
+  if (checkoutOf(dirname(real)) !== undefined) return `${path} is inside a git checkout`;
+  const dirMode = statSync(dirname(real)).mode & 0o777;
+  if (dirMode !== 0o700) return `${path} must be in a directory of mode 700, not ${dirMode.toString(8)}`;
+  return undefined;
+};
+
 const directory: Check = (path) =>
   !existsSync(path)
     ? `${path} does not exist`
@@ -93,7 +129,9 @@ export function campaignRequirements(
   const requirements =
     spec.agent.name === 'fake'
       ? [requirement(env, FAKE_SCRIPT_VARIABLE, 'fake agent script', 'run', readableFile)]
-      : [requirement(env, TOKEN_VARIABLE, 'credential file', 'run', readableFile)];
+      : spec.agent.name === 'codex'
+        ? [requirement(env, CODEX_AUTH_VARIABLE, 'Codex credential file', 'run', codexAuthFile)]
+        : [requirement(env, TOKEN_VARIABLE, 'credential file', 'run', readableFile)];
   const tools = [...new Set(Object.values(spec.harnesses).map((harness) => harness.tool))];
   for (const tool of tools) {
     const variable = harnessSourceVariable(tool);
@@ -108,6 +146,7 @@ export function campaignRequirements(
 /** What each variable is for, as a refusal explains it. */
 export const PURPOSES: Readonly<Record<string, string>> = {
   [TOKEN_VARIABLE]: "it names the file holding the agent's token",
+  [CODEX_AUTH_VARIABLE]: "it names Codex's auth.json, outside any git checkout (dl-019)",
   [FAKE_SCRIPT_VARIABLE]: "it holds the fake agent's script",
   [HARNESS_SOURCE_VARIABLES.wingfoil]:
     'it names the local WingFoil clone the WingFoil under test is built from',

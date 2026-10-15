@@ -96,6 +96,8 @@ export interface Doubles {
 export function doubles(
   options: {
     execResult?: ProcessResult;
+    /** Mounts the container reports besides those it was created with, as `source:target` (REQ-RUN-02). */
+    extraMounts?: readonly string[];
     onStep?: (request: AgentRequest) => void;
     /** The session the agent answers with; by default the one it was given (F2.2). */
     sessionOf?: (request: AgentRequest) => string;
@@ -214,7 +216,15 @@ export function doubles(
     mountsOf: (container) => {
       const index = Number(container.replace('container-', '')) - 1;
       const request = recorded.creates[index];
-      return Promise.resolve(request ? [`${request.workspace}:/workspace`] : []);
+      return Promise.resolve(
+        request
+          ? [
+              `${request.workspace}:/workspace`,
+              ...(request.mounts ?? []).map((mount) => `${mount.source}:${mount.target}`),
+              ...(options.extraMounts ?? []),
+            ]
+          : [],
+      );
     },
   };
   const git: GitPort = {

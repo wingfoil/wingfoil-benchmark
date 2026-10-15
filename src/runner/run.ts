@@ -11,7 +11,7 @@ import {
 import { basename, dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { foldModels, scrub } from '../agents/index.js';
+import { agentProfile, foldModels, scrub } from '../agents/index.js';
 import type { AgentPort, ModelsUsage, SessionUsage, StepOutcome } from '../agents/index.js';
 import {
   approverPolicy,
@@ -62,11 +62,22 @@ export interface RunnerOptions {
   /** What every container of this campaign gets in its environment: the agent's credential. */
   readonly containerEnv?: Readonly<Record<string, string>>;
   /**
+   * The host file of a credential the agent takes as a file (dl-019, REQ-RUN-15 as amended in 1.32): Codex's
+   * `auth.json`, mounted read-write at its profile's target. Absent for an agent whose credential is an environment
+   * variable.
+   */
+  readonly credentialFile?: string;
+  /**
    * The values to remove from everything this run stores (REQ-NFR-01). Named explicitly rather than
    * derived from {@link containerEnv}: from W3 that environment also carries an arm's own settings,
    * and scrubbing a value like `C` or `en_US` would corrupt every patch instead of protecting it.
    */
   readonly secrets?: readonly string[];
+  /**
+   * The values to scrub that only exist now (REQ-NFR-01 as amended in 1.32): Codex's credential refreshed during the
+   * campaign. Read whenever something is stored, beside {@link secrets}.
+   */
+  readonly refreshSecrets?: () => readonly string[];
   /**
    * The local clone of each harness tool, by the name an arm `requires` (W3 plan-phase decision 3):
    * the WingFoil under test is built from it by SHA (REQ-RUN-14).
@@ -294,9 +305,6 @@ const SCENARIO_DIR = '/home/node/scenario';
 /** Where an arm's MCP configuration is copied in the container (adr-003 decision 12). */
 const MCP_CONFIG = '/home/node/mcp.json';
 
-/** Where the arm's operating manual goes in the workspace, where the agent reads it (REQ-RUN-12). */
-const MANUAL_FILE = 'CLAUDE.md';
-
 /** The runner's commit that ends the setup phase, always present, possibly empty (adr-003 decision 10). */
 const SETUP_COMMIT = 'setup';
 
@@ -313,19 +321,11 @@ const NO_USAGE: SessionUsage = {
 };
 
 /**
- * What every container's agent gets in its environment besides the credential (bug-006, task-019):
- * Claude Code's auto-memory turned off. Without it, 2.1.280 writes notes under
- * `~/.claude/projects/<project>/memory/` that a later session reads — state carried between steps
- * outside the repository (REQ-RUN-04). task-019 saw the agent honour the variable. Not a secret.
+ * What the agent gets besides its credential, and what is cleared before every step (bug-006, task-019), is its
+ * profile's (`src/agents/profile.ts`): for Claude Code, its auto-memory turned off and cleared, since 2.1.280 writes
+ * notes under `~/.claude/projects/<project>/memory/` that a later session reads; for Codex, `CODEX_HOME` emptied but
+ * its credential and configuration.
  */
-const AGENT_ENVIRONMENT: Readonly<Record<string, string>> = { CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1' };
-
-/**
- * Run in the container before every step's first session, whatever the agent (bug-006): its
- * auto-memory, if any, removed; the rest of `~/.claude/projects/`, which `--resume` needs within a
- * step, kept.
- */
-const CLEAR_AUTO_MEMORY = ['sh', '-c', 'rm -rf "$HOME"/.claude/projects/*/memory'];
 
 /** A step that was not started: nothing was left of the run's cost cap (task-024). */
 const CAP_REACHED = 'cap reached';
@@ -838,6 +838,11 @@ async function executeRun(context: RunContext, options: RunnerOptions): Promise<
       throw new Error(`the approver policy ${plan.pins.approver_policy} is not implemented`);
     }
     const containerName = `${containerPrefix(plan.id)}${execution}-${name.replaceAll(/[@/]/g, '-')}`;
+    const profile = agentProfile(plan.pins.agent.name);
+    const credentialMount =
+      options.credentialFile === undefined || profile.credentialTarget === undefined
+        ? undefined
+        : { source: options.credentialFile, target: profile.credentialTarget };
     const stale = context.leftovers.get(containerName);
     // Reported, never removed: the runner does not destroy what this run did not create (bug-003,
     // approver's choice). The campaign goes on to its next run (REQ-NFR-03).
@@ -860,12 +865,27 @@ async function executeRun(context: RunContext, options: RunnerOptions): Promise<
       workspace,
       user: CONTAINER_USER,
       // The arm's telemetry settings (REQ-RUN-18), then the credential: the runner's names win over an arm's.
-      env: { ...telemetryEnvironment(arm), ...AGENT_ENVIRONMENT, ...options.containerEnv },
+      env: { ...telemetryEnvironment(arm), ...profile.environment, ...options.containerEnv },
+      // The credential file (dl-019), the one mount besides the workspace, read-write as Codex refreshes it.
+      ...(credentialMount === undefined ? {} : { mounts: [credentialMount] }),
     });
     options.signal?.addEventListener('abort', kill, { once: true });
     if (interrupted()) kill();
-    await assertOnlyWorkspaceMounted(container, workspace, options);
+    await assertOnlyWorkspaceMounted(container, workspace, credentialMount, options);
     await options.docker.start(container);
+    // The agent's own files (Codex's config.toml), before the arm's setup, so that the setup's commit never holds them.
+    for (const file of profile.files) {
+      const written = await options.docker.exec(container, [
+        'sh',
+        '-c',
+        'printf "%s" "$1" > "$2"',
+        'sh',
+        file.content,
+        file.path,
+      ]);
+      if (written.code !== 0)
+        throw new Error(`could not write ${file.path} in the container: ${written.stderr.trim()}`);
+    }
     setup = await executeSetup(
       arm,
       {
@@ -877,6 +897,7 @@ async function executeRun(context: RunContext, options: RunnerOptions): Promise<
         ...(scenario.armDirs[arm.name] === undefined ? {} : { scenarioDir: scenario.armDirs[arm.name] }),
         ...(context.projectRules === undefined ? {} : { projectRules: context.projectRules }),
         rulesSource: scenario.armDirs[RULES_SOURCE_ARM],
+        manualFile: profile.manualFile,
       },
       options,
     );
@@ -968,6 +989,8 @@ interface SetupContext {
   readonly projectRules?: string;
   /** Where the scenario declares its project rules (dl-005: the wingfoil arm's configuration), for a generator. */
   readonly rulesSource?: string | undefined;
+  /** Where the manual goes in the workspace: the agent's own file (REQ-RUN-12 as amended in 1.32). */
+  readonly manualFile: string;
 }
 
 /**
@@ -987,10 +1010,10 @@ async function executeSetup(arm: Arm, context: SetupContext, options: RunnerOpti
   if (projectRules !== undefined) copyFileSync(projectRules, join(workspace, PROJECT_RULES));
   // The manual after the environment, before the script: in the `setup` commit, never in a step's
   // patch. A CLAUDE.md already there was meant for the agent by someone; it is not overwritten.
-  const manual = join(workspace, MANUAL_FILE);
+  const manual = join(workspace, context.manualFile);
   if (existsSync(manual)) {
     throw new Error(
-      `the workspace already holds a ${MANUAL_FILE}, from the seed or the arm's environment: the manual ` +
+      `the workspace already holds a ${context.manualFile}, from the seed or the arm's environment: the manual ` +
         `of arm ${arm.name} would replace it`,
     );
   }
@@ -1006,7 +1029,7 @@ async function executeSetup(arm: Arm, context: SetupContext, options: RunnerOpti
   const setupDir = join(outputDir, 'setup');
   mkdirSync(setupDir, { recursive: true });
   // Scrubbed like a patch: a setup may print what it was given.
-  writeFileSync(join(setupDir, 'log.txt'), scrub(`${result.stdout}${result.stderr}`, options.secrets ?? []));
+  writeFileSync(join(setupDir, 'log.txt'), scrub(`${result.stdout}${result.stderr}`, secretsNow(options)));
   if (result.code !== 0) return { durationMs, usage: NO_USAGE, code: result.code };
   const manualAfter = mergeManual(arm, manual);
   // What was generated for the arm: a docs control's environment (REQ-RUN-11) or a harness's rules (REQ-FMT-14).
@@ -1022,7 +1045,7 @@ async function executeSetup(arm: Arm, context: SetupContext, options: RunnerOpti
   // — so that scoring can rebuild step 1's snapshot from the seed (task-027).
   writeFileSync(
     join(setupDir, 'diff.patch'),
-    scrub(await options.git.patchOf(workspace, seedTree, tree), options.secrets ?? []),
+    scrub(await options.git.patchOf(workspace, seedTree, tree), secretsNow(options)),
   );
   return {
     durationMs,
@@ -1261,11 +1284,10 @@ async function executeStep(
   if (remainingCostUsd <= 0) return CAP_REACHED;
 
   // Nothing an earlier step's session left in the agent's own memory reaches this one (bug-006).
-  const cleared = await options.docker.exec(container, CLEAR_AUTO_MEMORY);
+  const profile = agentProfile(pins.agent.name);
+  const cleared = await options.docker.exec(container, profile.clearBeforeStep);
   if (cleared.code !== 0) {
-    throw new Error(
-      `could not clear the agent's auto-memory before step ${number}: ${cleared.stderr.trim()}`,
-    );
+    throw new Error(`could not clear ${profile.cleared} before step ${number}: ${cleared.stderr.trim()}`);
   }
 
   // step_time_s (REQ-RUN-08, task-024): every command of every invocation runs under `timeout`, with
@@ -1544,7 +1566,7 @@ async function executeStep(
   // Scrubbed like the patch: a message can quote what the agent's environment holds.
   writeFileSync(
     join(stepDir, 'commits.json'),
-    `${JSON.stringify({ messages: messages.map((message) => scrub(message, options.secrets ?? [])) }, undefined, 2)}\n`,
+    `${JSON.stringify({ messages: messages.map((message) => scrub(message, secretsNow(options))) }, undefined, 2)}\n`,
   );
   // From the previous snapshot, not the last commit: an agent that commits during its step (the
   // wingfoil arm's does) would otherwise leave its own commits out of the patch (bug-007).
@@ -1552,7 +1574,7 @@ async function executeStep(
   // Scrubbed like the transcript: the agent runs with the credential in its own environment and
   // `bypassPermissions`, so one `env > notes.txt` would otherwise commit the token in a patch.
   const patch = await options.git.patchOf(workspace, previousTree, tree);
-  writeFileSync(join(stepDir, 'diff.patch'), scrub(patch, options.secrets ?? []));
+  writeFileSync(join(stepDir, 'diff.patch'), scrub(patch, secretsNow(options)));
   // What the step cost across its invocations, and the whole of what they said (REQ-RUN-09,
   // REQ-FMT-06). The transcript is git-ignored and scrubbed by the adapter (REQ-NFR-01, REQ-RES-06).
   const usage = stepUsage(invocations);
@@ -1621,13 +1643,23 @@ function untilAborted(promise: Promise<void>, signal: AbortSignal | undefined): 
 async function assertOnlyWorkspaceMounted(
   container: string,
   workspace: string,
+  credential: { readonly source: string; readonly target: string } | undefined,
   options: RunnerOptions,
 ): Promise<void> {
-  const mounts = await options.docker.mountsOf(container);
-  const expected = `${workspace}:${WORKSPACE}`;
-  if (mounts.length !== 1 || mounts[0] !== expected) {
+  const mounts = [...(await options.docker.mountsOf(container))].sort();
+  // REQ-RUN-02: the workspace, and the credential file dl-019 allows; nothing else.
+  const expected = [
+    `${workspace}:${WORKSPACE}`,
+    ...(credential === undefined ? [] : [`${credential.source}:${credential.target}`]),
+  ].sort();
+  if (mounts.length !== expected.length || mounts.some((mount, i) => mount !== expected[i])) {
     throw new Error(`the container has mounts other than its workspace: ${mounts.join(', ') || 'none'}`);
   }
+}
+
+/** The values to scrub now: those known at the start, and the refreshed credential's (REQ-NFR-01). */
+function secretsNow(options: RunnerOptions): readonly string[] {
+  return [...(options.secrets ?? []), ...(options.refreshSecrets?.() ?? [])];
 }
 
 /** An arm's `telemetry_off` settings (REQ-RUN-18) as the container's environment: `NAME=value` split at the first `=`. */
@@ -1731,7 +1763,7 @@ function record(run: RunResult, plan: RunPlan): RunResult {
           ? {}
           : {
               manual: {
-                file: MANUAL_FILE,
+                file: agentProfile(plan.pins.agent.name).manualFile,
                 sha256: manualOf(run)?.sha256,
                 bytes: manualOf(run)?.bytes,
                 tokens: manualOf(run)?.tokens,

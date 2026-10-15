@@ -122,6 +122,47 @@ describe('the Docker port', () => {
     ]);
   });
 
+  it("adds a credential file's mount, read-write, after the workspace's (dl-019, REQ-NFR-01 as amended in 1.32)", async () => {
+    const process = recorder([ok('c0ffee\n')]);
+    await dockerCli(process).create({
+      image: 'abc123',
+      name: 'bench-abc123-1',
+      workspace: '/repo/runs/abc123/1/w',
+      user: 'node',
+      mounts: [{ source: '/home/m/.codex-bench/auth.json', target: '/home/node/.codex-run/auth.json' }],
+    });
+    expect(process.calls[0]?.args).toEqual([
+      'create',
+      '--name',
+      'bench-abc123-1',
+      '--user',
+      'node',
+      '--workdir',
+      '/workspace',
+      '--mount',
+      'type=bind,source=/repo/runs/abc123/1/w,target=/workspace',
+      '--mount',
+      'type=bind,source=/home/m/.codex-bench/auth.json,target=/home/node/.codex-run/auth.json',
+      'abc123',
+      'sleep',
+      'infinity',
+    ]);
+  });
+
+  it('refuses a credential mount whose path would be read as more mount options', async () => {
+    const process = recorder([ok('c0ffee\n')]);
+    await expect(
+      dockerCli(process).create({
+        image: 'abc123',
+        name: 'bench-abc123-1',
+        workspace: '/repo/runs/abc123/1/w',
+        user: 'node',
+        mounts: [{ source: '/home/m/a,readonly=false', target: '/home/node/.codex-run/auth.json' }],
+      }),
+    ).rejects.toThrow(/comma or an equals sign/);
+    expect(process.calls).toEqual([]);
+  });
+
   it('runs a command in the container and reports its outcome', async () => {
     const process = recorder([{ code: 3, stdout: 'out', stderr: 'err' }]);
     const result = await dockerCli(process).exec('c0ffee', ['sh', '-c', 'echo hi']);

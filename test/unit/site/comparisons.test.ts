@@ -16,6 +16,7 @@ const side = (delta: number, n: number, min = 0.5, max = 0.5) => ({
 function comparison(extra: Partial<CampaignComparison> = {}): CampaignComparison {
   return {
     comparison_version: 1,
+    m_r_across: [],
     earlier: { campaign: '0123456789ab', execution: 1, model: 'sonnet' },
     newer: { campaign: 'abcdef012345', execution: 2, model: 'sonnet', ended: '2026-10-12T10:00:00.000Z' },
     order: 'maintainer',
@@ -143,6 +144,38 @@ describe('reading the comparisons of an execution (REQ-RES-02 as amended, task-0
     write(root, '0123456789ab-1.json', JSON.stringify(comparison()));
     const read = readComparisons(root, 'abcdef012345', 2);
     expect(read.ok && read.value.map((c) => c.earlier.campaign)).toEqual(['0123456789ab', 'fedcba987654']);
+  });
+
+  it('reads a comparison of version 2, with its M-R across the executions, and one of version 1 without (1.32)', () => {
+    const root = tempDir('bench-site-cmp-');
+    write(
+      root,
+      '0123456789ab-1.json',
+      JSON.stringify({
+        ...comparison(),
+        comparison_version: 2,
+        m_r_across: [
+          {
+            scenario: 'S3',
+            version: '1.0',
+            arm: 'baseline',
+            model: 'claude-sonnet-5-5 → gpt-6.1-sol',
+            earlier: { n: 2, runs: ['a', 'b'], not_reached: [] },
+            newer: { n: 2, runs: ['c', 'd'], not_reached: [] },
+            m_r1: { agree: 30, total: 37 },
+          },
+        ],
+      }),
+    );
+    const versionOne: Record<string, unknown> = { ...comparison() };
+    delete versionOne.m_r_across;
+    write(
+      root,
+      'fedcba987654-1.json',
+      JSON.stringify({ ...versionOne, earlier: { campaign: 'fedcba987654', execution: 1, model: 's' } }),
+    );
+    const read = readComparisons(root, 'abcdef012345', 2);
+    expect(read.ok && read.value.map((c) => c.comparison_version)).toEqual([2, 1]);
   });
 
   it('refuses a comparison it cannot read, or one whose newer side is another execution', () => {

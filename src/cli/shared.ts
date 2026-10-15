@@ -1,13 +1,27 @@
+import { readFileSync, realpathSync } from 'node:fs';
 import { dirname } from 'node:path';
 
-import { claudeCodeAgent, loadAgentToken, loadFakeScript } from '../agents/index.js';
+import {
+  claudeCodeAgent,
+  codexAgent,
+  codexSecrets,
+  loadAgentToken,
+  loadFakeScript,
+} from '../agents/index.js';
 import type { AgentPort } from '../agents/index.js';
 import { fakeAgent } from '../agents/index.js';
 import { dockerCli, gitCli, systemProcess } from '../core/index.js';
 import type { DockerPort, GitPort, ImagePort, Issue, PublishPort, Result } from '../core/index.js';
 import type { RunPins } from '../runner/index.js';
 
-import { FAKE_SCRIPT_VARIABLE, HARNESS_SOURCE_VARIABLES, PURPOSES, TOKEN_VARIABLE } from './preflight.js';
+import {
+  CODEX_AUTH_VARIABLE,
+  codexAuthFile,
+  FAKE_SCRIPT_VARIABLE,
+  HARNESS_SOURCE_VARIABLES,
+  PURPOSES,
+  TOKEN_VARIABLE,
+} from './preflight.js';
 
 /** Where the command writes its output; the bin passes the process streams, tests capture them. */
 export interface Io {
@@ -38,7 +52,7 @@ export const USAGE =
   '       bench campaign run <file> [--resume <campaign-id>/<n>] [--allow-spending]\n' +
   '       bench campaign compare <campaign-id>/<n> <campaign-id>/<n>\n' +
   '       bench scenario validate <id>@<version> [--holdout <path>]\n' +
-  '       bench scenario dry-run <id>@<version> --arm <arm> [--model <id>] [--allow-spending]\n' +
+  '       bench scenario dry-run <id>@<version> --arm <arm> [--model <id>] [--profile <file>] [--allow-spending]\n' +
   '       bench score <campaign-id>/<n>|dry-runs/<n> [--final] [--holdout <path>]\n' +
   '       bench run show <run> [--full]\n' +
   '       bench run compare <run> <run>\n' +
@@ -74,7 +88,11 @@ const AGENT_TOKEN_VARIABLE = 'ANTHROPIC_AUTH_TOKEN';
  * brings its credential, which the adapter keeps only in order to scrub it out of what is stored
  * (REQ-NFR-01).
  */
-export function portsFor(pins: RunPins, credential?: Readonly<Record<string, string>>): Result<Ports> {
+export function portsFor(
+  pins: RunPins,
+  credential?: Readonly<Record<string, string>>,
+  credentialFile?: string,
+): Result<Ports> {
   const usdToEur = pins.currency.usd_to_eur;
   const name = pins.agent.name;
   // Exhaustive over the campaign schema's enum on purpose: adding an agent there without an adapter
@@ -86,6 +104,25 @@ export function portsFor(pins: RunPins, credential?: Readonly<Record<string, str
         docker: dockerCli(systemProcess),
         git: gitCli(systemProcess),
         agent: claudeCodeAgent({ token: credential?.[AGENT_TOKEN_VARIABLE] ?? '', usdToEur }),
+      },
+    };
+  }
+  if (name === 'codex') {
+    // Its credential is a file the runner mounts (dl-019); the adapter reads it only to scrub its values.
+    if (credentialFile === undefined) {
+      return {
+        ok: false,
+        issues: [
+          { path: CODEX_AUTH_VARIABLE, message: `is not set: ${PURPOSES[CODEX_AUTH_VARIABLE] ?? ''}` },
+        ],
+      };
+    }
+    return {
+      ok: true,
+      value: {
+        docker: dockerCli(systemProcess),
+        git: gitCli(systemProcess),
+        agent: codexAgent({ authFile: credentialFile, usdToEur }),
       },
     };
   }
@@ -113,8 +150,12 @@ export function portsFor(pins: RunPins, credential?: Readonly<Record<string, str
 
 /** What an execution that may spend needs before anything is built, besides its ports. */
 export interface Spending {
-  /** The agent's credential, for any agent but the free one (REQ-RUN-15). */
+  /** The agent's credential in the environment, for Claude Code (REQ-RUN-15). */
   readonly credential?: Readonly<Record<string, string>>;
+  /** The agent's credential as a file the runner mounts, for Codex (dl-019, REQ-RUN-15 as amended in 1.32). */
+  readonly credentialFile?: string;
+  /** The values to scrub from what is stored, when they are not the environment credential's (REQ-NFR-01). */
+  readonly secrets?: readonly string[];
   /** The local clone of each harness tool the execution builds (REQ-RUN-14). */
   readonly harnessSources?: Readonly<Record<string, string>>;
 }
@@ -133,11 +174,47 @@ export function checkSpending(
 ): Result<Spending> {
   const agentName = pins.agent.name;
   if (agentName !== FREE_AGENT && !options.allowSpending) return { ok: false, issues: [options.refusal] };
+  if (agentName === 'codex') {
+    const file = codexCredentialFile();
+    if (!file.ok) return file;
+    // dl-019 bound 6: a credential with nothing to scrub (the placeholder before the login) is refused.
+    const secrets = codexSecrets(readFileSync(file.value, 'utf8'));
+    if (secrets.length === 0) {
+      return {
+        ok: false,
+        issues: [
+          { path: CODEX_AUTH_VARIABLE, message: 'holds no credential value: log in first (dl-019 bound 3)' },
+        ],
+      };
+    }
+    const sources = harnessSourcesOf(options.builds);
+    if (!sources.ok) return sources;
+    return {
+      ok: true,
+      value: {
+        credentialFile: file.value,
+        secrets,
+        ...(Object.keys(sources.value).length === 0 ? {} : { harnessSources: sources.value }),
+      },
+    };
+  }
   const credential = agentName === FREE_AGENT ? undefined : agentCredential();
   if (credential !== undefined && !credential.ok) return credential;
-  // The clone of every harness tool the execution builds (REQ-RUN-14, REQ-FMT-12), by the preflight's table.
+  const sources = harnessSourcesOf(options.builds);
+  if (!sources.ok) return sources;
+  return {
+    ok: true,
+    value: {
+      ...(credential === undefined ? {} : { credential: credential.value }),
+      ...(Object.keys(sources.value).length === 0 ? {} : { harnessSources: sources.value }),
+    },
+  };
+}
+
+/** The clone of every harness tool the execution builds (REQ-RUN-14, REQ-FMT-12), by the preflight's table. */
+function harnessSourcesOf(builds: readonly string[]): Result<Readonly<Record<string, string>>> {
   const sources: Record<string, string> = {};
-  for (const tool of [...new Set(options.builds)].sort()) {
+  for (const tool of [...new Set(builds)].sort()) {
     const variable = (HARNESS_SOURCE_VARIABLES as Readonly<Record<string, string | undefined>>)[tool];
     if (variable === undefined) continue;
     const clone = process.env[variable];
@@ -146,13 +223,23 @@ export function checkSpending(
     }
     sources[tool] = clone;
   }
-  return {
-    ok: true,
-    value: {
-      ...(credential === undefined ? {} : { credential: credential.value }),
-      ...(Object.keys(sources).length === 0 ? {} : { harnessSources: sources }),
-    },
-  };
+  return { ok: true, value: sources };
+}
+
+/** Codex's credential file (dl-019), checked as the preflight checks it; its content is not read here. */
+function codexCredentialFile(): Result<string> {
+  const file = process.env[CODEX_AUTH_VARIABLE];
+  if (file === undefined || file === '') {
+    return {
+      ok: false,
+      issues: [{ path: CODEX_AUTH_VARIABLE, message: `is not set: ${PURPOSES[CODEX_AUTH_VARIABLE] ?? ''}` }],
+    };
+  }
+  const problem = codexAuthFile(file);
+  // The real path: what Docker mounts (an absolute source) and what its inspection reports for the mount check.
+  return problem === undefined
+    ? { ok: true, value: realpathSync(file) }
+    : { ok: false, issues: [{ path: CODEX_AUTH_VARIABLE, message: `is invalid: ${problem}` }] };
 }
 
 /**

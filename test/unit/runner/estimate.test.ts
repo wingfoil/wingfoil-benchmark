@@ -186,6 +186,18 @@ describe('estimateCampaign (F1.2, task-022)', () => {
     });
   });
 
+  it('counts a dry run the benchmark priced from its pinned table, as Codex is (REQ-RUN-09 as amended in 1.32)', () => {
+    const { root, checked } = campaign({ arms: ['baseline'], harnesses: {} });
+    writeStoredDryRun(root, 1, {
+      hash: hashOf(checked),
+      arm: 'baseline',
+      stepCostsUsd: [1],
+      unpriced: ['gpt-6.1-sol', 'price-table'],
+    });
+    const counted = estimateCampaign(checked);
+    expect(counted.ok && counted.value.lines[0]?.dryRuns.map((run) => run.execution)).toEqual([1]);
+  });
+
   it('says when a dry run ran another agent or harness than the campaign pins, and still counts it', () => {
     const { root, checked } = campaign({
       harnesses: { wingfoil: { tool: 'wingfoil', version: 'abc1234' } },

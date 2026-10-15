@@ -21,8 +21,13 @@ RUN apt-get update \
 # nothing installed, so a campaign that uses it never downloads an agent.
 ARG AGENT_NAME=fake
 ARG AGENT_VERSION
+# Codex (task-094, REQ-RUN-16 as amended in 1.32): its home created owned by the container user, so that the
+# credential's single-file mount (dl-019) does not make Docker create it owned by root, where Codex could not write.
 RUN if [ "$AGENT_NAME" = "claude-code" ]; then \
         npm install --global "@anthropic-ai/claude-code@${AGENT_VERSION}"; \
+    elif [ "$AGENT_NAME" = "codex" ]; then \
+        npm install --global "@openai/codex@${AGENT_VERSION}" \
+        && install -d -o node -g node /home/node/.codex-run; \
     fi
 
 # Where an arm's setup puts the harness it installs (adr-003 decision 3), first on the PATH so the

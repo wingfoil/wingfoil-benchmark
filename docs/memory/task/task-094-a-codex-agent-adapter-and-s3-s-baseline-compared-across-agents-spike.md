@@ -2,7 +2,7 @@
 id: task-094-a-codex-agent-adapter-and-s3-s-baseline-compared-across-agents-spike
 type: task
 title: "A Codex agent adapter and S3's baseline compared across agents spike"
-status: backlog
+status: approved
 release: v0.2
 wave: calibration
 features: []
@@ -15,7 +15,7 @@ tags: ["spike","agent","codex","determinism"]
 
 ## Context
 
-plan-004 step 3-bis, approved by the approver in chat on 2026-10-15 and agreed with the coordination session WFCoord:
+plan-004 step 3-bis, approved by the approver in chat on 2026-10-15, within the approver's planning across projects:
 a **Codex agent adapter** and a small **cross-agent comparison**, kept **outside** the v0.2 reference campaign. The
 Claude pin (task-093: Claude Code 2.1.300) and dl-017 do not change; the v0.2 campaign files are not touched.
 
@@ -37,7 +37,7 @@ Claude pin (task-093: Claude Code 2.1.300) and dl-017 do not change; the v0.2 ca
 
 **Done** means: the adapter, its schema and requirements amendment, and the across-agent M-R delivered offline and
 green; the consented real sessions run, each a ledger line; M-R1 and M-R2 within and across agents reported, labelled
-preliminary; dl-019's end (logout, deletion) recorded; WFCoord told the merge sha.
+preliminary; dl-019's end (logout, deletion) recorded; the merge sha reported to the approver's planning.
 
 ## Acceptance criteria
 
@@ -182,7 +182,7 @@ v0.3 if the approver wants it).
 
 ### The real sessions (the consent is this task's pending → backlog approval)
 
-Planned in the week of **2026-11-02 to 2026-11-06**, before calibration part 2 and the subscription's end, from the
+Planned in the week of **2026-11-02 to 2026-11-06** (brought forward to 2026-10-15 by the approver in chat: see the Execution notes), before calibration part 2 and the subscription's end, from the
 main checkout. Every session is S3@1.0, baseline arm. Order: Codex first (no money), then Claude.
 
 | # | Agent | Model, effort | What | Steps | Cap | Real spending |
@@ -200,8 +200,8 @@ main checkout. Every session is S3@1.0, baseline arm. Order: Codex first (no mon
 - **Stops:** a failed session or run is not repeated without new consent. If P0 fails, or its stream cannot be read
   as designed, the task stops and asks before CX-D. If CC-D costs more than 2 € (over twice the expectation), it
   stops and asks before CC-1. A run stopped by the plan's quota is recorded, not repeated.
-- **The subscription's end** (WFCoord, 2026-10-15): the Plus subscription is not renewed after 2026-11-13, so every
-  Codex session is planned for 2026-11-02 to 11-06, with no slot after the 13th. Extra credits are bought only for a
+- **The subscription's end** (the approver's planning, 2026-10-15): the Plus subscription is not renewed after 2026-11-13, so every
+  Codex session is planned for 2026-11-02 to 11-06 (brought forward to 2026-10-15), with no slot after the 13th. Extra credits are bought only for a
   run the approver names as fundamental that finds the quota exhausted: that is new spending, asked for with its
   amount, never assumed by this consent.
 - **The campaign files** `campaigns/x-codex-s3-codex.yaml` and `x-codex-s3-claude-code.yaml`: S3@1.0, `arms:
@@ -247,3 +247,324 @@ main checkout. Every session is S3@1.0, baseline arm. Order: Codex first (no mon
   Observed: `e2a7a10`, `status: draft`, `tags` written, the other fields empty (W-02). Matches.
 - dl-019 before it: `memory add` `d3a2e74`, body `9baf6f9`, `memory submit` `0c98ad2` (`draft → pending`, `status`
   only), the approver's `memory approve` `f10f5ce` (`pending → approved`). Each matches its declaration.
+- The approver's `memory approve task-094-… --reason "…"` → `de6922f` (`pending → backlog`), on main; its reason names
+  the seven sessions, their caps, 0 € for Codex and at most 9 € for Claude. Matches.
+- `npx wingfoil memory submit task-094-…`, in the linked worktree `WingFoil2-Benchmark-wt/task-094` with its own
+  `npm ci`. Declared: `backlog → in-progress`, one commit. Observed: exit 0, JSON `from`/`to` as declared, `f5c3729`,
+  one file, `status` only. Matches.
+
+### The free phase (2026-10-15, no credential, no session)
+
+Output in the main checkout's git-ignored `spikes/task-094/out/`.
+
+- **F1, the release** (`probe.sh F1`, `111e195`): `@openai/codex` `latest` **0.162.1** (2026-10-09T19:50Z). Its source
+  at `rust-v0.162.1` (`out/f1/source/`, URLs in `out/f1/sources.txt`), read for what the adapter rests on:
+  - `exec_events.rs`: `thread.started` (`thread_id`), `turn.started`, `turn.completed` (`usage`: `input_tokens`,
+    `cached_input_tokens`, `cache_write_input_tokens`, `output_tokens`, `reasoning_output_tokens`), `turn.failed`
+    (`error.message`), `item.*` (`agent_message`, `reasoning`, `command_execution`, `file_change`, …), `error`;
+  - `event_processor_with_jsonl_output.rs`: `turn.completed`'s usage is `usage.total`, the **thread's running
+    total**, not the turn's;
+  - `codex-api/src/sse/responses.rs`: `input_tokens` is the API's, with `cached_input_tokens` and
+    `cache_write_input_tokens` inside it (its own test: 100 = 40 cached + 60 written); `reasoning_output_tokens` is
+    read from `output_tokens_details`, so inside `output_tokens`;
+  - `login/src/auth/storage.rs`: `auth.json` is saved by `truncate(true).write(true)` and `write_all`, in place, not
+    by a rename: a single-file bind mount survives a refresh (dl-019 bound 4);
+  - `protocol/src/error.rs`: the usage limit's text ("You’ve hit your usage limit…"), "Quota exceeded. Check your
+    plan and billing details.", "rate limit exceeded: …";
+  - `models-manager/models.json`: `gpt-6.1-sol` has priority 1 among the listed models, is available on `plus`, is
+    `supported_in_api`, 272 K context, default effort `low`, levels `low` … `ultra`; `manager.rs` takes the default
+    model by priority;
+  - `config/src/types.rs`, `features/src/lib.rs`: `history.persistence = "none"`, `analytics.enabled`,
+    `features.memories` (off by default), `otel.exporter`.
+  - **The price** (`out/f1/pricing.txt`): OpenAI's pricing page, Standard tier, read 2026-10-15: `gpt-6.1-sol` 2.00
+    input, 0.10 cached input, 2.50 cache writes, 10.00 output per million tokens up to 272 K input tokens — the same
+    list prices as Sonnet 5.5's. Its context window is 272 K, so the long-context tier is never reached.
+- **F2, the binary** (`probe.sh F2`): `codex-cli 0.162.1`; `codex exec --help` and `codex exec resume --help` hold
+  every flag the Design names (`--json`, `--model`, `-c`, `--dangerously-bypass-approvals-and-sandbox`,
+  `--skip-git-repo-check`) and `--strict-config`, which the adapter adds so that a configuration key Codex does not
+  know fails the session instead of being ignored. `codex login` has `--device-auth`.
+- **F3, offline with the real binary** (`out/f3/strict-config-no-auth.txt`): the runner's `config.toml` passes
+  `--strict-config`; with no network and no credential, Codex starts a thread and retries its connection
+  (`error` events "Reconnecting… n/5", not terminal) until `timeout` kills it. It wrote sqlite stores to `CODEX_HOME`
+  (state, logs, goals, memories, thread history, a queue) and an `installation_id`, with `features.memories = false`.
+  It read stdin ("Reading additional input from stdin…"): the runner's `docker exec` attaches none, so it reads EOF.
+- **F3, the rehearsal with a stub** (`out/fake-rehearsal.txt`, `78cc4b7`): `probe.sh P0 READ SCAN` with
+  `BENCH_SPIKE_FAKE=1`, a stub `codex` and a fake credential made at run time:
+  - the session and its resume read by the adapter (`completed`, cost by `price-table`);
+  - the host's fake `auth.json` rewritten in place by the stub through the single-file mount;
+  - P0 refused a second time (exit 2), and refused without `BENCH_SPIKE_CONFIRM=1` (exit 64);
+  - the original token planted in the stream, with the credential refreshed after it, found by the scan (exit 4);
+  - a credential holding no value fails the scan (exit 3).
+  - The rehearsal **found a defect in the scan as first written**: it read the credential's values at the end only,
+    so a refresh hid the original token. It now reads them before the session too, as the adapter does.
+
+### Where the build departs from the Design
+
+1. **Usage is a running total.** The Design summed `turn.completed`; Codex's is the thread's total, so an
+   invocation's tokens are its last total less the thread's total before it (the adapter keeps it per thread), and
+   the cost is the thread's total, as the port asks of every agent.
+2. **Cache writes are counted.** The Design set `cacheCreationInputTokens` to 0; Codex reports
+   `cache_write_input_tokens`, which the adapter maps to it and prices at 2.50.
+3. **`CODEX_HOME` is emptied before every step** (but `auth.json` and `config.toml`), as Claude Code's auto-memory is
+   cleared (bug-006). The Design said to turn off whatever a new session reads and to stop and ask if it could not:
+   history, memories, analytics and the exporter are off, but the sqlite stores cannot be turned off, so clearing
+   them is the measure taken. A resume within a step keeps its session. **For the approver to confirm.**
+4. **The model and its effort:** `gpt-6.1-sol` (Codex's default for a ChatGPT plan at 0.162.1, with a published API
+   price), at `medium` as dl-018 sets for Claude; its own default is `low`.
+5. **No new requirement id:** the adapter's rules amend REQ-RUN-04, -09, -12, -13, -15 and -16 (requirements 1.32);
+   the Design had said "REQ-RUN for the adapter".
+6. **The site reads comparison version 2.** The page is unchanged; its parser accepts versions 1 and 2.
+7. **A comparison whose scores cannot be read** records `note: not measured: …` for the across-agent M-R instead of
+   refusing, since the rows need the aggregates only.
+8. **`campaign validate`** lists the effort of every real agent's models, Codex's included.
+9. **The run image** creates `/home/node/.codex-run` owned by `node`: without it, the credential's single-file mount
+   makes Docker create the directory owned by root, and Codex cannot write its `config.toml` (the docker red test's
+   failure, `e68c256`).
+
+### Checks (offline, niced)
+
+- `npx tsc --noEmit -p .` clean, `npm run lint` clean after every commit.
+- Docker (`vitest.docker.config.ts`, touched files only): `run-image.test.ts` 2/2 (Codex 0.162.1 installed, its home
+  owned by `node`), `codex.test.ts` 1/1 (a Codex campaign end to end with a stub: the credential mounted read-write
+  and refreshed on the host, `config.toml`, `AGENTS.md`, the token scrubbed, nothing of it in `results/`). No
+  `bench-` container left.
+- vitest `--maxWorkers=2`, niced, over `test/unit` and `test/acceptance` (every directory the branch touches):
+  103 files, 1599 passed, 8 skipped. `npm run test:bin` 8/8. The full suites (`scripts/full-suites.sh`) are not run:
+  they are the approver's to ask for.
+- **Lint was red from `27b03af` to `3933fac`** (an unused binding in `test/unit/site/comparisons.test.ts`): the
+  check's output was cut by a `tail -1` that kept only its last line. Fixed in `3933fac`; lint is read in full since.
+
+### Review (offline work, before any real session)
+
+- **Round 1** (independent read-only Explore subagent, on `bf91c62`; no spending, no credential read): nothing
+  blocking. Red tests `ace2268`, fixes `3933fac`. Findings and outcomes:
+  1. should-fix — a thread total below the previous one clamped to a zero delta. **Fixed:** taken as the
+     invocation's own and added (REQ-RUN-09 1.32 says so); test.
+  2. should-fix — a failed or killed invocation reports no usage, counted as zero. **Stated, not changed:** REQ-RUN-09
+     1.32 calls it a lower bound the caps between invocations cannot see. On the subscription no money rides on it;
+     `step_time_s` still bounds the time.
+  3. should-fix — limits named only by an `error` event, and the end of Codex's retries on a 429, read as failures.
+     **Fixed:** both read (REQ-RUN-13 1.32 worded to the code); tests.
+  4. should-fix — the runner scrubbed patches, logs and messages with the values read at the start only. **Fixed:**
+     `refreshSecrets` re-reads the credential whenever the runner stores something; test.
+  5. should-fix — a credential with nothing to scrub (`{}`) accepted. **Fixed:** refused, "log in first"; test.
+  6. should-fix — `m_r_across` written whatever pins differ. **Fixed:** a note "not measured: pins other than the
+     agent's differ: …" unless only `agent.*` and `models.*` differ; test. Experiment design 1.4 and REQ-SCO-07 1.32
+     say so.
+  7. should-fix — the scan excluded every `auth.json`. **Fixed:** only a rehearsal's fake credential is excluded.
+  8. should-fix — the checkout test followed the path as given, and the directory's mode was not checked.
+     **Fixed:** checked on the real path; the directory must be mode 700 (dl-019 bound 2); tests.
+  9. nit — LOGIN's command would overwrite an existing credential. **Fixed.**
+  10. nit — `minimal` not supported by F1/F2. **Kept:** it is a level of Codex 0.162.1's `ReasoningEffort`
+      (`out/f1/source/codex-rs_protocol_src_openai_models.rs`: none, minimal, low, medium, high, xhigh, max, ultra,
+      persistent, custom); which a model takes is the model's (`gpt-6.1-sol`: low … ultra). The Design listed
+      `minimal` … `xhigh`; `max` and `ultra` are added from the same enum.
+  11. nit — the workspace limit texts (spend cap, out of credits). **Fixed** with 3.
+  12. nit — tests for Codex's retries, a resume without `thread.started`, a resume in another thread. **Added**; they
+      passed at once and stand as characterization.
+  13. nits — `mROf`'s comment displaced, the Codex clear named "auto-memory", REQ-RUN-15's "never read". **Fixed.**
+      The adapter's map of threads is never pruned: kept, one entry per step.
+  14. nit — dl-019 bounds 1 (scope, dates) and 9 (disclosure) are not enforced by code. **Procedural, as dl-019
+      states them:** the runs are this task's seven, from the main checkout, in 2026-11-02 … 06 (brought forward to 2026-10-15 by the approver); the disclosure goes to
+      the comparison's record in this task and to the ledger. Nothing in the code refuses a later `codex` campaign: a
+      new decision is the gate (bound 1).
+- Checks on `3933fac`: `tsc` and lint clean; unit and acceptance 1612 passed, 8 skipped; the stub rehearsal again
+  (clean; the planted token found, exit 4).
+- **Round 2** (a new independent read-only Explore subagent, on `b234763`): nothing blocking; it confirmed round 1's
+  outcomes but 3 and 6. Red tests `8687fa3`, fixes `06e1a58`. Findings and outcomes:
+  1. should-fix — round 1's limit fix let an earlier `error` event turn a later, unrelated failure into a stop, and
+     still missed a limit named by an `error` with no `turn.failed`. **Fixed** as Codex does (`last_critical_error`):
+     a `turn.failed` is read by its own message; only when none names one does the last `error` event stand; round
+     1's test of the opposite behaviour replaced; tests.
+  2. should-fix — a resume that restarted its count yet ends at or above the step's total cannot be told apart.
+     **Stated:** REQ-RUN-09 1.32 says so, and `probe.sh READ` records which 0.162.1 does (P0's resume).
+  3. should-fix — the runner mounted the path as given while the preflight checked its real path. **Fixed:** the
+     real path is handed to the runner; test.
+  4. should-fix — the M-R across gate let caps or the approver policy differ, and measured two executions of one
+     agent. **Fixed:** the agent's name must differ; harnesses, arm digests, caps and approver policy must be equal
+     (scenarios and repetitions only select groups); tests. The slow comparison test's newer side is now Codex.
+  5. should-fix (coverage) — no CLI-level test that `refreshSecrets` reaches the runner. **Added:** `bench campaign
+     run` with a refresh during the step; it passed at once (characterization).
+  6. nit — P0 did not check a real credential as the preflight does, and accepted `{}`. **Fixed:** both refused before
+     any container (rehearsed with a fake credential: a directory of mode 755 refused; `{}` refused).
+  7. nit — an empty array under `set -u` on old bash. **Fixed.**
+  8. nit — REQ-RUN-15 and REQ-NFR-01 1.32 behind the code (directory mode, real path, re-read values). **Fixed.**
+  9. nit — LOGIN without a candidate. **Fixed** (exit 64).
+- Checks on `06e1a58`: `tsc` and lint clean; unit and acceptance 1617 passed, 8 skipped; the stub rehearsal again
+  (clean, the resume reported as the thread total by the stub; the planted token found, exit 4).
+- **Round 3** (a new independent read-only Explore subagent, on `4a5bb5a`): nothing blocking; every round-2 outcome
+  confirmed against the code, the tests and Codex's source. Red tests `cf7e152`, fixes in the commit after it.
+  1. should-fix — READ called a resume at or above the step's total "the thread total", which REQ-RUN-09 1.32 says
+     cannot be told apart. **Fixed:** "consistent with the thread total (a restarted, larger count cannot be
+     excluded)".
+  2. nit — "restarted" decided per `turn.completed`, not once per invocation. **Fixed:** at the first; test.
+  3. nit — a stream with no turn lost its last error's text. **Fixed;** test.
+  4. nit — `pinsDiffer`'s comment displaced. **Fixed.**
+  5. nit — the rate (`currency`) shapes a run as the caps do. **Fixed:** it gates M-R across too; requirements 1.32
+     and experiment design 1.4 say so; test.
+  6. nit — the note tests could pass on an empty list; no approver-policy case. **Fixed.**
+  7. nit — experiment design said "the arms", the code the arms' digests. **Fixed.**
+  8. nit — `probe.sh` P0: the bounds named in a comment, the path in a JS literal, a stale `dist/`, the path mounted
+     as given. **Fixed** (checks `dist/` is newer than `src/`, passes the path as an argument, mounts the real path).
+- **Round 4** (a new independent read-only Explore subagent, on `26ff6b5`): every round-3 outcome confirmed; one nit.
+  1. nit — P0's freshness check compared one file, while READ loads the adapter. **Fixed:** P0 and READ refuse a
+     `dist/` older than any `src/**/*.ts` (rehearsed: a touched source refused, exit 64; rebuilt, clean).
+- **Round 5** (a new independent read-only Explore subagent, on `c9c1e7a`): one finding. Under `pipefail`,
+  `find … | grep -q .` lets a stale `dist/` pass once `find` has more than one buffered write (about 4 KB) to make (every source newer,
+  as after a checkout), since `find` dies of SIGPIPE. **Fixed** with `find … -print -quit` and no pipe; rehearsed with
+  every `src/**/*.ts` touched (refused, exit 64) and after a build (clean, exit 0). The round-4 note held only for a
+  few newer files.
+- **Round 6** (a new independent read-only Explore subagent, on `1ebc877`): the round-5 fix confirmed; two nits, both
+  **fixed:** `fresh_dist` refuses a missing or unreadable `src/` (where `find` would print nothing), and round 5's note
+  names the buffered write, not a pipe buffer. No blocking or should-fix finding in rounds 4–6: **the offline review
+  is closed** with these two nits fixed. The real sessions and the comparison get their own round before in-review.
+- **The approver in chat, 2026-10-15** ("ok per tutte e tre"): departure 3 confirmed (`CODEX_HOME` emptied before
+  every step, but its credential and configuration); `gpt-6.1-sol` at `medium`; Codex 0.162.1 kept unless a newer
+  release is out on the day of the runs, in which case the re-pin is asked first.
+- **The approver in chat, 2026-10-15: the real sessions are brought forward** from the week of 2026-11-02 to now
+  ("anticipiamo"); the seven sessions, their caps and the stops are unchanged. Codex's quota, read by the approver from
+  the plan's usage page before the login: 5-hour limit 88 % left (reset within minutes), weekly limit 98 % left, 0
+  credits. Plan: P0 and CX-D in one 5-hour window, CX-1 and CX-2 in later ones, the usage page read before each.
+  `npm view @openai/codex version` on the day: 0.162.1, the pin unchanged.
+
+### The real sessions
+
+- **The login** (the approver, 2026-10-15, by hand, with LOGIN's two commands): `$HOME/.codex-bench/` mode 700,
+  `auth.json` mode 600, written by Codex through the single-file mount (its size grew from the `{}` placeholder; its
+  content never read here). dl-019 bound 4 holds with the real binary.
+- **P0** (2026-10-15, `BENCH_SPIKE_CONFIRM=1 probe.sh P0 READ SCAN` from the main checkout, the worktree's build at
+  `179f66b`): S3@1.0 step 1, baseline arm, `gpt-6.1-sol` at `medium`, Codex 0.162.1, then one resume with approver
+  policy v1's reply to a question.
+  - The step: 24 events, `completed`, 117 s; 1 turn; 118,112 input tokens of which 104,576 cached, no cache writes,
+    3,461 output (195 reasoning). It wrote `src/`, `test/` and changed `README.md`.
+  - The resume: `thread.started` with the **same thread id**, then `completed`; its `turn.completed` reports 137,579
+    input, 123,776 cached, 3,531 output: every field above the step's, **consistent with the thread's running total**
+    (READ), as the source says.
+  - The adapter's reading (`out/P0/adapter.json`): step 13,536 fresh input, 104,576 cached, 3,461 output, 0.0721 USD;
+    the resume's own 267 fresh, 19,200 cached, 70 output; the session 0.0753 USD API-equivalent, `price-table`.
+  - The secret scan after each stage: clean. The credential's mtime did not change during P0: no refresh happened.
+  - The two streams are now fixtures (`test/fixtures/codex-sessions/recorded-p0-*.jsonl`) with a test that reads them;
+    the branch's files scanned for the credential's values: clean.
+  - One ledger line; the Plus quota is the approver's to read before the next window.
+- **The dry runs' profile** (found before CX-D): `bench scenario dry-run` read only `scenarios/dry-run.yaml`,
+  calibration's (Claude Code 2.1.280), so the spike's dry runs could not pin Codex or Claude Code 2.1.300 at `medium`.
+  The approver chose, in chat, to add `--profile <file>` (REQ-CLI-05 1.32): red test `22b71c5`, feature `93fc4e1`,
+  with the two profiles `campaigns/x-codex-s3-{codex,claude-code}.dry-run.yaml`, whose pins equal their campaign
+  files'. Unit and acceptance 1625 passed, 8 skipped; `test:bin` 8/8; lint and `tsc` clean.
+- **Round 7** (a new independent read-only Explore subagent, on `93fc4e1`): clean but two low notes, both accepted.
+  1. the stored dry run keeps its profile as `dry-run.yaml`, not the file's name: the pins are stored all the same;
+     the profile used is named in these notes and the ledger.
+  2. `--profile` resolves against the repository's root, a campaign file against the working directory. **README
+     says so**; the runs are made from the main checkout's root, where the two agree.
+- **Where the runs read their files:** a campaign's results go under its file's repository, so the campaign files and
+  the dry-run profiles are copied, unchanged, into the main checkout's `campaigns/` (untracked) before the runs, and
+  committed on main with the results (as the Design says).
+- **CX-D** (2026-10-15, 13:03–13:08 UTC, from the main checkout with the worktree's build at `3c7d8e8`, `bench scenario
+  dry-run S3@1.0 --arm baseline --profile campaigns/x-codex-s3-codex.dry-run.yaml --allow-spending`): `dry-runs/20`,
+  `completed`, five steps each `completed` in one turn, no intervention, `AGENTS.md` as the manual, every step's
+  model priced `price-table`. 0.3323 USD API-equivalent (0.2941 €): steps 0.0833, 0.0496, 0.0385, 0.0818, 0.0791 USD;
+  37–86 s a step. The secret scan of `results/dry-runs/20` and its workspace: clean. The credential's mtime unchanged:
+  no refresh. No `bench-` container left. One ledger line.
+- **CX-1, CX-2** (2026-10-15, 13:51–14:02 UTC; the approver read the plan's usage before it: 5-hour 92 %, weekly 97 %;
+  `bench campaign run campaigns/x-codex-s3-codex.yaml --allow-spending` from the main checkout, the worktree's build
+  at `188b578`): the estimate read CX-D (high 0.7940 €, guard 0.7940 € under the 4 € warning); campaign
+  `e6963fa82f29/1`, 2 runs completed, 0 failed; every step `completed`, no intervention, `price-table`. r1 0.3566 USD,
+  r2 0.3014 USD, 0.6581 USD in all (0.5824 €) API-equivalent, 0 € spent. The secret scan of its results and
+  workspaces: clean; the credential's mtime unchanged; no `bench-` container left. Two ledger lines. **Every Codex
+  session is now run**: P0, CX-D, CX-1, CX-2.
+- **CC-D** (2026-10-15, 14:02–14:04 UTC, `bench scenario dry-run S3@1.0 --arm baseline --profile
+  campaigns/x-codex-s3-claude-code.dry-run.yaml --allow-spending`, `BENCH_AGENT_TOKEN_FILE=$HOME/.claude/bench-token`):
+  `dry-runs/21`, `completed`, five steps, no intervention, `CLAUDE.md`, `claude-sonnet-5-5` priced `list`. 0.2690 USD
+  (0.2381 €): steps 0.0615, 0.0412, 0.0404, 0.0656, 0.0603 USD; under the 2 € stop, so the campaign followed. The
+  token scan (`grep -rlFf` over the results and workspace, the value never printed): clean. One ledger line.
+- **CC-1, CC-2** (2026-10-15, 14:04–14:08 UTC, `bench campaign run campaigns/x-codex-s3-claude-code.yaml
+  --allow-spending`): the estimate read CC-D (high 0.6428 €); campaign `ae7ce2af99a5/1`, 2 runs completed, 0 failed;
+  every step `completed`, no intervention, priced `list`. r1 0.3376 USD, r2 0.3050 USD, 0.6426 USD in all (0.5688 €).
+  The token scan: clean; no `bench-` container left. Two ledger lines. **Every one of the seven sessions is run.**
+- **Spending:** Claude 0.9116 USD in all (CC-D, CC-1, CC-2; about 0.81 €) of the 9 € consented; Codex 1.0656 USD
+  API-equivalent (P0, CX-D, CX-1, CX-2), 0 € spent, on the Plus plan.
+- **Results committed on main** (`8707559`, as the Design says): both executions, both dry runs, the comparison and
+  the four campaign files (identical to the branch's); transcripts ignored (REQ-RES-06). Both credentials scanned for
+  first: none.
+
+### The comparison (preliminary: n = 2 per agent)
+
+`bench score <execution> --final --holdout ../WingFoil2-Benchmark-HoldOut` for both, then `bench campaign compare
+ae7ce2af99a5/1 e6963fa82f29/1` → `results/comparisons/e6963fa82f29-1/ae7ce2af99a5-1.json` (version 2). The pins that
+differ are only the agent's and the model: `agent.name`, `agent.version`, `agent.effort.*`, `models.default`; so
+M-R across is measured (no note).
+
+| S3@1.0, baseline | Claude Code 2.1.300, Sonnet 5.5 `medium` | Codex 0.162.1, gpt-6.1-sol `medium` | Across agents |
+|---|---|---|---|
+| final public tests | 37/37, 35/37 | 37/37, 37/37 | — |
+| hold-out | 16/17, 16/17 | 17/17, 17/17 | — |
+| checks; M-F1 | 0/1; 4/5, 3/5 | 0/1; 4/5, 4/5 | — |
+| cost per run (€, API-equivalent) | 0.2988, 0.2700 | 0.3157, 0.2668 | — |
+| **M-R1** (tests with one verdict) | 35/37 | 37/37 | 35/37 (pooled four runs) |
+| **M-R2** (interface, Jaccard) | 0.70 (7/10) | 1.00 (8/8) | **0.1381** (four cross pairs: 2/14, 2/14, 2/15, 2/15) |
+| **M-R3** (paths, Jaccard) | 1.00 (6/6) | 0.7143 (5/7) | 0.7143 (four cross pairs, each 5/7) |
+
+- **How the groups are formed** (the brief's question): one execution per agent, the same scenario version (S3@1.0,
+  one hash) and arm (baseline), the same caps, rate and approver policy; the agent (name, version, model, effort) is
+  the pin that varies. Within each agent the two repetitions are a group; across agents M-R1 pools the four runs and
+  M-R2/M-R3 take the four cross pairs.
+- **Did the experiment design need an amendment** (the brief's question): yes, 1.4 §4.5 (written by this task), since
+  1.3 said only that M-R "also apply across agents" and REQ-SCO-07 required every pin to be shared.
+- **Reading, preliminary (n = 2, no "beyond variance" claim, §4.6):**
+  - M-R1: the outcomes agree across agents as much as within Claude; the two tests on which they differ are Claude's
+    r2 failures, not an agent split.
+  - **M-R2 is where the agents part:** the public interfaces the two agents write share 2 of 14–15 entries, against
+    0.70 and 1.00 within each agent. Nearly the same tests passed (all but Claude r2's two), with a different code
+    shape: consistent with hidden tests that constrain behaviour rather than the exported API; n = 2 cannot say more.
+  - M-R3: the file layout across agents (0.71) is as close as Codex's own two runs, below Claude's 1.00.
+  - Quality and cost are close at n = 2: Codex passed every public and hold-out test, Claude 16/17 on the hold-out in
+    both runs; cost per run 0.27–0.32 € on both, at the same list prices per token (Codex's from the benchmark's
+    table, Claude's from Claude Code).
+  - Disclosure (dl-019 bound 9): Codex's sessions ran on a ChatGPT Plus subscription; their cost is the benchmark's
+    own pricing from OpenAI's list (`price-table`), flagged as bug-016 requires (both Codex runs are listed under
+    `unpriced` in `results/e6963fa82f29/1/aggregate.json`); an outside reproduction would most likely use an API key,
+    whose routing and limits may differ. The method page bound 9 names does not exist for an execution outside a
+    published campaign: these notes and the ledger carry the disclosure, and a site page, if any, is v0.3's.
+  - "Preliminary" is this reading's label (§4.6, n = 2 per agent); the aggregates' `preliminary: false` counts n = 2 in
+    a group, and says nothing about the comparison across agents.
+- **Round 8** (a new independent read-only Explore subagent, on `212882f`, the real sessions and the comparison): the
+  sessions match the consent (order, pins, no repeat, the 2 € stop), every figure checked against the evidence, no
+  credential pattern in the 125 committed files. Findings, all **fixed**:
+  1. should-fix — CX-2 is 0.3014 USD, not 0.3015 (its steps add to 0.3014168): Codex 1.0656, total 4.7777 USD.
+  2. should-fix — the ledger gave P0 a 3 € ceiling; P0 had `step_time_s` 3600 s and no cost cap (≤ 1 USD expected).
+  3. nit — the disclosure now names routing and limits, the bug-016 flag (`unpriced`), and where it lives (no method
+     page outside a published campaign); the ledger names the API-key caveat.
+  4. nit — **a departure, stated:** CX-1 and CX-2 ran 43 minutes after CX-D, in the same 5-hour window, not a later
+     one as planned. The approver read the usage page first (92 % / 97 %) and said "procedi" to running the campaign
+     at once, as proposed in chat.
+  5. nit — the M-R2 reading softened to "consistent with"; "preliminary" said to be this reading's label.
+  6. nit — the Design's dates point to the brought-forward entry.
+
+- **Round 9** (a new independent read-only Explore subagent, on `97a2147`): **clean**. Every round-8 fix checked against
+  the evidence (CX-2's steps 0.3014168 USD; the ledger's lines sum to 4.7777 USD, Codex's to 1.0656; P0's ceiling;
+  the disclosure against dl-019 bound 9; `unpriced` in the aggregate; the planned dates).
+
+### Review and approval
+
+- `npx wingfoil memory submit task-094-…`, in the worktree. Declared: `in-progress → in-review`, one commit.
+  Observed: exit 0, JSON `from`/`to` as declared, `45f3f5b`, one file, `status` only. Matches. The `in-progress` slot
+  is free from here.
+- **dl-019's end** (bound 8, the approver, 2026-10-15, after the last Codex session): `codex logout` with the
+  single-file mount failed with "Resource busy (os error 16)": Codex 0.162.1's logout revokes the tokens (best effort,
+  a failure only logged) and then removes `auth.json`, which a single-file bind mount cannot do. Run again with the
+  directory `$HOME/.codex-bench` mounted as `CODEX_HOME`, it completed; the approver then deleted the directory
+  (checked here: it no longer exists; its content was never read). **For a later use of dl-019's mount:** log out with
+  the directory mounted, not the file. The date is in the ledger.
+
+- **Full suites** (`scripts/full-suites.sh task/task-094`, asked by the approver for when the load fell; the first wait
+  was cut by the machine's reboot and restarted; they ran 20:57–21:19 on 2026-10-15) on **`cf451fe`**, the commit
+  offered: `LINT 0 TEST 0 BUILD 0 BIN 0 DOCKER 0`. `npm test` 1625 passed, 8 skipped, coverage 97.71 % (statements);
+  `test:bin` 8/8; `test:docker` 22 passed, 2 skipped (the same two conditional skips as task-085's and task-086's
+  runs, 20 + 2 then; the two new ones are Codex's). Log `.cache/full-suites/2026-10-15/task_task-094-cf451fe-205758.txt`.
+  No `bench-` container left. The commits after `cf451fe` are these notes only.
+- **The approver in chat, 2026-10-15:** this task and dl-019 reworded to name no other session (`e16bf13` on this
+  branch; `9d511ed` on main, with `Approver:` and `Reason:`). The same kind of mention in earlier elements and commit
+  messages goes through a bug and a task; rewriting history or what is pushed is the approver's.
+- The approver's `memory approve task-094-… --reason "…"` → `e37bc4e`, run from this worktree (`in-review →
+  approved`, `Approver:`/`Reason:` trailers with the drafted reason, only `status` changed). Matches. The approver in
+  chat: the earlier, already pushed mentions are left as they are.

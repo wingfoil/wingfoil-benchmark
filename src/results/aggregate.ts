@@ -459,6 +459,25 @@ export function aggregateExecution(executionDir: string): Result<AggregateFile> 
   });
 }
 
+/**
+ * The scored runs of the execution in `executionDir`, as aggregation reads them, with the group each belongs to:
+ * what the across-agent M-R of a comparison reads (REQ-SCO-13 as amended in 1.32).
+ */
+export function scoredRunsOf(
+  executionDir: string,
+): Result<(MRRun & { readonly scenario: string; readonly version: string; readonly arm: string; readonly model: string })[]> {
+  const campaign = basename(dirname(executionDir));
+  const execution = Number(basename(executionDir));
+  const runs: ScoredRun[] = [];
+  const issues: Issue[] = [];
+  for (const runDir of executionRuns(executionDir)) {
+    const read = readScored(executionDir, runDir, campaign, execution);
+    if (read.ok) runs.push(read.value);
+    else issues.push(...read.issues);
+  }
+  return issues.length > 0 ? fail(issues) : ok(runs);
+}
+
 /** Write `aggregate` beside the execution's runs. */
 export function writeAggregate(executionDir: string, aggregate: AggregateFile): void {
   writeFileSync(join(executionDir, AGGREGATE_FILE), `${JSON.stringify(aggregate, undefined, 2)}\n`);
@@ -555,6 +574,76 @@ function continuityOf(runs: readonly ScoredRun[]): Pick<Group['metrics'], 'm_f1'
   };
 }
 
+/** What M-R reads of a run: its name, its harness commit and the parts of its score M-R1–M-R3 read. */
+export interface MRRun {
+  readonly name: string;
+  readonly harnessCommit?: string;
+  readonly score: Pick<Score, 'scenario_hash' | 'final'> & Partial<Pick<Score, 'scorer' | 'determinism'>>;
+}
+
+/** One side of an across-agent M-R: the runs compared, those that reached their final snapshot, and the others. */
+export interface MRSide {
+  readonly n: number;
+  readonly runs: readonly string[];
+  readonly not_reached: readonly string[];
+}
+
+/** M-R1–M-R3 across two executions (REQ-SCO-07 as amended in 1.32, experiment design 1.4 §4.5). */
+export interface MRAcross {
+  readonly earlier: MRSide;
+  readonly newer: MRSide;
+  readonly pins_differ?: readonly RecordedPin[];
+  readonly m_r1?: { readonly agree: number; readonly total: number };
+  readonly m_r2?: Similarity;
+  readonly m_r3?: Similarity;
+}
+
+const PINS_COMPARED: readonly [RecordedPin, (run: MRRun) => string][] = [
+  ['scenario_hash', (run) => run.score.scenario_hash],
+  ['harness_commit', (run) => run.harnessCommit ?? ''],
+  ['scorer', (run) => canonicalJson(run.score.scorer ?? {})],
+];
+
+function sideOf(runs: readonly MRRun[]): { side: MRSide; reached: MRRun[] } {
+  const reached = runs.filter((run) => !('not_reached' in run.score.final));
+  return {
+    side: {
+      n: reached.length,
+      runs: reached.map((run) => run.name),
+      not_reached: runs.filter((run) => 'not_reached' in run.score.final).map((run) => run.name),
+    },
+    reached,
+  };
+}
+
+/**
+ * M-R1–M-R3 across two executions of one group, one per agent (experiment design 1.4 §4.5): over the runs that reached
+ * their final snapshot on each side. No value unless each side has one, or when a per-run pin differs, which is named.
+ * M-R1 over the pooled runs; M-R2 and M-R3 over the cross pairs, one run from each side, in run order.
+ */
+export function mRAcross(earlier: readonly MRRun[], newer: readonly MRRun[]): MRAcross {
+  const a = sideOf(earlier);
+  const b = sideOf(newer);
+  const base = { earlier: a.side, newer: b.side };
+  if (a.reached.length === 0 || b.reached.length === 0) return base;
+  const pooled = [...a.reached, ...b.reached];
+  const differ = PINS_COMPARED.filter(([, of]) => new Set(pooled.map(of)).size > 1).map(([pin]) => pin);
+  if (differ.length > 0) return { ...base, pins_differ: differ };
+  const m_r1 = agreement(pooled);
+  const measured = pooled.every((run) => run.score.determinism !== undefined && 'paths' in run.score.determinism);
+  const inputOf = (run: MRRun) => run.score.determinism as { interface: string[]; paths: string[] };
+  return {
+    ...base,
+    ...(m_r1 === undefined ? {} : { m_r1 }),
+    ...(measured
+      ? {
+          m_r2: crossSimilarity(a.reached, b.reached, (run) => inputOf(run).interface),
+          m_r3: crossSimilarity(a.reached, b.reached, (run) => inputOf(run).paths),
+        }
+      : {}),
+  };
+}
+
 /**
  * M-R1–M-R3 of a group (experiment design §4.5, REQ-SCO-07 as amended in 1.17): over the runs that
  * reached their final snapshot, in run order. M-R1 from each public suite's failing tests on the final
@@ -568,12 +657,7 @@ function mROf(runs: readonly ScoredRun[]): MRAggregate {
     not_reached: runs.filter((run) => 'not_reached' in run.score.final).map((run) => run.name),
   };
   if (reached.length < 2) return base;
-  const pins: [RecordedPin, (run: ScoredRun) => string][] = [
-    ['scenario_hash', (run) => run.score.scenario_hash],
-    ['harness_commit', (run) => run.harnessCommit ?? ''],
-    ['scorer', (run) => canonicalJson(run.score.scorer ?? {})],
-  ];
-  const differ = pins.filter(([, of]) => new Set(reached.map(of)).size > 1).map(([pin]) => pin);
+  const differ = PINS_COMPARED.filter(([, of]) => new Set(reached.map(of)).size > 1).map(([pin]) => pin);
   if (differ.length > 0) return { ...base, pins_differ: differ };
   const m_r1 = agreement(reached);
   const inputs = reached.map((run) => run.score.determinism);
@@ -593,7 +677,7 @@ function mROf(runs: readonly ScoredRun[]): MRAggregate {
 }
 
 /** M-R1: the census's tests that fail in every run or in none; undefined when a run lists no failures. */
-function agreement(runs: readonly ScoredRun[]): MRAggregate['m_r1'] {
+function agreement(runs: readonly MRRun[]): MRAggregate['m_r1'] {
   const failed: Set<string>[] = [];
   let total = 0;
   for (const run of runs) {
@@ -607,17 +691,36 @@ function agreement(runs: readonly ScoredRun[]): MRAggregate['m_r1'] {
   return { agree: total - disagree, total };
 }
 
+/** The Jaccard figures of two sets of items. */
+function pairOf(runs: readonly [string, string], x: readonly string[], y: readonly string[]): Similarity['pairs'][number] {
+  const a = new Set(x);
+  const b = new Set(y);
+  const intersection = [...a].filter((item) => b.has(item)).length;
+  return { runs, intersection, union: a.size + b.size - intersection };
+}
+
 /** The mean pairwise Jaccard similarity of `sets`, each pair in run order; two empty sets are alike. */
 function similarity(runs: readonly string[], sets: readonly (readonly string[])[]): Similarity {
   const pairs: Similarity['pairs'][number][] = [];
   for (let i = 0; i < sets.length; i += 1) {
     for (let j = i + 1; j < sets.length; j += 1) {
-      const a = new Set(sets[i]);
-      const b = new Set(sets[j]);
-      const intersection = [...a].filter((item) => b.has(item)).length;
-      pairs.push({ runs: [runs[i] as string, runs[j] as string], intersection, union: a.size + b.size - intersection });
+      pairs.push(pairOf([runs[i] as string, runs[j] as string], sets[i] ?? [], sets[j] ?? []));
     }
   }
+  return meanOf(pairs);
+}
+
+/** The mean Jaccard similarity over the cross pairs of two sides, one run from each, in run order (1.4 §4.5). */
+function crossSimilarity(
+  earlier: readonly MRRun[],
+  newer: readonly MRRun[],
+  itemsOf: (run: MRRun) => readonly string[],
+): Similarity {
+  const pairs = earlier.flatMap((x) => newer.map((y) => pairOf([x.name, y.name], itemsOf(x), itemsOf(y))));
+  return meanOf(pairs);
+}
+
+function meanOf(pairs: readonly Similarity['pairs'][number][]): Similarity {
   const ratios = pairs.map((pair) => (pair.union === 0 ? 1 : pair.intersection / pair.union));
   const mean = ratios.reduce((sum, ratio) => sum + ratio, 0) / ratios.length;
   return { mean: Math.round(mean * 1e4) / 1e4, pairs };

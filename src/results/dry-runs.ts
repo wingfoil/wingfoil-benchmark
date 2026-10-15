@@ -126,13 +126,20 @@ export function findDryRuns(resultsRoot: string, key: DryRunKey): DryRunsLookup 
   return { records, ...(records.length === 0 && skipped !== undefined ? { skipped } : {}) };
 }
 
-/** `<model> (<basis>)` for each model of any step priced at a basis other than `list` (bug-016), sorted. */
+/** The basis of a cost the benchmark priced itself (Codex, task-094). */
+const PRICE_TABLE = 'price-table';
+
+/**
+ * `<model> (<basis>)` for each model of any step priced at a basis other than `list` (bug-016), sorted. `price-table`
+ * is the benchmark's own pricing from a pinned list-price table (REQ-RUN-09 as amended in 1.32): flagged in the
+ * results, but a price, so it does not keep a dry run out of the estimate.
+ */
 function unpricedModels(run: StoredRun): string[] {
   const found = new Set<string>();
   for (const step of run.steps ?? []) {
     for (const [model, usage] of Object.entries(step.models ?? {})) {
       const basis = usage.costBasis;
-      if (typeof basis === 'string' && basis !== 'list') found.add(`${model} (${basis})`);
+      if (typeof basis === 'string' && basis !== 'list' && basis !== PRICE_TABLE) found.add(`${model} (${basis})`);
     }
   }
   return [...found].sort();
