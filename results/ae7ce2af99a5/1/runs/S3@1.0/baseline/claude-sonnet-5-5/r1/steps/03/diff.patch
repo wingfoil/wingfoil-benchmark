@@ -1,0 +1,67 @@
+diff --git a/README.md b/README.md
+index 0ead01b48daae8e72d68edc4fa2c152ab48fa05f..75cf349129964773ec18480105c1cb6b9c520ffd 100644
+--- a/README.md
++++ b/README.md
+@@ -18,6 +18,8 @@ School rules, which apply to everything the module does:
+ 4. The same item cannot be booked twice for overlapping periods.
+ 5. Cancellation policy: a booking cancelled less than 24 hours before its start gets no refund;
+    otherwise the full amount is refunded.
++6. Long-stay discount: a rental of 3 days or more costs 10% less than its full price (days x daily
++   price), rounded to the nearest cent. Quotes and bookings both show the reduced total.
+ 
+ Not implemented yet: cancellations (rule 5 is for when they are added; bookings keep their `total`
+ in cents so the refund can be computed from it).
+diff --git a/src/index.ts b/src/index.ts
+index ecd5411e01483edff20b8f7ef1cdde84a85e7549..08dd3b571f732471101cecb4c4445fde05a1458d 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -45,6 +45,7 @@ export interface RentalService {
+ }
+ 
+ const DAY_MS = 24 * 60 * 60 * 1000;
++const LONG_STAY_DAYS = 3;
+ const UTC_MIDNIGHT = /^\d{4}-\d{2}-\d{2}T00:00(?::00(?:\.0+)?)?(?:Z|[+-]00:00)$/;
+ 
+ function parseMidnight(value: unknown, name: string): number {
+@@ -68,6 +69,9 @@ export function createRentalService(): RentalService {
+     const endMs = parseMidnight(request.end, 'end');
+     if (endMs <= startMs) throw new Error('end must be after start');
+     const days = Math.round((endMs - startMs) / DAY_MS);
++    const full = days * item.dailyPrice;
++    // 3 days or more: 10% off, rounded to the nearest cent (halves up).
++    const total = days >= LONG_STAY_DAYS ? Math.floor((full * 9 + 5) / 10) : full;
+     return {
+       startMs,
+       endMs,
+@@ -75,7 +79,7 @@ export function createRentalService(): RentalService {
+         itemId: item.id,
+         start: request.start,
+         end: request.end,
+-        total: days * item.dailyPrice,
++        total,
+       },
+     };
+   }
+diff --git a/test/rental.test.ts b/test/rental.test.ts
+index 900a57d1338a30d9f70048657b4fc96e85478a6f..3f98c412981eb10d76064dc1a4e4abdf69a3eca7 100644
+--- a/test/rental.test.ts
++++ b/test/rental.test.ts
+@@ -12,8 +12,17 @@ function setup() {
+ 
+ test('quote multiplies days by daily price', () => {
+   assert.deepEqual(setup().quote({ itemId: 'b1', start: d(1), end: d(4) }), {
+-    itemId: 'b1', start: d(1), end: d(4), total: 7650,
++    itemId: 'b1', start: d(1), end: d(4), total: 6885,
+   });
++  assert.equal(setup().quote({ itemId: 'b1', start: d(1), end: d(3) }).total, 5100);
++});
++
++test('rentals of 3 days or more get 10% off, in quote and booking', () => {
++  const s = setup();
++  assert.equal(s.quote({ itemId: 'b1', start: d(1), end: d(6) }).total, 11475);
++  assert.equal(s.book({ itemId: 'b1', start: d(1), end: d(4) }).total, 6885);
++  s.addEquipment({ id: 'c1', kind: 'sail', dailyPrice: 5 });
++  assert.equal(s.quote({ itemId: 'c1', start: d(1), end: d(4) }).total, 14); // 13.5 rounds up
+ });
+ 
+ test('rejects unknown item, non-midnight, and empty periods', () => {

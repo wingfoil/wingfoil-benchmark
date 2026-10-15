@@ -1,0 +1,74 @@
+diff --git a/README.md b/README.md
+index 0be67b952c8f2869b30b28e55371534917f94f98..702c22114872b2abf42cb5b4c22b3b5014e126ff 100644
+--- a/README.md
++++ b/README.md
+@@ -18,6 +18,10 @@ offset is also accepted). The end must be after the start and is exclusive: June
+ costs two daily prices. Adjacent bookings are allowed. Quotes do not reserve equipment or check
+ availability; booking rejects any overlap for the same item. Unknown items and invalid periods throw.
+ 
++Rentals of three days or more receive 10% off the full rental price in both quotes and bookings.
++The reduced total is rounded once to the nearest cent, with half cents rounded up. The full price
++must still fit in a safe integer before the discount is applied.
++
+ Use `availability({ start, end, kind? })` to list equipment free for the whole period, optionally
+ filtered to `board` or `sail`. It returns equipment IDs in lexicographic order, uses the same period
+ validation and exclusive end as booking, and does not reserve equipment. Invalid kinds throw.
+diff --git a/src/index.ts b/src/index.ts
+index 054f3565403b979bf54156b8ccbb3b1e0c2e5daf..ac240f0b39402c57c54eb22b4a27cdfd75001349 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -69,8 +69,11 @@ export function createRentalService(): RentalService {
+     const item = equipment.get(request.itemId);
+     if (!item) throw new Error('Unknown equipment item');
+     const { start, end } = period(request);
+-    const total = ((end - start) / DAY_MS) * item.dailyPrice;
+-    if (!Number.isSafeInteger(total)) throw new Error('Rental total exceeds the supported cent amount');
++    const days = (end - start) / DAY_MS;
++    const fullPrice = days * item.dailyPrice;
++    if (!Number.isSafeInteger(fullPrice)) throw new Error('Rental total exceeds the supported cent amount');
++    // Round once to the nearest cent (half up), using exact integer arithmetic.
++    const total = days >= 3 ? Number((BigInt(fullPrice) * 9n + 5n) / 10n) : fullPrice;
+     const quote: RentalQuote = {
+       itemId: item.id,
+       start: request.start,
+diff --git a/test/rentals.test.js b/test/rentals.test.js
+index 34f37bae50bdbfb7e1ba9b2f97a7001d5929fee7..c736d738cc7ab458d7d990f2f18b01c921d49370 100644
+--- a/test/rentals.test.js
++++ b/test/rentals.test.js
+@@ -23,6 +23,36 @@ test('quotes and books whole days in integer cents, preserving request timestamp
+   assert.deepEqual(service.quote(request()), { ...request(), total: 5000 });
+ });
+ 
++test('quotes and bookings discount the entire rental from three days onward', () => {
++  for (const [days, total] of [[1, 2500], [2, 5000], [3, 6750], [4, 9000], [10, 22500]]) {
++    const service = desk();
++    const input = request(10, 10 + days);
++    assert.deepEqual(service.quote(input), { ...input, total });
++    assert.deepEqual(service.book(input), { id: '1', ...input, total });
++  }
++  const service = desk();
++  assert.equal(service.quote(request(10, 13, 'sail')).total, 3240);
++  assert.equal(service.book(request(10, 13, 'sail')).total, 3240);
++});
++
++test('discounts round the full total once to the nearest cent, with half cents up', () => {
++  for (const [dailyPrice, days, total] of [[0, 3, 0], [1, 3, 3], [2, 3, 5], [1, 5, 5], [3, 5, 14],
++    [3002399751580330, 3, 8106479329266891]]) {
++    const service = createRentalService();
++    service.addEquipment({ id: 'board', kind: 'board', dailyPrice });
++    const input = request(10, 10 + days);
++    assert.equal(service.quote(input).total, total);
++    assert.equal(service.book(input).total, total);
++  }
++});
++
++test('rejects unsafe full prices even for discounted rentals', () => {
++  const service = createRentalService();
++  service.addEquipment({ id: 'board', kind: 'board', dailyPrice: 3100000000000000 });
++  assert.throws(() => service.quote(request(10, 13)));
++  assert.throws(() => service.book(request(10, 13)));
++});
++
+ test('rejects every overlap while allowing adjacent periods and other items', () => {
+   const service = desk();
+   service.book(request(10, 14));

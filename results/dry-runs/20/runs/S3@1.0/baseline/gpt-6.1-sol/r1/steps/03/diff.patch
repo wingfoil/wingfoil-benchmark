@@ -1,0 +1,68 @@
+diff --git a/README.md b/README.md
+index 2bc0a3b96f4baf7d2bd55106b445c9bf2bd8748b..78ee75320f60aa2d5cce1ca04760dee320cafdcd 100644
+--- a/README.md
++++ b/README.md
+@@ -9,6 +9,9 @@ service. Register boards and sails with `addEquipment({ id, kind, dailyPrice })`
+ IDs must be unique and prices are nonnegative safe integers in euro cents.
+ `quote({ itemId, start, end })` returns the period and its total in cents.
+ `book` returns the same fields plus a booking ID, and reserves the equipment.
++Rentals of 3 days or more receive 10% off the full period price in both quotes
++and bookings. The discounted total is rounded to the nearest cent, with half
++cents rounded up.
+ 
+ Periods use ISO-8601 UTC midnight strings (for example `2026-06-10T00:00:00.000Z`)
+ and include the start but exclude the end. The end must follow the start. Adjacent
+diff --git a/src/index.ts b/src/index.ts
+index 7bc9a1ccf084505e59989d6a6ae10982cb125745..3d9d2a7c6bf99f337c3d91bb52626e784516eed4 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -64,8 +64,12 @@ export function createRentalService(): RentalService {
+     const item = equipment.get(request.itemId);
+     if (!item) throw new Error('Unknown equipment');
+     const { start, end } = period(request);
+-    const total = ((end - start) / DAY_MS) * item.dailyPrice;
+-    if (!Number.isSafeInteger(total)) throw new Error('Rental total is too large');
++    const days = (end - start) / DAY_MS;
++    const fullPrice = days * item.dailyPrice;
++    if (!Number.isSafeInteger(fullPrice)) throw new Error('Rental total is too large');
++    // Round the discounted total to the nearest cent, with half cents up.
++    // Integer arithmetic keeps rounding exact even for large safe prices.
++    const total = days >= 3 ? Number((BigInt(fullPrice) * 9n + 5n) / 10n) : fullPrice;
+     const quote: RentalQuote = {
+       itemId: item.id,
+       start: request.start,
+diff --git a/test/rental.test.mjs b/test/rental.test.mjs
+index 5bd9d53c0528f09cd2132c9636f0f887cb8a0155..4d4242bf696141e55d5db74dde4d9e743dbbb94f 100644
+--- a/test/rental.test.mjs
++++ b/test/rental.test.mjs
+@@ -20,6 +20,30 @@ test('quotes whole days in cents, including leap days and year boundaries', () =
+   assert.equal(service.quote(request('2026-06-10', '2026-06-11', 'sail')).total, 1000);
+ });
+ 
++test('quotes and bookings discount the full price for rentals of at least three days', () => {
++  for (const operation of ['quote', 'book']) {
++    for (const [days, expected] of [[1, 2501], [2, 5002], [3, 6753], [4, 9004]]) {
++      const service = setup();
++      const rental = request('2026-06-10', `2026-06-${10 + days}`);
++      assert.equal(service[operation](rental).total, expected);
++    }
++    const service = setup();
++    const rental = request('2026-06-10', '2026-06-13', 'sail');
++    assert.equal(service[operation](rental).total, 2700);
++  }
++});
++
++test('discounted totals round once to whole cents, with half cents up', () => {
++  for (const operation of ['quote', 'book']) {
++    for (const [dailyPrice, expected] of [[0, 0], [1, 3], [2, 5], [5, 14],
++      [3002399751580329, 8106479329266888]]) {
++      const service = createRentalService();
++      service.addEquipment({ id: 'board', kind: 'board', dailyPrice });
++      assert.equal(service[operation](request('2026-06-10', '2026-06-13')).total, expected);
++    }
++  }
++});
++
+ test('both operations reject unknown items and invalid periods', () => {
+   const service = setup();
+   const invalid = [

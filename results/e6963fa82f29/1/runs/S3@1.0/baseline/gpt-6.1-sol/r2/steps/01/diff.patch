@@ -1,0 +1,202 @@
+diff --git a/README.md b/README.md
+index b5fe1b2a4feac926b16f4b55fd72f2bb6eb7b711..240473d728b405485af4ad8975470c8c92df2983 100644
+--- a/README.md
++++ b/README.md
+@@ -3,3 +3,20 @@
+ The Lakeside Windsurf School teaches windsurfing on the lake from April to October, and rents boards and
+ sails to its students and to visitors who bring their own experience. This repository holds the software
+ of its booking desk, written in TypeScript with no runtime dependency.
++
++`createRentalService()` from `src/index.ts` creates an independent in-memory rental
++service. Add equipment with a unique nonempty ID, kind (`board` or `sail`), and
++nonnegative daily price in integer euro cents. `quote({ itemId, start, end })`
++returns the total; `book` also reserves the item and returns a booking ID.
++
++Periods use ISO-8601 midnight UTC strings (with `Z` or `+00:00`). The end is
++exclusive and must follow the start. Adjacent rentals are allowed; overlapping
++rentals for the same item are rejected. Quotes do not reserve equipment or check
++availability. Prices and totals must be safe integers. Data lasts only for the
++lifetime of the service instance.
++
++Cancellation is not implemented. When added, cancellation less than 24 hours
++before the start receives no refund; at least 24 hours before receives a full
++refund.
++
++Run `npm test` with Node.js 22.18 or later (native TypeScript type stripping).
+diff --git a/src/index.ts b/src/index.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..cb9b1a16d74c90d5859c370204086168567f18fe
+--- /dev/null
++++ b/src/index.ts
+@@ -0,0 +1,86 @@
++export interface Equipment {
++  id: string;
++  kind: 'board' | 'sail';
++  dailyPrice: number;
++}
++
++export interface RentalRequest {
++  itemId: string;
++  start: string;
++  end: string;
++}
++
++export interface RentalQuote extends RentalRequest {
++  total: number;
++}
++
++export interface RentalBooking extends RentalQuote {
++  id: string;
++}
++
++export interface RentalService {
++  addEquipment(item: Equipment): void;
++  quote(request: RentalRequest): RentalQuote;
++  book(request: RentalRequest): RentalBooking;
++}
++
++const DAY_MS = 24 * 60 * 60 * 1000;
++
++function midnight(value: string): number {
++  // Require explicit UTC and reject dates that Date.parse would normalize,
++  // such as February 30. Both Z and the zero UTC offset are accepted.
++  if (typeof value !== 'string' ||
++      !/^\d{4}-\d{2}-\d{2}T00:00(?::00(?:\.0+)?)?(?:Z|\+00:00)$/.test(value)) {
++    throw new Error('Rental times must be ISO-8601 midnight UTC strings');
++  }
++  const time = Date.parse(value);
++  if (!Number.isFinite(time) || new Date(time).toISOString().slice(0, 10) !== value.slice(0, 10)) {
++    throw new Error('Invalid rental date');
++  }
++  return time;
++}
++
++/** Each call creates an independent, in-memory rental desk. */
++export function createRentalService(): RentalService {
++  const equipment = new Map<string, Equipment>();
++  const bookings: { booking: RentalBooking; start: number; end: number }[] = [];
++  let nextBookingId = 1;
++
++  function price(request: RentalRequest) {
++    const { itemId, start, end } = request;
++    const item = equipment.get(itemId);
++    if (!item) throw new Error('Unknown equipment');
++    const startTime = midnight(start);
++    const endTime = midnight(end);
++    if (endTime <= startTime) throw new Error('Rental end must be after its start');
++    const total = ((endTime - startTime) / DAY_MS) * item.dailyPrice;
++    if (!Number.isSafeInteger(total)) throw new Error('Rental total exceeds safe integer cents');
++    return { quote: { itemId, start, end, total }, startTime, endTime };
++  }
++
++  return {
++    addEquipment(item) {
++      const { id, kind, dailyPrice } = item;
++      if (typeof id !== 'string' || id.length === 0) throw new Error('Equipment needs a nonempty string ID');
++      if (kind !== 'board' && kind !== 'sail') throw new Error('Invalid equipment kind');
++      if (!Number.isSafeInteger(dailyPrice) || dailyPrice < 0) {
++        throw new Error('Daily price must be nonnegative safe integer cents');
++      }
++      if (equipment.has(id)) throw new Error('Equipment ID already exists');
++      equipment.set(id, { id, kind, dailyPrice });
++    },
++    quote(request) {
++      return price(request).quote;
++    },
++    book(request) {
++      const { quote, startTime, endTime } = price(request);
++      if (bookings.some(({ booking, start, end }) =>
++        booking.itemId === quote.itemId && startTime < end && start < endTime)) {
++        throw new Error('Equipment is already booked for this period');
++      }
++      const booking = { id: String(nextBookingId++), ...quote };
++      bookings.push({ booking, start: startTime, end: endTime });
++      return { ...booking };
++    },
++  };
++}
+diff --git a/test/rental.test.mjs b/test/rental.test.mjs
+new file mode 100644
+index 0000000000000000000000000000000000000000..6677efbb5175d266f0daa1a8339febc5b9fffc44
+--- /dev/null
++++ b/test/rental.test.mjs
+@@ -0,0 +1,79 @@
++import test from 'node:test';
++import assert from 'node:assert/strict';
++import { createRentalService } from '../src/index.ts';
++
++const date = (day) => `2026-06-${String(day).padStart(2, '0')}T00:00:00Z`;
++const request = (start = 1, end = 3, itemId = 'board') => ({ itemId, start: date(start), end: date(end) });
++function desk() {
++  const service = createRentalService();
++  service.addEquipment({ id: 'board', kind: 'board', dailyPrice: 1250 });
++  service.addEquipment({ id: 'sail', kind: 'sail', dailyPrice: 700 });
++  return service;
++}
++
++test('prices whole UTC days in cents, preserving request strings', () => {
++  const service = desk();
++  assert.deepEqual(service.quote(request()), { ...request(), total: 2500 });
++  assert.equal(service.quote(request(1, 2, 'sail')).total, 700);
++  assert.equal(service.quote({ itemId: 'board', start: '2028-02-28T00:00:00.000Z', end: '2028-03-01T00:00:00+00:00' }).total, 2500);
++  assert.equal(service.quote({ itemId: 'board', start: '2026-03-28T00:00Z', end: '2026-03-30T00:00Z' }).total, 2500);
++});
++
++test('rejects unknown items and invalid periods in both operations', () => {
++  const service = desk();
++  const invalid = [request(1, 2, 'missing'), request(2, 2), request(3, 1)];
++  for (const start of ['2026-02-30T00:00:00Z', '2026-06-01', '2026-06-01T00:00:00', '2026-06-01T01:00:00Z', '2026-06-01T00:00:00+01:00', '2026-06-01T00:00:00.001Z', 'invalid', null, 0]) {
++    invalid.push({ ...request(), start });
++    invalid.push({ ...request(), end: start });
++  }
++  for (const input of invalid) {
++    assert.throws(() => service.quote(input));
++    assert.throws(() => service.book(input));
++  }
++});
++
++test('blocks all overlap shapes while allowing adjacent periods and other items', () => {
++  const service = desk();
++  const booking = service.book(request(3, 6));
++  assert.deepEqual(booking, { id: booking.id, ...request(3, 6), total: 3750 });
++  assert.equal(typeof booking.id, 'string');
++  for (const [start, end] of [[3, 6], [2, 4], [5, 7], [4, 5], [2, 7]]) {
++    assert.throws(() => service.book(request(start, end)));
++  }
++  assert.equal(service.quote(request(3, 6)).total, 3750);
++  const adjacent = service.book(request(1, 3));
++  service.book(request(6, 7));
++  service.book(request(3, 6, 'sail'));
++  assert.notEqual(adjacent.id, booking.id);
++});
++
++test('validates equipment, duplicate IDs and safe integer money', () => {
++  const service = desk();
++  for (const dailyPrice of [-1, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1, '100']) {
++    assert.throws(() => service.addEquipment({ id: 'new', kind: 'board', dailyPrice }));
++  }
++  assert.throws(() => service.addEquipment({ id: '', kind: 'board', dailyPrice: 100 }));
++  assert.throws(() => service.addEquipment({ id: 'new', kind: 'mast', dailyPrice: 100 }));
++  assert.throws(() => service.addEquipment({ id: 'board', kind: 'sail', dailyPrice: 100 }));
++  service.addEquipment({ id: 'free', kind: 'sail', dailyPrice: 0 });
++  assert.equal(service.book(request(1, 2, 'free')).total, 0);
++  service.addEquipment({ id: 'expensive', kind: 'board', dailyPrice: Number.MAX_SAFE_INTEGER });
++  assert.throws(() => service.quote(request(1, 3, 'expensive')));
++  assert.throws(() => service.book(request(1, 3, 'expensive')));
++});
++
++test('caller mutations cannot change equipment or bookings; services are independent', () => {
++  const service = createRentalService();
++  const item = { id: 'board', kind: 'board', dailyPrice: 100 };
++  service.addEquipment(item);
++  item.dailyPrice = 999;
++  const input = request();
++  const booking = service.book(input);
++  input.end = date(2);
++  booking.itemId = 'changed';
++  booking.start = date(9);
++  booking.total = 0;
++  assert.throws(() => service.book(request()));
++  assert.equal(service.quote(request()).total, 200);
++  assert.throws(() => createRentalService().quote(request()));
++});

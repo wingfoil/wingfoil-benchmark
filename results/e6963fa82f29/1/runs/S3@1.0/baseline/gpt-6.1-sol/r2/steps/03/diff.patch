@@ -1,0 +1,79 @@
+diff --git a/README.md b/README.md
+index 54195342826c00ed9aae1067d76f89aec10fdaee..b3b08d60c66a72286f5068d1917590e39dfa8dcb 100644
+--- a/README.md
++++ b/README.md
+@@ -8,6 +8,9 @@ of its booking desk, written in TypeScript with no runtime dependency.
+ service. Add equipment with a unique nonempty ID, kind (`board` or `sail`), and
+ nonnegative daily price in integer euro cents. `quote({ itemId, start, end })`
+ returns the total; `book` also reserves the item and returns a booking ID.
++Rentals of at least three days receive 10% off the full rental price in both
++quotes and bookings. The discounted total is rounded to the nearest cent, with
++half cents rounded up.
+ `availability({ start, end, kind? })` returns sorted equipment IDs that are free
+ for the whole period, optionally filtered to `board` or `sail`. It uses the same
+ period validation as rentals and does not reserve equipment or calculate prices.
+diff --git a/src/index.ts b/src/index.ts
+index b9f2d1f28085a2a4d9abb8bedb538f553e702b76..0697ef17230e47c6e3dd8ce1f7950e26c15e0ec5 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -65,8 +65,11 @@ export function createRentalService(): RentalService {
+     const item = equipment.get(itemId);
+     if (!item) throw new Error('Unknown equipment');
+     const { startTime, endTime } = period(request);
+-    const total = ((endTime - startTime) / DAY_MS) * item.dailyPrice;
+-    if (!Number.isSafeInteger(total)) throw new Error('Rental total exceeds safe integer cents');
++    const days = (endTime - startTime) / DAY_MS;
++    const fullPrice = days * item.dailyPrice;
++    if (!Number.isSafeInteger(fullPrice)) throw new Error('Rental total exceeds safe integer cents');
++    // Round the discounted total to the nearest cent, with half cents rounded up.
++    const total = days >= 3 ? Number((BigInt(fullPrice) * 9n + 5n) / 10n) : fullPrice;
+     return { quote: { itemId, start, end, total }, startTime, endTime };
+   }
+ 
+diff --git a/test/rental.test.mjs b/test/rental.test.mjs
+index a14b6d318178afd02d84b74831bc6bbc67518f04..ca968fbe1995e3ea6b7e7683718a19cff0c89874 100644
+--- a/test/rental.test.mjs
++++ b/test/rental.test.mjs
+@@ -32,15 +32,40 @@ test('rejects unknown items and invalid periods in both operations', () => {
+   }
+ });
+ 
++test('discounts the full price for three or more days in quotes and bookings', () => {
++  for (const [days, total] of [[1, 1250], [2, 2500], [3, 3375], [4, 4500], [10, 11250]]) {
++    const service = desk();
++    const input = request(1, 1 + days);
++    assert.deepEqual(service.quote(input), { ...input, total });
++    assert.equal(service.book(input).total, total);
++  }
++});
++
++test('rounds discounted totals to integer cents accurately', () => {
++  for (const [dailyPrice, days, total] of [
++    [0, 3, 0],
++    [1, 3, 3],
++    [2, 3, 5],
++    [1, 5, 5],
++    [3002399751580330, 3, 8106479329266891],
++  ]) {
++    const service = createRentalService();
++    service.addEquipment({ id: 'board', kind: 'board', dailyPrice });
++    const input = request(1, 1 + days);
++    assert.equal(service.quote(input).total, total);
++    assert.equal(service.book(input).total, total);
++  }
++});
++
+ test('blocks all overlap shapes while allowing adjacent periods and other items', () => {
+   const service = desk();
+   const booking = service.book(request(3, 6));
+-  assert.deepEqual(booking, { id: booking.id, ...request(3, 6), total: 3750 });
++  assert.deepEqual(booking, { id: booking.id, ...request(3, 6), total: 3375 });
+   assert.equal(typeof booking.id, 'string');
+   for (const [start, end] of [[3, 6], [2, 4], [5, 7], [4, 5], [2, 7]]) {
+     assert.throws(() => service.book(request(start, end)));
+   }
+-  assert.equal(service.quote(request(3, 6)).total, 3750);
++  assert.equal(service.quote(request(3, 6)).total, 3375);
+   const adjacent = service.book(request(1, 3));
+   service.book(request(6, 7));
+   service.book(request(3, 6, 'sail'));

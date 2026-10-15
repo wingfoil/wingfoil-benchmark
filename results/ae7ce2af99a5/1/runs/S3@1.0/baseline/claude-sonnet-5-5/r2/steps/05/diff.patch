@@ -1,0 +1,75 @@
+diff --git a/src/index.ts b/src/index.ts
+index 8d1c5fc34baf9c0f1328c99cb1f35cc2f023de46..ac80cab71b6ec6ff8bbfb8020fbcc81579c8a91b 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -44,6 +44,18 @@ export interface RentalService {
+   book(request: RentalRequest): Booking;
+   /** Ids of the equipment free for the whole period, sorted. */
+   availability(query: AvailabilityQuery): string[];
++  /**
++   * Cancels a booking at the instant `at` (ISO-8601 UTC); the equipment is free again afterwards.
++   * Refund policy: the full price before the rental starts, nothing once it has started.
++   * A booking can only be cancelled once.
++   */
++  cancel(bookingId: string, at: string): CancelResult;
++}
++
++export interface CancelResult {
++  bookingId: string;
++  /** Euro cents given back to the customer. */
++  refund: number;
+ }
+ 
+ const HOUR_MS = 60 * 60 * 1000;
+@@ -78,6 +90,7 @@ function parsePeriod(start: unknown, end: unknown): { startMs: number; endMs: nu
+ export function createRentalService(): RentalService {
+   const equipment = new Map<string, Equipment>();
+   const bookings: (Booking & { startMs: number; endMs: number })[] = [];
++  const cancelled = new Set<string>();
+   let nextBookingId = 1;
+ 
+   function price(request: RentalRequest) {
+@@ -141,6 +154,23 @@ export function createRentalService(): RentalService {
+       return { ...booking };
+     },
+ 
++    cancel(bookingId, at) {
++      if (typeof at !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]00:?00)$/.test(at)) {
++        throw new Error('at must be an ISO-8601 UTC string');
++      }
++      const atMs = Date.parse(at);
++      if (Number.isNaN(atMs) || at.slice(0, 10) !== new Date(atMs).toISOString().slice(0, 10)) {
++        throw new Error(`at is not a valid date: ${at}`);
++      }
++      if (cancelled.has(bookingId)) throw new Error(`booking already cancelled: ${bookingId}`);
++      const index = bookings.findIndex((b) => b.id === bookingId);
++      if (index < 0) throw new Error(`unknown booking: ${String(bookingId)}`);
++      const booking = bookings[index];
++      bookings.splice(index, 1);
++      cancelled.add(bookingId);
++      return { bookingId, refund: atMs < booking.startMs ? booking.total : 0 };
++    },
++
+     availability(query) {
+       if (typeof query !== 'object' || query === null) throw new Error('query is required');
+       const { startMs, endMs, hourly } = parsePeriod(query.start, query.end);
+diff --git a/test/rental.test.ts b/test/rental.test.ts
+index 712270068a31c67eaf5b35ac3efe99bb088c5e2a..24bbcf12d936dd4ce9bd5597b9770a6cc8bbc3df 100644
+--- a/test/rental.test.ts
++++ b/test/rental.test.ts
+@@ -73,3 +73,15 @@ test('rents by the hour at the hourly price, without long-rental discount', () =
+   assert.deepEqual(s.availability({ ...h(8, 10) }), ['h1']);
+   assert.deepEqual(s.availability({ ...h(12, 13) }), []);
+ });
++
++test('cancels a booking once, refunds in full before the start and frees the equipment', () => {
++  const s = setup();
++  const a = s.book({ itemId: 'b1', start: d(1), end: d(4) });
++  assert.deepEqual(s.cancel(a.id, '2026-06-30T12:00:00Z'), { bookingId: a.id, refund: 6750 });
++  assert.throws(() => s.cancel(a.id, d(1)), /already cancelled/);
++  assert.deepEqual(s.availability({ start: d(1), end: d(4), kind: 'board' }), ['b1']);
++  const b = s.book({ itemId: 'b1', start: d(2), end: d(3) });
++  assert.equal(s.cancel(b.id, '2026-07-02T10:30:00Z').refund, 0);
++  assert.throws(() => s.cancel('nope', d(1)), /unknown booking/);
++  assert.throws(() => s.cancel(b.id, 'garbage'));
++});

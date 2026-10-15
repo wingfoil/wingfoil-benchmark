@@ -1,0 +1,186 @@
+diff --git a/README.md b/README.md
+index 0fb18ef9b5f92aac1c58aa96c465287d98e2250b..5d3a12934a1c28e50e6e36ace7a4c525dd0b811d 100644
+--- a/README.md
++++ b/README.md
+@@ -29,8 +29,12 @@ for the whole period. Omit `kind` to include both boards and sails. It uses the
+ same period rules as bookings and does not reserve equipment. For periods shorter
+ than a day, it only includes equipment with an hourly price.
+ 
+-Cancellation is not implemented yet. When added, a cancellation less than 24 hours
+-before the booking's start receives no refund; otherwise the full amount is
+-refunded, including at exactly 24 hours before the start.
++`cancel(bookingId, at)` returns `{ bookingId, refund }` in cents and releases the
++equipment. A cancellation less than 24 hours before the booking's start receives
++no refund; otherwise the full booked amount is refunded, including at exactly
++24 hours before the start. Cancellations at or after the start receive no refund.
++`at` must be an ISO-8601 UTC timestamp (`Z` or `+00:00`), and may include minutes,
++seconds, and up to three fractional second digits; it need not be on the hour.
++Unknown bookings, repeat cancellations, and invalid timestamps are rejected.
+ 
+ Run `npm test` with Node.js 22.18 or later (with native TypeScript stripping).
+diff --git a/src/index.ts b/src/index.ts
+index c56722566ea80a15ee6e6881530421ad019f9786..f79eaf67716716e85ed720e9d90d54c4f55e0369 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -25,16 +25,35 @@ export interface RentalBooking extends RentalQuote {
+   id: string;
+ }
+ 
++export interface RentalCancellation {
++  bookingId: string;
++  refund: number;
++}
++
+ export interface RentalService {
+   addEquipment(item: Equipment): void;
+   quote(request: RentalRequest): RentalQuote;
+   book(request: RentalRequest): RentalBooking;
++  cancel(bookingId: string, at: string): RentalCancellation;
+   availability(query: AvailabilityQuery): string[];
+ }
+ 
+ const HOUR_MS = 60 * 60 * 1000;
+ const DAY_MS = 24 * HOUR_MS;
+ 
++function cancellationTime(value: string): number {
++  if (typeof value !== 'string' ||
++      !/^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d{1,3})?)?(?:Z|\+00:00)$/.test(value)) {
++    throw new Error('Cancellation time must be an ISO-8601 UTC string');
++  }
++  const time = Date.parse(value);
++  if (!Number.isFinite(time) ||
++      new Date(time).toISOString().slice(0, 10) !== value.slice(0, 10)) {
++    throw new Error('Invalid cancellation time');
++  }
++  return time;
++}
++
+ function onTheHour(value: string): number {
+   // Require an explicit UTC timezone and a whole hour; reject Date.parse's
+   // normalization of impossible dates such as February 30.
+@@ -63,7 +82,9 @@ function period(request: { start: string; end: string }) {
+ 
+ export function createRentalService(): RentalService {
+   const equipment = new Map<string, Equipment>();
+-  const bookings: { start: number; end: number; itemId: string }[] = [];
++  const bookings = new Map<string, {
++    start: number; end: number; itemId: string; total: number; cancelled: boolean;
++  }>();
+   let nextBookingId = 1;
+ 
+   function price(request: RentalRequest) {
+@@ -115,20 +136,30 @@ export function createRentalService(): RentalService {
+     },
+     book(request) {
+       const { quote, start, end } = price(request);
+-      if (bookings.some(booking => booking.itemId === quote.itemId &&
++      if ([...bookings.values()].some(booking => !booking.cancelled && booking.itemId === quote.itemId &&
+           start < booking.end && booking.start < end)) {
+         throw new Error('Equipment is already booked for this period');
+       }
+-      bookings.push({ itemId: quote.itemId, start, end });
+-      return { id: String(nextBookingId++), ...quote };
++      const id = String(nextBookingId++);
++      bookings.set(id, { itemId: quote.itemId, start, end, total: quote.total, cancelled: false });
++      return { id, ...quote };
++    },
++    cancel(bookingId, at) {
++      const booking = bookings.get(bookingId);
++      if (!booking) throw new Error('Unknown booking');
++      if (booking.cancelled) throw new Error('Booking is already cancelled');
++      const time = cancellationTime(at);
++      const refund = booking.start - time >= DAY_MS ? booking.total : 0;
++      booking.cancelled = true;
++      return { bookingId, refund };
+     },
+     availability(query) {
+       const { start, end, hourly } = period(query);
+       if (query.kind !== undefined && query.kind !== 'board' && query.kind !== 'sail') {
+         throw new Error('Equipment kind must be board or sail');
+       }
+-      const unavailable = new Set(bookings
+-        .filter(booking => start < booking.end && booking.start < end)
++      const unavailable = new Set([...bookings.values()]
++        .filter(booking => !booking.cancelled && start < booking.end && booking.start < end)
+         .map(booking => booking.itemId));
+       return [...equipment.values()]
+         .filter(item => (query.kind === undefined || item.kind === query.kind) &&
+diff --git a/test/rental.test.mjs b/test/rental.test.mjs
+index 520bfbcf6ec2b8cec8991303f498bf4e18a39e08..21fc42709629bec0e96c2f213c8df1398f5daa52 100644
+--- a/test/rental.test.mjs
++++ b/test/rental.test.mjs
+@@ -248,3 +248,74 @@ test('availability validates periods and kinds even with no matching equipment',
+     ...['other', '', null].map(kind => ({ ...request(), kind })),
+   ]) assert.throws(() => service.availability(query));
+ });
++
++test('cancellation refunds the booked total at the exact 24-hour cutoff', () => {
++  for (const [at, fullRefund] of [
++    ['2026-06-08T23:59:59.999Z', true],
++    ['2026-06-09T00:00:00+00:00', true],
++    ['2026-06-09T00:00:00.001Z', false],
++    ['2026-06-09T12:30Z', false],
++    ['2026-06-10T00:00:00Z', false],
++    ['2026-06-15T00:00:00Z', false],
++  ]) {
++    const service = setup();
++    const booking = service.book(request('2026-06-10', '2026-06-13'));
++    assert.deepEqual(service.cancel(booking.id, at), {
++      bookingId: booking.id, refund: fullRefund ? 6753 : 0,
++    });
++    assert.deepEqual(service.availability(request()), ['board', 'sail']);
++    assert.throws(() => service.cancel(booking.id, at), /already cancelled/);
++    const replacement = service.book(request('2026-06-10', '2026-06-13'));
++    assert.notEqual(replacement.id, booking.id);
++    assert.throws(() => service.book(request()));
++  }
++});
++
++test('hourly cancellations use the actual start instant and release only that booking', () => {
++  for (const [at, refund] of [
++    ['2026-06-09T13:00Z', 1503],
++    ['2026-06-09T13:00:00.001Z', 0],
++  ]) {
++    const service = createRentalService();
++    service.addEquipment({ id: 'board', kind: 'board', dailyPrice: 1000, hourlyPrice: 501 });
++    const booking = service.book(hourlyRequest());
++    const adjacent = hourlyRequest('2026-06-10T16:00Z', '2026-06-10T17:00Z');
++    service.book(adjacent);
++    assert.deepEqual(service.cancel(booking.id, at), { bookingId: booking.id, refund });
++    assert.deepEqual(service.availability(hourlyRequest()), ['board']);
++    assert.deepEqual(service.availability(adjacent), []);
++    service.book(hourlyRequest());
++  }
++});
++
++test('invalid cancellations leave the booking reserved and cancellable', () => {
++  const service = setup();
++  const booking = service.book(request());
++  assert.throws(() => service.cancel('missing', '2026-06-08T00:00Z'), /Unknown booking/);
++  assert.throws(() => setup().cancel(booking.id, '2026-06-08T00:00Z'), /Unknown booking/);
++  for (const at of [undefined, null, 0, '', 'bad', '2026-06-08',
++    '2026-06-08T00:00:00', '2026-06-08T00:00:00+01:00',
++    '2026-02-30T00:00:00Z', '2026-06-08T24:00:00Z',
++    '2026-06-08T00:60:00Z', '2026-06-08T00:00:60Z']) {
++    assert.throws(() => service.cancel(booking.id, at));
++    assert.throws(() => service.book(request()));
++    assert.deepEqual(service.availability(request()), ['sail']);
++  }
++  assert.equal(service.cancel(booking.id, '2026-06-08T00:00Z').refund, 5002);
++});
++
++test('cancellation retains the stored price and start despite caller mutations', () => {
++  const service = setup();
++  const rental = request();
++  const booking = service.book(rental);
++  const id = booking.id;
++  rental.start = '2026-06-20T00:00:00Z';
++  booking.start = rental.start;
++  booking.total = 0;
++  booking.id = 'changed';
++  assert.deepEqual(service.cancel(id, '2026-06-09T00:00Z'), { bookingId: id, refund: 5002 });
++  service.addEquipment({ id: 'free', kind: 'board', dailyPrice: 0 });
++  const free = service.book(request('2026-06-10', '2026-06-12', 'free'));
++  assert.deepEqual(service.cancel(free.id, '2026-06-08T00:00Z'), { bookingId: free.id, refund: 0 });
++  assert.throws(() => service.cancel(free.id, '2026-06-08T00:00Z'), /already cancelled/);
++});
