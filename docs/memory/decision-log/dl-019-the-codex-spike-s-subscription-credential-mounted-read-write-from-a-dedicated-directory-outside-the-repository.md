@@ -2,7 +2,7 @@
 id: dl-019-the-codex-spike-s-subscription-credential-mounted-read-write-from-a-dedicated-directory-outside-the-repository
 type: decision-log
 title: "The Codex spike's subscription credential mounted read-write from a dedicated directory outside the repository"
-status: draft
+status: pending
 tags: ["security","agent","codex"]
 ---
 
