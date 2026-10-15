@@ -421,3 +421,8 @@ Output in the main checkout's git-ignored `spikes/task-094/out/`.
 - **The approver in chat, 2026-10-15** ("ok per tutte e tre"): departure 3 confirmed (`CODEX_HOME` emptied before
   every step, but its credential and configuration); `gpt-6.1-sol` at `medium`; Codex 0.162.1 kept unless a newer
   release is out on the day of the runs, in which case the re-pin is asked first.
+- **The approver in chat, 2026-10-15: the real sessions are brought forward** from the week of 2026-11-02 to now
+  ("anticipiamo"); the seven sessions, their caps and the stops are unchanged. Codex's quota, read by the approver from
+  the plan's usage page before the login: 5-hour limit 88 % left (reset within minutes), weekly limit 98 % left, 0
+  credits. Plan: P0 and CX-D in one 5-hour window, CX-1 and CX-2 in later ones, the usage page read before each.
+  `npm view @openai/codex version` on the day: 0.162.1, the pin unchanged.
