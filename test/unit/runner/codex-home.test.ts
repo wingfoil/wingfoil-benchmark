@@ -98,6 +98,25 @@ describe("Codex's home in the run container (REQ-RUN-15, REQ-NFR-01 as amended i
   });
 });
 
+describe("a refreshed credential's values (REQ-NFR-01 as amended in 1.32, review 1)", () => {
+  it('scrubs what the runner stores with the values the credential holds when it stores it, not only at the start', async () => {
+    const { checked } = codexCampaign();
+    const refreshed = 'at-refreshed-during-the-run-0002';
+    const ports = doubles({ patchOf: () => `+token=${refreshed}\n` });
+
+    const summary = await runCampaign(checked, {
+      ...ports,
+      credentialFile: AUTH,
+      secrets: ['at-original-0001-long'],
+      refreshSecrets: () => [refreshed],
+    });
+
+    const patch = readFileSync(join(summary.runs[0]?.outputDir ?? '', 'steps', '01', 'diff.patch'), 'utf8');
+    expect(patch).not.toContain(refreshed);
+    expect(patch).toContain('[redacted]');
+  });
+});
+
 describe("Codex's manual (REQ-RUN-12 as amended in 1.32)", () => {
   it("puts the arm's manual in the workspace as AGENTS.md, and records that file", async () => {
     const { root, checked } = codexCampaign();

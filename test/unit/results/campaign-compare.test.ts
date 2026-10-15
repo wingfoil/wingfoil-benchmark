@@ -119,6 +119,15 @@ describe('compareExecutions (REQ-SCO-13, task-083)', () => {
     expect(baseline?.m_r2?.pairs).toHaveLength(1);
   }, 240_000);
 
+  it('measures M-R across only when the agent and its models are the only pins that differ (review 1)', () => {
+    const root = handBuiltPair({ harness: ['v0.2.2', 'v0.3.0'] });
+    const result = compareExecutions(root, EARLIER, NEWER, categories);
+    if (!result.ok) throw new Error(JSON.stringify(result.issues));
+    expect(result.value.m_r_across.map((entry) => entry.note)).toEqual(
+      result.value.m_r_across.map(() => 'not measured: pins other than the agent\'s differ: harnesses.wingfoil'),
+    );
+  });
+
   it('gives the same bytes for the same two executions', async () => {
     const root = await executions();
     const result = compareExecutions(root, EARLIER, NEWER, primaryOf(root));
@@ -130,6 +139,21 @@ describe('compareExecutions (REQ-SCO-13, task-083)', () => {
     expect(file).toBe(join(root, 'results', 'comparisons', 'abcdef012345-1', '0123456789ab-1.json'));
   }, 240_000);
 });
+
+/** Two hand-built executions of TC's baseline whose campaign files differ in the WingFoil harness's version only. */
+function handBuiltPair({ harness }: { readonly harness: readonly [string, string] }): string {
+  const root = tempDir('bench-cmp-');
+  for (const [target, version] of [
+    [EARLIER, harness[0]],
+    [NEWER, harness[1]],
+  ] as const) {
+    handBuilt(root, target, 'm', [{ arm: 'baseline', q1: [1] }], {
+      models: { default: 'm' },
+      harnesses: { wingfoil: { tool: 'wingfoil', version } },
+    });
+  }
+  return root;
+}
 
 /** A group of hand-built figures: M-Q1 passed of 1 per run, M-K1 cost per run, and optionally M-E1's check. */
 interface Spec {

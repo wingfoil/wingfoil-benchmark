@@ -117,6 +117,49 @@ describe('reading a Codex session (REQ-RUN-09 as amended in 1.32)', () => {
     expect(session.outcome).toBe('rate limited');
   });
 
+  it("takes a total below the thread's previous one as the invocation's own, never as a negative delta (review 1)", () => {
+    const first = readCodexSession(stream('completed.jsonl'), { model: MODEL, usdToEur: RATE });
+    const lower = [
+      `{"type":"thread.started","thread_id":"${THREAD}"}`,
+      '{"type":"turn.completed","usage":{"input_tokens":3000,"cached_input_tokens":1000,"cache_write_input_tokens":0,"output_tokens":100,"reasoning_output_tokens":0}}',
+    ];
+    const resumed = readCodexSession(lower, { model: MODEL, usdToEur: RATE, before: first.totals });
+
+    expect(resumed.usage).toMatchObject({ inputTokens: 2000, cacheReadInputTokens: 1000, outputTokens: 100 });
+    expect(resumed.totals).toEqual({ input: 27000, cached: 19000, written: 4000, output: 1600 });
+    expect(resumed.usage.costUsd).toBeCloseTo(COMPLETED_USD + (2000 * 2 + 1000 * 0.1 + 100 * 10) / 1e6, 10);
+  });
+
+  it("does not fail a session on Codex's own retries, which it reports as error events", () => {
+    const lines = [
+      `{"type":"thread.started","thread_id":"${THREAD}"}`,
+      '{"type":"error","message":"Reconnecting... 2/5 (stream disconnected before completion)"}',
+      ...stream('completed.jsonl').slice(1),
+    ];
+    expect(readCodexSession(lines, { model: MODEL, usdToEur: RATE }).outcome).toBe('completed');
+  });
+
+  it('reads a limit named by an error event before a turn that failed with another message', () => {
+    const lines = [
+      `{"type":"thread.started","thread_id":"${THREAD}"}`,
+      '{"type":"error","message":"You’ve hit your usage limit. Try again later."}',
+      '{"type":"turn.failed","error":{"message":"the turn ended"}}',
+    ];
+    expect(readCodexSession(lines, { model: MODEL, usdToEur: RATE }).outcome).toBe('quota exhausted');
+  });
+
+  it.each([
+    ['exceeded retry limit, last status: 429 Too Many Requests', 'rate limited'],
+    ['You hit your spend cap for this workspace.', 'quota exhausted'],
+    ['Your workspace is out of credits.', 'quota exhausted'],
+  ])("reads Codex's '%s' as %s", (message, outcome) => {
+    const lines = [
+      `{"type":"thread.started","thread_id":"${THREAD}"}`,
+      JSON.stringify({ type: 'turn.failed', error: { message } }),
+    ];
+    expect(readCodexSession(lines, { model: MODEL, usdToEur: RATE }).outcome).toBe(outcome);
+  });
+
   it('reports a line that is not JSON rather than skipping it', () => {
     const session = readCodexSession(['not json'], { model: MODEL, usdToEur: RATE });
 
@@ -277,6 +320,48 @@ describe('the Codex adapter (REQ-RUN-04 as amended in 1.32)', () => {
     expect(resumed.sessionId).toBe(SESSION);
     expect(resumed.usage).toMatchObject({ inputTokens: 0, cacheReadInputTokens: 15000, outputTokens: 600 });
     expect(resumed.usage.costUsd).toBeCloseTo(RESUMED_USD, 10);
+  });
+
+  it('resumes a thread whose stream does not start it again, as the same session', async () => {
+    const exec = runner([stream('completed.jsonl').join('\n'), stream('resumed.jsonl').slice(1).join('\n')]);
+    const agent = codexAgent({ authFile: authFile('at-0001-long-access'), usdToEur: RATE });
+
+    await agent.runStep(step(exec.run));
+    const resumed = await agent.resume({
+      scenarioId: 'S3',
+      step: 1,
+      intervention: 1,
+      sessionId: SESSION,
+      reply: 'Continue.',
+      remainingCostUsd: 3,
+      run: exec.run,
+    });
+
+    expect(resumed.sessionId).toBe(SESSION);
+    expect(resumed.error).toBeUndefined();
+    expect(resumed.usage.cacheReadInputTokens).toBe(15000);
+  });
+
+  it('fails a resume that Codex answered in another thread, reporting no session', async () => {
+    const other = stream('resumed.jsonl').map((line) =>
+      line.replace(THREAD, '019a0000-ffff-7000-8000-000000000000'),
+    );
+    const exec = runner([stream('completed.jsonl').join('\n'), other.join('\n')]);
+    const agent = codexAgent({ authFile: authFile('at-0001-long-access'), usdToEur: RATE });
+
+    await agent.runStep(step(exec.run));
+    const resumed = await agent.resume({
+      scenarioId: 'S3',
+      step: 1,
+      intervention: 1,
+      sessionId: SESSION,
+      reply: 'Continue.',
+      remainingCostUsd: 3,
+      run: exec.run,
+    });
+
+    expect(resumed.sessionId).toBe('');
+    expect(resumed.error).toMatch(/resumed thread .*, not /);
   });
 
   it('refuses to resume a session it never started, without running anything', async () => {

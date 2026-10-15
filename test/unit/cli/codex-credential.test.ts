@@ -1,4 +1,4 @@
-import { chmodSync, mkdirSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -80,6 +80,32 @@ describe("Codex's credential file in the preflight (REQ-RUN-15 as amended in 1.3
       );
   });
 
+  it('says invalid for a link outside every checkout to a file inside one: the file is where it really is', () => {
+    const checkout = tempDir('bench-codex-checkout-');
+    mkdirSync(join(checkout, '.git'));
+    const inside = join(checkout, 'auth.json');
+    writeFileSync(inside, '{}');
+    chmodSync(inside, 0o600);
+    const link = join(tempDir('bench-codex-link-'), 'auth.json');
+    symlinkSync(inside, link);
+
+    expect(campaignRequirements(codexCampaign(), { BENCH_CODEX_AUTH_FILE: link })[0]).toEqual(
+      expect.objectContaining({ state: 'invalid', problem: `${link} is inside a git checkout` }),
+    );
+  });
+
+  it('says invalid for a file whose directory others can enter (dl-019 bound 2: mode 700)', () => {
+    const file = authFile();
+    const dir = join(file, '..');
+    chmodSync(dir, 0o755);
+    expect(campaignRequirements(codexCampaign(), { BENCH_CODEX_AUTH_FILE: file })[0]).toEqual(
+      expect.objectContaining({
+        state: 'invalid',
+        problem: `${file} must be in a directory of mode 700, not 755`,
+      }),
+    );
+  });
+
   it('says invalid for a directory', () => {
     const dir = tempDir('bench-codex-dir-');
     expect(campaignRequirements(codexCampaign(), { BENCH_CODEX_AUTH_FILE: dir })[0]).toEqual(
@@ -116,6 +142,20 @@ describe("Codex's credential for a run (REQ-RUN-15, REQ-NFR-01 as amended in 1.3
       refusal: { path: 'x', message: 'y' },
     });
     expect(spending.ok ? [] : spending.issues.map((issue) => issue.path)).toEqual(['BENCH_CODEX_AUTH_FILE']);
+  });
+
+  it('refuses a run whose credential holds no value to scrub, such as the placeholder before the login', () => {
+    const file = authFile();
+    writeFileSync(file, '{}');
+    vi.stubEnv('BENCH_CODEX_AUTH_FILE', file);
+    const spending = checkSpending(codexCampaign().campaign.spec, {
+      allowSpending: true,
+      builds: [],
+      refusal: { path: 'x', message: 'y' },
+    });
+    expect(spending.ok ? [] : spending.issues.map((issue) => `${issue.path}: ${issue.message}`)).toEqual([
+      'BENCH_CODEX_AUTH_FILE: holds no credential value: log in first (dl-019 bound 3)',
+    ]);
   });
 
   it("runs Codex's adapter behind the port", async () => {
