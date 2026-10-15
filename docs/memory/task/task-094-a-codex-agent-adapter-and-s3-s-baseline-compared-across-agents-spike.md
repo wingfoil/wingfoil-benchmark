@@ -540,3 +540,6 @@ M-R across is measured (no note).
   5. nit — the M-R2 reading softened to "consistent with"; "preliminary" said to be this reading's label.
   6. nit — the Design's dates point to the brought-forward entry.
 
+- **Round 9** (a new independent read-only Explore subagent, on `97a2147`): **clean**. Every round-8 fix checked against
+  the evidence (CX-2's steps 0.3014168 USD; the ledger's lines sum to 4.7777 USD, Codex's to 1.0656; P0's ceiling;
+  the disclosure against dl-019 bound 9; `unpriced` in the aggregate; the planned dates).
