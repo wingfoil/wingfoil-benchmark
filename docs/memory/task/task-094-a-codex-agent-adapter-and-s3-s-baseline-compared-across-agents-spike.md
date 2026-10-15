@@ -15,7 +15,7 @@ tags: ["spike","agent","codex","determinism"]
 
 ## Context
 
-plan-004 step 3-bis, approved by the approver in chat on 2026-10-15 and agreed with the coordination session WFCoord:
+plan-004 step 3-bis, approved by the approver in chat on 2026-10-15, within the approver's planning across projects:
 a **Codex agent adapter** and a small **cross-agent comparison**, kept **outside** the v0.2 reference campaign. The
 Claude pin (task-093: Claude Code 2.1.300) and dl-017 do not change; the v0.2 campaign files are not touched.
 
@@ -37,7 +37,7 @@ Claude pin (task-093: Claude Code 2.1.300) and dl-017 do not change; the v0.2 ca
 
 **Done** means: the adapter, its schema and requirements amendment, and the across-agent M-R delivered offline and
 green; the consented real sessions run, each a ledger line; M-R1 and M-R2 within and across agents reported, labelled
-preliminary; dl-019's end (logout, deletion) recorded; WFCoord told the merge sha.
+preliminary; dl-019's end (logout, deletion) recorded; the merge sha reported to the approver's planning.
 
 ## Acceptance criteria
 
@@ -200,7 +200,7 @@ main checkout. Every session is S3@1.0, baseline arm. Order: Codex first (no mon
 - **Stops:** a failed session or run is not repeated without new consent. If P0 fails, or its stream cannot be read
   as designed, the task stops and asks before CX-D. If CC-D costs more than 2 € (over twice the expectation), it
   stops and asks before CC-1. A run stopped by the plan's quota is recorded, not repeated.
-- **The subscription's end** (WFCoord, 2026-10-15): the Plus subscription is not renewed after 2026-11-13, so every
+- **The subscription's end** (the approver's planning, 2026-10-15): the Plus subscription is not renewed after 2026-11-13, so every
   Codex session is planned for 2026-11-02 to 11-06 (brought forward to 2026-10-15), with no slot after the 13th. Extra credits are bought only for a
   run the approver names as fundamental that finds the quota exhausted: that is new spending, asked for with its
   amount, never assumed by this consent.
