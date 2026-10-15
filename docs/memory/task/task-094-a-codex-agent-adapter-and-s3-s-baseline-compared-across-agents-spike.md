@@ -543,3 +543,9 @@ M-R across is measured (no note).
 - **Round 9** (a new independent read-only Explore subagent, on `97a2147`): **clean**. Every round-8 fix checked against
   the evidence (CX-2's steps 0.3014168 USD; the ledger's lines sum to 4.7777 USD, Codex's to 1.0656; P0's ceiling;
   the disclosure against dl-019 bound 9; `unpriced` in the aggregate; the planned dates).
+
+### Review and approval
+
+- `npx wingfoil memory submit task-094-…`, in the worktree. Declared: `in-progress → in-review`, one commit.
+  Observed: exit 0, JSON `from`/`to` as declared, `45f3f5b`, one file, `status` only. Matches. The `in-progress` slot
+  is free from here.
