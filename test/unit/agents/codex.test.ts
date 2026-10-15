@@ -163,7 +163,7 @@ describe('the Codex adapter (REQ-RUN-04 as amended in 1.32)', () => {
   const SESSION = '0babeb92-e70d-409c-8916-c15c542e5112';
 
   function authFile(accessToken: string): string {
-    const file = join(tempDir(), 'auth.json');
+    const file = join(tempDir('bench-codex-'), 'auth.json');
     writeFileSync(
       file,
       JSON.stringify({ tokens: { access_token: accessToken, refresh_token: 'rt_refresh-value-0001' } }),

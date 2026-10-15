@@ -253,7 +253,11 @@ async function runCampaignCommand(
   const spec = checked.value.campaign.spec;
   // dl-015: a real agent runs every model at a pinned effort, refused here before the estimate.
   const unpinned = missingEffort(spec.agent, campaignModels(spec));
-  if (unpinned.length > 0) return report(unpinned.map(effortRefusal), io);
+  if (unpinned.length > 0)
+    return report(
+      unpinned.map((m) => effortRefusal(m, spec.agent.name)),
+      io,
+    );
   const rate = spec.currency.usd_to_eur;
   // What it expects to spend, before anything is built (REQ-NFR-06), and the budget guard's first two
   // refusals (F1.3, task-023): a campaign whose cost is unknown, and one above its ceiling, never start.

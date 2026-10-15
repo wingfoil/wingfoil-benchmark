@@ -68,7 +68,11 @@ export async function dryRunCommand(
 
   // dl-015: a real agent's dry run runs its model at the profile's pinned effort; refused first, as `campaign run` does.
   const unpinned = missingEffort(profile.agent, [model]);
-  if (unpinned.length > 0) return report(unpinned.map(effortRefusal), io);
+  if (unpinned.length > 0)
+    return report(
+      unpinned.map((m) => effortRefusal(m, profile.agent.name)),
+      io,
+    );
 
   const spending = checkSpending(profile, {
     allowSpending: args.allowSpending,

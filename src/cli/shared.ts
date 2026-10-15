@@ -89,6 +89,10 @@ export function portsFor(pins: RunPins, credential?: Readonly<Record<string, str
       },
     };
   }
+  if (name === 'codex') {
+    // Wired with its credential mount (REQ-RUN-15 as amended in 1.32) by task-094's runner work.
+    return { ok: false, issues: [{ path: 'agent.name', message: "'codex' has no ports yet" }] };
+  }
   name satisfies typeof FREE_AGENT;
   const script = process.env[FAKE_SCRIPT_VARIABLE];
   if (script === undefined) {
