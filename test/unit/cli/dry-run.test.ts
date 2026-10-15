@@ -413,3 +413,52 @@ function existsUnder(dir: string): boolean {
     return false;
   }
 }
+
+describe('bench scenario dry-run --profile (REQ-CLI-05 as amended in 1.32, task-094)', () => {
+  it('parses --profile once, with a value', () => {
+    expect(
+      parseDryRunArguments(['T3@1.0', '--arm', 'baseline', '--profile', 'campaigns/x.dry-run.yaml']),
+    ).toEqual({
+      id: 'T3',
+      version: '1.0',
+      arm: 'baseline',
+      profile: 'campaigns/x.dry-run.yaml',
+      allowSpending: false,
+    });
+    expect(
+      parseDryRunArguments(['T3@1.0', '--arm', 'baseline', '--profile', 'a', '--profile', 'b']),
+    ).toBeUndefined();
+    expect(parseDryRunArguments(['T3@1.0', '--arm', 'baseline', '--profile'])).toBeUndefined();
+  });
+
+  it('runs on the profile it names, relative to the repository, and leaves scenarios/dry-run.yaml alone', async () => {
+    const root = repository();
+    const before = readFileSync(join(root, 'scenarios', 'dry-run.yaml'), 'utf8');
+    mkdirSync(join(root, 'campaigns'), { recursive: true });
+    writeFileSync(
+      join(root, 'campaigns', 'x.dry-run.yaml'),
+      stringify({ ...dryRunProfileYaml(), models: { default: 'other-model' } }),
+    );
+    vi.stubEnv('BENCH_FAKE_SCRIPT', repoPath('test/fixtures/fake-script.json'));
+
+    const result = await dryRun(root, [
+      'T3@1.0',
+      '--arm',
+      'baseline',
+      '--profile',
+      'campaigns/x.dry-run.yaml',
+    ]);
+
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain('on other-model');
+    expect(readFileSync(join(root, 'scenarios', 'dry-run.yaml'), 'utf8')).toBe(before);
+  });
+
+  it('refuses a profile file that does not exist, naming it', async () => {
+    const root = repository();
+    const result = await dryRun(root, ['T3@1.0', '--arm', 'baseline', '--profile', 'campaigns/missing.yaml']);
+
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain('missing.yaml');
+  });
+});
