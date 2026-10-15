@@ -495,3 +495,28 @@ describe('the Codex adapter (REQ-RUN-04 as amended in 1.32)', () => {
     expect(outcome.error).toMatch(/output bound/);
   });
 });
+
+describe("a recorded Codex 0.162.1 session (task-094's P0, 2026-10-15)", () => {
+  it('reads the real step and its resume as the fixtures in the source shape are read', () => {
+    const step = readCodexSession(stream('recorded-p0-step.jsonl'), { model: MODEL, usdToEur: RATE });
+    const resume = readCodexSession(stream('recorded-p0-resume.jsonl'), {
+      model: MODEL,
+      usdToEur: RATE,
+      before: step.totals,
+      threadId: step.threadId,
+    });
+
+    expect(step.outcome).toBe('completed');
+    expect(step.usage).toMatchObject({
+      inputTokens: 13536,
+      cacheReadInputTokens: 104576,
+      outputTokens: 3461,
+    });
+    expect(step.usage.costUsd).toBeCloseTo((13536 * 2 + 104576 * 0.1 + 3461 * 10) / 1e6, 10);
+    // The resume reported the thread's total, the step's included: its own tokens are the difference.
+    expect(resume.threadId).toBe(step.threadId);
+    expect(resume.outcome).toBe('completed');
+    expect(resume.usage).toMatchObject({ inputTokens: 267, cacheReadInputTokens: 19200, outputTokens: 70 });
+    expect(resume.usage.costUsd).toBeCloseTo(0.0752936, 7);
+  });
+});

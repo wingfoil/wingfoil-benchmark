@@ -426,3 +426,23 @@ Output in the main checkout's git-ignored `spikes/task-094/out/`.
   the plan's usage page before the login: 5-hour limit 88 % left (reset within minutes), weekly limit 98 % left, 0
   credits. Plan: P0 and CX-D in one 5-hour window, CX-1 and CX-2 in later ones, the usage page read before each.
   `npm view @openai/codex version` on the day: 0.162.1, the pin unchanged.
+
+### The real sessions
+
+- **The login** (the approver, 2026-10-15, by hand, with LOGIN's two commands): `$HOME/.codex-bench/` mode 700,
+  `auth.json` mode 600, written by Codex through the single-file mount (its size grew from the `{}` placeholder; its
+  content never read here). dl-019 bound 4 holds with the real binary.
+- **P0** (2026-10-15, `BENCH_SPIKE_CONFIRM=1 probe.sh P0 READ SCAN` from the main checkout, the worktree's build at
+  `179f66b`): S3@1.0 step 1, baseline arm, `gpt-6.1-sol` at `medium`, Codex 0.162.1, then one resume with approver
+  policy v1's reply to a question.
+  - The step: 24 events, `completed`, 117 s; 1 turn; 118,112 input tokens of which 104,576 cached, no cache writes,
+    3,461 output (195 reasoning). It wrote `src/`, `test/` and changed `README.md`.
+  - The resume: `thread.started` with the **same thread id**, then `completed`; its `turn.completed` reports 137,579
+    input, 123,776 cached, 3,531 output: every field above the step's, **consistent with the thread's running total**
+    (READ), as the source says.
+  - The adapter's reading (`out/P0/adapter.json`): step 13,536 fresh input, 104,576 cached, 3,461 output, 0.0721 USD;
+    the resume's own 267 fresh, 19,200 cached, 70 output; the session 0.0753 USD API-equivalent, `price-table`.
+  - The secret scan after each stage: clean. The credential's mtime did not change during P0: no refresh happened.
+  - The two streams are now fixtures (`test/fixtures/codex-sessions/recorded-p0-*.jsonl`) with a test that reads them;
+    the branch's files scanned for the credential's values: clean.
+  - One ledger line; the Plus quota is the approver's to read before the next window.
