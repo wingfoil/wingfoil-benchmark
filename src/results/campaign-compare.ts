@@ -528,12 +528,11 @@ function pinAt(pins: Record<string, unknown>, path: readonly string[]): string {
   return String(node);
 }
 
-/** The pins that differ (REQ-SCO-13): the default model, the agent, each model's effort and each arm's harness. */
 /**
  * Why M-R across is not measured, if it is not (experiment design 1.4 §4.5): it is across two agents, so the agent's
  * name must differ; the agent's pins and the models it runs may differ, and so may the scenarios a campaign lists and
- * their repetitions, which only select the groups; the harnesses, the arms' digests, the caps and the approver
- * policy, which shape a run, may not.
+ * their repetitions, which only select the groups; the harnesses, the arms' digests, the caps, the approver
+ * policy and the rate (which moves where `run_cost_eur` stops a run), which shape a run, may not.
  */
 function acrossNoteOf(
   before: Record<string, unknown>,
@@ -544,11 +543,12 @@ function acrossNoteOf(
   if (agentName(before) === agentName(after)) return `not measured: the same agent, ${agentName(after)}, on both sides`;
   const others = [
     ...differ.map((d) => d.pin).filter((pin) => !pin.startsWith('agent.') && !pin.startsWith('models.')),
-    ...['caps', 'approver_policy'].filter((key) => canonicalJson(before[key] ?? null) !== canonicalJson(after[key] ?? null)),
+    ...['caps', 'approver_policy', 'currency'].filter((key) => canonicalJson(before[key] ?? null) !== canonicalJson(after[key] ?? null)),
   ];
   return others.length === 0 ? undefined : `not measured: pins other than the agent's differ: ${others.join(', ')}`;
 }
 
+/** The pins that differ (REQ-SCO-13): the default model, the agent, each model's effort and each arm's harness. */
 function pinsDiffer(before: Record<string, unknown>, after: Record<string, unknown>): PinDiffers[] {
   const keysOf = (pins: Record<string, unknown>, at: string) => {
     const node = pins[at];

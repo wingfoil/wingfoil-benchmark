@@ -96,6 +96,8 @@ export function readCodexSession(lines: readonly string[], reading: CodexReading
    * (`last_critical_error`), it stands for the session's failure only when no `turn.failed` names one.
    */
   let lastError: string | undefined;
+  /** Whether this invocation's count restarted below the thread's: decided at its first `turn.completed`. */
+  let restarted: boolean | undefined;
 
   const result = (outcome: CodexSession['outcome'], error?: string): CodexSession => {
     const price = (reading.prices ?? OPENAI_PRICES)[reading.model];
@@ -156,10 +158,10 @@ export function readCodexSession(lines: readonly string[], reading: CodexReading
         };
         // The thread's running total: the latest replaces, never adds (REQ-RUN-09 as amended in 1.32). A total below
         // the thread's earlier one (a resume that restarted its count) is this invocation's own, added to it.
-        const lower = (Object.keys(reported) as (keyof CodexTotals)[]).some(
+        restarted ??= (Object.keys(reported) as (keyof CodexTotals)[]).some(
           (key) => reported[key] < before[key],
         );
-        totals = lower
+        totals = restarted
           ? {
               input: before.input + reported.input,
               cached: before.cached + reported.cached,
@@ -196,7 +198,7 @@ export function readCodexSession(lines: readonly string[], reading: CodexReading
   if (turns === 0) {
     const limit = lastError === undefined ? undefined : limitOf(lastError);
     if (limit !== undefined) return result(limit);
-    return result('failed', 'the session ended with no turn.completed event');
+    return result('failed', lastError ?? 'the session ended with no turn.completed event');
   }
   return result('completed');
 }

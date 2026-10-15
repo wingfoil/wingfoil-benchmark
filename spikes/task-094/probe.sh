@@ -102,11 +102,13 @@ p0() {
   local fake="at-fake-original-$(od -An -N8 -tx8 /dev/urandom | tr -d ' ')"
   if [ -n "$FAKE" ]; then printf '{"tokens":{"access_token":"%s"}}' "$fake" > "$AUTH_FILE"; chmod 600 "$AUTH_FILE"; fi
   [ -f "$AUTH_FILE" ] || { echo "no credential file at $AUTH_FILE: the approver logs in first (LOGIN)"; exit 64; }
-  if [ -z "$FAKE" ]; then # dl-019 bounds 2, 6 and 7, as the runner's preflight checks them (the built dist/)
-    local problem; problem="$(node --input-type=module -e "const m=await import('$REPO/dist/cli/preflight.js');process.stdout.write(m.codexAuthFile('$AUTH_FILE')??'')")"
+  if [ -z "$FAKE" ]; then # dl-019 bounds 2 and 7, as the runner's preflight checks them (the built dist/)
+    [ "$REPO/dist/cli/preflight.js" -nt "$REPO/src/cli/preflight.ts" ] || { echo "dist/ is older than src/: npm run build"; exit 64; }
+    local problem; problem="$(node --input-type=module -e "const m=await import('$REPO/dist/cli/preflight.js');process.stdout.write(m.codexAuthFile(process.argv[1])??'')" "$AUTH_FILE")"
     [ -z "$problem" ] || { echo "credential refused: $problem"; exit 64; }
   fi
-  BEFORE_VALUES="$(secrets)"
+  AUTH_FILE="$(realpath "$AUTH_FILE")" # the real path, mounted as the runner mounts it
+  BEFORE_VALUES="$(secrets)" # dl-019 bound 6: nothing to scrub, no session
   [ -n "$BEFORE_VALUES" ] || { echo "credential holds no value: log in first (LOGIN)"; exit 64; }
   mkdir -p "$dir"; rm -rf "$dir/workspace"
   cp -r "$REPO/scenarios/S3/1.0/seed" "$dir/workspace"
@@ -154,7 +156,9 @@ read_streams() { # the adapter's own reading of P0's streams, through the built 
     const raw = (f) => { let t; for (const l of lines(f)) { try { const e = JSON.parse(l); if (e.type === 'turn.completed') t = e.usage; } catch {} } return t; };
     const [a, b] = [raw('$OUT/P0/session.jsonl'), raw('$OUT/P0/resume.jsonl')];
     const resumeTotal = a === undefined || b === undefined ? 'not observed'
-      : Object.keys(a).every((k) => (b[k] ?? 0) >= a[k]) ? 'the thread total (every field at or above the step\'s)' : 'restarted (a field below the step\'s)';
+      : Object.keys(a).every((k) => (b[k] ?? 0) >= a[k])
+        ? 'consistent with the thread total (every field at or above the step\'s; a restarted, larger count cannot be excluded)'
+        : 'restarted (a field below the step\'s)';
     writeFileSync('$OUT/P0/adapter.json', JSON.stringify({ step: brief(step), resume: brief(resume), resumeTotal }, null, 2) + '\n');
     console.log('READ: the resume reports ' + resumeTotal);
     console.log('READ: step ' + step.outcome + ', ' + step.usage.costUsd.toFixed(4) + ' USD; resume ' + resume.outcome + ', ' + resume.usage.costUsd.toFixed(4) + ' USD (API-equivalent, price-table)');
