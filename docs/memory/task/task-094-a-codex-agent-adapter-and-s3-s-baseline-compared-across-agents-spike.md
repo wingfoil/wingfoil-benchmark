@@ -247,3 +247,87 @@ main checkout. Every session is S3@1.0, baseline arm. Order: Codex first (no mon
   Observed: `e2a7a10`, `status: draft`, `tags` written, the other fields empty (W-02). Matches.
 - dl-019 before it: `memory add` `d3a2e74`, body `9baf6f9`, `memory submit` `0c98ad2` (`draft → pending`, `status`
   only), the approver's `memory approve` `f10f5ce` (`pending → approved`). Each matches its declaration.
+- The approver's `memory approve task-094-… --reason "…"` → `de6922f` (`pending → backlog`), on main; its reason names
+  the seven sessions, their caps, 0 € for Codex and at most 9 € for Claude. Matches.
+- `npx wingfoil memory submit task-094-…`, in the linked worktree `WingFoil2-Benchmark-wt/task-094` with its own
+  `npm ci`. Declared: `backlog → in-progress`, one commit. Observed: exit 0, JSON `from`/`to` as declared, `f5c3729`,
+  one file, `status` only. Matches.
+
+### The free phase (2026-10-15, no credential, no session)
+
+Output in the main checkout's git-ignored `spikes/task-094/out/`.
+
+- **F1, the release** (`probe.sh F1`, `111e195`): `@openai/codex` `latest` **0.162.1** (2026-10-09T19:50Z). Its source
+  at `rust-v0.162.1` (`out/f1/source/`, URLs in `out/f1/sources.txt`), read for what the adapter rests on:
+  - `exec_events.rs`: `thread.started` (`thread_id`), `turn.started`, `turn.completed` (`usage`: `input_tokens`,
+    `cached_input_tokens`, `cache_write_input_tokens`, `output_tokens`, `reasoning_output_tokens`), `turn.failed`
+    (`error.message`), `item.*` (`agent_message`, `reasoning`, `command_execution`, `file_change`, …), `error`;
+  - `event_processor_with_jsonl_output.rs`: `turn.completed`'s usage is `usage.total`, the **thread's running
+    total**, not the turn's;
+  - `codex-api/src/sse/responses.rs`: `input_tokens` is the API's, with `cached_input_tokens` and
+    `cache_write_input_tokens` inside it (its own test: 100 = 40 cached + 60 written); `reasoning_output_tokens` is
+    read from `output_tokens_details`, so inside `output_tokens`;
+  - `login/src/auth/storage.rs`: `auth.json` is saved by `truncate(true).write(true)` and `write_all`, in place, not
+    by a rename: a single-file bind mount survives a refresh (dl-019 bound 4);
+  - `protocol/src/error.rs`: the usage limit's text ("You’ve hit your usage limit…"), "Quota exceeded. Check your
+    plan and billing details.", "rate limit exceeded: …";
+  - `models-manager/models.json`: `gpt-6.1-sol` has priority 1 among the listed models, is available on `plus`, is
+    `supported_in_api`, 272 K context, default effort `low`, levels `low` … `ultra`; `manager.rs` takes the default
+    model by priority;
+  - `config/src/types.rs`, `features/src/lib.rs`: `history.persistence = "none"`, `analytics.enabled`,
+    `features.memories` (off by default), `otel.exporter`.
+  - **The price** (`out/f1/pricing.txt`): OpenAI's pricing page, Standard tier, read 2026-10-15: `gpt-6.1-sol` 2.00
+    input, 0.10 cached input, 2.50 cache writes, 10.00 output per million tokens up to 272 K input tokens — the same
+    list prices as Sonnet 5.5's. Its context window is 272 K, so the long-context tier is never reached.
+- **F2, the binary** (`probe.sh F2`): `codex-cli 0.162.1`; `codex exec --help` and `codex exec resume --help` hold
+  every flag the Design names (`--json`, `--model`, `-c`, `--dangerously-bypass-approvals-and-sandbox`,
+  `--skip-git-repo-check`) and `--strict-config`, which the adapter adds so that a configuration key Codex does not
+  know fails the session instead of being ignored. `codex login` has `--device-auth`.
+- **F3, offline with the real binary** (`out/f3/strict-config-no-auth.txt`): the runner's `config.toml` passes
+  `--strict-config`; with no network and no credential, Codex starts a thread and retries its connection
+  (`error` events "Reconnecting… n/5", not terminal) until `timeout` kills it. It wrote sqlite stores to `CODEX_HOME`
+  (state, logs, goals, memories, thread history, a queue) and an `installation_id`, with `features.memories = false`.
+  It read stdin ("Reading additional input from stdin…"): the runner's `docker exec` attaches none, so it reads EOF.
+- **F3, the rehearsal with a stub** (`out/fake-rehearsal.txt`, `78cc4b7`): `probe.sh P0 READ SCAN` with
+  `BENCH_SPIKE_FAKE=1`, a stub `codex` and a fake credential made at run time:
+  - the session and its resume read by the adapter (`completed`, cost by `price-table`);
+  - the host's fake `auth.json` rewritten in place by the stub through the single-file mount;
+  - P0 refused a second time (exit 2), and refused without `BENCH_SPIKE_CONFIRM=1` (exit 64);
+  - the original token planted in the stream, with the credential refreshed after it, found by the scan (exit 4);
+  - a credential holding no value fails the scan (exit 3).
+  - The rehearsal **found a defect in the scan as first written**: it read the credential's values at the end only,
+    so a refresh hid the original token. It now reads them before the session too, as the adapter does.
+
+### Where the build departs from the Design
+
+1. **Usage is a running total.** The Design summed `turn.completed`; Codex's is the thread's total, so an
+   invocation's tokens are its last total less the thread's total before it (the adapter keeps it per thread), and
+   the cost is the thread's total, as the port asks of every agent.
+2. **Cache writes are counted.** The Design set `cacheCreationInputTokens` to 0; Codex reports
+   `cache_write_input_tokens`, which the adapter maps to it and prices at 2.50.
+3. **`CODEX_HOME` is emptied before every step** (but `auth.json` and `config.toml`), as Claude Code's auto-memory is
+   cleared (bug-006). The Design said to turn off whatever a new session reads and to stop and ask if it could not:
+   history, memories, analytics and the exporter are off, but the sqlite stores cannot be turned off, so clearing
+   them is the measure taken. A resume within a step keeps its session. **For the approver to confirm.**
+4. **The model and its effort:** `gpt-6.1-sol` (Codex's default for a ChatGPT plan at 0.162.1, with a published API
+   price), at `medium` as dl-018 sets for Claude; its own default is `low`.
+5. **No new requirement id:** the adapter's rules amend REQ-RUN-04, -09, -12, -13, -15 and -16 (requirements 1.32);
+   the Design had said "REQ-RUN for the adapter".
+6. **The site reads comparison version 2.** The page is unchanged; its parser accepts versions 1 and 2.
+7. **A comparison whose scores cannot be read** records `note: not measured: …` for the across-agent M-R instead of
+   refusing, since the rows need the aggregates only.
+8. **`campaign validate`** lists the effort of every real agent's models, Codex's included.
+9. **The run image** creates `/home/node/.codex-run` owned by `node`: without it, the credential's single-file mount
+   makes Docker create the directory owned by root, and Codex cannot write its `config.toml` (the docker red test's
+   failure, `e68c256`).
+
+### Checks (offline, niced)
+
+- `npx tsc --noEmit -p .` clean, `npm run lint` clean after every commit.
+- Docker (`vitest.docker.config.ts`, touched files only): `run-image.test.ts` 2/2 (Codex 0.162.1 installed, its home
+  owned by `node`), `codex.test.ts` 1/1 (a Codex campaign end to end with a stub: the credential mounted read-write
+  and refreshed on the host, `config.toml`, `AGENTS.md`, the token scrubbed, nothing of it in `results/`). No
+  `bench-` container left.
+- vitest `--maxWorkers=2`, niced, over `test/unit` and `test/acceptance` (every directory the branch touches):
+  103 files, 1599 passed, 8 skipped. `npm run test:bin` 8/8. The full suites (`scripts/full-suites.sh`) are not run:
+  they are the approver's to ask for.
