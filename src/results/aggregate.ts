@@ -574,11 +574,6 @@ function continuityOf(runs: readonly ScoredRun[]): Pick<Group['metrics'], 'm_f1'
   };
 }
 
-/**
- * M-R1–M-R3 of a group (experiment design §4.5, REQ-SCO-07 as amended in 1.17): over the runs that
- * reached their final snapshot, in run order. M-R1 from each public suite's failing tests on the final
- * snapshot, against the census; M-R2 and M-R3 from each pair's interface and paths.
- */
 /** What M-R reads of a run: its name, its harness commit and the parts of its score M-R1–M-R3 read. */
 export interface MRRun {
   readonly name: string;
@@ -649,6 +644,11 @@ export function mRAcross(earlier: readonly MRRun[], newer: readonly MRRun[]): MR
   };
 }
 
+/**
+ * M-R1–M-R3 of a group (experiment design §4.5, REQ-SCO-07 as amended in 1.17): over the runs that
+ * reached their final snapshot, in run order. M-R1 from each public suite's failing tests on the final
+ * snapshot, against the census; M-R2 and M-R3 from each pair's interface and paths.
+ */
 function mROf(runs: readonly ScoredRun[]): MRAggregate {
   const reached = runs.filter((run) => !('not_reached' in run.score.final));
   const base = {

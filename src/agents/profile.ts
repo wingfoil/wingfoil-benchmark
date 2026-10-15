@@ -11,6 +11,8 @@ export interface AgentProfile {
   readonly environment: Readonly<Record<string, string>>;
   /** Run before every step's first session: what the agent kept that a new session would read (bug-006). */
   readonly clearBeforeStep: readonly string[];
+  /** What {@link clearBeforeStep} clears, as a failure names it. */
+  readonly cleared: string;
   /** Where a credential **file** is mounted, read-write, for an agent that takes one (dl-019). */
   readonly credentialTarget?: string;
   /** Files the runner writes in the container after it starts and before the arm's setup. */
@@ -25,6 +27,7 @@ const CLAUDE_CODE: AgentProfile = {
   manualFile: 'CLAUDE.md',
   environment: { CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1' },
   clearBeforeStep: ['sh', '-c', 'rm -rf "$HOME"/.claude/projects/*/memory'],
+  cleared: "the agent's auto-memory",
   files: [],
 };
 
@@ -66,6 +69,7 @@ const CODEX: AgentProfile = {
     '-c',
     `find ${CODEX_HOME} -mindepth 1 -maxdepth 1 ! -name auth.json ! -name config.toml -exec rm -rf {} +`,
   ],
+  cleared: `the agent's ${CODEX_HOME}`,
   credentialTarget: `${CODEX_HOME}/auth.json`,
   files: [{ path: `${CODEX_HOME}/config.toml`, content: CODEX_CONFIG }],
 };

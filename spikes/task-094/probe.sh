@@ -74,7 +74,7 @@ f2() {
 
 login() { # dl-019 bound 3: the approver logs in by hand; this prints the commands and runs nothing
   cat <<EOF
-install -d -m 700 "\$HOME/.codex-bench" && printf '{}' > "\$HOME/.codex-bench/auth.json" && chmod 600 "\$HOME/.codex-bench/auth.json"
+install -d -m 700 "\$HOME/.codex-bench" && { [ -e "\$HOME/.codex-bench/auth.json" ] || printf '{}' > "\$HOME/.codex-bench/auth.json"; } && chmod 600 "\$HOME/.codex-bench/auth.json"
 docker run --rm -it -e CODEX_HOME=$CODEX_HOME_IN --mount type=bind,source="\$HOME/.codex-bench/auth.json",target=$CODEX_HOME_IN/auth.json $IMAGE codex login --device-auth -c 'cli_auth_credentials_store="file"'
 EOF
 }
@@ -153,7 +153,9 @@ scan() { # exit 3 when the scan cannot run, 4 when it finds a value
   local values; values="$(printf '%s\n%s' "$BEFORE_VALUES" "$(secrets 2>/dev/null || true)" | sed '/^$/d')"
   [ -n "$values" ] || { echo "secret scan failed: no value to scan for"; exit 3; }
   local found rc=0
-  found="$(grep -rlFf <(printf '%s\n' "$values") "$OUT" "$SPIKE_DIR" --exclude="$(basename "$AUTH_FILE")" 2>/dev/null)" || rc=$?
+  # Only a rehearsal keeps its (fake) credential under out/; a real one is outside both directories.
+  local exclude=(); [ -z "$FAKE" ] || exclude=(--exclude="$(basename "$AUTH_FILE")")
+  found="$(grep -rlFf <(printf '%s\n' "$values") "$OUT" "$SPIKE_DIR" "${exclude[@]}" 2>/dev/null)" || rc=$?
   [ "$rc" -le 1 ] || { echo "secret scan failed: grep exit $rc"; exit 3; }
   if [ -n "$found" ]; then echo "secret scan: a credential value is in $(echo "$found" | wc -l) file(s):"; echo "$found"; exit 4; fi
   echo "secret scan: clean"

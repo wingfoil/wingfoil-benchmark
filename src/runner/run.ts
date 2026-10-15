@@ -74,6 +74,11 @@ export interface RunnerOptions {
    */
   readonly secrets?: readonly string[];
   /**
+   * The values to scrub that only exist now (REQ-NFR-01 as amended in 1.32): Codex's credential refreshed during the
+   * campaign. Read whenever something is stored, beside {@link secrets}.
+   */
+  readonly refreshSecrets?: () => readonly string[];
+  /**
    * The local clone of each harness tool, by the name an arm `requires` (W3 plan-phase decision 3):
    * the WingFoil under test is built from it by SHA (REQ-RUN-14).
    */
@@ -1024,7 +1029,7 @@ async function executeSetup(arm: Arm, context: SetupContext, options: RunnerOpti
   const setupDir = join(outputDir, 'setup');
   mkdirSync(setupDir, { recursive: true });
   // Scrubbed like a patch: a setup may print what it was given.
-  writeFileSync(join(setupDir, 'log.txt'), scrub(`${result.stdout}${result.stderr}`, options.secrets ?? []));
+  writeFileSync(join(setupDir, 'log.txt'), scrub(`${result.stdout}${result.stderr}`, secretsNow(options)));
   if (result.code !== 0) return { durationMs, usage: NO_USAGE, code: result.code };
   const manualAfter = mergeManual(arm, manual);
   // What was generated for the arm: a docs control's environment (REQ-RUN-11) or a harness's rules (REQ-FMT-14).
@@ -1040,7 +1045,7 @@ async function executeSetup(arm: Arm, context: SetupContext, options: RunnerOpti
   // — so that scoring can rebuild step 1's snapshot from the seed (task-027).
   writeFileSync(
     join(setupDir, 'diff.patch'),
-    scrub(await options.git.patchOf(workspace, seedTree, tree), options.secrets ?? []),
+    scrub(await options.git.patchOf(workspace, seedTree, tree), secretsNow(options)),
   );
   return {
     durationMs,
@@ -1279,11 +1284,10 @@ async function executeStep(
   if (remainingCostUsd <= 0) return CAP_REACHED;
 
   // Nothing an earlier step's session left in the agent's own memory reaches this one (bug-006).
-  const cleared = await options.docker.exec(container, agentProfile(pins.agent.name).clearBeforeStep);
+  const profile = agentProfile(pins.agent.name);
+  const cleared = await options.docker.exec(container, profile.clearBeforeStep);
   if (cleared.code !== 0) {
-    throw new Error(
-      `could not clear the agent's auto-memory before step ${number}: ${cleared.stderr.trim()}`,
-    );
+    throw new Error(`could not clear ${profile.cleared} before step ${number}: ${cleared.stderr.trim()}`);
   }
 
   // step_time_s (REQ-RUN-08, task-024): every command of every invocation runs under `timeout`, with
@@ -1562,7 +1566,7 @@ async function executeStep(
   // Scrubbed like the patch: a message can quote what the agent's environment holds.
   writeFileSync(
     join(stepDir, 'commits.json'),
-    `${JSON.stringify({ messages: messages.map((message) => scrub(message, options.secrets ?? [])) }, undefined, 2)}\n`,
+    `${JSON.stringify({ messages: messages.map((message) => scrub(message, secretsNow(options))) }, undefined, 2)}\n`,
   );
   // From the previous snapshot, not the last commit: an agent that commits during its step (the
   // wingfoil arm's does) would otherwise leave its own commits out of the patch (bug-007).
@@ -1570,7 +1574,7 @@ async function executeStep(
   // Scrubbed like the transcript: the agent runs with the credential in its own environment and
   // `bypassPermissions`, so one `env > notes.txt` would otherwise commit the token in a patch.
   const patch = await options.git.patchOf(workspace, previousTree, tree);
-  writeFileSync(join(stepDir, 'diff.patch'), scrub(patch, options.secrets ?? []));
+  writeFileSync(join(stepDir, 'diff.patch'), scrub(patch, secretsNow(options)));
   // What the step cost across its invocations, and the whole of what they said (REQ-RUN-09,
   // REQ-FMT-06). The transcript is git-ignored and scrubbed by the adapter (REQ-NFR-01, REQ-RES-06).
   const usage = stepUsage(invocations);
@@ -1651,6 +1655,11 @@ async function assertOnlyWorkspaceMounted(
   if (mounts.length !== expected.length || mounts.some((mount, i) => mount !== expected[i])) {
     throw new Error(`the container has mounts other than its workspace: ${mounts.join(', ') || 'none'}`);
   }
+}
+
+/** The values to scrub now: those known at the start, and the refreshed credential's (REQ-NFR-01). */
+function secretsNow(options: RunnerOptions): readonly string[] {
+  return [...(options.secrets ?? []), ...(options.refreshSecrets?.() ?? [])];
 }
 
 /** An arm's `telemetry_off` settings (REQ-RUN-18) as the container's environment: `NAME=value` split at the first `=`. */

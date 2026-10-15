@@ -183,7 +183,12 @@ export function compareExecutions(
 
   const out: Collected = { rows: [], notCompared: [], onlyIn: [], compared: [], across: [] };
   const crossModel = before.aggregate.model !== after.aggregate.model;
-  const context = { root, before, after, primaryOf, out };
+  const differ = pinsDiffer(before.pins, after.pins);
+  // M-R across is across agents (experiment design 1.4 §4.5): the agent and the models it runs may differ, nothing else.
+  const others = differ.map((d) => d.pin).filter((pin) => !pin.startsWith('agent.') && !pin.startsWith('models.'));
+  const acrossNote =
+    others.length === 0 ? undefined : `not measured: pins other than the agent's differ: ${others.join(', ')}`;
+  const context = { root, before, after, primaryOf, out, ...(acrossNote === undefined ? {} : { acrossNote }) };
   compareGroups(context, before.aggregate.groups, after.aggregate.groups, crossModel);
   // Each slice against the other side's slice of its model (REQ-SCO-13), or said not to be compared.
   const models = (groups: readonly Group[]) => new Set(groups.map((group) => group.model));
@@ -212,7 +217,7 @@ export function compareExecutions(
     earlier: named(before),
     newer: named(after),
     order: 'maintainer',
-    pins_differ: pinsDiffer(before.pins, after.pins),
+    pins_differ: differ,
     compared: out.compared,
     rows: out.rows,
     m_r_across: out.across,
@@ -312,6 +317,8 @@ interface Collected {
 }
 
 interface Context {
+  /** Why M-R across is not measured for any group of this comparison, if it is not (1.4 §4.5). */
+  readonly acrossNote?: string;
   readonly root: string;
   readonly before: Side;
   readonly after: Side;
@@ -398,7 +405,9 @@ function compareGroups(
         version,
         arm: group.arm,
         model,
-        ...('unreadable' in earlierRuns
+        ...(context.acrossNote !== undefined
+          ? { note: context.acrossNote }
+          : 'unreadable' in earlierRuns
           ? { note: `not measured: ${earlierRuns.unreadable}` }
           : 'unreadable' in newerRuns
             ? { note: `not measured: ${newerRuns.unreadable}` }

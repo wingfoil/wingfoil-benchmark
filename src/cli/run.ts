@@ -1,3 +1,4 @@
+import { codexFileSecrets } from '../agents/index.js';
 import { missingCapabilities } from '../arms/index.js';
 import { effortRefusal, fail, missingEffort, ok, reasonOf } from '../core/index.js';
 import type { CampaignFile, Result } from '../core/index.js';
@@ -357,7 +358,13 @@ async function runCampaignCommand(
             ? {}
             : { containerEnv: credential, secrets: Object.values(credential) }),
           // Codex's credential is a file the runner mounts (dl-019); its values are scrubbed all the same.
-          ...(credentialFile === undefined ? {} : { credentialFile, secrets: secrets ?? [] }),
+          ...(credentialFile === undefined
+            ? {}
+            : {
+                credentialFile,
+                secrets: secrets ?? [],
+                refreshSecrets: () => codexFileSecrets(credentialFile),
+              }),
           signal,
         },
         resume === undefined ? {} : { resume: resume.value },

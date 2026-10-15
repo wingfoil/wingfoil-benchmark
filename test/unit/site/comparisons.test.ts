@@ -167,7 +167,8 @@ describe('reading the comparisons of an execution (REQ-RES-02 as amended, task-0
         ],
       }),
     );
-    const { m_r_across: _dropped, ...versionOne } = comparison();
+    const versionOne: Record<string, unknown> = { ...comparison() };
+    delete versionOne.m_r_across;
     write(
       root,
       'fedcba987654-1.json',

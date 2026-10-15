@@ -1,4 +1,4 @@
-import { accessSync, constants, existsSync, statSync } from 'node:fs';
+import { accessSync, constants, existsSync, realpathSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 
 import type { Issue } from '../core/index.js';
@@ -72,15 +72,20 @@ function checkoutOf(dir: string): string | undefined {
 }
 
 /**
- * Codex's credential file (dl-019 bounds 2 and 7): a readable regular file, mode 600, outside every git checkout —
- * the repository, a worktree, a run's workspace. Its content is never read here.
+ * Codex's credential file (dl-019 bounds 2 and 7): a readable regular file, mode 600, in a directory of mode 700,
+ * outside every git checkout — the repository, a worktree, a run's workspace — wherever a link to it is. Its content
+ * is never read here.
  */
 export const codexAuthFile: Check = (path) => {
   const readable = readableFile(path);
   if (readable !== undefined) return readable;
-  const mode = statSync(path).mode & 0o777;
+  // Where the file really is: a link outside every checkout to a file inside one is inside it.
+  const real = realpathSync(path);
+  const mode = statSync(real).mode & 0o777;
   if (mode !== 0o600) return `${path} must be mode 600, not ${mode.toString(8)}`;
-  if (checkoutOf(dirname(path)) !== undefined) return `${path} is inside a git checkout`;
+  if (checkoutOf(dirname(real)) !== undefined) return `${path} is inside a git checkout`;
+  const dirMode = statSync(dirname(real)).mode & 0o777;
+  if (dirMode !== 0o700) return `${path} must be in a directory of mode 700, not ${dirMode.toString(8)}`;
   return undefined;
 };
 

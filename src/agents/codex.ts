@@ -72,8 +72,10 @@ function priced(totals: CodexTotals, price: OpenAiPrice | undefined): number {
  * `protocol/src/error.rs`: documented, not observed.
  */
 function limitOf(message: string): 'quota exhausted' | 'rate limited' | undefined {
-  if (/hit your usage limit|^Quota exceeded/i.test(message)) return 'quota exhausted';
-  if (/^rate limit exceeded/i.test(message)) return 'rate limited';
+  if (/hit your usage limit|^Quota exceeded|hit your spend cap|out of credits/i.test(message))
+    return 'quota exhausted';
+  // A rate limit Codex retries, and the retries' end once the limit outlasted them (`RetryLimit`, status 429).
+  if (/^rate limit exceeded|exceeded retry limit, last status: 429/i.test(message)) return 'rate limited';
   return undefined;
 }
 
@@ -89,6 +91,8 @@ export function readCodexSession(lines: readonly string[], reading: CodexReading
   let turns = 0;
   let finalMessage: string | undefined;
   let failure: string | undefined;
+  /** A limit an `error` event named: Codex's retries ("Reconnecting…") name none, and are not failures. */
+  let errorLimit: 'quota exhausted' | 'rate limited' | undefined;
 
   const result = (outcome: CodexSession['outcome'], error?: string): CodexSession => {
     const price = (reading.prices ?? OPENAI_PRICES)[reading.model];
@@ -141,13 +145,25 @@ export function readCodexSession(lines: readonly string[], reading: CodexReading
         break;
       case 'turn.completed': {
         const usage = (event.usage ?? {}) as Record<string, unknown>;
-        // The thread's running total: the latest replaces, never adds (REQ-RUN-09 as amended in 1.32).
-        totals = {
+        const reported = {
           input: numberOf(usage.input_tokens),
           cached: numberOf(usage.cached_input_tokens),
           written: numberOf(usage.cache_write_input_tokens),
           output: numberOf(usage.output_tokens),
         };
+        // The thread's running total: the latest replaces, never adds (REQ-RUN-09 as amended in 1.32). A total below
+        // the thread's earlier one (a resume that restarted its count) is this invocation's own, added to it.
+        const lower = (Object.keys(reported) as (keyof CodexTotals)[]).some(
+          (key) => reported[key] < before[key],
+        );
+        totals = lower
+          ? {
+              input: before.input + reported.input,
+              cached: before.cached + reported.cached,
+              written: before.written + reported.written,
+              output: before.output + reported.output,
+            }
+          : reported;
         turns += 1;
         failure = undefined;
         break;
@@ -157,6 +173,9 @@ export function readCodexSession(lines: readonly string[], reading: CodexReading
         failure = typeof error.message === 'string' ? error.message : 'the turn failed';
         break;
       }
+      case 'error':
+        if (typeof event.message === 'string') errorLimit = limitOf(event.message) ?? errorLimit;
+        break;
       case 'item.completed': {
         const item = (event.item ?? {}) as Record<string, unknown>;
         if (item.type === 'agent_message' && typeof item.text === 'string') finalMessage = item.text;
@@ -168,7 +187,7 @@ export function readCodexSession(lines: readonly string[], reading: CodexReading
   }
 
   if (failure !== undefined) {
-    const limit = limitOf(failure);
+    const limit = limitOf(failure) ?? errorLimit;
     return limit === undefined ? result('failed', failure) : result(limit);
   }
   if (turns === 0) return result('failed', 'the session ended with no turn.completed event');
@@ -218,7 +237,8 @@ function effortFlag(effort: string | undefined): string[] {
   return effort === undefined || effort === 'none' ? [] : ['-c', `model_reasoning_effort="${effort}"`];
 }
 
-function secretsOf(file: string): string[] {
+/** The values to scrub of the Codex credential at `file` now; none when it cannot be read. */
+export function codexFileSecrets(file: string): string[] {
   try {
     return codexSecrets(readFileSync(file, 'utf8'));
   } catch {
@@ -244,12 +264,12 @@ export function codexAgent(options: CodexOptions): AgentPort {
     model: string,
     thread?: { readonly threadId: string; readonly totals: CodexTotals },
   ): Promise<StepOutcome> {
-    const secretsBefore = secretsOf(options.authFile);
+    const secretsBefore = codexFileSecrets(options.authFile);
     const started = now();
     const result = await run(command);
     const durationMs = now() - started;
     // A refresh during the invocation wrote new values: both sets are scrubbed.
-    const secrets = [...secretsBefore, ...secretsOf(options.authFile)];
+    const secrets = [...secretsBefore, ...codexFileSecrets(options.authFile)];
     const lines = scrub(result.stdout, secrets)
       .split('\n')
       .filter((line) => line.trim() !== '');

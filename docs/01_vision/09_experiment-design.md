@@ -201,7 +201,7 @@ v0.1. From v0.2 they also apply across agents, once a second agent exists.
 
 **Across agents (made precise in 1.4).** Two executions, one per agent, are compared group by group: the same
 scenario version and the same arm. The agent's pins (its name, version, model and effort) are the only pins that may
-differ between the two executions, and they are named. Per-run pins (scenario hash, harness commit, scorer) must be
+differ between the two executions, and they are named; when another differs, there is no value. Per-run pins (scenario hash, harness commit, scorer) must be
 equal, as within a group.
 
 - **Within an agent:** each side's own M-R1–M-R3, as above.

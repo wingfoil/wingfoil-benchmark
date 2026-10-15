@@ -177,13 +177,23 @@ export function checkSpending(
   if (agentName === 'codex') {
     const file = codexCredentialFile();
     if (!file.ok) return file;
+    // dl-019 bound 6: a credential with nothing to scrub (the placeholder before the login) is refused.
+    const secrets = codexSecrets(readFileSync(file.value, 'utf8'));
+    if (secrets.length === 0) {
+      return {
+        ok: false,
+        issues: [
+          { path: CODEX_AUTH_VARIABLE, message: 'holds no credential value: log in first (dl-019 bound 3)' },
+        ],
+      };
+    }
     const sources = harnessSourcesOf(options.builds);
     if (!sources.ok) return sources;
     return {
       ok: true,
       value: {
         credentialFile: file.value,
-        secrets: codexSecrets(readFileSync(file.value, 'utf8')),
+        secrets,
         ...(Object.keys(sources.value).length === 0 ? {} : { harnessSources: sources.value }),
       },
     };

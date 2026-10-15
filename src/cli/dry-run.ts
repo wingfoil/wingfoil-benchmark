@@ -1,4 +1,5 @@
 import { join, relative } from 'node:path';
+import { codexFileSecrets } from '../agents/index.js';
 
 import { effortRefusal, missingEffort, reasonOf } from '../core/index.js';
 import { latestDryRun } from '../results/index.js';
@@ -120,7 +121,13 @@ export async function dryRunCommand(
         // The credential reaches the container here and nowhere else (REQ-RUN-15, REQ-NFR-01).
         ...(credential === undefined ? {} : { containerEnv: credential, secrets: Object.values(credential) }),
         // Codex's credential is a file the runner mounts (dl-019); its values are scrubbed all the same.
-        ...(credentialFile === undefined ? {} : { credentialFile, secrets: secrets ?? [] }),
+        ...(credentialFile === undefined
+          ? {}
+          : {
+              credentialFile,
+              secrets: secrets ?? [],
+              refreshSecrets: () => codexFileSecrets(credentialFile),
+            }),
         signal,
       }),
     );
