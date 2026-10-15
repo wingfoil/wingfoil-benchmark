@@ -446,3 +446,17 @@ Output in the main checkout's git-ignored `spikes/task-094/out/`.
   - The two streams are now fixtures (`test/fixtures/codex-sessions/recorded-p0-*.jsonl`) with a test that reads them;
     the branch's files scanned for the credential's values: clean.
   - One ledger line; the Plus quota is the approver's to read before the next window.
+- **The dry runs' profile** (found before CX-D): `bench scenario dry-run` read only `scenarios/dry-run.yaml`,
+  calibration's (Claude Code 2.1.280), so the spike's dry runs could not pin Codex or Claude Code 2.1.300 at `medium`.
+  The approver chose, in chat, to add `--profile <file>` (REQ-CLI-05 1.32): red test `22b71c5`, feature `93fc4e1`,
+  with the two profiles `campaigns/x-codex-s3-{codex,claude-code}.dry-run.yaml`, whose pins equal their campaign
+  files'. Unit and acceptance 1625 passed, 8 skipped; `test:bin` 8/8; lint and `tsc` clean.
+- **Round 7** (a new independent read-only Explore subagent, on `93fc4e1`): clean but two low notes, both accepted.
+  1. the stored dry run keeps its profile as `dry-run.yaml`, not the file's name: the pins are stored all the same;
+     the profile used is named in these notes and the ledger.
+  2. `--profile` resolves against the repository's root, a campaign file against the working directory. **README
+     says so**; the runs are made from the main checkout's root, where the two agree.
+- **Where the runs read their files:** a campaign's results go under its file's repository, so the campaign files and
+  the dry-run profiles are copied, unchanged, into the main checkout's `campaigns/` (untracked) before the runs, and
+  committed on main with the results (as the Design says).
+

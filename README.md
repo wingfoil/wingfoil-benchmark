@@ -148,7 +148,9 @@ npx bench scenario dry-run <id>@<version> --arm <arm> [--model <id>] [--profile 
 
 A **dry run** is one real run of a scenario version in one arm, made to measure what it costs. It
 takes what a campaign file would pin — agent, harnesses, approver policy, caps, currency rate — from
-`scenarios/dry-run.yaml`, and it is stored in `results/dry-runs/<n>/`, marked `dry_run: true` in its
+`scenarios/dry-run.yaml` — or from the file `--profile` names, relative to the repository's root (a campaign file is
+relative to the working directory: the two agree when `bench` runs from the root) — and it is stored in
+`results/dry-runs/<n>/`, marked `dry_run: true` in its
 `run.json` and never counted as a campaign's result. Before it starts, it prints what the latest
 completed dry run of the same version, arm and model cost; when it ends, it prints what this one cost
 per step and in total.
