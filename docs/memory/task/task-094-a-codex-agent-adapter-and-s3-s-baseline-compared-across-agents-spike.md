@@ -565,3 +565,6 @@ M-R across is measured (no note).
 - **The approver in chat, 2026-10-15:** this task and dl-019 reworded to name no other session (`e16bf13` on this
   branch; `9d511ed` on main, with `Approver:` and `Reason:`). The same kind of mention in earlier elements and commit
   messages goes through a bug and a task; rewriting history or what is pushed is the approver's.
+- The approver's `memory approve task-094-… --reason "…"` → `e37bc4e`, run from this worktree (`in-review →
+  approved`, `Approver:`/`Reason:` trailers with the drafted reason, only `status` changed). Matches. The approver in
+  chat: the earlier, already pushed mentions are left as they are.
