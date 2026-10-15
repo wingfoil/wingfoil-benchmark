@@ -130,6 +130,40 @@ describe('reading a Codex session (REQ-RUN-09 as amended in 1.32)', () => {
     expect(resumed.usage.costUsd).toBeCloseTo(COMPLETED_USD + (2000 * 2 + 1000 * 0.1 + 100 * 10) / 1e6, 10);
   });
 
+  it('decides once, at the first turn.completed, that a resume restarted its count (review 3)', () => {
+    const first = readCodexSession(stream('completed.jsonl'), { model: MODEL, usdToEur: RATE });
+    const usage = (input: number, cached: number, written: number, output: number) =>
+      JSON.stringify({
+        type: 'turn.completed',
+        usage: {
+          input_tokens: input,
+          cached_input_tokens: cached,
+          cache_write_input_tokens: written,
+          output_tokens: output,
+          reasoning_output_tokens: 0,
+        },
+      });
+    // Restarted: the first total is below the step's; the second, still the resume's own, has grown past it.
+    const lines = [
+      `{"type":"thread.started","thread_id":"${THREAD}"}`,
+      usage(3000, 1000, 0, 100),
+      usage(30000, 20000, 5000, 2000),
+    ];
+    const resumed = readCodexSession(lines, { model: MODEL, usdToEur: RATE, before: first.totals });
+
+    expect(resumed.totals).toEqual({ input: 54000, cached: 38000, written: 9000, output: 3500 });
+  });
+
+  it('keeps the last error event as the failure of a stream with no turn, when it names no limit (review 3)', () => {
+    const lines = [
+      `{"type":"thread.started","thread_id":"${THREAD}"}`,
+      '{"type":"error","message":"unexpected status 401 Unauthorized"}',
+    ];
+    expect(readCodexSession(lines, { model: MODEL, usdToEur: RATE }).error).toBe(
+      'unexpected status 401 Unauthorized',
+    );
+  });
+
   it("does not fail a session on Codex's own retries, which it reports as error events", () => {
     const lines = [
       `{"type":"thread.started","thread_id":"${THREAD}"}`,

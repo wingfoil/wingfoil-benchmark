@@ -132,6 +132,7 @@ describe('compareExecutions (REQ-SCO-13, task-083)', () => {
     const root = handBuiltPair({ harness: ['v0.2.2', 'v0.3.0'] });
     const result = compareExecutions(root, EARLIER, NEWER, categories);
     if (!result.ok) throw new Error(JSON.stringify(result.issues));
+    expect(result.value.m_r_across.length).toBeGreaterThan(0);
     expect(result.value.m_r_across.map((entry) => entry.note)).toEqual(
       result.value.m_r_across.map(() => 'not measured: pins other than the agent\'s differ: harnesses.wingfoil'),
     );
@@ -140,10 +141,14 @@ describe('compareExecutions (REQ-SCO-13, task-083)', () => {
   it.each([
     [{ agents: ['codex', 'codex'] as const }, "not measured: the same agent, codex, on both sides"],
     [{ caps: [1, 2] as const }, "not measured: pins other than the agent's differ: caps"],
+    [{ approver: ['v1', 'v2'] as const }, "not measured: pins other than the agent's differ: approver_policy"],
+    // The rate moves where run_cost_eur stops a run, as the caps do (review 3).
+    [{ rate: [0.9, 0.8] as const }, "not measured: pins other than the agent's differ: currency"],
   ])('measures M-R across only across two agents, under the same caps and approver (review 2): %o', (pair, note) => {
     const root = handBuiltPair(pair);
     const result = compareExecutions(root, EARLIER, NEWER, categories);
     if (!result.ok) throw new Error(JSON.stringify(result.issues));
+    expect(result.value.m_r_across.length).toBeGreaterThan(0);
     expect(result.value.m_r_across.map((entry) => entry.note)).toEqual(result.value.m_r_across.map(() => note));
   });
 
@@ -167,10 +172,14 @@ function handBuiltPair({
   harness = ['v0.2.2', 'v0.2.2'],
   agents = ['claude-code', 'codex'],
   caps = [1, 1],
+  approver = ['v1', 'v1'],
+  rate = [0.9, 0.9],
 }: {
   readonly harness?: readonly [string, string];
   readonly agents?: readonly [string, string];
   readonly caps?: readonly [number, number];
+  readonly approver?: readonly [string, string];
+  readonly rate?: readonly [number, number];
 }): string {
   const root = tempDir('bench-cmp-');
   [EARLIER, NEWER].forEach((target, i) => {
@@ -179,6 +188,8 @@ function handBuiltPair({
       agent: { name: agents[i], version: '1.0.0' },
       harnesses: { wingfoil: { tool: 'wingfoil', version: harness[i] } },
       caps: { step_time_s: 60, step_tokens: 1000, run_cost_eur: caps[i] },
+      approver_policy: approver[i],
+      currency: { usd_to_eur: rate[i] },
     });
   });
   return root;
