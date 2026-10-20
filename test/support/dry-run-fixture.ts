@@ -42,6 +42,8 @@ export interface StoredDryRun {
   readonly effort?: string;
   /** A model of its first step priced at a basis other than list (bug-016), as `[model, basis]`. */
   readonly unpriced?: readonly [string, string];
+  /** The arm's digest the dry run recorded (REQ-FMT-13, 64 hex); absent, as in a run stored before it. */
+  readonly armDigest?: string;
 }
 
 /**
@@ -63,6 +65,7 @@ export function writeStoredDryRun(root: string, execution: number, run: StoredDr
       version,
       scenario_hash: run.hash,
       arm: run.arm,
+      ...(run.armDigest === undefined ? {} : { arm_digest: run.armDigest }),
       model,
       ...(run.effort === undefined ? {} : { effort: run.effort }),
       repetition: 1,

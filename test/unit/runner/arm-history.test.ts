@@ -1,13 +1,15 @@
 import { execFileSync } from 'node:child_process';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { stringify } from 'yaml';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, onTestFinished } from 'vitest';
 
 import { armDigest } from '../../../src/arms/index.js';
 import { main } from '../../../src/cli/index.js';
-import { checkCampaign, runCampaign } from '../../../src/runner/index.js';
+import { checkCampaign, checkDryRun, estimateCampaign, runCampaign } from '../../../src/runner/index.js';
 import { completeCampaignYaml, writeRepo } from '../../support/campaign-fixture.js';
+import { dryRunProfileYaml, writeStoredDryRun } from '../../support/dry-run-fixture.js';
+import { repoPath } from '../../support/paths.js';
 import { doubles } from '../../support/runner-doubles.js';
 
 /** A campaign of two plain arms, no harness, the fake agent. */
@@ -117,5 +119,108 @@ describe('an arm read by its pinned digest from history (REQ-FMT-13 as amended i
     expect(stdout).toContain(
       `arm baseline-notes: read from commit ${pinned.slice(0, 12)}, which holds its pinned digest\n`,
     );
+  });
+});
+
+describe('dry runs and the estimate by the pinned arm (task-095 review round 1)', () => {
+  function profile(root: string, digests?: Record<string, string>): void {
+    writeFileSync(
+      join(root, 'scenarios', 'dry-run.yaml'),
+      stringify({
+        ...dryRunProfileYaml(),
+        harnesses: {},
+        ...(digests === undefined ? {} : { arm_digests: digests }),
+      }),
+    );
+  }
+
+  it("reads a dry run's arm by the digest its profile pins, and gives it another identity than the tree's", () => {
+    const { root, pinned, digests } = movedOn();
+    profile(root);
+    const tree = checkDryRun({ id: 'S1', version: '1.0', arm: 'baseline-notes' }, root);
+    profile(root, { 'baseline-notes': digests['baseline-notes'] });
+    const old = checkDryRun({ id: 'S1', version: '1.0', arm: 'baseline-notes' }, root);
+
+    if (!tree.ok || !old.ok) throw new Error(JSON.stringify([tree, old]));
+    expect(tree.value.arm.from).toBeUndefined();
+    expect(old.value.arm.from?.commit).toBe(pinned);
+    expect(old.value.id).not.toBe(tree.value.id);
+  });
+
+  it('refuses a dry run whose profile pins a digest no commit holds', () => {
+    const { root } = movedOn();
+    profile(root, { 'baseline-notes': 'abcdef123456' });
+    const checked = checkDryRun({ id: 'S1', version: '1.0', arm: 'baseline-notes' }, root);
+    expect(checked.ok ? [] : checked.issues.map((issue) => issue.path)).toEqual([
+      'arm_digests.baseline-notes',
+    ]);
+  });
+
+  it('counts for the estimate only a dry run of the arm the campaign pins, by its recorded digest', () => {
+    const { file, digests } = movedOn();
+    const checked = checkCampaign(file);
+    if (!checked.ok) throw new Error(JSON.stringify(checked.issues));
+    const root = checked.value.campaign.repoRoot;
+    const hash = checked.value.scenarios[0]?.hash ?? '';
+    const pinned = digests['baseline-notes'];
+    const other = 'f'.repeat(64);
+    writeStoredDryRun(root, 1, {
+      id: 'S1',
+      hash,
+      arm: 'baseline-notes',
+      stepCostsUsd: [1],
+      armDigest: other,
+    });
+    writeStoredDryRun(root, 2, { id: 'S1', hash, arm: 'baseline', stepCostsUsd: [1] });
+
+    const first = estimateCampaign(checked.value);
+    expect(first.ok ? [] : first.issues.map((issue) => issue.message).join('\n')).toMatch(
+      new RegExp(`dry run 1 ran arm baseline-notes at digest ffffffffffff, the campaign pins ${pinned}`),
+    );
+    writeStoredDryRun(root, 3, {
+      id: 'S1',
+      hash,
+      arm: 'baseline-notes',
+      stepCostsUsd: [2],
+      armDigest: `${pinned}${'0'.repeat(52)}`,
+    });
+    expect(estimateCampaign(checked.value).ok).toBe(true);
+  });
+
+  it('works for an arm the working tree no longer has at all', () => {
+    const { root, file, pinned } = movedOn();
+    rmSync(join(root, 'arms', 'baseline-notes'), { recursive: true });
+    git(root, 'commit', '-q', '-am', 'removed');
+
+    const checked = checkCampaign(file);
+    if (!checked.ok) throw new Error(JSON.stringify(checked.issues));
+    expect(checked.value.arms.find((arm) => arm.name === 'baseline-notes')?.from?.commit).toBe(pinned);
+  });
+
+  it('rewrites a stale copy of an arm read from history rather than reading it', () => {
+    const { root, file, pinned } = movedOn();
+    expect(checkCampaign(file).ok).toBe(true);
+    writeFileSync(
+      join(root, '.cache', 'arms', pinned, 'arms', 'baseline-notes', 'stray.txt'),
+      'left behind\n',
+    );
+
+    expect(checkCampaign(file).ok).toBe(true);
+    expect(existsSync(join(root, '.cache', 'arms', pinned, 'arms', 'baseline-notes', 'stray.txt'))).toBe(
+      false,
+    );
+  });
+});
+
+describe('the WingFoil the register admits (task-095 review round 1)', () => {
+  it('refuses a campaign pinning WingFoil v0.3.1, which the register has not assessed', () => {
+    const reference = readFileSync(repoPath('campaigns/v0-2-reference.yaml'), 'utf8');
+    const file = repoPath('campaigns/x-test-task-095-v0-3-1.yaml');
+    writeFileSync(file, reference.replace('version: v0.3.0', 'version: v0.3.1'));
+    onTestFinished(() => rmSync(file, { force: true }));
+
+    const checked = checkCampaign(file);
+
+    expect(checked.ok ? '' : JSON.stringify(checked.issues)).toContain('v0.3.1');
   });
 });
