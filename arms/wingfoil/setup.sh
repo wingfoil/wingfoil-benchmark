@@ -27,8 +27,9 @@ if [ -d "$HOME/scenario" ]; then
 fi
 
 # 4. The approver member, after the scenario's configuration, which may bring its own dna.yaml; added
-#    only if no member has its e-mail yet. `dna add` commits by itself (WingFoil v0.2.2; usage note N33
-#    asked for this verb), and v0.2.2 reads approval authority from the committed dna.yaml. The team is
+#    only if no member has its e-mail yet. `dna add` commits by itself (since WingFoil v0.2.2; usage note N33
+#    asked for this verb), and WingFoil reads approval authority from the committed dna.yaml (v0.2.2 and
+#    v0.3.0, which decides every transition from HEAD). The team is
 #    read whole first, as JSON: `grep -q` closing a pipe early would fail it under pipefail. A scenario's
 #    dna.yaml naming another member "Benchmark Approver", or with no `approver` role, makes `dna add`
 #    refuse, and the setup fail.

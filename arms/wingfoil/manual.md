@@ -12,14 +12,17 @@ You are working in the software repository in your current directory, one reques
 
 This project is managed with WingFoil, installed as the command `wingfoil`. Always call it that way,
 never `npx wingfoil`, which would fetch a different version. This section follows WingFoil's guide for
-AI agents, release 0.2.2, and says below where this arm departs from it.
+AI agents, release 0.3.0, and says below where this arm departs from it.
 
 How WingFoil works:
 
 - The project's shared knowledge is in the repository: its documents (tasks, decisions and others)
   under `docs/memory/`, and the rules for each role.
 - A document's state is the `status:` line of its frontmatter. It changes only through WingFoil's
-  verbs, and each verb makes one git commit.
+  verbs, and each verb makes one git commit. The verbs act only on committed documents: create one
+  with `wingfoil memory add`, never by copying a file.
+- WingFoil records and routes workflows, but does not carry out their steps. Start or end a workflow
+  only when the request asks you to.
 - You act in a role. Here it is `developer`.
 
 Before you change any code, read:
