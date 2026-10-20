@@ -8,7 +8,8 @@ wave: calibration
 features: [F7.4, F7.2]
 acceptance: []
 requirements: [REQ-FMT-11, REQ-FMT-13, REQ-FMT-01, REQ-FMT-06, REQ-RUN-03, REQ-RUN-11, REQ-RUN-12, REQ-RUN-14, REQ-FMT-10]
-fixes: []
+fixes:
+  - bug-022-the-codex-credential-s-checkout-check-takes-any-git-for-a-repository
 tags: ["harness","wingfoil","calibration","eligibility"]
 ---
 
@@ -78,6 +79,9 @@ can start.
     paragraph says the bare 0.3.0 scaffold is what is measured (test/unit/site/method-statements.test.ts).
     **Red-first.**
 11. `claude-code`, `codex`, `fake` and every other arm unchanged: the existing suites. **Characterization.**
+12. bug-022: `BENCH_CODEX_AUTH_FILE` is inside a git checkout only when a `.git` directory holding `HEAD`, or a `.git`
+    file starting with `gitdir:`, is above its real path; an empty `.git` makes nothing a checkout. **Red-first**
+    (added with the approver's go in chat, 2026-10-20).
 
 ## Design
 
