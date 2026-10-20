@@ -89,6 +89,10 @@ export function estimateCampaign(
       arm,
       model,
       ...(effort === undefined ? {} : { effort }),
+      // A dry run of another version of the arm prices nothing here (task-095: the bridge's arm and the reference's).
+      ...(campaign.spec.arm_digests?.[arm] === undefined
+        ? {}
+        : { armDigest: campaign.spec.arm_digests[arm] }),
     });
     const [newest] = lookup.records;
     const name = `${scenario.id}@${scenario.version}`;

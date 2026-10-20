@@ -1,13 +1,15 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { armDigest, armFromHistory, docsGeneratorOf, loadArm } from '../arms/index.js';
+import { docsGeneratorOf } from '../arms/index.js';
 import { loadCampaign, loadRegister } from '../campaign/index.js';
 import type { Campaign } from '../campaign/index.js';
 import { eligibilityIssues, fail, harnessCoverage, ok } from '../core/index.js';
 import type { Arm, Issue, Result, Scenario } from '../core/index.js';
 import { versionChange } from '../results/index.js';
 import { loadScenario } from '../scenario/index.js';
+
+import { loadPinnedArm, pinnedDigestIssue } from './pinned-arm.js';
 
 /** A valid campaign with every scenario and every arm it names loaded, in the campaign's order. */
 export interface CheckedCampaign {
@@ -51,17 +53,7 @@ export function checkCampaign(file: string): Result<CheckedCampaign> {
   campaign.spec.arms.forEach((name, index) => {
     // REQ-FMT-13 as amended in 1.33: an arm whose working tree no longer digests to its pin is read from the newest
     // commit that does; when none does, it is the tree's, and the digest check below refuses it.
-    const pinned = campaign.spec.arm_digests?.[name];
-    const moved =
-      pinned !== undefined &&
-      (!existsSync(join(campaign.armsRoot, name)) ||
-        armDigest(campaign.repoRoot, name).slice(0, 12) !== pinned);
-    const history = moved ? armFromHistory(campaign.repoRoot, name, pinned) : undefined;
-    const loaded = loadArm(history === undefined ? campaign.armsRoot : join(history.root, 'arms'), name);
-    const arm =
-      loaded.ok && history !== undefined
-        ? { ok: true as const, value: { ...loaded.value, from: history } }
-        : loaded;
+    const arm = loadPinnedArm(campaign.repoRoot, name, campaign.spec.arm_digests?.[name]);
     if (!arm.ok) {
       issues.push({ path: `arms[${index}]`, message: `${name}: ${reasonsOf(arm.issues)}` });
       return;
@@ -87,17 +79,8 @@ export function checkCampaign(file: string): Result<CheckedCampaign> {
   // Every arm's files still digest to what the campaign pins (REQ-FMT-01 as amended, REQ-FMT-13, F7.2): a changed arm
   // is a new campaign, never a silent change under the old identity.
   for (const arm of arms) {
-    const pinned = campaign.spec.arm_digests?.[arm.name];
-    const actual =
-      pinned === undefined
-        ? undefined
-        : armDigest(arm.from?.root ?? campaign.repoRoot, arm.name).slice(0, 12);
-    if (pinned !== undefined && actual !== pinned) {
-      issues.push({
-        path: `arm_digests.${arm.name}`,
-        message: `is ${pinned}, but the arm's files digest to ${actual ?? ''}: the arm changed since the campaign pinned it`,
-      });
-    }
+    const issue = pinnedDigestIssue(campaign.repoRoot, arm, campaign.spec.arm_digests?.[arm.name]);
+    if (issue !== undefined) issues.push(issue);
   }
   // A docs control is generated from the configuration of the arm its docs_of names (REQ-RUN-11), by that arm's
   // tool's docs generator: without that arm, or without a generator, there is nothing to generate it from. Refused

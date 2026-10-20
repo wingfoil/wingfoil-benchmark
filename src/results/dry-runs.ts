@@ -16,6 +16,11 @@ export interface DryRunKey {
   readonly model: string;
   /** The effort the campaign pins for the model (dl-015); absent, or `none`, matches a dry run that recorded none. */
   readonly effort?: string;
+  /**
+   * The arm's digest the campaign pins (12 hex, REQ-FMT-13): a dry run that recorded another ran another arm and does
+   * not count (task-095); one that recorded none, stored before arm digests, still does.
+   */
+  readonly armDigest?: string;
 }
 
 /** A stored dry run: where it is, what it cost per step and in total (USD), and what it ran with. */
@@ -40,6 +45,7 @@ interface StoredRun {
   readonly agent?: { readonly name?: unknown; readonly version?: unknown };
   readonly harness?: { readonly commit?: unknown };
   readonly effort?: unknown;
+  readonly arm_digest?: unknown;
   readonly steps?: readonly {
     readonly usage?: { readonly costUsd?: unknown };
     readonly models?: Readonly<Record<string, { readonly costBasis?: unknown }>>;
@@ -104,6 +110,12 @@ export function findDryRuns(resultsRoot: string, key: DryRunKey): DryRunsLookup 
     const ran = typeof run.effort === 'string' ? run.effort : 'none';
     if (ran !== (key.effort ?? 'none')) {
       if (records.length === 0) skipped ??= `dry run ${execution} ran at effort ${ran}`;
+      continue;
+    }
+    if (key.armDigest !== undefined && typeof run.arm_digest === 'string' && !run.arm_digest.startsWith(key.armDigest)) {
+      if (records.length === 0) {
+        skipped ??= `dry run ${execution} ran arm ${key.arm} at digest ${run.arm_digest.slice(0, 12)}, the campaign pins ${key.armDigest}`;
+      }
       continue;
     }
     const unpriced = unpricedModels(run);

@@ -16,7 +16,8 @@ printf '#!/bin/sh\nexec node %s/wingfoil/dist/cli.js "$@"\n' "$HOME" > "$HOME/.l
 chmod +x "$HOME/.local/bin/wingfoil"
 echo "WingFoil under test: commit $(cat "$HOME/wingfoil/.wingfoil-commit"), at $(command -v wingfoil)"
 
-# 2. The project, with the benchmark's own process template. `init` commits by itself.
+# 2. The project, as WingFoil's documentation sets it up: `init`'s Kanban scaffold, no workflow of the benchmark's own
+#    (experiment design 1.5). `init` commits by itself.
 wingfoil init --template Kanban > /dev/null
 
 # 3. The scenario's configuration, if any (dl-005): copied over init's files, committed once.

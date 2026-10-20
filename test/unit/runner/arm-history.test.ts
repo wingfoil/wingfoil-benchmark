@@ -1,14 +1,14 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { stringify } from 'yaml';
-import { describe, expect, it, onTestFinished } from 'vitest';
+import { describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import { armDigest } from '../../../src/arms/index.js';
 import { main } from '../../../src/cli/index.js';
 import { checkCampaign, checkDryRun, estimateCampaign, runCampaign } from '../../../src/runner/index.js';
 import { completeCampaignYaml, writeRepo } from '../../support/campaign-fixture.js';
-import { dryRunProfileYaml, writeStoredDryRun } from '../../support/dry-run-fixture.js';
+import { dryRunProfileYaml, priceCampaign, writeStoredDryRun } from '../../support/dry-run-fixture.js';
 import { repoPath } from '../../support/paths.js';
 import { doubles } from '../../support/runner-doubles.js';
 
@@ -122,8 +122,36 @@ describe('an arm read by its pinned digest from history (REQ-FMT-13 as amended i
   });
 });
 
+describe('campaign run names the arms read from history (REQ-FMT-01 as amended in 1.33, review round 1)', () => {
+  it('prints the same line as validate before anything is built', async () => {
+    const { file, pinned } = movedOn();
+    priceCampaign(file);
+    vi.stubEnv('BENCH_FAKE_SCRIPT', repoPath('test/fixtures/fake-script.json'));
+    onTestFinished(() => {
+      vi.unstubAllEnvs();
+    });
+    const ports = doubles();
+    let stdout = '';
+
+    await main(
+      ['campaign', 'run', file],
+      { stdout: (t) => (stdout += t), stderr: () => undefined },
+      {
+        docker: ports.docker,
+        git: ports.git,
+        agent: ports.agent,
+      },
+    );
+
+    expect(stdout).toContain(
+      `arm baseline-notes: read from commit ${pinned.slice(0, 12)}, which holds its pinned digest\n`,
+    );
+  });
+});
+
 describe('dry runs and the estimate by the pinned arm (task-095 review round 1)', () => {
   function profile(root: string, digests?: Record<string, string>): void {
+    copyFileSync(repoPath('scenarios/leak-scan.yaml'), join(root, 'scenarios', 'leak-scan.yaml'));
     writeFileSync(
       join(root, 'scenarios', 'dry-run.yaml'),
       stringify({

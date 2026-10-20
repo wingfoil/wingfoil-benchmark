@@ -9,7 +9,15 @@ import { campaignSchema, modelId } from './campaign.js';
  * command line names. Unknown keys are rejected.
  */
 export const dryRunProfileSchema = campaignSchema
-  .pick({ harnesses: true, agent: true, approver_policy: true, caps: true, currency: true })
+  // arm_digests (task-095): a dry run of an arm as a campaign pins it, read from history when the tree moved on.
+  .pick({
+    harnesses: true,
+    agent: true,
+    approver_policy: true,
+    caps: true,
+    currency: true,
+    arm_digests: true,
+  })
   .extend({ models: z.strictObject({ default: modelId }) });
 
 /** A dry-run profile as parsed. */

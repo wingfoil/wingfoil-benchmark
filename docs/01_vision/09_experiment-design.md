@@ -364,10 +364,13 @@ The 30 € target above did not hold, and stays as the record of v0.1's plan.
     2026-10-20, at task-095's design.
     - **§2, the wingfoil arm:** from v0.3.0, WingFoil as its documentation sets it up, the `init` scaffold with no
       workflow written for the benchmark (the parity rule every competitor arm follows). WingFoil's answer of
-      2026-10-18: the scaffold's workflows declare no role, action or product, so a run that follows `workflow next`
-      mostly records checkpoints; what that costs and yields is what is measured.
+      2026-10-18: the scaffold's workflows declare no role, action or product. WingFoil's guide has an agent start a
+      workflow only when asked, and no step's request asks, so the arm uses WingFoil's Memory and directives on that
+      scaffold, and its workflow engine stays unstarted; that is what is measured.
     - **§6, the bridge:** its wingfoil arm is read by its pinned digest from the history, so that the bridge and the
-      reference campaign run from one benchmark commit with two versions of the arm.
+      reference campaign run from one benchmark commit with two versions of the arm. Its baseline-docs arm keeps its
+      digest, but its rules are generated from the configuration the bridge's WingFoil writes: where 0.3.0's `init`
+      ships other directive text (`doc-versioning`), the step bridge → reference changes the docs control's rules too.
 
     Source: [task-095](../memory/task/task-095-wingfoil-v0-3-0-admitted-to-the-wingfoil-arm-the-bridge-s-arm-read-by-its-pinned-digest.md).
 
