@@ -194,7 +194,9 @@ function profileHarnessPin(dir: string, tool: string): HarnessPin | undefined {
   for (const entry of Object.values(harnesses as Record<string, unknown>)) {
     const harness = entry as { tool?: unknown; version?: unknown; commit?: unknown };
     if (harness.tool !== tool || typeof harness.version !== 'string') continue;
-    return { version: harness.version, ...(typeof harness.commit === 'string' ? { commit: harness.commit } : {}) };
+    // Only a commit-shaped value counts as a commit: an empty one would match every commit (review round 5).
+    const commit = typeof harness.commit === 'string' && COMMIT_PIN.test(harness.commit) ? harness.commit : undefined;
+    return { version: harness.version, ...(commit === undefined ? {} : { commit }) };
   }
   return undefined;
 }
