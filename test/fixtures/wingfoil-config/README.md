@@ -14,3 +14,10 @@ Refresh both together, from a real run, when the pinned WingFoil or S8's configu
 
 Refreshed in task-049 for v0.2.2: only `dna.yaml` changed — `dna add` keeps the comments and the flow style
 `init` wrote, which the setup's former script re-dumped away — and `S8.PROJECT_RULES.md` came out the same.
+
+Refreshed in task-095 for v0.3.0 (`cc31d7a8`), from a dry run of S8@1.0 in the baseline-docs arm with the fake agent
+(its steps fail by design: the snapshot is made before them, and needs no agent): `init` 0.3.0's scaffold (workflows
+that include by name, the `plan` template, the built-in agent adapters under `agents/`), S8's configuration over it,
+the Benchmark Approver. `S8.PROJECT_RULES.md` changed in one line, the `doc-versioning` directive's text, which 0.3.0's
+`init` ships changed.
+

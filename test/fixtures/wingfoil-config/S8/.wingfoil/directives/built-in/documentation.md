@@ -6,6 +6,7 @@ kind: built-in
 title: "Documentation"
 tags: [built-in, documentation]
 ref: [P3.8]
+format: 1
 ---
 
 # Directive — Documentation

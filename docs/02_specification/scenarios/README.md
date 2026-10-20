@@ -1,7 +1,7 @@
 # Scenario specifications — common conventions (v0.1)
 
-**Version:** 1.3
-**Date:** 2026-10-02
+**Version:** 1.4
+**Date:** 2026-10-20
 **Status:** Approved
 **Traces to:** [09_experiment-design.md](../../01_vision/09_experiment-design.md), [06_features.md](../../01_vision/06_features.md) F3.1, F3.6, F6.1–F6.3, F6.8; plan [plan-002](../../plans/plan-002-benchmark-specification.md)
 
@@ -18,7 +18,7 @@ what differs from them.
 | K2 | Visibility | All four scenarios are **public**, so that they can be rerun without the hold-out. Each one also has **hold-out additions** (extra tests, variants), kept in the private repository (T13). Fully hold-out scenarios start in v0.3. |
 | K3 | Project rules | A scenario's rules (directives, decisions to follow) live **only in the arm's environment**: none in baseline, Markdown in baseline-docs, WingFoil directives and Memory in wingfoil. The seed carries no `CONTRIBUTING.md` with rules. |
 | K4 | Cost sizing | The per-run target of the experiment design (§6, about 1.2 € on Sonnet 5) is **indicative, with a loose gate**, until dry runs (F3.3) provide real data. The budget is then revised. Step counts below are sized with that target in mind. |
-| K5 | WingFoil under test | Scenarios and the runner are developed against the **WingFoil 0.2 pre-release** in the WingFoil repository, pinned to a commit when the arm is built (during development `3df305e`; from calibration the release `v0.2.2`, amended in 1.3). Compared with the v0.1 release it adds `memory submit/approve/reject/deprecate/history`, `directive create/assign/remove`, read-only MCP Resources and MCP Prompts that load role directives (mutating MCP Tools come in a later build; amended in 1.1). It still has **no workflow engine**. Note: WingFoil's `package.json` still says `0.1.0`, so the version string does not identify the build. The commit does. The first public campaign still runs on the latest *released* WingFoil (sequencer decision 3): from calibration on, the wingfoil arm runs **v0.2.2** (`12537b62`), which offers the same capabilities, still with no workflow engine and no MCP Tools (amended in 1.3). |
+| K5 | WingFoil under test | Scenarios and the runner are developed against the **WingFoil 0.2 pre-release** in the WingFoil repository, pinned to a commit when the arm is built (during development `3df305e`; from calibration the release `v0.2.2`, amended in 1.3). Compared with the v0.1 release it adds `memory submit/approve/reject/deprecate/history`, `directive create/assign/remove`, read-only MCP Resources and MCP Prompts that load role directives (mutating MCP Tools come in a later build; amended in 1.1). It still has **no workflow engine**. Note: WingFoil's `package.json` still says `0.1.0`, so the version string does not identify the build. The commit does. The first public campaign still runs on the latest *released* WingFoil (sequencer decision 3): from calibration on, the wingfoil arm runs **v0.2.2** (`12537b62`), which offers the same capabilities, still with no workflow engine and no MCP Tools (amended in 1.3). From v0.2's reference campaign the wingfoil arm runs **v0.3.0** (`cc31d7a8`), which adds a workflow engine that records and routes a workflow's steps and carries none out, still with no MCP Tools; v0.2's bridge keeps v0.2.2 (amended in 1.4, task-095). |
 
 ## 2. What a scenario spec contains
 

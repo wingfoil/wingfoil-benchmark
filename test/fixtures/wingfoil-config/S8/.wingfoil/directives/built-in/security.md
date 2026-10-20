@@ -6,6 +6,7 @@ kind: built-in
 title: "Security"
 tags: [built-in, security]
 ref: [P3.8]
+format: 1
 ---
 
 # Directive — Security
