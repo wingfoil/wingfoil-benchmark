@@ -291,3 +291,6 @@ Departures added to the list above:
      both name a commit, the commits decide; test.
   2. cosmetic — `COMMIT_PIN` now the third copy of the commit pattern (`src/runner/estimate.ts`, `src/site/model.ts`).
      **Left:** two copies predate this task; folding them is a refactor for another task.
+- **Round 5** (a new independent read-only Explore subagent, on `b172d4a`): **clean on logic**; two low nits. (1) long
+  lines in `dry-runs.ts`: prettier and lint accept them, left. (2) an empty `commit:` in a stored profile would match
+  every commit: **fixed**, only a commit-shaped value counts (`COMMIT_PIN`). No further round: the review is closed.
