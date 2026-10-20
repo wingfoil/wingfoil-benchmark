@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { copyFileSync, existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { stringify } from 'yaml';
 import { describe, expect, it, onTestFinished, vi } from 'vitest';
@@ -225,6 +225,18 @@ describe('dry runs and the estimate by the pinned arm (task-095 review round 1)'
     expect(checked.value.arms.find((arm) => arm.name === 'baseline-notes')?.from?.commit).toBe(pinned);
   });
 
+  it('reuses a cached arm that already digests to the pin, writing nothing (review round 2)', () => {
+    const { root, file, pinned } = movedOn();
+    expect(checkCampaign(file).ok).toBe(true);
+    const manual = join(root, '.cache', 'arms', pinned, 'arms', 'baseline-notes', 'manual.md');
+    const before = statSync(manual).mtimeMs;
+    const inode = statSync(manual).ino;
+
+    expect(checkCampaign(file).ok).toBe(true);
+
+    expect([statSync(manual).ino, statSync(manual).mtimeMs]).toEqual([inode, before]);
+  });
+
   it('rewrites a stale copy of an arm read from history rather than reading it', () => {
     const { root, file, pinned } = movedOn();
     expect(checkCampaign(file).ok).toBe(true);
@@ -250,5 +262,52 @@ describe('the WingFoil the register admits (task-095 review round 1)', () => {
     const checked = checkCampaign(file);
 
     expect(checked.ok ? '' : JSON.stringify(checked.issues)).toContain('v0.3.1');
+  });
+});
+
+describe('the estimate by the harness version a dry run ran (task-095 review round 2)', () => {
+  /** A campaign of baseline, wingfoil and its docs control, WingFoil pinned at `version`. */
+  function wingfoilCampaign(version: string) {
+    const yaml = {
+      ...completeCampaignYaml(),
+      harnesses: { wingfoil: { tool: 'wingfoil', version } },
+      arms: ['baseline', 'baseline-docs', 'wingfoil'],
+      scenarios: [{ id: 'S1', version: '1.0' }],
+      repetitions: { S1: 1 },
+      agent: { name: 'fake', version: '1.0.0' },
+      models: { default: 'fake-model' },
+    };
+    const { root, file } = writeRepo(yaml, ['S1@1.0']);
+    const checked = checkCampaign(file);
+    if (!checked.ok) throw new Error(JSON.stringify(checked.issues));
+    return { root, checked: checked.value };
+  }
+
+  /** A stored dry run of `arm` whose stored profile pinned WingFoil at `version`. */
+  function dryRunOn(root: string, execution: number, arm: string, hash: string, version: string): void {
+    const dir = writeStoredDryRun(root, execution, { id: 'S1', hash, arm, stepCostsUsd: [1] });
+    writeFileSync(
+      join(dir, 'dry-run.yaml'),
+      stringify({ ...dryRunProfileYaml(), harnesses: { wingfoil: { tool: 'wingfoil', version } } }),
+    );
+  }
+
+  it('counts for a harness arm, and for its docs control, only a dry run made on the WingFoil the campaign pins', () => {
+    const { root, checked } = wingfoilCampaign('v0.2.2');
+    const hash = checked.scenarios[0]?.hash ?? '';
+    dryRunOn(root, 1, 'baseline', hash, '3df305e');
+    dryRunOn(root, 2, 'wingfoil', hash, '3df305e');
+    dryRunOn(root, 3, 'baseline-docs', hash, '3df305e');
+
+    const refused = estimateCampaign(checked);
+    const messages = refused.ok ? '' : refused.issues.map((issue) => issue.message).join('\n');
+    expect(messages).toContain('dry run 2 ran wingfoil 3df305e, the campaign pins v0.2.2');
+    expect(messages).toContain('dry run 3 ran wingfoil 3df305e, the campaign pins v0.2.2');
+    // The baseline requires no harness: its dry run counts whatever WingFoil its profile named.
+    expect(messages).not.toMatch(/in arm baseline on/);
+
+    dryRunOn(root, 4, 'wingfoil', hash, 'v0.2.2');
+    dryRunOn(root, 5, 'baseline-docs', hash, 'v0.2.2');
+    expect(estimateCampaign(checked).ok).toBe(true);
   });
 });
