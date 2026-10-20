@@ -194,7 +194,7 @@ can start.
   passes, evidence from the tag and this task); the manual's "This arm" now cites release 0.3.0 and adds two of the
   guide's rules (the verbs act only on committed documents; start or end a workflow only when asked); `provides`:
   `workflow-engine: true` (the engine records and routes, executes no step), `mcp-tools: false`; the telemetry comment
-  and the setup's comments re-checked; `v0-2-reference.yaml` pins `v0.3.0` and the arm's digest `39b7c4c64454`;
+  and the setup's comments re-checked; `v0-2-reference.yaml` pins `v0.3.0` and the arm's digest (`39b7c4c64454`, then `45a5cce3de19` after review round 1's setup comment);
   `v0-2-bridge.yaml` keeps `680b19f27c9f`, read from history (its test reads task-086's manual "release 0.2.2"); the
   method page's T10 and wingfoil paragraph.
 - **The setup on v0.3.0** (criterion 8): red `1adf272` (the W3 docker test and `test/fixtures/campaigns/arms.yaml`
@@ -224,3 +224,37 @@ can start.
 
 - `tsc` and lint clean (lint read in full). Unit and acceptance: 105 files, 1635 passed, 8 skipped. `test:bin` 8/8.
   Docker: W3 on v0.3.0 1/1. No real-agent session, no spending.
+
+### Review
+
+- **Round 1** (independent read-only Explore subagent, on `961999a`): not clean. Red `10e2f98`, fixes in the commit
+  after it. Findings and outcomes:
+  1. should-fix, close to blocking — **dry runs ignored the pinned digest**: `checkDryRun` loaded the tree's arm, so a
+     wingfoil dry run on a v0.2.2 profile ran 0.3.0's arm, and the estimate matched dry runs by arm name only.
+     **Fixed:** a dry-run profile may pin `arm_digests` (read from history as a campaign's are); a dry run's identity
+     includes its arms' digests; the estimate counts a dry run only when its recorded `arm_digest` matches the
+     campaign's pin (one stored before arm digests still counts); tests. **For calibration:** the bridge's dry runs need
+     a profile with WingFoil v0.2.2 and `arm_digests: { wingfoil: 680b19f27c9f }`; the reference's a v0.3.0 profile
+     (`--profile`, task-094). `scenarios/dry-run.yaml` stays calibration's to set.
+  2. should-fix — baseline-docs keeps one digest in both campaigns while its generated rules differ (0.3.0's
+     `doc-versioning` text). **Stated** in experiment design 1.5 §6.
+  3. should-fix — the cached arm was rewritten in place, and a stale extra file made a false refusal. **Fixed:** written
+     aside, then renamed into place whole; test.
+  4. should-fix — criteria partly tested. **Added:** `campaign run` naming the commit, a v0.3.1 pin refused, an arm the
+     tree no longer has (these two passed at once: characterization). The `workflow-engine` order slip stays as stated.
+  5. should-fix — two departures not listed. **Listed** below (5, 6).
+  6. nit — the bridge test needs the real history. **Fixed:** skipped on a shallow clone.
+  7. nit — experiment design 1.5 said a run "mostly records checkpoints". **Fixed:** the engine stays unstarted, as the
+     method page says.
+  8. nit — `workflow-engine: true` though runs never start it. **Stated** in K5 (1.4).
+  9. nit — `setup.sh`'s "process template" comment. **Fixed** (the arm's digest moved to `45a5cce3de19`, pinned).
+  10. nit — bug-022's fix confirmed.
+
+Departures added to the list above:
+
+5. **`recordedArm` not moved:** the runner reads history synchronously (`src/arms/history.ts`, `checkCampaign` is
+   synchronous), the site keeps its asynchronous `recordedArm`; both digest with `armDigestOf`.
+6. **The cache is `.cache/arms/<commit>/`**, not the execution's `runs/` area: the arm is read at `checkCampaign`, before
+   an execution exists; `.cache/` is ignored.
+
+- Checks after round 1: `tsc` and lint clean; unit and acceptance 1642 passed, 8 skipped.
