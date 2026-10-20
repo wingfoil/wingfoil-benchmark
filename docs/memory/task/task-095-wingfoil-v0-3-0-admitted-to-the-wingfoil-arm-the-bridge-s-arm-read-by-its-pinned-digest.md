@@ -2,7 +2,7 @@
 id: task-095-wingfoil-v0-3-0-admitted-to-the-wingfoil-arm-the-bridge-s-arm-read-by-its-pinned-digest
 type: task
 title: "WingFoil v0.3.0 admitted to the wingfoil arm, the bridge's arm read by its pinned digest"
-status: draft
+status: pending
 release: v0.2
 wave: calibration
 features: [F7.4, F7.2]
