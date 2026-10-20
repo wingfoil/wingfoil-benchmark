@@ -126,6 +126,17 @@ function isFileArgument(file: string | undefined): file is string {
   return file !== undefined && file !== '' && !file.startsWith('-');
 }
 
+/** The arms read from history (REQ-FMT-01 as amended in 1.33), one line each, naming the commit. */
+function armsFromHistory(arms: readonly { name: string; from?: { commit: string } }[]): string[] {
+  return arms.flatMap((arm) =>
+    arm.from === undefined
+      ? []
+      : [
+          `arm ${arm.name}: read from commit ${arm.from.commit.slice(0, 12)}, which holds its pinned digest\n`,
+        ],
+  );
+}
+
 /** REQ-CLI-01: `bench campaign validate <file>`. */
 function validateCampaign(file: string, io: Io): number {
   const result = checkCampaign(file);
@@ -134,6 +145,7 @@ function validateCampaign(file: string, io: Io): number {
   io.stdout(
     `campaign ${id} is valid (${count(spec.scenarios.length, 'scenario')}, ${count(spec.arms.length, 'arm')})\n`,
   );
+  for (const line of armsFromHistory(result.value.arms)) io.stdout(line);
   // Every run that will be an expected failure (F3.6), before anything is spent: it runs, and is marked.
   for (const scenario of result.value.scenarios) {
     for (const arm of result.value.arms) {
@@ -236,6 +248,7 @@ async function runCampaignCommand(
 ): Promise<number> {
   const checked = checkCampaign(file);
   if (!checked.ok) return report(checked.issues, io);
+  for (const line of armsFromHistory(checked.value.arms)) io.stdout(line);
   // A resume that could mix results is refused first, by its reason (REQ-RUN-19, task-080).
   const resume = resumeTarget === undefined ? undefined : checkResume(checked.value, resumeTarget);
   if (resume !== undefined && !resume.ok) return report(resume.issues, io);

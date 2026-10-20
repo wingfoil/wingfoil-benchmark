@@ -668,7 +668,10 @@ async function executeRuns(
 
   // Each arm's digest, once, before anything is built or runs: the arm every run of this execution received
   // (REQ-FMT-13).
-  const armDigests = new Map(plan.arms.map((arm) => [arm.name, armDigest(plan.repoRoot, arm.name)]));
+  // An arm read from history is digested where it was written (REQ-FMT-13 as amended in 1.33).
+  const armDigests = new Map(
+    plan.arms.map((arm) => [arm.name, armDigest(arm.from?.root ?? plan.repoRoot, arm.name)]),
+  );
   await options.docker.build({
     dockerfile: join(packageRoot(), RUN_IMAGE_DIRECTORY, 'Dockerfile'),
     context: join(packageRoot(), RUN_IMAGE_DIRECTORY),
@@ -1722,6 +1725,12 @@ async function remove(container: string, options: RunnerOptions): Promise<void> 
   }
 }
 
+/** `run.json`'s `arm_source` for the arm named `name` (REQ-FMT-06 as amended in 1.33). */
+function armSourceOf(plan: RunPlan, name: string): { tree: true } | { commit: string } {
+  const from = plan.arms.find((arm) => arm.name === name)?.from;
+  return from === undefined ? { tree: true } : { commit: from.commit };
+}
+
 /** The package root, from this file's location in `dist/runner/` or `src/runner/`. */
 function packageRoot(): string {
   return dirname(dirname(dirname(fileURLToPath(import.meta.url))));
@@ -1747,6 +1756,8 @@ function record(run: RunResult, plan: RunPlan): RunResult {
         scenario_hash: run.scenarioHash,
         arm: run.arm,
         ...(run.armDigest === undefined ? {} : { arm_digest: run.armDigest }),
+        // Where the arm was read (REQ-FMT-06 as amended in 1.33): the working tree, or a commit of the history.
+        arm_source: armSourceOf(plan, run.arm),
         ...(run.telemetryOff === undefined ? {} : { telemetry_off: run.telemetryOff }),
         ...(run.docsOf === undefined ? {} : { docs_of: run.docsOf }),
         model: run.model,

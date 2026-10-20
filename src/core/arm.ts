@@ -65,4 +65,9 @@ export interface Arm {
   readonly docsOf?: string;
   /** The settings that turn the arm's tool's telemetry off, `NAME=value` (REQ-RUN-18). */
   readonly telemetryOff?: readonly string[];
+  /**
+   * Where the arm was read when the working tree no longer holds its pinned digest (REQ-FMT-13 as amended in 1.33):
+   * the commit, and the repository-shaped root it was written under. Absent for an arm read from the working tree.
+   */
+  readonly from?: { readonly commit: string; readonly root: string };
 }

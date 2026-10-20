@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { armDigest, docsGeneratorOf, loadArm } from '../arms/index.js';
+import { armDigest, armFromHistory, docsGeneratorOf, loadArm } from '../arms/index.js';
 import { loadCampaign, loadRegister } from '../campaign/index.js';
 import type { Campaign } from '../campaign/index.js';
 import { eligibilityIssues, fail, harnessCoverage, ok } from '../core/index.js';
@@ -49,7 +49,19 @@ export function checkCampaign(file: string): Result<CheckedCampaign> {
   });
   const arms: Arm[] = [];
   campaign.spec.arms.forEach((name, index) => {
-    const arm = loadArm(campaign.armsRoot, name);
+    // REQ-FMT-13 as amended in 1.33: an arm whose working tree no longer digests to its pin is read from the newest
+    // commit that does; when none does, it is the tree's, and the digest check below refuses it.
+    const pinned = campaign.spec.arm_digests?.[name];
+    const moved =
+      pinned !== undefined &&
+      (!existsSync(join(campaign.armsRoot, name)) ||
+        armDigest(campaign.repoRoot, name).slice(0, 12) !== pinned);
+    const history = moved ? armFromHistory(campaign.repoRoot, name, pinned) : undefined;
+    const loaded = loadArm(history === undefined ? campaign.armsRoot : join(history.root, 'arms'), name);
+    const arm =
+      loaded.ok && history !== undefined
+        ? { ok: true as const, value: { ...loaded.value, from: history } }
+        : loaded;
     if (!arm.ok) {
       issues.push({ path: `arms[${index}]`, message: `${name}: ${reasonsOf(arm.issues)}` });
       return;
@@ -76,7 +88,10 @@ export function checkCampaign(file: string): Result<CheckedCampaign> {
   // is a new campaign, never a silent change under the old identity.
   for (const arm of arms) {
     const pinned = campaign.spec.arm_digests?.[arm.name];
-    const actual = pinned === undefined ? undefined : armDigest(campaign.repoRoot, arm.name).slice(0, 12);
+    const actual =
+      pinned === undefined
+        ? undefined
+        : armDigest(arm.from?.root ?? campaign.repoRoot, arm.name).slice(0, 12);
     if (pinned !== undefined && actual !== pinned) {
       issues.push({
         path: `arm_digests.${arm.name}`,
