@@ -276,3 +276,11 @@ Departures added to the list above:
      (`leak-scan.yaml`), so two red dry-run tests first failed for that reason. **Recorded here.** The refusal names
      the profile for a dry run; the campaign's text, which @F7.2 pins, is unchanged.
 - Checks after round 2: `tsc` and lint clean; the touched tests and @F7.2 green; unit and acceptance re-run below.
+- **Round 3** (a new independent read-only Explore subagent, on `6fbfafe`): round 2's outcomes confirmed (the harness
+  map is keyed by arm name, as `harnessOf` assumes); one nit and two cosmetic points. Red `79a686c`, spec `a0f4414`,
+  fix `1564e10`.
+  1. nit — pins compared as `commit ?? version` on each side, so a profile naming the commit of the pinned version was
+     skipped (safe, but a paid dry run lost). **Fixed:** the same version, or commits (either side's, or a version
+     that is a commit) one a prefix of the other; test.
+  2. nit — REQ-CLI-02 1.33 did not say a dry run stored without its profile counts. **Fixed.**
+  3. cosmetic — a commit pin printed bare in the skip. **Fixed:** `version (commit12)`.
