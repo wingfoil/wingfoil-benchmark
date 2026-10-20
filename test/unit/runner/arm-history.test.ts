@@ -302,6 +302,27 @@ describe('the estimate by the harness version a dry run ran (task-095 review rou
     );
   }
 
+  it('skips a dry run of the same version built from another commit, when both pins name one (review round 4)', () => {
+    const { root, checked } = wingfoilCampaign('v0.2.2');
+    const pinned = {
+      ...checked.campaign.spec.harnesses.wingfoil,
+      commit: '12537b627ce0517222da762e8fa90997a1208a4b',
+    };
+    const withCommit = {
+      ...checked,
+      campaign: { ...checked.campaign, spec: { ...checked.campaign.spec, harnesses: { wingfoil: pinned } } },
+    } as typeof checked;
+    const hash = checked.scenarios[0]?.hash ?? '';
+    dryRunOn(root, 1, 'baseline', hash, 'v0.2.2');
+    dryRunOn(root, 2, 'wingfoil', hash, 'v0.2.2', 'ffffffffffffffffffffffffffffffffffffffff');
+    dryRunOn(root, 3, 'baseline-docs', hash, 'v0.2.2', '12537b627ce0517222da762e8fa90997a1208a4b');
+
+    const estimate = estimateCampaign(withCommit);
+    expect(estimate.ok ? '' : JSON.stringify(estimate.issues)).toContain(
+      'dry run 2 ran wingfoil v0.2.2 (ffffffffffff)',
+    );
+  });
+
   it('counts a dry run whose profile also named the commit of the version the campaign pins (review round 3)', () => {
     const { root, checked } = wingfoilCampaign('v0.2.2');
     const hash = checked.scenarios[0]?.hash ?? '';
