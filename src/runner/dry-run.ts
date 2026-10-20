@@ -94,7 +94,7 @@ export function checkDryRun(request: DryRunRequest, root: string): Result<Checke
     }
   }
   for (const arm of arms) {
-    const issue = pinnedDigestIssue(root, arm, pinnedOf(arm.name));
+    const issue = pinnedDigestIssue(root, arm, pinnedOf(arm.name), 'profile');
     if (issue !== undefined) issues.push(issue);
   }
   if (issues.length > 0) return fail(issues);

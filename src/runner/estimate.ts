@@ -93,6 +93,7 @@ export function estimateCampaign(
       ...(campaign.spec.arm_digests?.[arm] === undefined
         ? {}
         : { armDigest: campaign.spec.arm_digests[arm] }),
+      ...harnessOf(checked, arm),
     });
     const [newest] = lookup.records;
     const name = `${scenario.id}@${scenario.version}`;
@@ -188,6 +189,22 @@ function provenance({ campaign }: CheckedCampaign, arm: string, dryRun: DryRunRe
     }
   }
   return notes;
+}
+
+/**
+ * The harness `arm` runs on, as the campaign pins it: its own (`requires`), or for a docs control its source arm's
+ * (REQ-RUN-11), whose generated rules depend on that harness (task-095 review round 2).
+ */
+function harnessOf(
+  { campaign, arms }: CheckedCampaign,
+  arm: string,
+): { harness?: { tool: string; pin: string } } {
+  const own = arms.find((candidate) => candidate.name === arm);
+  const source = own?.docsOf === undefined ? own : arms.find((candidate) => candidate.name === own.docsOf);
+  if (source?.requires === undefined) return {};
+  const pinned = campaign.spec.harnesses[source.name];
+  const pin = pinned?.commit ?? pinned?.version;
+  return pin === undefined ? {} : { harness: { tool: source.requires, pin } };
 }
 
 /** A pin that names a commit (REQ-FMT-03): 7 to 40 hex characters. */

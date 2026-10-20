@@ -1,8 +1,8 @@
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, posix } from 'node:path';
 
-import { armDigestOf } from './digest.js';
+import { armDigest, armDigestOf } from './digest.js';
 
 /** No global or system configuration, and no variable pointing git at another repository (as `historyCli`). */
 const READ_ENVIRONMENT: NodeJS.ProcessEnv = {
@@ -67,19 +67,30 @@ export function armFromHistory(repoRoot: string, arm: string, digest: string): A
       }
     }
     if (files.size === 0 || armDigestOf(files).slice(0, digest.length) !== digest) continue;
-    // Written aside, then moved into place whole (task-095 review round 1): a stale copy with extra files is replaced,
-    // and a reader never sees a half-written arm.
+    // An arm already written for this commit is reused as it is; otherwise it is written aside, then moved into place
+    // whole (task-095 review rounds 1 and 2): a stale copy is replaced, and a reader never sees a half-written arm.
     const root = join(repoRoot, '.cache', 'arms', commit);
     const target = join(root, path);
+    const cached = () => existsSync(target) && armDigest(root, arm).slice(0, digest.length) === digest;
+    if (cached()) return { commit, root };
     const staging = `${target}.${process.pid}.${Date.now()}.tmp`;
-    for (const [file, content] of written) {
-      const at = join(staging, posix.relative(path, file));
-      mkdirSync(dirname(at), { recursive: true });
-      writeFileSync(at, content);
+    try {
+      for (const [file, content] of written) {
+        const at = join(staging, posix.relative(path, file));
+        mkdirSync(dirname(at), { recursive: true });
+        writeFileSync(at, content);
+      }
+      rmSync(target, { recursive: true, force: true });
+      mkdirSync(dirname(target), { recursive: true });
+      try {
+        renameSync(staging, target);
+      } catch (error) {
+        // Another process put the same arm in place meanwhile: it is the same commit's, so it is used.
+        if (!cached()) throw error;
+      }
+    } finally {
+      rmSync(staging, { recursive: true, force: true });
     }
-    rmSync(target, { recursive: true, force: true });
-    mkdirSync(dirname(target), { recursive: true });
-    renameSync(staging, target);
     return { commit, root };
   }
   return undefined;

@@ -1,6 +1,8 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { readYamlFile } from '../core/index.js';
+
 /**
  * Where dry runs are stored, under `results/` (REQ-RES-01): numbered like a campaign's executions,
  * and never a campaign's identity, which is 12 hex characters (REQ-FMT-02).
@@ -21,6 +23,11 @@ export interface DryRunKey {
    * not count (task-095); one that recorded none, stored before arm digests, still does.
    */
   readonly armDigest?: string;
+  /**
+   * The harness the key's arm runs on, as the campaign pins it (an arm that requires one, or the docs control generated
+   * from it): a dry run whose stored profile pinned another version of it does not count (task-095 review round 2).
+   */
+  readonly harness?: { readonly tool: string; readonly pin: string };
 }
 
 /** A stored dry run: where it is, what it cost per step and in total (USD), and what it ran with. */
@@ -118,6 +125,13 @@ export function findDryRuns(resultsRoot: string, key: DryRunKey): DryRunsLookup 
       }
       continue;
     }
+    const ranOn = key.harness === undefined ? undefined : profileHarnessPin(dir, key.harness.tool);
+    if (key.harness !== undefined && ranOn !== undefined && ranOn !== key.harness.pin) {
+      if (records.length === 0) {
+        skipped ??= `dry run ${execution} ran ${key.harness.tool} ${ranOn}, the campaign pins ${key.harness.pin}`;
+      }
+      continue;
+    }
     const unpriced = unpricedModels(run);
     if (unpriced.length > 0) {
       if (records.length === 0)
@@ -136,6 +150,26 @@ export function findDryRuns(resultsRoot: string, key: DryRunKey): DryRunsLookup 
     });
   }
   return { records, ...(records.length === 0 && skipped !== undefined ? { skipped } : {}) };
+}
+
+/**
+ * The version (or commit) at which the profile a dry run ran with — its stored copy, `dry-run.yaml` — pinned `tool`;
+ * undefined when it stored none or pinned no such tool, as a dry run made before profiles were stored.
+ */
+function profileHarnessPin(dir: string, tool: string): string | undefined {
+  const file = join(dir, 'dry-run.yaml');
+  if (!existsSync(file)) return undefined;
+  const profile = readYamlFile(file);
+  if (!profile.ok || profile.value === null || typeof profile.value !== 'object') return undefined;
+  const harnesses = (profile.value as { harnesses?: unknown }).harnesses;
+  if (harnesses === null || typeof harnesses !== 'object') return undefined;
+  for (const entry of Object.values(harnesses as Record<string, unknown>)) {
+    const harness = entry as { tool?: unknown; version?: unknown; commit?: unknown };
+    if (harness.tool !== tool) continue;
+    const pin = harness.commit ?? harness.version;
+    return typeof pin === 'string' ? pin : undefined;
+  }
+  return undefined;
 }
 
 /** The basis of a cost the benchmark priced itself (Codex, task-094). */

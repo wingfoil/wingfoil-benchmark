@@ -28,12 +28,17 @@ export function loadPinnedArm(repoRoot: string, name: string, pinned: string | u
 }
 
 /** The refusal of an arm whose files do not digest to its pin, read from the tree or from history (REQ-FMT-13). */
-export function pinnedDigestIssue(repoRoot: string, arm: Arm, pinned: string | undefined): Issue | undefined {
+export function pinnedDigestIssue(
+  repoRoot: string,
+  arm: Arm,
+  pinned: string | undefined,
+  pinnedBy: 'campaign' | 'profile' = 'campaign',
+): Issue | undefined {
   if (pinned === undefined) return undefined;
   const actual = armDigest(arm.from?.root ?? repoRoot, arm.name).slice(0, 12);
   if (actual === pinned) return undefined;
   return {
     path: `arm_digests.${arm.name}`,
-    message: `is ${pinned}, but the arm's files digest to ${actual}: the arm changed since the campaign pinned it`,
+    message: `is ${pinned}, but the arm's files digest to ${actual}: the arm changed since the ${pinnedBy} pinned it`,
   };
 }
