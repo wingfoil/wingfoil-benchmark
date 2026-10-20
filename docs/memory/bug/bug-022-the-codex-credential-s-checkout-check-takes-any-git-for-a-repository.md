@@ -2,7 +2,7 @@
 id: bug-022-the-codex-credential-s-checkout-check-takes-any-git-for-a-repository
 type: bug
 title: "The Codex credential's checkout check takes any .git for a repository"
-status: pending
+status: approved
 # fixed_by: task-…   # set by hand, with the fixing task's id, just before `approved → fixed`
 tags: ["codex","security","preflight"]
 ---
