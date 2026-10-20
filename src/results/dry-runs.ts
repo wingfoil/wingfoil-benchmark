@@ -27,7 +27,7 @@ export interface DryRunKey {
    * The harness the key's arm runs on, as the campaign pins it (an arm that requires one, or the docs control generated
    * from it): a dry run whose stored profile pinned another version of it does not count (task-095 review round 2).
    */
-  readonly harness?: { readonly tool: string; readonly pin: string };
+  readonly harness?: { readonly tool: string; readonly pin: HarnessPin };
 }
 
 /** A stored dry run: where it is, what it cost per step and in total (USD), and what it ran with. */
@@ -126,9 +126,9 @@ export function findDryRuns(resultsRoot: string, key: DryRunKey): DryRunsLookup 
       continue;
     }
     const ranOn = key.harness === undefined ? undefined : profileHarnessPin(dir, key.harness.tool);
-    if (key.harness !== undefined && ranOn !== undefined && ranOn !== key.harness.pin) {
+    if (key.harness !== undefined && ranOn !== undefined && !samePin(ranOn, key.harness.pin)) {
       if (records.length === 0) {
-        skipped ??= `dry run ${execution} ran ${key.harness.tool} ${ranOn}, the campaign pins ${key.harness.pin}`;
+        skipped ??= `dry run ${execution} ran ${key.harness.tool} ${pinText(ranOn)}, the campaign pins ${pinText(key.harness.pin)}`;
       }
       continue;
     }
@@ -152,11 +152,36 @@ export function findDryRuns(resultsRoot: string, key: DryRunKey): DryRunsLookup 
   return { records, ...(records.length === 0 && skipped !== undefined ? { skipped } : {}) };
 }
 
+/** A harness as a campaign or a profile pins it: a version (a release, or a commit), and optionally its full commit. */
+export interface HarnessPin {
+  readonly version: string;
+  readonly commit?: string;
+}
+
+/** A pin that names a commit (REQ-FMT-03): 7 to 40 hex characters. */
+const COMMIT_PIN = /^[0-9a-f]{7,40}$/;
+
 /**
- * The version (or commit) at which the profile a dry run ran with — its stored copy, `dry-run.yaml` — pinned `tool`;
- * undefined when it stored none or pinned no such tool, as a dry run made before profiles were stored.
+ * Whether two pins name the same harness (task-095 review round 3): the same version; or commits, of either side's
+ * `commit` or of a version that is a commit, one a prefix of the other. A release name and a commit with no shared
+ * field are not compared: the pins differ.
  */
-function profileHarnessPin(dir: string, tool: string): string | undefined {
+function samePin(a: HarnessPin, b: HarnessPin): boolean {
+  if (a.version === b.version) return true;
+  const commits = (pin: HarnessPin) =>
+    [pin.commit, COMMIT_PIN.test(pin.version) ? pin.version : undefined].filter((c): c is string => c !== undefined);
+  return commits(a).some((x) => commits(b).some((y) => x.startsWith(y) || y.startsWith(x)));
+}
+
+function pinText(pin: HarnessPin): string {
+  return pin.commit === undefined ? pin.version : `${pin.version} (${pin.commit.slice(0, 12)})`;
+}
+
+/**
+ * The harness `tool` as the profile a dry run ran with pinned it (its stored copy, `dry-run.yaml`); undefined when it
+ * stored none or pinned no such tool, as a dry run made before profiles were stored, which then counts.
+ */
+function profileHarnessPin(dir: string, tool: string): HarnessPin | undefined {
   const file = join(dir, 'dry-run.yaml');
   if (!existsSync(file)) return undefined;
   const profile = readYamlFile(file);
@@ -165,9 +190,8 @@ function profileHarnessPin(dir: string, tool: string): string | undefined {
   if (harnesses === null || typeof harnesses !== 'object') return undefined;
   for (const entry of Object.values(harnesses as Record<string, unknown>)) {
     const harness = entry as { tool?: unknown; version?: unknown; commit?: unknown };
-    if (harness.tool !== tool) continue;
-    const pin = harness.commit ?? harness.version;
-    return typeof pin === 'string' ? pin : undefined;
+    if (harness.tool !== tool || typeof harness.version !== 'string') continue;
+    return { version: harness.version, ...(typeof harness.commit === 'string' ? { commit: harness.commit } : {}) };
   }
   return undefined;
 }
