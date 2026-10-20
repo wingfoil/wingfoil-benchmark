@@ -74,6 +74,7 @@ describe("Codex's credential file in the preflight (REQ-RUN-15 as amended in 1.3
   it("says invalid for a file inside a git checkout: the repository, a worktree or a run's workspace", () => {
     const checkout = tempDir('bench-codex-checkout-');
     mkdirSync(join(checkout, '.git'));
+    writeFileSync(join(checkout, '.git', 'HEAD'), 'ref: refs/heads/main\n');
     mkdirSync(join(checkout, 'runs', 'w'), { recursive: true });
     const file = join(checkout, 'runs', 'w', 'auth.json');
     writeFileSync(file, '{}');
@@ -94,6 +95,7 @@ describe("Codex's credential file in the preflight (REQ-RUN-15 as amended in 1.3
   it('says invalid for a link outside every checkout to a file inside one: the file is where it really is', () => {
     const checkout = tempDir('bench-codex-checkout-');
     mkdirSync(join(checkout, '.git'));
+    writeFileSync(join(checkout, '.git', 'HEAD'), 'ref: refs/heads/main\n');
     const inside = join(checkout, 'auth.json');
     writeFileSync(inside, '{}');
     chmodSync(inside, 0o600);
@@ -115,6 +117,38 @@ describe("Codex's credential file in the preflight (REQ-RUN-15 as amended in 1.3
         problem: `${file} must be in a directory of mode 700, not 755`,
       }),
     );
+  });
+
+  it('takes an empty .git, or a .git file with no gitdir, for no checkout (bug-022)', () => {
+    for (const make of [
+      (dir: string) => mkdirSync(join(dir, '.git')),
+      (dir: string) => writeFileSync(join(dir, '.git'), 'not a worktree\n'),
+    ]) {
+      const outer = tempDir('bench-codex-stray-');
+      make(outer);
+      const dir = join(outer, 'credential');
+      mkdirSync(dir, { mode: 0o700 });
+      const file = join(dir, 'auth.json');
+      writeFileSync(file, '{}');
+      chmodSync(file, 0o600);
+      expect(campaignRequirements(codexCampaign(), { BENCH_CODEX_AUTH_FILE: file })[0]?.state).toBe('set');
+    }
+  });
+
+  it('takes a .git directory holding HEAD, or a .git file naming its gitdir, for a checkout (bug-022)', () => {
+    const repo = tempDir('bench-codex-repo-');
+    mkdirSync(join(repo, '.git'));
+    writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n');
+    const worktree = tempDir('bench-codex-wt-');
+    writeFileSync(join(worktree, '.git'), 'gitdir: /elsewhere/.git/worktrees/x\n');
+    for (const root of [repo, worktree]) {
+      const file = join(root, 'auth.json');
+      writeFileSync(file, '{}');
+      chmodSync(file, 0o600);
+      expect(campaignRequirements(codexCampaign(), { BENCH_CODEX_AUTH_FILE: file })[0]).toEqual(
+        expect.objectContaining({ state: 'invalid', problem: `${file} is inside a git checkout` }),
+      );
+    }
   });
 
   it('says invalid for a directory', () => {
