@@ -294,3 +294,8 @@ Departures added to the list above:
 - **Round 5** (a new independent read-only Explore subagent, on `b172d4a`): **clean on logic**; two low nits. (1) long
   lines in `dry-runs.ts`: prettier and lint accept them, left. (2) an empty `commit:` in a stored profile would match
   every commit: **fixed**, only a commit-shaped value counts (`COMMIT_PIN`). No further round: the review is closed.
+- Checks on `5537e2b`: `tsc` and lint clean; unit and acceptance 105 files, 1646 passed, 8 skipped; `test:bin` 8/8.
+  The docker W3 test on v0.3.0 ran on `1adf272`'s arm; the setup's comment has changed since (the arm's digest with
+  it), so the full suites re-run it.
+
+### Review and approval
