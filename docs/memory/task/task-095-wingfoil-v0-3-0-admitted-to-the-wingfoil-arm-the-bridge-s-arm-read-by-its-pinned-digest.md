@@ -299,3 +299,6 @@ Departures added to the list above:
   it), so the full suites re-run it.
 
 ### Review and approval
+
+- `npx wingfoil memory submit task-095-…`, in the worktree. Declared: `in-progress → in-review`, one commit. Observed:
+  exit 0, `from`/`to` as declared, cd281b1, one file, `status` only. The `in-progress` slot is free.
