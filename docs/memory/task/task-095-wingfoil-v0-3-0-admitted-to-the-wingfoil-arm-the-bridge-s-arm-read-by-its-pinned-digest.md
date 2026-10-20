@@ -155,3 +155,72 @@ can start.
   by its pinned digest" --tags "harness,wingfoil,calibration,eligibility"`, on main. Declared: the element from the
   template in `draft`, one commit. Observed: `4eba949`, `status: draft`, `tags` written, the other fields empty
   (W-02). Matches.
+- `npx wingfoil memory submit task-095-…`, on main. Declared: `draft → pending`, one commit. Observed: `d131733`, one
+  file, `status` only. Matches. The approver's `memory approve` → `042a22f` (`pending → backlog`). Matches.
+- `npx wingfoil memory submit task-095-…`, in the linked worktree `WingFoil2-Benchmark-wt/task-095` with its own
+  `npm ci`. Declared: `backlog → in-progress`, one commit. Observed: `89cc04e`, one file, `status` only. Matches.
+
+### Reading WingFoil v0.3.0 (free)
+
+- Tag `v0.3.0` → `cc31d7a8` in `../WingFoil2`; npm `wingfoil@0.3.0` is `latest`. Its CHANGELOG's 0.3.0 section:
+  workflow commands that deduce a workflow's state from Memory at `HEAD` (`workflow start|next|status|finalize|end|
+  show`), `agent execute` (launches an agent CLI through an adapter a `team.agents` entry declares), `memory
+  park|amend`, verbs that act only on committed documents, `include:` by workflow name (breaking), a
+  `WingFoil-Version:` trailer on every commit, `tools/list` answering `[]` (still no MCP Tools). Its source has no
+  telemetry or network call of its own.
+- `docs/agents.md` v0.2.2 → v0.3.0: §4 rule 1 adds `memory park` and the workflow verbs, `approve|reject|amend` the
+  approver's; §6 adds "act only on committed documents" errors; §7 "WingFoil 0.3 records and routes workflows; it does
+  not execute their steps … Start or end a workflow only when the human asks you to"; §9 drops "no workflow engine".
+- **Nested agents:** `agent execute` needs a `team.agents` entry with an adapter (`src/agent/execute.ts` L274–287).
+  The `init` scaffold declares none, and the arm's manual already keeps configuration commands (`dna`) away from the
+  agent (departure 2), so no run can launch an unmetered agent; the register's `no-own-llm` evidence says so.
+
+### What was done
+
+- **Specification** `8838f02`: requirements 1.33 (REQ-FMT-13, -01, -06, REQ-RUN-03), experiment design 1.5 (§2's
+  wingfoil row: the bare scaffold; §6's bridge: its arm read by digest; decision 10).
+- **The arm read by its pinned digest** (criteria 1–3): red `d4cbcc4`, code `f5a53ce`. `src/arms/history.ts`
+  `armFromHistory` reads `git log` / `ls-tree` / `cat-file` synchronously under `historyCli`'s read-only environment,
+  digests each commit's `arms/<arm>/` as the tree's digest does (bytes, links by target), and writes the first match
+  under `.cache/arms/<commit>/`; `checkCampaign` loads the arm from there with `from: { commit, root }`; `run.ts`
+  digests it there and writes `run.json`'s `arm_source`; `campaign validate` and `campaign run` print "arm <name>: read
+  from commit <sha12>, which holds its pinned digest". A docs control needed nothing more: since task-067 its manual is
+  its own copy, so `baseline-docs`' digest (`2ac51091da99`) did not change.
+- **bug-022** (found by the day checks: an empty `/tmp/.git` made every temporary credential "inside a git checkout"):
+  filed on main (`180fc3a`, `4150534`, submitted `98b7cfc`), main merged into the branch (`f0c3167`), criterion 12
+  added (`08d5e82`), red `c82cd35`, fix `c393358`: a checkout is a `.git` directory holding `HEAD` or a `.git` file
+  starting with `gitdir:`.
+- **The admission** (criteria 4–7, 10): red `358be8c`, code `77b4fea`. The register's `wingfoil` `v0.3.0` entry (five
+  passes, evidence from the tag and this task); the manual's "This arm" now cites release 0.3.0 and adds two of the
+  guide's rules (the verbs act only on committed documents; start or end a workflow only when asked); `provides`:
+  `workflow-engine: true` (the engine records and routes, executes no step), `mcp-tools: false`; the telemetry comment
+  and the setup's comments re-checked; `v0-2-reference.yaml` pins `v0.3.0` and the arm's digest `39b7c4c64454`;
+  `v0-2-bridge.yaml` keeps `680b19f27c9f`, read from history (its test reads task-086's manual "release 0.2.2"); the
+  method page's T10 and wingfoil paragraph.
+- **The setup on v0.3.0** (criterion 8): red `1adf272` (the W3 docker test and `test/fixtures/campaigns/arms.yaml`
+  pinned to `v0.3.0`), then the docker W3 test run against the clone: **1 passed** (init with no TTY, the scenario's
+  configuration, the approver member, the fake agent's approval round trip, the harness built from `cc31d7a8`).
+- **The S8 fixture** (criterion 9, `ba51eac`): regenerated from a dry run of S8@1.0 in baseline-docs with the fake
+  agent, in a scratch copy of the branch with a v0.3.0 profile (no agent session: the snapshot is made before the
+  steps). The new `.wingfoil/` includes by name, adds `plan.md` and `agents/built-in/{claude-code,codex-cli}.yaml`;
+  `S8.PROJECT_RULES.md` changed in one line (0.3.0's `doc-versioning` directive). The generator's acceptance test
+  (@F2.5) passes on it. K5 (`scenarios/README.md` 1.4) says v0.3.0.
+
+### Where the build departs from the Design
+
+1. **`TEMPLATE_COMMIT` not moved** (`src/results/finding.ts`): it names the WingFoil whose Memory templates a finding
+   note follows, and 0.3.0's `bug` and `decision-log` templates add fields (`reported_by`, a Retrospective section).
+   Moving it means changing the finding export: a follow-up, for the approver.
+2. **No docker test of the bridge's arm read from history**: the unit tests read it from the real history
+   (`v0-2-campaigns.test.ts`, task-086's manual) and from a scratch repository (`arm-history.test.ts`); v0.2.2's setup
+   itself ran in v0.1's campaigns and task-049's docker tests. The bridge's dry runs at calibration are the first runs
+   of it on this code.
+3. **The capabilities test came after the code** for `workflow-engine: true` (`ba51eac` after `77b4fea`): the TDD order
+   slipped for that one value.
+4. **`dl-017` is not edited**, as planned; `scenarios/dry-run.yaml` stays calibration's (v0.2.2) and the governance CLI
+   (`vendor/`) stays as it is.
+
+### Checks (offline, niced)
+
+- `tsc` and lint clean (lint read in full). Unit and acceptance: 105 files, 1635 passed, 8 skipped. `test:bin` 8/8.
+  Docker: W3 on v0.3.0 1/1. No real-agent session, no spending.
