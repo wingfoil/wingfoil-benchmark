@@ -1,4 +1,4 @@
-import { accessSync, constants, existsSync, realpathSync, statSync } from 'node:fs';
+import { accessSync, constants, existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 
 import type { Issue } from '../core/index.js';
@@ -60,11 +60,26 @@ const readableFile: Check = (path) => {
   }
 };
 
-/** The nearest directory at or above `dir` holding a `.git` (a repository or a linked worktree), if any. */
+/**
+ * Whether `dir` is the top of a git checkout: a `.git` directory holding `HEAD` (a repository), or a `.git` file
+ * starting with `gitdir:` (a linked worktree). Any other `.git`, such as an empty directory, makes none (bug-022).
+ */
+function isCheckout(dir: string): boolean {
+  const git = join(dir, '.git');
+  try {
+    const stat = statSync(git);
+    if (stat.isDirectory()) return existsSync(join(git, 'HEAD'));
+    return stat.isFile() && readFileSync(git, 'utf8').startsWith('gitdir:');
+  } catch {
+    return false;
+  }
+}
+
+/** The nearest directory at or above `dir` that is a git checkout (a repository or a linked worktree), if any. */
 function checkoutOf(dir: string): string | undefined {
   let current = resolve(dir);
   for (;;) {
-    if (existsSync(join(current, '.git'))) return current;
+    if (isCheckout(current)) return current;
     const parent = dirname(current);
     if (parent === current) return undefined;
     current = parent;
