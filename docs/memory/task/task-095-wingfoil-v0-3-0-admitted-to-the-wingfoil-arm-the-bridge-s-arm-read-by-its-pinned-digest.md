@@ -284,3 +284,10 @@ Departures added to the list above:
      that is a commit) one a prefix of the other; test.
   2. nit — REQ-CLI-02 1.33 did not say a dry run stored without its profile counts. **Fixed.**
   3. cosmetic — a commit pin printed bare in the skip. **Fixed:** `version (commit12)`.
+- **Round 4** (a new independent read-only Explore subagent, on `9c8c053`): round 3's cases checked (same release,
+  different releases, commit prefixes, a version that is a commit, a release against a commit alone: skipped, rightly).
+  Red `6dfa714`, fix `b054aa0`.
+  1. nit — the same version counted even when both pins named different commits (a re-tagged release). **Fixed:** when
+     both name a commit, the commits decide; test.
+  2. cosmetic — `COMMIT_PIN` now the third copy of the commit pattern (`src/runner/estimate.ts`, `src/site/model.ts`).
+     **Left:** two copies predate this task; folding them is a refactor for another task.
