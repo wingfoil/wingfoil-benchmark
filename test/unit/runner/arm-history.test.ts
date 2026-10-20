@@ -283,14 +283,36 @@ describe('the estimate by the harness version a dry run ran (task-095 review rou
     return { root, checked: checked.value };
   }
 
-  /** A stored dry run of `arm` whose stored profile pinned WingFoil at `version`. */
-  function dryRunOn(root: string, execution: number, arm: string, hash: string, version: string): void {
+  /** A stored dry run of `arm` whose stored profile pinned WingFoil at `version` (and `commit`, if given). */
+  function dryRunOn(
+    root: string,
+    execution: number,
+    arm: string,
+    hash: string,
+    version: string,
+    commit?: string,
+  ): void {
     const dir = writeStoredDryRun(root, execution, { id: 'S1', hash, arm, stepCostsUsd: [1] });
     writeFileSync(
       join(dir, 'dry-run.yaml'),
-      stringify({ ...dryRunProfileYaml(), harnesses: { wingfoil: { tool: 'wingfoil', version } } }),
+      stringify({
+        ...dryRunProfileYaml(),
+        harnesses: { wingfoil: { tool: 'wingfoil', version, ...(commit === undefined ? {} : { commit }) } },
+      }),
     );
   }
+
+  it('counts a dry run whose profile also named the commit of the version the campaign pins (review round 3)', () => {
+    const { root, checked } = wingfoilCampaign('v0.2.2');
+    const hash = checked.scenarios[0]?.hash ?? '';
+    const sha = '12537b627ce0517222da762e8fa90997a1208a4b';
+    dryRunOn(root, 1, 'baseline', hash, 'v0.2.2', sha);
+    dryRunOn(root, 2, 'wingfoil', hash, 'v0.2.2', sha);
+    dryRunOn(root, 3, 'baseline-docs', hash, 'v0.2.2', sha);
+
+    const estimate = estimateCampaign(checked);
+    expect(estimate.ok ? '' : JSON.stringify(estimate.issues)).toBe('');
+  });
 
   it('counts for a harness arm, and for its docs control, only a dry run made on the WingFoil the campaign pins', () => {
     const { root, checked } = wingfoilCampaign('v0.2.2');
