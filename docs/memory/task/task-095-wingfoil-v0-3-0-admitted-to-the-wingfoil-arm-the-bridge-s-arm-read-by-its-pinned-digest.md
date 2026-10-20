@@ -258,3 +258,21 @@ Departures added to the list above:
    an execution exists; `.cache/` is ignored.
 
 - Checks after round 1: `tsc` and lint clean; unit and acceptance 1642 passed, 8 skipped.
+- **Round 2** (a new independent read-only Explore subagent, on `5f91107`): round 1's outcomes confirmed; not clean.
+  Spec `04e1e50`, red `ed24e1f`, fixes in the commit after it.
+  1. should-fix — the estimate never compared the WingFoil version a dry run ran with a version pin (only a commit
+     pin), so a dry run of 0.3.0's arm on the default v0.2.2 profile would count for the reference silently. **Fixed:**
+     a dry run counts only if its stored profile (`dry-run.yaml` beside it) pinned the harness at the campaign's pin,
+     for a harness arm and for a docs control (by its source arm's harness), which also settles finding 3; test.
+  2. should-fix — the dry-run behaviours were not in the specification. **Fixed:** requirements 1.33 amend REQ-CLI-05
+     (a profile's `arm_digests`; a dry run's identity) and REQ-CLI-02 (the estimate by arm digest and harness pin).
+  3. nit — a baseline-docs dry run on another WingFoil counted. **Fixed** with 1.
+  4. nit — the cache's remove-then-rename window, a race, leftover staging directories. **Fixed:** an arm already
+     cached at that commit is reused untouched; staging is removed in `finally`; a rename that loses a race keeps the
+     other process's copy when it digests right; test.
+  5. nit — every dry run's identity changed. **Stated** in REQ-CLI-05 1.33: one interrupted before this change is not
+     found again and starts afresh.
+  6. nit — order: round 1's `campaign run` test came in its fix commit, and that commit also fixed the red fixture
+     (`leak-scan.yaml`), so two red dry-run tests first failed for that reason. **Recorded here.** The refusal names
+     the profile for a dry run; the campaign's text, which @F7.2 pins, is unchanged.
+- Checks after round 2: `tsc` and lint clean; the touched tests and @F7.2 green; unit and acceptance re-run below.
