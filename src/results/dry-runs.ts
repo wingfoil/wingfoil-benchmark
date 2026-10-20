@@ -162,11 +162,14 @@ export interface HarnessPin {
 const COMMIT_PIN = /^[0-9a-f]{7,40}$/;
 
 /**
- * Whether two pins name the same harness (task-095 review round 3): the same version; or commits, of either side's
+ * Whether two pins name the same harness (task-095 review rounds 3 and 4): when both name a commit, the same commit;
+ * otherwise the same version, or commits, of either side's
  * `commit` or of a version that is a commit, one a prefix of the other. A release name and a commit with no shared
  * field are not compared: the pins differ.
  */
 function samePin(a: HarnessPin, b: HarnessPin): boolean {
+  // Both name a commit: the commits decide, whatever the versions say (a re-tagged release; review round 4).
+  if (a.commit !== undefined && b.commit !== undefined) return a.commit.startsWith(b.commit) || b.commit.startsWith(a.commit);
   if (a.version === b.version) return true;
   const commits = (pin: HarnessPin) =>
     [pin.commit, COMMIT_PIN.test(pin.version) ? pin.version : undefined].filter((c): c is string => c !== undefined);
