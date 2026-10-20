@@ -50,7 +50,7 @@ describe('the operating manuals (F2.7)', () => {
     expect(manual('wingfoil')).toContain('wingfoil memory approve');
   });
 
-  it('mention no MCP Tool, since WingFoil v0.2.2 has none (adr-003 decision 13, re-checked in task-049)', () => {
+  it('mention no MCP Tool, since WingFoil v0.3.0 has none either (adr-003 decision 13; tools/list is [], task-095)', () => {
     expect(manual('wingfoil')).not.toMatch(/MCP tools?\b/i);
   });
 
@@ -59,10 +59,13 @@ describe('the operating manuals (F2.7)', () => {
       expect(manual(arm)).not.toMatch(/placeholder|task-014/i);
   });
 
-  it("start the wingfoil arm's section from WingFoil's guide for agents at 0.2.2, and keep its rules (task-086)", () => {
+  it("start the wingfoil arm's section from WingFoil's guide for agents at 0.3.0, and keep its rules (task-086, task-095)", () => {
     // The manual is wrapped Markdown: its words, one space apart.
     const own = manual('wingfoil').slice(manual('baseline').length).replace(/\s+/g, ' ');
-    expect(own).toContain("WingFoil's guide for AI agents, release 0.2.2");
+    expect(own).toContain("WingFoil's guide for AI agents, release 0.3.0");
+    // 0.3.0's guide: a workflow is started or ended only when asked; the verbs act on what is committed (§4, §6, §7)
+    expect(own).toMatch(/[Ss]tart or end a workflow only when/);
+    expect(own).toMatch(/act only on committed documents/);
     // The guide's rules (docs/agents.md §4)
     expect(own).toContain('wingfoil directives list --role developer');
     expect(own).toMatch(/only through (its|the) verbs/);
