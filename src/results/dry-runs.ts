@@ -158,6 +158,25 @@ export interface HarnessPin {
   readonly commit?: string;
 }
 
+/**
+ * The harness part of a {@link DryRunKey} for `arm`, as `harnesses` (a campaign's or a dry-run profile's) pins it: the
+ * arm's own (`requires`), or for a docs control its source arm's (REQ-RUN-11), whose generated rules depend on that
+ * harness (task-095 review round 2). The estimate and the dry run's expected cost build it alike (bug-024).
+ */
+export function harnessKey(
+  harnesses: Readonly<Record<string, HarnessPin>>,
+  arms: readonly { readonly name: string; readonly requires?: string; readonly docsOf?: string }[],
+  arm: string,
+): { harness?: { tool: string; pin: HarnessPin } } {
+  const own = arms.find((candidate) => candidate.name === arm);
+  const source = own?.docsOf === undefined ? own : arms.find((candidate) => candidate.name === own.docsOf);
+  if (source?.requires === undefined) return {};
+  const pinned = harnesses[source.name];
+  if (pinned === undefined) return {};
+  const pin = { version: pinned.version, ...(pinned.commit === undefined ? {} : { commit: pinned.commit }) };
+  return { harness: { tool: source.requires, pin } };
+}
+
 /** A pin that names a commit (REQ-FMT-03): 7 to 40 hex characters. */
 const COMMIT_PIN = /^[0-9a-f]{7,40}$/;
 

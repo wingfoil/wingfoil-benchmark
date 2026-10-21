@@ -23,7 +23,7 @@ export {
 export type { ExecutionRecord, StopReason } from './execution.js';
 export { recordedHashes, versionChange } from './recorded.js';
 export type { RecordedHash } from './recorded.js';
-export { DRY_RUNS, findDryRun, findDryRuns, latestDryRun } from './dry-runs.js';
+export { DRY_RUNS, findDryRun, findDryRuns, harnessKey, latestDryRun } from './dry-runs.js';
 export type { DryRunKey, DryRunRecord, DryRunsLookup, HarnessPin } from './dry-runs.js';
 export { executionRate, executionRuns, readStepCommits, readStepUsage, readStoredRun } from './runs.js';
 export type { StepUsage, StoredRun, StoredStep } from './runs.js';

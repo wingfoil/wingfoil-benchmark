@@ -330,6 +330,33 @@ describe('bench scenario dry-run: the run (F3.3, REQ-RES-01, REQ-NFR-06)', () =>
     );
   });
 
+  it("quotes no dry run of another arm digest, nor of another harness pin (bug-024, the estimate's key)", async () => {
+    vi.stubEnv('BENCH_WINGFOIL_REPO', '/clones/wingfoil');
+    const root = repository();
+    const other = '0a1b2c3';
+    const p = () =>
+      doubles({ commits: { '3df305e': SHA, [other]: '0a1b2c3d'.padEnd(40, '0') }, onRunOnce: oneOff });
+    await dryRun(root, ['T3@1.0', '--arm', 'baseline'], p());
+    await dryRun(root, ['T3@1.0', '--arm', 'baseline-docs'], p());
+
+    // The arm changed since: its digest is another, and so is what it measures.
+    writeFileSync(join(root, 'arms', 'baseline', 'manual.md'), 'another manual\n');
+    const changed = await dryRun(root, ['T3@1.0', '--arm', 'baseline'], p());
+    expect(changed.stdout.split('\n')[0]).toBe(
+      'dry run T3@1.0 in baseline on fake-model: no dry run yet; this one may spend up to its cap, 1 EUR',
+    );
+
+    // Another WingFoil pin: the docs control's rules are generated from that harness (its source arm's).
+    writeDryRunProfile(root, {
+      ...dryRunProfileYaml(),
+      harnesses: { wingfoil: { tool: 'wingfoil', version: other } },
+    });
+    const repinned = await dryRun(root, ['T3@1.0', '--arm', 'baseline-docs'], p());
+    expect(repinned.stdout.split('\n')[0]).toBe(
+      'dry run T3@1.0 in baseline-docs on fake-model: no dry run yet; this one may spend up to its cap, 1 EUR',
+    );
+  });
+
   it('exits 1 when the run fails, and keeps it: a failed dry run is stored, and never counts', async () => {
     const root = repository();
     const result = await dryRun(
