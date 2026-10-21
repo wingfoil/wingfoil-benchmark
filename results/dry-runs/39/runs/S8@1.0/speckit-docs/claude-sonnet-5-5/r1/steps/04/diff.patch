@@ -1,0 +1,93 @@
+diff --git a/src/domain/import.ts b/src/domain/import.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..f8110a9d264618de3cdf522e9933c3cae67dc866
+--- /dev/null
++++ b/src/domain/import.ts
+@@ -0,0 +1,46 @@
++import type { TaskList } from './list.ts';
++import type { NewTask } from './task.ts';
++
++/** A line of the imported text that could not be added: its number, counting from 1, and why. */
++export interface RejectedLine {
++  readonly line: number;
++  readonly reason: string;
++}
++
++/** The outcome of a bulk import: how many tasks were added, and the lines that were not. */
++export interface ImportReport {
++  readonly imported: number;
++  readonly rejected: readonly RejectedLine[];
++}
++
++/**
++ * Adds the tasks written in `text` to `list`, one per line as `title;priority;tags`. The priority may be
++ * empty for a normal one; the tags are separated by spaces. Blank lines are skipped, but still counted in
++ * the line numbers. A line that cannot be added is reported and does not stop the others.
++ *
++ * @param list - the task list to add the tasks to
++ * @param text - the lines to import
++ */
++export function importTasks(list: TaskList, text: string): ImportReport {
++  const rejected: RejectedLine[] = [];
++  let imported = 0;
++  text.split(/\r\n|\r|\n/).forEach((raw, index) => {
++    if (raw.trim() === '') return;
++    const line = index + 1;
++    const fields = raw.split(';');
++    if (fields.length > 3) {
++      rejected.push({ line, reason: `the line has ${fields.length} fields: expected title;priority;tags` });
++      return;
++    }
++    const [title = '', priority = '', tags = ''] = fields.map((field) => field.trim());
++    const input: NewTask = {
++      title,
++      ...(priority === '' ? {} : { priority: priority as NewTask['priority'] }),
++      tags: tags === '' ? [] : tags.split(/\s+/),
++    };
++    const added = list.add(input);
++    if (added.ok) imported += 1;
++    else rejected.push({ line, reason: added.error.message });
++  });
++  return { imported, rejected };
++}
+diff --git a/src/index.ts b/src/index.ts
+index a1bb2a89a041e0e83cba82edab74ad6c788c2506..7048b591efadc9a02a1d6d089ca83f2538510465 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -3,6 +3,8 @@ import type { TaskList } from './domain/list.ts';
+ 
+ export type { TaskFilter, TaskList } from './domain/list.ts';
+ export type { Result, TodoError, TodoErrorCode } from './domain/result.ts';
++export { importTasks } from './domain/import.ts';
++export type { ImportReport, RejectedLine } from './domain/import.ts';
+ export { summarize } from './domain/summary.ts';
+ export type { Summary } from './domain/summary.ts';
+ export { PRIORITIES } from './domain/task.ts';
+diff --git a/test/list.test.ts b/test/list.test.ts
+index 8204d16762e3b8fe0fb2ba35a6d0dcc4d074205e..3c3ec8e349d039dca835e9cf461f921028f6580d 100644
+--- a/test/list.test.ts
++++ b/test/list.test.ts
+@@ -1,7 +1,7 @@
+ import assert from 'node:assert/strict';
+ import { describe, it } from 'node:test';
+ 
+-import { createTodoList, summarize } from '../src/index.ts';
++import { createTodoList, importTasks, summarize } from '../src/index.ts';
+ 
+ function valueOf<T>(result: { ok: true; value: T } | { ok: false; error: unknown }): T {
+   if (!result.ok) assert.fail(JSON.stringify(result.error));
+@@ -139,3 +139,14 @@ describe('input validation', () => {
+     assert.equal(list.add({ title: 'x'.repeat(120) }).ok, true);
+   });
+ });
++
++describe('importTasks', () => {
++  it('imports valid lines and reports the others by line number', () => {
++    const list = createTodoList();
++    const report = importTasks(list, 'Renew the insurance;high;admin money\n\nBuy milk;;\nBad;urgent;\nBuy milk;low;\n;high;\na;b;c;d\r\nJust a title');
++    assert.equal(report.imported, 3);
++    assert.deepEqual(report.rejected.map((r) => r.line), [4, 5, 6, 7]);
++    assert.deepEqual(list.find('Renew the insurance').ok && list.list({ tag: 'money' }).length, 1);
++    assert.equal(list.list({ priority: 'normal' }).length, 2);
++  });
++});

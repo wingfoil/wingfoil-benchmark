@@ -1,0 +1,77 @@
+diff --git a/docs/memory/task/task-002-fix-coupon-base-after-volume-discount-coupon-last-day-expiry-shipping-vat-query.md b/docs/memory/task/task-002-fix-coupon-base-after-volume-discount-coupon-last-day-expiry-shipping-vat-query.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..e5ca2fc88547e7715eb93a18d435eff47b1559d6
+--- /dev/null
++++ b/docs/memory/task/task-002-fix-coupon-base-after-volume-discount-coupon-last-day-expiry-shipping-vat-query.md
+@@ -0,0 +1,18 @@
++---
++id: task-002-fix-coupon-base-after-volume-discount-coupon-last-day-expiry-shipping-vat-query
++type: task
++title: "Fix coupon base after volume discount, coupon last-day expiry; shipping VAT query"
++status: pending
++format: 1
++---
++
++## What was done
++
++1. Percentage coupon was taken on the gross amount; it now applies to the subtotal after volume
++   discounts (`src/pricing.ts`). 12 × €5.00 with 10%: €48.60.
++2. Coupon expired on its last day; validity now includes it (`src/coupons.ts`, `>` instead of `>=`).
++3. NOT changed: VAT on shipping. The README rule says shipping is subject to 22% VAT, shown on its own
++   receipt line, and the README prevails over the code. Removing it is a tax/business rule change that
++   needs the owner's decision (and a README update), so it was left as is and reported.
++
++Tests added in `test/coupons.test.ts`; `npm test` passes (21).
+diff --git a/src/coupons.ts b/src/coupons.ts
+index 4b7df8e652e5d52033abb2ea07d763007ccce283..496aed7828812115eb643d5d3378af00c2d6948f 100644
+--- a/src/coupons.ts
++++ b/src/coupons.ts
+@@ -74,7 +74,7 @@ export class Coupons {
+     const coupon = this.#coupons.get(canonicalCode(code));
+     if (coupon === undefined) throw new CouponError(code, 'unknown code');
+     if (compareDates(date, coupon.validFrom) < 0) throw new CouponError(coupon.code, 'not valid yet');
+-    if (compareDates(date, coupon.validUntil) >= 0) throw new CouponError(coupon.code, 'expired');
++    if (compareDates(date, coupon.validUntil) > 0) throw new CouponError(coupon.code, 'expired');
+     if (amount < coupon.minimumCents) throw new CouponError(coupon.code, 'order below the minimum amount');
+     if (coupon.singleUse && this.#usedBy.has(coupon.code)) throw new CouponError(coupon.code, 'already used');
+     return coupon;
+diff --git a/src/pricing.ts b/src/pricing.ts
+index 3d07b8e66d51d75411d7694eb6b4d79c95913fee..751ac9ae7bbf5660ce0272cc7ec55ddd9af76bb5 100644
+--- a/src/pricing.ts
++++ b/src/pricing.ts
+@@ -56,7 +56,7 @@ export function priceOrder(inputs: readonly LineInput[], coupon?: Coupon): Price
+   const volumeTotal = sum(volume);
+ 
+   const couponTotal =
+-    coupon === undefined ? 0 : capped(couponDiscount(coupon, grossTotal), volumeTotal, grossTotal);
++    coupon === undefined ? 0 : capped(couponDiscount(coupon, grossTotal - volumeTotal), volumeTotal, grossTotal);
+   const couponShares = allocate(couponTotal, afterVolume);
+ 
+   const lines = inputs.map(({ product, quantity }, index): PricedLine => {
+diff --git a/test/coupons.test.ts b/test/coupons.test.ts
+index 1fdc2519dc031050b1b5593605af611816478518..b39442d25de89587efb252d751932fa93fca5505 100644
+--- a/test/coupons.test.ts
++++ b/test/coupons.test.ts
+@@ -33,6 +33,22 @@ describe('coupons', () => {
+     assert.throws(() => orders.quote({ ...request, date: '2026-04-01' }), CouponError);
+   });
+ 
++  it('accepts a coupon on its last day', () => {
++    const { orders } = shop();
++    const quote = orders.quote({ customer: 'c-1', date: '2026-03-31', lines: [{ sku: 'PEN-4', quantity: 1 }], coupon: 'SPRING' });
++    assert.equal(quote.totals.couponDiscountCents, 200);
++  });
++
++  it('applies a percentage coupon to the subtotal after volume discounts', () => {
++    const { orders, catalog, inventory } = shop();
++    catalog.add({ sku: 'NB-1', name: 'Notebook', priceCents: 500, vatClass: 'standard', weightGrams: 100 });
++    inventory.restock('NB-1', 20);
++    const quote = orders.quote({ customer: 'c-1', date: '2026-03-15', lines: [{ sku: 'NB-1', quantity: 12 }], coupon: 'SPRING' });
++    assert.equal(quote.totals.volumeDiscountCents, 600);
++    assert.equal(quote.totals.couponDiscountCents, 540);
++    assert.equal(quote.totals.goodsCents, 4860);
++  });
++
+   it('lets a single-use coupon be used once', () => {
+     const { orders, coupons } = shop();
+     coupons.add({ code: 'ONCE', kind: 'fixed', value: 100, validFrom: '2026-01-01', validUntil: '2026-12-31', singleUse: true });

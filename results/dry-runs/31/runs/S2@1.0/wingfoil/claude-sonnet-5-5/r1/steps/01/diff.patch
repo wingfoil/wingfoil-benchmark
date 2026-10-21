@@ -1,0 +1,121 @@
+diff --git a/docs/memory/task/task-001-fix-lower-case-sku-lookup-free-shipping-threshold-line-vat-rounding.md b/docs/memory/task/task-001-fix-lower-case-sku-lookup-free-shipping-threshold-line-vat-rounding.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..d9f638a4b1e4deaa57190d4d1f0633667731e19b
+--- /dev/null
++++ b/docs/memory/task/task-001-fix-lower-case-sku-lookup-free-shipping-threshold-line-vat-rounding.md
+@@ -0,0 +1,24 @@
++---
++id: task-001-fix-lower-case-sku-lookup-free-shipping-threshold-line-vat-rounding
++type: task
++title: "Fix lower-case SKU lookup, free-shipping threshold, line VAT rounding"
++status: pending
++format: 1
++---
++
++<!-- task body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
++
++## What was done
++
++Three reports, each a deviation from the README rules, each fixed with a test first:
++
++1. Lower-case SKU refused: `Catalog.find` only trimmed; it now uses `canonicalSku` (case-insensitive).
++2. Delivery charged at exactly €50.00: free shipping used `>`; the rule is "€50.00 or more", now `>=`.
++3. Line VAT one cent low (€1.99 at 22%: 0.4378 → 0.44): `lineVat` truncated; it now uses `percentOf`
++   (round half up), as the README states.
++
++Tests added in `test/catalog.test.ts` and `test/orders.test.ts`; `npm test` passes (19).
+diff --git a/src/catalog.ts b/src/catalog.ts
+index 0dfc92645f10374f948e9312a79dc7dca44318e5..b114b9c78623136e5ee8c9b1fc6d118c4c478c33 100644
+--- a/src/catalog.ts
++++ b/src/catalog.ts
+@@ -56,7 +56,7 @@ export class Catalog {
+ 
+   /** The product with `sku`, or undefined. */
+   find(sku: string): Product | undefined {
+-    return this.#products.get(sku.trim());
++    return this.#products.get(canonicalSku(sku));
+   }
+ 
+   /** The product with `sku`; throws UnknownProductError when there is none. */
+diff --git a/src/shipping.ts b/src/shipping.ts
+index 71920b9dc3b375440460eaebb217a70a48152b33..f4290d2a7729ec7e4c062d0d5606894fb26fae09 100644
+--- a/src/shipping.ts
++++ b/src/shipping.ts
+@@ -30,6 +30,6 @@ export function parcelCost(grams: number): Cents {
+ 
+ /** The shipping cost of an order whose goods amount to `goods` and weigh `grams`. */
+ export function shippingCost(goods: Cents, grams: number): Cents {
+-  if (goods > FREE_SHIPPING_FROM_CENTS) return 0;
++  if (goods >= FREE_SHIPPING_FROM_CENTS) return 0;
+   return parcelCost(grams);
+ }
+diff --git a/src/tax.ts b/src/tax.ts
+index 7449c567971f4c22ec68c991949f8652936e091b..5e12c55f1ca4a2044012df5ea175a5b57febbef3 100644
+--- a/src/tax.ts
++++ b/src/tax.ts
+@@ -23,7 +23,7 @@ export function vatRate(vatClass: VatClass): number {
+ 
+ /** The VAT of one order line whose net amount is `net`. */
+ export function lineVat(net: Cents, vatClass: VatClass): Cents {
+-  return Math.floor((net * vatRate(vatClass)) / 100);
++  return percentOf(net, vatRate(vatClass));
+ }
+ 
+ /** The VAT on a shipping cost: the standard rate. */
+diff --git a/test/catalog.test.ts b/test/catalog.test.ts
+index 3c78feb21517c68b01432b4e6c8fdfee3e3914d9..4bcc5fee114994131cdbdbaefc25ab7861543c7b 100644
+--- a/test/catalog.test.ts
++++ b/test/catalog.test.ts
+@@ -28,4 +28,11 @@ describe('catalogue', () => {
+     assert.throws(() => catalog.getForSale('TEA-7'), InactiveProductError);
+     assert.throws(() => catalog.get('TEA-8'), UnknownProductError);
+   });
++
++  it('finds a product by its SKU in any case', () => {
++    const { catalog } = createShop();
++    catalog.add({ sku: 'LB-220', name: 'Lamp bulb', priceCents: 450, vatClass: 'standard', weightGrams: 80 });
++    assert.equal(catalog.get('lb-220').sku, 'LB-220');
++    assert.equal(catalog.get(' Lb-220 ').sku, 'LB-220');
++  });
+ });
+diff --git a/test/orders.test.ts b/test/orders.test.ts
+index d07f06bd09b3489b674e3119a14ea7d2ced148a7..4c63a6783ffaa26f3634129c50d1f32bc5492492 100644
+--- a/test/orders.test.ts
++++ b/test/orders.test.ts
+@@ -79,4 +79,32 @@ describe('orders', () => {
+     assert.match(text, /1 × Enamel mug \(MUG-01\)\s+€10\.00/);
+     assert.match(text, /Total\s+€/);
+   });
++
++  it('ships free when the goods come to exactly €50.00', () => {
++    const { orders } = shop();
++    const order = orders.place({ customer: 'c-1', date: '2026-03-02', lines: [{ sku: 'MUG-01', quantity: 5 }] });
++    assert.equal(order.totals.goodsCents, 5000);
++    assert.equal(order.totals.shippingCents, 0);
++  });
++
++  it('charges shipping just under €50.00', () => {
++    const { orders } = shop();
++    const order = orders.place({ customer: 'c-1', date: '2026-03-02', lines: [{ sku: 'MUG-01', quantity: 4 }, { sku: 'TEA-7', quantity: 1 }] });
++    assert.equal(order.totals.goodsCents, 4500);
++    assert.equal(order.totals.shippingCents, 890);
++  });
++
++  it('rounds the VAT of a line half up to the cent', () => {
++    const s = shop();
++    s.catalog.add({ sku: 'PEN-1', name: 'Pen', priceCents: 199, vatClass: 'standard', weightGrams: 10 });
++    s.inventory.restock('PEN-1', 5);
++    const order = s.orders.place({ customer: 'c-1', date: '2026-03-02', lines: [{ sku: 'PEN-1', quantity: 1 }] });
++    assert.equal(order.lines[0]?.vatCents, 44);
++  });
++
++  it('accepts a lower-case SKU on an order line', () => {
++    const { orders } = shop();
++    const order = orders.place({ customer: 'c-1', date: '2026-03-02', lines: [{ sku: 'mug-01', quantity: 1 }] });
++    assert.equal(order.lines[0]?.sku, 'MUG-01');
++  });
+ });

@@ -1,0 +1,99 @@
+diff --git a/src/domain/import.ts b/src/domain/import.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..b1a94919fcea1329e5e76f428ce53422ca6b026c
+--- /dev/null
++++ b/src/domain/import.ts
+@@ -0,0 +1,45 @@
++import type { TaskList } from './list.ts';
++import type { Priority } from './task.ts';
++
++/** A line of an import that could not be added: its number, counting from 1, and why. */
++export interface RejectedLine {
++  readonly line: number;
++  readonly reason: string;
++}
++
++/** What an import did: how many tasks were added, and the lines that were not. */
++export interface ImportReport {
++  readonly imported: number;
++  readonly rejected: readonly RejectedLine[];
++}
++
++/**
++ * Adds to a list the tasks written in a text, one per line as `title;priority;tags`. The priority may be
++ * empty for a normal one; the tags are separated by spaces. Blank lines are skipped, but still counted in
++ * the line numbers. A line that cannot be added is reported and does not stop the others.
++ *
++ * @param list - the list to add the tasks to
++ * @param text - the lines to import
++ */
++export function importTasks(list: TaskList, text: string): ImportReport {
++  const rejected: RejectedLine[] = [];
++  let imported = 0;
++  text.split(/\r\n|\r|\n/).forEach((raw, index) => {
++    if (raw.trim() === '') return;
++    const line = index + 1;
++    const fields = raw.split(';');
++    if (fields.length > 3) {
++      rejected.push({ line, reason: `expected "title;priority;tags" but found ${fields.length} fields` });
++      return;
++    }
++    const [title = '', priority = '', tags = ''] = fields;
++    const added = list.add({
++      title,
++      ...(priority.trim() === '' ? {} : { priority: priority.trim() as Priority }),
++      tags: tags.split(/\s+/).filter((tag) => tag !== ''),
++    });
++    if (added.ok) imported += 1;
++    else rejected.push({ line, reason: added.error.message });
++  });
++  return { imported, rejected };
++}
+diff --git a/src/index.ts b/src/index.ts
+index 16736d63c6a457ec669e0e7e69823d5720def8a2..0ee8b926978f76cb205682c9c33c28338c02c170 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -3,6 +3,8 @@ import type { TaskList } from './domain/list.ts';
+ 
+ export type { TaskFilter, TaskList } from './domain/list.ts';
+ export type { Result, TodoError, TodoErrorCode } from './domain/result.ts';
++export { importTasks } from './domain/import.ts';
++export type { ImportReport, RejectedLine } from './domain/import.ts';
+ export { summarize } from './domain/summary.ts';
+ export type { Summary } from './domain/summary.ts';
+ export { PRIORITIES } from './domain/task.ts';
+diff --git a/test/list.test.ts b/test/list.test.ts
+index f25fa7057dd9179da3701348c23a962e5bb269a4..670e96cd5e403e27fc752c420fdd1567053394aa 100644
+--- a/test/list.test.ts
++++ b/test/list.test.ts
+@@ -1,7 +1,7 @@
+ import assert from 'node:assert/strict';
+ import { describe, it } from 'node:test';
+ 
+-import { createTodoList, summarize } from '../src/index.ts';
++import { createTodoList, importTasks, summarize } from '../src/index.ts';
+ 
+ function valueOf<T>(result: { ok: true; value: T } | { ok: false; error: unknown }): T {
+   if (!result.ok) assert.fail(JSON.stringify(result.error));
+@@ -144,3 +144,21 @@ describe('input validation', () => {
+     assert.equal(valueOf(list.add({ title: 'z'.repeat(120) })).title.length, 120);
+   });
+ });
++
++describe('importTasks', () => {
++  it('imports valid lines and reports the others by line number', () => {
++    const list = createTodoList();
++    const report = importTasks(
++      list,
++      'Renew the insurance;high;admin money\n\nBuy milk\nBad;urgent;\nBuy milk;low;\n;;\na;b;c;d\r\nFine;;x x',
++    );
++    assert.equal(report.imported, 3);
++    assert.deepEqual(
++      report.rejected.map((r) => r.line),
++      [4, 5, 6, 7],
++    );
++    assert.deepEqual(valueOf(list.find('Renew the insurance')).tags, ['admin', 'money']);
++    assert.equal(valueOf(list.find('Buy milk')).priority, 'normal');
++    assert.deepEqual(valueOf(list.find('Fine')).tags, ['x']);
++  });
++});

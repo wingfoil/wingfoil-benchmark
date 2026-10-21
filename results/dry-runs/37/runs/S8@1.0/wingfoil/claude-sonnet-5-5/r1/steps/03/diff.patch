@@ -1,0 +1,243 @@
+diff --git a/docs/memory/decision-log/dl-003-invalid-input-is-rejected-with-an-invalid-input-error.md b/docs/memory/decision-log/dl-003-invalid-input-is-rejected-with-an-invalid-input-error.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..8fdb69985e917387d61ef6c04a9137aaf86150cf
+--- /dev/null
++++ b/docs/memory/decision-log/dl-003-invalid-input-is-rejected-with-an-invalid-input-error.md
+@@ -0,0 +1,29 @@
++---
++id: dl-003-invalid-input-is-rejected-with-an-invalid-input-error
++type: decision-log
++title: "Invalid input is rejected with an invalid-input error"
++status: pending
++format: 1
++---
++
++<!-- decision-log body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
++
++## Context
++
++Screens pass raw user input to the list. Bad titles, priorities and tags must be refused with a clear
++error, and the list must stay unchanged (r4: the domain returns a Result, never throws).
++
++## Decision
++
++Add the error code `invalid-input` and validate in `add`, `rename` and `tag` before any lookup or
++store. The title limit of 120 applies to the trimmed title. A tag is not trimmed: whitespace anywhere in it
++is rejected. The first problem found is reported.
++
++## Consequences
++
++`TodoErrorCode` gains a member, which callers switching on it must handle. Validation lives in
++`src/domain/validation.ts`.
+diff --git a/docs/memory/task/task-003-reject-invalid-titles-priorities-and-tags.md b/docs/memory/task/task-003-reject-invalid-titles-priorities-and-tags.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..dbac6fd0fa6029b693cc88ef1b3ce92732cc7299
+--- /dev/null
++++ b/docs/memory/task/task-003-reject-invalid-titles-priorities-and-tags.md
+@@ -0,0 +1,19 @@
++---
++id: task-003-reject-invalid-titles-priorities-and-tags
++type: task
++title: "Reject invalid titles, priorities and tags"
++status: pending
++format: 1
++---
++
++<!-- task body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
++
++## What was done
++
++Added `src/domain/validation.ts` (title, priority, tag, new-task checks) and an `invalid-input` error code.
++`add`, `rename` and `tag` validate before touching the list, so a rejected input changes nothing. Titles are
++checked after trimming (1–120 characters); a tag may not be empty or contain whitespace. Tests added.
+diff --git a/src/domain/list.ts b/src/domain/list.ts
+index 836cde2b30aee719e4b9f530859a4375398760d7..9d0210548ce0a9cb6b03382c3b2146da9ea5c78e 100644
+--- a/src/domain/list.ts
++++ b/src/domain/list.ts
+@@ -2,6 +2,7 @@ import { err, ok } from './result.ts';
+ import type { Result } from './result.ts';
+ import { addTag, compareTasks, completeTask, createTask, removeTag, renameTask, reopenTask } from './task.ts';
+ import type { NewTask, Priority, Status, Task } from './task.ts';
++import { validateNewTask, validateTag, validateTitle } from './validation.ts';
+ 
+ /** Which tasks to show: by status, priority or tag; every task when nothing is given. */
+ export interface TaskFilter {
+@@ -13,6 +14,7 @@ export interface TaskFilter {
+ /**
+  * The task list: tasks by title, each title once. Wherever a title is taken, a task's id is accepted as
+  * well; a title wins over an id that is the same text. Every change returns the task as it now is.
++ * Input that is not valid (see `validation.ts`) is refused with an `invalid-input` error and changes nothing.
+  */
+ export interface TaskList {
+   add(input: NewTask): Result<Task>;
+@@ -65,6 +67,8 @@ export function createTaskList(clock: () => string): TaskList {
+ 
+   return {
+     add(input) {
++      const valid = validateNewTask(input);
++      if (!valid.ok) return valid;
+       const title = input.title.trim();
+       if (withTitle(title) !== undefined) return err('duplicate', `there is already a task "${title}"`);
+       issued += 1;
+@@ -75,7 +79,9 @@ export function createTaskList(clock: () => string): TaskList {
+     complete: (title) => change(title, (task) => completeTask(task, clock())),
+     reopen: (title) => change(title, (task) => reopenTask(task, clock())),
+     rename(title, newTitle) {
+-      const target = newTitle.trim();
++      const valid = validateTitle(newTitle);
++      if (!valid.ok) return valid;
++      const target = valid.value;
+       const found = find(title);
+       if (!found.ok) return found;
+       const holder = withTitle(target);
+@@ -84,7 +90,10 @@ export function createTaskList(clock: () => string): TaskList {
+       }
+       return store(renameTask(found.value, target, clock()));
+     },
+-    tag: (title, tag) => change(title, (task) => ok(addTag(task, tag, clock()))),
++    tag(title, tag) {
++      const valid = validateTag(tag);
++      return valid.ok ? change(title, (task) => ok(addTag(task, tag, clock()))) : valid;
++    },
+     untag: (title, tag) => change(title, (task) => ok(removeTag(task, tag, clock()))),
+     remove(title) {
+       const found = find(title);
+diff --git a/src/domain/result.ts b/src/domain/result.ts
+index c6ed17a1b929cb19e127e0be01e84aac17b45407..4e46dfbe7c138c650e2d4b2d86dfbc5a5b27267c 100644
+--- a/src/domain/result.ts
++++ b/src/domain/result.ts
+@@ -5,7 +5,7 @@ export interface TodoError {
+ }
+ 
+ /** The kinds of failure the task list reports. */
+-export type TodoErrorCode = 'not-found' | 'duplicate' | 'invalid-state';
++export type TodoErrorCode = 'not-found' | 'duplicate' | 'invalid-state' | 'invalid-input';
+ 
+ /** The outcome of an operation that can fail: its value, or the reason it failed. */
+ export type Result<T, E = TodoError> =
+diff --git a/src/domain/validation.ts b/src/domain/validation.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..1a0f540910555a08207e1c0b0fb39295912a452f
+--- /dev/null
++++ b/src/domain/validation.ts
+@@ -0,0 +1,59 @@
++import { err, ok } from './result.ts';
++import type { Result } from './result.ts';
++import { PRIORITIES } from './task.ts';
++import type { NewTask } from './task.ts';
++
++/** The longest title a task may have, once trimmed. */
++export const MAX_TITLE_LENGTH = 120;
++
++/**
++ * Checks a title: after trimming it must be neither empty nor longer than `MAX_TITLE_LENGTH`.
++ *
++ * @param title - the title to check
++ */
++export function validateTitle(title: string): Result<string> {
++  const trimmed = typeof title === 'string' ? title.trim() : '';
++  if (trimmed === '') return err('invalid-input', 'the title is empty');
++  if (trimmed.length > MAX_TITLE_LENGTH) {
++    return err('invalid-input', `the title is ${trimmed.length} characters long; the limit is ${MAX_TITLE_LENGTH}`);
++  }
++  return ok(trimmed);
++}
++
++/**
++ * Checks a priority: it must be one of `PRIORITIES`.
++ *
++ * @param priority - the priority to check
++ */
++export function validatePriority(priority: string): Result<string> {
++  if (!(PRIORITIES as readonly string[]).includes(priority)) {
++    return err('invalid-input', `the priority "${priority}" is not one of ${PRIORITIES.join(', ')}`);
++  }
++  return ok(priority);
++}
++
++/**
++ * Checks a tag: it must not be empty nor contain a space.
++ *
++ * @param tag - the tag to check
++ */
++export function validateTag(tag: string): Result<string> {
++  if (typeof tag !== 'string' || tag === '') return err('invalid-input', 'the tag is empty');
++  if (/\s/.test(tag)) return err('invalid-input', `the tag "${tag}" contains a space`);
++  return ok(tag);
++}
++
++/**
++ * Checks everything a new task is made of: its title, its priority when given, and each tag.
++ *
++ * @param input - the task to check
++ */
++export function validateNewTask(input: NewTask): Result<NewTask> {
++  const checks = [
++    validateTitle(input.title),
++    ...(input.priority === undefined ? [] : [validatePriority(input.priority)]),
++    ...(input.tags ?? []).map(validateTag),
++  ];
++  const failed = checks.find((check) => !check.ok);
++  return failed !== undefined && !failed.ok ? failed : ok(input);
++}
+diff --git a/test/list.test.ts b/test/list.test.ts
+index cf04b80d19c8edec37845629ef2eaaecdec14a1f..02a73dbedd5ef2547b9f21a15825fbb11df80ac6 100644
+--- a/test/list.test.ts
++++ b/test/list.test.ts
+@@ -155,3 +155,48 @@ describe('task timestamps', () => {
+     assert.equal(new Date(task.createdAt).toISOString(), task.createdAt);
+   });
+ });
++
++describe('input validation', () => {
++  const rejected = (result: { ok: boolean; error?: { code: string; message: string } }, pattern: RegExp) => {
++    assert.equal(result.ok, false);
++    assert.equal(result.error?.code, 'invalid-input');
++    assert.match(result.error?.message ?? '', pattern);
++  };
++
++  it('rejects an empty or blank title, and a title over 120 characters', () => {
++    const list = createTodoList();
++    rejected(list.add({ title: '' }), /empty/);
++    rejected(list.add({ title: '   ' }), /empty/);
++    rejected(list.add({ title: 'x'.repeat(121) }), /121 characters.*120/);
++    assert.equal(list.list().length, 0);
++    assert.equal(list.add({ title: 'x'.repeat(120) }).ok, true);
++  });
++
++  it('rejects an unknown priority', () => {
++    const list = createTodoList();
++    rejected(list.add({ title: 'Buy milk', priority: 'urgent' as 'high' }), /"urgent".*low, normal, high/);
++    assert.equal(list.list().length, 0);
++  });
++
++  it('rejects an empty tag or one with a space, when adding and when tagging', () => {
++    const list = createTodoList();
++    rejected(list.add({ title: 'Buy milk', tags: ['ok', ''] }), /empty/);
++    rejected(list.add({ title: 'Buy milk', tags: ['two words'] }), /space/);
++    assert.equal(list.list().length, 0);
++    list.add({ title: 'Buy milk', tags: ['shop'] });
++    const before = valueOf(list.find('Buy milk'));
++    rejected(list.tag('Buy milk', ''), /empty/);
++    rejected(list.tag('Buy milk', ' '), /space/);
++    rejected(list.tag('Buy milk', 'a b'), /space/);
++    assert.deepEqual(valueOf(list.find('Buy milk')), before);
++  });
++
++  it('rejects an invalid new title on rename and leaves the task as it was', () => {
++    const list = createTodoList();
++    list.add({ title: 'Buy milk' });
++    const before = valueOf(list.find('Buy milk'));
++    rejected(list.rename('Buy milk', '  '), /empty/);
++    rejected(list.rename('Buy milk', 'x'.repeat(121)), /limit/);
++    assert.deepEqual(valueOf(list.find('Buy milk')), before);
++  });
++});

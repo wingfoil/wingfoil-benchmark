@@ -171,3 +171,33 @@ attempt, `completed`; the token scan of `results/dry-runs/<n>/` (`grep -rlFf`, t
   propose, then apply, then archive. Scored 0/37 public, 0/17 hold-out. The openspec-docs arm (the same docs, no
   commands) implemented every step. Not repeated; filed for the approver to decide (a bug in the arm, or a measured
   outcome).
+
+### Stage 2: S2@1.0 and S8@1.0 in six arms, Sonnet 5.5 (2026-10-21, 13:40–14:01 UTC)
+
+The approver's consent in chat, 2026-10-21: bug-023 a bug, its fix after calibration; stage 2 on the six arms
+without openspec, 2 € a run and 15 € in all (`66ccfe7` sets `run_cost_eur: 2`). One chain, one dry run at a time,
+stopping on a failure, on a run above 1 € (twice the expected 0.5 €), or before a run that could cross the ceiling;
+none was reached. Every one: `dry_run: true`, Claude Code 2.1.300, `claude-sonnet-5-5` at `medium` priced `list`
+(no other model in any step), the pinned arm digest, one attempt, `completed`; the token scan clean; no `bench-`
+container left; scored; a ledger line.
+
+| Dry run | Scenario | Arm | Cost | Wall time | Turns per step | Largest transcript | Final public | Hold-out | Checks |
+|---|---|---|---|---|---|---|---|---|---|
+| 29 | S2@1.0 | baseline | 0.2131 USD (0.1900 €) | 1 min 35 s | 5, 7, 6 | 91 KB (step 3) | 24/24 | 17/17 | 2/3 |
+| 30 | S2@1.0 | baseline-docs | 0.2158 USD (0.1924 €) | 1 min 15 s | 5, 5, 7 | 97 KB (step 3) | 24/24 | 17/17 | 2/3 |
+| 31 | S2@1.0 | wingfoil | 0.3223 USD (0.2874 €) | 2 min 14 s | 11, 9, 8 | 113 KB (step 1) | 24/24 | 17/17 | 3/3 |
+| 32 | S2@1.0 | speckit | 0.3051 USD (0.2721 €) | 1 min 51 s | 5, 12, 10 | 117 KB (step 2) | 21/24 | 16/17 | 0/3 |
+| 33 | S2@1.0 | speckit-docs | 0.2019 USD (0.1800 €) | 1 min 7 s | 5, 6, 7 | 91 KB (step 3) | 24/24 | 17/17 | 2/3 |
+| 34 | S2@1.0 | openspec-docs | 0.2037 USD (0.1817 €) | 1 min 14 s | 6, 4, 8 | 91 KB (step 3) | 24/24 | 17/17 | 2/3 |
+| 35 | S8@1.0 | baseline | 0.2366 USD (0.2110 €) | 1 min 43 s | 5, 4, 4, 4 | 53 KB (step 1) | 23/23 | 7/7 | 12/16 |
+| 36 | S8@1.0 | baseline-docs | 0.3000 USD (0.2675 €) | 1 min 39 s | 4, 4, 4, 6 | 76 KB (step 4) | 23/23 | 7/7 | 16/16 |
+| 37 | S8@1.0 | wingfoil | 0.4366 USD (0.3893 €) | 3 min 31 s | 8, 8, 6, 8 | 104 KB (step 4) | 23/23 | 7/7 | 16/16 |
+| 38 | S8@1.0 | speckit | 0.3353 USD (0.2990 €) | 2 min 1 s | 11, 4, 4, 5 | 97 KB (step 1) | 23/23 | 7/7 | 16/16 |
+| 39 | S8@1.0 | speckit-docs | 0.2532 USD (0.2258 €) | 1 min 32 s | 5, 4, 4, 4 | 59 KB (step 2) | 23/23 | 7/7 | 16/16 |
+| 40 | S8@1.0 | openspec-docs | 0.2492 USD (0.2222 €) | 1 min 32 s | 4, 4, 4, 4 | 59 KB (step 2) | 23/23 | 7/7 | 16/16 |
+
+- **Spent: 3.2728 USD (2.9184 €)** of the 15 € consented; the dearest run 0.4366 USD (S8, wingfoil).
+- **Interventions:** one approval request, in step 2 of S2 in speckit, answered by `approver_policy` v1.
+- Every arm at the maximum on S8's tests and hold-out, and on S2's but speckit (21/24, 16/17, checks 0/3); the arms
+  differ on the checks.
+- bug-023 approved by this session at the approver's request in chat (`78d75d4`; the reason says so).
