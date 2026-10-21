@@ -8,7 +8,7 @@ wave: calibration
 features: []
 acceptance: []
 requirements: [REQ-CLI-05, REQ-CLI-02, REQ-RES-01, REQ-RUN-08, REQ-RUN-16, REQ-NFR-06, REQ-FMT-01]
-fixes: []
+fixes: [bug-023-the-openspec-arm-ends-every-request-after-openspec-s-propose-and-writes-no-code, bug-024-the-dry-run-s-expected-cost-line-quotes-a-dry-run-of-another-arm-digest-or-harness-pin]
 tags: ["calibration","budget","dry-run"]
 ---
 
@@ -51,6 +51,15 @@ consequences carried out; the approver's approval of the revised budget.
    campaign tests, updated to the set values).
 2. The two dry-run profiles are the campaigns' pins (agent, effort, harnesses, caps, rate; the bridge's arm digest).
    **Characterization** (a test reading the profiles against the campaign files).
+3. bug-024: `bench scenario dry-run`'s expected-cost line quotes only a dry run of the arm digest the run will use
+   and of the harness pin its profile pins (for a docs control, its source arm's): with a stored dry run of the same
+   scenario, arm and model but another digest or another pin, it prints "no dry run yet". **Red-first** (a CLI test
+   with the fake agent and two stored dry runs).
+4. bug-023: the openspec arm's manual tells the agent that a request is carried through propose, apply and archive
+   in its one session, so that OpenSpec's propose skill ending with "wait for a new user request" does not end it;
+   the arm's digest changes and the reference campaign pins the new one. **Red-first** (a test of the arm's manual
+   and of the campaign's pinned digest against the arm's); the behaviour itself is checked by the openspec dry runs
+   (stage 6), not by a fake-agent test, which cannot follow a skill.
 
 ## Design
 
@@ -96,6 +105,23 @@ measured costs set the next stage's caps.
   spending).
 - **Watched** (task-093, dl-018): which Haiku Claude Code calls for its own work, in every `modelUsage`; the price
   basis of every model (`costBasis`, bug-016); Haiku 5.5's two price tiers; Opus 5.5's cost per run.
+
+### Stage 6 and the two fixes (added 2026-10-21, the approver's choice in chat)
+
+Stage 1 found bug-023 (the openspec arm writes no code) and stage 4 bug-024 (the pre-spending line ignores the arm
+digest and the harness pin); the approver approved both and chose to fix them in this task, since its criterion 1
+needs the openspec keys priced. On this task's branch, each fix red-first:
+
+- **bug-024:** `src/cli/dry-run.ts` builds `latestDryRun`'s key as the estimate does: the arm's digest (the one it
+  will run: the profile's pin, else the tree's), and the harness its profile pins for the arm or the docs control's
+  source arm. The harness part of the key moves to one function both the estimate and the dry run call.
+- **bug-023:** `arms/openspec/manual.md` says that each request is to be carried through, in this session, from
+  propose to apply to archive: once propose has presented its change, the request itself is the user's request to
+  apply it. Not a change to OpenSpec's installed skills (the arm keeps OpenSpec as its documentation installs it).
+  The arm's new digest goes into `campaigns/v0-2-reference.yaml` (REQ-FMT-13).
+- **Stage 6:** the openspec arm's four dry runs (S3, S2, S8, S1 on Sonnet 5.5), from the main checkout after the
+  merge of the fixes' commits to main, with the approver's consent in chat (caps then). If S3 still writes no code, the
+  stage stops and the approver decides.
 
 ### What the report holds (`docs/calibration/v0.2.md`)
 
