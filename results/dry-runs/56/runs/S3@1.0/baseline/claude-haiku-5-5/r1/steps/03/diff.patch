@@ -1,0 +1,87 @@
+diff --git a/src/index.ts b/src/index.ts
+index 42244daef5fff602169d746fc436fc277b8caa67..f20f5bf31de72de798f0302dce826b7a6515956c 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -47,6 +47,7 @@ export interface RentalService {
+ }
+ 
+ const DAY_MS = 24 * 60 * 60 * 1000;
++const LONG_RENTAL_DAYS = 3;
+ const KINDS: readonly string[] = ['board', 'sail'];
+ // A date alone is UTC by definition; a date and time must say so explicitly,
+ // because Date.parse reads a zone-less time as local time.
+@@ -106,11 +107,14 @@ export function createRentalService(): RentalService {
+     }
+     const { startMs, endMs } = parsePeriod(request.start, request.end);
+     const days = (endMs - startMs) / DAY_MS;
++    const gross = item.dailyPrice * days;
++    // Rentals of LONG_RENTAL_DAYS or more get 10% off; the discount is rounded to whole cents.
++    const discount = days >= LONG_RENTAL_DAYS ? Math.round(gross / 10) : 0;
+     return {
+       itemId: request.itemId,
+       start: request.start,
+       end: request.end,
+-      total: item.dailyPrice * days,
++      total: gross - discount,
+     };
+   }
+ 
+diff --git a/test/rental.test.ts b/test/rental.test.ts
+index e087b8825fa9eb0db2786c141addcf7987fb6851..fe00c27ff4b5192ab46fa4be52e68e185a4928a4 100644
+--- a/test/rental.test.ts
++++ b/test/rental.test.ts
+@@ -35,13 +35,39 @@ describe('addEquipment', () => {
+ 
+ describe('quote', () => {
+   test('prices whole days in cents', () => {
++    const service = setup();
++    assert.deepEqual(
++      service.quote({ itemId: 'board-1', start: '2026-07-01T00:00:00Z', end: '2026-07-03T00:00:00Z' }),
++      { itemId: 'board-1', start: '2026-07-01T00:00:00Z', end: '2026-07-03T00:00:00Z', total: 5000 },
++    );
++  });
++
++  test('takes 10% off a rental of 3 days or more', () => {
+     const service = setup();
+     assert.deepEqual(
+       service.quote({ itemId: 'board-1', start: '2026-07-01T00:00:00Z', end: '2026-07-04T00:00:00Z' }),
+-      { itemId: 'board-1', start: '2026-07-01T00:00:00Z', end: '2026-07-04T00:00:00Z', total: 7500 },
++      { itemId: 'board-1', start: '2026-07-01T00:00:00Z', end: '2026-07-04T00:00:00Z', total: 6750 },
+     );
+   });
+ 
++  test('gives no discount below 3 days', () => {
++    const service = setup();
++    assert.equal(service.quote({ itemId: 'sail-1', start: '2026-07-01', end: '2026-07-02' }).total, 1800);
++    assert.equal(service.quote({ itemId: 'sail-1', start: '2026-07-01', end: '2026-07-03' }).total, 3600);
++  });
++
++  test('rounds the discounted total to whole cents', () => {
++    const service = setup();
++    service.addEquipment({ id: 'odd', kind: 'sail', dailyPrice: 1005 });
++    // 1005 * 3 = 3015 gross; 10% is 301.5 cents, rounded to 302 off.
++    assert.equal(service.quote({ itemId: 'odd', start: '2026-07-01', end: '2026-07-04' }).total, 2713);
++  });
++
++  test('discounts a long rental of several weeks', () => {
++    const service = setup();
++    assert.equal(service.quote({ itemId: 'board-1', start: '2026-07-01', end: '2026-07-15' }).total, 31500);
++  });
++
+   test('accepts a date-only ISO string as UTC midnight', () => {
+     const service = setup();
+     assert.equal(service.quote({ itemId: 'sail-1', start: '2026-07-01', end: '2026-07-02' }).total, 1800);
+@@ -102,6 +128,13 @@ describe('book', () => {
+     });
+   });
+ 
++  test('charges the discounted total for a rental of 3 days or more', () => {
++    const service = setup();
++    const booking = service.book({ itemId: 'board-1', start: '2026-07-01', end: '2026-07-04' });
++    assert.equal(booking.total, 6750);
++    assert.equal(service.quote({ itemId: 'board-1', start: '2026-07-01', end: '2026-07-04' }).total, booking.total);
++  });
++
+   test('gives each booking a different id', () => {
+     const service = setup();
+     const a = service.book({ itemId: 'board-1', start: '2026-07-01', end: '2026-07-02' });

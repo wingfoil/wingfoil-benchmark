@@ -1,0 +1,103 @@
+diff --git a/src/index.ts b/src/index.ts
+index 8a40b4f91989f000b0109c00d85981f6cdd582b5..6ebb966dc6a4aa1854dcac28ca35cae4b9f4576f 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -93,6 +93,31 @@ function defineMember(object: Record<string, unknown>, key: string, value: unkno
+   Object.defineProperty(object, key, { value, writable: true, enumerable: true, configurable: true });
+ }
+ 
++// Returns true when `value` is a JSON value: null, a boolean, a finite number, a
++// string, or an array or plain object of JSON values. Holes in arrays, `undefined`,
++// NaN, Infinity, class instances and cyclic structures are not JSON.
++function isJsonValue(value: unknown, ancestors: Set<unknown> = new Set()): boolean {
++  if (value === null || typeof value === "string" || typeof value === "boolean") {
++    return true;
++  }
++  if (typeof value === "number") {
++    return Number.isFinite(value);
++  }
++  if (typeof value !== "object" || ancestors.has(value)) {
++    return false;
++  }
++  const prototype = Object.getPrototypeOf(value);
++  if (!Array.isArray(value) && prototype !== Object.prototype && prototype !== null) {
++    return false;
++  }
++  ancestors.add(value);
++  // Array.from maps holes to undefined, so a sparse array is rejected.
++  const members = Array.isArray(value) ? Array.from(value) : Object.values(value);
++  const json = members.every((member) => isJsonValue(member, ancestors));
++  ancestors.delete(value);
++  return json;
++}
++
+ // Checks the shape of one operation (RFC 6902 section 4) and returns it typed.
+ function validateOperation(operation: unknown, index: number): JsonPatchOperation {
+   if (!isObject(operation)) {
+@@ -112,6 +137,9 @@ function validateOperation(operation: unknown, index: number): JsonPatchOperatio
+       if (!Object.prototype.hasOwnProperty.call(operation, "value")) {
+         throw new JsonPatchError(`invalid patch: operation ${index} (${op}) needs a "value"`);
+       }
++      if (!isJsonValue(operation.value)) {
++        throw new JsonPatchError(`invalid patch: operation ${index} (${op}) has a "value" that is not JSON`);
++      }
+       return { op, path, value: operation.value };
+     case "remove":
+       return { op, path };
+@@ -231,7 +259,8 @@ export function applyPatch(document: unknown, patch: unknown): unknown {
+   }
+ 
+   let result = structuredClone(document);
+-  patch.forEach((item, index) => {
++  // Array.from turns holes into undefined, so a sparse patch is rejected rather than skipped.
++  Array.from(patch).forEach((item, index) => {
+     const operation = validateOperation(item, index);
+     try {
+       switch (operation.op) {
+@@ -250,6 +279,11 @@ export function applyPatch(document: unknown, patch: unknown): unknown {
+             throw new JsonPatchError("cannot move a location into one of its children");
+           }
+           const moved = resolvePointer(result, operation.from);
++          // Moving a location onto itself leaves the document unchanged. This also covers the
++          // whole document, which cannot be removed on its own.
++          if (operation.path === operation.from) {
++            break;
++          }
+           result = add(remove(result, operation.from), operation.path, moved);
+           break;
+         }
+diff --git a/test/json-patch.test.ts b/test/json-patch.test.ts
+index 603bca16d33eb1b01c6b264ecc633f4807058f61..c14718144e4c64f1cc319d97d78eb21558b96909 100644
+--- a/test/json-patch.test.ts
++++ b/test/json-patch.test.ts
+@@ -182,3 +182,30 @@ test("reports a JSON Pointer that does not resolve as a JsonPatchError", () => {
+     assert.ok(error.cause instanceof JsonPointerError);
+   }
+ });
++
++test("rejects a sparse patch array rather than skipping the hole", () => {
++  const patch = [, { op: "add", path: "/a", value: 1 }];
++  assert.throws(() => applyPatch({}, patch), JsonPatchError);
++});
++
++test("rejects values that are not JSON", () => {
++  assert.throws(() => applyPatch({}, [{ op: "add", path: "/a", value: undefined }]), JsonPatchError);
++  assert.throws(() => applyPatch({}, [{ op: "add", path: "/a", value: NaN }]), JsonPatchError);
++  assert.throws(() => applyPatch({}, [{ op: "replace", path: "", value: Infinity }]), JsonPatchError);
++  assert.throws(() => applyPatch({}, [{ op: "test", path: "", value: new Date(0) }]), JsonPatchError);
++  assert.throws(() => applyPatch({}, [{ op: "add", path: "/a", value: [1, , 2] }]), JsonPatchError);
++  assert.throws(() => applyPatch({}, [{ op: "add", path: "/a", value: { b: undefined } }]), JsonPatchError);
++  assert.throws(() => applyPatch({}, [{ op: "add", path: "/a", value: () => 1 }]), JsonPatchError);
++  const cyclic: Record<string, unknown> = {};
++  cyclic.self = cyclic;
++  assert.throws(() => applyPatch({}, [{ op: "add", path: "/a", value: cyclic }]), JsonPatchError);
++  assert.deepEqual(applyPatch({}, [{ op: "add", path: "/a", value: [null, true, 0.5, "s", { b: [] }] }]), {
++    a: [null, true, 0.5, "s", { b: [] }],
++  });
++});
++
++test("moving a location onto itself is a no-op, including the whole document", () => {
++  assert.deepEqual(applyPatch({ a: 1 }, [{ op: "move", from: "", path: "" }]), { a: 1 });
++  assert.deepEqual(applyPatch({ a: [1, 2] }, [{ op: "move", from: "/a/1", path: "/a/1" }]), { a: [1, 2] });
++  assert.throws(() => applyPatch({}, [{ op: "move", from: "/x", path: "/x" }]), JsonPatchError);
++});

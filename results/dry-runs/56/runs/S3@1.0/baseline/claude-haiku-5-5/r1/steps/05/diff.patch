@@ -1,0 +1,140 @@
+diff --git a/src/index.ts b/src/index.ts
+index ce2daefd257cd1c1127188134ef3efc37509cc4d..754db9d9ff5f6f6cbd42748ba293a2dd7e07245e 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -34,6 +34,12 @@ export interface Booking extends Quote {
+   id: string;
+ }
+ 
++export interface Cancellation {
++  bookingId: string;
++  /** Amount given back to the customer, in euro cents. */
++  refund: number;
++}
++
+ export interface AvailabilityQuery {
+   /** ISO-8601 UTC timestamp, with the same rules as RentalRequest. */
+   start: string;
+@@ -47,6 +53,11 @@ export interface RentalService {
+   addEquipment(item: Equipment): void;
+   quote(request: RentalRequest): Quote;
+   book(request: RentalRequest): Booking;
++  /**
++   * Cancels a booking at the time `at`, releasing its equipment. A booking can be cancelled only once.
++   * Refund: the full total if `at` is before the rental starts, nothing once it has started.
++   */
++  cancel(bookingId: string, at: string): Cancellation;
+   /** Ids of the matching equipment that is free for the whole period, sorted. */
+   availability(query: AvailabilityQuery): string[];
+ }
+@@ -64,6 +75,8 @@ interface StoredBooking {
+   itemId: string;
+   startMs: number;
+   endMs: number;
++  total: number;
++  cancelled: boolean;
+ }
+ 
+ function parseUtcTimestamp(value: unknown, name: string): number {
+@@ -170,16 +183,32 @@ export function createRentalService(): RentalService {
+       const endMs = Date.parse(request.end);
+       // Half-open periods: a booking ending at midnight does not clash with one starting then.
+       const clash = bookings.some(
+-        (b) => b.itemId === request.itemId && startMs < b.endMs && b.startMs < endMs,
++        (b) => !b.cancelled && b.itemId === request.itemId && startMs < b.endMs && b.startMs < endMs,
+       );
+       if (clash) {
+         throw new Error(`item ${request.itemId} is not free for the whole period`);
+       }
+       const id = randomUUID();
+-      bookings.push({ id, itemId: request.itemId, startMs, endMs });
++      bookings.push({ id, itemId: request.itemId, startMs, endMs, total: quote.total, cancelled: false });
+       return { id, ...quote };
+     },
+ 
++    cancel(bookingId, at) {
++      const atMs = parseUtcTimestamp(at, 'at');
++      const booking = bookings.find((b) => b.id === bookingId);
++      if (booking === undefined) {
++        throw new Error(`unknown booking: ${bookingId}`);
++      }
++      if (booking.cancelled) {
++        throw new Error(`booking ${bookingId} is already cancelled`);
++      }
++      if (atMs >= booking.endMs) {
++        throw new Error(`booking ${bookingId} has already ended`);
++      }
++      booking.cancelled = true;
++      return { bookingId, refund: booking.startMs > atMs ? booking.total : 0 };
++    },
++
+     availability(query) {
+       const { startMs, endMs } = parsePeriod(query.start, query.end);
+       if (query.kind !== undefined && !KINDS.includes(query.kind)) {
+@@ -192,7 +221,7 @@ export function createRentalService(): RentalService {
+         }
+         // Same half-open rule as book, so a period ending at midnight does not block one starting then.
+         const clash = bookings.some(
+-          (b) => b.itemId === item.id && startMs < b.endMs && b.startMs < endMs,
++          (b) => !b.cancelled && b.itemId === item.id && startMs < b.endMs && b.startMs < endMs,
+         );
+         if (!clash) {
+           free.push(item.id);
+diff --git a/test/rental.test.ts b/test/rental.test.ts
+index 5fb7e85037ab859995795ef1c785cf3135ec7124..2a2b06d07c771bccef03a8039c8db85ed1f6c9e7 100644
+--- a/test/rental.test.ts
++++ b/test/rental.test.ts
+@@ -268,6 +268,53 @@ describe('hourly rental', () => {
+   });
+ });
+ 
++describe('cancel', () => {
++  test('refunds the full total when cancelled before the rental starts', () => {
++    const service = setup();
++    const booking = service.book({ itemId: 'board-1', start: '2026-07-01', end: '2026-07-04' });
++    assert.deepEqual(service.cancel(booking.id, '2026-06-20T09:00:00Z'), { bookingId: booking.id, refund: 6750 });
++  });
++
++  test('refunds nothing when cancelled after the rental has started', () => {
++    const service = setup();
++    const booking = service.book({ itemId: 'board-1', start: '2026-07-01', end: '2026-07-04' });
++    assert.deepEqual(service.cancel(booking.id, '2026-07-02T00:00:00Z'), { bookingId: booking.id, refund: 0 });
++  });
++
++  test('frees the equipment for other bookings', () => {
++    const service = setup();
++    const booking = service.book({ itemId: 'board-1', start: '2026-07-01', end: '2026-07-04' });
++    service.cancel(booking.id, '2026-06-20T09:00:00Z');
++    assert.deepEqual(service.availability({ start: '2026-07-01', end: '2026-07-04', kind: 'board' }), ['board-1']);
++    assert.doesNotThrow(() => service.book({ itemId: 'board-1', start: '2026-07-02', end: '2026-07-03' }));
++  });
++
++  test('can be cancelled only once', () => {
++    const service = setup();
++    const booking = service.book({ itemId: 'board-1', start: '2026-07-01', end: '2026-07-04' });
++    service.cancel(booking.id, '2026-06-20T09:00:00Z');
++    assert.throws(() => service.cancel(booking.id, '2026-06-21T09:00:00Z'), /already cancelled/);
++  });
++
++  test('throws for an unknown booking', () => {
++    const service = setup();
++    assert.throws(() => service.cancel('nope', '2026-06-20T09:00:00Z'), /unknown booking/);
++  });
++
++  test('throws for a booking that has already ended', () => {
++    const service = setup();
++    const booking = service.book({ itemId: 'board-1', start: '2026-07-01', end: '2026-07-02' });
++    assert.throws(() => service.cancel(booking.id, '2026-07-02T00:00:00Z'), /already ended/);
++  });
++
++  test('throws for an invalid time without cancelling', () => {
++    const service = setup();
++    const booking = service.book({ itemId: 'board-1', start: '2026-07-01', end: '2026-07-02' });
++    assert.throws(() => service.cancel(booking.id, '2026-06-20T09:00:00'));
++    assert.doesNotThrow(() => service.cancel(booking.id, '2026-06-20T09:00:00Z'));
++  });
++});
++
+ describe('availability', () => {
+   test('lists every item when no kind is given, sorted', () => {
+     const service = setup();

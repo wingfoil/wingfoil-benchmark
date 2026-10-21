@@ -258,3 +258,31 @@ left; scored; a ledger line each.
   quoted, for every bridge dry run, the reference's dry run of the same scenario, arm and model (for S3 wingfoil
   `dry-runs/24`, WingFoil v0.3.0): `src/cli/dry-run.ts` looks it up without the profile's arm digest and harness
   pin, which the estimate's key has had since task-095. Filed as a bug; the estimate itself is not affected.
+
+### Stage 5: the Haiku 5.5 and Opus 5.5 slices (2026-10-21, 16:40–17:40 UTC)
+
+The approver's consent in chat, 2026-10-21 (with bug-024's approval, `292d3e3`): the seven dry runs, 4 € a run and
+15 € in all (`7fe41c2` sets `run_cost_eur: 4`). `--model claude-haiku-5-5` (S3, S1 × baseline, wingfoil), then
+`--model claude-opus-5-5` (S1 × baseline, baseline-docs, wingfoil); the same chain and stops, with twice the
+expected at 0.6 € for Haiku and 3 € for Opus; none reached. Every one: `dry_run: true`, Claude Code 2.1.300, the
+model at `medium`, priced `list`, the only model in every step's `modelUsage` (Claude Code called no other Haiku for
+its own work); the pinned arm digest; one attempt, `completed`; the token scan clean; no `bench-` container left;
+scored; a ledger line each.
+
+| Dry run | Model | Scenario | Arm | Cost | Wall time | Turns per step | Largest transcript | Final public | Hold-out | Checks |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 56 | Haiku 5.5 | S3@1.0 | baseline | 0.0404 USD (0.0360 €) | 3 min 27 s | 10, 8, 9, 16, 15 | 275 KB (step 4) | 35/37 | 16/17 | 0/1 |
+| 57 | Haiku 5.5 | S3@1.0 | wingfoil | 0.1057 USD (0.0942 €) | 7 min 51 s | 33, 20, 17, 31, 25 | 490 KB (step 4) | 35/37 | 16/17 | 1/1 |
+| 58 | Haiku 5.5 | S1@1.0 | baseline | 0.0604 USD (0.0538 €) | 5 min 34 s | 8, 9, 16, 5, 7 | 267 KB (step 3) | 164/165 | 45/48 | — |
+| 59 | Haiku 5.5 | S1@1.0 | wingfoil | 0.1132 USD (0.1010 €) | 8 min 51 s | 11, 39, 27, 15, 13 | 539 KB (step 2) | 164/165 | 45/48 | — |
+| 60 | Opus 5.5 | S1@1.0 | baseline | 1.9429 USD (1.7325 €) | 9 min 51 s | 5, 7, 11, 5, 14 | 242 KB (step 3) | 165/165 | 48/48 | — |
+| 61 | Opus 5.5 | S1@1.0 | baseline-docs | 2.7109 USD (2.4173 €) | 12 min 39 s | 11, 13, 11, 11, 17 | 269 KB (step 5) | 165/165 | 48/48 | — |
+| 62 | Opus 5.5 | S1@1.0 | wingfoil | 2.7361 USD (2.4398 €) | 11 min 43 s | 11, 14, 20, 12, 14 | 283 KB (step 3) | 165/165 | 48/48 | — |
+
+- **Spent: 7.7096 USD (6.8746 €)** of the 15 € consented: Haiku 5.5 0.3197 USD, Opus 5.5 7.3899 USD; the
+  dearest run 2.7361 USD (Opus 5.5, S1, wingfoil).
+- **Haiku 5.5's price tier:** every step's cost matches the lower tier (0.10 / 0.50 USD per million, cache writes
+  0.125, reads 0.01; for `dry-runs/56` step 1, 0.00994 USD from its tokens): no request passed 100 K prompt tokens.
+- **Opus 5.5:** S1 at 4.2–5.7 times Sonnet 5.5's cost in the same arm; every arm 165/165 and 48/48, the only model at
+  the maximum on S1.
+- **Haiku 5.5:** as Sonnet 5.5 on S1 (164/165, 45/48) and S3 (35/37, 16/17), at 15–18 % of its cost in the same arm.

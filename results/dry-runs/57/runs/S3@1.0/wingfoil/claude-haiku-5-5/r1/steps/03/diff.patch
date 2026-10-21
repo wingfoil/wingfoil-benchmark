@@ -1,0 +1,223 @@
+diff --git a/README.md b/README.md
+index 52ae9bc775945892876898b3e53daaeaac378826..ff4795570f29ae23d4fa2669e6382b60ad7c37a9 100644
+--- a/README.md
++++ b/README.md
+@@ -11,9 +11,11 @@ sails by the day. It offers four operations:
+ 
+ - `addEquipment({ id, kind, dailyPrice })` adds an item. `kind` is `'board'` or `'sail'`, and
+   `dailyPrice` is the price of one day in euro cents.
+-- `quote({ itemId, start, end })` returns `{ itemId, start, end, total }`, the price of the period.
+-- `book({ itemId, start, end })` books the item and returns `{ id, itemId, start, end, total }`. It
+-  throws when the item is already booked for an overlapping period.
++- `quote({ itemId, start, end })` returns `{ itemId, start, end, total }`, the price of the period. A
++  period of three days or more costs 10% less than its full price, rounded to the nearest cent with halves
++  rounded up.
++- `book({ itemId, start, end })` books the item and returns `{ id, itemId, start, end, total }`, with the
++  same total `quote` gives. It throws when the item is already booked for an overlapping period.
+ - `availability({ start, end, kind })` returns the sorted ids of the items free for the whole period. `kind`
+   is optional: without it, items of every kind are listed. A booking that ends at midnight does not block
+   a period that starts then, as with `book`.
+diff --git a/docs/memory/decision-log/dl-005-rentals-of-three-days-or-more-get-10-percent-off-rounded-to-the-cent.md b/docs/memory/decision-log/dl-005-rentals-of-three-days-or-more-get-10-percent-off-rounded-to-the-cent.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..c527b1f23a98c1945a2d40fe26105c5e398ab6ec
+--- /dev/null
++++ b/docs/memory/decision-log/dl-005-rentals-of-three-days-or-more-get-10-percent-off-rounded-to-the-cent.md
+@@ -0,0 +1,35 @@
++---
++id: dl-005-rentals-of-three-days-or-more-get-10-percent-off-rounded-to-the-cent
++type: decision-log
++title: "Rentals of three days or more get 10 percent off, rounded to the cent"
++status: pending
++format: 1
++---
++
++# Context
++
++The school wants to reward customers who stay longer. The brief says a rental of 3 days or more costs
++10% less than its full price, and that quotes and bookings both show the reduced total.
++
++dl-002 fixes the price as an exact integer number of euro cents. A 10% discount does not always give a
++whole number of cents: 3 days at 2501 cents is 6752.7 cents. The brief does not say how to round it.
++
++# Decision
++
++- A period of 3 days or more is discounted. Its total is the full price, days times `dailyPrice`, less
++  10%. A period of 2 days or fewer is not discounted.
++- The discounted total is rounded to the nearest cent, with halves rounded up. For example 6752.7 becomes
++  6753 and 2713.5 becomes 2714.
++- `quote` and `book` both get the total from the same pricing function, so they always agree.
++- The discount is computed in integer arithmetic, so no floating-point error reaches the rounding.
++- This amends dl-002, whose price rule said the price involves no rounding. That is no longer true for
++  a discounted period. Full-price periods are still exact.
++
++# Consequences
++
++- Customers pay the nearest cent, and a half cent goes to the customer's favour. A customer is never
++  charged more than the exact 90% price plus half a cent.
++- A discounted total is no longer always a multiple of the daily price, so a client must not divide the
++  total by the number of days to recover the daily price.
++- The rule is fixed in code. Changing the percentage, the threshold or the rounding is a change of this
++  decision.
+diff --git a/docs/memory/task/task-003-ten-percent-off-rentals-of-three-days-or-more.md b/docs/memory/task/task-003-ten-percent-off-rentals-of-three-days-or-more.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..dcb0aa82037b886fb5624298e3a24b03568bb625
+--- /dev/null
++++ b/docs/memory/task/task-003-ten-percent-off-rentals-of-three-days-or-more.md
+@@ -0,0 +1,31 @@
++---
++id: task-003-ten-percent-off-rentals-of-three-days-or-more
++type: task
++title: "Ten percent off rentals of three days or more"
++status: pending
++format: 1
++---
++
++# Request
++
++A rental of 3 days or more now costs 10% less than its full price. Quotes and bookings both show the
++reduced total. The request is to reward customers who stay longer.
++
++# Work
++
++- Tests first, in `src/rental.test.ts`: the existing three-day quote test moved to two days, since it
++  asserted the full price; new tests for a two-day rental (no discount), a three-day and a seven-day
++  rental (10% off), rounding to the cent with halves up, `book` charging the discounted total, and
++  `book` and `quote` agreeing. Run before the implementation, the three discount tests failed.
++- Implementation in `src/rental.ts`: `priceOf`, which both `quote` and `book` use, applies the discount
++  when the period is three days or more. The discount is computed in integer arithmetic.
++- `src/rental.ts` interface doc comments for `quote` and `book`, and `README.md`, describe the discount.
++- The rounding choice is recorded in dl-005.
++
++# Result
++
++- `npm test` builds with strict TypeScript and runs 32 tests, all passing: the 27 existing tests, with
++  one changed to a two-day period, and 5 new ones.
++- Not changed: `availability` and `addEquipment`. Their behaviour is as before.
++- Not decided: whether a discount should show as a separate line with the full price. Quotes and
++  bookings show only the total, as they did before.
+diff --git a/src/rental.test.ts b/src/rental.test.ts
+index ead806747e2f2a58d14d208ff0f007760f10c891..60d1a6858ab08cca7f5c771a5ea9512ac325cc7d 100644
+--- a/src/rental.test.ts
++++ b/src/rental.test.ts
+@@ -38,13 +38,69 @@ test('quote multiplies the daily price by the number of days', () => {
+   const quote = service.quote({
+     itemId: 'sail-1',
+     start: midnight('2026-07-01'),
+-    end: midnight('2026-07-04'),
++    end: midnight('2026-07-03'),
+   });
+ 
+-  assert.equal(quote.total, 3 * 1800);
++  assert.equal(quote.total, 2 * 1800);
+   assert.ok(Number.isInteger(quote.total));
+ });
+ 
++test('a rental of two days gets no discount', () => {
++  const service = serviceWithBoard();
++
++  const quote = service.quote({ itemId: 'board-1', start: midnight('2026-07-01'), end: midnight('2026-07-03') });
++
++  assert.equal(quote.total, 2 * 2500);
++});
++
++test('a rental of three days or more costs 10 percent less than its full price', () => {
++  const service = serviceWithBoard();
++
++  assert.equal(
++    service.quote({ itemId: 'board-1', start: midnight('2026-07-01'), end: midnight('2026-07-04') }).total,
++    6750,
++  );
++  assert.equal(
++    service.quote({ itemId: 'board-1', start: midnight('2026-07-01'), end: midnight('2026-07-08') }).total,
++    15750,
++  );
++});
++
++test('a discounted total is rounded to the nearest cent, halves up', () => {
++  const service = createRentalService();
++  service.addEquipment({ id: 'board-1', kind: 'board', dailyPrice: 2501 });
++  service.addEquipment({ id: 'board-2', kind: 'board', dailyPrice: 1005 });
++
++  // 3 * 2501 = 7503 cents, 90 percent of which is 6752.7 cents.
++  assert.equal(
++    service.quote({ itemId: 'board-1', start: midnight('2026-07-01'), end: midnight('2026-07-04') }).total,
++    6753,
++  );
++  // 3 * 1005 = 3015 cents, 90 percent of which is 2713.5 cents.
++  assert.equal(
++    service.quote({ itemId: 'board-2', start: midnight('2026-07-01'), end: midnight('2026-07-04') }).total,
++    2714,
++  );
++});
++
++test('book charges the discounted total for a rental of three days or more', () => {
++  const service = serviceWithBoard();
++
++  const booking = service.book({ itemId: 'board-1', start: midnight('2026-07-01'), end: midnight('2026-07-04') });
++
++  assert.equal(booking.total, 6750);
++});
++
++test('book and quote show the same total for the same period', () => {
++  const service = serviceWithBoard();
++  const period = { itemId: 'board-1', start: midnight('2026-07-01'), end: midnight('2026-07-04') };
++
++  const quote = service.quote(period);
++  const booking = service.book(period);
++
++  assert.equal(booking.total, quote.total);
++});
++
+ test('quote does not change what is booked', () => {
+   const service = serviceWithBoard();
+   const period = { itemId: 'board-1', start: midnight('2026-07-01'), end: midnight('2026-07-02') };
+diff --git a/src/rental.ts b/src/rental.ts
+index d667e158705fa418ba88e3e7586d556cb0aefad3..0fc9c90f2868e986d8ee81e7c27c76c4cd54da25 100644
+--- a/src/rental.ts
++++ b/src/rental.ts
+@@ -39,9 +39,15 @@ export interface Booking extends Quote {
+ export interface RentalService {
+   /** Adds an item. Throws if the id is empty or already in use, or the kind or price is invalid. */
+   addEquipment(item: Equipment): void;
+-  /** Prices a period for an item. Throws for an unknown item or a period the rules do not allow. */
++  /**
++   * Prices a period for an item. A period of three days or more costs 10 percent less than its full
++   * price. Throws for an unknown item or a period the rules do not allow.
++   */
+   quote(request: RentalRequest): Quote;
+-  /** Books an item for a period. Throws as `quote` does, and also when the item is already booked for an overlapping period. */
++  /**
++   * Books an item for a period at the price `quote` gives. Throws as `quote` does, and also when the item
++   * is already booked for an overlapping period.
++   */
+   book(request: RentalRequest): Booking;
+   /**
+    * Lists the ids, sorted, of the items free for the whole period. A period is free for an item when no
+@@ -61,6 +67,10 @@ interface BookedPeriod extends Period {
+ 
+ const DAY_MS = 24 * 60 * 60 * 1000;
+ 
++// A rental of this many days or more costs less than its full price.
++const LONG_RENTAL_DAYS = 3;
++const LONG_RENTAL_DISCOUNT_PERCENT = 10;
++
+ // A UTC midnight, written as the rules require. Anything else is refused before it is parsed.
+ const UTC_MIDNIGHT = /^\d{4}-\d{2}-\d{2}T00:00:00(\.000)?Z$/;
+ 
+@@ -131,7 +141,15 @@ export function createRentalService(): RentalService {
+ 
+ function priceOf(item: Equipment, request: RentalRequest, period: Period): Quote {
+   const days = (period.endMs - period.startMs) / DAY_MS;
+-  return { itemId: item.id, start: request.start, end: request.end, total: days * item.dailyPrice };
++  const fullPrice = days * item.dailyPrice;
++  const total = days >= LONG_RENTAL_DAYS ? discountedCents(fullPrice) : fullPrice;
++  return { itemId: item.id, start: request.start, end: request.end, total };
++}
++
++// The price in cents less the long-rental discount, rounded to the nearest cent with halves rounded
++// up. Integer arithmetic keeps the rounding exact.
++function discountedCents(cents: number): number {
++  return Math.floor((cents * (100 - LONG_RENTAL_DISCOUNT_PERCENT) + 50) / 100);
+ }
+ 
+ function validateEquipment(item: Equipment): void {

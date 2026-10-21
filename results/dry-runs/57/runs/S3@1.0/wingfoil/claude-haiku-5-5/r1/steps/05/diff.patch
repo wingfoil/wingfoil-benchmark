@@ -1,0 +1,291 @@
+diff --git a/README.md b/README.md
+index ad216ae271bdb52b7da2fb318504dba46fba6b22..9486841eeef2f6988be42cfa7e02182202b47904 100644
+--- a/README.md
++++ b/README.md
+@@ -21,9 +21,13 @@ sails by the day. It offers four operations:
+ - `availability({ start, end, kind })` returns the sorted ids of the items free for the whole period. `kind`
+   is optional: without it, items of every kind are listed. A booking that ends at midnight does not block
+   a period that starts then, as with `book`.
++- `cancel(bookingId, at)` cancels a booking at the time `at`, a UTC instant written `YYYY-MM-DDTHH:MM:SSZ`,
++  and returns `{ bookingId, refund }`, the amount given back in euro cents. The refund is the booking's whole
++  total when `at` is before the start of the rental, and nothing from the start on. A cancelled booking no
++  longer holds its equipment. A booking can be cancelled only once; it throws otherwise.
+ 
+ A period starts and ends at a UTC hour, written as `YYYY-MM-DDTHH:00:00Z`, and ends after it starts. A
+ period of whole days starts and ends at UTC midnight, `YYYY-MM-DDT00:00:00Z`, and ends at the start of the
+-day after its last day. Any other period must be shorter than a day. Cancellations are not implemented yet.
++day after its last day. Any other period must be shorter than a day.
+ 
+ Build and test with `npm install` followed by `npm test`.
+diff --git a/docs/memory/decision-log/dl-007-cancelling-a-booking-refunds-the-full-total-before-the-rental-starts-and-nothing-after.md b/docs/memory/decision-log/dl-007-cancelling-a-booking-refunds-the-full-total-before-the-rental-starts-and-nothing-after.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..e2e4c7eb06477a67c14f9546b51047bbc0fb4180
+--- /dev/null
++++ b/docs/memory/decision-log/dl-007-cancelling-a-booking-refunds-the-full-total-before-the-rental-starts-and-nothing-after.md
+@@ -0,0 +1,37 @@
++---
++id: dl-007-cancelling-a-booking-refunds-the-full-total-before-the-rental-starts-and-nothing-after
++type: decision-log
++title: "Cancelling a booking refunds the full total before the rental starts and nothing after"
++status: pending
++format: 1
++---
++
++# Context
++
++The desk needs to cancel bookings when customers' plans change. The request adds
++`cancel(bookingId, at)`, which cancels the booking at the time `at` and returns `{ bookingId, refund }`,
++the amount given back to the customer. A cancelled booking no longer holds its equipment, and a booking
++can be cancelled only once.
++
++The request does not say how much is refunded. It does pass the time of cancellation, which only matters
++if the refund depends on when the customer cancels. The README says cancellations are not implemented yet.
++
++# Decision
++
++- `cancel(bookingId, at)` refunds the booking's full total when `at` is before the start of the rental.
++  When `at` is the start of the rental or later, the refund is `0`. The booking is cancelled either way.
++- `at` is a UTC instant written `YYYY-MM-DDTHH:MM:SSZ`, with an optional `.000` before the `Z`. Any minute
++  is allowed, since a customer may cancel at any time. Any other form is rejected.
++- Cancelling an unknown booking id throws. Cancelling a booking a second time throws.
++- A cancelled booking no longer blocks its equipment for `book` or `availability`. Its booking id is not
++  reused: the id counter does not go back.
++- The result is `{ bookingId, refund }`, with `refund` in integer euro cents.
++
++# Consequences
++
++- A customer who cancels before the rental starts gets the whole amount back. A customer who cancels once
++  it has started gets nothing, so the policy is strict and needs a decision from the school before it is
++  relied on.
++- Partial refunds, fees, and refunds after the rental has ended are not covered. Changing any of them is a
++  change of this decision.
++- Cancellation does not record when the refund was paid, since the module has no payment step.
+diff --git a/docs/memory/task/task-005-cancel-a-booking-with-a-refund.md b/docs/memory/task/task-005-cancel-a-booking-with-a-refund.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..4708a24a06dcc2084c262b249cb8e3f09f1d9401
+--- /dev/null
++++ b/docs/memory/task/task-005-cancel-a-booking-with-a-refund.md
+@@ -0,0 +1,33 @@
++---
++id: task-005-cancel-a-booking-with-a-refund
++type: task
++title: "Cancel a booking with a refund"
++status: pending
++format: 1
++---
++
++# Request
++
++Plans change, and customers ask the desk to cancel their bookings. Add `cancel(bookingId, at)` to the rental
++service. It cancels the booking at the time `at` and returns `{ bookingId, refund }`, the amount given back to
++the customer. A cancelled booking no longer holds its equipment, and a booking can only be cancelled once.
++
++# Work
++
++- Tests first, in `src/rental.test.ts`: a full refund before the rental starts, the discounted total refunded
++  for a rental of three days or more, no refund once the rental has started, a cancelled booking freeing its
++  equipment for `book` and `availability`, a cancelled booking not reusing its id, cancelling twice throws,
++  an unknown booking throws, and a bad cancellation time is rejected. The tests were run first and failed to
++  compile, since `cancel` did not exist yet.
++- Implementation in `src/rental.ts`: `cancel` marks the booking cancelled and returns the refund; the booking
++  keeps its total and period, and the overlap check skips cancelled bookings. `Cancellation` is exported from
++  `src/index.ts`.
++- The refund policy was not given in the request. It is recorded in dl-007: the whole total before the rental
++  starts, nothing from the start on. dl-007 is pending approval.
++- `README.md` documents `cancel` and no longer says cancellations are missing.
++
++# Result
++
++- `npm test` builds with strict TypeScript and runs 51 tests, all passing: the 43 from task-004 and 8 new ones.
++- Not decided: the refund policy itself, which dl-007 records for approval. Partial refunds, fees and payment
++  are not covered.
+diff --git a/src/index.ts b/src/index.ts
+index cacb17b742d22a457f5d3badc47501033bbbef97..07cd1dbfbaec90dd40c5d4869f7c2e69e4d3a1d6 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -2,6 +2,7 @@ export { createRentalService } from './rental.js';
+ export type {
+   AvailabilityQuery,
+   Booking,
++  Cancellation,
+   Equipment,
+   EquipmentKind,
+   Quote,
+diff --git a/src/rental.test.ts b/src/rental.test.ts
+index 44d767b83a142a004717adf819593876ac2f3353..6d900bb943cf4fa98fba4c277c76054960c0b2bc 100644
+--- a/src/rental.test.ts
++++ b/src/rental.test.ts
+@@ -530,3 +530,70 @@ test('addEquipment rejects a bad hourly price', () => {
+   assert.throws(() => service.addEquipment(invalid({ id: 'x-2', kind: 'board', dailyPrice: 100, hourlyPrice: 12.5 })));
+   assert.throws(() => service.addEquipment(invalid({ id: 'x-3', kind: 'board', dailyPrice: 100, hourlyPrice: '800' })));
+ });
++
++test('cancel refunds the full total when the rental has not started', () => {
++  const service = serviceWithBoard();
++  const booking = service.book({ itemId: 'board-1', start: midnight('2026-07-01'), end: midnight('2026-07-03') });
++
++  assert.deepEqual(service.cancel(booking.id, '2026-06-30T23:59:59Z'), { bookingId: booking.id, refund: 2 * 2500 });
++});
++
++test('cancel refunds the discounted total of a rental of three days or more', () => {
++  const service = serviceWithBoard();
++  const booking = service.book({ itemId: 'board-1', start: midnight('2026-07-01'), end: midnight('2026-07-04') });
++
++  assert.equal(service.cancel(booking.id, '2026-06-01T08:00:00Z').refund, 6750);
++});
++
++test('cancel refunds nothing once the rental has started', () => {
++  const service = serviceWithBoard();
++  const booking = service.book({ itemId: 'board-1', start: midnight('2026-07-01'), end: midnight('2026-07-02') });
++
++  assert.equal(service.cancel(booking.id, midnight('2026-07-01')).refund, 0);
++
++  const later = service.book({ itemId: 'board-1', start: midnight('2026-08-01'), end: midnight('2026-08-02') });
++  assert.equal(service.cancel(later.id, '2026-08-01T09:30:00Z').refund, 0);
++});
++
++test('a cancelled booking no longer holds its equipment', () => {
++  const service = createRentalService();
++  service.addEquipment({ id: 'board-1', kind: 'board', dailyPrice: 2500 });
++  service.addEquipment({ id: 'board-2', kind: 'board', dailyPrice: 2500 });
++  const booking = service.book({ itemId: 'board-1', start: midnight('2026-07-01'), end: midnight('2026-07-02') });
++
++  service.cancel(booking.id, '2026-06-01T00:00:00Z');
++
++  assert.deepEqual(service.availability({ start: midnight('2026-07-01'), end: midnight('2026-07-02') }), ['board-1', 'board-2']);
++  assert.doesNotThrow(() => service.book({ itemId: 'board-1', start: midnight('2026-07-01'), end: midnight('2026-07-02') }));
++});
++
++test('a cancelled booking does not use up or reuse a booking id', () => {
++  const service = serviceWithBoard();
++  const first = service.book({ itemId: 'board-1', start: midnight('2026-07-01'), end: midnight('2026-07-02') });
++  service.cancel(first.id, '2026-06-01T00:00:00Z');
++
++  assert.equal(service.book({ itemId: 'board-1', start: midnight('2026-07-01'), end: midnight('2026-07-02') }).id, 'booking-2');
++});
++
++test('a booking can be cancelled only once', () => {
++  const service = serviceWithBoard();
++  const booking = service.book({ itemId: 'board-1', start: midnight('2026-07-01'), end: midnight('2026-07-02') });
++  service.cancel(booking.id, '2026-06-01T00:00:00Z');
++
++  assert.throws(() => service.cancel(booking.id, '2026-06-02T00:00:00Z'), /already cancelled/);
++});
++
++test('cancel throws for an unknown booking', () => {
++  const service = serviceWithBoard();
++
++  assert.throws(() => service.cancel('booking-99', '2026-06-01T00:00:00Z'), /unknown booking/);
++});
++
++test('cancel rejects a time that is not a UTC instant in the ISO form', () => {
++  const service = serviceWithBoard();
++  const booking = service.book({ itemId: 'board-1', start: midnight('2026-07-01'), end: midnight('2026-07-02') });
++
++  assert.throws(() => service.cancel(booking.id, '2026-06-01T10:00:00+01:00'));
++  assert.throws(() => service.cancel(booking.id, '2026-06-01 10:00:00Z'));
++  assert.throws(() => service.cancel(booking.id, '2026-02-30T10:00:00Z'));
++});
+diff --git a/src/rental.ts b/src/rental.ts
+index 2d2b2de8170e37573d5cbdd7cef0c39e460c7271..4d33210954104b6ba793d96be31da41c7896bf53 100644
+--- a/src/rental.ts
++++ b/src/rental.ts
+@@ -42,6 +42,12 @@ export interface Booking extends Quote {
+   id: string;
+ }
+ 
++/** A cancelled booking. `refund` is the amount given back to the customer, in euro cents. */
++export interface Cancellation {
++  bookingId: string;
++  refund: number;
++}
++
+ /** An in-memory rental service. */
+ export interface RentalService {
+   /**
+@@ -59,6 +65,12 @@ export interface RentalService {
+    * is already booked for an overlapping period. A rejected booking takes no booking id.
+    */
+   book(request: RentalRequest): Booking;
++  /**
++   * Cancels a booking at the time `at`, a UTC instant. The booking refunds its whole total when `at` is
++   * before the start of the rental, and nothing from the start on. A cancelled booking no longer holds its
++   * equipment. Throws for an unknown booking, a booking already cancelled, or a bad time.
++   */
++  cancel(bookingId: string, at: string): Cancellation;
+   /**
+    * Lists the ids, sorted, of the items free for the whole period. A period is free for an item when no
+    * booking of it overlaps. Throws as `quote` does for a bad period, and for a kind that is not a known kind.
+@@ -72,7 +84,10 @@ interface Period {
+ }
+ 
+ interface BookedPeriod extends Period {
++  bookingId: string;
+   itemId: string;
++  total: number;
++  cancelled: boolean;
+ }
+ 
+ const HOUR_MS = 60 * 60 * 1000;
+@@ -84,6 +99,8 @@ const LONG_RENTAL_DISCOUNT_PERCENT = 10;
+ 
+ // A UTC hour, written as the rules require. Anything else is refused before it is parsed.
+ const UTC_HOUR = /^\d{4}-\d{2}-\d{2}T([01]\d|2[0-3]):00:00(\.000)?Z$/;
++// A UTC instant to the second, the form a cancellation time is written in.
++const UTC_INSTANT = /^\d{4}-\d{2}-\d{2}T([01]\d|2[0-3]):[0-5]\d:[0-5]\d(\.000)?Z$/;
+ 
+ /**
+  * Creates an empty rental service. Each call returns a separate service with its own items and
+@@ -129,8 +146,22 @@ export function createRentalService(): RentalService {
+         throw new Error(`item ${item.id} is already booked for an overlapping period`);
+       }
+       lastBookingNumber += 1;
+-      bookedPeriods.push({ itemId: item.id, ...period });
+-      return { id: `booking-${lastBookingNumber}`, ...quote };
++      const id = `booking-${lastBookingNumber}`;
++      bookedPeriods.push({ bookingId: id, itemId: item.id, total: quote.total, cancelled: false, ...period });
++      return { id, ...quote };
++    },
++
++    cancel(bookingId, at) {
++      const atMs = parseUtcTime(at, 'cancellation time', UTC_INSTANT, 'a UTC time written as YYYY-MM-DDTHH:MM:SSZ');
++      const booked = bookedPeriods.find((candidate) => candidate.bookingId === bookingId);
++      if (booked === undefined) {
++        throw new Error(`unknown booking: ${bookingId}`);
++      }
++      if (booked.cancelled) {
++        throw new Error(`booking ${bookingId} is already cancelled`);
++      }
++      booked.cancelled = true;
++      return { bookingId, refund: atMs < booked.startMs ? booked.total : 0 };
+     },
+ 
+     availability(query) {
+@@ -152,7 +183,11 @@ export function createRentalService(): RentalService {
+   function isBooked(itemId: string, period: Period): boolean {
+     // Half-open periods: two periods overlap only when each starts before the other ends.
+     return bookedPeriods.some(
+-      (booked) => booked.itemId === itemId && booked.startMs < period.endMs && period.startMs < booked.endMs,
++      (booked) =>
++        !booked.cancelled &&
++        booked.itemId === itemId &&
++        booked.startMs < period.endMs &&
++        period.startMs < booked.endMs,
+     );
+   }
+ }
+@@ -219,8 +254,12 @@ function parsePeriod(request: { start: string; end: string }): Period {
+ }
+ 
+ function parseUtcHour(value: string, name: string): number {
+-  if (typeof value !== 'string' || !UTC_HOUR.test(value)) {
+-    throw new Error(`${name} must be a UTC time on the hour written as YYYY-MM-DDTHH:00:00Z`);
++  return parseUtcTime(value, name, UTC_HOUR, 'a UTC time on the hour written as YYYY-MM-DDTHH:00:00Z');
++}
++
++function parseUtcTime(value: string, name: string, format: RegExp, expected: string): number {
++  if (typeof value !== 'string' || !format.test(value)) {
++    throw new Error(`${name} must be ${expected}`);
+   }
+   const ms = Date.parse(value);
+   // Rejects dates that do not exist, such as 30 February, which Date would otherwise roll over.

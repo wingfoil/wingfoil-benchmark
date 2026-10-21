@@ -1,0 +1,504 @@
+diff --git a/README.md b/README.md
+index 77c42219dd2194c02d8980356ff69a54c1dd5251..ef297052518784099891ec379ee21e54e476e58f 100644
+--- a/README.md
++++ b/README.md
+@@ -60,4 +60,31 @@ applyPatch({ foo: ["bar"] }, [
+ - Pointers follow the JSON Pointer rules above; a member named `__proto__` is added as an ordinary
+   member and never changes a prototype.
+ 
++## JSON Merge Patch (RFC 7386)
++
++```ts
++import { applyMergePatch, JsonMergePatchError } from "./src/index.ts";
++
++applyMergePatch(
++  { title: "Goodbye!", author: { givenName: "John", familyName: "Doe" }, tags: ["a", "b"] },
++  { title: "Hello!", author: { familyName: null }, tags: ["a"] },
++); // { title: "Hello!", author: { givenName: "John" }, tags: ["a"] }
++```
++
++- `applyMergePatch(target, patch)` merges `patch` into `target` and returns the result as a new value.
++  It never modifies `target` or `patch`, and the result shares no object with them.
++- An object patch changes only the members it names, recursively: a member set to `null` is removed
++  (removing a missing member is not an error), any other value is merged into the target's member. A
++  target that is not an object is first replaced by `{}`. A patch that is not an object (an array, a
++  string, a number, a boolean or `null`) replaces the whole target: arrays are never merged, and a
++  `null` inside an array is kept.
++- As RFC 7386 notes, a merge patch cannot set a member to `null`, nor change part of an array: use
++  `applyPatch` for those.
++- It throws a `JsonMergePatchError` when `target` or `patch` is not a JSON value, by the same rules as
++  `applyPatch` (`undefined`, a function, `NaN`, a `Date`, a sparse array, a cyclic structure, a structure
++  too deep for the call stack...), even in a part of the target the patch replaces. Its `cause` is the
++  underlying error, and no other error escapes, even one raised by a getter.
++- Only own members are merged into; a member named `__proto__` is an ordinary member and never changes
++  a prototype.
++
+ Run the tests with `npm test` (Node.js 22.18 or later, which runs TypeScript directly).
+diff --git a/docs/memory/decision-log/dl-005-json-merge-patch-copy-on-apply-strict-json-inputs-jsonmergepatcherror.md b/docs/memory/decision-log/dl-005-json-merge-patch-copy-on-apply-strict-json-inputs-jsonmergepatcherror.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..8d7dc378e01b4901ac5934647b958779efb71314
+--- /dev/null
++++ b/docs/memory/decision-log/dl-005-json-merge-patch-copy-on-apply-strict-json-inputs-jsonmergepatcherror.md
+@@ -0,0 +1,41 @@
++---
++id: dl-005-json-merge-patch-copy-on-apply-strict-json-inputs-jsonmergepatcherror
++type: decision-log
++title: "JSON Merge Patch: copy-on-apply, strict JSON inputs, JsonMergePatchError"
++status: pending
++format: 1
++---
++
++# JSON Merge Patch: copy-on-apply, strict JSON inputs, JsonMergePatchError
++
++## Context
++
++Clients send partial updates as JSON Merge Patch (RFC 7386); `applyMergePatch(target, patch)` (task-004)
++implements it. The RFC's section 2 algorithm assigns into the target in place, and says nothing on
++inputs that are not JSON, nor on JavaScript's inherited properties (`__proto__`, `constructor`). The
++library already makes `applyPatch` strict about JSON values and side-effect free (dl-003 and dl-004,
++both still pending); merge patch payloads come from clients, so they are untrusted input.
++
++## Decision
++
++- Follow RFC 7386 section 2 exactly: an object patch merges member by member, `null` removes, a
++  non-object target becomes `{}`; any other patch (arrays included) replaces the target.
++- Copy-on-apply: deep-copy `target` and `patch`, then merge the copies; the inputs are never modified
++  and the result shares no object with them.
++- Both inputs must be JSON values, checked by the same rules as `applyPatch`. The validation and copy
++  helpers (`cloneJson`, `isPlainObject`, `setMember`) move from `json-patch.ts` to an internal module,
++  `json-value.ts`, shared by both features; `applyPatch` is unchanged.
++- The whole target is validated, even the parts the patch replaces or removes: a target that is not JSON
++  is an error at the boundary, whatever the patch.
++- Every failure throws a `JsonMergePatchError` (new export) whose `cause` is the underlying error; no
++  other error escapes, even one raised by a getter or a stack overflow.
++- Only own members of the target are merged into; members are written as own data properties, so
++  `__proto__` is an ordinary member.
++
++## Consequences
++
++- Callers get a fresh document and can keep using their inputs; the cost is one copy of each input.
++- JSON Patch and JSON Merge Patch accept exactly the same values, from one implementation.
++- `JsonMergePatchError` has no `index` or `operation`: a merge patch has no operations to point to.
++- As the RFC says, a merge patch cannot set `null` or change part of an array; the README points to
++  `applyPatch` for those.
+diff --git a/docs/memory/task/task-004-implement-rfc-7386-json-merge-patch-applymergepatch.md b/docs/memory/task/task-004-implement-rfc-7386-json-merge-patch-applymergepatch.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..79724e3ad4b33d3d08862a827ef737687e497ef2
+--- /dev/null
++++ b/docs/memory/task/task-004-implement-rfc-7386-json-merge-patch-applymergepatch.md
+@@ -0,0 +1,35 @@
++---
++id: task-004-implement-rfc-7386-json-merge-patch-applymergepatch
++type: task
++title: "Implement RFC 7386 JSON Merge Patch applyMergePatch"
++status: pending
++format: 1
++---
++
++# Implement RFC 7386 JSON Merge Patch applyMergePatch
++
++## Request
++
++Some clients send partial updates in JSON Merge Patch format. Implement JSON Merge Patch (RFC 7386):
++export `applyMergePatch(target, patch)` from `src/index.ts`, which applies a merge patch to a target
++JSON document and returns the merged document.
++
++## Done
++
++- `src/json-merge-patch.ts`: `applyMergePatch` (RFC 7386 section 2 algorithm, applied to deep copies of
++  both inputs) and `JsonMergePatchError`; both exported from `src/index.ts`.
++- `src/json-value.ts`: `cloneJson`, `isPlainObject` and `setMember` moved out of `src/json-patch.ts`
++  (unchanged, except that the internal error class is now `JsonValueError`), so both features validate
++  JSON values the same way. The 64 existing tests still pass.
++- `test/apply-merge-patch.test.ts`: 35 tests, red first (all failed before the implementation, since
++  the export did not exist): every RFC 7386 appendix A example and the section 3 example; removing a
++  missing member; non-object targets; `null` inside arrays; inputs never modified and not shared;
++  `__proto__` and inherited members; non-JSON values, cycles, throwing getters and over-deep values
++  rejected as `JsonMergePatchError`. 99 tests pass.
++- `README.md`: JSON Merge Patch section.
++- Decision: dl-005 (copy-on-apply, strict JSON inputs, JsonMergePatchError).
++
++## Notes
++
++- dl-003 and dl-004 (JSON Patch) are still pending approval; dl-005 reuses their validation rules.
++- `tsc` is not installed, so type-checking was not run; no coverage threshold is declared.
+diff --git a/src/index.ts b/src/index.ts
+index e96ddd2e856b972618616686ed1ac496d17921d3..24976b85a97470d2c1291f88e54872b72a1cb358 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -5,3 +5,4 @@
+ export { JsonPointerError, parsePointer, resolvePointer } from "./json-pointer.ts";
+ export { applyPatch, JsonPatchError } from "./json-patch.ts";
+ export type { JsonPatch, JsonPatchOperation } from "./json-patch.ts";
++export { applyMergePatch, JsonMergePatchError } from "./json-merge-patch.ts";
+diff --git a/src/json-merge-patch.ts b/src/json-merge-patch.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..c530e21c969f8b2acd11ea54653bf6cfcec8f8a7
+--- /dev/null
++++ b/src/json-merge-patch.ts
+@@ -0,0 +1,65 @@
++/**
++ * JSON Merge Patch (RFC 7386): describe changes to a JSON document with a document that resembles it.
++ *
++ * The target and patch are never mutated: both are validated and deep-copied first, and the merge is
++ * applied to the copies, so the result shares nothing with its inputs.
++ */
++
++import { cloneJson, setMember } from "./json-value.ts";
++
++/** Error thrown when the target or the patch is not a JSON value. */
++export class JsonMergePatchError extends Error {
++  constructor(message: string, options?: ErrorOptions) {
++    super(message, options);
++    this.name = "JsonMergePatchError";
++  }
++}
++
++type Members = Record<string, unknown>;
++
++/**
++ * Applies a JSON Merge Patch (RFC 7386) to a JSON document and returns the merged document.
++ *
++ * An object patch changes the members it names, recursively: a `null` member removes the member from
++ * the target, any other value is merged into it. A target that is not an object is first replaced by
++ * an empty object. A patch that is not an object (an array, a string, a number, a boolean or `null`)
++ * replaces the target entirely. Neither `target` nor `patch` is modified.
++ *
++ * @param target A JSON value: an object, array, string, finite number, boolean or null.
++ * @param patch A JSON value describing the changes.
++ * @returns A new document, the result of merging `patch` into `target`.
++ * @throws {JsonMergePatchError} When `target` or `patch` is not a JSON value (`undefined`, a function,
++ *   a non-finite number, a non-plain object, a sparse array, a cyclic structure, a structure too deep
++ *   for the call stack...). It is the only error thrown: its `cause` is the underlying error.
++ */
++export function applyMergePatch(target: unknown, patch: unknown): unknown {
++  try {
++    return merge(cloneJson(target), cloneJson(patch));
++  } catch (error) {
++    // Any error, including one raised by a getter or by a value too deeply nested to copy or merge.
++    const message = error instanceof Error ? error.message : String(error);
++    throw new JsonMergePatchError(`Invalid JSON Merge Patch input: ${message}`, { cause: error });
++  }
++}
++
++// RFC 7386, section 2: the MergePatch(Target, Patch) function, applied in place to copies.
++function merge(target: unknown, patch: unknown): unknown {
++  if (!isObject(patch)) {
++    return patch;
++  }
++  const result: Members = isObject(target) ? target : {};
++  for (const [name, value] of Object.entries(patch)) {
++    if (value === null) {
++      delete result[name];
++    } else {
++      // Only own members are members of the target: an inherited "constructor" is not merged into.
++      setMember(result, name, merge(Object.hasOwn(result, name) ? result[name] : undefined, value));
++    }
++  }
++  return result;
++}
++
++// A JSON object; the inputs are copies made by cloneJson, so any non-array object is a plain one.
++function isObject(value: unknown): value is Members {
++  return typeof value === "object" && value !== null && !Array.isArray(value);
++}
+diff --git a/src/json-patch.ts b/src/json-patch.ts
+index 65c1be52842b2c597effce5bccef51e921c0ee47..c5383734ee5f8249e1302631553e033bf534a4b0 100644
+--- a/src/json-patch.ts
++++ b/src/json-patch.ts
+@@ -6,6 +6,7 @@
+  */
+ 
+ import { isArrayIndex, parsePointer, resolveTokens } from "./json-pointer.ts";
++import { cloneJson, isPlainObject, setMember } from "./json-value.ts";
+ 
+ /** One operation of a JSON Patch (RFC 6902, section 4). Members other than these are ignored. */
+ export type JsonPatchOperation =
+@@ -210,64 +211,6 @@ function resolveParent(document: Document, tokens: string[], path: string): Cont
+   return parent as Container;
+ }
+ 
+-// Defines an own data property, so that a member named "__proto__" is a member and not a prototype.
+-function setMember(object: Record<string, unknown>, name: string, value: unknown): void {
+-  Object.defineProperty(object, name, { value, writable: true, enumerable: true, configurable: true });
+-}
+-
+-/**
+- * Deep copy of a JSON value; throws an `OperationError` for any value that is not JSON.
+- *
+- * `ancestors` holds the containers being copied around `value`: meeting one again is a cycle, which no
+- * JSON text can represent. An object found twice elsewhere (not a cycle) is copied twice.
+- */
+-function cloneJson(value: unknown, ancestors: Set<object> = new Set()): unknown {
+-  if (value === null || typeof value === "string" || typeof value === "boolean") {
+-    return value;
+-  }
+-  if (typeof value === "number") {
+-    if (!Number.isFinite(value)) {
+-      throw new OperationError(`${value} is not a JSON number`);
+-    }
+-    return value;
+-  }
+-  if (typeof value === "object" && (Array.isArray(value) || isPlainObject(value))) {
+-    if (ancestors.has(value)) {
+-      throw new OperationError("a cyclic structure is not a JSON value");
+-    }
+-    ancestors.add(value);
+-    const copy = Array.isArray(value) ? cloneArray(value, ancestors) : cloneObject(value, ancestors);
+-    ancestors.delete(value);
+-    return copy;
+-  }
+-  throw new OperationError(`${typeof value === "object" ? "a non-plain object" : typeof value} is not a JSON value`);
+-}
+-
+-function cloneArray(array: unknown[], ancestors: Set<object>): unknown[] {
+-  const copy: unknown[] = [];
+-  for (let index = 0; index < array.length; index++) {
+-    // A hole of a sparse array is not a JSON value (map would keep it as a hole).
+-    if (!Object.hasOwn(array, index)) {
+-      throw new OperationError(`a sparse array, with a hole at index ${index}, is not a JSON value`);
+-    }
+-    copy.push(cloneJson(array[index], ancestors));
+-  }
+-  return copy;
+-}
+-
+-function cloneObject(object: object, ancestors: Set<object>): Record<string, unknown> {
+-  const copy: Record<string, unknown> = {};
+-  for (const [name, member] of Object.entries(object)) {
+-    setMember(copy, name, cloneJson(member, ancestors));
+-  }
+-  return copy;
+-}
+-
+-function isPlainObject(value: object): boolean {
+-  const prototype = Object.getPrototypeOf(value);
+-  return prototype === Object.prototype || prototype === null;
+-}
+-
+ // RFC 6902, section 4.6: same type, and equal members (in any order) or elements (in order).
+ function jsonEqual(a: unknown, b: unknown): boolean {
+   if (Array.isArray(a) || Array.isArray(b)) {
+diff --git a/src/json-value.ts b/src/json-value.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..26dcaaaa261860e70ed0f61a197077be191cb6cd
+--- /dev/null
++++ b/src/json-value.ts
+@@ -0,0 +1,65 @@
++/**
++ * JSON values (RFC 8259) at the JavaScript boundary: validation and deep copy, shared by JSON Patch
++ * and JSON Merge Patch so that both accept exactly the same values.
++ */
++
++/** A value that is not JSON: `undefined`, a function, a non-finite number, a non-plain object, a hole, a cycle. */
++export class JsonValueError extends Error {}
++
++// Defines an own data property, so that a member named "__proto__" is a member and not a prototype.
++export function setMember(object: Record<string, unknown>, name: string, value: unknown): void {
++  Object.defineProperty(object, name, { value, writable: true, enumerable: true, configurable: true });
++}
++
++/**
++ * Deep copy of a JSON value; throws a `JsonValueError` for any value that is not JSON.
++ *
++ * `ancestors` holds the containers being copied around `value`: meeting one again is a cycle, which no
++ * JSON text can represent. An object found twice elsewhere (not a cycle) is copied twice.
++ */
++export function cloneJson(value: unknown, ancestors: Set<object> = new Set()): unknown {
++  if (value === null || typeof value === "string" || typeof value === "boolean") {
++    return value;
++  }
++  if (typeof value === "number") {
++    if (!Number.isFinite(value)) {
++      throw new JsonValueError(`${value} is not a JSON number`);
++    }
++    return value;
++  }
++  if (typeof value === "object" && (Array.isArray(value) || isPlainObject(value))) {
++    if (ancestors.has(value)) {
++      throw new JsonValueError("a cyclic structure is not a JSON value");
++    }
++    ancestors.add(value);
++    const copy = Array.isArray(value) ? cloneArray(value, ancestors) : cloneObject(value, ancestors);
++    ancestors.delete(value);
++    return copy;
++  }
++  throw new JsonValueError(`${typeof value === "object" ? "a non-plain object" : typeof value} is not a JSON value`);
++}
++
++function cloneArray(array: unknown[], ancestors: Set<object>): unknown[] {
++  const copy: unknown[] = [];
++  for (let index = 0; index < array.length; index++) {
++    // A hole of a sparse array is not a JSON value (map would keep it as a hole).
++    if (!Object.hasOwn(array, index)) {
++      throw new JsonValueError(`a sparse array, with a hole at index ${index}, is not a JSON value`);
++    }
++    copy.push(cloneJson(array[index], ancestors));
++  }
++  return copy;
++}
++
++function cloneObject(object: object, ancestors: Set<object>): Record<string, unknown> {
++  const copy: Record<string, unknown> = {};
++  for (const [name, member] of Object.entries(object)) {
++    setMember(copy, name, cloneJson(member, ancestors));
++  }
++  return copy;
++}
++
++export function isPlainObject(value: object): boolean {
++  const prototype = Object.getPrototypeOf(value);
++  return prototype === Object.prototype || prototype === null;
++}
+diff --git a/test/apply-merge-patch.test.ts b/test/apply-merge-patch.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..1837f23b330689909edb4e13b7bd872362daf101
+--- /dev/null
++++ b/test/apply-merge-patch.test.ts
+@@ -0,0 +1,146 @@
++import { test } from "node:test";
++import assert from "node:assert/strict";
++import { applyMergePatch, JsonMergePatchError } from "../src/index.ts";
++
++// RFC 7386, appendix A: every example, in order (target, patch, result).
++const APPENDIX_A: [unknown, unknown, unknown][] = [
++  [{ a: "b" }, { a: "c" }, { a: "c" }],
++  [{ a: "b" }, { b: "c" }, { a: "b", b: "c" }],
++  [{ a: "b" }, { a: null }, {}],
++  [{ a: "b", b: "c" }, { a: null }, { b: "c" }],
++  [{ a: ["b"] }, { a: "c" }, { a: "c" }],
++  [{ a: "c" }, { a: ["b"] }, { a: ["b"] }],
++  [{ a: { b: "c" } }, { a: { b: "d", c: null } }, { a: { b: "d" } }],
++  [{ a: [{ b: "c" }] }, { a: [1] }, { a: [1] }],
++  [["a", "b"], ["c", "d"], ["c", "d"]],
++  [{ a: "b" }, ["c"], ["c"]],
++  [{ a: "foo" }, null, null],
++  [{ a: "foo" }, "bar", "bar"],
++  [{ e: null }, { a: 1 }, { e: null, a: 1 }],
++  [[1, 2], { a: "b", c: null }, { a: "b" }],
++  [{}, { a: { bb: { ccc: null } } }, { a: { bb: {} } }],
++];
++
++APPENDIX_A.forEach(([target, patch, result], i) => {
++  test(`appendix A example ${i + 1}`, () => {
++    assert.deepEqual(applyMergePatch(target, patch), result);
++  });
++});
++
++test("section 3 example: changes, removes and adds members at any depth", () => {
++  const target = {
++    title: "Goodbye!",
++    author: { givenName: "John", familyName: "Doe" },
++    tags: ["example", "sample"],
++    content: "This will be unchanged",
++  };
++  const patch = { title: "Hello!", phoneNumber: "+01-123-456-7890", author: { familyName: null }, tags: ["example"] };
++  assert.deepEqual(applyMergePatch(target, patch), {
++    title: "Hello!",
++    author: { givenName: "John" },
++    tags: ["example"],
++    content: "This will be unchanged",
++    phoneNumber: "+01-123-456-7890",
++  });
++});
++
++test("removing a missing member changes nothing", () => {
++  assert.deepEqual(applyMergePatch({ a: 1 }, { b: null }), { a: 1 });
++});
++
++test("an object patch replaces a primitive target with an object", () => {
++  assert.deepEqual(applyMergePatch("text", { a: 1, b: null }), { a: 1 });
++  assert.deepEqual(applyMergePatch(null, { a: { b: null, c: 2 } }), { a: { c: 2 } });
++});
++
++test("null inside an array of the patch is kept as a value", () => {
++  assert.deepEqual(applyMergePatch({ a: 1 }, { a: [null, { b: null }] }), { a: [null, { b: null }] });
++});
++
++test("the empty patch object leaves an object target unchanged", () => {
++  assert.deepEqual(applyMergePatch({ a: { b: 1 } }, {}), { a: { b: 1 } });
++});
++
++test("neither target nor patch is modified, and the result shares no object with them", () => {
++  const target = { a: { b: 1 }, keep: { k: [1] } };
++  const patch = { a: { c: [2] }, d: { e: 3 } };
++  const targetCopy = structuredClone(target);
++  const patchCopy = structuredClone(patch);
++  const result = applyMergePatch(target, patch) as Record<string, any>;
++  assert.deepEqual(result, { a: { b: 1, c: [2] }, keep: { k: [1] }, d: { e: 3 } });
++  assert.deepEqual(target, targetCopy);
++  assert.deepEqual(patch, patchCopy);
++  assert.notEqual(result, target);
++  assert.notEqual(result.keep, target.keep);
++  assert.notEqual(result.keep.k, target.keep.k);
++  assert.notEqual(result.a.c, patch.a.c);
++  assert.notEqual(result.d, patch.d);
++  assert.deepEqual(applyMergePatch(target, ["x"]), ["x"]);
++  assert.notEqual(applyMergePatch(target, patch.a.c), patch.a.c);
++});
++
++test("a member named __proto__ is merged as an ordinary member", () => {
++  const patch = JSON.parse('{"__proto__": {"polluted": true}}');
++  const result = applyMergePatch({}, patch) as Record<string, unknown>;
++  assert.equal(Object.getPrototypeOf(result), Object.prototype);
++  assert.deepEqual(Object.keys(result), ["__proto__"]);
++  assert.equal(({} as Record<string, unknown>).polluted, undefined);
++  const removed = applyMergePatch(JSON.parse('{"__proto__": 1, "a": 2}'), JSON.parse('{"__proto__": null}'));
++  assert.deepEqual(Object.keys(removed as object), ["a"]);
++});
++
++test("inherited properties of the target are not members", () => {
++  assert.deepEqual(applyMergePatch({}, { constructor: { a: null } }), { constructor: {} });
++  assert.deepEqual(applyMergePatch({}, { toString: null }), {});
++});
++
++const NOT_JSON: [string, unknown][] = [
++  ["undefined", undefined],
++  ["a function", () => 1],
++  ["NaN", NaN],
++  ["Infinity", Infinity],
++  ["a Date", new Date(0)],
++  ["a class instance", new (class Point { x = 1 })()],
++  ["a sparse array", [1, , 3]],
++  ["a bigint", 1n],
++];
++
++for (const [name, value] of NOT_JSON) {
++  test(`rejects ${name} in the patch or the target`, () => {
++    assert.throws(() => applyMergePatch({}, { a: value }), JsonMergePatchError);
++    assert.throws(() => applyMergePatch({ a: value }, {}), JsonMergePatchError);
++  });
++}
++
++test("rejects a non-JSON target member even where the patch replaces it", () => {
++  assert.throws(() => applyMergePatch({ a: undefined }, { a: 1 }), JsonMergePatchError);
++  assert.throws(() => applyMergePatch(undefined, "x"), JsonMergePatchError);
++});
++
++test("rejects a cyclic structure", () => {
++  const cyclic: Record<string, unknown> = {};
++  cyclic.self = cyclic;
++  assert.throws(() => applyMergePatch({}, cyclic), JsonMergePatchError);
++  assert.throws(() => applyMergePatch(cyclic, {}), JsonMergePatchError);
++  const shared = { x: 1 };
++  assert.deepEqual(applyMergePatch({}, { a: shared, b: shared }), { a: { x: 1 }, b: { x: 1 } });
++});
++
++test("any error raised while reading the inputs is a JsonMergePatchError with the error as cause", () => {
++  const failure = new Error("boom");
++  const patch = {
++    get a() {
++      throw failure;
++    },
++  };
++  assert.throws(
++    () => applyMergePatch({}, patch),
++    (error: unknown) => error instanceof JsonMergePatchError && error.cause === failure && error.name === "JsonMergePatchError",
++  );
++});
++
++test("a structure nested too deeply for the call stack is a JsonMergePatchError", () => {
++  let deep: unknown = 1;
++  for (let i = 0; i < 1e6; i++) deep = [deep];
++  assert.throws(() => applyMergePatch({}, deep), JsonMergePatchError);
++});

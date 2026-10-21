@@ -1,0 +1,148 @@
+diff --git a/src/index.ts b/src/index.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..262a3250d2c705ef10a89aba8e40492f272493f6
+--- /dev/null
++++ b/src/index.ts
+@@ -0,0 +1,60 @@
++/**
++ * Thrown when a string is not a valid JSON Pointer, or when a valid pointer
++ * does not refer to a value of the document.
++ */
++export class JsonPointerError extends Error {
++  constructor(message: string) {
++    super(message);
++    this.name = "JsonPointerError";
++  }
++}
++
++// RFC 6901 section 4: an array index is "0" or a non-zero digit followed by digits.
++const ARRAY_INDEX = /^(0|[1-9][0-9]*)$/;
++
++function unescapeToken(pointer: string, token: string): string {
++  // "~" is only valid as the start of "~0" or "~1" (RFC 6901 section 3).
++  if (/~(?![01])/.test(token)) {
++    throw new JsonPointerError(`invalid JSON Pointer ${JSON.stringify(pointer)}: "~" must be followed by "0" or "1"`);
++  }
++  return token.replace(/~[01]/g, (escape) => (escape === "~1" ? "/" : "~"));
++}
++
++function parseTokens(pointer: string): string[] {
++  if (pointer === "") {
++    return [];
++  }
++  if (!pointer.startsWith("/")) {
++    throw new JsonPointerError(`invalid JSON Pointer ${JSON.stringify(pointer)}: must be empty or start with "/"`);
++  }
++  return pointer
++    .slice(1)
++    .split("/")
++    .map((token) => unescapeToken(pointer, token));
++}
++
++/**
++ * Returns the value that `pointer` refers to in `document` (RFC 6901).
++ *
++ * The empty pointer refers to the whole document. Throws a `JsonPointerError`
++ * when `pointer` is not a valid JSON Pointer or when it does not resolve.
++ */
++export function resolvePointer(document: unknown, pointer: string): unknown {
++  const tokens = parseTokens(pointer);
++
++  let current: unknown = document;
++  for (const token of tokens) {
++    if (Array.isArray(current)) {
++      // "-" refers to the element after the last one, so it never resolves.
++      if (!ARRAY_INDEX.test(token) || Number(token) >= current.length) {
++        throw new JsonPointerError(`JSON Pointer ${JSON.stringify(pointer)} does not resolve: no array index ${JSON.stringify(token)}`);
++      }
++      current = current[Number(token)];
++    } else if (typeof current === "object" && current !== null && Object.prototype.hasOwnProperty.call(current, token)) {
++      current = (current as Record<string, unknown>)[token];
++    } else {
++      throw new JsonPointerError(`JSON Pointer ${JSON.stringify(pointer)} does not resolve: no member ${JSON.stringify(token)}`);
++    }
++  }
++  return current;
++}
+diff --git a/test/json-pointer.test.ts b/test/json-pointer.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..1373b63b46815ab5fc71adeae6d44b086452a288
+--- /dev/null
++++ b/test/json-pointer.test.ts
+@@ -0,0 +1,76 @@
++import { test } from "node:test";
++import assert from "node:assert/strict";
++import { resolvePointer, JsonPointerError } from "../src/index.ts";
++
++// The example document from RFC 6901 section 5.
++const rfcDocument = {
++  foo: ["bar", "baz"],
++  "": 0,
++  "a/b": 1,
++  "c%d": 2,
++  "e^f": 3,
++  "g|h": 4,
++  "i\\j": 5,
++  'k"l': 6,
++  " ": 7,
++  "m~n": 8,
++};
++
++test("resolves the RFC 6901 section 5 examples", () => {
++  assert.equal(resolvePointer(rfcDocument, ""), rfcDocument);
++  assert.deepEqual(resolvePointer(rfcDocument, "/foo"), ["bar", "baz"]);
++  assert.equal(resolvePointer(rfcDocument, "/foo/0"), "bar");
++  assert.equal(resolvePointer(rfcDocument, "/"), 0);
++  assert.equal(resolvePointer(rfcDocument, "/a~1b"), 1);
++  assert.equal(resolvePointer(rfcDocument, "/c%d"), 2);
++  assert.equal(resolvePointer(rfcDocument, "/e^f"), 3);
++  assert.equal(resolvePointer(rfcDocument, "/g|h"), 4);
++  assert.equal(resolvePointer(rfcDocument, "/i\\j"), 5);
++  assert.equal(resolvePointer(rfcDocument, '/k"l'), 6);
++  assert.equal(resolvePointer(rfcDocument, "/ "), 7);
++  assert.equal(resolvePointer(rfcDocument, "/m~0n"), 8);
++});
++
++test("unescapes ~1 and ~0 in a single pass", () => {
++  const document = { "~1": "tilde-one", "/": "slash", "~": "tilde" };
++  assert.equal(resolvePointer(document, "/~01"), "tilde-one");
++  assert.equal(resolvePointer(document, "/~1"), "slash");
++  assert.equal(resolvePointer(document, "/~0"), "tilde");
++});
++
++test("returns primitives, null and nested values", () => {
++  const document = { n: null, f: false, z: 0, list: [[1, 2], { deep: "yes" }] };
++  assert.equal(resolvePointer(document, "/n"), null);
++  assert.equal(resolvePointer(document, "/f"), false);
++  assert.equal(resolvePointer(document, "/z"), 0);
++  assert.equal(resolvePointer(document, "/list/0/1"), 2);
++  assert.equal(resolvePointer(document, "/list/1/deep"), "yes");
++  assert.equal(resolvePointer("text", ""), "text");
++});
++
++test("rejects pointers that are not valid JSON Pointers", () => {
++  assert.throws(() => resolvePointer({}, "foo"), JsonPointerError);
++  assert.throws(() => resolvePointer({}, "#/foo"), JsonPointerError);
++  assert.throws(() => resolvePointer({ a: 1 }, "/a~"), JsonPointerError);
++  assert.throws(() => resolvePointer({ a: 1 }, "/a~2"), JsonPointerError);
++  assert.throws(() => resolvePointer({ a: 1 }, "/~"), JsonPointerError);
++});
++
++test("rejects pointers that do not resolve", () => {
++  const document = { foo: ["bar", "baz"], obj: { x: 1 }, s: "str", n: null };
++  assert.throws(() => resolvePointer(document, "/missing"), JsonPointerError);
++  assert.throws(() => resolvePointer(document, "/foo/2"), JsonPointerError);
++  assert.throws(() => resolvePointer(document, "/foo/-"), JsonPointerError);
++  assert.throws(() => resolvePointer(document, "/foo/01"), JsonPointerError);
++  assert.throws(() => resolvePointer(document, "/foo/x"), JsonPointerError);
++  assert.throws(() => resolvePointer(document, "/obj/x/y"), JsonPointerError);
++  assert.throws(() => resolvePointer(document, "/s/0"), JsonPointerError);
++  assert.throws(() => resolvePointer(document, "/n/x"), JsonPointerError);
++  assert.throws(() => resolvePointer(document, "/obj/"), JsonPointerError);
++});
++
++test("does not resolve inherited object properties", () => {
++  assert.throws(() => resolvePointer({}, "/constructor"), JsonPointerError);
++  assert.throws(() => resolvePointer({}, "/__proto__"), JsonPointerError);
++  assert.throws(() => resolvePointer({}, "/toString"), JsonPointerError);
++});

@@ -1,0 +1,100 @@
+diff --git a/src/index.ts b/src/index.ts
+index 6ebb966dc6a4aa1854dcac28ca35cae4b9f4576f..e63ac19cb5148e6de31479d257c545157743350b 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -303,3 +303,35 @@ export function applyPatch(document: unknown, patch: unknown): unknown {
+   });
+   return result;
+ }
++
++// Applies one level of a merge patch (RFC 7386 section 2). An object patch merges
++// into the target's members, while any other patch value replaces the target outright.
++// `target` is a private copy that may be mutated; patch values are copied when inserted.
++function mergeValue(target: unknown, patch: unknown): unknown {
++  if (!isObject(patch)) {
++    return patch;
++  }
++  const result = isObject(target) ? target : {};
++  for (const [key, value] of Object.entries(patch)) {
++    if (value === null) {
++      // A null in the patch removes the member (RFC 7386 section 2).
++      delete result[key];
++    } else {
++      const current = Object.prototype.hasOwnProperty.call(result, key) ? result[key] : undefined;
++      defineMember(result, key, mergeValue(current, value));
++    }
++  }
++  return result;
++}
++
++/**
++ * Applies a JSON Merge Patch (RFC 7386) to `target` and returns the result.
++ *
++ * Object members of `patch` are merged recursively into `target`, a `null`
++ * member removes the corresponding member, and any non-object patch (including
++ * arrays) replaces the target. The input values are not modified; the result
++ * shares no structure with them.
++ */
++export function applyMergePatch(target: unknown, patch: unknown): unknown {
++  return mergeValue(structuredClone(target), structuredClone(patch));
++}
+diff --git a/test/json-merge-patch.test.ts b/test/json-merge-patch.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..27478d834305e04c6a31d0705c9964f83f44d419
+--- /dev/null
++++ b/test/json-merge-patch.test.ts
+@@ -0,0 +1,54 @@
++import { test } from "node:test";
++import assert from "node:assert/strict";
++import { applyMergePatch } from "../src/index.ts";
++
++// The examples of RFC 7386 section 3 (appendix).
++test("applies the RFC 7386 examples", () => {
++  const cases: [unknown, unknown, unknown][] = [
++    [{ a: "b" }, { a: "c" }, { a: "c" }],
++    [{ a: "b" }, { b: "c" }, { a: "b", b: "c" }],
++    [{ a: "b" }, { a: null }, {}],
++    [{ a: "b", b: "c" }, { a: null }, { b: "c" }],
++    [{ a: ["b"] }, { a: "c" }, { a: "c" }],
++    [{ a: "c" }, { a: ["b"] }, { a: ["b"] }],
++    [{ a: { b: "c" } }, { a: { b: "d", c: null } }, { a: { b: "d" } }],
++    [{ a: [{ b: "c" }] }, { a: [1] }, { a: [1] }],
++    [["a", "b"], ["c", "d"], ["c", "d"]],
++    [{ a: "b" }, ["c"], ["c"]],
++    [{ a: "foo" }, null, null],
++    [{ a: "foo" }, "bar", "bar"],
++    [{ e: null }, { a: 1 }, { e: null, a: 1 }],
++    [[1, 2], { a: "b", c: null }, { a: "b" }],
++    [{}, { a: { bb: { ccc: null } } }, { a: { bb: {} } }],
++  ];
++  for (const [target, patch, expected] of cases) {
++    assert.deepEqual(applyMergePatch(target, patch), expected);
++  }
++});
++
++test("a non-object target is replaced by an object when the patch is an object", () => {
++  assert.deepEqual(applyMergePatch("text", { a: 1 }), { a: 1 });
++  assert.deepEqual(applyMergePatch([1], { a: { b: null } }), { a: {} });
++});
++
++test("nulls inside arrays are kept, since arrays are replaced whole", () => {
++  assert.deepEqual(applyMergePatch({ a: 1 }, { a: [null, { b: null }] }), { a: [null, { b: null }] });
++});
++
++test("a key named __proto__ is an ordinary member", () => {
++  const result = applyMergePatch({}, JSON.parse('{"__proto__": {"polluted": true}}')) as Record<string, unknown>;
++  assert.equal(Object.getPrototypeOf(result), Object.prototype);
++  assert.equal(({} as Record<string, unknown>).polluted, undefined);
++  assert.deepEqual(JSON.parse(JSON.stringify(result)), JSON.parse('{"__proto__": {"polluted": true}}'));
++});
++
++test("does not modify the target or the patch, and shares no structure with them", () => {
++  const target = { a: { b: 1 }, list: [1] };
++  const patch = { a: { c: { d: [2] } }, list: [3] };
++  const result = applyMergePatch(target, patch) as { a: { c: { d: unknown[] } }; list: unknown[] };
++  assert.deepEqual(target, { a: { b: 1 }, list: [1] });
++  assert.deepEqual(patch, { a: { c: { d: [2] } }, list: [3] });
++  result.a.c.d.push(9);
++  result.list.push(9);
++  assert.deepEqual(patch, { a: { c: { d: [2] } }, list: [3] });
++});

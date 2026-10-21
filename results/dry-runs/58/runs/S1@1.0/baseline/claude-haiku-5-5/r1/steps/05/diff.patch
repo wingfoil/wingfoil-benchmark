@@ -1,0 +1,187 @@
+diff --git a/src/index.ts b/src/index.ts
+index e63ac19cb5148e6de31479d257c545157743350b..158b3c0fe9f40ca35032f517fa0d1c5b8f48736d 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -335,3 +335,82 @@ function mergeValue(target: unknown, patch: unknown): unknown {
+ export function applyMergePatch(target: unknown, patch: unknown): unknown {
+   return mergeValue(structuredClone(target), structuredClone(patch));
+ }
++
++// Escapes a member name for use as a JSON Pointer token (RFC 6901 section 3).
++function escapeToken(token: string): string {
++  return token.replace(/~/g, "~0").replace(/\//g, "~1");
++}
++
++// Appends to `operations` the operations that turn `from` into `to`, where both are
++// the values found at `path`. Unchanged parts of the document produce no operations.
++function diffValue(from: unknown, to: unknown, path: string, operations: JsonPatchOperation[]): void {
++  if (jsonEquals(from, to)) {
++    return;
++  }
++  if (Array.isArray(from) && Array.isArray(to)) {
++    diffArray(from, to, path, operations);
++  } else if (isObject(from) && isObject(to)) {
++    for (const key of Object.keys(from)) {
++      if (!Object.prototype.hasOwnProperty.call(to, key)) {
++        operations.push({ op: "remove", path: `${path}/${escapeToken(key)}` });
++      }
++    }
++    for (const key of Object.keys(to)) {
++      const memberPath = `${path}/${escapeToken(key)}`;
++      if (Object.prototype.hasOwnProperty.call(from, key)) {
++        diffValue(from[key], to[key], memberPath, operations);
++      } else {
++        operations.push({ op: "add", path: memberPath, value: to[key] });
++      }
++    }
++  } else {
++    operations.push({ op: "replace", path, value: to });
++  }
++}
++
++// Diffs two arrays. Elements common to the start and end of both are skipped, and
++// the elements in between are matched by position, so a single insertion or removal
++// yields a single "add" or "remove".
++function diffArray(from: unknown[], to: unknown[], path: string, operations: JsonPatchOperation[]): void {
++  let start = 0;
++  while (start < from.length && start < to.length && jsonEquals(from[start], to[start])) {
++    start++;
++  }
++  let fromEnd = from.length;
++  let toEnd = to.length;
++  while (fromEnd > start && toEnd > start && jsonEquals(from[fromEnd - 1], to[toEnd - 1])) {
++    fromEnd--;
++    toEnd--;
++  }
++
++  const paired = Math.min(fromEnd - start, toEnd - start);
++  for (let i = 0; i < paired; i++) {
++    diffValue(from[start + i], to[start + i], `${path}/${start + i}`, operations);
++  }
++  // Remove from the highest index down, so each index is still valid when it is used.
++  for (let index = fromEnd - 1; index >= start + paired; index--) {
++    operations.push({ op: "remove", path: `${path}/${index}` });
++  }
++  // Add in ascending order, so each index is valid at the point it is used.
++  for (let index = start + paired; index < toEnd; index++) {
++    operations.push({ op: "add", path: `${path}/${index}`, value: to[index] });
++  }
++}
++
++/**
++ * Returns a JSON Patch (RFC 6902) that turns `from` into `to` when applied with
++ * `applyPatch`.
++ *
++ * The patch describes only what changed: unchanged members and array elements
++ * produce no operations. Values in the patch are copies, so the result shares no
++ * structure with either input, and neither input is modified. Throws a
++ * `JsonPatchError` when either document is not a JSON value.
++ */
++export function createPatch(from: unknown, to: unknown): JsonPatchOperation[] {
++  if (!isJsonValue(from) || !isJsonValue(to)) {
++    throw new JsonPatchError("cannot create a patch: both documents must be JSON values");
++  }
++  const operations: JsonPatchOperation[] = [];
++  diffValue(from, to, "", operations);
++  return structuredClone(operations);
++}
+diff --git a/test/json-patch-create.test.ts b/test/json-patch-create.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..b4b4eed1fe03dc7d057789477fb70c6af2440793
+--- /dev/null
++++ b/test/json-patch-create.test.ts
+@@ -0,0 +1,94 @@
++import { test } from "node:test";
++import assert from "node:assert/strict";
++import { applyPatch, createPatch, JsonPatchError } from "../src/index.ts";
++
++// Applying the patch to `from` must give `to`, whatever the shape of the documents.
++function assertRoundTrip(from: unknown, to: unknown) {
++  const patch = createPatch(from, to);
++  assert.deepEqual(applyPatch(from, patch), to);
++  return patch;
++}
++
++test("returns no operations for equal documents", () => {
++  assert.deepEqual(createPatch({ a: [1, { b: null }] }, { a: [1, { b: null }] }), []);
++  assert.deepEqual(createPatch({ a: 1, b: 2 }, { b: 2, a: 1 }), []);
++  assert.deepEqual(createPatch("x", "x"), []);
++});
++
++test("a single changed member yields a single small operation", () => {
++  const from = { id: 1, name: "a", payload: { big: [1, 2, 3, 4, 5, 6, 7, 8, 9] } };
++  const to = { id: 1, name: "b", payload: { big: [1, 2, 3, 4, 5, 6, 7, 8, 9] } };
++  assert.deepEqual(assertRoundTrip(from, to), [{ op: "replace", path: "/name", value: "b" }]);
++});
++
++test("a nested change is described at its own location", () => {
++  const from = { settings: { retries: 3, timeout: 10 } };
++  const to = { settings: { retries: 5, timeout: 10 } };
++  assert.deepEqual(assertRoundTrip(from, to), [{ op: "replace", path: "/settings/retries", value: 5 }]);
++});
++
++test("adds and removes object members", () => {
++  assert.deepEqual(assertRoundTrip({ a: 1 }, { a: 1, b: { c: true } }), [
++    { op: "add", path: "/b", value: { c: true } },
++  ]);
++  assert.deepEqual(assertRoundTrip({ a: 1, b: 2 }, { a: 1 }), [{ op: "remove", path: "/b" }]);
++});
++
++test("a single inserted or removed array element yields a single operation", () => {
++  assert.deepEqual(assertRoundTrip([1, 2, 3, 4], [1, 2, 9, 3, 4]), [{ op: "add", path: "/2", value: 9 }]);
++  assert.deepEqual(assertRoundTrip([1, 2, 3, 4], [1, 3, 4]), [{ op: "remove", path: "/1" }]);
++  assert.deepEqual(assertRoundTrip([1, 2], [0, 1, 2]), [{ op: "add", path: "/0", value: 0 }]);
++  assert.deepEqual(assertRoundTrip([1, 2], [1, 2, 3]), [{ op: "add", path: "/2", value: 3 }]);
++});
++
++test("array changes in several places are all found", () => {
++  assertRoundTrip([1, 2, 3, 4, 5], [0, 2, 3, 9]);
++  assertRoundTrip([{ id: 1 }, { id: 2 }], [{ id: 2 }, { id: 1 }]);
++  assertRoundTrip([], [1, [2]]);
++  assertRoundTrip([1, [2]], []);
++});
++
++test("changes to nested arrays of objects stay local", () => {
++  const from = { items: [{ id: 1, qty: 1 }, { id: 2, qty: 4 }, { id: 3, qty: 2 }] };
++  const to = { items: [{ id: 1, qty: 1 }, { id: 2, qty: 5 }, { id: 3, qty: 2 }] };
++  assert.deepEqual(assertRoundTrip(from, to), [{ op: "replace", path: "/items/1/qty", value: 5 }]);
++});
++
++test("a change of type replaces the value, including the whole document", () => {
++  assert.deepEqual(assertRoundTrip({ a: [1] }, { a: { b: 1 } }), [{ op: "replace", path: "/a", value: { b: 1 } }]);
++  assert.deepEqual(assertRoundTrip([1], null), [{ op: "replace", path: "", value: null }]);
++  assert.deepEqual(assertRoundTrip(null, { a: 1 }), [{ op: "replace", path: "", value: { a: 1 } }]);
++  assertRoundTrip({ a: 1 }, "text");
++});
++
++test("member names are escaped as JSON Pointer tokens", () => {
++  const from = { "a/b": 1, "c~d": 2 };
++  const to = { "a/b": 3, "c~d": 2, "e~/f": 4 };
++  assert.deepEqual(assertRoundTrip(from, to), [
++    { op: "replace", path: "/a~1b", value: 3 },
++    { op: "add", path: "/e~0~1f", value: 4 },
++  ]);
++});
++
++test("does not modify either input", () => {
++  const from = { a: [1, { b: 2 }], c: "x" };
++  const to = { a: [1, { b: 3 }, 4], d: { e: null } };
++  const fromCopy = structuredClone(from);
++  const toCopy = structuredClone(to);
++  createPatch(from, to);
++  assert.deepEqual(from, fromCopy);
++  assert.deepEqual(to, toCopy);
++});
++
++test("the patch shares no structure with the inputs", () => {
++  const to = { items: [{ id: 1 }] };
++  const patch = createPatch({}, to);
++  (to.items[0] as { id: number }).id = 99;
++  assert.deepEqual(patch, [{ op: "add", path: "/items", value: [{ id: 1 }] }]);
++});
++
++test("rejects values that are not JSON", () => {
++  assert.throws(() => createPatch({ a: undefined }, {}), JsonPatchError);
++  assert.throws(() => createPatch({}, { a: Number.NaN }), JsonPatchError);
++  assert.throws(() => createPatch(new Date(), {}), JsonPatchError);
++});

@@ -1,0 +1,140 @@
+diff --git a/src/index.ts b/src/index.ts
+index 32a8bbfba9506fd92996fb23b79bbc30492e0fd8..42244daef5fff602169d746fc436fc277b8caa67 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -29,10 +29,21 @@ export interface Booking extends Quote {
+   id: string;
+ }
+ 
++export interface AvailabilityQuery {
++  /** ISO-8601 UTC timestamp at midnight UTC. */
++  start: string;
++  /** ISO-8601 UTC timestamp at midnight UTC; the start of the day after the last rented day. */
++  end: string;
++  /** Only report equipment of this kind; any kind when omitted. */
++  kind?: EquipmentKind;
++}
++
+ export interface RentalService {
+   addEquipment(item: Equipment): void;
+   quote(request: RentalRequest): Quote;
+   book(request: RentalRequest): Booking;
++  /** Ids of the matching equipment that is free for the whole period, sorted. */
++  availability(query: AvailabilityQuery): string[];
+ }
+ 
+ const DAY_MS = 24 * 60 * 60 * 1000;
+@@ -63,6 +74,15 @@ function parseMidnightUtc(value: unknown, name: string): number {
+   return ms;
+ }
+ 
++function parsePeriod(start: unknown, end: unknown): { startMs: number; endMs: number } {
++  const startMs = parseMidnightUtc(start, 'start');
++  const endMs = parseMidnightUtc(end, 'end');
++  if (endMs <= startMs) {
++    throw new Error('end must be after start');
++  }
++  return { startMs, endMs };
++}
++
+ function validateEquipment(item: Equipment): void {
+   if (typeof item.id !== 'string' || item.id === '') {
+     throw new Error('equipment id must be a non-empty string');
+@@ -84,11 +104,7 @@ export function createRentalService(): RentalService {
+     if (item === undefined) {
+       throw new Error(`unknown item: ${request.itemId}`);
+     }
+-    const startMs = parseMidnightUtc(request.start, 'start');
+-    const endMs = parseMidnightUtc(request.end, 'end');
+-    if (endMs <= startMs) {
+-      throw new Error('end must be after start');
+-    }
++    const { startMs, endMs } = parsePeriod(request.start, request.end);
+     const days = (endMs - startMs) / DAY_MS;
+     return {
+       itemId: request.itemId,
+@@ -126,5 +142,26 @@ export function createRentalService(): RentalService {
+       bookings.push({ id, itemId: request.itemId, startMs, endMs });
+       return { id, ...quote };
+     },
++
++    availability(query) {
++      const { startMs, endMs } = parsePeriod(query.start, query.end);
++      if (query.kind !== undefined && !KINDS.includes(query.kind)) {
++        throw new Error(`equipment kind must be 'board' or 'sail'`);
++      }
++      const free: string[] = [];
++      for (const item of equipment.values()) {
++        if (query.kind !== undefined && item.kind !== query.kind) {
++          continue;
++        }
++        // Same half-open rule as book, so a period ending at midnight does not block one starting then.
++        const clash = bookings.some(
++          (b) => b.itemId === item.id && startMs < b.endMs && b.startMs < endMs,
++        );
++        if (!clash) {
++          free.push(item.id);
++        }
++      }
++      return free.sort();
++    },
+   };
+ }
+diff --git a/test/rental.test.ts b/test/rental.test.ts
+index e1dbd89dcb1e3c736d88572d0b1e85ab7e7fa59e..e087b8825fa9eb0db2786c141addcf7987fb6851 100644
+--- a/test/rental.test.ts
++++ b/test/rental.test.ts
+@@ -142,3 +142,53 @@ describe('book', () => {
+     assert.doesNotThrow(() => service.book({ itemId: 'board-1', start: '2026-07-01', end: '2026-07-02' }));
+   });
+ });
++
++describe('availability', () => {
++  test('lists every item when no kind is given, sorted', () => {
++    const service = setup();
++    service.addEquipment({ id: 'a-board', kind: 'board', dailyPrice: 100 });
++    assert.deepEqual(service.availability({ start: '2026-07-01', end: '2026-07-02' }), [
++      'a-board',
++      'board-1',
++      'sail-1',
++    ]);
++  });
++
++  test('filters by kind', () => {
++    const service = setup();
++    assert.deepEqual(service.availability({ start: '2026-07-01', end: '2026-07-02', kind: 'sail' }), ['sail-1']);
++    assert.deepEqual(service.availability({ start: '2026-07-01', end: '2026-07-02', kind: 'board' }), ['board-1']);
++  });
++
++  test('leaves out equipment booked for any part of the period', () => {
++    const service = setup();
++    service.book({ itemId: 'board-1', start: '2026-07-03', end: '2026-07-05' });
++    assert.deepEqual(service.availability({ start: '2026-07-01', end: '2026-07-04', kind: 'board' }), []);
++    assert.deepEqual(service.availability({ start: '2026-07-04', end: '2026-07-06', kind: 'board' }), []);
++    assert.deepEqual(service.availability({ start: '2026-06-01', end: '2026-07-03', kind: 'board' }), ['board-1']);
++    assert.deepEqual(service.availability({ start: '2026-07-05', end: '2026-07-06', kind: 'board' }), ['board-1']);
++  });
++
++  test('ignores bookings of other items', () => {
++    const service = setup();
++    service.book({ itemId: 'sail-1', start: '2026-07-01', end: '2026-07-04' });
++    assert.deepEqual(service.availability({ start: '2026-07-01', end: '2026-07-04' }), ['board-1']);
++  });
++
++  test('returns an empty list when nothing is free', () => {
++    const service = createRentalService();
++    assert.deepEqual(service.availability({ start: '2026-07-01', end: '2026-07-02' }), []);
++  });
++
++  test('throws for an invalid period', () => {
++    const service = setup();
++    assert.throws(() => service.availability({ start: '2026-07-02', end: '2026-07-02' }), /end must be after start/);
++    assert.throws(() => service.availability({ start: '2026-07-01T06:00:00Z', end: '2026-07-02' }));
++    assert.throws(() => service.availability({ start: '2026-02-30', end: '2026-03-01' }));
++  });
++
++  test('throws for an unknown kind', () => {
++    const service = setup();
++    assert.throws(() => service.availability({ start: '2026-07-01', end: '2026-07-02', kind: 'kite' as never }));
++  });
++});

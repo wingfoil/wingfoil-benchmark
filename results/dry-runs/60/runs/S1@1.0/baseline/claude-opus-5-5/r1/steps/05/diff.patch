@@ -1,0 +1,348 @@
+diff --git a/README.md b/README.md
+index 462d12f1e4a4ff0c63e0a51e768154e483c65755..29e7fdc25f7f111be8ec66f93d6d4ce44099fb62 100644
+--- a/README.md
++++ b/README.md
+@@ -52,6 +52,23 @@ other projects of the team, so its behaviour must follow the published standards
+ - Choices where the RFC is silent: `remove` of the root (`""`) fails; `move` with `from` equal to
+   `path` is a no-op (the target must still exist), including `from: ""` to `path: ""`.
+ 
++### JSON Patch generation
++
++- `createPatch(from, to)` returns a JSON Patch (an array of `add`, `remove` and `replace` operations)
++  that turns `from` into `to` with `applyPatch`. It never mutates its arguments, and the patch shares no
++  object or array with them. `TypeError` if either is not JSON (including array holes and cycles).
++- Only what differs is described; equal documents (JSON equality, as for `test`) give `[]`:
++  - objects are compared member by member, recursively: removed members get a `remove`, new ones an
++    `add`, changed ones are diffed in turn;
++  - arrays are aligned on a longest common subsequence of their elements (Myers' diff), so inserting or
++    removing an element does not rewrite the following ones. Between kept elements, removed and inserted
++    elements are paired and diffed in place, the rest are removed or added. Paths use the indices of the
++    array as modified by the previous operations. Beyond 2000 differing elements in one array, elements
++    are paired by position instead, to bound the work;
++  - a value whose type changes (or a scalar that changes) gets a `replace`, as does a container of
++    which nothing is kept when a single `replace` is shorter than the operations rewriting it.
++- No `move`, `copy` or `test` operations are produced.
++
+ ### JSON Merge Patch (RFC 7386)
+ 
+ - `applyMergePatch(target, patch)` applies a merge patch and returns the merged document as a new
+diff --git a/src/index.ts b/src/index.ts
+index 0f3254544c2a4e4b2c56dda24abe1b23378a2469..e29aaa82d7cab5b273571790f09c76fac7691326 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -429,3 +429,189 @@ export function applyMergePatch(target: unknown, patch: unknown): JsonValue {
+   const patchCopy = cloneJson(patch, "patch");
+   return mergePatch(cloneJson(target, "target"), patchCopy);
+ }
++
++/**
++ * JSON Patch generation: computes a JSON Patch (RFC 6902) that turns one document into another.
++ *
++ * Objects are compared member by member and arrays element by element (aligned on their longest
++ * common subsequence), so only what changed is described. A container is replaced as a whole only
++ * when nothing of it is kept and a single "replace" is shorter than the operations rewriting it.
++ */
++
++/** Beyond this many differing elements, arrays are aligned by position instead (bounds the work of Myers' diff). */
++const MAX_ARRAY_EDITS = 2000;
++
++function operationsSize(operations: readonly PatchOperation[]): number {
++  return JSON.stringify(operations).length;
++}
++
++/**
++ * Appends to `out` the operations turning `from` into `to` at `path`; both are copies owned by the patch.
++ * Returns true if the value was replaced as a whole (nothing of `from` is kept).
++ */
++function diffValues(from: JsonValue, to: JsonValue, path: string[], out: PatchOperation[]): boolean {
++  if (jsonEqual(from, to)) return false;
++  const replacement: PatchOperation = { op: "replace", path: formatPointer(path), value: to };
++  const bothArrays = Array.isArray(from) && Array.isArray(to);
++  if (!bothArrays && !(isObject(from) && isObject(to))) {
++    out.push(replacement);
++    return true;
++  }
++  const changes: PatchOperation[] = [];
++  const kept = bothArrays
++    ? diffArrays(from as JsonValue[], to as JsonValue[], path, changes)
++    : diffObjects(from as Record<string, JsonValue>, to as Record<string, JsonValue>, path, changes);
++  if (!kept && operationsSize(changes) > operationsSize([replacement])) {
++    out.push(replacement);
++    return true;
++  }
++  out.push(...changes);
++  return false;
++}
++
++/** Diffs two objects member by member. Returns true if some member of `from` is kept, at least in part. */
++function diffObjects(from: Record<string, JsonValue>, to: Record<string, JsonValue>, path: string[], out: PatchOperation[]): boolean {
++  let kept = false;
++  for (const key of Object.keys(from)) {
++    if (!hasOwn(to, key)) out.push({ op: "remove", path: formatPointer([...path, key]) });
++  }
++  for (const key of Object.keys(to)) {
++    if (hasOwn(from, key)) {
++      if (!diffValues(from[key], to[key], [...path, key], out)) kept = true;
++    } else {
++      out.push({ op: "add", path: formatPointer([...path, key]), value: to[key] });
++    }
++  }
++  return kept;
++}
++
++/**
++ * Aligns the arrays on their longest common subsequence (after trimming common ends). Between two kept
++ * elements, removed and inserted elements are paired up and diffed in place; the rest are removed or
++ * added. Indices are those of the array as modified by the preceding operations.
++ * Returns true if some element of `from` is kept, at least in part.
++ */
++function diffArrays(from: JsonValue[], to: JsonValue[], path: string[], out: PatchOperation[]): boolean {
++  let start = 0;
++  while (start < from.length && start < to.length && jsonEqual(from[start], to[start])) start++;
++  let fromEnd = from.length;
++  let toEnd = to.length;
++  while (fromEnd > start && toEnd > start && jsonEqual(from[fromEnd - 1], to[toEnd - 1])) {
++    fromEnd--;
++    toEnd--;
++  }
++  const a = from.slice(start, fromEnd);
++  const b = to.slice(start, toEnd);
++
++  // Matched pairs [i, j] of a and b, in order (a sentinel at the ends is added below).
++  const matches = commonSubsequence(a, b);
++  let kept = start > 0 || fromEnd < from.length || matches.length > 0;
++  matches.push([a.length, b.length]);
++
++  let index = start;
++  let i = 0;
++  let j = 0;
++  for (const [nextI, nextJ] of matches) {
++    const paired = Math.min(nextI - i, nextJ - j);
++    for (let k = 0; k < paired; k++) {
++      if (!diffValues(a[i + k], b[j + k], [...path, String(index++)], out)) kept = true;
++    }
++    for (let k = paired; k < nextI - i; k++) {
++      out.push({ op: "remove", path: formatPointer([...path, String(index)]) });
++    }
++    for (let k = paired; k < nextJ - j; k++) {
++      out.push({ op: "add", path: formatPointer([...path, String(index++)]), value: b[j + k] });
++    }
++    index++; // the matched element itself (or past the end, for the sentinel)
++    i = nextI + 1;
++    j = nextJ + 1;
++  }
++  return kept;
++}
++
++/** A string that is the same for two JSON values exactly when they are JSON-equal (members sorted). */
++function canonicalJson(value: JsonValue): string {
++  if (Array.isArray(value)) return "[" + value.map(canonicalJson).join(",") + "]";
++  if (isObject(value)) {
++    return "{" + Object.keys(value).sort().map((key) => JSON.stringify(key) + ":" + canonicalJson(value[key])).join(",") + "}";
++  }
++  return JSON.stringify(value);
++}
++
++/**
++ * Pairs [i, j] of equal elements a[i] and b[j] forming a longest common subsequence, by Myers' O((N+M)D)
++ * algorithm ("An O(ND) Difference Algorithm and Its Variations", 1986). Returns [] (no alignment) when
++ * more than MAX_ARRAY_EDITS elements differ.
++ */
++function commonSubsequence(a: readonly JsonValue[], b: readonly JsonValue[]): [number, number][] {
++  const n = a.length;
++  const m = b.length;
++  if (n === 0 || m === 0) return [];
++  // Elements are compared through small integer ids: equal ids exactly when the values are JSON-equal.
++  const ids = new Map<string, number>();
++  const id = (value: JsonValue) => {
++    const key = canonicalJson(value);
++    let result = ids.get(key);
++    if (result === undefined) ids.set(key, (result = ids.size));
++    return result;
++  };
++  const x = a.map(id);
++  const y = b.map(id);
++
++  const maxEdits = Math.min(n + m, MAX_ARRAY_EDITS);
++  const offset = maxEdits + 1;
++  // v[k + offset]: furthest x reached on diagonal k (x - y = k). trace[d]: v before step d.
++  const v = new Int32Array(2 * offset + 1);
++  const trace: Int32Array[] = [];
++  let found = false;
++  for (let d = 0; d <= maxEdits && !found; d++) {
++    trace.push(v.slice(offset - d, offset + d + 2));
++    for (let k = -d; k <= d; k += 2) {
++      let i = k === -d || (k !== d && v[offset + k - 1] < v[offset + k + 1]) ? v[offset + k + 1] : v[offset + k - 1] + 1;
++      let j = i - k;
++      while (i < n && j < m && x[i] === y[j]) {
++        i++;
++        j++;
++      }
++      v[offset + k] = i;
++      if (i >= n && j >= m) {
++        found = true;
++        break;
++      }
++    }
++  }
++  if (!found) return [];
++
++  // Walk back from (n, m) through the saved states, collecting the diagonal (matching) moves.
++  const matches: [number, number][] = [];
++  let i = n;
++  let j = m;
++  for (let d = trace.length - 1; d >= 0; d--) {
++    const saved = trace[d]; // saved[k + d] = v[k] before step d
++    const at = (k: number) => saved[k + d];
++    const k = i - j;
++    const fromAbove = d > 0 && (k === -d || (k !== d && at(k - 1) < at(k + 1)));
++    const prevK = d === 0 ? 0 : fromAbove ? k + 1 : k - 1;
++    const startI = d === 0 ? 0 : fromAbove ? at(prevK) : at(prevK) + 1;
++    const startJ = startI - k;
++    while (i > startI && j > startJ) matches.push([--i, --j]);
++    if (d > 0) {
++      i = at(prevK);
++      j = i - prevK;
++    }
++  }
++  return matches.reverse();
++}
++
++/**
++ * Returns a JSON Patch that turns `from` into `to` when applied with applyPatch. Neither argument is
++ * modified, and the patch shares no object or array with them. Only what differs is described:
++ * equal documents give an empty patch. Throws a TypeError if `from` or `to` is not JSON.
++ */
++export function createPatch(from: unknown, to: unknown): PatchOperation[] {
++  const source = cloneJson(from, "from");
++  const target = cloneJson(to, "to");
++  const patch: PatchOperation[] = [];
++  diffValues(source, target, [], patch);
++  return patch;
++}
+diff --git a/test/create-patch.test.ts b/test/create-patch.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..75b404a46a1ea694d1fa28d0eb1973cf1ba39fb9
+--- /dev/null
++++ b/test/create-patch.test.ts
+@@ -0,0 +1,120 @@
++import { test } from "node:test";
++import assert from "node:assert/strict";
++import { applyPatch, createPatch } from "../src/index.ts";
++
++function roundTrip(from: unknown, to: unknown) {
++  const patch = createPatch(from, to);
++  assert.deepStrictEqual(applyPatch(from, patch), to);
++  return patch;
++}
++
++test("equal documents give an empty patch", () => {
++  assert.deepStrictEqual(createPatch({ a: [1, { b: null }] }, { a: [1, { b: null }] }), []);
++  assert.deepStrictEqual(createPatch({ a: 1, b: 2 }, { b: 2, a: 1 }), []);
++  assert.deepStrictEqual(createPatch(null, null), []);
++});
++
++test("a change deep inside a large document gives a single small operation", () => {
++  const items = Array.from({ length: 1000 }, (_, i) => ({ id: i, name: `item ${i}`, tags: ["x", "y"] }));
++  const from = { meta: { version: 1 }, items };
++  const to = structuredClone(from);
++  to.items[500].tags[1] = "z";
++  assert.deepStrictEqual(roundTrip(from, to), [{ op: "replace", path: "/items/500/tags/1", value: "z" }]);
++});
++
++test("object members are added, removed and replaced individually", () => {
++  assert.deepStrictEqual(roundTrip({ a: 1, b: 2, c: { d: 3 } }, { a: 1, c: { d: 4 }, e: 5 }), [
++    { op: "remove", path: "/b" },
++    { op: "replace", path: "/c/d", value: 4 },
++    { op: "add", path: "/e", value: 5 },
++  ]);
++});
++
++test("array insertions and removals do not rewrite the following elements", () => {
++  const from = Array.from({ length: 100 }, (_, i) => ({ id: i }));
++  const inserted = [...from.slice(0, 10), { id: -1 }, ...from.slice(10)];
++  assert.deepStrictEqual(roundTrip(from, inserted), [{ op: "add", path: "/10", value: { id: -1 } }]);
++  const removed = [...from.slice(0, 10), ...from.slice(11)];
++  assert.deepStrictEqual(roundTrip(from, removed), [{ op: "remove", path: "/10" }]);
++  assert.deepStrictEqual(roundTrip([1, 2], [1, 2, 3]), [{ op: "add", path: "/2", value: 3 }]);
++  assert.deepStrictEqual(roundTrip([1, 2, 3, 4], [2, 4]), [{ op: "remove", path: "/0" }, { op: "remove", path: "/1" }]);
++});
++
++test("a value whose type changes, or the root, is replaced", () => {
++  assert.deepStrictEqual(roundTrip({ a: [1] }, { a: { 0: 1 } }), [{ op: "replace", path: "/a", value: { 0: 1 } }]);
++  assert.deepStrictEqual(roundTrip({ a: 1 }, [1]), [{ op: "replace", path: "", value: [1] }]);
++  assert.deepStrictEqual(roundTrip(1, "1"), [{ op: "replace", path: "", value: "1" }]);
++  assert.deepStrictEqual(roundTrip({ a: 1 }, { a: null }), [{ op: "replace", path: "/a", value: null }]);
++});
++
++test("a completely different container is replaced rather than rewritten member by member", () => {
++  assert.deepStrictEqual(roundTrip({ x: { a: 1, b: 2, c: 3 } }, { x: { d: 4 } }), [
++    { op: "replace", path: "/x", value: { d: 4 } },
++  ]);
++});
++
++test("member names needing escapes, and __proto__, are handled", () => {
++  const from = JSON.parse('{"a/b": 1, "m~n": 2, "__proto__": {"x": 1}}');
++  const to = JSON.parse('{"a/b": 2, "__proto__": {"x": 2}, "": 3}');
++  const patch = roundTrip(from, to);
++  assert.deepStrictEqual(patch, [
++    { op: "remove", path: "/m~0n" },
++    { op: "replace", path: "/a~1b", value: 2 },
++    { op: "replace", path: "/__proto__/x", value: 2 },
++    { op: "add", path: "/", value: 3 },
++  ]);
++  assert.equal(Object.getPrototypeOf(applyPatch(from, patch)), Object.prototype);
++});
++
++test("inputs are not mutated and the patch shares nothing with them", () => {
++  const from = { a: [1, 2], b: { c: 1 } };
++  const to = { a: [1, 2, { d: [3] }], b: { c: 1 }, e: { f: 1 } };
++  const before = structuredClone([from, to]);
++  const patch = createPatch(from, to);
++  assert.deepStrictEqual([from, to], before);
++  const values = patch.map((op) => ("value" in op ? op.value : undefined));
++  assert.notEqual(values[0], to.a[2]);
++  assert.notEqual(values[1], to.e);
++  (values[0] as { d: number[] }).d.push(4);
++  assert.deepStrictEqual(to.a[2], { d: [3] });
++});
++
++test("non-JSON input throws a TypeError", () => {
++  assert.throws(() => createPatch({ a: undefined }, {}), TypeError);
++  assert.throws(() => createPatch({}, [1, , 2]), TypeError);
++  assert.throws(() => createPatch(NaN, 1), TypeError);
++  const cyclic: Record<string, unknown> = {};
++  cyclic.self = cyclic;
++  assert.throws(() => createPatch({}, cyclic), TypeError);
++});
++
++test("random documents round-trip", () => {
++  let seed = 42;
++  const random = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
++  const pick = <T>(list: T[]) => list[Math.floor(random() * list.length)];
++  const generate = (depth: number): unknown => {
++    const kind = depth > 3 ? 0 : Math.floor(random() * 3);
++    if (kind === 0) return pick([null, true, false, 0, 1, 2, "a", "b", ""]);
++    const size = Math.floor(random() * 5);
++    if (kind === 1) return Array.from({ length: size }, () => generate(depth + 1));
++    return Object.fromEntries(Array.from({ length: size }, () => [pick(["a", "b", "c", "d", "~/"]), generate(depth + 1)]));
++  };
++  for (let n = 0; n < 2000; n++) {
++    const from = generate(0);
++    const to = generate(0);
++    roundTrip(from, to);
++    roundTrip(to, from);
++  }
++});
++
++test("long arrays with scattered changes give one operation per change", () => {
++  const from = Array.from({ length: 3000 }, (_, i) => ({ id: i, v: [i, "x"] }));
++  const to = from.filter((_, i) => i % 7 !== 0).map((x, i) => (i % 5 === 0 ? { ...x, v: [x.id, "y"] } : x));
++  const patch = roundTrip(from, to);
++  const removed = from.length - to.length;
++  const changed = Math.ceil(to.length / 5);
++  // A removed element next to a changed one may be paired with it: one replace of that element.
++  assert.ok(patch.length <= removed + changed, `${patch.length} operations`);
++  assert.ok(patch.length >= removed);
++  assert.ok(patch.every((op) => op.op === "remove" || (op.op === "replace" && /^\/\d+(\/v\/1)?$/.test(op.path))));
++});

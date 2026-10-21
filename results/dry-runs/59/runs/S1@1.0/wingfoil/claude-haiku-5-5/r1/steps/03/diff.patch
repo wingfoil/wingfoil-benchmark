@@ -1,0 +1,210 @@
+diff --git a/docs/memory/decision-log/dl-005-patch-values-must-be-json-values-checked-deeply-so-invalid-values-are-rejected-before-any-operation-runs.md b/docs/memory/decision-log/dl-005-patch-values-must-be-json-values-checked-deeply-so-invalid-values-are-rejected-before-any-operation-runs.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..c8b87272bf800edcbf38570a58e3a51332fed2dc
+--- /dev/null
++++ b/docs/memory/decision-log/dl-005-patch-values-must-be-json-values-checked-deeply-so-invalid-values-are-rejected-before-any-operation-runs.md
+@@ -0,0 +1,31 @@
++---
++id: dl-005-patch-values-must-be-json-values-checked-deeply-so-invalid-values-are-rejected-before-any-operation-runs
++type: decision-log
++title: "Patch values must be JSON values, checked deeply, so invalid values are rejected before any operation runs"
++status: approved
++format: 1
++---
++
++## Context
++
++RFC 6902 defines a patch as a JSON document, so the `value` of an operation must be a JSON value. dl-003
++checks only that `value` is present, and the implementation accepts `undefined`, `NaN`, `Infinity`,
++functions, `Date` objects and sparse arrays as values. Each of them is stored in the result, where it is
++not JSON and does not survive serialization. Users report that such patches are accepted, which the
++standard does not allow.
++
++This supersedes the sentence in dl-003 that says deep validation of `value` was not added.
++
++## Decision
++
++The `value` of `add`, `replace` and `test` is checked deeply during patch validation, before any
++operation runs. It must be a JSON value: `null`, a boolean, a finite number, a string, an array whose
++elements are all JSON values (no holes), or a plain object whose own members are all JSON values. Any
++other value throws, and the message names the operation index.
++
++## Consequences
++
++- An invalid value is rejected even when its operation would run last, as dl-003 already requires for
++  other invalid operations.
++- Validating a large value costs a walk over it, in addition to the copy made by dl-004.
++- Callers that build patches in code must pass JSON values; `undefined` no longer means "absent".
+diff --git a/docs/memory/task/task-003-conform-applypatch-validation-and-errors-to-rfc-6902.md b/docs/memory/task/task-003-conform-applypatch-validation-and-errors-to-rfc-6902.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..aa95d0db6124ab2f595bf942afa3fea3e809f13a
+--- /dev/null
++++ b/docs/memory/task/task-003-conform-applypatch-validation-and-errors-to-rfc-6902.md
+@@ -0,0 +1,39 @@
++---
++id: task-003-conform-applypatch-validation-and-errors-to-rfc-6902
++type: task
++title: "Conform applyPatch validation and errors to RFC 6902"
++status: approved
++format: 1
++---
++
++## Request
++
++Users of `applyPatch` report that some patches they consider invalid are accepted, that some edge cases
++give unexpected results, and that a failing patch does not always behave as the standard reads. Review how
++patches are checked and applied, and make the behaviour conform to RFC 6902 in every case, errors included.
++
++## Work done
++
++Probed `applyPatch` with inputs outside the standard in a scratch directory. These were accepted, although
++RFC 6902 does not allow them:
++
++- `value` set to `undefined`, `NaN`, `Infinity`, a function or a `Date` (dl-003 checks presence only).
++- A sparse patch array such as `[ , op]`: `map` and `reduce` skip the hole, so it is accepted silently
++  (dl-003 requires each operation to be an object).
++- An operation whose `op`, `path` or `from` is inherited rather than an own member.
++- A sparse array used as a `value`, whose holes survive into the result.
++
++Plan:
++
++- Done: holes and inherited members are rejected (red-first tests, then `Array.from` and `ownMember` in
++  `src/index.ts`).
++- Done after dl-005 was approved: `value` is checked deeply by `isJsonValue`, during validation, so
++  `undefined`, non-finite numbers, functions, non-plain objects and holes throw. Red-first tests were added
++  first.
++- `npm test`: 60 pass, 0 fail. No TypeScript compiler is installed, so `tsc --noEmit` was not run; a Node
++  syntax check passed.
++
++## Open points
++
++- `move` onto its own location reorders object members (`{a,b}` becomes `{b,a}`). The result is equal as
++  JSON, so it is left as it is.
+diff --git a/src/index.ts b/src/index.ts
+index b44f32a1bbfa8dad1dc954e5edb3c22ab6cfa5df..aaacddafb94dace0066762a7cb1b44a67b0c4e4f 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -67,13 +67,46 @@ export type JsonPatch = JsonPatchOperation[];
+ 
+ const OPERATION_NAMES: readonly string[] = ["add", "remove", "replace", "move", "copy", "test"];
+ 
++/**
++ * Whether `value` is a JSON value (RFC 8259): null, a boolean, a finite number, a string, an array of
++ * JSON values without holes, or a plain object whose members are JSON values.
++ */
++function isJsonValue(value: unknown): value is JsonValue {
++  if (value === null || typeof value === "string" || typeof value === "boolean") {
++    return true;
++  }
++  if (typeof value === "number") {
++    return Number.isFinite(value);
++  }
++  if (Array.isArray(value)) {
++    // Array.from turns a hole into undefined, which is not a JSON value.
++    return Array.from(value).every(isJsonValue);
++  }
++  if (typeof value === "object") {
++    const prototype = Object.getPrototypeOf(value);
++    const fields = value as Record<string, unknown>;
++    return (
++      (prototype === Object.prototype || prototype === null) &&
++      Object.keys(fields).every((key) => isJsonValue(fields[key]))
++    );
++  }
++  return false;
++}
++
++/** Returns the own member `name` of `fields`, or undefined: a JSON object has no inherited members. */
++function ownMember(fields: Record<string, unknown>, name: string): unknown {
++  return Object.hasOwn(fields, name) ? fields[name] : undefined;
++}
++
+ /** Checks that `operation` is a well-formed JSON Patch operation (RFC 6902, section 4). */
+ function parseOperation(operation: unknown, index: number): JsonPatchOperation {
+   if (typeof operation !== "object" || operation === null || Array.isArray(operation)) {
+     throw new Error(`invalid JSON Patch: operation ${index} is not an object`);
+   }
+   const fields = operation as Record<string, unknown>;
+-  const { op, path, from } = fields;
++  const op = ownMember(fields, "op");
++  const path = ownMember(fields, "path");
++  const from = ownMember(fields, "from");
+   if (typeof op !== "string" || !OPERATION_NAMES.includes(op)) {
+     throw new Error(`invalid JSON Patch: operation ${index} has an unknown "op"`);
+   }
+@@ -95,7 +128,11 @@ function parseOperation(operation: unknown, index: number): JsonPatchOperation {
+   if (!Object.hasOwn(fields, "value")) {
+     throw new Error(`invalid JSON Patch: operation ${index} (${op}) needs a "value"`);
+   }
+-  return { op: name, path, value: fields.value as JsonValue };
++  const value = fields.value;
++  if (!isJsonValue(value)) {
++    throw new Error(`invalid JSON Patch: operation ${index} (${op}) has a "value" that is not JSON`);
++  }
++  return { op: name, path, value };
+ }
+ 
+ /** Returns a copy of `value` that shares no arrays or objects with it. */
+@@ -258,6 +295,7 @@ export function applyPatch(document: JsonValue, patch: JsonPatch): JsonValue {
+   if (!Array.isArray(patch)) {
+     throw new Error("invalid JSON Patch: the patch must be an array of operations");
+   }
+-  const operations = patch.map(parseOperation);
++  // Array.from, unlike map, visits a hole as undefined, so a hole is rejected rather than skipped.
++  const operations = Array.from(patch, parseOperation);
+   return operations.reduce<JsonValue>(applyOperation, clone(document));
+ }
+diff --git a/test/apply-patch.test.ts b/test/apply-patch.test.ts
+index d8b8211ce3962a1233ec7ff68dfbe4dee0336629..0b08402153e8df0653532c0455572ac57f0de983 100644
+--- a/test/apply-patch.test.ts
++++ b/test/apply-patch.test.ts
+@@ -214,6 +214,16 @@ test("throws when an operation is not an object", () => {
+   assert.throws(() => applyPatch({}, [null] as never), Error);
+ });
+ 
++test("throws when the patch has a hole, which is not an operation", () => {
++  assert.throws(() => applyPatch({ a: 1 }, [, { op: "remove", path: "/a" }] as never), Error);
++  assert.throws(() => applyPatch({ a: 1 }, [,] as never), Error);
++});
++
++test("throws when an operation member is inherited rather than an own member", () => {
++  const operation = Object.create({ op: "remove", path: "/a" });
++  assert.throws(() => applyPatch({ a: 1 }, [operation]), Error);
++});
++
+ test("throws when path is missing or not a valid JSON Pointer", () => {
+   assert.throws(() => applyPatch({}, [{ op: "add", value: 1 }] as never), Error);
+   assert.throws(() => applyPatch({ a: 1 }, [{ op: "remove", path: "a" }]), Error);
+@@ -230,6 +240,32 @@ test("accepts a null value", () => {
+   assert.deepEqual(applyPatch({}, [{ op: "add", path: "/a", value: null }]), { a: null });
+ });
+ 
++test("accepts nested JSON values, including empty arrays and objects", () => {
++  assert.deepEqual(
++    applyPatch({}, [{ op: "add", path: "/a", value: { b: [1, "x", true, null, {}, []], c: -0.5 } }]),
++    { a: { b: [1, "x", true, null, {}, []], c: -0.5 } },
++  );
++});
++
++test("throws when a value is undefined, at the top level or inside a value", () => {
++  assert.throws(() => applyPatch({}, [{ op: "add", path: "/a", value: undefined }] as never), Error);
++  assert.throws(() => applyPatch({ a: 1 }, [{ op: "replace", path: "/a", value: undefined }] as never), Error);
++  assert.throws(() => applyPatch({ a: 1 }, [{ op: "test", path: "/a", value: undefined }] as never), Error);
++  assert.throws(() => applyPatch({}, [{ op: "add", path: "/a", value: { b: undefined } }] as never), Error);
++  assert.throws(() => applyPatch({}, [{ op: "add", path: "/a", value: [undefined] }] as never), Error);
++});
++
++test("throws when a value is not finite, or is a function or a non-plain object", () => {
++  assert.throws(() => applyPatch({}, [{ op: "add", path: "/a", value: NaN }]), Error);
++  assert.throws(() => applyPatch({}, [{ op: "add", path: "/a", value: Infinity }]), Error);
++  assert.throws(() => applyPatch({}, [{ op: "add", path: "/a", value: () => 1 }] as never), Error);
++  assert.throws(() => applyPatch({}, [{ op: "add", path: "/a", value: new Date(0) }] as never), Error);
++});
++
++test("throws when a value array has a hole", () => {
++  assert.throws(() => applyPatch({}, [{ op: "add", path: "/a", value: [, 1] }] as never), Error);
++});
++
+ test("throws when move or copy has no from", () => {
+   assert.throws(() => applyPatch({ a: 1 }, [{ op: "move", path: "/b" }] as never), Error);
+   assert.throws(() => applyPatch({ a: 1 }, [{ op: "copy", path: "/b" }] as never), Error);

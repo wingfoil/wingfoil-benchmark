@@ -1,0 +1,287 @@
+diff --git a/README.md b/README.md
+index 53a37097d7fdf58592aed55924687537deb9232f..9617e36e662e15b5d0be86e0737c0fb20e01a199 100644
+--- a/README.md
++++ b/README.md
+@@ -33,17 +33,21 @@ other projects of the team, so its behaviour must follow the published standards
+   `patch`, and the result shares no object or array with either. If anything fails, it throws and
+   nothing is returned (the patch is all-or-nothing).
+ - Errors (all extend `Error`):
+-  - `InvalidPatchError`: the patch is malformed: not an array, an operation that is not an object,
+-    unknown or missing `op`, missing or non-string `path`/`from`, invalid pointer syntax, missing
+-    `value` (a `null` value is fine), or a `value` that is not JSON (`undefined`, `NaN`, functions...).
+-    The whole patch is checked before any operation runs. `index` gives the offending operation.
++  - `InvalidPatchError`: the patch is malformed: not an array, an operation that is not a plain object
++    (including a hole in a sparse patch array, or a class instance), unknown or missing `op`, missing or
++    non-string `path`/`from`, invalid pointer syntax, missing `value` (a `null` value is fine), a
++    `value` that is not JSON (`undefined`, `NaN`, functions, array holes, cycles...), or a `move` whose
++    `from` is a proper prefix of its `path` (moving a value into its own child, RFC 6902 section 4.4).
++    Only own members of an operation count. The whole patch is checked before any operation runs, so a
++    malformed operation is reported even when an earlier one would fail. `index` gives the offending
++    operation.
+   - `PatchOperationError`: an operation cannot be applied (target or parent missing, array index out
+-    of bounds or not an index, `-` outside `add`, moving a value into its own child, removing the
+-    root). `index` gives the failing operation.
++    of bounds or not an index, `-` outside `add`, removing the root). `index` gives the failing
++    operation.
+   - `PatchTestFailedError` (a `PatchOperationError`): a `test` found a different value. Equality is
+     JSON equality: same type, objects compared regardless of member order, arrays element by element.
+-  - `TypeError` if `document` itself contains non-JSON values.
++  - `TypeError` if `document` itself contains non-JSON values (including array holes and cycles).
+ - Unknown operation members are ignored (RFC 6902 section 4). Object members are always set as own
+   properties, so `/__proto__` is an ordinary member and cannot change prototypes.
+ - Choices where the RFC is silent: `remove` of the root (`""`) fails; `move` with `from` equal to
+-  `path` is a no-op (the target must still exist).
++  `path` is a no-op (the target must still exist), including `from: ""` to `path: ""`.
+diff --git a/src/index.ts b/src/index.ts
+index 7af70799d0abda5f804c65101b72b1b82cc71ef7..0f8d9d6f719a09938029ba9259fed3207f73fbf8 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -63,6 +63,17 @@ function isObject(value: unknown): value is Record<string, unknown> {
+   return typeof value === "object" && value !== null && !Array.isArray(value);
+ }
+ 
++/** An object as JSON knows it: a plain object (or one without prototype), not a Date, Map, class instance... */
++function isPlainObject(value: unknown): value is Record<string, unknown> {
++  if (!isObject(value)) return false;
++  const proto = Object.getPrototypeOf(value);
++  return proto === Object.prototype || proto === null;
++}
++
++function hasOwn(object: object, key: string): boolean {
++  return Object.prototype.hasOwnProperty.call(object, key);
++}
++
+ /**
+  * Returns the value of `document` that `pointer` refers to.
+  * Throws InvalidPointerError if `pointer` is not a valid JSON Pointer, and
+@@ -85,7 +96,7 @@ export function resolvePointer(document: unknown, pointer: string): unknown {
+       current = current[index];
+     } else if (isObject(current)) {
+       // Own properties only: "__proto__", "constructor"... must not reach the prototype chain.
+-      if (!Object.prototype.hasOwnProperty.call(current, token)) {
++      if (!hasOwn(current, token)) {
+         throw new UnresolvablePointerError(pointer, `member ${JSON.stringify(token)} not found at ${at()}`);
+       }
+       current = current[token];
+@@ -164,25 +175,35 @@ function setMember(object: Record<string, unknown>, key: string, value: unknown)
+   Object.defineProperty(object, key, { value, writable: true, enumerable: true, configurable: true });
+ }
+ 
+-/** Deep copy of a JSON value. Throws TypeError (with the location) for anything that is not JSON. */
+-function cloneJson(value: unknown, where: string): JsonValue {
++/**
++ * Deep copy of a JSON value. Throws TypeError (with the location) for anything that is not JSON,
++ * including array holes and cyclic structures. `ancestors` holds the containers being copied.
++ */
++function cloneJson(value: unknown, where: string, ancestors: Set<object> = new Set()): JsonValue {
+   if (value === null || typeof value === "boolean" || typeof value === "string") return value;
+   if (typeof value === "number") {
+     if (!Number.isFinite(value)) throw new TypeError(`${where} is not a JSON value (non-finite number)`);
+     return value;
+   }
+-  if (Array.isArray(value)) {
+-    return value.map((item, i) => cloneJson(item, `${where}/${i}`));
+-  }
+-  if (typeof value === "object") {
+-    const proto = Object.getPrototypeOf(value);
+-    if (proto === Object.prototype || proto === null) {
+-      const copy: Record<string, JsonValue> = {};
++  if (Array.isArray(value) || isPlainObject(value)) {
++    if (ancestors.has(value)) throw new TypeError(`${where} is not a JSON value (cyclic structure)`);
++    ancestors.add(value);
++    let copy: JsonValue[] | Record<string, JsonValue>;
++    if (Array.isArray(value)) {
++      copy = [];
++      for (let i = 0; i < value.length; i++) {
++        // A hole (sparse array) is not a JSON value; map() would silently keep it.
++        if (!hasOwn(value, String(i))) throw new TypeError(`${where}/${i} is not a JSON value (array hole)`);
++        copy.push(cloneJson(value[i], `${where}/${i}`, ancestors));
++      }
++    } else {
++      copy = {};
+       for (const key of Object.keys(value)) {
+-        setMember(copy, key, cloneJson((value as Record<string, unknown>)[key], where + formatPointer([key])));
++        setMember(copy, key, cloneJson(value[key], where + formatPointer([key]), ancestors));
+       }
+-      return copy;
+     }
++    ancestors.delete(value);
++    return copy;
+   }
+   throw new TypeError(`${where} is not a JSON value`);
+ }
+@@ -198,14 +219,14 @@ function jsonEqual(a: unknown, b: unknown): boolean {
+     const keys = Object.keys(a);
+     return (
+       keys.length === Object.keys(b).length &&
+-      keys.every((key) => Object.prototype.hasOwnProperty.call(b, key) && jsonEqual(a[key], b[key]))
++      keys.every((key) => hasOwn(b, key) && jsonEqual(a[key], b[key]))
+     );
+   }
+   return false;
+ }
+ 
+ function parsePatchPointer(operation: Record<string, unknown>, member: "path" | "from", index: number): string[] {
+-  const pointer = operation[member];
++  const pointer = hasOwn(operation, member) ? operation[member] : undefined;
+   if (typeof pointer !== "string") {
+     throw new InvalidPatchError(`"${member}" must be a string`, index);
+   }
+@@ -221,17 +242,20 @@ function parsePatch(patch: unknown): ParsedOperation[] {
+   if (!Array.isArray(patch)) {
+     throw new InvalidPatchError("a patch must be an array of operations");
+   }
+-  return patch.map((operation: unknown, index) => {
+-    if (!isObject(operation)) {
++  const operations: ParsedOperation[] = [];
++  // A plain loop rather than map(): map() skips the holes of a sparse array, which would let them pass.
++  for (let index = 0; index < patch.length; index++) {
++    const operation: unknown = hasOwn(patch, String(index)) ? patch[index] : undefined;
++    if (!isPlainObject(operation)) {
+       throw new InvalidPatchError("an operation must be an object", index);
+     }
+-    const op = Object.prototype.hasOwnProperty.call(operation, "op") ? operation.op : undefined;
+-    if (typeof op !== "string" || !Object.prototype.hasOwnProperty.call(OPERATION_MEMBERS, op)) {
++    const op = hasOwn(operation, "op") ? operation.op : undefined;
++    if (typeof op !== "string" || !hasOwn(OPERATION_MEMBERS, op)) {
+       throw new InvalidPatchError(`"op" must be one of ${Object.keys(OPERATION_MEMBERS).join(", ")}`, index);
+     }
+     const parsed: ParsedOperation = { op, path: parsePatchPointer(operation, "path", index), from: [], value: undefined };
+     for (const member of OPERATION_MEMBERS[op]) {
+-      if (!Object.prototype.hasOwnProperty.call(operation, member)) {
++      if (!hasOwn(operation, member)) {
+         throw new InvalidPatchError(`"${op}" requires a "${member}" member`, index);
+       }
+       if (member === "from") {
+@@ -244,8 +268,15 @@ function parsePatch(patch: unknown): ParsedOperation[] {
+         }
+       }
+     }
+-    return parsed;
+-  });
++    // Section 4.4: "from" must not be a proper prefix of "path" (a value cannot move into its own
++    // child). This is a requirement on the patch itself, so it is checked with the rest of it.
++    const { from, path } = parsed;
++    if (op === "move" && from.length < path.length && from.every((token, i) => token === path[i])) {
++      throw new InvalidPatchError(`cannot move ${JSON.stringify(formatPointer(from))} into its own child ${JSON.stringify(formatPointer(path))}`, index);
++    }
++    operations.push(parsed);
++  }
++  return operations;
+ }
+ 
+ /**
+@@ -312,7 +343,7 @@ export function applyPatch(document: unknown, patch: readonly PatchOperation[] |
+       if (Array.isArray(parent)) {
+         return parent.splice(existingIndex(parent, token, tokens), 1)[0];
+       }
+-      if (!Object.prototype.hasOwnProperty.call(parent, token)) fail(`path ${show(tokens)} does not exist`);
++      if (!hasOwn(parent, token)) fail(`path ${show(tokens)} does not exist`);
+       const value = parent[token];
+       delete parent[token];
+       return value;
+@@ -327,7 +358,7 @@ export function applyPatch(document: unknown, patch: readonly PatchOperation[] |
+       if (Array.isArray(parent)) {
+         parent[existingIndex(parent, token, tokens)] = value;
+       } else {
+-        if (!Object.prototype.hasOwnProperty.call(parent, token)) fail(`path ${show(tokens)} does not exist`);
++        if (!hasOwn(parent, token)) fail(`path ${show(tokens)} does not exist`);
+         setMember(parent, token, value);
+       }
+     };
+@@ -344,14 +375,15 @@ export function applyPatch(document: unknown, patch: readonly PatchOperation[] |
+       case "replace":
+         replace(path, value);
+         break;
+-      case "move": {
+-        // Section 4.4: "from" must not be a proper prefix of "path" (a value cannot move into itself).
+-        if (from.length < path.length && from.every((token, i) => token === path[i])) {
+-          fail(`cannot move ${show(from)} into its own child ${show(path)}`);
++      case "move":
++        if (from.length === path.length && from.every((token, i) => token === path[i])) {
++          // Removing then re-adding at the same place changes nothing; only "from" must exist.
++          // Handled apart so that it also holds for the root, which cannot be removed.
++          get(from);
++        } else {
++          add(path, remove(from));
+         }
+-        add(path, remove(from));
+         break;
+-      }
+       case "copy":
+         add(path, cloneJson(get(from), "copied value"));
+         break;
+diff --git a/test/patch.test.ts b/test/patch.test.ts
+index 5a76f69ab4860eaf8bbef50e88e46ed2ec389c2b..e43f64745b6e7777c85c4cfaab9ea4f182118b8f 100644
+--- a/test/patch.test.ts
++++ b/test/patch.test.ts
+@@ -1,5 +1,6 @@
+ import { test } from "node:test";
+ import assert from "node:assert/strict";
++import { inspect } from "node:util";
+ import { applyPatch, InvalidPatchError, PatchOperationError, PatchTestFailedError } from "../src/index.ts";
+ 
+ // RFC 6902 appendix A examples, in order.
+@@ -126,7 +127,17 @@ test("move", () => {
+   assert.deepEqual(applyPatch({ a: 1 }, [{ op: "move", from: "/a", path: "/a" }]), { a: 1 });
+   assert.deepEqual(applyPatch([1, 2, 3], [{ op: "move", from: "/0", path: "/-" }]), [2, 3, 1]);
+   assert.deepEqual(applyPatch({ a: 1, b: {} }, [{ op: "move", from: "/a", path: "/b/a" }]), { b: { a: 1 } });
+-  assert.throws(() => applyPatch({ a: { b: 1 } }, [{ op: "move", from: "/a", path: "/a/b" }]), PatchOperationError);
++  assert.throws(() => applyPatch({ a: { b: 1 } }, [{ op: "move", from: "/a", path: "/a/b" }]), InvalidPatchError);
++  assert.throws(() => applyPatch({ a: 1 }, [{ op: "move", from: "", path: "/a" }]), InvalidPatchError);
++  // A move into its own child is a malformed patch: reported even if an earlier operation would fail.
++  assert.throws(
++    () => applyPatch({ a: {} }, [{ op: "test", path: "/a", value: 1 }, { op: "move", from: "/a", path: "/a/b" }]),
++    (error: unknown) => error instanceof InvalidPatchError && error.index === 1,
++  );
++  // "from" equal to "path" changes nothing, including for the root, but "from" must exist.
++  assert.deepEqual(applyPatch({ a: 1 }, [{ op: "move", from: "", path: "" }]), { a: 1 });
++  assert.deepEqual(applyPatch([1, 2], [{ op: "move", from: "/1", path: "/1" }]), [1, 2]);
++  assert.throws(() => applyPatch({ a: 1 }, [{ op: "move", from: "/x", path: "/x" }]), PatchOperationError);
+   assert.throws(() => applyPatch({ a: 1 }, [{ op: "move", from: "/x", path: "/y" }]), PatchOperationError);
+   // "from" being a string prefix but not a token prefix is allowed.
+   assert.deepEqual(applyPatch({ a: 1, ab: {} }, [{ op: "move", from: "/a", path: "/ab/c" }]), { ab: { c: 1 } });
+@@ -145,6 +156,8 @@ test("test compares JSON values structurally", () => {
+ });
+ 
+ test("malformed patches are rejected", () => {
++  const cyclic: Record<string, unknown> = {};
++  cyclic.self = cyclic;
+   const invalid: unknown[] = [
+     {},
+     null,
+@@ -164,9 +177,16 @@ test("malformed patches are rejected", () => {
+     [{ op: "add", path: "/a", value: undefined }],
+     [{ op: "add", path: "/a", value: () => 1 }],
+     [{ op: "add", path: "/a", value: NaN }],
++    [{ op: "add", path: "/a", value: [1, , 3] }],
++    [{ op: "add", path: "/a", value: cyclic }],
++    new Array(1),
++    [{ op: "test", path: "/a", value: 1 }, , { op: "test", path: "/a", value: 1 }],
++    [new (class { op = "remove"; path = "/a"; })()],
++    [new Date()],
++    [Object.assign(Object.create(null), { op: "remove" })],
+   ];
+   for (const patch of invalid) {
+-    assert.throws(() => applyPatch({ a: 1 }, patch), InvalidPatchError, JSON.stringify(patch));
++    assert.throws(() => applyPatch({ a: 1 }, patch), InvalidPatchError, inspect(patch));
+   }
+   // The whole patch is validated before anything is applied.
+   assert.throws(() => applyPatch({}, [{ op: "test", path: "/x", value: 1 }, { op: "bad", path: "" }]), InvalidPatchError);
+@@ -184,3 +204,16 @@ test("__proto__ is handled as an ordinary member", () => {
+   const parsed = JSON.parse('{"__proto__": {"x": 1}}');
+   assert.deepEqual(Object.keys(applyPatch(parsed, []) as object), ["__proto__"]);
+ });
++
++test("a document that is not JSON is rejected with a TypeError", () => {
++  const cyclic: Record<string, unknown> = {};
++  cyclic.self = cyclic;
++  for (const doc of [undefined, NaN, [1, , 3], { a: () => 1 }, new Date(0), cyclic]) {
++    assert.throws(() => applyPatch(doc, []), TypeError);
++  }
++  // A value shared (not cyclic) is fine and is copied at each place.
++  const shared = { x: 1 };
++  const result = applyPatch({ a: shared, b: shared }, []) as any;
++  assert.deepEqual(result, { a: { x: 1 }, b: { x: 1 } });
++  assert.notEqual(result.a, result.b);
++});
