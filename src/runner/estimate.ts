@@ -2,8 +2,8 @@ import { relative } from 'node:path';
 
 import { fail, ok } from '../core/index.js';
 import type { Issue, Result, Scenario } from '../core/index.js';
-import { findDryRuns } from '../results/index.js';
-import type { DryRunRecord, HarnessPin } from '../results/index.js';
+import { findDryRuns, harnessKey } from '../results/index.js';
+import type { DryRunRecord } from '../results/index.js';
 
 import type { CheckedCampaign } from './campaign.js';
 
@@ -93,7 +93,7 @@ export function estimateCampaign(
       ...(campaign.spec.arm_digests?.[arm] === undefined
         ? {}
         : { armDigest: campaign.spec.arm_digests[arm] }),
-      ...harnessOf(checked, arm),
+      ...harnessKey(checked.campaign.spec.harnesses, checked.arms, arm),
     });
     const [newest] = lookup.records;
     const name = `${scenario.id}@${scenario.version}`;
@@ -189,23 +189,6 @@ function provenance({ campaign }: CheckedCampaign, arm: string, dryRun: DryRunRe
     }
   }
   return notes;
-}
-
-/**
- * The harness `arm` runs on, as the campaign pins it: its own (`requires`), or for a docs control its source arm's
- * (REQ-RUN-11), whose generated rules depend on that harness (task-095 review round 2).
- */
-function harnessOf(
-  { campaign, arms }: CheckedCampaign,
-  arm: string,
-): { harness?: { tool: string; pin: HarnessPin } } {
-  const own = arms.find((candidate) => candidate.name === arm);
-  const source = own?.docsOf === undefined ? own : arms.find((candidate) => candidate.name === own.docsOf);
-  if (source?.requires === undefined) return {};
-  const pinned = campaign.spec.harnesses[source.name];
-  if (pinned === undefined) return {};
-  const pin = { version: pinned.version, ...(pinned.commit === undefined ? {} : { commit: pinned.commit }) };
-  return { harness: { tool: source.requires, pin } };
 }
 
 /** A pin that names a commit (REQ-FMT-03): 7 to 40 hex characters. */

@@ -1,8 +1,9 @@
 import { join, relative } from 'node:path';
 import { codexFileSecrets } from '../agents/index.js';
+import { armDigest } from '../arms/index.js';
 
 import { effortRefusal, missingEffort, reasonOf } from '../core/index.js';
-import { latestDryRun } from '../results/index.js';
+import { harnessKey, latestDryRun } from '../results/index.js';
 import { checkDryRun, runDryRun } from '../runner/index.js';
 import type { DryRunRequest } from '../runner/index.js';
 
@@ -74,7 +75,7 @@ export async function dryRunCommand(
   }
   const checked = checkDryRun(args, root);
   if (!checked.ok) return report(checked.issues, io);
-  const { profile, scenario, arm, model } = checked.value;
+  const { profile, scenario, arm, arms, model } = checked.value;
 
   // dl-015: a real agent's dry run runs its model at the profile's pinned effort; refused first, as `campaign run` does.
   const unpinned = missingEffort(profile.agent, [model]);
@@ -111,6 +112,10 @@ export async function dryRunCommand(
     arm: arm.name,
     model,
     ...(profile.agent.effort?.[model] === undefined ? {} : { effort: profile.agent.effort[model] }),
+    // The estimate's key (bug-024): a dry run of another version of the arm, or of another harness pin, is another
+    // measure. The digest is the arm's that runs, the profile's pin if it has one (task-095).
+    armDigest: armDigest(arm.from?.root ?? root, arm.name),
+    ...harnessKey(profile.harnesses, arms, arm.name),
   });
   io.stdout(
     latest === undefined
