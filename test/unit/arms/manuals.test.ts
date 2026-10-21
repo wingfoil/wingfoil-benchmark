@@ -32,6 +32,15 @@ describe('the operating manuals (F2.7)', () => {
     expect(own).toContain('Never run `specify workflow`');
   });
 
+  it("carry each openspec request from propose through apply in its one session, past propose's stop (bug-023)", () => {
+    const own = manual('openspec');
+    for (const command of ['/opsx:propose', '/opsx:apply', '/opsx:archive']) expect(own).toContain(command);
+    // OpenSpec's propose skill ends with "stop and wait for a new user request": in a headless session, the request
+    // itself is that request, and the session must not end on the proposal.
+    expect(own).toContain('in this one session');
+    expect(own).toContain('do not end the session after `/opsx:propose`');
+  });
+
   it('point baseline-docs at the rules its environment carries', () => {
     expect(manual('baseline-docs')).toContain('`PROJECT_RULES.md`');
   });
