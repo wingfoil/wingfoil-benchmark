@@ -3,6 +3,7 @@ id: bug-022-the-codex-credential-s-checkout-check-takes-any-git-for-a-repository
 type: bug
 title: "The Codex credential's checkout check takes any .git for a repository"
 status: approved
+fixed_by: task-095-wingfoil-v0-3-0-admitted-to-the-wingfoil-arm-the-bridge-s-arm-read-by-its-pinned-digest
 # fixed_by: task-…   # set by hand, with the fixing task's id, just before `approved → fixed`
 tags: ["codex","security","preflight"]
 ---
@@ -30,3 +31,11 @@ whose temporary files are under `/tmp`.
 
 A credential outside every repository is refused (a false refusal, not a leak): the check fails closed. Every
 machine with a stray `.git` above its temporary directory fails task-094's tests and the full suites.
+
+## Resolution
+
+Fixed by [task-095](../task/task-095-wingfoil-v0-3-0-admitted-to-the-wingfoil-arm-the-bridge-s-arm-read-by-its-pinned-digest.md)
+(merged in `c8b64fa`; red `c82cd35`, fix `c393358`): `src/cli/preflight.ts` takes a directory for a git checkout only
+when it holds a `.git` directory with `HEAD` or a `.git` file starting with `gitdir:`. An empty `.git` makes nothing a
+checkout; task-094's credential tests pass with `/tmp/.git` present, and the full suites ran green on `4ed2ec1`.
+
