@@ -1,0 +1,83 @@
+diff --git a/README.md b/README.md
+index 264e0a216396881a229e0a05c74d28d359fb40e1..c9441e53d7bfc86970f39385efdaab5a123c6aac 100644
+--- a/README.md
++++ b/README.md
+@@ -22,9 +22,9 @@ are considered, so `/constructor` or `/length` never reach inherited properties.
+ result as a new value. Neither argument is mutated, and values taken from the patch are copied.
+ 
+ It throws a `TypeError` when the patch is malformed (not an array, unknown `op`, missing `path`,
+-`from` or `value`), a `SyntaxError` when a pointer is invalid, and a `RangeError` when an operation
++`from` or `value`, or a `value` that is not JSON such as `undefined` or `NaN`), a `SyntaxError` when a pointer is invalid, and a `RangeError` when an operation
+ fails: unresolved target, out-of-range or non-canonical array index, removing the whole document,
+-moving a value into its own child, or a `test` that does not match. The patch is atomic: on any
++moving a value into its own child (moving a value onto itself is a no-op), or a `test` that does not match. The patch is atomic: on any
+ error nothing is returned. Pointers follow the rules above, so only own members are ever touched and
+ `__proto__` is an ordinary member name.
+ 
+diff --git a/src/patch.ts b/src/patch.ts
+index c33e86281ec0776da56a2a42693cd65e14f49a74..902b346b3571f98064283eaa680a660f4f599321 100644
+--- a/src/patch.ts
++++ b/src/patch.ts
+@@ -15,6 +15,20 @@ function isObject(value: unknown): value is Record<string, unknown> {
+   return typeof value === "object" && value !== null && !Array.isArray(value);
+ }
+ 
++/** Whether `value` is something a JSON document can hold (RFC 8259): no `undefined`, functions, `NaN`, etc. */
++function isJsonValue(value: unknown): boolean {
++  if (value === null || typeof value === "string" || typeof value === "boolean") {
++    return true;
++  }
++  if (typeof value === "number") {
++    return Number.isFinite(value);
++  }
++  if (Array.isArray(value)) {
++    return value.every(isJsonValue);
++  }
++  return isObject(value) && Object.values(value).every(isJsonValue);
++}
++
+ /** Checks the shape of one patch operation (RFC 6902, section 4) and returns it typed. */
+ function parseOperation(operation: unknown, index: number): Operation {
+   const where = `Invalid JSON Patch: operation ${index}`;
+@@ -34,6 +48,9 @@ function parseOperation(operation: unknown, index: number): Operation {
+   if ((op === "add" || op === "replace" || op === "test") && !Object.hasOwn(operation, "value")) {
+     throw new TypeError(`${where} needs a "value"`);
+   }
++  if (Object.hasOwn(operation, "value") && !isJsonValue(operation.value)) {
++    throw new TypeError(`${where} has a "value" that is not JSON`);
++  }
+   return operation as unknown as Operation;
+ }
+ 
+@@ -124,6 +141,10 @@ function replace(document: unknown, tokens: string[], value: unknown): unknown {
+ }
+ 
+ function move(document: unknown, from: string[], path: string[]): unknown {
++  if (from.length === path.length && isSamePrefix(from, path)) {
++    from.reduce(step, document);
++    return document;
++  }
+   if (from.length < path.length && isSamePrefix(from, path)) {
+     throw new RangeError("JSON Patch cannot move a value into one of its own children");
+   }
+diff --git a/test/patch.test.ts b/test/patch.test.ts
+index 4015507132e882f5fc1923f74b4093d17d847800..54557084432738aab21c0e943079f7b85b2c0d53 100644
+--- a/test/patch.test.ts
++++ b/test/patch.test.ts
+@@ -22,6 +22,7 @@ const examples: Array<[string, unknown, unknown[], unknown]> = [
+   ],
+   ["move array element", { foo: ["all", "grass", "cows", "eat"] }, [{ op: "move", from: "/foo/1", path: "/foo/3" }], { foo: ["all", "cows", "eat", "grass"] }],
+   ["move onto itself", { a: 1 }, [{ op: "move", from: "/a", path: "/a" }], { a: 1 }],
++  ["move the root onto itself", { a: 1 }, [{ op: "move", from: "", path: "" }], { a: 1 }],
+   ["copy value", { foo: { a: [1] } }, [{ op: "copy", from: "/foo/a", path: "/b" }], { foo: { a: [1] }, b: [1] }],
+   ["test equal, any member order", { a: { x: 1, y: [1, 2] } }, [{ op: "test", path: "/a", value: { y: [1, 2], x: 1 } }], { a: { x: 1, y: [1, 2] } }],
+   ["test the root", 5, [{ op: "test", path: "", value: 5 }], 5],
+@@ -41,6 +42,8 @@ const failures: Array<[string, unknown, unknown, ErrorConstructor]> = [
+   ["unknown op", {}, [{ op: "merge", path: "" }], TypeError],
+   ["missing path", {}, [{ op: "remove" }], TypeError],
+   ["add without value", {}, [{ op: "add", path: "/a" }], TypeError],
++  ["add with an undefined value", {}, [{ op: "add", path: "/a", value: undefined }], TypeError],
++  ["test with a non-JSON value", {}, [{ op: "test", path: "", value: Number.NaN }], TypeError],
+   ["move without from", {}, [{ op: "move", path: "/a" }], TypeError],
+   ["invalid pointer", {}, [{ op: "remove", path: "a" }], SyntaxError],
+   ["add under a missing parent", {}, [{ op: "add", path: "/a/b", value: 1 }], RangeError],

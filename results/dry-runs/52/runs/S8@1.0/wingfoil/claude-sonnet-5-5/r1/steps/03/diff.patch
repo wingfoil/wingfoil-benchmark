@@ -1,0 +1,230 @@
+diff --git a/docs/memory/decision-log/dl-003-input-is-validated-in-the-domain-and-rejected-with-an-invalid-input-error.md b/docs/memory/decision-log/dl-003-input-is-validated-in-the-domain-and-rejected-with-an-invalid-input-error.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..4672ec3ce3eb3c9ceb5cc215f709f7b42f37bc35
+--- /dev/null
++++ b/docs/memory/decision-log/dl-003-input-is-validated-in-the-domain-and-rejected-with-an-invalid-input-error.md
+@@ -0,0 +1,21 @@
++---
++id: dl-003-input-is-validated-in-the-domain-and-rejected-with-an-invalid-input-error
++type: decision-log
++title: "Input is validated in the domain and rejected with an invalid-input error"
++status: pending
++---
++
++<!-- decision-log body. `wingfoil memory add` copies this scaffold verbatim; `memory submit` replaces
++     these placeholder comments with real content and fills the required frontmatter fields. -->
++
++## Context
++Screens pass raw user input to the list, so odd tasks got in.
++
++## Decision
++Validation lives in the domain (`src/domain/task.ts`), runs before any state change and returns a
++`Result` with the new error code `invalid-input` (r4). The 120-character limit counts the trimmed
++title. A tag is invalid if empty or containing any whitespace. Tags are not trimmed.
++
++## Consequences
++Rejected input leaves the list, ids and `updatedAt` untouched. `TodoErrorCode` gains a member, which
++callers switching on codes may need to handle.
+diff --git a/docs/memory/task/task-003-reject-invalid-title-priority-and-tag-input.md b/docs/memory/task/task-003-reject-invalid-title-priority-and-tag-input.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..50e2d111e1550e0afb787cb992d9bde0b021cd72
+--- /dev/null
++++ b/docs/memory/task/task-003-reject-invalid-title-priority-and-tag-input.md
+@@ -0,0 +1,15 @@
++---
++id: task-003-reject-invalid-title-priority-and-tag-input
++type: task
++title: "Reject invalid title, priority and tag input"
++status: pending
++---
++
++<!-- task body. `wingfoil memory add` copies this scaffold verbatim; `memory submit` replaces
++     these placeholder comments with real content and fills the required frontmatter fields. -->
++
++## What was done
++`add`, `rename` and `tag` now validate their input before changing anything: a title that is empty or
++blank, or longer than 120 characters once trimmed; a priority other than low/normal/high; a tag that is
++empty or has whitespace. They return an `invalid-input` error whose message says what is wrong. A
++rejected add does not consume an id nor call the clock. Tests added in `test/list.test.ts`.
+diff --git a/src/domain/list.ts b/src/domain/list.ts
+index d9cd210d8b73b2f544fce05c40466ebfc0cfc864..22658542c8fe8e311ad3f398aa61ae04c1578bbc 100644
+--- a/src/domain/list.ts
++++ b/src/domain/list.ts
+@@ -1,6 +1,6 @@
+ import { err, ok } from './result.ts';
+ import type { Result } from './result.ts';
+-import { addTag, compareTasks, completeTask, createTask, removeTag, renameTask, reopenTask } from './task.ts';
++import { addTag, compareTasks, completeTask, createTask, removeTag, renameTask, reopenTask, validateNewTask, validateTag, validateTitle } from './task.ts';
+ import type { NewTask, Priority, Status, Task } from './task.ts';
+ 
+ /** Which tasks to show: by status, priority or tag; every task when nothing is given. */
+@@ -65,6 +65,8 @@ export function createTaskList(clock: () => string): TaskList {
+ 
+   return {
+     add(input) {
++      const valid = validateNewTask(input);
++      if (!valid.ok) return valid;
+       added += 1;
+       const task = createTask(input, `task-${added}`, clock());
+       if (tasks.has(task.title)) return err('duplicate', `there is already a task "${task.title}"`);
+@@ -76,14 +78,20 @@ export function createTaskList(clock: () => string): TaskList {
+     complete: (title) => change(title, (task) => completeTask(task, clock())),
+     reopen: (title) => change(title, (task) => reopenTask(task, clock())),
+     rename(title, newTitle) {
+-      const target = newTitle.trim();
++      const valid = validateTitle(newTitle);
++      if (!valid.ok) return valid;
++      const target = valid.value;
+       const current = find(title);
+       if (current.ok && target !== current.value.title && tasks.has(target)) {
+         return err('duplicate', `there is already a task "${target}"`);
+       }
+       return change(title, (task) => ok(renameTask(task, target, clock())));
+     },
+-    tag: (title, tag) => change(title, (task) => ok(addTag(task, tag, clock()))),
++    tag(title, tag) {
++      const valid = validateTag(tag);
++      if (!valid.ok) return valid;
++      return change(title, (task) => ok(addTag(task, tag, clock())));
++    },
+     untag: (title, tag) => change(title, (task) => ok(removeTag(task, tag, clock()))),
+     remove(title) {
+       const found = find(title);
+diff --git a/src/domain/result.ts b/src/domain/result.ts
+index c6ed17a1b929cb19e127e0be01e84aac17b45407..4e46dfbe7c138c650e2d4b2d86dfbc5a5b27267c 100644
+--- a/src/domain/result.ts
++++ b/src/domain/result.ts
+@@ -5,7 +5,7 @@ export interface TodoError {
+ }
+ 
+ /** The kinds of failure the task list reports. */
+-export type TodoErrorCode = 'not-found' | 'duplicate' | 'invalid-state';
++export type TodoErrorCode = 'not-found' | 'duplicate' | 'invalid-state' | 'invalid-input';
+ 
+ /** The outcome of an operation that can fail: its value, or the reason it failed. */
+ export type Result<T, E = TodoError> =
+diff --git a/src/domain/task.ts b/src/domain/task.ts
+index 9db3b2b3c51d79c45c0f5f150d5cafec7d7a0e21..714078a4dcd85d043fce0113ebbdf8a3350c94d8 100644
+--- a/src/domain/task.ts
++++ b/src/domain/task.ts
+@@ -126,6 +126,62 @@ export function compareTasks(a: Task, b: Task): number {
+   return a.title < b.title ? -1 : a.title > b.title ? 1 : 0;
+ }
+ 
++/** The longest title a task can have, once trimmed. */
++export const MAX_TITLE_LENGTH = 120;
++
++/**
++ * Checks a title: after trimming it must be neither empty nor longer than `MAX_TITLE_LENGTH`.
++ *
++ * @param title - the title as typed
++ */
++export function validateTitle(title: string): Result<string> {
++  const trimmed = title.trim();
++  if (trimmed === '') return err('invalid-input', 'the title is empty');
++  if (trimmed.length > MAX_TITLE_LENGTH) {
++    return err('invalid-input', `the title is ${trimmed.length} characters long; the limit is ${MAX_TITLE_LENGTH}`);
++  }
++  return ok(trimmed);
++}
++
++/**
++ * Checks a priority: it must be one of `PRIORITIES`.
++ *
++ * @param priority - the priority as typed
++ */
++export function validatePriority(priority: string): Result<Priority> {
++  const known = PRIORITIES.find((candidate) => candidate === priority);
++  if (known === undefined) {
++    return err('invalid-input', `the priority "${priority}" is not one of ${PRIORITIES.join(', ')}`);
++  }
++  return ok(known);
++}
++
++/**
++ * Checks a tag: it must not be empty nor contain a space.
++ *
++ * @param tag - the tag as typed
++ */
++export function validateTag(tag: string): Result<string> {
++  if (tag === '') return err('invalid-input', 'the tag is empty');
++  if (/\s/.test(tag)) return err('invalid-input', `the tag "${tag}" contains a space`);
++  return ok(tag);
++}
++
++/**
++ * Checks everything a new task is made of: its title, its priority when given, and its tags.
++ *
++ * @param input - the new task as typed
++ */
++export function validateNewTask(input: NewTask): Result<NewTask> {
++  const checks = [
++    validateTitle(input.title),
++    ...(input.priority === undefined ? [] : [validatePriority(input.priority)]),
++    ...(input.tags ?? []).map(validateTag),
++  ];
++  const failed = checks.find((check) => !check.ok);
++  return failed !== undefined && !failed.ok ? failed : ok(input);
++}
++
+ function unique(tags: readonly string[]): string[] {
+   return tags.filter((tag, index) => tags.indexOf(tag) === index);
+ }
+diff --git a/test/list.test.ts b/test/list.test.ts
+index 484f9b4cc11e87072dabc0b446cf647e9e36f8f5..67769fc3436c7a0d0e53639273aa6a29c21d0285 100644
+--- a/test/list.test.ts
++++ b/test/list.test.ts
+@@ -160,3 +160,53 @@ describe('task timestamps', () => {
+     assert.ok(!Number.isNaN(Date.parse(task.createdAt)));
+   });
+ });
++
++describe('input validation', () => {
++  const invalid = (result: { ok: boolean; error?: { code: string } }) => {
++    assert.equal(result.ok, false);
++    assert.equal(result.error?.code, 'invalid-input');
++  };
++
++  it('rejects an empty, blank or too long title when adding', () => {
++    const list = createTodoList();
++    invalid(list.add({ title: '' }));
++    invalid(list.add({ title: '   ' }));
++    invalid(list.add({ title: 'x'.repeat(121) }));
++    assert.equal(list.list().length, 0);
++  });
++
++  it('accepts a title of 120 characters, counted once trimmed', () => {
++    const list = createTodoList();
++    assert.equal(list.add({ title: ` ${'x'.repeat(120)} ` }).ok, true);
++  });
++
++  it('rejects an unknown priority and a bad tag when adding', () => {
++    const list = createTodoList();
++    invalid(list.add({ title: 'a', priority: 'urgent' as 'high' }));
++    invalid(list.add({ title: 'a', tags: ['ok', ''] }));
++    invalid(list.add({ title: 'a', tags: ['two words'] }));
++    assert.equal(list.list().length, 0);
++  });
++
++  it('rejects a bad new title when renaming, and changes nothing', () => {
++    const list = createTodoList();
++    const before = valueOf(list.add({ title: 'a' }));
++    invalid(list.rename('a', ' '));
++    invalid(list.rename('a', 'x'.repeat(121)));
++    assert.deepEqual(valueOf(list.find('a')), before);
++  });
++
++  it('rejects a bad tag when tagging, and changes nothing', () => {
++    const list = createTodoList();
++    const before = valueOf(list.add({ title: 'a' }));
++    invalid(list.tag('a', ''));
++    invalid(list.tag('a', 'a b'));
++    assert.deepEqual(valueOf(list.find('a')), before);
++  });
++
++  it('does not use up an id when an addition is rejected', () => {
++    const list = createTodoList();
++    list.add({ title: '' });
++    assert.equal(valueOf(list.add({ title: 'a' })).id, 'task-1');
++  });
++});

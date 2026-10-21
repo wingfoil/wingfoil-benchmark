@@ -229,3 +229,32 @@ line each, `43`'s included.
   dearest run 0.6498 USD (wingfoil).
 - Every arm passes steps 1–4 in full and 152/153 at step 5, but wingfoil (146/153; final 158/165, hold-out 43/48);
   the others 164/165 and 45/48.
+
+### Stage 4: the bridge on WingFoil v0.2.2, Sonnet 5.5 (2026-10-21, 15:31–15:56 UTC)
+
+The approver's consent in chat, 2026-10-21: the bridge's eight dry runs (S1, S2, S3, S8 in wingfoil and
+baseline-docs), 2 € a run and 10 € in all (`aa8750f` sets the bridge profile's `run_cost_eur: 2`). Each `bench
+scenario dry-run <scenario> --arm <arm> --profile campaigns/v0-2-bridge.dry-run.yaml --allow-spending`; the same
+chain and stops, with 1.2 € for twice the expected; none reached. Every one: `dry_run: true`, Claude Code 2.1.300,
+`claude-sonnet-5-5` at `medium` priced `list`, one attempt, `completed`; the stored profile pins WingFoil v0.2.2 and
+`arm_digests: { wingfoil: 680b19f27c9f }`; the wingfoil runs' `arm_digest` is `680b19f27c9f…`, read from history
+(`arm_source` commit `2441243b`, REQ-FMT-13); the baseline-docs runs' arm digest is the reference's
+(`2ac51091da99`), their manual v0.2.2's docs (`sha256` `4bbe51dc…`); the token scan clean; no `bench-` container
+left; scored; a ledger line each.
+
+| Dry run | Scenario | Arm | Cost | Wall time | Turns per step | Largest transcript | Final public | Hold-out | Checks |
+|---|---|---|---|---|---|---|---|---|---|
+| 48 | S3@1.0 | wingfoil | 0.5899 USD (0.5260 €) | 4 min 56 s | 9, 10, 9, 10, 13 | 111 KB (step 5) | 37/37 | 16/17 | 1/1 |
+| 49 | S3@1.0 | baseline-docs | 0.4080 USD (0.3638 €) | 3 min 13 s | 5, 7, 6, 6, 9 | 90 KB (step 5) | 37/37 | 17/17 | 0/1 |
+| 50 | S2@1.0 | wingfoil | 0.3038 USD (0.2709 €) | 1 min 56 s | 9, 8, 9 | 101 KB (step 3) | 24/24 | 17/17 | 3/3 |
+| 51 | S2@1.0 | baseline-docs | 0.2606 USD (0.2324 €) | 1 min 14 s | 9, 6, 8 | 98 KB (step 1) | 24/24 | 17/17 | 2/3 |
+| 52 | S8@1.0 | wingfoil | 0.4429 USD (0.3949 €) | 2 min 37 s | 8, 9, 6, 7 | 103 KB (step 2) | 23/23 | 7/7 | 16/16 |
+| 53 | S8@1.0 | baseline-docs | 0.3187 USD (0.2842 €) | 2 min 10 s | 6, 6, 5, 6 | 76 KB (step 4) | 23/23 | 7/7 | 16/16 |
+| 54 | S1@1.0 | wingfoil | 0.6147 USD (0.5481 €) | 4 min 35 s | 9, 8, 9, 10, 9 | 99 KB (step 5) | 164/165 | 45/48 | — |
+| 55 | S1@1.0 | baseline-docs | 0.4749 USD (0.4235 €) | 3 min 27 s | 5, 5, 7, 4, 5 | 86 KB (step 3) | 164/165 | 45/48 | — |
+
+- **Spent: 3.4135 USD (3.0438 €)** of the 10 € consented; the dearest run 0.6147 USD (S1@1.0, wingfoil).
+- **Found:** the line `bench scenario dry-run` prints before spending ("the latest dry run cost …", REQ-NFR-06)
+  quoted, for every bridge dry run, the reference's dry run of the same scenario, arm and model (for S3 wingfoil
+  `dry-runs/24`, WingFoil v0.3.0): `src/cli/dry-run.ts` looks it up without the profile's arm digest and harness
+  pin, which the estimate's key has had since task-095. Filed as a bug; the estimate itself is not affected.

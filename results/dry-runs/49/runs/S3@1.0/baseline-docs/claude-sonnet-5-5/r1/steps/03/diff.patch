@@ -1,0 +1,78 @@
+diff --git a/README.md b/README.md
+index de664d696d568c2e1009ca8b671d060636b3c01e..bf5121257a65208f33be7aaea1946a52aa2af11b 100644
+--- a/README.md
++++ b/README.md
+@@ -16,6 +16,8 @@ of its booking desk, written in TypeScript with no runtime dependency.
+ Rules: money in integer euro cents; times are ISO-8601 UTC strings; a period covers whole days, so `start` and
+ `end` are midnight UTC and `end` (exclusive) is the start of the day after the last day; the same item cannot be
+ booked for overlapping periods. Booking ids are sequential (`booking-1`, …) so behaviour is deterministic.
++A rental of 3 days or more costs 10% less than its full price (days × `dailyPrice`), rounded to the nearest
++cent with halves rounded up; `quote` and `book` both return the reduced `total`.
+ The cancellation policy (no refund under 24 hours before start, otherwise full refund) is not implemented yet.
+ 
+ Run the tests with `npm test` (Node 22.18+, which runs TypeScript directly).
+diff --git a/src/index.ts b/src/index.ts
+index 8c3f1d7303365268ce03e626a200ee9f707716fa..1c57e6bf5291986ed3b143f1589910f322e56431 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -45,6 +45,7 @@ export interface RentalService {
+ }
+ 
+ const DAY_MS = 24 * 60 * 60 * 1000;
++const LONG_RENTAL_DAYS = 3;
+ const MIDNIGHT_UTC = /^\d{4}-\d{2}-\d{2}T00:00(:00(\.0+)?)?(Z|\+00:00)$/;
+ 
+ interface Period {
+@@ -88,6 +89,12 @@ function validateEquipment(item: Equipment): void {
+   }
+ }
+ 
++/** Full price, or 10% less (rounded to the nearest cent) for a rental of 3 days or more. */
++function rentalTotal(days: number, dailyPrice: number): number {
++  const full = days * dailyPrice;
++  return days >= LONG_RENTAL_DAYS ? Math.round((full * 9) / 10) : full;
++}
++
+ const overlaps = (a: Period, b: Period): boolean => a.start < b.end && b.start < a.end;
+ 
+ /** Creates an empty rental service that keeps everything in memory. */
+@@ -104,7 +111,7 @@ export function createRentalService(): RentalService {
+     const period = parsePeriod(request);
+     const days = (period.end - period.start) / DAY_MS;
+     const { itemId, start, end } = request;
+-    return { quote: { itemId, start, end, total: days * item.dailyPrice }, period };
++    return { quote: { itemId, start, end, total: rentalTotal(days, item.dailyPrice) }, period };
+   }
+ 
+   return {
+diff --git a/test/rental.test.ts b/test/rental.test.ts
+index 6ff46dbb8fa4da7852c7580a5d1fdeffb77a1907..4b8ce885bcc4ecd50e1347967b68e02650588f00 100644
+--- a/test/rental.test.ts
++++ b/test/rental.test.ts
+@@ -14,10 +14,25 @@ describe('rental service', () => {
+ 
+   it('quotes whole days in euro cents', () => {
+     assert.deepEqual(service.quote(period(day(1), day(4))), {
+-      itemId: 'b1', start: day(1), end: day(4), total: 7650,
++      itemId: 'b1', start: day(1), end: day(4), total: 6885,
+     });
+   });
+ 
++  it('charges full price under 3 days and 10% less from 3 days', () => {
++    assert.equal(service.quote(period(day(1), day(3))).total, 5100);
++    assert.equal(service.quote(period(day(1), day(4))).total, 6885);
++    assert.equal(service.quote(period(day(1), day(11))).total, 22950);
++  });
++
++  it('rounds the discounted total to the nearest euro cent, halves up', () => {
++    service.addEquipment({ id: 's2', kind: 'sail', dailyPrice: 1005 });
++    assert.equal(service.quote({ itemId: 's2', start: day(1), end: day(4) }).total, 2714);
++  });
++
++  it('books at the discounted total', () => {
++    assert.equal(service.book(period(day(1), day(4))).total, 6885);
++  });
++
+   it('rejects unknown items', () => {
+     assert.throws(() => service.quote({ itemId: 'x', start: day(1), end: day(2) }));
+     assert.throws(() => service.book({ itemId: 'x', start: day(1), end: day(2) }));

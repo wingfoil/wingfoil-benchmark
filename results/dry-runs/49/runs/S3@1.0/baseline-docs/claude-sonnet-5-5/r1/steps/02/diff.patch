@@ -1,0 +1,136 @@
+diff --git a/README.md b/README.md
+index 44979ed825188979e25c8bd87df4a91e4c56bed6..de664d696d568c2e1009ca8b671d060636b3c01e 100644
+--- a/README.md
++++ b/README.md
+@@ -11,6 +11,7 @@ of its booking desk, written in TypeScript with no runtime dependency.
+ - `addEquipment({ id, kind, dailyPrice })` — `kind` is `'board'` or `'sail'`; `dailyPrice` is an integer in euro cents.
+ - `quote({ itemId, start, end })` — returns `{ itemId, start, end, total }`.
+ - `book({ itemId, start, end })` — returns `{ id, itemId, start, end, total }`; throws if the item is not free.
++- `availability({ start, end, kind? })` — returns the sorted ids of the equipment of that `kind` (any kind when omitted) that is free for the whole period; throws on an invalid period or kind.
+ 
+ Rules: money in integer euro cents; times are ISO-8601 UTC strings; a period covers whole days, so `start` and
+ `end` are midnight UTC and `end` (exclusive) is the start of the day after the last day; the same item cannot be
+diff --git a/src/index.ts b/src/index.ts
+index 591ded4f40594967697bf4b797efe91a77301456..8c3f1d7303365268ce03e626a200ee9f707716fa 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -15,6 +15,13 @@ export interface RentalRequest {
+   end: string;
+ }
+ 
++/** A search for free equipment; `kind` is optional and means any kind when omitted. */
++export interface AvailabilityQuery {
++  start: string;
++  end: string;
++  kind?: EquipmentKind;
++}
++
+ /** The price of renting an item for a period; `total` is in euro cents. */
+ export interface Quote extends RentalRequest {
+   total: number;
+@@ -33,6 +40,8 @@ export interface RentalService {
+   quote(request: RentalRequest): Quote;
+   /** Books a rental; throws like `quote`, and when the item is not free for the whole period. */
+   book(request: RentalRequest): Booking;
++  /** Returns the sorted ids of the equipment of `kind` (any kind if omitted) free for the whole period; throws on an invalid period or kind. */
++  availability(query: AvailabilityQuery): string[];
+ }
+ 
+ const DAY_MS = 24 * 60 * 60 * 1000;
+@@ -54,7 +63,7 @@ function parseMidnightUtc(value: unknown, name: string): number {
+   return time;
+ }
+ 
+-function parsePeriod(request: RentalRequest): Period {
++function parsePeriod(request: { start: string; end: string }): Period {
+   const start = parseMidnightUtc(request.start, 'start');
+   const end = parseMidnightUtc(request.end, 'end');
+   if (end <= start) {
+@@ -63,13 +72,17 @@ function parsePeriod(request: RentalRequest): Period {
+   return { start, end };
+ }
+ 
++function validateKind(kind: unknown): void {
++  if (kind !== 'board' && kind !== 'sail') {
++    throw new Error("kind must be 'board' or 'sail'");
++  }
++}
++
+ function validateEquipment(item: Equipment): void {
+   if (typeof item.id !== 'string' || item.id === '') {
+     throw new Error('id must be a non-empty string');
+   }
+-  if (item.kind !== 'board' && item.kind !== 'sail') {
+-    throw new Error("kind must be 'board' or 'sail'");
+-  }
++  validateKind(item.kind);
+   if (!Number.isSafeInteger(item.dailyPrice) || item.dailyPrice < 0) {
+     throw new Error('dailyPrice must be a non-negative integer number of euro cents');
+   }
+@@ -118,5 +131,17 @@ export function createRentalService(): RentalService {
+       bookingCount += 1;
+       return { id: `booking-${bookingCount}`, ...quote };
+     },
++
++    availability(query) {
++      const period = parsePeriod(query);
++      if (query.kind !== undefined) {
++        validateKind(query.kind);
++      }
++      return [...equipment.values()]
++        .filter((item) => query.kind === undefined || item.kind === query.kind)
++        .filter((item) => !(periods.get(item.id) ?? []).some((other) => overlaps(other, period)))
++        .map((item) => item.id)
++        .sort();
++    },
+   };
+ }
+diff --git a/test/rental.test.ts b/test/rental.test.ts
+index 01dd8dee10d03acd7660549bdf593817afe7e60d..6ff46dbb8fa4da7852c7580a5d1fdeffb77a1907 100644
+--- a/test/rental.test.ts
++++ b/test/rental.test.ts
+@@ -58,4 +58,44 @@ describe('rental service', () => {
+     assert.throws(() => service.addEquipment({ id: 'n', kind: 'board', dailyPrice: 10.5 }));
+     assert.throws(() => service.addEquipment({ id: 'n', kind: 'kite' as 'board', dailyPrice: 10 }));
+   });
++
++  describe('availability', () => {
++    beforeEach(() => {
++      service.addEquipment({ id: 's1', kind: 'sail', dailyPrice: 1000 });
++      service.addEquipment({ id: 'a0', kind: 'board', dailyPrice: 2000 });
++    });
++
++    it('lists free items of any kind, sorted', () => {
++      assert.deepEqual(service.availability({ start: day(1), end: day(3) }), ['a0', 'b1', 's1']);
++    });
++
++    it('filters by kind', () => {
++      assert.deepEqual(service.availability({ start: day(1), end: day(3), kind: 'board' }), ['a0', 'b1']);
++      assert.deepEqual(service.availability({ start: day(1), end: day(3), kind: 'sail' }), ['s1']);
++    });
++
++    it('excludes items booked for any part of the period', () => {
++      service.book(period(day(2), day(4)));
++      assert.deepEqual(service.availability({ start: day(1), end: day(3) }), ['a0', 's1']);
++      assert.deepEqual(service.availability({ start: day(3), end: day(6) }), ['a0', 's1']);
++      assert.deepEqual(service.availability({ start: day(1), end: day(7) }), ['a0', 's1']);
++    });
++
++    it('keeps items booked only next to the period', () => {
++      service.book(period(day(2), day(4)));
++      assert.deepEqual(service.availability({ start: day(4), end: day(5) }), ['a0', 'b1', 's1']);
++      assert.deepEqual(service.availability({ start: day(1), end: day(2) }), ['a0', 'b1', 's1']);
++    });
++
++    it('returns an empty list when nothing is free', () => {
++      service.book({ itemId: 's1', start: day(1), end: day(3) });
++      assert.deepEqual(service.availability({ start: day(2), end: day(3), kind: 'sail' }), []);
++    });
++
++    it('rejects invalid periods and kinds', () => {
++      assert.throws(() => service.availability({ start: day(2), end: day(2) }));
++      assert.throws(() => service.availability({ start: '2026-07-01', end: day(2) }));
++      assert.throws(() => service.availability({ start: day(1), end: day(2), kind: 'kite' as 'board' }));
++    });
++  });
+ });

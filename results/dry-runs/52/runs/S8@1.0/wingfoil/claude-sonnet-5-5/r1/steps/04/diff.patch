@@ -1,0 +1,190 @@
+diff --git a/docs/memory/decision-log/dl-004-bulk-import-is-line-based-tolerant-of-omitted-fields-and-keeps-going-after-a-bad-line.md b/docs/memory/decision-log/dl-004-bulk-import-is-line-based-tolerant-of-omitted-fields-and-keeps-going-after-a-bad-line.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..b223a0d4f3b6de63680820ef9092e418b66b3517
+--- /dev/null
++++ b/docs/memory/decision-log/dl-004-bulk-import-is-line-based-tolerant-of-omitted-fields-and-keeps-going-after-a-bad-line.md
+@@ -0,0 +1,21 @@
++---
++id: dl-004-bulk-import-is-line-based-tolerant-of-omitted-fields-and-keeps-going-after-a-bad-line
++type: decision-log
++title: "Bulk import is line-based, tolerant of omitted fields, and keeps going after a bad line"
++status: pending
++---
++
++## Context
++Teams move from spreadsheets to Tidy Tasks and need a bulk import with a per-line report.
++
++## Decision
++One task per line, `title;priority;tags`; lines split on `\n` or `\r\n`. Priority and tags may be
++omitted (a line with only a title, or title and priority, is valid); an empty priority is `normal`;
++tags are split on whitespace. More than three fields is rejected, since a `;` in a title would silently
++shift fields. Priority is trimmed but otherwise strict (`High` is rejected). A line failing validation
++or duplicating a title is rejected with the domain's message, and the import goes on. Blank lines are
++skipped but counted in line numbers, so they match the spreadsheet rows. Parsing is in the domain and
++never throws (r4); the import is not atomic.
++
++## Consequences
++A partly bad file imports its good lines; callers show `rejected` to the user. Titles cannot contain `;`.
+diff --git a/docs/memory/task/task-004-add-importtasks-for-bulk-import.md b/docs/memory/task/task-004-add-importtasks-for-bulk-import.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..20aaca7dcb8b2b9290588c8c0860a7e55a4be466
+--- /dev/null
++++ b/docs/memory/task/task-004-add-importtasks-for-bulk-import.md
+@@ -0,0 +1,12 @@
++---
++id: task-004-add-importtasks-for-bulk-import
++type: task
++title: "Add importTasks for bulk import"
++status: pending
++---
++
++## What was done
++Added `importTasks(list, text)` to `src/index.ts`, with the parsing in `src/domain/import.ts`. Each
++non-blank line is `title;priority;tags`; every valid line is added through `list.add`, so the existing
++validation and duplicate rules apply. It returns `{ imported, rejected }`, `rejected` being
++`{ line, reason }` with `line` counting from 1 (blank lines count). Tests in `test/import.test.ts`.
+diff --git a/src/domain/import.ts b/src/domain/import.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..1a6b29892b54526f8a25ebc81d876f7e58a6f9a2
+--- /dev/null
++++ b/src/domain/import.ts
+@@ -0,0 +1,51 @@
++import { err, ok } from './result.ts';
++import type { Result } from './result.ts';
++import type { NewTask } from './task.ts';
++import { validatePriority } from './task.ts';
++
++/** A line of an import that could not be added: its number, counting from 1, and why. */
++export interface RejectedLine {
++  readonly line: number;
++  readonly reason: string;
++}
++
++/** What an import did: how many tasks were added, and the lines that were not. */
++export interface ImportReport {
++  readonly imported: number;
++  readonly rejected: readonly RejectedLine[];
++}
++
++/** The most fields a line has: title, priority and tags. */
++const MAX_FIELDS = 3;
++
++/**
++ * Reads one line of `title;priority;tags` into a new task. The priority and the tags may be left out;
++ * an empty priority means a normal one, and tags are separated by spaces.
++ *
++ * @param line - a non-blank line as written in the spreadsheet
++ */
++export function parseTaskLine(line: string): Result<NewTask> {
++  const fields = line.split(';');
++  if (fields.length > MAX_FIELDS) {
++    return err('invalid-input', `the line has ${fields.length} fields; the most is ${MAX_FIELDS} (title;priority;tags)`);
++  }
++  const [title = '', rawPriority = '', rawTags = ''] = fields;
++  const tags = rawTags.split(/\s+/).filter((tag) => tag !== '');
++  const priority = rawPriority.trim();
++  if (priority === '') return ok({ title, tags });
++  const valid = validatePriority(priority);
++  return valid.ok ? ok({ title, priority: valid.value, tags }) : valid;
++}
++
++/**
++ * Splits import text into its non-blank lines, each with its number counting from 1; blank lines are
++ * skipped but still counted.
++ *
++ * @param text - one task per line
++ */
++export function numberedLines(text: string): readonly { readonly line: number; readonly text: string }[] {
++  return text
++    .split(/\r?\n/)
++    .map((content, index) => ({ line: index + 1, text: content }))
++    .filter((entry) => entry.text.trim() !== '');
++}
+diff --git a/src/index.ts b/src/index.ts
+index 07323994199231137c85050c7b68453320e37b5f..40dd612d55720a64ffe4d1028e040d68f2cc4846 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -1,6 +1,9 @@
+ import { createTaskList } from './domain/list.ts';
+ import type { TaskList } from './domain/list.ts';
++import { numberedLines, parseTaskLine } from './domain/import.ts';
++import type { ImportReport, RejectedLine } from './domain/import.ts';
+ 
++export type { ImportReport, RejectedLine };
+ export type { TaskFilter, TaskList } from './domain/list.ts';
+ export type { Result, TodoError, TodoErrorCode } from './domain/result.ts';
+ export { summarize } from './domain/summary.ts';
+@@ -16,3 +19,24 @@ export type { NewTask, Priority, Status, Task } from './domain/task.ts';
+ export function createTodoList(clock: () => string = () => new Date().toISOString()): TaskList {
+   return createTaskList(clock);
+ }
++
++/**
++ * Adds the tasks written in `text` to `list`, one per line as `title;priority;tags`: the priority may
++ * be left empty for a normal one, and tags are separated by spaces. Blank lines are skipped. A line
++ * that cannot be added (bad input, or a title already in the list) is reported and the rest go on.
++ *
++ * @param list - the list to add the tasks to
++ * @param text - the lines to import
++ * @returns how many tasks were added, and each rejected line with its number (from 1) and reason
++ */
++export function importTasks(list: TaskList, text: string): ImportReport {
++  const rejected: RejectedLine[] = [];
++  let imported = 0;
++  for (const { line, text: content } of numberedLines(text)) {
++    const parsed = parseTaskLine(content);
++    const added = parsed.ok ? list.add(parsed.value) : parsed;
++    if (added.ok) imported += 1;
++    else rejected.push({ line, reason: added.error.message });
++  }
++  return { imported, rejected };
++}
+diff --git a/test/import.test.ts b/test/import.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..b38799c223c5caec9030dfac0c94fff242e0a9b5
+--- /dev/null
++++ b/test/import.test.ts
+@@ -0,0 +1,43 @@
++import assert from 'node:assert/strict';
++import { describe, it } from 'node:test';
++
++import { createTodoList, importTasks } from '../src/index.ts';
++
++describe('importTasks', () => {
++  it('adds every line with its priority and tags', () => {
++    const list = createTodoList();
++    const report = importTasks(list, 'Renew the insurance;high;admin money\nBuy milk;;\nCall mum;low;family');
++    assert.deepEqual(report, { imported: 3, rejected: [] });
++    const insurance = list.find('Renew the insurance');
++    assert.ok(insurance.ok);
++    assert.equal(insurance.value.priority, 'high');
++    assert.deepEqual(insurance.value.tags, ['admin', 'money']);
++    const milk = list.find('Buy milk');
++    assert.ok(milk.ok);
++    assert.equal(milk.value.priority, 'normal');
++    assert.deepEqual(milk.value.tags, []);
++  });
++
++  it('skips blank lines but still counts them in line numbers', () => {
++    const list = createTodoList();
++    const report = importTasks(list, 'Buy milk\r\n\r\n   \r\n;high;x\r\n');
++    assert.equal(report.imported, 1);
++    assert.deepEqual(report.rejected.map((item) => item.line), [4]);
++  });
++
++  it('accepts a line with only a title or only a title and a priority', () => {
++    const list = createTodoList();
++    assert.equal(importTasks(list, 'One\nTwo;high').imported, 2);
++  });
++
++  it('rejects bad lines with a reason and imports the others', () => {
++    const list = createTodoList();
++    list.add({ title: 'Existing' });
++    const report = importTasks(list, 'Good\nBad priority;urgent\nExisting\nToo;many;tags;fields\nGood');
++    assert.equal(report.imported, 1);
++    assert.deepEqual(report.rejected.map((item) => item.line), [2, 3, 4, 5]);
++    for (const item of report.rejected) assert.ok(item.reason.length > 0);
++    assert.match(report.rejected[0]?.reason ?? '', /urgent/);
++    assert.equal(list.list().length, 2);
++  });
++});

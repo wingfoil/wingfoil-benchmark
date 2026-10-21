@@ -1,0 +1,110 @@
+diff --git a/docs/memory/decision-log/dl-003-applypatch-replace-in-place-and-strict-patch-iteration.md b/docs/memory/decision-log/dl-003-applypatch-replace-in-place-and-strict-patch-iteration.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..a158691abe9326cf074960380dee6e47b4383b64
+--- /dev/null
++++ b/docs/memory/decision-log/dl-003-applypatch-replace-in-place-and-strict-patch-iteration.md
+@@ -0,0 +1,22 @@
++---
++id: dl-003-applypatch-replace-in-place-and-strict-patch-iteration
++type: decision-log
++title: "applyPatch replace in place and strict patch iteration"
++status: pending
++---
++
++<!-- decision-log body. `wingfoil memory add` copies this scaffold verbatim; `memory submit` replaces
++     these placeholder comments with real content and fills the required frontmatter fields. -->
++
++## Context
++
++Review of `applyPatch` against RFC 6902 showed `replace` reordered object members (remove then add) and a sparse patch array was accepted because `reduce` skips holes.
++
++## Decision
++
++- `replace` writes the new value at the existing location (array element or object member) without removing it.
++- The patch is iterated by index so every slot is validated, holes included.
++
++## Consequences
++
++Results of `replace` keep member order; sparse patches throw. No other behaviour of dl-002 changes.
+diff --git a/docs/memory/task/task-003-make-applypatch-conform-to-rfc-6902.md b/docs/memory/task/task-003-make-applypatch-conform-to-rfc-6902.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..a02a337ece05b0da9b1dbe39879f6d4c109fd341
+--- /dev/null
++++ b/docs/memory/task/task-003-make-applypatch-conform-to-rfc-6902.md
+@@ -0,0 +1,16 @@
++---
++id: task-003-make-applypatch-conform-to-rfc-6902
++type: task
++title: "Make applyPatch conform to RFC 6902"
++status: pending
++---
++
++<!-- task body. `wingfoil memory add` copies this scaffold verbatim; `memory submit` replaces
++     these placeholder comments with real content and fills the required frontmatter fields. -->
++
++Reviewed `applyPatch` against RFC 6902. Found and fixed two deviations:
++
++- `replace` was implemented as remove + add, which moved an object member to the end; it now replaces the value in place (RFC 4.3 "replaces the value"; key order is kept).
++- Operations were applied with `Array.prototype.reduce`, which skips holes, so a sparse patch was silently accepted; operations are now iterated by index, so a hole is rejected as a non-object operation.
++
++Test added in `test/patch.test.ts`; all tests pass.
+diff --git a/src/index.ts b/src/index.ts
+index 43843f90f45b659d78f24e00a0c653face5c2d43..3c33f4f082b1d0d40d744f99127a391c35aa1b3a 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -118,6 +118,21 @@ function removeAt(document: unknown, path: string): unknown {
+   return document;
+ }
+ 
++function replaceAt(document: unknown, path: string, value: unknown): unknown {
++  const tokens = parsePointer(path);
++  if (tokens.length === 0) {
++    return value;
++  }
++  const { container, key } = parent(document, tokens);
++  step(container, key);
++  if (Array.isArray(container)) {
++    container[Number(key)] = value;
++  } else {
++    setMember(container, key, value);
++  }
++  return document;
++}
++
+ function requireString(operation: Record<string, unknown>, member: string): string {
+   const value = operation[member];
+   if (typeof value !== "string") {
+@@ -145,8 +160,7 @@ function applyOperation(document: unknown, operation: unknown): unknown {
+       return removeAt(document, path);
+     case "replace": {
+       const value = requireValue(operation);
+-      resolvePointer(document, path);
+-      return parsePointer(path).length === 0 ? value : addAt(removeAt(document, path), path, value);
++      return replaceAt(document, path, value);
+     }
+     case "test":
+       if (!jsonEqual(resolvePointer(document, path), requireValue(operation))) {
+@@ -183,5 +197,9 @@ export function applyPatch(document: unknown, patch: Patch): unknown {
+   if (!Array.isArray(patch)) {
+     throw new Error("Invalid JSON Patch: must be an array of operations");
+   }
+-  return patch.reduce(applyOperation, structuredClone(document));
++  let result = structuredClone(document);
++  for (let i = 0; i < patch.length; i++) {
++    result = applyOperation(result, patch[i]);
++  }
++  return result;
+ }
+diff --git a/test/patch.test.ts b/test/patch.test.ts
+index 7a354cb7f0aa7933f00325fd7d60a69616242656..4f1eade54c78ee67a718ec8aa528b4514d6eafaa 100644
+--- a/test/patch.test.ts
++++ b/test/patch.test.ts
+@@ -148,3 +148,8 @@ test("invalid patches are rejected", () => {
+   assert.throws(() => apply({ a: 1 }, { op: "copy", from: 1, path: "/b" }));
+   assert.throws(() => apply({ a: 1 }, { op: "remove", path: "/a~2" }));
+ });
++
++test("replace keeps the member position; sparse patches are rejected", () => {
++  assert.deepEqual(Object.keys(apply({ a: 1, b: 2 }, { op: "replace", path: "/a", value: 9 }) as object), ["a", "b"]);
++  assert.throws(() => applyPatch({}, [, ] as never));
++});

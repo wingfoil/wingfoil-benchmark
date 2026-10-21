@@ -1,0 +1,133 @@
+diff --git a/docs/memory/decision-log/dl-003-long-rental-discount-rules.md b/docs/memory/decision-log/dl-003-long-rental-discount-rules.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..4f69b26452890e846d05bce5b462f581a42ce800
+--- /dev/null
++++ b/docs/memory/decision-log/dl-003-long-rental-discount-rules.md
+@@ -0,0 +1,24 @@
++---
++id: dl-003-long-rental-discount-rules
++type: decision-log
++title: "Long rental discount rules"
++status: pending
++---
++
++# Long rental discount rules
++
++## Context
++Customers who stay longer are rewarded: a rental of 3 days or more costs 10% less than its full price.
++Money is integer cents (dl-001), so a 10% reduction can fall between two cents.
++
++## Decision
++- The discount applies from 3 whole days (`end` - `start` >= 3 days, half-open period of dl-001); 1 and 2
++  days are charged at the full price.
++- It is a flat 10% of the whole total (`days * dailyPrice`), not of the days beyond the third.
++- The discounted total is rounded to the nearest cent, halves up, with integer arithmetic only
++  (`floor((total * 9 + 5) / 10)`), so it is deterministic.
++- `quote` and `book` share one pricing path, so a booking always carries the quoted, reduced total.
++
++## Consequences
++Existing 3-day-or-longer quotes change (e.g. 3 days at 2500 cents: 7500 -> 6750). The threshold and rate
++are constants in `src/index.ts`; changing them later is a one-line edit.
+diff --git a/docs/memory/task/task-003-long-rental-discount.md b/docs/memory/task/task-003-long-rental-discount.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..ce1717ddbdeb4ebe04030450340c32149a90cf8c
+--- /dev/null
++++ b/docs/memory/task/task-003-long-rental-discount.md
+@@ -0,0 +1,13 @@
++---
++id: task-003-long-rental-discount
++type: task
++title: "Long rental discount"
++status: pending
++---
++
++# Long rental discount
++
++A rental of 3 days or more now costs 10% less than its full price, in `quote` and `book` alike
++(`rentalTotal` in `src/index.ts`). Tests first in `test/rental.test.ts` (`npm test`): threshold at 2/3
++days, rounding to the cent, booking total; the existing 3-day quote test now expects 6750.
++Rules and rounding are in dl-003-long-rental-discount-rules.
+diff --git a/src/index.ts b/src/index.ts
+index ec5e858c8cbb4916513b21a8b3bf53ddd8e1b1e0..9f0001f548cf31fd7ba66eb2911e36030488b555 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -1,4 +1,5 @@
+ const DAY_MS = 24 * 60 * 60 * 1000;
++const LONG_RENTAL_DAYS = 3;
+ const UTC_ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/;
+ 
+ /** What a piece of equipment can be. */
+@@ -39,7 +40,7 @@ export interface AvailabilityQuery {
+ export interface RentalService {
+   /** Registers an item; throws on an invalid item or a duplicate id. */
+   addEquipment(item: Equipment): void;
+-  /** Prices a rental; throws on an unknown item or a disallowed period. */
++  /** Prices a rental, with the long rental discount; throws on an unknown item or a disallowed period. */
+   quote(request: RentalRequest): Quote;
+   /** Books a rental; throws as `quote` does, or when the item is not free for the whole period. */
+   book(request: RentalRequest): Booking;
+@@ -69,6 +70,12 @@ function parsePeriod(request: Pick<RentalRequest, 'start' | 'end'>): Period {
+   return { startMs, endMs };
+ }
+ 
++/** Prices whole days in cents; from 3 days the total is 10% less, rounded to the nearest cent (halves up). */
++function rentalTotal(days: number, dailyPrice: number): number {
++  const full = days * dailyPrice;
++  return days >= LONG_RENTAL_DAYS ? Math.floor((full * 9 + 5) / 10) : full;
++}
++
+ function overlaps(a: Period, b: Period): boolean {
+   return a.startMs < b.endMs && b.startMs < a.endMs;
+ }
+@@ -106,7 +113,7 @@ export function createRentalService(): RentalService {
+       itemId: item.id,
+       start: new Date(period.startMs).toISOString(),
+       end: new Date(period.endMs).toISOString(),
+-      total: days * item.dailyPrice,
++      total: rentalTotal(days, item.dailyPrice),
+     };
+     return { quote, period };
+   }
+diff --git a/test/rental.test.ts b/test/rental.test.ts
+index 05c0a87be790778657b8087983366de02c7e2971..26f9ab3ebd2b6891c8a88b43bde7728fb361da34 100644
+--- a/test/rental.test.ts
++++ b/test/rental.test.ts
+@@ -13,16 +13,36 @@ describe('rental service', () => {
+ 
+   const request = (itemId: string, start: string, end: string) => ({ itemId, start, end });
+ 
+-  it('quotes the daily price times the number of days, in cents', () => {
++  it('quotes the daily price times the number of days, in cents, with the long rental discount', () => {
+     const quote = service.quote(request('board-1', '2026-07-01T00:00:00.000Z', '2026-07-04T00:00:00.000Z'));
+     assert.deepEqual(quote, {
+       itemId: 'board-1',
+       start: '2026-07-01T00:00:00.000Z',
+       end: '2026-07-04T00:00:00.000Z',
+-      total: 7500,
++      total: 6750,
+     });
+   });
+ 
++  it('charges the full price below 3 days and 10% less from 3 days', () => {
++    const total = (end: string) => service.quote(request('board-1', '2026-07-01T00:00:00Z', end)).total;
++    assert.equal(total('2026-07-02T00:00:00Z'), 2500);
++    assert.equal(total('2026-07-03T00:00:00Z'), 5000);
++    assert.equal(total('2026-07-04T00:00:00Z'), 6750);
++    assert.equal(total('2026-07-11T00:00:00Z'), 22500);
++  });
++
++  it('rounds a discounted total to the nearest cent, halves up', () => {
++    service.addEquipment({ id: 'board-2', kind: 'board', dailyPrice: 1235 });
++    service.addEquipment({ id: 'board-3', kind: 'board', dailyPrice: 1 });
++    assert.equal(service.quote(request('board-2', '2026-07-01T00:00:00Z', '2026-07-04T00:00:00Z')).total, 3335);
++    assert.equal(service.quote(request('board-3', '2026-07-01T00:00:00Z', '2026-07-04T00:00:00Z')).total, 3);
++  });
++
++  it('books a long rental at the discounted total', () => {
++    const booking = service.book(request('board-1', '2026-07-01T00:00:00Z', '2026-07-04T00:00:00Z'));
++    assert.equal(booking.total, 6750);
++  });
++
+   it('accepts ISO strings without milliseconds', () => {
+     const quote = service.quote(request('sail-1', '2026-07-01T00:00:00Z', '2026-07-02T00:00:00Z'));
+     assert.equal(quote.total, 1200);
