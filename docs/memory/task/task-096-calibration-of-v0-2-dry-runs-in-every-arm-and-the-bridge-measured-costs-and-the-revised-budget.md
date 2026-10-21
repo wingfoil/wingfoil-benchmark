@@ -384,3 +384,14 @@ wrote `src/`, and every change was archived under `openspec/changes/archive/` wi
 - **Full suites** (`scripts/full-suites.sh task/task-096`, started by a load waiter at 22:05, the approver's request
   in chat): on `51c56f30`, not dirty, LINT 0, TEST 0 (1652 passed, 8 skipped), BUILD 0, BIN 0 (8), DOCKER 0 (22, 2
   skipped); log `.cache/full-suites/2026-10-21/task_task-096-51c56f30-220535.txt`.
+
+## Approval notes
+
+- **in-review → approved** (`0bad8c88`): run by this session at the approver's explicit request in chat, 2026-10-21
+  ("approva tu task 96, procedi con merge e chiusura"); the reason says so. It approves the revised budget too.
+- **Merge:** `9ae50f8b` (`--no-ff`, the documents; the fixes were merged earlier, `19505e47`). bug-023 and bug-024:
+  `fixed_by` and Resolution (`79da7c11`), approved → fixed (`b35011d3`, `b3383696`).
+- **Worktree removed:** its ignored files were `.cache/arms/` (a copy of the bridge's arm, rebuilt from history),
+  `coverage/` and `dist/`: no evidence (the dry runs' transcripts are in the main checkout). Branch `task/task-096`
+  deleted.
+- Next: plan-004 step 5, the campaigns (campaign-cycle), can be planned.
