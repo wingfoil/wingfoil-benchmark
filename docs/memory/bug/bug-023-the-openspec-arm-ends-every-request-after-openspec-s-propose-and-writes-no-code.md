@@ -3,6 +3,7 @@ id: bug-023-the-openspec-arm-ends-every-request-after-openspec-s-propose-and-wri
 type: bug
 title: "The openspec arm ends every request after OpenSpec's propose and writes no code"
 status: approved
+fixed_by: task-096-calibration-of-v0-2-dry-runs-in-every-arm-and-the-bridge-measured-costs-and-the-revised-budget
 # fixed_by: task-…   # set by hand, with the fixing task's id, just before `approved → fixed`
 tags: ["openspec","arm","calibration"]
 ---
@@ -50,4 +51,9 @@ adaptation), checked by a fake-agent test of what the arm installs and then by t
 
 ## Resolution
 
-<!-- set when fixed -->
+Fixed by [task-096](../task/task-096-calibration-of-v0-2-dry-runs-in-every-arm-and-the-bridge-measured-costs-and-the-revised-budget.md) (merged in `19505e47`, before calibration's stage 6, and `9ae50f8b`; red
+`37f63cee`, fix `61406f66` and `27343a58` after review round 1): the openspec arm's manual states the user's standing
+instruction, given before the session, to run `/opsx:apply` and `/opsx:archive` after `/opsx:propose`, and not to end
+the session on the proposal; the arm's digest `1ba12def23cf`, pinned in `campaigns/v0-2-reference.yaml`. Stage 6's
+four dry runs (`dry-runs/63`–`66`) implemented and archived every step: S3 37/37, 17/17. Full suites green on
+`51c56f30`.

@@ -3,6 +3,7 @@ id: bug-024-the-dry-run-s-expected-cost-line-quotes-a-dry-run-of-another-arm-dig
 type: bug
 title: "The dry run's expected-cost line quotes a dry run of another arm digest or harness pin"
 status: approved
+fixed_by: task-096-calibration-of-v0-2-dry-runs-in-every-arm-and-the-bridge-measured-costs-and-the-revised-budget
 # fixed_by: task-…   # set by hand, with the fixing task's id, just before `approved → fixed`
 tags: ["dry-run","estimate","cli"]
 ---
@@ -36,4 +37,7 @@ against.
 
 ## Resolution
 
-<!-- set when fixed -->
+Fixed by [task-096](../task/task-096-calibration-of-v0-2-dry-runs-in-every-arm-and-the-bridge-measured-costs-and-the-revised-budget.md) (merged in `19505e47` and `9ae50f8b`; red `9daba120`, fix `40bf0e76`):
+`bench scenario dry-run` looks up its expected cost with the estimate's key, the digest of the arm that runs and the
+harness its profile pins (a docs control's source arm's), through one `harnessKey` the estimate calls too. Stage 6's
+first dry run printed "no dry run yet" for the openspec arm's new digest. Full suites green on `51c56f30`.
