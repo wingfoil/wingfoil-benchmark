@@ -2,7 +2,7 @@
 id: task-097-validation-of-v0-2-the-suites-and-one-real-agent-run-per-arm-on-the-scenario-with-the-largest-step
 type: task
 title: "Validation of v0.2: the suites and one real-agent run per arm on the scenario with the largest step"
-status: in-progress
+status: in-review
 release: v0.2
 wave: validation
 features: []
