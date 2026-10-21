@@ -1,0 +1,215 @@
+diff --git a/docs/memory/decision-log/dl-001-resolvepointer-throws-on-unresolvable-pointers-and-ignores-inherited-properties.md b/docs/memory/decision-log/dl-001-resolvepointer-throws-on-unresolvable-pointers-and-ignores-inherited-properties.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..d36629cbc369acb566f4042b303d8abffa462a88
+--- /dev/null
++++ b/docs/memory/decision-log/dl-001-resolvepointer-throws-on-unresolvable-pointers-and-ignores-inherited-properties.md
+@@ -0,0 +1,24 @@
++---
++id: dl-001-resolvepointer-throws-on-unresolvable-pointers-and-ignores-inherited-properties
++type: decision-log
++title: "resolvePointer throws on unresolvable pointers and ignores inherited properties"
++status: pending
++---
++
++## Context
++
++`resolvePointer(document, pointer)` implements RFC 6901 and later features build on it. The RFC leaves
++some behaviours to the implementation: what an unresolvable pointer yields, and the `-` token.
++
++## Decision
++
++- Any invalid pointer, or pointer that does not resolve, throws an `Error`; there is no `undefined` return.
++- Only own members are resolved: `/__proto__`, `/constructor`, `/length` on arrays etc. throw.
++- On arrays, a token must match `0|[1-9][0-9]*` and be in range; `-` (the element past the end) does not
++  resolve and throws. On objects `-` and numeric-looking tokens are ordinary keys.
++- `~` must be followed by `0` or `1`; unescaping is `~1` then `~0`, so `~01` is `~1`.
++
++## Consequences
++
++Callers can distinguish a found `null` from a missing value. Later features that need `-` (e.g. patch
++add) must handle it themselves. Inherited-property lookups cannot leak prototype data.
+diff --git a/docs/memory/task/task-001-implement-json-pointer-resolvepointer-rfc-6901.md b/docs/memory/task/task-001-implement-json-pointer-resolvepointer-rfc-6901.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..3c15ce73d8423bc2fb2b93929bb6c0dd93c51806
+--- /dev/null
++++ b/docs/memory/task/task-001-implement-json-pointer-resolvepointer-rfc-6901.md
+@@ -0,0 +1,10 @@
++---
++id: task-001-implement-json-pointer-resolvepointer-rfc-6901
++type: task
++title: "Implement JSON Pointer resolvePointer (RFC 6901)"
++status: pending
++---
++
++Added `resolvePointer(document, pointer)` to `src/index.ts` (RFC 6901), with tests in
++`test/pointer.test.ts` written first (RFC examples, escaping, array index rules, error paths).
++Design choices are in dl-001. Run with `npm test`.
+diff --git a/src/index.ts b/src/index.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..e4d7558b7336ca86be8b90db1d5aa4feddedad21
+--- /dev/null
++++ b/src/index.ts
+@@ -0,0 +1,64 @@
++/** A parsed JSON value. */
++export type JsonValue =
++  | null
++  | boolean
++  | number
++  | string
++  | JsonValue[]
++  | { [key: string]: JsonValue };
++
++const ARRAY_INDEX = /^(0|[1-9][0-9]*)$/;
++
++/** Splits a pointer into its unescaped reference tokens (RFC 6901, section 3). */
++function parsePointer(pointer: string): string[] {
++  if (pointer === "") return [];
++  if (!pointer.startsWith("/")) {
++    throw new Error(`Invalid JSON Pointer "${pointer}": must be empty or start with "/"`);
++  }
++  return pointer
++    .slice(1)
++    .split("/")
++    .map((token) => {
++      if (/~(?![01])/.test(token)) {
++        throw new Error(`Invalid JSON Pointer "${pointer}": "~" must be followed by "0" or "1"`);
++      }
++      // "~1" first, then "~0", so that "~01" yields "~1" (RFC 6901, section 4).
++      return token.replace(/~1/g, "/").replace(/~0/g, "~");
++    });
++}
++
++/** Reads one reference token from `current`; own members only, never inherited ones. */
++function step(current: unknown, token: string, pointer: string): unknown {
++  if (Array.isArray(current)) {
++    if (!ARRAY_INDEX.test(token) || Number(token) >= current.length) {
++      throw new Error(`JSON Pointer "${pointer}" does not resolve: no array element "${token}"`);
++    }
++    return current[Number(token)];
++  }
++  if (
++    typeof current === "object" &&
++    current !== null &&
++    Object.prototype.hasOwnProperty.call(current, token)
++  ) {
++    return (current as Record<string, unknown>)[token];
++  }
++  throw new Error(`JSON Pointer "${pointer}" does not resolve: no member "${token}"`);
++}
++
++/**
++ * Returns the value of `document` that the JSON Pointer `pointer` (RFC 6901) refers to.
++ *
++ * @throws Error if `pointer` is not a valid JSON Pointer, or does not resolve to a value of
++ * `document` (missing member, out-of-range or malformed array index, the "-" token, or a
++ * token applied to a primitive).
++ */
++export function resolvePointer(document: JsonValue, pointer: string): JsonValue {
++  if (typeof pointer !== "string") {
++    throw new Error("Invalid JSON Pointer: must be a string");
++  }
++  let current: unknown = document;
++  for (const token of parsePointer(pointer)) {
++    current = step(current, token, pointer);
++  }
++  return current as JsonValue;
++}
+diff --git a/test/pointer.test.ts b/test/pointer.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..c5c239380d4502966cc7d3ad7d227a6486e4b7c1
+--- /dev/null
++++ b/test/pointer.test.ts
+@@ -0,0 +1,93 @@
++import { test } from "node:test";
++import assert from "node:assert/strict";
++import { resolvePointer } from "../src/index.ts";
++
++// The document of RFC 6901, section 5, and its table of pointers (section 5).
++const rfc = {
++  foo: ["bar", "baz"],
++  "": 0,
++  "a/b": 1,
++  "c%d": 2,
++  "e^f": 3,
++  "g|h": 4,
++  "i\\j": 5,
++  'k"l': 6,
++  " ": 7,
++  "m~n": 8,
++};
++
++test("RFC 6901 examples", () => {
++  assert.equal(resolvePointer(rfc, ""), rfc);
++  assert.deepEqual(resolvePointer(rfc, "/foo"), ["bar", "baz"]);
++  assert.equal(resolvePointer(rfc, "/foo/0"), "bar");
++  assert.equal(resolvePointer(rfc, "/"), 0);
++  assert.equal(resolvePointer(rfc, "/a~1b"), 1);
++  assert.equal(resolvePointer(rfc, "/c%d"), 2);
++  assert.equal(resolvePointer(rfc, "/e^f"), 3);
++  assert.equal(resolvePointer(rfc, "/g|h"), 4);
++  assert.equal(resolvePointer(rfc, "/i\\j"), 5);
++  assert.equal(resolvePointer(rfc, '/k"l'), 6);
++  assert.equal(resolvePointer(rfc, "/ "), 7);
++  assert.equal(resolvePointer(rfc, "/m~0n"), 8);
++});
++
++test("unescapes ~01 as ~1, not /", () => {
++  assert.equal(resolvePointer({ "~1": "x", "~/": "y" }, "/~01"), "x");
++  assert.equal(resolvePointer({ "~/": "y" }, "/~0~1"), "y");
++});
++
++test("resolves falsy and null values", () => {
++  assert.equal(resolvePointer({ a: null }, "/a"), null);
++  assert.equal(resolvePointer({ a: false }, "/a"), false);
++  assert.equal(resolvePointer([0], "/0"), 0);
++  assert.equal(resolvePointer(null, ""), null);
++});
++
++test("resolves nested structures", () => {
++  assert.equal(resolvePointer({ a: [{ b: [1, 2] }] }, "/a/0/b/1"), 2);
++});
++
++test("rejects syntactically invalid pointers", () => {
++  for (const p of ["foo", "a/b", "/a~", "/a~2", "/~", "/a~b"]) {
++    assert.throws(() => resolvePointer({ a: 1 }, p), Error, p);
++  }
++});
++
++test("rejects non-string pointers", () => {
++  assert.throws(() => resolvePointer({}, undefined as unknown as string));
++});
++
++test("throws when a member is missing", () => {
++  assert.throws(() => resolvePointer({ a: 1 }, "/b"));
++  assert.throws(() => resolvePointer({ a: 1 }, "/a/b"));
++  assert.throws(() => resolvePointer({ a: null }, "/a/b"));
++  assert.throws(() => resolvePointer({ a: "str" }, "/a/0"));
++  assert.throws(() => resolvePointer({ a: 1 }, "/"));
++});
++
++test("does not resolve inherited properties", () => {
++  for (const p of ["/__proto__", "/constructor", "/toString", "/hasOwnProperty"]) {
++    assert.throws(() => resolvePointer({}, p), Error, p);
++  }
++  assert.throws(() => resolvePointer([], "/length"));
++  assert.throws(() => resolvePointer({ a: [1] }, "/a/constructor"));
++});
++
++test("array indices", () => {
++  const arr = ["a", "b"];
++  assert.equal(resolvePointer(arr, "/1"), "b");
++  assert.throws(() => resolvePointer(arr, "/2"), Error, "out of range");
++  assert.throws(() => resolvePointer(arr, "/-"), Error, "past the end");
++  assert.throws(() => resolvePointer(arr, "/-1"));
++  assert.throws(() => resolvePointer(arr, "/01"));
++  assert.throws(() => resolvePointer(arr, "/1.0"));
++  assert.throws(() => resolvePointer(arr, "/+1"));
++  assert.throws(() => resolvePointer(arr, "/ 1"));
++  assert.throws(() => resolvePointer(arr, "/"));
++  assert.throws(() => resolvePointer(arr, "/0x1"));
++});
++
++test("'-' and numeric tokens are plain keys on objects", () => {
++  assert.equal(resolvePointer({ "-": 1, "01": 2 }, "/-"), 1);
++  assert.equal(resolvePointer({ "-": 1, "01": 2 }, "/01"), 2);
++});

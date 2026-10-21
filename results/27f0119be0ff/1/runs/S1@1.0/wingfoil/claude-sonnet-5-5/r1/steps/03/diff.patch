@@ -1,0 +1,109 @@
+diff --git a/docs/memory/decision-log/dl-003-applypatch-rejects-holes-and-non-json-values.md b/docs/memory/decision-log/dl-003-applypatch-rejects-holes-and-non-json-values.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..d6446c712d73494a37ddc5ae12f8eb76944d0808
+--- /dev/null
++++ b/docs/memory/decision-log/dl-003-applypatch-rejects-holes-and-non-json-values.md
+@@ -0,0 +1,24 @@
++---
++id: dl-003-applypatch-rejects-holes-and-non-json-values
++type: decision-log
++title: "applyPatch rejects holes and non-JSON values"
++status: pending
++---
++
++<!-- decision-log body. `wingfoil memory add` copies this scaffold verbatim; `memory submit` replaces
++     these placeholder comments with real content and fills the required frontmatter fields. -->
++
++## Context
++
++RFC 6902 requires `value` to be a JSON value. `applyPatch` only checked that the member existed, and
++`Array.prototype.map` skipped holes in a sparse patch array.
++
++## Decision
++
++Validate `value` of `add`, `replace` and `test` as JSON (null, boolean, string, finite number, array,
++plain object, recursively) and visit every patch slot with `Array.from`, so holes are rejected as
++non-object operations. Validation still happens before any operation is applied.
++
++## Consequences
++
++Patches that were silently accepted now throw; valid patches are unaffected.
+diff --git a/docs/memory/task/task-003-make-applypatch-validation-conform-to-rfc-6902.md b/docs/memory/task/task-003-make-applypatch-validation-conform-to-rfc-6902.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..16648606fdb882e62a278aca88b8f639c1f35f8d
+--- /dev/null
++++ b/docs/memory/task/task-003-make-applypatch-validation-conform-to-rfc-6902.md
+@@ -0,0 +1,17 @@
++---
++id: task-003-make-applypatch-validation-conform-to-rfc-6902
++type: task
++title: "Make applyPatch validation conform to RFC 6902"
++status: pending
++---
++
++<!-- task body. `wingfoil memory add` copies this scaffold verbatim; `memory submit` replaces
++     these placeholder comments with real content and fills the required frontmatter fields. -->
++
++## What was done
++
++Reviewed `applyPatch` against RFC 6902 by probing each operation, edge cases and error paths. Two
++invalid patches were accepted: an operation slot that is a hole in a sparse array (skipped by `map`),
++and an `add`/`replace`/`test` whose `value` is not JSON (e.g. `undefined`, `NaN`). Both now throw
++before any operation is applied. Tests added in `test/patch.test.ts`. The other behaviours checked
++(add/move/copy/test semantics, array indexes, `-`, move into own child, atomicity) already conform.
+diff --git a/src/index.ts b/src/index.ts
+index 79c841d271d0d90009ce7965b42f738b6f22680c..d60af5ffd3b43ebde785fcd36392f51c5127ec8f 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -101,6 +101,17 @@ function jsonEqual(a: JsonValue, b: JsonValue): boolean {
+   );
+ }
+ 
++function isJsonValue(value: unknown): value is JsonValue {
++  if (value === null || typeof value === "boolean" || typeof value === "string") return true;
++  if (typeof value === "number") return Number.isFinite(value);
++  if (Array.isArray(value)) return Array.from(value).every(isJsonValue);
++  return (
++    typeof value === "object" &&
++    Object.getPrototypeOf(value) === Object.prototype &&
++    Object.values(value).every(isJsonValue)
++  );
++}
++
+ function validateOperation(operation: unknown, index: number): PatchOperation {
+   const where = `Invalid JSON Patch: operation ${index}`;
+   if (typeof operation !== "object" || operation === null || Array.isArray(operation)) {
+@@ -113,8 +124,8 @@ function validateOperation(operation: unknown, index: number): PatchOperation {
+   if (typeof fields.path !== "string") {
+     throw new Error(`${where} needs a string "path"`);
+   }
+-  if (OPERATIONS_WITH_VALUE.includes(fields.op) && !hasOwn(fields, "value")) {
+-    throw new Error(`${where} ("${fields.op}") needs a "value"`);
++  if (OPERATIONS_WITH_VALUE.includes(fields.op) && !isJsonValue(fields.value)) {
++    throw new Error(`${where} ("${fields.op}") needs a JSON "value"`);
+   }
+   if (OPERATIONS_WITH_FROM.includes(fields.op) && typeof fields.from !== "string") {
+     throw new Error(`${where} ("${fields.op}") needs a string "from"`);
+@@ -236,6 +247,6 @@ export function applyPatch(document: JsonValue, patch: PatchOperation[]): JsonVa
+   if (!Array.isArray(patch)) {
+     throw new Error("Invalid JSON Patch: must be an array of operations");
+   }
+-  const operations = patch.map(validateOperation);
++  const operations = Array.from(patch, validateOperation);
+   return operations.reduce(applyOperation, clone(document));
+ }
+diff --git a/test/patch.test.ts b/test/patch.test.ts
+index 0279319b73b863c299fc61ee1896d7ecb12da07a..e647268d84ce0874918a8867cf56a28eae446ef4 100644
+--- a/test/patch.test.ts
++++ b/test/patch.test.ts
+@@ -99,3 +99,10 @@ test("prototype keys are ordinary members", () => {
+   assert.deepEqual(Object.keys(result as object), ["__proto__"]);
+   assert.equal(({} as Record<string, unknown>).x, undefined);
+ });
++
++test("invalid patches: holes and non-JSON values", () => {
++  assert.throws(() => apply({}, [,]));
++  assert.throws(() => apply({}, [{ op: "add", path: "/a", value: undefined }]));
++  assert.throws(() => apply({}, [{ op: "test", path: "/a", value: { b: undefined } }]));
++  assert.throws(() => apply({}, [{ op: "replace", path: "", value: Number.NaN }]));
++});

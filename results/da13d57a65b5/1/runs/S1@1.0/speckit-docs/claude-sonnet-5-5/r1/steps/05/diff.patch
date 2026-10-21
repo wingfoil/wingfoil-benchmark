@@ -1,0 +1,108 @@
+diff --git a/src/index.ts b/src/index.ts
+index 7a0d2bf055efad18d6c31917119c849d5b6ab662..4862804053369178c755c14049335cefff76a85a 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -260,3 +260,66 @@ export function applyMergePatch(target: unknown, patch: unknown): JsonValue {
+   }
+   return result;
+ }
++
++export type PatchOperation =
++  | { op: "add" | "replace"; path: string; value: JsonValue }
++  | { op: "remove"; path: string };
++
++function escapeToken(token: string): string {
++  return token.replace(/~/g, "~0").replace(/\//g, "~1");
++}
++
++function diffInto(from: JsonValue, to: JsonValue, path: string, ops: PatchOperation[]): void {
++  if (deepEqual(from, to)) return;
++
++  if (Array.isArray(from) && Array.isArray(to)) {
++    // Skip the unchanged head and tail, then compare what is left position by position.
++    let start = 0;
++    while (start < from.length && start < to.length && deepEqual(from[start], to[start])) start++;
++    let endFrom = from.length;
++    let endTo = to.length;
++    while (endFrom > start && endTo > start && deepEqual(from[endFrom - 1], to[endTo - 1])) {
++      endFrom--;
++      endTo--;
++    }
++    const common = Math.min(endFrom - start, endTo - start);
++    for (let i = 0; i < common; i++) {
++      diffInto(from[start + i], to[start + i], `${path}/${start + i}`, ops);
++    }
++    // Remove from the highest index down so that earlier indexes stay valid.
++    for (let i = endFrom - 1; i >= start + common; i--) {
++      ops.push({ op: "remove", path: `${path}/${i}` });
++    }
++    for (let i = start + common; i < endTo; i++) {
++      ops.push({ op: "add", path: `${path}/${i}`, value: structuredClone(to[i]) });
++    }
++    return;
++  }
++
++  if (isObject(from) && isObject(to)) {
++    for (const key of Object.keys(from)) {
++      if (!hasOwn(to, key)) ops.push({ op: "remove", path: `${path}/${escapeToken(key)}` });
++    }
++    for (const key of Object.keys(to)) {
++      const child = `${path}/${escapeToken(key)}`;
++      if (!hasOwn(from, key)) {
++        ops.push({ op: "add", path: child, value: structuredClone(to[key]) });
++      } else {
++        diffInto(from[key], to[key], child, ops);
++      }
++    }
++    return;
++  }
++
++  ops.push({ op: "replace", path, value: structuredClone(to) });
++}
++
++/**
++ * Returns an RFC 6902 JSON Patch that turns `from` into `to`, describing only what changed.
++ * Neither input is mutated.
++ */
++export function createPatch(from: unknown, to: unknown): PatchOperation[] {
++  const ops: PatchOperation[] = [];
++  diffInto(from as JsonValue, to as JsonValue, "", ops);
++  return ops;
++}
+diff --git a/test/createpatch.test.ts b/test/createpatch.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..b663184de465d6ecb5389a65d66a93197376a827
+--- /dev/null
++++ b/test/createpatch.test.ts
+@@ -0,0 +1,31 @@
++import { test } from "node:test";
++import assert from "node:assert/strict";
++import { applyPatch, createPatch } from "../src/index.ts";
++
++const cases: [unknown, unknown][] = [
++  [{ a: 1 }, { a: 1 }],
++  [1, 2],
++  [{ a: [1, 2, 3, 4] }, { a: [1, 3, 4] }],
++  [[1, 2, 3], [0, 1, 2, 3, 4]],
++  [[1, 2, 3, 4, 5], [1, 9, 5]],
++  [{ "a/b": { "~": [1] } }, { "a/b": { "~": [1, 2] }, c: null }],
++  [{ a: 1 }, [1]],
++  [JSON.parse('{"__proto__":1,"x":2}'), JSON.parse('{"x":3}')],
++];
++
++for (const [from, to] of cases) {
++  test(`createPatch round-trips ${JSON.stringify(from)} -> ${JSON.stringify(to)}`, () => {
++    const copy = structuredClone(from);
++    assert.deepEqual(applyPatch(from, createPatch(from, to)), to);
++    assert.deepEqual(from, copy);
++  });
++}
++
++test("createPatch is minimal for a small change", () => {
++  assert.deepEqual(
++    createPatch({ a: { b: 1, c: 2 }, d: [1, 2] }, { a: { b: 1, c: 3 }, d: [1, 2] }),
++    [{ op: "replace", path: "/a/c", value: 3 }],
++  );
++  assert.deepEqual(createPatch({ a: 1 }, { a: 1 }), []);
++  assert.deepEqual(createPatch([1, 2, 3, 4], [1, 3, 4]), [{ op: "remove", path: "/1" }]);
++});

@@ -88,3 +88,47 @@ independent read-only agent, rounds until clean, before in-review.
   scenario with the largest step" --tags "validation,real-agent"`, on main. Declared: the element from the template
   in `draft`, one commit. Observed: `a75a8bf4`, `status: draft`, `tags` written, the other fields empty (W-02).
   Matches.
+- `npx wingfoil memory submit task-097-…` (draft → pending), on main. Declared: one commit, `status: pending`.
+  Observed: `d44df6c8`. Matches.
+- **pending → backlog** (`4405e082`): run by the approver from the main checkout with the drafted reason. The
+  approver then asked in chat for this session to approve; its `memory approve` ran after theirs and was refused,
+  "illegal transition backlog -> approved for type 'task'", with no commit: the gate had already passed. The approver's
+  own approval is the consent.
+- `npx wingfoil memory submit task-097-…` (backlog → in-progress): `6bdd4518`. Matches. WIP: no other task open.
+- **The full suites** (`scripts/full-suites.sh main`, the load low): on `6bdd4518`, not dirty, LINT 0, TEST 0 (1660
+  passed), BUILD 0, BIN 0 (8), DOCKER 0 (24, none skipped); log
+  `.cache/full-suites/2026-10-21/main-6bdd4518-222351.txt`.
+
+### The runs (2026-10-21, 20:34–21:15 UTC)
+
+`bench campaign run campaigns/v0-2-validation.yaml --allow-spending`, then the same for
+`v0-2-validation-bridge.yaml`, from the main checkout, with `BENCH_AGENT_TOKEN_FILE=$HOME/.claude/bench-token`,
+`BENCH_WINGFOIL_REPO`, `BENCH_SPECKIT_REPO`. The estimates as the Design (4.59 € and 1.15 €), under each `warn_eur`:
+no question asked. The bridge's run printed "arm wingfoil: read from commit 2441243b8e37, which holds its pinned
+digest". Both executions `completed` (`execution.json`).
+
+| Execution | Arm | Cost | Agent time | Turns | Final public | Hold-out |
+|---|---|---|---|---|---|---|
+| `da13d57a65b5/1` | baseline | 0.4347 USD (0.3876 €) | 211 s | 24 | 165/165 | 48/48 |
+| | baseline-docs | 0.4654 USD (0.4150 €) | 214 s | 30 | 158/165 | 43/48 |
+| | wingfoil | 0.6874 USD (0.6130 €) | 268 s | 46 | 164/165 | 45/48 |
+| | speckit | 0.5347 USD (0.4768 €) | 368 s | 33 | 164/165 | 45/48 |
+| | speckit-docs | 0.3854 USD (0.3437 €) | 192 s | 25 | 164/165 | 45/48 |
+| | openspec | 0.9527 USD (0.8495 €) | 342 s | 77 | 165/165 | 48/48 |
+| | openspec-docs | 0.3320 USD (0.2961 €) | 170 s | 23 | 164/165 | 45/48 |
+| `27f0119be0ff/1` | baseline | 0.3919 USD (0.3495 €) | 210 s | 24 | 164/165 | 45/48 |
+| | wingfoil (v0.2.2) | 0.7177 USD (0.6400 €) | 426 s | 52 | 165/165 | 48/48 |
+
+- **Spent: 4.9019 USD (4.3712 €)** of the 9 € consented: 3.7922 USD and 1.1096 USD; each run within 0.91 and
+  1.28 times its calibration dry run.
+- **Every run:** `completed`, one attempt, no intervention; Claude Code 2.1.300, `claude-sonnet-5-5` at `medium`,
+  priced `list`, the only model in every step; the arm digest its campaign pins, the bridge's wingfoil
+  `680b19f27c9f` with `arm_source` commit `2441243b`, every other `{ tree: true }`. The token scan of both executions'
+  results (`grep -rlFf`, the value never printed): clean; no `bench-` container left; a ledger line each.
+- **The chain:** `bench score <id>/1 --holdout` wrote both `aggregate.json` (7 and 2 groups, n = 1); `bench run show`
+  of all nine, exit 0; `bench site build` of both, locally (never published); `bench transcripts pack` of both
+  (35 and 10 transcripts, the harness artifacts 3 and 1), with the token file named so that the pack scans for its
+  value, exit 0: the `gh release create` it prints not run. `releases/` is git-ignored.
+- **S1's step 5 varies by run:** in calibration wingfoil lost six public tests (158/165) and the others one; here
+  baseline-docs lost seven (158/165, 43/48) and baseline and openspec none. calibration §8's H6 signal on v0.3.0 is
+  not repeated at n = 1: the campaign's three runs per arm are needed to read it.

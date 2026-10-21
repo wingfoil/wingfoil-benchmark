@@ -1,0 +1,158 @@
+diff --git a/docs/memory/decision-log/dl-004-applymergepatch-semantics-pure-strict-json-input-own-members-only.md b/docs/memory/decision-log/dl-004-applymergepatch-semantics-pure-strict-json-input-own-members-only.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..6baace79293cb6508a84aa9ac1afe52f1d882c64
+--- /dev/null
++++ b/docs/memory/decision-log/dl-004-applymergepatch-semantics-pure-strict-json-input-own-members-only.md
+@@ -0,0 +1,25 @@
++---
++id: dl-004-applymergepatch-semantics-pure-strict-json-input-own-members-only
++type: decision-log
++title: "applyMergePatch semantics: pure, strict JSON input, own members only"
++status: pending
++---
++
++## Context
++
++RFC 7386 defines MergePatch(Target, Patch) but leaves open aliasing of inputs, invalid input, and
++special member names.
++
++## Decision
++
++- Pure: neither argument is mutated and the result shares no structure with them (values are cloned).
++- Target and patch must be JSON values (same check as `applyPatch`); otherwise it throws.
++- Only own members of the target are considered, and members are set with `defineProperty`, so
++  `__proto__` and names such as `toString` are ordinary keys.
++- Following the RFC, a non-object target meets an object patch as `{}`, so `null` members inside a
++  patch applied there are dropped; arrays are replaced wholesale.
++
++## Consequences
++
++Callers get a safe merge at the cost of a copy per call. A `null` value cannot be set through a merge
++patch, as the RFC specifies.
+diff --git a/docs/memory/task/task-004-implement-json-merge-patch-applymergepatch-rfc-7386.md b/docs/memory/task/task-004-implement-json-merge-patch-applymergepatch-rfc-7386.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..fa0e3737cc0e312fb09b99f1377522fe9135a80b
+--- /dev/null
++++ b/docs/memory/task/task-004-implement-json-merge-patch-applymergepatch-rfc-7386.md
+@@ -0,0 +1,13 @@
++---
++id: task-004-implement-json-merge-patch-applymergepatch-rfc-7386
++type: task
++title: "Implement JSON Merge Patch applyMergePatch RFC 7386"
++status: pending
++---
++
++## What was done
++
++- Added `applyMergePatch(target, patch)` to `src/index.ts` (RFC 7386): non-object patches replace the
++  target, object patches merge member by member, `null` members delete, arrays are replaced.
++- Added `test/merge-patch.test.ts`: the RFC appendix A cases, scalar targets, no mutation or aliasing,
++  `__proto__` and inherited names, and rejection of non-JSON input.
+diff --git a/src/index.ts b/src/index.ts
+index d60af5ffd3b43ebde785fcd36392f51c5127ec8f..83733bddf5f8e1b382d9bbc5a571946e26644cd5 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -250,3 +250,35 @@ export function applyPatch(document: JsonValue, patch: PatchOperation[]): JsonVa
+   const operations = Array.from(patch, validateOperation);
+   return operations.reduce(applyOperation, clone(document));
+ }
++
++function mergeValues(target: JsonValue | undefined, patch: JsonValue): JsonValue {
++  if (typeof patch !== "object" || patch === null || Array.isArray(patch)) return clone(patch);
++  const result: { [key: string]: JsonValue } = {};
++  if (typeof target === "object" && target !== null && !Array.isArray(target)) {
++    for (const key of Object.keys(target)) setMember(result, key, clone(target[key]));
++  }
++  for (const key of Object.keys(patch)) {
++    const value = patch[key];
++    if (value === null) {
++      delete result[key];
++    } else {
++      setMember(result, key, mergeValues(hasOwn(result, key) ? result[key] : undefined, value));
++    }
++  }
++  return result;
++}
++
++/**
++ * Applies the JSON Merge Patch `patch` (RFC 7386) to `target` and returns the result as a new
++ * value; neither argument is mutated, and the result shares no structure with them.
++ *
++ * A non-object `patch` replaces `target`; an object `patch` is merged member by member, a `null`
++ * member removing that member of `target`. Arrays are replaced, never merged.
++ *
++ * @throws Error if `target` or `patch` is not a JSON value.
++ */
++export function applyMergePatch(target: JsonValue, patch: JsonValue): JsonValue {
++  if (!isJsonValue(target)) throw new Error("Invalid JSON Merge Patch: target must be a JSON value");
++  if (!isJsonValue(patch)) throw new Error("Invalid JSON Merge Patch: patch must be a JSON value");
++  return mergeValues(target, patch);
++}
+diff --git a/test/merge-patch.test.ts b/test/merge-patch.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..3039e7a60e8a823b3a43e59839340d25a61262b4
+--- /dev/null
++++ b/test/merge-patch.test.ts
+@@ -0,0 +1,62 @@
++import { test } from "node:test";
++import assert from "node:assert/strict";
++import { applyMergePatch, type JsonValue } from "../src/index.ts";
++
++const merge = (target: unknown, patch: unknown) => applyMergePatch(target as JsonValue, patch as JsonValue);
++
++test("RFC 7386 appendix A examples", () => {
++  const cases: [JsonValue, JsonValue, JsonValue][] = [
++    [{ a: "b" }, { a: "c" }, { a: "c" }],
++    [{ a: "b" }, { b: "c" }, { a: "b", b: "c" }],
++    [{ a: "b" }, { a: null }, {}],
++    [{ a: "b", b: "c" }, { a: null }, { b: "c" }],
++    [{ a: ["b"] }, { a: "c" }, { a: "c" }],
++    [{ a: "c" }, { a: ["b"] }, { a: ["b"] }],
++    [{ a: { b: "c" } }, { a: { b: "d", c: null } }, { a: { b: "d" } }],
++    [{ a: [{ b: "c" }] }, { a: [1] }, { a: [1] }],
++    [["a", "b"], ["c", "d"], ["c", "d"]],
++    [{ a: "b" }, ["c"], ["c"]],
++    [{ a: "foo" }, null, null],
++    [{ a: "foo" }, "bar", "bar"],
++    [{ e: null }, { a: 1 }, { e: null, a: 1 }],
++    [[1, 2], { a: "b", c: null }, { a: "b" }],
++    [{}, { a: { bb: { ccc: null } } }, { a: { bb: {} } }],
++  ];
++  for (const [target, patch, expected] of cases) {
++    assert.deepEqual(merge(target, patch), expected);
++  }
++});
++
++test("scalar and non-object targets", () => {
++  assert.deepEqual(merge(1, { a: 1 }), { a: 1 });
++  assert.deepEqual(merge(null, { a: 1 }), { a: 1 });
++  assert.equal(merge({ a: 1 }, 5), 5);
++});
++
++test("does not mutate or alias its arguments", () => {
++  const target = { a: { b: 1 }, c: [1] };
++  const patch = { a: { d: [2] }, e: { f: 1 } };
++  const result = merge(target, patch) as any;
++  assert.deepEqual(target, { a: { b: 1 }, c: [1] });
++  assert.deepEqual(patch, { a: { d: [2] }, e: { f: 1 } });
++  assert.notEqual(result.a.d, patch.a.d);
++  assert.notEqual(result.e, patch.e);
++  assert.notEqual(result.c, target.c);
++});
++
++test('"__proto__" and inherited names are ordinary keys', () => {
++  const result = merge({}, JSON.parse('{"__proto__": {"x": 1}}')) as any;
++  assert.equal(Object.getPrototypeOf(result), Object.prototype);
++  assert.deepEqual(Object.keys(result), ["__proto__"]);
++  assert.equal(({} as any).x, undefined);
++  assert.deepEqual(merge({}, { toString: null }), {});
++  assert.deepEqual(merge({}, { toString: { a: 1 } }), { toString: { a: 1 } });
++});
++
++test("rejects non-JSON input", () => {
++  assert.throws(() => merge({}, undefined));
++  assert.throws(() => merge({}, { a: undefined }));
++  assert.throws(() => merge({}, { a: NaN }));
++  assert.throws(() => merge(undefined, {}));
++  assert.throws(() => merge(new Date(), {}));
++});

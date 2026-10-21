@@ -1,0 +1,142 @@
+diff --git a/docs/memory/decision-log/dl-003-applypatch-replace-in-place-move-onto-itself-is-a-no-op-undefined-is-no-value.md b/docs/memory/decision-log/dl-003-applypatch-replace-in-place-move-onto-itself-is-a-no-op-undefined-is-no-value.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..6571e3453614b2d1039c97014bce86833233c94b
+--- /dev/null
++++ b/docs/memory/decision-log/dl-003-applypatch-replace-in-place-move-onto-itself-is-a-no-op-undefined-is-no-value.md
+@@ -0,0 +1,29 @@
++---
++id: dl-003-applypatch-replace-in-place-move-onto-itself-is-a-no-op-undefined-is-no-value
++type: decision-log
++title: "applyPatch: replace in place, move onto itself is a no-op, undefined is no value"
++status: pending
++format: 1
++---
++
++<!-- decision-log body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
++
++# Context
++
++A review of `applyPatch` against RFC 6902 found three deviations, described in task-003.
++
++# Decision
++
++- `replace` assigns at the target (array element or object member) rather than removing and re-adding.
++- `move` whose `from` equals `path` checks that the location exists and changes nothing, root included.
++- A `value` that is `undefined` is treated as missing; sparse patch arrays are validated element by element.
++- Unchanged from dl-002: removing the whole document still throws.
++
++# Consequences
++
++Results match the RFC in these cases and key order is stable under `replace`. Callers who passed
++`value: undefined` now get an error instead of a silently dropped value.
+diff --git a/docs/memory/task/task-003-make-applypatch-conform-to-rfc-6902-edge-cases.md b/docs/memory/task/task-003-make-applypatch-conform-to-rfc-6902-edge-cases.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..946446a6a70833bef3e6ed42e5c01052ddbeea0f
+--- /dev/null
++++ b/docs/memory/task/task-003-make-applypatch-conform-to-rfc-6902-edge-cases.md
+@@ -0,0 +1,27 @@
++---
++id: task-003-make-applypatch-conform-to-rfc-6902-edge-cases
++type: task
++title: "Make applyPatch conform to RFC 6902 edge cases"
++status: pending
++format: 1
++---
++
++<!-- task body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
++
++# Task
++
++Review `applyPatch` against RFC 6902 and fix the deviations found.
++
++## What was done
++
++- `replace` now overwrites the target in place instead of remove then add, so object members keep
++  their position.
++- `move` with identical `from` and `path` (including the whole document) is a no-op once the location
++  is checked to exist; before, moving the root onto itself threw.
++- A `value` of `undefined` on add/replace/test is rejected like a missing `value`; it is not JSON.
++- Holes in a sparse patch array are validated instead of silently skipped.
++- Tests added in `test/patch.test.ts`. Design choices are in decision-log dl-003.
+diff --git a/src/index.ts b/src/index.ts
+index 4e1d1b92c2224f616a7058eafc2e2e700aeff415..cd941bc9ea3812a8a66bf706a2543da41939b945 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -93,7 +93,7 @@ function validateOperation(operation: unknown, index: number): PatchOperation {
+   if (HAS_FROM.has(op) && typeof operation.from !== "string") {
+     throw new Error(`${where} needs a string "from"`);
+   }
+-  if (HAS_VALUE.has(op) && !Object.prototype.hasOwnProperty.call(operation, "value")) {
++  if (HAS_VALUE.has(op) && operation.value === undefined) {
+     throw new Error(`${where} needs a "value"`);
+   }
+   return operation as PatchOperation;
+@@ -191,13 +191,25 @@ function applyOperation(document: JsonValue, operation: PatchOperation): JsonVal
+     case "remove":
+       return removeValue(document, operation.path)[0];
+     case "replace": {
+-      if (parsePointer(operation.path).length === 0) return clone(operation.value);
++      const tokens = parsePointer(operation.path);
++      if (tokens.length === 0) return clone(operation.value);
+       resolvePointer(document, operation.path);
+-      return addValue(removeValue(document, operation.path)[0], operation.path, clone(operation.value));
++      const parent = parentOf(document, tokens, operation.path);
++      const token = tokens[tokens.length - 1];
++      if (Array.isArray(parent)) {
++        parent[Number(token)] = clone(operation.value);
++      } else {
++        setMember(parent, token, clone(operation.value));
++      }
++      return document;
+     }
+     case "move": {
+       const from = parsePointer(operation.from);
+       const to = parsePointer(operation.path);
++      if (from.length === to.length && from.every((token, i) => token === to[i])) {
++        resolvePointer(document, operation.from);
++        return document;
++      }
+       if (from.length < to.length && from.every((token, i) => token === to[i])) {
+         throw new Error(`Cannot move "${operation.from}" into one of its own children`);
+       }
+@@ -227,7 +239,7 @@ function applyOperation(document: JsonValue, operation: PatchOperation): JsonVal
+  */
+ export function applyPatch(document: unknown, patch: PatchOperation[]): JsonValue {
+   if (!Array.isArray(patch)) throw new Error("Invalid JSON Patch: not an array");
+-  const operations = patch.map(validateOperation);
++  const operations = Array.from(patch, validateOperation);
+   let result = clone(document as JsonValue);
+   for (const operation of operations) {
+     result = applyOperation(result, operation);
+diff --git a/test/patch.test.ts b/test/patch.test.ts
+index 495cf7bb7e237777e0e16f57e75a313d9ad45a8a..00f22f84f7ad0c58734c59c2eb0eb7cf47e37e32 100644
+--- a/test/patch.test.ts
++++ b/test/patch.test.ts
+@@ -140,3 +140,19 @@ test("invalid patches", () => {
+   assert.throws(() => applyPatch({}, [{ op: "move", path: "/a" }] as never));
+   assert.throws(() => applyPatch({}, [{ op: "copy", path: "/a", from: 1 }] as never));
+ });
++
++test("replace keeps the position of an object member", () => {
++  const out = applyPatch({ a: 1, b: 2, c: 3 }, [{ op: "replace", path: "/a", value: 9 }]);
++  assert.deepEqual(Object.keys(out as object), ["a", "b", "c"]);
++});
++
++test("move onto itself is a no-op, even for the whole document, but the location must exist", () => {
++  assert.deepEqual(applyPatch({ a: 1 }, [{ op: "move", from: "", path: "" }]), { a: 1 });
++  assert.throws(() => applyPatch({}, [{ op: "move", from: "/a", path: "/a" }]));
++});
++
++test("a value of undefined or a hole in the patch is not valid JSON Patch", () => {
++  assert.throws(() => applyPatch({}, [{ op: "add", path: "/a", value: undefined }] as never));
++  assert.throws(() => applyPatch({ a: 1 }, [{ op: "test", path: "/a", value: undefined }] as never));
++  assert.throws(() => applyPatch({}, new Array(1) as never));
++});

@@ -1,0 +1,75 @@
+diff --git a/src/index.ts b/src/index.ts
+index 38675f46afc67f09539a5bb16cc49e91f3fc823b..942eb60bb9ba004e5cb22adebc1fc18669f7446d 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -1,2 +1,3 @@
+ export { resolvePointer } from "./pointer.ts";
+ export { applyPatch } from "./patch.ts";
++export { applyMergePatch } from "./mergePatch.ts";
+diff --git a/src/mergePatch.ts b/src/mergePatch.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..c7c20f70a41ff0f3c018757482ac5ed0113c2096
+--- /dev/null
++++ b/src/mergePatch.ts
+@@ -0,0 +1,28 @@
++type Json = unknown;
++
++function isObject(value: unknown): value is Record<string, Json> {
++  return typeof value === "object" && value !== null && !Array.isArray(value);
++}
++
++function setMember(object: Record<string, Json>, key: string, value: Json): void {
++  // defineProperty so that a "__proto__" member is data, not a prototype assignment.
++  Object.defineProperty(object, key, { value, writable: true, enumerable: true, configurable: true });
++}
++
++// RFC 7386 MergePatch. Neither argument is modified.
++export function applyMergePatch(target: Json, patch: Json): Json {
++  if (!isObject(patch)) return structuredClone(patch);
++  const result: Record<string, Json> = {};
++  if (isObject(target)) {
++    for (const key of Object.keys(target)) setMember(result, key, structuredClone(target[key]));
++  }
++  for (const key of Object.keys(patch)) {
++    const value = patch[key];
++    if (value === null) {
++      delete result[key];
++    } else {
++      setMember(result, key, applyMergePatch(result[key], value));
++    }
++  }
++  return result;
++}
+diff --git a/test/mergePatch.test.ts b/test/mergePatch.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..acd5929f02d3cb9624a8146759d7bedb5c9746ce
+--- /dev/null
++++ b/test/mergePatch.test.ts
+@@ -0,0 +1,27 @@
++import { test } from "node:test";
++import assert from "node:assert/strict";
++import { applyMergePatch } from "../src/index.ts";
++
++test("RFC 7386 example", () => {
++  const target = { title: "Goodbye!", author: { givenName: "John", familyName: "Doe" }, tags: ["a", "b"], content: "x" };
++  const patch = { title: "Hello!", phoneNumber: "+01", author: { familyName: null }, tags: ["c"] };
++  assert.deepEqual(applyMergePatch(target, patch), {
++    title: "Hello!", author: { givenName: "John" }, tags: ["c"], content: "x", phoneNumber: "+01",
++  });
++  assert.equal(target.author.familyName, "Doe");
++});
++
++test("non-object patch replaces; non-object target is treated as {}", () => {
++  assert.deepEqual(applyMergePatch({ a: 1 }, ["x"]), ["x"]);
++  assert.equal(applyMergePatch({ a: 1 }, 3), 3);
++  assert.deepEqual(applyMergePatch([1], { a: 1 }), { a: 1 });
++  assert.deepEqual(applyMergePatch({ a: "b" }, { a: { b: null, c: 1 } }), { a: { c: 1 } });
++  assert.deepEqual(applyMergePatch({}, { a: { b: null } }), { a: {} });
++  assert.equal(applyMergePatch({ a: 1 }, null), null);
++});
++
++test("__proto__ is plain data", () => {
++  const out = applyMergePatch({}, JSON.parse('{"__proto__":{"x":1}}')) as object;
++  assert.equal(Object.getPrototypeOf(out), Object.prototype);
++  assert.equal(({} as any).x, undefined);
++});
