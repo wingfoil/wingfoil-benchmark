@@ -1,0 +1,331 @@
+diff --git a/openspec/changes/archive/2026-10-21-import-tasks/.openspec.yaml b/openspec/changes/archive/2026-10-21-import-tasks/.openspec.yaml
+new file mode 100644
+index 0000000000000000000000000000000000000000..dc36fb1bf855a31066cca3bf527c725e38489c5a
+--- /dev/null
++++ b/openspec/changes/archive/2026-10-21-import-tasks/.openspec.yaml
+@@ -0,0 +1,2 @@
++schema: spec-driven
++created: 2026-10-21
+diff --git a/openspec/changes/archive/2026-10-21-import-tasks/design.md b/openspec/changes/archive/2026-10-21-import-tasks/design.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..7d5ddc8a765f538a88053a6aafcf6952f283d76d
+--- /dev/null
++++ b/openspec/changes/archive/2026-10-21-import-tasks/design.md
+@@ -0,0 +1,22 @@
++## Context
++
++`TaskList.add` already validates title, priority and tags and rejects duplicates, returning a `Result` and leaving the list unchanged on failure. Domain code must not throw, read the clock or use randomness.
++
++## Goals / Non-Goals
++
++- Goals: a thin parser over `list.add`, reusing its validation and error messages.
++- Non-Goals: quoting or escaping `;`, other formats (CSV), undoing a partial import.
++
++## Decisions
++
++- Put `importTasks` in `src/domain/import.ts` and re-export from `src/index.ts`. It only splits lines and calls `list.add`, so validation rules live in one place.
++- Split text on `\r?\n`, each line on `;`. More than three fields is rejected rather than folding extras into tags, since a stray `;` likely means a damaged row.
++- Fewer than three fields is accepted (missing priority/tags), as an assumption for spreadsheet exports that trim trailing empties.
++- Priority is trimmed and matched exactly (case-sensitive), as `add` does; empty becomes `normal`. Tags split on whitespace runs.
++- The reason is the `add` error message; the parser's own errors use the same style.
++- The import is not atomic: valid lines are kept even when others are rejected, as the request asks.
++
++## Risks / Trade-offs
++
++- [Titles containing `;` are rejected as too many fields] → documented limitation.
++- [Case-sensitive priorities like `High` are rejected] → the reason names the allowed values.
+diff --git a/openspec/changes/archive/2026-10-21-import-tasks/proposal.md b/openspec/changes/archive/2026-10-21-import-tasks/proposal.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..4672b10c1a28b0b078bb3f32bcd03b47f49687a0
+--- /dev/null
++++ b/openspec/changes/archive/2026-10-21-import-tasks/proposal.md
+@@ -0,0 +1,21 @@
++## Why
++
++Teams are moving to Tidy Tasks from spreadsheets and need to bring their existing tasks in at once rather than adding them one by one.
++
++## What Changes
++
++- Add a public helper `importTasks(list, text)`, exported from `src/index.ts`.
++- `text` holds one task per line as `title;priority;tags`; priority may be empty (normal), tags are space-separated; blank lines are skipped.
++- Every valid line is added to the list; the helper returns `{ imported, rejected }`, where `rejected` lists `{ line, reason }` for each line that could not be added, `line` counting from 1.
++
++## Capabilities
++
++### New Capabilities
++- `task-import`: bulk import of tasks into a list from line-based text.
++
++### Modified Capabilities
++
++## Impact
++
++- New `src/domain/import.ts`, new export in `src/index.ts`, new tests.
++- No change to existing `TaskList` behavior; no new dependency.
+diff --git a/openspec/changes/archive/2026-10-21-import-tasks/specs/task-import/spec.md b/openspec/changes/archive/2026-10-21-import-tasks/specs/task-import/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..9505cf477db761e6a15a070a4e388b03aefd6d2b
+--- /dev/null
++++ b/openspec/changes/archive/2026-10-21-import-tasks/specs/task-import/spec.md
+@@ -0,0 +1,53 @@
++## ADDED Requirements
++
++### Requirement: Import tasks from text
++`importTasks(list, text)` SHALL read `text` as one task per line in the form `title;priority;tags` and add each valid line to `list` as a new task. The priority MAY be empty, meaning `normal`. Tags are separated by spaces; the tags field MAY be empty or omitted. Surrounding spaces around the title, priority and each tag SHALL be ignored. Lines MAY end in `\n` or `\r\n`.
++
++#### Scenario: Full line
++- **WHEN** the text is `Renew the insurance;high;admin money`
++- **THEN** a task titled `Renew the insurance`, priority `high`, tags `admin` and `money` is added
++
++#### Scenario: Empty priority
++- **WHEN** a line is `Buy milk;;home`
++- **THEN** the task is added with priority `normal` and tag `home`
++
++#### Scenario: Title only
++- **WHEN** a line is `Call the plumber`
++- **THEN** the task is added with priority `normal` and no tags
++
++### Requirement: Blank lines are skipped
++Lines that are empty or hold only spaces SHALL be skipped: not imported, not rejected.
++
++#### Scenario: Blank line between tasks
++- **WHEN** the text is `A;;` , an empty line, then `B;;`
++- **THEN** two tasks are imported and nothing is rejected
++
++### Requirement: Import report
++`importTasks` SHALL return `{ imported, rejected }`. `imported` is the number of tasks added. `rejected` lists, in text order, each non-blank line that could not be added as `{ line, reason }`, where `line` is the line's number in `text` counting from 1 (blank lines count) and `reason` says what was wrong. `importTasks` SHALL NOT throw because of the content of `text`.
++
++#### Scenario: Line numbers count blank lines
++- **WHEN** the text is `A;;`, an empty line, then `;high;` 
++- **THEN** `imported` is 1 and `rejected` is one entry with `line` 3
++
++#### Scenario: Empty text
++- **WHEN** the text is empty
++- **THEN** `imported` is 0 and `rejected` is empty
++
++### Requirement: Invalid lines are rejected, valid ones still imported
++A line SHALL be rejected when its title is empty or too long, its priority is not `low`, `normal` or `high`, a tag is invalid, it has more than three `;`-separated fields, or its title is already in the list (including one imported earlier from the same text). A rejected line SHALL leave the list unchanged and the remaining lines SHALL still be processed.
++
++#### Scenario: Unknown priority
++- **WHEN** a line is `Pay rent;urgent;money`
++- **THEN** the line is rejected with a reason naming the priority, and no task is added
++
++#### Scenario: Too many fields
++- **WHEN** a line is `A;high;x;y`
++- **THEN** the line is rejected
++
++#### Scenario: Duplicate title
++- **WHEN** the text has `A;;` twice, or a title already in the list
++- **THEN** the repeat line is rejected and the list holds that title once
++
++#### Scenario: Mixed text
++- **WHEN** one line is invalid among valid ones
++- **THEN** the valid lines are all added and only the invalid one is rejected
+diff --git a/openspec/changes/archive/2026-10-21-import-tasks/tasks.md b/openspec/changes/archive/2026-10-21-import-tasks/tasks.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..aae79540f4a08c857a54231cf9ef06e3ea461aed
+--- /dev/null
++++ b/openspec/changes/archive/2026-10-21-import-tasks/tasks.md
+@@ -0,0 +1,8 @@
++## 1. Domain
++
++- [x] 1.1 Add `src/domain/import.ts` with TSDoc'd `importTasks(list, text)` returning `{ imported, rejected }`; verify with `npm test`
++- [x] 1.2 Export `importTasks` and its result types from `src/index.ts`; verify it imports from `../src/index.ts` in a test
++
++## 2. Tests
++
++- [x] 2.1 Add `test/import.test.ts` covering every scenario of the `task-import` spec (full line, empty priority, title only, blank lines and line numbers, empty text, unknown priority, bad tag, too many fields, duplicates, mixed text, CRLF); verify with `npm test`
+diff --git a/openspec/specs/task-import/spec.md b/openspec/specs/task-import/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..72d2076a53202ca464ef2807d41a8485e18a2e53
+--- /dev/null
++++ b/openspec/specs/task-import/spec.md
+@@ -0,0 +1,58 @@
++# task-import Specification
++
++## Purpose
++TBD - created by archiving change import-tasks. Update Purpose after archive.
++
++## Requirements
++
++### Requirement: Import tasks from text
++`importTasks(list, text)` SHALL read `text` as one task per line in the form `title;priority;tags` and add each valid line to `list` as a new task. The priority MAY be empty, meaning `normal`. Tags are separated by spaces; the tags field MAY be empty or omitted. Surrounding spaces around the title, priority and each tag SHALL be ignored. Lines MAY end in `\n` or `\r\n`.
++
++#### Scenario: Full line
++- **WHEN** the text is `Renew the insurance;high;admin money`
++- **THEN** a task titled `Renew the insurance`, priority `high`, tags `admin` and `money` is added
++
++#### Scenario: Empty priority
++- **WHEN** a line is `Buy milk;;home`
++- **THEN** the task is added with priority `normal` and tag `home`
++
++#### Scenario: Title only
++- **WHEN** a line is `Call the plumber`
++- **THEN** the task is added with priority `normal` and no tags
++
++### Requirement: Blank lines are skipped
++Lines that are empty or hold only spaces SHALL be skipped: not imported, not rejected.
++
++#### Scenario: Blank line between tasks
++- **WHEN** the text is `A;;` , an empty line, then `B;;`
++- **THEN** two tasks are imported and nothing is rejected
++
++### Requirement: Import report
++`importTasks` SHALL return `{ imported, rejected }`. `imported` is the number of tasks added. `rejected` lists, in text order, each non-blank line that could not be added as `{ line, reason }`, where `line` is the line's number in `text` counting from 1 (blank lines count) and `reason` says what was wrong. `importTasks` SHALL NOT throw because of the content of `text`.
++
++#### Scenario: Line numbers count blank lines
++- **WHEN** the text is `A;;`, an empty line, then `;high;` 
++- **THEN** `imported` is 1 and `rejected` is one entry with `line` 3
++
++#### Scenario: Empty text
++- **WHEN** the text is empty
++- **THEN** `imported` is 0 and `rejected` is empty
++
++### Requirement: Invalid lines are rejected, valid ones still imported
++A line SHALL be rejected when its title is empty or too long, its priority is not `low`, `normal` or `high`, a tag is invalid, it has more than three `;`-separated fields, or its title is already in the list (including one imported earlier from the same text). A rejected line SHALL leave the list unchanged and the remaining lines SHALL still be processed.
++
++#### Scenario: Unknown priority
++- **WHEN** a line is `Pay rent;urgent;money`
++- **THEN** the line is rejected with a reason naming the priority, and no task is added
++
++#### Scenario: Too many fields
++- **WHEN** a line is `A;high;x;y`
++- **THEN** the line is rejected
++
++#### Scenario: Duplicate title
++- **WHEN** the text has `A;;` twice, or a title already in the list
++- **THEN** the repeat line is rejected and the list holds that title once
++
++#### Scenario: Mixed text
++- **WHEN** one line is invalid among valid ones
++- **THEN** the valid lines are all added and only the invalid one is rejected
+diff --git a/src/domain/import.ts b/src/domain/import.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..b66304ce61991d33c7f5377dcc59c4eb94462091
+--- /dev/null
++++ b/src/domain/import.ts
+@@ -0,0 +1,50 @@
++import { err, ok } from './result.ts';
++import type { Result } from './result.ts';
++import type { TaskList } from './list.ts';
++import type { NewTask, Priority } from './task.ts';
++
++/** A line of the imported text that could not be added: its number, counting from 1, and why. */
++export interface RejectedLine {
++  readonly line: number;
++  readonly reason: string;
++}
++
++/** What an import did: how many tasks were added, and the lines that were not. */
++export interface ImportReport {
++  readonly imported: number;
++  readonly rejected: readonly RejectedLine[];
++}
++
++function parseLine(text: string): Result<NewTask> {
++  const fields = text.split(';');
++  if (fields.length > 3) {
++    return err('invalid-input', `the line has ${fields.length} fields; the limit is 3 (title;priority;tags)`);
++  }
++  const [title = '', priority = '', tags = ''] = fields.map((field) => field.trim());
++  return ok({
++    title,
++    ...(priority === '' ? {} : { priority: priority as Priority }),
++    tags: tags.split(/\s+/).filter((tag) => tag !== ''),
++  });
++}
++
++/**
++ * Adds the tasks written in `text` to `list`. Each non-blank line is `title;priority;tags`: the priority may
++ * be empty for a normal one, the tags are separated by spaces. A line that cannot be added is reported and
++ * the others are still imported.
++ *
++ * @param list - the task list to add to
++ * @param text - one task per line; blank lines are skipped
++ */
++export function importTasks(list: TaskList, text: string): ImportReport {
++  const rejected: RejectedLine[] = [];
++  let imported = 0;
++  String(text ?? '').split(/\r?\n/).forEach((raw, index) => {
++    if (raw.trim() === '') return;
++    const parsed = parseLine(raw);
++    const added = parsed.ok ? list.add(parsed.value) : parsed;
++    if (added.ok) imported += 1;
++    else rejected.push({ line: index + 1, reason: added.error.message });
++  });
++  return { imported, rejected };
++}
+diff --git a/src/index.ts b/src/index.ts
+index 72f6090e5f568153ff1b098f6639afffa0be7062..4b3b36d3eff20fde59f9db9770f4bc935284db42 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -3,6 +3,8 @@ import type { TaskList } from './domain/list.ts';
+ 
+ export type { TaskFilter, TaskList } from './domain/list.ts';
+ export type { Result, TodoError, TodoErrorCode } from './domain/result.ts';
++export { importTasks } from './domain/import.ts';
++export type { ImportReport, RejectedLine } from './domain/import.ts';
+ export { summarize } from './domain/summary.ts';
+ export type { Summary } from './domain/summary.ts';
+ export { PRIORITIES } from './domain/task.ts';
+diff --git a/test/import.test.ts b/test/import.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..8b21af0ebcd12cbe43273cf7b39659a684cce65e
+--- /dev/null
++++ b/test/import.test.ts
+@@ -0,0 +1,56 @@
++import assert from 'node:assert/strict';
++import { describe, it } from 'node:test';
++
++import { createTodoList, importTasks } from '../src/index.ts';
++
++describe('importTasks', () => {
++  it('imports a full line', () => {
++    const list = createTodoList();
++    const report = importTasks(list, 'Renew the insurance;high;admin money');
++    assert.deepEqual(report, { imported: 1, rejected: [] });
++    const [task] = list.list();
++    assert.equal(task?.title, 'Renew the insurance');
++    assert.equal(task?.priority, 'high');
++    assert.deepEqual(task?.tags, ['admin', 'money']);
++  });
++
++  it('defaults an empty priority and accepts a title only', () => {
++    const list = createTodoList();
++    const report = importTasks(list, 'Buy milk;;home\nCall the plumber');
++    assert.equal(report.imported, 2);
++    assert.equal(list.find('Buy milk').ok && list.list({ tag: 'home' })[0]?.priority, 'normal');
++    assert.deepEqual(list.list().find((t) => t.title === 'Call the plumber')?.tags, []);
++  });
++
++  it('skips blank lines but counts them in line numbers', () => {
++    const list = createTodoList();
++    assert.deepEqual(importTasks(list, 'A;;\n\nB;;'), { imported: 2, rejected: [] });
++    const report = importTasks(createTodoList(), 'A;;\n  \n;high;');
++    assert.equal(report.imported, 1);
++    assert.equal(report.rejected.length, 1);
++    assert.equal(report.rejected[0]?.line, 3);
++  });
++
++  it('handles empty text and CRLF', () => {
++    assert.deepEqual(importTasks(createTodoList(), ''), { imported: 0, rejected: [] });
++    assert.deepEqual(importTasks(createTodoList(), 'A;low;x\r\nB;;\r\n'), { imported: 2, rejected: [] });
++  });
++
++  it('rejects bad priorities, tags and extra fields, and keeps the valid lines', () => {
++    const list = createTodoList();
++    const report = importTasks(list, 'Pay rent;urgent;money\nOk;;a\nA;high;x;y\nT;;a b');
++    assert.equal(report.imported, 2);
++    assert.deepEqual(report.rejected.map((r) => r.line), [1, 3]);
++    assert.match(report.rejected[0]?.reason ?? '', /priority/);
++    assert.deepEqual(list.list().map((t) => t.title).sort(), ['Ok', 'T']);
++  });
++
++  it('rejects duplicate titles, in the list or in the text', () => {
++    const list = createTodoList();
++    list.add({ title: 'Old' });
++    const report = importTasks(list, 'Old;;\nA;;\nA;high;');
++    assert.equal(report.imported, 1);
++    assert.deepEqual(report.rejected.map((r) => r.line), [1, 3]);
++    assert.equal(list.list().length, 2);
++  });
++});

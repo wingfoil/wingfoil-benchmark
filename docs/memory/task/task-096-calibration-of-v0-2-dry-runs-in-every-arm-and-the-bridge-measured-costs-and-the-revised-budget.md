@@ -313,6 +313,27 @@ scored; a ledger line each.
   the maximum on S1.
 - **Haiku 5.5:** as Sonnet 5.5 on S1 (164/165, 45/48) and S3 (35/37, 16/17), at 15–18 % of its cost in the same arm.
 
+### Stage 6: the openspec arm after bug-023's fix, Sonnet 5.5 (2026-10-21, 18:35–18:51 UTC)
+
+The approver's consent in chat, 2026-10-21: the fixes merged to main first (`19505e47`), then the openspec arm's four
+dry runs, 2 € a run and 6 € in all (`1ae290d2` sets `run_cost_eur: 2`). S3 first, scored before the others, the chain
+to stop if it passed no public test; it passed every one. The pre-spending line said "no dry run yet" for S3 (bug-024's
+fix: `dry-runs/27` ran the old digest). Every one: `dry_run: true`, Claude Code 2.1.300, `claude-sonnet-5-5` at
+`medium` priced `list`, the arm's new digest `1ba12def23cf…`, one attempt, `completed`, no intervention; every step
+wrote `src/`, and every change was archived under `openspec/changes/archive/` with its specs under
+`openspec/specs/`; the token scan clean; no `bench-` container left; scored; a ledger line each.
+
+| Dry run | Scenario | Cost | Wall time | Turns per step | Largest transcript | Final public | Hold-out | Checks |
+|---|---|---|---|---|---|---|---|---|
+| 63 | S3@1.0 | 1.0012 USD (0.8928 €) | 5 min 1 s | 16, 17, 16, 15, 20 | 194 KB (step 5) | 37/37 | 17/17 | 1/1 |
+| 64 | S2@1.0 | 0.5729 USD (0.5108 €) | 2 min 18 s | 16, 17, 22 | 209 KB (step 3) | 24/24 | 17/17 | 3/3 |
+| 65 | S8@1.0 | 0.6867 USD (0.6123 €) | 3 min 0 s | 13, 13, 16, 17 | 173 KB (step 4) | 23/23 | 6/7 | 16/16 |
+| 66 | S1@1.0 | 0.9847 USD (0.8780 €) | 5 min 13 s | 15, 19, 18, 10, 16 | 187 KB (step 2) | 164/165 | 45/48 | — |
+
+- **Spent: 3.2455 USD (2.8939 €)** of the 6 € consented; the dearest run 1.0012 USD (S3@1.0).
+- **bug-023 fixed in its effect:** the arm now proposes, applies and archives in each step; OpenSpec's full process
+  costs about 1.7 times the propose-only run of stage 1 on S3 (1.0012 against 0.5701 USD).
+
 ### The fixes (on `task/task-096`)
 
 - **bug-024:** red `9daba120` (a CLI test: a dry run after the arm changed, and a docs control's dry run after the

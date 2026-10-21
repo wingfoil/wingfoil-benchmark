@@ -1,0 +1,127 @@
+diff --git a/openspec/changes/archive/2026-10-21-fix-coupon-giveback-on-cancel/.openspec.yaml b/openspec/changes/archive/2026-10-21-fix-coupon-giveback-on-cancel/.openspec.yaml
+new file mode 100644
+index 0000000000000000000000000000000000000000..dc36fb1bf855a31066cca3bf527c725e38489c5a
+--- /dev/null
++++ b/openspec/changes/archive/2026-10-21-fix-coupon-giveback-on-cancel/.openspec.yaml
+@@ -0,0 +1,2 @@
++schema: spec-driven
++created: 2026-10-21
+diff --git a/openspec/changes/archive/2026-10-21-fix-coupon-giveback-on-cancel/proposal.md b/openspec/changes/archive/2026-10-21-fix-coupon-giveback-on-cancel/proposal.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..4e2f4dafd0a3b07e1cd5cf4bdfcab9609020b569
+--- /dev/null
++++ b/openspec/changes/archive/2026-10-21-fix-coupon-giveback-on-cancel/proposal.md
+@@ -0,0 +1,21 @@
++## Why
++
++A customer placed an order with a single-use welcome code, cancelled it, and was refused the code on the corrected order ("already used"). The README says cancelling gives the coupon back. Cancelling currently hands the coupon back under the customer's name instead of the order's id, so the release never matches and the coupon stays used.
++
++The second report (free shipping at exactly €50.00) was investigated: `shippingCost` already treats 5000 cents as free, and the `shipping` spec and a test cover it (fixed earlier). It is not changed here beyond a regression test through the order path.
++
++## What Changes
++
++- Cancelling an order gives back its single-use coupon, identified by the order that used it.
++- Add regression tests: place, cancel, re-place with a single-use coupon; and an order whose goods come to exactly 5000 cents ships free.
++
++## Capabilities
++
++### New Capabilities
++
++### Modified Capabilities
++- `coupons`: adds the single-use rule (one order only; given back on cancellation).
++
++## Impact
++
++- `src/orders.ts` (`cancel`), tests in `test/`.
+diff --git a/openspec/changes/archive/2026-10-21-fix-coupon-giveback-on-cancel/specs/coupons/spec.md b/openspec/changes/archive/2026-10-21-fix-coupon-giveback-on-cancel/specs/coupons/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..f5aef390541e4790331547f11698425ddcaaac02
+--- /dev/null
++++ b/openspec/changes/archive/2026-10-21-fix-coupon-giveback-on-cancel/specs/coupons/spec.md
+@@ -0,0 +1,12 @@
++## ADDED Requirements
++
++### Requirement: Single-use coupon returned on cancellation
++A single-use coupon SHALL be usable by one order only. When that order is cancelled, the coupon SHALL become usable again.
++
++#### Scenario: Reuse while the order stands
++- **WHEN** a second order tries a single-use coupon already used by a confirmed order
++- **THEN** the coupon is refused as already used
++
++#### Scenario: Re-order after cancelling
++- **WHEN** the order that used a single-use coupon is cancelled and a new order is placed with the same code
++- **THEN** the coupon is accepted
+diff --git a/openspec/changes/archive/2026-10-21-fix-coupon-giveback-on-cancel/tasks.md b/openspec/changes/archive/2026-10-21-fix-coupon-giveback-on-cancel/tasks.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..1d1d3f0cc25999ff8b48624bcdf00266d8e849f7
+--- /dev/null
++++ b/openspec/changes/archive/2026-10-21-fix-coupon-giveback-on-cancel/tasks.md
+@@ -0,0 +1,6 @@
++# Tasks
++
++## 1. Coupon give-back
++
++- [x] 1.1 In `src/orders.ts` `cancel`, give the coupon back using the order id instead of the customer name; verify with a new test in `test/fixes.test.ts` that place → cancel → place with the same single-use code succeeds, and that a second order is refused while the first stands
++- [x] 1.2 Add a test that an order placed through the shop whose goods come to exactly 5000 cents has 0 shipping; verify `npm test` passes
+diff --git a/openspec/specs/coupons/spec.md b/openspec/specs/coupons/spec.md
+index d08455d583fa34435fc82a29c4728cbe6246a3e0..40b57d2f4a39b5ed666f703a9d9b86f4a7d8cb9b 100644
+--- a/openspec/specs/coupons/spec.md
++++ b/openspec/specs/coupons/spec.md
+@@ -22,3 +22,14 @@ A coupon SHALL be valid from its first day to its last day, both included.
+ #### Scenario: Order the day after
+ - **WHEN** an order is placed the day after `validUntil`
+ - **THEN** the coupon is refused as expired
++
++### Requirement: Single-use coupon returned on cancellation
++A single-use coupon SHALL be usable by one order only. When that order is cancelled, the coupon SHALL become usable again.
++
++#### Scenario: Reuse while the order stands
++- **WHEN** a second order tries a single-use coupon already used by a confirmed order
++- **THEN** the coupon is refused as already used
++
++#### Scenario: Re-order after cancelling
++- **WHEN** the order that used a single-use coupon is cancelled and a new order is placed with the same code
++- **THEN** the coupon is accepted
+diff --git a/src/orders.ts b/src/orders.ts
+index 0c0b1ae889c9df13dffa9de7ed1924a4e8b09afd..e4c175527cc500b240776198678b04a3145894ea 100644
+--- a/src/orders.ts
++++ b/src/orders.ts
+@@ -153,7 +153,7 @@ export class OrderService {
+       throw new OrderStateError(`order ${id} can no longer be cancelled`);
+     }
+     for (const line of order.lines) this.#inventory.release(line.sku, line.quantity, id);
+-    if (order.coupon !== undefined) this.#coupons.giveBack(order.coupon, order.customer);
++    if (order.coupon !== undefined) this.#coupons.giveBack(order.coupon, id);
+     const cancelled: Order = { ...order, status: 'cancelled', cancelledOn: date };
+     this.#orders.set(id, cancelled);
+     return cancelled;
+diff --git a/test/fixes.test.ts b/test/fixes.test.ts
+index 74d84f8a39f0d4cc287632f7391742bc7a7c7f0e..b8a1e690d2fd96f77485732f577ee40c92cbc99d 100644
+--- a/test/fixes.test.ts
++++ b/test/fixes.test.ts
+@@ -35,4 +35,25 @@ describe('reported fixes', () => {
+     assert.equal(coupons.redeemable('autumn', '2026-11-30', 1000).code, 'AUTUMN');
+     assert.throws(() => coupons.redeemable('AUTUMN', '2026-12-01', 1000));
+   });
++
++  it('gives a single-use coupon back when its order is cancelled', () => {
++    const { catalog, coupons, inventory, orders } = createShop();
++    catalog.add({ sku: 'SH-1', name: 'Shirt', priceCents: 2000, vatClass: 'standard', weightGrams: 100 });
++    inventory.restock('SH-1', 10);
++    coupons.add({ code: 'WELCOME', kind: 'fixed', value: 500, validFrom: '2026-01-01', validUntil: '2026-12-31', singleUse: true });
++    const request = { customer: 'Paolo', date: '2026-10-01', lines: [{ sku: 'SH-1', quantity: 2 }], coupon: 'welcome' };
++    const first = orders.place(request);
++    assert.throws(() => orders.place(request));
++    orders.cancel(first.id, '2026-10-01');
++    assert.equal(orders.place(request).coupon, 'welcome');
++  });
++
++  it('ships an order free when its goods come to exactly 5000 cents', () => {
++    const { catalog, inventory, orders } = createShop();
++    catalog.add({ sku: 'SH-2', name: 'Shirt', priceCents: 2500, vatClass: 'standard', weightGrams: 100 });
++    inventory.restock('SH-2', 10);
++    const order = orders.place({ customer: 'Anna', date: '2026-10-01', lines: [{ sku: 'SH-2', quantity: 2 }] });
++    assert.equal(order.totals.goodsCents, 5000);
++    assert.equal(order.totals.shippingCents, 0);
++  });
+ });
