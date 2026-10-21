@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { join, resolve } from 'node:path';
 
-import { loadArm } from '../arms/index.js';
+import { armDigest } from '../arms/index.js';
 import { canonicalJson, fail, harnessCoverage, modelId, ok } from '../core/index.js';
 import type { Arm, DryRunProfile, Issue, Result, Scenario } from '../core/index.js';
 import { DRY_RUNS, versionChange } from '../results/index.js';
@@ -13,6 +13,7 @@ import {
   scanScenario,
 } from '../scenario/index.js';
 
+import { loadPinnedArm, pinnedDigestIssue } from './pinned-arm.js';
 import { runPlan } from './run.js';
 import type { RunnerOptions, RunSummary } from './run.js';
 
@@ -74,15 +75,16 @@ export function checkDryRun(request: DryRunRequest, root: string): Result<Checke
   const leaks = scanScenario(scenario.value, declarations.value);
   if (leaks.length > 0) return fail(leaks);
 
-  const armsRoot = join(root, 'arms');
-  // A docs control is generated from the arm its `docs_of` names, which the dry run loads too (REQ-RUN-11).
-  const requested = loadArm(armsRoot, request.arm);
+  // A docs control is generated from the arm its `docs_of` names, which the dry run loads too (REQ-RUN-11). Each arm
+  // as the profile pins it, if it does (REQ-FMT-13 as amended in 1.33, task-095).
+  const pinnedOf = (name: string) => profile.value.arm_digests?.[name];
+  const requested = loadPinnedArm(root, request.arm, pinnedOf(request.arm));
   const docsOf = requested.ok ? requested.value.docsOf : undefined;
   const names = docsOf === undefined ? [request.arm] : [request.arm, docsOf];
   const arms: Arm[] = [];
   const issues: Issue[] = [];
   for (const name of names) {
-    const arm = name === request.arm ? requested : loadArm(armsRoot, name);
+    const arm = name === request.arm ? requested : loadPinnedArm(root, name, pinnedOf(name));
     if (arm.ok) arms.push(arm.value);
     else {
       const role = name === request.arm ? '--arm' : 'arms';
@@ -91,12 +93,16 @@ export function checkDryRun(request: DryRunRequest, root: string): Result<Checke
       issues.push({ path: role, message: `${name}${source}: ${why}` });
     }
   }
+  for (const arm of arms) {
+    const issue = pinnedDigestIssue(root, arm, pinnedOf(arm.name), 'profile');
+    if (issue !== undefined) issues.push(issue);
+  }
   if (issues.length > 0) return fail(issues);
   const uncovered = harnessCoverage(profile.value, arms);
   if (uncovered.length > 0) return fail(uncovered);
 
   const [arm] = arms as [Arm, ...Arm[]];
-  const id = dryRunId(profile.value, request, model);
+  const id = dryRunId(profile.value, request, model, arms, root);
   return ok({
     id,
     profile: profile.value,
@@ -114,8 +120,25 @@ export function checkDryRun(request: DryRunRequest, root: string): Result<Checke
  * what it pins — the campaign identity's rule (REQ-FMT-02) over the profile, the scenario version, the
  * arm and the model — so that an interrupted dry run's container is found again (bug-003).
  */
-function dryRunId(profile: DryRunProfile, request: DryRunRequest, model: string): string {
-  const pinned = { profile, scenario: request.id, version: request.version, arm: request.arm, model };
+function dryRunId(
+  profile: DryRunProfile,
+  request: DryRunRequest,
+  model: string,
+  arms: readonly Arm[],
+  root: string,
+): string {
+  // The arms' digests too (task-095): a dry run of an arm read from history is another dry run than the tree's.
+  const digests = Object.fromEntries(
+    arms.map((arm) => [arm.name, armDigest(arm.from?.root ?? root, arm.name)]),
+  );
+  const pinned = {
+    profile,
+    scenario: request.id,
+    version: request.version,
+    arm: request.arm,
+    model,
+    digests,
+  };
   return `dry-${createHash('sha256').update(canonicalJson(pinned)).digest('hex').slice(0, 12)}`;
 }
 

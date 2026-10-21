@@ -4,6 +4,7 @@ name: traceability
 type: directive
 kind: custom
 title: "Traceability"
+format: 1
 ---
 
 # Traceability

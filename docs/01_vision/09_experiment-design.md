@@ -1,9 +1,9 @@
 # Experiment Design (GQM) — WingFoil Benchmark
 
-**Version:** 1.4
-**Date:** 2026-10-15
+**Version:** 1.5
+**Date:** 2026-10-20
 **Status:** Approved
-**Traces to:** [06_features.md](06_features.md) (F2.4, F2.7, F4.x, F7.4), [07_sequencer.md](07_sequencer.md) (decisions 1–3), [03_is-isnot.md](03_is-isnot.md) 1.1; input: [X_competitor-landscape-2026-09-22.md](X_competitor-landscape-2026-09-22.md), [X_competitor-landscape-2026-10-05.md](X_competitor-landscape-2026-10-05.md) (1.2); [dl-017](../memory/decision-log/dl-017-the-v0-2-campaign-pins-wingfoil-v0-3-beside-a-bridge-on-v0-2-2-one-repetition-per-group.md) (1.3); [task-094](../memory/task/task-094-a-codex-agent-adapter-and-s3-s-baseline-compared-across-agents-spike.md) (1.4)
+**Traces to:** [06_features.md](06_features.md) (F2.4, F2.7, F4.x, F7.4), [07_sequencer.md](07_sequencer.md) (decisions 1–3), [03_is-isnot.md](03_is-isnot.md) 1.1; input: [X_competitor-landscape-2026-09-22.md](X_competitor-landscape-2026-09-22.md), [X_competitor-landscape-2026-10-05.md](X_competitor-landscape-2026-10-05.md) (1.2); [dl-017](../memory/decision-log/dl-017-the-v0-2-campaign-pins-wingfoil-v0-3-beside-a-bridge-on-v0-2-2-one-repetition-per-group.md) (1.3); [task-094](../memory/task/task-094-a-codex-agent-adapter-and-s3-s-baseline-compared-across-agents-spike.md) (1.4); [task-095](../memory/task/task-095-wingfoil-v0-3-0-admitted-to-the-wingfoil-arm-the-bridge-s-arm-read-by-its-pinned-digest.md) (1.5)
 
 ---
 
@@ -56,7 +56,7 @@ Two goals cut across all categories:
 |---|---|---|
 | **baseline** | the agent, the seed, and a minimal instruction file (the same one-paragraph project description for every arm) | the plain agent |
 | **baseline-docs** | as baseline, plus the **same information** as the wingfoil arm, rendered as free-form Markdown | a control: "more context" versus "a harness" |
-| **wingfoil** | as baseline, plus WingFoil at the campaign's version, initialized and configured, with its MCP server, and the arm's operating manual | the subject |
+| **wingfoil** | as baseline, plus WingFoil at the campaign's version, initialized and configured, with its MCP server, and the arm's operating manual. From v0.3.0 (1.5), WingFoil as its documentation sets it up: the `init` scaffold, whose workflows declare no role, action or product, with no workflow written for the benchmark | the subject |
 | **competitor arms** (v0.2: **speckit**, **openspec**) | as baseline, plus the tool at a pinned version, set up from its official documentation, and the arm's operating manual | fair comparison |
 | **docs controls** (v0.2: **speckit-docs**, **openspec-docs**) | as baseline, plus the **same information** as their harness arm, rendered as free-form Markdown. `baseline-docs` keeps its name and stays the wingfoil arm's control | a control per harness: "more context" versus "this harness" (1.2) |
 
@@ -295,7 +295,9 @@ The 30 € target above did not hold, and stays as the record of v0.1's plan.
     baseline-docs and wingfoil, on **WingFoil v0.2.2** (`12537b62`) with task-086's manual (written against v0.2.2's
     guide), on the reference campaign's model, Claude Code version, effort and scenario versions. It runs from **the
     same benchmark commit** as the reference campaign, one after the other, and the commit is recorded in both campaign
-    elements, since the comparison does not list it. It is not cut at calibration to fit the budget;
+    elements, since the comparison does not list it. Its wingfoil arm is v0.2.2's as task-086 left it: the bridge's
+    file pins that arm's digest, and the runner reads the arm from the newest commit of the history that holds it once
+    the working tree has moved on to v0.3.0's (1.5, REQ-FMT-13). It is not cut at calibration to fit the budget;
   - **repetitions:** v0.1's, S1 × 3 and S2, S3 and S8 × 1, in both campaigns, until WingFoil 1.0 or the benchmark's
     1.0, whichever comes first. No group is raised to three to leave "preliminary": the rule n ≥ 3 above stands;
   - a Haiku 4.5 rung of the model ladder.
@@ -358,4 +360,17 @@ The 30 € target above did not hold, and stays as the record of v0.1's plan.
 
    Source: [task-094](../memory/task/task-094-a-codex-agent-adapter-and-s3-s-baseline-compared-across-agents-spike.md);
    [dl-019](../memory/decision-log/dl-019-the-codex-spike-s-subscription-credential-mounted-read-write-from-a-dedicated-directory-outside-the-repository.md).
+10. **Amendment 1.5 (v0.2, the admission of WingFoil v0.3.0, 2026-10-20).** The approver's choices in chat on
+    2026-10-20, at task-095's design.
+    - **§2, the wingfoil arm:** from v0.3.0, WingFoil as its documentation sets it up, the `init` scaffold with no
+      workflow written for the benchmark (the parity rule every competitor arm follows). WingFoil's answer of
+      2026-10-18: the scaffold's workflows declare no role, action or product. WingFoil's guide has an agent start a
+      workflow only when asked, and no step's request asks, so the arm uses WingFoil's Memory and directives on that
+      scaffold, and its workflow engine stays unstarted; that is what is measured.
+    - **§6, the bridge:** its wingfoil arm is read by its pinned digest from the history, so that the bridge and the
+      reference campaign run from one benchmark commit with two versions of the arm. Its baseline-docs arm keeps its
+      digest, but its rules are generated from the configuration the bridge's WingFoil writes: where 0.3.0's `init`
+      ships other directive text (`doc-versioning`), the step bridge → reference changes the docs control's rules too.
+
+    Source: [task-095](../memory/task/task-095-wingfoil-v0-3-0-admitted-to-the-wingfoil-arm-the-bridge-s-arm-read-by-its-pinned-digest.md).
 

@@ -1,3 +1,6 @@
+import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import { parse } from 'yaml';
 import { describe, expect, it } from 'vitest';
 
 import { missingEffort } from '../../../src/core/index.js';
@@ -31,7 +34,8 @@ describe('the v0.2 campaign files (task-091)', () => {
     expect(reference.repetitions).toEqual(REPETITIONS);
     expect(reference.arms).toEqual([...V0_1_ARMS, 'speckit', 'speckit-docs', 'openspec', 'openspec-docs']);
     expect(reference.harnesses).toEqual({
-      wingfoil: { tool: 'wingfoil', version: 'v0.2.2' },
+      // dl-017: the reference campaign on WingFoil v0.3.0, admitted by task-095.
+      wingfoil: { tool: 'wingfoil', version: 'v0.3.0' },
       speckit: { tool: 'speckit', version: 'v1.1.0' },
       openspec: { tool: 'openspec', version: '1.14.0' },
     });
@@ -75,9 +79,62 @@ describe('the v0.2 campaign files (task-091)', () => {
     }
     expect(bridge.models.default).toBe(reference.models.default);
     expect(bridge.arms.every((arm) => reference.arms.includes(arm))).toBe(true);
-    for (const arm of bridge.arms) {
+    // Every arm the same but wingfoil, which the bridge keeps at v0.2.2's (task-095).
+    for (const arm of bridge.arms.filter((name) => name !== 'wingfoil')) {
       expect(bridge.arm_digests?.[arm], arm).toBe(reference.arm_digests?.[arm]);
     }
+    expect(bridge.arm_digests?.wingfoil).not.toBe(reference.arm_digests?.wingfoil);
+  });
+
+  // It reads the repository's own history: a shallow clone has none to read (task-095 review round 1, nit 6).
+  const shallow = (() => {
+    try {
+      return (
+        execFileSync('git', ['-C', repoPath('.'), 'rev-parse', '--is-shallow-repository'], {
+          encoding: 'utf8',
+        }).trim() === 'true'
+      );
+    } catch {
+      return true;
+    }
+  })();
+
+  it.skipIf(shallow)(
+    "reads the bridge's wingfoil arm from history, task-086's for v0.2.2, and the reference's from the tree (task-095)",
+    () => {
+      const arms = (name: string) => {
+        const result = checkCampaign(repoPath(`campaigns/${name}.yaml`));
+        if (!result.ok) throw new Error(JSON.stringify(result.issues));
+        return result.value.arms;
+      };
+      const bridgeArm = arms('v0-2-bridge').find((arm) => arm.name === 'wingfoil');
+      const referenceArm = arms('v0-2-reference').find((arm) => arm.name === 'wingfoil');
+      expect(bridgeArm?.from?.commit).toMatch(/^[0-9a-f]{40}$/);
+      expect(readFileSync(bridgeArm?.manualPath ?? '', 'utf8')).toContain('0.2.2');
+      expect(referenceArm?.from).toBeUndefined();
+      expect(readFileSync(referenceArm?.manualPath ?? '', 'utf8')).toContain('0.3.0');
+    },
+  );
+
+  it('admits WingFoil v0.3.0 to the eligibility register, and no later version unassessed (REQ-FMT-11)', () => {
+    const register = parse(readFileSync(repoPath('eligibility/register.yaml'), 'utf8')) as {
+      entries: {
+        tool: string;
+        version: string;
+        verdict: string;
+        criteria: Record<string, { result: string }>;
+      }[];
+    };
+    const entry = register.entries.find((e) => e.tool === 'wingfoil' && e.version === 'v0.3.0');
+    expect(entry?.verdict).toBe('admitted');
+    expect(Object.values(entry?.criteria ?? {}).map((c) => c.result)).toEqual([
+      'pass',
+      'pass',
+      'pass',
+      'pass',
+      'pass',
+    ]);
+    expect(register.entries.some((e) => e.tool === 'wingfoil' && e.version === 'v0.3.1')).toBe(false);
   });
 
   it('pins an effort for every model the reference campaign runs, so run does not refuse it for that', () => {

@@ -412,8 +412,8 @@ describe('runs in a real container', () => {
 
   /** The WingFoil clone the WingFoil under test is built from (REQ-RUN-14): the one next to this repository. */
   const clone = process.env.BENCH_WINGFOIL_REPO ?? repoPath('../WingFoil2');
-  /** The WingFoil the reference campaign runs, the latest released (task-049): what these tests build. */
-  const WINGFOIL_UNDER_TEST = 'v0.2.2';
+  /** The WingFoil the reference campaign runs, the latest released (task-049, task-095): what these tests build. */
+  const WINGFOIL_UNDER_TEST = 'v0.3.0';
 
   /** The hold-out repository, when this machine has one (K2): S1's additions, S2's answer key. */
   const holdoutRepo = process.env.BENCH_HOLDOUT_PATH ?? repoPath('../WingFoil2-Benchmark-HoldOut');
@@ -760,7 +760,7 @@ describe('runs in a real container', () => {
       // The benchmark's own wingfoil arm, not a fixture: its setup is what is under test here.
       cpSync(repoPath('arms/wingfoil'), join(root, 'arms', 'wingfoil'), { recursive: true });
       cpSync(repoPath('arms/baseline-docs'), join(root, 'arms', 'baseline-docs'), { recursive: true });
-      // The repository's register, which admits the WingFoil the fixture campaign pins (v0.2.2, F7.4).
+      // The repository's register, which admits the WingFoil the fixture campaign pins (v0.3.0, F7.4).
       cpSync(repoPath('eligibility'), join(root, 'eligibility'), { recursive: true });
       process.env.BENCH_FAKE_SCRIPT = repoPath('test/fixtures/fake-script-arms.json');
       process.env.BENCH_WINGFOIL_REPO = clone;

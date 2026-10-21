@@ -4,6 +4,7 @@ name: security-secrets
 type: directive
 kind: custom
 title: "Secret hygiene"
+format: 1
 ---
 
 # Secret hygiene

@@ -16,7 +16,8 @@ printf '#!/bin/sh\nexec node %s/wingfoil/dist/cli.js "$@"\n' "$HOME" > "$HOME/.l
 chmod +x "$HOME/.local/bin/wingfoil"
 echo "WingFoil under test: commit $(cat "$HOME/wingfoil/.wingfoil-commit"), at $(command -v wingfoil)"
 
-# 2. The project, with the benchmark's own process template. `init` commits by itself.
+# 2. The project, as WingFoil's documentation sets it up: `init`'s Kanban scaffold, no workflow of the benchmark's own
+#    (experiment design 1.5). `init` commits by itself.
 wingfoil init --template Kanban > /dev/null
 
 # 3. The scenario's configuration, if any (dl-005): copied over init's files, committed once.
@@ -27,8 +28,9 @@ if [ -d "$HOME/scenario" ]; then
 fi
 
 # 4. The approver member, after the scenario's configuration, which may bring its own dna.yaml; added
-#    only if no member has its e-mail yet. `dna add` commits by itself (WingFoil v0.2.2; usage note N33
-#    asked for this verb), and v0.2.2 reads approval authority from the committed dna.yaml. The team is
+#    only if no member has its e-mail yet. `dna add` commits by itself (since WingFoil v0.2.2; usage note N33
+#    asked for this verb), and WingFoil reads approval authority from the committed dna.yaml (v0.2.2 and
+#    v0.3.0, which decides every transition from HEAD). The team is
 #    read whole first, as JSON: `grep -q` closing a pipe early would fail it under pipefail. A scenario's
 #    dna.yaml naming another member "Benchmark Approver", or with no `approver` role, makes `dna add`
 #    refuse, and the setup fail.

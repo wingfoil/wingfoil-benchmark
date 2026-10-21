@@ -62,13 +62,13 @@ describe('loadArm (REQ-FMT-05)', () => {
       'directive-delivery': true,
     });
 
-    // K5's facts about v0.2.2, as about 3df305e before it (task-049): directives and the memory life
-    // cycle, no workflow engine, no MCP Tools.
+    // v0.3.0's capabilities (task-095): directives and the memory life cycle, now a workflow engine that records and
+    // routes steps (v0.2.2 and 3df305e had none, task-049), still no MCP Tools.
     const own = loadArm(repoPath('arms'), 'wingfoil');
     expect(own.ok && own.value.provides).toEqual({
       'directive-delivery': true,
       'memory-lifecycle': true,
-      'workflow-engine': false,
+      'workflow-engine': true,
       'mcp-tools': false,
     });
   });

@@ -6,6 +6,7 @@ kind: built-in
 title: "Testing"
 tags: [built-in, testing]
 ref: [P3.8]
+format: 1
 ---
 
 # Directive — Testing

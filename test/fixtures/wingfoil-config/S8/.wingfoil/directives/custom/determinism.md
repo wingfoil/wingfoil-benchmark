@@ -4,6 +4,7 @@ name: determinism
 type: directive
 kind: custom
 title: "Determinism"
+format: 1
 ---
 
 # Determinism

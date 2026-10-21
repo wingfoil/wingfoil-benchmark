@@ -6,6 +6,7 @@ kind: built-in
 title: "Code Quality"
 tags: [built-in, code-quality]
 ref: [P3.8]
+format: 1
 ---
 
 # Directive — Code Quality
