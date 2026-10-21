@@ -1,0 +1,98 @@
+diff --git a/specs/002-json-merge-patch/spec.md b/specs/002-json-merge-patch/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..5f36169736a9d07a9fb8a6bbf2779f11bd6c492e
+--- /dev/null
++++ b/specs/002-json-merge-patch/spec.md
+@@ -0,0 +1,14 @@
++# Feature Specification: JSON Merge Patch
++
++**Input**: Implement RFC 7386: export `applyMergePatch(target, patch)` from `src/index.ts`; returns the merged document.
++
++## Requirements
++- A non-object patch (primitive, array, `null`) replaces the target entirely.
++- An object patch is merged into the target; a non-object target is treated as `{}`.
++- Patch members with `null` delete the target member; other members merge recursively.
++- Arrays are replaced, never merged. Nulls nested in patch values that are added to a non-object are dropped (RFC pseudo-code).
++- Inputs are never mutated, and the result shares no structure with them.
++- A `__proto__` member is plain data.
++
++## Verification
++`test/mergepatch.test.ts` covers all RFC 7386 Appendix A cases, non-mutation, and `__proto__`.
+diff --git a/src/index.ts b/src/index.ts
+index bc1c802b533e755a51f04d259447feac13c69691..6809ebbb1594a156108fa409f711516b543ca139 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -225,3 +225,23 @@ export function applyPatch(document: unknown, patch: unknown): unknown {
+   });
+   return result;
+ }
++
++/**
++ * Applies a JSON Merge Patch (RFC 7386) to `target` and returns the result as a new value.
++ * The inputs are never mutated. A non-object patch replaces the target; in an object patch,
++ * `null` members delete and other members are merged recursively.
++ */
++export function applyMergePatch(target: unknown, patch: unknown): unknown {
++  if (!isObject(patch)) {
++    return clone(patch);
++  }
++  const result: Record<string, unknown> = isObject(target) ? (clone(target) as Record<string, unknown>) : {};
++  for (const key of Object.keys(patch)) {
++    if (patch[key] === null) {
++      delete result[key];
++    } else {
++      setMember(result, key, applyMergePatch(Object.hasOwn(result, key) ? result[key] : undefined, patch[key]));
++    }
++  }
++  return result;
++}
+diff --git a/test/mergepatch.test.ts b/test/mergepatch.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..7971f77d92671b6a3175ecb24ef1c6f7d6afbf13
+--- /dev/null
++++ b/test/mergepatch.test.ts
+@@ -0,0 +1,44 @@
++import { test } from "node:test";
++import assert from "node:assert/strict";
++import { applyMergePatch } from "../src/index.ts";
++
++test("RFC 7386 appendix A examples", () => {
++  const cases: [unknown, unknown, unknown][] = [
++    [{ a: "b" }, { a: "c" }, { a: "c" }],
++    [{ a: "b" }, { b: "c" }, { a: "b", b: "c" }],
++    [{ a: "b" }, { a: null }, {}],
++    [{ a: "b", b: "c" }, { a: null }, { b: "c" }],
++    [{ a: ["b"] }, { a: "c" }, { a: "c" }],
++    [{ a: "c" }, { a: ["b"] }, { a: ["b"] }],
++    [{ a: { b: "c" } }, { a: { b: "d", c: null } }, { a: { b: "d" } }],
++    [{ a: [{ b: "c" }] }, { a: [1] }, { a: [1] }],
++    [["a", "b"], ["c", "d"], ["c", "d"]],
++    [{ a: "b" }, ["c"], ["c"]],
++    [{ a: "foo" }, null, null],
++    [{ a: "foo" }, "bar", "bar"],
++    [{ e: null }, { a: 1 }, { e: null, a: 1 }],
++    [[1, 2], { a: "b", c: null }, { a: "b" }],
++    [{}, { a: { bb: { ccc: null } } }, { a: { bb: {} } }],
++  ];
++  for (const [target, patch, expected] of cases) {
++    assert.deepEqual(applyMergePatch(target, patch), expected);
++  }
++});
++
++test("does not mutate inputs or alias the patch", () => {
++  const target = { a: { b: 1 } };
++  const patch = { a: { c: [1] }, d: { e: 1 } };
++  const result = applyMergePatch(target, patch) as any;
++  assert.deepEqual(target, { a: { b: 1 } });
++  assert.deepEqual(patch, { a: { c: [1] }, d: { e: 1 } });
++  assert.notEqual(result.d, patch.d);
++  assert.notEqual(result.a.c, patch.a.c);
++});
++
++test("__proto__ member is data", () => {
++  const patch = JSON.parse('{"__proto__":{"x":1}}');
++  const result = applyMergePatch({}, patch) as any;
++  assert.equal(Object.getPrototypeOf(result), Object.prototype);
++  assert.equal(({} as any).x, undefined);
++  assert.deepEqual(Object.keys(result), ["__proto__"]);
++});

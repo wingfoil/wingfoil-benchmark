@@ -1,0 +1,97 @@
+diff --git a/docs/memory/decision-log/dl-003-applypatch-rejects-sparse-patches-and-undefined-values.md b/docs/memory/decision-log/dl-003-applypatch-rejects-sparse-patches-and-undefined-values.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..a2d5b35ccb6f5b622186af5ae69228e3eb259fb9
+--- /dev/null
++++ b/docs/memory/decision-log/dl-003-applypatch-rejects-sparse-patches-and-undefined-values.md
+@@ -0,0 +1,25 @@
++---
++id: dl-003-applypatch-rejects-sparse-patches-and-undefined-values
++type: decision-log
++title: "applyPatch rejects sparse patches and undefined values"
++status: pending
++format: 1
++---
++
++<!-- decision-log body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
++
++## Context
++The RFC requires every operation to be an object and `add`, `replace` and `test` to carry a `value`.
++`applyPatch` used `Array.reduce`, which skips holes, and tested `value` with `hasOwn`, which accepts
++`undefined`, so two invalid patches were accepted.
++
++## Decision
++Operations are applied with a `for...of` loop, so a hole is seen as `undefined` and rejected. A `value`
++of `undefined` counts as missing, since `undefined` is not a JSON value.
++
++## Consequences
++Both inputs now throw `Error` and leave the document untouched. Valid JSON patches are unaffected.
+diff --git a/docs/memory/task/task-003-fix-applypatch-rfc-6902-conformance-gaps.md b/docs/memory/task/task-003-fix-applypatch-rfc-6902-conformance-gaps.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..dea1ac79b170dc58eec0b5912a520120baf545d7
+--- /dev/null
++++ b/docs/memory/task/task-003-fix-applypatch-rfc-6902-conformance-gaps.md
+@@ -0,0 +1,19 @@
++---
++id: task-003-fix-applypatch-rfc-6902-conformance-gaps
++type: task
++title: "Fix applyPatch RFC 6902 conformance gaps"
++status: pending
++format: 1
++---
++
++<!-- task body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
++
++Reviewed `applyPatch` against RFC 6902 by probing every operation and edge case. Pointer handling, array
++index rules, move/copy ordering, atomicity and deep equality already conformed. Two gaps were fixed in
++`src/index.ts`: holes in a sparse patch array were silently skipped (now rejected as non-object
++operations), and an explicit `undefined` `value` was accepted for add/replace/test (now rejected as a
++missing value). Tests added in `test/patch.test.ts`. See dl-003.
+diff --git a/src/index.ts b/src/index.ts
+index 9305a14ae4e70e35480efdb2137f7ebafc420d6e..a18bfd66804dad11f6c9276bf87cdb1bb0ad652b 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -148,7 +148,7 @@ function applyOperation(document: unknown, operation: unknown): unknown {
+     case "add":
+     case "replace":
+     case "test": {
+-      if (!Object.hasOwn(operation, "value")) {
++      if (operation.value === undefined) {
+         throw new Error(`Invalid JSON Patch: "${op}" requires a "value"`);
+       }
+       const value = structuredClone(operation.value);
+@@ -194,5 +194,8 @@ export function applyPatch(document: unknown, patch: unknown): unknown {
+   if (!Array.isArray(patch)) {
+     throw new TypeError("Invalid JSON Patch: must be an array of operations");
+   }
+-  return patch.reduce(applyOperation, structuredClone(document));
++  let result = structuredClone(document);
++  // Iterated rather than reduced, so that holes in a sparse patch are rejected instead of skipped.
++  for (const operation of patch) result = applyOperation(result, operation);
++  return result;
+ }
+diff --git a/test/patch.test.ts b/test/patch.test.ts
+index a5cb4e0a031db8326d4b78ec72b07e8114987be8..079e340a3911cef626baefe4385fe6e111a84062 100644
+--- a/test/patch.test.ts
++++ b/test/patch.test.ts
+@@ -198,3 +198,13 @@ test("__proto__ is an ordinary member", () => {
+   assert.throws(() => applyPatch({}, [{ op: "remove", path: "/__proto__" }]));
+   assert.throws(() => applyPatch({}, [{ op: "add", path: "/constructor/x", value: 1 }]));
+ });
++
++test("a sparse patch is rejected rather than its holes skipped", () => {
++  assert.throws(() => applyPatch({ a: 1 }, [, { op: "remove", path: "/a" }] as unknown[]));
++});
++
++test("an undefined value is not a JSON value", () => {
++  for (const op of ["add", "replace", "test"]) {
++    assert.throws(() => applyPatch({ a: 1 }, [{ op, path: "/a", value: undefined }]));
++  }
++});

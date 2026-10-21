@@ -1,0 +1,157 @@
+diff --git a/README.md b/README.md
+index ff92be649ff3f610b38798b3310751534d032814..35dc6b5c13c6a6eea4368f71eef8b119dd136b9f 100644
+--- a/README.md
++++ b/README.md
+@@ -3,3 +3,16 @@
+ A small TypeScript library, with no runtime dependency, of building blocks for our services that store,
+ exchange and update JSON: configuration files, API payloads and stored records. It is imported by the
+ other projects of the team, so its behaviour must follow the published standards it implements.
++
++## JSON Pointer (RFC 6901)
++
++`resolvePointer(document, pointer)`, exported from `src/index.ts`, returns the value of a JSON document
++that a JSON Pointer refers to. It throws a `SyntaxError` (or a `TypeError` for a non-string pointer) when
++the pointer is invalid, and a `RangeError` when it does not resolve to a value of the document.
++
++```ts
++resolvePointer({ "a/b": [10, 20] }, "/a~1b/1"); // 20
++```
++
++Strictness follows the RFC: array tokens must be canonical indexes (no leading zeros), the token `-`
++never resolves, and only own members of objects are followed.
+diff --git a/src/index.ts b/src/index.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..f631d4272a285c04aba10a77c70d6151049f9196
+--- /dev/null
++++ b/src/index.ts
+@@ -0,0 +1,52 @@
++const ARRAY_INDEX = /^(0|[1-9][0-9]*)$/;
++const INVALID_ESCAPE = /~(?![01])/;
++
++function unescapeToken(token: string): string {
++  return token.replace(/~1/g, "/").replace(/~0/g, "~");
++}
++
++function parsePointer(pointer: unknown): string[] {
++  if (typeof pointer !== "string") {
++    throw new TypeError("A JSON Pointer must be a string");
++  }
++  if (pointer === "") {
++    return [];
++  }
++  if (!pointer.startsWith("/")) {
++    throw new SyntaxError(`Invalid JSON Pointer "${pointer}": must be empty or start with "/"`);
++  }
++  if (INVALID_ESCAPE.test(pointer)) {
++    throw new SyntaxError(`Invalid JSON Pointer "${pointer}": "~" must be followed by "0" or "1"`);
++  }
++  return pointer.slice(1).split("/").map(unescapeToken);
++}
++
++function resolveToken(current: unknown, token: string, pointer: string): unknown {
++  if (Array.isArray(current)) {
++    if (ARRAY_INDEX.test(token) && Number(token) < current.length) {
++      return current[Number(token)];
++    }
++  } else if (typeof current === "object" && current !== null) {
++    if (Object.hasOwn(current, token)) {
++      return (current as Record<string, unknown>)[token];
++    }
++  }
++  throw new RangeError(`JSON Pointer "${pointer}" does not resolve to a value of the document`);
++}
++
++/**
++ * Returns the value of `document` that the JSON Pointer (RFC 6901) `pointer` refers to.
++ *
++ * The empty pointer refers to the whole document. Only own members of objects are
++ * followed, and the array token "-" never resolves since it names a nonexistent element.
++ *
++ * @throws SyntaxError when `pointer` is not a valid JSON Pointer.
++ * @throws TypeError when `pointer` is not a string.
++ * @throws RangeError when `pointer` does not resolve to a value of `document`.
++ */
++export function resolvePointer(document: unknown, pointer: string): unknown {
++  return parsePointer(pointer).reduce(
++    (current, token) => resolveToken(current, token, pointer),
++    document,
++  );
++}
+diff --git a/test/resolvePointer.test.ts b/test/resolvePointer.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..46da24d7aa7f98e13b537c4e82e1739e9d6f584c
+--- /dev/null
++++ b/test/resolvePointer.test.ts
+@@ -0,0 +1,72 @@
++import assert from "node:assert/strict";
++import { test } from "node:test";
++import { resolvePointer } from "../src/index.ts";
++
++// The example document and pointers of RFC 6901, section 5.
++const rfc = {
++  foo: ["bar", "baz"],
++  "": 0,
++  "a/b": 1,
++  "c%d": 2,
++  "e^f": 3,
++  "g|h": 4,
++  "i\\j": 5,
++  'k"l': 6,
++  " ": 7,
++  "m~n": 8,
++};
++
++test("resolves the RFC 6901 examples", () => {
++  assert.equal(resolvePointer(rfc, ""), rfc);
++  assert.deepEqual(resolvePointer(rfc, "/foo"), ["bar", "baz"]);
++  assert.equal(resolvePointer(rfc, "/foo/0"), "bar");
++  assert.equal(resolvePointer(rfc, "/"), 0);
++  assert.equal(resolvePointer(rfc, "/a~1b"), 1);
++  assert.equal(resolvePointer(rfc, "/c%d"), 2);
++  assert.equal(resolvePointer(rfc, "/e^f"), 3);
++  assert.equal(resolvePointer(rfc, "/g|h"), 4);
++  assert.equal(resolvePointer(rfc, "/i\\j"), 5);
++  assert.equal(resolvePointer(rfc, '/k"l'), 6);
++  assert.equal(resolvePointer(rfc, "/ "), 7);
++  assert.equal(resolvePointer(rfc, "/m~0n"), 8);
++});
++
++test("decodes ~01 as ~1, not as /", () => {
++  assert.equal(resolvePointer({ "~1": "x", "~/": "y" }, "/~01"), "x");
++});
++
++test("resolves falsy values, including null", () => {
++  assert.equal(resolvePointer({ a: null }, "/a"), null);
++  assert.equal(resolvePointer([false], "/0"), false);
++});
++
++test("rejects invalid pointers", () => {
++  for (const pointer of ["foo", "foo/bar", "/a~", "/a~2b", "#/a"]) {
++    assert.throws(() => resolvePointer({ a: 1 }, pointer), SyntaxError, pointer);
++  }
++  assert.throws(() => resolvePointer({}, undefined as unknown as string), TypeError);
++});
++
++test("rejects an invalid escape even when resolution fails earlier", () => {
++  assert.throws(() => resolvePointer({}, "/missing/~"), SyntaxError);
++});
++
++test("throws when the pointer does not resolve", () => {
++  assert.throws(() => resolvePointer({ a: 1 }, "/b"), RangeError);
++  assert.throws(() => resolvePointer({ a: 1 }, "/a/b"), RangeError);
++  assert.throws(() => resolvePointer(null, "/a"), RangeError);
++  assert.throws(() => resolvePointer("abc", "/0"), RangeError);
++});
++
++test("array tokens must be canonical in-range indexes", () => {
++  const doc = ["a", "b"];
++  for (const pointer of ["/2", "/-", "/-1", "/01", "/1.0", "/ 1", "/length", "/"]) {
++    assert.throws(() => resolvePointer(doc, pointer), RangeError, pointer);
++  }
++});
++
++test("only follows own members of objects", () => {
++  for (const pointer of ["/__proto__", "/constructor", "/toString"]) {
++    assert.throws(() => resolvePointer({}, pointer), RangeError, pointer);
++  }
++});

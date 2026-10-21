@@ -1,0 +1,75 @@
+diff --git a/README.md b/README.md
+index c18b98bdc0b97964d37e3d620ccf6df68cc44d22..bb1b8a739f7abd0994bfed7d1665e3142777552b 100644
+--- a/README.md
++++ b/README.md
+@@ -29,7 +29,7 @@ applyPatch({ foo: "bar" }, [{ op: "add", path: "/baz", value: "qux" }]); // { fo
+ - The input is never mutated, and the result shares no structure with the document or the patch.
+   Operations run on a copy, so a failing patch has no partial effect.
+ - It throws a `TypeError` or `SyntaxError` when the patch is invalid (not an array, unknown `op`, missing or
+-  mistyped `path`, `from` or `value`, malformed pointer), and a `RangeError` when an operation fails
++  mistyped `path`, `from` or `value`, malformed pointer), before any operation runs, and a `RangeError` when an operation fails
+   (missing target, invalid array position, `move` into its own child, failed `test`).
+ - Pointers follow `resolvePointer`. Removing the whole document (`remove` with path `""`) is rejected.
+ - `test` compares by JSON equality: object member order is irrelevant.
+diff --git a/src/index.ts b/src/index.ts
+index dd8c97b3d14d1114eb4cb49aa400dccc950f9a30..44514fb7fcbec398176db857a763177ccd55eb3a 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -63,6 +63,7 @@ function assertPointerMember(operation: Record<string, unknown>, member: "path"
+   if (typeof operation[member] !== "string") {
+     throw new TypeError(`A JSON Patch "${operation.op}" operation needs a string "${member}"`);
+   }
++  parsePointer(operation[member]);
+ }
+ 
+ function validateOperation(operation: unknown): asserts operation is PatchOperation {
+@@ -77,7 +78,7 @@ function validateOperation(operation: unknown): asserts operation is PatchOperat
+   if (candidate.op === "move" || candidate.op === "copy") {
+     assertPointerMember(candidate, "from");
+   }
+-  if (["add", "replace", "test"].includes(candidate.op) && !Object.hasOwn(candidate, "value")) {
++  if (["add", "replace", "test"].includes(candidate.op) && candidate.value === undefined) {
+     throw new SyntaxError(`A JSON Patch "${candidate.op}" operation needs a "value"`);
+   }
+ }
+@@ -215,6 +216,7 @@ export function applyPatch(document: unknown, patch: PatchOperation[]): unknown
+   if (!Array.isArray(patch)) {
+     throw new TypeError("A JSON Patch must be an array of operations");
+   }
+-  patch.forEach(validateOperation);
+-  return patch.reduce<unknown>(applyOperation, structuredClone(document));
++  const operations = Array.from(patch);
++  operations.forEach(validateOperation);
++  return operations.reduce<unknown>(applyOperation, structuredClone(document));
+ }
+diff --git a/test/applyPatch.test.ts b/test/applyPatch.test.ts
+index fcab58a46584c8fabaf75a68b832dd10ee6448ee..ae58f2aa38e2917d0421292ebf183653a3694575 100644
+--- a/test/applyPatch.test.ts
++++ b/test/applyPatch.test.ts
+@@ -132,3 +132,26 @@ test("rejects invalid patches", () => {
+   assert.throws(() => apply({}, { op: "move", path: "/a" }), TypeError);
+   assert.throws(() => apply({}, { op: "add", path: "a", value: 1 }), SyntaxError);
+ });
++
++test("a malformed pointer is rejected before any operation runs", () => {
++  assert.throws(
++    () => apply({}, { op: "test", path: "/x", value: 1 }, { op: "remove", path: "x" }),
++    SyntaxError,
++  );
++  assert.throws(
++    () => apply({}, { op: "test", path: "/x", value: 1 }, { op: "copy", from: "/~2", path: "/y" }),
++    SyntaxError,
++  );
++});
++
++test("an invalid operation is rejected even after a failing one, and holes are invalid", () => {
++  assert.throws(
++    () => apply({}, { op: "test", path: "/x", value: 1 }, { op: "bogus", path: "/y" }),
++    SyntaxError,
++  );
++  assert.throws(() => applyPatch({}, [, { op: "remove", path: "/a" }] as PatchOperation[]), TypeError);
++});
++
++test("an undefined value is not a JSON value", () => {
++  assert.throws(() => apply({}, { op: "add", path: "/a", value: undefined }), SyntaxError);
++});

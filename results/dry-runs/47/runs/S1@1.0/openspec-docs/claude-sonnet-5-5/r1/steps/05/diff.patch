@@ -1,0 +1,88 @@
+diff --git a/src/index.ts b/src/index.ts
+index dfb42de647563c333f45f1d32854b525465f6bbf..4fcdb1eb33c3a37afa49eb7e3d9b1bd5c10bd423 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -247,3 +247,46 @@ export function applyMergePatch(target: unknown, patch: unknown): unknown {
+   }
+   return result;
+ }
++
++const escapePointerToken = (token: string): string => token.replace(/~/g, "~0").replace(/\//g, "~1");
++
++function diff(from: unknown, to: unknown, path: string, patch: PatchOperation[]): void {
++  if (jsonEqual(from, to)) return;
++  if (Array.isArray(from) && Array.isArray(to)) {
++    let start = 0;
++    while (start < from.length && start < to.length && jsonEqual(from[start], to[start])) start++;
++    let fromEnd = from.length;
++    let toEnd = to.length;
++    while (fromEnd > start && toEnd > start && jsonEqual(from[fromEnd - 1], to[toEnd - 1])) {
++      fromEnd--;
++      toEnd--;
++    }
++    const common = Math.min(fromEnd, toEnd) - start;
++    for (let i = 0; i < common; i++) diff(from[start + i], to[start + i], `${path}/${start + i}`, patch);
++    for (let i = fromEnd - 1; i >= start + common; i--) patch.push({ op: "remove", path: `${path}/${i}` });
++    for (let i = start + common; i < toEnd; i++) {
++      patch.push({ op: "add", path: `${path}/${i}`, value: clone(to[i]) as JsonValue });
++    }
++  } else if (isObject(from) && isObject(to)) {
++    for (const key of Object.keys(from)) {
++      if (!has(to, key)) patch.push({ op: "remove", path: `${path}/${escapePointerToken(key)}` });
++    }
++    for (const key of Object.keys(to)) {
++      const child = `${path}/${escapePointerToken(key)}`;
++      if (has(from, key)) diff(from[key], to[key], child, patch);
++      else patch.push({ op: "add", path: child, value: clone(to[key]) as JsonValue });
++    }
++  } else {
++    patch.push({ op: "replace", path, value: clone(to) as JsonValue });
++  }
++}
++
++/**
++ * Returns a JSON Patch (RFC 6902) that turns `from` into `to` when applied with `applyPatch`.
++ * Only the differing parts are described. The inputs are not modified.
++ */
++export function createPatch(from: unknown, to: unknown): PatchOperation[] {
++  const patch: PatchOperation[] = [];
++  diff(from, to, "", patch);
++  return patch;
++}
+diff --git a/test/createpatch.test.ts b/test/createpatch.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..71fe17d3d3c4c2ff582e5c56c2d30f2f21579243
+--- /dev/null
++++ b/test/createpatch.test.ts
+@@ -0,0 +1,31 @@
++import test from "node:test";
++import assert from "node:assert/strict";
++import { applyPatch, createPatch } from "../src/index.ts";
++
++const roundTrip = (from: unknown, to: unknown) => {
++  const before = JSON.stringify(from);
++  const patch = createPatch(from, to);
++  assert.deepEqual(applyPatch(from, patch), to);
++  assert.equal(JSON.stringify(from), before);
++  return patch;
++};
++
++test("createPatch is minimal for small changes", () => {
++  assert.deepEqual(roundTrip({ a: 1, b: { c: [1, 2, 3] } }, { a: 1, b: { c: [1, 5, 3] } }), [
++    { op: "replace", path: "/b/c/1", value: 5 },
++  ]);
++  assert.deepEqual(roundTrip({ a: 1 }, { a: 1 }), []);
++  assert.deepEqual(roundTrip([1, 2, 3, 4], [1, 4]), [
++    { op: "remove", path: "/2" },
++    { op: "remove", path: "/1" },
++  ]);
++  assert.equal(roundTrip([1, 2], [1, 2, 3]).length, 1);
++});
++
++test("createPatch handles escapes, roots and type changes", () => {
++  roundTrip({ "a/b": 1, "m~n": 2 }, { "a/b": 3, "m~n": 2, "": 1 });
++  roundTrip(1, { a: 1 });
++  roundTrip({ a: [1] }, { a: { b: null } });
++  roundTrip([1, [2, 3], { x: 1 }], [{ x: 1 }, [2], 7, 8]);
++  roundTrip(JSON.parse('{"__proto__":1}'), JSON.parse('{"__proto__":2}'));
++});

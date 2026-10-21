@@ -1,0 +1,186 @@
+diff --git a/docs/memory/decision-log/dl-005-createpatch-minimal-recursive-diff-index-wise-arrays.md b/docs/memory/decision-log/dl-005-createpatch-minimal-recursive-diff-index-wise-arrays.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..31fa690c05a685ae1b115402fc4473cd12478d02
+--- /dev/null
++++ b/docs/memory/decision-log/dl-005-createpatch-minimal-recursive-diff-index-wise-arrays.md
+@@ -0,0 +1,23 @@
++---
++id: dl-005-createpatch-minimal-recursive-diff-index-wise-arrays
++type: decision-log
++title: "createPatch: minimal recursive diff, index-wise arrays"
++status: pending
++format: 1
++---
++
++## Context
++
++Clients want to send only what changed between two JSON versions, as a JSON Patch.
++
++## Decision
++
++Recursive diff: objects member by member (in `Object.keys` order, so output is deterministic), arrays
++index by index, anything else replaced. Array tail removals are emitted from the end. Values in the patch
++are cloned. `undefined` raises a TypeError, as in the other functions. No move/copy/test operations.
++
++## Consequences
++
++Patches are small for localized changes. An insertion at the front of a long array yields many operations
++rather than one `add`, since there is no LCS matching; this keeps the algorithm simple and predictable and
++can be refined later without changing the API.
+diff --git a/docs/memory/task/task-005-implement-createpatch-rfc-6902-diff.md b/docs/memory/task/task-005-implement-createpatch-rfc-6902-diff.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..723031bde5b598f67deea447545dfc85546758ff
+--- /dev/null
++++ b/docs/memory/task/task-005-implement-createpatch-rfc-6902-diff.md
+@@ -0,0 +1,11 @@
++---
++id: task-005-implement-createpatch-rfc-6902-diff
++type: task
++title: "Implement createPatch (RFC 6902 diff)"
++status: pending
++format: 1
++---
++
++Added `createPatch(from, to)` to `src/index.ts`: returns an RFC 6902 patch (add/remove/replace) that turns
++`from` into `to`, describing only the differing parts. Tests in `test/create-patch.test.ts` (round-trip through
++`applyPatch`, minimality, escaping, non-mutation, undefined rejection).
+diff --git a/src/index.ts b/src/index.ts
+index 8ab5d612ff1e6d3aee1b84eb856c7a665146cdde..f7abdcdaabaa5e97af48bd125e6f1a709c338585 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -235,3 +235,61 @@ function mergeInto(target: unknown, patch: unknown): unknown {
+ export function applyMergePatch(target: unknown, patch: unknown): unknown {
+   return mergeInto(target, patch);
+ }
++
++type Operation = { op: "add" | "replace"; path: string; value: unknown } | { op: "remove"; path: string };
++
++function escapeToken(token: string): string {
++  return token.replace(/~/g, "~0").replace(/\//g, "~1");
++}
++
++function diffArrays(from: unknown[], to: unknown[], path: string, out: Operation[]): void {
++  const common = Math.min(from.length, to.length);
++  for (let i = 0; i < common; i++) diffInto(from[i], to[i], `${path}/${i}`, out);
++  // Removed from the end, so that each index still designates the intended element.
++  for (let i = from.length - 1; i >= common; i--) out.push({ op: "remove", path: `${path}/${i}` });
++  for (let i = common; i < to.length; i++) {
++    out.push({ op: "add", path: `${path}/${i}`, value: structuredClone(to[i]) });
++  }
++}
++
++function diffObjects(from: Record<string, unknown>, to: Record<string, unknown>, path: string, out: Operation[]): void {
++  for (const key of Object.keys(from)) {
++    const member = `${path}/${escapeToken(key)}`;
++    if (Object.hasOwn(to, key)) diffInto(from[key], to[key], member, out);
++    else out.push({ op: "remove", path: member });
++  }
++  for (const key of Object.keys(to)) {
++    if (!Object.hasOwn(from, key)) {
++      out.push({ op: "add", path: `${path}/${escapeToken(key)}`, value: structuredClone(to[key]) });
++    }
++  }
++}
++
++function diffInto(from: unknown, to: unknown, path: string, out: Operation[]): void {
++  if (from === undefined || to === undefined) {
++    throw new TypeError("Invalid JSON document: undefined is not a JSON value");
++  }
++  if (Array.isArray(from) && Array.isArray(to)) diffArrays(from, to, path, out);
++  else if (isObject(from) && isObject(to)) diffObjects(from, to, path, out);
++  else if (from !== to) out.push({ op: "replace", path, value: structuredClone(to) });
++}
++
++/**
++ * Creates a JSON Patch (RFC 6902) that turns one JSON document into another.
++ *
++ * The patch is minimal in the sense that only the parts that differ are described: objects are compared
++ * member by member and arrays element by element, recursively. Array elements are matched by index, so
++ * an element inserted at the front of an array is expressed as changes to the elements after it.
++ * Neither input is mutated, and the patch shares no structure with either.
++ *
++ * @param from the parsed JSON document to start from.
++ * @param to the parsed JSON document to reach.
++ * @returns an array of `add`, `remove` and `replace` operations; empty if the documents are equal.
++ *   `applyPatch(from, patch)` is equal to `to`.
++ * @throws TypeError if either document contains `undefined`, which is not a JSON value.
++ */
++export function createPatch(from: unknown, to: unknown): Operation[] {
++  const patch: Operation[] = [];
++  diffInto(from, to, "", patch);
++  return patch;
++}
+diff --git a/test/create-patch.test.ts b/test/create-patch.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..446dcd49fd3ac15a6f243e2c0a03690e69ead675
+--- /dev/null
++++ b/test/create-patch.test.ts
+@@ -0,0 +1,68 @@
++import { test } from "node:test";
++import assert from "node:assert/strict";
++import { applyPatch, createPatch } from "../src/index.ts";
++
++function roundTrip(from: unknown, to: unknown): unknown {
++  const patch = createPatch(from, to);
++  assert.deepEqual(applyPatch(from, patch), to);
++  return patch;
++}
++
++test("equal documents give an empty patch", () => {
++  assert.deepEqual(roundTrip({ a: [1, { b: 2 }] }, { a: [1, { b: 2 }] }), []);
++});
++
++test("a small change gives a small patch", () => {
++  const from = { a: { b: 1, c: [1, 2, 3] }, d: "x" };
++  const to = { a: { b: 1, c: [1, 9, 3] }, d: "x" };
++  assert.deepEqual(roundTrip(from, to), [{ op: "replace", path: "/a/c/1", value: 9 }]);
++});
++
++test("object members are added and removed", () => {
++  assert.deepEqual(roundTrip({ a: 1, b: 2 }, { a: 1, c: 3 }), [
++    { op: "remove", path: "/b" },
++    { op: "add", path: "/c", value: 3 },
++  ]);
++});
++
++test("array growth and shrinkage", () => {
++  assert.deepEqual(roundTrip([1, 2], [1, 2, 3, 4]), [
++    { op: "add", path: "/2", value: 3 },
++    { op: "add", path: "/3", value: 4 },
++  ]);
++  assert.deepEqual(roundTrip([1, 2, 3, 4], [1, 2]), [
++    { op: "remove", path: "/3" },
++    { op: "remove", path: "/2" },
++  ]);
++});
++
++test("root and type changes", () => {
++  assert.deepEqual(roundTrip(1, 2), [{ op: "replace", path: "", value: 2 }]);
++  roundTrip({ a: 1 }, [1]);
++  roundTrip({ a: null }, { a: {} });
++  roundTrip([], {});
++});
++
++test("keys are escaped and __proto__ is an ordinary member", () => {
++  const from = JSON.parse('{"a/b":1,"c~d":1,"__proto__":{"x":1}}');
++  const to = JSON.parse('{"a/b":2,"c~d":2,"__proto__":{"x":2}}');
++  const patch = roundTrip(from, to) as { path: string }[];
++  assert.deepEqual(patch.map((o) => o.path), ["/a~1b", "/c~0d", "/__proto__/x"]);
++});
++
++test("inputs are not mutated and the patch shares no structure", () => {
++  const from = { a: [1] };
++  const to = { b: { c: [1] } };
++  const fromCopy = structuredClone(from);
++  const toCopy = structuredClone(to);
++  const patch = createPatch(from, to) as { value?: { c: number[] } }[];
++  assert.deepEqual(from, fromCopy);
++  assert.deepEqual(to, toCopy);
++  assert.notEqual(patch[1].value, to.b);
++  assert.notEqual(patch[1].value?.c, to.b.c);
++});
++
++test("undefined is rejected", () => {
++  assert.throws(() => createPatch({ a: undefined }, { a: 1 }), TypeError);
++  assert.throws(() => createPatch({}, undefined), TypeError);
++});

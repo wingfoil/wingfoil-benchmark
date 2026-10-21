@@ -201,3 +201,31 @@ container left; scored; a ledger line.
 - Every arm at the maximum on S8's tests and hold-out, and on S2's but speckit (21/24, 16/17, checks 0/3); the arms
   differ on the checks.
 - bug-023 approved by this session at the approver's request in chat (`78d75d4`; the reason says so).
+
+### Stage 3: S1@1.0 in six arms, Sonnet 5.5 (2026-10-21, 14:58–15:27 UTC)
+
+The approver's consent in chat, 2026-10-21: S1 on the six arms without openspec, 3 € a run and 12 € in all
+(`82d58c5` sets `run_cost_eur: 3`); the same chain and stops as stage 2, with 2 € for twice the expected. The
+session ended during wingfoil's step 2: the runner stopped the dry run (`dry-runs/43`, `interrupted`; no container
+left). The approver asked in chat to restart after the interruption; the chain went on from wingfoil
+(`dry-runs/44`), counting what was spent. The estimate reads completed dry runs only, so `43` is a record, not a
+measurement. Its step 2 ended before the agent's result, so its usage is not in `run.json`: the transcript's
+messages hold about 19.7 k cache-write and 186 k cache-read tokens, about 0.07 USD at the list prices, not counted
+below. Every other one: `dry_run: true`, Claude Code 2.1.300, `claude-sonnet-5-5` at `medium` priced `list`, the
+pinned arm digest, one attempt, `completed`, no intervention; the token scan clean (all seven); scored; a ledger
+line each, `43`'s included.
+
+| Dry run | Arm | Outcome | Cost | Wall time | Turns per step | Largest transcript | Final public | Hold-out |
+|---|---|---|---|---|---|---|---|---|
+| 41 | baseline | completed | 0.3393 USD (0.3026 €) | 3 min 6 s | 4, 6, 7, 4, 4 | 62 KB (step 3) | 164/165 | 45/48 |
+| 42 | baseline-docs | completed | 0.4741 USD (0.4228 €) | 3 min 43 s | 5, 7, 6, 5, 6 | 84 KB (step 2) | 164/165 | 45/48 |
+| 43 | wingfoil | interrupted | 0.1028 USD (0.0917 €) | — | 8, 0 | 93 KB (step 2) | — | — |
+| 44 | wingfoil | completed | 0.6498 USD (0.5794 €) | 4 min 15 s | 9, 8, 8, 9, 9 | 108 KB (step 2) | 158/165 | 43/48 |
+| 45 | speckit | completed | 0.5868 USD (0.5233 €) | 3 min 30 s | 18, 5, 5, 7, 4 | 156 KB (step 1) | 164/165 | 45/48 |
+| 46 | speckit-docs | completed | 0.4091 USD (0.3648 €) | 3 min 2 s | 4, 5, 8, 4, 4 | 92 KB (step 3) | 164/165 | 45/48 |
+| 47 | openspec-docs | completed | 0.3657 USD (0.3261 €) | 2 min 35 s | 4, 4, 6, 4, 5 | 75 KB (step 3) | 164/165 | 45/48 |
+
+- **Spent: 2.9276 USD (2.6107 €)** reported, of the 12 € consented, and about 0.07 USD unreported (`43`); the
+  dearest run 0.6498 USD (wingfoil).
+- Every arm passes steps 1–4 in full and 152/153 at step 5, but wingfoil (146/153; final 158/165, hold-out 43/48);
+  the others 164/165 and 45/48.
