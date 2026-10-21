@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 import { missingEffort } from '../../../src/core/index.js';
 import type { CampaignFile } from '../../../src/core/index.js';
-import { checkCampaign } from '../../../src/runner/index.js';
+import { campaignKeys, checkCampaign, estimateCampaign } from '../../../src/runner/index.js';
 import { repoPath } from '../../support/paths.js';
 
 /**
@@ -44,7 +44,8 @@ describe('the v0.2 campaign files (task-091)', () => {
       slices: [
         { model: 'claude-opus-5-5', scenarios: ['S1'], arms: V0_1_ARMS, repetitions: 1 },
         {
-          model: 'claude-haiku-4-5',
+          // dl-018: the weak-model rung on Haiku 5.5 (task-096).
+          model: 'claude-haiku-5-5',
           scenarios: ['S1', 'S3'],
           arms: ['baseline', 'wingfoil'],
           repetitions: 1,
@@ -142,5 +143,62 @@ describe('the v0.2 campaign files (task-091)', () => {
     const models = [reference.models.default, ...(reference.models.slices ?? []).map((s) => s.model)];
     expect(missingEffort(reference.agent, models)).toEqual([]);
     expect(reference.agent.name).toBe('claude-code');
+  });
+});
+
+/** A dry-run profile as committed (REQ-CLI-05). */
+function profile(path: string): Record<string, unknown> {
+  return parse(readFileSync(repoPath(path), 'utf8')) as Record<string, unknown>;
+}
+
+describe('the v0.2 campaign files after calibration (task-096)', () => {
+  it('leave no placeholder in either file', () => {
+    for (const name of ['v0-2-reference', 'v0-2-bridge'])
+      expect(readFileSync(repoPath(`campaigns/${name}.yaml`), 'utf8'), name).not.toMatch(/placeholder/i);
+  });
+
+  it("carry calibration's values, as the approver approved them (docs/calibration/v0.2.md §7)", () => {
+    const reference = checked('v0-2-reference');
+    const bridge = checked('v0-2-bridge');
+    for (const campaign of [reference, bridge]) {
+      expect(campaign.agent).toEqual({
+        name: 'claude-code',
+        version: '2.1.300',
+        effort: { 'claude-sonnet-5-5': 'medium', 'claude-opus-5-5': 'medium', 'claude-haiku-5-5': 'medium' },
+      });
+      expect(campaign.caps).toEqual({ step_time_s: 1800, step_tokens: 10000000, run_cost_eur: 5 });
+      expect(campaign.fail_fast).toEqual({ same_error: 3 });
+      expect(campaign.currency).toEqual({ usd_to_eur: 0.8917 });
+    }
+    expect(reference.budget).toEqual({ warn_eur: 40, ceiling_eur: 50 });
+    expect(bridge.budget).toEqual({ warn_eur: 12, ceiling_eur: 15 });
+  });
+
+  it('price every key of each from the stored dry runs', () => {
+    for (const name of ['v0-2-reference', 'v0-2-bridge']) {
+      const result = checkCampaign(repoPath(`campaigns/${name}.yaml`));
+      if (!result.ok) throw new Error(name);
+      const estimate = estimateCampaign(result.value);
+      expect(estimate.ok ? [] : estimate.issues, name).toEqual([]);
+      if (estimate.ok) expect(estimate.value.lines).toHaveLength(campaignKeys(result.value).length);
+    }
+  });
+
+  it("give the dry-run profiles the campaigns' pins: agent, effort, harnesses, caps, rate and the bridge's arm", () => {
+    for (const [file, name] of [
+      ['scenarios/dry-run.yaml', 'v0-2-reference'],
+      ['campaigns/v0-2-bridge.dry-run.yaml', 'v0-2-bridge'],
+    ] as const) {
+      const pins = profile(file);
+      const campaign = checked(name);
+      expect(pins.agent, file).toEqual(campaign.agent);
+      expect(pins.harnesses, file).toEqual(campaign.harnesses);
+      expect(pins.caps, file).toEqual(campaign.caps);
+      expect(pins.currency, file).toEqual(campaign.currency);
+      expect((pins.models as { default: string }).default, file).toBe(campaign.models.default);
+    }
+    expect(profile('campaigns/v0-2-bridge.dry-run.yaml').arm_digests).toEqual({
+      wingfoil: checked('v0-2-bridge').arm_digests?.wingfoil,
+    });
   });
 });

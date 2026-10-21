@@ -27,7 +27,7 @@ of step 1:
 
 | Element | Subject | Bears on |
 |---|---|---|
-| dl-007 | Claude 5.5 models, a bridge to v0.1, a model ladder from Haiku 4.5 | the campaign's models and budget |
+| dl-007 | Claude 5.5 models, a bridge to v0.1, a model ladder from Haiku 5.5 (Haiku 4.5 until dl-018) | the campaign's models and budget |
 | dl-008 | model configurations and the cost-quality frontier | the site; routing later |
 | dl-009 | findings linked to WingFoil both ways | the `findings` phase |
 | dl-010 | validation in every arm, on the largest step | step 4, `release-cycle` |

@@ -1,9 +1,9 @@
 # Experiment Design (GQM) — WingFoil Benchmark
 
-**Version:** 1.5
-**Date:** 2026-10-20
+**Version:** 1.6
+**Date:** 2026-10-21
 **Status:** Approved
-**Traces to:** [06_features.md](06_features.md) (F2.4, F2.7, F4.x, F7.4), [07_sequencer.md](07_sequencer.md) (decisions 1–3), [03_is-isnot.md](03_is-isnot.md) 1.1; input: [X_competitor-landscape-2026-09-22.md](X_competitor-landscape-2026-09-22.md), [X_competitor-landscape-2026-10-05.md](X_competitor-landscape-2026-10-05.md) (1.2); [dl-017](../memory/decision-log/dl-017-the-v0-2-campaign-pins-wingfoil-v0-3-beside-a-bridge-on-v0-2-2-one-repetition-per-group.md) (1.3); [task-094](../memory/task/task-094-a-codex-agent-adapter-and-s3-s-baseline-compared-across-agents-spike.md) (1.4); [task-095](../memory/task/task-095-wingfoil-v0-3-0-admitted-to-the-wingfoil-arm-the-bridge-s-arm-read-by-its-pinned-digest.md) (1.5)
+**Traces to:** [06_features.md](06_features.md) (F2.4, F2.7, F4.x, F7.4), [07_sequencer.md](07_sequencer.md) (decisions 1–3), [03_is-isnot.md](03_is-isnot.md) 1.1; input: [X_competitor-landscape-2026-09-22.md](X_competitor-landscape-2026-09-22.md), [X_competitor-landscape-2026-10-05.md](X_competitor-landscape-2026-10-05.md) (1.2); [dl-017](../memory/decision-log/dl-017-the-v0-2-campaign-pins-wingfoil-v0-3-beside-a-bridge-on-v0-2-2-one-repetition-per-group.md) (1.3); [task-094](../memory/task/task-094-a-codex-agent-adapter-and-s3-s-baseline-compared-across-agents-spike.md) (1.4); [task-095](../memory/task/task-095-wingfoil-v0-3-0-admitted-to-the-wingfoil-arm-the-bridge-s-arm-read-by-its-pinned-digest.md) (1.5); [dl-018](../memory/decision-log/dl-018-sonnet-5-5-s-cache-reads-at-half-dl-007-s-price-and-haiku-5-5-beside-the-haiku-4-5-rung.md), [task-096](../memory/task/task-096-calibration-of-v0-2-dry-runs-in-every-arm-and-the-bridge-measured-costs-and-the-revised-budget.md) (1.6)
 
 ---
 
@@ -300,10 +300,12 @@ The 30 € target above did not hold, and stays as the record of v0.1's plan.
     the working tree has moved on to v0.3.0's (1.5, REQ-FMT-13). It is not cut at calibration to fit the budget;
   - **repetitions:** v0.1's, S1 × 3 and S2, S3 and S8 × 1, in both campaigns, until WingFoil 1.0 or the benchmark's
     1.0, whichever comes first. No group is raised to three to leave "preliminary": the rule n ≥ 3 above stands;
-  - a Haiku 4.5 rung of the model ladder.
+  - a Haiku 5.5 rung of the model ladder (Haiku 4.5 until 1.6, dl-018);
+  - **the effort:** `medium` for Sonnet 5.5, Opus 5.5 and Haiku 5.5 (dl-015, dl-018; 1.6).
 
   A first sizing, Sonnet only and v0.1's repetitions, is about 42 runs and 75–85 €. With v0.3, the bridge adds 18 runs,
-  about 35–40 € at v0.1's measured cost. Calibration replaces both figures.
+  about 35–40 € at v0.1's measured cost. Calibration replaced both figures (1.6): the reference campaign's estimate is
+  32.5 €, the bridge's 8.7 €, the budget 50 € and 15 €, 65 € in all ([v0.2.md](../calibration/v0.2.md)).
 
   **With v0.3, the comparisons published with v0.2** form a chain of two steps, each changing one group of causes:
   `c82a5e74885b/2` → bridge (the model, Claude Code, the effort, the manual and the scoring code, WingFoil held at
@@ -373,4 +375,17 @@ The 30 € target above did not hold, and stays as the record of v0.1's plan.
       ships other directive text (`doc-versioning`), the step bridge → reference changes the docs control's rules too.
 
     Source: [task-095](../memory/task/task-095-wingfoil-v0-3-0-admitted-to-the-wingfoil-arm-the-bridge-s-arm-read-by-its-pinned-digest.md).
+11. **Amendment 1.6 (v0.2, calibration, 2026-10-21).** The consequences of
+    [dl-018](../memory/decision-log/dl-018-sonnet-5-5-s-cache-reads-at-half-dl-007-s-price-and-haiku-5-5-beside-the-haiku-4-5-rung.md)
+    and calibration's measurements, the approver's approval in chat of the values on 2026-10-21.
+    - **§6, the ladder:** its weak rung is Haiku 5.5 (`claude-haiku-5-5`), S1 and S3 in baseline and wingfoil; Haiku
+      4.5 until 1.6. The hypothesis on the weak model (dl-007's "H6", H11 in [v0.2.md](../calibration/v0.2.md) §8) reads Haiku
+      5.5.
+    - **§6, the effort:** `medium` for the three models, the same in every arm; v0.1 pinned none. So the comparison
+      with v0.1, through the bridge, changes the effort with the model and Claude Code (dl-015's C).
+    - **§6, the sizing:** replaced by calibration's estimate and budget.
+
+    Source:
+    [task-096](../memory/task/task-096-calibration-of-v0-2-dry-runs-in-every-arm-and-the-bridge-measured-costs-and-the-revised-budget.md);
+    [v0.2.md](../calibration/v0.2.md).
 
