@@ -308,3 +308,5 @@ Departures added to the list above:
   `test:bin` 8/8; `test:docker` 22 passed, 2 skipped (the same conditional skips as before), W3 on v0.3.0 with the
   arm as it is now included. Log `.cache/full-suites/2026-10-21/task_task-095-4ed2ec1-102609.txt`. No `bench-`
   container left. The commits after `4ed2ec1` are these notes only.
+- The approver's `memory approve task-095-… --reason "…"` → `6979a05`, run from this worktree (`in-review → approved`,
+  `Approver:`/`Reason:` trailers with the drafted reason, only `status` changed). Matches.
