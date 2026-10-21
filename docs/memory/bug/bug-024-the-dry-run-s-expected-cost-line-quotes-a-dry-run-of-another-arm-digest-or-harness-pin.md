@@ -2,7 +2,7 @@
 id: bug-024-the-dry-run-s-expected-cost-line-quotes-a-dry-run-of-another-arm-digest-or-harness-pin
 type: bug
 title: "The dry run's expected-cost line quotes a dry run of another arm digest or harness pin"
-status: approved
+status: fixed
 fixed_by: task-096-calibration-of-v0-2-dry-runs-in-every-arm-and-the-bridge-measured-costs-and-the-revised-budget
 # fixed_by: task-…   # set by hand, with the fixing task's id, just before `approved → fixed`
 tags: ["dry-run","estimate","cli"]
