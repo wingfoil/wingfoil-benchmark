@@ -97,13 +97,13 @@ independent read-only agent, rounds until clean, before in-review.
 - `npx wingfoil memory submit task-097-…` (backlog → in-progress): `6bdd4518`. Matches. WIP: no other task open.
 - **The full suites** (`scripts/full-suites.sh main`, the load low): on `6bdd4518`, not dirty, LINT 0, TEST 0 (1660
   passed), BUILD 0, BIN 0 (8), DOCKER 0 (24, none skipped); log
-  `.cache/full-suites/2026-10-21/main-6bdd4518-222351.txt`.
+  `.cache/full-suites/2026-10-21/main-6bdd4518-222351.txt`; coverage 97.57 % statements, 90.83 % branches.
 
 ### The runs (2026-10-21, 20:34–21:15 UTC)
 
 `bench campaign run campaigns/v0-2-validation.yaml --allow-spending`, then the same for
 `v0-2-validation-bridge.yaml`, from the main checkout, with `BENCH_AGENT_TOKEN_FILE=$HOME/.claude/bench-token`,
-`BENCH_WINGFOIL_REPO`, `BENCH_SPECKIT_REPO`. The estimates as the Design (4.59 € and 1.15 €), under each `warn_eur`:
+`BENCH_WINGFOIL_REPO`, `BENCH_SPECKIT_REPO` (and `BENCH_HOLDOUT_PATH` for `score`). The estimates as the Design (4.59 € and 1.15 €), under each `warn_eur`:
 no question asked. The bridge's run printed "arm wingfoil: read from commit 2441243b8e37, which holds its pinned
 digest". Both executions `completed` (`execution.json`).
 
@@ -119,8 +119,8 @@ digest". Both executions `completed` (`execution.json`).
 | `27f0119be0ff/1` | baseline | 0.3919 USD (0.3495 €) | 210 s | 24 | 164/165 | 45/48 |
 | | wingfoil (v0.2.2) | 0.7177 USD (0.6400 €) | 426 s | 52 | 165/165 | 48/48 |
 
-- **Spent: 4.9019 USD (4.3712 €)** of the 9 € consented: 3.7922 USD and 1.1096 USD; each run within 0.91 and
-  1.28 times its calibration dry run.
+- **Spent: 4.9019 USD (4.3712 €)** of the 9 € consented, the sum of the nine rounded ledger lines (exactly 4.90185
+  USD, 4.37098 €): 3.7923 and 1.1096 USD; each run 0.908 to 1.28 times its calibration dry run.
 - **Every run:** `completed`, one attempt, no intervention; Claude Code 2.1.300, `claude-sonnet-5-5` at `medium`,
   priced `list`, the only model in every step; the arm digest its campaign pins, the bridge's wingfoil
   `680b19f27c9f` with `arm_source` commit `2441243b`, every other `{ tree: true }`. The token scan of both executions'
@@ -129,6 +129,19 @@ digest". Both executions `completed` (`execution.json`).
   of all nine, exit 0; `bench site build` of both, locally (never published); `bench transcripts pack` of both
   (35 and 10 transcripts, the harness artifacts 3 and 1), with the token file named so that the pack scans for its
   value, exit 0: the `gh release create` it prints not run. `releases/` is git-ignored.
-- **S1's step 5 varies by run:** in calibration wingfoil lost six public tests (158/165) and the others one; here
+- **S1's step 5 varies by run:** in calibration wingfoil lost seven public tests (158/165) and the others one; here
   baseline-docs lost seven (158/165, 43/48) and baseline and openspec none. calibration §8's H6 signal on v0.3.0 is
   not repeated at n = 1: the campaign's three runs per arm are needed to read it.
+- **`bench campaign validate`** of both files in the runs' environment (recorded after review round 1, which found it
+  missing from these notes; the runs' own preflight checks the same before spending): `da13d57a65b5` valid, every
+  variable `set` (token file, WingFoil and Spec Kit clones, hold-out), effort `medium`; `27f0119be0ff` valid, "arm
+  wingfoil: read from commit 2441243b8e37", every variable `set`. Exit 0.
+- **No bug filed:** the chain did nothing wrong. rel-v0-2's validation is checked when this task is done.
+
+## Review notes
+
+- **Round 1** (an independent read-only agent, `f8c8362b` and `8ea268f4`): no blocker; every figure, pin, ledger
+  row and the campaign files checked against the stored runs. Should-fix: the total mixed rounded and exact sums;
+  "six" for 158/165 (seven); `bench campaign validate` in the run environment not recorded. Nits: coverage not
+  stated; 0.908 rounded up; no line on bugs filed. All fixed in these notes.
+
