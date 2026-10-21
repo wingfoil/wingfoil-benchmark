@@ -346,6 +346,20 @@ wrote `src/`, and every change was archived under `openspec/changes/archive/` wi
   arm's digest `1ba12def23cf`, pinned in `campaigns/v0-2-reference.yaml`. Whether the agent goes past the skill's stop
   is stage 6's to show. The touched tests 218/218; lint 0; `tsc` clean.
 
+### The documents (on `task/task-096`)
+
+- **The campaign files** (`abbdaecf`, the approver's values in chat): agent 2.1.300; `medium` for the three models;
+  the Haiku slice on `claude-haiku-5-5`; caps 1800 s, 10 M tokens, 5 € a run; budgets 40/50 € and 12/15 € (65 € in
+  all); `fail_fast: {same_error: 3}`; the rate 0.8917. `bench campaign validate` passes on both; `bench campaign
+  estimate`: the reference 35 keys, high 36.46 USD (32.51 €), the bridge 12 keys, high 9.80 USD (8.74 €), no key
+  missing. The profiles' caps set to the campaigns' (the stages' own are in the stored profiles). Tests: no
+  placeholder, every key priced, the set values (`aec3fd59`), the profiles' pins (criteria 1, 2); 11/11.
+- **dl-018's consequences:** dl-007 amended by hand (`491b5393`, W-07 trailers); experiment design 1.6, plan-004's
+  dl-007 row, the method page's effort statement (`a7e320dc`); rel-v0-2's dl-007 row (`aec3fd59`).
+- **The report** `docs/calibration/v0.2.md` (`a7e320dc`, `aec3fd59`, `51c56f30`): the 45 dry runs, cost per arm,
+  the slices, steps and transcripts, the estimates, the revised budget, the hypotheses restated on Sonnet 5.5 (H11 the
+  weak model's), the competitor arms, what was found; an appendix with every step.
+
 ## Review notes
 
 - **Round 1** (an independent read-only agent, the four commits `9daba120`..`61406f66`): no blocker. Should-fix: the
@@ -356,3 +370,14 @@ wrote `src/`, and every change was archived under `openspec/changes/archive/` wi
   Fixed in `27343a58` but the latent one, left.
 - **Round 2** (`27343a58`): clean. The reviewer computed the arm's digest (`1ba12def23cf`, the pin); an optional nit
   on the paragraph's line break, left (it would change the digest again).
+- **Round 3** (a fresh independent read-only agent, the documents `abbdaecf`, `491b5393`, `a7e320dc`): no blocker; it
+  recomputed every row of the report from the stored runs. Should-fix: the Sonnet transcript range written before stage
+  6 (156 KB, the largest is 209 KB); the bridge's ceiling called 1.5 times its estimate (1.72); the Design's per-step
+  figures and the hypotheses on Opus 5.5 missing. Nits: wording on the docs controls, H6's hold-out, Spec Kit's S2,
+  "one dry run per key", the rate's day, long lines in dl-007, no test of the set values, Haiku 4.5 named as current in
+  rel-v0-2. Fixed in `aec3fd59` (an appendix with every step; §8 says why Opus is not read; a test of the values), but
+  dl-008's line (v0.1's observation), left.
+- **Round 4** (`aec3fd59`): clean but three nits (wraps, one sentence, an indent), fixed in `51c56f30`. It also
+  reported an earlier line of rel-v0-2 (`894ee03c9`, already pushed) naming an anonymous project: left, as the
+  approver chose for the pushed mentions.
+
