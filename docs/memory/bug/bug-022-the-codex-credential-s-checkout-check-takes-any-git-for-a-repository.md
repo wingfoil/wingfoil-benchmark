@@ -2,7 +2,7 @@
 id: bug-022-the-codex-credential-s-checkout-check-takes-any-git-for-a-repository
 type: bug
 title: "The Codex credential's checkout check takes any .git for a repository"
-status: approved
+status: fixed
 fixed_by: task-095-wingfoil-v0-3-0-admitted-to-the-wingfoil-arm-the-bridge-s-arm-read-by-its-pinned-digest
 # fixed_by: task-…   # set by hand, with the fixing task's id, just before `approved → fixed`
 tags: ["codex","security","preflight"]
