@@ -1,0 +1,159 @@
+diff --git a/openspec/changes/add-hourly-rental/.openspec.yaml b/openspec/changes/add-hourly-rental/.openspec.yaml
+new file mode 100644
+index 0000000000000000000000000000000000000000..dc36fb1bf855a31066cca3bf527c725e38489c5a
+--- /dev/null
++++ b/openspec/changes/add-hourly-rental/.openspec.yaml
+@@ -0,0 +1,2 @@
++schema: spec-driven
++created: 2026-10-21
+diff --git a/openspec/changes/add-hourly-rental/design.md b/openspec/changes/add-hourly-rental/design.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..d2b6b5a48c5834e9f84656ef9bed34f9109ac1f5
+--- /dev/null
++++ b/openspec/changes/add-hourly-rental/design.md
+@@ -0,0 +1,19 @@
++# Design
++
++## Context
++
++Builds on `add-rental-service` (in-memory equipment and bookings, strict UTC period parsing, half-open overlap on epoch milliseconds). See proposal.md. The original request did not say whether an hourly period may cross midnight, nor how it relates to day pricing; the assumptions below are deliberate and recorded in the spec.
++
++## Decisions
++
++- **Period classification**: the one period parser returns `{ startMs, endMs, kind: 'days' | 'hours', units }`. Both ends at midnight UTC with end after start → `days` (as today). Otherwise both ends must be exactly on the hour, end after start, and duration < 24 h → `hours`. Anything else throws. A period of 24 h or more that is not midnight-aligned is therefore invalid, with no silent rounding.
++- **Strict format** stays as in the base change (`YYYY-MM-DDTHH:00:00(.000)?Z`, round-trips through `Date`); the parser relaxes only the "midnight" check to "on the hour".
++- **Pricing**: the single pricing helper switches on period kind: `hourlyPrice × hours` for `hours`, existing logic for `days`. `quote` and `book` keep sharing it. Missing `hourlyPrice` throws before any state change, so a failed booking leaves no trace.
++- **Optional field**: absent `hourlyPrice` is `undefined`; `0` is a valid price (consistent with dailyPrice ≥ 0). Same safe-integer check as dailyPrice; the total is checked to be a safe integer.
++- **Overlap** is unchanged, since it already works on epoch milliseconds, so mixed hourly/daily bookings are handled for free; `availability` (if implemented) also sees hourly bookings through it.
++- **No daily cap**: 23 hours may cost more than one day. Accepted; changing it is a pricing decision for the school.
++
++## Risks / Trade-offs
++
++- [The base service does not exist yet] → implement after `add-rental-service`; tasks assume its parser, pricing helper and test setup. If `add-long-stay-discount` is implemented first, hourly periods must bypass the discount.
++- [Midnight-to-midnight 24 h periods are daily, not hourly] → intended; they use dailyPrice.
+diff --git a/openspec/changes/add-hourly-rental/proposal.md b/openspec/changes/add-hourly-rental/proposal.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..509624f59013a0b3c298fe0788dfa43786e28480
+--- /dev/null
++++ b/openspec/changes/add-hourly-rental/proposal.md
+@@ -0,0 +1,27 @@
++# Proposal
++
++## Why
++
++Many visitors only want a board for an afternoon, and today they are turned away because rentals can only be whole days. Renting by the hour lets the school serve them.
++
++## What Changes
++
++- `addEquipment` accepts an optional `hourlyPrice`: a non-negative integer number of euro cents for one hour of rental.
++- `quote` and `book` accept a sub-day period that starts and ends on the hour (UTC). Its total is `hourlyPrice` × number of hours.
++- An item without an `hourlyPrice` cannot be quoted or booked by the hour: `quote` and `book` throw.
++- Whole-day periods and their pricing are unchanged. Hourly bookings take part in the existing no-overlap rule, so an hourly rental blocks a whole-day one and vice versa.
++- Assumptions (recorded in the spec): "shorter than a day" means strictly less than 24 hours and at least 1 hour; an hourly period may cross midnight UTC; the long-stay discount never applies (it needs 3 or more days).
++- Out of scope: part-hour periods, hourly periods of 24 hours or more, a daily-price cap for long hourly rentals, availability queries by hour, cancellation.
++
++## Capabilities
++
++### New Capabilities
++
++None.
++
++### Modified Capabilities
++- `rentals`: equipment gains an optional `hourlyPrice`, and periods may be sub-day on-the-hour periods. It is expressed as added requirements because `rentals` is still being introduced by the unarchived change `add-rental-service`; the new period requirement makes an explicit exception to that change's whole-day period rule.
++
++## Impact
++
++Depends on `add-rental-service` (the service, `src/rental.ts`, period parsing and pricing do not exist yet), which must be implemented first. Interacts with `add-long-stay-discount` (not applicable below 3 days) and `add-rental-availability` (whole-day queries must see hourly bookings through the shared overlap check). Touches `src/rental.ts` and `src/rental.test.ts`; no dependencies added.
+diff --git a/openspec/changes/add-hourly-rental/specs/rentals/spec.md b/openspec/changes/add-hourly-rental/specs/rentals/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..af6620123126eaede57c44f0d74c31b369420f11
+--- /dev/null
++++ b/openspec/changes/add-hourly-rental/specs/rentals/spec.md
+@@ -0,0 +1,65 @@
++## ADDED Requirements
++
++### Requirement: Hourly price
++`addEquipment` SHALL accept an optional `hourlyPrice` besides `{ id, kind, dailyPrice }`. When present it SHALL be a non-negative integer number of euro cents for one hour of rental. Equipment without `hourlyPrice` cannot be rented by the hour.
++
++#### Scenario: Add equipment with hourly price
++- **WHEN** a board with id `b1`, dailyPrice `2500` and hourlyPrice `600` is added
++- **THEN** it can be quoted and booked by the day and by the hour
++
++#### Scenario: Add equipment without hourly price
++- **WHEN** a board is added with no hourlyPrice
++- **THEN** it is accepted and can be rented by the day only
++
++#### Scenario: Reject invalid hourly price
++- **WHEN** hourlyPrice is present but is negative, fractional, not a number, or not a safe integer
++- **THEN** `addEquipment` throws an error
++
++### Requirement: Hourly periods
++Besides whole-day periods, `quote` and `book` SHALL accept an hourly period: ISO-8601 UTC strings `start` and `end`, both exactly on the hour (minutes, seconds and milliseconds zero), with `end` after `start` and the duration shorter than 24 hours. This is an exception to the whole-day rule: a period is a whole-day period when both ends are at midnight UTC and end is after start; otherwise it must be a valid hourly period. An hourly period may cross midnight UTC. Any other period is invalid.
++
++#### Scenario: Valid hourly period
++- **WHEN** start is `2026-07-01T13:00:00.000Z` and end is `2026-07-01T16:00:00.000Z`
++- **THEN** the period covers three hours
++
++#### Scenario: Hourly period across midnight
++- **WHEN** start is `2026-07-01T22:00:00.000Z` and end is `2026-07-02T01:00:00.000Z`
++- **THEN** the period covers three hours
++
++#### Scenario: Invalid hourly period
++- **WHEN** a period is not whole-day and either end is off the hour, end is not after start, or the duration is 24 hours or more
++- **THEN** `quote` and `book` throw an error
++
++### Requirement: Hourly pricing
++For an hourly period, the `total` returned by `quote` and `book` SHALL be the item's `hourlyPrice` times the number of hours, in integer euro cents. The long-stay discount does not apply. Quoting or booking an hourly period for an item without `hourlyPrice` SHALL throw. Whole-day pricing is unchanged.
++
++#### Scenario: Quote three hours
++- **WHEN** an item with hourlyPrice `600` is quoted for 13:00 to 16:00
++- **THEN** total is `1800`
++
++#### Scenario: Booking matches quote
++- **WHEN** the same item is booked for 13:00 to 16:00
++- **THEN** the booking's total is `1800`
++
++#### Scenario: Item without hourly price
++- **WHEN** an item added without hourlyPrice is quoted or booked for an hourly period
++- **THEN** `quote` or `book` throws an error and no booking is created
++
++#### Scenario: Day pricing unaffected
++- **WHEN** an item with dailyPrice `2500` and hourlyPrice `600` is quoted for one whole day
++- **THEN** total is `2500`
++
++### Requirement: Hourly bookings and overlap
++Hourly bookings SHALL follow the same half-open `[start, end)` overlap rule as whole-day bookings, compared by epoch milliseconds, across both kinds of period for the same item.
++
++#### Scenario: Overlapping hours rejected
++- **WHEN** an item is booked 13:00 to 16:00 and then 15:00 to 17:00 on the same day
++- **THEN** the second `book` throws
++
++#### Scenario: Adjacent hours allowed
++- **WHEN** an item is booked 13:00 to 16:00 and then 16:00 to 18:00
++- **THEN** both bookings succeed
++
++#### Scenario: Hourly booking blocks the day
++- **WHEN** an item is booked 13:00 to 16:00 on 07-01 and then for the whole day 07-01 to 07-02
++- **THEN** the second `book` throws
+diff --git a/openspec/changes/add-hourly-rental/tasks.md b/openspec/changes/add-hourly-rental/tasks.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..398c22f5c5281393b01ccaeffe45edea0f915e2c
+--- /dev/null
++++ b/openspec/changes/add-hourly-rental/tasks.md
+@@ -0,0 +1,16 @@
++# Tasks
++
++## 1. Hourly price on equipment
++
++- [ ] 1.1 Confirm `add-rental-service` is implemented (`addEquipment`, period parsing, pricing, `book`); if not, stop and do that first
++- [ ] 1.2 Accept and validate optional `hourlyPrice` in `addEquipment` (`src/rental.ts`); verify with tests for with/without price, and negative, fractional, non-number values throwing
++
++## 2. Hourly periods and pricing
++
++- [ ] 2.1 Extend period parsing to classify `days` vs `hours` periods (on the hour, under 24 h, may cross midnight); verify with tests for valid, cross-midnight, off-the-hour, 24 h or more, and end-not-after-start cases, and that whole-day behavior is unchanged
++- [ ] 2.2 Make the shared pricing helper return `hourlyPrice × hours` for hourly periods and throw when `hourlyPrice` is missing, bypassing any long-stay discount; verify with tests for quote and booking totals, item without hourly price (no booking created), and day pricing unaffected
++- [ ] 2.3 Verify overlap with tests: overlapping hours rejected, adjacent hours allowed, hourly booking blocks a whole-day one and vice versa
++
++## 3. Docs
++
++- [ ] 3.1 Add an hourly rental example to the `README.md` usage section and verify it matches the tested behavior

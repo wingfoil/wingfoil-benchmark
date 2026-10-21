@@ -1,0 +1,173 @@
+diff --git a/src/index.test.ts b/src/index.test.ts
+index 987b4fb17b7bd7f344f99987cae2f93df6cda0dc..354641d25756cd799fd9afd4a3a8a64002be9b0b 100644
+--- a/src/index.test.ts
++++ b/src/index.test.ts
+@@ -48,3 +48,24 @@ test('lists sorted equipment free for the whole period, optionally by kind', ()
+   assert.deepEqual(s.availability({ start: d(4), end: d(5), kind: 'board' }), ['b1', 'b2']);
+   assert.throws(() => s.availability({ start: d(3), end: d(3) }));
+ });
++
++const h = (day: number, hour: number) => `2026-07-${String(day).padStart(2, '0')}T${String(hour).padStart(2, '0')}:00:00.000Z`;
++
++test('rentals shorter than a day are priced per hour, without discount', () => {
++  const s = createRentalService();
++  s.addEquipment({ id: 'b1', kind: 'board', dailyPrice: 2500, hourlyPrice: 800 });
++  assert.equal(s.quote({ itemId: 'b1', start: h(1, 13), end: h(1, 17) }).total, 3200);
++  assert.equal(s.quote({ itemId: 'b1', start: h(1, 13), end: h(2, 12) }).total, 23 * 800);
++  assert.equal(s.book({ itemId: 'b1', start: h(1, 0), end: h(1, 3) }).total, 2400);
++  assert.throws(() => s.book({ itemId: 'b1', start: h(1, 2), end: h(1, 4) }));
++  assert.throws(() => s.quote({ itemId: 'b1', start: '2026-07-01T13:30:00Z', end: h(1, 17) }));
++  assert.throws(() => s.quote({ itemId: 'b1', start: h(1, 13), end: h(2, 13) }));
++});
++
++test('items without an hourly price cannot be rented by the hour', () => {
++  const s = setup();
++  s.addEquipment({ id: 'b2', kind: 'board', dailyPrice: 2500, hourlyPrice: 800 });
++  assert.throws(() => s.quote({ itemId: 'b1', start: h(1, 13), end: h(1, 17) }));
++  assert.deepEqual(s.availability({ start: h(1, 13), end: h(1, 17) }), ['b2']);
++  assert.throws(() => s.addEquipment({ id: 'x', kind: 'sail', dailyPrice: 1, hourlyPrice: -1 }));
++});
+diff --git a/src/index.ts b/src/index.ts
+index cca84fa9e44c836a3def3fdfac6e5c7414bdc6d8..92ef876babba5559dac9a819f8bef94945198931 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -5,13 +5,15 @@ export interface Equipment {
+   kind: EquipmentKind;
+   /** Price of one day of rental, in euro cents. */
+   dailyPrice: number;
++  /** Price of one hour of rental, in euro cents. Without it the item cannot be rented by the hour. */
++  hourlyPrice?: number;
+ }
+ 
+ export interface RentalRequest {
+   itemId: string;
+-  /** ISO-8601 UTC midnight. */
++  /** ISO-8601 UTC, midnight for whole days, on the hour for rentals shorter than a day. */
+   start: string;
+-  /** ISO-8601 UTC midnight, the start of the day after the last rented day. */
++  /** ISO-8601 UTC, the start of the day after the last rented day (or the end of the last rented hour). */
+   end: string;
+ }
+ 
+@@ -25,9 +27,9 @@ export interface Booking extends Quote {
+ }
+ 
+ export interface AvailabilityQuery {
+-  /** ISO-8601 UTC midnight. */
++  /** ISO-8601 UTC, midnight for whole days, on the hour for rentals shorter than a day. */
+   start: string;
+-  /** ISO-8601 UTC midnight, the start of the day after the last rented day. */
++  /** ISO-8601 UTC, the start of the day after the last rented day (or the end of the last rented hour). */
+   end: string;
+   /** Restrict to this kind of equipment; any kind when omitted. */
+   kind?: EquipmentKind;
+@@ -41,28 +43,46 @@ export interface RentalService {
+   availability(query: AvailabilityQuery): string[];
+ }
+ 
+-const DAY_MS = 24 * 60 * 60 * 1000;
++const HOUR_MS = 60 * 60 * 1000;
++const DAY_MS = 24 * HOUR_MS;
+ /** Rentals of at least this many days get the long-stay discount. */
+ const LONG_STAY_DAYS = 3;
+-const MIDNIGHT_UTC = /^(\d{4})-(\d{2})-(\d{2})T00:00(?::00(?:\.0+)?)?(?:Z|[+-]00:?00)$/;
++const HOUR_UTC = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):00(?::00(?:\.0+)?)?(?:Z|[+-]00:?00)$/;
+ 
+-function parseMidnightUtc(value: unknown, name: string): number {
++/** Parses an ISO-8601 UTC instant that falls on the hour. */
++function parseHourUtc(value: unknown, name: string): number {
+   if (typeof value !== 'string') throw new Error(`${name} must be an ISO-8601 string`);
+-  const match = MIDNIGHT_UTC.exec(value);
+-  if (!match) throw new Error(`${name} must be midnight UTC (whole days only): ${value}`);
+-  const [, y, m, d] = match;
+-  const ms = Date.UTC(Number(y), Number(m) - 1, Number(d));
++  const match = HOUR_UTC.exec(value);
++  if (!match) throw new Error(`${name} must be on the hour, in UTC: ${value}`);
++  const [, y, m, d, h] = match;
++  const ms = Date.UTC(Number(y), Number(m) - 1, Number(d), Number(h));
+   const date = new Date(ms);
+   if (
+     date.getUTCFullYear() !== Number(y) ||
+     date.getUTCMonth() !== Number(m) - 1 ||
+-    date.getUTCDate() !== Number(d)
++    date.getUTCDate() !== Number(d) ||
++    date.getUTCHours() !== Number(h)
+   ) {
+     throw new Error(`${name} is not a valid date: ${value}`);
+   }
+   return ms;
+ }
+ 
++/**
++ * Parses a period: whole days (both ends at midnight UTC) or, when shorter than a day,
++ * whole hours.
++ */
++function parsePeriod(start: unknown, end: unknown): { startMs: number; endMs: number; hourly: boolean } {
++  const startMs = parseHourUtc(start, 'start');
++  const endMs = parseHourUtc(end, 'end');
++  if (endMs <= startMs) throw new Error('end must be after start');
++  const hourly = endMs - startMs < DAY_MS;
++  if (!hourly && (startMs % DAY_MS !== 0 || endMs % DAY_MS !== 0)) {
++    throw new Error('rentals of a day or more must start and end at midnight UTC (whole days only)');
++  }
++  return { startMs, endMs, hourly };
++}
++
+ export function createRentalService(): RentalService {
+   const equipment = new Map<string, Equipment>();
+   const bookings: { id: string; itemId: string; startMs: number; endMs: number }[] = [];
+@@ -72,9 +92,20 @@ export function createRentalService(): RentalService {
+     if (request === null || typeof request !== 'object') throw new Error('invalid request');
+     const item = equipment.get(request.itemId);
+     if (!item) throw new Error(`unknown item: ${String(request.itemId)}`);
+-    const startMs = parseMidnightUtc(request.start, 'start');
+-    const endMs = parseMidnightUtc(request.end, 'end');
+-    if (endMs <= startMs) throw new Error('end must be after start');
++    const { startMs, endMs, hourly } = parsePeriod(request.start, request.end);
++    if (hourly) {
++      if (item.hourlyPrice === undefined) throw new Error(`item ${item.id} cannot be rented by the hour`);
++      return {
++        quote: {
++          itemId: item.id,
++          start: request.start,
++          end: request.end,
++          total: item.hourlyPrice * ((endMs - startMs) / HOUR_MS),
++        },
++        startMs,
++        endMs,
++      };
++    }
+     const days = (endMs - startMs) / DAY_MS;
+     const fullPrice = item.dailyPrice * days;
+     // 10% off, rounded to the nearest euro cent.
+@@ -95,7 +126,12 @@ export function createRentalService(): RentalService {
+         throw new Error('dailyPrice must be a non-negative integer number of euro cents');
+       }
+       if (equipment.has(item.id)) throw new Error(`equipment already exists: ${item.id}`);
+-      equipment.set(item.id, { id: item.id, kind: item.kind, dailyPrice: item.dailyPrice });
++      if (item.hourlyPrice !== undefined && (!Number.isSafeInteger(item.hourlyPrice) || item.hourlyPrice < 0)) {
++        throw new Error('hourlyPrice must be a non-negative integer number of euro cents');
++      }
++      const added: Equipment = { id: item.id, kind: item.kind, dailyPrice: item.dailyPrice };
++      if (item.hourlyPrice !== undefined) added.hourlyPrice = item.hourlyPrice;
++      equipment.set(item.id, added);
+     },
+ 
+     quote(request) {
+@@ -115,14 +151,13 @@ export function createRentalService(): RentalService {
+ 
+     availability(query) {
+       if (query === null || typeof query !== 'object') throw new Error('invalid query');
+-      const startMs = parseMidnightUtc(query.start, 'start');
+-      const endMs = parseMidnightUtc(query.end, 'end');
+-      if (endMs <= startMs) throw new Error('end must be after start');
++      const { startMs, endMs, hourly } = parsePeriod(query.start, query.end);
+       if (query.kind !== undefined && query.kind !== 'board' && query.kind !== 'sail') {
+         throw new Error(`invalid kind: ${String(query.kind)}`);
+       }
+       return [...equipment.values()]
+         .filter((item) => query.kind === undefined || item.kind === query.kind)
++        .filter((item) => !hourly || item.hourlyPrice !== undefined)
+         .filter((item) => !bookings.some((b) => b.itemId === item.id && startMs < b.endMs && b.startMs < endMs))
+         .map((item) => item.id)
+         .sort();

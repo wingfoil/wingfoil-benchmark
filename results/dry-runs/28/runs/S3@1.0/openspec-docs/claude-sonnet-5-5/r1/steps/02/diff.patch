@@ -1,0 +1,64 @@
+diff --git a/src/index.ts b/src/index.ts
+index 20007a420f563dd78939a55ad4fb7b449e94c029..a52b4d9905cb567f0ebce04af6919d5769c513e7 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -27,10 +27,20 @@ export interface Booking extends Quote {
+   id: string;
+ }
+ 
++export interface AvailabilityQuery {
++  /** ISO-8601, UTC, midnight. */
++  start: string;
++  /** ISO-8601, UTC, midnight; the start of the day after the last day. */
++  end: string;
++  kind?: EquipmentKind;
++}
++
+ export interface RentalService {
+   addEquipment(item: Equipment): void;
+   quote(request: RentalRequest): Quote;
+   book(request: RentalRequest): Booking;
++  /** Sorted ids of the equipment free for the whole period. */
++  availability(query: AvailabilityQuery): string[];
+ }
+ 
+ const DAY_MS = 24 * 60 * 60 * 1000;
+@@ -96,5 +106,18 @@ export function createRentalService(): RentalService {
+       bookings.push({ ...booking, startMs, endMs });
+       return booking;
+     },
++
++    availability(query) {
++      const startMs = parseMidnightUtc(query?.start, 'start');
++      const endMs = parseMidnightUtc(query?.end, 'end');
++      if (endMs <= startMs) throw new Error('end must be after start');
++      const kind = query.kind;
++      if (kind !== undefined && kind !== 'board' && kind !== 'sail') throw new Error("kind must be 'board' or 'sail'");
++      return [...items.values()]
++        .filter((item) => kind === undefined || item.kind === kind)
++        .filter((item) => !bookings.some((b) => b.itemId === item.id && b.startMs < endMs && startMs < b.endMs))
++        .map((item) => item.id)
++        .sort();
++    },
+   };
+ }
+diff --git a/test/rental.test.ts b/test/rental.test.ts
+index e0d41acd039c31e257a7fe19880af224007589aa..17c3093cbd39061025a64e864b1bfa7ffe7b4a20 100644
+--- a/test/rental.test.ts
++++ b/test/rental.test.ts
+@@ -29,3 +29,15 @@ test('book refuses overlaps but allows adjacent periods', () => {
+   assert.notEqual(a.id, b.id);
+   assert.equal(a.total, 8000);
+ });
++
++test('availability lists free items of a kind, sorted', () => {
++  const s = setup();
++  s.addEquipment({ id: 'a1', kind: 'sail', dailyPrice: 2000 });
++  s.addEquipment({ id: 'a0', kind: 'board', dailyPrice: 3000 });
++  s.book({ itemId: 'b1', start: '2026-07-01T00:00:00Z', end: '2026-07-03T00:00:00Z' });
++  const q = { start: '2026-07-02T00:00:00Z', end: '2026-07-04T00:00:00Z' };
++  assert.deepEqual(s.availability(q), ['a0', 'a1']);
++  assert.deepEqual(s.availability({ ...q, kind: 'board' }), ['a0']);
++  assert.deepEqual(s.availability({ start: '2026-07-03T00:00:00Z', end: '2026-07-04T00:00:00Z', kind: 'board' }), ['a0', 'b1']);
++  assert.throws(() => s.availability({ start: q.end, end: q.start }));
++});

@@ -131,3 +131,43 @@ they run (their results are main's), the documents on this task's branch, merged
   costs and the revised budget" --tags "calibration,budget,dry-run"`, on main. Declared: the element from the
   template in `draft`, one commit. Observed: `4450778`, `status: draft`, `tags` written, the other fields empty
   (W-02). Matches.
+- `npx wingfoil memory approve task-096-… --reason "…"`, on main, run by this session at the approver's explicit
+  request in chat (2026-10-21; the reason says so). Declared: pending → backlog, one commit. Observed: `e9b6b00`,
+  `status: backlog`. Matches. The approver then consented to stage 1 again in chat, in their own words: "the seven
+  real S3 dry runs (Sonnet 5.5, at most 4 € a run and 28 € in all) from the main checkout, with the token in
+  `BENCH_AGENT_TOKEN_FILE`".
+- `npx wingfoil memory submit task-096-…`, on main. Declared: backlog → in-progress, one commit. Observed: `3debdf3`,
+  `status: in-progress`. Matches. WIP: no other task in-progress or in-review.
+- **The profiles** (`ab0cb52`, on main): `scenarios/dry-run.yaml` and `campaigns/v0-2-bridge.dry-run.yaml` as the
+  Design says, `run_cost_eur: 4`. The rate: the ECB's of 2026-10-20 (1 EUR = 1.1215 USD, `usd_to_eur: 0.8917`), the
+  latest published when stage 1 started (the day's rate comes out at about 16:00 CET). The touched tests: 171/171.
+
+### Stage 1: S3@1.0 in the seven arms, Sonnet 5.5 (2026-10-21, 12:20–12:41 UTC)
+
+Each `bench scenario dry-run S3@1.0 --arm <arm> --allow-spending` from the main checkout, one at a time, with
+`BENCH_AGENT_TOKEN_FILE=$HOME/.claude/bench-token`, `BENCH_WINGFOIL_REPO`, `BENCH_SPECKIT_REPO`; then `bench score
+dry-runs/<n>` (`BENCH_HOLDOUT_PATH`). Every one: `dry_run: true`, Claude Code 2.1.300, `claude-sonnet-5-5` at
+`medium` priced `list` (no other model in any step's `modelUsage`), the arm digest the reference campaign pins, one
+attempt, `completed`; the token scan of `results/dry-runs/<n>/` (`grep -rlFf`, the value never printed): clean; no
+`bench-` container left; a ledger line.
+
+| Dry run | Arm | Cost | Wall time | Turns (steps 1–5) | Largest transcript | Final public | Hold-out | M-F1 |
+|---|---|---|---|---|---|---|---|---|
+| 22 | baseline | 0.2707 USD (0.2414 €) | 1 min 40 s | 4, 4, 4, 4, 6 | 52 KB (step 5) | 35/37 | 16/17 | 3/5 |
+| 23 | baseline-docs | 0.3966 USD (0.3536 €) | 2 min 56 s | 5, 6, 8, 6, 4 | 81 KB (step 4) | 37/37 | 17/17 | 4/5 |
+| 24 | wingfoil | 0.5751 USD (0.5128 €) | 4 min 19 s | 9, 6, 7, 9, 12 | 112 KB (step 5) | 35/37 | 15/17 | 4/5 |
+| 25 | speckit | 0.5875 USD (0.5239 €) | 3 min 59 s | 8, 16, 7, 11, 7 | 127 KB (step 2) | 35/37 | 16/17 | 4/5 |
+| 26 | speckit-docs | 0.3000 USD (0.2675 €) | 2 min 10 s | 8, 4, 4, 9, 4 | 59 KB (step 4) | 35/37 | 16/17 | 3/5 |
+| 27 | openspec | 0.5701 USD (0.5084 €) | 3 min 39 s | 8, 9, 9, 8, 9 | 136 KB (step 5) | **0/37** | **0/17** | 0/5 |
+| 28 | openspec-docs | 0.2781 USD (0.2480 €) | 1 min 39 s | 4, 4, 11, 8, 4 | 42 KB (step 4) | 35/37 | 16/17 | 3/5 |
+
+- **Spent: 2.9781 USD (2.6556 €)** of the 28 € consented; the dearest run 0.5875 USD, far under the 4 € cap. Below
+  the Design's expected 5–15 € for the stage: v0.1's measurements on Sonnet 5 overstated Sonnet 5.5 at `medium`.
+- **Interventions:** one approval request in step 5 of baseline, wingfoil and speckit, answered by `approver_policy`
+  v1 ("Approved. Proceed."); none elsewhere.
+- **Found: the openspec arm writes no code.** In every step the agent ran `/opsx:propose`, wrote the change's
+  `proposal.md`, `design.md`, `specs/` and `tasks.md` under `openspec/changes/`, and ended the session, saying it had
+  not edited code "as the propose workflow requires"; it never ran `/opsx:apply`, though the arm's manual asks for
+  propose, then apply, then archive. Scored 0/37 public, 0/17 hold-out. The openspec-docs arm (the same docs, no
+  commands) implemented every step. Not repeated; filed for the approver to decide (a bug in the arm, or a measured
+  outcome).

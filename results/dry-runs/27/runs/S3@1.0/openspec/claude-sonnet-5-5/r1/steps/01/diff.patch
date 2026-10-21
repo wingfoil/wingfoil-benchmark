@@ -1,0 +1,154 @@
+diff --git a/openspec/changes/add-rental-service/.openspec.yaml b/openspec/changes/add-rental-service/.openspec.yaml
+new file mode 100644
+index 0000000000000000000000000000000000000000..dc36fb1bf855a31066cca3bf527c725e38489c5a
+--- /dev/null
++++ b/openspec/changes/add-rental-service/.openspec.yaml
+@@ -0,0 +1,2 @@
++schema: spec-driven
++created: 2026-10-21
+diff --git a/openspec/changes/add-rental-service/design.md b/openspec/changes/add-rental-service/design.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..53307ed57e66d5051bf3b05529a35fde345f01e7
+--- /dev/null
++++ b/openspec/changes/add-rental-service/design.md
+@@ -0,0 +1,28 @@
++# Design
++
++## Context
++
++The repo is TypeScript, ESM, no runtime dependencies, tests run with `node --test`; `src/` does not exist yet. See proposal.md for motivation.
++
++## Goals / Non-Goals
++
++**Goals:**
++- A small in-memory service with strict validation.
++
++**Non-Goals:**
++- Cancellation, refunds, persistence, time zones other than UTC.
++
++## Decisions
++
++- **Strict period parsing**: accept only strings matching `YYYY-MM-DDT00:00:00(.000)?Z` that round-trip through `Date`; reject offsets, partial dates and non-midnight times. Returned `start`/`end` are echoed as given. Alternative (normalising any ISO input) was rejected as it hides desk mistakes.
++- **Days** = (end − start) / 86 400 000; UTC has no DST, so this is exact.
++- **Overlap** uses half-open intervals `[start, end)`, so back-to-back rentals are allowed. Compare by epoch milliseconds, not strings.
++- **Money** is plain integer cents (`Number.isSafeInteger`, ≥ 0); the total is checked to be a safe integer.
++- **Booking ids** come from a counter (`booking-1`, …), deterministic and unique within a service.
++- **Cancellation readiness**: bookings are stored with start and total as immutable records; the 24-hour rule is not coded now. Callers get copies, not internal references.
++- Layout: `src/index.ts` re-exports from `src/rental.ts`; tests in `src/rental.test.ts`.
++
++## Risks / Trade-offs
++
++- [Node cannot run `.ts` tests directly on older versions] → use the node version's type stripping if available; otherwise compile with `tsc` first (decide in task 1.1).
++- [In-memory state is lost on restart] → accepted for this first step.
+diff --git a/openspec/changes/add-rental-service/proposal.md b/openspec/changes/add-rental-service/proposal.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..95c3dd280ce7f37db08f3cadf3b92dfef47f1728
+--- /dev/null
++++ b/openspec/changes/add-rental-service/proposal.md
+@@ -0,0 +1,23 @@
++## Why
++
++The booking desk has no way to rent out boards and sails. Staff need a rental module that prices and books equipment without double-booking it.
++
++## What Changes
++
++- Add `createRentalService()`, exported from `src/index.ts`, returning an in-memory service with `addEquipment`, `quote` and `book`.
++- Enforce the school's rules: integer euro cents, UTC ISO-8601 times, whole-day periods at midnight UTC, no overlapping bookings of the same item.
++- Booking records keep what the cancellation policy (no refund under 24 h before start, otherwise full refund) will need later.
++- Out of scope: cancellation and refunds, persistence, equipment removal.
++
++## Capabilities
++
++### New Capabilities
++- `rentals`: equipment registration, quoting and booking of rentals.
++
++### Modified Capabilities
++
++None.
++
++## Impact
++
++New code under `src/` (none exists yet) and tests. No dependencies added.
+diff --git a/openspec/changes/add-rental-service/specs/rentals/spec.md b/openspec/changes/add-rental-service/specs/rentals/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..01901c9f6826d0b3002c96731ccf3eb543b6f4ad
+--- /dev/null
++++ b/openspec/changes/add-rental-service/specs/rentals/spec.md
+@@ -0,0 +1,60 @@
++## ADDED Requirements
++
++### Requirement: Register equipment
++The service SHALL let equipment be added as `{ id, kind, dailyPrice }`, where `kind` is `'board'` or `'sail'` and `dailyPrice` is a non-negative integer number of euro cents per day.
++
++#### Scenario: Add valid equipment
++- **WHEN** a board with id `b1` and dailyPrice `2500` is added
++- **THEN** it can be quoted and booked
++
++#### Scenario: Reject invalid equipment
++- **WHEN** equipment has an unknown kind, an empty or duplicate id, or a dailyPrice that is not a non-negative integer
++- **THEN** `addEquipment` throws an error
++
++### Requirement: Whole-day periods in UTC
++A rental period SHALL be given as ISO-8601 UTC strings `start` and `end`, both at midnight UTC, with `end` after `start`. `end` is the start of the day after the last rented day.
++
++#### Scenario: Valid period
++- **WHEN** start is `2026-07-01T00:00:00.000Z` and end is `2026-07-03T00:00:00.000Z`
++- **THEN** the period covers two days
++
++#### Scenario: Invalid period
++- **WHEN** start or end is not a valid ISO-8601 UTC string, is not at midnight UTC, or end is not after start
++- **THEN** `quote` and `book` throw an error
++
++### Requirement: Quote
++`quote({ itemId, start, end })` SHALL return `{ itemId, start, end, total }` where `total` is the item's dailyPrice times the number of days, in integer euro cents. It SHALL throw for an unknown item or an invalid period. A quote does not require the item to be free and does not reserve it.
++
++#### Scenario: Quote two days
++- **WHEN** an item with dailyPrice `2500` is quoted for two days
++- **THEN** total is `5000`
++
++#### Scenario: Unknown item
++- **WHEN** the itemId was never added
++- **THEN** `quote` throws an error
++
++### Requirement: Book
++`book(request)` SHALL, for a free item and valid period, create a booking and return `{ id, itemId, start, end, total }` with a unique `id` and the same total a quote gives. It SHALL throw for an unknown item, an invalid period, or when the period overlaps an existing booking of the same item. A failed booking SHALL leave no trace.
++
++#### Scenario: Successful booking
++- **WHEN** a free item is booked for a valid period
++- **THEN** a booking with a unique id and the quoted total is returned
++
++#### Scenario: Overlap rejected
++- **WHEN** an item is booked 07-01 to 07-03 and then 07-02 to 07-04
++- **THEN** the second `book` throws
++
++#### Scenario: Adjacent periods allowed
++- **WHEN** an item is booked 07-01 to 07-03 and then 07-03 to 07-05
++- **THEN** both bookings succeed
++
++#### Scenario: Other items unaffected
++- **WHEN** one item is booked for a period
++- **THEN** a different item can be booked for the same period
++
++### Requirement: Cancellation policy data
++Each booking SHALL retain its start and total so that the cancellation policy (no refund when cancelled less than 24 hours before start, otherwise full refund) can be applied later. Cancellation itself is not provided.
++
++#### Scenario: No cancellation operation
++- **WHEN** the service is inspected
++- **THEN** it offers no cancel operation
+diff --git a/openspec/changes/add-rental-service/tasks.md b/openspec/changes/add-rental-service/tasks.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..4879da6327ea1fa7525a0975343eeb6315ab6c62
+--- /dev/null
++++ b/openspec/changes/add-rental-service/tasks.md
+@@ -0,0 +1,11 @@
++# Tasks
++
++## 1. Service skeleton and equipment
++
++- [ ] 1.1 Create `src/rental.ts` and `src/index.ts` exporting `createRentalService()` with `addEquipment` validation; make `npm test` run TypeScript tests; verify with tests for valid, duplicate and invalid equipment passing
++- [ ] 1.2 Add period parsing/validation (UTC midnight, end after start) and `quote`; verify with tests for pricing, unknown item and each invalid-period case
++
++## 2. Booking
++
++- [ ] 2.1 Implement `book` with unique ids and half-open overlap rejection, returning copies; verify with tests for success, overlap, adjacent periods, other items, and that a failed booking leaves no trace
++- [ ] 2.2 Add a short usage section to `README.md` and verify the example matches the tested behavior

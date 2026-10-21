@@ -1,0 +1,138 @@
+diff --git a/docs/memory/task/task-002-add-availability-query-to-the-rental-service.md b/docs/memory/task/task-002-add-availability-query-to-the-rental-service.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..dbb76e89dcb3f60ab1dc4931e4e3d1a1d9a8e7bb
+--- /dev/null
++++ b/docs/memory/task/task-002-add-availability-query-to-the-rental-service.md
+@@ -0,0 +1,18 @@
++---
++id: task-002-add-availability-query-to-the-rental-service
++type: task
++title: "Add availability(query) to the rental service"
++status: pending
++format: 1
++---
++
++<!-- task body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
++
++Added `availability({ start, end, kind? })` to the rental service. It returns the sorted ids of the
++equipment (of the given kind, or any) with no booking overlapping the half-open period, as in dl-001.
++The period is validated like a rental's; an unknown kind throws. The overlap check is shared with `book`.
++Tests added in `test/rental.test.ts` (happy path, kind filter, adjacent booking, error paths); all pass.
+diff --git a/src/index.ts b/src/index.ts
+index f3e24e90a7bfa7b234c172b09c77642815955040..84eadea7e29b41b120eac7a9766bea04e81b029f 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -27,10 +27,21 @@ export interface Booking extends RentalQuote {
+   id: string;
+ }
+ 
++export interface AvailabilityQuery {
++  /** ISO-8601 instant, midnight UTC: first day of the period. */
++  start: string;
++  /** ISO-8601 instant, midnight UTC: the start of the day after the last day. */
++  end: string;
++  /** Restricts the result to this kind of equipment; any kind when omitted. */
++  kind?: EquipmentKind;
++}
++
+ export interface RentalService {
+   addEquipment(item: Equipment): void;
+   quote(request: RentalRequest): RentalQuote;
+   book(request: RentalRequest): Booking;
++  /** Ids, sorted, of the equipment free for the whole period. */
++  availability(query: AvailabilityQuery): string[];
+ }
+ 
+ const MS_PER_DAY = 24 * 60 * 60 * 1000;
+@@ -49,16 +60,20 @@ interface Period {
+   end: number;
+ }
+ 
+-function parsePeriod(request: RentalRequest): Period {
++function parsePeriod(request: Pick<RentalRequest, 'start' | 'end'>): Period {
+   const start = parseDayBoundary(request.start);
+   const end = parseDayBoundary(request.end);
+   if (end <= start) throw new Error('A rental must cover at least one day');
+   return { start, end };
+ }
+ 
++function validateKind(kind: string): void {
++  if (kind !== 'board' && kind !== 'sail') throw new Error(`Unknown equipment kind: ${kind}`);
++}
++
+ function validateEquipment(item: Equipment): void {
+   if (typeof item.id !== 'string' || item.id === '') throw new Error('Equipment id must be a non-empty string');
+-  if (item.kind !== 'board' && item.kind !== 'sail') throw new Error(`Unknown equipment kind: ${item.kind}`);
++  validateKind(item.kind);
+   if (!Number.isSafeInteger(item.dailyPrice) || item.dailyPrice < 0) {
+     throw new Error('dailyPrice must be a non-negative integer number of euro cents');
+   }
+@@ -84,6 +99,9 @@ export function createRentalService(): RentalService {
+     return { quote, period };
+   }
+ 
++  const isFree = (id: string, period: Period) =>
++    !(periodsByItem.get(id) ?? []).some((other) => period.start < other.end && other.start < period.end);
++
+   return {
+     addEquipment(item) {
+       validateEquipment(item);
+@@ -95,13 +113,19 @@ export function createRentalService(): RentalService {
+ 
+     book(request) {
+       const { quote, period } = price(request);
+-      const taken = periodsByItem.get(quote.itemId) ?? [];
+-      if (taken.some((other) => period.start < other.end && other.start < period.end)) {
+-        throw new Error(`${quote.itemId} is not free for the whole period`);
+-      }
+-      periodsByItem.set(quote.itemId, [...taken, period]);
++      if (!isFree(quote.itemId, period)) throw new Error(`${quote.itemId} is not free for the whole period`);
++      periodsByItem.set(quote.itemId, [...(periodsByItem.get(quote.itemId) ?? []), period]);
+       bookingCount += 1;
+       return { id: `booking-${bookingCount}`, ...quote };
+     },
++
++    availability(query) {
++      const period = parsePeriod(query);
++      if (query.kind !== undefined) validateKind(query.kind);
++      return [...equipment.values()]
++        .filter((item) => (query.kind === undefined || item.kind === query.kind) && isFree(item.id, period))
++        .map((item) => item.id)
++        .sort();
++    },
+   };
+ }
+diff --git a/test/rental.test.ts b/test/rental.test.ts
+index 0a903d89b2fb52e24c636553702917681316d57e..e3c023f2de9bd8a89096cc0cf4fbe46ae34ce95d 100644
+--- a/test/rental.test.ts
++++ b/test/rental.test.ts
+@@ -82,3 +82,25 @@ test('addEquipment validates the item and rejects duplicates', () => {
+   assert.throws(() => service.addEquipment({ id: '', kind: 'board', dailyPrice: 100 }));
+   assert.throws(() => service.addEquipment({ id: 'x', kind: 'mast' as 'board', dailyPrice: 100 }));
+ });
++
++test('availability lists free equipment sorted, optionally by kind', () => {
++  const service = setup();
++  service.addEquipment({ id: 'board-0', kind: 'board', dailyPrice: 1000 });
++  service.book(period('2026-07-02T00:00:00Z', '2026-07-03T00:00:00Z'));
++  const query = { start: '2026-07-01T00:00:00Z', end: '2026-07-03T00:00:00Z' };
++  assert.deepEqual(service.availability(query), ['board-0', 'sail-1']);
++  assert.deepEqual(service.availability({ ...query, kind: 'board' }), ['board-0']);
++  assert.deepEqual(service.availability({ start: '2026-07-03T00:00:00Z', end: '2026-07-04T00:00:00Z' }), [
++    'board-0',
++    'board-1',
++    'sail-1',
++  ]);
++});
++
++test('availability rejects bad periods and unknown kinds', () => {
++  const service = setup();
++  assert.throws(() => service.availability({ start: '2026-07-02T00:00:00Z', end: '2026-07-02T00:00:00Z' }));
++  assert.throws(() =>
++    service.availability({ start: '2026-07-01T00:00:00Z', end: '2026-07-02T00:00:00Z', kind: 'kite' as 'board' }),
++  );
++});

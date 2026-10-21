@@ -1,0 +1,80 @@
+diff --git a/README.md b/README.md
+index 2e254f6c73035f8727927e1bf0003cba170aebe3..f55173d263b6662f235d924b4bb769c736692c8d 100644
+--- a/README.md
++++ b/README.md
+@@ -13,6 +13,9 @@ of its booking desk, written in TypeScript with no runtime dependency.
+ - `book({ itemId, start, end })`: returns `{ id, itemId, start, end, total }`; booking ids are sequential (`booking-1`, ...) so that runs are deterministic.
+ - `availability({ start, end, kind? })`: returns the sorted ids of the equipment of that `kind` (any kind when omitted) with no booking overlapping the period, so the desk sees what can still be rented. It throws for a period that is not whole days or an unknown `kind`.
+ 
++A rental of 3 days or more costs 10% less than its full price (rounded half up to the cent); `quote` and `book`
++both return the reduced `total`.
++
+ Both `quote` and `book` throw for an unknown item or a period that is not whole days (`start` and `end` are ISO-8601 UTC strings at
+ midnight, `end` being the start of the day after the last day, so it must be after `start`). `book` also throws if the
+ item already has an overlapping booking; a booking ending the day another starts is fine.
+diff --git a/src/index.ts b/src/index.ts
+index 8f51dbf5639d495e8ff05ab0864a64802d77fcd2..60c0f8ee361be65d1f924564d01a280ef191f445 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -45,6 +45,7 @@ export interface RentalService {
+ }
+ 
+ const DAY_MS = 24 * 60 * 60 * 1000;
++const LONG_STAY_DAYS = 3;
+ const UTC_ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/;
+ 
+ function parseMidnightUtc(value: unknown, label: string): number {
+@@ -92,6 +93,11 @@ function parsePeriod(startValue: unknown, endValue: unknown): Period {
+   return { start, end };
+ }
+ 
++/** Applies the long-stay discount: 10% off from 3 days, in integer cents rounded half up. */
++function longStayTotal(days: number, fullPrice: number): number {
++  return days >= LONG_STAY_DAYS ? Math.floor((fullPrice * 9 + 5) / 10) : fullPrice;
++}
++
+ /** Creates an empty rental service that keeps equipment and bookings in memory. */
+ export function createRentalService(): RentalService {
+   const equipment = new Map<string, Equipment>();
+@@ -104,7 +110,8 @@ export function createRentalService(): RentalService {
+       throw new Error(`Unknown item: ${request?.itemId}`);
+     }
+     const { start, end } = parsePeriod(request.start, request.end);
+-    const total = ((end - start) / DAY_MS) * item.dailyPrice;
++    const days = (end - start) / DAY_MS;
++    const total = longStayTotal(days, days * item.dailyPrice);
+     if (!Number.isSafeInteger(total)) {
+       throw new Error('total is too large');
+     }
+diff --git a/test/rental.test.ts b/test/rental.test.ts
+index 08e9130f349ed3e6dc79fa121068d5e10fc514cc..659c0b918b3dfa0ccfdb396c328151a88dcafbc6 100644
+--- a/test/rental.test.ts
++++ b/test/rental.test.ts
+@@ -13,7 +13,17 @@ describe('rental service', () => {
+   });
+ 
+   it('quotes whole days in integer cents', () => {
+-    assert.deepEqual(service.quote(week), { ...week, total: 7650 });
++    assert.deepEqual(service.quote(week), { ...week, total: 6885 });
++  });
++
++  it('charges the full price below 3 days', () => {
++    assert.equal(service.quote({ ...week, end: '2026-07-03T00:00:00Z' }).total, 5100);
++  });
++
++  it('takes 10% off from 3 days, rounding to the nearest cent', () => {
++    service.addEquipment({ id: 's1', kind: 'sail', dailyPrice: 1005 });
++    assert.equal(service.quote({ ...week, itemId: 's1' }).total, 2714);
++    assert.equal(service.quote({ ...week, itemId: 's1', end: '2026-07-06T00:00:00Z' }).total, 4523);
+   });
+ 
+   it('quotes a single day', () => {
+@@ -46,7 +56,7 @@ describe('rental service', () => {
+ 
+   it('books with an id and the quoted total', () => {
+     const booking = service.book(week);
+-    assert.deepEqual({ ...booking, id: undefined }, { ...week, total: 7650, id: undefined });
++    assert.deepEqual({ ...booking, id: undefined }, { ...week, total: 6885, id: undefined });
+     assert.equal(typeof booking.id, 'string');
+   });
+ 

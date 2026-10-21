@@ -1,0 +1,157 @@
+diff --git a/openspec/changes/add-booking-cancellation/.openspec.yaml b/openspec/changes/add-booking-cancellation/.openspec.yaml
+new file mode 100644
+index 0000000000000000000000000000000000000000..dc36fb1bf855a31066cca3bf527c725e38489c5a
+--- /dev/null
++++ b/openspec/changes/add-booking-cancellation/.openspec.yaml
+@@ -0,0 +1,2 @@
++schema: spec-driven
++created: 2026-10-21
+diff --git a/openspec/changes/add-booking-cancellation/design.md b/openspec/changes/add-booking-cancellation/design.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..a189a2e6cea811c39bf582a09d4a904777c459c1
+--- /dev/null
++++ b/openspec/changes/add-booking-cancellation/design.md
+@@ -0,0 +1,21 @@
++# Design
++
++## Context
++
++Builds on `add-rental-service` (in-memory equipment and bookings; bookings kept as records with immutable start and total; strict UTC parsing; half-open overlap on epoch milliseconds). That change deliberately retained start and total for the policy "no refund under 24 h before start, otherwise full refund". See proposal.md.
++
++## Decisions
++
++- **Refund rule**: `refund = (startMs - atMs) >= 24 * 3_600_000 ? total : 0`, a single comparison on epoch milliseconds. "Less than 24 hours" is strict, so exactly 24 h is fully refunded (the policy's "otherwise"). Constant named in `src/rental.ts`.
++- **Refund amount** is the stored `total` of the booking, not recomputed from prices, so later changes to pricing (discount, hourly) never alter what a customer is refunded.
++- **`at` parsing**: separate small parser from the period parser, because `at` may have any time of day. Same strictness otherwise (`Z` only, optional `.sss`, round-trips through `Date`). `at` before the booking was made is not rejected: the service has no clock and does not record creation time.
++- **Releasing equipment**: mark the booking record `cancelled` rather than deleting it, and have the one shared overlap predicate (used by `book` and, if present, `availability`) skip cancelled records. This keeps `cancel` from needing to know about other features and lets a second `cancel` be told apart from an unknown id. Both give errors, with distinct messages.
++- **Atomicity**: validate id, `at` and cancelled-state before mutating; the status flip is the only write, so a failed `cancel` leaves no trace.
++- **Result** is a fresh object `{ bookingId, refund }`.
++- **Spec conflict with the base change**: `add-rental-service` has the requirement "Cancellation policy data" whose scenario "No cancellation operation" says the service offers no cancel. After that change is archived, reword it in this change's delta as a MODIFIED requirement (keep the retention of start and total, drop the scenario). Until then it is an ADDED requirement here, because MODIFIED needs the requirement to exist in `openspec/specs/`. The apply step must not leave that scenario contradicting the code.
++
++## Risks / Trade-offs
++
++- [The base service does not exist yet] → implement after `add-rental-service`; tasks assume its booking records and test setup.
++- [Overlap check is inline in `book` there] → extract it into a helper that ignores cancelled bookings, so `availability` (if implemented) agrees.
++- [Cancelling after start gives 0 and still releases the item] → follows the stated policy; the desk may want a different rule for past rentals later.
+diff --git a/openspec/changes/add-booking-cancellation/proposal.md b/openspec/changes/add-booking-cancellation/proposal.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..a503e1853ca01610d6c78e347a4f866bda754a2c
+--- /dev/null
++++ b/openspec/changes/add-booking-cancellation/proposal.md
+@@ -0,0 +1,27 @@
++# Proposal
++
++## Why
++
++Plans change and customers ask the desk to cancel their bookings. Today a booking can never be undone, so the equipment stays blocked and the desk has no way to tell the customer what they get back.
++
++## What Changes
++
++- Add `cancel(bookingId, at)` to the rental service. It cancels the booking at time `at` and returns `{ bookingId, refund }`, the amount in integer euro cents given back to the customer.
++- A cancelled booking no longer holds its equipment: the item can be booked again for that period (and shows as free in `availability`, if present).
++- A booking can only be cancelled once; a second `cancel` throws.
++- Refund follows the cancellation policy already recorded in `add-rental-service`: cancelled less than 24 hours before the booking start (including at or after the start) means refund `0`; otherwise the refund is the booking's full `total`.
++- Assumptions (recorded in the spec): `at` is a UTC ISO-8601 instant, any time of day (not only midnight); exactly 24 hours before start counts as "otherwise" and is fully refunded; the refund is the booking's `total` as charged, so it reflects any long-stay discount or hourly pricing.
++- Out of scope: partial refunds, cancellation fees, rebooking, listing bookings, persistence.
++
++## Capabilities
++
++### New Capabilities
++
++None.
++
++### Modified Capabilities
++- `rentals`: gains cancellation with refunds. It is expressed as an added requirement because `rentals` is still being introduced by the unarchived change `add-rental-service`. That change contains a requirement "Cancellation policy data" with a scenario "No cancellation operation", which this change supersedes; when `add-rental-service` is archived it must be reworded (see design.md).
++
++## Impact
++
++Depends on `add-rental-service` (the service, `src/rental.ts`, bookings with retained start and total do not exist yet), which must be implemented first. Interacts with `add-rental-availability` and `add-hourly-rental` (cancelled bookings must stop counting in the shared overlap check). Touches `src/rental.ts` and `src/rental.test.ts` and the README usage section; no dependencies added.
+diff --git a/openspec/changes/add-booking-cancellation/specs/rentals/spec.md b/openspec/changes/add-booking-cancellation/specs/rentals/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..962c41702808afbb90f2f7bb3177cf300ab52a10
+--- /dev/null
++++ b/openspec/changes/add-booking-cancellation/specs/rentals/spec.md
+@@ -0,0 +1,65 @@
++## ADDED Requirements
++
++### Requirement: Cancel a booking
++`cancel(bookingId, at)` SHALL cancel the booking with that id as of the instant `at` and return `{ bookingId, refund }`, where `refund` is an integer number of euro cents. `at` SHALL be an ISO-8601 UTC string (`YYYY-MM-DDTHH:MM:SS(.sss)?Z`, any time of day) that round-trips through `Date`. `cancel` SHALL throw for an unknown `bookingId` or an invalid `at`, and a failed `cancel` SHALL change nothing.
++
++#### Scenario: Cancel returns id and refund
++- **WHEN** an existing booking is cancelled with a valid `at`
++- **THEN** the result is `{ bookingId, refund }` with the booking's id and an integer refund
++
++#### Scenario: Unknown booking
++- **WHEN** `cancel` is called with an id that was never returned by `book`
++- **THEN** it throws an error
++
++#### Scenario: Invalid time
++- **WHEN** `at` is not a valid ISO-8601 UTC string (offset, partial date, not a string)
++- **THEN** `cancel` throws an error and the booking stays active
++
++### Requirement: Cancellation refund
++The refund SHALL be `0` when `at` is less than 24 hours before the booking's start (including when `at` is at or after the start). Otherwise, when `at` is 24 hours or more before the start, the refund SHALL be the booking's `total` in full, as returned when it was booked.
++
++#### Scenario: Full refund well before start
++- **WHEN** a booking with total `5000` starting `2026-07-10T00:00:00.000Z` is cancelled at `2026-07-01T09:00:00.000Z`
++- **THEN** refund is `5000`
++
++#### Scenario: Exactly 24 hours before start
++- **WHEN** the same booking is cancelled at `2026-07-09T00:00:00.000Z`
++- **THEN** refund is `5000`
++
++#### Scenario: Less than 24 hours before start
++- **WHEN** the same booking is cancelled at `2026-07-09T00:00:00.001Z`
++- **THEN** refund is `0`
++
++#### Scenario: After the start
++- **WHEN** the same booking is cancelled at `2026-07-11T00:00:00.000Z`
++- **THEN** refund is `0` and the booking is cancelled
++
++#### Scenario: Refund equals the charged total
++- **WHEN** a booking whose total was reduced by a discount or priced by the hour is cancelled 24 hours or more before start
++- **THEN** refund equals that booking's `total`, not the undiscounted or daily price
++
++### Requirement: Cancelled bookings release equipment
++A cancelled booking SHALL no longer count as a booking of its item: it SHALL NOT cause overlap rejections in `book` and SHALL NOT make the item unavailable in any availability query. This holds whatever the refund was.
++
++#### Scenario: Rebook after cancellation
++- **WHEN** an item is booked 07-01 to 07-03, that booking is cancelled, and the item is booked 07-01 to 07-03 again
++- **THEN** the second `book` succeeds
++
++#### Scenario: Zero refund still releases
++- **WHEN** a booking is cancelled less than 24 hours before its start and the item is then booked for the same period
++- **THEN** the new booking succeeds
++
++#### Scenario: Other bookings keep holding
++- **WHEN** an item has two bookings and one is cancelled
++- **THEN** the other still blocks overlapping bookings of that item
++
++### Requirement: Cancel only once
++A booking SHALL be cancellable only once. A second `cancel` of the same booking SHALL throw, whatever `at` is, and SHALL NOT change any state or return a refund.
++
++#### Scenario: Second cancel rejected
++- **WHEN** a booking is cancelled and `cancel` is called again with the same id
++- **THEN** the second call throws an error
++
++#### Scenario: Rejected cancel does not alter the first
++- **WHEN** the second `cancel` throws
++- **THEN** the booking remains cancelled and its item stays free for rebooking
+diff --git a/openspec/changes/add-booking-cancellation/tasks.md b/openspec/changes/add-booking-cancellation/tasks.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..ebe87b6f11d0476906431e0df5d55dd6efcdb026
+--- /dev/null
++++ b/openspec/changes/add-booking-cancellation/tasks.md
+@@ -0,0 +1,12 @@
++# Tasks
++
++## 1. Cancellation
++
++- [ ] 1.1 Confirm `add-rental-service` is implemented (`createRentalService`, `book`, booking records with start and total); if not, stop and do that first
++- [ ] 1.2 Store a `cancelled` flag on booking records and make the shared overlap check (and `availability`, if present) ignore cancelled bookings; verify with tests that a cancelled booking's period can be rebooked and uncancelled bookings still block
++- [ ] 1.3 Implement `cancel(bookingId, at)` in `src/rental.ts` with strict `at` parsing, the 24-hour refund rule and the cancel-once check, returning `{ bookingId, refund }`; verify with tests for full refund, exactly 24 h, 1 ms inside 24 h, after start, discounted/hourly totals, unknown id, invalid `at`, second cancel throwing, and a failed cancel changing nothing
++- [ ] 1.4 Reword the "Cancellation policy data" requirement of `rentals` (it says no cancel operation exists) so it no longer contradicts `cancel`; verify with `openspec validate add-booking-cancellation`
++
++## 2. Docs
++
++- [ ] 2.1 Add a cancellation example to the `README.md` usage section and verify it matches the tested behavior

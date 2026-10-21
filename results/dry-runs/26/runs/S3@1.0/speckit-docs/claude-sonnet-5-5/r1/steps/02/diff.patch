@@ -1,0 +1,66 @@
+diff --git a/src/index.test.ts b/src/index.test.ts
+index c115c10a341f779a7ec3cb0608f9b97ac1560771..6e54ca242b98b261ff869a99656123666c8d6d5a 100644
+--- a/src/index.test.ts
++++ b/src/index.test.ts
+@@ -30,3 +30,14 @@ test('prevents overlapping bookings but allows adjacent ones', () => {
+   const b = s.book({ itemId: 'b1', start: d(3), end: d(4) });
+   assert.notEqual(a.id, b.id);
+ });
++
++test('lists sorted equipment free for the whole period, optionally by kind', () => {
++  const s = setup();
++  s.addEquipment({ id: 'a1', kind: 'sail', dailyPrice: 1000 });
++  s.addEquipment({ id: 'b2', kind: 'board', dailyPrice: 2500 });
++  s.book({ itemId: 'b1', start: d(2), end: d(4) });
++  assert.deepEqual(s.availability({ start: d(1), end: d(3) }), ['a1', 'b2']);
++  assert.deepEqual(s.availability({ start: d(1), end: d(3), kind: 'board' }), ['b2']);
++  assert.deepEqual(s.availability({ start: d(4), end: d(5), kind: 'board' }), ['b1', 'b2']);
++  assert.throws(() => s.availability({ start: d(3), end: d(3) }));
++});
+diff --git a/src/index.ts b/src/index.ts
+index 56b72bc5dc09468700e81149ce485f29faac10be..ad12e2c0ba46e04d647bfee131a427c2c3db3397 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -24,10 +24,21 @@ export interface Booking extends Quote {
+   id: string;
+ }
+ 
++export interface AvailabilityQuery {
++  /** ISO-8601 UTC midnight. */
++  start: string;
++  /** ISO-8601 UTC midnight, the start of the day after the last rented day. */
++  end: string;
++  /** Restrict to this kind of equipment; any kind when omitted. */
++  kind?: EquipmentKind;
++}
++
+ export interface RentalService {
+   addEquipment(item: Equipment): void;
+   quote(request: RentalRequest): Quote;
+   book(request: RentalRequest): Booking;
++  /** Sorted ids of the equipment free for the whole period. */
++  availability(query: AvailabilityQuery): string[];
+ }
+ 
+ const DAY_MS = 24 * 60 * 60 * 1000;
+@@ -96,5 +107,20 @@ export function createRentalService(): RentalService {
+       bookings.push({ id, itemId: quote.itemId, startMs, endMs });
+       return { id, ...quote };
+     },
++
++    availability(query) {
++      if (query === null || typeof query !== 'object') throw new Error('invalid query');
++      const startMs = parseMidnightUtc(query.start, 'start');
++      const endMs = parseMidnightUtc(query.end, 'end');
++      if (endMs <= startMs) throw new Error('end must be after start');
++      if (query.kind !== undefined && query.kind !== 'board' && query.kind !== 'sail') {
++        throw new Error(`invalid kind: ${String(query.kind)}`);
++      }
++      return [...equipment.values()]
++        .filter((item) => query.kind === undefined || item.kind === query.kind)
++        .filter((item) => !bookings.some((b) => b.itemId === item.id && startMs < b.endMs && b.startMs < endMs))
++        .map((item) => item.id)
++        .sort();
++    },
+   };
+ }
