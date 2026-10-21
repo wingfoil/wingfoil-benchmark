@@ -310,3 +310,9 @@ Departures added to the list above:
   container left. The commits after `4ed2ec1` are these notes only.
 - The approver's `memory approve task-095-… --reason "…"` → `6979a05`, run from this worktree (`in-review → approved`,
   `Approver:`/`Reason:` trailers with the drafted reason, only `status` changed). Matches.
+- Merged into main with `--no-ff` → `c8b64fa`.
+- `npx wingfoil memory submit task-095-…` on main → `0ea62ea` (`approved → done`, one file, `status` only). Matches.
+- bug-022: `fixed_by` and Resolution `3e801ca`; `npx wingfoil memory submit bug-022-…` → `601613b` (`approved → fixed`).
+  Matches.
+- Worktree removed after `git status --ignored`: `node_modules/`, `dist/`, `coverage/` and `.cache/arms/` (copies of
+  arms the history holds); no evidence. Branch deleted. Calibration (plan-004 step 3) can start: the approver is told.
