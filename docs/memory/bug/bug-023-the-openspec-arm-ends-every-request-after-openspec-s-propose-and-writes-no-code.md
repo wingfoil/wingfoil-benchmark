@@ -2,7 +2,7 @@
 id: bug-023-the-openspec-arm-ends-every-request-after-openspec-s-propose-and-writes-no-code
 type: bug
 title: "The openspec arm ends every request after OpenSpec's propose and writes no code"
-status: approved
+status: fixed
 fixed_by: task-096-calibration-of-v0-2-dry-runs-in-every-arm-and-the-bridge-measured-costs-and-the-revised-budget
 # fixed_by: task-…   # set by hand, with the fixing task's id, just before `approved → fixed`
 tags: ["openspec","arm","calibration"]
