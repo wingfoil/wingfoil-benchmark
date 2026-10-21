@@ -312,3 +312,26 @@ scored; a ledger line each.
 - **Opus 5.5:** S1 at 4.2–5.7 times Sonnet 5.5's cost in the same arm; every arm 165/165 and 48/48, the only model at
   the maximum on S1.
 - **Haiku 5.5:** as Sonnet 5.5 on S1 (164/165, 45/48) and S3 (35/37, 16/17), at 15–18 % of its cost in the same arm.
+
+### The fixes (on `task/task-096`)
+
+- **bug-024:** red `9daba120` (a CLI test: a dry run after the arm changed, and a docs control's dry run after the
+  profile repinned WingFoil, both print "no dry run yet"; failed on the first, quoting `dry-runs/1`), fix `40bf0e76`
+  (`harnessKey` in `src/results/dry-runs.ts`, called by the estimate and `src/cli/dry-run.ts`; the dry run keys on
+  the digest of the arm that runs). The touched tests 402/402.
+- **bug-023:** red `37f63cee` (the openspec manual names the three commands, "in this one session" and "do not end
+  the session after `/opsx:propose`"; failed), fix `61406f66`, then `27343a58` after review round 1: the manual is the
+  user's standing instruction, given before the session, to run `/opsx:apply` and `/opsx:archive` after propose; the
+  arm's digest `1ba12def23cf`, pinned in `campaigns/v0-2-reference.yaml`. Whether the agent goes past the skill's stop
+  is stage 6's to show. The touched tests 218/218; lint 0; `tsc` clean.
+
+## Review notes
+
+- **Round 1** (an independent read-only agent, the four commits `9daba120`..`61406f66`): no blocker. Should-fix: the
+  manual argued that the request was the skill's "new user request", which OpenSpec's propose skill rules out ("Any
+  implementation or apply instruction in that request does not carry forward"); the agent might still stop.
+  Nits: the dry run always keys on the digest while an unpinned campaign's estimate does not (to be stated); a
+  comment's wording; the skipped message's "the campaign pins" from the dry run (latent: `latestDryRun` discards it).
+  Fixed in `27343a58` but the latent one, left.
+- **Round 2** (`27343a58`): clean. The reviewer computed the arm's digest (`1ba12def23cf`, the pin); an optional nit
+  on the paragraph's line break, left (it would change the digest again).
