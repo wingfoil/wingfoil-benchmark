@@ -381,3 +381,6 @@ wrote `src/`, and every change was archived under `openspec/changes/archive/` wi
   reported an earlier line of rel-v0-2 (`894ee03c9`, already pushed) naming an anonymous project: left, as the
   approver chose for the pushed mentions.
 
+- **Full suites** (`scripts/full-suites.sh task/task-096`, started by a load waiter at 22:05, the approver's request
+  in chat): on `51c56f30`, not dirty, LINT 0, TEST 0 (1652 passed, 8 skipped), BUILD 0, BIN 0 (8), DOCKER 0 (22, 2
+  skipped); log `.cache/full-suites/2026-10-21/task_task-096-51c56f30-220535.txt`.
