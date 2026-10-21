@@ -113,7 +113,8 @@ export async function dryRunCommand(
     model,
     ...(profile.agent.effort?.[model] === undefined ? {} : { effort: profile.agent.effort[model] }),
     // The estimate's key (bug-024): a dry run of another version of the arm, or of another harness pin, is another
-    // measure. The digest is the arm's that runs, the profile's pin if it has one (task-095).
+    // measure. The digest is that of the arm that runs, read from history when the profile pins it (task-095); unlike
+    // a campaign without `arm_digests`, the dry run always knows it, and quotes only a dry run of that arm.
     armDigest: armDigest(arm.from?.root ?? root, arm.name),
     ...harnessKey(profile.harnesses, arms, arm.name),
   });

@@ -20,8 +20,10 @@ Carry each request through, in this one session, from the proposal to the code:
 - then implement it with `/opsx:apply`;
 - once it is done, archive it with `/opsx:archive`.
 
-The propose workflow ends by waiting for a new request from the user: the request you were given is that request,
-for all three steps. So do not end the session after `/opsx:propose`; go on to `/opsx:apply` and `/opsx:archive`.
+This manual is the user's standing instruction for every request, given before the session starts: once
+`/opsx:propose` has presented the change, run `/opsx:apply` yourself, then `/opsx:archive`. No one else will send a
+request in this session, and a session that ends on the proposal leaves the request undone:
+do not end the session after `/opsx:propose`.
 
 OpenSpec keeps its work under `openspec/`: the changes under `openspec/changes/`, and the accepted specs under
 `openspec/specs/`.
