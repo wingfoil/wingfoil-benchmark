@@ -103,8 +103,8 @@ independent read-only agent, rounds until clean, before in-review.
 
 `bench campaign run campaigns/v0-2-validation.yaml --allow-spending`, then the same for
 `v0-2-validation-bridge.yaml`, from the main checkout, with `BENCH_AGENT_TOKEN_FILE=$HOME/.claude/bench-token`,
-`BENCH_WINGFOIL_REPO`, `BENCH_SPECKIT_REPO` (and `BENCH_HOLDOUT_PATH` for `score`). The estimates as the Design (4.59 € and 1.15 €), under each `warn_eur`:
-no question asked. The bridge's run printed "arm wingfoil: read from commit 2441243b8e37, which holds its pinned
+`BENCH_WINGFOIL_REPO`, `BENCH_SPECKIT_REPO` (and `BENCH_HOLDOUT_PATH` for `score`). The estimates as the Design
+(4.59 € and 1.15 €), under each `warn_eur`: no question asked. The bridge's run printed "arm wingfoil: read from commit 2441243b8e37, which holds its pinned
 digest". Both executions `completed` (`execution.json`).
 
 | Execution | Arm | Cost | Agent time | Turns | Final public | Hold-out |
@@ -144,4 +144,4 @@ digest". Both executions `completed` (`execution.json`).
   row and the campaign files checked against the stored runs. Should-fix: the total mixed rounded and exact sums;
   "six" for 158/165 (seven); `bench campaign validate` in the run environment not recorded. Nits: coverage not
   stated; 0.908 rounded up; no line on bugs filed. All fixed in these notes.
-
+- **Round 2** (`6d4c727c`): clean but a long line, rewrapped.
