@@ -302,3 +302,9 @@ Departures added to the list above:
 
 - `npx wingfoil memory submit task-095-…`, in the worktree. Declared: `in-progress → in-review`, one commit. Observed:
   exit 0, `from`/`to` as declared, cd281b1, one file, `status` only. The `in-progress` slot is free.
+- **Full suites** (`scripts/full-suites.sh task/task-095`, asked by the approver for when the load fell; the first
+  wait was cut by the machine's reboot and restarted; they ran 10:26–10:44 on 2026-10-21) on **`4ed2ec1`**, the commit
+  offered: `LINT 0 TEST 0 BUILD 0 BIN 0 DOCKER 0`. `npm test` 1646 passed, 8 skipped, coverage 97.54 % (statements);
+  `test:bin` 8/8; `test:docker` 22 passed, 2 skipped (the same conditional skips as before), W3 on v0.3.0 with the
+  arm as it is now included. Log `.cache/full-suites/2026-10-21/task_task-095-4ed2ec1-102609.txt`. No `bench-`
+  container left. The commits after `4ed2ec1` are these notes only.
