@@ -2,7 +2,7 @@
 id: task-096-calibration-of-v0-2-dry-runs-in-every-arm-and-the-bridge-measured-costs-and-the-revised-budget
 type: task
 title: "Calibration of v0.2: dry runs in every arm and the bridge, measured costs and the revised budget"
-status: in-progress
+status: in-review
 release: v0.2
 wave: calibration
 features: []
