@@ -375,8 +375,9 @@ The 30 € target above did not hold, and stays as the record of v0.1's plan.
       ships other directive text (`doc-versioning`), the step bridge → reference changes the docs control's rules too.
 
     Source: [task-095](../memory/task/task-095-wingfoil-v0-3-0-admitted-to-the-wingfoil-arm-the-bridge-s-arm-read-by-its-pinned-digest.md).
-11. **Amendment 1.6 (v0.2, calibration, 2026-10-21).** [dl-018](../memory/decision-log/dl-018-sonnet-5-5-s-cache-reads-at-half-dl-007-s-price-and-haiku-5-5-beside-the-haiku-4-5-rung.md)'s consequences and calibration's measurements, the
-    approver's approval in chat of the values on 2026-10-21.
+11. **Amendment 1.6 (v0.2, calibration, 2026-10-21).** The consequences of
+    [dl-018](../memory/decision-log/dl-018-sonnet-5-5-s-cache-reads-at-half-dl-007-s-price-and-haiku-5-5-beside-the-haiku-4-5-rung.md)
+    and calibration's measurements, the approver's approval in chat of the values on 2026-10-21.
     - **§6, the ladder:** its weak rung is Haiku 5.5 (`claude-haiku-5-5`), S1 and S3 in baseline and wingfoil; Haiku
       4.5 until 1.6. The hypothesis on the weak model (dl-007's "H6", H11 in [v0.2.md](../calibration/v0.2.md) §8) reads Haiku
       5.5.
@@ -384,5 +385,7 @@ The 30 € target above did not hold, and stays as the record of v0.1's plan.
       with v0.1, through the bridge, changes the effort with the model and Claude Code (dl-015's C).
     - **§6, the sizing:** replaced by calibration's estimate and budget.
 
-    Source: [task-096](../memory/task/task-096-calibration-of-v0-2-dry-runs-in-every-arm-and-the-bridge-measured-costs-and-the-revised-budget.md); [v0.2.md](../calibration/v0.2.md).
+    Source:
+    [task-096](../memory/task/task-096-calibration-of-v0-2-dry-runs-in-every-arm-and-the-bridge-measured-costs-and-the-revised-budget.md);
+    [v0.2.md](../calibration/v0.2.md).
 

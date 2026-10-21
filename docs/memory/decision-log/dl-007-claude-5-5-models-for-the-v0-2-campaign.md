@@ -30,9 +30,11 @@ helps a weaker model more than a stronger one.
 | **Haiku 4.5** | 1.00 | 5.00 | 1.25 | 0.10 |
 | **Haiku 5.5** (added by dl-018) | 0.10 | 0.50 | 0.125 | 0.01 |
 
-Haiku 5.5's prices are those of a request under 100 K prompt tokens; above, five times more (dl-018). v0.2's
-calibration found every Haiku 5.5 step at the lower tier (task-096). These prices are checked against the reported costs: recomputing the calibration dry runs' recorded tokens with them gives the cost
-the agent reported (dry run 19, Opus 5: 24.06 against 24.08 USD; dry run 15, Sonnet 5: 2.158 against 2.158 USD).
+These prices are checked against the reported costs: recomputing v0.1's calibration dry runs' recorded tokens with
+them gives the cost the agent reported (dry run 19, Opus 5: 24.06 against 24.08 USD; dry run 15, Sonnet 5: 2.158
+against 2.158 USD).
+Haiku 5.5's prices (added on 2026-10-21, dl-018) are a request's under 100 K prompt tokens, five times more above;
+v0.2's calibration found every Haiku 5.5 step at the lower tier (task-096).
 
 **What the price change does to this benchmark.** The cost of a run is dominated by **cache reads**. In dry run 19 (S1
 wingfoil, Opus 5) they are 23.9 M of 24.9 M tokens; S1 runs on Sonnet look the same (3.2 M of 3.5 M, dry run 15).
@@ -43,13 +45,15 @@ So:
   measured the full three-arm slice at about 89 €. It would come to about **54 €**, still more than the 21 € slice
   option A kept.
 - **Sonnet 5.5** costs the same per token as Sonnet 5, but for its cache reads, at half the price (0.10 USD/M,
-  [dl-018](dl-018-sonnet-5-5-s-cache-reads-at-half-dl-007-s-price-and-haiku-5-5-beside-the-haiku-4-5-rung.md)): with a run's cost mostly cache reads, the main campaign gets cheaper at equal tokens. Amended on 2026-10-21;
+  [dl-018](dl-018-sonnet-5-5-s-cache-reads-at-half-dl-007-s-price-and-haiku-5-5-beside-the-haiku-4-5-rung.md)):
+  with a run's cost mostly cache reads, the main campaign gets cheaper at equal tokens. Amended on 2026-10-21;
   before, this line said the same per token on every kind.
 - The price per token is not the price per run. Opus 5.5 defaults to effort `medium` where Opus 5 defaults to
   `high`, and Sonnet 5.5's effort levels are recalibrated. What Claude Code sends, and how many turns and tokens a
   run takes, change with the model. The figures above are bounds at equal tokens, not an estimate.
 
-**Haiku 4.5 as a weak model.**
+**Haiku 4.5 as a weak model.** (As decided on 2026-10-04; dl-018 moved the rung to Haiku 5.5, with a 1 M context,
+on 2026-10-14.)
 
 - **Price:** exactly half of Sonnet 5's on every kind of token. The 18 Sonnet runs of execution `c82a5e74885b/1`
   (39.05 USD) would cost **19.49 USD (about 17 €)** with the same tokens.
@@ -118,8 +122,8 @@ So:
 3. If calibration shows that Sonnet 5.5 costs more per run than the budget allows, fall back to **C**.
 4. **E is added**: the model ladder, with its hypothesis written before the runs (calibration §11, as **H6**: the
    wingfoil arm's gain over the baseline on S1 and S3, measured by M-Q1 and M-F1, is larger on Haiku 5.5 than on the
-   default model; Haiku 4.5 until dl-018). Its per-step reading is published as the first data of the cost-quality frontier (dl-008). The
-   Haiku rung is dropped if Haiku's dry runs do not finish S1 in any arm.
+   default model; Haiku 4.5 until dl-018). Its per-step reading is published as the first data of the cost-quality
+   frontier (dl-008). The Haiku rung is dropped if Haiku's dry runs do not finish S1 in any arm.
 5. The amendment goes through the experiment design (§6, model and slice) and calibration §11 (H1–H5 restated on
    the model they read), with a raised version and the review decision recorded.
 

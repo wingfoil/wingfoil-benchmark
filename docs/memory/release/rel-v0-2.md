@@ -64,7 +64,7 @@ The tables below are the proposal as approved.
 
 | Element | Proposal | Lands in |
 |---|---|---|
-| [dl-007](../decision-log/dl-007-claude-5-5-models-for-the-v0-2-campaign.md) Claude 5.5 models, bridge, ladder | **approve B + E, conditional on calibration**: Sonnet 5.5 default with a v0.1 bridge slice; the Haiku 4.5 rung of the ladder; fall back to C if 5.5 does not fit. A spike first checks the agent pin against the 5.5 models | a spike in W12; calibration |
+| [dl-007](../decision-log/dl-007-claude-5-5-models-for-the-v0-2-campaign.md) Claude 5.5 models, bridge, ladder | **approve B + E, conditional on calibration**: Sonnet 5.5 default with a v0.1 bridge slice; the Haiku 4.5 rung (Haiku 5.5 since dl-018) of the ladder; fall back to C if 5.5 does not fit. A spike first checks the agent pin against the 5.5 models | a spike in W12; calibration |
 | [dl-008](../decision-log/dl-008-model-configurations-and-the-cost-quality-frontier.md) model configurations, frontier | **approve C as direction**: the ladder now (through dl-007 E); routing and `baseline-mixed` deferred until WingFoil's routing is designed | the site's frontier view: a task in W14 if the ladder runs |
 | [dl-012](../decision-log/dl-012-budget-and-estimate-rebased-on-v0-1-s-measurements.md) budget, estimate, repetitions, partial re-runs | **approve C**: K4 and §6 amended; the estimate with a margin; a campaign-wide ceiling; a minimum *n*; partial re-runs as part of F1.4 | an amendment in this phase; estimate and guard tasks in W14 with F1.4 |
 | [dl-010](../decision-log/dl-010-validation-exercises-every-arm-the-largest-step-and-the-harness-environment.md) validation in every arm | **approve B**: `release-cycle` validation amended (version 3) | a task, W12 |

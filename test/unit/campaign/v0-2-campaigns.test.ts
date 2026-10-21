@@ -157,6 +157,23 @@ describe('the v0.2 campaign files after calibration (task-096)', () => {
       expect(readFileSync(repoPath(`campaigns/${name}.yaml`), 'utf8'), name).not.toMatch(/placeholder/i);
   });
 
+  it("carry calibration's values, as the approver approved them (docs/calibration/v0.2.md §7)", () => {
+    const reference = checked('v0-2-reference');
+    const bridge = checked('v0-2-bridge');
+    for (const campaign of [reference, bridge]) {
+      expect(campaign.agent).toEqual({
+        name: 'claude-code',
+        version: '2.1.300',
+        effort: { 'claude-sonnet-5-5': 'medium', 'claude-opus-5-5': 'medium', 'claude-haiku-5-5': 'medium' },
+      });
+      expect(campaign.caps).toEqual({ step_time_s: 1800, step_tokens: 10000000, run_cost_eur: 5 });
+      expect(campaign.fail_fast).toEqual({ same_error: 3 });
+      expect(campaign.currency).toEqual({ usd_to_eur: 0.8917 });
+    }
+    expect(reference.budget).toEqual({ warn_eur: 40, ceiling_eur: 50 });
+    expect(bridge.budget).toEqual({ warn_eur: 12, ceiling_eur: 15 });
+  });
+
   it('price every key of each from the stored dry runs', () => {
     for (const name of ['v0-2-reference', 'v0-2-bridge']) {
       const result = checkCampaign(repoPath(`campaigns/${name}.yaml`));
