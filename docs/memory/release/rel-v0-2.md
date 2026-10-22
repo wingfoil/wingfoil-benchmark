@@ -347,8 +347,13 @@ Bugs: bug-013 fixed. Spending: none in W14; 2.4124 USD in all so far.
 - [x] validation: acceptance green on the fake agent, coverage > 80 %, lint clean, the real-agent validation dl-010
   decides: task-097 done, the full suites green on `6bdd4518` (97.57 % statements), S1@1.0 once in the seven arms and
   the bridge's two (`da13d57a65b5/1`, `27f0119be0ff/1`), 4.90 USD
-- [ ] campaign: reference campaign published and compared with v0.1 (campaign: —)
-- [ ] publishing: tag `v0.2`, site published, release notes, transcripts attached
+- [x] campaign: reference campaign published and compared with v0.1: campaign-002 (`81ebb2691f9c/1`, 49 runs,
+  24.31 €) and the bridge campaign-003 (`bf3a1ac7dff5/1`, 18 runs, 6.86 €), both from `bf60bc1f`, scored, reviewed and
+  published; the comparisons `c82a5e74885b/2` → bridge → campaign-002; findings on S1's M-K1 (dl-147's verification)
+  and S3's M-F1
+- [x] publishing: site published (`gh-pages` `fbd5e8e0`: the three executions), transcripts and harness artifacts
+  attached (releases `81ebb2691f9c-1`, `bf3a1ac7dff5-1`), release notes `docs/releases/v0.2.md`, tag `v0.2` on the
+  releasing commit
 - [ ] retrospective: section below written; WingFoil usage notes handed to the approver
 
 ## Retrospective
