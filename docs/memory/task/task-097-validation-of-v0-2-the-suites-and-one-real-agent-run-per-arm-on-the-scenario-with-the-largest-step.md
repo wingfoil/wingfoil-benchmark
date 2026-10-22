@@ -145,3 +145,11 @@ digest". Both executions `completed` (`execution.json`).
   "six" for 158/165 (seven); `bench campaign validate` in the run environment not recorded. Nits: coverage not
   stated; 0.908 rounded up; no line on bugs filed. All fixed in these notes.
 - **Round 2** (`6d4c727c`): clean but a long line, rewrapped.
+
+## Approval notes
+
+- **in-review → approved** (b6f47ec1): run by the approver from the main checkout, with the drafted
+  reason.
+- No branch and no worktree: the task changed no code, and its campaign files, results, ledger lines and notes were
+  committed on main, as the Design says.
+- Next: plan-004 step 5, the campaigns (campaign-002 and the bridge).
