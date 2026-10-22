@@ -1,0 +1,113 @@
+diff --git a/docs/memory/decision-log/dl-003-long-rental-discount-threshold-rounding-scope.md b/docs/memory/decision-log/dl-003-long-rental-discount-threshold-rounding-scope.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..48841da6a35af2ac41015a71a33712e3f0a8a9d5
+--- /dev/null
++++ b/docs/memory/decision-log/dl-003-long-rental-discount-threshold-rounding-scope.md
+@@ -0,0 +1,30 @@
++---
++id: dl-003-long-rental-discount-threshold-rounding-scope
++type: decision-log
++title: "Long-rental discount: threshold, rounding, scope"
++status: pending
++format: 1
++---
++
++<!-- decision-log body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
++
++## Context
++
++Rentals of 3 days or more must cost 10% less than full price, in quotes and bookings. The request does
++not say how a fractional cent is handled, nor whether the discount covers the whole period.
++
++## Decision
++
++- The threshold is 3 whole days (`end - start >= 3 days`); shorter rentals keep the full price.
++- The discount applies to the whole total, computed in integer arithmetic as `total * 90 / 100` and
++  rounded to the nearest cent (`Math.round`, halves up), so the total stays an integer number of cents.
++- The discount lives in the shared pricing step, so `quote` and `book` always agree.
++
++## Consequences
++
++Prices of rentals of 3 days or more change: 3 days at 2500 cents/day now costs 6750 instead of 7500.
++Rounding differs from the exact 10% by at most half a cent.
+diff --git a/docs/memory/task/task-003-long-rental-discount-10-off-for-3-days-or-more.md b/docs/memory/task/task-003-long-rental-discount-10-off-for-3-days-or-more.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..50c905da7a09f29e452ad2f3b9af3bba027ecbc6
+--- /dev/null
++++ b/docs/memory/task/task-003-long-rental-discount-10-off-for-3-days-or-more.md
+@@ -0,0 +1,18 @@
++---
++id: task-003-long-rental-discount-10-off-for-3-days-or-more
++type: task
++title: "Long-rental discount: 10% off for 3 days or more"
++status: pending
++format: 1
++---
++
++<!-- task body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
++
++Rentals of 3 days or more now cost 10% less than full price (rounded to the nearest cent), in both
++`quote` and `book`, via the shared pricing step in `src/index.ts`. Added tests for the 2-day/3-day
++boundary, booking totals and rounding, and updated the existing 3-day quote test to the discounted
++total. See dl-003-long-rental-discount-threshold-rounding-scope.
+diff --git a/src/index.test.ts b/src/index.test.ts
+index 9bad54a66ce2ec3ca532220b4abb5a1b16720459..7a52e362a6611ed081bac676a829ca0f9f3a2598 100644
+--- a/src/index.test.ts
++++ b/src/index.test.ts
+@@ -10,7 +10,7 @@ const service = () => {
+ 
+ test('quote prices whole days at the daily price', () => {
+   const q = service().quote({ itemId: 'b1', start: '2026-07-01T00:00:00Z', end: '2026-07-04T00:00:00Z' });
+-  assert.deepEqual(q, { itemId: 'b1', start: '2026-07-01T00:00:00Z', end: '2026-07-04T00:00:00Z', total: 7500 });
++  assert.deepEqual(q, { itemId: 'b1', start: '2026-07-01T00:00:00Z', end: '2026-07-04T00:00:00Z', total: 6750 });
+ });
+ 
+ test('quote accepts equivalent UTC spellings of midnight', () => {
+@@ -103,3 +103,18 @@ test('availability is empty when nothing matches and rejects bad queries', () =>
+   assert.throws(() => s.availability({ start: '2026-07-01T10:00:00Z', end: '2026-07-02T00:00:00Z' }));
+   assert.throws(() => s.availability({ start: '2026-07-01T00:00:00Z', end: '2026-07-02T00:00:00Z', kind: 'kayak' as never }));
+ });
++
++test('rentals of 3 days or more cost 10% less, in quotes and bookings', () => {
++  const s = fleet();
++  const two = { itemId: 'b1', start: '2026-07-01T00:00:00Z', end: '2026-07-03T00:00:00Z' };
++  const three = { itemId: 'b1', start: '2026-07-01T00:00:00Z', end: '2026-07-04T00:00:00Z' };
++  assert.equal(s.quote(two).total, 5000);
++  assert.equal(s.quote(three).total, 6750);
++  assert.equal(s.book(three).total, 6750);
++});
++
++test('the long-rental discount rounds to whole cents', () => {
++  const s = createRentalService();
++  s.addEquipment({ id: 'x', kind: 'board', dailyPrice: 1001 });
++  assert.equal(s.quote({ itemId: 'x', start: '2026-07-01T00:00:00Z', end: '2026-07-04T00:00:00Z' }).total, 2703);
++});
+diff --git a/src/index.ts b/src/index.ts
+index e9db748a56fd3b3c6e9ecc0f7a658dcade9b1e22..7ca390736a3ff1960ab984357b1ff99536e482d6 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -1,4 +1,6 @@
+ const MS_PER_DAY = 86_400_000;
++const LONG_RENTAL_DAYS = 3;
++const LONG_RENTAL_PERCENT_PAID = 90;
+ const UTC_MIDNIGHT = /^\d{4}-\d{2}-\d{2}T00:00:00(\.0+)?Z$/;
+ 
+ /** What the school rents out. */
+@@ -98,7 +100,8 @@ export function createRentalService(): RentalService {
+     }
+     const period = parsePeriod(request);
+     const days = (period.to - period.from) / MS_PER_DAY;
+-    const total = days * item.dailyPrice;
++    const fullPrice = days * item.dailyPrice;
++    const total = days >= LONG_RENTAL_DAYS ? Math.round((fullPrice * LONG_RENTAL_PERCENT_PAID) / 100) : fullPrice;
+     if (!Number.isSafeInteger(total)) {
+       throw new Error('total is not a safe integer number of euro cents');
+     }

@@ -1,0 +1,187 @@
+diff --git a/README.md b/README.md
+index e9168758ea1620bbb38f5e5382623b49821042b4..fadb47615d202171db407aa623efce8a6b3b5fb5 100644
+--- a/README.md
++++ b/README.md
+@@ -49,4 +49,19 @@ for objects, is merged into it. Any other patch (a primitive, `null` or an array
+ whole. As the format specifies, `null` cannot be set as a member value, and arrays are replaced rather
+ than merged. It throws a `TypeError` if the patch contains `undefined`, which is not a JSON value.
+ 
++## Creating a patch
++
++`createPatch(from, to)` (exported from `src/index.ts`) returns a JSON Patch (RFC 6902) that turns `from`
++into `to` when passed to `applyPatch`, so a client can send only what changed. Neither argument is
++mutated, and the patch shares no structure with them.
++
++```ts
++createPatch({ a: 1, b: [1, 2] }, { a: 1, b: [1, 2, 3] }); // [{ op: "add", path: "/b/2", value: 3 }]
++```
++
++Objects are compared member by member and arrays element by element, after skipping the elements that
++are unchanged at their start and end, so inserting or removing one element is a single operation.
++Values of a different kind are replaced whole, and equal documents give an empty patch. It throws a
++`TypeError` if either document contains `undefined`, which is not a JSON value.
++
+ Run the tests with `npm test` (Node 22.18+, which runs the TypeScript sources directly).
+diff --git a/src/index.ts b/src/index.ts
+index dbf88be1bf9c82013fb0777182c68bf534ee67f9..c819c48e28eccb141a171fdb56a8c07134d5e527 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -235,3 +235,69 @@ function mergeValue(target: unknown, patch: unknown): unknown {
+ export function applyMergePatch(target: unknown, patch: unknown): unknown {
+   return mergeValue(target, patch);
+ }
++
++/** Encodes one reference token for use in a JSON Pointer; `~` becomes `~0` and `/` becomes `~1`. */
++function encodeToken(token: string): string {
++  return token.replaceAll("~", "~0").replaceAll("/", "~1");
++}
++
++/** Returns the operations that turn the array `from` into `to`, both found under `path`. */
++function diffArrays(from: unknown[], to: unknown[], path: string): PatchOperation[] {
++  let start = 0;
++  while (start < from.length && start < to.length && jsonEqual(from[start], to[start])) start++;
++  let fromEnd = from.length;
++  let toEnd = to.length;
++  while (fromEnd > start && toEnd > start && jsonEqual(from[fromEnd - 1], to[toEnd - 1])) {
++    fromEnd--;
++    toEnd--;
++  }
++  const shared = Math.min(fromEnd, toEnd) - start;
++  const operations: PatchOperation[] = [];
++  for (let i = start; i < start + shared; i++) operations.push(...diffValues(from[i], to[i], `${path}/${i}`));
++  for (let i = fromEnd - 1; i >= start + shared; i--) operations.push({ op: "remove", path: `${path}/${i}` });
++  for (let i = start + shared; i < toEnd; i++) {
++    operations.push({ op: "add", path: `${path}/${i}`, value: structuredClone(to[i]) });
++  }
++  return operations;
++}
++
++/** Returns the operations that turn the object `from` into `to`, both found under `path`. */
++function diffObjects(from: Record<string, unknown>, to: Record<string, unknown>, path: string): PatchOperation[] {
++  const operations: PatchOperation[] = [];
++  for (const key of Object.keys(from)) {
++    if (!Object.hasOwn(to, key)) operations.push({ op: "remove", path: `${path}/${encodeToken(key)}` });
++  }
++  for (const key of Object.keys(to)) {
++    const child = `${path}/${encodeToken(key)}`;
++    if (Object.hasOwn(from, key)) operations.push(...diffValues(from[key], to[key], child));
++    else operations.push({ op: "add", path: child, value: structuredClone(to[key]) });
++  }
++  return operations;
++}
++
++/** Returns the operations that turn `from` into `to`, both found at `path`. */
++function diffValues(from: unknown, to: unknown, path: string): PatchOperation[] {
++  if (from === undefined || to === undefined) {
++    throw new TypeError("Cannot create a JSON Patch: undefined is not a JSON value");
++  }
++  if (Array.isArray(from) && Array.isArray(to)) return diffArrays(from, to, path);
++  if (isObject(from) && isObject(to)) return diffObjects(from, to, path);
++  return jsonEqual(from, to) ? [] : [{ op: "replace", path, value: structuredClone(to) }];
++}
++
++/**
++ * Returns a JSON Patch (RFC 6902) that turns `from` into `to` when applied with `applyPatch`.
++ *
++ * The patch holds only what changed: objects are compared member by member and arrays element by
++ * element, after skipping the elements that are unchanged at their start and end, so inserting or
++ * removing one element is a single operation. Values that differ in kind are replaced whole.
++ * Neither argument is mutated and the patch shares no structure with them. Equal documents give
++ * an empty patch.
++ *
++ * @param from - A parsed JSON value, the earlier version.
++ * @param to - A parsed JSON value, the later version.
++ * @throws If either document contains `undefined`, which is not a JSON value.
++ */
++export function createPatch(from: unknown, to: unknown): PatchOperation[] {
++  return diffValues(from, to, "");
++}
+diff --git a/test/create-patch.test.ts b/test/create-patch.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..48536a0b2d678d5317e87a011073f4f0f6c1e8e4
+--- /dev/null
++++ b/test/create-patch.test.ts
+@@ -0,0 +1,83 @@
++import { test } from "node:test";
++import assert from "node:assert/strict";
++import { applyPatch, createPatch } from "../src/index.ts";
++
++/** Asserts that the patch turns `from` into `to`, and returns it. */
++function roundTrip(from: unknown, to: unknown) {
++  const patch = createPatch(from, to);
++  assert.deepEqual(applyPatch(from, patch), to);
++  return patch;
++}
++
++test("equal documents give an empty patch", () => {
++  assert.deepEqual(roundTrip({ a: [1, { b: 2 }] }, { a: [1, { b: 2 }] }), []);
++});
++
++test("a change in one small place gives a single operation", () => {
++  const from = { a: { b: 1, c: [1, 2, 3] }, d: "x" };
++  assert.deepEqual(roundTrip(from, { a: { b: 1, c: [1, 9, 3] }, d: "x" }), [
++    { op: "replace", path: "/a/c/1", value: 9 },
++  ]);
++});
++
++test("members are added and removed", () => {
++  assert.deepEqual(roundTrip({ a: 1, b: 2 }, { b: 2, c: null }), [
++    { op: "remove", path: "/a" },
++    { op: "add", path: "/c", value: null },
++  ]);
++});
++
++test("a change of type replaces the value", () => {
++  assert.deepEqual(roundTrip({ a: [1] }, { a: { 0: 1 } }), [{ op: "replace", path: "/a", value: { 0: 1 } }]);
++});
++
++test("the whole document is replaced when it is not a container of the same kind", () => {
++  assert.deepEqual(roundTrip(1, "x"), [{ op: "replace", path: "", value: "x" }]);
++  assert.deepEqual(roundTrip({ a: 1 }, [1]), [{ op: "replace", path: "", value: [1] }]);
++});
++
++test("keys are escaped in pointers", () => {
++  assert.deepEqual(roundTrip({ "a/b": 1, "~": 1 }, { "a/b": 2, "~": 1 }), [
++    { op: "replace", path: "/a~1b", value: 2 },
++  ]);
++});
++
++test("__proto__ is an ordinary member", () => {
++  const from = JSON.parse('{"__proto__": 1}');
++  roundTrip(from, JSON.parse('{"__proto__": 2}'));
++  roundTrip({}, from);
++  roundTrip(from, {});
++});
++
++test("an element appended to an array is a single add", () => {
++  assert.deepEqual(roundTrip([1, 2], [1, 2, 3]), [{ op: "add", path: "/2", value: 3 }]);
++});
++
++test("an element inserted or removed in the middle of an array is a single operation", () => {
++  assert.deepEqual(roundTrip([1, 2, 4], [1, 2, 3, 4]), [{ op: "add", path: "/2", value: 3 }]);
++  assert.deepEqual(roundTrip([1, 2, 3, 4], [1, 2, 4]), [{ op: "remove", path: "/2" }]);
++});
++
++test("several array elements removed are removed from the end", () => {
++  assert.equal(roundTrip([1, 2, 3, 4, 5], [1, 5]).length, 3);
++});
++
++test("arrays of objects are diffed element by element", () => {
++  assert.deepEqual(roundTrip([{ a: 1 }, { a: 2 }], [{ a: 1 }, { a: 3 }]), [
++    { op: "replace", path: "/1/a", value: 3 },
++  ]);
++});
++
++test("inputs are not mutated and the patch shares no structure with them", () => {
++  const from = { a: 1 };
++  const to = { a: 1, b: { c: [1] } };
++  const patch = createPatch(from, to);
++  assert.deepEqual(from, { a: 1 });
++  assert.deepEqual(to, { a: 1, b: { c: [1] } });
++  (patch[0] as { value: { c: number[] } }).value.c.push(2);
++  assert.deepEqual(to.b.c, [1]);
++});
++
++test("undefined is rejected as it is not a JSON value", () => {
++  assert.throws(() => createPatch({ a: 1 }, { a: undefined }), TypeError);
++});

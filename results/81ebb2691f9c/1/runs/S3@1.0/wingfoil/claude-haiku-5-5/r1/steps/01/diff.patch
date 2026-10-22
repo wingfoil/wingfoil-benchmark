@@ -1,0 +1,560 @@
+diff --git a/README.md b/README.md
+index b5fe1b2a4feac926b16f4b55fd72f2bb6eb7b711..b1a614e343c01c126bc1b003033d3571dc831037 100644
+--- a/README.md
++++ b/README.md
+@@ -3,3 +3,18 @@
+ The Lakeside Windsurf School teaches windsurfing on the lake from April to October, and rents boards and
+ sails to its students and to visitors who bring their own experience. This repository holds the software
+ of its booking desk, written in TypeScript with no runtime dependency.
++
++## Rental module
++
++`createRentalService()` (exported from `src/index.ts`) keeps equipment and bookings in memory.
++
++- `addEquipment({ id, kind, dailyPrice })` adds a `'board'` or `'sail'`. `dailyPrice` is in integer euro cents.
++- `quote({ itemId, start, end })` returns `{ itemId, start, end, total }` for the period.
++- `book({ itemId, start, end })` books the item and returns `{ id, itemId, start, end, total }`.
++
++Periods are UTC midnights written as ISO-8601, such as `2026-07-01T00:00:00Z`. `end` is the start of the
++day after the last rented day, so `2026-07-01` to `2026-07-03` is two days. `quote` and `book` throw for
++an unknown item or an invalid period, and `book` also throws when the item is already booked for part of
++the period. Cancellations are not implemented yet.
++
++Run the tests with `npm test`.
+diff --git a/docs/memory/decision-log/dl-001-rental-periods-are-half-open-whole-day-utc-intervals.md b/docs/memory/decision-log/dl-001-rental-periods-are-half-open-whole-day-utc-intervals.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..c7331733019ee87954f5afa328042e461eb4d54b
+--- /dev/null
++++ b/docs/memory/decision-log/dl-001-rental-periods-are-half-open-whole-day-utc-intervals.md
+@@ -0,0 +1,26 @@
++---
++id: dl-001-rental-periods-are-half-open-whole-day-utc-intervals
++type: decision-log
++title: "Rental periods are half-open whole-day UTC intervals"
++status: pending
++format: 1
++---
++
++## Context
++
++School rules 2 and 3: times are UTC ISO-8601, and a rental covers whole days only. A period starts at
++midnight UTC and ends at the start of the day after its last day. Rule 4 forbids overlapping bookings of
++the same item.
++
++## Decision
++
++A period is the half-open interval `[start, end)`. Its price is `dailyPrice` times the number of days,
++where the number of days is `(end - start) / 24h`. A period must have `end` strictly after `start`.
++Two periods overlap when each starts before the other ends. A period may therefore begin on the day
++another one ends.
++
++## Consequences
++
++- Back-to-back rentals of the same board are allowed without a gap day.
++- Pricing is a pure integer multiplication, so the total stays in whole euro cents (rule 1).
++- Cancellation (not implemented yet) will reuse the same period values.
+diff --git a/docs/memory/decision-log/dl-002-rental-input-is-validated-strictly-at-the-service-boundary.md b/docs/memory/decision-log/dl-002-rental-input-is-validated-strictly-at-the-service-boundary.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..47608d0d19e75d820db1b42ebf949776fe9ed22c
+--- /dev/null
++++ b/docs/memory/decision-log/dl-002-rental-input-is-validated-strictly-at-the-service-boundary.md
+@@ -0,0 +1,26 @@
++---
++id: dl-002-rental-input-is-validated-strictly-at-the-service-boundary
++type: decision-log
++title: "Rental input is validated strictly at the service boundary"
++status: pending
++format: 1
++---
++
++## Context
++
++The rental service is the entry point for the booking desk. Its callers are not trusted to pass
++well-formed values, and a wrong date or price would silently produce a wrong charge.
++
++## Decision
++
++- Item: `id` is a non-empty string and unique within the service; `kind` is `'board'` or `'sail'`;
++  `dailyPrice` is a non-negative safe integer of euro cents (zero is accepted).
++- Time: a value is accepted only when it has the form `YYYY-MM-DDT00:00:00Z`, optionally with
++  `.000` milliseconds, and names an existing calendar day. Offsets such as `+02:00`, local-time
++  strings, and times that are not midnight are refused.
++- Errors are thrown as `Error` with a message that names the offending field.
++
++## Consequences
++
++- Callers must send UTC midnight strings; the service does not convert other time zones.
++- Only ISO strings are accepted, so the output echoes the input period unchanged.
+diff --git a/docs/memory/decision-log/dl-003-rental-bookings-use-deterministic-in-memory-ids.md b/docs/memory/decision-log/dl-003-rental-bookings-use-deterministic-in-memory-ids.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..948ee8ad2e4b4ab9ebd403e4357fd15839056c28
+--- /dev/null
++++ b/docs/memory/decision-log/dl-003-rental-bookings-use-deterministic-in-memory-ids.md
+@@ -0,0 +1,23 @@
++---
++id: dl-003-rental-bookings-use-deterministic-in-memory-ids
++type: decision-log
++title: "Rental bookings use deterministic in-memory ids"
++status: pending
++format: 1
++---
++
++## Context
++
++The module keeps everything in memory for now. The determinism directive forbids wall-clock time and
++randomness in code paths that build state, and tests must not depend on either.
++
++## Decision
++
++Each service numbers its bookings from a counter it owns: `booking-1`, `booking-2`, and so on. Bookings
++are kept in insertion order. Each `createRentalService()` call starts its own counter and its own store.
++
++## Consequences
++
++- Given the same sequence of calls, ids and results are identical, so tests need no mocks.
++- Ids are unique only within one service instance. A persistent store will need a different scheme,
++  to be decided with that store.
+diff --git a/docs/memory/decision-log/dl-004-quote-prices-a-period-without-checking-availability.md b/docs/memory/decision-log/dl-004-quote-prices-a-period-without-checking-availability.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..32fb3dacf37a71fdaaaa1dfddc804f391035c87c
+--- /dev/null
++++ b/docs/memory/decision-log/dl-004-quote-prices-a-period-without-checking-availability.md
+@@ -0,0 +1,24 @@
++---
++id: dl-004-quote-prices-a-period-without-checking-availability
++type: decision-log
++title: "Quote prices a period without checking availability"
++status: pending
++format: 1
++---
++
++## Context
++
++The brief says `book` throws when the item is not free for the whole period, and says nothing of
++`quote` availability. A quote is a price for a candidate period, shown before the customer commits.
++
++## Decision
++
++`quote` checks the item exists and that the period is valid, then returns the price. It does not look
++at existing bookings. Only `book` refuses an overlapping period.
++
++## Consequences
++
++- A quote for a period that is already taken still returns a price, so the desk may show a price for a
++  period it then cannot book. The desk should call `book` to confirm availability.
++- A later change, such as a quote that reports availability, is a new decision and does not alter
++  these results.
+diff --git a/docs/memory/task/task-001-rental-module-basics-for-booking-desk.md b/docs/memory/task/task-001-rental-module-basics-for-booking-desk.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..ca13c37a032de7702369f71c6c30b33841b3feb8
+--- /dev/null
++++ b/docs/memory/task/task-001-rental-module-basics-for-booking-desk.md
+@@ -0,0 +1,34 @@
++---
++id: task-001-rental-module-basics-for-booking-desk
++type: task
++title: "Rental module basics for booking desk"
++status: pending
++format: 1
++---
++
++## Request
++
++Add the basics of a rental module to the booking desk: `createRentalService()`, exported from
++`src/index.ts`, with `addEquipment`, `quote` and `book`, following the school's five rules. Cancellations
++are out of scope for now.
++
++## Done
++
++- `test/rental.test.ts`: 24 tests written first and seen failing (module missing), then passing against
++  the implementation. They cover happy paths and error paths for each method, back-to-back and overlapping
++  periods, unknown items, invalid times, and service isolation.
++- `src/index.ts`: the service, in memory, with doc comments on every export.
++- `README.md`: a short section describing the module and its period rules.
++- Design choices are recorded in `dl-001` to `dl-004`.
++
++## Checks
++
++- `npm test` (`node --test`): 24 of 24 pass.
++- `tsc --noEmit -p tsconfig.json` with a temporary TypeScript 5 install (not added to the project): no errors.
++
++## Open points
++
++- The project has no TypeScript or test dependency declared, so the tests run on Node's built-in type
++  stripping (Node 22.23 here). Importing `../src/index.ts` with a `.ts` extension is what allows that.
++- No coverage threshold is declared, so none is enforced.
++- Rule 5 (cancellation refunds) is not implemented, as requested.
+diff --git a/src/index.ts b/src/index.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..2e3ecb7b937bac52e2af6c9cfd2055d1a85ff380
+--- /dev/null
++++ b/src/index.ts
+@@ -0,0 +1,135 @@
++/** The kinds of equipment the school rents out. */
++export type EquipmentKind = 'board' | 'sail';
++
++/** A rentable item. `dailyPrice` is the price of one day, in integer euro cents. */
++export interface Equipment {
++  id: string;
++  kind: EquipmentKind;
++  dailyPrice: number;
++}
++
++/**
++ * A period to price or book. `start` and `end` are UTC midnights in ISO-8601, such as
++ * `2026-07-01T00:00:00Z`. `end` is the start of the day after the last rented day.
++ */
++export interface RentalRequest {
++  itemId: string;
++  start: string;
++  end: string;
++}
++
++/** The price of renting an item for a period. `total` is in integer euro cents. */
++export interface Quote {
++  itemId: string;
++  start: string;
++  end: string;
++  total: number;
++}
++
++/** A confirmed booking of an item for a period. */
++export interface Booking extends Quote {
++  id: string;
++}
++
++/** An in-memory rental service for the booking desk. */
++export interface RentalService {
++  /** Adds an item to the catalogue. Throws when the item is invalid or its id is already taken. */
++  addEquipment(item: Equipment): void;
++  /** Prices a period. Does not check availability; only `book` refuses an overlapping period. */
++  quote(request: RentalRequest): Quote;
++  /** Books an item for a period. Throws when the item is not free for the whole period. */
++  book(request: RentalRequest): Booking;
++}
++
++const KINDS: readonly EquipmentKind[] = ['board', 'sail'];
++const DAY_MS = 24 * 60 * 60 * 1000;
++const UTC_MIDNIGHT = /^(\d{4}-\d{2}-\d{2})T00:00:00(\.000)?Z$/;
++
++interface Priced {
++  quote: Quote;
++  startMs: number;
++  endMs: number;
++}
++
++interface StoredBooking {
++  booking: Booking;
++  startMs: number;
++  endMs: number;
++}
++
++function parseDay(value: string, field: string): number {
++  const match = UTC_MIDNIGHT.exec(value);
++  const ms = Date.parse(value);
++  if (!match || Number.isNaN(ms) || new Date(ms).toISOString().slice(0, 10) !== match[1]) {
++    throw new Error(`${field} must be a UTC midnight ISO-8601 date, such as 2026-07-01T00:00:00Z`);
++  }
++  return ms;
++}
++
++/**
++ * Creates a rental service that keeps its items and bookings in memory. Each service has its own
++ * catalogue and its own booking ids, which count up from `booking-1`.
++ */
++export function createRentalService(): RentalService {
++  const items = new Map<string, Equipment>();
++  const bookings: StoredBooking[] = [];
++  let bookingCount = 0;
++
++  function priceOf(request: RentalRequest): Priced {
++    const item = items.get(request.itemId);
++    if (!item) {
++      throw new Error(`unknown item: ${request.itemId}`);
++    }
++    const startMs = parseDay(request.start, 'start');
++    const endMs = parseDay(request.end, 'end');
++    if (endMs <= startMs) {
++      throw new Error('end must be after start');
++    }
++    const days = (endMs - startMs) / DAY_MS;
++    const quote = {
++      itemId: request.itemId,
++      start: request.start,
++      end: request.end,
++      total: item.dailyPrice * days,
++    };
++    return { quote, startMs, endMs };
++  }
++
++  return {
++    addEquipment(item: Equipment): void {
++      if (typeof item.id !== 'string' || item.id === '') {
++        throw new Error('item id must be a non-empty string');
++      }
++      if (!KINDS.includes(item.kind)) {
++        throw new Error(`kind must be 'board' or 'sail', got ${String(item.kind)}`);
++      }
++      if (!Number.isSafeInteger(item.dailyPrice) || item.dailyPrice < 0) {
++        throw new Error('dailyPrice must be a non-negative integer number of euro cents');
++      }
++      if (items.has(item.id)) {
++        throw new Error(`duplicate item: ${item.id}`);
++      }
++      items.set(item.id, { id: item.id, kind: item.kind, dailyPrice: item.dailyPrice });
++    },
++
++    quote(request: RentalRequest): Quote {
++      return { ...priceOf(request).quote };
++    },
++
++    book(request: RentalRequest): Booking {
++      const { quote, startMs, endMs } = priceOf(request);
++      // Periods are half-open, so one that starts on the day another ends does not overlap it.
++      const clash = bookings.some(
++        (other) =>
++          other.booking.itemId === quote.itemId && other.startMs < endMs && startMs < other.endMs,
++      );
++      if (clash) {
++        throw new Error(`item ${quote.itemId} is already booked for part of that period`);
++      }
++      bookingCount += 1;
++      const booking: Booking = { id: `booking-${bookingCount}`, ...quote };
++      bookings.push({ booking, startMs, endMs });
++      return { ...booking };
++    },
++  };
++}
+diff --git a/test/rental.test.ts b/test/rental.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..a87e8cc2146f82d967737d90ffff178593ed43f2
+--- /dev/null
++++ b/test/rental.test.ts
+@@ -0,0 +1,227 @@
++import { describe, it } from 'node:test';
++import assert from 'node:assert/strict';
++import { createRentalService } from '../src/index.ts';
++
++function serviceWithBoard() {
++  const rental = createRentalService();
++  rental.addEquipment({ id: 'board-1', kind: 'board', dailyPrice: 1500 });
++  return rental;
++}
++
++describe('addEquipment', () => {
++  it('accepts a board and a sail with integer daily prices', () => {
++    const rental = createRentalService();
++    rental.addEquipment({ id: 'board-1', kind: 'board', dailyPrice: 1500 });
++    rental.addEquipment({ id: 'sail-1', kind: 'sail', dailyPrice: 900 });
++    const quote = rental.quote({
++      itemId: 'sail-1',
++      start: '2026-07-01T00:00:00Z',
++      end: '2026-07-02T00:00:00Z',
++    });
++    assert.equal(quote.total, 900);
++  });
++
++  it('rejects a duplicate id', () => {
++    const rental = serviceWithBoard();
++    assert.throws(() => rental.addEquipment({ id: 'board-1', kind: 'sail', dailyPrice: 900 }));
++  });
++
++  it('rejects an unknown kind', () => {
++    const rental = createRentalService();
++    assert.throws(() => rental.addEquipment({ id: 'x', kind: 'kite' as 'board', dailyPrice: 900 }));
++  });
++
++  it('rejects a daily price that is not a non-negative integer of cents', () => {
++    const rental = createRentalService();
++    assert.throws(() => rental.addEquipment({ id: 'a', kind: 'board', dailyPrice: 15.5 }));
++    assert.throws(() => rental.addEquipment({ id: 'b', kind: 'board', dailyPrice: -1 }));
++    assert.throws(() => rental.addEquipment({ id: 'c', kind: 'board', dailyPrice: NaN }));
++  });
++
++  it('rejects an empty id', () => {
++    const rental = createRentalService();
++    assert.throws(() => rental.addEquipment({ id: '', kind: 'board', dailyPrice: 1500 }));
++  });
++});
++
++describe('quote', () => {
++  it('prices a whole number of days as daily price times days', () => {
++    const rental = serviceWithBoard();
++    const quote = rental.quote({
++      itemId: 'board-1',
++      start: '2026-07-01T00:00:00Z',
++      end: '2026-07-04T00:00:00Z',
++    });
++    assert.deepEqual(quote, {
++      itemId: 'board-1',
++      start: '2026-07-01T00:00:00Z',
++      end: '2026-07-04T00:00:00Z',
++      total: 4500,
++    });
++  });
++
++  it('prices a single day', () => {
++    const rental = serviceWithBoard();
++    const quote = rental.quote({
++      itemId: 'board-1',
++      start: '2026-07-01T00:00:00Z',
++      end: '2026-07-02T00:00:00Z',
++    });
++    assert.equal(quote.total, 1500);
++  });
++
++  it('crosses month and year boundaries by calendar days', () => {
++    const rental = serviceWithBoard();
++    const quote = rental.quote({
++      itemId: 'board-1',
++      start: '2027-02-27T00:00:00Z',
++      end: '2027-03-02T00:00:00Z',
++    });
++    assert.equal(quote.total, 1500 * 3);
++  });
++
++  it('does not check availability', () => {
++    const rental = serviceWithBoard();
++    const period = { itemId: 'board-1', start: '2026-07-01T00:00:00Z', end: '2026-07-03T00:00:00Z' };
++    rental.book(period);
++    assert.equal(rental.quote(period).total, 3000);
++  });
++
++  it('throws for an unknown item', () => {
++    const rental = serviceWithBoard();
++    assert.throws(() =>
++      rental.quote({ itemId: 'nope', start: '2026-07-01T00:00:00Z', end: '2026-07-02T00:00:00Z' }),
++    );
++  });
++
++  it('throws when the period ends before or at its start', () => {
++    const rental = serviceWithBoard();
++    assert.throws(() =>
++      rental.quote({ itemId: 'board-1', start: '2026-07-02T00:00:00Z', end: '2026-07-01T00:00:00Z' }),
++    );
++    assert.throws(() =>
++      rental.quote({ itemId: 'board-1', start: '2026-07-01T00:00:00Z', end: '2026-07-01T00:00:00Z' }),
++    );
++  });
++
++  it('throws when a time is not at midnight UTC', () => {
++    const rental = serviceWithBoard();
++    assert.throws(() =>
++      rental.quote({ itemId: 'board-1', start: '2026-07-01T09:00:00Z', end: '2026-07-02T00:00:00Z' }),
++    );
++    assert.throws(() =>
++      rental.quote({ itemId: 'board-1', start: '2026-07-01T00:00:00Z', end: '2026-07-02T12:00:00Z' }),
++    );
++  });
++
++  it('throws when a time is not written in UTC', () => {
++    const rental = serviceWithBoard();
++    assert.throws(() =>
++      rental.quote({ itemId: 'board-1', start: '2026-07-01T00:00:00+02:00', end: '2026-07-02T00:00:00Z' }),
++    );
++  });
++
++  it('throws when a time is not an ISO-8601 date', () => {
++    const rental = serviceWithBoard();
++    assert.throws(() =>
++      rental.quote({ itemId: 'board-1', start: 'July 1 2026', end: '2026-07-02T00:00:00Z' }),
++    );
++    assert.throws(() =>
++      rental.quote({ itemId: 'board-1', start: '2026-02-30T00:00:00Z', end: '2026-03-01T00:00:00Z' }),
++    );
++  });
++});
++
++describe('book', () => {
++  it('returns a booking with an id and the total', () => {
++    const rental = serviceWithBoard();
++    const booking = rental.book({
++      itemId: 'board-1',
++      start: '2026-07-01T00:00:00Z',
++      end: '2026-07-03T00:00:00Z',
++    });
++    assert.equal(booking.itemId, 'board-1');
++    assert.equal(booking.start, '2026-07-01T00:00:00Z');
++    assert.equal(booking.end, '2026-07-03T00:00:00Z');
++    assert.equal(booking.total, 3000);
++    assert.equal(typeof booking.id, 'string');
++  });
++
++  it('gives each booking its own id', () => {
++    const rental = serviceWithBoard();
++    const first = rental.book({ itemId: 'board-1', start: '2026-07-01T00:00:00Z', end: '2026-07-02T00:00:00Z' });
++    const second = rental.book({ itemId: 'board-1', start: '2026-07-02T00:00:00Z', end: '2026-07-03T00:00:00Z' });
++    assert.notEqual(first.id, second.id);
++  });
++
++  it('allows a period that starts on the day another one ends', () => {
++    const rental = serviceWithBoard();
++    rental.book({ itemId: 'board-1', start: '2026-07-01T00:00:00Z', end: '2026-07-03T00:00:00Z' });
++    assert.doesNotThrow(() =>
++      rental.book({ itemId: 'board-1', start: '2026-07-03T00:00:00Z', end: '2026-07-04T00:00:00Z' }),
++    );
++  });
++
++  it('refuses a period that overlaps an existing booking', () => {
++    const rental = serviceWithBoard();
++    rental.book({ itemId: 'board-1', start: '2026-07-01T00:00:00Z', end: '2026-07-04T00:00:00Z' });
++    assert.throws(() =>
++      rental.book({ itemId: 'board-1', start: '2026-07-03T00:00:00Z', end: '2026-07-05T00:00:00Z' }),
++    );
++    assert.throws(() =>
++      rental.book({ itemId: 'board-1', start: '2026-06-30T00:00:00Z', end: '2026-07-02T00:00:00Z' }),
++    );
++    assert.throws(() =>
++      rental.book({ itemId: 'board-1', start: '2026-07-02T00:00:00Z', end: '2026-07-03T00:00:00Z' }),
++    );
++  });
++
++  it('refuses a period that contains an existing booking', () => {
++    const rental = serviceWithBoard();
++    rental.book({ itemId: 'board-1', start: '2026-07-02T00:00:00Z', end: '2026-07-03T00:00:00Z' });
++    assert.throws(() =>
++      rental.book({ itemId: 'board-1', start: '2026-07-01T00:00:00Z', end: '2026-07-05T00:00:00Z' }),
++    );
++  });
++
++  it('checks the overlap against every earlier booking, not only the last one', () => {
++    const rental = serviceWithBoard();
++    rental.book({ itemId: 'board-1', start: '2026-07-01T00:00:00Z', end: '2026-07-02T00:00:00Z' });
++    rental.book({ itemId: 'board-1', start: '2026-07-05T00:00:00Z', end: '2026-07-06T00:00:00Z' });
++    assert.throws(() =>
++      rental.book({ itemId: 'board-1', start: '2026-07-01T00:00:00Z', end: '2026-07-02T00:00:00Z' }),
++    );
++  });
++
++  it('does not treat other items as overlapping', () => {
++    const rental = serviceWithBoard();
++    rental.addEquipment({ id: 'sail-1', kind: 'sail', dailyPrice: 900 });
++    rental.book({ itemId: 'board-1', start: '2026-07-01T00:00:00Z', end: '2026-07-03T00:00:00Z' });
++    assert.doesNotThrow(() =>
++      rental.book({ itemId: 'sail-1', start: '2026-07-01T00:00:00Z', end: '2026-07-03T00:00:00Z' }),
++    );
++  });
++
++  it('throws for an unknown item', () => {
++    const rental = serviceWithBoard();
++    assert.throws(() =>
++      rental.book({ itemId: 'nope', start: '2026-07-01T00:00:00Z', end: '2026-07-02T00:00:00Z' }),
++    );
++  });
++
++  it('throws for an invalid period', () => {
++    const rental = serviceWithBoard();
++    assert.throws(() =>
++      rental.book({ itemId: 'board-1', start: '2026-07-01T10:00:00Z', end: '2026-07-02T00:00:00Z' }),
++    );
++  });
++
++  it('keeps bookings of one service apart from another service', () => {
++    const first = serviceWithBoard();
++    const second = serviceWithBoard();
++    first.book({ itemId: 'board-1', start: '2026-07-01T00:00:00Z', end: '2026-07-02T00:00:00Z' });
++    assert.doesNotThrow(() =>
++      second.book({ itemId: 'board-1', start: '2026-07-01T00:00:00Z', end: '2026-07-02T00:00:00Z' }),
++    );
++  });
++});

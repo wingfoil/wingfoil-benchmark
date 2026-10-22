@@ -1,0 +1,79 @@
+diff --git a/src/index.ts b/src/index.ts
+index 2b6525f370e1dceefa9288ca26a31beb802f36d4..063468a4cb72f7b26f3021e7f0e12bb270410bf6 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -227,3 +227,28 @@ export function applyPatch(document: unknown, patch: unknown): unknown {
+   }
+   return result;
+ }
++
++function isPlainObject(value: unknown): value is Record<string, Json> {
++  return typeof value === "object" && value !== null && !Array.isArray(value);
++}
++
++/**
++ * Applies `patch`, a JSON Merge Patch (RFC 7386), to `target` and returns the merged document.
++ * The inputs are never mutated. A non-object patch replaces the target; `null` members remove.
++ */
++export function applyMergePatch(target: unknown, patch: unknown): unknown {
++  if (!isPlainObject(patch)) return structuredClone(patch);
++  const result: Record<string, Json> = {};
++  if (isPlainObject(target)) {
++    for (const key of Object.keys(target)) setMember(result, key, structuredClone(target[key]));
++  }
++  for (const key of Object.keys(patch)) {
++    const value = patch[key];
++    if (value === null) {
++      delete result[key];
++    } else {
++      setMember(result, key, applyMergePatch(hasOwn(result, key) ? result[key] : undefined, value));
++    }
++  }
++  return result;
++}
+diff --git a/test/merge-patch.test.ts b/test/merge-patch.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..3f66689818f4a419caac0a40fa1ece06fee59f14
+--- /dev/null
++++ b/test/merge-patch.test.ts
+@@ -0,0 +1,40 @@
++import { test } from "node:test";
++import assert from "node:assert/strict";
++import { applyMergePatch } from "../src/index.ts";
++
++test("RFC 7386 example", () => {
++  const target = { title: "Goodbye!", author: { givenName: "John", familyName: "Doe" }, tags: ["example", "sample"], content: "x" };
++  const patch = { title: "Hello!", phoneNumber: "+01-123-456-7890", author: { familyName: null }, tags: ["example"] };
++  assert.deepEqual(applyMergePatch(target, patch), {
++    title: "Hello!", author: { givenName: "John" }, tags: ["example"], content: "x", phoneNumber: "+01-123-456-7890",
++  });
++  assert.equal(target.author.familyName, "Doe");
++});
++
++test("RFC 7386 appendix A cases", () => {
++  const cases: [unknown, unknown, unknown][] = [
++    [{ a: "b" }, { a: "c" }, { a: "c" }],
++    [{ a: "b" }, { b: "c" }, { a: "b", b: "c" }],
++    [{ a: "b" }, { a: null }, {}],
++    [{ a: "b", b: "c" }, { a: null }, { b: "c" }],
++    [{ a: ["b"] }, { a: "c" }, { a: "c" }],
++    [{ a: "c" }, { a: ["b"] }, { a: ["b"] }],
++    [{ a: { b: "c" } }, { a: { b: "d", c: null } }, { a: { b: "d" } }],
++    [{ a: [{ b: "c" }] }, { a: [1] }, { a: [1] }],
++    [["a", "b"], ["c", "d"], ["c", "d"]],
++    [{ a: "b" }, ["c"], ["c"]],
++    [{ a: "foo" }, null, null],
++    [{ a: "foo" }, "bar", "bar"],
++    [{ e: null }, { a: 1 }, { e: null, a: 1 }],
++    [[1, 2], { a: "b", c: null }, { a: "b" }],
++    [{}, { a: { bb: { ccc: null } } }, { a: { bb: {} } }],
++  ];
++  for (const [t, p, r] of cases) assert.deepEqual(applyMergePatch(t, p), r);
++});
++
++test("__proto__ member is an ordinary key", () => {
++  const patch = JSON.parse('{"__proto__": {"x": 1}}');
++  const out = applyMergePatch({}, patch) as Record<string, unknown>;
++  assert.equal(({} as Record<string, unknown>).x, undefined);
++  assert.deepEqual(Object.keys(out), ["__proto__"]);
++});

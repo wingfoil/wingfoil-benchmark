@@ -1,0 +1,107 @@
+diff --git a/src/index.ts b/src/index.ts
+index ec5aeaa7d4394fdff7a332a740ea69b5ed319799..f10aa0271b44b6ca2e60bbcf02384b09abb1de09 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -223,3 +223,55 @@ function mergePatch(target: unknown, patch: unknown): unknown {
+   }
+   return result;
+ }
++
++const escapeToken = (token: string): string => token.replace(/~/g, "~0").replace(/\//g, "~1");
++
++/**
++ * Creates a JSON Patch (RFC 6902) that turns `from` into `to` when applied with `applyPatch`.
++ * The inputs are not mutated and the patch shares no structure with them. Only the parts that differ
++ * are described: objects are compared member by member, arrays element by element after skipping the
++ * unchanged leading and trailing elements.
++ */
++export function createPatch(from: unknown, to: unknown): PatchOperation[] {
++  assertJson(from);
++  assertJson(to);
++  const ops: PatchOperation[] = [];
++  diff(from, to, "", ops);
++  return ops;
++}
++
++function diff(a: unknown, b: unknown, path: string, ops: PatchOperation[]): void {
++  if (deepEqual(a, b)) return;
++
++  if (Array.isArray(a) && Array.isArray(b)) {
++    let start = 0;
++    while (start < a.length && start < b.length && deepEqual(a[start], b[start])) start++;
++    let endA = a.length;
++    let endB = b.length;
++    while (endA > start && endB > start && deepEqual(a[endA - 1], b[endB - 1])) {
++      endA--;
++      endB--;
++    }
++    const common = Math.min(endA - start, endB - start);
++    for (let i = 0; i < common; i++) diff(a[start + i], b[start + i], `${path}/${start + i}`, ops);
++    for (let i = endA - 1; i >= start + common; i--) ops.push({ op: "remove", path: `${path}/${i}` });
++    for (let i = start + common; i < endB; i++) {
++      ops.push({ op: "add", path: `${path}/${i}`, value: clone(b[i]) as JsonValue });
++    }
++    return;
++  }
++
++  if (isObject(a) && isObject(b)) {
++    for (const key of Object.keys(a)) {
++      if (!hasOwn(b, key)) ops.push({ op: "remove", path: `${path}/${escapeToken(key)}` });
++    }
++    for (const key of Object.keys(b)) {
++      const child = `${path}/${escapeToken(key)}`;
++      if (hasOwn(a, key)) diff(a[key], b[key], child, ops);
++      else ops.push({ op: "add", path: child, value: clone(b[key]) as JsonValue });
++    }
++    return;
++  }
++
++  ops.push({ op: "replace", path, value: clone(b) as JsonValue });
++}
+diff --git a/test/createpatch.test.ts b/test/createpatch.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..938392c2964fdfd555a6553187bc4043456ee71e
+--- /dev/null
++++ b/test/createpatch.test.ts
+@@ -0,0 +1,41 @@
++import { test } from "node:test";
++import assert from "node:assert/strict";
++import { applyPatch, createPatch } from "../src/index.ts";
++
++const roundTrip = (from: unknown, to: unknown) => {
++  const snapshot = JSON.stringify([from, to]);
++  const patch = createPatch(from, to);
++  assert.deepEqual(applyPatch(from, patch), to);
++  assert.equal(JSON.stringify([from, to]), snapshot);
++  return patch;
++};
++
++test("identical documents give an empty patch", () => {
++  assert.deepEqual(roundTrip({ a: [1, { b: 2 }] }, { a: [1, { b: 2 }] }), []);
++});
++
++test("small change is a small patch", () => {
++  assert.deepEqual(roundTrip({ a: { b: [1, 2, 3], c: "x" }, d: 1 }, { a: { b: [1, 2, 3], c: "y" }, d: 1 }), [
++    { op: "replace", path: "/a/c", value: "y" },
++  ]);
++  assert.deepEqual(roundTrip([1, 2, 3, 4], [1, 2, 4]), [{ op: "remove", path: "/2" }]);
++  assert.deepEqual(roundTrip([1, 2, 3], [0, 1, 2, 3]), [{ op: "add", path: "/0", value: 0 }]);
++});
++
++test("round trips", () => {
++  roundTrip(1, "a");
++  roundTrip([1], { a: 1 });
++  roundTrip({ a: 1 }, null);
++  roundTrip({ "a/b": 1, "~": 2, "": 3 }, { "a/b": 2, "~x": 2, "": 4 });
++  roundTrip([1, 2, 3, 4, 5], [1, 9, 5]);
++  roundTrip([1, 2], [1, 7, 8, 9, 2]);
++  roundTrip([[1, 2], { a: [1] }, 3], [[1, 3], { a: [1, 2] }]);
++  roundTrip(JSON.parse('{"__proto__": {"a": 1}}'), JSON.parse('{"__proto__": {"a": 2}, "b": 1}'));
++});
++
++test("patch shares no structure with the inputs", () => {
++  const to = { a: { x: 1 } };
++  const patch = createPatch({}, to) as any;
++  patch[0].value.x = 9;
++  assert.deepEqual(to, { a: { x: 1 } });
++});

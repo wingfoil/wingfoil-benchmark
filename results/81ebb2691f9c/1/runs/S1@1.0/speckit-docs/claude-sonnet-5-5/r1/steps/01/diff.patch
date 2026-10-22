@@ -1,0 +1,105 @@
+diff --git a/src/index.ts b/src/index.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..0c728c22879f9ec61d83fded6ebd9d92286da482
+--- /dev/null
++++ b/src/index.ts
+@@ -0,0 +1,44 @@
++/** Decodes one reference token (RFC 6901 §4): `~1` becomes `/`, `~0` becomes `~`. */
++function decodeToken(token: string): string {
++  if (/~(?![01])/.test(token)) {
++    throw new Error(`Invalid JSON Pointer: bad escape in token "${token}"`);
++  }
++  return token.replace(/~([01])/g, (_, c: string) => (c === "0" ? "~" : "/"));
++}
++
++/**
++ * Returns the value of `document` referred to by `pointer`, a JSON Pointer (RFC 6901).
++ * Throws if the pointer is syntactically invalid or does not resolve to a value of the document.
++ */
++export function resolvePointer(document: unknown, pointer: string): unknown {
++  if (typeof pointer !== "string") {
++    throw new Error("Invalid JSON Pointer: not a string");
++  }
++  if (pointer === "") return document;
++  if (pointer[0] !== "/") {
++    throw new Error(`Invalid JSON Pointer: "${pointer}" must be empty or start with "/"`);
++  }
++  const tokens = pointer.slice(1).split("/").map(decodeToken);
++
++  let current: unknown = document;
++  for (const token of tokens) {
++    if (Array.isArray(current)) {
++      if (!/^(0|[1-9][0-9]*)$/.test(token)) {
++        throw new Error(`JSON Pointer "${pointer}" does not resolve: "${token}" is not an array index`);
++      }
++      const index = Number(token);
++      if (index >= current.length) {
++        throw new Error(`JSON Pointer "${pointer}" does not resolve: index ${token} out of range`);
++      }
++      current = current[index];
++    } else if (typeof current === "object" && current !== null) {
++      if (!Object.prototype.hasOwnProperty.call(current, token)) {
++        throw new Error(`JSON Pointer "${pointer}" does not resolve: no member "${token}"`);
++      }
++      current = (current as Record<string, unknown>)[token];
++    } else {
++      throw new Error(`JSON Pointer "${pointer}" does not resolve: cannot descend into a scalar`);
++    }
++  }
++  return current;
++}
+diff --git a/test/pointer.test.ts b/test/pointer.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..82a27f61b92727898ab023fa641789bf56c4509f
+--- /dev/null
++++ b/test/pointer.test.ts
+@@ -0,0 +1,49 @@
++import { test } from "node:test";
++import assert from "node:assert/strict";
++import { resolvePointer } from "../src/index.ts";
++
++// Examples from RFC 6901 §5
++const doc = JSON.parse(`{
++  "foo": ["bar", "baz"], "": 0, "a/b": 1, "c%d": 2, "e^f": 3,
++  "g|h": 4, "i\\\\j": 5, "k\\"l": 6, " ": 7, "m~n": 8 }`);
++
++test("RFC 6901 examples", () => {
++  assert.equal(resolvePointer(doc, ""), doc);
++  assert.deepEqual(resolvePointer(doc, "/foo"), ["bar", "baz"]);
++  assert.equal(resolvePointer(doc, "/foo/0"), "bar");
++  assert.equal(resolvePointer(doc, "/"), 0);
++  assert.equal(resolvePointer(doc, "/a~1b"), 1);
++  assert.equal(resolvePointer(doc, "/c%d"), 2);
++  assert.equal(resolvePointer(doc, "/e^f"), 3);
++  assert.equal(resolvePointer(doc, "/g|h"), 4);
++  assert.equal(resolvePointer(doc, "/i\\j"), 5);
++  assert.equal(resolvePointer(doc, '/k"l'), 6);
++  assert.equal(resolvePointer(doc, "/ "), 7);
++  assert.equal(resolvePointer(doc, "/m~0n"), 8);
++});
++
++test("~01 decodes to ~1, not /", () => {
++  assert.equal(resolvePointer({ "~1": "x" }, "/~01"), "x");
++});
++
++test("null values resolve", () => {
++  assert.equal(resolvePointer({ a: null }, "/a"), null);
++});
++
++test("invalid pointers throw", () => {
++  for (const p of ["foo", "/a~", "/a~2", "~0"]) {
++    assert.throws(() => resolvePointer({ a: 1 }, p), p);
++  }
++});
++
++test("unresolvable pointers throw", () => {
++  assert.throws(() => resolvePointer(doc, "/nope"));
++  assert.throws(() => resolvePointer(doc, "/foo/2"));
++  assert.throws(() => resolvePointer(doc, "/foo/-"));
++  assert.throws(() => resolvePointer(doc, "/foo/01"));
++  assert.throws(() => resolvePointer(doc, "/foo/length"));
++  assert.throws(() => resolvePointer(doc, "/foo/0/x"));
++  assert.throws(() => resolvePointer(doc, "/__proto__"));
++  assert.throws(() => resolvePointer(doc, "/constructor"));
++  assert.throws(() => resolvePointer(5, "/a"));
++});

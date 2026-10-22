@@ -1,0 +1,112 @@
+diff --git a/src/index.ts b/src/index.ts
+index e06983138c05bb55448bb900900ccd77b2deeae0..740c669b82bbb6db9478fdaf27e0690b7078cdc5 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -260,3 +260,64 @@ function mergePatch(target: JsonValue | undefined, patch: JsonValue): JsonValue
+ export function applyMergePatch(target: JsonValue, patch: JsonValue): JsonValue {
+   return mergePatch(isObject(target) ? clone(target) : target, patch);
+ }
++
++export type PatchOperation =
++  | { op: "add" | "replace"; path: string; value: JsonValue }
++  | { op: "remove"; path: string };
++
++function escapeToken(token: string): string {
++  return token.replace(/~/g, "~0").replace(/\//g, "~1");
++}
++
++function diff(from: JsonValue, to: JsonValue, path: string, ops: PatchOperation[]): void {
++  if (deepEqual(from, to)) return;
++
++  if (Array.isArray(from) && Array.isArray(to)) {
++    let start = 0;
++    while (start < from.length && start < to.length && deepEqual(from[start], to[start])) {
++      start++;
++    }
++    let endFrom = from.length;
++    let endTo = to.length;
++    while (endFrom > start && endTo > start && deepEqual(from[endFrom - 1], to[endTo - 1])) {
++      endFrom--;
++      endTo--;
++    }
++    const common = Math.min(endFrom, endTo) - start;
++    for (let i = 0; i < common; i++) {
++      diff(from[start + i], to[start + i], `${path}/${start + i}`, ops);
++    }
++    // removing at a fixed index keeps the remaining indices valid
++    for (let i = start + common; i < endFrom; i++) {
++      ops.push({ op: "remove", path: `${path}/${start + common}` });
++    }
++    for (let i = start + common; i < endTo; i++) {
++      ops.push({ op: "add", path: `${path}/${i}`, value: clone(to[i]) });
++    }
++    return;
++  }
++
++  if (isObject(from) && isObject(to)) {
++    for (const key of Object.keys(from)) {
++      if (!hasOwn(to, key)) ops.push({ op: "remove", path: `${path}/${escapeToken(key)}` });
++    }
++    for (const key of Object.keys(to)) {
++      const child = `${path}/${escapeToken(key)}`;
++      if (!hasOwn(from, key)) ops.push({ op: "add", path: child, value: clone(to[key]) });
++      else diff(from[key], to[key], child, ops);
++    }
++    return;
++  }
++
++  ops.push({ op: "replace", path, value: clone(to) });
++}
++
++/**
++ * Creates a JSON Patch (RFC 6902) that turns `from` into `to` when applied,
++ * containing only the differences. The inputs are not mutated.
++ */
++export function createPatch(from: JsonValue, to: JsonValue): PatchOperation[] {
++  const ops: PatchOperation[] = [];
++  diff(from, to, "", ops);
++  return ops;
++}
+diff --git a/test/createpatch.test.ts b/test/createpatch.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..8ff93ea7727008cc5f8ba3247a24191c10989e05
+--- /dev/null
++++ b/test/createpatch.test.ts
+@@ -0,0 +1,37 @@
++import { test } from "node:test";
++import assert from "node:assert/strict";
++import { createPatch, applyPatch, type JsonValue } from "../src/index.ts";
++
++function roundTrip(from: JsonValue, to: JsonValue) {
++  const before = structuredClone(from);
++  const patch = createPatch(from, to);
++  assert.deepEqual(from, before);
++  assert.deepEqual(applyPatch(from, patch), to);
++  return patch;
++}
++
++test("identical documents give an empty patch", () => {
++  assert.deepEqual(roundTrip({ a: [1, { b: 2 }] }, { a: [1, { b: 2 }] }), []);
++});
++
++test("small change yields a small patch", () => {
++  const patch = roundTrip({ a: { b: 1, c: [1, 2, 3] }, d: "x" }, { a: { b: 1, c: [1, 2, 4] }, d: "x" });
++  assert.deepEqual(patch, [{ op: "replace", path: "/a/c/2", value: 4 }]);
++});
++
++test("escapes keys and handles root and type changes", () => {
++  assert.deepEqual(roundTrip({ "a/b~c": 1 }, { "a/b~c": 2 }), [
++    { op: "replace", path: "/a~1b~0c", value: 2 },
++  ]);
++  roundTrip(1, { a: 1 });
++  roundTrip({ a: null }, { a: [] });
++  roundTrip({ a: 1 }, JSON.parse('{"__proto__": 1}'));
++});
++
++test("array insertions and removals", () => {
++  assert.deepEqual(roundTrip([1, 2, 3], [1, 9, 2, 3]), [{ op: "add", path: "/1", value: 9 }]);
++  assert.deepEqual(roundTrip([1, 9, 2, 3], [1, 2, 3]), [{ op: "remove", path: "/1" }]);
++  roundTrip([1, 2, 3, 4, 5], [1]);
++  roundTrip([1, 2, 3, 4, 5], [7, 8, 3, 9]);
++  roundTrip([], [1, 2]);
++});

@@ -1,0 +1,137 @@
+diff --git a/src/index.ts b/src/index.ts
+index 20cbdcf3e2470d5ae4170bbf52d49197a858e403..9a64c10fa16e1319ad0bbee86cd2cbca6e652916 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -71,13 +71,16 @@ export class JsonPatchError extends Error {
+  * applied in order, and the result is returned as a new value: neither
+  * `document` nor `patch` is mutated.
+  *
+- * @throws {JsonPatchError} if `patch` is not a valid JSON Patch, or if one of
+- * its operations fails. The error's `cause` is the underlying error.
++ * @throws {JsonPatchError} if `document` or `patch` is not a JSON value, if
++ * `patch` is not a valid JSON Patch, or if one of its operations fails. The
++ * error's `cause` is the underlying error, when there is one.
+  */
+ export function applyPatch(document: unknown, patch: unknown): unknown {
+   if (!Array.isArray(patch)) {
+     throw new JsonPatchError('JSON Patch must be an array of operations');
+   }
++  assertJsonValue(patch, '', 'patch');
++  assertJsonValue(document, '', 'document');
+ 
+   let result = structuredClone(document);
+   patch.forEach((operation: unknown, index) => {
+@@ -144,7 +147,7 @@ function fromPointer(operation: Record<string, unknown>, op: string): string {
+ 
+ /** Returns a deep copy of the `value` member of an operation, which must be present. */
+ function cloneValue(operation: Record<string, unknown>, op: string): unknown {
+-  if (!('value' in operation) || operation.value === undefined) {
++  if (!Object.hasOwn(operation, 'value')) {
+     throw new JsonPatchError(`"${op}" operation requires a "value"`);
+   }
+   return structuredClone(operation.value);
+@@ -226,6 +229,57 @@ function isObject(value: unknown): value is Record<string, unknown> {
+   return typeof value === 'object' && value !== null && !Array.isArray(value);
+ }
+ 
++/**
++ * Throws a JsonPatchError unless `value` is a JSON value (RFC 8259): null, a boolean,
++ * a finite number, a string, an array, or a plain object, all nested the same way.
++ * `where` names the value in the message, as a JSON Pointer-like location.
++ */
++function assertJsonValue(value: unknown, pointer: string, where: string, ancestors = new Set<object>()): void {
++  const fail = (reason: string): never => {
++    throw new JsonPatchError(`${where}${pointer} is not a JSON value: ${reason}`);
++  };
++  if (value === null || typeof value === 'string' || typeof value === 'boolean') {
++    return;
++  }
++  if (typeof value === 'number') {
++    if (!Number.isFinite(value)) {
++      fail(`${value} is not a finite number`);
++    }
++    return;
++  }
++  if (typeof value !== 'object') {
++    fail(`${typeof value} values are not allowed`);
++  }
++  const object = value as object;
++  if (ancestors.has(object)) {
++    fail('the value contains a reference to itself');
++  }
++  if (Array.isArray(object)) {
++    // A hole or an extra property would not be part of the JSON array.
++    if (Object.keys(object).length !== object.length) {
++      fail('the array is sparse or has extra properties');
++    }
++  } else {
++    const proto = Object.getPrototypeOf(object);
++    if (proto !== null && Object.getPrototypeOf(proto) !== null) {
++      fail('only plain objects are allowed');
++    }
++    if (Object.getOwnPropertySymbols(object).length > 0) {
++      fail('symbol keys are not allowed');
++    }
++  }
++
++  ancestors.add(object);
++  if (Array.isArray(object)) {
++    object.forEach((item, index) => assertJsonValue(item, `${pointer}/${index}`, where, ancestors));
++  } else {
++    for (const [key, member] of Object.entries(object)) {
++      assertJsonValue(member, `${pointer}/${key.replace(/~/g, '~0').replace(/\//g, '~1')}`, where, ancestors);
++    }
++  }
++  ancestors.delete(object);
++}
++
+ /** Compares two JSON values by content. */
+ function jsonEqual(a: unknown, b: unknown): boolean {
+   if (a === b) {
+diff --git a/test/apply-patch.test.ts b/test/apply-patch.test.ts
+index 1393d792ec8e1e1985f99350ee28838c8f13faff..c031664ef2cc573678f6312956fd40d16eb3fad8 100644
+--- a/test/apply-patch.test.ts
++++ b/test/apply-patch.test.ts
+@@ -187,6 +187,42 @@ test('rejects patches that are not arrays of valid operations', () => {
+   assert.throws(() => applyPatch({ a: 1 }, undefined), JsonPatchError);
+ });
+ 
++test('operation values must be JSON values', () => {
++  const cyclic: Record<string, unknown> = {};
++  cyclic.self = cyclic;
++  const values: unknown[] = [
++    undefined,
++    NaN,
++    Infinity,
++    1n,
++    () => 1,
++    new Date(0),
++    new Map(),
++    { a: undefined },
++    [, 1],
++    [1, { b: [Symbol('s')] }],
++    cyclic,
++  ];
++  for (const value of values) {
++    for (const op of ['add', 'replace', 'test'] as const) {
++      const target = op === 'add' ? '/b' : '/a';
++      assert.throws(() => applyPatch({ a: 1 }, [{ op, path: target, value }]), JsonPatchError, `${op} ${String(value)}`);
++    }
++  }
++});
++
++test('the document must be a JSON value', () => {
++  assert.throws(() => applyPatch({ a: new Date(0) }, []), JsonPatchError);
++  assert.throws(() => applyPatch({ a: undefined }, []), JsonPatchError);
++});
++
++test('the patch must not be sparse or contain extra array properties', () => {
++  const sparse: unknown[] = [, { op: 'add', path: '/b', value: 2 }];
++  assert.throws(() => applyPatch({ a: 1 }, sparse), JsonPatchError);
++  const extra = Object.assign([{ op: 'add', path: '/b', value: 2 }], { note: 'x' });
++  assert.throws(() => applyPatch({ a: 1 }, extra), JsonPatchError);
++});
++
+ test('errors keep the underlying cause', () => {
+   try {
+     applyPatch({}, [{ op: 'remove', path: '/missing' }]);

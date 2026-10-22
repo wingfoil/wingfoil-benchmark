@@ -1,0 +1,186 @@
+diff --git a/docs/memory/decision-log/dl-004-importtasks-reports-bad-lines-in-its-result-and-never-throws.md b/docs/memory/decision-log/dl-004-importtasks-reports-bad-lines-in-its-result-and-never-throws.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..5d138499215b4a426118378d244440aad64f8c9d
+--- /dev/null
++++ b/docs/memory/decision-log/dl-004-importtasks-reports-bad-lines-in-its-result-and-never-throws.md
+@@ -0,0 +1,32 @@
++---
++id: dl-004-importtasks-reports-bad-lines-in-its-result-and-never-throws
++type: decision-log
++title: "importTasks reports bad lines in its result and never throws"
++status: pending
++format: 1
++---
++
++<!-- decision-log body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
++
++
++## Context
++
++Teams import spreadsheet rows; some rows will be wrong. The domain must not throw (r4).
++
++## Decision
++
++`importTasks` returns `{ imported, rejected }` instead of a `Result`: a bad line never stops the others.
++Each line goes through `list.add`, so it gets the same validation (decision dl-003) and duplicate check;
++the reason is that error's message. A line with more than three `;` fields is rejected rather than
++guessed at. Priorities are matched exactly (no case folding), after trimming. Line numbers count every
++line, blank ones included, and `\n`, `\r\n` and `\r` all end a line. A title repeated in the text is
++rejected as a duplicate. Not atomic: valid lines stay added even if others are rejected.
++
++## Consequences
++
++- Callers show `rejected` to the user and need no try/catch.
++- Spreadsheet titles containing `;` cannot be imported.
+diff --git a/docs/memory/task/task-004-bulk-import-of-tasks-from-text.md b/docs/memory/task/task-004-bulk-import-of-tasks-from-text.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..39c99cb9d1ea6d0d64c12e1f82cc911afd7c986c
+--- /dev/null
++++ b/docs/memory/task/task-004-bulk-import-of-tasks-from-text.md
+@@ -0,0 +1,22 @@
++---
++id: task-004-bulk-import-of-tasks-from-text
++type: task
++title: "Bulk import of tasks from text"
++status: pending
++format: 1
++---
++
++<!-- task body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
++
++
++## What was done
++
++Added `importTasks(list, text)` (exported from `src/index.ts`, code in `src/domain/import.ts`). Each
++non-blank line is `title;priority;tags`; the priority may be empty or left out (normal), tags are split on
++whitespace. Valid lines are added through `list.add`; the result is `{ imported, rejected }` with
++`rejected` as `{ line, reason }`, `line` counting from 1 over all lines, blank ones included. Tests in
++`test/import.test.ts`.
+diff --git a/src/domain/import.ts b/src/domain/import.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..d2333191c138b408190031cf6502af0af5e3e827
+--- /dev/null
++++ b/src/domain/import.ts
+@@ -0,0 +1,52 @@
++import type { TaskList } from './list.ts';
++import type { Priority } from './task.ts';
++import { validatePriority } from './task.ts';
++
++/** A line of an import that could not be added: its number, counting from 1, and why. */
++export interface RejectedLine {
++  readonly line: number;
++  readonly reason: string;
++}
++
++/** The outcome of an import: how many tasks were added, and the lines that were not. */
++export interface ImportReport {
++  readonly imported: number;
++  readonly rejected: readonly RejectedLine[];
++}
++
++/**
++ * Adds the tasks written in `text` to `list`, one per line as `title;priority;tags`. The priority may be
++ * empty (or left out) for a normal one; tags are separated by spaces. Blank lines are skipped. A line that
++ * cannot be added is reported and does not stop the others.
++ *
++ * @param list - the list to add the tasks to
++ * @param text - the lines to import
++ */
++export function importTasks(list: TaskList, text: string): ImportReport {
++  const rejected: RejectedLine[] = [];
++  let imported = 0;
++  text.split(/\r\n|\r|\n/).forEach((raw, index) => {
++    if (raw.trim() === '') return;
++    const line = index + 1;
++    const fields = raw.split(';');
++    if (fields.length > 3) {
++      rejected.push({ line, reason: 'a line has at most three fields: title;priority;tags' });
++      return;
++    }
++    const [title = '', priorityText = '', tagsText = ''] = fields;
++    let priority: Priority | undefined;
++    if (priorityText.trim() !== '') {
++      const checked = validatePriority(priorityText.trim());
++      if (!checked.ok) {
++        rejected.push({ line, reason: checked.error.message });
++        return;
++      }
++      priority = checked.value;
++    }
++    const tags = tagsText.split(/\s+/).filter((tag) => tag !== '');
++    const added = list.add({ title, ...(priority === undefined ? {} : { priority }), tags });
++    if (added.ok) imported += 1;
++    else rejected.push({ line, reason: added.error.message });
++  });
++  return { imported, rejected };
++}
+diff --git a/src/index.ts b/src/index.ts
+index 435c9aa28c134746ecfaac2dd5de391f20760538..69094178cf4b1b826bbab9a911874539e12ba8e2 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -3,6 +3,8 @@ import type { TaskList } from './domain/list.ts';
+ 
+ export type { TaskFilter, TaskList } from './domain/list.ts';
+ export type { Result, TodoError, TodoErrorCode } from './domain/result.ts';
++export { importTasks } from './domain/import.ts';
++export type { ImportReport, RejectedLine } from './domain/import.ts';
+ export { summarize } from './domain/summary.ts';
+ export type { Summary } from './domain/summary.ts';
+ export { PRIORITIES } from './domain/task.ts';
+diff --git a/test/import.test.ts b/test/import.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..7291b8c01471e3f2cb88fd1ef15fc1bcdac8d1ae
+--- /dev/null
++++ b/test/import.test.ts
+@@ -0,0 +1,43 @@
++import assert from 'node:assert/strict';
++import { describe, it } from 'node:test';
++
++import { createTodoList, importTasks } from '../src/index.ts';
++
++describe('importTasks', () => {
++  it('adds every valid line with its priority and tags', () => {
++    const list = createTodoList();
++    const report = importTasks(list, 'Renew the insurance;high;admin money\nBuy milk;;\nWalk;low');
++    assert.deepEqual(report, { imported: 3, rejected: [] });
++    const insurance = list.find('Renew the insurance');
++    assert.ok(insurance.ok);
++    assert.equal(insurance.value.priority, 'high');
++    assert.deepEqual(insurance.value.tags, ['admin', 'money']);
++    const milk = list.find('Buy milk');
++    assert.ok(milk.ok);
++    assert.equal(milk.value.priority, 'normal');
++    assert.deepEqual(milk.value.tags, []);
++  });
++
++  it('skips blank lines but keeps counting them, and accepts CRLF', () => {
++    const list = createTodoList();
++    const report = importTasks(list, 'a;;\r\n\r\n   \r\nb;;x\r\n');
++    assert.equal(report.imported, 2);
++    assert.deepEqual(report.rejected, []);
++  });
++
++  it('rejects bad lines with their line number and reason, and still adds the others', () => {
++    const list = createTodoList();
++    const report = importTasks(list, 'ok;;\n;high;\nbad;urgent;\nfine;;a\nok;;\nx;high;t;extra');
++    assert.equal(report.imported, 2);
++    assert.deepEqual(
++      report.rejected.map((r) => r.line),
++      [2, 3, 5, 6],
++    );
++    for (const r of report.rejected) assert.ok(r.reason.length > 0);
++    assert.equal(list.list().length, 2);
++  });
++
++  it('returns nothing imported for empty text', () => {
++    assert.deepEqual(importTasks(createTodoList(), ''), { imported: 0, rejected: [] });
++  });
++});

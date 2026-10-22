@@ -1,0 +1,150 @@
+diff --git a/src/index.ts b/src/index.ts
+index 8873d839788172b30bbc4331add9988b1173cd07..6ff13db29a87d244a4794212a912407dc8484853 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -234,3 +234,92 @@ function mergePatch(target: unknown, patch: unknown): unknown {
+ export function applyMergePatch(target: unknown, patch: unknown): JsonValue {
+   return mergePatch(target, patch) as JsonValue;
+ }
++
++export type PatchOperation =
++  | { op: "add" | "replace"; path: string; value: JsonValue }
++  | { op: "remove"; path: string };
++
++const escapeToken = (token: string): string => token.replace(/~/g, "~0").replace(/\//g, "~1");
++
++/** Edit script (keep / delete / insert) turning array `a` into array `b`, from a longest common subsequence. */
++function editScript(a: unknown[], b: unknown[]): ("=" | "-" | "+")[] {
++  const n = a.length;
++  const m = b.length;
++  const lcs: number[][] = Array.from({ length: n + 1 }, () => new Array<number>(m + 1).fill(0));
++  for (let i = n - 1; i >= 0; i--) {
++    for (let j = m - 1; j >= 0; j--) {
++      lcs[i][j] = jsonEqual(a[i], b[j]) ? lcs[i + 1][j + 1] + 1 : Math.max(lcs[i + 1][j], lcs[i][j + 1]);
++    }
++  }
++  const script: ("=" | "-" | "+")[] = [];
++  let i = 0;
++  let j = 0;
++  while (i < n || j < m) {
++    if (i < n && j < m && jsonEqual(a[i], b[j])) {
++      script.push("=");
++      i++;
++      j++;
++    } else if (i < n && (j >= m || lcs[i + 1][j] >= lcs[i][j + 1])) {
++      script.push("-");
++      i++;
++    } else {
++      script.push("+");
++      j++;
++    }
++  }
++  return script;
++}
++
++function diff(from: unknown, to: unknown, path: string, ops: PatchOperation[]): void {
++  if (jsonEqual(from, to)) return;
++  if (isObject(from) && isObject(to)) {
++    for (const key of Object.keys(from)) {
++      if (!hasOwn(to, key)) ops.push({ op: "remove", path: `${path}/${escapeToken(key)}` });
++    }
++    for (const key of Object.keys(to)) {
++      const child = `${path}/${escapeToken(key)}`;
++      if (hasOwn(from, key)) diff(from[key], to[key], child, ops);
++      else ops.push({ op: "add", path: child, value: structuredClone(to[key]) as JsonValue });
++    }
++  } else if (Array.isArray(from) && Array.isArray(to)) {
++    const script = editScript(from, to);
++    let i = 0; // index in `from`
++    let j = 0; // index in `to`, which is also the index in the array being patched
++    let k = 0;
++    while (k < script.length) {
++      if (script[k] === "=") {
++        i++;
++        j++;
++        k++;
++        continue;
++      }
++      let dels = 0;
++      let adds = 0;
++      while (k < script.length && script[k] !== "=") {
++        if (script[k] === "-") dels++;
++        else adds++;
++        k++;
++      }
++      const paired = Math.min(dels, adds);
++      for (let p = 0; p < paired; p++) diff(from[i + p], to[j + p], `${path}/${j + p}`, ops);
++      for (let p = paired; p < dels; p++) ops.push({ op: "remove", path: `${path}/${j + paired}` });
++      for (let p = paired; p < adds; p++) {
++        ops.push({ op: "add", path: `${path}/${j + p}`, value: structuredClone(to[j + p]) as JsonValue });
++      }
++      i += dels;
++      j += adds;
++    }
++  } else {
++    ops.push({ op: "replace", path, value: structuredClone(to) as JsonValue });
++  }
++}
++
++/**
++ * Returns a JSON Patch (RFC 6902) that turns `from` into `to` when applied, describing only what
++ * changed. The inputs are not modified.
++ */
++export function createPatch(from: unknown, to: unknown): PatchOperation[] {
++  const ops: PatchOperation[] = [];
++  diff(from, to, "", ops);
++  return ops;
++}
+diff --git a/test/createpatch.test.ts b/test/createpatch.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..cacb492c1744dc620bf12564ec51fd2b4526755d
+--- /dev/null
++++ b/test/createpatch.test.ts
+@@ -0,0 +1,47 @@
++import test from "node:test";
++import assert from "node:assert/strict";
++import { createPatch, applyPatch } from "../src/index.ts";
++
++const roundTrip = (a: unknown, b: unknown) => {
++  const ca = structuredClone(a);
++  const cb = structuredClone(b);
++  const patch = createPatch(a, b);
++  assert.deepEqual(a, ca);
++  assert.deepEqual(b, cb);
++  assert.deepEqual(applyPatch(a, patch), b);
++  return patch;
++};
++
++test("identical documents give an empty patch", () => {
++  assert.deepEqual(roundTrip({ a: [1, { b: 2 }] }, { a: [1, { b: 2 }] }), []);
++});
++
++test("small change is a small patch", () => {
++  const p = roundTrip({ a: { b: 1, c: [1, 2, 3] }, d: "x" }, { a: { b: 1, c: [1, 2, 4] }, d: "x" });
++  assert.deepEqual(p, [{ op: "replace", path: "/a/c/2", value: 4 }]);
++});
++
++test("array insert and remove", () => {
++  assert.deepEqual(roundTrip([1, 2, 3, 4], [1, 2, 9, 3, 4]), [{ op: "add", path: "/2", value: 9 }]);
++  assert.deepEqual(roundTrip([1, 2, 3, 4], [1, 3, 4]), [{ op: "remove", path: "/1" }]);
++});
++
++test("escaping, root and type changes", () => {
++  roundTrip({ "a/b": 1, "m~n": 2 }, { "a/b": 2, "m~n": 2, "": 1 });
++  roundTrip(1, { a: 1 });
++  roundTrip({ a: [] }, { a: {} });
++  roundTrip({ a: null }, {});
++  roundTrip(JSON.parse('{"__proto__":1}'), JSON.parse('{"__proto__":2}'));
++});
++
++test("random round trips", () => {
++  let s = 7;
++  const r = (n: number) => (s = (s * 1103515245 + 12345) % 2147483648) % n;
++  const gen = (d: number): unknown =>
++    d === 0 || r(4) === 0
++      ? r(3)
++      : r(2)
++        ? Array.from({ length: r(5) }, () => gen(d - 1))
++        : Object.fromEntries(Array.from({ length: r(4) }, () => ["k" + r(4), gen(d - 1)]));
++  for (let i = 0; i < 500; i++) roundTrip(gen(3), gen(3));
++});

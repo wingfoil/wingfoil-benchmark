@@ -1,0 +1,193 @@
+diff --git a/src/index.ts b/src/index.ts
+index 22593cbf0e09f45ef08f6f6fd07dd761865114d9..897ea19c572557bd7c66afe11b0171f853850d06 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -330,3 +330,81 @@ function mergeValue(target: unknown, patch: unknown): unknown {
+   }
+   return result;
+ }
++
++/**
++ * Creates a JSON Patch (RFC 6902) that turns `from` into `to` when applied with
++ * `applyPatch`. The patch describes only what differs: unchanged members and
++ * elements produce no operations, and a change inside an object or array is
++ * described at the deepest location that contains it. Values in the patch are
++ * copies, so neither `from` nor `to` is mutated or shared with the result.
++ *
++ * @throws {JsonPatchError} if `from` or `to` is not a JSON value.
++ */
++export function createPatch(from: unknown, to: unknown): Array<Record<string, unknown>> {
++  assertJsonValue(from, '', 'from');
++  assertJsonValue(to, '', 'to');
++  const operations: Array<Record<string, unknown>> = [];
++  diffValues(from, to, '', operations);
++  return operations;
++}
++
++/** Appends to `operations` the operations that turn `from` into `to`, located at `pointer`. */
++function diffValues(from: unknown, to: unknown, pointer: string, operations: Array<Record<string, unknown>>): void {
++  if (jsonEqual(from, to)) {
++    return;
++  }
++  if (isObject(from) && isObject(to)) {
++    for (const key of Object.keys(from)) {
++      if (!Object.hasOwn(to, key)) {
++        operations.push({ op: 'remove', path: childPointer(pointer, key) });
++      }
++    }
++    for (const [key, value] of Object.entries(to)) {
++      const path = childPointer(pointer, key);
++      if (Object.hasOwn(from, key)) {
++        diffValues(from[key], value, path, operations);
++      } else {
++        operations.push({ op: 'add', path, value: structuredClone(value) });
++      }
++    }
++  } else if (Array.isArray(from) && Array.isArray(to)) {
++    diffArrays(from, to, pointer, operations);
++  } else {
++    operations.push({ op: 'replace', path: pointer, value: structuredClone(to) });
++  }
++}
++
++/**
++ * Diffs two arrays. The common prefix and suffix are kept as they are, so an
++ * element inserted or removed in the middle does not shift the rest of the array
++ * into the patch. Within the changed middle, elements are compared by position.
++ */
++function diffArrays(from: unknown[], to: unknown[], pointer: string, operations: Array<Record<string, unknown>>): void {
++  const limit = Math.min(from.length, to.length);
++  let prefix = 0;
++  while (prefix < limit && jsonEqual(from[prefix], to[prefix])) {
++    prefix++;
++  }
++  let suffix = 0;
++  while (suffix < limit - prefix && jsonEqual(from[from.length - 1 - suffix], to[to.length - 1 - suffix])) {
++    suffix++;
++  }
++
++  const common = Math.min(from.length, to.length) - prefix - suffix;
++  for (let i = 0; i < common; i++) {
++    diffValues(from[prefix + i], to[prefix + i], childPointer(pointer, String(prefix + i)), operations);
++  }
++  // Remove the surplus from the end, so the indices of the earlier removals stay valid.
++  for (let index = from.length - suffix - 1; index >= prefix + common; index--) {
++    operations.push({ op: 'remove', path: childPointer(pointer, String(index)) });
++  }
++  // Add the surplus in ascending order, so each index is the one the element will have.
++  for (let index = prefix + common; index < to.length - suffix; index++) {
++    operations.push({ op: 'add', path: childPointer(pointer, String(index)), value: structuredClone(to[index]) });
++  }
++}
++
++/** Appends one unescaped reference token to a JSON Pointer. */
++function childPointer(pointer: string, key: string): string {
++  return `${pointer}/${key.replace(/~/g, '~0').replace(/\//g, '~1')}`;
++}
+diff --git a/test/create-patch.test.ts b/test/create-patch.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..34254c3fa72d40e45d25ab16c96daae50cf9be8e
+--- /dev/null
++++ b/test/create-patch.test.ts
+@@ -0,0 +1,101 @@
++import { test } from 'node:test';
++import assert from 'node:assert/strict';
++import { JsonPatchError, applyPatch, createPatch } from '../src/index.ts';
++
++/** Checks that the patch turns `from` into `to`, and that neither input was changed. */
++function assertRoundTrip(from: unknown, to: unknown): Array<Record<string, unknown>> {
++  const fromBefore = structuredClone(from);
++  const toBefore = structuredClone(to);
++  const patch = createPatch(from, to);
++  assert.deepEqual(applyPatch(from, patch), to);
++  assert.deepEqual(from, fromBefore);
++  assert.deepEqual(to, toBefore);
++  return patch;
++}
++
++test('equal documents give an empty patch', () => {
++  assert.deepEqual(createPatch({ a: [1, { b: 'c' }] }, { a: [1, { b: 'c' }] }), []);
++  assert.deepEqual(createPatch(1, 1), []);
++  assert.deepEqual(createPatch(null, null), []);
++});
++
++test('a single changed member gives a single replace', () => {
++  const from = { name: 'a', big: { payload: [1, 2, 3], other: true }, count: 1 };
++  const to = { name: 'a', big: { payload: [1, 2, 3], other: true }, count: 2 };
++  assert.deepEqual(assertRoundTrip(from, to), [{ op: 'replace', path: '/count', value: 2 }]);
++});
++
++test('added and removed members give add and remove', () => {
++  assert.deepEqual(assertRoundTrip({ a: 1, b: 2 }, { a: 1, c: 3 }), [
++    { op: 'remove', path: '/b' },
++    { op: 'add', path: '/c', value: 3 },
++  ]);
++});
++
++test('an element inserted in the middle of an array gives one add', () => {
++  const from = { items: [1, 2, 3, 4, 5, 6, 7, 8] };
++  const to = { items: [1, 2, 3, 99, 4, 5, 6, 7, 8] };
++  assert.deepEqual(assertRoundTrip(from, to), [{ op: 'add', path: '/items/3', value: 99 }]);
++});
++
++test('an element removed from the middle of an array gives one remove', () => {
++  const from = { items: ['a', 'b', 'c', 'd', 'e'] };
++  const to = { items: ['a', 'b', 'd', 'e'] };
++  assert.deepEqual(assertRoundTrip(from, to), [{ op: 'remove', path: '/items/2' }]);
++});
++
++test('elements added at the start or the end of an array are described once', () => {
++  assert.deepEqual(assertRoundTrip([2, 3], [1, 2, 3]), [{ op: 'add', path: '/0', value: 1 }]);
++  assert.deepEqual(assertRoundTrip([1, 2], [1, 2, 3, 4]), [
++    { op: 'add', path: '/2', value: 3 },
++    { op: 'add', path: '/3', value: 4 },
++  ]);
++  assert.deepEqual(assertRoundTrip([1, 2, 3], [2, 3]), [{ op: 'remove', path: '/0' }]);
++});
++
++test('a change inside a nested object is described at its own location', () => {
++  const from = { a: { b: { c: 'x', d: [1, 2] } } };
++  const to = { a: { b: { c: 'y', d: [1, 2] } } };
++  assert.deepEqual(assertRoundTrip(from, to), [{ op: 'replace', path: '/a/b/c', value: 'y' }]);
++});
++
++test('a type change replaces the whole value', () => {
++  assert.deepEqual(assertRoundTrip({ a: [1] }, { a: { x: 1 } }), [{ op: 'replace', path: '/a', value: { x: 1 } }]);
++  assert.deepEqual(assertRoundTrip({ a: null }, { a: 0 }), [{ op: 'replace', path: '/a', value: 0 }]);
++  assert.deepEqual(assertRoundTrip(1, 'one'), [{ op: 'replace', path: '', value: 'one' }]);
++});
++
++test('keys that need escaping in a pointer are escaped', () => {
++  assert.deepEqual(assertRoundTrip({ 'a/b': 1, 'c~d': 1 }, { 'a/b': 2, 'c~d': 3 }), [
++    { op: 'replace', path: '/a~1b', value: 2 },
++    { op: 'replace', path: '/c~0d', value: 3 },
++  ]);
++});
++
++test('values in the patch are copies, not shared with the inputs', () => {
++  const to = { list: [{ x: 1 }] };
++  const patch = createPatch({}, to);
++  (to.list[0] as { x: number }).x = 2;
++  assert.deepEqual(patch, [{ op: 'add', path: '/list', value: [{ x: 1 }] }]);
++});
++
++test('round-trips a range of documents', () => {
++  const pairs: Array<[unknown, unknown]> = [
++    [[], [1]],
++    [[1], []],
++    [[1, 2, 3], [3, 2, 1]],
++    [{ a: [{ id: 1 }, { id: 2 }] }, { a: [{ id: 2 }, { id: 1, n: true }] }],
++    [{ a: 1 }, [1]],
++    [{ __proto__x: 1 }, { __proto__x: 2 }],
++    ['text', 'text!'],
++  ];
++  for (const [from, to] of pairs) {
++    assertRoundTrip(from, to);
++  }
++});
++
++test('rejects values that are not JSON', () => {
++  assert.throws(() => createPatch({ a: undefined }, {}), JsonPatchError);
++  assert.throws(() => createPatch({}, { a: Number.NaN }), JsonPatchError);
++  assert.throws(() => createPatch(new Date(), {}), JsonPatchError);
++});

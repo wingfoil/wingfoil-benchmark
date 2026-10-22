@@ -1,0 +1,165 @@
+diff --git a/src/index.ts b/src/index.ts
+index df010844e43109eafcc26f0e1da306903efa0f1e..8b0d59df4b412a0445d9afddb4dc5bea3ac21f2a 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -29,10 +29,20 @@ export interface Booking extends Quote {
+   id: string;
+ }
+ 
++export interface AvailabilityQuery {
++  /** ISO-8601 UTC midnight, as for a rental. */
++  start: string;
++  /** ISO-8601 UTC midnight, as for a rental. */
++  end: string;
++  /** Only report equipment of this kind; any kind when omitted. */
++  kind?: EquipmentKind;
++}
++
+ export interface RentalService {
+   addEquipment(item: Equipment): void;
+   quote(request: RentalRequest): Quote;
+   book(request: RentalRequest): Booking;
++  availability(query: AvailabilityQuery): string[];
+ }
+ 
+ const DAY_MS = 24 * 60 * 60 * 1000;
+@@ -96,6 +106,29 @@ export function createRentalService(): RentalService {
+     return { id: booking.id, itemId: booking.itemId, start, end, total };
+   }
+ 
++  function availability(query: AvailabilityQuery): string[] {
++    if (typeof query !== 'object' || query === null) {
++      throw new Error('query must be an object');
++    }
++    const { startMs, endMs } = parsePeriod(query);
++    if (query.kind !== undefined && !KINDS.includes(query.kind)) {
++      throw new Error(`kind must be 'board' or 'sail', got ${String(query.kind)}`);
++    }
++    const free: string[] = [];
++    for (const item of items.values()) {
++      if (query.kind !== undefined && item.kind !== query.kind) {
++        continue;
++      }
++      const clash = bookings.some(
++        (b) => b.itemId === item.id && b.startMs < endMs && startMs < b.endMs,
++      );
++      if (!clash) {
++        free.push(item.id);
++      }
++    }
++    return free.sort();
++  }
++
+   function resolve(request: RentalRequest) {
+     if (typeof request !== 'object' || request === null) {
+       throw new Error('request must be an object');
+@@ -104,15 +137,20 @@ export function createRentalService(): RentalService {
+     if (!item) {
+       throw new Error(`unknown item ${String(request.itemId)}`);
+     }
+-    const startMs = parseUtcMidnight(request.start, 'start');
+-    const endMs = parseUtcMidnight(request.end, 'end');
+-    if (endMs <= startMs) {
+-      throw new Error('end must be after start');
+-    }
+-    return { item, start: request.start, end: request.end, startMs, endMs };
++    const { start, end, startMs, endMs } = parsePeriod(request);
++    return { item, start, end, startMs, endMs };
+   }
+ 
+-  return { addEquipment, quote, book };
++  return { addEquipment, quote, book, availability };
++}
++
++function parsePeriod(period: { start: string; end: string }) {
++  const startMs = parseUtcMidnight(period.start, 'start');
++  const endMs = parseUtcMidnight(period.end, 'end');
++  if (endMs <= startMs) {
++    throw new Error('end must be after start');
++  }
++  return { start: period.start, end: period.end, startMs, endMs };
+ }
+ 
+ function priceOf(item: Equipment, startMs: number, endMs: number): number {
+diff --git a/test/rental.test.ts b/test/rental.test.ts
+index 55873d19d7e213f861a762e7b67117f5d8a81a2e..3b81e187640f9b92e1b3e81dd223c1874bec183d 100644
+--- a/test/rental.test.ts
++++ b/test/rental.test.ts
+@@ -200,3 +200,77 @@ test('services are independent of each other', () => {
+   b.addEquipment({ id: 'board-1', kind: 'board', dailyPrice: 100 });
+   assert.doesNotThrow(() => b.book({ itemId: 'board-1', start: '2026-07-01', end: '2026-07-05' }));
+ });
++
++test('availability lists every item when no kind is given, sorted', () => {
++  const service = setup();
++  service.addEquipment({ id: 'a-board', kind: 'board', dailyPrice: 100 });
++  assert.deepEqual(
++    service.availability({ start: '2026-07-01', end: '2026-07-02' }),
++    ['a-board', 'board-1', 'sail-1'],
++  );
++});
++
++test('availability filters by kind', () => {
++  const service = setup();
++  service.addEquipment({ id: 'sail-0', kind: 'sail', dailyPrice: 100 });
++  assert.deepEqual(service.availability({ start: '2026-07-01', end: '2026-07-02', kind: 'sail' }), [
++    'sail-0',
++    'sail-1',
++  ]);
++  assert.deepEqual(service.availability({ start: '2026-07-01', end: '2026-07-02', kind: 'board' }), [
++    'board-1',
++  ]);
++});
++
++test('availability leaves out items booked for any part of the period', () => {
++  const service = setup();
++  service.book({ itemId: 'board-1', start: '2026-07-03', end: '2026-07-05' });
++  assert.deepEqual(service.availability({ start: '2026-07-01', end: '2026-07-04' }), ['sail-1']);
++  assert.deepEqual(service.availability({ start: '2026-07-04', end: '2026-07-05' }), ['sail-1']);
++  assert.deepEqual(service.availability({ start: '2026-07-05', end: '2026-07-06' }), [
++    'board-1',
++    'sail-1',
++  ]);
++});
++
++test('availability treats back-to-back periods as free', () => {
++  const service = setup();
++  service.book({ itemId: 'board-1', start: '2026-07-01', end: '2026-07-03' });
++  assert.deepEqual(service.availability({ start: '2026-07-03', end: '2026-07-04', kind: 'board' }), [
++    'board-1',
++  ]);
++  assert.deepEqual(service.availability({ start: '2026-06-30', end: '2026-07-01', kind: 'board' }), [
++    'board-1',
++  ]);
++});
++
++test('availability returns an empty list when nothing is free', () => {
++  const service = setup();
++  service.book({ itemId: 'board-1', start: '2026-07-01', end: '2026-07-02' });
++  service.book({ itemId: 'sail-1', start: '2026-07-01', end: '2026-07-02' });
++  assert.deepEqual(service.availability({ start: '2026-07-01', end: '2026-07-02' }), []);
++});
++
++test('availability does not reserve anything', () => {
++  const service = setup();
++  service.availability({ start: '2026-07-01', end: '2026-07-03' });
++  assert.doesNotThrow(() =>
++    service.book({ itemId: 'board-1', start: '2026-07-01', end: '2026-07-03' }),
++  );
++});
++
++test('availability refuses an invalid period or kind', () => {
++  const service = setup();
++  assert.throws(
++    () => service.availability({ start: '2026-07-01T10:00:00Z', end: '2026-07-02' }),
++    /ISO-8601 UTC midnight/,
++  );
++  assert.throws(
++    () => service.availability({ start: '2026-07-02', end: '2026-07-02' }),
++    /end must be after start/,
++  );
++  assert.throws(
++    () => service.availability({ start: '2026-07-01', end: '2026-07-02', kind: 'kite' as 'board' }),
++    /kind must be/,
++  );
++});

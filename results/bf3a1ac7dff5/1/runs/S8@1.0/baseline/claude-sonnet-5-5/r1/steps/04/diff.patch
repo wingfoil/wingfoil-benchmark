@@ -1,0 +1,103 @@
+diff --git a/src/domain/import.ts b/src/domain/import.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..d55fd4d141d9f81e31cea60b1920c2d6f12f25c2
+--- /dev/null
++++ b/src/domain/import.ts
+@@ -0,0 +1,48 @@
++import type { TaskList } from './list.ts';
++import type { Priority } from './task.ts';
++
++/** A line of the import text that could not be added, and why. */
++export interface RejectedLine {
++  /** The line number in the text, counting from 1. */
++  readonly line: number;
++  readonly reason: string;
++}
++
++/** What a bulk import did: how many tasks it added, and the lines it could not add. */
++export interface ImportReport {
++  readonly imported: number;
++  readonly rejected: readonly RejectedLine[];
++}
++
++/**
++ * Adds the tasks written in `text` to `list`, one per line as `title;priority;tags`. The priority may be
++ * empty for a normal one, tags are separated by spaces, and blank lines are skipped. A line that cannot be
++ * added is reported and does not stop the others.
++ *
++ * @param list - the list to add the tasks to
++ * @param text - the lines to import
++ */
++export function importTasks(list: TaskList, text: string): ImportReport {
++  const rejected: RejectedLine[] = [];
++  let imported = 0;
++  text.split(/\r\n|\r|\n/).forEach((raw, index) => {
++    if (raw.trim() === '') return;
++    const line = index + 1;
++    const fields = raw.split(';');
++    if (fields.length > 3) {
++      rejected.push({ line, reason: 'the line has more than three fields (title;priority;tags)' });
++      return;
++    }
++    const [title = '', priorityText = '', tagText = ''] = fields;
++    const priorityName = priorityText.trim().toLowerCase();
++    const tags = tagText.split(/\s+/).filter((tag) => tag !== '');
++    const result = list.add({
++      title,
++      ...(priorityName === '' ? {} : { priority: priorityName as Priority }),
++      tags,
++    });
++    if (result.ok) imported++;
++    else rejected.push({ line, reason: result.error.message });
++  });
++  return { imported, rejected };
++}
+diff --git a/src/index.ts b/src/index.ts
+index d645db5250ea48852a8de1629640e42619a985c8..bce7c069264b867b8a9f93ff5fb3b2eb8ec7d706 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -2,6 +2,8 @@ import { createTaskList } from './domain/list.ts';
+ import type { TaskList } from './domain/list.ts';
+ 
+ export type { TaskFilter, TaskList } from './domain/list.ts';
++export { importTasks } from './domain/import.ts';
++export type { ImportReport, RejectedLine } from './domain/import.ts';
+ export type { Result, TodoError, TodoErrorCode } from './domain/result.ts';
+ export { summarize } from './domain/summary.ts';
+ export type { Summary } from './domain/summary.ts';
+diff --git a/test/list.test.ts b/test/list.test.ts
+index 80ac7bdd6fc3f75b390c35907c16c0762234fe99..602a60acdd8213b12d57d0eab0e30eabdf8939b9 100644
+--- a/test/list.test.ts
++++ b/test/list.test.ts
+@@ -1,7 +1,7 @@
+ import assert from 'node:assert/strict';
+ import { describe, it } from 'node:test';
+ 
+-import { createTodoList, summarize } from '../src/index.ts';
++import { createTodoList, importTasks, summarize } from '../src/index.ts';
+ 
+ function valueOf<T>(result: { ok: true; value: T } | { ok: false; error: unknown }): T {
+   if (!result.ok) assert.fail(JSON.stringify(result.error));
+@@ -146,3 +146,22 @@ describe('input validation', () => {
+     assert.equal(valueOf(list.add({ title: 'x'.repeat(120) })).title.length, 120);
+   });
+ });
++
++describe('importTasks', () => {
++  it('imports valid lines and reports the others by line number', () => {
++    const list = createTodoList();
++    const report = importTasks(
++      list,
++      'Renew the insurance;high;admin money\n\nBuy milk\nWater plants;;home\nBad;urgent;x\n;low;\nBuy milk;low;\r\na;b;c;d',
++    );
++    assert.equal(report.imported, 3);
++    assert.deepEqual(
++      report.rejected.map((r) => r.line),
++      [5, 6, 7, 8],
++    );
++    const insurance = valueOf(list.find('Renew the insurance'));
++    assert.equal(insurance.priority, 'high');
++    assert.deepEqual(insurance.tags, ['admin', 'money']);
++    assert.equal(valueOf(list.find('Water plants')).priority, 'normal');
++  });
++});

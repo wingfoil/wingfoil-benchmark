@@ -1,0 +1,91 @@
+diff --git a/src/index.ts b/src/index.ts
+index ec0364cae311213db8c112993e0f87e458ad4de8..cf70fc2c92138192f155999c7acc10a1dbdaa2b0 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -1,3 +1,4 @@
+ export { resolvePointer } from "./pointer.js";
+ export type { Json } from "./pointer.js";
+ export { applyPatch } from "./patch.js";
++export { applyMergePatch } from "./merge-patch.js";
+diff --git a/src/merge-patch.ts b/src/merge-patch.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..ff21b696b38e0a2bc34e491c5dd1fd0cf04b265c
+--- /dev/null
++++ b/src/merge-patch.ts
+@@ -0,0 +1,32 @@
++import type { Json } from "./pointer.js";
++
++function isObject(value: unknown): value is { [key: string]: Json } {
++  return typeof value === "object" && value !== null && !Array.isArray(value);
++}
++
++function setOwn(object: { [key: string]: Json }, key: string, value: Json): void {
++  // defineProperty so that a "__proto__" member is an own property, not a prototype change.
++  Object.defineProperty(object, key, { value, writable: true, enumerable: true, configurable: true });
++}
++
++/**
++ * Applies a JSON Merge Patch (RFC 7386) to a target document and returns the merged document.
++ * The inputs are not modified.
++ */
++export function applyMergePatch(target: unknown, patch: unknown): Json {
++  if (!isObject(patch)) return patch as Json;
++  const result: { [key: string]: Json } = {};
++  if (isObject(target)) {
++    for (const key of Object.keys(target)) setOwn(result, key, target[key]);
++  }
++  for (const key of Object.keys(patch)) {
++    const value = patch[key];
++    if (value === null) {
++      delete result[key];
++    } else {
++      const current = Object.prototype.hasOwnProperty.call(result, key) ? result[key] : undefined;
++      setOwn(result, key, applyMergePatch(current, value));
++    }
++  }
++  return result;
++}
+diff --git a/test/merge-patch.test.ts b/test/merge-patch.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..036b7e573b1976291ecef8c9c3243acabd0139a6
+--- /dev/null
++++ b/test/merge-patch.test.ts
+@@ -0,0 +1,38 @@
++import { test } from "node:test";
++import assert from "node:assert/strict";
++import { applyMergePatch as mp } from "../src/merge-patch.ts";
++
++test("RFC 7386 example", () => {
++  assert.deepEqual(
++    mp({ title: "Goodbye!", author: { givenName: "John", familyName: "Doe" }, tags: ["example", "sample"], content: "x" },
++      { title: "Hello!", phoneNumber: "+01-123-456-7890", author: { familyName: null }, tags: ["example"] }),
++    { title: "Hello!", author: { givenName: "John" }, tags: ["example"], content: "x", phoneNumber: "+01-123-456-7890" },
++  );
++});
++
++test("RFC 7386 appendix A cases", () => {
++  assert.deepEqual(mp({ a: "b" }, { a: "c" }), { a: "c" });
++  assert.deepEqual(mp({ a: "b" }, { b: "c" }), { a: "b", b: "c" });
++  assert.deepEqual(mp({ a: "b" }, { a: null }), {});
++  assert.deepEqual(mp({ a: "b", b: "c" }, { a: null }), { b: "c" });
++  assert.deepEqual(mp({ a: ["b"] }, { a: "c" }), { a: "c" });
++  assert.deepEqual(mp({ a: "c" }, { a: ["b"] }), { a: ["b"] });
++  assert.deepEqual(mp({ a: { b: "c" } }, { a: { b: "d", c: null } }), { a: { b: "d" } });
++  assert.deepEqual(mp({ a: [{ b: "c" }] }, { a: [1] }), { a: [1] });
++  assert.deepEqual(mp(["a", "b"], ["c", "d"]), ["c", "d"]);
++  assert.deepEqual(mp({ a: "b" }, ["c"]), ["c"]);
++  assert.deepEqual(mp({ a: "foo" }, null), null);
++  assert.deepEqual(mp({ a: "foo" }, "bar"), "bar");
++  assert.deepEqual(mp({ e: null }, { a: 1 }), { e: null, a: 1 });
++  assert.deepEqual(mp([1, 2], { a: "b", c: null }), { a: "b" });
++  assert.deepEqual(mp({}, { a: { bb: { ccc: null } } }), { a: { bb: {} } });
++});
++
++test("does not mutate or pollute", () => {
++  const t = { a: { b: 1 } };
++  mp(t, { a: { b: null } });
++  assert.deepEqual(t, { a: { b: 1 } });
++  const r = mp({}, JSON.parse('{"__proto__": {"x": 1}}')) as any;
++  assert.equal(({} as any).x, undefined);
++  assert.equal(Object.getPrototypeOf(r), Object.prototype);
++});

@@ -1,0 +1,106 @@
+diff --git a/docs/memory/decision-log/dl-003-json-patch-values-must-be-json-values.md b/docs/memory/decision-log/dl-003-json-patch-values-must-be-json-values.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..5dbfa1cf0361a3e3868137ab1b6d4423e3fcd212
+--- /dev/null
++++ b/docs/memory/decision-log/dl-003-json-patch-values-must-be-json-values.md
+@@ -0,0 +1,21 @@
++---
++id: dl-003-json-patch-values-must-be-json-values
++type: decision-log
++title: "JSON Patch values must be JSON values"
++status: pending
++format: 1
++---
++
++# JSON Patch values must be JSON values
++
++## Context
++RFC 6902 patches are JSON documents (section 3), so an operation `value` is a JSON value (RFC 8259).
++`applyPatch` only checked that `value` was present, so non-JSON values were accepted.
++
++## Decision
++`validateOperation` rejects a `value` that is not null, boolean, string, finite number, array or plain
++object (recursively, without cycles). This applies to `add`, `replace` and `test`.
++
++## Consequences
++Such patches now throw "Invalid JSON Patch" before any operation runs, rather than producing results
++that cannot be serialised as JSON. Complements dl-002.
+diff --git a/docs/memory/task/task-003-make-applypatch-conform-to-rfc-6902.md b/docs/memory/task/task-003-make-applypatch-conform-to-rfc-6902.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..734449e1c03506b9edac42bde27606bb7b007404
+--- /dev/null
++++ b/docs/memory/task/task-003-make-applypatch-conform-to-rfc-6902.md
+@@ -0,0 +1,15 @@
++---
++id: task-003-make-applypatch-conform-to-rfc-6902
++type: task
++title: "Make applyPatch conform to RFC 6902"
++status: pending
++format: 1
++---
++
++# Make applyPatch conform to RFC 6902
++
++Reviewed patch checking and application against RFC 6902 (all six operations, root and `-` handling,
++move-into-child, atomicity, input immutability, error cases). The behaviour was conformant except that
++operation `value`s were only checked for presence: `undefined`, `NaN`, `Infinity`, bigint, `Date`,
++`Map`, functions and cyclic structures were accepted (and silently cloned or dropped). They are now
++rejected as an invalid patch. Test added in `test/patch.test.ts`; `npm test` passes (35 tests).
+diff --git a/src/patch.ts b/src/patch.ts
+index 04bf02fd6962470854da2eb0631b44fec4e0f730..594d0faf35c9ef610af5abaed0343cf6619d37c3 100644
+--- a/src/patch.ts
++++ b/src/patch.ts
+@@ -16,6 +16,25 @@ function isObject(value: unknown): value is Record<string, unknown> {
+   return typeof value === "object" && value !== null && !Array.isArray(value);
+ }
+ 
++/** True if `value` is a JSON value (RFC 8259): no undefined, NaN, Infinity, class instance or cycle. */
++function isJsonValue(value: unknown, ancestors: object[] = []): boolean {
++  if (value === null || typeof value === "string" || typeof value === "boolean") {
++    return true;
++  }
++  if (typeof value === "number") {
++    return Number.isFinite(value);
++  }
++  if (typeof value !== "object" || ancestors.includes(value)) {
++    return false;
++  }
++  const path = [...ancestors, value];
++  if (Array.isArray(value)) {
++    return value.every((item) => isJsonValue(item, path));
++  }
++  const prototype = Object.getPrototypeOf(value);
++  return (prototype === Object.prototype || prototype === null) && Object.values(value).every((item) => isJsonValue(item, path));
++}
++
+ /** Checks the shape of one operation (RFC 6902, sections 3 and 4) and returns it typed. */
+ function validateOperation(operation: unknown, index: number): Operation {
+   const where = `Invalid JSON Patch: operation ${index}`;
+@@ -33,6 +52,9 @@ function validateOperation(operation: unknown, index: number): Operation {
+   if ((op === "add" || op === "replace" || op === "test") && !Object.hasOwn(operation, "value")) {
+     throw new Error(`${where} ("${op}") requires a "value"`);
+   }
++  if (Object.hasOwn(operation, "value") && !isJsonValue(operation.value)) {
++    throw new Error(`${where} has a "value" that is not a JSON value`);
++  }
+   if (op === "move" || op === "copy") {
+     if (typeof operation.from !== "string") {
+       throw new Error(`${where} ("${op}") requires a string "from"`);
+diff --git a/test/patch.test.ts b/test/patch.test.ts
+index 53edf1465cf259f8e1c25b4c78df9693426834b7..170c9054e3187620d4e3e4513f8a9fb7521370dd 100644
+--- a/test/patch.test.ts
++++ b/test/patch.test.ts
+@@ -141,3 +141,13 @@ test("invalid patches are rejected", () => {
+ test("value may be null; operations apply in order", () => {
+   assert.deepEqual(applyPatch({}, [{ op: "add", path: "/a", value: null }, { op: "copy", from: "/a", path: "/b" }]), { a: null, b: null });
+ });
++
++test("values that are not JSON are rejected", () => {
++  const cyclic: Record<string, unknown> = {};
++  cyclic.self = cyclic;
++  for (const value of [undefined, Number.NaN, Infinity, 10n, new Date(0), new Map(), () => 1, { a: undefined }, [undefined], cyclic]) {
++    for (const op of ["add", "replace", "test"]) {
++      assert.throws(() => applyPatch({ a: 1 }, [{ op, path: "/a", value }]), /JSON value|requires a "value"/, `${op} ${String(value)}`);
++    }
++  }
++});

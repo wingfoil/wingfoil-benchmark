@@ -1,0 +1,87 @@
+diff --git a/docs/memory/task/task-003-fix-applypatch-rfc-6902-conformance-review.md b/docs/memory/task/task-003-fix-applypatch-rfc-6902-conformance-review.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..31e1a41ec3c8193ce01fc76410325f09c93c2cf4
+--- /dev/null
++++ b/docs/memory/task/task-003-fix-applypatch-rfc-6902-conformance-review.md
+@@ -0,0 +1,20 @@
++---
++id: task-003-fix-applypatch-rfc-6902-conformance-review
++type: task
++title: "Fix applyPatch RFC 6902 conformance review"
++status: pending
++format: 1
++---
++
++<!-- task body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
++
++Reviewed how `applyPatch` checks and applies patches against RFC 6902 and probed edge cases (value checks,
++pointer syntax, move/copy/test, array indexes, atomicity, non-mutation). Most behaviour already conformed (dl-002).
++Two deviations fixed in `src/index.ts`, with tests:
++
++- `replace` was remove + add, which moved an object member to the end; it now replaces in place (`replaceValue`).
++- A sparse patch array let holes be skipped silently; holes are now rejected as non-object operations.
+diff --git a/src/index.ts b/src/index.ts
+index f9da580afa6b2de66908de7dec6bd96df4dc1737..08456ab700e50dacd4b1a883ec4da5262a87eba8 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -164,6 +164,21 @@ function removeValue(document: JsonValue, pointer: string): JsonValue {
+   return document;
+ }
+ 
++function replaceValue(document: JsonValue, pointer: string, value: JsonValue): JsonValue {
++  if (pointer === "") {
++    return value;
++  }
++  const { parent, token } = locateParent(document, pointer);
++  if (Array.isArray(parent)) {
++    parent[arrayIndex(parent, token, pointer, false)] = value;
++  } else if (Object.hasOwn(parent, token)) {
++    setMember(parent, token, value);
++  } else {
++    throw new Error(`JSON Patch target "${pointer}" does not exist`);
++  }
++  return document;
++}
++
+ function applyOperation(document: JsonValue, raw: unknown): JsonValue {
+   if (!isObject(raw)) {
+     throw new Error("Invalid JSON Patch: an operation must be an object");
+@@ -182,9 +197,7 @@ function applyOperation(document: JsonValue, raw: unknown): JsonValue {
+     case "remove":
+       return removeValue(document, path);
+     case "replace": {
+-      const value = needValue();
+-      resolvePointer(document, path);
+-      return path === "" ? value : addValue(removeValue(document, path), path, value);
++      return replaceValue(document, path, needValue());
+     }
+     case "move": {
+       const from = requirePointer(raw, "from");
+@@ -221,5 +234,5 @@ export function applyPatch(document: JsonValue, patch: JsonPatch): JsonValue {
+   if (!Array.isArray(patch)) {
+     throw new Error("Invalid JSON Patch: a patch must be an array of operations");
+   }
+-  return patch.reduce<JsonValue>(applyOperation, deepClone(document));
++  return Array.from(patch).reduce<JsonValue>(applyOperation, deepClone(document));
+ }
+diff --git a/test/patch.test.ts b/test/patch.test.ts
+index 6faf08a71fd164ffe621b4a0074b70d36a27fe25..5869a13d0036e6a3a41c26eebbfd3134ff95b6f0 100644
+--- a/test/patch.test.ts
++++ b/test/patch.test.ts
+@@ -127,3 +127,12 @@ test("keys such as __proto__ are plain own members", () => {
+ test("escaped tokens", () => {
+   assert.deepEqual(apply({}, [{ op: "add", path: "/a~1b~0c", value: 1 }]), { "a/b~c": 1 });
+ });
++
++test("replace keeps the position of an object member", () => {
++  const result = apply({ a: 1, b: 2, c: 3 }, [{ op: "replace", path: "/a", value: 9 }]);
++  assert.deepEqual(Object.keys(result as object), ["a", "b", "c"]);
++});
++
++test("a sparse patch array is invalid", () => {
++  assert.throws(() => apply({}, new Array(1)));
++});

@@ -1,0 +1,81 @@
+diff --git a/README.md b/README.md
+index b06903015faca20364819972b7ef21aa37b6e114..f99c5c34c59b23fa2bb2caf97cfda0675586b5fa 100644
+--- a/README.md
++++ b/README.md
+@@ -19,6 +19,9 @@ whole days (`start` and `end` at midnight UTC, `end` being the start of the day
+ an item cannot be booked for overlapping periods (back-to-back periods are fine). `quote` and `book` throw
+ for an unknown item or a disallowed period, and `book` also throws when the item is not free.
+ 
++Long stays are rewarded: a rental of 3 days or more costs 10% less than its full price (daily price times
++days), rounded to the nearest euro cent; `quote` and `book` both return the reduced total.
++
+ Booking ids are sequential (`booking-1`, `booking-2`, ...) so that behaviour stays deterministic.
+ Cancellation (no refund less than 24 hours before the start, full refund otherwise) is not implemented yet.
+ 
+diff --git a/src/rental.ts b/src/rental.ts
+index 4b4dbb03ee33d11853ad3fe9dfdf0d669e8fc211..86a7dde96f9edebad3cdaf6543113e53406eecf7 100644
+--- a/src/rental.ts
++++ b/src/rental.ts
+@@ -46,6 +46,15 @@ export interface RentalService {
+   availability(query: AvailabilityQuery): string[];
+ }
+ 
++const LONG_STAY_DAYS = 3;
++const LONG_STAY_PERCENT_PAID = 90;
++
++/** Total in euro cents for `days` days: 10% off from 3 days, rounded to the nearest cent. */
++function rentalTotal(dailyPrice: number, days: number): number {
++  const full = dailyPrice * days;
++  return days >= LONG_STAY_DAYS ? Math.round((full * LONG_STAY_PERCENT_PAID) / 100) : full;
++}
++
+ interface StoredBooking {
+   booking: Booking;
+   period: Period;
+@@ -79,7 +88,7 @@ export function createRentalService(): RentalService {
+     }
+     const period = parsePeriod(request.start, request.end);
+     const { itemId, start, end } = request;
+-    return { quote: { itemId, start, end, total: item.dailyPrice * countDays(period) }, period };
++    return { quote: { itemId, start, end, total: rentalTotal(item.dailyPrice, countDays(period)) }, period };
+   }
+ 
+   function isFree(itemId: string, period: Period): boolean {
+diff --git a/test/rental.test.ts b/test/rental.test.ts
+index cecbc45ef731e36c1a0956c54263f1508f6142f2..bd60631f6a22e7c74d3e94620d64d4eb60226128 100644
+--- a/test/rental.test.ts
++++ b/test/rental.test.ts
+@@ -19,10 +19,21 @@ describe('rental service', () => {
+         itemId: 'board-1',
+         start: day(1),
+         end: day(4),
+-        total: 7500,
++        total: 6750,
+       });
+     });
+ 
++    it('charges full price for 2 days and 10% less from 3 days', () => {
++      assert.equal(service.quote({ itemId: 'board-1', start: day(1), end: day(3) }).total, 5000);
++      assert.equal(service.quote({ itemId: 'board-1', start: day(1), end: day(4) }).total, 6750);
++      assert.equal(service.quote({ itemId: 'board-1', start: day(1), end: day(8) }).total, 15750);
++    });
++
++    it('rounds the discounted total to the nearest euro cent', () => {
++      service.addEquipment({ id: 'sail-2', kind: 'sail', dailyPrice: 1001 });
++      assert.equal(service.quote({ itemId: 'sail-2', start: day(1), end: day(4) }).total, 2703);
++    });
++
+     it('prices a single day', () => {
+       assert.equal(service.quote({ itemId: 'sail-1', start: day(1), end: day(2) }).total, 1500);
+     });
+@@ -60,6 +71,10 @@ describe('rental service', () => {
+       assert.equal(typeof booking.id, 'string');
+     });
+ 
++    it('books at the discounted total from 3 days', () => {
++      assert.equal(service.book({ itemId: 'board-1', start: day(1), end: day(4) }).total, 6750);
++    });
++
+     it('gives each booking its own id', () => {
+       const a = service.book({ itemId: 'board-1', start: day(1), end: day(2) });
+       const b = service.book({ itemId: 'board-1', start: day(2), end: day(3) });

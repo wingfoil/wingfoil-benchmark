@@ -1,0 +1,128 @@
+diff --git a/docs/memory/decision-log/dl-003-applypatch-reject-sparse-patches-replace-in-place.md b/docs/memory/decision-log/dl-003-applypatch-reject-sparse-patches-replace-in-place.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..a19bb84a4b1a05eef4fa4644fc13f36db03d9fc5
+--- /dev/null
++++ b/docs/memory/decision-log/dl-003-applypatch-reject-sparse-patches-replace-in-place.md
+@@ -0,0 +1,24 @@
++---
++id: dl-003-applypatch-reject-sparse-patches-replace-in-place
++type: decision-log
++title: "applyPatch: reject sparse patches, replace in place"
++status: pending
++---
++
++## Context
++
++Users reported that `applyPatch` accepted patches they consider invalid and gave unexpected results.
++A review against RFC 6902 found a patch with holes passing validation, and `replace` reordering keys.
++
++## Decision
++
++- Validate the patch with `Array.from(patch, validateOperation)` so holes are visited and rejected with
++  `TypeError` (dl-002: a non-object operation is an invalid patch).
++- `replace` overwrites the existing value in place (RFC 6902, section 4.3: the value is replaced).
++  Behaviour for arrays is unchanged; object members keep their position.
++- Unchanged from dl-002: removing the whole document stays rejected, since the RFC defines no result for it.
++
++## Consequences
++
++Sparse patches now throw before any operation runs. Results of `replace` are identical as JSON values,
++but key order of the output is now stable.
+diff --git a/docs/memory/task/task-003-fix-applypatch-conformance-to-rfc-6902.md b/docs/memory/task/task-003-fix-applypatch-conformance-to-rfc-6902.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..d74db15499446bd45ccae5833d1bc5af20476808
+--- /dev/null
++++ b/docs/memory/task/task-003-fix-applypatch-conformance-to-rfc-6902.md
+@@ -0,0 +1,19 @@
++---
++id: task-003-fix-applypatch-conformance-to-rfc-6902
++type: task
++title: "Fix applyPatch conformance to RFC 6902"
++status: pending
++---
++
++## What was done
++
++Reviewed how `applyPatch` validates and applies patches against RFC 6902 and fixed two deviations in
++`src/index.ts`, tests first in `src/index.test.ts`:
++
++- A patch array with holes (`new Array(2)`, `[op, , op]`) was accepted and the holes silently skipped.
++  Holes are now read as `undefined` and rejected with `TypeError`, like any non-object operation.
++- `replace` was a removal plus an addition, which moved an object member to the end. It now overwrites
++  the value in place: key order is kept, arrays keep their length.
++
++Everything else checked (move into own child, move onto itself, `-` handling, array index grammar,
++`test` equality, atomicity, non-mutation) already conformed. See dl-003.
+diff --git a/src/index.test.ts b/src/index.test.ts
+index 976d1f5e421524447f473b8e61b9176f493f3f17..56a4cdb94b55e240143a971a58f3acdc4113c42f 100644
+--- a/src/index.test.ts
++++ b/src/index.test.ts
+@@ -230,3 +230,13 @@ test("applyPatch rejects invalid patches", () => {
+ test("applyPatch validates the whole patch before applying it", () => {
+   assert.throws(() => applyPatch({}, [{ op: "add", path: "/a", value: 1 }, { op: "nope", path: "/a" }]), TypeError);
+ });
++
++test("applyPatch rejects a patch array with holes", () => {
++  assert.throws(() => applyPatch({}, new Array(1) as never), TypeError);
++  assert.throws(() => applyPatch({}, [{ op: "add", path: "/a", value: 1 }, , { op: "remove", path: "/a" }] as never), TypeError);
++});
++
++test("applyPatch replace keeps the position of an object member", () => {
++  const result = applyPatch({ a: 1, b: 2, c: 3 }, [{ op: "replace", path: "/a", value: 9 }]);
++  assert.deepEqual(Object.keys(result as object), ["a", "b", "c"]);
++});
+diff --git a/src/index.ts b/src/index.ts
+index 7ba1f44f9fe147201d1c355cdcaf0d73e1bee0e9..2a978432244138534b86806952fa6624ce70c2ba 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -158,6 +158,19 @@ function removeAt(document: unknown, pointer: string): unknown {
+   return document;
+ }
+ 
++function replaceAt(document: unknown, pointer: string, value: unknown): unknown {
++  const tokens = parseTokens(pointer);
++  if (tokens.length === 0) return value;
++  const [parent, key] = locateParent(document, tokens, pointer);
++  step(parent, key, pointer);
++  if (Array.isArray(parent)) {
++    parent[Number(key)] = value;
++  } else {
++    setMember(parent, key, value);
++  }
++  return document;
++}
++
+ function applyOperation(document: unknown, operation: PatchOperation): unknown {
+   switch (operation.op) {
+     case "add":
+@@ -165,10 +178,7 @@ function applyOperation(document: unknown, operation: PatchOperation): unknown {
+     case "remove":
+       return removeAt(document, operation.path);
+     case "replace":
+-      resolvePointer(document, operation.path);
+-      return parseTokens(operation.path).length === 0
+-        ? structuredClone(operation.value)
+-        : addAt(removeAt(document, operation.path), operation.path, structuredClone(operation.value));
++      return replaceAt(document, operation.path, structuredClone(operation.value));
+     case "copy":
+       return addAt(document, operation.path, structuredClone(resolvePointer(document, operation.from)));
+     case "move": {
+@@ -192,8 +202,8 @@ function applyOperation(document: unknown, operation: PatchOperation): unknown {
+  *
+  * Neither argument is mutated, and the result shares no structure with them. The patch is validated
+  * as a whole before any operation runs, then operations apply in order; if one fails, nothing is
+- * returned, so the patch is atomic. Removing the whole document is rejected. A "replace" at a
+- * position is a removal followed by an addition, so on arrays it keeps the element count.
++ * returned, so the patch is atomic. Removing the whole document is rejected. A "replace" overwrites
++ * the existing value in place, so object members keep their position and arrays their length.
+  *
+  * @throws TypeError when `patch` is not an array of well-formed operations.
+  * @throws SyntaxError when a "path" or "from" is not a valid JSON Pointer.
+@@ -204,6 +214,6 @@ export function applyPatch(document: unknown, patch: PatchOperation[]): unknown
+   if (!Array.isArray(patch)) {
+     throw new TypeError("A JSON Patch must be an array of operations");
+   }
+-  const operations = patch.map(validateOperation);
++  const operations = Array.from(patch, validateOperation);
+   return operations.reduce(applyOperation, structuredClone(document));
+ }

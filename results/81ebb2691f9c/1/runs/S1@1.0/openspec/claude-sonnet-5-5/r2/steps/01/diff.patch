@@ -1,0 +1,387 @@
+diff --git a/README.md b/README.md
+index ff92be649ff3f610b38798b3310751534d032814..7c8805948dd6c5a918b9356d2043fd68bcbac540 100644
+--- a/README.md
++++ b/README.md
+@@ -3,3 +3,17 @@
+ A small TypeScript library, with no runtime dependency, of building blocks for our services that store,
+ exchange and update JSON: configuration files, API payloads and stored records. It is imported by the
+ other projects of the team, so its behaviour must follow the published standards it implements.
++
++## JSON Pointer (RFC 6901)
++
++```ts
++import { resolvePointer } from "./src/index.ts";
++
++resolvePointer({ foo: ["bar", "baz"] }, "/foo/1"); // "baz"
++resolvePointer(doc, ""); // the whole document
++```
++
++`resolvePointer(document, pointer)` returns the value the pointer refers to. It throws an `Error` when
++the pointer is not a valid JSON Pointer (not a string, non-empty without a leading `/`, or a `~` not
++followed by `0` or `1`), or when it does not resolve to a value of the document (missing member, array
++index out of range or malformed, the `-` token, or a token applied to a scalar).
+diff --git a/openspec/changes/archive/2026-10-22-add-json-pointer-resolve/.openspec.yaml b/openspec/changes/archive/2026-10-22-add-json-pointer-resolve/.openspec.yaml
+new file mode 100644
+index 0000000000000000000000000000000000000000..7cc41bb519e271c0a74068d5a8e912100b55e58c
+--- /dev/null
++++ b/openspec/changes/archive/2026-10-22-add-json-pointer-resolve/.openspec.yaml
+@@ -0,0 +1,2 @@
++schema: spec-driven
++created: 2026-10-22
+diff --git a/openspec/changes/archive/2026-10-22-add-json-pointer-resolve/design.md b/openspec/changes/archive/2026-10-22-add-json-pointer-resolve/design.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..9a5b199bca53e926a4499232c33701df72d980db
+--- /dev/null
++++ b/openspec/changes/archive/2026-10-22-add-json-pointer-resolve/design.md
+@@ -0,0 +1,24 @@
++# Design
++
++## Context
++
++The repository has no source yet (`tsconfig.json` includes `src`, ESM/NodeNext, strict; tests run with `node --test`). The library has no runtime dependencies. Requirements are in `specs/json-pointer/spec.md`.
++
++## Goals / Non-Goals
++
++**Goals:**
++- A small pure function, with an internal split between parsing a pointer into tokens and walking the document, so later features can reuse the parser.
++
++**Non-Goals:**
++- URI fragment form, mutation, or exposing the parser publicly yet.
++
++## Decisions
++
++- **Parse then walk.** Validate the whole pointer first (so an invalid pointer throws even if the document would fail earlier), then resolve token by token. Alternative: validate lazily — rejected as it makes errors depend on the document.
++- **Own-property lookup** via `Object.prototype.hasOwnProperty.call`, so prototype keys are never reached. Array indices checked with `/^(0|[1-9][0-9]*)$/` and `< length`.
++- **Token decoding** by splitting on `/` and replacing `~1` then `~0` in a single regex pass (`/~([01])/` with a mapper), after checking no `~` is followed by anything else.
++- Source layout: implementation lives in `src/index.ts` for now (no tsc available; Node runs `.ts` via type stripping, which cannot resolve `./x.js` imports to `.ts`). Tests in `test/` import `../src/index.ts`.
++
++## Risks / Trade-offs
++
++- [Tests are TypeScript but only `node --test` is available] → rely on Node 22 type stripping; use only erasable TS syntax.
+diff --git a/openspec/changes/archive/2026-10-22-add-json-pointer-resolve/proposal.md b/openspec/changes/archive/2026-10-22-add-json-pointer-resolve/proposal.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..e67364a627983163d98ab3bc3278af61d8ae8c2d
+--- /dev/null
++++ b/openspec/changes/archive/2026-10-22-add-json-pointer-resolve/proposal.md
+@@ -0,0 +1,24 @@
++## Why
++
++Our services need one standard way to refer to a value inside a JSON document. RFC 6901 (JSON Pointer) is the published standard for it, and later features of this library will build on it.
++
++## What Changes
++
++- Add `resolvePointer(document, pointer)`, exported from `src/index.ts`, which returns the value a JSON Pointer string refers to.
++- It throws an error when the pointer is not a valid JSON Pointer, or when it does not resolve to a value of the document.
++- Behaviour follows RFC 6901 exactly (syntax, `~0`/`~1` escaping, array index rules, the `-` token).
++
++## Capabilities
++
++### New Capabilities
++- `json-pointer`: parsing and resolving RFC 6901 JSON Pointers against a JSON document.
++
++### Modified Capabilities
++
++None.
++
++## Impact
++
++- New code in `src/` (the project has no source yet) and tests; no dependencies added.
++- New public API surface of the library, which other projects import.
++- Out of scope: the URI fragment representation (RFC 6901 section 6), and modifying documents.
+diff --git a/openspec/changes/archive/2026-10-22-add-json-pointer-resolve/specs/json-pointer/spec.md b/openspec/changes/archive/2026-10-22-add-json-pointer-resolve/specs/json-pointer/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..ad7a8f18a99c4fd48419aec305e7ea109ff4426e
+--- /dev/null
++++ b/openspec/changes/archive/2026-10-22-add-json-pointer-resolve/specs/json-pointer/spec.md
+@@ -0,0 +1,63 @@
++## ADDED Requirements
++
++### Requirement: Resolve a pointer to a value
++`resolvePointer(document, pointer)` SHALL return the value of `document` that the JSON Pointer string `pointer` refers to, as defined by RFC 6901. The empty string refers to the whole document. The returned value is the referenced value itself, not a copy.
++
++#### Scenario: Empty pointer
++- **WHEN** the pointer is `""`
++- **THEN** the whole document is returned
++
++#### Scenario: Object member and array element
++- **WHEN** the document is `{"foo": ["bar", "baz"]}` and the pointer is `/foo/1`
++- **THEN** `"baz"` is returned
++
++#### Scenario: Empty-string key
++- **WHEN** the document is `{"": 0}` and the pointer is `/`
++- **THEN** `0` is returned
++
++#### Scenario: Falsy and null values
++- **WHEN** the pointer refers to a member whose value is `null`, `false`, `0` or `""`
++- **THEN** that value is returned and no error is thrown
++
++### Requirement: Escaped reference tokens
++In a pointer, `~1` SHALL stand for `/` and `~0` for `~` in a reference token; `~1` is decoded before `~0`-sequences can form new escapes, so `~01` decodes to `~1`.
++
++#### Scenario: Escapes
++- **WHEN** the document has members `"a/b"`, `"m~n"` and `"~1"`
++- **THEN** `/a~1b`, `/m~0n` and `/~01` return the values of `"a/b"`, `"m~n"` and `"~1"` respectively
++
++### Requirement: Invalid pointers are rejected
++`resolvePointer` SHALL throw an error when `pointer` is not a valid JSON Pointer: when it is not a string, when it is non-empty and does not start with `/`, or when a `~` in it is not followed by `0` or `1`.
++
++#### Scenario: Missing leading slash
++- **WHEN** the pointer is `foo`
++- **THEN** an error is thrown
++
++#### Scenario: Bad escape
++- **WHEN** the pointer is `/a~2b` or ends with `~`
++- **THEN** an error is thrown
++
++#### Scenario: Not a string
++- **WHEN** the pointer is `undefined`, `null` or a number
++- **THEN** an error is thrown
++
++### Requirement: Unresolvable pointers are rejected
++`resolvePointer` SHALL throw an error when a valid pointer does not resolve to a value of the document.
++
++An object token refers only to an own member of the object (never an inherited property such as `__proto__` or `constructor`). An array token refers to an element only if it is `0` or a decimal number without a leading zero, sign or other characters, and is less than the array length. The token `-` refers to the position after the last element, which is no value, so it throws. A token applied to a string, number, boolean or `null` throws. Properties of an array such as `length` are not reachable.
++
++#### Scenario: Missing member
++- **WHEN** the document is `{"a": 1}` and the pointer is `/b`
++- **THEN** an error is thrown
++
++#### Scenario: Array index out of range or malformed
++- **WHEN** the document is `{"a": [1, 2]}` and the pointer is `/a/2`, `/a/-`, `/a/01`, `/a/+1`, `/a/1.0` or `/a/length`
++- **THEN** an error is thrown
++
++#### Scenario: Descending into a scalar
++- **WHEN** the document is `{"a": 1}` and the pointer is `/a/b`
++- **THEN** an error is thrown
++
++#### Scenario: Inherited property
++- **WHEN** the document is `{}` and the pointer is `/__proto__` or `/constructor`
++- **THEN** an error is thrown
+diff --git a/openspec/changes/archive/2026-10-22-add-json-pointer-resolve/tasks.md b/openspec/changes/archive/2026-10-22-add-json-pointer-resolve/tasks.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..1ffe1b3e7a1cd6ac46857f594133084316b063dc
+--- /dev/null
++++ b/openspec/changes/archive/2026-10-22-add-json-pointer-resolve/tasks.md
+@@ -0,0 +1,7 @@
++# Tasks
++
++## 1. Implementation
++
++- [x] 1.1 Implement pointer parsing/validation and document resolution and export `resolvePointer` from `src/index.ts`; verify via the tests in 1.2
++- [x] 1.2 Add tests in `test/` covering every scenario in `specs/json-pointer/spec.md` (including RFC 6901 section 5 examples); verify `npm test` passes
++- [x] 1.3 Document `resolvePointer` in `README.md`; verify the README describes usage and error behaviour
+diff --git a/openspec/specs/json-pointer/spec.md b/openspec/specs/json-pointer/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..8a66d7303bf13979a0a83c04911ed0032e64515d
+--- /dev/null
++++ b/openspec/specs/json-pointer/spec.md
+@@ -0,0 +1,68 @@
++# json-pointer Specification
++
++## Purpose
++Resolving RFC 6901 JSON Pointers against a JSON document, with strict validation of pointer syntax and of whether the pointer resolves to a value.
++
++## Requirements
++
++### Requirement: Resolve a pointer to a value
++`resolvePointer(document, pointer)` SHALL return the value of `document` that the JSON Pointer string `pointer` refers to, as defined by RFC 6901. The empty string refers to the whole document. The returned value is the referenced value itself, not a copy.
++
++#### Scenario: Empty pointer
++- **WHEN** the pointer is `""`
++- **THEN** the whole document is returned
++
++#### Scenario: Object member and array element
++- **WHEN** the document is `{"foo": ["bar", "baz"]}` and the pointer is `/foo/1`
++- **THEN** `"baz"` is returned
++
++#### Scenario: Empty-string key
++- **WHEN** the document is `{"": 0}` and the pointer is `/`
++- **THEN** `0` is returned
++
++#### Scenario: Falsy and null values
++- **WHEN** the pointer refers to a member whose value is `null`, `false`, `0` or `""`
++- **THEN** that value is returned and no error is thrown
++
++### Requirement: Escaped reference tokens
++In a pointer, `~1` SHALL stand for `/` and `~0` for `~` in a reference token; `~1` is decoded before `~0`-sequences can form new escapes, so `~01` decodes to `~1`.
++
++#### Scenario: Escapes
++- **WHEN** the document has members `"a/b"`, `"m~n"` and `"~1"`
++- **THEN** `/a~1b`, `/m~0n` and `/~01` return the values of `"a/b"`, `"m~n"` and `"~1"` respectively
++
++### Requirement: Invalid pointers are rejected
++`resolvePointer` SHALL throw an error when `pointer` is not a valid JSON Pointer: when it is not a string, when it is non-empty and does not start with `/`, or when a `~` in it is not followed by `0` or `1`.
++
++#### Scenario: Missing leading slash
++- **WHEN** the pointer is `foo`
++- **THEN** an error is thrown
++
++#### Scenario: Bad escape
++- **WHEN** the pointer is `/a~2b` or ends with `~`
++- **THEN** an error is thrown
++
++#### Scenario: Not a string
++- **WHEN** the pointer is `undefined`, `null` or a number
++- **THEN** an error is thrown
++
++### Requirement: Unresolvable pointers are rejected
++`resolvePointer` SHALL throw an error when a valid pointer does not resolve to a value of the document.
++
++An object token refers only to an own member of the object (never an inherited property such as `__proto__` or `constructor`). An array token refers to an element only if it is `0` or a decimal number without a leading zero, sign or other characters, and is less than the array length. The token `-` refers to the position after the last element, which is no value, so it throws. A token applied to a string, number, boolean or `null` throws. Properties of an array such as `length` are not reachable.
++
++#### Scenario: Missing member
++- **WHEN** the document is `{"a": 1}` and the pointer is `/b`
++- **THEN** an error is thrown
++
++#### Scenario: Array index out of range or malformed
++- **WHEN** the document is `{"a": [1, 2]}` and the pointer is `/a/2`, `/a/-`, `/a/01`, `/a/+1`, `/a/1.0` or `/a/length`
++- **THEN** an error is thrown
++
++#### Scenario: Descending into a scalar
++- **WHEN** the document is `{"a": 1}` and the pointer is `/a/b`
++- **THEN** an error is thrown
++
++#### Scenario: Inherited property
++- **WHEN** the document is `{}` and the pointer is `/__proto__` or `/constructor`
++- **THEN** an error is thrown
+diff --git a/src/index.ts b/src/index.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..96e342e1f491e99836541840e514255a50e0fb94
+--- /dev/null
++++ b/src/index.ts
+@@ -0,0 +1,53 @@
++export type JsonValue =
++  | null
++  | boolean
++  | number
++  | string
++  | JsonValue[]
++  | { [key: string]: JsonValue };
++
++const ARRAY_INDEX = /^(0|[1-9][0-9]*)$/;
++
++function parsePointer(pointer: string): string[] {
++  if (typeof pointer !== "string") {
++    throw new Error("Invalid JSON Pointer: must be a string");
++  }
++  if (pointer === "") {
++    return [];
++  }
++  if (pointer[0] !== "/") {
++    throw new Error(`Invalid JSON Pointer "${pointer}": must be empty or start with "/"`);
++  }
++  if (/~(?![01])/.test(pointer)) {
++    throw new Error(`Invalid JSON Pointer "${pointer}": "~" must be followed by "0" or "1"`);
++  }
++  return pointer
++    .slice(1)
++    .split("/")
++    .map((token) => token.replace(/~([01])/g, (_, c: string) => (c === "0" ? "~" : "/")));
++}
++
++/**
++ * Returns the value of `document` referred to by the RFC 6901 JSON Pointer `pointer`.
++ * Throws if the pointer is invalid or does not resolve to a value of the document.
++ */
++export function resolvePointer(document: unknown, pointer: string): any {
++  const tokens = parsePointer(pointer);
++  let current: unknown = document;
++  for (const token of tokens) {
++    if (Array.isArray(current)) {
++      if (!ARRAY_INDEX.test(token) || Number(token) >= current.length) {
++        throw new Error(`JSON Pointer "${pointer}" does not resolve to a value: bad array index "${token}"`);
++      }
++      current = current[Number(token)];
++    } else if (typeof current === "object" && current !== null) {
++      if (!Object.prototype.hasOwnProperty.call(current, token)) {
++        throw new Error(`JSON Pointer "${pointer}" does not resolve to a value: no member "${token}"`);
++      }
++      current = (current as Record<string, unknown>)[token];
++    } else {
++      throw new Error(`JSON Pointer "${pointer}" does not resolve to a value: cannot descend into a scalar`);
++    }
++  }
++  return current;
++}
+diff --git a/test/pointer.test.ts b/test/pointer.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..41e31c0fb4485edacadd67884777b34eab10de15
+--- /dev/null
++++ b/test/pointer.test.ts
+@@ -0,0 +1,76 @@
++import { test } from "node:test";
++import assert from "node:assert/strict";
++import { resolvePointer } from "../src/index.ts";
++
++const rfc = {
++  foo: ["bar", "baz"],
++  "": 0,
++  "a/b": 1,
++  "c%d": 2,
++  "e^f": 3,
++  "g|h": 4,
++  "i\\j": 5,
++  'k"l': 6,
++  " ": 7,
++  "m~n": 8,
++};
++
++test("RFC 6901 section 5 examples", () => {
++  assert.equal(resolvePointer(rfc, ""), rfc);
++  assert.deepEqual(resolvePointer(rfc, "/foo"), ["bar", "baz"]);
++  assert.equal(resolvePointer(rfc, "/foo/0"), "bar");
++  assert.equal(resolvePointer(rfc, "/"), 0);
++  assert.equal(resolvePointer(rfc, "/a~1b"), 1);
++  assert.equal(resolvePointer(rfc, "/c%d"), 2);
++  assert.equal(resolvePointer(rfc, "/e^f"), 3);
++  assert.equal(resolvePointer(rfc, "/g|h"), 4);
++  assert.equal(resolvePointer(rfc, "/i\\j"), 5);
++  assert.equal(resolvePointer(rfc, '/k"l'), 6);
++  assert.equal(resolvePointer(rfc, "/ "), 7);
++  assert.equal(resolvePointer(rfc, "/m~0n"), 8);
++});
++
++test("returns the referenced value itself", () => {
++  const inner = {};
++  assert.equal(resolvePointer({ a: inner }, "/a"), inner);
++});
++
++test("falsy and null values", () => {
++  const doc = { a: null, b: false, c: 0, d: "" };
++  for (const k of ["a", "b", "c", "d"]) {
++    assert.equal(resolvePointer(doc, "/" + k), (doc as any)[k]);
++  }
++});
++
++test("escape order", () => {
++  assert.equal(resolvePointer({ "~1": "x" }, "/~01"), "x");
++  assert.equal(resolvePointer({ "~/": "y" }, "/~0~1"), "y");
++});
++
++test("invalid pointers throw", () => {
++  for (const p of ["foo", "a/b", "/a~2b", "/a~", "~0", " /a"]) {
++    assert.throws(() => resolvePointer({ a: 1 }, p), p);
++  }
++  for (const p of [undefined, null, 1, {}]) {
++    assert.throws(() => resolvePointer({ a: 1 }, p as any));
++  }
++});
++
++test("unresolvable pointers throw", () => {
++  assert.throws(() => resolvePointer({ a: 1 }, "/b"));
++  for (const p of ["/a/2", "/a/-", "/a/01", "/a/+1", "/a/1.0", "/a/length", "/a/", "/a/-1", "/a/0x1"]) {
++    assert.throws(() => resolvePointer({ a: [1, 2] }, p), p);
++  }
++  assert.throws(() => resolvePointer({ a: 1 }, "/a/b"));
++  assert.throws(() => resolvePointer({ a: null }, "/a/b"));
++  assert.throws(() => resolvePointer("str", "/length"));
++  assert.throws(() => resolvePointer({}, "/__proto__"));
++  assert.throws(() => resolvePointer({}, "/constructor"));
++  assert.throws(() => resolvePointer([], "/0"));
++});
++
++test("array elements", () => {
++  assert.equal(resolvePointer({ a: [10, 20] }, "/a/0"), 10);
++  assert.equal(resolvePointer({ a: [10, 20] }, "/a/1"), 20);
++  assert.equal(resolvePointer([[1]], "/0/0"), 1);
++});

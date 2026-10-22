@@ -1,0 +1,89 @@
+diff --git a/README.md b/README.md
+index c99dc12b776f5e824c9e10a9b1cba7abaefc658f..e4fd716e2382b9213f3ad5da7b6f43dfadabbe04 100644
+--- a/README.md
++++ b/README.md
+@@ -15,6 +15,9 @@ of its booking desk, written in TypeScript with no runtime dependency.
+   omitted) that is free for the whole period; the period follows the same rules as `quote`, and an invalid
+   `kind` throws.
+ 
++Long-stay discount: a rental of 3 days or more costs 10% less than its full price (days × `dailyPrice`),
++rounded half up to the cent; `quote` and `book` both return the reduced `total`. Shorter rentals pay full price.
++
+ School rules enforced: money in integer cents; times are UTC ISO-8601 strings (returned normalised, e.g.
+ `2026-06-01T00:00:00.000Z`); periods are whole days, from midnight UTC to midnight UTC, `end` being the
+ start of the day after the last day (so `end` must be after `start`); an item cannot be booked for
+diff --git a/src/index.ts b/src/index.ts
+index aea2a739a593895bfcba04dc5dbc0d8367b02848..f9c50641620f05eadab59b2fcb107413b75d2555 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -1,4 +1,6 @@
+ const DAY_MS = 24 * 60 * 60 * 1000;
++const LONG_STAY_DAYS = 3;
++const LONG_STAY_PERCENT_PAID = 90;
+ const MIDNIGHT_UTC = /^\d{4}-\d{2}-\d{2}T00:00(:00(\.0+)?)?(Z|\+00:00)$/;
+ 
+ /** The kinds of equipment the school rents out. */
+@@ -91,6 +93,15 @@ function validateEquipment(item: Equipment): void {
+   }
+ }
+ 
++/** Prices `days` days at `dailyPrice` cents; a stay of 3 days or more is 10% cheaper, rounded half up to the cent. */
++function rentalTotal(days: number, dailyPrice: number): number {
++  const fullPrice = days * dailyPrice;
++  if (days < LONG_STAY_DAYS) {
++    return fullPrice;
++  }
++  return Math.floor((fullPrice * LONG_STAY_PERCENT_PAID + 50) / 100);
++}
++
+ function overlaps(a: Period, b: Period): boolean {
+   return a.from < b.to && b.from < a.to;
+ }
+@@ -112,7 +123,7 @@ export function createRentalService(): RentalService {
+       itemId: item.id,
+       start: new Date(period.from).toISOString(),
+       end: new Date(period.to).toISOString(),
+-      total: days * item.dailyPrice,
++      total: rentalTotal(days, item.dailyPrice),
+     };
+     return { quote, period };
+   }
+diff --git a/test/rental.test.ts b/test/rental.test.ts
+index 1d65b383336a581a07610581391112c5e04baef7..72c3cb9eeb3515310ebea095a59bb347f7b6eda9 100644
+--- a/test/rental.test.ts
++++ b/test/rental.test.ts
+@@ -19,7 +19,22 @@ describe('rental service', () => {
+ 
+   describe('quote', () => {
+     it('prices whole days in integer cents', () => {
+-      assert.deepEqual(service.quote(jun(1, 4)), { ...jun(1, 4), total: 13500 });
++      assert.deepEqual(service.quote(jun(1, 3)), { ...jun(1, 3), total: 9000 });
++    });
++
++    it('takes 10% off a rental of 3 days or more', () => {
++      assert.equal(service.quote(jun(1, 4)).total, 12150);
++      assert.equal(service.quote(jun(1, 11)).total, 40500);
++    });
++
++    it('gives no discount under 3 days', () => {
++      assert.equal(service.quote(jun(1, 2)).total, 4500);
++      assert.equal(service.quote(jun(1, 3)).total, 9000);
++    });
++
++    it('rounds the discounted total to whole cents, halves up', () => {
++      service.addEquipment({ id: 'odd', kind: 'sail', dailyPrice: 1001 });
++      assert.equal(service.quote(jun(1, 4, 'odd')).total, 2703);
+     });
+ 
+     it('normalises equivalent UTC spellings', () => {
+@@ -55,6 +70,10 @@ describe('rental service', () => {
+   });
+ 
+   describe('book', () => {
++    it('books at the discounted total for 3 days or more', () => {
++      assert.equal(service.book(jun(1, 4)).total, 12150);
++    });
++
+     it('returns a booking with an id and the quoted total', () => {
+       const booking = service.book(jun(1, 3));
+       assert.equal(booking.total, 9000);

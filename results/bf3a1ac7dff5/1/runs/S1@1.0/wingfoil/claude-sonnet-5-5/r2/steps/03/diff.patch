@@ -1,0 +1,94 @@
+diff --git a/docs/memory/decision-log/dl-003-applypatch-rejects-sparse-patch-arrays-and-undefined-values.md b/docs/memory/decision-log/dl-003-applypatch-rejects-sparse-patch-arrays-and-undefined-values.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..efec1c341646ce4b36d68df338c6e9b79cb966a1
+--- /dev/null
++++ b/docs/memory/decision-log/dl-003-applypatch-rejects-sparse-patch-arrays-and-undefined-values.md
+@@ -0,0 +1,22 @@
++---
++id: dl-003-applypatch-rejects-sparse-patch-arrays-and-undefined-values
++type: decision-log
++title: "applyPatch rejects sparse patch arrays and undefined values"
++status: pending
++---
++
++# Context
++
++RFC 6902 requires a patch to be an array of operation objects, and `value` to be a JSON value.
++`applyPatch` iterated with `forEach` (skips holes) and only checked that a `value` member existed.
++
++# Decision
++
++- Iterate operations by index so every slot is validated; a hole is an invalid operation and throws.
++- A `value` of `undefined` counts as missing (it is not a JSON value); `null` stays valid.
++- Refines dl-002 ("missing `value`" invalid); no other behaviour changes.
++
++# Consequences
++
++- Callers passing hand-built patches with holes or `undefined` values now get an error instead of a
++  silently wrong result.
+diff --git a/docs/memory/task/task-003-make-applypatch-conform-to-rfc-6902-edge-cases.md b/docs/memory/task/task-003-make-applypatch-conform-to-rfc-6902-edge-cases.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..30eb5abe1c895a4303fbb142d433c288f6a67a59
+--- /dev/null
++++ b/docs/memory/task/task-003-make-applypatch-conform-to-rfc-6902-edge-cases.md
+@@ -0,0 +1,19 @@
++---
++id: task-003-make-applypatch-conform-to-rfc-6902-edge-cases
++type: task
++title: "Make applyPatch conform to RFC 6902 edge cases"
++status: pending
++---
++
++# Summary
++
++Reviewed `applyPatch` against RFC 6902 (checking, application and errors). Most behaviour already
++conformed: the appendix A cases, root paths, array index rules, move/copy/test semantics and atomicity.
++Two invalid patches were accepted and are now rejected:
++
++- a sparse patch array (`[ , {...}]`): `forEach` skipped the holes, so a missing operation passed
++  silently. Operations are now iterated by index, and a hole fails as "not an object".
++- an operation whose `value` is `undefined` (present but not a JSON value): it was accepted and
++  produced a member that vanishes on serialisation. `value` must now be defined (`null` is valid).
++
++Test added first in `test/patch.test.ts`. Design: dl-003.
+diff --git a/src/index.ts b/src/index.ts
+index 14c7fd29d76284ef1ce9338f03ab07ac7b73cef7..65a7f8938dec5c7a3487b142d14b9c444d99eb46 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -164,7 +164,7 @@ function applyOperation(document: unknown, operation: unknown, index: number): u
+   const path = requireString(operation, "path", index);
+   parsePointer(path);
+   const requireValue = (): unknown => {
+-    if (!Object.hasOwn(operation, "value")) {
++    if (operation.value === undefined) {
+       throw new Error(`Invalid patch: operation ${index} needs a "value" member`);
+     }
+     return structuredClone(operation.value);
+@@ -225,8 +225,8 @@ export function applyPatch(document: unknown, patch: PatchOperation[]): unknown
+     throw new Error("Invalid patch: must be an array of operations");
+   }
+   let result = structuredClone(document);
+-  patch.forEach((operation, index) => {
+-    result = applyOperation(result, operation, index);
+-  });
++  for (let index = 0; index < patch.length; index++) {
++    result = applyOperation(result, patch[index], index);
++  }
+   return result;
+ }
+diff --git a/test/patch.test.ts b/test/patch.test.ts
+index 9f1a0f69010ad706135866d4754c168b14ad5a94..b8ecf1a1641815046194a34e3fa5eaf7aa594a78 100644
+--- a/test/patch.test.ts
++++ b/test/patch.test.ts
+@@ -183,3 +183,11 @@ test("only own members are reached", () => {
+   assert.equal(({} as Record<string, unknown>).polluted, undefined);
+   assert.equal(Object.getPrototypeOf(result), Object.prototype);
+ });
++
++test("holes in the patch array and undefined values are invalid", () => {
++  const sparse = [, { op: "add", path: "/b", value: 1 }] as never;
++  assert.throws(() => applyPatch({}, sparse));
++  assert.throws(() => applyPatch({}, [{ op: "add", path: "/b", value: undefined }]));
++  assert.throws(() => applyPatch({}, [{ op: "test", path: "/b", value: undefined }]));
++  assert.deepEqual(applyPatch({}, [{ op: "add", path: "/b", value: null }]), { b: null });
++});

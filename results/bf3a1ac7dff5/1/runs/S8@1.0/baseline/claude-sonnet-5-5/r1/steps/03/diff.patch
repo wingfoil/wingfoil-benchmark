@@ -1,0 +1,153 @@
+diff --git a/src/domain/list.ts b/src/domain/list.ts
+index 0d90173188a8fb21592f69d73db517e6460c4b61..4a21ec2666f195f93e5c913d512c7e65589ea442 100644
+--- a/src/domain/list.ts
++++ b/src/domain/list.ts
+@@ -1,6 +1,17 @@
+ import { err, ok } from './result.ts';
+ import type { Result } from './result.ts';
+-import { addTag, compareTasks, completeTask, createTask, removeTag, renameTask, reopenTask } from './task.ts';
++import {
++  addTag,
++  compareTasks,
++  completeTask,
++  createTask,
++  priorityProblem,
++  removeTag,
++  renameTask,
++  reopenTask,
++  tagProblem,
++  titleProblem,
++} from './task.ts';
+ import type { NewTask, Priority, Status, Task } from './task.ts';
+ 
+ /** Which tasks to show: by status, priority or tag; every task when nothing is given. */
+@@ -53,8 +64,16 @@ export function createTaskList(): TaskList {
+     return updated;
+   };
+ 
++  const invalid = (problem: string | undefined): Result<never> | undefined =>
++    problem === undefined ? undefined : err('invalid-input', problem);
++
+   return {
+     add(input) {
++      const rejected =
++        invalid(titleProblem(input?.title)) ??
++        (input.priority === undefined ? undefined : invalid(priorityProblem(input.priority))) ??
++        (input.tags ?? []).map((tag) => invalid(tagProblem(tag))).find((result) => result !== undefined);
++      if (rejected !== undefined) return rejected;
+       const task = createTask(input);
+       if (withTitle(task.title) !== undefined) return err('duplicate', `there is already a task "${task.title}"`);
+       tasks.set(task.id, task);
+@@ -65,6 +84,8 @@ export function createTaskList(): TaskList {
+     complete: (titleOrId) => change(titleOrId, completeTask),
+     reopen: (titleOrId) => change(titleOrId, reopenTask),
+     rename(titleOrId, newTitle) {
++      const rejected = invalid(titleProblem(newTitle));
++      if (rejected !== undefined) return rejected;
+       const target = newTitle.trim();
+       return change(titleOrId, (task) => {
+         const other = withTitle(target);
+@@ -74,7 +95,8 @@ export function createTaskList(): TaskList {
+         return ok(renameTask(task, target));
+       });
+     },
+-    tag: (titleOrId, tag) => change(titleOrId, (task) => ok(addTag(task, tag))),
++    tag: (titleOrId, tag) =>
++      invalid(tagProblem(tag)) ?? change(titleOrId, (task) => ok(addTag(task, tag))),
+     untag: (titleOrId, tag) => change(titleOrId, (task) => ok(removeTag(task, tag))),
+     remove(titleOrId) {
+       const found = find(titleOrId);
+diff --git a/src/domain/result.ts b/src/domain/result.ts
+index c6ed17a1b929cb19e127e0be01e84aac17b45407..4e46dfbe7c138c650e2d4b2d86dfbc5a5b27267c 100644
+--- a/src/domain/result.ts
++++ b/src/domain/result.ts
+@@ -5,7 +5,7 @@ export interface TodoError {
+ }
+ 
+ /** The kinds of failure the task list reports. */
+-export type TodoErrorCode = 'not-found' | 'duplicate' | 'invalid-state';
++export type TodoErrorCode = 'not-found' | 'duplicate' | 'invalid-state' | 'invalid-input';
+ 
+ /** The outcome of an operation that can fail: its value, or the reason it failed. */
+ export type Result<T, E = TodoError> =
+diff --git a/src/domain/task.ts b/src/domain/task.ts
+index deee9d01ac1cc56f1fda69427572a2d06a22f7ff..d928752da62f80d93f628f05a8b63debdb7e92cb 100644
+--- a/src/domain/task.ts
++++ b/src/domain/task.ts
+@@ -33,6 +33,43 @@ export interface NewTask {
+   readonly tags?: readonly string[];
+ }
+ 
++/** The longest title a task may have, once trimmed. */
++export const MAX_TITLE_LENGTH = 120;
++
++/**
++ * Why `title` cannot be a task title, or `undefined` when it can.
++ *
++ * @param title - the title as typed
++ */
++export function titleProblem(title: unknown): string | undefined {
++  if (typeof title !== 'string' || title.trim() === '') return 'the title is empty';
++  if (title.trim().length > MAX_TITLE_LENGTH) {
++    return `the title is ${title.trim().length} characters long; the limit is ${MAX_TITLE_LENGTH}`;
++  }
++  return undefined;
++}
++
++/**
++ * Why `priority` is not a priority, or `undefined` when it is.
++ *
++ * @param priority - the priority as given
++ */
++export function priorityProblem(priority: unknown): string | undefined {
++  if (PRIORITIES.includes(priority as Priority)) return undefined;
++  return `the priority ${JSON.stringify(priority)} is not one of ${PRIORITIES.join(', ')}`;
++}
++
++/**
++ * Why `tag` cannot be a tag, or `undefined` when it can.
++ *
++ * @param tag - the tag as given
++ */
++export function tagProblem(tag: unknown): string | undefined {
++  if (typeof tag !== 'string' || tag === '') return 'a tag is empty';
++  if (/\s/.test(tag)) return `the tag "${tag}" contains a space`;
++  return undefined;
++}
++
+ /**
+  * A new open task. Its priority is `normal` unless given; its tags keep the order given, each once.
+  *
+diff --git a/test/list.test.ts b/test/list.test.ts
+index 6fcff5006564b5defb31fb90a268beafb2e04541..80ac7bdd6fc3f75b390c35907c16c0762234fe99 100644
+--- a/test/list.test.ts
++++ b/test/list.test.ts
+@@ -121,3 +121,28 @@ describe('task timestamps', () => {
+     }
+   });
+ });
++
++describe('input validation', () => {
++  it('rejects invalid input and leaves the list unchanged', () => {
++    const list = createTodoList();
++    list.add({ title: 'Keep' });
++    const results = [
++      list.add({ title: '   ' }),
++      list.add({ title: 'x'.repeat(121) }),
++      list.add({ title: 'Ok', priority: 'urgent' as never }),
++      list.add({ title: 'Ok', tags: ['fine', 'a b'] }),
++      list.add({ title: 'Ok', tags: [''] }),
++      list.rename('Keep', ' '),
++      list.rename('Keep', 'y'.repeat(121)),
++      list.tag('Keep', ''),
++      list.tag('Keep', 'a b'),
++    ];
++    for (const r of results) {
++      assert.equal(r.ok, false);
++      if (!r.ok) assert.equal(r.error.code, 'invalid-input');
++    }
++    assert.equal(list.list().length, 1);
++    assert.deepEqual(valueOf(list.find('Keep')).tags, []);
++    assert.equal(valueOf(list.add({ title: 'x'.repeat(120) })).title.length, 120);
++  });
++});

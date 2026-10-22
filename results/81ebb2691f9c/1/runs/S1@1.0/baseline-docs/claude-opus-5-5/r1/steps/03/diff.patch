@@ -1,0 +1,125 @@
+diff --git a/README.md b/README.md
+index 50fa30ef7992899fe782167f60c239cf92bcd501..cf65cc74bd952b0f2d5aedded5d3e5784162e746 100644
+--- a/README.md
++++ b/README.md
+@@ -70,7 +70,8 @@ ignored.
+ It throws a `JsonPatchError` (whose `index` and `operation` properties identify the failing operation,
+ and whose `cause` holds the underlying error, such as a `JsonPointerError`) when:
+ 
+-- the patch is invalid: not an array, an operation that is not an object, an unknown `op`, a missing
++- the patch is invalid: not an array, an operation that is not an object (including a missing element
++  of a sparse array), an unknown `op`, a missing
+   or invalid `path` or `from`, a missing `value` for `add`, `replace` or `test`, or a `value` that is
+   not JSON (only `null`, booleans, finite numbers, strings, arrays and plain objects are);
+ - the document is not a JSON value (then `index` is `undefined`, like for a patch that is not an
+@@ -78,5 +79,6 @@ and whose `cause` holds the underlying error, such as a `JsonPointerError`) when
+ - an operation fails: its target or its `from` does not exist, it adds to a nonexistent parent or at
+   an out-of-range index, it moves a value into itself, or a `test` does not match.
+ 
+-The whole patch is validated before any operation runs, and on failure nothing is returned: a patch
+-applies completely or not at all. See [ADR 0002](docs/adr/0002-json-patch.md) for the design decisions.
++As RFC 6902 sections 3 and 5 describe, each operation is validated when it is reached and evaluation
++stops at the first error, so `index` is that of the first operation, in order, that is malformed or
++fails. On failure nothing is returned: a patch applies completely or not at all. See [ADR 0002](docs/adr/0002-json-patch.md) for the design decisions.
+diff --git a/docs/adr/0002-json-patch.md b/docs/adr/0002-json-patch.md
+index d885eafae664b982e87648b045b6b27226fe2135..48674d2d1cb12dba17846230d58eb217e9876af6 100644
+--- a/docs/adr/0002-json-patch.md
++++ b/docs/adr/0002-json-patch.md
+@@ -1,6 +1,6 @@
+ # ADR 0002: JSON Patch
+ 
+-- Version: 1
++- Version: 2
+ - Date: 2026-10-22
+ - Status: accepted
+ 
+@@ -17,9 +17,15 @@ Pointers, which this library already resolves ([ADR 0001](0001-json-pointer.md))
+    failing patch to have no effect; working on a copy gives that without an undo log, and callers
+    never see their stored records half-changed or later mutated through shared references. Values
+    taken from the patch are copied too, so the result shares nothing with either input.
+-2. **Validate the whole patch first.** Malformed operations are reported before any operation runs,
+-   so an invalid patch is rejected even when an earlier operation would also have failed; the error
+-   then points at the malformed operation, which is the problem the sender must fix.
++2. **Validate each operation when it is reached.** RFC 6902 section 3 applies the operations
++   sequentially and stops "until an error condition is encountered", and section 5 terminates
++   evaluation at the first violated requirement or failed operation. Each operation is therefore
++   validated just before it is applied, and the error names the first operation, in order, that is
++   malformed or fails, which is how callers read the standard. Because the patch works on a copy
++   (decision 1), a malformed operation late in the patch still leaves nothing applied. A sparse
++   patch array is invalid: its holes are visited and rejected as operations that are not objects.
++   (Version 1 validated the whole patch before applying any operation, so a later malformed
++   operation was reported instead of an earlier failing one.)
+ 3. **JSON values only.** The document and every `value` must be `null`, booleans, finite numbers,
+    strings, arrays or plain objects. Other JavaScript values (`undefined`, `NaN`, dates, class
+    instances) have no JSON meaning, would make `test` and the result ambiguous, and are rejected at
+diff --git a/src/json-patch.ts b/src/json-patch.ts
+index caa6e461a75f08aaa35e3fffe89c30e5dc1d58b8..5d8e4cf25a066ebdd0da79d9d0ca852dde901539 100644
+--- a/src/json-patch.ts
++++ b/src/json-patch.ts
+@@ -1,8 +1,9 @@
+ /**
+  * JSON Patch (RFC 6902): a sequence of operations that changes a JSON document.
+  *
+- * The patch is validated as a whole before any operation runs, then the operations are applied in
+- * order to a private copy of the document, so a failing patch leaves the caller's values untouched.
++ * The operations are validated and applied one at a time, in order, to a private copy of the
++ * document, so evaluation stops at the first error and a failing patch leaves the caller's values
++ * untouched.
+  */
+ import { isArrayIndex, parsePointer, resolvePointer } from "./json-pointer.ts";
+ 
+@@ -41,11 +42,15 @@ const OPERATIONS = new Set(["add", "remove", "replace", "move", "copy", "test"])
+  *   `JsonPointerError`, is available as `cause`.
+  */
+ export function applyPatch(document: unknown, patch: readonly JsonPatchOperation[]): unknown {
+-  const operations = validatePatch(patch);
++  if (!Array.isArray(patch)) {
++    throw new JsonPatchError("a patch must be an array of operations");
++  }
+   let result = attempt(() => toJson(document, ""));
+-  operations.forEach((operation, index) => {
+-    result = attempt(() => applyOperation(result, operation), index, patch[index]);
+-  });
++  // An indexed loop, unlike forEach, also visits the holes of a sparse array, which are invalid.
++  for (let index = 0; index < patch.length; index += 1) {
++    const operation: unknown = patch[index];
++    result = attempt(() => applyOperation(result, validateOperation(operation)), index, operation);
++  }
+   return result;
+ }
+ 
+@@ -58,13 +63,6 @@ function attempt<T>(action: () => T, index?: number, operation?: unknown): T {
+   }
+ }
+ 
+-function validatePatch(patch: unknown): JsonPatchOperation[] {
+-  if (!Array.isArray(patch)) {
+-    throw new JsonPatchError("a patch must be an array of operations");
+-  }
+-  return patch.map((operation: unknown, index) => attempt(() => validateOperation(operation), index, operation));
+-}
+-
+ /** Checks one operation and returns a copy of it holding only its known members, with a private value. */
+ function validateOperation(operation: unknown): JsonPatchOperation {
+   if (!isPlainObject(operation)) {
+diff --git a/test/json-patch.test.ts b/test/json-patch.test.ts
+index 2b8a03329e81323e89d44e4cf29b37fdd91a6df4..ca8cf3333d97964b2d5b08a88592beb7e5e8cc11 100644
+--- a/test/json-patch.test.ts
++++ b/test/json-patch.test.ts
+@@ -227,8 +227,14 @@ test("rejects values that are not JSON", () => {
+   }
+ });
+ 
+-test("validates the whole patch before applying any operation", () => {
+-  assertPatchError({}, [{ op: "test", path: "/missing", value: 1 }, { op: "nope" }], 1);
++test("rejects a patch with a missing element, at the index of the hole", () => {
++  assertPatchError({}, [, { op: "add", path: "/a", value: 1 }], 0);
++  assertPatchError({}, [{ op: "add", path: "/a", value: 1 }, ,], 1);
++});
++
++test("stops at the first error in operation order, whether the operation is malformed or fails", () => {
++  assertPatchError({}, [{ op: "test", path: "/missing", value: 1 }, { op: "nope" }], 0);
++  assertPatchError({}, [{ op: "add", path: "/a", value: 1 }, { op: "nope" }, { op: "remove", path: "/missing" }], 1);
+ });
+ 
+ test("errors carry the failing operation and the cause", () => {

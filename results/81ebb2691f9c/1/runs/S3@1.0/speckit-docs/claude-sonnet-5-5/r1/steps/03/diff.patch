@@ -1,0 +1,53 @@
+diff --git a/src/index.ts b/src/index.ts
+index be80966ee2808a7cae3cf6e77714dd677c5ea31a..b43a8762a48d3b205a2dffc6a9985023ae0730ea 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -42,6 +42,7 @@ export interface RentalService {
+ }
+ 
+ const DAY_MS = 24 * 60 * 60 * 1000;
++const LONG_STAY_DAYS = 3;
+ const ISO_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/;
+ 
+ function parseMidnightUtc(value: unknown, name: string): number {
+@@ -65,8 +66,11 @@ export function createRentalService(): RentalService {
+     const startMs = parseMidnightUtc(request.start, 'start');
+     const endMs = parseMidnightUtc(request.end, 'end');
+     if (endMs <= startMs) throw new Error('end must be after start');
+-    const total = ((endMs - startMs) / DAY_MS) * item.dailyPrice;
+-    if (!Number.isSafeInteger(total)) throw new Error('total is too large');
++    const days = (endMs - startMs) / DAY_MS;
++    const fullPrice = days * item.dailyPrice;
++    if (!Number.isSafeInteger(fullPrice)) throw new Error('total is too large');
++    // Long-stay discount: 10% off from 3 days, the discount rounded to the nearest cent.
++    const total = days >= LONG_STAY_DAYS ? fullPrice - Math.round(fullPrice / 10) : fullPrice;
+     const quote: Quote = {
+       itemId: item.id,
+       start: new Date(startMs).toISOString(),
+diff --git a/test/rental.test.ts b/test/rental.test.ts
+index 7e289b2d06b202e580eab0249d92fd804f36e4e7..2a5ef550bd1dae2161e175f58b53621915110868 100644
+--- a/test/rental.test.ts
++++ b/test/rental.test.ts
+@@ -9,9 +9,9 @@ function setup() {
+ }
+ const req = (start: string, end: string) => ({ itemId: 'b1', start, end });
+ 
+-test('quotes whole days', () => {
++test('quotes whole days (3 days discounted)', () => {
+   const q = setup().quote(req('2026-05-01T00:00:00.000Z', '2026-05-04T00:00:00.000Z'));
+-  assert.equal(q.total, 7500);
++  assert.equal(q.total, 6750);
+ });
+ 
+ test('rejects unknown items and non-midnight or inverted periods', () => {
+@@ -42,3 +42,10 @@ test('availability lists free equipment of the kind, sorted', () => {
+   assert.deepEqual(s.availability({ start: '2026-05-03T00:00:00Z', end: '2026-05-04T00:00:00Z', kind: 'board' }), ['a0', 'b1']);
+   assert.throws(() => s.availability({ start: q.end, end: q.start }));
+ });
++
++test('rentals of 3 days or more get 10% off, in quotes and bookings', () => {
++  const s = setup();
++  assert.equal(s.quote(req('2026-05-01T00:00:00Z', '2026-05-03T00:00:00Z')).total, 5000);
++  assert.equal(s.quote(req('2026-05-01T00:00:00Z', '2026-05-04T00:00:00Z')).total, 6750);
++  assert.equal(s.book(req('2026-06-01T00:00:00Z', '2026-06-06T00:00:00Z')).total, 11250);
++});

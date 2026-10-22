@@ -1,0 +1,60 @@
+diff --git a/src/index.ts b/src/index.ts
+index a21e1ba421ccca42cfeae856e9514cb76b2ab70e..47490e0ea0852460584d4fc9e13ec2191783f1e8 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -45,6 +45,7 @@ export interface RentalService {
+ }
+ 
+ const DAY_MS = 24 * 60 * 60 * 1000;
++const LONG_RENTAL_DAYS = 3;
+ const MIDNIGHT_UTC = /^\d{4}-\d{2}-\d{2}T00:00(:00(\.0+)?)?(Z|[+-]00:?00)$/;
+ 
+ function parseMidnightUtc(value: unknown, field: string): number {
+@@ -74,11 +75,15 @@ export function createRentalService(): RentalService {
+     const endMs = parseMidnightUtc(request.end, 'end');
+     if (endMs <= startMs) throw new Error('end must be after start');
+     const days = (endMs - startMs) / DAY_MS;
++    const fullPrice = days * item.dailyPrice;
++    // Long rentals get 10% off, rounded to the nearest cent (halves up).
++    const total =
++      days >= LONG_RENTAL_DAYS ? Math.floor((fullPrice * 9 + 5) / 10) : fullPrice;
+     const quote: Quote = {
+       itemId: item.id,
+       start: request.start,
+       end: request.end,
+-      total: days * item.dailyPrice,
++      total,
+     };
+     return { quote, startMs, endMs };
+   }
+diff --git a/test/rental.test.ts b/test/rental.test.ts
+index 9a3b69718974a290847be76ed6f664c50be410dd..998d049c79a05ac9cc229920991402de95c74068 100644
+--- a/test/rental.test.ts
++++ b/test/rental.test.ts
+@@ -9,9 +9,9 @@ function setup() {
+ }
+ const d = (day: number) => `2026-07-${String(day).padStart(2, '0')}T00:00:00.000Z`;
+ 
+-test('quotes whole days', () => {
+-  assert.deepEqual(setup().quote({ itemId: 'b1', start: d(1), end: d(4) }), {
+-    itemId: 'b1', start: d(1), end: d(4), total: 7500,
++test('quotes whole days (2 days, no discount)', () => {
++  assert.deepEqual(setup().quote({ itemId: 'b1', start: d(1), end: d(3) }), {
++    itemId: 'b1', start: d(1), end: d(3), total: 5000,
+   });
+ });
+ 
+@@ -45,3 +45,13 @@ test('availability lists free items of a kind, sorted', () => {
+   assert.deepEqual(s.availability({ start: d(4), end: d(5), kind: 'board' }), ['b0', 'b1']);
+   assert.throws(() => s.availability({ start: d(3), end: d(3) }));
+ });
++
++test('rentals of 3 days or more cost 10% less, in quotes and bookings', () => {
++  const s = setup();
++  assert.equal(s.quote({ itemId: 'b1', start: d(1), end: d(3) }).total, 5000);
++  assert.equal(s.quote({ itemId: 'b1', start: d(1), end: d(4) }).total, 6750);
++  assert.equal(s.book({ itemId: 'b1', start: d(1), end: d(4) }).total, 6750);
++  s.addEquipment({ id: 'odd', kind: 'sail', dailyPrice: 1005 });
++  // 3015 * 0.9 = 2713.5 -> rounds up to 2714
++  assert.equal(s.quote({ itemId: 'odd', start: d(1), end: d(4) }).total, 2714);
++});

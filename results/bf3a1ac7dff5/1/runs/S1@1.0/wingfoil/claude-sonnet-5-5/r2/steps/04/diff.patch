@@ -1,0 +1,162 @@
+diff --git a/docs/memory/decision-log/dl-004-applymergepatch-semantics-immutable-own-properties-only-null-deletes.md b/docs/memory/decision-log/dl-004-applymergepatch-semantics-immutable-own-properties-only-null-deletes.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..b5be01e2510b1625a524f10905559ad900ef0e78
+--- /dev/null
++++ b/docs/memory/decision-log/dl-004-applymergepatch-semantics-immutable-own-properties-only-null-deletes.md
+@@ -0,0 +1,27 @@
++---
++id: dl-004-applymergepatch-semantics-immutable-own-properties-only-null-deletes
++type: decision-log
++title: "applyMergePatch semantics: immutable, own properties only, null deletes"
++status: pending
++---
++
++<!-- decision-log body. `wingfoil memory add` copies this scaffold verbatim; `memory submit` replaces
++     these placeholder comments with real content and fills the required frontmatter fields. -->
++
++# Context
++
++RFC 7386 defines the merge algorithm but leaves implementation choices open: mutation, prototype
++safety, and inherited names. `applyPatch` (dl-002) already set conventions for these.
++
++# Decision
++
++- Follow the RFC algorithm exactly: a non-object patch replaces the target, an object patch merges,
++  `null` deletes a member, arrays are replaced whole.
++- Never mutate inputs and share no structure with them (deep clone), as `applyPatch` does.
++- Address only own members; set members with `defineProperty` so `__proto__` stays plain data.
++- Never throw: any JSON value is a valid patch.
++
++# Consequences
++
++- A `null` in a target cannot be set by a merge patch (inherent to RFC 7386).
++- Callers get a fresh value on each call, at the cost of a copy.
+diff --git a/docs/memory/task/task-004-implement-json-merge-patch-applymergepatch-rfc-7386.md b/docs/memory/task/task-004-implement-json-merge-patch-applymergepatch-rfc-7386.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..344623ad11aa5b3239cfc5619af2ee3bc42969bb
+--- /dev/null
++++ b/docs/memory/task/task-004-implement-json-merge-patch-applymergepatch-rfc-7386.md
+@@ -0,0 +1,15 @@
++---
++id: task-004-implement-json-merge-patch-applymergepatch-rfc-7386
++type: task
++title: "Implement JSON Merge Patch applyMergePatch RFC 7386"
++status: pending
++---
++
++<!-- task body. `wingfoil memory add` copies this scaffold verbatim; `memory submit` replaces
++     these placeholder comments with real content and fills the required frontmatter fields. -->
++
++# Summary
++
++Added `applyMergePatch(target, patch)` to `src/index.ts`, implementing JSON Merge Patch (RFC 7386).
++Tests in `test/mergepatch.test.ts` cover the RFC section 3 example and all appendix A cases, plus
++non-mutation, `__proto__` and inherited-name edge cases. Decision: dl-004.
+diff --git a/src/index.ts b/src/index.ts
+index 65a7f8938dec5c7a3487b142d14b9c444d99eb46..c32da3c1c8cd6ae7781794e8feb17026eb7fab12 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -230,3 +230,36 @@ export function applyPatch(document: unknown, patch: PatchOperation[]): unknown
+   }
+   return result;
+ }
++
++/**
++ * Applies a JSON Merge Patch (RFC 7386) to a JSON document.
++ *
++ * A non-object `patch` replaces the target; an object `patch` is merged member by member into
++ * the target (or into `{}` when the target is not an object): a `null` member deletes the
++ * member, any other value is merged recursively. Arrays are replaced, never merged. The inputs
++ * are never mutated and the result shares no structure with them. Only own members are addressed.
++ *
++ * @param target the JSON document to update.
++ * @param patch the merge patch.
++ * @returns the merged document, as a new value.
++ */
++export function applyMergePatch(target: unknown, patch: unknown): unknown {
++  if (!isObject(patch)) {
++    return structuredClone(patch);
++  }
++  const result: Record<string, unknown> = {};
++  if (isObject(target)) {
++    for (const key of Object.keys(target)) {
++      setMember(result, key, structuredClone(target[key]));
++    }
++  }
++  for (const key of Object.keys(patch)) {
++    const value = patch[key];
++    if (value === null) {
++      delete result[key];
++    } else {
++      setMember(result, key, applyMergePatch(Object.hasOwn(result, key) ? result[key] : undefined, value));
++    }
++  }
++  return result;
++}
+diff --git a/test/mergepatch.test.ts b/test/mergepatch.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..afa3093f7d343364aa2d497d357fa3dcf4c11197
+--- /dev/null
++++ b/test/mergepatch.test.ts
+@@ -0,0 +1,61 @@
++import { test } from "node:test";
++import assert from "node:assert/strict";
++import { applyMergePatch } from "../src/index.ts";
++
++// RFC 7386 section 3 example.
++test("section 3 example", () => {
++  const target = { title: "Goodbye!", author: { givenName: "John", familyName: "Doe" }, tags: ["example", "sample"], content: "This will be unchanged" };
++  const patch = { title: "Hello!", phoneNumber: "+01-123-456-7890", author: { familyName: null }, tags: ["example"] };
++  assert.deepEqual(applyMergePatch(target, patch), {
++    title: "Hello!",
++    author: { givenName: "John" },
++    tags: ["example"],
++    content: "This will be unchanged",
++    phoneNumber: "+01-123-456-7890",
++  });
++});
++
++// RFC 7386 appendix A test cases.
++const cases: [unknown, unknown, unknown][] = [
++  [{ a: "b" }, { a: "c" }, { a: "c" }],
++  [{ a: "b" }, { b: "c" }, { a: "b", b: "c" }],
++  [{ a: "b" }, { a: null }, {}],
++  [{ a: "b", b: "c" }, { a: null }, { b: "c" }],
++  [{ a: ["b"] }, { a: "c" }, { a: "c" }],
++  [{ a: "c" }, { a: ["b"] }, { a: ["b"] }],
++  [{ a: { b: "c" } }, { a: { b: "d", c: null } }, { a: { b: "d" } }],
++  [{ a: [{ b: "c" }] }, { a: [1] }, { a: [1] }],
++  [["a", "b"], ["c", "d"], ["c", "d"]],
++  [{ a: "b" }, ["c"], ["c"]],
++  [{ a: "foo" }, null, null],
++  [{ a: "foo" }, "bar", "bar"],
++  [{ e: null }, { a: 1 }, { e: null, a: 1 }],
++  [[1, 2], { a: "b", c: null }, { a: "b" }],
++  [{}, { a: { bb: { ccc: null } } }, { a: { bb: {} } }],
++];
++for (const [target, patch, expected] of cases) {
++  test(`${JSON.stringify(target)} + ${JSON.stringify(patch)}`, () => {
++    assert.deepEqual(applyMergePatch(target, patch), expected);
++  });
++}
++
++test("does not mutate inputs and shares no structure", () => {
++  const target = { a: { b: 1 }, l: [1] };
++  const patch = { a: { c: 2 }, n: { x: [1] } };
++  const result = applyMergePatch(target, patch) as any;
++  assert.deepEqual(target, { a: { b: 1 }, l: [1] });
++  assert.deepEqual(patch, { a: { c: 2 }, n: { x: [1] } });
++  assert.notEqual(result.l, target.l);
++  assert.notEqual(result.n.x, patch.n.x);
++});
++
++test("__proto__ member is data, not a prototype change", () => {
++  const result = applyMergePatch({}, JSON.parse('{"__proto__":{"polluted":true}}')) as any;
++  assert.equal(Object.getPrototypeOf(result), Object.prototype);
++  assert.equal(({} as any).polluted, undefined);
++  assert.deepEqual(Object.keys(result), ["__proto__"]);
++});
++
++test("inherited names are not treated as target members", () => {
++  assert.deepEqual(applyMergePatch({}, { toString: { a: 1 } }), { toString: { a: 1 } });
++});

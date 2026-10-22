@@ -1,0 +1,64 @@
+diff --git a/src/index.ts b/src/index.ts
+index 565cafca84e7d7ac1676fabf66c0faabd2836126..db77cc6415e4d246eb48eac75be1bffd727a4bbf 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -147,8 +147,12 @@ function replaceAt(root: unknown, pointer: string, value: unknown): unknown {
+   return root;
+ }
+ 
++function ownMember(operation: Record<string, unknown>, name: string): unknown {
++  return Object.hasOwn(operation, name) ? operation[name] : undefined;
++}
++
+ function requireString(operation: Record<string, unknown>, name: string): string {
+-  const value = operation[name];
++  const value = ownMember(operation, name);
+   if (typeof value !== "string") {
+     throw new TypeError(`Invalid JSON Patch: "${name}" must be a string in a "${String(operation.op)}" operation`);
+   }
+@@ -156,7 +160,7 @@ function requireString(operation: Record<string, unknown>, name: string): string
+ }
+ 
+ function requireValue(operation: Record<string, unknown>): unknown {
+-  if (!Object.hasOwn(operation, "value")) {
++  if (ownMember(operation, "value") === undefined) {
+     throw new TypeError(`Invalid JSON Patch: "value" is required in a "${String(operation.op)}" operation`);
+   }
+   return structuredClone(operation.value);
+@@ -166,7 +170,7 @@ function applyOperation(root: unknown, operation: unknown): unknown {
+   if (!isObject(operation)) {
+     throw new TypeError("Invalid JSON Patch: each operation must be an object");
+   }
+-  const op = operation.op;
++  const op = ownMember(operation, "op");
+   if (!OPERATIONS.includes(op as (typeof OPERATIONS)[number])) {
+     throw new TypeError(`Invalid JSON Patch: unknown operation "${String(op)}"`);
+   }
+@@ -212,5 +216,6 @@ export function applyPatch(document: unknown, patch: unknown[]): unknown {
+   if (!Array.isArray(patch)) {
+     throw new TypeError("Invalid JSON Patch: a patch must be an array of operations");
+   }
+-  return patch.reduce(applyOperation, structuredClone(document));
++  // Array.from turns holes of a sparse array into undefined, which applyOperation rejects.
++  return Array.from(patch).reduce(applyOperation, structuredClone(document));
+ }
+diff --git a/test/patch.test.ts b/test/patch.test.ts
+index 039d19069a767f090e6f47b54572c61da3eee3e6..4b28f3e9d23d92335afed0d6b05292bcfc26e2f6 100644
+--- a/test/patch.test.ts
++++ b/test/patch.test.ts
+@@ -119,3 +119,15 @@ test("applyPatch keeps __proto__ an ordinary member", () => {
+   assert.equal(Object.getPrototypeOf(result), Object.prototype);
+   assert.deepEqual(Object.keys(result), ["__proto__"]);
+ });
++
++const malformed: [string, unknown[]][] = [
++  ["a hole in the patch", [, { op: "add", path: "/a", value: 1 }] as unknown[]],
++  ["an inherited op", [Object.create({ op: "add", path: "/a", value: 1 })]],
++  ["an undefined value", [{ op: "add", path: "/a", value: undefined }]],
++];
++
++for (const [name, patch] of malformed) {
++  test(`applyPatch rejects ${name}`, () => {
++    assert.throws(() => applyPatch({}, patch), TypeError);
++  });
++}

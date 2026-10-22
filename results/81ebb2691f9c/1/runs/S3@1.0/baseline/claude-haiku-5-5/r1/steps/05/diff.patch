@@ -1,0 +1,155 @@
+diff --git a/src/index.ts b/src/index.ts
+index 1b04ebcdead7981f1dd201af3299fa0e36ecc270..4a56aeaeb8c3ecd8b1dfe65aca775644c4eb2048 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -34,6 +34,12 @@ export interface Booking extends Quote {
+   id: string;
+ }
+ 
++export interface Cancellation {
++  bookingId: string;
++  /** Amount given back to the customer, in euro cents. */
++  refund: number;
++}
++
+ export interface AvailabilityQuery {
+   /** ISO-8601 UTC time on the hour, as for a rental. */
+   start: string;
+@@ -47,6 +53,11 @@ export interface RentalService {
+   addEquipment(item: Equipment): void;
+   quote(request: RentalRequest): Quote;
+   book(request: RentalRequest): Booking;
++  /**
++   * Cancels a booking at the UTC time `at`. A cancelled booking no longer holds its equipment.
++   * Cancelling before the rental starts refunds the whole booking; from its start on, nothing is refunded.
++   */
++  cancel(bookingId: string, at: string): Cancellation;
+   availability(query: AvailabilityQuery): string[];
+ }
+ 
+@@ -62,6 +73,7 @@ const UTC_ON_THE_HOUR = /^\d{4}-\d{2}-\d{2}(T\d{2}:00:00(\.000)?Z)?$/;
+ interface StoredBooking extends Booking {
+   startMs: number;
+   endMs: number;
++  cancelled: boolean;
+ }
+ 
+ export function createRentalService(): RentalService {
+@@ -104,7 +116,7 @@ export function createRentalService(): RentalService {
+     const { item, start, end, startMs, endMs } = resolve(request);
+     // Periods are half-open: one booking ending at midnight does not clash with one starting then.
+     const clash = bookings.some(
+-      (b) => b.itemId === item.id && b.startMs < endMs && startMs < b.endMs,
++      (b) => !b.cancelled && b.itemId === item.id && b.startMs < endMs && startMs < b.endMs,
+     );
+     if (clash) {
+       throw new Error(`${item.id} is already booked for an overlapping period`);
+@@ -118,11 +130,27 @@ export function createRentalService(): RentalService {
+       total,
+       startMs,
+       endMs,
++      cancelled: false,
+     };
+     bookings.push(booking);
+     return { id: booking.id, itemId: booking.itemId, start, end, total };
+   }
+ 
++  function cancel(bookingId: string, at: string): Cancellation {
++    const booking = bookings.find((b) => b.id === bookingId);
++    if (!booking) {
++      throw new Error(`unknown booking ${String(bookingId)}`);
++    }
++    if (booking.cancelled) {
++      throw new Error(`booking ${bookingId} is already cancelled`);
++    }
++    const atMs = parseUtcTime(at, 'at');
++    // Validation happens before the booking is changed, so a refused cancel leaves it in place.
++    booking.cancelled = true;
++    const refund = atMs < booking.startMs ? booking.total : 0;
++    return { bookingId, refund };
++  }
++
+   function availability(query: AvailabilityQuery): string[] {
+     if (typeof query !== 'object' || query === null) {
+       throw new Error('query must be an object');
+@@ -137,7 +165,7 @@ export function createRentalService(): RentalService {
+         continue;
+       }
+       const clash = bookings.some(
+-        (b) => b.itemId === item.id && b.startMs < endMs && startMs < b.endMs,
++        (b) => !b.cancelled && b.itemId === item.id && b.startMs < endMs && startMs < b.endMs,
+       );
+       if (!clash) {
+         free.push(item.id);
+@@ -158,7 +186,7 @@ export function createRentalService(): RentalService {
+     return { item, start, end, startMs, endMs };
+   }
+ 
+-  return { addEquipment, quote, book, availability };
++  return { addEquipment, quote, book, cancel, availability };
+ }
+ 
+ function parsePeriod(period: { start: string; end: string }) {
+diff --git a/test/rental.test.ts b/test/rental.test.ts
+index c46e7506985ffcb3b8666b1fed17edf4744042dc..ac87014a6a647193fc5ea0462c4b7e44d92ca926 100644
+--- a/test/rental.test.ts
++++ b/test/rental.test.ts
+@@ -392,3 +392,58 @@ test('availability refuses an invalid period or kind', () => {
+     /kind must be/,
+   );
+ });
++
++test('cancelling before the rental starts refunds the whole booking', () => {
++  const service = setup();
++  const booking = service.book({ itemId: 'board-1', start: '2026-07-01', end: '2026-07-04' });
++  assert.deepEqual(service.cancel(booking.id, '2026-06-30T09:00:00Z'), {
++    bookingId: booking.id,
++    refund: 6750,
++  });
++});
++
++test('cancelling once the rental has started refunds nothing', () => {
++  const service = createRentalService();
++  service.addEquipment({ id: 'board-1', kind: 'board', dailyPrice: 2500, hourlyPrice: 800 });
++  const booking = service.book({ itemId: 'board-1', start: '2026-07-01T10:00:00Z', end: '2026-07-01T12:00:00Z' });
++  assert.equal(service.cancel(booking.id, '2026-07-01T10:00:00Z').refund, 0);
++  const other = service.book({ itemId: 'board-1', start: '2026-07-01T12:00:00Z', end: '2026-07-01T14:00:00Z' });
++  assert.equal(service.cancel(other.id, '2026-07-01T13:00:00Z').refund, 0);
++});
++
++test('a cancelled booking no longer holds its equipment', () => {
++  const service = setup();
++  const booking = service.book({ itemId: 'board-1', start: '2026-07-01', end: '2026-07-04' });
++  assert.deepEqual(service.availability({ start: '2026-07-01', end: '2026-07-04', kind: 'board' }), []);
++  service.cancel(booking.id, '2026-06-30T00:00:00Z');
++  assert.deepEqual(service.availability({ start: '2026-07-01', end: '2026-07-04', kind: 'board' }), [
++    'board-1',
++  ]);
++  assert.doesNotThrow(() =>
++    service.book({ itemId: 'board-1', start: '2026-07-02', end: '2026-07-03' }),
++  );
++});
++
++test('a booking can only be cancelled once', () => {
++  const service = setup();
++  const booking = service.book({ itemId: 'board-1', start: '2026-07-01', end: '2026-07-04' });
++  service.cancel(booking.id, '2026-06-30T00:00:00Z');
++  assert.throws(() => service.cancel(booking.id, '2026-06-29T00:00:00Z'), /already cancelled/);
++});
++
++test('cancel refuses an unknown booking', () => {
++  const service = setup();
++  assert.throws(() => service.cancel('missing', '2026-06-30T00:00:00Z'), /unknown booking/);
++});
++
++test('cancel refuses an invalid time and leaves the booking holding its equipment', () => {
++  const service = setup();
++  const booking = service.book({ itemId: 'board-1', start: '2026-07-01', end: '2026-07-04' });
++  assert.throws(() => service.cancel(booking.id, '2026-06-30T09:30:00Z'), /at must be an ISO-8601 UTC time on the hour/);
++  assert.throws(() => service.cancel(booking.id, 'soon'), /at must be/);
++  assert.throws(
++    () => service.book({ itemId: 'board-1', start: '2026-07-02', end: '2026-07-03' }),
++    /overlapping/,
++  );
++  assert.equal(service.cancel(booking.id, '2026-06-30T00:00:00Z').refund, 6750);
++});

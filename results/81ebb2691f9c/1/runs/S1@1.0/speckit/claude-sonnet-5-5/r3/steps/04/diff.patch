@@ -1,0 +1,80 @@
+diff --git a/src/index.ts b/src/index.ts
+index df565aeef421ef64f3e560716dca39ca17f61464..27abd94dbe653cefd05e3b59cdfbc18b1159f9c8 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -1,2 +1,3 @@
+ export { resolvePointer, parsePointer } from "./pointer.ts";
+ export { applyPatch } from "./patch.ts";
++export { applyMergePatch } from "./merge-patch.ts";
+diff --git a/src/merge-patch.ts b/src/merge-patch.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..c02389baf7d511c8f521bb2d0890277c8bcc06e8
+--- /dev/null
++++ b/src/merge-patch.ts
+@@ -0,0 +1,27 @@
++type Json = unknown;
++
++function isObject(value: unknown): value is Record<string, unknown> {
++  return typeof value === "object" && value !== null && !Array.isArray(value);
++}
++
++function setMember(target: Record<string, Json>, key: string, value: Json): void {
++  Object.defineProperty(target, key, { value, writable: true, enumerable: true, configurable: true });
++}
++
++/** Applies an RFC 7386 JSON Merge Patch to `target` and returns the result; inputs are not mutated. */
++export function applyMergePatch(target: Json, patch: Json): Json {
++  if (!isObject(patch)) return patch;
++  const result: Record<string, Json> = {};
++  if (isObject(target)) {
++    for (const key of Object.keys(target)) setMember(result, key, target[key]);
++  }
++  for (const key of Object.keys(patch)) {
++    const value = patch[key];
++    if (value === null) {
++      delete result[key];
++    } else {
++      setMember(result, key, applyMergePatch(Object.hasOwn(result, key) ? result[key] : undefined, value));
++    }
++  }
++  return result;
++}
+diff --git a/test/merge-patch.test.ts b/test/merge-patch.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..48ed5ea1dd49fe336a6da91aa99d08ecd55e1700
+--- /dev/null
++++ b/test/merge-patch.test.ts
+@@ -0,0 +1,33 @@
++import { test } from "node:test";
++import assert from "node:assert/strict";
++import { applyMergePatch } from "../src/index.ts";
++
++test("RFC 7386 Appendix A examples", () => {
++  const cases: [unknown, unknown, unknown][] = [
++    [{ a: "b" }, { a: "c" }, { a: "c" }],
++    [{ a: "b" }, { b: "c" }, { a: "b", b: "c" }],
++    [{ a: "b" }, { a: null }, {}],
++    [{ a: "b", b: "c" }, { a: null }, { b: "c" }],
++    [{ a: ["b"] }, { a: "c" }, { a: "c" }],
++    [{ a: "c" }, { a: ["b"] }, { a: ["b"] }],
++    [{ a: { b: "c" } }, { a: { b: "d", c: null } }, { a: { b: "d" } }],
++    [{ a: [{ b: "c" }] }, { a: [1] }, { a: [1] }],
++    [["a", "b"], ["c", "d"], ["c", "d"]],
++    [{ a: "b" }, ["c"], ["c"]],
++    [{ a: "foo" }, null, null],
++    [{ a: "foo" }, "bar", "bar"],
++    [{ e: null }, { a: 1 }, { e: null, a: 1 }],
++    [[1, 2], { a: "b", c: null }, { a: "b" }],
++    [{}, { a: { bb: { ccc: null } } }, { a: { bb: {} } }],
++  ];
++  for (const [t, p, e] of cases) assert.deepEqual(applyMergePatch(t, p), e);
++});
++
++test("does not mutate inputs and is safe against __proto__", () => {
++  const target = { a: { b: 1 } };
++  applyMergePatch(target, { a: { b: null } });
++  assert.deepEqual(target, { a: { b: 1 } });
++  const r = applyMergePatch({}, JSON.parse('{"__proto__":{"x":1}}')) as any;
++  assert.equal(({} as any).x, undefined);
++  assert.deepEqual(Object.keys(r), ["__proto__"]);
++});

@@ -1,0 +1,135 @@
+diff --git a/src/diff.ts b/src/diff.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..ee630276ecd31cc638e6071b76f19911c783d012
+--- /dev/null
++++ b/src/diff.ts
+@@ -0,0 +1,54 @@
++import { clone, equal, isObject } from "./patch.ts";
++import type { Json } from "./pointer.ts";
++
++export type Operation =
++  | { op: "add" | "replace"; path: string; value: Json }
++  | { op: "remove"; path: string };
++
++const has = (o: object, k: string): boolean => Object.prototype.hasOwnProperty.call(o, k);
++const escapeToken = (t: string): string => t.replace(/~/g, "~0").replace(/\//g, "~1");
++
++function diffArrays(a: Json[], b: Json[], path: string, ops: Operation[]): void {
++  let start = 0;
++  while (start < a.length && start < b.length && equal(a[start], b[start])) start++;
++  let endA = a.length;
++  let endB = b.length;
++  while (endA > start && endB > start && equal(a[endA - 1], b[endB - 1])) {
++    endA--;
++    endB--;
++  }
++  const common = Math.min(endA, endB) - start;
++  for (let i = 0; i < common; i++) diff(a[start + i], b[start + i], `${path}/${start + i}`, ops);
++  // Remove surplus elements from the end so earlier indices stay valid.
++  for (let i = endA - 1; i >= start + common; i--) ops.push({ op: "remove", path: `${path}/${i}` });
++  for (let i = start + common; i < endB; i++) {
++    ops.push({ op: "add", path: `${path}/${i}`, value: clone(b[i]) });
++  }
++}
++
++function diff(a: Json, b: Json, path: string, ops: Operation[]): void {
++  if (equal(a, b)) return;
++  if (Array.isArray(a) && Array.isArray(b)) return diffArrays(a, b, path, ops);
++  if (isObject(a) && isObject(b)) {
++    for (const k of Object.keys(a)) {
++      if (!has(b, k)) ops.push({ op: "remove", path: `${path}/${escapeToken(k)}` });
++    }
++    for (const k of Object.keys(b)) {
++      const p = `${path}/${escapeToken(k)}`;
++      if (!has(a, k)) ops.push({ op: "add", path: p, value: clone(b[k]) });
++      else diff(a[k], b[k], p, ops);
++    }
++    return;
++  }
++  ops.push({ op: "replace", path, value: clone(b) });
++}
++
++/**
++ * Creates a JSON Patch (RFC 6902) that turns `from` into `to` when applied, describing only the
++ * parts that differ. Neither input is modified, and the patch shares no structure with them.
++ */
++export function createPatch(from: unknown, to: unknown): Operation[] {
++  const ops: Operation[] = [];
++  diff(from as Json, to as Json, "", ops);
++  return ops;
++}
+diff --git a/src/index.ts b/src/index.ts
+index cf70fc2c92138192f155999c7acc10a1dbdaa2b0..7bc054faee9f2609ee4b0c87b6a0944e3328b943 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -2,3 +2,5 @@ export { resolvePointer } from "./pointer.js";
+ export type { Json } from "./pointer.js";
+ export { applyPatch } from "./patch.js";
+ export { applyMergePatch } from "./merge-patch.js";
++export { createPatch } from "./diff.js";
++export type { Operation } from "./diff.js";
+diff --git a/src/patch.ts b/src/patch.ts
+index 255fd8fe94bbaf6e42d09f9f5246083b6a02ac00..2a664f2ebb1e2beebc21536455268fa6c2206c21 100644
+--- a/src/patch.ts
++++ b/src/patch.ts
+@@ -6,7 +6,7 @@ type Container = Json[] | { [key: string]: Json };
+ const ARRAY_INDEX = /^(0|[1-9][0-9]*)$/;
+ const has = (o: object, k: string): boolean => Object.prototype.hasOwnProperty.call(o, k);
+ 
+-function isObject(v: unknown): v is { [key: string]: Json } {
++export function isObject(v: unknown): v is { [key: string]: Json } {
+   return typeof v === "object" && v !== null && !Array.isArray(v);
+ }
+ 
+@@ -15,7 +15,7 @@ function setMember(obj: { [key: string]: Json }, key: string, value: Json): void
+   Object.defineProperty(obj, key, { value, writable: true, enumerable: true, configurable: true });
+ }
+ 
+-function clone(value: Json): Json {
++export function clone(value: Json): Json {
+   if (Array.isArray(value)) return value.map(clone);
+   if (isObject(value)) {
+     const out: { [key: string]: Json } = {};
+@@ -25,7 +25,7 @@ function clone(value: Json): Json {
+   return value;
+ }
+ 
+-function equal(a: unknown, b: unknown): boolean {
++export function equal(a: unknown, b: unknown): boolean {
+   if (Array.isArray(a)) {
+     return Array.isArray(b) && a.length === b.length && a.every((x, i) => equal(x, b[i]));
+   }
+diff --git a/test/diff.test.ts b/test/diff.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..a748ae30c5a31b65d2eb93877c79e34b695ac41b
+--- /dev/null
++++ b/test/diff.test.ts
+@@ -0,0 +1,28 @@
++import { test } from "node:test";
++import assert from "node:assert/strict";
++import { createPatch } from "../src/diff.ts";
++import { applyPatch } from "../src/patch.ts";
++
++const roundTrip = (a: unknown, b: unknown) => {
++  const before = JSON.stringify(a);
++  const p = createPatch(a, b);
++  assert.equal(JSON.stringify(a), before);
++  assert.deepEqual(applyPatch(a, p), b);
++  return p;
++};
++
++test("minimal patches", () => {
++  assert.deepEqual(roundTrip({ a: 1, b: { c: [1, 2, 3] } }, { a: 1, b: { c: [1, 2, 3] } }), []);
++  assert.deepEqual(roundTrip({ a: 1, b: { c: 2 } }, { a: 1, b: { c: 3 } }), [{ op: "replace", path: "/b/c", value: 3 }]);
++  assert.deepEqual(roundTrip([1, 2, 3, 4], [1, 2, 9, 3, 4]), [{ op: "add", path: "/2", value: 9 }]);
++  assert.deepEqual(roundTrip({ "a/b~": 1 }, {}), [{ op: "remove", path: "/a~1b~0" }]);
++});
++
++test("round trips", () => {
++  roundTrip(1, "x");
++  roundTrip([1, 2, 3, 4, 5], [1, 7]);
++  roundTrip([1], [5, 6, 7]);
++  roundTrip({ a: [{ x: 1 }, { y: 2 }] }, { a: [{ x: 2 }] });
++  roundTrip({ a: null }, { a: [] });
++  roundTrip(JSON.parse('{"__proto__":{"a":1}}'), JSON.parse('{"__proto__":{"a":2}}'));
++});

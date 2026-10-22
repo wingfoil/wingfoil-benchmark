@@ -1,0 +1,142 @@
+diff --git a/specs/002-create-patch/spec.md b/specs/002-create-patch/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..6c49dedc15d6fd5693171910d1dcffc299dc09dd
+--- /dev/null
++++ b/specs/002-create-patch/spec.md
+@@ -0,0 +1,10 @@
++# Feature: createPatch(from, to)
++
++Exported from `src/index.ts`. Returns an RFC 6902 JSON Patch that turns `from` into `to` via `applyPatch`.
++
++- Neither input is mutated; values in the patch are copies (no aliasing).
++- Minimal: equal documents give `[]`; objects are diffed per member (add/remove/recurse); arrays trim the
++  common prefix/suffix, diff the overlapping middle element-wise, then remove/add the remainder.
++  Only differing primitives or type changes produce `replace` (root: path `""`).
++- Pointer tokens are escaped (`~0`, `~1`); keys such as `__proto__` are ordinary members.
++- Tests: `test/diff.test.ts`. The constitution is an unfilled template, so no further rules applied.
+diff --git a/src/diff.ts b/src/diff.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..6adb489497799bdf158595ef7172b97d3f412dd8
+--- /dev/null
++++ b/src/diff.ts
+@@ -0,0 +1,52 @@
++import { equal } from "./patch.ts";
++
++type Operation = { op: "add" | "replace"; path: string; value: unknown } | { op: "remove"; path: string };
++
++function isObject(value: unknown): value is Record<string, unknown> {
++  return typeof value === "object" && value !== null && !Array.isArray(value);
++}
++
++function escape(token: string): string {
++  return token.replace(/~/g, "~0").replace(/\//g, "~1");
++}
++
++function diff(from: unknown, to: unknown, path: string, ops: Operation[]): void {
++  if (equal(from, to)) return;
++  if (Array.isArray(from) && Array.isArray(to)) {
++    let start = 0;
++    while (start < from.length && start < to.length && equal(from[start], to[start])) start++;
++    let fromEnd = from.length;
++    let toEnd = to.length;
++    while (fromEnd > start && toEnd > start && equal(from[fromEnd - 1], to[toEnd - 1])) {
++      fromEnd--;
++      toEnd--;
++    }
++    const common = Math.min(fromEnd, toEnd) - start;
++    for (let i = 0; i < common; i++) diff(from[start + i], to[start + i], `${path}/${start + i}`, ops);
++    for (let i = fromEnd - 1; i >= start + common; i--) ops.push({ op: "remove", path: `${path}/${i}` });
++    for (let i = start + common; i < toEnd; i++) {
++      ops.push({ op: "add", path: `${path}/${i}`, value: structuredClone(to[i]) });
++    }
++  } else if (isObject(from) && isObject(to)) {
++    for (const key of Object.keys(from)) {
++      if (!Object.hasOwn(to, key)) ops.push({ op: "remove", path: `${path}/${escape(key)}` });
++    }
++    for (const key of Object.keys(to)) {
++      const child = `${path}/${escape(key)}`;
++      if (Object.hasOwn(from, key)) diff(from[key], to[key], child, ops);
++      else ops.push({ op: "add", path: child, value: structuredClone(to[key]) });
++    }
++  } else {
++    ops.push({ op: "replace", path, value: structuredClone(to) });
++  }
++}
++
++/**
++ * Returns an RFC 6902 JSON Patch that turns `from` into `to`, describing only what changed.
++ * Neither argument is mutated; equal documents give an empty patch.
++ */
++export function createPatch(from: unknown, to: unknown): Operation[] {
++  const ops: Operation[] = [];
++  diff(from, to, "", ops);
++  return ops;
++}
+diff --git a/src/index.ts b/src/index.ts
+index 942eb60bb9ba004e5cb22adebc1fc18669f7446d..d00fde41e9c6101c98b21c17eb0fda6181909496 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -1,3 +1,4 @@
+ export { resolvePointer } from "./pointer.ts";
+ export { applyPatch } from "./patch.ts";
+ export { applyMergePatch } from "./mergePatch.ts";
++export { createPatch } from "./diff.ts";
+diff --git a/src/patch.ts b/src/patch.ts
+index b54d318118d40f1034061ad94a05107b9cd6bfc2..dc64fad8255d3c918700640c026d9abbec709ecd 100644
+--- a/src/patch.ts
++++ b/src/patch.ts
+@@ -17,7 +17,7 @@ function setMember(object: Record<string, unknown>, key: string, value: unknown)
+   Object.defineProperty(object, key, { value, writable: true, enumerable: true, configurable: true });
+ }
+ 
+-function equal(a: unknown, b: unknown): boolean {
++export function equal(a: unknown, b: unknown): boolean {
+   if (Array.isArray(a)) {
+     return Array.isArray(b) && a.length === b.length && a.every((item, i) => equal(item, b[i]));
+   }
+diff --git a/test/diff.test.ts b/test/diff.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..069d5ac79f7ba524ad7e0d80d5d038feb34f0148
+--- /dev/null
++++ b/test/diff.test.ts
+@@ -0,0 +1,40 @@
++import { test } from "node:test";
++import assert from "node:assert/strict";
++import { applyPatch, createPatch } from "../src/index.ts";
++
++const roundTrip = (from: unknown, to: unknown) => {
++  const before = structuredClone([from, to]);
++  const patch = createPatch(from, to);
++  assert.deepEqual(applyPatch(from, patch), to);
++  assert.deepEqual([from, to], before);
++  return patch;
++};
++
++test("equal documents give an empty patch", () => {
++  assert.deepEqual(roundTrip({ a: [1, { b: 2 }] }, { a: [1, { b: 2 }] }), []);
++});
++
++test("small change gives a small patch", () => {
++  const from = { a: { b: 1, c: [1, 2, 3] }, d: "x" };
++  assert.deepEqual(roundTrip(from, { a: { b: 1, c: [1, 9, 3] }, d: "x" }), [{ op: "replace", path: "/a/c/1", value: 9 }]);
++  assert.deepEqual(roundTrip(from, { a: { b: 1, c: [1, 2, 3] } }), [{ op: "remove", path: "/d" }]);
++  assert.deepEqual(roundTrip({ l: [1, 2, 3, 4] }, { l: [1, 2, 3, 4, 5] }), [{ op: "add", path: "/l/4", value: 5 }]);
++  assert.equal(roundTrip({ l: [1, 2, 3, 4] }, { l: [1, 3, 4] }).length, 1);
++  assert.equal(roundTrip({ l: [1, 2, 3, 4] }, { l: [1, 0, 2, 3, 4] }).length, 1);
++});
++
++test("type changes, root, escaping, special keys", () => {
++  roundTrip(1, 2);
++  roundTrip({ a: 1 }, [1]);
++  roundTrip([1, 2, 3, 4], [4]);
++  roundTrip([1], [1, 2, 3]);
++  roundTrip(null, { a: null });
++  roundTrip({ "a/b": 1, "m~n": 2, "": 3 }, { "a/b": 2, "m~n": 3, "": 4 });
++  const proto = JSON.parse('{"__proto__": {"x": 1}}');
++  roundTrip({}, proto);
++  roundTrip(proto, {});
++  const to = { a: { b: 1 } };
++  const patch = createPatch({}, to);
++  (patch[0] as { value: { b: number } }).value.b = 5;
++  assert.equal(to.a.b, 1);
++});

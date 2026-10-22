@@ -1,0 +1,132 @@
+diff --git a/README.md b/README.md
+index adcc7df908691f5f08aad5cdfccf21753e89d3ab..15c5590166ae6a3a9c012578d59e77c4ac38c484 100644
+--- a/README.md
++++ b/README.md
+@@ -17,7 +17,7 @@ resolve: missing member, array index out of bounds, the `-` index, a non-canonic
+ `applyPatch(document, patch)` (exported from `src/index.ts`) applies an array of `add`, `remove`,
+ `replace`, `move`, `copy` and `test` operations and returns the result as a new value; the document and
+ the patch are never mutated, and the patch is atomic (on failure nothing is returned). It throws an
+-`Error` if the patch is invalid (not an array, unknown `op`, missing `path`/`value`/`from`, bad
++`Error` if the patch is invalid (not an array, unknown `op`, missing `path`/`value`/`from`, a `value` that is not JSON, a hole in the patch array, bad
+ pointer) or an operation fails (unresolvable path, failed `test`, moving a value into its own child,
+ removing the whole document). `-` is accepted only as the target of `add`.
+ 
+diff --git a/docs/memory/decision-log/dl-003-applypatch-rejects-sparse-patches-and-non-json-values.md b/docs/memory/decision-log/dl-003-applypatch-rejects-sparse-patches-and-non-json-values.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..d39454851db5f0fe62c1dda44427c6b13d618294
+--- /dev/null
++++ b/docs/memory/decision-log/dl-003-applypatch-rejects-sparse-patches-and-non-json-values.md
+@@ -0,0 +1,24 @@
++---
++id: dl-003-applypatch-rejects-sparse-patches-and-non-json-values
++type: decision-log
++title: "applyPatch rejects sparse patches and non-JSON values"
++status: pending
++---
++
++<!-- decision-log body. `wingfoil memory add` copies this scaffold verbatim; `memory submit` replaces
++     these placeholder comments with real content and fills the required frontmatter fields. -->
++
++# Decision — applyPatch rejects sparse patches and non-JSON values
++
++## Context
++An operation's `value` must be a JSON value (RFC 6902 section 4), and each element of a patch is an
++operation. `reduce` skipped holes in sparse arrays, and `structuredClone` accepted values JSON cannot hold.
++
++## Decision
++- Holes in the patch array are read as `undefined` and fail as invalid operations.
++- `value` must be null, boolean, string, finite number, array without holes, or plain object, recursively;
++  otherwise the patch is invalid.
++
++## Consequences
++Patches that could not have come from JSON text now fail instead of producing results that do not
++round-trip through JSON. Validation walks each value once more.
+diff --git a/docs/memory/task/task-003-make-applypatch-validation-conform-to-rfc-6902.md b/docs/memory/task/task-003-make-applypatch-validation-conform-to-rfc-6902.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..d592661f12f882cad791b0625022886919b88901
+--- /dev/null
++++ b/docs/memory/task/task-003-make-applypatch-validation-conform-to-rfc-6902.md
+@@ -0,0 +1,16 @@
++---
++id: task-003-make-applypatch-validation-conform-to-rfc-6902
++type: task
++title: "Make applyPatch validation conform to RFC 6902"
++status: pending
++---
++
++<!-- task body. `wingfoil memory add` copies this scaffold verbatim; `memory submit` replaces
++     these placeholder comments with real content and fills the required frontmatter fields. -->
++
++# Task — Make applyPatch validation conform to RFC 6902
++
++Reviewed `applyPatch` against RFC 6902 (all six operations, error cases, atomicity). Two deviations:
++a hole in a sparse patch array was silently skipped, and a `value` that is not JSON (`undefined`,
++`NaN`, `Infinity`, `BigInt`, functions, `Date`, nested `undefined`) was accepted. Both now throw.
++Tests added to `test/patch.test.ts` (red first); README updated. Other behaviour was already conformant.
+diff --git a/src/index.ts b/src/index.ts
+index 93bd6fe19229855767f5f3e187828f73138dbf7b..9305cade0fa927d0f8a59e39f991fd9fbccf875d 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -176,11 +176,32 @@ function requireString(operation: Record<string, unknown>, name: string): string
+   return value;
+ }
+ 
++/** Whether `value` is made only of what JSON can express (plain objects and arrays, finite numbers). */
++function isJsonValue(value: unknown): value is JsonValue {
++  if (value === null || typeof value === "boolean" || typeof value === "string") {
++    return true;
++  }
++  if (typeof value === "number") {
++    return Number.isFinite(value);
++  }
++  if (Array.isArray(value)) {
++    return Array.from(value).every(isJsonValue) && Object.keys(value).length === value.length;
++  }
++  if (typeof value === "object") {
++    const prototype = Object.getPrototypeOf(value);
++    return (prototype === Object.prototype || prototype === null) && Object.values(value).every(isJsonValue);
++  }
++  return false;
++}
++
+ function requireValue(operation: Record<string, unknown>): JsonValue {
+   if (!Object.prototype.hasOwnProperty.call(operation, "value")) {
+     throw new Error(`Invalid JSON Patch: "${String(operation.op)}" needs a "value"`);
+   }
+-  return operation.value as JsonValue;
++  if (!isJsonValue(operation.value)) {
++    throw new Error(`Invalid JSON Patch: the "value" of "${String(operation.op)}" is not a JSON value`);
++  }
++  return operation.value;
+ }
+ 
+ function applyOperation(document: JsonValue, operation: unknown): JsonValue {
+@@ -239,5 +260,5 @@ export function applyPatch(document: unknown, patch: PatchOperation[] | unknown)
+   if (!Array.isArray(patch)) {
+     throw new Error("Invalid JSON Patch: a patch must be an array of operations");
+   }
+-  return patch.reduce<JsonValue>(applyOperation, structuredClone(document) as JsonValue);
++  return Array.from(patch).reduce<JsonValue>(applyOperation, structuredClone(document) as JsonValue);
+ }
+diff --git a/test/patch.test.ts b/test/patch.test.ts
+index 71db4c9275f423c50c1a051da94c20a587d36709..e9a75c81d5108f880a7a8b7a54616c7e05e15e5d 100644
+--- a/test/patch.test.ts
++++ b/test/patch.test.ts
+@@ -88,3 +88,17 @@ test("escapes and prototype keys", () => {
+   assert.deepEqual(Object.keys(result), ["__proto__"]);
+   assert.throws(() => applyPatch({}, [{ op: "remove", path: "/constructor" }]));
+ });
++
++test("a hole in the patch array is an invalid operation, not skipped", () => {
++  const sparse = [{ op: "add", path: "/a", value: 1 }, , { op: "add", path: "/b", value: 2 }];
++  assert.throws(() => applyPatch({}, sparse));
++});
++
++test("values that are not JSON are rejected", () => {
++  for (const value of [undefined, Number.NaN, Infinity, 10n, () => 1, new Date(0), { a: undefined }, [undefined]]) {
++    assert.throws(() => applyPatch({}, [{ op: "add", path: "/a", value }]));
++    assert.throws(() => applyPatch({ a: 1 }, [{ op: "replace", path: "/a", value }]));
++    assert.throws(() => applyPatch({ a: 1 }, [{ op: "test", path: "/a", value }]));
++  }
++  assert.deepEqual(applyPatch({}, [{ op: "add", path: "/a", value: { b: [null, true, 1.5, "s"] } }]), { a: { b: [null, true, 1.5, "s"] } });
++});

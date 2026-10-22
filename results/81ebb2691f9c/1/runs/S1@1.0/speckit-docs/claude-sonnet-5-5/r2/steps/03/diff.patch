@@ -1,0 +1,95 @@
+diff --git a/src/index.ts b/src/index.ts
+index 71e18dea7cf1e1589b1a312f134f9346cfec2351..dbfe41631662eee13dcfb91e2ea8a71f90777673 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -104,6 +104,24 @@ function deepEqual(a: JsonValue, b: JsonValue): boolean {
+   return a === b;
+ }
+ 
++// Rejects anything that cannot appear in a JSON text (undefined, NaN, functions, Dates, ...).
++function assertJson(value: unknown): asserts value is JsonValue {
++  if (value === null || typeof value === "boolean" || typeof value === "string") return;
++  if (typeof value === "number") {
++    if (Number.isFinite(value)) return;
++  } else if (Array.isArray(value)) {
++    value.forEach(assertJson);
++    return;
++  } else if (typeof value === "object") {
++    const proto = Object.getPrototypeOf(value);
++    if (proto === Object.prototype || proto === null) {
++      Object.values(value).forEach(assertJson);
++      return;
++    }
++  }
++  throw new Error("Invalid JSON Patch: \"value\" is not a JSON value");
++}
++
+ function arrayIndex(token: string, max: number, allowEnd: boolean): number {
+   if (allowEnd && token === "-") return max;
+   if (!/^(0|[1-9][0-9]*)$/.test(token)) {
+@@ -171,19 +189,38 @@ function removeValue(doc: JsonValue, tokens: string[]): JsonValue {
+ export function applyPatch(document: JsonValue, patch: readonly PatchOperation[]): JsonValue {
+   if (!Array.isArray(patch)) throw new Error("Invalid JSON Patch: patch must be an array");
+ 
+-  let doc = clone(document);
+-  for (const operation of patch as unknown[]) {
++  // Validate the whole patch before applying anything: a malformed patch is reported as such,
++  // whatever the outcome of the operations that precede the malformed one.
++  const operations = (patch as unknown[]).map((operation) => {
+     if (typeof operation !== "object" || operation === null || Array.isArray(operation)) {
+       throw new Error("Invalid JSON Patch: operation must be an object");
+     }
+     const o = operation as Record<string, unknown>;
+     const path = parsePointer(o.path, "path");
+-    const needValue = () => {
+-      if (!Object.hasOwn(o, "value") || o.value === undefined) {
+-        throw new Error(`Invalid JSON Patch: "${String(o.op)}" requires "value"`);
+-      }
+-      return o.value as JsonValue;
+-    };
++    switch (o.op) {
++      case "add":
++      case "replace":
++      case "test":
++        if (!Object.hasOwn(o, "value") || o.value === undefined) {
++          throw new Error(`Invalid JSON Patch: "${o.op}" requires "value"`);
++        }
++        assertJson(o.value);
++        break;
++      case "remove":
++        break;
++      case "move":
++      case "copy":
++        parsePointer(o.from, "from");
++        break;
++      default:
++        throw new Error(`Invalid JSON Patch: unknown operation "${String(o.op)}"`);
++    }
++    return { o, path };
++  });
++
++  let doc = clone(document);
++  for (const { o, path } of operations) {
++    const needValue = () => o.value as JsonValue;
+ 
+     switch (o.op) {
+       case "add":
+diff --git a/test/patch.test.ts b/test/patch.test.ts
+index 767cfa160c194112ff5927d8cc7d4c48804bc5eb..ee14df2d7a78d371ef987b77fd18cb764c2c88e1 100644
+--- a/test/patch.test.ts
++++ b/test/patch.test.ts
+@@ -43,3 +43,14 @@ test("no prototype pollution", () => {
+   assert.equal(({} as any).x, undefined);
+   assert.deepEqual(Object.keys(out), ["__proto__"]);
+ });
++
++test("whole patch is validated before it is applied", () => {
++  assert.throws(() => applyPatch({}, [{ op: "add", path: "/a", value: 1 }, { op: "nope", path: "" } as any]), /Invalid JSON Patch/);
++  assert.throws(() => applyPatch({}, [{ op: "test", path: "", value: 1 }, { op: "add", path: "/a" } as any]), /Invalid JSON Patch/);
++});
++
++test("values must be JSON", () => {
++  for (const value of [NaN, Infinity, () => 1, new Date(), [undefined], { a: undefined }]) {
++    assert.throws(() => applyPatch({}, [{ op: "add", path: "/a", value } as any]), /not a JSON value/);
++  }
++});

@@ -46,7 +46,38 @@ the same error; a rerun (`--resume`) needs the approver's consent. Each run is a
 
 ## Execution
 
-<!-- Execution id(s) `<campaign-id>/<n>`, outcomes, caps reached, reruns. -->
+**`bf3a1ac7dff5/1`**, 2026-10-22, 11:11:00–12:09:24 UTC (`execution.json`: `completed`), from the main checkout at the benchmark
+commit **`bf60bc1f`** (`bf60bc1f9311483f57cfbcbcc7adb72bfed02714`, no change in the tree), the same for both
+campaigns, nothing committed between them (dl-017 point 3). The script ran the reference campaign, then the bridge,
+`bench campaign run <file> --allow-spending` each, detached from the session; the estimates as above, under each
+`warn_eur`: no question asked.
+
+- 18 runs completed, 0 failed; **7.6883 USD (6.8556 €)**, under the 8.74 € estimate's high and the 15 € ceiling; one ledger line per run ([v0.2 ledger](../../calibration/v0.2-ledger.md)).
+- Every run: one attempt, the arm digest the campaign pins, Claude Code 2.1.300 at `medium`, the run's model priced
+  `list` and the only model in every step; no cap reached, no `fail_fast`. The token scan of the results (`grep
+  -rlFf`, the value never printed): clean; no `bench-` container left.
+- **Scored** (`bench score bf3a1ac7dff5/1 --holdout …`): `aggregate.json`, 12 groups; determinism measured in 3.
+
+| Scenario | Arm | Model | Run | Cost (USD) | Agent time | Turns | Interventions | Final public | Hold-out | Checks | M-F1 |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| S1@1.0 | baseline | Sonnet 5.5 | r1 | 0.3614 | 165 s | 21 | 0 | 164/165 | 45/48 | — | — |
+| S1@1.0 | baseline | Sonnet 5.5 | r2 | 0.4349 | 237 s | 26 | 0 | 164/165 | 45/48 | — | — |
+| S1@1.0 | baseline | Sonnet 5.5 | r3 | 0.3797 | 208 s | 24 | 0 | 164/165 | 45/48 | — | — |
+| S1@1.0 | baseline-docs | Sonnet 5.5 | r1 | 0.4846 | 212 s | 31 | 0 | 164/165 | 45/48 | — | — |
+| S1@1.0 | baseline-docs | Sonnet 5.5 | r2 | 0.4870 | 199 s | 29 | 0 | 164/165 | 45/48 | — | — |
+| S1@1.0 | baseline-docs | Sonnet 5.5 | r3 | 0.4524 | 203 s | 26 | 0 | 158/165 | 43/48 | — | — |
+| S1@1.0 | wingfoil | Sonnet 5.5 | r1 | 0.6899 | 380 s | 47 | 0 | 158/165 | 43/48 | — | — |
+| S1@1.0 | wingfoil | Sonnet 5.5 | r2 | 0.6677 | 296 s | 47 | 0 | 164/165 | 45/48 | — | — |
+| S1@1.0 | wingfoil | Sonnet 5.5 | r3 | 0.6647 | 265 s | 45 | 0 | 164/165 | 45/48 | — | — |
+| S2@1.0 | baseline | Sonnet 5.5 | r1 | 0.2017 | 79 s | 19 | 0 | 24/24 | 17/17 | 2/3 | — |
+| S2@1.0 | baseline-docs | Sonnet 5.5 | r1 | 0.2250 | 69 s | 19 | 0 | 24/24 | 17/17 | 2/3 | — |
+| S2@1.0 | wingfoil | Sonnet 5.5 | r1 | 0.3823 | 168 s | 35 | 1 | 21/24 | 16/17 | 0/3 | — |
+| S3@1.0 | baseline | Sonnet 5.5 | r1 | 0.2530 | 115 s | 20 | 0 | 35/37 | 16/17 | 0/1 | 3/5 |
+| S3@1.0 | baseline-docs | Sonnet 5.5 | r1 | 0.4331 | 181 s | 32 | 0 | 37/37 | 17/17 | 0/1 | 4/5 |
+| S3@1.0 | wingfoil | Sonnet 5.5 | r1 | 0.5330 | 251 s | 43 | 0 | 35/37 | 16/17 | 1/1 | 4/5 |
+| S8@1.0 | baseline | Sonnet 5.5 | r1 | 0.2455 | 105 s | 16 | 0 | 23/23 | 7/7 | 12/16 | — |
+| S8@1.0 | baseline-docs | Sonnet 5.5 | r1 | 0.3315 | 133 s | 18 | 0 | 23/23 | 7/7 | 16/16 | — |
+| S8@1.0 | wingfoil | Sonnet 5.5 | r1 | 0.4609 | 146 s | 31 | 0 | 23/23 | 7/7 | 16/16 | — |
 
 ## Results review
 

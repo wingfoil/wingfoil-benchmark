@@ -1,0 +1,137 @@
+diff --git a/src/index.ts b/src/index.ts
+index 00549985146d0bf8d5700c54a732f94da36578a0..7cf8c3f7c9793f850110c5e137ad0d8ab7a75dc1 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -224,3 +224,102 @@ export function applyMergePatch(target: unknown, patch: unknown): unknown {
+   }
+   return result;
+ }
++
++type PatchOperation =
++  | { op: "add" | "replace"; path: string; value: unknown }
++  | { op: "remove"; path: string };
++
++function escapeToken(token: string): string {
++  return token.replace(/~/g, "~0").replace(/\//g, "~1");
++}
++
++const MAX_LCS_CELLS = 1_000_000;
++
++/** Pairs of indices (into `a` and `b`) of a longest common subsequence of deeply equal elements. */
++function commonElements(a: unknown[], b: unknown[]): Array<[number, number]> {
++  const n = a.length;
++  const m = b.length;
++  if (n * m > MAX_LCS_CELLS) return [];
++  const table: Uint32Array[] = [];
++  for (let i = 0; i <= n; i++) table.push(new Uint32Array(m + 1));
++  for (let i = n - 1; i >= 0; i--) {
++    for (let j = m - 1; j >= 0; j--) {
++      table[i][j] = deepEqual(a[i], b[j])
++        ? table[i + 1][j + 1] + 1
++        : Math.max(table[i + 1][j], table[i][j + 1]);
++    }
++  }
++  const pairs: Array<[number, number]> = [];
++  let i = 0;
++  let j = 0;
++  while (i < n && j < m) {
++    if (deepEqual(a[i], b[j])) pairs.push([i++, j++]);
++    else if (table[i + 1][j] >= table[i][j + 1]) i++;
++    else j++;
++  }
++  return pairs;
++}
++
++function diffArrays(from: unknown[], to: unknown[], path: string, ops: PatchOperation[]): void {
++  let start = 0;
++  while (start < from.length && start < to.length && deepEqual(from[start], to[start])) start++;
++  let endFrom = from.length;
++  let endTo = to.length;
++  while (endFrom > start && endTo > start && deepEqual(from[endFrom - 1], to[endTo - 1])) {
++    endFrom--;
++    endTo--;
++  }
++  const a = from.slice(start, endFrom);
++  const b = to.slice(start, endTo);
++  const matches = commonElements(a, b);
++  matches.push([a.length, b.length]); // sentinel closing the last gap
++
++  let x = 0; // position in a
++  let y = 0; // position in b
++  let index = start; // position in the array being edited
++  for (const [mx, my] of matches) {
++    const removed = mx - x;
++    const added = my - y;
++    const paired = Math.min(removed, added);
++    for (let k = 0; k < paired; k++) {
++      diffValues(a[x + k], b[y + k], `${path}/${index + k}`, ops);
++    }
++    for (let k = paired; k < removed; k++) {
++      ops.push({ op: "remove", path: `${path}/${index + paired}` });
++    }
++    for (let k = paired; k < added; k++) {
++      ops.push({ op: "add", path: `${path}/${index + k}`, value: structuredClone(b[y + k]) });
++    }
++    index += added + 1; // the gap, then the matching element
++    x = mx + 1;
++    y = my + 1;
++  }
++}
++
++function diffValues(from: unknown, to: unknown, path: string, ops: PatchOperation[]): void {
++  if (deepEqual(from, to)) return;
++  if (Array.isArray(from) && Array.isArray(to)) {
++    diffArrays(from, to, path, ops);
++  } else if (isObject(from) && isObject(to)) {
++    for (const key of Object.keys(from)) {
++      if (!Object.hasOwn(to, key)) ops.push({ op: "remove", path: `${path}/${escapeToken(key)}` });
++    }
++    for (const key of Object.keys(to)) {
++      const child = `${path}/${escapeToken(key)}`;
++      if (Object.hasOwn(from, key)) diffValues(from[key], to[key], child, ops);
++      else ops.push({ op: "add", path: child, value: structuredClone(to[key]) });
++    }
++  } else {
++    ops.push({ op: "replace", path, value: structuredClone(to) });
++  }
++}
++
++/**
++ * Returns a JSON Patch (RFC 6902) that turns `from` into `to` when applied, describing only what
++ * changed. The inputs are not mutated.
++ */
++export function createPatch(from: unknown, to: unknown): PatchOperation[] {
++  const ops: PatchOperation[] = [];
++  diffValues(from, to, "", ops);
++  return ops;
++}
+diff --git a/test/create-patch.test.ts b/test/create-patch.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..e081004574d0b67bd068e0e354006a40c5b1618a
+--- /dev/null
++++ b/test/create-patch.test.ts
+@@ -0,0 +1,24 @@
++import { test } from "node:test";
++import assert from "node:assert/strict";
++import { applyPatch, createPatch } from "../src/index.ts";
++
++test("createPatch emits only the changed place", () => {
++  const from = { a: { b: 1, c: [1, 2, 3, 4] }, d: "x" };
++  const to = { a: { b: 1, c: [1, 9, 2, 3, 4] }, d: "x" };
++  assert.deepEqual(createPatch(from, to), [{ op: "add", path: "/a/c/1", value: 9 }]);
++  assert.deepEqual(createPatch(from, structuredClone(from)), []);
++});
++
++test("createPatch escapes keys, handles removals and does not mutate", () => {
++  const from = { "a/b": 1, "m~n": 2, gone: true, list: [1, 2, 3] };
++  const to = { "a/b": 2, "m~n": 2, added: null, list: [3] };
++  const snapshot = structuredClone(from);
++  const patch = createPatch(from, to);
++  assert.deepEqual(from, snapshot);
++  assert.deepEqual(applyPatch(from, patch), to);
++  assert.ok(patch.some((o) => o.path === "/a~1b"));
++});
++
++test("createPatch replaces the root when types differ", () => {
++  assert.deepEqual(createPatch([1], { a: 1 }), [{ op: "replace", path: "", value: { a: 1 } }]);
++});

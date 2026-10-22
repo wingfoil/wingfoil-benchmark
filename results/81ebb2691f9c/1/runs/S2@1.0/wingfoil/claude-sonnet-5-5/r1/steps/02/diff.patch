@@ -1,0 +1,88 @@
+diff --git a/docs/memory/task/task-002-fix-coupon-base-coupon-last-day-shipping-vat-report.md b/docs/memory/task/task-002-fix-coupon-base-coupon-last-day-shipping-vat-report.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..d5dd5abef210dcf5a5cea4212e8670b10e8ee202
+--- /dev/null
++++ b/docs/memory/task/task-002-fix-coupon-base-coupon-last-day-shipping-vat-report.md
+@@ -0,0 +1,20 @@
++---
++id: task-002-fix-coupon-base-coupon-last-day-shipping-vat-report
++type: task
++title: "Fix coupon base, coupon last day; shipping VAT report"
++status: pending
++format: 1
++---
++
++Three reports.
++
++1. Finance, coupon too generous: the percentage coupon was computed on the gross amount instead of the
++   subtotal after volume discounts (README: Discounts). `priceOrder` now uses `grossTotal - volumeTotal`.
++   12 notebooks at €5.00 with 10%: €48.60.
++2. Luca, AUTUMN refused on its last day: `Coupons.redeemable` used `>=` against `validUntil`; the last
++   day is included, now `>`.
++3. Anna, VAT on shipping: NOT changed. README (Shipping, VAT) says shipping is subject to 22% VAT, shown
++   on its own line, and the README prevails over the code. Dropping it is a business/tax decision and
++   needs the README updated by someone who owns the rule. Left for the requester to confirm.
++
++Tests (red first): new `coupon rules` in `test/rules.test.ts`.
+diff --git a/src/coupons.ts b/src/coupons.ts
+index 4b7df8e652e5d52033abb2ea07d763007ccce283..496aed7828812115eb643d5d3378af00c2d6948f 100644
+--- a/src/coupons.ts
++++ b/src/coupons.ts
+@@ -74,7 +74,7 @@ export class Coupons {
+     const coupon = this.#coupons.get(canonicalCode(code));
+     if (coupon === undefined) throw new CouponError(code, 'unknown code');
+     if (compareDates(date, coupon.validFrom) < 0) throw new CouponError(coupon.code, 'not valid yet');
+-    if (compareDates(date, coupon.validUntil) >= 0) throw new CouponError(coupon.code, 'expired');
++    if (compareDates(date, coupon.validUntil) > 0) throw new CouponError(coupon.code, 'expired');
+     if (amount < coupon.minimumCents) throw new CouponError(coupon.code, 'order below the minimum amount');
+     if (coupon.singleUse && this.#usedBy.has(coupon.code)) throw new CouponError(coupon.code, 'already used');
+     return coupon;
+diff --git a/src/pricing.ts b/src/pricing.ts
+index 3d07b8e66d51d75411d7694eb6b4d79c95913fee..751ac9ae7bbf5660ce0272cc7ec55ddd9af76bb5 100644
+--- a/src/pricing.ts
++++ b/src/pricing.ts
+@@ -56,7 +56,7 @@ export function priceOrder(inputs: readonly LineInput[], coupon?: Coupon): Price
+   const volumeTotal = sum(volume);
+ 
+   const couponTotal =
+-    coupon === undefined ? 0 : capped(couponDiscount(coupon, grossTotal), volumeTotal, grossTotal);
++    coupon === undefined ? 0 : capped(couponDiscount(coupon, grossTotal - volumeTotal), volumeTotal, grossTotal);
+   const couponShares = allocate(couponTotal, afterVolume);
+ 
+   const lines = inputs.map(({ product, quantity }, index): PricedLine => {
+diff --git a/test/rules.test.ts b/test/rules.test.ts
+index 52d493cf43383b3be21554c636e8bd5976513ae3..e1ea9875a4679bdd24117666e652c43c8ec2bbb1 100644
+--- a/test/rules.test.ts
++++ b/test/rules.test.ts
+@@ -1,6 +1,9 @@
+ import assert from 'node:assert/strict';
+ import { describe, it } from 'node:test';
+ 
++import { Coupons } from '../src/coupons.ts';
++import { CouponError } from '../src/errors.ts';
++import { priceOrder } from '../src/pricing.ts';
+ import { lineVat } from '../src/tax.ts';
+ import { shippingCost } from '../src/shipping.ts';
+ 
+@@ -19,3 +22,21 @@ describe('line VAT', () => {
+     assert.equal(lineVat(0, 'exempt'), 0);
+   });
+ });
++
++describe('coupon rules', () => {
++  const product = { sku: 'NB-1', name: 'Notebook', priceCents: 500, vatClass: 'standard', weightGrams: 100 } as const;
++
++  it('takes a percentage coupon off the subtotal after volume discounts', () => {
++    const coupon = { code: 'TEN', kind: 'percent', value: 10, validFrom: '2026-01-01', validUntil: '2026-12-31', minimumCents: 0, singleUse: false } as const;
++    const priced = priceOrder([{ product, quantity: 12 }], coupon);
++    assert.equal(priced.totals.couponDiscountCents, 540);
++    assert.equal(priced.totals.goodsCents, 4860);
++  });
++
++  it('is valid on its last day, not after', () => {
++    const coupons = new Coupons();
++    coupons.add({ code: 'AUTUMN', kind: 'percent', value: 10, validFrom: '2026-09-01', validUntil: '2026-11-30' });
++    assert.equal(coupons.redeemable('AUTUMN', '2026-11-30', 1000).code, 'AUTUMN');
++    assert.throws(() => coupons.redeemable('AUTUMN', '2026-12-01', 1000), CouponError);
++  });
++});

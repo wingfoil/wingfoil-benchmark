@@ -1,0 +1,332 @@
+diff --git a/README.md b/README.md
+index 748792b2c2582f762317bb20a434f890c289bd3b..d8673bfb26c450b24faeb2de327efd88867292de 100644
+--- a/README.md
++++ b/README.md
+@@ -40,19 +40,23 @@ applyPatch({ foo: ["bar"] }, [
+ ```
+ 
+ `applyPatch(document, patch)` supports the six operations `add`, `remove`, `replace`, `move`, `copy` and
+-`test`, and returns a new document: neither `document` nor `patch` is modified, and the result shares no
+-object or array with them. A patch applies atomically: if any operation fails, it throws and no partial
++`test`, and returns a new document. `document` and every `value` must be JSON values: `null`, booleans,
++finite numbers, strings, and arrays (without holes) and plain objects of these, without cycles. Neither
++`document` nor `patch` is modified, and the result shares no object or array with them. A patch applies atomically: if any operation fails, it throws and no partial
+ result exists.
+ 
+-It throws a `JsonPatchError` (whose `index` property is the position of the operation at fault) when:
++It throws a `JsonPatchError` (whose `index` property is the position of the operation at fault, or
++`undefined` when the fault is not in one operation) when:
+ 
+-- the patch is invalid: not an array, or an operation that is not an object, has an unknown `op`, or
+-  lacks a valid `path`, `from` (for `move` and `copy`) or `value` (for `add`, `replace` and `test`).
+-  The whole patch is checked before any operation is applied; unknown members are ignored;
++- the patch is invalid: not an array, or an operation that is not a plain object, has no own valid
++  `op`, or lacks a valid `path`, `from` (for `move` and `copy`) or `value` (for `add`, `replace` and
++  `test`; a value that is not a JSON value, such as `NaN` or a `Date`, is invalid). The whole patch is
++  checked before any operation is applied; unknown members are ignored;
++- the document is not a JSON value;
+ - an operation fails: a target or `from` location that does not exist (pointers resolve as in
+   `resolvePointer`; `add` also accepts `-` and an index equal to the array length, to append), a `move`
+-  into one of the value's own children, a `test` whose value differs (objects compare regardless of
+-  member order), or a `remove` of the whole document. A pointer error is kept as the error's `cause`.
++  into one of the value's own children (a `move` onto its own location changes nothing, but its `from`
++  must exist), a `test` whose value differs (objects compare regardless of member order), or a `remove` of the whole document. A pointer error is kept as the error's `cause`.
+ 
+ ## Development
+ 
+diff --git a/docs/memory/decision-log/dl-003-json-patch-document-and-values-must-be-json-values-move-to-the-same-location-still-requires-its-source.md b/docs/memory/decision-log/dl-003-json-patch-document-and-values-must-be-json-values-move-to-the-same-location-still-requires-its-source.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..d27a413a92fa56c4d7b30dd6c24dc0c8594ce1fb
+--- /dev/null
++++ b/docs/memory/decision-log/dl-003-json-patch-document-and-values-must-be-json-values-move-to-the-same-location-still-requires-its-source.md
+@@ -0,0 +1,51 @@
++---
++id: dl-003-json-patch-document-and-values-must-be-json-values-move-to-the-same-location-still-requires-its-source
++type: decision-log
++title: "JSON Patch: document and values must be JSON values; move to the same location still requires its source"
++status: approved
++format: 1
++---
++
++## Context
++
++Users of `applyPatch` (dl-002-json-patch-api-atomic-copy-on-apply-upfront-validation-jsonpatcherror-with-index)
++reported patches they consider invalid being accepted and failures that do not match RFC 6902. A review
++against the RFC found:
++
++- `move` with `from` equal to `path` returned the document unchanged without checking that `from`
++  exists, although RFC 6902 section 4.4 says "The "from" location MUST exist for the operation to be
++  successful" (e.g. `{"op":"move","from":"/x","path":"/x"}` on `{}` succeeded).
++- RFC 6902 operates on JSON documents and its `value` members are JSON values (sections 3, 4), but
++  `applyPatch` accepted any JavaScript value and silently changed it while copying: `NaN`/`Infinity`
++  became numbers no JSON text holds, a `Date` or `Map` became `{}`, a function or nested `undefined`
++  vanished, and a cyclic value crashed with a `RangeError` instead of a `JsonPatchError`. The same
++  held for the document.
++- An operation was accepted when its `op` was inherited from a prototype, or when it was an instance
++  of a class (`Map`, `Date`), unlike `path`, `from` and `value`, which already had to be own members.
++- A hole in a sparse patch array was skipped by `Array.prototype.map`, so it was silently ignored
++  instead of rejected as a non-operation.
++
++## Decision
++
++1. **`move` onto its own location resolves `from` first**: it still changes nothing, but fails like any
++   `move` whose `from` does not exist (including `-` and out-of-range indexes).
++2. **Only JSON values are accepted.** A JSON value is `null`, a boolean, a finite number, a string, an
++   array without holes or a plain object (prototype `Object.prototype` or `null`) made of JSON values,
++   with no cycle; a sub-value shared by several places, without a cycle, is accepted and copied for
++   each place. A `value` member that is not one makes the operation invalid (`JsonPatchError` with its
++   `index`, reported during the upfront validation of dl-002 point 2). A document that is not one
++   throws a `JsonPatchError` whose `index` is `undefined`, checked after the patch is validated.
++   Unknown members of an operation are still ignored, whatever they hold (RFC 6902 section 4).
++3. **An operation must be a plain object with an own `op`**, like `path`, `from` and `value`.
++4. **Every element of the patch array is an operation**: holes are validated, and rejected, too.
++5. Unchanged, as decided in dl-002: `remove` of the root stays an error, and the whole patch is still
++   validated before any operation is applied.
++
++## Consequences
++
++- Every failure of `applyPatch` is a `JsonPatchError`; no input is silently altered.
++- Callers that passed non-JSON values (a `Date`, `undefined` as the document) now get an error and
++  must serialise those values themselves, as sending the patch as JSON would have done.
++- Validating the document costs one more traversal of it per call, the same order as the copy.
++- Objects from another realm (e.g. `vm`) have another `Object.prototype` and are rejected; callers
++  parse JSON in their own realm.
+diff --git a/docs/memory/task/task-003-make-applypatch-conform-to-rfc-6902-in-every-case-errors-included.md b/docs/memory/task/task-003-make-applypatch-conform-to-rfc-6902-in-every-case-errors-included.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..6e768a6dcc7cfb37f967b79a3e1d293ec7189dec
+--- /dev/null
++++ b/docs/memory/task/task-003-make-applypatch-conform-to-rfc-6902-in-every-case-errors-included.md
+@@ -0,0 +1,34 @@
++---
++id: task-003-make-applypatch-conform-to-rfc-6902-in-every-case-errors-included
++type: task
++title: "Make applyPatch conform to RFC 6902 in every case, errors included"
++status: pending
++format: 1
++---
++
++## Request
++
++Users of `applyPatch` report surprising results: some patches they consider invalid are accepted, some
++edge cases give unexpected results, and a failing patch does not always behave as they read the
++standard. Review how patches are checked and applied, and make the behaviour conform to RFC 6902 in
++every case, errors included.
++
++## What was done
++
++- Reviewed `applyPatch` against RFC 6902 sections 3 to 5 and appendix A. Found and fixed (see
++  dl-003-json-patch-document-and-values-must-be-json-values-move-to-the-same-location-still-requires-its-source):
++  - `move` with `from` equal to `path` succeeded when `from` did not exist (section 4.4);
++  - non-JSON values (`NaN`, `Infinity`, `BigInt`, symbols, functions, `Date`, `Map`, nested
++    `undefined`, sparse arrays) in a `value` or the document were accepted and silently altered,
++    and a cyclic value crashed with a `RangeError`;
++  - an operation with an inherited `op`, or that is a class instance, was accepted;
++  - a hole in a sparse patch array was skipped instead of rejected.
++- Checked and left unchanged (conforming, or approved in dl-002): pointer resolution, `-` and index
++  bounds, `replace`/`remove` requiring an existing target, the proper-prefix rule of `move`, `copy`
++  into its own child, `test` equality, ignored unknown members, atomicity, the root `remove` error.
++- `test/json-patch.test.ts`: 7 new tests written first; 5 failed (red), and the 2 for shared
++  sub-values and null-prototype objects are characterization tests that passed at once.
++- `src/index.ts`: `isPlainObject` and `isJsonValue`; validation of operations, values and the
++  document; `move` onto itself resolves `from`; doc comments updated.
++- `README.md`: the JSON-value requirement and the new error cases.
++- `npm test`: 52 tests pass. `tsc` is not installed here, so the type check was not run.
+diff --git a/src/index.ts b/src/index.ts
+index de9932050c3b9c5311f043010512cecbba1f648b..1317e4fe78a0de5f8ac07c280a6306f5f4758a6d 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -103,7 +103,10 @@ export type JsonPatchOperation =
+ 
+ /** Error thrown when a patch is invalid, or when one of its operations fails. */
+ export class JsonPatchError extends Error {
+-  /** The position in the patch of the operation at fault; `undefined` when the patch is not an array. */
++  /**
++   * The position in the patch of the operation at fault; `undefined` when the patch is not an array
++   * or the document is not a JSON value.
++   */
+   readonly index: number | undefined;
+ 
+   constructor(message: string, index?: number, options?: ErrorOptions) {
+@@ -121,14 +124,16 @@ const OPERATIONS = new Set(["add", "remove", "replace", "move", "copy", "test"])
+ /**
+  * Applies `patch`, a JSON Patch, to `document` and returns the resulting document.
+  *
+- * The result is a new value that shares no object or array with `document` or `patch`, neither of
+- * which is modified. The whole patch is validated before any operation is applied; the operations
++ * `document` and the `value` members of `patch` must be JSON values: null, booleans, finite numbers,
++ * strings, and arrays and plain objects of these, without cycles. The result is a new value that
++ * shares no object or array with `document` or `patch`, neither of which is modified. The whole patch is validated before any operation is applied; the operations
+  * then apply in order, each to the result of the previous one. Members of an operation other than
+  * `op`, `path`, `from` and `value` are ignored. Object members are always set as own data members,
+  * so a `__proto__` member never changes a prototype.
+  *
+- * @throws {JsonPatchError} when `patch` is not an array of valid operations, or when an operation
+- * fails: its target or `from` location does not exist, a `move` would put a value inside itself,
++ * @throws {JsonPatchError} when `document` is not a JSON value, when `patch` is not an array of
++ * valid operations, or when an operation fails: its target or `from` location does not exist (even
++ * for a `move` onto itself), a `move` would put a value inside itself,
+  * a `test` finds a different value, or a `remove` targets the whole document. Its `index` tells
+  * which operation; a pointer that does not resolve is kept as its `cause`.
+  */
+@@ -136,7 +141,11 @@ export function applyPatch(document: unknown, patch: unknown): unknown {
+   if (!Array.isArray(patch)) {
+     throw new JsonPatchError("a JSON Patch must be an array of operations");
+   }
+-  const operations = patch.map(validateOperation);
++  // `Array.from`, unlike `map`, visits the holes of a sparse array, which are not operations.
++  const operations = Array.from(patch, validateOperation);
++  if (!isJsonValue(document)) {
++    throw new JsonPatchError("the document is not a JSON value");
++  }
+   let result = cloneJson(document);
+   operations.forEach((operation, index) => {
+     try {
+@@ -155,10 +164,10 @@ export function applyPatch(document: unknown, patch: unknown): unknown {
+ }
+ 
+ function validateOperation(operation: unknown, index: number): JsonPatchOperation {
+-  if (!isObject(operation)) {
++  if (!isPlainObject(operation)) {
+     throw new JsonPatchError("an operation must be an object", index);
+   }
+-  const { op } = operation;
++  const op = Object.hasOwn(operation, "op") ? operation.op : undefined;
+   if (typeof op !== "string" || !OPERATIONS.has(op)) {
+     throw new JsonPatchError(`unknown op ${JSON.stringify(op)}`, index);
+   }
+@@ -174,6 +183,9 @@ function validateOperation(operation: unknown, index: number): JsonPatchOperatio
+       if (!Object.hasOwn(operation, "value") || operation.value === undefined) {
+         throw new JsonPatchError(`a "${op}" operation needs a "value" member`, index);
+       }
++      if (!isJsonValue(operation.value)) {
++        throw new JsonPatchError(`the "value" member is not a JSON value`, index);
++      }
+       return { op: op as "add" | "replace" | "test", path, value: operation.value };
+   }
+ }
+@@ -206,6 +218,8 @@ function applyOperation(document: unknown, operation: JsonPatchOperation): unkno
+       return addValue(document, operation.path, cloneJson(operation.value));
+     case "move":
+       if (operation.from === operation.path) {
++        // Moving a value onto itself changes nothing, but its "from" location must still exist.
++        resolvePointer(document, operation.from);
+         return document;
+       }
+       // Reference tokens are separated by `/` and never contain one, so this is a token prefix.
+@@ -274,7 +288,40 @@ function isObject(value: unknown): value is Record<string, unknown> {
+   return typeof value === "object" && value !== null && !Array.isArray(value);
+ }
+ 
+-// Deep-copies a JSON value; `Object.fromEntries` keeps `__proto__` as an own member.
++// A JSON object: neither an array nor an instance of a class such as `Date` or `Map`.
++function isPlainObject(value: unknown): value is Record<string, unknown> {
++  if (!isObject(value)) {
++    return false;
++  }
++  const prototype = Object.getPrototypeOf(value);
++  return prototype === Object.prototype || prototype === null;
++}
++
++// Whether `value` is one a JSON text can hold: null, a boolean, a finite number, a string, or an
++// array without holes and a plain object made of such values, with no cycle. `ancestors` holds the
++// arrays and objects that contain `value`.
++function isJsonValue(value: unknown, ancestors = new Set<object>()): boolean {
++  if (value === null || typeof value === "boolean" || typeof value === "string") {
++    return true;
++  }
++  if (typeof value === "number") {
++    return Number.isFinite(value);
++  }
++  if (!Array.isArray(value) && !isPlainObject(value)) {
++    return false;
++  }
++  if (ancestors.has(value)) {
++    return false;
++  }
++  ancestors.add(value);
++  // A hole of an array reads as `undefined`, which is not a JSON value.
++  const members = Array.isArray(value) ? Array.from(value) : Object.values(value);
++  const valid = members.every((member) => isJsonValue(member, ancestors));
++  ancestors.delete(value);
++  return valid;
++}
++
++// Deep-copies a JSON value, checked by `isJsonValue`; `Object.fromEntries` keeps `__proto__` as an own member.
+ function cloneJson(value: unknown): unknown {
+   if (Array.isArray(value)) {
+     return value.map(cloneJson);
+diff --git a/test/json-patch.test.ts b/test/json-patch.test.ts
+index 7b647154fc08e6203bc1bbf1f2cf10ffa7b714a7..480f0153bf919e134e47bb69cdc57b2474fecd79 100644
+--- a/test/json-patch.test.ts
++++ b/test/json-patch.test.ts
+@@ -262,3 +262,70 @@ test("the error tells which operation failed and keeps the pointer error as caus
+       error.cause instanceof JsonPointerError,
+   );
+ });
++
++test("move: to the same location still requires the source to exist", () => {
++  assert.throws(() => applyPatch({}, [{ op: "move", from: "/a", path: "/a" }]), JsonPatchError);
++  assert.throws(() => applyPatch({ a: [1] }, [{ op: "move", from: "/a/-", path: "/a/-" }]), JsonPatchError);
++  assert.throws(() => applyPatch({ a: [1] }, [{ op: "move", from: "/a/1", path: "/a/1" }]), JsonPatchError);
++});
++
++test("rejects an operation that is not a plain object or whose op is inherited", () => {
++  const inherited = Object.assign(Object.create({ op: "add" }), { path: "/a", value: 1 });
++  for (const operation of [inherited, new Map([["op", "add"]]), new Date(0)]) {
++    assert.throws(
++      () => applyPatch({}, [operation]),
++      (error: unknown) => error instanceof JsonPatchError && error.index === 0,
++    );
++  }
++});
++
++test("rejects a sparse patch: a hole is not an operation", () => {
++  const patch: unknown[] = [];
++  patch[1] = { op: "add", path: "/a", value: 1 };
++  assert.throws(
++    () => applyPatch({}, patch),
++    (error: unknown) => error instanceof JsonPatchError && error.index === 0,
++  );
++});
++
++// Values that a JSON text cannot hold, at the top level or nested.
++function nonJsonValues(): unknown[] {
++  const cycle: Record<string, unknown> = {};
++  cycle.self = cycle;
++  const values: unknown[] = [NaN, Infinity, -Infinity, 1n, Symbol("s"), () => 1, new Date(0), new Map(), /re/, cycle];
++  const sparse = [1, , 3];
++  return [...values, ...values.map((value) => ({ a: [value] })), { a: undefined }, [undefined], sparse];
++}
++
++test("rejects a value member that is not a JSON value", () => {
++  for (const op of ["add", "replace", "test"]) {
++    for (const value of nonJsonValues()) {
++      assert.throws(
++        () => applyPatch({ a: 1 }, [{ op: "test", path: "/a", value: 1 }, { op, path: "/a", value }]),
++        (error: unknown) => error instanceof JsonPatchError && error.index === 1,
++        `${op} ${String(value)}`,
++      );
++    }
++  }
++});
++
++test("rejects a document that is not a JSON value", () => {
++  for (const document of [undefined, ...nonJsonValues()]) {
++    assert.throws(
++      () => applyPatch(document, []),
++      (error: unknown) => error instanceof JsonPatchError && error.index === undefined,
++      String(document),
++    );
++  }
++});
++
++test("accepts a document and values that share a sub-value without a cycle", () => {
++  const shared = { b: 1 };
++  const result = applyPatch({ x: shared, y: shared }, [{ op: "add", path: "/z", value: [shared, shared] }]);
++  assert.deepEqual(result, { x: { b: 1 }, y: { b: 1 }, z: [{ b: 1 }, { b: 1 }] });
++});
++
++test("accepts objects without a prototype", () => {
++  const document = Object.assign(Object.create(null), { a: 1 });
++  assert.deepEqual(applyPatch(document, [{ op: "test", path: "/a", value: 1 }]), { a: 1 });
++});

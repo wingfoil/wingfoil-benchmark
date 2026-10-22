@@ -1,0 +1,84 @@
+diff --git a/PROJECT_RULES.md b/PROJECT_RULES.md
+index 2bc1bc7bbd0b46d28c702d7e4b24a99e0523cfdf..0cfb0e1f9f0b6fb6b0e0c4c0a4906fe86aa47161 100644
+--- a/PROJECT_RULES.md
++++ b/PROJECT_RULES.md
+@@ -1,3 +1,9 @@
+ # Project rules
+ 
+ This project declares no rules beyond its README.
++
++## Decisions taken
++
++- Cancellation refund (assumed by the developer, not confirmed by the school): full booking total if
++  cancelled strictly before the rental start, nothing from the start on. Change `cancel` in `src/index.ts`
++  if the school's policy differs.
+diff --git a/src/index.ts b/src/index.ts
+index ba1f9d0a5dcdc5284e63b4a7292b9dbcedc4a256..606b9767993251397a933f70f222bdffe2c9ae14 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -44,6 +44,14 @@ export interface RentalService {
+   book(request: RentalRequest): Booking;
+   /** Sorted ids of the equipment free for the whole period. */
+   availability(query: AvailabilityQuery): string[];
++  /** Cancels a booking at time `at` (ISO-8601 UTC, on the hour); frees its equipment. A booking can be cancelled once. */
++  cancel(bookingId: string, at: string): CancelResult;
++}
++
++export interface CancelResult {
++  bookingId: string;
++  /** Euro cents given back to the customer. */
++  refund: number;
+ }
+ 
+ const DAY_MS = 24 * 60 * 60 * 1000;
+@@ -74,6 +82,7 @@ function parseRentalBound(value: unknown, name: string, shortRental: boolean): n
+ export function createRentalService(): RentalService {
+   const equipment = new Map<string, Equipment>();
+   const bookings: (Booking & { startMs: number; endMs: number })[] = [];
++  const cancelled = new Set<string>();
+   let nextBooking = 1;
+ 
+   function price(request: RentalRequest) {
+@@ -139,6 +148,22 @@ export function createRentalService(): RentalService {
+         .sort();
+     },
+ 
++    cancel(bookingId, at) {
++      const atMs = parseHour(at, 'at');
++      const index = bookings.findIndex((b) => b.id === bookingId);
++      if (index === -1) {
++        throw new Error(
++          cancelled.has(bookingId) ? `Booking already cancelled: ${bookingId}` : `Unknown booking: ${String(bookingId)}`,
++        );
++      }
++      const booking = bookings[index];
++      // Policy (assumed, to be confirmed): full refund before the rental starts, nothing once it has started.
++      const refund = atMs < booking.startMs ? booking.total : 0;
++      bookings.splice(index, 1);
++      cancelled.add(bookingId);
++      return { bookingId, refund };
++    },
++
+     book(request) {
+       const { quote, startMs, endMs } = price(request);
+       const clash = bookings.some(
+diff --git a/test/rental.test.ts b/test/rental.test.ts
+index 205effb86f5d4c7b7628c249288460b54b29d14f..e92d0865a3ac7de81fe8493c9e778f6ffb38f6cf 100644
+--- a/test/rental.test.ts
++++ b/test/rental.test.ts
+@@ -68,3 +68,15 @@ test('rentals shorter than a day are priced per hour, only for items with an hou
+   assert.deepEqual(s.availability({ start: h(1, 9), end: h(1, 10) }), ['b1', 'b2']);
+   assert.throws(() => s.addEquipment({ id: 'x', kind: 'sail', dailyPrice: 1, hourlyPrice: -1 }));
+ });
++
++test('cancel refunds before the start, frees the equipment, and works only once', () => {
++  const s = setup();
++  const a = s.book({ itemId: 'b1', start: d(5), end: d(7) });
++  assert.deepEqual(s.cancel(a.id, d(1)), { bookingId: a.id, refund: 5100 });
++  assert.deepEqual(s.availability({ start: d(5), end: d(7) }), ['b1']);
++  assert.throws(() => s.cancel(a.id, d(1)), /already cancelled/);
++  assert.throws(() => s.cancel('nope', d(1)), /Unknown booking/);
++  const b = s.book({ itemId: 'b1', start: d(5), end: d(7) });
++  assert.equal(s.cancel(b.id, d(6)).refund, 0);
++  assert.throws(() => s.cancel(b.id, '2026-07-01'));
++});

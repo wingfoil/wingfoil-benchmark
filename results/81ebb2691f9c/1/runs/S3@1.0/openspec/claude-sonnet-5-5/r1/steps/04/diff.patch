@@ -1,0 +1,389 @@
+diff --git a/openspec/changes/archive/2026-10-22-add-hourly-rental/.openspec.yaml b/openspec/changes/archive/2026-10-22-add-hourly-rental/.openspec.yaml
+new file mode 100644
+index 0000000000000000000000000000000000000000..7cc41bb519e271c0a74068d5a8e912100b55e58c
+--- /dev/null
++++ b/openspec/changes/archive/2026-10-22-add-hourly-rental/.openspec.yaml
+@@ -0,0 +1,2 @@
++schema: spec-driven
++created: 2026-10-22
+diff --git a/openspec/changes/archive/2026-10-22-add-hourly-rental/design.md b/openspec/changes/archive/2026-10-22-add-hourly-rental/design.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..7ee8401118098b60cd375ae1de6c8f8418200ba2
+--- /dev/null
++++ b/openspec/changes/archive/2026-10-22-add-hourly-rental/design.md
+@@ -0,0 +1,16 @@
++## Context
++
++`price` parses both ends as midnight UTC and multiplies by the daily price. Bookings store epoch-millisecond ranges, so overlap checks already work for any instants.
++
++## Decisions
++
++- A period is hourly when `end - start` is under 24 hours and not both ends are at midnight (which cannot be under a day anyway). Both ends must be on the hour UTC (minutes, seconds, ms all zero); otherwise rejected. Anything else follows the existing whole-day rules.
++- Hourly total = `hourlyPrice × hours`, no discount. Assumption: the long-stay discount only applies from 3 days, so it never concerns hourly rentals.
++- A period of exactly 24 hours not starting at midnight is not "shorter than a day" and is rejected.
++- Hourly periods may cross midnight.
++- `hourlyPrice` is optional; when present it must be a non-negative integer, like `dailyPrice`.
++- `availability` is unchanged (whole-day queries), but it already excludes items with overlapping hourly bookings.
++
++## Risks
++
++- Hourly bookings of a day-priced item are blocked by design; the desk must register an `hourlyPrice` to enable them.
+diff --git a/openspec/changes/archive/2026-10-22-add-hourly-rental/proposal.md b/openspec/changes/archive/2026-10-22-add-hourly-rental/proposal.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..a73c3c1c22056001652073da0ab790373b69c22a
+--- /dev/null
++++ b/openspec/changes/archive/2026-10-22-add-hourly-rental/proposal.md
+@@ -0,0 +1,24 @@
++## Why
++
++Many visitors only want a board for an afternoon and are turned away because rentals are whole days only.
++
++## What Changes
++
++- `addEquipment` accepts an optional `hourlyPrice` (non-negative integer euro cents for one hour).
++- A rental shorter than a day that starts and ends on the hour (UTC) is priced at `hourlyPrice` × hours, via `quote` and `book`.
++- An item without an `hourlyPrice` cannot be quoted or booked by the hour (error).
++- Whole-day rentals are unchanged, including the long-stay discount; the discount does not apply to hourly rentals.
++- Hourly bookings take part in the no-overlap rule.
++
++## Capabilities
++
++### New Capabilities
++None.
++
++### Modified Capabilities
++- `equipment-rental`: Equipment registration, the period rules, Quote and Booking gain hourly rental.
++
++## Impact
++
++- `src/index.ts`: `Equipment` type, `addEquipment`, period parsing and `price`.
++- `src/index.test.ts`: new tests.
+diff --git a/openspec/changes/archive/2026-10-22-add-hourly-rental/specs/equipment-rental/spec.md b/openspec/changes/archive/2026-10-22-add-hourly-rental/specs/equipment-rental/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..0550f661ed1cac9ac6cbaab225ba7873c2c4d306
+--- /dev/null
++++ b/openspec/changes/archive/2026-10-22-add-hourly-rental/specs/equipment-rental/spec.md
+@@ -0,0 +1,86 @@
++## MODIFIED Requirements
++
++### Requirement: Equipment registration
++The service SHALL let the desk register equipment with an `id` (string), a `kind` (`'board'` or `'sail'`), a `dailyPrice` that is a non-negative integer number of euro cents, and optionally an `hourlyPrice`, the price of one hour of rental, also a non-negative integer number of euro cents.
++
++#### Scenario: Register an item
++- **WHEN** `addEquipment({ id: 'b1', kind: 'board', dailyPrice: 2500 })` is called
++- **THEN** the item can be quoted and booked
++
++#### Scenario: Register an item with an hourly price
++- **WHEN** `addEquipment({ id: 'b1', kind: 'board', dailyPrice: 2500, hourlyPrice: 500 })` is called
++- **THEN** the item can also be rented by the hour
++
++#### Scenario: Invalid equipment rejected
++- **WHEN** the kind is neither `'board'` nor `'sail'`, the id is empty or already registered, a price is not a non-negative integer, or `hourlyPrice` is given but not a non-negative integer
++- **THEN** `addEquipment` throws an error
++
++### Requirement: Whole-day UTC periods
++A rental period SHALL be given as ISO-8601 UTC strings `start` and `end` with `end` strictly after `start`. Unless it is an hourly period, both SHALL be at midnight UTC, and `end` is the start of the day after the last rented day. Any other period SHALL be rejected with an error by both `quote` and `book`.
++
++#### Scenario: Valid period
++- **WHEN** start is `2026-07-01T00:00:00.000Z` and end is `2026-07-04T00:00:00.000Z`
++- **THEN** the period is 3 days
++
++#### Scenario: Disallowed periods
++- **WHEN** a time is not at midnight UTC (and the period is not an hourly period), has a non-UTC offset, is not valid ISO-8601, or `end` is not after `start`
++- **THEN** `quote` and `book` throw an error
++
++### Requirement: Quote
++`quote({ itemId, start, end })` SHALL return `{ itemId, start, end, total }` where, for a whole-day period, `total` is the item's daily price times the number of days, as an integer number of euro cents, reduced by 10% when the rental lasts 3 days or more; hourly periods are priced as in the Hourly rental requirement. The reduced total SHALL be rounded half up to the nearest cent. Whole-day rentals of fewer than 3 days SHALL be charged the full price. It SHALL throw for an unknown item. It SHALL NOT reserve anything.
++
++#### Scenario: Quote two days
++- **WHEN** an item with dailyPrice 2500 is quoted for 2 days
++- **THEN** the result has total 5000
++
++#### Scenario: Quote three days
++- **WHEN** an item with dailyPrice 2500 is quoted for 3 days
++- **THEN** the result has total 6750
++
++#### Scenario: Rounding
++- **WHEN** an item with dailyPrice 1005 is quoted for 3 days
++- **THEN** the result has total 2714
++
++#### Scenario: Unknown item
++- **WHEN** the item id was never registered
++- **THEN** `quote` throws an error
++
++### Requirement: Booking
++`book(request)` SHALL book the item for the period and return `{ id, itemId, start, end, total }`, with `total` equal to the quote (including any long-stay discount or hourly pricing) and a unique `id` per booking. It SHALL throw for an unknown item or a disallowed period.
++
++#### Scenario: Book an item
++- **WHEN** a free item is booked for a valid period
++- **THEN** a booking with a unique id and the quoted total is returned
++
++#### Scenario: Book a long stay
++- **WHEN** an item with dailyPrice 2500 is booked for 3 days
++- **THEN** the booking total is 6750
++
++#### Scenario: Book by the hour
++- **WHEN** an item with hourlyPrice 500 is booked for 3 hours
++- **THEN** the booking total is 1500
++
++## ADDED Requirements
++
++### Requirement: Hourly rental
++A period that is shorter than 24 hours and whose `start` and `end` both fall exactly on the hour (UTC) SHALL be an hourly period. Its `quote` total SHALL be the item's `hourlyPrice` times the number of hours, as an integer number of euro cents, with no long-stay discount. An item without an `hourlyPrice` SHALL NOT be rented by the hour: `quote` and `book` throw for an hourly period. A non-midnight period of 24 hours or more, or one not on the hour, SHALL be rejected. Hourly bookings are subject to the no-overlap rule.
++
++#### Scenario: Quote an afternoon
++- **WHEN** an item with hourlyPrice 500 is quoted from `2026-07-01T13:00:00.000Z` to `2026-07-01T17:00:00.000Z`
++- **THEN** the result has total 2000
++
++#### Scenario: Item without hourly price
++- **WHEN** an item registered without `hourlyPrice` is quoted or booked for an hourly period
++- **THEN** an error is thrown
++
++#### Scenario: Not on the hour
++- **WHEN** an hourly period starts at `13:30` UTC
++- **THEN** `quote` and `book` throw an error
++
++#### Scenario: Not shorter than a day
++- **WHEN** a period runs from `2026-07-01T10:00:00.000Z` to `2026-07-02T10:00:00.000Z`
++- **THEN** `quote` and `book` throw an error
++
++#### Scenario: Hourly overlap rejected
++- **WHEN** an item is booked 13:00–17:00 and a booking 16:00–18:00 the same day is attempted
++- **THEN** `book` throws
+diff --git a/openspec/changes/archive/2026-10-22-add-hourly-rental/tasks.md b/openspec/changes/archive/2026-10-22-add-hourly-rental/tasks.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..e19d1fbf1434f32c0b5915cb97386d4a01569add
+--- /dev/null
++++ b/openspec/changes/archive/2026-10-22-add-hourly-rental/tasks.md
+@@ -0,0 +1,6 @@
++## 1. Implementation
++
++- [x] 1.1 Add optional `hourlyPrice` to `Equipment`; validate and store it in `addEquipment`
++- [x] 1.2 In `price`, detect hour-aligned periods shorter than a day, price them at `hourlyPrice` × hours (error without an hourly price), keep whole-day behaviour otherwise
++- [x] 1.3 Add tests: hourly quote/book, no hourly price, off-the-hour and 24h+ non-midnight periods, invalid `hourlyPrice`, overlap with hourly bookings
++- [x] 1.4 Run `npm test`
+diff --git a/openspec/specs/equipment-rental/spec.md b/openspec/specs/equipment-rental/spec.md
+index c69e76906a2de2585c341a6ab06acd269437ab5c..ee17ff26c071cccde7c982bfd7f4264dbf70e3ce 100644
+--- a/openspec/specs/equipment-rental/spec.md
++++ b/openspec/specs/equipment-rental/spec.md
+@@ -6,29 +6,33 @@ TBD - created by archiving change add-rental-module. Update Purpose after archiv
+ ## Requirements
+ 
+ ### Requirement: Equipment registration
+-The service SHALL let the desk register equipment with an `id` (string), a `kind` (`'board'` or `'sail'`) and a `dailyPrice` that is a non-negative integer number of euro cents.
++The service SHALL let the desk register equipment with an `id` (string), a `kind` (`'board'` or `'sail'`), a `dailyPrice` that is a non-negative integer number of euro cents, and optionally an `hourlyPrice`, the price of one hour of rental, also a non-negative integer number of euro cents.
+ 
+ #### Scenario: Register an item
+ - **WHEN** `addEquipment({ id: 'b1', kind: 'board', dailyPrice: 2500 })` is called
+ - **THEN** the item can be quoted and booked
+ 
++#### Scenario: Register an item with an hourly price
++- **WHEN** `addEquipment({ id: 'b1', kind: 'board', dailyPrice: 2500, hourlyPrice: 500 })` is called
++- **THEN** the item can also be rented by the hour
++
+ #### Scenario: Invalid equipment rejected
+-- **WHEN** the kind is neither `'board'` nor `'sail'`, the id is empty or already registered, or the price is not a non-negative integer
++- **WHEN** the kind is neither `'board'` nor `'sail'`, the id is empty or already registered, a price is not a non-negative integer, or `hourlyPrice` is given but not a non-negative integer
+ - **THEN** `addEquipment` throws an error
+ 
+ ### Requirement: Whole-day UTC periods
+-A rental period SHALL be given as ISO-8601 UTC strings `start` and `end`, both at midnight UTC, with `end` strictly after `start`; `end` is the start of the day after the last rented day. Any other period SHALL be rejected with an error by both `quote` and `book`.
++A rental period SHALL be given as ISO-8601 UTC strings `start` and `end` with `end` strictly after `start`. Unless it is an hourly period, both SHALL be at midnight UTC, and `end` is the start of the day after the last rented day. Any other period SHALL be rejected with an error by both `quote` and `book`.
+ 
+ #### Scenario: Valid period
+ - **WHEN** start is `2026-07-01T00:00:00.000Z` and end is `2026-07-04T00:00:00.000Z`
+ - **THEN** the period is 3 days
+ 
+ #### Scenario: Disallowed periods
+-- **WHEN** a time is not at midnight UTC, has a non-UTC offset, is not valid ISO-8601, or `end` is not after `start`
++- **WHEN** a time is not at midnight UTC (and the period is not an hourly period), has a non-UTC offset, is not valid ISO-8601, or `end` is not after `start`
+ - **THEN** `quote` and `book` throw an error
+ 
+ ### Requirement: Quote
+-`quote({ itemId, start, end })` SHALL return `{ itemId, start, end, total }` where `total` is the item's daily price times the number of days, as an integer number of euro cents, reduced by 10% when the rental lasts 3 days or more. The reduced total SHALL be rounded half up to the nearest cent. Rentals of fewer than 3 days SHALL be charged the full price. It SHALL throw for an unknown item. It SHALL NOT reserve anything.
++`quote({ itemId, start, end })` SHALL return `{ itemId, start, end, total }` where, for a whole-day period, `total` is the item's daily price times the number of days, as an integer number of euro cents, reduced by 10% when the rental lasts 3 days or more; hourly periods are priced as in the Hourly rental requirement. The reduced total SHALL be rounded half up to the nearest cent. Whole-day rentals of fewer than 3 days SHALL be charged the full price. It SHALL throw for an unknown item. It SHALL NOT reserve anything.
+ 
+ #### Scenario: Quote two days
+ - **WHEN** an item with dailyPrice 2500 is quoted for 2 days
+@@ -47,7 +51,7 @@ A rental period SHALL be given as ISO-8601 UTC strings `start` and `end`, both a
+ - **THEN** `quote` throws an error
+ 
+ ### Requirement: Booking
+-`book(request)` SHALL book the item for the period and return `{ id, itemId, start, end, total }`, with `total` equal to the quote (including any long-stay discount) and a unique `id` per booking. It SHALL throw for an unknown item or a disallowed period.
++`book(request)` SHALL book the item for the period and return `{ id, itemId, start, end, total }`, with `total` equal to the quote (including any long-stay discount or hourly pricing) and a unique `id` per booking. It SHALL throw for an unknown item or a disallowed period.
+ 
+ #### Scenario: Book an item
+ - **WHEN** a free item is booked for a valid period
+@@ -57,6 +61,10 @@ A rental period SHALL be given as ISO-8601 UTC strings `start` and `end`, both a
+ - **WHEN** an item with dailyPrice 2500 is booked for 3 days
+ - **THEN** the booking total is 6750
+ 
++#### Scenario: Book by the hour
++- **WHEN** an item with hourlyPrice 500 is booked for 3 hours
++- **THEN** the booking total is 1500
++
+ ### Requirement: No overlapping bookings
+ The same item SHALL NOT be booked for overlapping periods; `book` SHALL throw when the item is not free for the whole period, and a failed booking SHALL leave no trace. Periods that merely touch (one ends when the next starts) do not overlap. Different items are independent.
+ 
+@@ -101,3 +109,26 @@ Cancellations SHALL NOT be offered yet. When introduced, a booking cancelled les
+ #### Scenario: Invalid query
+ - **WHEN** the period is disallowed or kind is unknown
+ - **THEN** `availability` throws an error
++
++### Requirement: Hourly rental
++A period that is shorter than 24 hours and whose `start` and `end` both fall exactly on the hour (UTC) SHALL be an hourly period. Its `quote` total SHALL be the item's `hourlyPrice` times the number of hours, as an integer number of euro cents, with no long-stay discount. An item without an `hourlyPrice` SHALL NOT be rented by the hour: `quote` and `book` throw for an hourly period. A non-midnight period of 24 hours or more, or one not on the hour, SHALL be rejected. Hourly bookings are subject to the no-overlap rule.
++
++#### Scenario: Quote an afternoon
++- **WHEN** an item with hourlyPrice 500 is quoted from `2026-07-01T13:00:00.000Z` to `2026-07-01T17:00:00.000Z`
++- **THEN** the result has total 2000
++
++#### Scenario: Item without hourly price
++- **WHEN** an item registered without `hourlyPrice` is quoted or booked for an hourly period
++- **THEN** an error is thrown
++
++#### Scenario: Not on the hour
++- **WHEN** an hourly period starts at `13:30` UTC
++- **THEN** `quote` and `book` throw an error
++
++#### Scenario: Not shorter than a day
++- **WHEN** a period runs from `2026-07-01T10:00:00.000Z` to `2026-07-02T10:00:00.000Z`
++- **THEN** `quote` and `book` throw an error
++
++#### Scenario: Hourly overlap rejected
++- **WHEN** an item is booked 13:00–17:00 and a booking 16:00–18:00 the same day is attempted
++- **THEN** `book` throws
+diff --git a/src/index.test.ts b/src/index.test.ts
+index 05cce4ba652f1bc49f402f225711ad9070272452..37c44935ed770ace8eba97306a40b9fae8ba3b19 100644
+--- a/src/index.test.ts
++++ b/src/index.test.ts
+@@ -91,3 +91,36 @@ test('availability rejects invalid queries', () => {
+   assert.throws(() => s.availability({ start: '2026-07-01T10:00:00Z', end: d(2) }));
+   assert.throws(() => s.availability({ start: d(1), end: d(2), kind: 'boat' as any }));
+ });
++
++const t = (day: number, hour: number) => `2026-07-${String(day).padStart(2, '0')}T${String(hour).padStart(2, '0')}:00:00.000Z`;
++
++test('hourly rentals are priced per hour, without discount', () => {
++  const s = createRentalService();
++  s.addEquipment({ id: 'h', kind: 'board', dailyPrice: 2500, hourlyPrice: 500 });
++  assert.equal(s.quote({ itemId: 'h', start: t(1, 13), end: t(1, 17) }).total, 2000);
++  assert.equal(s.quote({ itemId: 'h', start: t(1, 22), end: t(2, 2) }).total, 2000);
++  assert.equal(s.book({ itemId: 'h', start: t(3, 9), end: t(3, 12) }).total, 1500);
++  assert.equal(s.quote({ itemId: 'h', start: d(1), end: d(4) }).total, 6750);
++});
++
++test('hourly rentals need an hourly price, whole hours and less than a day', () => {
++  const s = setup();
++  s.addEquipment({ id: 'h', kind: 'board', dailyPrice: 2500, hourlyPrice: 500 });
++  assert.throws(() => s.quote({ itemId: 'b1', start: t(1, 13), end: t(1, 17) }));
++  assert.throws(() => s.book({ itemId: 'b1', start: t(1, 13), end: t(1, 17) }));
++  assert.throws(() => s.quote({ itemId: 'h', start: '2026-07-01T13:30:00Z', end: t(1, 17) }));
++  assert.throws(() => s.quote({ itemId: 'h', start: t(1, 10), end: t(2, 10) }));
++  assert.throws(() => s.quote({ itemId: 'h', start: t(1, 10), end: t(1, 10) }));
++  assert.throws(() => s.quote({ itemId: 'h', start: t(1, 10), end: d(3) }));
++});
++
++test('hourlyPrice is validated and hourly bookings cannot overlap', () => {
++  const s = createRentalService();
++  assert.throws(() => s.addEquipment({ id: 'x', kind: 'board', dailyPrice: 1, hourlyPrice: 1.5 }));
++  assert.throws(() => s.addEquipment({ id: 'x', kind: 'board', dailyPrice: 1, hourlyPrice: -1 }));
++  s.addEquipment({ id: 'h', kind: 'board', dailyPrice: 2500, hourlyPrice: 500 });
++  s.book({ itemId: 'h', start: t(1, 13), end: t(1, 17) });
++  assert.throws(() => s.book({ itemId: 'h', start: t(1, 16), end: t(1, 18) }));
++  s.book({ itemId: 'h', start: t(1, 17), end: t(1, 18) });
++  assert.throws(() => s.book({ itemId: 'h', start: d(1), end: d(2) }));
++});
+diff --git a/src/index.ts b/src/index.ts
+index 46ebf194b1ba0c91f419927cf11cb6dd7b4a5e14..658dcdf288e3728ec6718d094fdc7fa4b640e86f 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -4,6 +4,7 @@ export interface Equipment {
+   id: string;
+   kind: EquipmentKind;
+   dailyPrice: number;
++  hourlyPrice?: number;
+ }
+ 
+ export interface RentalRequest {
+@@ -36,25 +37,32 @@ export interface RentalService {
+   availability(query: AvailabilityQuery): string[];
+ }
+ 
++const HOUR_MS = 3_600_000;
+ const DAY_MS = 86_400_000;
+ const LONG_STAY_DAYS = 3;
+ const ISO_UTC = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,3}))?Z$/;
+ 
+-function parseMidnight(value: unknown, name: string): number {
++function parseInstant(value: unknown, name: string): number {
+   const m = typeof value === 'string' ? ISO_UTC.exec(value) : null;
+   if (!m) throw new Error(`${name} must be an ISO-8601 UTC string ending in Z`);
+   const [y, mo, d, h, mi, s, ms] = m.slice(1).map((p) => Number(p ?? 0));
+-  if (h !== 0 || mi !== 0 || s !== 0 || ms !== 0) {
+-    throw new Error(`${name} must be at midnight UTC`);
+-  }
+-  const time = Date.UTC(y, mo - 1, d);
++  const time = Date.UTC(y, mo - 1, d, h, mi, s, ms);
+   const check = new Date(time);
+-  if (check.getUTCFullYear() !== y || check.getUTCMonth() !== mo - 1 || check.getUTCDate() !== d) {
++  if (
++    check.getUTCFullYear() !== y || check.getUTCMonth() !== mo - 1 || check.getUTCDate() !== d ||
++    h > 23 || mi > 59 || s > 59
++  ) {
+     throw new Error(`${name} is not a valid date`);
+   }
+   return time;
+ }
+ 
++function parseMidnight(value: unknown, name: string): number {
++  const time = parseInstant(value, name);
++  if (time % DAY_MS !== 0) throw new Error(`${name} must be at midnight UTC`);
++  return time;
++}
++
+ export function createRentalService(): RentalService {
+   const items = new Map<string, Equipment>();
+   const bookings: (Booking & { from: number; to: number })[] = [];
+@@ -63,12 +71,23 @@ export function createRentalService(): RentalService {
+   function price(request: RentalRequest) {
+     const item = items.get(request?.itemId);
+     if (!item) throw new Error(`Unknown item: ${request?.itemId}`);
+-    const from = parseMidnight(request.start, 'start');
+-    const to = parseMidnight(request.end, 'end');
+-    if (to <= from) throw new Error('end must be after start');
+-    const days = (to - from) / DAY_MS;
+-    const full = item.dailyPrice * days;
+-    const total = days >= LONG_STAY_DAYS ? Math.floor((full * 9 + 5) / 10) : full;
++    const start = parseInstant(request.start, 'start');
++    const end = parseInstant(request.end, 'end');
++    if (end <= start) throw new Error('end must be after start');
++    const hourly = !(start % DAY_MS === 0 && end % DAY_MS === 0);
++    let total: number;
++    if (hourly) {
++      if (start % HOUR_MS !== 0 || end % HOUR_MS !== 0) throw new Error('hourly periods must start and end on the hour');
++      if (end - start >= DAY_MS) throw new Error('periods of a day or more must start and end at midnight UTC');
++      if (item.hourlyPrice === undefined) throw new Error(`Item ${item.id} cannot be rented by the hour`);
++      total = item.hourlyPrice * ((end - start) / HOUR_MS);
++    } else {
++      const days = (end - start) / DAY_MS;
++      const full = item.dailyPrice * days;
++      total = days >= LONG_STAY_DAYS ? Math.floor((full * 9 + 5) / 10) : full;
++    }
++    const from = start;
++    const to = end;
+     return { from, to, total, quote: { itemId: item.id, start: request.start, end: request.end, total } };
+   }
+ 
+@@ -79,8 +98,11 @@ export function createRentalService(): RentalService {
+       if (!Number.isSafeInteger(item.dailyPrice) || item.dailyPrice < 0) {
+         throw new Error('dailyPrice must be a non-negative integer number of cents');
+       }
++      if (item.hourlyPrice !== undefined && (!Number.isSafeInteger(item.hourlyPrice) || item.hourlyPrice < 0)) {
++        throw new Error('hourlyPrice must be a non-negative integer number of cents');
++      }
+       if (items.has(item.id)) throw new Error(`Item already registered: ${item.id}`);
+-      items.set(item.id, { id: item.id, kind: item.kind, dailyPrice: item.dailyPrice });
++      items.set(item.id, { id: item.id, kind: item.kind, dailyPrice: item.dailyPrice, hourlyPrice: item.hourlyPrice });
+     },
+     quote(request) {
+       return price(request).quote;

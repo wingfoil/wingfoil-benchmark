@@ -62,7 +62,69 @@ the same error; a rerun (`--resume`) needs the approver's consent. Each run is a
 
 ## Execution
 
-<!-- Execution id(s) `<campaign-id>/<n>`, outcomes, caps reached, reruns. -->
+**`81ebb2691f9c/1`**, 2026-10-22, 07:52:58–11:11:00 UTC (`execution.json`: `completed`), from the main checkout at the benchmark
+commit **`bf60bc1f`** (`bf60bc1f9311483f57cfbcbcc7adb72bfed02714`, no change in the tree), the same for both
+campaigns, nothing committed between them (dl-017 point 3). The script ran the reference campaign, then the bridge,
+`bench campaign run <file> --allow-spending` each, detached from the session; the estimates as above, under each
+`warn_eur`: no question asked.
+
+- 49 runs completed, 0 failed; **27.2624 USD (24.3099 €)**, under the 32.51 € estimate's high and the 50 € ceiling; one ledger line per run ([v0.2 ledger](../../calibration/v0.2-ledger.md)).
+- Every run: one attempt, the arm digest the campaign pins, Claude Code 2.1.300 at `medium`, the run's model priced
+  `list` and the only model in every step; no cap reached, no `fail_fast`. The token scan of the results (`grep
+  -rlFf`, the value never printed): clean; no `bench-` container left.
+- **Scored** (`bench score 81ebb2691f9c/1 --holdout …`): `aggregate.json`, 28 groups, 7 slices; determinism measured in 7.
+
+| Scenario | Arm | Model | Run | Cost (USD) | Agent time | Turns | Interventions | Final public | Hold-out | Checks | M-F1 |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| S1@1.0 | baseline | Haiku 5.5 | r1 | 0.0583 | 322 s | 49 | 0 | 164/165 | 45/48 | — | — |
+| S1@1.0 | baseline | Opus 5.5 | r1 | 1.9507 | 529 s | 52 | 0 | 165/165 | 48/48 | — | — |
+| S1@1.0 | baseline | Sonnet 5.5 | r1 | 0.3599 | 154 s | 24 | 0 | 164/165 | 45/48 | — | — |
+| S1@1.0 | baseline | Sonnet 5.5 | r2 | 0.3870 | 195 s | 23 | 0 | 165/165 | 48/48 | — | — |
+| S1@1.0 | baseline | Sonnet 5.5 | r3 | 0.4153 | 199 s | 24 | 0 | 165/165 | 48/48 | — | — |
+| S1@1.0 | baseline-docs | Opus 5.5 | r1 | 2.3758 | 732 s | 54 | 0 | 165/165 | 48/48 | — | — |
+| S1@1.0 | baseline-docs | Sonnet 5.5 | r1 | 0.5404 | 253 s | 34 | 0 | 164/165 | 45/48 | — | — |
+| S1@1.0 | baseline-docs | Sonnet 5.5 | r2 | 0.5180 | 218 s | 29 | 0 | 158/165 | 43/48 | — | — |
+| S1@1.0 | baseline-docs | Sonnet 5.5 | r3 | 0.4921 | 225 s | 26 | 0 | 164/165 | 45/48 | — | — |
+| S1@1.0 | openspec | Sonnet 5.5 | r1 | 0.9669 | 333 s | 75 | 0 | 165/165 | 48/48 | — | — |
+| S1@1.0 | openspec | Sonnet 5.5 | r2 | 0.8646 | 350 s | 70 | 0 | 164/165 | 45/48 | — | — |
+| S1@1.0 | openspec | Sonnet 5.5 | r3 | 1.0141 | 401 s | 82 | 0 | 164/165 | 45/48 | — | — |
+| S1@1.0 | openspec-docs | Sonnet 5.5 | r1 | 0.4000 | 222 s | 28 | 0 | 164/165 | 45/48 | — | — |
+| S1@1.0 | openspec-docs | Sonnet 5.5 | r2 | 0.4059 | 199 s | 27 | 0 | 164/165 | 45/48 | — | — |
+| S1@1.0 | openspec-docs | Sonnet 5.5 | r3 | 0.4167 | 192 s | 27 | 0 | 164/165 | 45/48 | — | — |
+| S1@1.0 | speckit | Sonnet 5.5 | r1 | 0.6077 | 260 s | 39 | 0 | 164/165 | 45/48 | — | — |
+| S1@1.0 | speckit | Sonnet 5.5 | r2 | 0.5428 | 217 s | 38 | 0 | 164/165 | 45/48 | — | — |
+| S1@1.0 | speckit | Sonnet 5.5 | r3 | 0.5701 | 250 s | 31 | 0 | 165/165 | 48/48 | — | — |
+| S1@1.0 | speckit-docs | Sonnet 5.5 | r1 | 0.3865 | 179 s | 25 | 0 | 164/165 | 45/48 | — | — |
+| S1@1.0 | speckit-docs | Sonnet 5.5 | r2 | 0.4323 | 196 s | 28 | 0 | 165/165 | 48/48 | — | — |
+| S1@1.0 | speckit-docs | Sonnet 5.5 | r3 | 0.3590 | 164 s | 24 | 0 | 165/165 | 48/48 | — | — |
+| S1@1.0 | wingfoil | Haiku 5.5 | r1 | 0.1455 | 660 s | 126 | 3 | 165/165 | 48/48 | — | — |
+| S1@1.0 | wingfoil | Opus 5.5 | r1 | 2.6549 | 658 s | 68 | 3 | 165/165 | 48/48 | — | — |
+| S1@1.0 | wingfoil | Sonnet 5.5 | r1 | 0.6743 | 292 s | 42 | 0 | 164/165 | 45/48 | — | — |
+| S1@1.0 | wingfoil | Sonnet 5.5 | r2 | 0.6730 | 322 s | 44 | 1 | 164/165 | 45/48 | — | — |
+| S1@1.0 | wingfoil | Sonnet 5.5 | r3 | 0.6231 | 274 s | 42 | 0 | 164/165 | 45/48 | — | — |
+| S2@1.0 | baseline | Sonnet 5.5 | r1 | 0.2419 | 63 s | 22 | 0 | 24/24 | 17/17 | 2/3 | — |
+| S2@1.0 | baseline-docs | Sonnet 5.5 | r1 | 0.2761 | 89 s | 24 | 0 | 24/24 | 17/17 | 2/3 | — |
+| S2@1.0 | openspec | Sonnet 5.5 | r1 | 0.6010 | 183 s | 54 | 0 | 24/24 | 17/17 | 3/3 | — |
+| S2@1.0 | openspec-docs | Sonnet 5.5 | r1 | 0.2028 | 74 s | 19 | 0 | 24/24 | 17/17 | 2/3 | — |
+| S2@1.0 | speckit | Sonnet 5.5 | r1 | 0.2762 | 84 s | 24 | 0 | 24/24 | 17/17 | 2/3 | — |
+| S2@1.0 | speckit-docs | Sonnet 5.5 | r1 | 0.2085 | 85 s | 20 | 0 | 24/24 | 17/17 | 2/3 | — |
+| S2@1.0 | wingfoil | Sonnet 5.5 | r1 | 0.2957 | 88 s | 25 | 0 | 24/24 | 17/17 | 2/3 | — |
+| S3@1.0 | baseline | Haiku 5.5 | r1 | 0.0457 | 229 s | 60 | 0 | 35/37 | 16/17 | 0/1 | 3/5 |
+| S3@1.0 | baseline | Sonnet 5.5 | r1 | 0.2829 | 139 s | 24 | 0 | 35/37 | 16/17 | 0/1 | 3/5 |
+| S3@1.0 | baseline-docs | Sonnet 5.5 | r1 | 0.4247 | 177 s | 33 | 0 | 37/37 | 17/17 | 0/1 | 4/5 |
+| S3@1.0 | openspec | Sonnet 5.5 | r1 | 0.8981 | 279 s | 83 | 0 | 37/37 | 17/17 | 1/1 | 5/5 |
+| S3@1.0 | openspec-docs | Sonnet 5.5 | r1 | 0.2703 | 105 s | 25 | 0 | 35/37 | 16/17 | 0/1 | 3/5 |
+| S3@1.0 | speckit | Sonnet 5.5 | r1 | 0.8724 | 276 s | 76 | 0 | 30/37 | 15/17 | 1/1 | 3/5 |
+| S3@1.0 | speckit-docs | Sonnet 5.5 | r1 | 0.2739 | 106 s | 24 | 0 | 35/37 | 16/17 | 0/1 | 3/5 |
+| S3@1.0 | wingfoil | Haiku 5.5 | r1 | 0.1050 | 456 s | 119 | 0 | 30/37 | 15/17 | 1/1 | 3/5 |
+| S3@1.0 | wingfoil | Sonnet 5.5 | r1 | 0.5290 | 240 s | 40 | 0 | 35/37 | 16/17 | 0/1 | 3/5 |
+| S8@1.0 | baseline | Sonnet 5.5 | r1 | 0.2526 | 92 s | 16 | 0 | 23/23 | 7/7 | 12/16 | — |
+| S8@1.0 | baseline-docs | Sonnet 5.5 | r1 | 0.3163 | 119 s | 18 | 0 | 23/23 | 7/7 | 16/16 | — |
+| S8@1.0 | openspec | Sonnet 5.5 | r1 | 0.7580 | 228 s | 59 | 0 | 23/23 | 6/7 | 16/16 | — |
+| S8@1.0 | openspec-docs | Sonnet 5.5 | r1 | 0.2651 | 92 s | 17 | 0 | 23/23 | 7/7 | 16/16 | — |
+| S8@1.0 | speckit | Sonnet 5.5 | r1 | 0.3430 | 149 s | 20 | 0 | 23/23 | 7/7 | 16/16 | — |
+| S8@1.0 | speckit-docs | Sonnet 5.5 | r1 | 0.2708 | 112 s | 20 | 0 | 23/23 | 7/7 | 16/16 | — |
+| S8@1.0 | wingfoil | Sonnet 5.5 | r1 | 0.4174 | 151 s | 30 | 0 | 23/23 | 7/7 | 16/16 | — |
 
 ## Results review
 

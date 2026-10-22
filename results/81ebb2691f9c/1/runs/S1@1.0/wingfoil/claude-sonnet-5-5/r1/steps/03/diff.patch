@@ -1,0 +1,100 @@
+diff --git a/docs/memory/decision-log/dl-003-applypatch-reject-sparse-patches-move-onto-itself-is-always-a-no-op.md b/docs/memory/decision-log/dl-003-applypatch-reject-sparse-patches-move-onto-itself-is-always-a-no-op.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..c90185dba5e240a25f8490f489e8f51cf6e46bb4
+--- /dev/null
++++ b/docs/memory/decision-log/dl-003-applypatch-reject-sparse-patches-move-onto-itself-is-always-a-no-op.md
+@@ -0,0 +1,27 @@
++---
++id: dl-003-applypatch-reject-sparse-patches-move-onto-itself-is-always-a-no-op
++type: decision-log
++title: "applyPatch: reject sparse patches, move onto itself is always a no-op"
++status: pending
++format: 1
++---
++
++<!-- decision-log body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
++
++# applyPatch: sparse patches and move onto itself
++
++## Context
++A review against RFC 6902 found a sparse patch array silently accepted, and `move` of the root onto the
++root failing although dl-002 defines move onto itself as a no-op.
++
++## Decision
++- Every slot of the patch array is validated (`Array.from`), so holes are invalid operations.
++- `move` with `from` equal to `path` returns the document unchanged once `from` is known to exist.
++
++## Consequences
++Stricter validation for malformed patches; no change for valid JSON patches. Whole-document `remove`
++still throws (dl-002).
+diff --git a/docs/memory/task/task-003-review-applypatch-conformance-to-rfc-6902.md b/docs/memory/task/task-003-review-applypatch-conformance-to-rfc-6902.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..17b07d5a31e9230958d215165513922963a9f65f
+--- /dev/null
++++ b/docs/memory/task/task-003-review-applypatch-conformance-to-rfc-6902.md
+@@ -0,0 +1,26 @@
++---
++id: task-003-review-applypatch-conformance-to-rfc-6902
++type: task
++title: "Review applyPatch conformance to RFC 6902"
++status: pending
++format: 1
++---
++
++<!-- task body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
++
++# Review applyPatch conformance to RFC 6902
++
++Reviewed validation and application of `applyPatch` against RFC 6902 (operations, pointer handling,
++array indices, `-`, move prefix rule, test equality, atomic failure). Two deviations found and fixed in
++`src/index.ts`:
++
++- A sparse patch array (holes) was accepted as if the holes were absent; `Array.from` now visits every
++  slot, so a hole is rejected as an invalid operation.
++- `move` from the root onto the root threw "whole document cannot be removed"; moving a value onto
++  itself is now a no-op for every path, as dl-002 states.
++
++Tests added in `test/patch.test.ts`; `npm test` passes (38). The rest was verified conformant. Decision: dl-003.
+diff --git a/src/index.ts b/src/index.ts
+index 525090d8bca15f56ec72633181d01e55126d42c1..deb6058f2fd0d4f96194373d449b28c309ba29a6 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -192,6 +192,9 @@ function applyOperation(document: unknown, operation: Operation): unknown {
+       return addAt(document, operation.path, structuredClone(get(document, operation.from)));
+     case "move": {
+       const value = get(document, operation.from);
++      if (operation.from.length === operation.path.length && operation.from.every((token, i) => token === operation.path[i])) {
++        return document;
++      }
+       if (isProperPrefix(operation.from, operation.path)) {
+         throw new Error(`JSON Patch: cannot move "${describe(operation.from)}" into one of its own children`);
+       }
+@@ -222,6 +225,6 @@ export function applyPatch(document: unknown, patch: unknown[]): unknown {
+   if (!Array.isArray(patch)) {
+     throw new Error("Invalid JSON Patch: must be an array of operations");
+   }
+-  const operations = patch.map(parseOperation);
++  const operations = Array.from(patch, parseOperation);
+   return operations.reduce(applyOperation, structuredClone(document));
+ }
+diff --git a/test/patch.test.ts b/test/patch.test.ts
+index af8e1b9501bbf18ddf97256c49aa62fa67fa9355..9b2d5c9f0350740ade2d078cbf89c9ad53c415f5 100644
+--- a/test/patch.test.ts
++++ b/test/patch.test.ts
+@@ -249,3 +249,8 @@ test("prototype-polluting keys are plain data", () => {
+   assert.throws(() => applyPatch({}, [{ op: "remove", path: "/__proto__" }]));
+   assert.throws(() => applyPatch({}, [{ op: "add", path: "/constructor/x", value: 1 }]));
+ });
++
++test("a sparse patch array is invalid, and moving the root onto itself is a no-op", () => {
++  assert.throws(() => applyPatch({ a: 1 }, new Array(1)));
++  assert.deepEqual(applyPatch({ a: 1 }, [{ op: "move", from: "", path: "" }]), { a: 1 });
++});

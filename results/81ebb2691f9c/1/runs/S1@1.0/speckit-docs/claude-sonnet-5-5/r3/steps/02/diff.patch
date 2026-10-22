@@ -1,0 +1,209 @@
+diff --git a/src/index.ts b/src/index.ts
+index e164d745feaba7cfd9b6477020127772cb052208..53630cccadc122c303de71291e6d2f2bd6a737c3 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -56,3 +56,155 @@ export function resolvePointer(document: unknown, pointer: string): unknown {
+   }
+   return current;
+ }
++
++const hasOwn = (object: object, key: string): boolean => Object.prototype.hasOwnProperty.call(object, key);
++
++function isObject(value: unknown): value is Record<string, unknown> {
++  return typeof value === "object" && value !== null && !Array.isArray(value);
++}
++
++/** Deep equality of two JSON values (RFC 6902 section 4.6): object member order is irrelevant. */
++function jsonEqual(a: unknown, b: unknown): boolean {
++  if (Array.isArray(a)) {
++    return Array.isArray(b) && a.length === b.length && a.every((item, i) => jsonEqual(item, b[i]));
++  }
++  if (isObject(a)) {
++    if (!isObject(b)) return false;
++    const keys = Object.keys(a);
++    return (
++      keys.length === Object.keys(b).length &&
++      keys.every((key) => hasOwn(b, key) && jsonEqual(a[key], b[key]))
++    );
++  }
++  return a === b;
++}
++
++function setMember(object: Record<string, unknown>, key: string, value: unknown): void {
++  // defineProperty, so that a member named "__proto__" is an own member and not a prototype change.
++  Object.defineProperty(object, key, { value, writable: true, enumerable: true, configurable: true });
++}
++
++/** Returns the container designated by all but the last token of a pointer. */
++function walkToParent(document: unknown, tokens: string[], pointer: string): unknown {
++  let current = document;
++  for (const token of tokens.slice(0, -1)) {
++    if (Array.isArray(current)) {
++      if (!ARRAY_INDEX.test(token) || Number(token) >= current.length) {
++        throw new Error(`Path "${pointer}" does not exist: bad array index "${token}"`);
++      }
++      current = current[Number(token)];
++    } else if (isObject(current) && hasOwn(current, token)) {
++      current = current[token];
++    } else {
++      throw new Error(`Path "${pointer}" does not exist: no member "${token}"`);
++    }
++  }
++  return current;
++}
++
++function addValue(document: unknown, pointer: string, value: unknown): unknown {
++  const tokens = parsePointer(pointer);
++  if (tokens.length === 0) return value;
++  const parent = walkToParent(document, tokens, pointer);
++  const last = tokens[tokens.length - 1];
++  if (Array.isArray(parent)) {
++    if (last === "-") {
++      parent.push(value);
++    } else if (ARRAY_INDEX.test(last) && Number(last) <= parent.length) {
++      parent.splice(Number(last), 0, value);
++    } else {
++      throw new Error(`Cannot add at "${pointer}": bad array index "${last}"`);
++    }
++  } else if (isObject(parent)) {
++    setMember(parent, last, value);
++  } else {
++    throw new Error(`Cannot add at "${pointer}": parent is not a container`);
++  }
++  return document;
++}
++
++/** Removes the value at `pointer`, which must exist; returns the document and the removed value. */
++function removeValue(document: unknown, pointer: string): { document: unknown; removed: unknown } {
++  const tokens = parsePointer(pointer);
++  if (tokens.length === 0) throw new Error("Cannot remove the root of the document");
++  const parent = walkToParent(document, tokens, pointer);
++  const last = tokens[tokens.length - 1];
++  let removed: unknown;
++  if (Array.isArray(parent)) {
++    if (!ARRAY_INDEX.test(last) || Number(last) >= parent.length) {
++      throw new Error(`Path "${pointer}" does not exist: bad array index "${last}"`);
++    }
++    removed = parent.splice(Number(last), 1)[0];
++  } else if (isObject(parent) && hasOwn(parent, last)) {
++    removed = parent[last];
++    delete parent[last];
++  } else {
++    throw new Error(`Path "${pointer}" does not exist`);
++  }
++  return { document, removed };
++}
++
++const OPERATIONS = ["add", "remove", "replace", "move", "copy", "test"];
++
++/**
++ * Applies the JSON Patch `patch` (RFC 6902) to `document` and returns the resulting document.
++ * The input is not modified. Throws if the patch is invalid or if an operation fails, in which
++ * case no result is produced.
++ */
++export function applyPatch(document: unknown, patch: unknown): JsonValue {
++  if (!Array.isArray(patch)) throw new TypeError("A JSON Patch must be an array of operations");
++  let result: unknown = structuredClone(document);
++  patch.forEach((operation: unknown, index) => {
++    if (!isObject(operation)) throw new TypeError(`Operation ${index} must be an object`);
++    const { op, path } = operation;
++    if (typeof op !== "string" || !OPERATIONS.includes(op)) {
++      throw new Error(`Operation ${index} has an invalid "op"`);
++    }
++    if (typeof path !== "string") throw new TypeError(`Operation ${index} needs a string "path"`);
++    if ((op === "add" || op === "replace" || op === "test") && operation.value === undefined) {
++      throw new TypeError(`Operation ${index} (${op}) needs a "value"`);
++    }
++    const from = operation.from;
++    if ((op === "move" || op === "copy") && typeof from !== "string") {
++      throw new TypeError(`Operation ${index} (${op}) needs a string "from"`);
++    }
++    const value = structuredClone(operation.value);
++
++    switch (op) {
++      case "add":
++        result = addValue(result, path, value);
++        break;
++      case "remove":
++        result = removeValue(result, path).document;
++        break;
++      case "replace":
++        resolvePointer(result, path); // must exist
++        result = parsePointer(path).length === 0 ? value : addValue(removeValue(result, path).document, path, value);
++        break;
++      case "move": {
++        const fromTokens = parsePointer(from as string);
++        const pathTokens = parsePointer(path);
++        resolvePointer(result, from as string);
++        if (
++          fromTokens.length < pathTokens.length &&
++          fromTokens.every((token, i) => token === pathTokens[i])
++        ) {
++          throw new Error(`Cannot move "${from}" into one of its own children "${path}"`);
++        }
++        if ((from as string) === path) break;
++        const moved = fromTokens.length === 0 ? { document: undefined, removed: result } : removeValue(result, from as string);
++        result = addValue(moved.document, path, moved.removed);
++        break;
++      }
++      case "copy":
++        result = addValue(result, path, structuredClone(resolvePointer(result, from as string)));
++        break;
++      case "test":
++        if (!jsonEqual(resolvePointer(result, path), value)) {
++          throw new Error(`Test failed at "${path}"`);
++        }
++        break;
++    }
++  });
++  return result as JsonValue;
++}
+diff --git a/test/patch.test.ts b/test/patch.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..20560bce8da6268ff48aea1a1f7a42568b342d57
+--- /dev/null
++++ b/test/patch.test.ts
+@@ -0,0 +1,43 @@
++import { test } from "node:test";
++import assert from "node:assert/strict";
++import { applyPatch } from "../src/index.ts";
++
++test("RFC 6902 appendix A examples", () => {
++  assert.deepEqual(applyPatch({ foo: "bar" }, [{ op: "add", path: "/baz", value: "qux" }]), { foo: "bar", baz: "qux" });
++  assert.deepEqual(applyPatch({ foo: ["bar", "baz"] }, [{ op: "add", path: "/foo/1", value: "qux" }]), { foo: ["bar", "qux", "baz"] });
++  assert.deepEqual(applyPatch({ foo: ["a"] }, [{ op: "add", path: "/foo/-", value: "b" }]), { foo: ["a", "b"] });
++  assert.deepEqual(applyPatch({ baz: "qux", foo: "bar" }, [{ op: "remove", path: "/baz" }]), { foo: "bar" });
++  assert.deepEqual(applyPatch({ foo: ["bar", "qux", "baz"] }, [{ op: "remove", path: "/foo/1" }]), { foo: ["bar", "baz"] });
++  assert.deepEqual(applyPatch({ baz: "qux" }, [{ op: "replace", path: "/baz", value: "boo" }]), { baz: "boo" });
++  assert.deepEqual(
++    applyPatch({ foo: { bar: "baz", waldo: "fred" }, qux: { corge: "grault" } }, [{ op: "move", from: "/foo/waldo", path: "/qux/thud" }]),
++    { foo: { bar: "baz" }, qux: { corge: "grault", thud: "fred" } },
++  );
++  assert.deepEqual(applyPatch({ foo: ["all", "grass", "cows", "eat"] }, [{ op: "move", from: "/foo/1", path: "/foo/3" }]), { foo: ["all", "cows", "eat", "grass"] });
++  assert.deepEqual(applyPatch({ a: { b: 1 } }, [{ op: "copy", from: "/a", path: "/c" }]), { a: { b: 1 }, c: { b: 1 } });
++  assert.deepEqual(applyPatch({ a: 1 }, [{ op: "test", path: "/a", value: 1 }]), { a: 1 });
++});
++
++test("failures", () => {
++  assert.throws(() => applyPatch({}, [{ op: "remove", path: "/a" }]));
++  assert.throws(() => applyPatch({}, [{ op: "replace", path: "/a", value: 1 }]));
++  assert.throws(() => applyPatch({ a: 1 }, [{ op: "test", path: "/a", value: 2 }]));
++  assert.throws(() => applyPatch({ a: [] }, [{ op: "add", path: "/a/1", value: 1 }]));
++  assert.throws(() => applyPatch({ a: [] }, [{ op: "add", path: "/a/01", value: 1 }]));
++  assert.throws(() => applyPatch({}, [{ op: "add", path: "/a/b", value: 1 }]));
++  assert.throws(() => applyPatch({ a: {} }, [{ op: "move", from: "/a", path: "/a/b" }]));
++  assert.throws(() => applyPatch({}, [{ op: "add", path: "/a" }]));
++  assert.throws(() => applyPatch({}, [{ op: "nope", path: "/a" }]));
++  assert.throws(() => applyPatch({}, { op: "add" }));
++});
++
++test("does not mutate, root ops, deep equality", () => {
++  const doc = { a: [1, { b: 2 }] };
++  const out = applyPatch(doc, [{ op: "add", path: "/a/-", value: 3 }]);
++  assert.deepEqual(doc, { a: [1, { b: 2 }] });
++  assert.notEqual(out, doc);
++  assert.deepEqual(applyPatch(doc, [{ op: "replace", path: "", value: 5 }]), 5);
++  assert.deepEqual(applyPatch(null, [{ op: "add", path: "", value: null }]), null);
++  applyPatch({ x: { a: 1, b: 2 } }, [{ op: "test", path: "/x", value: { b: 2, a: 1 } }]);
++  assert.throws(() => applyPatch({ x: 1 }, [{ op: "test", path: "/x", value: "1" }]));
++});

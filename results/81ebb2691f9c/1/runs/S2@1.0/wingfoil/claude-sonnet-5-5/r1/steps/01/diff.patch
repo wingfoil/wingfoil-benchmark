@@ -1,0 +1,110 @@
+diff --git a/docs/memory/task/task-001-fix-sku-case-free-shipping-threshold-line-vat-rounding.md b/docs/memory/task/task-001-fix-sku-case-free-shipping-threshold-line-vat-rounding.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..d0d2495038b371ef5949545bb27b7bbdd1a04e20
+--- /dev/null
++++ b/docs/memory/task/task-001-fix-sku-case-free-shipping-threshold-line-vat-rounding.md
+@@ -0,0 +1,21 @@
++---
++id: task-001-fix-sku-case-free-shipping-threshold-line-vat-rounding
++type: task
++title: "Fix SKU case, free shipping threshold, line VAT rounding"
++status: pending
++format: 1
++---
++
++<!-- task body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
++
++Three reports, each a deviation from the README rules, fixed test-first (all three were red first).
++
++1. Lower-case SKU refused: `Catalog.find` only trimmed; it now uses `canonicalSku` (trim + upper case).
++2. Free shipping at exactly €50.00: `shippingCost` used `>`; the rule is "€50.00 or more", now `>=`.
++3. Line VAT one cent low: `lineVat` rounded down; it now uses `percentOf` (half up), e.g. 199 at 22% = 44.
++
++Tests: `test/catalog.test.ts` (lower-case lookup), new `test/rules.test.ts` (shipping threshold, VAT rounding).
+diff --git a/src/catalog.ts b/src/catalog.ts
+index 0dfc92645f10374f948e9312a79dc7dca44318e5..b114b9c78623136e5ee8c9b1fc6d118c4c478c33 100644
+--- a/src/catalog.ts
++++ b/src/catalog.ts
+@@ -56,7 +56,7 @@ export class Catalog {
+ 
+   /** The product with `sku`, or undefined. */
+   find(sku: string): Product | undefined {
+-    return this.#products.get(sku.trim());
++    return this.#products.get(canonicalSku(sku));
+   }
+ 
+   /** The product with `sku`; throws UnknownProductError when there is none. */
+diff --git a/src/shipping.ts b/src/shipping.ts
+index 71920b9dc3b375440460eaebb217a70a48152b33..f4290d2a7729ec7e4c062d0d5606894fb26fae09 100644
+--- a/src/shipping.ts
++++ b/src/shipping.ts
+@@ -30,6 +30,6 @@ export function parcelCost(grams: number): Cents {
+ 
+ /** The shipping cost of an order whose goods amount to `goods` and weigh `grams`. */
+ export function shippingCost(goods: Cents, grams: number): Cents {
+-  if (goods > FREE_SHIPPING_FROM_CENTS) return 0;
++  if (goods >= FREE_SHIPPING_FROM_CENTS) return 0;
+   return parcelCost(grams);
+ }
+diff --git a/src/tax.ts b/src/tax.ts
+index 7449c567971f4c22ec68c991949f8652936e091b..5e12c55f1ca4a2044012df5ea175a5b57febbef3 100644
+--- a/src/tax.ts
++++ b/src/tax.ts
+@@ -23,7 +23,7 @@ export function vatRate(vatClass: VatClass): number {
+ 
+ /** The VAT of one order line whose net amount is `net`. */
+ export function lineVat(net: Cents, vatClass: VatClass): Cents {
+-  return Math.floor((net * vatRate(vatClass)) / 100);
++  return percentOf(net, vatRate(vatClass));
+ }
+ 
+ /** The VAT on a shipping cost: the standard rate. */
+diff --git a/test/catalog.test.ts b/test/catalog.test.ts
+index 3c78feb21517c68b01432b4e6c8fdfee3e3914d9..ec489b4487b126fefa8433c783eb4349f90ee231 100644
+--- a/test/catalog.test.ts
++++ b/test/catalog.test.ts
+@@ -29,3 +29,13 @@ describe('catalogue', () => {
+     assert.throws(() => catalog.get('TEA-8'), UnknownProductError);
+   });
+ });
++
++describe('catalogue lookups', () => {
++  it('finds a product by a lower-case SKU', () => {
++    const { catalog } = createShop();
++    catalog.add({ sku: 'LB-220', name: 'Lunch box', priceCents: 1000, vatClass: 'standard', weightGrams: 200 });
++    assert.equal(catalog.get('lb-220').sku, 'LB-220');
++    assert.equal(catalog.find(' lb-220 ')?.sku, 'LB-220');
++    assert.equal(catalog.find('lb-221'), undefined);
++  });
++});
+diff --git a/test/rules.test.ts b/test/rules.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..52d493cf43383b3be21554c636e8bd5976513ae3
+--- /dev/null
++++ b/test/rules.test.ts
+@@ -0,0 +1,21 @@
++import assert from 'node:assert/strict';
++import { describe, it } from 'node:test';
++
++import { lineVat } from '../src/tax.ts';
++import { shippingCost } from '../src/shipping.ts';
++
++describe('free shipping', () => {
++  it('is free from exactly €50.00, not below', () => {
++    assert.equal(shippingCost(5000, 500), 0);
++    assert.equal(shippingCost(5001, 500), 0);
++    assert.equal(shippingCost(4999, 500), 490);
++  });
++});
++
++describe('line VAT', () => {
++  it('rounds half up to the cent', () => {
++    assert.equal(lineVat(199, 'standard'), 44);
++    assert.equal(lineVat(100, 'standard'), 22);
++    assert.equal(lineVat(0, 'exempt'), 0);
++  });
++});

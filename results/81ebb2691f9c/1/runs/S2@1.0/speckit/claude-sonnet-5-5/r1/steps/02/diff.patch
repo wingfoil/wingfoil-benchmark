@@ -1,0 +1,89 @@
+diff --git a/specs/001-fix-coupon-defects/checklists/requirements.md b/specs/001-fix-coupon-defects/checklists/requirements.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..09162ec31cbe7afc60e9555376cb9b5bf7f6a263
+--- /dev/null
++++ b/specs/001-fix-coupon-defects/checklists/requirements.md
+@@ -0,0 +1,2 @@
++# Requirements checklist
++- [x] Testable requirements, no open clarifications, scope bounded
+diff --git a/specs/001-fix-coupon-defects/spec.md b/specs/001-fix-coupon-defects/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..4217f6ffbfd116a9ac1cf337303a19417b308b04
+--- /dev/null
++++ b/specs/001-fix-coupon-defects/spec.md
+@@ -0,0 +1,23 @@
++# Feature Specification: Fix coupon defects
++
++**Created**: 2026-10-22 | **Status**: Draft
++**Input**: Finance and customer reports on discounts, coupon expiry and shipping VAT.
++
++## User Scenarios & Testing
++
++### Story 1 - Percentage coupon applies after volume discount (P1)
++**Acceptance**: Given 12 notebooks at €5.00 and a 10% coupon, goods come to €48.60 (6000 − 600 volume − 540 coupon).
++
++### Story 2 - Coupon valid through its last day (P1)
++**Acceptance**: Given AUTUMN valid until 2026-11-30, an order on 2026-11-30 is accepted; on 2026-12-01 it is refused as expired.
++
++## Requirements
++- **FR-001**: A coupon applies to the subtotal after volume discounts (README, Discounts).
++- **FR-002**: A coupon is valid on its last day, inclusive (README, Discounts).
++- **FR-003**: The 50% cap still applies to the gross amount.
++
++## Out of scope / needs business decision
++- Report 3 (no VAT on shipping) contradicts README ("Shipping is subject to VAT at the standard rate (22%)"), which is authoritative. Not changed.
++
++## Assumptions
++- Fixed coupons are also capped by the post-volume subtotal, per README.
+diff --git a/src/coupons.ts b/src/coupons.ts
+index 4b7df8e652e5d52033abb2ea07d763007ccce283..496aed7828812115eb643d5d3378af00c2d6948f 100644
+--- a/src/coupons.ts
++++ b/src/coupons.ts
+@@ -74,7 +74,7 @@ export class Coupons {
+     const coupon = this.#coupons.get(canonicalCode(code));
+     if (coupon === undefined) throw new CouponError(code, 'unknown code');
+     if (compareDates(date, coupon.validFrom) < 0) throw new CouponError(coupon.code, 'not valid yet');
+-    if (compareDates(date, coupon.validUntil) >= 0) throw new CouponError(coupon.code, 'expired');
++    if (compareDates(date, coupon.validUntil) > 0) throw new CouponError(coupon.code, 'expired');
+     if (amount < coupon.minimumCents) throw new CouponError(coupon.code, 'order below the minimum amount');
+     if (coupon.singleUse && this.#usedBy.has(coupon.code)) throw new CouponError(coupon.code, 'already used');
+     return coupon;
+diff --git a/src/pricing.ts b/src/pricing.ts
+index 3d07b8e66d51d75411d7694eb6b4d79c95913fee..751ac9ae7bbf5660ce0272cc7ec55ddd9af76bb5 100644
+--- a/src/pricing.ts
++++ b/src/pricing.ts
+@@ -56,7 +56,7 @@ export function priceOrder(inputs: readonly LineInput[], coupon?: Coupon): Price
+   const volumeTotal = sum(volume);
+ 
+   const couponTotal =
+-    coupon === undefined ? 0 : capped(couponDiscount(coupon, grossTotal), volumeTotal, grossTotal);
++    coupon === undefined ? 0 : capped(couponDiscount(coupon, grossTotal - volumeTotal), volumeTotal, grossTotal);
+   const couponShares = allocate(couponTotal, afterVolume);
+ 
+   const lines = inputs.map(({ product, quantity }, index): PricedLine => {
+diff --git a/test/coupons.test.ts b/test/coupons.test.ts
+index 1fdc2519dc031050b1b5593605af611816478518..1716619f1bf13fb3832a15b85427d2a254e76b5a 100644
+--- a/test/coupons.test.ts
++++ b/test/coupons.test.ts
+@@ -40,4 +40,21 @@ describe('coupons', () => {
+     assert.equal(coupons.usedBy('ONCE'), 'ORD-0001');
+     assert.throws(() => orders.place({ customer: 'c-2', date: '2026-05-05', lines: [{ sku: 'PEN-4', quantity: 1 }], coupon: 'ONCE' }), CouponError);
+   });
++
++  it('applies a percentage coupon to the subtotal after the volume discount', () => {
++    const s = shop();
++    s.catalog.add({ sku: 'NB-1', name: 'Notebook', priceCents: 500, vatClass: 'standard', weightGrams: 100 });
++    s.inventory.restock('NB-1', 20);
++    const order = s.orders.place({ customer: 'c-1', date: '2026-03-15', lines: [{ sku: 'NB-1', quantity: 12 }], coupon: 'SPRING' });
++    assert.equal(order.totals.volumeDiscountCents, 600);
++    assert.equal(order.totals.couponDiscountCents, 540);
++    assert.equal(order.totals.goodsCents, 4860);
++  });
++
++  it('accepts a coupon on its last day and refuses it the day after', () => {
++    const { orders } = shop();
++    const request = { customer: 'c-1', lines: [{ sku: 'PEN-4', quantity: 2 }], coupon: 'SPRING' };
++    assert.equal(orders.quote({ ...request, date: '2026-03-31' }).totals.couponDiscountCents, 400);
++    assert.throws(() => orders.quote({ ...request, date: '2026-04-01' }), CouponError);
++  });
+ });

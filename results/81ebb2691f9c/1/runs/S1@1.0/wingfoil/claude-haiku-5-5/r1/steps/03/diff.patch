@@ -1,0 +1,209 @@
+diff --git a/docs/memory/decision-log/dl-006-applypatch-rejects-a-patch-that-is-not-plain-json-data.md b/docs/memory/decision-log/dl-006-applypatch-rejects-a-patch-that-is-not-plain-json-data.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..5708d30dff846716b38b61c4573da080d4620ad4
+--- /dev/null
++++ b/docs/memory/decision-log/dl-006-applypatch-rejects-a-patch-that-is-not-plain-json-data.md
+@@ -0,0 +1,35 @@
++---
++id: dl-006-applypatch-rejects-a-patch-that-is-not-plain-json-data
++type: decision-log
++title: "applyPatch rejects a patch that is not plain JSON data"
++status: pending
++format: 1
++---
++
++## Context
++
++RFC 6902 describes a patch as a JSON document: an array of operation objects, each `value` being a JSON
++value. `applyPatch` (dl-004) rejects patches that are not well formed, but its check does not cover the
++JSON data itself. A patch that carries a `Date`, a `NaN`, an `undefined` member, or an operation whose
++`op` or `path` is inherited rather than an own member is currently accepted: the value is copied with
++`structuredClone`, which keeps a `Date` as a `Date` and an `undefined` member as `undefined`, so the
++result is not JSON.
++
++## Decision
++
++- `applyPatch` throws an `Error` for a patch that is not plain JSON data, with the operation index
++  (for example `patch[2]`) in the message. A patch is plain JSON data when:
++  - each operation is a plain object whose members are own properties;
++  - each `value` is a JSON value: `null`, a string, a boolean, a finite number, an array whose elements
++    are JSON values, or a plain object with own, enumerable string-keyed members that are JSON values.
++- The check runs when the patch is parsed, before any operation is applied, so such a patch is an
++  invalid patch (dl-004) and the document is not touched.
++- The document itself is not checked by this decision.
++
++## Consequences
++
++- A patch that a looser library would accept, such as one carrying a `Date`, now fails before it
++  runs. Callers that build patches from richer objects must serialise them first.
++- Checking every `value` costs a walk over the patch, which is small next to the copy of the document.
++- Whether `applyPatch` should also check the document is left open; it is not needed for the patch rules
++  of RFC 6902.
+diff --git a/docs/memory/task/task-003-make-applypatch-conform-to-rfc-6902-in-every-case-errors-included.md b/docs/memory/task/task-003-make-applypatch-conform-to-rfc-6902-in-every-case-errors-included.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..c9e4d842dea0809671dc17d6e32808bd5b01419a
+--- /dev/null
++++ b/docs/memory/task/task-003-make-applypatch-conform-to-rfc-6902-in-every-case-errors-included.md
+@@ -0,0 +1,43 @@
++---
++id: task-003-make-applypatch-conform-to-rfc-6902-in-every-case-errors-included
++type: task
++title: "Make applyPatch conform to RFC 6902 in every case, errors included"
++status: pending
++format: 1
++---
++
++## Request
++
++Users of `applyPatch` report that some patches they consider invalid are accepted, that some edge cases
++give unexpected results, and that a failing patch does not always behave as RFC 6902 reads. Review how
++patches are checked and applied, and make the behaviour conform to RFC 6902 in every case, errors
++included.
++
++## What was done
++
++Review of `src/index.ts` against RFC 6902 and dl-003 to dl-005. Five deviations were reproduced before any
++change was made:
++
++- A sparse patch array (`[, op]`) skipped its hole silently, so an invalid patch was accepted. Fixed:
++  the patch is read with `Array.from`, so a hole becomes an invalid element (dl-004).
++- An invalid pointer was reported only when its operation ran, as a failed operation after earlier
++  operations had run. Fixed: `path` and `from` are checked when the patch is parsed, and reported as an
++  invalid patch naming the operation index (dl-004).
++- `move` from `""` to `""` threw "cannot remove the whole document", but dl-005 says a move to the same
++  location leaves the document unchanged. Fixed: a move to the same location returns the document
++  unchanged, after the source is checked to exist.
++- Non-JSON values (`Date`, `NaN`, nested `undefined`) and operations with inherited members are accepted.
++  This extends what dl-004 treats as an invalid patch, so it is recorded as dl-006 and is not implemented
++  yet.
++
++Tests: `test/apply-patch.test.ts` gained four red-first tests (sparse hole, invalid pointer before any
++operation, invalid `from` pointer, move of the whole document to itself). They failed before the change.
++
++## Verification
++
++- `npm test`: 76 of 76 pass (72 before, 4 new).
++- `tsc -p tsconfig.json --noEmit` (TypeScript 5, strict mode, installed outside the repo): no errors.
++
++## Open
++
++- dl-006 (plain JSON data) is submitted and waits for approval. Its implementation is not started.
+diff --git a/src/index.ts b/src/index.ts
+index 5ae1d7cb874b844bddb3070ea17f62dd3eddb349..daf3e21580d06273660b7a960da8d8bb5977bd4a 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -36,7 +36,7 @@ export function applyPatch(document: unknown, patch: readonly JsonPatchOperation
+   if (!Array.isArray(patch)) {
+     throw new Error('invalid JSON Patch: the patch must be an array of operations');
+   }
+-  const operations = patch.map((operation, index) => parseOperation(operation, index));
++  const operations = Array.from(patch, (operation, index) => parseOperation(operation, index));
+   return operations.reduce<unknown>((current, operation, index) => {
+     try {
+       return applyOperation(current, operation);
+@@ -62,6 +62,7 @@ function parseOperation(input: unknown, index: number): JsonPatchOperation {
+   if (typeof path !== 'string') {
+     throw invalidOperation(index, `"${op}" needs a string "path"`);
+   }
++  checkPointer(path, index);
+   switch (op) {
+     case 'add':
+     case 'replace':
+@@ -77,10 +78,20 @@ function parseOperation(input: unknown, index: number): JsonPatchOperation {
+       if (typeof from !== 'string') {
+         throw invalidOperation(index, `"${op}" needs a string "from"`);
+       }
++      checkPointer(from, index);
+       return { op, from, path };
+   }
+ }
+ 
++/** Checks that a pointer of a patch operation is a valid JSON Pointer, so that it is an invalid patch. */
++function checkPointer(pointer: string, index: number): void {
++  try {
++    parsePointer(pointer);
++  } catch (error) {
++    throw invalidOperation(index, `has an invalid pointer: ${(error as Error).message}`);
++  }
++}
++
+ function invalidOperation(index: number, reason: string): Error {
+   return new Error(`invalid JSON Patch: patch[${index}] ${reason}`);
+ }
+@@ -170,10 +181,18 @@ function replace(document: unknown, pointer: string, value: unknown): unknown {
+   return document;
+ }
+ 
+-/** Moves the value at "from" to "path": a removal followed by an addition. */
++/**
++ * Moves the value at "from" to "path": a removal followed by an addition. Moving a location to itself
++ * changes nothing.
++ */
+ function move(document: unknown, from: string, pointer: string): unknown {
+   const value = resolvePointer(document, from);
+-  if (isProperPrefix(parsePointer(from), parsePointer(pointer))) {
++  const source = parsePointer(from);
++  const target = parsePointer(pointer);
++  if (isPrefix(source, target)) {
++    if (source.length === target.length) {
++      return document;
++    }
+     throw new Error(`cannot move "${from}" into one of its own children, "${pointer}"`);
+   }
+   return add(remove(document, from), pointer, value);
+@@ -192,8 +211,8 @@ function defineMember(object: Record<string, unknown>, key: string, value: unkno
+   Object.defineProperty(object, key, { value, writable: true, enumerable: true, configurable: true });
+ }
+ 
+-function isProperPrefix(prefix: string[], tokens: string[]): boolean {
+-  return prefix.length < tokens.length && prefix.every((token, index) => token === tokens[index]);
++function isPrefix(prefix: string[], tokens: string[]): boolean {
++  return prefix.length <= tokens.length && prefix.every((token, index) => token === tokens[index]);
+ }
+ 
+ /** Compares two JSON values by structure: arrays in order, objects by their members in any order. */
+diff --git a/test/apply-patch.test.ts b/test/apply-patch.test.ts
+index bacb28397faf2d0581014a9b62d35c325244cf0e..457bd1d37ed3ffff3214b71228a27dfaa7f8cf90 100644
+--- a/test/apply-patch.test.ts
++++ b/test/apply-patch.test.ts
+@@ -145,6 +145,10 @@ describe('applyPatch', () => {
+         a: [1, 2],
+       });
+     });
++
++    it('move from the whole document to itself leaves the document unchanged', () => {
++      assert.deepEqual(applyPatch({ a: 1 }, [{ op: 'move', from: '', path: '' }]), { a: 1 });
++    });
+   });
+ 
+   describe('sequence', () => {
+@@ -251,6 +255,29 @@ describe('applyPatch', () => {
+       assert.throws(() => applyPatch({ a: 1 }, [{ op: 'remove', path: '/~2' }]));
+     });
+ 
++    it('throws when an element of the patch is a hole in a sparse array', () => {
++      const patch: unknown[] = [, { op: 'add', path: '/a', value: 1 }];
++      assert.throws(() => applyPatch({}, patch as []), /invalid JSON Patch: patch\[0\]/);
++    });
++
++    it('reports an invalid pointer as an invalid patch, before any operation is applied', () => {
++      assert.throws(
++        () =>
++          applyPatch({ a: 1 }, [
++            { op: 'remove', path: '/a' },
++            { op: 'add', path: 'b', value: 2 },
++          ]),
++        /invalid JSON Patch: patch\[1\]/,
++      );
++    });
++
++    it('reports an invalid "from" pointer as an invalid patch', () => {
++      assert.throws(
++        () => applyPatch({ a: 1 }, [{ op: 'copy', from: '/~2', path: '/b' }]),
++        /invalid JSON Patch: patch\[0\]/,
++      );
++    });
++
+     it('names the operation index in the error', () => {
+       assert.throws(
+         () => applyPatch({}, [{ op: 'add', path: '/a', value: 1 }, { op: 'swap' }] as unknown as []),

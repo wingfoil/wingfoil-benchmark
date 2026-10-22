@@ -1,0 +1,164 @@
+diff --git a/README.md b/README.md
+index 2da987bc1d527849a80e257add968c39eacac296..07b9bf20d6e699c291cb98471c2422ab059b340a 100644
+--- a/README.md
++++ b/README.md
+@@ -49,7 +49,13 @@ Decisions:
+   the inputs. A failing patch therefore has no partial effect.
+ - The whole patch is validated (shape, known `op`, string `path`/`from` that parse as pointers,
+   `value` present for `add`/`replace`/`test` — `null` is allowed) before any operation is applied.
+-  Unknown members of an operation are ignored (section 4).
++  Unknown members of an operation are ignored (section 4). A hole in a sparse patch array is an
++  invalid operation, not skipped.
++- The document and every `value` must be JSON values: `null`, booleans, strings, finite numbers,
++  dense plain arrays and plain objects (prototype `Object.prototype` or `null`), without cycles.
++  Anything else (`undefined`, `NaN`/`Infinity`, `BigInt`, functions, symbols, `Date`, `Map`, typed
++  arrays, sparse arrays, ...) throws `JsonPatchError` instead of being copied or compared wrongly; a
++  bad document gives an error with `index` undefined. Shared, non-cyclic references are allowed.
+ - Paths are resolved like `resolvePointer` (own properties only, strict array indices). `-` is only
+   accepted as the last token of an `add` target (or of a `move`/`copy` `path`).
+ - `replace` keeps the position of an object member; `add` on an existing member replaces it in place.
+diff --git a/src/patch.ts b/src/patch.ts
+index 369aa1dcab641b4cbd5fed3db223871129725db0..289b123a709c4c9e0b6b119ed08a7633229a5ac8 100644
+--- a/src/patch.ts
++++ b/src/patch.ts
+@@ -69,6 +69,50 @@ function cloneJson<T>(value: T): T {
+   return value;
+ }
+ 
++/**
++ * Returns a description of why `value` is not a JSON value (RFC 8259), or undefined if it is one:
++ * null, a boolean, a string, a finite number, a dense plain array or a plain object (prototype
++ * Object.prototype or null) whose members are JSON values, without cycles.
++ */
++function invalidJson(value: unknown, at: string[] = [], ancestors = new Set<object>()): string | undefined {
++  const where = () => (at.length === 0 ? "" : ` at ${JSON.stringify(formatPointer(at))}`);
++  switch (typeof value) {
++    case "string":
++    case "boolean":
++      return undefined;
++    case "number":
++      return Number.isFinite(value) ? undefined : `${value} is not a JSON number${where()}`;
++    case "object":
++      if (value === null) return undefined;
++      break;
++    default:
++      return `${typeof value} is not a JSON value${where()}`;
++  }
++  const proto = Object.getPrototypeOf(value);
++  if (Array.isArray(value) ? proto !== Array.prototype : proto !== Object.prototype && proto !== null) {
++    return `${proto?.constructor?.name ?? "object"} is not a JSON value${where()}`;
++  }
++  if (ancestors.has(value)) return `circular reference${where()}`;
++  ancestors.add(value);
++  try {
++    if (Array.isArray(value)) {
++      for (let i = 0; i < value.length; i++) {
++        if (!(i in value)) return `missing array element at ${JSON.stringify(formatPointer([...at, String(i)]))}`;
++        const problem = invalidJson(value[i], [...at, String(i)], ancestors);
++        if (problem !== undefined) return problem;
++      }
++    } else {
++      for (const key of Object.keys(value)) {
++        const problem = invalidJson((value as Record<string, unknown>)[key], [...at, key], ancestors);
++        if (problem !== undefined) return problem;
++      }
++    }
++    return undefined;
++  } finally {
++    ancestors.delete(value);
++  }
++}
++
+ /**
+  * JSON equality as defined for "test" (RFC 6902 section 4.6): same type, numbers equal by value,
+  * arrays equal element by element, objects with the same set of members regardless of order.
+@@ -88,7 +132,10 @@ function jsonEqual(a: unknown, b: unknown): boolean {
+ /** Checks the structure of every operation before any is applied (sections 3 and 4). */
+ function parseOperations(patch: unknown): ParsedOperation[] {
+   if (!Array.isArray(patch)) throw new JsonPatchError("JSON Patch must be an array of operations");
+-  return patch.map((operation, index) => {
++  // A plain loop rather than map, so that a hole in a sparse array is reported, not skipped.
++  const operations: ParsedOperation[] = [];
++  for (let index = 0; index < patch.length; index++) {
++    const operation = patch[index];
+     const fail = (message: string, cause?: unknown): never => {
+       throw new JsonPatchError(message, index, operation, cause === undefined ? undefined : { cause });
+     };
+@@ -113,10 +160,14 @@ function parseOperations(patch: unknown): ParsedOperation[] {
+     if (op === "add" || op === "replace" || op === "test") {
+       // A "value" of null is valid; only an absent member is an error.
+       if (!hasOwn(operation, "value")) fail('missing "value"');
+-      parsed.value = operation.value;
++      const problem = invalidJson(operation.value);
++      if (problem !== undefined) fail(`"value" is not JSON: ${problem}`);
++      // Copied once here, so the result never shares structure with the patch.
++      parsed.value = cloneJson(operation.value);
+     }
+-    return parsed;
+-  });
++    operations.push(parsed);
++  }
++  return operations;
+ }
+ 
+ /**
+@@ -126,6 +177,8 @@ function parseOperations(patch: unknown): ParsedOperation[] {
+  * returned. Neither `document` nor `patch` is modified.
+  */
+ export function applyPatch(document: unknown, patch: readonly unknown[]): unknown {
++  const problem = invalidJson(document);
++  if (problem !== undefined) throw new JsonPatchError(`document is not JSON: ${problem}`);
+   const operations = parseOperations(patch);
+   // A single root holder lets the whole document ("" path) be replaced like any other location.
+   const root: { document: unknown } = { document: cloneJson(document) };
+@@ -204,13 +257,13 @@ export function applyPatch(document: unknown, patch: readonly unknown[]): unknow
+     const { path, from } = operation;
+     switch (operation.op) {
+       case "add":
+-        add(path, cloneJson(operation.value));
++        add(path, operation.value);
+         break;
+       case "remove":
+         remove(path);
+         break;
+       case "replace":
+-        replace(path, cloneJson(operation.value));
++        replace(path, operation.value);
+         break;
+       case "move": {
+         // Section 4.4: "from" must not be a proper prefix of "path" (no move into its own child).
+diff --git a/test/patch.test.ts b/test/patch.test.ts
+index 6f8f0ed06a54e1b79994ea17bf90eb5f349055b9..011aa7c5947ae69dfa80c2fc758544bab813683a 100644
+--- a/test/patch.test.ts
++++ b/test/patch.test.ts
+@@ -154,3 +154,30 @@ test("operations apply in order and a failure aborts the patch", () => {
+   fails(doc, [...patch, { op: "remove", path: "/b" }], 4);
+   assert.deepEqual(doc, { b: 1 });
+ });
++
++test("values and documents must be JSON", () => {
++  const cyclic: any = { a: [] };
++  cyclic.a.push(cyclic);
++  for (const value of [undefined, NaN, Infinity, -Infinity, 1n, () => 1, Symbol("s"), new Date(0), new Map(), new Uint8Array(1), [, 1], { a: undefined }, [{ b: NaN }], cyclic]) {
++    fails({}, [{ op: "add", path: "/x", value }], 0);
++    fails({ x: 1 }, [{ op: "replace", path: "/x", value }], 0);
++    fails({ x: 1 }, [{ op: "test", path: "/x", value }], 0);
++    fails({ x: value }, [], undefined);
++  }
++  // Checked before anything is applied.
++  fails({}, [{ op: "test", path: "/missing", value: 1 }, { op: "add", path: "/x", value: undefined }], 1);
++  // Unknown members are ignored, whatever their value.
++  assert.deepEqual(applyPatch({}, [{ op: "add", path: "/x", value: 1, extra: undefined }]), { x: 1 });
++  // Shared (acyclic) references, null-prototype objects and -0 are fine.
++  const shared = { s: 1 };
++  assert.deepEqual(applyPatch({}, [{ op: "add", path: "/x", value: [shared, shared] }]), { x: [{ s: 1 }, { s: 1 }] });
++  const bare = Object.assign(Object.create(null), { a: 1 });
++  assert.deepEqual(applyPatch(bare, [{ op: "test", path: "", value: { a: 1 } }]), { a: 1 });
++  assert.ok(Object.is((applyPatch({}, [{ op: "add", path: "/z", value: -0 }]) as any).z, -0));
++});
++
++test("holes in the patch array are invalid operations", () => {
++  // eslint-disable-next-line no-sparse-arrays
++  fails({}, [, { op: "add", path: "/a", value: 1 }], 0);
++  fails({}, [{ op: "add", path: "/a", value: 1 }, ,], 1);
++});

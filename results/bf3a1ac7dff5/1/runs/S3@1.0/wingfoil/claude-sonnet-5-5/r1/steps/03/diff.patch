@@ -1,0 +1,129 @@
+diff --git a/docs/memory/decision-log/dl-003-long-rental-discount-rounds-to-the-nearest-cent-applies-to-the-whole-rental-from-3-days.md b/docs/memory/decision-log/dl-003-long-rental-discount-rounds-to-the-nearest-cent-applies-to-the-whole-rental-from-3-days.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..e49c2278becb8adc51b0795153bd5e78957de318
+--- /dev/null
++++ b/docs/memory/decision-log/dl-003-long-rental-discount-rounds-to-the-nearest-cent-applies-to-the-whole-rental-from-3-days.md
+@@ -0,0 +1,25 @@
++---
++id: dl-003-long-rental-discount-rounds-to-the-nearest-cent-applies-to-the-whole-rental-from-3-days
++type: decision-log
++title: "Long-rental discount rounds to the nearest cent, applies to the whole rental from 3 days"
++status: pending
++---
++
++<!-- decision-log body. `wingfoil memory add` copies this scaffold verbatim; `memory submit` replaces
++     these placeholder comments with real content and fills the required frontmatter fields. -->
++
++## Context
++
++Customers staying 3 days or more get 10% off. Totals are integer euro cents, so the discount can leave a fraction of a cent.
++
++## Decision
++
++The 10% applies to the whole rental, not only to days beyond the third. The reduced total is computed in
++integer arithmetic (`full * 90 / 100`) and rounded to the nearest cent with `Math.round`, which is
++deterministic. `quote` carries the rule and `book` reuses it, so both always show the same total.
++
++## Consequences
++
++Total stays an integer number of cents. The price jumps down in per-day terms at 3 days (a 3-day rental
++is never cheaper than a 2-day one in total, but its per-day price is 10% lower), which is the intended reward
++for longer stays.
+diff --git a/docs/memory/task/task-003-long-rental-discount-10-off-from-3-days.md b/docs/memory/task/task-003-long-rental-discount-10-off-from-3-days.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..a8584b81e3ad8538c2fccb15d9c82a897d5e45d9
+--- /dev/null
++++ b/docs/memory/task/task-003-long-rental-discount-10-off-from-3-days.md
+@@ -0,0 +1,17 @@
++---
++id: task-003-long-rental-discount-10-off-from-3-days
++type: task
++title: "Long-rental discount: 10% off from 3 days"
++status: pending
++---
++
++<!-- task body. `wingfoil memory add` copies this scaffold verbatim; `memory submit` replaces
++     these placeholder comments with real content and fills the required frontmatter fields. -->
++
++# Long-rental discount: 10% off from 3 days
++
++`quote` (and so `book`, which reuses the same pricing) now charges 90% of the full price for a rental of
++3 days or more; shorter rentals keep the full price (`src/index.ts`, `price`).
++Tests: red-first for the new behaviour (discount at 3 and 10 days, none at 2 days, rounding, booking total);
++the existing 3-day quote test was updated to the reduced total. All 19 pass.
++Design choice: see dl-003-long-rental-discount-rounds-to-the-nearest-cent-applies-to-the-whole-rental-from-3-days.
+diff --git a/src/index.ts b/src/index.ts
+index bab87d48b5ef7b7fc705c9c1b2fc147af0143d04..69452749f1fd63b7dd7ac6267a0e9e0421d84d2c 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -36,7 +36,7 @@ export interface AvailabilityQuery {
+ export interface RentalService {
+   /** Registers an item; throws if it is invalid or its id is already used. */
+   addEquipment(item: Equipment): void;
+-  /** Prices a rental; throws for an unknown item or a period that is not whole UTC days. */
++  /** Prices a rental, 10% off from 3 days; throws for an unknown item or a period that is not whole UTC days. */
+   quote(request: RentalRequest): Quote;
+   /** Books an item; throws like `quote`, and when the item is not free for the whole period. */
+   book(request: RentalRequest): Booking;
+@@ -45,6 +45,8 @@ export interface RentalService {
+ }
+ 
+ const MS_PER_DAY = 24 * 60 * 60 * 1000;
++const DISCOUNT_FROM_DAYS = 3;
++const DISCOUNT_PERCENT = 10;
+ const UTC_MIDNIGHT = /^\d{4}-\d{2}-\d{2}T00:00:00(\.0+)?Z$/;
+ 
+ function parseMidnight(value: string): number {
+@@ -76,7 +78,10 @@ export function createRentalService(): RentalService {
+       throw new Error('The period must end after it starts');
+     }
+     const days = (end - start) / MS_PER_DAY;
+-    const quote = { itemId: request.itemId, start: request.start, end: request.end, total: days * item.dailyPrice };
++    const fullPrice = days * item.dailyPrice;
++    const total =
++      days >= DISCOUNT_FROM_DAYS ? Math.round((fullPrice * (100 - DISCOUNT_PERCENT)) / 100) : fullPrice;
++    const quote = { itemId: request.itemId, start: request.start, end: request.end, total };
+     return { quote, start, end };
+   }
+ 
+diff --git a/test/rental.test.ts b/test/rental.test.ts
+index a2c9514414826689ce08fc525b1624087e037d60..a007b1b4e4f58e0721d39af5b740c28379581998 100644
+--- a/test/rental.test.ts
++++ b/test/rental.test.ts
+@@ -11,9 +11,9 @@ function setup() {
+ 
+ const day = (d: number) => `2026-07-${String(d).padStart(2, '0')}T00:00:00.000Z`;
+ 
+-test('quote multiplies the daily price by the number of days', () => {
++test('quote multiplies the daily price by the number of days, less the long-rental discount', () => {
+   const quote = setup().quote({ itemId: 'board-1', start: day(10), end: day(13) });
+-  assert.deepEqual(quote, { itemId: 'board-1', start: day(10), end: day(13), total: 7500 });
++  assert.deepEqual(quote, { itemId: 'board-1', start: day(10), end: day(13), total: 6750 });
+ });
+ 
+ test('quote accepts ISO strings without milliseconds', () => {
+@@ -121,3 +121,24 @@ test('availability rejects invalid periods and unknown kinds', () => {
+   assert.throws(() => service.availability({ start: '2026-07-10', end: day(11) }));
+   assert.throws(() => service.availability({ start: day(10), end: day(11), kind: 'kayak' as 'board' }));
+ });
++
++test('a rental of 3 days or more costs 10% less', () => {
++  const service = setup();
++  assert.equal(service.quote({ itemId: 'board-1', start: day(10), end: day(13) }).total, 6750);
++  assert.equal(service.quote({ itemId: 'board-1', start: day(10), end: day(20) }).total, 22500);
++});
++
++test('a rental of 2 days keeps its full price', () => {
++  assert.equal(setup().quote({ itemId: 'board-1', start: day(10), end: day(12) }).total, 5000);
++});
++
++test('the discounted total is rounded to a whole cent', () => {
++  const service = createRentalService();
++  service.addEquipment({ id: 'odd', kind: 'board', dailyPrice: 1001 });
++  assert.equal(service.quote({ itemId: 'odd', start: day(1), end: day(4) }).total, 2703);
++});
++
++test('book shows the same reduced total as quote', () => {
++  const booking = setup().book({ itemId: 'sail-1', start: day(10), end: day(14) });
++  assert.equal(booking.total, 5400);
++});

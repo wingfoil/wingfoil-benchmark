@@ -1,0 +1,111 @@
+diff --git a/src/index.ts b/src/index.ts
+index 27d78e883af1d4e6a4530750700eda8274e953fd..c9d9d1227e612e9e60a1b8edf83c00d2e430cc92 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -261,3 +261,65 @@ function mergePatch(target: unknown, patch: unknown): unknown {
+ export function applyMergePatch(target: unknown, patch: unknown): unknown {
+   return mergePatch(target, patch);
+ }
++
++/**
++ * JSON Patch generation.
++ */
++
++type PatchOperation =
++  | { op: "add" | "replace"; path: string; value: unknown }
++  | { op: "remove"; path: string };
++
++function escapeToken(token: string): string {
++  return token.replace(/~/g, "~0").replace(/\//g, "~1");
++}
++
++function diff(from: unknown, to: unknown, path: string, out: PatchOperation[]): void {
++  if (deepEqual(from, to)) return;
++
++  if (Array.isArray(from) && Array.isArray(to)) {
++    // Skip the unchanged head and tail, so an insertion or removal does not shift the whole array.
++    let start = 0;
++    while (start < from.length && start < to.length && deepEqual(from[start], to[start])) start++;
++    let endFrom = from.length;
++    let endTo = to.length;
++    while (endFrom > start && endTo > start && deepEqual(from[endFrom - 1], to[endTo - 1])) {
++      endFrom--;
++      endTo--;
++    }
++    const common = Math.min(endFrom, endTo) - start;
++    for (let i = 0; i < common; i++) diff(from[start + i], to[start + i], `${path}/${start + i}`, out);
++    // Remove surplus elements from the end, so that earlier indexes stay valid.
++    for (let i = endFrom - 1; i >= start + common; i--) out.push({ op: "remove", path: `${path}/${i}` });
++    for (let i = start + common; i < endTo; i++) {
++      out.push({ op: "add", path: `${path}/${i}`, value: structuredClone(to[i]) });
++    }
++    return;
++  }
++
++  if (isObject(from) && isObject(to)) {
++    for (const key of Object.keys(from)) {
++      if (!Object.hasOwn(to, key)) out.push({ op: "remove", path: `${path}/${escapeToken(key)}` });
++    }
++    for (const key of Object.keys(to)) {
++      const child = `${path}/${escapeToken(key)}`;
++      if (Object.hasOwn(from, key)) diff(from[key], to[key], child, out);
++      else out.push({ op: "add", path: child, value: structuredClone(to[key]) });
++    }
++    return;
++  }
++
++  out.push({ op: "replace", path, value: structuredClone(to) });
++}
++
++/**
++ * Returns a JSON Patch (RFC 6902) that turns `from` into `to` when applied.
++ *
++ * Neither argument is mutated, and the patch shares no structure with them. Only the parts of the
++ * document that differ are described; identical documents give an empty patch.
++ */
++export function createPatch(from: unknown, to: unknown): PatchOperation[] {
++  const out: PatchOperation[] = [];
++  diff(from, to, "", out);
++  return out;
++}
+diff --git a/test/createpatch.test.ts b/test/createpatch.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..ec59810ff820b96ec7f9ce74ad7a25279d747fc7
+--- /dev/null
++++ b/test/createpatch.test.ts
+@@ -0,0 +1,35 @@
++import { test } from "node:test";
++import assert from "node:assert/strict";
++import { applyPatch, createPatch } from "../src/index.ts";
++
++const roundTrip = (from: unknown, to: unknown) => {
++  const before = structuredClone(from);
++  const patch = createPatch(from, to);
++  assert.deepEqual(from, before);
++  assert.deepEqual(applyPatch(from, patch), to);
++  return patch;
++};
++
++test("identical documents give an empty patch", () => {
++  assert.deepEqual(roundTrip({ a: [1, { b: 2 }] }, { a: [1, { b: 2 }] }), []);
++});
++
++test("a small change gives a small patch", () => {
++  const patch = roundTrip({ a: { b: 1, c: [1, 2] }, d: "x" }, { a: { b: 2, c: [1, 2] }, d: "x" });
++  assert.deepEqual(patch, [{ op: "replace", path: "/a/b", value: 2 }]);
++});
++
++test("array insertion and removal do not rewrite the array", () => {
++  assert.deepEqual(roundTrip([1, 2, 3, 4], [0, 1, 2, 3, 4]), [{ op: "add", path: "/0", value: 0 }]);
++  assert.deepEqual(roundTrip([1, 2, 3, 4], [1, 4]), [
++    { op: "remove", path: "/2" },
++    { op: "remove", path: "/1" },
++  ]);
++});
++
++test("keys needing escapes, type changes and root replacement", () => {
++  roundTrip({ "a/b~": 1 }, { "a/b~": 2, "": 3 });
++  roundTrip({ a: 1 }, [1]);
++  roundTrip(1, { a: 1 });
++  roundTrip({ a: [{ x: 1 }, { y: 2 }] }, { a: [{ x: 1, z: 1 }] });
++});

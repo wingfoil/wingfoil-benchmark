@@ -1,0 +1,76 @@
+diff --git a/src/index.ts b/src/index.ts
+index a4379d7173c1340a8b3ac0dbed9065d2baf04352..c346dd96adf0b22e57cd215d4b7e75d602a863af 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -237,3 +237,26 @@ export function applyPatch(document: unknown, patch: unknown): unknown {
+   for (const operation of patch) doc = applyOperation(doc, operation);
+   return doc;
+ }
++
++function isPlainObject(v: unknown): v is Record<string, unknown> {
++  return typeof v === "object" && v !== null && !Array.isArray(v);
++}
++
++/**
++ * Applies a JSON Merge Patch (RFC 7386) to a document and returns the result.
++ * The inputs are never mutated. A non-object patch replaces the target; in an object patch,
++ * null members delete the corresponding target member.
++ */
++export function applyMergePatch(target: unknown, patch: unknown): unknown {
++  if (!isPlainObject(patch)) return clone(patch);
++  const out = isPlainObject(target) ? (clone(target) as Record<string, unknown>) : {};
++  for (const key of Object.keys(patch)) {
++    const value = patch[key];
++    if (value === null) {
++      delete out[key];
++    } else {
++      setMember(out, key, applyMergePatch(hasOwn(out, key) ? out[key] : undefined, value));
++    }
++  }
++  return out;
++}
+diff --git a/test/mergepatch.test.ts b/test/mergepatch.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..99b52e23bc5d344f3ca282e9d20555b6f0d637b6
+--- /dev/null
++++ b/test/mergepatch.test.ts
+@@ -0,0 +1,39 @@
++import { test } from "node:test";
++import assert from "node:assert/strict";
++import { applyMergePatch } from "../src/index.ts";
++
++test("RFC 7386 appendix A examples", () => {
++  const cases: [unknown, unknown, unknown][] = [
++    [{ a: "b" }, { a: "c" }, { a: "c" }],
++    [{ a: "b" }, { b: "c" }, { a: "b", b: "c" }],
++    [{ a: "b" }, { a: null }, {}],
++    [{ a: "b", b: "c" }, { a: null }, { b: "c" }],
++    [{ a: ["b"] }, { a: "c" }, { a: "c" }],
++    [{ a: "c" }, { a: ["b"] }, { a: ["b"] }],
++    [{ a: { b: "c" } }, { a: { b: "d", c: null } }, { a: { b: "d" } }],
++    [{ a: [{ b: "c" }] }, { a: [1] }, { a: [1] }],
++    [["a", "b"], ["c", "d"], ["c", "d"]],
++    [{ a: "b" }, ["c"], ["c"]],
++    [{ a: "foo" }, null, null],
++    [{ a: "foo" }, "bar", "bar"],
++    [{ e: null }, { a: 1 }, { e: null, a: 1 }],
++    [[1, 2], { a: "b", c: null }, { a: "b" }],
++    [{}, { a: { bb: { ccc: null } } }, { a: { bb: {} } }],
++  ];
++  for (const [t, p, r] of cases) assert.deepEqual(applyMergePatch(t, p), r);
++});
++
++test("does not mutate inputs", () => {
++  const t = { a: { b: 1 } };
++  const p = { a: { c: { d: null } } };
++  const r = applyMergePatch(t, p) as any;
++  assert.deepEqual(t, { a: { b: 1 } });
++  assert.deepEqual(p, { a: { c: { d: null } } });
++  assert.notEqual(r.a, t.a);
++});
++
++test("__proto__ is an ordinary member", () => {
++  const r = applyMergePatch({}, JSON.parse('{"__proto__":{"x":1}}')) as any;
++  assert.equal(Object.getPrototypeOf(r), Object.prototype);
++  assert.deepEqual(Object.keys(r), ["__proto__"]);
++});
