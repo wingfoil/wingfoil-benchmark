@@ -344,8 +344,9 @@ Bugs: bug-013 fixed. Spending: none in W14; 2.4124 USD in all so far.
 - [x] calibration: dry runs in every arm, budget revised (`docs/calibration/v0.2.md`): task-096 done (`c57d0f48`), 45
   dry runs, 23.55 USD; the revised budget approved in chat on 2026-10-21 (65 € for both campaigns); bug-023, bug-024
   fixed
-- [ ] validation: acceptance green on the fake agent, coverage > 80 %, lint clean, the real-agent validation dl-010
-  decides
+- [x] validation: acceptance green on the fake agent, coverage > 80 %, lint clean, the real-agent validation dl-010
+  decides: task-097 done, the full suites green on `6bdd4518` (97.57 % statements), S1@1.0 once in the seven arms and
+  the bridge's two (`da13d57a65b5/1`, `27f0119be0ff/1`), 4.90 USD
 - [ ] campaign: reference campaign published and compared with v0.1 (campaign: —)
 - [ ] publishing: tag `v0.2`, site published, release notes, transcripts attached
 - [ ] retrospective: section below written; WingFoil usage notes handed to the approver
