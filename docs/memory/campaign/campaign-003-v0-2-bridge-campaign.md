@@ -2,7 +2,7 @@
 id: campaign-003-v0-2-bridge-campaign
 type: campaign
 title: "v0.2 bridge campaign"
-status: pending
+status: approved
 release: v0.2
 campaign_file: campaigns/v0-2-bridge.yaml
 campaign_id: bf3a1ac7dff5
