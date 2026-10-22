@@ -30,7 +30,7 @@ after calibration ([task-096](../task/task-096-calibration-of-v0-2-dry-runs-in-e
 
 The seven arms: baseline, baseline-docs, wingfoil, speckit, speckit-docs, openspec, openspec-docs.
 
-**Pins** (`campaigns/v0-2-reference.yaml`, calibration §1 and §7): WingFoil **v0.3.0** (`cc31d7a8`, task-095), Spec Kit
+**Pins** (`campaigns/v0-2-reference.yaml`, calibration §1 and §8): WingFoil **v0.3.0** (`cc31d7a8`, task-095), Spec Kit
 v1.1.0, OpenSpec 1.14.0; Claude Code **2.1.300**, effort `medium` for the three models; approver policy `v1`; caps
 1800 s, 10 M tokens, 5 € a run; `fail_fast` after three same errors; rate 0.8917 (ECB, 2026-10-20); every arm's
 digest (openspec `1ba12def23cf`, bug-023's fix).
@@ -142,7 +142,7 @@ What was shown at review (in chat, 2026-10-22), on Sonnet 5.5, one pass of S1–
 - **The chain:** `c82a5e74885b/2` → bridge, S1 M-K1 3.82 → 0.60 € for wingfoil (the model, the agent and the effort),
   M-Q1 within variance; bridge → this campaign (WingFoil v0.2.2 → v0.3.0 alone): wingfoil ÷ baseline falls on every
   scenario (1.72 → 1.70, 1.90 → 1.22, 2.11 → 1.87, 1.88 → 1.65), S3's M-F1 4/5 → 3/5 with D3 lost.
-- **The hypotheses** (calibration v0.2 §8): H2, H5, H6, H7 hold; H1 in part (it falls on all four, S1 stays at
+- **The hypotheses** (calibration v0.2 §9): H2, H5, H6, H7 hold; H1 in part (it falls on all four, S1 stays at
   1.70×), H3, H4, H8, H10 fail; H9 not measurable at L1; H11 mixed (Haiku 5.5's wingfoil gain on S1, its loss on S3).
 - **The slices:** Opus 5.5 165/165, 48/48 on S1 in its three arms at 4–5 times Sonnet's cost; Haiku 5.5 wingfoil
   165/165, 48/48 on S1 at 0.15 USD, 30/37 on S3.

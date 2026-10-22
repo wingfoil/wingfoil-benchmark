@@ -157,7 +157,7 @@ describe('the v0.2 campaign files after calibration (task-096)', () => {
       expect(readFileSync(repoPath(`campaigns/${name}.yaml`), 'utf8'), name).not.toMatch(/placeholder/i);
   });
 
-  it("carry calibration's values, as the approver approved them (docs/calibration/v0.2.md §7)", () => {
+  it("carry calibration's values, as the approver approved them (docs/calibration/v0.2.md §8)", () => {
     const reference = checked('v0-2-reference');
     const bridge = checked('v0-2-bridge');
     for (const campaign of [reference, bridge]) {

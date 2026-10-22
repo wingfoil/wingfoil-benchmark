@@ -379,7 +379,7 @@ The 30 € target above did not hold, and stays as the record of v0.1's plan.
     [dl-018](../memory/decision-log/dl-018-sonnet-5-5-s-cache-reads-at-half-dl-007-s-price-and-haiku-5-5-beside-the-haiku-4-5-rung.md)
     and calibration's measurements, the approver's approval in chat of the values on 2026-10-21.
     - **§6, the ladder:** its weak rung is Haiku 5.5 (`claude-haiku-5-5`), S1 and S3 in baseline and wingfoil; Haiku
-      4.5 until 1.6. The hypothesis on the weak model (dl-007's "H6", H11 in [v0.2.md](../calibration/v0.2.md) §8) reads Haiku
+      4.5 until 1.6. The hypothesis on the weak model (dl-007's "H6", H11 in [v0.2.md](../calibration/v0.2.md) §9) reads Haiku
       5.5.
     - **§6, the effort:** `medium` for the three models, the same in every arm; v0.1 pinned none. So the comparison
       with v0.1, through the bridge, changes the effort with the model and Claude Code (dl-015's C).
