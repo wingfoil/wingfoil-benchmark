@@ -2,7 +2,7 @@
 id: campaign-002-v0-2-reference-campaign
 type: campaign
 title: "v0.2 reference campaign"
-status: running
+status: scored
 release: v0.2
 campaign_file: campaigns/v0-2-reference.yaml
 campaign_id: 81ebb2691f9c
