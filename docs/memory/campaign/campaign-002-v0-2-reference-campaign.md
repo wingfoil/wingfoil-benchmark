@@ -128,8 +128,39 @@ campaigns, nothing committed between them (dl-017 point 3). The script ran the r
 
 ## Results review
 
-<!-- Anomalies, runs to rerun, and whether the results are publishable. -->
+The approver accepted the results of `81ebb2691f9c/1` (scored → reviewed, run by the approver): "Results reviewed: 49
+runs completed and scored, no rerun; publishable as v0.2's preliminary result (n = 3 on S1, n = 1 elsewhere);
+anomalies noted: S3 D3 lost on v0.3.0, S1 step-5 variance".
+
+What was shown at review (in chat, 2026-10-22), on Sonnet 5.5, one pass of S1–S8 (S1's mean of three):
+
+- **Correctness:** every arm 241–248 of 249 public tests and 83–87 of 89 hold-out tests; the L1 scenarios are nearly
+  saturated, the arms differ on the checks: the baseline 14/20, the docs controls and wingfoil 18/20, speckit 19/20,
+  openspec 20/20.
+- **Cost** against the baseline (1.17 USD): baseline-docs 1.32×, **wingfoil 1.63×**, speckit 1.77×, speckit-docs and
+  openspec-docs 0.98×, openspec 2.75×.
+- **The chain:** `c82a5e74885b/2` → bridge, S1 M-K1 3.82 → 0.60 € for wingfoil (the model, the agent and the effort),
+  M-Q1 within variance; bridge → this campaign (WingFoil v0.2.2 → v0.3.0 alone): wingfoil ÷ baseline falls on every
+  scenario (1.72 → 1.70, 1.90 → 1.22, 2.11 → 1.87, 1.88 → 1.65), S3's M-F1 4/5 → 3/5 with D3 lost.
+- **The hypotheses** (calibration v0.2 §8): H2, H5, H6, H7 hold; H1 in part (it falls on all four, S1 stays at
+  1.70×), H3, H4, H8, H10 fail; H9 not measurable at L1; H11 mixed (Haiku 5.5's wingfoil gain on S1, its loss on S3).
+- **The slices:** Opus 5.5 165/165, 48/48 on S1 in its three arms at 4–5 times Sonnet's cost; Haiku 5.5 wingfoil
+  165/165, 48/48 on S1 at 0.15 USD, 30/37 on S3.
+- **Anomalies, none rerun:** S3's D3 lost by wingfoil on v0.3.0; S1's step 5 varying by run (158/165 in one run of
+  baseline-docs here, two of the bridge); S3 30/37 for speckit (Sonnet) and wingfoil (Haiku); openspec 6/7 hold-out
+  on S8.
+
+The site built locally (`bench site build`, never published) is plan-004 step 6's.
 
 ## Findings
 
-<!-- Finding notes produced (F5.4) and where they went in WingFoil. -->
+Exported with `bench finding` (REQ-CLI-07, REQ-RES-05); written only in this repository, filing them in WingFoil is
+the approver's (dl-009).
+
+- **[M-K1 on S1@1.0, baseline against wingfoil](../../../findings/81ebb2691f9c-1-s1-1.0-m-k1-baseline+wingfoil.md)**,
+  as a **decision-log**: the verification dl-147's Actions ask for (H1). The wingfoil arm on v0.3.0 costs 1.70 times
+  the baseline on S1 (n = 3), above the 1.5 its verification sets: not verified. WingFoil v0.3.0's workflow engine
+  stays unstarted on S1–S8 (task-095), so the ratio reads WingFoil as its documentation sets it up.
+- **[M-F1 on S3@1.0, baseline-docs against wingfoil](../../../findings/81ebb2691f9c-1-s3-1.0-m-f1-baseline-docs+wingfoil.md)**,
+  as a **bug**, preliminary (n = 1): wingfoil 3/5 against baseline-docs' 4/5, D3 and D5 failed; on v0.2.2 (the
+  bridge, `bf3a1ac7dff5/1`) the wingfoil arm kept 4/5 with D3 recorded.

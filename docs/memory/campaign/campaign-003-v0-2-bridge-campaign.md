@@ -81,8 +81,16 @@ campaigns, nothing committed between them (dl-017 point 3). The script ran the r
 
 ## Results review
 
-<!-- Anomalies, runs to rerun, and whether the results are publishable. -->
+The approver accepted the results of `bf3a1ac7dff5/1` (scored → reviewed, run by the approver): "Results reviewed:
+18 runs completed and scored, no rerun; publishable as the bridge v0.1 -> v0.2; anomalies noted: S2 wingfoil on
+v0.2.2 21/24 with 3 regressions".
+
+- **v0.1 → bridge** (`c82a5e74885b/2` → this execution, cross-model): S1 M-K1 for wingfoil 3.82 → 0.60 € a run,
+  baseline-docs 2.22 → 0.42 €, M-Q1 within variance; the step changes the model, Claude Code, the effort, the manual
+  and the scoring code.
+- **Anomalies, none rerun:** S2's wingfoil 21/24, 16/17, checks 0/3, M-D3 3 (n = 1); S1's step 5, 158/165 in
+  baseline-docs r3 and wingfoil r1.
 
 ## Findings
 
-<!-- Finding notes produced (F5.4) and where they went in WingFoil. -->
+None exported from the bridge: its figures are the baseline of campaign-002's findings (v0.2.2 on Sonnet 5.5).
