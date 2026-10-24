@@ -2,7 +2,7 @@
 id: task-100-the-v0-2-retrospective-s-wingfoil-feedback-notes
 type: task
 title: "The v0.2 retrospective's WingFoil feedback notes"
-status: draft
+status: pending
 release: v0.2
 wave: retrospective
 features: []
