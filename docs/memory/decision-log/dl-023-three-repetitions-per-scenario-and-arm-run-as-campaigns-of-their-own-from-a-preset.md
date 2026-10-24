@@ -2,7 +2,7 @@
 id: dl-023-three-repetitions-per-scenario-and-arm-run-as-campaigns-of-their-own-from-a-preset
 type: decision-log
 title: "Three repetitions per scenario and arm, run as campaigns of their own from a preset"
-status: draft
+status: pending
 tags: ["campaign","repetitions","v0.3"]
 ---
 
