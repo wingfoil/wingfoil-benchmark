@@ -1,9 +1,10 @@
-import { cpSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, readdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parse, stringify } from 'yaml';
 import { describe, expect, it } from 'vitest';
 
 import { loadCampaign, mergePreset } from '../../../src/campaign/index.js';
+import { completeCampaignYaml, writeRepo } from '../../support/campaign-fixture.js';
 import { repoPath } from '../../support/paths.js';
 import { tempDir } from '../../support/scenario-fixture.js';
 
@@ -93,5 +94,83 @@ describe('the identities of the campaigns that extend nothing (characterization)
   ])('keeps %s as %s', (name, id) => {
     const result = loadCampaign(repoPath(`campaigns/${name}.yaml`));
     expect(result.ok && result.value.id).toBe(id);
+  });
+});
+
+/** A repository (writeRepo's) whose campaign file is `own`, with `presets` written under `campaigns/presets/`. */
+function extending(own: Record<string, unknown>, presets: Record<string, unknown> = {}): string {
+  const { root, file } = writeRepo();
+  mkdirSync(join(root, 'campaigns', 'presets', 'sub'), { recursive: true });
+  for (const [name, content] of Object.entries(presets)) {
+    writeFileSync(join(root, 'campaigns', 'presets', name), stringify(content));
+  }
+  writeFileSync(file, stringify(own));
+  return file;
+}
+
+const PRESET = { description: 'every arm', ...completeCampaignYaml() };
+
+function issues(file: string): { path: string; message: string }[] {
+  const result = loadCampaign(file);
+  return result.ok ? [] : [...result.issues];
+}
+
+describe('extends: refusals and edge paths (REQ-FMT-01 as amended in 1.34)', () => {
+  it.each([[['a']], [null], [3]])('refuses an extends that is not a path (%j)', (named) => {
+    expect(issues(extending({ extends: named }))).toEqual([
+      { path: 'extends', message: 'must name a file in campaigns/presets/' },
+    ]);
+  });
+
+  it('refuses a preset in a subdirectory of campaigns/presets/', () => {
+    const file = extending({ extends: 'presets/sub/x.yaml' }, { 'sub/x.yaml': PRESET });
+    expect(issues(file)).toEqual([
+      { path: 'extends', message: "'presets/sub/x.yaml' must name a file in campaigns/presets/" },
+    ]);
+  });
+
+  it('refuses a preset that is a symbolic link', () => {
+    const file = extending({ extends: 'presets/link.yaml' }, { 'real.yaml': PRESET });
+    symlinkSync(join(file, '..', 'presets', 'real.yaml'), join(file, '..', 'presets', 'link.yaml'));
+    expect(issues(file)).toEqual([
+      { path: 'extends', message: "'presets/link.yaml' must not be a symbolic link" },
+    ]);
+  });
+
+  it('accepts a preset whose name begins with two dots', () => {
+    expect(issues(extending({ extends: 'presets/..x.yaml' }, { '..x.yaml': PRESET }))).toEqual([]);
+  });
+
+  it('refuses a description that is not a line of text as having none', () => {
+    const file = extending({ extends: 'presets/p.yaml' }, { 'p.yaml': { ...PRESET, description: 42 } });
+    expect(issues(file)).toEqual([
+      { path: 'extends', message: expect.stringMatching(/^'presets\/p.yaml' has no one-line description/) },
+    ]);
+  });
+
+  it('says that a key the preset sets cannot be removed when the resolved campaign is refused', () => {
+    const file = extending(
+      {
+        extends: 'presets/p.yaml',
+        arms: ['baseline', 'baseline-docs'],
+        scenarios: [{ id: 'S1', version: '1.0' }],
+      },
+      { 'p.yaml': PRESET },
+    );
+    const found = issues(file);
+    expect(found.length).toBeGreaterThan(1);
+    expect(found.at(-1)).toEqual({
+      path: 'extends',
+      message: expect.stringMatching(/campaign resolved from 'presets\/p.yaml'.*cannot remove a key/),
+    });
+  });
+
+  it('refuses a misplaced file that extends a preset for its place first', () => {
+    const root = tempDir('bench-misplaced-');
+    const file = join(root, 'c.yaml');
+    writeFileSync(file, stringify({ extends: 'presets/p.yaml' }));
+    expect(issues(file)).toEqual([
+      { path: 'c.yaml', message: "must live in a 'campaigns' directory, next to 'scenarios'" },
+    ]);
   });
 });

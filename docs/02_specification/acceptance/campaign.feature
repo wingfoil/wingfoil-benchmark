@@ -85,6 +85,14 @@ Feature: Campaign definition, cost estimate and budget guard
     When the maintainer lists the presets
     Then each is listed with its name and its description
 
+  @F1.1 @error
+  Scenario: A preset that cannot be extended is listed with its refusal
+    Given a preset in campaigns/presets/ without a description, beside a valid one
+    When the maintainer lists the presets
+    Then the valid preset is listed with its description
+    And the other is named with the reason it cannot be extended
+    And the listing fails
+
   @F1.2
   Scenario: The cost is estimated before any run starts
     When the maintainer asks for the campaign's cost estimate

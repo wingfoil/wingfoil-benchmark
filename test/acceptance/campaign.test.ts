@@ -329,7 +329,7 @@ describe('campaign.feature', () => {
         'has no description',
         preset({ description: undefined }),
         {},
-        /'presets\/reference.yaml' has no description/,
+        /'presets\/reference.yaml' has no one-line description/,
       ],
       [
         'does not exist',
@@ -428,6 +428,62 @@ describe('campaign.feature', () => {
     expect(listed.stdout).toBe(
       'reference: every arm, every scenario\n' + 'smoke: one cheap scenario in every arm\n',
     );
+  });
+
+  it('@F1.1 A preset that cannot be extended is listed with its refusal', async () => {
+    // Given a preset without a description, beside a valid one
+    const { root } = presetRepo({ description: 'every arm, every scenario', ...completeCampaignYaml() }, {});
+    writeFileSync(join(root, 'campaigns', 'presets', 'broken.yaml'), stringify({ repetitions: { S3: 1 } }));
+
+    // When the maintainer lists the presets
+    const listed = await cli(['campaign', 'presets'], root);
+
+    // Then the valid preset is listed, the other is named with its reason, and the listing fails
+    expect(listed.stdout).toBe('reference: every arm, every scenario\n');
+    expect(listed.stderr).toMatch(/^campaigns\/presets\/broken.yaml: has no one-line description/);
+    expect(listed.code).toBe(1);
+  });
+
+  it('estimates a campaign that extends a preset as the whole file it resolves to', async () => {
+    const { file } = await pricedRepository({ baseline: 0.01, wingfoil: 0.05 });
+    const whole = await estimate(file, doubles());
+    const root = join(file, '..', '..');
+    mkdirSync(join(root, 'campaigns', 'presets'));
+    const pins = parse(readFileSync(file, 'utf8')) as Record<string, unknown>;
+    writeFileSync(join(root, 'campaigns', 'presets', 'p.yaml'), stringify({ description: 'T3', ...pins }));
+    writeFileSync(file, stringify({ extends: 'presets/p.yaml' }));
+
+    const extended = await estimate(file, doubles());
+
+    expect(whole.code).toBe(0);
+    expect(extended).toEqual(whole);
+  });
+
+  it('resumes an execution of a campaign that extends a preset, keeping its resolved campaign', async () => {
+    const runnable = budgetedRepository(0.01, { warn_eur: 30, ceiling_eur: 100 });
+    const root = join(runnable, '..', '..');
+    const { budget, ...preset } = parse(readFileSync(runnable, 'utf8')) as Record<string, unknown>;
+    mkdirSync(join(root, 'campaigns', 'presets'));
+    writeFileSync(
+      join(root, 'campaigns', 'presets', 'smoke.yaml'),
+      stringify({ description: 'T3 once', ...preset }),
+    );
+    writeFileSync(runnable, stringify({ extends: 'presets/smoke.yaml', budget }));
+    const loaded = loadCampaign(runnable);
+    if (!loaded.ok) throw new Error(JSON.stringify(loaded.issues));
+    const kept = join(root, 'results', loaded.value.id, '1', 'campaign.yaml');
+
+    const stopped = await start(
+      runnable,
+      doubles({ stopOf: (request) => (request.step === 1 ? 'quota exhausted' : undefined) }),
+    );
+    expect(stopped.code).not.toBe(0);
+    const before = readFileSync(kept, 'utf8');
+    const resumed = await start(runnable, doubles(), undefined, '--resume', `${loaded.value.id}/1`);
+
+    expect(resumed.code).toBe(0);
+    expect(readFileSync(kept, 'utf8')).toBe(before);
+    expect(existsSync(join(root, 'results', loaded.value.id, '2'))).toBe(false);
   });
 
   it('@F1.2 The cost is estimated before any run starts', async () => {
