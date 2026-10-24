@@ -2,7 +2,7 @@
 id: rel-v0-3
 type: release
 title: "v0.3"
-status: draft
+status: planning
 version: v0.3
 waves: [W15, W16, W17, W18, W19]
 features: [F1.1, F4.1, F4.3, F2.7, F2.6, F7.5, F4.9]
