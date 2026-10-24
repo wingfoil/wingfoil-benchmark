@@ -83,8 +83,8 @@ export function loadCampaign(file: string): Result<Campaign> {
     const hint = {
       path: 'extends',
       message:
-        `these issues are in the campaign resolved from '${preset}': a file cannot remove a key its preset ` +
-        'sets, so a narrower campaign extends a preset that leaves those fields out',
+        `these issues are in the campaign resolved from '${preset}'; where one is a key the preset sets, a ` +
+        'file cannot remove it: a narrower campaign extends a preset that leaves those fields out',
     };
     return fail(preset === undefined ? issues : [...issues, hint]);
   }
@@ -101,6 +101,15 @@ export function loadCampaign(file: string): Result<Campaign> {
     armsRoot: join(repoRoot, 'arms'),
     resultsRoot: join(repoRoot, 'results'),
   });
+}
+
+/** Whether `path` is a symbolic link, dangling or not; a path that does not exist is not one. */
+function isSymbolicLink(path: string): boolean {
+  try {
+    return lstatSync(path).isSymbolicLink();
+  } catch {
+    return false;
+  }
 }
 
 /** A value YAML parses into a map. */
@@ -159,8 +168,8 @@ function readPreset(
     return refuse(`'${named}' must name a file in ${CAMPAIGNS_DIR}/${PRESETS_DIR}/`);
   }
   const preset = `${PRESETS_DIR}/${inside}`;
-  if (existsSync(file) && lstatSync(file).isSymbolicLink())
-    return refuse(`'${preset}' must not be a symbolic link`);
+  if (isSymbolicLink(presets)) return refuse(`'${PRESETS_DIR}/' must not be a symbolic link`);
+  if (isSymbolicLink(file)) return refuse(`'${preset}' must not be a symbolic link`);
   const read = readYamlFile(file);
   if (!read.ok)
     return refuse(`'${preset}' cannot be read: ${read.issues.map((issue) => issue.message).join('; ')}`);
