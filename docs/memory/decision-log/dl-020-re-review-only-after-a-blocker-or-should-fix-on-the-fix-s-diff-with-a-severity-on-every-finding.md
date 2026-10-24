@@ -2,7 +2,7 @@
 id: dl-020-re-review-only-after-a-blocker-or-should-fix-on-the-fix-s-diff-with-a-severity-on-every-finding
 type: decision-log
 title: "Re-review only after a blocker or should-fix, on the fix's diff, with a severity on every finding"
-status: pending
+status: approved
 tags: ["review","process","kanban-delivery"]
 ---
 
