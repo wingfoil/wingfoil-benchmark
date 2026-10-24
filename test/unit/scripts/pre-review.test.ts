@@ -123,10 +123,54 @@ describe('scripts/pre-review.sh (dl-020, task-098)', () => {
 
   it('checks only the Markdown lines the branch added, not the long lines a file already had', () => {
     const long = 'word '.repeat(26).trim();
-    const { run, git } = fixture([['docs/d.md', `# Title\n\n${long}\n`]], undefined, ['docs/d.md']);
-    git('checkout', '-q', 'task/x');
+    const { run } = fixture([['docs/d.md', `# Title\n\n${long}\n`]], undefined, ['docs/d.md']);
     const result = run();
     expect(result.status, result.stderr).toBe(0);
+  });
+
+  it('numbers the added lines right across hunks, and after an added line that starts with "++"', () => {
+    const long = 'word '.repeat(26).trim();
+    const before = ['# Title', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', ''].join('\n');
+    const { run, git } = fixture([['docs/e.md', before]], undefined, ['docs/e.md']);
+    // Two hunks: a short line changed near the top, a long line added between unchanged lines further down.
+    const after = [
+      '# Title',
+      'one, changed',
+      'two',
+      'three',
+      'four',
+      'five',
+      long,
+      'six',
+      'seven',
+      'A short line.',
+      '',
+    ].join('\n');
+    writeFileSync(join(run.cwd, 'docs/e.md'), after);
+    writeFileSync(join(run.cwd, 'docs/p.md'), `# t\n++ plus\n${long}\n`);
+    git('add', '-A');
+    git('-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '-m', 'more');
+    const result = run();
+    expect(result.status).toBe(1);
+    expect(result.stderr).toMatch(/docs\/e\.md:7: 129 characters/);
+    expect(result.stderr).not.toMatch(/docs\/e\.md:2:/);
+    expect(result.stderr).toMatch(/docs\/p\.md:3: 129 characters/);
+  });
+
+  it('reports a long line after a closing fence and after a "---" that is not front matter', () => {
+    const long = 'word '.repeat(26).trim();
+    const text = ['# Title', '```', 'code', '```', long, '', '---', '', long, ''].join('\n');
+    const result = fixture([['docs/f.md', text]]).run();
+    expect(result.status).toBe(1);
+    expect(result.stderr).toMatch(/docs\/f\.md:5: 129 characters/);
+    expect(result.stderr).toMatch(/docs\/f\.md:9: 129 characters/);
+  });
+
+  it('refuses to run outside a git repository', () => {
+    const outside = tempDir('bench-pre-review-outside-');
+    const result = spawnSync('bash', [SCRIPT, 'main'], { cwd: outside, encoding: 'utf8' });
+    expect(result.status).toBe(2);
+    expect(result.stderr).toMatch(/not in a git repository/);
   });
 
   it('leaves tables, code blocks, front matter, links and byte-pinned paths out of the Markdown check', () => {
