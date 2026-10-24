@@ -89,7 +89,8 @@ export interface StepOutcome {
   readonly stop?: 'cap reached' | 'quota exhausted' | 'rate limited';
   /**
    * Set when the agent cannot say what the invocation used (REQ-RUN-09 as amended in 1.35): Codex's stream with no
-   * `turn.completed`. The runner then counts the step at its bound, as a killed one, never as free.
+   * `turn.completed` that failed or stopped at the quota (a rate limit is the runner's to wait out, and is not marked).
+   * The runner then counts the step at its bound, as a killed one, never as free.
    */
   readonly costUnknown?: true;
   /**

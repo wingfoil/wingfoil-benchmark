@@ -151,15 +151,23 @@ scan() { # exit 3 when the scan cannot run, 4 when it finds a value
   found="$(grep -rlFf <(printf '%s\n' "$values") "$OUT" "$SPIKE_DIR" ${exclude[@]+"${exclude[@]}"} 2>/dev/null)" || rc=$?
   [ "$rc" -le 1 ] || { echo "secret scan failed: grep exit $rc"; exit 3; }
   if [ -n "$found" ]; then echo "secret scan: a credential value is in $(echo "$found" | wc -l) file(s):"; echo "$found"; exit 4; fi
-  # The workspaces' history: a value the agent committed is compressed in .git, which grep -F cannot see (review round 1).
-  # No pipe: under pipefail, git log killed by grep -q's early exit would make a match read as clean (review round 2).
-  local ws
+  # The workspaces' git objects: a value the agent committed, staged or left dangling is compressed in .git, which
+  # grep -F cannot see. Every object, read uncompressed, packed or loose, reachable or not (review rounds 1-3), into a
+  # file that is removed at once: no pipe, since under pipefail a reader killed by grep -q's early exit reads as clean,
+  # and git's own status is checked, so that a store git cannot read fails the scan.
+  local ws dump
   for ws in "$OUT"/*/workspace; do
     [ -d "$ws/.git" ] || continue
-    git -C "$ws" rev-parse --git-dir >/dev/null 2>&1 || { echo "secret scan failed: git cannot read $ws"; exit 3; }
-    rc=0; grep -qFf <(printf '%s\n' "$values") <(git -C "$ws" log -p --all) || rc=$?
-    [ "$rc" -le 1 ] || { echo "secret scan failed: grep exit $rc on the history of $ws"; exit 3; }
-    if [ "$rc" -eq 0 ]; then echo "secret scan: a credential value is in the history of $ws"; exit 4; fi
+    # A store whose reachable objects are missing lists none, and would scan as clean: checked first.
+    git -C "$ws" fsck --connectivity-only --no-progress >/dev/null 2>&1 \
+      || { echo "secret scan failed: git cannot read the objects of $ws"; exit 3; }
+    dump="$(mktemp "$OUT/.scan.XXXXXX")"
+    git -C "$ws" cat-file --batch-all-objects --batch > "$dump" 2>/dev/null \
+      || { rm -f "$dump"; echo "secret scan failed: git cannot read the objects of $ws"; exit 3; }
+    rc=0; grep -qFf <(printf '%s\n' "$values") "$dump" || rc=$?
+    rm -f "$dump"
+    [ "$rc" -le 1 ] || { echo "secret scan failed: grep exit $rc on the objects of $ws"; exit 3; }
+    if [ "$rc" -eq 0 ]; then echo "secret scan: a credential value is in the git objects of $ws"; exit 4; fi
   done
   echo "secret scan: clean"
 }

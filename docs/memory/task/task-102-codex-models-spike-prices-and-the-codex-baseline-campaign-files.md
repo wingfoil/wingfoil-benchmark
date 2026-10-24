@@ -136,8 +136,8 @@ Under dl-020; `scripts/pre-review.sh main` green before each round.
 - **Round 2** (a new independent agent, the fixes' diff `e404242c..HEAD`):
   - **blocker:** the probe's history scan piped `git log` into `grep -q` under `pipefail`: a match killed `git log`
     with SIGPIPE and read as clean (reproduced 5 of 5). Fixed without a pipe (process substitution, grep's status
-    read), a git that cannot read the workspace failing the scan (exit 3); checked by hand on a workspace with a
-    planted value buried under 30 commits: found 3 of 3 (exit 4).
+    read), a git that cannot read the workspace meant to fail the scan (exit 3), which round 3 found only partly
+    true; checked by hand on a workspace with a planted value buried under 30 commits: found 3 of 3 (exit 4).
   - **should-fix:** a rate-limited invocation was marked `costUnknown`, which the runner's wait never reads. Fixed:
     the adapter marks only a failure and a quota stop; a rate limit is waited out and resumed, and REQ-RUN-09 1.35
     says so. **Should-fix:** the dry-run profile rule compared the basename only, so a copy elsewhere passed. Fixed:
@@ -145,3 +145,18 @@ Under dl-020; `scripts/pre-review.sh main` green before each round.
   - **nits, fixed:** the approver's statement above includes the quota stop; the notes' wrap; a malformed
     credential now stops the probe with a message.
   - Red `e0425edc`, fix in the commit after it.
+- **Round 3** (a new independent agent, round 2's fixes):
+  - **Incident:** the reviewer's own scratch helper ran `git -C "" reset --hard HEAD~1` with an empty path, in its
+    cwd, the main checkout: `main` moved from `e8805f6b` to `bb344642` at 19:21 (reflog). No commit was lost (none
+    came after) and the checkout was clean; uncommitted work of another session there, if any, could not be told.
+    Restored by `git merge --ff-only e8805f6b`. Later reviewers are briefed to work in a fresh temporary directory,
+    and the reflog is checked after each round.
+  - **should-fix:** the history scan read `git log` in a process substitution whose status is never checked, so a
+    store with missing objects scanned as clean; and `git log -p --all` missed a value only in the object store (a
+    commit reset away, a staged file deleted). Fixed: `git fsck --connectivity-only` first (exit 3), then every
+    object, packed or loose, reachable or not, through `git cat-file --batch-all-objects --batch` into a file grep
+    reads and that is removed at once. Checked by hand on five workspaces: reset away, staged and deleted, buried under
+    30 commits (each exit 4), clean (exit 0), objects removed (exit 3).
+  - **nits, fixed:** the port's `costUnknown` comment and REQ-RUN-09 1.35 on a rate limit that outlasts the waits.
+    **Stated:** the unit test of a copied profile was green at the red commit (the bug was the caller's basename;
+    the CLI test is the red evidence); a `--profile` given through a symlinked working directory is refused, safely.
