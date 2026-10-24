@@ -257,6 +257,8 @@ Under dl-020; `scripts/pre-review.sh main` green before each round.
   table and the ledger matches the sessions' files; the main-checkout rule keeps dl-024 bound 1's intent.
   - **should-fix, fixed:** criterion 1 presented the quota's end as observed; it is documented, not observed.
   - **nits, fixed:** "accepted" means "not rejected"; the `CODEX_HOME` listing's metadata named; the containers'
-    check named; the ledger's hashes shortened to seven characters as v0.2's. **Stated:** the probe's
+    check named; the ledger's hashes shortened to seven characters, as v0.2's spike rows. **Stated:** the probe's
     working-directory check records task-094's invocation rather than protecting a path; the ledger's probe commit is
     reachable from main once the task is merged.
+- **The sessions' re-review** (a new independent agent, the fix only): accurate, no new false claim; one nit, the
+  wording just above, fixed. **The review is closed.**
