@@ -358,4 +358,123 @@ Bugs: bug-013 fixed. Spending: none in W14; 2.4124 USD in all so far.
 
 ## Retrospective
 
-<!-- What went well, what to change, and the WingFoil usage notes handed to WingFoil. -->
+Written on 2026-10-24, at plan-004 step 7 (`release-cycle` › `retrospective`), after the release was approved
+(`f7e412cf`). Inputs:
+
+- three read-only agents mined the Execution notes, Review notes and Approval notes of the 42 tasks; the
+  calibration report, the ledger and the two campaigns; and every bug, decision-log and the git history
+  `v0.1..v0.2`;
+- the analysis of the wingfoil arm's transcripts, [calibration v0.2](../../calibration/v0.2.md) §7;
+- a discussion of every defect with the approver, point by point (2026-10-22/24), whose decisions are recorded
+  below;
+- an analysis of the review rounds of this release, compared with the review records of WingFoil, WingFoil UI
+  and WingFoil Templates.
+
+**v0.2 in figures:**
+
+| | |
+|---|---|
+| Span and history | 17 days (2026-10-05 → 2026-10-22); 1 061 commits, 48 merges |
+| Work | 42 tasks (056–097), all done; waves W12–W14, calibration, validation |
+| Process | 411 WingFoil transitions, 1 of them a reject (task-085); 147 commits with an `Approver:` trailer |
+| Bugs and decisions | 24 bugs touched, all `fixed` with `fixed_by` and a Resolution; 13 decision-logs, all approved but dl-013 (deferred to v0.3) |
+| Tests | 1 660 (1 225 at v0.1), coverage 97.6 % statements, 90.8 % branches; requirements 1.33, experiment design 1.6 |
+| Review | 118 independent review rounds, 2.8 a task; 4 tasks clean at the first round |
+| Real-agent spending | 68.18 USD in the [ledger](../../calibration/v0.2-ledger.md): spikes 4.78, calibration 23.55 (45 dry runs), validation 4.90, campaigns 34.95 |
+| The published campaigns | `81ebb2691f9c/1` (49 runs, 24.31 € against a high estimate of 32.51 €) and the bridge `bf3a1ac7dff5/1` (18 runs, 6.86 € against 8.74 €), 67/67 completed, 31.17 € of the 65 € consented |
+
+### What went well
+
+1. **v0.1's lessons held.** dl-010's validation in every arm, dl-012's estimate with a margin and a campaign-wide
+   ceiling, bug-014's preflight, dl-014's multi-session rules and dl-015's effort pin all worked as written. Each
+   campaign landed at its estimate's low bound (+0.7 % and +4.9 %), and per run within 0.86–1.48 times its dry run.
+2. **Calibration found the defects before the campaign:** bug-023 (the openspec arm wrote no code) and bug-024 (the
+   expected-cost line read another arm's dry run), both fixed in task-096 before any campaign run.
+3. **Spikes stayed cheap and decisive.** task-062, task-065, task-070, task-093 and task-094 spent 3.71 USD of Claude
+   (and 1.07 USD API-equivalent of Codex, not billed), and each answer changed a pin or a design.
+4. **Independent reviews caught real defects** in task-060, 063, 084, 085, 090, 092 and 095, among them the agent's
+   token placed on `grep`'s command line (task-062).
+5. **Every bug closed.** bug-005's backlog of fixed bugs still marked `approved` is gone.
+6. **The bridge made the step v0.1 → v0.2 readable one cause at a time:** the model, the agent and the effort first
+   (S1's wingfoil run from 3.82 € to 0.60 €, correctness within the spread), then WingFoil v0.2.2 → v0.3.0 alone.
+7. **No evidence lost:** every worktree removal listed its ignored files first; the transcripts are packed as
+   release assets with their harness artifacts.
+
+### What to change
+
+1. **The wingfoil arm did not exercise WingFoil's workflow engine.** Its manual made it a document register with a
+   fixed `developer` role, read only approved decision-logs while every record stayed pending, recorded only the
+   decisions the agent "takes", and asked for approval and stopped after each document (calibration v0.2 §7). The
+   lookup filter was the benchmark's manual, not WingFoil's guide. The engine's own hypotheses (H1, H2, H8) could not
+   be tested on 0.3.0, whose `init` scaffold does not drive the engine (WingFoil bug-400).
+2. **The oracle's content checks are lexical.** D3 passed on v0.2.2 only because "unchanged" contains "changed" and
+   the WingFoil template's comment contains "replace"; on v0.3.0 the revision and the duplicate were recorded in other
+   words and failed. The template false positive favours the arms with templates.
+3. **A published finding was wrong.** The S3 M-F1 finding read as a WingFoil regression: its D3 difference is the
+   check's false positive, and its D5 gap comes from the arm's manual and was already present on v0.2.2.
+4. **Metrics and labels say more than the data.** M-R2 measures the file layout, not the public interface; M-K3 is
+   always 0 and M-K4 is degenerate, its "not applicable" ignoring the variance; ▲/▼ and the headline count
+   differences within the variance.
+5. **The runner's approval classifier v1** read an agent's account of pending documents as a second approval
+   request (Opus S1, step 2).
+6. **Too many review rounds.** 2.8 a task: 15 rounds opened after nit-only rounds, 40 % of later findings created by
+   the previous round's fix, and about half of all findings in notes and figures rather than code. The other
+   WingFoil-governed projects show the same dynamics (round 1 rarely clean; 40–89 % of later findings fix-induced),
+   with a round count set by their re-review rule, their task size and their reviewer's rigour. Whether WingFoil
+   itself adds rounds cannot be told: none of these projects has an ungoverned baseline.
+7. **Process slips:** tests written with or after the code in nine tasks; `test:bin` skipped by the day checks
+   (task-085's reject); Markdown outside the Prettier check; findings cite the v0.2.2 template (`TEMPLATE_COMMIT`);
+   an interrupted dry-run step loses its spent cost.
+8. **The docs controls differ in size** because the tools ship different content (baseline-docs about 800 words,
+   the others a line), and the wingfoil manual is three times the others': comparable only harness against its own
+   control.
+9. **Triage debt:** 12 smaller items of v0.1's retrospective were never triaged, and about 20 follow-ups of v0.2 are
+   left in task notes.
+
+### Decisions taken with the approver
+
+- **The wingfoil arm, step A (v0.3, WingFoil ≥ 0.3.1):** the session agent drives WingFoil's workflow cycle (status,
+  next, the step's role, gates, finalize), with no driver script written by the benchmark (T1, T12); the setup opens
+  one instance per scenario, verified first by a spike on 0.3.1; the context comes from the MCP session Resource
+  (pending records included); baseline-docs gets every role's directives, labelled. Steps B (WingFoil 0.4, only with
+  its headless launch) and C (1.0) are planned, not committed.
+- **Configured variants (v0.3):** besides each harness as installed, each harness configured for the project, with a
+  configuration written by an agent that sees only the seed and the README, in scenario versions 1.1; extra cost
+  accepted, full and partial campaigns to weigh after calibration. Profiles for prototype, enterprise and critical
+  projects are a later idea.
+- **Oracle and metrics (v0.3):** word-boundary checks on the agent's own text plus a published human judgement;
+  classifier v2; M-R2 v2; M-K3 as one-off costs and M-K4 with the variance rule; ▲/▼ only beyond the variance. The
+  published v0.2 values stay, with errata.
+- **Review (as soon as possible):** re-review only after a blocker or should-fix, on the fix's diff; a severity on
+  every finding; a checklist after each fix; figures generated by script; tasks kept small; a pre-review script.
+- **A new measurement (v0.3 if possible):** the review loop per arm, the same reviewer in every arm, baseline
+  included, which is the only way to tell whether a harness adds or removes review rounds.
+
+### Actions recorded
+
+To file, in this order (the approver approves each decision-log and task):
+
+| When | Kind | What |
+|---|---|---|
+| Now | decision-log + task | the review rule, amending [dl-011](../decision-log/dl-011-an-independent-review-for-every-task-in-kanban-delivery.md), and its changes to `kanban-delivery`, the `code-review` directive and a pre-review script (`test:bin`, Prettier on Markdown) |
+| Now | task | the v0.2 errata: the S3 M-F1 finding withdrawn and annotated; calibration v0.2 §9 (H3), campaign-002, the release notes and the GitHub release corrected |
+| Now | decision-log | the synchronisation plan with WingFoil, steps A, B and C, with their entry conditions |
+| v0.3 | decision-log + tasks | the wingfoil arm's step A (spike on 0.3.1, admission, rewrite) |
+| v0.3 | decision-log + tasks | the configured variants and scenario versions 1.1 |
+| v0.3 | bugs | the lexical checks, classifier v1, M-R2, M-K3/M-K4, the ▲/▼ labels, `TEMPLATE_COMMIT`, the interrupted step's cost |
+| v0.3 | feature | the review loop measured per arm, with the cross-project analysis as its evidence |
+| v0.3 planning | triage | [dl-013](../decision-log/dl-013-saturation-levels-of-delegation-and-an-external-neutral-control.md), v0.1's smaller items and v0.2's follow-ups |
+
+### WingFoil feedback inbox
+
+`docs/wingfoil-feedback/` (WingFoil dl-163) holds F-001 to F-039, all open, none synced. This retrospective adds:
+
+| Note | Subject |
+|---|---|
+| F-040 | review rounds across four WingFoil-governed projects, and a re-review rule with a severity threshold |
+| F-041 | what a benchmark needs to drive `agent execute` (step B): the agent's stream and usage to the launcher, its exit status, a `--dry-run` without a terminal |
+| F-042 | `directive create` writes no body and takes no title |
+| F-032, F-033 | evidence from 0.3.0: no MCP call in 69 steps; context only through the CLI; the guide leaves the lookup's status to the agent |
+
+The approved-only lookup that hid the run's own records was the benchmark's manual, not WingFoil's guide: it is
+said here so that the error is not attributed to WingFoil.
