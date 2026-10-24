@@ -155,8 +155,19 @@ Under dl-020; `scripts/pre-review.sh main` green before each round.
     store with missing objects scanned as clean; and `git log -p --all` missed a value only in the object store (a
     commit reset away, a staged file deleted). Fixed: `git fsck --connectivity-only` first (exit 3), then every
     object, packed or loose, reachable or not, through `git cat-file --batch-all-objects --batch` into a file grep
-    reads and that is removed at once. Checked by hand on five workspaces: reset away, staged and deleted, buried under
+    reads and that is removed at once (on a signal only from round 4's fix on). Checked by hand on five workspaces: reset away, staged and deleted, buried under
     30 commits (each exit 4), clean (exit 0), objects removed (exit 3).
   - **nits, fixed:** the port's `costUnknown` comment and REQ-RUN-09 1.35 on a rate limit that outlasts the waits.
     **Stated:** the unit test of a copied profile was green at the red commit (the bug was the caller's basename;
     the CLI test is the red evidence); a `--profile` given through a symlinked working directory is refused, safely.
+- **Round 4** (a new independent agent, sandboxed in a temporary directory; the reflog unchanged after it): the scan's
+  detection reproduced on ten stores (committed and reset away with its reflog expired, staged and deleted, packed,
+  in a commit message, clean, missing or truncated objects, an empty `.git`, no `.git`).
+  - **should-fix:** the dump survived a signal (SIGINT, SIGTERM, SIGHUP) in `out/`, the objects uncompressed, and
+    pointed every later scan at itself; the notes' "removed at once" was untrue then. Fixed: the dump's path kept
+    globally and removed by the exit handler, INT, TERM and HUP turned into an exit that runs it, and any stale
+    `.scan.*` removed before a scan reads. Checked by hand: a TERM sent while a 1.5 GB dump was being written, exit
+    143, no dump left.
+  - **nits, fixed:** every repository under a workspace is scanned, nested ones and gitfiles included (checked: a
+    value only in a nested repository's pack, exit 4); a `mktemp` failure exits 3; the comment says that an object
+    git itself cannot unpack is skipped.

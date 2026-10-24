@@ -24,11 +24,17 @@ AUTH_FILE="${BENCH_CODEX_AUTH_FILE:-$HOME/.codex-bench/auth.json}"
 [ -z "$FAKE" ] || AUTH_FILE="$OUT/fake-auth.json"
 BEFORE_VALUES=""
 STARTED=() # every container this run started, removed on exit whatever happens (review round 1)
+SCAN_DUMP="" # the secret scan's uncompressed dump of a workspace's git objects, while it exists (review round 4)
 cleanup() {
   local c; for c in ${STARTED[@]+"${STARTED[@]}"}; do docker rm -f "$c" >/dev/null 2>&1 || true; done
+  [ -z "$SCAN_DUMP" ] || rm -f "$SCAN_DUMP"
   [ -z "$BEFORE_VALUES" ] || scan
 }
 trap cleanup EXIT
+# A signal ends the script through its EXIT handler, which removes the containers and any dump, then scans.
+trap 'exit 130' INT
+trap 'exit 143' TERM
+trap 'exit 129' HUP
 
 model_of() { # the approver's option A in task-102
   case "$1" in SOL) echo gpt-6.1-sol ;; TERRA) echo gpt-5.6-terra ;; LUNA) echo gpt-6-luna ;; *) exit 64 ;; esac
@@ -146,28 +152,34 @@ scan() { # exit 3 when the scan cannot run, 4 when it finds a value
   local values; values="$(printf '%s\n%s' "$BEFORE_VALUES" "$(secrets 2>/dev/null || true)" | sed '/^$/d')"
   [ -n "$values" ] || { echo "secret scan failed: no value to scan for"; exit 3; }
   local found rc=0
+  # A dump an earlier run could not remove (a kill -9) holds the objects uncompressed: removed before the scan reads.
+  rm -f "$OUT"/.scan.*
   # Only a rehearsal keeps its (fake) credential under out/; a real one is outside both directories.
   local exclude=(); [ -z "$FAKE" ] || exclude=(--exclude="$(basename "$AUTH_FILE")")
   found="$(grep -rlFf <(printf '%s\n' "$values") "$OUT" "$SPIKE_DIR" ${exclude[@]+"${exclude[@]}"} 2>/dev/null)" || rc=$?
   [ "$rc" -le 1 ] || { echo "secret scan failed: grep exit $rc"; exit 3; }
   if [ -n "$found" ]; then echo "secret scan: a credential value is in $(echo "$found" | wc -l) file(s):"; echo "$found"; exit 4; fi
   # The workspaces' git objects: a value the agent committed, staged or left dangling is compressed in .git, which
-  # grep -F cannot see. Every object, read uncompressed, packed or loose, reachable or not (review rounds 1-3), into a
-  # file that is removed at once: no pipe, since under pipefail a reader killed by grep -q's early exit reads as clean,
-  # and git's own status is checked, so that a store git cannot read fails the scan.
-  local ws dump
+  # grep -F cannot see. Every object git can read, packed or loose, reachable or not (review rounds 1-4), of every
+  # repository under a workspace, nested ones and gitfiles included, into a dump that is removed at once and on any
+  # exit or signal: no pipe, since under pipefail a reader killed by grep -q's early exit reads as clean, and git's
+  # own status is checked, so that a store whose reachable objects are missing fails the scan. An object git itself
+  # cannot unpack is skipped by cat-file: its bytes cannot be read back through git either.
+  local ws repo
   for ws in "$OUT"/*/workspace; do
-    [ -d "$ws/.git" ] || continue
-    # A store whose reachable objects are missing lists none, and would scan as clean: checked first.
-    git -C "$ws" fsck --connectivity-only --no-progress >/dev/null 2>&1 \
-      || { echo "secret scan failed: git cannot read the objects of $ws"; exit 3; }
-    dump="$(mktemp "$OUT/.scan.XXXXXX")"
-    git -C "$ws" cat-file --batch-all-objects --batch > "$dump" 2>/dev/null \
-      || { rm -f "$dump"; echo "secret scan failed: git cannot read the objects of $ws"; exit 3; }
-    rc=0; grep -qFf <(printf '%s\n' "$values") "$dump" || rc=$?
-    rm -f "$dump"
-    [ "$rc" -le 1 ] || { echo "secret scan failed: grep exit $rc on the objects of $ws"; exit 3; }
-    if [ "$rc" -eq 0 ]; then echo "secret scan: a credential value is in the git objects of $ws"; exit 4; fi
+    [ -d "$ws" ] || continue
+    while IFS= read -r -d '' repo; do
+      repo="$(dirname "$repo")"
+      git -C "$repo" fsck --connectivity-only --no-progress >/dev/null 2>&1 \
+        || { echo "secret scan failed: git cannot read the objects of $repo"; exit 3; }
+      SCAN_DUMP="$(mktemp "$OUT/.scan.XXXXXX")" || { echo "secret scan failed: no dump file in $OUT"; exit 3; }
+      git -C "$repo" cat-file --batch-all-objects --batch > "$SCAN_DUMP" 2>/dev/null \
+        || { rm -f "$SCAN_DUMP"; SCAN_DUMP=""; echo "secret scan failed: git cannot read the objects of $repo"; exit 3; }
+      rc=0; grep -qFf <(printf '%s\n' "$values") "$SCAN_DUMP" || rc=$?
+      rm -f "$SCAN_DUMP"; SCAN_DUMP=""
+      [ "$rc" -le 1 ] || { echo "secret scan failed: grep exit $rc on the objects of $repo"; exit 3; }
+      if [ "$rc" -eq 0 ]; then echo "secret scan: a credential value is in the git objects of $repo"; exit 4; fi
+    done < <(find "$ws" -name .git -print0)
   done
   echo "secret scan: clean"
 }
