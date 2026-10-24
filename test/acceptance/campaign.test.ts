@@ -1,7 +1,7 @@
 import { copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { stringify } from 'yaml';
+import { parse, stringify } from 'yaml';
 
 import { loadCampaign } from '../../src/campaign/index.js';
 import { checkCampaign, main } from '../../src/cli/index.js';
@@ -198,6 +198,34 @@ function spent(costUsd: number) {
   };
 }
 
+/**
+ * A repository (writeRepo's) with `preset` as `campaigns/presets/reference.yaml` and a campaign file that
+ * extends it with `own` (dl-022, task-101); `own.extends` replaces the default reference.
+ */
+function presetRepo(
+  preset: Record<string, unknown>,
+  own: Record<string, unknown>,
+): { root: string; file: string } {
+  const { root, file } = writeRepo();
+  mkdirSync(join(root, 'campaigns', 'presets'));
+  writeFileSync(join(root, 'campaigns', 'presets', 'reference.yaml'), stringify(preset));
+  writeFileSync(file, stringify({ extends: 'presets/reference.yaml', ...own }));
+  return { root, file };
+}
+
+/** `bench …` from `root`, its output captured. */
+async function cli(argv: string[], root: string): Promise<{ code: number; stdout: string; stderr: string }> {
+  let stdout = '';
+  let stderr = '';
+  const code = await main(
+    argv,
+    { stdout: (text) => (stdout += text), stderr: (text) => (stderr += text) },
+    doubles(),
+    root,
+  );
+  return { code, stdout, stderr };
+}
+
 describe('campaign.feature', () => {
   it('@F1.1 A campaign file pins every variable', () => {
     const { file } = writeRepo();
@@ -253,6 +281,153 @@ describe('campaign.feature', () => {
 
     expect(again.ok && again.value.id).toBe(first.value.id);
     expect(nextExecution(first.value.resultsRoot, first.value.id)).toBe(2);
+  });
+
+  it('@F1.1 A campaign file that extends a preset is resolved before it is validated', async () => {
+    // Given a preset that describes what it measures and pins every field but the budget
+    const { budget, ...pins } = completeCampaignYaml();
+    const { root, file } = presetRepo(
+      { description: 'every arm, every scenario', ...pins },
+      { budget: { warn_eur: 5, ceiling_eur: 9 } },
+    );
+    void budget;
+
+    // When the maintainer validates the campaign file
+    const result = checkCampaign(file);
+    const printed = await cli(['campaign', 'validate', file], root);
+
+    // Then the campaign is accepted, with the preset's pins and the file's budget
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.campaign.spec.arms).toEqual(['baseline', 'baseline-docs', 'wingfoil']);
+    expect(result.value.campaign.spec.budget).toEqual({ warn_eur: 5, ceiling_eur: 9 });
+    // And the validation prints the resolved campaign
+    expect(printed.code).toBe(0);
+    expect(printed.stdout).toContain('resolved from presets/reference.yaml:');
+    expect(printed.stdout).toContain('ceiling_eur: 9');
+    expect(printed.stdout).not.toContain('extends:');
+  });
+
+  it('@F1.1 A preset that cannot be extended is refused', () => {
+    const preset = (change: Record<string, unknown>): Record<string, unknown> => {
+      const content: Record<string, unknown> = {
+        description: 'every arm',
+        ...completeCampaignYaml(),
+        ...change,
+      };
+      if (content.description === undefined) delete content.description;
+      return content;
+    };
+    const cases: [string, Record<string, unknown>, Record<string, unknown>, RegExp][] = [
+      [
+        'extends another preset',
+        preset({ extends: 'presets/other.yaml' }),
+        {},
+        /'presets\/reference.yaml' must not extend another preset/,
+      ],
+      [
+        'has no description',
+        preset({ description: undefined }),
+        {},
+        /'presets\/reference.yaml' has no description/,
+      ],
+      [
+        'does not exist',
+        preset({}),
+        { extends: 'presets/missing.yaml' },
+        /'presets\/missing.yaml' cannot be read/,
+      ],
+      [
+        'lies outside campaigns/presets/',
+        preset({}),
+        { extends: 'presets/../campaign.yaml' },
+        /must name a file in campaigns\/presets\//,
+      ],
+    ];
+    for (const [defect, content, own, message] of cases) {
+      // Given a campaign file that extends a preset that <defect>
+      const { file } = presetRepo(content, own);
+
+      // When the maintainer validates the campaign file
+      const result = checkCampaign(file);
+
+      // Then the campaign is rejected, and the message names the preset and says why
+      expect(result.ok, defect).toBe(false);
+      if (result.ok) continue;
+      expect(result.issues, defect).toEqual([{ path: 'extends', message: expect.stringMatching(message) }]);
+    }
+  });
+
+  it('@F1.1 A campaign is identified by its resolved content', () => {
+    // Given a campaign file that extends a preset, and a whole file holding the same resolved content
+    const { root, file } = presetRepo(
+      { description: 'every arm', ...completeCampaignYaml() },
+      { currency: { usd_to_eur: 0.9 } },
+    );
+    const whole = join(root, 'campaigns', 'whole.yaml');
+    writeFileSync(whole, stringify({ ...completeCampaignYaml(), currency: { usd_to_eur: 0.9 } }));
+
+    // When the maintainer validates both, they have the same identity
+    const extending = loadCampaign(file);
+    const written = loadCampaign(whole);
+    expect(extending.ok && written.ok).toBe(true);
+    if (!extending.ok || !written.ok) return;
+    expect(extending.value.id).toBe(written.value.id);
+
+    // And changing the preset gives the extending campaign a new identity
+    writeFileSync(
+      join(root, 'campaigns', 'presets', 'reference.yaml'),
+      stringify({ description: 'every arm', ...completeCampaignYaml(), approver_policy: 'v2' }),
+    );
+    const changed = loadCampaign(file);
+    expect(changed.ok && changed.value.id).not.toBe(extending.value.id);
+  });
+
+  it('@F1.1 An execution keeps the resolved campaign', async () => {
+    // Given a campaign file that extends a preset (T3 once in the baseline arm, with the fake agent)
+    const runnable = budgetedRepository(0.01, { warn_eur: 30, ceiling_eur: 100 });
+    const root = join(runnable, '..', '..');
+    const pins = parse(readFileSync(runnable, 'utf8')) as Record<string, unknown>;
+    const { budget, ...preset } = pins;
+    mkdirSync(join(root, 'campaigns', 'presets'));
+    writeFileSync(
+      join(root, 'campaigns', 'presets', 'smoke.yaml'),
+      stringify({ description: 'T3 once', ...preset }),
+    );
+    writeFileSync(runnable, stringify({ extends: 'presets/smoke.yaml', budget }));
+    const loaded = loadCampaign(runnable);
+    expect(loaded.ok).toBe(true);
+    if (!loaded.ok) return;
+
+    // When the maintainer runs the campaign
+    const ports = doubles();
+    const run = await start(runnable, ports);
+    expect(run.code).toBe(0);
+
+    // Then the execution's campaign.yaml is the resolved campaign, without the extends field
+    const kept = parse(
+      readFileSync(join(root, 'results', loaded.value.id, '1', 'campaign.yaml'), 'utf8'),
+    ) as Record<string, unknown>;
+    expect(kept).toEqual(pins);
+    expect(kept).not.toHaveProperty('extends');
+  });
+
+  it('@F1.1 The presets are listed with what they measure', async () => {
+    // Given two presets in campaigns/presets/
+    const { root } = presetRepo({ description: 'every arm, every scenario', ...completeCampaignYaml() }, {});
+    writeFileSync(
+      join(root, 'campaigns', 'presets', 'smoke.yaml'),
+      stringify({ description: 'one cheap scenario in every arm', repetitions: { S3: 1 } }),
+    );
+
+    // When the maintainer lists the presets
+    const listed = await cli(['campaign', 'presets'], root);
+
+    // Then each is listed with its name and its description
+    expect(listed.code).toBe(0);
+    expect(listed.stdout).toBe(
+      'reference: every arm, every scenario\n' + 'smoke: one cheap scenario in every arm\n',
+    );
   });
 
   it('@F1.2 The cost is estimated before any run starts', async () => {
