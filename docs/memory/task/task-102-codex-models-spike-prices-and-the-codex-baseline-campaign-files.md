@@ -186,3 +186,17 @@ Under dl-020; `scripts/pre-review.sh main` green before each round.
     clean (0), objects removed (3); TERM and HUP during a slowed `cat-file` end the probe at once (143, 129) with
     nothing left in `out/`. An INT sent to a background job is ignored by bash, as for any background job; a Ctrl-C
     reaches the probe in the foreground.
+- **Round 6** (a new independent agent, sandboxed; the reflog unchanged after it): the streaming, git's status and the
+  signals sound (no race: grep sees the end of the stream only after git's status is written).
+  - **should-fix:** stores found by a regular `HEAD` beside `objects/` failed open: a `HEAD` that is a symlink, a
+    removed `HEAD`, an `objects/` moved away each scanned clean with the value committed. Fixed, failing closed: every
+    directory shaped like an object store (`objects/` holding `pack/`, `info/` or a two-hex-digit directory) must
+    belong to a store git opens and reads, or the scan fails (exit 3).
+  - **nits, fixed:** the failure message read git's status after removing its file; the temporary files (git's
+    status, the stores' list, no value) now live in one `mktemp -d` directory removed on every exit path and by the
+    exit handler; the status file is emptied before each store. **Stated:** after a TERM or HUP the exit handler
+    reruns the whole final scan before the probe exits, and a scan cut short leaves its grep and git to finish, writing
+    nothing.
+  - Checked by hand on eleven workspaces (paths with spaces, `TMPDIR` watched): reset away, staged and deleted,
+    packed, nested, bare (exit 4 each); clean, and an agent's own `src/objects/` (exit 0); objects removed, a symlinked
+    `HEAD`, no `HEAD`, `objects/` moved (exit 3 each); no temporary file left.

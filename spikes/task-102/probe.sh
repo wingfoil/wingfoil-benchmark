@@ -24,8 +24,11 @@ AUTH_FILE="${BENCH_CODEX_AUTH_FILE:-$HOME/.codex-bench/auth.json}"
 [ -z "$FAKE" ] || AUTH_FILE="$OUT/fake-auth.json"
 BEFORE_VALUES=""
 STARTED=() # every container this run started, removed on exit whatever happens (review round 1)
+SCAN_TMP="" # the scan's temporary directory (git's status and the stores' list, no value), while it exists
 cleanup() {
   local c; for c in ${STARTED[@]+"${STARTED[@]}"}; do docker rm -f "$c" >/dev/null 2>&1 || true; done
+  [ -z "$SCAN_TMP" ] || rm -rf "$SCAN_TMP"
+  # The final scan reruns in full, also after a TERM or HUP: the probe exits once it has a verdict.
   [ -z "$BEFORE_VALUES" ] || scan
 }
 # Bash runs it on exit and on TERM or HUP; no trap of a signal, which would wait for the running child (round 5).
@@ -153,35 +156,38 @@ scan() { # exit 3 when the scan cannot run, 4 when it finds a value
   [ "$rc" -le 1 ] || { echo "secret scan failed: grep exit $rc"; exit 3; }
   if [ -n "$found" ]; then echo "secret scan: a credential value is in $(echo "$found" | wc -l) file(s):"; echo "$found"; exit 4; fi
   # The workspaces' git stores: a value the agent committed, staged or left dangling is compressed there, which
-  # grep -F cannot see. Every store under a workspace, found by its structure (a HEAD file beside an objects/
-  # directory: a work tree's .git, a nested or a bare repository), and every object git can read in it, packed or
-  # loose, reachable or not, streamed to grep and never written to disk (review rounds 1-5). Git's status goes to a
-  # file that holds no value: a store whose reachable objects are missing, or that git cannot read, fails the scan.
-  # An object git itself cannot unpack is skipped by cat-file: its bytes cannot be read back through git either.
-  local ws head store status
-  status="$(mktemp)" || { echo "secret scan failed: no status file"; exit 3; }
+  # grep -F cannot see. Every directory under a workspace shaped like a git object store (named objects/, holding
+  # pack/, info/ or a two-hex-digit directory) belongs to a store, its parent, which git must open (a work tree's .git,
+  # a nested or a bare repository, a separate git dir); one git cannot open fails the scan, so that an odd layout
+  # (a HEAD removed or a symlink, objects/ moved) fails closed (review rounds 1-6). Every object git can read in it,
+  # packed or loose, reachable or not, is streamed to grep and never written to disk; git's status goes to a file
+  # that holds no value. A store whose reachable objects are missing fails the scan. An object git itself cannot
+  # unpack is skipped by cat-file: its bytes cannot be read back through git either.
+  local ws objects store gitrc
+  rm -rf "$SCAN_TMP"; SCAN_TMP="$(mktemp -d)" || { echo "secret scan failed: no temporary directory"; exit 3; }
   for ws in "$OUT"/*/workspace; do
     [ -d "$ws" ] || continue
-    find "$ws" -type f -name HEAD -print0 > "$status.find" 2>/dev/null \
-      || { rm -f "$status" "$status.find"; echo "secret scan failed: cannot search $ws"; exit 3; }
-    while IFS= read -r -d '' head; do
-      store="$(dirname "$head")"
-      [ -d "$store/objects" ] || continue
+    find "$ws" -type d -name objects -print0 > "$SCAN_TMP/objects" 2>/dev/null \
+      || { echo "secret scan failed: cannot search $ws"; rm -rf "$SCAN_TMP"; exit 3; }
+    while IFS= read -r -d '' objects; do
+      [ -n "$(find "$objects" -mindepth 1 -maxdepth 1 -type d \( -name pack -o -name info -o -name '[0-9a-f][0-9a-f]' \) -print -quit)" ] \
+        || continue # a directory of the agent's own named objects, not a store
+      store="$(dirname "$objects")"
       git --git-dir="$store" fsck --connectivity-only --no-progress >/dev/null 2>&1 \
-        || { rm -f "$status" "$status.find"; echo "secret scan failed: git cannot read the store $store"; exit 3; }
+        || { echo "secret scan failed: git cannot open or read the store $store"; rm -rf "$SCAN_TMP"; exit 3; }
+      : > "$SCAN_TMP/status" # no earlier store's status
       rc=0
       grep -qFf <(printf '%s\n' "$values") \
-        <(git --git-dir="$store" cat-file --batch-all-objects --batch 2>/dev/null; echo "$?" > "$status") || rc=$?
+        <(git --git-dir="$store" cat-file --batch-all-objects --batch 2>/dev/null; echo "$?" > "$SCAN_TMP/status") || rc=$?
       wait "$!" 2>/dev/null || true
-      if [ "$rc" -eq 0 ]; then
-        rm -f "$status" "$status.find"; echo "secret scan: a credential value is in the git store $store"; exit 4
-      fi
+      [ "$rc" -ne 0 ] || { echo "secret scan: a credential value is in the git store $store"; rm -rf "$SCAN_TMP"; exit 4; }
       # No match: grep read the whole stream, so git's own status says whether it was the whole store.
-      [ "$rc" -eq 1 ] && [ "$(cat "$status")" = 0 ] \
-        || { rm -f "$status" "$status.find"; echo "secret scan failed: the store $store (grep $rc, git $(cat "$status"))"; exit 3; }
-    done < "$status.find"
+      gitrc="$(cat "$SCAN_TMP/status")"
+      [ "$rc" -eq 1 ] && [ "$gitrc" = 0 ] \
+        || { echo "secret scan failed: the store $store (grep $rc, git ${gitrc:-none})"; rm -rf "$SCAN_TMP"; exit 3; }
+    done < "$SCAN_TMP/objects"
   done
-  rm -f "$status" "$status.find"
+  rm -rf "$SCAN_TMP"; SCAN_TMP=""
   echo "secret scan: clean"
 }
 
