@@ -77,4 +77,7 @@ The rule of dl-020: every finding with a severity; a re-review of the fix's diff
 - **in-review → approved** (`26c01e5c`): run by the approver. **Merge:** `ab2ac0eb` (`--no-ff`), pushed with main.
 - **The GitHub release `v0.2`**: its notes replaced by the merged `docs/releases/v0.2.md` (`gh release edit v0.2
   --notes-file …`), with the approver's consent in chat (2026-10-24); the published notes carry both errata lines.
-- **Worktree removed:** no ignored file but `node_modules`. Branch `task/task-099` deleted.
+- **Worktree removed:** its ignored files were `node_modules/` and `.cache/`; `.cache/` was listed but not opened
+  before the removal (a slip: the note was written before the listing was read). In this task's worktree it held only
+  what the tests write (no run, no transcript was made there), so no evidence is believed lost. Branch `task/task-099`
+  deleted.
