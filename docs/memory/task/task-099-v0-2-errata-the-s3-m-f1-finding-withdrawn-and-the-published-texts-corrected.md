@@ -51,3 +51,23 @@ regression carries an errata line; nothing else of the published results changes
 - `npx wingfoil memory add --type task --title "v0.2 errata: the S3 M-F1 finding withdrawn and the published texts
   corrected" --tags "errata,v0.2,retrospective"`, on main. Declared: the element from the template in `draft`, one
   commit. Observed: `106e9165`, `status: draft`. Matches.
+- `memory approve` (pending → backlog, `e4c60d0f`): run by this session at the approver's explicit request in chat
+  (2026-10-24), the reason saying so. `memory submit` (backlog → in-progress): `42c855e8`. Matches.
+- **The errata** (on `task/task-099`, worktree `../WingFoil2-Benchmark-wt/task-099`): `657f5b58` the finding
+  withdrawn; `73ee8fd3` calibration v0.2 §9 (H3 and H4); `f4dcc178` campaign-002 (Results review and Findings, a hand
+  edit with `Approver:`/`Reason:` trailers); `6390e425` the release notes (the S3 sentence and H3/H4). Dated lines, the
+  original sentences kept. The touched tests (docs, results, site, campaign) 406/406; lint 0.
+
+### Review
+
+The rule of dl-020: every finding with a severity; a re-review of the fix's diff after a blocker or a should-fix.
+
+- **Round 1** (an independent read-only agent, the four commits): no blocker. Should-fix: the §9 errata gave the
+  template comment as the false positive's cause where §7.4 names "unchanged", and overstated it; the finding and
+  campaign-002 cited the evidence as plain text, not links. Nits: the release notes' cause, H4's wording, long first
+  lines. All fixed in `e721cc48`.
+- **Round 2** (`e721cc48`'s diff): one should-fix: §9's errata explained the campaign's v0.2.2 run while §9 holds the
+  calibration dry runs' values (both passes rest on "unchanged"; v0.3.0's also on the template's comment). Fixed in
+  `518ddd44`.
+- **Round 3** (`518ddd44`'s diff): one nit (v0.3.0's template word is "replace"; the runs in column order), fixed in
+  `c5345986` and closed with no new round, as dl-020 says.
