@@ -70,6 +70,9 @@ service's full id and the full sha of the commit it read (WingFoil `COLLABORATIO
 | [F-037](F-037-approve-accepts-a-placeholder-reason.md) | approve --reason accepts a placeholder as the recorded reason | request | open | |
 | [F-038](F-038-submit-takes-no-reason.md) | submit takes no --reason | request | open | |
 | [F-039](F-039-directive-assign-cannot-bind-a-directive-globally.md) | directive assign cannot bind a directive globally | gap | open | |
+| [F-040](F-040-review-rounds-follow-the-re-review-rule-and-no-guide-sets-one.md) | Review rounds follow each project's re-review rule, and neither the guide nor the templates set one | request | open | |
+| [F-041](F-041-agent-execute-cannot-be-driven-by-an-unattended-runner.md) | agent execute cannot be driven by an unattended runner that must meter the agent | request | open | |
+| [F-042](F-042-directive-create-writes-no-body-and-takes-no-title.md) | directive create writes no body and takes no title | gap | open | |
 
 ## Context
 

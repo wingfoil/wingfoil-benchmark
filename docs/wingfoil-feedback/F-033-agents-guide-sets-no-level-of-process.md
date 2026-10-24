@@ -17,6 +17,12 @@ request, a decision-log per design decision, or only what the workflow asks), so
 cannot say it uses "WingFoil's own". It also has no place for an automated approver: an unattended pipeline whose
 approval is a fixed policy has to break "never approve" or stop.
 
+Again on 0.3.0 (2026-10-23, this repository's task-100): `docs/agents.md` §2 reads current work and decisions with
+`wingfoil memory search --type <type> [--status <s>]`, leaving the status to the agent; it does not say that an
+agent's own records stay pending until an approver approves them, nor where knowledge given in a request (a rule meant
+for later) belongs. This repository's arm manual read `--status approved`, and that search found nothing in almost
+every step.
+
 ## Expected
 
 The guide recommends levels of process (for example a light and a strict one) and says how an unattended,
