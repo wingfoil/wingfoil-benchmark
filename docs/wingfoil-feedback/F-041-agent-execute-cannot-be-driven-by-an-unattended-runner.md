@@ -26,6 +26,6 @@ transcript) for every run; it cannot hand the launch to `agent execute` without 
 
 ## Expected
 
-A headless `agent execute` (WingFoil dl-181) that hands the agent's output stream and its usage, tokens and cost, to
-its caller (dl-182), with the built-in adapters, and a `--dry-run` that works without a terminal and can print the
+A headless `agent execute` (WingFoil dl-181) that hands the agent's output stream and its usage (tokens, cost) to its
+caller (dl-182), with the built-in adapters too, and a `--dry-run` that works without a terminal and can print the
 resolved context, not only the pointer to it.
