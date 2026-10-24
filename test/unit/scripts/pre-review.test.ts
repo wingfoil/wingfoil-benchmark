@@ -13,7 +13,7 @@ const SCRIPT = repoPath('scripts/pre-review.sh');
  * A repository whose branch changes `files` over `main`, and stub `npx` and `npm` that record each call and fail the
  * command named by `failing`: what the script runs, without running a check (dl-020, task-098).
  */
-function fixture(files: readonly string[], failing?: string) {
+function fixture(files: readonly (string | readonly [string, string])[], failing?: string) {
   const root = tempDir('bench-pre-review-');
   const repo = join(root, 'repo');
   mkdirSync(repo);
@@ -21,9 +21,10 @@ function fixture(files: readonly string[], failing?: string) {
   git('init', '-q', '-b', 'main');
   git('-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'seed');
   git('checkout', '-q', '-b', 'task/x');
-  for (const file of files) {
+  for (const entry of files) {
+    const [file, content] = typeof entry === 'string' ? [entry, 'x\n'] : entry;
     mkdirSync(join(repo, dirname(file)), { recursive: true });
-    writeFileSync(join(repo, file), 'x\n');
+    writeFileSync(join(repo, file), content);
   }
   git('add', '-A');
   git('-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '-m', 'change');
@@ -85,6 +86,41 @@ describe('scripts/pre-review.sh (dl-020, task-098)', () => {
     expect(result.status).toBe(2);
     expect(result.stderr).toMatch(/no commit named 'no-such-branch'/);
     expect(recorded()).toEqual([]);
+  });
+
+  it('checks changed Markdown for lines over 120 characters and a final newline, before Prettier', () => {
+    const long = 'word '.repeat(26).trim();
+    const wide = fixture([['docs/a.md', `# Title\n\n${long}\n`]]);
+    const result = wide.run();
+    expect(result.status).toBe(1);
+    expect(result.stderr).toMatch(/docs\/a\.md:3: 129 characters/);
+    expect(wide.recorded()).toEqual([]);
+
+    const noNewline = fixture([['docs/b.md', '# Title\n\nText']]);
+    expect(noNewline.run().status).toBe(1);
+    expect(noNewline.run().stderr).toMatch(/docs\/b\.md: no newline at the end/);
+  });
+
+  it('leaves tables, code blocks, front matter, links and byte-pinned paths out of the Markdown check', () => {
+    const long = 'word '.repeat(26).trim();
+    const exempt = [
+      '---',
+      `title: "${long}"`,
+      '---',
+      `| ${long} |`,
+      '```',
+      long,
+      '```',
+      `See [the page](https://example.com/${'p'.repeat(120)}).`,
+      '',
+    ].join('\n');
+    const { run } = fixture([
+      ['docs/c.md', exempt],
+      ['scenarios/S1/1.0/notes.md', `${long}\n`],
+      ['test/fixtures/wingfoil-config/x.md', `${long}\n`],
+    ]);
+    const result = run();
+    expect(result.status, result.stderr).toBe(0);
   });
 
   it('stops at the first red check and exits non-zero, naming it', () => {
