@@ -14,7 +14,8 @@ v0.2 that rule took 118 review rounds for 42 tasks, 2.8 a task, only four tasks 
 
 - **Rounds opened for nits.** The rule never says which severity counts, and the `code-review` directive leaves no
   finding only in the notes, so a nit is fixed and its fix is reviewed again: 15 rounds followed a round with nits
-  only, and none of them found a blocker or a should-fix.
+  only, and 2 of them found something of substance (a should-fix in task-094, two edge cases in task-095).
+  (Corrected 2026-10-24: it read "none of them found a blocker or a should-fix"; found by task-100's review.)
 - **Findings created by the previous fix.** 40 % of the findings of rounds 2 and later (77 of 193) were made by the
   previous round's fix: a Design, note or specification not updated after a code change, or a regression in the
   fix's own code.
@@ -25,8 +26,9 @@ v0.2 that rule took 118 review rounds for 42 tasks, 2.8 a task, only four tasks 
 
 The same analysis over WingFoil (v0.1–v0.3), WingFoil UI and WingFoil Templates found the same dynamics: the first
 round is rarely clean, 40–89 % of later findings are fix-induced, and the number of rounds follows each project's
-re-review rule, task size and reviewer's rigour. Where re-reviews followed a nit-only round, none found anything
-serious. Where fixes were not re-reviewed at all, they were often wrong when they were.
+re-review rule, task size and reviewer's rigour. Where re-reviews followed a nit-only round, they rarely found
+anything serious (corrected 2026-10-24: it read "none found anything serious"). Where fixes were not re-reviewed at
+all, they were often wrong when they were.
 
 ## Options
 
