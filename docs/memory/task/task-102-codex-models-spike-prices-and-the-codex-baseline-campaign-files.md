@@ -2,7 +2,7 @@
 id: task-102-codex-models-spike-prices-and-the-codex-baseline-campaign-files
 type: task
 title: "Codex models spike, prices and the Codex baseline campaign files"
-status: draft
+status: pending
 release: v0.3
 wave: W15
 features: []
