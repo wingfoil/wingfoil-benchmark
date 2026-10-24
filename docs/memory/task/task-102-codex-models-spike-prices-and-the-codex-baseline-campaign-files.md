@@ -155,7 +155,8 @@ Under dl-020; `scripts/pre-review.sh main` green before each round.
     store with missing objects scanned as clean; and `git log -p --all` missed a value only in the object store (a
     commit reset away, a staged file deleted). Fixed: `git fsck --connectivity-only` first (exit 3), then every
     object, packed or loose, reachable or not, through `git cat-file --batch-all-objects --batch` into a file grep
-    reads and that is removed at once (on a signal only from round 4's fix on). Checked by hand on five workspaces: reset away, staged and deleted, buried under
+    reads and that is removed at once (on a signal only from round 4's fix on). Checked by hand on five workspaces:
+    reset away, staged and deleted, buried under
     30 commits (each exit 4), clean (exit 0), objects removed (exit 3).
   - **nits, fixed:** the port's `costUnknown` comment and REQ-RUN-09 1.35 on a rate limit that outlasts the waits.
     **Stated:** the unit test of a copied profile was green at the red commit (the bug was the caller's basename;
