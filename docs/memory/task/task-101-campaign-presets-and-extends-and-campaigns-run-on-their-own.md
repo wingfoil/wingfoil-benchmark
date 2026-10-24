@@ -120,4 +120,4 @@ Under dl-020 and the `code-review` directive; `scripts/pre-review.sh main` green
   loads (harness-vs-docs with fewer arms; repetitions with fewer scenarios, and with S3 once in fewer arms), and the
   old recipes are refused; the red `fa91234f` precedes the fix `d37d6a2b`; the notes checked against the history.
   The review is closed.
-- **Rounds:** 4 (1 blocker, 5 should-fix, 13 nits; the should-fix of rounds 2 and 3 were notes and comments).
+- **Rounds:** 4; the should-fix of rounds 2 and 3 were in notes and comments, not code.
