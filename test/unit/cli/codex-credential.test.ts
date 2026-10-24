@@ -272,7 +272,12 @@ describe('bench campaign run with Codex (review 2)', () => {
       patchOf: () => (stepped ? `+token=${refreshed}\n` : '+setup\n'),
     });
     let output = '';
-    const io = { stdout: (text: string) => (output += text), stderr: (text: string) => (output += text) };
+    const io = {
+      stdout: (text: string) => (output += text),
+      stderr: (text: string) => (output += text),
+      // dl-024's scope, read against a fixed day so that the test is not dated (review round 1).
+      now: () => Date.parse('2026-10-24T12:00:00Z'),
+    };
 
     const code = await main(['campaign', 'run', file, '--allow-spending'], io, {
       docker: ports.docker,

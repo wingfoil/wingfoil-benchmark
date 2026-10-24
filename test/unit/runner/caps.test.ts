@@ -210,6 +210,38 @@ describe('step_time_s (task-024)', () => {
     expect(ended).toBe(2);
   });
 
+  it('counts a step stopped at the quota with no usage reported at its bound, still as the quota (review round 1)', async () => {
+    const agent = commandAgent(
+      () => ['codex', 'exec'],
+      () => ({ stop: 'quota exhausted' as const, costUnknown: true }),
+    );
+    const summary = await runCampaign(campaign({ run_cost_eur: 5 }), { ...doubles(), agent });
+    const record = runJson(summary.runs[0]?.outputDir) as { steps: Record<string, unknown>[] };
+
+    expect(record.steps[0]).toMatchObject({
+      outcome: 'quota exhausted',
+      cost_reported: false,
+      cost_bound_usd: 5,
+    });
+  });
+
+  it('ends the run on the agent when the run fails (review round 1)', async () => {
+    // No port double makes executeRun itself throw (a failing container, git or agent is a failed run, and a failing
+    // list throws before any run): the runner's finally is defensive, and this pins the failed run's path.
+    let ended = 0;
+    const agent: AgentPort = {
+      runStep: () => Promise.reject(new Error('the agent could not start')),
+      resume: () => Promise.reject(new Error('no resume')),
+      endRun: () => {
+        ended += 1;
+      },
+    };
+    const summary = await runCampaign(campaign(), { ...doubles(), agent });
+
+    expect(summary.runs[0]?.outcome).toBe('failed');
+    expect(ended).toBe(1);
+  });
+
   it('runs no command once the step has no time left', async () => {
     // The agent thinks for 20 ms of a 1 ms step before its first command.
     const agent: AgentPort = {

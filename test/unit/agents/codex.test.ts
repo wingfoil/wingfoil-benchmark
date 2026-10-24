@@ -361,6 +361,17 @@ describe('the Codex adapter (REQ-RUN-04 as amended in 1.32)', () => {
     expect(outcome.costUnknown).toBeUndefined();
   });
 
+  it('says that a session stopped at the quota before any turn.completed reported no usage (review round 1)', async () => {
+    const exec = runner([stream('usage-limit.jsonl').join('\n')]);
+
+    const outcome = await codexAgent({ authFile: authFile('at-0001-long-access'), usdToEur: RATE }).runStep(
+      step(exec.run),
+    );
+
+    expect(outcome.stop).toBe('quota exhausted');
+    expect(outcome.costUnknown).toBe(true);
+  });
+
   it('forgets its threads at the end of a run (dl-024)', async () => {
     const exec = runner([stream('completed.jsonl').join('\n')]);
     const agent = codexAgent({ authFile: authFile('at-0001-long-access'), usdToEur: RATE });
