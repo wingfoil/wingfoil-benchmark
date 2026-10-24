@@ -1,5 +1,6 @@
 import { codexFileSecrets } from '../agents/index.js';
 import { missingCapabilities } from '../arms/index.js';
+import { listPresets } from '../campaign/index.js';
 import { effortRefusal, fail, missingEffort, ok, reasonOf } from '../core/index.js';
 import type { CampaignFile, Result } from '../core/index.js';
 import { campaignSpendingEur } from '../results/index.js';
@@ -58,6 +59,7 @@ export async function main(
   }
   if (argv[0] === 'scenario' && argv[1] === 'dry-run') return dryRunCommand(argv.slice(2), io, ports, root);
   if (argv[0] === 'campaign' && argv[1] === 'compare') return compareCommand(argv.slice(2), io, root);
+  if (argv[0] === 'campaign' && argv[1] === 'presets') return presetsCommand(argv.slice(2), io, root);
   if (argv[0] === 'scenario') return scenarioCommand(argv.slice(1), io, root);
   if (argv[0] === 'score') return scoreCommand(argv.slice(1), io, ports, root);
   if (argv[0] === 'run') return runCommand(argv.slice(1), io, root);
@@ -137,6 +139,17 @@ function armsFromHistory(arms: readonly { name: string; from?: { commit: string 
   );
 }
 
+/** REQ-CLI-13: `bench campaign presets`, each preset of `campaigns/presets/` with what it measures (dl-022). */
+function presetsCommand(argv: readonly string[], io: Io, root: string): number {
+  if (argv.length > 0) {
+    io.stderr(USAGE);
+    return EXIT.usage;
+  }
+  const { presets, issues } = listPresets(root);
+  for (const preset of presets) io.stdout(`${preset.name}: ${preset.description}\n`);
+  return issues.length > 0 ? report(issues, io) : EXIT.ok;
+}
+
 /** REQ-CLI-01: `bench campaign validate <file>`. */
 function validateCampaign(file: string, io: Io): number {
   const result = checkCampaign(file);
@@ -146,6 +159,9 @@ function validateCampaign(file: string, io: Io): number {
     `campaign ${id} is valid (${count(spec.scenarios.length, 'scenario')}, ${count(spec.arms.length, 'arm')})\n`,
   );
   for (const line of armsFromHistory(result.value.arms)) io.stdout(line);
+  // What will run, before anything is spent (REQ-CLI-01 as amended in 1.34): the campaign its preset resolves to.
+  const { extended } = result.value.campaign;
+  if (extended !== undefined) io.stdout(`resolved from ${extended.preset}:\n${extended.yaml}`);
   // Every run that will be an expected failure (F3.6), before anything is spent: it runs, and is marked.
   for (const scenario of result.value.scenarios) {
     for (const arm of result.value.arms) {

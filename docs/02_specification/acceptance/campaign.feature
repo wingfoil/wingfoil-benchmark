@@ -1,6 +1,6 @@
-# Acceptance — Campaign (v0.1, v0.2)
-# Traces to: F1.1, F1.2, F1.3, F1.4 (v0.2) · J2 steps 1–2, 4 · experiment design §3 (pins), §6 (budget) · K4 · bug-013, dl-012
-# Version: 1.1 · Status: Approved (1.0, 2026-09-22; 1.1, 2026-10-05)
+# Acceptance — Campaign (v0.1, v0.2, v0.3)
+# Traces to: F1.1, F1.2, F1.3, F1.4 (v0.2) · J2 steps 1–2, 4 · experiment design §3 (pins), §6 (budget) · K4 · bug-013, dl-012 · dl-022 (v0.3)
+# Version: 1.2 · Status: Approved (1.0, 2026-09-22; 1.1, 2026-10-05); 1.2 (v0.3, task-101, 2026-10-24) for review
 
 Feature: Campaign definition, cost estimate and budget guard
   As the WingFoil maintainer
@@ -39,6 +39,59 @@ Feature: Campaign definition, cost estimate and budget guard
     Given a campaign file that was already run
     When the maintainer runs it again without changing it
     Then the new results are stored under the same campaign identity, as a new execution
+
+  # v0.3 (dl-022): a campaign file may extend one preset and write only what differs.
+
+  @F1.1
+  Scenario: A campaign file that extends a preset is resolved before it is validated
+    Given a preset in campaigns/presets/ that describes what it measures and pins every field but the budget
+    And a campaign file that extends it and sets only the budget
+    When the maintainer validates the campaign file
+    Then the campaign is accepted
+    And it holds the preset's pins and the file's budget
+    And the validation prints the resolved campaign
+
+  @F1.1 @error
+  Scenario Outline: A preset that cannot be extended is refused
+    Given a campaign file that extends a preset that <defect>
+    When the maintainer validates the campaign file
+    Then the campaign is rejected
+    And the message names the preset and says why
+
+    Examples:
+      | defect                              |
+      | extends another preset              |
+      | has no description                  |
+      | does not exist                      |
+      | lies outside campaigns/presets/     |
+
+  @F1.1
+  Scenario: A campaign is identified by its resolved content
+    Given a campaign file that extends a preset
+    And a whole campaign file holding the same resolved content
+    When the maintainer validates both
+    Then both have the same campaign identity
+    And changing the preset gives the extending campaign a new identity
+
+  @F1.1
+  Scenario: An execution keeps the resolved campaign
+    Given a campaign file that extends a preset
+    When the maintainer runs the campaign
+    Then the execution's campaign.yaml is the resolved campaign, without the extends field
+
+  @F1.1
+  Scenario: The presets are listed with what they measure
+    Given two presets in campaigns/presets/
+    When the maintainer lists the presets
+    Then each is listed with its name and its description
+
+  @F1.1 @error
+  Scenario: A preset that cannot be extended is listed with its refusal
+    Given a preset in campaigns/presets/ without a description, beside a valid one
+    When the maintainer lists the presets
+    Then the valid preset is listed with its description
+    And the other is named with the reason it cannot be extended
+    And the listing fails
 
   @F1.2
   Scenario: The cost is estimated before any run starts

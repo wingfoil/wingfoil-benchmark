@@ -7,7 +7,7 @@ release: v0.3
 wave: W15
 features: [F1.1]
 acceptance: [campaign.feature]
-requirements: [REQ-FMT-01, REQ-FMT-02, REQ-CLI-01]
+requirements: [REQ-FMT-01, REQ-FMT-02, REQ-CLI-01, REQ-CLI-13]
 fixes: []
 tags: ["campaign","presets","v0.3"]
 ---
@@ -71,3 +71,53 @@ unchanged.
   (2026-10-24). Declared: the element from the template in `draft`, one commit. Observed: as declared.
 - The body committed by hand (`e7a5e1e2`), then `memory submit` (draft → pending). Declared and observed: one commit,
   `status: pending`.
+- `memory submit` (backlog → in-progress, `2525cbe0`) on main, after the Design (`ba3007a4`). Declared and observed:
+  one commit, `status: in-progress`.
+- **Build** (on `task/task-101`, worktree `../WingFoil2-Benchmark-wt/task-101`, its own `npm ci`): requirements 1.34
+  and traceability 1.5 (`8f1587b4`); red: campaign.feature 1.2's five scenarios and the unit tests (`1cb3b839`);
+  code (`f7125217`); the workflows, release-cycle version 5 and campaign-cycle's header (`48d1d7cb`).
+- **Slip, disclosed:** the usage text gained `bench campaign presets` in the code commit, and its two tests
+  (`test/bin/bench.test.ts`, then `test/unit/cli/main.test.ts` in review round 1) were updated after it: test-after
+  for that one line. `scripts/pre-review.sh main` caught the first (`test:bin` red), the review the second.
+- `npm run -s wingfoil -- workflow list` exits 0 and reads release-cycle version 5.
+- **Not in this task:** dl-023's joining rule (a repetition campaign's runs counted with the reference campaign's
+  group of the same key, REQ-RES-03); the `repetitions` preset says so in its header.
+
+### Review
+
+Under dl-020 and the `code-review` directive; `scripts/pre-review.sh main` green before each round.
+
+- **Round 1** (an independent read-only agent, `git diff main...HEAD` at `829cc31e`):
+  - **blocker:** `test/unit/cli/main.test.ts`'s usage regexes not updated (12 tests red). Fixed in `c73ae19d`.
+  - **should-fix:** REQ-CLI-13's error path: the listing printed nothing when one preset was broken, and named it
+    `extends:`. Fixed: red `c73ae19d`, fix `c767d6b1` (valid presets listed, each broken one named by its file with
+    its refusal, exit 1).
+  - **should-fix:** a file extending a superset preset (reference, smoke) cannot narrow arms or scenarios, unstated.
+    Fixed: REQ-FMT-01 1.34 states it, a refused resolved campaign ends with a hint naming the preset, and the
+    reference preset's header says so (`c767d6b1`).
+  - **should-fix:** tests missing for a non-string `extends:`, a preset in a subdirectory, a resume and an estimate
+    of an extending campaign. Added in `c73ae19d` (they pass: the behaviour already held).
+  - **nits, fixed:** a symlinked preset refused; `..x.yaml` accepted; a misplaced file with `extends:` refused for its
+    place first (its first version reordered every file's checks and broke `test:bin`, fixed in `1b932475`); a
+    non-string description worded as "no one-line description"; the reference preset says it resolves to
+    campaign-002's id.
+- **Round 2** (a new independent agent, the fixes' diff `829cc31e..HEAD`): the fixes correct and complete, no
+  regression (red-first checked at `c73ae19d`).
+  - **should-fix (process):** these Review notes were not yet written. Fixed here.
+  - **nits, fixed** in `f3298443`: a dangling symlink and a symlinked `campaigns/presets/` refused as symbolic links
+    (red `6ab3f72e`); a unit test pinning the order of checks for a misplaced file that extends nothing
+    (characterization, green at `6ab3f72e`); the hint worded for any refusal of the resolved campaign (its test's
+    pattern reworded in the fix); smoke's header on what a file cannot remove (no test).
+- **Round 3** (a new independent agent, `1b932475..HEAD`): the code fixes correct, no regression; the notes checked
+  against the history.
+  - **should-fix:** smoke's new header recommended extending harness-vs-docs or baseline-across-agents with S3, which
+    the loader refuses (both set `repetitions` for every scenario); reference's header said the same for scenarios.
+    Fixed: both headers name the presets that leave those fields out (harness-vs-docs for arms, repetitions for
+    scenarios), the recipes the unit tests' minimal files already validate.
+  - **nits, fixed:** this round 2 note made exact; a symlinked `campaigns/presets/`, dangling or not, named once by
+    the listing instead of once per file (red `fa91234f`, fixed in the commit after it).
+- **Round 4** (a new independent agent, `9d38e7d7..HEAD`): **clean**, no finding. Each recipe the headers state
+  loads (harness-vs-docs with fewer arms; repetitions with fewer scenarios, and with S3 once in fewer arms), and the
+  old recipes are refused; the red `fa91234f` precedes the fix `d37d6a2b`; the notes checked against the history.
+  The review is closed.
+- **Rounds:** 4; the should-fix of rounds 2 and 3 were in notes and comments, not code.
