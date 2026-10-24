@@ -2,8 +2,9 @@
 id: dl-022-campaigns-run-outside-the-release-cycle-composed-from-self-explaining-presets-and-a-codex-only-campaign-as-the-first
 type: decision-log
 title: "Campaigns run outside the release cycle, composed from self-explaining presets, and a Codex-only campaign as the first"
-status: pending
+status: draft
 tags: ["campaign","codex","presets"]
+rejection_reason: "Sent back by the approver: the proposal is reframed around what exists (campaign-cycle is already a standalone main, bench campaign run already reads a versioned file); presets become a campaign file's extends: instead of a generator, with the resolved file digested and recorded."
 ---
 
 ## Context
