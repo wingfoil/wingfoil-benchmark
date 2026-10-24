@@ -86,3 +86,12 @@ The rule of dl-020, applied to its own implementation.
 - **Full suites** (`scripts/full-suites.sh task/task-098`, the approver's request in chat): on `e82c2cc4`, not dirty,
   LINT 0, TEST 0 (1663 passed, 8 skipped; coverage 97.57 % statements), BUILD 0, BIN 0 (8), DOCKER 0 (22, 2 skipped);
   log `.cache/full-suites/2026-10-24/task_task-098-e82c2cc4-114607.txt`.
+
+## Approval notes
+
+- **in-review → approved** (`6fcb5447`): run by the approver. **Merge:** `--no-ff` on main.
+- **Worktree removed:** its ignored files were `.cache/arms/` (a copy of the bridge's arm read from history,
+  rebuilt on demand), `coverage/` and `dist/`, listed and opened before the removal: no evidence. Branch
+  `task/task-098` deleted.
+- From now on every task's review follows `kanban-delivery` version 6 and runs `scripts/pre-review.sh main` before
+  each round; the next release's retrospective compares its rounds per task with v0.2's 2.8 (dl-020).
