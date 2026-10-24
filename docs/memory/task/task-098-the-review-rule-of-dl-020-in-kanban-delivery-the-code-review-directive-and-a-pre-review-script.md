@@ -7,7 +7,7 @@ release: v0.2
 wave: retrospective
 features: []
 acceptance: []
-requirements: []
+requirements: [REQ-NFR-04]
 fixes: []
 tags: ["review","process","retrospective"]
 ---

@@ -7,7 +7,7 @@ release: v0.2
 wave: retrospective
 features: []
 acceptance: []
-requirements: []
+requirements: [REQ-RES-05, REQ-RES-02]
 fixes: []
 tags: ["errata","v0.2","retrospective"]
 ---
