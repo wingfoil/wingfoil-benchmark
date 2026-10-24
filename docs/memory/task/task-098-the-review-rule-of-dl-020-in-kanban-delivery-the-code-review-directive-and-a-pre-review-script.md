@@ -2,7 +2,7 @@
 id: task-098-the-review-rule-of-dl-020-in-kanban-delivery-the-code-review-directive-and-a-pre-review-script
 type: task
 title: "The review rule of dl-020 in kanban-delivery, the code-review directive and a pre-review script"
-status: draft
+status: pending
 release: v0.2
 wave: retrospective
 features: []
