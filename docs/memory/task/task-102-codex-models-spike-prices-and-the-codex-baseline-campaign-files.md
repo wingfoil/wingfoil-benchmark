@@ -7,7 +7,7 @@ release: v0.3
 wave: W15
 features: []
 acceptance: []
-requirements: [REQ-RUN-09, REQ-RUN-13, REQ-RUN-15, REQ-NFR-01]
+requirements: [REQ-ARC-04, REQ-RUN-09, REQ-RUN-13, REQ-RUN-15, REQ-NFR-01]
 fixes: []
 tags: ["codex","spike","v0.3"]
 ---
