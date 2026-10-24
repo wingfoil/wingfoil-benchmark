@@ -83,3 +83,6 @@ The rule of dl-020, applied to its own implementation.
   `e82c2cc4` and closed with no new round.
 - Day checks on `e82c2cc4`: `scripts/pre-review.sh main` green (markdown, prettier, eslint, tsc, the touched tests with
   traceability); `test/unit/scripts` 16/16; lint 0.
+- **Full suites** (`scripts/full-suites.sh task/task-098`, the approver's request in chat): on `e82c2cc4`, not dirty,
+  LINT 0, TEST 0 (1663 passed, 8 skipped; coverage 97.57 % statements), BUILD 0, BIN 0 (8), DOCKER 0 (22, 2 skipped);
+  log `.cache/full-suites/2026-10-24/task_task-098-e82c2cc4-114607.txt`.
