@@ -111,11 +111,14 @@ table; dl-024's code bounds in place; `campaigns/codex-baseline.yaml` and its dr
 
 - **The approver's login** (dl-024, dl-019 bound 3), by hand on 2026-10-24, with the two commands the probe's LOGIN
   stage printed (`install -d -m 700 $HOME/.codex-bench …`, then `codex login --device-auth` in the probe's image with
-  the credential bind-mounted). The session named the path only and never read, printed or listed the file.
+  the credential bind-mounted). The session named the path only and never read or printed the file; each session's
+  `codex-home.txt` (the probe's `ls -la` of the run's `CODEX_HOME`, as task-094's) records its directory entry, name,
+  mode, size and time, no value.
 - **The three real sessions** (2026-10-24, the consent of task-102's pending → backlog, `c5e55182`):
   `BENCH_SPIKE_CONFIRM=1 ../WingFoil2-Benchmark-wt/task-102/spikes/task-102/probe.sh SOL SCAN TERRA SCAN LUNA SCAN`
   from the main checkout, the worktree's probe and `dist/` at `50fab163`. Each `completed` in one turn, no
-  intervention, exit 0; every secret scan clean, the final one included; no container left. API-equivalent
+  intervention, exit 0; every secret scan clean, the final one included; no `bench-spike-task-102` container left
+  (`docker ps -a` after the run). API-equivalent
   (`price-table`), 0 € spent:
 
   | Session | Model | Events | Wall time | Fresh in | Cached in | Out | USD |
@@ -126,12 +129,15 @@ table; dl-024's code bounds in place; `campaigns/codex-baseline.yaml` and its dr
 
   Figures from each session's `adapter.json` and `duration-ms.txt` (`spikes/task-102/out/<SESSION>/`). Three lines of
   `docs/calibration/v0.3-ledger.md`, created by this task.
-- **Criterion 1, read from the sessions:** the three model ids are accepted by Codex 0.162.1 on the Plus plan;
+- **Criterion 1, read from the sessions:** the three model ids are accepted by Codex 0.162.1 on the Plus plan, in
+  the sense that none was rejected (each session completed under `--strict-config`; Codex's events do not echo the
+  model);
   `model_reasoning_effort="medium"` is accepted under `--strict-config` by all three (no error on stderr, one line
   each); **the Plus quota does not show** in the `--json` stream (only `thread.started`, `turn.*` and `item.*` events)
-  nor on stderr while it lasts: it shows only when it ends, as the usage-limit message the adapter already reads as
-  `quota exhausted`. What is left of it is read by the approver on the account's usage page, before each stage of the
-  campaign.
+  nor on stderr while it lasts (observed). That it shows when it ends, as the usage-limit message the adapter reads
+  as `quota exhausted`, is documented by Codex 0.162.1's `protocol/src/error.rs` (task-094's F1), not observed: no
+  session reached it. What is left of it is read by the approver on the account's usage page, before each stage of
+  the campaign.
 
 ### Review
 
@@ -247,3 +253,10 @@ Under dl-020; `scripts/pre-review.sh main` green before each round.
   every compressed file outside a git store (an archive, a bundle), not only git objects; a hand-typed count of
   workspaces removed from round 7's note. **The review of the offline work is closed.** The three real sessions and
   their reading get their own round before in-review.
+- **The sessions' round** (a new independent agent, sandboxed; the reflog unchanged after it): every figure of the
+  table and the ledger matches the sessions' files; the main-checkout rule keeps dl-024 bound 1's intent.
+  - **should-fix, fixed:** criterion 1 presented the quota's end as observed; it is documented, not observed.
+  - **nits, fixed:** "accepted" means "not rejected"; the `CODEX_HOME` listing's metadata named; the containers'
+    check named; the ledger's hashes shortened to seven characters as v0.2's. **Stated:** the probe's
+    working-directory check records task-094's invocation rather than protecting a path; the ledger's probe commit is
+    reachable from main once the task is merged.
