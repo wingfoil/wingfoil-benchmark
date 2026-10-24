@@ -2,7 +2,7 @@
 id: dl-024-the-codex-campaign-s-subscription-credential-on-dl-019-s-model
 type: decision-log
 title: "The Codex campaign's subscription credential on dl-019's model"
-status: pending
+status: approved
 tags: ["codex","security","campaign"]
 ---
 
