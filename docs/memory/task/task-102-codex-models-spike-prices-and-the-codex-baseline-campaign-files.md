@@ -84,7 +84,8 @@ table; dl-024's code bounds in place; `campaigns/codex-baseline.yaml` and its dr
   (2026-10-24). Declared: the element from the template in `draft`, one commit. Observed: as declared.
 - The body committed by hand (`e7a5e1e2`), then `memory submit` (draft → pending). Declared and observed: one commit,
   `status: pending`.
-- The approver's pending → backlog in chat (2026-10-24). `memory submit` (backlog → in-progress, `e8805f6b`) on main, after
+- The approver's pending → backlog in chat (2026-10-24). `memory submit` (backlog → in-progress, `e8805f6b`) on main,
+  after
   the Design. Declared and observed: one commit each.
 - **The free phase (2026-10-24, no session, no credential)**, in the main checkout's ignored `spikes/task-102/out/f1/`:
   - `@openai/codex` `latest` is **0.164.0** (2026-10-23); dl-022 pins 0.162.1, task-094's, which is kept.
@@ -99,7 +100,8 @@ table; dl-024's code bounds in place; `campaigns/codex-baseline.yaml` and its dr
     raw extract is the source (`sources.txt`).
 - **Build** (on `task/task-102`): requirements 1.35 (`8b541d7a`); red (`d59f1c1e`); code
   (`0186ed6c`: prices, `costUnknown`, `endRun`, dl-024's scope); the campaign files and their test
-  (`3361fec1`); the probe (`spikes/task-102/probe.sh`), rehearsed with a stub for one model, then for three after review round 1, and
+  (`3361fec1`); the probe (`spikes/task-102/probe.sh`), rehearsed with a stub for one model, then for three after
+  review round 1, and
   with a planted value, which the scan found.
 - **Tests changed with the code, disclosed:** `test/unit/cli/codex-credential.test.ts`'s Codex campaign run now
   extends the preset, since dl-024 refuses one that does not; `test/unit/agents/codex.test.ts`'s characterization of
