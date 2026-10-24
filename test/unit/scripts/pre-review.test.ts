@@ -54,7 +54,7 @@ describe('scripts/pre-review.sh (dl-020, task-098)', () => {
     const result = run();
     expect(result.status, result.stderr).toBe(0);
     expect(recorded()).toEqual([
-      'npx prettier --check docs/n.md src/cli/a.ts test/unit/x.test.ts',
+      'npx prettier --check --ignore-unknown docs/n.md src/cli/a.ts test/unit/x.test.ts',
       'npx tsc --noEmit -p .',
       'npx vitest run --maxWorkers=2 test/unit/x.test.ts test/acceptance/traceability.test.ts',
       'npm run test:bin -- --maxWorkers=2',
@@ -74,7 +74,7 @@ describe('scripts/pre-review.sh (dl-020, task-098)', () => {
     const { run, recorded } = fixture(['src/cli/a.ts', 'docs/n.md'], 'npx prettier');
     const result = run();
     expect(result.status).not.toBe(0);
-    expect(recorded()).toEqual(['npx prettier --check docs/n.md src/cli/a.ts']);
+    expect(recorded()).toEqual(['npx prettier --check --ignore-unknown docs/n.md src/cli/a.ts']);
     expect(result.stdout + result.stderr).toMatch(/prettier/);
   });
 });
