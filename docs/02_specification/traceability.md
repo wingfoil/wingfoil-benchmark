@@ -1,7 +1,7 @@
-# Traceability (v0.1, v0.2)
+# Traceability (v0.1, v0.2, v0.3)
 
-**Version:** 1.4
-**Date:** 2026-10-05
+**Version:** 1.5
+**Date:** 2026-10-24
 **Status:** Approved
 **Traces to:** [06_features.md](../01_vision/06_features.md) 1.2, [07_sequencer.md](../01_vision/07_sequencer.md) 1.1, [09_experiment-design.md](../01_vision/09_experiment-design.md) 1.1, [scenarios/](scenarios/), [acceptance/](acceptance/), [requirements.md](requirements.md)
 
@@ -42,7 +42,7 @@ Only questions that are active in v0.1 are listed. Q-E2, Q-E3 (deferred in exper
 
 | Feature | Journey | Acceptance | Requirements | Wave |
 |---|---|---|---|---|
-| F1.1 campaign file | J2.1 | campaign.feature | REQ-FMT-01, 02, 03; REQ-CLI-01; REQ-RUN-16 | W1 |
+| F1.1 campaign file | J2.1 | campaign.feature | REQ-FMT-01, 02, 03; REQ-CLI-01, 13 (v0.3); REQ-RUN-16 | W1; presets W15 (v0.3) |
 | F1.2 cost estimate | J2.2 | campaign.feature | REQ-CLI-02; REQ-NFR-06 | W5 |
 | F1.3 budget guard | J2.2, J2.4 | campaign.feature | REQ-CLI-03; REQ-RUN-08, 13 | W5 |
 | F1.4 resumable campaign (v0.2) | J2.4 | campaign.feature | REQ-FMT-01, 06; REQ-CLI-02, 03, 06; REQ-RUN-19; REQ-RES-06; REQ-NFR-03 | W14 |

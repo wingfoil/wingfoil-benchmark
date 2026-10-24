@@ -7,7 +7,7 @@ release: v0.3
 wave: W15
 features: [F1.1]
 acceptance: [campaign.feature]
-requirements: [REQ-FMT-01, REQ-FMT-02, REQ-CLI-01]
+requirements: [REQ-FMT-01, REQ-FMT-02, REQ-CLI-01, REQ-CLI-13]
 fixes: []
 tags: ["campaign","presets","v0.3"]
 ---
