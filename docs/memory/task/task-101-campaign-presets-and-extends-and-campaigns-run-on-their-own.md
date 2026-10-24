@@ -121,3 +121,13 @@ Under dl-020 and the `code-review` directive; `scripts/pre-review.sh main` green
   old recipes are refused; the red `fa91234f` precedes the fix `d37d6a2b`; the notes checked against the history.
   The review is closed.
 - **Rounds:** 4; the should-fix of rounds 2 and 3 were in notes and comments, not code.
+- **Full suites** (`scripts/full-suites.sh task/task-101`, the approver's request in chat): on `4859be45`, not dirty,
+  LINT 0, TEST 0 (1694 passed, 8 skipped; coverage 97.54 % statements), BUILD 0, BIN 0 (8), DOCKER 0 (22, 2 skipped);
+  log `.cache/full-suites/2026-10-24/task_task-101-4859be45-143708.txt`.
+
+## Approval notes
+
+- **in-review → approved** (`b2997bba`): run by this session at the approver's explicit request in chat (2026-10-24),
+  the reason saying so. **Merge:** `--no-ff` on main.
+- **Worktree removed:** its ignored files were `.cache/arms/` (an arm read from a commit of the history, rebuilt on
+  demand), `coverage/` and `dist/`, listed and opened before the removal: no evidence. Branch `task/task-101` deleted.
