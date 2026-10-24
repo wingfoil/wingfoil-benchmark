@@ -7,7 +7,7 @@ release: v0.3
 wave: release-planning
 features: []
 acceptance: []
-requirements: []
+requirements: [REQ-RES-03]
 fixes: []
 tags: ["specification","v0.3"]
 ---
