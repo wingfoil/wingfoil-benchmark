@@ -2,7 +2,7 @@
 id: dl-021-the-wingfoil-arm-follows-wingfoil-s-workflow-model-in-three-steps-each-on-the-wingfoil-release-that-enables-it
 type: decision-log
 title: "The wingfoil arm follows WingFoil's workflow model in three steps, each on the WingFoil release that enables it"
-status: pending
+status: approved
 tags: ["wingfoil","arm","workflow"]
 ---
 
