@@ -214,6 +214,12 @@ Under dl-020; `scripts/pre-review.sh main` green before each round.
     above; the directory holds no value. The handler's `rm` no longer aborts it under `set -e` (`|| true`).
   - **nit, stated:** an agent's own `objects/` holding `info/`, `pack/` or a two-hex-digit directory (`src/objects/db/`)
     fails the scan, falsely but safely.
-  - Checked by hand on sixteen workspaces: round 6's eleven with the same outcomes but `objects/` moved, now refused by
+  - Checked by hand on round 6's workspaces with the same outcomes but `objects/` moved, now refused by
     the own-store check (3); `objects/` renamed (3); `src/objects/db/` (3, the stated false positive); `objects/` and
     `pack/` through symlinks (4 each); no temporary file left.
+- **Round 8** (a new independent agent, sandboxed, scoped to the scan's stated purpose; the reflog unchanged after
+  it): no regression, no blocker, no should-fix. **Nits, fixed:** the comment says every symbolic link is followed and
+  that a link loop or one into an unreadable host path fails the search, falsely but safely; the stated limit covers
+  every compressed file outside a git store (an archive, a bundle), not only git objects; a hand-typed count of
+  workspaces removed from round 7's note. **The review of the offline work is closed.** The three real sessions and
+  their reading get their own round before in-review.

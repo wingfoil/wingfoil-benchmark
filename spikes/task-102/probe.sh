@@ -158,14 +158,16 @@ scan() { # exit 3 when the scan cannot run, 4 when it finds a value
   # The workspaces' git stores: a value the agent committed, staged or left dangling is compressed there, which
   # grep -F cannot see. The workspace's own .git, which the probe made, must be a store git opens. Beyond it, every
   # directory under a workspace shaped like a git object store (named objects/, holding pack/, info/ or a
-  # two-hex-digit directory), symbolic links followed as git follows them, belongs to a store, its parent, which git
+  # two-hex-digit directory), every symbolic link followed (so that one git follows is too; a link loop or
+  # one into an unreadable host path fails the search, falsely but safely), belongs to a store, its parent, which git
   # must open (a nested or a bare repository, a separate git dir); one git cannot open fails the scan (review rounds
   # 1-7). An agent's own directory named objects/ with such a subdirectory fails it too, falsely but safely. Every
   # object git can read in a store, packed or loose, reachable or not, is streamed to grep and never written to disk;
   # git's status goes to a file that holds no value. A store whose reachable objects are missing fails the scan.
-  # The limit: bytes that are compressed and that no git store names (objects renamed or copied out of any store)
-  # are read by neither grep nor this loop. The scan guards against a value that reaches the results by accident,
-  # through the files or git; it is not a defence against an agent that hides one on purpose.
+  # The limit: compressed bytes outside a git store git opens (an archive such as an npm pack .tgz or a git bundle,
+  # git objects renamed or copied out of any store) are read by neither grep nor this loop. The scan guards against a
+  # value that reaches the results by accident, as plain text or through git; it is not a defence against compressed
+  # files nor against an agent that hides one on purpose.
   local ws objects store gitrc
   rm -rf "$SCAN_TMP"; SCAN_TMP="$(mktemp -d)" || { echo "secret scan failed: no temporary directory"; exit 3; }
   for ws in "$OUT"/*/workspace; do
