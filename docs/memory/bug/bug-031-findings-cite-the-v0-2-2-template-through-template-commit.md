@@ -7,5 +7,24 @@ status: draft
 tags: ["v0.3"]
 ---
 
-<!-- bug body. `wingfoil memory add` copies this scaffold verbatim; `memory submit` replaces
-     these placeholder comments with real content and fills the required frontmatter fields. -->
+## Context
+
+Found by the v0.2 retrospective ([rel-v0-2](../release/rel-v0-2.md), "What to change" 7) and task-095's notes.
+
+## Expected
+
+A finding note names the WingFoil template of the version it is filed against.
+
+## Actual
+
+`src/results/finding.ts:53` hard-codes `TEMPLATE_COMMIT = 'v0.2.2 (12537b62)'`; findings of the v0.3.0 campaign cite
+v0.2.2's template.
+
+## Impact
+
+A finding pasted into WingFoil names the wrong template; low severity, but every finding of v0.3 would carry it.
+
+## Resolution
+
+The template's version read from the campaign's WingFoil pin. A W16 task of
+[plan-005](../../plans/plan-005-release-v0-3.md).
