@@ -47,7 +47,8 @@ if [ "${#markdown[@]}" -gt 0 ]; then
       index(added, " " FNR " ") && length($0) > 120 {
         printf "%s:%d: %d characters, over 120\n", name, FNR, length($0) > "/dev/stderr"; bad = 1 }
       END { exit bad }' <(git show "HEAD:$file") || red=1
-    if [ -s "$file" ] && [ "$(tail -c 1 "$file" | od -An -c | tr -d ' ')" != '\n' ]; then
+    last="$(git show "HEAD:$file" | tail -c 1 | od -An -c | tr -d ' ')"
+    if [ -n "$last" ] && [ "$last" != '\n' ]; then
       echo "$file: no newline at the end" >&2; red=1
     fi
   done
