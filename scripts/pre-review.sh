@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# The checks before a review round (dl-020 option C, task-098): Prettier on every file the branch changed, Markdown
-# included; eslint on changed sources; tsc; the touched test files with the traceability test; test:bin when the CLI,
+# The checks before a review round (dl-020 option C, task-098): changed Markdown checked for width and a final newline,
+# Prettier on every file the branch changed; eslint on changed sources; tsc; the touched test files with the traceability test; test:bin when the CLI,
 # the site or a bin test changed (the default vitest config excludes test/bin/ and test/docker/). At the
 # lowest priority, vitest with 2 workers (dl-016); it stops at the first red check and names it. No agent, no
 # credential, nothing written. The full suites stay scripts/full-suites.sh's.
@@ -21,6 +21,30 @@ diff_out="$(git -c core.quotePath=false diff --name-only --diff-filter=d "$base"
 mapfile -t changed < <(printf '%s\n' "$diff_out" | grep -v '^$' | LC_ALL=C sort)
 if [ "${#changed[@]}" -eq 0 ]; then echo "pre-review: nothing changed over $base"; exit 0; fi
 
+# Markdown, which .prettierignore leaves out (Prettier would rewrite the front matter WingFoil writes): every line within
+# 120 characters, tables, code blocks, the front matter and lines holding a link or a URL apart, and a final newline.
+# The byte-pinned paths stay out (scenario versions, WingFoil's captured output).
+mapfile -t markdown < <(printf '%s\n' "${changed[@]}" | grep -E '\.md$' \
+  | grep -vE '^(scenarios/[^/]+/[^/]+/|test/fixtures/wingfoil-config/)' || true)
+if [ "${#markdown[@]}" -gt 0 ]; then
+  echo "pre-review: markdown"
+  if ! awk '
+    FNR == 1 { fence = 0; front = 0 }
+    FNR == 1 && /^---$/ { front = 1; next }
+    front && /^---$/ { front = 0; next }
+    front { next }
+    /^[[:space:]]*(```|~~~)/ { fence = !fence; next }
+    fence || /^[[:space:]]*\|/ || /\]\(/ || /:\/\// { next }
+    length($0) > 120 { printf "%s:%d: %d characters, over 120\n", FILENAME, FNR, length($0) > "/dev/stderr"; bad = 1 }
+    END { exit bad }' "${markdown[@]}"; then
+    echo "pre-review: markdown is red" >&2; exit 1
+  fi
+  for file in "${markdown[@]}"; do
+    if [ -s "$file" ] && [ "$(tail -c 1 "$file" | od -An -c | tr -d ' ')" != '\n' ]; then
+      echo "$file: no newline at the end" >&2; echo "pre-review: markdown is red" >&2; exit 1
+    fi
+  done
+fi
 check prettier npx prettier --check --ignore-unknown "${changed[@]}"
 mapfile -t sources < <(printf '%s\n' "${changed[@]}" | grep -E '\.(ts|mts|js|mjs)$' || true)
 if [ "${#sources[@]}" -gt 0 ]; then check eslint npx eslint "${sources[@]}"; fi
