@@ -42,7 +42,9 @@ all, they were often wrong when they were.
     changed; re-read every line the fix removed; add a red test for each blocker or should-fix, and list the edge
     cases next to it;
   - a **pre-review script**: Prettier on every changed file, Markdown included, `tsc`, the touched tests, `test:bin`
-    when CLI or site output changes, the traceability test;
+    when CLI or site output changes, the traceability test (amended 2026-10-24, the approver's choice in chat, task-098:
+    Markdown is checked for the width of the lines the branch added and a final newline instead, since Prettier would
+    rewrite the front matter WingFoil writes);
   - **figures in notes generated** from the results, the ledger or a script, never typed by hand;
   - a task's diff kept under about 1 200 lines, splitting a larger one at its Design.
 - **D. Fewer re-reviews.** Re-review at the coordinator's discretion, as WingFoil v0.3 did (1.2 rounds a task): about
