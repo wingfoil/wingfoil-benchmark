@@ -48,8 +48,20 @@ unchanged.
 - **The specification first, in this task:** requirements 1.34 (REQ-FMT-01, REQ-FMT-02 amended: presets,
   `extends:`, the id over the resolved file, the resolved file in the results; REQ-CLI: `campaign presets`,
   `validate`'s printed resolution), `campaign.feature` amended, traceability amended. Committed before the red tests.
-- **The loader** (`src/campaign/load.ts`): read the file, resolve `extends:` relative to `campaigns/`, merge, then
-  validate and hash the resolved object; `campaignId` takes the resolved object.
+- **The loader** (`src/campaign/load.ts`): read the YAML, and when it has `extends:`, read the preset from
+  `campaigns/presets/` (a path that leaves `campaigns/presets/`, a missing preset, a preset with `extends:` or
+  without `description:` refused), merge the preset under the file, drop `extends:` and the preset's `description:`,
+  then validate (`campaignSchema`, unchanged) and hash the resolved object. `campaignId` already hashes the object as
+  parsed, so a file without `extends:` keeps its id.
+- **The results:** the runner copies the campaign file into each execution as `campaign.yaml`
+  (`src/runner/run.ts`, `source`), which `aggregate`, `compare` and `finding` read with the pins schema. A file
+  without `extends:` is still copied byte for byte; a file with it is written resolved, as YAML, so that every
+  reader and the finding's reproduction line (`cp …/campaign.yaml campaigns/<id>.yaml`, the same id) are unchanged.
+  dl-022's "next to `run.json`" is read as the execution's `campaign.yaml`, one per execution.
+- **The CLI:** `bench campaign presets` (a new REQ-CLI) reads `campaigns/presets/*.yaml` and prints name and
+  description; `validate` prints the resolved campaign after its checks when the file extends a preset.
+- **Out of scope:** dry-run profiles (`*.dry-run.yaml`) do not extend presets; the Codex campaign's profile is written
+  whole (task-102).
 - **No generator** (dl-022's option C rejected) and no flags in place of a file (option D rejected).
 - The existing campaign files are not touched.
 
