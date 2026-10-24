@@ -27,7 +27,7 @@ STARTED=() # every container this run started, removed on exit whatever happens 
 SCAN_TMP="" # the scan's temporary directory (git's status and the stores' list, no value), while it exists
 cleanup() {
   local c; for c in ${STARTED[@]+"${STARTED[@]}"}; do docker rm -f "$c" >/dev/null 2>&1 || true; done
-  [ -z "$SCAN_TMP" ] || rm -rf "$SCAN_TMP"
+  [ -z "$SCAN_TMP" ] || rm -rf "$SCAN_TMP" || true
   # The final scan reruns in full, also after a TERM or HUP: the probe exits once it has a verdict.
   [ -z "$BEFORE_VALUES" ] || scan
 }
@@ -156,21 +156,26 @@ scan() { # exit 3 when the scan cannot run, 4 when it finds a value
   [ "$rc" -le 1 ] || { echo "secret scan failed: grep exit $rc"; exit 3; }
   if [ -n "$found" ]; then echo "secret scan: a credential value is in $(echo "$found" | wc -l) file(s):"; echo "$found"; exit 4; fi
   # The workspaces' git stores: a value the agent committed, staged or left dangling is compressed there, which
-  # grep -F cannot see. Every directory under a workspace shaped like a git object store (named objects/, holding
-  # pack/, info/ or a two-hex-digit directory) belongs to a store, its parent, which git must open (a work tree's .git,
-  # a nested or a bare repository, a separate git dir); one git cannot open fails the scan, so that an odd layout
-  # (a HEAD removed or a symlink, objects/ moved) fails closed (review rounds 1-6). Every object git can read in it,
-  # packed or loose, reachable or not, is streamed to grep and never written to disk; git's status goes to a file
-  # that holds no value. A store whose reachable objects are missing fails the scan. An object git itself cannot
-  # unpack is skipped by cat-file: its bytes cannot be read back through git either.
+  # grep -F cannot see. The workspace's own .git, which the probe made, must be a store git opens. Beyond it, every
+  # directory under a workspace shaped like a git object store (named objects/, holding pack/, info/ or a
+  # two-hex-digit directory), symbolic links followed as git follows them, belongs to a store, its parent, which git
+  # must open (a nested or a bare repository, a separate git dir); one git cannot open fails the scan (review rounds
+  # 1-7). An agent's own directory named objects/ with such a subdirectory fails it too, falsely but safely. Every
+  # object git can read in a store, packed or loose, reachable or not, is streamed to grep and never written to disk;
+  # git's status goes to a file that holds no value. A store whose reachable objects are missing fails the scan.
+  # The limit: bytes that are compressed and that no git store names (objects renamed or copied out of any store)
+  # are read by neither grep nor this loop. The scan guards against a value that reaches the results by accident,
+  # through the files or git; it is not a defence against an agent that hides one on purpose.
   local ws objects store gitrc
   rm -rf "$SCAN_TMP"; SCAN_TMP="$(mktemp -d)" || { echo "secret scan failed: no temporary directory"; exit 3; }
   for ws in "$OUT"/*/workspace; do
     [ -d "$ws" ] || continue
-    find "$ws" -type d -name objects -print0 > "$SCAN_TMP/objects" 2>/dev/null \
+    git --git-dir="$ws/.git" fsck --connectivity-only --no-progress >/dev/null 2>&1 \
+      || { echo "secret scan failed: git cannot open or read the workspace's own store $ws/.git"; rm -rf "$SCAN_TMP"; exit 3; }
+    find -L "$ws" -type d -name objects -print0 > "$SCAN_TMP/objects" 2>/dev/null \
       || { echo "secret scan failed: cannot search $ws"; rm -rf "$SCAN_TMP"; exit 3; }
     while IFS= read -r -d '' objects; do
-      [ -n "$(find "$objects" -mindepth 1 -maxdepth 1 -type d \( -name pack -o -name info -o -name '[0-9a-f][0-9a-f]' \) -print -quit)" ] \
+      [ -n "$(find -L "$objects" -mindepth 1 -maxdepth 1 -type d \( -name pack -o -name info -o -name '[0-9a-f][0-9a-f]' \) -print -quit)" ] \
         || continue # a directory of the agent's own named objects, not a store
       store="$(dirname "$objects")"
       git --git-dir="$store" fsck --connectivity-only --no-progress >/dev/null 2>&1 \

@@ -193,10 +193,27 @@ Under dl-020; `scripts/pre-review.sh main` green before each round.
     directory shaped like an object store (`objects/` holding `pack/`, `info/` or a two-hex-digit directory) must
     belong to a store git opens and reads, or the scan fails (exit 3).
   - **nits, fixed:** the failure message read git's status after removing its file; the temporary files (git's
-    status, the stores' list, no value) now live in one `mktemp -d` directory removed on every exit path and by the
-    exit handler; the status file is emptied before each store. **Stated:** after a TERM or HUP the exit handler
+    status, the stores' list, no value) now live in one `mktemp -d` directory removed on every explicit exit and by
+    the exit handler (not when a signal ends the exit handler itself: round 7); the status file is emptied before
+    each store. **Stated:** after a TERM or HUP the exit handler
     reruns the whole final scan before the probe exits, and a scan cut short leaves its grep and git to finish, writing
     nothing.
   - Checked by hand on eleven workspaces (paths with spaces, `TMPDIR` watched): reset away, staged and deleted,
     packed, nested, bare (exit 4 each); clean, and an agent's own `src/objects/` (exit 0); objects removed, a symlinked
     `HEAD`, no `HEAD`, `objects/` moved (exit 3 each); no temporary file left.
+- **Round 7** (a new independent agent, sandboxed; the reflog unchanged after it):
+  - **blocker, a regression of round 6:** `find -type d` follows no symbolic link and git does: an `objects/` or a
+    `pack/` reached through a symlink scanned clean with a committed value, which round 5's version caught. Fixed:
+    `find -L` for the stores and their shape.
+  - **should-fix:** "fails closed" was overstated: an `objects/` renamed (`.git/objx`) scanned clean, and "objects/
+    moved" failed only when it kept its name. Fixed: the workspace's own `.git`, which the probe made, must be a store
+    git opens, so a renamed or moved `objects/` fails the scan. **The limit is now stated in the probe:** bytes that
+    are compressed and that no git store names are read by neither grep nor git; the scan guards against a value that
+    reaches the results by accident, not against an agent hiding one on purpose.
+  - **should-fix:** "removed on every exit path" was untrue when a signal ends the exit handler's own scan. Narrowed
+    above; the directory holds no value. The handler's `rm` no longer aborts it under `set -e` (`|| true`).
+  - **nit, stated:** an agent's own `objects/` holding `info/`, `pack/` or a two-hex-digit directory (`src/objects/db/`)
+    fails the scan, falsely but safely.
+  - Checked by hand on sixteen workspaces: round 6's eleven with the same outcomes but `objects/` moved, now refused by
+    the own-store check (3); `objects/` renamed (3); `src/objects/db/` (3, the stated false positive); `objects/` and
+    `pack/` through symlinks (4 each); no temporary file left.
