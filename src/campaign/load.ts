@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { existsSync, readdirSync } from 'node:fs';
+import { existsSync, lstatSync, readdirSync } from 'node:fs';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { stringify } from 'yaml';
 
@@ -12,7 +12,7 @@ import {
   parseWith,
   readYamlFile,
 } from '../core/index.js';
-import type { CampaignFile, Result } from '../core/index.js';
+import type { CampaignFile, Issue, Result } from '../core/index.js';
 
 /** REQ-ARC-03: campaign files live in `campaigns/`, beside `scenarios/` and `results/`. */
 const CAMPAIGNS_DIR = 'campaigns';
@@ -62,18 +62,25 @@ export function loadCampaign(file: string): Result<Campaign> {
   const read = readYamlFile(path);
   if (!read.ok) return read;
   const directory = dirname(path);
-  const resolution = resolvePreset(read.value, directory);
-  if (!resolution.ok) return resolution;
-  const { resolved, preset } = resolution.value;
-  const parsed = parseWith(campaignSchema, resolved, basename(path));
-  if (!parsed.ok) return parsed;
-  const inconsistent = campaignConsistency(parsed.value);
-  if (inconsistent.length > 0) return fail(inconsistent);
-
   if (basename(directory) !== CAMPAIGNS_DIR) {
     return fail([
       { path: basename(path), message: `must live in a '${CAMPAIGNS_DIR}' directory, next to 'scenarios'` },
     ]);
+  }
+  const resolution = resolvePreset(read.value, directory);
+  if (!resolution.ok) return resolution;
+  const { resolved, preset } = resolution.value;
+  const parsed = parseWith(campaignSchema, resolved, basename(path));
+  const issues = parsed.ok ? campaignConsistency(parsed.value) : parsed.issues;
+  if (!parsed.ok || issues.length > 0) {
+    // Maps merge by key, so a file cannot drop what its preset sets: say so where the refusal comes from it.
+    const hint = {
+      path: 'extends',
+      message:
+        `these issues are in the campaign resolved from '${preset}': a file cannot remove a key its preset ` +
+        'sets, so a narrower campaign extends a preset that leaves those fields out',
+    };
+    return fail(preset === undefined ? issues : [...issues, hint]);
   }
 
   const repoRoot = dirname(directory);
@@ -117,14 +124,36 @@ function resolvePreset(data: unknown, directory: string): Result<{ resolved: unk
   const { extends: named, ...own } = data;
   const refuse = (message: string) => fail<{ resolved: unknown }>([{ path: 'extends', message }]);
   if (typeof named !== 'string') return refuse(`must name a file in ${CAMPAIGNS_DIR}/${PRESETS_DIR}/`);
+  const read = readPreset(named, directory);
+  if (!read.ok) return refuse(read.issues.map((issue) => issue.message).join('; '));
+  return ok({ resolved: mergePreset(read.value.pins, own), preset: read.value.preset });
+}
 
+/**
+ * The preset `named` (relative to the campaign's `directory`): a regular file directly in `<directory>/presets/`,
+ * not a symbolic link, a map that extends nothing and has a one-line `description:` (REQ-FMT-01 as amended in
+ * 1.34). Its pins are the map less the description; each refusal names it.
+ */
+function readPreset(
+  named: string,
+  directory: string,
+): Result<{ preset: string; description: string; pins: Record<string, unknown> }> {
+  const refuse = (message: string) => fail<never>([{ path: 'extends', message }]);
   const presets = join(directory, PRESETS_DIR);
   const file = resolve(directory, named);
   const inside = relative(presets, file);
-  if (inside === '' || inside.startsWith('..') || inside.includes(sep) || !inside.endsWith('.yaml')) {
+  if (
+    inside === '' ||
+    inside === '..' ||
+    inside.startsWith(`..${sep}`) ||
+    inside.includes(sep) ||
+    !inside.endsWith('.yaml')
+  ) {
     return refuse(`'${named}' must name a file in ${CAMPAIGNS_DIR}/${PRESETS_DIR}/`);
   }
   const preset = `${PRESETS_DIR}/${inside}`;
+  if (existsSync(file) && lstatSync(file).isSymbolicLink())
+    return refuse(`'${preset}' must not be a symbolic link`);
   const read = readYamlFile(file);
   if (!read.ok)
     return refuse(`'${preset}' cannot be read: ${read.issues.map((issue) => issue.message).join('; ')}`);
@@ -132,9 +161,9 @@ function resolvePreset(data: unknown, directory: string): Result<{ resolved: unk
   const { description, ...pins } = read.value;
   if ('extends' in pins) return refuse(`'${preset}' must not extend another preset`);
   if (typeof description !== 'string' || description.trim() === '' || description.includes('\n')) {
-    return refuse(`'${preset}' has no description: a one-line \`description:\` says what it measures`);
+    return refuse(`'${preset}' has no one-line description: \`description:\` says what it measures`);
   }
-  return ok({ resolved: mergePreset(pins, own), preset });
+  return ok({ preset, description, pins });
 }
 
 /** A preset of `campaigns/presets/` and the line that says what it measures (REQ-CLI-13). */
@@ -144,26 +173,30 @@ export interface Preset {
 }
 
 /**
- * REQ-CLI-13: the presets of `<root>/campaigns/presets/`, by name; a preset that cannot be read, extends another
- * or has no one-line description is an issue naming it.
+ * REQ-CLI-13: the presets of `<root>/campaigns/presets/` that can be extended, by name, and an issue naming each
+ * one that cannot, with the refusal REQ-FMT-01 gives it.
  */
-export function listPresets(root: string): Result<readonly Preset[]> {
+export function listPresets(root: string): {
+  readonly presets: readonly Preset[];
+  readonly issues: readonly Issue[];
+} {
   const directory = join(root, CAMPAIGNS_DIR, PRESETS_DIR);
-  if (!existsSync(directory)) return ok([]);
-  const names = readdirSync(directory)
-    .filter((name) => name.endsWith('.yaml'))
-    .sort();
+  if (!existsSync(directory)) return { presets: [], issues: [] };
   const presets: Preset[] = [];
-  const issues: { path: string; message: string }[] = [];
-  for (const name of names) {
-    const checked = resolvePreset({ extends: `${PRESETS_DIR}/${name}` }, join(root, CAMPAIGNS_DIR));
-    if (!checked.ok) {
-      issues.push(...checked.issues);
-      continue;
+  const issues: Issue[] = [];
+  for (const name of readdirSync(directory)
+    .filter((entry) => entry.endsWith('.yaml'))
+    .sort()) {
+    const read = readPreset(`${PRESETS_DIR}/${name}`, join(root, CAMPAIGNS_DIR));
+    if (read.ok) presets.push({ name: name.replace(/\.yaml$/, ''), description: read.value.description });
+    else {
+      // The refusal `extends:` would give, named by the file: the listing has no `extends:` of its own.
+      const quoted = `'${PRESETS_DIR}/${name}' `;
+      for (const issue of read.issues) {
+        const message = issue.message.startsWith(quoted) ? issue.message.slice(quoted.length) : issue.message;
+        issues.push({ path: `${CAMPAIGNS_DIR}/${PRESETS_DIR}/${name}`, message });
+      }
     }
-    const read = readYamlFile(join(directory, name));
-    const description = read.ok && isMap(read.value) ? String(read.value.description) : '';
-    presets.push({ name: name.replace(/\.yaml$/, ''), description });
   }
-  return issues.length > 0 ? fail(issues) : ok(presets);
+  return { presets, issues };
 }

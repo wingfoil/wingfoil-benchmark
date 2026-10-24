@@ -145,10 +145,9 @@ function presetsCommand(argv: readonly string[], io: Io, root: string): number {
     io.stderr(USAGE);
     return EXIT.usage;
   }
-  const presets = listPresets(root);
-  if (!presets.ok) return report(presets.issues, io);
-  for (const preset of presets.value) io.stdout(`${preset.name}: ${preset.description}\n`);
-  return EXIT.ok;
+  const { presets, issues } = listPresets(root);
+  for (const preset of presets) io.stdout(`${preset.name}: ${preset.description}\n`);
+  return issues.length > 0 ? report(issues, io) : EXIT.ok;
 }
 
 /** REQ-CLI-01: `bench campaign validate <file>`. */
