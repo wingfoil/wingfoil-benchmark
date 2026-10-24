@@ -109,6 +109,30 @@ table; dl-024's code bounds in place; `campaigns/codex-baseline.yaml` and its dr
 - **Criterion 5:** both campaign files pass `bench campaign validate`; `estimate` refuses the campaign until its dry
   runs exist (11 of 12 keys have none; S3 on Sol is task-094's), as it should before the dry runs.
 
+- **The approver's login** (dl-024, dl-019 bound 3), by hand on 2026-10-24, with the two commands the probe's LOGIN
+  stage printed (`install -d -m 700 $HOME/.codex-bench …`, then `codex login --device-auth` in the probe's image with
+  the credential bind-mounted). The session named the path only and never read, printed or listed the file.
+- **The three real sessions** (2026-10-24, the consent of task-102's pending → backlog, `c5e55182`):
+  `BENCH_SPIKE_CONFIRM=1 ../WingFoil2-Benchmark-wt/task-102/spikes/task-102/probe.sh SOL SCAN TERRA SCAN LUNA SCAN`
+  from the main checkout, the worktree's probe and `dist/` at `50fab163`. Each `completed` in one turn, no
+  intervention, exit 0; every secret scan clean, the final one included; no container left. API-equivalent
+  (`price-table`), 0 € spent:
+
+  | Session | Model | Events | Wall time | Fresh in | Cached in | Out | USD |
+  |---|---|---|---|---|---|---|---|
+  | SOL | `gpt-6.1-sol` | 28 | 87.8 s | 6 376 | 170 624 | 3 763 | 0.0674 |
+  | TERRA | `gpt-5.6-terra` | 23 | 79.4 s | 13 384 | 132 864 | 3 516 | 0.0955 |
+  | LUNA | `gpt-6-luna` | 18 | 29.8 s | 6 675 | 100 864 | 2 883 | 0.0031 |
+
+  Figures from each session's `adapter.json` and `duration-ms.txt` (`spikes/task-102/out/<SESSION>/`). Three lines of
+  `docs/calibration/v0.3-ledger.md`, created by this task.
+- **Criterion 1, read from the sessions:** the three model ids are accepted by Codex 0.162.1 on the Plus plan;
+  `model_reasoning_effort="medium"` is accepted under `--strict-config` by all three (no error on stderr, one line
+  each); **the Plus quota does not show** in the `--json` stream (only `thread.started`, `turn.*` and `item.*` events)
+  nor on stderr while it lasts: it shows only when it ends, as the usage-limit message the adapter already reads as
+  `quota exhausted`. What is left of it is read by the approver on the account's usage page, before each stage of the
+  campaign.
+
 ### Review
 
 Under dl-020; `scripts/pre-review.sh main` green before each round.
