@@ -168,3 +168,32 @@ own overhead, which is unknown until calibration. Calibration replaces this figu
   - `rel-v0-2` `released` (step 6).
 - **Completion:** `rel-v0-2` is `released` and its Retrospective is written. The plan then moves `active → done`, and
   `rel-v0-3` gets its own plan.
+
+## Completion
+
+Closed on 2026-10-24, at the approver's request.
+
+- `rel-v0-2` is `released` (`f7e412cf`), and its Retrospective section is written (`6029ce0b`).
+- **Every checkpoint is reached:**
+  - `in-development` at the end of step 1, with the triage done;
+  - W12–W14's "Ends with" recorded;
+  - calibration approved with task-096 (`0bad8c88`), the revised budget included;
+  - validation (task-097) recorded in rel-v0-2 (`98a8c079`);
+  - campaign-002 and its bridge campaign-003 `published` (`669b0e9d`, `6d18c3fb`), with the comparisons
+    `c82a5e74885b/2` → bridge → campaign-002;
+  - `rel-v0-2` `released`, tag `v0.2`.
+- **The retrospective's immediate actions are done:** dl-020 and dl-021 approved; task-098 (the review rule),
+  task-099 (the v0.2 errata, the GitHub release corrected) and task-100 (the WingFoil feedback notes) done.
+
+**What differed from the plan** is recorded in rel-v0-2 (Release checklist and Retrospective) and in campaign-002:
+
+- the reference campaign pinned WingFoil v0.3.0, with the bridge on v0.2.2 (dl-017, task-095);
+- calibration cost 21 € against the 80–160 € expected, and the campaigns 31.17 € of the 65 € consented;
+- dl-147's verification (M-K1 on S1, H1) was not reached: 1.70× against 1.5×, on an arm whose manual did not exercise
+  WingFoil's workflow engine;
+- an errata corrected the S3 M-F1 finding and the texts that read it as a WingFoil regression (task-099).
+
+**Carried to v0.3's planning** (rel-v0-2 Retrospective, "Actions recorded"): the wingfoil arm's step A on WingFoil
+0.3.1, the configured variants and scenario versions 1.1, the oracle and metric bugs, the review loop measured per
+arm, the first `wingfoil-sync` together with the managing WingFoil pin, and the triage of dl-013, v0.1's smaller items
+and v0.2's follow-ups.
