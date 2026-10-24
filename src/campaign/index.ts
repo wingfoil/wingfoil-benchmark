@@ -1,3 +1,3 @@
-export { campaignId, loadCampaign } from './load.js';
-export type { Campaign } from './load.js';
+export { campaignId, listPresets, loadCampaign, mergePreset, PRESETS_DIR } from './load.js';
+export type { Campaign, Preset } from './load.js';
 export { loadRegister } from './register.js';

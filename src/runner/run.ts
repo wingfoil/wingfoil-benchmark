@@ -258,8 +258,11 @@ export interface RunPlan {
   readonly resultsRoot: string;
   /** The directory the executions are numbered in, under `results/` and `runs/`. */
   readonly key: string;
-  /** The file the execution ran from, copied into its results under `name`. */
-  readonly source: { readonly file: string; readonly name: string };
+  /**
+   * The file the execution ran from, copied into its results under `name`; with `content`, that text is written
+   * instead: a campaign that extends a preset keeps its resolved campaign (REQ-FMT-01 as amended in 1.34).
+   */
+  readonly source: { readonly file: string; readonly name: string; readonly content?: string };
   readonly scenarios: readonly Scenario[];
   readonly arms: readonly Arm[];
   readonly runs: readonly PlannedRun[];
@@ -408,7 +411,11 @@ function campaignPlan(checked: CheckedCampaign): RunPlan {
     repoRoot: campaign.repoRoot,
     resultsRoot: campaign.resultsRoot,
     key: campaign.id,
-    source: { file: campaign.file, name: 'campaign.yaml' },
+    source: {
+      file: campaign.file,
+      name: 'campaign.yaml',
+      ...(campaign.extended === undefined ? {} : { content: campaign.extended.yaml }),
+    },
     scenarios,
     arms,
     runs,
@@ -462,7 +469,8 @@ export async function runPlan(plan: RunPlan, options: RunnerOptions, resume?: nu
   if (resume === undefined) {
     mkdirSync(resultsDir, { recursive: true });
     options.log?.(`${plan.noun} ${plan.id}, execution ${execution}`);
-    copyFileSync(plan.source.file, join(resultsDir, plan.source.name));
+    if (plan.source.content === undefined) copyFileSync(plan.source.file, join(resultsDir, plan.source.name));
+    else writeFileSync(join(resultsDir, plan.source.name), plan.source.content);
   } else {
     // The command line refuses these first, by name (checkResume); the runner never resumes past them either.
     const resumable = executionResumable(resultsDir);
