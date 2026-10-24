@@ -16,6 +16,11 @@ itself. It found its rules and decisions through CLI calls instead, which took 9
 about 1 300 tokens for the directives themselves. Observed on `0.2.2`, in unattended sessions; reproducing it needs
 an agent, so it was not re-run here.
 
+Again on 0.3.0 (2026-10-23, this repository's task-100, from its v0.2 campaigns' transcripts): no MCP call in 69
+steps of the wingfoil arm; the agent read its rules and decisions through `wingfoil directives list` and `memory
+search` in every step. 0.3.0's session context (`wingfoil://session/<role>/<element>/<sha>`) is named only by
+`agent execute`'s bootstrap, and `agent execute` runs only interactively.
+
 ## Expected
 
 The role's context reaches the agent when its session starts (for example a generated section of the agent's
