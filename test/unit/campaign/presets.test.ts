@@ -174,3 +174,29 @@ describe('extends: refusals and edge paths (REQ-FMT-01 as amended in 1.34)', () 
     ]);
   });
 });
+
+describe('extends: review round 2 (task-101)', () => {
+  it('refuses a dangling symbolic link as a symbolic link', () => {
+    const file = extending({ extends: 'presets/gone.yaml' });
+    symlinkSync(join(file, '..', 'presets', 'nowhere.yaml'), join(file, '..', 'presets', 'gone.yaml'));
+    expect(issues(file)).toEqual([
+      { path: 'extends', message: "'presets/gone.yaml' must not be a symbolic link" },
+    ]);
+  });
+
+  it('refuses a campaigns/presets/ that is itself a symbolic link', () => {
+    const elsewhere = tempDir('bench-presets-elsewhere-');
+    writeFileSync(join(elsewhere, 'p.yaml'), stringify(PRESET));
+    const { root, file } = writeRepo();
+    symlinkSync(elsewhere, join(root, 'campaigns', 'presets'));
+    writeFileSync(file, stringify({ extends: 'presets/p.yaml' }));
+    expect(issues(file)).toEqual([{ path: 'extends', message: "'presets/' must not be a symbolic link" }]);
+  });
+
+  it('keeps the schema before the place for a misplaced file that extends nothing (characterization)', () => {
+    const root = tempDir('bench-misplaced-');
+    const file = join(root, 'c.yaml');
+    writeFileSync(file, stringify({ arms: ['baseline'] }));
+    expect(issues(file)[0]).toEqual({ path: 'harnesses', message: 'is required' });
+  });
+});
