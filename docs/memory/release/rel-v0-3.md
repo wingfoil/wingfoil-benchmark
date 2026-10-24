@@ -46,3 +46,8 @@ and v0.2's follow-ups merged, filed or dropped.
 ## Retrospective
 
 <!-- What went well, what to change, and the WingFoil usage notes handed to WingFoil. -->
+
+**Inputs collected for the retrospective** (input only, not acted on before it):
+
+- 2026-10-24, the WingFoil maintainer on the wingfoil arm and WingFoil's workflow model (dl-203, the steps A, B, C):
+  [docs/retrospective-inputs/v0.3/](../../retrospective-inputs/v0.3/2026-10-24-wingfoil-maintainer-the-arm-and-the-workflow-model.md).
