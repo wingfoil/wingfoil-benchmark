@@ -58,7 +58,7 @@ script runs the mechanical checks; the next task's review records severities.
 - **Build** (on `task/task-098`): red `8c6f9c33`, then `scripts/pre-review.sh` (`e2dfa01c`); `kanban-delivery.yaml`
   version 6 (`c7e522ba`); `npx wingfoil directive create --name code-review` (`dd66319f`: declared, a custom directive
   from the scaffold and one commit; observed, `name: code-review`, `title: "Code review"`, a placeholder body, as F-042
-  says) and its body (`3b0a7d6f`); `npx wingfoil directives list --role reviewer` reports "using
+  says) and its body (`94eb2fbe`); `npx wingfoil directives list --role reviewer` reports "using
   directives/custom/code-review.md". `npx wingfoil workflow list` exits 0 and reads version 6.
 - **Deviation, the approver's choice in chat (option b):** Markdown is not checked by Prettier, which would rewrite
   the front matter WingFoil writes (`tags: ["a","b"]` → `['a', 'b']`) and every table; the script checks the width of
