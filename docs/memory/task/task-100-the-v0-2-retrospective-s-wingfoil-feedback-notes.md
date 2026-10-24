@@ -64,3 +64,12 @@ The rule of dl-020.
   `e1a0124b`. The same overstatement was in dl-020's Context: corrected on main (`846d7065`).
 - **Round 2** (`e1a0124b`'s diff): 2 nits (F-041's Expected sentence, a missing trailing newline), fixed in
   `f76c061b` and closed with no new round, as dl-020 says.
+
+## Approval notes
+
+- **in-review → approved** (`a410b164`): run by this session at the approver's explicit request in chat (2026-10-24),
+  the reason saying so. Declared: one transition. Observed: the transition committed, then `error: illegal transition
+  approved -> backlog for type 'task'`, exit 2, with no second commit (as task-097's pending → backlog showed a refused
+  `backlog -> approved`). The state is right; the error is spurious.
+- **Merge:** `ae877625` (`--no-ff`). **Worktree removed:** no ignored file but `node_modules/`. Branch
+  `task/task-100` deleted.
