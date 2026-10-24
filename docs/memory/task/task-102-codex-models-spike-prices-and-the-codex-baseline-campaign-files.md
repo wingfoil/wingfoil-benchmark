@@ -51,3 +51,10 @@ table; dl-024's code bounds in place; `campaigns/codex-baseline.yaml` and its dr
 - **Security:** the delivery session names `$HOME/.codex-bench/` only; it never reads, prints, copies or lists the
   credential (dl-019 bounds 2–7 and 9, restated by dl-024). The secret scan after every stage that ran Codex.
 - Results are published only as their own cross-agent comparison, never mixed with the Claude headline (T14).
+
+## Execution notes
+
+- `npm run -s wingfoil -- memory add --type task --title "…" --tags "…"` on main, at v0.3's release-planning
+  (2026-10-24). Declared: the element from the template in `draft`, one commit. Observed: as declared.
+- The body committed by hand (`e7a5e1e2`), then `memory submit` (draft → pending). Declared and observed: one commit,
+  `status: pending`.

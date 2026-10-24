@@ -52,3 +52,10 @@ unchanged.
   validate and hash the resolved object; `campaignId` takes the resolved object.
 - **No generator** (dl-022's option C rejected) and no flags in place of a file (option D rejected).
 - The existing campaign files are not touched.
+
+## Execution notes
+
+- `npm run -s wingfoil -- memory add --type task --title "…" --tags "…"` on main, at v0.3's release-planning
+  (2026-10-24). Declared: the element from the template in `draft`, one commit. Observed: as declared.
+- The body committed by hand (`e7a5e1e2`), then `memory submit` (draft → pending). Declared and observed: one commit,
+  `status: pending`.

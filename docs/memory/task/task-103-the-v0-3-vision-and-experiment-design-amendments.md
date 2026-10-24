@@ -46,3 +46,13 @@ decision.
 
 - Documents only; each amendment raises its version and records the review decision (doc-versioning).
 - Written after dl-013's amendment and dl-023 are approved, so that the texts follow the options approved.
+
+## Execution notes
+
+- `npm run -s wingfoil -- memory add --type task --title "…" --tags "…"` on main, at v0.3's release-planning
+  (2026-10-24). Declared: the element from the template in `draft`, one commit. Observed: as declared.
+- The body committed by hand (`e7a5e1e2`), then `memory submit` (draft → pending). Declared and observed: one commit,
+  `status: pending`.
+- The first `memory submit` refused: "missing required field on submit: requirements" (the empty list, W-06 of the
+  `wingfoil-cli` directive, as declared). `requirements: [REQ-RES-03]` committed by hand, then `submit` (draft →
+  pending) passed.
