@@ -161,7 +161,9 @@ describe('extends: refusals and edge paths (REQ-FMT-01 as amended in 1.34)', () 
     expect(found.length).toBeGreaterThan(1);
     expect(found.at(-1)).toEqual({
       path: 'extends',
-      message: expect.stringMatching(/campaign resolved from 'presets\/p.yaml'.*a key the preset sets, a file cannot remove it/),
+      message: expect.stringMatching(
+        /campaign resolved from 'presets\/p.yaml'.*a key the preset sets, a file cannot remove it/,
+      ),
     });
   });
 
