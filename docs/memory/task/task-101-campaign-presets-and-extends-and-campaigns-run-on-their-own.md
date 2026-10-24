@@ -116,3 +116,8 @@ Under dl-020 and the `code-review` directive; `scripts/pre-review.sh main` green
     scenarios), the recipes the unit tests' minimal files already validate.
   - **nits, fixed:** this round 2 note made exact; a symlinked `campaigns/presets/`, dangling or not, named once by
     the listing instead of once per file (red `fa91234f`, fixed in the commit after it).
+- **Round 4** (a new independent agent, `9d38e7d7..HEAD`): **clean**, no finding. Each recipe the headers state
+  loads (harness-vs-docs with fewer arms; repetitions with fewer scenarios, and with S3 once in fewer arms), and the
+  old recipes are refused; the red `fa91234f` precedes the fix `d37d6a2b`; the notes checked against the history.
+  The review is closed.
+- **Rounds:** 4 (1 blocker, 5 should-fix, 13 nits; the should-fix of rounds 2 and 3 were notes and comments).
