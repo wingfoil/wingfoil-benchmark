@@ -309,6 +309,18 @@ npm run test:docker  # W1's to W3's runs, a dry run, bug-003's, W6's scoring, th
 
 MIT — see [LICENSE](LICENSE).
 
+## Pre-review checks
+
+`scripts/pre-review.sh <base>` runs, before every review round of a task (dl-020, `kanban-delivery` version 6), the
+checks a reviewer should never have to report: Prettier on every file the branch changed over `<base>` (types it does
+not know, and paths `.prettierignore` names, skipped), eslint on changed sources, `tsc`, the changed test files with the
+traceability test, and `test:bin` when the CLI, the site or a bin test changed. Niced, 2 vitest workers, it stops at
+the first red check and names it; it refuses a `<base>` that names no commit (exit 2).
+
+```sh
+scripts/pre-review.sh main
+```
+
 ## Full suites
 
 `scripts/full-suites.sh` runs the full suites — lint, `npm test` with coverage, the build, `test:bin` and `test:docker` — on the
