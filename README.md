@@ -315,9 +315,9 @@ MIT — see [LICENSE](LICENSE).
 checks a reviewer should never have to report: on changed Markdown, every line the branch added within 120 characters
 (tables, code blocks, the front matter and lines with a link apart) and a final newline, since Prettier leaves Markdown
 out (it would rewrite the front matter WingFoil writes); Prettier on every file the branch changed over `<base>` (types
-it does not know, and paths `.prettierignore` names, skipped); eslint on changed sources, `tsc`, the changed test files with the
-traceability test, and `test:bin` when the CLI, the site or a bin test changed. Niced, 2 vitest workers, it stops at
-the first red check and names it; it refuses a `<base>` that names no commit (exit 2).
+it does not know, and paths `.prettierignore` names, skipped); eslint on changed sources, `tsc`, the changed test
+files with the traceability test, and `test:bin` when the CLI, the site or a bin test changed. Niced, 2 vitest
+workers, it stops at the first red check and names it; it refuses a `<base>` that names no commit (exit 2).
 
 ```sh
 scripts/pre-review.sh main
