@@ -150,6 +150,10 @@ What was shown at review (in chat, 2026-10-22), on Sonnet 5.5, one pass of S1–
   baseline-docs here, two of the bridge); S3 30/37 for speckit (Sonnet) and wingfoil (Haiku); openspec 6/7 hold-out
   on S8.
 
+**Errata (2026-10-24, task-099):** the S3 D3 difference between v0.2.2 and v0.3.0 is the lexical check's: a
+false positive on v0.2.2, a revision in other words on v0.3.0. H3 and H4 are not measured reliably by v0.2's
+content checks; see [calibration v0.2](../../calibration/v0.2.md) §7.3–7.5.
+
 The site built locally (`bench site build`, never published) is plan-004 step 6's.
 
 ## Findings
@@ -164,3 +168,6 @@ the approver's (dl-009).
 - **[M-F1 on S3@1.0, baseline-docs against wingfoil](../../../findings/81ebb2691f9c-1-s3-1.0-m-f1-baseline-docs+wingfoil.md)**,
   as a **bug**, preliminary (n = 1): wingfoil 3/5 against baseline-docs' 4/5, D3 and D5 failed; on v0.2.2 (the
   bridge, `bf3a1ac7dff5/1`) the wingfoil arm kept 4/5 with D3 recorded.
+  **Errata (2026-10-24, task-099):** withdrawn, not to be filed in WingFoil: D3 fails in baseline-docs too,
+  and v0.2.2's "recorded" was a false positive; D5 fails in the wingfoil arm on both versions, from the arm's manual
+  ([calibration v0.2](../../calibration/v0.2.md) §7.3–7.4).
