@@ -2,7 +2,7 @@
 id: task-101-campaign-presets-and-extends-and-campaigns-run-on-their-own
 type: task
 title: "Campaign presets and extends, and campaigns run on their own"
-status: pending
+status: backlog
 release: v0.3
 wave: W15
 features: [F1.1]
