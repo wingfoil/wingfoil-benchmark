@@ -53,3 +53,33 @@ script runs the mechanical checks; the next task's review records severities.
 - `npx wingfoil memory add --type task --title "The review rule of dl-020 in kanban-delivery, the code-review
   directive and a pre-review script" --tags "review,process,retrospective"`, on main. Declared: the element from the
   template in `draft`, one commit. Observed: `1fe0f02a`, `status: draft`. Matches.
+- `memory approve` (pending → backlog, `812b1762`): run by this session at the approver's explicit request in chat
+  (2026-10-24), the reason saying so. `memory submit` (backlog → in-progress): `ff486944`. Matches.
+- **Build** (on `task/task-098`): red `8c6f9c33`, then `scripts/pre-review.sh` (`e2dfa01c`); `kanban-delivery.yaml`
+  version 6 (`c7e522ba`); `npx wingfoil directive create --name code-review` (`dd66319f`: declared, a custom directive
+  from the scaffold and one commit; observed, `name: code-review`, `title: "Code review"`, a placeholder body, as F-042
+  says) and its body (`3b0a7d6f`); `npx wingfoil directives list --role reviewer` reports "using
+  directives/custom/code-review.md". `npx wingfoil workflow list` exits 0 and reads version 6.
+- **Deviation, the approver's choice in chat (option b):** Markdown is not checked by Prettier, which would rewrite
+  the front matter WingFoil writes (`tags: ["a","b"]` → `['a', 'b']`) and every table; the script checks the width of
+  the lines the branch added to changed Markdown and its final newline instead. dl-020 amended on main (`e556e3d7`).
+
+### Review
+
+The rule of dl-020, applied to its own implementation.
+
+- **Round 1** (an independent read-only agent, the five build commits): a **blocker**: `.prettierignore` leaves out
+  `*.md`, `docs/` and `.wingfoil/`, and Prettier skips ignored paths passed explicitly, so no Markdown was checked
+  (resolved by the approver's option b). Should-fix: a missing base or a run outside git exited 0 with "nothing
+  changed"; a changed `test/bin/` test was dropped by the default vitest config; the directive lacked the reviewer's
+  prompt and the completeness rule. Nits: quoted non-ASCII paths, no eslint, no README section, the directive's
+  `ref`. Fixed: red `2380be24`, `dc448077`, `6ea5d571`; the Markdown check red `87da13f3`, `7c6af89d`; only the added
+  lines red `4d4b023b`, `4026fe45`; the README rewrapped as the script asked (`fb71267a`).
+- **Round 2** (the fixes' diff): should-fix: an added Markdown line starting with `++` was skipped as a diff header,
+  shifting the numbers after it; the tests did not prove multi-hunk numbering, nor a long line after a fence or a
+  mid-file `---`. Nits: header lines over 120, the width check reading the working tree, a no-op checkout. Fixed: red
+  `5c91efcd`, `21592afa`.
+- **Round 3** (`21592afa`'s diff): one nit (the final-newline check still read the working tree), fixed in
+  `e82c2cc4` and closed with no new round.
+- Day checks on `e82c2cc4`: `scripts/pre-review.sh main` green (markdown, prettier, eslint, tsc, the touched tests with
+  traceability); `test/unit/scripts` 16/16; lint 0.
