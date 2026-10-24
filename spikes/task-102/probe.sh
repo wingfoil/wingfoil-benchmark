@@ -98,8 +98,13 @@ session() { # one real Codex session: S3@1.0 step 1, baseline arm, outside the r
   local key="$1" model; model="$(model_of "$key")"
   local dir="$OUT/$key" c="bench-spike-task-102-$key${FAKE:+-fake}"
   [ -n "$FAKE" ] || [ "${BENCH_SPIKE_CONFIRM:-}" = 1 ] || { echo "$key runs a real Codex session: BENCH_SPIKE_CONFIRM=1"; exit 64; }
-  # dl-024 bound 1: real sessions from the main checkout only.
-  [ -n "$FAKE" ] || [ "$REPO" = "$MAIN" ] || { echo "$key runs from the main checkout only, not $REPO"; exit 64; }
+  # dl-024 bound 1: real sessions from the main checkout, as task-094's ran: the main checkout as the working
+  # directory and their records in its ignored out/, the probe and the built dist/ possibly a worktree's, at a commit
+  # each ledger line names.
+  if [ -z "$FAKE" ]; then
+    [ "$(pwd -P)" = "$(cd "$MAIN" && pwd -P)" ] || { echo "$key runs with the main checkout as working directory"; exit 64; }
+    [ -z "${BENCH_SPIKE_OUT:-}" ] || { echo "$key writes into the main checkout's out/, not BENCH_SPIKE_OUT"; exit 64; }
+  fi
   # A session is never repeated without new consent: its output exists from the first redirect on.
   [ ! -e "$dir/session.jsonl" ] || { echo "$key already ran ($dir): not repeated"; exit 2; }
   fresh_dist
