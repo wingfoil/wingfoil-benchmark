@@ -1,6 +1,6 @@
-import { chmodSync, copyFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { stringify } from 'yaml';
+import { parse, stringify } from 'yaml';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { CODEX_SCOPE_END, codexScopeIssues } from '../../../src/cli/codex-scope.js';
@@ -44,7 +44,7 @@ describe("the Codex credential's scope (dl-024)", () => {
     ).toEqual([]);
     expect(
       codexScopeIssues(
-        { agent: 'codex', dryRunArm: 'baseline', profile: 'codex-baseline.dry-run.yaml' },
+        { agent: 'codex', dryRunArm: 'baseline', profile: 'campaigns/codex-baseline.dry-run.yaml' },
         before,
       ),
     ).toEqual([]);
@@ -53,7 +53,7 @@ describe("the Codex credential's scope (dl-024)", () => {
   it('refuses any Codex session after 2026-11-13', () => {
     expect(
       codexScopeIssues(
-        { agent: 'codex', dryRunArm: 'baseline', profile: 'codex-baseline.dry-run.yaml' },
+        { agent: 'codex', dryRunArm: 'baseline', profile: 'campaigns/codex-baseline.dry-run.yaml' },
         after,
       ),
     ).toEqual([{ path: 'agent', message: "codex's credential is in scope until 2026-11-13 only (dl-024)" }]);
@@ -74,7 +74,7 @@ describe("the Codex credential's scope (dl-024)", () => {
     ).toEqual([{ path: 'arms', message: 'a codex campaign runs the baseline arm only (dl-024)' }]);
     expect(
       codexScopeIssues(
-        { agent: 'codex', dryRunArm: 'wingfoil', profile: 'codex-baseline.dry-run.yaml' },
+        { agent: 'codex', dryRunArm: 'wingfoil', profile: 'campaigns/codex-baseline.dry-run.yaml' },
         before,
       ),
     ).toEqual([{ path: 'arm', message: 'a codex dry run runs the baseline arm only (dl-024)' }]);
@@ -83,7 +83,18 @@ describe("the Codex credential's scope (dl-024)", () => {
   it("refuses a Codex dry run from another profile than the campaign's (review round 1)", () => {
     expect(
       codexScopeIssues(
-        { agent: 'codex', dryRunArm: 'baseline', profile: 'x-codex-s3-codex.dry-run.yaml' },
+        { agent: 'codex', dryRunArm: 'baseline', profile: 'campaigns/x-codex-s3-codex.dry-run.yaml' },
+        before,
+      ),
+    ).toEqual([
+      { path: 'profile', message: 'a codex dry run reads campaigns/codex-baseline.dry-run.yaml (dl-024)' },
+    ]);
+  });
+
+  it("refuses a copy of the campaign's profile outside campaigns/ (review round 2)", () => {
+    expect(
+      codexScopeIssues(
+        { agent: 'codex', dryRunArm: 'baseline', profile: 'spikes/x/codex-baseline.dry-run.yaml' },
         before,
       ),
     ).toEqual([
@@ -146,6 +157,43 @@ describe("dl-024's scope in the commands", () => {
     expect(refused).toMatchObject({ code: 1, built: 0 });
     expect(refused.stderr).toContain(
       'extends: a codex campaign must extend presets/baseline-across-agents.yaml (dl-024)',
+    );
+  });
+
+  it("refuses a copy of the campaign's dry-run profile outside campaigns/, building nothing (review round 2)", async () => {
+    const { root } = writeRepo();
+    copyFileSync(repoPath('scenarios/leak-scan.yaml'), join(root, 'scenarios', 'leak-scan.yaml'));
+    mkdirSync(join(root, 'spikes', 'x'), { recursive: true });
+    const copy = join(root, 'spikes', 'x', 'codex-baseline.dry-run.yaml');
+    // The campaign's profile, less the digest of the repository's own baseline arm, which this fixture's differs from.
+    const profile = parse(readFileSync(repoPath('campaigns/codex-baseline.dry-run.yaml'), 'utf8')) as Record<
+      string,
+      unknown
+    >;
+    delete profile.arm_digests;
+    writeFileSync(copy, stringify(profile));
+    vi.stubEnv('BENCH_CODEX_AUTH_FILE', fakeAuthFile());
+
+    const refused = await cli(
+      [
+        'scenario',
+        'dry-run',
+        'S1@1.0',
+        '--arm',
+        'baseline',
+        '--model',
+        'gpt-6.1-sol',
+        '--profile',
+        copy,
+        '--allow-spending',
+      ],
+      root,
+      () => Date.parse('2026-10-24T12:00:00Z'),
+    );
+
+    expect(refused).toMatchObject({ code: 1, built: 0 });
+    expect(refused.stderr).toContain(
+      'profile: a codex dry run reads campaigns/codex-baseline.dry-run.yaml (dl-024)',
     );
   });
 
