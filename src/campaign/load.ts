@@ -62,11 +62,17 @@ export function loadCampaign(file: string): Result<Campaign> {
   const read = readYamlFile(path);
   if (!read.ok) return read;
   const directory = dirname(path);
-  if (basename(directory) !== CAMPAIGNS_DIR) {
-    return fail([
-      { path: basename(path), message: `must live in a '${CAMPAIGNS_DIR}' directory, next to 'scenarios'` },
-    ]);
-  }
+  const misplaced =
+    basename(directory) === CAMPAIGNS_DIR
+      ? undefined
+      : fail<Campaign>([
+          {
+            path: basename(path),
+            message: `must live in a '${CAMPAIGNS_DIR}' directory, next to 'scenarios'`,
+          },
+        ]);
+  // A misplaced file has no `campaigns/presets/` to resolve against: its place is said first, before any preset.
+  if (misplaced !== undefined && isMap(read.value) && 'extends' in read.value) return misplaced;
   const resolution = resolvePreset(read.value, directory);
   if (!resolution.ok) return resolution;
   const { resolved, preset } = resolution.value;
@@ -82,6 +88,7 @@ export function loadCampaign(file: string): Result<Campaign> {
     };
     return fail(preset === undefined ? issues : [...issues, hint]);
   }
+  if (misplaced !== undefined) return misplaced;
 
   const repoRoot = dirname(directory);
   return ok({
