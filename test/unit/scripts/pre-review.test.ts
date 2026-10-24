@@ -13,15 +13,35 @@ const SCRIPT = repoPath('scripts/pre-review.sh');
  * A repository whose branch changes `files` over `main`, and stub `npx` and `npm` that record each call and fail the
  * command named by `failing`: what the script runs, without running a check (dl-020, task-098).
  */
-function fixture(files: readonly (string | readonly [string, string])[], failing?: string) {
+function fixture(
+  files: readonly (string | readonly [string, string])[],
+  failing?: string,
+  onMain: readonly string[] = [],
+) {
   const root = tempDir('bench-pre-review-');
   const repo = join(root, 'repo');
   mkdirSync(repo);
   const git = (...args: string[]) => execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8' });
   git('init', '-q', '-b', 'main');
   git('-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'seed');
+  // Files already on main with their content: the branch then appends a short line to each.
+  for (const entry of files) {
+    const [file, content] = typeof entry === 'string' ? [entry, 'x\n'] : entry;
+    if (!onMain.includes(file)) continue;
+    mkdirSync(join(repo, dirname(file)), { recursive: true });
+    writeFileSync(join(repo, file), content);
+  }
+  if (onMain.length > 0) {
+    git('add', '-A');
+    git('-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '-m', 'main files');
+  }
   git('checkout', '-q', '-b', 'task/x');
   for (const entry of files) {
+    if (onMain.includes(typeof entry === 'string' ? entry : entry[0])) {
+      const file = typeof entry === 'string' ? entry : entry[0];
+      writeFileSync(join(repo, file), `${readFileSync(join(repo, file), 'utf8')}A short line.\n`);
+      continue;
+    }
     const [file, content] = typeof entry === 'string' ? [entry, 'x\n'] : entry;
     mkdirSync(join(repo, dirname(file)), { recursive: true });
     writeFileSync(join(repo, file), content);
@@ -48,7 +68,7 @@ function fixture(files: readonly (string | readonly [string, string])[], failing
     cwd: repo,
   });
   const recorded = () => (existsSync(calls) ? readFileSync(calls, 'utf8').trim().split('\n') : []);
-  return { run, recorded };
+  return { run, recorded, git };
 }
 
 describe('scripts/pre-review.sh (dl-020, task-098)', () => {
@@ -99,6 +119,14 @@ describe('scripts/pre-review.sh (dl-020, task-098)', () => {
     const noNewline = fixture([['docs/b.md', '# Title\n\nText']]);
     expect(noNewline.run().status).toBe(1);
     expect(noNewline.run().stderr).toMatch(/docs\/b\.md: no newline at the end/);
+  });
+
+  it('checks only the Markdown lines the branch added, not the long lines a file already had', () => {
+    const long = 'word '.repeat(26).trim();
+    const { run, git } = fixture([['docs/d.md', `# Title\n\n${long}\n`]], undefined, ['docs/d.md']);
+    git('checkout', '-q', 'task/x');
+    const result = run();
+    expect(result.status, result.stderr).toBe(0);
   });
 
   it('leaves tables, code blocks, front matter, links and byte-pinned paths out of the Markdown check', () => {
