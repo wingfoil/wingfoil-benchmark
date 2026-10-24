@@ -45,12 +45,38 @@ table; dl-024's code bounds in place; `campaigns/codex-baseline.yaml` and its dr
 
 ## Design
 
-- **Order within the quota** (dl-022): if not everything fits by 2026-11-12, S3's dry runs on every model, then Sol's
-  whole campaign, then Luna, then Terra.
-- The adapter is task-094's; only the bounds, the store clearing and the failure's cost are new.
-- **Security:** the delivery session names `$HOME/.codex-bench/` only; it never reads, prints, copies or lists the
-  credential (dl-019 bounds 2–7 and 9, restated by dl-024). The secret scan after every stage that ran Codex.
-- Results are published only as their own cross-agent comparison, never mixed with the Claude headline (T14).
+- **The phases**, as task-094's (`spikes/task-094/probe.sh` is the model):
+  - **Free, no session:** Codex 0.162.1's model presets and effort levels read from its released source; Terra's and
+    Luna's list prices read from OpenAI's pricing page; both recorded with their source and the date read. If a
+    model is not offered to Codex 0.162.1, or has no list price, the task stops and asks.
+  - **Offline code** (criteria 2–5), reviewed by an independent agent before any real session, one round at a time
+    under dl-020.
+  - **The three real sessions** (the consent of this task's pending → backlog approval): `spikes/task-102/probe.sh`
+    runs S3@1.0 step 1 in the baseline arm, outside the runner, once per model (Sol, Terra, Luna) at the effort F1
+    reads, `step_time_s` 1800 s. **Spending: 0 €** (the Plus quota); API-equivalent expected well under 1 USD a
+    session, recorded and flagged `price-table`. A failed session is not repeated without new consent. The secret scan
+    after each session. One line of `docs/calibration/v0.3-ledger.md` each.
+  - The approver logs in by hand first (dl-024, dl-019 bound 3): `CODEX_HOME=$HOME/.codex-bench`, `codex login
+    --device-auth`, `cli_auth_credentials_store = "file"`. The session names the path only.
+- **dl-024's bounds in code:**
+  - `bench campaign run` and `bench scenario dry-run` refuse `agent.name: codex` after **2026-11-13** (the clock
+    injected, so that the test is not dated), and a Codex campaign that does not extend
+    `presets/baseline-across-agents.yaml` (dl-022's fallback, a whole file, would need the approver's word and an
+    amendment of dl-024 first); a Codex dry-run profile must hold the baseline arm only.
+  - The agent port gains an optional `endRun()`, called by the runner after each run; the Codex adapter clears its
+    thread map there.
+  - `CODEX_HOME`'s stores are already emptied before every step but `auth.json` and `config.toml`
+    (`src/agents/profile.ts`, task-094): characterization.
+- **A failed Codex invocation's cost** ([bug-032](../bug/bug-032-an-interrupted-or-killed-step-loses-the-cost-it-spent.md),
+  its Codex case): when the stream holds no `turn.completed`, the adapter says its usage is not reported, and the
+  runner counts the step at its bound, as it does a killed one (`cost_reported: false`). bug-032's other cases stay
+  with W16.
+- **The campaign files:** `campaigns/codex-baseline.yaml` extends `presets/baseline-across-agents.yaml` with `agent:
+  codex` (the version and effort F1 pins), `models` (Sol by default, Terra and Luna as slices over every scenario of
+  the baseline arm, so that one execution holds the three) and the budget in API-equivalent euro; its dry-run profile
+  `campaigns/codex-baseline.dry-run.yaml`, written whole (task-101: profiles do not extend presets).
+- **Requirements 1.35:** REQ-NFR-01's exception restated for dl-024's scope; the Codex refusals (REQ-RUN-15);
+  `endRun` (REQ-ARC-04); the failed invocation's bound (REQ-RUN-09).
 
 ## Execution notes
 
