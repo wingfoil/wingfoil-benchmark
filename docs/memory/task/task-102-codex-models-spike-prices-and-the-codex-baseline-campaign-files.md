@@ -172,3 +172,17 @@ Under dl-020; `scripts/pre-review.sh main` green before each round.
   - **nits, fixed:** every repository under a workspace is scanned, nested ones and gitfiles included (checked: a
     value only in a nested repository's pack, exit 4); a `mktemp` failure exits 3; the comment says that an object
     git itself cannot unpack is skipped.
+- **Round 5** (a new independent agent, sandboxed; the reflog unchanged after it):
+  - **should-fix:** a signal during the exit handler's own scan still left the dump; the INT, TERM and HUP traps made
+    bash wait for the running child (a real Codex session for up to 30 minutes, a whole dump) before exiting; bare
+    repositories, `--separate-git-dir` stores and orphaned submodule stores were not scanned.
+  - **Fixed by simplifying** rather than patching: the objects are streamed from `git cat-file` into grep and never
+    written to disk, git's status going to a file that holds no value (a match is found even if git is cut short;
+    no match counts only when git read the whole store); no signal trap, since bash runs the exit handler on exit,
+    TERM and HUP by itself; every store found by its structure (a `HEAD` file beside an `objects/` directory), work
+    trees' `.git`, nested and bare ones alike; `find`'s own failure fails the scan (round 5's nit). Round 4's dump and
+    its stale-dump removal are gone with it.
+  - Checked by hand, paths with spaces: reset away, staged and deleted, buried and packed, nested, bare (exit 4 each),
+    clean (0), objects removed (3); TERM and HUP during a slowed `cat-file` end the probe at once (143, 129) with
+    nothing left in `out/`. An INT sent to a background job is ignored by bash, as for any background job; a Ctrl-C
+    reaches the probe in the foreground.
