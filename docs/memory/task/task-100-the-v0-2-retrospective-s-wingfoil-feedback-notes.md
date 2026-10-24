@@ -47,3 +47,20 @@ dl-163). The inbox's rules have a note written by a task (`New note (task-<n>).`
 - `npx wingfoil memory add --type task --title "The v0.2 retrospective's WingFoil feedback notes" --tags
   "wingfoil-feedback,retrospective"`, on main. Declared: the element from the template in `draft`, one commit.
   Observed: `status: draft`. Matches.
+- `memory approve` (pending → backlog): run by this session at the approver's explicit request in chat (2026-10-24),
+  the reason saying so. `memory submit` (backlog → in-progress). Matches.
+- **The notes** (on `task/task-100`): `9b170309` F-040, F-041, F-042, the 0.3.0 evidence in F-032 and F-033, three
+  ledger rows; `e1a0124b` after review round 1; `f76c061b` round 2's nits. The inbox test 10/10; lint 0.
+
+### Review
+
+The rule of dl-020.
+
+- **Round 1** (an independent read-only agent, `9b170309`): no blocker; 7 should-fix: F-041 said the exit status is
+  not handed back (it is; the output goes to the terminal, and the built-in adapter records no usage); F-032's "69
+  steps on 0.3.0" (42 on 0.3.0, 27 on the bridge); F-040's benchmark column (14 %, not 10 %), WingFoil v0.3's rule
+  (one exists after a gate reject, dl-098), Templates' rule from task-026 and its inferred fix-induced share, and "no
+  nit-only round found anything serious" (2 of 15 did); F-033's "never found its own records". 4 nits. All fixed in
+  `e1a0124b`. The same overstatement was in dl-020's Context: corrected on main (`846d7065`).
+- **Round 2** (`e1a0124b`'s diff): 2 nits (F-041's Expected sentence, a missing trailing newline), fixed in
+  `f76c061b` and closed with no new round, as dl-020 says.
