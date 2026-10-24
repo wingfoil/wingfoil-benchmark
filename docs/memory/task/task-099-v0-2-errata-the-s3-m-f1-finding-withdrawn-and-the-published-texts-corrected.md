@@ -71,3 +71,10 @@ The rule of dl-020: every finding with a severity; a re-review of the fix's diff
   `518ddd44`.
 - **Round 3** (`518ddd44`'s diff): one nit (v0.3.0's template word is "replace"; the runs in column order), fixed in
   `c5345986` and closed with no new round, as dl-020 says.
+
+## Approval notes
+
+- **in-review → approved** (`26c01e5c`): run by the approver. **Merge:** `ab2ac0eb` (`--no-ff`), pushed with main.
+- **The GitHub release `v0.2`**: its notes replaced by the merged `docs/releases/v0.2.md` (`gh release edit v0.2
+  --notes-file …`), with the approver's consent in chat (2026-10-24); the published notes carry both errata lines.
+- **Worktree removed:** no ignored file but `node_modules`. Branch `task/task-099` deleted.
