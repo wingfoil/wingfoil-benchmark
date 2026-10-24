@@ -71,3 +71,39 @@ unchanged.
   (2026-10-24). Declared: the element from the template in `draft`, one commit. Observed: as declared.
 - The body committed by hand (`e7a5e1e2`), then `memory submit` (draft → pending). Declared and observed: one commit,
   `status: pending`.
+- `memory submit` (backlog → in-progress, `2525cbe0`) on main, after the Design (`ba3007a4`). Declared and observed:
+  one commit, `status: in-progress`.
+- **Build** (on `task/task-101`, worktree `../WingFoil2-Benchmark-wt/task-101`, its own `npm ci`): requirements 1.34
+  and traceability 1.5 (`8f1587b4`); red: campaign.feature 1.2's five scenarios and the unit tests (`1cb3b839`);
+  code (`f7125217`); the workflows, release-cycle version 5 and campaign-cycle's header (`48d1d7cb`).
+- **Slip, disclosed:** the usage text gained `bench campaign presets` in the code commit, and its two tests
+  (`test/bin/bench.test.ts`, then `test/unit/cli/main.test.ts` in review round 1) were updated after it: test-after
+  for that one line. `scripts/pre-review.sh main` caught the first (`test:bin` red), the review the second.
+- `npm run -s wingfoil -- workflow list` exits 0 and reads release-cycle version 5.
+- **Not in this task:** dl-023's joining rule (a repetition campaign's runs counted with the reference campaign's
+  group of the same key, REQ-RES-03); the `repetitions` preset says so in its header.
+
+### Review
+
+Under dl-020 and the `code-review` directive; `scripts/pre-review.sh main` green before each round.
+
+- **Round 1** (an independent read-only agent, `git diff main...HEAD` at `829cc31e`):
+  - **blocker:** `test/unit/cli/main.test.ts`'s usage regexes not updated (12 tests red). Fixed in `c73ae19d`.
+  - **should-fix:** REQ-CLI-13's error path: the listing printed nothing when one preset was broken, and named it
+    `extends:`. Fixed: red `c73ae19d`, fix `c767d6b1` (valid presets listed, each broken one named by its file with
+    its refusal, exit 1).
+  - **should-fix:** a file extending a superset preset (reference, smoke) cannot narrow arms or scenarios, unstated.
+    Fixed: REQ-FMT-01 1.34 states it, a refused resolved campaign ends with a hint naming the preset, and the
+    reference preset's header says so (`c767d6b1`).
+  - **should-fix:** tests missing for a non-string `extends:`, a preset in a subdirectory, a resume and an estimate
+    of an extending campaign. Added in `c73ae19d` (they pass: the behaviour already held).
+  - **nits, fixed:** a symlinked preset refused; `..x.yaml` accepted; a misplaced file with `extends:` refused for its
+    place first (its first version reordered every file's checks and broke `test:bin`, fixed in `1b932475`); a
+    non-string description worded as "no one-line description"; the reference preset says it resolves to
+    campaign-002's id.
+- **Round 2** (a new independent agent, the fixes' diff `829cc31e..HEAD`): the fixes correct and complete, no
+  regression (red-first checked at `c73ae19d`).
+  - **should-fix (process):** these Review notes were not yet written. Fixed here.
+  - **nits, fixed** (red `6ab3f72e`, fix `f3298443`): a unit test pinning the order of checks for a misplaced file
+    that extends nothing; smoke's header says what a file cannot remove; a dangling symlink and a symlinked
+    `campaigns/presets/` refused as symbolic links; the hint worded for any refusal of the resolved campaign.
