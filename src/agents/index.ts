@@ -14,6 +14,6 @@ export type { AdapterOptions, ModelsUsage, ModelUsage, Session, SessionUsage } f
 export { readableTranscript } from './transcript.js';
 export { codexAgent, codexFileSecrets, codexSecrets, readCodexSession } from './codex.js';
 export type { CodexOptions, CodexSession, CodexTotals } from './codex.js';
-export { OPENAI_PRICES, OPENAI_PRICES_SOURCE } from './openai-prices.js';
+export { OPENAI_PRICE_SOURCES, OPENAI_PRICES, OPENAI_PRICES_SOURCE } from './openai-prices.js';
 export { agentProfile, CODEX_CONFIG, CODEX_HOME } from './profile.js';
 export type { AgentProfile } from './profile.js';

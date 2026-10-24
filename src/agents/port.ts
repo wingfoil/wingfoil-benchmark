@@ -88,6 +88,11 @@ export interface StepOutcome {
    */
   readonly stop?: 'cap reached' | 'quota exhausted' | 'rate limited';
   /**
+   * Set when the agent cannot say what the invocation used (REQ-RUN-09 as amended in 1.35): Codex's stream with no
+   * `turn.completed`. The runner then counts the step at its bound, as a killed one, never as free.
+   */
+  readonly costUnknown?: true;
+  /**
    * The session's final assistant message, which the neutral approver classifies (REQ-RUN-06).
    * Whether it is waiting is the approver's reading, not the agent's: no field of the protocol says so.
    */
@@ -99,4 +104,9 @@ export interface AgentPort {
   runStep(request: StepRequest): Promise<StepOutcome>;
   /** Continue a step's session with the approver's reply (REQ-RUN-07). */
   resume(request: ResumeRequest): Promise<StepOutcome>;
+  /**
+   * Called by the runner once at the end of each run (REQ-ARC-04 as amended in 1.35): an adapter forgets there what it
+   * kept for the run's resumes (dl-024: Codex's thread map).
+   */
+  endRun?(): void;
 }

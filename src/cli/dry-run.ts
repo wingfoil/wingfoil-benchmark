@@ -8,6 +8,7 @@ import { checkDryRun, runDryRun } from '../runner/index.js';
 import type { DryRunRequest } from '../runner/index.js';
 
 import { parseScenarioRef } from './scenario.js';
+import { codexScopeIssues } from './codex-scope.js';
 import { checkSpending, EXIT, portsFor, report, SPENDING_FLAG, USAGE, withInterrupt } from './shared.js';
 import type { Io, Ports } from './shared.js';
 
@@ -76,6 +77,13 @@ export async function dryRunCommand(
   const checked = checkDryRun(args, root);
   if (!checked.ok) return report(checked.issues, io);
   const { profile, scenario, arm, arms, model } = checked.value;
+
+  // dl-024: a Codex session only within its credential's scope, refused first.
+  const outOfScope = codexScopeIssues(
+    { agent: profile.agent.name, dryRunArm: arm.name },
+    (ports?.now ?? Date.now)(),
+  );
+  if (outOfScope.length > 0) return report(outOfScope, io);
 
   // dl-015: a real agent's dry run runs its model at the profile's pinned effort; refused first, as `campaign run` does.
   const unpinned = missingEffort(profile.agent, [model]);

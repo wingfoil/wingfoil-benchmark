@@ -43,6 +43,8 @@ export interface Ports {
   readonly publish?: PublishPort;
   /** The host's images, for `bench images prune` (task-061); the system's when not given. */
   readonly images?: ImagePort;
+  /** The clock dl-024's scope is read against (REQ-RUN-15 as amended in 1.35); `Date.now` when not given. */
+  readonly now?: () => number;
 }
 
 /** The command line's usage, printed on `--help` and on a usage error. */

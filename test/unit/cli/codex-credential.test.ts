@@ -7,8 +7,9 @@ import {
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { stringify } from 'yaml';
 
 import { main } from '../../../src/cli/index.js';
 import { campaignRequirements } from '../../../src/cli/preflight.js';
@@ -240,18 +241,23 @@ describe("Codex's credential for a run (REQ-RUN-15, REQ-NFR-01 as amended in 1.3
 
 describe('bench campaign run with Codex (review 2)', () => {
   it('scrubs what it stores with the credential as a refresh during the run left it', async () => {
-    const { file } = writeRepo(
-      {
-        ...completeCampaignYaml(),
-        harnesses: {},
-        arms: ['baseline'],
-        scenarios: [{ id: 'S1', version: '1.0' }],
-        repetitions: { S1: 1 },
-        agent: CODEX_AGENT,
-        models: { default: 'gpt-6.1-sol' },
-      },
-      ['S1@1.0'],
+    const pins = {
+      ...completeCampaignYaml(),
+      harnesses: {},
+      arms: ['baseline'],
+      scenarios: [{ id: 'S1', version: '1.0' }],
+      repetitions: { S1: 1 },
+      agent: CODEX_AGENT,
+      models: { default: 'gpt-6.1-sol' },
+    };
+    const { file } = writeRepo(pins, ['S1@1.0']);
+    // dl-024: a Codex campaign extends presets/baseline-across-agents.yaml (task-102).
+    mkdirSync(join(dirname(file), 'presets'));
+    writeFileSync(
+      join(dirname(file), 'presets', 'baseline-across-agents.yaml'),
+      stringify({ description: 'the baseline arm only', ...pins }),
     );
+    writeFileSync(file, stringify({ extends: 'presets/baseline-across-agents.yaml' }));
     priceCampaign(file);
     const auth = authFile();
     vi.stubEnv('BENCH_CODEX_AUTH_FILE', auth);

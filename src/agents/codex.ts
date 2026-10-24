@@ -353,6 +353,8 @@ export function codexAgent(options: CodexOptions): AgentPort {
         thread,
       );
     },
+    // dl-024: no thread outlives its run.
+    endRun: () => threads.clear(),
   };
 }
 
@@ -363,6 +365,8 @@ function outcomeOf(session: CodexSession, sessionId: string): StepOutcome {
     ...(Object.keys(session.models).length === 0 ? {} : { models: session.models }),
     transcript: session.transcript,
     ...(session.outcome === 'failed' ? { error: session.error ?? 'the session failed' } : {}),
+    // No turn.completed: Codex reported nothing of what the invocation used (REQ-RUN-09 as amended in 1.35).
+    ...(session.outcome === 'failed' && session.usage.turns === 0 ? { costUnknown: true as const } : {}),
     ...(session.outcome === 'quota exhausted' || session.outcome === 'rate limited'
       ? { stop: session.outcome }
       : {}),

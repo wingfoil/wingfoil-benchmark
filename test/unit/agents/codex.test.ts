@@ -346,12 +346,18 @@ describe('the Codex adapter (REQ-RUN-04 as amended in 1.32)', () => {
   });
 
   it('reports the usage of a session that failed after a turn.completed as known', async () => {
-    const exec = runner([stream('failed.jsonl').join('\n')]);
+    const lines = [
+      ...stream('completed.jsonl').filter((line) => !line.includes('"turn.failed"')),
+      '{"type":"turn.started"}',
+      '{"type":"turn.failed","error":{"message":"stream disconnected before completion"}}',
+    ];
+    const exec = runner([lines.join('\n')]);
 
     const outcome = await codexAgent({ authFile: authFile('at-0001-long-access'), usdToEur: RATE }).runStep(
       step(exec.run),
     );
 
+    expect(outcome.error).toMatch(/stream disconnected/);
     expect(outcome.costUnknown).toBeUndefined();
   });
 
