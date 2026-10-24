@@ -2,7 +2,7 @@
 id: task-099-v0-2-errata-the-s3-m-f1-finding-withdrawn-and-the-published-texts-corrected
 type: task
 title: "v0.2 errata: the S3 M-F1 finding withdrawn and the published texts corrected"
-status: backlog
+status: in-progress
 release: v0.2
 wave: retrospective
 features: []
