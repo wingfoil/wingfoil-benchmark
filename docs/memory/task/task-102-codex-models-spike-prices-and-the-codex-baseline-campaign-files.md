@@ -84,3 +84,50 @@ table; dl-024's code bounds in place; `campaigns/codex-baseline.yaml` and its dr
   (2026-10-24). Declared: the element from the template in `draft`, one commit. Observed: as declared.
 - The body committed by hand (`e7a5e1e2`), then `memory submit` (draft → pending). Declared and observed: one commit,
   `status: pending`.
+- The approver's pending → backlog in chat (2026-10-24). `memory submit` (backlog → in-progress, `e8805f6b`) on main, after
+  the Design. Declared and observed: one commit each.
+- **The free phase (2026-10-24, no session, no credential)**, in the main checkout's ignored `spikes/task-102/out/f1/`:
+  - `@openai/codex` `latest` is **0.164.0** (2026-10-23); dl-022 pins 0.162.1, task-094's, which is kept.
+  - Codex's `models.json` at `rust-v0.162.1` (task-094's copy) and `rust-v0.164.0` lists the same models on the Plus
+    plan, and **no generation-6 Terra**: Sol as `gpt-6.1-sol`, `gpt-6-sol`, `gpt-5.6-sol`; Terra only as
+    `gpt-5.6-terra`; Luna as `gpt-6-luna`, `gpt-5.6-luna`; `gpt-6-astra` beside them. The Design's stop: asked.
+    **The approver's choice in chat: option A**, the latest of each name, `gpt-6.1-sol`, `gpt-5.6-terra`,
+    `gpt-6-luna`, at `medium` (every one offers it; Luna has no `ultra`).
+  - Their list prices from OpenAI's pricing page, Standard tier, short context, read from the page's raw data
+    (`pricing.html`): Terra 2 / 0.2 cached / 2.5 write / 12 output, Luna 0.1 / 0.01 / 0.125 / 0.5 USD per million
+    tokens; Sol unchanged. WebFetch's summary gave the same figures, but Terra's row is only in the page's data, so the
+    raw extract is the source (`sources.txt`).
+- **Build** (on `task/task-102`): requirements 1.35 (`8b541d7a`); red (`d59f1c1e`); code
+  (`0186ed6c`: prices, `costUnknown`, `endRun`, dl-024's scope); the campaign files and their test
+  (`3361fec1`); the probe (`spikes/task-102/probe.sh`), rehearsed with a stub for one model, then for three after review round 1, and
+  with a planted value, which the scan found.
+- **Tests changed with the code, disclosed:** `test/unit/cli/codex-credential.test.ts`'s Codex campaign run now
+  extends the preset, since dl-024 refuses one that does not; `test/unit/agents/codex.test.ts`'s characterization of
+  a session failed after a `turn.completed` used `failed.jsonl`, which has none: rewritten on an inline stream before
+  the code commit; `codex-baseline.test.ts`'s model list deduplicated when the slices were split (review round 1).
+- **Criterion 5:** both campaign files pass `bench campaign validate`; `estimate` refuses the campaign until its dry
+  runs exist (11 of 12 keys have none; S3 on Sol is task-094's), as it should before the dry runs.
+
+### Review
+
+Under dl-020; `scripts/pre-review.sh main` green before each round.
+
+- **Round 1** (an independent read-only agent, the offline work `git diff main...HEAD`, before any session):
+  - **blocker:** the probe overwrote its EXIT trap per session, leaving earlier sessions' containers running with the
+    credential mounted. Fixed: each session's container is removed at its end, and an exit handler removes every
+    container started (`8f64396a`); the three-model rehearsal leaves none.
+  - **should-fix:** the edited Codex test and `test/docker/codex.test.ts` were dated and the docker one refused by
+    dl-024; the scope check had no test where it is wired; Terra's and Luna's slices ran S1 once against Sol's three;
+    a quota stop with no `turn.completed` counted as zero; `endRun`'s `finally` path untested. Fixed: the clock moved
+    to `Io.now` and injected in both tests, the docker test extends the preset; three CLI tests with an injected
+    clock (date, preset, profile), each building nothing; the slices split (S1 × 3, the others × 1); `costUnknown` for
+    any outcome with no `turn.completed`, the runner keeping the stop and counting the bound; a test that `endRun` is
+    called on a failed run. **Not fixed, stated:** no port double makes `executeRun` itself throw (a failing
+    container, git or agent is a failed run; a failing `list` throws before any run), so the `finally` stays
+    defensive and untested. Red `9d00bee8`, fix `8f64396a`.
+  - **nits, fixed:** a Codex dry run must read `campaigns/codex-baseline.dry-run.yaml`; REQ-NFR-01 1.35 states "the
+    campaign's last run or 2026-11-13, whichever comes first" and the main checkout, which the probe now checks; the
+    probe's final scan uses every session's values, scans the workspaces' git history, and `secrets()` no longer
+    quotes a malformed file; criterion 5's wording above. **Stated for the approver:** a Codex invocation refused at
+    once (a model id or a login refused) now counts at its bound, about 5 € API-equivalent a run, capped by
+    `fail_fast` at three runs.
