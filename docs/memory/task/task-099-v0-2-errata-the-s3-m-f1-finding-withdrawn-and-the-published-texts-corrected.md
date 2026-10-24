@@ -3,29 +3,51 @@ id: task-099-v0-2-errata-the-s3-m-f1-finding-withdrawn-and-the-published-texts-c
 type: task
 title: "v0.2 errata: the S3 M-F1 finding withdrawn and the published texts corrected"
 status: draft
-release: ""           # e.g. v0.1
-wave: ""              # e.g. W1
-features: []          # e.g. [F1.1, F3.1]
-acceptance: []        # e.g. [campaign.feature, scenarios.feature]
-requirements: []      # e.g. [REQ-FMT-01, REQ-FMT-02]
-fixes: []             # optional: the bugs this task fixes, e.g. [bug-005-a-bug-cannot-name-…]
+release: v0.2
+wave: retrospective
+features: []
+acceptance: []
+requirements: []
+fixes: []
 tags: ["errata","v0.2","retrospective"]
 ---
 
 ## Context
 
-<!-- Why this task, which wave it belongs to, and what "done" means for the wave's "Ends with". -->
+[rel-v0-2](../release/rel-v0-2.md)'s Retrospective, "What to change" 3: the published finding
+`findings/81ebb2691f9c-1-s3-1.0-m-f1-baseline-docs+wingfoil.md` reads as a WingFoil regression on S3's continuity
+(M-F1), and so do texts published with it. The transcripts and the scores show otherwise
+([calibration v0.2](../../calibration/v0.2.md) §7.3–7.4):
+
+- **D3:** baseline-docs failed it too, in both campaigns; the wingfoil arm's "revised" on v0.2.2 was a false
+  positive of the lexical check ("unchanged" contains "changed", and the WingFoil template's comment holds
+  "replace");
+- **D5:** failed by the wingfoil arm on v0.2.2 and v0.3.0 alike, because the arm's manual read only approved
+  decision-logs and recorded only the decisions the agent takes; not a WingFoil change.
+
+**Done** means: the finding is annotated and not sent to WingFoil; every published text that reads it as a
+regression carries an errata line; nothing else of the published results changes.
 
 ## Acceptance criteria
 
-<!-- One line per criterion (Gherkin scenario or requirement), each classified as red-first
-     (new behaviour: a failing test precedes the code) or characterization (existing behaviour). -->
+<!-- Documentation errata: no code. -->
+
+1. The finding carries, under its title, a line: withdrawn, not a WingFoil regression, with the reasons and links.
+2. An "Errata (2026-10-24)" line, dated and leaving the original text in place, in: `docs/calibration/v0.2.md`
+   §9 (H3's row); [campaign-002](../campaign/campaign-002-v0-2-reference-campaign.md)'s Results review and Findings
+   (a hand edit, W-07); `docs/releases/v0.2.md` ("on S3 it lost a decision revision that v0.2.2 recorded").
+3. **The GitHub release `v0.2`**'s notes get the same errata line, **only with the approver's explicit consent in
+   chat**, since it changes a public page: `gh release edit v0.2 --notes-file docs/releases/v0.2.md`.
 
 ## Design
 
-<!-- Modules, interfaces, data formats touched; decisions taken and their reasons. -->
+- One commit per file group on this task's branch, then the merge; the GitHub release edited after the merge, from
+  the merged notes, with consent.
+- The site is unchanged: it does not cite D3.
+- The errata say what was wrong and why, and point to calibration v0.2 §7; they never rewrite the original sentence.
 
 ## Execution notes
 
-<!-- What happened while building: deviations, blockers, follow-ups (filed as elements, never left
-     here). For every `wingfoil` command: declared vs observed behaviour. -->
+- `npx wingfoil memory add --type task --title "v0.2 errata: the S3 M-F1 finding withdrawn and the published texts
+  corrected" --tags "errata,v0.2,retrospective"`, on main. Declared: the element from the template in `draft`, one
+  commit. Observed: `106e9165`, `status: draft`. Matches.
