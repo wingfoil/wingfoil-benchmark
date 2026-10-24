@@ -191,6 +191,25 @@ describe('step_time_s (task-024)', () => {
     expect(record.error).toMatch(/output bound/);
   });
 
+  it('counts a failed step whose agent reported no usage at its bound (bug-032, the Codex case)', async () => {
+    const agent = commandAgent(
+      () => ['codex', 'exec'],
+      () => ({ error: 'the session ended with no turn.completed event', costUnknown: true }),
+    );
+    const summary = await runCampaign(campaign({ run_cost_eur: 5 }), { ...doubles(), agent });
+    const record = runJson(summary.runs[0]?.outputDir) as { steps: Record<string, unknown>[] };
+
+    expect(record.steps[0]).toMatchObject({ outcome: 'failed', cost_reported: false, cost_bound_usd: 5 });
+  });
+
+  it('ends every run on the agent, once each (dl-024)', async () => {
+    let ended = 0;
+    const agent = { ...commandAgent(() => ['true']), endRun: () => (ended += 1) };
+    await runCampaign(campaign({}, { repetitions: { S1: 2 } }), { ...doubles(), agent });
+
+    expect(ended).toBe(2);
+  });
+
   it('runs no command once the step has no time left', async () => {
     // The agent thinks for 20 ms of a 1 ms step before its first command.
     const agent: AgentPort = {
