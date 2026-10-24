@@ -197,6 +197,12 @@ export function listPresets(root: string): {
   readonly issues: readonly Issue[];
 } {
   const directory = join(root, CAMPAIGNS_DIR, PRESETS_DIR);
+  if (isSymbolicLink(directory)) {
+    return {
+      presets: [],
+      issues: [{ path: `${CAMPAIGNS_DIR}/${PRESETS_DIR}`, message: 'must not be a symbolic link' }],
+    };
+  }
   if (!existsSync(directory)) return { presets: [], issues: [] };
   const presets: Preset[] = [];
   const issues: Issue[] = [];

@@ -104,6 +104,15 @@ Under dl-020 and the `code-review` directive; `scripts/pre-review.sh main` green
 - **Round 2** (a new independent agent, the fixes' diff `829cc31e..HEAD`): the fixes correct and complete, no
   regression (red-first checked at `c73ae19d`).
   - **should-fix (process):** these Review notes were not yet written. Fixed here.
-  - **nits, fixed** (red `6ab3f72e`, fix `f3298443`): a unit test pinning the order of checks for a misplaced file
-    that extends nothing; smoke's header says what a file cannot remove; a dangling symlink and a symlinked
-    `campaigns/presets/` refused as symbolic links; the hint worded for any refusal of the resolved campaign.
+  - **nits, fixed** in `f3298443`: a dangling symlink and a symlinked `campaigns/presets/` refused as symbolic links
+    (red `6ab3f72e`); a unit test pinning the order of checks for a misplaced file that extends nothing
+    (characterization, green at `6ab3f72e`); the hint worded for any refusal of the resolved campaign (its test's
+    pattern reworded in the fix); smoke's header on what a file cannot remove (no test).
+- **Round 3** (a new independent agent, `1b932475..HEAD`): the code fixes correct, no regression; the notes checked
+  against the history.
+  - **should-fix:** smoke's new header recommended extending harness-vs-docs or baseline-across-agents with S3, which
+    the loader refuses (both set `repetitions` for every scenario); reference's header said the same for scenarios.
+    Fixed: both headers name the presets that leave those fields out (harness-vs-docs for arms, repetitions for
+    scenarios), the recipes the unit tests' minimal files already validate.
+  - **nits, fixed:** this round 2 note made exact; a symlinked `campaigns/presets/`, dangling or not, named once by
+    the listing instead of once per file (red `fa91234f`, fixed in the commit after it).
