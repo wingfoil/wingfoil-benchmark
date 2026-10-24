@@ -32,6 +32,8 @@ export interface Io {
    * on (task-023). Without it, nothing that needs a confirmation starts.
    */
   readonly ask?: (question: string) => Promise<string>;
+  /** The clock dl-024's scope is read against (REQ-RUN-15 as amended in 1.35); `Date.now` when not given. */
+  readonly now?: () => number;
 }
 
 /** The ports a run uses. Tests pass doubles; the bin passes the real ones (REQ-ARC-04). */

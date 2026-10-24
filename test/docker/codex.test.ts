@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { chmodSync, cpSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { stringify, parse } from 'yaml';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -54,11 +54,17 @@ describe('a Codex campaign in a real container (task-094)', () => {
       string,
       unknown
     >;
+    // dl-024 (task-102): a Codex campaign extends presets/baseline-across-agents.yaml and runs the baseline arm only.
+    mkdirSync(join(root, 'campaigns', 'presets'));
+    writeFileSync(
+      join(root, 'campaigns', 'presets', 'baseline-across-agents.yaml'),
+      stringify({ description: 'the baseline arm only', ...smoke }),
+    );
     const file = join(root, 'campaigns', 'codex-smoke.yaml');
     writeFileSync(
       file,
       stringify({
-        ...smoke,
+        extends: 'presets/baseline-across-agents.yaml',
         agent: { name: 'codex', version: '0.162.1', effort: { 'fake-model': 'medium' } },
       }),
     );
@@ -73,6 +79,8 @@ describe('a Codex campaign in a real container (task-094)', () => {
     const code = await main(['campaign', 'run', file, '--allow-spending'], {
       stdout: (text) => (output += text),
       stderr: (text) => (output += text),
+      // dl-024's scope read against a fixed day, so that the test is not dated.
+      now: () => Date.parse('2026-10-24T12:00:00Z'),
     });
     delete process.env.BENCH_CODEX_AUTH_FILE;
 

@@ -334,6 +334,76 @@ describe('the Codex adapter (REQ-RUN-04 as amended in 1.32)', () => {
     expect(outcome.transcript.join('\n')).toContain(THREAD);
   });
 
+  it('says that a session with no turn.completed reported no usage, so that the runner counts it at its bound', async () => {
+    const exec = runner([stream('no-turn-completed.jsonl').join('\n')]);
+
+    const outcome = await codexAgent({ authFile: authFile('at-0001-long-access'), usdToEur: RATE }).runStep(
+      step(exec.run),
+    );
+
+    expect(outcome.error).toBeDefined();
+    expect(outcome.costUnknown).toBe(true);
+  });
+
+  it('reports the usage of a session that failed after a turn.completed as known', async () => {
+    const lines = [
+      ...stream('completed.jsonl').filter((line) => !line.includes('"turn.failed"')),
+      '{"type":"turn.started"}',
+      '{"type":"turn.failed","error":{"message":"stream disconnected before completion"}}',
+    ];
+    const exec = runner([lines.join('\n')]);
+
+    const outcome = await codexAgent({ authFile: authFile('at-0001-long-access'), usdToEur: RATE }).runStep(
+      step(exec.run),
+    );
+
+    expect(outcome.error).toMatch(/stream disconnected/);
+    expect(outcome.costUnknown).toBeUndefined();
+  });
+
+  it('says that a session stopped at the quota before any turn.completed reported no usage (review round 1)', async () => {
+    const exec = runner([stream('usage-limit.jsonl').join('\n')]);
+
+    const outcome = await codexAgent({ authFile: authFile('at-0001-long-access'), usdToEur: RATE }).runStep(
+      step(exec.run),
+    );
+
+    expect(outcome.stop).toBe('quota exhausted');
+    expect(outcome.costUnknown).toBe(true);
+  });
+
+  it('leaves a rate-limited session to the runner, which waits it out and resumes (review round 2)', async () => {
+    const exec = runner([stream('rate-limited.jsonl').join('\n')]);
+
+    const outcome = await codexAgent({ authFile: authFile('at-0001-long-access'), usdToEur: RATE }).runStep(
+      step(exec.run),
+    );
+
+    expect(outcome.stop).toBe('rate limited');
+    expect(outcome.costUnknown).toBeUndefined();
+  });
+
+  it('forgets its threads at the end of a run (dl-024)', async () => {
+    const exec = runner([stream('completed.jsonl').join('\n')]);
+    const agent = codexAgent({ authFile: authFile('at-0001-long-access'), usdToEur: RATE });
+    await agent.runStep(step(exec.run, 'medium'));
+
+    agent.endRun?.();
+    const resumed = await agent.resume({
+      scenarioId: 'S3',
+      step: 1,
+      intervention: 1,
+      sessionId: SESSION,
+      reply: 'Continue.',
+      remainingCostUsd: 3,
+      effort: 'medium',
+      run: exec.run,
+    });
+
+    expect(resumed.error).toMatch(/no Codex thread for session/);
+    expect(exec.commands).toHaveLength(1);
+  });
+
   it("resumes Codex's thread, not the runner's id, and reads the resume against the thread's total", async () => {
     const exec = runner([stream('completed.jsonl').join('\n'), stream('resumed.jsonl').join('\n')]);
     const agent = codexAgent({ authFile: authFile('at-0001-long-access'), usdToEur: RATE });
