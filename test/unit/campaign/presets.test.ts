@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { parse, stringify } from 'yaml';
 import { describe, expect, it } from 'vitest';
 
-import { loadCampaign, mergePreset } from '../../../src/campaign/index.js';
+import { listPresets, loadCampaign, mergePreset } from '../../../src/campaign/index.js';
 import { completeCampaignYaml, writeRepo } from '../../support/campaign-fixture.js';
 import { repoPath } from '../../support/paths.js';
 import { tempDir } from '../../support/scenario-fixture.js';
@@ -200,5 +200,27 @@ describe('extends: review round 2 (task-101)', () => {
     const file = join(root, 'c.yaml');
     writeFileSync(file, stringify({ arms: ['baseline'] }));
     expect(issues(file)[0]).toEqual({ path: 'harnesses', message: 'is required' });
+  });
+});
+
+describe('campaign presets: review round 3 (task-101)', () => {
+  it('names a symlinked campaigns/presets/ once, dangling or not', () => {
+    for (const target of ['exists', 'nowhere']) {
+      const root = tempDir('bench-presets-link-');
+      mkdirSync(join(root, 'campaigns'));
+      const elsewhere = tempDir('bench-presets-target-');
+      if (target === 'exists') {
+        writeFileSync(join(elsewhere, 'a.yaml'), stringify(PRESET));
+        writeFileSync(join(elsewhere, 'b.yaml'), stringify(PRESET));
+      }
+      symlinkSync(
+        target === 'exists' ? elsewhere : join(elsewhere, 'gone'),
+        join(root, 'campaigns', 'presets'),
+      );
+      expect(listPresets(root), target).toEqual({
+        presets: [],
+        issues: [{ path: 'campaigns/presets', message: 'must not be a symbolic link' }],
+      });
+    }
   });
 });
