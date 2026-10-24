@@ -12,8 +12,11 @@ const OUT_OF_SCOPE_FROM = Date.parse(`${CODEX_SCOPE_END}T00:00:00Z`) + 24 * 60 *
 /** The one preset a Codex campaign may extend (dl-022, dl-024). */
 const CODEX_PRESET = 'presets/baseline-across-agents.yaml';
 
-/** The one dry-run profile a Codex dry run may read: the Codex baseline campaign's (dl-024, its first bound). */
-const CODEX_PROFILE = 'codex-baseline.dry-run.yaml';
+/**
+ * The one dry-run profile a Codex dry run may read, by its path in the repository: the Codex baseline campaign's
+ * (dl-024, its first bound).
+ */
+const CODEX_PROFILE = 'campaigns/codex-baseline.dry-run.yaml';
 
 /**
  * What a campaign or a dry run asks of the agent: its name and, for a campaign, the preset it extends and its arms; for
@@ -21,7 +24,11 @@ const CODEX_PROFILE = 'codex-baseline.dry-run.yaml';
  */
 export type CodexScopeInput =
   | { readonly agent: string; readonly preset?: string; readonly arms: readonly string[] }
-  | { readonly agent: string; readonly dryRunArm: string; readonly profile: string };
+  | {
+      readonly agent: string;
+      readonly dryRunArm: string;
+      /** Relative to the repository. */ readonly profile: string;
+    };
 
 /**
  * dl-024's scope, checked before any Codex session (REQ-RUN-15 as amended in 1.35): no session after
@@ -37,7 +44,7 @@ export function codexScopeIssues(input: CodexScopeInput, now: number): Issue[] {
   }
   if ('dryRunArm' in input) {
     if (input.profile !== CODEX_PROFILE) {
-      return [{ path: 'profile', message: `a codex dry run reads campaigns/${CODEX_PROFILE} (dl-024)` }];
+      return [{ path: 'profile', message: `a codex dry run reads ${CODEX_PROFILE} (dl-024)` }];
     }
     return input.dryRunArm === 'baseline'
       ? []

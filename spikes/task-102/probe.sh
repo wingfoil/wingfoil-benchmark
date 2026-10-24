@@ -109,7 +109,7 @@ session() { # one real Codex session: S3@1.0 step 1, baseline arm, outside the r
     [ -z "$problem" ] || { echo "credential refused: $problem"; exit 64; }
   fi
   AUTH_FILE="$(realpath "$AUTH_FILE")" # the real path, mounted as the runner mounts it
-  local now_values; now_values="$(secrets)" # dl-019 bound 6: nothing to scrub, no session
+  local now_values; now_values="$(secrets)" || { echo "credential is not valid JSON: log in again (LOGIN)"; exit 64; }
   BEFORE_VALUES="$(printf '%s\n%s' "$BEFORE_VALUES" "$now_values" | sed '/^$/d')" # every session's, for the final scan
   [ -n "$now_values" ] || { echo "credential holds no value: log in first (LOGIN)"; exit 64; }
   mkdir -p "$dir"; rm -rf "$dir/workspace"
@@ -152,12 +152,14 @@ scan() { # exit 3 when the scan cannot run, 4 when it finds a value
   [ "$rc" -le 1 ] || { echo "secret scan failed: grep exit $rc"; exit 3; }
   if [ -n "$found" ]; then echo "secret scan: a credential value is in $(echo "$found" | wc -l) file(s):"; echo "$found"; exit 4; fi
   # The workspaces' history: a value the agent committed is compressed in .git, which grep -F cannot see (review round 1).
+  # No pipe: under pipefail, git log killed by grep -q's early exit would make a match read as clean (review round 2).
   local ws
   for ws in "$OUT"/*/workspace; do
     [ -d "$ws/.git" ] || continue
-    if git -C "$ws" log -p --all 2>/dev/null | grep -qFf <(printf '%s\n' "$values"); then
-      echo "secret scan: a credential value is in the history of $ws"; exit 4
-    fi
+    git -C "$ws" rev-parse --git-dir >/dev/null 2>&1 || { echo "secret scan failed: git cannot read $ws"; exit 3; }
+    rc=0; grep -qFf <(printf '%s\n' "$values") <(git -C "$ws" log -p --all) || rc=$?
+    [ "$rc" -le 1 ] || { echo "secret scan failed: grep exit $rc on the history of $ws"; exit 3; }
+    if [ "$rc" -eq 0 ]; then echo "secret scan: a credential value is in the history of $ws"; exit 4; fi
   done
   echo "secret scan: clean"
 }

@@ -85,8 +85,7 @@ table; dl-024's code bounds in place; `campaigns/codex-baseline.yaml` and its dr
 - The body committed by hand (`e7a5e1e2`), then `memory submit` (draft → pending). Declared and observed: one commit,
   `status: pending`.
 - The approver's pending → backlog in chat (2026-10-24). `memory submit` (backlog → in-progress, `e8805f6b`) on main,
-  after
-  the Design. Declared and observed: one commit each.
+  after the Design. Declared and observed: one commit each.
 - **The free phase (2026-10-24, no session, no credential)**, in the main checkout's ignored `spikes/task-102/out/f1/`:
   - `@openai/codex` `latest` is **0.164.0** (2026-10-23); dl-022 pins 0.162.1, task-094's, which is kept.
   - Codex's `models.json` at `rust-v0.162.1` (task-094's copy) and `rust-v0.164.0` lists the same models on the Plus
@@ -132,4 +131,17 @@ Under dl-020; `scripts/pre-review.sh main` green before each round.
     probe's final scan uses every session's values, scans the workspaces' git history, and `secrets()` no longer
     quotes a malformed file; criterion 5's wording above. **Stated for the approver:** a Codex invocation refused at
     once (a model id or a login refused) now counts at its bound, about 5 € API-equivalent a run, capped by
-    `fail_fast` at three runs.
+    `fail_fast` at three runs; so does a session stopped at the Plus quota before any `turn.completed`, the expected
+    way the quota ends, recorded with `cost_reported: false`.
+- **Round 2** (a new independent agent, the fixes' diff `e404242c..HEAD`):
+  - **blocker:** the probe's history scan piped `git log` into `grep -q` under `pipefail`: a match killed `git log`
+    with SIGPIPE and read as clean (reproduced 5 of 5). Fixed without a pipe (process substitution, grep's status
+    read), a git that cannot read the workspace failing the scan (exit 3); checked by hand on a workspace with a
+    planted value buried under 30 commits: found 3 of 3 (exit 4).
+  - **should-fix:** a rate-limited invocation was marked `costUnknown`, which the runner's wait never reads. Fixed:
+    the adapter marks only a failure and a quota stop; a rate limit is waited out and resumed, and REQ-RUN-09 1.35
+    says so. **Should-fix:** the dry-run profile rule compared the basename only, so a copy elsewhere passed. Fixed:
+    the profile's path in the repository is compared, with a CLI test of a copy under `spikes/`.
+  - **nits, fixed:** the approver's statement above includes the quota stop; the notes' wrap; a malformed
+    credential now stops the probe with a message.
+  - Red `e0425edc`, fix in the commit after it.
