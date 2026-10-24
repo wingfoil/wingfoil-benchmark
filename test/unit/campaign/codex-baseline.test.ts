@@ -22,7 +22,9 @@ describe('the Codex baseline campaign files (task-102)', () => {
       version: '0.162.1',
       effort: Object.fromEntries(MODELS.map((model) => [model, 'medium'])),
     });
-    expect([spec.models.default, ...(spec.models.slices ?? []).map((slice) => slice.model)]).toEqual(MODELS);
+    expect([spec.models.default, ...new Set((spec.models.slices ?? []).map((slice) => slice.model))]).toEqual(
+      MODELS,
+    );
     // Every model runs what the default runs: S1 three times, S2, S3 and S8 once (review round 1).
     for (const model of MODELS.slice(1)) {
       const runs = Object.fromEntries(

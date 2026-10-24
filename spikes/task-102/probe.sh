@@ -23,6 +23,12 @@ CODEX_HOME_IN=/home/node/.codex-run
 AUTH_FILE="${BENCH_CODEX_AUTH_FILE:-$HOME/.codex-bench/auth.json}"
 [ -z "$FAKE" ] || AUTH_FILE="$OUT/fake-auth.json"
 BEFORE_VALUES=""
+STARTED=() # every container this run started, removed on exit whatever happens (review round 1)
+cleanup() {
+  local c; for c in ${STARTED[@]+"${STARTED[@]}"}; do docker rm -f "$c" >/dev/null 2>&1 || true; done
+  [ -z "$BEFORE_VALUES" ] || scan
+}
+trap cleanup EXIT
 
 model_of() { # the approver's option A in task-102
   case "$1" in SOL) echo gpt-6.1-sol ;; TERRA) echo gpt-5.6-terra ;; LUNA) echo gpt-6-luna ;; *) exit 64 ;; esac
@@ -34,7 +40,7 @@ secrets() {
   node -e 'const t=require("fs").readFileSync(process.argv[1],"utf8");const out=new Set();
     const walk=(n,k)=>{if(typeof n==="string"){if(k!=="last_refresh"&&n.length>=16)out.add(n)}
       else if(n&&typeof n==="object")for(const [kk,v] of Object.entries(n))walk(v,kk)};
-    walk(JSON.parse(t));process.stdout.write([...out].join("\n"))' "$AUTH_FILE"
+    let d;try{d=JSON.parse(t)}catch{process.exit(3)}walk(d);process.stdout.write([...out].join("\n"))' "$AUTH_FILE"
 }
 
 read_one() { # the adapter's own reading of a session, through the built dist/, and every quota or limit sign in it
@@ -88,6 +94,8 @@ session() { # one real Codex session: S3@1.0 step 1, baseline arm, outside the r
   local key="$1" model; model="$(model_of "$key")"
   local dir="$OUT/$key" c="bench-spike-task-102-$key${FAKE:+-fake}"
   [ -n "$FAKE" ] || [ "${BENCH_SPIKE_CONFIRM:-}" = 1 ] || { echo "$key runs a real Codex session: BENCH_SPIKE_CONFIRM=1"; exit 64; }
+  # dl-024 bound 1: real sessions from the main checkout only.
+  [ -n "$FAKE" ] || [ "$REPO" = "$MAIN" ] || { echo "$key runs from the main checkout only, not $REPO"; exit 64; }
   # A session is never repeated without new consent: its output exists from the first redirect on.
   [ ! -e "$dir/session.jsonl" ] || { echo "$key already ran ($dir): not repeated"; exit 2; }
   fresh_dist
@@ -101,15 +109,16 @@ session() { # one real Codex session: S3@1.0 step 1, baseline arm, outside the r
     [ -z "$problem" ] || { echo "credential refused: $problem"; exit 64; }
   fi
   AUTH_FILE="$(realpath "$AUTH_FILE")" # the real path, mounted as the runner mounts it
-  BEFORE_VALUES="$(secrets)" # dl-019 bound 6: nothing to scrub, no session
-  [ -n "$BEFORE_VALUES" ] || { echo "credential holds no value: log in first (LOGIN)"; exit 64; }
+  local now_values; now_values="$(secrets)" # dl-019 bound 6: nothing to scrub, no session
+  BEFORE_VALUES="$(printf '%s\n%s' "$BEFORE_VALUES" "$now_values" | sed '/^$/d')" # every session's, for the final scan
+  [ -n "$now_values" ] || { echo "credential holds no value: log in first (LOGIN)"; exit 64; }
   mkdir -p "$dir"; rm -rf "$dir/workspace"
   cp -r "$REPO/scenarios/S3/1.0/seed" "$dir/workspace"
   cp "$REPO/arms/baseline/manual.md" "$dir/workspace/AGENTS.md"
   git -C "$dir/workspace" init -q && git -C "$dir/workspace" add -A \
     && git -C "$dir/workspace" -c user.name=bench -c user.email=bench@localhost commit -q -m seed
   docker rm -f "$c" >/dev/null 2>&1 || true
-  trap 'docker rm -f "'"$c"'" >/dev/null 2>&1 || true; scan' EXIT
+  STARTED+=("$c")
   docker run -d --name "$c" --user node --workdir /workspace -e CODEX_HOME="$CODEX_HOME_IN" ${BENCH_SPIKE_PLANT:+-e PLANT=$fake} \
     --mount "type=bind,source=$dir/workspace,target=/workspace" \
     --mount "type=bind,source=$AUTH_FILE,target=$CODEX_HOME_IN/auth.json" "$IMAGE" sleep infinity >/dev/null
@@ -127,6 +136,8 @@ session() { # one real Codex session: S3@1.0 step 1, baseline arm, outside the r
   echo "$(( $(date +%s%3N) - started ))" > "$dir/duration-ms.txt"
   docker exec "$c" sh -c 'ls -la "$CODEX_HOME"' > "$dir/codex-home.txt" 2>&1 || true
   git -C "$dir/workspace" status --short > "$dir/workspace-status.txt"
+  # One session at a time, each with its own CODEX_HOME (dl-024): its container goes before the next one starts.
+  docker rm -f "$c" >/dev/null 2>&1 || true
   echo "$key ($model): $(wc -l < "$dir/session.jsonl") events, exit $(cat "$dir/exit.txt" 2>/dev/null || echo 0)"
   read_one "$key" "$model"
 }
@@ -140,6 +151,14 @@ scan() { # exit 3 when the scan cannot run, 4 when it finds a value
   found="$(grep -rlFf <(printf '%s\n' "$values") "$OUT" "$SPIKE_DIR" ${exclude[@]+"${exclude[@]}"} 2>/dev/null)" || rc=$?
   [ "$rc" -le 1 ] || { echo "secret scan failed: grep exit $rc"; exit 3; }
   if [ -n "$found" ]; then echo "secret scan: a credential value is in $(echo "$found" | wc -l) file(s):"; echo "$found"; exit 4; fi
+  # The workspaces' history: a value the agent committed is compressed in .git, which grep -F cannot see (review round 1).
+  local ws
+  for ws in "$OUT"/*/workspace; do
+    [ -d "$ws/.git" ] || continue
+    if git -C "$ws" log -p --all 2>/dev/null | grep -qFf <(printf '%s\n' "$values"); then
+      echo "secret scan: a credential value is in the history of $ws"; exit 4
+    fi
+  done
   echo "secret scan: clean"
 }
 

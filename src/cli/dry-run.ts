@@ -1,4 +1,4 @@
-import { join, relative } from 'node:path';
+import { basename, join, relative } from 'node:path';
 import { codexFileSecrets } from '../agents/index.js';
 import { armDigest } from '../arms/index.js';
 
@@ -80,8 +80,8 @@ export async function dryRunCommand(
 
   // dl-024: a Codex session only within its credential's scope, refused first.
   const outOfScope = codexScopeIssues(
-    { agent: profile.agent.name, dryRunArm: arm.name },
-    (ports?.now ?? Date.now)(),
+    { agent: profile.agent.name, dryRunArm: arm.name, profile: basename(checked.value.profileFile) },
+    (io.now ?? Date.now)(),
   );
   if (outOfScope.length > 0) return report(outOfScope, io);
 

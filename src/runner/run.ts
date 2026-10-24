@@ -1403,12 +1403,15 @@ async function executeStep(
       options.log?.(`step ${number}: time cap reached (${pins.caps.step_time_s} s)`);
       return false;
     }
-    if (bounded || result.costUnknown === true) {
+    if (bounded) {
       // A failure, but one whose cost the agent never reported: it counts at its bound, as a killed one does.
       costBoundUsd = bound;
       error = result.error ?? "the agent's output passed the port's output bound";
       return false;
     }
+    // An invocation whose usage the agent cannot say (REQ-RUN-09 as amended in 1.35) counts at its bound, whether it
+    // failed or stopped.
+    if (result.costUnknown === true) costBoundUsd = bound;
     error = invocationError(result, sessionId, name);
     if (error === undefined && result.stop !== undefined) {
       // `waitOut` resumes a rate-limited invocation before it reaches here; one that does was not waited out.

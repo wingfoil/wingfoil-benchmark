@@ -291,7 +291,7 @@ async function runCampaignCommand(
         ? {}
         : { preset: checked.value.campaign.extended.preset }),
     },
-    (ports?.now ?? Date.now)(),
+    (io.now ?? Date.now)(),
   );
   if (outOfScope.length > 0) return report(outOfScope, io);
   // dl-015: a real agent runs every model at a pinned effort, refused here before the estimate.
