@@ -43,7 +43,9 @@ function fixture(files: readonly string[], failing?: string) {
     chmodSync(join(bin, tool), 0o755);
   }
   const env = { ...process.env, PATH: `${bin}:${process.env.PATH ?? ''}` };
-  const run = () => spawnSync('bash', [SCRIPT, 'main'], { cwd: repo, env, encoding: 'utf8' });
+  const run = Object.assign(() => spawnSync('bash', [SCRIPT, 'main'], { cwd: repo, env, encoding: 'utf8' }), {
+    cwd: repo,
+  });
   const recorded = () => (existsSync(calls) ? readFileSync(calls, 'utf8').trim().split('\n') : []);
   return { run, recorded };
 }
@@ -55,6 +57,7 @@ describe('scripts/pre-review.sh (dl-020, task-098)', () => {
     expect(result.status, result.stderr).toBe(0);
     expect(recorded()).toEqual([
       'npx prettier --check --ignore-unknown docs/n.md src/cli/a.ts test/unit/x.test.ts',
+      'npx eslint src/cli/a.ts test/unit/x.test.ts',
       'npx tsc --noEmit -p .',
       'npx vitest run --maxWorkers=2 test/unit/x.test.ts test/acceptance/traceability.test.ts',
       'npm run test:bin -- --maxWorkers=2',
@@ -68,6 +71,20 @@ describe('scripts/pre-review.sh (dl-020, task-098)', () => {
     const site = fixture(['src/site/b.ts']);
     expect(site.run().status).toBe(0);
     expect(site.recorded()).toContain('npm run test:bin -- --maxWorkers=2');
+  });
+
+  it('runs test:bin for a changed bin test, which the default vitest config excludes', () => {
+    const { run, recorded } = fixture(['test/bin/z.test.ts']);
+    expect(run().status).toBe(0);
+    expect(recorded()).toContain('npm run test:bin -- --maxWorkers=2');
+  });
+
+  it('refuses a base that names no commit, rather than reporting nothing changed', () => {
+    const { run, recorded } = fixture(['src/core/a.ts']);
+    const result = spawnSync('bash', [SCRIPT, 'no-such-branch'], { cwd: run.cwd, encoding: 'utf8' });
+    expect(result.status).toBe(2);
+    expect(result.stderr).toMatch(/no commit named 'no-such-branch'/);
+    expect(recorded()).toEqual([]);
   });
 
   it('stops at the first red check and exits non-zero, naming it', () => {
