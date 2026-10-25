@@ -132,3 +132,15 @@ Under dl-020; `scripts/pre-review.sh main` green before each round.
     approver).
   - **nits, fixed:** an M-R across entry with no value reads "not measured".
   - Red `4902fe6d`, fix `7cf90a48` (the red's check fixture lacked its second step; added in the fix, disclosed).
+- **Round 2** (a new independent agent, sandboxed; the reflog unchanged after it, the fixes' diff): the fixes correct on
+  the real data (every Codex value of the across-agents page matches campaign-004's table; the cost basis on every
+  cell; the published comparisons byte-identical when recomputed; building 4682bcc65d6b/1 before the comparison is
+  refused, naming the compare).
+  - **should-fix, fixed:** REQ-RES-11 did not state the new refusal of a `compared_with` whose comparison is not
+    written, nor that the link's kind comes from the comparison; now it does, with the publishing order it implies (the
+    comparison run and committed before the home is built), as do `rootIndex`'s comment and the Design.
+  - **nits, fixed:** a comparison file that is valid JSON but not a comparison crashed the build (now refused); the
+    alignment of checks by run, a value's own n and a mixed cost basis pinned by a test (characterization: the code
+    already did it); the Design's wording on REQ-SCO-07 and the badge. **Stated:** a failed rebuild in the publish
+    check also lists the execution's pages as not part of a fresh build, as any failed rebuild already did.
+  - Red `7830c6a8`, fix `3b017fa3`.
