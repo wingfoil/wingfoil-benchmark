@@ -2,7 +2,7 @@
 id: task-105-a-wingfoil-arm-on-codex-against-its-docs-control-on-terra-dl-022-arm-b
 type: task
 title: "A WingFoil arm on Codex, against its docs control, on Terra (dl-022 arm B)"
-status: in-progress
+status: in-review
 release: v0.3
 wave: W15
 features: [F7.1]
