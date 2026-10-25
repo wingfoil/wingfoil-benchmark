@@ -1,0 +1,177 @@
+diff --git a/README.md b/README.md
+index fd381e32ed452931199266c58702d4c97324e2c8..679e02cb1b61af54461180cda64ea6282a2fc071 100644
+--- a/README.md
++++ b/README.md
+@@ -25,3 +25,15 @@ rentals.quote({
+ });
+ // { itemId: 'board-17', start: '2026-06-01T00:00:00Z', end: '2026-06-03T00:00:00Z', total: 5000 }
+ ```
++
++Use `availability` to list equipment that has no overlapping booking for the complete requested
++period. Results are sorted by id; omit `kind` to include both boards and sails.
++
++```ts
++rentals.availability({
++  start: '2026-06-01T00:00:00Z',
++  end: '2026-06-03T00:00:00Z',
++  kind: 'board',
++});
++// ['board-17']
++```
+diff --git a/docs/memory/decision-log/dl-002-availability-uses-booking-overlap-semantics.md b/docs/memory/decision-log/dl-002-availability-uses-booking-overlap-semantics.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..24a5b8f009589b8cf3b294bcb11f6275392e2f77
+--- /dev/null
++++ b/docs/memory/decision-log/dl-002-availability-uses-booking-overlap-semantics.md
+@@ -0,0 +1,23 @@
++---
++id: dl-002-availability-uses-booking-overlap-semantics
++type: decision-log
++title: "Availability uses booking overlap semantics"
++status: pending
++format: 1
++---
++
++## Context
++
++The desk needs to determine which equipment is free for an entire requested rental period. Existing
++bookings use half-open UTC day intervals and allow adjacent bookings.
++
++## Decision
++
++Availability uses the existing overlap predicate: a piece of equipment is unavailable only when its
++booking overlaps the requested half-open interval. An optional `kind` limits the result to boards or
++sails; ids are sorted before returning.
++
++## Consequences
++
++An item remains available when a booking ends at the query start or begins at the query end. The
++availability query and booking operation apply identical period boundaries.
+diff --git a/docs/memory/task/task-002-add-rental-availability-query.md b/docs/memory/task/task-002-add-rental-availability-query.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..a62418162c47cb3ec98f21428c2a640bcf3ac245
+--- /dev/null
++++ b/docs/memory/task/task-002-add-rental-availability-query.md
+@@ -0,0 +1,14 @@
++---
++id: task-002-add-rental-availability-query
++type: task
++title: "Add rental availability query"
++status: pending
++format: 1
++---
++
++Implemented `RentalService.availability(query)` with optional board or sail filtering. It validates
++the same whole-day UTC period rules as bookings, excludes every item with an overlapping booking,
++and returns ids in ascending order.
++
++Added coverage for filtering, sorting, overlapping and adjacent bookings, plus invalid queries.
++Verified with `npm test`.
+diff --git a/src/index.ts b/src/index.ts
+index 5a3dc3820bc11567a60d00f1d644460289f98794..f3d089888d56544103a3e5e4698a4df6bf32fea8 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -20,6 +20,13 @@ export interface RentalQuote extends RentalRequest {
+   total: number;
+ }
+ 
++/** A requested half-open availability period, optionally limited to an equipment kind. */
++export interface AvailabilityQuery {
++  start: string;
++  end: string;
++  kind?: Equipment['kind'];
++}
++
+ /** A confirmed in-memory rental booking. */
+ export interface RentalBooking extends RentalQuote {
+   id: string;
+@@ -30,6 +37,7 @@ export interface RentalService {
+   addEquipment(item: Equipment): void;
+   quote(request: RentalRequest): RentalQuote;
+   book(request: RentalRequest): RentalBooking;
++  availability(query: AvailabilityQuery): string[];
+ }
+ 
+ interface RentalPeriod {
+@@ -92,6 +100,18 @@ export function createRentalService(): RentalService {
+       const { startAt: _startAt, endAt: _endAt, ...result } = booking;
+       return result;
+     },
++
++    availability(query: AvailabilityQuery): string[] {
++      validateAvailabilityQuery(query);
++      const period = validatePeriod(query);
++
++      return [...equipmentById.values()]
++        .filter((equipment) => query.kind === undefined || equipment.kind === query.kind)
++        .filter((equipment) => !bookings.some((booking) => booking.itemId === equipment.id
++          && periodsOverlap(period, booking)))
++        .map((equipment) => equipment.id)
++        .sort();
++    },
+   };
+ }
+ 
+@@ -117,7 +137,14 @@ function getEquipment(equipmentById: Map<string, Equipment>, request: RentalRequ
+   return equipment;
+ }
+ 
+-function validatePeriod(request: RentalRequest): RentalPeriod {
++function validateAvailabilityQuery(query: AvailabilityQuery): void {
++  if (typeof query !== 'object' || query === null
++    || (query.kind !== undefined && query.kind !== 'board' && query.kind !== 'sail')) {
++    throw new Error('Availability query must have an optional board or sail kind.');
++  }
++}
++
++function validatePeriod(request: Pick<RentalRequest, 'start' | 'end'>): RentalPeriod {
+   if (typeof request !== 'object' || request === null) {
+     throw new Error('Rental request must include a start and end time.');
+   }
+diff --git a/test/rental-service.test.js b/test/rental-service.test.js
+index a0cd3c0ef3c64460e9b91f1908d247587688da15..78d5d4d96dd3bd54fcdf7d191cd95236ef5d378f 100644
+--- a/test/rental-service.test.js
++++ b/test/rental-service.test.js
+@@ -41,6 +41,42 @@ test('allows adjacent bookings but rejects overlapping bookings', () => {
+   );
+ });
+ 
++test('lists sorted equipment that is free for the full requested period', () => {
++  const service = createRentalService();
++  service.addEquipment({ id: 'sail-2', kind: 'sail', dailyPrice: 1_500 });
++  service.addEquipment({ id: 'board-2', kind: 'board', dailyPrice: 2_500 });
++  service.addEquipment({ id: 'board-1', kind: 'board', dailyPrice: 2_000 });
++  service.addEquipment({ id: 'sail-1', kind: 'sail', dailyPrice: 1_000 });
++  service.book({ itemId: 'board-1', start: firstDay, end: thirdDay });
++  service.book({ itemId: 'sail-2', start: thirdDay, end: fourthDay });
++
++  assert.deepEqual(
++    service.availability({ start: firstDay, end: thirdDay }),
++    ['board-2', 'sail-1', 'sail-2'],
++  );
++  assert.deepEqual(
++    service.availability({ start: firstDay, end: thirdDay, kind: 'board' }),
++    ['board-2'],
++  );
++  assert.deepEqual(
++    service.availability({ start: thirdDay, end: fourthDay, kind: 'board' }),
++    ['board-1', 'board-2'],
++  );
++});
++
++test('rejects invalid availability queries', () => {
++  const service = createServiceWithBoard();
++
++  assert.throws(
++    () => service.availability({ start: firstDay, end: firstDay }),
++    /end after start/,
++  );
++  assert.throws(
++    () => service.availability({ start: firstDay, end: thirdDay, kind: 'mast' }),
++    /board or sail kind/,
++  );
++});
++
+ test('rejects unknown equipment and periods that are not whole UTC days', () => {
+   const service = createServiceWithBoard();
+ 

@@ -1,0 +1,93 @@
+diff --git a/README.md b/README.md
+index 31b7d66c11c752dd8d8682fef5b31361073524cf..b3404c2174fac5d9326fc3d3fca56ef3db1ca369 100644
+--- a/README.md
++++ b/README.md
+@@ -1,6 +1,6 @@
+ # lakeside-desk
+ 
+-Documentation version: 0.2.1 (2026-10-25)
++Documentation version: 0.2.2 (2026-10-25)
+ 
+ The Lakeside Windsurf School teaches windsurfing on the lake from April to October, and rents boards and
+ sails to its students and to visitors who bring their own experience. This repository holds the software
+@@ -13,6 +13,9 @@ integer daily price in euro cents, then call `quote` or `book` with UTC ISO-8601
+ periods are half-open: `start` is included and `end` is the midnight after the final rental day. A booking
+ cannot overlap another booking for the same item.
+ 
++Rentals of three or more days receive a 10% discount from the full price. Quotes and bookings include this
++discounted total, rounded to the nearest euro cent.
++
+ `availability({ start, end, kind? })` returns the sorted ids of equipment free for the entire period.
+ When `kind` is omitted it considers boards and sails; otherwise it limits results to the requested kind.
+ 
+diff --git a/src/index.ts b/src/index.ts
+index db0053f64d42aed1172963e338d2905ae03909cb..47402b10357163eadee0d66d085fa002f942fa77 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -1,4 +1,6 @@
+ const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1_000;
++const LONG_RENTAL_MINIMUM_DAYS = 3;
++const LONG_RENTAL_DISCOUNT_PERCENTAGE = 10;
+ const MIDNIGHT_UTC_PATTERN = /^(\d{4}-\d{2}-\d{2})T00:00:00(?:\.0{1,3})?Z$/;
+ type EquipmentKind = 'board' | 'sail';
+ 
+@@ -67,7 +69,7 @@ export function createRentalService(): RentalService {
+       itemId: request.itemId,
+       start: request.start,
+       end: request.end,
+-      total: ((endTime - startTime) / MILLISECONDS_PER_DAY) * item.dailyPrice,
++      total: calculateRentalTotal(item.dailyPrice, startTime, endTime),
+     };
+   }
+ 
+@@ -121,6 +123,15 @@ export function createRentalService(): RentalService {
+   };
+ }
+ 
++function calculateRentalTotal(dailyPrice: number, startTime: number, endTime: number): number {
++  const days = (endTime - startTime) / MILLISECONDS_PER_DAY;
++  const fullPrice = days * dailyPrice;
++
++  return days >= LONG_RENTAL_MINIMUM_DAYS
++    ? Math.round(fullPrice * (100 - LONG_RENTAL_DISCOUNT_PERCENTAGE) / 100)
++    : fullPrice;
++}
++
+ function validateAvailabilityQuery(
+   query: AvailabilityQuery,
+ ): { startTime: number; endTime: number; kind: EquipmentKind | undefined } {
+diff --git a/test/rental-service.test.mjs b/test/rental-service.test.mjs
+index 07e4242facdca5594b5fd0ca53e41d29e984cd11..57772c2262c4ede05c199433cdae2ebfbaa75480 100644
+--- a/test/rental-service.test.mjs
++++ b/test/rental-service.test.mjs
+@@ -24,6 +24,15 @@ test('quotes whole-day rentals in euro cents', () => {
+   });
+ });
+ 
++test('discounts quotes for rentals of three days or more', () => {
++  const service = serviceWithBoard();
++  service.addEquipment({ id: 'sail-1', kind: 'sail', dailyPrice: 5 });
++
++  assert.equal(service.quote({ itemId: 'board-1', start: firstDay, end: thirdDay }).total, 5_000);
++  assert.equal(service.quote({ itemId: 'board-1', start: firstDay, end: '2026-06-04T00:00:00Z' }).total, 6_750);
++  assert.equal(service.quote({ itemId: 'sail-1', start: firstDay, end: '2026-06-04T00:00:00Z' }).total, 14);
++});
++
+ test('books an available item and assigns a booking id', () => {
+   const service = serviceWithBoard();
+ 
+@@ -39,6 +48,14 @@ test('books an available item and assigns a booking id', () => {
+   });
+ });
+ 
++test('records the long-rental discount on bookings', () => {
++  const service = serviceWithBoard();
++
++  const booking = service.book({ itemId: 'board-1', start: firstDay, end: '2026-06-04T00:00:00Z' });
++
++  assert.equal(booking.total, 6_750);
++});
++
+ test('lists sorted equipment ids available for the whole period', () => {
+   const service = createRentalService();
+   service.addEquipment({ id: 'sail-2', kind: 'sail', dailyPrice: 1_800 });
