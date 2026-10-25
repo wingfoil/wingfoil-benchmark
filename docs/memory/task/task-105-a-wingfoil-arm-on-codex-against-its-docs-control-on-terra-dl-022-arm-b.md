@@ -71,6 +71,29 @@ and its dry-run profile validating.
   configuration); the approver is asked whether the spike becomes the two arms' S3 dry runs (10 sessions, which the
   campaign's estimate needs anyway) instead of two step-1 sessions outside the runner.
 
+- **The consent widened** by the approver in chat (2026-10-25, option A): the spike is the two arms' S3@1.0 dry runs on
+  `gpt-5.6-terra` (baseline-docs, wingfoil; five steps each, ten sessions) instead of two step-1 sessions outside the
+  runner, which cannot run an arm's setup; the campaign's estimate needs them anyway.
+- **The two dry runs** (2026-10-25, from the main checkout, the worktree's `dist/` at `31b7d6c5`, the profile copied
+  into the main checkout untracked for the run and removed after; `BENCH_WINGFOIL_REPO` the local WingFoil clone, whose
+  `v0.3.0` is `cc31d7a8`, after a first attempt refused for its absence before any session): each completed, no
+  intervention, its secret scan clean; `dry-runs/78` (baseline-docs, 0.7005 USD) and `dry-runs/79` (wingfoil, 0.8499
+  USD), API-equivalent (`price-table`), 0 € spent; two lines of the v0.3 ledger; committed on main (`b99474a8`).
+- **Criterion 2, read from the wingfoil dry run:** the MCP server started in every session (`required = true`: a
+  server that does not start ends the session, and all five completed); the agent made no MCP call and ran
+  `wingfoil` through the shell 54 times over the five steps, as the arm did under Claude Code in v0.2 (calibration v0.2
+  §7.7, point 1).
+- **What the three S3 dry runs on Terra show** (n = 1, preliminary; scored from the main checkout):
+
+  | Arm | Final public | Hold-out | Checks | M-F1 | Cost (USD) |
+  |---|---|---|---|---|---|
+  | baseline (`dry-runs/67`) | 34/37 | 16/17 | 0/1 | 3/5 | 0.4412 |
+  | baseline-docs (`dry-runs/78`) | 34/37 | 16/17 | 0/1 | 3/5 | 0.7005 |
+  | wingfoil (`dry-runs/79`) | 26/37 | 13/17 | 1/1 | 2/5 | 0.8499 |
+
+  The campaign's estimate still lacks S1, S2 and S8 in baseline-docs and wingfoil on Terra: six more dry runs, to be
+  consented in `campaign-cycle`.
+
 ### Review
 
 Under dl-020; `scripts/pre-review.sh main` green before each round.
