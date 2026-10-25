@@ -95,7 +95,8 @@ logs, transcripts or results, beyond dl-024's bounded exception; one worktree pe
 
 **Delivery order** (WIP 1 in-progress, 1 in-review):
 
-1. W15: task-101 (presets) → task-102 (Codex spike, after dl-024) → the Codex campaign (step 1-bis) → task-103 (vision
+1. W15: task-101 (presets) → task-102 (Codex spike, after dl-024) → the Codex campaign (step 1-bis, campaign-004) →
+   task-104 (the site's catalogue and the across-agents page, the approver's addition of 2026-10-25) → task-103 (vision
    and experiment design) → the managing pin and the first `wingfoil-sync`.
 2. W16: its requirements and acceptance first; then bug-026, bug-027, bug-028 with bug-029 and bug-030, bug-031 with
    bug-032, bug-025 with S1 1.1, the M-K1 annotation; v0.2's campaigns re-scored.
