@@ -158,7 +158,7 @@ describe('the root index (REQ-RES-02 as amended, task-085)', () => {
     writeFileSync(join(root, 'results', 'comparisons', 'abcdef012345-1', 'fedcba987654-1.json'), 'null');
     const refused = rootIndex(root, ['abcdef012345/1']);
     expect(refused.ok ? [] : refused.issues.map((issue) => issue.message)).toEqual([
-      'results/comparisons/abcdef012345-1/fedcba987654-1.json is not a comparison',
+      'results/comparisons/abcdef012345-1/fedcba987654-1.json is not a comparison: not a JSON object',
     ]);
   });
 

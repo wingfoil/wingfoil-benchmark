@@ -133,7 +133,8 @@ export function builtExecutions(site: string): string[] {
  * {@link KINDS}' order, each newest first by the end its `execution.json` records (an execution with none last), with
  * its title, end date, agent, arms, comparison pages and erratum. An execution with no catalogue entry, whose results
  * are gone, whose record is unreadable or not a date, or that is `compared_with` an execution whose comparison is not
- * written (or not a comparison) refuses it, naming it. A comparison page's link is an across-agents page when the
+ * written (or is not a JSON object) refuses it, naming it; the comparison's own shape is checked when its execution
+ * is built (`readComparisons`). A comparison page's link is an across-agents page when the
  * comparison's agents differ, a comparison of deltas otherwise.
  */
 export function rootIndex(root: string, executions: readonly string[]): Result<string> {
@@ -188,17 +189,21 @@ export function rootIndex(root: string, executions: readonly string[]): Result<s
     for (const other of entry.compared_with ?? []) {
       const path = `results/comparisons/${execution.replace('/', '-')}/${other.replace('/', '-')}.json`;
       let comparison: { pins_differ?: { pin?: unknown }[] } | null;
-      try {
-        comparison = JSON.parse(readFileSync(join(root, path), 'utf8')) as typeof comparison;
-      } catch {
+      if (!existsSync(join(root, path))) {
         issues.push({
           path: CATALOG_FILE,
           message: `${execution} is compared_with ${other}, but ${path} is not written: run bench campaign compare ${other} ${execution} first`,
         });
         continue;
       }
+      try {
+        comparison = JSON.parse(readFileSync(join(root, path), 'utf8')) as typeof comparison;
+      } catch (error) {
+        issues.push({ path, message: `cannot be read as a comparison: ${(error as Error).message}` });
+        continue;
+      }
       if (comparison === null || typeof comparison !== 'object' || Array.isArray(comparison)) {
-        issues.push({ path: CATALOG_FILE, message: `${path} is not a comparison` });
+        issues.push({ path: CATALOG_FILE, message: `${path} is not a comparison: not a JSON object` });
         continue;
       }
       const across = (Array.isArray(comparison.pins_differ) ? comparison.pins_differ : []).some(

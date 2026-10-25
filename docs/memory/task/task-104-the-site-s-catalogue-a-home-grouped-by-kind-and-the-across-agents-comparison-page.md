@@ -144,3 +144,8 @@ Under dl-020; `scripts/pre-review.sh main` green before each round.
     already did it); the Design's wording on REQ-SCO-07 and the badge. **Stated:** a failed rebuild in the publish
     check also lists the execution's pages as not part of a fresh build, as any failed rebuild already did.
   - Red `7830c6a8`, fix `3b017fa3`.
+- **Round 3** (a new independent agent, sandboxed; the reflog unchanged after it, round 2's fixes only): no blocker, no
+  should-fix. **Nits, fixed:** the guard's message and comment narrowed to "not a JSON object" (a comparison's shape
+  is checked by `readComparisons` when its own execution is built); a comparison file that exists but is not JSON is
+  now reported as unreadable, not as unwritten. **The review is closed.**
+- **Rounds:** 3.
