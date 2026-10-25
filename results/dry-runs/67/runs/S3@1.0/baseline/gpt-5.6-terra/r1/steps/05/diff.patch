@@ -1,0 +1,90 @@
+diff --git a/src/index.ts b/src/index.ts
+index e2c0dd1c2601e0d188f4afc08881991dab252d42..a36722fc4c6f49a567454e805fffe58c7fb48b89 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -27,9 +27,15 @@ export interface Booking extends RentalQuote {
+   id: string;
+ }
+ 
++export interface Cancellation {
++  bookingId: string;
++  refund: number;
++}
++
+ interface StoredBooking extends Booking {
+   startTime: number;
+   endTime: number;
++  cancelled: boolean;
+ }
+ 
+ /**
+@@ -84,7 +90,8 @@ export function createRentalService() {
+     const period = validatePeriod(request);
+ 
+     const conflict = bookings.some((booking) =>
+-      booking.itemId === request.itemId
++      !booking.cancelled
++      && booking.itemId === request.itemId
+       && period.startTime < booking.endTime
+       && period.endTime > booking.startTime,
+     );
+@@ -98,13 +105,39 @@ export function createRentalService() {
+       ...rentalQuote,
+       startTime: period.startTime,
+       endTime: period.endTime,
++      cancelled: false,
+     };
+     bookings.push(booking);
+ 
+-    const { startTime: _startTime, endTime: _endTime, ...result } = booking;
++    const {
++      startTime: _startTime,
++      endTime: _endTime,
++      cancelled: _cancelled,
++      ...result
++    } = booking;
+     return result;
+   }
+ 
++  function cancel(bookingId: string, at: string): Cancellation {
++    const booking = bookings.find((candidate) => candidate.id === bookingId);
++    if (!booking) {
++      throw new Error(`Unknown booking "${bookingId}"`);
++    }
++    if (booking.cancelled) {
++      throw new Error(`Booking "${bookingId}" has already been cancelled`);
++    }
++
++    const cancellationTime = parseHourlyUtc(at, 'cancellation time');
++    const unusedDuration = Math.max(
++      0,
++      booking.endTime - Math.max(booking.startTime, cancellationTime),
++    );
++    const refund = booking.total * unusedDuration / (booking.endTime - booking.startTime);
++
++    booking.cancelled = true;
++    return { bookingId: booking.id, refund };
++  }
++
+   function availability(query: AvailabilityQuery): string[] {
+     const period = validatePeriod(query);
+     validateAvailabilityQuery(query);
+@@ -113,7 +146,8 @@ export function createRentalService() {
+       .filter((item) => query.kind === undefined || item.kind === query.kind)
+       .filter((item) => period.endTime - period.startTime >= DAY_IN_MILLISECONDS || item.hourlyPrice !== undefined)
+       .filter((item) => !bookings.some((booking) =>
+-        booking.itemId === item.id
++        !booking.cancelled
++        && booking.itemId === item.id
+         && period.startTime < booking.endTime
+         && period.endTime > booking.startTime,
+       ))
+@@ -121,7 +155,7 @@ export function createRentalService() {
+       .sort();
+   }
+ 
+-  return { addEquipment, quote, book, availability };
++  return { addEquipment, quote, book, cancel, availability };
+ }
+ 
+ const DAY_IN_MILLISECONDS = 24 * 60 * 60 * 1000;

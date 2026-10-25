@@ -1,0 +1,195 @@
+diff --git a/src/index.ts b/src/index.ts
+index 456e8555043923d60075318cff7076b013c796b9..56d4fcfd84402e292fb3cc4de371d73238d90f53 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -157,6 +157,21 @@ export function applyPatch(document: unknown, patch: unknown): unknown {
+   return result;
+ }
+ 
++/**
++ * Creates an RFC 6902 JSON Patch that transforms `from` into `to`.
++ *
++ * Both inputs must be JSON values. The returned patch and any values embedded
++ * in it are independent snapshots, and neither input is mutated.
++ */
++export function createPatch(from: unknown, to: unknown): Record<string, unknown>[] {
++  const source = cloneJsonValue(from, "source JSON document");
++  const target = cloneJsonValue(to, "target JSON document");
++  const patch: Record<string, unknown>[] = [];
++
++  diffJsonValue(source, target, "", patch);
++  return patch;
++}
++
+ /**
+  * Applies an RFC 7386 JSON Merge Patch without mutating the source document.
+  *
+@@ -189,6 +204,110 @@ function mergePatch(target: unknown, patch: unknown): unknown {
+   return result;
+ }
+ 
++function diffJsonValue(
++  source: unknown,
++  target: unknown,
++  path: string,
++  patch: Record<string, unknown>[],
++): void {
++  if (jsonEquals(source, target)) {
++    return;
++  }
++
++  if (Array.isArray(source) && Array.isArray(target)) {
++    diffArray(source, target, path, patch);
++    return;
++  }
++
++  if (isObject(source) && isObject(target)) {
++    diffObject(source, target, path, patch);
++    return;
++  }
++
++  patch.push({ op: "replace", path, value: target });
++}
++
++function diffObject(
++  source: Record<string, unknown>,
++  target: Record<string, unknown>,
++  path: string,
++  patch: Record<string, unknown>[],
++): void {
++  // Removing first means that additions and replacements can use their final
++  // paths, even for object members such as "__proto__".
++  for (const key of Object.keys(source)) {
++    if (!hasOwn(target, key)) {
++      patch.push({ op: "remove", path: childPointer(path, key) });
++    }
++  }
++
++  for (const key of Object.keys(target)) {
++    const memberPath = childPointer(path, key);
++    if (!hasOwn(source, key)) {
++      patch.push({ op: "add", path: memberPath, value: target[key] });
++    } else {
++      diffJsonValue(source[key], target[key], memberPath, patch);
++    }
++  }
++}
++
++function diffArray(
++  source: unknown[],
++  target: unknown[],
++  path: string,
++  patch: Record<string, unknown>[],
++): void {
++  // Keep equal runs at either end intact. This produces concise add/remove
++  // operations for the common case of an insertion or deletion in an array.
++  let prefixLength = 0;
++  while (
++    prefixLength < source.length
++    && prefixLength < target.length
++    && jsonEquals(source[prefixLength], target[prefixLength])
++  ) {
++    prefixLength += 1;
++  }
++
++  let suffixLength = 0;
++  while (
++    suffixLength < source.length - prefixLength
++    && suffixLength < target.length - prefixLength
++    && jsonEquals(source[source.length - 1 - suffixLength], target[target.length - 1 - suffixLength])
++  ) {
++    suffixLength += 1;
++  }
++
++  const sourceMiddleLength = source.length - prefixLength - suffixLength;
++  const targetMiddleLength = target.length - prefixLength - suffixLength;
++  const sharedLength = Math.min(sourceMiddleLength, targetMiddleLength);
++
++  // Match positions inside the changed run so a small edit inside an array
++  // element is still represented as a small patch.
++  for (let offset = 0; offset < sharedLength; offset += 1) {
++    const index = prefixLength + offset;
++    diffJsonValue(source[index], target[index], childPointer(path, String(index)), patch);
++  }
++
++  // Remove from the end to avoid changing the indexes of remaining entries.
++  for (let index = sourceMiddleLength - 1; index >= sharedLength; index -= 1) {
++    patch.push({ op: "remove", path: childPointer(path, String(prefixLength + index)) });
++  }
++
++  // After removals, appending each remaining target entry at this point keeps
++  // the untouched suffix in place.
++  for (let index = sharedLength; index < targetMiddleLength; index += 1) {
++    patch.push({
++      op: "add",
++      path: childPointer(path, String(prefixLength + index)),
++      value: target[prefixLength + index],
++    });
++  }
++}
++
++function childPointer(parent: string, token: string): string {
++  return `${parent}/${token.replace(/~/g, "~0").replace(/\//g, "~1")}`;
++}
++
+ type PatchOperation = Record<string, unknown> & { op: string; path: string };
+ 
+ function parseOperation(value: unknown, index: number): PatchOperation {
+diff --git a/test/applyPatch.test.js b/test/applyPatch.test.js
+index 1ae78c06078c9cbafe8e82af431400383602de84..72b01935ab295566253cfc4f1a487315a312f733 100644
+--- a/test/applyPatch.test.js
++++ b/test/applyPatch.test.js
+@@ -1,7 +1,52 @@
+ import assert from "node:assert/strict";
+ import test from "node:test";
+ 
+-import { applyMergePatch, applyPatch } from "../src/index.ts";
++import { applyMergePatch, applyPatch, createPatch } from "../src/index.ts";
++
++test("creates a small patch for a nested change without mutating its inputs", () => {
++  const from = {
++    profile: { name: "Ada", preferences: { theme: "light", notices: true } },
++    roles: ["reader", "editor"],
++  };
++  const to = {
++    profile: { name: "Ada", preferences: { theme: "dark", notices: true } },
++    roles: ["reader", "editor"],
++  };
++
++  const patch = createPatch(from, to);
++
++  assert.deepEqual(patch, [{ op: "replace", path: "/profile/preferences/theme", value: "dark" }]);
++  assert.deepEqual(applyPatch(from, patch), to);
++  assert.deepEqual(from, {
++    profile: { name: "Ada", preferences: { theme: "light", notices: true } },
++    roles: ["reader", "editor"],
++  });
++  assert.deepEqual(to, {
++    profile: { name: "Ada", preferences: { theme: "dark", notices: true } },
++    roles: ["reader", "editor"],
++  });
++});
++
++test("creates granular object and array changes with escaped JSON Pointer tokens", () => {
++  const from = { "a/b": [1, 3], obsolete: true };
++  const to = { "a/b": [1, 2, 3], "~key": { enabled: true } };
++
++  const patch = createPatch(from, to);
++
++  assert.deepEqual(patch, [
++    { op: "remove", path: "/obsolete" },
++    { op: "add", path: "/a~1b/1", value: 2 },
++    { op: "add", path: "/~0key", value: { enabled: true } },
++  ]);
++  assert.deepEqual(applyPatch(from, patch), to);
++});
++
++test("creates a root replacement and rejects non-JSON source documents", () => {
++  assert.deepEqual(createPatch({ value: true }, ["replacement"]), [
++    { op: "replace", path: "", value: ["replacement"] },
++  ]);
++  assert.throws(() => createPatch({ value: undefined }, {}), /not a valid JSON value/);
++});
+ 
+ test("applies the RFC 7386 merge-patch example without mutating the target", () => {
+   const target = {

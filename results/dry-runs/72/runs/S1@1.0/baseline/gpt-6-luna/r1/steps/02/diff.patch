@@ -1,0 +1,135 @@
+diff --git a/src/index.ts b/src/index.ts
+index f1866649f1ae12cc67825a33c76b1587c1da1834..d538a88f6bf1a7bb4aafdd57906b8fc4ae35caa7 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -47,3 +47,130 @@ export function resolvePointer(document: unknown, pointer: string): unknown {
+ 
+   return value;
+ }
++
++type PatchOperation = Record<string, unknown>;
++
++function pointerTokens(pointer: unknown): string[] {
++  if (typeof pointer !== "string") throw new TypeError("JSON Pointer must be a string");
++  if (pointer === "") return [];
++  if (!pointer.startsWith("/")) throw new Error("Invalid JSON Pointer: a non-empty pointer must start with '/'");
++  return pointer.slice(1).split("/").map((token) => {
++    if (/~(?:[^01]|$)/.test(token)) throw new Error("Invalid JSON Pointer escape sequence");
++    return token.replace(/~[01]/g, (escape) => escape === "~1" ? "/" : "~");
++  });
++}
++
++function cloneJson(value: unknown): unknown {
++  if (Array.isArray(value)) return value.map(cloneJson);
++  if (value !== null && typeof value === "object") {
++    const copy: Record<string, unknown> = {};
++    for (const key of Object.keys(value)) {
++      Object.defineProperty(copy, key, { value: cloneJson((value as Record<string, unknown>)[key]), enumerable: true, writable: true, configurable: true });
++    }
++    return copy;
++  }
++  return value;
++}
++
++function arrayIndex(token: string, length: number, allowEnd: boolean): number {
++  if (!/^(0|[1-9][0-9]*)$/.test(token)) throw new Error(`Invalid array index '${token}'`);
++  const index = Number(token);
++  if (!Number.isSafeInteger(index) || index > length || (!allowEnd && index === length)) {
++    throw new Error(`Array index '${token}' is out of range`);
++  }
++  return index;
++}
++
++function getAt(root: unknown, tokens: string[]): unknown {
++  return resolvePointer(root, tokens.length ? "/" + tokens.map((t) => t.replace(/~/g, "~0").replace(/\//g, "~1")).join("/") : "");
++}
++
++function parentAt(root: unknown, tokens: string[]): { parent: Record<string, unknown> | unknown[]; key: string } {
++  if (!tokens.length) throw new Error("The document root has no parent");
++  const parent = getAt(root, tokens.slice(0, -1));
++  if (parent === null || typeof parent !== "object") throw new Error("Patch path parent does not exist");
++  return { parent: parent as Record<string, unknown> | unknown[], key: tokens[tokens.length - 1] };
++}
++
++function addAt(root: unknown, tokens: string[], value: unknown): unknown {
++  if (!tokens.length) return cloneJson(value);
++  const { parent, key } = parentAt(root, tokens);
++  if (Array.isArray(parent)) {
++    const index = key === "-" ? parent.length : arrayIndex(key, parent.length, true);
++    parent.splice(index, 0, cloneJson(value));
++  } else {
++    Object.defineProperty(parent, key, { value: cloneJson(value), enumerable: true, writable: true, configurable: true });
++  }
++  return root;
++}
++
++function removeAt(root: unknown, tokens: string[]): { root: unknown; value: unknown } {
++  if (!tokens.length) return { root: undefined, value: root };
++  const { parent, key } = parentAt(root, tokens);
++  if (Array.isArray(parent)) {
++    const index = arrayIndex(key, parent.length, false);
++    const [value] = parent.splice(index, 1);
++    return { root, value };
++  }
++  if (!Object.prototype.hasOwnProperty.call(parent, key)) throw new Error(`Patch path member '${key}' does not exist`);
++  const value = parent[key];
++  delete parent[key];
++  return { root, value };
++}
++
++function deepEqual(a: unknown, b: unknown): boolean {
++  if (a === b) return true;
++  if (Array.isArray(a) || Array.isArray(b)) return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((v, i) => deepEqual(v, b[i]));
++  if (a !== null && b !== null && typeof a === "object" && typeof b === "object") {
++    const ak = Object.keys(a), bk = Object.keys(b);
++    return ak.length === bk.length && ak.every((k) => Object.prototype.hasOwnProperty.call(b, k) && deepEqual((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k]));
++  }
++  return false;
++}
++
++/** Apply an RFC 6902 JSON Patch and return a new document without mutating the input. */
++export function applyPatch(document: unknown, patch: unknown): unknown {
++  if (!Array.isArray(patch)) throw new TypeError("JSON Patch must be an array");
++  let result = cloneJson(document);
++
++  for (const raw of patch) {
++    if (raw === null || typeof raw !== "object" || Array.isArray(raw)) throw new TypeError("Each patch operation must be an object");
++    const op = raw as PatchOperation;
++    if (typeof op.op !== "string") throw new TypeError("Patch operation must have a string 'op'");
++    const path = pointerTokens(op.path);
++
++    switch (op.op) {
++      case "add":
++        if (!("value" in op)) throw new Error("add operation requires 'value'");
++        result = addAt(result, path, op.value);
++        break;
++      case "remove":
++        result = removeAt(result, path).root;
++        break;
++      case "replace": {
++        if (!("value" in op)) throw new Error("replace operation requires 'value'");
++        getAt(result, path);
++        result = removeAt(result, path).root;
++        result = addAt(result, path, op.value);
++        break;
++      }
++      case "copy":
++      case "move": {
++        const from = pointerTokens(op.from);
++        if (op.op === "move" && from.length < path.length && from.every((t, i) => t === path[i])) throw new Error("Cannot move a value into one of its children");
++        if (op.op === "move" && from.length === path.length && from.every((t, i) => t === path[i])) break;
++        const value = getAt(result, from);
++        if (op.op === "move") result = removeAt(result, from).root;
++        result = addAt(result, path, value);
++        break;
++      }
++      case "test":
++        if (!("value" in op)) throw new Error("test operation requires 'value'");
++        if (!deepEqual(getAt(result, path), op.value)) throw new Error("JSON Patch test operation failed");
++        break;
++      default:
++        throw new Error(`Unknown JSON Patch operation '${op.op}'`);
++    }
++  }
++  return result;
++}

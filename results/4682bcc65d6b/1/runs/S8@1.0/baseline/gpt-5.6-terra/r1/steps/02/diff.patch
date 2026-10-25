@@ -1,0 +1,152 @@
+diff --git a/src/domain/task.ts b/src/domain/task.ts
+index b0c5d180a90a856edcf96fc76c28efd3c97b5819..e4c4b1792b11ed794c41bdfdd48bdbb4e9458c6b 100644
+--- a/src/domain/task.ts
++++ b/src/domain/task.ts
+@@ -14,6 +14,10 @@ export type Status = 'open' | 'done';
+ export interface Task {
+   /** A stable identifier, unique within its task list. */
+   readonly id: string;
++  /** When the task was added, as an ISO-8601 date-time string. */
++  readonly createdAt: string;
++  /** When the task was last changed, as an ISO-8601 date-time string. */
++  readonly updatedAt: string;
+   readonly title: string;
+   readonly priority: Priority;
+   readonly tags: readonly string[];
+@@ -34,8 +38,11 @@ export interface NewTask {
+  * @param id - the task's stable identifier
+  */
+ export function createTask(input: NewTask, id: string): Task {
++  const createdAt = new Date().toISOString();
+   return {
+     id,
++    createdAt,
++    updatedAt: createdAt,
+     title: input.title.trim(),
+     priority: input.priority ?? 'normal',
+     tags: unique(input.tags ?? []),
+@@ -50,7 +57,7 @@ export function createTask(input: NewTask, id: string): Task {
+  */
+ export function completeTask(task: Task): Result<Task> {
+   if (task.status === 'done') return err('invalid-state', `"${task.title}" is already done`);
+-  return ok({ ...task, status: 'done' });
++  return ok(changed(task, { status: 'done' }));
+ }
+ 
+ /**
+@@ -60,7 +67,7 @@ export function completeTask(task: Task): Result<Task> {
+  */
+ export function reopenTask(task: Task): Result<Task> {
+   if (task.status === 'open') return err('invalid-state', `"${task.title}" is still open`);
+-  return ok({ ...task, status: 'open' });
++  return ok(changed(task, { status: 'open' }));
+ }
+ 
+ /**
+@@ -70,7 +77,8 @@ export function reopenTask(task: Task): Result<Task> {
+  * @param title - its new title
+  */
+ export function renameTask(task: Task, title: string): Task {
+-  return { ...task, title: title.trim() };
++  const newTitle = title.trim();
++  return newTitle === task.title ? task : changed(task, { title: newTitle });
+ }
+ 
+ /**
+@@ -80,7 +88,8 @@ export function renameTask(task: Task, title: string): Task {
+  * @param tag - the tag to add
+  */
+ export function addTag(task: Task, tag: string): Task {
+-  return { ...task, tags: unique([...task.tags, tag]) };
++  const tags = unique([...task.tags, tag]);
++  return tags.length === task.tags.length ? task : changed(task, { tags });
+ }
+ 
+ /**
+@@ -90,7 +99,8 @@ export function addTag(task: Task, tag: string): Task {
+  * @param tag - the tag to remove
+  */
+ export function removeTag(task: Task, tag: string): Task {
+-  return { ...task, tags: task.tags.filter((existing) => existing !== tag) };
++  const tags = task.tags.filter((existing) => existing !== tag);
++  return tags.length === task.tags.length ? task : changed(task, { tags });
+ }
+ 
+ /**
+@@ -117,3 +127,8 @@ export function compareTasks(a: Task, b: Task): number {
+ function unique(tags: readonly string[]): string[] {
+   return tags.filter((tag, index) => tags.indexOf(tag) === index);
+ }
++
++/** Returns `task` with its changed fields and the time of that change. */
++function changed(task: Task, fields: Partial<Omit<Task, 'id' | 'createdAt' | 'updatedAt'>>): Task {
++  return { ...task, ...fields, updatedAt: new Date().toISOString() };
++}
+diff --git a/test/list.test.ts b/test/list.test.ts
+index b64ace006636c41f28bbbb92c873ae8d8f917926..7f2014e3b173a90d1833616275a5e7873536e2c1 100644
+--- a/test/list.test.ts
++++ b/test/list.test.ts
+@@ -1,5 +1,5 @@
+ import assert from 'node:assert/strict';
+-import { describe, it } from 'node:test';
++import { describe, it, mock } from 'node:test';
+ 
+ import { createTodoList, summarize } from '../src/index.ts';
+ 
+@@ -12,10 +12,55 @@ describe('task list', () => {
+   it('adds an open task with a normal priority by default', () => {
+     const list = createTodoList();
+     const task = valueOf(list.add({ title: '  Buy milk ' }));
+-    assert.deepEqual(task, { id: 'task-1', title: 'Buy milk', priority: 'normal', tags: [], status: 'open' });
++    assert.deepEqual(
++      task,
++      {
++        id: 'task-1',
++        createdAt: task.createdAt,
++        updatedAt: task.createdAt,
++        title: 'Buy milk',
++        priority: 'normal',
++        tags: [],
++        status: 'open',
++      },
++    );
++    assert.ok(Number.isFinite(Date.parse(task.createdAt)));
+     assert.equal(list.openCount(), 1);
+   });
+ 
++  it('records when a task is created and each kind of change', () => {
++    mock.timers.enable({ apis: ['Date'], now: new Date('2026-01-02T03:04:05.000Z') });
++    try {
++      const list = createTodoList();
++      const added = valueOf(list.add({ title: 'Draft proposal' }));
++      assert.equal(added.createdAt, '2026-01-02T03:04:05.000Z');
++      assert.equal(added.updatedAt, added.createdAt);
++
++      mock.timers.setTime(Date.parse('2026-01-02T03:04:06.000Z'));
++      const tagged = valueOf(list.tag(added.id, 'work'));
++      assert.equal(tagged.updatedAt, '2026-01-02T03:04:06.000Z');
++
++      mock.timers.setTime(Date.parse('2026-01-02T03:04:07.000Z'));
++      const renamed = valueOf(list.rename(added.id, 'Send proposal'));
++      assert.equal(renamed.updatedAt, '2026-01-02T03:04:07.000Z');
++
++      mock.timers.setTime(Date.parse('2026-01-02T03:04:08.000Z'));
++      const completed = valueOf(list.complete(added.id));
++      assert.equal(completed.updatedAt, '2026-01-02T03:04:08.000Z');
++
++      mock.timers.setTime(Date.parse('2026-01-02T03:04:09.000Z'));
++      const reopened = valueOf(list.reopen(added.id));
++      assert.equal(reopened.updatedAt, '2026-01-02T03:04:09.000Z');
++
++      mock.timers.setTime(Date.parse('2026-01-02T03:04:10.000Z'));
++      const untagged = valueOf(list.untag(added.id, 'work'));
++      assert.equal(untagged.updatedAt, '2026-01-02T03:04:10.000Z');
++      assert.equal(untagged.createdAt, added.createdAt);
++    } finally {
++      mock.timers.reset();
++    }
++  });
++
+   it('refuses a second task with the same title', () => {
+     const list = createTodoList();
+     list.add({ title: 'Call the plumber' });

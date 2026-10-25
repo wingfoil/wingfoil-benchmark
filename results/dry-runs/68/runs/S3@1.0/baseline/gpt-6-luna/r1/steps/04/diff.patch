@@ -1,0 +1,88 @@
+diff --git a/src/rental-service.ts b/src/rental-service.ts
+index e7940654b4f216659f1665e2fcbbc3ce094dbe5e..91b16cc587b1c90d1ee3d4c7f1613693a8912ca9 100644
+--- a/src/rental-service.ts
++++ b/src/rental-service.ts
+@@ -4,6 +4,7 @@ export interface EquipmentItem {
+   id: string;
+   kind: EquipmentKind;
+   dailyPrice: number;
++  hourlyPrice?: number;
+ }
+ 
+ export interface RentalRequest {
+@@ -38,9 +39,9 @@ interface StoredBooking extends RentalBooking {
+   endTime: number;
+ }
+ 
+-function utcMidnight(value: string): number {
+-  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}T00:00:00(?:\.0+)?(?:Z|\+00:00)$/.test(value)) {
+-    throw new Error('Rental dates must be midnight UTC ISO-8601 timestamps');
++function utcHour(value: string): number {
++  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:00:00(?:\.0+)?(?:Z|\+00:00)$/.test(value)) {
++    throw new Error('Rental dates must be on the hour in UTC ISO-8601 timestamps');
+   }
+ 
+   const time = Date.parse(value);
+@@ -50,20 +51,26 @@ function utcMidnight(value: string): number {
+   return time;
+ }
+ 
+-function validateDates(start: string, end: string): { startTime: number; endTime: number; days: number } {
+-  const startTime = utcMidnight(start);
+-  const endTime = utcMidnight(end);
++function validateDates(start: string, end: string): { startTime: number; endTime: number; days: number; hours: number } {
++  const startTime = utcHour(start);
++  const endTime = utcHour(end);
+   const duration = endTime - startTime;
+   const dayMilliseconds = 24 * 60 * 60 * 1000;
++  const hourMilliseconds = 60 * 60 * 1000;
+ 
+-  if (duration <= 0 || duration % dayMilliseconds !== 0) {
+-    throw new Error('Rental period must cover one or more whole days');
++  if (duration <= 0 || duration % hourMilliseconds !== 0) {
++    throw new Error('Rental period must cover one or more whole hours');
+   }
+ 
+-  return { startTime, endTime, days: duration / dayMilliseconds };
++  const hours = duration / hourMilliseconds;
++  if (hours >= 24 && (hours % 24 !== 0 || new Date(startTime).getUTCHours() !== 0)) {
++    throw new Error('Rental periods of one or more days must cover whole days from midnight UTC');
++  }
++
++  return { startTime, endTime, days: hours / 24, hours };
+ }
+ 
+-function validatePeriod(request: RentalRequest): { startTime: number; endTime: number; days: number } {
++function validatePeriod(request: RentalRequest): { startTime: number; endTime: number; days: number; hours: number } {
+   if (!request || typeof request.itemId !== 'string' || typeof request.start !== 'string' || typeof request.end !== 'string') {
+     throw new Error('Invalid rental request');
+   }
+@@ -77,12 +84,15 @@ export function createRentalService(): RentalService {
+   let nextBookingId = 1;
+ 
+   function calculate(request: RentalRequest): RentalQuote & { startTime: number; endTime: number } {
+-    const { startTime, endTime, days } = validatePeriod(request);
++    const { startTime, endTime, days, hours } = validatePeriod(request);
+     const item = equipment.get(request.itemId);
+     if (!item) throw new Error(`Unknown equipment item: ${request.itemId}`);
+ 
+-    const fullPrice = item.dailyPrice * days;
+-    const total = days >= 3 ? fullPrice * 0.9 : fullPrice;
++    if (hours < 24 && item.hourlyPrice === undefined) {
++      throw new Error(`Equipment item cannot be rented by the hour: ${item.id}`);
++    }
++    const fullPrice = hours < 24 ? item.hourlyPrice! * hours : item.dailyPrice * days;
++    const total = hours >= 72 ? fullPrice * 0.9 : fullPrice;
+     if (!Number.isSafeInteger(total)) throw new Error('Rental total exceeds the supported amount');
+ 
+     return { itemId: request.itemId, start: request.start, end: request.end, total, startTime, endTime };
+@@ -92,7 +102,8 @@ export function createRentalService(): RentalService {
+     addEquipment(item): void {
+       if (!item || typeof item.id !== 'string' || item.id.length === 0 ||
+           (item.kind !== 'board' && item.kind !== 'sail') ||
+-          !Number.isSafeInteger(item.dailyPrice) || item.dailyPrice < 0) {
++          !Number.isSafeInteger(item.dailyPrice) || item.dailyPrice < 0 ||
++          (item.hourlyPrice !== undefined && (!Number.isSafeInteger(item.hourlyPrice) || item.hourlyPrice < 0))) {
+         throw new Error('Invalid equipment item');
+       }
+       if (equipment.has(item.id)) throw new Error(`Equipment item already exists: ${item.id}`);

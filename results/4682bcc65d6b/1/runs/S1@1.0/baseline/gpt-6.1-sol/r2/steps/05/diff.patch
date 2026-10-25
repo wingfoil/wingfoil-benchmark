@@ -1,0 +1,263 @@
+diff --git a/README.md b/README.md
+index 60b67c5997949a08de24ed9b4f5c7b785ad3ec21..3b87f00835db75bbed857c1177fbeabf0a03c028 100644
+--- a/README.md
++++ b/README.md
+@@ -27,6 +27,18 @@ source, and cannot move a value into one of its descendants. `test` compares JSO
+ values structurally, ignoring object member order. Members not defined for an
+ operation are ignored.
+ 
++`createPatch(from, to)` produces a JSON Patch that transforms one JSON value into
++another: `applyPatch(from, createPatch(from, to))` is structurally equal to `to`.
++For example, `createPatch({ user: { name: "Ada" } }, { user: { name: "Grace" } })`
++returns `[{ op: "replace", path: "/user/name", value: "Grace" }]`.
++Equal inputs produce `[]`, ignoring object member order. Objects and arrays are
++compared recursively, with array insertions and removals aligned to preserve
++unchanged elements. Paths escape member names as JSON Pointers. Incompatible
++value types use a replacement at that path, including the empty path for the
++root. The generated operations use `add`, `remove`, and `replace`; the patch is
++not guaranteed to be the smallest possible encoding. Neither input is modified,
++and patch values are independent copies. Both inputs must be JSON values.
++
+ `applyMergePatch(target, patch)` applies a JSON Merge Patch as defined in
+ [RFC 7386](https://www.rfc-editor.org/rfc/rfc7386.html), returning an independent
+ result without modifying either input. Object patches merge recursively, and
+diff --git a/src/index.ts b/src/index.ts
+index a626af361a4f0cdcbbdce07d58c08ca05cdba3e1..cc703b02e6ddd99d01292fe1f1aa3b2e6bc0a4d2 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -145,6 +145,96 @@ function equalJson(left: JsonValue, right: JsonValue): boolean {
+     keys.every((key) => Object.hasOwn(b, key) && equalJson(a[key], b[key]));
+ }
+ 
++type CreatedPatchOperation =
++  | { op: "remove"; path: string }
++  | { op: "add" | "replace"; path: string; value: JsonValue };
++
++/**
++ * Create an RFC 6902 patch transforming from into to, without modifying either.
++ * Equal values produce no operations. Objects and arrays are diffed recursively;
++ * replacements target individual changed values rather than their containers.
++ * Patch values are independent copies. Both inputs must be JSON values.
++ */
++export function createPatch(from: unknown, to: unknown): CreatedPatchOperation[] {
++  const before = cloneJson(from);
++  const after = cloneJson(to);
++  const patch: CreatedPatchOperation[] = [];
++  const childPath = (path: string, key: string) =>
++    `${path}/${key.replace(/~/gu, "~0").replace(/\//gu, "~1")}`;
++
++  function diff(left: JsonValue, right: JsonValue, path: string): void {
++    if (equalJson(left, right)) return;
++    if (Array.isArray(left) && Array.isArray(right)) {
++      diffArray(left, right, path);
++    } else if (isJsonObject(left) && isJsonObject(right)) {
++      for (const key of Object.keys(left)) {
++        if (!Object.hasOwn(right, key)) patch.push({ op: "remove", path: childPath(path, key) });
++      }
++      for (const key of Object.keys(right)) {
++        const nextPath = childPath(path, key);
++        if (Object.hasOwn(left, key)) diff(left[key], right[key], nextPath);
++        else patch.push({ op: "add", path: nextPath, value: right[key] });
++      }
++    } else {
++      patch.push({ op: "replace", path, value: right });
++    }
++  }
++
++  function diffArray(left: JsonValue[], right: JsonValue[], path: string): void {
++    // Trim unchanged ends before aligning the middle. A single insertion or
++    // deletion in a large array therefore needs no edit-distance table.
++    let start = 0;
++    let leftEnd = left.length;
++    let rightEnd = right.length;
++    while (start < leftEnd && start < rightEnd && equalJson(left[start], right[start])) start++;
++    while (leftEnd > start && rightEnd > start && equalJson(left[leftEnd - 1], right[rightEnd - 1])) {
++      leftEnd--;
++      rightEnd--;
++    }
++    const rows = leftEnd - start;
++    const columns = rightEnd - start;
++    if (rows === 0 || columns === 0) {
++      for (let i = 0; i < rows; i++) {
++        patch.push({ op: "remove", path: childPath(path, String(start)) });
++      }
++      for (let j = 0; j < columns; j++) {
++        patch.push({ op: "add", path: childPath(path, String(start + j)), value: right[start + j] });
++      }
++      return;
++    }
++    // Suffix edit distances allow forward emission with indices referring to
++    // the document after all preceding operations. Substitutions recurse.
++    const costs = Array.from({ length: rows + 1 }, () => new Uint32Array(columns + 1));
++    for (let i = rows; i >= 0; i--) {
++      for (let j = columns; j >= 0; j--) {
++        if (i === rows) costs[i][j] = columns - j;
++        else if (j === columns) costs[i][j] = rows - i;
++        else if (equalJson(left[start + i], right[start + j])) costs[i][j] = costs[i + 1][j + 1];
++        else costs[i][j] = 1 + Math.min(costs[i + 1][j + 1], costs[i + 1][j], costs[i][j + 1]);
++      }
++    }
++    let i = 0;
++    let j = 0;
++    while (i < rows || j < columns) {
++      const nextPath = childPath(path, String(start + j));
++      if (i < rows && j < columns && equalJson(left[start + i], right[start + j])) {
++        i++;
++        j++;
++      } else if (i < rows && j < columns && costs[i][j] === 1 + costs[i + 1][j + 1]) {
++        diff(left[start + i++], right[start + j++], nextPath);
++      } else if (i < rows && costs[i][j] === 1 + costs[i + 1][j]) {
++        patch.push({ op: "remove", path: nextPath });
++        i++;
++      } else {
++        patch.push({ op: "add", path: nextPath, value: right[start + j++] });
++      }
++    }
++  }
++
++  diff(before, after, "");
++  return patch;
++}
++
+ /**
+  * Apply RFC 6902 operations in order, returning an independent JSON value.
+  * Neither the document nor patch values are mutated, including on failure.
+diff --git a/test/create-patch.test.mjs b/test/create-patch.test.mjs
+new file mode 100644
+index 0000000000000000000000000000000000000000..6de6d1abc960b5adcc2be0924ed8e55fc1281c43
+--- /dev/null
++++ b/test/create-patch.test.mjs
+@@ -0,0 +1,133 @@
++import assert from 'node:assert/strict';
++import test from 'node:test';
++import { applyPatch, createPatch } from '../src/index.ts';
++
++test('changes only the affected object members, including inside arrays', () => {
++  const from = { stable: { large: 'unchanged'.repeat(1000) }, user: { name: 'Ada', old: 1 }, items: [{ n: 1 }] };
++  const to = { stable: from.stable, user: { name: 'Grace', added: null }, items: [{ n: 2 }] };
++  const patch = createPatch(from, to);
++  assert.deepEqual(patch, [
++    { op: 'remove', path: '/user/old' },
++    { op: 'replace', path: '/user/name', value: 'Grace' },
++    { op: 'add', path: '/user/added', value: null },
++    { op: 'replace', path: '/items/0/n', value: 2 },
++  ]);
++  assert.deepEqual(applyPatch(from, patch), to);
++});
++
++test('equal JSON values produce an empty patch regardless of member order or aliasing', () => {
++  const shared = { n: 1 };
++  for (const value of [null, false, 0, '', [], {}, [1, { a: 2 }], { a: shared, b: shared }]) {
++    assert.deepEqual(createPatch(value, value), []);
++    assert.deepEqual(createPatch(value, JSON.parse(JSON.stringify(value))), []);
++  }
++  assert.deepEqual(createPatch({ a: 1, b: { c: 2, d: 3 } }, { b: { d: 3, c: 2 }, a: 1 }), []);
++  assert.deepEqual(createPatch(-0, 0), []);
++});
++
++test('replaces scalars and incompatible containers, including the root', () => {
++  const values = [null, false, true, 0, 3, '', 'text', [], {}, [1], { a: 1 }];
++  for (const from of values) {
++    for (const to of values) {
++      assert.deepEqual(applyPatch(from, createPatch(from, to)), to);
++    }
++  }
++  assert.deepEqual(createPatch({ a: [1] }, { a: null }), [{ op: 'replace', path: '/a', value: null }]);
++  assert.deepEqual(createPatch({}, [1]), [{ op: 'replace', path: '', value: [1] }]);
++});
++
++test('escapes literal member names and safely handles prototype-related keys', () => {
++  const from = JSON.parse('{"":{"~/":1},"__proto__":{"n":1},"constructor":1,"toString":1}');
++  const to = JSON.parse('{"":{"~/":2},"__proto__":{"n":2},"constructor":{},"a/b~":3}');
++  const patch = createPatch(from, to);
++  assert.ok(patch.some(op => op.path === '//~0~1'));
++  assert.ok(patch.some(op => op.path === '/a~1b~0'));
++  assert.deepEqual(applyPatch(from, patch), to);
++  assert.deepEqual(applyPatch({}, createPatch({}, to)), to);
++  assert.equal({}.n, undefined);
++  const plain = Object.assign(Object.create(null), { a: 1 });
++  assert.deepEqual(createPatch(plain, { a: 1 }), []);
++});
++
++test('array insertions and deletions preserve unchanged neighbors', () => {
++  for (const index of [0, 1, 3]) {
++    const from = [{ id: 1 }, { id: 2 }, { id: 3 }];
++    const to = from.slice();
++    to.splice(index, 0, { id: 4 });
++    assert.deepEqual(createPatch(from, to), [{ op: 'add', path: `/${index}`, value: { id: 4 } }]);
++    assert.deepEqual(createPatch(to, from), [{ op: 'remove', path: `/${index}` }]);
++  }
++  const cases = [
++    [[1, 2, 3, 4, 5], [0, 1, 2, 4, 5, 6]],
++    [[1, 1, 2, 1], [1, 2, 2, 1, 1]],
++    [[1, 2, 3, 4], []],
++    [[], [1, 2, 3]],
++    [[{ a: 1 }, 2, 3], [{ a: 2 }, 3, 4]],
++    [[[1, 2], [3]], [[0, 1, 2], [4]]],
++  ];
++  for (const [from, to] of cases) {
++    assert.deepEqual(applyPatch(from, createPatch(from, to)), to);
++  }
++  assert.equal(createPatch(cases[0][0], cases[0][1]).length, 3);
++  const large = Array.from({ length: 10000 }, (_, i) => i);
++  const inserted = large.slice();
++  inserted.splice(5000, 0, 'new');
++  assert.deepEqual(createPatch(large, inserted), [{ op: 'add', path: '/5000', value: 'new' }]);
++});
++
++test('does not mutate inputs and patch values are independent', () => {
++  const from = Object.freeze({ a: Object.freeze({ n: 1 }), removed: Object.freeze([1]) });
++  const to = Object.freeze({ a: Object.freeze([Object.freeze({ n: 2 })]), added: Object.freeze({ n: 3 }) });
++  const patch = createPatch(from, to);
++  assert.deepEqual(applyPatch(from, patch), to);
++  patch.find(op => op.path === '/a').value[0].n = 99;
++  patch.find(op => op.path === '/added').value.n = 99;
++  assert.equal(to.a[0].n, 2);
++  assert.equal(to.added.n, 3);
++  assert.deepEqual(from, { a: { n: 1 }, removed: [1] });
++});
++
++test('validates both entire inputs even when equal or replaced', () => {
++  const cycle = {};
++  cycle.self = cycle;
++  const inherited = new Array(1);
++  Object.setPrototypeOf(inherited, Object.assign(Object.create(Array.prototype), { 0: 1 }));
++  for (const invalid of [undefined, NaN, Infinity, -Infinity, 1n, Symbol('x'), () => {},
++    new Date(), new Map(), cycle, { nested: undefined }, [undefined], new Array(1), inherited]) {
++    assert.throws(() => createPatch(invalid, null));
++    assert.throws(() => createPatch(null, invalid));
++    assert.throws(() => createPatch(invalid, invalid));
++    assert.throws(() => createPatch({ deleted: invalid }, {}));
++  }
++});
++
++test('reads array own indices regardless of iterators', () => {
++  const from = [1, { a: 2 }];
++  const to = [0, 1, { a: 2 }];
++  for (const value of [from, to]) {
++    value[Symbol.iterator] = () => { throw new Error('unexpected iteration'); };
++  }
++  assert.deepEqual(createPatch(from, to), [{ op: 'add', path: '/0', value: 0 }]);
++});
++
++test('round trips varied nested JSON documents through serialized patches', () => {
++  let seed = 12345;
++  const random = n => ((seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) % n);
++  function value(depth) {
++    switch (random(depth ? 6 : 4)) {
++      case 0: return null;
++      case 1: return random(2) === 0;
++      case 2: return random(10);
++      case 3: return ['a', '', '~/'][random(3)];
++      case 4: return Array.from({ length: random(6) }, () => value(depth - 1));
++      default: return Object.fromEntries(Array.from({ length: random(5) }, (_, i) => [String(i), value(depth - 1)]));
++    }
++  }
++  for (let i = 0; i < 500; i++) {
++    const from = value(3);
++    const to = value(3);
++    const before = JSON.stringify([from, to]);
++    assert.deepEqual(applyPatch(from, JSON.parse(JSON.stringify(createPatch(from, to)))), to);
++    assert.equal(JSON.stringify([from, to]), before);
++  }
++});

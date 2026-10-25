@@ -1,0 +1,87 @@
+diff --git a/src/index.ts b/src/index.ts
+index b1b185aa28f59442661aa6352a364a8e55b19470..77c15acc41563644ec80796317f8ebff19eafb07 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -4,6 +4,7 @@ export type {
+   EquipmentItem,
+   EquipmentKind,
+   RentalBooking,
++  RentalCancellation,
+   RentalQuote,
+   RentalRequest,
+   RentalService,
+diff --git a/src/rental-service.ts b/src/rental-service.ts
+index 91b16cc587b1c90d1ee3d4c7f1613693a8912ca9..c53950929d147401995b449515ef1aee01722fd6 100644
+--- a/src/rental-service.ts
++++ b/src/rental-service.ts
+@@ -27,16 +27,23 @@ export interface RentalBooking extends RentalQuote {
+   id: string;
+ }
+ 
++export interface RentalCancellation {
++  bookingId: string;
++  refund: number;
++}
++
+ export interface RentalService {
+   addEquipment(item: EquipmentItem): void;
+   quote(request: RentalRequest): RentalQuote;
+   book(request: RentalRequest): RentalBooking;
++  cancel(bookingId: string, at: string): RentalCancellation;
+   availability(query: AvailabilityQuery): string[];
+ }
+ 
+ interface StoredBooking extends RentalBooking {
+   startTime: number;
+   endTime: number;
++  cancelled: boolean;
+ }
+ 
+ function utcHour(value: string): number {
+@@ -117,7 +124,7 @@ export function createRentalService(): RentalService {
+ 
+     book(request): RentalBooking {
+       const quote = calculate(request);
+-      if (bookings.some((booking) => booking.itemId === quote.itemId &&
++      if (bookings.some((booking) => !booking.cancelled && booking.itemId === quote.itemId &&
+           quote.startTime < booking.endTime && booking.startTime < quote.endTime)) {
+         throw new Error(`Equipment item is not available for the requested period: ${quote.itemId}`);
+       }
+@@ -130,12 +137,28 @@ export function createRentalService(): RentalService {
+         total: quote.total,
+         startTime: quote.startTime,
+         endTime: quote.endTime,
++        cancelled: false,
+       };
+       bookings.push(booking);
+       const { startTime: _startTime, endTime: _endTime, ...result } = booking;
+       return result;
+     },
+ 
++    cancel(bookingId, at): RentalCancellation {
++      if (typeof bookingId !== 'string' || bookingId.length === 0) {
++        throw new Error('Invalid booking ID');
++      }
++      const cancellationTime = utcHour(at);
++      const booking = bookings.find((candidate) => candidate.id === bookingId);
++      if (!booking) throw new Error(`Unknown booking: ${bookingId}`);
++      if (booking.cancelled) throw new Error(`Booking has already been cancelled: ${bookingId}`);
++
++      const remainingTime = Math.max(0, booking.endTime - Math.max(cancellationTime, booking.startTime));
++      const refund = Math.floor(booking.total * remainingTime / (booking.endTime - booking.startTime));
++      booking.cancelled = true;
++      return { bookingId, refund };
++    },
++
+     availability(query): string[] {
+       if (!query || typeof query.start !== 'string' || typeof query.end !== 'string' ||
+           (query.kind !== undefined && query.kind !== 'board' && query.kind !== 'sail')) {
+@@ -145,7 +168,7 @@ export function createRentalService(): RentalService {
+       const { startTime, endTime } = validateDates(query.start, query.end);
+       return [...equipment.values()]
+         .filter((item) => (query.kind === undefined || item.kind === query.kind) &&
+-          !bookings.some((booking) => booking.itemId === item.id &&
++          !bookings.some((booking) => !booking.cancelled && booking.itemId === item.id &&
+             startTime < booking.endTime && booking.startTime < endTime))
+         .map((item) => item.id)
+         .sort();

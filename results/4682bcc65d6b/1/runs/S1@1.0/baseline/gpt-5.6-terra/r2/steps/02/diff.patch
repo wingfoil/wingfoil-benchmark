@@ -1,0 +1,337 @@
+diff --git a/src/index.ts b/src/index.ts
+index 0e60cf9f93520decb9423a27366a78acbe154dfa..a4336263074bac07cc7bc54f6b7d9dc46b58c2d9 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -44,6 +44,332 @@ export function resolvePointer(document: unknown, pointer: string): unknown {
+   return value;
+ }
+ 
++/**
++ * Applies an RFC 6902 JSON Patch without mutating the source document.
++ *
++ * @throws {Error} when the document or patch is invalid, or an operation
++ * cannot be applied.
++ */
++export function applyPatch(document: unknown, patch: unknown): unknown {
++  let result = cloneJsonValue(document, "document");
++  let documentExists = true;
++
++  if (!Array.isArray(patch)) {
++    throw new Error("A JSON Patch must be an array of operations");
++  }
++
++  for (let index = 0; index < patch.length; index += 1) {
++    const operation = parseOperation(patch[index], index);
++    const path = parsePointer(operation.path, "path", index);
++
++    switch (operation.op) {
++      case "add": {
++        const value = cloneJsonValue(requiredMember(operation, "value", index), "value");
++        if (path.length === 0) {
++          result = value;
++          documentExists = true;
++        } else {
++          addAt(result, documentExists, path, value, index);
++        }
++        break;
++      }
++
++      case "remove": {
++        if (path.length === 0) {
++          requireDocument(documentExists, index);
++          result = undefined;
++          documentExists = false;
++        } else {
++          removeAt(result, documentExists, path, index);
++        }
++        break;
++      }
++
++      case "replace": {
++        const value = cloneJsonValue(requiredMember(operation, "value", index), "value");
++        if (path.length === 0) {
++          requireDocument(documentExists, index);
++          result = value;
++        } else {
++          replaceAt(result, documentExists, path, value, index);
++        }
++        break;
++      }
++
++      case "move": {
++        const from = parsePointer(requiredStringMember(operation, "from", index), "from", index);
++        if (isProperPrefix(from, path)) {
++          throw operationError(index, "cannot move a value into one of its children");
++        }
++
++        const value = getAt(result, documentExists, from, index);
++        if (from.length === 0) {
++          result = undefined;
++          documentExists = false;
++        } else {
++          removeAt(result, documentExists, from, index);
++        }
++
++        if (path.length === 0) {
++          result = value;
++          documentExists = true;
++        } else {
++          addAt(result, documentExists, path, value, index);
++        }
++        break;
++      }
++
++      case "copy": {
++        const from = parsePointer(requiredStringMember(operation, "from", index), "from", index);
++        const value = cloneJsonValue(getAt(result, documentExists, from, index), "copied value");
++        if (path.length === 0) {
++          result = value;
++          documentExists = true;
++        } else {
++          addAt(result, documentExists, path, value, index);
++        }
++        break;
++      }
++
++      case "test": {
++        const expected = requiredMember(operation, "value", index);
++        const actual = getAt(result, documentExists, path, index);
++        // Validating the expected value also prevents non-JSON values from
++        // accidentally comparing equal to values in the document.
++        const expectedJson = cloneJsonValue(expected, "value");
++        if (!jsonEquals(actual, expectedJson)) {
++          throw operationError(index, "test operation failed");
++        }
++        break;
++      }
++
++      default:
++        throw operationError(index, `unsupported operation '${operation.op}'`);
++    }
++  }
++
++  return result;
++}
++
++type PatchOperation = Record<string, unknown> & { op: string; path: string };
++
++function parseOperation(value: unknown, index: number): PatchOperation {
++  if (value === null || typeof value !== "object" || Array.isArray(value)) {
++    throw operationError(index, "must be an object");
++  }
++
++  const operation = value as Record<string, unknown>;
++  if (!hasOwn(operation, "op") || typeof operation.op !== "string") {
++    throw operationError(index, "requires a string 'op' member");
++  }
++  if (!hasOwn(operation, "path") || typeof operation.path !== "string") {
++    throw operationError(index, "requires a string 'path' member");
++  }
++
++  return operation as PatchOperation;
++}
++
++function requiredMember(operation: Record<string, unknown>, member: string, index: number): unknown {
++  if (!hasOwn(operation, member)) {
++    throw operationError(index, `requires a '${member}' member`);
++  }
++  return operation[member];
++}
++
++function requiredStringMember(operation: Record<string, unknown>, member: string, index: number): string {
++  const value = requiredMember(operation, member, index);
++  if (typeof value !== "string") {
++    throw operationError(index, `requires a string '${member}' member`);
++  }
++  return value;
++}
++
++function parsePointer(pointer: string, member: string, index: number): string[] {
++  if (pointer === "") {
++    return [];
++  }
++  if (!pointer.startsWith("/")) {
++    throw operationError(index, `'${member}' must be a JSON Pointer`);
++  }
++
++  try {
++    return pointer.slice(1).split("/").map(decodeReferenceToken);
++  } catch {
++    throw operationError(index, `'${member}' contains an invalid JSON Pointer escape`);
++  }
++}
++
++function getAt(document: unknown, documentExists: boolean, tokens: string[], index: number): unknown {
++  requireDocument(documentExists, index);
++  let value = document;
++  for (const token of tokens) {
++    if (Array.isArray(value)) {
++      const arrayIndex = existingArrayIndex(token);
++      if (arrayIndex === undefined || arrayIndex >= value.length) {
++        throw operationError(index, "path does not identify an existing value");
++      }
++      value = value[arrayIndex];
++    } else if (isObject(value) && hasOwn(value, token)) {
++      value = value[token];
++    } else {
++      throw operationError(index, "path does not identify an existing value");
++    }
++  }
++  return value;
++}
++
++function addAt(document: unknown, documentExists: boolean, tokens: string[], value: unknown, index: number): void {
++  const [parent, token] = parentAt(document, documentExists, tokens, index);
++  if (Array.isArray(parent)) {
++    if (token === "-") {
++      parent.push(value);
++      return;
++    }
++    const arrayIndex = insertionArrayIndex(token, parent.length);
++    if (arrayIndex === undefined) {
++      throw operationError(index, "array insertion index is invalid");
++    }
++    parent.splice(arrayIndex, 0, value);
++  } else {
++    defineJsonProperty(parent, token, value);
++  }
++}
++
++function removeAt(document: unknown, documentExists: boolean, tokens: string[], index: number): void {
++  const [parent, token] = parentAt(document, documentExists, tokens, index);
++  if (Array.isArray(parent)) {
++    const arrayIndex = existingArrayIndex(token);
++    if (arrayIndex === undefined || arrayIndex >= parent.length) {
++      throw operationError(index, "path does not identify an existing value");
++    }
++    parent.splice(arrayIndex, 1);
++  } else if (hasOwn(parent, token)) {
++    delete parent[token];
++  } else {
++    throw operationError(index, "path does not identify an existing value");
++  }
++}
++
++function replaceAt(document: unknown, documentExists: boolean, tokens: string[], value: unknown, index: number): void {
++  const [parent, token] = parentAt(document, documentExists, tokens, index);
++  if (Array.isArray(parent)) {
++    const arrayIndex = existingArrayIndex(token);
++    if (arrayIndex === undefined || arrayIndex >= parent.length) {
++      throw operationError(index, "path does not identify an existing value");
++    }
++    parent[arrayIndex] = value;
++  } else if (hasOwn(parent, token)) {
++    defineJsonProperty(parent, token, value);
++  } else {
++    throw operationError(index, "path does not identify an existing value");
++  }
++}
++
++function parentAt(document: unknown, documentExists: boolean, tokens: string[], index: number): [Record<string, unknown> | unknown[], string] {
++  const token = tokens[tokens.length - 1];
++  const parent = getAt(document, documentExists, tokens.slice(0, -1), index);
++  if (!isObject(parent) && !Array.isArray(parent)) {
++    throw operationError(index, "path's parent is not a container");
++  }
++  return [parent, token];
++}
++
++function existingArrayIndex(token: string): number | undefined {
++  if (!/^(?:0|[1-9][0-9]*)$/.test(token)) {
++    return undefined;
++  }
++  const index = Number(token);
++  return Number.isSafeInteger(index) ? index : undefined;
++}
++
++function insertionArrayIndex(token: string, length: number): number | undefined {
++  const index = existingArrayIndex(token);
++  return index !== undefined && index <= length ? index : undefined;
++}
++
++function isProperPrefix(prefix: string[], value: string[]): boolean {
++  return prefix.length < value.length && prefix.every((token, index) => token === value[index]);
++}
++
++function requireDocument(documentExists: boolean, index: number): void {
++  if (!documentExists) {
++    throw operationError(index, "cannot address a removed document");
++  }
++}
++
++function operationError(index: number, message: string): Error {
++  return new Error(`Invalid JSON Patch operation at index ${index}: ${message}`);
++}
++
++function cloneJsonValue(value: unknown, description: string): unknown {
++  if (value === null || typeof value === "string" || typeof value === "boolean") {
++    return value;
++  }
++  if (typeof value === "number") {
++    if (!Number.isFinite(value)) {
++      throw new Error(`${description} is not a valid JSON value`);
++    }
++    return value;
++  }
++  if (Array.isArray(value)) {
++    const clone: unknown[] = [];
++    for (let index = 0; index < value.length; index += 1) {
++      if (!hasOwn(value, String(index))) {
++        throw new Error(`${description} is not a valid JSON value`);
++      }
++      clone.push(cloneJsonValue(value[index], description));
++    }
++    return clone;
++  }
++  if (!isObject(value)) {
++    throw new Error(`${description} is not a valid JSON value`);
++  }
++
++  const clone: Record<string, unknown> = {};
++  for (const key of Object.keys(value)) {
++    defineJsonProperty(clone, key, cloneJsonValue(value[key], description));
++  }
++  return clone;
++}
++
++function jsonEquals(left: unknown, right: unknown): boolean {
++  if (left === right) {
++    return true;
++  }
++  if (typeof left !== typeof right || left === null || right === null) {
++    return false;
++  }
++  if (Array.isArray(left) || Array.isArray(right)) {
++    return Array.isArray(left) && Array.isArray(right)
++      && left.length === right.length
++      && left.every((value, index) => jsonEquals(value, right[index]));
++  }
++  if (!isObject(left) || !isObject(right)) {
++    return false;
++  }
++  const leftKeys = Object.keys(left);
++  const rightKeys = Object.keys(right);
++  return leftKeys.length === rightKeys.length
++    && leftKeys.every((key) => hasOwn(right, key) && jsonEquals(left[key], right[key]));
++}
++
++function isObject(value: unknown): value is Record<string, unknown> {
++  if (value === null || typeof value !== "object" || Array.isArray(value)) {
++    return false;
++  }
++  const prototype = Object.getPrototypeOf(value);
++  return prototype === Object.prototype || prototype === null;
++}
++
++function defineJsonProperty(object: Record<string, unknown>, key: string, value: unknown): void {
++  Object.defineProperty(object, key, {
++    value,
++    writable: true,
++    enumerable: true,
++    configurable: true,
++  });
++}
++
+ function decodeReferenceToken(token: string): string {
+   let decoded = "";
+ 

@@ -1,0 +1,204 @@
+diff --git a/src/index.ts b/src/index.ts
+index 65d99b113c8deb771421a5143314d723e3d1fd7e..fa6c328f2ef7a3e2d0452362974442f7709df0ac 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -140,6 +140,134 @@ export function applyPatch(document: unknown, patch: unknown): unknown {
+   return result;
+ }
+ 
++/**
++ * Create an RFC 6902 JSON Patch that transforms `from` into `to` without
++ * modifying either document.
++ *
++ * Object members are compared recursively. Arrays use a shortest edit script
++ * for insertions, removals, and replacements, so a change near one end does
++ * not cause the whole array (or enclosing document) to be sent again.
++ */
++export function createPatch(from: unknown, to: unknown): unknown[] {
++  assertJsonValue(from, "The source document");
++  assertJsonValue(to, "The target document");
++
++  const patch: Operation[] = [];
++  createPatchAt(from, to, [], patch);
++  return patch;
++}
++
++function createPatchAt(from: unknown, to: unknown, path: readonly string[], patch: Operation[]): void {
++  if (jsonEqual(from, to)) {
++    return;
++  }
++
++  if (Array.isArray(from) && Array.isArray(to)) {
++    createArrayPatch(from, to, path, patch);
++    return;
++  }
++
++  if (isJsonObject(from) && isJsonObject(to)) {
++    const fromObject = from as Record<string, unknown>;
++    const toObject = to as Record<string, unknown>;
++
++    // Delete before adding. This is particularly important when a property
++    // name is special in JavaScript (for example, __proto__).
++    for (const key of Object.keys(fromObject)) {
++      if (!Object.prototype.hasOwnProperty.call(toObject, key)) {
++        patch.push({ op: "remove", path: formatPointer([...path, key]) });
++      }
++    }
++    for (const key of Object.keys(fromObject)) {
++      if (Object.prototype.hasOwnProperty.call(toObject, key)) {
++        createPatchAt(fromObject[key], toObject[key], [...path, key], patch);
++      }
++    }
++    for (const key of Object.keys(toObject)) {
++      if (!Object.prototype.hasOwnProperty.call(fromObject, key)) {
++        patch.push({ op: "add", path: formatPointer([...path, key]), value: cloneJsonValue(toObject[key]) });
++      }
++    }
++    return;
++  }
++
++  patch.push({ op: "replace", path: formatPointer(path), value: cloneJsonValue(to) });
++}
++
++/**
++ * Emit a Levenshtein edit script while tracking the index in the array as it
++ * is changed. Paired substitutions are visited recursively so an object or
++ * array change can remain granular.
++ */
++function createArrayPatch(
++  from: unknown[],
++  to: unknown[],
++  path: readonly string[],
++  patch: Operation[],
++): void {
++  const costs: number[][] = Array.from(
++    { length: from.length + 1 },
++    () => Array<number>(to.length + 1).fill(0),
++  );
++
++  for (let fromIndex = from.length; fromIndex >= 0; fromIndex -= 1) {
++    for (let toIndex = to.length; toIndex >= 0; toIndex -= 1) {
++      if (fromIndex === from.length) {
++        costs[fromIndex][toIndex] = to.length - toIndex;
++      } else if (toIndex === to.length) {
++        costs[fromIndex][toIndex] = from.length - fromIndex;
++      } else if (jsonEqual(from[fromIndex], to[toIndex])) {
++        costs[fromIndex][toIndex] = costs[fromIndex + 1][toIndex + 1];
++      } else {
++        costs[fromIndex][toIndex] = 1 + Math.min(
++          costs[fromIndex + 1][toIndex],
++          costs[fromIndex][toIndex + 1],
++          costs[fromIndex + 1][toIndex + 1],
++        );
++      }
++    }
++  }
++
++  let fromIndex = 0;
++  let toIndex = 0;
++  let currentIndex = 0;
++  while (fromIndex < from.length || toIndex < to.length) {
++    if (fromIndex === from.length) {
++      patch.push({ op: "add", path: formatPointer([...path, String(currentIndex)]), value: cloneJsonValue(to[toIndex]) });
++      toIndex += 1;
++      currentIndex += 1;
++    } else if (toIndex === to.length) {
++      patch.push({ op: "remove", path: formatPointer([...path, String(currentIndex)]) });
++      fromIndex += 1;
++    } else if (jsonEqual(from[fromIndex], to[toIndex])) {
++      fromIndex += 1;
++      toIndex += 1;
++      currentIndex += 1;
++    } else {
++      const removeCost = costs[fromIndex + 1][toIndex];
++      const addCost = costs[fromIndex][toIndex + 1];
++      const replaceCost = costs[fromIndex + 1][toIndex + 1];
++      const bestCost = Math.min(removeCost, addCost, replaceCost);
++
++      // Prefer replacement on a tie. It permits recursive diffs in matching
++      // positions and avoids describing a simple edit as a deletion and add.
++      if (replaceCost === bestCost) {
++        createPatchAt(from[fromIndex], to[toIndex], [...path, String(currentIndex)], patch);
++        fromIndex += 1;
++        toIndex += 1;
++        currentIndex += 1;
++      } else if (removeCost === bestCost) {
++        patch.push({ op: "remove", path: formatPointer([...path, String(currentIndex)]) });
++        fromIndex += 1;
++      } else {
++        patch.push({ op: "add", path: formatPointer([...path, String(currentIndex)]), value: cloneJsonValue(to[toIndex]) });
++        toIndex += 1;
++        currentIndex += 1;
++      }
++    }
++  }
++}
++
+ /**
+  * Apply an RFC 7386 JSON Merge Patch without modifying either input.
+  *
+diff --git a/test/applyPatch.test.mjs b/test/applyPatch.test.mjs
+index 5b8b5b89dcdcb277b0d4a07fe15321c87888ebeb..4246ec29c689a7021f71c5e27b94a915e8370903 100644
+--- a/test/applyPatch.test.mjs
++++ b/test/applyPatch.test.mjs
+@@ -1,7 +1,59 @@
+ import assert from "node:assert/strict";
+ import test from "node:test";
+ 
+-import { applyMergePatch, applyPatch } from "../src/index.ts";
++import { applyMergePatch, applyPatch, createPatch } from "../src/index.ts";
++
++test("creates a small patch for nested changes without modifying either input", () => {
++  const from = {
++    profile: { name: "Ada", settings: { alerts: true, theme: "light" } },
++    untouched: [1, 2, 3],
++  };
++  const to = {
++    profile: { name: "Ada", settings: { alerts: false, theme: "light" } },
++    untouched: [1, 2, 3],
++  };
++
++  const patch = createPatch(from, to);
++
++  assert.deepEqual(patch, [{ op: "replace", path: "/profile/settings/alerts", value: false }]);
++  assert.deepEqual(applyPatch(from, patch), to);
++  assert.deepEqual(from, {
++    profile: { name: "Ada", settings: { alerts: true, theme: "light" } },
++    untouched: [1, 2, 3],
++  });
++  assert.deepEqual(to, {
++    profile: { name: "Ada", settings: { alerts: false, theme: "light" } },
++    untouched: [1, 2, 3],
++  });
++});
++
++test("creates array insertions and removals at the affected position", () => {
++  const from = { values: ["one", "three"] };
++  const to = { values: ["one", "two", "three"] };
++
++  const patch = createPatch(from, to);
++
++  assert.deepEqual(patch, [{ op: "add", path: "/values/1", value: "two" }]);
++  assert.deepEqual(applyPatch(from, patch), to);
++});
++
++test("escapes object member names and clones patch values", () => {
++  const from = { "a/b": { value: 1 } };
++  const to = { "a/b": { value: 2 }, "~name": { nested: true } };
++  const patch = createPatch(from, to);
++
++  assert.deepEqual(patch, [
++    { op: "replace", path: "/a~1b/value", value: 2 },
++    { op: "add", path: "/~0name", value: { nested: true } },
++  ]);
++  (patch[1]).value.nested = false;
++  assert.deepEqual(to, { "a/b": { value: 2 }, "~name": { nested: true } });
++});
++
++test("validates documents passed to createPatch", () => {
++  assert.throws(() => createPatch({ value: undefined }, {}), /JSON values/);
++  assert.throws(() => createPatch({}, { value: Number.NaN }), /JSON values/);
++});
+ 
+ test("applies operations in order without modifying the input document", () => {
+   const document = { items: ["one", "two"], copied: null };

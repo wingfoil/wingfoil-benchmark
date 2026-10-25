@@ -1,0 +1,99 @@
+diff --git a/src/orders.ts b/src/orders.ts
+index 0c0b1ae889c9df13dffa9de7ed1924a4e8b09afd..a029a93fd6f94a43d5ecd351af29cda4d205ab99 100644
+--- a/src/orders.ts
++++ b/src/orders.ts
+@@ -153,7 +153,7 @@ export class OrderService {
+       throw new OrderStateError(`order ${id} can no longer be cancelled`);
+     }
+     for (const line of order.lines) this.#inventory.release(line.sku, line.quantity, id);
+-    if (order.coupon !== undefined) this.#coupons.giveBack(order.coupon, order.customer);
++    if (order.coupon !== undefined) this.#coupons.giveBack(order.coupon, order.id);
+     const cancelled: Order = { ...order, status: 'cancelled', cancelledOn: date };
+     this.#orders.set(id, cancelled);
+     return cancelled;
+diff --git a/test/coupons.test.ts b/test/coupons.test.ts
+index 49b4e9f9d9c0a26bbb7f260e0b9e09878480ff9f..0ccaa65c9bec3045d3c5ea48322bbe5014958174 100644
+--- a/test/coupons.test.ts
++++ b/test/coupons.test.ts
+@@ -1,7 +1,7 @@
+ import assert from 'node:assert/strict';
+ import { describe, it } from 'node:test';
+ 
+-import { CouponError, createShop } from '../src/index.ts';
++import { CouponError, createShop, OrderStateError } from '../src/index.ts';
+ 
+ function shop() {
+   const s = createShop();
+@@ -56,4 +56,24 @@ describe('coupons', () => {
+     assert.equal(coupons.usedBy('ONCE'), 'ORD-0001');
+     assert.throws(() => orders.place({ customer: 'c-2', date: '2026-05-05', lines: [{ sku: 'PEN-4', quantity: 1 }], coupon: 'ONCE' }), CouponError);
+   });
++
++  it('returns a single-use welcome coupon on cancellation so the corrected order can use it', () => {
++    const { orders, coupons, inventory } = shop();
++    coupons.add({ code: 'WELCOME', kind: 'fixed', value: 100, validFrom: '2026-01-01', validUntil: '2026-12-31', singleUse: true });
++    const request = { customer: 'paolo', date: '2026-05-05', lines: [{ sku: 'PEN-4', quantity: 1 }], coupon: ' welcome ' };
++    const first = orders.place(request);
++    assert.equal(coupons.usedBy('WELCOME'), first.id);
++    assert.throws(() => orders.place(request), CouponError);
++
++    assert.equal(orders.cancel(first.id, request.date).status, 'cancelled');
++    assert.equal(coupons.usedBy('WELCOME'), undefined);
++    assert.equal(inventory.available('PEN-4'), 20);
++
++    const corrected = orders.place({ ...request, coupon: 'Welcome', lines: [{ sku: 'PEN-4', quantity: 2 }] });
++    assert.equal(corrected.totals.couponDiscountCents, 100);
++    assert.equal(coupons.usedBy('WELCOME'), corrected.id);
++    assert.throws(() => orders.cancel(first.id, request.date), OrderStateError);
++    assert.equal(coupons.usedBy('WELCOME'), corrected.id);
++    assert.throws(() => orders.place(request), CouponError);
++  });
+ });
+diff --git a/test/regressions.test.ts b/test/regressions.test.ts
+index 63e027ff2d8970e10c1bca75c3fc54da088ef479..3e5f3375179495fb89e87e10bbd1c58bdf4c0b43 100644
+--- a/test/regressions.test.ts
++++ b/test/regressions.test.ts
+@@ -59,6 +59,20 @@ describe('reported order regressions', () => {
+   });
+ 
+   for (const [goods, shipping] of [[4999, 490], [5000, 0], [5001, 0]]) {
++    it(`charges ${shipping} cents shipping for ${goods} cents of goods without a coupon`, () => {
++      const { catalog, inventory, orders } = createShop();
++      catalog.add({ sku: 'ITEM', name: 'Item', priceCents: goods, vatClass: 'standard', weightGrams: 100 });
++      inventory.restock('ITEM', 1);
++      const request = { customer: 'c-1', date: '2026-03-02', lines: [{ sku: 'ITEM', quantity: 1 }] };
++      const quote = orders.quote(request);
++      const order = orders.place(request);
++      assert.deepEqual(order.totals, quote.totals);
++      assert.equal(order.totals.goodsCents, goods);
++      assert.equal(order.totals.shippingCents, shipping);
++      assert.equal(order.totals.shippingVatCents, shipping === 0 ? 0 : 108);
++      assert.equal(order.totals.totalCents, goods + shipping + order.totals.vatCents + order.totals.shippingVatCents);
++    });
++
+     it(`charges ${shipping} cents shipping for ${goods} cents of goods after a coupon`, () => {
+       const { catalog, inventory, coupons, orders } = createShop();
+       catalog.add({ sku: 'LB-220', name: 'Lamp', priceCents: 6000, vatClass: 'standard', weightGrams: 100 });
+@@ -74,6 +88,22 @@ describe('reported order regressions', () => {
+     });
+   }
+ 
++  it('ships goods worth exactly fifty euros after a volume discount free', () => {
++    const { catalog, inventory, orders } = createShop();
++    catalog.add({ sku: 'ITEM', name: 'Item', priceCents: 500, vatClass: 'standard', weightGrams: 100 });
++    inventory.restock('ITEM', 11);
++    catalog.add({ sku: 'EXTRA', name: 'Extra', priceCents: 50, vatClass: 'standard', weightGrams: 100 });
++    inventory.restock('EXTRA', 1);
++    const request = { customer: 'c-1', date: '2026-03-02', lines: [{ sku: 'ITEM', quantity: 11 }, { sku: 'EXTRA', quantity: 1 }] };
++    const quote = orders.quote(request);
++    const order = orders.place(request);
++    assert.deepEqual(order.totals, quote.totals);
++    assert.equal(order.totals.volumeDiscountCents, 550);
++    assert.equal(order.totals.goodsCents, 5000);
++    assert.equal(order.totals.shippingCents, 0);
++    assert.equal(order.totals.shippingVatCents, 0);
++  });
++
+   it('rounds VAT half up on each discounted line and carries it into totals and invoices', () => {
+     const { catalog, inventory, coupons, orders, invoices } = createShop();
+     for (const sku of ['ITEM-A', 'ITEM-B']) {

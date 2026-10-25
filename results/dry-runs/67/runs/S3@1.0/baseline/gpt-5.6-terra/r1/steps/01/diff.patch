@@ -1,0 +1,146 @@
+diff --git a/src/index.ts b/src/index.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..8946f5aba0af77dc2007fcb83222050f2940701b
+--- /dev/null
++++ b/src/index.ts
+@@ -0,0 +1,140 @@
++export type EquipmentKind = 'board' | 'sail';
++
++export interface Equipment {
++  id: string;
++  kind: EquipmentKind;
++  dailyPrice: number;
++}
++
++export interface RentalRequest {
++  itemId: string;
++  start: string;
++  end: string;
++}
++
++export interface RentalQuote extends RentalRequest {
++  total: number;
++}
++
++export interface Booking extends RentalQuote {
++  id: string;
++}
++
++interface StoredBooking extends Booking {
++  startTime: number;
++  endTime: number;
++}
++
++/**
++ * Creates an in-memory service for renting individual pieces of equipment.
++ * All periods are half-open UTC day ranges: [start, end).
++ */
++export function createRentalService() {
++  const equipment = new Map<string, Equipment>();
++  const bookings: StoredBooking[] = [];
++  let nextBookingNumber = 1;
++
++  function addEquipment(item: Equipment): void {
++    validateEquipment(item);
++
++    if (equipment.has(item.id)) {
++      throw new Error(`Equipment with id "${item.id}" already exists`);
++    }
++
++    equipment.set(item.id, { ...item });
++  }
++
++  function quote(request: RentalRequest): RentalQuote {
++    const item = equipment.get(request.itemId);
++    if (!item) {
++      throw new Error(`Unknown equipment item "${request.itemId}"`);
++    }
++
++    const period = validatePeriod(request);
++    return {
++      ...request,
++      total: (period.endTime - period.startTime) / DAY_IN_MILLISECONDS * item.dailyPrice,
++    };
++  }
++
++  function book(request: RentalRequest): Booking {
++    const rentalQuote = quote(request);
++    const period = validatePeriod(request);
++
++    const conflict = bookings.some((booking) =>
++      booking.itemId === request.itemId
++      && period.startTime < booking.endTime
++      && period.endTime > booking.startTime,
++    );
++
++    if (conflict) {
++      throw new Error(`Equipment item "${request.itemId}" is not available for this period`);
++    }
++
++    const booking: StoredBooking = {
++      id: `booking-${nextBookingNumber++}`,
++      ...rentalQuote,
++      startTime: period.startTime,
++      endTime: period.endTime,
++    };
++    bookings.push(booking);
++
++    const { startTime: _startTime, endTime: _endTime, ...result } = booking;
++    return result;
++  }
++
++  return { addEquipment, quote, book };
++}
++
++const DAY_IN_MILLISECONDS = 24 * 60 * 60 * 1000;
++const UTC_TIMESTAMP = /^(\d{4})-(\d{2})-(\d{2})T00:00:00(?:\.0+)?Z$/;
++
++function validateEquipment(item: Equipment): void {
++  if (!item || typeof item.id !== 'string' || item.id.length === 0) {
++    throw new Error('Equipment id must be a non-empty string');
++  }
++  if (item.kind !== 'board' && item.kind !== 'sail') {
++    throw new Error('Equipment kind must be "board" or "sail"');
++  }
++  if (!Number.isSafeInteger(item.dailyPrice) || item.dailyPrice < 0) {
++    throw new Error('Daily price must be a non-negative integer number of euro cents');
++  }
++}
++
++function validatePeriod(request: RentalRequest): { startTime: number; endTime: number } {
++  if (!request || typeof request.itemId !== 'string') {
++    throw new Error('Rental request must include an item id');
++  }
++
++  const startTime = parseMidnightUtc(request.start, 'start');
++  const endTime = parseMidnightUtc(request.end, 'end');
++  if (endTime <= startTime) {
++    throw new Error('Rental end must be after its start');
++  }
++
++  return { startTime, endTime };
++}
++
++function parseMidnightUtc(value: unknown, field: string): number {
++  if (typeof value !== 'string') {
++    throw new Error(`Rental ${field} must be an ISO-8601 UTC timestamp`);
++  }
++
++  const match = UTC_TIMESTAMP.exec(value);
++  if (!match) {
++    throw new Error(`Rental ${field} must be at midnight UTC`);
++  }
++
++  const time = Date.parse(value);
++  const date = new Date(time);
++  if (
++    Number.isNaN(time)
++    || date.getUTCFullYear() !== Number(match[1])
++    || date.getUTCMonth() + 1 !== Number(match[2])
++    || date.getUTCDate() !== Number(match[3])
++  ) {
++    throw new Error(`Rental ${field} must be a valid ISO-8601 UTC timestamp`);
++  }
++
++  return time;
++}

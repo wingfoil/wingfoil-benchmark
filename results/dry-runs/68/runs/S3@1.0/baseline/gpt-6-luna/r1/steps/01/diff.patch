@@ -1,0 +1,137 @@
+diff --git a/src/index.ts b/src/index.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..6186847acac27362be1ed9a84538b11f34ff910f
+--- /dev/null
++++ b/src/index.ts
+@@ -0,0 +1,9 @@
++export { createRentalService } from './rental-service.js';
++export type {
++  EquipmentItem,
++  EquipmentKind,
++  RentalBooking,
++  RentalQuote,
++  RentalRequest,
++  RentalService,
++} from './rental-service.js';
+diff --git a/src/rental-service.ts b/src/rental-service.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..283216c5e50b39a515ea886c469200237cf6d5f1
+--- /dev/null
++++ b/src/rental-service.ts
+@@ -0,0 +1,116 @@
++export type EquipmentKind = 'board' | 'sail';
++
++export interface EquipmentItem {
++  id: string;
++  kind: EquipmentKind;
++  dailyPrice: number;
++}
++
++export interface RentalRequest {
++  itemId: string;
++  start: string;
++  end: string;
++}
++
++export interface RentalQuote extends RentalRequest {
++  total: number;
++}
++
++export interface RentalBooking extends RentalQuote {
++  id: string;
++}
++
++export interface RentalService {
++  addEquipment(item: EquipmentItem): void;
++  quote(request: RentalRequest): RentalQuote;
++  book(request: RentalRequest): RentalBooking;
++}
++
++interface StoredBooking extends RentalBooking {
++  startTime: number;
++  endTime: number;
++}
++
++function utcMidnight(value: string): number {
++  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}T00:00:00(?:\.0+)?(?:Z|\+00:00)$/.test(value)) {
++    throw new Error('Rental dates must be midnight UTC ISO-8601 timestamps');
++  }
++
++  const time = Date.parse(value);
++  if (!Number.isFinite(time) || new Date(time).toISOString().slice(0, 10) !== value.slice(0, 10)) {
++    throw new Error('Invalid rental date');
++  }
++  return time;
++}
++
++function validatePeriod(request: RentalRequest): { startTime: number; endTime: number; days: number } {
++  if (!request || typeof request.itemId !== 'string' || typeof request.start !== 'string' || typeof request.end !== 'string') {
++    throw new Error('Invalid rental request');
++  }
++
++  const startTime = utcMidnight(request.start);
++  const endTime = utcMidnight(request.end);
++  const duration = endTime - startTime;
++  const dayMilliseconds = 24 * 60 * 60 * 1000;
++
++  if (duration <= 0 || duration % dayMilliseconds !== 0) {
++    throw new Error('Rental period must cover one or more whole days');
++  }
++
++  return { startTime, endTime, days: duration / dayMilliseconds };
++}
++
++export function createRentalService(): RentalService {
++  const equipment = new Map<string, EquipmentItem>();
++  const bookings: StoredBooking[] = [];
++  let nextBookingId = 1;
++
++  function calculate(request: RentalRequest): RentalQuote & { startTime: number; endTime: number } {
++    const { startTime, endTime, days } = validatePeriod(request);
++    const item = equipment.get(request.itemId);
++    if (!item) throw new Error(`Unknown equipment item: ${request.itemId}`);
++
++    const total = item.dailyPrice * days;
++    if (!Number.isSafeInteger(total)) throw new Error('Rental total exceeds the supported amount');
++
++    return { itemId: request.itemId, start: request.start, end: request.end, total, startTime, endTime };
++  }
++
++  return {
++    addEquipment(item): void {
++      if (!item || typeof item.id !== 'string' || item.id.length === 0 ||
++          (item.kind !== 'board' && item.kind !== 'sail') ||
++          !Number.isSafeInteger(item.dailyPrice) || item.dailyPrice < 0) {
++        throw new Error('Invalid equipment item');
++      }
++      if (equipment.has(item.id)) throw new Error(`Equipment item already exists: ${item.id}`);
++      equipment.set(item.id, { ...item });
++    },
++
++    quote(request): RentalQuote {
++      const { startTime: _startTime, endTime: _endTime, ...quote } = calculate(request);
++      return quote;
++    },
++
++    book(request): RentalBooking {
++      const quote = calculate(request);
++      if (bookings.some((booking) => booking.itemId === quote.itemId &&
++          quote.startTime < booking.endTime && booking.startTime < quote.endTime)) {
++        throw new Error(`Equipment item is not available for the requested period: ${quote.itemId}`);
++      }
++
++      const booking: StoredBooking = {
++        id: `booking-${nextBookingId++}`,
++        itemId: quote.itemId,
++        start: quote.start,
++        end: quote.end,
++        total: quote.total,
++        startTime: quote.startTime,
++        endTime: quote.endTime,
++      };
++      bookings.push(booking);
++      const { startTime: _startTime, endTime: _endTime, ...result } = booking;
++      return result;
++    },
++  };
++}

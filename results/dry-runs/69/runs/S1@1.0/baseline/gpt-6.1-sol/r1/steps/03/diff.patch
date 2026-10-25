@@ -1,0 +1,120 @@
+diff --git a/README.md b/README.md
+index e83d52c40f7b4a1be227193fd414b4d627471331..699a4e323213a5ca3da363cd6a4a59e6f649bb58 100644
+--- a/README.md
++++ b/README.md
+@@ -34,4 +34,11 @@ an existing index. `test` compares JSON values structurally, ignoring object key
+ order. Documents and operation values must be JSON values, with finite numbers
+ and no cycles.
+ 
++The patch must be a dense array of JSON operation objects. Every operation member,
++including an unrecognized extension member, must contain a JSON value. Members
++without meaning for a particular operation are otherwise ignored (for example,
++`from` on `add`). Operations are checked and applied in order; the first error
++throws and stops evaluation, without evaluating later operations or exposing
++partial changes to the inputs.
++
+ Run tests with `npm test` (Node.js 22.18 or newer, with native TypeScript support).
+diff --git a/src/index.ts b/src/index.ts
+index 35da2d75987dbca68a11070ed85441bebf03a905..0387a1a6de8e7be010cc29e1701b2952eba70bef 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -158,7 +158,14 @@ function changeValue(
+ export function applyPatch(document: unknown, patch: unknown): unknown {
+   if (!Array.isArray(patch)) throw new Error("JSON Patch must be an array");
+   let result = cloneJson(document);
+-  for (const operation of patch) {
++  for (let index = 0; index < patch.length; index++) {
++    // A patch is a JSON array, not an arbitrary iterable. In particular, holes
++    // must not acquire operations from the prototype or a custom iterator.
++    if (!hasOwn(patch, String(index))) throw new Error("Expected a JSON Patch operation");
++    // Validate the whole operation as JSON, including extension members. The
++    // RFC ignores their meaning, but still requires a JSON patch document.
++    // Do this sequentially so an error never evaluates a later operation.
++    const operation = cloneJson(patch[index]) as Record<string, unknown>;
+     if (operation === null || typeof operation !== "object" || Array.isArray(operation) ||
+         !hasOwn(operation, "op") || !hasOwn(operation, "path") ||
+         typeof operation.op !== "string" || typeof operation.path !== "string") {
+diff --git a/test/patch.test.js b/test/patch.test.js
+index 39813d2b2dc8d1b633bc2dbc9e0b5a75148c82cf..c29dabf19238a735c326abd23ce5a5bf42608541 100644
+--- a/test/patch.test.js
++++ b/test/patch.test.js
+@@ -137,7 +137,7 @@ test('rejects malformed patches and missing required operation members', () => {
+ test('ignores members that have no meaning for the operation', () => {
+   assert.deepEqual(applyPatch({ a: 1 }, [
+     { op: 'add', path: '/b', value: 2, from: 'invalid pointer', extra: true },
+-    { op: 'remove', path: '/a', value: undefined, from: null },
++    { op: 'remove', path: '/a', value: { ignored: true }, from: null },
+   ]), { b: 2 });
+ });
+ 
+@@ -224,3 +224,70 @@ test('rejects non-JSON values instead of silently coercing them', () => {
+     assert.throws(() => applyPatch({}, [{ op: 'add', path: '/a', value }]));
+   }
+ });
++
++test('requires every operation and extension member to be JSON', () => {
++  const cycle = {}; cycle.self = cycle;
++  for (const extra of [undefined, NaN, Infinity, -Infinity, 1n, () => {}, Symbol(),
++    new Date(), new Map(), new Set(), cycle, [undefined], new Array(1)]) {
++    for (const operation of [
++      { op: 'add', path: '/a', value: 1, extra },
++      { op: 'remove', path: '/a', value: extra },
++      { op: 'test', path: '/a', value: 1, from: extra },
++    ]) {
++      assert.throws(() => applyPatch({ a: 1 }, [operation]));
++    }
++  }
++  class Operation {
++    op = 'add'; path = '/a'; value = 1;
++  }
++  for (const operation of [new Operation(), Object.assign(new Date(), {
++    op: 'add', path: '/a', value: 1,
++  })]) {
++    assert.throws(() => applyPatch({}, [operation]));
++  }
++  const operation = Object.assign(Object.create(null), {
++    op: 'add', path: '/a', value: null, extra: { arbitrary: ['JSON'] },
++  });
++  assert.deepEqual(applyPatch({}, [operation]), { a: null });
++});
++
++test('evaluates array entries rather than custom iterators or inherited entries', () => {
++  const patch = [{ op: 'add', path: '/a', value: 1 }];
++  patch[Symbol.iterator] = function* () {
++    yield { op: 'add', path: '/unexpected', value: true };
++  };
++  assert.deepEqual(applyPatch({}, patch), { a: 1 });
++
++  const sparse = new Array(1);
++  const prototype = Object.create(Array.prototype);
++  prototype[0] = { op: 'add', path: '/a', value: 1 };
++  Object.setPrototypeOf(sparse, prototype);
++  assert.throws(() => applyPatch({}, sparse));
++});
++
++test('stops on the first error and leaves both inputs unchanged', () => {
++  const failures = [
++    { op: 'test', path: '/items', value: [] },
++    { op: 'remove', path: '/missing' },
++    // The removal succeeds internally before the destination fails.
++    { op: 'move', from: '/items/0', path: '/missing/child' },
++    { op: 'unknown', path: '' },
++    { op: 'add', path: '/a', value: undefined },
++  ];
++  for (const failure of failures) {
++    const document = { items: [{ nested: 1 }, 2] };
++    const patch = [
++      { op: 'replace', path: '/items/0/nested', value: 9 }, failure,
++    ];
++    const before = structuredClone(patch);
++    Object.defineProperty(patch, '2', {
++      get() { assert.fail('evaluated an operation after an error'); },
++    });
++    assert.throws(() => applyPatch(document, patch), error => {
++      assert.doesNotMatch(error.message, /evaluated an operation/);
++      return true;
++    });
++    assert.deepEqual(document, { items: [{ nested: 1 }, 2] });
++    assert.deepEqual(patch.slice(0, 2), before);
++  }
++});
