@@ -37,8 +37,9 @@ and its dry-run profile validating.
    rendering; the spike decides which.
 3. REQ-RUN-15's Codex refusals (1.35) accept dl-025's campaign (`presets/harness-vs-docs.yaml`, arms baseline,
    baseline-docs and wingfoil, `gpt-5.6-terra`) and its dry-run profile, and still refuse anything else. **Red-first.**
-4. Two real sessions (spike): S3@1.0 step 1 in the wingfoil arm and in baseline-docs on `gpt-5.6-terra`, through
-   task-102's probe extended to an arm; each completes, its secret scan clean, a ledger line each. **Spike.**
+4. **The spike** (the approver's option A in chat, 2026-10-25, in place of two step-1 sessions through task-102's probe,
+   which cannot run an arm's setup): the S3@1.0 dry runs of baseline-docs and wingfoil on `gpt-5.6-terra`, five steps
+   each, through the runner; each completes, its secret scan clean, a ledger line each. **Spike.**
 5. `campaigns/codex-terra-harness-vs-docs.yaml` and its dry-run profile validate. **Characterization.**
 
 ## Design
@@ -47,8 +48,9 @@ and its dry-run profile validating.
 - **MCP:** `src/agents/profile.ts`'s Codex `config.toml` gains the arm's server when the arm declares one; checked
   offline against Codex 0.162.1's `config/src/types.rs` (task-094's copy) before any session.
 - **Scope:** `src/cli/codex-scope.ts` names the allowed campaigns and profiles by preset, arms and model.
-- **The probe:** `spikes/task-102/probe.sh` gains an arm argument (the arm's setup run in the session's container);
-  or a sibling `spikes/task-105/probe.sh`, if simpler.
+- **The spike:** the runner's own dry runs (`bench scenario dry-run S3@1.0 --arm <arm> --model gpt-5.6-terra
+  --profile campaigns/codex-terra-harness-vs-docs.dry-run.yaml`), from the main checkout with the worktree's `dist/`,
+  as task-094's sessions ran (the approver's option A; the probe of task-102 runs no arm's setup).
 - **Fairness:** the method page and the across-agents page state that the wingfoil arm is v0.2's manual (the engine not
   exercised) and how its MCP reached Codex.
 - The dl-022 cut order is not needed (18 runs on one model); if the quota stops the campaign, it resumes after the
@@ -77,12 +79,17 @@ and its dry-run profile validating.
 - **The two dry runs** (2026-10-25, from the main checkout, the worktree's `dist/` at `31b7d6c5`, the profile copied
   into the main checkout untracked for the run and removed after; `BENCH_WINGFOIL_REPO` the local WingFoil clone, whose
   `v0.3.0` is `cc31d7a8`, after a first attempt refused for its absence before any session): each completed, no
-  intervention, its secret scan clean; `dry-runs/78` (baseline-docs, 0.7005 USD) and `dry-runs/79` (wingfoil, 0.8499
+  intervention, its secret scan clean (the first, refused attempt's log was overwritten by the second; no dry-run
+  directory was made for it, `dry-runs/78` following 77); `dry-runs/78` (baseline-docs, 0.7005 USD) and `dry-runs/79` (wingfoil, 0.8499
   USD), API-equivalent (`price-table`), 0 € spent; two lines of the v0.3 ledger; committed on main (`b99474a8`).
-- **Criterion 2, read from the wingfoil dry run:** the MCP server started in every session (`required = true`: a
-  server that does not start ends the session, and all five completed); the agent made no MCP call and ran
-  `wingfoil` through the shell 54 times over the five steps, as the arm did under Claude Code in v0.2 (calibration v0.2
-  §7.7, point 1).
+- **Criterion 2, read from the wingfoil dry run:** that the MCP server started is an inference, not an observation: the
+  runner writes it with `required = true`, Codex 0.162.1 ends a session whose required server does not start (read
+  offline, review round 2), and all five sessions completed; no `config.toml`, MCP start event or stderr line is kept
+  in the results. No MCP call was made, and none could be: WingFoil v0.3.0's server exposes no tool (`tools/list`
+  answers `[]`, the arm's `mcp-tools: false`). The agent used the CLI through the shell instead, as the arm did under
+  Claude Code in v0.2 (calibration v0.2 §7.7, point 1): 22 of the 51 shell commands of the five steps invoke it, 33
+  invocations (`memory add` 11, `memory submit` 9, `memory search` 5, `directives list` 5, `directives` 3), counted by a
+  script over the transcripts' `item.completed` events (review's figure, regenerated).
 - **What the three S3 dry runs on Terra show** (n = 1, preliminary; scored from the main checkout):
 
   | Arm | Final public | Hold-out | Checks | M-F1 | Cost (USD) |
