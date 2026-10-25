@@ -87,3 +87,24 @@ the committed results; publishing stays the approver's (`bench site publish`, ca
 - **The data:** after the merge, the approver's `bench campaign compare 81ebb2691f9c/1 4682bcc65d6b/1` writes the
   comparison; the catalogue's four entries are in this task.
 - **Out of scope:** dl-022's arm B; publishing (`bench site publish`, campaign-004 reviewed → published).
+
+## Execution notes
+
+- `memory add`, the body (`docs(task)`), `memory submit` (draft → pending) on main on 2026-10-25; the approver's
+  pending → backlog (`dcb2ae0b`, run by the approver); `memory submit` (backlog → in-progress) on main. Declared and
+  observed: one commit each.
+- **Build** (on `task/task-104`): the Design (`74c9af85`); requirements 1.36 and traceability 1.6 (`11eab00b`, then `faaf2b38`); red (`36526276`); code (`68570af3`); `main` merged (`f67f9904`) for
+  campaign-004's committed results (`3799c054` on main: REQ-RES-06's records of `4682bcc65d6b/1` and its dry runs had
+  not been committed by the campaign step; committed there as campaign-002's were, `55d47017`).
+- **Tests changed with the code, disclosed:** the root index's tests of task-085 (`profiles.test.ts`) now read the
+  grouped home; `build.test.ts` and `comparison.feature`'s "A published link keeps showing the same values" give the
+  second execution its catalogue entry and read the home's titles; the site fixture writes a catalogue entry for its
+  execution and keeps earlier ones; `campaign-compare.test.ts`'s review-1 test asserts the per-arm rule, its baseline
+  only that no pin blocks it (hand-built runs have nothing to measure; the acceptance scenario measures real ones).
+- **A check on the real data** (in the worktree, the generated files removed after): `bench campaign compare
+  81ebb2691f9c/1 4682bcc65d6b/1` matched 4 groups, the baseline's M-R across measured in each (S1 M-R1 164/165); `bench
+  site build 4682bcc65d6b/1` wrote 22 pages, the across-agents page among them, and the home's "Across agents" group.
+  It showed turns are not comparable across agents (Codex one a request, Claude Code one an assistant message): the
+  column was removed, REQ-RES-07 1.36 says so.
+- **The Design's deviations:** the catalogue's schema lives in `src/site/profiles.ts` beside the profiles' (not in
+  `core`): only the site reads it.
