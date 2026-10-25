@@ -2,7 +2,7 @@
 id: campaign-004-codex-baseline-campaign
 type: campaign
 title: "Codex baseline campaign"
-status: running
+status: scored
 release: v0.3
 campaign_file: campaigns/codex-baseline.yaml
 campaign_id: 4682bcc65d6b
