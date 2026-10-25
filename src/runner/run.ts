@@ -11,7 +11,7 @@ import {
 import { basename, dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { agentProfile, foldModels, scrub } from '../agents/index.js';
+import { agentProfile, codexMcpServers, foldModels, scrub } from '../agents/index.js';
 import type { AgentPort, ModelsUsage, SessionUsage, StepOutcome } from '../agents/index.js';
 import {
   approverPolicy,
@@ -892,12 +892,17 @@ async function executeRun(context: RunContext, options: RunnerOptions): Promise<
     await options.docker.start(container);
     // The agent's own files (Codex's config.toml), before the arm's setup, so that the setup's commit never holds them.
     for (const file of profile.files) {
+      // An agent that reads its MCP servers from its own configuration gets the arm's there (dl-025, task-105).
+      const content =
+        file.path === profile.mcpInConfig && arm.mcpPath !== undefined
+          ? `${file.content}\n${codexMcpServers(JSON.parse(readFileSync(arm.mcpPath, 'utf8')) as unknown)}`
+          : file.content;
       const written = await options.docker.exec(container, [
         'sh',
         '-c',
         'printf "%s" "$1" > "$2"',
         'sh',
-        file.content,
+        content,
         file.path,
       ]);
       if (written.code !== 0)

@@ -118,7 +118,7 @@ describe("the Codex credential's scope (dl-024, widened by dl-025)", () => {
     expect(
       issuesOf({
         agent: 'codex',
-        dryRunArm: 'spikes/x/codex-baseline.dry-run.yaml' === '' ? '' : 'baseline',
+        dryRunArm: 'baseline',
         profile: 'spikes/x/codex-baseline.dry-run.yaml',
         model: 'gpt-6.1-sol',
       }),

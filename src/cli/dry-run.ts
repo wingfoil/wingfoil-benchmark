@@ -80,7 +80,12 @@ export async function dryRunCommand(
 
   // dl-024: a Codex session only within its credential's scope, refused first.
   const outOfScope = codexScopeIssues(
-    { agent: profile.agent.name, dryRunArm: arm.name, profile: relative(root, checked.value.profileFile) },
+    {
+      agent: profile.agent.name,
+      dryRunArm: arm.name,
+      profile: relative(root, checked.value.profileFile),
+      model,
+    },
     (io.now ?? Date.now)(),
   );
   if (outOfScope.length > 0) return report(outOfScope, io);

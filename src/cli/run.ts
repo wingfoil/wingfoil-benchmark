@@ -287,6 +287,7 @@ async function runCampaignCommand(
     {
       agent: spec.agent.name,
       arms: spec.arms,
+      models: campaignModels(spec),
       ...(checked.value.campaign.extended === undefined
         ? {}
         : { preset: checked.value.campaign.extended.preset }),

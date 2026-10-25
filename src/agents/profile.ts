@@ -17,6 +17,11 @@ export interface AgentProfile {
   readonly credentialTarget?: string;
   /** Files the runner writes in the container after it starts and before the arm's setup. */
   readonly files: readonly { readonly path: string; readonly content: string }[];
+  /**
+   * The file among {@link files} the arm's MCP servers are rendered into, for an agent that reads them from its own
+   * configuration rather than a flag (Codex's `config.toml`, REQ-RUN-15 as amended in 1.37).
+   */
+  readonly mcpInConfig?: string;
 }
 
 /**
@@ -72,6 +77,7 @@ const CODEX: AgentProfile = {
   cleared: `the agent's ${CODEX_HOME}`,
   credentialTarget: `${CODEX_HOME}/auth.json`,
   files: [{ path: `${CODEX_HOME}/config.toml`, content: CODEX_CONFIG }],
+  mcpInConfig: `${CODEX_HOME}/config.toml`,
 };
 
 /** The profile of the agent a campaign pins. */
