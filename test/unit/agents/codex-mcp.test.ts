@@ -43,4 +43,16 @@ describe("an arm's MCP servers in Codex's config.toml (REQ-RUN-15 as amended in 
       /a: env values must be strings/,
     );
   });
+
+  it('refuses a server name or an env key that is not valid TOML either (review round 2)', () => {
+    expect(() => codexMcpServers({ mcpServers: { 'a\ud800': { command: 'x', args: [] } } })).toThrow(
+      /not valid TOML/,
+    );
+    expect(() =>
+      codexMcpServers({ mcpServers: { a: { command: 'x', args: [], env: { 'k\ud800': 'v' } } } }),
+    ).toThrow(/not valid TOML/);
+    expect(codexMcpServers({ mcpServers: { 'a\u007f': { command: 'x', args: [] } } })).toContain(
+      '[mcp_servers."a\\u007f"]',
+    );
+  });
 });

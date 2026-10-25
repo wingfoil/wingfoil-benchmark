@@ -272,6 +272,48 @@ describe("dl-024's scope in the commands", () => {
     );
   });
 
+  it('refuses a Codex dry run of an arm whose MCP server Codex cannot be given, building nothing (task-105 review round 2)', async () => {
+    const { root } = writeRepo();
+    copyFileSync(repoPath('scenarios/leak-scan.yaml'), join(root, 'scenarios', 'leak-scan.yaml'));
+    writeFileSync(
+      join(root, 'arms', 'baseline', 'arm.yaml'),
+      'name: baseline\nsetup: setup.sh\nmanual: manual.md\nmcp: mcp.json\n',
+    );
+    writeFileSync(
+      join(root, 'arms', 'baseline', 'mcp.json'),
+      JSON.stringify({ mcpServers: { web: { type: 'http', url: 'https://example.org' } } }),
+    );
+    const profile = parse(readFileSync(repoPath('campaigns/codex-baseline.dry-run.yaml'), 'utf8')) as Record<
+      string,
+      unknown
+    >;
+    delete profile.arm_digests;
+    writeFileSync(join(root, 'campaigns', 'codex-baseline.dry-run.yaml'), stringify(profile));
+    vi.stubEnv('BENCH_CODEX_AUTH_FILE', fakeAuthFile());
+
+    const refused = await cli(
+      [
+        'scenario',
+        'dry-run',
+        'S1@1.0',
+        '--arm',
+        'baseline',
+        '--model',
+        'gpt-6.1-sol',
+        '--profile',
+        join(root, 'campaigns', 'codex-baseline.dry-run.yaml'),
+        '--allow-spending',
+      ],
+      root,
+      () => Date.parse('2026-10-24T12:00:00Z'),
+    );
+
+    expect(refused).toMatchObject({ code: 1, built: 0 });
+    expect(refused.stderr).toContain(
+      'arms/baseline/mcp.json: web: only stdio servers with a command are rendered for Codex',
+    );
+  });
+
   it("refuses a Codex dry run from another profile than the campaign's, building nothing", async () => {
     const { root } = writeRepo();
     copyFileSync(repoPath('scenarios/leak-scan.yaml'), join(root, 'scenarios', 'leak-scan.yaml'));
