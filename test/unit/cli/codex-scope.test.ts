@@ -27,83 +27,123 @@ function fakeAuthFile(): string {
 }
 
 /** dl-024's scope, enforced before any Codex session: the date, and the campaign or dry run it may serve. */
-describe("the Codex credential's scope (dl-024)", () => {
+describe("the Codex credential's scope (dl-024, widened by dl-025)", () => {
   const before = Date.parse('2026-11-13T23:59:59Z');
   const after = Date.parse('2026-11-14T00:00:00Z');
+  const BASELINE = 'presets/baseline-across-agents.yaml';
+  const HVD = 'presets/harness-vs-docs.yaml';
+  const BASELINE_PROFILE = 'campaigns/codex-baseline.dry-run.yaml';
+  const TERRA_PROFILE = 'campaigns/codex-terra-harness-vs-docs.dry-run.yaml';
+  const issuesOf = (input: Parameters<typeof codexScopeIssues>[0], now = before) =>
+    codexScopeIssues(input, now);
 
   it('ends on 2026-11-13', () => {
     expect(CODEX_SCOPE_END).toBe('2026-11-13');
   });
 
-  it('accepts the Codex baseline campaign and its dry runs until the end of 2026-11-13', () => {
+  it('accepts the Codex baseline campaign on any model, and its dry runs, until the end of 2026-11-13', () => {
     expect(
-      codexScopeIssues(
-        { agent: 'codex', preset: 'presets/baseline-across-agents.yaml', arms: ['baseline'] },
-        before,
-      ),
+      issuesOf({
+        agent: 'codex',
+        preset: BASELINE,
+        arms: ['baseline'],
+        models: ['gpt-6.1-sol', 'gpt-6-luna'],
+      }),
     ).toEqual([]);
     expect(
-      codexScopeIssues(
-        { agent: 'codex', dryRunArm: 'baseline', profile: 'campaigns/codex-baseline.dry-run.yaml' },
-        before,
-      ),
+      issuesOf({ agent: 'codex', dryRunArm: 'baseline', profile: BASELINE_PROFILE, model: 'gpt-6-luna' }),
     ).toEqual([]);
+  });
+
+  it("accepts dl-025's campaign on Terra and its dry runs of the three arms (task-105)", () => {
+    expect(
+      issuesOf({
+        agent: 'codex',
+        preset: HVD,
+        arms: ['baseline', 'baseline-docs', 'wingfoil'],
+        models: ['gpt-5.6-terra'],
+      }),
+    ).toEqual([]);
+    for (const arm of ['baseline', 'baseline-docs', 'wingfoil']) {
+      expect(
+        issuesOf({ agent: 'codex', dryRunArm: arm, profile: TERRA_PROFILE, model: 'gpt-5.6-terra' }),
+        arm,
+      ).toEqual([]);
+    }
   });
 
   it('refuses any Codex session after 2026-11-13', () => {
     expect(
-      codexScopeIssues(
-        { agent: 'codex', dryRunArm: 'baseline', profile: 'campaigns/codex-baseline.dry-run.yaml' },
+      issuesOf(
+        { agent: 'codex', dryRunArm: 'baseline', profile: BASELINE_PROFILE, model: 'gpt-6.1-sol' },
         after,
       ),
     ).toEqual([{ path: 'agent', message: "codex's credential is in scope until 2026-11-13 only (dl-024)" }]);
   });
 
-  it('refuses a Codex campaign that does not extend baseline-across-agents, or runs another arm', () => {
-    expect(codexScopeIssues({ agent: 'codex', arms: ['baseline'] }, before)).toEqual([
+  it('refuses another preset, an arm or a model outside its preset, naming the decision', () => {
+    expect(issuesOf({ agent: 'codex', arms: ['baseline'], models: ['gpt-6.1-sol'] })).toEqual([
+      { path: 'extends', message: `a codex campaign must extend ${BASELINE} or ${HVD} (dl-024, dl-025)` },
+    ]);
+    expect(
+      issuesOf({ agent: 'codex', preset: BASELINE, arms: ['baseline', 'wingfoil'], models: ['gpt-6.1-sol'] }),
+    ).toEqual([{ path: 'arms', message: `a codex campaign of ${BASELINE} runs baseline only (dl-024)` }]);
+    expect(
+      issuesOf({ agent: 'codex', preset: HVD, arms: ['baseline', 'speckit'], models: ['gpt-5.6-terra'] }),
+    ).toEqual([
       {
-        path: 'extends',
-        message: 'a codex campaign must extend presets/baseline-across-agents.yaml (dl-024)',
+        path: 'arms',
+        message: `a codex campaign of ${HVD} runs baseline, baseline-docs, wingfoil only (dl-025)`,
       },
     ]);
     expect(
-      codexScopeIssues(
-        { agent: 'codex', preset: 'presets/baseline-across-agents.yaml', arms: ['baseline', 'wingfoil'] },
-        before,
-      ),
-    ).toEqual([{ path: 'arms', message: 'a codex campaign runs the baseline arm only (dl-024)' }]);
-    expect(
-      codexScopeIssues(
-        { agent: 'codex', dryRunArm: 'wingfoil', profile: 'campaigns/codex-baseline.dry-run.yaml' },
-        before,
-      ),
-    ).toEqual([{ path: 'arm', message: 'a codex dry run runs the baseline arm only (dl-024)' }]);
+      issuesOf({ agent: 'codex', preset: HVD, arms: ['baseline', 'wingfoil'], models: ['gpt-6.1-sol'] }),
+    ).toEqual([{ path: 'models', message: `a codex campaign of ${HVD} runs gpt-5.6-terra only (dl-025)` }]);
   });
 
-  it("refuses a Codex dry run from another profile than the campaign's (review round 1)", () => {
+  it("refuses a Codex dry run from another profile, or of an arm or a model its profile's campaign does not run", () => {
     expect(
-      codexScopeIssues(
-        { agent: 'codex', dryRunArm: 'baseline', profile: 'campaigns/x-codex-s3-codex.dry-run.yaml' },
-        before,
-      ),
+      issuesOf({
+        agent: 'codex',
+        dryRunArm: 'baseline',
+        profile: 'campaigns/x-codex-s3-codex.dry-run.yaml',
+        model: 'gpt-6.1-sol',
+      }),
     ).toEqual([
-      { path: 'profile', message: 'a codex dry run reads campaigns/codex-baseline.dry-run.yaml (dl-024)' },
+      {
+        path: 'profile',
+        message: `a codex dry run reads ${BASELINE_PROFILE} or ${TERRA_PROFILE} (dl-024, dl-025)`,
+      },
     ]);
-  });
-
-  it("refuses a copy of the campaign's profile outside campaigns/ (review round 2)", () => {
     expect(
-      codexScopeIssues(
-        { agent: 'codex', dryRunArm: 'baseline', profile: 'spikes/x/codex-baseline.dry-run.yaml' },
-        before,
-      ),
+      issuesOf({
+        agent: 'codex',
+        dryRunArm: 'spikes/x/codex-baseline.dry-run.yaml' === '' ? '' : 'baseline',
+        profile: 'spikes/x/codex-baseline.dry-run.yaml',
+        model: 'gpt-6.1-sol',
+      }),
     ).toEqual([
-      { path: 'profile', message: 'a codex dry run reads campaigns/codex-baseline.dry-run.yaml (dl-024)' },
+      {
+        path: 'profile',
+        message: `a codex dry run reads ${BASELINE_PROFILE} or ${TERRA_PROFILE} (dl-024, dl-025)`,
+      },
+    ]);
+    expect(
+      issuesOf({ agent: 'codex', dryRunArm: 'wingfoil', profile: BASELINE_PROFILE, model: 'gpt-6.1-sol' }),
+    ).toEqual([
+      { path: 'arm', message: `a codex dry run of ${BASELINE_PROFILE} runs baseline only (dl-024)` },
+    ]);
+    expect(
+      issuesOf({ agent: 'codex', dryRunArm: 'wingfoil', profile: TERRA_PROFILE, model: 'gpt-6-luna' }),
+    ).toEqual([
+      { path: 'model', message: `a codex dry run of ${TERRA_PROFILE} runs gpt-5.6-terra only (dl-025)` },
     ]);
   });
 
   it('says nothing for another agent', () => {
-    expect(codexScopeIssues({ agent: 'claude-code', arms: ['baseline', 'wingfoil'] }, after)).toEqual([]);
+    expect(issuesOf({ agent: 'claude-code', arms: ['baseline', 'wingfoil'], models: ['x'] }, after)).toEqual(
+      [],
+    );
   });
 });
 
@@ -156,7 +196,7 @@ describe("dl-024's scope in the commands", () => {
 
     expect(refused).toMatchObject({ code: 1, built: 0 });
     expect(refused.stderr).toContain(
-      'extends: a codex campaign must extend presets/baseline-across-agents.yaml (dl-024)',
+      'extends: a codex campaign must extend presets/baseline-across-agents.yaml or presets/harness-vs-docs.yaml (dl-024, dl-025)',
     );
   });
 
@@ -193,7 +233,7 @@ describe("dl-024's scope in the commands", () => {
 
     expect(refused).toMatchObject({ code: 1, built: 0 });
     expect(refused.stderr).toContain(
-      'profile: a codex dry run reads campaigns/codex-baseline.dry-run.yaml (dl-024)',
+      'profile: a codex dry run reads campaigns/codex-baseline.dry-run.yaml or campaigns/codex-terra-harness-vs-docs.dry-run.yaml (dl-024, dl-025)',
     );
   });
 
@@ -230,7 +270,7 @@ describe("dl-024's scope in the commands", () => {
 
     expect(refused).toMatchObject({ code: 1, built: 0 });
     expect(refused.stderr).toContain(
-      'profile: a codex dry run reads campaigns/codex-baseline.dry-run.yaml (dl-024)',
+      'profile: a codex dry run reads campaigns/codex-baseline.dry-run.yaml or campaigns/codex-terra-harness-vs-docs.dry-run.yaml (dl-024, dl-025)',
     );
   });
 });

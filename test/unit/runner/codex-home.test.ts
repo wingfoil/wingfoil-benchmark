@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -129,6 +129,53 @@ describe("Codex's manual (REQ-RUN-12 as amended in 1.32)", () => {
       readFileSync(join(root, 'arms', 'baseline', 'manual.md'), 'utf8'),
     );
     expect(existsSync(join(workspace, 'CLAUDE.md'))).toBe(false);
+    const record = JSON.parse(readFileSync(join(summary.runs[0]?.outputDir ?? '', 'run.json'), 'utf8')) as {
+      manual: { file: string };
+    };
+    expect(record.manual.file).toBe('AGENTS.md');
+  });
+});
+
+describe("an arm's MCP server and manual under Codex (dl-025, task-105)", () => {
+  it("adds the arm's MCP servers to Codex's config.toml, from its mcp.json", async () => {
+    const { root, checked } = codexCampaign();
+    writeFileSync(
+      join(root, 'arms', 'baseline', 'arm.yaml'),
+      'name: baseline\nsetup: setup.sh\nmanual: manual.md\nmcp: mcp.json\n',
+    );
+    writeFileSync(
+      join(root, 'arms', 'baseline', 'mcp.json'),
+      JSON.stringify({
+        mcpServers: { wingfoil: { type: 'stdio', command: '/home/node/.local/bin/wingfoil', args: ['mcp'] } },
+      }),
+    );
+    const again = checkCampaign(join(root, 'campaigns', 'campaign.yaml'));
+    if (!again.ok) throw new Error(JSON.stringify(again.issues));
+    const ports = doubles();
+
+    await runCampaign(again.value, { ...ports, credentialFile: AUTH });
+
+    const written =
+      ports.recorded.execs.map((exec) => exec.command).find((command) => command[2] === WRITE) ?? [];
+    expect(written[5]).toBe(`${CODEX_HOME}/config.toml`);
+    expect(written[4]).toContain(
+      '[mcp_servers.wingfoil]\ncommand = "/home/node/.local/bin/wingfoil"\nargs = ["mcp"]\n',
+    );
+    void checked;
+  });
+
+  it("merges an AGENTS.md the arm's setup wrote with the manual, as a CLAUDE.md is under Claude Code (characterization)", async () => {
+    const { root } = codexCampaign();
+    writeFileSync(
+      join(root, 'arms', 'baseline', 'setup.sh'),
+      'printf "the tool\'s own guide\\n" >> AGENTS.md\n',
+    );
+    const again = checkCampaign(join(root, 'campaigns', 'campaign.yaml'));
+    if (!again.ok) throw new Error(JSON.stringify(again.issues));
+    const ports = doubles({ execResultOf: () => undefined });
+
+    const summary = await runCampaign(again.value, { ...ports, credentialFile: AUTH });
+
     const record = JSON.parse(readFileSync(join(summary.runs[0]?.outputDir ?? '', 'run.json'), 'utf8')) as {
       manual: { file: string };
     };
