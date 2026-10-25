@@ -111,3 +111,24 @@ the committed results; publishing stays the approver's (`bench site publish`, ca
   column was removed, REQ-RES-07 1.36 says so.
 - **The Design's deviations:** the catalogue's schema lives in `src/site/profiles.ts` beside the profiles' (not in
   `core`): only the site reads it.
+
+### Review
+
+Under dl-020; `scripts/pre-review.sh main` green before each round.
+
+- **Round 1** (an independent read-only agent, sandboxed; the reflog unchanged after it): red-first checked (9 tests
+  red at `36526276`); every page of `81ebb2691f9c/1` byte-identical between main and the branch, `site/index.html`
+  aside; the published comparisons unchanged when recomputed; the catalogue's facts checked against the campaigns.
+  - **blocker:** the cost column mixed Codex's price-table means with Claude's agent-reported ones, unflagged. Fixed:
+    each cost says its basis, "reported by the agent" or "price table" (from the aggregate's `cost.unpriced`).
+  - **should-fix, fixed:** M-R1, M-R2 and M-R across without their n or badge; the home's comparison links built from
+    `compared_with` and the kind, not the comparisons written (now a `compared_with` with no comparison file refuses
+    the build, and the link's kind is the comparison's agents); a docs control measured across agents although its
+    source's harness differed (now only the baseline is relieved of the other arms' harnesses; REQ-SCO-07 1.36
+    restated); the Checks column summing only each check's last step, unlike campaign-004's table (now every scored
+    step, aligned by run, each value with its own n); the page's cells untested (hold-out, checks, M-F1, the cost's
+    basis, a non-baseline group left out, escaping, a dash); criterion 3 and the Design still naming turns, and
+    criterion 1 a date (corrected; the turns' removal was the check on the real data's finding, reported to the
+    approver).
+  - **nits, fixed:** an M-R across entry with no value reads "not measured".
+  - Red `4902fe6d`, fix `7cf90a48` (the red's check fixture lacked its second step; added in the fix, disclosed).
