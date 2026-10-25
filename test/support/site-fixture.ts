@@ -144,7 +144,11 @@ export function completeExecution(
   ids: readonly string[] = STAND_INS.map((standIn) => standIn.id),
 ): void {
   cpSync(repoPath('arms'), join(root, 'arms'), { recursive: true });
+  // The catalogue entries an earlier call wrote are kept: the repository's copy would replace them (task-104).
+  const catalog = join(root, 'site-content', 'catalog.yaml');
+  const kept = existsSync(catalog) ? readFileSync(catalog, 'utf8') : undefined;
   cpSync(repoPath('site-content'), join(root, 'site-content'), { recursive: true });
+  if (kept !== undefined) writeFileSync(catalog, kept);
   cpSync(repoPath('eligibility'), join(root, 'eligibility'), { recursive: true });
   catalogueEntry(root, executionDir);
   writeFileSync(join(executionDir, 'campaign.yaml'), siteCampaign(ids));

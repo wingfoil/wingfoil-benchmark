@@ -26,7 +26,7 @@ interface GroupView {
   readonly metrics?: {
     readonly m_q1?: { readonly final?: { readonly m_q1?: PerRun<Fraction> } };
     readonly holdout?: { readonly scored?: boolean; readonly final?: { readonly m_q1?: PerRun<Fraction> } };
-    readonly cost?: { readonly cost_usd?: PerRun<number>; readonly turns?: PerRun<number> };
+    readonly cost?: { readonly cost_usd?: PerRun<number> };
     readonly checks?: readonly { readonly steps?: readonly { readonly passed?: PerRun<Fraction> }[] }[];
     readonly m_f1?: { readonly share?: PerRun<Fraction> };
     readonly m_r?: { readonly m_r1?: { agree: number; total: number }; readonly m_r2?: { mean: number } };
@@ -107,7 +107,6 @@ function rowHtml(agent: string, group: GroupView): string {
     cell(fractions(checksOf(group))) +
     cell(fractions(metrics.m_f1?.share)) +
     cell(mean(metrics.cost?.cost_usd, 4)) +
-    cell(mean(metrics.cost?.turns, 1)) +
     `<td>${mR1 === undefined ? '—' : e(`${mR1.agree}/${mR1.total}`)}</td>` +
     `<td>${mR2 === undefined ? '—' : e(mR2.mean.toFixed(2))}</td></tr>\n`
   );
@@ -115,7 +114,8 @@ function rowHtml(agent: string, group: GroupView): string {
 
 /**
  * The across-agents page (REQ-RES-07 as amended in 1.36, task-104): the baseline arm of two executions whose agents
- * differ, scenario by scenario, one row per model of each agent, then each group's M-R across (REQ-SCO-07); `notes`,
+ * differ, scenario by scenario, one row per model of each agent (no turns: each agent counts them its own way), then
+ * each group's M-R across (REQ-SCO-07); `notes`,
  * the catalogue's, at its top. No headline and no better/worse mark: two agents are not one harness, and these runs
  * are few.
  */
@@ -138,7 +138,7 @@ export function acrossAgentsPage(
   const header =
     '<thead><tr><th scope="col">Agent</th><th scope="col">Model</th><th scope="col">Final public tests</th>' +
     '<th scope="col">Hold-out tests</th><th scope="col">Checks</th><th scope="col">M-F1</th>' +
-    '<th scope="col">Cost (USD, API-equivalent, mean)</th><th scope="col">Turns (mean)</th>' +
+    '<th scope="col">Cost (USD, API-equivalent, mean)</th>' +
     '<th scope="col">M-R1</th><th scope="col">M-R2</th></tr></thead>\n';
   const sections = scenarios.map((name) => {
     const rows = sides
@@ -177,7 +177,8 @@ export function acrossAgentsPage(
       `<p class="meta">The baseline arm of each execution, scenario by scenario: ${e(earlierAgent)} in ` +
       `${e(executionName(comparison.earlier))}, ${e(newerAgent)} in ${e(executionName(comparison.newer))}. Values are ` +
       'means or ranges of their runs, with their n; there is no headline and no better or worse mark, since two agents ' +
-      'are not one harness and these runs are few.</p>\n' +
+      'are not one harness and these runs are few. Turns are not shown: each agent counts them its own way (Codex one ' +
+      'a request, Claude Code one an assistant message).</p>\n' +
       (notes.length === 0
         ? ''
         : `<ul class="notes">\n${notes.map((note) => `<li>${e(note)}</li>\n`).join('')}</ul>\n`) +

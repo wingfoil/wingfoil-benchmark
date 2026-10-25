@@ -365,7 +365,8 @@ describe('comparison.feature', () => {
     expect((await benchSite(root, 'score', later)).code).toBe(0);
 
     // When the site is rebuilt and published
-    expect((await benchSite(root, 'site', 'build', later)).code).toBe(0);
+    const rebuilt = await benchSite(root, 'site', 'build', later);
+    expect(rebuilt.code, rebuilt.stderr).toBe(0);
     const second = await benchPublish(root, probeSaying(true), 'site', 'publish');
     expect(second.code, second.stderr).toBe(0);
 
