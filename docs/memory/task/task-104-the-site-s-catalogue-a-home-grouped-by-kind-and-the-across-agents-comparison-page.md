@@ -39,7 +39,8 @@ the committed results; publishing stays the approver's (`bench site publish`, ca
    the order reference, bridge, across-agents, each group under its heading and one-line description, each execution
    newest first with its title, date, agent and models, arms, and links (the execution, its comparisons, an erratum
    when the catalogue names one). **Red-first.**
-3. **The across-agents page** `across-agents-<earlier-id>-<m>.html` in the newer execution's directory, rendered for a comparison `bench campaign compare`
+3. **The across-agents page** `across-agents-<earlier-id>-<m>.html` in the newer execution's directory, rendered
+   for a comparison `bench campaign compare`
    made of two executions whose agents differ (REQ-CLI-12): the baseline arm, one row per scenario and model of each
    agent, with final public and hold-out tests, checks, M-F1, API-equivalent cost and its basis (`price-table`
    flagged), turns, M-R1 and M-R2 within each agent and across (`m_r_across`), `n` and the preliminary badge on every
@@ -93,7 +94,8 @@ the committed results; publishing stays the approver's (`bench site publish`, ca
 - `memory add`, the body (`docs(task)`), `memory submit` (draft → pending) on main on 2026-10-25; the approver's
   pending → backlog (`dcb2ae0b`, run by the approver); `memory submit` (backlog → in-progress) on main. Declared and
   observed: one commit each.
-- **Build** (on `task/task-104`): the Design (`74c9af85`); requirements 1.36 and traceability 1.6 (`11eab00b`, then `faaf2b38`); red (`36526276`); code (`68570af3`); `main` merged (`f67f9904`) for
+- **Build** (on `task/task-104`): the Design (`74c9af85`); requirements 1.36 and traceability 1.6 (`11eab00b`, then
+  `faaf2b38`); red (`36526276`); code (`68570af3`); `main` merged (`f67f9904`) for
   campaign-004's committed results (`3799c054` on main: REQ-RES-06's records of `4682bcc65d6b/1` and its dry runs had
   not been committed by the campaign step; committed there as campaign-002's were, `55d47017`).
 - **Tests changed with the code, disclosed:** the root index's tests of task-085 (`profiles.test.ts`) now read the
