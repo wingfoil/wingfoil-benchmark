@@ -177,4 +177,75 @@ describe('the across-agents comparison page (REQ-RES-07 as amended in 1.36, task
     );
     expect(nothing).toContain('claude-sonnet-5-5 → gpt-6.1-sol: not measured');
   });
+
+  it("aligns a check's runs by id, gives each value its own n, and names a mixed cost basis (review round 2)", () => {
+    const g = group('S9', 'claude-sonnet-5-5', [10, 10, 10]);
+    // Run r2 never reached step 3: its check values are those of r1 and r3 only.
+    const reached = [g.runs[0] as string, g.runs[2] as string];
+    const mixed = {
+      ...g,
+      metrics: {
+        ...g.metrics,
+        checks: [
+          {
+            id: 'duplicate',
+            kind: 'content',
+            steps: [
+              {
+                step: 2,
+                passed: {
+                  n: 3,
+                  runs: g.runs,
+                  values: [
+                    { passed: 1, total: 1 },
+                    { passed: 0, total: 1 },
+                    { passed: 1, total: 1 },
+                  ],
+                },
+              },
+              {
+                step: 3,
+                passed: {
+                  n: 2,
+                  runs: reached,
+                  values: [
+                    { passed: 1, total: 1 },
+                    { passed: 1, total: 1 },
+                  ],
+                },
+              },
+            ],
+          },
+        ],
+        holdout: {
+          scored: true,
+          final: {
+            m_q1: {
+              n: 2,
+              runs: reached,
+              values: [
+                { passed: 5, total: 5 },
+                { passed: 5, total: 5 },
+              ],
+            },
+          },
+        },
+        cost: { ...g.metrics.cost, unpriced: [g.runs[1] as string] },
+      },
+    };
+    const html = acrossAgentsPage(
+      comparison,
+      { model: 'm', groups: [mixed] },
+      { model: 'm', groups: [] },
+      [],
+    );
+    const row = html.slice(html.indexOf('<td>claude-sonnet-5-5</td>'));
+    // r1 2/2, r2 0/1, r3 2/2: by run, not by position
+    expect(row).toMatch(/<td>0–2\/varies <span class="n">n = 3<\/span><\/td>/);
+    // the hold-out's own n, 2, not the group's 3
+    expect(row).toMatch(
+      /<td>5\/5 <span class="n">n = 2<\/span> <span class="preliminary">preliminary<\/span><\/td>/,
+    );
+    expect(row).toContain('price table for 1 of 3');
+  });
 });

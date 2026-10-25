@@ -150,6 +150,18 @@ describe('the root index (REQ-RES-02 as amended, task-085)', () => {
     expect(index.value).toContain('<a href="abcdef012345/1/across-agents-fedcba987654-1.html">');
   });
 
+  it('refuses a comparison file that is not a comparison (review round 2)', () => {
+    const root = tempDir('bench-root-index-');
+    results(root, 'abcdef012345/1', ended('2026-10-05T12:00:00.000Z'));
+    catalogue(root, { 'abcdef012345/1': { kind: 'reference', compared_with: ['fedcba987654/1'] } });
+    mkdirSync(join(root, 'results', 'comparisons', 'abcdef012345-1'), { recursive: true });
+    writeFileSync(join(root, 'results', 'comparisons', 'abcdef012345-1', 'fedcba987654-1.json'), 'null');
+    const refused = rootIndex(root, ['abcdef012345/1']);
+    expect(refused.ok ? [] : refused.issues.map((issue) => issue.message)).toEqual([
+      'results/comparisons/abcdef012345-1/fedcba987654-1.json is not a comparison',
+    ]);
+  });
+
   it('leaves an empty kind out (task-104)', () => {
     const root = tempDir('bench-root-index-');
     results(root, 'abcdef012345/1', ended('2026-10-05T12:00:00.000Z'));
