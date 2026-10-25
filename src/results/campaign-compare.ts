@@ -184,8 +184,9 @@ export function compareExecutions(
   const out: Collected = { rows: [], notCompared: [], onlyIn: [], compared: [], across: [] };
   const crossModel = before.aggregate.model !== after.aggregate.model;
   const differ = pinsDiffer(before.pins, after.pins);
-  const acrossNote = acrossNoteOf(before.pins, after.pins, differ);
-  const context = { root, before, after, primaryOf, out, ...(acrossNote === undefined ? {} : { acrossNote }) };
+  // Why M-R across is not measured, per arm (REQ-SCO-07 as amended in 1.36): each group's own harness and digest.
+  const acrossNote = (arm: string) => acrossNoteOf(before.pins, after.pins, differ, arm);
+  const context = { root, before, after, primaryOf, out, acrossNote };
   compareGroups(context, before.aggregate.groups, after.aggregate.groups, crossModel);
   // Each slice against the other side's slice of its model (REQ-SCO-13), or said not to be compared.
   const models = (groups: readonly Group[]) => new Set(groups.map((group) => group.model));
@@ -315,7 +316,7 @@ interface Collected {
 
 interface Context {
   /** Why M-R across is not measured for any group of this comparison, if it is not (1.4 §4.5). */
-  readonly acrossNote?: string;
+  readonly acrossNote: (arm: string) => string | undefined;
   readonly root: string;
   readonly before: Side;
   readonly after: Side;
@@ -397,13 +398,14 @@ function compareGroups(
       out.compared.push({ scenario, version, arm: group.arm, model });
       const earlierRuns = runsOf(before, group);
       const newerRuns = runsOf(after, counterpart);
+      const acrossNote = context.acrossNote(group.arm);
       out.across.push({
         scenario,
         version,
         arm: group.arm,
         model,
-        ...(context.acrossNote !== undefined
-          ? { note: context.acrossNote }
+        ...(acrossNote !== undefined
+          ? { note: acrossNote }
           : 'unreadable' in earlierRuns
           ? { note: `not measured: ${earlierRuns.unreadable}` }
           : 'unreadable' in newerRuns
@@ -529,20 +531,27 @@ function pinAt(pins: Record<string, unknown>, path: readonly string[]): string {
 }
 
 /**
- * Why M-R across is not measured, if it is not (experiment design 1.4 §4.5): it is across two agents, so the agent's
- * name must differ; the agent's pins and the models it runs may differ, and so may the scenarios a campaign lists and
- * their repetitions, which only select the groups; the harnesses, the arms' digests, the caps, the approver
+ * Why M-R across is not measured for a group of `arm`, if it is not (experiment design 1.4 §4.5): it is across two
+ * agents, so the agent's name must differ; the agent's pins and the models it runs may differ, and so may the
+ * scenarios a campaign lists and their repetitions, which only select the groups; the harnesses and the digests (for a
+ * baseline group, its own digest only: it runs no harness, REQ-SCO-07 as amended in 1.36), the caps, the approver
  * policy and the rate (which moves where `run_cost_eur` stops a run), which shape a run, may not.
  */
 function acrossNoteOf(
   before: Record<string, unknown>,
   after: Record<string, unknown>,
   differ: readonly PinDiffers[],
+  arm: string,
 ): string | undefined {
   const agentName = (pins: Record<string, unknown>) => pinAt(pins, ['agent', 'name']);
   if (agentName(before) === agentName(after)) return `not measured: the same agent, ${agentName(after)}, on both sides`;
   const others = [
-    ...differ.map((d) => d.pin).filter((pin) => !pin.startsWith('agent.') && !pin.startsWith('models.')),
+    ...differ
+      .map((d) => d.pin)
+      .filter((pin) => !pin.startsWith('agent.') && !pin.startsWith('models.'))
+      // The baseline runs no harness: another arm's harness and digest do not shape its runs. Any other arm keeps
+      // every harness, since a docs control's rules are generated from its source's (REQ-SCO-07 as amended in 1.36).
+      .filter((pin) => arm !== 'baseline' || pin === `arm_digests.${arm}` || !/^(harnesses|arm_digests)\./.test(pin)),
     ...['caps', 'approver_policy', 'currency'].filter((key) => canonicalJson(before[key] ?? null) !== canonicalJson(after[key] ?? null)),
   ];
   return others.length === 0 ? undefined : `not measured: pins other than the agent's differ: ${others.join(', ')}`;

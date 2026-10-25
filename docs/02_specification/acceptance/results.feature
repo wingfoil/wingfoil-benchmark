@@ -1,6 +1,6 @@
-# Acceptance — Results and reporting (v0.1)
+# Acceptance — Results and reporting (v0.1, v0.3)
 # Traces to: F5.1, F5.3, F5.4, F5.5, F5.6, F5.8 · J1, J2 steps 7–8, J4 · vision (losses published equally) · experiment design §4.6
-# Version: 1.0 · Status: Approved (2026-09-22)
+# Version: 1.1 · Status: Approved (1.0, 2026-09-22); 1.1 (v0.3, task-104, 2026-10-25) for review
 
 Feature: Stored results, run detail, finding notes and the published site
   As the WingFoil maintainer, and as Riley the curious reader
@@ -76,3 +76,26 @@ Feature: Stored results, run detail, finding notes and the published site
     When the maintainer requests publishing
     Then the built site is deployed to GitHub Pages
     And the published pages show the same numbers as the results store for that campaign
+
+  # v0.3 (task-104): the home groups the published executions by kind, from the site's catalogue (REQ-RES-11).
+
+  @F5.5
+  Scenario: The home groups the published executions by kind
+    Given a scored execution with its entry in the site's catalogue
+    When the site is built
+    Then the home says that results are preliminary and that the benchmark is built by WingFoil's maintainer
+    And it lists the execution under its kind's heading, with its title, its end date, its agent and its arms
+
+  @F5.5 @error
+  Scenario: An execution missing from the catalogue is not built
+    Given a scored execution with no entry in the site's catalogue
+    When the site is built
+    Then the build is refused, naming the execution
+    And nothing is written to the site
+
+  @F5.5
+  Scenario: A baseline-only execution says that no harness is compared
+    Given a scored execution of the baseline arm alone
+    When the site is built
+    Then its landing page says that no harness is compared, in place of the headline
+

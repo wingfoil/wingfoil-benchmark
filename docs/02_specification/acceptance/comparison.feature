@@ -1,6 +1,6 @@
-# Acceptance — Campaign comparison and Dana's views (v0.2)
+# Acceptance — Campaign comparison and Dana's views (v0.2, v0.3)
 # Traces to: F5.2, F5.7 · J2 step 6, J5 steps 1 and 5 · experiment design 1.2 §4.6, §5 T7, T14, T15
-# Version: 1.0 · Status: Approved (2026-10-05)
+# Version: 1.1 · Status: Approved (1.0, 2026-10-05); 1.1 (v0.3, task-104, 2026-10-25) for review
 
 Feature: A campaign compared with an earlier one, and filtered views with permanent links
   As the maintainer, and as Dana who evaluates adoption
@@ -51,3 +51,14 @@ Feature: A campaign compared with an earlier one, and filtered views with perman
     When the site is rebuilt and published
     Then every page of the earlier execution has the same address and shows the same values as before
     And the root index lists both executions with the date each ended
+
+  # v0.3 (task-104): two agents compared on the baseline arm, never mixed with the headlines (T14, dl-022).
+
+  @F5.2
+  Scenario: Two executions of different agents are compared on the baseline arm
+    Given two scored executions of the baseline arm whose agents differ, the earlier pinning a harness its baseline does not run
+    When the maintainer compares them and builds the newer execution's site
+    Then its landing page links an across-agents page, not a comparison of deltas
+    And the page shows one row per scenario and model of each agent, with n on every value and no better or worse mark
+    And the baseline's determinism across the two agents is measured
+

@@ -14,7 +14,13 @@ import { describe, expect, it } from 'vitest';
 import { aggregateExecution, writeAggregate } from '../../../src/results/index.js';
 import { escapeHtml } from '../../../src/site/render.js';
 import { CANCEL, EXECUTION, storedRun } from '../../support/score-fixture.js';
-import { benchSite, completeExecution, sha256Of, siteExecution } from '../../support/site-fixture.js';
+import {
+  benchSite,
+  catalogueEntry,
+  completeExecution,
+  sha256Of,
+  siteExecution,
+} from '../../support/site-fixture.js';
 
 /** Every file under `dir`, relative, with its text. */
 function tree(dir: string): Record<string, string> {
@@ -177,6 +183,8 @@ describe('bench site build (REQ-CLI-09 as amended in 1.20, task-045)', () => {
     writeFileSync(join(other, 'index.html'), 'an older execution\n');
     // Its results are kept: a built execution whose results are gone is refused (task-085's review)
     mkdirSync(join(root, 'results', '0123456789ab', '2'), { recursive: true });
+    // ... and its catalogue entry (REQ-RES-11, task-104)
+    catalogueEntry(root, join(root, 'results', '0123456789ab', '2'));
     writeFileSync(join(root, 'site', 'abcdef012345', '1', 'stale.html'), 'left by an older build\n');
 
     expect((await benchSite(root, 'site', 'build', EXECUTION)).code).toBe(0);

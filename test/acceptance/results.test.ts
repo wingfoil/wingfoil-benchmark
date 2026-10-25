@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
+import { stringify } from 'yaml';
 import { describe, expect, it } from 'vitest';
 
 import type { AgentPort } from '../../src/agents/index.js';
@@ -17,6 +18,7 @@ import {
   sha256Of,
   siteExecution,
   STAND_INS,
+  standInHoldout,
 } from '../support/site-fixture.js';
 import { localScoringDocker } from '../support/local-scoring.js';
 import { repoPath } from '../support/paths.js';
@@ -342,6 +344,57 @@ describe('results.feature', () => {
     const after = snapshotTree(root);
     expect(Object.keys(after).filter((path) => !(path in before))).toEqual([file]);
     expect(Object.fromEntries(Object.entries(after).filter(([path]) => path !== file))).toEqual(before);
+  });
+
+  it('@F5.5 The home groups the published executions by kind', async () => {
+    // Given a scored execution with its entry in the site's catalogue (the fixture's, a reference campaign)
+    const { root } = await siteExecution();
+
+    // When the site is built
+    const built = await benchSite(root, 'site', 'build', EXECUTION);
+    expect(built.code, built.stderr).toBe(0);
+
+    // Then the home says that results are preliminary and that the benchmark is built by WingFoil's maintainer
+    const home = readFileSync(join(root, 'site', 'index.html'), 'utf8');
+    expect(home).toContain('preliminary');
+    expect(home).toContain("built by WingFoil's maintainer");
+    // And it lists the execution under its kind's heading, with its title, its end date, its agent and its arms
+    expect(home).toContain('<h2>Reference campaigns</h2>');
+    expect(home).toMatch(
+      /<li><a href="abcdef012345\/1\/">the site fixture<\/a>, (ended \d{4}-\d{2}-\d{2}|end date not recorded) · fake 1\.0\.0 · baseline, wingfoil<\/li>/,
+    );
+  });
+
+  it('@F5.5 An execution missing from the catalogue is not built', async () => {
+    // Given a scored execution with no entry in the site's catalogue
+    const { root } = await siteExecution();
+    writeFileSync(join(root, 'site-content', 'catalog.yaml'), stringify({ executions: {} }));
+
+    // When the site is built
+    const built = await benchSite(root, 'site', 'build', EXECUTION);
+
+    // Then the build is refused, naming the execution, and nothing is written to the site
+    expect(built.code).toBe(1);
+    expect(built.stderr).toContain('site-content/catalog.yaml: has no entry for abcdef012345/1');
+    expect(existsSync(join(root, 'site'))).toBe(false);
+  });
+
+  it('@F5.5 A baseline-only execution says that no harness is compared', async () => {
+    // Given a scored execution of the baseline arm alone
+    const { root, executionDir } = await storedRun({ variant: STAND_INS[0], steps: [{}, CANCEL] });
+    completeExecution(root, executionDir, ['TC']);
+    const scored = await benchSite(root, 'score', EXECUTION, '--holdout', standInHoldout());
+    expect(scored.code, scored.stderr).toBe(0);
+
+    // When the site is built
+    const built = await benchSite(root, 'site', 'build', EXECUTION);
+    expect(built.code, built.stderr).toBe(0);
+
+    // Then its landing page says that no harness is compared, in place of the headline
+    const page = readFileSync(join(root, 'site', 'abcdef012345', '1', 'index.html'), 'utf8');
+    expect(page).toContain('Baseline only: no harness is compared in this execution.');
+    expect(page).not.toContain('Harness, not model');
+    expect(page).not.toContain('class="headline"');
   });
 
   it('@F5.5 The landing page answers the question at a glance', async () => {
