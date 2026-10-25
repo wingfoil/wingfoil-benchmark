@@ -100,3 +100,7 @@ Under dl-020; `scripts/pre-review.sh main` green before each round.
     added with the code (round 1's fix), not in its red commit; a history-read arm's message names its `.cache/` path;
     `codexMcpIssues` gates on the agent's name.
   - Red `2ccf170c`, fix `f58627c9`.
+- **Round 3** (a new independent agent, sandboxed; the fixes' diff): clean, no blocker, no should-fix; the chain
+  "a server that does not start → failed, at its bound" checked through the adapter and the runner. **Nit, stated:** a
+  lone surrogate in an env key or value names the string, not its server (the file is named by `codexMcpIssues`).
+  **The review of the offline work is closed**; the spike's sessions get their own round before in-review.
