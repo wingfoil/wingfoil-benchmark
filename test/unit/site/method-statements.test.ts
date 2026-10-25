@@ -22,7 +22,7 @@ const STATEMENTS: readonly (readonly [string, string])[] = [
   ],
   [
     'other-agents',
-    'dl-022 (Codex campaigns, never mixed with the Claude headlines, T14); dl-024 and dl-025 (the ChatGPT Plus subscription); REQ-RUN-12 and REQ-RUN-15 as amended in 1.37 (AGENTS.md, the MCP server in config.toml, required); REQ-RUN-09 as amended in 1.32 (`costBasis: price-table`); task-105 Design "Fairness"',
+    'dl-022 (Codex campaigns, never mixed with the Claude headlines, T14); dl-024 and dl-025 (the ChatGPT Plus subscription); REQ-RUN-12 and REQ-RUN-15 as amended in 1.37 (AGENTS.md, the MCP server in config.toml, `required = true`); campaign-002 (the v0.2 wingfoil arm); REQ-RUN-09 as amended in 1.32 (`costBasis: price-table`); task-105 Design "Fairness"',
   ],
   [
     'auxiliary-models',

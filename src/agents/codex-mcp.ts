@@ -1,9 +1,9 @@
 /** A bare TOML key, written as it is; any other is quoted. */
 const BARE_KEY = /^[A-Za-z0-9_-]+$/;
 
-/** A TOML key: bare when it can be, quoted otherwise. */
+/** A TOML key: bare when it can be, quoted as a basic string otherwise (with {@link str}'s checks). */
 function key(name: string): string {
-  return BARE_KEY.test(name) ? name : JSON.stringify(name);
+  return BARE_KEY.test(name) ? name : str(name);
 }
 
 /**

@@ -64,7 +64,9 @@ and its dry-run profile validating.
 - **Criterion 1** was already met: the runner's merge takes the profile's `manualFile` (task-094); now pinned on its
   bytes. WingFoil v0.3.0's `init` writes neither `CLAUDE.md` nor `AGENTS.md` (dry run 57's setup diff).
 - **The method page** gains the statement {#other-agents} (how a Codex execution differs, its wingfoil arm v0.2's
-  manual): every execution's `method.html` changes, so the next `site publish` rebuilds them all.
+  manual): every execution's `method.html` is built from it, so before the next `bench site publish` every
+  execution under `site/` (v0.1's and v0.2's included) is rebuilt with `bench site build`, or the publish check
+  refuses each stale page; the gh-pages commit then changes every published method page.
 - **The spike's sessions:** the probe of task-102 runs no arm's setup, which the wingfoil arm needs (its harness, its
   configuration); the approver is asked whether the spike becomes the two arms' S3 dry runs (10 sessions, which the
   campaign's estimate needs anyway) instead of two step-1 sessions outside the runner.
@@ -74,7 +76,8 @@ and its dry-run profile validating.
 Under dl-020; `scripts/pre-review.sh main` green before each round.
 
 - **Round 1** (an independent read-only agent, sandboxed; the reflog unchanged after it; the offline work): the TOML
-  shape checked against Codex 0.162.1 (`type` dropped, as `deny_unknown_fields` requires), the Claude path unchanged,
+  shape checked against Codex 0.162.1 (`type` dropped: harmless, since serde ignores it; `deny_unknown_fields` there
+  is schemars', not serde's, as round 2 noted), the Claude path unchanged,
   the scope's table, the campaign's digests those of campaign-002.
   - **should-fix, fixed:** the AGENTS.md merge test checked nothing new (the doubles run no script; now the setup's
     exec writes the tool's guide and the merged bytes are asserted); a bad `mcp.json` failed every run instead of the

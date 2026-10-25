@@ -11,9 +11,9 @@ with Claude Code's results: an execution is one agent and its models, and two ag
 their own, on the baseline arm. Under Codex the operating manual is `AGENTS.md` instead of `CLAUDE.md`, and an arm's
 MCP server is configured in Codex's own `config.toml` instead of a command-line flag, marked required so that a server
 that does not start fails the session. Codex runs on a ChatGPT Plus subscription: its costs are API-equivalent, from a
-pinned OpenAI price table, and are marked as such. Its wingfoil arm is the same as Claude Code's, the v0.2 manual on
-WingFoil v0.3.0: it measures WingFoil as that manual uses it, a register of documents, not WingFoil's workflow engine.
-{#other-agents}
+pinned OpenAI price table, and are marked as such. Its wingfoil arm is the same as Claude Code's in v0.2
+(campaign-002), the v0.2 manual on WingFoil v0.3.0: it measures WingFoil as that manual uses it, a register of
+documents, not WingFoil's workflow engine. {#other-agents}
 
 The agent may also call a smaller model for its own work, beside the run's model: in v0.1, Claude Code called Haiku 4.5 now and then, for a small share of the cost. The models each step used, with their tokens and cost, are recorded with the run. Their cost is part of the arm's cost, and so are their tokens: a step's tokens are every model's, and the token cap counts them all. (v0.1's results counted the run's model's tokens only.) When the agent cannot price a model it does not know, its cost is not that model's price: such a run is named on this page, and its dry run does not count for an estimate. {#auxiliary-models}
 
