@@ -1,5 +1,6 @@
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { stringify } from 'yaml';
 import { describe, expect, it } from 'vitest';
 
 import { loadProfiles, rootIndex } from '../../../src/site/profiles.js';
@@ -65,27 +66,106 @@ describe('the root index (REQ-RES-02 as amended, task-085)', () => {
   }
   const ended = (date: string) => JSON.stringify({ state: 'completed', started: date, ended: date });
 
-  it('lists every built execution, by campaign then number, with the day it ended, or that none was recorded', () => {
+  /** The site's catalogue (REQ-RES-11, task-104): an entry per execution, `kind` and `title` as given. */
+  function catalogue(root: string, entries: Record<string, Record<string, unknown>>) {
+    mkdirSync(join(root, 'site-content'), { recursive: true });
+    const full = Object.fromEntries(
+      Object.entries(entries).map(([id, entry]) => [
+        id,
+        { title: `the ${id}`, release: 'v0.2', agent: 'Claude Code', arms: 'baseline, wingfoil', ...entry },
+      ]),
+    );
+    writeFileSync(join(root, 'site-content', 'catalog.yaml'), stringify({ executions: full }));
+  }
+
+  it('groups the built executions by kind, newest first, each with its title, day, agent, arms and links (task-104)', () => {
     const root = tempDir('bench-root-index-');
     results(root, 'fedcba987654/1', ended('2026-10-12T12:00:00.000Z'));
     results(root, 'abcdef012345/2', ended('2026-10-05T12:00:00.000Z'));
     results(root, 'abcdef012345/10', ended('2026-10-06T12:00:00.000Z'));
     results(root, 'c82a5e74885b/2');
+    catalogue(root, {
+      'fedcba987654/1': {
+        kind: 'across-agents',
+        title: 'Codex baseline',
+        compared_with: ['abcdef012345/10'],
+      },
+      'abcdef012345/2': { kind: 'reference', title: 'v0.1', erratum: 'https://example.org/errata' },
+      'abcdef012345/10': { kind: 'reference', title: 'v0.2', compared_with: ['abcdef012345/2'] },
+      'c82a5e74885b/2': { kind: 'bridge', title: 'the bridge' },
+    });
     const index = rootIndex(root, ['fedcba987654/1', 'abcdef012345/10', 'c82a5e74885b/2', 'abcdef012345/2']);
     if (!index.ok) throw new Error(JSON.stringify(index.issues));
-    const items = [...index.value.matchAll(/<li>(.*)<\/li>/g)].map((match) => match[1]);
-    expect(items).toEqual([
-      '<a href="abcdef012345/2/">campaign abcdef012345, execution 2</a>, ended 2026-10-05',
-      '<a href="abcdef012345/10/">campaign abcdef012345, execution 10</a>, ended 2026-10-06',
-      '<a href="c82a5e74885b/2/">campaign c82a5e74885b, execution 2</a>, end date not recorded',
-      '<a href="fedcba987654/1/">campaign fedcba987654, execution 1</a>, ended 2026-10-12',
+
+    expect([...index.value.matchAll(/<h2>(.*?)<\/h2>/g)].map((match) => match[1])).toEqual([
+      'Reference campaigns',
+      'Bridges',
+      'Across agents',
     ]);
+    expect([...index.value.matchAll(/<li>(.*)<\/li>/g)].map((match) => match[1])).toEqual([
+      '<a href="abcdef012345/10/">v0.2</a>, ended 2026-10-06 · Claude Code · baseline, wingfoil · ' +
+        '<a href="abcdef012345/10/compare-abcdef012345-2.html">compared with abcdef012345/2</a>',
+      '<a href="abcdef012345/2/">v0.1</a>, ended 2026-10-05 · Claude Code · baseline, wingfoil · ' +
+        '<a href="https://example.org/errata">erratum</a>',
+      '<a href="c82a5e74885b/2/">the bridge</a>, end date not recorded · Claude Code · baseline, wingfoil',
+      '<a href="fedcba987654/1/">Codex baseline</a>, ended 2026-10-12 · Claude Code · baseline, wingfoil · ' +
+        '<a href="fedcba987654/1/across-agents-abcdef012345-10.html">compared across agents with abcdef012345/10</a>',
+    ]);
+    expect(index.value).toContain('preliminary');
+    expect(index.value).toContain('T1');
     expect(index.value).not.toContain('<script');
     expect(index.value).not.toContain('http-equiv="refresh"');
   });
 
+  it('leaves an empty kind out (task-104)', () => {
+    const root = tempDir('bench-root-index-');
+    results(root, 'abcdef012345/1', ended('2026-10-05T12:00:00.000Z'));
+    catalogue(root, { 'abcdef012345/1': { kind: 'reference' } });
+    const index = rootIndex(root, ['abcdef012345/1']);
+    if (!index.ok) throw new Error(JSON.stringify(index.issues));
+    expect([...index.value.matchAll(/<h2>(.*?)<\/h2>/g)].map((match) => match[1])).toEqual([
+      'Reference campaigns',
+    ]);
+  });
+
+  it('refuses a built execution with no catalogue entry, an unknown kind and an erratum that is not a link (task-104)', () => {
+    const root = tempDir('bench-root-index-');
+    results(root, 'abcdef012345/1', ended('2026-10-05T12:00:00.000Z'));
+    results(root, 'fedcba987654/1', ended('2026-10-05T12:00:00.000Z'));
+    const issuesOf = (executions: string[]) => {
+      const index = rootIndex(root, executions);
+      return index.ok ? [] : index.issues;
+    };
+    catalogue(root, { 'abcdef012345/1': { kind: 'reference' } });
+    expect(issuesOf(['abcdef012345/1', 'fedcba987654/1'])).toEqual([
+      {
+        path: 'site-content/catalog.yaml',
+        message: 'has no entry for fedcba987654/1, which is built under site/',
+      },
+    ]);
+    catalogue(root, { 'abcdef012345/1': { kind: 'spike' } });
+    expect(issuesOf(['abcdef012345/1']).map((issue) => issue.path)).toEqual([
+      'site-content/catalog.yaml.executions.abcdef012345/1.kind',
+    ]);
+    catalogue(root, { 'abcdef012345/1': { kind: 'reference', erratum: 'docs/releases/v0.2.md' } });
+    expect(issuesOf(['abcdef012345/1']).map((issue) => issue.path)).toEqual([
+      'site-content/catalog.yaml.executions.abcdef012345/1.erratum',
+    ]);
+    rmSync(join(root, 'site-content', 'catalog.yaml'));
+    expect(issuesOf(['abcdef012345/1']).map((issue) => issue.path)).toEqual(['catalog.yaml']);
+  });
+
   it('refuses a record it cannot read, and a built execution whose results are gone', () => {
     const root = tempDir('bench-root-index-');
+    catalogue(
+      root,
+      Object.fromEntries(
+        ['abcdef012345/1', 'fedcba987654/1', 'abcdef012345/2', 'abcdef012345/3'].map((id) => [
+          id,
+          { kind: 'reference' },
+        ]),
+      ),
+    );
     results(root, 'abcdef012345/1', '{');
     const paths = (executions: string[]) => {
       const index = rootIndex(root, executions);

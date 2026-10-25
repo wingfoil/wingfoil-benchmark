@@ -337,3 +337,20 @@ describe('the landing page link to a comparison (REQ-RES-07, task-084 review)', 
     );
   });
 });
+
+describe('a one-arm landing page (REQ-RES-07 as amended in 1.36, task-104)', () => {
+  it('says that no harness is compared, in place of the framing and the headlines, and links its comparisons first', () => {
+    const one = { ...model(), arms: ['baseline'] } as SiteModel;
+    const html = landingPage(one, [
+      {
+        file: 'across-agents-81ebb2691f9c-1.html',
+        label: 'campaign 81ebb2691f9c, execution 1',
+        crossModel: true,
+        acrossAgents: true,
+      },
+    ]);
+    expect(html).toContain('Baseline only: no harness is compared in this execution.');
+    expect(html).not.toContain('Harness, not model');
+    expect(html.indexOf('across-agents-81ebb2691f9c-1.html')).toBeLessThan(html.indexOf('<svg'));
+  });
+});

@@ -128,14 +128,15 @@ describe('compareExecutions (REQ-SCO-13, task-083)', () => {
     expect(baseline?.m_r2?.pairs).toHaveLength(1);
   }, 240_000);
 
-  it('measures M-R across only when the agent and its models are the only pins that differ (review 1)', () => {
-    const root = handBuiltPair({ harness: ['v0.2.2', 'v0.3.0'] });
+  it("measures M-R across on the pins of the group's own arm (review 1, task-104)", () => {
+    const root = handBuiltPair({ harness: ['v0.2.2', 'v0.3.0'], arms: ['baseline', 'wingfoil'] });
     const result = compareExecutions(root, EARLIER, NEWER, categories);
     if (!result.ok) throw new Error(JSON.stringify(result.issues));
-    expect(result.value.m_r_across.length).toBeGreaterThan(0);
-    expect(result.value.m_r_across.map((entry) => entry.note)).toEqual(
-      result.value.m_r_across.map(() => 'not measured: pins other than the agent\'s differ: harnesses.wingfoil'),
-    );
+    const byArm = Object.fromEntries(result.value.m_r_across.map((entry) => [entry.arm, entry]));
+    // The baseline runs no harness: the other campaign's WingFoil pin does not stop it being measured.
+    expect(byArm.baseline?.note).toBeUndefined();
+    expect(byArm.baseline?.m_r1?.total).toBeGreaterThan(0);
+    expect(byArm.wingfoil?.note).toBe("not measured: pins other than the agent's differ: harnesses.wingfoil");
   });
 
   it.each([
@@ -174,16 +175,18 @@ function handBuiltPair({
   caps = [1, 1],
   approver = ['v1', 'v1'],
   rate = [0.9, 0.9],
+  arms = ['baseline'],
 }: {
   readonly harness?: readonly [string, string];
   readonly agents?: readonly [string, string];
   readonly caps?: readonly [number, number];
   readonly approver?: readonly [string, string];
   readonly rate?: readonly [number, number];
+  readonly arms?: readonly string[];
 }): string {
   const root = tempDir('bench-cmp-');
   [EARLIER, NEWER].forEach((target, i) => {
-    handBuilt(root, target, 'm', [{ arm: 'baseline', q1: [1] }], {
+    handBuilt(root, target, 'm', arms.map((arm) => ({ arm, q1: [1] })), {
       models: { default: 'm' },
       agent: { name: agents[i], version: '1.0.0' },
       harnesses: { wingfoil: { tool: 'wingfoil', version: harness[i] } },

@@ -1,7 +1,8 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, relative, sep } from 'node:path';
+import { parse, stringify } from 'yaml';
 
 import type { AgentPort } from '../../src/agents/index.js';
 import { armDigest } from '../../src/arms/index.js';
@@ -145,6 +146,7 @@ export function completeExecution(
   cpSync(repoPath('arms'), join(root, 'arms'), { recursive: true });
   cpSync(repoPath('site-content'), join(root, 'site-content'), { recursive: true });
   cpSync(repoPath('eligibility'), join(root, 'eligibility'), { recursive: true });
+  catalogueEntry(root, executionDir);
   writeFileSync(join(executionDir, 'campaign.yaml'), siteCampaign(ids));
   for (const id of ids) {
     for (const arm of ['baseline', 'wingfoil']) {
@@ -157,6 +159,34 @@ export function completeExecution(
       writeFileSync(file, `${JSON.stringify(run, undefined, 2)}\n`);
     }
   }
+}
+
+/**
+ * The site's catalogue entry of the execution in `executionDir` (REQ-RES-11, task-104), beside the repository's own
+ * entries: a reference campaign of the fake agent, `kind` overridable.
+ */
+export function catalogueEntry(
+  root: string,
+  executionDir: string,
+  entry: Record<string, unknown> = {},
+): void {
+  const file = join(root, 'site-content', 'catalog.yaml');
+  const read = existsSync(file)
+    ? (parse(readFileSync(file, 'utf8')) as { executions?: Record<string, unknown> })
+    : {};
+  const id = relative(join(root, 'results'), executionDir).split(sep).join('/');
+  const executions = {
+    ...(read.executions ?? {}),
+    [id]: {
+      title: 'the site fixture',
+      kind: 'reference',
+      release: 'v0.0',
+      agent: 'fake 1.0.0',
+      arms: 'baseline, wingfoil',
+      ...entry,
+    },
+  };
+  writeFileSync(file, stringify({ executions }));
 }
 
 /** A visibility probe for tests: public, or private (task-047). No test reaches GitHub. */

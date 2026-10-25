@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import {
   benchPublish,
   benchSite,
+  catalogueEntry,
   completeExecution,
   gitIn,
   probeSaying,
@@ -231,6 +232,70 @@ describe('comparison.feature', () => {
     expect(page).toContain('<li>agent.version: 0.9.0 → 1.0.0</li>');
     expect(page).not.toContain('<script');
   }, 240_000);
+  it('@F5.2 Two executions of different agents are compared on the baseline arm', async () => {
+    // Given two scored executions of the baseline arm whose agents differ, the earlier pinning a harness its baseline
+    // does not run (as campaign-002 pins WingFoil, Spec Kit and OpenSpec beside its baseline)
+    const variant = STAND_INS[0];
+    const root = tempDir('bench-across-');
+    for (const target of [EARLIER, NEWER]) {
+      await storedRun({ variant, steps: [{}, CANCEL], into: { root, execution: target } });
+    }
+    completeExecution(root, join(root, 'results', NEWER), ['TC']);
+    const side = (agent: Record<string, unknown>, harnesses: Record<string, unknown>, arms: string[]) =>
+      stringify({
+        harnesses,
+        scenarios: [{ id: 'TC', version: '1.0' }],
+        arms,
+        agent,
+        models: { default: 'fake-model' },
+        repetitions: { TC: 1 },
+        approver_policy: 'v1',
+        caps: { step_time_s: 600, step_tokens: 1000000, run_cost_eur: 5 },
+        budget: { warn_eur: 10, ceiling_eur: 20 },
+        currency: { usd_to_eur: 0.5 },
+      });
+    writeFileSync(
+      join(root, 'results', EARLIER, 'campaign.yaml'),
+      side(
+        { name: 'claude-code', version: '2.1.300' },
+        { wingfoil: { tool: 'wingfoil', version: 'v0.3.0' } },
+        ['baseline', 'wingfoil'],
+      ),
+    );
+    writeFileSync(
+      join(root, 'results', NEWER, 'campaign.yaml'),
+      side({ name: 'codex', version: '0.162.1' }, {}, ['baseline']),
+    );
+    catalogueEntry(root, join(root, 'results', NEWER), { kind: 'across-agents', compared_with: [EARLIER] });
+    for (const target of [EARLIER, NEWER]) {
+      const scored = await benchSite(root, 'score', target);
+      expect(scored.code, scored.stderr).toBe(0);
+    }
+
+    // When the maintainer compares them and builds the newer execution's site
+    const compared = await benchSite(root, 'campaign', 'compare', EARLIER, NEWER);
+    expect(compared.code, compared.stderr).toBe(0);
+    const built = await benchSite(root, 'site', 'build', NEWER);
+    expect(built.code, built.stderr).toBe(0);
+
+    // Then its landing page links an across-agents page, not a comparison of deltas
+    const dir = join(root, 'site', 'abcdef012345', '1');
+    const landing = readFileSync(join(dir, 'index.html'), 'utf8');
+    expect(landing).toContain('<a href="across-agents-0123456789ab-1.html">');
+    expect(existsSync(join(dir, 'compare-0123456789ab-1.html'))).toBe(false);
+    // And the page shows one row per scenario and model of each agent, with n on every value and no better or worse mark
+    const page = readFileSync(join(dir, 'across-agents-0123456789ab-1.html'), 'utf8');
+    expect(page).toContain('<h2>TC@1.0</h2>');
+    expect(page).toContain('<td>claude-code</td>');
+    expect(page).toContain('<td>codex</td>');
+    expect(page).toContain('n = 1');
+    expect(page).not.toMatch(/[▲▼]/);
+    // And the baseline's determinism across the two agents is measured
+    const across = comparisonOf(root).m_r_across as { arm: string; note?: string; m_r1?: unknown }[];
+    expect(across.find((entry) => entry.arm === 'baseline')).toMatchObject({ m_r1: expect.anything() });
+    expect(across.find((entry) => entry.arm === 'baseline')?.note).toBeUndefined();
+  }, 240_000);
+
   it('@F5.7 A result profile filters the landing page', async () => {
     // Given the result profiles and the categories each one covers
     const profiles = readFileSync(repoPath('site-content/profiles.yaml'), 'utf8');
