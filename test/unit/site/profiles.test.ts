@@ -66,6 +66,17 @@ describe('the root index (REQ-RES-02 as amended, task-085)', () => {
   }
   const ended = (date: string) => JSON.stringify({ state: 'completed', started: date, ended: date });
 
+  /** A comparison of `newer` against `earlier`, as `bench campaign compare` writes it: the newer side's agent named. */
+  function comparisonFile(root: string, newer: string, earlier: string, agent: string) {
+    const dir = join(root, 'results', 'comparisons', newer.replace('/', '-'));
+    mkdirSync(dir, { recursive: true });
+    const pins = agent === 'claude-code' ? [] : [{ pin: 'agent.name', earlier: 'claude-code', newer: agent }];
+    writeFileSync(
+      join(dir, `${earlier.replace('/', '-')}.json`),
+      JSON.stringify({ comparison_version: 2, pins_differ: pins }),
+    );
+  }
+
   /** The site's catalogue (REQ-RES-11, task-104): an entry per execution, `kind` and `title` as given. */
   function catalogue(root: string, entries: Record<string, Record<string, unknown>>) {
     mkdirSync(join(root, 'site-content'), { recursive: true });
@@ -94,6 +105,8 @@ describe('the root index (REQ-RES-02 as amended, task-085)', () => {
       'abcdef012345/10': { kind: 'reference', title: 'v0.2', compared_with: ['abcdef012345/2'] },
       'c82a5e74885b/2': { kind: 'bridge', title: 'the bridge' },
     });
+    comparisonFile(root, 'abcdef012345/10', 'abcdef012345/2', 'claude-code');
+    comparisonFile(root, 'fedcba987654/1', 'abcdef012345/10', 'codex');
     const index = rootIndex(root, ['fedcba987654/1', 'abcdef012345/10', 'c82a5e74885b/2', 'abcdef012345/2']);
     if (!index.ok) throw new Error(JSON.stringify(index.issues));
 
@@ -115,6 +128,26 @@ describe('the root index (REQ-RES-02 as amended, task-085)', () => {
     expect(index.value).toContain('T1');
     expect(index.value).not.toContain('<script');
     expect(index.value).not.toContain('http-equiv="refresh"');
+  });
+
+  it('refuses a compared_with whose comparison is not written, and links each by the agents it compares (review round 1)', () => {
+    const root = tempDir('bench-root-index-');
+    results(root, 'abcdef012345/1', ended('2026-10-05T12:00:00.000Z'));
+    catalogue(root, { 'abcdef012345/1': { kind: 'reference', compared_with: ['fedcba987654/1'] } });
+    const refused = rootIndex(root, ['abcdef012345/1']);
+    expect(refused.ok ? [] : refused.issues).toEqual([
+      {
+        path: 'site-content/catalog.yaml',
+        message:
+          'abcdef012345/1 is compared_with fedcba987654/1, but results/comparisons/abcdef012345-1/fedcba987654-1.json ' +
+          'is not written: run bench campaign compare fedcba987654/1 abcdef012345/1 first',
+      },
+    ]);
+    // A reference execution compared with another agent's links an across-agents page, whatever its kind
+    comparisonFile(root, 'abcdef012345/1', 'fedcba987654/1', 'codex');
+    const index = rootIndex(root, ['abcdef012345/1']);
+    if (!index.ok) throw new Error(JSON.stringify(index.issues));
+    expect(index.value).toContain('<a href="abcdef012345/1/across-agents-fedcba987654-1.html">');
   });
 
   it('leaves an empty kind out (task-104)', () => {

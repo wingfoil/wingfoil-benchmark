@@ -80,10 +80,18 @@ const earlierAggregate = {
   groups: [group('S1', 'claude-sonnet-5-5', [10, 10, 9]), group('S2', 'claude-sonnet-5-5', [7])],
   slices: [group('S1', 'claude-opus-5-5', [10])],
 };
+/** Codex's runs are priced from the price table (`cost.unpriced`, bug-016). */
+function priced(g: ReturnType<typeof group>) {
+  return { ...g, metrics: { ...g.metrics, cost: { ...g.metrics.cost, unpriced: g.runs } } };
+}
 const newerAggregate = {
   model: 'gpt-6.1-sol',
-  groups: [group('S1', 'gpt-6.1-sol', [10, 10, 10]), group('S2', 'gpt-6.1-sol', [8])],
-  slices: [group('S1', 'gpt-6-luna', [6, 10, 6])],
+  groups: [
+    priced(group('S1', 'gpt-6.1-sol', [10, 10, 10])),
+    priced(group('S2', 'gpt-6.1-sol', [8])),
+    { ...group('S1', 'gpt-6.1-sol', [1]), arm: 'wingfoil', model: 'not-a-baseline-model' },
+  ],
+  slices: [priced(group('S1', '<gpt-6-luna>', [6, 10, 6]))],
 };
 
 describe('the across-agents comparison page (REQ-RES-07 as amended in 1.36, task-104)', () => {
@@ -100,7 +108,7 @@ describe('the across-agents comparison page (REQ-RES-07 as amended in 1.36, task
   it('shows, per scenario of the baseline arm, one row per model of each agent, with n on every value', () => {
     expect(page).toContain('<h2>S1@1.0</h2>');
     expect(page).toContain('<h2>S2@1.0</h2>');
-    for (const model of ['claude-sonnet-5-5', 'claude-opus-5-5', 'gpt-6.1-sol', 'gpt-6-luna']) {
+    for (const model of ['claude-sonnet-5-5', 'claude-opus-5-5', 'gpt-6.1-sol', '&lt;gpt-6-luna&gt;']) {
       expect(page).toContain(`<td>${model}</td>`);
     }
     expect(page).toContain('<td>claude-code</td>');
@@ -117,5 +125,53 @@ describe('the across-agents comparison page (REQ-RES-07 as amended in 1.36, task
     expect(page).not.toMatch(/[▲▼]/);
     expect(page).not.toContain('class="headline"');
     expect(page).not.toContain('<script');
+  });
+
+  it('shows each cell with its own n, and the cost with its basis (review round 1)', () => {
+    const sonnet = page.slice(
+      page.indexOf('<td>claude-sonnet-5-5</td>'),
+      page.indexOf('</tr>', page.indexOf('<td>claude-sonnet-5-5</td>')),
+    );
+    const sol = page.slice(
+      page.indexOf('<td>gpt-6.1-sol</td>'),
+      page.indexOf('</tr>', page.indexOf('<td>gpt-6.1-sol</td>')),
+    );
+    // hold-out, checks summed over every scored step, M-F1
+    expect(sonnet).toContain('5/5');
+    expect(sonnet).toContain('1/2');
+    expect(sonnet).toContain('3/5');
+    // the cost's basis: reported by the agent, or from the price table
+    expect(sonnet).toContain('0.2500');
+    expect(sonnet).toContain('reported by the agent');
+    expect(sol).toContain('price table');
+    // M-R1 and M-R2 within the agent, with their n
+    expect(sonnet).toMatch(/9\/10 <span class="n">n = 3<\/span>/);
+  });
+
+  it('marks a preliminary M-R across, leaves non-baseline groups out, and shows a missing value as a dash', () => {
+    expect(page).not.toContain('not-a-baseline-model');
+    const s2 = page.slice(page.indexOf('<h2>S2@1.0</h2>'));
+    expect(s2).toContain('<td>—</td>');
+    const lowN = acrossAgentsPage(
+      {
+        ...comparison,
+        m_r_across: [{ ...comparison.m_r_across[0], earlier: { n: 1, runs: [], not_reached: [] } }],
+      } as unknown as CampaignComparison,
+      earlierAggregate,
+      newerAggregate,
+      [],
+    );
+    const across = lowN.slice(lowN.indexOf('M-R across the two agents'));
+    expect(across).toContain('<span class="preliminary">preliminary</span>');
+    const nothing = acrossAgentsPage(
+      {
+        ...comparison,
+        m_r_across: [{ ...comparison.m_r_across[0], m_r1: undefined, m_r2: undefined }],
+      } as unknown as CampaignComparison,
+      earlierAggregate,
+      newerAggregate,
+      [],
+    );
+    expect(nothing).toContain('claude-sonnet-5-5 → gpt-6.1-sol: not measured');
   });
 });

@@ -139,6 +139,15 @@ describe('compareExecutions (REQ-SCO-13, task-083)', () => {
     expect(byArm.wingfoil?.note).toBe("not measured: pins other than the agent's differ: harnesses.wingfoil");
   });
 
+  it("keeps every harness for an arm other than the baseline: a docs control's rules come from one (review round 1)", () => {
+    const root = handBuiltPair({ harness: ['v0.2.2', 'v0.3.0'], arms: ['baseline', 'baseline-docs'] });
+    const result = compareExecutions(root, EARLIER, NEWER, categories);
+    if (!result.ok) throw new Error(JSON.stringify(result.issues));
+    const byArm = Object.fromEntries(result.value.m_r_across.map((entry) => [entry.arm, entry]));
+    expect(byArm['baseline-docs']?.note).toBe("not measured: pins other than the agent's differ: harnesses.wingfoil");
+    expect(byArm.baseline?.note ?? '').not.toContain('pins other than');
+  });
+
   it.each([
     [{ agents: ['codex', 'codex'] as const }, "not measured: the same agent, codex, on both sides"],
     [{ caps: [1, 2] as const }, "not measured: pins other than the agent's differ: caps"],
