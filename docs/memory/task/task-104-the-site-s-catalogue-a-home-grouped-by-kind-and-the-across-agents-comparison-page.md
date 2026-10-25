@@ -31,7 +31,7 @@ the committed results; publishing stays the approver's (`bench site publish`, ca
 
 ## Acceptance criteria
 
-1. **The catalogue:** `campaigns/catalog.yaml` gives each published execution a title, a kind (`reference`,
+1. **The catalogue:** `site-content/catalog.yaml` gives each published execution a title, a kind (`reference`,
    `bridge`, `across-agents`), the release, its date and what it is compared with; it is not part of any campaign
    file, so no campaign id changes. `bench site build` refuses an execution under `site/` with no catalogue entry, and
    an entry of an unknown kind, naming it. **Red-first** (`results.feature`).
@@ -39,12 +39,14 @@ the committed results; publishing stays the approver's (`bench site publish`, ca
    the order reference, bridge, across-agents, each group under its heading and one-line description, each execution
    newest first with its title, date, agent and models, arms, and links (the execution, its comparisons, an erratum
    when the catalogue names one). **Red-first.**
-3. **The across-agents page** `across-agents-<a>-<n>-<b>-<m>.html`, rendered for a comparison `bench campaign compare`
+3. **The across-agents page** `across-agents-<earlier-id>-<m>.html` in the newer execution's directory, rendered for a comparison `bench campaign compare`
    made of two executions whose agents differ (REQ-CLI-12): the baseline arm, one row per scenario and model of each
    agent, with final public and hold-out tests, checks, M-F1, API-equivalent cost and its basis (`price-table`
    flagged), turns, M-R1 and M-R2 within each agent and across (`m_r_across`), `n` and the preliminary badge on every
    value; no headline and no ▲/▼; the disclosures at its top (the subscription and the price table, the models'
-   generations, the lexical checks of bug-026, S1's step 5 of bug-025). **Red-first** (`comparison.feature`).
+   generations, the lexical checks of bug-026, S1's step 5 of bug-025). M-R across compares the pins of the group's
+   own arm, so that a baseline group is measured although the other campaign pins harnesses its baseline does not
+   use. **Red-first** (`comparison.feature`).
 4. **A one-arm execution's landing page** says "baseline only: no harness compared" in place of the headline, and
    links its across-agents comparison. **Red-first.**
 5. The catalogue holds the four executions: `81ebb2691f9c/1`, `c82a5e74885b/2` (reference), `bf3a1ac7dff5/1`
@@ -53,12 +55,34 @@ the committed results; publishing stays the approver's (`bench site publish`, ca
 
 ## Design
 
-- **The specification first:** requirements 1.36 (REQ-RES-02, the site reads the catalogue too; REQ-RES-04, the
-  home; REQ-RES-07, the across-agents page; REQ-RES-11, the catalogue), `results.feature` and `comparison.feature`
-  amended, traceability (F5.5, F5.2, T14).
-- **Where:** `src/site/profiles.ts` (`rootIndex`) and `render.ts`; the catalogue's schema in `core`; the comparison's
-  data already in `results/comparisons/` (`campaign-compare.ts`), with `m_r_across`.
-- **Why a catalogue:** a title or a kind in the campaign file would change its identity (REQ-FMT-02); the
-  campaign elements are not read by the site (REQ-RES-02), and the catalogue is what the maintainer decides to show.
-- **Out of scope:** dl-022's arm B (a WingFoil arm on Codex); the comparison is made by the approver's command
-  before the build, as every comparison is.
+- **The specification first:** requirements 1.36 — REQ-RES-02 (the site also reads `site-content/catalog.yaml` and,
+  for an across-agents comparison, the earlier execution's `aggregate.json`), REQ-RES-04 (the publish check's root
+  index is the catalogue's), REQ-RES-07 (the across-agents page), REQ-RES-11 (new: the catalogue and the home),
+  REQ-SCO-07 (M-R across compares the pins of the group's own arm); `results.feature` and `comparison.feature`
+  amended; traceability (F5.5, F5.2, T14). Committed before the red tests.
+- **The catalogue** is `site-content/catalog.yaml`, beside `profiles.yaml` and `contests.yaml`, the site's other
+  maintainer-written inputs (the Context said `campaigns/`: `site-content/` is where the site's inputs live, and
+  `campaigns/` holds what runs). Per execution `<campaign-id>/<n>`: `title`, `kind`, `release`, `agent` (a line),
+  `arms` (a line), optional `erratum` (a repository path the home links). Its schema in `core`, read by
+  `src/site/profiles.ts`.
+- **The home** (`rootIndex`, `src/site/profiles.ts`): the executions under `site/` grouped by kind, each group under
+  its heading and one-line description; within a group, newest first by `execution.json`'s end (the date stays the
+  only one on the page, REQ-RES-02 1.26); a built execution with no entry, or an entry of an unknown kind, refuses
+  the build and the publish check, naming it. `publish.ts` recomputes the same function, so its byte-for-byte check
+  is unchanged in shape.
+- **The across-agents page:** a comparison whose two sides' `agent.name` differ is rendered as
+  `across-agents-<earlier-id>-<m>.html` in the newer execution's directory, instead of `compare-…`; the landing page
+  links it under "Compared across agents". Rows: per scenario of the baseline arm, one row per model of each side,
+  from the two aggregates: final public and hold-out, checks, M-F1, API-equivalent cost with its basis, turns, M-R1
+  and M-R2 within, then the `m_r_across` row of the group. No headline, no ▲/▼, `n` and the preliminary badge on
+  every value; the disclosures at its top come from the catalogue entry's `notes` (the subscription and price
+  table, the models' generations, bug-026, bug-025), so that the page states what the maintainer recorded.
+- **M-R across's pins** (`acrossNoteOf`, `src/results/campaign-compare.ts`): per group, the harness and digest pins
+  of that group's arm only, so that a baseline group is compared although the other campaign pins harnesses its
+  baseline does not use; caps, approver policy and rate still whole. The comparison file's version is unchanged; a
+  comparison written before reads as before.
+- **A one-arm landing page** (`landingContent`, `src/site/render.ts`): "Baseline only: no harness is compared in this
+  execution." in place of the framing and the headlines, and its across-agents links first.
+- **The data:** after the merge, the approver's `bench campaign compare 81ebb2691f9c/1 4682bcc65d6b/1` writes the
+  comparison; the catalogue's four entries are in this task.
+- **Out of scope:** dl-022's arm B; publishing (`bench site publish`, campaign-004 reviewed → published).
