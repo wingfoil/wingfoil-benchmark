@@ -42,5 +42,12 @@ describe('the Codex harness-vs-docs campaign on Terra (task-105, characterizatio
     expect(profile.currency).toEqual(spec.currency);
     expect(profile.arm_digests).toEqual(spec.arm_digests);
     expect(profile.harnesses).toEqual(spec.harnesses);
+    // ... and every other pin the estimate's key reads (review round 1)
+    expect((profile.agent as { version: string }).version).toBe(spec.agent.version);
+    expect((profile.agent as { effort: Record<string, string> }).effort['gpt-5.6-terra']).toBe(
+      spec.agent.effort?.['gpt-5.6-terra'],
+    );
+    expect(profile.caps).toEqual(spec.caps);
+    expect(profile.approver_policy).toBe(spec.approver_policy);
   });
 });

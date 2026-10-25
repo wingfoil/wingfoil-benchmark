@@ -237,6 +237,41 @@ describe("dl-024's scope in the commands", () => {
     );
   });
 
+  it("refuses a Codex campaign whose arm's MCP server Codex cannot be given, building nothing (task-105 review round 1)", async () => {
+    const pins = {
+      ...completeCampaignYaml(),
+      harnesses: {},
+      arms: ['baseline'],
+      agent: CODEX,
+      models: { default: 'gpt-6.1-sol' },
+    };
+    const { root, file } = writeRepo(pins);
+    mkdirSync(join(root, 'campaigns', 'presets'));
+    writeFileSync(
+      join(root, 'campaigns', 'presets', 'baseline-across-agents.yaml'),
+      stringify({ description: 'b', ...pins }),
+    );
+    writeFileSync(file, stringify({ extends: 'presets/baseline-across-agents.yaml' }));
+    writeFileSync(
+      join(root, 'arms', 'baseline', 'arm.yaml'),
+      'name: baseline\nsetup: setup.sh\nmanual: manual.md\nmcp: mcp.json\n',
+    );
+    writeFileSync(
+      join(root, 'arms', 'baseline', 'mcp.json'),
+      JSON.stringify({ mcpServers: { web: { type: 'http', url: 'https://example.org' } } }),
+    );
+    vi.stubEnv('BENCH_CODEX_AUTH_FILE', fakeAuthFile());
+
+    const refused = await cli(['campaign', 'run', file, '--allow-spending'], root, () =>
+      Date.parse('2026-10-24T12:00:00Z'),
+    );
+
+    expect(refused).toMatchObject({ code: 1, built: 0 });
+    expect(refused.stderr).toContain(
+      'arms/baseline/mcp.json: web: only stdio servers with a command are rendered for Codex',
+    );
+  });
+
   it("refuses a Codex dry run from another profile than the campaign's, building nothing", async () => {
     const { root } = writeRepo();
     copyFileSync(repoPath('scenarios/leak-scan.yaml'), join(root, 'scenarios', 'leak-scan.yaml'));
