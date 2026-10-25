@@ -62,7 +62,38 @@ then Luna, then Terra.
 
 ## Execution
 
-<!-- Execution id(s) `<campaign-id>/<n>`, outcomes, caps reached, reruns. -->
+- **Spending approved** (`2a8d6914`): run by the agent at the approver's explicit request in chat (2026-10-25), the
+  quota read by the approver first (67 % of the 5-hour window, 95 % of the week). `memory approve` printed a spurious
+  `illegal transition approved -> reviewed` after the transition (F-011's case). **approved → running** on start.
+- **`4682bcc65d6b/1`**, `bench campaign run campaigns/codex-baseline.yaml --allow-spending` from the main checkout,
+  2026-10-25: 18 runs completed, 0 failed; cost: 6.1066 USD, 5.4453 EUR at 0.8917 EUR/USD, API-equivalent; 0 €
+  spent (ChatGPT Plus, dl-024). No cap reached, no quota stop, no rerun. The secret scan of `results/4682bcc65d6b/1/` and
+  `runs/4682bcc65d6b/1/` (plain files and every git object): clean.
+- **Scored** (`bench score 4682bcc65d6b/1 --holdout ../WingFoil2-Benchmark-HoldOut`): `aggregate.json`, 4 groups,
+  8 slices; determinism measured in 3, n = 1 in 9.
+
+| Model | Run | Final public | Hold-out | Checks | M-F1 |
+|---|---|---|---|---|---|
+| `gpt-6.1-sol` | S1 r1 | 165/165 | 48/48 | — | — |
+| `gpt-6.1-sol` | S1 r2 | 165/165 | 48/48 | — | — |
+| `gpt-6.1-sol` | S1 r3 | 165/165 | 48/48 | — | — |
+| `gpt-6.1-sol` | S2 r1 | 24/24 | 17/17 | 2/3 | — |
+| `gpt-6.1-sol` | S3 r1 | 37/37 | 17/17 | 0/1 | 4/5 |
+| `gpt-6.1-sol` | S8 r1 | 23/23 | 7/7 | 13/16 | — |
+| `gpt-5.6-terra` | S1 r1 | 165/165 | 48/48 | — | — |
+| `gpt-5.6-terra` | S1 r2 | 164/165 | 45/48 | — | — |
+| `gpt-5.6-terra` | S1 r3 | 163/165 | 45/48 | — | — |
+| `gpt-5.6-terra` | S2 r1 | 22/24 | 16/17 | 0/3 | — |
+| `gpt-5.6-terra` | S3 r1 | 35/37 | 16/17 | 0/1 | 3/5 |
+| `gpt-5.6-terra` | S8 r1 | 23/23 | 6/7 | 13/16 | — |
+| `gpt-6-luna` | S1 r1 | 158/165 | 43/48 | — | — |
+| `gpt-6-luna` | S1 r2 | 165/165 | 48/48 | — | — |
+| `gpt-6-luna` | S1 r3 | 158/165 | 45/48 | — | — |
+| `gpt-6-luna` | S2 r1 | 23/24 | 16/17 | 0/3 | — |
+| `gpt-6-luna` | S3 r1 | 30/37 | 15/17 | 0/1 | 2/5 |
+| `gpt-6-luna` | S8 r1 | 23/23 | 7/7 | 13/16 | — |
+
+Figures from the scoring's output; the run costs per model in `results/4682bcc65d6b/1/aggregate.json`.
 
 ## Results review
 
