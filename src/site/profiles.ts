@@ -1,4 +1,4 @@
-import { existsSync, lstatSync, readdirSync } from 'node:fs';
+import { existsSync, lstatSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { z } from 'zod';
 
@@ -138,7 +138,12 @@ export function rootIndex(root: string, executions: readonly string[]): Result<s
   const catalog = loadCatalog(root);
   if (!catalog.ok) return catalog;
   const issues: Issue[] = [];
-  const listed: { execution: string; entry: CatalogEntry; ended?: string }[] = [];
+  const listed: {
+    execution: string;
+    entry: CatalogEntry;
+    links: { file: string; label: string }[];
+    ended?: string;
+  }[] = [];
   for (const execution of executions) {
     const [campaign, n] = execution.split('/') as [string, string];
     const dir = join(root, 'results', campaign, n);
@@ -176,17 +181,32 @@ export function rootIndex(root: string, executions: readonly string[]): Result<s
       });
       continue;
     }
-    listed.push({ execution, entry, ...(ended === undefined ? {} : { ended }) });
+    // Each comparison the entry names must be written (REQ-RES-11): its page's kind is the comparison's, by its agents.
+    const links: { file: string; label: string }[] = [];
+    for (const other of entry.compared_with ?? []) {
+      const path = `results/comparisons/${execution.replace('/', '-')}/${other.replace('/', '-')}.json`;
+      let comparison: { pins_differ?: { pin?: unknown }[] };
+      try {
+        comparison = JSON.parse(readFileSync(join(root, path), 'utf8')) as typeof comparison;
+      } catch {
+        issues.push({
+          path: CATALOG_FILE,
+          message: `${execution} is compared_with ${other}, but ${path} is not written: run bench campaign compare ${other} ${execution} first`,
+        });
+        continue;
+      }
+      const across = (comparison.pins_differ ?? []).some((pin) => pin.pin === 'agent.name');
+      links.push({
+        file: `${across ? 'across-agents' : 'compare'}-${other.replace('/', '-')}.html`,
+        label: across ? `compared across agents with ${other}` : `compared with ${other}`,
+      });
+    }
+    listed.push({ execution, entry, links, ...(ended === undefined ? {} : { ended }) });
   }
   if (issues.length > 0) return fail(issues);
 
-  const item = ({ execution, entry, ended }: (typeof listed)[number]) => {
-    const across = entry.kind === 'across-agents';
-    const links = (entry.compared_with ?? []).map((other) => {
-      const file = `${across ? 'across-agents' : 'compare'}-${other.replace('/', '-')}.html`;
-      const label = across ? `compared across agents with ${other}` : `compared with ${other}`;
-      return `<a href="${e(`${execution}/${file}`)}">${e(label)}</a>`;
-    });
+  const item = ({ execution, entry, links: compared, ended }: (typeof listed)[number]) => {
+    const links = compared.map((link) => `<a href="${e(`${execution}/${link.file}`)}">${e(link.label)}</a>`);
     const parts = [
       `<a href="${e(`${execution}/`)}">${e(entry.title)}</a>, ${ended === undefined ? 'end date not recorded' : e(`ended ${ended.slice(0, 10)}`)}`,
       e(entry.agent),

@@ -31,7 +31,10 @@ function group(
         {
           id: 'duplicate',
           kind: 'content',
-          steps: [{ step: 2, passed: value(passed.map(() => ({ passed: 1, total: 1 }))) }],
+          steps: [
+            { step: 2, passed: value(passed.map(() => ({ passed: 1, total: 1 }))) },
+            { step: 3, passed: value(passed.map(() => ({ passed: 0, total: 1 }))) },
+          ],
         },
       ],
       m_f1: { share: value(passed.map(() => ({ passed: 3, total: 5 }))) },

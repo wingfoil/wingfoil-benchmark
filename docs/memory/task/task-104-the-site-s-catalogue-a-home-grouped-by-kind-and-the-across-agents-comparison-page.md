@@ -32,7 +32,8 @@ the committed results; publishing stays the approver's (`bench site publish`, ca
 ## Acceptance criteria
 
 1. **The catalogue:** `site-content/catalog.yaml` gives each published execution a title, a kind (`reference`,
-   `bridge`, `across-agents`), the release, its date and what it is compared with; it is not part of any campaign
+   `bridge`, `across-agents`), the release, its agent and arms, and what it is compared with (its date is its
+   `execution.json`'s); it is not part of any campaign
    file, so no campaign id changes. `bench site build` refuses an execution under `site/` with no catalogue entry, and
    an entry of an unknown kind, naming it. **Red-first** (`results.feature`).
 2. **The home** (`site/index.html`) shows the preliminary and T1 statements, then the executions grouped by kind in
@@ -42,8 +43,8 @@ the committed results; publishing stays the approver's (`bench site publish`, ca
 3. **The across-agents page** `across-agents-<earlier-id>-<m>.html` in the newer execution's directory, rendered
    for a comparison `bench campaign compare`
    made of two executions whose agents differ (REQ-CLI-12): the baseline arm, one row per scenario and model of each
-   agent, with final public and hold-out tests, checks, M-F1, API-equivalent cost and its basis (`price-table`
-   flagged), turns, M-R1 and M-R2 within each agent and across (`m_r_across`), `n` and the preliminary badge on every
+   agent, with final public and hold-out tests, checks over every scored step, M-F1, API-equivalent cost and its
+   basis (`price-table` flagged), M-R1 and M-R2 within each agent and across (`m_r_across`), `n` and the preliminary badge on every
    value; no headline and no ▲/▼; the disclosures at its top (the subscription and the price table, the models'
    generations, the lexical checks of bug-026, S1's step 5 of bug-025). M-R across compares the pins of the group's
    own arm, so that a baseline group is measured although the other campaign pins harnesses its baseline does not
@@ -75,7 +76,7 @@ the committed results; publishing stays the approver's (`bench site publish`, ca
 - **The across-agents page:** a comparison whose two sides' `agent.name` differ is rendered as
   `across-agents-<earlier-id>-<m>.html` in the newer execution's directory, instead of `compare-…`; the landing page
   links it under "Compared across agents". Rows: per scenario of the baseline arm, one row per model of each side,
-  from the two aggregates: final public and hold-out, checks, M-F1, API-equivalent cost with its basis, turns, M-R1
+  from the two aggregates: final public and hold-out, checks, M-F1, API-equivalent cost with its basis, M-R1
   and M-R2 within, then the `m_r_across` row of the group. No headline, no ▲/▼, `n` and the preliminary badge on
   every value; the disclosures at its top come from the catalogue entry's `notes` (the subscription and price
   table, the models' generations, bug-026, bug-025), so that the page states what the maintainer recorded.

@@ -533,9 +533,9 @@ function pinAt(pins: Record<string, unknown>, path: readonly string[]): string {
 /**
  * Why M-R across is not measured for a group of `arm`, if it is not (experiment design 1.4 §4.5): it is across two
  * agents, so the agent's name must differ; the agent's pins and the models it runs may differ, and so may the
- * scenarios a campaign lists and their repetitions, which only select the groups; the harness and the digest of the
- * group's own arm (REQ-SCO-07 as amended in 1.36: another arm's harness does not shape this arm's runs), the caps,
- * the approver policy and the rate (which moves where `run_cost_eur` stops a run), which shape a run, may not.
+ * scenarios a campaign lists and their repetitions, which only select the groups; the harnesses and the digests (for a
+ * baseline group, its own digest only: it runs no harness, REQ-SCO-07 as amended in 1.36), the caps, the approver
+ * policy and the rate (which moves where `run_cost_eur` stops a run), which shape a run, may not.
  */
 function acrossNoteOf(
   before: Record<string, unknown>,
@@ -549,7 +549,9 @@ function acrossNoteOf(
     ...differ
       .map((d) => d.pin)
       .filter((pin) => !pin.startsWith('agent.') && !pin.startsWith('models.'))
-      .filter((pin) => pin === `harnesses.${arm}` || pin === `arm_digests.${arm}` || !/^(harnesses|arm_digests)\./.test(pin)),
+      // The baseline runs no harness: another arm's harness and digest do not shape its runs. Any other arm keeps
+      // every harness, since a docs control's rules are generated from its source's (REQ-SCO-07 as amended in 1.36).
+      .filter((pin) => arm !== 'baseline' || pin === `arm_digests.${arm}` || !/^(harnesses|arm_digests)\./.test(pin)),
     ...['caps', 'approver_policy', 'currency'].filter((key) => canonicalJson(before[key] ?? null) !== canonicalJson(after[key] ?? null)),
   ];
   return others.length === 0 ? undefined : `not measured: pins other than the agent's differ: ${others.join(', ')}`;
