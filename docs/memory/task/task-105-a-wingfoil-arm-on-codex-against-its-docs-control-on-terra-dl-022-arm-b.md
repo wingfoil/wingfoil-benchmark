@@ -92,8 +92,8 @@ Under dl-020; `scripts/pre-review.sh main` green before each round.
   correct (`required = true` read by Codex 0.162.1, `codex exec` exiting when the server does not start; the escaping;
   the refusal before anything is built in both commands; the merge test now meaningful).
   - **should-fix, fixed:** the notes said the next publish rebuilds every execution, when its check refuses each stale
-    page (now stated: rebuild every execution before publishing); `required = true` had no requirement behind it (now
-    in REQ-RUN-15 1.37, with how such a step counts: failed, at its bound); the method page's "the same as Claude Code's"
+    page (now stated: rebuild every execution before publishing); `required = true` had no requirement behind it (now in
+    REQ-RUN-15 1.37, with how such a step counts: failed, at its bound); the method page's "the same as Claude Code's"
     would go stale with step A (now "in v0.2 (campaign-002)").
   - **nits, fixed:** a server name or env key not valid TOML refused like a value; the dry run's MCP refusal pinned by a
     test (characterization); round 1's note on `type` corrected. **Stated:** the method-statements test's entry was
