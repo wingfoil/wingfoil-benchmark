@@ -56,11 +56,11 @@ the committed results; publishing stays the approver's (`bench site publish`, ca
 
 ## Design
 
-- **The specification first:** requirements 1.36 — REQ-RES-02 (the site also reads `site-content/catalog.yaml` and,
-  for an across-agents comparison, the earlier execution's `aggregate.json`), REQ-RES-04 (the publish check's root
-  index is the catalogue's), REQ-RES-07 (the across-agents page), REQ-RES-11 (new: the catalogue and the home),
-  REQ-SCO-07 (M-R across compares the pins of the group's own arm); `results.feature` and `comparison.feature`
-  amended; traceability (F5.5, F5.2, T14). Committed before the red tests.
+- **The specification first:** requirements 1.36 — REQ-RES-02 (the site also reads `site-content/catalog.yaml` and, for
+  an across-agents comparison, the earlier execution's `aggregate.json`), REQ-RES-04 (the publish check's root index is
+  the catalogue's), REQ-RES-07 (the across-agents page), REQ-RES-11 (new: the catalogue and the home), REQ-SCO-07 (M-R
+  across measures a baseline group although the other execution pins harnesses it does not run); `results.feature` and
+  `comparison.feature` amended; traceability (F5.5, F5.2, T14). Committed before the red tests.
 - **The catalogue** is `site-content/catalog.yaml`, beside `profiles.yaml` and `contests.yaml`, the site's other
   maintainer-written inputs (the Context said `campaigns/`: `site-content/` is where the site's inputs live, and
   `campaigns/` holds what runs). Per execution `<campaign-id>/<n>`: `title`, `kind`, `release`, `agent` (a line),
@@ -69,15 +69,16 @@ the committed results; publishing stays the approver's (`bench site publish`, ca
   `src/site/profiles.ts`.
 - **The home** (`rootIndex`, `src/site/profiles.ts`): the executions under `site/` grouped by kind, each group under
   its heading and one-line description; within a group, newest first by `execution.json`'s end (the date stays the
-  only one on the page, REQ-RES-02 1.26); a built execution with no entry, or an entry of an unknown kind, refuses
-  the build and the publish check, naming it. `publish.ts` recomputes the same function, so its byte-for-byte check
+  only one on the page, REQ-RES-02 1.26); a built execution with no entry, an entry of an unknown kind, or a
+  `compared_with` whose comparison is not written refuses the build and the publish check, naming it. The links'
+  kind comes from each comparison's agents. `publish.ts` recomputes the same function, so its byte-for-byte check
   is unchanged in shape.
 - **The across-agents page:** a comparison whose two sides' `agent.name` differ is rendered as
   `across-agents-<earlier-id>-<m>.html` in the newer execution's directory, instead of `compare-…`; the landing page
   links it under "Compared across agents". Rows: per scenario of the baseline arm, one row per model of each side,
-  from the two aggregates: final public and hold-out, checks, M-F1, API-equivalent cost with its basis, M-R1
-  and M-R2 within, then the `m_r_across` row of the group. No headline, no ▲/▼, `n` and the preliminary badge on
-  every value; the disclosures at its top come from the catalogue entry's `notes` (the subscription and price
+  from the two aggregates: final public and hold-out, checks over every scored step, M-F1, API-equivalent cost
+  with its basis, M-R1 and M-R2 within, then the `m_r_across` row of the group. No headline, no ▲/▼, each value's `n`
+  and the preliminary badge below n = 3; the disclosures at its top come from the catalogue entry's `notes` (the subscription and price
   table, the models' generations, bug-026, bug-025), so that the page states what the maintainer recorded.
 - **M-R across's pins** (`acrossNoteOf`, `src/results/campaign-compare.ts`): per group, the harness and digest pins
   of that group's arm only, so that a baseline group is compared although the other campaign pins harnesses its

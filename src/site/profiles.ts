@@ -131,8 +131,10 @@ export function builtExecutions(site: string): string[] {
 /**
  * The home, `site/index.html` (REQ-RES-11, task-104): the built `executions` grouped by the catalogue's kind, in
  * {@link KINDS}' order, each newest first by the end its `execution.json` records (an execution with none last), with
- * its title, end date, agent, arms, comparison pages and erratum. An execution with no catalogue entry, or whose
- * results are gone or whose record is unreadable or not a date, refuses it, naming it.
+ * its title, end date, agent, arms, comparison pages and erratum. An execution with no catalogue entry, whose results
+ * are gone, whose record is unreadable or not a date, or that is `compared_with` an execution whose comparison is not
+ * written (or not a comparison) refuses it, naming it. A comparison page's link is an across-agents page when the
+ * comparison's agents differ, a comparison of deltas otherwise.
  */
 export function rootIndex(root: string, executions: readonly string[]): Result<string> {
   const catalog = loadCatalog(root);
@@ -185,7 +187,7 @@ export function rootIndex(root: string, executions: readonly string[]): Result<s
     const links: { file: string; label: string }[] = [];
     for (const other of entry.compared_with ?? []) {
       const path = `results/comparisons/${execution.replace('/', '-')}/${other.replace('/', '-')}.json`;
-      let comparison: { pins_differ?: { pin?: unknown }[] };
+      let comparison: { pins_differ?: { pin?: unknown }[] } | null;
       try {
         comparison = JSON.parse(readFileSync(join(root, path), 'utf8')) as typeof comparison;
       } catch {
@@ -195,7 +197,13 @@ export function rootIndex(root: string, executions: readonly string[]): Result<s
         });
         continue;
       }
-      const across = (comparison.pins_differ ?? []).some((pin) => pin.pin === 'agent.name');
+      if (comparison === null || typeof comparison !== 'object' || Array.isArray(comparison)) {
+        issues.push({ path: CATALOG_FILE, message: `${path} is not a comparison` });
+        continue;
+      }
+      const across = (Array.isArray(comparison.pins_differ) ? comparison.pins_differ : []).some(
+        (pin) => pin !== null && typeof pin === 'object' && pin.pin === 'agent.name',
+      );
       links.push({
         file: `${across ? 'across-agents' : 'compare'}-${other.replace('/', '-')}.html`,
         label: across ? `compared across agents with ${other}` : `compared with ${other}`,
