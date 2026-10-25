@@ -387,6 +387,8 @@ export interface ComparisonLink {
   readonly file: string;
   readonly label: string;
   readonly crossModel: boolean;
+  /** Whether it is across two agents (REQ-RES-07 as amended in 1.36): linked under its own heading. */
+  readonly acrossAgents?: boolean;
 }
 
 /** A profile page the landing page links (REQ-RES-08, task-085): its page, the profile's name and its categories. */
@@ -405,18 +407,20 @@ export function landingPage(
   comparisons: readonly ComparisonLink[] = [],
   profiles: readonly ProfileLink[] = [],
 ): string {
+  const linkList = (links: readonly ComparisonLink[]) =>
+    links
+      .map(
+        (link) =>
+          `<li><a href="${e(link.file)}">${e(link.label)}</a>` +
+          `${link.crossModel && link.acrossAgents !== true ? ' <span class="cross-model">cross-model</span>' : ''}</li>\n`,
+      )
+      .join('');
+  const others = comparisons.filter((link) => link.acrossAgents !== true);
+  const across = comparisons.filter((link) => link.acrossAgents === true);
   const compared =
-    comparisons.length === 0
-      ? ''
-      : '<h2>Compared with earlier executions</h2>\n<ul>\n' +
-        comparisons
-          .map(
-            (link) =>
-              `<li><a href="${e(link.file)}">${e(link.label)}</a>` +
-              `${link.crossModel ? ' <span class="cross-model">cross-model</span>' : ''}</li>\n`,
-          )
-          .join('') +
-        '</ul>\n';
+    others.length === 0 ? '' : `<h2>Compared with earlier executions</h2>\n<ul>\n${linkList(others)}</ul>\n`;
+  const acrossAgentsSection =
+    across.length === 0 ? '' : `<h2>Compared across agents</h2>\n<ul>\n${linkList(across)}</ul>\n`;
   const views =
     profiles.length === 0
       ? ''
@@ -428,7 +432,11 @@ export function landingPage(
           )
           .join('') +
         '</ul>\n';
-  return page(title(model), landingContent(model, title(model)) + compared + views, 2);
+  // A baseline-only execution compares no harness (task-104): its across-agents comparisons come first.
+  if (model.arms.length === 1) {
+    return page(title(model), landingContent(model, title(model), acrossAgentsSection) + compared + views, 2);
+  }
+  return page(title(model), landingContent(model, title(model)) + compared + acrossAgentsSection + views, 2);
 }
 
 /**
@@ -475,16 +483,23 @@ export function profilePage(model: SiteModel, profile: Pick<ProfileLink, 'name' 
  * The landing page's own content, under `heading` (task-085): the framing, the headline, the chart, one row per
  * category, the legend and the counts. A profile page is this content over a model restricted to its categories.
  */
-function landingContent(model: SiteModel, heading: string): string {
+function landingContent(model: SiteModel, heading: string, intro = ''): string {
   const strong = (text: string) => `<strong>${e(text)}</strong>`;
   const gaps = notCoveredSentence(notCovered(model));
+  // One arm (task-104): no harness is compared, so no framing of harnesses and no headline.
+  const framing =
+    model.arms.length === 1
+      ? `<p class="framing">Baseline only: no harness is compared in this execution. Every run is the ${e(model.arms[0] ?? 'baseline')} ` +
+        `arm, the agent alone with ${strong(model.model)}.</p>\n`
+      : `<p class="framing">Harness, not model: every arm runs the same agent with the same model, ${strong(model.model)}. ` +
+        `Only the harness around it differs: ${e(model.arms.join(', '))}.</p>\n` +
+        headlines(model, strong)
+          .map((sentence) => `<p class="headline">${sentence}</p>\n`)
+          .join('');
   return (
     `<h1>${e(heading)}</h1>\n` +
-    `<p class="framing">Harness, not model: every arm runs the same agent with the same model, ${strong(model.model)}. ` +
-    `Only the harness around it differs: ${e(model.arms.join(', '))}.</p>\n` +
-    headlines(model, strong)
-      .map((sentence) => `<p class="headline">${sentence}</p>\n`)
-      .join('') +
+    framing +
+    intro +
     (gaps === '' ? '' : `<p class="gaps">${e(gaps)}</p>\n`) +
     `<figure>\n${chartSvg(model)}\n<figcaption>M-Q1: the share of public hidden tests passed on the final snapshot, ` +
     `per arm, with the range of its runs and their n.</figcaption>\n</figure>\n` +

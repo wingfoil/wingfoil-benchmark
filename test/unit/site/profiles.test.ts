@@ -152,7 +152,7 @@ describe('the root index (REQ-RES-02 as amended, task-085)', () => {
       'site-content/catalog.yaml.executions.abcdef012345/1.erratum',
     ]);
     rmSync(join(root, 'site-content', 'catalog.yaml'));
-    expect(issuesOf(['abcdef012345/1']).map((issue) => issue.path)).toEqual(['catalog.yaml']);
+    expect(issuesOf(['abcdef012345/1']).map((issue) => issue.path)).toEqual(['site-content/catalog.yaml']);
   });
 
   it('refuses a record it cannot read, and a built execution whose results are gone', () => {

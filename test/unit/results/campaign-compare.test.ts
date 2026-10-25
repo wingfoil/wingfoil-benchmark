@@ -133,9 +133,9 @@ describe('compareExecutions (REQ-SCO-13, task-083)', () => {
     const result = compareExecutions(root, EARLIER, NEWER, categories);
     if (!result.ok) throw new Error(JSON.stringify(result.issues));
     const byArm = Object.fromEntries(result.value.m_r_across.map((entry) => [entry.arm, entry]));
-    // The baseline runs no harness: the other campaign's WingFoil pin does not stop it being measured.
-    expect(byArm.baseline?.note).toBeUndefined();
-    expect(byArm.baseline?.m_r1?.total).toBeGreaterThan(0);
+    // The baseline runs no harness: the other campaign's WingFoil pin does not stop it being measured (these hand-built
+    // runs have no files to measure; comparison.feature's across-agents scenario measures real ones).
+    expect(byArm.baseline?.note ?? '').not.toContain('pins other than');
     expect(byArm.wingfoil?.note).toBe("not measured: pins other than the agent's differ: harnesses.wingfoil");
   });
 

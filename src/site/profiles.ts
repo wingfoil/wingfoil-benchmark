@@ -55,6 +55,62 @@ export function profileFile(profile: Pick<Profile, 'id'>): string {
   return `profile-${profile.id}.html`;
 }
 
+/** Where the site's catalogue is versioned (REQ-RES-11, task-104). */
+export const CATALOG_FILE = 'site-content/catalog.yaml';
+
+/** The kinds of execution the home groups, in its order, with each group's heading and line (REQ-RES-11). */
+export const KINDS = [
+  {
+    id: 'reference',
+    heading: 'Reference campaigns',
+    line: 'Every harness against the baseline, on one agent and its models.',
+  },
+  { id: 'bridge', heading: 'Bridges', line: 'One change at a time between two reference campaigns.' },
+  {
+    id: 'across-agents',
+    heading: 'Across agents',
+    line: 'The same baseline arm under another agent; never mixed with the headlines above.',
+  },
+] as const;
+
+/** An execution `<campaign-id>/<n>`, as the catalogue and `compared_with` name it. */
+const EXECUTION_ID = /^[0-9a-f]{12}\/[1-9]\d*$/;
+
+const catalogSchema = z.strictObject({
+  executions: z.record(
+    z.string().regex(EXECUTION_ID, 'must be <campaign-id>/<n>'),
+    z.strictObject({
+      title: z.string().min(1),
+      kind: z.enum(KINDS.map((kind) => kind.id) as [string, ...string[]]),
+      release: z.string().min(1),
+      agent: z.string().min(1),
+      arms: z.string().min(1),
+      notes: z.array(z.string().min(1)).optional(),
+      erratum: z
+        .string()
+        .regex(/^https:\/\/\S+$/, 'must be an https:// link')
+        .optional(),
+      compared_with: z.array(z.string().regex(EXECUTION_ID, 'must be <campaign-id>/<n>')).optional(),
+    }),
+  ),
+});
+
+/** A published execution as the catalogue presents it (REQ-RES-11). */
+export type CatalogEntry = z.infer<typeof catalogSchema>['executions'][string];
+
+/** The catalogue of `root`'s `site-content/catalog.yaml` (REQ-RES-11, task-104), by execution. */
+export function loadCatalog(root: string): Result<ReadonlyMap<string, CatalogEntry>> {
+  const read = readYamlFile(join(root, CATALOG_FILE));
+  if (!read.ok) return fail(read.issues.map((issue) => ({ path: CATALOG_FILE, message: issue.message })));
+  const parsed = parseWith(catalogSchema, read.value, CATALOG_FILE);
+  if (!parsed.ok) {
+    return fail(
+      parsed.issues.map((issue) => ({ path: `${CATALOG_FILE}.${issue.path}`, message: issue.message })),
+    );
+  }
+  return ok(new Map(Object.entries(parsed.value.executions)));
+}
+
 /** A campaign's directory under `site/`: its identity, 12 hex characters (REQ-FMT-02). */
 const CAMPAIGN_DIR = /^[0-9a-f]{12}$/;
 
@@ -73,19 +129,17 @@ export function builtExecutions(site: string): string[] {
 }
 
 /**
- * `site/index.html` (REQ-RES-02 as amended in 1.26, task-085): every built execution, by campaign then number, linking
- * its permanent URL, with the day it ended read from its `results/<campaign-id>/<n>/execution.json` — never the
- * build's — or that none was recorded (v0.1's executions have none). The only page that holds a date. A record that
- * cannot be read, an end that is not a date, or a built execution whose results are gone is refused, naming it.
+ * The home, `site/index.html` (REQ-RES-11, task-104): the built `executions` grouped by the catalogue's kind, in
+ * {@link KINDS}' order, each newest first by the end its `execution.json` records (an execution with none last), with
+ * its title, end date, agent, arms, comparison pages and erratum. An execution with no catalogue entry, or whose
+ * results are gone or whose record is unreadable or not a date, refuses it, naming it.
  */
 export function rootIndex(root: string, executions: readonly string[]): Result<string> {
-  const sorted = [...executions].sort((a, b) => {
-    const [ca, na] = a.split('/') as [string, string];
-    const [cb, nb] = b.split('/') as [string, string];
-    return ca === cb ? Number(na) - Number(nb) : ca < cb ? -1 : 1;
-  });
+  const catalog = loadCatalog(root);
+  if (!catalog.ok) return catalog;
   const issues: Issue[] = [];
-  const items = sorted.map((execution) => {
+  const listed: { execution: string; entry: CatalogEntry; ended?: string }[] = [];
+  for (const execution of executions) {
     const [campaign, n] = execution.split('/') as [string, string];
     const dir = join(root, 'results', campaign, n);
     if (!existsSync(dir)) {
@@ -93,12 +147,12 @@ export function rootIndex(root: string, executions: readonly string[]): Result<s
         path: `site/${execution}`,
         message: `is built, but results/${execution} is gone: remove it from site/, or restore its results`,
       });
-      return '';
+      continue;
     }
     const record = readExecutionRecord(dir);
     if (!record.ok) {
       issues.push(...record.issues);
-      return '';
+      continue;
     }
     const ended = record.value?.ended;
     // A day that exists: a UTC ISO timestamp, as the runner writes it, whose own date is the one it names.
@@ -112,19 +166,52 @@ export function rootIndex(root: string, executions: readonly string[]): Result<s
         path: `results/${execution}/execution.json`,
         message: `records an end that is not a date: ${ended}`,
       });
-      return '';
+      continue;
     }
-    return (
-      `<li><a href="${e(`${execution}/`)}">${e(`campaign ${campaign}, execution ${n}`)}</a>, ` +
-      `${ended === undefined ? 'end date not recorded' : e(`ended ${ended.slice(0, 10)}`)}</li>\n`
-    );
-  });
+    const entry = catalog.value.get(execution);
+    if (entry === undefined) {
+      issues.push({
+        path: CATALOG_FILE,
+        message: `has no entry for ${execution}, which is built under site/`,
+      });
+      continue;
+    }
+    listed.push({ execution, entry, ...(ended === undefined ? {} : { ended }) });
+  }
   if (issues.length > 0) return fail(issues);
+
+  const item = ({ execution, entry, ended }: (typeof listed)[number]) => {
+    const across = entry.kind === 'across-agents';
+    const links = (entry.compared_with ?? []).map((other) => {
+      const file = `${across ? 'across-agents' : 'compare'}-${other.replace('/', '-')}.html`;
+      const label = across ? `compared across agents with ${other}` : `compared with ${other}`;
+      return `<a href="${e(`${execution}/${file}`)}">${e(label)}</a>`;
+    });
+    const parts = [
+      `<a href="${e(`${execution}/`)}">${e(entry.title)}</a>, ${ended === undefined ? 'end date not recorded' : e(`ended ${ended.slice(0, 10)}`)}`,
+      e(entry.agent),
+      e(entry.arms),
+      ...links,
+      ...(entry.erratum === undefined ? [] : [`<a href="${e(entry.erratum)}">erratum</a>`]),
+    ];
+    return `<li>${parts.join(' · ')}</li>\n`;
+  };
+  // Newest first; an execution whose end is not recorded after those that have one, then by its address.
+  const newestFirst = (a: (typeof listed)[number], b: (typeof listed)[number]) =>
+    (b.ended ?? '').localeCompare(a.ended ?? '') || a.execution.localeCompare(b.execution);
+  const groups = KINDS.flatMap((kind) => {
+    const members = listed.filter((one) => one.entry.kind === kind.id).sort(newestFirst);
+    return members.length === 0
+      ? []
+      : [`<h2>${e(kind.heading)}</h2>\n<p>${e(kind.line)}</p>\n<ul>\n${members.map(item).join('')}</ul>\n`];
+  });
   return ok(
     page(
       'WingFoil Benchmark',
-      '<h1>WingFoil Benchmark</h1>\n<p>Every published campaign execution, each at a permanent address:</p>\n' +
-        `<ul>\n${items.join('')}</ul>\n`,
+      '<h1>WingFoil Benchmark</h1>\n' +
+        '<p>Every published campaign execution, each at a permanent address. Results are preliminary unless marked ' +
+        "otherwise, and the benchmark is built by WingFoil's maintainer (validity threat T1).</p>\n" +
+        groups.join(''),
       0,
     ),
   );
