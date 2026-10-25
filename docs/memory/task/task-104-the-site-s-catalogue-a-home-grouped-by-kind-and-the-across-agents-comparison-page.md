@@ -2,7 +2,7 @@
 id: task-104-the-site-s-catalogue-a-home-grouped-by-kind-and-the-across-agents-comparison-page
 type: task
 title: "The site's catalogue, a home grouped by kind, and the across-agents comparison page"
-status: in-progress
+status: in-review
 release: v0.3
 wave: W15
 features: [F5.5, F5.2]
