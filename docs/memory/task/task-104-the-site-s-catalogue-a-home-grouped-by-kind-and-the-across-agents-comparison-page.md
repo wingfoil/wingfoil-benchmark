@@ -75,11 +75,11 @@ the committed results; publishing stays the approver's (`bench site publish`, ca
   is unchanged in shape.
 - **The across-agents page:** a comparison whose two sides' `agent.name` differ is rendered as
   `across-agents-<earlier-id>-<m>.html` in the newer execution's directory, instead of `compare-…`; the landing page
-  links it under "Compared across agents". Rows: per scenario of the baseline arm, one row per model of each side,
-  from the two aggregates: final public and hold-out, checks over every scored step, M-F1, API-equivalent cost
-  with its basis, M-R1 and M-R2 within, then the `m_r_across` row of the group. No headline, no ▲/▼, each value's `n`
-  and the preliminary badge below n = 3; the disclosures at its top come from the catalogue entry's `notes` (the subscription and price
-  table, the models' generations, bug-026, bug-025), so that the page states what the maintainer recorded.
+  links it under "Compared across agents". Rows: per scenario of the baseline arm, one row per model of each side, from
+  the two aggregates: final public and hold-out, checks over every scored step, M-F1, API-equivalent cost with its
+  basis, M-R1 and M-R2 within, then the `m_r_across` row of the group. No headline, no ▲/▼, each value's `n` and the
+  preliminary badge below n = 3; the disclosures at its top come from the catalogue entry's `notes` (the subscription
+  and price table, the models' generations, bug-026, bug-025), so that the page states what the maintainer recorded.
 - **M-R across's pins** (`acrossNoteOf`, `src/results/campaign-compare.ts`): per group, the harness and digest pins
   of that group's arm only, so that a baseline group is compared although the other campaign pins harnesses its
   baseline does not use; caps, approver policy and rate still whole. The comparison file's version is unchanged; a
