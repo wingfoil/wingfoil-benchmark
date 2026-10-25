@@ -53,3 +53,35 @@ and its dry-run profile validating.
   exercised) and how its MCP reached Codex.
 - The dl-022 cut order is not needed (18 runs on one model); if the quota stops the campaign, it resumes after the
   window.
+
+## Execution notes
+
+- `memory add`, the body, `memory submit` (draft → pending) on main on 2026-10-25; dl-025 approved and this task's
+  pending → backlog run by the approver (`e79569ce`, `cf1e3ef8`); `memory submit` (backlog → in-progress) on main.
+- **Offline** (on `task/task-105`): Codex 0.162.1's `config/src/mcp_types.rs` read (`spikes/task-105/out/f1/`, main
+  checkout, git-ignored): a stdio server is `[mcp_servers.<name>]` with `command`, `args`, `env`, its other keys
+  defaulted, `required` false unless set. Requirements 1.37 (`4a8f68b9`); red (`8fbfdf8d`); code (`076a107d`).
+- **Criterion 1** was already met: the runner's merge takes the profile's `manualFile` (task-094); now pinned on its
+  bytes. WingFoil v0.3.0's `init` writes neither `CLAUDE.md` nor `AGENTS.md` (dry run 57's setup diff).
+- **The method page** gains the statement {#other-agents} (how a Codex execution differs, its wingfoil arm v0.2's
+  manual): every execution's `method.html` changes, so the next `site publish` rebuilds them all.
+- **The spike's sessions:** the probe of task-102 runs no arm's setup, which the wingfoil arm needs (its harness, its
+  configuration); the approver is asked whether the spike becomes the two arms' S3 dry runs (10 sessions, which the
+  campaign's estimate needs anyway) instead of two step-1 sessions outside the runner.
+
+### Review
+
+Under dl-020; `scripts/pre-review.sh main` green before each round.
+
+- **Round 1** (an independent read-only agent, sandboxed; the reflog unchanged after it; the offline work): the TOML
+  shape checked against Codex 0.162.1 (`type` dropped, as `deny_unknown_fields` requires), the Claude path unchanged,
+  the scope's table, the campaign's digests those of campaign-002.
+  - **should-fix, fixed:** the AGENTS.md merge test checked nothing new (the doubles run no script; now the setup's
+    exec writes the tool's guide and the merged bytes are asserted); a bad `mcp.json` failed every run instead of the
+    campaign (now refused before anything is built, in `campaign run` and `scenario dry-run`); a server that does not
+    start went unnoticed (now `required = true`); the Codex arm's differences were on no page (now the method page's
+    {#other-agents}; the across-agents page's notes come from the catalogue at publication).
+  - **nits, fixed:** DEL escaped and a lone surrogate refused; env values must be strings; the preset's Claude effort
+    kept in the resolved campaign named in the file's comment; the profile test checks every pin of the estimate's key.
+    **Stated:** a cosmetic edit of a test after the red commit (`076a107d`, an equivalent expression).
+  - Red `3b5839f3`, fix `1430a2cd`.
