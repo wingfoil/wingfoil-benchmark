@@ -1,7 +1,7 @@
 # Traceability (v0.1, v0.2, v0.3)
 
-**Version:** 1.5
-**Date:** 2026-10-24
+**Version:** 1.6
+**Date:** 2026-10-25
 **Status:** Approved
 **Traces to:** [06_features.md](../01_vision/06_features.md) 1.2, [07_sequencer.md](../01_vision/07_sequencer.md) 1.1, [09_experiment-design.md](../01_vision/09_experiment-design.md) 1.1, [scenarios/](scenarios/), [acceptance/](acceptance/), [requirements.md](requirements.md)
 
@@ -69,7 +69,7 @@ Only questions that are active in v0.1 are listed. Q-E2, Q-E3 (deferred in exper
 | F5.1 results store | J2.7 | results.feature | REQ-FMT-06, 07; REQ-RES-01, 06 | W7 |
 | F5.3 run detail | J2.7, J4.2 | results.feature | REQ-CLI-08; REQ-RES-06 | W10 |
 | F5.4 finding note | J4.3 | results.feature | REQ-CLI-07; REQ-RES-05 | W10 |
-| F5.5 landing page | J1, J6.2 | results.feature | REQ-RES-02, 03; REQ-CLI-09 | W11 |
+| F5.5 landing page | J1, J6.2 | results.feature | REQ-RES-02, 03, 11 (v0.3); REQ-CLI-09 | W11; the catalogue and the home W15 (v0.3) |
 | F5.6 manual publish | J2.8 | results.feature | REQ-RES-04, 06; REQ-CLI-09, 11 | W11 |
 | F5.8 method page | J5.4 | results.feature | REQ-RES-02 | W11 |
 | F6.1 S1 | — | scenarios.feature (outline) | scenarios/S1.md; REQ-FMT-04 | W7 |
