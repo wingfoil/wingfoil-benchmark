@@ -2,7 +2,7 @@
 id: dl-025-the-codex-credential-s-scope-widened-to-a-wingfoil-arm-against-its-docs-control-on-terra-dl-022-arm-b
 type: decision-log
 title: "The Codex credential's scope widened to a WingFoil arm against its docs control on Terra (dl-022 arm B)"
-status: draft
+status: pending
 tags: ["codex","security","campaign","wingfoil"]
 ---
 
