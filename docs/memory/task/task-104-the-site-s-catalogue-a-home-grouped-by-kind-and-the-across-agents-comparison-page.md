@@ -149,3 +149,16 @@ Under dl-020; `scripts/pre-review.sh main` green before each round.
   is checked by `readComparisons` when its own execution is built); a comparison file that exists but is not JSON is
   now reported as unreadable, not as unwritten. **The review is closed.**
 - **Rounds:** 3.
+- **Full suites** (`scripts/full-suites.sh task/task-104`, the approver's request in chat): on `eb836afb`, not dirty,
+  LINT 0, TEST 0 (1737 passed, 8 skipped; coverage 97.49 % statements), BUILD 0, BIN 0 (8), DOCKER 0 (22, 2 skipped);
+  log `.cache/full-suites/2026-10-25/task_task-104-eb836afb-182418.txt`.
+
+## Approval notes
+
+- **in-review → approved** (`0e613601`): run by this session at the approver's explicit request in chat (2026-10-25),
+  the status read first, the reason saying so. **Merge:** `--no-ff` on main (`c026b077`).
+- **Worktree removed:** its ignored files were `.cache/arms/` (an arm read from history, rebuilt on demand),
+  `coverage/` and `dist/`, listed before the removal: no evidence (the trial comparison and site of the Execution
+  notes had been removed). Branch `task/task-104` deleted.
+- **Next, the approver's:** `bench campaign compare 81ebb2691f9c/1 4682bcc65d6b/1` and its commit; `bench site build
+  4682bcc65d6b/1`; `bench site publish`; campaign-004 reviewed → published; its transcripts packed as a release asset.
