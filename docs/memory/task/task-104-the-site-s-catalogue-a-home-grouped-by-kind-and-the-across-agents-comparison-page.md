@@ -3,29 +3,62 @@ id: task-104-the-site-s-catalogue-a-home-grouped-by-kind-and-the-across-agents-c
 type: task
 title: "The site's catalogue, a home grouped by kind, and the across-agents comparison page"
 status: draft
-release: ""           # e.g. v0.1
-wave: ""              # e.g. W1
-features: []          # e.g. [F1.1, F3.1]
-acceptance: []        # e.g. [campaign.feature, scenarios.feature]
-requirements: []      # e.g. [REQ-FMT-01, REQ-FMT-02]
-fixes: []             # optional: the bugs this task fixes, e.g. [bug-005-a-bug-cannot-name-…]
+release: v0.3
+wave: W15
+features: [F5.5, F5.2]
+acceptance: [results.feature, comparison.feature]
+requirements: [REQ-RES-02, REQ-RES-04, REQ-RES-07, REQ-CLI-12]
+fixes: []
 tags: ["site","codex","v0.3"]
 ---
 
 ## Context
 
-<!-- Why this task, which wave it belongs to, and what "done" means for the wave's "Ends with". -->
+[campaign-004](../campaign/campaign-004-codex-baseline-campaign.md) (the Codex baseline campaign, dl-022 arm A) is
+`reviewed`: the approver accepted its results as publishable (2026-10-25), to be published only as their own
+cross-agent comparison, never mixed with the Claude headlines (T14, dl-022). The site cannot do that today:
+
+- `site/index.html` (REQ-RES-02 and REQ-RES-04 as amended in 1.26) lists every published execution flat, by
+  hexadecimal id, without saying what each is; the Codex execution would come first, beside the reference campaigns;
+- an execution's landing page has a headline across arms ("harness, not model"), meaningless for one arm;
+- the cross-agent comparison of task-094 (`m_r_across`, REQ-SCO-13 as amended in 1.32) exists only in JSON
+  (task-094's follow-up).
+
+W15 of [plan-005](../../plans/plan-005-release-v0-3.md), before task-103, the approver's choice in chat (2026-10-25),
+with the home's three groups and titles as proposed there. **Done** means: the site's catalogue, the home grouped by
+kind, the across-agents page for `4682bcc65d6b/1` against `81ebb2691f9c/1`, and a one-arm landing page, built from
+the committed results; publishing stays the approver's (`bench site publish`, campaign-004 reviewed → published).
 
 ## Acceptance criteria
 
-<!-- One line per criterion (Gherkin scenario or requirement), each classified as red-first
-     (new behaviour: a failing test precedes the code) or characterization (existing behaviour). -->
+1. **The catalogue:** `campaigns/catalog.yaml` gives each published execution a title, a kind (`reference`,
+   `bridge`, `across-agents`), the release, its date and what it is compared with; it is not part of any campaign
+   file, so no campaign id changes. `bench site build` refuses an execution under `site/` with no catalogue entry, and
+   an entry of an unknown kind, naming it. **Red-first** (`results.feature`).
+2. **The home** (`site/index.html`) shows the preliminary and T1 statements, then the executions grouped by kind in
+   the order reference, bridge, across-agents, each group under its heading and one-line description, each execution
+   newest first with its title, date, agent and models, arms, and links (the execution, its comparisons, an erratum
+   when the catalogue names one). **Red-first.**
+3. **The across-agents page** `across-agents-<a>-<n>-<b>-<m>.html`, rendered for a comparison `bench campaign compare`
+   made of two executions whose agents differ (REQ-CLI-12): the baseline arm, one row per scenario and model of each
+   agent, with final public and hold-out tests, checks, M-F1, API-equivalent cost and its basis (`price-table`
+   flagged), turns, M-R1 and M-R2 within each agent and across (`m_r_across`), `n` and the preliminary badge on every
+   value; no headline and no ▲/▼; the disclosures at its top (the subscription and the price table, the models'
+   generations, the lexical checks of bug-026, S1's step 5 of bug-025). **Red-first** (`comparison.feature`).
+4. **A one-arm execution's landing page** says "baseline only: no harness compared" in place of the headline, and
+   links its across-agents comparison. **Red-first.**
+5. The catalogue holds the four executions: `81ebb2691f9c/1`, `c82a5e74885b/2` (reference), `bf3a1ac7dff5/1`
+   (bridge), `4682bcc65d6b/1` (across-agents); the existing executions' pages are otherwise unchanged.
+   **Characterization** (the site tests and `bench site publish`'s checks pass).
 
 ## Design
 
-<!-- Modules, interfaces, data formats touched; decisions taken and their reasons. -->
-
-## Execution notes
-
-<!-- What happened while building: deviations, blockers, follow-ups (filed as elements, never left
-     here). For every `wingfoil` command: declared vs observed behaviour. -->
+- **The specification first:** requirements 1.36 (REQ-RES-02, the site reads the catalogue too; REQ-RES-04, the
+  home; REQ-RES-07, the across-agents page; REQ-RES-11, the catalogue), `results.feature` and `comparison.feature`
+  amended, traceability (F5.5, F5.2, T14).
+- **Where:** `src/site/profiles.ts` (`rootIndex`) and `render.ts`; the catalogue's schema in `core`; the comparison's
+  data already in `results/comparisons/` (`campaign-compare.ts`), with `m_r_across`.
+- **Why a catalogue:** a title or a kind in the campaign file would change its identity (REQ-FMT-02); the
+  campaign elements are not read by the site (REQ-RES-02), and the catalogue is what the maintainer decides to show.
+- **Out of scope:** dl-022's arm B (a WingFoil arm on Codex); the comparison is made by the approver's command
+  before the build, as every comparison is.
