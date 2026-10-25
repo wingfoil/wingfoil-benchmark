@@ -63,7 +63,8 @@ the committed results; publishing stays the approver's (`bench site publish`, ca
 - **The catalogue** is `site-content/catalog.yaml`, beside `profiles.yaml` and `contests.yaml`, the site's other
   maintainer-written inputs (the Context said `campaigns/`: `site-content/` is where the site's inputs live, and
   `campaigns/` holds what runs). Per execution `<campaign-id>/<n>`: `title`, `kind`, `release`, `agent` (a line),
-  `arms` (a line), optional `erratum` (a repository path the home links). Its schema in `core`, read by
+  `arms` (a line), optional `notes`, `erratum` (an `https://` link: the site is published apart from the repository)
+  and `compared_with` (the executions its comparison pages are against). Its schema in `core`, read by
   `src/site/profiles.ts`.
 - **The home** (`rootIndex`, `src/site/profiles.ts`): the executions under `site/` grouped by kind, each group under
   its heading and one-line description; within a group, newest first by `execution.json`'s end (the date stays the
