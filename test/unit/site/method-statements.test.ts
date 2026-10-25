@@ -21,6 +21,10 @@ const STATEMENTS: readonly (readonly [string, string])[] = [
     'experiment design §1 (object, comparison "with the agent and model fixed"); REQ-RES-03 ("harness, not model"); experiment design §5 T14 (cross-model shown apart)',
   ],
   [
+    'other-agents',
+    'dl-022 (Codex campaigns, never mixed with the Claude headlines, T14); dl-024 and dl-025 (the ChatGPT Plus subscription); REQ-RUN-12 and REQ-RUN-15 as amended in 1.37 (AGENTS.md, the MCP server in config.toml, required); REQ-RUN-09 as amended in 1.32 (`costBasis: price-table`); task-105 Design "Fairness"',
+  ],
+  [
     'auxiliary-models',
     'REQ-RUN-09 as amended in 1.25 (models observed from `modelUsage`) and 1.27 (tokens summed over every model; `costBasis` recorded, an unpriced cost flagged); REQ-RUN-08 as amended in 1.27 (the token cap counts every model); bug-012; bug-016; task-054 Context and its deviation; campaign-001 execution 2 (Haiku 4.5, 0.19 USD); task-055 Design item 4; task-069 Design',
   ],

@@ -8,7 +8,7 @@ import { checkDryRun, runDryRun } from '../runner/index.js';
 import type { DryRunRequest } from '../runner/index.js';
 
 import { parseScenarioRef } from './scenario.js';
-import { codexScopeIssues } from './codex-scope.js';
+import { codexMcpIssues, codexScopeIssues } from './codex-scope.js';
 import { checkSpending, EXIT, portsFor, report, SPENDING_FLAG, USAGE, withInterrupt } from './shared.js';
 import type { Io, Ports } from './shared.js';
 
@@ -89,6 +89,9 @@ export async function dryRunCommand(
     (io.now ?? Date.now)(),
   );
   if (outOfScope.length > 0) return report(outOfScope, io);
+  // An arm's MCP server Codex could not be given is refused before the dry run (task-105).
+  const mcpIssues = codexMcpIssues(profile.agent.name, [arm], root);
+  if (mcpIssues.length > 0) return report(mcpIssues, io);
 
   // dl-015: a real agent's dry run runs its model at the profile's pinned effort; refused first, as `campaign run` does.
   const unpinned = missingEffort(profile.agent, [model]);

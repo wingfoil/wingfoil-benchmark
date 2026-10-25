@@ -1,3 +1,7 @@
+import { readFileSync } from 'node:fs';
+import { relative } from 'node:path';
+
+import { codexMcpServers } from '../agents/index.js';
 import type { Issue } from '../core/index.js';
 
 /**
@@ -113,4 +117,25 @@ export function codexScopeIssues(input: CodexScopeInput, now: number): Issue[] {
     ];
   }
   return [];
+}
+
+/**
+ * The arms' MCP servers Codex is given (REQ-RUN-15 as amended in 1.37), rendered before anything is built: an arm whose
+ * `mcp.json` Codex cannot be given is refused before the run, naming its file. Nothing for another agent.
+ */
+export function codexMcpIssues(
+  agent: string,
+  arms: readonly { readonly mcpPath?: string }[],
+  root: string,
+): Issue[] {
+  if (agent !== 'codex') return [];
+  return arms.flatMap((arm) => {
+    if (arm.mcpPath === undefined) return [];
+    try {
+      codexMcpServers(JSON.parse(readFileSync(arm.mcpPath, 'utf8')) as unknown);
+      return [];
+    } catch (error) {
+      return [{ path: relative(root, arm.mcpPath), message: (error as Error).message }];
+    }
+  });
 }

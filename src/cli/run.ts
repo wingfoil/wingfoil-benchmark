@@ -1,7 +1,7 @@
 import { codexFileSecrets } from '../agents/index.js';
 import { missingCapabilities } from '../arms/index.js';
 import { listPresets } from '../campaign/index.js';
-import { codexScopeIssues } from './codex-scope.js';
+import { codexMcpIssues, codexScopeIssues } from './codex-scope.js';
 import { effortRefusal, fail, missingEffort, ok, reasonOf } from '../core/index.js';
 import type { CampaignFile, Result } from '../core/index.js';
 import { campaignSpendingEur } from '../results/index.js';
@@ -295,6 +295,9 @@ async function runCampaignCommand(
     (io.now ?? Date.now)(),
   );
   if (outOfScope.length > 0) return report(outOfScope, io);
+  // An arm's MCP server Codex could not be given is refused before the run, not by every run (task-105).
+  const mcpIssues = codexMcpIssues(spec.agent.name, checked.value.arms, checked.value.campaign.repoRoot);
+  if (mcpIssues.length > 0) return report(mcpIssues, io);
   // dl-015: a real agent runs every model at a pinned effort, refused here before the estimate.
   const unpinned = missingEffort(spec.agent, campaignModels(spec));
   if (unpinned.length > 0)
