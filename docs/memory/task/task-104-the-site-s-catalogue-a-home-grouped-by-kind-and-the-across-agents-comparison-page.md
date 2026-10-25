@@ -41,14 +41,12 @@ the committed results; publishing stays the approver's (`bench site publish`, ca
    newest first with its title, date, agent and models, arms, and links (the execution, its comparisons, an erratum
    when the catalogue names one). **Red-first.**
 3. **The across-agents page** `across-agents-<earlier-id>-<m>.html` in the newer execution's directory, rendered
-   for a comparison `bench campaign compare`
-   made of two executions whose agents differ (REQ-CLI-12): the baseline arm, one row per scenario and model of each
-   agent, with final public and hold-out tests, checks over every scored step, M-F1, API-equivalent cost and its
-   basis (`price-table` flagged), M-R1 and M-R2 within each agent and across (`m_r_across`), `n` and the preliminary badge on every
-   value; no headline and no ▲/▼; the disclosures at its top (the subscription and the price table, the models'
-   generations, the lexical checks of bug-026, S1's step 5 of bug-025). M-R across compares the pins of the group's
-   own arm, so that a baseline group is measured although the other campaign pins harnesses its baseline does not
-   use. **Red-first** (`comparison.feature`).
+   for a comparison `bench campaign compare` made of two executions whose agents differ (REQ-CLI-12): the baseline
+   arm, one row per scenario and model of each agent, with final public and hold-out tests, checks over every scored
+   step, M-F1, API-equivalent cost and its basis (`price-table` flagged), M-R1 and M-R2 within each agent and across
+   (`m_r_across`), each value's `n`, and the preliminary badge below n = 3; no headline and no ▲/▼; the disclosures at its top (the subscription and the price table, the models'
+   generations, the lexical checks of bug-026, S1's step 5 of bug-025). M-R across measures a baseline group
+   although the other campaign pins harnesses its baseline does not use. **Red-first** (`comparison.feature`).
 4. **A one-arm execution's landing page** says "baseline only: no harness compared" in place of the headline, and
    links its across-agents comparison. **Red-first.**
 5. The catalogue holds the four executions: `81ebb2691f9c/1`, `c82a5e74885b/2` (reference), `bf3a1ac7dff5/1`
