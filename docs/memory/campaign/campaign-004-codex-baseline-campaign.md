@@ -97,8 +97,22 @@ Figures from the scoring's output; the run costs per model in `results/4682bcc65
 
 ## Results review
 
-<!-- Anomalies, runs to rerun, and whether the results are publishable. -->
+- **Accepted as publishable** by the approver (scored → reviewed, `57f5a016`, 2026-10-25), to be published only as its
+  own comparison across agents (T14, dl-022). A second `memory approve` run by this session (`46375b98`) passed the
+  publish gate by mistake; reverted at the approver's request (`6ae65296`).
+- **Anomalies, none blocking:** S1's step 5 bimodal under Codex too (Luna r1 and r3 158/165, bug-025); the content
+  checks lexical (S2's and S3's, bug-026); every group but S1 at n = 1, preliminary. No rerun.
+- **Published** (reviewed → published, run by this session at the approver's request, 2026-10-25):
+  - the comparison `results/comparisons/4682bcc65d6b-1/81ebb2691f9c-1.json`, run by the approver and rerun on a
+    fresh build (the first run's `dist/` predated task-104's per-arm rule and measured no M-R across); the baseline's
+    M-R across measured in all four scenarios (S1 M-R1 164/165, M-R2 0.69);
+  - the site on `gh-pages` (`8ba6fd95`): the home grouped by kind (task-104), this execution under "Across agents",
+    its across-agents page against `81ebb2691f9c/1`;
+  - the transcripts, 81, as the GitHub release `4682bcc65d6b-1` (`transcripts.tar.gz`, sha256
+    `9164c590758527e149a9de7c4621abfd1ba0225ba162d036e71b1e9a0c96e0c8`), after a scan of the archive for the Codex
+    credential's values (clean); the asset recorded in the runs (`004ea7cb`); the built site unchanged by it.
 
 ## Findings
 
-<!-- Finding notes produced (F5.4) and where they went in WingFoil. -->
+None filed: a baseline-only campaign measures no harness. dl-022's arm B (a WingFoil arm on Codex) is the approver's
+next question, which needs dl-024's scope widened.
