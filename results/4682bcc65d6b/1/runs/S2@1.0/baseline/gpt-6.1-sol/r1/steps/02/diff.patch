@@ -1,0 +1,96 @@
+diff --git a/src/coupons.ts b/src/coupons.ts
+index 4b7df8e652e5d52033abb2ea07d763007ccce283..496aed7828812115eb643d5d3378af00c2d6948f 100644
+--- a/src/coupons.ts
++++ b/src/coupons.ts
+@@ -74,7 +74,7 @@ export class Coupons {
+     const coupon = this.#coupons.get(canonicalCode(code));
+     if (coupon === undefined) throw new CouponError(code, 'unknown code');
+     if (compareDates(date, coupon.validFrom) < 0) throw new CouponError(coupon.code, 'not valid yet');
+-    if (compareDates(date, coupon.validUntil) >= 0) throw new CouponError(coupon.code, 'expired');
++    if (compareDates(date, coupon.validUntil) > 0) throw new CouponError(coupon.code, 'expired');
+     if (amount < coupon.minimumCents) throw new CouponError(coupon.code, 'order below the minimum amount');
+     if (coupon.singleUse && this.#usedBy.has(coupon.code)) throw new CouponError(coupon.code, 'already used');
+     return coupon;
+diff --git a/src/pricing.ts b/src/pricing.ts
+index 3d07b8e66d51d75411d7694eb6b4d79c95913fee..8d2e07ede7fc792a7a1ada9fffd4bebfedb73c6c 100644
+--- a/src/pricing.ts
++++ b/src/pricing.ts
+@@ -56,7 +56,7 @@ export function priceOrder(inputs: readonly LineInput[], coupon?: Coupon): Price
+   const volumeTotal = sum(volume);
+ 
+   const couponTotal =
+-    coupon === undefined ? 0 : capped(couponDiscount(coupon, grossTotal), volumeTotal, grossTotal);
++    coupon === undefined ? 0 : capped(couponDiscount(coupon, sum(afterVolume)), volumeTotal, grossTotal);
+   const couponShares = allocate(couponTotal, afterVolume);
+ 
+   const lines = inputs.map(({ product, quantity }, index): PricedLine => {
+diff --git a/test/reports.test.ts b/test/reports.test.ts
+index 98b3fbfa3bcd59bb3565d7e014506924bcb088a0..08e39e93288e342d8d0ad499d60ad57a82dd6a52 100644
+--- a/test/reports.test.ts
++++ b/test/reports.test.ts
+@@ -1,10 +1,64 @@
+ import assert from 'node:assert/strict';
+ import { describe, it } from 'node:test';
+ 
+-import { createShop } from '../src/index.ts';
++import { CouponError, createShop, receipt } from '../src/index.ts';
+ import { lineVat } from '../src/tax.ts';
+ 
+ describe('reported order issues', () => {
++  for (const [percent, couponDiscount, goods] of [[10, 540, 4860], [100, 2400, 3000]]) {
++    it(`applies a ${percent}% coupon after the volume discount, within the overall cap`, () => {
++      const { catalog, inventory, coupons, orders } = createShop();
++      catalog.add({ sku: 'NOTEBOOK', name: 'Notebook', priceCents: 500, vatClass: 'standard', weightGrams: 50 });
++      inventory.restock('NOTEBOOK', 12);
++      coupons.add({ code: 'SAVE', kind: 'percent', value: percent, validFrom: '2026-01-01', validUntil: '2026-12-31' });
++      const request = { customer: 'finance', date: '2026-10-25', lines: [{ sku: 'NOTEBOOK', quantity: 12 }], coupon: 'SAVE' };
++      const quote = orders.quote(request);
++      const order = orders.place(request);
++      assert.deepEqual(order.totals, quote.totals);
++      assert.equal(order.totals.grossCents, 6000);
++      assert.equal(order.totals.volumeDiscountCents, 600);
++      assert.equal(order.totals.couponDiscountCents, couponDiscount);
++      assert.equal(order.totals.goodsCents, goods);
++      assert.equal(order.lines[0]?.netCents, goods);
++    });
++  }
++
++  it('accepts AUTUMN on both boundary days and refuses it outside the validity period', () => {
++    const { catalog, inventory, coupons, orders } = createShop();
++    catalog.add({ sku: 'BOOK', name: 'Book', priceCents: 1000, vatClass: 'reduced', weightGrams: 100 });
++    inventory.restock('BOOK', 2);
++    coupons.add({ code: 'AUTUMN', kind: 'percent', value: 10, validFrom: '2026-11-01', validUntil: '2026-11-30' });
++    const request = { customer: 'Luca', lines: [{ sku: 'BOOK', quantity: 1 }], coupon: 'AUTUMN' };
++    for (const date of ['2026-10-31', '2026-12-01']) {
++      assert.throws(() => orders.quote({ ...request, date }), CouponError);
++      assert.throws(() => orders.place({ ...request, date }), CouponError);
++    }
++    for (const date of ['2026-11-01', '2026-11-30']) {
++      assert.equal(orders.quote({ ...request, date }).totals.couponDiscountCents, 100);
++      assert.equal(orders.place({ ...request, date }).totals.couponDiscountCents, 100);
++    }
++  });
++
++  it('accepts a coupon whose first and last valid days are the same', () => {
++    const { coupons } = createShop();
++    coupons.add({ code: 'TODAY', kind: 'fixed', value: 100, validFrom: '2026-11-30', validUntil: '2026-11-30' });
++    assert.equal(coupons.redeemable('TODAY', '2026-11-30', 1000).code, 'TODAY');
++    assert.throws(() => coupons.redeemable('TODAY', '2026-11-29', 1000), CouponError);
++    assert.throws(() => coupons.redeemable('TODAY', '2026-12-01', 1000), CouponError);
++  });
++
++  it('shows the required 22% VAT on shipping as its own receipt line', () => {
++    const { catalog, inventory, orders } = createShop();
++    catalog.add({ sku: 'BOOK', name: 'Book', priceCents: 1000, vatClass: 'exempt', weightGrams: 100 });
++    inventory.restock('BOOK', 1);
++    const order = orders.place({ customer: 'Anna', date: '2026-10-25', lines: [{ sku: 'BOOK', quantity: 1 }] });
++    assert.equal(order.totals.shippingCents, 490);
++    assert.equal(order.totals.vatCents, 0);
++    assert.equal(order.totals.shippingVatCents, 108);
++    assert.equal(order.totals.totalCents, 1598);
++    assert.match(receipt(order), /VAT on shipping\s+€1\.08/);
++  });
++
+   it('looks up and orders mixed-case, padded SKUs under their canonical code', () => {
+     const { catalog, inventory, orders } = createShop();
+     const product = catalog.add({ sku: 'LB-220', name: 'Lamp', priceCents: 199, vatClass: 'standard', weightGrams: 100 });

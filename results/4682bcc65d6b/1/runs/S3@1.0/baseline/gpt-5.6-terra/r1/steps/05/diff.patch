@@ -1,0 +1,77 @@
+diff --git a/src/index.ts b/src/index.ts
+index 6446997d6fe79b6d715a670340698dab7fe39d39..564e4e90d2a8e12645ef7f90f4074442675782f5 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -33,6 +33,7 @@ export interface RentalService {
+   addEquipment(item: Equipment): void;
+   quote(request: RentalRequest): RentalQuote;
+   book(request: RentalRequest): Booking;
++  cancel(bookingId: string, at: string): { bookingId: string; refund: number };
+   availability(query: AvailabilityQuery): string[];
+ }
+ 
+@@ -53,6 +54,8 @@ const LONG_RENTAL_DISCOUNT = 0.1;
+ export function createRentalService(): RentalService {
+   const equipment = new Map<string, Equipment>();
+   const bookingsByItem = new Map<string, StoredBooking[]>();
++  const bookingsById = new Map<string, StoredBooking>();
++  const cancelledBookingIds = new Set<string>();
+   let nextBookingNumber = 1;
+ 
+   function getEquipment(itemId: unknown): Equipment {
+@@ -113,10 +116,37 @@ export function createRentalService(): RentalService {
+       endTime: period.endTime,
+     };
+     itemBookings.push(booking);
++    bookingsById.set(booking.id, booking);
+ 
+     return toBooking(booking);
+   }
+ 
++  function cancel(bookingId: string, at: string): { bookingId: string; refund: number } {
++    if (typeof bookingId !== 'string') {
++      throw new Error('Booking id must be a string.');
++    }
++
++    const cancellationTime = parseHourUtc(at, 'cancellation time');
++    const booking = bookingsById.get(bookingId);
++
++    if (!booking) {
++      if (cancelledBookingIds.has(bookingId)) {
++        throw new Error(`Booking "${bookingId}" has already been cancelled.`);
++      }
++      throw new Error(`Unknown booking: "${bookingId}".`);
++    }
++
++    const itemBookings = bookingsByItem.get(booking.itemId)!;
++    itemBookings.splice(itemBookings.indexOf(booking), 1);
++    bookingsById.delete(bookingId);
++    cancelledBookingIds.add(bookingId);
++
++    return {
++      bookingId,
++      refund: cancellationTime < booking.startTime ? booking.total : 0,
++    };
++  }
++
+   function availability(query: AvailabilityQuery): string[] {
+     const period = validatePeriod(query);
+     validateAvailabilityKind(query);
+@@ -131,7 +161,7 @@ export function createRentalService(): RentalService {
+       .sort();
+   }
+ 
+-  return { addEquipment, quote, book, availability };
++  return { addEquipment, quote, book, cancel, availability };
+ }
+ 
+ function validateEquipment(item: Equipment): void {
+@@ -199,7 +229,7 @@ function quoteHourlyRental(item: Equipment, hours: number): number {
+   return item.hourlyPrice * hours;
+ }
+ 
+-function parseHourUtc(value: string, name: 'start' | 'end'): number {
++function parseHourUtc(value: string, name: string): number {
+   const match = HOUR_UTC.exec(value);
+   if (!match) {
+     throw new Error(`Rental ${name} must be on the hour UTC.`);

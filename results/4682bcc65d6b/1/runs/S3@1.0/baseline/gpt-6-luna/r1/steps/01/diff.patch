@@ -1,0 +1,131 @@
+diff --git a/src/index.ts b/src/index.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..6577fa3fe07680c59ba1f91ce0f67f6a0e1a1364
+--- /dev/null
++++ b/src/index.ts
+@@ -0,0 +1,125 @@
++export type EquipmentKind = 'board' | 'sail';
++
++export interface Equipment {
++  id: string;
++  kind: EquipmentKind;
++  dailyPrice: number;
++}
++
++export interface RentalRequest {
++  itemId: string;
++  start: string;
++  end: string;
++}
++
++export interface RentalQuote extends RentalRequest {
++  total: number;
++}
++
++export interface RentalBooking extends RentalQuote {
++  id: string;
++}
++
++export interface RentalService {
++  addEquipment(item: Equipment): void;
++  quote(request: RentalRequest): RentalQuote;
++  book(request: RentalRequest): RentalBooking;
++}
++
++const DAY_IN_MILLISECONDS = 24 * 60 * 60 * 1000;
++
++function parseUtcMidnight(value: string): number {
++  // Accept ISO calendar timestamps at midnight, with UTC expressed as Z or
++  // an explicit zero offset. Fractional seconds are allowed only when zero.
++  const match = /^(\d{4})-(\d{2})-(\d{2})T00:00(?::00(?:\.0+)?)?(?:Z|\+00:00)$/.exec(value);
++  if (!match) {
++    throw new Error('Rental dates must be ISO-8601 UTC midnights');
++  }
++
++  const year = Number(match[1]);
++  const month = Number(match[2]);
++  const day = Number(match[3]);
++  const date = new Date(0);
++  date.setUTCFullYear(year, month - 1, day);
++  date.setUTCHours(0, 0, 0, 0);
++  const timestamp = date.getTime();
++  if (
++    date.getUTCFullYear() !== year ||
++    date.getUTCMonth() !== month - 1 ||
++    date.getUTCDate() !== day
++  ) {
++    throw new Error('Rental dates must be valid calendar dates');
++  }
++  return timestamp;
++}
++
++export function createRentalService(): RentalService {
++  const equipment = new Map<string, Equipment>();
++  const bookings: RentalBooking[] = [];
++  let nextBookingId = 1;
++
++  function quote(request: RentalRequest): RentalQuote {
++    const item = equipment.get(request.itemId);
++    if (!item) {
++      throw new Error(`Unknown equipment item: ${request.itemId}`);
++    }
++
++    const start = parseUtcMidnight(request.start);
++    const end = parseUtcMidnight(request.end);
++    if (end <= start) {
++      throw new Error('Rental end must be after rental start');
++    }
++
++    const numberOfDays = (end - start) / DAY_IN_MILLISECONDS;
++    const total = numberOfDays * item.dailyPrice;
++    if (!Number.isSafeInteger(total)) {
++      throw new Error('Rental total exceeds the supported integer range');
++    }
++    return {
++      itemId: request.itemId,
++      start: request.start,
++      end: request.end,
++      total,
++    };
++  }
++
++  return {
++    addEquipment(item) {
++      if (typeof item.id !== 'string' || item.id.length === 0) {
++        throw new Error('Equipment id must be a non-empty string');
++      }
++      if (item.kind !== 'board' && item.kind !== 'sail') {
++        throw new Error('Equipment kind must be board or sail');
++      }
++      if (!Number.isSafeInteger(item.dailyPrice) || item.dailyPrice < 0) {
++        throw new Error('Daily price must be a non-negative integer number of cents');
++      }
++      if (equipment.has(item.id)) {
++        throw new Error(`Equipment item already exists: ${item.id}`);
++      }
++      equipment.set(item.id, { ...item });
++    },
++
++    quote,
++
++    book(request) {
++      const rentalQuote = quote(request);
++      const start = parseUtcMidnight(request.start);
++      const end = parseUtcMidnight(request.end);
++      const overlaps = bookings.some((booking) => {
++        if (booking.itemId !== request.itemId) return false;
++        return start < parseUtcMidnight(booking.end) && parseUtcMidnight(booking.start) < end;
++      });
++      if (overlaps) {
++        throw new Error('Equipment item is already booked for part of this period');
++      }
++
++      const booking: RentalBooking = {
++        id: String(nextBookingId++),
++        ...rentalQuote,
++      };
++      bookings.push(booking);
++      return { ...booking };
++    },
++  };
++}

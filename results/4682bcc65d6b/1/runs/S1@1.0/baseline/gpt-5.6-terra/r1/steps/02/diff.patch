@@ -1,0 +1,278 @@
+diff --git a/src/index.ts b/src/index.ts
+index 204f22c3191f52c79ba1748db4177e71953bd2c7..5e71d421e5e3b86c8ee37711d363849477fc2386 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -51,6 +51,273 @@ export function resolvePointer(document: unknown, pointer: string): unknown {
+   return value;
+ }
+ 
++/**
++ * Applies an RFC 6902 JSON Patch without changing the supplied document.
++ *
++ * @throws {Error} If the document or patch is not JSON, the patch is malformed,
++ * or an operation cannot be applied.
++ */
++export function applyPatch(document: unknown, patch: unknown): unknown {
++  if (!Array.isArray(patch)) {
++    throw new Error("A JSON Patch must be an array of operations");
++  }
++
++  // Besides preserving the caller's document, cloning makes a copied value a
++  // distinct JSON value, as required by the copy operation.
++  let result = cloneJsonValue(document);
++
++  for (const operation of patch) {
++    result = applyOperation(result, operation);
++  }
++
++  return result;
++}
++
++function applyOperation(document: unknown, operation: unknown): unknown {
++  if (!isJsonObject(operation)) {
++    throw new Error("Each JSON Patch operation must be an object");
++  }
++
++  const op = requiredStringMember(operation, "op");
++  const path = parsePointer(requiredStringMember(operation, "path"));
++
++  switch (op) {
++    case "add":
++      return addValue(document, path, cloneJsonValue(requiredMember(operation, "value")));
++    case "remove":
++      return removeValue(document, path);
++    case "replace":
++      return replaceValue(document, path, cloneJsonValue(requiredMember(operation, "value")));
++    case "move": {
++      const from = parsePointer(requiredStringMember(operation, "from"));
++
++      if (from.length === path.length && from.every((token, index) => token === path[index])) {
++        return document;
++      }
++
++      // A value cannot be moved into one of its own descendants.  Compare
++      // decoded tokens, so equivalent escaped spellings are treated alike.
++      if (from.length < path.length && from.every((token, index) => token === path[index])) {
++        throw new Error("Cannot move a value into one of its children");
++      }
++
++      const value = getValue(document, from);
++      return addValue(removeValue(document, from), path, value);
++    }
++    case "copy": {
++      const value = cloneJsonValue(getValue(document, parsePointer(requiredStringMember(operation, "from"))));
++      return addValue(document, path, value);
++    }
++    case "test": {
++      const expected = cloneJsonValue(requiredMember(operation, "value"));
++      if (!jsonEqual(getValue(document, path), expected)) {
++        throw new Error("JSON Patch test operation failed");
++      }
++      return document;
++    }
++    default:
++      throw new Error(`Unsupported JSON Patch operation: ${op}`);
++  }
++}
++
++function addValue(document: unknown, path: string[], value: unknown): unknown {
++  if (path.length === 0) {
++    return value;
++  }
++
++  const [parent, token] = getParent(document, path);
++  if (Array.isArray(parent)) {
++    if (token === "-") {
++      parent.push(value);
++      return document;
++    }
++    const index = arrayIndex(token, path);
++    if (index > parent.length) {
++      throw new Error(`JSON Patch add index is outside the array: /${path.join("/")}`);
++    }
++    parent.splice(index, 0, value);
++    return document;
++  }
++
++  setObjectMember(parent, token, value);
++  return document;
++}
++
++function removeValue(document: unknown, path: string[]): unknown {
++  if (path.length === 0) {
++    // RFC 6902 defines JSON documents as values.  Removing that sole value
++    // would leave no JSON document to return.
++    throw new Error("Cannot remove the root JSON document");
++  }
++
++  const [parent, token] = getParent(document, path);
++  if (Array.isArray(parent)) {
++    const index = existingArrayIndex(token, parent, path);
++    parent.splice(index, 1);
++    return document;
++  }
++  if (!Object.prototype.hasOwnProperty.call(parent, token)) {
++    throw new Error(`JSON Pointer does not resolve to a value: /${path.join("/")}`);
++  }
++  delete parent[token];
++  return document;
++}
++
++function replaceValue(document: unknown, path: string[], value: unknown): unknown {
++  if (path.length === 0) {
++    return value;
++  }
++
++  const [parent, token] = getParent(document, path);
++  if (Array.isArray(parent)) {
++    parent[existingArrayIndex(token, parent, path)] = value;
++    return document;
++  }
++  if (!Object.prototype.hasOwnProperty.call(parent, token)) {
++    throw new Error(`JSON Pointer does not resolve to a value: /${path.join("/")}`);
++  }
++  setObjectMember(parent, token, value);
++  return document;
++}
++
++function getParent(document: unknown, path: string[]): [Record<string, unknown> | unknown[], string] {
++  const parent = getValue(document, path.slice(0, -1));
++  if (!isJsonObject(parent) && !Array.isArray(parent)) {
++    throw new Error(`JSON Pointer does not resolve to a container: /${path.join("/")}`);
++  }
++  return [parent, path[path.length - 1]];
++}
++
++function getValue(document: unknown, path: string[]): unknown {
++  let value = document;
++  for (const token of path) {
++    if (Array.isArray(value)) {
++      value = value[existingArrayIndex(token, value, path)];
++      continue;
++    }
++    if (!isJsonObject(value) || !Object.prototype.hasOwnProperty.call(value, token)) {
++      throw new Error(`JSON Pointer does not resolve to a value: /${path.join("/")}`);
++    }
++    value = value[token];
++  }
++  return value;
++}
++
++function existingArrayIndex(token: string, array: unknown[], path: string[]): number {
++  const index = arrayIndex(token, path);
++  if (index >= array.length || !Object.prototype.hasOwnProperty.call(array, index)) {
++    throw new Error(`JSON Pointer does not resolve to a value: /${path.join("/")}`);
++  }
++  return index;
++}
++
++function arrayIndex(token: string, path: string[]): number {
++  if (!isArrayIndex(token)) {
++    throw new Error(`Invalid array index in JSON Pointer: ${token}`);
++  }
++  return Number(token);
++}
++
++function parsePointer(pointer: string): string[] {
++  if (pointer === "") {
++    return [];
++  }
++  if (!pointer.startsWith("/")) {
++    throw new Error("A non-empty JSON Pointer must start with '/'");
++  }
++  return pointer.slice(1).split("/").map(decodeReferenceToken);
++}
++
++function requiredMember(object: Record<string, unknown>, member: string): unknown {
++  if (!Object.prototype.hasOwnProperty.call(object, member)) {
++    throw new Error(`JSON Patch operation is missing '${member}'`);
++  }
++  return object[member];
++}
++
++function requiredStringMember(object: Record<string, unknown>, member: string): string {
++  const value = requiredMember(object, member);
++  if (typeof value !== "string") {
++    throw new Error(`JSON Patch operation member '${member}' must be a string`);
++  }
++  return value;
++}
++
++function setObjectMember(object: Record<string, unknown>, member: string, value: unknown): void {
++  // Assignment to __proto__ on a normal object changes its prototype instead
++  // of creating the JSON member named "__proto__".
++  Object.defineProperty(object, member, {
++    configurable: true,
++    enumerable: true,
++    value,
++    writable: true,
++  });
++}
++
++function cloneJsonValue(value: unknown, ancestors = new WeakSet<object>()): unknown {
++  if (value === null || typeof value === "string" || typeof value === "boolean") {
++    return value;
++  }
++  if (typeof value === "number") {
++    if (!Number.isFinite(value)) {
++      throw new Error("A JSON number must be finite");
++    }
++    return value;
++  }
++  if (Array.isArray(value)) {
++    if (ancestors.has(value)) {
++      throw new Error("A JSON value cannot contain a cycle");
++    }
++    ancestors.add(value);
++    const copy: unknown[] = [];
++    for (let index = 0; index < value.length; index += 1) {
++      if (!Object.prototype.hasOwnProperty.call(value, index)) {
++        throw new Error("A JSON array cannot contain holes");
++      }
++      copy.push(cloneJsonValue(value[index], ancestors));
++    }
++    ancestors.delete(value);
++    return copy;
++  }
++  if (!isJsonObject(value)) {
++    throw new Error("Value is not valid JSON");
++  }
++  if (ancestors.has(value)) {
++    throw new Error("A JSON value cannot contain a cycle");
++  }
++  ancestors.add(value);
++  const copy: Record<string, unknown> = {};
++  for (const key of Object.keys(value)) {
++    setObjectMember(copy, key, cloneJsonValue(value[key], ancestors));
++  }
++  ancestors.delete(value);
++  return copy;
++}
++
++function isJsonObject(value: unknown): value is Record<string, unknown> {
++  if (value === null || typeof value !== "object" || Array.isArray(value)) {
++    return false;
++  }
++  const prototype = Object.getPrototypeOf(value);
++  return prototype === Object.prototype || prototype === null;
++}
++
++function jsonEqual(left: unknown, right: unknown): boolean {
++  if (left === right) {
++    return true;
++  }
++  if (Array.isArray(left) && Array.isArray(right)) {
++    return left.length === right.length && left.every((item, index) => jsonEqual(item, right[index]));
++  }
++  if (!isJsonObject(left) || !isJsonObject(right)) {
++    return false;
++  }
++  const leftKeys = Object.keys(left);
++  const rightKeys = Object.keys(right);
++  return leftKeys.length === rightKeys.length
++    && leftKeys.every((key) => Object.prototype.hasOwnProperty.call(right, key) && jsonEqual(left[key], right[key]));
++}
++
+ function decodeReferenceToken(token: string): string {
+   let decoded = "";
+ 

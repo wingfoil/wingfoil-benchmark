@@ -1,0 +1,115 @@
+diff --git a/README.md b/README.md
+index d27cb04beba589383f94f36b68bba7a2670a883c..1e67160e1b8b975efa1876c1d758bb7b06d3333b 100644
+--- a/README.md
++++ b/README.md
+@@ -15,6 +15,10 @@ Prices and totals are nonnegative safe integer euro cents. Equipment IDs must be
+ allowed. Quotes do not reserve equipment or check availability. Invalid inputs and booking conflicts
+ throw errors.
+ 
++Use `availability({ start, end, kind? })` to get sorted equipment IDs that are free for the entire
++period. Omit `kind` to include both boards and sails. It uses the same period rules as bookings and
++does not reserve equipment.
++
+ Cancellations are not implemented yet. The policy for future cancellation support is no refund when
+ cancelled less than 24 hours before the booking starts, and a full refund otherwise (including exactly
+ 24 hours before the start).
+diff --git a/src/index.ts b/src/index.ts
+index 6a808e4d4da2514e0ea4ee5eeec661a35ff8cfdb..67ecfd58ac3d7400e4b614865b97f983b7bedaab 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -10,6 +10,12 @@ export interface RentalRequest {
+   end: string;
+ }
+ 
++export interface AvailabilityQuery {
++  start: string;
++  end: string;
++  kind?: Equipment['kind'];
++}
++
+ export interface RentalQuote extends RentalRequest {
+   total: number;
+ }
+@@ -77,5 +83,20 @@ export function createRentalService() {
+     return booking;
+   }
+ 
+-  return { addEquipment, quote, book };
++  function availability(query: AvailabilityQuery): string[] {
++    const start = midnight(query.start);
++    const end = midnight(query.end);
++    if (end <= start) throw new Error('Rental end must be after its start');
++    if (query.kind !== undefined && query.kind !== 'board' && query.kind !== 'sail') {
++      throw new Error('Equipment kind must be board or sail');
++    }
++    return [...equipment.values()]
++      .filter(item => (query.kind === undefined || item.kind === query.kind)
++        && !bookings.some(existing => existing.booking.itemId === item.id
++          && start < existing.end && existing.start < end))
++      .map(item => item.id)
++      .sort();
++  }
++
++  return { addEquipment, quote, book, availability };
+ }
+diff --git a/test/rental.test.mjs b/test/rental.test.mjs
+index d7b5c2736f1d8ead23c213716b73f9e28ae5e6ec..a4f55e9cdacfccb788be19aef4000c1d473cbd7a 100644
+--- a/test/rental.test.mjs
++++ b/test/rental.test.mjs
+@@ -87,3 +87,56 @@ test('caller mutations cannot change equipment or existing reservations', () =>
+   assert.equal(service.quote(request()).total, 5000);
+   assert.throws(() => service.book(request()));
+ });
++
++test('availability returns sorted ids, optionally filtered by kind, without reserving', () => {
++  const service = setup();
++  service.addEquipment({ id: 'another-board', kind: 'board', dailyPrice: Number.MAX_SAFE_INTEGER });
++  const { start, end } = request();
++  assert.deepEqual(service.availability({ start, end }), ['another-board', 'board', 'sail']);
++  assert.deepEqual(service.availability({ start, end, kind: 'board' }), ['another-board', 'board']);
++  assert.deepEqual(service.availability({ start, end, kind: 'sail' }), ['sail']);
++  const result = service.availability({ start, end });
++  result.length = 0;
++  service.book(request());
++  assert.deepEqual(service.availability({ start, end }), ['another-board', 'sail']);
++  assert.deepEqual(setup().availability({ start, end }), ['board', 'sail']);
++});
++
++test('availability excludes every overlap and allows adjacent periods', () => {
++  const service = setup();
++  service.book(request('2026-06-10T00:00:00Z', '2026-06-15T00:00:00Z'));
++  for (const [start, end] of [[10, 15], [11, 14], [9, 16], [9, 11], [14, 16]]) {
++    assert.deepEqual(service.availability({
++      start: `2026-06-${String(start).padStart(2, '0')}T00:00:00+00:00`,
++      end: `2026-06-${end}T00:00:00.000Z`,
++    }), ['sail']);
++  }
++  for (const [start, end] of [[8, 10], [15, 17]]) {
++    assert.deepEqual(service.availability({
++      start: `2026-06-${String(start).padStart(2, '0')}T00:00:00Z`,
++      end: `2026-06-${end}T00:00:00Z`,
++      kind: 'board',
++    }), ['board']);
++  }
++  service.book(request('2026-06-10T00:00:00Z', '2026-06-15T00:00:00Z', 'sail'));
++  assert.deepEqual(service.availability({
++    start: '2026-06-10T00:00:00Z', end: '2026-06-15T00:00:00Z',
++  }), []);
++});
++
++test('availability validates periods and kinds even with no equipment', () => {
++  const service = createRentalService();
++  const { start, end } = request();
++  assert.deepEqual(service.availability({ start, end }), []);
++  for (const invalid of ['invalid', '2026-02-30T00:00:00Z', '2026-06-01',
++    '2026-06-01T00:00:00', '2026-06-01T01:00:00Z', '2026-06-01T00:00:00+01:00',
++    '2026-06-01T00:00:00.001Z', undefined]) {
++    assert.throws(() => service.availability({ start: invalid, end }));
++    assert.throws(() => service.availability({ start, end: invalid }));
++  }
++  assert.throws(() => service.availability({ start, end: start }));
++  assert.throws(() => service.availability({ start: end, end: start }));
++  for (const kind of ['mast', '', null]) {
++    assert.throws(() => service.availability({ start, end, kind }));
++  }
++});

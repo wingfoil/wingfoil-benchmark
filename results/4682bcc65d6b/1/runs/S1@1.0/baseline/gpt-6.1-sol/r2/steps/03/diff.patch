@@ -1,0 +1,188 @@
+diff --git a/README.md b/README.md
+index ac40a2ecba9abb83e51b9a6e407d5b5155271084..f775a4556b5e202cd32cac46a5a857588ce53249 100644
+--- a/README.md
++++ b/README.md
+@@ -21,4 +21,17 @@ returns `{ items: ["first", "second"] }`. Invalid patches, unresolved paths, and
+ failed tests throw errors. An empty path targets the whole document; removing
+ the root returns `undefined`, and a subsequent root `add` can restore it.
+ 
++Operations are evaluated in order and stop at the first error; a failed patch
++leaves both inputs unchanged. `move` resolves its destination after removing its
++source, and cannot move a value into one of its descendants. `test` compares JSON
++values structurally, ignoring object member order. Members not defined for an
++operation are ignored.
++
++Pass JSON values directly: finite numbers, strings, booleans, null, dense arrays,
++and plain objects (including objects with a null prototype). Operation objects
++must also be plain objects, with their required members as own properties.
++Sparse arrays, cycles, and non-JSON values such as `undefined` are errors in the
++document or required `value` members. Arrays are read by their own indexed
++elements, regardless of custom iterators or inherited elements.
++
+ Run the tests with `npm test` (Node.js 22.18 or later, with native TypeScript support).
+diff --git a/src/index.ts b/src/index.ts
+index 53e7f401c1368351b734365ca17ad3d76dde9476..3e53c3b730308a6b01d6835156f3ca4689a6ada1 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -8,7 +8,7 @@ export function resolvePointer(document: unknown, pointer: string): unknown {
+   return resolveTokens(document, parsePointer(pointer));
+ }
+ 
+-function parsePointer(pointer: string): string[] {
++function parsePointer(pointer: unknown): string[] {
+   if (
+     typeof pointer !== "string" ||
+     (pointer !== "" && !pointer.startsWith("/")) ||
+@@ -56,6 +56,12 @@ function resolveTokens(document: unknown, tokens: string[]): unknown {
+ 
+ type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
+ 
++function isJsonObject(value: unknown): value is Record<string, unknown> {
++  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
++  const prototype = Object.getPrototypeOf(value);
++  return prototype === Object.prototype || prototype === null;
++}
++
+ // Defining an own property also handles the JSON member "__proto__" safely.
+ function setMember(object: object, key: string, value: JsonValue): void {
+   Object.defineProperty(object, key, {
+@@ -72,10 +78,14 @@ function cloneJson(value: unknown, ancestors = new Set<object>()): JsonValue {
+   ancestors.add(value);
+   try {
+     if (Array.isArray(value)) {
+-      return Array.from(value, (element) => cloneJson(element, ancestors));
++      const result: JsonValue[] = [];
++      for (let index = 0; index < value.length; index++) {
++        if (!Object.hasOwn(value, index)) throw new Error("Expected a dense JSON array");
++        result.push(cloneJson(value[index], ancestors));
++      }
++      return result;
+     }
+-    const prototype = Object.getPrototypeOf(value);
+-    if (prototype !== Object.prototype && prototype !== null) {
++    if (!isJsonObject(value)) {
+       throw new Error("Expected a JSON object");
+     }
+     const result: { [key: string]: JsonValue } = {};
+@@ -147,8 +157,12 @@ export function applyPatch(document: unknown, patch: unknown): unknown {
+     }
+   }
+ 
+-  for (const operation of patch) {
+-    if (operation === null || typeof operation !== "object" || Array.isArray(operation) ||
++  // JSON arrays are ordered own elements, independent of JavaScript iterators
++  // or properties inherited through an array's prototype.
++  for (let index = 0; index < patch.length; index++) {
++    if (!Object.hasOwn(patch, index)) throw new Error("Expected a dense JSON Patch array");
++    const operation = patch[index];
++    if (!isJsonObject(operation) ||
+         !Object.hasOwn(operation, "op") || !Object.hasOwn(operation, "path")) {
+       throw new Error("Invalid JSON Patch operation");
+     }
+diff --git a/test/patch.test.mjs b/test/patch.test.mjs
+index 31b67521bcf520aeda81355266ce3d8d40499c51..d8c55b6e0e571f1f7503ab87fc980667ed1581f2 100644
+--- a/test/patch.test.mjs
++++ b/test/patch.test.mjs
+@@ -156,3 +156,102 @@ test('results share no mutable values with inputs or copied subtrees, even on fa
+   ]));
+   assert.equal(document.child.n, 1);
+ });
++
++test('operation objects must be JSON objects, including null-prototype objects', () => {
++  for (const operation of [new Date(), new Number(1), new String('x'), /x/,
++    new (class Operation {})()]) {
++    Object.assign(operation, { op: 'add', path: '/x', value: 1 });
++    assert.throws(() => applyPatch({}, [operation]));
++  }
++  const operation = Object.assign(Object.create(null), { op: 'add', path: '/x', value: 1 });
++  assert.deepEqual(applyPatch({}, [operation]), { x: 1 });
++});
++
++test('JSON arrays use indexed elements rather than custom iterators', () => {
++  const document = [1, 2];
++  const value = [3, 4];
++  const patch = [{ op: 'add', path: '/-', value }];
++  for (const array of [document, value, patch]) {
++    array[Symbol.iterator] = () => { throw new Error('iterator must not run'); };
++  }
++  assert.deepEqual(applyPatch(document, patch), [1, 2, [3, 4]]);
++});
++
++test('array holes cannot be supplied by inherited properties', () => {
++  function inheritedElement(value) {
++    const array = new Array(1);
++    const prototype = Object.create(Array.prototype);
++    prototype[0] = value;
++    Object.setPrototypeOf(array, prototype);
++    return array;
++  }
++  for (const array of [new Array(1), inheritedElement(1)]) {
++    assert.throws(() => applyPatch(array, []));
++    for (const op of ['add', 'replace', 'test']) {
++      assert.throws(() => applyPatch([], [{ op, path: '', value: array }]));
++    }
++  }
++  assert.throws(() => applyPatch({}, inheritedElement({ op: 'remove', path: '' })));
++  assert.throws(() => applyPatch({}, new Array(1)));
++});
++
++test('rejects non-JSON documents and required values without coercing them', () => {
++  const cycle = {};
++  cycle.self = cycle;
++  for (const value of [undefined, NaN, Infinity, -Infinity, 1n, Symbol('x'),
++    () => {}, new Date(), new Map(), cycle, { nested: undefined }, [undefined]]) {
++    assert.throws(() => applyPatch(value, []));
++    for (const op of ['add', 'replace', 'test']) {
++      assert.throws(() => applyPatch(null, [{ op, path: '', value }]));
++    }
++  }
++  // Members not defined for an operation are ignored, even if they are not JSON values.
++  assert.deepEqual(applyPatch({ x: 1 }, [{ op: 'remove', path: '/x', from: cycle, value: cycle }]), {});
++});
++
++test('each failure terminates evaluation and leaves both inputs unchanged', () => {
++  const failures = [
++    { op: 'test', path: '/items/0', value: 99 },
++    { op: 'remove', path: '/missing' },
++    { op: 'replace', path: '/missing', value: 1 },
++    { op: 'add', path: '/missing/child', value: 1 },
++    { op: 'move', from: '/items/0', path: '/missing/child' },
++    { op: 'copy', from: '/items', path: '/missing/child' },
++    { op: 'unknown', path: '' },
++    { op: 'add', path: '/~2', value: 1 },
++  ];
++  for (const failure of failures) {
++    const document = { items: [{ n: 1 }, { n: 2 }] };
++    const patch = [
++      { op: 'add', path: '/new', value: { values: [1] } },
++      { op: 'replace', path: '/new/values/0', value: 2 },
++      failure,
++    ];
++    const originalDocument = structuredClone(document);
++    const originalPatch = structuredClone(patch);
++    let reachedLaterOperation = false;
++    Object.defineProperty(patch, 3, { get() {
++      reachedLaterOperation = true;
++      return { op: 'add', path: '', value: 'unexpected' };
++    } });
++    assert.throws(() => applyPatch(document, patch));
++    assert.equal(reachedLaterOperation, false);
++    assert.deepEqual(document, originalDocument);
++    assert.deepEqual(patch.slice(0, 3), originalPatch);
++  }
++});
++
++test('copy and move use add semantics for existing members and array destinations', () => {
++  for (const op of ['copy', 'move']) {
++    assert.deepEqual(applyPatch({ source: 1, target: 2 }, [
++      { op, from: '/source', path: '/target' },
++    ]), op === 'copy' ? { source: 1, target: 1 } : { target: 1 });
++    assert.deepEqual(applyPatch([1, 2, 3], [{ op, from: '/0', path: '/1' }]),
++      op === 'copy' ? [1, 1, 2, 3] : [2, 1, 3]);
++    assert.throws(() => applyPatch([1], [{ op, from: '/-', path: '/0' }]));
++    assert.throws(() => applyPatch([1], [{ op, from: '/0', path: '/01' }]));
++  }
++  assert.deepEqual(applyPatch({ '-': 1, '01': 2 }, [
++    { op: 'move', from: '/-', path: '/01' },
++  ]), { '01': 1 });
++});

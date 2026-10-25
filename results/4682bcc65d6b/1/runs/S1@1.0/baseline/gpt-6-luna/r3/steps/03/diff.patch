@@ -1,0 +1,108 @@
+diff --git a/src/index.ts b/src/index.ts
+index 748a311c5e05a946a23c6f5ae3b9686eb37b0c8e..2515a0918baafb61668913d0971119cfe2c69b34 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -52,6 +52,8 @@ type Location = { parent: Record<string, unknown> | unknown[]; key: string };
+ 
+ /** Apply an RFC 6902 JSON Patch and return a new document. */
+ export function applyPatch(document: unknown, patch: unknown): unknown {
++  assertJson(document, "Target document");
++  assertJson(patch, "JSON Patch");
+   if (!Array.isArray(patch)) throw new Error("JSON Patch must be an array");
+ 
+   let result = cloneJson(document);
+@@ -60,8 +62,10 @@ export function applyPatch(document: unknown, patch: unknown): unknown {
+       throw new Error("Each JSON Patch operation must be an object");
+     }
+     const operation = rawOperation as Record<string, unknown>;
+-    const op = operation.op;
+-    if (typeof op !== "string" || typeof operation.path !== "string") {
++    const hasOwn = (key: string) => Object.prototype.hasOwnProperty.call(operation, key);
++    const op = hasOwn("op") ? operation.op : undefined;
++    const path = hasOwn("path") ? operation.path : undefined;
++    if (typeof op !== "string" || typeof path !== "string") {
+       throw new Error("Each JSON Patch operation must have string 'op' and 'path' members");
+     }
+ 
+@@ -71,37 +75,36 @@ export function applyPatch(document: unknown, patch: unknown): unknown {
+ 
+     switch (op) {
+       case "add":
+-        result = addAt(result, operation.path, cloneJson(operation.value));
++        result = addAt(result, path, cloneJson(operation.value));
+         break;
+       case "remove":
+-        result = removeAt(result, operation.path).document;
++        result = removeAt(result, path).document;
+         break;
+       case "replace": {
+         // A replace target must already exist.
+-        getAt(result, operation.path);
+-        result = addAt(result, operation.path, cloneJson(operation.value));
++        getAt(result, path);
++        result = addAt(result, path, cloneJson(operation.value));
+         break;
+       }
+       case "copy": {
+-        if (typeof operation.from !== "string") throw new Error("A copy operation requires a string 'from'");
+-        result = addAt(result, operation.path, cloneJson(getAt(result, operation.from)));
++        if (!hasOwn("from") || typeof operation.from !== "string") throw new Error("A copy operation requires a string 'from'");
++        result = addAt(result, path, cloneJson(getAt(result, operation.from)));
+         break;
+       }
+       case "move": {
+-        if (typeof operation.from !== "string") throw new Error("A move operation requires a string 'from'");
+-        const source = getAt(result, operation.from);
++        if (!hasOwn("from") || typeof operation.from !== "string") throw new Error("A move operation requires a string 'from'");
+         const fromTokens = pointerTokens(operation.from);
+-        const pathTokens = pointerTokens(operation.path);
++        const pathTokens = pointerTokens(path);
+         if (pathTokens.length > fromTokens.length && fromTokens.every((token, i) => pathTokens[i] === token)) {
+           throw new Error("Cannot move a value into one of its children");
+         }
+-        if (operation.from === operation.path) break;
++        if (operation.from === path) break;
+         const removed = removeAt(result, operation.from);
+-        result = addAt(removed.document, operation.path, source);
++        result = addAt(removed.document, path, removed.value);
+         break;
+       }
+       case "test":
+-        if (!jsonEqual(getAt(result, operation.path), operation.value)) {
++        if (!jsonEqual(getAt(result, path), operation.value)) {
+           throw new Error("JSON Patch test operation failed");
+         }
+         break;
+@@ -112,6 +115,32 @@ export function applyPatch(document: unknown, patch: unknown): unknown {
+   return result;
+ }
+ 
++/** Reject values that cannot be represented by the JSON data model. */
++function assertJson(value: unknown, label: string, ancestors = new Set<object>()): void {
++  if (value === null || typeof value === "string" || typeof value === "boolean") return;
++  if (typeof value === "number") {
++    if (!Number.isFinite(value)) throw new Error(`${label} must contain only finite JSON numbers`);
++    return;
++  }
++  if (typeof value !== "object") throw new Error(`${label} must contain only JSON values`);
++  if (ancestors.has(value)) throw new Error(`${label} must not contain circular references`);
++  ancestors.add(value);
++  try {
++    if (Array.isArray(value)) {
++      for (let i = 0; i < value.length; i++) {
++        if (!Object.prototype.hasOwnProperty.call(value, i)) throw new Error(`${label} must not contain sparse arrays`);
++        assertJson(value[i], label, ancestors);
++      }
++    } else {
++      const prototype = Object.getPrototypeOf(value);
++      if (prototype !== Object.prototype && prototype !== null) throw new Error(`${label} must contain only JSON objects`);
++      for (const key of Object.keys(value)) assertJson((value as Record<string, unknown>)[key], label, ancestors);
++    }
++  } finally {
++    ancestors.delete(value);
++  }
++}
++
+ function cloneJson(value: unknown): unknown {
+   if (Array.isArray(value)) return value.map(cloneJson);
+   if (value !== null && typeof value === "object") {

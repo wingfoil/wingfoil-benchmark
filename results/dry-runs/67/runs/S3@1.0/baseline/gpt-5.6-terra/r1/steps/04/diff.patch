@@ -1,0 +1,114 @@
+diff --git a/src/index.ts b/src/index.ts
+index 5d2640a0a85f80091b33e6b12300dfae0a5db50f..e2c0dd1c2601e0d188f4afc08881991dab252d42 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -4,6 +4,7 @@ export interface Equipment {
+   id: string;
+   kind: EquipmentKind;
+   dailyPrice: number;
++  hourlyPrice?: number;
+ }
+ 
+ export interface RentalRequest {
+@@ -33,7 +34,8 @@ interface StoredBooking extends Booking {
+ 
+ /**
+  * Creates an in-memory service for renting individual pieces of equipment.
+- * All periods are half-open UTC day ranges: [start, end).
++ * Periods are half-open UTC ranges: [start, end). Rentals shorter than a day
++ * may start and end on any UTC hour; longer rentals use UTC day ranges.
+  */
+ export function createRentalService() {
+   const equipment = new Map<string, Equipment>();
+@@ -57,7 +59,19 @@ export function createRentalService() {
+     }
+ 
+     const period = validatePeriod(request);
+-    const durationInDays = (period.endTime - period.startTime) / DAY_IN_MILLISECONDS;
++    const durationInMilliseconds = period.endTime - period.startTime;
++    if (durationInMilliseconds < DAY_IN_MILLISECONDS) {
++      if (item.hourlyPrice === undefined) {
++        throw new Error(`Equipment item "${request.itemId}" cannot be rented by the hour`);
++      }
++
++      return {
++        ...request,
++        total: durationInMilliseconds / HOUR_IN_MILLISECONDS * item.hourlyPrice,
++      };
++    }
++
++    const durationInDays = durationInMilliseconds / DAY_IN_MILLISECONDS;
+     const fullPrice = durationInDays * item.dailyPrice;
+     return {
+       ...request,
+@@ -97,6 +111,7 @@ export function createRentalService() {
+ 
+     return [...equipment.values()]
+       .filter((item) => query.kind === undefined || item.kind === query.kind)
++      .filter((item) => period.endTime - period.startTime >= DAY_IN_MILLISECONDS || item.hourlyPrice !== undefined)
+       .filter((item) => !bookings.some((booking) =>
+         booking.itemId === item.id
+         && period.startTime < booking.endTime
+@@ -110,7 +125,8 @@ export function createRentalService() {
+ }
+ 
+ const DAY_IN_MILLISECONDS = 24 * 60 * 60 * 1000;
+-const UTC_TIMESTAMP = /^(\d{4})-(\d{2})-(\d{2})T00:00:00(?:\.0+)?Z$/;
++const HOUR_IN_MILLISECONDS = 60 * 60 * 1000;
++const UTC_HOURLY_TIMESTAMP = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):00:00(?:\.0+)?Z$/;
+ 
+ function validateEquipment(item: Equipment): void {
+   if (!item || typeof item.id !== 'string' || item.id.length === 0) {
+@@ -122,6 +138,9 @@ function validateEquipment(item: Equipment): void {
+   if (!Number.isSafeInteger(item.dailyPrice) || item.dailyPrice < 0) {
+     throw new Error('Daily price must be a non-negative integer number of euro cents');
+   }
++  if (item.hourlyPrice !== undefined && (!Number.isSafeInteger(item.hourlyPrice) || item.hourlyPrice < 0)) {
++    throw new Error('Hourly price must be a non-negative integer number of euro cents');
++  }
+ }
+ 
+ function validateAvailabilityQuery(query: AvailabilityQuery): void {
+@@ -135,23 +154,29 @@ function validatePeriod(period: { start: unknown; end: unknown }): { startTime:
+     throw new Error('Rental period is required');
+   }
+ 
+-  const startTime = parseMidnightUtc(period.start, 'start');
+-  const endTime = parseMidnightUtc(period.end, 'end');
++  const startTime = parseHourlyUtc(period.start, 'start');
++  const endTime = parseHourlyUtc(period.end, 'end');
+   if (endTime <= startTime) {
+     throw new Error('Rental end must be after its start');
+   }
++  if (
++    endTime - startTime >= DAY_IN_MILLISECONDS
++    && (startTime % DAY_IN_MILLISECONDS !== 0 || endTime % DAY_IN_MILLISECONDS !== 0)
++  ) {
++    throw new Error('Rentals of a day or more must start and end at midnight UTC');
++  }
+ 
+   return { startTime, endTime };
+ }
+ 
+-function parseMidnightUtc(value: unknown, field: string): number {
++function parseHourlyUtc(value: unknown, field: string): number {
+   if (typeof value !== 'string') {
+     throw new Error(`Rental ${field} must be an ISO-8601 UTC timestamp`);
+   }
+ 
+-  const match = UTC_TIMESTAMP.exec(value);
++  const match = UTC_HOURLY_TIMESTAMP.exec(value);
+   if (!match) {
+-    throw new Error(`Rental ${field} must be at midnight UTC`);
++    throw new Error(`Rental ${field} must be on the hour UTC`);
+   }
+ 
+   const time = Date.parse(value);
+@@ -161,6 +186,7 @@ function parseMidnightUtc(value: unknown, field: string): number {
+     || date.getUTCFullYear() !== Number(match[1])
+     || date.getUTCMonth() + 1 !== Number(match[2])
+     || date.getUTCDate() !== Number(match[3])
++    || date.getUTCHours() !== Number(match[4])
+   ) {
+     throw new Error(`Rental ${field} must be a valid ISO-8601 UTC timestamp`);
+   }

@@ -1,0 +1,179 @@
+diff --git a/README.md b/README.md
+index e76db14a4ff593aecf1199d1693093aab2ca5e2b..9c1f8ac0066e9e85c40095c207987ce1f5032b87 100644
+--- a/README.md
++++ b/README.md
+@@ -45,4 +45,22 @@ removing it returns `undefined`, and a subsequent `add` at the root can create a
+ Array additions accept an index up to the array length or `-` to append. Other array references
+ must select an existing element. `test` compares JSON values recursively, ignoring object key order.
+ 
++`applyMergePatch(target, patch)` applies an
++[RFC 7386](https://www.rfc-editor.org/rfc/rfc7386.html) JSON Merge Patch. Object members merge
++recursively, and a null member in the patch deletes that member from the target. Arrays and
++scalar patches (including a root null) replace the target entirely. An object patch applied to
++a non-object target starts from an empty object. Member names are literal strings, not JSON
++Pointers. The target may also be `undefined` to represent an absent document.
++
++Both inputs are validated using the JSON rules above, even when values would be replaced or
++deleted. The result is independent of both inputs; neither input is mutated, even on failure.
++
++```ts
++import { applyMergePatch } from './src/index.ts';
++
++applyMergePatch({ name: 'Ada', settings: { theme: 'dark', alerts: true } }, {
++  settings: { alerts: null, language: 'en' },
++}); // { name: 'Ada', settings: { theme: 'dark', language: 'en' } }
++```
++
+ Run `npm test` with Node.js 22.18 or newer.
+diff --git a/src/index.ts b/src/index.ts
+index d5841e348039ae41964a52a8990d73175386a3b1..9fcfc70622e8ef797b25c2310e5672b41efb880e 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -95,6 +95,33 @@ function cloneJson(value: unknown, ancestors = new Set<object>()): unknown {
+   return result;
+ }
+ 
++// Both inputs are private, validated clones; edits cannot affect caller data.
++function mergePatch(target: unknown, patch: unknown): unknown {
++  if (!isJsonObject(patch)) return patch;
++  const result = isJsonObject(target) ? target : {};
++  for (const key of Object.keys(patch)) {
++    const value = patch[key];
++    if (value === null) {
++      delete result[key];
++    } else {
++      const previous = Object.hasOwn(result, key) ? result[key] : undefined;
++      setMember(result, key, mergePatch(previous, value));
++    }
++  }
++  return result;
++}
++
++/**
++ * Apply an RFC 7386 JSON Merge Patch without mutating either input.
++ * Object members merge recursively; null members delete, and other values replace.
++ * The target may be undefined to represent an absent document.
++ * Throws when either input contains non-JSON data.
++ */
++export function applyMergePatch(target: unknown, patch: unknown): unknown {
++  const document = target === undefined ? undefined : cloneJson(target);
++  return mergePatch(document, cloneJson(patch));
++}
++
+ function equalJson(left: unknown, right: unknown): boolean {
+   if (left === right) return true;
+   if (!isObject(left) || !isObject(right) || Array.isArray(left) !== Array.isArray(right)) return false;
+diff --git a/test/merge-patch.test.mjs b/test/merge-patch.test.mjs
+new file mode 100644
+index 0000000000000000000000000000000000000000..b9573c602198a194cba106b354b4526de0b46c7f
+--- /dev/null
++++ b/test/merge-patch.test.mjs
+@@ -0,0 +1,108 @@
++import assert from 'node:assert/strict';
++import test from 'node:test';
++import { applyMergePatch } from '../src/index.ts';
++
++test('matches every RFC 7386 Appendix A example', () => {
++  const cases = [
++    [{ a: 'b' }, { a: 'c' }, { a: 'c' }],
++    [{ a: 'b' }, { b: 'c' }, { a: 'b', b: 'c' }],
++    [{ a: 'b' }, { a: null }, {}],
++    [{ a: 'b', b: 'c' }, { a: null }, { b: 'c' }],
++    [{ a: ['b'] }, { a: 'c' }, { a: 'c' }],
++    [{ a: 'c' }, { a: ['b'] }, { a: ['b'] }],
++    [{ a: { b: 'c' } }, { a: { b: 'd', c: null } }, { a: { b: 'd' } }],
++    [{ a: [{ b: 'c' }] }, { a: [1] }, { a: [1] }],
++    [['a', 'b'], ['c', 'd'], ['c', 'd']],
++    [{ a: 'b' }, ['c'], ['c']],
++    [{ a: 'foo' }, null, null],
++    [{ a: 'foo' }, 'bar', 'bar'],
++    [{ e: null }, { a: 1 }, { e: null, a: 1 }],
++    [[1, 2], { a: 'b', c: null }, { a: 'b' }],
++    [{}, { a: { bb: { ccc: null } } }, { a: { bb: {} } }],
++  ];
++  for (const [target, patch, expected] of cases) {
++    assert.deepEqual(applyMergePatch(target, patch), expected);
++  }
++});
++
++test('handles all root types, absent targets, and empty object patches', () => {
++  for (const target of [undefined, null, true, false, 0, '', 'text', [1], { a: 1 }]) {
++    for (const patch of [null, true, false, 0, '', 'text', [null, { a: null }]]) {
++      assert.deepEqual(applyMergePatch(target, patch), patch);
++    }
++    assert.deepEqual(applyMergePatch(target, {}), target !== null &&
++      typeof target === 'object' && !Array.isArray(target) ? target : {});
++    assert.deepEqual(applyMergePatch(target, { missing: null, nested: { absent: null } }),
++      { ...(target?.a === 1 ? { a: 1 } : {}), nested: {} });
++  }
++});
++
++test('merges nested members and treats keys literally and safely', () => {
++  const target = JSON.parse('{"__proto__":{"keep":1,"drop":2},"constructor":{"keep":3},"a/b":4,"~":5,"":6}');
++  const patch = JSON.parse('{"__proto__":{"drop":null,"add":7},"constructor":{"new":8},"a/b":null,"~":9,"":null,"toString":{"value":10}}');
++  const result = applyMergePatch(target, patch);
++  assert.deepEqual(result, JSON.parse('{"__proto__":{"keep":1,"add":7},"constructor":{"keep":3,"new":8},"~":9,"toString":{"value":10}}'));
++  assert.equal(Object.getPrototypeOf(result), Object.prototype);
++  for (const key of ['__proto__', 'constructor', 'toString']) {
++    const added = applyMergePatch({}, JSON.parse(`{"${key}":{"mergePatchSafe":true}}`));
++    assert.equal(Object.hasOwn(added, key), true);
++    assert.deepEqual(added[key], { mergePatchSafe: true });
++    assert.deepEqual(applyMergePatch(added, JSON.parse(`{"${key}":null}`)), {});
++    assert.deepEqual(applyMergePatch({}, JSON.parse(`{"${key}":null}`)), {});
++  }
++  assert.equal(Object.hasOwn(Object.prototype, 'mergePatchSafe'), false);
++});
++
++test('returns independent data and accepts frozen inputs, null prototypes, and repeated references', () => {
++  const child = Object.freeze(Object.assign(Object.create(null), { value: 1 }));
++  const target = Object.freeze({ a: child, b: child });
++  const patch = Object.freeze({ a: Object.freeze({ extra: 2 }), c: Object.freeze([child, child]) });
++  const result = applyMergePatch(target, patch);
++  assert.deepEqual(result, { a: { value: 1, extra: 2 }, b: { value: 1 }, c: [{ value: 1 }, { value: 1 }] });
++  result.a.value = 3;
++  result.c[0].value = 4;
++  assert.equal(result.b.value, 1);
++  assert.equal(result.c[1].value, 1);
++  assert.equal(child.value, 1);
++  assert.notStrictEqual(applyMergePatch(target, {}), target);
++  const replacement = [{ nested: [] }];
++  const replaced = applyMergePatch(target, replacement);
++  replaced[0].nested.push(1);
++  assert.deepEqual(replacement, [{ nested: [] }]);
++  assert.deepEqual(applyMergePatch(null, Object.assign(Object.create(null), { a: child })),
++    { a: { value: 1 } });
++});
++
++test('validates both complete inputs, including replaced and deleted values', () => {
++  const cycle = {};
++  cycle.self = cycle;
++  const extraArray = Object.assign([1], { extra: 2 });
++  const iteratorArray = [1];
++  iteratorArray[Symbol.iterator] = () => { throw new Error('Iterator executed'); };
++  const invalid = [
++    NaN, Infinity, -Infinity, 1n, Symbol('value'), () => {}, new Date(), new Map(),
++    new (class { value = 1; })(), cycle, { nested: undefined }, [undefined], new Array(1),
++    { [Symbol('member')]: 1 }, Object.defineProperty({}, 'hidden', { value: 1 }),
++    extraArray, iteratorArray,
++  ];
++  for (const value of invalid) {
++    assert.throws(() => applyMergePatch(value, null), Error);
++    assert.throws(() => applyMergePatch({ a: value }, { a: null }), Error);
++    assert.throws(() => applyMergePatch({}, value), Error);
++    assert.throws(() => applyMergePatch({}, { a: value }), Error);
++  }
++  assert.throws(() => applyMergePatch({}, undefined), Error);
++});
++
++test('rejects accessors without executing them and leaves inputs unchanged on failure', () => {
++  let reads = 0;
++  const accessor = { enumerable: true, get() { reads++; return 1; } };
++  for (const value of [Object.defineProperty({}, 'a', accessor),
++    Object.defineProperty([], '0', accessor)]) {
++    assert.throws(() => applyMergePatch(value, null), Error);
++    const target = { a: { value: 1 } };
++    assert.throws(() => applyMergePatch(target, { a: { value: 2 }, later: value }), Error);
++    assert.deepEqual(target, { a: { value: 1 } });
++  }
++  assert.equal(reads, 0);
++});

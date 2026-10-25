@@ -1,0 +1,139 @@
+diff --git a/src/index.ts b/src/index.ts
+index a4336263074bac07cc7bc54f6b7d9dc46b58c2d9..28216b09b603b030ae19b8ba0dd118b316ffa83a 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -51,15 +51,21 @@ export function resolvePointer(document: unknown, pointer: string): unknown {
+  * cannot be applied.
+  */
+ export function applyPatch(document: unknown, patch: unknown): unknown {
+-  let result = cloneJsonValue(document, "document");
+-  let documentExists = true;
+-
+-  if (!Array.isArray(patch)) {
++  // A JSON Patch is itself a JSON document.  Validate and snapshot the whole
++  // patch before interpreting its operations: RFC 6902 requires members that
++  // are not meaningful to an operation to be ignored, but they still have to
++  // be JSON values.  In particular, an ignored `undefined`, function, or
++  // cyclic value must not make an otherwise-invalid patch succeed.
++  const jsonPatch = cloneJsonValue(patch, "JSON Patch");
++  if (!Array.isArray(jsonPatch)) {
+     throw new Error("A JSON Patch must be an array of operations");
+   }
+ 
+-  for (let index = 0; index < patch.length; index += 1) {
+-    const operation = parseOperation(patch[index], index);
++  let result = cloneJsonValue(document, "document");
++  let documentExists = true;
++
++  for (let index = 0; index < jsonPatch.length; index += 1) {
++    const operation = parseOperation(jsonPatch[index], index);
+     const path = parsePointer(operation.path, "path", index);
+ 
+     switch (operation.op) {
+@@ -301,7 +307,7 @@ function operationError(index: number, message: string): Error {
+   return new Error(`Invalid JSON Patch operation at index ${index}: ${message}`);
+ }
+ 
+-function cloneJsonValue(value: unknown, description: string): unknown {
++function cloneJsonValue(value: unknown, description: string, ancestors = new Set<object>()): unknown {
+   if (value === null || typeof value === "string" || typeof value === "boolean") {
+     return value;
+   }
+@@ -312,24 +318,40 @@ function cloneJsonValue(value: unknown, description: string): unknown {
+     return value;
+   }
+   if (Array.isArray(value)) {
++    if (ancestors.has(value)) {
++      throw new Error(`${description} is not a valid JSON value`);
++    }
++    ancestors.add(value);
+     const clone: unknown[] = [];
+-    for (let index = 0; index < value.length; index += 1) {
+-      if (!hasOwn(value, String(index))) {
+-        throw new Error(`${description} is not a valid JSON value`);
++    try {
++      for (let index = 0; index < value.length; index += 1) {
++        if (!hasOwn(value, String(index))) {
++          throw new Error(`${description} is not a valid JSON value`);
++        }
++        clone.push(cloneJsonValue(value[index], description, ancestors));
+       }
+-      clone.push(cloneJsonValue(value[index], description));
++      return clone;
++    } finally {
++      ancestors.delete(value);
+     }
+-    return clone;
+   }
+   if (!isObject(value)) {
+     throw new Error(`${description} is not a valid JSON value`);
+   }
+ 
++  if (ancestors.has(value)) {
++    throw new Error(`${description} is not a valid JSON value`);
++  }
++  ancestors.add(value);
+   const clone: Record<string, unknown> = {};
+-  for (const key of Object.keys(value)) {
+-    defineJsonProperty(clone, key, cloneJsonValue(value[key], description));
++  try {
++    for (const key of Object.keys(value)) {
++      defineJsonProperty(clone, key, cloneJsonValue(value[key], description, ancestors));
++    }
++    return clone;
++  } finally {
++    ancestors.delete(value);
+   }
+-  return clone;
+ }
+ 
+ function jsonEquals(left: unknown, right: unknown): boolean {
+diff --git a/test/applyPatch.test.js b/test/applyPatch.test.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..4489c01b9bde349ff514a80b30534cd167e19b7c
+--- /dev/null
++++ b/test/applyPatch.test.js
+@@ -0,0 +1,43 @@
++import assert from "node:assert/strict";
++import test from "node:test";
++
++import { applyPatch } from "../src/index.ts";
++
++test("valid but unrecognised operation members are ignored", () => {
++  assert.deepEqual(
++    applyPatch({ value: 1 }, [{
++      op: "test",
++      path: "/value",
++      value: 1,
++      extension: { enabled: true },
++    }]),
++    { value: 1 },
++  );
++});
++
++test("a patch must be JSON even when invalid data is in an ignored member", () => {
++  assert.throws(() => applyPatch({}, [{
++    op: "add",
++    path: "/value",
++    value: true,
++    extension: undefined,
++  }]));
++});
++
++test("a cyclic patch fails normally instead of overflowing the stack", () => {
++  const operation = { op: "add", path: "/value", value: true };
++  operation.extension = operation;
++
++  assert.throws(() => applyPatch({}, [operation]), /not a valid JSON value/);
++});
++
++test("a failed operation does not mutate its source document", () => {
++  const document = { value: 1 };
++
++  assert.throws(() => applyPatch(document, [
++    { op: "replace", path: "/value", value: 2 },
++    { op: "test", path: "/value", value: 3 },
++  ]));
++
++  assert.deepEqual(document, { value: 1 });
++});

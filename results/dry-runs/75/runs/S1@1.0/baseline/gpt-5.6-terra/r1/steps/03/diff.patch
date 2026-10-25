@@ -1,0 +1,156 @@
+diff --git a/package.json b/package.json
+index 5f1f12a7edbf25e1ade5481dc7f359ede03d0df5..b83dba113c0e09271e9782db88d8577cce8a9bb8 100644
+--- a/package.json
++++ b/package.json
+@@ -5,6 +5,6 @@
+   "description": "Building blocks for services that store, exchange and update JSON documents.",
+   "type": "module",
+   "scripts": {
+-    "test": "node --test"
++    "test": "node --experimental-strip-types --test"
+   }
+ }
+diff --git a/src/index.ts b/src/index.ts
+index 11a4b01726425ecda78fcd32c0e8cf44e054d17b..29eb2d3639eb8617387e9e4724dc8237a14bb2fa 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -82,6 +82,12 @@ export function applyPatch(document: unknown, patch: unknown): unknown {
+     throw new Error("A JSON Patch must be an array of operations");
+   }
+ 
++  // RFC 6902 operates on JSON documents, rather than arbitrary JavaScript
++  // values.  Validate both inputs before applying anything so an invalid
++  // patch cannot be reported as partially successful.
++  assertJsonValue(document, "The target document");
++  assertJsonValue(patch, "A JSON Patch");
++
+   let result = cloneJsonValue(document);
+ 
+   for (const operation of patch) {
+@@ -309,3 +315,73 @@ function samePointer(left: readonly string[], right: readonly string[]): boolean
+ function formatPointer(tokens: readonly string[]): string {
+   return tokens.length === 0 ? "" : `/${tokens.map((token) => token.replace(/~/g, "~0").replace(/\//g, "~1")).join("/")}`;
+ }
++
++/**
++ * JSON Patch is defined only for JSON documents.  In particular, accepting a
++ * JavaScript-only value here would make an operation appear successful while
++ * returning a value that cannot be represented as JSON.
++ *
++ * Only data properties are accepted.  JSON obtained by parsing text has no
++ * getters, symbols, sparse array slots, custom prototypes, or cycles.
++ */
++function assertJsonValue(value: unknown, description: string, ancestors = new Set<object>()): void {
++  if (value === null || typeof value === "string" || typeof value === "boolean") {
++    return;
++  }
++  if (typeof value === "number") {
++    if (Number.isFinite(value)) {
++      return;
++    }
++    throw new Error(`${description} must contain only JSON values`);
++  }
++  if (typeof value !== "object") {
++    throw new Error(`${description} must contain only JSON values`);
++  }
++
++  if (ancestors.has(value)) {
++    throw new Error(`${description} must not contain a cycle`);
++  }
++  ancestors.add(value);
++
++  try {
++    if (Array.isArray(value)) {
++      assertJsonArray(value, description, ancestors);
++    } else {
++      assertJsonObject(value, description, ancestors);
++    }
++  } finally {
++    ancestors.delete(value);
++  }
++}
++
++function assertJsonArray(value: unknown[], description: string, ancestors: Set<object>): void {
++  const names = Object.getOwnPropertyNames(value);
++  if (names.length !== value.length + 1 || names[names.length - 1] !== "length" ||
++      Object.getOwnPropertySymbols(value).length !== 0) {
++    throw new Error(`${description} must contain only JSON values`);
++  }
++
++  for (let index = 0; index < value.length; index += 1) {
++    const name = String(index);
++    const descriptor = Object.getOwnPropertyDescriptor(value, name);
++    if (descriptor === undefined || !("value" in descriptor) || !descriptor.enumerable) {
++      throw new Error(`${description} must contain only JSON values`);
++    }
++    assertJsonValue(descriptor.value, description, ancestors);
++  }
++}
++
++function assertJsonObject(value: object, description: string, ancestors: Set<object>): void {
++  const prototype = Object.getPrototypeOf(value);
++  if ((prototype !== Object.prototype && prototype !== null) || Object.getOwnPropertySymbols(value).length !== 0) {
++    throw new Error(`${description} must contain only JSON values`);
++  }
++
++  for (const name of Object.getOwnPropertyNames(value)) {
++    const descriptor = Object.getOwnPropertyDescriptor(value, name);
++    if (descriptor === undefined || !("value" in descriptor) || !descriptor.enumerable) {
++      throw new Error(`${description} must contain only JSON values`);
++    }
++    assertJsonValue(descriptor.value, description, ancestors);
++  }
++}
+diff --git a/test/applyPatch.test.mjs b/test/applyPatch.test.mjs
+new file mode 100644
+index 0000000000000000000000000000000000000000..281cd3f497bd21134ad2700a694f0e085aba28ff
+--- /dev/null
++++ b/test/applyPatch.test.mjs
+@@ -0,0 +1,47 @@
++import assert from "node:assert/strict";
++import test from "node:test";
++
++import { applyPatch } from "../src/index.ts";
++
++test("applies operations in order without modifying the input document", () => {
++  const document = { items: ["one", "two"], copied: null };
++  const patch = [
++    { op: "move", from: "/items/0", path: "/items/1" },
++    { op: "copy", from: "/items", path: "/copied" },
++  ];
++
++  assert.deepEqual(applyPatch(document, patch), {
++    items: ["two", "one"],
++    copied: ["two", "one"],
++  });
++  assert.deepEqual(document, { items: ["one", "two"], copied: null });
++});
++
++test("fails a patch atomically when a later operation is unsuccessful", () => {
++  const document = { value: 1 };
++
++  assert.throws(
++    () => applyPatch(document, [
++      { op: "replace", path: "/value", value: 2 },
++      { op: "test", path: "/value", value: 3 },
++    ]),
++    /test operation failed/,
++  );
++  assert.deepEqual(document, { value: 1 });
++});
++
++test("rejects values that are JavaScript values but not JSON", () => {
++  assert.throws(
++    () => applyPatch({}, [{ op: "add", path: "/value", value: undefined }]),
++    /JSON values/,
++  );
++  assert.throws(() => applyPatch({ value: Number.NaN }, []), /JSON values/);
++  assert.throws(() => applyPatch([, "value"], []), /JSON values/);
++});
++
++test("rejects failed target lookups and malformed operations", () => {
++  assert.throws(() => applyPatch({ value: 1 }, [{ op: "remove", path: "/missing" }]));
++  assert.throws(() => applyPatch({ value: 1 }, [{ op: "replace", path: "/missing", value: 2 }]));
++  assert.throws(() => applyPatch({ value: 1 }, [{ op: "copy", path: "/copy" }]));
++  assert.throws(() => applyPatch({ value: 1 }, [{ op: "unknown", path: "/value" }]));
++});

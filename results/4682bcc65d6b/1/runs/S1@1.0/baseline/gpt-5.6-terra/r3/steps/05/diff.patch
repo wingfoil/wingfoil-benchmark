@@ -1,0 +1,135 @@
+diff --git a/src/index.ts b/src/index.ts
+index 3961ebf0c063699af9623ec1987471a34f5d0a22..cb7795d511b04c13dba06e47104179e5f8525a86 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -93,6 +93,27 @@ export function applyPatch(document: unknown, patch: unknown): unknown {
+   return result;
+ }
+ 
++/**
++ * Creates an RFC 6902 JSON Patch that transforms `from` into `to`.
++ *
++ * The returned operations contain copies of values from `to`, so neither
++ * input is modified now or by a later change to the returned patch.
++ *
++ * @throws {TypeError} If either value is not a JSON value.
++ */
++export function createPatch(from: unknown, to: unknown): Array<Record<string, unknown>> {
++  if (!isJsonValue(from)) {
++    throw new TypeError("A JSON Patch source must be a JSON value");
++  }
++  if (!isJsonValue(to)) {
++    throw new TypeError("A JSON Patch target must be a JSON value");
++  }
++
++  const patch: Array<Record<string, unknown>> = [];
++  createPatchAt(from, to, [], patch);
++  return patch;
++}
++
+ /**
+  * Applies an RFC 7386 JSON Merge Patch without modifying either supplied
+  * value.
+@@ -136,6 +157,102 @@ function mergePatch(target: unknown, patch: unknown): unknown {
+   return result;
+ }
+ 
++function createPatchAt(
++  from: unknown,
++  to: unknown,
++  path: string[],
++  patch: Array<Record<string, unknown>>,
++): void {
++  if (jsonEqual(from, to)) {
++    return;
++  }
++
++  if (isJsonObject(from) && isJsonObject(to)) {
++    const fromKeys = Object.keys(from);
++    const toKeys = Object.keys(to);
++
++    // Removing before adding/replacing means every operation is valid against
++    // the document state produced by the preceding operation.
++    for (const key of fromKeys) {
++      if (!hasOwn(to, key)) {
++        patch.push({ op: "remove", path: pointer(path, key) });
++      }
++    }
++    for (const key of toKeys) {
++      if (hasOwn(from, key)) {
++        createPatchAt(from[key], to[key], [...path, key], patch);
++      } else {
++        patch.push({ op: "add", path: pointer(path, key), value: cloneJson(to[key]) });
++      }
++    }
++    return;
++  }
++
++  if (Array.isArray(from) && Array.isArray(to)) {
++    createArrayPatch(from, to, path, patch);
++    return;
++  }
++
++  patch.push({ op: "replace", path: pointer(path), value: cloneJson(to) });
++}
++
++function createArrayPatch(
++  from: unknown[],
++  to: unknown[],
++  path: string[],
++  patch: Array<Record<string, unknown>>,
++): void {
++  // Preserve equal runs at either end. This makes common one-item insertions
++  // and removals a single operation rather than replacements for every later
++  // array member.
++  let prefixLength = 0;
++  while (prefixLength < from.length
++    && prefixLength < to.length
++    && jsonEqual(from[prefixLength], to[prefixLength])) {
++    prefixLength += 1;
++  }
++
++  let suffixLength = 0;
++  while (suffixLength < from.length - prefixLength
++    && suffixLength < to.length - prefixLength
++    && jsonEqual(from[from.length - suffixLength - 1], to[to.length - suffixLength - 1])) {
++    suffixLength += 1;
++  }
++
++  const fromMiddleLength = from.length - prefixLength - suffixLength;
++  const toMiddleLength = to.length - prefixLength - suffixLength;
++  const sharedLength = Math.min(fromMiddleLength, toMiddleLength);
++
++  for (let index = 0; index < sharedLength; index += 1) {
++    createPatchAt(
++      from[prefixLength + index],
++      to[prefixLength + index],
++      [...path, String(prefixLength + index)],
++      patch,
++    );
++  }
++
++  // Each removal shifts the next unwanted member into the same position.
++  for (let index = sharedLength; index < fromMiddleLength; index += 1) {
++    patch.push({ op: "remove", path: pointer(path, String(prefixLength + sharedLength)) });
++  }
++
++  // Insertions are emitted in target order and their indices account for the
++  // members already inserted in this loop.
++  for (let index = sharedLength; index < toMiddleLength; index += 1) {
++    patch.push({
++      op: "add",
++      path: pointer(path, String(prefixLength + index)),
++      value: cloneJson(to[prefixLength + index]),
++    });
++  }
++}
++
++function pointer(path: string[], token?: string): string {
++  const tokens = token === undefined ? path : [...path, token];
++  return tokens.map((part) => `/${part.replace(/~/g, "~0").replace(/\//g, "~1")}`).join("");
++}
++
+ function applyOperation(document: unknown, operation: unknown, operationIndex: number): unknown {
+   if (operation === null || typeof operation !== "object" || Array.isArray(operation)) {
+     throw patchError(operationIndex, "must be an object");

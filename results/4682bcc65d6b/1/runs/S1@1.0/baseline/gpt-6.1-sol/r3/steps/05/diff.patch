@@ -1,0 +1,312 @@
+diff --git a/README.md b/README.md
+index 9c1f8ac0066e9e85c40095c207987ce1f5032b87..9434f1e9ae07c7efafcabcf6af7414e513b56c5a 100644
+--- a/README.md
++++ b/README.md
+@@ -45,6 +45,23 @@ removing it returns `undefined`, and a subsequent `add` at the root can create a
+ Array additions accept an index up to the array length or `-` to append. Other array references
+ must select an existing element. `test` compares JSON values recursively, ignoring object key order.
+ 
++`createPatch(from, to)` produces an RFC 6902 JSON Patch that transforms `from` into `to`.
++It emits `add`, `remove`, and `replace` operations, recursing into objects and arrays so
++small changes send only the changed values. Unchanged array elements are aligned across
++insertions and deletions. Equal documents produce `[]`; object key order is ignored.
++The patch is not guaranteed to have the fewest possible operations.
++
++Both inputs follow the JSON validation rules above. Neither is mutated, and values in
++the returned patch are independent copies. Incompatible types and changed scalars use
++`replace`, with an empty path for a root replacement.
++
++```ts
++import { createPatch } from './src/index.ts';
++
++createPatch({ settings: { theme: 'dark' } }, { settings: { theme: 'light' } });
++// [{ op: 'replace', path: '/settings/theme', value: 'light' }]
++```
++
+ `applyMergePatch(target, patch)` applies an
+ [RFC 7386](https://www.rfc-editor.org/rfc/rfc7386.html) JSON Merge Patch. Object members merge
+ recursively, and a null member in the patch deletes that member from the target. Arrays and
+diff --git a/src/index.ts b/src/index.ts
+index 9fcfc70622e8ef797b25c2310e5672b41efb880e..ea7274e9527dc65e59d0cb61298fd54f3b6eb839 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -133,6 +133,131 @@ function equalJson(left: unknown, right: unknown): boolean {
+     Object.hasOwn(right, key) && equalJson(left[key], right[key]));
+ }
+ 
++/** Operations emitted by createPatch. */
++export type PatchOperation =
++  | { op: 'remove'; path: string }
++  | { op: 'add' | 'replace'; path: string; value: unknown };
++
++function memberPath(path: string, key: string): string {
++  return `${path}/${key.replace(/~/gu, '~0').replace(/\//gu, '~1')}`;
++}
++
++// LCS lengths for each prefix (or reversed suffix) of a target range.
++// Keeping only one row avoids allocating a quadratic-size table.
++function matchingLengths(
++  from: unknown[], start: number, end: number,
++  to: unknown[], first: number, last: number, reverse: boolean,
++): Uint32Array {
++  const lengths = new Uint32Array(last - first + 1);
++  for (let i = 0; i < end - start; i++) {
++    let diagonal = 0;
++    for (let j = 1; j < lengths.length; j++) {
++      const previous = lengths[j];
++      lengths[j] = equalJson(from[reverse ? end - 1 - i : start + i],
++        to[reverse ? last - j : first + j - 1])
++        ? diagonal + 1 : Math.max(lengths[j], lengths[j - 1]);
++      diagonal = previous;
++    }
++  }
++  return lengths;
++}
++
++function matchingSplit(
++  from: unknown[], start: number, middle: number, end: number,
++  to: unknown[], first: number, last: number,
++): number {
++  const left = matchingLengths(from, start, middle, to, first, last, false);
++  const right = matchingLengths(from, middle, end, to, first, last, true);
++  let split = 0;
++  for (let j = 1; j < left.length; j++) {
++    if (left[j] + right[last - first - j] > left[split] + right[last - first - split]) split = j;
++  }
++  return first + split;
++}
++
++// Hirschberg's LCS alignment preserves equal elements through insertions and
++// deletions, using linear auxiliary space. Trim common ends for small edits.
++function arrayMatches(
++  from: unknown[], start: number, end: number,
++  to: unknown[], first: number, last: number, matches: [number, number][],
++): void {
++  while (start < end && first < last && equalJson(from[start], to[first])) {
++    matches.push([start++, first++]);
++  }
++  let suffix = 0;
++  while (start < end && first < last && equalJson(from[end - 1], to[last - 1])) {
++    end--;
++    last--;
++    suffix++;
++  }
++  if (end - start === 1) {
++    for (let j = first; j < last; j++) {
++      if (equalJson(from[start], to[j])) {
++        matches.push([start, j]);
++        break;
++      }
++    }
++  } else if (start < end && first < last) {
++    const middle = start + Math.floor((end - start) / 2);
++    const split = matchingSplit(from, start, middle, end, to, first, last);
++    arrayMatches(from, start, middle, to, first, split, matches);
++    arrayMatches(from, middle, end, to, split, last, matches);
++  }
++  for (let i = 0; i < suffix; i++) matches.push([end + i, last + i]);
++}
++
++// Inputs are private validated clones, so emitted values cannot alias inputs.
++function diffJson(from: unknown, to: unknown, path: string, patch: PatchOperation[]): void {
++  if (equalJson(from, to)) return;
++  if (isJsonObject(from) && isJsonObject(to)) {
++    for (const key of Object.keys(from)) {
++      const child = memberPath(path, key);
++      if (!Object.hasOwn(to, key)) patch.push({ op: 'remove', path: child });
++      else diffJson(from[key], to[key], child, patch);
++    }
++    for (const key of Object.keys(to)) {
++      if (!Object.hasOwn(from, key)) patch.push({ op: 'add', path: memberPath(path, key), value: to[key] });
++    }
++  } else if (Array.isArray(from) && Array.isArray(to)) {
++    const matches: [number, number][] = [];
++    arrayMatches(from, 0, from.length, to, 0, to.length, matches);
++    // The sentinel flushes the final unmatched range. Target indices also
++    // describe current indices after all preceding operations have run.
++    matches.push([from.length, to.length]);
++    let oldIndex = 0;
++    let newIndex = 0;
++    for (const [oldEnd, newEnd] of matches) {
++      const paired = Math.min(oldEnd - oldIndex, newEnd - newIndex);
++      for (let i = 0; i < paired; i++) {
++        diffJson(from[oldIndex + i], to[newIndex + i], `${path}/${newIndex + i}`, patch);
++      }
++      for (let i = oldIndex + paired; i < oldEnd; i++) {
++        patch.push({ op: 'remove', path: `${path}/${newIndex + paired}` });
++      }
++      for (let i = newIndex + paired; i < newEnd; i++) {
++        patch.push({ op: 'add', path: `${path}/${i}`, value: to[i] });
++      }
++      oldIndex = oldEnd + 1;
++      newIndex = newEnd + 1;
++    }
++  } else {
++    patch.push({ op: 'replace', path, value: to });
++  }
++}
++
++/**
++ * Create an RFC 6902 patch transforming from into to without mutating either.
++ * Recurses into objects and arrays, omitting unchanged values. Both inputs must
++ * be JSON data; returned operation values are independent of the inputs.
++ */
++export function createPatch(from: unknown, to: unknown): PatchOperation[] {
++  const source = cloneJson(from);
++  const target = cloneJson(to);
++  const patch: PatchOperation[] = [];
++  diffJson(source, target, '', patch);
++  return patch;
++}
++
+ function edit(document: unknown, tokens: string[], op: 'add' | 'remove' | 'replace', value?: unknown): unknown {
+   if (tokens.length === 0) {
+     if (op !== 'add' && document === undefined) throw new Error('Missing document');
+diff --git a/test/create-patch.test.mjs b/test/create-patch.test.mjs
+new file mode 100644
+index 0000000000000000000000000000000000000000..a85a51678004d9f441766f5313426452848da9c9
+--- /dev/null
++++ b/test/create-patch.test.mjs
+@@ -0,0 +1,142 @@
++import assert from 'node:assert/strict';
++import test from 'node:test';
++import { applyPatch, createPatch } from '../src/index.ts';
++
++function freeze(value) {
++  if (value !== null && typeof value === 'object') {
++    Object.values(value).forEach(freeze);
++    Object.freeze(value);
++  }
++  return value;
++}
++
++test('emits only changed leaves, additions, and removals in nested objects', () => {
++  const from = freeze({ settings: { theme: 'dark', alerts: true }, gone: [1], stable: 'x'.repeat(10000) });
++  const to = freeze({ settings: { theme: 'light', alerts: true }, added: { n: null }, stable: from.stable });
++  const patch = createPatch(from, to);
++  assert.deepEqual(patch, [
++    { op: 'replace', path: '/settings/theme', value: 'light' },
++    { op: 'remove', path: '/gone' },
++    { op: 'add', path: '/added', value: { n: null } },
++  ]);
++  assert.deepEqual(applyPatch(from, patch), to);
++});
++
++test('equal JSON values produce no operations, regardless of member order or aliases', () => {
++  const shared = { x: [1, null] };
++  for (const [from, to] of [
++    [null, null], [false, false], [0, -0], ['', ''], [[], []],
++    [{ a: 1, b: [2] }, { b: [2], a: 1 }],
++    [{ a: shared, b: shared }, { b: { x: [1, null] }, a: { x: [1, null] } }],
++    [Object.assign(Object.create(null), { a: 1 }), { a: 1 }],
++  ]) assert.deepEqual(createPatch(from, to), []);
++});
++
++test('supports scalar roots and changes between JSON types', () => {
++  const values = [null, false, true, 0, 1, '', 'hello', [], {}, [1], { a: 1 }];
++  for (const from of values) {
++    for (const to of values) assert.deepEqual(applyPatch(from, createPatch(from, to)), to);
++  }
++  assert.deepEqual(createPatch({ a: [1] }, { a: null }), [
++    { op: 'replace', path: '/a', value: null },
++  ]);
++  assert.deepEqual(createPatch(0, { a: 1 }), [
++    { op: 'replace', path: '', value: { a: 1 } },
++  ]);
++});
++
++test('escapes JSON Pointers and handles prototype-related and empty member names', () => {
++  const from = JSON.parse('{"":{"a/b":{"~1":1}},"__proto__":{"n":1},"constructor":0}');
++  const to = JSON.parse('{"":{"a/b":{"~1":2}},"__proto__":{"n":2},"toString":3}');
++  const patch = createPatch(from, to);
++  assert.deepEqual(patch, [
++    { op: 'replace', path: '//a~1b/~01', value: 2 },
++    { op: 'replace', path: '/__proto__/n', value: 2 },
++    { op: 'remove', path: '/constructor' },
++    { op: 'add', path: '/toString', value: 3 },
++  ]);
++  assert.deepEqual(applyPatch(from, patch), to);
++  const special = JSON.parse('{"__proto__":{"safe":true}}');
++  assert.deepEqual(applyPatch({}, createPatch({}, special)), special);
++  assert.equal(Object.hasOwn(Object.prototype, 'safe'), false);
++});
++
++test('array insertions and deletions preserve unchanged elements', () => {
++  for (const index of [0, 1, 3]) {
++    const from = ['a', 'b', 'c'];
++    const to = from.toSpliced(index, 0, 'new');
++    assert.deepEqual(createPatch(from, to), [{ op: 'add', path: `/${index}`, value: 'new' }]);
++    assert.deepEqual(createPatch(to, from), [{ op: 'remove', path: `/${index}` }]);
++  }
++  const from = [0, 1, 2, 3, 4, 5];
++  const to = [0, 'a', 1, 2, 4, 'b', 5];
++  const patch = createPatch(from, to);
++  assert.equal(patch.length, 3);
++  assert.deepEqual(applyPatch(from, patch), to);
++});
++
++test('a small edit inside an array element sends only the changed leaf', () => {
++  const from = { items: [{ id: 1, data: { label: 'before', large: 'x'.repeat(10000) } }, { id: 2 }] };
++  const to = structuredClone(from);
++  to.items[0].data.label = 'after';
++  assert.deepEqual(createPatch(freeze(from), freeze(to)), [
++    { op: 'replace', path: '/items/0/data/label', value: 'after' },
++  ]);
++});
++
++test('large arrays with a single insertion yield a single small operation', () => {
++  const from = Array.from({ length: 10000 }, (_, id) => ({ id }));
++  const to = from.toSpliced(5000, 0, { id: 'new' });
++  assert.deepEqual(createPatch(from, to), [{ op: 'add', path: '/5000', value: { id: 'new' } }]);
++});
++
++test('returned values are independent of inputs and of repeated references', () => {
++  const shared = { nested: [1] };
++  const from = freeze({ keep: 1 });
++  const to = { keep: 1, a: shared, b: shared };
++  const patch = createPatch(from, to);
++  patch[0].value.nested.push(2);
++  assert.deepEqual(to.a.nested, [1]);
++  assert.deepEqual(patch[1].value.nested, [1]);
++  shared.nested.push(3);
++  assert.deepEqual(patch[1].value.nested, [1]);
++  const root = createPatch(null, { a: shared });
++  root[0].value.a.nested.push(4);
++  assert.deepEqual(shared.nested, [1, 3]);
++});
++
++test('validates both entire inputs even when identical or being replaced', () => {
++  const cycle = {};
++  cycle.self = cycle;
++  let reads = 0;
++  const accessor = Object.defineProperty({}, 'a', { enumerable: true, get() { reads++; return 1; } });
++  const customArray = [1];
++  customArray[Symbol.iterator] = () => { throw new Error('Iterator executed'); };
++  const invalid = [
++    undefined, NaN, Infinity, -Infinity, 1n, Symbol(), () => {},
++    new Date(), new Map(), new (class { a = 1; })(), cycle,
++    { nested: undefined }, [undefined], new Array(1), accessor,
++    Object.defineProperty({}, 'hidden', { value: 1 }), { [Symbol()]: 1 }, customArray,
++  ];
++  for (const value of invalid) {
++    assert.throws(() => createPatch(value, null), Error);
++    assert.throws(() => createPatch(null, value), Error);
++    assert.throws(() => createPatch(value, value), Error);
++  }
++  assert.equal(reads, 0);
++});
++
++test('round-trips all small arrays across multiple shifts and duplicate alignments', () => {
++  const arrays = [[]];
++  let level = [[]];
++  for (let length = 1; length <= 4; length++) {
++    level = level.flatMap(array => [0, 1, { a: 1 }].map(value => [...array, value]));
++    arrays.push(...level);
++  }
++  for (const from of arrays) {
++    for (const to of arrays) {
++      const patch = createPatch(from, to);
++      assert.deepEqual(applyPatch(from, JSON.parse(JSON.stringify(patch))), to);
++    }
++  }
++});

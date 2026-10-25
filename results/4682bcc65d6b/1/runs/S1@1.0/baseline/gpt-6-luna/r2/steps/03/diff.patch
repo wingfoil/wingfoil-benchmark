@@ -1,0 +1,63 @@
+diff --git a/src/index.ts b/src/index.ts
+index e5961b657e77f95c161cea59f15c05188da3a9e0..661317be33dd9fce11528f469023c217792778d2 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -66,13 +66,19 @@ type PatchOperation = Record<string, unknown>;
+ export function applyPatch(document: unknown, patch: unknown): unknown {
+   if (!Array.isArray(patch)) throw new Error("JSON Patch must be an array");
+ 
++  // The RFC operates on JSON values, not arbitrary JavaScript object graphs.
++  // Check both inputs before cloning so values such as undefined, sparse
++  // arrays, non-finite numbers, and cycles cannot silently change meaning.
++  assertJson(document);
++  assertJson(patch);
++
+   let result = cloneJson(document);
+   for (const item of patch) {
+     if (item === null || typeof item !== "object" || Array.isArray(item)) {
+       throw new Error("JSON Patch operation must be an object");
+     }
+     const operation = item as PatchOperation;
+-    if (typeof operation.op !== "string" || typeof operation.path !== "string") {
++    if (!Object.prototype.hasOwnProperty.call(operation, "op") || !Object.prototype.hasOwnProperty.call(operation, "path") || typeof operation.op !== "string" || typeof operation.path !== "string") {
+       throw new Error("JSON Patch operation requires string 'op' and 'path' members");
+     }
+     const path = parsePointer(operation.path);
+@@ -146,6 +152,28 @@ function cloneJson(value: unknown): any {
+   return value;
+ }
+ 
++function assertJson(value: unknown, ancestors = new Set<object>()): void {
++  if (value === null || typeof value === "string" || typeof value === "boolean") return;
++  if (typeof value === "number") {
++    if (Number.isFinite(value)) return;
++    throw new Error("Value is not valid JSON: numbers must be finite");
++  }
++  if (typeof value !== "object") throw new Error("Value is not valid JSON");
++  if (ancestors.has(value)) throw new Error("Value is not valid JSON: cyclic structure");
++  ancestors.add(value);
++  if (Array.isArray(value)) {
++    for (let i = 0; i < value.length; i++) {
++      if (!Object.prototype.hasOwnProperty.call(value, i)) throw new Error("Value is not valid JSON: sparse arrays are not allowed");
++      assertJson(value[i], ancestors);
++    }
++  } else {
++    const prototype = Object.getPrototypeOf(value);
++    if (prototype !== Object.prototype && prototype !== null) throw new Error("Value is not valid JSON: objects must be plain objects");
++    for (const key of Object.keys(value)) assertJson((value as Record<string, unknown>)[key], ancestors);
++  }
++  ancestors.delete(value);
++}
++
+ function getAt(document: any, tokens: string[]): any {
+   let value = document;
+   for (const token of tokens) {
+@@ -182,7 +210,7 @@ function addAt(document: any, tokens: string[], value: any, replace = false): an
+ }
+ 
+ function removeAt(document: any, tokens: string[]): { document: any; value: any } {
+-  if (!tokens.length) return { document: undefined, value: document };
++  if (!tokens.length) throw new Error("Cannot remove the root document");
+   const parent = getAt(document, tokens.slice(0, -1));
+   const key = tokens[tokens.length - 1];
+   if (Array.isArray(parent)) {

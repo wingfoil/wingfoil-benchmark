@@ -1,0 +1,87 @@
+diff --git a/src/index.ts b/src/index.ts
+index d538a88f6bf1a7bb4aafdd57906b8fc4ae35caa7..9c655e9619d2b8cfff5e4fb11ecf5241db82635d 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -50,6 +50,32 @@ export function resolvePointer(document: unknown, pointer: string): unknown {
+ 
+ type PatchOperation = Record<string, unknown>;
+ 
++function assertJsonValue(value: unknown, label: string, ancestors = new Set<object>()): void {
++  if (value === null || typeof value === "string" || typeof value === "boolean") return;
++  if (typeof value === "number") {
++    if (!Number.isFinite(value)) throw new TypeError(`${label} must contain only finite JSON numbers`);
++    return;
++  }
++  if (typeof value !== "object") throw new TypeError(`${label} must be a JSON value`);
++  if (ancestors.has(value)) throw new TypeError(`${label} must not contain circular references`);
++  ancestors.add(value);
++  if (Array.isArray(value)) {
++    if (Object.getOwnPropertySymbols(value).length || Object.keys(value).some((key) => !/^(0|[1-9][0-9]*)$/.test(key) || Number(key) >= value.length)) {
++      throw new TypeError(`${label} arrays must contain only indexed elements`);
++    }
++    for (let i = 0; i < value.length; i++) {
++      if (!Object.prototype.hasOwnProperty.call(value, i)) throw new TypeError(`${label} must not contain sparse arrays`);
++      assertJsonValue(value[i], label, ancestors);
++    }
++  } else {
++    const prototype = Object.getPrototypeOf(value);
++    if (prototype !== Object.prototype && prototype !== null) throw new TypeError(`${label} must contain only plain JSON objects`);
++    if (Object.getOwnPropertySymbols(value).length) throw new TypeError(`${label} must not contain symbol properties`);
++    for (const key of Object.keys(value)) assertJsonValue((value as Record<string, unknown>)[key], label, ancestors);
++  }
++  ancestors.delete(value);
++}
++
+ function pointerTokens(pointer: unknown): string[] {
+   if (typeof pointer !== "string") throw new TypeError("JSON Pointer must be a string");
+   if (pointer === "") return [];
+@@ -131,24 +157,29 @@ function deepEqual(a: unknown, b: unknown): boolean {
+ /** Apply an RFC 6902 JSON Patch and return a new document without mutating the input. */
+ export function applyPatch(document: unknown, patch: unknown): unknown {
+   if (!Array.isArray(patch)) throw new TypeError("JSON Patch must be an array");
++  assertJsonValue(document, "JSON document");
++  assertJsonValue(patch, "JSON Patch");
+   let result = cloneJson(document);
+ 
+   for (const raw of patch) {
+     if (raw === null || typeof raw !== "object" || Array.isArray(raw)) throw new TypeError("Each patch operation must be an object");
+     const op = raw as PatchOperation;
+-    if (typeof op.op !== "string") throw new TypeError("Patch operation must have a string 'op'");
++    if (!Object.prototype.hasOwnProperty.call(op, "op") || typeof op.op !== "string") throw new TypeError("Patch operation must have a string 'op'");
++    if (!["add", "remove", "replace", "move", "copy", "test"].includes(op.op)) throw new Error(`Unknown JSON Patch operation '${op.op}'`);
++    if (!Object.prototype.hasOwnProperty.call(op, "path")) throw new TypeError(`${op.op} operation requires 'path'`);
+     const path = pointerTokens(op.path);
++    const has = (key: string) => Object.prototype.hasOwnProperty.call(op, key);
+ 
+     switch (op.op) {
+       case "add":
+-        if (!("value" in op)) throw new Error("add operation requires 'value'");
++        if (!has("value")) throw new Error("add operation requires 'value'");
+         result = addAt(result, path, op.value);
+         break;
+       case "remove":
+         result = removeAt(result, path).root;
+         break;
+       case "replace": {
+-        if (!("value" in op)) throw new Error("replace operation requires 'value'");
++        if (!has("value")) throw new Error("replace operation requires 'value'");
+         getAt(result, path);
+         result = removeAt(result, path).root;
+         result = addAt(result, path, op.value);
+@@ -156,6 +187,7 @@ export function applyPatch(document: unknown, patch: unknown): unknown {
+       }
+       case "copy":
+       case "move": {
++        if (!has("from")) throw new TypeError(`${op.op} operation requires 'from'`);
+         const from = pointerTokens(op.from);
+         if (op.op === "move" && from.length < path.length && from.every((t, i) => t === path[i])) throw new Error("Cannot move a value into one of its children");
+         if (op.op === "move" && from.length === path.length && from.every((t, i) => t === path[i])) break;
+@@ -165,7 +197,7 @@ export function applyPatch(document: unknown, patch: unknown): unknown {
+         break;
+       }
+       case "test":
+-        if (!("value" in op)) throw new Error("test operation requires 'value'");
++        if (!has("value")) throw new Error("test operation requires 'value'");
+         if (!deepEqual(getAt(result, path), op.value)) throw new Error("JSON Patch test operation failed");
+         break;
+       default:

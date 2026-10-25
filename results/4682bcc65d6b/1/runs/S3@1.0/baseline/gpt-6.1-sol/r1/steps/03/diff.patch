@@ -1,0 +1,73 @@
+diff --git a/README.md b/README.md
+index 1e67160e1b8b975efa1876c1d758bb7b06d3333b..52c6a8cb7e33cb4df13cc2950a23aebcdc09b909 100644
+--- a/README.md
++++ b/README.md
+@@ -9,7 +9,10 @@ bookings in memory. Register equipment with `addEquipment({ id, kind, dailyPrice
+ `quote({ itemId, start, end })` or `book({ itemId, start, end })`. Quotes contain the request fields and
+ `total`; bookings also contain a unique `id` within that service.
+ 
+-Prices and totals are nonnegative safe integer euro cents. Equipment IDs must be nonempty and unique;
++Prices and totals are nonnegative safe integer euro cents.
++Rentals of 3 days or more receive 10% off the full price in both quotes and bookings. The discounted
++total is rounded to the nearest cent, with half cents rounded up.
++Equipment IDs must be nonempty and unique;
+ `kind` is `board` or `sail`. Periods use explicit UTC ISO-8601 midnight timestamps (for example,
+ `2026-06-01T00:00:00Z`), with the end excluded and strictly after the start. Adjacent bookings are
+ allowed. Quotes do not reserve equipment or check availability. Invalid inputs and booking conflicts
+diff --git a/src/index.ts b/src/index.ts
+index 67ecfd58ac3d7400e4b614865b97f983b7bedaab..b87520ef8a27af8f2a389ca6fe702b296a8cccbd 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -65,8 +65,12 @@ export function createRentalService() {
+     const start = midnight(request.start);
+     const end = midnight(request.end);
+     if (end <= start) throw new Error('Rental end must be after its start');
+-    const total = ((end - start) / DAY_MS) * item.dailyPrice;
+-    if (!Number.isSafeInteger(total)) throw new Error('Rental total exceeds safe integer cents');
++    const days = (end - start) / DAY_MS;
++    const fullPrice = days * item.dailyPrice;
++    if (!Number.isSafeInteger(fullPrice)) throw new Error('Rental total exceeds safe integer cents');
++    // Round the discounted full price to cents, with half cents rounded up.
++    // Integer arithmetic keeps rounding exact even for large safe totals.
++    const total = days >= 3 ? Number((BigInt(fullPrice) * 9n + 5n) / 10n) : fullPrice;
+     return { itemId: request.itemId, start: request.start, end: request.end, total };
+   }
+ 
+diff --git a/test/rental.test.mjs b/test/rental.test.mjs
+index a4f55e9cdacfccb788be19aef4000c1d473cbd7a..dd7657391ebf8c7b980b3f4d4163c7092101cb2d 100644
+--- a/test/rental.test.mjs
++++ b/test/rental.test.mjs
+@@ -27,6 +27,33 @@ test('bookings have unique ids and isolated service state', () => {
+   assert.doesNotThrow(() => setup().book(request()));
+ });
+ 
++test('quotes and bookings discount the full price for rentals of at least three days', () => {
++  for (const [days, boardTotal, sailTotal] of [
++    [1, 2500, 1200], [2, 5000, 2400], [3, 6750, 3240], [4, 9000, 4320],
++  ]) {
++    const service = setup();
++    for (const [itemId, total] of [['board', boardTotal], ['sail', sailTotal]]) {
++      const input = request('2026-06-01T00:00:00Z', `2026-06-0${days + 1}T00:00:00Z`, itemId);
++      assert.deepEqual(service.quote(input), { ...input, total });
++      const booking = service.book(input);
++      assert.deepEqual(booking, { id: booking.id, ...input, total });
++    }
++  }
++});
++
++test('discounts round the full total to cents and preserve precision for large prices', () => {
++  for (const [dailyPrice, total] of [
++    [0, 0], [101, 273], [102, 275], [105, 284],
++    [3002399751580330, 8106479329266891],
++  ]) {
++    const service = createRentalService();
++    service.addEquipment({ id: 'board', kind: 'board', dailyPrice });
++    const input = request('2026-06-01T00:00:00Z', '2026-06-04T00:00:00Z');
++    assert.equal(service.quote(input).total, total);
++    assert.equal(service.book(input).total, total);
++  }
++});
++
+ test('rejects every form of overlap but allows adjacent bookings and other items', () => {
+   const service = setup();
+   service.book(request('2026-06-10T00:00:00Z', '2026-06-15T00:00:00Z'));

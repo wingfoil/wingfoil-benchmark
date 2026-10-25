@@ -1,0 +1,135 @@
+diff --git a/README.md b/README.md
+index 669f63c1d48ed691352b729bddab5c8e21baacae..eaff7e3c116fd4232cf0678d8a86dc8ce6f1ef15 100644
+--- a/README.md
++++ b/README.md
+@@ -71,8 +71,8 @@ These are the rules the service implements. When the code and this list disagree
+ - Rates by VAT class: standard 22%, reduced 10%, super-reduced 4%, exempt 0%.
+ - VAT is computed line by line, on each line's net amount after every discount, and rounded half up
+   to the cent on each line.
+-- Shipping is subject to VAT at the standard rate (22%), shown on its own line of the receipt.
+-- The order total is goods + shipping + VAT on goods + VAT on shipping.
++- Shipping is not subject to VAT.
++- The order total is goods + shipping + VAT on goods.
+ 
+ ### Invoices
+ 
+diff --git a/src/coupons.ts b/src/coupons.ts
+index 4b7df8e652e5d52033abb2ea07d763007ccce283..496aed7828812115eb643d5d3378af00c2d6948f 100644
+--- a/src/coupons.ts
++++ b/src/coupons.ts
+@@ -74,7 +74,7 @@ export class Coupons {
+     const coupon = this.#coupons.get(canonicalCode(code));
+     if (coupon === undefined) throw new CouponError(code, 'unknown code');
+     if (compareDates(date, coupon.validFrom) < 0) throw new CouponError(coupon.code, 'not valid yet');
+-    if (compareDates(date, coupon.validUntil) >= 0) throw new CouponError(coupon.code, 'expired');
++    if (compareDates(date, coupon.validUntil) > 0) throw new CouponError(coupon.code, 'expired');
+     if (amount < coupon.minimumCents) throw new CouponError(coupon.code, 'order below the minimum amount');
+     if (coupon.singleUse && this.#usedBy.has(coupon.code)) throw new CouponError(coupon.code, 'already used');
+     return coupon;
+diff --git a/src/invoices.ts b/src/invoices.ts
+index 198c748dcbdc66310b665bd79b8c19725437ff17..78247b56d1935ef805fd41645c09c6c4ab08def8 100644
+--- a/src/invoices.ts
++++ b/src/invoices.ts
+@@ -1,13 +1,11 @@
+ /**
+  * Invoices. A shipped order gets an invoice, numbered per calendar year (2026/0001, 2026/0002, …) in the
+- * order the invoices are issued, with its VAT summarised by rate: goods at each rate, and shipping at the
+- * standard rate.
++ * order the invoices are issued, with its VAT summarised by rate for goods.
+  */
+ import { OrderStateError } from './errors.ts';
+ import { sum } from './money.ts';
+ import type { Cents } from './money.ts';
+ import type { Order } from './orders.ts';
+-import { VAT_RATES } from './tax.ts';
+ 
+ export interface VatSummaryRow {
+   readonly rate: number;
+@@ -24,7 +22,7 @@ export interface Invoice {
+   readonly totalCents: Cents;
+ }
+ 
+-/** VAT by rate, the highest rate first; shipping counts at the standard rate. */
++/** VAT by rate, the highest rate first. Shipping is not subject to VAT. */
+ export function vatSummary(order: Order): VatSummaryRow[] {
+   const rows = new Map<number, { netCents: Cents; vatCents: Cents }>();
+   const add = (rate: number, net: Cents, vat: Cents) => {
+@@ -32,9 +30,6 @@ export function vatSummary(order: Order): VatSummaryRow[] {
+     rows.set(rate, { netCents: row.netCents + net, vatCents: row.vatCents + vat });
+   };
+   for (const line of order.lines) add(line.vatRate, line.netCents, line.vatCents);
+-  if (order.totals.shippingCents > 0) {
+-    add(VAT_RATES.standard, order.totals.shippingCents, order.totals.shippingVatCents);
+-  }
+   return [...rows.entries()].map(([rate, row]) => ({ rate, ...row })).sort((a, b) => b.rate - a.rate);
+ }
+ 
+diff --git a/src/pricing.ts b/src/pricing.ts
+index 3d07b8e66d51d75411d7694eb6b4d79c95913fee..42932c9f1db5e5af5b0499b7befd4c73332bf2b4 100644
+--- a/src/pricing.ts
++++ b/src/pricing.ts
+@@ -1,7 +1,7 @@
+ /**
+  * Pricing an order, in the order the README documents: gross lines, volume discounts, the coupon
+  * (spread over the lines in proportion to their amounts, for VAT), shipping on the goods amount, VAT
+- * per line and on shipping, and the total.
++ * per line, and the total. Shipping is not subject to VAT.
+  */
+ import type { Product } from './catalog.ts';
+ import type { Coupon } from './coupons.ts';
+@@ -9,7 +9,7 @@ import { capped, couponDiscount, volumeDiscount } from './discounts.ts';
+ import { allocate, sum } from './money.ts';
+ import type { Cents } from './money.ts';
+ import { shippingCost } from './shipping.ts';
+-import { lineVat, shippingVat, vatRate } from './tax.ts';
++import { lineVat, vatRate } from './tax.ts';
+ 
+ export interface PricedLine {
+   readonly sku: string;
+@@ -55,8 +55,12 @@ export function priceOrder(inputs: readonly LineInput[], coupon?: Coupon): Price
+   const afterVolume = gross.map((amount, index) => amount - (volume[index] ?? 0));
+   const volumeTotal = sum(volume);
+ 
+-  const couponTotal =
+-    coupon === undefined ? 0 : capped(couponDiscount(coupon, grossTotal), volumeTotal, grossTotal);
++  const afterVolumeTotal = sum(afterVolume);
++  const couponTotal = coupon === undefined ? 0 : capped(
++    couponDiscount(coupon, afterVolumeTotal),
++    volumeTotal,
++    grossTotal,
++  );
+   const couponShares = allocate(couponTotal, afterVolume);
+ 
+   const lines = inputs.map(({ product, quantity }, index): PricedLine => {
+@@ -79,7 +83,7 @@ export function priceOrder(inputs: readonly LineInput[], coupon?: Coupon): Price
+   const weight = sum(inputs.map(({ product, quantity }) => product.weightGrams * quantity));
+   const shipping = shippingCost(goods, weight);
+   const vat = sum(lines.map((line) => line.vatCents));
+-  const shippingTax = shippingVat(shipping);
++  const shippingTax = 0;
+   return {
+     lines,
+     weightGrams: weight,
+diff --git a/src/tax.ts b/src/tax.ts
+index 5e12c55f1ca4a2044012df5ea175a5b57febbef3..c70202a264f4a409508379ab815d49a97b292087 100644
+--- a/src/tax.ts
++++ b/src/tax.ts
+@@ -1,6 +1,6 @@
+ /**
+  * VAT. Every product belongs to a VAT class; each order line pays its class's rate on its net amount
+- * (after every discount), and shipping pays the standard rate. Amounts are rounded half up to the cent,
++ * (after every discount). Shipping is not subject to VAT. Amounts are rounded half up to the cent,
+  * line by line.
+  */
+ import { percentOf } from './money.ts';
+@@ -26,7 +26,8 @@ export function lineVat(net: Cents, vatClass: VatClass): Cents {
+   return percentOf(net, vatRate(vatClass));
+ }
+ 
+-/** The VAT on a shipping cost: the standard rate. */
++/** Shipping is not subject to VAT. */
+ export function shippingVat(shipping: Cents): Cents {
+-  return percentOf(shipping, VAT_RATES.standard);
++  void shipping;
++  return 0;
+ }

@@ -1,0 +1,162 @@
+diff --git a/src/index.ts b/src/index.ts
+index 498da9fdf4a8d7cbc174ff638793863b7c9abe79..45a1fcafd638bb4fe516ed98e283dbe9742de40f 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -51,6 +51,157 @@ export function resolvePointer(document: unknown, pointer: string): unknown {
+   return value;
+ }
+ 
++/** An operation emitted by {@link createPatch}. */
++export type JsonPatchOperation =
++  | { op: "add"; path: string; value: unknown }
++  | { op: "remove"; path: string }
++  | { op: "replace"; path: string; value: unknown };
++
++/**
++ * Creates an RFC 6902 JSON Patch which transforms `from` into `to`.
++ *
++ * Both inputs must be JSON values.  Neither is changed, and values included
++ * in the returned patch are independent copies rather than references into
++ * `to`.
++ */
++export function createPatch(from: unknown, to: unknown): JsonPatchOperation[] {
++  // Apart from validating the inputs, snapshots mean a getter-backed object
++  // cannot change underneath the comparison and that returned patch values do
++  // not share mutable containers with either argument.
++  const source = cloneJsonValue(from);
++  const target = cloneJsonValue(to);
++  const patch: JsonPatchOperation[] = [];
++
++  createPatchAtPath(source, target, [], patch);
++  return patch;
++}
++
++function createPatchAtPath(
++  from: unknown,
++  to: unknown,
++  path: string[],
++  patch: JsonPatchOperation[],
++): void {
++  if (jsonEqual(from, to)) {
++    return;
++  }
++
++  if (isJsonObject(from) && isJsonObject(to)) {
++    // Delete first so a key present only in the old document never survives.
++    for (const key of Object.keys(from)) {
++      if (!Object.prototype.hasOwnProperty.call(to, key)) {
++        patch.push({ op: "remove", path: formatPointer([...path, key]) });
++      }
++    }
++
++    for (const key of Object.keys(to)) {
++      if (Object.prototype.hasOwnProperty.call(from, key)) {
++        createPatchAtPath(from[key], to[key], [...path, key], patch);
++      } else {
++        patch.push({ op: "add", path: formatPointer([...path, key]), value: to[key] });
++      }
++    }
++    return;
++  }
++
++  if (Array.isArray(from) && Array.isArray(to)) {
++    createArrayPatch(from, to, path, patch);
++    return;
++  }
++
++  patch.push({ op: "replace", path: formatPointer(path), value: to });
++}
++
++function createArrayPatch(
++  from: unknown[],
++  to: unknown[],
++  path: string[],
++  patch: JsonPatchOperation[],
++): void {
++  // This is the Levenshtein edit table, with a replacement costing one.  It
++  // preserves matching runs (including after an insertion/deletion), while a
++  // changed array member is still recursively diffed instead of replacing the
++  // entire array.  Operations are emitted in application order, so `index`
++  // always refers to the current version of the array.
++  const distances: number[][] = Array.from(
++    { length: from.length + 1 },
++    () => Array<number>(to.length + 1).fill(0),
++  );
++
++  for (let sourceIndex = from.length; sourceIndex >= 0; sourceIndex -= 1) {
++    for (let targetIndex = to.length; targetIndex >= 0; targetIndex -= 1) {
++      if (sourceIndex === from.length) {
++        distances[sourceIndex][targetIndex] = to.length - targetIndex;
++      } else if (targetIndex === to.length) {
++        distances[sourceIndex][targetIndex] = from.length - sourceIndex;
++      } else if (jsonEqual(from[sourceIndex], to[targetIndex])) {
++        distances[sourceIndex][targetIndex] = distances[sourceIndex + 1][targetIndex + 1];
++      } else {
++        distances[sourceIndex][targetIndex] = 1 + Math.min(
++          distances[sourceIndex + 1][targetIndex + 1],
++          distances[sourceIndex + 1][targetIndex],
++          distances[sourceIndex][targetIndex + 1],
++        );
++      }
++    }
++  }
++
++  let sourceIndex = 0;
++  let targetIndex = 0;
++  let index = 0;
++  while (sourceIndex < from.length || targetIndex < to.length) {
++    if (sourceIndex === from.length) {
++      patch.push({ op: "add", path: formatPointer([...path, String(index)]), value: to[targetIndex] });
++      targetIndex += 1;
++      index += 1;
++      continue;
++    }
++    if (targetIndex === to.length) {
++      patch.push({ op: "remove", path: formatPointer([...path, String(index)]) });
++      sourceIndex += 1;
++      continue;
++    }
++    if (jsonEqual(from[sourceIndex], to[targetIndex])) {
++      sourceIndex += 1;
++      targetIndex += 1;
++      index += 1;
++      continue;
++    }
++
++    const replaceCost = distances[sourceIndex + 1][targetIndex + 1];
++    const removeCost = distances[sourceIndex + 1][targetIndex];
++    const addCost = distances[sourceIndex][targetIndex + 1];
++    const minimumCost = distances[sourceIndex][targetIndex] - 1;
++
++    // Prefer a replacement on ties: it produces a smaller, more informative
++    // nested patch for e.g. an object whose one member changed.
++    if (replaceCost === minimumCost) {
++      createPatchAtPath(from[sourceIndex], to[targetIndex], [...path, String(index)], patch);
++      sourceIndex += 1;
++      targetIndex += 1;
++      index += 1;
++    } else if (removeCost === minimumCost) {
++      patch.push({ op: "remove", path: formatPointer([...path, String(index)]) });
++      sourceIndex += 1;
++    } else if (addCost === minimumCost) {
++      patch.push({ op: "add", path: formatPointer([...path, String(index)]), value: to[targetIndex] });
++      targetIndex += 1;
++      index += 1;
++    } else {
++      // The dynamic-programming recurrence guarantees one of the branches.
++      throw new Error("Unable to create JSON Patch for array values");
++    }
++  }
++}
++
++function formatPointer(tokens: string[]): string {
++  return tokens.length === 0 ? "" : `/${tokens.map(encodeReferenceToken).join("/")}`;
++}
++
++function encodeReferenceToken(token: string): string {
++  return token.replace(/~/g, "~0").replace(/\//g, "~1");
++}
++
+ /**
+  * Applies an RFC 6902 JSON Patch without changing the supplied document.
+  *

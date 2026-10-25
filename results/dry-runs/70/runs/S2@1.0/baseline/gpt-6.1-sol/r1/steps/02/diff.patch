@@ -1,0 +1,113 @@
+diff --git a/src/coupons.ts b/src/coupons.ts
+index 4b7df8e652e5d52033abb2ea07d763007ccce283..496aed7828812115eb643d5d3378af00c2d6948f 100644
+--- a/src/coupons.ts
++++ b/src/coupons.ts
+@@ -74,7 +74,7 @@ export class Coupons {
+     const coupon = this.#coupons.get(canonicalCode(code));
+     if (coupon === undefined) throw new CouponError(code, 'unknown code');
+     if (compareDates(date, coupon.validFrom) < 0) throw new CouponError(coupon.code, 'not valid yet');
+-    if (compareDates(date, coupon.validUntil) >= 0) throw new CouponError(coupon.code, 'expired');
++    if (compareDates(date, coupon.validUntil) > 0) throw new CouponError(coupon.code, 'expired');
+     if (amount < coupon.minimumCents) throw new CouponError(coupon.code, 'order below the minimum amount');
+     if (coupon.singleUse && this.#usedBy.has(coupon.code)) throw new CouponError(coupon.code, 'already used');
+     return coupon;
+diff --git a/src/pricing.ts b/src/pricing.ts
+index 3d07b8e66d51d75411d7694eb6b4d79c95913fee..8d2e07ede7fc792a7a1ada9fffd4bebfedb73c6c 100644
+--- a/src/pricing.ts
++++ b/src/pricing.ts
+@@ -56,7 +56,7 @@ export function priceOrder(inputs: readonly LineInput[], coupon?: Coupon): Price
+   const volumeTotal = sum(volume);
+ 
+   const couponTotal =
+-    coupon === undefined ? 0 : capped(couponDiscount(coupon, grossTotal), volumeTotal, grossTotal);
++    coupon === undefined ? 0 : capped(couponDiscount(coupon, sum(afterVolume)), volumeTotal, grossTotal);
+   const couponShares = allocate(couponTotal, afterVolume);
+ 
+   const lines = inputs.map(({ product, quantity }, index): PricedLine => {
+diff --git a/test/coupons.test.ts b/test/coupons.test.ts
+index 1fdc2519dc031050b1b5593605af611816478518..49b4e9f9d9c0a26bbb7f260e0b9e09878480ff9f 100644
+--- a/test/coupons.test.ts
++++ b/test/coupons.test.ts
+@@ -33,6 +33,22 @@ describe('coupons', () => {
+     assert.throws(() => orders.quote({ ...request, date: '2026-04-01' }), CouponError);
+   });
+ 
++  for (const [validFrom, validUntil] of [['2026-11-01', '2026-11-30'], ['2026-11-30', '2026-11-30']]) {
++    it(`accepts both endpoints of AUTUMN valid from ${validFrom} through ${validUntil}`, () => {
++      for (const date of new Set([validFrom, validUntil])) {
++        const { orders, coupons } = shop();
++        coupons.add({ code: 'AUTUMN', kind: 'percent', value: 10, validFrom, validUntil });
++        const request = { customer: 'luca', date, lines: [{ sku: 'PEN-4', quantity: 1 }], coupon: 'autumn' };
++        const quote = orders.quote(request);
++        const order = orders.place(request);
++        assert.equal(order.totals.couponDiscountCents, 200);
++        assert.deepEqual(order.totals, quote.totals);
++        assert.throws(() => orders.quote({ ...request, date: '2026-10-31' }), CouponError);
++        assert.throws(() => orders.quote({ ...request, date: '2026-12-01' }), CouponError);
++      }
++    });
++  }
++
+   it('lets a single-use coupon be used once', () => {
+     const { orders, coupons } = shop();
+     coupons.add({ code: 'ONCE', kind: 'fixed', value: 100, validFrom: '2026-01-01', validUntil: '2026-12-31', singleUse: true });
+diff --git a/test/orders.test.ts b/test/orders.test.ts
+index d07f06bd09b3489b674e3119a14ea7d2ced148a7..271100316d05c76da280623e5019f5a97f6c840a 100644
+--- a/test/orders.test.ts
++++ b/test/orders.test.ts
+@@ -77,6 +77,8 @@ describe('orders', () => {
+     const { orders } = shop();
+     const text = receipt(orders.place({ customer: 'c-1', date: '2026-03-02', lines: [{ sku: 'MUG-01', quantity: 1 }] }));
+     assert.match(text, /1 × Enamel mug \(MUG-01\)\s+€10\.00/);
++    assert.match(text, /^Shipping\s+€4\.90$/m);
++    assert.match(text, /^VAT on shipping\s+€1\.08$/m);
+     assert.match(text, /Total\s+€/);
+   });
+ });
+diff --git a/test/regressions.test.ts b/test/regressions.test.ts
+index 586c69998ebd92820b3eefa59dc16c37db92ba80..63e027ff2d8970e10c1bca75c3fc54da088ef479 100644
+--- a/test/regressions.test.ts
++++ b/test/regressions.test.ts
+@@ -5,6 +5,42 @@ import { createShop } from '../src/index.ts';
+ import { lineVat } from '../src/tax.ts';
+ 
+ describe('reported order regressions', () => {
++  it('applies a percentage coupon after the volume discount in quotes and placed orders', () => {
++    const { catalog, inventory, coupons, orders } = createShop();
++    catalog.add({ sku: 'NOTEBOOK', name: 'Notebook', priceCents: 500, vatClass: 'standard', weightGrams: 50 });
++    inventory.restock('NOTEBOOK', 12);
++    coupons.add({ code: 'TENOFF', kind: 'percent', value: 10, validFrom: '2026-01-01', validUntil: '2026-12-31' });
++    const request = { customer: 'c-1', date: '2026-11-15', lines: [{ sku: 'NOTEBOOK', quantity: 12 }], coupon: 'TENOFF' };
++    const quote = orders.quote(request);
++    const order = orders.place(request);
++    assert.deepEqual(order.totals, quote.totals);
++    assert.deepEqual(order.lines, quote.lines);
++    assert.deepEqual(order.totals, {
++      grossCents: 6000,
++      volumeDiscountCents: 600,
++      couponDiscountCents: 540,
++      goodsCents: 4860,
++      shippingCents: 490,
++      vatCents: 1069,
++      shippingVatCents: 108,
++      totalCents: 6527,
++    });
++    assert.equal(order.lines[0]?.netCents, 4860);
++    assert.equal(order.lines[0]?.couponDiscountCents, 540);
++  });
++
++  it('keeps combined volume and coupon discounts within half the gross amount', () => {
++    const { catalog, coupons, orders } = createShop();
++    catalog.add({ sku: 'NOTEBOOK', name: 'Notebook', priceCents: 500, vatClass: 'standard', weightGrams: 50 });
++    for (const kind of ['percent', 'fixed'] as const) {
++      coupons.add({ code: kind, kind, value: kind === 'percent' ? 80 : 10000, validFrom: '2026-01-01', validUntil: '2026-12-31' });
++      const quote = orders.quote({ customer: 'c-1', date: '2026-11-15', lines: [{ sku: 'NOTEBOOK', quantity: 12 }], coupon: kind });
++      assert.equal(quote.totals.volumeDiscountCents, 600);
++      assert.equal(quote.totals.couponDiscountCents, 2400);
++      assert.equal(quote.totals.goodsCents, 3000);
++    }
++  });
++
+   it('accepts lower-case and padded SKUs, merges them and reserves canonical stock', () => {
+     const { catalog, inventory, orders } = createShop();
+     const product = catalog.add({ sku: 'LB-220', name: 'Lamp', priceCents: 1000, vatClass: 'standard', weightGrams: 100 });
