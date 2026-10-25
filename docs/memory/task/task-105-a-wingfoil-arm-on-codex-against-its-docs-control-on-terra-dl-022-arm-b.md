@@ -80,8 +80,9 @@ and its dry-run profile validating.
   into the main checkout untracked for the run and removed after; `BENCH_WINGFOIL_REPO` the local WingFoil clone, whose
   `v0.3.0` is `cc31d7a8`, after a first attempt refused for its absence before any session): each completed, no
   intervention, its secret scan clean (the first, refused attempt's log was overwritten by the second; no dry-run
-  directory was made for it, `dry-runs/78` following 77); `dry-runs/78` (baseline-docs, 0.7005 USD) and `dry-runs/79` (wingfoil, 0.8499
-  USD), API-equivalent (`price-table`), 0 € spent; two lines of the v0.3 ledger; committed on main (`b99474a8`).
+  directory was made for it, `dry-runs/78` following 77); `dry-runs/78` (baseline-docs, 0.7005 USD) and `dry-runs/79`
+  (wingfoil, 0.8499 USD), API-equivalent (`price-table`), 0 € spent; two lines of the v0.3 ledger; committed on main
+  (`b99474a8`).
 - **Criterion 2, read from the wingfoil dry run:** that the MCP server started is an inference, not an observation: the
   runner writes it with `required = true`, Codex 0.162.1 ends a session whose required server does not start (read
   offline, review round 2), and all five sessions completed; no `config.toml`, MCP start event or stderr line is kept
