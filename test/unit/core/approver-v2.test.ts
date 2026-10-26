@@ -98,6 +98,11 @@ describe('approver policy v2 (task-106, REQ-RUN-06)', () => {
     'dl-003 is pending. Reply with `Approved. Proceed.` to continue.',
     'Reply `Approved. Proceed.` and I will implement it.',
     'Once approved, I will implement the change.',
+    // Review round 2: Codex's form without "please", and a request in a bullet or a quote.
+    'dl-003 is pending. Reply: `Approved. Proceed.`',
+    'dl-003 is pending. Reply exactly: `Approved. Proceed.`',
+    '- Reply `Approved. Proceed.` to approve dl-003.',
+    '> Reply with `Approved. Proceed.` to continue.',
   ])('reads the request %j as an approval request', (text) => {
     expect(v2().classify(`I did some work.\n\n${text}`)).toBe('approval');
   });
@@ -118,6 +123,14 @@ describe('approver policy v2 (task-106, REQ-RUN-06)', () => {
     'In reply to your message I approved dl-003.',
     'Reply received; dl-003 approved and the change committed.',
     'The approval went through and I don’t have anything else to change.',
+    // Review round 2: accounts the round-1 patterns let back in.
+    'On your go-ahead I approved dl-003 and implemented the change.',
+    'Once approved, dl-003 moved to done and I implemented the validation.',
+    'Once approved, the decision-log was committed by WingFoil.',
+    'The parser now returns null if the reply is empty.',
+    'I added a test for what happens if the reply is malformed.',
+    'Reply received: "Approved. Proceed." — so I approved dl-003 and implemented it.',
+    'Replying now. Reply received.',
   ])('does not read %j as an approval request', (text) => {
     expect(v2().classify(`I did some work.\n\n${text}`)).not.toBe('approval');
   });
@@ -185,6 +198,8 @@ describe('approver policy v2 (task-106, REQ-RUN-06)', () => {
     // "your" repeated without "approval": a backtracking pattern scans to the sentence's end from each one.
     const started = performance.now();
     expect(v2().classify(`it needs ${'your '.repeat(40_000)}`)).toBeUndefined();
+    // A full stop then a long run of spaces: overlapping whitespace classes backtrack (review round 2).
+    expect(v2().classify(`Done.${' '.repeat(40_000)}x`)).toBeUndefined();
     expect(performance.now() - started).toBeLessThan(1000);
   });
 
