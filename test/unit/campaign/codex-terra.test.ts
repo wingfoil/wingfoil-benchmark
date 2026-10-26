@@ -51,3 +51,23 @@ describe('the Codex harness-vs-docs campaign on Terra (task-105, characterizatio
     expect(profile.approver_policy).toBe(spec.approver_policy);
   });
 });
+
+/** dl-022's arm B rerun on approver policy v2 (task-106, bug-035). */
+describe('the Terra campaign on approver policy v2 (task-106, characterization)', () => {
+  const v1 = checkCampaign(repoPath('campaigns/codex-terra-harness-vs-docs.yaml'));
+  const v2 = checkCampaign(repoPath('campaigns/codex-terra-harness-vs-docs-v2.yaml'));
+
+  it("validates inside dl-025 and differs from campaign-005's file in its approver policy only", () => {
+    if (!v1.ok) throw new Error(JSON.stringify(v1.issues));
+    if (!v2.ok) throw new Error(JSON.stringify(v2.issues));
+    const { spec, extended } = v2.value.campaign;
+    expect(spec.approver_policy).toBe('v2');
+    expect({ ...spec, approver_policy: 'v1' }).toEqual(v1.value.campaign.spec);
+    expect(
+      codexScopeIssues(
+        { agent: 'codex', preset: extended?.preset, arms: spec.arms, models: campaignModels(spec) },
+        Date.parse('2026-10-27T12:00:00Z'),
+      ),
+    ).toEqual([]);
+  });
+});
