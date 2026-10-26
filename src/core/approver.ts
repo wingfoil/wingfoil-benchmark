@@ -115,6 +115,10 @@ const ANYWHERE_V2: readonly RegExp[] = [
   /\bpending\s+your\b/i,
   // Work held until an approval: "Once dl-005 is approved, the value will be checked".
   /\b(?:once|when|after|until)\s+[^.!?\n]{0,80}?\b(?:is|are|gets?|been)\s+approved\b/i,
+  /\b(?:once|when|after|if)\s+you\s+approve\b/i,
+  /\byour\s+go-ahead\b/i,
+  // "Please provide: "Approved. Proceed."", never "please provide a sample", which is a question.
+  /\bplease\s+provide\b[^\n]{0,40}?\bapproved\b/i,
 ];
 
 /**
@@ -125,6 +129,7 @@ const WITHIN_SENTENCE_V2: readonly (readonly [RegExp, RegExp])[] = [
   [/\b(?:needs?|requires?)\b/i, /\byour\b[\s\S]*\bapproval\b/i],
   [/\bI\s+(?:need|require)\b/i, /\bapproval\b/i],
   [/\bI(?:'m|’m|\s+am)\s+asking\b/i, /\bapproval\b/i],
+  [/\bapproval\b/i, /\bI\s+(?:don't|don’t|do\s+not|haven't|haven’t|have\s+not)\s+(?:have|got|received)\b/i],
   [/\blet\s+me\s+know\b/i, /\b(?:proceed|continue|approve)/i],
 ];
 

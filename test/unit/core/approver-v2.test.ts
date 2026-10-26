@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
+import { CLASSIFIER_V1, CLASSIFIER_V2 } from '../../../src/core/approver.js';
 import { approverPolicy, approverPolicyVersions } from '../../../src/core/index.js';
 import { repoPath } from '../../support/paths.js';
 
@@ -112,6 +113,54 @@ describe('approver policy v2 (task-106, REQ-RUN-06)', () => {
     expect(
       v2().classify('What refund policy should it use?\n\nFor example: a full refund before the start.'),
     ).toBe('question');
+  });
+
+  it('changes v1’s reading of the corpus only where a bug says it should (criterion 4)', () => {
+    // Every message of the corpus whose reading differs between v1 and v2, each reviewed by hand and named with the
+    // bug it answers (test/fixtures/approver/v1-to-v2.json). A change of v2 that moves any other message fails here.
+    const v1 = approverPolicy('v1');
+    if (v1 === undefined) throw new Error('policy v1 is not implemented');
+    const reading = (kind: string | undefined): string => kind ?? '-';
+    const changed = CORPUS.filter((m) => v1.classify(m.text) !== v2().classify(m.text)).map((m) => ({
+      source: m.source,
+      v1: reading(v1.classify(m.text)),
+      v2: reading(v2().classify(m.text)),
+    }));
+    const pinned = (
+      JSON.parse(readFileSync(repoPath('test/fixtures/approver/v1-to-v2.json'), 'utf8')) as {
+        source: string;
+        v1: string;
+        v2: string;
+      }[]
+    ).map(({ source, v1: before, v2: after }) => ({ source, v1: before, v2: after }));
+    expect(changed.sort((a, b) => a.source.localeCompare(b.source))).toEqual(
+      pinned.sort((a, b) => a.source.localeCompare(b.source)),
+    );
+    expect(CORPUS).toHaveLength(1048);
+  });
+
+  it('is frozen: its patterns are exactly these, and changing one is v3', () => {
+    expect(CLASSIFIER_V2.anywhere.slice(0, CLASSIFIER_V1.anywhere.length)).toEqual(CLASSIFIER_V1.anywhere);
+    expect(CLASSIFIER_V2.anywhere.slice(CLASSIFIER_V1.anywhere.length).map(String)).toEqual([
+      String.raw`/\bplease\s+(?:reply|respond|approve|review)\b/i`,
+      String.raw`/(?<!\byour\s+)\b(?:reply|respond)\b[^\n]{0,40}?\bapproved\b/i`,
+      String.raw`/\b(?:can|could|would|will)\s+you\s+(?:please\s+)?(?:approve|review)\b/i`,
+      String.raw`/\bpending\s+your\b/i`,
+      String.raw`/\b(?:once|when|after|until)\s+[^.!?\n]{0,80}?\b(?:is|are|gets?|been)\s+approved\b/i`,
+      String.raw`/\b(?:once|when|after|if)\s+you\s+approve\b/i`,
+      String.raw`/\byour\s+go-ahead\b/i`,
+      String.raw`/\bplease\s+provide\b[^\n]{0,40}?\bapproved\b/i`,
+    ]);
+    expect(CLASSIFIER_V2.withinSentence.map((pair) => pair.map(String))).toEqual([
+      [String.raw`/\b(?:needs?|requires?)\b/i`, String.raw`/\byour\b[\s\S]*\bapproval\b/i`],
+      [String.raw`/\bI\s+(?:need|require)\b/i`, String.raw`/\bapproval\b/i`],
+      [String.raw`/\bI(?:'m|’m|\s+am)\s+asking\b/i`, String.raw`/\bapproval\b/i`],
+      [
+        String.raw`/\bapproval\b/i`,
+        String.raw`/\bI\s+(?:don't|don’t|do\s+not|haven't|haven’t|have\s+not)\s+(?:have|got|received)\b/i`,
+      ],
+      [String.raw`/\blet\s+me\s+know\b/i`, String.raw`/\b(?:proceed|continue|approve)/i`],
+    ]);
   });
 
   it('does not read a question earlier in the message', () => {
