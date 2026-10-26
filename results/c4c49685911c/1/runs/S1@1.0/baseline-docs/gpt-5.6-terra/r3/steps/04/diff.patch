@@ -1,0 +1,146 @@
+diff --git a/README.md b/README.md
+index e18f743fa2bab00b5fce73e2ce6417615480834f..67891439db01f05cc31e5fcb0b2b7c05ae153e10 100644
+--- a/README.md
++++ b/README.md
+@@ -1,6 +1,6 @@
+ # json-toolkit
+ 
+-Documentation version: 0.4 (2026-10-26)
++Documentation version: 0.5 (2026-10-26)
+ 
+ A small TypeScript library, with no runtime dependency, of building blocks for our services that store,
+ exchange and update JSON: configuration files, API payloads and stored records. It is imported by the
+@@ -34,3 +34,18 @@ applyPatch({ users: ['Ada'] }, [
+   { op: 'add', path: '/users/-', value: 'Grace' },
+ ]); // { users: ['Ada', 'Grace'] }
+ ```
++
++## JSON Merge Patch
++
++`applyMergePatch(target, patch)` applies an [RFC 7386 JSON Merge Patch](https://www.rfc-editor.org/rfc/rfc7386)
++without mutating either input. Object members set to `null` in the patch are removed; arrays and other
++non-object values replace their target wholesale.
++
++```ts
++import { applyMergePatch } from 'json-toolkit';
++
++applyMergePatch(
++  { title: 'Draft', author: { name: 'Ada', email: 'ada@example.test' } },
++  { title: 'Published', author: { email: null } },
++); // { title: 'Published', author: { name: 'Ada' } }
++```
+diff --git a/src/index.ts b/src/index.ts
+index 989f8c5a0f78fd4af2f5aa2c01440de9522b02c5..e2aa0cb514746540f059a548370d03cd84f97cc3 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -69,6 +69,40 @@ export function applyPatch(document: JsonValue, patch: unknown): JsonValue {
+   return result;
+ }
+ 
++/**
++ * Applies an RFC 7386 JSON Merge Patch without mutating either input document.
++ *
++ * Object members with a null patch value are removed. A non-object patch replaces
++ * the target value, while arrays are replaced as whole values.
++ *
++ * @param target - The JSON document to update.
++ * @param patch - The JSON Merge Patch document to apply.
++ * @returns A new JSON document containing the merged result.
++ * @throws {Error} If either argument is not a JSON value.
++ */
++export function applyMergePatch(target: JsonValue, patch: JsonValue): JsonValue {
++  assertJsonValue(target, 'The target');
++  assertJsonValue(patch, 'The JSON Merge Patch');
++  return mergePatch(target, patch);
++}
++
++function mergePatch(target: JsonValue, patch: JsonValue): JsonValue {
++  if (!isJsonObject(patch)) {
++    return cloneJsonValue(patch);
++  }
++
++  const result: { [member: string]: JsonValue } = isJsonObject(target) ? cloneJsonObject(target) : {};
++  for (const member of Object.keys(patch)) {
++    const value = patch[member]!;
++    if (value === null) {
++      delete result[member];
++    } else {
++      setObjectMember(result, member, mergePatch(result[member] ?? null, value));
++    }
++  }
++  return result;
++}
++
+ function applyOperation(document: JsonValue, operation: unknown): JsonValue {
+   if (operation === null || typeof operation !== 'object' || Array.isArray(operation)) {
+     throw new Error('A JSON Patch operation must be an object.');
+@@ -340,15 +374,19 @@ function cloneJsonValue(value: JsonValue): JsonValue {
+     return value.map(cloneJsonValue);
+   }
+   if (isJsonObject(value)) {
+-    const copy: { [member: string]: JsonValue } = {};
+-    for (const key of Object.keys(value)) {
+-      setObjectMember(copy, key, cloneJsonValue(value[key]!));
+-    }
+-    return copy;
++    return cloneJsonObject(value);
+   }
+   return value;
+ }
+ 
++function cloneJsonObject(value: { [member: string]: JsonValue }): { [member: string]: JsonValue } {
++  const copy: { [member: string]: JsonValue } = {};
++  for (const key of Object.keys(value)) {
++    setObjectMember(copy, key, cloneJsonValue(value[key]!));
++  }
++  return copy;
++}
++
+ function decodeReferenceToken(token: string): string {
+   if (/~(?:[^01]|$)/.test(token)) {
+     throw new Error(`Invalid JSON Pointer escape sequence in token "${token}".`);
+diff --git a/test/apply-merge-patch.test.mjs b/test/apply-merge-patch.test.mjs
+new file mode 100644
+index 0000000000000000000000000000000000000000..19e2d5a3618f304f99f8e6194344ec69de313025
+--- /dev/null
++++ b/test/apply-merge-patch.test.mjs
+@@ -0,0 +1,39 @@
++import assert from 'node:assert/strict';
++import { before, test } from 'node:test';
++import { execFileSync } from 'node:child_process';
++
++before(() => {
++  execFileSync('npx', ['tsc'], { stdio: 'inherit' });
++});
++
++test('applies the RFC 7386 merge patch examples without changing the target or patch', async () => {
++  const { applyMergePatch } = await import('../dist/index.js');
++  const target = { title: 'Goodbye!', author: { givenName: 'John', familyName: 'Doe' }, tags: ['example', 'sample'], content: 'This will be unchanged' };
++  const patch = { title: 'Hello!', phoneNumber: '+01-123-456-7890', author: { familyName: null }, tags: ['example'] };
++
++  assert.deepEqual(applyMergePatch(target, patch), {
++    title: 'Hello!',
++    author: { givenName: 'John' },
++    tags: ['example'],
++    content: 'This will be unchanged',
++    phoneNumber: '+01-123-456-7890',
++  });
++  assert.deepEqual(target, { title: 'Goodbye!', author: { givenName: 'John', familyName: 'Doe' }, tags: ['example', 'sample'], content: 'This will be unchanged' });
++  assert.deepEqual(patch, { title: 'Hello!', phoneNumber: '+01-123-456-7890', author: { familyName: null }, tags: ['example'] });
++});
++
++test('treats a non-object target as an empty object and replaces with non-object patches', async () => {
++  const { applyMergePatch } = await import('../dist/index.js');
++
++  assert.deepEqual(applyMergePatch(['a', 'b'], { value: null, added: true }), { added: true });
++  assert.deepEqual(applyMergePatch({ value: true }, ['replaced']), ['replaced']);
++  assert.equal(applyMergePatch({ value: true }, null), null);
++});
++
++test('accepts only JSON documents', async () => {
++  const { applyMergePatch } = await import('../dist/index.js');
++
++  assert.throws(() => applyMergePatch({ value: 1 }, { value: Number.NaN }));
++  assert.throws(() => applyMergePatch({ value: 1 }, new Date()));
++  assert.throws(() => applyMergePatch(new Date(), {}));
++});

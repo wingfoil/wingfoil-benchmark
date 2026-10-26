@@ -1,0 +1,108 @@
+diff --git a/README.md b/README.md
+index b4ed9fc86f4f1c8d035bb6022852769cd3fa148c..0abb520fd47002fc1d5f65cc0832d7bb434146ca 100644
+--- a/README.md
++++ b/README.md
+@@ -19,8 +19,9 @@ resolvePointer({ "a/b": ["value"] }, "/a~1b/0"); // "value"
+ ## JSON Patch
+ 
+ `applyPatch(document, patch)` applies an RFC 6902 JSON Patch containing `add`, `remove`, `replace`,
+-`move`, `copy`, and `test` operations. It returns a new JSON value and never mutates the supplied
+-document. Invalid patches and failed operations throw an error.
++`move`, `copy`, and `test` operations. The document and every part of the patch must be valid JSON.
++It returns a new JSON value and never mutates the supplied document. Invalid patches and failed
++operations throw an error.
+ 
+ ```ts
+ import { applyPatch } from "json-toolkit";
+diff --git a/docs/memory/decision-log/dl-003-validate-the-complete-json-patch-document-before-evaluation.md b/docs/memory/decision-log/dl-003-validate-the-complete-json-patch-document-before-evaluation.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..31a795516ff826d2fde666d3ae502d2e057d99c6
+--- /dev/null
++++ b/docs/memory/decision-log/dl-003-validate-the-complete-json-patch-document-before-evaluation.md
+@@ -0,0 +1,24 @@
++---
++id: dl-003-validate-the-complete-json-patch-document-before-evaluation
++type: decision-log
++title: "Validate the complete JSON Patch document before evaluation"
++status: pending
++format: 1
++---
++
++## Context
++
++RFC 6902 defines a JSON Patch as a JSON document whose top-level value is an array of operation
++objects. The operation evaluator previously validated only the operation members it used, allowing
++non-JSON values in ignored members and non-JSON JavaScript objects to be treated as patches.
++
++## Decision
++
++Validate the entire patch value as JSON before checking that its top-level value is an array and
++before applying operations. Continue to ignore additional operation members when their values are
++valid JSON, as required by RFC 6902.
++
++## Consequences
++
++Invalid patch input fails before evaluation. Valid extension members remain interoperable and do not
++affect operation semantics.
+diff --git a/docs/memory/task/task-003-conform-applypatch-to-rfc-6902.md b/docs/memory/task/task-003-conform-applypatch-to-rfc-6902.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..84abfe17f79e41c331dab9cf626e33db7351bd10
+--- /dev/null
++++ b/docs/memory/task/task-003-conform-applypatch-to-rfc-6902.md
+@@ -0,0 +1,16 @@
++---
++id: task-003-conform-applypatch-to-rfc-6902
++type: task
++title: "Conform applyPatch to RFC 6902"
++status: pending
++format: 1
++---
++
++## Work completed
++
++Reviewed `applyPatch` against RFC 6902 and its conformance cases. The complete patch array is now
++validated as a JSON value before evaluation, including ignored extension members. This rejects
++non-JSON JavaScript values, named array properties, and class instances while retaining RFC-required
++ignoring of additional valid JSON operation members.
++
++Added regression coverage and verified the test suite.
+diff --git a/src/index.ts b/src/index.ts
+index f3d19bc08d1cb48376c62b10e32639f5dbf1c693..efbb9811f62b0ea4c08338a666ed644623b0d596 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -41,6 +41,7 @@ export function resolvePointer(document: unknown, pointer: string): unknown {
+  */
+ export function applyPatch(document: unknown, patch: unknown): unknown {
+   assertJsonValue(document, "document");
++  assertJsonValue(patch, "patch");
+   if (!Array.isArray(patch)) {
+     throw new Error("Invalid JSON Patch: it must be an array of operations");
+   }
+diff --git a/test/applyPatch.test.ts b/test/applyPatch.test.ts
+index 7a092f5a2a755c503865b1372eb6edb528c9f33d..c2e4d203cd3c48ec89989b3140a01b92defd5aca 100644
+--- a/test/applyPatch.test.ts
++++ b/test/applyPatch.test.ts
+@@ -91,6 +91,23 @@ test("requires operation members with their RFC 6902 types", () => {
+   }
+ });
+ 
++test("requires the whole patch document to be JSON, including ignored members", () => {
++  const patchWithIgnoredNonJsonMember = [{ op: "test", path: "/value", value: 1, ignored: undefined }];
++  const patchWithNamedArrayProperty = Object.assign([], { ignored: true });
++  const patchWithClassOperation = [Object.assign(new (class {})(), { op: "add", path: "/value", value: 1 })];
++
++  assert.throws(() => applyPatch({ value: 1 }, patchWithIgnoredNonJsonMember));
++  assert.throws(() => applyPatch({}, patchWithNamedArrayProperty));
++  assert.throws(() => applyPatch({}, patchWithClassOperation));
++});
++
++test("ignores additional JSON members on an operation", () => {
++  assert.deepEqual(
++    applyPatch({ value: 1 }, [{ op: "test", path: "/value", value: 1, ignored: { nested: true } }]),
++    { value: 1 },
++  );
++});
++
+ test("tests objects by JSON structure rather than member insertion order", () => {
+   assert.deepEqual(
+     applyPatch({ value: { first: 1, second: 2 } }, [{ op: "test", path: "/value", value: { second: 2, first: 1 } }]),

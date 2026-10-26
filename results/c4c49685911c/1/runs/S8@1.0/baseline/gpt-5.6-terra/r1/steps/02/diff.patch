@@ -1,0 +1,142 @@
+diff --git a/src/domain/task.ts b/src/domain/task.ts
+index b1c0b2dfba2854c723965e6fa8a2a0ef6fbc7d17..13d4f430caec0b7a9b9a1111dcb7885616030e41 100644
+--- a/src/domain/task.ts
++++ b/src/domain/task.ts
+@@ -18,6 +18,10 @@ export interface Task {
+   readonly priority: Priority;
+   readonly tags: readonly string[];
+   readonly status: Status;
++  /** When this task was added, as an ISO-8601 date-time string. */
++  readonly createdAt: string;
++  /** When this task was most recently changed, as an ISO-8601 date-time string. */
++  readonly updatedAt: string;
+ }
+ 
+ /** What it takes to add a task: a title, and optionally a priority and tags. */
+@@ -33,12 +37,15 @@ export interface NewTask {
+  * @param input - the task's title, priority and tags
+  */
+ export function createTask(input: NewTask, id: string): Task {
++  const now = new Date().toISOString();
+   return {
+     id,
+     title: input.title.trim(),
+     priority: input.priority ?? 'normal',
+     tags: unique(input.tags ?? []),
+     status: 'open',
++    createdAt: now,
++    updatedAt: now,
+   };
+ }
+ 
+@@ -49,7 +56,7 @@ export function createTask(input: NewTask, id: string): Task {
+  */
+ export function completeTask(task: Task): Result<Task> {
+   if (task.status === 'done') return err('invalid-state', `"${task.title}" is already done`);
+-  return ok({ ...task, status: 'done' });
++  return ok({ ...task, status: 'done', updatedAt: changedAt() });
+ }
+ 
+ /**
+@@ -59,7 +66,7 @@ export function completeTask(task: Task): Result<Task> {
+  */
+ export function reopenTask(task: Task): Result<Task> {
+   if (task.status === 'open') return err('invalid-state', `"${task.title}" is still open`);
+-  return ok({ ...task, status: 'open' });
++  return ok({ ...task, status: 'open', updatedAt: changedAt() });
+ }
+ 
+ /**
+@@ -69,7 +76,7 @@ export function reopenTask(task: Task): Result<Task> {
+  * @param title - its new title
+  */
+ export function renameTask(task: Task, title: string): Task {
+-  return { ...task, title: title.trim() };
++  return { ...task, title: title.trim(), updatedAt: changedAt() };
+ }
+ 
+ /**
+@@ -79,7 +86,7 @@ export function renameTask(task: Task, title: string): Task {
+  * @param tag - the tag to add
+  */
+ export function addTag(task: Task, tag: string): Task {
+-  return { ...task, tags: unique([...task.tags, tag]) };
++  return { ...task, tags: unique([...task.tags, tag]), updatedAt: changedAt() };
+ }
+ 
+ /**
+@@ -89,7 +96,7 @@ export function addTag(task: Task, tag: string): Task {
+  * @param tag - the tag to remove
+  */
+ export function removeTag(task: Task, tag: string): Task {
+-  return { ...task, tags: task.tags.filter((existing) => existing !== tag) };
++  return { ...task, tags: task.tags.filter((existing) => existing !== tag), updatedAt: changedAt() };
+ }
+ 
+ /**
+@@ -116,3 +123,7 @@ export function compareTasks(a: Task, b: Task): number {
+ function unique(tags: readonly string[]): string[] {
+   return tags.filter((tag, index) => tags.indexOf(tag) === index);
+ }
++
++function changedAt(): string {
++  return new Date().toISOString();
++}
+diff --git a/test/list.test.ts b/test/list.test.ts
+index a0e57edd62d65d41efcc9393ce1742048a7c53cf..fe35242be7c651d2fa4785b33e60028ba80b855b 100644
+--- a/test/list.test.ts
++++ b/test/list.test.ts
+@@ -1,5 +1,5 @@
+ import assert from 'node:assert/strict';
+-import { describe, it } from 'node:test';
++import { describe, it, mock } from 'node:test';
+ 
+ import { createTodoList, summarize } from '../src/index.ts';
+ 
+@@ -13,10 +13,45 @@ describe('task list', () => {
+     const list = createTodoList();
+     const task = valueOf(list.add({ title: '  Buy milk ' }));
+     assert.match(task.id, /^task-\d+$/);
+-    assert.deepEqual(task, { id: task.id, title: 'Buy milk', priority: 'normal', tags: [], status: 'open' });
++    assert.deepEqual(task, {
++      id: task.id,
++      title: 'Buy milk',
++      priority: 'normal',
++      tags: [],
++      status: 'open',
++      createdAt: task.createdAt,
++      updatedAt: task.updatedAt,
++    });
++    assert.match(task.createdAt, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
++    assert.equal(task.updatedAt, task.createdAt);
+     assert.equal(list.openCount(), 1);
+   });
+ 
++  it('records creation and every task change time', () => {
++    mock.timers.enable({ apis: ['Date'], now: new Date('2026-01-02T03:04:05.000Z') });
++    try {
++      const list = createTodoList();
++      let task = valueOf(list.add({ title: 'Write report' }));
++      const createdAt = task.createdAt;
++      assert.equal(task.updatedAt, createdAt);
++
++      const changed = (change: () => typeof task) => {
++        mock.timers.tick(1);
++        task = change();
++        assert.equal(task.createdAt, createdAt);
++        assert.equal(task.updatedAt, new Date().toISOString());
++      };
++
++      changed(() => valueOf(list.complete(task.id)));
++      changed(() => valueOf(list.reopen(task.id)));
++      changed(() => valueOf(list.rename(task.id, 'Review report')));
++      changed(() => valueOf(list.tag(task.id, 'work')));
++      changed(() => valueOf(list.untag(task.id, 'work')));
++    } finally {
++      mock.timers.reset();
++    }
++  });
++
+   it('finds a task by its stable id after it is renamed', () => {
+     const list = createTodoList();
+     const task = valueOf(list.add({ title: 'Wash car' }));

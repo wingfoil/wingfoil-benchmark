@@ -1,0 +1,151 @@
+diff --git a/README.md b/README.md
+index b1fb6c7e869571454725cbb9151c152ad639c7ae..fb5d53ec94fdcce501aa1c97589a6ce8cfe207c5 100644
+--- a/README.md
++++ b/README.md
+@@ -11,3 +11,6 @@ daily price, then use `quote` or `book` with UTC ISO-8601 midnight boundaries. R
+ half-open: the `end` is midnight at the start of the day after the final rental day. Bookings for the
+ same item may be adjacent but cannot overlap. Use `availability({ start, end, kind? })` to get sorted
+ ids of equipment that is free for the entire period; omit `kind` to include both boards and sails.
++
++Rentals of three or more days receive 10% off the full price. The discounted result is rounded to the
++nearest euro cent, and `quote` and `book` return the same discounted total.
+diff --git a/docs/memory/decision-log/dl-002-round-long-rental-discounts-to-whole-cents.md b/docs/memory/decision-log/dl-002-round-long-rental-discounts-to-whole-cents.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..701835d6196b28d15e5ce2318ade8ab066d37da4
+--- /dev/null
++++ b/docs/memory/decision-log/dl-002-round-long-rental-discounts-to-whole-cents.md
+@@ -0,0 +1,23 @@
++---
++id: dl-002-round-long-rental-discounts-to-whole-cents
++type: decision-log
++title: "Round long-rental discounts to whole cents"
++status: pending
++format: 1
++---
++
++## Context
++
++Equipment prices and rental totals are integer euro cents. Applying a 10% reduction to a full-price
++rental total can produce a fractional cent.
++
++## Decision
++
++Rentals lasting three or more whole days receive a 10% reduction from their full price. Round the
++discounted total to the nearest whole euro cent before returning it from either `quote` or `book`.
++Rentals lasting one or two days retain their full price.
++
++## Consequences
++
++Quotes and confirmed bookings preserve their integer-cent `total` contract and display identical
++prices. A half-cent result rounds upward under JavaScript's `Math.round` behavior.
+diff --git a/docs/memory/task/task-003-apply-long-rental-discount.md b/docs/memory/task/task-003-apply-long-rental-discount.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..f57b8400bdcad5bb2d6fe1a82862d5397c7697ad
+--- /dev/null
++++ b/docs/memory/task/task-003-apply-long-rental-discount.md
+@@ -0,0 +1,14 @@
++---
++id: task-003-apply-long-rental-discount
++type: task
++title: "Apply long-rental discount"
++status: pending
++format: 1
++---
++
++Implemented a 10% discount for rentals lasting three or more whole days. Both `quote` and `book`
++now return the same discounted integer-cent total; fractional-cent results round to the nearest cent.
++Rentals shorter than three days retain their full price.
++
++Updated the rental-service documentation and added deterministic tests for the threshold, quote and
++booking totals, and fractional-cent rounding. `npm test` passes.
+diff --git a/src/index.ts b/src/index.ts
+index 31d87e0a17cd74cba9bc8d772708856927c79360..be6dcaae6c264e6f7f55c4f1efe5a9098e468c81 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -39,6 +39,8 @@ export interface RentalService {
+ 
+ const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1_000;
+ const MIDNIGHT_UTC = /^(\d{4})-(\d{2})-(\d{2})T00:00:00(?:\.0+)?Z$/;
++const LONG_RENTAL_MINIMUM_DAYS = 3;
++const LONG_RENTAL_DISCOUNT_RATE = 0.1;
+ 
+ /**
+  * Creates an isolated in-memory rental service.
+@@ -67,10 +69,7 @@ export function createRentalService(): RentalService {
+ 
+     const { startTime, endTime } = validatePeriod(request);
+     const days = (endTime - startTime) / MILLISECONDS_PER_DAY;
+-    const total = days * item.dailyPrice;
+-    if (!Number.isSafeInteger(total)) {
+-      throw new Error('Rental total exceeds the supported integer-cent range');
+-    }
++    const total = calculateRentalTotal(days, item.dailyPrice);
+ 
+     return { ...request, total };
+   }
+@@ -114,6 +113,19 @@ export function createRentalService(): RentalService {
+   return { addEquipment, quote, book, availability };
+ }
+ 
++function calculateRentalTotal(days: number, dailyPrice: number): number {
++  const fullPrice = days * dailyPrice;
++  if (!Number.isSafeInteger(fullPrice)) {
++    throw new Error('Rental total exceeds the supported integer-cent range');
++  }
++
++  if (days < LONG_RENTAL_MINIMUM_DAYS) {
++    return fullPrice;
++  }
++
++  return Math.round(fullPrice * (1 - LONG_RENTAL_DISCOUNT_RATE));
++}
++
+ function validateEquipment(item: Equipment): void {
+   if (typeof item !== 'object' || item === null || typeof item.id !== 'string' || item.id.length === 0) {
+     throw new Error('Equipment must have a non-empty string id');
+diff --git a/test/rental.test.mjs b/test/rental.test.mjs
+index 5e341cf976412e3c014147348c37923414f319b3..038986c6b3f3428d59ac9ac8cf3df11b5639c5c3 100644
+--- a/test/rental.test.mjs
++++ b/test/rental.test.mjs
+@@ -13,8 +13,39 @@ test('quotes and books a whole-day rental in integer euro cents', () => {
+     end: '2026-06-04T00:00:00Z',
+   };
+ 
+-  assert.deepEqual(rentals.quote(request), { ...request, total: 7_500 });
+-  assert.deepEqual(rentals.book(request), { id: 'booking-1', ...request, total: 7_500 });
++  assert.deepEqual(rentals.quote(request), { ...request, total: 6_750 });
++  assert.deepEqual(rentals.book(request), { id: 'booking-1', ...request, total: 6_750 });
++});
++
++test('applies a 10% discount to quotes and bookings of at least three days', () => {
++  const rentals = createRentalService();
++  rentals.addEquipment({ id: 'board-1', kind: 'board', dailyPrice: 2_500 });
++
++  const shortRequest = {
++    itemId: 'board-1',
++    start: '2026-06-01T00:00:00Z',
++    end: '2026-06-03T00:00:00Z',
++  };
++  const longRequest = {
++    itemId: 'board-1',
++    start: '2026-06-03T00:00:00Z',
++    end: '2026-06-06T00:00:00Z',
++  };
++
++  assert.deepEqual(rentals.quote(shortRequest), { ...shortRequest, total: 5_000 });
++  assert.deepEqual(rentals.quote(longRequest), { ...longRequest, total: 6_750 });
++  assert.deepEqual(rentals.book(longRequest), { id: 'booking-1', ...longRequest, total: 6_750 });
++});
++
++test('rounds a fractional-cent long-rental discount to the nearest cent', () => {
++  const rentals = createRentalService();
++  rentals.addEquipment({ id: 'sail-1', kind: 'sail', dailyPrice: 1_005 });
++
++  assert.equal(rentals.quote({
++    itemId: 'sail-1',
++    start: '2026-06-01T00:00:00Z',
++    end: '2026-06-04T00:00:00Z',
++  }).total, 2_714);
+ });
+ 
+ test('rejects invalid periods, unknown equipment, and overlapping bookings', () => {

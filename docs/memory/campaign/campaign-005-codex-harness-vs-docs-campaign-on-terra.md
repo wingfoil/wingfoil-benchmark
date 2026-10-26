@@ -58,7 +58,45 @@ stops at `quota exhausted` and resumes (`--resume`) once it resets.
 
 ## Execution
 
-<!-- Execution id(s) `<campaign-id>/<n>`, outcomes, caps reached, reruns. -->
+- **Spending approved** (`996e7ae5`): run by the agent at the approver's explicit request in chat (2026-10-26, "gate
+  eseguito, lancia la campagna"). **approved → running** on start (`38b9883d`).
+- **`c4c49685911c/1`**, `bench campaign run campaigns/codex-terra-harness-vs-docs.yaml --allow-spending` from the main
+  checkout, 2026-10-26, in three legs:
+  1. 10:45–12:08 UTC: S1 baseline and baseline-docs r1–r3 completed; S1 wingfoil r1 stopped at the subscription's
+     quota at step 1 (0 turns, 0 cost; its attempt kept in `attempts/1`). The 5-hour window read by the approver
+     before the resume: 0 % left, the week 84 % left.
+  2. Resumed (`--resume c4c49685911c/1`) at 13:38 UTC, after the window reset: S1 wingfoil r1–r3, S2 and S3 baseline
+     and baseline-docs completed; S3 wingfoil r1 interrupted at step 1 by an unexpected shutdown of the machine
+     (0 turns, 0 cost; its attempt kept in `attempts/1`). The execution record stayed `running`; the stopped container
+     (`bench-c4c49685911c-1-S3-1.0-wingfoil-gpt-5.6-terra-r1`, Codex's own stores only, the workspace bind-mounted)
+     was removed so that the runner would resume.
+  3. Resumed at 15:43 UTC at the approver's request ("riavvia con resume"): S3 wingfoil r1 and S8 in the three arms
+     completed. Execution `completed` at 16:10 UTC.
+- **Outcome:** 18 runs completed, 0 failed, no intervention; two runs took a second attempt (S1 wingfoil r1 after the
+  quota stop, S3 wingfoil r1 after the shutdown). No cap reached. Cost: 14.4471 USD, 12.8825 EUR at 0.8917 EUR/USD,
+  API-equivalent (`price-table`), the steps' reported costs summed; 0 € spent (ChatGPT Plus, dl-025). The secret scan
+  of `results/c4c49685911c/1/` and `runs/c4c49685911c/1/` (plain files and every git object) after the first and the
+  last leg: clean (the second leg's log was lost with `/tmp` in the shutdown; the last leg's scan covers the whole
+  execution).
+- **Scored** (`bench score c4c49685911c/1 --holdout ../WingFoil2-Benchmark-HoldOut`): `aggregate.json`, 12 groups;
+  determinism measured in 3, n = 1 in 9.
+
+| Scenario | Run | baseline | baseline-docs | wingfoil |
+|---|---|---|---|---|
+| S1 | r1 | 165/165, 48/48 | 165/165, 48/48 | 159/165, 48/48 |
+| S1 | r2 | 165/165, 48/48 | 165/165, 48/48 | 165/165, 48/48 |
+| S1 | r3 | 165/165, 48/48 | 165/165, 48/48 | 135/165, 33/48 |
+| S2 | r1 | 23/24, 16/17, checks 0/3 | 23/24, 16/17, checks 0/3 | 23/24, 16/17, checks 0/3 |
+| S3 | r1 | 34/37, 16/17, checks 0/1, M-F1 3/5 | 37/37, 17/17, checks 0/1, M-F1 4/5 | 30/37, 15/17, checks 1/1, M-F1 3/5 |
+| S8 | r1 | 23/23, 6/7, checks 13/16 | 23/23, 6/7, checks 16/16 | 15/23, 4/7, checks 16/16 |
+
+Each cell: final public tests, hold-out, then checks and M-F1 where the scenario has them; from the scoring's output.
+
+- **For the results review:** the wingfoil arm's losses are steps where Codex stopped at the manual's approval gate
+  and did not implement: S1 r1 step 3, S1 r3 step 5 (`dl-005 … awaiting approval`), S3 step 5 (a question to the user
+  on the refund policy), S8 steps 2–4 ("Please reply: Approved. Proceed."). A non-interactive `codex exec` has no one
+  to answer; 0 interventions recorded. Whether these runs measure WingFoil or
+  the arm's gate wording on an unattended agent is the review's question.
 
 ## Results review
 

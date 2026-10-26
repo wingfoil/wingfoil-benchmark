@@ -1,0 +1,82 @@
+diff --git a/docs/memory/task/task-003-restore-cancelled-welcome-coupons-and-free-delivery-threshold.md b/docs/memory/task/task-003-restore-cancelled-welcome-coupons-and-free-delivery-threshold.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..ef7206547452c0110edfc8df3107bdae8f5ae37f
+--- /dev/null
++++ b/docs/memory/task/task-003-restore-cancelled-welcome-coupons-and-free-delivery-threshold.md
+@@ -0,0 +1,18 @@
++---
++id: task-003-restore-cancelled-welcome-coupons-and-free-delivery-threshold
++type: task
++title: "Restore cancelled welcome coupons and free delivery threshold"
++status: pending
++format: 1
++---
++
++## Work completed
++
++- Fixed cancellation to release a single-use coupon with the order ID that recorded its use.
++- Added a red-first regression test covering a customer who cancels and reuses a welcome coupon.
++- Verified that free delivery is already inclusive at €50.00 after discounts; added a characterization
++  test for an order reduced to exactly that amount by a coupon.
++
++## Verification
++
++`npm test` passes: 25 tests, including both reported scenarios.
+diff --git a/src/orders.ts b/src/orders.ts
+index 0c0b1ae889c9df13dffa9de7ed1924a4e8b09afd..a029a93fd6f94a43d5ecd351af29cda4d205ab99 100644
+--- a/src/orders.ts
++++ b/src/orders.ts
+@@ -153,7 +153,7 @@ export class OrderService {
+       throw new OrderStateError(`order ${id} can no longer be cancelled`);
+     }
+     for (const line of order.lines) this.#inventory.release(line.sku, line.quantity, id);
+-    if (order.coupon !== undefined) this.#coupons.giveBack(order.coupon, order.customer);
++    if (order.coupon !== undefined) this.#coupons.giveBack(order.coupon, order.id);
+     const cancelled: Order = { ...order, status: 'cancelled', cancelledOn: date };
+     this.#orders.set(id, cancelled);
+     return cancelled;
+diff --git a/test/coupons.test.ts b/test/coupons.test.ts
+index fff3c0618a3f40e7690954311d6d578b145b8b02..428ec8f61f2e825678a90efe54ad8d3eec9af31f 100644
+--- a/test/coupons.test.ts
++++ b/test/coupons.test.ts
+@@ -85,4 +85,16 @@ describe('coupons', () => {
+     assert.equal(coupons.usedBy('ONCE'), 'ORD-0001');
+     assert.throws(() => orders.place({ customer: 'c-2', date: '2026-05-05', lines: [{ sku: 'PEN-4', quantity: 1 }], coupon: 'ONCE' }), CouponError);
+   });
++
++  // Red-first: cancellation must release the same order identifier that reserved the code.
++  it('returns a single-use coupon when its order is cancelled', () => {
++    const { orders, coupons } = shop();
++    coupons.add({ code: 'WELCOME', kind: 'fixed', value: 100, validFrom: '2026-01-01', validUntil: '2026-12-31', singleUse: true });
++    const first = orders.place({ customer: 'Paolo', date: '2026-05-05', lines: [{ sku: 'PEN-4', quantity: 1 }], coupon: 'WELCOME' });
++
++    orders.cancel(first.id, '2026-05-05');
++
++    assert.equal(coupons.usedBy('WELCOME'), undefined);
++    assert.doesNotThrow(() => orders.place({ customer: 'Paolo', date: '2026-05-05', lines: [{ sku: 'PEN-4', quantity: 1 }], coupon: 'WELCOME' }));
++  });
+ });
+diff --git a/test/orders.test.ts b/test/orders.test.ts
+index 7995b2b23aeab983d845f680fc95968a82190068..b4fe9ee1fdadec70ef2bdf428965ea035437ac47 100644
+--- a/test/orders.test.ts
++++ b/test/orders.test.ts
+@@ -44,6 +44,19 @@ describe('orders', () => {
+     assert.equal(order.totals.shippingCents, 0);
+   });
+ 
++  // Characterization: the threshold remains inclusive after a coupon discount.
++  it('ships goods worth exactly €50.00 free after a coupon', () => {
++    const s = createShop();
++    s.catalog.add({ sku: 'JACKET', name: 'Jacket', priceCents: 6000, vatClass: 'standard', weightGrams: 800 });
++    s.inventory.restock('JACKET', 1);
++    s.coupons.add({ code: 'TENOFF', kind: 'fixed', value: 1000, validFrom: '2026-01-01', validUntil: '2026-12-31' });
++
++    const order = s.orders.place({ customer: 'c-1', date: '2026-03-02', lines: [{ sku: 'JACKET', quantity: 1 }], coupon: 'TENOFF' });
++
++    assert.equal(order.totals.goodsCents, 5000);
++    assert.equal(order.totals.shippingCents, 0);
++  });
++
+   it('rounds VAT half up on each product line', () => {
+     const s = createShop();
+     s.catalog.add({ sku: 'PIN-01', name: 'Pin', priceCents: 199, vatClass: 'standard', weightGrams: 10 });

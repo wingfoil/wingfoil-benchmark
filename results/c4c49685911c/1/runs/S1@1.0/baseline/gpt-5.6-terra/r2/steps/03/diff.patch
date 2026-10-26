@@ -1,0 +1,77 @@
+diff --git a/src/index.ts b/src/index.ts
+index 867e9f1a2ec9a750d3e9ddcf96a070ae7d0d1710..4388bbaa17fc38345989797f94d1c545306ceabe 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -61,9 +61,22 @@ export function applyPatch(document: unknown, patch: unknown): unknown {
+     throw new Error("A JSON Patch must be an array of operations");
+   }
+ 
++  // A patch document is JSON too.  Validate and copy the complete patch
++  // before applying any operation, so a later-invalid value cannot leave a
++  // partially evaluated patch.  This also makes operation values independent
++  // of both the caller and the result.
++  const operations = cloneJsonValue(patch);
++  if (!Array.isArray(operations)) {
++    // Kept as a guard for the type system and for future changes to cloning.
++    throw new Error("A JSON Patch must be an array of operations");
++  }
++
++  // RFC 6902 evaluates operations in order, but an unsuccessful patch must
++  // not be applied.  Work entirely on a copy and only return it after every
++  // operation has succeeded.
+   let result = cloneJsonValue(document);
+ 
+-  for (const operation of patch) {
++  for (const operation of operations) {
+     result = applyOperation(result, operation);
+   }
+ 
+@@ -189,8 +202,11 @@ function addValue(document: unknown, path: string[], value: unknown): unknown {
+ 
+ function removeValue(document: unknown, path: string[]): { document: unknown; value: unknown } {
+   if (path.length === 0) {
+-    // A JSON document must still have a JSON value after its root is removed.
+-    return { document: null, value: document };
++    // RFC 6902 never defines a replacement JSON document for removing its
++    // root.  In particular, treating it as JSON null invents a value that was
++    // not in the patch.  Reject it rather than silently applying a different
++    // operation.
++    throw new Error("Cannot remove the root of a JSON document");
+   }
+   const parent = getValue(document, path.slice(0, -1));
+   const token = path[path.length - 1];
+@@ -274,8 +290,23 @@ function cloneJsonValue(value: unknown, ancestors = new Set<object>()): unknown
+         }
+         result.push(cloneJsonValue(value[index], ancestors));
+       }
++      // JSON arrays have values only at their numeric positions.  Own
++      // properties such as `array.extra` do not exist in a JSON array and
++      // must not be silently discarded while validating a patch document.
++      if (Object.keys(value).some((key) => !isArrayElementKey(key, value.length))) {
++        throw new Error("A JSON array cannot contain non-index properties");
++      }
+       return result;
+     }
++
++    const prototype = Object.getPrototypeOf(value);
++    if (prototype !== Object.prototype && prototype !== null) {
++      throw new Error("A JSON object must not have a custom prototype");
++    }
++    if (Object.getOwnPropertySymbols(value).length > 0) {
++      throw new Error("A JSON object cannot contain symbol properties");
++    }
++
+     const result: Record<string, unknown> = {};
+     for (const key of Object.keys(value)) {
+       defineJsonProperty(result, key, cloneJsonValue((value as Record<string, unknown>)[key], ancestors));
+@@ -286,6 +317,10 @@ function cloneJsonValue(value: unknown, ancestors = new Set<object>()): unknown
+   }
+ }
+ 
++function isArrayElementKey(key: string, length: number): boolean {
++  return isArrayIndex(key) && Number(key) < length;
++}
++
+ function jsonEqual(left: unknown, right: unknown): boolean {
+   if (left === right) {
+     return true;

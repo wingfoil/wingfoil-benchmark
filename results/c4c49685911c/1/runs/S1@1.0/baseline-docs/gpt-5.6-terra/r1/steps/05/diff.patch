@@ -1,0 +1,221 @@
+diff --git a/README.md b/README.md
+index c6135ace24c5968286abb875125053ddb4af2da2..67aaebc15f5da51a1a08a4152bb29ff84c4204d1 100644
+--- a/README.md
++++ b/README.md
+@@ -33,6 +33,19 @@ applyPatch(
+ ); // { users: ["Ada", "Grace"] }
+ ```
+ 
++`createPatch(from, to)` creates an [RFC 6902 JSON Patch](https://www.rfc-editor.org/rfc/rfc6902) that changes one
++JSON document into another. It emits operations for only the changed paths where possible and does not modify either
++input.
++
++```ts
++import { createPatch } from "json-toolkit";
++
++createPatch(
++  { profile: { name: "Ada", theme: "light" } },
++  { profile: { name: "Ada", theme: "dark" } },
++); // [{ op: "replace", path: "/profile/theme", value: "dark" }]
++```
++
+ ## JSON Merge Patch
+ 
+ `applyMergePatch(target, patch)` applies an [RFC 7386 JSON Merge Patch](https://www.rfc-editor.org/rfc/rfc7386)
+diff --git a/src/index.ts b/src/index.ts
+index 62e06ba7675b46751f52cb01325b35f634890130..d077cfe26d76c48243f691913f290bc4b40d2ac3 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -72,6 +72,34 @@ export function applyPatch(document: unknown, patch: unknown): unknown {
+   return result;
+ }
+ 
++/**
++ * An RFC 6902 operation that adds, removes, or replaces a JSON value.
++ */
++export type JsonPatchOperation =
++  | { op: "add"; path: string; value: unknown }
++  | { op: "remove"; path: string }
++  | { op: "replace"; path: string; value: unknown };
++
++/**
++ * Creates an RFC 6902 JSON Patch that transforms one JSON document into another.
++ *
++ * The returned patch changes only the differing values where possible. Both input
++ * documents are validated as JSON-compatible values and are never modified.
++ *
++ * @param from The original JSON document.
++ * @param to The desired JSON document.
++ * @returns An ordered JSON Patch that transforms `from` into `to`.
++ * @throws {TypeError} If either document is not a JSON-compatible value.
++ */
++export function createPatch(from: unknown, to: unknown): JsonPatchOperation[] {
++  const source = cloneJsonValue(from);
++  const target = cloneJsonValue(to);
++  const patch: JsonPatchOperation[] = [];
++
++  createPatchAt(source, target, "", patch);
++  return patch;
++}
++
+ /**
+  * Applies an RFC 7386 JSON Merge Patch to a JSON document without modifying either input.
+  *
+@@ -101,6 +129,97 @@ function mergePatch(target: unknown, patch: unknown): unknown {
+   return result;
+ }
+ 
++function createPatchAt(
++  from: unknown,
++  to: unknown,
++  path: string,
++  patch: JsonPatchOperation[],
++): void {
++  if (jsonEqual(from, to)) {
++    return;
++  }
++
++  if (isJsonRecord(from) && isJsonRecord(to)) {
++    for (const key of Object.keys(from)) {
++      if (!Object.prototype.hasOwnProperty.call(to, key)) {
++        patch.push({ op: "remove", path: appendPointer(path, key) });
++      }
++    }
++    for (const key of Object.keys(to)) {
++      const childPath = appendPointer(path, key);
++      if (Object.prototype.hasOwnProperty.call(from, key)) {
++        createPatchAt(from[key], to[key], childPath, patch);
++      } else {
++        patch.push({ op: "add", path: childPath, value: to[key] });
++      }
++    }
++    return;
++  }
++
++  if (Array.isArray(from) && Array.isArray(to)) {
++    createArrayPatch(from, to, path, patch);
++    return;
++  }
++
++  patch.push({ op: "replace", path, value: to });
++}
++
++function createArrayPatch(
++  from: unknown[],
++  to: unknown[],
++  path: string,
++  patch: JsonPatchOperation[],
++): void {
++  let fromIndex = 0;
++  let toIndex = 0;
++
++  while (fromIndex < from.length && toIndex < to.length) {
++    if (jsonEqual(from[fromIndex], to[toIndex])) {
++      fromIndex += 1;
++      toIndex += 1;
++      continue;
++    }
++
++    if (findJsonValue(to, toIndex + 1, from[fromIndex]) !== -1) {
++      patch.push({ op: "add", path: appendPointer(path, String(toIndex)), value: to[toIndex] });
++      toIndex += 1;
++      continue;
++    }
++
++    if (findJsonValue(from, fromIndex + 1, to[toIndex]) !== -1) {
++      patch.push({ op: "remove", path: appendPointer(path, String(toIndex)) });
++      fromIndex += 1;
++      continue;
++    }
++
++    createPatchAt(from[fromIndex], to[toIndex], appendPointer(path, String(toIndex)), patch);
++    fromIndex += 1;
++    toIndex += 1;
++  }
++
++  while (fromIndex < from.length) {
++    patch.push({ op: "remove", path: appendPointer(path, String(toIndex)) });
++    fromIndex += 1;
++  }
++  while (toIndex < to.length) {
++    patch.push({ op: "add", path: appendPointer(path, "-"), value: to[toIndex] });
++    toIndex += 1;
++  }
++}
++
++function findJsonValue(values: unknown[], start: number, value: unknown): number {
++  for (let index = start; index < values.length; index += 1) {
++    if (jsonEqual(values[index], value)) {
++      return index;
++    }
++  }
++  return -1;
++}
++
++function appendPointer(pointer: string, token: string): string {
++  return `${pointer}/${token.replace(/~/g, "~0").replace(/\//g, "~1")}`;
++}
++
+ function applyOperation(document: unknown, operation: unknown): unknown {
+   operation = cloneJsonValue(operation);
+ 
+diff --git a/test/createPatch.test.mjs b/test/createPatch.test.mjs
+new file mode 100644
+index 0000000000000000000000000000000000000000..fe0432b4806c1339a8b7a9045b79fae16989ebd3
+--- /dev/null
++++ b/test/createPatch.test.mjs
+@@ -0,0 +1,54 @@
++import assert from "node:assert/strict";
++import test from "node:test";
++
++import { applyPatch, createPatch } from "../src/index.ts";
++
++test("creates a patch for a small nested change without replacing the document", () => {
++  const from = {
++    profile: { name: "Ada", settings: { theme: "light", alerts: true } },
++    projects: ["json-toolkit"],
++  };
++  const to = {
++    profile: { name: "Ada", settings: { theme: "dark", alerts: true } },
++    projects: ["json-toolkit"],
++  };
++
++  const patch = createPatch(from, to);
++
++  assert.deepEqual(patch, [{ op: "replace", path: "/profile/settings/theme", value: "dark" }]);
++  assert.deepEqual(applyPatch(from, patch), to);
++  assert.deepEqual(from.profile.settings, { theme: "light", alerts: true });
++  assert.deepEqual(to.profile.settings, { theme: "dark", alerts: true });
++});
++
++test("creates add, remove, and array operations with escaped pointer tokens", () => {
++  const from = { "a/b": { "m~n": 1 }, items: ["Ada", "Linus"] };
++  const to = { "a/b": { "m~n": 2, enabled: true }, items: ["Grace", "Ada"] };
++
++  const patch = createPatch(from, to);
++
++  assert.deepEqual(patch, [
++    { op: "replace", path: "/a~1b/m~0n", value: 2 },
++    { op: "add", path: "/a~1b/enabled", value: true },
++    { op: "add", path: "/items/0", value: "Grace" },
++    { op: "remove", path: "/items/2" },
++  ]);
++  assert.deepEqual(applyPatch(from, patch), to);
++});
++
++test("creates an empty patch for equal values and replaces a changed root", () => {
++  assert.deepEqual(createPatch({ value: [1] }, { value: [1] }), []);
++  assert.deepEqual(createPatch({ value: true }, ["replacement"]), [
++    { op: "replace", path: "", value: ["replacement"] },
++  ]);
++});
++
++test("validates JSON values and does not retain mutable target values", () => {
++  assert.throws(() => createPatch({ value: 1 }, { value: Number.NaN }));
++
++  const to = { added: { enabled: true } };
++  const patch = createPatch({}, to);
++  to.added.enabled = false;
++
++  assert.deepEqual(applyPatch({}, patch), { added: { enabled: true } });
++});

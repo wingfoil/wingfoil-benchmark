@@ -1,0 +1,91 @@
+diff --git a/README.md b/README.md
+index 8dd62111612ddee186c554148b718c7c1d27ef68..5ad03ea379a97ec8f2a8548242bed2c63d8a6cc8 100644
+--- a/README.md
++++ b/README.md
+@@ -10,6 +10,10 @@ of its booking desk, written in TypeScript with no runtime dependency.
+ an ID, its kind, and a non-negative integer daily price in euro cents. Use `quote()` to calculate a
+ rental's price and `book()` to reserve it.
+ 
++Rentals lasting three or more days receive a 10% discount from the full price.
++The resulting total is rounded down to whole euro cents and is returned by both
++`quote()` and `book()`.
++
+ Rental requests use UTC ISO-8601 timestamps at midnight and form half-open periods: the `end` is the
+ midnight that begins the day after the final rented day. Overlapping reservations for one item are
+ rejected, while adjacent reservations are allowed. Booking IDs are deterministic and sequential within
+diff --git a/src/index.ts b/src/index.ts
+index c2c2393ae4f15f6d645d100559403787463104d4..9371b63825c881550f32a6a237f8ff253a97c1b8 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -19,7 +19,7 @@ export interface AvailabilityQuery {
+   kind?: Equipment['kind'];
+ }
+ 
+-/** The calculated price for a rental request, in euro cents. */
++/** The calculated price for a rental request, in euro cents, including any applicable long-rental discount. */
+ export interface RentalQuote extends RentalRequest {
+   total: number;
+ }
+@@ -48,6 +48,8 @@ interface ValidatedPeriod {
+ 
+ const MIDNIGHT_UTC = /^(\d{4}-\d{2}-\d{2})T00:00:00(?:\.000)?Z$/;
+ const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000;
++const LONG_RENTAL_MINIMUM_DAYS = 3;
++const LONG_RENTAL_DISCOUNT_PERCENT = 10;
+ 
+ /**
+  * Creates an isolated, in-memory rental service.
+@@ -189,11 +191,19 @@ function parseMidnightUtc(value: unknown, field: string): number {
+ 
+ function calculateTotal(dailyPrice: number, period: ValidatedPeriod): number {
+   const days = (period.endTime - period.startTime) / MILLISECONDS_PER_DAY;
+-  const total = days * dailyPrice;
+-  if (!Number.isSafeInteger(total)) {
++  const fullPrice = days * dailyPrice;
++  if (!Number.isSafeInteger(fullPrice)) {
+     throw new Error('Rental total exceeds the supported money range');
+   }
+-  return total;
++
++  return days >= LONG_RENTAL_MINIMUM_DAYS
++    ? applyDiscount(fullPrice, LONG_RENTAL_DISCOUNT_PERCENT)
++    : fullPrice;
++}
++
++function applyDiscount(total: number, discountPercent: number): number {
++  const retainedPercent = 100 - discountPercent;
++  return Math.floor(total / 100) * retainedPercent + Math.floor((total % 100) * retainedPercent / 100);
+ }
+ 
+ function periodsOverlap(period: ValidatedPeriod, booking: RentalBooking & ValidatedPeriod): boolean {
+diff --git a/test/rental-service.test.mjs b/test/rental-service.test.mjs
+index 94329d14c94ea360318547438827ea578ca9109f..6d55628b2c3499e85c939fdf83520d1863458015 100644
+--- a/test/rental-service.test.mjs
++++ b/test/rental-service.test.mjs
+@@ -6,6 +6,7 @@ import { createRentalService } from '../dist/index.js';
+ const firstDay = '2026-06-01T00:00:00.000Z';
+ const secondDay = '2026-06-02T00:00:00.000Z';
+ const thirdDay = '2026-06-03T00:00:00.000Z';
++const fourthDay = '2026-06-04T00:00:00.000Z';
+ 
+ test('quotes and books an item for whole UTC days', () => {
+   const rentals = createRentalService();
+@@ -16,6 +17,18 @@ test('quotes and books an item for whole UTC days', () => {
+   assert.deepEqual(rentals.book(request), { id: 'booking-1', ...request, total: 5_000 });
+ });
+ 
++test('applies a 10% discount to quotes and bookings lasting three days or more', () => {
++  const rentals = createRentalService();
++  rentals.addEquipment({ id: 'board-1', kind: 'board', dailyPrice: 2_500 });
++
++  const twoDayRequest = { itemId: 'board-1', start: firstDay, end: thirdDay };
++  const threeDayRequest = { itemId: 'board-1', start: firstDay, end: fourthDay };
++
++  assert.deepEqual(rentals.quote(twoDayRequest), { ...twoDayRequest, total: 5_000 });
++  assert.deepEqual(rentals.quote(threeDayRequest), { ...threeDayRequest, total: 6_750 });
++  assert.deepEqual(rentals.book(threeDayRequest), { id: 'booking-1', ...threeDayRequest, total: 6_750 });
++});
++
+ test('rejects unknown equipment, invalid periods, and overlapping bookings', () => {
+   const rentals = createRentalService();
+   rentals.addEquipment({ id: 'sail-1', kind: 'sail', dailyPrice: 1_800 });

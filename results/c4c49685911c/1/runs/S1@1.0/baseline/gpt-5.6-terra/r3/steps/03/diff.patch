@@ -1,0 +1,108 @@
+diff --git a/src/index.ts b/src/index.ts
+index 14f5b0fc80be0f2b3e43c70de5244e31c9d719d2..45fc2f1a49b136f9242c6d1c0392fe52a456b762 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -55,6 +55,10 @@ export function resolvePointer(document: unknown, pointer: string): unknown {
+  */
+ export function applyPatch(document: unknown, patch: unknown): unknown {
+   assertJsonValue(document, "document");
++  // A patch is itself a JSON document.  In particular, accepting arbitrary
++  // JavaScript objects here could make non-JSON operation members observable
++  // even though RFC 6902 requires an array of JSON objects.
++  assertJsonValue(patch, "JSON Patch");
+ 
+   if (!Array.isArray(patch)) {
+     throw new Error("A JSON Patch must be an array of operations");
+@@ -102,11 +106,13 @@ function applyOperation(document: unknown, operation: unknown, operationIndex: n
+       if (isProperPrefix(from, path)) {
+         throw patchError(operationIndex, "cannot move a value into one of its children");
+       }
++      // Even when source and destination are identical, RFC 6902 still
++      // requires the `from` location to exist for a move to succeed.
++      const value = getValue(document, from);
+       // Moving a location onto itself is explicitly a no-op.
+       if (sameTokens(from, path)) {
+         return document;
+       }
+-      const value = getValue(document, from);
+       return addValue(removeValue(document, from), path, value);
+     }
+     case "copy": {
+@@ -151,7 +157,10 @@ function addValue(document: unknown, path: string[], value: unknown): unknown {
+ 
+ function removeValue(document: unknown, path: string[]): unknown {
+   if (path.length === 0) {
+-    return undefined;
++    // RFC 6902 does not define a JSON document that results from removing
++    // its root.  `undefined` is not a JSON value, so this cannot be a
++    // successful application of a JSON Patch operation.
++    throw new Error("JSON Patch cannot remove the document root");
+   }
+ 
+   const parent = getValue(document, path.slice(0, -1));
+diff --git a/test/apply-patch.test.ts b/test/apply-patch.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..6a7e2626155b88f1c41b1039b662747ef038cc8b
+--- /dev/null
++++ b/test/apply-patch.test.ts
+@@ -0,0 +1,60 @@
++import assert from "node:assert/strict";
++import test from "node:test";
++
++import { applyPatch } from "../src/index.ts";
++
++test("applies operations sequentially without mutating the supplied document", () => {
++  const document = { items: ["a", "c"], unchanged: true };
++  const result = applyPatch(document, [
++    { op: "add", path: "/items/1", value: "b" },
++    { op: "move", from: "/items/2", path: "/items/0" },
++    { op: "replace", path: "/unchanged", value: false },
++  ]);
++
++  assert.deepEqual(result, { items: ["c", "a", "b"], unchanged: false });
++  assert.deepEqual(document, { items: ["a", "c"], unchanged: true });
++});
++
++test("permits add at the root and only permits '-' as an add array index", () => {
++  assert.deepEqual(
++    applyPatch({ old: true }, [{ op: "add", path: "", value: { replacement: true } }]),
++    { replacement: true },
++  );
++  assert.deepEqual(
++    applyPatch([1, 2], [{ op: "add", path: "/-", value: 3 }]),
++    [1, 2, 3],
++  );
++  assert.throws(() => applyPatch([1], [{ op: "remove", path: "/-" }]));
++});
++
++test("requires a JSON Patch document, not merely a JavaScript array", () => {
++  const patch = [{ op: "add", path: "/ok", value: true, metadata: undefined }];
++  assert.throws(() => applyPatch({}, patch), /JSON Patch is not a JSON value/);
++});
++
++test("move requires its source to exist even when source and destination match", () => {
++  assert.throws(
++    () => applyPatch({}, [{ op: "move", from: "/missing", path: "/missing" }]),
++    /does not exist/,
++  );
++  assert.deepEqual(
++    applyPatch({ value: 1 }, [{ op: "move", from: "/value", path: "/value" }]),
++    { value: 1 },
++  );
++});
++
++test("rejects removal of the document root", () => {
++  assert.throws(
++    () => applyPatch({ value: 1 }, [{ op: "remove", path: "" }]),
++    /cannot remove the document root/,
++  );
++});
++
++test("a failed patch leaves the supplied document unchanged", () => {
++  const document = { value: 1 };
++  assert.throws(() => applyPatch(document, [
++    { op: "replace", path: "/value", value: 2 },
++    { op: "test", path: "/value", value: 3 },
++  ]));
++  assert.deepEqual(document, { value: 1 });
++});

@@ -1,0 +1,130 @@
+diff --git a/README.md b/README.md
+index d2a867d533f2799a001609b957793b81c00cf1d2..71dfa32e8d4a44f76a8d92e57bfda403b288445c 100644
+--- a/README.md
++++ b/README.md
+@@ -14,5 +14,5 @@ does not identify a value in the document.
+ 
+ `applyPatch(document, patch)` applies an [RFC 6902 JSON Patch](https://www.rfc-editor.org/rfc/rfc6902)
+ array using the `add`, `remove`, `replace`, `move`, `copy`, and `test` operations. It returns a new
+-JSON document without mutating `document`, and throws when the patch is malformed or an operation
+-cannot be applied.
++JSON document without mutating `document`, and throws when the JSON patch is malformed or an
++operation cannot be applied. If an operation fails, the input document remains unchanged.
+diff --git a/docs/memory/decision-log/dl-003-validate-json-patch-documents-before-evaluation.md b/docs/memory/decision-log/dl-003-validate-json-patch-documents-before-evaluation.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..7852f554c0b2231a6fca13b6c87cd80df3dbdced
+--- /dev/null
++++ b/docs/memory/decision-log/dl-003-validate-json-patch-documents-before-evaluation.md
+@@ -0,0 +1,24 @@
++---
++id: dl-003-validate-json-patch-documents-before-evaluation
++type: decision-log
++title: "Validate JSON Patch documents before evaluation"
++status: pending
++format: 1
++---
++
++## Context
++
++RFC 6902 defines a JSON Patch as a JSON document whose top-level value is an array of operation
++objects. Applying arbitrary JavaScript arrays can admit non-JSON arrays or operation objects and makes
++the patch's validity dependent on implementation details rather than the standard.
++
++## Decision
++
++Validate and detach the entire patch as a JSON value before evaluating its operations. Treat a move
++whose `from` and `path` identify exactly the same existing location as a no-op; RFC 6902 prohibits
++only moving a value into a proper child of its source.
++
++## Consequences
++
++Malformed non-JSON patch structures fail before any operation runs. Patch evaluation remains isolated
++from the input document, including when a later operation fails, and root-to-root moves succeed.
+diff --git a/docs/memory/task/task-003-conform-applypatch-to-rfc-6902.md b/docs/memory/task/task-003-conform-applypatch-to-rfc-6902.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..411337cc483bce8801848d88c19fb47e94dc8953
+--- /dev/null
++++ b/docs/memory/task/task-003-conform-applypatch-to-rfc-6902.md
+@@ -0,0 +1,12 @@
++---
++id: task-003-conform-applypatch-to-rfc-6902
++type: task
++title: "Conform applyPatch to RFC 6902"
++status: pending
++format: 1
++---
++
++Reviewed `applyPatch` against RFC 6902 and its error handling rules. The implementation now validates
++the patch itself as a JSON document before applying operations, retains the caller's document when a
++later operation fails, and supports a same-location move of the document root. Added deterministic
++regression tests and documented the failure guarantee.
+diff --git a/src/index.ts b/src/index.ts
+index b88692ef117db12eff92235f67c0e065602657fe..6c388ec31a1427cb7561da14f0789a61af70f326 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -47,13 +47,17 @@ export function resolvePointer(document: unknown, pointer: string): unknown {
+  * @throws {Error} If an operation cannot be applied or a test operation fails.
+  */
+ export function applyPatch(document: unknown, patch: unknown): unknown {
+-  if (!Array.isArray(patch)) {
++  // RFC 6902 defines a patch as a JSON document, not merely an iterable of
++  // operation-like JavaScript values. Clone it before applying anything so
++  // non-JSON arrays and operation objects are rejected at this boundary.
++  const patchDocument = cloneJsonValue(patch);
++  if (!Array.isArray(patchDocument)) {
+     throw new TypeError('A JSON Patch must be an array of operations.');
+   }
+ 
+   let result = cloneJsonValue(document);
+ 
+-  for (const operation of patch) {
++  for (const operation of patchDocument) {
+     result = applyOperation(result, operation);
+   }
+ 
+@@ -120,6 +124,13 @@ function moveValue(document: unknown, path: string[], from: string): unknown {
+   }
+ 
+   const value = getValue(document, fromTokens);
++  // A source and target may be the same location: only a *proper* prefix is
++  // forbidden by RFC 6902. This is particularly important for the root,
++  // where modeling the move as a literal remove followed by add is impossible.
++  if (fromTokens.length === path.length &&
++      fromTokens.every((token, index) => token === path[index])) {
++    return document;
++  }
+   return addValue(removeValue(document, fromTokens), path, value);
+ }
+ 
+diff --git a/test/json-patch.test.mjs b/test/json-patch.test.mjs
+index 972aac6900bcc4f9fe4d4b4574c7510e70e819e8..1a87912bcca0a5021b64622fc74bf3ab46886cac 100644
+--- a/test/json-patch.test.mjs
++++ b/test/json-patch.test.mjs
+@@ -58,3 +58,27 @@ test('rejects malformed patches and failed operations', () => {
+   assert.throws(() => applyPatch(document, [{ op: 'move', from: '/child', path: '/child/value/new' }]));
+   assert.throws(() => applyPatch(document, [{ op: 'copy', from: '/missing', path: '/copy' }]));
+ });
++
++test('requires the patch document to be a JSON array of JSON operation objects', () => {
++  const patch = [{ op: 'add', path: '/answer', value: 42 }];
++  Object.defineProperty(patch, 'metadata', { enumerable: true, value: 'not JSON' });
++  assert.throws(() => applyPatch({}, patch), TypeError);
++
++  assert.throws(() => applyPatch({}, [Object.assign(new Date(), {
++    op: 'add', path: '/answer', value: 42,
++  })]), TypeError);
++});
++
++test('permits moving the document root to itself', () => {
++  const document = { value: ['preserved'] };
++  assert.deepEqual(applyPatch(document, [{ op: 'move', from: '', path: '' }]), document);
++});
++
++test('leaves the input document unchanged when a later operation fails', () => {
++  const document = { value: 1 };
++  assert.throws(() => applyPatch(document, [
++    { op: 'replace', path: '/value', value: 2 },
++    { op: 'test', path: '/value', value: 3 },
++  ]));
++  assert.deepEqual(document, { value: 1 });
++});

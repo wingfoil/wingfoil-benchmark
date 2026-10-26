@@ -1,0 +1,176 @@
+diff --git a/README.md b/README.md
+index ff92be649ff3f610b38798b3310751534d032814..0e31c12562a536e1a9da7d56e9eb9966076c51b3 100644
+--- a/README.md
++++ b/README.md
+@@ -3,3 +3,9 @@
+ A small TypeScript library, with no runtime dependency, of building blocks for our services that store,
+ exchange and update JSON: configuration files, API payloads and stored records. It is imported by the
+ other projects of the team, so its behaviour must follow the published standards it implements.
++
++## JSON Pointer
++
++`resolvePointer(document, pointer)` resolves a [JSON Pointer (RFC 6901)](https://www.rfc-editor.org/rfc/rfc6901)
++against a JSON document. It returns the referenced value and throws when the pointer is malformed or
++does not identify a value in the document.
+diff --git a/package-lock.json b/package-lock.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..c26b08203395cc24a2ea2dc86b0e2eaf71a50e8b
+--- /dev/null
++++ b/package-lock.json
+@@ -0,0 +1,29 @@
++{
++  "name": "json-toolkit",
++  "version": "0.1.0",
++  "lockfileVersion": 3,
++  "requires": true,
++  "packages": {
++    "": {
++      "name": "json-toolkit",
++      "version": "0.1.0",
++      "devDependencies": {
++        "typescript": "^5.7.3"
++      }
++    },
++    "node_modules/typescript": {
++      "version": "5.9.3",
++      "resolved": "https://registry.npmjs.org/typescript/-/typescript-5.9.3.tgz",
++      "integrity": "sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw==",
++      "dev": true,
++      "license": "Apache-2.0",
++      "bin": {
++        "tsc": "bin/tsc",
++        "tsserver": "bin/tsserver"
++      },
++      "engines": {
++        "node": ">=14.17"
++      }
++    }
++  }
++}
+diff --git a/package.json b/package.json
+index 5f1f12a7edbf25e1ade5481dc7f359ede03d0df5..cdc6b75e70f206676abc9a962c3235977b1dd2e1 100644
+--- a/package.json
++++ b/package.json
+@@ -5,6 +5,10 @@
+   "description": "Building blocks for services that store, exchange and update JSON documents.",
+   "type": "module",
+   "scripts": {
+-    "test": "node --test"
++    "build": "tsc",
++    "test": "npm run build && node --test test/*.test.mjs"
++  },
++  "devDependencies": {
++    "typescript": "^5.7.3"
+   }
+ }
+diff --git a/src/index.ts b/src/index.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..ca5b1437f7381cab165c005883b1f1cd79bafdf5
+--- /dev/null
++++ b/src/index.ts
+@@ -0,0 +1,59 @@
++/**
++ * Resolves a JSON Pointer (RFC 6901) against a JSON document.
++ *
++ * @param document The JSON document to evaluate the pointer against.
++ * @param pointer A JSON Pointer string.
++ * @returns The value identified by the pointer.
++ * @throws {TypeError} If `pointer` is not a valid JSON Pointer string.
++ * @throws {Error} If the pointer cannot be resolved in the document.
++ */
++export function resolvePointer(document: unknown, pointer: string): unknown {
++  if (typeof pointer !== 'string') {
++    throw new TypeError('A JSON Pointer must be a string.');
++  }
++
++  if (pointer === '') {
++    return document;
++  }
++
++  if (!pointer.startsWith('/')) {
++    throw new TypeError('A JSON Pointer must be empty or begin with a slash.');
++  }
++
++  return pointer.slice(1).split('/').reduce<unknown>((current, token) => {
++    const referenceToken = decodeReferenceToken(token);
++
++    if (Array.isArray(current)) {
++      return resolveArrayElement(current, referenceToken);
++    }
++
++    if (current !== null && typeof current === 'object') {
++      if (Object.hasOwn(current, referenceToken)) {
++        return (current as Record<string, unknown>)[referenceToken];
++      }
++    }
++
++    throw new Error(`JSON Pointer does not resolve at token "${referenceToken}".`);
++  }, document);
++}
++
++function decodeReferenceToken(token: string): string {
++  if (/~(?:[^01]|$)/.test(token)) {
++    throw new TypeError('A JSON Pointer reference token contains an invalid escape sequence.');
++  }
++
++  return token.replace(/~[01]/g, (escape) => (escape === '~0' ? '~' : '/'));
++}
++
++function resolveArrayElement(array: unknown[], token: string): unknown {
++  if (!/^(?:0|[1-9][0-9]*)$/.test(token)) {
++    throw new Error(`JSON Pointer array index "${token}" is invalid.`);
++  }
++
++  const index = Number(token);
++  if (!Number.isSafeInteger(index) || index >= array.length) {
++    throw new Error(`JSON Pointer does not resolve at array index "${token}".`);
++  }
++
++  return array[index];
++}
+diff --git a/test/json-pointer.test.mjs b/test/json-pointer.test.mjs
+new file mode 100644
+index 0000000000000000000000000000000000000000..e8acef37525deb7e51c89bba4b52d1e0e63db850
+--- /dev/null
++++ b/test/json-pointer.test.mjs
+@@ -0,0 +1,40 @@
++import assert from 'node:assert/strict';
++import test from 'node:test';
++
++import { resolvePointer } from '../dist/index.js';
++
++test('resolves the RFC 6901 evaluation examples', () => {
++  const document = {
++    foo: ['bar', 'baz'],
++    '': 0,
++    'a/b': 1,
++    'c%d': 2,
++    'e^f': 3,
++    'g|h': 4,
++    'i\\j': 5,
++    'k\"l': 6,
++    ' ': 7,
++    'm~n': 8,
++  };
++
++  assert.equal(resolvePointer(document, ''), document);
++  assert.equal(resolvePointer(document, '/foo/0'), 'bar');
++  assert.equal(resolvePointer(document, '/'), 0);
++  assert.equal(resolvePointer(document, '/a~1b'), 1);
++  assert.equal(resolvePointer(document, '/c%d'), 2);
++  assert.equal(resolvePointer(document, '/e^f'), 3);
++  assert.equal(resolvePointer(document, '/g|h'), 4);
++  assert.equal(resolvePointer(document, '/i\\j'), 5);
++  assert.equal(resolvePointer(document, '/k\"l'), 6);
++  assert.equal(resolvePointer(document, '/ '), 7);
++  assert.equal(resolvePointer(document, '/m~0n'), 8);
++});
++
++test('rejects malformed pointers and unresolved values', () => {
++  assert.throws(() => resolvePointer({}, 'foo'));
++  assert.throws(() => resolvePointer({}, '/bad~escape'));
++  assert.throws(() => resolvePointer({}, '/missing'));
++  assert.throws(() => resolvePointer(['value'], '/01'));
++  assert.throws(() => resolvePointer(['value'], '/-'));
++  assert.throws(() => resolvePointer(null, '/value'));
++});

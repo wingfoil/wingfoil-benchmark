@@ -1,0 +1,199 @@
+diff --git a/README.md b/README.md
+index 34a2eb73d665855f613c901351f628440648aee4..24af498b1221536a90b93868315615ba4052c062 100644
+--- a/README.md
++++ b/README.md
+@@ -7,6 +7,13 @@ from `src/index.ts`.
+ 
+ Run its tests with `npm test`.
+ 
++## Bulk import
++
++`importTasks(list, text)` adds spreadsheet-style task records to a list. Give it one non-blank
++`title;priority;tags` record per line; leave `priority` empty for normal priority and separate tags
++with spaces. It returns the number imported plus the one-based source line and reason for every
++rejected record.
++
+ ## Task identifiers
+ 
+ `add` returns a task with a stable string `id`, unique within its list. Use `get(id)` to retrieve a
+diff --git a/docs/memory/decision-log/dl-004-use-strict-semicolon-records-for-bulk-task-import.md b/docs/memory/decision-log/dl-004-use-strict-semicolon-records-for-bulk-task-import.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..d3450c6d340ffbcc28dd086eb89f4f6868cc9e22
+--- /dev/null
++++ b/docs/memory/decision-log/dl-004-use-strict-semicolon-records-for-bulk-task-import.md
+@@ -0,0 +1,24 @@
++---
++id: dl-004-use-strict-semicolon-records-for-bulk-task-import
++type: decision-log
++title: "Use strict semicolon records for bulk task import"
++status: pending
++format: 1
++---
++
++## Context
++
++Spreadsheet exports can contain incomplete or malformed rows. The public import helper needs a
++deterministic way to distinguish usable records from rejected ones while retaining successful rows.
++
++## Decision
++
++Require exactly three semicolon-separated fields: a non-empty title, an optional priority of `low`,
++`normal`, or `high`, and a space-separated tag field. Whitespace-only lines are skipped. Each invalid
++record is rejected independently, and failures reported by the task list (such as duplicate titles)
++become that record's rejection reason.
++
++## Consequences
++
++Importers receive stable line numbers and human-readable reasons, and a malformed row cannot prevent
++later valid rows from being added. Semicolons cannot appear within an individual field.
+diff --git a/docs/memory/task/task-004-add-bulk-task-import-helper.md b/docs/memory/task/task-004-add-bulk-task-import-helper.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..5933da75b5bea261bfb11b7f492e46eafe6db0c1
+--- /dev/null
++++ b/docs/memory/task/task-004-add-bulk-task-import-helper.md
+@@ -0,0 +1,12 @@
++---
++id: task-004-add-bulk-task-import-helper
++type: task
++title: "Add bulk task import helper"
++status: pending
++format: 1
++---
++
++Add the public `importTasks(list, text)` helper. It parses one semicolon-separated record per
++non-blank line, adds valid tasks, and reports rejected lines without rolling back successful imports.
++Cover normal-priority records, tags, blank lines, invalid records, and duplicate titles with
++deterministic tests.
+diff --git a/src/index.ts b/src/index.ts
+index d645db5250ea48852a8de1629640e42619a985c8..d35d60d2da58a799477c24e42aed1631d7880db1 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -8,9 +8,68 @@ export type { Summary } from './domain/summary.ts';
+ export { PRIORITIES } from './domain/task.ts';
+ export type { NewTask, Priority, Status, Task } from './domain/task.ts';
+ 
++/** A source line that could not be imported, with its one-based line number and failure reason. */
++export interface RejectedTaskImport {
++  readonly line: number;
++  readonly reason: string;
++}
++
++/** The result of importing task records: successfully added tasks and records that were rejected. */
++export interface TaskImportResult {
++  readonly imported: number;
++  readonly rejected: readonly RejectedTaskImport[];
++}
++
+ /**
+  * A new, empty task list for the app, kept in memory.
+  */
+ export function createTodoList(): TaskList {
+   return createTaskList();
+ }
++
++/**
++ * Imports semicolon-separated task records into `list`.
++ *
++ * Each non-blank line in `text` must contain `title;priority;tags`, where the priority is empty or
++ * one of `low`, `normal`, and `high`, and tags are separated by whitespace. Valid lines are added
++ * independently; rejected lines are returned with their one-based source line and reason.
++ *
++ * @param list - the task list to add imported tasks to
++ * @param text - newline-separated task records to import
++ */
++export function importTasks(list: TaskList, text: string): TaskImportResult {
++  const rejected: RejectedTaskImport[] = [];
++  let imported = 0;
++
++  for (const [index, line] of text.split(/\r?\n/).entries()) {
++    if (line.trim() === '') continue;
++
++    const fields = line.split(';');
++    if (fields.length !== 3) {
++      rejected.push({ line: index + 1, reason: 'expected title;priority;tags' });
++      continue;
++    }
++
++    const [title, priorityText, tagsText] = fields;
++    if (title.trim() === '') {
++      rejected.push({ line: index + 1, reason: 'title is required' });
++      continue;
++    }
++
++    const priority = priorityText.trim();
++    if (priority !== '' && priority !== 'low' && priority !== 'normal' && priority !== 'high') {
++      rejected.push({ line: index + 1, reason: 'priority must be low, normal, or high' });
++      continue;
++    }
++
++    const result = list.add({
++      title,
++      ...(priority === '' ? {} : { priority }),
++      tags: tagsText.trim() === '' ? [] : tagsText.trim().split(/\s+/),
++    });
++    if (result.ok) imported += 1;
++    else rejected.push({ line: index + 1, reason: result.error.message });
++  }
++
++  return { imported, rejected };
++}
+diff --git a/test/list.test.ts b/test/list.test.ts
+index 89c9656a9e206541190017a481b1c5117d1be704..12308ab1ed1d253fab2e1914d492f53c08a6eee3 100644
+--- a/test/list.test.ts
++++ b/test/list.test.ts
+@@ -1,7 +1,7 @@
+ import assert from 'node:assert/strict';
+ import { describe, it } from 'node:test';
+ 
+-import { createTodoList, summarize } from '../src/index.ts';
++import { createTodoList, importTasks, summarize } from '../src/index.ts';
+ 
+ function valueOf<T>(result: { ok: true; value: T } | { ok: false; error: unknown }): T {
+   if (!result.ok) assert.fail(JSON.stringify(result.error));
+@@ -9,6 +9,46 @@ function valueOf<T>(result: { ok: true; value: T } | { ok: false; error: unknown
+ }
+ 
+ describe('task list', () => {
++  it('imports semicolon-separated tasks, including normal-priority tasks', () => {
++    const list = createTodoList();
++
++    const result = importTasks(
++      list,
++      'Renew the insurance;high;admin money\nBuy milk;;groceries\nRead a book;low;',
++    );
++
++    assert.deepEqual(result, { imported: 3, rejected: [] });
++    assert.deepEqual(
++      list.list().map(({ title, priority, tags }) => ({ title, priority, tags })),
++      [
++        { title: 'Renew the insurance', priority: 'high', tags: ['admin', 'money'] },
++        { title: 'Buy milk', priority: 'normal', tags: ['groceries'] },
++        { title: 'Read a book', priority: 'low', tags: [] },
++      ],
++    );
++  });
++
++  it('skips blank lines and rejects malformed, invalid, and duplicate task records', () => {
++    const list = createTodoList();
++    list.add({ title: 'Existing task' });
++
++    const result = importTasks(
++      list,
++      '\nExisting task;;\nNo priority;urgent;\nMissing tags;high\n;low;home\n\nNext task;normal;work',
++    );
++
++    assert.deepEqual(result, {
++      imported: 1,
++      rejected: [
++        { line: 2, reason: 'there is already a task "Existing task"' },
++        { line: 3, reason: 'priority must be low, normal, or high' },
++        { line: 4, reason: 'expected title;priority;tags' },
++        { line: 5, reason: 'title is required' },
++      ],
++    });
++    assert.deepEqual(list.list().map((task) => task.title), ['Existing task', 'Next task']);
++  });
++
+   it('adds an open task with a normal priority by default', () => {
+     const list = createTodoList();
+     const task = valueOf(list.add({ title: '  Buy milk ' }));

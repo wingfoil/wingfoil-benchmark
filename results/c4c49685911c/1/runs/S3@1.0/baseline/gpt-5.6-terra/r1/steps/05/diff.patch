@@ -1,0 +1,113 @@
+diff --git a/src/index.ts b/src/index.ts
+index 35af2d612b21ba18ad27fbc52484d5344fa149db..c5c1b822f290f764b9cbdda6d67e0fd1080aac5a 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -23,6 +23,12 @@ export interface Booking extends RentalQuote {
+   id: string;
+ }
+ 
++export interface Cancellation {
++  bookingId: string;
++  /** Amount refunded to the customer. */
++  refund: number;
++}
++
+ export interface AvailabilityQuery {
+   start: string;
+   end: string;
+@@ -33,6 +39,7 @@ export interface RentalService {
+   addEquipment(item: EquipmentItem): void;
+   quote(request: RentalRequest): RentalQuote;
+   book(request: RentalRequest): Booking;
++  cancel(bookingId: string, at: string): Cancellation;
+   availability(query: AvailabilityQuery): string[];
+ }
+ 
+@@ -53,6 +60,7 @@ const LONG_RENTAL_DISCOUNT = 0.1;
+ export function createRentalService(): RentalService {
+   const equipment = new Map<string, EquipmentItem>();
+   const bookings: Booking[] = [];
++  const cancelledBookingIds = new Set<string>();
+   let nextBookingNumber = 1;
+ 
+   function addEquipment(item: EquipmentItem): void {
+@@ -105,6 +113,31 @@ export function createRentalService(): RentalService {
+     return { ...booking };
+   }
+ 
++  function cancel(bookingId: string, at: string): Cancellation {
++    if (typeof bookingId !== "string") {
++      throw new Error("A booking id must be a string");
++    }
++
++    const cancellationTime = parseUtcHour(at, "cancellation time");
++    if (cancelledBookingIds.has(bookingId)) {
++      throw new Error(`Booking with id "${bookingId}" has already been cancelled`);
++    }
++
++    const bookingIndex = bookings.findIndex((booking) => booking.id === bookingId);
++    if (bookingIndex === -1) {
++      throw new Error(`Unknown booking id "${bookingId}"`);
++    }
++
++    const [booking] = bookings.splice(bookingIndex, 1);
++    cancelledBookingIds.add(bookingId);
++
++    const period = validatePeriod(booking);
++    const unusedDuration = Math.max(0, period.endTime - Math.max(period.startTime, cancellationTime));
++    const refund = booking.total * unusedDuration / (period.endTime - period.startTime);
++
++    return { bookingId, refund };
++  }
++
+   function availability(query: AvailabilityQuery): string[] {
+     validateAvailabilityQuery(query);
+     const requestedPeriod = validatePeriod(query);
+@@ -125,7 +158,7 @@ export function createRentalService(): RentalService {
+       .sort();
+   }
+ 
+-  return { addEquipment, quote, book, availability };
++  return { addEquipment, quote, book, cancel, availability };
+ 
+   function findEquipment(request: RentalRequest): EquipmentItem {
+     if (!request || typeof request.itemId !== "string") {
+@@ -203,17 +236,17 @@ function validatePeriod(request: Pick<RentalRequest, "start" | "end">): Period {
+   return period;
+ }
+ 
+-function parseUtcHour(value: string, field: "start" | "end"): number {
++function parseUtcHour(value: string, field: "start" | "end" | "cancellation time"): number {
+   // An optional fractional component is permitted only when it represents zero,
+   // so every accepted time falls exactly on a UTC hour.
+   const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):00:00(?:\.0+)?Z$/.exec(value);
+   if (!match) {
+-    throw new Error(`Rental ${field} must be an ISO-8601 time on the hour in UTC`);
++    throw new Error(`${timeFieldName(field)} must be an ISO-8601 time on the hour in UTC`);
+   }
+ 
+   const time = Date.parse(value);
+   if (!Number.isFinite(time)) {
+-    throw new Error(`Rental ${field} must be a valid ISO-8601 time`);
++    throw new Error(`${timeFieldName(field)} must be a valid ISO-8601 time`);
+   }
+ 
+   const date = new Date(time);
+@@ -224,12 +257,16 @@ function parseUtcHour(value: string, field: "start" | "end"): number {
+     || date.getUTCMinutes() !== 0
+     || date.getUTCSeconds() !== 0
+     || date.getUTCMilliseconds() !== 0) {
+-    throw new Error(`Rental ${field} must be a valid ISO-8601 time on the hour in UTC`);
++    throw new Error(`${timeFieldName(field)} must be a valid ISO-8601 time on the hour in UTC`);
+   }
+ 
+   return time;
+ }
+ 
++function timeFieldName(field: "start" | "end" | "cancellation time"): string {
++  return field === "cancellation time" ? "Cancellation time" : `Rental ${field}`;
++}
++
+ function isUtcMidnight(time: number): boolean {
+   return new Date(time).getUTCHours() === 0;
+ }

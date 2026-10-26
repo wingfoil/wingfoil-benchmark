@@ -1,0 +1,227 @@
+diff --git a/README.md b/README.md
+index ff92be649ff3f610b38798b3310751534d032814..be0b7c79bc2770a4ed397f98a6f5d940d7da1eac 100644
+--- a/README.md
++++ b/README.md
+@@ -3,3 +3,9 @@
+ A small TypeScript library, with no runtime dependency, of building blocks for our services that store,
+ exchange and update JSON: configuration files, API payloads and stored records. It is imported by the
+ other projects of the team, so its behaviour must follow the published standards it implements.
++
++## JSON Pointer
++
++`resolvePointer(document, pointer)` resolves an [RFC 6901 JSON Pointer](https://www.rfc-editor.org/rfc/rfc6901)
++against a JSON document. It returns the referenced value and throws when the pointer is malformed or
++does not identify a value in the document.
+diff --git a/docs/memory/decision-log/dl-001-reject-malformed-json-pointer-tokens.md b/docs/memory/decision-log/dl-001-reject-malformed-json-pointer-tokens.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..7b1f37db726d3c93d69f93abdbda58957428a906
+--- /dev/null
++++ b/docs/memory/decision-log/dl-001-reject-malformed-json-pointer-tokens.md
+@@ -0,0 +1,22 @@
++---
++id: dl-001-reject-malformed-json-pointer-tokens
++type: decision-log
++title: "Reject malformed JSON Pointer tokens"
++status: pending
++format: 1
++---
++
++## Context
++
++RFC 6901 permits only `~0` and `~1` escape sequences in reference tokens. Accepting other uses of
++`~` would silently resolve a different, non-standard pointer.
++
++## Decision
++
++Reject a pointer when any token contains a tilde escape other than `~0` or `~1`. A pointer must also
++be the empty string or begin with `/`; array indices must use the RFC's canonical decimal syntax.
++
++## Consequences
++
++Callers receive an error for malformed pointers rather than ambiguous results. The resolver remains
++strictly interoperable with RFC 6901 producers.
+diff --git a/docs/memory/task/task-001-implement-json-pointer-resolution.md b/docs/memory/task/task-001-implement-json-pointer-resolution.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..9a3a0557c50d24e006b1724a1e48c6c198fbfe5a
+--- /dev/null
++++ b/docs/memory/task/task-001-implement-json-pointer-resolution.md
+@@ -0,0 +1,12 @@
++---
++id: task-001-implement-json-pointer-resolution
++type: task
++title: "Implement JSON Pointer resolution"
++status: pending
++format: 1
++---
++
++Implement RFC 6901 JSON Pointer resolution as the public `resolvePointer(document, pointer)` API.
++
++Validate pointer syntax and resolution failures, document the export, and add deterministic tests for
++standard escape handling, arrays, root resolution, and invalid or unresolved pointers.
+diff --git a/package-lock.json b/package-lock.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..b3defd684091160dc3f4b8db388905bf224c93d7
+--- /dev/null
++++ b/package-lock.json
+@@ -0,0 +1,29 @@
++{
++  "name": "json-toolkit",
++  "version": "0.1.0",
++  "lockfileVersion": 3,
++  "requires": true,
++  "packages": {
++    "": {
++      "name": "json-toolkit",
++      "version": "0.1.0",
++      "devDependencies": {
++        "typescript": "^5.9.3"
++      }
++    },
++    "node_modules/typescript": {
++      "version": "5.9.3",
++      "resolved": "https://registry.npmjs.org/typescript/-/typescript-5.9.3.tgz",
++      "integrity": "sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw==",
++      "dev": true,
++      "license": "Apache-2.0",
++      "bin": {
++        "tsc": "bin/tsc",
++        "tsserver": "bin/tsserver"
++      },
++      "engines": {
++        "node": ">=14.17"
++      }
++    }
++  }
++}
+diff --git a/package.json b/package.json
+index 5f1f12a7edbf25e1ade5481dc7f359ede03d0df5..b7edec60160a423ca57862a60959e849113d9c8f 100644
+--- a/package.json
++++ b/package.json
+@@ -5,6 +5,9 @@
+   "description": "Building blocks for services that store, exchange and update JSON documents.",
+   "type": "module",
+   "scripts": {
+-    "test": "node --test"
++    "test": "tsc && node --test"
++  },
++  "devDependencies": {
++    "typescript": "^5.9.3"
+   }
+ }
+diff --git a/src/index.ts b/src/index.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..718c37430d8ce539273b12fe9fe7923e7d663c73
+--- /dev/null
++++ b/src/index.ts
+@@ -0,0 +1,63 @@
++/**
++ * Resolves an RFC 6901 JSON Pointer against a JSON document.
++ *
++ * @param document The JSON document to traverse.
++ * @param pointer The JSON Pointer string to resolve.
++ * @returns The value referenced by the pointer.
++ * @throws {TypeError} If `pointer` is not a valid JSON Pointer.
++ * @throws {Error} If the pointer does not resolve to a document value.
++ */
++export function resolvePointer(document: unknown, pointer: string): unknown {
++  if (typeof pointer !== 'string' || (pointer !== '' && !pointer.startsWith('/'))) {
++    throw new TypeError('A JSON Pointer must be empty or start with "/".');
++  }
++
++  if (pointer === '') {
++    return document;
++  }
++
++  let value = document;
++
++  for (const token of pointer.slice(1).split('/')) {
++    const referenceToken = decodeReferenceToken(token);
++
++    if (Array.isArray(value)) {
++      value = resolveArrayElement(value, referenceToken, pointer);
++    } else if (isJsonObject(value)) {
++      if (!Object.hasOwn(value, referenceToken)) {
++        throw new Error(`JSON Pointer does not resolve: ${pointer}`);
++      }
++
++      value = value[referenceToken];
++    } else {
++      throw new Error(`JSON Pointer does not resolve: ${pointer}`);
++    }
++  }
++
++  return value;
++}
++
++function decodeReferenceToken(token: string): string {
++  if (/~(?:[^01]|$)/.test(token)) {
++    throw new TypeError(`Invalid JSON Pointer escape sequence in token: ${token}`);
++  }
++
++  return token.replace(/~1/g, '/').replace(/~0/g, '~');
++}
++
++function resolveArrayElement(array: unknown[], token: string, pointer: string): unknown {
++  if (!/^(0|[1-9][0-9]*)$/.test(token)) {
++    throw new Error(`JSON Pointer does not resolve: ${pointer}`);
++  }
++
++  const index = Number(token);
++  if (!Number.isSafeInteger(index) || index >= array.length) {
++    throw new Error(`JSON Pointer does not resolve: ${pointer}`);
++  }
++
++  return array[index];
++}
++
++function isJsonObject(value: unknown): value is Record<string, unknown> {
++  return typeof value === 'object' && value !== null;
++}
+diff --git a/test/json-pointer.test.mjs b/test/json-pointer.test.mjs
+new file mode 100644
+index 0000000000000000000000000000000000000000..0fdd8c9b2b4a2917dc4bc9279d016faae5fab965
+--- /dev/null
++++ b/test/json-pointer.test.mjs
+@@ -0,0 +1,42 @@
++import assert from 'node:assert/strict';
++import test from 'node:test';
++
++import { resolvePointer } from '../dist/index.js';
++
++const document = {
++  foo: ['bar', 'baz'],
++  '': 0,
++  'a/b': 1,
++  'c%d': 2,
++  'e^f': 3,
++  'g|h': 4,
++  'i\\j': 5,
++  'k\"l': 6,
++  ' ': 7,
++  'm~n': 8,
++};
++
++test('resolves RFC 6901 example pointers', () => {
++  assert.deepEqual(resolvePointer(document, ''), document);
++  assert.deepEqual(resolvePointer(document, '/foo'), ['bar', 'baz']);
++  assert.equal(resolvePointer(document, '/foo/0'), 'bar');
++  assert.equal(resolvePointer(document, '/'), 0);
++  assert.equal(resolvePointer(document, '/a~1b'), 1);
++  assert.equal(resolvePointer(document, '/m~0n'), 8);
++});
++
++test('resolves values that are falsy or undefined-like JSON values', () => {
++  assert.equal(resolvePointer({ a: false }, '/a'), false);
++  assert.equal(resolvePointer({ a: null }, '/a'), null);
++  assert.equal(resolvePointer({ a: 0 }, '/a'), 0);
++});
++
++test('rejects invalid or unresolved pointers', () => {
++  assert.throws(() => resolvePointer(document, 'foo'));
++  assert.throws(() => resolvePointer(document, '/m~2n'));
++  assert.throws(() => resolvePointer(document, '/foo/01'));
++  assert.throws(() => resolvePointer(document, '/foo/-'));
++  assert.throws(() => resolvePointer(document, '/foo/2'));
++  assert.throws(() => resolvePointer(document, '/missing'));
++  assert.throws(() => resolvePointer(null, '/anything'));
++});

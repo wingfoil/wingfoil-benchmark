@@ -1,0 +1,168 @@
+diff --git a/README.md b/README.md
+index ff92be649ff3f610b38798b3310751534d032814..d7dd2b66e3c3b0a4c1cc1d0aef2e60c10ed68f82 100644
+--- a/README.md
++++ b/README.md
+@@ -3,3 +3,15 @@
+ A small TypeScript library, with no runtime dependency, of building blocks for our services that store,
+ exchange and update JSON: configuration files, API payloads and stored records. It is imported by the
+ other projects of the team, so its behaviour must follow the published standards it implements.
++
++## JSON Pointer
++
++`resolvePointer(document, pointer)` returns the value addressed by an RFC 6901 JSON Pointer. It accepts
++the empty pointer for the document root, decodes `~0` and `~1` in member names, and throws when the
++pointer is malformed or does not resolve to a value.
++
++```ts
++import { resolvePointer } from "json-toolkit";
++
++resolvePointer({ "a/b": ["value"] }, "/a~1b/0"); // "value"
++```
+diff --git a/docs/memory/decision-log/dl-001-use-strict-rfc-6901-pointer-evaluation.md b/docs/memory/decision-log/dl-001-use-strict-rfc-6901-pointer-evaluation.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..b4201ff5e38fc373dcfc6c0a9c9c54a7b5f6fbdb
+--- /dev/null
++++ b/docs/memory/decision-log/dl-001-use-strict-rfc-6901-pointer-evaluation.md
+@@ -0,0 +1,23 @@
++---
++id: dl-001-use-strict-rfc-6901-pointer-evaluation
++type: decision-log
++title: "Use strict RFC 6901 pointer evaluation"
++status: pending
++format: 1
++---
++
++## Context
++
++Services need one interoperable way to resolve values in JSON documents, and later features will build
++on this primitive.
++
++## Decision
++
++Evaluate pointers strictly according to RFC 6901: every non-root pointer begins with `/`, only `~0` and
++`~1` are valid token escapes, and array indices are `0` or non-zero decimal digits without leading zeroes.
++The array append token (`-`) and paths that do not identify a concrete value raise an error.
++
++## Consequences
++
++Callers receive a value only for an unambiguous, existing location. Invalid input and missing locations
++cannot be silently confused with JSON values such as `false` or `null`.
+diff --git a/docs/memory/task/task-001-implement-rfc-6901-json-pointer-resolution.md b/docs/memory/task/task-001-implement-rfc-6901-json-pointer-resolution.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..a3e15a2f47015ed6de182b5ebe7ae6ece0bf8cd8
+--- /dev/null
++++ b/docs/memory/task/task-001-implement-rfc-6901-json-pointer-resolution.md
+@@ -0,0 +1,11 @@
++---
++id: task-001-implement-rfc-6901-json-pointer-resolution
++type: task
++title: "Implement RFC 6901 JSON Pointer resolution"
++status: pending
++format: 1
++---
++
++Implemented `resolvePointer(document, pointer)` in `src/index.ts` with RFC 6901 escaping, object member
++lookup, strict array-index handling, and errors for invalid or unresolved pointers. Added unit tests and
++documented the public API in the README.
+diff --git a/src/index.ts b/src/index.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..17b914af3eed7b2e010fb6d908c6b70e37b0d793
+--- /dev/null
++++ b/src/index.ts
+@@ -0,0 +1,59 @@
++/**
++ * Resolves an RFC 6901 JSON Pointer against a JSON document.
++ *
++ * @throws {Error} If the pointer syntax is invalid or it does not identify a value.
++ */
++export function resolvePointer(document: unknown, pointer: string): unknown {
++  if (!pointer.startsWith("/")) {
++    if (pointer === "") {
++      return document;
++    }
++
++    throw new Error("Invalid JSON Pointer: it must be empty or start with '/'");
++  }
++
++  let value = document;
++
++  for (const token of pointer.slice(1).split("/")) {
++    const referenceToken = decodeReferenceToken(token);
++
++    if (Array.isArray(value)) {
++      value = resolveArrayElement(value, referenceToken);
++    } else if (isObject(value)) {
++      if (!Object.hasOwn(value, referenceToken)) {
++        throw new Error(`JSON Pointer does not resolve: ${pointer}`);
++      }
++
++      value = value[referenceToken];
++    } else {
++      throw new Error(`JSON Pointer does not resolve: ${pointer}`);
++    }
++  }
++
++  return value;
++}
++
++function decodeReferenceToken(token: string): string {
++  if (/~(?:[^01]|$)/u.test(token)) {
++    throw new Error(`Invalid JSON Pointer escape sequence in token: ${token}`);
++  }
++
++  return token.replace(/~1/gu, "/").replace(/~0/gu, "~");
++}
++
++function resolveArrayElement(array: unknown[], token: string): unknown {
++  if (!/^(?:0|[1-9][0-9]*)$/u.test(token)) {
++    throw new Error(`JSON Pointer does not resolve: invalid array index '${token}'`);
++  }
++
++  const index = Number(token);
++  if (!Number.isSafeInteger(index) || index >= array.length || !Object.hasOwn(array, index)) {
++    throw new Error(`JSON Pointer does not resolve: array index '${token}' is absent`);
++  }
++
++  return array[index];
++}
++
++function isObject(value: unknown): value is Record<string, unknown> {
++  return typeof value === "object" && value !== null;
++}
+diff --git a/test/resolvePointer.test.ts b/test/resolvePointer.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..48182271728a107dee185b2ca172fe79b37b3c95
+--- /dev/null
++++ b/test/resolvePointer.test.ts
+@@ -0,0 +1,31 @@
++import assert from "node:assert/strict";
++import test from "node:test";
++
++import { resolvePointer } from "../src/index.ts";
++
++const document = {
++  foo: ["bar", "baz"],
++  "": 0,
++  "a/b": 1,
++  "m~n": 8,
++  "~1": 9,
++  nested: { enabled: false, value: null },
++};
++
++test("resolves RFC 6901 reference tokens", () => {
++  assert.equal(resolvePointer(document, ""), document);
++  assert.deepEqual(resolvePointer(document, "/foo"), ["bar", "baz"]);
++  assert.equal(resolvePointer(document, "/foo/0"), "bar");
++  assert.equal(resolvePointer(document, "/"), 0);
++  assert.equal(resolvePointer(document, "/a~1b"), 1);
++  assert.equal(resolvePointer(document, "/m~0n"), 8);
++  assert.equal(resolvePointer(document, "/~01"), 9);
++  assert.equal(resolvePointer(document, "/nested/enabled"), false);
++  assert.equal(resolvePointer(document, "/nested/value"), null);
++});
++
++test("rejects malformed pointers and unresolved values", () => {
++  for (const pointer of ["foo", "/m~n", "/m~2n", "/foo/01", "/foo/-", "/foo/2", "/missing", "/nested/value/property"]) {
++    assert.throws(() => resolvePointer(document, pointer));
++  }
++});

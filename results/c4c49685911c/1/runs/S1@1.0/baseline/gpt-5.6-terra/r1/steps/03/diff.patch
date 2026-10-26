@@ -1,0 +1,96 @@
+diff --git a/package.json b/package.json
+index 5f1f12a7edbf25e1ade5481dc7f359ede03d0df5..2eebb7e23dbb04d4217859d2fc61bb65a24d9d51 100644
+--- a/package.json
++++ b/package.json
+@@ -5,6 +5,6 @@
+   "description": "Building blocks for services that store, exchange and update JSON documents.",
+   "type": "module",
+   "scripts": {
+-    "test": "node --test"
++    "test": "node --test test/*.test.ts"
+   }
+ }
+diff --git a/src/index.ts b/src/index.ts
+index 7ecc88d45f0d6ac3860f234c66090b0fdba421ad..123aab1d675a3914efb0a48626f330d17582299f 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -62,9 +62,24 @@ export function applyPatch(document: unknown, patch: unknown): unknown {
+     throw new Error("A JSON Patch must be an array");
+   }
+ 
++  // A patch is itself a JSON document.  In particular, members that an
++  // operation does not define are ignored only after they have been parsed as
++  // JSON; accepting (for example) `undefined` or a function in such a member
++  // would accept a document that RFC 6902 does not define.
++  //
++  // Cloning also snapshots the operations before evaluation.  This keeps the
++  // input patch just as immutable as the input document and ensures a failed
++  // patch cannot expose an intermediate result.
++  const patchDocument = cloneJson(patch);
++  if (!Array.isArray(patchDocument)) {
++    // `patch` was checked above, but retain this guard so the type and the
++    // JSON-document invariant remain local to this function.
++    throw new Error("A JSON Patch must be an array");
++  }
++
+   let result = cloneJson(document);
+ 
+-  for (const operation of patch) {
++  for (const operation of patchDocument) {
+     if (!isObject(operation) || Array.isArray(operation)) {
+       throw new Error("Each JSON Patch operation must be an object");
+     }
+diff --git a/test/applyPatch.test.ts b/test/applyPatch.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..c82d052b935fb8d405cea1390969cc12357933ec
+--- /dev/null
++++ b/test/applyPatch.test.ts
+@@ -0,0 +1,48 @@
++import assert from "node:assert/strict";
++import test from "node:test";
++
++import { applyPatch } from "../src/index.ts";
++
++test("ignores valid extension members", () => {
++  const document = { value: 1 };
++
++  assert.deepEqual(
++    applyPatch(document, [
++      { op: "replace", path: "/value", value: 2, extension: { trace: true } },
++    ]),
++    { value: 2 },
++  );
++  assert.deepEqual(document, { value: 1 });
++});
++
++test("rejects a patch document with a non-JSON ignored member", () => {
++  assert.throws(
++    () => applyPatch({ value: 1 }, [
++      { op: "test", path: "/value", value: 1, extension: undefined },
++    ]),
++    /Value is not valid JSON/,
++  );
++});
++
++test("does not change the supplied document when a later operation fails", () => {
++  const document = { value: 1 };
++
++  assert.throws(
++    () => applyPatch(document, [
++      { op: "replace", path: "/value", value: 2 },
++      { op: "test", path: "/value", value: 3 },
++    ]),
++    /test operation failed/,
++  );
++  assert.deepEqual(document, { value: 1 });
++});
++
++test("applies array moves as a remove followed by an add", () => {
++  assert.deepEqual(
++    applyPatch(
++      { values: ["all", "grass", "cows", "eat"] },
++      [{ op: "move", from: "/values/1", path: "/values/3" }],
++    ),
++    { values: ["all", "cows", "eat", "grass"] },
++  );
++});

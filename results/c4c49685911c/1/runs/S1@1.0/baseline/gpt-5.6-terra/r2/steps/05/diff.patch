@@ -1,0 +1,201 @@
+diff --git a/src/index.ts b/src/index.ts
+index c103408ed840a52c4b6c538c5a249fb41da135a0..85453ecd866b61a5609c5279fa98ea6abde9a8d4 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -83,6 +83,22 @@ export function applyPatch(document: unknown, patch: unknown): unknown {
+   return result;
+ }
+ 
++/**
++ * Creates an RFC 6902 JSON Patch that transforms `from` into `to`.
++ *
++ * The inputs must be JSON values.  Neither input is mutated, and values put
++ * into the returned patch are detached from `to`.
++ */
++export function createPatch(from: unknown, to: unknown): Array<Record<string, unknown>> {
++  // Cloning validates the values as JSON and means that no operation value in
++  // the resulting patch can retain a reference to either caller-owned input.
++  const source = cloneJsonValue(from);
++  const target = cloneJsonValue(to);
++  const patch: Array<Record<string, unknown>> = [];
++  createPatchAt(source, target, [], patch);
++  return patch;
++}
++
+ /**
+  * Applies an RFC 7386 JSON Merge Patch to a JSON document.
+  *
+@@ -121,6 +137,173 @@ function mergePatch(target: unknown, patch: unknown): unknown {
+   return result;
+ }
+ 
++function createPatchAt(
++  from: unknown,
++  to: unknown,
++  path: string[],
++  patch: Array<Record<string, unknown>>,
++): void {
++  if (jsonEqual(from, to)) {
++    return;
++  }
++
++  if (isJsonObject(from) && isJsonObject(to)) {
++    const fromKeys = Object.keys(from);
++    const toKeys = Object.keys(to);
++
++    // Remove first so that a subsequent add at the same object member is
++    // unambiguous, and so every recursive operation has a valid parent.
++    for (const key of fromKeys) {
++      if (!Object.hasOwn(to, key)) {
++        patch.push({ op: "remove", path: formatPointer([...path, key]) });
++      }
++    }
++    for (const key of toKeys) {
++      if (Object.hasOwn(from, key)) {
++        createPatchAt(from[key], to[key], [...path, key], patch);
++      } else {
++        patch.push({ op: "add", path: formatPointer([...path, key]), value: to[key] });
++      }
++    }
++    return;
++  }
++
++  if (Array.isArray(from) && Array.isArray(to)) {
++    createArrayPatch(from, to, path, patch);
++    return;
++  }
++
++  patch.push({ op: "replace", path: formatPointer(path), value: to });
++}
++
++function createArrayPatch(
++  from: unknown[],
++  to: unknown[],
++  path: string[],
++  patch: Array<Record<string, unknown>>,
++): void {
++  // Trim unchanged ends before alignment.  Apart from making common edits
++  // inexpensive, this makes a one-element edit in a large array local.
++  let prefixLength = 0;
++  while (
++    prefixLength < from.length
++    && prefixLength < to.length
++    && jsonEqual(from[prefixLength], to[prefixLength])
++  ) {
++    prefixLength += 1;
++  }
++
++  let fromEnd = from.length;
++  let toEnd = to.length;
++  while (
++    fromEnd > prefixLength
++    && toEnd > prefixLength
++    && jsonEqual(from[fromEnd - 1], to[toEnd - 1])
++  ) {
++    fromEnd -= 1;
++    toEnd -= 1;
++  }
++
++  const fromMiddle = from.slice(prefixLength, fromEnd);
++  const toMiddle = to.slice(prefixLength, toEnd);
++  let currentIndex = prefixLength;
++
++  // LCS produces useful anchors for reorders and multiple independent edits,
++  // but needs a matrix proportional to both dimensions.  For a genuinely
++  // large changed region, corresponding positions still get granular diffs
++  // without risking disproportionate memory use.
++  if (fromMiddle.length * toMiddle.length > 1_000_000) {
++    createArrayGapPatch(fromMiddle, toMiddle, path, currentIndex, patch);
++    return;
++  }
++
++  // Keep a longest sequence of unchanged values as anchors.  The portions
++  // between anchors can then be edited at their current array index, avoiding
++  // replacement of an entire array for a local insertion, deletion, or edit.
++  const anchors = longestCommonSubsequence(fromMiddle, toMiddle);
++  let fromIndex = 0;
++  let toIndex = 0;
++
++  for (const [anchorFrom, anchorTo] of [...anchors, [fromMiddle.length, toMiddle.length] as [number, number]]) {
++    currentIndex = createArrayGapPatch(
++      fromMiddle.slice(fromIndex, anchorFrom),
++      toMiddle.slice(toIndex, anchorTo),
++      path,
++      currentIndex,
++      patch,
++    );
++    // The matching anchor is still present at currentIndex.
++    if (anchorFrom < fromMiddle.length) {
++      currentIndex += 1;
++    }
++    fromIndex = anchorFrom + 1;
++    toIndex = anchorTo + 1;
++  }
++}
++
++function createArrayGapPatch(
++  from: unknown[],
++  to: unknown[],
++  path: string[],
++  index: number,
++  patch: Array<Record<string, unknown>>,
++): number {
++  const sharedLength = Math.min(from.length, to.length);
++  for (let offset = 0; offset < sharedLength; offset += 1) {
++    createPatchAt(from[offset], to[offset], [...path, String(index + offset)], patch);
++  }
++
++  // Remove at one fixed index because each removal shifts the next value into
++  // that position.
++  for (let offset = sharedLength; offset < from.length; offset += 1) {
++    patch.push({ op: "remove", path: formatPointer([...path, String(index + sharedLength)]) });
++  }
++  for (let offset = sharedLength; offset < to.length; offset += 1) {
++    patch.push({
++      op: "add",
++      path: formatPointer([...path, String(index + offset)]),
++      value: to[offset],
++    });
++  }
++
++  return index + to.length;
++}
++
++function longestCommonSubsequence(from: unknown[], to: unknown[]): Array<[number, number]> {
++  const lengths = Array.from(
++    { length: from.length + 1 },
++    () => new Array<number>(to.length + 1).fill(0),
++  );
++
++  for (let fromIndex = from.length - 1; fromIndex >= 0; fromIndex -= 1) {
++    for (let toIndex = to.length - 1; toIndex >= 0; toIndex -= 1) {
++      lengths[fromIndex][toIndex] = jsonEqual(from[fromIndex], to[toIndex])
++        ? lengths[fromIndex + 1][toIndex + 1] + 1
++        : Math.max(lengths[fromIndex + 1][toIndex], lengths[fromIndex][toIndex + 1]);
++    }
++  }
++
++  const result: Array<[number, number]> = [];
++  let fromIndex = 0;
++  let toIndex = 0;
++  while (fromIndex < from.length && toIndex < to.length) {
++    if (jsonEqual(from[fromIndex], to[toIndex])) {
++      result.push([fromIndex, toIndex]);
++      fromIndex += 1;
++      toIndex += 1;
++    } else if (lengths[fromIndex + 1][toIndex] >= lengths[fromIndex][toIndex + 1]) {
++      fromIndex += 1;
++    } else {
++      toIndex += 1;
++    }
++  }
++  return result;
++}
++
++function formatPointer(path: string[]): string {
++  return path.map((token) => `/${token.replace(/~/g, "~0").replace(/\//g, "~1")}`).join("");
++}
++
+ function isJsonObject(value: unknown): value is Record<string, unknown> {
+   return value !== null && typeof value === "object" && !Array.isArray(value);
+ }

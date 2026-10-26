@@ -1,0 +1,96 @@
+diff --git a/README.md b/README.md
+index f55a6f65ae600b9b09a3b9ba0e2fb5365e11e57b..cf84ddf37db57d0d3a043131db04598851e82f36 100644
+--- a/README.md
++++ b/README.md
+@@ -20,7 +20,9 @@ resolvePointer({ users: [{ name: "Ada" }] }, "/users/0/name"); // "Ada"
+ 
+ `applyPatch(document, patch)` applies an [RFC 6902 JSON Patch](https://www.rfc-editor.org/rfc/rfc6902)
+ without changing the supplied document. It supports the `add`, `remove`, `replace`, `move`, `copy`, and
+-`test` operations and throws when the patch is invalid or an operation fails.
++`test` operations and throws when the patch is invalid or an operation fails. Both the patch and its
++operations must be JSON-compatible values; evaluation stops at the first error and never changes the
++supplied document.
+ 
+ ```ts
+ import { applyPatch } from "json-toolkit";
+diff --git a/src/index.ts b/src/index.ts
+index 236bd9c6d60d2bd296038a1053c3f2e49191723f..b2f029477bb7effa05b82edf46411b9d21b3685b 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -61,6 +61,7 @@ export function applyPatch(document: unknown, patch: unknown): unknown {
+   if (!Array.isArray(patch)) {
+     throw new TypeError("A JSON Patch must be an array of operations.");
+   }
++  validateJsonArray(patch, "A JSON Patch");
+ 
+   let result = cloneJsonValue(document);
+ 
+@@ -72,6 +73,8 @@ export function applyPatch(document: unknown, patch: unknown): unknown {
+ }
+ 
+ function applyOperation(document: unknown, operation: unknown): unknown {
++  operation = cloneJsonValue(operation);
++
+   if (!isObject(operation) || Array.isArray(operation)) {
+     throw new TypeError("A JSON Patch operation must be an object.");
+   }
+@@ -116,6 +119,19 @@ function applyOperation(document: unknown, operation: unknown): unknown {
+   }
+ }
+ 
++function validateJsonArray(value: unknown[], description: string): void {
++  for (let index = 0; index < value.length; index += 1) {
++    const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
++    if (descriptor === undefined || !("value" in descriptor)) {
++      throw new TypeError(`${description} must not contain empty slots or accessor members.`);
++    }
++  }
++
++  if (Object.keys(value).some((key) => !isArrayIndex(key) || Number(key) >= value.length)) {
++    throw new TypeError(`${description} must not have named members.`);
++  }
++}
++
+ function addAt(document: unknown, tokens: string[], value: unknown): unknown {
+   if (tokens.length === 0) {
+     return value;
+diff --git a/test/applyPatch.test.mjs b/test/applyPatch.test.mjs
+index 476d2d72c5d4ed24b551b8be8eaf94e429fc5be4..b0054857b01edcfe67126e3732bf661280402b8c 100644
+--- a/test/applyPatch.test.mjs
++++ b/test/applyPatch.test.mjs
+@@ -60,3 +60,35 @@ test("rejects malformed patches and failed operations", () => {
+     assert.throws(() => applyPatch(document, patch));
+   }
+ });
++
++test("rejects JavaScript values that cannot represent a JSON Patch document", () => {
++  class AddOperation {
++    op = "add";
++    path = "/added";
++    value = true;
++  }
++
++  const patchWithNamedMember = [{ op: "add", path: "/added", value: true }];
++  patchWithNamedMember.metadata = "not JSON";
++
++  assert.throws(() => applyPatch({}, [new AddOperation()]));
++  assert.throws(() => applyPatch({}, patchWithNamedMember));
++  assert.throws(() => applyPatch({}, [{
++    get op() {
++      return "add";
++    },
++    path: "/added",
++    value: true,
++  }]));
++});
++
++test("leaves the supplied document unchanged when a later operation fails", () => {
++  const original = { status: "pending" };
++
++  assert.throws(() => applyPatch(original, [
++    { op: "replace", path: "/status", value: "updated" },
++    { op: "test", path: "/status", value: "pending" },
++  ]));
++
++  assert.deepEqual(original, { status: "pending" });
++});

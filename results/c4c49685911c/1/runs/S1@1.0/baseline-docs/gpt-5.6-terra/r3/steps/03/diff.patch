@@ -1,0 +1,160 @@
+diff --git a/README.md b/README.md
+index cac198007bb30421a5eb753ffaced39ede3636f2..e18f743fa2bab00b5fce73e2ce6417615480834f 100644
+--- a/README.md
++++ b/README.md
+@@ -1,6 +1,6 @@
+ # json-toolkit
+ 
+-Documentation version: 0.3 (2026-10-26)
++Documentation version: 0.4 (2026-10-26)
+ 
+ A small TypeScript library, with no runtime dependency, of building blocks for our services that store,
+ exchange and update JSON: configuration files, API payloads and stored records. It is imported by the
+@@ -22,7 +22,10 @@ resolvePointer({ users: [{ name: 'Ada' }] }, '/users/0/name'); // 'Ada'
+ 
+ `applyPatch(document, patch)` applies an [RFC 6902 JSON Patch](https://www.rfc-editor.org/rfc/rfc6902)
+ without mutating the source document. It supports `add`, `remove`, `replace`, `move`, `copy`, and
+-`test`, and throws if either the patch or an operation is invalid.
++`test`. Documents and operation members must be JSON values; operation members that RFC 6902 does
++not define are ignored. It throws if either the patch or an operation is invalid, and a failed patch
++never mutates the input document. Replacing the root is supported; removing it is rejected because
++there is no JSON document left to return.
+ 
+ ```ts
+ import { applyPatch } from 'json-toolkit';
+diff --git a/src/index.ts b/src/index.ts
+index 033d85bfa84ea7a0634fca0dc2cf7b2714ff5022..989f8c5a0f78fd4af2f5aa2c01440de9522b02c5 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -170,7 +170,7 @@ function addValue(document: JsonValue, tokens: readonly string[], value: JsonVal
+ 
+ function removeValue(document: JsonValue, tokens: readonly string[]): JsonValue {
+   if (tokens.length === 0) {
+-    return null;
++    throw new Error('Cannot remove the root of a JSON document.');
+   }
+ 
+   const { parent, token } = resolveParent(document, tokens);
+@@ -273,8 +273,8 @@ function assertJsonValue(value: unknown, label: string, ancestors = new Set<obje
+       throw new Error(`${label} must not contain a circular reference.`);
+     }
+     ancestors.add(value);
+-    for (const key of Object.keys(value)) {
+-      assertJsonValue((value as Record<string, unknown>)[key], label, ancestors);
++    for (const key of jsonObjectKeys(value, label)) {
++      assertJsonValue((value as Record<string, unknown>)[key]!, label, ancestors);
+     }
+     ancestors.delete(value);
+     return;
+@@ -283,8 +283,8 @@ function assertJsonValue(value: unknown, label: string, ancestors = new Set<obje
+       throw new Error(`${label} must not contain a circular reference.`);
+     }
+     ancestors.add(value);
+-    for (const item of value) {
+-      assertJsonValue(item, label, ancestors);
++    for (const key of jsonArrayKeys(value, label)) {
++      assertJsonValue(value[Number(key)]!, label, ancestors);
+     }
+     ancestors.delete(value);
+     return;
+@@ -292,6 +292,49 @@ function assertJsonValue(value: unknown, label: string, ancestors = new Set<obje
+   throw new Error(`${label} must be a JSON value.`);
+ }
+ 
++function jsonObjectKeys(value: object, label: string): string[] {
++  if (Object.getOwnPropertySymbols(value).length > 0) {
++    throw new Error(`${label} must be a JSON value.`);
++  }
++
++  const keys = Object.getOwnPropertyNames(value);
++  for (const key of keys) {
++    const descriptor = Object.getOwnPropertyDescriptor(value, key)!;
++    if (!descriptor.enumerable || !Object.prototype.hasOwnProperty.call(descriptor, 'value')) {
++      throw new Error(`${label} must be a JSON value.`);
++    }
++  }
++  return keys;
++}
++
++function jsonArrayKeys(value: unknown[], label: string): string[] {
++  if (Object.getOwnPropertySymbols(value).length > 0) {
++    throw new Error(`${label} must be a JSON value.`);
++  }
++
++  const keys = Object.getOwnPropertyNames(value);
++  const elementKeys = keys.filter((key) => key !== 'length');
++  if (keys.length !== value.length + 1) {
++    throw new Error(`${label} must be a JSON value.`);
++  }
++  for (const key of elementKeys) {
++    const descriptor = Object.getOwnPropertyDescriptor(value, key)!;
++    if (!isArrayElementKey(key, value.length) || !descriptor.enumerable
++      || !Object.prototype.hasOwnProperty.call(descriptor, 'value')) {
++      throw new Error(`${label} must be a JSON value.`);
++    }
++  }
++  return elementKeys;
++}
++
++function isArrayElementKey(key: string, length: number): boolean {
++  if (!/^(?:0|[1-9][0-9]*)$/.test(key)) {
++    return false;
++  }
++  const index = Number(key);
++  return Number.isSafeInteger(index) && index < length;
++}
++
+ function cloneJsonValue(value: JsonValue): JsonValue {
+   if (Array.isArray(value)) {
+     return value.map(cloneJsonValue);
+diff --git a/test/apply-patch.test.mjs b/test/apply-patch.test.mjs
+index ec4629dc4fce7a55a4353e0ca69d1df5803bb21f..67038802e9f610711707b23c3d3b46f437b30d5c 100644
+--- a/test/apply-patch.test.mjs
++++ b/test/apply-patch.test.mjs
+@@ -31,7 +31,7 @@ test('supports root replacement, array append, and escaped member names', async
+   const { applyPatch } = await import('../dist/index.js');
+ 
+   assert.deepEqual(applyPatch({ value: 1 }, [{ op: 'replace', path: '', value: ['root'] }]), ['root']);
+-  assert.equal(applyPatch({ value: 1 }, [{ op: 'remove', path: '' }]), null);
++  assert.throws(() => applyPatch({ value: 1 }, [{ op: 'remove', path: '' }]));
+   assert.deepEqual(
+     applyPatch({ 'a/b': [] }, [{ op: 'add', path: '/a~1b/-', value: false }]),
+     { 'a/b': [false] },
+@@ -49,3 +49,37 @@ test('rejects malformed patches and operations whose targets do not exist', asyn
+   assert.throws(() => applyPatch({ a: {} }, [{ op: 'move', from: '/a', path: '/a/b' }]));
+   assert.throws(() => applyPatch({ value: 1 }, [{ op: 'test', path: '/value', value: 2 }]));
+ });
++
++test('accepts only JSON patch documents, rather than JavaScript lookalikes', async () => {
++  const { applyPatch } = await import('../dist/index.js');
++  const operation = {};
++  Object.defineProperties(operation, {
++    op: { value: 'add' },
++    path: { value: '/added' },
++    value: { value: true },
++  });
++
++  assert.throws(() => applyPatch({}, [operation]));
++  assert.throws(() => applyPatch({}, Object.assign([], { extra: true })));
++});
++
++test('ignores defined-but-unrecognised JSON operation members', async () => {
++  const { applyPatch } = await import('../dist/index.js');
++
++  assert.deepEqual(
++    applyPatch({}, [{ op: 'add', path: '/added', value: true, extension: { enabled: false } }]),
++    { added: true },
++  );
++});
++
++test('leaves the input unchanged when any operation fails', async () => {
++  const { applyPatch } = await import('../dist/index.js');
++  const source = { status: 'draft', tags: ['one'] };
++
++  assert.throws(() => applyPatch(source, [
++    { op: 'replace', path: '/status', value: 'published' },
++    { op: 'test', path: '/tags/0', value: 'two' },
++  ]));
++
++  assert.deepEqual(source, { status: 'draft', tags: ['one'] });
++});
