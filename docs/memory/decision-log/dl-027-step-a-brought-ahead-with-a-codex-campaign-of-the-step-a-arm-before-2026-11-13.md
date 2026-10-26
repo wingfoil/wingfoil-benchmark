@@ -2,7 +2,7 @@
 id: dl-027-step-a-brought-ahead-with-a-codex-campaign-of-the-step-a-arm-before-2026-11-13
 type: decision-log
 title: "Step A brought ahead, with a Codex campaign of the step-A arm before 2026-11-13"
-status: pending
+status: approved
 tags: ["v0.3","wingfoil","codex"]
 ---
 
