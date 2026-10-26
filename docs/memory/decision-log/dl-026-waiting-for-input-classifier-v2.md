@@ -2,7 +2,7 @@
 id: dl-026-waiting-for-input-classifier-v2
 type: decision-log
 title: "Waiting-for-input classifier v2"
-status: draft
+status: pending
 tags: ["v0.3","approver"]
 ---
 
