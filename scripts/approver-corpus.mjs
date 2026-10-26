@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // The approver's corpus (task-106): every invocation's final assistant message in the local results' transcripts,
 // which is what the neutral approver classifies (REQ-RUN-06). Claude Code: each `result` event's `result`. Codex: the
-// last `agent_message` of each thread (from one `thread.started` to the next). Transcripts are git-ignored (published
+// last `agent_message` of each thread (from one `thread.started` to the next). Every invocation's last message, failed
+// ones included, which the runner never classifies; `#k` numbers the non-empty ones. Transcripts are git-ignored (published
 // as release assets), so the corpus is extracted from a checkout that holds them and committed as text only.
 //
 //   node scripts/approver-corpus.mjs <results-dir> > test/fixtures/approver/corpus.json
