@@ -102,19 +102,73 @@ export function classify(message: string): InterventionKind | undefined {
   return undefined;
 }
 
-/** Policy v1 (experiment-design decision 2), frozen when the first campaign is published. */
-const V1: ApproverPolicy = {
-  version: 'v1',
-  classify,
-  replies: {
-    approval: 'Approved. Proceed.',
-    question: 'No further input is available. Make the most reasonable choice, record it, and proceed.',
-  },
-  maxInterventions: 3,
+/**
+ * Classifier v2's patterns matched anywhere (task-106): v1's, plus requests addressed to the requester that Codex
+ * writes (bug-035) and Claude Code writes too. Frozen with v2: a pattern added or changed is v3.
+ */
+const ANYWHERE_V2: readonly RegExp[] = [
+  ...ANYWHERE,
+  /\bplease\s+(?:reply|respond|approve|review)\b/i,
+  // A reply asked for, not one reported: "using your reply "Approved. Proceed."" is an account.
+  /(?<!\byour\s+)\b(?:reply|respond)\b[^\n]{0,40}?\bapproved\b/i,
+  /\b(?:can|could|would|will)\s+you\s+(?:please\s+)?(?:approve|review)\b/i,
+  /\bpending\s+your\b/i,
+  // Work held until an approval: "Once dl-005 is approved, the value will be checked".
+  /\b(?:once|when|after|until)\s+[^.!?\n]{0,80}?\b(?:is|are|gets?|been)\s+approved\b/i,
+];
+
+/**
+ * Classifier v2's within-one-sentence patterns: "need/require … approval" only with a requester, the reader's
+ * approval or the agent's own need (bug-027), never a document's; v1's "let me know … proceed" unchanged.
+ */
+const WITHIN_SENTENCE_V2: readonly (readonly [RegExp, RegExp])[] = [
+  [/\b(?:needs?|requires?)\b/i, /\byour\b[\s\S]*\bapproval\b/i],
+  [/\bI\s+(?:need|require)\b/i, /\bapproval\b/i],
+  [/\bI(?:'m|’m|\s+am)\s+asking\b/i, /\bapproval\b/i],
+  [/\blet\s+me\s+know\b/i, /\b(?:proceed|continue|approve)/i],
+];
+
+/** Classifier v2's patterns, exported so that a test can pin them: changing one is v3. */
+export const CLASSIFIER_V2 = { anywhere: ANYWHERE_V2, withinSentence: WITHIN_SENTENCE_V2 } as const;
+
+/** A `?` that ends a sentence: followed, past closing emphasis, quotes or brackets, by a space or the end. */
+const QUESTION_END = /\?(?=[*_"”')\]]*(?:\s|$))/;
+
+/**
+ * The waiting-for-input classifier v2 (REQ-RUN-06 as amended in 1.38, task-106): v1's order, its approval patterns
+ * those of `CLASSIFIER_V2`, and a question anywhere in the last two paragraphs, so that an example after it does not
+ * hide it (bug-035).
+ */
+export function classifyV2(message: string): InterventionKind | undefined {
+  const text = withoutCode(message);
+  const sentences = text.split(SENTENCE_END);
+  if (
+    ANYWHERE_V2.some((pattern) => pattern.test(text)) ||
+    WITHIN_SENTENCE_V2.some((pair) => inOneSentence(sentences, pair))
+  ) {
+    return 'approval';
+  }
+  const paragraphs = text.split(/\n[^\S\n]*\n/).filter((paragraph) => paragraph.trim() !== '');
+  if (paragraphs.slice(-2).some((paragraph) => QUESTION_END.test(paragraph))) return 'question';
+  return undefined;
+}
+
+const REPLIES: ApproverPolicy['replies'] = {
+  approval: 'Approved. Proceed.',
+  question: 'No further input is available. Make the most reasonable choice, record it, and proceed.',
 };
 
+/** Policy v1 (experiment-design decision 2), frozen when the first campaign is published. */
+const V1: ApproverPolicy = { version: 'v1', classify, replies: REPLIES, maxInterventions: 3 };
+
+/** Policy v2 (task-106): only the classifier differs from v1, so the two differ only in when the runner answers. */
+const V2: ApproverPolicy = { version: 'v2', classify: classifyV2, replies: REPLIES, maxInterventions: 3 };
+
 /** Every policy this runner implements, by the version a campaign pins. */
-const POLICIES: ReadonlyMap<string, ApproverPolicy> = new Map([[V1.version, V1]]);
+const POLICIES: ReadonlyMap<string, ApproverPolicy> = new Map([
+  [V1.version, V1],
+  [V2.version, V2],
+]);
 
 /** The policy a campaign pins, or nothing when this runner does not implement that version. */
 export function approverPolicy(version: string): ApproverPolicy | undefined {
