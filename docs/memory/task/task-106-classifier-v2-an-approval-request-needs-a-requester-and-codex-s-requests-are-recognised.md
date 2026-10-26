@@ -2,7 +2,7 @@
 id: task-106-classifier-v2-an-approval-request-needs-a-requester-and-codex-s-requests-are-recognised
 type: task
 title: "Classifier v2: an approval request needs a requester, and Codex's requests are recognised"
-status: backlog
+status: in-progress
 release: v0.3
 wave: W15
 features: [F2.4]
