@@ -100,7 +100,42 @@ Each cell: final public tests, hold-out, then checks and M-F1 where the scenario
 
 ## Results review
 
-<!-- Anomalies, runs to rerun, and whether the results are publishable. -->
+### The agent's analysis of the steps stopped at the approval gate (2026-10-26, input to the approver's review)
+
+Every step's final agent message of `c4c49685911c/1` read again with classifier v1 itself (`dist/core/approver.js`,
+the policy the campaign pins), next to the step's diff and its public M-Q1 (`aggregate.json`).
+
+- **The wingfoil arm's manual stops by design.** `arms/wingfoil/manual.md` (lines 62–64): "If your work needs an
+  approval, ask for it and stop", then proceed on "Approved. Proceed.". The arm relies on the neutral approver
+  (F2.4, dl-004) to answer; under Claude Code it did (`81ebb2691f9c/1`: 7 interventions in 42 wingfoil steps;
+  `c82a5e74885b/1`, `/2`: 18 and 25).
+- **Under Codex, classifier v1 missed six of seven requests.** In 27 wingfoil steps Codex stopped to wait in 7. One
+  was recognised (S2 step 2, "I need approval for …", the `needs … approval` pattern), answered, and the step
+  completed. Six were not, because Codex's wording matches none of v1's patterns ("Please reply: Approved. Proceed.",
+  "submitted … for approval", "pending approval"; S3's question ends with an example, not a `?`):
+
+| Run | Step | Final message (abridged) | Code in the step's diff | Public M-Q1 at the step |
+|---|---|---|---|---|
+| S1 r1 | 3 | decision record pending approval; "Please reply: **Approved. Proceed.**" | none | 102/108 |
+| S1 r3 | 5 | `dl-005` "awaiting approval … the new test is intentionally failing"; "Please reply" | a failing test only | 123/153 |
+| S3 r1 | 5 | "What refund policy should `at` use? For example: …" | none | 30/37 |
+| S8 r1 | 2 | "submitted … for approval. Please reply: **Approved. Proceed.** and I'll implement" | none | 11/14 |
+| S8 r1 | 3 | "awaiting approval as required. Please reply exactly: `Approved. Proceed.`" | none | 11/19 |
+| S8 r1 | 4 | "Implementation and tests are ready, but … pending WingFoil approval. Please reply" | 2 files, partial | 15/23 |
+
+- **Every loss of the wingfoil arm against its docs control coincides with a missed request:** S1 r1 (159/165: a
+  step-2 defect that step 3, stopped, never fixed), S1 r3 (135/165, hold-out 33/48), S3 (30/37, 15/17), S8 (15/23,
+  4/7). Where no request was missed, the arm equals its controls: S1 r2 (165/165, 48/48) and S2 (23/24, 16/17, the
+  recognised request included). The baseline and baseline-docs arms never stopped to wait (0 classified, 0 missed).
+- **The checks, which do not depend on the stopped steps' code, favour the arm:** S3 1/1 against 0/1 in both
+  controls; S8 16/16, equal to baseline-docs, against the baseline's 13/16.
+- **So the execution measures, for the wingfoil arm, v0.2's manual with classifier v1 on an unattended Codex, not
+  WingFoil on Codex.** The difference is not neutral between arms: only the governed arm asks for approvals.
+  Classifier v1 was calibrated on Claude Code's final messages; this is a false negative, the converse of bug-027's
+  false positive, and bug-027's classifier v2 (W16) would need Codex's wording in its corpus.
+
+What the approver decides here: whether the execution is publishable as it stands (with this annotation) or the arm
+is rerun once the classifier recognises Codex's requests, before the subscription ends on 2026-11-13.
 
 ## Findings
 
