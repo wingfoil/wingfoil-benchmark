@@ -171,15 +171,16 @@ describe('approver policy v2 (task-106, REQ-RUN-06)', () => {
     );
     expect(CLASSIFIER_V2.anywhere.slice(CLASSIFIER_V1.anywhere.length).map(String)).toEqual([
       String.raw`/\bplease\s+(?:reply|respond|approve|review)\b/i`,
-      String.raw`/(?<!\b(?:your|the|this|that|an?|approver['’]s)\s+)(?<!\bin\s+)\b(?:reply|respond)\b[^\n]{0,40}?["“'‘*_]\s*approved\b/i`,
-      String.raw`/\bif\s+the\s+reply\s+is\b/i`,
-      String.raw`/(?:^|[.!?:;]\s+|\n)[^\S\n]*[*_]*(?:please\s+)?reply\s+(?:exactly\s+)?(?:with\b|:|and\b|to\s+(?:continue|proceed|approve)\b|[.!]|$)/im`,
+      String.raw`/(?<!\b(?:your|the|this|that|an?|approver['’]s)\s+)(?<!\bin\s+)\b(?:reply|respond)\b(?!\s+(?:received|was|is)\b)[^\n]{0,40}?["“'‘*_]\s*approved\b/i`,
+      String.raw`/\bif\s+the\s+reply\s+is\s+["“'‘*_]*approved\b/i`,
+      String.raw`/(?:^[^\S\n]*(?:[-*>][^\S\n]+)?|[.!?:;]\s+)[*_]*(?:please\s+)?reply(?:\s+exactly)?(?:\s*:|\s+(?:with|and)\b|\s+to\s+(?:continue|proceed|approve)\b|\s*[.!]|\s*$)/im`,
       String.raw`/\b(?:can|could|would|will)\s+you\s+(?:please\s+)?(?:approve|review)\b/i`,
       String.raw`/\bpending\s+your\b/i`,
       String.raw`/\b(?:once|when|after|until)\s+[^.!?\n]{0,80}?\b(?:is|are|gets?)\s+approved\b/i`,
-      String.raw`/\bonce\s+approved\b/i`,
+      String.raw`/\bonce\s+approved\b[^.!?\n]{0,40}?\b(?:I(?:'ll|’ll|\s+will)|will|can)\b/i`,
       String.raw`/\b(?:once|when|after|if)\s+you\s+approve\b/i`,
-      String.raw`/\b(?:on|await|awaiting|need|want)\s+your\s+go-ahead\b/i`,
+      String.raw`/\b(?:await|awaiting|need|want)\s+your\s+go-ahead\b/i`,
+      String.raw`/\bI(?:'ll|’ll|\s+will)\b[^.!?\n]{0,80}?\bon\s+your\s+go-ahead\b/i`,
       String.raw`/\bplease\s+provide\b[^\n]{0,40}?\bapproved\b/i`,
       String.raw`/\bapproval\s+(?:that\s+)?I\s+(?:don't|don’t|do\s+not|haven't|haven’t|have\s+not)\s+(?:have|got|received)\b/i`,
     ]);

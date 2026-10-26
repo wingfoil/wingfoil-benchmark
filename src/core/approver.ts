@@ -111,19 +111,21 @@ const ANYWHERE_V2: readonly RegExp[] = [
   /\bplease\s+(?:reply|respond|approve|review)\b/i,
   // A reply asked for, quoting the reply, not one reported: "using your reply", "with the reply", "the approver's
   // reply", "in reply to" are accounts (review round 1).
-  /(?<!\b(?:your|the|this|that|an?|approver['’]s)\s+)(?<!\bin\s+)\b(?:reply|respond)\b[^\n]{0,40}?["“'‘*_]\s*approved\b/i,
-  /\bif\s+the\s+reply\s+is\b/i,
-  // A reply asked for at a sentence's start, its words in backticks that the preparation removed.
-  /(?:^|[.!?:;]\s+|\n)[^\S\n]*[*_]*(?:please\s+)?reply\s+(?:exactly\s+)?(?:with\b|:|and\b|to\s+(?:continue|proceed|approve)\b|[.!]|$)/im,
+  /(?<!\b(?:your|the|this|that|an?|approver['’]s)\s+)(?<!\bin\s+)\b(?:reply|respond)\b(?!\s+(?:received|was|is)\b)[^\n]{0,40}?["“'‘*_]\s*approved\b/i,
+  /\bif\s+the\s+reply\s+is\s+["“'‘*_]*approved\b/i,
+  // A reply asked for at a sentence's or a line's start (a bullet or a quote included), its words in backticks that
+  // the preparation removed. One whitespace class per position, so that a run of spaces cannot backtrack.
+  /(?:^[^\S\n]*(?:[-*>][^\S\n]+)?|[.!?:;]\s+)[*_]*(?:please\s+)?reply(?:\s+exactly)?(?:\s*:|\s+(?:with|and)\b|\s+to\s+(?:continue|proceed|approve)\b|\s*[.!]|\s*$)/im,
   /\b(?:can|could|would|will)\s+you\s+(?:please\s+)?(?:approve|review)\b/i,
   // Deliberate: "now pending your approval" is read as a request, as v1 reads "awaiting your approval" (dl-004: a
   // false negative costs more than a false positive).
   /\bpending\s+your\b/i,
   // Work held until an approval: "Once dl-005 is approved, the value will be checked"; never "had been approved".
   /\b(?:once|when|after|until)\s+[^.!?\n]{0,80}?\b(?:is|are|gets?)\s+approved\b/i,
-  /\bonce\s+approved\b/i,
+  /\bonce\s+approved\b[^.!?\n]{0,40}?\b(?:I(?:'ll|’ll|\s+will)|will|can)\b/i,
   /\b(?:once|when|after|if)\s+you\s+approve\b/i,
-  /\b(?:on|await|awaiting|need|want)\s+your\s+go-ahead\b/i,
+  /\b(?:await|awaiting|need|want)\s+your\s+go-ahead\b/i,
+  /\bI(?:'ll|’ll|\s+will)\b[^.!?\n]{0,80}?\bon\s+your\s+go-ahead\b/i,
   // "Please provide: "Approved. Proceed."", never "please provide a sample", which is a question.
   /\bplease\s+provide\b[^\n]{0,40}?\bapproved\b/i,
   /\bapproval\s+(?:that\s+)?I\s+(?:don't|don’t|do\s+not|haven't|haven’t|have\s+not)\s+(?:have|got|received)\b/i,
