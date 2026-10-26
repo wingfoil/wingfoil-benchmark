@@ -75,5 +75,36 @@ on v2.
 
 ## Execution notes
 
-<!-- What happened while building: deviations, blockers, follow-ups (filed as elements, never left
-     here). For every `wingfoil` command: declared vs observed behaviour. -->
+- bug-035 and this task drafted on main (2026-10-26), approved by the approver (`4013f0bf`, `e8a855ef`);
+  `memory submit` (backlog → in-progress, `d11841ba`) on main; worktree `../WingFoil2-Benchmark-wt/task-106`, branch
+  `task/task-106`, its own `npm ci`.
+- **The corpus, a deviation from the Design:** transcripts are git-ignored (published as release assets), so "from
+  committed results" was not possible. `scripts/approver-corpus.mjs` reads the main checkout's local
+  `results/**/transcript.jsonl` read-only: Claude Code's `result` events, Codex's last `agent_message` per thread;
+  1048 messages (Claude Code 788, Codex 260), committed as text only in `test/fixtures/approver/corpus.json` (left out
+  of prettier, being generated). Secret scan before the commit: the Codex credential's values (extracted in memory),
+  token-shaped strings and the maintainer's names: clean. **For the approver:** the fixture makes public, once
+  pushed, the final messages of executions never published (the dry runs, campaign-005); see the review question.
+- **Red-first:** `0a39d12f` (policy v2, bug-027's accounts, bug-035's six requests) before `f60644a0`; `2811edaa` (the
+  corpus's requests a first draft missed, accounts it must not read) before `c841b268`.
+- **Settled on the corpus, by hand:** a first draft changed 45 readings; three were wrong ("using your reply
+  "Approved. Proceed."" read as a request, twice; "can you send …?" read as an approval) and one request was lost
+  ("it needs an approval I don't have"). A search of v2's negatives with approval words in their closing paragraphs
+  found three more requests (Codex's "Please provide: Approved. Proceed.", "once you approve", "on your go-ahead",
+  the last hidden from v1 by a code span). Final: 47 of 1048 readings change (`v1-to-v2.json`, pinned), dl-026's
+  counts. Conditional offers after finished work ("tell me and I'll change it") are left out on purpose.
+- **v1's tests touched only where they named v2 as unimplemented:** `approver.test.ts` ("knows no other version"),
+  `load.test.ts`, `run.test.ts` now name v3 (`95614027`); v1's patterns and its frozen-pattern test unchanged.
+- **Criterion 6:** `campaigns/codex-terra-harness-vs-docs-v2.yaml` validates (`13fda3099afa`), inside dl-025's scope,
+  differs from campaign-005's resolved file in `approver_policy` only (test). **No dry-run profile:** the estimate's
+  key is scenario, arm, model and effort, not the policy, so campaign-005's dry runs serve its estimate (13.43 USD
+  mean, 16.16 € high, API-equivalent); a v2 profile would only be needed for new dry runs.
+- **A consequence found:** M-R across compares only executions on one approver policy (`campaign-compare.ts`), so the
+  v2 rerun is not comparable across agents with the v1 Claude Code baselines; stated in dl-026 and on the method page.
+- **Docs:** requirements 1.38 (REQ-RUN-06); the method page's {#approver-classifier} names v1's miss and v2, its source
+  line updated — every published method page changes again at the next `bench site publish` (task-105's note
+  stands); dl-026 drafted and submitted (draft → pending) on main.
+- `wingfoil` commands (0.2-pre-3df305e): `memory add` (bug, task, decision-log) and `memory submit` behaved as
+  declared, each auto-committing; no spurious output.
+- **Checks:** `scripts/pre-review.sh main` green (after wrapping the method paragraph at 120); every unit test green,
+  niced, 2 workers (1667 passed, 8 skipped).
