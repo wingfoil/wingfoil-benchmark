@@ -97,10 +97,12 @@ logs, transcripts or results, beyond dl-024's bounded exception; one worktree pe
 
 1. W15: task-101 (presets) → task-102 (Codex spike, after dl-024) → the Codex campaign (step 1-bis, campaign-004) →
    task-104 (the site's catalogue and the across-agents page, the approver's addition of 2026-10-25) → dl-025 and
-   task-105 (dl-022's arm B on Terra, before 2026-11-13, the approver's addition of 2026-10-25) → task-103 (vision
-   and experiment design) → the managing pin and the first `wingfoil-sync`.
-2. W16: its requirements and acceptance first; then bug-026, bug-027, bug-028 with bug-029 and bug-030, bug-031 with
-   bug-032, bug-025 with S1 1.1, the M-K1 annotation; v0.2's campaigns re-scored.
+   task-105 (dl-022's arm B on Terra, before 2026-11-13, the approver's addition of 2026-10-25) → campaign-005 →
+   task-106 (classifier v2, bug-027 and bug-035, brought ahead from W16 by the approver on 2026-10-26: campaign-005's
+   wingfoil arm stopped at approval requests v1 did not recognise) → the arm-B rerun on policy v2, before 2026-11-13
+   → task-103 (vision and experiment design) → the managing pin and the first `wingfoil-sync`.
+2. W16: its requirements and acceptance first; then bug-026, bug-028 with bug-029 and bug-030 (bug-027 in W15's
+   task-106), bug-031 with bug-032, bug-025 with S1 1.1, the M-K1 annotation; v0.2's campaigns re-scored.
 3. W17: the spike on 0.3.1 as soon as it is tagged and admitted; then the arm's rewrite. If 0.3.1 is late, W18's
    configuration work for speckit and openspec may start first.
 4. W18: bug-034 first, then the configuring agent and the configured arms.
