@@ -152,28 +152,33 @@ describe('approver policy v2 (task-106, REQ-RUN-06)', () => {
     expect(CORPUS).toHaveLength(1048);
   });
 
-  it('is frozen: its patterns are exactly these, and changing one is v3', () => {
-    expect(CLASSIFIER_V2.anywhere.slice(0, CLASSIFIER_V1.anywhere.length)).toEqual(CLASSIFIER_V1.anywhere);
+  it('is frozen: its patterns and its question rule are exactly these, and changing one is v3', () => {
+    expect(CLASSIFIER_V2.anywhere.slice(0, CLASSIFIER_V1.anywhere.length).map(String)).toEqual(
+      CLASSIFIER_V1.anywhere.map(String),
+    );
     expect(CLASSIFIER_V2.anywhere.slice(CLASSIFIER_V1.anywhere.length).map(String)).toEqual([
       String.raw`/\bplease\s+(?:reply|respond|approve|review)\b/i`,
-      String.raw`/(?<!\byour\s+)\b(?:reply|respond)\b[^\n]{0,40}?\bapproved\b/i`,
+      String.raw`/(?<!\b(?:your|the|this|that|an?|approver['’]s)\s+)(?<!\bin\s+)\b(?:reply|respond)\b[^\n]{0,40}?["“'‘*_]\s*approved\b/i`,
+      String.raw`/\bif\s+the\s+reply\s+is\b/i`,
+      String.raw`/(?:^|[.!?:;]\s+|\n)[^\S\n]*[*_]*(?:please\s+)?reply\s+(?:exactly\s+)?(?:with\b|:|and\b|to\s+(?:continue|proceed|approve)\b|[.!]|$)/im`,
       String.raw`/\b(?:can|could|would|will)\s+you\s+(?:please\s+)?(?:approve|review)\b/i`,
       String.raw`/\bpending\s+your\b/i`,
-      String.raw`/\b(?:once|when|after|until)\s+[^.!?\n]{0,80}?\b(?:is|are|gets?|been)\s+approved\b/i`,
+      String.raw`/\b(?:once|when|after|until)\s+[^.!?\n]{0,80}?\b(?:is|are|gets?)\s+approved\b/i`,
+      String.raw`/\bonce\s+approved\b/i`,
       String.raw`/\b(?:once|when|after|if)\s+you\s+approve\b/i`,
-      String.raw`/\byour\s+go-ahead\b/i`,
+      String.raw`/\b(?:on|await|awaiting|need|want)\s+your\s+go-ahead\b/i`,
       String.raw`/\bplease\s+provide\b[^\n]{0,40}?\bapproved\b/i`,
+      String.raw`/\bapproval\s+(?:that\s+)?I\s+(?:don't|don’t|do\s+not|haven't|haven’t|have\s+not)\s+(?:have|got|received)\b/i`,
     ]);
     expect(CLASSIFIER_V2.withinSentence.map((pair) => pair.map(String))).toEqual([
-      [String.raw`/\b(?:needs?|requires?)\b/i`, String.raw`/\byour\b[\s\S]*\bapproval\b/i`],
+      [String.raw`/\b(?:needs?|requires?)\b/i`, String.raw`/^(?=([\s\S]*?\byour\b))\1[\s\S]*\bapproval\b/i`],
       [String.raw`/\bI\s+(?:need|require)\b/i`, String.raw`/\bapproval\b/i`],
       [String.raw`/\bI(?:'m|’m|\s+am)\s+asking\b/i`, String.raw`/\bapproval\b/i`],
-      [
-        String.raw`/\bapproval\b/i`,
-        String.raw`/\bI\s+(?:don't|don’t|do\s+not|haven't|haven’t|have\s+not)\s+(?:have|got|received)\b/i`,
-      ],
       [String.raw`/\blet\s+me\s+know\b/i`, String.raw`/\b(?:proceed|continue|approve)/i`],
     ]);
+    expect(String(CLASSIFIER_V2.questionEnd)).toBe(String.raw`/\?(?=[*_"”')\]]*(?:\s|$))/`);
+    expect(String(CLASSIFIER_V2.paragraphEnd)).toBe(String.raw`/\n[^\S\n]*\n/`);
+    expect(CLASSIFIER_V2.closingParagraphs).toBe(2);
   });
 
   it('reads a long adversarial message in linear time (review round 1)', () => {

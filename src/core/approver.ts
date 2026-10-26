@@ -109,35 +109,56 @@ export function classify(message: string): InterventionKind | undefined {
 const ANYWHERE_V2: readonly RegExp[] = [
   ...ANYWHERE,
   /\bplease\s+(?:reply|respond|approve|review)\b/i,
-  // A reply asked for, not one reported: "using your reply "Approved. Proceed."" is an account.
-  /(?<!\byour\s+)\b(?:reply|respond)\b[^\n]{0,40}?\bapproved\b/i,
+  // A reply asked for, quoting the reply, not one reported: "using your reply", "with the reply", "the approver's
+  // reply", "in reply to" are accounts (review round 1).
+  /(?<!\b(?:your|the|this|that|an?|approver['’]s)\s+)(?<!\bin\s+)\b(?:reply|respond)\b[^\n]{0,40}?["“'‘*_]\s*approved\b/i,
+  /\bif\s+the\s+reply\s+is\b/i,
+  // A reply asked for at a sentence's start, its words in backticks that the preparation removed.
+  /(?:^|[.!?:;]\s+|\n)[^\S\n]*[*_]*(?:please\s+)?reply\s+(?:exactly\s+)?(?:with\b|:|and\b|to\s+(?:continue|proceed|approve)\b|[.!]|$)/im,
   /\b(?:can|could|would|will)\s+you\s+(?:please\s+)?(?:approve|review)\b/i,
+  // Deliberate: "now pending your approval" is read as a request, as v1 reads "awaiting your approval" (dl-004: a
+  // false negative costs more than a false positive).
   /\bpending\s+your\b/i,
-  // Work held until an approval: "Once dl-005 is approved, the value will be checked".
-  /\b(?:once|when|after|until)\s+[^.!?\n]{0,80}?\b(?:is|are|gets?|been)\s+approved\b/i,
+  // Work held until an approval: "Once dl-005 is approved, the value will be checked"; never "had been approved".
+  /\b(?:once|when|after|until)\s+[^.!?\n]{0,80}?\b(?:is|are|gets?)\s+approved\b/i,
+  /\bonce\s+approved\b/i,
   /\b(?:once|when|after|if)\s+you\s+approve\b/i,
-  /\byour\s+go-ahead\b/i,
+  /\b(?:on|await|awaiting|need|want)\s+your\s+go-ahead\b/i,
   // "Please provide: "Approved. Proceed."", never "please provide a sample", which is a question.
   /\bplease\s+provide\b[^\n]{0,40}?\bapproved\b/i,
+  /\bapproval\s+(?:that\s+)?I\s+(?:don't|don’t|do\s+not|haven't|haven’t|have\s+not)\s+(?:have|got|received)\b/i,
 ];
 
 /**
  * Classifier v2's within-one-sentence patterns: "need/require … approval" only with a requester, the reader's
- * approval or the agent's own need (bug-027), never a document's; v1's "let me know … proceed" unchanged.
+ * approval or the agent's own need (bug-027), never a document's; v1's "let me know … proceed" unchanged. The first
+ * one's second pattern starts once, at the sentence's first "your" (an atomic lookahead), so that it never scans the
+ * sentence again from each "your" (review round 1: quadratic on a long sentence).
  */
 const WITHIN_SENTENCE_V2: readonly (readonly [RegExp, RegExp])[] = [
-  [/\b(?:needs?|requires?)\b/i, /\byour\b[\s\S]*\bapproval\b/i],
+  [/\b(?:needs?|requires?)\b/i, /^(?=([\s\S]*?\byour\b))\1[\s\S]*\bapproval\b/i],
   [/\bI\s+(?:need|require)\b/i, /\bapproval\b/i],
   [/\bI(?:'m|’m|\s+am)\s+asking\b/i, /\bapproval\b/i],
-  [/\bapproval\b/i, /\bI\s+(?:don't|don’t|do\s+not|haven't|haven’t|have\s+not)\s+(?:have|got|received)\b/i],
   [/\blet\s+me\s+know\b/i, /\b(?:proceed|continue|approve)/i],
 ];
 
-/** Classifier v2's patterns, exported so that a test can pin them: changing one is v3. */
-export const CLASSIFIER_V2 = { anywhere: ANYWHERE_V2, withinSentence: WITHIN_SENTENCE_V2 } as const;
-
 /** A `?` that ends a sentence: followed, past closing emphasis, quotes or brackets, by a space or the end. */
 const QUESTION_END = /\?(?=[*_"”')\]]*(?:\s|$))/;
+
+/** Where a paragraph ends: a blank line, spaces allowed on it. */
+const PARAGRAPH_END = /\n[^\S\n]*\n/;
+
+/** How many closing paragraphs rule 2 reads for a question. */
+const CLOSING_PARAGRAPHS = 2;
+
+/** Classifier v2's patterns and question rule, exported so that a test can pin them: changing one is v3. */
+export const CLASSIFIER_V2 = {
+  anywhere: ANYWHERE_V2,
+  withinSentence: WITHIN_SENTENCE_V2,
+  questionEnd: QUESTION_END,
+  paragraphEnd: PARAGRAPH_END,
+  closingParagraphs: CLOSING_PARAGRAPHS,
+} as const;
 
 /**
  * The waiting-for-input classifier v2 (REQ-RUN-06 as amended in 1.38, task-106): v1's order, its approval patterns
@@ -153,8 +174,9 @@ export function classifyV2(message: string): InterventionKind | undefined {
   ) {
     return 'approval';
   }
-  const paragraphs = text.split(/\n[^\S\n]*\n/).filter((paragraph) => paragraph.trim() !== '');
-  if (paragraphs.slice(-2).some((paragraph) => QUESTION_END.test(paragraph))) return 'question';
+  const paragraphs = text.split(PARAGRAPH_END).filter((paragraph) => paragraph.trim() !== '');
+  if (paragraphs.slice(-CLOSING_PARAGRAPHS).some((paragraph) => QUESTION_END.test(paragraph)))
+    return 'question';
   return undefined;
 }
 
