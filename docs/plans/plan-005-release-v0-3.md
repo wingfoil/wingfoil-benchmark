@@ -55,7 +55,10 @@ review loop measured per arm. The sequencer's "Broader categories" (S4, S7, S5 w
   task-102 (spike, prices, campaign files), then its dry runs and runs. If not everything fits by 2026-11-12: S3's dry
   runs on every model, then Sol's whole campaign, then Luna, then Terra. If task-101 is not approved by 2026-11-05,
   arm A runs from a whole hand-written campaign file and the presets follow in W15 without the deadline. Arm B (a
-  WingFoil arm for Codex) waits for step A and a new subscription: not in v0.3.
+  WingFoil arm for Codex) waits for step A and a new subscription: not in v0.3. **Amended:** arm B ran on v0.2's
+  manual under dl-025 (campaign-005, deprecated by bug-035; campaign-006 on approver policy v2), and
+  [dl-027](../memory/decision-log/dl-027-step-a-brought-ahead-with-a-codex-campaign-of-the-step-a-arm-before-2026-11-13.md)
+  (approved 2026-10-26) brings step A under Codex into v0.3, before 2026-11-13, with a cut order.
 
 **The triage**, the approver's decisions in chat (2026-10-24, "proceed as you recommend"):
 
@@ -99,12 +102,21 @@ logs, transcripts or results, beyond dl-024's bounded exception; one worktree pe
    task-104 (the site's catalogue and the across-agents page, the approver's addition of 2026-10-25) → dl-025 and
    task-105 (dl-022's arm B on Terra, before 2026-11-13, the approver's addition of 2026-10-25) → campaign-005 →
    task-106 (classifier v2, bug-027 and bug-035, brought ahead from W16 by the approver on 2026-10-26: campaign-005's
-   wingfoil arm stopped at approval requests v1 did not recognise) → the arm-B rerun on policy v2, before 2026-11-13
-   → task-103 (vision and experiment design) → the managing pin and the first `wingfoil-sync`.
+   wingfoil arm stopped at approval requests v1 did not recognise) → the arm-B rerun on policy v2 (campaign-006),
+   before 2026-11-13 → **step A, brought ahead by
+   [dl-027](../memory/decision-log/dl-027-step-a-brought-ahead-with-a-codex-campaign-of-the-step-a-arm-before-2026-11-13.md)** as soon as WingFoil 0.3.1 is tagged: its
+   admission, the step-A spike under both agents (Claude Code in `-p`, Codex in `exec`), the step-A arm (the wingfoil
+   arm's new version, baseline-docs with every role's directives, the agent-specific files explicit, the Codex scope
+   widened), then campaign-007 on Codex and Terra before 2026-11-13 → task-103 (vision and experiment design) → the
+   managing pin and the first `wingfoil-sync`. **dl-027's cuts:** 0.3.1 not tagged and admitted by 2026-11-02, a
+   spike showing Codex cannot read the session Resource or drive the cycle, or the step-A arm not approved by
+   2026-11-08 → no Codex step-A campaign, and step A goes on under Claude Code in this position; campaign-007 short
+   of time → S3, then S1 × 3, then S2, then S8.
 2. W16: its requirements and acceptance first; then bug-026, bug-028 with bug-029 and bug-030 (bug-027 in W15's
    task-106), bug-031 with bug-032, bug-025 with S1 1.1, the M-K1 annotation; v0.2's campaigns re-scored.
-3. W17: the spike on 0.3.1 as soon as it is tagged and admitted; then the arm's rewrite. If 0.3.1 is late, W18's
-   configuration work for speckit and openspec may start first.
+3. W17: the spike on 0.3.1 as soon as it is tagged and admitted; then the arm's rewrite — **both done in W15's
+   order by dl-027**; W17 then holds what step A leaves (its reading in calibration, the method page). If 0.3.1 is
+   late, W18's configuration work for speckit and openspec may start first.
 4. W18: bug-034 first, then the configuring agent and the configured arms.
 5. W19: the review loop.
 6. Last, if time allows: bug-033, the test-gap and cleanup tasks.
