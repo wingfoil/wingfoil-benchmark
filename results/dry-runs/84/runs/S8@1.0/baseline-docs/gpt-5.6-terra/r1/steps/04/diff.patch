@@ -1,0 +1,160 @@
+diff --git a/README.md b/README.md
+index b3a490c76e124b55216126f46cd37fac862fb57e..29983d27fbb74652d8526fced3080c9ab4e463f5 100644
+--- a/README.md
++++ b/README.md
+@@ -1,6 +1,6 @@
+ # tidy-tasks
+ 
+-Document version: 1.2 (2026-10-26)
++Document version: 1.3 (2026-10-26)
+ 
+ The task list behind Tidy Tasks, a small to-do app for households and small teams. People add tasks with
+ a title, a priority and a few tags, tick them off when they are done, and look at what is left, most
+@@ -9,6 +9,12 @@ from `src/index.ts`.
+ 
+ Run its tests with `npm test`.
+ 
++## Bulk import
++
++`importTasks(list, text)` imports spreadsheet-style task text into an existing list. Each nonblank
++line is `title;priority;tags`; leave the priority empty for `normal`, and separate tags with spaces.
++It returns the number imported and the one-based line number and reason for each rejected row.
++
+ ## Input validation
+ 
+ Adding or renaming a task rejects titles that are blank after trimming or longer than 120 characters.
+diff --git a/src/index.ts b/src/index.ts
+index 47cec84b5d12dddf186d7c1e0479e76fc3f852b9..bd45a32cefe017a464a8626aeef1b09d0d157caa 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -1,5 +1,6 @@
+ import { createTaskList } from './domain/list.ts';
+ import type { TaskList } from './domain/list.ts';
++import type { NewTask, Priority } from './domain/task.ts';
+ 
+ export type { TaskFilter, TaskList } from './domain/list.ts';
+ export type { Result, TodoError, TodoErrorCode } from './domain/result.ts';
+@@ -8,6 +9,22 @@ export type { Summary } from './domain/summary.ts';
+ export { PRIORITIES } from './domain/task.ts';
+ export type { NewTask, Priority, Status, Task } from './domain/task.ts';
+ 
++/** A source line that could not be imported and the reason it was rejected. */
++export interface RejectedImport {
++  /** The one-based line number in the supplied import text. */
++  readonly line: number;
++  /** Why the line could not be parsed or added to the list. */
++  readonly reason: string;
++}
++
++/** The tasks added from an import and each source line that was rejected. */
++export interface ImportTasksResult {
++  /** The number of tasks successfully added to the list. */
++  readonly imported: number;
++  /** Every nonblank source line that could not be added. */
++  readonly rejected: readonly RejectedImport[];
++}
++
+ /**
+  * A new, empty task list for the app, kept in memory.
+  *
+@@ -16,3 +33,42 @@ export type { NewTask, Priority, Status, Task } from './domain/task.ts';
+ export function createTodoList(now: () => string = () => new Date().toISOString()): TaskList {
+   return createTaskList(now);
+ }
++
++/**
++ * Imports tasks from semicolon-delimited text into a list. Blank lines are skipped; each other line
++ * must contain a title, priority, and space-separated tags as `title;priority;tags`.
++ *
++ * @param list - the task list that receives every valid task
++ * @param text - one semicolon-delimited task per line
++ */
++export function importTasks(list: TaskList, text: string): ImportTasksResult {
++  const rejected: RejectedImport[] = [];
++  let imported = 0;
++
++  for (const [index, source] of text.split(/\r?\n/).entries()) {
++    if (source.trim().length === 0) continue;
++
++    const fields = source.split(';');
++    if (fields.length !== 3) {
++      rejected.push({ line: index + 1, reason: 'expected title;priority;tags' });
++      continue;
++    }
++
++    const [title, rawPriority, rawTags] = fields;
++    const priority = rawPriority.trim();
++    const tags = rawTags.trim() === '' ? [] : rawTags.trim().split(/\s+/);
++    const input: NewTask = {
++      title,
++      priority: priority === '' ? undefined : priority as Priority,
++      tags,
++    };
++    const added = list.add(input);
++    if (added.ok) {
++      imported += 1;
++    } else {
++      rejected.push({ line: index + 1, reason: added.error.message });
++    }
++  }
++
++  return { imported, rejected };
++}
+diff --git a/test/list.test.ts b/test/list.test.ts
+index 83b42cb64d85606a0aa49230b96fd4be7316c147..5330d8a3dd4161ac7b52e446b260306033a663a6 100644
+--- a/test/list.test.ts
++++ b/test/list.test.ts
+@@ -1,7 +1,7 @@
+ import assert from 'node:assert/strict';
+ import { describe, it } from 'node:test';
+ 
+-import { createTodoList, summarize } from '../src/index.ts';
++import { createTodoList, importTasks, summarize } from '../src/index.ts';
+ 
+ function valueOf<T>(result: { ok: true; value: T } | { ok: false; error: unknown }): T {
+   if (!result.ok) assert.fail(JSON.stringify(result.error));
+@@ -9,6 +9,44 @@ function valueOf<T>(result: { ok: true; value: T } | { ok: false; error: unknown
+ }
+ 
+ describe('task list', () => {
++  it('imports semicolon-delimited tasks and skips blank lines', () => {
++    const list = createTodoList(() => '2026-10-26T09:00:00.000Z');
++
++    const result = importTasks(list, '\nRenew the insurance;high;admin money\nBuy milk;;shopping\n   \n');
++
++    assert.deepEqual(result, { imported: 2, rejected: [] });
++    assert.deepEqual(
++      list.list().map(({ title, priority, tags }) => ({ title, priority, tags })),
++      [
++        { title: 'Renew the insurance', priority: 'high', tags: ['admin', 'money'] },
++        { title: 'Buy milk', priority: 'normal', tags: ['shopping'] },
++      ],
++    );
++  });
++
++  it('reports malformed and invalid import rows while adding the valid ones', () => {
++    const list = createTodoList(() => '2026-10-26T09:00:00.000Z');
++
++    const result = importTasks(list, [
++      'Pay rent;high;home',
++      'Missing fields',
++      'Bad priority;urgent;',
++      'Pay rent;low;',
++      'Too;many;fields;here',
++    ].join('\n'));
++
++    assert.deepEqual(result, {
++      imported: 1,
++      rejected: [
++        { line: 2, reason: 'expected title;priority;tags' },
++        { line: 3, reason: 'priority must be low, normal, or high' },
++        { line: 4, reason: 'there is already a task "Pay rent"' },
++        { line: 5, reason: 'expected title;priority;tags' },
++      ],
++    });
++    assert.deepEqual(list.list().map((task) => task.title), ['Pay rent']);
++  });
++
+   it('records creation and each effective change time', () => {
+     const times = [
+       '2026-10-26T09:00:00.000Z',

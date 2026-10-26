@@ -1,0 +1,130 @@
+diff --git a/README.md b/README.md
+index a1e9697a786925efbb23dacf07cdc6b056f1a390..71d4e8acc13a0f8f5501059c83fbc6a0a4921703 100644
+--- a/README.md
++++ b/README.md
+@@ -8,4 +8,6 @@ other projects of the team, so its behaviour must follow the published standards
+ 
+ `applyPatch(document, patch)` applies an [RFC 6902](https://www.rfc-editor.org/rfc/rfc6902) JSON Patch
+ array and returns a new JSON value. It supports `add`, `remove`, `replace`, `move`, `copy`, and `test`;
+-invalid documents, patches, and unsuccessful operations throw an error.
++invalid documents, patches, and unsuccessful operations throw an error. Inputs are never mutated.
++`add` and `replace` may target the document root; removing the root is unsuccessful because it would
++not produce a JSON document.
+diff --git a/docs/memory/decision-log/dl-003-reject-removal-of-the-document-root.md b/docs/memory/decision-log/dl-003-reject-removal-of-the-document-root.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..74e5d107cd2c89a25f41b4b8abc2683edc0c60c5
+--- /dev/null
++++ b/docs/memory/decision-log/dl-003-reject-removal-of-the-document-root.md
+@@ -0,0 +1,23 @@
++---
++id: dl-003-reject-removal-of-the-document-root
++type: decision-log
++title: "Reject removal of the document root"
++status: pending
++format: 1
++---
++
++## Context
++
++`applyPatch` returns a JSON value. RFC 6902 specifies that the target document is a JSON document
++and defines root replacement for `add`; it provides no JSON value that represents a document after
++its root has been removed. The prior implementation silently converted that condition to `null`.
++
++## Decision
++
++Treat `remove` at the empty JSON Pointer as an unsuccessful operation and throw an error. Do not
++invent a JSON value to stand for a document with no root.
++
++## Consequences
++
++Successful calls always return the JSON document produced by RFC 6902 operations. A root `remove`
++does not report a successful application with an unrelated `null` document.
+diff --git a/docs/memory/task/task-003-conform-json-patch-application-to-rfc-6902.md b/docs/memory/task/task-003-conform-json-patch-application-to-rfc-6902.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..e8c802265770d22ad8174c10ed0ad40d9ab38237
+--- /dev/null
++++ b/docs/memory/task/task-003-conform-json-patch-application-to-rfc-6902.md
+@@ -0,0 +1,14 @@
++---
++id: task-003-conform-json-patch-application-to-rfc-6902
++type: task
++title: "Conform JSON Patch application to RFC 6902"
++status: pending
++format: 1
++---
++
++Reviewed `applyPatch` against RFC 6902's operation and error requirements. Root `remove` now fails
++instead of returning `null`, and a root-to-root `move` remains the valid no-op implied by remove then
++add semantics. `from` must be an own operation member.
++
++Added regression coverage for root behavior and ignored, operation-irrelevant members. Verified the
++library test suite and all 92 enabled cases in the JSON Patch conformance suite.
+diff --git a/src/index.ts b/src/index.ts
+index 1abfc97753ba0cd0d2b14528518fe02bbaba267d..a2e98ecccc9d26ccdd8e268ecb429ed084296d49 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -58,6 +58,9 @@ function applyOperation(document: JsonValue, operation: unknown, index: number):
+         throw operationError(index, "cannot move a value into one of its children");
+       }
+       const value = get(document, from);
++      if (samePath(from, path)) {
++        return document;
++      }
+       return add(remove(document, from), path, value);
+     }
+     case "copy":
+@@ -81,7 +84,7 @@ function requireValue(operation: JsonObject, index: number): asserts operation i
+ }
+ 
+ function requireFrom(operation: JsonObject, index: number): string[] {
+-  if (typeof operation.from !== "string") {
++  if (!hasOwn(operation, "from") || typeof operation.from !== "string") {
+     throw operationError(index, 'must contain a string "from" member');
+   }
+   return parsePointer(operation.from, index, "from");
+@@ -137,7 +140,7 @@ function add(document: JsonValue, path: string[], value: JsonValue): JsonValue {
+ 
+ function remove(document: JsonValue, path: string[]): JsonValue {
+   if (path.length === 0) {
+-    return null;
++    throw new Error("Cannot remove the root of a JSON document");
+   }
+   const [parent, token] = parentAt(document, path);
+   if (Array.isArray(parent)) {
+@@ -195,6 +198,10 @@ function isProperPrefix(from: string[], path: string[]): boolean {
+   return from.length < path.length && from.every((token, index) => token === path[index]);
+ }
+ 
++function samePath(left: string[], right: string[]): boolean {
++  return left.length === right.length && left.every((token, index) => token === right[index]);
++}
++
+ function jsonEqual(left: JsonValue, right: JsonValue): boolean {
+   if (left === right) {
+     return true;
+diff --git a/test/json-patch.test.mjs b/test/json-patch.test.mjs
+index ddb1a123c2159993aedd25d153896dde208a158e..155b672707263c102d6573d31d7666b90a2fce14 100644
+--- a/test/json-patch.test.mjs
++++ b/test/json-patch.test.mjs
+@@ -30,7 +30,20 @@ test("supports root replacement and JSON Pointer escaping", () => {
+     { "a/b": { "m~n": 2 } },
+   );
+   assert.deepEqual(applyPatch({ old: true }, [{ op: "add", path: "", value: [1] }]), [1]);
+-  assert.equal(applyPatch({ old: true }, [{ op: "remove", path: "" }]), null);
++  assert.throws(() => applyPatch({ old: true }, [{ op: "remove", path: "" }]));
++  assert.deepEqual(
++    applyPatch({ old: true }, [{ op: "move", from: "", path: "" }]),
++    { old: true },
++  );
++});
++
++test("ignores operation members not defined for that operation", () => {
++  assert.deepEqual(
++    applyPatch({ present: true }, [
++      { op: "remove", path: "/present", value: "ignored", from: "/also-ignored" },
++    ]),
++    {},
++  );
+ });
+ 
+ test("copies values independently", () => {
