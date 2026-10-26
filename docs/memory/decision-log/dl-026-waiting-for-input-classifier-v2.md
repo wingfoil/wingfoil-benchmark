@@ -31,15 +31,18 @@ frozen**, so every campaign that pinned it still reconstructs its interventions.
 **Rule 1 — approval request.** v1's patterns, except "need/require … approval", plus:
 
 - `please (reply|respond|approve|review)`; `please provide … approved`
-- `reply|respond … "approved` (the reply quoted), but not after `your`, `the`, `this`, `that`, `a`, `the approver's`
-  or `in` ("using your reply …", "with the reply …", "in reply to" are accounts); `if the reply is`
-- `reply` at a sentence's start, then `with`, `:`, `and`, `to proceed|continue|approve` or the sentence's end (the
-  reply's words in backticks, which the preparation removes)
+- `reply|respond … "approved` (the reply quoted), but not after `your`, `the`, `this`, `that`, `a`/`an`, `approver's`
+  or `in`, nor as `reply received|was|is` ("using your reply …", "with the reply …", "in reply to", "reply received"
+  are accounts); the excluded words are a list, and other wording of an account ("following your exact reply …") is
+  still read as a request (dl-004: a false negative costs more); `if the reply is "approved`
+- `reply` at a sentence's or a line's start, a bullet or a quote included, then `:`, `with`, `and`, `to
+  proceed|continue|approve` or the sentence's end (the reply's words in backticks, which the preparation removes)
 - `(can|could|would|will) you (please) (approve|review)`
 - `pending your` — deliberately read as a request, as v1 reads "awaiting your approval" (dl-004: a false negative
   costs more than a false positive)
-- `(once|when|after|until) … (is|are|gets) approved` (never "had been approved"); `once approved`;
-  `(once|when|after|if) you approve`; `(on|await|awaiting|need|want) your go-ahead` (never "with" or "thanks for")
+- `(once|when|after|until) … (is|are|gets) approved` (never "had been approved"); `once approved … I will|will|can`;
+  `(once|when|after|if) you approve`; `(await|awaiting|need|want) your go-ahead` and `I will … on your go-ahead`
+  (never "with", "on" or "thanks for" your go-ahead in an account)
 - `approval (that) I (don't|haven't) (have|got|received)`
 - within one sentence: `need(s)/require(s) … your … approval` (from the sentence's first "your" only, so that the
   match stays linear); `I (need|require) … approval`; `I am asking … approval`; v1's `let me know …
