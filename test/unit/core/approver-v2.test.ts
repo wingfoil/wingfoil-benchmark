@@ -94,6 +94,10 @@ describe('approver policy v2 (task-106, REQ-RUN-06)', () => {
     'Let me know if they look right and I will run `wingfoil memory approve` on your go-ahead.',
     'Once dl-005 is approved, the value will be checked deeply.',
     'The deep check is not done, because it needs an approval I do not have.',
+    // Review round 1: a reply asked for in backticks, which the preparation removes, and no "please".
+    'dl-003 is pending. Reply with `Approved. Proceed.` to continue.',
+    'Reply `Approved. Proceed.` and I will implement it.',
+    'Once approved, I will implement the change.',
   ])('reads the request %j as an approval request', (text) => {
     expect(v2().classify(`I did some work.\n\n${text}`)).toBe('approval');
   });
@@ -105,6 +109,15 @@ describe('approver policy v2 (task-106, REQ-RUN-06)', () => {
     // A request for information is a question, never an approval: its reply would make no sense.
     'Can you send one or two of the patches users reported?',
     'Please provide a concrete patch that misbehaves?',
+    // Review round 1: accounts written after a reply, which a rerun on v2 produces in numbers.
+    'I approved dl-003 with the reply "Approved. Proceed." as the reason.',
+    'I approved both, using the approver’s reply "Approved. Proceed." as the reason.',
+    'With your go-ahead, I approved dl-003 and implemented the change.',
+    'Thanks for your go-ahead: dl-003 is approved and the change is committed.',
+    'After dl-003 had been approved, I implemented the change.',
+    'In reply to your message I approved dl-003.',
+    'Reply received; dl-003 approved and the change committed.',
+    'The approval went through and I don’t have anything else to change.',
   ])('does not read %j as an approval request', (text) => {
     expect(v2().classify(`I did some work.\n\n${text}`)).not.toBe('approval');
   });
@@ -161,6 +174,13 @@ describe('approver policy v2 (task-106, REQ-RUN-06)', () => {
       ],
       [String.raw`/\blet\s+me\s+know\b/i`, String.raw`/\b(?:proceed|continue|approve)/i`],
     ]);
+  });
+
+  it('reads a long adversarial message in linear time (review round 1)', () => {
+    // "your" repeated without "approval": a backtracking pattern scans to the sentence's end from each one.
+    const started = performance.now();
+    expect(v2().classify(`it needs ${'your '.repeat(40_000)}`)).toBeUndefined();
+    expect(performance.now() - started).toBeLessThan(1000);
   });
 
   it('does not read a question earlier in the message', () => {
