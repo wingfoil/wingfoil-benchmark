@@ -2,7 +2,7 @@
 id: campaign-005-codex-harness-vs-docs-campaign-on-terra
 type: campaign
 title: "Codex harness-vs-docs campaign on Terra"
-status: draft
+status: pending
 release: v0.3
 campaign_file: campaigns/codex-terra-harness-vs-docs.yaml
 campaign_id: c4c49685911c
