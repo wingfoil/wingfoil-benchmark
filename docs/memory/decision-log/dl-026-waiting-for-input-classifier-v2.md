@@ -75,5 +75,8 @@ which the corpus holds few of and a rerun on v2 will hold many of, are pinned as
   so the v2 rerun is read within Codex, arm against arm.
 - v2 answers more often than v1, for Claude Code too (26 of the corpus's messages): a v0.3 campaign of Claude Code
   pinning v2 is not comparable, intervention for intervention, with v0.2's on v1.
-- Still a rule list: it will be wrong at the edges. Conditional offers after finished work ("tell me and I'll change
+- Still a rule list: it will be wrong at the edges. Known gaps, left as they are (task-106's review round 3): a
+  reply asked for after a comma or an adverb ("To continue, reply with …", "If you agree, reply …") is missed; a few
+  accounts read as requests ("Once approved, I implemented it and the tests will run …", "Reply came back …",
+  "- Reply with 401 when …"). Conditional offers after finished work ("tell me and I'll change
   it") are deliberately not requests.

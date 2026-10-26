@@ -142,4 +142,8 @@ Under dl-020; `scripts/pre-review.sh main` green before each round.
     corpus's readings unchanged at 48.
   - **nits, fixed:** the method paragraph names every campaign on v1 (campaign-004 was left out); dl-026's wording
     matches the regexes (`a`/`an`, `approver's`) and says the account words are a list.
+- **Round 3** (the same agent, round 2's fix only; reflogs unchanged): A and B fixed with linear patterns (0.4–12 ms
+  on 160 KB adversarial inputs), the corpus unchanged at 48, dl-026's rule list matching the code. **Nits only,
+  recorded** in dl-026's Consequences as known gaps: a reply asked for after a comma or an adverb is missed; a few
+  constructed accounts read as requests. The review closes.
 
