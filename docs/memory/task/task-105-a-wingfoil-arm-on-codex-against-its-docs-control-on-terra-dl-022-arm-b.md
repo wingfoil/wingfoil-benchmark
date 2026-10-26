@@ -148,3 +148,16 @@ Under dl-020; `scripts/pre-review.sh main` green before each round.
   review is closed.**
 - **Rounds:** offline 3, the spike 2.
 
+- **Full suites** (`scripts/full-suites.sh task/task-105`, the approver's request in chat): on `c0556018`, not dirty,
+  LINT 0, TEST 0 (1748 passed, 8 skipped; coverage 97.51 % statements), BUILD 0, BIN 0 (8), DOCKER 0 (22, 2 skipped);
+  log `.cache/full-suites/2026-10-26/task_task-105-c0556018-085106.txt`.
+
+## Approval notes
+
+- **in-review → approved** (`3830527c`): run by this session at the approver's explicit request in chat (2026-10-26),
+  the status read first, the reason saying so. **Merge:** `--no-ff` on main (`097a0139`).
+- **Worktree removed:** its ignored files were `.cache/arms/` (an arm read from history, rebuilt on demand),
+  `coverage/` and `dist/`, listed before the removal: no evidence (the dry runs' records are on main, `b99474a8`).
+  Branch `task/task-105` deleted.
+- **Next, the approver's:** the campaign's six other dry runs (S1, S2, S8 in baseline-docs and wingfoil on Terra), then
+  the campaign; and, before the next `bench site publish`, every execution under `site/` rebuilt (the method page).
