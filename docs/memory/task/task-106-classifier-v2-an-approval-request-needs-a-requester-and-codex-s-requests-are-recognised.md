@@ -131,4 +131,15 @@ Under dl-020; `scripts/pre-review.sh main` green before each round.
   - **nits, recorded:** the question rule reads the last **two** paragraphs, where bug-035 and the Design said the
     closing one, which misses bug-035's own S3 case (stated in dl-026); `f60644a0` to `564b5055` fail `load.test.ts`
     and `run.test.ts`, which named v2 as unimplemented, until `95614027` (the history is left as it is).
+- **Round 2** (the same agent, the fix's diff only; reflogs unchanged): round 1's findings fixed or recorded as stated,
+  the 48 readings and dl-026's counts verified, the 48th change a genuine request.
+  - **should-fix, fixed:** the sentence-start `reply` pattern never matched "Reply:" or "Reply exactly:" (Codex's form
+    without "please") and was cubic on a full stop followed by a long run of spaces (2.1 s at 40k); now one whitespace
+    class per position, bullets and quotes included, and the spaces case in the timing test. Accounts the round-1
+    patterns let back in ("On your go-ahead I approved …", "Once approved, dl-003 moved …", "if the reply is empty",
+    "Reply received: …"): `once approved` and `on your go-ahead` now need a future form, `if the reply is` a quoted
+    "Approved", `reply received|was|is` excluded; pinned as negatives. Red first (`0df1460d` before `55c88285`); the
+    corpus's readings unchanged at 48.
+  - **nits, fixed:** the method paragraph names every campaign on v1 (campaign-004 was left out); dl-026's wording
+    matches the regexes (`a`/`an`, `approver's`) and says the account words are a list.
 
