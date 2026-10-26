@@ -91,8 +91,9 @@ on v2.
   "Approved. Proceed."" read as a request, twice; "can you send …?" read as an approval) and one request was lost
   ("it needs an approval I don't have"). A search of v2's negatives with approval words in their closing paragraphs
   found three more requests (Codex's "Please provide: Approved. Proceed.", "once you approve", "on your go-ahead",
-  the last hidden from v1 by a code span). Final: 47 of 1048 readings change (`v1-to-v2.json`, pinned), dl-026's
-  counts. Conditional offers after finished work ("tell me and I'll change it") are left out on purpose.
+  the last hidden from v1 by a code span). After review round 1: 48 of 1048 readings change (`v1-to-v2.json`,
+  pinned), dl-026's counts. Conditional offers after finished work ("tell me and I'll change it") are left out on
+  purpose.
 - **v1's tests touched only where they named v2 as unimplemented:** `approver.test.ts` ("knows no other version"),
   `load.test.ts`, `run.test.ts` now name v3 (`95614027`); v1's patterns and its frozen-pattern test unchanged.
 - **Criterion 6:** `campaigns/codex-terra-harness-vs-docs-v2.yaml` validates (`13fda3099afa`), inside dl-025's scope,
@@ -108,3 +109,26 @@ on v2.
   declared, each auto-committing; no spurious output.
 - **Checks:** `scripts/pre-review.sh main` green (after wrapping the method paragraph at 120); every unit test green,
   niced, 2 workers (1667 passed, 8 skipped).
+
+### Review
+
+Under dl-020; `scripts/pre-review.sh main` green before each round.
+
+- **Round 1** (an independent read-only agent, from a `mktemp` directory; both checkouts' reflogs unchanged after it):
+  v1 unchanged, dl-026's counts, the campaign file's claims, the extraction and the corpus's secret scan verified.
+  - **should-fix, fixed:** the v2 campaign's estimate presented as campaign-005's without saying it is a lower bound
+    for the wingfoil arm (9 of its dry runs' 17 steps stopped at a request v2 answers; checked; now stated in the
+    campaign file and dl-026); `your … approval` quadratic on a long sentence (2.5 s at 200 KB; now from the first
+    "your" only, an atomic lookahead, and a timing test); a reply asked for in backticks with no "please" missed (now
+    a reply at a sentence's start); accounts after a reply read as requests ("with the reply …", "the approver's
+    reply …", "with your go-ahead", "had been approved", "in reply to", "approval … I don't have anything", now
+    pinned as negatives). Red first (`434efaa5`), then `812ca246`; one more request of the corpus read ("**Decision
+    needed:** … Once approved, I will"), 48 readings.
+  - **nits, fixed:** the question rule pinned in `CLASSIFIER_V2` and the frozen test, which compared v1's objects with
+    themselves, now compares strings; the fixture's causes name task-106 for Claude Code's misses, bug-035 for
+    Codex's; "pending your" stated as deliberate (dl-004); the corpus script's header says failed invocations are
+    included; REQ-RUN-06's examples by agent; the method page says which campaigns pin which policy.
+  - **nits, recorded:** the question rule reads the last **two** paragraphs, where bug-035 and the Design said the
+    closing one, which misses bug-035's own S3 case (stated in dl-026); `f60644a0` to `564b5055` fail `load.test.ts`
+    and `run.test.ts`, which named v2 as unimplemented, until `95614027` (the history is left as it is).
+
