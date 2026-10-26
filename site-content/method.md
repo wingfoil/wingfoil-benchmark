@@ -71,7 +71,21 @@ The agent works without a human. When a session ends by asking a question or ask
 - A question gets: "No further input is available. Make the most reasonable choice, record it, and proceed."
 - After 3 interventions in a step, the step ends.
 
-Whether a session is waiting for input is decided by a small, fixed set of written rules, not by a model. First, the last message is checked for approval phrases anywhere in it, such as "are you sure", "please confirm" or "do you want me to". If none matches, the message counts as a question when its last line ends with a question mark. Otherwise the session is not waiting, and the step ends. Code quoted in the message is ignored. The rules have a version, which is part of the approver policy's version. Changing a rule makes a new version and is never done quietly. The list is small and may misread unusual wording. A session that fails is a failed step, not a waiting one, and is never answered. {#approver-classifier}
+Whether a session is waiting for input is decided by a small, fixed set of written rules, not by a model. First, the
+last message is checked for approval phrases anywhere in it, such as "are you sure", "please confirm" or "do you want
+me to". If none matches, the message counts as a question when its last line ends with a question mark. Otherwise the
+session is not waiting, and the step ends. Code quoted in the message is ignored. The rules have a version, which is
+part of the approver policy's version. Changing a rule makes a new version and is never done quietly. The list is small
+and may misread unusual wording. A session that fails is a failed step, not a waiting one, and is never answered.
+Version v1 was written from Claude Code's messages and missed most of Codex's requests for approval, such as "Please
+reply: Approved. Proceed.", so a Codex execution of the wingfoil arm on v1 measured the manual's stops more than
+WingFoil. Version v2, from v0.3, also reads requests addressed to the reader such as "please reply", "please approve"
+or "once you approve", counts "needs approval" only when it is the reader's approval or the agent's own need and never
+a document's, and reads a question anywhere in the last two paragraphs. Its rules were settled on every final message
+of the earlier executions, and each message whose reading changed is published with the tests. Both versions stay
+available and each campaign pins one: every execution so far, from v0.1 to v0.3's Codex campaigns, ran on v1; the rerun
+of the Codex campaign of the wingfoil arm runs on v2. Two executions on different versions are not compared across
+agents. {#approver-classifier}
 
 In the wingfoil arm, WingFoil's process needs a person with the approver role. The arm's configuration declares a member "Benchmark Approver" with that role, and the container's git identity is that member. After the neutral approver's reply, the agent may run WingFoil's approval commands itself. The *decision* is always the neutral approver's fixed reply; the agent only carries it out. {#approver-decision}
 

@@ -222,7 +222,7 @@ describe('the approver policy (experiment design §3.5)', () => {
   });
 
   it('knows no other version', () => {
-    expect(approverPolicy('v2')).toBeUndefined();
+    expect(approverPolicy('v3')).toBeUndefined();
     expect(approverPolicy('toString')).toBeUndefined();
   });
 });

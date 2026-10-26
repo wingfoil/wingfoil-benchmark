@@ -74,7 +74,7 @@ const STATEMENTS: readonly (readonly [string, string])[] = [
   ],
   [
     'approver-classifier',
-    'dl-004 Decision (rules 1–3, preparation, versioning, "what is not the classifier’s business") and Consequences ("will be wrong at the edges", v2 never a quiet edit); REQ-RUN-06',
+    'dl-004 Decision (rules 1–3, preparation, versioning, "what is not the classifier’s business") and Consequences ("will be wrong at the edges", v2 never a quiet edit); REQ-RUN-06 as amended in 1.38 (v2); bug-027, bug-035 and campaign-005 Results review (v1 missed Codex’s requests); task-106 Design (the corpus, v1 frozen, M-R across on one policy)',
   ],
   [
     'approver-decision',
