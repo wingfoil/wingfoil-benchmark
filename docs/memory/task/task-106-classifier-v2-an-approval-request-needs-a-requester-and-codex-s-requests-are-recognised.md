@@ -147,3 +147,11 @@ Under dl-020; `scripts/pre-review.sh main` green before each round.
   recorded** in dl-026's Consequences as known gaps: a reply asked for after a comma or an adverb is missed; a few
   constructed accounts read as requests. The review closes.
 
+### Full suites and approval
+
+- `scripts/full-suites.sh task/task-106` at `1934a7dc` (2026-10-26, at the approver's request): LINT 0, TEST 0 (1811
+  passed, 8 skipped; lines 97.52 %), BUILD 0, BIN 0, DOCKER 0.
+- in-review → approved run by the agent at the approver's explicit request in chat (`9251332e`); dl-026 approved by
+  the approver (`8187d642`); the corpus fixture published as committed, the approver's choice A in chat (2026-10-26).
+- Merged into main (`1847d56e`); `dist/` rebuilt in the main checkout.
+
