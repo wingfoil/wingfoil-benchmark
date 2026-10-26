@@ -2,7 +2,7 @@
 id: bug-035-the-approval-classifier-v1-misses-codex-s-approval-requests
 type: bug
 title: "The approval classifier v1 misses Codex's approval requests"
-status: pending
+status: approved
 # fixed_by: task-…   # set by hand, with the fixing task's id, just before `approved → fixed`
 tags: ["v0.3"]
 ---
