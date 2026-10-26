@@ -137,6 +137,16 @@ the policy the campaign pins), next to the step's diff and its public M-Q1 (`agg
 What the approver decides here: whether the execution is publishable as it stands (with this annotation) or the arm
 is rerun once the classifier recognises Codex's requests, before the subscription ends on 2026-11-13.
 
+### The decision (2026-10-26)
+
+- **Not published; superseded.** The approver chose the rerun (in chat, 2026-10-26): bug-035 filed and fixed with
+  bug-027 by [task-106](../task/task-106-classifier-v2-an-approval-request-needs-a-requester-and-codex-s-requests-are-recognised.md)
+  (approver policy v2, [dl-026](../decision-log/dl-026-waiting-for-input-classifier-v2.md)); dl-022's arm B reruns as
+  campaign-006 on `campaigns/codex-terra-harness-vs-docs-v2.yaml` (`13fda3099afa`), campaign-005's file with
+  `approver_policy: v2`. This element closes as `deprecated` (the approver's `memory deprecate`); its execution
+  `c4c49685911c/1` stays committed under `results/` as the evidence of bug-035, never on the site.
+
+
 ## Findings
 
 <!-- Finding notes produced (F5.4) and where they went in WingFoil. -->
