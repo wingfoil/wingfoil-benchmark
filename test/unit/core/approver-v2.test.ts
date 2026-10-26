@@ -87,8 +87,25 @@ describe('approver policy v2 (task-106, REQ-RUN-06)', () => {
     'Please approve dl-006 and task-003, or tell me what to change.',
     'Please review and approve task-002.',
     'Can you approve it?',
+    // Found in the corpus, missed by v1 and by v2's first draft.
+    'I need the approver’s reply before changing code. Please provide: **“Approved. Proceed.”**',
+    'Once you approve dl-007 (and task-005 if you want it closed), I will carry out the approval.',
+    'Let me know if they look right and I will run `wingfoil memory approve` on your go-ahead.',
+    'Once dl-005 is approved, the value will be checked deeply.',
+    'The deep check is not done, because it needs an approval I do not have.',
   ])('reads the request %j as an approval request', (text) => {
     expect(v2().classify(`I did some work.\n\n${text}`)).toBe('approval');
+  });
+
+  it.each([
+    // Accounts that name a reply or an approval without asking for one.
+    'I ran the approve verb on task-004 using your reply "Approved. Proceed.", and both are now approved.',
+    'I approved the decision-log with your reply "Approved. Proceed.".',
+    // A request for information is a question, never an approval: its reply would make no sense.
+    'Can you send one or two of the patches users reported?',
+    'Please provide a concrete patch that misbehaves?',
+  ])('does not read %j as an approval request', (text) => {
+    expect(v2().classify(`I did some work.\n\n${text}`)).not.toBe('approval');
   });
 
   it('reads a question in the closing paragraphs, though an example follows it (bug-035)', () => {
