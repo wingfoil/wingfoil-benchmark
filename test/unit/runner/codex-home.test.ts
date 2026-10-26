@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -133,5 +133,60 @@ describe("Codex's manual (REQ-RUN-12 as amended in 1.32)", () => {
       manual: { file: string };
     };
     expect(record.manual.file).toBe('AGENTS.md');
+  });
+});
+
+describe("an arm's MCP server and manual under Codex (dl-025, task-105)", () => {
+  it("adds the arm's MCP servers to Codex's config.toml, from its mcp.json", async () => {
+    const { root, checked } = codexCampaign();
+    writeFileSync(
+      join(root, 'arms', 'baseline', 'arm.yaml'),
+      'name: baseline\nsetup: setup.sh\nmanual: manual.md\nmcp: mcp.json\n',
+    );
+    writeFileSync(
+      join(root, 'arms', 'baseline', 'mcp.json'),
+      JSON.stringify({
+        mcpServers: { wingfoil: { type: 'stdio', command: '/home/node/.local/bin/wingfoil', args: ['mcp'] } },
+      }),
+    );
+    const again = checkCampaign(join(root, 'campaigns', 'campaign.yaml'));
+    if (!again.ok) throw new Error(JSON.stringify(again.issues));
+    const ports = doubles();
+
+    await runCampaign(again.value, { ...ports, credentialFile: AUTH });
+
+    const written =
+      ports.recorded.execs.map((exec) => exec.command).find((command) => command[2] === WRITE) ?? [];
+    expect(written[5]).toBe(`${CODEX_HOME}/config.toml`);
+    expect(written[4]).toContain(
+      '[mcp_servers.wingfoil]\ncommand = "/home/node/.local/bin/wingfoil"\nargs = ["mcp"]\nrequired = true\n',
+    );
+    void checked;
+  });
+
+  it("merges an AGENTS.md the arm's setup wrote with the manual, as a CLAUDE.md is under Claude Code (review round 1)", async () => {
+    const { root, checked } = codexCampaign();
+    // The doubles run no script: the setup's exec writes the tool's guide into the run's workspace, as a tool would.
+    const ports = doubles({
+      execResultOf: (command) => {
+        if (command[0] === 'bash') {
+          const workspace = ports.recorded.creates.at(-1)?.workspace ?? '';
+          writeFileSync(join(workspace, 'AGENTS.md'), "the tool's own guide\n", { flag: 'a' });
+        }
+        return undefined;
+      },
+    });
+
+    const summary = await runCampaign(checked, { ...ports, credentialFile: AUTH });
+
+    const manual = readFileSync(join(root, 'arms', 'baseline', 'manual.md'), 'utf8');
+    const merged = `${manual.trimEnd()}\n\n## baseline\n\nthe tool's own guide\n`;
+    const workspace = summary.runs[0]?.workspace ?? '';
+    expect(readFileSync(join(workspace, 'AGENTS.md'), 'utf8')).toBe(merged);
+    const record = JSON.parse(readFileSync(join(summary.runs[0]?.outputDir ?? '', 'run.json'), 'utf8')) as {
+      manual: { file: string; bytes: number };
+    };
+    expect(record.manual.file).toBe('AGENTS.md');
+    expect(record.manual.bytes).toBe(Buffer.byteLength(merged, 'utf8'));
   });
 });
