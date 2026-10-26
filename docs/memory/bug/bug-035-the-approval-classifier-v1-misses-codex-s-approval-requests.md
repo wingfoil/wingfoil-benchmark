@@ -2,7 +2,7 @@
 id: bug-035-the-approval-classifier-v1-misses-codex-s-approval-requests
 type: bug
 title: "The approval classifier v1 misses Codex's approval requests"
-status: approved
+status: fixed
 fixed_by: task-106-classifier-v2-an-approval-request-needs-a-requester-and-codex-s-requests-are-recognised
 tags: ["v0.3"]
 ---
