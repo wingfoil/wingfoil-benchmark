@@ -3,7 +3,7 @@ id: bug-027-the-approval-classifier-v1-reads-an-account-of-pending-documents-as-
 type: bug
 title: "The approval classifier v1 reads an account of pending documents as an approval request"
 status: approved
-# fixed_by: task-…   # set by hand, with the fixing task's id, just before `approved → fixed`
+fixed_by: task-106-classifier-v2-an-approval-request-needs-a-requester-and-codex-s-requests-are-recognised
 tags: ["v0.3"]
 ---
 
