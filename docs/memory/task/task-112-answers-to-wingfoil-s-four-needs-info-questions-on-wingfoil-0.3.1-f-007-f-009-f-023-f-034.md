@@ -2,7 +2,7 @@
 id: task-112-answers-to-wingfoil-s-four-needs-info-questions-on-wingfoil-0.3.1-f-007-f-009-f-023-f-034
 type: task
 title: "Answers to WingFoil's four needs-info questions on wingfoil@0.3.1 (F-007, F-009, F-023, F-034)"
-status: pending
+status: backlog
 release: v0.3
 wave: W16
 features: []          # e.g. [F1.1, F3.1]
