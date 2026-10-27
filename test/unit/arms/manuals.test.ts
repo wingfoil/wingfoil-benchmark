@@ -123,7 +123,7 @@ describe('the step-A wingfoil manual (dl-021 step A, task-114)', () => {
 
   it("forbids the approver's verbs other than approve, by name (decision 3)", () => {
     expect(wingfoilOwn()).toMatch(
-      /never run the approver's other verbs: `wingfoil memory amend`, `wingfoil memory reject` or `wingfoil memory rekey`/,
+      /never run the approver's other verbs: `wingfoil memory amend`, `wingfoil memory reject`, `wingfoil memory rekey` or `wingfoil memory deprecate`/,
     );
     expect(wingfoilOwn()).toMatch(/If the reply is "Approved\. Proceed\.", run `wingfoil memory approve/);
   });

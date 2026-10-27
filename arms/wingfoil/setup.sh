@@ -1,5 +1,6 @@
 #!/bin/bash
-# The wingfoil arm's setup (REQ-RUN-03, adr-003 decisions 3, 6, 8, 9; REQ-RUN-17). The runner has
+# The wingfoil arm's setup, step A (REQ-RUN-03, adr-003 decisions 3, 6, 8, 9; REQ-RUN-17; dl-021 step A, task-114):
+# WingFoil set up as its documentation sets it up, then one workflow instance opened. The runner has
 # already written the git identity (Benchmark Approver), copied this directory to ~/arm, the WingFoil
 # under test to ~/harness.tgz and, if the scenario has one, its configuration to ~/scenario.
 set -euo pipefail
@@ -39,4 +40,12 @@ if ! grep -qi '"approver@benchmark\.localhost"' <<< "$team"; then
   wingfoil dna add team.members --value "Benchmark Approver" --entry-email approver@benchmark.localhost \
     --entry-roles approver > /dev/null
 fi
+
+# 5. One workflow instance, opened by the setup (dl-021 step A): the scenario starts from a project already past its
+#    inception and specification, so those two steps are recorded complete here, and the instance waits at its
+#    delivery. The agent opens a new instance for a later request (the manual's rule; task-107's option A: on 0.3.1's
+#    Kanban scaffold an instance's delivery runs once, then reaches its sunset).
+wingfoil workflow start sw-life-cycle > /dev/null
+wingfoil workflow finalize > /dev/null
+wingfoil workflow finalize > /dev/null
 echo "setup done: $(git log --format=%s | head -n 3 | tr '\n' '|')"
