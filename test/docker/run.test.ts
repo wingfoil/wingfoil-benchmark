@@ -412,8 +412,8 @@ describe('runs in a real container', () => {
 
   /** The WingFoil clone the WingFoil under test is built from (REQ-RUN-14): the one next to this repository. */
   const clone = process.env.BENCH_WINGFOIL_REPO ?? repoPath('../WingFoil2');
-  /** The WingFoil the reference campaign runs, the latest released (task-049, task-095): what these tests build. */
-  const WINGFOIL_UNDER_TEST = 'v0.3.0';
+  /** The WingFoil the step-A wingfoil arm runs, the latest released (task-049, task-095, task-114): what these build. */
+  const WINGFOIL_UNDER_TEST = 'v0.3.1';
 
   /** The hold-out repository, when this machine has one (K2): S1's additions, S2's answer key. */
   const holdoutRepo = process.env.BENCH_HOLDOUT_PATH ?? repoPath('../WingFoil2-Benchmark-HoldOut');
@@ -760,7 +760,7 @@ describe('runs in a real container', () => {
       // The benchmark's own wingfoil arm, not a fixture: its setup is what is under test here.
       cpSync(repoPath('arms/wingfoil'), join(root, 'arms', 'wingfoil'), { recursive: true });
       cpSync(repoPath('arms/baseline-docs'), join(root, 'arms', 'baseline-docs'), { recursive: true });
-      // The repository's register, which admits the WingFoil the fixture campaign pins (v0.3.0, F7.4).
+      // The repository's register, which admits the WingFoil the fixture campaign pins (v0.3.1, F7.4).
       cpSync(repoPath('eligibility'), join(root, 'eligibility'), { recursive: true });
       process.env.BENCH_FAKE_SCRIPT = repoPath('test/fixtures/fake-script-arms.json');
       process.env.BENCH_WINGFOIL_REPO = clone;
@@ -833,13 +833,21 @@ describe('runs in a real container', () => {
       expect(readFileSync(join(run('wingfoil'), 'decisions.json'), 'utf8')).toContain(
         'dl-001-errors-are-returned-as-a-result',
       );
+      // dl-021 step A (task-114): the instance the setup opened waits at its delivery's plan.
+      expect(readFileSync(join(run('wingfoil'), 'next.txt'), 'utf8')).toContain(
+        'next step: kanban-delivery.plan',
+      );
 
       // REQ-RUN-11: baseline-docs received T2's wingfoil configuration as Markdown, the same file the
       // results keep, generated from the snapshot the wingfoil arm's own setup made.
       const generated = join(root, 'results', image, '1', 'generated', 'T2@1.0', 'baseline-docs');
       const rules = readFileSync(join(run('baseline-docs'), 'PROJECT_RULES.md'), 'utf8');
       expect(rules).toBe(readFileSync(join(generated, 'PROJECT_RULES.md'), 'utf8'));
-      expect(rules).toContain('### No throw\n\nFunctions of the domain return a `Result` and never throw.\n');
+      // dl-021 step A (task-114): every role's directives, each labelled with its roles.
+      expect(rules).toContain(
+        '### No throw\n\nFor: developer.\n\n#### No throw\n\nFunctions of the domain return a `Result` and never throw.\n',
+      );
+      expect(rules).toContain('### Code Review\n\nFor: ');
       expect(rules).toContain('### Errors are returned as a Result');
       expect(rules).toContain('**Orders** — A small orders domain.');
       expect(existsSync(join(generated, 'wingfoil', '.wingfoil', 'dna.yaml'))).toBe(true);
@@ -871,6 +879,11 @@ describe('runs in a real container', () => {
         'wf(decision-log): submit dl-002-orders-are-cancelled-not-deleted',
         'wf(decision-log): add dl-002-orders-are-cancelled-not-deleted',
         'setup',
+        // dl-021 step A (task-114): the setup opens one instance and brings it to its delivery.
+        'workflow: finalize sw-life-cycle-1-plan sw-life-cycle.specification',
+        'workflow: finalize sw-life-cycle-1-plan sw-life-cycle.inception',
+        'wf(plan): submit sw-life-cycle-1-plan',
+        'wf(plan): add sw-life-cycle-1-plan',
         'wf(dna): add team.members Benchmark Approver',
         'chore(wingfoil): apply the scenario configuration',
         'chore(wingfoil): initialize .wingfoil/ with the Kanban template (P5.1.1)',
