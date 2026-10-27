@@ -2,7 +2,7 @@
 id: campaign-006-codex-harness-vs-docs-campaign-on-terra-on-approver-policy-v2
 type: campaign
 title: "Codex harness-vs-docs campaign on Terra, on approver policy v2"
-status: scored
+status: reviewed
 release: v0.3
 campaign_file: campaigns/codex-terra-harness-vs-docs-v2.yaml
 campaign_id: 13fda3099afa
