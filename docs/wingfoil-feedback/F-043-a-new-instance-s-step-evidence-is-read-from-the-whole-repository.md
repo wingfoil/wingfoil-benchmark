@@ -22,11 +22,18 @@ one's delivery:
    no approval.
 3. `memory add --type task --workflow <instance>` then refuses: `error: no step of <instance> adds a task`.
 
-Reproducible with WingFoil alone: `init --template Kanban`; `workflow start sw-life-cycle`; `workflow finalize` twice;
-`memory add --type task …` and `memory submit`; approve it; `workflow finalize` through deliver; then `workflow start
-sw-life-cycle` again, `workflow finalize` twice, `workflow next`. Seen in two agent sessions of this repository's
-step-A spike (Claude Code and Codex, its dry runs 86 and 87): one agent built and delivered with no task and no gate,
-the other stopped at the refusal and did no work.
+Reproducible with WingFoil alone: `init --template Kanban`; `dna add team.members --value "<name>" --entry-email
+<the git identity's email> --entry-roles approver`; `workflow start sw-life-cycle`; `workflow finalize` twice; `memory
+add --type task …` and `memory submit`; `memory approve` it; `workflow finalize` through deliver; then `workflow start
+sw-life-cycle` again, `workflow finalize` twice, `workflow next`.
+
+Seen in both agent sessions of this repository's step-A spike (its dry runs 86 and 87, Claude Code and Codex):
+
+- both agents built and delivered later requests with no task and no gate (Claude Code at its steps 3 and 4, Codex at
+  its steps 3 to 5);
+- both met the refusal of point 3 (each at its steps 2 and 5). Claude Code then added the task without `--workflow`
+  and submitted it, so that the review found a pending task and the gate fired; Codex, at its step 2, stopped at the
+  refusal and did no work, and at its step 5 built anyway.
 
 ## Expected
 
