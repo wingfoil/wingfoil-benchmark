@@ -56,3 +56,16 @@ decision.
 - The first `memory submit` refused: "missing required field on submit: requirements" (the empty list, W-06 of the
   `wingfoil-cli` directive, as declared). `requirements: [REQ-RES-03]` committed by hand, then `submit` (draft →
   pending) passed.
+- `memory submit` (backlog → in-progress) on main (2026-10-27); worktree `../WingFoil2-Benchmark-wt/task-103`, branch
+  `task/task-103`.
+- **Deviations from the criteria, each a decision taken since the task was written:**
+  - the sequencer's v0.3 section also records W15's arm B on Codex (dl-025, campaigns 005 and 006), the classifier v2
+    brought ahead (task-106, dl-026) and step A brought ahead with a Codex campaign (dl-027); the waves keep their
+    features, the order of delivery moves (amendment 1.2, point 8);
+  - the releases table counts v0.3's features as "2 new (F7.5, F4.9)", the five revisited ones named, since every
+    feature is assigned to one release;
+  - the experiment design also adds approver policy v2 (§3.5, dl-026) and T9's and T10's mitigations;
+  - the review loop's three metrics are named M-V1 to M-V3 (§4.7), a new letter; W19's task defines them;
+  - the scenario conventions' rules are numbered K6 and K7, after the kickoff's K1–K5.
+- **Checks:** `scripts/pre-review.sh main` green; `test/acceptance/traceability.test.ts` green (27).
+
