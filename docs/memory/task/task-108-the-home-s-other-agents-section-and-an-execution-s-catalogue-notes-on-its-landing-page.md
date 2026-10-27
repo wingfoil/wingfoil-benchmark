@@ -76,3 +76,12 @@ Under dl-020; `scripts/pre-review.sh main` green before it.
     step for the notes, which the unit and build tests cover.
   The review closes.
 
+### Approval
+
+- **No full suites,** at the approver's choice in chat (2026-10-27): the code changed since the last full suites
+  (`task/task-106` at `1934a7dc`, all five stages green) is three files of `src/site/` and their unit tests; lint and
+  `tsc` green in `pre-review.sh`, the site's unit tests (157) and the site's acceptance tests (`results`,
+  `comparison`: 22) green.
+- in-review → approved by the approver (`9914531e`); merged into main (`c16b5099`); `dist/` rebuilt in the main
+  checkout.
+
