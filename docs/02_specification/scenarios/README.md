@@ -1,7 +1,7 @@
 # Scenario specifications — common conventions (v0.1)
 
-**Version:** 1.4
-**Date:** 2026-10-20
+**Version:** 1.5
+**Date:** 2026-10-27
 **Status:** Approved
 **Traces to:** [09_experiment-design.md](../../01_vision/09_experiment-design.md), [06_features.md](../../01_vision/06_features.md) F3.1, F3.6, F6.1–F6.3, F6.8; plan [plan-002](../../plans/plan-002-benchmark-specification.md)
 
@@ -115,3 +115,17 @@ review decision of the approver at that task's review, 2026-09-29 (`312c4c1`).
 
 Source: [task-049](../../memory/task/task-049-wingfoil-v0-2-2-as-the-harness-under-test.md), review decision of
 the approver at that task's review, 2026-10-02 (`cd062e2`).
+
+### Amendment 1.5 (v0.3, release-planning, 2026-10-27)
+
+- **K6, saturation** ([dl-013](../../memory/decision-log/dl-013-saturation-levels-of-delegation-and-an-external-neutral-control.md), as amended at v0.3's planning): a scenario version is **saturated** when every arm
+  reaches the maximum on its final hidden tests in every run. A saturated version is revised (a new version), never
+  edited. Every version 1.1 records whether its 1.0 was saturated, read from the published campaigns. Levels of
+  delegation and the external control are deferred to v0.4, which adds scenarios.
+- **K7, the versions 1.1:** S1, S2, S3 and S8 at 1.1 carry the oracle's corrections (content checks v2, the human
+  rubric) and S1's step 5 stated (bug-025); what a correction would change in 1.0 is published as an **erratum** for
+  1.0, whose results stay as published. A configured variant's configuration (F7.5) is written **per scenario
+  version** and versioned with it.
+
+Source: [task-103](../../memory/task/task-103-the-v0-3-vision-and-experiment-design-amendments.md); the approver's
+review decision at the task's review.
