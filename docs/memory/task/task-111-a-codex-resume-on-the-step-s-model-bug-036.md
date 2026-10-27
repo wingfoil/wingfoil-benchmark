@@ -2,7 +2,7 @@
 id: task-111-a-codex-resume-on-the-step-s-model-bug-036
 type: task
 title: "A Codex resume on the step's model (bug-036)"
-status: approved
+status: done
 release: v0.3
 wave: W15
 features: [F2.4]
