@@ -129,6 +129,21 @@ Run costs (USD, API-equivalent): baseline 0.31–0.86, baseline-docs 0.42–0.88
   note that campaign-005 (deprecated) is its v1 predecessor. Before any `bench site publish`, every execution under
   `site/` is rebuilt (the method page changed in task-105 and task-106).
 
+### The approver's review and the publication
+
+- **Accepted as publishable** by the approver (scored → reviewed, 2026-10-27), read arm against arm within Codex.
+- **Published** at the approver's request in chat ("procedi con merge e pubblicazione", 2026-10-27), after
+  [task-108](../task/task-108-the-home-s-other-agents-section-and-an-execution-s-catalogue-notes-on-its-landing-page.md)
+  (the home's "Other agents" group, the catalogue's notes on the landing page):
+  - the catalogue entry `13fda3099afa/1` under "Other agents", with five notes (`45f57b68`); no `compared_with` (M-R
+    across needs one approver policy);
+  - every execution under `site/` rebuilt (the method page changed in task-105 and task-106), then `bench site
+    publish`: gh-pages `b85f462e`, five executions;
+  - the transcripts, 83, and the harness artifact as the GitHub release `13fda3099afa-1` (`transcripts.tar.gz`
+    sha256 `91e0e84a5a54d82917d50c0a7cb2142a504a06fddee1631fdd1e96a95620497d`; `harnesses.tar.gz`, WingFoil 0.3.0's
+    package byte for byte the one in `81ebb2691f9c-1`), after a scan of both archives for the Codex credential's
+    values and token shapes (clean); the asset recorded in the runs (`d50c14dc`); the built site unchanged by it.
+
 ## Findings
 
 <!-- Finding notes produced (F5.4) and where they went in WingFoil. -->
