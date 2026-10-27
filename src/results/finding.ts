@@ -47,10 +47,11 @@ export interface FindingNote {
 
 /**
  * The WingFoil the finding's WingFoil section follows the templates of: the release the reference
- * campaign runs (sequencer decision 3, amended in 1.1; task-049), `.wingfoil/memory/templates/` there.
- * Its `bug` and `decision-log` templates are those of the development pin `3df305e`, byte for byte.
+ * campaign runs (sequencer decision 3, amended in 1.1; REQ-RES-05 1.40, task-109), `.wingfoil/memory/templates/`
+ * there. Its `bug` and `decision-log` templates are byte-identical at v0.3.1, the WingFoil that manages this
+ * repository.
  */
-const TEMPLATE_COMMIT = 'v0.2.2 (12537b62)';
+const TEMPLATE_COMMIT = 'v0.3.0 (cc31d7a8)';
 
 /** The harness tool whose commit the note names (REQ-RUN-14). */
 const WINGFOIL = 'wingfoil';
@@ -405,6 +406,10 @@ function bugBlock(actual: readonly string[], facts: readonly string[], reproduce
     '## Triage & Execution Notes',
     '',
     '<!-- to fill: at triage, as WingFoil\'s template asks. -->',
+    '',
+    '### Retrospective',
+    '',
+    '<!-- to fill: notes for WingFoil\'s retrospective, as its template asks. -->',
     '```',
   ];
 }
