@@ -2,7 +2,7 @@
 id: dl-028-gpt-6-1-terra-as-a-model-slice-of-campaign-007-beside-gpt-5-6-terra-s-bridge
 type: decision-log
 title: "gpt-6.1-terra as a model slice of campaign-007, beside gpt-5.6-terra's bridge"
-status: pending
+status: approved
 tags: ["v0.3","codex"]
 ---
 
