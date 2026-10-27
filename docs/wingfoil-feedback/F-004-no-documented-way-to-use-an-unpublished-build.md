@@ -2,9 +2,9 @@
 id: F-004
 title: "No documented way to use an unpublished build pinned to a commit"
 kind: gap
-status: open
+status: resolved
 wingfoil_version: 0.1.0-7a65580
-answered_by: []
+answered_by: [dl-095]
 ---
 
 Formerly N4.

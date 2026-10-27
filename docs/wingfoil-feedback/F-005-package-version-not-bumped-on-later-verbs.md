@@ -2,7 +2,7 @@
 id: F-005
 title: "The package version is not bumped: a 0.1.0 build ships later verbs"
 kind: defect
-status: open
+status: resolved
 wingfoil_version: 0.2-pre-3df305e
 answered_by: []
 ---

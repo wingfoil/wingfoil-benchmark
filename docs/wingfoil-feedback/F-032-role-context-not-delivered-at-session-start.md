@@ -2,9 +2,9 @@
 id: F-032
 title: "A role's context is not delivered when an agent's session starts"
 kind: request
-status: open
+status: captured
 wingfoil_version: 0.2.2
-answered_by: []
+answered_by: [dl-192]
 ---
 
 Formerly N42.

@@ -90,8 +90,8 @@ part that concerns them:
 - **Isolation:** every run executes in Docker. The agent sees only the scenario seed, never the
   oracles, the other arms, or this repository.
 - **Separation from WingFoil:** nothing about the benchmark lives in the WingFoil repository. The
-  WingFoil that manages this repository is pinned (`vendor/`) and independent of the WingFoil under
-  test.
+  WingFoil that manages this repository is a pinned published build (`package.json`) and independent
+  of the WingFoil under test.
 - **Hold-out:** a private sibling repository, `WingFoil2-Benchmark-HoldOut`, keeps hold-out
   scenarios and oracles unpublished, against overfitting and training contamination.
 - **Stack:** TypeScript / Node.js 22.12+.

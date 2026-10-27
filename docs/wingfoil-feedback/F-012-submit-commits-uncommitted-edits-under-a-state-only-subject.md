@@ -2,9 +2,9 @@
 id: F-012
 title: "submit commits uncommitted edits under a state-only subject"
 kind: defect
-status: open
+status: resolved
 wingfoil_version: 0.2-pre-3df305e
-answered_by: []
+answered_by: [bug-182]
 ---
 
 Formerly N13.

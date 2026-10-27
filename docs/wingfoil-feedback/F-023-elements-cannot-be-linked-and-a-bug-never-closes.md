@@ -2,7 +2,7 @@
 id: F-023
 title: "Elements cannot be linked, and a bug's machine never closes"
 kind: gap
-status: open
+status: needs-info
 wingfoil_version: 0.2-pre-3df305e
 answered_by: []
 ---

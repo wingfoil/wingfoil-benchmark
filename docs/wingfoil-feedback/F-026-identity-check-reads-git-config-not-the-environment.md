@@ -2,7 +2,7 @@
 id: F-026
 title: "The identity check reads git config, while git takes the author from the environment"
 kind: defect
-status: open
+status: resolved
 wingfoil_version: 0.2-pre-3df305e
 answered_by: []
 ---

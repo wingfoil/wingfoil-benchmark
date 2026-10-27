@@ -2,9 +2,9 @@
 id: F-003
 title: "The default console output format prints JSON"
 kind: defect
-status: open
+status: captured
 wingfoil_version: 0.1.0-7a65580
-answered_by: []
+answered_by: [dl-043]
 ---
 
 Formerly N3.

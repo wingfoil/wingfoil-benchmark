@@ -2,7 +2,7 @@
 id: F-020
 title: "No verb parks a started task"
 kind: gap
-status: open
+status: resolved
 wingfoil_version: 0.2-pre-3df305e
 answered_by: []
 ---

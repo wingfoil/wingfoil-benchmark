@@ -2,9 +2,9 @@
 id: F-010
 title: "Slugs drop dots, and id_pattern has no {version} token"
 kind: request
-status: open
+status: resolved
 wingfoil_version: 0.2-pre-3df305e
-answered_by: []
+answered_by: [dl-107]
 ---
 
 Formerly N11.

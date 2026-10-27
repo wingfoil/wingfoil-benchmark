@@ -2,7 +2,7 @@
 id: F-018
 title: "A directive's global scope is declared in two places nothing reconciles"
 kind: gap
-status: open
+status: resolved
 wingfoil_version: 0.2-pre-3df305e
 answered_by: []
 ---

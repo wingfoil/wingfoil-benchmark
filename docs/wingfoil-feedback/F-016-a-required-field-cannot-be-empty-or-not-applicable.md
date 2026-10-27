@@ -2,7 +2,7 @@
 id: F-016
 title: "A required field cannot be empty or say \"not applicable\""
 kind: gap
-status: open
+status: resolved
 wingfoil_version: 0.2-pre-3df305e
 answered_by: []
 ---

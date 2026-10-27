@@ -51,8 +51,9 @@ describe('findingNote (F5.4, REQ-RES-05, task-044)', () => {
     const bug = (await noteOf('M-Q1')).text;
     const tail = bug.slice(bug.indexOf('## For WingFoil: bug'));
     expect(tail).toContain('severity: ""');
-    // The templates of the WingFoil the campaign runs, the latest released (task-049, REQ-RES-05 1.23).
-    expect(tail).toContain('whose template is that of WingFoil v0.2.2 (12537b62):');
+    // The templates of the WingFoil the reference campaign runs (REQ-RES-05 1.40, task-109): v0.3.0's, byte-identical
+    // at the managing pin v0.3.1.
+    expect(tail).toContain('whose template is that of WingFoil v0.3.0 (cc31d7a8):');
     for (const section of ['## Summary', '## Steps to Reproduce', '## Expected Behavior', '## Actual Behavior', '## Notes']) {
       expect(tail).toContain(`\n${section}\n`);
     }
@@ -127,6 +128,8 @@ describe('findingNote (F5.4, REQ-RES-05, task-044)', () => {
       '## Notes',
       '## Triage & Execution Notes',
     ]);
+    // v0.3.0's bug template closes its Triage section with a Retrospective subsection (WingFoil dl-115).
+    expect(block).toMatch(/\n## Triage & Execution Notes\n\n<!-- to fill: [^\n]+-->\n\n### Retrospective\n\n<!-- to fill: [^\n]+-->\n```$/m);
     expect(block).toContain('\n\n### baseline\n\n- M-D3:');
     expect(block).toContain('\n\n### wingfoil\n\n- M-D3:');
     // Filled in: the campaign file the execution copied, and the commands with this finding's options.
