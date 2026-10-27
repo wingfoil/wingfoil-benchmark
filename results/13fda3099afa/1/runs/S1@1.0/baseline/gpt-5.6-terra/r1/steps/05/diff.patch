@@ -1,0 +1,221 @@
+diff --git a/src/index.ts b/src/index.ts
+index 0f3cbabc8f7fc51bd942daebc44cb6ef746daf61..97d27ae3f936f3e94429550e5318b43bf7488136 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -113,6 +113,26 @@ export function applyPatch(document: unknown, patch: unknown): unknown {
+   return result;
+ }
+ 
++/**
++ * Creates an RFC 6902 JSON Patch that transforms `from` into `to`.
++ *
++ * The returned patch uses the smallest affected containers practical for each
++ * change: object members are compared recursively and array elements are
++ * aligned so that insertions and removals do not cause the whole array to be
++ * replaced. Neither input is changed.
++ *
++ * @throws {Error} If either input is not a JSON document.
++ */
++export function createPatch(from: unknown, to: unknown): JsonPatchOperation[] {
++  if (!isJsonValue(from) || !isJsonValue(to)) {
++    throw new Error("A JSON Patch can only be created between JSON documents");
++  }
++
++  const patch: JsonPatchOperation[] = [];
++  createPatchAt(from, to, "", patch);
++  return patch;
++}
++
+ /**
+  * Applies an RFC 7386 JSON Merge Patch without changing either input.
+  *
+@@ -156,6 +176,123 @@ function mergePatch(target: unknown, patch: unknown): unknown {
+ 
+ type JsonObject = Record<string, unknown>;
+ 
++type JsonPatchOperation =
++  | { op: "add"; path: string; value: unknown }
++  | { op: "remove"; path: string }
++  | { op: "replace"; path: string; value: unknown };
++
++function createPatchAt(from: unknown, to: unknown, path: string, patch: JsonPatchOperation[]): void {
++  if (jsonEqual(from, to)) {
++    return;
++  }
++
++  if (isJsonObject(from) && isJsonObject(to)) {
++    for (const key of Object.keys(from)) {
++      if (!Object.hasOwn(to, key)) {
++        patch.push({ op: "remove", path: childPath(path, key) });
++      }
++    }
++    for (const key of Object.keys(to)) {
++      const memberPath = childPath(path, key);
++      if (Object.hasOwn(from, key)) {
++        createPatchAt(from[key], to[key], memberPath, patch);
++      } else {
++        patch.push({ op: "add", path: memberPath, value: cloneJson(to[key]) });
++      }
++    }
++    return;
++  }
++
++  if (Array.isArray(from) && Array.isArray(to)) {
++    createArrayPatch(from, to, path, patch);
++    return;
++  }
++
++  patch.push({ op: "replace", path, value: cloneJson(to) });
++}
++
++function createArrayPatch(from: unknown[], to: unknown[], path: string, patch: JsonPatchOperation[]): void {
++  // The edit-distance table lets us keep matching elements in place while
++  // still preferring a single recursive replacement over a remove/add pair.
++  const costs = Array.from({ length: from.length + 1 }, () => Array<number>(to.length + 1).fill(0));
++  for (let fromIndex = from.length; fromIndex >= 0; fromIndex -= 1) {
++    for (let toIndex = to.length; toIndex >= 0; toIndex -= 1) {
++      if (fromIndex === from.length) {
++        costs[fromIndex][toIndex] = to.length - toIndex;
++      } else if (toIndex === to.length) {
++        costs[fromIndex][toIndex] = from.length - fromIndex;
++      } else if (jsonEqual(from[fromIndex], to[toIndex])) {
++        costs[fromIndex][toIndex] = costs[fromIndex + 1][toIndex + 1];
++      } else {
++        costs[fromIndex][toIndex] = 1 + Math.min(
++          costs[fromIndex + 1][toIndex + 1],
++          costs[fromIndex + 1][toIndex],
++          costs[fromIndex][toIndex + 1],
++        );
++      }
++    }
++  }
++
++  let fromIndex = 0;
++  let toIndex = 0;
++  let resultIndex = 0;
++  while (fromIndex < from.length || toIndex < to.length) {
++    if (fromIndex === from.length) {
++      patch.push({ op: "add", path: childPath(path, String(resultIndex)), value: cloneJson(to[toIndex]) });
++      toIndex += 1;
++      resultIndex += 1;
++      continue;
++    }
++    if (toIndex === to.length) {
++      patch.push({ op: "remove", path: childPath(path, String(resultIndex)) });
++      fromIndex += 1;
++      continue;
++    }
++    if (jsonEqual(from[fromIndex], to[toIndex])) {
++      fromIndex += 1;
++      toIndex += 1;
++      resultIndex += 1;
++      continue;
++    }
++
++    const replaceCost = 1 + costs[fromIndex + 1][toIndex + 1];
++    const removeCost = 1 + costs[fromIndex + 1][toIndex];
++    const addCost = 1 + costs[fromIndex][toIndex + 1];
++    // On an equal-cost choice, retain an element if possible: this avoids
++    // describing an unchanged shifted array item as a replacement.
++    // Prefer recursively comparing two like-shaped values on a tie. That
++    // keeps a change inside (for example) an object array item local to that
++    // item, instead of representing it as an insertion and a replacement of
++    // its neighbour.
++    if (replaceCost <= removeCost && replaceCost <= addCost && sameContainerKind(from[fromIndex], to[toIndex])) {
++      createPatchAt(from[fromIndex], to[toIndex], childPath(path, String(resultIndex)), patch);
++      fromIndex += 1;
++      toIndex += 1;
++      resultIndex += 1;
++    } else if (removeCost <= replaceCost && removeCost <= addCost) {
++      patch.push({ op: "remove", path: childPath(path, String(resultIndex)) });
++      fromIndex += 1;
++    } else if (addCost <= replaceCost) {
++      patch.push({ op: "add", path: childPath(path, String(resultIndex)), value: cloneJson(to[toIndex]) });
++      toIndex += 1;
++      resultIndex += 1;
++    } else {
++      createPatchAt(from[fromIndex], to[toIndex], childPath(path, String(resultIndex)), patch);
++      fromIndex += 1;
++      toIndex += 1;
++      resultIndex += 1;
++    }
++  }
++}
++
++function sameContainerKind(left: unknown, right: unknown): boolean {
++  return (Array.isArray(left) && Array.isArray(right)) || (isJsonObject(left) && isJsonObject(right));
++}
++
++function childPath(path: string, token: string): string {
++  return `${path}/${token.replace(/~/g, "~0").replace(/\//g, "~1")}`;
++}
++
+ function requiredValue(operation: JsonObject): unknown {
+   if (!Object.hasOwn(operation, "value") || !isJsonValue(operation.value)) {
+     throw new Error("operation requires a JSON 'value' member");
+diff --git a/test/index.test.mjs b/test/index.test.mjs
+index 338dd1097657378369929d5b417f2caa0ae8e214..ad60a3feb88a3b66a8d4bbed42afbd7d895bbc0e 100644
+--- a/test/index.test.mjs
++++ b/test/index.test.mjs
+@@ -1,7 +1,60 @@
+ import assert from "node:assert/strict";
+ import test from "node:test";
+ 
+-import { applyMergePatch, applyPatch } from "../src/index.ts";
++import { applyMergePatch, applyPatch, createPatch } from "../src/index.ts";
++
++test("creates a focused JSON Patch without changing either source document", () => {
++  const from = {
++    unchanged: { value: true },
++    nested: { before: 1, remove: "old" },
++    items: ["first", { state: "old" }, "last"],
++  };
++  const to = {
++    unchanged: { value: true },
++    nested: { before: 2, added: "new" },
++    items: ["first", { state: "new" }, "inserted", "last"],
++  };
++
++  const patch = createPatch(from, to);
++
++  assert.deepEqual(patch, [
++    { op: "remove", path: "/nested/remove" },
++    { op: "replace", path: "/nested/before", value: 2 },
++    { op: "add", path: "/nested/added", value: "new" },
++    { op: "replace", path: "/items/1/state", value: "new" },
++    { op: "add", path: "/items/2", value: "inserted" },
++  ]);
++  assert.deepEqual(applyPatch(from, patch), to);
++  assert.deepEqual(from, {
++    unchanged: { value: true },
++    nested: { before: 1, remove: "old" },
++    items: ["first", { state: "old" }, "last"],
++  });
++  assert.deepEqual(to, {
++    unchanged: { value: true },
++    nested: { before: 2, added: "new" },
++    items: ["first", { state: "new" }, "inserted", "last"],
++  });
++});
++
++test("creates valid pointers and preserves shifted array items", () => {
++  const from = { "a/b~c": ["keep", "remove", "also keep"] };
++  const to = { "a/b~c": ["keep", "also keep", "added"] };
++
++  const patch = createPatch(from, to);
++
++  assert.deepEqual(patch, [
++    { op: "remove", path: "/a~1b~0c/1" },
++    { op: "add", path: "/a~1b~0c/2", value: "added" },
++  ]);
++  assert.deepEqual(applyPatch(from, patch), to);
++});
++
++test("creates an empty patch for equal JSON and rejects non-JSON inputs", () => {
++  assert.deepEqual(createPatch({ value: [1] }, { value: [1] }), []);
++  assert.throws(() => createPatch({ value: undefined }, {}), /JSON documents/);
++  assert.throws(() => createPatch({}, { value: undefined }), /JSON documents/);
++});
+ 
+ test("applies the RFC 7386 merge patch examples", () => {
+   const cases = [

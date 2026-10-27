@@ -1,0 +1,227 @@
+diff --git a/src/index.ts b/src/index.ts
+index 07231b486472b0bac0bbe186ef39be21d7dbe6ca..275f11a64e3a490267063d9b99cd0d00263c7cec 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -82,6 +82,166 @@ export function applyMergePatch(target: unknown, patch: unknown): unknown {
+   return mergePatch(cloneJson(target), cloneJson(patch));
+ }
+ 
++/**
++ * Creates an RFC 6902 JSON Patch that transforms `from` into `to`.
++ *
++ * Both inputs must be valid JSON. The inputs are validated and detached before
++ * comparison, and values placed in the returned patch are cloned, so this
++ * function never shares mutable JSON containers with either input.
++ */
++export function createPatch(from: unknown, to: unknown): JsonPatchOperation[] {
++  const source = cloneJson(from);
++  const target = cloneJson(to);
++  const patch: JsonPatchOperation[] = [];
++  diffJson(source, target, [], patch);
++  return patch;
++}
++
++type JsonPatchOperation =
++  | { op: "add"; path: string; value: unknown }
++  | { op: "remove"; path: string }
++  | { op: "replace"; path: string; value: unknown };
++
++function diffJson(
++  from: unknown,
++  to: unknown,
++  path: readonly string[],
++  patch: JsonPatchOperation[],
++): void {
++  if (jsonEqual(from, to)) return;
++
++  if (isJsonObject(from) && isJsonObject(to)) {
++    for (const key of Object.keys(from)) {
++      if (!Object.hasOwn(to, key)) patch.push({ op: "remove", path: formatPointer([...path, key]) });
++    }
++    for (const key of Object.keys(to)) {
++      if (!Object.hasOwn(from, key)) {
++        patch.push({ op: "add", path: formatPointer([...path, key]), value: cloneJson(to[key]) });
++      } else {
++        diffJson(from[key], to[key], [...path, key], patch);
++      }
++    }
++    return;
++  }
++
++  if (Array.isArray(from) && Array.isArray(to)) {
++    diffArray(from, to, path, patch);
++    return;
++  }
++
++  patch.push({ op: "replace", path: formatPointer(path), value: cloneJson(to) });
++}
++
++function diffArray(
++  from: readonly unknown[],
++  to: readonly unknown[],
++  path: readonly string[],
++  patch: JsonPatchOperation[],
++): void {
++  // Exact matches are anchors. This means insertions and removals in the
++  // middle of an array stay small instead of causing every following element
++  // to be replaced. The unmatched spans are compared positionally, allowing
++  // changes inside corresponding object or array elements to remain granular.
++  const anchors = arrayAnchors(from, to);
++  let fromIndex = 0;
++  let toIndex = 0;
++  let currentIndex = 0;
++
++  for (const [nextFrom, nextTo] of [...anchors, [from.length, to.length] as const]) {
++    const shared = Math.min(nextFrom - fromIndex, nextTo - toIndex);
++    for (let offset = 0; offset < shared; offset += 1) {
++      diffJson(from[fromIndex + offset], to[toIndex + offset], [...path, String(currentIndex + offset)], patch);
++    }
++    currentIndex += shared;
++
++    for (let index = fromIndex + shared; index < nextFrom; index += 1) {
++      patch.push({ op: "remove", path: formatPointer([...path, String(currentIndex)]) });
++    }
++    for (let index = toIndex + shared; index < nextTo; index += 1) {
++      patch.push({ op: "add", path: formatPointer([...path, String(currentIndex)]), value: cloneJson(to[index]) });
++      currentIndex += 1;
++    }
++
++    if (nextFrom < from.length) {
++      // The anchored item is already in the working array.
++      currentIndex += 1;
++      fromIndex = nextFrom + 1;
++      toIndex = nextTo + 1;
++    }
++  }
++}
++
++function arrayAnchors(from: readonly unknown[], to: readonly unknown[]): Array<readonly [number, number]> {
++  // Retaining a direction for each cell permits LCS reconstruction while using
++  // only two rows of lengths. For exceptionally large, wholly different
++  // arrays, positional comparison still avoids replacing the entire document.
++  const cells = from.length * to.length;
++  if (cells > 4_000_000) return prefixAndSuffixAnchors(from, to);
++
++  const width = to.length + 1;
++  const directions = new Uint8Array(from.length * to.length);
++  let next = new Uint32Array(width);
++  for (let fromIndex = from.length - 1; fromIndex >= 0; fromIndex -= 1) {
++    const current = new Uint32Array(width);
++    for (let toIndex = to.length - 1; toIndex >= 0; toIndex -= 1) {
++      const cell = fromIndex * to.length + toIndex;
++      if (jsonEqual(from[fromIndex], to[toIndex])) {
++        current[toIndex] = next[toIndex + 1] + 1;
++        directions[cell] = 1;
++      } else if (next[toIndex] >= current[toIndex + 1]) {
++        current[toIndex] = next[toIndex];
++        directions[cell] = 2;
++      } else {
++        current[toIndex] = current[toIndex + 1];
++        directions[cell] = 3;
++      }
++    }
++    next = current;
++  }
++
++  const anchors: Array<readonly [number, number]> = [];
++  let fromIndex = 0;
++  let toIndex = 0;
++  while (fromIndex < from.length && toIndex < to.length) {
++    const direction = directions[fromIndex * to.length + toIndex];
++    if (direction === 1) {
++      anchors.push([fromIndex, toIndex]);
++      fromIndex += 1;
++      toIndex += 1;
++    } else if (direction === 2) {
++      fromIndex += 1;
++    } else {
++      toIndex += 1;
++    }
++  }
++  return anchors;
++}
++
++function prefixAndSuffixAnchors(
++  from: readonly unknown[],
++  to: readonly unknown[],
++): Array<readonly [number, number]> {
++  let prefix = 0;
++  while (prefix < from.length && prefix < to.length && jsonEqual(from[prefix], to[prefix])) prefix += 1;
++
++  let fromEnd = from.length;
++  let toEnd = to.length;
++  while (fromEnd > prefix && toEnd > prefix && jsonEqual(from[fromEnd - 1], to[toEnd - 1])) {
++    fromEnd -= 1;
++    toEnd -= 1;
++  }
++
++  const anchors: Array<readonly [number, number]> = [];
++  for (let index = 0; index < prefix; index += 1) anchors.push([index, index]);
++  for (; fromEnd < from.length; fromEnd += 1, toEnd += 1) anchors.push([fromEnd, toEnd]);
++  return anchors;
++}
++
++function formatPointer(tokens: readonly string[]): string {
++  if (tokens.length === 0) return "";
++  return `/${tokens.map((token) => token.replace(/~/g, "~0").replace(/\//g, "~1")).join("/")}`;
++}
++
+ function mergePatch(target: unknown, patch: unknown): unknown {
+   // RFC 7386: only an object patch is merged. Arrays, null, and primitive
+   // values replace the target exactly as supplied.
+diff --git a/test/index.test.mjs b/test/index.test.mjs
+index 599fdd39882ef8258f45bacfe70c326e11f9ea4b..937d7a21a294248f9ec217735f2ddad7e5c79063 100644
+--- a/test/index.test.mjs
++++ b/test/index.test.mjs
+@@ -1,7 +1,7 @@
+ import assert from "node:assert/strict";
+ import test from "node:test";
+ 
+-import { applyMergePatch, applyPatch } from "../src/index.ts";
++import { applyMergePatch, applyPatch, createPatch } from "../src/index.ts";
+ 
+ test("applies the RFC 7386 merge-patch example", () => {
+   const target = {
+@@ -85,3 +85,42 @@ test("honors RFC 6902 move and array-index rules", () => {
+     /array insertion index is invalid/,
+   );
+ });
++
++test("creates a granular JSON Patch for nested object changes", () => {
++  const from = {
++    unchanged: { value: true },
++    account: { name: "Ada", settings: { theme: "light", alerts: true } },
++  };
++  const to = {
++    unchanged: { value: true },
++    account: { name: "Ada", settings: { theme: "dark" }, role: "admin" },
++  };
++
++  const patch = createPatch(from, to);
++  assert.deepEqual(patch, [
++    { op: "remove", path: "/account/settings/alerts" },
++    { op: "replace", path: "/account/settings/theme", value: "dark" },
++    { op: "add", path: "/account/role", value: "admin" },
++  ]);
++  assert.deepEqual(applyPatch(from, patch), to);
++  assert.deepEqual(from, {
++    unchanged: { value: true },
++    account: { name: "Ada", settings: { theme: "light", alerts: true } },
++  });
++});
++
++test("creates small array edits and escapes JSON Pointer tokens", () => {
++  const from = { "a/b~c": ["first", "third"] };
++  const to = { "a/b~c": ["first", "second", "third"] };
++
++  const patch = createPatch(from, to);
++  assert.deepEqual(patch, [{ op: "add", path: "/a~1b~0c/1", value: "second" }]);
++  assert.deepEqual(applyPatch(from, patch), to);
++});
++
++test("creates a root replacement and validates JSON inputs", () => {
++  assert.deepEqual(createPatch({ before: true }, ["after"]), [
++    { op: "replace", path: "", value: ["after"] },
++  ]);
++  assert.throws(() => createPatch({}, { invalid: undefined }), /Value is not valid JSON/);
++});

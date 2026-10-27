@@ -1,0 +1,146 @@
+diff --git a/README.md b/README.md
+index 44280cc3c45582267bddc02baa74528b71f74dde..43c76f3bb315dc4a61e9e7ea7a5ee8e368388a5c 100644
+--- a/README.md
++++ b/README.md
+@@ -27,3 +27,8 @@ error if it is absent.
+ `find`, `complete`, `reopen`, `rename`, `tag`, `untag`, and `remove` accept either a task's ID or its
+ title. If a string matches both an ID and another task's title, the ID takes precedence. Titles must
+ still be unique. For example, after `rename(id, 'New title')`, `get(id)` returns the renamed task.
++
++`importTasks(list, text)` imports newline-separated spreadsheet rows in the form
++`title;priority;tags`. Leave the priority empty for `normal`; separate tags with spaces. Empty lines
++are skipped. It returns the count of added tasks and one-based line numbers with reasons for rows that
++could not be added.
+diff --git a/docs/memory/task/task-004-add-bulk-task-import-helper.md b/docs/memory/task/task-004-add-bulk-task-import-helper.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..d2e5e29a5c10cbb4b0c5c24444f5726244e19c29
+--- /dev/null
++++ b/docs/memory/task/task-004-add-bulk-task-import-helper.md
+@@ -0,0 +1,17 @@
++---
++id: task-004-add-bulk-task-import-helper
++type: task
++title: "Add bulk task import helper"
++status: pending
++format: 1
++---
++
++## Work completed
++
++- Added the public `importTasks(list, text)` helper, including public result types and TSDoc.
++- Parsed one `title;priority;tags` row per line, skipped blank rows, defaulted an empty priority to
++  `normal`, and delegated task validation to the supplied list.
++- Reported malformed rows and list validation failures with their one-based source line number.
++- Added red-first coverage for successful imports, blank rows, malformed rows, duplicate titles, and
++  invalid priorities.
++- Documented the helper in the README and verified the suite with `npm test`.
+diff --git a/src/index.ts b/src/index.ts
+index a236799b81e66845626e8be3baa262b270e27031..f944de3617150f2dbc0c78280fe7c2171438236e 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -8,6 +8,18 @@ export type { Summary } from './domain/summary.ts';
+ export { PRIORITIES } from './domain/task.ts';
+ export type { NewTask, Priority, Status, Task } from './domain/task.ts';
+ 
++/** A source row that could not be imported, including its one-based line number. */
++export interface RejectedImport {
++  readonly line: number;
++  readonly reason: string;
++}
++
++/** The outcome of importing task rows into a list. */
++export interface ImportResult {
++  readonly imported: number;
++  readonly rejected: readonly RejectedImport[];
++}
++
+ /**
+  * A new, empty task list for the app, kept in memory.
+  *
+@@ -16,3 +28,38 @@ export type { NewTask, Priority, Status, Task } from './domain/task.ts';
+ export function createTodoList(now: () => Date = () => new Date()): TaskList {
+   return createTaskList(() => now().toISOString());
+ }
++
++/**
++ * Add valid task rows from semicolon-separated text to a list.
++ *
++ * @param list - the list that receives valid tasks
++ * @param text - one `title;priority;tags` task row per line
++ */
++export function importTasks(list: TaskList, text: string): ImportResult {
++  let imported = 0;
++  const rejected: RejectedImport[] = [];
++
++  for (const [index, row] of text.split(/\r?\n/).entries()) {
++    if (row.trim().length === 0) continue;
++    const fields = row.split(';');
++    if (fields.length !== 3) {
++      rejected.push({
++        line: index + 1,
++        reason: 'task rows must contain title, priority, and tags separated by semicolons',
++      });
++      continue;
++    }
++    const [title, priorityField, tagsField] = fields;
++    const priority = priorityField.trim();
++    const tags = tagsField.trim() === '' ? [] : tagsField.trim().split(/\s+/);
++    const result = list.add({
++      title,
++      ...(priority === '' ? {} : { priority: priority as Priority }),
++      tags,
++    });
++    if (result.ok) imported += 1;
++    else rejected.push({ line: index + 1, reason: result.error.message });
++  }
++
++  return { imported, rejected };
++}
+diff --git a/test/list.test.ts b/test/list.test.ts
+index 2cbc6275c3a81aa28253bc1d3f76587024caf87c..fd8bc9b7929ca741d75da070d4b48b19b95812e3 100644
+--- a/test/list.test.ts
++++ b/test/list.test.ts
+@@ -1,7 +1,7 @@
+ import assert from 'node:assert/strict';
+ import { describe, it } from 'node:test';
+ 
+-import { createTodoList, summarize } from '../src/index.ts';
++import { createTodoList, importTasks, summarize } from '../src/index.ts';
+ 
+ function valueOf<T>(result: { ok: true; value: T } | { ok: false; error: unknown }): T {
+   if (!result.ok) assert.fail(JSON.stringify(result.error));
+@@ -9,6 +9,34 @@ function valueOf<T>(result: { ok: true; value: T } | { ok: false; error: unknown
+ }
+ 
+ describe('task list', () => {
++  it('imports spreadsheet rows, skips blanks, and reports rejected rows', () => {
++    const list = createTodoList(() => new Date('2026-10-27T10:00:00.000Z'));
++
++    const result = importTasks(list, [
++      'Renew the insurance;high;admin money',
++      '',
++      'Buy milk;;errands',
++      'Missing fields',
++      'Renew the insurance;low;',
++      'Bad priority;urgent;',
++    ].join('\n'));
++
++    assert.deepEqual(result, {
++      imported: 2,
++      rejected: [
++        { line: 4, reason: 'task rows must contain title, priority, and tags separated by semicolons' },
++        { line: 5, reason: 'there is already a task "Renew the insurance"' },
++        { line: 6, reason: 'priority must be low, normal, or high' },
++      ],
++    });
++    assert.deepEqual(list.list().map((task) => ({
++      title: task.title, priority: task.priority, tags: task.tags,
++    })), [
++      { title: 'Renew the insurance', priority: 'high', tags: ['admin', 'money'] },
++      { title: 'Buy milk', priority: 'normal', tags: ['errands'] },
++    ]);
++  });
++
+   it('adds an open task with a normal priority by default', () => {
+     const timestamp = '2026-10-27T10:00:00.000Z';
+     const list = createTodoList(() => new Date(timestamp));

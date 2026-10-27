@@ -1,0 +1,130 @@
+diff --git a/package.json b/package.json
+index 5f1f12a7edbf25e1ade5481dc7f359ede03d0df5..b83dba113c0e09271e9782db88d8577cce8a9bb8 100644
+--- a/package.json
++++ b/package.json
+@@ -5,6 +5,6 @@
+   "description": "Building blocks for services that store, exchange and update JSON documents.",
+   "type": "module",
+   "scripts": {
+-    "test": "node --test"
++    "test": "node --experimental-strip-types --test"
+   }
+ }
+diff --git a/src/index.ts b/src/index.ts
+index 945dc26dac367984e837ecd564ec601bff6c13ea..3248e3a3bf5a64d6a9fcb11d4acdc13a13e1615b 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -57,6 +57,13 @@ export function applyPatch(document: unknown, patch: unknown): unknown {
+     throw new Error("A JSON Patch must be an array of operations");
+   }
+ 
++  // A patch is itself a JSON document.  Checking only the operation members
++  // that happen to be used would, for example, accept a function in an
++  // otherwise ignored member, even though no JSON document can contain one.
++  if (!isJsonValue(patch)) {
++    throw new Error("A JSON Patch must be a valid JSON array of operations");
++  }
++
+   let result = cloneJson(document);
+ 
+   for (let index = 0; index < patch.length; index += 1) {
+@@ -174,14 +181,36 @@ function remove(document: unknown, path: string): { document: unknown; value: un
+ }
+ 
+ function replace(document: unknown, path: string, value: unknown): unknown {
+-  // Replace requires that the target already exists, unlike add.
+-  get(document, path);
+-  return add(document, path, value);
++  const valueCopy = cloneJson(value);
++  if (path === "") {
++    return valueCopy;
++  }
++
++  const { parent, token } = parentAt(document, path);
++  if (Array.isArray(parent)) {
++    if (!isArrayIndex(token) || !hasArrayElement(parent, token)) {
++      throw new Error(`JSON Pointer does not resolve at token ${JSON.stringify(token)}`);
++    }
++    parent[Number(token)] = valueCopy;
++    return document;
++  }
++
++  if (!isJsonObject(parent) || !Object.hasOwn(parent, token)) {
++    throw new Error(`JSON Pointer does not resolve at token ${JSON.stringify(token)}`);
++  }
++  setObjectMember(parent, token, valueCopy);
++  return document;
+ }
+ 
+ function move(document: unknown, path: string, from: string): unknown {
+   const fromTokens = pointerTokens(from);
+   const pathTokens = pointerTokens(path);
++
++  // A no-op move still has a `from` member whose location MUST exist.  Parse
++  // both pointers before the special case as well, so an invalid same-location
++  // pointer is not silently accepted.
++  get(document, from);
++
+   if (fromTokens.length < pathTokens.length && fromTokens.every((token, index) => token === pathTokens[index])) {
+     throw new Error("Cannot move a value into one of its children");
+   }
+diff --git a/test/index.test.mjs b/test/index.test.mjs
+new file mode 100644
+index 0000000000000000000000000000000000000000..bd566437cdd9a60784ca216ec51c689b6ea46ad5
+--- /dev/null
++++ b/test/index.test.mjs
+@@ -0,0 +1,54 @@
++import assert from "node:assert/strict";
++import test from "node:test";
++
++import { applyPatch } from "../src/index.ts";
++
++test("a move to the same valid location is a no-op", () => {
++  const document = { foo: 1 };
++
++  assert.deepEqual(
++    applyPatch(document, [{ op: "move", from: "/foo", path: "/foo" }]),
++    document,
++  );
++});
++
++test("a same-location move still requires an existing source", () => {
++  assert.throws(
++    () => applyPatch({}, [{ op: "move", from: "/missing", path: "/missing" }]),
++    /JSON Pointer does not resolve/,
++  );
++});
++
++test("a same-location move still requires valid JSON Pointers", () => {
++  assert.throws(
++    () => applyPatch({}, [{ op: "move", from: "missing", path: "missing" }]),
++    /JSON Pointer/,
++  );
++});
++
++test("replace overwrites an array element without inserting one", () => {
++  assert.deepEqual(
++    applyPatch(["foo"], [{ op: "replace", path: "/0", value: "bar" }]),
++    ["bar"],
++  );
++});
++
++test("the whole patch, including ignored members, must be JSON", () => {
++  assert.throws(
++    () => applyPatch({}, [{ op: "add", path: "/a", value: 1, ignored: undefined }]),
++    /valid JSON array/,
++  );
++});
++
++test("a failed patch leaves its input document unchanged", () => {
++  const document = { value: 1 };
++
++  assert.throws(
++    () => applyPatch(document, [
++      { op: "replace", path: "/value", value: 2 },
++      { op: "test", path: "/value", value: 3 },
++    ]),
++    /test operation failed/,
++  );
++  assert.deepEqual(document, { value: 1 });
++});

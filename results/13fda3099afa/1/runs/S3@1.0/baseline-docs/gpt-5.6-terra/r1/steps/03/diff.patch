@@ -1,0 +1,99 @@
+diff --git a/README.md b/README.md
+index a9f30076efd686040a73ca6820ec28e108fb8798..6d85af2d0ac7668703212db9f22bc3ad928f5f4f 100644
+--- a/README.md
++++ b/README.md
+@@ -21,11 +21,13 @@ rentals.quote({
+   start: '2026-06-10T00:00:00Z',
+   end: '2026-06-13T00:00:00Z',
+ });
+-// { itemId: 'board-1', start: '...', end: '...', total: 7500 }
++// { itemId: 'board-1', start: '...', end: '...', total: 6750 }
+ ```
+ 
+ The end timestamp is the start of the day after the final rental day. Bookings for the same item may
+-be adjacent but cannot overlap. Quotes and bookings reject unknown equipment and invalid periods.
++be adjacent but cannot overlap. Rentals of three days or more receive a 10% discount from their full
++daily price, rounded to the nearest euro cent; quotes and bookings both report the discounted total.
++Quotes and bookings reject unknown equipment and invalid periods.
+ Use `availability()` to see the equipment free for an entire valid period. Its optional `kind` filters
+ the result, and returned equipment ids are sorted:
+ 
+diff --git a/src/index.ts b/src/index.ts
+index 0df277db434180bb02ed1ab3987299fc1ee481d7..10d17f936996ac90ca90d0c7d0c11ed5275c9021 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -42,6 +42,9 @@ export interface RentalService {
+ }
+ 
+ const DAY_IN_MILLISECONDS = 24 * 60 * 60 * 1_000;
++const LONG_RENTAL_MINIMUM_DAYS = 3;
++const LONG_RENTAL_DISCOUNT_PERCENT = 10;
++const LONG_RENTAL_PRICE_TENTHS = (100 - LONG_RENTAL_DISCOUNT_PERCENT) / 10;
+ const MIDNIGHT_UTC = /^(\d{4})-(\d{2})-(\d{2})T00:00:00(?:\.0+)?Z$/;
+ 
+ /**
+@@ -69,11 +72,7 @@ export function createRentalService(): RentalService {
+         throw new Error(`Unknown equipment: ${request?.itemId ?? ''}`);
+       }
+       const period = validatePeriod(request);
+-      const total = item.dailyPrice * period.days;
+-      if (!Number.isSafeInteger(total)) {
+-        throw new Error('Rental total exceeds the supported money range');
+-      }
+-      return { ...request, total };
++      return { ...request, total: calculateRentalTotal(item.dailyPrice, period.days) };
+     },
+ 
+     book(request: RentalRequest): RentalBooking {
+@@ -107,6 +106,20 @@ export function createRentalService(): RentalService {
+   };
+ }
+ 
++function calculateRentalTotal(dailyPrice: number, days: number): number {
++  const fullPrice = dailyPrice * days;
++  if (!Number.isSafeInteger(fullPrice)) {
++    throw new Error('Rental total exceeds the supported money range');
++  }
++  if (days < LONG_RENTAL_MINIMUM_DAYS) {
++    return fullPrice;
++  }
++
++  const tens = Math.floor(fullPrice / 10);
++  const remainder = fullPrice % 10;
++  return tens * LONG_RENTAL_PRICE_TENTHS + Math.round(remainder * LONG_RENTAL_PRICE_TENTHS / 10);
++}
++
+ function validateEquipment(item: Equipment): void {
+   if (typeof item !== 'object' || item === null) {
+     throw new Error('Equipment must be an object');
+diff --git a/test/rental-service.test.mjs b/test/rental-service.test.mjs
+index 1a9d6a39d99f1af443a488dd87c15e07ca63cec4..cdea408f01baa938c5e332c789b21e06572676fc 100644
+--- a/test/rental-service.test.mjs
++++ b/test/rental-service.test.mjs
+@@ -5,22 +5,23 @@ import { createRentalService } from '../src/index.ts';
+ 
+ const day = (dayOfMonth) => `2026-06-${String(dayOfMonth).padStart(2, '0')}T00:00:00Z`;
+ 
+-test('quotes and books a whole-day rental', () => {
++test('quotes and books long rentals at ten percent off', () => {
+   const rentals = createRentalService();
+   rentals.addEquipment({ id: 'board-1', kind: 'board', dailyPrice: 2_500 });
+ 
++  assert.equal(rentals.quote({ itemId: 'board-1', start: day(10), end: day(12) }).total, 5_000);
+   assert.deepEqual(rentals.quote({ itemId: 'board-1', start: day(10), end: day(13) }), {
+     itemId: 'board-1',
+     start: day(10),
+     end: day(13),
+-    total: 7_500,
++    total: 6_750,
+   });
+   assert.deepEqual(rentals.book({ itemId: 'board-1', start: day(10), end: day(13) }), {
+     id: 'booking-1',
+     itemId: 'board-1',
+     start: day(10),
+     end: day(13),
+-    total: 7_500,
++    total: 6_750,
+   });
+ });
+ 

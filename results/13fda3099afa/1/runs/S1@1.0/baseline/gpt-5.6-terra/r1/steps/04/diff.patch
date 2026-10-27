@@ -1,0 +1,107 @@
+diff --git a/src/index.ts b/src/index.ts
+index 3248e3a3bf5a64d6a9fcb11d4acdc13a13e1615b..0f3cbabc8f7fc51bd942daebc44cb6ef746daf61 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -113,6 +113,47 @@ export function applyPatch(document: unknown, patch: unknown): unknown {
+   return result;
+ }
+ 
++/**
++ * Applies an RFC 7386 JSON Merge Patch without changing either input.
++ *
++ * A non-object patch replaces the target entirely.  Within an object patch,
++ * a null member removes that member from an object target; null otherwise has
++ * its usual JSON value semantics when used as the patch document itself.
++ *
++ * @throws {Error} If the target or patch is not a JSON document.
++ */
++export function applyMergePatch(target: unknown, patch: unknown): unknown {
++  if (!isJsonValue(target)) {
++    throw new Error("A JSON Merge Patch can only be applied to a JSON document");
++  }
++  if (!isJsonValue(patch)) {
++    throw new Error("A JSON Merge Patch must be a valid JSON document");
++  }
++
++  return mergePatch(target, patch);
++}
++
++function mergePatch(target: unknown, patch: unknown): unknown {
++  if (!isJsonObject(patch)) {
++    return cloneJson(patch);
++  }
++
++  // RFC 7386: an object patch applied to any non-object target starts with
++  // an empty object. Arrays are consequently replaced rather than merged.
++  const result: JsonObject = isJsonObject(target) ? cloneJson(target) as JsonObject : {};
++
++  for (const key of Object.keys(patch)) {
++    const value = patch[key];
++    if (value === null) {
++      delete result[key];
++    } else {
++      setObjectMember(result, key, mergePatch(result[key], value));
++    }
++  }
++
++  return result;
++}
++
+ type JsonObject = Record<string, unknown>;
+ 
+ function requiredValue(operation: JsonObject): unknown {
+diff --git a/test/index.test.mjs b/test/index.test.mjs
+index bd566437cdd9a60784ca216ec51c689b6ea46ad5..338dd1097657378369929d5b417f2caa0ae8e214 100644
+--- a/test/index.test.mjs
++++ b/test/index.test.mjs
+@@ -1,7 +1,49 @@
+ import assert from "node:assert/strict";
+ import test from "node:test";
+ 
+-import { applyPatch } from "../src/index.ts";
++import { applyMergePatch, applyPatch } from "../src/index.ts";
++
++test("applies the RFC 7386 merge patch examples", () => {
++  const cases = [
++    [{ a: "b" }, { a: "c" }, { a: "c" }],
++    [{ a: "b" }, { b: "c" }, { a: "b", b: "c" }],
++    [{ a: "b" }, { a: null }, {}],
++    [{ a: "b", b: "c" }, { a: null }, { b: "c" }],
++    [{ a: ["b"] }, { a: "c" }, { a: "c" }],
++    [{ a: "c" }, { a: ["b"] }, { a: ["b"] }],
++    [{ a: { b: "c" } }, { a: { b: "d", c: null } }, { a: { b: "d" } }],
++    [{ a: [{ b: "c" }] }, { a: [1] }, { a: [1] }],
++    [["a", "b"], ["c", "d"], ["c", "d"]],
++    [{ a: "b" }, ["c"], ["c"]],
++    [{ a: "foo" }, null, null],
++    [{ a: "foo" }, "bar", "bar"],
++    [{ e: null }, { a: 1 }, { e: null, a: 1 }],
++    [[1, 2], { a: "b", c: null }, { a: "b" }],
++    [{}, { a: { bb: { ccc: null } } }, { a: { bb: {} } }],
++  ];
++
++  for (const [target, patch, expected] of cases) {
++    assert.deepEqual(applyMergePatch(target, patch), expected);
++  }
++});
++
++test("merge patch leaves both inputs unchanged and safely handles __proto__", () => {
++  const target = { nested: { keep: true, remove: 1 } };
++  const patch = JSON.parse('{"nested":{"remove":null,"added":[1]},"__proto__":{"safe":true}}');
++
++  assert.deepEqual(applyMergePatch(target, patch), {
++    nested: { keep: true, added: [1] },
++    ["__proto__"]: { safe: true },
++  });
++  assert.deepEqual(target, { nested: { keep: true, remove: 1 } });
++  assert.deepEqual(patch, JSON.parse('{"nested":{"remove":null,"added":[1]},"__proto__":{"safe":true}}'));
++  assert.equal(Object.prototype.safe, undefined);
++});
++
++test("merge patch accepts only JSON documents", () => {
++  assert.throws(() => applyMergePatch({ a: 1 }, { a: undefined }), /valid JSON document/);
++  assert.throws(() => applyMergePatch({ a: undefined }, {}), /JSON document/);
++});
+ 
+ test("a move to the same valid location is a no-op", () => {
+   const document = { foo: 1 };

@@ -1,0 +1,160 @@
+diff --git a/README.md b/README.md
+index 11367124ca353950bbfa7acc9b9ceea73dcbdf73..f85a19b92fe071f635fb8cb1553972e95985e332 100644
+--- a/README.md
++++ b/README.md
+@@ -14,6 +14,13 @@ Adding or renaming requires a non-blank title of at most 120 characters. Task pr
+ `low`, `normal`, or `high`; tags must be non-empty and cannot contain spaces. Invalid add, rename,
+ or tag requests return an `invalid-input` result with a clear message and leave the list unchanged.
+ 
++## Bulk import
++
++`importTasks(list, text)` imports spreadsheet rows into a task list. Each non-blank row must be
++`title;priority;tags`, where priority is `low`, `normal`, or `high` (or empty for normal), and tags
++are separated by spaces. It returns the count imported plus each rejected row with its one-based line
++number and reason; a rejected row does not stop subsequent rows from being imported.
++
+ Run its tests with `npm test`.
+ 
+ ## Task identity
+diff --git a/src/index.ts b/src/index.ts
+index 6580314dd5b30736426f46e5e8cf5a5e88b4b3d8..7ebc61a5088613aab7bfd010aa7503f31bb747f8 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -1,5 +1,6 @@
+ import { createTaskList } from './domain/list.ts';
+ import type { TaskList } from './domain/list.ts';
++import type { NewTask, Priority } from './domain/task.ts';
+ 
+ export type { TaskFilter, TaskList } from './domain/list.ts';
+ export type { Result, TodoError, TodoErrorCode } from './domain/result.ts';
+@@ -8,6 +9,22 @@ export type { Summary } from './domain/summary.ts';
+ export { PRIORITIES } from './domain/task.ts';
+ export type { NewTask, Priority, Status, Task } from './domain/task.ts';
+ 
++/** A spreadsheet row that could not be imported. */
++export interface RejectedTaskImport {
++  /** The one-based line number in the imported text. */
++  readonly line: number;
++  /** Why the row could not be added. */
++  readonly reason: string;
++}
++
++/** The outcome of importing task rows into a list. */
++export interface TaskImportResult {
++  /** The number of tasks successfully added to the list. */
++  readonly imported: number;
++  /** Every non-blank row that could not be added. */
++  readonly rejected: readonly RejectedTaskImport[];
++}
++
+ /**
+  * A new, empty task list for the app, kept in memory.
+  *
+@@ -16,3 +33,46 @@ export type { NewTask, Priority, Status, Task } from './domain/task.ts';
+ export function createTodoList(now: () => string = () => new Date().toISOString()): TaskList {
+   return createTaskList(now);
+ }
++
++/**
++ * Imports semicolon-separated `title;priority;tags` rows into a task list.
++ * Blank rows are ignored; tags are separated by whitespace and an omitted priority is normal.
++ *
++ * @param list - the task list to add each valid row to
++ * @param text - the newline-separated spreadsheet rows to import
++ */
++export function importTasks(list: TaskList, text: string): TaskImportResult {
++  const rejected: RejectedTaskImport[] = [];
++  let imported = 0;
++
++  for (const [index, line] of text.split(/\r?\n/).entries()) {
++    if (line.trim().length === 0) continue;
++
++    const input = parseImportedTask(line);
++    if (input === undefined) {
++      rejected.push({ line: index + 1, reason: 'expected title;priority;tags' });
++      continue;
++    }
++
++    const added = list.add(input);
++    if (added.ok) {
++      imported += 1;
++    } else {
++      rejected.push({ line: index + 1, reason: added.error.message });
++    }
++  }
++
++  return { imported, rejected };
++}
++
++function parseImportedTask(line: string): NewTask | undefined {
++  const fields = line.split(';');
++  if (fields.length !== 3) return undefined;
++
++  const [title, priority, tags] = fields;
++  return {
++    title,
++    ...(priority.trim().length === 0 ? {} : { priority: priority.trim() as Priority }),
++    tags: tags.trim().length === 0 ? [] : tags.trim().split(/\s+/),
++  };
++}
+diff --git a/test/list.test.ts b/test/list.test.ts
+index adc04ca7dd943ea044bd2e665b0928ecadc1651e..0b887110062a383585e5d0ea20f527556cf07566 100644
+--- a/test/list.test.ts
++++ b/test/list.test.ts
+@@ -1,7 +1,7 @@
+ import assert from 'node:assert/strict';
+ import { describe, it } from 'node:test';
+ 
+-import { createTodoList, summarize } from '../src/index.ts';
++import { createTodoList, importTasks, summarize } from '../src/index.ts';
+ 
+ function valueOf<T>(result: { ok: true; value: T } | { ok: false; error: unknown }): T {
+   if (!result.ok) assert.fail(JSON.stringify(result.error));
+@@ -9,6 +9,47 @@ function valueOf<T>(result: { ok: true; value: T } | { ok: false; error: unknown
+ }
+ 
+ describe('task list', () => {
++  it('bulk imports spreadsheet tasks with priorities and tags', () => {
++    const list = createTodoList(() => '2026-10-27T10:00:00.000Z');
++
++    const result = importTasks(
++      list,
++      'Renew the insurance;high;admin money\nBuy milk;;groceries\nWash the car;low;',
++    );
++
++    assert.deepEqual(result, { imported: 3, rejected: [] });
++    assert.deepEqual(
++      list.list().map(({ title, priority, tags }) => ({ title, priority, tags })),
++      [
++        { title: 'Renew the insurance', priority: 'high', tags: ['admin', 'money'] },
++        { title: 'Buy milk', priority: 'normal', tags: ['groceries'] },
++        { title: 'Wash the car', priority: 'low', tags: [] },
++      ],
++    );
++  });
++
++  it('skips blank lines and reports every malformed or invalid import row', () => {
++    const list = createTodoList();
++
++    const result = importTasks(
++      list,
++      '\nGood task;;home\nMissing fields;high\nDuplicate;;\nDuplicate;;\nInvalid priority;urgent;\n   \n',
++    );
++
++    assert.deepEqual(result, {
++      imported: 2,
++      rejected: [
++        { line: 3, reason: 'expected title;priority;tags' },
++        { line: 5, reason: 'there is already a task "Duplicate"' },
++        { line: 6, reason: 'priority must be low, normal, or high' },
++      ],
++    });
++    assert.deepEqual(
++      list.list().map((task) => task.title),
++      ['Duplicate', 'Good task'],
++    );
++  });
++
+   it('adds an open task with a unique, deterministic id and matching creation timestamps', () => {
+     const list = createTodoList(() => '2026-10-27T10:00:00.000Z');
+     const task = valueOf(list.add({ title: '  Buy milk ' }));

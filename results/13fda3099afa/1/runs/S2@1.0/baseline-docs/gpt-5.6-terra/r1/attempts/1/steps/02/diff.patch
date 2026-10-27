@@ -1,0 +1,208 @@
+diff --git a/README.md b/README.md
+index 669f63c1d48ed691352b729bddab5c8e21baacae..414a0ffecb748bdfa275fa44243aad124e7f50c4 100644
+--- a/README.md
++++ b/README.md
+@@ -71,8 +71,8 @@ These are the rules the service implements. When the code and this list disagree
+ - Rates by VAT class: standard 22%, reduced 10%, super-reduced 4%, exempt 0%.
+ - VAT is computed line by line, on each line's net amount after every discount, and rounded half up
+   to the cent on each line.
+-- Shipping is subject to VAT at the standard rate (22%), shown on its own line of the receipt.
+-- The order total is goods + shipping + VAT on goods + VAT on shipping.
++- Shipping is a service and is not subject to VAT.
++- The order total is goods + shipping + VAT on goods.
+ 
+ ### Invoices
+ 
+diff --git a/src/coupons.ts b/src/coupons.ts
+index 4b7df8e652e5d52033abb2ea07d763007ccce283..496aed7828812115eb643d5d3378af00c2d6948f 100644
+--- a/src/coupons.ts
++++ b/src/coupons.ts
+@@ -74,7 +74,7 @@ export class Coupons {
+     const coupon = this.#coupons.get(canonicalCode(code));
+     if (coupon === undefined) throw new CouponError(code, 'unknown code');
+     if (compareDates(date, coupon.validFrom) < 0) throw new CouponError(coupon.code, 'not valid yet');
+-    if (compareDates(date, coupon.validUntil) >= 0) throw new CouponError(coupon.code, 'expired');
++    if (compareDates(date, coupon.validUntil) > 0) throw new CouponError(coupon.code, 'expired');
+     if (amount < coupon.minimumCents) throw new CouponError(coupon.code, 'order below the minimum amount');
+     if (coupon.singleUse && this.#usedBy.has(coupon.code)) throw new CouponError(coupon.code, 'already used');
+     return coupon;
+diff --git a/src/pricing.ts b/src/pricing.ts
+index 3d07b8e66d51d75411d7694eb6b4d79c95913fee..adcf4a2e21f0c77d18768277d2c379446fe8cd91 100644
+--- a/src/pricing.ts
++++ b/src/pricing.ts
+@@ -1,7 +1,7 @@
+ /**
+  * Pricing an order, in the order the README documents: gross lines, volume discounts, the coupon
+  * (spread over the lines in proportion to their amounts, for VAT), shipping on the goods amount, VAT
+- * per line and on shipping, and the total.
++ * per line, and the total.
+  */
+ import type { Product } from './catalog.ts';
+ import type { Coupon } from './coupons.ts';
+@@ -9,7 +9,7 @@ import { capped, couponDiscount, volumeDiscount } from './discounts.ts';
+ import { allocate, sum } from './money.ts';
+ import type { Cents } from './money.ts';
+ import { shippingCost } from './shipping.ts';
+-import { lineVat, shippingVat, vatRate } from './tax.ts';
++import { lineVat, vatRate } from './tax.ts';
+ 
+ export interface PricedLine {
+   readonly sku: string;
+@@ -56,7 +56,7 @@ export function priceOrder(inputs: readonly LineInput[], coupon?: Coupon): Price
+   const volumeTotal = sum(volume);
+ 
+   const couponTotal =
+-    coupon === undefined ? 0 : capped(couponDiscount(coupon, grossTotal), volumeTotal, grossTotal);
++    coupon === undefined ? 0 : capped(couponDiscount(coupon, sum(afterVolume)), volumeTotal, grossTotal);
+   const couponShares = allocate(couponTotal, afterVolume);
+ 
+   const lines = inputs.map(({ product, quantity }, index): PricedLine => {
+@@ -79,7 +79,6 @@ export function priceOrder(inputs: readonly LineInput[], coupon?: Coupon): Price
+   const weight = sum(inputs.map(({ product, quantity }) => product.weightGrams * quantity));
+   const shipping = shippingCost(goods, weight);
+   const vat = sum(lines.map((line) => line.vatCents));
+-  const shippingTax = shippingVat(shipping);
+   return {
+     lines,
+     weightGrams: weight,
+@@ -90,8 +89,8 @@ export function priceOrder(inputs: readonly LineInput[], coupon?: Coupon): Price
+       goodsCents: goods,
+       shippingCents: shipping,
+       vatCents: vat,
+-      shippingVatCents: shippingTax,
+-      totalCents: goods + shipping + vat + shippingTax,
++      shippingVatCents: 0,
++      totalCents: goods + shipping + vat,
+     },
+   };
+ }
+diff --git a/src/receipt.ts b/src/receipt.ts
+index 732b3de8b6aa10adf22ca78c3fc202cf0b778232..376ab8f59bb6c873221c71c8304daf2b6349f778 100644
+--- a/src/receipt.ts
++++ b/src/receipt.ts
+@@ -1,4 +1,4 @@
+-/** The customer's receipt: one line per product, then the discounts, shipping, VAT and the total. */
++/** The customer's receipt: one line per product, then the discounts, shipping, goods VAT and the total. */
+ import { formatEuro } from './money.ts';
+ import type { Order } from './orders.ts';
+ 
+@@ -20,7 +20,6 @@ export function receipt(order: Order): string {
+   lines.push(row('Goods', order.totals.goodsCents));
+   lines.push(row('Shipping', order.totals.shippingCents));
+   lines.push(row('VAT on goods', order.totals.vatCents));
+-  lines.push(row('VAT on shipping', order.totals.shippingVatCents));
+   lines.push(row('Total', order.totals.totalCents));
+   if (order.status === 'cancelled') lines.push('', `Cancelled on ${order.cancelledOn ?? ''}`);
+   return `${lines.join('\n')}\n`;
+diff --git a/src/tax.ts b/src/tax.ts
+index 5e12c55f1ca4a2044012df5ea175a5b57febbef3..d40a21022bed4ba83984c006c0cae1ee06804f06 100644
+--- a/src/tax.ts
++++ b/src/tax.ts
+@@ -1,7 +1,7 @@
+ /**
+  * VAT. Every product belongs to a VAT class; each order line pays its class's rate on its net amount
+- * (after every discount), and shipping pays the standard rate. Amounts are rounded half up to the cent,
+- * line by line.
++ * (after every discount). Amounts are rounded half up to the cent, line by line. Shipping is a service
++ * and is not subject to VAT.
+  */
+ import { percentOf } from './money.ts';
+ import type { Cents } from './money.ts';
+@@ -26,7 +26,3 @@ export function lineVat(net: Cents, vatClass: VatClass): Cents {
+   return percentOf(net, vatRate(vatClass));
+ }
+ 
+-/** The VAT on a shipping cost: the standard rate. */
+-export function shippingVat(shipping: Cents): Cents {
+-  return percentOf(shipping, VAT_RATES.standard);
+-}
+diff --git a/test/coupons.test.ts b/test/coupons.test.ts
+index 1fdc2519dc031050b1b5593605af611816478518..f7c4a2b3e7c1f61603ebd10b4b564edd23512ba1 100644
+--- a/test/coupons.test.ts
++++ b/test/coupons.test.ts
+@@ -33,6 +33,13 @@ describe('coupons', () => {
+     assert.throws(() => orders.quote({ ...request, date: '2026-04-01' }), CouponError);
+   });
+ 
++  it('accepts a coupon on its final valid day', () => {
++    const { orders } = shop();
++    const request = { customer: 'c-1', date: '2026-03-31', lines: [{ sku: 'PEN-4', quantity: 1 }], coupon: 'SPRING' };
++
++    assert.equal(orders.quote(request).totals.couponDiscountCents, 200);
++  });
++
+   it('lets a single-use coupon be used once', () => {
+     const { orders, coupons } = shop();
+     coupons.add({ code: 'ONCE', kind: 'fixed', value: 100, validFrom: '2026-01-01', validUntil: '2026-12-31', singleUse: true });
+diff --git a/test/orders.test.ts b/test/orders.test.ts
+index a4c9f8ee1416bc9e8f44261a06a62e4a33c410e1..259362bc4d836563de7ec214483dc6367a484e9b 100644
+--- a/test/orders.test.ts
++++ b/test/orders.test.ts
+@@ -1,7 +1,7 @@
+ import assert from 'node:assert/strict';
+ import { describe, it } from 'node:test';
+ 
+-import { createShop, OrderStateError, OutOfStockError, receipt } from '../src/index.ts';
++import { createShop, Invoices, OrderStateError, OutOfStockError, receipt } from '../src/index.ts';
+ 
+ function shop() {
+   const s = createShop();
+@@ -13,7 +13,7 @@ function shop() {
+ }
+ 
+ describe('orders', () => {
+-  it('prices a small order: goods, shipping by weight, VAT per line and on shipping', () => {
++  it('prices a small order: goods, shipping by weight, and VAT only on goods', () => {
+     const { orders } = shop();
+     const order = orders.place({ customer: 'c-1', date: '2026-03-02', lines: [{ sku: 'MUG-01', quantity: 2 }, { sku: 'TEA-7', quantity: 2 }] });
+     assert.equal(order.id, 'ORD-0001');
+@@ -24,8 +24,8 @@ describe('orders', () => {
+       goodsCents: 3000,
+       shippingCents: 490,
+       vatCents: 440 + 100,
+-      shippingVatCents: 108,
+-      totalCents: 3000 + 490 + 540 + 108,
++      shippingVatCents: 0,
++      totalCents: 3000 + 490 + 540,
+     });
+   });
+ 
+@@ -60,6 +60,19 @@ describe('orders', () => {
+     assert.equal(order.totals.goodsCents, 4500);
+   });
+ 
++  it('calculates a percentage coupon from the subtotal after a volume discount', () => {
++    const s = createShop();
++    s.catalog.add({ sku: 'NOTE-1', name: 'Notebook', priceCents: 500, vatClass: 'standard', weightGrams: 50 });
++    s.inventory.restock('NOTE-1', 12);
++    s.coupons.add({ code: 'TENOFF', kind: 'percent', value: 10, validFrom: '2026-01-01', validUntil: '2026-12-31' });
++
++    const order = s.orders.place({ customer: 'c-1', date: '2026-03-02', lines: [{ sku: 'NOTE-1', quantity: 12 }], coupon: 'TENOFF' });
++
++    assert.equal(order.totals.volumeDiscountCents, 600);
++    assert.equal(order.totals.couponDiscountCents, 540);
++    assert.equal(order.totals.goodsCents, 4860);
++  });
++
+   it('merges two lines of the same product', () => {
+     const { orders } = shop();
+     const order = orders.place({ customer: 'c-1', date: '2026-03-02', lines: [{ sku: 'TEA-7', quantity: 1 }, { sku: 'TEA-7', quantity: 3 }] });
+@@ -94,6 +107,18 @@ describe('orders', () => {
+     const { orders } = shop();
+     const text = receipt(orders.place({ customer: 'c-1', date: '2026-03-02', lines: [{ sku: 'MUG-01', quantity: 1 }] }));
+     assert.match(text, /1 × Enamel mug \(MUG-01\)\s+€10\.00/);
++    assert.doesNotMatch(text, /VAT on shipping/);
+     assert.match(text, /Total\s+€/);
+   });
++
++  it('excludes delivery from the invoice VAT summary while including it in the total', () => {
++    const { orders } = shop();
++    const order = orders.place({ customer: 'c-1', date: '2026-03-02', lines: [{ sku: 'MUG-01', quantity: 1 }] });
++    orders.ship(order.id, '2026-03-03');
++
++    const invoice = new Invoices().issue(orders.get(order.id));
++
++    assert.deepEqual(invoice.vat, [{ rate: 22, netCents: 1000, vatCents: 220 }]);
++    assert.equal(invoice.totalCents, 1710);
++  });
+ });

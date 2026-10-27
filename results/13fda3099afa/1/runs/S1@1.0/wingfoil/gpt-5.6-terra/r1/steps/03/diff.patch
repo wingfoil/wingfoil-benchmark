@@ -1,0 +1,178 @@
+diff --git a/README.md b/README.md
+index 1be5e3bad9a9a05c0f58a10ee77dc22b67924a91..72e30b1f23c6aa035ecb06f35d170edbd0b3a44e 100644
+--- a/README.md
++++ b/README.md
+@@ -47,5 +47,7 @@ const updated = applyPatch(document, [
+ // document is unchanged; updated has both changes.
+ ```
+ 
+-The document and each `value` member must be JSON values. The patch is an array of operation objects;
+-additional operation members are ignored as specified by RFC 6902.
++The document, patch, and each `value` member must be JSON values. In particular, non-finite numbers,
++sparse arrays, accessors, and non-JSON object types are rejected. Operations run in array order and
++stop at the first error; the supplied document remains unchanged. Additional operation members are
++ignored as specified by RFC 6902.
+diff --git a/docs/memory/decision-log/dl-003-validate-applypatch-inputs-as-json-values.md b/docs/memory/decision-log/dl-003-validate-applypatch-inputs-as-json-values.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..fea6e3efe35d56ff9f7a2909eea367339f54baa4
+--- /dev/null
++++ b/docs/memory/decision-log/dl-003-validate-applypatch-inputs-as-json-values.md
+@@ -0,0 +1,25 @@
++---
++id: dl-003-validate-applypatch-inputs-as-json-values
++type: decision-log
++title: "Validate applyPatch inputs as JSON values"
++status: pending
++format: 1
++---
++
++## Context
++
++`applyPatch` receives JavaScript values, but RFC 6902 operates on JSON documents. The previous
++validation allowed JavaScript values such as `Date`, sparse arrays, and non-finite numbers, which
++could be silently changed during cloning instead of producing a patch error.
++
++## Decision
++
++Validate the document, patch document, and operation values as JSON-shaped JavaScript data before
++applying a patch. Accept finite JSON primitives, dense arrays, and own data properties on ordinary
++or null-prototype objects; reject other JavaScript-specific representations.
++
++## Consequences
++
++Invalid input fails before operation evaluation, so JSON Patch behavior is not altered by JavaScript
++serialization or cloning quirks. RFC-defined sequential operation evaluation and first-error
++termination remain unchanged.
+diff --git a/docs/memory/task/task-003-conform-applypatch-to-rfc-6902.md b/docs/memory/task/task-003-conform-applypatch-to-rfc-6902.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..32af02a5e8853536c58aff48e533f0146aed5775
+--- /dev/null
++++ b/docs/memory/task/task-003-conform-applypatch-to-rfc-6902.md
+@@ -0,0 +1,15 @@
++---
++id: task-003-conform-applypatch-to-rfc-6902
++type: task
++title: "Conform applyPatch to RFC 6902"
++status: pending
++format: 1
++---
++
++## Work completed
++
++- Validated the patch document and all values against the JSON data model before applying operations.
++- Rejected non-finite numbers, sparse arrays, accessors, special object types, and non-JSON keys.
++- Added coverage for invalid JSON-shaped inputs and first-error termination while preserving caller
++  immutability.
++- Updated the public `applyPatch` contract and ran `npm test` successfully.
+diff --git a/src/index.ts b/src/index.ts
+index 4801e77a4c5937b119bf4b3296b635f6ba241f3a..297f7c906947a2dcd027751cbdfb07b7d3efe457 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -49,8 +49,8 @@ interface PatchOperation {
+  * @throws {Error} If the patch is malformed or an operation cannot be applied.
+  */
+ export function applyPatch(document: unknown, patch: unknown): unknown {
+-  if (!Array.isArray(patch)) {
+-    throw new Error('JSON Patch must be an array');
++  if (!Array.isArray(patch) || !isJsonValue(patch)) {
++    throw new Error('JSON Patch must be an array of JSON operations');
+   }
+ 
+   let result = cloneJson(document);
+@@ -99,7 +99,7 @@ export function applyPatch(document: unknown, patch: unknown): unknown {
+ }
+ 
+ function parseOperation(operation: unknown): PatchOperation {
+-  if (operation === null || typeof operation !== 'object' || Array.isArray(operation) ||
++  if (!isJsonValue(operation) || operation === null || typeof operation !== 'object' || Array.isArray(operation) ||
+       !Object.hasOwn(operation, 'op') || !Object.hasOwn(operation, 'path') ||
+       typeof (operation as PatchOperation).op !== 'string' ||
+       typeof (operation as PatchOperation).path !== 'string') {
+@@ -215,11 +215,18 @@ function defineMember(object: JsonObject, key: string, value: unknown): void {
+ }
+ 
+ function cloneJson(value: unknown): unknown {
+-  if (value === null || typeof value === 'string' || typeof value === 'boolean' || typeof value === 'number') {
++  if (value === null || typeof value === 'string' || typeof value === 'boolean') {
+     return value;
+   }
+-  if (Array.isArray(value)) return value.map(cloneJson);
+-  if (typeof value === 'object') {
++  if (typeof value === 'number') {
++    if (!Number.isFinite(value)) throw new Error('Expected a JSON value');
++    return value;
++  }
++  if (Array.isArray(value)) {
++    if (!isJsonArray(value)) throw new Error('Expected a JSON value');
++    return value.map(cloneJson);
++  }
++  if (isJsonObject(value)) {
+     const copy: JsonObject = {};
+     for (const key of Object.keys(value)) defineMember(copy, key, cloneJson((value as JsonObject)[key]));
+     return copy;
+@@ -230,11 +237,31 @@ function cloneJson(value: unknown): unknown {
+ function isJsonValue(value: unknown): boolean {
+   if (value === null || typeof value === 'string' || typeof value === 'boolean') return true;
+   if (typeof value === 'number') return Number.isFinite(value);
+-  if (Array.isArray(value)) return value.every(isJsonValue);
+-  if (typeof value === 'object') return Object.values(value).every(isJsonValue);
++  if (Array.isArray(value)) return isJsonArray(value) && value.every(isJsonValue);
++  if (isJsonObject(value)) return Object.values(value).every(isJsonValue);
+   return false;
+ }
+ 
++function isJsonArray(value: unknown[]): boolean {
++  const keys = Object.keys(value);
++  return keys.length === value.length &&
++    keys.every((key, index) => key === String(index) && isDataProperty(value, key)) &&
++    Reflect.ownKeys(value).length === keys.length + 1;
++}
++
++function isJsonObject(value: unknown): value is JsonObject {
++  if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
++  const prototype = Object.getPrototypeOf(value);
++  const keys = Object.keys(value);
++  return (prototype === Object.prototype || prototype === null) &&
++    Reflect.ownKeys(value).length === keys.length &&
++    keys.every((key) => isDataProperty(value, key));
++}
++
++function isDataProperty(object: object, key: string): boolean {
++  return Object.hasOwn(Object.getOwnPropertyDescriptor(object, key) ?? {}, 'value');
++}
++
+ function jsonEqual(left: unknown, right: unknown): boolean {
+   if (typeof left !== typeof right || left === null || right === null) return left === right;
+   if (typeof left === 'number' || typeof left === 'string' || typeof left === 'boolean') return left === right;
+diff --git a/tests/patch.test.mjs b/tests/patch.test.mjs
+index f45eff1f4d5a300d21c6e790270692e4be4aad71..d541099b4e55d91baf77c91d3518f825d0f2ec27 100644
+--- a/tests/patch.test.mjs
++++ b/tests/patch.test.mjs
+@@ -72,3 +72,27 @@ test('supports escaped pointer tokens and rejects inherited-member operations',
+   assert.deepEqual(result, { 'a/b': { 'm~n': 2 } });
+   assert.throws(() => applyPatch({}, [{ op: 'replace', path: '/toString', value: 1 }]));
+ });
++
++test('rejects JavaScript values that cannot represent JSON documents or JSON values', () => {
++  const sparse = [];
++  sparse.length = 1;
++
++  for (const document of [NaN, Infinity, new Date(), sparse]) {
++    assert.throws(() => applyPatch(document, []));
++  }
++  for (const value of [NaN, Infinity, new Date(), sparse]) {
++    assert.throws(() => applyPatch({}, [{ op: 'add', path: '/value', value }]));
++  }
++});
++
++test('stops at the first failed operation and leaves the caller document unchanged', () => {
++  const document = { value: 1 };
++  const patch = [
++    { op: 'replace', path: '/value', value: 2 },
++    { op: 'test', path: '/value', value: 3 },
++    { op: 'replace', path: '/value', value: 4 },
++  ];
++
++  assert.throws(() => applyPatch(document, patch), /test operation failed/);
++  assert.deepEqual(document, { value: 1 });
++});

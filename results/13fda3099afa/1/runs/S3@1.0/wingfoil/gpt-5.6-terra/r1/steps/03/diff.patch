@@ -1,0 +1,201 @@
+diff --git a/README.md b/README.md
+index c23a4e43ed9ee7426be2a0f531a7f26a040cf212..7da6230dd36c6761a17b986140801b4f6be69ef4 100644
+--- a/README.md
++++ b/README.md
+@@ -1,6 +1,6 @@
+ # lakeside-desk
+ 
+-Version: 2 · Updated: 2026-10-27
++Version: 3 · Updated: 2026-10-27
+ 
+ The Lakeside Windsurf School teaches windsurfing on the lake from April to October, and rents boards and
+ sails to its students and to visitors who bring their own experience. This repository holds the software
+@@ -22,8 +22,8 @@ const request = {
+   start: '2026-06-01T00:00:00Z',
+   end: '2026-06-04T00:00:00Z',
+ };
+-rentals.quote(request); // { ...request, total: 7500 }
+-rentals.book(request); // { id: 'booking-1', ...request, total: 7500 }
++rentals.quote(request); // { ...request, total: 6750 }
++rentals.book(request); // { id: 'booking-1', ...request, total: 6750 }
+ rentals.availability({ start: request.end, end: '2026-06-05T00:00:00Z', kind: 'board' }); // ['board-1']
+ ```
+ 
+@@ -35,8 +35,11 @@ rentals.availability({ start: request.end, end: '2026-06-05T00:00:00Z', kind: 'b
+ - `availability({ start, end, kind? })` returns sorted IDs of equipment free for the entire period.
+   Omit `kind` to include boards and sails.
+ 
+-Prices and totals are nonnegative, safe integer numbers of euro cents. Totals equal the daily price
+-multiplied by the number of days; an unrepresentable total throws an error.
++Prices and totals are nonnegative, safe integer numbers of euro cents. The full price equals the daily
++price multiplied by the number of days; an unrepresentable full price throws an error. Rentals of
++three days or more receive 10% off the full price in both quotes and bookings, with the discounted
++total rounded down to whole cents so customers receive at least the stated reduction. Shorter rentals
++cost the full price. See the [approved rounding decision](docs/memory/decision-log/dl-002-round-long-rental-discounted-totals-down-to-whole-cents.md).
+ 
+ Times use ISO-8601 extended calendar timestamps at midnight UTC, with `Z` or `+00:00`. Seconds may be
+ omitted, and fractional seconds must be all zero. Calendar dates must exist. Returned timestamps
+diff --git a/docs/memory/decision-log/dl-002-round-long-rental-discounted-totals-down-to-whole-cents.md b/docs/memory/decision-log/dl-002-round-long-rental-discounted-totals-down-to-whole-cents.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..b2494650e7241e6b71a858964c62d637b662da22
+--- /dev/null
++++ b/docs/memory/decision-log/dl-002-round-long-rental-discounted-totals-down-to-whole-cents.md
+@@ -0,0 +1,23 @@
++---
++id: dl-002-round-long-rental-discounted-totals-down-to-whole-cents
++type: decision-log
++title: "Round long-rental discounted totals down to whole cents"
++status: approved
++format: 1
++---
++
++## Context
++
++Rentals lasting three calendar days or more receive a 10% reduction. Prices are stored and returned
++as whole euro cents, but 90% of a whole-cent full price can contain a tenth of a cent.
++
++## Decision
++
++Calculate the full price first, then, for a rental of at least three days, calculate its total as
++`floor(full price * 90 / 100)` euro cents. Shorter rentals retain their full price.
++
++## Consequences
++
++The returned total always remains an integer number of cents and customers never receive less than
++the stated 10% reduction; when a tenth of a cent cannot be represented, the customer receives the
++extra fractional saving. Quotes and bookings use the same shared pricing calculation.
+diff --git a/docs/memory/task/task-003-apply-10-discount-to-rentals-of-three-or-more-days.md b/docs/memory/task/task-003-apply-10-discount-to-rentals-of-three-or-more-days.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..5c3449d325f2dae63fabae225416808fcac62dc1
+--- /dev/null
++++ b/docs/memory/task/task-003-apply-10-discount-to-rentals-of-three-or-more-days.md
+@@ -0,0 +1,29 @@
++---
++id: task-003-apply-10-discount-to-rentals-of-three-or-more-days
++type: task
++title: "Apply 10% discount to rentals of three or more days"
++status: pending
++format: 1
++---
++
++## Work completed
++
++Updated the shared pricing calculation so rentals of three days or more receive 10% off the full
++price in both quotes and bookings. One- and two-day rentals retain full pricing. Discounted totals
++round down to whole euro cents according to the
++[approved rounding decision](../decision-log/dl-002-round-long-rental-discounted-totals-down-to-whole-cents.md).
++Integer arithmetic preserves precision for large prices, and the existing full-price safe-integer
++validation remains in place.
++
++Updated README pricing guidance and examples, bumped its version, and documented the public pricing
++behavior.
++
++## Verification
++
++Classified the discount threshold, fractional-cent rounding, and large-price discounted totals as
++new behavior requiring red-first tests. Before implementation, six tests failed with full-price
++totals, including the new threshold and precision cases. After implementation, `npm test` passes
++all 15 tests and TypeScript compilation. Tests exercise one through five days in both quotes and
++bookings, boards and sails, zero prices, cent rounding, safe-integer precision, and existing error
++and booking behavior. Existing validation and reservation checks provide characterization coverage.
++`git diff --check` passes.
+diff --git a/src/index.ts b/src/index.ts
+index 9f49d758274af480400e7f3ef398d82b238bcb7c..c4367a5c72caab71b41eedd80a06309b5a0c687e 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -33,7 +33,10 @@ export interface RentalBooking extends RentalQuote {
+ export interface RentalService {
+   /** Register equipment; reject invalid data and duplicate IDs. */
+   addEquipment(item: Equipment): void;
+-  /** Price a valid period without reserving equipment or checking availability. */
++  /**
++   * Price without reserving or checking availability.
++   * Apply 10% off from three days, rounding the total down to whole cents.
++   */
+   quote(request: RentalRequest): RentalQuote;
+   /** Reserve the entire period; reject invalid input or overlapping bookings. */
+   book(request: RentalRequest): RentalBooking;
+@@ -95,10 +98,13 @@ export function createRentalService(): RentalService {
+     if (endMs <= startMs) {
+       throw new Error('Rental end must be after its start');
+     }
+-    const total = ((endMs - startMs) / DAY_MS) * item.equipment.dailyPrice;
+-    if (!Number.isSafeInteger(total)) {
++    const days = (endMs - startMs) / DAY_MS;
++    const fullPrice = days * item.equipment.dailyPrice;
++    if (!Number.isSafeInteger(fullPrice)) {
+       throw new Error('Rental total exceeds the safe integer range for euro cents');
+     }
++    // Integer division rounds down without losing cent precision on large prices.
++    const total = days >= 3 ? Number(BigInt(fullPrice) * 90n / 100n) : fullPrice;
+     return {
+       item,
+       startMs,
+diff --git a/test/rental.test.js b/test/rental.test.js
+index bec8868418e19f36ebcefe29742b9f00778a5941..d09e96e5c101f262caae2027555e0026157effe6 100644
+--- a/test/rental.test.js
++++ b/test/rental.test.js
+@@ -15,14 +15,31 @@ function stockedService() {
+ 
+ test('quotes whole days in integer cents for boards and sails', () => {
+   const service = stockedService();
+-  assert.deepEqual(service.quote(request), { ...request, total: 7500 });
++  assert.deepEqual(service.quote(request), { ...request, total: 6750 });
+   assert.deepEqual(service.quote({ ...request, itemId: 'sail-1' }), {
+-    ...request, itemId: 'sail-1', total: 3750,
++    ...request, itemId: 'sail-1', total: 3375,
+   });
+   service.addEquipment({ id: 'free', kind: 'board', dailyPrice: 0 });
+   assert.equal(service.quote({ ...request, itemId: 'free' }).total, 0);
+ });
+ 
++test('quotes and bookings discount the full price only from three days, rounding down cents', () => {
++  for (const [days, total] of [[1, 101], [2, 202], [3, 272], [4, 363], [5, 454]]) {
++    const service = createRentalService();
++    service.addEquipment({ id: 'board-1', kind: 'board', dailyPrice: 101 });
++    const period = { ...request, end: `2026-06-0${days + 1}T00:00:00Z` };
++    assert.deepEqual(service.quote(period), { ...period, total });
++    assert.deepEqual(service.book(period), { id: 'booking-1', ...period, total });
++  }
++});
++
++test('discount calculations preserve integer-cent precision near the safe integer limit', () => {
++  const service = createRentalService();
++  service.addEquipment({ id: 'board-1', kind: 'board', dailyPrice: 3002399751580329 });
++  assert.equal(service.quote(request).total, 8106479329266888);
++  assert.equal(service.book(request).total, 8106479329266888);
++});
++
+ test('rejects malformed equipment and duplicate identifiers without changing existing equipment', () => {
+   const service = stockedService();
+   for (const item of [
+@@ -35,7 +52,7 @@ test('rejects malformed equipment and duplicate identifiers without changing exi
+     assert.throws(() => service.addEquipment(item));
+   }
+   assert.throws(() => service.addEquipment({ id: 'board-1', kind: 'board', dailyPrice: 1 }));
+-  assert.equal(service.quote(request).total, 7500);
++  assert.equal(service.quote(request).total, 6750);
+ });
+ 
+ test('quote and book reject unknown equipment and invalid request objects', () => {
+@@ -121,9 +138,9 @@ test('book returns sequential unique identifiers and quote does not reserve equi
+   const service = stockedService();
+   service.quote(request);
+   service.quote(request);
+-  assert.deepEqual(service.book(request), { id: 'booking-1', ...request, total: 7500 });
++  assert.deepEqual(service.book(request), { id: 'booking-1', ...request, total: 6750 });
+   assert.equal(service.book({ ...request, itemId: 'sail-1' }).id, 'booking-2');
+-  assert.equal(service.quote(request).total, 7500);
++  assert.equal(service.quote(request).total, 6750);
+ });
+ 
+ test('rejects every overlap shape and allows adjacent periods and different equipment', () => {
+@@ -158,7 +175,7 @@ test('service instances and caller-owned objects cannot change stored state', ()
+   input.start = '2026-07-01T00:00:00Z';
+   booking.end = start;
+   assert.throws(() => service.book(request));
+-  assert.equal(service.quote(request).total, 7500);
++  assert.equal(service.quote(request).total, 6750);
+   assert.equal(stockedService().book(request).id, 'booking-1');
+   assert.throws(() => createRentalService().quote(request));
+ });

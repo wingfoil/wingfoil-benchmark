@@ -1,0 +1,389 @@
+diff --git a/README.md b/README.md
+index 8034ad0dc6189b3a09f422739b736353761859e4..c99e76c4a7b5398dc2ff6eafbb0c6ec62af69a35 100644
+--- a/README.md
++++ b/README.md
+@@ -16,3 +16,17 @@ resolvePointer({ users: [{ name: 'Ada' }] }, '/users/0/name'); // 'Ada'
+ ```
+ 
+ Use `~0` for a literal `~` and `~1` for a literal `/` in reference tokens.
++
++## JSON Patch
++
++`applyPatch(document, patch)` applies an [RFC 6902 JSON Patch](https://www.rfc-editor.org/rfc/rfc6902)
++and returns a new document. It supports `add`, `remove`, `replace`, `move`, `copy`, and `test` and
++throws if an operation is malformed or cannot be applied.
++
++```ts
++import { applyPatch } from 'json-toolkit';
++
++applyPatch({ users: ['Ada'] }, [
++  { op: 'add', path: '/users/-', value: 'Grace' },
++]); // { users: ['Ada', 'Grace'] }
++```
+diff --git a/docs/memory/decision-log/dl-002-validate-json-patch-operations-strictly-before-application.md b/docs/memory/decision-log/dl-002-validate-json-patch-operations-strictly-before-application.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..dfb8de37c7cb5c4c46c34930d5ff1e6452c22447
+--- /dev/null
++++ b/docs/memory/decision-log/dl-002-validate-json-patch-operations-strictly-before-application.md
+@@ -0,0 +1,24 @@
++---
++id: dl-002-validate-json-patch-operations-strictly-before-application
++type: decision-log
++title: "Validate JSON Patch operations strictly before application"
++status: pending
++format: 1
++---
++
++## Context
++
++JSON Patch input arrives at a public library boundary. Permissive operation or pointer handling could
++silently modify a location other than the caller intended.
++
++## Decision
++
++Validate every operation's required members and JSON Pointer syntax before applying it. Apply each
++operation to a deep copy of the input document, using RFC 6901 token decoding and canonical array
++indexes. Reject attempts to remove the document root because the result would not be a JSON value.
++
++## Consequences
++
++Malformed patches and failed operations throw without mutating the supplied document. Object members
++may be added or replaced, while array insertion accepts only canonical indexes within the current
++array bounds or the RFC 6902 append token.
+diff --git a/docs/memory/task/task-002-implement-rfc-6902-json-patch.md b/docs/memory/task/task-002-implement-rfc-6902-json-patch.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..6457e149b0744e9f93076291177636fb77f7a332
+--- /dev/null
++++ b/docs/memory/task/task-002-implement-rfc-6902-json-patch.md
+@@ -0,0 +1,13 @@
++---
++id: task-002-implement-rfc-6902-json-patch
++type: task
++title: "Implement RFC 6902 JSON Patch"
++status: pending
++format: 1
++---
++
++Implemented `applyPatch(document, patch)` with all six RFC 6902 operations. The implementation
++validates operation members and pointers, preserves input immutability through JSON-value cloning,
++and rejects failed operations. Added tests for normal operations, error paths, root replacement,
++RFC 6901 escaping, and safe handling of the `__proto__` member. Updated the README with the public
++API and an example.
+diff --git a/src/index.ts b/src/index.ts
+index 58a3799de24df0685d1662503b5a1f4ed73ed64f..af58eb26b7af3dc47d724d0ee8747a70354aa19a 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -57,6 +57,237 @@ export function resolvePointer(document: unknown, pointer: string): unknown {
+   return value;
+ }
+ 
++/**
++ * Applies an RFC 6902 JSON Patch without mutating the supplied document.
++ *
++ * @param document The JSON document to update.
++ * @param patch The array of JSON Patch operations.
++ * @returns A new JSON document containing the applied operations.
++ * @throws {Error} If the document or patch is invalid, or an operation cannot be applied.
++ */
++export function applyPatch(document: unknown, patch: unknown): unknown {
++  let result = cloneJsonValue(document, 'The JSON document is invalid.');
++
++  if (!Array.isArray(patch)) {
++    throw new Error('A JSON Patch must be an array of operations.');
++  }
++
++  for (const operation of patch) {
++    result = applyOperation(result, operation);
++  }
++
++  return result;
++}
++
++function applyOperation(document: JsonValue, operation: unknown): JsonValue {
++  if (!isJsonObject(operation) || Array.isArray(operation)) {
++    throw new Error('A JSON Patch operation must be an object.');
++  }
++
++  const op = requiredStringMember(operation, 'op');
++  const path = parsePointer(requiredStringMember(operation, 'path'));
++
++  switch (op) {
++    case 'add':
++      return addValue(document, path, requiredJsonMember(operation, 'value'));
++    case 'remove':
++      return removeValue(document, path);
++    case 'replace':
++      getValue(document, path);
++      return addValue(document, path, requiredJsonMember(operation, 'value'));
++    case 'move': {
++      const from = parsePointer(requiredStringMember(operation, 'from'));
++      if (isProperDescendant(path, from)) {
++        throw new Error('A JSON Patch move cannot move a value into one of its children.');
++      }
++      if (samePointer(path, from)) {
++        return document;
++      }
++      const value = getValue(document, from);
++      return addValue(removeValue(document, from), path, value);
++    }
++    case 'copy': {
++      const value = getValue(document, parsePointer(requiredStringMember(operation, 'from')));
++      return addValue(document, path, value);
++    }
++    case 'test':
++      if (!jsonEquals(getValue(document, path), requiredJsonMember(operation, 'value'))) {
++        throw new Error('A JSON Patch test operation failed.');
++      }
++      return document;
++    default:
++      throw new Error('A JSON Patch operation has an unsupported op member.');
++  }
++}
++
++type JsonValue = null | boolean | number | string | JsonValue[] | JsonObject;
++type JsonObject = { [member: string]: JsonValue };
++
++function parsePointer(pointer: string): string[] {
++  if (pointer === '') {
++    return [];
++  }
++  if (!pointer.startsWith('/')) {
++    throw new Error('A non-empty JSON Pointer must begin with a slash.');
++  }
++  return pointer.slice(1).split('/').map(decodeReferenceToken);
++}
++
++function getValue(document: JsonValue, path: string[]): JsonValue {
++  let value = document;
++  for (const token of path) {
++    if (Array.isArray(value)) {
++      if (!isArrayIndex(token) || Number(token) >= value.length) {
++        throw new Error('The JSON Patch path does not resolve to an array value.');
++      }
++      value = value[Number(token)];
++    } else if (isJsonObject(value) && Object.hasOwn(value, token)) {
++      value = value[token];
++    } else {
++      throw new Error('The JSON Patch path does not resolve to a value.');
++    }
++  }
++  return value;
++}
++
++function addValue(document: JsonValue, path: string[], value: JsonValue): JsonValue {
++  if (path.length === 0) {
++    return cloneJsonValue(value, 'A JSON Patch value is invalid.');
++  }
++
++  const { parent, token } = getParent(document, path);
++  if (Array.isArray(parent)) {
++    if (token === '-') {
++      parent.push(cloneJsonValue(value, 'A JSON Patch value is invalid.'));
++    } else if (isArrayIndex(token) && Number(token) <= parent.length) {
++      parent.splice(Number(token), 0, cloneJsonValue(value, 'A JSON Patch value is invalid.'));
++    } else {
++      throw new Error('A JSON Patch add path has an invalid array index.');
++    }
++  } else {
++    setObjectMember(parent, token, cloneJsonValue(value, 'A JSON Patch value is invalid.'));
++  }
++  return document;
++}
++
++function removeValue(document: JsonValue, path: string[]): JsonValue {
++  if (path.length === 0) {
++    throw new Error('A JSON Patch cannot remove the document root.');
++  }
++
++  const { parent, token } = getParent(document, path);
++  if (Array.isArray(parent)) {
++    if (!isArrayIndex(token) || Number(token) >= parent.length) {
++      throw new Error('A JSON Patch remove path does not resolve to an array value.');
++    }
++    parent.splice(Number(token), 1);
++  } else {
++    if (!Object.hasOwn(parent, token)) {
++      throw new Error('A JSON Patch remove path does not resolve to a value.');
++    }
++    delete parent[token];
++  }
++  return document;
++}
++
++function getParent(document: JsonValue, path: string[]): { parent: JsonValue[] | JsonObject; token: string } {
++  const parent = getValue(document, path.slice(0, -1));
++  if (Array.isArray(parent) || isJsonObject(parent)) {
++    return { parent, token: path[path.length - 1] };
++  }
++  throw new Error('A JSON Patch path cannot add a member to a primitive value.');
++}
++
++function requiredStringMember(operation: Record<string, unknown>, member: string): string {
++  if (!Object.hasOwn(operation, member) || typeof operation[member] !== 'string') {
++    throw new Error(`A JSON Patch operation requires a string ${member} member.`);
++  }
++  return operation[member];
++}
++
++function requiredJsonMember(operation: Record<string, unknown>, member: string): JsonValue {
++  if (!Object.hasOwn(operation, member)) {
++    throw new Error(`A JSON Patch operation requires a ${member} member.`);
++  }
++  return cloneJsonValue(operation[member], `A JSON Patch ${member} member is invalid.`);
++}
++
++function cloneJsonValue(value: unknown, errorMessage: string, seen = new Set<object>()): JsonValue {
++  if (value === null || typeof value === 'boolean' || typeof value === 'string') {
++    return value;
++  }
++  if (typeof value === 'number') {
++    if (Number.isFinite(value)) {
++      return value;
++    }
++    throw new Error(errorMessage);
++  }
++  if (Array.isArray(value)) {
++    if (seen.has(value)) {
++      throw new Error(errorMessage);
++    }
++    seen.add(value);
++    const clone = value.map((item) => cloneJsonValue(item, errorMessage, seen));
++    seen.delete(value);
++    return clone;
++  }
++  if (isJsonObject(value) && !Array.isArray(value) && isPlainObject(value)) {
++    if (seen.has(value)) {
++      throw new Error(errorMessage);
++    }
++    seen.add(value);
++    const clone: JsonObject = {};
++    for (const key of Object.keys(value)) {
++      setObjectMember(clone, key, cloneJsonValue(value[key], errorMessage, seen));
++    }
++    seen.delete(value);
++    return clone;
++  }
++  throw new Error(errorMessage);
++}
++
++function jsonEquals(left: JsonValue, right: JsonValue): boolean {
++  if (typeof left !== typeof right || left === null || right === null) {
++    return left === right;
++  }
++  if (typeof left === 'number' || typeof left === 'string' || typeof left === 'boolean') {
++    return left === right;
++  }
++  if (Array.isArray(left) || Array.isArray(right)) {
++    return Array.isArray(left) && Array.isArray(right)
++      && left.length === right.length
++      && left.every((value, index) => jsonEquals(value, right[index]));
++  }
++  const leftObject = left as JsonObject;
++  const rightObject = right as JsonObject;
++  const leftKeys = Object.keys(leftObject);
++  const rightKeys = Object.keys(rightObject);
++  return leftKeys.length === rightKeys.length
++    && leftKeys.every((key) => Object.hasOwn(rightObject, key) && jsonEquals(leftObject[key], rightObject[key]));
++}
++
++function samePointer(left: string[], right: string[]): boolean {
++  return left.length === right.length && left.every((token, index) => token === right[index]);
++}
++
++function isProperDescendant(path: string[], ancestor: string[]): boolean {
++  return path.length > ancestor.length && ancestor.every((token, index) => token === path[index]);
++}
++
++function setObjectMember(object: JsonObject, member: string, value: JsonValue): void {
++  Object.defineProperty(object, member, {
++    configurable: true,
++    enumerable: true,
++    value,
++    writable: true,
++  });
++}
++
++function isPlainObject(value: object): boolean {
++  const prototype = Object.getPrototypeOf(value);
++  return prototype === Object.prototype || prototype === null;
++}
++
+ function decodeReferenceToken(token: string): string {
+   let decoded = '';
+ 
+diff --git a/test/applyPatch.test.mjs b/test/applyPatch.test.mjs
+new file mode 100644
+index 0000000000000000000000000000000000000000..658b6cd70c2ae0f434cc0987998698988155607b
+--- /dev/null
++++ b/test/applyPatch.test.mjs
+@@ -0,0 +1,70 @@
++import assert from 'node:assert/strict';
++import test from 'node:test';
++
++const { applyPatch } = await import('../dist/index.js');
++
++test('applies all RFC 6902 operations without mutating the document', () => {
++  const document = {
++    foo: ['bar', 'baz'],
++    nested: { value: 1 },
++    source: { copied: true },
++  };
++
++  const result = applyPatch(document, [
++    { op: 'add', path: '/foo/1', value: 'qux' },
++    { op: 'add', path: '/foo/-', value: 'tail' },
++    { op: 'remove', path: '/foo/0' },
++    { op: 'replace', path: '/nested/value', value: 2 },
++    { op: 'move', from: '/foo/0', path: '/foo/2' },
++    { op: 'copy', from: '/source', path: '/duplicate' },
++    { op: 'test', path: '/duplicate', value: { copied: true } },
++  ]);
++
++  assert.deepEqual(result, {
++    foo: ['baz', 'tail', 'qux'],
++    nested: { value: 2 },
++    source: { copied: true },
++    duplicate: { copied: true },
++  });
++  assert.deepEqual(document, {
++    foo: ['bar', 'baz'],
++    nested: { value: 1 },
++    source: { copied: true },
++  });
++  assert.notEqual(result.duplicate, document.source);
++});
++
++test('supports root replacement and escaped object member paths', () => {
++  assert.deepEqual(
++    applyPatch({ 'a/b': { 'm~n': 1 } }, [
++      { op: 'replace', path: '/a~1b/m~0n', value: 2 },
++      { op: 'add', path: '', value: ['root'] },
++    ]),
++    ['root'],
++  );
++});
++
++test('treats __proto__ as an ordinary JSON object member', () => {
++  const result = applyPatch({}, [{ op: 'add', path: '/__proto__', value: { safe: true } }]);
++
++  assert.equal(Object.hasOwn(result, '__proto__'), true);
++  assert.deepEqual(result.__proto__, { safe: true });
++  assert.equal(Object.getPrototypeOf(result), Object.prototype);
++});
++
++test('rejects malformed patches and failed operations', () => {
++  const document = { array: ['first'], object: { value: true } };
++
++  for (const patch of [
++    [{ op: 'add', path: '/array/2', value: 'nope' }],
++    [{ op: 'remove', path: '' }],
++    [{ op: 'replace', path: '/missing', value: 1 }],
++    [{ op: 'move', from: '/object', path: '/object/child' }],
++    [{ op: 'test', path: '/object/value', value: false }],
++    [{ op: 'copy', path: '/copy' }],
++    [{ op: 'unknown', path: '/value' }],
++    { op: 'add', path: '/value', value: 1 },
++  ]) {
++    assert.throws(() => applyPatch(document, patch));
++  }
++});

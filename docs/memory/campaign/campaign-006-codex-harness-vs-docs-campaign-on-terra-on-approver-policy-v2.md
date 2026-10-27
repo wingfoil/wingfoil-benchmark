@@ -68,7 +68,38 @@ cost was 14.45 USD API-equivalent for the 18 runs, below this estimate's high 18
 
 ## Execution
 
-<!-- Execution id(s) `<campaign-id>/<n>`, outcomes, caps reached, reruns. -->
+- **Spending approved** by the approver (`1dc823af`), the quota read by the approver first (100 % of the 5-hour
+  window, 70 % of the week); run by the agent at the approver's explicit request in chat (2026-10-26, "lancia la
+  campagna"). **approved → running** on start (`af37aa5d`).
+- **`13fda3099afa/1`**, `bench campaign run campaigns/codex-terra-harness-vs-docs-v2.yaml --allow-spending` from the
+  main checkout, in two legs:
+  1. 2026-10-26 19:50–21:43 UTC: 10 runs completed; S2 baseline-docs r1 stopped at the subscription's quota at step 2
+     (its attempt kept in `attempts/1`: step 1 completed at 0.1053 USD, step 2 at 0). Leg cost 9.6570 USD.
+  2. Resumed automatically at the quota's reset, at the approver's request in chat ("programma tu la ripresa al reset
+     della quota"): a script read Codex's "try again at Oct 27th, 2026 12:51 AM" (UTC) from the stopped step and
+     resumed (`--resume 13fda3099afa/1`) at 00:56 UTC: the 8 other runs completed, the execution `completed` at
+     01:59 UTC. Leg cost 5.6630 USD.
+- **Outcome:** 18 runs completed, 0 failed; one run on a second attempt (S2 baseline-docs r1, after the quota stop).
+  No cap reached. Cost: 15.3200 USD, 13.6608 EUR at 0.8917 EUR/USD, API-equivalent (`price-table`), the two legs'
+  totals; 0 € spent (ChatGPT Plus, dl-025). The secret scan of `results/13fda3099afa/1/` and `runs/13fda3099afa/1/`
+  (plain files and every git object) after each leg: clean.
+- **Interventions (approver policy v2):** the wingfoil arm 13 in its 27 steps (S1 r1 3, r2 2, r3 1, S2 1, S3 4, S8 2),
+  every one "Approved. Proceed."; baseline and baseline-docs 0. No step of any arm ended still waiting (each step's
+  last message read by classifier v2: none waiting). campaign-005 on v1: 1 intervention and 6 requests left unanswered.
+- **Scored** (`bench score 13fda3099afa/1 --holdout ../WingFoil2-Benchmark-HoldOut`): `aggregate.json`, 12 groups;
+  determinism measured in 3, n = 1 in 9.
+
+| Scenario | Run | baseline | baseline-docs | wingfoil |
+|---|---|---|---|---|
+| S1 | r1 | 165/165, 48/48 | 164/165, 45/48 | 165/165, 48/48 |
+| S1 | r2 | 165/165, 48/48 | 164/165, 45/48 | 164/165, 46/48 |
+| S1 | r3 | 165/165, 48/48 | 165/165, 48/48 | 165/165, 48/48 |
+| S2 | r1 | 23/24, 16/17, checks 0/3 | 23/24, 16/17, checks 0/3 | 23/24, 16/17, checks 0/3 |
+| S3 | r1 | 34/37, 16/17, checks 0/1, M-F1 3/5 | 37/37, 16/17, checks 0/1, M-F1 4/5 | 37/37, 16/17, checks 1/1, M-F1 5/5 |
+| S8 | r1 | 23/23, 6/7, checks 12/16 | 23/23, 6/7, checks 16/16 | 23/23, 6/7, checks 16/16 |
+
+Each cell: final public tests, hold-out, then checks and M-F1 where the scenario has them; from the scoring's output.
+Run costs (USD, API-equivalent): baseline 0.31–0.86, baseline-docs 0.42–0.88, wingfoil 0.61–1.58.
 
 ## Results review
 

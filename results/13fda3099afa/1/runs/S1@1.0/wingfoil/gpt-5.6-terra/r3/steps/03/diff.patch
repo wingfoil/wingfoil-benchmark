@@ -1,0 +1,135 @@
+diff --git a/README.md b/README.md
+index 542867154d33ae94839e0a8c66685c8a22eaf9e6..7c1f2b9e4bd62ab3d6e9c28b33a571cb35d49f41 100644
+--- a/README.md
++++ b/README.md
+@@ -27,3 +27,6 @@ import { applyPatch } from "json-toolkit";
+ applyPatch({ users: ["Ada"] }, [{ op: "add", path: "/users/-", value: "Grace" }]);
+ // { users: ["Ada", "Grace"] }
+ ```
++
++Both inputs must be JSON values. Operations are evaluated in order and processing stops at the first
++RFC 6902 error; because the input document is never changed, a failed patch leaves it intact.
+diff --git a/docs/memory/task/task-003-conform-json-patch-to-rfc-6902.md b/docs/memory/task/task-003-conform-json-patch-to-rfc-6902.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..829ae792ba8831bfbee7f9fc66b6a18f3f3a224a
+--- /dev/null
++++ b/docs/memory/task/task-003-conform-json-patch-to-rfc-6902.md
+@@ -0,0 +1,17 @@
++---
++id: task-003-conform-json-patch-to-rfc-6902
++type: task
++title: "Conform JSON Patch to RFC 6902"
++status: pending
++format: 1
++---
++
++## Work completed
++
++Validated JSON Patch input as JSON and required `op`, `path`, and `from`
++members to be own members of operation objects. `move` now verifies its source
++exists even when source and destination paths are identical.
++
++Added regression tests for inherited/non-JSON operation objects, identity moves
++with missing sources, and source-document immutability when a later operation
++fails. Documented sequential error handling and input immutability in the README.
+diff --git a/src/index.ts b/src/index.ts
+index 00b5c14c2a195c1657d361b5a96b1367b5f8dcaf..7cdd8dd2e3ee984786ccb81c26861fad27b63636 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -55,7 +55,7 @@ export function applyPatch(document: unknown, patch: unknown): unknown {
+   if (!isJsonValue(document)) {
+     throw new Error("Invalid JSON document");
+   }
+-  if (!Array.isArray(patch)) {
++  if (!Array.isArray(patch) || !isJsonValue(patch)) {
+     throw new Error("Invalid JSON Patch");
+   }
+ 
+@@ -67,7 +67,13 @@ export function applyPatch(document: unknown, patch: unknown): unknown {
+ }
+ 
+ function applyOperation(document: JsonValue, rawOperation: unknown): JsonValue {
+-  if (!isRecord(rawOperation) || typeof rawOperation.op !== "string" || typeof rawOperation.path !== "string") {
++  if (
++    !isJsonObject(rawOperation)
++    || !Object.hasOwn(rawOperation, "op")
++    || !Object.hasOwn(rawOperation, "path")
++    || typeof rawOperation.op !== "string"
++    || typeof rawOperation.path !== "string"
++  ) {
+     throw new Error("Invalid JSON Patch operation");
+   }
+ 
+@@ -144,13 +150,13 @@ function replace(document: JsonValue, path: string[], operation: PatchOperation)
+ 
+ function move(document: JsonValue, path: string[], operation: PatchOperation): JsonValue {
+   const from = requiredFrom(operation);
++  const value = getValue(document, from);
+   if (path.length === from.length && path.every((token, index) => token === from[index])) {
+     return document;
+   }
+   if (isProperDescendant(path, from)) {
+     throw new Error("Cannot move a value into one of its children");
+   }
+-  const value = getValue(document, from);
+   return add(remove(document, from), path, { value });
+ }
+ 
+@@ -173,7 +179,7 @@ function requiredValue(operation: PatchOperation): JsonValue {
+ }
+ 
+ function requiredFrom(operation: PatchOperation): string[] {
+-  if (typeof operation.from !== "string") {
++  if (!Object.hasOwn(operation, "from") || typeof operation.from !== "string") {
+     throw new Error("JSON Patch move and copy operations require a from path");
+   }
+   return parsePointer(operation.from);
+@@ -271,7 +277,7 @@ function isJsonValue(value: unknown): value is JsonValue {
+     return Number.isFinite(value);
+   }
+   if (Array.isArray(value)) {
+-    return value.every(isJsonValue);
++    return Array.from(value).every(isJsonValue);
+   }
+   return isJsonObject(value) && Object.values(value).every(isJsonValue);
+ }
+diff --git a/test/index.test.js b/test/index.test.js
+index f9e41a9009a68a921370be955d07cd78e2c29f0d..ed334ab455d930aa4b7c29bd16d98baad6343fe4 100644
+--- a/test/index.test.js
++++ b/test/index.test.js
+@@ -84,3 +84,35 @@ test("rejects malformed patches and failing operations", () => {
+     assert.throws(() => applyPatch(document, patch));
+   }
+ });
++
++test("rejects non-JSON operation objects and inherited required members", () => {
++  const inheritedOperation = Object.create({ op: "add", path: "/value", value: 2 });
++  const inheritedFrom = Object.create({ from: "/value" });
++  inheritedFrom.op = "copy";
++  inheritedFrom.path = "/copy";
++
++  assert.throws(() => applyPatch({ value: 1 }, [inheritedOperation]));
++  assert.throws(() => applyPatch({ value: 1 }, [inheritedFrom]));
++});
++
++test("rejects sparse arrays, which are not JSON values", () => {
++  const sparseArray = new Array(1);
++
++  assert.throws(() => applyPatch(sparseArray, []));
++  assert.throws(() => applyPatch({}, [{ op: "add", path: "/value", value: sparseArray }]));
++});
++
++test("requires the source of an identity move to exist", () => {
++  assert.throws(() => applyPatch({}, [{ op: "move", from: "/missing", path: "/missing" }]));
++});
++
++test("leaves the supplied document unchanged when a later operation fails", () => {
++  const source = { value: 1 };
++
++  assert.throws(() => applyPatch(source, [
++    { op: "replace", path: "/value", value: 2 },
++    { op: "test", path: "/value", value: 3 },
++  ]));
++
++  assert.deepEqual(source, { value: 1 });
++});

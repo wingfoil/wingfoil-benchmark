@@ -1,0 +1,202 @@
+diff --git a/src/index.ts b/src/index.ts
+index 57e148f6f67a7f1ffdf9225c2759f9d13b9f0218..b54e02cb615cb634fd5b7410a202f4285a53587e 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -117,6 +117,23 @@ export function applyPatch(document: unknown, patch: unknown): unknown {
+   return result === removedDocument ? undefined : result;
+ }
+ 
++/**
++ * Creates an RFC 6902 JSON Patch that transforms `from` into `to`.
++ *
++ * Both arguments must be JSON values. Neither is changed, and values placed
++ * in the returned patch are detached copies of values from `to`.
++ */
++export function createPatch(from: unknown, to: unknown): Array<Record<string, unknown>> {
++  // Apart from validating the public inputs, copying here means the patch can
++  // never retain a reference into either caller-owned document.
++  const source = cloneJson(from, "source JSON document");
++  const target = cloneJson(to, "target JSON document");
++  const patch: Array<Record<string, unknown>> = [];
++
++  createPatchOperations(source, target, "", patch);
++  return patch;
++}
++
+ /**
+  * Applies an RFC 7386 JSON Merge Patch without changing either supplied
+  * document. Object-valued patches merge recursively; every other patch value
+@@ -153,6 +170,173 @@ function mergePatch(target: unknown, patch: unknown): unknown {
+   return result;
+ }
+ 
++function createPatchOperations(
++  from: unknown,
++  to: unknown,
++  path: string,
++  patch: Array<Record<string, unknown>>,
++): void {
++  if (jsonEqual(from, to)) {
++    return;
++  }
++
++  if (isJsonObject(from) && isJsonObject(to)) {
++    for (const key of Object.keys(from)) {
++      if (!Object.hasOwn(to, key)) {
++        patch.push({ op: "remove", path: appendPointer(path, key) });
++      }
++    }
++    for (const key of Object.keys(to)) {
++      const memberPath = appendPointer(path, key);
++      if (Object.hasOwn(from, key)) {
++        createPatchOperations(from[key], to[key], memberPath, patch);
++      } else {
++        patch.push({ op: "add", path: memberPath, value: cloneJson(to[key], "JSON Patch value") });
++      }
++    }
++    return;
++  }
++
++  if (Array.isArray(from) && Array.isArray(to)) {
++    createArrayPatchOperations(from, to, path, patch);
++    return;
++  }
++
++  patch.push({ op: "replace", path, value: cloneJson(to, "JSON Patch value") });
++}
++
++function createArrayPatchOperations(
++  from: unknown[],
++  to: unknown[],
++  path: string,
++  patch: Array<Record<string, unknown>>,
++): void {
++  // Keeping equal ends is important: an insertion near the beginning should
++  // be one `add`, rather than replacements for every shifted array element.
++  let prefixLength = 0;
++  while (prefixLength < from.length && prefixLength < to.length
++    && jsonEqual(from[prefixLength], to[prefixLength])) {
++    prefixLength += 1;
++  }
++
++  let suffixLength = 0;
++  while (suffixLength < from.length - prefixLength && suffixLength < to.length - prefixLength
++    && jsonEqual(from[from.length - suffixLength - 1], to[to.length - suffixLength - 1])) {
++    suffixLength += 1;
++  }
++
++  const fromMiddleLength = from.length - prefixLength - suffixLength;
++  const toMiddleLength = to.length - prefixLength - suffixLength;
++  const matches = findArrayMatches(
++    from, prefixLength, fromMiddleLength, to, prefixLength, toMiddleLength,
++  );
++
++  // An LCS keeps unchanged runs in the middle too. For example, inserting
++  // twice into a long array produces two adds, not replacements for every
++  // element between the insertions. The bounded fallback remains linear for
++  // exceptionally large, entirely changed arrays.
++  let fromOffset = 0;
++  let toOffset = 0;
++  let currentIndex = prefixLength;
++  for (const match of matches) {
++    currentIndex = createArraySegmentPatchOperations(
++      from, prefixLength + fromOffset, match.fromIndex - fromOffset,
++      to, prefixLength + toOffset, match.toIndex - toOffset,
++      path, currentIndex, patch,
++    );
++    fromOffset = match.fromIndex + 1;
++    toOffset = match.toIndex + 1;
++    currentIndex += 1;
++  }
++  createArraySegmentPatchOperations(
++    from, prefixLength + fromOffset, fromMiddleLength - fromOffset,
++    to, prefixLength + toOffset, toMiddleLength - toOffset,
++    path, currentIndex, patch,
++  );
++}
++
++function createArraySegmentPatchOperations(
++  from: unknown[],
++  fromStart: number,
++  fromLength: number,
++  to: unknown[],
++  toStart: number,
++  toLength: number,
++  path: string,
++  currentIndex: number,
++  patch: Array<Record<string, unknown>>,
++): number {
++  const sharedLength = Math.min(fromLength, toLength);
++
++  // Pairing values which have no exact counterpart still permits a small
++  // recursive object/array patch for an in-place modification.
++  for (let index = 0; index < sharedLength; index += 1) {
++    createPatchOperations(
++      from[fromStart + index],
++      to[toStart + index],
++      appendPointer(path, String(currentIndex + index)),
++      patch,
++    );
++  }
++  for (let index = fromLength - 1; index >= sharedLength; index -= 1) {
++    patch.push({ op: "remove", path: appendPointer(path, String(currentIndex + index)) });
++  }
++  for (let index = sharedLength; index < toLength; index += 1) {
++    patch.push({
++      op: "add",
++      path: appendPointer(path, String(currentIndex + index)),
++      value: cloneJson(to[toStart + index], "JSON Patch value"),
++    });
++  }
++  return currentIndex + toLength;
++}
++
++function findArrayMatches(
++  from: unknown[],
++  fromStart: number,
++  fromLength: number,
++  to: unknown[],
++  toStart: number,
++  toLength: number,
++): Array<{ fromIndex: number; toIndex: number }> {
++  const columns = toLength + 1;
++  // Dynamic programming gives useful, stable diffs for ordinary arrays, but
++  // avoid quadratic space for a huge pair of arrays with no common sections.
++  if (fromLength * toLength > 1_000_000) {
++    return [];
++  }
++
++  const lengths = new Uint32Array((fromLength + 1) * columns);
++  for (let fromIndex = fromLength - 1; fromIndex >= 0; fromIndex -= 1) {
++    for (let toIndex = toLength - 1; toIndex >= 0; toIndex -= 1) {
++      const offset = fromIndex * columns + toIndex;
++      lengths[offset] = jsonEqual(from[fromStart + fromIndex], to[toStart + toIndex])
++        ? lengths[(fromIndex + 1) * columns + toIndex + 1] + 1
++        : Math.max(lengths[(fromIndex + 1) * columns + toIndex], lengths[fromIndex * columns + toIndex + 1]);
++    }
++  }
++
++  const matches: Array<{ fromIndex: number; toIndex: number }> = [];
++  let fromIndex = 0;
++  let toIndex = 0;
++  while (fromIndex < fromLength && toIndex < toLength) {
++    if (jsonEqual(from[fromStart + fromIndex], to[toStart + toIndex])) {
++      matches.push({ fromIndex, toIndex });
++      fromIndex += 1;
++      toIndex += 1;
++    } else if (lengths[(fromIndex + 1) * columns + toIndex] >= lengths[fromIndex * columns + toIndex + 1]) {
++      fromIndex += 1;
++    } else {
++      toIndex += 1;
++    }
++  }
++  return matches;
++}
++
++function appendPointer(path: string, token: string): string {
++  return `${path}/${token.replace(/~/g, "~0").replace(/\//g, "~1")}`;
++}
++
+ const removedDocument = Symbol("removed JSON document");
+ 
+ function requireValue(operation: Record<string, unknown>, op: string): void {

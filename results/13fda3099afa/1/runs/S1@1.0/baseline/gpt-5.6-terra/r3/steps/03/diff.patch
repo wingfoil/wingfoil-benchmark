@@ -1,0 +1,148 @@
+diff --git a/src/index.ts b/src/index.ts
+index 077dd358381cbe2d43ef760f9cb2f6ef3bccd1b9..df9983eb86fa47c09370e4fb33d96ff2ff1acabe 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -44,22 +44,27 @@ export function resolvePointer(document: unknown, pointer: string): unknown {
+  * Applies an RFC 6902 JSON Patch without changing the supplied document.
+  */
+ export function applyPatch(document: unknown, patch: unknown): unknown {
+-  if (!Array.isArray(patch)) {
++  // JSON Patch is itself a JSON document.  Copying it before evaluation makes
++  // its operation objects ordinary JSON objects (rather than arbitrary
++  // JavaScript objects with inherited members, accessors, or later mutation).
++  const patchDocument = cloneJson(patch, "JSON Patch document");
++  if (!Array.isArray(patchDocument)) {
+     throw new Error("JSON Patch must be an array of operations");
+   }
+ 
+-  let result = cloneJson(document, "document");
++  let result: unknown | typeof removedDocument = cloneJson(document, "document");
+ 
+-  for (const operation of patch) {
++  for (const operation of patchDocument) {
+     if (!isJsonObject(operation)) {
+       throw new Error("JSON Patch operation must be an object");
+     }
+ 
+-    const op = operation.op;
+-    const path = operation.path;
+-    if (typeof op !== "string" || typeof path !== "string") {
++    if (!Object.hasOwn(operation, "op") || !Object.hasOwn(operation, "path")
++      || typeof operation.op !== "string" || typeof operation.path !== "string") {
+       throw new Error("JSON Patch operation must contain string 'op' and 'path' members");
+     }
++    const op = operation.op;
++    const path = operation.path;
+     // Decode now so malformed pointers are rejected even for operations such as
+     // `test` whose target happens to be the document root.
+     parsePointer(path);
+@@ -106,9 +111,14 @@ export function applyPatch(document: unknown, patch: unknown): unknown {
+     }
+   }
+ 
+-  return result;
++  // RFC 6902 permits a remove operation to target the document root.  There
++  // is no JSON value representing a document with no root, so expose that
++  // state as undefined at this API boundary.
++  return result === removedDocument ? undefined : result;
+ }
+ 
++const removedDocument = Symbol("removed JSON document");
++
+ function requireValue(operation: Record<string, unknown>, op: string): void {
+   if (!Object.hasOwn(operation, "value")) {
+     throw new Error(`JSON Patch '${op}' operation requires a 'value' member`);
+@@ -123,7 +133,7 @@ function requireFrom(operation: Record<string, unknown>, op: string): string {
+   return operation.from;
+ }
+ 
+-function addValue(document: unknown, path: string, value: unknown): unknown {
++function addValue(document: unknown | typeof removedDocument, path: string, value: unknown): unknown {
+   if (path === "") {
+     return value;
+   }
+@@ -144,9 +154,12 @@ function addValue(document: unknown, path: string, value: unknown): unknown {
+   return document;
+ }
+ 
+-function removeValue(document: unknown, path: string): unknown {
++function removeValue(document: unknown | typeof removedDocument, path: string): unknown | typeof removedDocument {
+   if (path === "") {
+-    throw new Error("Cannot remove the document root");
++    if (document === removedDocument) {
++      throw unresolved(path);
++    }
++    return removedDocument;
+   }
+ 
+   const { parent, token } = getParent(document, path);
+@@ -164,8 +177,11 @@ function removeValue(document: unknown, path: string): unknown {
+   return document;
+ }
+ 
+-function replaceValue(document: unknown, path: string, value: unknown): unknown {
++function replaceValue(document: unknown | typeof removedDocument, path: string, value: unknown): unknown {
+   if (path === "") {
++    if (document === removedDocument) {
++      throw unresolved(path);
++    }
+     return value;
+   }
+ 
+@@ -183,11 +199,14 @@ function replaceValue(document: unknown, path: string, value: unknown): unknown
+   return document;
+ }
+ 
+-function getValue(document: unknown, path: string): unknown {
++function getValue(document: unknown | typeof removedDocument, path: string): unknown {
++  if (document === removedDocument) {
++    throw unresolved(path);
++  }
+   return resolvePointer(document, path);
+ }
+ 
+-function getParent(document: unknown, path: string): { parent: unknown; token: string } {
++function getParent(document: unknown | typeof removedDocument, path: string): { parent: unknown; token: string } {
+   const tokens = parsePointer(path);
+   // Callers have already handled the root path.
+   const token = tokens[tokens.length - 1];
+@@ -267,9 +286,16 @@ function cloneJson(value: unknown, name: string, ancestors = new Set<object>()):
+     return value;
+   }
+   if (Array.isArray(value)) {
+-    if (ancestors.has(value) || Object.keys(value).length !== value.length) {
++    if (ancestors.has(value) || Object.getOwnPropertyNames(value).length !== value.length + 1
++      || Object.getOwnPropertySymbols(value).length !== 0) {
+       throw new Error(`${name} is not valid JSON`);
+     }
++    for (let index = 0; index < value.length; index += 1) {
++      const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
++      if (descriptor === undefined || !("value" in descriptor)) {
++        throw new Error(`${name} is not valid JSON`);
++      }
++    }
+     ancestors.add(value);
+     const copy = value.map((item) => cloneJson(item, name, ancestors));
+     ancestors.delete(value);
+@@ -280,10 +306,19 @@ function cloneJson(value: unknown, name: string, ancestors = new Set<object>()):
+     if (ancestors.has(value) || (prototype !== Object.prototype && prototype !== null)) {
+       throw new Error(`${name} is not valid JSON`);
+     }
++    const keys = Object.keys(value);
++    if (Object.getOwnPropertyNames(value).length !== keys.length
++      || Object.getOwnPropertySymbols(value).length !== 0) {
++      throw new Error(`${name} is not valid JSON`);
++    }
+     ancestors.add(value);
+     const copy: Record<string, unknown> = {};
+-    for (const key of Object.keys(value)) {
+-      setObjectMember(copy, key, cloneJson(value[key], name, ancestors));
++    for (const key of keys) {
++      const descriptor = Object.getOwnPropertyDescriptor(value, key);
++      if (descriptor === undefined || !("value" in descriptor)) {
++        throw new Error(`${name} is not valid JSON`);
++      }
++      setObjectMember(copy, key, cloneJson(descriptor.value, name, ancestors));
+     }
+     ancestors.delete(value);
+     return copy;

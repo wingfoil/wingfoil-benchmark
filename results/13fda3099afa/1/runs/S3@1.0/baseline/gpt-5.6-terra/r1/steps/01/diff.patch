@@ -1,0 +1,151 @@
+diff --git a/src/index.ts b/src/index.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..24389fd8e474117dfd3001c49e02235d74482ed5
+--- /dev/null
++++ b/src/index.ts
+@@ -0,0 +1,145 @@
++export type EquipmentKind = 'board' | 'sail';
++
++export interface Equipment {
++  id: string;
++  kind: EquipmentKind;
++  /** Price for one full day, in euro cents. */
++  dailyPrice: number;
++}
++
++export interface RentalRequest {
++  itemId: string;
++  start: string;
++  end: string;
++}
++
++export interface RentalQuote {
++  itemId: string;
++  start: string;
++  end: string;
++  total: number;
++}
++
++export interface RentalBooking extends RentalQuote {
++  id: string;
++}
++
++export interface RentalService {
++  addEquipment(item: Equipment): void;
++  quote(request: RentalRequest): RentalQuote;
++  book(request: RentalRequest): RentalBooking;
++}
++
++interface StoredBooking extends RentalBooking {
++  startTime: number;
++  endTime: number;
++}
++
++const DAY_IN_MILLISECONDS = 24 * 60 * 60 * 1000;
++const UTC_ISO_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/;
++
++/**
++ * Creates an in-memory service for the school's board and sail rentals.
++ */
++export function createRentalService(): RentalService {
++  const equipment = new Map<string, Equipment>();
++  const bookings: StoredBooking[] = [];
++  let nextBookingNumber = 1;
++
++  function addEquipment(item: Equipment): void {
++    if (!item || typeof item.id !== 'string') {
++      throw new Error('Equipment id must be a string.');
++    }
++    if (item.kind !== 'board' && item.kind !== 'sail') {
++      throw new Error('Equipment kind must be "board" or "sail".');
++    }
++    if (!Number.isSafeInteger(item.dailyPrice) || item.dailyPrice < 0) {
++      throw new Error('Daily price must be a non-negative integer number of euro cents.');
++    }
++    if (equipment.has(item.id)) {
++      throw new Error(`Equipment with id "${item.id}" already exists.`);
++    }
++
++    // Copy the value so later caller changes do not alter the service's state.
++    equipment.set(item.id, { ...item });
++  }
++
++  function quote(request: RentalRequest): RentalQuote {
++    const item = equipment.get(request?.itemId);
++    if (!item) {
++      throw new Error(`Unknown equipment item "${request?.itemId}".`);
++    }
++
++    const period = validatePeriod(request);
++    const days = (period.endTime - period.startTime) / DAY_IN_MILLISECONDS;
++    const total = item.dailyPrice * days;
++    if (!Number.isSafeInteger(total)) {
++      throw new Error('Rental total exceeds the supported money range.');
++    }
++
++    return {
++      itemId: request.itemId,
++      start: request.start,
++      end: request.end,
++      total,
++    };
++  }
++
++  function book(request: RentalRequest): RentalBooking {
++    const rentalQuote = quote(request);
++    const period = validatePeriod(request);
++    const isUnavailable = bookings.some(
++      (booking) =>
++        booking.itemId === request.itemId &&
++        period.startTime < booking.endTime &&
++        booking.startTime < period.endTime,
++    );
++    if (isUnavailable) {
++      throw new Error(`Equipment item "${request.itemId}" is not available for this period.`);
++    }
++
++    const booking: StoredBooking = {
++      id: `rental-${nextBookingNumber++}`,
++      ...rentalQuote,
++      startTime: period.startTime,
++      endTime: period.endTime,
++    };
++    bookings.push(booking);
++
++    const { startTime: _startTime, endTime: _endTime, ...result } = booking;
++    return result;
++  }
++
++  return { addEquipment, quote, book };
++}
++
++function validatePeriod(request: RentalRequest): { startTime: number; endTime: number } {
++  if (!request || typeof request.start !== 'string' || typeof request.end !== 'string') {
++    throw new Error('Rental start and end must be ISO-8601 UTC strings.');
++  }
++
++  const startTime = parseMidnightUtc(request.start, 'start');
++  const endTime = parseMidnightUtc(request.end, 'end');
++  if (endTime <= startTime) {
++    throw new Error('Rental end must be after its start.');
++  }
++
++  return { startTime, endTime };
++}
++
++function parseMidnightUtc(value: string, name: 'start' | 'end'): number {
++  if (!UTC_ISO_TIMESTAMP.test(value)) {
++    throw new Error(`Rental ${name} must be an ISO-8601 UTC timestamp.`);
++  }
++
++  const time = Date.parse(value);
++  if (
++    !Number.isFinite(time) ||
++    time % DAY_IN_MILLISECONDS !== 0 ||
++    new Date(time).toISOString().slice(0, 10) !== value.slice(0, 10)
++  ) {
++    throw new Error(`Rental ${name} must be midnight UTC.`);
++  }
++
++  return time;
++}

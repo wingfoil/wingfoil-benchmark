@@ -1,0 +1,140 @@
+diff --git a/README.md b/README.md
+index 2fdcda21040ac3f376cf4ddbced7b0aa58fc1753..8ddb31885d37da3850405ae002c399d73f64f659 100644
+--- a/README.md
++++ b/README.md
+@@ -28,3 +28,18 @@ import { applyPatch } from "json-toolkit";
+ applyPatch({ names: ["Ada"] }, [{ op: "add", path: "/names/-", value: "Lin" }]);
+ // { names: ["Ada", "Lin"] }
+ ```
++
++## JSON Merge Patch
++
++`applyMergePatch(target, patch)` applies an RFC 7386 JSON Merge Patch without
++changing either input. Object members set to `null` in a patch are removed;
++arrays and other non-object values replace their targets.
++
++```ts
++import { applyMergePatch } from "json-toolkit";
++
++applyMergePatch({ profile: { name: "Ada", title: "Engineer" } }, {
++  profile: { title: null },
++});
++// { profile: { name: "Ada" } }
++```
+diff --git a/src/index.ts b/src/index.ts
+index 38c3e8e4ac64ebc48f12de9b3929770c1bf721a9..d4e32a4794cbd2ed1e0d0c61ded4e7a55f2ed03d 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -55,6 +55,45 @@ export function applyPatch(document: unknown, patch: unknown): unknown {
+   return result;
+ }
+ 
++/**
++ * Applies an RFC 7386 JSON Merge Patch to a JSON document.
++ *
++ * Object members whose patch value is `null` are removed. Arrays and all
++ * non-object patch values replace the target. Neither input is modified.
++ *
++ * @param target The JSON document to update.
++ * @param patch The JSON Merge Patch document.
++ * @returns A new JSON document containing the merged result.
++ * @throws {Error} If the target or patch is not a JSON value.
++ */
++export function applyMergePatch(target: unknown, patch: unknown): unknown {
++  assertJsonValue(target, "target");
++  assertJsonValue(patch, "JSON Merge Patch");
++  return mergePatch(target, patch);
++}
++
++function mergePatch(target: unknown, patch: unknown): unknown {
++  if (!isJsonObject(patch)) {
++    return cloneJsonValue(patch);
++  }
++
++  const result = isJsonObject(target)
++    ? cloneJsonValue(target) as Record<string, unknown>
++    : {};
++
++  for (const key of Object.keys(patch)) {
++    const patchValue = patch[key];
++    if (patchValue === null) {
++      delete result[key];
++    } else {
++      const targetValue = Object.hasOwn(result, key) ? result[key] : undefined;
++      setObjectMember(result, key, mergePatch(targetValue, patchValue));
++    }
++  }
++
++  return result;
++}
++
+ type PatchOperation = Record<string, unknown>;
+ 
+ function applyOperation(document: unknown, rawOperation: unknown): unknown {
+@@ -223,6 +262,10 @@ function isObject(value: unknown): value is Record<string, unknown> {
+   return typeof value === "object" && value !== null;
+ }
+ 
++function isJsonObject(value: unknown): value is Record<string, unknown> {
++  return isObject(value) && !Array.isArray(value);
++}
++
+ function setObjectMember(object: Record<string, unknown>, key: string, value: unknown): void {
+   Object.defineProperty(object, key, { configurable: true, enumerable: true, value, writable: true });
+ }
+diff --git a/test/applyMergePatch.test.mjs b/test/applyMergePatch.test.mjs
+new file mode 100644
+index 0000000000000000000000000000000000000000..7e85cd507145691ec24a50623757ad377774ade1
+--- /dev/null
++++ b/test/applyMergePatch.test.mjs
+@@ -0,0 +1,50 @@
++import assert from "node:assert/strict";
++import test from "node:test";
++
++import { applyMergePatch } from "../src/index.ts";
++
++test("applies the RFC 7386 merge patch examples without mutating either input", () => {
++  const target = {
++    title: "Goodbye!",
++    author: { givenName: "John", familyName: "Doe" },
++    tags: ["example", "sample"],
++    content: "This will be unchanged",
++  };
++  const patch = {
++    title: "Hello!",
++    phoneNumber: "+01-123-456-7890",
++    author: { familyName: null },
++    tags: ["example"],
++  };
++
++  assert.deepEqual(applyMergePatch(target, patch), {
++    title: "Hello!",
++    author: { givenName: "John" },
++    tags: ["example"],
++    content: "This will be unchanged",
++    phoneNumber: "+01-123-456-7890",
++  });
++  assert.deepEqual(target, {
++    title: "Goodbye!",
++    author: { givenName: "John", familyName: "Doe" },
++    tags: ["example", "sample"],
++    content: "This will be unchanged",
++  });
++  assert.deepEqual(patch, {
++    title: "Hello!",
++    phoneNumber: "+01-123-456-7890",
++    author: { familyName: null },
++    tags: ["example"],
++  });
++});
++
++test("replaces non-object targets and patches, and treats null object members as removals", () => {
++  assert.deepEqual(applyMergePatch(["a", "b"], { 0: "c", added: true }), { 0: "c", added: true });
++  assert.deepEqual(applyMergePatch({ value: 1 }, ["replacement"]), ["replacement"]);
++  assert.deepEqual(applyMergePatch({ retained: true }, { missing: null, retained: null }), {});
++});
++
++test("rejects inputs that are not JSON values", () => {
++  assert.throws(() => applyMergePatch({ value: undefined }, {}));
++  assert.throws(() => applyMergePatch({}, { value: Number.POSITIVE_INFINITY }));
++});

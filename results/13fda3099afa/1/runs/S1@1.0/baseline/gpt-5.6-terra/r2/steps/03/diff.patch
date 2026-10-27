@@ -1,0 +1,98 @@
+diff --git a/package.json b/package.json
+index 5f1f12a7edbf25e1ade5481dc7f359ede03d0df5..b83dba113c0e09271e9782db88d8577cce8a9bb8 100644
+--- a/package.json
++++ b/package.json
+@@ -5,6 +5,6 @@
+   "description": "Building blocks for services that store, exchange and update JSON documents.",
+   "type": "module",
+   "scripts": {
+-    "test": "node --test"
++    "test": "node --experimental-strip-types --test"
+   }
+ }
+diff --git a/src/index.ts b/src/index.ts
+index e73b706d4794bafb343b047b5a02fba7528a98d2..05c114ba45f69ddea6b2fff05c08acf326267ce5 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -43,21 +43,25 @@ export function resolvePointer(document: unknown, pointer: string): unknown {
+ /**
+  * Applies an RFC 6902 JSON Patch to a JSON document.
+  *
+- * The document and values supplied by the patch are cloned before they are
+- * used, so neither input is mutated and the returned document shares no JSON
+- * containers with them.
++ * The document and patch are cloned before they are used, so neither input is
++ * mutated and the returned document shares no JSON containers with them.
+  *
+  * @throws {Error} When the document or patch is not JSON, a patch operation is
+  * malformed, or an operation cannot be applied.
+  */
+ export function applyPatch(document: unknown, patch: unknown): unknown {
+-  let result = cloneJson(document);
+-
+   if (!Array.isArray(patch)) {
+     throw new Error("A JSON Patch must be an array of operations");
+   }
+ 
+-  for (const operation of patch) {
++  // A JSON Patch is itself a JSON document.  Validate and detach the whole
++  // patch before evaluating it, including members that RFC 6902 says an
++  // operation must otherwise ignore.  Validating only the members used by an
++  // operation would accept, for example, a function in an unused member.
++  const operations = cloneJson(patch);
++  let result = cloneJson(document);
++
++  for (const operation of operations as unknown[]) {
+     result = applyOperation(result, operation);
+   }
+ 
+diff --git a/test/index.test.mjs b/test/index.test.mjs
+new file mode 100644
+index 0000000000000000000000000000000000000000..ca9cc051954db0251dc4fe52fa421b7428851d9c
+--- /dev/null
++++ b/test/index.test.mjs
+@@ -0,0 +1,44 @@
++import assert from "node:assert/strict";
++import test from "node:test";
++
++import { applyPatch } from "../src/index.ts";
++
++test("validates the complete JSON Patch document", () => {
++  const patch = [{
++    op: "add",
++    path: "/answer",
++    value: 42,
++    ignoredByRfc6902: () => "not JSON",
++  }];
++
++  assert.throws(() => applyPatch({}, patch), /Value is not valid JSON/);
++});
++
++test("does not expose partial changes when an operation fails", () => {
++  const document = { items: ["first"] };
++  const patch = [
++    { op: "add", path: "/items/-", value: "second" },
++    { op: "test", path: "/items/0", value: "not first" },
++  ];
++
++  assert.throws(() => applyPatch(document, patch), /test operation failed/);
++  assert.deepEqual(document, { items: ["first"] });
++  assert.deepEqual(patch, [
++    { op: "add", path: "/items/-", value: "second" },
++    { op: "test", path: "/items/0", value: "not first" },
++  ]);
++});
++
++test("honors RFC 6902 move and array-index rules", () => {
++  assert.deepEqual(
++    applyPatch({ values: ["a", "b", "c"] }, [
++      { op: "move", from: "/values/0", path: "/values/2" },
++    ]),
++    { values: ["b", "c", "a"] },
++  );
++
++  assert.throws(
++    () => applyPatch(["a"], [{ op: "add", path: "/01", value: "b" }]),
++    /array insertion index is invalid/,
++  );
++});

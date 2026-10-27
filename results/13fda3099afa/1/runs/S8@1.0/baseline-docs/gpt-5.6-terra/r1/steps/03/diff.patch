@@ -1,0 +1,159 @@
+diff --git a/README.md b/README.md
+index 5236c191ae363b3cf19394b65caa62cee7fba61c..11367124ca353950bbfa7acc9b9ceea73dcbdf73 100644
+--- a/README.md
++++ b/README.md
+@@ -8,6 +8,12 @@ from `src/index.ts`.
+ Each returned task includes `createdAt` and `updatedAt` ISO-8601 date-time strings. They match when a
+ task is added; every successful completion, reopening, rename, tag, or untag updates `updatedAt`.
+ 
++## Input validation
++
++Adding or renaming requires a non-blank title of at most 120 characters. Task priorities must be
++`low`, `normal`, or `high`; tags must be non-empty and cannot contain spaces. Invalid add, rename,
++or tag requests return an `invalid-input` result with a clear message and leave the list unchanged.
++
+ Run its tests with `npm test`.
+ 
+ ## Task identity
+diff --git a/src/domain/list.ts b/src/domain/list.ts
+index cd0b27652150713e7fcb342f4758a1a4d26e0189..f35ba8172312e0bc78628bbbeb8a371a0401f603 100644
+--- a/src/domain/list.ts
++++ b/src/domain/list.ts
+@@ -1,6 +1,6 @@
+ import { err, ok } from './result.ts';
+ import type { Result } from './result.ts';
+-import { addTag, compareTasks, completeTask, createTask, removeTag, renameTask, reopenTask } from './task.ts';
++import { PRIORITIES, addTag, compareTasks, completeTask, createTask, removeTag, renameTask, reopenTask } from './task.ts';
+ import type { NewTask, Priority, Status, Task } from './task.ts';
+ 
+ /** Which tasks to show: by status, priority or tag; every task when nothing is given. */
+@@ -74,9 +74,11 @@ export function createTaskList(now: () => string): TaskList {
+ 
+   return {
+     add(input) {
+-      const title = input.title.trim();
++      const validInput = validateNewTask(input);
++      if (!validInput.ok) return validInput;
++      const title = validInput.value.title;
+       if (tasksByTitle.has(title)) return err('duplicate', `there is already a task "${title}"`);
+-      const task = createTask(input, `task-${nextId}`, now());
++      const task = createTask(validInput.value, `task-${nextId}`, now());
+       nextId += 1;
+       tasksByTitle.set(task.title, task);
+       tasksById.set(task.id, task);
+@@ -87,15 +89,19 @@ export function createTaskList(now: () => string): TaskList {
+     complete: (title) => change(title, completeTask),
+     reopen: (title) => change(title, reopenTask),
+     rename(title, newTitle) {
+-      const target = newTitle.trim();
++      const target = validateTitle(newTitle);
++      if (!target.ok) return target;
+       const found = find(title);
+       if (!found.ok) return found;
+-      if (target !== found.value.title && tasksByTitle.has(target)) {
+-        return err('duplicate', `there is already a task "${target}"`);
++      if (target.value !== found.value.title && tasksByTitle.has(target.value)) {
++        return err('duplicate', `there is already a task "${target.value}"`);
+       }
+-      return store(found.value, renameTask(found.value, target));
++      return store(found.value, renameTask(found.value, target.value));
++    },
++    tag(title, tag) {
++      const validTag = validateTag(tag);
++      return validTag.ok ? change(title, (task) => ok(addTag(task, validTag.value))) : validTag;
+     },
+-    tag: (title, tag) => change(title, (task) => ok(addTag(task, tag))),
+     untag: (title, tag) => change(title, (task) => ok(removeTag(task, tag))),
+     remove(title) {
+       const found = find(title);
+@@ -117,3 +123,32 @@ export function createTaskList(now: () => string): TaskList {
+     },
+   };
+ }
++
++function validateNewTask(input: NewTask): Result<NewTask> {
++  const title = validateTitle(input.title);
++  if (!title.ok) return title;
++
++  if (input.priority !== undefined && !PRIORITIES.includes(input.priority)) {
++    return err('invalid-input', 'priority must be low, normal, or high');
++  }
++
++  for (const tag of input.tags ?? []) {
++    const validTag = validateTag(tag);
++    if (!validTag.ok) return validTag;
++  }
++
++  return ok({ ...input, title: title.value });
++}
++
++function validateTitle(title: string): Result<string> {
++  const normalized = title.trim();
++  if (normalized.length === 0) return err('invalid-input', 'title must not be empty');
++  if (normalized.length > 120) return err('invalid-input', 'title must be at most 120 characters');
++  return ok(normalized);
++}
++
++function validateTag(tag: string): Result<string> {
++  if (tag.length === 0) return err('invalid-input', 'tag must not be empty');
++  if (tag.includes(' ')) return err('invalid-input', 'tag must not contain spaces');
++  return ok(tag);
++}
+diff --git a/src/domain/result.ts b/src/domain/result.ts
+index c6ed17a1b929cb19e127e0be01e84aac17b45407..4e46dfbe7c138c650e2d4b2d86dfbc5a5b27267c 100644
+--- a/src/domain/result.ts
++++ b/src/domain/result.ts
+@@ -5,7 +5,7 @@ export interface TodoError {
+ }
+ 
+ /** The kinds of failure the task list reports. */
+-export type TodoErrorCode = 'not-found' | 'duplicate' | 'invalid-state';
++export type TodoErrorCode = 'not-found' | 'duplicate' | 'invalid-state' | 'invalid-input';
+ 
+ /** The outcome of an operation that can fail: its value, or the reason it failed. */
+ export type Result<T, E = TodoError> =
+diff --git a/test/list.test.ts b/test/list.test.ts
+index 0bb1d32151633bb5ed397a28f6181eed91363236..adc04ca7dd943ea044bd2e665b0928ecadc1651e 100644
+--- a/test/list.test.ts
++++ b/test/list.test.ts
+@@ -104,6 +104,40 @@ describe('task list', () => {
+     if (!again.ok) assert.equal(again.error.code, 'duplicate');
+   });
+ 
++  it('rejects invalid task input without changing the list', () => {
++    const list = createTodoList();
++    const task = valueOf(list.add({ title: 'Wash the car' }));
++    const tooLongTitle = 'a'.repeat(121);
++
++    const rejected = [
++      list.add({ title: '   ' }),
++      list.add({ title: tooLongTitle }),
++      list.add({ title: 'Pay bills', priority: 'urgent' as never }),
++      list.add({ title: 'Pay bills', tags: [''] }),
++      list.add({ title: 'Pay bills', tags: ['home chores'] }),
++      list.rename(task.id, '   '),
++      list.rename(task.id, tooLongTitle),
++      list.tag(task.id, ''),
++      list.tag(task.id, 'home chores'),
++    ];
++
++    assert.deepEqual(
++      rejected.map((result) => (result.ok ? undefined : result.error.message)),
++      [
++        'title must not be empty',
++        'title must be at most 120 characters',
++        'priority must be low, normal, or high',
++        'tag must not be empty',
++        'tag must not contain spaces',
++        'title must not be empty',
++        'title must be at most 120 characters',
++        'tag must not be empty',
++        'tag must not contain spaces',
++      ],
++    );
++    assert.deepEqual(list.list(), [task]);
++  });
++
+   it('completes a task once, and reopens it', () => {
+     const list = createTodoList();
+     list.add({ title: 'Water the plants' });
