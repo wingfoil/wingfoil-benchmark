@@ -92,7 +92,8 @@ maintainer's subscription), API-equivalent recorded in the v0.3 ledger.
   step A by task-107.
 - **Second cut (a `codex exec` session cannot read the session Resource or drive the cycle): not taken**
   ([task-107](../task/task-107-step-a-spike-on-wingfoil-0-3-1-under-claude-code-and-codex-dl-021-dl-027.md)'s spike,
-  2026-10-27). Codex drove the cycle; it read no Resource, nor did Claude Code, both reading the same context through
-  the CLI, which WingFoil's guide states as the equivalent. The spike found WingFoil's F-043 (a later instance's gate
-  can be skipped); the step-A arm corrects for it (the approver's decisions recorded in task-107).
+  2026-10-27). Codex drove the cycle, skipping the gate in later instances as Claude Code did (F-043); it read no
+  Resource, nor did Claude Code, both reading the same context through the CLI, which WingFoil's guide states as the
+  equivalent. The spike found WingFoil's F-043 (a later instance's gate can be skipped); the step-A arm corrects for it
+  (the approver's decisions recorded in task-107).
 

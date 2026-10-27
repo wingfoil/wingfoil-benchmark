@@ -89,9 +89,11 @@ inbox.
   scratch repository): `sw-life-cycle` (inception, specification, `kanban-delivery`: plan → build → review → deliver,
   sunset); `workflow next` prints the role, its directives, the missing evidence and the exact command of each action;
   at review, "human needed: approve or reject … — routed to Benchmark Approver". **After one delivery the frontier is
-  `sw-life-cycle.sunset`**: no construct repeats a phase. The approver chose **option A** in chat (2026-10-27): one
-  instance per request, the setup opening the first and finalizing inception and specification, the manual asking
-  the agent to open a new one when the next step is the sunset.
+  `sw-life-cycle.sunset`**: the scaffold includes the delivery once and uses none of the format's repeating constructs
+  (`iterate_over`, a recurring `cadence`; F-044). bug-400 on 0.3.1: inception and specification declare no action or
+  evidence (a bare `finalize` passes them), build and deliver only `record`, plan and review their actions. The approver
+  chose **option A** in chat (2026-10-27): one instance per request, the setup opening the first and finalizing
+  inception and specification, the manual asking the agent to open a new one when the next step is the sunset.
 - **The spike arm** (`c58900cd`), checked first in the run container with the fake agent (WingFoil `870bd440` installed,
   the instance at `kanban-delivery.plan`); the Codex scope red-first (`033e03ec` before the scope's code); both removed
   from the tree after the dry runs (`47ba2b3c`), kept in the branch's history, from which the dry runs' arm digest
@@ -105,7 +107,7 @@ inbox.
   | Final public, hold-out | 164/165, 45/48 | 164/165, 45/48 (step 2 34/108) |
   | Cost (API-equivalent) | 0.7023 USD | 1.1517 USD |
   | Interventions | 3 (steps 1, 2, 5) | 1 (step 1) |
-  | Secret scan | — | clean |
+  | Secret scan | the runner's (`BENCH_AGENT_TOKEN_FILE` set) | the runner's, and the Codex credential's values: clean |
 
 - **dl-021's three questions, per agent:**
   1. *One instance carries several requests?* **No** on 0.3.1's Kanban scaffold (F-044); with option A both agents
@@ -116,10 +118,21 @@ inbox.
      read their context through the CLI (`directives list`, `workflow next`), which WingFoil's guide states as the
      equivalent.
 - **The defect the spike found (F-043):** a later instance's step evidence is read from the whole repository: its plan
-  is satisfied by the earlier requests' tasks, and its review (pending tasks only) passes when none is pending. Claude
-  Code built and delivered steps 3 and 4 with no task and no gate; Codex, at step 2, had `memory add … --workflow`
-  refused ("no step of … adds a task"), followed the manual's rule not to work around a refusal, and did no work.
-  Codex also ran `memory amend` at step 5, an approver's verb in the guide.
+  is satisfied by the earlier requests' tasks, and its review (pending tasks only) passes when none is pending. Both
+  agents built and delivered later requests with no task and no gate (Claude Code at steps 3 and 4, Codex at steps 3
+  to 5). Both met `memory add … --workflow` refused ("no step of … adds a task") at steps 2 and 5: Claude Code then
+  added the task without `--workflow` and submitted it, and the gate fired — the approver's decision 1 below, already
+  done unprompted; Codex stopped at step 2 with no work (the manual's rule not to work around a refusal) and built
+  anyway at step 5. Codex also wrote its step-3 summary into the plan document's body by hand, and read
+  `memory amend --help` at step 5 (it did not run the verb).
+- **Where each session stopped:** Claude Code at a gate at steps 1, 2 and 5, at the step's end at 3 and 4; Codex at a
+  gate at step 1, at the refusal at step 2, at the step's end at 3, 4 and 5.
+- **bug-036, found by the review:** Codex's step-1 turn after the approver's reply ran on `gpt-6.1-sol`, Codex's
+  default model ("is resuming with `gpt-6.1-sol`"): the adapter's resume names no model. Filed as bug-036, fixed by
+  task-111; the same affected campaign-006's wingfoil arm (its erratum).
+- **Criterion 5's size check is moot:** no session read the Resource, so its size against Codex's per-tool output
+  limit (WingFoil's bug-374) was not measured; the risk is deferred with the Resource (decision 2). The committed
+  results do not show whether Codex's MCP server was reachable: "Codex reads no Resource" means it did not try.
 - **dl-027's second cut:** not taken. A `codex exec` session drives the cycle (with the corrections below); it reads
   no Resource, but neither does Claude Code, and the CLI carries the same context. campaign-007 stays planned.
 - **The step-A arm's Design inputs, the approver's decisions in chat (2026-10-27, "approvo 1–3"):**
@@ -128,8 +141,24 @@ inbox.
      pending task and the gate fires — a stated departure from "the recording follows the step's evidence" (dl-021).
   2. **Context through the CLI:** the manual states the CLI equivalents of the session Resource as WingFoil's guide
      does, rather than requiring the Resource; the difference from dl-021's wording recorded.
-  3. **The approver's verbs other than `approve` forbidden explicitly** (`amend`, `reject`, `rekey`).
+  3. **The approver's verbs other than `approve` forbidden explicitly** (`amend`, `reject`, `rekey`), as a precaution:
+     no session ran one.
 - **Admission:** `eligibility/register.yaml` admits WingFoil v0.3.1 for step A (`4e37cd1b`). The two tests that named
   v0.3.1 as an unassessed version now name v0.3.2.
 - **Notes:** F-043 and F-044 in `docs/wingfoil-feedback/` (`4e37cd1b`).
 - **Checks:** `scripts/pre-review.sh main` green; every unit test green, niced (1697 passed, 8 skipped).
+
+### Review
+
+Under dl-020; `scripts/pre-review.sh main` green before each round.
+
+- **Round 1** (an independent read-only agent, from a `mktemp` directory; reflogs unchanged): the scores, costs,
+  interventions, the absence of any Resource read, the refusal's text, the eligibility row, the tests and the
+  committed results' security verified by its own scripts.
+  - **should-fix, fixed:** "Codex ran `memory amend`" (it read its help; decision 3 kept as a precaution); F-043 and
+    the notes describing each agent's behaviour wrongly (both skipped the gate, both met the refusal, Claude Code's
+    workaround made the gate fire); F-044's premise (the format has `iterate_over` and `cadence`; the scaffold uses
+    neither); **Codex's resumed turn on `gpt-6.1-sol`** (bug-036, task-111, campaign-006's erratum).
+  - **nits, fixed:** the per-step stops; criterion 5's size check moot; bug-400's reading on 0.3.1; the Claude run's
+    secret scan stated; F-043's repro with the approver member.
+
