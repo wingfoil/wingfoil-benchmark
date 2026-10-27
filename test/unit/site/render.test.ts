@@ -94,6 +94,15 @@ function model(): SiteModel {
 }
 
 describe('the pages, from a hand-built model (task-045)', () => {
+  it("shows the catalogue's notes, escaped, under the framing, and nothing for an execution without (task-108)", () => {
+    const page = landingPage(model(), [], [], ['Costs are API-equivalent <not spent>.', 'Preliminary.']);
+    expect(page).toContain(
+      '<ul class="notes">\n<li>Costs are API-equivalent &lt;not spent&gt;.</li>\n<li>Preliminary.</li>\n</ul>\n',
+    );
+    expect(page.indexOf('class="framing"')).toBeLessThan(page.indexOf('class="notes"'));
+    expect(landingPage(model())).not.toContain('class="notes"');
+  });
+
   it('shows a range from n = 3, beyond variance, not measured, a loss with its reason, and a hold-out not scored', () => {
     const page = landingPage(model());
     expect(page).toContain('<span class="range">range 10.0%–30.0%</span>');

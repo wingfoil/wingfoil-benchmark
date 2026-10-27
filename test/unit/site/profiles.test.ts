@@ -113,8 +113,13 @@ describe('the root index (REQ-RES-02 as amended, task-085)', () => {
     expect([...index.value.matchAll(/<h2>(.*?)<\/h2>/g)].map((match) => match[1])).toEqual([
       'Reference campaigns',
       'Bridges',
-      'Across agents',
+      'Other agents',
     ]);
+    // The group covers an execution of another agent whatever its arms (task-108): its id stays across-agents.
+    expect(index.value).toContain(
+      '<p>Executions under another agent than Claude Code: its baseline compared across agents, or its arms ' +
+        'compared with each other; never mixed with the headlines above.</p>',
+    );
     expect([...index.value.matchAll(/<li>(.*)<\/li>/g)].map((match) => match[1])).toEqual([
       '<a href="abcdef012345/10/">v0.2</a>, ended 2026-10-06 · Claude Code · baseline, wingfoil · ' +
         '<a href="abcdef012345/10/compare-abcdef012345-2.html">compared with abcdef012345/2</a>',

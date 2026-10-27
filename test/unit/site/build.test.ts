@@ -174,6 +174,17 @@ describe('bench site build (REQ-CLI-09 as amended in 1.20, task-045)', () => {
     expect(built.code, built.stderr).toBe(0);
   }, 120_000);
 
+  it("puts the catalogue entry's notes on the execution's landing page (task-108)", async () => {
+    const { root } = await siteExecution();
+    catalogueEntry(root, join(root, 'results', 'abcdef012345', '1'), {
+      notes: ['Ran on another subscription.'],
+    });
+    expect((await benchSite(root, 'site', 'build', EXECUTION)).code).toBe(0);
+    expect(readFileSync(join(root, 'site', 'abcdef012345', '1', 'index.html'), 'utf8')).toContain(
+      '<li>Ran on another subscription.</li>',
+    );
+  }, 120_000);
+
   it('gives the same bytes from the same aggregate, and leaves another execution pages as they are', async () => {
     const { root } = await siteExecution();
     expect((await benchSite(root, 'site', 'build', EXECUTION)).code).toBe(0);
