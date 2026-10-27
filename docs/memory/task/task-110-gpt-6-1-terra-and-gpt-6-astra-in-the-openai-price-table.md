@@ -51,3 +51,14 @@ benchmark prices a Codex session from its pinned table (`src/agents/openai-price
   in that table; its row stays (Design).
 - **Red-first:** `44f113b2` before the rows.
 - **Checks:** `scripts/pre-review.sh main` green; `test/unit/agents` and `test/unit/campaign` green (268).
+
+### Review
+
+Under dl-020; `scripts/pre-review.sh main` green before each round.
+
+- **Round 1** (an independent read-only agent, from a `mktemp` directory; reflogs unchanged): values and field
+  mapping right (the 30-minute write column, as the existing rows), red-first, no other reader of the table affected.
+  **should-fix, fixed:** the session test asserted only a cost above 0; now the exact cost from `completed.jsonl`'s
+  totals at the new row (0.0154 USD), on the model and the usage. **nit, fixed:** the table's five keys pinned.
+- **Round 2** (the fix's diff only): the arithmetic and the key order verified; no finding. The review closes.
+
