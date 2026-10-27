@@ -2,7 +2,7 @@
 id: task-109-the-managing-wingfoil-pin-advanced-to-a-published-build-and-the-first-wingfoil-sync-of-the-feedback-inbox
 type: task
 title: "The managing WingFoil pin advanced to a published build, and the first wingfoil-sync of the feedback inbox"
-status: backlog
+status: in-progress
 release: v0.3
 wave: W15
 features: []
