@@ -89,4 +89,8 @@ Under dl-020; `scripts/pre-review.sh main` green before each round.
     reader; step A's "≥ 0.3.1", pending records, recording by evidence, agent-specific files, a new arm version per
     step; the repetition key spelled out; K6's line wrapped.
   - **nit, recorded:** the scenario conventions' title "(v0.1)" and Traces line are left as they are.
+- **Round 2** (the same agent, the fix's diff only; reflogs unchanged): the seven should-fixes fixed against their
+  sources, the rewrapped paragraphs intact, the added links resolving. **Nits only, fixed** (`68aa36d9`): a long
+  line after dl-027's link wrapped; amendment 1.7 lists §1 for G-A and G-B; K2's hold-out scenarios read v0.4; the
+  traceability matrix's T12 names the configuring agent's parity rule. The review closes.
 
