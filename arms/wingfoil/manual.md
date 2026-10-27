@@ -31,36 +31,35 @@ How WingFoil works:
 
 ## Following the workflow
 
-For each request:
+For each request, in this order:
 
-1. Run `wingfoil workflow status`, then `wingfoil workflow next`. The next step names its role, that
-   role's rules, the document it works on, what it still lacks, and the exact command each of its actions
-   expects.
-2. **A new instance for a new request.** If the next step is `sw-life-cycle.sunset`, the open instance's
-   delivery is done: this request needs an instance of its own. Run `wingfoil workflow start sw-life-cycle
-   --title "<the request, in a few words>"`, then `wingfoil workflow finalize` twice (this project is
-   already past its inception and specification), then `wingfoil workflow next` again.
-3. **Act in the step's role, with its context.** Read it through the command line:
-   - the role's rules: `wingfoil directives list --role <role>`, then each file it lists;
-   - the decisions already taken: `wingfoil memory search --type decision-log --status approved`;
-   - the document the step works on: its file under `docs/memory/`, and what it still lacks, from
-     `wingfoil workflow next`.
-
-   WingFoil's guide gives the same context through its MCP server, as the Prompt `<role>-session` and the
-   resource `wingfoil://session/<role>/<type>:<id>/<commit>`; you need not read them through the MCP server.
-4. **Every request has its task.** Before you build, the request needs a task of its own, submitted. If
-   the step asks for one, add it with the command `next` prints. If it does not (the step counts an
-   earlier request's task), or that command is refused, add it without `--workflow`:
-   `wingfoil memory add --type task --title "<the request, in a few words>"`, write in it what the
-   request asks, and run `wingfoil memory submit <id>` before you build.
-5. **Do the step's work, and record its outcome as the step asks**: run the commands `workflow next`
-   prints, write what you did in the document they create, and move it only with the verbs. WingFoil
-   reads, from the documents as committed, that the step is done; when `next` says a step is
-   `finalizable`, record it with `wingfoil workflow finalize`.
-6. **At a gate, finish the work first.** When a step needs an approval (`next` says `human needed`),
-   complete the request's work before you ask: the code written, its tests passing, the document
-   updated and submitted. Then ask for the approval of that document, and stop.
-7. Run `wingfoil workflow next` again after each step, until the request's delivery is recorded.
+- **Where the work stands.** Run `wingfoil workflow status`, then `wingfoil workflow next`. The next step
+  names its role, that role's rules, the document it works on, what it still lacks, and the exact command
+  each of its actions expects.
+- **A new instance for a new request.** If the next step is `sw-life-cycle.sunset`, the open instance's
+  delivery is done: this request needs an instance of its own. Run `wingfoil workflow start sw-life-cycle
+  --title "<the request, in a few words>"`, then `wingfoil workflow finalize` twice (this project is
+  already past its inception and specification), then `wingfoil workflow next` again.
+- **Act in the step's role, with its context.** Read it through the command line: the role's rules with
+  `wingfoil directives list --role <role>`, then each file it lists; the decisions already taken with
+  `wingfoil memory search --type decision-log --status approved`; the document the step works on, its
+  file under `docs/memory/`, and what it still lacks, from `wingfoil workflow next`. WingFoil's guide
+  gives the same context through its MCP server, as the Prompt `<role>-session` and the resource
+  `wingfoil://session/<role>/<type>:<id>/<commit>`; you need not read them through the MCP server.
+- **Every request has its task.** Before you build, the request needs a task of its own, submitted. If
+  the step asks for one, add it with the command `next` prints. If it does not (the step counts an
+  earlier request's task), or that command is refused, add it without `--workflow`:
+  `wingfoil memory add --type task --title "<the request, in a few words>"`, write in it what the
+  request asks, and run `wingfoil memory submit <id>` before you build.
+- **Do the step's work, and record its outcome as the step asks**: run the commands `workflow next`
+  prints, write what you did in the document they create, and move it only with the verbs. WingFoil
+  reads, from the documents as committed, that the step is done; when `next` says a step is
+  `finalizable`, record it with `wingfoil workflow finalize`.
+- **At a gate, finish the work first.** When a step needs an approval (`next` says `human needed`),
+  complete the request's work before you ask: the code written, its tests passing, the document
+  updated and submitted. Then ask for the approval of that document, and stop.
+- **Until the delivery is recorded.** Run `wingfoil workflow next` again after each step, until the
+  request's delivery is recorded.
 
 General rules:
 
@@ -74,11 +73,11 @@ General rules:
 ### Where this arm departs from the guide
 
 - **Starting a workflow.** The guide starts or ends a workflow only when asked. Here the setup opened
-  the first instance, and rule 2 above asks you to open one for each later request: on this release's
-  Kanban workflow an instance's delivery runs once.
+  the first instance, and the rule *A new instance for a new request* asks you to open one for each
+  later request: on this release's Kanban workflow an instance's delivery runs once.
 - **A task for every request.** The guide records what each step's evidence asks for. Here every request
-  gets its own task, as rule 4 says, even when an earlier request's task already meets the step's
-  evidence, so that its review has a document to approve.
+  gets its own task, as the rule *Every request has its task* says, even when an earlier request's task
+  already meets the step's evidence, so that its review has a document to approve.
 - **Configuration.** The guide lets an agent change the project's configuration, through WingFoil's
   verbs or by committed edits under `.wingfoil/`. Here the configuration belongs to the scenario: never
   edit a file under `.wingfoil/`, and do not use the `dna` or `directive` commands that change it.
