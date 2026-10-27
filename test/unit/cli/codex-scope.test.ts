@@ -132,7 +132,7 @@ describe("the Codex credential's scope (dl-024, widened by dl-025)", () => {
     ).toEqual([
       {
         path: 'profile',
-        message: `a codex dry run reads ${BASELINE_PROFILE} or ${TERRA_PROFILE} (dl-024, dl-025)`,
+        message: `a codex dry run reads ${BASELINE_PROFILE} or ${TERRA_PROFILE} or campaigns/wingfoil-step-a-spike.dry-run.yaml (dl-024, dl-025, dl-027)`,
       },
     ]);
     expect(
@@ -145,7 +145,7 @@ describe("the Codex credential's scope (dl-024, widened by dl-025)", () => {
     ).toEqual([
       {
         path: 'profile',
-        message: `a codex dry run reads ${BASELINE_PROFILE} or ${TERRA_PROFILE} (dl-024, dl-025)`,
+        message: `a codex dry run reads ${BASELINE_PROFILE} or ${TERRA_PROFILE} or campaigns/wingfoil-step-a-spike.dry-run.yaml (dl-024, dl-025, dl-027)`,
       },
     ]);
     expect(
@@ -253,7 +253,7 @@ describe("dl-024's scope in the commands", () => {
 
     expect(refused).toMatchObject({ code: 1, built: 0 });
     expect(refused.stderr).toContain(
-      'profile: a codex dry run reads campaigns/codex-baseline.dry-run.yaml or campaigns/codex-terra-harness-vs-docs.dry-run.yaml (dl-024, dl-025)',
+      'profile: a codex dry run reads campaigns/codex-baseline.dry-run.yaml or campaigns/codex-terra-harness-vs-docs.dry-run.yaml or campaigns/wingfoil-step-a-spike.dry-run.yaml (dl-024, dl-025, dl-027)',
     );
   });
 
@@ -367,7 +367,7 @@ describe("dl-024's scope in the commands", () => {
 
     expect(refused).toMatchObject({ code: 1, built: 0 });
     expect(refused.stderr).toContain(
-      'profile: a codex dry run reads campaigns/codex-baseline.dry-run.yaml or campaigns/codex-terra-harness-vs-docs.dry-run.yaml (dl-024, dl-025)',
+      'profile: a codex dry run reads campaigns/codex-baseline.dry-run.yaml or campaigns/codex-terra-harness-vs-docs.dry-run.yaml or campaigns/wingfoil-step-a-spike.dry-run.yaml (dl-024, dl-025, dl-027)',
     );
   });
 });
