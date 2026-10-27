@@ -165,3 +165,8 @@ Under dl-020; `scripts/pre-review.sh main` green before each round.
   claims re-checked against the transcripts. **One nit, recorded:** the bug-400 sentence reads inception and
   specification apart from build and deliver, though all four pass on `finalize` alone. The review closes.
 
+### Approval
+
+- in-review → approved by the approver (`53b0f0a0`), 2026-10-27; no full suites (an arm removed from the tree,
+  data rows, notes and two tests' example version; every unit test green). Merged into main (`c84547ad`).
+
