@@ -75,8 +75,11 @@ describe('reading a Codex session (REQ-RUN-09 as amended in 1.32)', () => {
 
   it('prices a session on gpt-6.1-terra from its row (task-110)', () => {
     const session = readCodexSession(stream('completed.jsonl'), { model: 'gpt-6.1-terra', usdToEur: RATE });
+    // completed.jsonl's totals at gpt-6.1-terra's list prices: 2000 fresh, 18000 cached, 4000 written, 1500 out.
+    const usd = (2000 * 1 + 18000 * 0.05 + 4000 * 1.25 + 1500 * 5) / 1e6;
     expect(session.models['gpt-6.1-terra']?.costBasis).toBe('price-table');
-    expect(session.usage.costUsd).toBeGreaterThan(0);
+    expect(session.models['gpt-6.1-terra']?.costUsd).toBeCloseTo(usd, 10);
+    expect(session.usage.costUsd).toBeCloseTo(usd, 10);
   });
 
   it('records a model the table does not hold as unknown, at no cost, so that the estimate refuses it', () => {

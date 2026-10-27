@@ -26,6 +26,16 @@ describe("OpenAI's list prices (REQ-RUN-09 as amended in 1.32)", () => {
     );
   });
 
+  it('holds exactly these five models', () => {
+    expect(Object.keys(OPENAI_PRICES).sort()).toEqual([
+      'gpt-5.6-terra',
+      'gpt-6-astra',
+      'gpt-6-luna',
+      'gpt-6.1-sol',
+      'gpt-6.1-terra',
+    ]);
+  });
+
   it('gives every price a source', () => {
     expect(Object.keys(OPENAI_PRICE_SOURCES).sort()).toEqual(Object.keys(OPENAI_PRICES).sort());
   });
