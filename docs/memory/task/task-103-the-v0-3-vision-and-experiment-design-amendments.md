@@ -94,3 +94,8 @@ Under dl-020; `scripts/pre-review.sh main` green before each round.
   line after dl-027's link wrapped; amendment 1.7 lists §1 for G-A and G-B; K2's hold-out scenarios read v0.4; the
   traceability matrix's T12 names the configuring agent's parity rule. The review closes.
 
+### Approval
+
+- The approver's review decision: in-review → approved (`ff795796`), 2026-10-27; no full suites (documents only; the
+  traceability test green). Merged into main (`c222a9fc`).
+
