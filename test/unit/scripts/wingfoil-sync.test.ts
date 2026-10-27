@@ -148,7 +148,7 @@ describe('wingfoil-sync (task-109)', () => {
     expect(frontmatter(repo, 4)).toEqual(['open', '[]']); // restated with no element
     expect(frontmatter(repo, 5)).toEqual(['needs-info', '[]']);
     expect(frontmatter(repo, 6)).toEqual(['open', '[]']); // not read
-    expect(frontmatter(repo, 7)).toEqual(['captured', '[dl-001, dl-003]']); // dl-003 not in its last state
+    expect(frontmatter(repo, 7)).toEqual(['captured', '[dl-001, dl-003]']); // dl-003 not ready
     expect(frontmatter(repo, 8)).toEqual(['resolved', '[dl-001]']); // captured earlier, no row: re-checked
     expect(frontmatter(repo, 9)).toEqual(['captured', '[dl-003]']); // captured earlier, still not shipped
     expect(frontmatter(repo, 10)).toEqual(['captured', '[cp-004]']); // a change-proposal never ships

@@ -183,3 +183,7 @@ pin-specific text is rule 8's.
   type never shipped; tested with a change-proposal, an element not found, and a note captured earlier whose element
   has not shipped. Nits fixed: W-02's wording (`--set` sets `id_pattern` and `path` tokens); the second sync's test
   checks every note's two fields as well as the ledger.
+- **Round 3** (re-review of `8bdde20a` only): the map matches WingFoil's sequences, the tests fail on the old rule,
+  the real data unchanged (24, 7, 4, 10). Nits only, which closes the review (dl-020); applied: W-02 names `title`,
+  `tags` and the initial `status`; a test comment; the script says that an ADR or tech-spec superseded since keeps
+  its note `captured`.

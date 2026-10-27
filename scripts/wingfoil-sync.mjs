@@ -143,7 +143,8 @@ for (const line of grep.split('\n')) {
 /**
  * The state in which an element of each WingFoil type has shipped, read from WingFoil's `.wingfoil/memory.yaml` at
  * v0.3.1: the end of the bug, task and decision-log sequences, and the adopted state of an ADR and a tech-spec (their
- * sequences end at `superseded`). Any other type (a change-proposal ends at `scheduled`) never counts as shipped.
+ * sequences end at `superseded`; one superseded since counts as not shipped, which keeps its note `captured`). Any
+ * other type (a change-proposal ends at `scheduled`) never counts as shipped.
  */
 const SHIPPED = /** @type {Record<string, string>} */ ({
   bug: 'closed',
