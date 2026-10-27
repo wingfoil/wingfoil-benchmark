@@ -85,3 +85,14 @@ maintainer's subscription), API-equivalent recorded in the v0.3 ledger.
 - A third Codex execution on Terra: campaign-005 (v0.2's manual, v1, deprecated), campaign-006 (v0.2's manual, v2),
   campaign-007 (step A, v2) — the arm's change read on one agent and one model.
 - If a cut falls, nothing of step A is lost: its tasks are W17's, done earlier.
+
+## The cuts, as they fell
+
+- **First cut (0.3.1 by 2026-11-02): not taken.** WingFoil `v0.3.1` tagged on 2026-10-27 (`870bd440`), admitted for
+  step A by task-107.
+- **Second cut (a `codex exec` session cannot read the session Resource or drive the cycle): not taken**
+  ([task-107](../task/task-107-step-a-spike-on-wingfoil-0-3-1-under-claude-code-and-codex-dl-021-dl-027.md)'s spike,
+  2026-10-27). Codex drove the cycle; it read no Resource, nor did Claude Code, both reading the same context through
+  the CLI, which WingFoil's guide states as the equivalent. The spike found WingFoil's F-043 (a later instance's gate
+  can be skipped); the step-A arm corrects for it (the approver's decisions recorded in task-107).
+
