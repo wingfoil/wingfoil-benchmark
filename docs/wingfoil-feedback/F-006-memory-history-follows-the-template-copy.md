@@ -2,7 +2,7 @@
 id: F-006
 title: "memory history follows the template copy into unrelated commits"
 kind: defect
-status: open
+status: resolved
 wingfoil_version: 0.2-pre-3df305e
 answered_by: []
 ---

@@ -2,7 +2,7 @@
 id: F-025
 title: "The MCP server answers tools/list with \"Method not found\""
 kind: defect
-status: open
+status: resolved
 wingfoil_version: 0.2-pre-3df305e
 answered_by: []
 ---

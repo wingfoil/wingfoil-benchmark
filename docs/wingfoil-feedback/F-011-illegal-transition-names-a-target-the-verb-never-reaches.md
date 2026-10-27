@@ -2,7 +2,7 @@
 id: F-011
 title: "\"illegal transition\" names a target the verb would never reach"
 kind: defect
-status: open
+status: resolved
 wingfoil_version: 0.2-pre-3df305e
 answered_by: []
 ---

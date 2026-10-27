@@ -2,9 +2,9 @@
 id: F-001
 title: "init's Kanban template scaffolds a life cycle with empty phases, no plan type and ingest workflows with no actions"
 kind: gap
-status: open
+status: resolved
 wingfoil_version: 0.1.0-7a65580
-answered_by: []
+answered_by: [bug-400]
 ---
 
 Formerly N1.

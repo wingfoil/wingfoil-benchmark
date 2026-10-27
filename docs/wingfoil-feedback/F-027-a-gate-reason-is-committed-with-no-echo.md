@@ -2,9 +2,9 @@
 id: F-027
 title: "A gate's --reason is committed with no echo and cannot be corrected"
 kind: request
-status: open
+status: resolved
 wingfoil_version: 0.2-pre-3df305e
-answered_by: []
+answered_by: [task-210]
 ---
 
 Formerly N36.

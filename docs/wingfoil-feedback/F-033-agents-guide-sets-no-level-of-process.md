@@ -2,9 +2,9 @@
 id: F-033
 title: "The agents' guide sets rules but no level of process, and no place for an automated approver"
 kind: request
-status: open
+status: resolved
 wingfoil_version: 0.2.2
-answered_by: []
+answered_by: [dl-103]
 ---
 
 Formerly N43.

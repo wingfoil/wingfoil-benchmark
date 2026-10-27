@@ -2,7 +2,7 @@
 id: F-014
 title: "Scaffolded templates say submit fills the placeholders; it does not"
 kind: defect
-status: open
+status: resolved
 wingfoil_version: 0.2-pre-3df305e
 answered_by: []
 ---

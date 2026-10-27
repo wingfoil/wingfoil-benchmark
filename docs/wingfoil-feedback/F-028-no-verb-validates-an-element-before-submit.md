@@ -2,9 +2,9 @@
 id: F-028
 title: "No verb validates an element before submit"
 kind: gap
-status: open
+status: captured
 wingfoil_version: 0.2-pre-3df305e
-answered_by: []
+answered_by: [dl-200]
 ---
 
 Formerly N37.

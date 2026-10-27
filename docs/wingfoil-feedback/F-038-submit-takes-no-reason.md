@@ -2,9 +2,9 @@
 id: F-038
 title: "submit takes no --reason"
 kind: request
-status: open
+status: captured
 wingfoil_version: 0.2-pre-3df305e
-answered_by: []
+answered_by: [dl-201]
 ---
 
 Formerly N51.

@@ -2,7 +2,7 @@
 id: F-002
 title: "The scaffolded dna.yaml does not show that a technology needs a category"
 kind: defect
-status: open
+status: resolved
 wingfoil_version: 0.1.0-7a65580
 answered_by: []
 ---

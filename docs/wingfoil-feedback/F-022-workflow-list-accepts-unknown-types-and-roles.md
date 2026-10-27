@@ -2,7 +2,7 @@
 id: F-022
 title: "workflow list accepts actions on unknown types and roles nobody has"
 kind: defect
-status: open
+status: resolved
 wingfoil_version: 0.2-pre-3df305e
 answered_by: []
 ---

@@ -2,9 +2,9 @@
 id: F-039
 title: "directive assign cannot bind a directive globally"
 kind: gap
-status: open
+status: captured
 wingfoil_version: 0.2-pre-3df305e
-answered_by: []
+answered_by: [bug-410]
 ---
 
 New note (task-078).

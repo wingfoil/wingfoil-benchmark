@@ -2,9 +2,9 @@
 id: F-029
 title: "memory add takes no field values"
 kind: gap
-status: open
+status: captured
 wingfoil_version: 0.2-pre-3df305e
-answered_by: []
+answered_by: [dl-197]
 ---
 
 Formerly N38.

@@ -2,7 +2,7 @@
 id: F-024
 title: "init --help and the missing-template error do not list the templates"
 kind: defect
-status: open
+status: resolved
 wingfoil_version: 0.2-pre-3df305e
 answered_by: []
 ---

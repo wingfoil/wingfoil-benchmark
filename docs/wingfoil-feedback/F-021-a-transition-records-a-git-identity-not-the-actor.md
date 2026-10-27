@@ -2,9 +2,9 @@
 id: F-021
 title: "A transition records a git identity, not who performed it"
 kind: gap
-status: open
+status: resolved
 wingfoil_version: 0.2-pre-3df305e
-answered_by: []
+answered_by: [dl-134]
 ---
 
 Formerly N23.

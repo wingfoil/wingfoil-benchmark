@@ -25,51 +25,57 @@ feedback source (`svc-020-github-repository-wingfoil-benchmark-the-benchmark-con
 service's full id and the full sha of the commit it read (WingFoil `COLLABORATION.md`, `## Credit`), for example
 `svc-020-github-repository-wingfoil-benchmark-the-benchmark-consumer-project-and-its-feedback-inbox/F-001@<full sha>`.
 
-**Last sync:** none.
+**Last sync:** 2026-10-27, task-109, at the pin bump to `wingfoil@0.3.1` (`scripts/wingfoil-sync.mjs`, by
+`COLLABORATION.md`'s mapping only). Read at WingFoil `v0.3.1` (`870bd4406f3b9bba5ecde7a5f8198b80c2a98583`):
+`retro-v0.3`'s `## Consumer feedback` and `rel-v0.3-feedback-triage.md`, which read this inbox at
+`2ff5116fd249b5591d6e110e49feb0ba21c703d2` (F-001 to F-039); `patch-v0.3.1`'s scope changes, which take up no note;
+the citations at WingFoil's `origin/main` (`334a288707c3c817bdc8a1d31b20fb452dc2a5a1`), the same elements as the
+table. Outcome: 24 `resolved`, 7 `captured`, 4 `needs-info` (F-007, F-009, F-023, F-034: WingFoil's questions are in
+its triage record), 4 `open` (restated with no element), and F-040 to F-044, not yet read, `open`.
 
 ## Ledger
 
 | Note | Title | Kind | Status | Answered by |
 |---|---|---|---|---|
-| [F-001](F-001-init-kanban-scaffolds-a-life-cycle-that-cannot-run.md) | init's Kanban template scaffolds a life cycle with empty phases, no plan type and ingest workflows with no actions | gap | open | |
-| [F-002](F-002-dna-scaffold-does-not-show-that-a-technology-needs-a-category.md) | The scaffolded dna.yaml does not show that a technology needs a category | defect | open | |
-| [F-003](F-003-default-console-format-prints-json.md) | The default console output format prints JSON | defect | open | |
-| [F-004](F-004-no-documented-way-to-use-an-unpublished-build.md) | No documented way to use an unpublished build pinned to a commit | gap | open | |
-| [F-005](F-005-package-version-not-bumped-on-later-verbs.md) | The package version is not bumped: a 0.1.0 build ships later verbs | defect | open | |
-| [F-006](F-006-memory-history-follows-the-template-copy.md) | memory history follows the template copy into unrelated commits | defect | open | |
-| [F-007](F-007-hand-written-finalize-commit-is-not-a-history-operation.md) | A hand-written finalize commit is not a recognized history operation | gap | open | |
-| [F-008](F-008-submit-commit-subjects-carry-no-transition.md) | submit commit subjects carry no transition | request | open | |
-| [F-009](F-009-no-verb-closes-a-plan-with-an-approval-record.md) | No verb closes a plan with an approval record | gap | open | |
-| [F-010](F-010-slugs-drop-dots-and-id-pattern-has-no-version-token.md) | Slugs drop dots, and id_pattern has no {version} token | request | open | |
-| [F-011](F-011-illegal-transition-names-a-target-the-verb-never-reaches.md) | "illegal transition" names a target the verb would never reach | defect | open | |
-| [F-012](F-012-submit-commits-uncommitted-edits-under-a-state-only-subject.md) | submit commits uncommitted edits under a state-only subject | defect | open | |
-| [F-013](F-013-dna-set-writes-scalars-only.md) | dna set writes scalars only, so lists (modules, paths, members) are hand edits | gap | open | |
-| [F-014](F-014-templates-say-submit-fills-the-placeholders.md) | Scaffolded templates say submit fills the placeholders; it does not | defect | open | |
-| [F-015](F-015-no-verb-amends-an-approved-element.md) | No verb amends an approved element | gap | open | |
-| [F-016](F-016-a-required-field-cannot-be-empty-or-not-applicable.md) | A required field cannot be empty or say "not applicable" | gap | open | |
-| [F-017](F-017-phase-include-is-never-resolved.md) | A phase include is never resolved: a path where a name belongs passes in silence | defect | open | |
-| [F-018](F-018-directive-global-scope-declared-in-two-places.md) | A directive's global scope is declared in two places nothing reconciles | gap | open | |
-| [F-019](F-019-kind-decides-both-startable-and-includable.md) | kind decides both startable and includable | request | open | |
-| [F-020](F-020-no-verb-parks-a-started-task.md) | No verb parks a started task | gap | open | |
-| [F-021](F-021-a-transition-records-a-git-identity-not-the-actor.md) | A transition records a git identity, not who performed it | gap | open | |
-| [F-022](F-022-workflow-list-accepts-unknown-types-and-roles.md) | workflow list accepts actions on unknown types and roles nobody has | defect | open | |
-| [F-023](F-023-elements-cannot-be-linked-and-a-bug-never-closes.md) | Elements cannot be linked, and a bug's machine never closes | gap | open | |
-| [F-024](F-024-init-help-does-not-list-the-templates.md) | init --help and the missing-template error do not list the templates | defect | open | |
-| [F-025](F-025-mcp-tools-list-answers-method-not-found.md) | The MCP server answers tools/list with "Method not found" | defect | open | |
-| [F-026](F-026-identity-check-reads-git-config-not-the-environment.md) | The identity check reads git config, while git takes the author from the environment | defect | open | |
-| [F-027](F-027-a-gate-reason-is-committed-with-no-echo.md) | A gate's --reason is committed with no echo and cannot be corrected | request | open | |
-| [F-028](F-028-no-verb-validates-an-element-before-submit.md) | No verb validates an element before submit | gap | open | |
-| [F-029](F-029-memory-add-takes-no-field-values.md) | memory add takes no field values | gap | open | |
+| [F-001](F-001-init-kanban-scaffolds-a-life-cycle-that-cannot-run.md) | init's Kanban template scaffolds a life cycle with empty phases, no plan type and ingest workflows with no actions | gap | resolved | bug-400 |
+| [F-002](F-002-dna-scaffold-does-not-show-that-a-technology-needs-a-category.md) | The scaffolded dna.yaml does not show that a technology needs a category | defect | resolved | |
+| [F-003](F-003-default-console-format-prints-json.md) | The default console output format prints JSON | defect | captured | dl-043 |
+| [F-004](F-004-no-documented-way-to-use-an-unpublished-build.md) | No documented way to use an unpublished build pinned to a commit | gap | resolved | dl-095 |
+| [F-005](F-005-package-version-not-bumped-on-later-verbs.md) | The package version is not bumped: a 0.1.0 build ships later verbs | defect | resolved | |
+| [F-006](F-006-memory-history-follows-the-template-copy.md) | memory history follows the template copy into unrelated commits | defect | resolved | |
+| [F-007](F-007-hand-written-finalize-commit-is-not-a-history-operation.md) | A hand-written finalize commit is not a recognized history operation | gap | needs-info | |
+| [F-008](F-008-submit-commit-subjects-carry-no-transition.md) | submit commit subjects carry no transition | request | resolved | dl-054 |
+| [F-009](F-009-no-verb-closes-a-plan-with-an-approval-record.md) | No verb closes a plan with an approval record | gap | needs-info | |
+| [F-010](F-010-slugs-drop-dots-and-id-pattern-has-no-version-token.md) | Slugs drop dots, and id_pattern has no {version} token | request | resolved | dl-107 |
+| [F-011](F-011-illegal-transition-names-a-target-the-verb-never-reaches.md) | "illegal transition" names a target the verb would never reach | defect | resolved | |
+| [F-012](F-012-submit-commits-uncommitted-edits-under-a-state-only-subject.md) | submit commits uncommitted edits under a state-only subject | defect | resolved | bug-182 |
+| [F-013](F-013-dna-set-writes-scalars-only.md) | dna set writes scalars only, so lists (modules, paths, members) are hand edits | gap | resolved | |
+| [F-014](F-014-templates-say-submit-fills-the-placeholders.md) | Scaffolded templates say submit fills the placeholders; it does not | defect | resolved | |
+| [F-015](F-015-no-verb-amends-an-approved-element.md) | No verb amends an approved element | gap | resolved | |
+| [F-016](F-016-a-required-field-cannot-be-empty-or-not-applicable.md) | A required field cannot be empty or say "not applicable" | gap | resolved | |
+| [F-017](F-017-phase-include-is-never-resolved.md) | A phase include is never resolved: a path where a name belongs passes in silence | defect | resolved | |
+| [F-018](F-018-directive-global-scope-declared-in-two-places.md) | A directive's global scope is declared in two places nothing reconciles | gap | resolved | |
+| [F-019](F-019-kind-decides-both-startable-and-includable.md) | kind decides both startable and includable | request | resolved | |
+| [F-020](F-020-no-verb-parks-a-started-task.md) | No verb parks a started task | gap | resolved | |
+| [F-021](F-021-a-transition-records-a-git-identity-not-the-actor.md) | A transition records a git identity, not who performed it | gap | resolved | dl-134 |
+| [F-022](F-022-workflow-list-accepts-unknown-types-and-roles.md) | workflow list accepts actions on unknown types and roles nobody has | defect | resolved | |
+| [F-023](F-023-elements-cannot-be-linked-and-a-bug-never-closes.md) | Elements cannot be linked, and a bug's machine never closes | gap | needs-info | |
+| [F-024](F-024-init-help-does-not-list-the-templates.md) | init --help and the missing-template error do not list the templates | defect | resolved | |
+| [F-025](F-025-mcp-tools-list-answers-method-not-found.md) | The MCP server answers tools/list with "Method not found" | defect | resolved | |
+| [F-026](F-026-identity-check-reads-git-config-not-the-environment.md) | The identity check reads git config, while git takes the author from the environment | defect | resolved | |
+| [F-027](F-027-a-gate-reason-is-committed-with-no-echo.md) | A gate's --reason is committed with no echo and cannot be corrected | request | resolved | task-210 |
+| [F-028](F-028-no-verb-validates-an-element-before-submit.md) | No verb validates an element before submit | gap | captured | dl-200 |
+| [F-029](F-029-memory-add-takes-no-field-values.md) | memory add takes no field values | gap | captured | dl-197 |
 | [F-030](F-030-an-approver-decision-without-a-transition-has-no-record.md) | An approver's decision that moves no element has no record | gap | open | |
 | [F-031](F-031-a-gate-commits-on-whatever-branch-is-checked-out.md) | A gate commits on whatever branch is checked out | gap | open | |
-| [F-032](F-032-role-context-not-delivered-at-session-start.md) | A role's context is not delivered when an agent's session starts | request | open | |
-| [F-033](F-033-agents-guide-sets-no-level-of-process.md) | The agents' guide sets rules but no level of process, and no place for an automated approver | request | open | |
-| [F-034](F-034-packed-tarball-installs-without-bin-or-lockfile.md) | The packed tarball installs with no executable bin and no lockfile | defect | open | |
+| [F-032](F-032-role-context-not-delivered-at-session-start.md) | A role's context is not delivered when an agent's session starts | request | captured | dl-192 |
+| [F-033](F-033-agents-guide-sets-no-level-of-process.md) | The agents' guide sets rules but no level of process, and no place for an automated approver | request | resolved | dl-103 |
+| [F-034](F-034-packed-tarball-installs-without-bin-or-lockfile.md) | The packed tarball installs with no executable bin and no lockfile | defect | needs-info | |
 | [F-035](F-035-copied-records-lose-their-approval-provenance.md) | Records copied into a repository lose their approval provenance | gap | open | |
-| [F-036](F-036-init-commit-subject-carries-an-internal-plan-id.md) | init's commit subject carries an internal plan id | defect | open | |
+| [F-036](F-036-init-commit-subject-carries-an-internal-plan-id.md) | init's commit subject carries an internal plan id | defect | captured | bug-409 |
 | [F-037](F-037-approve-accepts-a-placeholder-reason.md) | approve --reason accepts a placeholder as the recorded reason | request | open | |
-| [F-038](F-038-submit-takes-no-reason.md) | submit takes no --reason | request | open | |
-| [F-039](F-039-directive-assign-cannot-bind-a-directive-globally.md) | directive assign cannot bind a directive globally | gap | open | |
+| [F-038](F-038-submit-takes-no-reason.md) | submit takes no --reason | request | captured | dl-201 |
+| [F-039](F-039-directive-assign-cannot-bind-a-directive-globally.md) | directive assign cannot bind a directive globally | gap | captured | bug-410 |
 | [F-040](F-040-review-rounds-follow-the-re-review-rule-and-no-guide-sets-one.md) | Review rounds follow each project's re-review rule, and neither the guide nor the templates set one | request | open | |
 | [F-041](F-041-agent-execute-cannot-be-driven-by-an-unattended-runner.md) | agent execute cannot be driven by an unattended runner that must meter the agent | request | open | |
 | [F-042](F-042-directive-create-writes-no-body-and-takes-no-title.md) | directive create writes no body and takes no title | gap | open | |

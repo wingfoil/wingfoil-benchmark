@@ -2,7 +2,7 @@
 id: F-007
 title: "A hand-written finalize commit is not a recognized history operation"
 kind: gap
-status: open
+status: needs-info
 wingfoil_version: 0.2-pre-3df305e
 answered_by: []
 ---

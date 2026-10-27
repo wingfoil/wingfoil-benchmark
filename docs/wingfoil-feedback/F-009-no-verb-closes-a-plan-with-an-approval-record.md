@@ -2,7 +2,7 @@
 id: F-009
 title: "No verb closes a plan with an approval record"
 kind: gap
-status: open
+status: needs-info
 wingfoil_version: 0.2-pre-3df305e
 answered_by: []
 ---
