@@ -144,6 +144,18 @@ Run costs (USD, API-equivalent): baseline 0.31–0.86, baseline-docs 0.42–0.88
     package byte for byte the one in `81ebb2691f9c-1`), after a scan of both archives for the Codex credential's
     values and token shapes (clean); the asset recorded in the runs (`d50c14dc`); the built site unchanged by it.
 
+### Erratum (2026-10-27, bug-036)
+
+Found by task-107's review: the Codex adapter's resume named no model, so **in 12 of the wingfoil arm's 27 steps the
+turn after the approver's reply ran on `gpt-6.1-sol`**, Codex's default, not on `gpt-5.6-terra`, and was priced as
+Terra ([bug-036](../bug/bug-036-a-codex-resume-runs-on-codex-s-default-model-not-the-step-s.md)). The baseline and
+baseline-docs arms had no intervention and are not affected. The analysis above, WingFoil's small edge over its docs
+control in particular, therefore leans towards the arm and does not stand as measured on Terra.
+
+- **The approver's decision in chat (2026-10-27): an erratum and a rerun.** The erratum is the catalogue's first note
+  on the execution's page (site republished); the wingfoil arm is rerun beside the baseline once task-111 has fixed
+  the resume, in the week from about 2026-11-02.
+
 ## Findings
 
 <!-- Finding notes produced (F5.4) and where they went in WingFoil. -->
