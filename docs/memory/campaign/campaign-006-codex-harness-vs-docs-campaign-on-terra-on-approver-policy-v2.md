@@ -103,7 +103,31 @@ Run costs (USD, API-equivalent): baseline 0.31–0.86, baseline-docs 0.42–0.88
 
 ## Results review
 
-<!-- Anomalies, runs to rerun, and whether the results are publishable. -->
+### The agent's analysis (2026-10-27, input to the approver's review)
+
+- **The approver now answers Codex.** The wingfoil arm's 13 approval requests were answered under v2, and no step of
+  any arm ended still waiting. Every loss the arm had in campaign-005 (v1) is gone: S1 r3 135/165 → 165/165 (hold-out
+  33/48 → 48/48), S3 30/37 → 37/37 (M-F1 3/5 → 5/5), S8 15/23 → 23/23 (hold-out 4/7 → 6/7), S1 r1 159/165 →
+  165/165. The two executions differ only in the approver policy, so this is bug-035's effect, measured.
+- **WingFoil against the baseline:** better in S3 (37/37 against 34/37, D3's check 1/1 against 0/1, M-F1 5/5 against
+  3/5) and on S8's rules (16/16 against 12/16); the same in S1 and S2.
+- **WingFoil against its docs control** (the harness's own effect, the comparison the campaign exists for): small.
+  `aggregate.json`'s controls: M-Q1 better within the variance in S1 (hold-out 48, 46, 48 against 45, 45, 48),
+  the same in S2, S3 and S8; M-F1 better in S3 (5/5 against 4/5: D3's revision recorded, which a decision-log does
+  by design); M-E1 the same in S8 (16/16 both); M-D3 the same everywhere. Most of the gain over the baseline comes with
+  the docs control, that is from the information, not from WingFoil's process.
+- **The cost:** M-K1 worse in every scenario, beyond the variance in S1: the arm's mean step cost is 0.26 € against
+  baseline-docs' 0.15 € in S1, 0.25 € against 0.15 € in S3 (`break_even`: never or not applicable). The difference is
+  the process — task and decision-log documents, 13 approval round trips — that v0.2's manual imposes.
+- **Anomalies, none blocking:** baseline-docs' S1 r1 and r2 at 164/165 and 45/48 hold-out, S1's step 5 (bug-025);
+  D3's and S2's content checks lexical (bug-026); S2's checks 0/3 in every arm; one run on a second attempt (S2
+  baseline-docs r1, the quota stop: a fresh attempt, scored on it). No rerun proposed.
+- **What it does not measure:** WingFoil's workflow engine (v0.2's manual, a register of documents): campaign-007
+  (dl-027, step A) remeasures the arm. Every group but S1 is n = 1: preliminary. Not comparable across agents with
+  the v1 executions (M-R across needs one approver policy).
+- **Publishable, in the agent's reading,** as a Codex execution read arm against arm, with the caveats above and a
+  note that campaign-005 (deprecated) is its v1 predecessor. Before any `bench site publish`, every execution under
+  `site/` is rebuilt (the method page changed in task-105 and task-106).
 
 ## Findings
 
