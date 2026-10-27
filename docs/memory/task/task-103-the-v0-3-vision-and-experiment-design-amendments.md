@@ -2,7 +2,7 @@
 id: task-103-the-v0-3-vision-and-experiment-design-amendments
 type: task
 title: "The v0.3 vision and experiment design amendments"
-status: approved
+status: done
 release: v0.3
 wave: release-planning
 features: []
