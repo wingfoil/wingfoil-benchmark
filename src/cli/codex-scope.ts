@@ -35,30 +35,8 @@ const ALLOWED = [
   },
 ] as const;
 
-/**
- * Dry-run profiles the credential may serve with no campaign of theirs (dl-027): the step-A spike's (task-107), its
- * one arm on Terra. Apart from {@link ALLOWED}, whose entries a campaign is matched against by its preset.
- */
-/** What a dry-run profile lets the credential serve. */
-interface DryRunScope {
-  readonly profile: string;
-  readonly arms: readonly string[];
-  readonly models: readonly string[] | undefined;
-  readonly decision: string;
-}
-
-const DRY_RUN_ONLY: readonly DryRunScope[] = [
-  {
-    profile: 'campaigns/wingfoil-step-a-spike.dry-run.yaml',
-    arms: ['wingfoil-step-a-spike'],
-    models: ['gpt-5.6-terra'],
-    decision: 'dl-027',
-  },
-];
-
-/** The decisions, as a refusal names them: a campaign's, and a dry run's (which dl-027's spike widens). */
+/** The decisions, as a refusal names them. */
 const DECISIONS = 'dl-024, dl-025';
-const DRY_RUN_DECISIONS = 'dl-024, dl-025, dl-027';
 
 /**
  * What a campaign or a dry run asks of the agent: its name and, for a campaign, the preset it extends, its arms and
@@ -86,13 +64,12 @@ export function codexScopeIssues(input: CodexScopeInput, now: number): Issue[] {
       { path: 'agent', message: `codex's credential is in scope until ${CODEX_SCOPE_END} only (dl-024)` },
     ];
   }
-  const armsOf = (allowed: { readonly arms: readonly string[] }) => allowed.arms.join(', ');
+  const armsOf = (allowed: (typeof ALLOWED)[number]) => allowed.arms.join(', ');
   if ('dryRunArm' in input) {
-    const profilesAllowed: readonly DryRunScope[] = [...ALLOWED, ...DRY_RUN_ONLY];
-    const allowed = profilesAllowed.find((one) => one.profile === input.profile);
+    const allowed = ALLOWED.find((one) => one.profile === input.profile);
     if (allowed === undefined) {
-      const profiles = profilesAllowed.map((one) => one.profile).join(' or ');
-      return [{ path: 'profile', message: `a codex dry run reads ${profiles} (${DRY_RUN_DECISIONS})` }];
+      const profiles = ALLOWED.map((one) => one.profile).join(' or ');
+      return [{ path: 'profile', message: `a codex dry run reads ${profiles} (${DECISIONS})` }];
     }
     if (!(allowed.arms as readonly string[]).includes(input.dryRunArm)) {
       return [
