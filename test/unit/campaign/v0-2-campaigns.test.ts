@@ -117,7 +117,7 @@ describe('the v0.2 campaign files (task-091)', () => {
     },
   );
 
-  it('admits WingFoil v0.3.0 to the eligibility register, and no later version unassessed (REQ-FMT-11)', () => {
+  it('admits WingFoil v0.3.0 to the eligibility register, and no version it has not assessed, v0.3.2 for one (REQ-FMT-11)', () => {
     const register = parse(readFileSync(repoPath('eligibility/register.yaml'), 'utf8')) as {
       entries: {
         tool: string;
@@ -135,7 +135,7 @@ describe('the v0.2 campaign files (task-091)', () => {
       'pass',
       'pass',
     ]);
-    expect(register.entries.some((e) => e.tool === 'wingfoil' && e.version === 'v0.3.1')).toBe(false);
+    expect(register.entries.some((e) => e.tool === 'wingfoil' && e.version === 'v0.3.2')).toBe(false);
   });
 
   it('pins an effort for every model the reference campaign runs, so run does not refuse it for that', () => {
