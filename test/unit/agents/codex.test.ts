@@ -145,6 +145,20 @@ describe('reading a Codex session (REQ-RUN-09 as amended in 1.32)', () => {
     expect(session.outcome).toBe('quota exhausted');
   });
 
+  it('reads the warning as a top-level error event too (review round 2)', () => {
+    const switched = JSON.stringify({
+      type: 'error',
+      message: 'This session was recorded with model `gpt-5.6-terra` but is resuming with `gpt-6.1-sol`.',
+    });
+    const lines = stream('completed.jsonl');
+    const session = readCodexSession([lines[0] ?? '', switched, ...lines.slice(1)], {
+      model: 'gpt-5.6-terra',
+      usdToEur: RATE,
+    });
+    expect(session.outcome).toBe('failed');
+    expect(session.switchedTo).toBe('gpt-6.1-sol');
+  });
+
   it('takes the final message from the last agent_message item', () => {
     const session = readCodexSession(stream('completed.jsonl'), { model: MODEL, usdToEur: RATE });
     expect(session.finalMessage).toBe('Added src/index.ts with the inventory API.');
@@ -505,6 +519,40 @@ describe('the Codex adapter (REQ-RUN-04 as amended in 1.32)', () => {
     expect(resumed.sessionId).toBe(SESSION);
     expect(resumed.usage).toMatchObject({ inputTokens: 0, cacheReadInputTokens: 15000, outputTokens: 600 });
     expect(resumed.usage.costUsd).toBeCloseTo(RESUMED_USD, 10);
+  });
+
+  it('counts a resume Codex ran on another model at its bound, priced as no model (bug-036, review round 2)', async () => {
+    const warning = JSON.stringify({
+      type: 'item.completed',
+      item: {
+        id: 'item_0',
+        type: 'error',
+        message: `This session was recorded with model \`${MODEL}\` but is resuming with \`gpt-6-luna\`.`,
+      },
+    });
+    const resumedLines = stream('resumed.jsonl');
+    const exec = runner([
+      stream('completed.jsonl').join('\n'),
+      [resumedLines[0] ?? '', warning, ...resumedLines.slice(1)].join('\n'),
+    ]);
+    const agent = codexAgent({ authFile: authFile('at-0001-long-access'), usdToEur: RATE });
+
+    await agent.runStep(step(exec.run, 'medium'));
+    const resumed = await agent.resume({
+      scenarioId: 'S3',
+      step: 1,
+      intervention: 1,
+      sessionId: SESSION,
+      reply: 'Continue.',
+      remainingCostUsd: 3,
+      effort: 'medium',
+      run: exec.run,
+    });
+
+    expect(resumed.costUnknown).toBe(true);
+    expect(resumed.error).toMatch(/resuming with `gpt-6-luna`/);
+    expect(resumed.usage.costUsd).toBe(0);
+    expect(resumed.models).toBeUndefined();
   });
 
   it('resumes a thread whose stream does not start it again, as the same session', async () => {
