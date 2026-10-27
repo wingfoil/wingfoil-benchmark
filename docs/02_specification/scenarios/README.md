@@ -1,7 +1,7 @@
 # Scenario specifications — common conventions (v0.1)
 
-**Version:** 1.4
-**Date:** 2026-10-20
+**Version:** 1.5
+**Date:** 2026-10-27
 **Status:** Approved
 **Traces to:** [09_experiment-design.md](../../01_vision/09_experiment-design.md), [06_features.md](../../01_vision/06_features.md) F3.1, F3.6, F6.1–F6.3, F6.8; plan [plan-002](../../plans/plan-002-benchmark-specification.md)
 
@@ -14,8 +14,8 @@ what differs from them.
 
 | # | Topic | Decision |
 |---|---|---|
-| K1 | Stack of the seeds | **TypeScript / Node.js 22** for all v0.1 scenarios, so that oracles share the runner's tooling. A Python scenario arrives in v0.3. |
-| K2 | Visibility | All four scenarios are **public**, so that they can be rerun without the hold-out. Each one also has **hold-out additions** (extra tests, variants), kept in the private repository (T13). Fully hold-out scenarios start in v0.3. |
+| K1 | Stack of the seeds | **TypeScript / Node.js 22** for all v0.1 scenarios, so that oracles share the runner's tooling. A Python scenario arrives in v0.3 (v0.4 from sequencer 1.2). |
+| K2 | Visibility | All four scenarios are **public**, so that they can be rerun without the hold-out. Each one also has **hold-out additions** (extra tests, variants), kept in the private repository (T13). Fully hold-out scenarios start in v0.3 (v0.4 from sequencer 1.2). |
 | K3 | Project rules | A scenario's rules (directives, decisions to follow) live **only in the arm's environment**: none in baseline, Markdown in baseline-docs, WingFoil directives and Memory in wingfoil. The seed carries no `CONTRIBUTING.md` with rules. |
 | K4 | Cost sizing | The per-run target of the experiment design (§6, about 1.2 € on Sonnet 5) is **indicative, with a loose gate**, until dry runs (F3.3) provide real data. The budget is then revised. Step counts below are sized with that target in mind. |
 | K5 | WingFoil under test | Scenarios and the runner are developed against the **WingFoil 0.2 pre-release** in the WingFoil repository, pinned to a commit when the arm is built (during development `3df305e`; from calibration the release `v0.2.2`, amended in 1.3). Compared with the v0.1 release it adds `memory submit/approve/reject/deprecate/history`, `directive create/assign/remove`, read-only MCP Resources and MCP Prompts that load role directives (mutating MCP Tools come in a later build; amended in 1.1). It still has **no workflow engine**. Note: WingFoil's `package.json` still says `0.1.0`, so the version string does not identify the build. The commit does. The first public campaign still runs on the latest *released* WingFoil (sequencer decision 3): from calibration on, the wingfoil arm runs **v0.2.2** (`12537b62`), which offers the same capabilities, still with no workflow engine and no MCP Tools (amended in 1.3). From v0.2's reference campaign the wingfoil arm runs **v0.3.0** (`cc31d7a8`), which adds a workflow engine that records and routes a workflow's steps and carries none out, still with no MCP Tools; the arm declares the engine (`provides`), though its runs leave it unstarted, since WingFoil's guide has an agent start a workflow only when asked; v0.2's bridge keeps v0.2.2 (amended in 1.4, task-095). |
@@ -115,3 +115,19 @@ review decision of the approver at that task's review, 2026-09-29 (`312c4c1`).
 
 Source: [task-049](../../memory/task/task-049-wingfoil-v0-2-2-as-the-harness-under-test.md), review decision of
 the approver at that task's review, 2026-10-02 (`cd062e2`).
+
+### Amendment 1.5 (v0.3, release-planning, 2026-10-27)
+
+- **K6, saturation**
+  ([dl-013](../../memory/decision-log/dl-013-saturation-levels-of-delegation-and-an-external-neutral-control.md),
+  as amended at v0.3's planning): a scenario version is **saturated** when every arm reaches the maximum on its final
+  hidden tests in every run. A saturated version is revised (a new version), never edited. Every version 1.1 records
+  whether its 1.0 was saturated, read from the published campaigns. Levels of delegation and the external control are
+  deferred to v0.4, which adds scenarios.
+- **K7, the versions 1.1:** S1, S2, S3 and S8 at 1.1 carry the oracle's corrections (content checks v2, the human
+  rubric) and S1's step 5 stated (bug-025); what a correction would change in 1.0 is published as an **erratum** for
+  1.0, whose results stay as published. A configured variant's configuration (F7.5) is written **per scenario
+  version** and versioned with it.
+
+Source: [task-103](../../memory/task/task-103-the-v0-3-vision-and-experiment-design-amendments.md); the approver's
+review decision at the task's review.

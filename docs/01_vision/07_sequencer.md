@@ -1,9 +1,9 @@
 # Sequencer — WingFoil Benchmark
 
-**Version:** 1.1
-**Date:** 2026-09-22
+**Version:** 1.2
+**Date:** 2026-10-27
 **Status:** Approved
-**Traces to:** [06_features.md](06_features.md) (decisions 1–3), [05_journeys.md](05_journeys.md), [04_personas.md](04_personas.md)
+**Traces to:** [06_features.md](06_features.md) (decisions 1–3), [05_journeys.md](05_journeys.md), [04_personas.md](04_personas.md); 1.2: [plan-005](../plans/plan-005-release-v0-3.md), [rel-v0-3](../memory/release/rel-v0-3.md)
 
 ---
 
@@ -25,10 +25,11 @@ A **release** is a group of waves that ends in a result someone can use.
 |---|---|---|---|
 | **v0.1 — First preliminary result** | A WingFoil-only campaign (baseline, baseline-docs, wingfoil) on S1–S3 and S8, published as preliminary. The repository becomes public. | Riley (primary), Maintainer | 33 |
 | **v0.2 — Competitors** | Spec Kit and OpenSpec arms under the same rules; campaign comparison; filters for Dana. | Avery, Dana, Maintainer | 7 |
-| **v0.3 — Broader categories** | Cover A and B: S4, S5 (with the blind judge), S6, S7. | Dana, Maintainer | 5 |
+| **v0.3 — WingFoil as designed, harnesses as configured** | Re-measure S1, S2, S3 and S8 at 1.1 with a corrected oracle and metrics; the wingfoil arm driving WingFoil 0.3.1's workflow engine; every harness also configured for the project; the review loop measured per arm; campaigns composed from presets, Codex among the agents (1.2). | Riley, Avery, Dana, Maintainer | 2 new (F7.5, F4.9); F1.1, F2.6, F2.7, F4.1, F4.3 revisited |
+| **v0.4 — Broader categories** | Cover A and B: S4, S5 (with the blind judge), S6, S7 (from v0.3 in 1.2). | Dana, Maintainer | 5 |
 | **v1.0 — Macro projects** | M1–M3 and S9, run for WingFoil's major releases; contributions from external authors. | all | 5 |
 
-Every feature of `06_features.md` is assigned to exactly one release.
+Every feature of `06_features.md` is assigned to exactly one release; a later release may revisit it (1.2), and says so.
 
 ---
 
@@ -60,13 +61,35 @@ Competitors come after the first WingFoil-only result (features decision 2).
 | W13 — OpenSpec and contests | F7.1 OpenSpec arm · F7.2 setup contest process | — | OpenSpec runs, and a setup can be contested |
 | W14 — Comparison and Dana | F5.2 campaign comparison · F5.7 profile filter and stable URLs · F1.4 resumable campaign | — | a second public campaign compared with the first |
 
-## v0.3 — Broader categories
+## v0.3 — WingFoil as designed, harnesses as configured
+
+Planned in [plan-005](../plans/plan-005-release-v0-3.md) (1.2). Campaigns run outside the release cycle, from files
+that extend a preset ([dl-022](../memory/decision-log/dl-022-campaigns-run-outside-the-release-cycle-composed-from-self-explaining-presets-and-a-codex-only-campaign-as-the-first.md)).
 
 | Wave | Features | High unc. | Ends with |
 |---|---|---|---|
-| W15 — Knowledge and legacy | F6.4 S4 fictional domain · F6.7 S7 legacy refactoring | — | F and D covered with two more scenarios |
-| W16 — Specification | F6.5 S5 spec authoring · F4.6 blind rubric judge | F6.5 | category A covered |
-| W17 — Planning | F6.6 S6 plan-then-execute | F6.6 | category B covered |
+| W15 — Presets and Codex | F1.1 campaign presets and `extends:` | the Codex spike | the Codex baseline campaign run, comparable with campaign-002's baseline |
+| W16 — The method corrected | F4.1 content checks v2 and a human rubric · F4.3 cost metrics (M-K3, M-K4), M-R2 v2, the variance rule | — | v0.2's campaigns re-scored offline from their transcripts, at no spending |
+| W17 — WingFoil 0.3.1, step A | F2.7 the wingfoil arm driving the workflow cycle · F2.6 WingFoil 0.3.1 under test | the spike on 0.3.1 | an S1 dry run whose agent drives the engine |
+| W18 — Configured variants | F7.5 configured variants | the configuring agent | every arm, configured ones included, in a dry run |
+| W19 — The review loop | F4.9 the review loop per arm | F4.9 | the review-loop metrics in the dry runs |
+
+W15 also runs, before the ChatGPT Plus subscription's end on 2026-11-13: dl-022's arm B on Codex (campaign-005 and,
+on approver policy v2, campaign-006; dl-025) and the classifier v2 brought ahead from W16 (task-106, dl-026), both
+done; and, as soon as WingFoil 0.3.1 is tagged and subject to its cut order, step A brought ahead from W17 with a
+Codex campaign of the step-A arm (campaign-007,
+[dl-027](../memory/decision-log/dl-027-step-a-brought-ahead-with-a-codex-campaign-of-the-step-a-arm-before-2026-11-13.md)).
+The waves keep their features; only their order of delivery moves.
+
+## v0.4 — Broader categories
+
+v0.3's waves of 1.1, renumbered (1.2).
+
+| Wave | Features | High unc. | Ends with |
+|---|---|---|---|
+| W20 — Knowledge and legacy | F6.4 S4 fictional domain · F6.7 S7 legacy refactoring | — | F and D covered with two more scenarios |
+| W21 — Specification | F6.5 S5 spec authoring · F4.6 blind rubric judge | F6.5 | category A covered |
+| W22 — Planning | F6.6 S6 plan-then-execute | F6.6 | category B covered |
 
 ## v1.0 — Macro projects
 
@@ -74,11 +97,11 @@ Run for WingFoil's major releases, with a reduced smoke run at each minor (brief
 
 | Wave | Features | High unc. | Ends with |
 |---|---|---|---|
-| W18 — First macros | F6.10 M1 calculator · F6.11 M2 bookmarks dashboard | — | two macro projects run end to end |
-| W19 — Hard ones | F6.12 M3 situation awareness · F6.9 S9 parallel agents | F6.12 | categories F and G covered at scale |
-| W20 — Openness | F7.3 external contribution guide | — | external scenario authors supported |
+| W23 — First macros | F6.10 M1 calculator · F6.11 M2 bookmarks dashboard | — | two macro projects run end to end |
+| W24 — Hard ones | F6.12 M3 situation awareness · F6.9 S9 parallel agents | F6.12 | categories F and G covered at scale |
+| W25 — Openness | F7.3 external contribution guide | — | external scenario authors supported |
 
-W19 holds two high-uncertainty features (F6.12 and F6.9). This breaks the one-per-wave rule. It is
+W24 (W19 until 1.2) holds two high-uncertainty features (F6.12 and F6.9). This breaks the one-per-wave rule. It is
 accepted for v1.0, because it is far away and will be re-planned (sequencer decision 4).
 
 ---
@@ -93,7 +116,7 @@ accepted for v1.0, because it is far away and will be re-planned (sequencer deci
 3. **WingFoil version:** the benchmark is developed against the pinned WingFoil v0.2 pre-release
    (commit `3df305e`; amended in 1.1). The first public campaign runs on the latest released
    WingFoil at that time.
-4. **W19:** accepted with two high-uncertainty features.
+4. **W24** (W19 until 1.2): accepted with two high-uncertainty features.
 
 ### Amendment 1.1 (specification phase, 2026-09-22)
 
@@ -103,3 +126,19 @@ accepted for v1.0, because it is far away and will be re-planned (sequencer deci
    `package.json` version had not been bumped. The WingFoil under development is now the **v0.2
    pre-release, pinned to commit `3df305e`**. Its only relevant gap is the missing **workflow engine**.
    Source: scenario-specs review (2026-09-22), [../02_specification/scenarios/README.md](../02_specification/scenarios/README.md) K5.
+
+### Amendment 1.2 (v0.3, release-planning, 2026-10-27)
+
+6. **v0.3 is "WingFoil as designed, harnesses as configured"**, the approver's choice of 2026-10-24: S1, S2, S3 and S8
+   re-measured at 1.1, the wingfoil arm on WingFoil 0.3.1 driving its workflow engine
+   ([dl-021](../memory/decision-log/dl-021-the-wingfoil-arm-follows-wingfoil-s-workflow-model-in-three-steps-each-on-the-wingfoil-release-that-enables-it.md)
+   step A), every harness also configured for the project (F7.5), the review loop measured per arm (F4.9); waves
+   W15–W19. It revisits F1.1, F2.6, F2.7, F4.1 and F4.3, assigned to v0.1, and adds F7.5 and F4.9.
+7. **"Broader categories" moves to v0.4**, its waves renumbered W20–W22; v1.0's waves renumbered W23–W25. Decision
+   4 now names W24.
+8. **The order of delivery may move within a release** when a decision says so (dl-022, dl-027): W15 ran W16's
+   classifier v2 ahead of its wave, and brings W17's step A ahead once WingFoil 0.3.1 is tagged, subject to dl-027's
+   cut order; each wave keeps its features and its "Ends with".
+
+Source: [task-103](../memory/task/task-103-the-v0-3-vision-and-experiment-design-amendments.md);
+[plan-005](../plans/plan-005-release-v0-3.md); the approver's review decision at the task's review.

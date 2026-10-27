@@ -1,7 +1,7 @@
 # Features — WingFoil Benchmark
 
-**Version:** 1.3
-**Date:** 2026-09-23
+**Version:** 1.4
+**Date:** 2026-10-27
 **Status:** Approved
 **Traces to:** [05_journeys.md](05_journeys.md), [03_is-isnot.md](03_is-isnot.md); input: [X_competitor-landscape-2026-09-22.md](X_competitor-landscape-2026-09-22.md)
 
@@ -64,6 +64,7 @@ decision in the experiment design.
 | F4.6 | **Blind rubric judge** (not in the first release; arrives with S5): an LLM judge scores spec adherence against a rubric, with harness files stripped so that it cannot tell the arms apart. | J2.5 | M | M | **H** |
 | F4.8 | **Tool-neutral governance metrics**: governance is measured by outcomes that any harness can achieve, for example "is an illegal state transition prevented?" or "can who approved what, and why, be reconstructed from the repository?", and never by the presence of one tool's file or commit format. | J5.2, J6.1 | H | M | M |
 | F4.7 | **Continuity metrics**: maintainability as **next-change cost** (M-F2), the cost and success of the later steps of a scenario attributed to the code produced by the earlier ones; and **decision consistency** (M-F1), whether earlier decisions are respected or explicitly revised (extended in 1.2). | vision | H | L | M |
+| F4.9 | **Review loop per arm** (v0.3): the code an arm produced is reviewed by the same independent reviewer in every arm, with the same severities (blocker, should-fix, nit) and the same closing rule (a re-review of the fix's diff after a blocker or a should-fix; a nit-only round closes); measured per arm: rounds to a clean review, the share of later findings induced by fixes, and the review's cost. | J2.5 | M | M | H |
 
 ## F5 — Results and reporting
 
@@ -106,6 +107,7 @@ phase. The IDs below are the candidates from the brief.
 | F7.4 | **Harness eligibility criteria**: published criteria a tool must meet to get an arm, for example: runs with the campaign's agent and model id; version can be pinned; runs headless in a container; is a workflow harness rather than only a standards or prompt pack. Exclusions are published with their reason (from the input landscape, probable ones are Kiro, which imposes its own models and IDE, Taskmaster, which calls its own LLMs, and Agent OS, no longer a workflow harness). | J6.1 | M | L | M |
 | F7.2 | **Setup contest process**: an issue template for contesting a setup; a corrected setup yields a new campaign and the old one stays published. | J6.3 | L | L | L |
 | F7.3 | **External contribution guide**: guide and review step for outside scenario authors (deferred). | J7 | L | L | L |
+| F7.5 | **Configured variants** (v0.3): each harness arm also run configured for the project — its configuration written by an agent that sees only the seed and the README, never the prompts or the oracle, versioned with the scenario (1.1) — beside a configured docs control generated from that configuration; the configuring cost is a one-off setup cost (M-K3). | J6.1 | H | H | H |
 
 ---
 
@@ -165,3 +167,12 @@ phase. The IDs below are the candidates from the brief.
    unaffected: F1.1's journey, acceptance file and requirements do not change. Source:
    [../memory/decision-log/dl-003-campaign-pins-harness-coverage-seed-and-the-models-shape.md](../memory/decision-log/dl-003-campaign-pins-harness-coverage-seed-and-the-models-shape.md),
    decision 2.
+
+9. **Amendment 1.4 (v0.3, release-planning, 2026-10-27) — F7.5 and F4.9 added.** The v0.2 retrospective's decisions
+   of 2026-10-23, planned in v0.3 by the approver on 2026-10-24: **F7.5 configured variants**, so that a harness is
+   measured as its users would configure it for their project, and not only on its defaults, with a configured docs
+   control so that T3 still holds; **F4.9 the review loop per arm**, from the cross-repository analysis of review rounds
+   (rounds rarely clean at the first; 40–89 % of later findings induced by fixes, dl-020): one reviewer and one rule for
+   every arm, so that the loop is a measurement and not an artefact of one arm. Both in v0.3 (sequencer 1.2, W18 and
+   W19). Source: [task-103](../memory/task/task-103-the-v0-3-vision-and-experiment-design-amendments.md);
+   [plan-005](../plans/plan-005-release-v0-3.md).
