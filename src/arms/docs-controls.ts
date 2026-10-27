@@ -1,6 +1,7 @@
 import { parse } from 'yaml';
 
 import { renderProjectRules } from './baseline-docs.js';
+import type { RenderOptions } from './baseline-docs.js';
 
 /** One kind of content a docs generator declares: whether it renders it, and why (REQ-RUN-11 as amended). */
 export interface DeclaredContent {
@@ -15,7 +16,8 @@ export interface DeclaredContent {
  */
 export interface DocsGenerator {
   readonly kept: readonly string[];
-  readonly render: (files: ReadonlyMap<string, string>) => string;
+  /** The options are a docs control's own choices (`docs_directives`); a generator with none ignores them. */
+  readonly render: (files: ReadonlyMap<string, string>, options?: RenderOptions) => string;
   readonly declaration: readonly DeclaredContent[];
 }
 
@@ -116,7 +118,12 @@ export const DOCS_GENERATORS: Readonly<Record<string, DocsGenerator>> = {
       {
         kind: 'directives of other roles only',
         rendered: false,
-        why: 'the manual does not send the agent to them',
+        why: "the v0.2 manual does not send the agent to them; rendered for a docs control that renders every role's",
+      },
+      {
+        kind: "every role's directives, each labelled with its roles (`docs_directives: every-role`)",
+        rendered: true,
+        why: "the step-A manual has the agent act in each workflow step's role (dl-021)",
       },
       { kind: 'approved decision-logs and ADRs', rendered: true, why: 'decisions already taken: rules' },
       {

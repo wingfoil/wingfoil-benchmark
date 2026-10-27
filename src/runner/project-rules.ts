@@ -63,7 +63,7 @@ export async function prepareProjectRules(
         await snapshot(
           key,
           scenario,
-          { control: control.name, source, harness, generator },
+          { control, source, harness, generator },
           { resultsDir, campaignId: checked.id, reuse },
           options,
         ),
@@ -78,7 +78,7 @@ async function snapshot(
   key: string,
   scenario: Scenario,
   arms: {
-    readonly control: string;
+    readonly control: Arm;
     readonly source: Arm;
     readonly harness: HarnessArtefact;
     readonly generator: DocsGenerator;
@@ -87,7 +87,7 @@ async function snapshot(
   options: ProjectRulesOptions,
 ): Promise<string> {
   const { control, source, harness, generator } = arms;
-  const generated = join(where.resultsDir, 'generated', key, control);
+  const generated = join(where.resultsDir, 'generated', key, control.name);
   // A resumed execution's rules are those its earlier runs ran with (task-080): a setup need not give the same bytes
   // twice, and runs of one group must not get two.
   if (where.reuse && existsSync(join(generated, PROJECT_RULES))) return join(generated, PROJECT_RULES);
@@ -149,7 +149,8 @@ async function snapshot(
   }
   rmSync(build, { recursive: true, force: true });
   const rules = join(generated, PROJECT_RULES);
-  writeFileSync(rules, generator.render(files));
+  // A docs control's choice of directives (REQ-RUN-11 as amended in 1.41): its own, so that its digest pins it.
+  writeFileSync(rules, generator.render(files, { everyRole: control.docsDirectives === 'every-role' }));
   return rules;
 }
 
