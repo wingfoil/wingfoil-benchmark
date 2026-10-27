@@ -26,14 +26,25 @@ function commit(repo: string, message: string, tag?: string): void {
   if (tag !== undefined) git('tag', tag);
 }
 
-const element = (release: string) => `---\nstatus: ready\nrelease: "${release}"   # a comment\n---\n`;
+const element = (release: string, status = 'ready') =>
+  `---\ntype: decision-log\nstatus: ${status}\nrelease: "${release}"   # a comment\n---\n`;
 
-/** A WingFoil checkout: a retrospective of v0.3 with one row per decision, its triage record, a patch, tags. */
-function wingfoil(root: string): string {
+/**
+ * A WingFoil checkout: its memory.yaml's machines, a retrospective of v0.3 with one row per decision (and `extra`
+ * rows), its triage record, a patch, tags.
+ */
+function wingfoil(root: string, extra: readonly string[][] = []): string {
   const repo = join(root, 'wingfoil');
   mkdirSync(repo);
   execFileSync('git', ['-C', repo, 'init', '-q', '-b', 'main']);
+  put(
+    repo,
+    '.wingfoil/memory.yaml',
+    'defaults:\n  states:\n    sequence: [draft, pending, approved]\ntypes:\n  decision-log:\n    states:\n      sequence: [draft, in-discussion, ready]\n',
+  );
   put(repo, 'docs/04_memory/design/dls/dl-001-old.md', element('v0.2'));
+  // Stamped for a shipped release, but still under discussion: a target, not shipped.
+  put(repo, 'docs/04_memory/design/dls/dl-003-open.md', element('v0.2', 'in-discussion'));
   commit(repo, 'v0.2', 'v0.2.0');
   const rows = [
     ['F-001', 'superseded', '—'],
@@ -41,6 +52,8 @@ function wingfoil(root: string): string {
     ['F-003', 'element', '`dl-002`'],
     ['F-004', 'restated', '—'],
     ['F-005', 'needs-info', '—'],
+    ['F-007', 'element', '`dl-001`, `dl-003`'],
+    ...extra,
   ];
   put(repo, 'docs/04_memory/design/dls/dl-002-later.md', element('v0.4'));
   put(
@@ -79,20 +92,21 @@ function wingfoil(root: string): string {
   return repo;
 }
 
-/** A consumer repository pinning `pin`, with notes F-001 to F-006 all `open`. */
+/** A consumer repository pinning `pin`, with notes F-001 to F-007 `open`, and F-008 captured by dl-001 at an earlier sync. */
 function consumer(root: string, pin: string): string {
   const repo = join(root, 'consumer');
   put(repo, 'package.json', JSON.stringify({ devDependencies: { wingfoil: pin } }));
   const ledger: string[] = [];
-  for (let n = 1; n <= 6; n += 1) {
+  for (let n = 1; n <= 8; n += 1) {
     const id = `F-00${String(n)}`;
     const file = `${id}-note-${String(n)}.md`;
+    const [status, answered] = n === 8 ? ['captured', 'dl-001'] : ['open', ''];
     put(
       repo,
       `docs/wingfoil-feedback/${file}`,
-      `---\nid: ${id}\ntitle: "Note ${String(n)}"\nkind: gap\nstatus: open\nwingfoil_version: 0.2.2\nanswered_by: []\n---\n\nbody\n`,
+      `---\nid: ${id}\ntitle: "Note ${String(n)}"\nkind: gap\nstatus: ${status}\nwingfoil_version: 0.2.2\nanswered_by: [${answered}]\n---\n\nbody\n`,
     );
-    ledger.push(`| [${id}](${file}) | Note ${String(n)} | gap | open | |`);
+    ledger.push(`| [${id}](${file}) | Note ${String(n)} | gap | ${status} | ${answered} |`);
   }
   put(
     repo,
@@ -127,6 +141,8 @@ describe('wingfoil-sync (task-109)', () => {
     expect(frontmatter(repo, 4)).toEqual(['open', '[]']); // restated with no element
     expect(frontmatter(repo, 5)).toEqual(['needs-info', '[]']);
     expect(frontmatter(repo, 6)).toEqual(['open', '[]']); // not read
+    expect(frontmatter(repo, 7)).toEqual(['captured', '[dl-001, dl-003]']); // dl-003 not in its last state
+    expect(frontmatter(repo, 8)).toEqual(['resolved', '[dl-001]']); // captured earlier, no row: re-checked
     const readme = readFileSync(join(repo, 'docs/wingfoil-feedback/README.md'), 'utf8');
     expect(readme).toContain('| [F-002](F-002-note-2.md) | Note 2 | gap | resolved | dl-001 |');
     expect(readme).toContain('| [F-003](F-003-note-3.md) | Note 3 | gap | captured | dl-002 |');
@@ -135,12 +151,12 @@ describe('wingfoil-sync (task-109)', () => {
     expect(result.stdout).toContain(`triage read this inbox at: \`${SHA}\` (5 notes)`);
     expect(result.stdout).toContain('F-003 ← bug-003');
     expect(result.stdout).not.toContain(OTHER);
-    expect(result.stdout).toContain('counts: resolved 2, captured 1, open 2, needs-info 1');
+    expect(result.stdout).toContain('counts: resolved 3, captured 2, open 2, needs-info 1');
     // A second sync reads the notes it wrote and changes nothing.
     const before = readFileSync(join(repo, 'docs/wingfoil-feedback/README.md'), 'utf8');
     const again = sync(repo, wf, 'v0.3.1', '--grep-ref', 'origin-main', '--write');
     expect(again.status, again.stderr).toBe(0);
-    expect(again.stdout).toBe(result.stdout);
+    expect(again.stdout).toContain('counts: resolved 3, captured 2, open 2, needs-info 1');
     expect(readFileSync(join(repo, 'docs/wingfoil-feedback/README.md'), 'utf8')).toBe(before);
   });
 
@@ -150,6 +166,16 @@ describe('wingfoil-sync (task-109)', () => {
     const repo = consumer(root, 'npm:wingfoil@0.1.9');
     expect(sync(repo, wf, 'v0.3.1', '--grep-ref', 'origin-main', '--write').status).toBe(0);
     expect(frontmatter(repo, 2)).toEqual(['captured', '[dl-001]']);
+  });
+
+  it('refuses a decision the mapping does not know, writing nothing', () => {
+    const root = tempDir('bench-wingfoil-sync-');
+    const wf = wingfoil(root, [['F-006', 'postponed', '—']]);
+    const repo = consumer(root, 'npm:wingfoil@0.3.1');
+    const refused = sync(repo, wf, 'v0.3.1', '--grep-ref', 'origin-main', '--write');
+    expect(refused.status).toBe(1);
+    expect(refused.stderr).toContain('F-006: decision "postponed" is not in the mapping');
+    expect(frontmatter(repo, 1)).toEqual(['open', '[]']);
   });
 
   it('prints without writing unless asked, and refuses a pin that is not a published build', () => {

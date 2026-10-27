@@ -12,7 +12,7 @@ const NOTE_FILE = /^F-\d{3}-[a-z0-9-]+\.md$/;
 const FIELDS = ['id', 'title', 'kind', 'status', 'wingfoil_version', 'answered_by'];
 const KINDS = ['defect', 'gap', 'request'];
 const STATUSES = ['open', 'needs-info', 'captured', 'resolved', 'declined', 'duplicate'];
-/** A WingFoil build: `0.2.2`, `0.1.0-7a65580`, or this repository's pinned tarball `0.2-pre-3df305e`. */
+/** A WingFoil build: `0.3.1`, `0.1.0-7a65580`, or the tarball this repository pinned until task-109, `0.2-pre-3df305e`. */
 const BUILD = /^\d+\.\d+(?:\.\d+)?(?:-[0-9a-z.]+)*$/;
 /**
  * The first body line names the usage notes the note was migrated from (task-077), or the task that wrote a new

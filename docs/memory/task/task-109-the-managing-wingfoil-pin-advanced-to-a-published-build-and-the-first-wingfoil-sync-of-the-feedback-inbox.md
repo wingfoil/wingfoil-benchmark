@@ -126,8 +126,10 @@ Retrospective subsection, `v0.3.0 (cc31d7a8)` named), requirements **1.40**.
 `node scripts/wingfoil-sync.mjs ../WingFoil2 v0.3.1 --write` (`df51bc9c`): records read at `v0.3.1`
 (`retro-v0.3.md`, identical at `origin/main`; `rel-v0.3-feedback-triage.md`, this inbox read at `2ff5116f`, F-001 to
 F-039), `patch-v0.3.1`'s scope changes (no note), citations at `origin/main` `334a2887` (bug-400, bug-409, bug-410,
-dl-192, dl-197, dl-200, dl-201: the same elements as the table). Only this service's rows are read. A `captured`
-note is `resolved` when each element's `release:` at `v0.3.1` is a tag no later than the pin. Outcome: 24 `resolved`,
+dl-192, dl-197, dl-200, dl-201: each one the table names). Only this service's rows are read. A `captured`
+note is `resolved` when each element is, at `v0.3.1`, in the last state of its type's sequence in WingFoil's
+`memory.yaml` and its `release:` is a tag no later than the pin; a note captured at an earlier sync is re-checked so.
+Outcome: 24 `resolved`,
 7 `captured`, 4 `needs-info` (F-007, F-009, F-023, F-034), 4 `open` (restated, no element: F-030, F-031, F-035,
 F-037), F-040 to F-044 `open` (not read). Only `status` and `answered_by` changed (35 notes).
 **Left for the approver:** COLLABORATION.md says a consumer answers a `needs-info` in the note; the four answers
@@ -152,3 +154,26 @@ pin-specific text is rule 8's.
 
 - Checks: `npm run -s lint`, `tsc`, `scripts/pre-review.sh main` green; `test/unit/docs`, `test/unit/scripts`,
   `test/unit/results` and the traceability test green (198 tests). No real-agent session: 0 €.
+
+### Review
+
+- **Round 1** (independent read-only agent, `cd "$(mktemp -d)"`, on `21a5754a`): no blocker; it recomputed the sync
+  from the published records and found every note's status, `answered_by` and ledger row right, and no note changed
+  beyond the two fields. Five should-fix:
+  1. `lists` makes `[]` filled, so `task.requirements` and `release.waves`/`features` could be empty, and the
+     `memory.yaml` comment was stale. Fixed: the comment; `test/unit/docs/required-lists.test.ts` keeps a task's
+     `requirements`, and a release's `waves` and `features` past `draft`, non-empty; F-045 says 0.3 cannot express a
+     required non-empty list.
+  2. `release-cycle`'s retrospective now names the release element, which exists from planning, so its evidence is
+     always present (0.2's prose never matched a file). **Left for the approver:** what closes the phase (a document
+     of its own, an approval, or nothing); W-19 says so.
+  3. The sync left a `captured` note without a row of the newest retrospective unchanged, so it would never become
+     `resolved`. Fixed: such a note is re-checked against its own `answered_by`; tested.
+  4. A stamped `release:` is a target, not proof of shipping. Fixed: the element must also be in the last state of its
+     type's sequence at the ref (a bug `closed`, a task `done`, a decision-log `ready`); tested. This sync's outcome
+     is unchanged.
+  5. The four `needs-info` notes have no scheduled answer. **Left for the approver** (as in criterion 4).
+  Nits fixed: W-02 names `--set`; the README's and these notes' wording on the citations; `01_product-brief.md` and
+  a test comment no longer call the tarball the pin; a JSDoc name; tests for an unknown decision and a two-element row;
+  F-045 cites the user guide's upgrade section too. Nit accepted for the approver: rule 5 not rewritten (criterion 6).
+  Not changed: the README's Origin paragraph, which is history.

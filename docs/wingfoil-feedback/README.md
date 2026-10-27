@@ -29,9 +29,9 @@ service's full id and the full sha of the commit it read (WingFoil `COLLABORATIO
 `COLLABORATION.md`'s mapping only). Read at WingFoil `v0.3.1` (`870bd4406f3b9bba5ecde7a5f8198b80c2a98583`):
 `retro-v0.3`'s `## Consumer feedback` and `rel-v0.3-feedback-triage.md`, which read this inbox at
 `2ff5116fd249b5591d6e110e49feb0ba21c703d2` (F-001 to F-039); `patch-v0.3.1`'s scope changes, which take up no note;
-the citations at WingFoil's `origin/main` (`334a288707c3c817bdc8a1d31b20fb452dc2a5a1`), the same elements as the
-table. Outcome: 24 `resolved`, 7 `captured`, 4 `needs-info` (F-007, F-009, F-023, F-034: WingFoil's questions are in
-its triage record), 4 `open` (restated with no element), and F-040 to F-044, not yet read, `open`.
+the citations at WingFoil's `origin/main` (`334a288707c3c817bdc8a1d31b20fb452dc2a5a1`), each citing element one the
+table names. Outcome: 24 `resolved`, 7 `captured`, 4 `needs-info` (F-007, F-009, F-023, F-034: WingFoil's questions
+are in its triage record), 4 `open` (restated with no element), and F-040 to F-044, not yet read, `open`.
 
 ## Ledger
 

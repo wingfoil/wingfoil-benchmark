@@ -12,14 +12,16 @@ New note (task-109).
 ## Observed
 
 A project whose configuration worked on a 0.2 build (here `0.2-pre-3df305e`) moved to `wingfoil@0.3.1`
-(`870bd440`). `CHANGELOG.md`'s "Upgrading from 0.2.x" (0.3.0) lists what to change; two more changes broke the project,
-and neither is in that list:
+(`870bd440`). `CHANGELOG.md`'s "Upgrading from 0.2.x" (0.3.0) lists what to change, as does the user guide's
+*Upgrading from 0.2.x* section; two more changes broke the project, and neither is in either list:
 
 - A required frontmatter field holding a list is now missing unless the type lists it in
   `template.frontmatter.lists`. With `required: [id, type, title, status, release, wave, requirements]` and
   `requirements: [REQ-NFR-02]` in a committed task, `memory submit <id>` printed `error: missing required field on
   submit: requirements`, exit 1, where 0.2-pre moved it to `pending`. The changelog mentions `lists` only as an
-  addition (an explicit `[]` accepted there), not as a refusal of every non-empty list elsewhere.
+  addition (an explicit `[]` accepted there), not as a refusal of every non-empty list elsewhere. The fix also
+  changes what `required` means for a list: once listed, `[]` is filled, so a list that must hold at least one
+  value (a task's requirements) can no longer be required non-empty by `memory.yaml`.
 - A phase's `produces` must be a path pattern. A workflow with `produces: ["release element: ## Retrospective
   section"]` made `workflow list`, and `workflow show` for every workflow, exit 1 with `E_PHASE_PRODUCES_NOT_A_PATH
   phases[6].produces[0] (workflows/custom/release-cycle.yaml): produces 'release element: ## Retrospective section'

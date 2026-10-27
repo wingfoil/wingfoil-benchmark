@@ -7,8 +7,9 @@
 //   - its triage record (docs/09_retrospectives/rl-*/rel-v<X.Y>-feedback-triage.md), for the commit it read;
 //   - the `## Scope changes` of every patch released since (docs/04_memory/planning/rl-*/patch-v<X.Y>.*.md);
 //   - every element citing one of the notes, `git grep` at <grep-ref> (origin/main by default).
-// A `captured` note becomes `resolved` once every element in its `answered_by` names, in its `release:` at <ref>, a
-// release tag of WingFoil no later than the version this repository pins (package.json, npm:wingfoil@<version>).
+// A `captured` note becomes `resolved` once every element in its `answered_by` is, at <ref>, in the last state of its
+// type's sequence and names in its `release:` a release tag of WingFoil no later than the version this repository
+// pins (package.json, npm:wingfoil@<version>); a note captured at an earlier sync is re-checked so, row or not.
 // A note no row names stays as it is. It prints one line per note; with --write it changes the notes' `status` and
 // `answered_by` lines and the README ledger's two columns, nothing else.
 //
@@ -54,7 +55,7 @@ function version(text) {
 /** @param {number[]} a @param {number[]} b */
 const compare = (a, b) => (a[0] ?? 0) - (b[0] ?? 0) || (a[1] ?? 0) - (b[1] ?? 0) || (a[2] ?? 0) - (b[2] ?? 0);
 
-/** The table rows after a heading, header and rule skipped, as trimmed cells. @param {string} text @param {string} heading */
+/** The table rows after a heading, header and rule skipped, as trimmed cells. @param {string} source @param {string} heading */
 function table(source, heading) {
   const text = `\n${source}`;
   const lines = text.slice(text.indexOf(`\n${heading}\n`) + 1).split('\n');
@@ -139,11 +140,30 @@ for (const line of grep.split('\n')) {
   cited.set(match[2], list);
 }
 
+/** Each type's `states.sequence` in WingFoil's own memory.yaml at <ref>, `defaults` for a type with none. */
+const memoryYaml =
+  /** @type {{ defaults?: { states?: { sequence?: string[] } }, types?: Record<string, { states?: { sequence?: string[] } }> }} */ (
+    parse(show('.wingfoil/memory.yaml'))
+  );
+/** @type {Record<string, string[]>} */
+const machines = { defaults: memoryYaml.defaults?.states?.sequence ?? [] };
+for (const [type, def] of Object.entries(memoryYaml.types ?? {})) {
+  if (def.states?.sequence !== undefined) machines[type] = def.states.sequence;
+}
+
 /** The release an element names in its `release:` at <ref>, if it is a tag no later than the pin. @param {string} id */
 function shipped(id) {
   const path = files('docs/04_memory').find((file) => new RegExp(`/${id}-[^/]*\\.md$`).test(file));
   if (path === undefined) return { ok: false, why: `${id} not found at ${ref}` };
-  const release = /^release:\s*"?([^"#\s]*)"?/m.exec(show(path))?.[1] ?? '';
+  const text = show(path);
+  // Shipped means closed too: the element is in the last state of its type's sequence at <ref> (a bug `closed`, a
+  // task `done`, a decision-log `ready`); a stamped `release:` alone is a target.
+  const type = /^type:\s*"?([a-z-]+)"?/m.exec(text)?.[1] ?? '';
+  const state = /^status:\s*"?([a-z-]+)"?/m.exec(text)?.[1] ?? '';
+  const last = (machines[type] ?? machines.defaults ?? []).at(-1);
+  if (last === undefined || state !== last)
+    return { ok: false, why: `${id} is ${state}, not ${last ?? '?'}` };
+  const release = /^release:\s*"?([^"#\s]*)"?/m.exec(text)?.[1] ?? '';
   const v = version(release);
   const tag = tags.find((t) => v !== undefined && compare(/** @type {number[]} */ (version(t)), v) === 0);
   if (v === undefined || tag === undefined)
@@ -169,8 +189,22 @@ const results = notes.map((file) => {
   const status = /^status: (.*)$/m.exec(text)?.[1] ?? '';
   const answered = /** @type {string[]} */ (parse(/^answered_by: (.*)$/m.exec(text)?.[1] ?? '[]') ?? []);
   const row = decisions.get(id);
-  if (row === undefined)
+  if (row === undefined) {
+    // A note captured at an earlier sync is not read again; it is resolved once its elements ship.
+    if (status === 'captured' && answered.length > 0) {
+      const checks = answered.map(shipped);
+      const resolved = checks.every((check) => check.ok);
+      const whys = checks.map((check) => check.why).join('; ');
+      return {
+        file,
+        id,
+        status: resolved ? 'resolved' : 'captured',
+        answered,
+        why: `captured earlier: ${whys}`,
+      };
+    }
     return { file, id, status, answered, why: `not read by retro-${retroVersion}: unchanged` };
+  }
   const label = `${row.decision}${row.elements.length > 0 ? ` (${row.elements.join(', ')})` : ''}`;
   if (row.decision in MAPPING) {
     return {
