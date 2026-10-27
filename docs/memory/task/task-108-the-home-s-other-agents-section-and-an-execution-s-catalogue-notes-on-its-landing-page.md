@@ -50,5 +50,15 @@ execution's `notes` are shown on its landing page; REQ-RES-11 amended; ready for
 
 ## Execution notes
 
-<!-- What happened while building: deviations, blockers, follow-ups (filed as elements, never left
-     here). For every `wingfoil` command: declared vs observed behaviour. -->
+- Drafted, submitted and approved on main (2026-10-27); `memory submit` (backlog → in-progress, `53627f16`);
+  worktree `../WingFoil2-Benchmark-wt/task-108`, branch `task/task-108`, its own `npm ci`.
+- **Red-first:** `8045da72` (the home's heading and line, the notes on the landing page in `render.test.ts` and through
+  `bench site build` in `build.test.ts`) before the code.
+- **The code:** `KINDS`' third entry's heading and line; `landingPage` gains `notes`, rendered as the across-agents
+  page renders them (`<ul class="notes">`, escaped), after the framing, also on a baseline-only page (before its
+  across-agents section); `build.ts` passes the catalogue entry's notes.
+- **Criterion 4:** in the worktree, `bench site build` of the four published executions (`81ebb2691f9c/1`,
+  `c82a5e74885b/2`, `bf3a1ac7dff5/1`, `4682bcc65d6b/1`) succeeded; the home's groups read Reference campaigns,
+  Bridges, Other agents; campaign-004's landing page now carries its four notes.
+- **Docs:** requirements 1.39 (REQ-RES-11); the catalogue's header comment.
+- **Checks:** `scripts/pre-review.sh main` green; the site's unit tests (157) green.
