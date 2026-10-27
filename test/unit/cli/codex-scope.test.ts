@@ -37,6 +37,26 @@ describe("the Codex credential's scope (dl-024, widened by dl-025)", () => {
   const issuesOf = (input: Parameters<typeof codexScopeIssues>[0], now = before) =>
     codexScopeIssues(input, now);
 
+  it("accepts the step-A spike's dry run of its arm on Terra, and nothing else of it (task-107, dl-027)", () => {
+    const SPIKE = 'campaigns/wingfoil-step-a-spike.dry-run.yaml';
+    expect(
+      issuesOf({
+        agent: 'codex',
+        dryRunArm: 'wingfoil-step-a-spike',
+        profile: SPIKE,
+        model: 'gpt-5.6-terra',
+      }),
+    ).toEqual([]);
+    expect(
+      issuesOf({ agent: 'codex', dryRunArm: 'baseline', profile: SPIKE, model: 'gpt-5.6-terra' }),
+    ).toEqual([
+      { path: 'arm', message: `a codex dry run of ${SPIKE} runs wingfoil-step-a-spike only (dl-027)` },
+    ]);
+    expect(
+      issuesOf({ agent: 'codex', dryRunArm: 'wingfoil-step-a-spike', profile: SPIKE, model: 'gpt-6-luna' }),
+    ).toEqual([{ path: 'model', message: `a codex dry run of ${SPIKE} runs gpt-5.6-terra only (dl-027)` }]);
+  });
+
   it('ends on 2026-11-13', () => {
     expect(CODEX_SCOPE_END).toBe('2026-11-13');
   });
