@@ -23,8 +23,9 @@ task-102 chose `gpt-5.6-terra` (the approver's option A, 2026-10-24). OpenAI's p
 **Codex CLI 0.162.1** (the agent's pin) and 0.164.0 (npm's latest on 2026-10-27) do not list it in their bundled
 catalogue (`models.json`); whether `codex exec -m gpt-6.1-terra` runs on 0.162.1 is unverified.
 
-[dl-027](dl-027-step-a-brought-ahead-with-a-codex-campaign-of-the-step-a-arm-before-2026-11-13.md) plans campaign-007, the step-A arm on Codex, on `gpt-5.6-terra`, so that it bridges campaign-006 (v0.2's
-manual on the same model): only the arm's version and WingFoil's release change.
+[dl-027](dl-027-step-a-brought-ahead-with-a-codex-campaign-of-the-step-a-arm-before-2026-11-13.md)
+plans campaign-007, the step-A arm on Codex, on `gpt-5.6-terra`, so that it bridges campaign-006 (v0.2's manual on
+the same model): only the arm's version and WingFoil's release change.
 
 ## Options
 
