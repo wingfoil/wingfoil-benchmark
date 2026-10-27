@@ -8,7 +8,7 @@ import { moduleBoundaries } from './eslint/module-boundaries.js';
 export default tseslint.config(
   // `spikes/` holds throwaway probes and whatever an agent wrote while being probed: it is evidence,
   // not project code, and it is never built or published.
-  { ignores: ['dist/', 'coverage/', 'vendor/', 'docs/', 'runs/', 'results/', 'spikes/'] },
+  { ignores: ['dist/', 'coverage/', 'docs/', 'runs/', 'results/', 'spikes/'] },
   js.configs.recommended,
   ...tseslint.configs.strict,
   {

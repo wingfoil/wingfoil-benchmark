@@ -48,12 +48,13 @@ used to pass them (threats T5 and T13).
 ## Tooling
 
 This repository is itself managed with WingFoil. The WingFoil version that manages this repository
-is pinned in `vendor/` (built from a fixed WingFoil commit) and is **independent** of the WingFoil
-version under test, which each benchmark campaign selects on its own.
+is a published build, pinned in `package.json` as `npm:wingfoil@<version>` and moved forward only (WingFoil's
+`COLLABORATION.md`, "Contributor setup"), and is **independent** of the WingFoil version under test, which each
+benchmark campaign selects on its own.
 
 ```bash
-npm install
-npx wingfoil --help
+npm ci
+npm run -s wingfoil -- --help
 ```
 
 Private oracles and hold-out scenarios live in a separate, private repository.
