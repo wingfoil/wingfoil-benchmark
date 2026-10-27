@@ -161,4 +161,7 @@ Under dl-020; `scripts/pre-review.sh main` green before each round.
     neither); **Codex's resumed turn on `gpt-6.1-sol`** (bug-036, task-111, campaign-006's erratum).
   - **nits, fixed:** the per-step stops; criterion 5's size check moot; bug-400's reading on 0.3.1; the Claude run's
     secret scan stated; F-043's repro with the approver member.
+- **Round 2** (the same agent, the fix only; reflogs unchanged): every round-1 finding fixed or recorded, the factual
+  claims re-checked against the transcripts. **One nit, recorded:** the bug-400 sentence reads inception and
+  specification apart from build and deliver, though all four pass on `finalize` alone. The review closes.
 
