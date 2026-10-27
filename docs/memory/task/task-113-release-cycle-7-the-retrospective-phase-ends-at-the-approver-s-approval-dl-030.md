@@ -2,7 +2,7 @@
 id: task-113-release-cycle-7-the-retrospective-phase-ends-at-the-approver-s-approval-dl-030
 type: task
 title: "release-cycle 7: the retrospective phase ends at the approver's approval (dl-030)"
-status: pending
+status: backlog
 release: v0.3
 wave: W16
 features: []          # e.g. [F1.1, F3.1]
