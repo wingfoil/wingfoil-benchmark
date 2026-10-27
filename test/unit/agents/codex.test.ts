@@ -107,6 +107,42 @@ describe('reading a Codex session (REQ-RUN-09 as amended in 1.32)', () => {
     });
     expect(session.outcome).toBe('failed');
     expect(session.error).toMatch(/resuming with `gpt-6\.1-sol`/);
+    // Review round 1: its tokens are no model's of the step, nor priced as it; the runner counts it at its bound.
+    expect(session.models).toEqual({});
+    expect(session.switchedTo).toBe('gpt-6.1-sol');
+  });
+
+  it("reads the same warning naming the step's own model as no switch (review round 1)", () => {
+    const same = JSON.stringify({
+      type: 'item.completed',
+      item: {
+        id: 'item_0',
+        type: 'error',
+        message: 'recorded with model `a` but is resuming with `gpt-5.6-terra`.',
+      },
+    });
+    const lines = stream('completed.jsonl');
+    const session = readCodexSession([lines[0] ?? '', same, ...lines.slice(1)], {
+      model: 'gpt-5.6-terra',
+      usdToEur: RATE,
+    });
+    expect(session.outcome).toBe('completed');
+  });
+
+  it('keeps a quota stop a quota stop, though the resume also switched model (review round 1)', () => {
+    const switched = JSON.stringify({
+      type: 'item.completed',
+      item: {
+        id: 'item_0',
+        type: 'error',
+        message: 'This session was recorded with model `gpt-5.6-terra` but is resuming with `gpt-6.1-sol`.',
+      },
+    });
+    const session = readCodexSession([switched, ...stream('usage-limit.jsonl')], {
+      model: 'gpt-5.6-terra',
+      usdToEur: RATE,
+    });
+    expect(session.outcome).toBe('quota exhausted');
   });
 
   it('takes the final message from the last agent_message item', () => {
