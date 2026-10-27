@@ -9,7 +9,9 @@ tags: [custom, wingfoil, cli, governance]
 
 # Directive — Using the pinned WingFoil CLI
 
-**Version:** 1.0 · **Date:** 2026-10-10 · **Checked against:** `wingfoil@0.2-pre-3df305e`
+**Version:** 1.1 · **Date:** 2026-10-27 (1.1: rule 8 for a published pin; entries re-checked, W-04, W-05, W-06,
+W-10, W-11 and W-12 removed as fixed, W-18 and W-19 added — task-109) · **Checked against:** `wingfoil@0.3.1`
+(`870bd440`)
 
 Global. Applies to every role, human or agent, that runs the WingFoil CLI in this repository.
 
@@ -28,31 +30,28 @@ Global. Applies to every role, human or agent, that runs the WingFoil CLI in thi
    as `<service id>/F-<nnn>@<sha>`.
 7. Run `wingfoil-sync` at every `release-planning` and at every pin bump, and record the sync in
    `docs/wingfoil-feedback/README.md`.
-8. The pinned build is an unpublished tarball, `vendor/wingfoil-0.2-pre-3df305e.tgz`, installed as a `file:`
-   devDependency; it prints `0.1.0` for `--version` (F-005), so the build is named after the tarball. The pin moves
-   only through a task that replaces the tarball and `package.json`'s entry, and re-checks this directive (rule 5).
+8. The pinned build is a published version, `package.json`'s devDependency `"wingfoil": "npm:wingfoil@<version>"`
+   (WingFoil `COLLABORATION.md`, "Contributor setup"); `--version` prints `<version> (<sha>)`, which names the build.
+   The pin moves forward only, to a published version, one commit per switch, through a task that runs `npm ci`,
+   re-checks this directive (rule 5) and runs the sync (rule 7, `scripts/wingfoil-sync.mjs`).
 9. The WingFoil builds the benchmark's arms run inside their containers are measured, not used to govern this
    repository. Friction they show is still a note, with that build as `wingfoil_version`; a note never carries a
    run's results, which stay in the benchmark's own records.
 
-## Known behaviours (0.2-pre-3df305e)
+## Known behaviours (0.3.1)
 
 | # | Behaviour | How to work with it | Note | WingFoil element |
 |---|-----------|---------------------|------|------------------|
-| W-01 | `memory submit` and `memory approve` commit uncommitted edits of the element with the transition. | Commit the content by hand, with its own `docs(…)` message, before any transition. | F-012 | bug-076 |
-| W-02 | `memory add` takes only `--type`, `--title` and `--tags`; required fields come out empty. | Fill the frontmatter in a `docs(…)` commit before `submit`. | F-029 | |
-| W-03 | `approve` and `reject` require `--reason`; `submit` refuses one (`unknown option '--reason'`). | Never pass `--reason` to `submit`; every approval command handed over carries a drafted reason, never a placeholder. | F-038, F-037 | |
-| W-04 | `memory history` prepends template commits with `operation: null` and prints `fatal:` on stderr, exit 0. | Read an element's trail with `git log -- <path>`; ignore entries with `operation: null` that do not touch the element. | F-006 | bug-077 |
-| W-05 | "illegal transition" names a target the verb would never reach. | Read the type's machine in `memory.yaml` to see which verb applies from the current state. | F-011 | bug-127 |
-| W-06 | `submit` reads an empty required list as missing. | Fields that may truly be empty (`features`, `acceptance`) are left out of the type's `required`; a near-true value is never written to satisfy the check. | F-016 | |
-| W-07 | No verb amends an approved element. | A hand edit whose commit body carries `Approver:` and `Reason:`. | F-015 | dl-108, task-127 |
-| W-08 | No verb parks a started task. | Freeing a WIP slot is a question for the approver, framed in the machine's terms. | F-020 | dl-110, task-180 |
+| W-01 | `memory submit` commits uncommitted edits of the element with the transition, naming them in a `Carries content:` body line; `approve`, `reject` and `deprecate` refuse an element with uncommitted edits. | Commit the content by hand, with its own `docs(…)` message, before any transition. | F-012 | bug-076, bug-182 |
+| W-02 | `memory add` takes only `--type`, `--title` and `--tags`; required fields come out empty. | Fill the frontmatter in a `docs(…)` commit before `submit`. | F-029 | dl-197 |
+| W-03 | `approve` and `reject` require `--reason`; `submit` refuses one (`unknown option '--reason'`). | Never pass `--reason` to `submit`; every approval command handed over carries a drafted reason, never a placeholder. | F-038, F-037 | dl-201 |
+| W-07 | `memory amend` exists, but no type here declares `amendable: true`, so it refuses (`type 'task' is not amendable`). | A hand edit whose commit body carries `Approver:` and `Reason:`, until a task adopts `amendable`. | F-015 | dl-108, task-127 |
+| W-08 | `memory park` exists, but the `task` machine declares no `returns:` edge, so it refuses (`not a returns state`). | Freeing a WIP slot is a question for the approver, framed in the machine's terms, until a task adopts a `returns:` edge. | F-020 | dl-110, task-180 |
 | W-09 | A gate commits on the branch checked out. | Every approval command starts with the `cd` to the checkout of the branch that should receive it (`multi-session` directive). | F-031 | |
-| W-10 | `dna set` writes scalars only. | Edit lists in `dna.yaml` by hand, commit, then check with `dna show`. | F-013 | dl-081 |
-| W-11 | `workflow list` neither resolves phase includes nor checks actions, roles and `produces`. | Name the workflow in `include`; the repository's tests and the reviewer check the rest. | F-017, F-022 | bug-145, task-136, bug-150 |
-| W-12 | `--version` prints `0.1.0`. | Name the build after the tarball (rule 8). | F-005 | |
-| W-13 | No `memory validate`. | `submit` is the first check of required fields; fill them before it. | F-028 | |
+| W-13 | No `memory validate`. | `memory submit <id> --dry-run` checks the required fields and writes nothing. | F-028 | dl-200 |
 | W-14 | `submit` subjects carry no `[from → to]`. | Read the state from the frontmatter or `git log -p`, not from the subject. | F-008 | dl-054 |
-| W-15 | `directive assign` binds a directive to one role only; `--role global` is refused. | Add the directive to `roles.yaml`'s `global:` list by hand, commit it, and check `directives list --role <r>` for every role. | F-039, F-018 | |
+| W-15 | `directive assign` binds a directive to one role only; `--role global` is refused. | Add the directive to `roles.yaml`'s `global:` list by hand, commit it, and check `directives list --role <r>` for every role. | F-039, F-018 | bug-410 |
 | W-16 | The default `bug` machine ends at `approved`, and no field links a bug to the task that fixes it. | The `bug` type adds a `fixed` state, reached by `submit` once the fixing task is done; the bug's `fixed_by` and the task's `fixes` name each other, and the traceability test holds them together. | F-023 | |
 | W-17 | A `waiting` state, once declared, has no verb that leaves it without a workflow engine; a `plan` closes by a plain `submit`, with no approver or reason. | The `task` machine drops WingFoil's `waiting` states; a plan is closed by `submit` only after the approver's go, which the plan's text or its completion criterion records (the first plan was closed by a hand-written commit carrying `Approver:` and `Reason:`). | F-009 | |
+| W-18 | A required field holding a list is missing unless the type lists it in `template.frontmatter.lists`; there `[]` is filled. | Every required list field goes in its type's `lists` (`task.requirements`; `release.waves`, `features`). | F-045 | bug-147 |
+| W-19 | A phase's `produces` must be a path pattern; prose fails `workflow list` and `workflow show` for every workflow. | Name the file that holds the evidence (`release-cycle`'s retrospective: the release element). | F-045 | |

@@ -81,6 +81,7 @@ its triage record), 4 `open` (restated with no element), and F-040 to F-044, not
 | [F-042](F-042-directive-create-writes-no-body-and-takes-no-title.md) | directive create writes no body and takes no title | gap | open | |
 | [F-043](F-043-a-new-instance-s-step-evidence-is-read-from-the-whole-repository.md) | A new workflow instance's step evidence is read from the whole repository, so its gate can be skipped | defect | open | |
 | [F-044](F-044-kanban-s-delivery-runs-once-per-instance.md) | Kanban's delivery runs once per instance, though the scaffold says work flows continuously | gap | open | |
+| [F-045](F-045-the-0-3-upgrade-list-omits-two-changes-that-break-a-0-2-configuration.md) | The 0.3 upgrade list omits two changes that break a 0.2 configuration | defect | open | |
 
 ## Context
 
