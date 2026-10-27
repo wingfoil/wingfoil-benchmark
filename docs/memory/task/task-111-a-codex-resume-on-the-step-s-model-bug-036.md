@@ -84,3 +84,8 @@ Under dl-020; `scripts/pre-review.sh main` green before each round.
 - **Round 3** (the same agent, round 2's fix only): both tests pin their behaviour, nothing else changed; no finding.
   The review closes.
 
+### Approval
+
+- in-review → approved by the approver (`203aba03`), 2026-10-27; no full suites (one file of `src/agents/` and its
+  tests; `test/unit/agents` and `test/unit/runner` green). Merged into main (`1b258c08`); `dist/` rebuilt.
+
