@@ -2,7 +2,7 @@
 id: task-110-gpt-6-1-terra-and-gpt-6-astra-in-the-openai-price-table
 type: task
 title: "gpt-6.1-terra and gpt-6-astra in the OpenAI price table"
-status: backlog
+status: in-progress
 release: v0.3
 wave: W15
 features: []
