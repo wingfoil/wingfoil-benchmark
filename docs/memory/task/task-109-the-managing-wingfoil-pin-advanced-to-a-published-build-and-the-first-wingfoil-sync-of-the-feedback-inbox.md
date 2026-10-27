@@ -70,5 +70,6 @@ recorded; the `wingfoil-cli` directive re-checked against the new pin.
 
 ## Execution notes
 
-<!-- What happened while building: deviations, blockers, follow-ups (filed as elements, never left
-     here). For every `wingfoil` command: declared vs observed behaviour. -->
+- Drafted and submitted on main (2026-10-27); pending → backlog by the approver. **The approver's decision in chat
+  (2026-10-27): the task starts only once WingFoil `v0.3.1` is tagged**, so that the pin goes straight to 0.3.1 (with
+  bug-408's `COLLABORATION.md` and bug-400's scaffold) and one bump and one sync suffice.
