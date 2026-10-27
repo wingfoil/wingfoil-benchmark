@@ -447,7 +447,8 @@ The 30 € target above did not hold, and stays as the record of v0.1's plan.
     - **§4.2 and §4.6:** M-K3's one-off costs, M-K4's "not applicable" and ▲/▼ only beyond the variance; dl-023's
       repetition campaigns.
     - **§4.7:** the review loop as a measurement (F4.9).
-    - **§5:** T9's, T10's, T11's and T12's mitigations; G-A and G-B move to v0.4 with their scenarios.
+    - **§1:** G-A and G-B move to v0.4 with their scenarios.
+    - **§5:** T9's, T10's, T11's and T12's mitigations.
 
     Source: [task-103](../memory/task/task-103-the-v0-3-vision-and-experiment-design-amendments.md); the approver's
     review decision at the task's review.

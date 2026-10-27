@@ -78,7 +78,8 @@ W15 also runs, before the ChatGPT Plus subscription's end on 2026-11-13: dl-022'
 on approver policy v2, campaign-006; dl-025) and the classifier v2 brought ahead from W16 (task-106, dl-026), both
 done; and, as soon as WingFoil 0.3.1 is tagged and subject to its cut order, step A brought ahead from W17 with a
 Codex campaign of the step-A arm (campaign-007,
-[dl-027](../memory/decision-log/dl-027-step-a-brought-ahead-with-a-codex-campaign-of-the-step-a-arm-before-2026-11-13.md)). The waves keep their features; only their order of delivery moves.
+[dl-027](../memory/decision-log/dl-027-step-a-brought-ahead-with-a-codex-campaign-of-the-step-a-arm-before-2026-11-13.md)).
+The waves keep their features; only their order of delivery moves.
 
 ## v0.4 — Broader categories
 

@@ -103,7 +103,7 @@ scheduled), G-A, G-B (v0.4 from sequencer 1.2) and G-G (v1.0) have no v0.1 scena
 | T9 approver policy favours some tools | one versioned policy; interventions per arm | REQ-RUN-06, 07 |
 | T10 harness capability gap | expected failures | REQ-FMT-10; REQ-SCO-10 |
 | T11 oracle validity | several metrics per goal | scoring.feature (all); blind judge in **v0.4** (sequencer 1.2) |
-| T12 unequal setup effort | scripted setups from official documentation; telemetry off; setups published and contestable; setup cost apart | REQ-RUN-03; REQ-FMT-05; v0.2: REQ-RUN-18, REQ-RES-09, REQ-RES-10 |
+| T12 unequal setup effort | scripted setups from official documentation; telemetry off; setups published and contestable; setup cost apart; v0.3: the configured variants' configuring agent the same for every harness (experiment design 1.7) | REQ-RUN-03; REQ-FMT-05; v0.2: REQ-RUN-18, REQ-RES-09, REQ-RES-10 |
 | T13 answer lookup | web requests logged; hold-out additions | REQ-RUN-10 (**partial**: shell network use is not detected); REQ-SCO-09 |
 | T14 model sensitivity | model slices as a separate comparison; v0.2: a model ladder (dl-007, dl-008), cross-model comparisons marked | REQ-FMT-01 (`models` slices); v0.2: REQ-SCO-13 |
 | T15 tool drift (v0.2) | every harness pinned, assessed at that version and its artifact published; the version beside every value; across campaigns only deltas | REQ-FMT-03, 11, 12; REQ-RES-03 (as amended in 1.26); REQ-SCO-13 |
