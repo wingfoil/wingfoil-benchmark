@@ -59,7 +59,7 @@ describe('the operating manuals (F2.7)', () => {
     expect(manual('wingfoil')).toContain('wingfoil memory approve');
   });
 
-  it('mention no MCP Tool, since WingFoil v0.3.0 has none either (adr-003 decision 13; tools/list is [], task-095)', () => {
+  it('mention no MCP Tool, since WingFoil v0.3.1 has none either (adr-003 decision 13; tools/list is [], task-095)', () => {
     expect(manual('wingfoil')).not.toMatch(/MCP tools?\b/i);
   });
 
@@ -67,53 +67,104 @@ describe('the operating manuals (F2.7)', () => {
     for (const arm of ['baseline', 'baseline-docs', 'wingfoil', 'speckit'])
       expect(manual(arm)).not.toMatch(/placeholder|task-014/i);
   });
+});
 
-  it("start the wingfoil arm's section from WingFoil's guide for agents at 0.3.0, and keep its rules (task-086, task-095)", () => {
-    // The manual is wrapped Markdown: its words, one space apart.
-    const own = manual('wingfoil').slice(manual('baseline').length).replace(/\s+/g, ' ');
-    expect(own).toContain("WingFoil's guide for AI agents, release 0.3.0");
-    // 0.3.0's guide: a workflow is started or ended only when asked; the verbs act on what is committed (§4, §6, §7)
-    expect(own).toMatch(/[Ss]tart or end a workflow only when/);
+/** The wingfoil arm's own section, its words one space apart (the manual is wrapped Markdown). */
+function wingfoilOwn(): string {
+  return manual('wingfoil').slice(manual('baseline').length).replace(/\s+/g, ' ');
+}
+
+describe('the step-A wingfoil manual (dl-021 step A, task-114)', () => {
+  it("starts from WingFoil's guide for agents at 0.3.1, and keeps its rules", () => {
+    const own = wingfoilOwn();
+    expect(own).toContain("WingFoil's guide for AI agents, release 0.3.1");
     expect(own).toMatch(/act only on committed documents/);
-    // The guide's rules (docs/agents.md §4)
-    expect(own).toContain('wingfoil directives list --role developer');
     expect(own).toMatch(/only through (its|the) verbs/);
     expect(own).toMatch(/exit code 1 is a rule speaking/i);
+    expect(own).toMatch(/exit code 2 means your command line is wrong/);
   });
 
-  it('state where the wingfoil manual departs from the guide, and why (task-086, F-033)', () => {
-    const own = manual('wingfoil').slice(manual('baseline').length).replace(/\s+/g, ' ');
-    expect(own).toContain('### Where this arm departs from the guide');
-    // The level of process the guide does not set
-    expect(own).toMatch(/sets no level of process/);
-    // The automated approver: the guide says an agent never approves; the decision is the neutral approver's
-    expect(own).toMatch(/The guide says an agent never approves/);
-    // The approval command, only after the reply's own sentence
-    expect(own).toMatch(/If the reply is "Approved\. Proceed\.", run `wingfoil memory approve/);
+  it("has the agent drive the workflow's cycle: status, next, a new instance after a delivery, finalize", () => {
+    const own = wingfoilOwn();
+    for (const command of [
+      'wingfoil workflow status',
+      'wingfoil workflow next',
+      'wingfoil workflow start sw-life-cycle',
+      'wingfoil workflow finalize',
+    ])
+      expect(own).toContain(command);
+    // task-107's option A: on 0.3.1's Kanban scaffold an instance's delivery runs once (F-044)
+    expect(own).toContain('`sw-life-cycle.sunset`');
   });
 
-  it("send the wingfoil agent to read only what the docs controls also carry (task-086, the approver's choice C)", () => {
-    const own = manual('wingfoil').slice(manual('baseline').length).replace(/\s+/g, ' ');
-    // The role's rules and the approved decisions; not dna show, nor paths, nor the dna resource (REQ-RUN-11, T3)
+  it("finishes the step's work before it asks for an approval at a gate (experiment design 1.7)", () => {
+    expect(wingfoilOwn()).toMatch(/At a gate, finish the work first/);
+  });
+
+  it('gives every request its task, without --workflow when the step does not ask for one (decision 1, F-043)', () => {
+    const own = wingfoilOwn();
+    expect(own).toContain('**Every request has its task.**');
+    expect(own).toContain('without `--workflow`');
+    expect(own).toContain('wingfoil memory add --type task --title');
+    expect(own).toMatch(/`wingfoil memory submit <id>` before you build/);
+  });
+
+  it('reads the context through the CLI, the session Resource named as its equivalent, not required (decision 2)', () => {
+    const own = wingfoilOwn();
+    expect(own).toContain('wingfoil directives list --role <role>');
+    expect(own).toContain('wingfoil memory search --type decision-log --status approved');
+    expect(own).toContain('wingfoil://session/');
+    expect(own).toMatch(/you need not read them through the MCP server/);
+    // Only what the docs controls also carry (REQ-RUN-11, T3): not the project's dna, nor its paths
     expect(own).not.toContain('wingfoil dna show');
     expect(own).not.toContain('wingfoil paths');
     expect(own).not.toContain('wingfoil://dna');
-    expect(own).toContain('`developer-session`');
-    expect(own).toContain('`wingfoil://memory/decision-log`');
   });
 
-  it('state its three departures from the guide, configuration and rejection included (task-086)', () => {
+  it("forbids the approver's verbs other than approve, by name (decision 3)", () => {
+    expect(wingfoilOwn()).toMatch(
+      /never run the approver's other verbs: `wingfoil memory amend`, `wingfoil memory reject` or `wingfoil memory rekey`/,
+    );
+    expect(wingfoilOwn()).toMatch(/If the reply is "Approved\. Proceed\.", run `wingfoil memory approve/);
+  });
+
+  it("names the agent-specific files: the manual as CLAUDE.md or AGENTS.md, the MCP server's configuration", () => {
+    const own = wingfoilOwn();
+    expect(own).toContain('`CLAUDE.md` under Claude Code');
+    expect(own).toContain('`AGENTS.md` under Codex');
+    expect(own).toContain("Codex's `config.toml`");
+  });
+
+  it('states its departures from the guide: starting a workflow, a task per request, configuration, approvals', () => {
     const own = manual('wingfoil').slice(manual('baseline').length);
     const departures = own.slice(own.indexOf('### Where this arm departs from the guide'));
-    expect(departures.match(/^- \*\*/gm)).toHaveLength(3);
-    const flat = departures.replace(/\s+/g, ' ');
-    expect(flat).toContain('`memory reject`');
-    expect(flat).toMatch(/configuration/i);
-    expect(flat).toContain('never edit a file under `.wingfoil/`');
-    expect(manual('wingfoil').replace(/\s+/g, ' ')).toContain(
-      'wingfoil memory search --type decision-log --status approved',
-    );
-    // An exit code 2 is the command line's fault: fixed and run again, not reported and left
-    expect(own.replace(/\s+/g, ' ')).toMatch(/exit code 2 means your command line is wrong/);
+    expect([...departures.matchAll(/^- \*\*([^*]+)\*\*/gm)].map((match) => match[1])).toEqual([
+      'Starting a workflow.',
+      'A task for every request.',
+      'Configuration.',
+      'Approvals.',
+    ]);
+    expect(departures.replace(/\s+/g, ' ')).toContain('never edit a file under `.wingfoil/`');
+  });
+});
+
+describe("the step-A wingfoil arm's files (dl-021 step A, task-114)", () => {
+  const read = (file: string) => readFileSync(repoPath(`arms/wingfoil/${file}`), 'utf8');
+
+  it('opens one sw-life-cycle instance in its setup and brings it to its delivery (task-107 option A)', () => {
+    const steps = read('setup.sh')
+      .split('\n')
+      .filter((line) => /^wingfoil workflow /.test(line))
+      .map((line) => line.replace(/\s*>.*$/, ''));
+    expect(steps).toEqual([
+      'wingfoil workflow start sw-life-cycle',
+      'wingfoil workflow finalize',
+      'wingfoil workflow finalize',
+    ]);
+  });
+
+  it('names WingFoil v0.3.1 in its definition, its capabilities re-read there', () => {
+    expect(read('arm.yaml')).toContain('v0.3.1');
+    expect(read('arm.yaml')).not.toContain('WingFoil v0.3.0 sends');
   });
 });

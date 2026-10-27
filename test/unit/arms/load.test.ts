@@ -114,6 +114,43 @@ describe('loadArm (REQ-FMT-05)', () => {
     ]);
   });
 
+  it("loads a docs control's choice of directives, every role's (dl-021 step A), and the benchmark's baseline-docs'", () => {
+    const root = tempDir('bench-arm-');
+    writeArmAt(
+      root,
+      'baseline-docs',
+      { ...plainArmYaml('baseline-docs'), docs_of: 'wingfoil', docs_directives: 'every-role' },
+      ['setup.sh', 'manual.md'],
+    );
+
+    const result = loadArm(relative(process.cwd(), root), 'baseline-docs');
+
+    expect(result.ok && result.value.docsDirectives).toBe('every-role');
+    const own = loadArm(repoPath('arms'), 'baseline-docs');
+    expect(own.ok && own.value.docsDirectives).toBe('every-role');
+  });
+
+  it('refuses another choice of directives, and one on an arm that is not a docs control', () => {
+    const root = tempDir('bench-arm-');
+    writeArmAt(
+      root,
+      'baseline-docs',
+      { ...plainArmYaml('baseline-docs'), docs_of: 'wingfoil', docs_directives: 'all' },
+      ['setup.sh', 'manual.md'],
+    );
+    writeArmAt(root, 'baseline', { ...plainArmYaml('baseline'), docs_directives: 'every-role' }, [
+      'setup.sh',
+      'manual.md',
+    ]);
+
+    expect(issuesOf(root, 'baseline-docs')).toEqual([
+      { path: 'docs_directives', message: expect.stringContaining('every-role') },
+    ]);
+    expect(issuesOf(root, 'baseline')).toEqual([
+      { path: 'docs_directives', message: 'only a docs control (docs_of) chooses the directives it renders' },
+    ]);
+  });
+
   it('requires the name to match its directory', () => {
     const root = tempDir('bench-arm-');
     writeArmAt(root, 'wingfoil', completeArmYaml('baseline'), COMPLETE_ARM_FILES);
