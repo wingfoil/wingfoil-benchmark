@@ -62,3 +62,8 @@ Under dl-020; `scripts/pre-review.sh main` green before each round.
   totals at the new row (0.0154 USD), on the model and the usage. **nit, fixed:** the table's five keys pinned.
 - **Round 2** (the fix's diff only): the arithmetic and the key order verified; no finding. The review closes.
 
+### Approval
+
+- in-review → approved by the approver (`adfe16b6`), 2026-10-27; no full suites (two data rows and their tests;
+  `test/unit/agents` and `test/unit/campaign` green). Merged into main (`a0614907`); `dist/` rebuilt.
+
