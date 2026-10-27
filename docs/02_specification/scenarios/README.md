@@ -14,7 +14,7 @@ what differs from them.
 
 | # | Topic | Decision |
 |---|---|---|
-| K1 | Stack of the seeds | **TypeScript / Node.js 22** for all v0.1 scenarios, so that oracles share the runner's tooling. A Python scenario arrives in v0.3. |
+| K1 | Stack of the seeds | **TypeScript / Node.js 22** for all v0.1 scenarios, so that oracles share the runner's tooling. A Python scenario arrives in v0.3 (v0.4 from sequencer 1.2). |
 | K2 | Visibility | All four scenarios are **public**, so that they can be rerun without the hold-out. Each one also has **hold-out additions** (extra tests, variants), kept in the private repository (T13). Fully hold-out scenarios start in v0.3. |
 | K3 | Project rules | A scenario's rules (directives, decisions to follow) live **only in the arm's environment**: none in baseline, Markdown in baseline-docs, WingFoil directives and Memory in wingfoil. The seed carries no `CONTRIBUTING.md` with rules. |
 | K4 | Cost sizing | The per-run target of the experiment design (§6, about 1.2 € on Sonnet 5) is **indicative, with a loose gate**, until dry runs (F3.3) provide real data. The budget is then revised. Step counts below are sized with that target in mind. |
@@ -118,10 +118,12 @@ the approver at that task's review, 2026-10-02 (`cd062e2`).
 
 ### Amendment 1.5 (v0.3, release-planning, 2026-10-27)
 
-- **K6, saturation** ([dl-013](../../memory/decision-log/dl-013-saturation-levels-of-delegation-and-an-external-neutral-control.md), as amended at v0.3's planning): a scenario version is **saturated** when every arm
-  reaches the maximum on its final hidden tests in every run. A saturated version is revised (a new version), never
-  edited. Every version 1.1 records whether its 1.0 was saturated, read from the published campaigns. Levels of
-  delegation and the external control are deferred to v0.4, which adds scenarios.
+- **K6, saturation**
+  ([dl-013](../../memory/decision-log/dl-013-saturation-levels-of-delegation-and-an-external-neutral-control.md),
+  as amended at v0.3's planning): a scenario version is **saturated** when every arm reaches the maximum on its final
+  hidden tests in every run. A saturated version is revised (a new version), never edited. Every version 1.1 records
+  whether its 1.0 was saturated, read from the published campaigns. Levels of delegation and the external control are
+  deferred to v0.4, which adds scenarios.
 - **K7, the versions 1.1:** S1, S2, S3 and S8 at 1.1 carry the oracle's corrections (content checks v2, the human
   rubric) and S1's step 5 stated (bug-025); what a correction would change in 1.0 is published as an **erratum** for
   1.0, whose results stay as published. A configured variant's configuration (F7.5) is written **per scenario

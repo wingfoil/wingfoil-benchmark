@@ -74,11 +74,11 @@ that extend a preset ([dl-022](../memory/decision-log/dl-022-campaigns-run-outsi
 | W18 — Configured variants | F7.5 configured variants | the configuring agent | every arm, configured ones included, in a dry run |
 | W19 — The review loop | F4.9 the review loop per arm | F4.9 | the review-loop metrics in the dry runs |
 
-W15 also ran, before the ChatGPT Plus subscription's end on 2026-11-13: dl-022's arm B on Codex (campaign-005 and,
-on approver policy v2, campaign-006; dl-025), the classifier v2 brought ahead from W16 (task-106, dl-026), and step A
-brought ahead from W17 with a Codex campaign of the step-A arm
-([dl-027](../memory/decision-log/dl-027-step-a-brought-ahead-with-a-codex-campaign-of-the-step-a-arm-before-2026-11-13.md),
-with its cut order). The waves keep their features; only their order of delivery moves.
+W15 also runs, before the ChatGPT Plus subscription's end on 2026-11-13: dl-022's arm B on Codex (campaign-005 and,
+on approver policy v2, campaign-006; dl-025) and the classifier v2 brought ahead from W16 (task-106, dl-026), both
+done; and, as soon as WingFoil 0.3.1 is tagged and subject to its cut order, step A brought ahead from W17 with a
+Codex campaign of the step-A arm (campaign-007,
+[dl-027](../memory/decision-log/dl-027-step-a-brought-ahead-with-a-codex-campaign-of-the-step-a-arm-before-2026-11-13.md)). The waves keep their features; only their order of delivery moves.
 
 ## v0.4 — Broader categories
 
@@ -115,7 +115,7 @@ accepted for v1.0, because it is far away and will be re-planned (sequencer deci
 3. **WingFoil version:** the benchmark is developed against the pinned WingFoil v0.2 pre-release
    (commit `3df305e`; amended in 1.1). The first public campaign runs on the latest released
    WingFoil at that time.
-4. **W19:** accepted with two high-uncertainty features.
+4. **W24** (W19 until 1.2): accepted with two high-uncertainty features.
 
 ### Amendment 1.1 (specification phase, 2026-09-22)
 
@@ -134,9 +134,10 @@ accepted for v1.0, because it is far away and will be re-planned (sequencer deci
    step A), every harness also configured for the project (F7.5), the review loop measured per arm (F4.9); waves
    W15–W19. It revisits F1.1, F2.6, F2.7, F4.1 and F4.3, assigned to v0.1, and adds F7.5 and F4.9.
 7. **"Broader categories" moves to v0.4**, its waves renumbered W20–W22; v1.0's waves renumbered W23–W25. Decision
-   4 reads W24.
+   4 now names W24.
 8. **The order of delivery may move within a release** when a decision says so (dl-022, dl-027): W15 ran W16's
-   classifier v2 and W17's step A ahead of their waves; each wave keeps its features and its "Ends with".
+   classifier v2 ahead of its wave, and brings W17's step A ahead once WingFoil 0.3.1 is tagged, subject to dl-027's
+   cut order; each wave keeps its features and its "Ends with".
 
 Source: [task-103](../memory/task/task-103-the-v0-3-vision-and-experiment-design-amendments.md);
 [plan-005](../plans/plan-005-release-v0-3.md); the approver's review decision at the task's review.
