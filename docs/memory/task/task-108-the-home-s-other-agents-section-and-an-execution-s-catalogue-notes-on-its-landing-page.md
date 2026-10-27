@@ -62,3 +62,17 @@ execution's `notes` are shown on its landing page; REQ-RES-11 amended; ready for
   Bridges, Other agents; campaign-004's landing page now carries its four notes.
 - **Docs:** requirements 1.39 (REQ-RES-11); the catalogue's header comment.
 - **Checks:** `scripts/pre-review.sh main` green; the site's unit tests (157) green.
+
+### Review
+
+Under dl-020; `scripts/pre-review.sh main` green before it.
+
+- **Round 1** (an independent read-only agent, from a `mktemp` directory; both reflogs unchanged): correct,
+  red-first, documented; a fresh build differs from the published site only in the home and campaign-004's landing
+  page (and every `method.html`, from task-105's and task-106's method changes, not this task). **Nits only:**
+  - fixed: the group's line reads "their baseline … their arms" (criterion 1 quoted "its"; the plural subject);
+    the notes' place on a one-arm page pinned by a test;
+  - recorded: on a multi-arm page the notes follow the framing and its headline paragraphs; `results.feature` has no
+    step for the notes, which the unit and build tests cover.
+  The review closes.
+
