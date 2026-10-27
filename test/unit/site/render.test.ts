@@ -362,4 +362,17 @@ describe('a one-arm landing page (REQ-RES-07 as amended in 1.36, task-104)', () 
     expect(html).not.toContain('Harness, not model');
     expect(html.indexOf('across-agents-81ebb2691f9c-1.html')).toBeLessThan(html.indexOf('<svg'));
   });
+
+  it("puts the catalogue's notes after the framing and before its across-agents comparisons (task-108)", () => {
+    const one = { ...model(), arms: ['baseline'] } as SiteModel;
+    const link = {
+      file: 'across-agents-81ebb2691f9c-1.html',
+      label: 'x',
+      crossModel: false,
+      acrossAgents: true,
+    };
+    const html = landingPage(one, [link], [], ['A note.']);
+    expect(html.indexOf('class="framing"')).toBeLessThan(html.indexOf('class="notes"'));
+    expect(html.indexOf('class="notes"')).toBeLessThan(html.indexOf('<h2>Compared across agents</h2>'));
+  });
 });

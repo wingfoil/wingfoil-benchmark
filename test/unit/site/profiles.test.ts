@@ -117,7 +117,7 @@ describe('the root index (REQ-RES-02 as amended, task-085)', () => {
     ]);
     // The group covers an execution of another agent whatever its arms (task-108): its id stays across-agents.
     expect(index.value).toContain(
-      '<p>Executions under another agent than Claude Code: its baseline compared across agents, or its arms ' +
+      '<p>Executions under another agent than Claude Code: their baseline compared across agents, or their arms ' +
         'compared with each other; never mixed with the headlines above.</p>',
     );
     expect([...index.value.matchAll(/<li>(.*)<\/li>/g)].map((match) => match[1])).toEqual([

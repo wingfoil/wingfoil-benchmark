@@ -71,8 +71,8 @@ export const KINDS = [
     // The id stays across-agents (task-108): the group holds any execution of another agent, whatever its arms.
     heading: 'Other agents',
     line:
-      'Executions under another agent than Claude Code: its baseline compared across agents, or its arms compared ' +
-      'with each other; never mixed with the headlines above.',
+      'Executions under another agent than Claude Code: their baseline compared across agents, or their arms ' +
+      'compared with each other; never mixed with the headlines above.',
   },
 ] as const;
 
