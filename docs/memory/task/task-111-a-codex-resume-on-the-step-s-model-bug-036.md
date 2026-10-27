@@ -59,3 +59,19 @@ as the step's.
 - **Not verified with a real session:** the fix is first at work in campaign-006's rerun, whose resumed steps must show
   no such warning (a step with one now fails visibly).
 - **Checks:** `scripts/pre-review.sh main` green; `test/unit/agents` and `test/unit/runner` green (362).
+
+### Review
+
+Under dl-020; `scripts/pre-review.sh main` green before each round.
+
+- **Round 1** (an independent read-only agent, from a `mktemp` directory; reflogs unchanged): `--model` accepted by
+  0.162.1 and placed right; `thread.model` always the step's; the guard matching the real warning and not misfiring on
+  agent messages or first invocations; red-first clean.
+  - **should-fix, fixed:** a switched invocation was still priced at the step's model and recorded under it; now its
+    tokens are attributed to no model, its cost 0, and the step marked `costUnknown`, counted at its bound
+    (`switchedTo` names the model Codex ran).
+  - **nits, fixed:** a quota or rate limit now wins over the switch, so an execution's quota stop is not lost; the
+    warning is read as a top-level `error` event too; a negative case (the warning naming the step's own model).
+  - **nit, recorded:** `claude-code.ts`'s `resumeLine` comment says the resume names no session id, though it passes
+    `--resume <id>`; out of this task's scope.
+
