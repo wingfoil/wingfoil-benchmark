@@ -127,8 +127,9 @@ Retrospective subsection, `v0.3.0 (cc31d7a8)` named), requirements **1.40**.
 (`retro-v0.3.md`, identical at `origin/main`; `rel-v0.3-feedback-triage.md`, this inbox read at `2ff5116f`, F-001 to
 F-039), `patch-v0.3.1`'s scope changes (no note), citations at `origin/main` `334a2887` (bug-400, bug-409, bug-410,
 dl-192, dl-197, dl-200, dl-201: each one the table names). Only this service's rows are read. A `captured`
-note is `resolved` when each element is, at `v0.3.1`, in the last state of its type's sequence in WingFoil's
-`memory.yaml` and its `release:` is a tag no later than the pin; a note captured at an earlier sync is re-checked so.
+note is `resolved` when each element is, at `v0.3.1`, in its type's shipped state (a bug `closed`, a task `done`, a
+decision-log `ready`, an ADR `accepted`, a tech-spec `approved`; no other type) and its `release:` is a tag no later
+than the pin; a note captured at an earlier sync is re-checked so.
 Outcome: 24 `resolved`,
 7 `captured`, 4 `needs-info` (F-007, F-009, F-023, F-034), 4 `open` (restated, no element: F-030, F-031, F-035,
 F-037), F-040 to F-044 `open` (not read). Only `status` and `answered_by` changed (35 notes).
@@ -169,11 +170,16 @@ pin-specific text is rule 8's.
      of its own, an approval, or nothing); W-19 says so.
   3. The sync left a `captured` note without a row of the newest retrospective unchanged, so it would never become
      `resolved`. Fixed: such a note is re-checked against its own `answered_by`; tested.
-  4. A stamped `release:` is a target, not proof of shipping. Fixed: the element must also be in the last state of its
-     type's sequence at the ref (a bug `closed`, a task `done`, a decision-log `ready`); tested. This sync's outcome
-     is unchanged.
+  4. A stamped `release:` is a target, not proof of shipping. Fixed: the element must also be in its type's shipped
+     state at the ref; tested. This sync's outcome is unchanged.
   5. The four `needs-info` notes have no scheduled answer. **Left for the approver** (as in criterion 4).
   Nits fixed: W-02 names `--set`; the README's and these notes' wording on the citations; `01_product-brief.md` and
   a test comment no longer call the tarball the pin; a JSDoc name; tests for an unknown decision and a two-element row;
   F-045 cites the user guide's upgrade section too. Nit accepted for the approver: rule 5 not rewritten (criterion 6).
   Not changed: the README's Origin paragraph, which is history.
+- **Round 2** (re-review of `4ba408cc` only): fixes 1, 3 and 4 correct; the real data give the same outcome for all 45
+  notes. One should-fix: "the last state of the sequence" is wrong for an ADR and a tech-spec (their sequences end at
+  `superseded`) and a change-proposal (`scheduled`). Fixed: an explicit map of each type's shipped state, any other
+  type never shipped; tested with a change-proposal, an element not found, and a note captured earlier whose element
+  has not shipped. Nits fixed: W-02's wording (`--set` sets `id_pattern` and `path` tokens); the second sync's test
+  checks every note's two fields as well as the ledger.

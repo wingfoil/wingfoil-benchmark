@@ -7,8 +7,8 @@
 //   - its triage record (docs/09_retrospectives/rl-*/rel-v<X.Y>-feedback-triage.md), for the commit it read;
 //   - the `## Scope changes` of every patch released since (docs/04_memory/planning/rl-*/patch-v<X.Y>.*.md);
 //   - every element citing one of the notes, `git grep` at <grep-ref> (origin/main by default).
-// A `captured` note becomes `resolved` once every element in its `answered_by` is, at <ref>, in the last state of its
-// type's sequence and names in its `release:` a release tag of WingFoil no later than the version this repository
+// A `captured` note becomes `resolved` once every element in its `answered_by` is, at <ref>, in its type's shipped
+// state (SHIPPED below) and names in its `release:` a release tag of WingFoil no later than the version this repository
 // pins (package.json, npm:wingfoil@<version>); a note captured at an earlier sync is re-checked so, row or not.
 // A note no row names stays as it is. It prints one line per note; with --write it changes the notes' `status` and
 // `answered_by` lines and the README ledger's two columns, nothing else.
@@ -140,29 +140,31 @@ for (const line of grep.split('\n')) {
   cited.set(match[2], list);
 }
 
-/** Each type's `states.sequence` in WingFoil's own memory.yaml at <ref>, `defaults` for a type with none. */
-const memoryYaml =
-  /** @type {{ defaults?: { states?: { sequence?: string[] } }, types?: Record<string, { states?: { sequence?: string[] } }> }} */ (
-    parse(show('.wingfoil/memory.yaml'))
-  );
-/** @type {Record<string, string[]>} */
-const machines = { defaults: memoryYaml.defaults?.states?.sequence ?? [] };
-for (const [type, def] of Object.entries(memoryYaml.types ?? {})) {
-  if (def.states?.sequence !== undefined) machines[type] = def.states.sequence;
-}
+/**
+ * The state in which an element of each WingFoil type has shipped, read from WingFoil's `.wingfoil/memory.yaml` at
+ * v0.3.1: the end of the bug, task and decision-log sequences, and the adopted state of an ADR and a tech-spec (their
+ * sequences end at `superseded`). Any other type (a change-proposal ends at `scheduled`) never counts as shipped.
+ */
+const SHIPPED = /** @type {Record<string, string>} */ ({
+  bug: 'closed',
+  task: 'done',
+  'decision-log': 'ready',
+  adr: 'accepted',
+  'tech-spec': 'approved',
+});
 
 /** The release an element names in its `release:` at <ref>, if it is a tag no later than the pin. @param {string} id */
 function shipped(id) {
   const path = files('docs/04_memory').find((file) => new RegExp(`/${id}-[^/]*\\.md$`).test(file));
   if (path === undefined) return { ok: false, why: `${id} not found at ${ref}` };
   const text = show(path);
-  // Shipped means closed too: the element is in the last state of its type's sequence at <ref> (a bug `closed`, a
-  // task `done`, a decision-log `ready`); a stamped `release:` alone is a target.
+  // Shipped means in its type's shipped state too: a stamped `release:` alone is a target.
   const type = /^type:\s*"?([a-z-]+)"?/m.exec(text)?.[1] ?? '';
   const state = /^status:\s*"?([a-z-]+)"?/m.exec(text)?.[1] ?? '';
-  const last = (machines[type] ?? machines.defaults ?? []).at(-1);
-  if (last === undefined || state !== last)
-    return { ok: false, why: `${id} is ${state}, not ${last ?? '?'}` };
+  const done = Object.hasOwn(SHIPPED, type) ? SHIPPED[type] : undefined;
+  if (done === undefined)
+    return { ok: false, why: `${id} is a ${type || 'typeless'} element, never shipped` };
+  if (state !== done) return { ok: false, why: `${id} is ${state}, not ${done}` };
   const release = /^release:\s*"?([^"#\s]*)"?/m.exec(text)?.[1] ?? '';
   const v = version(release);
   const tag = tags.find((t) => v !== undefined && compare(/** @type {number[]} */ (version(t)), v) === 0);
