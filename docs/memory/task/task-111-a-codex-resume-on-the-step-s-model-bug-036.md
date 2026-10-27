@@ -74,4 +74,11 @@ Under dl-020; `scripts/pre-review.sh main` green before each round.
     warning is read as a top-level `error` event too; a negative case (the warning naming the step's own model).
   - **nit, recorded:** `claude-code.ts`'s `resumeLine` comment says the resume names no session id, though it passes
     `--resume <id>`; out of this task's scope.
+- **Round 2** (the same agent, the fix only): the switched invocation's `costUnknown` and no attribution right, the
+  limit-first order equivalent in every other case. **should-fix, fixed** (`d1f2755a`): the top-level warning's
+  test was never written (a replacement missed after prettier changed its neighbour's quotes) and the adapter's
+  `costUnknown` and zero cost had no test; both added, each checked by removing its code (a mutation) and seeing it
+  fail. **nits, recorded:** a resume that both switched and hit the quota keeps the switch only in its transcript and
+  `switchedTo`; a switched invocation that is also rate limited is pushed by `waitOut` without `costUnknown` — both
+  matter only if the switch recurs after the `--model` fix.
 
