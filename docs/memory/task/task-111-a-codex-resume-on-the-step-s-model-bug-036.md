@@ -81,4 +81,6 @@ Under dl-020; `scripts/pre-review.sh main` green before each round.
   fail. **nits, recorded:** a resume that both switched and hit the quota keeps the switch only in its transcript and
   `switchedTo`; a switched invocation that is also rate limited is pushed by `waitOut` without `costUnknown` — both
   matter only if the switch recurs after the `--model` fix.
+- **Round 3** (the same agent, round 2's fix only): both tests pin their behaviour, nothing else changed; no finding.
+  The review closes.
 
