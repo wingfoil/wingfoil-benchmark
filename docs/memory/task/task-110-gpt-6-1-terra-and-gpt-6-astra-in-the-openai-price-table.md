@@ -43,5 +43,11 @@ benchmark prices a Codex session from its pinned table (`src/agents/openai-price
 
 ## Execution notes
 
-<!-- What happened while building: deviations, blockers, follow-ups (filed as elements, never left
-     here). For every `wingfoil` command: declared vs observed behaviour. -->
+- Drafted, approved (`a9afc1b8`) and submitted (backlog → in-progress) on main, 2026-10-27; worktree
+  `../WingFoil2-Benchmark-wt/task-110`, its own `npm ci`.
+- **The source:** `developers.openai.com/api/docs/pricing`, the "Flagship models" table, Standard, short context, read
+  with the built-in browser on 2026-10-27 (WebFetch is refused on openai.com): `gpt-6.1-terra` 1.00 / 5.00, cached
+  0.05, 30-minute write 1.25; `gpt-6-astra` 10.00 / 50.00, cached 1.00, write 12.50. `gpt-5.6-terra` is no longer
+  in that table; its row stays (Design).
+- **Red-first:** `44f113b2` before the rows.
+- **Checks:** `scripts/pre-review.sh main` green; `test/unit/agents` and `test/unit/campaign` green (268).
