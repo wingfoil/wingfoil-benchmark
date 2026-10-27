@@ -89,6 +89,26 @@ describe('reading a Codex session (REQ-RUN-09 as amended in 1.32)', () => {
     expect(session.models['gpt-unpriced']?.costBasis).toBe('unknown');
   });
 
+  it("fails a session that Codex resumed on another model than the step's, naming both (bug-036)", () => {
+    const switched = JSON.stringify({
+      type: 'item.completed',
+      item: {
+        id: 'item_0',
+        type: 'error',
+        message:
+          'This session was recorded with model `gpt-5.6-terra` but is resuming with `gpt-6.1-sol`. ' +
+          'Consider switching back to `gpt-5.6-terra` as it may affect Codex performance.',
+      },
+    });
+    const lines = stream('completed.jsonl');
+    const session = readCodexSession([lines[0] ?? '', switched, ...lines.slice(1)], {
+      model: 'gpt-5.6-terra',
+      usdToEur: RATE,
+    });
+    expect(session.outcome).toBe('failed');
+    expect(session.error).toMatch(/resuming with `gpt-6\.1-sol`/);
+  });
+
   it('takes the final message from the last agent_message item', () => {
     const session = readCodexSession(stream('completed.jsonl'), { model: MODEL, usdToEur: RATE });
     expect(session.finalMessage).toBe('Added src/index.ts with the inventory API.');
@@ -429,11 +449,14 @@ describe('the Codex adapter (REQ-RUN-04 as amended in 1.32)', () => {
       run: exec.run,
     });
 
+    // bug-036: the resume names the thread's model, or Codex resumes on its default one.
     expect(exec.commands[1]).toEqual([
       'codex',
       'exec',
       'resume',
       '--json',
+      '--model',
+      MODEL,
       '-c',
       'model_reasoning_effort="medium"',
       '--dangerously-bypass-approvals-and-sandbox',
