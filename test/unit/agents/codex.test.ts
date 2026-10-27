@@ -73,6 +73,12 @@ describe('reading a Codex session (REQ-RUN-09 as amended in 1.32)', () => {
     expect(session.models[MODEL]?.costUsd).toBeCloseTo(COMPLETED_USD, 10);
   });
 
+  it('prices a session on gpt-6.1-terra from its row (task-110)', () => {
+    const session = readCodexSession(stream('completed.jsonl'), { model: 'gpt-6.1-terra', usdToEur: RATE });
+    expect(session.models['gpt-6.1-terra']?.costBasis).toBe('price-table');
+    expect(session.usage.costUsd).toBeGreaterThan(0);
+  });
+
   it('records a model the table does not hold as unknown, at no cost, so that the estimate refuses it', () => {
     const session = readCodexSession(stream('completed.jsonl'), { model: 'gpt-unpriced', usdToEur: RATE });
 
