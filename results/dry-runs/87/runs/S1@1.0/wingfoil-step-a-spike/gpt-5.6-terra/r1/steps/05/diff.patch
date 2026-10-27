@@ -1,0 +1,243 @@
+diff --git a/README.md b/README.md
+index f870384f0b24beb0e6a1363a84966c87278dbd34..58f73496da3db3098ae71d7831b08f99d8bfc967 100644
+--- a/README.md
++++ b/README.md
+@@ -19,6 +19,10 @@ targets. It validates operation shape and JSON Pointer syntax, ignores operation
+ the selected operation, and throws when an operation fails. Inputs are not mutated, so a failing patch
+ leaves the caller's source document unchanged.
+ 
++`createPatch(from, to)` produces a deterministic RFC 6902 JSON Patch that transforms `from` into `to`.
++It emits operations for the differing locations instead of replacing an unchanged enclosing document,
++and does not mutate either input.
++
+ ## JSON Merge Patch
+ 
+ `applyMergePatch(target, patch)` applies an RFC 7386 JSON Merge Patch and returns a new JSON value.
+diff --git a/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-4-plan.md b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-4-plan.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..b10a4f2d03df3c710a5688eb713a431c082d7bd3
+--- /dev/null
++++ b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-4-plan.md
+@@ -0,0 +1,17 @@
++---
++id: sw-life-cycle-1-4-plan
++type: plan
++title: "Create RFC 6902 JSON patches"
++status: active
++workflow: "sw-life-cycle"
++phase: "1-4"
++element: ""
++parent: ""
++format: 1
++---
++
++<!-- plan body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
+diff --git a/src/index.ts b/src/index.ts
+index 5a106a880075ffcda490e58731b7c80bf2893180..199699bc24897e4390289312075bd6897fd2aca9 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -27,6 +27,27 @@ export function resolvePointer(document: unknown, pointer: string): unknown {
+   return value;
+ }
+ 
++/**
++ * Creates an RFC 6902 JSON Patch that transforms one JSON value into another.
++ *
++ * The generated patch is deterministic and makes changes at the lowest
++ * differing object or array locations where practical. Neither input is
++ * mutated, and operation values are independent copies of values in `to`.
++ *
++ * @param from - The JSON value to transform.
++ * @param to - The desired JSON value.
++ * @returns An RFC 6902 JSON Patch document.
++ * @throws {TypeError} If either input contains a value outside JSON.
++ */
++export function createPatch(from: unknown, to: unknown): JsonPatchOperation[] {
++  const source = cloneJson(from, 'The source document');
++  const target = cloneJson(to, 'The target document');
++  const patch: JsonPatchOperation[] = [];
++
++  diffJson(source, target, [], patch);
++  return patch;
++}
++
+ /**
+  * Applies an RFC 6902 JSON Patch document and returns the resulting JSON value.
+  *
+@@ -59,6 +80,103 @@ export function applyPatch(document: unknown, patch: unknown): unknown {
+   return result;
+ }
+ 
++type JsonPatchOperation = {
++  op: 'add' | 'remove' | 'replace';
++  path: string;
++  value?: unknown;
++};
++
++function diffJson(
++  from: unknown,
++  to: unknown,
++  tokens: string[],
++  patch: JsonPatchOperation[],
++): void {
++  if (jsonEqual(from, to)) {
++    return;
++  }
++
++  if (isJsonObject(from) && isJsonObject(to)) {
++    diffObject(from, to, tokens, patch);
++  } else if (Array.isArray(from) && Array.isArray(to)) {
++    diffArray(from, to, tokens, patch);
++  } else {
++    patch.push({ op: 'replace', path: formatPointer(tokens), value: to });
++  }
++}
++
++function diffObject(
++  from: Record<string, unknown>,
++  to: Record<string, unknown>,
++  tokens: string[],
++  patch: JsonPatchOperation[],
++): void {
++  for (const key of Object.keys(from)) {
++    if (!Object.hasOwn(to, key)) {
++      patch.push({ op: 'remove', path: formatPointer([...tokens, key]) });
++    }
++  }
++
++  for (const key of Object.keys(to)) {
++    const path = [...tokens, key];
++    if (Object.hasOwn(from, key)) {
++      diffJson(from[key], to[key], path, patch);
++    } else {
++      patch.push({ op: 'add', path: formatPointer(path), value: to[key] });
++    }
++  }
++}
++
++function diffArray(
++  from: unknown[],
++  to: unknown[],
++  tokens: string[],
++  patch: JsonPatchOperation[],
++): void {
++  let prefix = 0;
++  while (prefix < from.length && prefix < to.length && jsonEqual(from[prefix], to[prefix])) {
++    prefix += 1;
++  }
++
++  let suffix = 0;
++  while (
++    suffix < from.length - prefix
++    && suffix < to.length - prefix
++    && jsonEqual(from[from.length - suffix - 1], to[to.length - suffix - 1])
++  ) {
++    suffix += 1;
++  }
++
++  const fromMiddleLength = from.length - prefix - suffix;
++  const toMiddleLength = to.length - prefix - suffix;
++  if (fromMiddleLength === toMiddleLength) {
++    for (let index = 0; index < fromMiddleLength; index += 1) {
++      diffJson(from[prefix + index], to[prefix + index], [...tokens, String(prefix + index)], patch);
++    }
++    return;
++  }
++
++  const indexPath = [...tokens, String(prefix)];
++  for (let index = 0; index < fromMiddleLength; index += 1) {
++    patch.push({ op: 'remove', path: formatPointer(indexPath) });
++  }
++  for (let index = 0; index < toMiddleLength; index += 1) {
++    patch.push({
++      op: 'add',
++      path: formatPointer([...tokens, String(prefix + index)]),
++      value: to[prefix + index],
++    });
++  }
++}
++
++function formatPointer(tokens: string[]): string {
++  return tokens.length === 0 ? '' : `/${tokens.map(encodeToken).join('/')}`;
++}
++
++function encodeToken(token: string): string {
++  return token.replace(/~/g, '~0').replace(/\//g, '~1');
++}
++
+ /**
+  * Applies an RFC 7386 JSON Merge Patch and returns the resulting JSON value.
+  *
+diff --git a/test/index.test.mjs b/test/index.test.mjs
+index d2ebdee42ef28937e14beca58d62ab1c9c6f9481..99fc15bab4595029d9b1576d2502869d4b426bc6 100644
+--- a/test/index.test.mjs
++++ b/test/index.test.mjs
+@@ -1,7 +1,7 @@
+ import assert from 'node:assert/strict';
+ import test from 'node:test';
+ 
+-import { applyMergePatch, applyPatch, resolvePointer } from '../src/index.ts';
++import { applyMergePatch, applyPatch, createPatch, resolvePointer } from '../src/index.ts';
+ 
+ const document = {
+   foo: ['bar', 'baz'],
+@@ -103,6 +103,55 @@ test('uses JSON equality for test and ignores members unknown to an operation',
+   ));
+ });
+ 
++test('creates a compact RFC 6902 patch for nested object changes', () => {
++  const from = {
++    unchanged: { deeply: ['preserved'] },
++    account: { name: 'Ada', enabled: false },
++    removed: true,
++  };
++  const to = {
++    unchanged: { deeply: ['preserved'] },
++    account: { name: 'Ada', enabled: true, role: 'admin' },
++  };
++
++  const patch = createPatch(from, to);
++
++  assert.deepEqual(patch, [
++    { op: 'remove', path: '/removed' },
++    { op: 'replace', path: '/account/enabled', value: true },
++    { op: 'add', path: '/account/role', value: 'admin' },
++  ]);
++  assert.deepEqual(applyPatch(from, patch), to);
++  assert.deepEqual(from, {
++    unchanged: { deeply: ['preserved'] },
++    account: { name: 'Ada', enabled: false },
++    removed: true,
++  });
++  assert.deepEqual(to, {
++    unchanged: { deeply: ['preserved'] },
++    account: { name: 'Ada', enabled: true, role: 'admin' },
++  });
++});
++
++test('creates patches for escaped object keys, array insertions, and root replacement', () => {
++  const from = { 'a/b~c': ['before', 'after'] };
++  const to = { 'a/b~c': ['before', 'new', 'after'] };
++
++  assert.deepEqual(createPatch(from, to), [
++    { op: 'add', path: '/a~1b~0c/1', value: 'new' },
++  ]);
++  assert.deepEqual(applyPatch(from, createPatch(from, to)), to);
++  assert.deepEqual(createPatch({ value: 1 }, ['replacement']), [
++    { op: 'replace', path: '', value: ['replacement'] },
++  ]);
++  assert.deepEqual(createPatch({ stable: true }, { stable: true }), []);
++});
++
++test('rejects non-JSON values when creating a patch', () => {
++  assert.throws(() => createPatch({ value: undefined }, {}));
++  assert.throws(() => createPatch({}, Number.NaN));
++});
++
+ test('applies the RFC 7386 merge-patch examples', () => {
+   const cases = [
+     [{ a: 'b' }, { a: 'c' }, { a: 'c' }],
