@@ -33,6 +33,8 @@ export interface CodexSession {
   readonly outcome: 'completed' | 'failed' | 'quota exhausted' | 'rate limited';
   readonly error?: string;
   readonly finalMessage?: string;
+  /** The model Codex says it resumed the thread on, when not the step's (bug-036): no model's work, counted at its bound. */
+  readonly switchedTo?: string;
 }
 
 export interface CodexReading {
@@ -79,6 +81,9 @@ function limitOf(message: string): 'quota exhausted' | 'rate limited' | undefine
   return undefined;
 }
 
+/** Codex's warning on a resume (bug-036): "… recorded with model `A` but is resuming with `B`" — B, the model it ran. */
+const RESUMED_ON = /\bis resuming with `([^`]+)`/;
+
 /**
  * Read one Codex invocation's `--json` stream. As for Claude Code's (`readSession`): the outcome is what the stream
  * says, never assumed; a stream with no `turn.completed` is a failed step, not a step that used nothing; a line that
@@ -96,12 +101,24 @@ export function readCodexSession(lines: readonly string[], reading: CodexReading
    * (`last_critical_error`), it stands for the session's failure only when no `turn.failed` names one.
    */
   let lastError: string | undefined;
+  /** Codex's warning that it resumed the thread on another model than the step's (bug-036). */
+  let switched: string | undefined;
+  let switchedTo: string | undefined;
+  /** A resume warning naming another model than the step's (bug-036), as an `error` item or a top-level event. */
+  const readSwitch = (message: string) => {
+    const resumedOn = RESUMED_ON.exec(message)?.[1];
+    if (resumedOn !== undefined && resumedOn !== reading.model) {
+      switched = message;
+      switchedTo = resumedOn;
+    }
+  };
   /** Whether this invocation's count restarted below the thread's: decided at its first `turn.completed`. */
   let restarted: boolean | undefined;
 
   const result = (outcome: CodexSession['outcome'], error?: string): CodexSession => {
     const price = (reading.prices ?? OPENAI_PRICES)[reading.model];
-    const costUsd = priced(totals, price);
+    // A thread resumed on another model (bug-036) is no work of the step's model: nothing priced, nothing attributed.
+    const costUsd = switchedTo === undefined ? priced(totals, price) : 0;
     return {
       threadId,
       usage: {
@@ -116,7 +133,7 @@ export function readCodexSession(lines: readonly string[], reading: CodexReading
       },
       totals,
       models:
-        totals === NO_TOTALS
+        totals === NO_TOTALS || switchedTo !== undefined
           ? {}
           : {
               [reading.model]: {
@@ -132,6 +149,7 @@ export function readCodexSession(lines: readonly string[], reading: CodexReading
       outcome,
       ...(error === undefined ? {} : { error }),
       ...(finalMessage === undefined ? {} : { finalMessage }),
+      ...(switchedTo === undefined ? {} : { switchedTo }),
     };
   };
 
@@ -179,11 +197,16 @@ export function readCodexSession(lines: readonly string[], reading: CodexReading
         break;
       }
       case 'error':
-        if (typeof event.message === 'string') lastError = event.message;
+        if (typeof event.message === 'string') {
+          lastError = event.message;
+          readSwitch(event.message);
+        }
         break;
       case 'item.completed': {
         const item = (event.item ?? {}) as Record<string, unknown>;
         if (item.type === 'agent_message' && typeof item.text === 'string') finalMessage = item.text;
+        // bug-036: a thread resumed on another model than the step's is not the step's work, nor priced as it.
+        if (item.type === 'error' && typeof item.message === 'string') readSwitch(item.message);
         break;
       }
       default:
@@ -191,13 +214,12 @@ export function readCodexSession(lines: readonly string[], reading: CodexReading
     }
   }
 
-  if (failure !== undefined) {
-    const limit = limitOf(failure);
-    return limit === undefined ? result('failed', failure) : result(limit);
-  }
+  // A limit first (review round 1): a quota stop must stop the execution, whatever else the stream says.
+  const limit = limitOf(failure ?? (turns === 0 ? (lastError ?? '') : ''));
+  if (limit !== undefined) return result(limit);
+  if (switched !== undefined) return result('failed', switched);
+  if (failure !== undefined) return result('failed', failure);
   if (turns === 0) {
-    const limit = lastError === undefined ? undefined : limitOf(lastError);
-    if (limit !== undefined) return result(limit);
     return result('failed', lastError ?? 'the session ended with no turn.completed event');
   }
   return result('completed');
@@ -342,6 +364,9 @@ export function codexAgent(options: CodexOptions): AgentPort {
           'exec',
           'resume',
           '--json',
+          // bug-036: without it Codex resumes the thread on its default model, not the step's.
+          '--model',
+          thread.model,
           ...effortFlag(request.effort),
           ...BYPASS,
           '--',
@@ -367,7 +392,10 @@ function outcomeOf(session: CodexSession, sessionId: string): StepOutcome {
     ...(session.outcome === 'failed' ? { error: session.error ?? 'the session failed' } : {}),
     // No turn.completed: Codex reported nothing of what the invocation used, whether it failed or stopped at the quota
     // (REQ-RUN-09 as amended in 1.35). A rate limit is the runner's to wait out and resume: not marked.
-    ...((session.outcome === 'failed' || session.outcome === 'quota exhausted') && session.usage.turns === 0
+    // A thread resumed on another model (bug-036): its tokens are no model's of the step, so it is counted at its bound.
+    ...(((session.outcome === 'failed' || session.outcome === 'quota exhausted') &&
+      session.usage.turns === 0) ||
+    session.switchedTo !== undefined
       ? { costUnknown: true as const }
       : {}),
     ...(session.outcome === 'quota exhausted' || session.outcome === 'rate limited'
