@@ -68,4 +68,25 @@ decision.
   - the review loop's three metrics are named M-V1 to M-V3 (§4.7), a new letter; W19's task defines them;
   - the scenario conventions' rules are numbered K6 and K7, after the kickoff's K1–K5.
 - **Checks:** `scripts/pre-review.sh main` green; `test/acceptance/traceability.test.ts` green (27).
+- **Why now:** plan-005's order puts step A before this task, but step A waits for WingFoil 0.3.1's tag (task-107 in
+  draft); the approver chose this task meanwhile (2026-10-27).
+
+### Review
+
+Under dl-020; `scripts/pre-review.sh main` green before each round.
+
+- **Round 1** (an independent read-only agent, from a `mktemp` directory; both reflogs unchanged): links, metric
+  ids, amendment numbering and the wave table verified; no private project named.
+  - **should-fix, fixed** (`027c7192`): step A described as already run (now: brought ahead once 0.3.1 is tagged,
+    subject to dl-027's cut order); M-K4's variance attached to the quality condition, against bug-029 (now: W16's
+    task settles which difference, bug-029 cited); the variance rule beyond bug-030 and silent on n < 3 (now: bug-030,
+    REQ-RES-03 amended in W16, preliminary differences left to it); G-A, G-B, T11's judge, M-E2's schedule,
+    `traceability.md` and K1 still saying v0.3 for v0.4's work; decision 4 and experiment-design decision 5 naming W19
+    for what is now W24; the configured variants without a parity rule for the configuring agent (now in §2 and T12);
+    "most later findings" overstating dl-020 (now 40–89 %).
+  - **nits, fixed:** the reviewer strips harness files and the fixer is the arm's agent (§4.7); M-V1 counts a round
+    with no finding as clean; dl-020's quick check left to W19; F4.9 traced to J2.5; policy v2's wording for a public
+    reader; step A's "≥ 0.3.1", pending records, recording by evidence, agent-specific files, a new arm version per
+    step; the repetition key spelled out; K6's line wrapped.
+  - **nit, recorded:** the scenario conventions' title "(v0.1)" and Traces line are left as they are.
 
