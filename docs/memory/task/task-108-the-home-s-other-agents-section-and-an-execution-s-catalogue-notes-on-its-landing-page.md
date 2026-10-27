@@ -2,7 +2,7 @@
 id: task-108-the-home-s-other-agents-section-and-an-execution-s-catalogue-notes-on-its-landing-page
 type: task
 title: "The home's other-agents section, and an execution's catalogue notes on its landing page"
-status: approved
+status: done
 release: v0.3
 wave: W15
 features: [F5.5]
