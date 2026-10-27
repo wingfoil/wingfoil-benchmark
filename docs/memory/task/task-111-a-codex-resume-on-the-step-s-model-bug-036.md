@@ -45,5 +45,17 @@ as the step's.
 
 ## Execution notes
 
-<!-- What happened while building: deviations, blockers, follow-ups (filed as elements, never left
-     here). For every `wingfoil` command: declared vs observed behaviour. -->
+- Drafted, approved and submitted (backlog → in-progress) on main, 2026-10-27; worktree
+  `../WingFoil2-Benchmark-wt/task-111`.
+- **`codex exec resume --help` on Codex 0.162.1**, read in the bench image with no network and no credential: `-m,
+  --model <MODEL>`.
+- **Red-first:** `267e6fe4` (the resume's command line, pinned without `--model` until now, now with `--model
+  <thread's model>` after `--json`, where the first invocation carries it; a stream with Codex's "is resuming with
+  `<model>`" warning for another model fails) before the fix.
+- **The fix:** the resume passes `--model thread.model`; `readCodexSession` reads an `item.completed` of type `error`
+  whose message says Codex resumed on another model than the step's, and ends the invocation `failed` with that
+  message. The warning's form, read from `dry-runs/87`: "This session was recorded with model `gpt-5.6-terra` but is
+  resuming with `gpt-6.1-sol`. …".
+- **Not verified with a real session:** the fix is first at work in campaign-006's rerun, whose resumed steps must show
+  no such warning (a step with one now fails visibly).
+- **Checks:** `scripts/pre-review.sh main` green; `test/unit/agents` and `test/unit/runner` green (362).
