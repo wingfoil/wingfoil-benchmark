@@ -94,6 +94,7 @@ export async function buildSite(
           acrossAgents: acrossAgents(comparison),
         })),
         profiles.value.map((profile) => ({ ...profile, file: profileFile(profile) })),
+        catalog.value.get(self)?.notes ?? [],
       ),
     ],
     ...profiles.value.map((profile): [string, string] => [

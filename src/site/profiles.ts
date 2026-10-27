@@ -68,8 +68,11 @@ export const KINDS = [
   { id: 'bridge', heading: 'Bridges', line: 'One change at a time between two reference campaigns.' },
   {
     id: 'across-agents',
-    heading: 'Across agents',
-    line: 'The same baseline arm under another agent; never mixed with the headlines above.',
+    // The id stays across-agents (task-108): the group holds any execution of another agent, whatever its arms.
+    heading: 'Other agents',
+    line:
+      'Executions under another agent than Claude Code: its baseline compared across agents, or its arms compared ' +
+      'with each other; never mixed with the headlines above.',
   },
 ] as const;
 
