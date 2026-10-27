@@ -253,15 +253,15 @@ describe('dry runs and the estimate by the pinned arm (task-095 review round 1)'
 });
 
 describe('the WingFoil the register admits (task-095 review round 1)', () => {
-  it('refuses a campaign pinning WingFoil v0.3.1, which the register has not assessed', () => {
+  it('refuses a campaign pinning WingFoil v0.3.2, which the register has not assessed', () => {
     const reference = readFileSync(repoPath('campaigns/v0-2-reference.yaml'), 'utf8');
-    const file = repoPath('campaigns/x-test-task-095-v0-3-1.yaml');
-    writeFileSync(file, reference.replace('version: v0.3.0', 'version: v0.3.1'));
+    const file = repoPath('campaigns/x-test-task-095-v0-3-2.yaml');
+    writeFileSync(file, reference.replace('version: v0.3.0', 'version: v0.3.2'));
     onTestFinished(() => rmSync(file, { force: true }));
 
     const checked = checkCampaign(file);
 
-    expect(checked.ok ? '' : JSON.stringify(checked.issues)).toContain('v0.3.1');
+    expect(checked.ok ? '' : JSON.stringify(checked.issues)).toContain('v0.3.2');
   });
 });
 
