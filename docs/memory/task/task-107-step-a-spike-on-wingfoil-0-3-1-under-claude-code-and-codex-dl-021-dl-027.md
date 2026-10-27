@@ -2,7 +2,7 @@
 id: task-107-step-a-spike-on-wingfoil-0-3-1-under-claude-code-and-codex-dl-021-dl-027
 type: task
 title: "Step A spike on WingFoil 0.3.1 under Claude Code and Codex (dl-021, dl-027)"
-status: draft
+status: pending
 release: v0.3
 wave: W15
 features: [F2.6, F2.7]
