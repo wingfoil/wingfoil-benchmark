@@ -2,7 +2,7 @@
 id: task-114-the-step-a-wingfoil-arm-on-wingfoil-0.3.1-baseline-docs-with-every-role-s-directives-dl-021-dl-027
 type: task
 title: "The step-A wingfoil arm on WingFoil 0.3.1, baseline-docs with every role's directives (dl-021, dl-027)"
-status: backlog
+status: in-progress
 release: v0.3
 wave: W15
 features: [F2.5, F2.6, F2.7]
