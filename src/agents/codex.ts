@@ -79,6 +79,9 @@ function limitOf(message: string): 'quota exhausted' | 'rate limited' | undefine
   return undefined;
 }
 
+/** Codex's warning on a resume (bug-036): "… recorded with model `A` but is resuming with `B`" — B, the model it ran. */
+const RESUMED_ON = /\bis resuming with `([^`]+)`/;
+
 /**
  * Read one Codex invocation's `--json` stream. As for Claude Code's (`readSession`): the outcome is what the stream
  * says, never assumed; a stream with no `turn.completed` is a failed step, not a step that used nothing; a line that
@@ -96,6 +99,8 @@ export function readCodexSession(lines: readonly string[], reading: CodexReading
    * (`last_critical_error`), it stands for the session's failure only when no `turn.failed` names one.
    */
   let lastError: string | undefined;
+  /** Codex's warning that it resumed the thread on another model than the step's (bug-036). */
+  let switched: string | undefined;
   /** Whether this invocation's count restarted below the thread's: decided at its first `turn.completed`. */
   let restarted: boolean | undefined;
 
@@ -184,6 +189,11 @@ export function readCodexSession(lines: readonly string[], reading: CodexReading
       case 'item.completed': {
         const item = (event.item ?? {}) as Record<string, unknown>;
         if (item.type === 'agent_message' && typeof item.text === 'string') finalMessage = item.text;
+        // bug-036: a thread resumed on another model than the step's is not the step's work, nor priced as it.
+        if (item.type === 'error' && typeof item.message === 'string') {
+          const resumedOn = RESUMED_ON.exec(item.message)?.[1];
+          if (resumedOn !== undefined && resumedOn !== reading.model) switched = item.message;
+        }
         break;
       }
       default:
@@ -191,6 +201,7 @@ export function readCodexSession(lines: readonly string[], reading: CodexReading
     }
   }
 
+  if (switched !== undefined) return result('failed', switched);
   if (failure !== undefined) {
     const limit = limitOf(failure);
     return limit === undefined ? result('failed', failure) : result(limit);
@@ -342,6 +353,9 @@ export function codexAgent(options: CodexOptions): AgentPort {
           'exec',
           'resume',
           '--json',
+          // bug-036: without it Codex resumes the thread on its default model, not the step's.
+          '--model',
+          thread.model,
           ...effortFlag(request.effort),
           ...BYPASS,
           '--',
