@@ -400,13 +400,19 @@ export interface ProfileLink {
 
 /**
  * The landing page (REQ-RES-03 as amended in 1.20); the comparisons whose newer side it is, each linked (REQ-RES-07), in
- * a section only an execution with a comparison has; and the profile pages, each linked (REQ-RES-08).
+ * a section only an execution with a comparison has; the profile pages, each linked (REQ-RES-08); and the catalogue
+ * entry's notes under the framing (REQ-RES-11 as amended in 1.39, task-108).
  */
 export function landingPage(
   model: SiteModel,
   comparisons: readonly ComparisonLink[] = [],
   profiles: readonly ProfileLink[] = [],
+  notes: readonly string[] = [],
 ): string {
+  const notesList =
+    notes.length === 0
+      ? ''
+      : `<ul class="notes">\n${notes.map((note) => `<li>${e(note)}</li>\n`).join('')}</ul>\n`;
   const linkList = (links: readonly ComparisonLink[]) =>
     links
       .map(
@@ -434,9 +440,17 @@ export function landingPage(
         '</ul>\n';
   // A baseline-only execution compares no harness (task-104): its across-agents comparisons come first.
   if (model.arms.length === 1) {
-    return page(title(model), landingContent(model, title(model), acrossAgentsSection) + compared + views, 2);
+    return page(
+      title(model),
+      landingContent(model, title(model), notesList + acrossAgentsSection) + compared + views,
+      2,
+    );
   }
-  return page(title(model), landingContent(model, title(model)) + compared + acrossAgentsSection + views, 2);
+  return page(
+    title(model),
+    landingContent(model, title(model), notesList) + compared + acrossAgentsSection + views,
+    2,
+  );
 }
 
 /**

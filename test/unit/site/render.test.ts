@@ -94,6 +94,15 @@ function model(): SiteModel {
 }
 
 describe('the pages, from a hand-built model (task-045)', () => {
+  it("shows the catalogue's notes, escaped, under the framing, and nothing for an execution without (task-108)", () => {
+    const page = landingPage(model(), [], [], ['Costs are API-equivalent <not spent>.', 'Preliminary.']);
+    expect(page).toContain(
+      '<ul class="notes">\n<li>Costs are API-equivalent &lt;not spent&gt;.</li>\n<li>Preliminary.</li>\n</ul>\n',
+    );
+    expect(page.indexOf('class="framing"')).toBeLessThan(page.indexOf('class="notes"'));
+    expect(landingPage(model())).not.toContain('class="notes"');
+  });
+
   it('shows a range from n = 3, beyond variance, not measured, a loss with its reason, and a hold-out not scored', () => {
     const page = landingPage(model());
     expect(page).toContain('<span class="range">range 10.0%–30.0%</span>');
@@ -352,5 +361,18 @@ describe('a one-arm landing page (REQ-RES-07 as amended in 1.36, task-104)', () 
     expect(html).toContain('Baseline only: no harness is compared in this execution.');
     expect(html).not.toContain('Harness, not model');
     expect(html.indexOf('across-agents-81ebb2691f9c-1.html')).toBeLessThan(html.indexOf('<svg'));
+  });
+
+  it("puts the catalogue's notes after the framing and before its across-agents comparisons (task-108)", () => {
+    const one = { ...model(), arms: ['baseline'] } as SiteModel;
+    const link = {
+      file: 'across-agents-81ebb2691f9c-1.html',
+      label: 'x',
+      crossModel: false,
+      acrossAgents: true,
+    };
+    const html = landingPage(one, [link], [], ['A note.']);
+    expect(html.indexOf('class="framing"')).toBeLessThan(html.indexOf('class="notes"'));
+    expect(html.indexOf('class="notes"')).toBeLessThan(html.indexOf('<h2>Compared across agents</h2>'));
   });
 });
