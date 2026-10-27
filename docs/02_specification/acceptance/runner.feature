@@ -1,6 +1,6 @@
 # Acceptance — Runner (v0.1)
-# Traces to: F2.1–F2.7 · J2 steps 3–4 · experiment design §2 (arms, parity), §3 (run protocol) · is/is-not 1.1
-# Version: 1.0 · Status: Approved (2026-09-22)
+# Traces to: F2.1–F2.7 · J2 steps 3–4 · experiment design §2 (arms, parity), §3 (run protocol) · is/is-not 1.1 · dl-021 (v0.3)
+# Version: 1.1 · Status: Approved (1.0, 2026-09-22); 1.1 (v0.3, task-114, 2026-10-27) for review
 
 Feature: Isolated, multi-step runs of a scenario in an arm
   As the WingFoil maintainer
@@ -79,6 +79,15 @@ Feature: Isolated, multi-step runs of a scenario in an arm
     When the baseline-docs environment for S8 is generated
     Then it contains the same directives, decisions and project description as Markdown
     And generating it twice yields byte-identical output
+
+  # Added in 1.1 (v0.3, task-114): dl-021 step A, the wingfoil arm's agent acts in each workflow step's role.
+  @F2.5
+  Scenario: A docs control that declares every role gets every role's rules, labelled
+    Given the wingfoil arm's configuration binds directives to several roles
+    And the baseline-docs arm declares that it renders every role's directives
+    When the baseline-docs environment is generated
+    Then every directive a role loads appears once, labelled with the roles it is bound to
+    And a docs control without that declaration gets the developer's and the global directives only
 
   @F2.6
   Scenario: The WingFoil under test is the version pinned by the campaign
