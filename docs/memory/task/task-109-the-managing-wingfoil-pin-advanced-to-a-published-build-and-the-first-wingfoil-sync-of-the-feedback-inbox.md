@@ -187,3 +187,10 @@ pin-specific text is rule 8's.
   the real data unchanged (24, 7, 4, 10). Nits only, which closes the review (dl-020); applied: W-02 names `title`,
   `tags` and the initial `status`; a test comment; the script says that an ADR or tech-spec superseded since keeps
   its note `captured`.
+
+## Approval notes
+
+- **in-review → approved** (`4b0882fd`): by the approver, 2026-10-27, accepting rule 5 kept word for word as every
+  consumer; the retrospective's evidence in `release-cycle` and the four `needs-info` answers left to follow-ups.
+- **Merge:** `12f07419` (`--no-ff`) on main; `npm ci` on the main checkout, `npm run -s wingfoil -- --version` →
+  `0.3.1 (870bd440…)`.
