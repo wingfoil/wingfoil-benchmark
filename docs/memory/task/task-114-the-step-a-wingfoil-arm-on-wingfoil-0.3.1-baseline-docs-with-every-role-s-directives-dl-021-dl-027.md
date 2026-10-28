@@ -200,10 +200,9 @@ real-agent session (S2, S3, S8 dry runs, campaign-007's runs, `gpt-6.1-terra`) i
     instance (the setup's, then four opened), adds and submits its task, gets "Approved. Proceed." at its review gate,
     approves in the turn after the reply (never before) and records its delivery; no MCP call, no forbidden verb.
     Committed on main (`08fbeb76`); secret scan clean.
-- **What campaign-007 reads:** wingfoil `dd43760095bd` (`dry-runs/95`), baseline-docs `64e37c838830` (`dry-runs/91`),
-  in `campaigns/codex-terra-step-a.dry-run.yaml`. `dry-runs/88`, 90, 92 and 93 ran earlier digests: evidence of the
-  corrections, not campaign-007's dry runs. Eight real dry runs in all: 8.2143 USD API-equivalent (the ledger's
-  eight lines summed), 0 € billed, under the consent's 20 €.
+- **What campaign-007 reads** (updated after review round 1, below): wingfoil `cf70ad7ed9aa` (`dry-runs/96`),
+  baseline-docs `64e37c838830` with round 1's sentence (`dry-runs/97`), in `campaigns/codex-terra-step-a.dry-run.yaml`.
+  `dry-runs/88` to 95 ran earlier digests or the earlier sentence: evidence of the corrections.
 - **criterion 4's scenario:** a new `runner.feature` scenario, "A docs control that declares every role gets every
   role's rules, labelled", beside the existing one, which stays as it was (the docs control without the choice).
 
@@ -230,3 +229,9 @@ Under dl-020; `scripts/pre-review.sh main` green before each round.
   - The manual's fixes move wingfoil's digest to `cf70ad7ed9aa`; baseline-docs' sentence is generator code, its
     digest unchanged. The approver chose (chat, 2026-10-28, "2 rifai solo Codex, 3 frase ok e rifai baseline-docs")
     to run again Codex's two dry runs, campaign-007's.
+- **Round 1's dry runs** (Codex, 2026-10-28, committed on main, `14af9295`; two ledger lines): `dry-runs/96`, wingfoil
+  `cf70ad7ed9aa`: 164/165, hold-out 45/48, 5 interventions, 1.1885 USD; each of the five requests in its own instance,
+  its task added and submitted, "Approved. Proceed." at its gate, the approval in the turn after the reply, its
+  delivery; no MCP call, no forbidden verb. `dry-runs/97`, baseline-docs: 165/165, hold-out 47/48, no intervention,
+  0.8691 USD; its `PROJECT_RULES.md` carries round 1's sentence. Secret scan clean. **Ten real dry runs in all:
+  10.2719 USD API-equivalent** (the ledger's ten lines summed), 0 € billed, under the consent's 20 €.
