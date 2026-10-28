@@ -245,3 +245,15 @@ Under dl-020; `scripts/pre-review.sh main` green before each round.
     and 91 and renders round 1's since `b246c8b4`: the sentence is generator code, outside the digest (REQ-FMT-13), so
     89 and 91 no longer re-render as they ran, as REQ-RUN-11 1.41's "renders as it ran" would have it; their
     `generated_sha256` tells them apart from 97's. campaign-007's estimate reads the latest dry run, 97.
+
+### Approval
+
+- **Full suites** (`scripts/full-suites.sh`, the approver in chat, 2026-10-28, "Si lancia le suite"), on `766d861b`,
+  the worktree clean: green — lint, 1854 unit and acceptance tests passed (8 skipped; coverage 97.52 % of lines),
+  build, test:bin 8/8, test:docker 22 passed (2 skipped: the ones that need the real hold-out, absent beside the
+  worktree; W3 on the step-A arms ran), log `.cache/full-suites/2026-10-28/…-766d861b-120642.txt`. A first run
+  (`…-766d861b-114911.txt`) was red: `BENCH_HOLDOUT_PATH` passed to the whole suite made the unit, bin and one docker
+  test read the real hold-out for the fixture scenario T3 (56 failures, one cause); rerun with `BENCH_WINGFOIL_REPO`
+  alone.
+- in-review → approved by the approver (`02f60847`), 2026-10-28, before dl-027's third cut (2026-11-08): campaign-007
+  can run, from the main checkout.
