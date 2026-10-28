@@ -67,3 +67,11 @@ past: task-114 approved on 2026-10-28). **It starts only once dl-031 is approved
      out of step with the test's name. **Fixed:** it probes `gpt-6-luna`.
   3. 1.42's "their refusals name dl-027 and dl-031" leaves the date's refusal (dl-024) to 1.41's sentence. Kept.
   A nit-only round closes the review.
+
+### Approval
+
+- **Full suites** (`scripts/full-suites.sh`, the approver in chat, 2026-10-28, "lancia le suite adesso"), on
+  `2aa5750a`, the worktree clean, `BENCH_WINGFOIL_REPO` alone: green — lint, 1856 unit and acceptance tests passed
+  (8 skipped; coverage 98.78 % of lines), build, test:bin 8/8, test:docker 22 passed (2 skipped), log
+  `.cache/full-suites/2026-10-28/…-2aa5750a-161254.txt`.
+- in-review → approved by the approver (`f2631a15`), 2026-10-28: campaign-007's file and profile may run Luna.
