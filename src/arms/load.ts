@@ -39,6 +39,12 @@ export function loadArm(armsRoot: string, name: string): Result<Arm> {
       { path: 'docs_directives', message: 'only a docs control (docs_of) chooses the directives it renders' },
     ]);
   }
+  // Only the wingfoil arm's docs generator reads the choice (review round 1): elsewhere it would move a digest alone.
+  if (spec.docs_directives !== undefined && spec.docs_of !== 'wingfoil') {
+    return fail([
+      { path: 'docs_directives', message: 'only a docs control of the wingfoil arm chooses its directives' },
+    ]);
+  }
   const declared: Declared[] = [
     { path: 'setup', relative: spec.setup, kind: 'file' },
     { path: 'manual', relative: spec.manual, kind: 'file' },

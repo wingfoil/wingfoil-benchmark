@@ -1,5 +1,6 @@
 # Acceptance — Runner (v0.1)
-# Traces to: F2.1–F2.7 · J2 steps 3–4 · experiment design §2 (arms, parity), §3 (run protocol) · is/is-not 1.1 · dl-021 (v0.3)
+# Traces to: F2.1–F2.7 · J2 steps 3–4 · experiment design §2 (arms, parity), §3 (run protocol) · is/is-not 1.1
+# · dl-021 (v0.3)
 # Version: 1.1 · Status: Approved (1.0, 2026-09-22); 1.1 (v0.3, task-114, 2026-10-27) for review
 
 Feature: Isolated, multi-step runs of a scenario in an arm

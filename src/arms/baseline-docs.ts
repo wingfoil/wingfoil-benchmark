@@ -148,8 +148,8 @@ function everyRoleRules(files: ReadonlyMap<string, string>): string[] {
   if (directives.length === 0) return [];
   return [
     '## Rules',
-    'Each rule names the roles it is for. Follow the rules for the role a step of the work is done in, and those for ' +
-      'every role.',
+    'Each rule names the roles it is for. Follow those that fit the work you are doing, and always those for every ' +
+      'role.',
     ...directives.flatMap((document) => {
       const [heading, ...body] = render(document);
       const label = global.has(document.id)

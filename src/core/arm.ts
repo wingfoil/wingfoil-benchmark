@@ -69,7 +69,7 @@ export interface Arm {
   readonly provides: Readonly<Record<string, boolean>>;
   /** The harness arm a docs control is generated from (REQ-FMT-05 as amended). */
   readonly docsOf?: string;
-  /** Which directives a docs control renders: every role's, labelled, or, absent, the developer's and the global ones. */
+  /** The directives a docs control renders: every role's, labelled, or, absent, the developer's and global ones. */
   readonly docsDirectives?: 'every-role';
   /** The settings that turn the arm's tool's telemetry off, `NAME=value` (REQ-RUN-18). */
   readonly telemetryOff?: readonly string[];

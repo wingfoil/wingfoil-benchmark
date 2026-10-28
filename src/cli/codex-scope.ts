@@ -79,11 +79,12 @@ export type CodexScopeInput =
   | { readonly agent: string; readonly dryRunArm: string; readonly profile: string; readonly model: string };
 
 /**
- * dl-024's scope as dl-025, dl-027 and dl-028 widen it, checked before any Codex session (REQ-RUN-15 as amended in 1.35,
- * 1.37 and 1.41): no
- * session after {@link CODEX_SCOPE_END}; a campaign extends one of {@link ALLOWED}'s presets and runs its arms and
- * models only, those of the entry kept to its file when one is; a dry run reads one of their profiles, of one of its arms on one of its models. Nothing for another
- * agent.
+ * dl-024's scope as dl-025, dl-027 and dl-028 widen it, checked before any Codex session (REQ-RUN-15 as amended in
+ * 1.35, 1.37 and 1.41): no session after {@link CODEX_SCOPE_END}; a campaign extends one of {@link ALLOWED}'s presets
+ * and runs its arms and models only, those of the entry kept to its file when one is; a dry run reads one of their
+ * profiles, of one of its arms on one of its models. Nothing for another agent. A campaign file is named as
+ * `campaigns/<file>` of the tree that holds it, so an entry kept to a file matches by that name; its arms and models
+ * are checked all the same.
  */
 export function codexScopeIssues(input: CodexScopeInput, now: number): Issue[] {
   if (input.agent !== 'codex') return [];
@@ -126,11 +127,12 @@ export function codexScopeIssues(input: CodexScopeInput, now: number): Issue[] {
     const presets = either(ALLOWED.map((one) => one.preset));
     return [{ path: 'extends', message: `a codex campaign must extend ${presets} (${DECISIONS})` }];
   }
+  const campaignOf = allowed.campaign ?? allowed.preset;
   if (!input.arms.includes('baseline') || !input.arms.every((arm) => allowed.arms.includes(arm))) {
     return [
       {
         path: 'arms',
-        message: `a codex campaign of ${allowed.campaign ?? allowed.preset} runs ${armsOf(allowed)} only (${allowed.decision})`,
+        message: `a codex campaign of ${campaignOf} runs ${armsOf(allowed)} only (${allowed.decision})`,
       },
     ];
   }
@@ -141,7 +143,7 @@ export function codexScopeIssues(input: CodexScopeInput, now: number): Issue[] {
     return [
       {
         path: 'models',
-        message: `a codex campaign of ${allowed.campaign ?? allowed.preset} runs ${allowed.models.join(', ')} only (${allowed.decision})`,
+        message: `a codex campaign of ${campaignOf} runs ${allowed.models.join(', ')} only (${allowed.decision})`,
       },
     ];
   }

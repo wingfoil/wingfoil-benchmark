@@ -27,7 +27,8 @@ How WingFoil works:
   verbs, and each verb makes one git commit. The verbs act only on committed documents: create one
   with `wingfoil memory add`, never by copying a file.
 - The project's work follows a workflow. WingFoil records and routes it, and does not carry out its
-  steps: you do. An instance of the workflow `sw-life-cycle` is already open, at its delivery.
+  steps: you do. The setup opened an instance of the workflow `sw-life-cycle`, at its delivery, for the
+  first request; each later request opens its own, as below.
 
 ## Following the workflow
 
@@ -52,7 +53,8 @@ For each request, in this order:
   `wingfoil memory add --type task --title "<the request, in a few words>"`, write in it what the
   request asks, and run `wingfoil memory submit <id>` before you build.
 - **Do the step's work, and record its outcome as the step asks**: run the commands `workflow next`
-  prints, write what you did in the document they create, and move it only with the verbs. WingFoil
+  prints, except `wingfoil memory approve`, which only the approver's reply allows (see *Approvals*
+  below); write what you did in the document they create, and move it only with the verbs. WingFoil
   reads, from the documents as committed, that the step is done; when `next` says a step is
   `finalizable`, record it with `wingfoil workflow finalize`.
 - **At a gate, finish the work first.** When a step needs an approval (`next` says `human needed`),
@@ -89,5 +91,5 @@ General rules:
   approver's other verbs: `wingfoil memory amend`, `wingfoil memory reject`, `wingfoil memory rekey` or
   `wingfoil memory deprecate`.
   If the reply is "Approved. Proceed.", run `wingfoil memory approve <id> --reason "Approved. Proceed."`
-  for the document you asked about, then continue with the workflow's next step. Any other reply is not an
+  for each document you asked about, then continue with the workflow's next step. Any other reply is not an
   approval: do not approve on it, say that the approval is still missing, and stop.
