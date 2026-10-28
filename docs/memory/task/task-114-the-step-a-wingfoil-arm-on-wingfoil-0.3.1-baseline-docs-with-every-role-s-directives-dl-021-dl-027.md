@@ -192,5 +192,5 @@ real-agent session (S2, S3, S8 dry runs, campaign-007's runs, `gpt-6.1-terra`) i
     Committed on main (`08fbeb76`); secret scan clean.
 - **What campaign-007 reads:** wingfoil `dd43760095bd` (`dry-runs/95`), baseline-docs `64e37c838830` (`dry-runs/91`),
   in `campaigns/codex-terra-step-a.dry-run.yaml`. `dry-runs/88`, 90, 92 and 93 ran earlier digests: evidence of the
-  corrections, not campaign-007's dry runs. Eight real dry runs in all: 7.80 USD API-equivalent, 0 € billed, under the
+  corrections, not campaign-007's dry runs. Eight real dry runs in all: 8.2143 USD API-equivalent (the ledger's eight lines summed), 0 € billed, under the
   consent's 20 €.
