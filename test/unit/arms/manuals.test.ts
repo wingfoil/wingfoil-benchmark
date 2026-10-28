@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
+import { classifyV2 } from '../../../src/core/approver.js';
 import { repoPath } from '../../support/paths.js';
 
 /** The benchmark's own operating manuals (F2.7), as published. */
@@ -101,13 +102,21 @@ describe('the step-A wingfoil manual (dl-021 step A, task-114)', () => {
     expect(wingfoilOwn()).toMatch(/At a gate, finish the work first/);
   });
 
-  it('ends the session at a gate on a direct question to the approver, naming each document (dry-runs/88)', () => {
-    // Claude Code stated the gate ("waiting on approval of task-001 …") and stopped; approver policy v2 reads a
-    // request only, so the gate went unanswered for three steps (task-114).
+  it('ends the session at a gate on a request approver policy v2 reads as one, naming each document (dry-runs/88, 92, 93)', () => {
+    // dry-runs/88: Claude Code stated the gate ("waiting on approval of task-001 …"), which v2 does not read; dry-runs
+    // 92 and 93: "Do you approve <id>?" is a question to v2, whose reply Codex took as leave to approve (task-114).
     const own = wingfoilOwn();
-    expect(own).toContain('end your message with a direct question to the approver');
-    expect(own).toContain('"Do you approve <id>?"');
-    expect(own).toMatch(/A statement that the work waits for an approval is not a question/);
+    const phrase = /end your message with the request "(Please approve <id>\.)"/.exec(own)?.[1];
+    expect(phrase).toBe('Please approve <id>.');
+    const closing = `The work is done and committed; the tests pass.\n\n${(phrase ?? '').replace('<id>', 'task-001-x')}`;
+    expect(classifyV2(closing)).toBe('approval');
+    expect(own).not.toContain('Do you approve');
+  });
+
+  it('approves only on the reply "Approved. Proceed.", any other reply being no approval (dry-runs/93)', () => {
+    expect(wingfoilOwn()).toMatch(
+      /Any other reply is not an approval: do not approve on it, say that the approval is still missing, and stop\./,
+    );
   });
 
   it('gives every request its task, without --workflow when the step does not ask for one (decision 1, F-043)', () => {
