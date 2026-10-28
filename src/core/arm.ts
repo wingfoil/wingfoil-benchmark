@@ -39,6 +39,12 @@ export const armSchema = z.strictObject({
   /** REQ-FMT-05 as amended: a docs control names the harness arm it is generated from, and requires no tool. */
   docs_of: z.string().regex(ARM_NAME, 'must be an arm name').optional(),
   /**
+   * REQ-RUN-11 as amended in 1.41 (dl-021 step A): a docs control that renders every role's directives, each labelled
+   * with its roles, declares `every-role`; absent, it renders the developer's and the global ones, as before, so that a
+   * digest pinned before the choice renders as it ran (REQ-FMT-13).
+   */
+  docs_directives: z.literal('every-role').optional(),
+  /**
    * REQ-FMT-05 as amended, REQ-RUN-18: the environment settings, `NAME=value`, that turn a harness's telemetry off,
    * set in the arm's container; `[]` states the tool has none. Required of an arm that requires a harness.
    */
@@ -63,6 +69,8 @@ export interface Arm {
   readonly provides: Readonly<Record<string, boolean>>;
   /** The harness arm a docs control is generated from (REQ-FMT-05 as amended). */
   readonly docsOf?: string;
+  /** The directives a docs control renders: every role's, labelled, or, absent, the developer's and global ones. */
+  readonly docsDirectives?: 'every-role';
   /** The settings that turn the arm's tool's telemetry off, `NAME=value` (REQ-RUN-18). */
   readonly telemetryOff?: readonly string[];
   /**

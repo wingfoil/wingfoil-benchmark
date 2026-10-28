@@ -171,3 +171,55 @@ describe('the baseline-docs generator (REQ-RUN-11)', () => {
     expect(rules).not.toContain('no name');
   });
 });
+
+/** dl-021 step A: a docs control that declares `docs_directives: every-role` gets every role's rules, labelled. */
+describe("the baseline-docs generator, every role's directives labelled (dl-021 step A, REQ-RUN-11)", () => {
+  /** The fixture's configuration, testing also bound to the reviewer, and a directive no role loads. */
+  function everyRoleSnapshot(): Map<string, string> {
+    const files = snapshot();
+    files.set(
+      '.wingfoil/roles.yaml',
+      'version: 1\nassignments:\n  developer: [testing, no-throw]\n  reviewer: [code-review, testing]\n' +
+        '  architect: [missing]\nglobal: [security-secrets]\n',
+    );
+    files.set(
+      '.wingfoil/directives/custom/unbound.md',
+      directive('unbound', 'Unbound', 'Nobody loads it.\n'),
+    );
+    return files;
+  }
+  const rules = renderProjectRules(everyRoleSnapshot(), { everyRole: true });
+
+  it('renders every directive a role or every role loads, once each, by id; none that no role loads', () => {
+    const section = rules.slice(rules.indexOf('## Rules'), rules.indexOf('## Decisions'));
+    const headings = [...section.matchAll(/^### (.+)$/gm)].map((match) => match[1]);
+    expect(headings).toEqual(['Code review', 'No throw', 'Secret hygiene', 'Testing']);
+    expect(rules).not.toContain('Unbound');
+  });
+
+  it('labels each directive with the roles it is bound to, sorted, or as every role', () => {
+    expect(rules).toContain('### Code review\n\nFor: reviewer.\n\nReview it.\n');
+    expect(rules).toContain('### No throw\n\nFor: developer.\n\n#### No throw\n\nNever throw.\n');
+    expect(rules).toContain('### Secret hygiene\n\nFor: every role.\n\nNo secrets.\n');
+    expect(rules).toContain('### Testing\n\nFor: developer, reviewer.\n\n#### Testing\n');
+  });
+
+  it('says that the rules are per role, in words an agent with no role can act on (review round 1)', () => {
+    expect(rules).toContain(
+      '## Rules\n\nEach rule names the roles it is for. Follow those that fit the work you are doing, and always ' +
+        'those for every role.\n',
+    );
+    expect(rules).not.toMatch(/a step of the work/);
+  });
+
+  it('is the same bytes twice, whatever the order of the snapshot', () => {
+    const reversed = new Map([...everyRoleSnapshot()].reverse());
+    expect(renderProjectRules(everyRoleSnapshot(), { everyRole: true })).toBe(rules);
+    expect(renderProjectRules(reversed, { everyRole: true })).toBe(rules);
+  });
+
+  it('keeps the earlier rendering without the choice, for the digests that pinned it (REQ-FMT-13)', () => {
+    expect(renderProjectRules(everyRoleSnapshot())).toBe(renderProjectRules(everyRoleSnapshot(), {}));
+    expect(renderProjectRules(everyRoleSnapshot())).not.toMatch(/For: |Code review/);
+  });
+});

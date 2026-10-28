@@ -27,13 +27,17 @@ function fakeAuthFile(): string {
 }
 
 /** dl-024's scope, enforced before any Codex session: the date, and the campaign or dry run it may serve. */
-describe("the Codex credential's scope (dl-024, widened by dl-025)", () => {
+describe("the Codex credential's scope (dl-024, widened by dl-025, dl-027 and dl-028)", () => {
   const before = Date.parse('2026-11-13T23:59:59Z');
   const after = Date.parse('2026-11-14T00:00:00Z');
   const BASELINE = 'presets/baseline-across-agents.yaml';
   const HVD = 'presets/harness-vs-docs.yaml';
   const BASELINE_PROFILE = 'campaigns/codex-baseline.dry-run.yaml';
   const TERRA_PROFILE = 'campaigns/codex-terra-harness-vs-docs.dry-run.yaml';
+  const STEP_A = 'campaigns/codex-terra-step-a.yaml';
+  const STEP_A_PROFILE = 'campaigns/codex-terra-step-a.dry-run.yaml';
+  const PROFILES = `${BASELINE_PROFILE} or ${TERRA_PROFILE} or ${STEP_A_PROFILE}`;
+  const ALL_DECISIONS = 'dl-024, dl-025, dl-027, dl-028';
   const issuesOf = (input: Parameters<typeof codexScopeIssues>[0], now = before) =>
     codexScopeIssues(input, now);
 
@@ -72,6 +76,86 @@ describe("the Codex credential's scope (dl-024, widened by dl-025)", () => {
     }
   });
 
+  it("accepts campaign-007's file on Terra and gpt-6.1-terra, and its dry runs of the three arms (dl-027, dl-028)", () => {
+    expect(
+      issuesOf({
+        agent: 'codex',
+        campaign: STEP_A,
+        preset: HVD,
+        arms: ['baseline', 'baseline-docs', 'wingfoil'],
+        models: ['gpt-5.6-terra', 'gpt-6.1-terra'],
+      }),
+    ).toEqual([]);
+    for (const arm of ['baseline', 'baseline-docs', 'wingfoil'])
+      for (const model of ['gpt-5.6-terra', 'gpt-6.1-terra'])
+        expect(
+          issuesOf({ agent: 'codex', dryRunArm: arm, profile: STEP_A_PROFILE, model }),
+          `${arm} ${model}`,
+        ).toEqual([]);
+  });
+
+  it("keeps gpt-6.1-terra to campaign-007's file and profile, and campaign-007 to its arms and models", () => {
+    // Another file extending the same preset is dl-025's: Terra 5.6 alone.
+    expect(
+      issuesOf({
+        agent: 'codex',
+        campaign: 'campaigns/codex-terra-harness-vs-docs-v2.yaml',
+        preset: HVD,
+        arms: ['baseline', 'wingfoil'],
+        models: ['gpt-6.1-terra'],
+      }),
+    ).toEqual([{ path: 'models', message: `a codex campaign of ${HVD} runs gpt-5.6-terra only (dl-025)` }]);
+    expect(
+      issuesOf({ agent: 'codex', dryRunArm: 'wingfoil', profile: TERRA_PROFILE, model: 'gpt-6.1-terra' }),
+    ).toEqual([
+      { path: 'model', message: `a codex dry run of ${TERRA_PROFILE} runs gpt-5.6-terra only (dl-025)` },
+    ]);
+    expect(
+      issuesOf({
+        agent: 'codex',
+        campaign: STEP_A,
+        preset: HVD,
+        arms: ['baseline', 'wingfoil'],
+        models: ['gpt-6.1-sol'],
+      }),
+    ).toEqual([
+      {
+        path: 'models',
+        message: `a codex campaign of ${STEP_A} runs gpt-5.6-terra, gpt-6.1-terra only (dl-027, dl-028)`,
+      },
+    ]);
+    expect(
+      issuesOf({
+        agent: 'codex',
+        campaign: STEP_A,
+        preset: HVD,
+        arms: ['baseline', 'speckit'],
+        models: ['gpt-5.6-terra'],
+      }),
+    ).toEqual([
+      {
+        path: 'arms',
+        message: `a codex campaign of ${STEP_A} runs baseline, baseline-docs, wingfoil only (dl-027, dl-028)`,
+      },
+    ]);
+    expect(
+      issuesOf({ agent: 'codex', dryRunArm: 'speckit', profile: STEP_A_PROFILE, model: 'gpt-5.6-terra' }),
+    ).toEqual([
+      {
+        path: 'arm',
+        message: `a codex dry run of ${STEP_A_PROFILE} runs baseline, baseline-docs, wingfoil only (dl-027, dl-028)`,
+      },
+    ]);
+    expect(
+      issuesOf({ agent: 'codex', dryRunArm: 'wingfoil', profile: STEP_A_PROFILE, model: 'gpt-6.1-sol' }),
+    ).toEqual([
+      {
+        path: 'model',
+        message: `a codex dry run of ${STEP_A_PROFILE} runs gpt-5.6-terra, gpt-6.1-terra only (dl-027, dl-028)`,
+      },
+    ]);
+  });
+
   it('refuses any Codex session after 2026-11-13', () => {
     expect(
       issuesOf(
@@ -83,7 +167,7 @@ describe("the Codex credential's scope (dl-024, widened by dl-025)", () => {
 
   it('refuses another preset, an arm or a model outside its preset, naming the decision', () => {
     expect(issuesOf({ agent: 'codex', arms: ['baseline'], models: ['gpt-6.1-sol'] })).toEqual([
-      { path: 'extends', message: `a codex campaign must extend ${BASELINE} or ${HVD} (dl-024, dl-025)` },
+      { path: 'extends', message: `a codex campaign must extend ${BASELINE} or ${HVD} (${ALL_DECISIONS})` },
     ]);
     expect(
       issuesOf({ agent: 'codex', preset: BASELINE, arms: ['baseline', 'wingfoil'], models: ['gpt-6.1-sol'] }),
@@ -112,7 +196,7 @@ describe("the Codex credential's scope (dl-024, widened by dl-025)", () => {
     ).toEqual([
       {
         path: 'profile',
-        message: `a codex dry run reads ${BASELINE_PROFILE} or ${TERRA_PROFILE} (dl-024, dl-025)`,
+        message: `a codex dry run reads ${PROFILES} (${ALL_DECISIONS})`,
       },
     ]);
     expect(
@@ -125,7 +209,7 @@ describe("the Codex credential's scope (dl-024, widened by dl-025)", () => {
     ).toEqual([
       {
         path: 'profile',
-        message: `a codex dry run reads ${BASELINE_PROFILE} or ${TERRA_PROFILE} (dl-024, dl-025)`,
+        message: `a codex dry run reads ${PROFILES} (${ALL_DECISIONS})`,
       },
     ]);
     expect(
@@ -196,7 +280,7 @@ describe("dl-024's scope in the commands", () => {
 
     expect(refused).toMatchObject({ code: 1, built: 0 });
     expect(refused.stderr).toContain(
-      'extends: a codex campaign must extend presets/baseline-across-agents.yaml or presets/harness-vs-docs.yaml (dl-024, dl-025)',
+      'extends: a codex campaign must extend presets/baseline-across-agents.yaml or presets/harness-vs-docs.yaml (dl-024, dl-025, dl-027, dl-028)',
     );
   });
 
@@ -233,7 +317,7 @@ describe("dl-024's scope in the commands", () => {
 
     expect(refused).toMatchObject({ code: 1, built: 0 });
     expect(refused.stderr).toContain(
-      'profile: a codex dry run reads campaigns/codex-baseline.dry-run.yaml or campaigns/codex-terra-harness-vs-docs.dry-run.yaml (dl-024, dl-025)',
+      'profile: a codex dry run reads campaigns/codex-baseline.dry-run.yaml or campaigns/codex-terra-harness-vs-docs.dry-run.yaml or campaigns/codex-terra-step-a.dry-run.yaml (dl-024, dl-025, dl-027, dl-028)',
     );
   });
 
@@ -269,6 +353,47 @@ describe("dl-024's scope in the commands", () => {
     expect(refused).toMatchObject({ code: 1, built: 0 });
     expect(refused.stderr).toContain(
       'arms/baseline/mcp.json: web: only stdio servers with a command are rendered for Codex',
+    );
+  });
+
+  it("passes campaign-007's file on gpt-6.1-terra to the next check, and refuses the same pins in another file (dl-028)", async () => {
+    const pins = {
+      ...completeCampaignYaml(),
+      harnesses: {},
+      arms: ['baseline'],
+      agent: { ...CODEX, effort: { 'gpt-6.1-terra': 'medium' } },
+      models: { default: 'gpt-6.1-terra' },
+    };
+    const { root } = writeRepo(pins);
+    mkdirSync(join(root, 'campaigns', 'presets'));
+    writeFileSync(
+      join(root, 'campaigns', 'presets', 'harness-vs-docs.yaml'),
+      stringify({ description: 'h', ...pins }),
+    );
+    // An MCP server Codex cannot be given: the check after the scope's, so that reaching it shows the scope passed.
+    writeFileSync(
+      join(root, 'arms', 'baseline', 'arm.yaml'),
+      'name: baseline\nsetup: setup.sh\nmanual: manual.md\nmcp: mcp.json\n',
+    );
+    writeFileSync(
+      join(root, 'arms', 'baseline', 'mcp.json'),
+      JSON.stringify({ mcpServers: { web: { type: 'http', url: 'https://example.org' } } }),
+    );
+    vi.stubEnv('BENCH_CODEX_AUTH_FILE', fakeAuthFile());
+    const now = () => Date.parse('2026-10-28T12:00:00Z');
+    const stepA = join(root, 'campaigns', 'codex-terra-step-a.yaml');
+    const other = join(root, 'campaigns', 'codex-terra-other.yaml');
+    for (const file of [stepA, other])
+      writeFileSync(file, stringify({ extends: 'presets/harness-vs-docs.yaml' }));
+
+    const passed = await cli(['campaign', 'run', stepA, '--allow-spending'], root, now);
+    const refused = await cli(['campaign', 'run', other, '--allow-spending'], root, now);
+
+    expect(passed).toMatchObject({ code: 1, built: 0 });
+    expect(passed.stderr).toContain('arms/baseline/mcp.json: web: only stdio servers');
+    expect(refused).toMatchObject({ code: 1, built: 0 });
+    expect(refused.stderr).toContain(
+      'models: a codex campaign of presets/harness-vs-docs.yaml runs gpt-5.6-terra only (dl-025)',
     );
   });
 
@@ -347,7 +472,7 @@ describe("dl-024's scope in the commands", () => {
 
     expect(refused).toMatchObject({ code: 1, built: 0 });
     expect(refused.stderr).toContain(
-      'profile: a codex dry run reads campaigns/codex-baseline.dry-run.yaml or campaigns/codex-terra-harness-vs-docs.dry-run.yaml (dl-024, dl-025)',
+      'profile: a codex dry run reads campaigns/codex-baseline.dry-run.yaml or campaigns/codex-terra-harness-vs-docs.dry-run.yaml or campaigns/codex-terra-step-a.dry-run.yaml (dl-024, dl-025, dl-027, dl-028)',
     );
   });
 });

@@ -1,3 +1,5 @@
+import { relative } from 'node:path';
+
 import { codexFileSecrets } from '../agents/index.js';
 import { missingCapabilities } from '../arms/index.js';
 import { listPresets } from '../campaign/index.js';
@@ -286,6 +288,7 @@ async function runCampaignCommand(
   const outOfScope = codexScopeIssues(
     {
       agent: spec.agent.name,
+      campaign: relative(checked.value.campaign.repoRoot, checked.value.campaign.file).split('\\').join('/'),
       arms: spec.arms,
       models: campaignModels(spec),
       ...(checked.value.campaign.extended === undefined

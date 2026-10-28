@@ -17,8 +17,9 @@ interface Declared {
 
 /**
  * Load `<armsRoot>/<name>/arm.yaml` (REQ-ARC-03, REQ-FMT-05) and return it with absolute paths.
- * Issues come in a stable order: schema issues; then the name against its directory; then every
- * declared path, in declaration order. No declared path may be a symbolic link, nor hold one: the
+ * Issues come in a stable order: schema issues; then the name against its directory; then a choice of directives on
+ * an arm that is not a docs control, or on one not generated from wingfoil; then every declared path, in declaration
+ * order. No declared path may be a symbolic link, nor hold one: the
  * environment is copied into the workspace and the directory into the container, and nothing there
  * may point outside them (the seed's rule, task-003).
  */
@@ -32,6 +33,17 @@ export function loadArm(armsRoot: string, name: string): Result<Arm> {
   const spec = parsed.value;
   if (spec.name !== name) {
     return fail([{ path: 'name', message: `'${spec.name}' differs from its directory '${name}'` }]);
+  }
+  if (spec.docs_directives !== undefined && spec.docs_of === undefined) {
+    return fail([
+      { path: 'docs_directives', message: 'only a docs control (docs_of) chooses the directives it renders' },
+    ]);
+  }
+  // Only the wingfoil arm's docs generator reads the choice (review round 1): elsewhere it would move a digest alone.
+  if (spec.docs_directives !== undefined && spec.docs_of !== 'wingfoil') {
+    return fail([
+      { path: 'docs_directives', message: 'only a docs control of the wingfoil arm chooses its directives' },
+    ]);
   }
   const declared: Declared[] = [
     { path: 'setup', relative: spec.setup, kind: 'file' },
@@ -100,6 +112,7 @@ function toArm(spec: ArmFile, dir: string): Arm {
     ...(spec.requires === undefined ? {} : { requires: spec.requires }),
     provides: spec.provides,
     ...(spec.docs_of === undefined ? {} : { docsOf: spec.docs_of }),
+    ...(spec.docs_directives === undefined ? {} : { docsDirectives: spec.docs_directives }),
     ...(spec.telemetry_off === undefined ? {} : { telemetryOff: spec.telemetry_off }),
   };
 }

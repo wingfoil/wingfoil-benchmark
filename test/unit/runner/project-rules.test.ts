@@ -102,6 +102,26 @@ describe('the baseline-docs environment, generated per scenario (REQ-RUN-11)', (
     expect(root).toBeDefined();
   });
 
+  it("renders every role's directives, labelled, for a docs control that declares it (dl-021 step A)", async () => {
+    const { checked: campaign } = checked(undefined, undefined, (root) =>
+      writeArmAt(
+        join(root, 'arms'),
+        'baseline-docs',
+        { ...plainArmYaml('baseline-docs'), docs_directives: 'every-role' },
+        ['setup.sh', 'manual.md'],
+      ),
+    );
+    const ports = doubles({ onRunOnce: fakeBuild });
+
+    const summary = await runCampaign(campaign, { ...ports, harnessSources: { wingfoil: CLONE } });
+
+    const rules = readFileSync(
+      join(summary.resultsDir, 'generated', 'S1@1.0', 'baseline-docs', 'PROJECT_RULES.md'),
+      'utf8',
+    );
+    expect(rules).toContain('### Fake rule\n\nFor: developer.\n\nBe fake.\n');
+  });
+
   it("gives the scenario's configuration to the snapshot, as the wingfoil arm's runs get it (dl-005)", async () => {
     const { checked: campaign } = checked(campaignYaml(), ['S1@1.0'], (root) => {
       const overlay = join(root, 'scenarios', 'S1', '1.0', 'arms', 'wingfoil', '.wingfoil');

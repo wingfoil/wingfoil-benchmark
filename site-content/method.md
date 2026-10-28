@@ -41,7 +41,8 @@ What counts as "the same information": every kind of content in the wingfoil arm
 | The team's members (`dna.yaml` `team.members`) | no | the Benchmark Approver is how the arm handles approvals, not project information |
 | Navigation paths (`dna.yaml` `paths`) | no | query categories for WingFoil's navigation |
 | Rules for the developer role, and global rules | yes, full text | what the wingfoil manual tells the agent to read |
-| Rules bound only to other roles | no | the wingfoil manual does not send the agent to them either |
+| Rules bound only to other roles | no, before step A | the v0.2 wingfoil manual does not send the agent to them either |
+| Every role's rules, each labelled with its roles (from the step-A arm, v0.3) | yes, full text | the step-A wingfoil manual has the agent act in each workflow step's role |
 | Approved decisions (`decision-log` and `adr` records) | yes, title and body | the decisions to follow; what the manual tells the agent to read |
 | Records in any other state, and other record types (tasks, bugs, releases) | no | process state, not rules |
 | Workflows | yes: name, description, phases | the workflow descriptions |

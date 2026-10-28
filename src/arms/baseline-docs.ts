@@ -13,6 +13,8 @@ import { parse } from 'yaml';
  *   Benchmark Approver is the arm's approval mechanism (REQ-RUN-17), not project information.
  * - directives bound to `developer`, and the `global` ones: rendered in full — what the wingfoil
  *   manual sends the agent to read. Directives of other roles only: left out, as the manual does.
+ *   With `everyRole` (a docs control's `docs_directives: every-role`, dl-021 step A, where the manual has the agent
+ *   act in each step's role): every directive a role or every role loads, each labelled with its roles.
  * - Memory `decision-log` and `adr` elements with `status: approved`: rendered, title and body. Any
  *   other state or type: left out — process state, not rules.
  * - workflows (`.wingfoil/workflows/custom/*.yaml`): name, description, phases.
@@ -21,17 +23,22 @@ import { parse } from 'yaml';
  * Deterministic: fixed templates, sections in a fixed order, entries sorted by id or name, YAML read
  * and never re-serialized, bodies copied with their headings moved under the file's own.
  */
-export function renderProjectRules(files: ReadonlyMap<string, string>): string {
+export function renderProjectRules(files: ReadonlyMap<string, string>, options: RenderOptions = {}): string {
   const blocks = [
     '# Project rules',
     "This file is generated from the wingfoil arm's configuration for this scenario. It holds the\n" +
       "project's description, its rules and the decisions already taken.",
     ...project(files),
-    ...rules(files),
+    ...(options.everyRole === true ? everyRoleRules(files) : rules(files)),
     ...decisions(files),
     ...process(files),
   ];
   return `${blocks.join('\n\n')}\n`;
+}
+
+/** How a docs control's rules are rendered: every role's, labelled, or (absent) the developer's and the global ones. */
+export interface RenderOptions {
+  readonly everyRole?: boolean;
 }
 
 /** Headings of a copied body sit this many levels below where they were, under the file's own. */
@@ -122,6 +129,35 @@ export function developerDirectives(files: ReadonlyMap<string, string>): readonl
 function rules(files: ReadonlyMap<string, string>): string[] {
   const directives = developerDirectives(files);
   return directives.length > 0 ? ['## Rules', ...directives.flatMap(render)] : [];
+}
+
+/**
+ * Every directive a role or every role loads, by id, each once and labelled with the roles it is bound to, sorted, or
+ * as every role's when it is global (dl-021 step A): the rules of every role the step-A manual has the agent act in.
+ */
+function everyRoleRules(files: ReadonlyMap<string, string>): string[] {
+  const roles = yamlOf(files.get('.wingfoil/roles.yaml'));
+  const global = new Set(list(roles.global).map(text));
+  const rolesOf = new Map<string, string[]>();
+  for (const [role, ids] of Object.entries(object(roles.assignments))) {
+    for (const id of list(ids).map(text)) rolesOf.set(id, [...(rolesOf.get(id) ?? []), role]);
+  }
+  const directives = documents(files, (path) => /^\.wingfoil\/directives\/[^/]+\/[^/]+\.md$/.test(path))
+    .filter((document) => global.has(document.id) || rolesOf.has(document.id))
+    .sort(byId);
+  if (directives.length === 0) return [];
+  return [
+    '## Rules',
+    'Each rule names the roles it is for. Follow those that fit the work you are doing, and always those for every ' +
+      'role.',
+    ...directives.flatMap((document) => {
+      const [heading, ...body] = render(document);
+      const label = global.has(document.id)
+        ? 'every role'
+        : [...new Set(rolesOf.get(document.id))].sort(compare).join(', ');
+      return [heading ?? '', `For: ${label}.`, ...body];
+    }),
+  ];
 }
 
 /** The approved decision-logs and ADRs, by id. */

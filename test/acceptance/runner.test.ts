@@ -249,6 +249,38 @@ describe('runner.feature', () => {
     expect(renderProjectRules(new Map([...files].reverse()))).toBe(rules);
   });
 
+  it("@F2.5 A docs control that declares every role gets every role's rules, labelled", () => {
+    // Given the wingfoil arm's configuration binds directives to several roles: S8's snapshot, whose scaffold binds
+    // testing to the developer and qa, traceability to the architect, the product owner and the reviewer
+    const root = repoPath('test/fixtures/wingfoil-config/S8');
+    const files = new Map(
+      filesUnder(root).map((file) => [relative(root, file), readFileSync(file, 'utf8')] as const),
+    );
+    // And the baseline-docs arm declares that it renders every role's directives
+    expect(readFileSync(repoPath('arms/baseline-docs/arm.yaml'), 'utf8')).toMatch(
+      /^docs_directives: every-role$/m,
+    );
+
+    // When the baseline-docs environment is generated
+    const rules = renderProjectRules(files, { everyRole: true });
+
+    // Then every directive a role loads appears once, labelled with the roles it is bound to
+    const section = rules.slice(
+      rules.indexOf('## Rules'),
+      rules.indexOf('\n## ', rules.indexOf('## Rules') + 1),
+    );
+    const titles = [...section.matchAll(/^### (.+)$/gm)].map((match) => match[1]);
+    expect(new Set(titles).size).toBe(titles.length);
+    expect(section.match(/^For: /gm)).toHaveLength(titles.length);
+    expect(section).toMatch(/\nFor: architect, product-owner, reviewer\.\n/);
+    expect(section).toMatch(/\nFor: developer, qa\.\n/);
+    expect(section).toMatch(/\nFor: every role\.\n/);
+    // And a docs control without that declaration gets the developer's and the global directives only
+    const plain = renderProjectRules(files);
+    expect(plain).not.toMatch(/^For: /m);
+    expect(plain).toBe(readFileSync(repoPath('test/fixtures/wingfoil-config/S8.PROJECT_RULES.md'), 'utf8'));
+  });
+
   it('@F2.6 The WingFoil under test is the version pinned by the campaign', async () => {
     const sha = '3df305ea198d7e2ca0da73bfb12b14af865e9922';
     // Given the campaign pins wingfoil@3df305e

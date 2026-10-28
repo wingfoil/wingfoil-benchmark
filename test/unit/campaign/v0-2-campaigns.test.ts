@@ -101,7 +101,7 @@ describe('the v0.2 campaign files (task-091)', () => {
   })();
 
   it.skipIf(shallow)(
-    "reads the bridge's wingfoil arm from history, task-086's for v0.2.2, and the reference's from the tree (task-095)",
+    "reads the bridge's and the reference's wingfoil arms from history, v0.2.2's and v0.3.0's, since the tree holds step A's (task-114)",
     () => {
       const arms = (name: string) => {
         const result = checkCampaign(repoPath(`campaigns/${name}.yaml`));
@@ -112,8 +112,9 @@ describe('the v0.2 campaign files (task-091)', () => {
       const referenceArm = arms('v0-2-reference').find((arm) => arm.name === 'wingfoil');
       expect(bridgeArm?.from?.commit).toMatch(/^[0-9a-f]{40}$/);
       expect(readFileSync(bridgeArm?.manualPath ?? '', 'utf8')).toContain('0.2.2');
-      expect(referenceArm?.from).toBeUndefined();
-      expect(readFileSync(referenceArm?.manualPath ?? '', 'utf8')).toContain('0.3.0');
+      expect(referenceArm?.from?.commit).toMatch(/^[0-9a-f]{40}$/);
+      expect(readFileSync(referenceArm?.manualPath ?? '', 'utf8')).toContain('release 0.3.0');
+      expect(readFileSync(repoPath('arms/wingfoil/manual.md'), 'utf8')).toContain('release 0.3.1');
     },
   );
 

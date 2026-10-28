@@ -1,5 +1,6 @@
 export { loadArm } from './load.js';
 export { renderProjectRules } from './baseline-docs.js';
+export type { RenderOptions } from './baseline-docs.js';
 export { missingCapabilities } from './capabilities.js';
 export { armDigest, armDigestOf } from './digest.js';
 export { armFromHistory } from './history.js';

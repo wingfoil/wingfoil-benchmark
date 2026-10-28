@@ -12,7 +12,12 @@ You are working in the software repository in your current directory, one reques
 
 This project is managed with WingFoil, installed as the command `wingfoil`. Always call it that way,
 never `npx wingfoil`, which would fetch a different version. This section follows WingFoil's guide for
-AI agents, release 0.3.0, and says below where this arm departs from it.
+AI agents, release 0.3.1, and says below where this arm departs from it.
+
+This file is your operating manual, the same text under every agent: you read it as `CLAUDE.md` under
+Claude Code and as `AGENTS.md` under Codex. WingFoil's MCP server, `wingfoil`, is configured for you:
+under Claude Code in the session's MCP configuration, under Codex in Codex's `config.toml`. Do not
+edit this file, nor write another agent's.
 
 How WingFoil works:
 
@@ -21,26 +26,47 @@ How WingFoil works:
 - A document's state is the `status:` line of its frontmatter. It changes only through WingFoil's
   verbs, and each verb makes one git commit. The verbs act only on committed documents: create one
   with `wingfoil memory add`, never by copying a file.
-- WingFoil records and routes workflows, but does not carry out their steps. Start or end a workflow
-  only when the request asks you to.
-- You act in a role. Here it is `developer`.
+- The project's work follows a workflow. WingFoil records and routes it, and does not carry out its
+  steps: you do. The setup opened an instance of the workflow `sw-life-cycle`, at its delivery, for the
+  first request; each later request opens its own, as below.
 
-Before you change any code, read:
+## Following the workflow
 
-- the rules for your role: `wingfoil directives list --role developer`, then each file it lists;
-- the decisions already taken: `wingfoil memory search --type decision-log --status approved`.
+For each request, in this order:
 
-The same can be read through WingFoil's MCP server: your role's rules as its Prompt
-`developer-session`; the decision-logs as the resource `wingfoil://memory/decision-log`, of which only
-the `approved` ones are decisions taken, each one's text at `wingfoil://memory/decision-log/<id>`.
+- **Where the work stands.** Run `wingfoil workflow status`, then `wingfoil workflow next`. The next step
+  names its role, that role's rules, the document it works on, what it still lacks, and the exact command
+  each of its actions expects.
+- **A new instance for a new request.** If the next step is `sw-life-cycle.sunset`, the open instance's
+  delivery is done: this request needs an instance of its own. Run `wingfoil workflow start sw-life-cycle
+  --title "<the request, in a few words>"`, then `wingfoil workflow finalize` twice (this project is
+  already past its inception and specification), then `wingfoil workflow next` again.
+- **Act in the step's role, with its context.** Read it through the command line: the role's rules with
+  `wingfoil directives list --role <role>`, then each file it lists; the decisions already taken with
+  `wingfoil memory search --type decision-log --status approved`; the document the step works on, its
+  file under `docs/memory/`, and what it still lacks, from `wingfoil workflow next`. WingFoil's guide
+  gives the same context through its MCP server, as the Prompt `<role>-session` and the resource
+  `wingfoil://session/<role>/<type>:<id>/<commit>`; you need not read them through the MCP server.
+- **Every request has its task.** Before you build, the request needs a task of its own, submitted. If
+  the step asks for one, add it with the command `next` prints. If it does not (the step counts an
+  earlier request's task), or that command is refused, add it without `--workflow`:
+  `wingfoil memory add --type task --title "<the request, in a few words>"`, write in it what the
+  request asks, and run `wingfoil memory submit <id>` before you build.
+- **Do the step's work, and record its outcome as the step asks**: run the commands `workflow next`
+  prints, except `wingfoil memory approve`, which only the approver's reply allows (see *Approvals*
+  below); write what you did in the document they create, and move it only with the verbs. WingFoil
+  reads, from the documents as committed, that the step is done; when `next` says a step is
+  `finalizable`, record it with `wingfoil workflow finalize`.
+- **At a gate, finish the work first.** When a step needs an approval (`next` says `human needed`),
+  complete the request's work before you ask: the code written, its tests passing, the document
+  updated and submitted. Then end your message with the request "Please approve <id>." for each
+  document `next` lists, and stop. A statement that the work waits for an approval is not a request:
+  nobody answers it.
+- **Until the delivery is recorded.** Run `wingfoil workflow next` again after each step, until the
+  request's delivery is recorded.
 
-While you work:
+General rules:
 
-- Track each request as a task: `wingfoil memory add --type task --title "<the request, in a few
-  words>"`, write what you did in the file it creates, then `wingfoil memory submit <id>`.
-- Record each design decision you take as a decision-log, the same way:
-  `wingfoil memory add --type decision-log --title "<the decision>"`, write its context, the decision
-  and its consequences, then `wingfoil memory submit <id>`.
 - Change a document's state only through the verbs: never edit the `status:` line of a document, nor
   write a `wf(...)` commit by hand.
 - Do not invent document types or roles that the configuration does not declare.
@@ -50,16 +76,20 @@ While you work:
 
 ### Where this arm departs from the guide
 
-- **What to read, and how much to record.** The guide asks you to read the project's description and
-  paths before you write, and sets no level of process. This arm asks you to read your role's rules and
-  the approved decisions, as above, and to record each request as a task and each design decision as
-  a decision-log.
+- **Starting a workflow.** The guide starts or ends a workflow only when asked. Here the setup opened
+  the first instance, and the rule *A new instance for a new request* asks you to open one for each
+  later request: on this release's Kanban workflow an instance's delivery runs once.
+- **A task for every request.** The guide records what each step's evidence asks for. Here every request
+  gets its own task, as the rule *Every request has its task* says, even when an earlier request's task
+  already meets the step's evidence, so that its review has a document to approve.
 - **Configuration.** The guide lets an agent change the project's configuration, through WingFoil's
-  verbs or by committed edits under `.wingfoil/`. Here the configuration belongs to the scenario: never edit a file under `.wingfoil/`, and do
-  not use the `dna` or `directive` commands that change it.
+  verbs or by committed edits under `.wingfoil/`. Here the configuration belongs to the scenario: never
+  edit a file under `.wingfoil/`, and do not use the `dna` or `directive` commands that change it.
 - **Approvals.** The guide says an agent never approves or rejects. In this benchmark the decision is
   never yours: it is the reply of a fixed approver, and you only carry it out, which is why your git
-  identity holds the approver role. A submitted document waits for approval, and you never approve on
-  your own initiative, nor run `memory reject`. If your work needs an approval, ask for it and stop.
+  identity holds the approver role. You never approve on your own initiative, and you never run the
+  approver's other verbs: `wingfoil memory amend`, `wingfoil memory reject`, `wingfoil memory rekey` or
+  `wingfoil memory deprecate`.
   If the reply is "Approved. Proceed.", run `wingfoil memory approve <id> --reason "Approved. Proceed."`
-  for the document you asked about, then continue.
+  for each document you asked about, then continue with the workflow's next step. Any other reply is not an
+  approval: do not approve on it, say that the approval is still missing, and stop.
