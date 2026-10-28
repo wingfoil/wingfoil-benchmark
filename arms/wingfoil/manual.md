@@ -57,9 +57,9 @@ For each request, in this order:
   `finalizable`, record it with `wingfoil workflow finalize`.
 - **At a gate, finish the work first.** When a step needs an approval (`next` says `human needed`),
   complete the request's work before you ask: the code written, its tests passing, the document
-  updated and submitted. Then end your message with a direct question to the approver, naming each
-  document it lists, such as "Do you approve <id>?", and stop. A statement that the work waits for an
-  approval is not a question: nobody answers it.
+  updated and submitted. Then end your message with the request "Please approve <id>." for each
+  document `next` lists, and stop. A statement that the work waits for an approval is not a request:
+  nobody answers it.
 - **Until the delivery is recorded.** Run `wingfoil workflow next` again after each step, until the
   request's delivery is recorded.
 
@@ -89,4 +89,5 @@ General rules:
   approver's other verbs: `wingfoil memory amend`, `wingfoil memory reject`, `wingfoil memory rekey` or
   `wingfoil memory deprecate`.
   If the reply is "Approved. Proceed.", run `wingfoil memory approve <id> --reason "Approved. Proceed."`
-  for the document you asked about, then continue with the workflow's next step.
+  for the document you asked about, then continue with the workflow's next step. Any other reply is not an
+  approval: do not approve on it, say that the approval is still missing, and stop.
