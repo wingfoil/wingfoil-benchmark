@@ -2,7 +2,7 @@
 id: task-115-campaign-007-s-codex-scope-on-gpt-6-luna-instead-of-gpt-6.1-terra-dl-031
 type: task
 title: "campaign-007's Codex scope on gpt-6-luna instead of gpt-6.1-terra (dl-031)"
-status: in-progress
+status: approved
 release: v0.3
 wave: W15
 features: []
@@ -44,3 +44,34 @@ past: task-114 approved on 2026-10-28). **It starts only once dl-031 is approved
 - **Not in this task:** campaign-007's element, its campaign file and its estimate (campaign-cycle), Luna's dry runs.
 
 ## Execution notes
+
+- **2026-10-28, in-progress.** Branch `task/task-115-…` in the worktree `../WingFoil2-Benchmark-wt/task-115`, `npm ci`.
+- **Red first** (`155cdfab`): `test/unit/cli/codex-scope.test.ts` and `test/unit/campaign/codex-terra.test.ts` moved to
+  `gpt-6-luna` and dl-031, with a new case refusing `gpt-6.1-terra` for campaign-007's file and its profile (each arm),
+  and a new one pinning the profile's effort map to exactly `gpt-5.6-terra` and `gpt-6-luna` at `medium`; 11 of 23
+  failed against `main`.
+- **Code** (`src/cli/codex-scope.ts`): the step-A entry's `models` are `gpt-5.6-terra, gpt-6-luna`, its `decision`
+  `dl-027, dl-031`; the refusals of a preset and of a profile name `dl-024, dl-025, dl-027, dl-031`, derived from the
+  entries. No other entry changed. `campaigns/codex-terra-step-a.dry-run.yaml`: the effort map and the header comment;
+  no arm changes, so no digest moves. Requirements 1.42: REQ-RUN-15's amendment and `### Amendment 1.42`.
+- `src/agents/openai-prices.ts` keeps `gpt-6.1-terra`'s price: it is a catalogue, not the scope.
+- **Checks:** prettier, `tsc --noEmit`, eslint clean; `scripts/pre-review.sh main` green.
+
+### Review
+
+- **Round 1 (2026-10-28, dl-020):** a fresh read-only agent, briefed to write nothing in either checkout (scratch in a
+  `mktemp -d` under `/tmp/claude-1000/` only); both checkouts' HEAD and reflog the same after as before (main
+  `7ecd6743`, the branch `404983e6`). It ran the two test files (23/23). **No blocker, no should-fix; three nits:**
+  1. Amendment 1.42's dl-031 link line is over 120 characters: one unbreakable link, as 1.41's. Kept.
+  2. The dl-025 profile probe in "keeps gpt-6-luna to campaign-007's file and profile…" still used `gpt-6.1-terra`,
+     out of step with the test's name. **Fixed:** it probes `gpt-6-luna`.
+  3. 1.42's "their refusals name dl-027 and dl-031" leaves the date's refusal (dl-024) to 1.41's sentence. Kept.
+  A nit-only round closes the review.
+
+### Approval
+
+- **Full suites** (`scripts/full-suites.sh`, the approver in chat, 2026-10-28, "lancia le suite adesso"), on
+  `2aa5750a`, the worktree clean, `BENCH_WINGFOIL_REPO` alone: green — lint, 1856 unit and acceptance tests passed
+  (8 skipped; coverage 98.78 % of lines), build, test:bin 8/8, test:docker 22 passed (2 skipped), log
+  `.cache/full-suites/2026-10-28/…-2aa5750a-161254.txt`.
+- in-review → approved by the approver (`f2631a15`), 2026-10-28: campaign-007's file and profile may run Luna.

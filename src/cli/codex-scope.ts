@@ -26,9 +26,9 @@ interface Allowed {
 }
 
 /**
- * What the Codex credential may serve (dl-024, widened by dl-025, dl-027 and dl-028; REQ-RUN-15 as amended in 1.37 and
- * 1.41): per campaign preset, or per campaign file, and per dry-run profile, the arms it may run (the baseline among
- * them) and the models, and the decisions that allow it.
+ * What the Codex credential may serve (dl-024, widened by dl-025, dl-027 and dl-031; REQ-RUN-15 as amended in 1.37,
+ * 1.41 and 1.42): per campaign preset, or per campaign file, and per dry-run profile, the arms it may run (the baseline
+ * among them) and the models, and the decisions that allow it.
  */
 const ALLOWED: readonly Allowed[] = [
   {
@@ -45,13 +45,13 @@ const ALLOWED: readonly Allowed[] = [
     decision: 'dl-025',
   },
   {
-    // campaign-007: the step-A arms on Terra, with gpt-6.1-terra's slice (task-114).
+    // campaign-007: the step-A arms on Terra, with gpt-6-luna's slice (task-114, task-115).
     campaign: 'campaigns/codex-terra-step-a.yaml',
     preset: 'presets/harness-vs-docs.yaml',
     profile: 'campaigns/codex-terra-step-a.dry-run.yaml',
     arms: ['baseline', 'baseline-docs', 'wingfoil'],
-    models: ['gpt-5.6-terra', 'gpt-6.1-terra'],
-    decision: 'dl-027, dl-028',
+    models: ['gpt-5.6-terra', 'gpt-6-luna'],
+    decision: 'dl-027, dl-031',
   },
 ];
 
@@ -79,10 +79,10 @@ export type CodexScopeInput =
   | { readonly agent: string; readonly dryRunArm: string; readonly profile: string; readonly model: string };
 
 /**
- * dl-024's scope as dl-025, dl-027 and dl-028 widen it, checked before any Codex session (REQ-RUN-15 as amended in
- * 1.35, 1.37 and 1.41): no session after {@link CODEX_SCOPE_END}; a campaign extends one of {@link ALLOWED}'s presets
- * and runs its arms and models only, those of the entry kept to its file when one is; a dry run reads one of their
- * profiles, of one of its arms on one of its models. Nothing for another agent. A campaign file is named as
+ * dl-024's scope as dl-025, dl-027 and dl-031 widen it, checked before any Codex session (REQ-RUN-15 as amended in
+ * 1.35, 1.37, 1.41 and 1.42): no session after {@link CODEX_SCOPE_END}; a campaign extends one of {@link ALLOWED}'s
+ * presets and runs its arms and models only, those of the entry kept to its file when one is; a dry run reads one of
+ * their profiles, of one of its arms on one of its models. Nothing for another agent. A campaign file is named as
  * `campaigns/<file>` of the tree that holds it, so an entry kept to a file matches by that name; its arms and models
  * are checked all the same.
  */

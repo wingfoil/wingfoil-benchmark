@@ -74,7 +74,7 @@ describe('the Terra campaign on approver policy v2 (task-106, characterization)'
   });
 });
 
-/** campaign-007's dry-run profile (task-114, dl-027 item 4, dl-028): the step-A arms on WingFoil v0.3.1. */
+/** campaign-007's dry-run profile (task-114, dl-027 item 4, dl-031; task-115): the step-A arms on WingFoil v0.3.1. */
 describe("campaign-007's dry-run profile (task-114, characterization)", () => {
   const file = 'campaigns/codex-terra-step-a.dry-run.yaml';
 
@@ -89,10 +89,16 @@ describe("campaign-007's dry-run profile (task-114, characterization)", () => {
       expect(profile.arm_digests?.[arm], arm).toBe(armDigest(repoPath(''), arm).slice(0, 12));
   });
 
-  it('is accepted by the Codex scope for each arm on gpt-5.6-terra and gpt-6.1-terra, each with its effort', () => {
+  it('pins gpt-6-luna at medium beside gpt-5.6-terra, and no gpt-6.1-terra (dl-031, task-115)', () => {
     const loaded = loadDryRunProfile(repoPath(file));
     if (!loaded.ok) throw new Error(JSON.stringify(loaded.issues));
-    for (const model of ['gpt-5.6-terra', 'gpt-6.1-terra']) {
+    expect(loaded.value.agent.effort).toEqual({ 'gpt-5.6-terra': 'medium', 'gpt-6-luna': 'medium' });
+  });
+
+  it('is accepted by the Codex scope for each arm on gpt-5.6-terra and gpt-6-luna, each with its effort', () => {
+    const loaded = loadDryRunProfile(repoPath(file));
+    if (!loaded.ok) throw new Error(JSON.stringify(loaded.issues));
+    for (const model of ['gpt-5.6-terra', 'gpt-6-luna']) {
       expect(loaded.value.agent.effort?.[model], model).toBe('medium');
       for (const arm of ['baseline', 'baseline-docs', 'wingfoil'])
         expect(
