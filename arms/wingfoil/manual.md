@@ -57,7 +57,9 @@ For each request, in this order:
   `finalizable`, record it with `wingfoil workflow finalize`.
 - **At a gate, finish the work first.** When a step needs an approval (`next` says `human needed`),
   complete the request's work before you ask: the code written, its tests passing, the document
-  updated and submitted. Then ask for the approval of that document, and stop.
+  updated and submitted. Then end your message with a direct question to the approver, naming each
+  document it lists, such as "Do you approve <id>?", and stop. A statement that the work waits for an
+  approval is not a question: nobody answers it.
 - **Until the delivery is recorded.** Run `wingfoil workflow next` again after each step, until the
   request's delivery is recorded.
 
