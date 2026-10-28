@@ -2,7 +2,7 @@
 id: bug-037-the-site-s-markdown-renderer-has-no-ordered-list-and-loops-on-a-numbered-item-holding-a-nested-list
 type: bug
 title: "The site's Markdown renderer has no ordered list and loops on a numbered item holding a nested list"
-status: pending
+status: approved
 # fixed_by: task-…   # set by hand, with the fixing task's id, just before `approved → fixed`
 tags: ["v0.3","site"]
 ---
