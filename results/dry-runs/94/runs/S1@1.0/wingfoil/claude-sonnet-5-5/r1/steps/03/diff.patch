@@ -1,0 +1,140 @@
+diff --git a/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-3-plan.md b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-3-plan.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..3d463f2c527a2154115e8a8355279edcb4068fba
+--- /dev/null
++++ b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-3-plan.md
+@@ -0,0 +1,17 @@
++---
++id: sw-life-cycle-1-3-plan
++type: plan
++title: "Make applyPatch conform to RFC 6902"
++status: active
++workflow: "sw-life-cycle"
++phase: "1-3"
++element: ""
++parent: ""
++format: 1
++---
++
++<!-- plan body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
+diff --git a/docs/memory/task/task-003-make-applypatch-conform-to-rfc-6902.md b/docs/memory/task/task-003-make-applypatch-conform-to-rfc-6902.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..89589837bbc498f353381e7116ec6ab3716c2c5c
+--- /dev/null
++++ b/docs/memory/task/task-003-make-applypatch-conform-to-rfc-6902.md
+@@ -0,0 +1,25 @@
++---
++id: task-003-make-applypatch-conform-to-rfc-6902
++type: task
++title: "Make applyPatch conform to RFC 6902"
++status: approved
++format: 1
++---
++
++<!-- task body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
++
++## Request
++
++Users report surprising `applyPatch` results: patches they consider invalid are accepted, edge cases
++give unexpected results, and failures do not behave as RFC 6902 reads. Review and make behaviour conform.
++
++## Done
++
++- The whole patch is validated before any operation is applied (`op`/`path` own string members,
++  `value` for add/replace/test, `from` for move/copy, known op, well-formed pointers).
++- `replace` now replaces in place, keeping object member order (it used to remove then re-add).
++- Tests added; `node --test` passes. A failing patch throws and leaves the input untouched.
+diff --git a/src/index.test.ts b/src/index.test.ts
+index 663bac24a45c16bf3b87c4092c675567afc124a2..b6b36f754b021d8d36518d967ee8a6f39051a138 100644
+--- a/src/index.test.ts
++++ b/src/index.test.ts
+@@ -138,3 +138,10 @@ test("applyPatch: does not mutate or alias, and treats __proto__ as a plain memb
+   assert.equal(({} as any).x, undefined);
+   assert.deepEqual(Object.keys(polluted), ["__proto__"]);
+ });
++
++test("applyPatch: replace keeps member order; whole patch is validated before applying", () => {
++  const out = ap({ a: 1, b: 2, c: 3 }, [{ op: "replace", path: "/a", value: 9 }]);
++  assert.equal(JSON.stringify(out), '{"a":9,"b":2,"c":3}');
++  assert.throws(() => ap({ a: 1 }, [{ op: "remove", path: "/a" }, { op: "bogus", path: "/x" }]), /unknown op/);
++  assert.throws(() => ap({ a: 1 }, [{ op: "test", path: "/a", value: 2 }, { op: "add", path: "/b" }]), /value/);
++});
+diff --git a/src/index.ts b/src/index.ts
+index 2641f27580fc3fb35a3fa327043ce0052a06a2fb..c0a61c4ccc01447c5d270fa6943b0ffc36f49d34 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -152,6 +152,47 @@ function removeAt(doc: unknown, path: string): unknown {
+   return doc;
+ }
+ 
++/** Replaces the value at an existing, non-root path in place, keeping object member order. */
++function replaceAt(doc: unknown, path: string, value: unknown): void {
++  getAt(doc, path); // must exist
++  const tokens = parsePointer(path, "path");
++  const parent = parentOf(doc, tokens, path);
++  const last = tokens[tokens.length - 1];
++  if (Array.isArray(parent)) parent[Number(last)] = value;
++  else setMember(parent, last, value);
++}
++
++/** Checks the whole patch before any operation is applied (RFC 6902 §3 and §4). */
++function validatePatch(patch: unknown[]): void {
++  for (const operation of patch) {
++    if (typeof operation !== "object" || operation === null || Array.isArray(operation)) {
++      throw new Error("Invalid JSON Patch: operation is not an object");
++    }
++    const op = operation as Record<string, unknown>;
++    if (!hasOwn(op, "op") || typeof op.op !== "string") throw new Error('Invalid JSON Patch: missing "op"');
++    if (!hasOwn(op, "path") || typeof op.path !== "string") {
++      throw new Error(`Invalid JSON Patch: "${op.op}" lacks a string "path"`);
++    }
++    parsePointer(op.path, "path");
++    switch (op.op) {
++      case "add":
++      case "replace":
++      case "test":
++        if (!hasOwn(op, "value")) throw new Error(`Invalid JSON Patch: "${op.op}" lacks "value"`);
++        break;
++      case "remove":
++        break;
++      case "move":
++      case "copy":
++        if (!hasOwn(op, "from")) throw new Error(`Invalid JSON Patch: "${op.op}" lacks "from"`);
++        parsePointer(op.from, "from");
++        break;
++      default:
++        throw new Error(`Invalid JSON Patch: unknown op "${op.op}"`);
++    }
++  }
++}
++
+ /**
+  * Applies a JSON Patch (RFC 6902) to a JSON document.
+  *
+@@ -162,6 +203,7 @@ function removeAt(doc: unknown, path: string): unknown {
+  */
+ export function applyPatch(document: unknown, patch: unknown): unknown {
+   if (!Array.isArray(patch)) throw new Error("Invalid JSON Patch: not an array");
++  validatePatch(patch);
+   let doc = clone(document);
+ 
+   for (const operation of patch) {
+@@ -182,8 +224,8 @@ export function applyPatch(document: unknown, patch: unknown): unknown {
+         if (op.op === "add") {
+           doc = addAt(doc, path, clone(op.value));
+         } else if (op.op === "replace") {
+-          getAt(doc, path); // must exist
+-          doc = parsePointer(path, "path").length === 0 ? clone(op.value) : addAt(removeAt(doc, path), path, clone(op.value));
++          if (path === "") doc = clone(op.value);
++          else replaceAt(doc, path, clone(op.value));
+         } else if (!jsonEqual(getAt(doc, path), op.value)) {
+           throw new Error(`JSON Patch test failed at "${path}"`);
+         }
