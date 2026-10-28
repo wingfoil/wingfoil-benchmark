@@ -154,10 +154,12 @@ real-agent session (S2, S3, S8 dry runs, campaign-007's runs, `gpt-6.1-terra`) i
 - **The four dry runs** (S1@1.0, 2026-10-28; committed on main, `b275f1cb`; four ledger lines; read by a script over
   the transcripts, never by hand):
 
-  | | Claude Code | Codex |
-  |---|---|---|
-  | wingfoil (`d8e7f0ee3779`) | `dry-runs/88`: 164/165, hold-out 45/48; 2 interventions; 0.5821 USD | `dry-runs/90`: 165/165, hold-out 48/48; 5 interventions; 1.5148 USD |
-  | baseline-docs (`64e37c838830`) | `dry-runs/89`: 164/165, hold-out 45/48; none; 0.5028 USD | `dry-runs/91`: 164/165, hold-out 45/48; none; 0.9680 USD |
+  | Arm | Agent | Dry run | Final, hold-out | Interventions | Cost |
+  |---|---|---|---|---|---|
+  | wingfoil `d8e7f0ee3779` | Claude Code | `dry-runs/88` | 164/165, 45/48 | 2 | 0.5821 USD |
+  | baseline-docs `64e37c838830` | Claude Code | `dry-runs/89` | 164/165, 45/48 | 0 | 0.5028 USD |
+  | wingfoil `d8e7f0ee3779` | Codex | `dry-runs/90` | 165/165, 48/48 | 5 | 1.5148 USD |
+  | baseline-docs `64e37c838830` | Codex | `dry-runs/91` | 164/165, 45/48 | 0 | 0.9680 USD |
 
   All four completed; 0 € billed; no MCP call in any session (decision 2); no forbidden verb (decision 3); no Codex
   resume on another model (bug-036 fixed). Secret scan: the runner's scrub, then a pattern scan (Anthropic and OpenAI
@@ -192,5 +194,5 @@ real-agent session (S2, S3, S8 dry runs, campaign-007's runs, `gpt-6.1-terra`) i
     Committed on main (`08fbeb76`); secret scan clean.
 - **What campaign-007 reads:** wingfoil `dd43760095bd` (`dry-runs/95`), baseline-docs `64e37c838830` (`dry-runs/91`),
   in `campaigns/codex-terra-step-a.dry-run.yaml`. `dry-runs/88`, 90, 92 and 93 ran earlier digests: evidence of the
-  corrections, not campaign-007's dry runs. Eight real dry runs in all: 8.2143 USD API-equivalent (the ledger's eight lines summed), 0 € billed, under the
-  consent's 20 €.
+  corrections, not campaign-007's dry runs. Eight real dry runs in all: 8.2143 USD API-equivalent (the ledger's
+  eight lines summed), 0 € billed, under the consent's 20 €.
