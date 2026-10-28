@@ -151,6 +151,20 @@ describe('loadArm (REQ-FMT-05)', () => {
     ]);
   });
 
+  it('refuses the choice on a docs control whose generator has none, one not generated from wingfoil (review round 1)', () => {
+    const root = tempDir('bench-arm-');
+    writeArmAt(
+      root,
+      'speckit-docs',
+      { ...plainArmYaml('speckit-docs'), docs_of: 'speckit', docs_directives: 'every-role' },
+      ['setup.sh', 'manual.md'],
+    );
+
+    expect(issuesOf(root, 'speckit-docs')).toEqual([
+      { path: 'docs_directives', message: 'only a docs control of the wingfoil arm chooses its directives' },
+    ]);
+  });
+
   it('requires the name to match its directory', () => {
     const root = tempDir('bench-arm-');
     writeArmAt(root, 'wingfoil', completeArmYaml('baseline'), COMPLETE_ARM_FILES);

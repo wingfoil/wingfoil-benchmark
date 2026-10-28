@@ -204,11 +204,12 @@ describe("the baseline-docs generator, every role's directives labelled (dl-021 
     expect(rules).toContain('### Testing\n\nFor: developer, reviewer.\n\n#### Testing\n');
   });
 
-  it('says that the rules are per role, under its Rules heading', () => {
+  it('says that the rules are per role, in words an agent with no role can act on (review round 1)', () => {
     expect(rules).toContain(
-      '## Rules\n\nEach rule names the roles it is for. Follow the rules for the role a step of the work is ' +
-        'done in, and those for every role.\n',
+      '## Rules\n\nEach rule names the roles it is for. Follow those that fit the work you are doing, and always ' +
+        'those for every role.\n',
     );
+    expect(rules).not.toMatch(/a step of the work/);
   });
 
   it('is the same bytes twice, whatever the order of the snapshot', () => {
