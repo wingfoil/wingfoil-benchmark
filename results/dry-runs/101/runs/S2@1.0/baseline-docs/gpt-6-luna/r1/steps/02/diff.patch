@@ -1,0 +1,211 @@
+diff --git a/README.md b/README.md
+index 669f63c1d48ed691352b729bddab5c8e21baacae..eaff7e3c116fd4232cf0678d8a86dc8ce6f1ef15 100644
+--- a/README.md
++++ b/README.md
+@@ -71,8 +71,8 @@ These are the rules the service implements. When the code and this list disagree
+ - Rates by VAT class: standard 22%, reduced 10%, super-reduced 4%, exempt 0%.
+ - VAT is computed line by line, on each line's net amount after every discount, and rounded half up
+   to the cent on each line.
+-- Shipping is subject to VAT at the standard rate (22%), shown on its own line of the receipt.
+-- The order total is goods + shipping + VAT on goods + VAT on shipping.
++- Shipping is not subject to VAT.
++- The order total is goods + shipping + VAT on goods.
+ 
+ ### Invoices
+ 
+diff --git a/src/coupons.ts b/src/coupons.ts
+index 4b7df8e652e5d52033abb2ea07d763007ccce283..496aed7828812115eb643d5d3378af00c2d6948f 100644
+--- a/src/coupons.ts
++++ b/src/coupons.ts
+@@ -74,7 +74,7 @@ export class Coupons {
+     const coupon = this.#coupons.get(canonicalCode(code));
+     if (coupon === undefined) throw new CouponError(code, 'unknown code');
+     if (compareDates(date, coupon.validFrom) < 0) throw new CouponError(coupon.code, 'not valid yet');
+-    if (compareDates(date, coupon.validUntil) >= 0) throw new CouponError(coupon.code, 'expired');
++    if (compareDates(date, coupon.validUntil) > 0) throw new CouponError(coupon.code, 'expired');
+     if (amount < coupon.minimumCents) throw new CouponError(coupon.code, 'order below the minimum amount');
+     if (coupon.singleUse && this.#usedBy.has(coupon.code)) throw new CouponError(coupon.code, 'already used');
+     return coupon;
+diff --git a/src/invoices.ts b/src/invoices.ts
+index 198c748dcbdc66310b665bd79b8c19725437ff17..f545057faa75b1fd4232194453131a610ff86c53 100644
+--- a/src/invoices.ts
++++ b/src/invoices.ts
+@@ -1,13 +1,11 @@
+ /**
+  * Invoices. A shipped order gets an invoice, numbered per calendar year (2026/0001, 2026/0002, …) in the
+- * order the invoices are issued, with its VAT summarised by rate: goods at each rate, and shipping at the
+- * standard rate.
++ * order the invoices are issued, with its VAT on goods summarised by rate.
+  */
+ import { OrderStateError } from './errors.ts';
+ import { sum } from './money.ts';
+ import type { Cents } from './money.ts';
+ import type { Order } from './orders.ts';
+-import { VAT_RATES } from './tax.ts';
+ 
+ export interface VatSummaryRow {
+   readonly rate: number;
+@@ -24,7 +22,7 @@ export interface Invoice {
+   readonly totalCents: Cents;
+ }
+ 
+-/** VAT by rate, the highest rate first; shipping counts at the standard rate. */
++/** VAT by rate, the highest rate first. */
+ export function vatSummary(order: Order): VatSummaryRow[] {
+   const rows = new Map<number, { netCents: Cents; vatCents: Cents }>();
+   const add = (rate: number, net: Cents, vat: Cents) => {
+@@ -32,9 +30,6 @@ export function vatSummary(order: Order): VatSummaryRow[] {
+     rows.set(rate, { netCents: row.netCents + net, vatCents: row.vatCents + vat });
+   };
+   for (const line of order.lines) add(line.vatRate, line.netCents, line.vatCents);
+-  if (order.totals.shippingCents > 0) {
+-    add(VAT_RATES.standard, order.totals.shippingCents, order.totals.shippingVatCents);
+-  }
+   return [...rows.entries()].map(([rate, row]) => ({ rate, ...row })).sort((a, b) => b.rate - a.rate);
+ }
+ 
+diff --git a/src/pricing.ts b/src/pricing.ts
+index 3d07b8e66d51d75411d7694eb6b4d79c95913fee..68106bfb609c26366d27c2b35f0117501e1c0ac2 100644
+--- a/src/pricing.ts
++++ b/src/pricing.ts
+@@ -1,7 +1,7 @@
+ /**
+  * Pricing an order, in the order the README documents: gross lines, volume discounts, the coupon
+- * (spread over the lines in proportion to their amounts, for VAT), shipping on the goods amount, VAT
+- * per line and on shipping, and the total.
++ * (spread over the lines in proportion to their amounts after volume discounts, for VAT), shipping on
++ * the goods amount, VAT per goods line, and the total.
+  */
+ import type { Product } from './catalog.ts';
+ import type { Coupon } from './coupons.ts';
+@@ -9,7 +9,7 @@ import { capped, couponDiscount, volumeDiscount } from './discounts.ts';
+ import { allocate, sum } from './money.ts';
+ import type { Cents } from './money.ts';
+ import { shippingCost } from './shipping.ts';
+-import { lineVat, shippingVat, vatRate } from './tax.ts';
++import { lineVat, vatRate } from './tax.ts';
+ 
+ export interface PricedLine {
+   readonly sku: string;
+@@ -33,7 +33,6 @@ export interface Totals {
+   readonly goodsCents: Cents;
+   readonly shippingCents: Cents;
+   readonly vatCents: Cents;
+-  readonly shippingVatCents: Cents;
+   readonly totalCents: Cents;
+ }
+ 
+@@ -56,7 +55,7 @@ export function priceOrder(inputs: readonly LineInput[], coupon?: Coupon): Price
+   const volumeTotal = sum(volume);
+ 
+   const couponTotal =
+-    coupon === undefined ? 0 : capped(couponDiscount(coupon, grossTotal), volumeTotal, grossTotal);
++    coupon === undefined ? 0 : capped(couponDiscount(coupon, sum(afterVolume)), volumeTotal, grossTotal);
+   const couponShares = allocate(couponTotal, afterVolume);
+ 
+   const lines = inputs.map(({ product, quantity }, index): PricedLine => {
+@@ -79,7 +78,6 @@ export function priceOrder(inputs: readonly LineInput[], coupon?: Coupon): Price
+   const weight = sum(inputs.map(({ product, quantity }) => product.weightGrams * quantity));
+   const shipping = shippingCost(goods, weight);
+   const vat = sum(lines.map((line) => line.vatCents));
+-  const shippingTax = shippingVat(shipping);
+   return {
+     lines,
+     weightGrams: weight,
+@@ -90,8 +88,7 @@ export function priceOrder(inputs: readonly LineInput[], coupon?: Coupon): Price
+       goodsCents: goods,
+       shippingCents: shipping,
+       vatCents: vat,
+-      shippingVatCents: shippingTax,
+-      totalCents: goods + shipping + vat + shippingTax,
++      totalCents: goods + shipping + vat,
+     },
+   };
+ }
+diff --git a/src/receipt.ts b/src/receipt.ts
+index 732b3de8b6aa10adf22ca78c3fc202cf0b778232..fdaf607b6c9e228914ed319b4a7417efa131cae0 100644
+--- a/src/receipt.ts
++++ b/src/receipt.ts
+@@ -20,7 +20,6 @@ export function receipt(order: Order): string {
+   lines.push(row('Goods', order.totals.goodsCents));
+   lines.push(row('Shipping', order.totals.shippingCents));
+   lines.push(row('VAT on goods', order.totals.vatCents));
+-  lines.push(row('VAT on shipping', order.totals.shippingVatCents));
+   lines.push(row('Total', order.totals.totalCents));
+   if (order.status === 'cancelled') lines.push('', `Cancelled on ${order.cancelledOn ?? ''}`);
+   return `${lines.join('\n')}\n`;
+diff --git a/src/tax.ts b/src/tax.ts
+index 5e12c55f1ca4a2044012df5ea175a5b57febbef3..71e01b1233e721d485c129df70354d8783b592e2 100644
+--- a/src/tax.ts
++++ b/src/tax.ts
+@@ -1,6 +1,6 @@
+ /**
+  * VAT. Every product belongs to a VAT class; each order line pays its class's rate on its net amount
+- * (after every discount), and shipping pays the standard rate. Amounts are rounded half up to the cent,
++ * (after every discount). Amounts are rounded half up to the cent,
+  * line by line.
+  */
+ import { percentOf } from './money.ts';
+@@ -25,8 +25,3 @@ export function vatRate(vatClass: VatClass): number {
+ export function lineVat(net: Cents, vatClass: VatClass): Cents {
+   return percentOf(net, vatRate(vatClass));
+ }
+-
+-/** The VAT on a shipping cost: the standard rate. */
+-export function shippingVat(shipping: Cents): Cents {
+-  return percentOf(shipping, VAT_RATES.standard);
+-}
+diff --git a/test/coupons.test.ts b/test/coupons.test.ts
+index 1fdc2519dc031050b1b5593605af611816478518..6ca482256bd2bb80e560ee380fd698206d3c58c9 100644
+--- a/test/coupons.test.ts
++++ b/test/coupons.test.ts
+@@ -20,6 +20,18 @@ describe('coupons', () => {
+     assert.equal(order.totals.goodsCents, 3600);
+   });
+ 
++  it('applies a percentage coupon to the subtotal after volume discounts', () => {
++    const s = createShop();
++    s.catalog.add({ sku: 'NOTEBOOK', name: 'Notebook', priceCents: 500, vatClass: 'standard', weightGrams: 50 });
++    s.inventory.restock('NOTEBOOK', 12);
++    s.coupons.add({ code: 'TEN', kind: 'percent', value: 10, validFrom: '2026-01-01', validUntil: '2026-12-31' });
++    const order = s.orders.place({ customer: 'c-1', date: '2026-06-01', lines: [{ sku: 'NOTEBOOK', quantity: 12 }], coupon: 'TEN' });
++    assert.equal(order.totals.grossCents, 6000);
++    assert.equal(order.totals.volumeDiscountCents, 600);
++    assert.equal(order.totals.couponDiscountCents, 540);
++    assert.equal(order.totals.goodsCents, 4860);
++  });
++
+   it('takes a fixed amount off above its minimum, and refuses it below', () => {
+     const { orders } = shop();
+     assert.equal(orders.quote({ customer: 'c-1', date: '2026-06-01', lines: [{ sku: 'PEN-4', quantity: 2 }], coupon: 'FIVEOFF' }).totals.couponDiscountCents, 500);
+@@ -31,6 +43,7 @@ describe('coupons', () => {
+     const request = { customer: 'c-1', lines: [{ sku: 'PEN-4', quantity: 1 }], coupon: 'SPRING' };
+     assert.throws(() => orders.quote({ ...request, date: '2026-02-28' }), CouponError);
+     assert.throws(() => orders.quote({ ...request, date: '2026-04-01' }), CouponError);
++    assert.doesNotThrow(() => orders.quote({ ...request, date: '2026-03-31' }));
+   });
+ 
+   it('lets a single-use coupon be used once', () => {
+diff --git a/test/orders.test.ts b/test/orders.test.ts
+index e22afb9be03820093362e4259e3e03efe7c48029..5253059e015595e10f09b641c60d2011fd39d70b 100644
+--- a/test/orders.test.ts
++++ b/test/orders.test.ts
+@@ -13,7 +13,7 @@ function shop() {
+ }
+ 
+ describe('orders', () => {
+-  it('prices a small order: goods, shipping by weight, VAT per line and on shipping', () => {
++  it('prices a small order: goods, shipping by weight and VAT per goods line', () => {
+     const { orders } = shop();
+     const order = orders.place({ customer: 'c-1', date: '2026-03-02', lines: [{ sku: 'MUG-01', quantity: 2 }, { sku: 'TEA-7', quantity: 2 }] });
+     assert.equal(order.id, 'ORD-0001');
+@@ -24,8 +24,7 @@ describe('orders', () => {
+       goodsCents: 3000,
+       shippingCents: 490,
+       vatCents: 440 + 100,
+-      shippingVatCents: 108,
+-      totalCents: 3000 + 490 + 540 + 108,
++      totalCents: 3000 + 490 + 540,
+     });
+   });
+ 

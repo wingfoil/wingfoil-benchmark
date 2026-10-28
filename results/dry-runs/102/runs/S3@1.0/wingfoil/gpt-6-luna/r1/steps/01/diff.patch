@@ -1,0 +1,149 @@
+diff --git a/README.md b/README.md
+index b5fe1b2a4feac926b16f4b55fd72f2bb6eb7b711..4110d9000b9668253fe2a1be850e46ebdde70b10 100644
+--- a/README.md
++++ b/README.md
+@@ -3,3 +3,13 @@
+ The Lakeside Windsurf School teaches windsurfing on the lake from April to October, and rents boards and
+ sails to its students and to visitors who bring their own experience. This repository holds the software
+ of its booking desk, written in TypeScript with no runtime dependency.
++
++## Equipment rentals
++
++`createRentalService()` from `src/index.ts` creates an in-memory rental service. Add boards or sails
++with a daily price in integer euro cents, then call `quote({ itemId, start, end })` or
++`book({ itemId, start, end })`. Start and end must be UTC midnight ISO-8601 timestamps; end is
++exclusive, so it is the midnight after the last rental day. Quotes return the total in euro cents.
++Bookings cannot overlap for the same item and receive a service-local ID. Cancellation is not yet
++implemented; the future policy is a full refund except when cancelled less than 24 hours before
++the booking starts, when there is no refund.
+diff --git a/docs/memory/task/task-001-add-basic-in-memory-equipment-rental-service.md b/docs/memory/task/task-001-add-basic-in-memory-equipment-rental-service.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..ab77406fea1283e0cb43ecaf98bde5b33aaa61c1
+--- /dev/null
++++ b/docs/memory/task/task-001-add-basic-in-memory-equipment-rental-service.md
+@@ -0,0 +1,13 @@
++---
++id: task-001-add-basic-in-memory-equipment-rental-service
++type: task
++title: "Add basic in-memory equipment rental service"
++status: approved
++format: 1
++---
++
++Implement and export `createRentalService()` from `src/index.ts`. The in-memory service must add
++boards and sails with daily prices in integer euro cents, quote and book whole UTC-day periods,
++reject unknown items and invalid periods, prevent overlapping bookings for an item, and assign each
++booking an ID. Keep the stated cancellation refund rule in mind for future work, but do not implement
++cancellation now. Document the exported API.
+diff --git a/src/index.ts b/src/index.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..c51d2a55ac1d4feea2dcd77eb906816464b81039
+--- /dev/null
++++ b/src/index.ts
+@@ -0,0 +1,106 @@
++export type EquipmentKind = 'board' | 'sail';
++
++export interface Equipment {
++  id: string;
++  kind: EquipmentKind;
++  /** The cost of one rental day, in integer euro cents. */
++  dailyPrice: number;
++}
++
++export interface RentalRequest {
++  itemId: string;
++  /** UTC midnight in ISO-8601 form. */
++  start: string;
++  /** UTC midnight after the final rental day, in ISO-8601 form. */
++  end: string;
++}
++
++export interface RentalQuote extends RentalRequest {
++  total: number;
++}
++
++export interface RentalBooking extends RentalQuote {
++  id: string;
++}
++
++export interface RentalService {
++  /** Adds a board or sail. Prices are integer euro cents per day. */
++  addEquipment(item: Equipment): void;
++  /** Returns the price for a valid whole-day UTC rental period. */
++  quote(request: RentalRequest): RentalQuote;
++  /** Books a free item for a valid whole-day UTC rental period. */
++  book(request: RentalRequest): RentalBooking;
++}
++
++const DAY_MS = 24 * 60 * 60 * 1000;
++
++function parseUtcMidnight(value: string, field: string): number {
++  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}T00:00(?::00(?:\.\d{1,3})?)?(?:Z|\+00:00)$/.test(value)) {
++    throw new Error(`${field} must be a UTC midnight ISO-8601 timestamp`);
++  }
++
++  const timestamp = Date.parse(value);
++  if (!Number.isFinite(timestamp)) {
++    throw new Error(`${field} must be a valid timestamp`);
++  }
++
++  const date = new Date(timestamp);
++  if (date.toISOString().slice(0, 10) !== value.slice(0, 10)) {
++    throw new Error(`${field} must be a valid calendar date`);
++  }
++  if (date.getUTCHours() !== 0 || date.getUTCMinutes() !== 0 || date.getUTCSeconds() !== 0 || date.getUTCMilliseconds() !== 0) {
++    throw new Error(`${field} must be midnight UTC`);
++  }
++  return timestamp;
++}
++
++/** Creates an in-memory service for equipment, quotes, and whole-day bookings. */
++export function createRentalService(): RentalService {
++  const equipment = new Map<string, Equipment>();
++  const bookings: RentalBooking[] = [];
++  let nextBookingId = 1;
++
++  function quote(request: RentalRequest): RentalQuote {
++    if (!request || typeof request.itemId !== 'string') {
++      throw new Error('A valid itemId is required');
++    }
++    const item = equipment.get(request.itemId);
++    if (!item) throw new Error(`Unknown equipment item: ${request.itemId}`);
++
++    const start = parseUtcMidnight(request.start, 'start');
++    const end = parseUtcMidnight(request.end, 'end');
++    if (end <= start) throw new Error('Rental end must be after start');
++
++    const days = (end - start) / DAY_MS;
++    const total = days * item.dailyPrice;
++    if (!Number.isSafeInteger(total)) throw new Error('Rental total exceeds the safe integer range');
++    return { itemId: request.itemId, start: request.start, end: request.end, total };
++  }
++
++  return {
++    addEquipment(item: Equipment): void {
++      if (!item || typeof item.id !== 'string') throw new Error('Equipment id must be a string');
++      if (item.kind !== 'board' && item.kind !== 'sail') throw new Error('Equipment kind must be board or sail');
++      if (!Number.isSafeInteger(item.dailyPrice) || item.dailyPrice < 0) {
++        throw new Error('Daily price must be a non-negative integer number of euro cents');
++      }
++      if (equipment.has(item.id)) throw new Error(`Equipment item already exists: ${item.id}`);
++      equipment.set(item.id, { ...item });
++    },
++
++    quote,
++
++    book(request: RentalRequest): RentalBooking {
++      const price = quote(request);
++      const start = Date.parse(price.start);
++      const end = Date.parse(price.end);
++      if (bookings.some((booking) => booking.itemId === price.itemId &&
++        start < Date.parse(booking.end) && Date.parse(booking.start) < end)) {
++        throw new Error(`Equipment item is already booked for part of this period: ${price.itemId}`);
++      }
++      const booking: RentalBooking = { id: String(nextBookingId++), ...price };
++      bookings.push(booking);
++      return { ...booking };
++    },
++  };
++}

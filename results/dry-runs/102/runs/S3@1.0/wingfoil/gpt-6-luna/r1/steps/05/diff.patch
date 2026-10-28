@@ -1,0 +1,205 @@
+diff --git a/README.md b/README.md
+index 8f7ef524a1d75938a5ddcfa20659c4699eaf78eb..b8ed69473777f2000db7c3c530fc31e62bd37ef8 100644
+--- a/README.md
++++ b/README.md
+@@ -9,7 +9,8 @@ of its booking desk, written in TypeScript with no runtime dependency.
+ `createRentalService()` from `src/index.ts` creates an in-memory rental service. Add boards or sails
+ with a daily price in integer euro cents and, optionally, an hourly price. Then call
+ `quote({ itemId, start, end })`, `book({ itemId, start, end })`, or
+-`availability({ start, end, kind })`. Whole-day rentals use UTC midnight ISO-8601 timestamps, with
++`availability({ start, end, kind })`, or cancel a booking with `cancel(bookingId, at)`. Whole-day
++rentals use UTC midnight ISO-8601 timestamps, with
+ `end` exclusive at midnight after the last rental day. Rentals shorter than a day can use UTC hour
+ boundaries instead; their cost is the hourly price multiplied by the number of hours, and equipment
+ without an hourly price cannot be rented for those periods. Quotes return the total in euro cents;
+diff --git a/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-5-plan.md b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-5-plan.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..d31658fbbb21fbfa8c58f8606d5d4882ba5e3877
+--- /dev/null
++++ b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-5-plan.md
+@@ -0,0 +1,17 @@
++---
++id: sw-life-cycle-1-5-plan
++type: plan
++title: "Add rental booking cancellation"
++status: active
++workflow: "sw-life-cycle"
++phase: "1-5"
++element: ""
++parent: ""
++format: 1
++---
++
++<!-- plan body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
+diff --git a/docs/memory/release/release-001.md b/docs/memory/release/release-001.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..598d3de4b6844f08d7dfe4588d5b0d397776114f
+--- /dev/null
++++ b/docs/memory/release/release-001.md
+@@ -0,0 +1,13 @@
++---
++id: release-001
++type: release
++title: "Rental booking cancellation delivery"
++status: draft
++format: 1
++---
++
++<!-- release body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
+diff --git a/docs/memory/task/task-005-add-rental-booking-cancellation.md b/docs/memory/task/task-005-add-rental-booking-cancellation.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..9188e28e49549c63380df28e3e91c0bf2a415609
+--- /dev/null
++++ b/docs/memory/task/task-005-add-rental-booking-cancellation.md
+@@ -0,0 +1,12 @@
++---
++id: task-005-add-rental-booking-cancellation
++type: task
++title: "Add rental booking cancellation"
++status: approved
++format: 1
++---
++
++Add `cancel(bookingId, at)` to the rental service. It cancels the booking at the given timestamp
++and returns `{ bookingId, refund }` in euro cents. Refund the full booking total when cancellation
++is at least 24 hours before the rental starts; otherwise refund zero. Cancelled bookings must no
++longer reserve equipment, and a booking may only be cancelled once. Update public API documentation.
+diff --git a/src/index.ts b/src/index.ts
+index b9d115835a30f8f0256f8e6bfcc94cf129af551a..58339e3f2a734ca69d5a1d48098dd5c2d17541ad 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -35,6 +35,12 @@ export interface RentalBooking extends RentalQuote {
+   id: string;
+ }
+ 
++export interface RentalCancellation {
++  bookingId: string;
++  /** The refunded amount in euro cents. */
++  refund: number;
++}
++
+ export interface RentalService {
+   /** Adds a board or sail with a daily price and an optional hourly price, in integer euro cents. */
+   addEquipment(item: Equipment): void;
+@@ -42,6 +48,8 @@ export interface RentalService {
+   quote(request: RentalRequest): RentalQuote;
+   /** Books a free item for a valid hourly or whole-day UTC rental period. */
+   book(request: RentalRequest): RentalBooking;
++  /** Cancels a booking at a valid timestamp; cancellations less than 24 hours before start receive no refund. */
++  cancel(bookingId: string, at: string): RentalCancellation;
+   /** Returns sorted equipment IDs free for the entire valid hourly or whole-day UTC period. */
+   availability(query: AvailabilityQuery): string[];
+ }
+@@ -99,10 +107,11 @@ function parseRentalPeriod(startValue: string, endValue: string): { start: numbe
+   return { start, end, hourly: false };
+ }
+ 
+-/** Creates an in-memory service for equipment, quotes, and bookings. */
++/** Creates an in-memory service for equipment, quotes, bookings, and cancellations. */
+ export function createRentalService(): RentalService {
+   const equipment = new Map<string, Equipment>();
+   const bookings: RentalBooking[] = [];
++  const cancelledBookingIds = new Set<string>();
+   let nextBookingId = 1;
+ 
+   function quote(request: RentalRequest): RentalQuote {
+@@ -150,7 +159,7 @@ export function createRentalService(): RentalService {
+       const price = quote(request);
+       const start = Date.parse(price.start);
+       const end = Date.parse(price.end);
+-      if (bookings.some((booking) => booking.itemId === price.itemId &&
++      if (bookings.some((booking) => !cancelledBookingIds.has(booking.id) && booking.itemId === price.itemId &&
+         start < Date.parse(booking.end) && Date.parse(booking.start) < end)) {
+         throw new Error(`Equipment item is already booked for part of this period: ${price.itemId}`);
+       }
+@@ -159,6 +168,17 @@ export function createRentalService(): RentalService {
+       return { ...booking };
+     },
+ 
++    cancel(bookingId: string, at: string): RentalCancellation {
++      if (typeof bookingId !== 'string' || bookingId.length === 0) throw new Error('A valid bookingId is required');
++      if (typeof at !== 'string' || !Number.isFinite(Date.parse(at))) throw new Error('at must be a valid timestamp');
++      const booking = bookings.find((candidate) => candidate.id === bookingId);
++      if (!booking) throw new Error(`Unknown booking: ${bookingId}`);
++      if (cancelledBookingIds.has(bookingId)) throw new Error(`Booking has already been cancelled: ${bookingId}`);
++      cancelledBookingIds.add(bookingId);
++      const refund = Date.parse(booking.start) - Date.parse(at) >= DAY_MS ? booking.total : 0;
++      return { bookingId, refund };
++    },
++
+     availability(query: AvailabilityQuery): string[] {
+       if (!query || typeof query !== 'object') throw new Error('A valid availability query is required');
+       if (query.kind !== undefined && query.kind !== 'board' && query.kind !== 'sail') {
+@@ -170,7 +190,7 @@ export function createRentalService(): RentalService {
+       return [...equipment.values()]
+         .filter((item) => query.kind === undefined || item.kind === query.kind)
+         .filter((item) => !hourly || item.hourlyPrice !== undefined)
+-        .filter((item) => !bookings.some((booking) => booking.itemId === item.id &&
++        .filter((item) => !bookings.some((booking) => !cancelledBookingIds.has(booking.id) && booking.itemId === item.id &&
+           start < Date.parse(booking.end) && Date.parse(booking.start) < end))
+         .map((item) => item.id)
+         .sort();
+diff --git a/test/cancellation.test.mjs b/test/cancellation.test.mjs
+new file mode 100644
+index 0000000000000000000000000000000000000000..c9ec8fea11f8503378f77d0aded8e4bfce6a53ef
+--- /dev/null
++++ b/test/cancellation.test.mjs
+@@ -0,0 +1,50 @@
++import test from 'node:test';
++import assert from 'node:assert/strict';
++import { createRentalService } from '../src/index.ts';
++
++const period = {
++  itemId: 'board-1',
++  start: '2026-06-10T00:00:00Z',
++  end: '2026-06-11T00:00:00Z',
++};
++
++function serviceWithBooking() {
++  const service = createRentalService();
++  service.addEquipment({ id: period.itemId, kind: 'board', dailyPrice: 4200 });
++  const booking = service.book(period);
++  return { service, booking };
++}
++
++test('cancelling at least 24 hours before start gives a full refund and releases equipment', () => {
++  const { service, booking } = serviceWithBooking();
++
++  assert.deepEqual(service.cancel(booking.id, '2026-06-09T00:00:00Z'), {
++    bookingId: booking.id,
++    refund: booking.total,
++  });
++  assert.deepEqual(service.availability(period), [period.itemId]);
++  assert.equal(service.book(period).itemId, period.itemId);
++});
++
++test('cancelling less than 24 hours before start gives no refund', () => {
++  const { service, booking } = serviceWithBooking();
++
++  assert.deepEqual(service.cancel(booking.id, '2026-06-09T00:00:01Z'), {
++    bookingId: booking.id,
++    refund: 0,
++  });
++});
++
++test('a booking cannot be cancelled more than once', () => {
++  const { service, booking } = serviceWithBooking();
++  service.cancel(booking.id, '2026-06-09T00:00:00Z');
++
++  assert.throws(() => service.cancel(booking.id, '2026-06-09T00:00:00Z'), /already been cancelled/);
++});
++
++test('cancelling an unknown booking or with an invalid time fails', () => {
++  const { service } = serviceWithBooking();
++
++  assert.throws(() => service.cancel('missing', '2026-06-09T00:00:00Z'), /Unknown booking/);
++  assert.throws(() => service.cancel('1', 'not-a-time'), /valid timestamp/);
++});

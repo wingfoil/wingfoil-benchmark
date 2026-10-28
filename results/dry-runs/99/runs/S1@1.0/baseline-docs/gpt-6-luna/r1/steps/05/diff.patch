@@ -1,0 +1,160 @@
+diff --git a/README.md b/README.md
+index 12b3c31e24bb997cb28b246fe1f56f0e88e60676..96e7d8ef314d80bc0aa3341bc2970071f36e9f83 100644
+--- a/README.md
++++ b/README.md
+@@ -23,6 +23,10 @@ operation must be JSON values. Members not defined for an operation are ignored,
+ throw an error. If any operation fails, no patched value is returned and the input document remains
+ unchanged.
+ 
++`createPatch(from, to)` produces an RFC 6902 patch using only the changed paths. It recursively
++compares object members and array contents, and returns an empty array for equal documents. The
++inputs must be valid JSON values and are not modified.
++
+ ## JSON Merge Patch
+ 
+ `applyMergePatch(target, patch)` applies a JSON Merge Patch from RFC 7386 and returns a new JSON value
+diff --git a/src/index.test.js b/src/index.test.js
+index d1f73d864ce4c7f8b48789c4b9048a59da847f4d..fdcb46e196d2c14a2aa042810d678e6a503ef14c 100644
+--- a/src/index.test.js
++++ b/src/index.test.js
+@@ -1,6 +1,6 @@
+ import test from 'node:test';
+ import assert from 'node:assert/strict';
+-import { applyPatch } from './index.ts';
++import { applyPatch, createPatch } from './index.ts';
+ 
+ test('applies RFC 6902 operations in sequence and leaves the input untouched', () => {
+   const source = { list: ['a', 'b'], value: { ok: true } };
+@@ -43,3 +43,30 @@ test('failed patches do not mutate the original document', () => {
+   ]));
+   assert.deepEqual(source, { list: [1, 2] });
+ });
++
++test('creates a minimal patch for changed object members and escapes pointer tokens', () => {
++  const from = { 'a/b': { '~key': 1, stay: true }, gone: 'x' };
++  const to = { 'a/b': { '~key': 2, stay: true }, added: 'y' };
++  const patch = createPatch(from, to);
++  assert.deepEqual(patch, [
++    { op: 'remove', path: '/gone' },
++    { op: 'replace', path: '/a~1b/~0key', value: 2 },
++    { op: 'add', path: '/added', value: 'y' },
++  ]);
++  assert.deepEqual(applyPatch(from, patch), to);
++  assert.deepEqual(from, { 'a/b': { '~key': 1, stay: true }, gone: 'x' });
++});
++
++test('creates array edits without replacing unchanged elements and handles root replacement', () => {
++  const from = { items: ['a', 'b', 'c'] };
++  const to = { items: ['a', 'x', 'c', 'd'] };
++  const patch = createPatch(from, to);
++  assert.deepEqual(applyPatch(from, patch), to);
++  assert.ok(patch.length < 4);
++  assert.deepEqual(createPatch({ a: 1 }, null), [{ op: 'replace', path: '', value: null }]);
++});
++
++test('equal documents produce an empty patch and invalid JSON is rejected', () => {
++  assert.deepEqual(createPatch({ a: [1, { b: true }] }, { a: [1, { b: true }] }), []);
++  assert.throws(() => createPatch({ a: undefined }, { a: null }));
++});
+diff --git a/src/index.ts b/src/index.ts
+index 6dfac2abea43d073530325c02e8567d7ef6e1b9a..f7f6f831b4365eaddb227f49eb2615f26c1e265e 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -41,6 +41,89 @@ type PatchOperation =
+   | { op: "copy"; from: string; path: string }
+   | { op: "test"; path: string; value: unknown };
+ 
++type GeneratedPatchOperation =
++  | { op: "add"; path: string; value: unknown }
++  | { op: "remove"; path: string }
++  | { op: "replace"; path: string; value: unknown };
++
++/**
++ * Creates an RFC 6902 JSON Patch that transforms `from` into `to`.
++ * The inputs must be JSON values and are never mutated. Unchanged object
++ * members and array elements are omitted from the patch.
++ *
++ * @param from The original JSON document.
++ * @param to The desired JSON document.
++ * @returns A sequence of add, remove, and replace operations.
++ */
++export function createPatch(from: unknown, to: unknown): GeneratedPatchOperation[] {
++  const source = cloneJson(from);
++  const target = cloneJson(to);
++  const patch: GeneratedPatchOperation[] = [];
++  diffJson(source, target, "", patch);
++  return patch;
++}
++
++function diffJson(from: unknown, to: unknown, path: string, patch: GeneratedPatchOperation[]): void {
++  if (jsonEqual(from, to)) return;
++
++  if (isJsonObject(from) && isJsonObject(to)) {
++    for (const key of Object.keys(from)) {
++      if (!Object.hasOwn(to, key)) patch.push({ op: "remove", path: `${path}/${encodeToken(key)}` });
++    }
++    for (const key of Object.keys(to)) {
++      const childPath = `${path}/${encodeToken(key)}`;
++      if (!Object.hasOwn(from, key)) patch.push({ op: "add", path: childPath, value: cloneJson(to[key]) });
++      else diffJson(from[key], to[key], childPath, patch);
++    }
++    return;
++  }
++
++  if (Array.isArray(from) && Array.isArray(to)) {
++    diffArray(from, to, path, patch);
++    return;
++  }
++
++  patch.push({ op: "replace", path, value: cloneJson(to) });
++}
++
++function diffArray(from: unknown[], to: unknown[], path: string, patch: GeneratedPatchOperation[]): void {
++  // LCS keeps common elements in place and emits only inserts/removals. Cap the
++  // matrix size to avoid quadratic memory growth for unusually large arrays.
++  if (from.length * to.length > 1_000_000) {
++    patch.push({ op: "replace", path, value: cloneJson(to) });
++    return;
++  }
++  const rows = from.length + 1;
++  const cols = to.length + 1;
++  const lengths = Array.from({ length: rows }, () => new Uint32Array(cols));
++  for (let i = from.length - 1; i >= 0; i--) {
++    for (let j = to.length - 1; j >= 0; j--) {
++      lengths[i][j] = jsonEqual(from[i], to[j])
++        ? lengths[i + 1][j + 1] + 1
++        : Math.max(lengths[i + 1][j], lengths[i][j + 1]);
++    }
++  }
++
++  let i = 0;
++  let j = 0;
++  let index = 0;
++  while (i < from.length || j < to.length) {
++    if (i < from.length && j < to.length && jsonEqual(from[i], to[j])) {
++      i++; j++; index++;
++    } else if (j < to.length && (i === from.length || lengths[i][j + 1] > lengths[i + 1][j])) {
++      patch.push({ op: "add", path: `${path}/${index}`, value: cloneJson(to[j]) });
++      j++; index++;
++    } else {
++      patch.push({ op: "remove", path: `${path}/${index}` });
++      i++;
++    }
++  }
++}
++
++function isJsonObject(value: unknown): value is Record<string, unknown> {
++  return value !== null && typeof value === "object" && !Array.isArray(value);
++}
++
+ /**
+  * Applies an RFC 6902 JSON Patch to a JSON document without mutating the input.
+  * Invalid operations, pointers, or failed tests throw an Error.
+@@ -245,3 +328,7 @@ function decodeToken(token: string): string {
+   }
+   return token.replace(/~[01]/g, (escape) => (escape === "~1" ? "/" : "~"));
+ }
++
++function encodeToken(token: string): string {
++  return token.replace(/~/g, "~0").replace(/\//g, "~1");
++}

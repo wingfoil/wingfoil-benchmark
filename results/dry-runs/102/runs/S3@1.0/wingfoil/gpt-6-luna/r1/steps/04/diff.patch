@@ -1,0 +1,203 @@
+diff --git a/README.md b/README.md
+index ee0a7a7d83e3155b91c984d06561000d7f324454..8f7ef524a1d75938a5ddcfa20659c4699eaf78eb 100644
+--- a/README.md
++++ b/README.md
+@@ -7,13 +7,15 @@ of its booking desk, written in TypeScript with no runtime dependency.
+ ## Equipment rentals
+ 
+ `createRentalService()` from `src/index.ts` creates an in-memory rental service. Add boards or sails
+-with a daily price in integer euro cents, then call `quote({ itemId, start, end })`,
+-`book({ itemId, start, end })`, or `availability({ start, end, kind })`. Start and end must be UTC midnight ISO-8601 timestamps; end is
+-exclusive, so it is the midnight after the last rental day. Quotes return the total in euro cents;
++with a daily price in integer euro cents and, optionally, an hourly price. Then call
++`quote({ itemId, start, end })`, `book({ itemId, start, end })`, or
++`availability({ start, end, kind })`. Whole-day rentals use UTC midnight ISO-8601 timestamps, with
++`end` exclusive at midnight after the last rental day. Rentals shorter than a day can use UTC hour
++boundaries instead; their cost is the hourly price multiplied by the number of hours, and equipment
++without an hourly price cannot be rented for those periods. Quotes return the total in euro cents;
+ rentals of three or more days receive a 10% discount, rounded to the nearest cent. Bookings use the
+-same discounted total as quotes.
+-Availability returns sorted equipment IDs that are free for the entire period, optionally filtered
+-to `board` or `sail`.
++same total as quotes. Availability returns sorted equipment IDs free for the entire period, optionally
++filtered to `board` or `sail`; hourly queries include only equipment with an hourly price.
+ Bookings cannot overlap for the same item and receive a service-local ID. Cancellation is not yet
+ implemented; the future policy is a full refund except when cancelled less than 24 hours before
+ the booking starts, when there is no refund.
+diff --git a/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-4-plan.md b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-4-plan.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..fd4954e6298cec47e8d72944e0fb644fc2094a92
+--- /dev/null
++++ b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-4-plan.md
+@@ -0,0 +1,17 @@
++---
++id: sw-life-cycle-1-4-plan
++type: plan
++title: "Add hourly equipment rentals"
++status: active
++workflow: "sw-life-cycle"
++phase: "1-4"
++element: ""
++parent: ""
++format: 1
++---
++
++<!-- plan body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
+diff --git a/docs/memory/task/task-004-add-hourly-equipment-rentals.md b/docs/memory/task/task-004-add-hourly-equipment-rentals.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..c25bafe1bea25442f8834bc11bf67046bf416bb5
+--- /dev/null
++++ b/docs/memory/task/task-004-add-hourly-equipment-rentals.md
+@@ -0,0 +1,13 @@
++---
++id: task-004-add-hourly-equipment-rentals
++type: task
++title: "Add hourly equipment rentals"
++status: approved
++format: 1
++---
++
++Add optional `hourlyPrice` to equipment registration. Rentals shorter than one day may start and end
++at UTC hour boundaries and cost the hourly price multiplied by the number of hours. Reject hourly
++rentals for equipment without an hourly price. Preserve whole-day rental pricing and the long-rental
++discount, and ensure hourly bookings participate in the existing overlap checks. Update the public API
++documentation.
+diff --git a/src/index.ts b/src/index.ts
+index 74a6f5a36824bb10814556cbb12348066061dfcb..b9d115835a30f8f0256f8e6bfcc94cf129af551a 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -5,13 +5,15 @@ export interface Equipment {
+   kind: EquipmentKind;
+   /** The cost of one rental day, in integer euro cents. */
+   dailyPrice: number;
++  /** The cost of one rental hour, in integer euro cents. Hourly rentals require this price. */
++  hourlyPrice?: number;
+ }
+ 
+ export interface RentalRequest {
+   itemId: string;
+-  /** UTC midnight in ISO-8601 form. */
++  /** UTC hour boundary in ISO-8601 form for hourly rentals; UTC midnight for daily rentals. */
+   start: string;
+-  /** UTC midnight after the final rental day, in ISO-8601 form. */
++  /** Exclusive UTC hour boundary for hourly rentals; UTC midnight after the final day otherwise. */
+   end: string;
+ }
+ 
+@@ -34,17 +36,18 @@ export interface RentalBooking extends RentalQuote {
+ }
+ 
+ export interface RentalService {
+-  /** Adds a board or sail. Prices are integer euro cents per day. */
++  /** Adds a board or sail with a daily price and an optional hourly price, in integer euro cents. */
+   addEquipment(item: Equipment): void;
+-  /** Returns the price for a valid whole-day UTC rental period; rentals of three or more days are 10% off. */
++  /** Returns the price for a valid hourly or whole-day UTC rental; rentals of three or more days are 10% off. */
+   quote(request: RentalRequest): RentalQuote;
+-  /** Books a free item for a valid whole-day UTC rental period. */
++  /** Books a free item for a valid hourly or whole-day UTC rental period. */
+   book(request: RentalRequest): RentalBooking;
+-  /** Returns sorted equipment IDs free for the entire valid whole-day UTC period. */
++  /** Returns sorted equipment IDs free for the entire valid hourly or whole-day UTC period. */
+   availability(query: AvailabilityQuery): string[];
+ }
+ 
+-const DAY_MS = 24 * 60 * 60 * 1000;
++const HOUR_MS = 60 * 60 * 1000;
++const DAY_MS = 24 * HOUR_MS;
+ 
+ function parseUtcMidnight(value: string, field: string): number {
+   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}T00:00(?::00(?:\.\d{1,3})?)?(?:Z|\+00:00)$/.test(value)) {
+@@ -66,7 +69,37 @@ function parseUtcMidnight(value: string, field: string): number {
+   return timestamp;
+ }
+ 
+-/** Creates an in-memory service for equipment, quotes, and whole-day bookings. */
++function parseUtcHour(value: string, field: string): number {
++  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:00(?::00(?:\.0{1,3})?)?(?:Z|\+00:00)$/.test(value)) {
++    throw new Error(`${field} must be a UTC hour-boundary ISO-8601 timestamp`);
++  }
++  const timestamp = Date.parse(value);
++  if (!Number.isFinite(timestamp)) throw new Error(`${field} must be a valid timestamp`);
++  const date = new Date(timestamp);
++  if (date.toISOString().slice(0, 16) !== value.slice(0, 16)) {
++    throw new Error(`${field} must be a valid calendar date and hour`);
++  }
++  return timestamp;
++}
++
++function parseRentalPeriod(startValue: string, endValue: string): { start: number; end: number; hourly: boolean } {
++  const startTimestamp = Date.parse(startValue);
++  const endTimestamp = Date.parse(endValue);
++  if (!Number.isFinite(startTimestamp) || !Number.isFinite(endTimestamp) || endTimestamp <= startTimestamp) {
++    throw new Error('Rental end must be after start');
++  }
++  if (endTimestamp - startTimestamp < DAY_MS) {
++    const start = parseUtcHour(startValue, 'start');
++    const end = parseUtcHour(endValue, 'end');
++    if (end - start >= DAY_MS) throw new Error('Hourly rental must be shorter than one day');
++    return { start, end, hourly: true };
++  }
++  const start = parseUtcMidnight(startValue, 'start');
++  const end = parseUtcMidnight(endValue, 'end');
++  return { start, end, hourly: false };
++}
++
++/** Creates an in-memory service for equipment, quotes, and bookings. */
+ export function createRentalService(): RentalService {
+   const equipment = new Map<string, Equipment>();
+   const bookings: RentalBooking[] = [];
+@@ -79,12 +112,18 @@ export function createRentalService(): RentalService {
+     const item = equipment.get(request.itemId);
+     if (!item) throw new Error(`Unknown equipment item: ${request.itemId}`);
+ 
+-    const start = parseUtcMidnight(request.start, 'start');
+-    const end = parseUtcMidnight(request.end, 'end');
+-    if (end <= start) throw new Error('Rental end must be after start');
+-
+-    const days = (end - start) / DAY_MS;
+-    const fullPrice = days * item.dailyPrice;
++    const { start, end, hourly } = parseRentalPeriod(request.start, request.end);
++    let days: number;
++    let fullPrice: number;
++    if (hourly) {
++      const hours = (end - start) / HOUR_MS;
++      if (item.hourlyPrice === undefined) throw new Error(`Equipment item cannot be rented by the hour: ${item.id}`);
++      days = 0;
++      fullPrice = hours * item.hourlyPrice;
++    } else {
++      days = (end - start) / DAY_MS;
++      fullPrice = days * item.dailyPrice;
++    }
+     if (!Number.isSafeInteger(fullPrice)) throw new Error('Rental total exceeds the safe integer range');
+     const total = days >= 3 ? Math.round(fullPrice * 0.9) : fullPrice;
+     if (!Number.isSafeInteger(total)) throw new Error('Rental total exceeds the safe integer range');
+@@ -98,6 +137,9 @@ export function createRentalService(): RentalService {
+       if (!Number.isSafeInteger(item.dailyPrice) || item.dailyPrice < 0) {
+         throw new Error('Daily price must be a non-negative integer number of euro cents');
+       }
++      if (item.hourlyPrice !== undefined && (!Number.isSafeInteger(item.hourlyPrice) || item.hourlyPrice < 0)) {
++        throw new Error('Hourly price must be a non-negative integer number of euro cents');
++      }
+       if (equipment.has(item.id)) throw new Error(`Equipment item already exists: ${item.id}`);
+       equipment.set(item.id, { ...item });
+     },
+@@ -123,12 +165,11 @@ export function createRentalService(): RentalService {
+         throw new Error('Equipment kind must be board or sail');
+       }
+ 
+-      const start = parseUtcMidnight(query.start, 'start');
+-      const end = parseUtcMidnight(query.end, 'end');
+-      if (end <= start) throw new Error('Rental end must be after start');
++      const { start, end, hourly } = parseRentalPeriod(query.start, query.end);
+ 
+       return [...equipment.values()]
+         .filter((item) => query.kind === undefined || item.kind === query.kind)
++        .filter((item) => !hourly || item.hourlyPrice !== undefined)
+         .filter((item) => !bookings.some((booking) => booking.itemId === item.id &&
+           start < Date.parse(booking.end) && Date.parse(booking.start) < end))
+         .map((item) => item.id)

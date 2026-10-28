@@ -1,0 +1,91 @@
+diff --git a/DECISION_LOG.md b/DECISION_LOG.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..aa26ce20c00ed2ed592b8a7f47fc534893bc0e98
+--- /dev/null
++++ b/DECISION_LOG.md
+@@ -0,0 +1,11 @@
++# Decision log
++
++## 2026-10-28: Long-rental discount
++
++- **Context:** Customers should receive a lower price for staying longer, and quotes and bookings must
++  show the same reduced total.
++- **Decision:** Apply a 10% discount to the full rental price when the whole-day rental period is at
++  least three days. Round the discounted euro-cent amount to the nearest cent. Quotes remain the source
++  of the total used by bookings.
++- **Consequences:** Both quote and booking totals use the discount. Shorter rentals keep the full price.
++  Discounted totals remain integer euro cents.
+diff --git a/README.md b/README.md
+index 78c89b9e89f5e8b107e54f63839ad151fc8bc51d..6dd2b3156ffd9efeb85a574cbd4ddfa45947760f 100644
+--- a/README.md
++++ b/README.md
+@@ -8,7 +8,9 @@ of its booking desk, written in TypeScript with no runtime dependency.
+ 
+ `createRentalService()` creates an in-memory rental desk. Add equipment with an ID, a kind (`'board'` or
+ `'sail'`), and a daily price in integer euro cents. `quote({ itemId, start, end })` returns the cost for
+-the requested whole-day period. `book(...)` reserves the item and returns a booking ID with the quote.
++the requested whole-day period. Rentals of three days or more receive a 10% discount, rounded to the
++nearest euro cent. `book(...)` reserves the item and returns a booking ID with the quote, including any
++applicable discount.
+ Times must be UTC ISO-8601 timestamps at midnight; `end` is the midnight starting the day after the
+ last rental day. Bookings for the same item cannot overlap. Quotes and bookings reject unknown items and
+ invalid periods; bookings also reject periods already reserved. Booking IDs are sequential within each
+diff --git a/src/index.ts b/src/index.ts
+index 57e9e0996dba29ebaddbb797bb84cd8d7cc4dfa4..2c2481eb3803b537be3d061b2e8cfc5b5cb575b5 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -69,7 +69,9 @@ export function createRentalService(): RentalService {
+     const end = utcMidnight(request.end);
+     if (end <= start) throw new Error('Rental end must be after its start.');
+     const days = (end - start) / 86_400_000;
+-    const total = days * item.dailyPrice;
++    const fullPrice = days * item.dailyPrice;
++    if (!Number.isSafeInteger(fullPrice)) throw new Error('Rental total exceeds the supported amount.');
++    const total = days >= 3 ? Math.round(fullPrice * 0.9) : fullPrice;
+     if (!Number.isSafeInteger(total)) throw new Error('Rental total exceeds the supported amount.');
+ 
+     return { itemId: request.itemId, start: request.start, end: request.end, total };
+diff --git a/test/rental-discount.test.mjs b/test/rental-discount.test.mjs
+new file mode 100644
+index 0000000000000000000000000000000000000000..c1506b1f3ae6e44636a6f72de27271744b1aff2b
+--- /dev/null
++++ b/test/rental-discount.test.mjs
+@@ -0,0 +1,38 @@
++import test from 'node:test';
++import assert from 'node:assert/strict';
++import { createRentalService } from '../src/index.ts';
++
++test('applies a 10% discount to rentals of three days or more in quotes and bookings', () => {
++  const service = createRentalService();
++  service.addEquipment({ id: 'board', kind: 'board', dailyPrice: 1000 });
++  const request = {
++    itemId: 'board',
++    start: '2026-06-01T00:00:00Z',
++    end: '2026-06-04T00:00:00Z',
++  };
++
++  assert.equal(service.quote(request).total, 2700);
++  assert.equal(service.book(request).total, 2700);
++});
++
++test('does not discount rentals shorter than three days', () => {
++  const service = createRentalService();
++  service.addEquipment({ id: 'sail', kind: 'sail', dailyPrice: 1000 });
++
++  assert.equal(service.quote({
++    itemId: 'sail',
++    start: '2026-06-01T00:00:00Z',
++    end: '2026-06-03T00:00:00Z',
++  }).total, 2000);
++});
++
++test('rounds a discounted total to the nearest euro cent', () => {
++  const service = createRentalService();
++  service.addEquipment({ id: 'board', kind: 'board', dailyPrice: 101 });
++
++  assert.equal(service.quote({
++    itemId: 'board',
++    start: '2026-06-01T00:00:00Z',
++    end: '2026-06-04T00:00:00Z',
++  }).total, 273);
++});

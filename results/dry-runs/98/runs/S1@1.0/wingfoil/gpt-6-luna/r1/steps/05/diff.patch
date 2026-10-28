@@ -1,0 +1,164 @@
+diff --git a/README.md b/README.md
+index 2fff69591193909e7aa80b92d77bd729fb28ff34..d9aadf380328139f80cdcc41c758a685af401d59 100644
+--- a/README.md
++++ b/README.md
+@@ -8,3 +8,7 @@ other projects of the team, so its behaviour must follow the published standards
+ Object patches merge recursively, a member whose patch value is `null` removes that member, and
+ non-object patches replace the target document. The function returns a new JSON value and leaves
+ both inputs unchanged.
++
++`createPatch(from, to)` returns an [RFC 6902 JSON Patch](https://www.rfc-editor.org/rfc/rfc6902)
++containing only the operations needed to transform `from` into `to`. It recursively describes
++changes to objects and arrays, and leaves both input documents unchanged.
+diff --git a/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-5-plan.md b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-5-plan.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..1c555e11e4cabb3defd254ebbb8433a9af87ad3b
+--- /dev/null
++++ b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-5-plan.md
+@@ -0,0 +1,17 @@
++---
++id: sw-life-cycle-1-5-plan
++type: plan
++title: "Create JSON Patch"
++status: active
++workflow: "sw-life-cycle"
++phase: "1-5"
++element: ""
++parent: ""
++format: 1
++---
++
++<!-- plan body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
+diff --git a/docs/memory/task/task-005-create-json-patch.md b/docs/memory/task/task-005-create-json-patch.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..5b465fd57636df70f68464ae4640d2ee283bafd1
+--- /dev/null
++++ b/docs/memory/task/task-005-create-json-patch.md
+@@ -0,0 +1,13 @@
++---
++id: task-005-create-json-patch
++type: task
++title: "Create JSON Patch"
++status: approved
++format: 1
++---
++
++<!-- task body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
+diff --git a/src/index.ts b/src/index.ts
+index 466e0c03f0e855dc42c74d77e9b642d6518cce76..6fe3d37dd9a2140f3cebf21605268082d46569c8 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -68,6 +68,69 @@ type PatchOperation = {
+   value?: unknown;
+ };
+ 
++type GeneratedPatchOperation = { op: 'add' | 'remove' | 'replace'; path: string; value?: unknown };
++
++/**
++ * Creates an RFC 6902 JSON Patch that transforms `from` into `to`.
++ * The inputs must contain only JSON values; the returned operations contain
++ * only changed paths and do not share mutable values with either input.
++ *
++ * @param from The original JSON document.
++ * @param to The desired JSON document.
++ * @returns A JSON Patch that transforms `from` into `to`.
++ * @throws {TypeError} If either input is not a JSON value.
++ */
++export function createPatch(from: unknown, to: unknown): GeneratedPatchOperation[] {
++  assertJsonValue(from, 'JSON Patch source');
++  assertJsonValue(to, 'JSON Patch target');
++  const patch: GeneratedPatchOperation[] = [];
++  diffJson(from, to, [], patch);
++  return patch;
++}
++
++function diffJson(from: unknown, to: unknown, path: string[], patch: GeneratedPatchOperation[]): void {
++  if (jsonEqual(from, to)) return;
++  const pointer = path.map(encodeToken).join('/');
++  const jsonPath = pointer === '' ? '' : `/${pointer}`;
++
++  if (isRecord(from) && isRecord(to)) {
++    for (const key of Object.keys(from)) {
++      if (!Object.prototype.hasOwnProperty.call(to, key)) {
++        patch.push({ op: 'remove', path: `${jsonPath}/${encodeToken(key)}` });
++      }
++    }
++    for (const key of Object.keys(to)) {
++      const childPath = [...path, key];
++      if (!Object.prototype.hasOwnProperty.call(from, key)) {
++        patch.push({ op: 'add', path: `/${childPath.map(encodeToken).join('/')}`, value: cloneJson(to[key]) });
++      } else {
++        diffJson(from[key], to[key], childPath, patch);
++      }
++    }
++    return;
++  }
++
++  if (Array.isArray(from) && Array.isArray(to)) {
++    const sharedLength = Math.min(from.length, to.length);
++    for (let index = 0; index < sharedLength; index += 1) {
++      diffJson(from[index], to[index], [...path, String(index)], patch);
++    }
++    for (let index = from.length - 1; index >= to.length; index -= 1) {
++      patch.push({ op: 'remove', path: `/${[...path, String(index)].map(encodeToken).join('/')}` });
++    }
++    for (let index = sharedLength; index < to.length; index += 1) {
++      patch.push({ op: 'add', path: `/${[...path, String(index)].map(encodeToken).join('/')}`, value: cloneJson(to[index]) });
++    }
++    return;
++  }
++
++  patch.push({ op: 'replace', path: jsonPath, value: cloneJson(to) });
++}
++
++function encodeToken(token: string): string {
++  return token.replace(/~/g, '~0').replace(/\//g, '~1');
++}
++
+ /**
+  * Applies an RFC 6902 JSON Patch to a JSON document without changing the input.
+  * Operations run in order, members beyond those defined for an operation are ignored,
+diff --git a/test/apply-patch.test.js b/test/apply-patch.test.js
+index 59cd70f317d4202b2250b5a15a51062aa97878f7..5565c132604af8e8b33895d7d5cde2f07a0dc5e6 100644
+--- a/test/apply-patch.test.js
++++ b/test/apply-patch.test.js
+@@ -1,6 +1,30 @@
+ import test from 'node:test';
+ import assert from 'node:assert/strict';
+-import { applyPatch, applyMergePatch } from '../src/index.ts';
++import { applyPatch, applyMergePatch, createPatch } from '../src/index.ts';
++
++test('creates a minimal patch for nested changes and preserves both inputs', () => {
++  const from = { keep: [1, 2], object: { old: true, value: 1 }, 'a/b~c': 0 };
++  const to = { keep: [1, 2], object: { value: 2, added: null }, 'a/b~c': 0 };
++  const patch = createPatch(from, to);
++
++  assert.deepEqual(patch, [
++    { op: 'remove', path: '/object/old' },
++    { op: 'replace', path: '/object/value', value: 2 },
++    { op: 'add', path: '/object/added', value: null },
++  ]);
++  assert.deepEqual(applyPatch(from, patch), to);
++  assert.deepEqual(from, { keep: [1, 2], object: { old: true, value: 1 }, 'a/b~c': 0 });
++  assert.deepEqual(to, { keep: [1, 2], object: { value: 2, added: null }, 'a/b~c': 0 });
++});
++
++test('creates patches for array length changes, escaped keys, and root replacement', () => {
++  assert.deepEqual(createPatch({ 'a/b~c': [1, 2, 3] }, { 'a/b~c': [4, 2] }), [
++    { op: 'replace', path: '/a~1b~0c/0', value: 4 },
++    { op: 'remove', path: '/a~1b~0c/2' },
++  ]);
++  assert.deepEqual(createPatch({ a: 1 }, null), [{ op: 'replace', path: '', value: null }]);
++  assert.deepEqual(createPatch({ a: 1 }, { a: 1 }), []);
++});
+ 
+ test('applies operations in order without mutating the source', () => {
+   const document = { list: ['a', 'b', 'c'], copied: null };

@@ -1,0 +1,108 @@
+diff --git a/README.md b/README.md
+index f9f2ddc38b0d0b05e21dd2d801eb8f98d46ef84b..cee3a8224957a77a62305319341a6552c45d9760 100644
+--- a/README.md
++++ b/README.md
+@@ -17,5 +17,8 @@ identify an existing element. Invalid pointer syntax and paths that do not resol
+ `applyPatch(document, patch)` applies an array of JSON Patch operations from RFC 6902 and returns a
+ new JSON value without changing `document`. It supports `add`, `remove`, `replace`, `move`, `copy` and
+ `test`. Operation paths and `from` paths use JSON Pointer syntax. Array additions may use `-` to
+-append; other array indices must be decimal indices without leading zeroes. Invalid operations,
+-paths that do not resolve, and failed `test` operations throw an error.
++append; other array indices must be decimal indices without leading zeroes. Values supplied to an
++operation must be JSON values. Members not defined for an operation are ignored, as required by RFC
++6902. Invalid operations, paths that do not resolve, invalid values, and failed `test` operations
++throw an error. If any operation fails, no patched value is returned and the input document remains
++unchanged.
+diff --git a/src/index.test.js b/src/index.test.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..d1f73d864ce4c7f8b48789c4b9048a59da847f4d
+--- /dev/null
++++ b/src/index.test.js
+@@ -0,0 +1,45 @@
++import test from 'node:test';
++import assert from 'node:assert/strict';
++import { applyPatch } from './index.ts';
++
++test('applies RFC 6902 operations in sequence and leaves the input untouched', () => {
++  const source = { list: ['a', 'b'], value: { ok: true } };
++  const result = applyPatch(source, [
++    { op: 'add', path: '/list/1', value: 'x' },
++    { op: 'copy', from: '/value', path: '/copy', ignored: true },
++    { op: 'move', from: '/list/0', path: '/list/2' },
++    { op: 'test', path: '/copy/ok', value: true },
++  ]);
++  assert.deepEqual(result, { list: ['x', 'b', 'a'], value: { ok: true }, copy: { ok: true } });
++  assert.deepEqual(source, { list: ['a', 'b'], value: { ok: true } });
++});
++
++test('add replaces object members and can replace the document root', () => {
++  assert.deepEqual(applyPatch({ a: 1 }, [{ op: 'add', path: '/a', value: 2 }]), { a: 2 });
++  assert.deepEqual(applyPatch({ a: 1 }, [{ op: 'add', path: '', value: [1, 2] }]), [1, 2]);
++});
++
++test('move to the same location is a no-op and moving into a child fails', () => {
++  assert.deepEqual(applyPatch({ a: [1, 2] }, [{ op: 'move', from: '/a/1', path: '/a/1' }]), { a: [1, 2] });
++  assert.throws(() => applyPatch({ a: {} }, [{ op: 'move', from: '/a', path: '/a/b' }]));
++});
++
++test('rejects malformed operations, unresolved paths, and invalid JSON values', () => {
++  for (const patch of [
++    [{ op: 'add', path: '/x' }],
++    [{ op: 'wat', path: '' }],
++    [{ op: 'remove', path: '/missing' }],
++    [{ op: 'test', path: '', value: undefined }],
++    [{ op: 'add', path: '', value: Number.NaN }],
++    [{ op: 'add', path: '', value: new Date() }],
++  ]) assert.throws(() => applyPatch({}, patch));
++});
++
++test('failed patches do not mutate the original document', () => {
++  const source = { list: [1, 2] };
++  assert.throws(() => applyPatch(source, [
++    { op: 'remove', path: '/list/0' },
++    { op: 'test', path: '/list/0', value: 99 },
++  ]));
++  assert.deepEqual(source, { list: [1, 2] });
++});
+diff --git a/src/index.ts b/src/index.ts
+index 188a54c026de107d54a8236f4beae5bfe8a8308a..149879c92ce94b826073fa63f0047e0a5be406bf 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -76,7 +76,7 @@ export function applyPatch(document: unknown, patch: unknown): unknown {
+         break;
+       case "test":
+         requireField(op, "value");
+-        if (!jsonEqual(resolveTokens(result, path), op.value)) throw new Error("JSON Patch test failed");
++        if (!jsonEqual(resolveTokens(result, path), cloneJson(op.value))) throw new Error("JSON Patch test failed");
+         break;
+       case "copy":
+       case "move": {
+@@ -164,10 +164,27 @@ function arrayIndex(token: string, length: number, allowEnd: boolean): number {
+ function cloneJson(value: unknown): any {
+   if (value === null || typeof value === "string" || typeof value === "boolean") return value;
+   if (typeof value === "number" && Number.isFinite(value)) return value;
+-  if (Array.isArray(value)) return value.map(cloneJson);
++  if (Array.isArray(value)) {
++    const copy: unknown[] = [];
++    for (let i = 0; i < value.length; i++) {
++      if (!Object.hasOwn(value, i)) throw new Error("Value is not valid JSON");
++      const descriptor = Object.getOwnPropertyDescriptor(value, String(i));
++      if (!descriptor || !("value" in descriptor)) throw new Error("Value is not valid JSON");
++      copy.push(cloneJson(descriptor.value));
++    }
++    if (Object.getOwnPropertySymbols(value).length > 0 || Object.keys(value).some((key) => !/^(0|[1-9][0-9]*)$/.test(key) || Number(key) >= value.length)) {
++      throw new Error("Value is not valid JSON");
++    }
++    return copy;
++  }
+   if (value !== null && typeof value === "object") {
++    const prototype = Object.getPrototypeOf(value);
++    if (prototype !== Object.prototype && prototype !== null) throw new Error("Value is not valid JSON");
++    if (Object.getOwnPropertySymbols(value).length > 0) throw new Error("Value is not valid JSON");
+     const copy: Record<string, unknown> = {};
+     for (const key of Object.keys(value)) {
++      const descriptor = Object.getOwnPropertyDescriptor(value, key);
++      if (!descriptor || !("value" in descriptor)) throw new Error("Value is not valid JSON");
+       Object.defineProperty(copy, key, { value: cloneJson((value as Record<string, unknown>)[key]), enumerable: true, configurable: true, writable: true });
+     }
+     return copy;

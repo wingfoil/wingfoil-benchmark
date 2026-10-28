@@ -1,0 +1,141 @@
+diff --git a/README.md b/README.md
+index ff92be649ff3f610b38798b3310751534d032814..2fff69591193909e7aa80b92d77bd729fb28ff34 100644
+--- a/README.md
++++ b/README.md
+@@ -3,3 +3,8 @@
+ A small TypeScript library, with no runtime dependency, of building blocks for our services that store,
+ exchange and update JSON: configuration files, API payloads and stored records. It is imported by the
+ other projects of the team, so its behaviour must follow the published standards it implements.
++
++`applyMergePatch(target, patch)` applies an [RFC 7386 JSON Merge Patch](https://www.rfc-editor.org/rfc/rfc7386).
++Object patches merge recursively, a member whose patch value is `null` removes that member, and
++non-object patches replace the target document. The function returns a new JSON value and leaves
++both inputs unchanged.
+diff --git a/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-4-plan.md b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-4-plan.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..21930452ee3791384a03eae4720811060415642b
+--- /dev/null
++++ b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-4-plan.md
+@@ -0,0 +1,17 @@
++---
++id: sw-life-cycle-1-4-plan
++type: plan
++title: "Implement JSON Merge Patch"
++status: active
++workflow: "sw-life-cycle"
++phase: "1-4"
++element: ""
++parent: ""
++format: 1
++---
++
++<!-- plan body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
+diff --git a/docs/memory/task/task-004-implement-json-merge-patch.md b/docs/memory/task/task-004-implement-json-merge-patch.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..e4cccd976cec36e1b3ca7555cd028b445363bc31
+--- /dev/null
++++ b/docs/memory/task/task-004-implement-json-merge-patch.md
+@@ -0,0 +1,11 @@
++---
++id: task-004-implement-json-merge-patch
++type: task
++title: "Implement JSON Merge Patch"
++status: approved
++format: 1
++---
++
++Implement and export `applyMergePatch(target, patch)` from `src/index.ts` with RFC 7386 behavior.
++Add tests for object member replacement/deletion, recursive merge, whole-document replacement,
++and preservation of the input values. Update the public README documentation.
+diff --git a/src/index.ts b/src/index.ts
+index 1d0044e3bb457c795a0b3e4b814180eb964c15dc..466e0c03f0e855dc42c74d77e9b642d6518cce76 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -143,6 +143,42 @@ export function applyPatch(document: unknown, patch: unknown): unknown {
+   return result;
+ }
+ 
++/**
++ * Applies an RFC 7386 JSON Merge Patch to a JSON document without changing either input.
++ * Object patches recursively merge members, null-valued members remove target members,
++ * and any non-object patch replaces the entire target.
++ *
++ * @param target The JSON value to update.
++ * @param patch An RFC 7386 merge patch JSON value.
++ * @returns The merged JSON value.
++ * @throws {TypeError} If either input is not a JSON value.
++ */
++export function applyMergePatch(target: unknown, patch: unknown): unknown {
++  assertJsonValue(target, 'JSON Merge Patch target');
++  assertJsonValue(patch, 'JSON Merge Patch patch');
++  return mergePatchValue(target, patch);
++}
++
++function mergePatchValue(target: unknown, patch: unknown): unknown {
++  if (!isRecord(patch)) return cloneJson(patch);
++
++  const result: Record<string, unknown> = isRecord(target) ? cloneJson(target) as Record<string, unknown> : {};
++  for (const key of Object.keys(patch)) {
++    const patchValue = patch[key];
++    if (patchValue === null) {
++      delete result[key];
++    } else {
++      Object.defineProperty(result, key, {
++        value: mergePatchValue(result[key], patchValue),
++        enumerable: true,
++        configurable: true,
++        writable: true,
++      });
++    }
++  }
++  return result;
++}
++
+ function parsePointer(pointer: string): string[] {
+   if (pointer === '') return [];
+   if (!pointer.startsWith('/')) throw new TypeError('JSON Pointer must be empty or begin with "/"');
+diff --git a/test/apply-patch.test.js b/test/apply-patch.test.js
+index f14fd0419a6da476c01a887136dff008e326a65b..59cd70f317d4202b2250b5a15a51062aa97878f7 100644
+--- a/test/apply-patch.test.js
++++ b/test/apply-patch.test.js
+@@ -1,6 +1,6 @@
+ import test from 'node:test';
+ import assert from 'node:assert/strict';
+-import { applyPatch } from '../src/index.ts';
++import { applyPatch, applyMergePatch } from '../src/index.ts';
+ 
+ test('applies operations in order without mutating the source', () => {
+   const document = { list: ['a', 'b', 'c'], copied: null };
+@@ -51,3 +51,28 @@ test('a failed operation leaves the original document untouched', () => {
+   ]));
+   assert.deepEqual(document, { value: 1 });
+ });
++
++test('applies RFC 7386 object member merges and deletions without mutation', () => {
++  const target = { title: 'old', author: { givenName: 'Ada', familyName: 'Lovelace' }, tags: ['a'] };
++  const patch = { title: 'new', author: { familyName: null, role: 'writer' }, tags: ['b'] };
++
++  assert.deepEqual(applyMergePatch(target, patch), {
++    title: 'new', author: { givenName: 'Ada', role: 'writer' }, tags: ['b'],
++  });
++  assert.deepEqual(target, { title: 'old', author: { givenName: 'Ada', familyName: 'Lovelace' }, tags: ['a'] });
++});
++
++test('replaces the entire target when the patch is not an object', () => {
++  assert.equal(applyMergePatch({ a: 1 }, null), null);
++  assert.deepEqual(applyMergePatch({ a: 1 }, ['x', 2]), ['x', 2]);
++  assert.deepEqual(applyMergePatch(1, { a: 1 }), { a: 1 });
++});
++
++test('safely merges special object member names', () => {
++  const patch = JSON.parse('{"__proto__":{"polluted":true},"constructor":null}');
++  const result = applyMergePatch({ constructor: 1 }, patch);
++
++  assert.equal(Object.prototype.hasOwnProperty.call(result, '__proto__'), true);
++  assert.deepEqual(result['__proto__'], { polluted: true });
++  assert.equal('polluted' in Object.prototype, false);
++});

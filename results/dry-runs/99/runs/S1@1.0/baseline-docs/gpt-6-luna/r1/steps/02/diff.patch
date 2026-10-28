@@ -1,0 +1,199 @@
+diff --git a/README.md b/README.md
+index 3460c410f3850c220efa0beda0c3afb790ee8499..f9f2ddc38b0d0b05e21dd2d801eb8f98d46ef84b 100644
+--- a/README.md
++++ b/README.md
+@@ -11,3 +11,11 @@ referenced value. The empty string selects the whole document. A non-empty point
+ within each path token, `~1` decodes to `/` and `~0` decodes to `~`. Object properties must exist as
+ own properties. Array tokens must be decimal indices without leading zeroes (except `0`) and must
+ identify an existing element. Invalid pointer syntax and paths that do not resolve throw an error.
++
++## JSON Patch
++
++`applyPatch(document, patch)` applies an array of JSON Patch operations from RFC 6902 and returns a
++new JSON value without changing `document`. It supports `add`, `remove`, `replace`, `move`, `copy` and
++`test`. Operation paths and `from` paths use JSON Pointer syntax. Array additions may use `-` to
++append; other array indices must be decimal indices without leading zeroes. Invalid operations,
++paths that do not resolve, and failed `test` operations throw an error.
+diff --git a/src/index.ts b/src/index.ts
+index 473013f90a66b192573665238675f93db602ad99..188a54c026de107d54a8236f4beae5bfe8a8308a 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -8,18 +8,7 @@
+  * @returns The value identified by the pointer.
+  */
+ export function resolvePointer(document: unknown, pointer: string): unknown {
+-  if (typeof pointer !== "string") {
+-    throw new Error("JSON Pointer must be a string");
+-  }
+-
+-  if (pointer === "") {
+-    return document;
+-  }
+-  if (!pointer.startsWith("/")) {
+-    throw new Error("A non-empty JSON Pointer must start with '/'");
+-  }
+-
+-  const tokens = pointer.slice(1).split("/").map(decodeToken);
++  const tokens = parsePointer(pointer);
+   let value = document;
+ 
+   for (const token of tokens) {
+@@ -44,6 +33,158 @@ export function resolvePointer(document: unknown, pointer: string): unknown {
+   return value;
+ }
+ 
++type PatchOperation =
++  | { op: "add"; path: string; value: unknown }
++  | { op: "remove"; path: string }
++  | { op: "replace"; path: string; value: unknown }
++  | { op: "move"; from: string; path: string }
++  | { op: "copy"; from: string; path: string }
++  | { op: "test"; path: string; value: unknown };
++
++/**
++ * Applies an RFC 6902 JSON Patch to a JSON document without mutating the input.
++ * Invalid operations, pointers, or failed tests throw an Error.
++ *
++ * @param document The JSON document to patch.
++ * @param patch An array of RFC 6902 operations.
++ * @returns The patched document as a new value.
++ */
++export function applyPatch(document: unknown, patch: unknown): unknown {
++  if (!Array.isArray(patch)) throw new Error("JSON Patch must be an array");
++  let result = cloneJson(document);
++
++  for (const raw of patch) {
++    if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
++      throw new Error("Each JSON Patch operation must be an object");
++    }
++    const op = raw as Record<string, unknown>;
++    if (typeof op.op !== "string" || typeof op.path !== "string") {
++      throw new Error("JSON Patch operation requires string 'op' and 'path'");
++    }
++    const path = parsePointer(op.path);
++    switch (op.op) {
++      case "add":
++        requireField(op, "value");
++        result = setAt(result, path, cloneJson(op.value), "add");
++        break;
++      case "remove":
++        result = setAt(result, path, undefined, "remove");
++        break;
++      case "replace":
++        requireField(op, "value");
++        result = setAt(result, path, cloneJson(op.value), "replace");
++        break;
++      case "test":
++        requireField(op, "value");
++        if (!jsonEqual(resolveTokens(result, path), op.value)) throw new Error("JSON Patch test failed");
++        break;
++      case "copy":
++      case "move": {
++        if (typeof op.from !== "string") throw new Error(`JSON Patch ${op.op} operation requires string 'from'`);
++        const from = parsePointer(op.from);
++        if (op.op === "move" && from.length < path.length && from.every((token, i) => token === path[i])) {
++          throw new Error("Cannot move a value into one of its children");
++        }
++        const value = cloneJson(resolveTokens(result, from));
++        if (op.op === "move") result = setAt(result, from, undefined, "remove");
++        result = setAt(result, path, value, "add");
++        break;
++      }
++      default:
++        throw new Error(`Unsupported JSON Patch operation: ${op.op}`);
++    }
++  }
++  return result;
++}
++
++function parsePointer(pointer: string): string[] {
++  if (typeof pointer !== "string") throw new Error("JSON Pointer must be a string");
++  if (pointer === "") return [];
++  if (!pointer.startsWith("/")) throw new Error("A non-empty JSON Pointer must start with '/'");
++  return pointer.slice(1).split("/").map(decodeToken);
++}
++
++function requireField(op: Record<string, unknown>, field: string): void {
++  if (!Object.hasOwn(op, field)) throw new Error(`JSON Patch operation requires '${field}'`);
++}
++
++function resolveTokens(document: unknown, tokens: string[]): unknown {
++  let value = document;
++  for (const token of tokens) {
++    if (Array.isArray(value)) {
++      const index = arrayIndex(token, value.length, false);
++      value = value[index];
++    } else if (value !== null && typeof value === "object" && Object.hasOwn(value, token)) {
++      value = (value as Record<string, unknown>)[token];
++    } else {
++      throw new Error("JSON Patch path does not resolve");
++    }
++  }
++  return value;
++}
++
++function setAt(root: unknown, tokens: string[], value: unknown, mode: "add" | "remove" | "replace"): unknown {
++  if (tokens.length === 0) {
++    if (mode === "remove") throw new Error("Cannot remove the document root");
++    return value;
++  }
++  const parent = resolveTokens(root, tokens.slice(0, -1));
++  const key = tokens[tokens.length - 1];
++  if (Array.isArray(parent)) {
++    if (mode === "add" && key === "-") { parent.push(value); return root; }
++    const index = arrayIndex(key, parent.length, mode === "add");
++    if (mode === "add") parent.splice(index, 0, value);
++    else if (mode === "remove") {
++      if (index >= parent.length) throw new Error("JSON Patch array index does not exist");
++      parent.splice(index, 1);
++    } else {
++      if (index >= parent.length) throw new Error("JSON Patch array index does not exist");
++      parent[index] = value;
++    }
++    return root;
++  }
++  if (parent === null || typeof parent !== "object") throw new Error("JSON Patch parent is not a container");
++  const object = parent as Record<string, unknown>;
++  const exists = Object.hasOwn(object, key);
++  if (mode !== "add" && !exists) throw new Error("JSON Patch path does not exist");
++  if (mode === "remove") delete object[key];
++  else Object.defineProperty(object, key, { value, enumerable: true, configurable: true, writable: true });
++  return root;
++}
++
++function arrayIndex(token: string, length: number, allowEnd: boolean): number {
++  if (!/^(0|[1-9][0-9]*)$/.test(token)) throw new Error(`Invalid JSON Patch array index: ${token}`);
++  const index = Number(token);
++  if (!Number.isSafeInteger(index) || index > length || (!allowEnd && index === length)) {
++    throw new Error(`JSON Patch array index out of range: ${token}`);
++  }
++  return index;
++}
++
++function cloneJson(value: unknown): any {
++  if (value === null || typeof value === "string" || typeof value === "boolean") return value;
++  if (typeof value === "number" && Number.isFinite(value)) return value;
++  if (Array.isArray(value)) return value.map(cloneJson);
++  if (value !== null && typeof value === "object") {
++    const copy: Record<string, unknown> = {};
++    for (const key of Object.keys(value)) {
++      Object.defineProperty(copy, key, { value: cloneJson((value as Record<string, unknown>)[key]), enumerable: true, configurable: true, writable: true });
++    }
++    return copy;
++  }
++  throw new Error("Value is not valid JSON");
++}
++
++function jsonEqual(a: unknown, b: unknown): boolean {
++  if (a === b) return true;
++  if (typeof a !== typeof b || a === null || b === null || typeof a !== "object") return false;
++  if (Array.isArray(a) || Array.isArray(b)) {
++    return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((v, i) => jsonEqual(v, b[i]));
++  }
++  const ak = Object.keys(a as object), bk = Object.keys(b as object);
++  return ak.length === bk.length && ak.every((key) => Object.hasOwn(b, key) && jsonEqual((a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key]));
++}
++
+ function decodeToken(token: string): string {
+   if (/~(?![01])/.test(token)) {
+     throw new Error(`Invalid escape sequence in JSON Pointer: ${token}`);

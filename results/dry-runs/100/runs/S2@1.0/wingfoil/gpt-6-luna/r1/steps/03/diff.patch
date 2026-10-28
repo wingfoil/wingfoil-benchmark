@@ -1,0 +1,120 @@
+diff --git a/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-3-plan.md b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-3-plan.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..f453b19b821cb8dca22b4bf787dcb87a04ebd750
+--- /dev/null
++++ b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-3-plan.md
+@@ -0,0 +1,18 @@
++---
++id: sw-life-cycle-1-3-plan
++type: plan
++title: "Fix coupon cancellation and free shipping"
++status: active
++workflow: "sw-life-cycle"
++phase: "1-3"
++element: ""
++parent: ""
++format: 1
++---
++
++## Delivery record
++
++- Fixed cancellation to return a single-use coupon using the order ID expected by the coupon ledger. Added a regression test that cancels an order and reuses its welcome coupon on the corrected order.
++- Added a regression test for the exact €50.00 free-shipping threshold. The existing pricing implementation already applies the documented inclusive threshold.
++- Corrected the small-order test's stale expectation that shipping incurs VAT; shipping VAT remains zero under the documented rule.
++- Verification: `npm test` passes (16 tests).
+diff --git a/docs/memory/task/task-003-fix-coupon-cancellation-and-free-shipping.md b/docs/memory/task/task-003-fix-coupon-cancellation-and-free-shipping.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..40a1a15da9e6a0471911bd82fa5f054914aebd0a
+--- /dev/null
++++ b/docs/memory/task/task-003-fix-coupon-cancellation-and-free-shipping.md
+@@ -0,0 +1,19 @@
++---
++id: task-003-fix-coupon-cancellation-and-free-shipping
++type: task
++title: "Fix coupon cancellation and free shipping"
++status: approved
++format: 1
++---
++
++## Request
++
++Correct two order-service behaviors reported by a customer and support:
++
++- A single-use welcome coupon used on an order must be available again after that order is cancelled, so the customer can place a corrected order.
++- Goods totaling exactly €50.00 must qualify for free shipping.
++
++## Acceptance
++
++- Place an order with a single-use coupon, cancel it within the allowed window, and successfully place another order with the same coupon.
++- Goods at exactly 5,000 cents incur no shipping charge; orders below the threshold continue to pay the weight-based shipping price.
+diff --git a/src/orders.ts b/src/orders.ts
+index 0c0b1ae889c9df13dffa9de7ed1924a4e8b09afd..a029a93fd6f94a43d5ecd351af29cda4d205ab99 100644
+--- a/src/orders.ts
++++ b/src/orders.ts
+@@ -153,7 +153,7 @@ export class OrderService {
+       throw new OrderStateError(`order ${id} can no longer be cancelled`);
+     }
+     for (const line of order.lines) this.#inventory.release(line.sku, line.quantity, id);
+-    if (order.coupon !== undefined) this.#coupons.giveBack(order.coupon, order.customer);
++    if (order.coupon !== undefined) this.#coupons.giveBack(order.coupon, order.id);
+     const cancelled: Order = { ...order, status: 'cancelled', cancelledOn: date };
+     this.#orders.set(id, cancelled);
+     return cancelled;
+diff --git a/test/coupons.test.ts b/test/coupons.test.ts
+index 1fdc2519dc031050b1b5593605af611816478518..467bb0b3c45925f39522d43e3c0d067344cb4cdd 100644
+--- a/test/coupons.test.ts
++++ b/test/coupons.test.ts
+@@ -33,6 +33,15 @@ describe('coupons', () => {
+     assert.throws(() => orders.quote({ ...request, date: '2026-04-01' }), CouponError);
+   });
+ 
++  it('returns a single-use coupon when its order is cancelled', () => {
++    const { orders, coupons } = shop();
++    coupons.add({ code: 'WELCOME', kind: 'fixed', value: 100, validFrom: '2026-01-01', validUntil: '2026-12-31', singleUse: true });
++    const first = orders.place({ customer: 'c-1', date: '2026-05-05', lines: [{ sku: 'PEN-4', quantity: 1 }], coupon: 'WELCOME' });
++    orders.cancel(first.id, '2026-05-05');
++    const corrected = orders.place({ customer: 'c-1', date: '2026-05-05', lines: [{ sku: 'PEN-4', quantity: 1 }], coupon: 'WELCOME' });
++    assert.equal(corrected.totals.couponDiscountCents, 100);
++  });
++
+   it('lets a single-use coupon be used once', () => {
+     const { orders, coupons } = shop();
+     coupons.add({ code: 'ONCE', kind: 'fixed', value: 100, validFrom: '2026-01-01', validUntil: '2026-12-31', singleUse: true });
+diff --git a/test/orders.test.ts b/test/orders.test.ts
+index d07f06bd09b3489b674e3119a14ea7d2ced148a7..da220247141691c29a45f771abb4fc8df9801fb8 100644
+--- a/test/orders.test.ts
++++ b/test/orders.test.ts
+@@ -13,7 +13,7 @@ function shop() {
+ }
+ 
+ describe('orders', () => {
+-  it('prices a small order: goods, shipping by weight, VAT per line and on shipping', () => {
++  it('prices a small order: goods, shipping by weight and VAT per line', () => {
+     const { orders } = shop();
+     const order = orders.place({ customer: 'c-1', date: '2026-03-02', lines: [{ sku: 'MUG-01', quantity: 2 }, { sku: 'TEA-7', quantity: 2 }] });
+     assert.equal(order.id, 'ORD-0001');
+@@ -24,8 +24,8 @@ describe('orders', () => {
+       goodsCents: 3000,
+       shippingCents: 490,
+       vatCents: 440 + 100,
+-      shippingVatCents: 108,
+-      totalCents: 3000 + 490 + 540 + 108,
++      shippingVatCents: 0,
++      totalCents: 3000 + 490 + 540,
+     });
+   });
+ 
+@@ -36,6 +36,13 @@ describe('orders', () => {
+     assert.equal(order.totals.shippingCents, 0);
+   });
+ 
++  it('ships goods of exactly €50.00 for free', () => {
++    const { orders } = shop();
++    const order = orders.place({ customer: 'c-1', date: '2026-03-02', lines: [{ sku: 'MUG-01', quantity: 5 }] });
++    assert.equal(order.totals.goodsCents, 5000);
++    assert.equal(order.totals.shippingCents, 0);
++  });
++
+   it('gives 10% off a line of 10 units or more', () => {
+     const { orders } = shop();
+     const order = orders.place({ customer: 'c-1', date: '2026-03-02', lines: [{ sku: 'TEA-7', quantity: 10 }] });

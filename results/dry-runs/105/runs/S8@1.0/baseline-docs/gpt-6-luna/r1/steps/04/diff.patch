@@ -1,0 +1,95 @@
+diff --git a/src/index.ts b/src/index.ts
+index 0c0147055375357d6013c9e29b57b0fcc73c2a6b..572b3c315fc474ce6240fcb60eda4d9262b99a87 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -1,5 +1,6 @@
+ import { createTaskList } from './domain/list.ts';
+ import type { TaskList } from './domain/list.ts';
++import type { Priority } from './domain/task.ts';
+ 
+ export type { TaskFilter, TaskList } from './domain/list.ts';
+ export type { Result, TodoError, TodoErrorCode } from './domain/result.ts';
+@@ -16,3 +17,38 @@ export type { NewTask, Priority, Status, Task } from './domain/task.ts';
+ export function createTodoList(timestamp: () => string = () => new Date().toISOString()): TaskList {
+   return createTaskList(timestamp);
+ }
++
++/**
++ * Adds tasks from semicolon-separated lines, skipping blank lines and reporting rejected lines.
++ *
++ * @param list - the task list to add tasks to
++ * @param text - one `title;priority;tags` record per line; priority may be empty and tags are space-separated
++ */
++export function importTasks(
++  list: TaskList,
++  text: string,
++): { readonly imported: number; readonly rejected: readonly { readonly line: number; readonly reason: string }[] } {
++  let imported = 0;
++  const rejected: { line: number; reason: string }[] = [];
++
++  text.split(/\r?\n/).forEach((rawLine, index) => {
++    if (rawLine.trim().length === 0) return;
++    const fields = rawLine.split(';');
++    if (fields.length !== 3) {
++      rejected.push({ line: index + 1, reason: 'line must contain title, priority and tags separated by semicolons' });
++      return;
++    }
++
++    const [title, rawPriority, rawTags] = fields;
++    const priority = rawPriority.trim();
++    const result = list.add({
++      title,
++      ...(priority === '' ? {} : { priority: priority as Priority }),
++      tags: rawTags.trim() === '' ? [] : rawTags.trim().split(/\s+/),
++    });
++    if (result.ok) imported += 1;
++    else rejected.push({ line: index + 1, reason: result.error.message });
++  });
++
++  return { imported, rejected };
++}
+diff --git a/test/list.test.ts b/test/list.test.ts
+index a442f244b25f01dd22c1a48a39f91364be6bad34..3785988376fa9882f58f26a33d736f4a127d26fe 100644
+--- a/test/list.test.ts
++++ b/test/list.test.ts
+@@ -1,7 +1,7 @@
+ import assert from 'node:assert/strict';
+ import { describe, it } from 'node:test';
+ 
+-import { createTodoList, summarize } from '../src/index.ts';
++import { createTodoList, importTasks, summarize } from '../src/index.ts';
+ 
+ function valueOf<T>(result: { ok: true; value: T } | { ok: false; error: unknown }): T {
+   if (!result.ok) assert.fail(JSON.stringify(result.error));
+@@ -9,6 +9,31 @@ function valueOf<T>(result: { ok: true; value: T } | { ok: false; error: unknown
+ }
+ 
+ describe('task list', () => {
++  it('imports valid lines, defaults an empty priority, and skips blank lines', () => {
++    const list = createTodoList(() => '2026-01-01T00:00:00.000Z');
++    const result = importTasks(list, 'Renew the insurance;high;admin money\n\nBuy milk;;home');
++    assert.deepEqual(result, { imported: 2, rejected: [] });
++    assert.deepEqual(list.list().map(({ title, priority, tags }) => ({ title, priority, tags })), [
++      { title: 'Renew the insurance', priority: 'high', tags: ['admin', 'money'] },
++      { title: 'Buy milk', priority: 'normal', tags: ['home'] },
++    ]);
++  });
++
++  it('reports invalid and duplicate lines with their original line numbers', () => {
++    const list = createTodoList();
++    list.add({ title: 'Existing' });
++    const result = importTasks(list, `Existing;;\nBad;urgent;home\n${'x'.repeat(121)};low;\nGood;low;`);
++    assert.deepEqual(result, {
++      imported: 1,
++      rejected: [
++        { line: 1, reason: 'there is already a task "Existing"' },
++        { line: 2, reason: 'priority must be low, normal or high' },
++        { line: 3, reason: 'title must be 120 characters or fewer' },
++      ],
++    });
++    assert.deepEqual(list.list().map((task) => task.title).sort(), ['Existing', 'Good']);
++  });
++
+   it('adds an open task with a normal priority by default', () => {
+     const list = createTodoList(() => '2026-01-01T00:00:00.000Z');
+     const task = valueOf(list.add({ title: '  Buy milk ' }));

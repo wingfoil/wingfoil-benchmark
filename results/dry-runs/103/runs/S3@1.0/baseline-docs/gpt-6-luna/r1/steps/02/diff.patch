@@ -1,0 +1,72 @@
+diff --git a/README.md b/README.md
+index b682d6fea5ec1fd2f4a436493d15f5683206b965..78c89b9e89f5e8b107e54f63839ad151fc8bc51d 100644
+--- a/README.md
++++ b/README.md
+@@ -13,3 +13,8 @@ Times must be UTC ISO-8601 timestamps at midnight; `end` is the midnight startin
+ last rental day. Bookings for the same item cannot overlap. Quotes and bookings reject unknown items and
+ invalid periods; bookings also reject periods already reserved. Booking IDs are sequential within each
+ service instance. All state is kept in memory and is lost when the service instance is discarded.
++
++`availability({ start, end, kind? })` returns the sorted equipment IDs that are free for the entire
++whole-day period. When `kind` is supplied, only equipment of that kind (`'board'` or `'sail'`) is
++considered; otherwise, equipment of every kind is considered. The period uses the same UTC midnight
++timestamps and exclusive `end` as quotes and bookings, and invalid periods are rejected.
+diff --git a/src/index.ts b/src/index.ts
+index 3e1c77717a6cdb9fe1d5bcd9610955d8189b8dc5..57e9e0996dba29ebaddbb797bb84cd8d7cc4dfa4 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -12,6 +12,13 @@ export interface RentalRequest {
+   end: string;
+ }
+ 
++/** A whole-day period to check for available equipment, optionally limited to one kind. */
++export interface RentalAvailabilityQuery {
++  start: string;
++  end: string;
++  kind?: RentalEquipment['kind'];
++}
++
+ /** The cost returned for a valid rental request. */
+ export interface RentalQuote extends RentalRequest {
+   total: number;
+@@ -27,6 +34,8 @@ export interface RentalService {
+   addEquipment(item: RentalEquipment): void;
+   quote(request: RentalRequest): RentalQuote;
+   book(request: RentalRequest): RentalBooking;
++  /** Returns sorted IDs of equipment free for the entire valid period. */
++  availability(query: RentalAvailabilityQuery): string[];
+ }
+ 
+ function utcMidnight(value: string): number {
+@@ -66,6 +75,23 @@ export function createRentalService(): RentalService {
+     return { itemId: request.itemId, start: request.start, end: request.end, total };
+   }
+ 
++  function availability(query: RentalAvailabilityQuery): string[] {
++    if (!query) throw new Error('A valid availability query is required.');
++    const start = utcMidnight(query.start);
++    const end = utcMidnight(query.end);
++    if (end <= start) throw new Error('Rental end must be after its start.');
++    if (query.kind !== undefined && query.kind !== 'board' && query.kind !== 'sail') {
++      throw new Error('Equipment kind must be board or sail.');
++    }
++
++    return [...equipment.values()]
++      .filter((item) => query.kind === undefined || item.kind === query.kind)
++      .filter((item) => !bookings.some((booking) => booking.itemId === item.id &&
++        start < Date.parse(booking.end) && Date.parse(booking.start) < end))
++      .map((item) => item.id)
++      .sort();
++  }
++
+   return {
+     addEquipment(item: RentalEquipment): void {
+       if (!item || typeof item.id !== 'string' || item.id.length === 0) {
+@@ -82,6 +108,7 @@ export function createRentalService(): RentalService {
+     },
+ 
+     quote,
++    availability,
+ 
+     book(request: RentalRequest): RentalBooking {
+       const priced = quote(request);
