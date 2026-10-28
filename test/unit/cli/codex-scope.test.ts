@@ -133,7 +133,7 @@ describe("the Codex credential's scope (dl-024, widened by dl-025, dl-027 and dl
       }),
     ).toEqual([{ path: 'models', message: `a codex campaign of ${HVD} runs gpt-5.6-terra only (dl-025)` }]);
     expect(
-      issuesOf({ agent: 'codex', dryRunArm: 'wingfoil', profile: TERRA_PROFILE, model: 'gpt-6.1-terra' }),
+      issuesOf({ agent: 'codex', dryRunArm: 'wingfoil', profile: TERRA_PROFILE, model: 'gpt-6-luna' }),
     ).toEqual([
       { path: 'model', message: `a codex dry run of ${TERRA_PROFILE} runs gpt-5.6-terra only (dl-025)` },
     ]);

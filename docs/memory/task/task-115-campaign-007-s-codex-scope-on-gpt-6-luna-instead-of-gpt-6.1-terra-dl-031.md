@@ -56,3 +56,14 @@ past: task-114 approved on 2026-10-28). **It starts only once dl-031 is approved
   no arm changes, so no digest moves. Requirements 1.42: REQ-RUN-15's amendment and `### Amendment 1.42`.
 - `src/agents/openai-prices.ts` keeps `gpt-6.1-terra`'s price: it is a catalogue, not the scope.
 - **Checks:** prettier, `tsc --noEmit`, eslint clean; `scripts/pre-review.sh main` green.
+
+### Review
+
+- **Round 1 (2026-10-28, dl-020):** a fresh read-only agent, briefed to write nothing in either checkout (scratch in a
+  `mktemp -d` under `/tmp/claude-1000/` only); both checkouts' HEAD and reflog the same after as before (main
+  `7ecd6743`, the branch `404983e6`). It ran the two test files (23/23). **No blocker, no should-fix; three nits:**
+  1. Amendment 1.42's dl-031 link line is over 120 characters: one unbreakable link, as 1.41's. Kept.
+  2. The dl-025 profile probe in "keeps gpt-6-luna to campaign-007's file and profile…" still used `gpt-6.1-terra`,
+     out of step with the test's name. **Fixed:** it probes `gpt-6-luna`.
+  3. 1.42's "their refusals name dl-027 and dl-031" leaves the date's refusal (dl-024) to 1.41's sentence. Kept.
+  A nit-only round closes the review.
