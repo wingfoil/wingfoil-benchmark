@@ -155,6 +155,10 @@ control in particular, therefore leans towards the arm and does not stand as mea
 - **The approver's decision in chat (2026-10-27): an erratum and a rerun.** The erratum is the catalogue's first note
   on the execution's page (site republished); the wingfoil arm is rerun beside the baseline once task-111 has fixed
   the resume, in the week from about 2026-11-02.
+- **No rerun (the approver in chat, 2026-10-28):** the campaigns of v0.3 are preliminary, speed and correctness first;
+  the erratum's note stands for the difference, and campaign-007, which bridges this execution on Terra, carries the
+  same note on its comparison
+  ([dl-031](../decision-log/dl-031-gpt-6-luna-replaces-gpt-6.1-terra-as-campaign-007-s-model-slice-the-weak-model-on-codex-before-2026-11-13.md)).
 
 ## Findings
 
