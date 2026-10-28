@@ -113,13 +113,14 @@ describe('the step-A wingfoil manual (dl-021 step A, task-114)', () => {
     expect(own).not.toContain('Do you approve');
   });
 
-  it("runs every command next prints but memory approve, which only the approver's reply allows (review round 1)", () => {
-    expect(wingfoilOwn()).toMatch(
-      /run the commands `workflow next` prints, except `wingfoil memory approve`, which only the approver's reply allows/,
+  it("runs every command next prints but memory approve, which only the approver's reply allows", () => {
+    expect(wingfoilOwn()).toContain(
+      'run the commands `workflow next` prints, except `wingfoil memory approve`,',
     );
+    expect(wingfoilOwn()).toContain("which only the approver's reply allows");
   });
 
-  it('approves each document it asked about, and says an instance is open only at the first request (review round 1)', () => {
+  it('approves each document it asked about, and opens an instance only for the first request', () => {
     const own = wingfoilOwn();
     expect(own).toContain('for each document you asked about');
     expect(own).not.toContain('is already open, at its delivery');

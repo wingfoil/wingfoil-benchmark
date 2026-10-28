@@ -151,7 +151,7 @@ describe('loadArm (REQ-FMT-05)', () => {
     ]);
   });
 
-  it('refuses the choice on a docs control whose generator has none, one not generated from wingfoil (review round 1)', () => {
+  it('refuses the choice on a docs control not generated from wingfoil, whose generator has none', () => {
     const root = tempDir('bench-arm-');
     writeArmAt(
       root,

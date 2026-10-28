@@ -18,8 +18,8 @@ interface Declared {
 /**
  * Load `<armsRoot>/<name>/arm.yaml` (REQ-ARC-03, REQ-FMT-05) and return it with absolute paths.
  * Issues come in a stable order: schema issues; then the name against its directory; then a choice of directives on
- * an arm that is not a docs control; then every
- * declared path, in declaration order. No declared path may be a symbolic link, nor hold one: the
+ * an arm that is not a docs control, or on one not generated from wingfoil; then every declared path, in declaration
+ * order. No declared path may be a symbolic link, nor hold one: the
  * environment is copied into the workspace and the directory into the container, and nothing there
  * may point outside them (the seed's rule, task-003).
  */

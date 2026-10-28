@@ -235,3 +235,13 @@ Under dl-020; `scripts/pre-review.sh main` green before each round.
   delivery; no MCP call, no forbidden verb. `dry-runs/97`, baseline-docs: 165/165, hold-out 47/48, no intervention,
   0.8691 USD; its `PROJECT_RULES.md` carries round 1's sentence. Secret scan clean. **Ten real dry runs in all:
   10.2719 USD API-equivalent** (the ledger's ten lines summed), 0 € billed, under the consent's 20 €.
+- **Round 2** (an independent read-only agent, the fix's diff only, `13698d65..a513b054` and main's `b414a460`,
+  `14af9295`; both checkouts' HEAD unchanged): every round-1 finding fixed as stated, the red-first tests failing on
+  the old source, the digests, dry-runs/96 and 97's figures and per-step claims and the ten lines' sum re-checked by
+  its own scripts. No blocker, no should-fix; three nits, fixed, so the review closes:
+  - `load.ts`'s JSDoc lists the wingfoil-only refusal in its order of issues;
+  - three new test titles within 120 columns;
+  - **one baseline-docs digest, two renderings:** `64e37c838830` rendered the earlier Rules sentence in `dry-runs/89`
+    and 91 and renders round 1's since `b246c8b4`: the sentence is generator code, outside the digest (REQ-FMT-13), so
+    89 and 91 no longer re-render as they ran, as REQ-RUN-11 1.41's "renders as it ran" would have it; their
+    `generated_sha256` tells them apart from 97's. campaign-007's estimate reads the latest dry run, 97.
