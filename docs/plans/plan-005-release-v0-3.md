@@ -107,7 +107,11 @@ logs, transcripts or results, beyond dl-024's bounded exception; one worktree pe
    [dl-027](../memory/decision-log/dl-027-step-a-brought-ahead-with-a-codex-campaign-of-the-step-a-arm-before-2026-11-13.md)** as soon as WingFoil 0.3.1 is tagged: its
    admission, the step-A spike under both agents (Claude Code in `-p`, Codex in `exec`), the step-A arm (the wingfoil
    arm's new version, baseline-docs with every role's directives, the agent-specific files explicit, the Codex scope
-   widened), then campaign-007 on Codex and Terra before 2026-11-13 → task-103 (vision and experiment design) → the
+   widened; task-114, done 2026-10-28), then campaign-007 on Codex and Terra before 2026-11-13, its model slice
+   `gpt-6-luna` on every scenario × 3 ([dl-031](../memory/decision-log/dl-031-gpt-6-luna-replaces-gpt-6.1-terra-as-campaign-007-s-model-slice-the-weak-model-on-codex-before-2026-11-13.md),
+   replacing dl-028's `gpt-6.1-terra`; its scope task first), campaign-006's wingfoil rerun dropped for a note (the
+   approver, 2026-10-28: the campaigns are preliminary, speed and correctness first) → task-103 (vision and experiment
+   design) → the
    managing pin and the first `wingfoil-sync`. **dl-027's cuts:** 0.3.1 not tagged and admitted by 2026-11-02, a
    spike showing Codex cannot read the session Resource or drive the cycle, or the step-A arm not approved by
    2026-11-08 → no Codex step-A campaign, and step A goes on under Claude Code in this position; campaign-007 short
@@ -115,11 +119,17 @@ logs, transcripts or results, beyond dl-024's bounded exception; one worktree pe
 2. W16: its requirements and acceptance first; then bug-026, bug-028 with bug-029 and bug-030 (bug-027 in W15's
    task-106), bug-031 with bug-032, bug-025 with S1 1.1, the M-K1 annotation; v0.2's campaigns re-scored.
 3. W17: the spike on 0.3.1 as soon as it is tagged and admitted; then the arm's rewrite — **both done in W15's
-   order by dl-027**; W17 then holds what step A leaves (its reading in calibration, the method page). If 0.3.1 is
+   order by dl-027**; W17 then holds what step A leaves (its reading in calibration, the method page) and, after
+   2026-11-13, a Claude Code campaign of the step-A arms on Haiku 5.5 and Sonnet 5.5, every scenario, three repetitions
+   at least (dl-031: the weak models' question on Claude). If 0.3.1 is
    late, W18's configuration work for speckit and openspec may start first.
 4. W18: bug-034 first, then the configuring agent and the configured arms.
 5. W19: the review loop.
 6. Last, if time allows: bug-033, the test-gap and cleanup tasks.
+7. **For v0.4's planning** (dl-031, the approver's aim of 2026-10-28: WingFoil's benefit to weak models, and to a
+   project's governance with strong ones): the gates-and-roles scenario (dl-029) and S4–S7 first, the decision on
+   repetitions before any campaign is read as more than preliminary; local models later (an adapter and an
+   eligibility assessment).
 
 ## Handoff
 
