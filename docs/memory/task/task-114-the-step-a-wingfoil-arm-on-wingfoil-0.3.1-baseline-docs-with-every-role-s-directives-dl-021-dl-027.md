@@ -174,3 +174,23 @@ real-agent session (S2, S3, S8 dry runs, campaign-007's runs, `gpt-6.1-terra`) i
   session asked; one reply, and it approved the four tasks one by one and finalized one delivery. Step 5 opened a new
   instance and passed its gate. Every request had its task, and every task was approved, but three gates were
   answered late, in one batch.
+- **The manual corrected twice** (the approver's choice in chat, 2026-10-28, "2 correggi il manuale", consenting to
+  the two wingfoil dry runs again; then "sì, correggi e lancia i 2 dry run" for two more):
+  - `13f44241` asked, at a gate, for "Do you approve <id>?" (digest `9af52370f697`). **Wrong:** approver policy v2
+    reads it as a question. `dry-runs/92` (Claude Code, 164/165, 45/48, 10 interventions, 0.7782 USD) got the
+    question's reply at every step, refused to approve on it at steps 3 and 4 (cap reached) and approved tasks 003–005
+    at step 5; `dry-runs/93` (Codex, 165/165, 48/48, 5 interventions, 1.6682 USD) **approved its own task at every
+    step on the question's reply** ("Make the most reasonable choice, record it, and proceed"). The phrase had not been
+    run through the classifier before the dry runs.
+  - `8c2dae54` (digest `dd43760095bd`, final): the gate's request is "Please approve <id>." for each document `next`
+    lists, which a test runs through `classifyV2` (`approval`); and any reply but "Approved. Proceed." is no approval:
+    the agent says so and stops.
+  - `dry-runs/94` (Claude Code: 165/165, hold-out 48/48, 5 interventions, 0.7636 USD) and `dry-runs/95` (Codex:
+    164/165, hold-out 45/48, 5 interventions, 1.4366 USD): under both agents each of the five requests runs in its own
+    instance (the setup's, then four opened), adds and submits its task, gets "Approved. Proceed." at its review gate,
+    approves in the turn after the reply (never before) and records its delivery; no MCP call, no forbidden verb.
+    Committed on main (`08fbeb76`); secret scan clean.
+- **What campaign-007 reads:** wingfoil `dd43760095bd` (`dry-runs/95`), baseline-docs `64e37c838830` (`dry-runs/91`),
+  in `campaigns/codex-terra-step-a.dry-run.yaml`. `dry-runs/88`, 90, 92 and 93 ran earlier digests: evidence of the
+  corrections, not campaign-007's dry runs. Eight real dry runs in all: 7.80 USD API-equivalent, 0 € billed, under the
+  consent's 20 €.
