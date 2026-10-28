@@ -101,6 +101,15 @@ describe('the step-A wingfoil manual (dl-021 step A, task-114)', () => {
     expect(wingfoilOwn()).toMatch(/At a gate, finish the work first/);
   });
 
+  it('ends the session at a gate on a direct question to the approver, naming each document (dry-runs/88)', () => {
+    // Claude Code stated the gate ("waiting on approval of task-001 …") and stopped; approver policy v2 reads a
+    // request only, so the gate went unanswered for three steps (task-114).
+    const own = wingfoilOwn();
+    expect(own).toContain('end your message with a direct question to the approver');
+    expect(own).toContain('"Do you approve <id>?"');
+    expect(own).toMatch(/A statement that the work waits for an approval is not a question/);
+  });
+
   it('gives every request its task, without --workflow when the step does not ask for one (decision 1, F-043)', () => {
     const own = wingfoilOwn();
     expect(own).toContain('**Every request has its task.**');
