@@ -135,7 +135,7 @@ real-agent session (S2, S3, S8 dry runs, campaign-007's runs, `gpt-6.1-terra`) i
     `12ed3a10`'s message dates that choice 2026-10-28; it was 2026-10-27.
   - The manual's numbered rules became **bullets** (`6c4719c0`): the site's Markdown renderer has no ordered list and
     loops on a numbered item holding a nested list; the site's unit tests ran out of heap on the first version.
-    Filed as **bug-037** (`d81c5431`, the approver's request in chat, 2026-10-27), pending.
+    Filed as **bug-037** (`d81c5431`, the approver's request in chat, 2026-10-28), pending.
   - **Context through the CLI** (decision 2) keeps the approved decisions' search the v0.2 manual had, so that the
     wingfoil agent can read what baseline-docs carries (T3).
 - **What else changed:** v0.2's reference campaign now reads its wingfoil arm from history, as its bridge does (its
