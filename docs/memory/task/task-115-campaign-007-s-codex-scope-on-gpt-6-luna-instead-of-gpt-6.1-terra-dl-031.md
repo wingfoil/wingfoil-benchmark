@@ -2,7 +2,7 @@
 id: task-115-campaign-007-s-codex-scope-on-gpt-6-luna-instead-of-gpt-6.1-terra-dl-031
 type: task
 title: "campaign-007's Codex scope on gpt-6-luna instead of gpt-6.1-terra (dl-031)"
-status: draft
+status: pending
 release: v0.3
 wave: W15
 features: []
