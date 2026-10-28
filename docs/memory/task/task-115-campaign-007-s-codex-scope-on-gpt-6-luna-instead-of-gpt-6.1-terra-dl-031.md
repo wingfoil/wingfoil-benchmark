@@ -44,3 +44,15 @@ past: task-114 approved on 2026-10-28). **It starts only once dl-031 is approved
 - **Not in this task:** campaign-007's element, its campaign file and its estimate (campaign-cycle), Luna's dry runs.
 
 ## Execution notes
+
+- **2026-10-28, in-progress.** Branch `task/task-115-…` in the worktree `../WingFoil2-Benchmark-wt/task-115`, `npm ci`.
+- **Red first** (`155cdfab`): `test/unit/cli/codex-scope.test.ts` and `test/unit/campaign/codex-terra.test.ts` moved to
+  `gpt-6-luna` and dl-031, with a new case refusing `gpt-6.1-terra` for campaign-007's file and its profile (each arm),
+  and a new one pinning the profile's effort map to exactly `gpt-5.6-terra` and `gpt-6-luna` at `medium`; 11 of 23
+  failed against `main`.
+- **Code** (`src/cli/codex-scope.ts`): the step-A entry's `models` are `gpt-5.6-terra, gpt-6-luna`, its `decision`
+  `dl-027, dl-031`; the refusals of a preset and of a profile name `dl-024, dl-025, dl-027, dl-031`, derived from the
+  entries. No other entry changed. `campaigns/codex-terra-step-a.dry-run.yaml`: the effort map and the header comment;
+  no arm changes, so no digest moves. Requirements 1.42: REQ-RUN-15's amendment and `### Amendment 1.42`.
+- `src/agents/openai-prices.ts` keeps `gpt-6.1-terra`'s price: it is a catalogue, not the scope.
+- **Checks:** prettier, `tsc --noEmit`, eslint clean; `scripts/pre-review.sh main` green.
