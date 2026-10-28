@@ -52,8 +52,8 @@ Claude subscription, with no deadline. The weekly Codex quota had 88 % left on 2
 5. **The cut order of campaign-007:** Luna's S2, S3, S8 repetitions 2 and 3 first, then dl-027's order of the default
    model's runs (S3, then S1 × 3, then S2, then S8); Luna's first repetitions last, being the aim's.
 
-**The quota:** Luna's 44 runs (36 and 8 dry runs) at about a hundredth of Terra's cost a run; inside this week with dl-027's. **Spending: 0 €
-billed** (ChatGPT Plus), API-equivalent recorded in the v0.3 ledger.
+**The quota:** Luna's 44 runs (36, and 8 dry runs) at about a hundredth of Terra's cost a run; inside this week
+with dl-027's. **Spending: 0 € billed** (ChatGPT Plus), API-equivalent recorded in the v0.3 ledger.
 
 ## Consequences
 
