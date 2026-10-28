@@ -1,0 +1,159 @@
+diff --git a/README.md b/README.md
+index 801372836535ff94463e722d8771a2a2fd83f938..9205263d2e1dd1155c1ad653cc48aa9af699f222 100644
+--- a/README.md
++++ b/README.md
+@@ -14,5 +14,6 @@ pointer is malformed or does not refer to a value, including when an array index
+ 
+ `applyPatch(document, patch)` applies an [RFC 6902 JSON Patch](https://www.rfc-editor.org/rfc/rfc6902)
+ array and returns a new JSON document. It supports `add`, `remove`, `replace`, `move`, `copy`, and `test`;
+-it throws when the patch is invalid or an operation cannot be applied. Neither the document nor the patch
+-is mutated.
++it throws when the patch is invalid or an operation cannot be applied. Operations are evaluated in order,
++and evaluation stops at the first error. Neither the document nor the patch is mutated, so a failed patch
++does not expose a partially applied result.
+diff --git a/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-3-plan.md b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-3-plan.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..1a48a4cf402fce81f8ed897b7bb0b7f85e1bb5e0
+--- /dev/null
++++ b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-3-plan.md
+@@ -0,0 +1,17 @@
++---
++id: sw-life-cycle-1-3-plan
++type: plan
++title: "RFC 6902 patch conformance"
++status: active
++workflow: "sw-life-cycle"
++phase: "1-3"
++element: ""
++parent: ""
++format: 1
++---
++
++<!-- plan body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
+diff --git a/docs/memory/task/task-003-rfc-6902-patch-conformance.md b/docs/memory/task/task-003-rfc-6902-patch-conformance.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..f458f924d776f04869fc5187b7eed514b5bf539d
+--- /dev/null
++++ b/docs/memory/task/task-003-rfc-6902-patch-conformance.md
+@@ -0,0 +1,11 @@
++---
++id: task-003-rfc-6902-patch-conformance
++type: task
++title: "RFC 6902 patch conformance"
++status: approved
++format: 1
++---
++
++Review and correct `applyPatch` so it implements RFC 6902 operation validation, JSON Pointer target
++handling, sequential evaluation, and error termination. Preserve the public guarantee that neither
++input is mutated, document the behavior, and cover valid operations plus malformed and failing patches.
+diff --git a/src/index.ts b/src/index.ts
+index 9331a6335f32c25ea70fc84ec51ce11f1fcb8d77..450b149ef8b0b32ea2b6a841fef905b9c78d4291 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -46,7 +46,8 @@ type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string
+  * @param document The JSON document to transform.
+  * @param patch An array of JSON Patch operation objects.
+  * @returns A new JSON document with every operation applied in order.
+- * @throws {Error} If the document or patch is invalid, or an operation cannot be applied.
++ * @throws {Error} If the document or patch is invalid, or an operation cannot be applied. On error,
++ * neither input is mutated and no partially applied document is returned.
+  */
+ export function applyPatch(document: unknown, patch: unknown): unknown {
+   if (!isJsonValue(document) || !Array.isArray(patch) || !isJsonValue(patch)) {
+@@ -248,7 +249,17 @@ function isJsonValue(value: unknown, seen = new Set<object>()): value is JsonVal
+   }
+   if (Array.isArray(value)) {
+     seen.add(value);
+-    const valid = value.every((item) => isJsonValue(item, seen));
++    const keys = Reflect.ownKeys(value);
++    const valid = keys.length === value.length + 1 && keys.every((key) => {
++      if (key === "length") {
++        return true;
++      }
++      if (typeof key !== "string" || !isArrayIndex(key) || Number(key) >= value.length) {
++        return false;
++      }
++      const descriptor = Object.getOwnPropertyDescriptor(value, key);
++      return descriptor?.enumerable === true && "value" in descriptor && isJsonValue(descriptor.value, seen);
++    });
+     seen.delete(value);
+     return valid;
+   }
+@@ -256,7 +267,13 @@ function isJsonValue(value: unknown, seen = new Set<object>()): value is JsonVal
+     return false;
+   }
+   seen.add(value);
+-  const valid = Object.keys(value).every((key) => isJsonValue((value as Record<string, unknown>)[key], seen));
++  const valid = Reflect.ownKeys(value).every((key) => {
++    if (typeof key !== "string") {
++      return false;
++    }
++    const descriptor = Object.getOwnPropertyDescriptor(value, key);
++    return descriptor?.enumerable === true && "value" in descriptor && isJsonValue(descriptor.value, seen);
++  });
+   seen.delete(value);
+   return valid;
+ }
+@@ -268,6 +285,9 @@ function jsonEqual(left: JsonValue, right: JsonValue): boolean {
+   if (typeof left !== typeof right || left === null || right === null) {
+     return false;
+   }
++  if (typeof left !== "object") {
++    return false;
++  }
+   if (Array.isArray(left) || Array.isArray(right)) {
+     return Array.isArray(left) && Array.isArray(right) && left.length === right.length &&
+       left.every((value, index) => jsonEqual(value, right[index]));
+diff --git a/test/index.test.mjs b/test/index.test.mjs
+index 5aab6106cb947dcc97ce322f6548429865c57bf7..09be326ef3ce7998efee9bf1cf49a6ddde603716 100644
+--- a/test/index.test.mjs
++++ b/test/index.test.mjs
+@@ -96,3 +96,43 @@ test("rejects invalid patches and operations that cannot be applied", () => {
+     assert.throws(() => applyPatch({ a: { child: 1 }, list: [] }, patch));
+   }
+ });
++
++test("rejects JavaScript values that cannot represent JSON", () => {
++  const sparseDocument = [];
++  sparseDocument.length = 1;
++  const sparseValue = [];
++  sparseValue.length = 1;
++  const hiddenOperation = { path: "/value", value: 2 };
++  Object.defineProperty(hiddenOperation, "op", { value: "replace" });
++
++  for (const [document, patch] of [
++    [sparseDocument, []],
++    [{ values: [] }, [{ op: "add", path: "/values/-", value: sparseValue }]],
++    [{ value: 1 }, [{ op: "replace", path: "/value", value: Number.NaN }]],
++    [{ value: 1 }, [hiddenOperation]],
++  ]) {
++    assert.throws(() => applyPatch(document, patch));
++  }
++});
++
++test("terminates a failed patch without mutating its input document", () => {
++  const original = { value: 1 };
++
++  assert.throws(() => applyPatch(original, [
++    { op: "replace", path: "/value", value: 2 },
++    { op: "test", path: "/value", value: 3 },
++    { op: "replace", path: "/value", value: 4 },
++  ]));
++
++  assert.deepEqual(original, { value: 1 });
++});
++
++test("compares JSON primitive values by value and type", () => {
++  for (const value of [2, true, false, "two"]) {
++    assert.throws(() => applyPatch({ value }, [{ op: "test", path: "/value", value: null }]));
++  }
++
++  assert.throws(() => applyPatch({ value: true }, [{ op: "test", path: "/value", value: false }]));
++  assert.throws(() => applyPatch({ value: 2 }, [{ op: "test", path: "/value", value: 3 }]));
++  assert.throws(() => applyPatch({ value: "two" }, [{ op: "test", path: "/value", value: "one" }]));
++});

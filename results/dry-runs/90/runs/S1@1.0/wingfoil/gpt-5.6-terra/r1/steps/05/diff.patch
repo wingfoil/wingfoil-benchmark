@@ -1,0 +1,292 @@
+diff --git a/README.md b/README.md
+index 5209ae78de96a54a8c5294b9703afefedf9f8e68..5cf8eed0dfcc24c073108841b9c2bfdc105283f7 100644
+--- a/README.md
++++ b/README.md
+@@ -16,6 +16,10 @@ pointer, and throws when the pointer is malformed or has no matching value.
+ array using the standard `add`, `remove`, `replace`, `move`, `copy`, and `test` operations. It returns
+ a new JSON value without mutating the document or patch, and throws when an operation or patch is invalid.
+ 
++`createPatch(from, to)` produces an RFC 6902 JSON Patch that changes `from` into `to`. It emits
++member-level and array edit operations where possible, returns an empty patch for equal documents, and
++does not mutate either input.
++
+ ## JSON Merge Patch
+ 
+ `applyMergePatch(target, patch)` applies an [RFC 7386 JSON Merge Patch](https://www.rfc-editor.org/rfc/rfc7386)
+diff --git a/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-5-plan.md b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-5-plan.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..1c555e11e4cabb3defd254ebbb8433a9af87ad3b
+--- /dev/null
++++ b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-5-plan.md
+@@ -0,0 +1,17 @@
++---
++id: sw-life-cycle-1-5-plan
++type: plan
++title: "Create JSON Patch"
++status: active
++workflow: "sw-life-cycle"
++phase: "1-5"
++element: ""
++parent: ""
++format: 1
++---
++
++<!-- plan body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
+diff --git a/docs/memory/task/task-005-create-json-patch.md b/docs/memory/task/task-005-create-json-patch.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..b4701bb7248d047601476f381fa80b5d7ef4dfdc
+--- /dev/null
++++ b/docs/memory/task/task-005-create-json-patch.md
+@@ -0,0 +1,14 @@
++---
++id: task-005-create-json-patch
++type: task
++title: "Create JSON Patch"
++status: approved
++format: 1
++---
++
++Implement RFC 6902 JSON Patch generation as `createPatch(from, to)` exported by `src/index.ts`.
++
++The function must accept JSON values, return a deterministic patch which `applyPatch` transforms from
++`from` into `to`, avoid mutating either input, and emit granular operations for local object and array
++changes rather than replacing an unchanged document wholesale. Document the public API and cover the
++behaviour with deterministic automated tests.
+diff --git a/src/index.ts b/src/index.ts
+index e9bb0c4f13f153e66160f8e7923bf26ebae1c7c8..68c4bacd2b09045c7c45f61993251b09fb27cbc4 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -97,6 +97,150 @@ export function applyPatch(document: unknown, patch: unknown): unknown {
+   return result;
+ }
+ 
++/**
++ * Creates an RFC 6902 JSON Patch that transforms one JSON document into another.
++ *
++ * The generated patch uses member-level operations for objects and edit operations for arrays so
++ * unchanged portions of a document are not included in the patch. Neither input is modified.
++ *
++ * @param from The JSON document to transform.
++ * @param to The desired JSON document.
++ * @returns A JSON Patch array which transforms `from` into `to`.
++ * @throws {TypeError} If either input is not a JSON value.
++ */
++export function createPatch(from: unknown, to: unknown): JsonObject[] {
++  if (!isJsonValue(from) || !isJsonValue(to)) {
++    throw new TypeError("JSON Patch source and target must be JSON values.");
++  }
++
++  const patch: JsonObject[] = [];
++  createPatchAt(from, to, [], patch);
++  return patch;
++}
++
++function createPatchAt(from: JsonValue, to: JsonValue, path: string[], patch: JsonObject[]): void {
++  if (jsonEqual(from, to)) {
++    return;
++  }
++
++  if (isJsonObject(from) && isJsonObject(to)) {
++    const fromKeys = Object.keys(from).sort();
++    const toKeys = Object.keys(to).sort();
++
++    for (const key of fromKeys) {
++      if (!hasOwn(to, key)) {
++        patch.push({ op: "remove", path: pointer(path, key) });
++      }
++    }
++    for (const key of fromKeys) {
++      if (hasOwn(to, key)) {
++        createPatchAt(from[key] as JsonValue, to[key] as JsonValue, [...path, key], patch);
++      }
++    }
++    for (const key of toKeys) {
++      if (!hasOwn(from, key)) {
++        patch.push({ op: "add", path: pointer(path, key), value: cloneJson(to[key] as JsonValue) });
++      }
++    }
++    return;
++  }
++
++  if (Array.isArray(from) && Array.isArray(to)) {
++    createArrayPatch(from, to, path, patch);
++    return;
++  }
++
++  patch.push({ op: "replace", path: pointer(path), value: cloneJson(to) });
++}
++
++function createArrayPatch(from: JsonValue[], to: JsonValue[], path: string[], patch: JsonObject[]): void {
++  const indexedPatch: JsonObject[] = [];
++  createIndexedArrayPatch(from, to, path, indexedPatch);
++  const editPatch: JsonObject[] = [];
++  createArrayEditPatch(from, to, path, editPatch);
++
++  patch.push(...(editPatch.length < indexedPatch.length ? editPatch : indexedPatch));
++}
++
++function createIndexedArrayPatch(from: JsonValue[], to: JsonValue[], path: string[], patch: JsonObject[]): void {
++  const sharedLength = Math.min(from.length, to.length);
++  for (let index = 0; index < sharedLength; index += 1) {
++    createPatchAt(from[index], to[index], [...path, String(index)], patch);
++  }
++
++  for (let index = from.length - 1; index >= to.length; index -= 1) {
++    patch.push({ op: "remove", path: pointer(path, String(index)) });
++  }
++  for (let index = from.length; index < to.length; index += 1) {
++    patch.push({ op: "add", path: pointer(path, String(index)), value: cloneJson(to[index]) });
++  }
++}
++
++function createArrayEditPatch(from: JsonValue[], to: JsonValue[], path: string[], patch: JsonObject[]): void {
++  const matches = longestCommonSubsequence(from, to);
++  let fromIndex = 0;
++  let toIndex = 0;
++  let resultIndex = 0;
++
++  for (const [matchingFrom, matchingTo] of matches) {
++    while (fromIndex < matchingFrom) {
++      patch.push({ op: "remove", path: pointer(path, String(resultIndex)) });
++      fromIndex += 1;
++    }
++    while (toIndex < matchingTo) {
++      patch.push({ op: "add", path: pointer(path, String(resultIndex)), value: cloneJson(to[toIndex]) });
++      toIndex += 1;
++      resultIndex += 1;
++    }
++    fromIndex += 1;
++    toIndex += 1;
++    resultIndex += 1;
++  }
++
++  while (fromIndex < from.length) {
++    patch.push({ op: "remove", path: pointer(path, String(resultIndex)) });
++    fromIndex += 1;
++  }
++  while (toIndex < to.length) {
++    patch.push({ op: "add", path: pointer(path, String(resultIndex)), value: cloneJson(to[toIndex]) });
++    toIndex += 1;
++    resultIndex += 1;
++  }
++}
++
++function longestCommonSubsequence(left: JsonValue[], right: JsonValue[]): Array<[number, number]> {
++  const lengths = Array.from({ length: left.length + 1 }, () => Array<number>(right.length + 1).fill(0));
++
++  for (let leftIndex = left.length - 1; leftIndex >= 0; leftIndex -= 1) {
++    for (let rightIndex = right.length - 1; rightIndex >= 0; rightIndex -= 1) {
++      lengths[leftIndex][rightIndex] = jsonEqual(left[leftIndex], right[rightIndex])
++        ? lengths[leftIndex + 1][rightIndex + 1] + 1
++        : Math.max(lengths[leftIndex + 1][rightIndex], lengths[leftIndex][rightIndex + 1]);
++    }
++  }
++
++  const matches: Array<[number, number]> = [];
++  let leftIndex = 0;
++  let rightIndex = 0;
++  while (leftIndex < left.length && rightIndex < right.length) {
++    if (jsonEqual(left[leftIndex], right[rightIndex])) {
++      matches.push([leftIndex, rightIndex]);
++      leftIndex += 1;
++      rightIndex += 1;
++    } else if (lengths[leftIndex + 1][rightIndex] >= lengths[leftIndex][rightIndex + 1]) {
++      leftIndex += 1;
++    } else {
++      rightIndex += 1;
++    }
++  }
++  return matches;
++}
++
++function pointer(path: string[], token?: string): string {
++  const tokens = token === undefined ? path : [...path, token];
++  return tokens.map((part) => `/${part.replace(/~/g, "~0").replace(/\//g, "~1")}`).join("");
++}
++
+ function mergePatch(target: JsonValue | undefined, patch: JsonValue): JsonValue {
+   if (!isJsonObject(patch)) {
+     return cloneJson(patch);
+diff --git a/test/index.test.mts b/test/index.test.mts
+index 59d7441b01a2ab13f4969589ffb59fb4423054c8..a66161b9bd31fd4f4f249d6dad606664f242bf90 100644
+--- a/test/index.test.mts
++++ b/test/index.test.mts
+@@ -1,7 +1,7 @@
+ import assert from "node:assert/strict";
+ import test from "node:test";
+ 
+-import { applyMergePatch, applyPatch, resolvePointer } from "../src/index.ts";
++import { applyMergePatch, applyPatch, createPatch, resolvePointer } from "../src/index.ts";
+ 
+ const document = {
+   foo: ["bar", "baz"],
+@@ -126,6 +126,65 @@ test("rejects malformed patches and invalid operation targets", () => {
+   }
+ });
+ 
++test("creates a granular JSON Patch without mutating either input", () => {
++  const from = {
++    unchanged: { nested: true },
++    changed: { before: 1, remove: true },
++    "a/b": "old",
++    list: ["one", "two", "three"],
++  };
++  const to = {
++    unchanged: { nested: true },
++    changed: { before: 2, add: true },
++    "a/b": "new",
++    list: ["zero", "one", "two", "three"],
++  };
++
++  const patch = createPatch(from, to);
++
++  assert.deepEqual(patch, [
++    { op: "replace", path: "/a~1b", value: "new" },
++    { op: "remove", path: "/changed/remove" },
++    { op: "replace", path: "/changed/before", value: 2 },
++    { op: "add", path: "/changed/add", value: true },
++    { op: "add", path: "/list/0", value: "zero" },
++  ]);
++  assert.deepEqual(applyPatch(from, patch), to);
++  assert.deepEqual(from, {
++    unchanged: { nested: true },
++    changed: { before: 1, remove: true },
++    "a/b": "old",
++    list: ["one", "two", "three"],
++  });
++  assert.deepEqual(to, {
++    unchanged: { nested: true },
++    changed: { before: 2, add: true },
++    "a/b": "new",
++    list: ["zero", "one", "two", "three"],
++  });
++});
++
++test("creates no operations for equal JSON and uses local array edits", () => {
++  assert.deepEqual(createPatch({ nested: [1, 2] }, { nested: [1, 2] }), []);
++  assert.deepEqual(createPatch(["a", "b", "c"], ["b", "c", "d"]), [
++    { op: "remove", path: "/0" },
++    { op: "add", path: "/2", value: "d" },
++  ]);
++  assert.deepEqual(createPatch([{ value: 1 }], [{ value: 2 }]), [
++    { op: "replace", path: "/0/value", value: 2 },
++  ]);
++});
++
++test("creates a root replacement and rejects non-JSON documents", () => {
++  const to = { value: [1] };
++  const patch = createPatch(null, to);
++
++  assert.deepEqual(patch, [{ op: "replace", path: "", value: to }]);
++  assert.deepEqual(applyPatch(null, patch), to);
++  assert.throws(() => createPatch(new Date(), {}));
++  assert.throws(() => createPatch({}, Number.NaN));
++});
++
+ test("applies an RFC 7386 merge patch without mutating either input", () => {
+   const target = {
+     title: "Goodbye!",

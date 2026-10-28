@@ -1,0 +1,154 @@
+diff --git a/README.md b/README.md
+index ff92be649ff3f610b38798b3310751534d032814..8eb8fafa8f55990895e5100071f61d1fcc1f95b9 100644
+--- a/README.md
++++ b/README.md
+@@ -3,3 +3,14 @@
+ A small TypeScript library, with no runtime dependency, of building blocks for our services that store,
+ exchange and update JSON: configuration files, API payloads and stored records. It is imported by the
+ other projects of the team, so its behaviour must follow the published standards it implements.
++
++## JSON Pointer
++
++`resolvePointer(document, pointer)` (exported from `src/index.ts`) returns the value a JSON Pointer
++([RFC 6901](https://www.rfc-editor.org/rfc/rfc6901)) refers to. It throws an `Error` when the pointer
++is not valid (it must be empty or start with `/`, and `~` must be followed by `0` or `1`) or when it
++does not resolve: a missing member, an array index that is out of range, has a leading zero or is `-`
++(the nonexistent element after the last), or a scalar that is traversed. Only own members of objects
++are resolved, so `/__proto__` or `/toString` never reach inherited properties.
++
++Run the tests with `npm test`.
+diff --git a/src/index.ts b/src/index.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..16f3751eeed7e7038b4ecdf732333b57322e3be3
+--- /dev/null
++++ b/src/index.ts
+@@ -0,0 +1,46 @@
++const ARRAY_INDEX = /^(?:0|[1-9][0-9]*)$/;
++
++/** Decodes one reference token (RFC 6901, section 4); `~1` must be decoded before `~0`. */
++function unescapeToken(token: string): string {
++  if (/~(?![01])/.test(token)) {
++    throw new Error(`Invalid JSON Pointer: bad escape in token "${token}"`);
++  }
++  return token.replace(/~1/g, "/").replace(/~0/g, "~");
++}
++
++/** Returns the child of `node` named by `token`, or throws when there is none. */
++function step(node: unknown, token: string): unknown {
++  if (Array.isArray(node)) {
++    if (!ARRAY_INDEX.test(token) || Number(token) >= node.length) {
++      throw new Error(`JSON Pointer does not resolve: no array element "${token}"`);
++    }
++    return node[Number(token)];
++  }
++  if (typeof node === "object" && node !== null && Object.hasOwn(node, token)) {
++    return (node as Record<string, unknown>)[token];
++  }
++  throw new Error(`JSON Pointer does not resolve: no member "${token}"`);
++}
++
++/**
++ * Returns the value of `document` that the JSON Pointer `pointer` refers to (RFC 6901).
++ *
++ * @throws Error when `pointer` is not a valid JSON Pointer, or does not resolve to a value of
++ * `document` (missing member, out-of-range or `-` array index, or a scalar traversed).
++ */
++export function resolvePointer(document: unknown, pointer: string): unknown {
++  if (typeof pointer !== "string") {
++    throw new TypeError("Invalid JSON Pointer: must be a string");
++  }
++  if (pointer === "") {
++    return document;
++  }
++  if (!pointer.startsWith("/")) {
++    throw new Error('Invalid JSON Pointer: must be empty or start with "/"');
++  }
++  return pointer
++    .slice(1)
++    .split("/")
++    .map(unescapeToken)
++    .reduce(step, document);
++}
+diff --git a/test/pointer.test.ts b/test/pointer.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..c5599ce23d4d5c25750e2e00bbae18433b9c4cd6
+--- /dev/null
++++ b/test/pointer.test.ts
+@@ -0,0 +1,77 @@
++import { test } from "node:test";
++import assert from "node:assert/strict";
++import { resolvePointer } from "../src/index.ts";
++
++// The document of RFC 6901, section 5.
++const rfc = {
++  foo: ["bar", "baz"],
++  "": 0,
++  "a/b": 1,
++  "c%d": 2,
++  "e^f": 3,
++  "g|h": 4,
++  "i\\j": 5,
++  'k"l': 6,
++  " ": 7,
++  "m~n": 8,
++};
++
++test("RFC 6901 section 5 examples", () => {
++  assert.equal(resolvePointer(rfc, ""), rfc);
++  assert.deepEqual(resolvePointer(rfc, "/foo"), ["bar", "baz"]);
++  assert.equal(resolvePointer(rfc, "/foo/0"), "bar");
++  assert.equal(resolvePointer(rfc, "/"), 0);
++  assert.equal(resolvePointer(rfc, "/a~1b"), 1);
++  assert.equal(resolvePointer(rfc, "/c%d"), 2);
++  assert.equal(resolvePointer(rfc, "/e^f"), 3);
++  assert.equal(resolvePointer(rfc, "/g|h"), 4);
++  assert.equal(resolvePointer(rfc, "/i\\j"), 5);
++  assert.equal(resolvePointer(rfc, '/k"l'), 6);
++  assert.equal(resolvePointer(rfc, "/ "), 7);
++  assert.equal(resolvePointer(rfc, "/m~0n"), 8);
++});
++
++test("unescapes ~01 as ~1, not as /", () => {
++  assert.equal(resolvePointer({ "~1": "x", "/": "y" }, "/~01"), "x");
++});
++
++test("resolves falsy and null values", () => {
++  assert.equal(resolvePointer({ a: null }, "/a"), null);
++  assert.equal(resolvePointer({ a: false }, "/a"), false);
++  assert.equal(resolvePointer([0], "/0"), 0);
++  assert.equal(resolvePointer(null, ""), null);
++});
++
++test("rejects pointers that are not valid", () => {
++  assert.throws(() => resolvePointer({ a: 1 }, "a"));
++  assert.throws(() => resolvePointer({ "~": 1 }, "/~"));
++  assert.throws(() => resolvePointer({ "~2": 1 }, "/~2"));
++  assert.throws(() => resolvePointer({}, undefined as unknown as string));
++});
++
++test("throws when a member is missing", () => {
++  assert.throws(() => resolvePointer({ a: 1 }, "/b"));
++  assert.throws(() => resolvePointer({ a: { b: 1 } }, "/a/c"));
++});
++
++test("does not resolve inherited properties", () => {
++  assert.throws(() => resolvePointer({}, "/toString"));
++  assert.throws(() => resolvePointer({}, "/__proto__"));
++  assert.throws(() => resolvePointer([], "/length"));
++});
++
++test("array indexes", () => {
++  assert.throws(() => resolvePointer(["a"], "/1"));
++  assert.throws(() => resolvePointer(["a"], "/-"));
++  assert.throws(() => resolvePointer(["a", "b"], "/01"));
++  assert.throws(() => resolvePointer(["a"], "/+0"));
++  assert.throws(() => resolvePointer(["a"], "/-0"));
++  assert.throws(() => resolvePointer(["a"], "/0.0"));
++  assert.throws(() => resolvePointer(["a"], "/"));
++});
++
++test("throws when descending into a scalar", () => {
++  assert.throws(() => resolvePointer({ a: "str" }, "/a/0"));
++  assert.throws(() => resolvePointer({ a: null }, "/a/b"));
++  assert.throws(() => resolvePointer(5, "/a"));
++});

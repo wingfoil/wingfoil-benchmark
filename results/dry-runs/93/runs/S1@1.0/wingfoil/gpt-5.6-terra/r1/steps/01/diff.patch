@@ -1,0 +1,140 @@
+diff --git a/README.md b/README.md
+index ff92be649ff3f610b38798b3310751534d032814..cfe8c0cc29cdf5919d5607a99be8aeeb1ecff544 100644
+--- a/README.md
++++ b/README.md
+@@ -3,3 +3,9 @@
+ A small TypeScript library, with no runtime dependency, of building blocks for our services that store,
+ exchange and update JSON: configuration files, API payloads and stored records. It is imported by the
+ other projects of the team, so its behaviour must follow the published standards it implements.
++
++## JSON Pointer
++
++`resolvePointer(document, pointer)` resolves an [RFC 6901 JSON Pointer](https://www.rfc-editor.org/rfc/rfc6901)
++and returns the referenced JSON value. The empty pointer returns the entire document. It throws if the
++pointer is malformed or does not refer to a value, including when an array index is invalid or out of bounds.
+diff --git a/docs/memory/task/task-001-implement-json-pointer-resolution.md b/docs/memory/task/task-001-implement-json-pointer-resolution.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..6d2a58a4eded5263737299aac7f884d1484ae359
+--- /dev/null
++++ b/docs/memory/task/task-001-implement-json-pointer-resolution.md
+@@ -0,0 +1,13 @@
++---
++id: task-001-implement-json-pointer-resolution
++type: task
++title: "Implement JSON Pointer resolution"
++status: approved
++format: 1
++---
++
++<!-- task body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
+diff --git a/package.json b/package.json
+index 5f1f12a7edbf25e1ade5481dc7f359ede03d0df5..8b87f8c54c2a922d3597b2e438d6ee3c2511bdad 100644
+--- a/package.json
++++ b/package.json
+@@ -5,6 +5,6 @@
+   "description": "Building blocks for services that store, exchange and update JSON documents.",
+   "type": "module",
+   "scripts": {
+-    "test": "node --test"
++    "test": "node --test test/**/*.test.mjs"
+   }
+ }
+diff --git a/src/index.ts b/src/index.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..3dd3b5c28f03c7b0f834dc6c573f7ec378d4b68d
+--- /dev/null
++++ b/src/index.ts
+@@ -0,0 +1,51 @@
++/**
++ * Resolves an RFC 6901 JSON Pointer against a JSON document.
++ *
++ * @param document The JSON value to traverse.
++ * @param pointer A JSON Pointer string. An empty pointer selects `document`.
++ * @returns The value selected by `pointer`.
++ * @throws {Error} If `pointer` is malformed or does not identify a value.
++ */
++export function resolvePointer(document: unknown, pointer: string): unknown {
++  if (typeof pointer !== "string" || (pointer !== "" && !pointer.startsWith("/"))) {
++    throw new Error("Invalid JSON Pointer");
++  }
++
++  if (pointer === "") {
++    return document;
++  }
++
++  let value = document;
++
++  for (const referenceToken of pointer.slice(1).split("/")) {
++    const token = decodeReferenceToken(referenceToken);
++
++    if (Array.isArray(value)) {
++      if (!isArrayIndex(token) || Number(token) >= value.length) {
++        throw new Error(`JSON Pointer does not resolve: ${pointer}`);
++      }
++      value = value[Number(token)];
++      continue;
++    }
++
++    if (value === null || typeof value !== "object" || !Object.hasOwn(value, token)) {
++      throw new Error(`JSON Pointer does not resolve: ${pointer}`);
++    }
++
++    value = (value as Record<string, unknown>)[token];
++  }
++
++  return value;
++}
++
++function decodeReferenceToken(token: string): string {
++  if (/~(?:[^01]|$)/.test(token)) {
++    throw new Error("Invalid JSON Pointer escape sequence");
++  }
++
++  return token.replaceAll("~1", "/").replaceAll("~0", "~");
++}
++
++function isArrayIndex(token: string): boolean {
++  return /^(?:0|[1-9][0-9]*)$/.test(token);
++}
+diff --git a/test/index.test.mjs b/test/index.test.mjs
+new file mode 100644
+index 0000000000000000000000000000000000000000..92dce4b30649969ce892ae5f133088f316a8af5c
+--- /dev/null
++++ b/test/index.test.mjs
+@@ -0,0 +1,32 @@
++import assert from "node:assert/strict";
++import test from "node:test";
++
++import { resolvePointer } from "../src/index.ts";
++
++const document = {
++  "": "empty key",
++  "a/b": "slash",
++  "m~n": "tilde",
++  nested: {
++    values: ["first", null, { answer: 42 }],
++  },
++};
++
++test("resolves the whole document and RFC 6901 escaped member names", () => {
++  assert.equal(resolvePointer(document, ""), document);
++  assert.equal(resolvePointer(document, "/"), "empty key");
++  assert.equal(resolvePointer(document, "/a~1b"), "slash");
++  assert.equal(resolvePointer(document, "/m~0n"), "tilde");
++});
++
++test("resolves object members and array elements", () => {
++  assert.equal(resolvePointer(document, "/nested/values/0"), "first");
++  assert.equal(resolvePointer(document, "/nested/values/1"), null);
++  assert.equal(resolvePointer(document, "/nested/values/2/answer"), 42);
++});
++
++test("rejects malformed pointers and references that do not resolve", () => {
++  for (const pointer of ["nested", "/m~2n", "/m~", "/nested/values/-", "/nested/values/01", "/nested/values/3", "/nested/values/name"]) {
++    assert.throws(() => resolvePointer(document, pointer));
++  }
++});
