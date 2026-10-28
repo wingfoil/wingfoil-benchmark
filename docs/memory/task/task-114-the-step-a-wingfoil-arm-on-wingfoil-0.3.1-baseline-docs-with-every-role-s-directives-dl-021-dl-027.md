@@ -114,3 +114,40 @@ real-agent session (S2, S3, S8 dry runs, campaign-007's runs, `gpt-6.1-terra`) i
   {#other-agents} (when campaign-007 is published, dl-027's Consequences).
 
 ## Execution notes
+
+- Approved pending → backlog by the approver (`303891d4`, 2026-10-27), the consent for the four dry runs ("4: due arm ×
+  due agenti", the approver in chat, 2026-10-27); backlog → in-progress on main (`b79f576a`); worktree
+  `../WingFoil2-Benchmark-wt/task-114`, branch `task/<id>`.
+- **Red-first** (`c1d08289`): the manual's and setup's tests, the schema's, the generator's, the snapshot's and the
+  Codex scope's, all red before the code; then the scope (`0ae2ad65`), baseline-docs (`0f61a032`), the arm
+  (`12ed3a10`), campaign-007's dry-run profile (`6c4719c0`), the specification (`370aa63d`), the docker test
+  (`e5550254`).
+- **Deviations from the Design:**
+  - baseline-docs' **manual is unchanged**: speckit-docs and openspec-docs borrow it (REQ-RUN-11), so a sentence on
+    roles there would be false for them and move their digests. The generated `PROJECT_RULES.md` says it instead,
+    under its Rules heading. The Design's "sorted by role then id" became one entry per directive, by id, labelled
+    `For: <roles>.` (or `For: every role.`): a directive bound to several roles is rendered once.
+  - The choice is `docs_directives: every-role` in `arm.yaml` (REQ-FMT-05 1.41), refused on an arm that is not a
+    docs control; absent, the generator renders as before, so campaign-006's pinned baseline-docs renders as it ran.
+  - **Decision 3 widened:** WingFoil 0.3.1 has no `memory rekey` verb (its `memory --help`: add, amend, approve,
+    deprecate, history, park, reject, search, submit), and has `memory deprecate`, which retires a document from any
+    state. The approver chose in chat (2026-10-27, "amend, reject, rekey, deprecate"): the manual forbids all four.
+    `12ed3a10`'s message dates that choice 2026-10-28; it was 2026-10-27.
+  - The manual's numbered rules became **bullets** (`6c4719c0`): the site's Markdown renderer has no ordered list and
+    loops on a numbered item holding a nested list; the site's unit tests ran out of heap on the first version.
+    Filed as **bug-037** (`d81c5431`, the approver's request in chat, 2026-10-27), pending.
+  - **Context through the CLI** (decision 2) keeps the approved decisions' search the v0.2 manual had, so that the
+    wingfoil agent can read what baseline-docs carries (T3).
+- **What else changed:** v0.2's reference campaign now reads its wingfoil arm from history, as its bridge does (its
+  test updated); the docker tests and the W3 fixture campaign build WingFoil `v0.3.1`.
+- **Checked offline** on WingFoil 0.3.1 (`870bd440`, `init --template Kanban` in a scratch repository): `init` writes
+  no `CLAUDE.md` or `AGENTS.md`; the instance the setup opens is a `plan` element (`docs/memory/plan/…`), which the
+  generator does not read; `workflow start --title` exists; the Kanban scaffold binds directives to six roles
+  (developer, reviewer, qa, architect, product-owner, tech-lead) and four global ones.
+- **The arms with the fake agent in the run container** (criterion 7): the docker W3 test, `BENCH_WINGFOIL_REPO` at
+  v0.3.1: the setup opens the instance (four commits), `workflow next` prints `kanban-delivery.plan`, baseline-docs
+  gets every role's directives labelled; green. The other docker tests run with the full suites.
+- **Digests:** wingfoil `d8e7f0ee3779`, baseline-docs `64e37c838830`, baseline `964b1354526c` (unchanged).
+- **The dry runs ran from the worktree** (the approver's choice in chat, 2026-10-28, "1, dal worktree"), not the main
+  checkout: main's history does not hold the step-A digests. Each execution's directory, transcripts included, was
+  then copied into the main checkout and committed there, with its ledger line.
