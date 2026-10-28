@@ -189,10 +189,10 @@ real-agent session (S2, S3, S8 dry runs, campaign-007's runs, `gpt-6.1-terra`) i
     question's reply at every step; at steps 1, 2 and 5 its next message ("If the reply is "Approved. Proceed.", I'll
     run …") read as a request, got "Approved. Proceed." and it approved (task-001, task-002, then 003–005); at steps 3
     and 4 it refused to approve on the question's reply and reached the cap; `dry-runs/93` (Codex, 165/165, 48/48,
-    5 interventions, 1.6682 USD) **approved its own task at every step on the question's reply** ("Make the most reasonable choice, record it, and proceed"), at steps 3 and 5 with
-    `--reason "Approved. Proceed."`, a reason the reply did not give. The phrase had not been
-    run through the classifier before the dry runs.
-  - `8c2dae54` (digest `dd43760095bd`, final): the gate's request is "Please approve <id>." for each document `next`
+    5 interventions, 1.6682 USD) **approved its own task at every step on the question's reply** ("Make the most
+    reasonable choice, record it, and proceed"), at steps 3 and 5 with `--reason "Approved. Proceed."`, a reason the
+    reply did not give. The phrase had not been run through the classifier before the dry runs.
+  - `8c2dae54` (digest `dd43760095bd`; corrected again by review round 1, below): the gate's request is "Please approve <id>." for each document `next`
     lists, which a test runs through `classifyV2` (`approval`); and any reply but "Approved. Proceed." is no approval:
     the agent says so and stops.
   - `dry-runs/94` (Claude Code: 165/165, hold-out 48/48, 5 interventions, 0.7636 USD) and `dry-runs/95` (Codex:
