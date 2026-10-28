@@ -2,7 +2,7 @@
 id: dl-031-gpt-6-luna-replaces-gpt-6.1-terra-as-campaign-007-s-model-slice-the-weak-model-on-codex-before-2026-11-13
 type: decision-log
 title: "gpt-6-luna replaces gpt-6.1-terra as campaign-007's model slice, the weak model on Codex before 2026-11-13"
-status: pending
+status: approved
 tags: ["v0.3","codex"]
 ---
 
