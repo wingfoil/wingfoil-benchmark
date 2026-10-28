@@ -1,0 +1,242 @@
+diff --git a/README.md b/README.md
+index b5fe1b2a4feac926b16f4b55fd72f2bb6eb7b711..7752ef5eb8bbedf009d30c2f5a43b2a16d779366 100644
+--- a/README.md
++++ b/README.md
+@@ -3,3 +3,12 @@
+ The Lakeside Windsurf School teaches windsurfing on the lake from April to October, and rents boards and
+ sails to its students and to visitors who bring their own experience. This repository holds the software
+ of its booking desk, written in TypeScript with no runtime dependency.
++
++## Rental service
++
++`createRentalService()` creates an isolated in-memory rental service. Register each board or sail with
++`addEquipment({ id, kind, dailyPrice })`, where money is an integer number of euro cents. `quote()`
++prices a request and `book()` reserves it; both accept `{ itemId, start, end }` and require UTC
++ISO-8601 timestamps at midnight. Rental periods are start-inclusive and end-exclusive, so the end is
++the midnight following the final rental day. A booking cannot overlap an existing booking for the same
++item. Cancellation is not implemented yet.
+diff --git a/docs/memory/task/task-001-add-rental-service.md b/docs/memory/task/task-001-add-rental-service.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..4036341d4dc93cf825adaf3f30042bc6bcfea830
+--- /dev/null
++++ b/docs/memory/task/task-001-add-rental-service.md
+@@ -0,0 +1,14 @@
++---
++id: task-001-add-rental-service
++type: task
++title: "Add rental service"
++status: approved
++format: 1
++---
++
++Implement the initial in-memory rental service for the booking desk.
++
++The public API must export `createRentalService()` from `src/index.ts`, support registering boards
++and sails, quoting and booking whole UTC days, reject invalid/unknown/unavailable requests, and use
++integer euro cents.  Cancellation is explicitly out of scope, though its policy is retained as a
++future requirement.
+diff --git a/package.json b/package.json
+index af51de924b3d8d8b3f5fafcf8ccf30bd663030c7..b890f77bf0b50ad6845e1720487a5db52121f312 100644
+--- a/package.json
++++ b/package.json
+@@ -5,6 +5,6 @@
+   "description": "The booking desk software of the Lakeside Windsurf School.",
+   "type": "module",
+   "scripts": {
+-    "test": "node --test"
++    "test": "node --experimental-strip-types --test test/*.test.mjs"
+   }
+ }
+diff --git a/src/index.ts b/src/index.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..59bafbefb0a538901835d5da5977298a14a5889d
+--- /dev/null
++++ b/src/index.ts
+@@ -0,0 +1,141 @@
++/** A rentable board or sail, with its daily price in euro cents. */
++export interface Equipment {
++  id: string;
++  kind: 'board' | 'sail';
++  dailyPrice: number;
++}
++
++/** An inclusive-start, exclusive-end rental period expressed as UTC ISO-8601 timestamps. */
++export interface RentalRequest {
++  itemId: string;
++  start: string;
++  end: string;
++}
++
++/** The price of a valid rental request, in euro cents. */
++export interface RentalQuote extends RentalRequest {
++  total: number;
++}
++
++/** A confirmed rental booking. */
++export interface RentalBooking extends RentalQuote {
++  id: string;
++}
++
++/** In-memory operations for the school's rental inventory and bookings. */
++export interface RentalService {
++  addEquipment(item: Equipment): void;
++  quote(request: RentalRequest): RentalQuote;
++  book(request: RentalRequest): RentalBooking;
++}
++
++const DAY_IN_MILLISECONDS = 24 * 60 * 60 * 1_000;
++const UTC_MIDNIGHT = /^(\d{4}-\d{2}-\d{2})T00:00:00(?:\.000)?(?:Z|\+00:00)$/;
++
++interface ValidatedPeriod {
++  startTime: number;
++  endTime: number;
++}
++
++/**
++ * Creates an isolated, in-memory rental service.
++ *
++ * Booking identifiers are assigned sequentially for deterministic local operation.  Cancellations
++ * are deliberately not exposed yet; their policy will be applied when that operation is added.
++ */
++export function createRentalService(): RentalService {
++  const equipment = new Map<string, Equipment>();
++  const bookings: RentalBooking[] = [];
++  let nextBookingNumber = 1;
++
++  return {
++    addEquipment(item: Equipment): void {
++      validateEquipment(item);
++      if (equipment.has(item.id)) {
++        throw new Error(`Equipment already exists: ${item.id}`);
++      }
++      equipment.set(item.id, { ...item });
++    },
++
++    quote(request: RentalRequest): RentalQuote {
++      const item = getEquipment(equipment, request);
++      const period = validatePeriod(request);
++      return createQuote(request, item.dailyPrice, period);
++    },
++
++    book(request: RentalRequest): RentalBooking {
++      const item = getEquipment(equipment, request);
++      const period = validatePeriod(request);
++      if (bookings.some((booking) => booking.itemId === request.itemId
++        && periodsOverlap(period, validatePeriod(booking)))) {
++        throw new Error(`Equipment is unavailable for the requested period: ${request.itemId}`);
++      }
++
++      const booking: RentalBooking = {
++        id: `booking-${nextBookingNumber++}`,
++        ...createQuote(request, item.dailyPrice, period),
++      };
++      bookings.push(booking);
++      return { ...booking };
++    },
++  };
++}
++
++function validateEquipment(item: Equipment): void {
++  if (!item || typeof item.id !== 'string' || item.id.length === 0) {
++    throw new Error('Equipment id must be a non-empty string');
++  }
++  if (item.kind !== 'board' && item.kind !== 'sail') {
++    throw new Error('Equipment kind must be board or sail');
++  }
++  if (!Number.isSafeInteger(item.dailyPrice) || item.dailyPrice < 0) {
++    throw new Error('Equipment daily price must be a non-negative integer number of euro cents');
++  }
++}
++
++function getEquipment(equipment: Map<string, Equipment>, request: RentalRequest): Equipment {
++  if (!request || typeof request.itemId !== 'string') {
++    throw new Error('Rental request item id must be a string');
++  }
++  const item = equipment.get(request.itemId);
++  if (!item) {
++    throw new Error(`Unknown equipment: ${request.itemId}`);
++  }
++  return item;
++}
++
++function validatePeriod(request: RentalRequest): ValidatedPeriod {
++  if (!request || !isUtcMidnight(request.start) || !isUtcMidnight(request.end)) {
++    throw new Error('Rental periods must use UTC ISO-8601 timestamps at midnight');
++  }
++  const startTime = Date.parse(request.start);
++  const endTime = Date.parse(request.end);
++  if (endTime <= startTime || (endTime - startTime) % DAY_IN_MILLISECONDS !== 0) {
++    throw new Error('Rental period must cover one or more whole days');
++  }
++  return { startTime, endTime };
++}
++
++function isUtcMidnight(value: unknown): value is string {
++  if (typeof value !== 'string') {
++    return false;
++  }
++  const match = UTC_MIDNIGHT.exec(value);
++  const timestamp = Date.parse(value);
++  return match !== null
++    && !Number.isNaN(timestamp)
++    && new Date(timestamp).toISOString() === `${match[1]}T00:00:00.000Z`;
++}
++
++function createQuote(request: RentalRequest, dailyPrice: number, period: ValidatedPeriod): RentalQuote {
++  const days = (period.endTime - period.startTime) / DAY_IN_MILLISECONDS;
++  const total = dailyPrice * days;
++  if (!Number.isSafeInteger(total)) {
++    throw new Error('Rental total exceeds the supported integer money range');
++  }
++  return { ...request, total };
++}
++
++function periodsOverlap(first: ValidatedPeriod, second: ValidatedPeriod): boolean {
++  return first.startTime < second.endTime && second.startTime < first.endTime;
++}
+diff --git a/test/rental-service.test.mjs b/test/rental-service.test.mjs
+new file mode 100644
+index 0000000000000000000000000000000000000000..81afd6b362173cde1baa70d24eec75db81e47421
+--- /dev/null
++++ b/test/rental-service.test.mjs
+@@ -0,0 +1,40 @@
++import assert from 'node:assert/strict';
++import test from 'node:test';
++
++import { createRentalService } from '../src/index.ts';
++
++test('quotes and books full UTC days at the equipment daily price', () => {
++  const rentals = createRentalService();
++  rentals.addEquipment({ id: 'board-1', kind: 'board', dailyPrice: 2_500 });
++
++  const request = {
++    itemId: 'board-1',
++    start: '2026-06-01T00:00:00.000Z',
++    end: '2026-06-03T00:00:00.000Z',
++  };
++
++  assert.deepEqual(rentals.quote(request), { ...request, total: 5_000 });
++  assert.deepEqual(rentals.book(request), { id: 'booking-1', ...request, total: 5_000 });
++});
++
++test('rejects unknown items, non-whole-day periods, and overlapping bookings', () => {
++  const rentals = createRentalService();
++  rentals.addEquipment({ id: 'sail-1', kind: 'sail', dailyPrice: 1_500 });
++
++  assert.throws(() => rentals.quote({
++    itemId: 'missing', start: '2026-06-01T00:00:00Z', end: '2026-06-02T00:00:00Z',
++  }));
++  assert.throws(() => rentals.quote({
++    itemId: 'sail-1', start: '2026-06-01T12:00:00Z', end: '2026-06-02T00:00:00Z',
++  }));
++
++  rentals.book({
++    itemId: 'sail-1', start: '2026-06-01T00:00:00Z', end: '2026-06-03T00:00:00Z',
++  });
++  assert.throws(() => rentals.book({
++    itemId: 'sail-1', start: '2026-06-02T00:00:00Z', end: '2026-06-04T00:00:00Z',
++  }));
++  assert.doesNotThrow(() => rentals.book({
++    itemId: 'sail-1', start: '2026-06-03T00:00:00Z', end: '2026-06-04T00:00:00Z',
++  }));
++});

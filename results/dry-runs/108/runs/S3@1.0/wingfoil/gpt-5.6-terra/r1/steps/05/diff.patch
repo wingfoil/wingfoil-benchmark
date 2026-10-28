@@ -1,0 +1,235 @@
+diff --git a/README.md b/README.md
+index 273c1774a255c1f88d854814d1fe9defe505cf80..d6de5b0b365b30df6b71a8a0142f330fab93c686 100644
+--- a/README.md
++++ b/README.md
+@@ -14,6 +14,9 @@ so the end is the midnight following the final rental day. Rentals shorter than
+ end on exact UTC hours; they cost `hourlyPrice` for each hour, and require that price to be configured
+ on the equipment. A booking cannot overlap an existing booking for the same item.
+ `availability({ start, end, kind? })` returns sorted IDs of equipment without an overlapping booking
+-for a full-day period, optionally restricted to `board` or `sail`. Cancellation is not implemented
+-yet. Rentals of three or more days receive a 10% discount on the full price, rounded to the nearest
+-euro cent; both `quote()` and `book()` return this reduced total.
++for a full-day period, optionally restricted to `board` or `sail`. `cancel(bookingId, at)` releases a
++booking's equipment and returns its ID with a refund in euro cents. The cancellation timestamp must be
++an exact UTC hour; the refund is the unused, pro-rated portion of the booking's discounted total,
++rounded to the nearest cent. A booking can be cancelled only once. Rentals of three or more days
++receive a 10% discount on the full price, rounded to the nearest euro cent; both `quote()` and `book()`
++return this reduced total.
+diff --git a/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-5-plan.md b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-5-plan.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..cddb7a9de23240fc32b5e8c31b2187a5bb8bdb90
+--- /dev/null
++++ b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-5-plan.md
+@@ -0,0 +1,17 @@
++---
++id: sw-life-cycle-1-5-plan
++type: plan
++title: "Cancel rental bookings"
++status: active
++workflow: "sw-life-cycle"
++phase: "1-5"
++element: ""
++parent: ""
++format: 1
++---
++
++<!-- plan body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
+diff --git a/docs/memory/task/task-005-cancel-rental-bookings.md b/docs/memory/task/task-005-cancel-rental-bookings.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..154e0c310d643fa5b3d0e6fcbec5da27e5c98996
+--- /dev/null
++++ b/docs/memory/task/task-005-cancel-rental-bookings.md
+@@ -0,0 +1,11 @@
++---
++id: task-005-cancel-rental-bookings
++type: task
++title: "Cancel rental bookings"
++status: approved
++format: 1
++---
++
++Add `cancel(bookingId, at)` to the rental service. It must release the booked equipment and return
++the booking ID together with a refund for the unused portion of the booking's already-discounted
++total. A booking may only be cancelled once.
+diff --git a/src/index.ts b/src/index.ts
+index 0e3f5703570bbf923a7efe9451777ad81372d548..26561361eda13b15a7f41857102cf1ce798c8a52 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -30,11 +30,18 @@ export interface RentalBooking extends RentalQuote {
+   id: string;
+ }
+ 
++/** The result of cancelling a booking, including the refunded amount in euro cents. */
++export interface RentalCancellation {
++  bookingId: string;
++  refund: number;
++}
++
+ /** In-memory operations for the school's rental inventory and bookings. */
+ export interface RentalService {
+   addEquipment(item: Equipment): void;
+   quote(request: RentalRequest): RentalQuote;
+   book(request: RentalRequest): RentalBooking;
++  cancel(bookingId: string, at: string): RentalCancellation;
+   availability(query: AvailabilityQuery): string[];
+ }
+ 
+@@ -50,15 +57,19 @@ interface ValidatedPeriod {
+   pricing: 'daily' | 'hourly';
+ }
+ 
++interface BookingRecord {
++  booking: RentalBooking;
++  cancelled: boolean;
++}
++
+ /**
+  * Creates an isolated, in-memory rental service.
+  *
+- * Booking identifiers are assigned sequentially for deterministic local operation.  Cancellations
+- * are deliberately not exposed yet; their policy will be applied when that operation is added.
++ * Booking identifiers are assigned sequentially for deterministic local operation.
+  */
+ export function createRentalService(): RentalService {
+   const equipment = new Map<string, Equipment>();
+-  const bookings: RentalBooking[] = [];
++  const bookings: BookingRecord[] = [];
+   let nextBookingNumber = 1;
+ 
+   return {
+@@ -79,7 +90,7 @@ export function createRentalService(): RentalService {
+     book(request: RentalRequest): RentalBooking {
+       const item = getEquipment(equipment, request);
+       const period = validatePeriod(request);
+-      if (bookings.some((booking) => booking.itemId === request.itemId
++      if (bookings.some(({ booking, cancelled }) => !cancelled && booking.itemId === request.itemId
+         && periodsOverlap(period, validatePeriod(booking)))) {
+         throw new Error(`Equipment is unavailable for the requested period: ${request.itemId}`);
+       }
+@@ -88,16 +99,37 @@ export function createRentalService(): RentalService {
+         id: `booking-${nextBookingNumber++}`,
+         ...createQuote(request, item, period),
+       };
+-      bookings.push(booking);
++      bookings.push({ booking, cancelled: false });
+       return { ...booking };
+     },
+ 
++    cancel(bookingId: string, at: string): RentalCancellation {
++      if (typeof bookingId !== 'string') {
++        throw new Error('Booking id must be a string');
++      }
++      const record = bookings.find(({ booking }) => booking.id === bookingId);
++      if (!record) {
++        throw new Error(`Unknown booking: ${bookingId}`);
++      }
++      if (record.cancelled) {
++        throw new Error(`Booking is already cancelled: ${bookingId}`);
++      }
++
++      const cancellationTime = validateCancellationTime(at);
++      const period = validatePeriod(record.booking);
++      record.cancelled = true;
++      return {
++        bookingId,
++        refund: calculateRefund(record.booking.total, period, cancellationTime),
++      };
++    },
++
+     availability(query: AvailabilityQuery): string[] {
+       const period = validateAvailabilityQuery(query);
+       return [...equipment.values()]
+         .filter((item) => query.kind === undefined || item.kind === query.kind)
+-        .filter((item) => !bookings.some((booking) => booking.itemId === item.id
+-          && periodsOverlap(period, validatePeriod(booking))))
++        .filter((item) => !bookings.some(({ booking, cancelled }) => !cancelled
++          && booking.itemId === item.id && periodsOverlap(period, validatePeriod(booking))))
+         .map((item) => item.id)
+         .sort();
+     },
+@@ -162,6 +194,13 @@ function validateAvailabilityQuery(query: AvailabilityQuery): ValidatedPeriod {
+   return period;
+ }
+ 
++function validateCancellationTime(at: unknown): number {
++  if (!isUtcHour(at)) {
++    throw new Error('Cancellation time must use a UTC ISO-8601 timestamp on exact hours');
++  }
++  return Date.parse(at);
++}
++
+ function isUtcMidnight(value: unknown): value is string {
+   if (typeof value !== 'string') {
+     return false;
+@@ -215,6 +254,21 @@ function applyLongRentalDiscount(total: number, days: number): number {
+   return discountedWholeEuros + discountedCents;
+ }
+ 
++/** Returns the rounded value of the booked total for time remaining at cancellation. */
++function calculateRefund(total: number, period: ValidatedPeriod, cancellationTime: number): number {
++  if (cancellationTime <= period.startTime) {
++    return total;
++  }
++  if (cancellationTime >= period.endTime) {
++    return 0;
++  }
++
++  const remaining = BigInt(period.endTime - cancellationTime);
++  const duration = BigInt(period.endTime - period.startTime);
++  const roundedRefund = (BigInt(total) * remaining + duration / 2n) / duration;
++  return Number(roundedRefund);
++}
++
+ function periodsOverlap(first: ValidatedPeriod, second: ValidatedPeriod): boolean {
+   return first.startTime < second.endTime && second.startTime < first.endTime;
+ }
+diff --git a/test/rental-service.test.mjs b/test/rental-service.test.mjs
+index 3be841a4ee3e130a7b59aecadda1f6eaa69b108d..2dc7efb1aa7dad8a1908893d56ff843da8d5079f 100644
+--- a/test/rental-service.test.mjs
++++ b/test/rental-service.test.mjs
+@@ -151,3 +151,41 @@ test('rejects availability queries with invalid periods or equipment kinds', ()
+     start: '2026-06-01T00:00:00Z', end: '2026-06-02T00:00:00Z', kind: 'kite',
+   }));
+ });
++
++test('cancels a booking, refunds its unused discounted value, and releases its equipment', () => {
++  const rentals = createRentalService();
++  rentals.addEquipment({ id: 'board-1', kind: 'board', dailyPrice: 1_000 });
++  const booking = rentals.book({
++    itemId: 'board-1',
++    start: '2026-06-01T00:00:00Z',
++    end: '2026-06-05T00:00:00Z',
++  });
++
++  assert.deepEqual(rentals.cancel(booking.id, '2026-06-03T00:00:00Z'), {
++    bookingId: booking.id,
++    refund: 1_800,
++  });
++  assert.deepEqual(rentals.availability({
++    start: '2026-06-01T00:00:00Z',
++    end: '2026-06-05T00:00:00Z',
++  }), ['board-1']);
++  assert.doesNotThrow(() => rentals.book({
++    itemId: 'board-1',
++    start: '2026-06-01T00:00:00Z',
++    end: '2026-06-05T00:00:00Z',
++  }));
++  assert.throws(() => rentals.cancel(booking.id, '2026-06-03T00:00:00Z'), /already cancelled/);
++});
++
++test('validates cancellation identifiers and timestamps', () => {
++  const rentals = createRentalService();
++  rentals.addEquipment({ id: 'board-1', kind: 'board', dailyPrice: 1_000 });
++  const booking = rentals.book({
++    itemId: 'board-1',
++    start: '2026-06-01T00:00:00Z',
++    end: '2026-06-02T00:00:00Z',
++  });
++
++  assert.throws(() => rentals.cancel('missing', '2026-06-01T00:00:00Z'), /Unknown booking/);
++  assert.throws(() => rentals.cancel(booking.id, '2026-06-01T00:30:00Z'), /exact hours/);
++});

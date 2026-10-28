@@ -1,0 +1,176 @@
+diff --git a/README.md b/README.md
+index e717bbee6082d65e374e20191c6d920b8f0df464..0dde5166e22c41b3c6fa4c3c62721fca97e6ce09 100644
+--- a/README.md
++++ b/README.md
+@@ -9,3 +9,6 @@ Run its tests with `npm test`.
+ 
+ Every task has a stable `id` returned by `add`. Use `get(id)` to retrieve it after a rename; the other
+ task operations accept either a title or an ID.
++
++Tasks also expose `createdAt` and `updatedAt` ISO-8601 date-time strings. They are identical when a
++task is added; completing, reopening, renaming, tagging, or untagging updates `updatedAt`.
+diff --git a/docs/task-list-api.md b/docs/task-list-api.md
+index 89ae6dd2cd98a3de0a606c60664984a26f94a806..cbdfd2624fafa5beef6885c434d5503e077a01ff 100644
+--- a/docs/task-list-api.md
++++ b/docs/task-list-api.md
+@@ -1,6 +1,19 @@
+ # Task list API specification
+ 
+-Version: 1.0
++Version: 1.1
++
++Date: 2026-10-28
++
++## Task timestamps
++
++Requirement: the app can show a task's age and its recent changes.
++
++Each `Task` has `createdAt` and `updatedAt` properties, both ISO-8601 date-time strings. `add` sets
++both properties to the same time. Each successful `complete`, `reopen`, `rename`, `tag`, or `untag`
++operation preserves `createdAt` and sets `updatedAt` to the operation's time.
++
++`createTodoList` obtains these times from its optional `now` argument. The default supplier uses the
++current system time; callers can supply a deterministic ISO-8601 time source when needed.
+ 
+ ## Stable task identifiers
+ 
+diff --git a/src/domain/list.ts b/src/domain/list.ts
+index 06ebb04f5f1b7f2beabc0b66fd1c56151fe57d9f..f6ba9841a3ef42bd2699a780b53e47a6b3bf70c0 100644
+--- a/src/domain/list.ts
++++ b/src/domain/list.ts
+@@ -36,8 +36,12 @@ export interface TaskList {
+   openCount(): number;
+ }
+ 
+-/** A new, empty task list, kept in memory. */
+-export function createTaskList(): TaskList {
++/**
++ * A new, empty task list, kept in memory.
++ *
++ * @param now - supplies the current time as an ISO-8601 date-time string
++ */
++export function createTaskList(now: () => string): TaskList {
+   const tasksById = new Map<string, Task>();
+   const taskIdsByTitle = new Map<string, string>();
+   let nextId = 1;
+@@ -65,14 +69,14 @@ export function createTaskList(): TaskList {
+     const found = find(reference);
+     if (!found.ok) return found;
+     const updated = update(found.value);
+-    return updated.ok ? store(found.value, updated.value) : updated;
++    return updated.ok ? store(found.value, { ...updated.value, updatedAt: now() }) : updated;
+   };
+ 
+   return {
+     add(input) {
+       const title = input.title.trim();
+       if (taskIdsByTitle.has(title)) return err('duplicate', `there is already a task "${title}"`);
+-      const task = createTask(input, `task-${nextId}`);
++      const task = createTask(input, `task-${nextId}`, now());
+       nextId += 1;
+       tasksById.set(task.id, task);
+       taskIdsByTitle.set(task.title, task.id);
+diff --git a/src/domain/task.ts b/src/domain/task.ts
+index a479681379a334fe96c7736b01309af72e75efe1..48f7ac931947bdd033d41da7c8231f2472cd8ef2 100644
+--- a/src/domain/task.ts
++++ b/src/domain/task.ts
+@@ -14,6 +14,10 @@ export type Status = 'open' | 'done';
+ export interface Task {
+   /** A list-local identifier that does not change when the task is renamed. */
+   readonly id: string;
++  /** When the task was added, as an ISO-8601 date-time string. */
++  readonly createdAt: string;
++  /** When the task was last changed, as an ISO-8601 date-time string. */
++  readonly updatedAt: string;
+   readonly title: string;
+   readonly priority: Priority;
+   readonly tags: readonly string[];
+@@ -32,10 +36,13 @@ export interface NewTask {
+  *
+  * @param input - the task's title, priority and tags
+  * @param id - the task's stable list-local identifier
++ * @param timestamp - when the task was added, as an ISO-8601 date-time string
+  */
+-export function createTask(input: NewTask, id: string): Task {
++export function createTask(input: NewTask, id: string, timestamp: string): Task {
+   return {
+     id,
++    createdAt: timestamp,
++    updatedAt: timestamp,
+     title: input.title.trim(),
+     priority: input.priority ?? 'normal',
+     tags: unique(input.tags ?? []),
+diff --git a/src/index.ts b/src/index.ts
+index d645db5250ea48852a8de1629640e42619a985c8..a89af87f684754e85dfd56119f116cb44b898899 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -9,8 +9,11 @@ export { PRIORITIES } from './domain/task.ts';
+ export type { NewTask, Priority, Status, Task } from './domain/task.ts';
+ 
+ /**
+- * A new, empty task list for the app, kept in memory.
++ * A new, empty task list for the app, kept in memory. By default it records the current time when a
++ * task is added or changed.
++ *
++ * @param now - optionally supplies current times as ISO-8601 date-time strings
+  */
+-export function createTodoList(): TaskList {
+-  return createTaskList();
++export function createTodoList(now: () => string = () => new Date().toISOString()): TaskList {
++  return createTaskList(now);
+ }
+diff --git a/test/list.test.ts b/test/list.test.ts
+index cacaf6b8bc00ee33592dd524f38bd8ea97db2f95..d55d127ccc36e7e452d760cc6ffb116de85b905b 100644
+--- a/test/list.test.ts
++++ b/test/list.test.ts
+@@ -9,10 +9,49 @@ function valueOf<T>(result: { ok: true; value: T } | { ok: false; error: unknown
+ }
+ 
+ describe('task list', () => {
++  it('records creation and each task change time', () => {
++    const timestamps = [
++      '2026-10-28T09:00:00.000Z',
++      '2026-10-28T09:01:00.000Z',
++      '2026-10-28T09:02:00.000Z',
++      '2026-10-28T09:03:00.000Z',
++      '2026-10-28T09:04:00.000Z',
++      '2026-10-28T09:05:00.000Z',
++    ];
++    const list = createTodoList(() => timestamps.shift()!);
++
++    const added = valueOf(list.add({ title: 'Buy milk' }));
++    assert.equal(added.createdAt, '2026-10-28T09:00:00.000Z');
++    assert.equal(added.updatedAt, added.createdAt);
++
++    const completed = valueOf(list.complete(added.id));
++    const reopened = valueOf(list.reopen(added.id));
++    const renamed = valueOf(list.rename(added.id, 'Get milk'));
++    const tagged = valueOf(list.tag(added.id, 'shopping'));
++    const untagged = valueOf(list.untag(added.id, 'shopping'));
++
++    assert.deepEqual(
++      [completed, reopened, renamed, tagged, untagged].map((task) => task.updatedAt),
++      [
++        '2026-10-28T09:01:00.000Z',
++        '2026-10-28T09:02:00.000Z',
++        '2026-10-28T09:03:00.000Z',
++        '2026-10-28T09:04:00.000Z',
++        '2026-10-28T09:05:00.000Z',
++      ],
++    );
++    assert.ok([completed, reopened, renamed, tagged, untagged].every((task) => task.createdAt === added.createdAt));
++  });
++
+   it('adds an open task with a normal priority by default', () => {
+     const list = createTodoList();
+     const task = valueOf(list.add({ title: '  Buy milk ' }));
+-    assert.deepEqual(task, { id: 'task-1', title: 'Buy milk', priority: 'normal', tags: [], status: 'open' });
++    assert.deepEqual(
++      { ...task, createdAt: 'timestamp', updatedAt: 'timestamp' },
++      { id: 'task-1', createdAt: 'timestamp', updatedAt: 'timestamp', title: 'Buy milk', priority: 'normal', tags: [], status: 'open' },
++    );
++    assert.match(task.createdAt, /^\d{4}-\d{2}-\d{2}T/);
++    assert.equal(task.updatedAt, task.createdAt);
+     assert.equal(list.openCount(), 1);
+   });
+ 

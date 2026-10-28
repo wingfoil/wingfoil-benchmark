@@ -1,0 +1,114 @@
+diff --git a/README.md b/README.md
+index 39354485c621a4a85c8967eb051274065d588af0..aee14c3559d7186a30fd3a1aa5fec3cca3e06866 100644
+--- a/README.md
++++ b/README.md
+@@ -1,6 +1,6 @@
+ # lakeside-desk
+ 
+-Documentation version: 0.3.0 (2026-10-28)
++Documentation version: 0.4.0 (2026-10-28)
+ 
+ The Lakeside Windsurf School teaches windsurfing on the lake from April to October, and rents boards and
+ sails to its students and to visitors who bring their own experience. This repository holds the software
+@@ -21,6 +21,10 @@ A rental period is `[start, end)`: both timestamps must be midnight UTC, and
+ when it overlaps another booking for the same item; periods that only touch at
+ their boundary are permitted. Booking IDs are assigned in creation order.
+ 
++Rentals lasting three days or more receive a 10% discount on their full price.
++Both quotes and bookings return this discounted total in euro cents. When the
++discounted amount falls between cents, it is rounded to the nearest cent.
++
+ The service has no cancellation operation yet. When it is added, the school
+ policy is a full refund at least 24 hours before the booking start and no refund
+ after that point.
+diff --git a/src/index.ts b/src/index.ts
+index f65df87d7f9a37d0fccb46f0d2c454b1bc95d56c..2f93aa25314ce0eded755631df5e34079b6e129c 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -20,7 +20,7 @@ export interface RentalRequest {
+ 
+ /** The price for a valid rental period. */
+ export interface RentalQuote extends RentalRequest {
+-  /** Total rental price, expressed as an integer number of euro cents. */
++  /** Total rental price after any applicable duration discount, in euro cents. */
+   total: number;
+ }
+ 
+@@ -58,6 +58,9 @@ interface ValidatedRental extends RentalQuote {
+ }
+ 
+ const DAY_IN_MILLISECONDS = 24 * 60 * 60 * 1_000;
++const LONG_RENTAL_MINIMUM_DAYS = 3;
++const LONG_RENTAL_DISCOUNT_NUMERATOR = 9n;
++const LONG_RENTAL_DISCOUNT_DENOMINATOR = 10n;
+ const UTC_MIDNIGHT = /^\d{4}-\d{2}-\d{2}T00:00:00(?:\.0{1,3})?Z$/;
+ 
+ /**
+@@ -123,7 +126,15 @@ export function createRentalService(): RentalService {
+     }
+ 
+     const days = (endTime - startTime) / DAY_IN_MILLISECONDS;
+-    const total = days * item.dailyPrice;
++    const fullTotal = days * item.dailyPrice;
++    if (!Number.isSafeInteger(fullTotal)) {
++      throw new Error('The rental total is outside the supported money range.');
++    }
++
++    const total = days >= LONG_RENTAL_MINIMUM_DAYS
++      ? Number((BigInt(fullTotal) * LONG_RENTAL_DISCOUNT_NUMERATOR
++        + LONG_RENTAL_DISCOUNT_DENOMINATOR / 2n) / LONG_RENTAL_DISCOUNT_DENOMINATOR)
++      : fullTotal;
+     if (!Number.isSafeInteger(total)) {
+       throw new Error('The rental total is outside the supported money range.');
+     }
+diff --git a/test/rental-service.test.mjs b/test/rental-service.test.mjs
+index fd6aada38ababca06db011cfc02718fe6598a9fa..2007aecbe806e779892d9b2bf3ea0944d40f9c62 100644
+--- a/test/rental-service.test.mjs
++++ b/test/rental-service.test.mjs
+@@ -3,7 +3,7 @@ import test from 'node:test';
+ 
+ import { createRentalService } from '../dist/index.js';
+ 
+-test('quotes and books a whole-day rental in euro cents', () => {
++test('quotes and books rentals of three days or more at 10% off', () => {
+   const rentals = createRentalService();
+   rentals.addEquipment({ id: 'board-1', kind: 'board', dailyPrice: 2_500 });
+ 
+@@ -13,8 +13,35 @@ test('quotes and books a whole-day rental in euro cents', () => {
+     end: '2026-06-04T00:00:00.000Z',
+   };
+ 
+-  assert.deepEqual(rentals.quote(request), { ...request, total: 7_500 });
+-  assert.deepEqual(rentals.book(request), { id: 'booking-1', ...request, total: 7_500 });
++  assert.deepEqual(rentals.quote(request), { ...request, total: 6_750 });
++  assert.deepEqual(rentals.book(request), { id: 'booking-1', ...request, total: 6_750 });
++});
++
++test('charges the full price for rentals shorter than three days', () => {
++  const rentals = createRentalService();
++  rentals.addEquipment({ id: 'sail-1', kind: 'sail', dailyPrice: 1_800 });
++
++  assert.deepEqual(rentals.quote({
++    itemId: 'sail-1',
++    start: '2026-06-01T00:00:00.000Z',
++    end: '2026-06-03T00:00:00.000Z',
++  }), {
++    itemId: 'sail-1',
++    start: '2026-06-01T00:00:00.000Z',
++    end: '2026-06-03T00:00:00.000Z',
++    total: 3_600,
++  });
++});
++
++test('rounds discounted totals to the nearest cent', () => {
++  const rentals = createRentalService();
++  rentals.addEquipment({ id: 'sail-1', kind: 'sail', dailyPrice: 3 });
++
++  assert.equal(rentals.quote({
++    itemId: 'sail-1',
++    start: '2026-06-01T00:00:00.000Z',
++    end: '2026-06-04T00:00:00.000Z',
++  }).total, 8);
+ });
+ 
+ test('rejects unknown equipment and periods that are not whole days', () => {

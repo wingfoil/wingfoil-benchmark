@@ -1,0 +1,154 @@
+diff --git a/README.md b/README.md
+index 7752ef5eb8bbedf009d30c2f5a43b2a16d779366..e9c39e9bbe268101976ca2e73f395d7f897ca25b 100644
+--- a/README.md
++++ b/README.md
+@@ -11,4 +11,6 @@ of its booking desk, written in TypeScript with no runtime dependency.
+ prices a request and `book()` reserves it; both accept `{ itemId, start, end }` and require UTC
+ ISO-8601 timestamps at midnight. Rental periods are start-inclusive and end-exclusive, so the end is
+ the midnight following the final rental day. A booking cannot overlap an existing booking for the same
+-item. Cancellation is not implemented yet.
++item. `availability({ start, end, kind? })` returns sorted IDs of equipment without an overlapping
++booking for that full period, optionally restricted to `board` or `sail`. Cancellation is not
++implemented yet.
+diff --git a/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-2-plan.md b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-2-plan.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..d656729bc4d01c35f66bd011d97d93e8c7101b37
+--- /dev/null
++++ b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-2-plan.md
+@@ -0,0 +1,17 @@
++---
++id: sw-life-cycle-1-2-plan
++type: plan
++title: "Add rental equipment availability query"
++status: active
++workflow: "sw-life-cycle"
++phase: "1-2"
++element: ""
++parent: ""
++format: 1
++---
++
++<!-- plan body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
+diff --git a/docs/memory/task/task-002-add-rental-equipment-availability-query.md b/docs/memory/task/task-002-add-rental-equipment-availability-query.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..984ac18af3094302f870c639c78598706cdc28c9
+--- /dev/null
++++ b/docs/memory/task/task-002-add-rental-equipment-availability-query.md
+@@ -0,0 +1,13 @@
++---
++id: task-002-add-rental-equipment-availability-query
++type: task
++title: "Add rental equipment availability query"
++status: approved
++format: 1
++---
++
++Add `availability(query)` to the rental service. `query` contains UTC-midnight, whole-day `start`
++and `end` timestamps and an optional `kind` (`board` or `sail`). The operation returns the sorted
++equipment IDs matching the requested kind, or all kinds when omitted, which have no overlapping
++booking for the entire requested period. Invalid periods and invalid kinds must be rejected using
++the service's existing validation rules.
+diff --git a/src/index.ts b/src/index.ts
+index 59bafbefb0a538901835d5da5977298a14a5889d..690124b293c76b9ad157ce51d1749efdcb0484b6 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -12,6 +12,13 @@ export interface RentalRequest {
+   end: string;
+ }
+ 
++/** A period for finding free equipment, optionally restricted to one equipment kind. */
++export interface AvailabilityQuery {
++  start: string;
++  end: string;
++  kind?: Equipment['kind'];
++}
++
+ /** The price of a valid rental request, in euro cents. */
+ export interface RentalQuote extends RentalRequest {
+   total: number;
+@@ -27,6 +34,7 @@ export interface RentalService {
+   addEquipment(item: Equipment): void;
+   quote(request: RentalRequest): RentalQuote;
+   book(request: RentalRequest): RentalBooking;
++  availability(query: AvailabilityQuery): string[];
+ }
+ 
+ const DAY_IN_MILLISECONDS = 24 * 60 * 60 * 1_000;
+@@ -78,6 +86,16 @@ export function createRentalService(): RentalService {
+       bookings.push(booking);
+       return { ...booking };
+     },
++
++    availability(query: AvailabilityQuery): string[] {
++      const period = validateAvailabilityQuery(query);
++      return [...equipment.values()]
++        .filter((item) => query.kind === undefined || item.kind === query.kind)
++        .filter((item) => !bookings.some((booking) => booking.itemId === item.id
++          && periodsOverlap(period, validatePeriod(booking))))
++        .map((item) => item.id)
++        .sort();
++    },
+   };
+ }
+ 
+@@ -116,6 +134,14 @@ function validatePeriod(request: RentalRequest): ValidatedPeriod {
+   return { startTime, endTime };
+ }
+ 
++function validateAvailabilityQuery(query: AvailabilityQuery): ValidatedPeriod {
++  const period = validatePeriod(query);
++  if (query.kind !== undefined && query.kind !== 'board' && query.kind !== 'sail') {
++    throw new Error('Equipment kind must be board or sail');
++  }
++  return period;
++}
++
+ function isUtcMidnight(value: unknown): value is string {
+   if (typeof value !== 'string') {
+     return false;
+diff --git a/test/rental-service.test.mjs b/test/rental-service.test.mjs
+index 81afd6b362173cde1baa70d24eec75db81e47421..a8f219047f8e84e48ea3b35eeb57311bb57ed775 100644
+--- a/test/rental-service.test.mjs
++++ b/test/rental-service.test.mjs
+@@ -38,3 +38,37 @@ test('rejects unknown items, non-whole-day periods, and overlapping bookings', (
+     itemId: 'sail-1', start: '2026-06-03T00:00:00Z', end: '2026-06-04T00:00:00Z',
+   }));
+ });
++
++test('lists sorted equipment that is available for a whole period', () => {
++  const rentals = createRentalService();
++  rentals.addEquipment({ id: 'board-z', kind: 'board', dailyPrice: 2_500 });
++  rentals.addEquipment({ id: 'board-a', kind: 'board', dailyPrice: 2_000 });
++  rentals.addEquipment({ id: 'sail-b', kind: 'sail', dailyPrice: 1_500 });
++  rentals.addEquipment({ id: 'sail-a', kind: 'sail', dailyPrice: 1_300 });
++
++  rentals.book({
++    itemId: 'board-z', start: '2026-06-01T00:00:00Z', end: '2026-06-03T00:00:00Z',
++  });
++  rentals.book({
++    itemId: 'sail-b', start: '2026-06-03T00:00:00Z', end: '2026-06-05T00:00:00Z',
++  });
++
++  const period = { start: '2026-06-02T00:00:00Z', end: '2026-06-04T00:00:00Z' };
++  assert.deepEqual(rentals.availability(period), ['board-a', 'sail-a']);
++  assert.deepEqual(rentals.availability({ ...period, kind: 'board' }), ['board-a']);
++  assert.deepEqual(rentals.availability({ ...period, kind: 'sail' }), ['sail-a']);
++  assert.deepEqual(rentals.availability({
++    start: '2026-06-05T00:00:00Z', end: '2026-06-06T00:00:00Z',
++  }), ['board-a', 'board-z', 'sail-a', 'sail-b']);
++});
++
++test('rejects availability queries with invalid periods or equipment kinds', () => {
++  const rentals = createRentalService();
++
++  assert.throws(() => rentals.availability({
++    start: '2026-06-01T12:00:00Z', end: '2026-06-02T00:00:00Z',
++  }));
++  assert.throws(() => rentals.availability({
++    start: '2026-06-01T00:00:00Z', end: '2026-06-02T00:00:00Z', kind: 'kite',
++  }));
++});
