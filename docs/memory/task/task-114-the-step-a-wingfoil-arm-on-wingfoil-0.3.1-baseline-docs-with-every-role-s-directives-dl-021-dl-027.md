@@ -151,3 +151,26 @@ real-agent session (S2, S3, S8 dry runs, campaign-007's runs, `gpt-6.1-terra`) i
 - **The dry runs ran from the worktree** (the approver's choice in chat, 2026-10-28, "1, dal worktree"), not the main
   checkout: main's history does not hold the step-A digests. Each execution's directory, transcripts included, was
   then copied into the main checkout and committed there, with its ledger line.
+- **The four dry runs** (S1@1.0, 2026-10-28; committed on main, `b275f1cb`; four ledger lines; read by a script over
+  the transcripts, never by hand):
+
+  | | Claude Code | Codex |
+  |---|---|---|
+  | wingfoil (`d8e7f0ee3779`) | `dry-runs/88`: 164/165, hold-out 45/48; 2 interventions; 0.5821 USD | `dry-runs/90`: 165/165, hold-out 48/48; 5 interventions; 1.5148 USD |
+  | baseline-docs (`64e37c838830`) | `dry-runs/89`: 164/165, hold-out 45/48; none; 0.5028 USD | `dry-runs/91`: 164/165, hold-out 45/48; none; 0.9680 USD |
+
+  All four completed; 0 € billed; no MCP call in any session (decision 2); no forbidden verb (decision 3); no Codex
+  resume on another model (bug-036 fixed). Secret scan: the runner's scrub, then a pattern scan (Anthropic and OpenAI
+  token shapes, JWTs, `access_token`/`refresh_token` values) of the results, the workspaces and every git object of
+  their histories: clean.
+- **Codex (`dry-runs/90`) follows the cycle as designed:** each of the five requests opens its own instance (step 1
+  the setup's), adds and submits its task (decision 1), stops at the review gate asking for the approval, gets
+  "Approved. Proceed.", approves its task and finalizes the delivery.
+- **Claude Code (`dry-runs/88`) stops at the gate without asking:** at steps 1–3 `workflow next` printed `human
+  needed: approve or reject <tasks>`, and the session ended on a statement ("needs approval of task-001 … from the
+  approver", "waiting on approval of task-001, task-002 and task-003. I'm stopping here for that"), which approver
+  policy v2 does not read as a request (dl-026: a request needs a requester); no reply came, the instance stayed at its
+  review, and steps 2 and 3 added their tasks to it (decision 1 held: each request has its task). At step 4 the
+  session asked; one reply, and it approved the four tasks one by one and finalized one delivery. Step 5 opened a new
+  instance and passed its gate. Every request had its task, and every task was approved, but three gates were
+  answered late, in one batch.
