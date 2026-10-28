@@ -146,11 +146,17 @@ real-agent session (S2, S3, S8 dry runs, campaign-007's runs, `gpt-6.1-terra`) i
   (developer, reviewer, qa, architect, product-owner, tech-lead) and four global ones.
 - **The arms with the fake agent in the run container** (criterion 7): the docker W3 test, `BENCH_WINGFOIL_REPO` at
   v0.3.1: the setup opens the instance (four commits), `workflow next` prints `kanban-delivery.plan`, baseline-docs
-  gets every role's directives labelled; green. The other docker tests run with the full suites.
-- **Digests:** wingfoil `d8e7f0ee3779`, baseline-docs `64e37c838830`, baseline `964b1354526c` (unchanged).
+  gets every role's directives labelled; green. The other docker tests run with the full suites. **A deviation from
+  criterion 7:** the W3 test runs the fixture scenario T2 with the fake agent, not a fake-agent dry run of S1@1.0 in
+  each changed arm; it holds no credential, so no secret scan applies to it.
+- **The first build's digests:** wingfoil `d8e7f0ee3779`, baseline-docs `64e37c838830`, baseline `964b1354526c`
+  (unchanged); wingfoil's final digest is below.
 - **The dry runs ran from the worktree** (the approver's choice in chat, 2026-10-28, "1, dal worktree"), not the main
-  checkout: main's history does not hold the step-A digests. Each execution's directory, transcripts included, was
-  then copied into the main checkout and committed there, with its ledger line.
+  checkout: main's history does not hold the step-A digests. **For the Codex ones this departs from dl-024's bound 1**
+  ("from the main checkout"), which dl-025, dl-027 and dl-028 keep; recorded here and in their ledger lines, with no
+  amendment of dl-024 (the approver in chat, 2026-10-28, "1 ok"): campaign-007 runs from main after the merge. Each
+  execution's directory was then copied into the main checkout and committed there with its ledger line; its
+  transcripts, git-ignored (`.gitignore:13`), and its workspace under `runs/` were copied beside it, not committed.
 - **The four dry runs** (S1@1.0, 2026-10-28; committed on main, `b275f1cb`; four ledger lines; read by a script over
   the transcripts, never by hand):
 
@@ -179,10 +185,12 @@ real-agent session (S2, S3, S8 dry runs, campaign-007's runs, `gpt-6.1-terra`) i
 - **The manual corrected twice** (the approver's choice in chat, 2026-10-28, "2 correggi il manuale", consenting to
   the two wingfoil dry runs again; then "sì, correggi e lancia i 2 dry run" for two more):
   - `13f44241` asked, at a gate, for "Do you approve <id>?" (digest `9af52370f697`). **Wrong:** approver policy v2
-    reads it as a question. `dry-runs/92` (Claude Code, 164/165, 45/48, 10 interventions, 0.7782 USD) got the
-    question's reply at every step, refused to approve on it at steps 3 and 4 (cap reached) and approved tasks 003–005
-    at step 5; `dry-runs/93` (Codex, 165/165, 48/48, 5 interventions, 1.6682 USD) **approved its own task at every
-    step on the question's reply** ("Make the most reasonable choice, record it, and proceed"). The phrase had not been
+    reads it as a question. `dry-runs/92` (Claude Code, 164/165, 45/48, 12 interventions, 0.7782 USD) got the
+    question's reply at every step; at steps 1, 2 and 5 its next message ("If the reply is "Approved. Proceed.", I'll
+    run …") read as a request, got "Approved. Proceed." and it approved (task-001, task-002, then 003–005); at steps 3
+    and 4 it refused to approve on the question's reply and reached the cap; `dry-runs/93` (Codex, 165/165, 48/48, 5 interventions, 1.6682 USD) **approved its own task at every
+    step on the question's reply** ("Make the most reasonable choice, record it, and proceed"), at steps 3 and 5 with
+    `--reason "Approved. Proceed."`, a reason the reply did not give. The phrase had not been
     run through the classifier before the dry runs.
   - `8c2dae54` (digest `dd43760095bd`, final): the gate's request is "Please approve <id>." for each document `next`
     lists, which a test runs through `classifyV2` (`approval`); and any reply but "Approved. Proceed." is no approval:
@@ -196,3 +204,29 @@ real-agent session (S2, S3, S8 dry runs, campaign-007's runs, `gpt-6.1-terra`) i
   in `campaigns/codex-terra-step-a.dry-run.yaml`. `dry-runs/88`, 90, 92 and 93 ran earlier digests: evidence of the
   corrections, not campaign-007's dry runs. Eight real dry runs in all: 8.2143 USD API-equivalent (the ledger's
   eight lines summed), 0 € billed, under the consent's 20 €.
+- **criterion 4's scenario:** a new `runner.feature` scenario, "A docs control that declares every role gets every
+  role's rules, labelled", beside the existing one, which stays as it was (the docs control without the choice).
+
+### Review
+
+Under dl-020; `scripts/pre-review.sh main` green before each round.
+
+- **Round 1** (an independent read-only agent, its scripts in a `mktemp` directory; both checkouts' HEAD and reflog
+  unchanged): the code, the manual against the three decisions and WingFoil 0.3.1's commands, the gate phrase through
+  `classifyV2` (16 variants), parity, every dry run's figures by its own scripts, the digests, the cited commits.
+  No blocker.
+  - **should-fix, fixed:** dry-runs/92's interventions were 12, not 10 (here and the ledger, `b414a460`); the
+    manual's "run the commands `next` prints" against "never approve on your own initiative" at the review gate
+    (an explicit `memory approve` exception, `b246c8b4`); the Codex dry runs' departure from dl-024's bound 1
+    recorded (above, and the ledger); criterion 7's substitution recorded; baseline-docs' Rules sentence assumed a
+    role and a step the docs control's agent does not have: now "Follow those that fit the work you are doing, and
+    always those for every role." (the approver's wording in chat, 2026-10-28).
+  - **nits, fixed:** the digests line marked as the first build's; "transcripts included" corrected; dry-runs/93's
+    false `--reason`; "each document you asked about"; the setup's instance described as the first request's; the
+    setup's comment names v0.3.1; `docs_directives` refused on a docs control not generated from wingfoil; REQ-RUN-15
+    1.41 says how a campaign file is named and which refusals name which decisions; the Codex scope's comment and
+    two messages, `arm.ts` and `runner.feature`'s header within 120 columns; criterion 4's new scenario recorded.
+  - **nit, recorded:** `rekey` is not a 0.3.1 verb; the manual forbids it as the approver chose.
+  - The manual's fixes move wingfoil's digest to `cf70ad7ed9aa`; baseline-docs' sentence is generator code, its
+    digest unchanged. The approver chose (chat, 2026-10-28, "2 rifai solo Codex, 3 frase ok e rifai baseline-docs")
+    to run again Codex's two dry runs, campaign-007's.
