@@ -1,0 +1,79 @@
+diff --git a/README.md b/README.md
+index 99d8d5a571de6c9df60da81b5008358380be77f2..0e32879860d44721e9ca8b1c3039d477273e0cf5 100644
+--- a/README.md
++++ b/README.md
+@@ -15,4 +15,5 @@ whole document. Non-empty pointers must begin with `/`; `~0` represents `~` and
+ 
+ `applyPatch(document, patch)` applies an [RFC 6902 JSON Patch](https://www.rfc-editor.org/rfc/rfc6902)
+ array using the `add`, `remove`, `replace`, `move`, `copy`, and `test` operations. It returns a new
+-JSON value and never mutates the source document. Invalid patch documents and failed operations throw.
++JSON value and never mutates the source document. Both inputs must be JSON values; invalid patch
++documents and failed operations throw, leaving the source document unchanged.
+diff --git a/src/index.ts b/src/index.ts
+index ff64b49f025fc9aae8408adbfdd424b66524436e..81dfbd1e2a228950ead82b31de80f4dce039deb6 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -36,6 +36,7 @@ export function applyPatch(document: unknown, patch: unknown): unknown {
+   if (!Array.isArray(patch)) {
+     throw new TypeError('A JSON Patch must be an array of operations.');
+   }
++  assertJsonValue(patch, 'A JSON Patch');
+ 
+   let result = cloneJson(document);
+   for (const operation of patch) {
+@@ -86,6 +87,7 @@ function applyOperation(document: unknown, operation: unknown): unknown {
+ function moveAt(document: unknown, path: string[], operation: Record<string, unknown>): unknown {
+   const from = getFrom(operation, 'move');
+   const fromTokens = parsePointer(from);
++  const value = resolveAt(document, fromTokens);
+   if (isProperPrefix(fromTokens, path)) {
+     throw new Error('A JSON Patch move destination cannot be inside its source.');
+   }
+@@ -93,7 +95,6 @@ function moveAt(document: unknown, path: string[], operation: Record<string, unk
+     return document;
+   }
+ 
+-  const value = resolveAt(document, fromTokens);
+   return addAt(removeAt(document, fromTokens), path, value);
+ }
+ 
+@@ -103,7 +104,7 @@ function copyAt(document: unknown, path: string[], operation: Record<string, unk
+ }
+ 
+ function getFrom(operation: Record<string, unknown>, op: string): string {
+-  if (typeof operation.from !== 'string') {
++  if (!Object.hasOwn(operation, 'from') || typeof operation.from !== 'string') {
+     throw new TypeError(`A JSON Patch ${op} operation must have a string "from" member.`);
+   }
+   return operation.from;
+diff --git a/test/index.test.mjs b/test/index.test.mjs
+index 6ca49559f951f96fbf24315f0ab1fe0cc17fe9ad..f0e40df32d6fcbe3c60a61fa761bd524a0ecd491 100644
+--- a/test/index.test.mjs
++++ b/test/index.test.mjs
+@@ -84,3 +84,26 @@ test('rejects malformed patches and failed operations', () => {
+   assert.throws(() => applyPatch({ value: 1 }, [{ op: 'test', path: '/value', value: 2 }]));
+   assert.throws(() => applyPatch({ a: {} }, [{ op: 'move', from: '/a', path: '/a/b' }]));
+ });
++
++test('rejects a same-location move when its source does not exist', () => {
++  assert.throws(() => applyPatch({}, [{ op: 'move', from: '/missing', path: '/missing' }]));
++});
++
++test('accepts only JSON Patch documents and ignores defined extra members', () => {
++  assert.throws(() => applyPatch({}, [{ op: 'add', path: '/value', value: 1, extra: undefined }]));
++  assert.deepEqual(
++    applyPatch({}, [{ op: 'add', path: '/value', value: 1, extra: { ignored: true } }]),
++    { value: 1 },
++  );
++});
++
++test('leaves the source document unchanged when a later operation fails', () => {
++  const source = { value: 1 };
++
++  assert.throws(() => applyPatch(source, [
++    { op: 'replace', path: '/value', value: 2 },
++    { op: 'test', path: '/value', value: 3 },
++  ]));
++
++  assert.deepEqual(source, { value: 1 });
++});
