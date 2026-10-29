@@ -2,7 +2,7 @@
 id: task-116-s10-gates-and-roles-scenario-dl-029
 type: task
 title: "S10 gates and roles scenario (dl-029)"
-status: backlog
+status: in-progress
 release: v0.3
 wave: W17
 features: [F6.13]
