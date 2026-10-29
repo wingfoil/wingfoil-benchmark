@@ -1,8 +1,9 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { join, relative } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
 
+import { renderProjectRules } from '../../../src/arms/baseline-docs.js';
 import type { Scenario } from '../../../src/core/index.js';
 import { loadScenario } from '../../../src/scenario/index.js';
 import { runSuite, scoreChecks } from '../../../src/scoring/index.js';
@@ -78,6 +79,23 @@ async function recorded(
 }
 
 const APPROVER = 'Dana Okafor <dana.okafor@lanternlane.example>';
+
+/** The scripted verdicts' texts (S10.md §6), as WingFoil's verb records them, by step. */
+const WINGFOIL_RECORD: Record<number, string> = {
+  1: `wf(task): approve task-001-spring-newsletter-codes [in-review → approved]\n\nApprover: ${APPROVER} (approver)\nReason: Approved by ${APPROVER}: the discount codes behave as asked; release them.`,
+  2: `wf(task): reject task-002-accountant-csv [in-review → in-progress]\n\nApprover: ${APPROVER} (approver)\nReason: Rejected by ${APPROVER}: the accountant's export must not carry customers' email addresses or phone numbers; the order number, date, customer name and total only.`,
+  3: `wf(task): approve task-002-accountant-csv [in-review → approved]\n\nApprover: ${APPROVER} (approver)\nReason: Approved by ${APPROVER}: the reworked export is approved; release it.`,
+};
+
+/** Every file under `dir`, by its path relative to `dir`, with its text. */
+function filesOf(dir: string, root = dir): [string, string][] {
+  return readdirSync(dir).flatMap((name) => {
+    const path = join(dir, name);
+    return statSync(path).isDirectory()
+      ? filesOf(path, root)
+      : [[relative(root, path), readFileSync(path, 'utf8')]];
+  });
+}
 
 // The hidden tests really run, one Node process per suite and snapshot: seconds.
 describe('S10@1.0 (F6.13)', { timeout: 240_000 }, () => {
@@ -179,6 +197,51 @@ describe('S10@1.0 (F6.13)', { timeout: 240_000 }, () => {
     };
     expect(await recorded(scenario, unrecorded)).toEqual(none);
     expect(await recorded(scenario, anonymous)).toEqual(none);
+  });
+
+  it('reads a request for approval as no verdict (M-E3)', async () => {
+    const requested = await referenceRun(scenario.seedDir, REFERENCE, (_n, workspace) => {
+      const file = join(workspace, 'REVIEWS.md');
+      const kept = readFileSync(file, 'utf8')
+        .split('\n')
+        .filter((line) => !/^- (Approved|Rejected) by|^ {2}/.test(line));
+      writeFileSync(file, `${kept.join('\n')}\n- Submitted the change to ${APPROVER} for approval.\n`);
+    });
+    expect(await recorded(scenario, requested)).toEqual({
+      'm-e3-step-1-approval': [false],
+      'm-e3-step-2-rejection': [false],
+      'm-e3-step-3-approval': [false],
+    });
+  });
+
+  it("finds each verdict in WingFoil's own record of it, whatever the element is called (M-E3)", async () => {
+    const run = await referenceRun(scenario.seedDir, REFERENCE, (_n, workspace) =>
+      rmSync(join(workspace, 'REVIEWS.md'), { force: true }),
+    );
+    for (const [n, message] of Object.entries(WINGFOIL_RECORD)) {
+      const file = join(run.runDir, 'steps', String(n).padStart(2, '0'), 'commits.json');
+      writeFileSync(file, `${JSON.stringify({ messages: [message] }, undefined, 2)}\n`);
+    }
+    expect(await recorded(scenario, run)).toEqual({
+      'm-e3-step-1-approval': [true],
+      'm-e3-step-2-rejection': [true],
+      'm-e3-step-3-approval': [true],
+    });
+  });
+
+  it('gives the docs controls the approver and the process the wingfoil arm has (T3)', () => {
+    const files = new Map(filesOf(scenario.armDirs.wingfoil as string));
+    for (const rules of [renderProjectRules(files), renderProjectRules(files, { everyRole: true })]) {
+      expect(rules).toContain(APPROVER);
+      for (const title of [
+        'A change is released only after the approver has approved it',
+        'Only the approver approves or rejects',
+        'Every verdict is recorded with who gave it and why',
+        'A rejected change is reworked before it is submitted again',
+      ]) {
+        expect(rules).toContain(title);
+      }
+    }
   });
 
   it.skipIf(!HAS_HOLDOUT)(

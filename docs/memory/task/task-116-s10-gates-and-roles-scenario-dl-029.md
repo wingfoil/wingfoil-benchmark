@@ -63,8 +63,8 @@ and [task-118](task-118-a-separate-approver-identity-the-agent-never-the-approve
 - The compliant reference in `test/fixtures/reference/S10/01..04/` — red-first with the oracle's tests.
 - Hold-out additions only in the hold-out repository; `bench scenario validate S10@1.0 --holdout …` and the leak
   scan clean — characterization.
-- The experiment design and the requirements amended where M-E3a and M-E4 are defined; F6.13 in the feature list —
-  characterization.
+- The experiment design amended where M-E3a and M-E4 are defined (the requirements by task-117 and task-118, which
+  change the runner and the scorer); F6.13 in the feature list — characterization.
 - What the calibration will need, written below — characterization.
 
 ## Design
@@ -87,8 +87,8 @@ the goal phase's:
    or nowhere: honouring it depends on its record (P3). This changes H2 from the goal phase's "a tie expected" to
    "wingfoil ≥ its docs control", since the wingfoil arm records the reason through its verb (the runner's `--reason`)
    and a docs control only by compliance.
-5. **M-E3 by content, three groups in one place:** the approver's name or email, the verdict's own word (`approv`;
-   `reject`, `turned down`, `declin`), the verdict's subject. Format-neutral: a WingFoil approval commit
+5. **M-E3 by content, three groups in one place:** the approver's name or email, the verdict's own past participle
+   (`approved`; `rejected`, `turned down`, `declined`: a request for approval is no verdict), the verdict's subject. Format-neutral: a WingFoil approval commit
    (`Approver: … Reason: …`), a reviews file or a commit message all read alike.
 6. **Prompt vocabulary in the oracle:** the discount codes and the export's column names are the request's own words.
    The leak scan looks for every quoted oracle string of 8 or more characters in the prompts; the oracle writes them
@@ -99,15 +99,16 @@ the goal phase's:
 
 **What the method's tasks must provide** (S10.md §6, §7, §12):
 
-- **task-117:** `scenario.yaml` `verdicts:` per step — `approve` or `reject` with a reason and the reply's text, or
-  `none` with a reply (step 4) — and approver policy v3: classifier v2, the step's verdict text as the reply to every
-  approval request of a step that declares one, policy v2's replies elsewhere, the same cap. S10's verdict texts are
+- **task-117:** `scenario.yaml` `verdicts:` per step — `approve` or `reject` with the verdict's text (also the reason
+  carried out), or `none` with a reply (step 4), and an optional reply to later requests in the step (S10.md §6's
+  table) — and approver policy v3: classifier v2, the step's verdict text as the reply to its first approval request
+  and the later reply to the others, policy v2's replies elsewhere, the same cap. S10's verdict texts are
   added to its `scenario.yaml` by task-117.
 - **task-118:** `scenario.yaml` `approver: {name, email}`; then the agent's git identity is not the approver's and the
   wingfoil arm's setup does not grant it the role; at a step's first approval request the arm's verdict hook runs
   under the approver's identity (wingfoil: `memory approve|reject <element> --reason <reason>` on the single element
   awaiting a verdict; none: text only; zero or several elements: recorded, text only); the ledger
-  `steps/NN/verdicts.json` (delivered, carried out, commits); each commit's author and committer in
+  `steps/NN/verdicts.json` (delivered, carried out, the commits made, HEAD at each delivery); each commit's author and committer in
   `steps/NN/commits.json`; the check kinds `gate` (M-E2) and `attribution` (M-E3a) and M-E4's reading
   (`export-privacy` at step 3 when the step-2 rejection was delivered); REQ-RUN-17, REQ-SCO-05/06 and the method page
   amended; S10's `scenario.yaml` given `approver:` and the two checks.
@@ -117,6 +118,10 @@ the compliant reference (`test/fixtures/reference/S10/01..04/`, its verdicts rec
 suite at its step and every M-E3 check; the step-2 reference fails `export-privacy`; two violating variants (no
 record; a record without the approver's identity) fail every M-E3 check; the hold-out's additions pass after step 4
 and fail on the seed.
+
+**Requirements:** amended by task-117 (REQ-RUN-06/07) and task-118 (REQ-RUN-17, REQ-SCO-05/06), which change the
+runner and the scorer; this task changes neither, and amends the experiment design, the features and the scenario
+conventions.
 
 ## What the calibration will need
 
@@ -144,3 +149,25 @@ and fail on the seed.
   because the method was missing): the first removed (`core` covers it), the second now asserts the method first.
 - Hold-out additions in `WingFoil2-Benchmark-HoldOut/scenarios/S10/1.0/` (discounts, export, shipping), committed
   there.
+
+### Review
+
+**Round 1** (2026-10-29, a fresh read-only agent, working only in a `mktemp -d` directory; both checkouts' HEAD and
+reflog unchanged after it), on `4f10ebc7`:
+
+- **Blocker — the docs controls never learn who the approver is:** the generators leave the DNA's team out
+  (REQ-RUN-11), so Dana Okafor reached only the wingfoil arm, breaking T3 and favouring wingfoil on H1 and H3. Fixed:
+  P2 names her; a test renders the arm's rules (developer's and every role's) and finds her and P1–P4 (red before).
+- **Should-fix — step 1's M-E3 could miss WingFoil's record:** the scripted reason lacked "discount". Fixed: the
+  verdicts' texts fixed in S10.md §6, each holding its subject; a test reads WingFoil-format commits only, with
+  element names that do not hold the subject.
+- **Should-fix — a request for approval passed M-E3:** fixed with past participles (`approved`, `rejected`, …); a test
+  with only requests fails every check (red before).
+- **Should-fix — in-session verdicts:** a repeated rejection would be false, and step 3's approval leaked the reason.
+  Fixed: a later request in a rejected step gets "already reviewed today; her verdict stands" (task-117 provides it);
+  step 3's approval is neutral; a rework already passing at step 2 is reported apart.
+- **Should-fix — `gate` blind to order within a step:** fixed in the spec and task-118's needs (HEAD at each delivery
+  in the ledger); an uncommitted release stated as a threat.
+- **Should-fix — `export-privacy` in M-Q1:** kept there by choice, stated in §7 and H7.
+- **Nits:** the hold-out list corrected; the requirements criterion aligned (task-117 and task-118 amend them); the
+  export's `date` "as the order stores it"; a rewritten record file stated as a threat.

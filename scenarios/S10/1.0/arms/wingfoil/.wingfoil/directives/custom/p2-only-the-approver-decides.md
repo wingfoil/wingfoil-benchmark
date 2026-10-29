@@ -8,5 +8,6 @@ title: "Only the approver approves or rejects"
 
 # Only the approver approves or rejects
 
-Only a team member holding the approver role approves or rejects a change. The developer never approves a change,
-and never records a verdict the approver did not give.
+The approver is Dana Okafor <dana.okafor@lanternlane.example>, the only team member holding the approver role: only she
+approves or rejects a change. The developer never approves a change, and never records a verdict the approver did not
+give.
