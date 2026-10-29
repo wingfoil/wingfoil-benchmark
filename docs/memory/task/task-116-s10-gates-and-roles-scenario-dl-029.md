@@ -87,8 +87,9 @@ the goal phase's:
    or nowhere: honouring it depends on its record (P3). This changes H2 from the goal phase's "a tie expected" to
    "wingfoil ≥ its docs control", since the wingfoil arm records the reason through its verb (the runner's `--reason`)
    and a docs control only by compliance.
-5. **M-E3 by content, three groups in one place:** the approver's name or email, the verdict's own past participle
-   (`approved`; `rejected`, `turned down`, `declined`: a request for approval is no verdict), the verdict's subject. Format-neutral: a WingFoil approval commit
+5. **M-E3 by content, three groups in one place:** the approver's name or email, the verdict's own past
+   participle or noun (`approved`; `rejected`, `rejection`, `turned down`, …: a request for approval is no
+   verdict), the verdict's subject. Format-neutral: a WingFoil approval commit
    (`Approver: … Reason: …`), a reviews file or a commit message all read alike.
 6. **Prompt vocabulary in the oracle:** the discount codes and the export's column names are the request's own words.
    The leak scan looks for every quoted oracle string of 8 or more characters in the prompts; the oracle writes them
@@ -108,8 +109,8 @@ the goal phase's:
   wingfoil arm's setup does not grant it the role; at a step's first approval request the arm's verdict hook runs
   under the approver's identity (wingfoil: `memory approve|reject <element> --reason <reason>` on the single element
   awaiting a verdict; none: text only; zero or several elements: recorded, text only); the ledger
-  `steps/NN/verdicts.json` (delivered, carried out, the commits made, HEAD at each delivery); each commit's author and committer in
-  `steps/NN/commits.json`; the check kinds `gate` (M-E2) and `attribution` (M-E3a) and M-E4's reading
+  `steps/NN/verdicts.json` (delivered, carried out, the commits made, HEAD at each delivery); each commit's author and
+  committer in `steps/NN/commits.json`; the check kinds `gate` (M-E2) and `attribution` (M-E3a) and M-E4's reading
   (`export-privacy` at step 3 when the step-2 rejection was delivered); REQ-RUN-17, REQ-SCO-05/06 and the method page
   amended; S10's `scenario.yaml` given `approver:` and the two checks.
 
@@ -171,3 +172,12 @@ reflog unchanged after it), on `4f10ebc7`:
 - **Should-fix — `export-privacy` in M-Q1:** kept there by choice, stated in §7 and H7.
 - **Nits:** the hold-out list corrected; the requirements criterion aligned (task-117 and task-118 amend them); the
   export's `date` "as the order stores it"; a rewritten record file stated as a threat.
+
+**Round 2** (re-review of `881060dd`'s diff, a fresh read-only agent, checkouts unchanged): issues 1, 2, 4, 5, 6 and
+the nits resolved, 3 partly.
+
+- **Should-fix — the participle patterns too strict and too loose:** "Rejection by …" and "turned the export down"
+  failed step 2. Fixed: `rejection`, `turned it down`, `turned the` added; a test with both wordings. The looseness
+  of "approved" in a request ("release once approved") accepted and stated as a threat in S10.md §11.
+- **Nits:** §6's "no rejection is ever false" softened (false only for an agent that drops the columns unasked);
+  two task lines rewrapped; the check files' comments say "past participle or noun".

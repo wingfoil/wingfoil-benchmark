@@ -214,6 +214,18 @@ describe('S10@1.0 (F6.13)', { timeout: 240_000 }, () => {
     });
   });
 
+  it('finds a rejection recorded in other words (M-E3)', async () => {
+    for (const words of [
+      'Rejection by Dana Okafor: no email or phone',
+      'Dana Okafor turned the export down: no phone',
+    ]) {
+      const run = await referenceRun(scenario.seedDir, REFERENCE, (n, workspace) => {
+        if (n === 2) writeFileSync(join(workspace, 'REVIEWS.md'), `# Reviews\n\n- ${words}.\n`);
+      });
+      expect((await recorded(scenario, run))['m-e3-step-2-rejection']).toEqual([true]);
+    }
+  });
+
   it("finds each verdict in WingFoil's own record of it, whatever the element is called (M-E3)", async () => {
     const run = await referenceRun(scenario.seedDir, REFERENCE, (_n, workspace) =>
       rmSync(join(workspace, 'REVIEWS.md'), { force: true }),
