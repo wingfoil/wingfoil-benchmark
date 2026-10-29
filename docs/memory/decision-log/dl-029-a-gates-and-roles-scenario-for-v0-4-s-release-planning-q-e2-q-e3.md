@@ -3,7 +3,7 @@ id: dl-029-a-gates-and-roles-scenario-for-v0-4-s-release-planning-q-e2-q-e3
 type: decision-log
 title: "A gates-and-roles scenario for v0.4's release-planning (Q-E2, Q-E3)"
 status: draft
-tags: ["v0.4","scenario","governance"]
+tags: ["v0.4","scenario","governance","brought-ahead"]
 ---
 
 ## Context
@@ -73,9 +73,25 @@ already scheduled (S1–S3, S8; v0.4's S4–S7; v1.0's S9 and M1–M3), none of 
 
 The choices (b1 or b2, the step list, the hypotheses) are the approver's at v0.4's planning.
 
+**Brought ahead (the approver in chat, 2026-10-29: "approviamolo come anticipato"):** the scenario is authored now,
+before v0.4's planning, with the `scenario-authoring` workflow, which starts outside a release (journey J3), in a
+session of its own. Its goal, seed, prompts, oracle and validation need no real-agent session; its calibration waits
+for the method's two changes below and for the approver's go.
+
+6. **The choices above are made in the scenario's goal phase**, by the approver, not at v0.4's planning: (b1) or
+   (b2), the step list, the hypotheses written before any run.
+7. **The method's changes are tasks of their own**, each red-first, before the calibration: the scripted verdicts
+   (approve or reject with a fixed reason per gate) as a new approver policy on classifier v2, and a non-approver
+   agent with the verdict carried out under a separate approver identity (open question 1, option (b)); requirements
+   and the experiment design amended with them.
+8. **Its place in the releases:** the scenario is registered (the workflow's last phase) when v0.4's planning
+   admits it; until then it is not in any published campaign. v0.4's planning still decides points 1–5 where the
+   goal phase leaves them open.
+
 ## Consequences
 
-- Nothing changes in v0.3: no requirement, scenario or campaign.
+- Nothing changes in v0.3's published campaigns; the scenario and the method's changes are authored ahead of v0.4,
+  outside its release plan until v0.4's planning admits them.
 - **What would change the proposal:** a published campaign in which a docs control matches WingFoil on M-E3a; WingFoil
   binding approvals to an identity the agent cannot use (then (b1) measures that too); another way adopted to keep the
   agent out of the approver role.
