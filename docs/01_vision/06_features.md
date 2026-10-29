@@ -1,7 +1,7 @@
 # Features — WingFoil Benchmark
 
-**Version:** 1.4
-**Date:** 2026-10-27
+**Version:** 1.5
+**Date:** 2026-10-29
 **Status:** Approved
 **Traces to:** [05_journeys.md](05_journeys.md), [03_is-isnot.md](03_is-isnot.md); input: [X_competitor-landscape-2026-09-22.md](X_competitor-landscape-2026-09-22.md)
 
@@ -98,6 +98,7 @@ phase. The IDs below are the candidates from the brief.
 | F6.10 | M1 — Macro: mobile calculator app | C Development | M | H | M |
 | F6.11 | M2 — Macro: bookmarks dashboard (web app, backend, database) | C Development | M | H | M |
 | F6.12 | M3 — Macro: situation awareness with synthetic, seeded data ingestion | F Knowledge & Continuity | M | H | **H** |
+| F6.13 | S10 — Gates and roles: approvals, a rejection and an absent approver | E Governance & Compliance | M | M | M |
 
 ## F7 — Competitors and contributions
 
@@ -176,3 +177,9 @@ phase. The IDs below are the candidates from the brief.
    every arm, so that the loop is a measurement and not an artefact of one arm. Both in v0.3 (sequencer 1.2, W18 and
    W19). Source: [task-103](../memory/task/task-103-the-v0-3-vision-and-experiment-design-amendments.md);
    [plan-005](../plans/plan-005-release-v0-3.md).
+
+10. **Amendment 1.5 (v0.3, W17, 2026-10-29) — F6.13 added.** dl-029, brought ahead by the approver: a scenario for
+    Q-E2 and Q-E3, which no scenario covered, authored before v0.4's planning and run first in the W17 Claude Code
+    campaign. **F6.13 S10 gates and roles**, primary category E. Source:
+    [task-116](../memory/task/task-116-s10-gates-and-roles-scenario-dl-029.md);
+    [dl-029](../memory/decision-log/dl-029-a-gates-and-roles-scenario-for-v0-4-s-release-planning-q-e2-q-e3.md).

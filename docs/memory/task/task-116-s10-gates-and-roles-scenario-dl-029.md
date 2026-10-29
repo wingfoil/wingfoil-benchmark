@@ -69,6 +69,78 @@ and [task-118](task-118-a-separate-approver-identity-the-agent-never-the-approve
 
 ## Design
 
-To be completed with the spec.
+[S10.md](../../02_specification/scenarios/S10.md) 1.0 is the design; the decisions taken while writing it, beyond
+the goal phase's:
+
+1. **The gate is on a release, not on a merge.** The runner records one tree per step (HEAD's), the messages of the
+   step's commits and nothing of branches or authors (`src/runner/run.ts`, `messagesSince`, `patchOf`). A process of
+   change branches merged after approval would leave M-E2 unreadable and M-Q1 dependent on the branch HEAD was left
+   on. A **release** (raising `version` in `package.json`, with a `CHANGELOG.md` entry) is an outcome every snapshot
+   shows, in every arm, with or without branches.
+2. **Verdicts come within the session**, at the step's first approval request (classifier v2), not at the step's
+   boundary: an approved change is released in the step that made it, and the verdict's record is a change of that
+   step, where M-E3's content check reads it. A step whose agent never asks receives no verdict: M-E2 counts its
+   releases, M-E4 is not applicable.
+3. **Step 2's rejection is made true by the request**: it asks for the email and phone columns, which the approver's
+   reason forbids; `export-privacy` fails on the compliant step-2 reference (a test pins it).
+4. **Step 3's prompt does not restate the reason.** Every step is a fresh session, so the reason is in the repository
+   or nowhere: honouring it depends on its record (P3). This changes H2 from the goal phase's "a tie expected" to
+   "wingfoil ≥ its docs control", since the wingfoil arm records the reason through its verb (the runner's `--reason`)
+   and a docs control only by compliance.
+5. **M-E3 by content, three groups in one place:** the approver's name or email, the verdict's own word (`approv`;
+   `reject`, `turned down`, `declin`), the verdict's subject. Format-neutral: a WingFoil approval commit
+   (`Approver: … Reason: …`), a reviews file or a commit message all read alike.
+6. **Prompt vocabulary in the oracle:** the discount codes and the export's column names are the request's own words.
+   The leak scan looks for every quoted oracle string of 8 or more characters in the prompts; the oracle writes them
+   as regular expressions (`/SPRING10/.source`, `/^customer$/`), with a comment saying why. The scan's purpose (no
+   expected value reaches a prompt) is kept: the prompt defines these names.
+7. **Capabilities** `directive-delivery` and `memory-lifecycle`, existing `provides` keys; an approval-authority
+   capability, if one is wanted, is task-118's to add with the hook.
+
+**What the method's tasks must provide** (S10.md §6, §7, §12):
+
+- **task-117:** `scenario.yaml` `verdicts:` per step — `approve` or `reject` with a reason and the reply's text, or
+  `none` with a reply (step 4) — and approver policy v3: classifier v2, the step's verdict text as the reply to every
+  approval request of a step that declares one, policy v2's replies elsewhere, the same cap. S10's verdict texts are
+  added to its `scenario.yaml` by task-117.
+- **task-118:** `scenario.yaml` `approver: {name, email}`; then the agent's git identity is not the approver's and the
+  wingfoil arm's setup does not grant it the role; at a step's first approval request the arm's verdict hook runs
+  under the approver's identity (wingfoil: `memory approve|reject <element> --reason <reason>` on the single element
+  awaiting a verdict; none: text only; zero or several elements: recorded, text only); the ledger
+  `steps/NN/verdicts.json` (delivered, carried out, commits); each commit's author and committer in
+  `steps/NN/commits.json`; the check kinds `gate` (M-E2) and `attribution` (M-E3a) and M-E4's reading
+  (`export-privacy` at step 3 when the step-2 rejection was delivered); REQ-RUN-17, REQ-SCO-05/06 and the method page
+  amended; S10's `scenario.yaml` given `approver:` and the two checks.
+
+**Red-first.** `test/unit/scenarios/s10.test.ts`: on the seed every feature suite fails (pass 0) and `core` passes;
+the compliant reference (`test/fixtures/reference/S10/01..04/`, its verdicts recorded in a `REVIEWS.md`) passes every
+suite at its step and every M-E3 check; the step-2 reference fails `export-privacy`; two violating variants (no
+record; a record without the approver's identity) fail every M-E3 check; the hold-out's additions pass after step 4
+and fail on the seed.
+
+## What the calibration will need
+
+- task-117 and task-118 done and merged; S10's `scenario.yaml` then declares `verdicts:`, `approver:` and the `gate`
+  and `attribution` checks, and validates.
+- The approver's go in chat, with the count of runs, the model(s) and the spending ceiling.
+- A dry run in each arm of the W17 campaign (baseline, its docs controls, wingfoil step A on 0.3.1) with the fake
+  agent replaying the reference, then one real run per arm on the cheaper model: that the classifier sees each arm's
+  approval request at steps 1–3; that the wingfoil hook finds exactly one element awaiting a verdict and its commit
+  carries Dana's identity; that a text-only arm gets the reply; that step 4's reply is delivered; measured cost per
+  run (four steps, interventions included) for the campaign's budget.
+- Then the workflow's `register` phase: S10 registered ahead of v0.4's planning (dl-029 point 8).
 
 ## Execution notes
+
+- 2026-10-29: backlog → in-progress on main (`3b7c24e5`); worktree `../WingFoil2-Benchmark-wt/s10` on
+  `task/task-116-s10-gates-and-roles-scenario-dl-029`, `npm ci`.
+- `wingfoil memory add --set release=… --set wave=…` refused (`--set` fills id or path tokens only; declared: "fill
+  the id_pattern/path token {name} and write the frontmatter field"; observed: refused, nothing written); the fields
+  were written in the body. `memory submit` draft → pending and backlog → in-progress as declared.
+- The leak scan first flagged 20 literals shared by the oracle, the seed's own test and the prompts (product and
+  customer names, dates, test titles, the codes): the oracle's fixtures were renamed and the prompt's vocabulary
+  written as regular expressions (Design 6). `bench scenario validate S10@1.0 --holdout …`: valid, hold-out 3 files.
+- Two tests passed on the seed (a regression guard of the shipping charge; a refused code on a missing order, refused
+  because the method was missing): the first removed (`core` covers it), the second now asserts the method first.
+- Hold-out additions in `WingFoil2-Benchmark-HoldOut/scenarios/S10/1.0/` (discounts, export, shipping), committed
+  there.
