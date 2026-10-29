@@ -84,14 +84,16 @@ for the method's two changes below and for the approver's go.
    (approve or reject with a fixed reason per gate) as a new approver policy on classifier v2, and a non-approver
    agent with the verdict carried out under a separate approver identity (open question 1, option (b)); requirements
    and the experiment design amended with them.
-8. **Its place in the releases:** the scenario is registered (the workflow's last phase) when v0.4's planning
-   admits it; until then it is not in any published campaign. v0.4's planning still decides points 1–5 where the
-   goal phase leaves them open.
+8. **Its place in the releases** (the approver in chat, 2026-10-29): the scenario, the method's two changes and its
+   calibration are done before the next campaign, the W17 Claude Code campaign on Haiku 5.5 and Sonnet 5.5, which
+   waits for them; the scenario is registered (the workflow's last phase) ahead of v0.4's planning and runs in that
+   campaign beside S1–S3 and S8, marked preliminary. v0.4's planning still decides points 1–5 where the goal phase
+   leaves them open, and may revise the scenario into a new version.
 
 ## Consequences
 
-- Nothing changes in v0.3's published campaigns; the scenario and the method's changes are authored ahead of v0.4,
-  outside its release plan until v0.4's planning admits them.
+- Nothing changes in v0.3's published campaigns; the scenario and the method's changes are authored ahead of v0.4
+  and first run in the W17 Claude Code campaign, which waits for them.
 - **What would change the proposal:** a published campaign in which a docs control matches WingFoil on M-E3a; WingFoil
   binding approvals to an identity the agent cannot use (then (b1) measures that too); another way adopted to keep the
   agent out of the approver role.
