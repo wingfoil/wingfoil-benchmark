@@ -2,7 +2,7 @@
 id: task-118-a-separate-approver-identity-the-agent-never-the-approver-verdicts-executed-by-the-runner-dl-029
 type: task
 title: "A separate approver identity: the agent never the approver, verdicts executed by the runner (dl-029)"
-status: draft
+status: pending
 release: v0.3
 wave: W17
 features: [F2.4]
