@@ -15,6 +15,7 @@ import { agentProfile, codexMcpServers, foldModels, scrub } from '../agents/inde
 import type { AgentPort, ModelsUsage, SessionUsage, StepOutcome } from '../agents/index.js';
 import {
   approverPolicy,
+  replyFor,
   approximateTokens,
   fail,
   ok,
@@ -1542,7 +1543,9 @@ async function executeStep(
       options.log?.(`step ${number}: cap reached before resume ${interventions.length + 1}`);
       break;
     }
-    const reply = policy.replies[kind];
+    // A step's scripted verdict under policy v3 (task-117): its text at the first approval request, its later reply after.
+    const approvalsBefore = interventions.filter((intervention) => intervention.kind === 'approval').length;
+    const reply = replyFor(policy, kind, step.verdict, approvalsBefore);
     const intervention = interventions.length + 1;
     // Recorded before the reply is sent: once sent, it was an intervention, whatever comes of it.
     interventions.push({ step: step.n, kind, reply });

@@ -93,7 +93,24 @@ const categories = z
     }
   });
 
-const step = z.strictObject({ n: z.number().int(), prompt_file: relativePath });
+/** A text with something besides whitespace: a verdict's reply. */
+const replyText = z.string().refine((text) => text.trim() !== '', 'must not be empty');
+
+/**
+ * A step's scripted verdict (task-117, dl-029, approver policy v3): `approve`, `reject` or `none` (no approver to
+ * give one), the reply to the step's first approval request, which is also the reason a verdict carried out records,
+ * and the reply to its later approval requests (by default the same text).
+ */
+const verdict = z.strictObject({
+  kind: z.enum(['approve', 'reject', 'none']),
+  text: replyText,
+  later: replyText.optional(),
+});
+
+/** A step's scripted verdict, as a scenario declares it (S10.md §6). */
+export type StepVerdict = z.infer<typeof verdict>;
+
+const step = z.strictObject({ n: z.number().int(), prompt_file: relativePath, verdict: verdict.optional() });
 
 /** A kebab-case name: a capability, or a suite's id (a single path segment, so a hold-out directory name). */
 const kebabName = z.string().regex(/^[a-z][a-z0-9]*(-[a-z0-9]+)*$/, 'must be kebab-case');
@@ -407,7 +424,12 @@ export interface Scenario {
   readonly gqm: readonly string[];
   readonly capabilities: readonly string[];
   readonly seedDir: string;
-  readonly steps: readonly { readonly n: number; readonly promptPath: string }[];
+  /** Each step's prompt, and its scripted verdict when it declares one (task-117). */
+  readonly steps: readonly {
+    readonly n: number;
+    readonly promptPath: string;
+    readonly verdict?: StepVerdict;
+  }[];
   readonly oracle: {
     /** The suites of hidden tests (dl-001), in declaration order, each with its steps in ascending order. */
     readonly suites: readonly Suite[];

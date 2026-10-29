@@ -88,6 +88,12 @@ available and each campaign pins one: every execution so far, from v0.1 to v0.3'
 of the Codex campaign of the wingfoil arm runs on v2. Two executions on different versions are not compared across
 agents. {#approver-classifier}
 
+Version v3, from v0.3's W17, adds **scripted verdicts** for a scenario that declares them, S10 so far: at a step whose
+gate the scenario scripts, the first approval request is answered with that step's fixed verdict, an approval or a
+rejection with its reason, or word that no approver is available, and later requests in the step with a fixed second
+reply. The verdicts are the same in every arm. Everything else is v2's: its rules, its replies and its cap. A scenario
+without verdicts reads v3 as v2. {#approver-verdicts}
+
 In the wingfoil arm, WingFoil's process needs a person with the approver role. The arm's configuration declares a member "Benchmark Approver" with that role, and the container's git identity is that member. After the neutral approver's reply, the agent may run WingFoil's approval commands itself. The *decision* is always the neutral approver's fixed reply; the agent only carries it out. {#approver-decision}
 
 Every step has a time cap and a token cap, and every run has a cost cap. When a cap is hit, the step or the run ends, and what exists at that moment is scored as it stands. The campaign also stops starting new runs once its total cost reaches its ceiling. {#caps}

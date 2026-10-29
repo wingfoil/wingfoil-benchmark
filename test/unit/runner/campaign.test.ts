@@ -1,6 +1,6 @@
-import { rmSync, writeFileSync } from 'node:fs';
+import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { stringify } from 'yaml';
+import { parse, stringify } from 'yaml';
 import { describe, expect, it } from 'vitest';
 
 import { checkCampaign } from '../../../src/runner/index.js';
@@ -215,5 +215,30 @@ describe('the effort pinned per model (dl-015, task-069)', () => {
     const yaml = completeCampaignYaml();
     yaml.agent = { name: 'claude-code', version: '2.1.221' };
     expect(checkCampaign(writeRepo(yaml, ['S1@1.0', 'S2@1.0', 'S3@1.0', 'S8@1.0']).file).ok).toBe(true);
+  });
+});
+
+describe('scripted verdicts need policy v3 (task-117, dl-029)', () => {
+  it.each(['v1', 'v2'])('refuses a scenario with verdicts under policy %s, naming it', (version) => {
+    const { root, file } = writeRepo(
+      {
+        ...completeCampaignYaml(),
+        scenarios: [{ id: 'S1', version: '1.0' }],
+        repetitions: { S1: 1 },
+        approver_policy: version,
+      },
+      ['S1@1.0'],
+    );
+    const scenarioFile = join(root, 'scenarios', 'S1', '1.0', 'scenario.yaml');
+    const scenario = parse(readFileSync(scenarioFile, 'utf8')) as { steps: Record<string, unknown>[] };
+    scenario.steps[0] = { ...scenario.steps[0], verdict: { kind: 'approve', text: 'Approved by Dana.' } };
+    writeFileSync(scenarioFile, stringify(scenario));
+    const checked = checkCampaign(file);
+    expect(checked.ok).toBe(false);
+    if (checked.ok) return;
+    expect(checked.issues).toContainEqual({
+      path: 'scenarios[0]',
+      message: `S1@1.0: declares scripted verdicts, which approver policy ${version} does not read; pin v3`,
+    });
   });
 });

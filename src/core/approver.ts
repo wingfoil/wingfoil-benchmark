@@ -1,3 +1,5 @@
+import type { StepVerdict } from './scenario.js';
+
 /** What a waiting session asks for (REQ-RUN-06): an approval, or an answer to a question. */
 export type InterventionKind = 'approval' | 'question';
 
@@ -13,6 +15,8 @@ export interface ApproverPolicy {
   readonly replies: Readonly<Record<InterventionKind, string>>;
   /** Interventions allowed in one step; a session still waiting after them gets no reply. */
   readonly maxInterventions: number;
+  /** Whether the policy answers approval requests with a step's scripted verdict (v3, task-117). */
+  readonly scriptedVerdicts: boolean;
 }
 
 /**
@@ -188,16 +192,51 @@ const REPLIES: ApproverPolicy['replies'] = {
 };
 
 /** Policy v1 (experiment-design decision 2), frozen when the first campaign is published. */
-const V1: ApproverPolicy = { version: 'v1', classify, replies: REPLIES, maxInterventions: 3 };
+const V1: ApproverPolicy = {
+  version: 'v1',
+  classify,
+  replies: REPLIES,
+  maxInterventions: 3,
+  scriptedVerdicts: false,
+};
 
 /** Policy v2 (task-106): only the classifier differs from v1, so the two differ only in when the runner answers. */
-const V2: ApproverPolicy = { version: 'v2', classify: classifyV2, replies: REPLIES, maxInterventions: 3 };
+const V2: ApproverPolicy = {
+  version: 'v2',
+  classify: classifyV2,
+  replies: REPLIES,
+  maxInterventions: 3,
+  scriptedVerdicts: false,
+};
+
+/**
+ * Policy v3 (task-117, dl-029): v2's classifier, replies and cap, and a scenario's scripted verdicts: a step that
+ * declares one answers its first approval request with the verdict's text and the later ones with its later reply.
+ * A scenario that declares none reads v3 as v2.
+ */
+const V3: ApproverPolicy = { ...V2, version: 'v3', scriptedVerdicts: true };
 
 /** Every policy this runner implements, by the version a campaign pins. */
 const POLICIES: ReadonlyMap<string, ApproverPolicy> = new Map([
   [V1.version, V1],
   [V2.version, V2],
+  [V3.version, V3],
 ]);
+
+/**
+ * The reply to a waiting session (experiment design §3.5): the policy's, or, under a policy with scripted verdicts, a
+ * step's verdict for an approval request — its text when no approval request of the step came before
+ * (`approvalsBefore` is 0), its later reply (by default the same text) after.
+ */
+export function replyFor(
+  policy: ApproverPolicy,
+  kind: InterventionKind,
+  verdict: StepVerdict | undefined,
+  approvalsBefore: number,
+): string {
+  if (kind !== 'approval' || verdict === undefined || !policy.scriptedVerdicts) return policy.replies[kind];
+  return approvalsBefore === 0 ? verdict.text : (verdict.later ?? verdict.text);
+}
 
 /** The policy a campaign pins, or nothing when this runner does not implement that version. */
 export function approverPolicy(version: string): ApproverPolicy | undefined {

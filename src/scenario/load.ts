@@ -417,7 +417,11 @@ function toScenario(
     gqm: spec.gqm,
     capabilities: spec.capabilities,
     seedDir: resolve(dir, spec.seed),
-    steps: spec.steps.map((step) => ({ n: step.n, promptPath: resolve(dir, step.prompt_file) })),
+    steps: spec.steps.map((step) => ({
+      n: step.n,
+      promptPath: resolve(dir, step.prompt_file),
+      ...(step.verdict === undefined ? {} : { verdict: step.verdict }),
+    })),
     oracle: {
       suites: spec.oracle.suites.map((suite) => ({
         id: suite.id,

@@ -32,6 +32,37 @@ review.
 
 ## Design
 
-To be completed once S10.md fixes what the policy must provide.
+What S10.md §6 and task-116's Design fix, and how:
+
+1. **The verdict lives on its step** in `scenario.yaml`: `verdict: {kind, text, later?}`, `kind` one of `approve`,
+   `reject`, `none`; `text` the reply to the step's first approval request and the reason a verdict carried out
+   records (task-118); `later` the reply to the step's later approval requests, by default `text`. Strict schema,
+   every text non-empty (`src/core/scenario.ts`); the loader copies it onto `Scenario.steps[n].verdict`. A step is
+   where a verdict is timed, so a separate `verdicts:` list keyed by step would only repeat the step numbers.
+2. **Policy v3 = v2 plus `scriptedVerdicts: true`** (`src/core/approver.ts`): the same classifier function, replies
+   and cap; v1 and v2 get `scriptedVerdicts: false` and are otherwise unchanged. `replyFor(policy, kind, verdict,
+   approvalsBefore)` is the one place a reply is chosen: the verdict's text at the step's first approval request,
+   `later` after; the policy's reply for a question, a step without a verdict, or a policy that reads none.
+3. **The runner** (`src/runner/run.ts`) counts the step's earlier approval interventions and asks `replyFor`; each
+   reply is still one intervention, recorded with its text in `run.json` (REQ-RUN-07), so the verdicts given are
+   reconstructible from the run.
+4. **A verdict is never silently ignored:** `checkCampaign` refuses a scenario with verdicts under a policy that does
+   not read them (v1, v2), naming the scenario and asking for v3 — otherwise S10 would be answered "Approved.
+   Proceed." at its rejection.
+5. **S10's verdicts** are declared in its `scenario.yaml` with S10.md §6's texts (task-116, review round 1); its test
+   pins their kinds, the approver's identity in steps 1–3, the rejection's subject and a step-3 text that does not
+   restate it.
+6. **Documents:** requirements 1.43 (REQ-FMT-04, REQ-RUN-06); experiment design 1.9 (§3); the method page's
+   `approver-verdicts` statement, pinned to its sources; S10.md §12's status.
+
+**Red-first:** `test/unit/core/approver-v3.test.ts`, the verdict cases of `test/unit/scenario/load.test.ts`, the v3
+case of `test/unit/runner/run.test.ts` and `test/unit/runner/campaign.test.ts`'s refusal: 14 failing before the code,
+green after. Three existing tests used `v3` as the example of an unimplemented version (now `v4`), and v2's test
+listed the versions.
 
 ## Execution notes
+
+- 2026-10-29: backlog → in-progress on main; worktree `../WingFoil2-Benchmark-wt/v3` on
+  `task/task-117-approver-policy-v3-scripted-verdicts-per-gate-on-classifier-v2-dl-029`, `npm ci`.
+- `bench scenario validate S10@1.0 --holdout …` valid with the verdicts; S10's hash changes, which is allowed: S10 has
+  no stored result.
