@@ -187,7 +187,37 @@ Costs from the runs' usage files.
 
 ## Results review
 
-<!-- Anomalies, runs to rerun, and whether the results are publishable. -->
+### The agent's analysis (2026-10-29, input to the approver's review)
+
+Sums over the repetitions, from the scoring's output (final public tests; hold-out); wingfoil against its docs
+control is `aggregate.json`'s `controls` for Terra, read from the per-run table for Luna (the slices carry no
+controls).
+
+- **On Luna, the weak model, WingFoil's step A helps, preliminary (n = 3).** S1: wingfoil 492/495 (hold-out
+  137/144) against baseline-docs 428/495 (128/144) and the baseline 476/495 (135/144); without baseline-docs' r1
+  (105/165), the docs control is 323/330, so most of S1's gap is one bad run, but wingfoil's three runs are the most
+  even (164 each). S3: 108/111 (50/51), M-F1 4/5 in every run, against 101/111 (46/51) and 103/111 (48/51), M-F1
+  3/5 in every run. S8: 67/69 against 59/69 for both controls, the rules' checks 48/48 as baseline-docs (the
+  baseline 39/48). S2: the same (68 to 69/72; checks 0/9 in every arm).
+- **On Terra, the strong model, small or none, n = 1 but S1:** S1 wingfoil 494/495 (142/144) against 492/495
+  (136/144), M-Q1 better within the variance; S2 and S8 the same; **S3 worse**: 34/37, M-F1 3/5, against
+  baseline-docs' 37/37, 4/5 (the baseline 34/37, 3/5). The bridge with campaign-006 (v0.2's manual on 0.3.0):
+  there the wingfoil arm had S3 37/37, M-F1 5/5; that execution carries bug-036's erratum (12 of its wingfoil
+  steps resumed on `gpt-6.1-sol`), so the difference is noted, not read.
+- **The cost:** M-K1 worse wherever measured: on Terra the wingfoil arm's 6 runs cost 7.09 USD against
+  baseline-docs' 4.62 and the baseline's 3.77 (S1 beyond the variance); on Luna 0.60 USD against 0.26 and 0.16 for
+  12 runs each. The difference is the cycle: 77 approval round trips, and the task documents.
+- **The process held on the weak model:** 77 of the wingfoil arm's 78 steps asked at the gate with "Please approve
+  …", got "Approved. Proceed." and approved only after it; none self-approved (the failure of dry-runs/93). The one
+  exception, Luna's S1 r3 step 3, a refused double `memory submit`, ended its step with no work and no request; the
+  next step recovered it.
+- **Anomalies, none blocking:** Luna S8 r2 at 13/23 in both the baseline and baseline-docs (wingfoil 23/23); Luna's
+  baseline-docs S1 r1 at 105/165; S2's checks 0/3 in every arm and run (bug-026, lexical); two runs on a second
+  attempt after a quota stop (fresh attempts, scored on them). No rerun proposed (campaigns are preliminary).
+- **What it does not measure:** governance (dl-029, v0.4); M-R across agents. Every Terra group but S1 is n = 1,
+  Luna's n = 3: preliminary throughout.
+- **Publishable, in the agent's reading,** as a Codex execution read arm against arm within each model, with the
+  caveats above and the bridge note on campaign-006.
 
 ## Findings
 
