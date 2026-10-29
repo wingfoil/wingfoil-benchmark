@@ -219,6 +219,18 @@ controls).
 - **Publishable, in the agent's reading,** as a Codex execution read arm against arm within each model, with the
   caveats above and the bridge note on campaign-006.
 
+### The approver's review
+
+- **Accepted as publishable** by the approver (scored → reviewed, `97701ab7`, 2026-10-29), read arm against arm
+  within each model; preliminary, with the bridge note on campaign-006's bug-036 erratum; no rerun.
+- **The weak-model question it raised** (the approver in chat, 2026-10-29: the advantage of a weak or local model is
+  lost if WingFoil makes it take too much time or too many tokens) is
+  [dl-032](../decision-log/dl-032-a-weak-model-with-wingfoil-against-a-strong-model-without-it-cost-and-time-at-equal-quality-and-a-local-model-s-estimate.md)
+  (approved `fc4cbec8`, its task later, at the approver's choice): a separate cross-model parity comparison and a
+  local estimate. Its first reading uses this execution: Luna with WingFoil matches Terra's baseline at about a
+  twelfth of the cost and in less agent time, with 2.4 times the tokens.
+- **Not yet published:** the catalogue entry, the site and the transcripts' release, at the approver's request.
+
 ## Findings
 
 <!-- Finding notes produced (F5.4) and where they went in WingFoil. -->
