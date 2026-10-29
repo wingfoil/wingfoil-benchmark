@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { docsGeneratorOf } from '../arms/index.js';
 import { loadCampaign, loadRegister } from '../campaign/index.js';
 import type { Campaign } from '../campaign/index.js';
-import { approverPolicy, eligibilityIssues, fail, harnessCoverage, ok } from '../core/index.js';
+import { eligibilityIssues, fail, harnessCoverage, ok, verdictPolicyIssue } from '../core/index.js';
 import type { Arm, Issue, Result, Scenario } from '../core/index.js';
 import { versionChange } from '../results/index.js';
 import { loadScenario } from '../scenario/index.js';
@@ -34,7 +34,6 @@ export function checkCampaign(file: string): Result<CheckedCampaign> {
 
   const scenarios: Scenario[] = [];
   const issues: Issue[] = [];
-  const scripted = approverPolicy(campaign.spec.approver_policy)?.scriptedVerdicts === true;
   campaign.spec.scenarios.forEach(({ id, version }, index) => {
     const scenario = loadScenario(campaign.scenariosRoot, id, version);
     // A version that changed since stored results ran it never runs under its old name (REQ-FMT-09).
@@ -42,14 +41,10 @@ export function checkCampaign(file: string): Result<CheckedCampaign> {
       ? versionChange(campaign.resultsRoot, campaign.repoRoot, scenario.value)
       : undefined;
     if (changed !== undefined) issues.push({ path: `scenarios[${index}]`, message: changed });
-    else if (scenario.ok && scenario.value.steps.some((step) => step.verdict !== undefined) && !scripted) {
+    else if (scenario.ok && verdictPolicyIssue(scenario.value, campaign.spec.approver_policy) !== undefined) {
       // A verdict a policy does not read would be answered "Approved. Proceed." (task-117): refused, not ignored.
-      issues.push({
-        path: `scenarios[${index}]`,
-        message:
-          `${id}@${version}: declares scripted verdicts, which approver policy ${campaign.spec.approver_policy} ` +
-          'does not read; pin v3',
-      });
+      const message = verdictPolicyIssue(scenario.value, campaign.spec.approver_policy) as string;
+      issues.push({ path: `scenarios[${index}]`, message });
     } else if (scenario.ok) scenarios.push(scenario.value);
     else {
       issues.push({

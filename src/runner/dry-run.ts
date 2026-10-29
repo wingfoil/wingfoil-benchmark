@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { join, resolve } from 'node:path';
 
 import { armDigest } from '../arms/index.js';
-import { canonicalJson, fail, harnessCoverage, modelId, ok } from '../core/index.js';
+import { canonicalJson, fail, harnessCoverage, modelId, ok, verdictPolicyIssue } from '../core/index.js';
 import type { Arm, DryRunProfile, Issue, Result, Scenario } from '../core/index.js';
 import { DRY_RUNS, versionChange } from '../results/index.js';
 import {
@@ -70,6 +70,9 @@ export function checkDryRun(request: DryRunRequest, root: string): Result<Checke
   if (!scenario.ok) return scenario;
   const changed = versionChange(join(root, 'results'), root, scenario.value);
   if (changed !== undefined) return fail([{ path: 'scenario', message: changed }]);
+  // The profile's policy must read the scenario's verdicts, as a campaign's must (task-117).
+  const unread = verdictPolicyIssue(scenario.value, profile.value.approver_policy);
+  if (unread !== undefined) return fail([{ path: 'scenario', message: unread }]);
   const declarations = loadLeakScanDeclarations(join(scenariosRoot, 'leak-scan.yaml'));
   if (!declarations.ok) return declarations;
   const leaks = scanScenario(scenario.value, declarations.value);

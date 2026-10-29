@@ -56,8 +56,8 @@ What S10.md §6 and task-116's Design fix, and how:
    `approver-verdicts` statement, pinned to its sources; S10.md §12's status.
 
 **Red-first:** `test/unit/core/approver-v3.test.ts`, the verdict cases of `test/unit/scenario/load.test.ts`, the v3
-case of `test/unit/runner/run.test.ts` and `test/unit/runner/campaign.test.ts`'s refusal: 14 failing before the code,
-green after. Three existing tests used `v3` as the example of an unimplemented version (now `v4`), and v2's test
+case of `test/unit/runner/run.test.ts` and `test/unit/runner/campaign.test.ts`'s refusal: 15 new tests, 14 failing
+before the code (the 15th, an unknown field in a verdict, was already refused by the strict step), green after. Three existing tests used `v3` as the example of an unimplemented version (now `v4`), and v2's test
 listed the versions.
 
 ## Execution notes
@@ -66,3 +66,17 @@ listed the versions.
   `task/task-117-approver-policy-v3-scripted-verdicts-per-gate-on-classifier-v2-dl-029`, `npm ci`.
 - `bench scenario validate S10@1.0 --holdout …` valid with the verdicts; S10's hash changes, which is allowed: S10 has
   no stored result.
+
+### Review
+
+**Round 1** (2026-10-29, a fresh read-only agent in a `mktemp -d` directory; the checkouts' HEAD unchanged after it),
+on `1d0ae5c5`: no blocker.
+
+- **Should-fix — a dry run skipped the refusal:** `checkDryRun` takes the profile's policy (`scenarios/dry-run.yaml`
+  pins v1), so `bench dry-run S10@1.0` would have answered the rejection "Approved. Proceed.". Fixed: one helper,
+  `verdictPolicyIssue` (`src/core/approver.ts`), called by `checkCampaign` and `checkDryRun`; a test refuses a dry run
+  under v2 and accepts it under v3. S10's calibration pins v3 in its dry-run profile.
+- **Strengthened:** the runner's test now has a question before the verdict step's approvals, so questions are shown
+  not to be counted.
+- **Nits:** S10.md's "`verdicts`" wording; a comment over 120 columns; an import out of order; a useless assertion;
+  the red-first count (15 new, 14 red).

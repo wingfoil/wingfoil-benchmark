@@ -224,6 +224,23 @@ const POLICIES: ReadonlyMap<string, ApproverPolicy> = new Map([
 ]);
 
 /**
+ * Why a scenario cannot run under the policy pinned as `version`: it declares scripted verdicts (task-117) and the
+ * policy does not read them, so its rejections would be answered "Approved. Proceed."; nothing when it can.
+ */
+export function verdictPolicyIssue(
+  scenario: {
+    readonly id: string;
+    readonly version: string;
+    readonly steps: readonly { readonly verdict?: unknown }[];
+  },
+  version: string,
+): string | undefined {
+  if (!scenario.steps.some((step) => step.verdict !== undefined)) return undefined;
+  if (approverPolicy(version)?.scriptedVerdicts === true) return undefined;
+  return `${scenario.id}@${scenario.version}: declares scripted verdicts, which approver policy ${version} does not read; pin v3`;
+}
+
+/**
  * The reply to a waiting session (experiment design §3.5): the policy's, or, under a policy with scripted verdicts, a
  * step's verdict for an approval request — its text when no approval request of the step came before
  * (`approvalsBefore` is 0), its later reply (by default the same text) after.

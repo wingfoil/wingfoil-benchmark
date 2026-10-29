@@ -15,11 +15,11 @@ import { agentProfile, codexMcpServers, foldModels, scrub } from '../agents/inde
 import type { AgentPort, ModelsUsage, SessionUsage, StepOutcome } from '../agents/index.js';
 import {
   approverPolicy,
-  replyFor,
   approximateTokens,
   fail,
   ok,
   reasonOf,
+  replyFor,
   TOKEN_METHOD,
   WORKSPACE,
 } from '../core/index.js';
@@ -1543,7 +1543,8 @@ async function executeStep(
       options.log?.(`step ${number}: cap reached before resume ${interventions.length + 1}`);
       break;
     }
-    // A step's scripted verdict under policy v3 (task-117): its text at the first approval request, its later reply after.
+    // A step's scripted verdict under policy v3 (task-117): its text at the step's first approval request, its later
+    // reply after; questions are not counted.
     const approvalsBefore = interventions.filter((intervention) => intervention.kind === 'approval').length;
     const reply = replyFor(policy, kind, step.verdict, approvalsBefore);
     const intervention = interventions.length + 1;

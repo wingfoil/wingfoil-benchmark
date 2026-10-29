@@ -701,20 +701,23 @@ describe('the neutral approver in the step loop (F2.4)', () => {
     writeFileSync(scenarioFile, stringify(scenario));
     const checked = checkCampaign(file);
     if (!checked.ok) throw new Error(JSON.stringify(checked.issues));
-    // Step 1 asks for approval with no verdict declared; step 2 asks twice, then finishes.
+    // Step 1 asks for approval with no verdict declared; step 2 asks a question, then for approval twice, then finishes.
     const ports = doubles({
       messageOf: (request) =>
         request.step === 1 && invocationOf(request) === 0
           ? 'Please approve the change.'
-          : request.step === 2 && invocationOf(request) < 2
-            ? 'Please approve the change.'
-            : undefined,
+          : request.step === 2 && invocationOf(request) === 0
+            ? 'Which file?'
+            : request.step === 2 && invocationOf(request) < 3
+              ? 'Please approve the change.'
+              : undefined,
     });
 
     const summary = await runCampaign(checked.value, ports);
 
     expect(ports.recorded.resumes.map((r) => [r.step, r.reply])).toEqual([
       [1, 'Approved. Proceed.'],
+      [2, QUESTION_REPLY],
       [2, verdict.text],
       [2, verdict.later],
     ]);
@@ -725,6 +728,7 @@ describe('the neutral approver in the step loop (F2.4)', () => {
     expect(record.approver_policy).toBe('v3');
     expect(record.interventions).toEqual([
       { step: 1, kind: 'approval', reply: 'Approved. Proceed.' },
+      { step: 2, kind: 'question', reply: QUESTION_REPLY },
       { step: 2, kind: 'approval', reply: verdict.text },
       { step: 2, kind: 'approval', reply: verdict.later },
     ]);

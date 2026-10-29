@@ -1,11 +1,13 @@
-import { readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parse, stringify } from 'yaml';
 import { describe, expect, it } from 'vitest';
 
-import { checkCampaign } from '../../../src/runner/index.js';
+import { checkCampaign, checkDryRun } from '../../../src/runner/index.js';
 import { plainArmYaml } from '../../support/arm-fixture.js';
 import { completeCampaignYaml, writeRepo } from '../../support/campaign-fixture.js';
+import { dryRunProfileYaml } from '../../support/dry-run-fixture.js';
+import { repoPath } from '../../support/paths.js';
 
 type Yaml = Record<string, unknown>;
 
@@ -241,4 +243,32 @@ describe('scripted verdicts need policy v3 (task-117, dl-029)', () => {
       message: `S1@1.0: declares scripted verdicts, which approver policy ${version} does not read; pin v3`,
     });
   });
+
+  it.each([
+    ['v2', false],
+    ['v3', true],
+  ])(
+    'refuses a dry run of a scenario with verdicts under policy %s, and accepts it under v3',
+    (version, accepted) => {
+      const { root } = writeRepo({ ...completeCampaignYaml(), arms: ['baseline'] }, ['S1@1.0']);
+      copyFileSync(repoPath('scenarios/leak-scan.yaml'), join(root, 'scenarios', 'leak-scan.yaml'));
+      writeFileSync(
+        join(root, 'scenarios', 'dry-run.yaml'),
+        stringify({ ...dryRunProfileYaml(), harnesses: {}, approver_policy: version }),
+      );
+      const scenarioFile = join(root, 'scenarios', 'S1', '1.0', 'scenario.yaml');
+      const scenario = parse(readFileSync(scenarioFile, 'utf8')) as { steps: Record<string, unknown>[] };
+      scenario.steps[0] = { ...scenario.steps[0], verdict: { kind: 'approve', text: 'Approved by Dana.' } };
+      writeFileSync(scenarioFile, stringify(scenario));
+      const checked = checkDryRun({ id: 'S1', version: '1.0', arm: 'baseline' }, root);
+      if (accepted) expect(checked.ok ? [] : checked.issues).toEqual([]);
+      else
+        expect(checked.ok ? [] : checked.issues).toEqual([
+          {
+            path: 'scenario',
+            message: `S1@1.0: declares scripted verdicts, which approver policy ${version} does not read; pin v3`,
+          },
+        ]);
+    },
+  );
 });

@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 
-import { CLASSIFIER_V2 } from '../../../src/core/approver.js';
 import { approverPolicy, approverPolicyVersions, replyFor } from '../../../src/core/index.js';
 import type { ApproverPolicy, StepVerdict } from '../../../src/core/index.js';
 
@@ -33,7 +32,6 @@ describe('approver policy v3: scripted verdicts on classifier v2 (task-117, dl-0
       true,
     ]);
     expect(v3.classify('Please approve the change.')).toBe('approval');
-    expect(CLASSIFIER_V2).toBeDefined();
   });
 
   it("answers a step's first approval request with its verdict, and the later ones with its later reply", () => {
