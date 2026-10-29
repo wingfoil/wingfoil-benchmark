@@ -32,7 +32,7 @@ const TERRA = 'c4c49685911c/1/runs';
 
 describe('approver policy v2 (task-106, REQ-RUN-06)', () => {
   it('is implemented beside v1, with v1 unchanged and the same replies and cap', () => {
-    expect(approverPolicyVersions()).toEqual(['v1', 'v2']);
+    expect(approverPolicyVersions()).toEqual(['v1', 'v2', 'v3']);
     const v1 = approverPolicy('v1');
     expect(v1?.version).toBe('v1');
     expect(v2().version).toBe('v2');

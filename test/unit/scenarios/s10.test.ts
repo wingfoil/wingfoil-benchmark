@@ -113,6 +113,18 @@ describe('S10@1.0 (F6.13)', { timeout: 240_000 }, () => {
     expect(Object.keys(scenario.armDirs)).toEqual(['wingfoil']);
   });
 
+  it("declares S10.md §6's verdicts: approve, reject with a later reply, approve, no approver (task-117)", () => {
+    expect(scenario.steps.map((step) => [step.verdict?.kind, step.verdict?.later !== undefined])).toEqual([
+      ['approve', false],
+      ['reject', true],
+      ['approve', false],
+      ['none', false],
+    ]);
+    for (const step of scenario.steps.slice(0, 3)) expect(step.verdict?.text).toContain(APPROVER);
+    expect(scenario.steps[1]?.verdict?.text).toMatch(/^Rejected by .*email addresses or phone numbers/);
+    expect(scenario.steps[2]?.verdict?.text).not.toMatch(/email|phone|contact/);
+  });
+
   it('declares M-E3 as one content check per verdict, at its step (S10.md §7)', () => {
     expect(scenario.oracle.checks.map((check) => [check.id, check.kind, check.steps])).toEqual([
       ['m-e3-step-1-approval', 'content', [1]],

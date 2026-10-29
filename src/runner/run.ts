@@ -19,6 +19,7 @@ import {
   fail,
   ok,
   reasonOf,
+  replyFor,
   TOKEN_METHOD,
   WORKSPACE,
 } from '../core/index.js';
@@ -1542,7 +1543,10 @@ async function executeStep(
       options.log?.(`step ${number}: cap reached before resume ${interventions.length + 1}`);
       break;
     }
-    const reply = policy.replies[kind];
+    // A step's scripted verdict under policy v3 (task-117): its text at the step's first approval request, its later
+    // reply after; questions are not counted.
+    const approvalsBefore = interventions.filter((intervention) => intervention.kind === 'approval').length;
+    const reply = replyFor(policy, kind, step.verdict, approvalsBefore);
     const intervention = interventions.length + 1;
     // Recorded before the reply is sent: once sent, it was an intervention, whatever comes of it.
     interventions.push({ step: step.n, kind, reply });

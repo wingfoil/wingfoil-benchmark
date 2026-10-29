@@ -21,6 +21,7 @@ export type {
   Region,
   Scenario,
   ScenarioFile,
+  StepVerdict,
   Suite,
   ThirdParty,
   UnchangedCheck,
@@ -78,5 +79,11 @@ export {
   systemProcess,
 } from './ports/process.js';
 export type { ProcessPort, ProcessResult } from './ports/process.js';
-export { approverPolicy, approverPolicyVersions, classify } from './approver.js';
+export {
+  approverPolicy,
+  approverPolicyVersions,
+  classify,
+  replyFor,
+  verdictPolicyIssue,
+} from './approver.js';
 export type { ApproverPolicy, InterventionKind } from './approver.js';

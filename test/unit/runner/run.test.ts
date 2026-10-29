@@ -10,6 +10,7 @@ import {
 } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { parse, stringify } from 'yaml';
 
 import type { ModelsUsage } from '../../../src/agents/index.js';
 import { checkCampaign, runCampaign } from '../../../src/runner/index.js';
@@ -686,6 +687,53 @@ describe('the neutral approver in the step loop (F2.4)', () => {
     ]);
   });
 
+  it("answers step 2's approval requests with its scripted verdict, then its later reply (policy v3, task-117)", async () => {
+    const yaml = campaignYaml({ approver_policy: 'v3' });
+    const { root, file } = writeRepo(yaml, ['S1@1.0']);
+    const scenarioFile = join(root, 'scenarios', 'S1', '1.0', 'scenario.yaml');
+    const scenario = parse(readFileSync(scenarioFile, 'utf8')) as { steps: Record<string, unknown>[] };
+    const verdict = {
+      kind: 'reject',
+      text: 'Rejected by Dana: no contact details.',
+      later: 'Already reviewed today.',
+    };
+    scenario.steps[1] = { ...scenario.steps[1], verdict };
+    writeFileSync(scenarioFile, stringify(scenario));
+    const checked = checkCampaign(file);
+    if (!checked.ok) throw new Error(JSON.stringify(checked.issues));
+    // Step 1 asks for approval with no verdict declared; step 2 asks a question, then for approval twice, then finishes.
+    const ports = doubles({
+      messageOf: (request) =>
+        request.step === 1 && invocationOf(request) === 0
+          ? 'Please approve the change.'
+          : request.step === 2 && invocationOf(request) === 0
+            ? 'Which file?'
+            : request.step === 2 && invocationOf(request) < 3
+              ? 'Please approve the change.'
+              : undefined,
+    });
+
+    const summary = await runCampaign(checked.value, ports);
+
+    expect(ports.recorded.resumes.map((r) => [r.step, r.reply])).toEqual([
+      [1, 'Approved. Proceed.'],
+      [2, QUESTION_REPLY],
+      [2, verdict.text],
+      [2, verdict.later],
+    ]);
+    const record = JSON.parse(readFileSync(join(summary.runs[0]?.outputDir ?? '', 'run.json'), 'utf8')) as {
+      approver_policy: string;
+      interventions: unknown[];
+    };
+    expect(record.approver_policy).toBe('v3');
+    expect(record.interventions).toEqual([
+      { step: 1, kind: 'approval', reply: 'Approved. Proceed.' },
+      { step: 2, kind: 'question', reply: QUESTION_REPLY },
+      { step: 2, kind: 'approval', reply: verdict.text },
+      { step: 2, kind: 'approval', reply: verdict.later },
+    ]);
+  });
+
   it("records every intervention and each step's outcome in run.json (REQ-RUN-07)", async () => {
     const { checked } = checkedCampaign();
     const ports = doubles({
@@ -916,14 +964,14 @@ describe('the neutral approver in the step loop (F2.4)', () => {
     const { checked } = checkedCampaign();
     const unvalidated = {
       ...checked,
-      campaign: { ...checked.campaign, spec: { ...checked.campaign.spec, approver_policy: 'v3' } },
+      campaign: { ...checked.campaign, spec: { ...checked.campaign.spec, approver_policy: 'v4' } },
     };
     const ports = doubles();
 
     const summary = await runCampaign(unvalidated, ports);
 
     expect(summary.runs[0]?.outcome).toBe('failed');
-    expect(summary.runs[0]?.error).toMatch(/approver policy v3 is not implemented/);
+    expect(summary.runs[0]?.error).toMatch(/approver policy v4 is not implemented/);
     expect(ports.recorded.steps).toEqual([]);
   });
 

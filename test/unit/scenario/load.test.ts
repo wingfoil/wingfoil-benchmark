@@ -767,3 +767,31 @@ describe('scenario fixtures', () => {
     expect(existsSync(dir)).toBe(false);
   });
 });
+
+describe("a step's scripted verdict (task-117, dl-029)", () => {
+  function withVerdict(verdict: unknown): Record<string, unknown> {
+    const yaml = completeScenarioYaml();
+    const steps = yaml.steps as Record<string, unknown>[];
+    steps[1] = { ...steps[1], verdict };
+    return yaml;
+  }
+
+  it('loads a verdict onto its step, and none onto a step without one', () => {
+    const verdict = { kind: 'reject', text: 'Rejected by Dana: no.', later: 'Already reviewed today.' };
+    const root = writeScenario(withVerdict(verdict));
+    const loaded = loadScenario(root, 'S9', '1.0');
+    expect(loaded.ok).toBe(true);
+    if (!loaded.ok) return;
+    expect(loaded.value.steps.map((step) => step.verdict)).toEqual([undefined, verdict]);
+  });
+
+  it.each([
+    [{ kind: 'maybe', text: 'Hm.' }, 'steps[1].verdict.kind'],
+    [{ kind: 'approve', text: '   ' }, 'steps[1].verdict.text'],
+    [{ kind: 'approve' }, 'steps[1].verdict.text'],
+    [{ kind: 'none', text: 'Away.', later: '' }, 'steps[1].verdict.later'],
+    [{ kind: 'approve', text: 'Yes.', reason: 'x' }, 'steps[1].verdict.reason'],
+  ])('refuses the verdict %j, naming %s', (verdict, path) => {
+    expect(paths(writeScenario(withVerdict(verdict)))).toContain(path);
+  });
+});

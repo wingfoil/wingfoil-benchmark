@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { docsGeneratorOf } from '../arms/index.js';
 import { loadCampaign, loadRegister } from '../campaign/index.js';
 import type { Campaign } from '../campaign/index.js';
-import { eligibilityIssues, fail, harnessCoverage, ok } from '../core/index.js';
+import { eligibilityIssues, fail, harnessCoverage, ok, verdictPolicyIssue } from '../core/index.js';
 import type { Arm, Issue, Result, Scenario } from '../core/index.js';
 import { versionChange } from '../results/index.js';
 import { loadScenario } from '../scenario/index.js';
@@ -41,8 +41,12 @@ export function checkCampaign(file: string): Result<CheckedCampaign> {
       ? versionChange(campaign.resultsRoot, campaign.repoRoot, scenario.value)
       : undefined;
     if (changed !== undefined) issues.push({ path: `scenarios[${index}]`, message: changed });
-    else if (scenario.ok) scenarios.push(scenario.value);
-    else {
+    else if (scenario.ok) {
+      // A verdict a policy does not read would be answered "Approved. Proceed." (task-117): refused, not ignored.
+      const unread = verdictPolicyIssue(scenario.value, campaign.spec.approver_policy);
+      if (unread !== undefined) issues.push({ path: `scenarios[${index}]`, message: unread });
+      else scenarios.push(scenario.value);
+    } else {
       issues.push({
         path: `scenarios[${index}]`,
         message: `${id}@${version}: ${reasonsOf(scenario.issues)}`,
