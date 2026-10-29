@@ -2,7 +2,7 @@
 id: task-117-approver-policy-v3-scripted-verdicts-per-gate-on-classifier-v2-dl-029
 type: task
 title: "Approver policy v3: scripted verdicts per gate on classifier v2 (dl-029)"
-status: in-progress
+status: in-review
 release: v0.3
 wave: W17
 features: [F2.4]
@@ -10,7 +10,6 @@ acceptance: [runner.feature]
 requirements: [REQ-RUN-06, REQ-RUN-07, REQ-FMT-04]
 fixes: []
 tags: ["v0.3","runner","approver"]
-rejection_reason: "Sent back: full suites red on 988d718c (log task_task-117-approver-policy-v3-scripted-verdicts-per-gate-on-classifier-v2-dl-029-988d718c-140432.txt), test/unit/campaign/load.test.ts still used v3 as an unimplemented policy; fixed in dad49a9e, to be resubmitted with a green run."
 ---
 
 ## Context
