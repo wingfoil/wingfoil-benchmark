@@ -264,7 +264,10 @@ describe('loadCampaign', () => {
     // REQ-RUN-06: the policy version pins the classifier and the replies. A campaign naming v4 would
     // otherwise run v1, and its interventions could not be reconstructed from what it pinned.
     expect(issuesOf(withField(['approver_policy'], 'v4'))).toEqual([
-      { path: 'approver_policy', message: "'v4' is not an approver policy this runner implements: v1, v2, v3" },
+      {
+        path: 'approver_policy',
+        message: "'v4' is not an approver policy this runner implements: v1, v2, v3",
+      },
     ]);
   });
 
