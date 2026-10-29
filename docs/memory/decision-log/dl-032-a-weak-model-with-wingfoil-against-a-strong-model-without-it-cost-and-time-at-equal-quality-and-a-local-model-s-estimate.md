@@ -2,7 +2,7 @@
 id: dl-032-a-weak-model-with-wingfoil-against-a-strong-model-without-it-cost-and-time-at-equal-quality-and-a-local-model-s-estimate
 type: decision-log
 title: "A weak model with WingFoil against a strong model without it: cost and time at equal quality, and a local model's estimate"
-status: pending
+status: approved
 tags: ["v0.3","codex","weak-models"]
 ---
 
