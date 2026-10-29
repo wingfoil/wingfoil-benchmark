@@ -2,7 +2,7 @@
 id: campaign-007-codex-step-a-campaign-on-terra-and-luna-on-approver-policy-v2
 type: campaign
 title: "Codex step-A campaign on Terra and Luna, on approver policy v2"
-status: reviewed
+status: published
 release: v0.3
 campaign_file: campaigns/codex-terra-step-a.yaml
 campaign_id: 697e79b75e41
