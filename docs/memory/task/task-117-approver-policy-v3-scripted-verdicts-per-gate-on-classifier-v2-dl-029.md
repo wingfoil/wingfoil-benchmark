@@ -2,7 +2,7 @@
 id: task-117-approver-policy-v3-scripted-verdicts-per-gate-on-classifier-v2-dl-029
 type: task
 title: "Approver policy v3: scripted verdicts per gate on classifier v2 (dl-029)"
-status: approved
+status: done
 release: v0.3
 wave: W17
 features: [F2.4]
