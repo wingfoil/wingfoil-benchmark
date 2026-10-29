@@ -1,0 +1,195 @@
+diff --git a/README.md b/README.md
+index 4213e3a814d1a3f6493659e8189f2babdb06787b..470e627435bda0047e58b9f2b18b544c6c9eef8e 100644
+--- a/README.md
++++ b/README.md
+@@ -11,3 +11,11 @@ against a JSON value. The empty string selects the entire document; slash-prefix
+ pointers select object members or array elements. Within a token, `~1` represents
+ `/` and `~0` represents `~`. The function throws for malformed pointers and
+ references that do not exist.
++
++## JSON Patch
++
++`applyPatch(document, patch)` applies an [RFC 6902 JSON Patch](https://www.rfc-editor.org/rfc/rfc6902)
++array and returns the resulting JSON value without changing the input document. It supports
++`add`, `remove`, `replace`, `move`, `copy` and `test`; malformed operations and operations
++that cannot be applied throw an error. Operation paths and `from` values use RFC 6901 JSON
++Pointers.
+diff --git a/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-2-plan.md b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-2-plan.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..ca02fbd1fcd26baf28be86e0ee6737b639f83d2d
+--- /dev/null
++++ b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-2-plan.md
+@@ -0,0 +1,17 @@
++---
++id: sw-life-cycle-1-2-plan
++type: plan
++title: "Implement JSON Patch"
++status: active
++workflow: "sw-life-cycle"
++phase: "1-2"
++element: ""
++parent: ""
++format: 1
++---
++
++<!-- plan body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
+diff --git a/docs/memory/task/task-002-implement-json-patch.md b/docs/memory/task/task-002-implement-json-patch.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..656682694e4a0e396752fce910c10f7060de6cc8
+--- /dev/null
++++ b/docs/memory/task/task-002-implement-json-patch.md
+@@ -0,0 +1,13 @@
++---
++id: task-002-implement-json-patch
++type: task
++title: "Implement JSON Patch"
++status: approved
++format: 1
++---
++
++<!-- task body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
+diff --git a/src/index.ts b/src/index.ts
+index 08c5f0471e6bb4866094ed2e451f597c26064473..005ddba760260affa5fab3fff86683478d4ece86 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -47,6 +47,132 @@ export function resolvePointer(document: unknown, pointer: string): unknown {
+   return current;
+ }
+ 
++/** Applies an RFC 6902 JSON Patch without modifying the input document. */
++export function applyPatch(document: unknown, patch: unknown): unknown {
++  if (!Array.isArray(patch)) throw new TypeError("JSON Patch must be an array");
++  let result = cloneJson(document);
++  for (const item of patch) {
++    if (item === null || typeof item !== "object" || Array.isArray(item)) throw new TypeError("JSON Patch operation must be an object");
++    const operation = item as Record<string, unknown>;
++    const op = operation.op;
++    const path = operation.path;
++    if (typeof op !== "string" || typeof path !== "string") throw new TypeError("Operation requires string 'op' and 'path'");
++    const tokens = parsePointer(path);
++    switch (op) {
++      case "add":
++        requireMember(operation, "value");
++        result = addAt(result, tokens, cloneJson(operation.value));
++        break;
++      case "remove":
++        result = removeAt(result, tokens).document;
++        break;
++      case "replace":
++        requireMember(operation, "value");
++        resolvePointer(result, path);
++        result = addAt(result, tokens, cloneJson(operation.value), true);
++        break;
++      case "copy": {
++        const from = parseFrom(operation);
++        result = addAt(result, tokens, cloneJson(resolvePointer(result, from)));
++        break;
++      }
++      case "move": {
++        const from = parseFrom(operation);
++        const fromTokens = parsePointer(from);
++        if (tokens.length > fromTokens.length && fromTokens.every((token, i) => token === tokens[i])) throw new Error("Cannot move a value into its child");
++        const value = resolvePointer(result, from);
++        if (from !== path) {
++          result = removeAt(result, fromTokens).document;
++          result = addAt(result, tokens, value);
++        }
++        break;
++      }
++      case "test":
++        requireMember(operation, "value");
++        if (!jsonEqual(resolvePointer(result, path), operation.value)) throw new Error(`JSON Patch test failed at ${path}`);
++        break;
++      default:
++        throw new TypeError(`Unsupported JSON Patch operation: ${op}`);
++    }
++  }
++  return result;
++}
++
++function parsePointer(pointer: string): string[] {
++  if (pointer === "") return [];
++  if (!pointer.startsWith("/")) throw new TypeError("JSON Pointer must be empty or begin with '/'");
++  return pointer.slice(1).split("/").map(decodeToken);
++}
++
++function parseFrom(operation: Record<string, unknown>): string {
++  if (typeof operation.from !== "string") throw new TypeError("Operation requires string 'from'");
++  parsePointer(operation.from);
++  return operation.from;
++}
++
++function requireMember(operation: Record<string, unknown>, name: string): void {
++  if (!Object.prototype.hasOwnProperty.call(operation, name)) throw new TypeError(`Operation requires '${name}'`);
++}
++
++function addAt(document: unknown, tokens: string[], value: unknown, replace = false): unknown {
++  if (tokens.length === 0) return value;
++  const parentPath = `/${tokens.slice(0, -1).map(encodeToken).join("/")}`;
++  const parent = resolvePointer(document, parentPath);
++  const token = tokens[tokens.length - 1];
++  if (Array.isArray(parent)) {
++    const index = token === "-" && !replace ? parent.length : patchArrayIndex(token, parent.length, !replace);
++    if (replace) parent[index] = value;
++    else parent.splice(index, 0, value);
++  } else if (parent !== null && typeof parent === "object") {
++    if (replace && !Object.prototype.hasOwnProperty.call(parent, token)) throw new Error(`JSON Pointer does not resolve: ${token}`);
++    Object.defineProperty(parent, token, { value, enumerable: true, configurable: true, writable: true });
++  } else throw new Error("JSON Patch parent is not a container");
++  return document;
++}
++
++function removeAt(document: unknown, tokens: string[]): { document: unknown; value: unknown } {
++  if (tokens.length === 0) return { document: undefined, value: document };
++  const parent = resolvePointer(document, `/${tokens.slice(0, -1).map(encodeToken).join("/")}`);
++  const token = tokens[tokens.length - 1];
++  if (Array.isArray(parent)) {
++    const index = patchArrayIndex(token, parent.length, false);
++    return { document, value: parent.splice(index, 1)[0] };
++  }
++  if (parent !== null && typeof parent === "object" && Object.prototype.hasOwnProperty.call(parent, token)) {
++    const value = (parent as Record<string, unknown>)[token];
++    delete (parent as Record<string, unknown>)[token];
++    return { document, value };
++  }
++  throw new Error(`JSON Pointer does not resolve: ${token}`);
++}
++
++function patchArrayIndex(token: string, length: number, allowEnd: boolean): number {
++  if (!/^(0|[1-9][0-9]*)$/.test(token)) throw new Error(`Invalid JSON Patch array index: ${token}`);
++  const index = Number(token);
++  if (!Number.isSafeInteger(index) || index > length || (!allowEnd && index === length)) throw new Error(`JSON Patch array index out of range: ${token}`);
++  return index;
++}
++
++function encodeToken(token: string): string { return token.replace(/~/g, "~0").replace(/\//g, "~1"); }
++
++function cloneJson(value: unknown): unknown {
++  if (Array.isArray(value)) return value.map(cloneJson);
++  if (value !== null && typeof value === "object") {
++    const copy: Record<string, unknown> = {};
++    for (const key of Object.keys(value)) Object.defineProperty(copy, key, { value: cloneJson((value as Record<string, unknown>)[key]), enumerable: true, configurable: true, writable: true });
++    return copy;
++  }
++  return value;
++}
++
++function jsonEqual(a: unknown, b: unknown): boolean {
++  if (Object.is(a, b)) return true;
++  if (a === null || b === null || typeof a !== "object" || typeof b !== "object") return false;
++  if (Array.isArray(a) || Array.isArray(b)) return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((v, i) => jsonEqual(v, b[i]));
++  const ak = Object.keys(a), bk = Object.keys(b);
++  return ak.length === bk.length && ak.every((key) => Object.prototype.hasOwnProperty.call(b, key) && jsonEqual((a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key]));
++}
++
+ function decodeToken(token: string): string {
+   if (/~(?![01])/.test(token)) {
+     throw new TypeError(`Invalid escape in JSON Pointer token: ${token}`);

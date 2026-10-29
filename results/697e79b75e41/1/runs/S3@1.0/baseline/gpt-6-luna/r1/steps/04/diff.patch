@@ -1,0 +1,100 @@
+diff --git a/src/index.ts b/src/index.ts
+index a8cd281f1df7145afc00ee82287bedb3353d8083..da65d096160eec1496ece727a72bc1fe54777280 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -4,6 +4,7 @@ export interface Equipment {
+   id: string;
+   kind: EquipmentKind;
+   dailyPrice: number;
++  hourlyPrice?: number;
+ }
+ 
+ export interface RentalRequest {
+@@ -41,19 +42,35 @@ export function createRentalService(): RentalService {
+   const bookings: RentalBooking[] = [];
+   let nextBookingId = 1;
+ 
+-  function validateRequest(request: RentalRequest): { item: Equipment; days: number } {
++  function validateRequest(request: RentalRequest): { item: Equipment; days: number; hours?: number } {
+     const item = equipment.get(request.itemId);
+     if (!item) throw new Error(`Unknown equipment item: ${request.itemId}`);
+ 
+-    const start = parseUtcMidnight(request.start, 'start');
+-    const end = parseUtcMidnight(request.end, 'end');
++    const start = parseUtcDateTime(request.start, 'start');
++    const end = parseUtcDateTime(request.end, 'end');
+     if (end <= start) throw new Error('Rental end must be after rental start');
+ 
+-    return { item, days: (end - start) / DAY_MS };
++    const duration = end - start;
++    if (duration < DAY_MS) {
++      if (start % (60 * 60 * 1000) !== 0 || end % (60 * 60 * 1000) !== 0) {
++        throw new Error('Hourly rentals must start and end on the hour');
++      }
++      if (item.hourlyPrice === undefined) throw new Error('Equipment item does not support hourly rentals');
++      return { item, days: 0, hours: duration / (60 * 60 * 1000) };
++    }
++    if (start % DAY_MS !== 0 || end % DAY_MS !== 0 || duration % DAY_MS !== 0) {
++      throw new Error('Daily rentals must start and end at midnight UTC');
++    }
++    return { item, days: duration / DAY_MS };
+   }
+ 
+   function quote(request: RentalRequest): RentalQuote {
+-    const { item, days } = validateRequest(request);
++    const { item, days, hours } = validateRequest(request);
++    if (hours !== undefined) {
++      const total = item.hourlyPrice! * hours;
++      if (!Number.isSafeInteger(total)) throw new Error('Rental total exceeds the supported integer range');
++      return { itemId: request.itemId, start: request.start, end: request.end, total };
++    }
+     const fullTotal = item.dailyPrice * days;
+     if (!Number.isSafeInteger(fullTotal)) throw new Error('Rental total exceeds the supported integer range');
+     const total = days >= 3
+@@ -68,8 +85,8 @@ export function createRentalService(): RentalService {
+   }
+ 
+   function availability(query: AvailabilityQuery): string[] {
+-    const start = parseUtcMidnight(query.start, 'start');
+-    const end = parseUtcMidnight(query.end, 'end');
++    const start = parseUtcDateTime(query.start, 'start');
++    const end = parseUtcDateTime(query.end, 'end');
+     if (end <= start) throw new Error('Rental end must be after rental start');
+     if (query.kind !== undefined && query.kind !== 'board' && query.kind !== 'sail') {
+       throw new Error("Equipment kind must be 'board' or 'sail'");
+@@ -98,6 +115,9 @@ export function createRentalService(): RentalService {
+       if (!Number.isSafeInteger(item.dailyPrice) || item.dailyPrice < 0) {
+         throw new Error('Daily price must be a non-negative integer number of cents');
+       }
++      if (item.hourlyPrice !== undefined && (!Number.isSafeInteger(item.hourlyPrice) || item.hourlyPrice < 0)) {
++        throw new Error('Hourly price must be a non-negative integer number of cents');
++      }
+       if (equipment.has(item.id)) throw new Error(`Equipment item already exists: ${item.id}`);
+       equipment.set(item.id, { ...item });
+     },
+@@ -108,8 +128,8 @@ export function createRentalService(): RentalService {
+ 
+     book(request) {
+       const result = quote(request);
+-      const start = parseUtcMidnight(request.start, 'start');
+-      const end = parseUtcMidnight(request.end, 'end');
++      const start = parseUtcDateTime(request.start, 'start');
++      const end = parseUtcDateTime(request.end, 'end');
+       const overlaps = bookings.some((booking) => {
+         if (booking.itemId !== request.itemId) return false;
+         const bookingStart = Date.parse(booking.start);
+@@ -125,10 +145,10 @@ export function createRentalService(): RentalService {
+   };
+ }
+ 
+-function parseUtcMidnight(value: string, field: string): number {
+-  // Require a full ISO date-time, a zero UTC offset, and exactly midnight.
+-  const match = /^\d{4}-\d{2}-\d{2}T00:00:00(?:\.0+)?(?:Z|\+00:00)$/.exec(value);
+-  if (!match) throw new Error(`${field} must be midnight UTC in ISO-8601 format`);
++function parseUtcDateTime(value: string, field: string): number {
++  // Require a full ISO date-time with a zero UTC offset.
++  const match = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|\+00:00)$/.exec(value);
++  if (!match) throw new Error(`${field} must be a UTC date-time in ISO-8601 format`);
+ 
+   const timestamp = Date.parse(value);
+   if (!Number.isFinite(timestamp)) throw new Error(`${field} must be a valid ISO-8601 date`);

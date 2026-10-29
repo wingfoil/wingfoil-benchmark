@@ -1,0 +1,115 @@
+diff --git a/src/index.ts b/src/index.ts
+index 851affefe33cfc740412f163e21137d7d7d7dbc9..f38c1166212c07b9726fee536c60040f81fd39b1 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -114,8 +114,49 @@ export function applyPatch(document: unknown, patch: unknown): unknown {
+   return result;
+ }
+ 
++/**
++ * Applies an RFC 7386 JSON Merge Patch to a JSON document.
++ *
++ * Object-valued patches are merged recursively; a `null` member removes the
++ * corresponding member from the target. All other patch values replace the
++ * target value. Neither supplied value is mutated.
++ *
++ * @throws {Error} If the target or patch is not a JSON value.
++ */
++export function applyMergePatch(target: unknown, patch: unknown): unknown {
++  assertJsonValue(target, 'target');
++  assertJsonValue(patch, 'merge patch');
++
++  return mergePatch(target, patch);
++}
++
+ type JsonObject = Record<string, unknown>;
+ 
++function mergePatch(target: unknown, patch: unknown): unknown {
++  // RFC 7386, section 2: an object patch merges into an object target. A
++  // non-object target is first treated as an empty object.
++  if (isJsonObject(patch)) {
++    const result: JsonObject = isJsonObject(target) ? cloneJson(target) as JsonObject : {};
++
++    for (const key of Object.keys(patch)) {
++      const patchValue = patch[key];
++      if (patchValue === null) {
++        delete result[key];
++      } else {
++        const targetValue = Object.hasOwn(result, key) ? result[key] : undefined;
++        setObjectMember(result, key, mergePatch(targetValue, patchValue));
++      }
++    }
++
++    return result;
++  }
++
++  // Arrays and scalar values are replacements, rather than structures to
++  // merge. Clone compound replacements so callers cannot mutate patch data
++  // through the returned document.
++  return cloneJson(patch);
++}
++
+ function isJsonObject(value: unknown): value is JsonObject {
+   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+     return false;
+diff --git a/test/index.test.mjs b/test/index.test.mjs
+index 748be151a04be9fe00dfd17081ad34fd7af02d84..a26d65055cba8ff95c7633d6a1bac16b1e974649 100644
+--- a/test/index.test.mjs
++++ b/test/index.test.mjs
+@@ -1,7 +1,55 @@
+ import assert from 'node:assert/strict';
+ import test from 'node:test';
+ 
+-import { applyPatch } from '../src/index.ts';
++import { applyMergePatch, applyPatch } from '../src/index.ts';
++
++test('applies RFC 7386 merge patches without mutating either input', () => {
++  const target = {
++    title: 'Goodbye!',
++    author: { givenName: 'John', familyName: 'Doe' },
++    tags: ['example', 'sample'],
++    content: 'This will be unchanged',
++  };
++  const patch = {
++    title: 'Hello!',
++    phoneNumber: '+01-123-456-7890',
++    author: { familyName: null },
++    tags: ['example'],
++  };
++
++  assert.deepEqual(applyMergePatch(target, patch), {
++    title: 'Hello!',
++    author: { givenName: 'John' },
++    tags: ['example'],
++    content: 'This will be unchanged',
++    phoneNumber: '+01-123-456-7890',
++  });
++  assert.deepEqual(target, {
++    title: 'Goodbye!',
++    author: { givenName: 'John', familyName: 'Doe' },
++    tags: ['example', 'sample'],
++    content: 'This will be unchanged',
++  });
++  assert.deepEqual(patch, {
++    title: 'Hello!',
++    phoneNumber: '+01-123-456-7890',
++    author: { familyName: null },
++    tags: ['example'],
++  });
++});
++
++test('merge patch replaces non-object values and treats object patches as merging into empty objects', () => {
++  assert.deepEqual(applyMergePatch(['old'], { value: true, removed: null }), { value: true });
++  assert.deepEqual(applyMergePatch({ value: true }, ['replacement']), ['replacement']);
++  assert.equal(applyMergePatch({ value: true }, null), null);
++});
++
++test('merge patch safely handles special JavaScript property names', () => {
++  const result = applyMergePatch({}, JSON.parse('{"__proto__":{"polluted":true}}'));
++
++  assert.deepEqual(result, JSON.parse('{"__proto__":{"polluted":true}}'));
++  assert.equal(Object.prototype.polluted, undefined);
++});
+ 
+ test('applies operations sequentially and does not mutate the input document', () => {
+   const document = { entries: ['one'] };

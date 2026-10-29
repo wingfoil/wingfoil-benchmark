@@ -1,0 +1,76 @@
+diff --git a/src/index.ts b/src/index.ts
+index f835e69037a6c7ec26b563d7aea4dffe976f4ff4..d775cea8ed2a6c0845caeb0933962a1cc39852e2 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -29,14 +29,22 @@ export interface RentalBooking extends RentalQuote {
+   id: string;
+ }
+ 
++export interface RentalCancellation {
++  bookingId: string;
++  refund: number;
++}
++
+ export interface RentalService {
+   addEquipment(item: Equipment): void;
+   quote(request: RentalRequest): RentalQuote;
+   book(request: RentalRequest): RentalBooking;
++  cancel(bookingId: string, at: string): RentalCancellation;
+   availability(query: AvailabilityQuery): string[];
+ }
+ 
+-interface StoredBooking extends RentalBooking {}
++interface StoredBooking extends RentalBooking {
++  cancelled: boolean;
++}
+ 
+ /** Creates an in-memory rental catalog and booking service. */
+ export function createRentalService(): RentalService {
+@@ -139,15 +147,35 @@ export function createRentalService(): RentalService {
+       const start = Date.parse(quoted.start);
+       const end = Date.parse(quoted.end);
+       const conflict = bookings.some((booking) =>
+-        booking.itemId === quoted.itemId &&
++        !booking.cancelled && booking.itemId === quoted.itemId &&
+         start < Date.parse(booking.end) && end > Date.parse(booking.start)
+       );
+       if (conflict) {
+         throw new Error(`Equipment is already booked for part of this period: ${quoted.itemId}`);
+       }
+-      const booking: StoredBooking = { id: `booking-${nextBookingId++}`, ...quoted };
++      const booking: StoredBooking = { id: `booking-${nextBookingId++}`, ...quoted, cancelled: false };
+       bookings.push(booking);
+-      return { ...booking };
++      const { cancelled: _cancelled, ...result } = booking;
++      return result;
++    },
++
++    cancel(bookingId: string, at: string): RentalCancellation {
++      if (typeof bookingId !== 'string' || bookingId.length === 0) {
++        throw new Error('bookingId must be a non-empty string');
++      }
++      const cancelledAt = parseUtcTimestamp(at, 'at');
++      const booking = bookings.find((candidate) => candidate.id === bookingId);
++      if (!booking) {
++        throw new Error(`Unknown booking: ${bookingId}`);
++      }
++      if (booking.cancelled) {
++        throw new Error(`Booking has already been cancelled: ${bookingId}`);
++      }
++      booking.cancelled = true;
++      return {
++        bookingId,
++        refund: cancelledAt < Date.parse(booking.start) ? booking.total : 0,
++      };
+     },
+ 
+     availability(query: AvailabilityQuery): string[] {
+@@ -158,7 +186,7 @@ export function createRentalService(): RentalService {
+       return [...equipment.values()]
+         .filter((item) => query.kind === undefined || item.kind === query.kind)
+         .filter((item) => !bookings.some((booking) =>
+-          booking.itemId === item.id &&
++          !booking.cancelled && booking.itemId === item.id &&
+           start < Date.parse(booking.end) && end > Date.parse(booking.start)
+         ))
+         .map((item) => item.id)

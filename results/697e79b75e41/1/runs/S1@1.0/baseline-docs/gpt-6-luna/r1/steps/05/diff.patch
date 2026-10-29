@@ -1,0 +1,84 @@
+diff --git a/README.md b/README.md
+index 1bb1ce4f2eebafd03b85b7c22085e25b064b6f8f..6eb34b29dbb271c8d655eb825384ab56bc97b0a6 100644
+--- a/README.md
++++ b/README.md
+@@ -25,6 +25,11 @@ malformed, its pointer does not resolve as required, or an operation cannot be c
+ operation must provide its own `op` and `path` members; extra members not defined for that operation
+ are ignored. If any operation fails, the patch throws and no partially updated document is returned.
+ 
++### `createPatch(from, to)`
++
++Creates an RFC 6902 JSON Patch array that transforms `from` into `to`. It emits changes at the
++smallest practical object-member or array-element paths, and does not mutate either input.
++
+ ### `applyMergePatch(target, patch)`
+ 
+ Applies an [RFC 7386 JSON Merge Patch](https://www.rfc-editor.org/rfc/rfc7386) to a JSON document and
+diff --git a/src/index.ts b/src/index.ts
+index dc495d8e08ba47e49916770e501d3c6f3049796b..f1dd55a3a9c111c7280be3970fe0850a1da73742 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -138,6 +138,63 @@ export function applyMergePatch(target: unknown, patch: unknown): unknown {
+   return result;
+ }
+ 
++/**
++ * Creates an RFC 6902 JSON Patch that transforms `from` into `to` without
++ * changing either input. Object members and same-length array elements are
++ * compared recursively so unchanged values are not sent again.
++ *
++ * @param from The original JSON document.
++ * @param to The desired JSON document.
++ * @returns A JSON Patch operation array.
++ */
++export function createPatch(from: unknown, to: unknown): Array<Record<string, unknown>> {
++  const operations: Array<Record<string, unknown>> = [];
++  diffJson(from, to, [], operations);
++  return operations;
++}
++
++function diffJson(from: unknown, to: unknown, path: string[], operations: Array<Record<string, unknown>>): void {
++  if (jsonEqual(from, to)) return;
++
++  if (isObject(from) && isObject(to)) {
++    for (const key of Object.keys(from)) {
++      if (!Object.hasOwn(to, key)) {
++        operations.push({ op: "remove", path: pointer(path.concat(key)) });
++      }
++    }
++    for (const key of Object.keys(to)) {
++      if (!Object.hasOwn(from, key)) {
++        operations.push({ op: "add", path: pointer(path.concat(key)), value: cloneJson(to[key]) });
++      } else {
++        diffJson(from[key], to[key], path.concat(key), operations);
++      }
++    }
++    return;
++  }
++
++  if (Array.isArray(from) && Array.isArray(to)) {
++    const shared = Math.min(from.length, to.length);
++    for (let i = 0; i < shared; i++) diffJson(from[i], to[i], path.concat(String(i)), operations);
++    for (let i = from.length - 1; i >= to.length; i--) {
++      operations.push({ op: "remove", path: pointer(path.concat(String(i))) });
++    }
++    for (let i = shared; i < to.length; i++) {
++      operations.push({ op: "add", path: pointer(path.concat("-")), value: cloneJson(to[i]) });
++    }
++    return;
++  }
++
++  if (path.length === 0) {
++    operations.push({ op: "replace", path: "", value: cloneJson(to) });
++  } else {
++    operations.push({ op: "replace", path: pointer(path), value: cloneJson(to) });
++  }
++}
++
++function pointer(tokens: string[]): string {
++  return tokens.map((token) => `/${encodeToken(token)}`).join("");
++}
++
+ function parsePointer(pointer: string): string[] {
+   if (pointer === "") return [];
+   if (!pointer.startsWith("/")) throw new Error("A non-empty JSON Pointer must begin with '/'");

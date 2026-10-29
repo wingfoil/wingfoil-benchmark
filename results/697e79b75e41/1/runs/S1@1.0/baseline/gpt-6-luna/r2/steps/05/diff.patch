@@ -1,0 +1,73 @@
+diff --git a/src/index.ts b/src/index.ts
+index 958605b9c4b3f844419f6527f02dda4080c12abf..9218871230ad4358342587af8f5a2c9d7639e9af 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -56,6 +56,68 @@ type PatchOperation = {
+   value?: unknown;
+ };
+ 
++export type JsonPatchOperation =
++  | { op: "add"; path: string; value: unknown }
++  | { op: "remove"; path: string }
++  | { op: "replace"; path: string; value: unknown };
++
++/** Create a minimal, non-mutating RFC 6902 patch from one JSON value to another. */
++export function createPatch(from: unknown, to: unknown): JsonPatchOperation[] {
++  const operations: JsonPatchOperation[] = [];
++  buildPatch(from, to, [], operations);
++  return operations;
++}
++
++function buildPatch(from: unknown, to: unknown, path: string[], operations: JsonPatchOperation[]): void {
++  if (jsonEqual(from, to)) return;
++  if (isJsonObject(from) && isJsonObject(to)) {
++    for (const key of Object.keys(from)) {
++      if (!Object.hasOwn(to, key)) operations.push({ op: "remove", path: pointer(path.concat(key)) });
++    }
++    for (const key of Object.keys(to)) {
++      if (!Object.hasOwn(from, key)) {
++        operations.push({ op: "add", path: pointer(path.concat(key)), value: cloneJson(to[key]) });
++      } else {
++        buildPatch(from[key], to[key], path.concat(key), operations);
++      }
++    }
++    return;
++  }
++  if (Array.isArray(from) && Array.isArray(to)) {
++    // Preserve equal prefix and suffix, limiting edits to the changed middle.
++    let prefix = 0;
++    while (prefix < from.length && prefix < to.length && jsonEqual(from[prefix], to[prefix])) prefix++;
++    let suffix = 0;
++    while (suffix < from.length - prefix && suffix < to.length - prefix &&
++      jsonEqual(from[from.length - 1 - suffix], to[to.length - 1 - suffix])) suffix++;
++
++    const oldMiddle = from.length - prefix - suffix;
++    const newMiddle = to.length - prefix - suffix;
++    const shared = Math.min(oldMiddle, newMiddle);
++    for (let i = 0; i < shared; i++) {
++      buildPatch(from[prefix + i], to[prefix + i], path.concat(String(prefix + i)), operations);
++    }
++    for (let i = 0; i < oldMiddle - shared; i++) {
++      operations.push({ op: "remove", path: pointer(path.concat(String(prefix + shared))) });
++    }
++    for (let i = shared; i < newMiddle; i++) {
++      operations.push({ op: "add", path: pointer(path.concat(String(prefix + i))), value: cloneJson(to[prefix + i]) });
++    }
++    return;
++  }
++  operations.push(path.length === 0
++    ? { op: "replace", path: "", value: cloneJson(to) }
++    : { op: "replace", path: pointer(path), value: cloneJson(to) });
++}
++
++function isJsonObject(value: unknown): value is Record<string, unknown> {
++  return value !== null && typeof value === "object" && !Array.isArray(value);
++}
++
++function pointer(tokens: string[]): string {
++  return tokens.length === 0 ? "" : "/" + tokens.map(token => token.replace(/~/g, "~0").replace(/\//g, "~1")).join("/");
++}
++
+ /** Apply an RFC 6902 JSON Patch without changing the supplied document. */
+ export function applyPatch(document: unknown, patch: unknown): unknown {
+   if (!Array.isArray(patch)) throw new Error("JSON Patch must be an array");

@@ -1,0 +1,103 @@
+diff --git a/src/index.ts b/src/index.ts
+index 7b313964f7f46d46c082ca8417a986efff2af71e..f835e69037a6c7ec26b563d7aea4dffe976f4ff4 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -5,6 +5,8 @@ export interface Equipment {
+   kind: EquipmentKind;
+   /** Price for one rental day, in euro cents. */
+   dailyPrice: number;
++  /** Price for one rental hour, in euro cents. */
++  hourlyPrice?: number;
+ }
+ 
+ export interface RentalRequest {
+@@ -42,31 +44,34 @@ export function createRentalService(): RentalService {
+   const bookings: StoredBooking[] = [];
+   let nextBookingId = 1;
+ 
+-  function rentalDays(request: RentalRequest): number {
++  function rentalDuration(request: RentalRequest): { start: number; end: number; duration: number } {
+     if (typeof request.itemId !== 'string') {
+       throw new Error('itemId must be a string');
+     }
+ 
+     const { start, end } = rentalPeriod(request.start, request.end);
+-    const duration = end - start;
+-    const day = 24 * 60 * 60 * 1000;
+-    return duration / day;
++    return { start, end, duration: end - start };
+   }
+ 
+   function rentalPeriod(startValue: string, endValue: string): { start: number; end: number } {
+-    const start = parseUtcMidnight(startValue, 'start');
+-    const end = parseUtcMidnight(endValue, 'end');
++    const start = parseUtcTimestamp(startValue, 'start');
++    const end = parseUtcTimestamp(endValue, 'end');
+     const duration = end - start;
+     const day = 24 * 60 * 60 * 1000;
+-    if (duration <= 0 || duration % day !== 0) {
+-      throw new Error('Rental period must cover one or more whole UTC days');
++    const hour = 60 * 60 * 1000;
++    const startsAtMidnight = start % day === 0;
++    const endsAtMidnight = end % day === 0;
++    if (duration <= 0 || (duration < day
++      ? start % hour !== 0 || end % hour !== 0
++      : !startsAtMidnight || !endsAtMidnight || duration % day !== 0)) {
++      throw new Error('Rental period must cover whole UTC hours or whole UTC days');
+     }
+     return { start, end };
+   }
+ 
+-  function parseUtcMidnight(value: string, label: string): number {
+-    if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}T00:00:00(?:\.000)?Z$/.test(value)) {
+-      throw new Error(`${label} must be midnight UTC in ISO-8601 format`);
++  function parseUtcTimestamp(value: string, label: string): number {
++    if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:00:00(?:\.000)?Z$/.test(value)) {
++      throw new Error(`${label} must be on a UTC hour in ISO-8601 format`);
+     }
+     const timestamp = Date.parse(value);
+     if (!Number.isFinite(timestamp)) {
+@@ -81,18 +86,29 @@ export function createRentalService(): RentalService {
+   }
+ 
+   function quote(request: RentalRequest): RentalQuote {
+-    const days = rentalDays(request);
++    const { duration } = rentalDuration(request);
+     const item = equipment.get(request.itemId);
+     if (!item) {
+       throw new Error(`Unknown equipment: ${request.itemId}`);
+     }
++    const day = 24 * 60 * 60 * 1000;
++    let total: number;
++    if (duration < day) {
++      if (item.hourlyPrice === undefined) {
++        throw new Error(`Equipment cannot be rented by the hour: ${request.itemId}`);
++      }
++      total = item.hourlyPrice * (duration / (60 * 60 * 1000));
++    } else {
++      const days = duration / day;
++      total = days >= 3
++        ? Math.round(item.dailyPrice * days * 0.9)
++        : item.dailyPrice * days;
++    }
+     return {
+       itemId: request.itemId,
+       start: request.start,
+       end: request.end,
+-      total: days >= 3
+-        ? Math.round(item.dailyPrice * days * 0.9)
+-        : item.dailyPrice * days,
++      total,
+     };
+   }
+ 
+@@ -107,6 +123,9 @@ export function createRentalService(): RentalService {
+       if (!Number.isSafeInteger(item.dailyPrice) || item.dailyPrice < 0) {
+         throw new Error('dailyPrice must be a non-negative integer number of euro cents');
+       }
++      if (item.hourlyPrice !== undefined && (!Number.isSafeInteger(item.hourlyPrice) || item.hourlyPrice < 0)) {
++        throw new Error('hourlyPrice must be a non-negative integer number of euro cents');
++      }
+       if (equipment.has(item.id)) {
+         throw new Error(`Equipment already exists: ${item.id}`);
+       }

@@ -1,0 +1,126 @@
+diff --git a/README.md b/README.md
+index 1ba665c6cf57a7a123e6c18335030837cc70bac3..e6b1916076b1faf1b6b83515cfb75df3829566ec 100644
+--- a/README.md
++++ b/README.md
+@@ -12,5 +12,6 @@ or sails with daily prices in integer euro cents and an optional hourly price, t
+ the hourly price and require exact UTC hour ISO-8601 timestamps. Rentals of 24 hours or more use the
+ daily price and require UTC midnight timestamps, with `end` at midnight after the final rental day.
+ Quotes calculate price without reserving availability; bookings reject overlapping periods for the
+-same item. Cancellation is not implemented yet. See
++same item. Cancel a booking with `cancel(bookingId, at)`; cancellations at least 24 hours before the
++booking starts receive a full refund, and later cancellations receive none. See
+ [`docs/rental-api.md`](docs/rental-api.md) for the API contract.
+diff --git a/docs/rental-api.md b/docs/rental-api.md
+index 7afec534908501345786b65eb6dc9c16cd47b3cc..5593314dcbac920f7cabeb62cfab0d1f7a0a3197 100644
+--- a/docs/rental-api.md
++++ b/docs/rental-api.md
+@@ -4,7 +4,7 @@
+ 
+ Provide the booking desk with an in-memory catalogue and booking service for boards and sails.
+ This specification implements the rental-module requirement: register equipment, quote rentals by
+-the hour or day, and book equipment while preventing overlapping reservations.
++the hour or day, book equipment while preventing overlapping reservations, and cancel bookings.
+ 
+ ## Public API
+ 
+@@ -14,6 +14,8 @@ the hour or day, and book equipment while preventing overlapping reservations.
+   hourlyPrice?: number }`.
+ - `quote(request)`: return `{ itemId, start, end, total }` for `{ itemId, start, end }`.
+ - `book(request)`: reserve an available item and return `{ id, itemId, start, end, total }`.
++- `cancel(bookingId, at)`: cancel a booking and return `{ bookingId, refund }`, with the refund in
++  integer euro cents.
+ - `availability(query)`: return sorted equipment ids free for the full `{ start, end }` period,
+   optionally restricted by `kind: 'board' | 'sail'`.
+ 
+@@ -34,10 +36,13 @@ Availability queries use exact UTC hour timestamps and half-open period rules as
+ An item is available when none of its bookings overlap the query period; touching boundaries are free.
+ An omitted kind includes both boards and sails. Invalid periods or kinds cause an error.
+ 
+-The future cancellation policy is full refund at least 24 hours before a booking starts and no refund
+-inside 24 hours. Cancellation is outside this API's current scope; no wall clock is consulted.
++Cancellation requires an existing booking identifier and an exact UTC hour timestamp. A booking may
++only be cancelled once. The customer receives the full booking total when cancellation is at least
++24 hours before the booking starts, and no refund when it is inside that 24-hour window. A cancelled
++booking no longer reserves its equipment. No wall clock is consulted.
+ 
+ ## Decision
+ 
+-The service uses private in-memory maps and a monotonically increasing booking sequence. This keeps
+-instances isolated and deterministic without adding a runtime dependency or persistence coupling.
++The service uses private in-memory maps, a set of cancelled booking identifiers, and a monotonically
++increasing booking sequence. This keeps instances isolated and deterministic without adding a runtime
++dependency or persistence coupling.
+diff --git a/src/index.ts b/src/index.ts
+index 6c79b8d1cff1f93727f69e08f589fb1c72198862..b2199a6d9de17622624f64047979dc3d1f551b20 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -31,6 +31,12 @@ export interface RentalBooking extends RentalQuote {
+   id: string;
+ }
+ 
++/** The result of cancelling a booking, with the amount refunded in euro cents. */
++export interface RentalCancellation {
++  bookingId: string;
++  refund: number;
++}
++
+ /** In-memory operations for equipment and hour or day rental bookings. */
+ export interface RentalService {
+   /** Add an item with unique id and nonnegative daily and optional hourly prices in euro cents. */
+@@ -41,6 +47,8 @@ export interface RentalService {
+   availability(query: RentalAvailabilityQuery): string[];
+   /** Book a valid period if the item is free throughout it. */
+   book(request: RentalRequest): RentalBooking;
++  /** Cancel a booking at an exact UTC hour and return its refund in euro cents. */
++  cancel(bookingId: string, at: string): RentalCancellation;
+ }
+ 
+ /**
+@@ -51,6 +59,7 @@ export interface RentalService {
+ export function createRentalService(): RentalService {
+   const equipment = new Map<string, RentalEquipment>();
+   const bookings: RentalBooking[] = [];
++  const cancelledBookingIds = new Set<string>();
+   let nextBookingId = 1;
+ 
+   function validateRequest(request: RentalRequest): { item: RentalEquipment; start: number; end: number; total: number } {
+@@ -111,7 +120,8 @@ export function createRentalService(): RentalService {
+ 
+     return [...equipment.values()]
+       .filter((item) => query.kind === undefined || item.kind === query.kind)
+-      .filter((item) => !bookings.some((booking) => booking.itemId === item.id &&
++      .filter((item) => !bookings.some((booking) =>
++        !cancelledBookingIds.has(booking.id) && booking.itemId === item.id &&
+         start < Date.parse(booking.end) && Date.parse(booking.start) < end))
+       .map((item) => item.id)
+       .sort();
+@@ -135,13 +145,27 @@ export function createRentalService(): RentalService {
+       const price = quote(request);
+       const start = Date.parse(request.start);
+       const end = Date.parse(request.end);
+-      if (bookings.some((booking) => booking.itemId === price.itemId &&
+-          start < Date.parse(booking.end) && Date.parse(booking.start) < end)) {
++      if (bookings.some((booking) =>
++        !cancelledBookingIds.has(booking.id) && booking.itemId === price.itemId &&
++        start < Date.parse(booking.end) && Date.parse(booking.start) < end)) {
+         throw new Error(`Equipment is not available for the requested period: ${price.itemId}`);
+       }
+       const booking: RentalBooking = { id: `booking-${nextBookingId++}`, ...price };
+       bookings.push(booking);
+       return { ...booking };
+     },
++    cancel(bookingId: string, at: string): RentalCancellation {
++      if (typeof bookingId !== 'string' || bookingId.length === 0) {
++        throw new Error('Invalid booking identifier');
++      }
++      const cancelledAt = parseUtcHour(at);
++      const booking = bookings.find((candidate) => candidate.id === bookingId);
++      if (!booking) throw new Error(`Unknown booking: ${bookingId}`);
++      if (cancelledBookingIds.has(bookingId)) throw new Error(`Booking already cancelled: ${bookingId}`);
++
++      const refund = Date.parse(booking.start) - cancelledAt >= 86_400_000 ? booking.total : 0;
++      cancelledBookingIds.add(bookingId);
++      return { bookingId, refund };
++    },
+   };
+ }

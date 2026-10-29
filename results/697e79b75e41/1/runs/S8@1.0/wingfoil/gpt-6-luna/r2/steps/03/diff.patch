@@ -1,0 +1,124 @@
+diff --git a/README.md b/README.md
+index d6865400744e630e3a2388320e06862933951dad..000da2c247399c814812e9a67499bb32cc6380ad 100644
+--- a/README.md
++++ b/README.md
+@@ -15,3 +15,7 @@ Each task also has `createdAt` and `updatedAt` ISO-8601 date-time strings. They
+ `updatedAt` advances whenever a task is completed, reopened, renamed, tagged or untagged with an
+ actual change. `createTodoList` accepts an optional timestamp function for callers that need to
+ control the time source; by default it uses the current time.
++
++The list rejects titles that are blank or longer than 120 characters, priorities other than `low`,
++`normal` and `high`, and tags that are blank or contain whitespace. Add, rename and tag return an
++`invalid-input` error for these values without changing the list.
+diff --git a/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-3-plan.md b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-3-plan.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..6a7af475e46b81aafd0cdf21bab7a519c1fd11bb
+--- /dev/null
++++ b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-3-plan.md
+@@ -0,0 +1,13 @@
++---
++id: sw-life-cycle-1-3-plan
++type: plan
++title: "Validate task input"
++status: active
++workflow: "sw-life-cycle"
++phase: "1-3"
++element: ""
++parent: ""
++format: 1
++---
++
++Implemented validation for task titles, priorities and tags at the list API boundary. Rejected input returns `invalid-input` before mutation, and the README documents the accepted values. The submitted task record was approved and the delivery step was recorded. Tests were not run in this session.
+diff --git a/docs/memory/task/task-003-validate-task-input.md b/docs/memory/task/task-003-validate-task-input.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..c482656105386136c16db79d64b71120a23cdba9
+--- /dev/null
++++ b/docs/memory/task/task-003-validate-task-input.md
+@@ -0,0 +1,11 @@
++---
++id: task-003-validate-task-input
++type: task
++title: "Validate task input"
++status: approved
++format: 1
++---
++
++Reject task input when adding, renaming or tagging if a title is blank after trimming, exceeds 120
++characters, a priority is not `low`, `normal` or `high`, or a tag is blank or contains whitespace.
++Return a clear error and leave the task list unchanged on rejection.
+diff --git a/src/domain/list.ts b/src/domain/list.ts
+index a482717e1461bd253b7ffd4d6b82b24ad92603b8..e27d06ed56f5f16931ded3fab289cba6f594f3ab 100644
+--- a/src/domain/list.ts
++++ b/src/domain/list.ts
+@@ -1,8 +1,22 @@
+ import { err, ok } from './result.ts';
+ import type { Result } from './result.ts';
+ import { addTag, compareTasks, completeTask, createTask, removeTag, renameTask, reopenTask } from './task.ts';
++import { PRIORITIES } from './task.ts';
+ import type { NewTask, Priority, Status, Task } from './task.ts';
+ 
++const validateTitle = (title: string): string | undefined => {
++  const trimmed = title.trim();
++  if (trimmed.length === 0) return 'title must not be empty';
++  if (trimmed.length > 120) return 'title must be 120 characters or fewer';
++  return undefined;
++};
++
++const validateTag = (tag: string): string | undefined => {
++  if (tag.trim().length === 0) return 'tag must not be empty';
++  if (/\s/.test(tag)) return 'tag must not contain spaces';
++  return undefined;
++};
++
+ /** Which tasks to show: by status, priority or tag; every task when nothing is given. */
+ export interface TaskFilter {
+   readonly status?: Status;
+@@ -60,6 +74,13 @@ export function createTaskList(timestampNow: () => string): TaskList {
+   return {
+     add(input) {
+       const title = input.title.trim();
++      const titleError = validateTitle(input.title);
++      if (titleError !== undefined) return err('invalid-input', titleError);
++      if (input.priority !== undefined && !(PRIORITIES as readonly string[]).includes(input.priority)) {
++        return err('invalid-input', 'priority must be low, normal or high');
++      }
++      const tagError = (input.tags ?? []).map(validateTag).find((message) => message !== undefined);
++      if (tagError !== undefined) return err('invalid-input', tagError);
+       if ([...tasks.values()].some((task) => task.title === title)) {
+         return err('duplicate', `there is already a task "${title}"`);
+       }
+@@ -78,6 +99,8 @@ export function createTaskList(timestampNow: () => string): TaskList {
+     reopen: (titleOrId) => change(titleOrId, reopenTask),
+     rename(titleOrId, newTitle) {
+       const target = newTitle.trim();
++      const titleError = validateTitle(newTitle);
++      if (titleError !== undefined) return err('invalid-input', titleError);
+       const found = find(titleOrId);
+       if (!found.ok) return found;
+       if (target !== found.value.title && [...tasks.values()].some((task) => task.title === target)) {
+@@ -85,7 +108,11 @@ export function createTaskList(timestampNow: () => string): TaskList {
+       }
+       return change(titleOrId, (task) => ok(renameTask(task, target)));
+     },
+-    tag: (titleOrId, tag) => change(titleOrId, (task) => ok(addTag(task, tag))),
++    tag(titleOrId, tag) {
++      const tagError = validateTag(tag);
++      if (tagError !== undefined) return err('invalid-input', tagError);
++      return change(titleOrId, (task) => ok(addTag(task, tag)));
++    },
+     untag: (titleOrId, tag) => change(titleOrId, (task) => ok(removeTag(task, tag))),
+     remove(titleOrId) {
+       const found = find(titleOrId);
+diff --git a/src/domain/result.ts b/src/domain/result.ts
+index c6ed17a1b929cb19e127e0be01e84aac17b45407..4e46dfbe7c138c650e2d4b2d86dfbc5a5b27267c 100644
+--- a/src/domain/result.ts
++++ b/src/domain/result.ts
+@@ -5,7 +5,7 @@ export interface TodoError {
+ }
+ 
+ /** The kinds of failure the task list reports. */
+-export type TodoErrorCode = 'not-found' | 'duplicate' | 'invalid-state';
++export type TodoErrorCode = 'not-found' | 'duplicate' | 'invalid-state' | 'invalid-input';
+ 
+ /** The outcome of an operation that can fail: its value, or the reason it failed. */
+ export type Result<T, E = TodoError> =

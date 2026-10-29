@@ -1,0 +1,98 @@
+diff --git a/README.md b/README.md
+index 7a8295c838179739ead16f23c7cdf1276127dc54..6a245374b7d08fe211745efa9ccda39c9ff71bd7 100644
+--- a/README.md
++++ b/README.md
+@@ -31,3 +31,16 @@ import { applyPatch } from "json-toolkit";
+ applyPatch({ name: "Ada" }, [{ op: "replace", path: "/name", value: "Grace" }]);
+ // { name: "Grace" }
+ ```
++
++## JSON Merge Patch
++
++`applyMergePatch(target, patch)` applies an RFC 7386 JSON Merge Patch and returns a new value.
++Object patches recursively merge members, members set to `null` are removed, and any non-object
++patch replaces the target. Arrays are treated as values and replaced as a whole.
++
++```ts
++import { applyMergePatch } from "json-toolkit";
++
++applyMergePatch({ name: "Ada", role: "admin" }, { name: "Grace", role: null });
++// { name: "Grace" }
++```
+diff --git a/src/index.ts b/src/index.ts
+index ae930fda26c795834da44504632dfa72e4ffdda7..cc36781ee4c641d66c848a6261bc7eaa29b54cd6 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -132,6 +132,41 @@ export function applyPatch(document: unknown, patch: unknown): unknown {
+   return result;
+ }
+ 
++/**
++ * Applies an RFC 7386 JSON Merge Patch to a JSON document without changing the input.
++ * Object patches recursively update members, null members remove properties, and
++ * any non-object patch replaces the entire target.
++ *
++ * @param target The JSON value to update.
++ * @param patch An RFC 7386 merge patch value.
++ * @returns The merged JSON value.
++ */
++export function applyMergePatch(target: unknown, patch: unknown): unknown {
++  if (patch === null || typeof patch !== "object" || Array.isArray(patch)) {
++    return cloneJson(patch);
++  }
++
++  const result: Record<string, unknown> = isObject(target) ? cloneJson(target) : {};
++  for (const key of Object.keys(patch)) {
++    const patchValue = (patch as Record<string, unknown>)[key];
++    if (patchValue === null) {
++      delete result[key];
++    } else {
++      Object.defineProperty(result, key, {
++        value: applyMergePatch(result[key], patchValue),
++        enumerable: true,
++        configurable: true,
++        writable: true,
++      });
++    }
++  }
++  return result;
++}
++
++function isObject(value: unknown): value is Record<string, unknown> {
++  return value !== null && typeof value === "object" && !Array.isArray(value);
++}
++
+ function requireField(operation: Record<string, unknown>, field: string): void {
+   if (!Object.hasOwn(operation, field)) throw new Error(`JSON Patch operation requires '${field}'`);
+ }
+diff --git a/test/merge-patch.test.js b/test/merge-patch.test.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..33b1fd64ecaca14de956e800d78babbbe3605e72
+--- /dev/null
++++ b/test/merge-patch.test.js
+@@ -0,0 +1,25 @@
++import test from "node:test";
++import assert from "node:assert/strict";
++import { applyMergePatch } from "../src/index.ts";
++
++test("recursively merges object members and removes members patched with null", () => {
++  const target = { title: "old", author: { name: "Ada", age: 30 }, tags: ["a", "b"] };
++  const result = applyMergePatch(target, { title: "new", author: { age: null }, tags: ["c"] });
++  assert.deepEqual(result, { title: "new", author: { name: "Ada" }, tags: ["c"] });
++  assert.deepEqual(target, { title: "old", author: { name: "Ada", age: 30 }, tags: ["a", "b"] });
++});
++
++test("a non-object patch replaces the target, and an object patch replaces non-object targets", () => {
++  assert.equal(applyMergePatch({ a: 1 }, "replacement"), "replacement");
++  assert.deepEqual(applyMergePatch([1, 2], { a: 1 }), { a: 1 });
++  assert.deepEqual(applyMergePatch(null, { a: 1 }), { a: 1 });
++});
++
++test("empty object patch leaves an object unchanged and null patch replaces the root", () => {
++  assert.deepEqual(applyMergePatch({ a: { b: 1 } }, {}), { a: { b: 1 } });
++  assert.equal(applyMergePatch({ a: 1 }, null), null);
++});
++
++test("handles special object member names as ordinary JSON keys", () => {
++  assert.deepEqual(applyMergePatch({}, JSON.parse('{"__proto__":{"safe":true}}')), JSON.parse('{"__proto__":{"safe":true}}'));
++});

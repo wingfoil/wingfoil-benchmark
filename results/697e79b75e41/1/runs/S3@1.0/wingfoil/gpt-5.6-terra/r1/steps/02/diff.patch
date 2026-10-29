@@ -1,0 +1,183 @@
+diff --git a/README.md b/README.md
+index 51ecda7e5436e7ab8b2863e573e6ac94c0f19a88..18173f3b4c31104a07366d3b6d2b793625849d12 100644
+--- a/README.md
++++ b/README.md
+@@ -9,4 +9,6 @@ of its booking desk, written in TypeScript with no runtime dependency.
+ `createRentalService()` creates an in-memory rental service. Add a board or sail with an integer daily
+ price in euro cents, then use `quote()` to price a complete UTC-day period or `book()` to reserve it.
+ Periods are half-open (`[start, end)`), must start and end at midnight UTC, and cannot overlap for the
+-same item. Booking IDs are deterministic (`booking-1`, `booking-2`, and so on).
++same item. Booking IDs are deterministic (`booking-1`, `booking-2`, and so on). Use
++`availability({ start, end, kind? })` to return the sorted IDs of equipment that has no overlapping
++booking for the full period; omit `kind` to search boards and sails together.
+diff --git a/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-2-plan.md b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-2-plan.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..023913269d9cd54253bbbd9f97f3509f164ab061
+--- /dev/null
++++ b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-2-plan.md
+@@ -0,0 +1,17 @@
++---
++id: sw-life-cycle-1-2-plan
++type: plan
++title: "Add equipment availability query"
++status: active
++workflow: "sw-life-cycle"
++phase: "1-2"
++element: ""
++parent: ""
++format: 1
++---
++
++<!-- plan body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
+diff --git a/docs/memory/task/task-002-add-equipment-availability-query.md b/docs/memory/task/task-002-add-equipment-availability-query.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..1c5ee9f6a1df35135dfc09bed02d711ca7bec3bd
+--- /dev/null
++++ b/docs/memory/task/task-002-add-equipment-availability-query.md
+@@ -0,0 +1,11 @@
++---
++id: task-002-add-equipment-availability-query
++type: task
++title: "Add equipment availability query"
++status: approved
++format: 1
++---
++
++Add `availability(query)` to the in-memory rental service. The query has `start`, `end`, and an
++optional `kind`; it returns sorted equipment IDs that match the requested kind (or all kinds) and
++have no overlapping booking for the complete half-open period.
+diff --git a/src/index.ts b/src/index.ts
+index d227f3989a58fe2d2e85fb3e60ff756346c9b482..e2aa97ad95d34a92def1ee6814fa26a85e414f07 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -12,6 +12,13 @@ export interface RentalRequest {
+   end: string;
+ }
+ 
++/** Criteria for finding equipment that is unbooked throughout a UTC-day period. */
++export interface AvailabilityQuery {
++  start: string;
++  end: string;
++  kind?: Equipment['kind'];
++}
++
+ /** The calculated cost for a rental period, expressed in euro cents. */
+ export interface RentalQuote extends RentalRequest {
+   total: number;
+@@ -30,6 +37,8 @@ export interface RentalService {
+   quote(request: RentalRequest): RentalQuote;
+   /** Reserves free equipment for a valid rental period. */
+   book(request: RentalRequest): RentalBooking;
++  /** Returns sorted IDs of matching equipment that has no overlapping booking. */
++  availability(query: AvailabilityQuery): string[];
+ }
+ 
+ const MIDNIGHT_UTC = /^(\d{4})-(\d{2})-(\d{2})T00:00:00(?:\.0{1,3})?Z$/;
+@@ -67,13 +76,7 @@ export function createRentalService(): RentalService {
+   function book(request: RentalRequest): RentalBooking {
+     const quoteResult = quote(request);
+     const { startTime, endTime } = validatePeriod(request);
+-    const isUnavailable = bookings.some((booking) => {
+-      if (booking.itemId !== request.itemId) {
+-        return false;
+-      }
+-      const existing = validatePeriod(booking);
+-      return startTime < existing.endTime && endTime > existing.startTime;
+-    });
++    const isUnavailable = hasOverlappingBooking(request.itemId, startTime, endTime);
+     if (isUnavailable) {
+       throw new Error(`Equipment is unavailable: ${request.itemId}`);
+     }
+@@ -86,6 +89,27 @@ export function createRentalService(): RentalService {
+     return { ...booking };
+   }
+ 
++  function availability(query: AvailabilityQuery): string[] {
++    const { startTime, endTime } = validatePeriod(query);
++    validateAvailabilityKind(query.kind);
++
++    return [...equipment.values()]
++      .filter((item) => query.kind === undefined || item.kind === query.kind)
++      .filter((item) => !hasOverlappingBooking(item.id, startTime, endTime))
++      .map((item) => item.id)
++      .sort();
++  }
++
++  function hasOverlappingBooking(itemId: string, startTime: number, endTime: number): boolean {
++    return bookings.some((booking) => {
++      if (booking.itemId !== itemId) {
++        return false;
++      }
++      const existing = validatePeriod(booking);
++      return startTime < existing.endTime && endTime > existing.startTime;
++    });
++  }
++
+   function findEquipment(itemId: string): Equipment {
+     if (typeof itemId !== 'string') {
+       throw new Error('Item ID must be a string');
+@@ -97,7 +121,7 @@ export function createRentalService(): RentalService {
+     return item;
+   }
+ 
+-  return { addEquipment, quote, book };
++  return { addEquipment, quote, book, availability };
+ }
+ 
+ function validateEquipment(item: Equipment): void {
+@@ -115,7 +139,13 @@ function validateEquipment(item: Equipment): void {
+   }
+ }
+ 
+-function validatePeriod(request: RentalRequest): { startTime: number; endTime: number } {
++function validateAvailabilityKind(kind: AvailabilityQuery['kind']): void {
++  if (kind !== undefined && kind !== 'board' && kind !== 'sail') {
++    throw new Error('Equipment kind must be board or sail');
++  }
++}
++
++function validatePeriod(request: Pick<RentalRequest, 'start' | 'end'>): { startTime: number; endTime: number } {
+   if (typeof request !== 'object' || request === null) {
+     throw new Error('Rental request must be an object');
+   }
+diff --git a/test/rental-service.test.mjs b/test/rental-service.test.mjs
+index 4b68e2ec38b9f3e172001464f344eb91877efd8b..d48a1939af51855faf576fe8eb15587902196fcf 100644
+--- a/test/rental-service.test.mjs
++++ b/test/rental-service.test.mjs
+@@ -54,3 +54,32 @@ test('prevents bookings that overlap and permits adjacent bookings', () => {
+     end: '2026-06-14T00:00:00.000Z',
+   }));
+ });
++
++test('lists sorted equipment that is free for the complete requested period', () => {
++  const rentals = createRentalService();
++  rentals.addEquipment({ id: 'sail-2', kind: 'sail', dailyPrice: 1_500 });
++  rentals.addEquipment({ id: 'board-2', kind: 'board', dailyPrice: 2_500 });
++  rentals.addEquipment({ id: 'sail-1', kind: 'sail', dailyPrice: 1_500 });
++  rentals.addEquipment({ id: 'board-1', kind: 'board', dailyPrice: 2_500 });
++  rentals.book({ itemId: 'board-1', start, end });
++  rentals.book({
++    itemId: 'sail-1',
++    start: '2026-06-09T00:00:00.000Z',
++    end: '2026-06-11T00:00:00.000Z',
++  });
++
++  assert.deepEqual(rentals.availability({ start, end }), ['board-2', 'sail-2']);
++  assert.deepEqual(rentals.availability({ start, end, kind: 'board' }), ['board-2']);
++  assert.deepEqual(rentals.availability({ start, end, kind: 'sail' }), ['sail-2']);
++  assert.deepEqual(rentals.availability({
++    start: end,
++    end: '2026-06-14T00:00:00.000Z',
++  }), ['board-1', 'board-2', 'sail-1', 'sail-2']);
++});
++
++test('rejects availability queries with invalid periods or equipment kinds', () => {
++  const rentals = createRentalService();
++
++  assert.throws(() => rentals.availability({ start: end, end: start }));
++  assert.throws(() => rentals.availability({ start, end, kind: 'mast' }));
++});

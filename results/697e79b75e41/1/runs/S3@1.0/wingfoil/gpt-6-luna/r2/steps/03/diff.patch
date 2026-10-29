@@ -1,0 +1,117 @@
+diff --git a/README.md b/README.md
+index 0531137c01790a49fd5942ec98e910369a3f01eb..2094b113c3ae7d2d3f6c93263485a6139e5756dd 100644
+--- a/README.md
++++ b/README.md
+@@ -9,6 +9,9 @@ of its booking desk, written in TypeScript with no runtime dependency.
+ `createRentalService()` creates an isolated in-memory rental inventory. Add boards or sails with a
+ daily price in integer euro cents, then quote or book a period using UTC ISO-8601 timestamps at
+ midnight. The end timestamp is exclusive, so a rental from one midnight to the next is one day.
++Rentals of three or more days receive a 10% discount from the full period price. Discounted totals
++are rounded to the nearest euro cent, with half cents rounded up. Both quotes and bookings report
++that same reduced total.
+ Bookings for the same item cannot overlap. Cancellation and refunds are not available yet.
+ 
+ ```ts
+diff --git a/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-3-plan.md b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-3-plan.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..1df790c33d5fd08843297a0dcd806a3af67429cd
+--- /dev/null
++++ b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-3-plan.md
+@@ -0,0 +1,17 @@
++---
++id: sw-life-cycle-1-3-plan
++type: plan
++title: "Reward rentals of 3 days or more"
++status: active
++workflow: "sw-life-cycle"
++phase: "1-3"
++element: ""
++parent: ""
++format: 1
++---
++
++<!-- plan body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
+diff --git a/docs/memory/task/task-003-reward-rentals-of-3-days-or-more.md b/docs/memory/task/task-003-reward-rentals-of-3-days-or-more.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..d88c08af95af0e3c10b229d355599c9a7bf0e6e1
+--- /dev/null
++++ b/docs/memory/task/task-003-reward-rentals-of-3-days-or-more.md
+@@ -0,0 +1,11 @@
++---
++id: task-003-reward-rentals-of-3-days-or-more
++type: task
++title: "Reward rentals of 3 days or more"
++status: approved
++format: 1
++---
++
++Apply a 10% discount to rentals lasting three or more whole days. Quotes and bookings must both return
++and display the discounted total, while shorter rentals retain their full price. Prices and totals
++remain integer euro cents, with deterministic rounding.
+diff --git a/src/index.ts b/src/index.ts
+index 9da4f5a3b3d1b6f8175ebe8b6a303f405a2f908b..2cd36fb3c9edb87f75e2e457857260f7c7c2e543 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -22,7 +22,7 @@ export interface AvailabilityQuery {
+   kind?: EquipmentKind;
+ }
+ 
+-/** The price quote for a rental period, in integer euro cents. */
++/** The price quote for a rental period, in integer euro cents. Rentals of at least three days include a 10% discount. */
+ export interface RentalQuote extends RentalRequest {
+   total: number;
+ }
+@@ -99,10 +99,14 @@ export function createRentalService(): RentalService {
+     }
+ 
+     const days = (endTime - startTime) / 86_400_000;
+-    const total = item.dailyPrice * days;
+-    if (!Number.isSafeInteger(total)) {
++    const fullTotal = item.dailyPrice * days;
++    if (!Number.isSafeInteger(fullTotal)) {
+       throw new Error('Rental total exceeds the safe integer range');
+     }
++    // Round the discounted total to the nearest euro cent, with half cents rounded up.
++    const total = days >= 3
++      ? Math.floor(fullTotal / 10) * 9 + Math.round((fullTotal % 10) * 0.9)
++      : fullTotal;
+     return {
+       quote: { itemId: item.id, start: request.start, end: request.end, total },
+       startTime,
+diff --git a/test/rental-discount.test.js b/test/rental-discount.test.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..76846007294951020764e7d6d7d21975b2ce1665
+--- /dev/null
++++ b/test/rental-discount.test.js
+@@ -0,0 +1,27 @@
++import test from 'node:test';
++import assert from 'node:assert/strict';
++import { createRentalService } from '../src/index.ts';
++
++test('rentals of at least three days receive a 10% discount in quotes and bookings', () => {
++  const rentals = createRentalService();
++  rentals.addEquipment({ id: 'board', kind: 'board', dailyPrice: 1001 });
++  const request = {
++    itemId: 'board',
++    start: '2026-07-01T00:00:00Z',
++    end: '2026-07-04T00:00:00Z',
++  };
++
++  assert.equal(rentals.quote(request).total, 2703);
++  assert.equal(rentals.book(request).total, 2703);
++});
++
++test('rentals shorter than three days retain their full price', () => {
++  const rentals = createRentalService();
++  rentals.addEquipment({ id: 'sail', kind: 'sail', dailyPrice: 1001 });
++
++  assert.equal(rentals.quote({
++    itemId: 'sail',
++    start: '2026-07-01T00:00:00Z',
++    end: '2026-07-03T00:00:00Z',
++  }).total, 2002);
++});

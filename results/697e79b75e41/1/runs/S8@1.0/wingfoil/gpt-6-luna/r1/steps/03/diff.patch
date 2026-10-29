@@ -1,0 +1,142 @@
+diff --git a/README.md b/README.md
+index 3a92dbf0fffa54537e3370b49caee4c56f20a203..5960a5a4c4d46fb0cf8d95223c5def4f71645dab 100644
+--- a/README.md
++++ b/README.md
+@@ -12,4 +12,9 @@ Tasks also include `createdAt` and `updatedAt`, ISO-8601 date-time strings. They
+ added; `updatedAt` changes when the task's status, title or tags change. `createTodoList` accepts an
+ optional function that supplies timestamps, which is useful when the app needs a controlled clock.
+ 
++Task input is validated when adding, renaming or tagging. Titles must contain a non-space character
++and be at most 120 characters long. Priorities must be `low`, `normal` or `high`; tags must be
++non-empty and contain no spaces. Invalid input returns an `invalid-input` error with a message that
++explains the problem, without changing the list.
++
+ Run its tests with `npm test`.
+diff --git a/docs/memory/task/task-002-record-task-creation-and-update-timestamps.md b/docs/memory/task/task-002-record-task-creation-and-update-timestamps.md
+index c93a3687175b9a3cfd442488421bcc4e460cd73e..e7196a5220354be67a92b08c565e591f41927606 100644
+--- a/docs/memory/task/task-002-record-task-creation-and-update-timestamps.md
++++ b/docs/memory/task/task-002-record-task-creation-and-update-timestamps.md
+@@ -2,7 +2,7 @@
+ id: task-002-record-task-creation-and-update-timestamps
+ type: task
+ title: "Record task creation and update timestamps"
+-status: pending
++status: approved
+ format: 1
+ ---
+ 
+diff --git a/docs/memory/task/task-003-reject-invalid-task-input.md b/docs/memory/task/task-003-reject-invalid-task-input.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..b1f9d496e9296d6c483778dc0fc9f95f8f5211b5
+--- /dev/null
++++ b/docs/memory/task/task-003-reject-invalid-task-input.md
+@@ -0,0 +1,25 @@
++---
++id: task-003-reject-invalid-task-input
++type: task
++title: "Reject invalid task input"
++status: pending
++format: 1
++---
++
++## Request
++
++Reject invalid input when adding, renaming or tagging tasks, and leave the list unchanged on
++rejection.
++
++## Acceptance
++
++- Reject titles that are empty or only spaces, or longer than 120 characters, with a clear error.
++- Reject priorities outside `low`, `normal` and `high` with a clear error.
++- Reject tags that are empty or contain a space with a clear error.
++- Rejected add, rename and tag operations do not change the task list.
++
++## Outcome
++
++The list validates titles, priorities and tags before creating or updating tasks. Invalid input
++returns an `invalid-input` result with a specific message, without changing the list. The README
++documents these constraints and the error behavior.
+diff --git a/src/domain/list.ts b/src/domain/list.ts
+index de4e10307589c1f2773301608935a5ddcefe91c8..2b1caefa788833f7e2ac90b5ae25992a3bad7909 100644
+--- a/src/domain/list.ts
++++ b/src/domain/list.ts
+@@ -1,6 +1,6 @@
+ import { err, ok } from './result.ts';
+ import type { Result } from './result.ts';
+-import { addTag, compareTasks, completeTask, createTask, removeTag, renameTask, reopenTask } from './task.ts';
++import { PRIORITIES, addTag, compareTasks, completeTask, createTask, removeTag, renameTask, reopenTask } from './task.ts';
+ import type { NewTask, Priority, Status, Task } from './task.ts';
+ 
+ /** Which tasks to show: by status, priority or tag; every task when nothing is given. */
+@@ -58,6 +58,14 @@ export function createTaskList(now: () => string): TaskList {
+ 
+   return {
+     add(input) {
++      const invalidTitle = validateTitle(input.title);
++      if (invalidTitle !== undefined) return invalidTitle;
++      const invalidPriority = validatePriority(input.priority);
++      if (invalidPriority !== undefined) return invalidPriority;
++      for (const tag of input.tags ?? []) {
++        const invalidTag = validateTag(tag);
++        if (invalidTag !== undefined) return invalidTag;
++      }
+       const task = createTask(input, `task-${nextId}`, now);
+       if ([...tasks.values()].some((existing) => existing.title === task.title)) {
+         return err('duplicate', `there is already a task "${task.title}"`);
+@@ -71,6 +79,8 @@ export function createTaskList(now: () => string): TaskList {
+     complete: (title) => change(title, (task) => completeTask(task, now)),
+     reopen: (title) => change(title, (task) => reopenTask(task, now)),
+     rename(titleOrId, newTitle) {
++      const invalidTitle = validateTitle(newTitle);
++      if (invalidTitle !== undefined) return invalidTitle;
+       const target = newTitle.trim();
+       const found = find(titleOrId);
+       if (!found.ok) return found;
+@@ -79,7 +89,10 @@ export function createTaskList(now: () => string): TaskList {
+       }
+       return change(titleOrId, (task) => ok(renameTask(task, target, now)));
+     },
+-    tag: (title, tag) => change(title, (task) => ok(addTag(task, tag, now))),
++    tag(title, tag) {
++      const invalidTag = validateTag(tag);
++      return invalidTag ?? change(title, (task) => ok(addTag(task, tag, now)));
++    },
+     untag: (title, tag) => change(title, (task) => ok(removeTag(task, tag, now))),
+     remove(title) {
+       const found = find(title);
+@@ -98,3 +111,22 @@ export function createTaskList(now: () => string): TaskList {
+     },
+   };
+ }
++
++function validateTitle(title: string): Result<never> | undefined {
++  if (title.trim().length === 0) return err('invalid-input', 'title must not be empty or only spaces');
++  if (title.length > 120) return err('invalid-input', 'title must be 120 characters or fewer');
++  return undefined;
++}
++
++function validatePriority(priority: unknown): Result<never> | undefined {
++  if (priority !== undefined && !PRIORITIES.includes(priority as Priority)) {
++    return err('invalid-input', 'priority must be low, normal or high');
++  }
++  return undefined;
++}
++
++function validateTag(tag: string): Result<never> | undefined {
++  if (tag.length === 0) return err('invalid-input', 'tag must not be empty');
++  if (tag.includes(' ')) return err('invalid-input', 'tag must not contain spaces');
++  return undefined;
++}
+diff --git a/src/domain/result.ts b/src/domain/result.ts
+index c6ed17a1b929cb19e127e0be01e84aac17b45407..4e46dfbe7c138c650e2d4b2d86dfbc5a5b27267c 100644
+--- a/src/domain/result.ts
++++ b/src/domain/result.ts
+@@ -5,7 +5,7 @@ export interface TodoError {
+ }
+ 
+ /** The kinds of failure the task list reports. */
+-export type TodoErrorCode = 'not-found' | 'duplicate' | 'invalid-state';
++export type TodoErrorCode = 'not-found' | 'duplicate' | 'invalid-state' | 'invalid-input';
+ 
+ /** The outcome of an operation that can fail: its value, or the reason it failed. */
+ export type Result<T, E = TodoError> =

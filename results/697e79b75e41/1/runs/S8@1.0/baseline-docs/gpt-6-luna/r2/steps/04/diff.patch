@@ -1,0 +1,113 @@
+diff --git a/src/index.ts b/src/index.ts
+index f850e8470e0376e5a235c6b5048b1fde955a41f8..7fbf78d8db0f1f31022d0013d4dedb3a79e3fa6e 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -8,6 +8,58 @@ export type { Summary } from './domain/summary.ts';
+ export { PRIORITIES } from './domain/task.ts';
+ export type { NewTask, Priority, Status, Task } from './domain/task.ts';
+ 
++/** A rejected line from a task import.
++ * @property line - the one-based line number in the supplied text
++ * @property reason - why the line could not be added
++ */
++export interface ImportRejection {
++  readonly line: number;
++  readonly reason: string;
++}
++
++/** The outcome of importing task lines into a list.
++ * @property imported - the number of tasks added
++ * @property rejected - lines that could not be added
++ */
++export interface ImportTasksResult {
++  readonly imported: number;
++  readonly rejected: readonly ImportRejection[];
++}
++
++/**
++ * Imports semicolon-separated task lines into a list, skipping blank lines and continuing after errors.
++ * Each nonblank line has the form `title;priority;tags`, with tags separated by spaces and an empty
++ * priority meaning normal.
++ * @param list - the task list to add tasks to
++ * @param text - task data with one task per line
++ * @returns counts of added tasks and reasons for rejected lines
++ */
++export function importTasks(list: TaskList, text: string): ImportTasksResult {
++  let imported = 0;
++  const rejected: ImportRejection[] = [];
++
++  text.split(/\r?\n/).forEach((rawLine, index) => {
++    if (rawLine.trim().length === 0) return;
++    const fields = rawLine.split(';');
++    if (fields.length !== 3) {
++      rejected.push({ line: index + 1, reason: 'line must contain title, priority and tags separated by semicolons' });
++      return;
++    }
++
++    const [title, rawPriority, rawTags] = fields;
++    const priority = rawPriority === '' ? undefined : rawPriority;
++    const result = list.add({
++      title,
++      ...(priority === undefined ? {} : { priority: priority as 'low' | 'normal' | 'high' }),
++      tags: rawTags.trim() === '' ? [] : rawTags.trim().split(/\s+/),
++    });
++    if (result.ok) imported++;
++    else rejected.push({ line: index + 1, reason: result.error.message });
++  });
++
++  return { imported, rejected };
++}
++
+ /**
+  * A new, empty task list for the app, kept in memory.
+  * @param clock - supplies ISO-8601 date-time strings; defaults to the current UTC time
+diff --git a/test/list.test.ts b/test/list.test.ts
+index 8a2eea2b47ae3125d2f52b82054ec7348d30af78..dba55c876f074b7daafb3ce87b2fc2b0ae1cd2bb 100644
+--- a/test/list.test.ts
++++ b/test/list.test.ts
+@@ -1,7 +1,7 @@
+ import assert from 'node:assert/strict';
+ import { describe, it } from 'node:test';
+ 
+-import { createTodoList, summarize } from '../src/index.ts';
++import { createTodoList, importTasks, summarize } from '../src/index.ts';
+ 
+ function valueOf<T>(result: { ok: true; value: T } | { ok: false; error: unknown }): T {
+   if (!result.ok) assert.fail(JSON.stringify(result.error));
+@@ -9,6 +9,36 @@ function valueOf<T>(result: { ok: true; value: T } | { ok: false; error: unknown
+ }
+ 
+ describe('task list', () => {
++  it('imports valid task lines, skips blanks, and reports rejected lines by line number', () => {
++    const list = createTodoList(() => '2026-01-01T00:00:00.000Z');
++    const result = importTasks(
++      list,
++      'Renew the insurance;high;admin money\n\nBad priority;urgent;home\n  ;low;\nRenew the insurance;normal;',
++    );
++
++    assert.equal(result.imported, 1);
++    assert.deepEqual(result.rejected, [
++      { line: 3, reason: 'priority must be low, normal or high' },
++      { line: 4, reason: 'title must not be empty' },
++      { line: 5, reason: 'there is already a task "Renew the insurance"' },
++    ]);
++    assert.deepEqual(list.list().map(({ title, priority, tags }) => ({ title, priority, tags })), [
++      { title: 'Renew the insurance', priority: 'high', tags: ['admin', 'money'] },
++    ]);
++  });
++
++  it('rejects malformed rows and defaults an empty priority to normal', () => {
++    const list = createTodoList();
++    const result = importTasks(list, 'Normal task;;home\nMissing fields\nToo;many;fields;here');
++
++    assert.equal(result.imported, 1);
++    assert.deepEqual(result.rejected, [
++      { line: 2, reason: 'line must contain title, priority and tags separated by semicolons' },
++      { line: 3, reason: 'line must contain title, priority and tags separated by semicolons' },
++    ]);
++    assert.equal(list.list()[0]?.priority, 'normal');
++  });
++
+   it('adds an open task with a normal priority by default', () => {
+     const list = createTodoList(() => '2026-01-01T00:00:00.000Z');
+     const task = valueOf(list.add({ title: '  Buy milk ' }));

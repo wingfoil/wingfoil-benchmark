@@ -1,0 +1,182 @@
+diff --git a/README.md b/README.md
+index 2d706550dbf78df69c040aad9a931f3d3275be34..272e4f29c1cc17633b8e5c1068cd097c2b8824c6 100644
+--- a/README.md
++++ b/README.md
+@@ -17,5 +17,10 @@ Booking IDs are deterministic (`booking-1`, `booking-2`, and so on). Use
+ booking for the full period; hourly queries return only equipment with an hourly price. Omit `kind` to
+ search boards and sails together.
+ 
++Use `cancel(bookingId, at)` to cancel a booking at a UTC hour. It returns the booking ID and the
++euro-cent refund for the unused proportion of the booked period, rounded to the nearest cent. A
++cancellation before the booking begins refunds its full price; one after it ends refunds zero. A
++cancelled booking immediately releases its equipment, and cannot be cancelled again.
++
+ Rentals of three or more complete UTC days receive a 10% discount from their full price; the resulting
+ total is rounded to the nearest euro cent and is returned by both `quote()` and `book()`.
+diff --git a/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-5-plan.md b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-5-plan.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..cddb7a9de23240fc32b5e8c31b2187a5bb8bdb90
+--- /dev/null
++++ b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-5-plan.md
+@@ -0,0 +1,17 @@
++---
++id: sw-life-cycle-1-5-plan
++type: plan
++title: "Cancel rental bookings"
++status: active
++workflow: "sw-life-cycle"
++phase: "1-5"
++element: ""
++parent: ""
++format: 1
++---
++
++<!-- plan body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
+diff --git a/docs/memory/task/task-005-cancel-rental-bookings.md b/docs/memory/task/task-005-cancel-rental-bookings.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..5946e066f4d85e202cd883bc83c3c737d3676451
+--- /dev/null
++++ b/docs/memory/task/task-005-cancel-rental-bookings.md
+@@ -0,0 +1,13 @@
++---
++id: task-005-cancel-rental-bookings
++type: task
++title: "Cancel rental bookings"
++status: approved
++format: 1
++---
++
++Add `cancel(bookingId, at)` to the rental service. It must cancel an existing booking exactly once,
++release its equipment from availability checks, and return the booking ID plus the euro-cent refund for
++the unused proportion of the booking at the supplied UTC-hour time. Cancellation before the booked
++period refunds its whole price; cancellation after it refunds zero. Reject unknown booking IDs,
++invalid cancellation times, and repeat cancellations.
+diff --git a/src/index.ts b/src/index.ts
+index 20a351d37472050bcb6445efcbb6cc3242d7ca90..bf3bb52d50df17c9b6f22e431f97acc0946dba3f 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -31,6 +31,12 @@ export interface RentalBooking extends RentalQuote {
+   id: string;
+ }
+ 
++/** The result of cancelling a booking, including its refund in euro cents. */
++export interface RentalCancellation {
++  bookingId: string;
++  refund: number;
++}
++
+ /** An in-memory service for renting windsurfing equipment by complete UTC days or hourly periods. */
+ export interface RentalService {
+   /** Adds one rentable item. */
+@@ -39,6 +45,8 @@ export interface RentalService {
+   quote(request: RentalRequest): RentalQuote;
+   /** Reserves free equipment for a valid rental period. */
+   book(request: RentalRequest): RentalBooking;
++  /** Cancels a booking at a UTC hour and refunds its unused proportion. */
++  cancel(bookingId: string, at: string): RentalCancellation;
+   /** Returns sorted IDs of matching equipment that has no overlapping booking. */
+   availability(query: AvailabilityQuery): string[];
+ }
+@@ -63,6 +71,7 @@ interface RentalPeriod {
+ export function createRentalService(): RentalService {
+   const equipment = new Map<string, Equipment>();
+   const bookings: RentalBooking[] = [];
++  const cancelledBookingIds = new Set<string>();
+   let nextBookingNumber = 1;
+ 
+   function addEquipment(item: Equipment): void {
+@@ -114,9 +123,28 @@ export function createRentalService(): RentalService {
+       .sort();
+   }
+ 
++  function cancel(bookingId: string, at: string): RentalCancellation {
++    if (typeof bookingId !== 'string') {
++      throw new Error('Booking ID must be a string');
++    }
++    const cancellationTime = parseUtcHour(at, 'cancellation time');
++    const booking = bookings.find((existing) => existing.id === bookingId);
++    if (booking === undefined) {
++      throw new Error(`Unknown booking: ${bookingId}`);
++    }
++    if (cancelledBookingIds.has(bookingId)) {
++      throw new Error(`Booking is already cancelled: ${bookingId}`);
++    }
++
++    const period = validatePeriod(booking);
++    const refund = calculateRefund(booking.total, period, cancellationTime);
++    cancelledBookingIds.add(bookingId);
++    return { bookingId, refund };
++  }
++
+   function hasOverlappingBooking(itemId: string, startTime: number, endTime: number): boolean {
+     return bookings.some((booking) => {
+-      if (booking.itemId !== itemId) {
++      if (booking.itemId !== itemId || cancelledBookingIds.has(booking.id)) {
+         return false;
+       }
+       const existing = validatePeriod(booking);
+@@ -135,7 +163,19 @@ export function createRentalService(): RentalService {
+     return item;
+   }
+ 
+-  return { addEquipment, quote, book, availability };
++  return { addEquipment, quote, book, cancel, availability };
++}
++
++function calculateRefund(total: number, period: RentalPeriod, cancellationTime: number): number {
++  if (cancellationTime <= period.startTime) {
++    return total;
++  }
++  if (cancellationTime >= period.endTime) {
++    return 0;
++  }
++  const unusedDuration = period.endTime - cancellationTime;
++  const totalDuration = period.endTime - period.startTime;
++  return Math.round(total * (unusedDuration / totalDuration));
+ }
+ 
+ function applyLongRentalDiscount(fullPrice: number): number {
+diff --git a/test/rental-service.test.mjs b/test/rental-service.test.mjs
+index f4d44a7931af5e4eb8c8e3416a32f6a3612b12b6..67627d833d2ed0b606005dd6a6fb0db48f2f8f8f 100644
+--- a/test/rental-service.test.mjs
++++ b/test/rental-service.test.mjs
+@@ -168,3 +168,35 @@ test('rejects availability queries with invalid periods or equipment kinds', ()
+   assert.throws(() => rentals.availability({ start: end, end: start }));
+   assert.throws(() => rentals.availability({ start, end, kind: 'mast' }));
+ });
++
++test('cancels a booking with a prorated refund and releases its equipment', () => {
++  const rentals = createRentalService();
++  rentals.addEquipment({ id: 'board-1', kind: 'board', dailyPrice: 2_500 });
++  const booking = rentals.book({ itemId: 'board-1', start, end });
++
++  assert.deepEqual(rentals.cancel(booking.id, '2026-06-11T00:00:00.000Z'), {
++    bookingId: booking.id,
++    refund: 4_500,
++  });
++  assert.deepEqual(rentals.availability({ start, end }), ['board-1']);
++});
++
++test('refunds the whole price before a booking begins and rejects invalid cancellations', () => {
++  const rentals = createRentalService();
++  rentals.addEquipment({
++    id: 'board-1', kind: 'board', dailyPrice: 2_500, hourlyPrice: 400,
++  });
++  const booking = rentals.book({
++    itemId: 'board-1',
++    start: '2026-06-10T10:00:00.000Z',
++    end: '2026-06-10T13:00:00.000Z',
++  });
++
++  assert.deepEqual(rentals.cancel(booking.id, '2026-06-10T09:00:00.000Z'), {
++    bookingId: booking.id,
++    refund: 1_200,
++  });
++  assert.throws(() => rentals.cancel(booking.id, '2026-06-10T10:00:00.000Z'));
++  assert.throws(() => rentals.cancel('booking-999', '2026-06-10T10:00:00.000Z'));
++  assert.throws(() => rentals.cancel('booking-999', 'not-a-time'));
++});

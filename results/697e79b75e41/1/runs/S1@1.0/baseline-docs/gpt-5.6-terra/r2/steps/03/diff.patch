@@ -1,0 +1,82 @@
+diff --git a/README.md b/README.md
+index 9a4ebe24171780d0d1bcd447e8cd3c0871c25914..a6c98de51cb4c7eb9de67a73287acf9fec32fc52 100644
+--- a/README.md
++++ b/README.md
+@@ -30,7 +30,8 @@ does not exist. It returns `JsonValue`, the exported type for JSON values.
+ `applyPatch(document, patch)` applies an [RFC 6902 JSON Patch](https://www.rfc-editor.org/rfc/rfc6902)
+ without changing either input. It supports `add`, `remove`, `replace`, `move`,
+ `copy`, and `test`, including RFC 6901-escaped paths. A malformed patch or an
+-operation whose target cannot be resolved throws an error.
++operation whose target cannot be resolved throws an error. Failed patches leave
++the supplied document unchanged; removing the root produces `null`.
+ 
+ ```ts
+ import { applyPatch } from "json-toolkit";
+diff --git a/src/index.ts b/src/index.ts
+index 9fed712cfd3f950cb06c563381470f212404a28b..809ff94c6bb256831b1898115c7b7434302575ae 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -21,9 +21,10 @@ export function applyPatch(document: JsonValue, patch: unknown): JsonValue {
+     throw new Error("A JSON Patch must be an array of operations.");
+   }
+ 
++  const operations = cloneJson(patch);
+   let result = cloneJson(document);
+ 
+-  for (const rawOperation of patch) {
++  for (const rawOperation of operations) {
+     const operation = validateOperation(rawOperation);
+     result = applyOperation(result, operation);
+   }
+@@ -167,10 +168,10 @@ function applyOperation(document: JsonValue, operation: PatchOperation): JsonVal
+       if (isProperPrefix(from, path)) {
+         throw new Error("A JSON Patch move destination cannot be a child of its source.");
+       }
++      const value = getValue(document, from);
+       if (sameTokens(from, path)) {
+         return document;
+       }
+-      const value = getValue(document, from);
+       return addValue(removeValue(document, from).document, path, value);
+     }
+     case "test":
+@@ -230,7 +231,7 @@ function addValue(document: JsonValue, path: string[], value: JsonValue): JsonVa
+ 
+ function removeValue(document: JsonValue, path: string[]): { document: JsonValue; value: JsonValue } {
+   if (path.length === 0) {
+-    throw new Error("A JSON Patch cannot remove the document root.");
++    return { document: null, value: document };
+   }
+ 
+   const { parent, token } = getParent(document, path);
+diff --git a/test/index.test.ts b/test/index.test.ts
+index a32a963a42ff8c134de2a97dc2769e26c5ad3e20..65af1619908ed1410eed90a9be6fea50372ac773 100644
+--- a/test/index.test.ts
++++ b/test/index.test.ts
+@@ -96,3 +96,26 @@ test("rejects invalid patches and operations that cannot be applied", () => {
+     { op: "move", from: "/child", path: "/child/value/moved" },
+   ]));
+ });
++
++test("removing the root replaces the document with null", () => {
++  assert.equal(applyPatch({ value: true }, [
++    { op: "remove", path: "" },
++  ]), null);
++});
++
++test("a move to the same location still requires its source to exist", () => {
++  assert.throws(() => applyPatch({}, [
++    { op: "move", from: "/missing", path: "/missing" },
++  ]));
++});
++
++test("a failed patch leaves its input document unchanged", () => {
++  const original = { value: 1 };
++
++  assert.throws(() => applyPatch(original, [
++    { op: "replace", path: "/value", value: 2 },
++    { op: "test", path: "/value", value: 3 },
++  ]));
++
++  assert.deepEqual(original, { value: 1 });
++});

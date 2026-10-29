@@ -1,0 +1,266 @@
+diff --git a/src/index.ts b/src/index.ts
+index 51941eef14a8a40485a514ce57d1fa0aa65fa002..54e24c26457bd0145720cd1bb28af08261d122fe 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -41,6 +41,261 @@ export function resolvePointer(document: unknown, pointer: string): unknown {
+   return current;
+ }
+ 
++/**
++ * Applies an RFC 6902 JSON Patch to a JSON document.
++ *
++ * Neither the supplied document nor values supplied by the patch are mutated.
++ *
++ * @throws {Error} If the document or patch is not JSON, the patch is malformed,
++ * or an operation cannot be applied.
++ */
++export function applyPatch(document: unknown, patch: unknown): unknown {
++  assertJsonValue(document, 'document');
++
++  if (!Array.isArray(patch)) {
++    throw new Error('Invalid JSON Patch: patch must be an array');
++  }
++
++  // Clone before doing any work, including an empty patch: callers always get
++  // a distinct document value when the document is an object or array.
++  let result: unknown = cloneJson(document);
++
++  for (const [index, operation] of patch.entries()) {
++    assertJsonValue(operation, `patch operation at index ${index}`);
++    if (!isJsonObject(operation)) {
++      throw new Error(`Invalid JSON Patch operation at index ${index}`);
++    }
++
++    const op = requiredStringMember(operation, 'op', index);
++    const path = requiredStringMember(operation, 'path', index);
++    const pathTokens = parsePointer(path);
++
++    switch (op) {
++      case 'add':
++        requireMember(operation, 'value', index);
++        result = addValue(result, pathTokens, cloneJson(operation.value), path);
++        break;
++      case 'remove':
++        result = removeValue(result, pathTokens, path);
++        break;
++      case 'replace':
++        requireMember(operation, 'value', index);
++        result = replaceValue(result, pathTokens, cloneJson(operation.value), path);
++        break;
++      case 'move': {
++        const from = requiredStringMember(operation, 'from', index);
++        const fromTokens = parsePointer(from);
++        if (isProperPrefix(fromTokens, pathTokens)) {
++          throw new Error('Invalid JSON Patch move: path cannot be a descendant of from');
++        }
++        const value = getValue(result, fromTokens, from);
++        result = removeValue(result, fromTokens, from);
++        result = addValue(result, pathTokens, value, path);
++        break;
++      }
++      case 'copy': {
++        const from = requiredStringMember(operation, 'from', index);
++        const value = getValue(result, parsePointer(from), from);
++        result = addValue(result, pathTokens, cloneJson(value), path);
++        break;
++      }
++      case 'test':
++        requireMember(operation, 'value', index);
++        if (!jsonEqual(getValue(result, pathTokens, path), operation.value)) {
++          throw new Error(`JSON Patch test operation failed at path: ${path}`);
++        }
++        break;
++      default:
++        throw new Error(`Invalid JSON Patch operation: ${op}`);
++    }
++  }
++
++  return result;
++}
++
++type JsonObject = Record<string, unknown>;
++
++function isJsonObject(value: unknown): value is JsonObject {
++  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
++    return false;
++  }
++  const prototype = Object.getPrototypeOf(value);
++  return prototype === Object.prototype || prototype === null;
++}
++
++function requireMember(object: JsonObject, name: string, operationIndex: number): void {
++  if (!Object.hasOwn(object, name)) {
++    throw new Error(`Invalid JSON Patch operation at index ${operationIndex}: missing ${name}`);
++  }
++}
++
++function requiredStringMember(object: JsonObject, name: string, operationIndex: number): string {
++  requireMember(object, name, operationIndex);
++  if (typeof object[name] !== 'string') {
++    throw new Error(`Invalid JSON Patch operation at index ${operationIndex}: ${name} must be a string`);
++  }
++  return object[name] as string;
++}
++
++function parsePointer(pointer: string): string[] {
++  if (pointer === '') {
++    return [];
++  }
++  if (!pointer.startsWith('/')) {
++    throw new Error('Invalid JSON Pointer: a non-empty pointer must begin with "/"');
++  }
++  return pointer.slice(1).split('/').map(decodeReferenceToken);
++}
++
++function getValue(document: unknown, tokens: readonly string[], pointer: string): unknown {
++  let current = document;
++  for (const token of tokens) {
++    if (Array.isArray(current)) {
++      if (!isArrayIndex(token) || !Object.hasOwn(current, Number(token))) {
++        throw new Error(`JSON Pointer does not resolve: ${pointer}`);
++      }
++      current = current[Number(token)];
++    } else if (isJsonObject(current) && Object.hasOwn(current, token)) {
++      current = current[token];
++    } else {
++      throw new Error(`JSON Pointer does not resolve: ${pointer}`);
++    }
++  }
++  return current;
++}
++
++function getParent(document: unknown, tokens: readonly string[], pointer: string): [unknown, string] {
++  if (tokens.length === 0) {
++    throw new Error('The root has no parent');
++  }
++  return [getValue(document, tokens.slice(0, -1), pointer), tokens[tokens.length - 1]];
++}
++
++function addValue(document: unknown, tokens: readonly string[], value: unknown, pointer: string): unknown {
++  if (tokens.length === 0) {
++    return value;
++  }
++  const [parent, token] = getParent(document, tokens, pointer);
++  if (Array.isArray(parent)) {
++    const index = token === '-' ? parent.length : arrayInsertionIndex(token, parent.length, pointer);
++    parent.splice(index, 0, value);
++  } else if (isJsonObject(parent)) {
++    setObjectMember(parent, token, value);
++  } else {
++    throw new Error(`JSON Patch add parent is not a container: ${pointer}`);
++  }
++  return document;
++}
++
++function removeValue(document: unknown, tokens: readonly string[], pointer: string): unknown {
++  if (tokens.length === 0) {
++    // RFC 6902 permits addressing the entire document. There is no JSON value
++    // left after removing it, which JavaScript represents as undefined.
++    return undefined;
++  }
++  const [parent, token] = getParent(document, tokens, pointer);
++  if (Array.isArray(parent)) {
++    const index = arrayExistingIndex(token, parent.length, pointer);
++    parent.splice(index, 1);
++  } else if (isJsonObject(parent) && Object.hasOwn(parent, token)) {
++    delete parent[token];
++  } else {
++    throw new Error(`JSON Patch remove target does not exist: ${pointer}`);
++  }
++  return document;
++}
++
++function replaceValue(document: unknown, tokens: readonly string[], value: unknown, pointer: string): unknown {
++  if (tokens.length === 0) {
++    return value;
++  }
++  const [parent, token] = getParent(document, tokens, pointer);
++  if (Array.isArray(parent)) {
++    parent[arrayExistingIndex(token, parent.length, pointer)] = value;
++  } else if (isJsonObject(parent) && Object.hasOwn(parent, token)) {
++    setObjectMember(parent, token, value);
++  } else {
++    throw new Error(`JSON Patch replace target does not exist: ${pointer}`);
++  }
++  return document;
++}
++
++function arrayInsertionIndex(token: string, length: number, pointer: string): number {
++  if (!isArrayIndex(token) || Number(token) > length) {
++    throw new Error(`JSON Patch array index is invalid for add: ${pointer}`);
++  }
++  return Number(token);
++}
++
++function arrayExistingIndex(token: string, length: number, pointer: string): number {
++  if (!isArrayIndex(token) || Number(token) >= length) {
++    throw new Error(`JSON Patch array index does not exist: ${pointer}`);
++  }
++  return Number(token);
++}
++
++function isProperPrefix(prefix: readonly string[], value: readonly string[]): boolean {
++  return prefix.length < value.length && prefix.every((token, index) => token === value[index]);
++}
++
++function setObjectMember(object: JsonObject, key: string, value: unknown): void {
++  // Assignment to "__proto__" has special behaviour on ordinary objects.
++  Object.defineProperty(object, key, {
++    configurable: true,
++    enumerable: true,
++    value,
++    writable: true,
++  });
++}
++
++function jsonEqual(left: unknown, right: unknown): boolean {
++  if (left === right) {
++    return true;
++  }
++  if (Array.isArray(left) && Array.isArray(right)) {
++    return left.length === right.length && left.every((value, index) => jsonEqual(value, right[index]));
++  }
++  if (isJsonObject(left) && isJsonObject(right)) {
++    const leftKeys = Object.keys(left);
++    const rightKeys = Object.keys(right);
++    return leftKeys.length === rightKeys.length
++      && leftKeys.every((key) => Object.hasOwn(right, key) && jsonEqual(left[key], right[key]));
++  }
++  return false;
++}
++
++function assertJsonValue(value: unknown, description: string, seen = new Set<object>()): void {
++  if (value === null || typeof value === 'string' || typeof value === 'boolean') {
++    return;
++  }
++  if (typeof value === 'number') {
++    if (Number.isFinite(value)) return;
++  } else if (Array.isArray(value)) {
++    if (seen.has(value)) throw new Error(`Invalid JSON ${description}: cyclic value`);
++    seen.add(value);
++    for (const item of value) assertJsonValue(item, description, seen);
++    seen.delete(value);
++    return;
++  } else if (isJsonObject(value)) {
++    if (seen.has(value)) throw new Error(`Invalid JSON ${description}: cyclic value`);
++    seen.add(value);
++    for (const key of Object.keys(value)) assertJsonValue(value[key], description, seen);
++    seen.delete(value);
++    return;
++  }
++  throw new Error(`Invalid JSON ${description}`);
++}
++
++function cloneJson(value: unknown): unknown {
++  if (Array.isArray(value)) return value.map(cloneJson);
++  if (isJsonObject(value)) {
++    const clone: JsonObject = {};
++    for (const key of Object.keys(value)) setObjectMember(clone, key, cloneJson(value[key]));
++    return clone;
++  }
++  return value;
++}
++
+ function decodeReferenceToken(token: string): string {
+   let decoded = '';
+ 

@@ -1,0 +1,183 @@
+diff --git a/README.md b/README.md
+index 59db672dafd0d3af22864cee62fe51701cd17097..128ba5fdba224dad49c304ab4cf25ac040867ede 100644
+--- a/README.md
++++ b/README.md
+@@ -9,6 +9,10 @@ Every task returned by `add` has a unique, stable string `id`. Use `get(id)` to
+ rename; `find`, `complete`, `reopen`, `rename`, `tag`, `untag`, and `remove` accept either its title
+ or its ID.
+ 
++Task titles are required (after trimming) and may be at most 120 characters. Priorities must be
++`low`, `normal`, or `high`; tags must be non-empty single words. Invalid adds, renames, and tags
++return an `invalid-input` error and leave the list unchanged.
++
+ Tasks also expose `createdAt` and `updatedAt` as ISO-8601 date-time strings. They are initially equal;
+ each successful completion, reopening, rename, tag, or untag operation refreshes `updatedAt`.
+ 
+diff --git a/src/domain/list.ts b/src/domain/list.ts
+index a73df3f4454db0813b25369e02be05426923cdfd..e79ff39fb8830d467f105e3b87f64b4a0bfbebb5 100644
+--- a/src/domain/list.ts
++++ b/src/domain/list.ts
+@@ -1,8 +1,44 @@
+ import { err, ok } from './result.ts';
+ import type { Result } from './result.ts';
+-import { addTag, compareTasks, completeTask, createTask, removeTag, renameTask, reopenTask } from './task.ts';
++import { addTag, compareTasks, completeTask, createTask, PRIORITIES, removeTag, renameTask, reopenTask } from './task.ts';
+ import type { NewTask, Priority, Status, Task } from './task.ts';
+ 
++const MAX_TITLE_LENGTH = 120;
++
++function validateTitle(title: string): Result<void> {
++  const trimmedTitle = title.trim();
++  if (trimmedTitle.length === 0) return err('invalid-input', 'title must not be empty or only spaces');
++  if (trimmedTitle.length > MAX_TITLE_LENGTH) {
++    return err('invalid-input', `title must be ${MAX_TITLE_LENGTH} characters or fewer`);
++  }
++  return ok(undefined);
++}
++
++function validatePriority(priority: Priority | undefined): Result<void> {
++  if (priority !== undefined && !PRIORITIES.includes(priority)) {
++    return err('invalid-input', 'priority must be low, normal, or high');
++  }
++  return ok(undefined);
++}
++
++function validateTag(tag: string): Result<void> {
++  if (tag.length === 0) return err('invalid-input', 'tag must not be empty');
++  if (/\s/u.test(tag)) return err('invalid-input', 'tag must not contain spaces');
++  return ok(undefined);
++}
++
++function validateNewTask(input: NewTask): Result<void> {
++  const title = validateTitle(input.title);
++  if (!title.ok) return title;
++  const priority = validatePriority(input.priority);
++  if (!priority.ok) return priority;
++  for (const tag of input.tags ?? []) {
++    const validTag = validateTag(tag);
++    if (!validTag.ok) return validTag;
++  }
++  return ok(undefined);
++}
++
+ /** Which tasks to show: by status, priority or tag; every task when nothing is given. */
+ export interface TaskFilter {
+   readonly status?: Status;
+@@ -74,6 +110,8 @@ export function createTaskList(now: () => string): TaskList {
+ 
+   return {
+     add(input) {
++      const validInput = validateNewTask(input);
++      if (!validInput.ok) return validInput;
+       const title = input.title.trim();
+       if (idsByTitle.has(title)) return err('duplicate', `there is already a task "${title}"`);
+       const task = createTask(input, `task-${++nextId}`, now());
+@@ -86,6 +124,8 @@ export function createTaskList(now: () => string): TaskList {
+     complete: (titleOrId) => change(titleOrId, completeTask),
+     reopen: (titleOrId) => change(titleOrId, reopenTask),
+     rename(titleOrId, newTitle) {
++      const validTitle = validateTitle(newTitle);
++      if (!validTitle.ok) return validTitle;
+       const target = newTitle.trim();
+       const found = find(titleOrId);
+       if (!found.ok) return found;
+@@ -94,7 +134,11 @@ export function createTaskList(now: () => string): TaskList {
+       }
+       return change(titleOrId, (task) => ok(renameTask(task, target)));
+     },
+-    tag: (titleOrId, tag) => change(titleOrId, (task) => ok(addTag(task, tag))),
++    tag(titleOrId, tag) {
++      const validTag = validateTag(tag);
++      if (!validTag.ok) return validTag;
++      return change(titleOrId, (task) => ok(addTag(task, tag)));
++    },
+     untag: (titleOrId, tag) => change(titleOrId, (task) => ok(removeTag(task, tag))),
+     remove(titleOrId) {
+       const found = find(titleOrId);
+diff --git a/src/domain/result.ts b/src/domain/result.ts
+index c6ed17a1b929cb19e127e0be01e84aac17b45407..4e46dfbe7c138c650e2d4b2d86dfbc5a5b27267c 100644
+--- a/src/domain/result.ts
++++ b/src/domain/result.ts
+@@ -5,7 +5,7 @@ export interface TodoError {
+ }
+ 
+ /** The kinds of failure the task list reports. */
+-export type TodoErrorCode = 'not-found' | 'duplicate' | 'invalid-state';
++export type TodoErrorCode = 'not-found' | 'duplicate' | 'invalid-state' | 'invalid-input';
+ 
+ /** The outcome of an operation that can fail: its value, or the reason it failed. */
+ export type Result<T, E = TodoError> =
+diff --git a/test/list.test.ts b/test/list.test.ts
+index bc1a7fc428d0c966f751544e6ad7c35d76987fcc..e873a07aad6b26f2108dbf421fc3da73841f1326 100644
+--- a/test/list.test.ts
++++ b/test/list.test.ts
+@@ -102,6 +102,69 @@ describe('task list', () => {
+     if (!again.ok) assert.equal(again.error.code, 'duplicate');
+   });
+ 
++  it('rejects invalid task details when adding without changing the list', () => {
++    const list = createTodoList({ now: () => '2026-10-29T09:00:00.000Z' });
++    const invalidTasks: ReadonlyArray<[unknown, string]> = [
++      [{ title: '' }, 'title must not be empty or only spaces'],
++      [{ title: '   ' }, 'title must not be empty or only spaces'],
++      [{ title: 'x'.repeat(121) }, 'title must be 120 characters or fewer'],
++      [{ title: 'Valid title', priority: 'urgent' }, 'priority must be low, normal, or high'],
++      [{ title: 'Valid title', tags: [''] }, 'tag must not be empty'],
++      [{ title: 'Valid title', tags: ['two words'] }, 'tag must not contain spaces'],
++    ];
++
++    for (const [input, message] of invalidTasks) {
++      const result = list.add(input as Parameters<typeof list.add>[0]);
++      assert.equal(result.ok, false);
++      if (!result.ok) {
++        assert.equal(result.error.code, 'invalid-input');
++        assert.equal(result.error.message, message);
++      }
++      assert.equal(list.list().length, 0);
++    }
++  });
++
++  it('rejects invalid titles when renaming without changing the task', () => {
++    const list = createTodoList({ now: () => '2026-10-29T09:00:00.000Z' });
++    const task = valueOf(list.add({ title: 'Original' }));
++
++    const invalidTitles: ReadonlyArray<[string, string]> = [
++      ['', 'title must not be empty or only spaces'],
++      ['   ', 'title must not be empty or only spaces'],
++      ['x'.repeat(121), 'title must be 120 characters or fewer'],
++    ];
++
++    for (const [title, message] of invalidTitles) {
++      const result = list.rename(task.id, title);
++      assert.equal(result.ok, false);
++      if (!result.ok) {
++        assert.equal(result.error.code, 'invalid-input');
++        assert.equal(result.error.message, message);
++      }
++      assert.deepEqual(valueOf(list.get(task.id)), task);
++    }
++  });
++
++  it('rejects invalid tags without changing the task', () => {
++    const list = createTodoList({ now: () => '2026-10-29T09:00:00.000Z' });
++    const task = valueOf(list.add({ title: 'Original' }));
++
++    const invalidTags: ReadonlyArray<[string, string]> = [
++      ['', 'tag must not be empty'],
++      ['two words', 'tag must not contain spaces'],
++    ];
++
++    for (const [tag, message] of invalidTags) {
++      const result = list.tag(task.id, tag);
++      assert.equal(result.ok, false);
++      if (!result.ok) {
++        assert.equal(result.error.code, 'invalid-input');
++        assert.equal(result.error.message, message);
++      }
++      assert.deepEqual(valueOf(list.get(task.id)), task);
++    }
++  });
++
+   it('completes a task once, and reopens it', () => {
+     const list = createTodoList();
+     list.add({ title: 'Water the plants' });

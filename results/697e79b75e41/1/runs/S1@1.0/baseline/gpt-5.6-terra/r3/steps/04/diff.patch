@@ -1,0 +1,120 @@
+diff --git a/src/index.ts b/src/index.ts
+index 43cbfdc4750f38c3c0733b1d1bb38900d5d14f03..2f7555860f052b7d02b0401ba30890c5d5885486 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -111,6 +111,46 @@ export function applyPatch(document: unknown, patch: unknown): unknown {
+   return result;
+ }
+ 
++/**
++ * Apply a JSON Merge Patch (RFC 7386) to a JSON document.
++ *
++ * Object members with a null patch value are removed. Other object members
++ * are merged recursively; every non-object patch value replaces its target
++ * wholesale. Arrays are therefore replaced, rather than merged by index.
++ * Neither input is changed and the result shares no mutable containers with
++ * either input.
++ */
++export function applyMergePatch(target: unknown, patch: unknown): unknown {
++  // A merge patch and its target are JSON documents. Clone both up front to
++  // validate them and to keep all returned containers independent of inputs.
++  const result = cloneJsonValue(target);
++  const mergePatch = cloneJsonValue(patch);
++  return mergePatchValue(result, mergePatch);
++}
++
++function mergePatchValue(target: unknown, patch: unknown): unknown {
++  // RFC 7386 defines non-object patches as replacements, including null at
++  // the document root. Arrays are JSON values, but not JSON objects here.
++  if (!isJsonObject(patch)) {
++    return patch;
++  }
++
++  // Applying an object patch to a scalar, null, or array begins with an empty
++  // object. The target is already a private clone, so it can be updated.
++  const result: Record<string, unknown> = isJsonObject(target) ? target : {};
++
++  for (const key of Object.keys(patch)) {
++    const value = patch[key];
++    if (value === null) {
++      delete result[key];
++    } else {
++      defineJsonProperty(result, key, mergePatchValue(result[key], value));
++    }
++  }
++
++  return result;
++}
++
+ type ParsedOperation =
+   | { op: "add" | "replace"; path: string; value: unknown }
+   | { op: "remove"; path: string }
+diff --git a/test/apply-patch.test.js b/test/apply-patch.test.js
+index 4f54902041d6ec75f38e8d7e194ba556e7acb68f..fca9b6ede8be7a0b373b3c91988622a7705f12d3 100644
+--- a/test/apply-patch.test.js
++++ b/test/apply-patch.test.js
+@@ -1,7 +1,7 @@
+ import assert from "node:assert/strict";
+ import test from "node:test";
+ 
+-import { applyPatch } from "../dist/index.js";
++import { applyMergePatch, applyPatch } from "../dist/index.js";
+ 
+ test("applies the RFC 6902 operation examples in sequence", () => {
+   const document = { foo: ["all", "grass", "cows", "eat"], old: true };
+@@ -54,3 +54,55 @@ test("enforces pointer and operation failure rules", () => {
+     { a: 1, b: 2 },
+   );
+ });
++
++test("applies the RFC 7386 merge patch example without mutating either input", () => {
++  const target = {
++    title: "Goodbye!",
++    author: { givenName: "John", familyName: "Doe" },
++    tags: ["example", "sample"],
++    content: "This will be unchanged",
++  };
++  const patch = {
++    title: "Hello!",
++    phoneNumber: "+01-123-456-7890",
++    author: { familyName: null },
++    tags: ["example"],
++  };
++
++  const result = applyMergePatch(target, patch);
++
++  assert.deepEqual(result, {
++    title: "Hello!",
++    author: { givenName: "John" },
++    tags: ["example"],
++    content: "This will be unchanged",
++    phoneNumber: "+01-123-456-7890",
++  });
++  assert.deepEqual(target, {
++    title: "Goodbye!",
++    author: { givenName: "John", familyName: "Doe" },
++    tags: ["example", "sample"],
++    content: "This will be unchanged",
++  });
++  assert.deepEqual(patch, {
++    title: "Hello!",
++    phoneNumber: "+01-123-456-7890",
++    author: { familyName: null },
++    tags: ["example"],
++  });
++  assert.notEqual(result.author, target.author);
++  assert.notEqual(result.tags, patch.tags);
++});
++
++test("handles merge-patch replacement, deletion, and non-object targets", () => {
++  assert.equal(applyMergePatch({ a: 1 }, null), null);
++  assert.deepEqual(applyMergePatch([1, 2], { a: { b: 1 } }), { a: { b: 1 } });
++  assert.deepEqual(applyMergePatch({ a: 1, b: 2 }, { a: null, missing: null }), { b: 2 });
++  assert.deepEqual(applyMergePatch({ list: [1, 2] }, { list: [3] }), { list: [3] });
++});
++
++test("rejects non-JSON merge-patch inputs", () => {
++  assert.throws(() => applyMergePatch({ a: 1 }, { b: Infinity }));
++  assert.throws(() => applyMergePatch({ a: 1 }, [, 2]));
++  assert.throws(() => applyMergePatch({ a: undefined }, {}));
++});

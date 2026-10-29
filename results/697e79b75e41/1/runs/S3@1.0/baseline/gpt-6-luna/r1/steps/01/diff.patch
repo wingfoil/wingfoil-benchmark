@@ -1,0 +1,113 @@
+diff --git a/src/index.ts b/src/index.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..07e786c23c9d8c8d9ef8304373e7e755c1f206ec
+--- /dev/null
++++ b/src/index.ts
+@@ -0,0 +1,107 @@
++export type EquipmentKind = 'board' | 'sail';
++
++export interface Equipment {
++  id: string;
++  kind: EquipmentKind;
++  dailyPrice: number;
++}
++
++export interface RentalRequest {
++  itemId: string;
++  start: string;
++  end: string;
++}
++
++export interface RentalQuote extends RentalRequest {
++  total: number;
++}
++
++export interface RentalBooking extends RentalQuote {
++  id: string;
++}
++
++export interface RentalService {
++  addEquipment(item: Equipment): void;
++  quote(request: RentalRequest): RentalQuote;
++  book(request: RentalRequest): RentalBooking;
++}
++
++const DAY_MS = 24 * 60 * 60 * 1000;
++
++/** Creates an in-memory service for equipment rentals. */
++export function createRentalService(): RentalService {
++  const equipment = new Map<string, Equipment>();
++  const bookings: RentalBooking[] = [];
++  let nextBookingId = 1;
++
++  function validateRequest(request: RentalRequest): { item: Equipment; days: number } {
++    const item = equipment.get(request.itemId);
++    if (!item) throw new Error(`Unknown equipment item: ${request.itemId}`);
++
++    const start = parseUtcMidnight(request.start, 'start');
++    const end = parseUtcMidnight(request.end, 'end');
++    if (end <= start) throw new Error('Rental end must be after rental start');
++
++    return { item, days: (end - start) / DAY_MS };
++  }
++
++  function quote(request: RentalRequest): RentalQuote {
++    const { item, days } = validateRequest(request);
++    const total = item.dailyPrice * days;
++    if (!Number.isSafeInteger(total)) throw new Error('Rental total exceeds the supported integer range');
++    return {
++      itemId: request.itemId,
++      start: request.start,
++      end: request.end,
++      total,
++    };
++  }
++
++  return {
++    addEquipment(item) {
++      if (!item || typeof item.id !== 'string' || item.id.length === 0) {
++        throw new Error('Equipment id must be a non-empty string');
++      }
++      if (item.kind !== 'board' && item.kind !== 'sail') {
++        throw new Error("Equipment kind must be 'board' or 'sail'");
++      }
++      if (!Number.isSafeInteger(item.dailyPrice) || item.dailyPrice < 0) {
++        throw new Error('Daily price must be a non-negative integer number of cents');
++      }
++      if (equipment.has(item.id)) throw new Error(`Equipment item already exists: ${item.id}`);
++      equipment.set(item.id, { ...item });
++    },
++
++    quote,
++
++    book(request) {
++      const result = quote(request);
++      const start = parseUtcMidnight(request.start, 'start');
++      const end = parseUtcMidnight(request.end, 'end');
++      const overlaps = bookings.some((booking) => {
++        if (booking.itemId !== request.itemId) return false;
++        const bookingStart = Date.parse(booking.start);
++        const bookingEnd = Date.parse(booking.end);
++        return start < bookingEnd && bookingStart < end;
++      });
++      if (overlaps) throw new Error(`Equipment item is not available for the requested period`);
++
++      const booking: RentalBooking = { id: `booking-${nextBookingId++}`, ...result };
++      bookings.push(booking);
++      return { ...booking };
++    },
++  };
++}
++
++function parseUtcMidnight(value: string, field: string): number {
++  // Require a full ISO date-time, a zero UTC offset, and exactly midnight.
++  const match = /^\d{4}-\d{2}-\d{2}T00:00:00(?:\.0+)?(?:Z|\+00:00)$/.exec(value);
++  if (!match) throw new Error(`${field} must be midnight UTC in ISO-8601 format`);
++
++  const timestamp = Date.parse(value);
++  if (!Number.isFinite(timestamp)) throw new Error(`${field} must be a valid ISO-8601 date`);
++  const datePart = value.slice(0, 10);
++  const normalized = new Date(timestamp).toISOString().slice(0, 10);
++  if (normalized !== datePart) throw new Error(`${field} must be a valid ISO-8601 date`);
++  return timestamp;
++}

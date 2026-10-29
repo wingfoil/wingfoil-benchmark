@@ -1,0 +1,153 @@
+diff --git a/README.md b/README.md
+index e5f58fd337ed712648e7dd0891c6f34a75ed4592..b17fdc871e691886cc59b794ced61dc59509710c 100644
+--- a/README.md
++++ b/README.md
+@@ -22,6 +22,10 @@ document remains unchanged. The document and patch must be representable as JSON
+ paths and `from` values use RFC 6901 JSON Pointers; unrecognized operation members are ignored as
+ RFC 6902 requires.
+ 
++`createPatch(from, to)` returns an RFC 6902 JSON Patch that transforms `from` into `to`. It
++recursively patches changed object members and uses array insertions/removals to preserve unchanged
++entries where possible. Neither input is modified.
++
+ ## JSON Merge Patch
+ 
+ `applyMergePatch(target, patch)` applies an [RFC 7386 JSON Merge Patch](https://www.rfc-editor.org/rfc/rfc7386)
+diff --git a/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-5-plan.md b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-5-plan.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..210ef7af2354b26c4dd226c759ed0adda0739a10
+--- /dev/null
++++ b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-5-plan.md
+@@ -0,0 +1,17 @@
++---
++id: sw-life-cycle-1-5-plan
++type: plan
++title: "Create JSON Patch diffs"
++status: active
++workflow: "sw-life-cycle"
++phase: "1-5"
++element: ""
++parent: ""
++format: 1
++---
++
++<!-- plan body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
+diff --git a/docs/memory/task/task-004-implement-json-merge-patch.md b/docs/memory/task/task-004-implement-json-merge-patch.md
+index 8f1a5b225998d257ed61982c84cfd7f67a4cda72..f6a1f204f45083b2c2fdd7c284da694055e9ae6d 100644
+--- a/docs/memory/task/task-004-implement-json-merge-patch.md
++++ b/docs/memory/task/task-004-implement-json-merge-patch.md
+@@ -2,7 +2,7 @@
+ id: task-004-implement-json-merge-patch
+ type: task
+ title: "Implement JSON Merge Patch"
+-status: pending
++status: approved
+ format: 1
+ ---
+ 
+diff --git a/docs/memory/task/task-005-implement-json-patch-creation.md b/docs/memory/task/task-005-implement-json-patch-creation.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..05f93297cea349065a14f16fa8bedb8f2a76f2af
+--- /dev/null
++++ b/docs/memory/task/task-005-implement-json-patch-creation.md
+@@ -0,0 +1,13 @@
++---
++id: task-005-implement-json-patch-creation
++type: task
++title: "Implement JSON Patch creation"
++status: approved
++format: 1
++---
++
++<!-- task body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
+diff --git a/src/index.ts b/src/index.ts
+index d08520705dbd924938c446e4dbebaf8fa18301ba..a9488416629d342350a8108069b8bc5bf3e5308b 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -141,6 +141,78 @@ function mergePatchValue(target: unknown, patch: unknown): unknown {
+   return result;
+ }
+ 
++/**
++ * Creates an RFC 6902 JSON Patch that transforms `from` into `to`.
++ * Unchanged object members and array entries are omitted from the patch.
++ * Neither input is modified.
++ */
++export function createPatch(from: unknown, to: unknown): unknown[] {
++  const source = cloneJson(from);
++  const target = cloneJson(to);
++  const patch: unknown[] = [];
++  diffJson(source, target, [], patch);
++  return patch;
++}
++
++function diffJson(from: unknown, to: unknown, path: string[], patch: unknown[]): void {
++  if (jsonEqual(from, to)) return;
++  if (from !== null && to !== null && typeof from === "object" && typeof to === "object" && !Array.isArray(from) && !Array.isArray(to)) {
++    const oldObject = from as Record<string, unknown>;
++    const newObject = to as Record<string, unknown>;
++    for (const key of Object.keys(oldObject)) {
++      if (!Object.prototype.hasOwnProperty.call(newObject, key)) {
++        patch.push({ op: "remove", path: pointerFromTokens([...path, key]) });
++      }
++    }
++    for (const key of Object.keys(newObject)) {
++      const childPath = [...path, key];
++      if (!Object.prototype.hasOwnProperty.call(oldObject, key)) {
++        patch.push({ op: "add", path: pointerFromTokens(childPath), value: cloneJson(newObject[key]) });
++      } else {
++        diffJson(oldObject[key], newObject[key], childPath, patch);
++      }
++    }
++    return;
++  }
++  if (Array.isArray(from) && Array.isArray(to)) {
++    diffArrays(from, to, path, patch);
++    return;
++  }
++  patch.push({ op: "replace", path: pointerFromTokens(path), value: cloneJson(to) });
++}
++
++function diffArrays(from: unknown[], to: unknown[], path: string[], patch: unknown[]): void {
++  // For same-length arrays, index correspondence preserves the smallest nested edits.
++  if (from.length === to.length) {
++    for (let i = 0; i < from.length; i++) diffJson(from[i], to[i], [...path, String(i)], patch);
++    return;
++  }
++
++  // Longest common subsequence keeps stable entries in place and expresses insertions
++  // and removals as single operations, rather than replacing the entire array.
++  const rows = from.length + 1, cols = to.length + 1;
++  const lengths = Array.from({ length: rows }, () => new Array<number>(cols).fill(0));
++  for (let i = from.length - 1; i >= 0; i--) {
++    for (let j = to.length - 1; j >= 0; j--) {
++      lengths[i][j] = jsonEqual(from[i], to[j])
++        ? lengths[i + 1][j + 1] + 1
++        : Math.max(lengths[i + 1][j], lengths[i][j + 1]);
++    }
++  }
++  let i = 0, j = 0, index = 0;
++  while (i < from.length || j < to.length) {
++    if (i < from.length && j < to.length && jsonEqual(from[i], to[j])) {
++      i++; j++; index++;
++    } else if (i < from.length && (j === to.length || lengths[i + 1][j] >= lengths[i][j + 1])) {
++      patch.push({ op: "remove", path: pointerFromTokens([...path, String(index)]) });
++      i++;
++    } else {
++      patch.push({ op: "add", path: pointerFromTokens([...path, String(index)]), value: cloneJson(to[j]) });
++      j++; index++;
++    }
++  }
++}
++
+ function parsePointer(pointer: string): string[] {
+   if (pointer === "") return [];
+   if (!pointer.startsWith("/")) throw new TypeError("JSON Pointer must be empty or begin with '/'");

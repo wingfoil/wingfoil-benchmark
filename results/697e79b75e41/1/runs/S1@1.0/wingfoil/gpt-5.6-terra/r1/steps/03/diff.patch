@@ -1,0 +1,178 @@
+diff --git a/README.md b/README.md
+index 6c4e3773e1837445425ba5018cf9f942cd7ea88c..ce843365c31c90302c8522c4ad3df1ce475d15f5 100644
+--- a/README.md
++++ b/README.md
+@@ -23,7 +23,8 @@ resolvePointer({ "a/b": true }, "/a~1b"); // true
+ `applyPatch(document, patch)` applies an [RFC 6902 JSON Patch](https://www.rfc-editor.org/rfc/rfc6902)
+ and returns a new JSON value without changing the input document. It supports the `add`, `remove`,
+ `replace`, `move`, `copy`, and `test` operations and throws when a patch is invalid or cannot be
+-applied.
++applied. Operations are evaluated in order; when any one fails, no changed document is returned and
++the supplied document remains unchanged. Removing the document root returns `null`.
+ 
+ ```ts
+ import { applyPatch } from "json-toolkit";
+diff --git a/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-3-plan.md b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-3-plan.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..44fdd7bc059163542425e4a9f60406419105e8e8
+--- /dev/null
++++ b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-3-plan.md
+@@ -0,0 +1,15 @@
++---
++id: sw-life-cycle-1-3-plan
++type: plan
++title: "RFC 6902 patch conformance"
++status: active
++workflow: "sw-life-cycle"
++phase: "1-3"
++element: ""
++parent: ""
++format: 1
++---
++
++Corrected JSON Patch evaluation to use only valid JSON documents, support root removal, and preserve
++the caller's document when a sequential operation fails. Added regression coverage for root removal,
++non-JSON values, and a failed operation after an earlier successful operation. `npm test` passes.
+diff --git a/docs/memory/task/task-003-conform-json-patch-to-rfc-6902.md b/docs/memory/task/task-003-conform-json-patch-to-rfc-6902.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..b142ee434b728f0f95a470ff08480cc31bd4e50e
+--- /dev/null
++++ b/docs/memory/task/task-003-conform-json-patch-to-rfc-6902.md
+@@ -0,0 +1,11 @@
++---
++id: task-003-conform-json-patch-to-rfc-6902
++type: task
++title: "Conform JSON Patch to RFC 6902"
++status: approved
++format: 1
++---
++
++Review and correct `applyPatch` so that each RFC 6902 operation, JSON Pointer edge case, sequential
++application rule, and error condition has the standard's required observable behaviour. Preserve the
++library's non-mutating input contract and add deterministic regression tests for the corrected cases.
+diff --git a/src/index.ts b/src/index.ts
+index 95c15731ce4a11655ac02b97cfd86e1e9ddbaa3e..66ae34347a3e2336a17028181a0e4b7625ff8ddd 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -45,13 +45,14 @@ type PatchOperation = Record<string, unknown>;
+  * @throws {Error} If the document or patch is invalid, or an operation fails.
+  */
+ export function applyPatch(document: unknown, patch: unknown): unknown {
+-  let result = cloneJson(document, "document");
+-
+   if (!Array.isArray(patch)) {
+     throw new Error("A JSON Patch must be an array of operations.");
+   }
+ 
+-  for (const operation of patch) {
++  const operations = cloneJson(patch, "JSON Patch");
++  let result = cloneJson(document, "document");
++
++  for (const operation of operations) {
+     result = applyOperation(result, operation);
+   }
+ 
+@@ -158,7 +159,7 @@ function addValue(document: JsonValue, path: string[], value: JsonValue): JsonVa
+ 
+ function removeValue(document: JsonValue, path: string[]): { document: JsonValue; value: JsonValue } {
+   if (path.length === 0) {
+-    throw new Error("A JSON Patch remove operation cannot remove the document root.");
++    return { document: null, value: document };
+   }
+   const { parent, token } = parentAt(document, path);
+   if (Array.isArray(parent)) {
+@@ -228,7 +229,7 @@ function isProperDescendant(path: string[], ancestor: string[]): boolean {
+   return path.length > ancestor.length && ancestor.every((token, index) => path[index] === token);
+ }
+ 
+-function cloneJson(value: unknown, description: string): JsonValue {
++function cloneJson(value: unknown, description: string, ancestors = new Set<object>()): JsonValue {
+   if (value === null || typeof value === "string" || typeof value === "boolean") {
+     return value;
+   }
+@@ -239,13 +240,34 @@ function cloneJson(value: unknown, description: string): JsonValue {
+     return value;
+   }
+   if (Array.isArray(value)) {
+-    return value.map((item) => cloneJson(item, description));
++    if (ancestors.has(value)) {
++      throw new Error(`${description} must be a valid JSON value.`);
++    }
++    ancestors.add(value);
++    const clone: JsonValue[] = [];
++    for (let index = 0; index < value.length; index += 1) {
++      if (!Object.hasOwn(value, index)) {
++        throw new Error(`${description} must be a valid JSON value.`);
++      }
++      clone.push(cloneJson(value[index], description, ancestors));
++    }
++    ancestors.delete(value);
++    return clone;
+   }
+-  if (isObject(value)) {
++  if (isJsonObject(value)) {
++    if (ancestors.has(value)) {
++      throw new Error(`${description} must be a valid JSON value.`);
++    }
++    ancestors.add(value);
+     const clone: { [key: string]: JsonValue } = {};
+     for (const key of Object.keys(value)) {
+-      defineJsonProperty(clone, key, cloneJson(value[key], description));
++      const descriptor = Object.getOwnPropertyDescriptor(value, key);
++      if (descriptor === undefined || !("value" in descriptor)) {
++        throw new Error(`${description} must be a valid JSON value.`);
++      }
++      defineJsonProperty(clone, key, cloneJson(descriptor.value, description, ancestors));
+     }
++    ancestors.delete(value);
+     return clone;
+   }
+   throw new Error(`${description} must be a valid JSON value.`);
+@@ -255,6 +277,14 @@ function isObject(value: JsonValue | unknown): value is { [key: string]: JsonVal
+   return typeof value === "object" && value !== null && !Array.isArray(value);
+ }
+ 
++function isJsonObject(value: unknown): value is Record<string, unknown> {
++  if (!isObject(value)) {
++    return false;
++  }
++  const prototype = Object.getPrototypeOf(value);
++  return prototype === Object.prototype || prototype === null;
++}
++
+ function defineJsonProperty(object: { [key: string]: JsonValue }, key: string, value: JsonValue): void {
+   Object.defineProperty(object, key, { configurable: true, enumerable: true, value, writable: true });
+ }
+diff --git a/test/apply-patch.test.ts b/test/apply-patch.test.ts
+index 0e252cba79f82954b4bb232072c9ac52f3313c08..869b735fc27a975a8620d312d80b74a4da8687ba 100644
+--- a/test/apply-patch.test.ts
++++ b/test/apply-patch.test.ts
+@@ -22,6 +22,10 @@ test("adds a document root and appends with an array dash token", () => {
+   assert.deepEqual(applyPatch([1], [{ op: "add", path: "/-", value: 2 }]), [1, 2]);
+ });
+ 
++test("removes the document root", () => {
++  assert.equal(applyPatch({ title: "draft" }, [{ op: "remove", path: "" }]), null);
++});
++
+ test("moves and copies values using JSON Pointers", () => {
+   const result = applyPatch(
+     { from: { nested: ["value"] }, target: [] },
+@@ -53,3 +57,17 @@ test("rejects malformed patches and invalid operation targets", () => {
+   assert.throws(() => applyPatch({ child: {} }, [{ op: "move", from: "/child", path: "/child/value" }]));
+   assert.throws(() => applyPatch({}, [{ op: "copy", path: "/copy" }]));
+ });
++
++test("rejects values that are not JSON and leaves the input unchanged after an error", () => {
++  assert.throws(() => applyPatch([, 1], [{ op: "replace", path: "/0", value: 0 }]));
++  assert.throws(() => applyPatch({}, [{ op: "add", path: "/date", value: new Date() }]));
++
++  const document = { title: "draft" };
++  assert.throws(() =>
++    applyPatch(document, [
++      { op: "replace", path: "/title", value: "published" },
++      { op: "test", path: "/title", value: "draft" },
++    ]),
++  );
++  assert.deepEqual(document, { title: "draft" });
++});

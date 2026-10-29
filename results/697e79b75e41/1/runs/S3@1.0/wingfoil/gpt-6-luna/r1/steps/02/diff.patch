@@ -1,0 +1,120 @@
+diff --git a/README.md b/README.md
+index 9af8b87e0510c49d298835b9a00c1f4412fa695c..e16aa82e531f1ca809cf68dd987e539e4578f095 100644
+--- a/README.md
++++ b/README.md
+@@ -10,7 +10,8 @@ of its booking desk, written in TypeScript with no runtime dependency.
+ service. Add boards or sails with `addEquipment({ id, kind, dailyPrice })`, where `dailyPrice` is a
+ non-negative integer number of euro cents. `quote({ itemId, start, end })` returns the total in cents;
+ `book(...)` creates a booking with a service-generated id and rejects periods overlapping an existing
+-booking for that item.
++booking for that item. `availability({ start, end, kind })` returns the sorted ids of equipment free
++for the entire period; omit `kind` to include both boards and sails.
+ 
+ Rental dates must be ISO-8601 UTC midnights (`Z` or `+00:00`). `start` is the first rented day and
+ `end` is midnight after the last rented day, so the period is one or more whole days. The service does
+diff --git a/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-2-plan.md b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-2-plan.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..a5154a66d27306b1d6c535e3218daa849be7393c
+--- /dev/null
++++ b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-2-plan.md
+@@ -0,0 +1,17 @@
++---
++id: sw-life-cycle-1-2-plan
++type: plan
++title: "Add rental availability query"
++status: active
++workflow: "sw-life-cycle"
++phase: "1-2"
++element: ""
++parent: ""
++format: 1
++---
++
++<!-- plan body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
+diff --git a/docs/memory/task/task-002-add-rental-availability-query.md b/docs/memory/task/task-002-add-rental-availability-query.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..ca19e94a02310868c02b2422b61e49804d2c95cb
+--- /dev/null
++++ b/docs/memory/task/task-002-add-rental-availability-query.md
+@@ -0,0 +1,9 @@
++---
++id: task-002-add-rental-availability-query
++type: task
++title: "Add rental availability query"
++status: approved
++format: 1
++---
++
++Add `availability({ start, end, kind? })` to the rental service. Return the sorted equipment ids matching the optional kind that have no booking overlapping any part of the requested whole-day UTC period. Update the public API documentation.
+diff --git a/src/index.ts b/src/index.ts
+index 913eaffd73c6e0c052e7390f61471452fdfd8fef..c31d23e58d0dc144199a08e17820681233a50c4e 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -18,6 +18,16 @@ export interface RentalRequest {
+   end: string;
+ }
+ 
++/** Query for equipment that is free throughout a whole-day UTC rental period. */
++export interface RentalAvailabilityQuery {
++  /** ISO-8601 UTC timestamp at midnight on the first rental day. */
++  start: string;
++  /** ISO-8601 UTC timestamp at midnight after the final rental day. */
++  end: string;
++  /** Optional equipment category to include. */
++  kind?: RentalEquipment['kind'];
++}
++
+ /** Price quote for a rental period, in euro cents. */
+ export interface RentalQuote extends RentalRequest {
+   /** Total rental price in euro cents. */
+@@ -38,6 +48,8 @@ export interface RentalService {
+   quote(request: RentalRequest): RentalQuote;
+   /** Books an available item for a valid period and returns its price and identifier. */
+   book(request: RentalRequest): RentalBooking;
++  /** Returns sorted equipment ids available throughout a valid period, optionally filtered by kind. */
++  availability(query: RentalAvailabilityQuery): string[];
+ }
+ 
+ interface StoredBooking extends RentalBooking {}
+@@ -101,6 +113,28 @@ export function createRentalService(): RentalService {
+     return { itemId: request.itemId, start: request.start, end: request.end, total };
+   }
+ 
++  function availability(query: RentalAvailabilityQuery): string[] {
++    if (!isRecord(query) || typeof query.start !== 'string' || typeof query.end !== 'string') {
++      throw new Error('Availability query must include start and end.');
++    }
++    if (query.kind !== undefined && query.kind !== 'board' && query.kind !== 'sail') {
++      throw new Error('Equipment kind must be board or sail.');
++    }
++    rentalDays(query.start, query.end);
++    const startTime = Date.parse(query.start);
++    const endTime = Date.parse(query.end);
++
++    return [...equipment.values()]
++      .filter((item) => query.kind === undefined || item.kind === query.kind)
++      .filter((item) => !bookings.some((booking) =>
++        booking.itemId === item.id &&
++        startTime < Date.parse(booking.end) &&
++        Date.parse(booking.start) < endTime,
++      ))
++      .map((item) => item.id)
++      .sort();
++  }
++
+   return {
+     addEquipment(item: RentalEquipment): void {
+       if (!isRecord(item) || typeof item.id !== 'string' || item.id.length === 0) {
+@@ -120,6 +154,8 @@ export function createRentalService(): RentalService {
+ 
+     quote,
+ 
++    availability,
++
+     book(request: RentalRequest): RentalBooking {
+       const rentalQuote = quote(request);
+       const startTime = Date.parse(request.start);

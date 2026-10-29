@@ -1,0 +1,49 @@
+diff --git a/README.md b/README.md
+index 5e91ff2dc0d7fa396ef6bc529d5cf5e9dc353f0a..5a06bbabd40554e7ad26575c9d9a7b61db125a91 100644
+--- a/README.md
++++ b/README.md
+@@ -8,4 +8,6 @@ of its booking desk, written in TypeScript with no runtime dependency.
+ 
+ The `createRentalService()` API exported from `src/index.ts` provides an in-memory inventory and booking desk. Add boards or sails with a daily price in integer euro cents, then use `quote({ itemId, start, end })` to get the total or `book(...)` to reserve the equipment. Rental timestamps must be UTC ISO-8601 midnights. The end is exclusive and must be the midnight after the final rental day. A booking fails if that equipment is already booked during any part of the period. Each service instance starts with an empty inventory and booking list.
+ 
++Rentals of three days or more receive a 10% discount on the full rental price. The discounted total is returned by `quote()` and stored on the resulting booking. Discounted totals are rounded to the nearest euro cent.
++
+ Use `availability({ start, end, kind })` to get the sorted equipment ids free for the entire period. `kind` is optional; omit it to include boards and sails. Period boundaries follow the same UTC midnight and end-exclusive rules as quotes and bookings.
+diff --git a/src/rental-service.ts b/src/rental-service.ts
+index e51e3fa2375f569008d97163c29d9ab2e16eed1e..23534831d2224413cb2acc2fd4207da8c119d670 100644
+--- a/src/rental-service.ts
++++ b/src/rental-service.ts
+@@ -78,7 +78,8 @@ export function createRentalService(): RentalService {
+     const item = equipment.get(request.itemId);
+     if (!item) throw new Error(`Unknown equipment: ${request.itemId}`);
+     const days = (endTime - startTime) / 86_400_000;
+-    const total = item.dailyPrice * days;
++    const fullPrice = item.dailyPrice * days;
++    const total = days >= 3 ? Math.round(fullPrice * 0.9) : fullPrice;
+     if (!Number.isSafeInteger(total)) throw new Error('Rental total exceeds the safe integer range');
+     return { itemId: request.itemId, start: request.start, end: request.end, total };
+   }
+diff --git a/test/rental-service.test.mjs b/test/rental-service.test.mjs
+index 3bfa913456d74f2687b6b693e44fc86a391eefbd..f79b6379ec07f357a5c86dc97912edf7180cfb33 100644
+--- a/test/rental-service.test.mjs
++++ b/test/rental-service.test.mjs
+@@ -19,3 +19,19 @@ test('availability rejects invalid periods and kinds', () => {
+   assert.throws(() => rentals.availability({ start: '2026-06-02T00:00:00Z', end: '2026-06-01T00:00:00Z' }), /end must be after start/);
+   assert.throws(() => rentals.availability({ start: '2026-06-01T00:00:00Z', end: '2026-06-02T00:00:00Z', kind: 'kite' }), /kind must be board or sail/);
+ });
++
++test('rentals of three days or more receive a 10% discount in quotes and bookings', () => {
++  const rentals = createRentalService();
++  rentals.addEquipment({ id: 'board-a', kind: 'board', dailyPrice: 1_000 });
++
++  const request = { itemId: 'board-a', start: '2026-06-01T00:00:00Z', end: '2026-06-04T00:00:00Z' };
++  assert.equal(rentals.quote(request).total, 2_700);
++  assert.equal(rentals.book(request).total, 2_700);
++});
++
++test('rentals shorter than three days keep the full price', () => {
++  const rentals = createRentalService();
++  rentals.addEquipment({ id: 'board-a', kind: 'board', dailyPrice: 1_001 });
++
++  assert.equal(rentals.quote({ itemId: 'board-a', start: '2026-06-01T00:00:00Z', end: '2026-06-03T00:00:00Z' }).total, 2_002);
++});

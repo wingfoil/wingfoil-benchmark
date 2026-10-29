@@ -1,0 +1,191 @@
+diff --git a/README.md b/README.md
+index 559cd410c91782d256af56762c2dd6e20785f8f5..9701260070763b25f4653aaaedf38c4d2793198e 100644
+--- a/README.md
++++ b/README.md
+@@ -23,7 +23,10 @@ resolvePointer({ services: [{ name: "api" }] }, "/services/0/name");
+ `applyPatch(document, patch)` applies an [RFC 6902 JSON Patch](https://www.rfc-editor.org/rfc/rfc6902)
+ and returns a new JSON value. The input document is never changed. All six standard operations are
+ supported: `add`, `remove`, `replace`, `move`, `copy`, and `test`. Invalid patch structures,
+-malformed pointers, failed tests, and missing targets throw an error.
++malformed pointers, failed tests, and missing targets throw an error. Operations are evaluated in
++order and evaluation stops at the first error; therefore, no result is returned for a failed patch.
++Operation members required by RFC 6902 (`op`, `path`, and, where applicable, `value` or `from`) must
++be members of the operation itself rather than inherited JavaScript properties.
+ 
+ ```ts
+ import { applyPatch } from "json-toolkit";
+diff --git a/src/index.ts b/src/index.ts
+index 6904909cab3b173c6d8e1677522d36eb9dbd0259..47b93e000fb3234f90adcc391843a2cba6ea2a48 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -41,7 +41,7 @@ export function applyPatch(document: unknown, patch: unknown): unknown {
+   if (!isJsonValue(document)) {
+     throw new TypeError("A JSON Patch document must contain only JSON values.");
+   }
+-  if (!Array.isArray(patch)) {
++  if (!Array.isArray(patch) || !isJsonValue(patch)) {
+     throw new TypeError("A JSON Patch must be an array of operations.");
+   }
+ 
+@@ -54,10 +54,10 @@ export function applyPatch(document: unknown, patch: unknown): unknown {
+ }
+ 
+ function applyOperation(document: unknown, operation: unknown): unknown {
+-  if (!isJsonObject(operation) || typeof operation.op !== "string") {
++  if (!isJsonObject(operation) || !Object.hasOwn(operation, "op") || typeof operation.op !== "string") {
+     throw new TypeError("A JSON Patch operation must be an object with an 'op' member.");
+   }
+-  if (typeof operation.path !== "string") {
++  if (!Object.hasOwn(operation, "path") || typeof operation.path !== "string") {
+     throw new TypeError("A JSON Patch operation must have a string 'path' member.");
+   }
+ 
+@@ -91,7 +91,7 @@ function requiredValue(operation: Record<string, unknown>): unknown {
+ }
+ 
+ function requiredFrom(operation: Record<string, unknown>): string {
+-  if (typeof operation.from !== "string") {
++  if (!Object.hasOwn(operation, "from") || typeof operation.from !== "string") {
+     throw new TypeError("This JSON Patch operation requires a string 'from' member.");
+   }
+   parsePointer(operation.from);
+@@ -221,18 +221,65 @@ function isProperPrefix(prefix: string[], value: string[]): boolean {
+ }
+ 
+ function isJsonValue(value: unknown): boolean {
++  return isJsonValueInternal(value, new Set<object>());
++}
++
++function isJsonValueInternal(value: unknown, ancestors: Set<object>): boolean {
+   if (value === null || typeof value === "string" || typeof value === "boolean") {
+     return true;
+   }
+   if (typeof value === "number") {
+     return Number.isFinite(value);
+   }
+-  if (Array.isArray(value)) {
+-    return value.every((child, index) => Object.hasOwn(value, index) && isJsonValue(child));
++
++  if (value === null || typeof value !== "object" || ancestors.has(value)) {
++    return false;
++  }
++
++  ancestors.add(value);
++  const valid = Array.isArray(value)
++    ? isJsonArray(value, ancestors)
++    : isJsonObject(value) && isJsonObjectMembers(value, ancestors);
++  ancestors.delete(value);
++  return valid;
++}
++
++function isJsonArray(value: unknown[], ancestors: Set<object>): boolean {
++  if (Object.getOwnPropertySymbols(value).length !== 0) {
++    return false;
+   }
+-  return isJsonObject(value)
+-    && Object.getOwnPropertySymbols(value).length === 0
+-    && Object.values(value).every(isJsonValue);
++
++  const propertyNames = Object.getOwnPropertyNames(value);
++  if (propertyNames.length !== value.length + 1) {
++    return false;
++  }
++
++  return propertyNames.every((name) => {
++    if (name === "length") {
++      return true;
++    }
++    const descriptor = Object.getOwnPropertyDescriptor(value, name);
++    return descriptor !== undefined
++      && descriptor.enumerable
++      && "value" in descriptor
++      && isArrayIndex(name)
++      && Number(name) < value.length
++      && isJsonValueInternal(descriptor.value, ancestors);
++  });
++}
++
++function isJsonObjectMembers(value: Record<string, unknown>, ancestors: Set<object>): boolean {
++  if (Object.getOwnPropertySymbols(value).length !== 0) {
++    return false;
++  }
++
++  return Object.getOwnPropertyNames(value).every((name) => {
++    const descriptor = Object.getOwnPropertyDescriptor(value, name);
++    return descriptor !== undefined
++      && descriptor.enumerable
++      && "value" in descriptor
++      && isJsonValueInternal(descriptor.value, ancestors);
++  });
+ }
+ 
+ function isJsonObject(value: unknown): value is Record<string, unknown> {
+diff --git a/test/patch.test.mjs b/test/patch.test.mjs
+index 347099460ddec742edf700093ddb85f33850ac8f..37ab016141979bce4e1a2735fbd662a6e4200192 100644
+--- a/test/patch.test.mjs
++++ b/test/patch.test.mjs
+@@ -62,3 +62,64 @@ test("rejects invalid patch operations and operations whose targets fail", () =>
+   assert.throws(() => applyPatch({ a: 1 }, [{ op: "test", path: "/a", value: 2 }]));
+   assert.throws(() => applyPatch({ a: {} }, [{ op: "move", from: "/a", path: "/a/b" }]));
+ });
++
++test("requires operation members to be own JSON object members", () => {
++  withObjectPrototypeMembers({ op: "add", path: "/value" }, () => {
++    assert.throws(() => applyPatch({}, [{ value: 1 }]));
++  });
++  withObjectPrototypeMembers({ value: 1 }, () => {
++    assert.throws(() => applyPatch({}, [{ op: "add", path: "/value" }]));
++  });
++  withObjectPrototypeMembers({ from: "/source" }, () => {
++    assert.throws(() => applyPatch({ source: 1 }, [{ op: "copy", path: "/copy" }]));
++  });
++});
++
++test("leaves the supplied document unchanged when evaluation stops at an error", () => {
++  const document = { status: "draft" };
++
++  assert.throws(() => applyPatch(document, [
++    { op: "replace", path: "/status", value: "published" },
++    { op: "test", path: "/status", value: "draft" },
++  ]));
++
++  assert.deepEqual(document, { status: "draft" });
++});
++
++test("rejects JavaScript values that cannot represent JSON patch documents", () => {
++  const sparseArray = [];
++  sparseArray.length = 1;
++  assert.throws(() => applyPatch(sparseArray, []));
++
++  assert.throws(() => applyPatch({}, [{
++    op: "add",
++    path: "/value",
++    value: 1,
++    ignored: undefined,
++  }]));
++});
++
++function withObjectPrototypeMembers(members, callback) {
++  const originals = new Map(Object.keys(members).map((key) => [
++    key,
++    Object.getOwnPropertyDescriptor(Object.prototype, key),
++  ]));
++  try {
++    for (const [key, value] of Object.entries(members)) {
++      Object.defineProperty(Object.prototype, key, {
++        configurable: true,
++        value,
++        writable: true,
++      });
++    }
++    callback();
++  } finally {
++    for (const [key, descriptor] of originals) {
++      if (descriptor === undefined) {
++        delete Object.prototype[key];
++      } else {
++        Object.defineProperty(Object.prototype, key, descriptor);
++      }
++    }
++  }
++}

@@ -1,0 +1,97 @@
+diff --git a/src/index.ts b/src/index.ts
+index 99cd68f28b1ad79704199dc77440a6eca6acab00..4f201f1ac7b44f6c900dd7880a0b2b46aaef7d82 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -151,6 +151,92 @@ export function applyPatch(document: unknown, patch: unknown): unknown {
+   return result;
+ }
+ 
++/** Create an RFC 6902 JSON Patch that transforms `from` into `to`. */
++export function createPatch(from: unknown, to: unknown): Array<Record<string, unknown>> {
++  assertJsonValue(from, "JSON Patch source");
++  assertJsonValue(to, "JSON Patch destination");
++
++  const operations: Array<Record<string, unknown>> = [];
++  const pointer = (tokens: string[]) => tokens.map((token) =>
++    `/${token.replace(/~/g, "~0").replace(/\//g, "~1")}`,
++  ).join("");
++
++  const diff = (before: any, after: any, tokens: string[]): void => {
++    if (jsonEqual(before, after)) return;
++
++    if (before !== null && after !== null && typeof before === "object" && typeof after === "object" &&
++        Array.isArray(before) === Array.isArray(after)) {
++      if (Array.isArray(before)) {
++        // Preserve array elements across pure insertions/removals. This keeps a
++        // one-element insertion from turning into replacements of every later index.
++        if (before.length < after.length && isSubsequence(before, after)) {
++          let sourceIndex = 0;
++          for (let targetIndex = 0; targetIndex < after.length; targetIndex++) {
++            if (sourceIndex < before.length && jsonEqual(before[sourceIndex], after[targetIndex])) {
++              sourceIndex++;
++            } else {
++              operations.push({ op: "add", path: pointer([...tokens, String(targetIndex)]), value: cloneJson(after[targetIndex]) });
++            }
++          }
++          return;
++        }
++        if (after.length < before.length && isSubsequence(after, before)) {
++          let targetIndex = 0;
++          let sourceIndex = 0;
++          while (sourceIndex < before.length) {
++            if (targetIndex < after.length && jsonEqual(before[sourceIndex], after[targetIndex])) {
++              sourceIndex++;
++              targetIndex++;
++            } else {
++              operations.push({ op: "remove", path: pointer([...tokens, String(sourceIndex)]) });
++              sourceIndex++;
++            }
++          }
++          return;
++        }
++        const sharedLength = Math.min(before.length, after.length);
++        for (let i = 0; i < sharedLength; i++) diff(before[i], after[i], [...tokens, String(i)]);
++        // Remove from the end so earlier array indices remain stable.
++        for (let i = before.length - 1; i >= after.length; i--) {
++          operations.push({ op: "remove", path: pointer([...tokens, String(i)]) });
++        }
++        for (let i = before.length; i < after.length; i++) {
++          operations.push({ op: "add", path: pointer([...tokens, "-"]), value: cloneJson(after[i]) });
++        }
++      } else {
++        const beforeKeys = Object.keys(before);
++        const afterKeys = Object.keys(after);
++        for (const key of beforeKeys) {
++          if (!Object.prototype.hasOwnProperty.call(after, key)) {
++            operations.push({ op: "remove", path: pointer([...tokens, key]) });
++          }
++        }
++        for (const key of afterKeys) {
++          if (!Object.prototype.hasOwnProperty.call(before, key)) {
++            operations.push({ op: "add", path: pointer([...tokens, key]), value: cloneJson(after[key]) });
++          } else {
++            diff(before[key], after[key], [...tokens, key]);
++          }
++        }
++      }
++      return;
++    }
++
++    operations.push({ op: "replace", path: pointer(tokens), value: cloneJson(after) });
++  };
++
++  diff(from, to, []);
++  return operations;
++}
++
++function isSubsequence(shorter: unknown[], longer: unknown[]): boolean {
++  let index = 0;
++  for (const value of longer) {
++    if (index < shorter.length && jsonEqual(shorter[index], value)) index++;
++  }
++  return index === shorter.length;
++}
++
+ /** Reject JavaScript values that cannot occur in an RFC 8259 JSON document. */
+ function assertJsonValue(value: any, label: string, seen = new Set<object>()): void {
+   if (value === null || typeof value === "string" || typeof value === "boolean") return;

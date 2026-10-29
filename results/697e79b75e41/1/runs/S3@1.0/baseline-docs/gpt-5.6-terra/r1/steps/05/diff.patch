@@ -1,0 +1,167 @@
+diff --git a/README.md b/README.md
+index 6e324cdead8ea8adaf977a8ea72593b1afdd99ef..3a5f8bf019abd031606425c9afec88c5f2bd703d 100644
+--- a/README.md
++++ b/README.md
+@@ -21,6 +21,7 @@ Use `availability({ start, end, kind? })` to list the sorted ids of equipment th
+ entire half-open period. Hourly searches omit equipment without an `hourlyPrice`. Omit `kind` to
+ include both boards and sails; otherwise it must be `board` or `sail`.
+ 
+-Cancellation is intentionally not part of this first API. The school policy is retained for the
+-future cancellation feature: cancellations at least 24 hours before the booking start receive the
+-full amount; later cancellations receive no refund.
++Use `cancel(bookingId, at)` to cancel a booking at a UTC ISO-8601 hour. It returns
++`{ bookingId, refund }`, where cancellations made at least 24 hours before the booking start refund
++the full amount and later cancellations refund zero. A booking can only be cancelled once. Cancelled
++bookings no longer reserve their equipment.
+diff --git a/src/index.ts b/src/index.ts
+index 2f87543389a3b5af76ba8fe709a1654c4b1d8400..a20c0427fb8f5fce29272d03a77146975867f201 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -24,6 +24,12 @@ export interface Booking extends RentalQuote {
+   id: string;
+ }
+ 
++/** The outcome of cancelling a booking. Amounts are integer euro cents. */
++export interface Cancellation {
++  bookingId: string;
++  refund: number;
++}
++
+ /** Criteria for finding equipment free throughout a half-open rental period. */
+ export interface AvailabilityQuery {
+   start: string;
+@@ -39,6 +45,12 @@ export interface RentalService {
+   quote(request: RentalRequest): RentalQuote;
+   /** Reserves a free item and returns the confirmed booking. */
+   book(request: RentalRequest): Booking;
++  /**
++   * Cancels a booking at a UTC hour and returns its refund. Cancellations at
++   * least 24 hours before the rental starts receive the booking total; later
++   * cancellations receive no refund.
++   */
++  cancel(bookingId: string, at: string): Cancellation;
+   /** Lists sorted ids of equipment that is free throughout the requested period. */
+   availability(query: AvailabilityQuery): string[];
+ }
+@@ -54,9 +66,14 @@ interface ValidatedPeriod {
+ const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1_000;
+ const LONG_RENTAL_MINIMUM_DAYS = 3;
+ const LONG_RENTAL_DISCOUNT_PERCENT = 10;
++const FULL_REFUND_NOTICE_MILLISECONDS = 24 * 60 * 60 * 1_000;
+ const UTC_HOUR = /^\d{4}-\d{2}-\d{2}T\d{2}:00:00(?:\.0+)?Z$/;
+ const UTC_MIDNIGHT = /^\d{4}-\d{2}-\d{2}T00:00:00(?:\.0+)?Z$/;
+ 
++interface StoredBooking extends Booking {
++  cancelled: boolean;
++}
++
+ /**
+  * Creates an isolated, in-memory rental service.
+  *
+@@ -66,7 +83,7 @@ const UTC_MIDNIGHT = /^\d{4}-\d{2}-\d{2}T00:00:00(?:\.0+)?Z$/;
+  */
+ export function createRentalService(): RentalService {
+   const equipment = new Map<string, Equipment>();
+-  const bookings: Booking[] = [];
++  const bookings: StoredBooking[] = [];
+   let nextBookingNumber = 1;
+ 
+   return {
+@@ -90,17 +107,36 @@ export function createRentalService(): RentalService {
+       const period = validatePeriod(request);
+       const quote = createQuote(item, period);
+ 
+-      if (bookings.some((booking) => booking.itemId === item.id && periodsOverlap(period, booking))) {
++      if (bookings.some((booking) => !booking.cancelled && booking.itemId === item.id && periodsOverlap(period, booking))) {
+         throw new Error(`Equipment is unavailable for the requested period: ${item.id}`);
+       }
+ 
+-      const booking: Booking = {
++      const booking: StoredBooking = {
+         id: `booking-${nextBookingNumber}`,
+         ...quote,
++        cancelled: false,
+       };
+       nextBookingNumber += 1;
+       bookings.push(booking);
+-      return { ...booking };
++      return toBooking(booking);
++    },
++
++    cancel(bookingId: string, at: string): Cancellation {
++      validateBookingId(bookingId);
++      const cancelledAt = parseUtcHour(at, 'cancellation time');
++      const booking = bookings.find((candidate) => candidate.id === bookingId);
++      if (booking === undefined) {
++        throw new Error(`Unknown booking: ${bookingId}`);
++      }
++      if (booking.cancelled) {
++        throw new Error(`Booking has already been cancelled: ${bookingId}`);
++      }
++
++      booking.cancelled = true;
++      const refund = cancelledAt <= Date.parse(booking.start) - FULL_REFUND_NOTICE_MILLISECONDS
++        ? booking.total
++        : 0;
++      return { bookingId, refund };
+     },
+ 
+     availability(query: AvailabilityQuery): string[] {
+@@ -110,13 +146,24 @@ export function createRentalService(): RentalService {
+       return [...equipment.values()]
+         .filter((item) => query.kind === undefined || item.kind === query.kind)
+         .filter((item) => period.type !== 'hourly' || item.hourlyPrice !== undefined)
+-        .filter((item) => !bookings.some((booking) => booking.itemId === item.id && periodsOverlap(period, booking)))
++        .filter((item) => !bookings.some((booking) => !booking.cancelled && booking.itemId === item.id && periodsOverlap(period, booking)))
+         .map((item) => item.id)
+         .sort();
+     },
+   };
+ }
+ 
++function toBooking(booking: StoredBooking): Booking {
++  const { cancelled: _cancelled, ...publicBooking } = booking;
++  return publicBooking;
++}
++
++function validateBookingId(bookingId: string): void {
++  if (typeof bookingId !== 'string' || bookingId.length === 0) {
++    throw new Error('Booking id must be a non-empty string');
++  }
++}
++
+ function validateEquipment(item: Equipment): void {
+   if (typeof item !== 'object' || item === null) {
+     throw new Error('Equipment must be an object');
+diff --git a/test/rental-service.test.mjs b/test/rental-service.test.mjs
+index 4e05cef443c6c5653ee82eb2775d8999bef0a359..d08e691236ae758f1e067dec90b14ea2a8147bd3 100644
+--- a/test/rental-service.test.mjs
++++ b/test/rental-service.test.mjs
+@@ -124,3 +124,27 @@ test('rejects availability queries with invalid kinds or periods', () => {
+   assert.throws(() => rentals.availability({ start: day('2026-05-10'), end: day('2026-05-10') }));
+   assert.throws(() => rentals.availability({ start: day('2026-05-10'), end: day('2026-05-11'), kind: 'mast' }));
+ });
++
++test('cancels a booking exactly 24 hours before it starts and releases its equipment', () => {
++  const rentals = createRentalService();
++  rentals.addEquipment({ id: 'board-1', kind: 'board', dailyPrice: 2_500 });
++  const booking = rentals.book({ itemId: 'board-1', start: day('2026-05-10'), end: day('2026-05-12') });
++
++  assert.deepEqual(rentals.cancel(booking.id, day('2026-05-09')), { bookingId: booking.id, refund: 5_000 });
++  assert.deepEqual(
++    rentals.availability({ start: day('2026-05-10'), end: day('2026-05-12'), kind: 'board' }),
++    ['board-1'],
++  );
++  assert.doesNotThrow(() => rentals.book({ itemId: 'board-1', start: day('2026-05-10'), end: day('2026-05-12') }));
++});
++
++test('only refunds a cancellation at least 24 hours before the booking and rejects repeat or invalid cancellations', () => {
++  const rentals = createRentalService();
++  rentals.addEquipment({ id: 'board-1', kind: 'board', dailyPrice: 2_500 });
++  const lateBooking = rentals.book({ itemId: 'board-1', start: day('2026-05-10'), end: day('2026-05-12') });
++
++  assert.deepEqual(rentals.cancel(lateBooking.id, hour('2026-05-09', '01')), { bookingId: lateBooking.id, refund: 0 });
++  assert.throws(() => rentals.cancel(lateBooking.id, day('2026-05-08')));
++  assert.throws(() => rentals.cancel('missing', day('2026-05-08')));
++  assert.throws(() => rentals.cancel('booking-2', '2026-05-08T10:30:00.000Z'));
++});

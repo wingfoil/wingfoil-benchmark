@@ -1,0 +1,195 @@
+diff --git a/README.md b/README.md
+index ade295b41f056bf1edfaf0067f1e7ef97fd077b1..0f58541610edd1714696ccaeef04b8ee3bc19873 100644
+--- a/README.md
++++ b/README.md
+@@ -17,4 +17,8 @@ pointer does not resolve to a value in the document.
+ 
+ `applyPatch(document, patch)` applies an [RFC 6902 JSON Patch](https://www.rfc-editor.org/rfc/rfc6902)
+ array and returns the resulting JSON value. It supports `add`, `remove`, `replace`, `move`, `copy` and
+-`test`. The input document is left unchanged; an invalid patch or failed operation throws an error.
++`test`. Operations run in order on a copy of the input. A failed operation throws and returns no
++partial result; the input remains unchanged. The document and patch must contain valid JSON values.
++Operation-specific required fields and JSON Pointers are validated, while unrecognized operation
++members are ignored as required by RFC 6902. A `test` compares JSON values structurally, including
++objects whose members appear in a different order.
+diff --git a/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-3-plan.md b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-3-plan.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..d5cff4a12cddc7b6b2b3c5b611dcb24c7337ce8a
+--- /dev/null
++++ b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-3-plan.md
+@@ -0,0 +1,17 @@
++---
++id: sw-life-cycle-1-3-plan
++type: plan
++title: "Conform applyPatch to RFC 6902"
++status: active
++workflow: "sw-life-cycle"
++phase: "1-3"
++element: ""
++parent: ""
++format: 1
++---
++
++<!-- plan body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
+diff --git a/docs/memory/task/task-003-conform-applypatch-to-rfc-6902.md b/docs/memory/task/task-003-conform-applypatch-to-rfc-6902.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..ce5fdf55597903ea84c664735d335746777f2fb9
+--- /dev/null
++++ b/docs/memory/task/task-003-conform-applypatch-to-rfc-6902.md
+@@ -0,0 +1,9 @@
++---
++id: task-003-conform-applypatch-to-rfc-6902
++type: task
++title: "Conform applyPatch to RFC 6902"
++status: approved
++format: 1
++---
++
++Review and correct `applyPatch` validation, operation semantics, edge cases, and errors to conform to RFC 6902. Ensure invalid patches and failed operations throw without mutating the input, and add coverage for the RFC behavior and error cases. Update the API documentation to explain the resulting behavior.
+diff --git a/src/index.test.ts b/src/index.test.ts
+index 0488708275ff86e20a5c103251421931c2fc8394..b2047a82a067a37b872730c1ba1aadfe7d2e8bd6 100644
+--- a/src/index.test.ts
++++ b/src/index.test.ts
+@@ -35,3 +35,35 @@ test("throws when an operation cannot be applied", () => {
+   throws(() => applyPatch([], [{ op: "add", path: "/01", value: 0 }]));
+   throws(() => applyPatch({}, [{ op: "move", from: "/a", path: "/a/b" }]));
+ });
++
++test("follows RFC add, move, and copy semantics", () => {
++  deepStrictEqual(applyPatch({ a: 1, list: ["a", "b", "c"] }, [
++    { op: "add", path: "/a", value: 2 },
++    { op: "move", from: "/list/0", path: "/list/2" },
++    { op: "copy", from: "/a", path: "/copied", ignored: "extension member" },
++  ]), { a: 2, list: ["b", "c", "a"], copied: 2 });
++});
++
++test("requires own, correctly typed operation members and valid JSON values", () => {
++  const inherited = Object.assign(Object.create({ op: "add", path: "/x", value: 1 }), {});
++  throws(() => applyPatch({}, [inherited]), TypeError);
++  throws(() => applyPatch({}, [{ op: "add", path: "/x" }]), TypeError);
++  throws(() => applyPatch({}, [{ op: "add", path: "/x", value: undefined }]), TypeError);
++  throws(() => applyPatch({ n: Number.NaN }, []), TypeError);
++  throws(() => applyPatch({}, [{ op: "remove", path: "/x" }]), RangeError);
++  throws(() => applyPatch({}, [{ op: "replace", path: "/x", value: 1 }]), RangeError);
++  throws(() => applyPatch({}, [{ op: "add", path: "/a/b", value: 1 }]), RangeError);
++});
++
++test("test compares JSON values structurally and failed patches leave input untouched", () => {
++  const document = { n: 1, nested: { a: [true, null] } };
++  deepStrictEqual(applyPatch(document, [
++    { op: "test", path: "/nested", value: { a: [true, null] } },
++    { op: "test", path: "/n", value: 1.0 },
++  ]), document);
++  throws(() => applyPatch(document, [
++    { op: "replace", path: "/n", value: 2 },
++    { op: "test", path: "/n", value: 3 },
++  ]), RangeError);
++  deepStrictEqual(document, { n: 1, nested: { a: [true, null] } });
++});
+diff --git a/src/index.ts b/src/index.ts
+index dcc703521f9e8eab87813cecb0fc01335e54eae1..6ecd71d1ae8f62dd142eb4e379585e4122714e39 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -68,37 +68,44 @@ type PatchOperation = {
+ export function applyPatch(document: unknown, patch: unknown): unknown {
+   if (!Array.isArray(patch)) throw new TypeError("JSON Patch must be an array");
+ 
++  assertJsonValue(document, "document");
++  assertJsonValue(patch, "patch");
++
+   let result = cloneJson(document);
+   for (const entry of patch) {
+     if (entry === null || typeof entry !== "object" || Array.isArray(entry)) {
+       throw new TypeError("Each JSON Patch operation must be an object");
+     }
+     const operation = entry as PatchOperation;
+-    if (typeof operation.op !== "string" || typeof operation.path !== "string") {
++    if (!Object.hasOwn(operation, "op") || !Object.hasOwn(operation, "path") ||
++        typeof operation.op !== "string" || typeof operation.path !== "string") {
+       throw new TypeError("JSON Patch operation requires string 'op' and 'path' fields");
+     }
++    if (!["add", "remove", "replace", "move", "copy", "test"].includes(operation.op)) {
++      throw new TypeError(`Unsupported JSON Patch operation: ${operation.op}`);
++    }
+     const path = parsePointer(operation.path);
+ 
+     switch (operation.op) {
+       case "add":
+-        if (!Object.hasOwn(operation, "value")) throw new TypeError("add requires a value");
++        requireMember(operation, "value", "add");
+         result = addAt(result, path, cloneJson(operation.value));
+         break;
+       case "remove":
+         result = removeAt(result, path).document;
+         break;
+       case "replace":
+-        if (!Object.hasOwn(operation, "value")) throw new TypeError("replace requires a value");
++        requireMember(operation, "value", "replace");
+         result = replaceAt(result, path, cloneJson(operation.value));
+         break;
+       case "copy": {
+-        if (typeof operation.from !== "string") throw new TypeError("copy requires a string 'from' field");
++        if (!Object.hasOwn(operation, "from") || typeof operation.from !== "string") throw new TypeError("copy requires a string 'from' field");
+         const from = parsePointer(operation.from);
+         result = addAt(result, path, cloneJson(getAt(result, from)));
+         break;
+       }
+       case "move": {
+-        if (typeof operation.from !== "string") throw new TypeError("move requires a string 'from' field");
++        if (!Object.hasOwn(operation, "from") || typeof operation.from !== "string") throw new TypeError("move requires a string 'from' field");
+         const from = parsePointer(operation.from);
+         if (from.length < path.length && from.every((token, i) => token === path[i])) {
+           throw new RangeError("Cannot move a value into one of its children");
+@@ -110,18 +117,47 @@ export function applyPatch(document: unknown, patch: unknown): unknown {
+         break;
+       }
+       case "test":
+-        if (!Object.hasOwn(operation, "value")) throw new TypeError("test requires a value");
++        requireMember(operation, "value", "test");
+         if (!jsonEqual(getAt(result, path), operation.value)) {
+           throw new RangeError("JSON Patch test operation failed");
+         }
+         break;
+       default:
++        // The operation name is validated before dispatch.
+         throw new TypeError(`Unsupported JSON Patch operation: ${operation.op}`);
+     }
+   }
+   return result;
+ }
+ 
++function requireMember(operation: PatchOperation, member: "value", op: string): void {
++  if (!Object.hasOwn(operation, member)) throw new TypeError(`${op} requires a value`);
++}
++
++function assertJsonValue(value: unknown, label: string, seen = new Set<object>()): void {
++  if (value === null || typeof value === "string" || typeof value === "boolean") return;
++  if (typeof value === "number") {
++    if (Number.isFinite(value)) return;
++    throw new TypeError(`${label} must contain only finite JSON numbers`);
++  }
++  if (typeof value !== "object") throw new TypeError(`${label} must contain only JSON values`);
++  if (seen.has(value)) throw new TypeError(`${label} must not contain circular references`);
++  seen.add(value);
++  if (Array.isArray(value)) {
++    for (let i = 0; i < value.length; i++) {
++      if (!Object.hasOwn(value, i)) throw new TypeError(`${label} must not contain sparse arrays`);
++      assertJsonValue(value[i], label, seen);
++    }
++  } else {
++    const prototype = Object.getPrototypeOf(value);
++    if (prototype !== Object.prototype && prototype !== null) {
++      throw new TypeError(`${label} must contain only plain JSON objects`);
++    }
++    for (const key of Object.keys(value)) assertJsonValue((value as Record<string, unknown>)[key], label, seen);
++  }
++  seen.delete(value);
++}
++
+ function parsePointer(pointer: string): string[] {
+   if (pointer === "") return [];
+   if (!pointer.startsWith("/")) throw new TypeError("JSON Pointer must be empty or begin with '/'");

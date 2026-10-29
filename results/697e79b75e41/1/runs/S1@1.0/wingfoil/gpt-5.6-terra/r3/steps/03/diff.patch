@@ -1,0 +1,159 @@
+diff --git a/README.md b/README.md
+index 01a3b88fbe606a66ab806e1d46c44f776488753d..c4d5e5f72cf11d0c5b143701b1c757da953e9a9e 100644
+--- a/README.md
++++ b/README.md
+@@ -23,7 +23,9 @@ resolvePointer(document, '/services/0/name'); // 'catalog'
+ `applyPatch(document, patch)` applies an [RFC 6902 JSON Patch](https://www.rfc-editor.org/rfc/rfc6902)
+ array and returns a new JSON document. It supports `add`, `remove`, `replace`, `move`, `copy`, and
+ `test`; validates patch input; and throws if an operation cannot be applied. Neither the input
+-document nor values copied from it are mutated.
++document nor values copied from it are mutated. Operations are evaluated in order and evaluation
++stops at the first error, leaving the caller's document unchanged. Each operation must be a JSON
++object with its required own members; unrecognized JSON members are ignored as RFC 6902 specifies.
+ 
+ ```ts
+ import { applyPatch } from 'json-toolkit';
+diff --git a/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-3-plan.md b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-3-plan.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..0d649c47e93e9129d6cb3feb0494132334199c8f
+--- /dev/null
++++ b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-3-plan.md
+@@ -0,0 +1,17 @@
++---
++id: sw-life-cycle-1-3-plan
++type: plan
++title: "Conform JSON Patch to RFC 6902"
++status: active
++workflow: "sw-life-cycle"
++phase: "1-3"
++element: ""
++parent: ""
++format: 1
++---
++
++<!-- plan body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
+diff --git a/docs/memory/task/task-003-conform-json-patch-to-rfc-6902.md b/docs/memory/task/task-003-conform-json-patch-to-rfc-6902.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..eb35d25bf9748ef6d9a8885ccbb2770bedaa4629
+--- /dev/null
++++ b/docs/memory/task/task-003-conform-json-patch-to-rfc-6902.md
+@@ -0,0 +1,13 @@
++---
++id: task-003-conform-json-patch-to-rfc-6902
++type: task
++title: "Conform JSON Patch to RFC 6902"
++status: approved
++format: 1
++---
++
++<!-- task body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
+diff --git a/src/index.ts b/src/index.ts
+index 227f4bafebabd0b5f6ecf71f3206dc79d4d77a14..a9eba9b3b3dea5197e41d2d7631a3d91b79b9e1c 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -128,28 +128,45 @@ function validateOperation(operation: unknown, index: number): JsonPatchOperatio
+     throw new TypeError(`JSON Patch operation ${index} must be an object.`);
+   }
+ 
++  assertJsonValue(operation, `JSON Patch operation ${index}`);
+   const candidate = operation as Record<string, unknown>;
+-  if (typeof candidate.op !== 'string' || typeof candidate.path !== 'string') {
++  const op = requiredOperationMember(candidate, 'op', index);
++  const path = requiredOperationMember(candidate, 'path', index);
++  if (typeof op !== 'string' || typeof path !== 'string') {
+     throw new TypeError(`JSON Patch operation ${index} requires string "op" and "path" members.`);
+   }
+ 
+-  switch (candidate.op) {
+-    case 'add':
+-    case 'replace':
+-    case 'test':
+-      assertJsonValue(candidate.value, `value in JSON Patch operation ${index}`);
+-      return candidate as JsonPatchOperation;
++  switch (op) {
++    case 'add': {
++      const value = requiredOperationMember(candidate, 'value', index);
++      return { op, path, value };
++    }
+     case 'remove':
+-      return candidate as JsonPatchOperation;
++      return { op, path };
++    case 'replace':
++    case 'test': {
++      const value = requiredOperationMember(candidate, 'value', index);
++      return { op, path, value };
++    }
+     case 'move':
+-    case 'copy':
+-      if (typeof candidate.from !== 'string') {
++    case 'copy': {
++      const from = requiredOperationMember(candidate, 'from', index);
++      if (typeof from !== 'string') {
+         throw new TypeError(`JSON Patch operation ${index} requires a string "from" member.`);
+       }
+-      return candidate as JsonPatchOperation;
++      return { op, path, from };
++    }
+     default:
+-      throw new TypeError(`JSON Patch operation ${index} has unsupported op "${candidate.op}".`);
++      throw new TypeError(`JSON Patch operation ${index} has unsupported op "${op}".`);
++  }
++}
++
++function requiredOperationMember(candidate: Record<string, unknown>, name: string, index: number): unknown {
++  const descriptor = Object.getOwnPropertyDescriptor(candidate, name);
++  if (descriptor === undefined || !descriptor.enumerable || !('value' in descriptor)) {
++    throw new TypeError(`JSON Patch operation ${index} requires a "${name}" member.`);
+   }
++  return descriptor.value;
+ }
+ 
+ function parsePointer(pointer: string): string[] {
+diff --git a/test/index.test.mjs b/test/index.test.mjs
+index 1a3642e8dc2e242434c08cd56257726dc1859cac..177d3b36a1969f54b81c477565e9136eecdcd7b2 100644
+--- a/test/index.test.mjs
++++ b/test/index.test.mjs
+@@ -96,3 +96,35 @@ test('rejects invalid patches and failed operations without changing the input',
+ 
+   assert.deepEqual(document, { values: [1], child: { value: true } });
+ });
++
++test('requires operation members to be own JSON members and ignores defined extras', () => {
++  const inheritedOperation = Object.create({
++    op: 'add',
++    path: '/added',
++    value: true,
++  });
++
++  assert.throws(() => applyPatch({}, [inheritedOperation]));
++  assert.throws(() => applyPatch({}, [{
++    op: 'add',
++    path: '/added',
++    value: true,
++    invalidJsonExtra: undefined,
++  }]));
++  assert.deepEqual(
++    applyPatch({}, [{ op: 'add', path: '/added', value: true, ignored: null }]),
++    { added: true },
++  );
++});
++
++test('terminates a failed patch without changing the caller document', () => {
++  const document = { value: 1 };
++
++  assert.throws(() => applyPatch(document, [
++    { op: 'replace', path: '/value', value: 2 },
++    { op: 'test', path: '/value', value: 3 },
++    { op: 'add', path: '/unreached', value: true },
++  ]));
++
++  assert.deepEqual(document, { value: 1 });
++});

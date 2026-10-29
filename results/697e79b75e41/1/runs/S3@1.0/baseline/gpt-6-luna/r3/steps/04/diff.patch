@@ -1,0 +1,73 @@
+diff --git a/src/index.ts b/src/index.ts
+index 39ad02b72b4e1caf56e4407f5a0263d03fbf33e1..392ceb07a8e1bcf62f5447f851e90d88c71729f2 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -4,6 +4,7 @@ export interface Equipment {
+   id: string;
+   kind: EquipmentKind;
+   dailyPrice: number;
++  hourlyPrice?: number;
+ }
+ 
+ export interface RentalRequest {
+@@ -49,6 +50,17 @@ function utcMidnight(value: string, field: string): number {
+   return timestamp;
+ }
+ 
++function utcTimestamp(value: string, field: string): number {
++  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/.test(value)) {
++    throw new Error(`${field} must be a UTC date-time in ISO-8601 format`);
++  }
++  const timestamp = Date.parse(value);
++  if (!Number.isFinite(timestamp) || new Date(timestamp).toISOString().replace(/\.000Z$/, "Z") !== value.replace(/\.0+Z$/, "Z")) {
++    throw new Error(`${field} is not a valid UTC date-time`);
++  }
++  return timestamp;
++}
++
+ export function createRentalService(): RentalService {
+   const equipment = new Map<string, StoredEquipment>();
+   const bookings: RentalBooking[] = [];
+@@ -58,13 +70,27 @@ export function createRentalService(): RentalService {
+     const item = equipment.get(request.itemId);
+     if (!item) throw new Error(`Unknown equipment item: ${request.itemId}`);
+ 
+-    const start = utcMidnight(request.start, "start");
+-    const end = utcMidnight(request.end, "end");
++    const start = utcTimestamp(request.start, "start");
++    const end = utcTimestamp(request.end, "end");
+     if (end <= start) throw new Error("end must be after start");
+ 
+-    const days = (end - start) / 86_400_000;
+-    const fullPrice = item.dailyPrice * days;
+-    const total = days >= 3 ? Math.round(fullPrice * 0.9) : fullPrice;
++    const duration = end - start;
++    let total: number;
++    if (duration < 86_400_000) {
++      if (item.hourlyPrice === undefined) {
++        throw new Error(`Equipment item cannot be rented by the hour: ${item.id}`);
++      }
++      if (start % 3_600_000 !== 0 || end % 3_600_000 !== 0) {
++        throw new Error("Hourly rentals must start and end on the hour");
++      }
++      total = item.hourlyPrice * (duration / 3_600_000);
++    } else {
++      utcMidnight(request.start, "start");
++      utcMidnight(request.end, "end");
++      const days = duration / 86_400_000;
++      const fullPrice = item.dailyPrice * days;
++      total = days >= 3 ? Math.round(fullPrice * 0.9) : fullPrice;
++    }
+     if (!Number.isSafeInteger(total)) throw new Error("Rental total exceeds the supported euro-cent range");
+     return {
+       itemId: request.itemId,
+@@ -104,6 +130,9 @@ export function createRentalService(): RentalService {
+       if (!Number.isSafeInteger(item.dailyPrice) || item.dailyPrice < 0) {
+         throw new Error("dailyPrice must be a non-negative integer number of euro cents");
+       }
++      if (item.hourlyPrice !== undefined && (!Number.isSafeInteger(item.hourlyPrice) || item.hourlyPrice < 0)) {
++        throw new Error("hourlyPrice must be a non-negative integer number of euro cents");
++      }
+       if (equipment.has(item.id)) throw new Error(`Equipment item already exists: ${item.id}`);
+       equipment.set(item.id, { ...item });
+     },

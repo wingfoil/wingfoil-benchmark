@@ -1,0 +1,124 @@
+diff --git a/src/index.ts b/src/index.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..454659ffa9b8504db1788076446e22072c1bdcc2
+--- /dev/null
++++ b/src/index.ts
+@@ -0,0 +1,118 @@
++export type EquipmentKind = 'board' | 'sail';
++
++export interface Equipment {
++  id: string;
++  kind: EquipmentKind;
++  /** Price for one rental day, in euro cents. */
++  dailyPrice: number;
++}
++
++export interface RentalRequest {
++  itemId: string;
++  start: string;
++  end: string;
++}
++
++export interface RentalQuote extends RentalRequest {
++  total: number;
++}
++
++export interface RentalBooking extends RentalQuote {
++  id: string;
++}
++
++export interface RentalService {
++  addEquipment(item: Equipment): void;
++  quote(request: RentalRequest): RentalQuote;
++  book(request: RentalRequest): RentalBooking;
++}
++
++interface StoredBooking extends RentalBooking {}
++
++/** Creates an in-memory rental catalog and booking service. */
++export function createRentalService(): RentalService {
++  const equipment = new Map<string, Equipment>();
++  const bookings: StoredBooking[] = [];
++  let nextBookingId = 1;
++
++  function rentalDays(request: RentalRequest): number {
++    if (typeof request.itemId !== 'string') {
++      throw new Error('itemId must be a string');
++    }
++
++    const start = parseUtcMidnight(request.start, 'start');
++    const end = parseUtcMidnight(request.end, 'end');
++    const duration = end - start;
++    const day = 24 * 60 * 60 * 1000;
++    if (duration <= 0 || duration % day !== 0) {
++      throw new Error('Rental period must cover one or more whole UTC days');
++    }
++    return duration / day;
++  }
++
++  function parseUtcMidnight(value: string, label: string): number {
++    if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}T00:00:00(?:\.000)?Z$/.test(value)) {
++      throw new Error(`${label} must be midnight UTC in ISO-8601 format`);
++    }
++    const timestamp = Date.parse(value);
++    if (!Number.isFinite(timestamp)) {
++      throw new Error(`${label} must be a valid ISO-8601 timestamp`);
++    }
++    // Date.parse normalizes some invalid calendar values; require a real calendar date.
++    const datePart = value.slice(0, 10);
++    if (new Date(timestamp).toISOString().slice(0, 10) !== datePart) {
++      throw new Error(`${label} must be a valid ISO-8601 timestamp`);
++    }
++    return timestamp;
++  }
++
++  function quote(request: RentalRequest): RentalQuote {
++    const days = rentalDays(request);
++    const item = equipment.get(request.itemId);
++    if (!item) {
++      throw new Error(`Unknown equipment: ${request.itemId}`);
++    }
++    return {
++      itemId: request.itemId,
++      start: request.start,
++      end: request.end,
++      total: item.dailyPrice * days,
++    };
++  }
++
++  return {
++    addEquipment(item: Equipment): void {
++      if (!item || typeof item.id !== 'string' || item.id.length === 0) {
++        throw new Error('Equipment id must be a non-empty string');
++      }
++      if (item.kind !== 'board' && item.kind !== 'sail') {
++        throw new Error("Equipment kind must be 'board' or 'sail'");
++      }
++      if (!Number.isSafeInteger(item.dailyPrice) || item.dailyPrice < 0) {
++        throw new Error('dailyPrice must be a non-negative integer number of euro cents');
++      }
++      if (equipment.has(item.id)) {
++        throw new Error(`Equipment already exists: ${item.id}`);
++      }
++      equipment.set(item.id, { ...item });
++    },
++
++    quote,
++
++    book(request: RentalRequest): RentalBooking {
++      const quoted = quote(request);
++      const start = Date.parse(quoted.start);
++      const end = Date.parse(quoted.end);
++      const conflict = bookings.some((booking) =>
++        booking.itemId === quoted.itemId &&
++        start < Date.parse(booking.end) && end > Date.parse(booking.start)
++      );
++      if (conflict) {
++        throw new Error(`Equipment is already booked for part of this period: ${quoted.itemId}`);
++      }
++      const booking: StoredBooking = { id: `booking-${nextBookingId++}`, ...quoted };
++      bookings.push(booking);
++      return { ...booking };
++    },
++  };
++}

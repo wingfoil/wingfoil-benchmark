@@ -114,7 +114,76 @@ first.
 
 ## Execution
 
-<!-- Execution id(s) `<campaign-id>/<n>`, outcomes, caps reached, reruns. -->
+- **Spending approved** by the approver (`d8a31c84`), the quota read by the approver first (49 % of the 5-hour
+  window, 80 % of the week); run by the agent at the approver's request in chat (2026-10-28, "lancia la campagna ora
+  e programma la ripresa al reset"). **approved → running** on start (`ebb728f7`).
+- **`697e79b75e41/1`**, `bench campaign run campaigns/codex-terra-step-a.yaml --allow-spending` from the main
+  checkout (dl-024 bound 1), in three legs, each resumed (`--resume 697e79b75e41/1`) by a script five minutes after
+  the reset Codex named in the stopped step ("try again at …", read as UTC):
+  1. 2026-10-28 17:09–18:16 UTC: 5 runs completed; S1 baseline-docs r3 (Terra) stopped at the quota at step 3 (its
+     attempt kept in `attempts/1`, 0.3179 USD). Codex named the reset as a time with no date ("try again at 8:41
+     PM"), which the script did not parse: it resumed at its fallback, 20:50 UTC, from the approver's quota page.
+     Leg cost 4.5696 USD.
+  2. 20:50–22:28 UTC: 11 runs completed; S8 baseline-docs r1 (Terra) stopped at the quota at its first step (its
+     attempt in `attempts/1`, 0 USD). Leg cost 9.6266 USD.
+  3. 2026-10-29 01:55–03:54 UTC: the 38 other runs completed (Terra's last two, then Luna's 36); the execution
+     `completed`. Leg cost 2.6271 USD.
+- **Outcome:** 54 runs completed, 0 failed; two on a second attempt after a quota stop. No cap reached. Cost: 16.8233
+  USD, 15.0013 EUR at 0.8917 EUR/USD, API-equivalent (`price-table`), the three legs' totals (the runs' 16.5054
+  USD and the two stopped attempts'); against the estimate's mean 15.2537 and high 19.7765 USD. 0 € spent (ChatGPT
+  Plus, dl-024 as dl-027 and dl-031 widen it). A ledger line per run. The secret scan of `results/697e79b75e41/1/`
+  and `runs/697e79b75e41/1/` (plain files and every git object of the 54 workspaces) after each leg and at the end:
+  clean.
+- **Interventions (approver policy v2):** the wingfoil arm 27 in its 27 steps on Terra and 50 in its 51 on Luna,
+  every one "Approved. Proceed."; `memory approve` ran only in the turn after the reply, in every wingfoil step (a
+  script over the transcripts). Baseline and baseline-docs 0. The one wingfoil step with no intervention is Luna's
+  S1 r3 step 3: the session submitted its task twice, the second `memory submit` was refused (the task already
+  pending, its forward edge an approval), and it ended on a statement, with no code and no request; step 4 asked,
+  got the reply and approved task-003 and task-004.
+- **Scored** (`bench score 697e79b75e41/1 --holdout ../WingFoil2-Benchmark-HoldOut`): `aggregate.json`, 12 groups
+  and 12 slices; determinism measured in 15, n = 1 in 9.
+
+**gpt-5.6-terra**
+
+| Scenario | Run | baseline | baseline-docs | wingfoil |
+|---|---|---|---|---|
+| S1 | r1 | 164/165, 45/48 | 164/165, 45/48 | 165/165, 48/48 |
+| S1 | r2 | 159/165, 48/48 | 164/165, 46/48 | 164/165, 46/48 |
+| S1 | r3 | 164/165, 45/48 | 164/165, 45/48 | 165/165, 48/48 |
+| S2 | r1 | 23/24, 16/17, checks 0/3 | 23/24, 16/17, checks 0/3 | 23/24, 16/17, checks 0/3 |
+| S3 | r1 | 34/37, 16/17, checks 0/1, M-F1 3/5 | 37/37, 16/17, checks 0/1, M-F1 4/5 | 34/37, 16/17, checks 0/1, M-F1 3/5 |
+| S8 | r1 | 23/23, 6/7, checks 12/16 | 23/23, 7/7, checks 16/16 | 23/23, 7/7, checks 16/16 |
+
+**gpt-6-luna**
+
+| Scenario | Run | baseline | baseline-docs | wingfoil |
+|---|---|---|---|---|
+| S1 | r1 | 149/165, 46/48 | 105/165, 37/48 | 164/165, 46/48 |
+| S1 | r2 | 164/165, 45/48 | 165/165, 48/48 | 164/165, 45/48 |
+| S1 | r3 | 163/165, 44/48 | 158/165, 43/48 | 164/165, 46/48 |
+| S2 | r1 | 23/24, 16/17, checks 0/3 | 23/24, 16/17, checks 0/3 | 23/24, 16/17, checks 0/3 |
+| S2 | r2 | 23/24, 16/17, checks 0/3 | 23/24, 16/17, checks 0/3 | 23/24, 16/17, checks 0/3 |
+| S2 | r3 | 23/24, 16/17, checks 0/3 | 23/24, 16/17, checks 0/3 | 22/24, 16/17, checks 0/3 |
+| S3 | r1 | 34/37, 16/17, checks 0/1, M-F1 3/5 | 34/37, 16/17, checks 0/1, M-F1 3/5 | 37/37, 17/17, checks 0/1, M-F1 4/5 |
+| S3 | r2 | 35/37, 16/17, checks 0/1, M-F1 3/5 | 35/37, 16/17, checks 0/1, M-F1 3/5 | 34/37, 16/17, checks 1/1, M-F1 4/5 |
+| S3 | r3 | 34/37, 16/17, checks 0/1, M-F1 3/5 | 32/37, 14/17, checks 0/1, M-F1 3/5 | 37/37, 17/17, checks 0/1, M-F1 4/5 |
+| S8 | r1 | 23/23, 7/7, checks 13/16 | 23/23, 7/7, checks 16/16 | 21/23, 5/7, checks 16/16 |
+| S8 | r2 | 13/23, 5/7, checks 13/16 | 13/23, 5/7, checks 16/16 | 23/23, 7/7, checks 16/16 |
+| S8 | r3 | 23/23, 6/7, checks 13/16 | 23/23, 7/7, checks 16/16 | 23/23, 6/7, checks 16/16 |
+
+| Model | Arm | Runs | Steps | Interventions | Cost (USD) | Run cost range (USD) |
+|---|---|---|---|---|---|---|
+| gpt-5.6-terra | baseline | 6 | 27 | 0 | 3.7730 | 0.39–0.84 |
+| gpt-5.6-terra | baseline-docs | 6 | 27 | 0 | 4.6218 | 0.50–0.97 |
+| gpt-5.6-terra | wingfoil | 6 | 27 | 27 | 7.0947 | 0.90–1.41 |
+| gpt-6-luna | baseline | 12 | 51 | 0 | 0.1569 | 0.01–0.02 |
+| gpt-6-luna | baseline-docs | 12 | 51 | 0 | 0.2629 | 0.01–0.03 |
+| gpt-6-luna | wingfoil | 12 | 51 | 50 | 0.5961 | 0.04–0.07 |
+
+Total: 54 runs, 16.5054 USD, 14.7178 EUR at 0.8917; per model: gpt-5.6-terra 15.4894 USD, gpt-6-luna 1.0159 USD
+
+Each cell: final public tests, hold-out, then checks and M-F1 where the scenario has them; from the scoring's output.
+Costs from the runs' usage files.
 
 ## Results review
 

@@ -1,0 +1,115 @@
+diff --git a/src/index.ts b/src/index.ts
+index 119b39d7308a8b3097b1001efd18208e14e0cfc7..81b4596bf0492052546d2871b2560f527b7273fd 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -8,6 +8,18 @@ export type { Summary } from './domain/summary.ts';
+ export { PRIORITIES } from './domain/task.ts';
+ export type { NewTask, Priority, Status, Task } from './domain/task.ts';
+ 
++/** A row that could not be imported, with its one-based source line and reason. */
++export interface RejectedTaskImport {
++  readonly line: number;
++  readonly reason: string;
++}
++
++/** The outcome of importing task rows into a list. */
++export interface TaskImportResult {
++  readonly imported: number;
++  readonly rejected: readonly RejectedTaskImport[];
++}
++
+ /**
+  * A new, empty task list for the app, kept in memory.
+  * @param now - optionally supplies ISO-8601 date-time strings for task creation and changes
+@@ -15,3 +27,40 @@ export type { NewTask, Priority, Status, Task } from './domain/task.ts';
+ export function createTodoList(now: () => string = () => new Date().toISOString()): TaskList {
+   return createTaskList(now);
+ }
++
++/**
++ * Import semicolon-separated task rows, skipping blank lines and collecting rows that fail validation.
++ * @param list - the task list to add tasks to
++ * @param text - rows in `title;priority;tags` format, with tags separated by spaces
++ */
++export function importTasks(list: TaskList, text: string): TaskImportResult {
++  let imported = 0;
++  const rejected: RejectedTaskImport[] = [];
++
++  text.split(/\r?\n/).forEach((row, index) => {
++    if (row.trim().length === 0) return;
++    const fields = row.split(';');
++    if (fields.length !== 3) {
++      rejected.push({
++        line: index + 1,
++        reason: 'line must contain title, priority and tags separated by semicolons',
++      });
++      return;
++    }
++
++    const [title, rawPriority, rawTags] = fields;
++    const priority = rawPriority.trim();
++    const result = list.add({
++      title,
++      ...(priority === '' ? {} : { priority: priority as Priority }),
++      tags: rawTags.trim() === '' ? [] : rawTags.trim().split(/\s+/),
++    });
++    if (result.ok) {
++      imported += 1;
++    } else {
++      rejected.push({ line: index + 1, reason: result.error.message });
++    }
++  });
++
++  return { imported, rejected };
++}
+diff --git a/test/list.test.ts b/test/list.test.ts
+index 8e07e6d5203d2e146e85a140b50b0068f801c50e..843713b832edfcc2f795c89e7d6c88c943376445 100644
+--- a/test/list.test.ts
++++ b/test/list.test.ts
+@@ -1,7 +1,7 @@
+ import assert from 'node:assert/strict';
+ import { describe, it } from 'node:test';
+ 
+-import { createTodoList, summarize } from '../src/index.ts';
++import { createTodoList, importTasks, summarize } from '../src/index.ts';
+ 
+ function valueOf<T>(result: { ok: true; value: T } | { ok: false; error: unknown }): T {
+   if (!result.ok) assert.fail(JSON.stringify(result.error));
+@@ -9,6 +9,37 @@ function valueOf<T>(result: { ok: true; value: T } | { ok: false; error: unknown
+ }
+ 
+ describe('task list', () => {
++  it('imports valid task rows and reports rejected rows with their line numbers', () => {
++    const list = createTodoList();
++    const result = importTasks(
++      list,
++      'Renew the insurance;high;admin money\n\nCall the dentist;;health\nBad priority;urgent;work\nRenew the insurance;low;home\nMissing fields',
++    );
++
++    assert.equal(result.imported, 2);
++    assert.deepEqual(result.rejected, [
++      { line: 4, reason: 'priority must be low, normal or high' },
++      { line: 5, reason: 'there is already a task "Renew the insurance"' },
++      { line: 6, reason: 'line must contain title, priority and tags separated by semicolons' },
++    ]);
++    assert.deepEqual(list.list().map(({ title, priority, tags }) => ({ title, priority, tags })), [
++      { title: 'Renew the insurance', priority: 'high', tags: ['admin', 'money'] },
++      { title: 'Call the dentist', priority: 'normal', tags: ['health'] },
++    ]);
++  });
++
++  it('skips blank lines and rejects invalid titles and tags', () => {
++    const list = createTodoList();
++    const result = importTasks(list, '\n ;high;home\nTask;urgent;tag\n   ');
++
++    assert.equal(result.imported, 0);
++    assert.deepEqual(result.rejected, [
++      { line: 2, reason: 'title must not be empty or only spaces' },
++      { line: 3, reason: 'priority must be low, normal or high' },
++    ]);
++    assert.equal(list.openCount(), 0);
++  });
++
+   it('adds an open task with a normal priority by default', () => {
+     const list = createTodoList();
+     const task = valueOf(list.add({ title: '  Buy milk ' }));

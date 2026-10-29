@@ -1,0 +1,83 @@
+diff --git a/README.md b/README.md
+index dea2c4c3e074bdc621d860878215fcc70d75cd65..6d2a939dbf8cab6aaf4e77a2f4275b223c53f4a0 100644
+--- a/README.md
++++ b/README.md
+@@ -16,4 +16,7 @@ identify a value in the document.
+ 
+ Applies an [RFC 6902 JSON Patch](https://www.rfc-editor.org/rfc/rfc6902) to a JSON document and
+ returns a new document without mutating the input. Supports `add`, `remove`, `replace`, `move`,
+-`copy`, and `test`; invalid patches and failed operations throw an error.
++`copy`, and `test`; invalid patches and failed operations throw an error. Both arguments must be
++JSON values (so, for example, sparse arrays and `undefined` are rejected), including operation
++members that RFC 6902 otherwise ignores. Patch validation and application use detached working
++copies, so a failure leaves both supplied arguments unchanged.
+diff --git a/src/index.ts b/src/index.ts
+index a552e6d4f2af83613e41b346be94ed82f18d1947..eafb89f455754abb18f1bf90f5195ef105dea394 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -30,17 +30,21 @@ type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string
+  * @param document - The JSON document to patch.
+  * @param patch - The ordered array of JSON Patch operations.
+  * @returns A new JSON document containing the applied changes.
+- * @throws {TypeError} If the document or patch is not valid JSON Patch input.
++ * @throws {TypeError} If either argument is not a JSON value or the patch is not an array of operations.
+  * @throws {Error} If an operation cannot be applied or a `test` operation fails.
+  */
+ export function applyPatch(document: unknown, patch: unknown): unknown {
+-  let result = cloneJson(document, 'document');
+-
+   if (!Array.isArray(patch)) {
+     throw new TypeError('JSON Patch must be an array of operations');
+   }
+ 
+-  for (const [index, operation] of patch.entries()) {
++  // Validate and detach the full patch before changing the working document.
++  // A JSON Patch document is itself JSON, including members an operation ignores.
++  const operations = cloneJson(patch, 'JSON Patch');
++  if (!Array.isArray(operations)) throw new TypeError('JSON Patch must be an array of operations');
++  let result = cloneJson(document, 'document');
++
++  for (const [index, operation] of operations.entries()) {
+     result = applyOperation(result, operation, index);
+   }
+ 
+@@ -199,7 +203,11 @@ function cloneJsonValue(value: unknown, name: string, ancestors: Set<object>): J
+   if (Array.isArray(value)) {
+     if (ancestors.has(value)) throw new TypeError(`${name} must not contain circular references`);
+     ancestors.add(value);
+-    const result = value.map((item) => cloneJsonValue(item, name, ancestors));
++    const result: JsonValue[] = [];
++    for (let index = 0; index < value.length; index += 1) {
++      if (!Object.hasOwn(value, index)) throw new TypeError(`${name} must contain only JSON values`);
++      result.push(cloneJsonValue(value[index], name, ancestors));
++    }
+     ancestors.delete(value);
+     return result;
+   }
+diff --git a/test/apply-patch.test.mjs b/test/apply-patch.test.mjs
+index f65fdb0d4f020d0303ea7b6df14453bf2a3c2b69..1e916bb48ba39b30ef250610e4a25c0b3884c148 100644
+--- a/test/apply-patch.test.mjs
++++ b/test/apply-patch.test.mjs
+@@ -74,3 +74,22 @@ test('rejects invalid patches and failing operations', () => {
+   circular.self = circular;
+   assert.throws(() => applyPatch(circular, []));
+ });
++
++test('rejects patch documents and values that cannot be JSON', () => {
++  assert.throws(() => applyPatch({}, [{ op: 'remove', path: '', ignored: undefined }]));
++  assert.throws(() => applyPatch({}, [{ op: 'remove', path: '', ignored: Infinity }]));
++  assert.throws(() => applyPatch([,], []));
++  assert.throws(() => applyPatch({}, [{ op: 'add', path: '/value', value: [,] }]));
++  assert.throws(() => applyPatch({}, [{ op: 'add', path: '/value', value: { missing: undefined } }]));
++});
++
++test('leaves the supplied document unchanged when a later operation fails', () => {
++  const document = { state: { value: 'before' } };
++
++  assert.throws(() => applyPatch(document, [
++    { op: 'replace', path: '/state/value', value: 'after' },
++    { op: 'test', path: '/state/value', value: 'not after' },
++  ]));
++
++  assert.deepEqual(document, { state: { value: 'before' } });
++});

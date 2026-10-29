@@ -1,0 +1,160 @@
+diff --git a/README.md b/README.md
+index d612324370b57b45806694326ba5a8ed26d784c3..761fa035b48e2ee4f529e88fb4bf7e7d69f26669 100644
+--- a/README.md
++++ b/README.md
+@@ -26,3 +26,7 @@ members set to `null` are removed. A non-object patch replaces the entire target
+ with `add`, `remove`, `replace`, `move`, `copy` and `test` operations. It returns a new value, leaving
+ the input document unchanged, and throws if the patch is malformed or an operation fails. Array `add`
+ accepts `-` to append; other array indices use canonical non-negative decimal notation.
++
++`createPatch(from, to)` returns an RFC 6902 JSON Patch containing the changes needed to transform
++`from` into `to`. It recursively diffs object members and uses array insertions and removals to keep
++unchanged array values out of the patch. Neither input is modified.
+diff --git a/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-4-plan.md b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-4-plan.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..571df7a84d3d80d2ba75bdaa8a75a4e6291cdd95
+--- /dev/null
++++ b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-4-plan.md
+@@ -0,0 +1,17 @@
++---
++id: sw-life-cycle-1-4-plan
++type: plan
++title: "Create JSON Patch diffs"
++status: active
++workflow: "sw-life-cycle"
++phase: "1-4"
++element: ""
++parent: ""
++format: 1
++---
++
++<!-- plan body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
+diff --git a/docs/memory/task/task-005-create-json-patch-diffs.md b/docs/memory/task/task-005-create-json-patch-diffs.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..71037e4f23f2188fef4565ac4e5d3e22790d6854
+--- /dev/null
++++ b/docs/memory/task/task-005-create-json-patch-diffs.md
+@@ -0,0 +1,9 @@
++---
++id: task-005-create-json-patch-diffs
++type: task
++title: "Create JSON Patch diffs"
++status: approved
++format: 1
++---
++
++Export `createPatch(from, to)` from `src/index.ts`. It must return an RFC 6902 JSON Patch that transforms `from` into `to`, leave both inputs unchanged, and describe only the changes rather than replacing unchanged document structure.
+diff --git a/src/index.ts b/src/index.ts
+index 55bcf42c0e598a59c99c77e132fb3e99e54cb140..024b6d412c404190ee8a87eda016d8c1f57b4fd5 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -81,6 +81,105 @@ export type JsonPatchOperation =
+   | { op: "copy"; from: string; path: string }
+   | { op: "test"; path: string; value: unknown };
+ 
++/**
++ * Create an RFC 6902 JSON Patch containing the changes needed to transform
++ * `from` into `to`. Objects are diffed by member and arrays by index, leaving
++ * unchanged values out of the patch. Neither input is modified.
++ *
++ * @param from The original JSON value.
++ * @param to The desired JSON value.
++ * @returns A JSON Patch that transforms `from` into `to`.
++ */
++export function createPatch(from: unknown, to: unknown): JsonPatchOperation[] {
++  const patch: JsonPatchOperation[] = [];
++  buildPatch(from, to, "", patch);
++  return patch;
++}
++
++function buildPatch(from: unknown, to: unknown, path: string, patch: JsonPatchOperation[]): void {
++  if (jsonEqual(from, to)) return;
++
++  if (isJsonObject(from) && isJsonObject(to)) {
++    const fromKeys = Object.keys(from).sort();
++    const toKeys = Object.keys(to).sort();
++    const toKeySet = new Set(toKeys);
++    const fromKeySet = new Set(fromKeys);
++
++    for (const key of fromKeys) {
++      if (!toKeySet.has(key)) patch.push({ op: "remove", path: `${path}/${encodeToken(key)}` });
++    }
++    for (const key of toKeys) {
++      const childPath = `${path}/${encodeToken(key)}`;
++      if (!fromKeySet.has(key)) {
++        patch.push({ op: "add", path: childPath, value: cloneJson(to[key]) });
++      } else {
++        buildPatch(from[key], to[key], childPath, patch);
++      }
++    }
++    return;
++  }
++
++  if (Array.isArray(from) && Array.isArray(to)) {
++    buildArrayPatch(from, to, path, patch);
++    return;
++  }
++
++  patch.push({ op: "replace", path, value: cloneJson(to) });
++}
++
++function buildArrayPatch(from: unknown[], to: unknown[], path: string, patch: JsonPatchOperation[]): void {
++  // Keeping positional correspondence for equal-sized arrays lets nested edits
++  // remain small (for example, changing one field in an array element).
++  if (from.length === to.length) {
++    for (let index = 0; index < from.length; index += 1) {
++      buildPatch(from[index], to[index], `${path}/${index}`, patch);
++    }
++    return;
++  }
++
++  // For arrays whose length changed, retain the longest unchanged subsequence
++  // and express the rest as insertions and removals against the evolving array.
++  const lengths = Array.from({ length: from.length + 1 }, () => new Array<number>(to.length + 1).fill(0));
++  for (let i = from.length - 1; i >= 0; i -= 1) {
++    for (let j = to.length - 1; j >= 0; j -= 1) {
++      lengths[i][j] = jsonEqual(from[i], to[j])
++        ? lengths[i + 1][j + 1] + 1
++        : Math.max(lengths[i + 1][j], lengths[i][j + 1]);
++    }
++  }
++
++  let fromIndex = 0;
++  let toIndex = 0;
++  let currentIndex = 0;
++  while (fromIndex < from.length && toIndex < to.length) {
++    if (jsonEqual(from[fromIndex], to[toIndex])) {
++      fromIndex += 1;
++      toIndex += 1;
++      currentIndex += 1;
++    } else if (lengths[fromIndex + 1][toIndex] >= lengths[fromIndex][toIndex + 1]) {
++      patch.push({ op: "remove", path: `${path}/${currentIndex}` });
++      fromIndex += 1;
++    } else {
++      patch.push({ op: "add", path: `${path}/${currentIndex}`, value: cloneJson(to[toIndex]) });
++      toIndex += 1;
++      currentIndex += 1;
++    }
++  }
++  while (fromIndex < from.length) {
++    patch.push({ op: "remove", path: `${path}/${currentIndex}` });
++    fromIndex += 1;
++  }
++  while (toIndex < to.length) {
++    patch.push({ op: "add", path: `${path}/${currentIndex}`, value: cloneJson(to[toIndex]) });
++    toIndex += 1;
++    currentIndex += 1;
++  }
++}
++
++function isJsonObject(value: unknown): value is Record<string, unknown> {
++  return value !== null && typeof value === "object" && !Array.isArray(value);
++}
++
+ /**
+  * Apply an RFC 6902 JSON Patch to a JSON document without changing the input.
+  * Operations are applied in order. Array `add` accepts `-` to append; all

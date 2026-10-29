@@ -1,0 +1,174 @@
+diff --git a/README.md b/README.md
+index 606055d1e02a8cac266ef71cf0c97818ac9e00aa..a4c99e86b205318431ce6de11551780f46ab7a9e 100644
+--- a/README.md
++++ b/README.md
+@@ -25,7 +25,8 @@ The function throws when a pointer is malformed or does not identify a value in
+ `applyPatch(document, patch)` applies an [RFC 6902 JSON Patch](https://www.rfc-editor.org/rfc/rfc6902)
+ array and returns a new JSON document. It supports the standard `add`, `remove`, `replace`, `move`,
+ `copy`, and `test` operations. The input document is never mutated; invalid patches and unsuccessful
+-operations throw an error.
++operations throw an error. Inputs must be JSON values (rather than host-language objects or sparse
++arrays), and a failed operation leaves the supplied document unchanged.
+ 
+ ```ts
+ import { applyPatch } from "json-toolkit";
+diff --git a/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-3-plan.md b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-3-plan.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..1a48a4cf402fce81f8ed897b7bb0b7f85e1bb5e0
+--- /dev/null
++++ b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-3-plan.md
+@@ -0,0 +1,17 @@
++---
++id: sw-life-cycle-1-3-plan
++type: plan
++title: "RFC 6902 patch conformance"
++status: active
++workflow: "sw-life-cycle"
++phase: "1-3"
++element: ""
++parent: ""
++format: 1
++---
++
++<!-- plan body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
+diff --git a/docs/memory/task/task-003-rfc-6902-patch-conformance.md b/docs/memory/task/task-003-rfc-6902-patch-conformance.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..ab696e706e14612677860b7ca55d954d753ff9a7
+--- /dev/null
++++ b/docs/memory/task/task-003-rfc-6902-patch-conformance.md
+@@ -0,0 +1,13 @@
++---
++id: task-003-rfc-6902-patch-conformance
++type: task
++title: "RFC 6902 patch conformance"
++status: approved
++format: 1
++---
++
++<!-- task body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
+diff --git a/src/index.ts b/src/index.ts
+index 87f7c66f97100459d5d8c1c40befab8015d51aee..a77dc57dac2e76cd7235d4c256b746655f6b894b 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -66,8 +66,7 @@ function applyOperation(document: JsonValue, operation: unknown): JsonValue {
+     case "remove":
+       return removeValue(document, tokens, path).document;
+     case "replace":
+-      resolveTokens(document, tokens, path);
+-      return addValue(document, tokens, path, operationValue(members));
++      return replaceValue(document, tokens, path, operationValue(members));
+     case "copy": {
+       const from = operationFrom(members);
+       return addValue(document, tokens, path, cloneJsonValue(resolvePointer(document, from)));
+@@ -160,6 +159,31 @@ function removeValue(document: JsonValue, tokens: string[], path: string): { doc
+   throw new Error(`JSON Patch path does not identify a container: ${path}`);
+ }
+ 
++function replaceValue(document: JsonValue, tokens: string[], path: string, value: JsonValue): JsonValue {
++  if (tokens.length === 0) {
++    return value;
++  }
++
++  const parent = resolveTokens(document, tokens.slice(0, -1), path);
++  const token = tokens[tokens.length - 1]!;
++  if (Array.isArray(parent)) {
++    const index = parseArrayIndex(token);
++    if (index >= parent.length) {
++      throw new Error(`JSON Pointer array index is out of bounds: ${token}`);
++    }
++    parent[index] = value;
++    return document;
++  }
++  if (isJsonObject(parent)) {
++    if (!hasOwn(parent, token)) {
++      throw new Error(`JSON Pointer does not resolve: ${path}`);
++    }
++    setObjectMember(parent, token, value);
++    return document;
++  }
++  throw new Error(`JSON Patch path does not identify a container: ${path}`);
++}
++
+ function parsePointer(pointer: string): string[] {
+   if (typeof pointer !== "string") {
+     throw new Error("A JSON Pointer must be a string.");
+@@ -270,7 +294,14 @@ function cloneJsonValue(value: unknown, ancestors = new Set<object>()): JsonValu
+   ancestors.add(value);
+   let copy: JsonValue;
+   if (Array.isArray(value)) {
+-    copy = value.map((item) => cloneJsonValue(item, ancestors));
++    const arrayCopy: JsonValue[] = [];
++    for (let index = 0; index < value.length; index += 1) {
++      if (!hasOwn(value, String(index))) {
++        throw new Error("Expected a valid JSON array without missing elements.");
++      }
++      arrayCopy.push(cloneJsonValue(value[index], ancestors));
++    }
++    copy = arrayCopy;
+   } else if (isJsonObject(value)) {
+     const objectCopy: { [key: string]: JsonValue } = {};
+     for (const key of Object.keys(value)) {
+@@ -285,7 +316,11 @@ function cloneJsonValue(value: unknown, ancestors = new Set<object>()): JsonValu
+ }
+ 
+ function isJsonObject(value: unknown): value is { [key: string]: JsonValue } {
+-  return value !== null && typeof value === "object" && !Array.isArray(value);
++  if (value === null || typeof value !== "object" || Array.isArray(value)) {
++    return false;
++  }
++  const prototype = Object.getPrototypeOf(value);
++  return prototype === Object.prototype || prototype === null;
+ }
+ 
+ function hasOwn(value: object, key: string): boolean {
+diff --git a/test/index.test.mjs b/test/index.test.mjs
+index f638e3ad456d6c3189aa1a097899cdf3fcbda47f..6aae681f115b3981be2936f704c307dba2e17ea0 100644
+--- a/test/index.test.mjs
++++ b/test/index.test.mjs
+@@ -73,6 +73,14 @@ test("supports escaped paths and replacing the document root", () => {
+   assert.deepEqual(result, ["replacement"]);
+ });
+ 
++test("replaces an array element instead of inserting beside it", () => {
++  const result = applyPatch(["foo", "sil"], [
++    { op: "replace", path: "/1", value: ["bar", "baz"] },
++  ]);
++
++  assert.deepEqual(result, ["foo", ["bar", "baz"]]);
++});
++
+ test("rejects invalid patches and failed operations without modifying the input", () => {
+   const document = { array: ["one"] };
+ 
+@@ -84,3 +92,23 @@ test("rejects invalid patches and failed operations without modifying the input"
+   assert.throws(() => applyPatch(document, [{ op: "test", path: "/array/0", value: "two" }]));
+   assert.deepEqual(document, { array: ["one"] });
+ });
++
++test("rejects values that are not JSON and sparse JSON arrays", () => {
++  const sparseArray = ["present"];
++  sparseArray.length = 2;
++
++  assert.throws(() => applyPatch(new Date(), []));
++  assert.throws(() => applyPatch({}, [{ op: "add", path: "/value", value: new Date() }]));
++  assert.throws(() => applyPatch(sparseArray, []));
++});
++
++test("leaves the supplied document unchanged when a later operation fails", () => {
++  const document = { value: 1 };
++
++  assert.throws(() => applyPatch(document, [
++    { op: "replace", path: "/value", value: 2 },
++    { op: "test", path: "/value", value: 3 },
++  ]));
++
++  assert.deepEqual(document, { value: 1 });
++});

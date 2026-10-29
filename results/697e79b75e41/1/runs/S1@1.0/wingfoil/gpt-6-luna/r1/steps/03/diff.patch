@@ -1,0 +1,237 @@
+diff --git a/README.md b/README.md
+index 470e627435bda0047e58b9f2b18b544c6c9eef8e..ab57cad2e8bf7d9dc8c08057cd980f6fb1f17b2c 100644
+--- a/README.md
++++ b/README.md
+@@ -17,5 +17,7 @@ references that do not exist.
+ `applyPatch(document, patch)` applies an [RFC 6902 JSON Patch](https://www.rfc-editor.org/rfc/rfc6902)
+ array and returns the resulting JSON value without changing the input document. It supports
+ `add`, `remove`, `replace`, `move`, `copy` and `test`; malformed operations and operations
+-that cannot be applied throw an error. Operation paths and `from` values use RFC 6901 JSON
+-Pointers.
++that cannot be applied throw an error. If any operation fails, no result is returned and the input
++document remains unchanged. The document and patch must be representable as JSON values. Operation
++paths and `from` values use RFC 6901 JSON Pointers; unrecognized operation members are ignored as
++RFC 6902 requires.
+diff --git a/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-3-plan.md b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-3-plan.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..fc7ab6b95340c61c84f1b37a97d2e69b94fb89e5
+--- /dev/null
++++ b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-3-plan.md
+@@ -0,0 +1,20 @@
++---
++id: sw-life-cycle-1-3-plan
++type: plan
++title: "Conform applyPatch to RFC 6902"
++status: active
++workflow: "sw-life-cycle"
++phase: "1-3"
++element: ""
++parent: ""
++format: 1
++---
++
++# Delivery record
++
++Updated `applyPatch` to honor RFC 6902 operation member rules, post-removal move destinations,
++single-token parent pointers, JSON number equality, and the JSON data model. Failed patches leave
++the caller's input unchanged. Added regression coverage for successful operations, pointer and array
++edge cases, invalid operations and values, and failure atomicity. Updated the README behavior notes.
++
++Verification: `npm test` passes all six focused tests; `git diff --check` is clean.
+diff --git a/docs/memory/task/task-003-conform-applypatch-to-rfc-6902.md b/docs/memory/task/task-003-conform-applypatch-to-rfc-6902.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..aa20f27cb9891fd6613b19d1f40437659ce67716
+--- /dev/null
++++ b/docs/memory/task/task-003-conform-applypatch-to-rfc-6902.md
+@@ -0,0 +1,13 @@
++---
++id: task-003-conform-applypatch-to-rfc-6902
++type: task
++title: "Conform applyPatch to RFC 6902"
++status: approved
++format: 1
++---
++
++<!-- task body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
+diff --git a/package.json b/package.json
+index 5f1f12a7edbf25e1ade5481dc7f359ede03d0df5..b83dba113c0e09271e9782db88d8577cce8a9bb8 100644
+--- a/package.json
++++ b/package.json
+@@ -5,6 +5,6 @@
+   "description": "Building blocks for services that store, exchange and update JSON documents.",
+   "type": "module",
+   "scripts": {
+-    "test": "node --test"
++    "test": "node --experimental-strip-types --test"
+   }
+ }
+diff --git a/src/index.ts b/src/index.ts
+index 005ddba760260affa5fab3fff86683478d4ece86..ee7f652f456f1eb0dcc2e5b87fc37ad16be0ead4 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -51,9 +51,13 @@ export function resolvePointer(document: unknown, pointer: string): unknown {
+ export function applyPatch(document: unknown, patch: unknown): unknown {
+   if (!Array.isArray(patch)) throw new TypeError("JSON Patch must be an array");
+   let result = cloneJson(document);
+-  for (const item of patch) {
++  const operations = cloneJson(patch) as unknown[];
++  for (const item of operations) {
+     if (item === null || typeof item !== "object" || Array.isArray(item)) throw new TypeError("JSON Patch operation must be an object");
+     const operation = item as Record<string, unknown>;
++    if (!Object.prototype.hasOwnProperty.call(operation, "op") || !Object.prototype.hasOwnProperty.call(operation, "path")) {
++      throw new TypeError("Operation requires 'op' and 'path'");
++    }
+     const op = operation.op;
+     const path = operation.path;
+     if (typeof op !== "string" || typeof path !== "string") throw new TypeError("Operation requires string 'op' and 'path'");
+@@ -80,11 +84,8 @@ export function applyPatch(document: unknown, patch: unknown): unknown {
+         const from = parseFrom(operation);
+         const fromTokens = parsePointer(from);
+         if (tokens.length > fromTokens.length && fromTokens.every((token, i) => token === tokens[i])) throw new Error("Cannot move a value into its child");
+-        const value = resolvePointer(result, from);
+-        if (from !== path) {
+-          result = removeAt(result, fromTokens).document;
+-          result = addAt(result, tokens, value);
+-        }
++        const removed = removeAt(result, fromTokens);
++        result = addAt(removed.document, tokens, removed.value);
+         break;
+       }
+       case "test":
+@@ -116,7 +117,7 @@ function requireMember(operation: Record<string, unknown>, name: string): void {
+ 
+ function addAt(document: unknown, tokens: string[], value: unknown, replace = false): unknown {
+   if (tokens.length === 0) return value;
+-  const parentPath = `/${tokens.slice(0, -1).map(encodeToken).join("/")}`;
++  const parentPath = pointerFromTokens(tokens.slice(0, -1));
+   const parent = resolvePointer(document, parentPath);
+   const token = tokens[tokens.length - 1];
+   if (Array.isArray(parent)) {
+@@ -132,7 +133,7 @@ function addAt(document: unknown, tokens: string[], value: unknown, replace = fa
+ 
+ function removeAt(document: unknown, tokens: string[]): { document: unknown; value: unknown } {
+   if (tokens.length === 0) return { document: undefined, value: document };
+-  const parent = resolvePointer(document, `/${tokens.slice(0, -1).map(encodeToken).join("/")}`);
++  const parent = resolvePointer(document, pointerFromTokens(tokens.slice(0, -1)));
+   const token = tokens[tokens.length - 1];
+   if (Array.isArray(parent)) {
+     const index = patchArrayIndex(token, parent.length, false);
+@@ -155,18 +156,45 @@ function patchArrayIndex(token: string, length: number, allowEnd: boolean): numb
+ 
+ function encodeToken(token: string): string { return token.replace(/~/g, "~0").replace(/\//g, "~1"); }
+ 
+-function cloneJson(value: unknown): unknown {
+-  if (Array.isArray(value)) return value.map(cloneJson);
+-  if (value !== null && typeof value === "object") {
++function pointerFromTokens(tokens: string[]): string {
++  return tokens.length === 0 ? "" : `/${tokens.map(encodeToken).join("/")}`;
++}
++
++function cloneJson(value: unknown, ancestors = new Set<object>()): unknown {
++  if (value === null || typeof value === "string" || typeof value === "boolean") return value;
++  if (typeof value === "number") {
++    if (!Number.isFinite(value)) throw new TypeError("JSON values cannot contain non-finite numbers");
++    return value;
++  }
++  if (Array.isArray(value) || (value !== null && typeof value === "object")) {
++    if (ancestors.has(value)) throw new TypeError("JSON values cannot contain cycles");
++    ancestors.add(value);
++    if (Array.isArray(value)) {
++      const copy: unknown[] = [];
++      for (let i = 0; i < value.length; i++) {
++        if (!Object.prototype.hasOwnProperty.call(value, i)) throw new TypeError("JSON arrays cannot contain holes");
++        copy.push(cloneJson(value[i], ancestors));
++      }
++      ancestors.delete(value);
++      return copy;
++    }
++    const prototype = Object.getPrototypeOf(value);
++    if (prototype !== Object.prototype && prototype !== null) throw new TypeError("JSON objects must be plain objects");
++    if (Object.getOwnPropertySymbols(value).length !== 0) throw new TypeError("JSON objects cannot contain symbol members");
+     const copy: Record<string, unknown> = {};
+-    for (const key of Object.keys(value)) Object.defineProperty(copy, key, { value: cloneJson((value as Record<string, unknown>)[key]), enumerable: true, configurable: true, writable: true });
++    for (const key of Object.keys(value)) {
++      const descriptor = Object.getOwnPropertyDescriptor(value, key)!;
++      if (!("value" in descriptor)) throw new TypeError("JSON objects cannot contain accessor members");
++      Object.defineProperty(copy, key, { value: cloneJson(descriptor.value, ancestors), enumerable: true, configurable: true, writable: true });
++    }
++    ancestors.delete(value);
+     return copy;
+   }
+-  return value;
++  throw new TypeError("Value is not representable as JSON");
+ }
+ 
+ function jsonEqual(a: unknown, b: unknown): boolean {
+-  if (Object.is(a, b)) return true;
++  if (a === b) return true;
+   if (a === null || b === null || typeof a !== "object" || typeof b !== "object") return false;
+   if (Array.isArray(a) || Array.isArray(b)) return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((v, i) => jsonEqual(v, b[i]));
+   const ak = Object.keys(a), bk = Object.keys(b);
+diff --git a/test/apply-patch.test.js b/test/apply-patch.test.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..a2abd31ab722d9e8a179483a5797b013b53b6918
+--- /dev/null
++++ b/test/apply-patch.test.js
+@@ -0,0 +1,57 @@
++import test from "node:test";
++import assert from "node:assert/strict";
++import { applyPatch } from "../src/index.ts";
++
++test("applies all RFC 6902 operations and ignores undefined operation members", () => {
++  const input = { a: [1, 2], b: { value: true } };
++  const result = applyPatch(input, [
++    { op: "add", path: "/a/1", value: 3, ignored: "member" },
++    { op: "copy", from: "/b", path: "/c" },
++    { op: "move", from: "/a/0", path: "/a/2" },
++    { op: "replace", path: "/c/value", value: false },
++    { op: "test", path: "/a", value: [3, 2, 1] },
++    { op: "remove", path: "/b" },
++  ]);
++  assert.deepEqual(result, { a: [3, 2, 1], c: { value: false } });
++  assert.deepEqual(input, { a: [1, 2], b: { value: true } });
++});
++
++test("move evaluates its destination after removing the source", () => {
++  assert.deepEqual(applyPatch(["a", "b", "c"], [{ op: "move", from: "/0", path: "/2" }]), ["b", "c", "a"]);
++});
++
++test("supports root replacement, array append, escaped keys, and numeric equality", () => {
++  const root = applyPatch({ "a/b~c": 1 }, [{ op: "replace", path: "", value: [] }, { op: "add", path: "/-", value: 1 }]);
++  assert.deepEqual(root, [1]);
++  assert.deepEqual(applyPatch({ n: 1 }, [{ op: "test", path: "/n", value: 1.0 }]), { n: 1 });
++  assert.deepEqual(applyPatch({ n: -0 }, [{ op: "test", path: "/n", value: 0 }]), { n: -0 });
++  assert.deepEqual(applyPatch({ "a/b~c": 1 }, [{ op: "test", path: "/a~1b~0c", value: 1 }]), { "a/b~c": 1 });
++});
++
++test("rejects invalid operations, invalid required members, and invalid array locations", () => {
++  for (const patch of [
++    [{ op: "add", path: "/x" }],
++    [{ op: "remove", path: "/missing" }],
++    [{ op: "replace", path: "/missing", value: 1 }],
++    [{ op: "add", path: "/a/3", value: 1 }],
++    [{ op: "add", path: "/a/-", value: 1 }, { op: "remove", path: "/a/-" }],
++    [{ op: "move", from: "/a", path: "/a/b" }],
++    [{ op: "wat", path: "/x" }],
++  ]) assert.throws(() => applyPatch({ a: [1, 2] }, patch));
++});
++
++test("failed patches do not change the input document", () => {
++  const input = { value: 1 };
++  assert.throws(() => applyPatch(input, [
++    { op: "replace", path: "/value", value: 2 },
++    { op: "test", path: "/value", value: 3 },
++  ]));
++  assert.deepEqual(input, { value: 1 });
++});
++
++test("rejects values outside the JSON data model", () => {
++  assert.throws(() => applyPatch({ value: undefined }, []));
++  assert.throws(() => applyPatch({}, [{ op: "add", path: "/x", value: Infinity }]));
++  const cyclic = {}; cyclic.self = cyclic;
++  assert.throws(() => applyPatch(cyclic, []));
++});

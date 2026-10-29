@@ -1,0 +1,148 @@
+diff --git a/README.md b/README.md
+index 2afef0ce968cd8b807662c117de952c403c14d41..ff649ace46f0430d7890b6e12f24e7ffd5941d9a 100644
+--- a/README.md
++++ b/README.md
+@@ -17,4 +17,5 @@ does not designate a value in the document.
+ Applies an [RFC 6902 JSON Patch](https://www.rfc-editor.org/rfc/rfc6902) document and returns an
+ updated copy of the JSON document. The original document is never mutated. The patch may use `add`,
+ `remove`, `replace`, `move`, `copy`, and `test`; malformed patches and unsuccessful operations throw
+-an error.
++an error. Both inputs must contain only JSON values (null, booleans, finite numbers, strings, arrays,
++and objects); non-JSON JavaScript values and cyclic structures are rejected.
+diff --git a/src/index.ts b/src/index.ts
+index 25fca93aa32a037c0e8ccb02d9a401a0ca4f0864..2a928a38f2959ee6b6e54dc5cba748ffb0c3ec1b 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -35,9 +35,12 @@ export function applyPatch(document: unknown, patch: unknown): unknown {
+     throw new TypeError("A JSON Patch must be an array of operations.");
+   }
+ 
++  assertJsonValue(document, "The document");
++  assertJsonValue(patch, "A JSON Patch");
++  const operations = patch.map(parseOperation);
+   let result = cloneJsonValue(document);
+ 
+-  for (const operation of patch) {
++  for (const operation of operations) {
+     result = applyOperation(result, operation);
+   }
+ 
+@@ -51,24 +54,22 @@ type Operation = {
+   value?: unknown;
+ };
+ 
+-function applyOperation(document: unknown, operation: unknown): unknown {
+-  const parsedOperation = parseOperation(operation);
+-
+-  switch (parsedOperation.op) {
++function applyOperation(document: unknown, operation: Required<Operation>): unknown {
++  switch (operation.op) {
+     case "add":
+-      return addValue(document, parsedOperation.path, cloneJsonValue(parsedOperation.value));
++      return addValue(document, operation.path, cloneJsonValue(operation.value));
+     case "remove":
+-      return removeValue(document, parsedOperation.path).document;
++      return removeValue(document, operation.path).document;
+     case "replace":
+-      getValue(document, parsedOperation.path);
+-      return addValue(document, parsedOperation.path, cloneJsonValue(parsedOperation.value), true);
++      getValue(document, operation.path);
++      return addValue(document, operation.path, cloneJsonValue(operation.value), true);
+     case "move":
+-      return moveValue(document, parsedOperation.from, parsedOperation.path);
++      return moveValue(document, operation.from, operation.path);
+     case "copy":
+-      return addValue(document, parsedOperation.path, cloneJsonValue(getValue(document, parsedOperation.from)));
++      return addValue(document, operation.path, cloneJsonValue(getValue(document, operation.from)));
+     case "test":
+-      if (!jsonEquals(getValue(document, parsedOperation.path), parsedOperation.value)) {
+-        throw new Error(`JSON Patch test operation failed at path: ${parsedOperation.path}`);
++      if (!jsonEquals(getValue(document, operation.path), operation.value)) {
++        throw new Error(`JSON Patch test operation failed at path: ${operation.path}`);
+       }
+       return document;
+     default:
+@@ -224,6 +225,46 @@ function cloneJsonValue(value: unknown): unknown {
+   return value;
+ }
+ 
++function assertJsonValue(value: unknown, subject: string, ancestors = new WeakSet<object>()): void {
++  if (value === null || typeof value === "string" || typeof value === "boolean") {
++    return;
++  }
++  if (typeof value === "number") {
++    if (Number.isFinite(value)) {
++      return;
++    }
++    throw new TypeError(`${subject} must contain only JSON values.`);
++  }
++  if (typeof value !== "object") {
++    throw new TypeError(`${subject} must contain only JSON values.`);
++  }
++  if (ancestors.has(value)) {
++    throw new TypeError(`${subject} must not contain a cycle.`);
++  }
++
++  ancestors.add(value);
++  if (Array.isArray(value)) {
++    if (Object.keys(value).length !== value.length) {
++      throw new TypeError(`${subject} must contain only JSON values.`);
++    }
++    for (let index = 0; index < value.length; index += 1) {
++      if (!Object.hasOwn(value, index)) {
++        throw new TypeError(`${subject} must contain only JSON values.`);
++      }
++      assertJsonValue(value[index], subject, ancestors);
++    }
++  } else {
++    const prototype = Object.getPrototypeOf(value);
++    if (prototype !== Object.prototype && prototype !== null) {
++      throw new TypeError(`${subject} must contain only JSON values.`);
++    }
++    for (const key of Object.keys(value)) {
++      assertJsonValue((value as Record<string, unknown>)[key], subject, ancestors);
++    }
++  }
++  ancestors.delete(value);
++}
++
+ function jsonEquals(left: unknown, right: unknown): boolean {
+   if (left === right) {
+     return true;
+diff --git a/test/index.test.ts b/test/index.test.ts
+index 2aed4c4bf4e95999e289db456cf694029b372497..7ac4179e335c8c6920c09e928f7b4eaea301b10c 100644
+--- a/test/index.test.ts
++++ b/test/index.test.ts
+@@ -102,3 +102,32 @@ test("rejects malformed patches and operations that cannot be applied", () => {
+     assert.throws(() => applyPatch({ a: { b: 1 }, items: [] }, patch));
+   }
+ });
++
++test("rejects values that are not JSON before applying a patch", () => {
++  const cyclic: { self?: unknown } = {};
++  cyclic.self = cyclic;
++
++  for (const [document, patch] of [
++    [undefined, []],
++    [{ value: Infinity }, []],
++    [{ value: new Date() }, []],
++    [{ value: 1 }, [{ op: "add", path: "/new", value: undefined }]],
++    [{ value: 1 }, [{ op: "test", path: "/value", value: Number.NaN }]],
++    [{ value: 1 }, [{ op: "add", path: "/new", value: cyclic }]],
++  ] as const) {
++    assert.throws(() => applyPatch(document, patch));
++  }
++});
++
++test("leaves the input document unchanged when a later operation fails", () => {
++  const original = { status: "draft", items: [1] };
++
++  assert.throws(() =>
++    applyPatch(original, [
++      { op: "replace", path: "/status", value: "published" },
++      { op: "test", path: "/items/0", value: 2 },
++    ]),
++  );
++
++  assert.deepEqual(original, { status: "draft", items: [1] });
++});

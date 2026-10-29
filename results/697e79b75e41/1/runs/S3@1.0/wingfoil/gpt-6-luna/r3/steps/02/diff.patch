@@ -1,0 +1,114 @@
+diff --git a/README.md b/README.md
+index 783515fbf8eba5b9af028365f12a781c6285a7a6..c59e34d12474aa0a2ef17af5be21019d511d451c 100644
+--- a/README.md
++++ b/README.md
+@@ -8,9 +8,11 @@ of its booking desk, written in TypeScript with no runtime dependency.
+ 
+ `createRentalService()` from `src/index.ts` creates an in-memory service. Add boards or sails with
+ `addEquipment({ id, kind, dailyPrice })`, where `dailyPrice` is an integer number of euro cents.
+-Use `quote({ itemId, start, end })` to price a rental and `book(...)` to reserve it. Periods use
+-ISO-8601 UTC timestamps at midnight; `end` is exclusive and must be the midnight after the last
+-rental day. A single item cannot have overlapping bookings. Bookings are held only in memory.
++Use `quote({ itemId, start, end })` to price a rental, `book(...)` to reserve it, and
++`availability({ start, end, kind? })` to list sorted equipment IDs free for the entire period. When
++`kind` is supplied, only that equipment category is included; otherwise all categories are considered.
++Periods use ISO-8601 UTC timestamps at midnight; `end` is exclusive and must be the midnight after the
++last rental day. A single item cannot have overlapping bookings. Bookings are held only in memory.
+ 
+ The future cancellation policy is full refund at least 24 hours before a booking starts and no refund
+ when cancelled less than 24 hours before start. Cancellation is not currently implemented.
+diff --git a/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-2-plan.md b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-2-plan.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..a5154a66d27306b1d6c535e3218daa849be7393c
+--- /dev/null
++++ b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-2-plan.md
+@@ -0,0 +1,17 @@
++---
++id: sw-life-cycle-1-2-plan
++type: plan
++title: "Add rental availability query"
++status: active
++workflow: "sw-life-cycle"
++phase: "1-2"
++element: ""
++parent: ""
++format: 1
++---
++
++<!-- plan body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
+diff --git a/docs/memory/task/task-002-add-rental-availability-query.md b/docs/memory/task/task-002-add-rental-availability-query.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..341b6236d107303fe0ab60059418c934822a378a
+--- /dev/null
++++ b/docs/memory/task/task-002-add-rental-availability-query.md
+@@ -0,0 +1,9 @@
++---
++id: task-002-add-rental-availability-query
++type: task
++title: "Add rental availability query"
++status: approved
++format: 1
++---
++
++Add `availability({ start, end, kind? })` to the rental service. It returns the sorted equipment IDs whose kind matches the optional filter and which have no booking overlapping the full exclusive-end UTC period. Validate the period using the service's existing UTC-midnight rules. Document the API and implement it alongside the existing in-memory equipment and bookings.
+diff --git a/src/index.ts b/src/index.ts
+index af3bdbf7c7bcb74bfec71da9a1abe8077a38b23e..5b6396aa06a7fc8676f08ff6a0bbe06ada96910f 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -15,6 +15,13 @@ export interface RentalRequest {
+   end: string;
+ }
+ 
++/** A period and optional equipment category to check for availability. */
++export interface AvailabilityQuery {
++  start: string;
++  end: string;
++  kind?: EquipmentKind;
++}
++
+ /** A rental period priced in euro cents. */
+ export interface RentalQuote extends RentalRequest {
+   total: number;
+@@ -33,6 +40,8 @@ export interface RentalService {
+   quote(request: RentalRequest): RentalQuote;
+   /** Reserve a valid, available period and return its booking details. */
+   book(request: RentalRequest): RentalBooking;
++  /** Return sorted equipment IDs available for the full exclusive-end period. */
++  availability(query: AvailabilityQuery): string[];
+ }
+ 
+ const DAY_MS = 24 * 60 * 60 * 1000;
+@@ -116,5 +125,29 @@ export function createRentalService(): RentalService {
+       bookings.push(booking);
+       return { ...booking };
+     },
++
++    availability(query) {
++      if (typeof query?.start !== 'string' || typeof query.end !== 'string') {
++        throw new Error('Rental period must use ISO-8601 UTC strings');
++      }
++      if (query.kind !== undefined && query.kind !== 'board' && query.kind !== 'sail') {
++        throw new Error("Equipment kind must be 'board' or 'sail'");
++      }
++
++      const start = parseMidnight(query.start, 'start');
++      const end = parseMidnight(query.end, 'end');
++      if (end <= start) throw new Error('end must be after start');
++
++      return [...equipment.values()]
++        .filter((item) =>
++          (query.kind === undefined || item.kind === query.kind) &&
++          !bookings.some((booking) =>
++            booking.itemId === item.id &&
++            start < Date.parse(booking.end) && end > Date.parse(booking.start),
++          ),
++        )
++        .map((item) => item.id)
++        .sort();
++    },
+   };
+ }

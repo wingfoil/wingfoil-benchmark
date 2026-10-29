@@ -1,0 +1,128 @@
+diff --git a/README.md b/README.md
+index ce9aadaffc9e0ec5253dc8820622a7e364c22fac..46815764105e8d9403bbe07372cb0d0b710fc539 100644
+--- a/README.md
++++ b/README.md
+@@ -29,3 +29,11 @@ objects whose members appear in a different order.
+ and returns the resulting JSON value without changing either input. Object patches recursively merge
+ with object targets (or an empty object for other targets); a `null` patch member removes that member.
+ Arrays and other non-object patches replace the target value entirely. Both inputs must be valid JSON values.
++
++## Creating JSON Patch diffs
++
++`createPatch(from, to)` returns an [RFC 6902 JSON Patch](https://www.rfc-editor.org/rfc/rfc6902)
++that transforms `from` into `to` without changing either input. It recursively compares object
++members and identifies unchanged array prefixes and suffixes, so unchanged portions are omitted
++from the patch. Changed values are represented with `replace`, while added and removed object
++members use `add` and `remove`. Both inputs must be valid JSON values.
+diff --git a/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-5-plan.md b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-5-plan.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..210ef7af2354b26c4dd226c759ed0adda0739a10
+--- /dev/null
++++ b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-5-plan.md
+@@ -0,0 +1,17 @@
++---
++id: sw-life-cycle-1-5-plan
++type: plan
++title: "Create JSON Patch diffs"
++status: active
++workflow: "sw-life-cycle"
++phase: "1-5"
++element: ""
++parent: ""
++format: 1
++---
++
++<!-- plan body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
+diff --git a/docs/memory/task/task-005-create-json-patch-diffs.md b/docs/memory/task/task-005-create-json-patch-diffs.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..bf8cd81d857f206c3c7d7394202a539270680228
+--- /dev/null
++++ b/docs/memory/task/task-005-create-json-patch-diffs.md
+@@ -0,0 +1,12 @@
++---
++id: task-005-create-json-patch-diffs
++type: task
++title: "Create JSON Patch diffs"
++status: pending
++format: 1
++---
++
++Export `createPatch(from, to)` from `src/index.ts`. It must return an RFC 6902 JSON Patch that
++transforms `from` into `to`, describe only the changes rather than replacing the whole document
++when a smaller patch is possible, and leave both inputs unchanged. Document the public API and add
++coverage for representative object, array, and edge cases.
+diff --git a/src/index.ts b/src/index.ts
+index d75d07fbdf7e4181c3c1f353ac90c54fab05bbc2..e1a03f2b46efda0e4ac0caa58cd0a65310d5efaf 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -59,6 +59,66 @@ type PatchOperation = {
+   value?: unknown;
+ };
+ 
++type JsonPatchOperation =
++  | { op: "add" | "replace"; path: string; value: unknown }
++  | { op: "remove"; path: string };
++
++/**
++ * Creates a minimal structural RFC 6902 JSON Patch that transforms `from` into `to`.
++ * Objects are diffed by member and arrays by their common prefix and suffix; values
++ * that differ as scalars or at the root are replaced. Inputs are validated and never changed.
++ *
++ * @param from The original JSON value.
++ * @param to The desired JSON value.
++ * @returns An RFC 6902 patch containing only changed members or values.
++ * @throws TypeError if either input is not a valid JSON value.
++ */
++export function createPatch(from: unknown, to: unknown): JsonPatchOperation[] {
++  assertJsonValue(from, "from");
++  assertJsonValue(to, "to");
++  const patch: JsonPatchOperation[] = [];
++  diffJson(from, to, "", patch);
++  return patch;
++}
++
++function diffJson(from: unknown, to: unknown, path: string, patch: JsonPatchOperation[]): void {
++  if (jsonEqual(from, to)) return;
++  if (isObject(from) && isObject(to)) {
++    for (const key of Object.keys(from).sort()) {
++      if (!Object.hasOwn(to, key)) patch.push({ op: "remove", path: `${path}/${encodeToken(key)}` });
++    }
++    for (const key of Object.keys(to).sort()) {
++      const childPath = `${path}/${encodeToken(key)}`;
++      if (!Object.hasOwn(from, key)) patch.push({ op: "add", path: childPath, value: cloneJson(to[key]) });
++      else diffJson(from[key], to[key], childPath, patch);
++    }
++    return;
++  }
++  if (Array.isArray(from) && Array.isArray(to)) {
++    let prefix = 0;
++    while (prefix < from.length && prefix < to.length && jsonEqual(from[prefix], to[prefix])) prefix++;
++    let suffix = 0;
++    while (suffix < from.length - prefix && suffix < to.length - prefix &&
++      jsonEqual(from[from.length - 1 - suffix], to[to.length - 1 - suffix])) suffix++;
++    const fromMiddle = from.length - prefix - suffix;
++    const toMiddle = to.length - prefix - suffix;
++    const overlap = Math.min(fromMiddle, toMiddle);
++    for (let i = 0; i < overlap; i++) diffJson(from[prefix + i], to[prefix + i], `${path}/${prefix + i}`, patch);
++    for (let i = fromMiddle - 1; i >= overlap; i--) {
++      patch.push({ op: "remove", path: `${path}/${prefix + i}` });
++    }
++    for (let i = overlap; i < toMiddle; i++) {
++      patch.push({ op: "add", path: `${path}/${prefix + i}`, value: cloneJson(to[prefix + i]) });
++    }
++    return;
++  }
++  patch.push({ op: "replace", path, value: cloneJson(to) });
++}
++
++function encodeToken(token: string): string {
++  return token.replace(/~/g, "~0").replace(/\//g, "~1");
++}
++
+ /**
+  * Applies an RFC 6902 JSON Patch to a JSON document without changing the input.
+  * Supported operations are add, remove, replace, move, copy and test.

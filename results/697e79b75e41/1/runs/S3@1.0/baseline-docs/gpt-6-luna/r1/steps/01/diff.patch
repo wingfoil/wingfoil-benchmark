@@ -1,0 +1,130 @@
+diff --git a/README.md b/README.md
+index b5fe1b2a4feac926b16f4b55fd72f2bb6eb7b711..1e9abd45748ae50c456081a53283b4263c6be23b 100644
+--- a/README.md
++++ b/README.md
+@@ -3,3 +3,7 @@
+ The Lakeside Windsurf School teaches windsurfing on the lake from April to October, and rents boards and
+ sails to its students and to visitors who bring their own experience. This repository holds the software
+ of its booking desk, written in TypeScript with no runtime dependency.
++
++## Equipment rentals
++
++The `createRentalService()` API exported from `src/index.ts` provides an in-memory inventory and booking desk. Add boards or sails with a daily price in integer euro cents, then use `quote({ itemId, start, end })` to get the total or `book(...)` to reserve the equipment. Rental timestamps must be UTC ISO-8601 midnights. The end is exclusive and must be the midnight after the final rental day. A booking fails if that equipment is already booked during any part of the period. Each service instance starts with an empty inventory and booking list.
+diff --git a/src/index.ts b/src/index.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..c2d4c9f3fee85792a294b269b65a40d2d0354bb7
+--- /dev/null
++++ b/src/index.ts
+@@ -0,0 +1,2 @@
++export { createRentalService } from './rental-service.js';
++export type { RentalBooking, RentalEquipment, RentalQuote, RentalRequest, RentalService } from './rental-service.js';
+diff --git a/src/rental-service.ts b/src/rental-service.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..d4e155895e0b392e61a9e6ef0409a7640c217c19
+--- /dev/null
++++ b/src/rental-service.ts
+@@ -0,0 +1,104 @@
++/** Equipment available for rental. Prices are integer euro cents per day. */
++export interface RentalEquipment {
++  id: string;
++  kind: 'board' | 'sail';
++  dailyPrice: number;
++}
++
++/** A rental period uses UTC ISO-8601 timestamps at midnight, with end exclusive. */
++export interface RentalRequest {
++  itemId: string;
++  start: string;
++  end: string;
++}
++
++/** The cost of a rental request, in euro cents. */
++export interface RentalQuote extends RentalRequest {
++  total: number;
++}
++
++/** A confirmed rental booking, in euro cents. */
++export interface RentalBooking extends RentalQuote {
++  id: string;
++}
++
++/** In-memory rental inventory and bookings. */
++export interface RentalService {
++  /** Add equipment to the inventory. */
++  addEquipment(item: RentalEquipment): void;
++  /** Calculate the cost for a valid rental period. */
++  quote(request: RentalRequest): RentalQuote;
++  /** Book an available item for a valid rental period. */
++  book(request: RentalRequest): RentalBooking;
++}
++
++interface StoredBooking extends RentalBooking {
++  endTime: number;
++  startTime: number;
++}
++
++function utcMidnight(value: string, field: string): number {
++  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}T00:00:00(?:\.0+)?(?:Z|\+00:00)$/.test(value)) {
++    throw new Error(`${field} must be midnight UTC in ISO-8601 format`);
++  }
++  const time = Date.parse(value);
++  if (!Number.isFinite(time) || new Date(time).toISOString().slice(0, 10) !== value.slice(0, 10)) {
++    throw new Error(`${field} must be a valid UTC date`);
++  }
++  return time;
++}
++
++function validateRequest(request: RentalRequest): { startTime: number; endTime: number } {
++  if (!request || typeof request.itemId !== 'string' || request.itemId.length === 0) {
++    throw new Error('itemId must be a non-empty string');
++  }
++  const startTime = utcMidnight(request.start, 'start');
++  const endTime = utcMidnight(request.end, 'end');
++  if (endTime <= startTime) throw new Error('end must be after start');
++  return { startTime, endTime };
++}
++
++/** Create a rental service whose inventory and bookings live in memory. */
++export function createRentalService(): RentalService {
++  const equipment = new Map<string, RentalEquipment>();
++  const bookings = new Map<string, StoredBooking[]>();
++  let nextBookingId = 1;
++
++  function quote(request: RentalRequest): RentalQuote {
++    const { startTime, endTime } = validateRequest(request);
++    const item = equipment.get(request.itemId);
++    if (!item) throw new Error(`Unknown equipment: ${request.itemId}`);
++    const days = (endTime - startTime) / 86_400_000;
++    const total = item.dailyPrice * days;
++    if (!Number.isSafeInteger(total)) throw new Error('Rental total exceeds the safe integer range');
++    return { itemId: request.itemId, start: request.start, end: request.end, total };
++  }
++
++  return {
++    addEquipment(item): void {
++      if (!item || typeof item.id !== 'string' || item.id.length === 0) throw new Error('id must be a non-empty string');
++      if (item.kind !== 'board' && item.kind !== 'sail') throw new Error('kind must be board or sail');
++      if (!Number.isSafeInteger(item.dailyPrice) || item.dailyPrice < 0) throw new Error('dailyPrice must be a non-negative integer number of euro cents');
++      if (equipment.has(item.id)) throw new Error(`Equipment already exists: ${item.id}`);
++      equipment.set(item.id, { ...item });
++      bookings.set(item.id, []);
++    },
++    quote,
++    book(request): RentalBooking {
++      const amount = quote(request);
++      const { startTime, endTime } = validateRequest(request);
++      const itemBookings = bookings.get(request.itemId)!;
++      if (itemBookings.some((booking) => startTime < booking.endTime && booking.startTime < endTime)) {
++        throw new Error(`Equipment is not available for the requested period: ${request.itemId}`);
++      }
++      const booking: StoredBooking = {
++        id: `booking-${nextBookingId++}`,
++        ...amount,
++        startTime,
++        endTime,
++      };
++      itemBookings.push(booking);
++      return { id: booking.id, itemId: booking.itemId, start: booking.start, end: booking.end, total: booking.total };
++    },
++  };
++}

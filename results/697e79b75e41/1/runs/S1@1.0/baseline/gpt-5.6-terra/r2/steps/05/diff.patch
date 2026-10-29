@@ -1,0 +1,157 @@
+diff --git a/src/index.ts b/src/index.ts
+index 9de62784709ecec22599bbfae01389187011a870..6f9ded2a6d7f47198ab9b99124bd96d111bd4694 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -94,6 +94,152 @@ export function applyPatch(document: unknown, patch: unknown): unknown {
+   return result;
+ }
+ 
++/**
++ * Create an RFC 6902 JSON Patch that transforms `from` into `to`.
++ *
++ * The returned patch contains only operations for values that differ.  Object
++ * members are compared recursively and arrays preserve unchanged runs, so a
++ * change deep inside a document does not require replacing its containing
++ * object or array.  Neither input is modified.
++ *
++ * @throws {Error} If either input is not a JSON value.
++ */
++export function createPatch(from: unknown, to: unknown): Operation[] {
++  assertJsonValue(from, "The source JSON document");
++  assertJsonValue(to, "The target JSON document");
++
++  const patch: Operation[] = [];
++  createPatchAt(from, to, "", patch);
++  return patch;
++}
++
++function createPatchAt(from: unknown, to: unknown, path: string, patch: Operation[]): void {
++  if (jsonEqual(from, to)) return;
++
++  if (isObject(from) && isObject(to)) {
++    // Remove first so a member that disappears cannot affect the paths of any
++    // descendants we still need to visit.
++    for (const key of Object.keys(from)) {
++      if (!hasOwn(to, key)) {
++        patch.push({ op: "remove", path: appendPointer(path, key) });
++      }
++    }
++    for (const key of Object.keys(to)) {
++      const memberPath = appendPointer(path, key);
++      if (!hasOwn(from, key)) {
++        patch.push({ op: "add", path: memberPath, value: cloneJsonValue(to[key]) });
++      } else {
++        createPatchAt(from[key], to[key], memberPath, patch);
++      }
++    }
++    return;
++  }
++
++  if (Array.isArray(from) && Array.isArray(to)) {
++    createArrayPatch(from, to, path, patch);
++    return;
++  }
++
++  patch.push({ op: "replace", path, value: cloneJsonValue(to) });
++}
++
++function createArrayPatch(from: unknown[], to: unknown[], path: string, patch: Operation[]): void {
++  let prefix = 0;
++  while (prefix < from.length && prefix < to.length && jsonEqual(from[prefix], to[prefix])) {
++    prefix += 1;
++  }
++
++  let fromEnd = from.length;
++  let toEnd = to.length;
++  while (fromEnd > prefix && toEnd > prefix && jsonEqual(from[fromEnd - 1], to[toEnd - 1])) {
++    fromEnd -= 1;
++    toEnd -= 1;
++  }
++
++  const matches = longestCommonSubsequence(from, prefix, fromEnd, to, prefix, toEnd);
++  let fromCursor = prefix;
++  let toCursor = prefix;
++  let outputIndex = prefix;
++
++  for (const match of matches) {
++    outputIndex = createArrayGapPatch(
++      from, fromCursor, match.from, to, toCursor, match.to, path, outputIndex, patch,
++    );
++    // The matched value is already at the right position in the result.
++    fromCursor = match.from + 1;
++    toCursor = match.to + 1;
++    outputIndex += 1;
++  }
++
++  createArrayGapPatch(from, fromCursor, fromEnd, to, toCursor, toEnd, path, outputIndex, patch);
++}
++
++/** Diff two unmatched array ranges and return the next index in the output. */
++function createArrayGapPatch(
++  from: unknown[], fromStart: number, fromEnd: number,
++  to: unknown[], toStart: number, toEnd: number,
++  path: string, outputIndex: number, patch: Operation[],
++): number {
++  const commonLength = Math.min(fromEnd - fromStart, toEnd - toStart);
++  for (let offset = 0; offset < commonLength; offset += 1) {
++    createPatchAt(from[fromStart + offset], to[toStart + offset], appendPointer(path, String(outputIndex + offset)), patch);
++  }
++
++  // Removing at one index repeatedly accounts for the array closing up after
++  // every removal, as required by RFC 6902.
++  for (let index = fromStart + commonLength; index < fromEnd; index += 1) {
++    patch.push({ op: "remove", path: appendPointer(path, String(outputIndex + commonLength)) });
++  }
++  for (let index = toStart + commonLength; index < toEnd; index += 1) {
++    patch.push({ op: "add", path: appendPointer(path, String(outputIndex + commonLength)), value: cloneJsonValue(to[index]) });
++    outputIndex += 1;
++  }
++
++  return outputIndex + commonLength;
++}
++
++type ArrayMatch = { from: number; to: number };
++
++function longestCommonSubsequence(
++  from: unknown[], fromStart: number, fromEnd: number,
++  to: unknown[], toStart: number, toEnd: number,
++): ArrayMatch[] {
++  const fromLength = fromEnd - fromStart;
++  const toLength = toEnd - toStart;
++  // Avoid quadratic memory for unusually large, entirely changed arrays. The
++  // prefix/suffix work above still makes common single insertions inexpensive.
++  if (fromLength * toLength > 100_000) return [];
++
++  const lengths = Array.from({ length: fromLength + 1 }, () => new Uint32Array(toLength + 1));
++  for (let fromIndex = fromLength - 1; fromIndex >= 0; fromIndex -= 1) {
++    for (let toIndex = toLength - 1; toIndex >= 0; toIndex -= 1) {
++      lengths[fromIndex][toIndex] = jsonEqual(from[fromStart + fromIndex], to[toStart + toIndex])
++        ? lengths[fromIndex + 1][toIndex + 1] + 1
++        : Math.max(lengths[fromIndex + 1][toIndex], lengths[fromIndex][toIndex + 1]);
++    }
++  }
++
++  const matches: ArrayMatch[] = [];
++  let fromIndex = 0;
++  let toIndex = 0;
++  while (fromIndex < fromLength && toIndex < toLength) {
++    if (jsonEqual(from[fromStart + fromIndex], to[toStart + toIndex])) {
++      matches.push({ from: fromStart + fromIndex, to: toStart + toIndex });
++      fromIndex += 1;
++      toIndex += 1;
++    } else if (lengths[fromIndex + 1][toIndex] >= lengths[fromIndex][toIndex + 1]) {
++      fromIndex += 1;
++    } else {
++      toIndex += 1;
++    }
++  }
++  return matches;
++}
++
++function appendPointer(path: string, token: string): string {
++  return `${path}/${token.replace(/~/g, "~0").replace(/\//g, "~1")}`;
++}
++
+ /**
+  * Apply an RFC 7386 JSON Merge Patch without changing either supplied value.
+  *

@@ -1,0 +1,74 @@
+diff --git a/src/index.ts b/src/index.ts
+index 1f788754cba48bd3339c048b0a956c566c313082..0bb5fc96e9744de0f3a3a388fce1c38e64c35dd2 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -57,6 +57,11 @@ type PatchOperation = Record<string, unknown>;
+ 
+ /** Applies an RFC 6902 JSON Patch without changing the supplied document. */
+ export function applyPatch(document: unknown, patch: unknown): unknown {
++  // JSON Patch operates on JSON values. Checking up front also prevents values
++  // that cannot occur in a JSON document (such as undefined or cyclic objects)
++  // from producing JavaScript-specific patch results.
++  assertJson(document);
++  assertJson(patch);
+   if (!Array.isArray(patch)) {
+     throw new Error("JSON Patch must be an array");
+   }
+@@ -67,8 +72,8 @@ export function applyPatch(document: unknown, patch: unknown): unknown {
+       throw new Error("JSON Patch operation must be an object");
+     }
+     const operation = rawOperation as PatchOperation;
+-    if (typeof operation.op !== "string") throw new Error("JSON Patch operation must have a string 'op'");
+-    if (typeof operation.path !== "string") throw new Error("JSON Patch operation must have a string 'path'");
++    if (!Object.prototype.hasOwnProperty.call(operation, "op") || typeof operation.op !== "string") throw new Error("JSON Patch operation must have a string 'op'");
++    if (!Object.prototype.hasOwnProperty.call(operation, "path") || typeof operation.path !== "string") throw new Error("JSON Patch operation must have a string 'path'");
+ 
+     const path = parsePointer(operation.path);
+     switch (operation.op) {
+@@ -113,7 +118,7 @@ export function applyPatch(document: unknown, patch: unknown): unknown {
+ }
+ 
+ function parseFrom(operation: PatchOperation): string[] {
+-  if (typeof operation.from !== "string") throw new Error("JSON Patch operation must have a string 'from'");
++  if (!Object.prototype.hasOwnProperty.call(operation, "from") || typeof operation.from !== "string") throw new Error("JSON Patch operation must have a string 'from'");
+   return parsePointer(operation.from);
+ }
+ 
+@@ -215,12 +220,36 @@ function cloneJson(value: unknown): any {
+   if (Array.isArray(value)) return value.map(cloneJson);
+   if (value !== null && typeof value === "object") {
+     const copy: Record<string, unknown> = {};
+-    for (const key of Object.keys(value)) copy[key] = cloneJson((value as Record<string, unknown>)[key]);
++    for (const key of Object.keys(value)) Object.defineProperty(copy, key, {
++      value: cloneJson((value as Record<string, unknown>)[key]), enumerable: true, writable: true, configurable: true,
++    });
+     return copy;
+   }
+   return value;
+ }
+ 
++function assertJson(value: unknown, ancestors = new Set<object>()): void {
++  if (value === null || typeof value === "string" || typeof value === "boolean") return;
++  if (typeof value === "number") {
++    if (!Number.isFinite(value)) throw new Error("Value is not valid JSON");
++    return;
++  }
++  if (typeof value !== "object") throw new Error("Value is not valid JSON");
++  if (ancestors.has(value)) throw new Error("Value is not valid JSON");
++  ancestors.add(value);
++  if (Array.isArray(value)) {
++    for (let i = 0; i < value.length; i++) {
++      if (!Object.prototype.hasOwnProperty.call(value, i)) throw new Error("Value is not valid JSON");
++      assertJson(value[i], ancestors);
++    }
++  } else {
++    const prototype = Object.getPrototypeOf(value);
++    if (prototype !== Object.prototype && prototype !== null) throw new Error("Value is not valid JSON");
++    for (const key of Object.keys(value)) assertJson((value as Record<string, unknown>)[key], ancestors);
++  }
++  ancestors.delete(value);
++}
++
+ function jsonEqual(a: unknown, b: unknown): boolean {
+   if (a === b) return true;
+   if (typeof a === "number" && typeof b === "number") return a === b;

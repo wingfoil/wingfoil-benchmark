@@ -1,0 +1,84 @@
+diff --git a/README.md b/README.md
+index d474ab6ecab022440892f8f486d759560d43b23e..ce4c47838aec7b2240685ff7eb2b46fb775f2f25 100644
+--- a/README.md
++++ b/README.md
+@@ -16,3 +16,8 @@ Tasks include ISO-8601 `createdAt` and `updatedAt` timestamps. `createdAt` is se
+ added and remains unchanged; `updatedAt` is set at creation and refreshed by each successful task
+ change. `createTodoList` accepts an optional function returning the current timestamp, which is useful
+ when the caller needs to provide a clock; by default it uses the current time.
++
++The list rejects invalid task input with an `invalid-input` result and a message describing the problem.
++Titles must contain non-space characters and be at most 120 characters long. Priorities must be `low`,
++`normal` or `high`. Tags must be non-empty and contain no whitespace. These rules apply to task creation,
++renaming and adding tags; rejected input leaves the list unchanged.
+diff --git a/src/domain/list.ts b/src/domain/list.ts
+index f35cd441323444c3deecb305af92a4e9e580f6d3..adc83ffe1793d225cad544eaa19fe0322d85814a 100644
+--- a/src/domain/list.ts
++++ b/src/domain/list.ts
+@@ -53,6 +53,15 @@ export function createTaskList(now: () => string): TaskList {
+ 
+   return {
+     add(input) {
++      const invalid = validateTitle(input.title);
++      if (invalid !== undefined) return invalid;
++      if (input.priority !== undefined && !['low', 'normal', 'high'].includes(input.priority)) {
++        return err('invalid-input', 'priority must be low, normal or high');
++      }
++      for (const tag of input.tags ?? []) {
++        const invalidTag = validateTag(tag);
++        if (invalidTag !== undefined) return invalidTag;
++      }
+       const task = createTask(String(nextId), input, now());
+       if (tasks.has(task.title)) return err('duplicate', `there is already a task "${task.title}"`);
+       nextId += 1;
+@@ -67,13 +76,19 @@ export function createTaskList(now: () => string): TaskList {
+     complete: (title) => change(title, completeTask),
+     reopen: (title) => change(title, reopenTask),
+     rename(title, newTitle) {
++      const invalid = validateTitle(newTitle);
++      if (invalid !== undefined) return invalid;
+       const target = newTitle.trim();
+       if (target !== title.trim() && tasks.has(target)) {
+         return err('duplicate', `there is already a task "${target}"`);
+       }
+       return change(title, (task) => ok(renameTask(task, target)));
+     },
+-    tag: (title, tag) => change(title, (task) => ok(addTag(task, tag))),
++    tag(title, tag) {
++      const invalid = validateTag(tag);
++      if (invalid !== undefined) return invalid;
++      return change(title, (task) => ok(addTag(task, tag)));
++    },
+     untag: (title, tag) => change(title, (task) => ok(removeTag(task, tag))),
+     remove(title) {
+       const found = find(title);
+@@ -92,3 +107,16 @@ export function createTaskList(now: () => string): TaskList {
+     },
+   };
+ }
++
++function validateTitle(title: string): ReturnType<typeof err> | undefined {
++  const trimmed = title.trim();
++  if (trimmed.length === 0) return err('invalid-input', 'title must not be empty or only spaces');
++  if (trimmed.length > 120) return err('invalid-input', 'title must be 120 characters or fewer');
++  return undefined;
++}
++
++function validateTag(tag: string): ReturnType<typeof err> | undefined {
++  if (tag.length === 0) return err('invalid-input', 'tag must not be empty');
++  if (/\s/.test(tag)) return err('invalid-input', 'tag must not contain spaces');
++  return undefined;
++}
+diff --git a/src/domain/result.ts b/src/domain/result.ts
+index c6ed17a1b929cb19e127e0be01e84aac17b45407..4e46dfbe7c138c650e2d4b2d86dfbc5a5b27267c 100644
+--- a/src/domain/result.ts
++++ b/src/domain/result.ts
+@@ -5,7 +5,7 @@ export interface TodoError {
+ }
+ 
+ /** The kinds of failure the task list reports. */
+-export type TodoErrorCode = 'not-found' | 'duplicate' | 'invalid-state';
++export type TodoErrorCode = 'not-found' | 'duplicate' | 'invalid-state' | 'invalid-input';
+ 
+ /** The outcome of an operation that can fail: its value, or the reason it failed. */
+ export type Result<T, E = TodoError> =

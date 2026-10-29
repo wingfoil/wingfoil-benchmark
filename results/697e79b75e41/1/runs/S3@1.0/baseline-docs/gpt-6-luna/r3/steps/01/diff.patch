@@ -1,0 +1,163 @@
+diff --git a/README.md b/README.md
+index b5fe1b2a4feac926b16f4b55fd72f2bb6eb7b711..d7417ed252cc74937aaa012b31a2406d68d0aefb 100644
+--- a/README.md
++++ b/README.md
+@@ -3,3 +3,12 @@
+ The Lakeside Windsurf School teaches windsurfing on the lake from April to October, and rents boards and
+ sails to its students and to visitors who bring their own experience. This repository holds the software
+ of its booking desk, written in TypeScript with no runtime dependency.
++
++## Rental service
++
++`createRentalService()` provides an isolated in-memory equipment catalogue and booking desk. Add boards
++or sails with daily prices in integer euro cents, then call `quote({ itemId, start, end })` or
++`book({ itemId, start, end })`. Dates must be UTC midnight ISO-8601 timestamps, and `end` is the
++midnight after the final rental day. Quotes calculate price without reserving availability; bookings
++reject overlapping periods for the same item. Cancellation is not implemented yet. See
++[`docs/rental-api.md`](docs/rental-api.md) for the API contract.
+diff --git a/docs/rental-api.md b/docs/rental-api.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..fd57a5cbf0cfcdcc7bf7445f8bbce4bdfd0f3e07
+--- /dev/null
++++ b/docs/rental-api.md
+@@ -0,0 +1,34 @@
++# Rental API specification
++
++## Purpose
++
++Provide the booking desk with an in-memory catalogue and booking service for boards and sails.
++This specification implements the rental-module requirement: register equipment, quote whole-day
++rentals, and book equipment while preventing overlapping reservations.
++
++## Public API
++
++`createRentalService()` creates an isolated service instance. It exposes:
++
++- `addEquipment(item)`: register `{ id: string, kind: 'board' | 'sail', dailyPrice: number }`.
++- `quote(request)`: return `{ itemId, start, end, total }` for `{ itemId, start, end }`.
++- `book(request)`: reserve an available item and return `{ id, itemId, start, end, total }`.
++
++All money values are integer euro cents. Item identifiers must be non-empty strings; equipment kinds
++must be `board` or `sail`; daily prices must be nonnegative safe integers. Re-adding an identifier is
++invalid. A period uses ISO-8601 UTC timestamps at midnight (`Z`), with `start < end`; it represents the
++half-open interval `[start, end)`, so `end` is the midnight after the last rental day. The total is the
++daily price multiplied by the number of days and must remain a safe integer.
++
++Unknown equipment, invalid data or periods, and an overlapping booking cause an error. Quotes do not
++reserve availability and may be returned even when another booking exists. Bookings for the same item
++may touch at their boundaries but may not overlap. Booking identifiers are unique within a service and
++assigned in creation order.
++
++The future cancellation policy is full refund at least 24 hours before a booking starts and no refund
++inside 24 hours. Cancellation is outside this API's current scope; no wall clock is consulted.
++
++## Decision
++
++The service uses private in-memory maps and a monotonically increasing booking sequence. This keeps
++instances isolated and deterministic without adding a runtime dependency or persistence coupling.
+diff --git a/src/index.ts b/src/index.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..9264492da76239f9cff1c932ce104994ec6fe043
+--- /dev/null
++++ b/src/index.ts
+@@ -0,0 +1,100 @@
++/** Equipment that can be rented by the booking desk. Prices are integer euro cents per day. */
++export interface RentalEquipment {
++  id: string;
++  kind: 'board' | 'sail';
++  dailyPrice: number;
++}
++
++/** A half-open rental period expressed as UTC midnight ISO-8601 timestamps. */
++export interface RentalRequest {
++  itemId: string;
++  start: string;
++  end: string;
++}
++
++/** The price returned by a rental quote. */
++export interface RentalQuote extends RentalRequest {
++  total: number;
++}
++
++/** A confirmed booking with a service-assigned identifier. */
++export interface RentalBooking extends RentalQuote {
++  id: string;
++}
++
++/** In-memory operations for equipment and whole-day rental bookings. */
++export interface RentalService {
++  /** Add an item with a unique identifier and nonnegative daily price in integer euro cents. */
++  addEquipment(item: RentalEquipment): void;
++  /** Calculate the cost for a valid rental period; availability is not reserved. */
++  quote(request: RentalRequest): RentalQuote;
++  /** Book a valid period if the item is free throughout it. */
++  book(request: RentalRequest): RentalBooking;
++}
++
++/**
++ * Create an isolated in-memory rental catalogue and booking service.
++ * Periods are UTC whole-day half-open ranges; amounts are integer euro cents.
++ */
++export function createRentalService(): RentalService {
++  const equipment = new Map<string, RentalEquipment>();
++  const bookings: RentalBooking[] = [];
++  let nextBookingId = 1;
++
++  function validateRequest(request: RentalRequest): { item: RentalEquipment; start: number; end: number; days: number } {
++    if (!request || typeof request.itemId !== 'string' || request.itemId.length === 0) {
++      throw new Error('Invalid rental request');
++    }
++    const start = parseUtcMidnight(request.start);
++    const end = parseUtcMidnight(request.end);
++    if (start >= end) throw new Error('Rental period must have a start before its end');
++
++    const item = equipment.get(request.itemId);
++    if (!item) throw new Error(`Unknown equipment: ${request.itemId}`);
++    const days = (end - start) / 86_400_000;
++    const total = item.dailyPrice * days;
++    if (!Number.isSafeInteger(total)) throw new Error('Rental total exceeds the supported amount');
++    return { item, start, end, days };
++  }
++
++  function parseUtcMidnight(value: string): number {
++    if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}T00:00(?::00(?:\.0+)?)?Z$/.test(value)) {
++      throw new Error('Rental dates must be UTC midnight ISO-8601 timestamps');
++    }
++    const timestamp = Date.parse(value);
++    if (!Number.isFinite(timestamp) || new Date(timestamp).toISOString().slice(0, 10) !== value.slice(0, 10)) {
++      throw new Error('Invalid rental date');
++    }
++    return timestamp;
++  }
++
++  function quote(request: RentalRequest): RentalQuote {
++    const { item, start, end, days } = validateRequest(request);
++    return { itemId: item.id, start: request.start, end: request.end, total: item.dailyPrice * days };
++  }
++
++  return {
++    addEquipment(item: RentalEquipment): void {
++      if (!item || typeof item.id !== 'string' || item.id.length === 0 ||
++          (item.kind !== 'board' && item.kind !== 'sail') ||
++          !Number.isSafeInteger(item.dailyPrice) || item.dailyPrice < 0) {
++        throw new Error('Invalid equipment');
++      }
++      if (equipment.has(item.id)) throw new Error(`Equipment already exists: ${item.id}`);
++      equipment.set(item.id, { ...item });
++    },
++    quote,
++    book(request: RentalRequest): RentalBooking {
++      const price = quote(request);
++      const start = Date.parse(request.start);
++      const end = Date.parse(request.end);
++      if (bookings.some((booking) => booking.itemId === price.itemId &&
++          start < Date.parse(booking.end) && Date.parse(booking.start) < end)) {
++        throw new Error(`Equipment is not available for the requested period: ${price.itemId}`);
++      }
++      const booking: RentalBooking = { id: `booking-${nextBookingId++}`, ...price };
++      bookings.push(booking);
++      return { ...booking };
++    },
++  };
++}

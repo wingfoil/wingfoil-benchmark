@@ -1,0 +1,169 @@
+diff --git a/README.md b/README.md
+index bc8bce3b71096e353fbe7f192be57988e52e50fc..3b9cd4a23bda78ff0ad6d4643c36c4094ce90aab 100644
+--- a/README.md
++++ b/README.md
+@@ -10,3 +10,7 @@ Adding and renaming tasks requires a non-empty title of at most 120 characters.
+ `invalid-input` error and leaves the list unchanged.
+ 
+ Run its tests with `npm test`.
++
++Use `importTasks(list, text)` from the public API to bulk import tasks. Each non-blank line has the
++form `title;priority;tags`, with tags separated by spaces. Leave priority empty for normal priority.
++The result reports the number imported and each rejected line with its 1-based line number and reason.
+diff --git a/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-4-plan.md b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-4-plan.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..df6c48e4ca28c88bc0c5845d79be7978bcf60c0b
+--- /dev/null
++++ b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-4-plan.md
+@@ -0,0 +1,17 @@
++---
++id: sw-life-cycle-1-4-plan
++type: plan
++title: "Add bulk task import helper"
++status: active
++workflow: "sw-life-cycle"
++phase: "1-4"
++element: ""
++parent: ""
++format: 1
++---
++
++<!-- plan body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
+diff --git a/docs/memory/task/task-004-add-bulk-task-import-helper.md b/docs/memory/task/task-004-add-bulk-task-import-helper.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..4923100d73d2f2947888ebd0b2c03ed99ccc33f1
+--- /dev/null
++++ b/docs/memory/task/task-004-add-bulk-task-import-helper.md
+@@ -0,0 +1,12 @@
++---
++id: task-004-add-bulk-task-import-helper
++type: task
++title: "Add bulk task import helper"
++status: approved
++format: 1
++---
++
++Add a public `importTasks(list, text)` helper, exported from `src/index.ts`. Parse one task per line
++using `title;priority;tags`, with an empty priority meaning normal priority and tags separated by
++spaces. Skip blank lines, add each valid task, and return the number imported plus every rejected
++line number and its reason.
+diff --git a/src/index.ts b/src/index.ts
+index f87d90f5bd0b29efa1af37bc773a937aec17b405..63c052f0c48e8c44720998db35b1df861ff1f930 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -8,9 +8,57 @@ export type { Summary } from './domain/summary.ts';
+ export { PRIORITIES } from './domain/task.ts';
+ export type { NewTask, Priority, Status, Task } from './domain/task.ts';
+ 
++/** A rejected line from a bulk task import. */
++export interface ImportRejection {
++  readonly line: number;
++  readonly reason: string;
++}
++
++/** The outcome of importing a block of task lines. */
++export interface ImportTasksResult {
++  readonly imported: number;
++  readonly rejected: readonly ImportRejection[];
++}
++
+ /**
+  * A new, empty task list for the app, kept in memory.
+  */
+ export function createTodoList(): TaskList {
+   return createTaskList(() => new Date().toISOString());
+ }
++
++/**
++ * Add valid tasks from `title;priority;tags` lines to a task list.
++ * Blank lines are skipped; an empty priority uses the list's normal priority. Rejected line numbers
++ * refer to their positions in the original text, starting at 1.
++ *
++ * @param list - the task list to add tasks to
++ * @param text - task rows with tags separated by spaces
++ */
++export function importTasks(list: TaskList, text: string): ImportTasksResult {
++  let imported = 0;
++  const rejected: ImportRejection[] = [];
++
++  text.split(/\r?\n/).forEach((rawLine, index) => {
++    if (rawLine.trim() === '') return;
++
++    const fields = rawLine.split(';');
++    if (fields.length !== 3) {
++      rejected.push({ line: index + 1, reason: 'line must contain title, priority and tags separated by semicolons' });
++      return;
++    }
++
++    const [title, rawPriority, rawTags] = fields;
++    const priority = rawPriority.trim();
++    const tagsText = rawTags.trim();
++    const result = list.add({
++      title: title.trim(),
++      ...(priority === '' ? {} : { priority: priority as 'low' | 'normal' | 'high' }),
++      tags: tagsText === '' ? [] : tagsText.split(/\s+/),
++    });
++    if (result.ok) imported += 1;
++    else rejected.push({ line: index + 1, reason: result.error.message });
++  });
++
++  return { imported, rejected };
++}
+diff --git a/test/list.test.ts b/test/list.test.ts
+index c454f7abf802a9b1eeabb18c8ce29f1f4f71c1d1..4cb245b9da4a7285d9fb47d60cb1fdac33c1ddec 100644
+--- a/test/list.test.ts
++++ b/test/list.test.ts
+@@ -1,7 +1,7 @@
+ import assert from 'node:assert/strict';
+ import { describe, it } from 'node:test';
+ 
+-import { createTodoList, summarize } from '../src/index.ts';
++import { createTodoList, importTasks, summarize } from '../src/index.ts';
+ 
+ function valueOf<T>(result: { ok: true; value: T } | { ok: false; error: unknown }): T {
+   if (!result.ok) assert.fail(JSON.stringify(result.error));
+@@ -9,10 +9,39 @@ function valueOf<T>(result: { ok: true; value: T } | { ok: false; error: unknown
+ }
+ 
+ describe('task list', () => {
++  it('imports tasks from non-blank lines and defaults an empty priority to normal', () => {
++    const list = createTodoList();
++    const result = importTasks(list, '\nRenew the insurance;high;admin money\n\nBuy stamps;;errands');
++
++    assert.deepEqual(result, { imported: 2, rejected: [] });
++    assert.deepEqual(list.list().map(({ title, priority, tags }) => ({ title, priority, tags })), [
++      { title: 'Renew the insurance', priority: 'high', tags: ['admin', 'money'] },
++      { title: 'Buy stamps', priority: 'normal', tags: ['errands'] },
++    ]);
++  });
++
++  it('reports each rejected line with its original line number and reason', () => {
++    const list = createTodoList();
++    list.add({ title: 'Existing task' });
++    const result = importTasks(list, 'Existing task;;\n\nNew task;urgent;work\n;low;home\nMalformed line');
++
++    assert.equal(result.imported, 0);
++    assert.deepEqual(result.rejected, [
++      { line: 1, reason: 'there is already a task "Existing task"' },
++      { line: 3, reason: 'priority must be low, normal or high' },
++      { line: 4, reason: 'title must not be empty or only spaces' },
++      { line: 5, reason: 'line must contain title, priority and tags separated by semicolons' },
++    ]);
++    assert.equal(list.list().length, 1);
++  });
++
+   it('adds an open task with a normal priority by default', () => {
+     const list = createTodoList();
+     const task = valueOf(list.add({ title: '  Buy milk ' }));
+-    assert.deepEqual(task, { id: 'task-1', title: 'Buy milk', priority: 'normal', tags: [], status: 'open' });
++    assert.deepEqual(
++      { id: task.id, title: task.title, priority: task.priority, tags: task.tags, status: task.status },
++      { id: 'task-1', title: 'Buy milk', priority: 'normal', tags: [], status: 'open' },
++    );
+     assert.equal(list.openCount(), 1);
+   });
+ 

@@ -1,0 +1,147 @@
+diff --git a/README.md b/README.md
+index 60d6645d04ad0810e85455d346fcb8540997d25f..d6865400744e630e3a2388320e06862933951dad 100644
+--- a/README.md
++++ b/README.md
+@@ -10,3 +10,8 @@ Run its tests with `npm test`.
+ Each task has a stable `id` that remains unchanged when its title is renamed. `add` returns that ID,
+ and `get(id)` retrieves the task. `find`, `complete`, `reopen`, `rename`, `tag`, `untag`, and `remove`
+ accept either a task title or its ID; prefer IDs when a reference must survive a rename.
++
++Each task also has `createdAt` and `updatedAt` ISO-8601 date-time strings. They start equal, and
++`updatedAt` advances whenever a task is completed, reopened, renamed, tagged or untagged with an
++actual change. `createTodoList` accepts an optional timestamp function for callers that need to
++control the time source; by default it uses the current time.
+diff --git a/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-2-plan.md b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-2-plan.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..7f17a6883b1a64c5354d9b8e6824e69db42d3b18
+--- /dev/null
++++ b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-2-plan.md
+@@ -0,0 +1,17 @@
++---
++id: sw-life-cycle-1-2-plan
++type: plan
++title: "Record task timestamps"
++status: active
++workflow: "sw-life-cycle"
++phase: "1-2"
++element: ""
++parent: ""
++format: 1
++---
++
++<!-- plan body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
+diff --git a/docs/memory/task/task-002-record-task-timestamps.md b/docs/memory/task/task-002-record-task-timestamps.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..7e923bfa6ad3c121dedfa950f06f90ccac3d15d0
+--- /dev/null
++++ b/docs/memory/task/task-002-record-task-timestamps.md
+@@ -0,0 +1,11 @@
++---
++id: task-002-record-task-timestamps
++type: task
++title: "Record task timestamps"
++status: approved
++format: 1
++---
++
++Add ISO-8601 `createdAt` and `updatedAt` timestamps to each task. Initialize both to the same time when
++adding a task. Advance `updatedAt` whenever completing, reopening, renaming, tagging or untagging makes a
++change to the task. Keep clock access outside the domain layer.
+diff --git a/src/domain/list.ts b/src/domain/list.ts
+index d1929764649ceaf410b45db5588beab3362895d1..a482717e1461bd253b7ffd4d6b82b24ad92603b8 100644
+--- a/src/domain/list.ts
++++ b/src/domain/list.ts
+@@ -25,8 +25,12 @@ export interface TaskList {
+   openCount(): number;
+ }
+ 
+-/** A new, empty task list, kept in memory. */
+-export function createTaskList(): TaskList {
++/**
++ * A new, empty task list, kept in memory.
++ *
++ * @param timestampNow - supplies the ISO-8601 date-time for each task change
++ */
++export function createTaskList(timestampNow: () => string): TaskList {
+   const tasks = new Map<string, Task>();
+   let nextId = 1;
+ 
+@@ -44,7 +48,13 @@ export function createTaskList(): TaskList {
+     const found = find(titleOrId);
+     if (!found.ok) return found;
+     const updated = update(found.value);
+-    return updated.ok ? store(found.value, updated.value) : updated;
++    if (!updated.ok) return updated;
++    const changed = updated.value.title !== found.value.title ||
++      updated.value.status !== found.value.status ||
++      updated.value.tags.length !== found.value.tags.length ||
++      updated.value.tags.some((tag, index) => tag !== found.value.tags[index]);
++    const task = changed ? { ...updated.value, updatedAt: timestampNow() } : updated.value;
++    return store(found.value, task);
+   };
+ 
+   return {
+@@ -53,7 +63,8 @@ export function createTaskList(): TaskList {
+       if ([...tasks.values()].some((task) => task.title === title)) {
+         return err('duplicate', `there is already a task "${title}"`);
+       }
+-      const task = createTask(input, `task-${nextId}`);
++      const timestamp = timestampNow();
++      const task = createTask(input, `task-${nextId}`, timestamp);
+       nextId += 1;
+       tasks.set(task.id, task);
+       return ok(task);
+diff --git a/src/domain/task.ts b/src/domain/task.ts
+index d2f124a99b2668d1356b0f81e3c28203119de222..ee75c09be9d67316f9c8ba3e56a99191edfc9779 100644
+--- a/src/domain/task.ts
++++ b/src/domain/task.ts
+@@ -18,6 +18,10 @@ export interface Task {
+   readonly priority: Priority;
+   readonly tags: readonly string[];
+   readonly status: Status;
++  /** When the task was created, as an ISO-8601 date-time string. */
++  readonly createdAt: string;
++  /** When the task was last changed, as an ISO-8601 date-time string. */
++  readonly updatedAt: string;
+ }
+ 
+ /** What it takes to add a task: a title, and optionally a priority and tags. */
+@@ -32,14 +36,17 @@ export interface NewTask {
+  *
+  * @param input - the task's title, priority and tags
+  * @param id - the stable identifier assigned by its task list
++ * @param timestamp - the creation time as an ISO-8601 date-time string
+  */
+-export function createTask(input: NewTask, id: string): Task {
++export function createTask(input: NewTask, id: string, timestamp: string): Task {
+   return {
+     id,
+     title: input.title.trim(),
+     priority: input.priority ?? 'normal',
+     tags: unique(input.tags ?? []),
+     status: 'open',
++    createdAt: timestamp,
++    updatedAt: timestamp,
+   };
+ }
+ 
+diff --git a/src/index.ts b/src/index.ts
+index d645db5250ea48852a8de1629640e42619a985c8..1630bcd302ccd0000fb3a2c28dc71c3db1f59d69 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -10,7 +10,9 @@ export type { NewTask, Priority, Status, Task } from './domain/task.ts';
+ 
+ /**
+  * A new, empty task list for the app, kept in memory.
++ *
++ * @param timestampNow - supplies timestamps; defaults to the current ISO-8601 time
+  */
+-export function createTodoList(): TaskList {
+-  return createTaskList();
++export function createTodoList(timestampNow: () => string = () => new Date().toISOString()): TaskList {
++  return createTaskList(timestampNow);
+ }

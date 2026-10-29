@@ -1,0 +1,95 @@
+diff --git a/README.md b/README.md
+index df46c1f142c49b7559371c31f640a30b03f4e243..bc71a6ae87d4d525ca3749680299eb571aeb6a28 100644
+--- a/README.md
++++ b/README.md
+@@ -29,11 +29,17 @@ operations and returns the updated document without changing the input. It suppo
+ use JSON Pointer syntax. Invalid operations, failed paths and failed `test`
+ operations throw an `Error`.
+ 
++`createPatch(from, to)` creates an RFC 6902 patch containing only the changed
++object members and array elements. It does not mutate either document.
++
+ ```ts
+-import { applyPatch } from "json-toolkit";
++import { applyPatch, createPatch } from "json-toolkit";
+ 
+ applyPatch({ count: 1 }, [{ op: "replace", path: "/count", value: 2 }]);
+ // { count: 2 }
++
++createPatch({ count: 1, label: "item" }, { count: 2, label: "item" });
++// [{ op: "replace", path: "/count", value: 2 }]
+ ```
+ 
+ ## JSON Merge Patch
+diff --git a/src/index.ts b/src/index.ts
+index 055d081e00f1ab5b3b98dd3cd348b60524811276..dc755d9bbe269167bc305171b4fc6b01d0e265a2 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -205,6 +205,67 @@ export function applyPatch(document: JsonValue, patch: readonly unknown[]): Json
+   return result;
+ }
+ 
++/** An RFC 6902 operation emitted by {@link createPatch}. */
++export type JsonPatchOperation =
++  | { op: "add"; path: string; value: JsonValue }
++  | { op: "remove"; path: string }
++  | { op: "replace"; path: string; value: JsonValue };
++
++/**
++ * Creates an RFC 6902 JSON Patch that transforms `from` into `to`.
++ * Objects are diffed by member and arrays by index, so unchanged portions are
++ * omitted. The inputs are only read and are never mutated.
++ *
++ * @param from The original JSON document.
++ * @param to The desired JSON document.
++ * @returns Ordered JSON Patch operations which produce `to` from `from`.
++ * @throws {Error} If either input is not a JSON value.
++ */
++export function createPatch(from: JsonValue, to: JsonValue): JsonPatchOperation[] {
++  if (!isJsonValue(from)) throw new Error("JSON Patch source must be a JSON value");
++  if (!isJsonValue(to)) throw new Error("JSON Patch target must be a JSON value");
++
++  const pointer = (path: string, key: string): string =>
++    `${path}/${key.replace(/~/g, "~0").replace(/\//g, "~1")}`;
++  const operations: JsonPatchOperation[] = [];
++
++  const diff = (before: JsonValue, after: JsonValue, path: string): void => {
++    if (jsonEqual(before, after)) return;
++    if (Array.isArray(before) && Array.isArray(after)) {
++      const sharedLength = Math.min(before.length, after.length);
++      for (let i = 0; i < sharedLength; i++) diff(before[i], after[i], pointer(path, String(i)));
++      for (let i = before.length - 1; i >= after.length; i--) {
++        operations.push({ op: "remove", path: pointer(path, String(i)) });
++      }
++      for (let i = before.length; i < after.length; i++) {
++        operations.push({ op: "add", path: pointer(path, String(i)), value: cloneJson(after[i]) });
++      }
++      return;
++    }
++    if (before !== null && after !== null && typeof before === "object" && typeof after === "object" && !Array.isArray(before) && !Array.isArray(after)) {
++      const beforeObject = before as Record<string, JsonValue>;
++      const afterObject = after as Record<string, JsonValue>;
++      for (const key of Object.keys(beforeObject)) {
++        if (!Object.prototype.hasOwnProperty.call(afterObject, key)) {
++          operations.push({ op: "remove", path: pointer(path, key) });
++        } else {
++          diff(beforeObject[key], afterObject[key], pointer(path, key));
++        }
++      }
++      for (const key of Object.keys(afterObject)) {
++        if (!Object.prototype.hasOwnProperty.call(beforeObject, key)) {
++          operations.push({ op: "add", path: pointer(path, key), value: cloneJson(afterObject[key]) });
++        }
++      }
++      return;
++    }
++    operations.push({ op: "replace", path, value: cloneJson(after) });
++  };
++
++  diff(from, to, "");
++  return operations;
++}
++
+ /**
+  * Applies an RFC 7386 JSON Merge Patch to a JSON document without mutating the inputs.
+  * Object patches recursively update members, null values remove members, and any

@@ -1,0 +1,180 @@
+diff --git a/src/index.ts b/src/index.ts
+index 974f3a31105b1ddf37112499065278cc67bc7298..4c1e1c2c4d90ac05d0af391db80d55f635d62838 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -48,3 +48,175 @@ function decodeToken(token: string): string {
+   }
+   return token.replace(/~1/g, "/").replace(/~0/g, "~");
+ }
++
++type PatchOperation = {
++  op: unknown;
++  path: unknown;
++  from?: unknown;
++  value?: unknown;
++};
++
++/** Apply an RFC 6902 JSON Patch without changing the supplied document. */
++export function applyPatch(document: unknown, patch: unknown): unknown {
++  if (!Array.isArray(patch)) throw new Error("JSON Patch must be an array");
++
++  // Work on a deep copy so even a later failing operation leaves the input intact.
++  let result = cloneJson(document);
++  for (const raw of patch) {
++    if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
++      throw new Error("JSON Patch operation must be an object");
++    }
++    const operation = raw as PatchOperation;
++    if (typeof operation.op !== "string" || typeof operation.path !== "string") {
++      throw new Error("JSON Patch operation requires string op and path members");
++    }
++    const path = parsePointer(operation.path);
++
++    switch (operation.op) {
++      case "add":
++        requireValue(operation);
++        result = addAt(result, path, cloneJson(operation.value));
++        break;
++      case "remove":
++        result = removeAt(result, path).document;
++        break;
++      case "replace":
++        requireValue(operation);
++        result = replaceAt(result, path, cloneJson(operation.value));
++        break;
++      case "move": {
++        if (typeof operation.from !== "string") throw new Error("move requires a string from member");
++        const from = parsePointer(operation.from);
++        if (path.length > from.length && from.every((part, i) => path[i] === part)) {
++          throw new Error("Cannot move a value into one of its children");
++        }
++        const removed = removeAt(result, from);
++        result = addAt(removed.document, path, removed.value);
++        break;
++      }
++      case "copy": {
++        if (typeof operation.from !== "string") throw new Error("copy requires a string from member");
++        const value = getAt(result, parsePointer(operation.from));
++        result = addAt(result, path, cloneJson(value));
++        break;
++      }
++      case "test": {
++        requireValue(operation);
++        if (!jsonEqual(getAt(result, path), operation.value)) throw new Error("JSON Patch test failed");
++        break;
++      }
++      default:
++        throw new Error(`Unknown JSON Patch operation: ${operation.op}`);
++    }
++  }
++  return result;
++}
++
++function requireValue(operation: PatchOperation): void {
++  if (!Object.hasOwn(operation, "value")) throw new Error(`${String(operation.op)} requires a value member`);
++}
++
++function parsePointer(pointer: string): string[] {
++  if (pointer === "") return [];
++  if (!pointer.startsWith("/")) throw new Error("A non-empty JSON Pointer must start with '/'");
++  return pointer.slice(1).split("/").map(decodeToken);
++}
++
++function cloneJson(value: unknown): any {
++  if (Array.isArray(value)) return value.map(cloneJson);
++  if (value !== null && typeof value === "object") {
++    const copy: Record<string, unknown> = {};
++    for (const key of Object.keys(value)) copy[key] = cloneJson((value as Record<string, unknown>)[key]);
++    return copy;
++  }
++  return value;
++}
++
++function getAt(document: unknown, path: string[]): unknown {
++  let current = document;
++  for (const token of path) current = readChild(current, token);
++  return current;
++}
++
++function readChild(parent: unknown, token: string): unknown {
++  if (Array.isArray(parent)) {
++    const index = arrayIndex(token, parent.length, false);
++    return parent[index];
++  }
++  if (parent !== null && typeof parent === "object") {
++    if (!Object.hasOwn(parent, token)) throw new Error(`JSON Pointer member not found: ${token}`);
++    return (parent as Record<string, unknown>)[token];
++  }
++  throw new Error(`JSON Pointer cannot resolve through: ${token}`);
++}
++
++function parentAt(document: unknown, path: string[]): { parent: any; token: string } {
++  if (path.length === 0) throw new Error("Root has no parent");
++  return { parent: getAt(document, path.slice(0, -1)), token: path[path.length - 1] };
++}
++
++function addAt(document: unknown, path: string[], value: unknown): unknown {
++  if (path.length === 0) return value;
++  const { parent, token } = parentAt(document, path);
++  if (Array.isArray(parent)) {
++    const index = token === "-" ? parent.length : arrayIndex(token, parent.length, true);
++    parent.splice(index, 0, value);
++  } else if (parent !== null && typeof parent === "object") {
++    (parent as Record<string, unknown>)[token] = value;
++  } else {
++    throw new Error(`JSON Pointer cannot resolve through: ${token}`);
++  }
++  return document;
++}
++
++function removeAt(document: unknown, path: string[]): { document: unknown; value: unknown } {
++  if (path.length === 0) return { document: undefined, value: document };
++  const { parent, token } = parentAt(document, path);
++  if (Array.isArray(parent)) {
++    const index = arrayIndex(token, parent.length, false);
++    return { document, value: parent.splice(index, 1)[0] };
++  }
++  if (parent !== null && typeof parent === "object") {
++    if (!Object.hasOwn(parent, token)) throw new Error(`JSON Pointer member not found: ${token}`);
++    const value = (parent as Record<string, unknown>)[token];
++    delete (parent as Record<string, unknown>)[token];
++    return { document, value };
++  }
++  throw new Error(`JSON Pointer cannot resolve through: ${token}`);
++}
++
++function replaceAt(document: unknown, path: string[], value: unknown): unknown {
++  if (path.length === 0) return value;
++  const { parent, token } = parentAt(document, path);
++  if (Array.isArray(parent)) {
++    parent[arrayIndex(token, parent.length, false)] = value;
++  } else if (parent !== null && typeof parent === "object") {
++    if (!Object.hasOwn(parent, token)) throw new Error(`JSON Pointer member not found: ${token}`);
++    (parent as Record<string, unknown>)[token] = value;
++  } else {
++    throw new Error(`JSON Pointer cannot resolve through: ${token}`);
++  }
++  return document;
++}
++
++function arrayIndex(token: string, length: number, allowEnd: boolean): number {
++  if (!/^(0|[1-9][0-9]*)$/.test(token)) throw new Error(`Invalid array index: ${token}`);
++  const index = Number(token);
++  if (!Number.isSafeInteger(index) || index > length || (!allowEnd && index === length)) {
++    throw new Error(`Array index is out of range: ${token}`);
++  }
++  return index;
++}
++
++function jsonEqual(left: unknown, right: unknown): boolean {
++  if (left === right) return true;
++  if (typeof left !== typeof right || left === null || right === null) return false;
++  if (Array.isArray(left) || Array.isArray(right)) {
++    return Array.isArray(left) && Array.isArray(right) && left.length === right.length && left.every((v, i) => jsonEqual(v, right[i]));
++  }
++  if (typeof left === "object" && typeof right === "object") {
++    const a = Object.keys(left as object), b = Object.keys(right as object);
++    return a.length === b.length && a.every(key => Object.hasOwn(right, key) && jsonEqual((left as any)[key], (right as any)[key]));
++  }
++  return false;
++}

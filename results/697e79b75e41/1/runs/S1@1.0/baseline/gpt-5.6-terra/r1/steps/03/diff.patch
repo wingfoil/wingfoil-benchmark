@@ -1,0 +1,131 @@
+diff --git a/src/index.ts b/src/index.ts
+index 54e24c26457bd0145720cd1bb28af08261d122fe..851affefe33cfc740412f163e21137d7d7d7dbc9 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -55,6 +55,7 @@ export function applyPatch(document: unknown, patch: unknown): unknown {
+   if (!Array.isArray(patch)) {
+     throw new Error('Invalid JSON Patch: patch must be an array');
+   }
++  assertJsonValue(patch, 'patch');
+ 
+   // Clone before doing any work, including an empty patch: callers always get
+   // a distinct document value when the document is an object or array.
+@@ -189,9 +190,10 @@ function addValue(document: unknown, tokens: readonly string[], value: unknown,
+ 
+ function removeValue(document: unknown, tokens: readonly string[], pointer: string): unknown {
+   if (tokens.length === 0) {
+-    // RFC 6902 permits addressing the entire document. There is no JSON value
+-    // left after removing it, which JavaScript represents as undefined.
+-    return undefined;
++    // A patch result must itself be a JSON document.  Unlike add and replace,
++    // RFC 6902 does not define a JSON value that results from removing the
++    // root, so do not expose JavaScript's non-JSON `undefined` as a result.
++    throw new Error('JSON Patch remove target cannot be the document root');
+   }
+   const [parent, token] = getParent(document, tokens, pointer);
+   if (Array.isArray(parent)) {
+@@ -272,12 +274,14 @@ function assertJsonValue(value: unknown, description: string, seen = new Set<obj
+     if (Number.isFinite(value)) return;
+   } else if (Array.isArray(value)) {
+     if (seen.has(value)) throw new Error(`Invalid JSON ${description}: cyclic value`);
++    assertJsonArrayProperties(value, description);
+     seen.add(value);
+     for (const item of value) assertJsonValue(item, description, seen);
+     seen.delete(value);
+     return;
+   } else if (isJsonObject(value)) {
+     if (seen.has(value)) throw new Error(`Invalid JSON ${description}: cyclic value`);
++    assertJsonObjectProperties(value, description);
+     seen.add(value);
+     for (const key of Object.keys(value)) assertJsonValue(value[key], description, seen);
+     seen.delete(value);
+@@ -286,6 +290,31 @@ function assertJsonValue(value: unknown, description: string, seen = new Set<obj
+   throw new Error(`Invalid JSON ${description}`);
+ }
+ 
++/**
++ * JSON arrays have only indexed values.  JavaScript permits other own
++ * properties (including symbol properties), but they are not part of a JSON
++ * array and must not be silently accepted as patch or document data.
++ */
++function assertJsonArrayProperties(array: unknown[], description: string): void {
++  for (const key of Reflect.ownKeys(array)) {
++    if (key === 'length') continue;
++    if (typeof key !== 'string' || !isArrayIndex(key)) {
++      throw new Error(`Invalid JSON ${description}`);
++    }
++  }
++}
++
++/**
++ * JSON object members are enumerable string-keyed values.  Reject JavaScript
++ * metadata that JSON serialization would omit instead of allowing it to alter
++ * an operation (for example, a non-enumerable `op` member).
++ */
++function assertJsonObjectProperties(object: JsonObject, description: string): void {
++  if (Reflect.ownKeys(object).length !== Object.keys(object).length) {
++    throw new Error(`Invalid JSON ${description}`);
++  }
++}
++
+ function cloneJson(value: unknown): unknown {
+   if (Array.isArray(value)) return value.map(cloneJson);
+   if (isJsonObject(value)) {
+diff --git a/test/index.test.mjs b/test/index.test.mjs
+new file mode 100644
+index 0000000000000000000000000000000000000000..748be151a04be9fe00dfd17081ad34fd7af02d84
+--- /dev/null
++++ b/test/index.test.mjs
+@@ -0,0 +1,52 @@
++import assert from 'node:assert/strict';
++import test from 'node:test';
++
++import { applyPatch } from '../src/index.ts';
++
++test('applies operations sequentially and does not mutate the input document', () => {
++  const document = { entries: ['one'] };
++  const patch = [
++    { op: 'add', path: '/entries/-', value: 'two' },
++    { op: 'replace', path: '/entries/0', value: 'zero' },
++  ];
++
++  assert.deepEqual(applyPatch(document, patch), { entries: ['zero', 'two'] });
++  assert.deepEqual(document, { entries: ['one'] });
++});
++
++test('stops at an error without exposing partial changes', () => {
++  const document = { value: 1 };
++
++  assert.throws(() => applyPatch(document, [
++    { op: 'replace', path: '/value', value: 2 },
++    { op: 'test', path: '/value', value: 3 },
++  ]));
++  assert.deepEqual(document, { value: 1 });
++});
++
++test('requires existing locations except for the final add location', () => {
++  assert.deepEqual(
++    applyPatch({ parent: {} }, [{ op: 'add', path: '/parent/child', value: true }]),
++    { parent: { child: true } },
++  );
++  assert.throws(() => applyPatch({}, [{ op: 'add', path: '/parent/child', value: true }]));
++  assert.throws(() => applyPatch({ parent: {} }, [{ op: 'replace', path: '/parent/child', value: true }]));
++});
++
++test('rejects attempts to remove the root because no JSON document remains', () => {
++  assert.throws(() => applyPatch({ value: true }, [{ op: 'remove', path: '' }]));
++});
++
++test('rejects JavaScript-only properties that cannot appear in JSON Patch', () => {
++  const operation = { path: '/value' };
++  Object.defineProperty(operation, 'op', { value: 'remove' });
++
++  assert.throws(() => applyPatch({ value: true }, [operation]));
++});
++
++test('ignores defined-but-unrecognised operation members', () => {
++  assert.deepEqual(
++    applyPatch({}, [{ op: 'add', path: '/value', value: true, note: 'ignored' }]),
++    { value: true },
++  );
++});

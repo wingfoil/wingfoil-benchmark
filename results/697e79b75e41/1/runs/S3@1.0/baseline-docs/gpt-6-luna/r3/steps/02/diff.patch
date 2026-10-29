@@ -1,0 +1,82 @@
+diff --git a/docs/rental-api.md b/docs/rental-api.md
+index fd57a5cbf0cfcdcc7bf7445f8bbce4bdfd0f3e07..a2f176068472be6668a3f019ec13eeca25991b39 100644
+--- a/docs/rental-api.md
++++ b/docs/rental-api.md
+@@ -13,6 +13,8 @@ rentals, and book equipment while preventing overlapping reservations.
+ - `addEquipment(item)`: register `{ id: string, kind: 'board' | 'sail', dailyPrice: number }`.
+ - `quote(request)`: return `{ itemId, start, end, total }` for `{ itemId, start, end }`.
+ - `book(request)`: reserve an available item and return `{ id, itemId, start, end, total }`.
++- `availability(query)`: return sorted equipment ids free for the full `{ start, end }` period,
++  optionally restricted by `kind: 'board' | 'sail'`.
+ 
+ All money values are integer euro cents. Item identifiers must be non-empty strings; equipment kinds
+ must be `board` or `sail`; daily prices must be nonnegative safe integers. Re-adding an identifier is
+@@ -25,6 +27,10 @@ reserve availability and may be returned even when another booking exists. Booki
+ may touch at their boundaries but may not overlap. Booking identifiers are unique within a service and
+ assigned in creation order.
+ 
++Availability queries use the same UTC midnight timestamps and half-open period rules as bookings.
++An item is available when none of its bookings overlap the query period; touching boundaries are free.
++An omitted kind includes both boards and sails. Invalid periods or kinds cause an error.
++
+ The future cancellation policy is full refund at least 24 hours before a booking starts and no refund
+ inside 24 hours. Cancellation is outside this API's current scope; no wall clock is consulted.
+ 
+diff --git a/src/index.ts b/src/index.ts
+index 9264492da76239f9cff1c932ce104994ec6fe043..2e446a4646fba5db63791f78b07a35259320c08f 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -12,6 +12,13 @@ export interface RentalRequest {
+   end: string;
+ }
+ 
++/** A period and optional equipment kind to check for free equipment. */
++export interface RentalAvailabilityQuery {
++  start: string;
++  end: string;
++  kind?: RentalEquipment['kind'];
++}
++
+ /** The price returned by a rental quote. */
+ export interface RentalQuote extends RentalRequest {
+   total: number;
+@@ -28,6 +35,8 @@ export interface RentalService {
+   addEquipment(item: RentalEquipment): void;
+   /** Calculate the cost for a valid rental period; availability is not reserved. */
+   quote(request: RentalRequest): RentalQuote;
++  /** Return sorted identifiers of equipment free for the whole period, optionally limited by kind. */
++  availability(query: RentalAvailabilityQuery): string[];
+   /** Book a valid period if the item is free throughout it. */
+   book(request: RentalRequest): RentalBooking;
+ }
+@@ -73,6 +82,22 @@ export function createRentalService(): RentalService {
+     return { itemId: item.id, start: request.start, end: request.end, total: item.dailyPrice * days };
+   }
+ 
++  function availability(query: RentalAvailabilityQuery): string[] {
++    if (!query || (query.kind !== undefined && query.kind !== 'board' && query.kind !== 'sail')) {
++      throw new Error('Invalid availability query');
++    }
++    const start = parseUtcMidnight(query.start);
++    const end = parseUtcMidnight(query.end);
++    if (start >= end) throw new Error('Rental period must have a start before its end');
++
++    return [...equipment.values()]
++      .filter((item) => query.kind === undefined || item.kind === query.kind)
++      .filter((item) => !bookings.some((booking) => booking.itemId === item.id &&
++        start < Date.parse(booking.end) && Date.parse(booking.start) < end))
++      .map((item) => item.id)
++      .sort();
++  }
++
+   return {
+     addEquipment(item: RentalEquipment): void {
+       if (!item || typeof item.id !== 'string' || item.id.length === 0 ||
+@@ -84,6 +109,7 @@ export function createRentalService(): RentalService {
+       equipment.set(item.id, { ...item });
+     },
+     quote,
++    availability,
+     book(request: RentalRequest): RentalBooking {
+       const price = quote(request);
+       const start = Date.parse(request.start);

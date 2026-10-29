@@ -1,0 +1,94 @@
+diff --git a/README.md b/README.md
+index 216aa6f09bf636ae593fb701b9385e6378953d22..af4e8476ea0a697afe18fcc288cdf951ac2776ae 100644
+--- a/README.md
++++ b/README.md
+@@ -11,3 +11,5 @@ The `createRentalService()` API exported from `src/index.ts` provides an in-memo
+ Rentals of three days or more receive a 10% discount on the full rental price. The discounted total is returned by `quote()` and stored on the resulting booking. Discounted totals are rounded to the nearest euro cent.
+ 
+ Use `availability({ start, end, kind })` to get the sorted equipment ids free for the entire period. `kind` is optional; omit it to include boards and sails. Period boundaries follow the same UTC midnight and end-exclusive rules as quotes and bookings.
++
++Use `cancel(bookingId, at)` to cancel a booking once. `at` must be a whole-hour UTC timestamp in ISO-8601 format. The service returns `{ bookingId, refund }`, with `refund` in euro cents: the unused portion of the stored booking total, prorated over its duration and rounded to the nearest cent. A cancellation releases the equipment immediately; cancelling at or after the booking end returns zero.
+diff --git a/src/index.ts b/src/index.ts
+index d8094069a4d93ea5a9ee64619e01502462a259a5..6ef3b8baad43c8f55971519919b48d31b13e5713 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -1,2 +1,2 @@
+ export { createRentalService } from './rental-service.js';
+-export type { AvailabilityQuery, RentalBooking, RentalEquipment, RentalQuote, RentalRequest, RentalService } from './rental-service.js';
++export type { AvailabilityQuery, RentalBooking, RentalCancellation, RentalEquipment, RentalQuote, RentalRequest, RentalService } from './rental-service.js';
+diff --git a/src/rental-service.ts b/src/rental-service.ts
+index 1bc06c2ab7999574df02ac183ffb6b4308e253f7..03295ed05d8be9a70df546eccadd9133f14e89fa 100644
+--- a/src/rental-service.ts
++++ b/src/rental-service.ts
+@@ -31,6 +31,12 @@ export interface RentalBooking extends RentalQuote {
+   id: string;
+ }
+ 
++/** The result of cancelling a booking, in euro cents. */
++export interface RentalCancellation {
++  bookingId: string;
++  refund: number;
++}
++
+ /** In-memory rental inventory and bookings. */
+ export interface RentalService {
+   /** Add equipment to the inventory. */
+@@ -39,6 +45,8 @@ export interface RentalService {
+   quote(request: RentalRequest): RentalQuote;
+   /** Book an available item for a valid rental period. */
+   book(request: RentalRequest): RentalBooking;
++  /** Cancel a booking at a whole-hour UTC timestamp and return the unused rental amount. */
++  cancel(bookingId: string, at: string): RentalCancellation;
+   /** Return sorted equipment ids available for the whole valid rental period. */
+   availability(query: AvailabilityQuery): string[];
+ }
+@@ -46,6 +54,7 @@ export interface RentalService {
+ interface StoredBooking extends RentalBooking {
+   endTime: number;
+   startTime: number;
++  cancelled: boolean;
+ }
+ 
+ function utcTime(value: string, field: string): number {
+@@ -113,7 +122,7 @@ export function createRentalService(): RentalService {
+       if (endTime <= startTime) throw new Error('end must be after start');
+       return [...equipment.values()]
+         .filter((item) => query.kind === undefined || item.kind === query.kind)
+-        .filter((item) => !bookings.get(item.id)!.some((booking) => startTime < booking.endTime && booking.startTime < endTime))
++        .filter((item) => !bookings.get(item.id)!.some((booking) => !booking.cancelled && startTime < booking.endTime && booking.startTime < endTime))
+         .map((item) => item.id)
+         .sort();
+     },
+@@ -121,7 +130,7 @@ export function createRentalService(): RentalService {
+       const amount = quote(request);
+       const { startTime, endTime } = validateRequest(request);
+       const itemBookings = bookings.get(request.itemId)!;
+-      if (itemBookings.some((booking) => startTime < booking.endTime && booking.startTime < endTime)) {
++      if (itemBookings.some((booking) => !booking.cancelled && startTime < booking.endTime && booking.startTime < endTime)) {
+         throw new Error(`Equipment is not available for the requested period: ${request.itemId}`);
+       }
+       const booking: StoredBooking = {
+@@ -129,9 +138,23 @@ export function createRentalService(): RentalService {
+         ...amount,
+         startTime,
+         endTime,
++        cancelled: false,
+       };
+       itemBookings.push(booking);
+       return { id: booking.id, itemId: booking.itemId, start: booking.start, end: booking.end, total: booking.total };
+     },
++    cancel(bookingId, at): RentalCancellation {
++      if (typeof bookingId !== 'string' || bookingId.length === 0) throw new Error('bookingId must be a non-empty string');
++      const cancellationTime = utcTime(at, 'at');
++      const booking = [...bookings.values()].flat().find((candidate) => candidate.id === bookingId);
++      if (!booking) throw new Error(`Unknown booking: ${bookingId}`);
++      if (booking.cancelled) throw new Error(`Booking already cancelled: ${bookingId}`);
++      const unusedDuration = Math.max(0, booking.endTime - Math.max(cancellationTime, booking.startTime));
++      const numerator = BigInt(booking.total) * BigInt(unusedDuration);
++      const denominator = BigInt(booking.endTime - booking.startTime);
++      const refund = Number((numerator * 2n + denominator) / (denominator * 2n));
++      booking.cancelled = true;
++      return { bookingId, refund };
++    },
+   };
+ }

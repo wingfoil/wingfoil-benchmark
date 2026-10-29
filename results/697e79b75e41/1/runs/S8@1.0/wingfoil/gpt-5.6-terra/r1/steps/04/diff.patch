@@ -1,0 +1,195 @@
+diff --git a/README.md b/README.md
+index 1d0f8fb9d616f8d9f7d34df153e1201ad1d99560..6d3aee66b69f788a107479f4dc793c103494bf9f 100644
+--- a/README.md
++++ b/README.md
+@@ -13,3 +13,9 @@ accept that identifier, so a reference remains usable when the task is renamed.
+ 
+ Each task also records `createdAt` and `updatedAt` as ISO-8601 date-time strings. Both values are set
+ when the task is added; completing, reopening, renaming, tagging, or untagging refreshes `updatedAt`.
++
++## Bulk import
++
++`importTasks(list, text)` imports spreadsheet-style text into a task list. Each non-blank line must be
++`title;priority;tags`; leave the priority empty for `normal`, and separate tags with spaces. It returns
++the number added plus every rejected line and its reason, while continuing to import later valid lines.
+diff --git a/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-4-plan.md b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-4-plan.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..675b8866e7e03f72b00629f64a62629aea605df7
+--- /dev/null
++++ b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-4-plan.md
+@@ -0,0 +1,17 @@
++---
++id: sw-life-cycle-1-4-plan
++type: plan
++title: "Bulk task import helper"
++status: active
++workflow: "sw-life-cycle"
++phase: "1-4"
++element: ""
++parent: ""
++format: 1
++---
++
++<!-- plan body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
+diff --git a/docs/memory/task/task-004-bulk-task-import-helper.md b/docs/memory/task/task-004-bulk-task-import-helper.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..68deacec7f88e97cdb36401fa4c5064a415237f2
+--- /dev/null
++++ b/docs/memory/task/task-004-bulk-task-import-helper.md
+@@ -0,0 +1,13 @@
++---
++id: task-004-bulk-task-import-helper
++type: task
++title: "Bulk task import helper"
++status: approved
++format: 1
++---
++
++Add a public `importTasks(list, text)` helper exported from `src/index.ts`.
++
++It imports one semicolon-delimited task per non-blank input line (`title;priority;tags`), accepts an
++empty priority as normal priority, splits tags on spaces, and returns counts and per-line rejection
++reasons without preventing valid lines from being added.
+diff --git a/src/index.ts b/src/index.ts
+index ea8d07b1d751a9e25f5cbab969c8be6d1eca051e..3e8e00124bededf548aa68fa34bac083c8857561 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -1,5 +1,7 @@
+ import { createTaskList } from './domain/list.ts';
+ import type { TaskList } from './domain/list.ts';
++import { PRIORITIES } from './domain/task.ts';
++import type { Priority } from './domain/task.ts';
+ 
+ export type { TaskFilter, TaskList } from './domain/list.ts';
+ export type { Result, TodoError, TodoErrorCode } from './domain/result.ts';
+@@ -8,6 +10,22 @@ export type { Summary } from './domain/summary.ts';
+ export { PRIORITIES } from './domain/task.ts';
+ export type { NewTask, Priority, Status, Task } from './domain/task.ts';
+ 
++/** A source line that could not be added during a bulk import. */
++export interface RejectedTaskImport {
++  /** The one-based line number in the supplied import text. */
++  readonly line: number;
++  /** Why the line could not be imported. */
++  readonly reason: string;
++}
++
++/** The outcome of a bulk task import. */
++export interface TaskImportResult {
++  /** The number of tasks successfully added to the list. */
++  readonly imported: number;
++  /** Each non-blank line that could not be added. */
++  readonly rejected: readonly RejectedTaskImport[];
++}
++
+ /**
+  * A new, empty task list for the app, kept in memory.
+  *
+@@ -16,3 +34,45 @@ export type { NewTask, Priority, Status, Task } from './domain/task.ts';
+ export function createTodoList(now: () => string = () => new Date().toISOString()): TaskList {
+   return createTaskList(now);
+ }
++
++/**
++ * Adds tasks from semicolon-delimited text, retaining per-line failures while importing valid rows.
++ *
++ * @param list - the task list to receive valid tasks
++ * @param text - one `title;priority;tags` task row per line
++ */
++export function importTasks(list: TaskList, text: string): TaskImportResult {
++  const rejected: RejectedTaskImport[] = [];
++  let imported = 0;
++
++  for (const [index, line] of text.split(/\r?\n/).entries()) {
++    if (line.trim().length === 0) continue;
++
++    const fields = line.split(';');
++    if (fields.length !== 3) {
++      rejected.push({ line: index + 1, reason: 'expected title;priority;tags' });
++      continue;
++    }
++
++    const [title, priorityText, tagsText] = fields;
++    const priority = priorityText.trim();
++    if (priority.length > 0 && !isPriority(priority)) {
++      rejected.push({ line: index + 1, reason: 'priority must be low, normal, or high' });
++      continue;
++    }
++
++    const result = list.add({
++      title,
++      priority: priority || undefined,
++      tags: tagsText.trim().length === 0 ? [] : tagsText.trim().split(/\s+/),
++    });
++    if (result.ok) imported += 1;
++    else rejected.push({ line: index + 1, reason: result.error.message });
++  }
++
++  return { imported, rejected };
++}
++
++function isPriority(value: string): value is Priority {
++  return PRIORITIES.includes(value as Priority);
++}
+diff --git a/test/list.test.ts b/test/list.test.ts
+index f8906b7cc3245e958ab0a4511679a8a7ce0f24cc..63174e407456ee3d45f297c42fafc768db171a73 100644
+--- a/test/list.test.ts
++++ b/test/list.test.ts
+@@ -1,7 +1,7 @@
+ import assert from 'node:assert/strict';
+ import { describe, it } from 'node:test';
+ 
+-import { createTodoList, summarize } from '../src/index.ts';
++import { createTodoList, importTasks, summarize } from '../src/index.ts';
+ 
+ function valueOf<T>(result: { ok: true; value: T } | { ok: false; error: unknown }): T {
+   if (!result.ok) assert.fail(JSON.stringify(result.error));
+@@ -9,6 +9,44 @@ function valueOf<T>(result: { ok: true; value: T } | { ok: false; error: unknown
+ }
+ 
+ describe('task list', () => {
++  it('bulk imports valid task rows, skipping blank lines', () => {
++    const list = createTodoList(() => '2026-10-29T10:00:00.000Z');
++
++    const result = importTasks(
++      list,
++      'Renew the insurance;high;admin money\n\nBuy milk;;shopping\nPlan weekend;low;',
++    );
++
++    assert.deepEqual(result, { imported: 3, rejected: [] });
++    assert.deepEqual(
++      list.list().map(({ title, priority, tags }) => ({ title, priority, tags })),
++      [
++        { title: 'Renew the insurance', priority: 'high', tags: ['admin', 'money'] },
++        { title: 'Buy milk', priority: 'normal', tags: ['shopping'] },
++        { title: 'Plan weekend', priority: 'low', tags: [] },
++      ],
++    );
++  });
++
++  it('reports malformed and invalid bulk-import rows while importing the valid ones', () => {
++    const list = createTodoList(() => '2026-10-29T10:00:00.000Z');
++
++    const result = importTasks(
++      list,
++      'Valid task;normal;home\nMissing fields;high\nBad priority;urgent;\nValid task;;\n;low;home',
++    );
++
++    assert.deepEqual(result, {
++      imported: 1,
++      rejected: [
++        { line: 2, reason: 'expected title;priority;tags' },
++        { line: 3, reason: 'priority must be low, normal, or high' },
++        { line: 4, reason: 'there is already a task "Valid task"' },
++        { line: 5, reason: 'title must not be empty' },
++      ],
++    });
++  });
++
+   it('adds an open task with a normal priority by default', () => {
+     const list = createTodoList();
+     const task = valueOf(list.add({ title: '  Buy milk ' }));

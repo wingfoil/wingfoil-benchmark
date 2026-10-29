@@ -1,0 +1,120 @@
+diff --git a/src/index.ts b/src/index.ts
+index c06ae61ea9519104622e20461347f02add08738d..819f6cc4a185cb4ce561bc128438f2905bcd5fba 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -1,8 +1,10 @@
+-/** A rentable board or sail. Prices are expressed in euro cents per day. */
++/** A rentable board or sail. Prices are expressed in euro cents. */
+ export interface Equipment {
+   id: string;
+   kind: "board" | "sail";
+   dailyPrice: number;
++  /** The optional price for one hour of a rental shorter than a day. */
++  hourlyPrice?: number;
+ }
+ 
+ /** A requested rental interval. `end` is exclusive. */
+@@ -35,6 +37,7 @@ export interface RentalService {
+ }
+ 
+ const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000;
++const MILLISECONDS_PER_HOUR = 60 * 60 * 1000;
+ const LONG_RENTAL_MINIMUM_DAYS = 3;
+ const LONG_RENTAL_DISCOUNT_RATE = 0.1;
+ 
+@@ -62,12 +65,22 @@ export function createRentalService(): RentalService {
+     }
+ 
+     const { startTime, endTime } = validateRentalRequest(request);
+-    const days = (endTime - startTime) / MILLISECONDS_PER_DAY;
+-    const fullPrice = item.dailyPrice * days;
+-    const total =
+-      days >= LONG_RENTAL_MINIMUM_DAYS
+-        ? Math.round(fullPrice * (1 - LONG_RENTAL_DISCOUNT_RATE))
+-        : fullPrice;
++    const duration = endTime - startTime;
++    let total: number;
++
++    if (duration < MILLISECONDS_PER_DAY) {
++      if (item.hourlyPrice === undefined) {
++        throw new Error(`Equipment item cannot be rented by the hour: ${request.itemId}`);
++      }
++      total = item.hourlyPrice * (duration / MILLISECONDS_PER_HOUR);
++    } else {
++      const days = duration / MILLISECONDS_PER_DAY;
++      const fullPrice = item.dailyPrice * days;
++      total =
++        days >= LONG_RENTAL_MINIMUM_DAYS
++          ? Math.round(fullPrice * (1 - LONG_RENTAL_DISCOUNT_RATE))
++          : fullPrice;
++    }
+ 
+     if (!Number.isSafeInteger(total)) {
+       throw new Error("Rental total must be a safe integer number of cents");
+@@ -134,19 +147,42 @@ function validateEquipment(item: Equipment): void {
+   if (!Number.isSafeInteger(item.dailyPrice) || item.dailyPrice < 0) {
+     throw new Error("Daily price must be a non-negative integer number of cents");
+   }
++  if (
++    item.hourlyPrice !== undefined &&
++    (!Number.isSafeInteger(item.hourlyPrice) || item.hourlyPrice < 0)
++  ) {
++    throw new Error("Hourly price must be a non-negative integer number of cents");
++  }
+ }
+ 
+ function validatePeriod(request: { start: string; end: string }): {
+   startTime: number;
+   endTime: number;
+ } {
+-  const startTime = parseUtcMidnight(request.start, "start");
+-  const endTime = parseUtcMidnight(request.end, "end");
++  const startTime = parseUtcTime(request.start, "start");
++  const endTime = parseUtcTime(request.end, "end");
+ 
+   if (endTime <= startTime) {
+     throw new Error("Rental end must be after its start");
+   }
+ 
++  const duration = endTime - startTime;
++  const isHourlyRental = duration < MILLISECONDS_PER_DAY;
++  const isOnTheHour =
++    startTime % MILLISECONDS_PER_HOUR === 0 &&
++    endTime % MILLISECONDS_PER_HOUR === 0;
++  const isDailyRental =
++    startTime % MILLISECONDS_PER_DAY === 0 &&
++    endTime % MILLISECONDS_PER_DAY === 0;
++
++  if ((isHourlyRental && !isOnTheHour) || (!isHourlyRental && !isDailyRental)) {
++    throw new Error(
++      isHourlyRental
++        ? "Rentals shorter than a day must start and end on the hour UTC"
++        : "Rentals of a day or longer must start and end at midnight UTC",
++    );
++  }
++
+   return { startTime, endTime };
+ }
+ 
+@@ -173,7 +209,7 @@ function validateAvailabilityQuery(query: AvailabilityQuery): {
+   return validatePeriod(query);
+ }
+ 
+-function parseUtcMidnight(value: unknown, field: string): number {
++function parseUtcTime(value: unknown, field: string): number {
+   const parts =
+     typeof value === "string"
+       ? /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?Z$/.exec(
+@@ -197,10 +233,9 @@ function parseUtcMidnight(value: unknown, field: string): number {
+ 
+   if (
+     !Number.isFinite(timestamp) ||
+-    !isExactDate ||
+-    timestamp % MILLISECONDS_PER_DAY !== 0
++    !isExactDate
+   ) {
+-    throw new Error(`Rental ${field} must be at midnight UTC`);
++    throw new Error(`Rental ${field} must be a valid ISO-8601 UTC time`);
+   }
+ 
+   return timestamp;

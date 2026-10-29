@@ -1,0 +1,73 @@
+diff --git a/README.md b/README.md
+index 5344b9a4d0ebb8fba433d18d9d87ac9f69a4b005..7a8295c838179739ead16f23c7cdf1276127dc54 100644
+--- a/README.md
++++ b/README.md
+@@ -22,7 +22,8 @@ resolvePointer({ items: ["first", "second"] }, "/items/1"); // "second"
+ 
+ `applyPatch(document, patch)` applies an RFC 6902 JSON Patch array and returns a new value. It supports
+ `add`, `remove`, `replace`, `move`, `copy` and `test`; malformed operations, unresolved paths, and
+-failed tests throw an error. The input document is left unchanged.
++failed tests throw an error and stop processing the patch. Operations are applied in order, and the
++input document is left unchanged even when an operation fails.
+ 
+ ```ts
+ import { applyPatch } from "json-toolkit";
+diff --git a/src/index.ts b/src/index.ts
+index 84327f4c2efe3192dd22893124312e6a91de3609..ae930fda26c795834da44504632dfa72e4ffdda7 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -81,6 +81,8 @@ export function applyPatch(document: unknown, patch: unknown): unknown {
+       throw new Error("JSON Patch operation must be an object");
+     }
+     const operation = entry as Record<string, unknown>;
++    if (!Object.hasOwn(operation, "op")) throw new Error("JSON Patch operation requires 'op'");
++    if (!Object.hasOwn(operation, "path")) throw new Error("JSON Patch operation requires 'path'");
+     const op = operation.op;
+     const path = operation.path;
+     if (typeof path !== "string") throw new Error("JSON Patch path must be a string");
+@@ -109,8 +111,10 @@ export function applyPatch(document: unknown, patch: unknown): unknown {
+         if (destinationTokens.length > sourceTokens.length && sourceTokens.every((token, i) => token === destinationTokens[i])) {
+           throw new Error("Cannot move a value into one of its children");
+         }
+-        if (from === path) break;
+         const value = resolvePointer(result, from);
++        // RFC 6902 defines move as removal followed by addition. Even when
++        // both pointers are identical, the source must still resolve.
++        if (from === path) break;
+         result = writeAt(result, from, undefined, "remove");
+         result = writeAt(result, path, value, "add");
+         break;
+diff --git a/test/patch.test.js b/test/patch.test.js
+index 96e93b322ef7c45950043ff9ad08035e90d23e0d..eae3fb580a22d2b94d189ecb6ae87bcc52ac3fbd 100644
+--- a/test/patch.test.js
++++ b/test/patch.test.js
+@@ -34,3 +34,29 @@ test("throws on invalid operations, failed paths, moves into descendants, and fa
+   ];
+   for (const patch of cases) assert.throws(() => applyPatch({ a: {}, arr: [] }, patch), Error);
+ });
++
++test("validates move sources even when source and destination are identical", () => {
++  assert.throws(() => applyPatch({}, [{ op: "move", from: "/missing", path: "/missing" }]), Error);
++});
++
++test("a failing later operation leaves the caller's document unchanged", () => {
++  const document = { items: ["a", "b"] };
++  assert.throws(() => applyPatch(document, [
++    { op: "remove", path: "/items/0" },
++    { op: "remove", path: "/absent" },
++  ]), Error);
++  assert.deepEqual(document, { items: ["a", "b"] });
++});
++
++test("test compares JSON numbers and nested arrays and objects by value", () => {
++  assert.doesNotThrow(() => applyPatch({ value: { list: [1, { ok: true }] } }, [
++    { op: "test", path: "/value", value: { list: [1, { ok: true }] } },
++  ]));
++});
++
++test("add treats an absent object member as a new member and replaces an existing member", () => {
++  assert.deepEqual(applyPatch({ a: 1 }, [
++    { op: "add", path: "/a", value: 2 },
++    { op: "add", path: "/b", value: 3 },
++  ]), { a: 2, b: 3 });
++});

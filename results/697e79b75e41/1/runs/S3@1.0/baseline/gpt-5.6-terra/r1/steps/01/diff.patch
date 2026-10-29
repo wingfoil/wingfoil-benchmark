@@ -1,0 +1,160 @@
+diff --git a/src/index.ts b/src/index.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..9b6dfb35a34a09591535ca7ecbf418874510be5a
+--- /dev/null
++++ b/src/index.ts
+@@ -0,0 +1,154 @@
++/** A rentable board or sail. Prices are expressed in euro cents per day. */
++export interface Equipment {
++  id: string;
++  kind: "board" | "sail";
++  dailyPrice: number;
++}
++
++/** A requested rental interval. `end` is exclusive. */
++export interface RentalRequest {
++  itemId: string;
++  start: string;
++  end: string;
++}
++
++export interface RentalQuote extends RentalRequest {
++  total: number;
++}
++
++export interface Booking extends RentalQuote {
++  id: string;
++}
++
++export interface RentalService {
++  addEquipment(item: Equipment): void;
++  quote(request: RentalRequest): RentalQuote;
++  book(request: RentalRequest): Booking;
++}
++
++const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000;
++
++/**
++ * Creates an isolated, in-memory rental service.
++ *
++ * Rental intervals are half-open: their start is included and their end is
++ * excluded. Consequently, a booking ending at midnight can be followed by
++ * one starting at that same midnight.
++ */
++export function createRentalService(): RentalService {
++  const equipment = new Map<string, Equipment>();
++  const bookings: Booking[] = [];
++  let nextBookingNumber = 1;
++
++  function addEquipment(item: Equipment): void {
++    validateEquipment(item);
++    equipment.set(item.id, { ...item });
++  }
++
++  function quote(request: RentalRequest): RentalQuote {
++    const item = equipment.get(request.itemId);
++    if (!item) {
++      throw new Error(`Unknown equipment item: ${request.itemId}`);
++    }
++
++    const { startTime, endTime } = validatePeriod(request);
++    const days = (endTime - startTime) / MILLISECONDS_PER_DAY;
++    const total = item.dailyPrice * days;
++
++    if (!Number.isSafeInteger(total)) {
++      throw new Error("Rental total must be a safe integer number of cents");
++    }
++
++    return { ...request, total };
++  }
++
++  function book(request: RentalRequest): Booking {
++    const quoteResult = quote(request);
++    const { startTime, endTime } = validatePeriod(request);
++
++    const isUnavailable = bookings.some((booking) => {
++      if (booking.itemId !== request.itemId) {
++        return false;
++      }
++      const bookedStart = Date.parse(booking.start);
++      const bookedEnd = Date.parse(booking.end);
++      return startTime < bookedEnd && bookedStart < endTime;
++    });
++
++    if (isUnavailable) {
++      throw new Error(`Equipment item is not available: ${request.itemId}`);
++    }
++
++    const booking: Booking = {
++      id: `booking-${nextBookingNumber++}`,
++      ...quoteResult,
++    };
++    bookings.push(booking);
++    return { ...booking };
++  }
++
++  return { addEquipment, quote, book };
++}
++
++function validateEquipment(item: Equipment): void {
++  if (!item || typeof item.id !== "string" || item.id.length === 0) {
++    throw new Error("Equipment id must be a non-empty string");
++  }
++  if (item.kind !== "board" && item.kind !== "sail") {
++    throw new Error("Equipment kind must be 'board' or 'sail'");
++  }
++  if (!Number.isSafeInteger(item.dailyPrice) || item.dailyPrice < 0) {
++    throw new Error("Daily price must be a non-negative integer number of cents");
++  }
++}
++
++function validatePeriod(request: RentalRequest): {
++  startTime: number;
++  endTime: number;
++} {
++  if (!request || typeof request.itemId !== "string") {
++    throw new Error("Rental request must include an item id");
++  }
++
++  const startTime = parseUtcMidnight(request.start, "start");
++  const endTime = parseUtcMidnight(request.end, "end");
++
++  if (endTime <= startTime) {
++    throw new Error("Rental end must be after its start");
++  }
++
++  return { startTime, endTime };
++}
++
++function parseUtcMidnight(value: unknown, field: string): number {
++  const parts =
++    typeof value === "string"
++      ? /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?Z$/.exec(
++          value,
++        )
++      : null;
++
++  if (!parts) {
++    throw new Error(`Rental ${field} must be an ISO-8601 UTC string`);
++  }
++
++  const timestamp = Date.parse(value as string);
++  const date = new Date(timestamp);
++  const isExactDate =
++    date.getUTCFullYear() === Number(parts[1]) &&
++    date.getUTCMonth() + 1 === Number(parts[2]) &&
++    date.getUTCDate() === Number(parts[3]) &&
++    date.getUTCHours() === Number(parts[4]) &&
++    date.getUTCMinutes() === Number(parts[5]) &&
++    date.getUTCSeconds() === Number(parts[6] ?? "0");
++
++  if (
++    !Number.isFinite(timestamp) ||
++    !isExactDate ||
++    timestamp % MILLISECONDS_PER_DAY !== 0
++  ) {
++    throw new Error(`Rental ${field} must be at midnight UTC`);
++  }
++
++  return timestamp;
++}

@@ -1,0 +1,154 @@
+diff --git a/README.md b/README.md
+index 128ba5fdba224dad49c304ab4cf25ac040867ede..85b694045e8dae98515d32167b7b07f672c36197 100644
+--- a/README.md
++++ b/README.md
+@@ -16,4 +16,8 @@ return an `invalid-input` error and leave the list unchanged.
+ Tasks also expose `createdAt` and `updatedAt` as ISO-8601 date-time strings. They are initially equal;
+ each successful completion, reopening, rename, tag, or untag operation refreshes `updatedAt`.
+ 
++`importTasks(list, text)` imports spreadsheet rows in the form `title;priority;tags`. An empty priority
++uses `normal`; tags are separated by spaces. It skips blank lines, adds valid rows, and returns the
++number imported along with each rejected row's one-based line number and reason.
++
+ Run its tests with `npm test`.
+diff --git a/src/index.ts b/src/index.ts
+index 02bd65c6919b8092f8b4f014a6c435f711181160..62b8f0285930b304584d76d2893b72931695f06a 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -1,5 +1,6 @@
+ import { createTaskList } from './domain/list.ts';
+ import type { TaskList } from './domain/list.ts';
++import type { NewTask, Priority } from './domain/task.ts';
+ 
+ export type { TaskFilter, TaskList } from './domain/list.ts';
+ export type { Result, TodoError, TodoErrorCode } from './domain/result.ts';
+@@ -14,6 +15,22 @@ export interface TodoListOptions {
+   readonly now?: () => string;
+ }
+ 
++/** A source row that could not be imported. */
++export interface RejectedTaskImport {
++  /** The one-based line number in the supplied text. */
++  readonly line: number;
++  /** Why this row could not be added. */
++  readonly reason: string;
++}
++
++/** The outcome of importing tasks from spreadsheet text. */
++export interface TaskImportResult {
++  /** How many tasks were added. */
++  readonly imported: number;
++  /** Every non-blank row that could not be added. */
++  readonly rejected: readonly RejectedTaskImport[];
++}
++
+ /**
+  * A new, empty task list for the app, kept in memory.
+  *
+@@ -22,3 +39,47 @@ export interface TodoListOptions {
+ export function createTodoList(options: TodoListOptions = {}): TaskList {
+   return createTaskList(options.now ?? (() => new Date().toISOString()));
+ }
++
++/**
++ * Adds tasks described as `title;priority;tags` rows to a list.
++ *
++ * @param list - the list that receives valid tasks
++ * @param text - spreadsheet text, with tags separated by whitespace and an empty priority meaning `normal`
++ */
++export function importTasks(list: TaskList, text: string): TaskImportResult {
++  const rejected: RejectedTaskImport[] = [];
++  let imported = 0;
++
++  for (const [index, row] of text.split(/\r\n?|\n/u).entries()) {
++    if (row.trim().length === 0) continue;
++
++    const parsed = parseImportRow(row);
++    if (parsed === undefined) {
++      rejected.push({ line: index + 1, reason: 'expected title;priority;tags' });
++      continue;
++    }
++
++    const added = list.add(parsed);
++    if (added.ok) {
++      imported += 1;
++    } else {
++      rejected.push({ line: index + 1, reason: added.error.message });
++    }
++  }
++
++  return { imported, rejected };
++}
++
++function parseImportRow(row: string): NewTask | undefined {
++  const fields = row.split(';');
++  if (fields.length !== 3) return undefined;
++
++  const [title, priorityText, tagsText] = fields;
++  const priority = priorityText.trim();
++  const tags = tagsText.trim();
++  return {
++    title,
++    priority: priority === '' ? undefined : (priority as Priority),
++    tags: tags === '' ? [] : tags.split(/\s+/u),
++  };
++}
+diff --git a/test/list.test.ts b/test/list.test.ts
+index e873a07aad6b26f2108dbf421fc3da73841f1326..c03dd4491e576023dc2cf5dc5480f69c66ec872a 100644
+--- a/test/list.test.ts
++++ b/test/list.test.ts
+@@ -1,7 +1,7 @@
+ import assert from 'node:assert/strict';
+ import { describe, it } from 'node:test';
+ 
+-import { createTodoList, summarize } from '../src/index.ts';
++import { createTodoList, importTasks, summarize } from '../src/index.ts';
+ 
+ function valueOf<T>(result: { ok: true; value: T } | { ok: false; error: unknown }): T {
+   if (!result.ok) assert.fail(JSON.stringify(result.error));
+@@ -9,6 +9,45 @@ function valueOf<T>(result: { ok: true; value: T } | { ok: false; error: unknown
+ }
+ 
+ describe('task list', () => {
++  it('imports tasks from spreadsheet text, using normal priority for an empty value', () => {
++    const list = createTodoList({ now: () => '2026-10-29T09:00:00.000Z' });
++
++    const result = importTasks(
++      list,
++      'Renew the insurance;high;admin money\nBuy milk;;groceries\n\nCall Mum;low;',
++    );
++
++    assert.deepEqual(result, { imported: 3, rejected: [] });
++    assert.deepEqual(
++      list.list().map(({ title, priority, tags }) => ({ title, priority, tags })),
++      [
++        { title: 'Renew the insurance', priority: 'high', tags: ['admin', 'money'] },
++        { title: 'Buy milk', priority: 'normal', tags: ['groceries'] },
++        { title: 'Call Mum', priority: 'low', tags: [] },
++      ],
++    );
++  });
++
++  it('reports every malformed or invalid import line while keeping valid tasks', () => {
++    const list = createTodoList();
++
++    const result = importTasks(
++      list,
++      'Valid;normal;home\nMissing tags;high\nInvalid priority;urgent;\n;low;\nValid;low;work',
++    );
++
++    assert.deepEqual(result, {
++      imported: 1,
++      rejected: [
++        { line: 2, reason: 'expected title;priority;tags' },
++        { line: 3, reason: 'priority must be low, normal, or high' },
++        { line: 4, reason: 'title must not be empty or only spaces' },
++        { line: 5, reason: 'there is already a task "Valid"' },
++      ],
++    });
++    assert.deepEqual(list.list().map((task) => task.title), ['Valid']);
++  });
++
+   it('adds an open task with a normal priority by default', () => {
+     const list = createTodoList({ now: () => '2026-10-29T09:00:00.000Z' });
+     const task = valueOf(list.add({ title: '  Buy milk ' }));

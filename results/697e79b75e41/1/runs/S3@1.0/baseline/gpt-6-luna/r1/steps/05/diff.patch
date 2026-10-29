@@ -1,0 +1,65 @@
+diff --git a/src/index.ts b/src/index.ts
+index da65d096160eec1496ece727a72bc1fe54777280..e672079a2a01a7ffda63a43e1377b718f9ea0725 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -27,10 +27,16 @@ export interface RentalBooking extends RentalQuote {
+   id: string;
+ }
+ 
++export interface RentalCancellation {
++  bookingId: string;
++  refund: number;
++}
++
+ export interface RentalService {
+   addEquipment(item: Equipment): void;
+   quote(request: RentalRequest): RentalQuote;
+   book(request: RentalRequest): RentalBooking;
++  cancel(bookingId: string, at: string): RentalCancellation;
+   availability(query: AvailabilityQuery): string[];
+ }
+ 
+@@ -40,6 +46,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
+ export function createRentalService(): RentalService {
+   const equipment = new Map<string, Equipment>();
+   const bookings: RentalBooking[] = [];
++  const cancelledBookings = new Set<string>();
+   let nextBookingId = 1;
+ 
+   function validateRequest(request: RentalRequest): { item: Equipment; days: number; hours?: number } {
+@@ -95,6 +102,7 @@ export function createRentalService(): RentalService {
+     return [...equipment.values()]
+       .filter((item) => query.kind === undefined || item.kind === query.kind)
+       .filter((item) => !bookings.some((booking) => {
++        if (cancelledBookings.has(booking.id)) return false;
+         if (booking.itemId !== item.id) return false;
+         const bookingStart = Date.parse(booking.start);
+         const bookingEnd = Date.parse(booking.end);
+@@ -126,11 +134,27 @@ export function createRentalService(): RentalService {
+ 
+     availability,
+ 
++    cancel(bookingId, at) {
++      const cancellationTime = parseUtcDateTime(at, 'at');
++      const booking = bookings.find((candidate) => candidate.id === bookingId);
++      if (!booking) throw new Error(`Unknown booking: ${bookingId}`);
++      if (cancelledBookings.has(bookingId)) throw new Error(`Booking has already been cancelled: ${bookingId}`);
++
++      // Refund the unused proportion of the quoted total, rounded down to whole cents.
++      const start = Date.parse(booking.start);
++      const end = Date.parse(booking.end);
++      const remaining = Math.max(0, end - Math.max(start, cancellationTime));
++      const refund = Number((BigInt(booking.total) * BigInt(remaining)) / BigInt(end - start));
++      cancelledBookings.add(bookingId);
++      return { bookingId, refund };
++    },
++
+     book(request) {
+       const result = quote(request);
+       const start = parseUtcDateTime(request.start, 'start');
+       const end = parseUtcDateTime(request.end, 'end');
+       const overlaps = bookings.some((booking) => {
++        if (cancelledBookings.has(booking.id)) return false;
+         if (booking.itemId !== request.itemId) return false;
+         const bookingStart = Date.parse(booking.start);
+         const bookingEnd = Date.parse(booking.end);

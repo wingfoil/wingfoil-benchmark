@@ -1,0 +1,61 @@
+diff --git a/src/index.ts b/src/index.ts
+index 081245f0211126038b332cb8198165acbfe0178e..a04680ba413f0d08cc48a7e9ea82c32e58b1907e 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -91,6 +91,24 @@ function cloneJson(value: JsonValue): JsonValue {
+   return value;
+ }
+ 
++function isJsonValue(value: unknown, ancestors = new Set<object>()): value is JsonValue {
++  if (value === null || typeof value === "string" || typeof value === "boolean") return true;
++  if (typeof value === "number") return Number.isFinite(value);
++  if (typeof value !== "object") return false;
++  if (ancestors.has(value)) return false;
++  ancestors.add(value);
++  let valid: boolean;
++  if (Array.isArray(value)) {
++    valid = Object.keys(value).length === value.length && value.every((item) => isJsonValue(item, ancestors));
++  } else {
++    const prototype = Object.getPrototypeOf(value);
++    valid = (prototype === Object.prototype || prototype === null) &&
++      Object.keys(value).every((key) => isJsonValue((value as Record<string, unknown>)[key], ancestors));
++  }
++  ancestors.delete(value);
++  return valid;
++}
++
+ function arrayIndex(token: string, length: number, allowEnd: boolean): number {
+   if (!/^(0|[1-9][0-9]*)$/.test(token)) throw new Error(`Invalid array index '${token}'`);
+   const index = Number(token);
+@@ -153,16 +171,21 @@ function jsonEqual(a: JsonValue, b: JsonValue): boolean {
+  * @throws {Error} If an operation is invalid or cannot be applied.
+  */
+ export function applyPatch(document: JsonValue, patch: readonly unknown[]): JsonValue {
++  if (!isJsonValue(document)) throw new Error("JSON Patch document must be a JSON value");
+   if (!Array.isArray(patch)) throw new Error("JSON Patch must be an array");
+   let result = cloneJson(document);
+   for (const raw of patch) {
+     if (raw === null || typeof raw !== "object" || Array.isArray(raw)) throw new Error("JSON Patch operation must be an object");
+     const operation = raw as Record<string, unknown>;
+     const op = operation.op;
++    if (typeof op !== "string" || !["add", "remove", "replace", "move", "copy", "test"].includes(op)) {
++      throw new Error(`Unsupported JSON Patch operation '${String(op)}'`);
++    }
+     const path = decodePointer(operation.path);
+     const requireValue = (): JsonValue => {
+       if (!Object.prototype.hasOwnProperty.call(operation, "value")) throw new Error(`JSON Patch '${String(op)}' operation requires value`);
+-      return operation.value as JsonValue;
++      if (!isJsonValue(operation.value)) throw new Error(`JSON Patch '${String(op)}' value must be a JSON value`);
++      return cloneJson(operation.value);
+     };
+     if (op === "add") result = writeAt(result, path, "add", requireValue());
+     else if (op === "remove") result = writeAt(result, path, "remove");
+@@ -177,7 +200,7 @@ export function applyPatch(document: JsonValue, patch: readonly unknown[]): Json
+         result = writeAt(result, from, "remove");
+       }
+       result = writeAt(result, path, "add", copied);
+-    } else throw new Error(`Unsupported JSON Patch operation '${String(op)}'`);
++    }
+   }
+   return result;
+ }

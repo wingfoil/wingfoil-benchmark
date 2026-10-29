@@ -1,0 +1,79 @@
+diff --git a/README.md b/README.md
+index a9b6ab79b2a894c21b8adfebba111cc480a18da6..12a7603ea98e98b624cc4c6f0e7bdc496133a7f2 100644
+--- a/README.md
++++ b/README.md
+@@ -9,7 +9,9 @@ of its booking desk, written in TypeScript with no runtime dependency.
+ Import `createRentalService` from `src/index.ts` to create an in-memory equipment catalog and
+ booking desk. Add boards or sails with `addEquipment({ id, kind, dailyPrice })`, where `dailyPrice`
+ is a non-negative integer number of euro cents per day. `quote({ itemId, start, end })` calculates
+-the price, and `book(...)` reserves the item and returns its booking ID. Rental timestamps must be
++the price, `availability({ start, end, kind? })` returns the sorted IDs of equipment free for the
++whole period (optionally filtered to boards or sails), and `book(...)` reserves the item and returns
++its booking ID. Rental timestamps must be
+ ISO-8601 UTC midnight strings. The start is included and the end is exclusive, so a one-day rental
+ ends at midnight on the following day. Equipment cannot have overlapping bookings. The service
+ does not persist data after it is discarded. Cancellation is not implemented yet.
+diff --git a/src/index.ts b/src/index.ts
+index ec86ff34546f787527c8c9f85f803debae9b1827..f9b55e05667402ac875030928f62c59c4a35dcc3 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -12,6 +12,13 @@ export interface RentalRequest {
+   end: string;
+ }
+ 
++/** A period to check for available equipment, optionally limited by kind. */
++export interface AvailabilityQuery {
++  start: string;
++  end: string;
++  kind?: 'board' | 'sail';
++}
++
+ /** The price for a rental period, in integer euro cents. */
+ export interface RentalQuote extends RentalRequest {
+   total: number;
+@@ -26,6 +33,8 @@ export interface RentalBooking extends RentalQuote {
+ export interface RentalService {
+   /** Add equipment to the catalog. */
+   addEquipment(item: RentalEquipment): void;
++  /** Return sorted equipment IDs free for the entire period, optionally filtered by kind. */
++  availability(query: AvailabilityQuery): string[];
+   /** Calculate the cost of a valid rental period. */
+   quote(request: RentalRequest): RentalQuote;
+   /** Book an available item for a valid rental period. */
+@@ -35,7 +44,7 @@ export interface RentalService {
+ const DAY_MS = 24 * 60 * 60 * 1000;
+ const UTC_MIDNIGHT = /^\d{4}-\d{2}-\d{2}T00:00:00(?:\.\d+)?Z$/;
+ 
+-function validatePeriod(request: RentalRequest): { start: number; end: number; days: number } {
++function validatePeriod(request: Pick<RentalRequest, 'start' | 'end'>): { start: number; end: number; days: number } {
+   if (typeof request.start !== 'string' || typeof request.end !== 'string' ||
+       !UTC_MIDNIGHT.test(request.start) || !UTC_MIDNIGHT.test(request.end)) {
+     throw new Error('Rental period must use UTC midnight ISO-8601 timestamps');
+@@ -70,6 +79,19 @@ export function createRentalService(): RentalService {
+     return { itemId: request.itemId, start: request.start, end: request.end, total };
+   }
+ 
++  function availability(query: AvailabilityQuery): string[] {
++    if (!query || (query.kind !== undefined && query.kind !== 'board' && query.kind !== 'sail')) {
++      throw new Error('Equipment kind must be board or sail');
++    }
++    const { start, end } = validatePeriod(query);
++    return [...equipment.values()]
++      .filter((item) => query.kind === undefined || item.kind === query.kind)
++      .filter((item) => !bookings.some((booking) => booking.itemId === item.id &&
++        start < Date.parse(booking.end) && Date.parse(booking.start) < end))
++      .map((item) => item.id)
++      .sort();
++  }
++
+   return {
+     addEquipment(item: RentalEquipment): void {
+       if (!item || typeof item.id !== 'string' || item.id.length === 0) throw new Error('Equipment ID must be a non-empty string');
+@@ -78,6 +100,7 @@ export function createRentalService(): RentalService {
+       if (equipment.has(item.id)) throw new Error(`Equipment already exists: ${item.id}`);
+       equipment.set(item.id, { ...item });
+     },
++    availability,
+     quote,
+     book(request: RentalRequest): RentalBooking {
+       const priced = quote(request);

@@ -1,0 +1,129 @@
+diff --git a/README.md b/README.md
+index ff92be649ff3f610b38798b3310751534d032814..6597aa53ff21dad3e870598fd95d6d743e8cb74c 100644
+--- a/README.md
++++ b/README.md
+@@ -3,3 +3,17 @@
+ A small TypeScript library, with no runtime dependency, of building blocks for our services that store,
+ exchange and update JSON: configuration files, API payloads and stored records. It is imported by the
+ other projects of the team, so its behaviour must follow the published standards it implements.
++
++## JSON Pointer
++
++`resolvePointer(document, pointer)` resolves a JSON Pointer string (RFC 6901) against a JSON value.
++The empty string refers to the whole document; other pointers must begin with `/`. Within a pointer,
++`~1` represents `/` and `~0` represents `~`. Object tokens name properties, while array tokens must
++be canonical non-negative indices (no leading zeroes except for `0`). Invalid pointers and pointers
++that do not identify a value throw an error.
++
++```ts
++import { resolvePointer } from "json-toolkit";
++
++resolvePointer({ items: ["first", "second"] }, "/items/1"); // "second"
++```
+diff --git a/src/index.ts b/src/index.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..4173e0b4fe9ee583737b51790b46acbfc35aa77c
+--- /dev/null
++++ b/src/index.ts
+@@ -0,0 +1,60 @@
++/**
++ * Resolves an RFC 6901 JSON Pointer against a JSON document.
++ *
++ * The empty pointer refers to the document itself. Object tokens select own
++ * properties, and array tokens select canonical non-negative indices.
++ * Throws when the pointer is malformed or does not resolve within the document.
++ *
++ * @param document The JSON value to search.
++ * @param pointer An RFC 6901 JSON Pointer string.
++ * @returns The value identified by the pointer.
++ */
++export function resolvePointer(document: unknown, pointer: string): unknown {
++  if (typeof pointer !== "string") {
++    throw new Error("JSON Pointer must be a string");
++  }
++
++  if (pointer === "") {
++    return document;
++  }
++
++  if (!pointer.startsWith("/")) {
++    throw new Error("JSON Pointer must be empty or begin with '/'");
++  }
++
++  const tokens = pointer.slice(1).split("/").map(decodeToken);
++  let value = document;
++
++  for (const token of tokens) {
++    if (Array.isArray(value)) {
++      if (!/^(0|[1-9][0-9]*)$/.test(token)) {
++        throw new Error(`Invalid array index in JSON Pointer: ${token}`);
++      }
++
++      const index = Number(token);
++      if (!Number.isSafeInteger(index) || index >= value.length) {
++        throw new Error(`JSON Pointer array index does not exist: ${token}`);
++      }
++
++      value = value[index];
++      continue;
++    }
++
++    if (value !== null && typeof value === "object" && Object.hasOwn(value, token)) {
++      value = (value as Record<string, unknown>)[token];
++      continue;
++    }
++
++    throw new Error(`JSON Pointer token does not resolve: ${token}`);
++  }
++
++  return value;
++}
++
++function decodeToken(token: string): string {
++  if (/~(?:[^01]|$)/.test(token)) {
++    throw new Error(`Invalid escape sequence in JSON Pointer token: ${token}`);
++  }
++
++  return token.replace(/~1/g, "/").replace(/~0/g, "~");
++}
+diff --git a/test/pointer.test.js b/test/pointer.test.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..0429673253260758936711ebcf4249207ba5ef98
+--- /dev/null
++++ b/test/pointer.test.js
+@@ -0,0 +1,35 @@
++import test from "node:test";
++import assert from "node:assert/strict";
++import { resolvePointer } from "../src/index.ts";
++
++test("resolves the root and RFC 6901 object and array references", () => {
++  const document = {
++    "": 0,
++    "a/b": { "~key": ["zero", { value: true }] },
++    array: ["first", "second"],
++  };
++
++  assert.equal(resolvePointer(document, ""), document);
++  assert.equal(resolvePointer(document, "/"), 0);
++  assert.equal(resolvePointer(document, "/a~1b/~0key/1/value"), true);
++  assert.equal(resolvePointer(document, "/array/1"), "second");
++});
++
++test("preserves null values and property names inherited by ordinary objects", () => {
++  const document = JSON.parse('{"nullable":null,"constructor":"own"}');
++
++  assert.equal(resolvePointer(document, "/nullable"), null);
++  assert.equal(resolvePointer(document, "/constructor"), "own");
++});
++
++test("rejects malformed pointers and references that do not resolve", () => {
++  const document = { array: ["value"], object: {} };
++
++  for (const pointer of ["relative", "/bad~", "/bad~2escape"]) {
++    assert.throws(() => resolvePointer(document, pointer), Error);
++  }
++
++  for (const pointer of ["/missing", "/array/1", "/array/01", "/array/-", "/object/missing"]) {
++    assert.throws(() => resolvePointer(document, pointer), Error);
++  }
++});

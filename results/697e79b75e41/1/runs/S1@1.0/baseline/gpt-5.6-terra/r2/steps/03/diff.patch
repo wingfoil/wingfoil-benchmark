@@ -1,0 +1,103 @@
+diff --git a/src/index.ts b/src/index.ts
+index 2d4659a0359701441946c74c2dcaa1e1f49e89a1..bf391cf055c92bd746756697803c5fba5c04338f 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -41,6 +41,12 @@ export function resolvePointer(document: unknown, pointer: string): unknown {
+  * @throws {Error} If the patch is malformed or an operation cannot be applied.
+  */
+ export function applyPatch(document: unknown, patch: unknown): unknown {
++  // RFC 6902 operates on JSON documents, rather than arbitrary JavaScript
++  // values.  Checking this before cloning is important: JSON.stringify would
++  // silently change values such as `undefined`, `NaN`, and array holes.
++  assertJsonValue(document, "The target of a JSON Patch");
++  assertJsonValue(patch, "A JSON Patch");
++
+   if (!Array.isArray(patch)) {
+     throw new Error("A JSON Patch must be an array of operations");
+   }
+@@ -218,6 +224,85 @@ function isObject(value: unknown): value is Record<string, unknown> {
+   return value !== null && typeof value === "object" && !Array.isArray(value);
+ }
+ 
++/**
++ * Reject values that cannot be values in a JSON document.
++ *
++ * A repeated object reference is harmless here -- it represents the same JSON
++ * value twice after cloning -- but a reference back to an ancestor is a cycle
++ * and cannot be JSON.  Only plain objects are accepted so that Date, Map,
++ * accessors, and other JavaScript objects are not mistaken for JSON objects.
++ */
++function assertJsonValue(value: unknown, description: string, ancestors = new Set<object>()): void {
++  if (value === null || typeof value === "string" || typeof value === "boolean") return;
++  if (typeof value === "number") {
++    if (Number.isFinite(value)) return;
++    throw new Error(`${description} must contain only JSON values`);
++  }
++  if (typeof value !== "object") {
++    throw new Error(`${description} must contain only JSON values`);
++  }
++  if (ancestors.has(value)) {
++    throw new Error(`${description} must not contain a cycle`);
++  }
++
++  ancestors.add(value);
++  try {
++    if (Array.isArray(value)) {
++      const prototype = Object.getPrototypeOf(value);
++      if (prototype !== Array.prototype && prototype !== null) {
++        throw new Error(`${description} must contain only JSON values`);
++      }
++      for (let index = 0; index < value.length; index += 1) {
++        // A JSON array has a value at every position.  `for...of` would turn
++        // holes into undefined, but checking explicitly makes that rule clear.
++        if (!hasOwn(value, String(index))) {
++          throw new Error(`${description} must contain only JSON values`);
++        }
++        const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
++        if (!descriptor || !("value" in descriptor)) {
++          throw new Error(`${description} must contain only JSON values`);
++        }
++        assertJsonValue(descriptor.value, description, ancestors);
++      }
++      // JavaScript arrays can also have named, hidden, or symbol properties;
++      // none of those can occur in a JSON array.
++      for (const key of Reflect.ownKeys(value)) {
++        if (key === "length") continue;
++        const descriptor = Object.getOwnPropertyDescriptor(value, key);
++        if (
++          typeof key !== "string" ||
++          !isArrayIndex(key) ||
++          !descriptor ||
++          !descriptor.enumerable ||
++          !("value" in descriptor)
++        ) {
++          throw new Error(`${description} must contain only JSON values`);
++        }
++      }
++      return;
++    }
++
++    const prototype = Object.getPrototypeOf(value);
++    if (prototype !== Object.prototype && prototype !== null) {
++      throw new Error(`${description} must contain only JSON values`);
++    }
++    for (const key of Reflect.ownKeys(value)) {
++      const descriptor = Object.getOwnPropertyDescriptor(value, key);
++      if (
++        typeof key !== "string" ||
++        !descriptor ||
++        !descriptor.enumerable ||
++        !("value" in descriptor)
++      ) {
++        throw new Error(`${description} must contain only JSON values`);
++      }
++      assertJsonValue(descriptor.value, description, ancestors);
++    }
++  } finally {
++    ancestors.delete(value);
++  }
++}
++
+ function hasOwn(object: object, key: string): boolean {
+   return Object.prototype.hasOwnProperty.call(object, key);
+ }
