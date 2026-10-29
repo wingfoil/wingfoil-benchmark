@@ -229,7 +229,17 @@ controls).
   (approved `fc4cbec8`, its task later, at the approver's choice): a separate cross-model parity comparison and a
   local estimate. Its first reading uses this execution: Luna with WingFoil matches Terra's baseline at about a
   twelfth of the cost and in less agent time, with 2.4 times the tokens.
-- **Not yet published:** the catalogue entry, the site and the transcripts' release, at the approver's request.
+- **Published** at the approver's request in chat (2026-10-29, "si" to push and publication):
+  - the catalogue entry `697e79b75e41/1` under "Other agents", with six notes, `compared_with: [13fda3099afa/1]`
+    (`bench campaign compare 13fda3099afa/1 697e79b75e41/1`: 12 groups matched, the differing pins listed);
+    campaign-006's erratum note now says no rerun (`34dc1606`);
+  - the transcripts, 238, and the harness artifact (WingFoil 0.3.1's package and its install) as the GitHub release
+    `697e79b75e41-1` (`transcripts.tar.gz` sha256 `336bf5191433314f70cf115bf162a8eaa31ad8d9f18ed95453730cfb5d32565e`;
+    `harnesses.tar.gz` sha256 `3b651019c07931b25a8ed60e7aa225962a1b6baf4419c697420b2ae12d43eb82`), after a pattern
+    scan of both archives (Anthropic and OpenAI key shapes, JWTs, OAuth token values: clean; the credential's values
+    are scrubbed by the runner, not re-checked here); the asset recorded in the runs (`9fa5ee1f`);
+  - every execution under `site/` rebuilt, then `bench site publish`, run by the approver: gh-pages `86839b2d`, six
+    executions.
 
 ## Findings
 
