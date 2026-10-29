@@ -85,3 +85,8 @@ on `1d0ae5c5`: no blocker.
 **Round 2** (re-review of `e94e3e5e`'s diff, a fresh read-only agent, checkouts unchanged): round 1's findings
 resolved; nits only, so the review closes. Applied: the helper computed once in `checkCampaign`; a task line
 rewrapped; the dry-run profile for S10 stated as a need of its calibration, not as done.
+
+**Full suites, first run** (on `988d718c`, log `…-988d718c-140432.txt`): red, TEST 1 —
+`test/unit/campaign/load.test.ts` used `v3` as its example of an unimplemented policy, the fourth such test, missed by
+the targeted runs (core, runner, scenario, site). Fixed to `v4`, its message listing v1, v2, v3; `test/unit/campaign`
+green (143). The task goes back to in-progress for it.
