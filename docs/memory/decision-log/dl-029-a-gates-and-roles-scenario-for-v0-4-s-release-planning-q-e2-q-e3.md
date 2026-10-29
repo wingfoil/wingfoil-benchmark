@@ -2,7 +2,7 @@
 id: dl-029-a-gates-and-roles-scenario-for-v0-4-s-release-planning-q-e2-q-e3
 type: decision-log
 title: "A gates-and-roles scenario for v0.4's release-planning (Q-E2, Q-E3)"
-status: pending
+status: approved
 tags: ["v0.4","scenario","governance","brought-ahead"]
 ---
 
