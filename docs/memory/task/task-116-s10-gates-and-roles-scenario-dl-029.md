@@ -181,3 +181,7 @@ the nits resolved, 3 partly.
   of "approved" in a request ("release once approved") accepted and stated as a threat in S10.md §11.
 - **Nits:** §6's "no rejection is ever false" softened (false only for an agent that drops the columns unasked);
   two task lines rewrapped; the check files' comments say "past participle or noun".
+
+**Round 3** (re-review of `c6054557`'s diff, a fresh read-only agent, checkouts unchanged): round 2's findings
+resolved; nits only, so the review closes. Applied: the §11 threat widened to every verdict's word in a request
+(`approved`, `rejection`, `turned the`); §7's M-E3 bullet reflowed.
