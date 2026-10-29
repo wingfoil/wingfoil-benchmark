@@ -41,12 +41,12 @@ export function checkCampaign(file: string): Result<CheckedCampaign> {
       ? versionChange(campaign.resultsRoot, campaign.repoRoot, scenario.value)
       : undefined;
     if (changed !== undefined) issues.push({ path: `scenarios[${index}]`, message: changed });
-    else if (scenario.ok && verdictPolicyIssue(scenario.value, campaign.spec.approver_policy) !== undefined) {
+    else if (scenario.ok) {
       // A verdict a policy does not read would be answered "Approved. Proceed." (task-117): refused, not ignored.
-      const message = verdictPolicyIssue(scenario.value, campaign.spec.approver_policy) as string;
-      issues.push({ path: `scenarios[${index}]`, message });
-    } else if (scenario.ok) scenarios.push(scenario.value);
-    else {
+      const unread = verdictPolicyIssue(scenario.value, campaign.spec.approver_policy);
+      if (unread !== undefined) issues.push({ path: `scenarios[${index}]`, message: unread });
+      else scenarios.push(scenario.value);
+    } else {
       issues.push({
         path: `scenarios[${index}]`,
         message: `${id}@${version}: ${reasonsOf(scenario.issues)}`,

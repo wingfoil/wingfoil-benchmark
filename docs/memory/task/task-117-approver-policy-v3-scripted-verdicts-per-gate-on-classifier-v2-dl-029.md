@@ -57,7 +57,8 @@ What S10.md §6 and task-116's Design fix, and how:
 
 **Red-first:** `test/unit/core/approver-v3.test.ts`, the verdict cases of `test/unit/scenario/load.test.ts`, the v3
 case of `test/unit/runner/run.test.ts` and `test/unit/runner/campaign.test.ts`'s refusal: 15 new tests, 14 failing
-before the code (the 15th, an unknown field in a verdict, was already refused by the strict step), green after. Three existing tests used `v3` as the example of an unimplemented version (now `v4`), and v2's test
+before the code (the 15th, an unknown field in a verdict, was already refused by the strict step), green after. Three
+existing tests used `v3` as the example of an unimplemented version (now `v4`), and v2's test
 listed the versions.
 
 ## Execution notes
@@ -75,8 +76,12 @@ on `1d0ae5c5`: no blocker.
 - **Should-fix — a dry run skipped the refusal:** `checkDryRun` takes the profile's policy (`scenarios/dry-run.yaml`
   pins v1), so `bench dry-run S10@1.0` would have answered the rejection "Approved. Proceed.". Fixed: one helper,
   `verdictPolicyIssue` (`src/core/approver.ts`), called by `checkCampaign` and `checkDryRun`; a test refuses a dry run
-  under v2 and accepts it under v3. S10's calibration pins v3 in its dry-run profile.
+  under v2 and accepts it under v3. S10's calibration will need a dry-run profile that pins v3 (the default pins v1).
 - **Strengthened:** the runner's test now has a question before the verdict step's approvals, so questions are shown
   not to be counted.
 - **Nits:** S10.md's "`verdicts`" wording; a comment over 120 columns; an import out of order; a useless assertion;
   the red-first count (15 new, 14 red).
+
+**Round 2** (re-review of `e94e3e5e`'s diff, a fresh read-only agent, checkouts unchanged): round 1's findings
+resolved; nits only, so the review closes. Applied: the helper computed once in `checkCampaign`; a task line
+rewrapped; the dry-run profile for S10 stated as a need of its calibration, not as done.
