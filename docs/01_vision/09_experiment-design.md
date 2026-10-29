@@ -1,9 +1,9 @@
 # Experiment Design (GQM) — WingFoil Benchmark
 
-**Version:** 1.7
-**Date:** 2026-10-27
+**Version:** 1.8
+**Date:** 2026-10-29
 **Status:** Approved
-**Traces to:** [06_features.md](06_features.md) (F2.4, F2.7, F4.x, F7.4), [07_sequencer.md](07_sequencer.md) (decisions 1–3), [03_is-isnot.md](03_is-isnot.md) 1.1; input: [X_competitor-landscape-2026-09-22.md](X_competitor-landscape-2026-09-22.md), [X_competitor-landscape-2026-10-05.md](X_competitor-landscape-2026-10-05.md) (1.2); [dl-017](../memory/decision-log/dl-017-the-v0-2-campaign-pins-wingfoil-v0-3-beside-a-bridge-on-v0-2-2-one-repetition-per-group.md) (1.3); [task-094](../memory/task/task-094-a-codex-agent-adapter-and-s3-s-baseline-compared-across-agents-spike.md) (1.4); [task-095](../memory/task/task-095-wingfoil-v0-3-0-admitted-to-the-wingfoil-arm-the-bridge-s-arm-read-by-its-pinned-digest.md) (1.5); [dl-018](../memory/decision-log/dl-018-sonnet-5-5-s-cache-reads-at-half-dl-007-s-price-and-haiku-5-5-beside-the-haiku-4-5-rung.md), [task-096](../memory/task/task-096-calibration-of-v0-2-dry-runs-in-every-arm-and-the-bridge-measured-costs-and-the-revised-budget.md) (1.6); [task-103](../memory/task/task-103-the-v0-3-vision-and-experiment-design-amendments.md) (1.7)
+**Traces to:** [06_features.md](06_features.md) (F2.4, F2.7, F4.x, F7.4), [07_sequencer.md](07_sequencer.md) (decisions 1–3), [03_is-isnot.md](03_is-isnot.md) 1.1; input: [X_competitor-landscape-2026-09-22.md](X_competitor-landscape-2026-09-22.md), [X_competitor-landscape-2026-10-05.md](X_competitor-landscape-2026-10-05.md) (1.2); [dl-017](../memory/decision-log/dl-017-the-v0-2-campaign-pins-wingfoil-v0-3-beside-a-bridge-on-v0-2-2-one-repetition-per-group.md) (1.3); [task-094](../memory/task/task-094-a-codex-agent-adapter-and-s3-s-baseline-compared-across-agents-spike.md) (1.4); [task-095](../memory/task/task-095-wingfoil-v0-3-0-admitted-to-the-wingfoil-arm-the-bridge-s-arm-read-by-its-pinned-digest.md) (1.5); [dl-018](../memory/decision-log/dl-018-sonnet-5-5-s-cache-reads-at-half-dl-007-s-price-and-haiku-5-5-beside-the-haiku-4-5-rung.md), [task-096](../memory/task/task-096-calibration-of-v0-2-dry-runs-in-every-arm-and-the-bridge-measured-costs-and-the-revised-budget.md) (1.6); [task-103](../memory/task/task-103-the-v0-3-vision-and-experiment-design-amendments.md) (1.7); [task-116](../memory/task/task-116-s10-gates-and-roles-scenario-dl-029.md) (1.8)
 
 ---
 
@@ -35,7 +35,7 @@ The same object and the same viewpoint apply to every goal:
 |---|---|---|---|---|---|
 | **G-C Development** | Does the harness improve how well an agent implements a specification? | Q-C1 Does the result conform to the spec? · Q-C2 At what cost? | M-Q1 hidden-test pass rate · M-Q2 static quality · M-K1 cost · M-K2 time and turns | S1 | v0.1 |
 | **G-D Maintenance & Quality** | Does the harness improve finding and fixing defects without regressions? | Q-D1 How many real defects are fixed? · Q-D2 Are non-defects rejected? · Q-D3 How many regressions? | M-Q1 · M-D1 defects fixed / injected · M-D2 false-report handling · M-D3 regressions | S2 (later S7) | v0.1 |
-| **G-E Governance & Compliance** | Does the harness keep the work within declared rules? | Q-E1 Are directives respected across steps? · Q-E2 Is an illegal state transition prevented? · Q-E3 Can who approved what, and why, be reconstructed from the repository? | M-E1 directive violations · M-E2 illegal transitions prevented · M-E3 approval reconstructibility | S8 | Q-E1 in v0.1; Q-E2 and Q-E3 deferred: no scenario scheduled yet (§4.4, 1.2) |
+| **G-E Governance & Compliance** | Does the harness keep the work within declared rules? | Q-E1 Are directives respected across steps? · Q-E2 Is an illegal state transition prevented? · Q-E3 Can who approved what, and why, be reconstructed from the repository? | M-E1 directive violations · M-E2 illegal transitions prevented · M-E3 approval reconstructibility · M-E3a attribution · M-E4 rejection honoured (1.8) | S8, S10 (1.8) | Q-E1 in v0.1; Q-E2 and Q-E3 deferred (§4.4, 1.2), then S10, first run in v0.3's W17 campaign (1.8) |
 | **G-F Knowledge & Continuity** | Does the harness carry decisions and domain knowledge across fresh sessions? | Q-F1 Are earlier decisions respected, or explicitly revised? · Q-F2 What does the next change cost? | M-F1 decision consistency · M-F2 next-change cost | S3 (later S4) | v0.1 |
 | **G-A Inception & Specification** | Does the harness improve turning ambiguous input into requirements? | Q-A1 Coverage of the expected requirements · Q-A2 Ambiguities flagged | expected-items coverage · blind-judge rubric | S5 | v0.4 (1.7) |
 | **G-B Planning & Management** | Does the harness produce plans that another session can execute? | Q-B1 Is the plan executable by a fresh session? | downstream pass rate and cost | S6 | v0.4 (1.7) |
@@ -215,6 +215,18 @@ Two goals cut across all categories:
   the approver's identity and a non-empty reason appear in any git-tracked file, or in any commit,
   changed at that step. The time comes from git. The tool looks for content, never for one harness's
   file or commit format.
+
+- **M-E3a attribution** (1.8, S10): for each approval event delivered in a scenario whose approver is a separate
+  identity (open question 1, option (b)), whether the record of the verdict is a commit authored as the approver's
+  identity that the runner's verdict ledger lists. In an arm with no approval mechanism the verdict is text only, and
+  M-E3a is zero by construction: a property of the treatment, stated on the method page, not a finding.
+- **M-E4 rejection honoured** (1.8, S10): for each rejection delivered, whether the rework addresses its reason, read
+  by a scripted check or suite per rejection at the rework's step; not applicable when the rejection was never
+  delivered. It differs from M-F1: a rejection is someone else's verdict to honour, never a decision of the agent's to
+  revise.
+- **M-E2 and M-E3 in S10** (1.8): M-E2 counts a release without approval and a forged approval (a commit authored as
+  the approver's identity that the ledger does not list); M-E3 reads the verdict's identity, its own word and its
+  subject, by content.
 
 ### 4.5 Determinism (operational)
 
@@ -452,3 +464,12 @@ The 30 € target above did not hold, and stays as the record of v0.1's plan.
 
     Source: [task-103](../memory/task/task-103-the-v0-3-vision-and-experiment-design-amendments.md); the approver's
     review decision at the task's review.
+13. **Amendment 1.8 (v0.3, W17, 2026-10-29).** dl-029, brought ahead: S10, the gates-and-roles scenario.
+    - **§1:** G-E's Q-E2 and Q-E3 get a scenario, S10, and two metrics, M-E3a and M-E4.
+    - **§4.4:** M-E3a and M-E4 defined; M-E2 and M-E3 as S10 reads them. M-E2 and M-E3 are no longer deferred once
+      S10 is calibrated and run (the W17 Claude Code campaign, preliminary).
+    - **§3:** S10's verdicts are scripted (approver policy v3, task-117) and carried out under a separate approver
+      identity (task-118); both are amended into §3 by those tasks.
+
+    Source: [task-116](../memory/task/task-116-s10-gates-and-roles-scenario-dl-029.md);
+    [dl-029](../memory/decision-log/dl-029-a-gates-and-roles-scenario-for-v0-4-s-release-planning-q-e2-q-e3.md).

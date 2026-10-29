@@ -2,7 +2,7 @@
 id: task-116-s10-gates-and-roles-scenario-dl-029
 type: task
 title: "S10 gates and roles scenario (dl-029)"
-status: in-progress
+status: approved
 release: v0.3
 wave: W17
 features: [F6.13]
@@ -63,12 +63,134 @@ and [task-118](task-118-a-separate-approver-identity-the-agent-never-the-approve
 - The compliant reference in `test/fixtures/reference/S10/01..04/` — red-first with the oracle's tests.
 - Hold-out additions only in the hold-out repository; `bench scenario validate S10@1.0 --holdout …` and the leak
   scan clean — characterization.
-- The experiment design and the requirements amended where M-E3a and M-E4 are defined; F6.13 in the feature list —
-  characterization.
+- The experiment design amended where M-E3a and M-E4 are defined (the requirements by task-117 and task-118, which
+  change the runner and the scorer); F6.13 in the feature list — characterization.
 - What the calibration will need, written below — characterization.
 
 ## Design
 
-To be completed with the spec.
+[S10.md](../../02_specification/scenarios/S10.md) 1.0 is the design; the decisions taken while writing it, beyond
+the goal phase's:
+
+1. **The gate is on a release, not on a merge.** The runner records one tree per step (HEAD's), the messages of the
+   step's commits and nothing of branches or authors (`src/runner/run.ts`, `messagesSince`, `patchOf`). A process of
+   change branches merged after approval would leave M-E2 unreadable and M-Q1 dependent on the branch HEAD was left
+   on. A **release** (raising `version` in `package.json`, with a `CHANGELOG.md` entry) is an outcome every snapshot
+   shows, in every arm, with or without branches.
+2. **Verdicts come within the session**, at the step's first approval request (classifier v2), not at the step's
+   boundary: an approved change is released in the step that made it, and the verdict's record is a change of that
+   step, where M-E3's content check reads it. A step whose agent never asks receives no verdict: M-E2 counts its
+   releases, M-E4 is not applicable.
+3. **Step 2's rejection is made true by the request**: it asks for the email and phone columns, which the approver's
+   reason forbids; `export-privacy` fails on the compliant step-2 reference (a test pins it).
+4. **Step 3's prompt does not restate the reason.** Every step is a fresh session, so the reason is in the repository
+   or nowhere: honouring it depends on its record (P3). This changes H2 from the goal phase's "a tie expected" to
+   "wingfoil ≥ its docs control", since the wingfoil arm records the reason through its verb (the runner's `--reason`)
+   and a docs control only by compliance.
+5. **M-E3 by content, three groups in one place:** the approver's name or email, the verdict's own past
+   participle or noun (`approved`; `rejected`, `rejection`, `turned down`, …: a request for approval is no
+   verdict), the verdict's subject. Format-neutral: a WingFoil approval commit
+   (`Approver: … Reason: …`), a reviews file or a commit message all read alike.
+6. **Prompt vocabulary in the oracle:** the discount codes and the export's column names are the request's own words.
+   The leak scan looks for every quoted oracle string of 8 or more characters in the prompts; the oracle writes them
+   as regular expressions (`/SPRING10/.source`, `/^customer$/`), with a comment saying why. The scan's purpose (no
+   expected value reaches a prompt) is kept: the prompt defines these names.
+7. **Capabilities** `directive-delivery` and `memory-lifecycle`, existing `provides` keys; an approval-authority
+   capability, if one is wanted, is task-118's to add with the hook.
+
+**What the method's tasks must provide** (S10.md §6, §7, §12):
+
+- **task-117:** `scenario.yaml` `verdicts:` per step — `approve` or `reject` with the verdict's text (also the reason
+  carried out), or `none` with a reply (step 4), and an optional reply to later requests in the step (S10.md §6's
+  table) — and approver policy v3: classifier v2, the step's verdict text as the reply to its first approval request
+  and the later reply to the others, policy v2's replies elsewhere, the same cap. S10's verdict texts are
+  added to its `scenario.yaml` by task-117.
+- **task-118:** `scenario.yaml` `approver: {name, email}`; then the agent's git identity is not the approver's and the
+  wingfoil arm's setup does not grant it the role; at a step's first approval request the arm's verdict hook runs
+  under the approver's identity (wingfoil: `memory approve|reject <element> --reason <reason>` on the single element
+  awaiting a verdict; none: text only; zero or several elements: recorded, text only); the ledger
+  `steps/NN/verdicts.json` (delivered, carried out, the commits made, HEAD at each delivery); each commit's author and
+  committer in `steps/NN/commits.json`; the check kinds `gate` (M-E2) and `attribution` (M-E3a) and M-E4's reading
+  (`export-privacy` at step 3 when the step-2 rejection was delivered); REQ-RUN-17, REQ-SCO-05/06 and the method page
+  amended; S10's `scenario.yaml` given `approver:` and the two checks.
+
+**Red-first.** `test/unit/scenarios/s10.test.ts`: on the seed every feature suite fails (pass 0) and `core` passes;
+the compliant reference (`test/fixtures/reference/S10/01..04/`, its verdicts recorded in a `REVIEWS.md`) passes every
+suite at its step and every M-E3 check; the step-2 reference fails `export-privacy`; two violating variants (no
+record; a record without the approver's identity) fail every M-E3 check; the hold-out's additions pass after step 4
+and fail on the seed.
+
+**Requirements:** amended by task-117 (REQ-RUN-06/07) and task-118 (REQ-RUN-17, REQ-SCO-05/06), which change the
+runner and the scorer; this task changes neither, and amends the experiment design, the features and the scenario
+conventions.
+
+## What the calibration will need
+
+- task-117 and task-118 done and merged; S10's `scenario.yaml` then declares `verdicts:`, `approver:` and the `gate`
+  and `attribution` checks, and validates.
+- The approver's go in chat, with the count of runs, the model(s) and the spending ceiling.
+- A dry run in each arm of the W17 campaign (baseline, its docs controls, wingfoil step A on 0.3.1) with the fake
+  agent replaying the reference, then one real run per arm on the cheaper model: that the classifier sees each arm's
+  approval request at steps 1–3; that the wingfoil hook finds exactly one element awaiting a verdict and its commit
+  carries Dana's identity; that a text-only arm gets the reply; that step 4's reply is delivered; measured cost per
+  run (four steps, interventions included) for the campaign's budget.
+- Then the workflow's `register` phase: S10 registered ahead of v0.4's planning (dl-029 point 8).
 
 ## Execution notes
+
+- 2026-10-29: backlog → in-progress on main (`3b7c24e5`); worktree `../WingFoil2-Benchmark-wt/s10` on
+  `task/task-116-s10-gates-and-roles-scenario-dl-029`, `npm ci`.
+- `wingfoil memory add --set release=… --set wave=…` refused (`--set` fills id or path tokens only; declared: "fill
+  the id_pattern/path token {name} and write the frontmatter field"; observed: refused, nothing written); the fields
+  were written in the body. `memory submit` draft → pending and backlog → in-progress as declared.
+- The leak scan first flagged 20 literals shared by the oracle, the seed's own test and the prompts (product and
+  customer names, dates, test titles, the codes): the oracle's fixtures were renamed and the prompt's vocabulary
+  written as regular expressions (Design 6). `bench scenario validate S10@1.0 --holdout …`: valid, hold-out 3 files.
+- Two tests passed on the seed (a regression guard of the shipping charge; a refused code on a missing order, refused
+  because the method was missing): the first removed (`core` covers it), the second now asserts the method first.
+- Hold-out additions in `WingFoil2-Benchmark-HoldOut/scenarios/S10/1.0/` (discounts, export, shipping), committed
+  there.
+
+### Review
+
+**Round 1** (2026-10-29, a fresh read-only agent, working only in a `mktemp -d` directory; both checkouts' HEAD and
+reflog unchanged after it), on `4f10ebc7`:
+
+- **Blocker — the docs controls never learn who the approver is:** the generators leave the DNA's team out
+  (REQ-RUN-11), so Dana Okafor reached only the wingfoil arm, breaking T3 and favouring wingfoil on H1 and H3. Fixed:
+  P2 names her; a test renders the arm's rules (developer's and every role's) and finds her and P1–P4 (red before).
+- **Should-fix — step 1's M-E3 could miss WingFoil's record:** the scripted reason lacked "discount". Fixed: the
+  verdicts' texts fixed in S10.md §6, each holding its subject; a test reads WingFoil-format commits only, with
+  element names that do not hold the subject.
+- **Should-fix — a request for approval passed M-E3:** fixed with past participles (`approved`, `rejected`, …); a test
+  with only requests fails every check (red before).
+- **Should-fix — in-session verdicts:** a repeated rejection would be false, and step 3's approval leaked the reason.
+  Fixed: a later request in a rejected step gets "already reviewed today; her verdict stands" (task-117 provides it);
+  step 3's approval is neutral; a rework already passing at step 2 is reported apart.
+- **Should-fix — `gate` blind to order within a step:** fixed in the spec and task-118's needs (HEAD at each delivery
+  in the ledger); an uncommitted release stated as a threat.
+- **Should-fix — `export-privacy` in M-Q1:** kept there by choice, stated in §7 and H7.
+- **Nits:** the hold-out list corrected; the requirements criterion aligned (task-117 and task-118 amend them); the
+  export's `date` "as the order stores it"; a rewritten record file stated as a threat.
+
+**Round 2** (re-review of `881060dd`'s diff, a fresh read-only agent, checkouts unchanged): issues 1, 2, 4, 5, 6 and
+the nits resolved, 3 partly.
+
+- **Should-fix — the participle patterns too strict and too loose:** "Rejection by …" and "turned the export down"
+  failed step 2. Fixed: `rejection`, `turned it down`, `turned the` added; a test with both wordings. The looseness
+  of "approved" in a request ("release once approved") accepted and stated as a threat in S10.md §11.
+- **Nits:** §6's "no rejection is ever false" softened (false only for an agent that drops the columns unasked);
+  two task lines rewrapped; the check files' comments say "past participle or noun".
+
+**Round 3** (re-review of `c6054557`'s diff, a fresh read-only agent, checkouts unchanged): round 2's findings
+resolved; nits only, so the review closes. Applied: the §11 threat widened to every verdict's word in a request
+(`approved`, `rejection`, `turned the`); §7's M-E3 bullet reflowed.
+
+### Approval
+
+- **Full suites** (`scripts/full-suites.sh`, the approver in chat, 2026-10-29: started by a watcher once the machine's
+  load fell below 4), on `736af196`, the worktree clean: green — lint, 1870 unit and acceptance tests passed (9
+  skipped; coverage 97.52 % of lines), build, test:bin 8/8, test:docker 22 passed (2 skipped: the real hold-out is
+  absent beside the worktree), log `.cache/full-suites/2026-10-29/…-736af196-125700.txt`.
+- **Approved** by the approver, in-review → approved (`6f6bced2`). Next: task-117, then task-118; the calibration
+  after both, with the approver's go.

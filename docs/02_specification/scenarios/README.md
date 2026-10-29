@@ -1,9 +1,9 @@
 # Scenario specifications — common conventions (v0.1)
 
-**Version:** 1.5
-**Date:** 2026-10-27
+**Version:** 1.6
+**Date:** 2026-10-29
 **Status:** Approved
-**Traces to:** [09_experiment-design.md](../../01_vision/09_experiment-design.md), [06_features.md](../../01_vision/06_features.md) F3.1, F3.6, F6.1–F6.3, F6.8; plan [plan-002](../../plans/plan-002-benchmark-specification.md)
+**Traces to:** [09_experiment-design.md](../../01_vision/09_experiment-design.md), [06_features.md](../../01_vision/06_features.md) F3.1, F3.6, F6.1–F6.3, F6.8, F6.13; plan [plan-002](../../plans/plan-002-benchmark-specification.md)
 
 ---
 
@@ -70,7 +70,8 @@ what differs from them.
 
    (b) keeps "agents never approve", which is a WingFoil principle, but it needs runner support.
    **Deferred to the requirements phase** (scenario-specs review). It affects M-E3 and the wingfoil
-   arm's operating manual.
+   arm's operating manual. **Answered per scenario in 1.6:** (a) for every scenario but S10; S10 takes (b) in the
+   variant (b1) (amendment 1.6).
 
 ## 6. Amendments
 
@@ -131,3 +132,15 @@ the approver at that task's review, 2026-10-02 (`cd062e2`).
 
 Source: [task-103](../../memory/task/task-103-the-v0-3-vision-and-experiment-design-amendments.md); the approver's
 review decision at the task's review.
+
+### Amendment 1.6 (v0.3, W17, task-116, 2026-10-29)
+
+- **S10 (F6.13)**, gates and roles (dl-029, brought ahead): [S10.md](S10.md).
+- **Open question 1, for S10 only:** option (b), variant (b1), chosen by the approver in S10's goal phase: the agent's
+  identity holds no approver role; the scenario's scripted verdict is carried out by the runner under a separate
+  approver identity, through each tool's documented approval mechanism, and given as text to an arm with none; a
+  ledger of the verdicts carried out is kept per run. Every other scenario keeps option (a) (dl-029 constraint 5),
+  and the difference of treatment is stated where both are read. The runner's support is task-117's and task-118's.
+
+Source: [task-116](../../memory/task/task-116-s10-gates-and-roles-scenario-dl-029.md); the approver in chat,
+2026-10-29 (S10's goal phase).
