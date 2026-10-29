@@ -90,3 +90,12 @@ rewrapped; the dry-run profile for S10 stated as a need of its calibration, not 
 `test/unit/campaign/load.test.ts` used `v3` as its example of an unimplemented policy, the fourth such test, missed by
 the targeted runs (core, runner, scenario, site). Fixed to `v4`, its message listing v1, v2, v3; `test/unit/campaign`
 green (143). The task goes back to in-progress for it.
+
+### Approval
+
+- **Full suites** (`scripts/full-suites.sh`, started by a watcher once the machine's load fell below 4), on
+  `dd676147`, the worktree clean: green — lint, 1888 unit and acceptance tests passed (9 skipped; coverage 97.53 % of
+  lines), build, test:bin 8/8, test:docker 22 passed (2 skipped: the real hold-out is absent beside the worktree), log
+  `.cache/full-suites/2026-10-29/…-dd676147-175751.txt`. The first run (`…-988d718c-140432.txt`) was red, sent back
+  by the approver and fixed (the campaign load test).
+- **Approved** by the approver, in-review → approved. Next: task-118.
