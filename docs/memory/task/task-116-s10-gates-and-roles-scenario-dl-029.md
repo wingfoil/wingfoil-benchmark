@@ -185,3 +185,12 @@ the nits resolved, 3 partly.
 **Round 3** (re-review of `c6054557`'s diff, a fresh read-only agent, checkouts unchanged): round 2's findings
 resolved; nits only, so the review closes. Applied: the §11 threat widened to every verdict's word in a request
 (`approved`, `rejection`, `turned the`); §7's M-E3 bullet reflowed.
+
+### Approval
+
+- **Full suites** (`scripts/full-suites.sh`, the approver in chat, 2026-10-29: started by a watcher once the machine's
+  load fell below 4), on `736af196`, the worktree clean: green — lint, 1870 unit and acceptance tests passed (9
+  skipped; coverage 97.52 % of lines), build, test:bin 8/8, test:docker 22 passed (2 skipped: the real hold-out is
+  absent beside the worktree), log `.cache/full-suites/2026-10-29/…-736af196-125700.txt`.
+- **Approved** by the approver, in-review → approved (`6f6bced2`). Next: task-117, then task-118; the calibration
+  after both, with the approver's go.
