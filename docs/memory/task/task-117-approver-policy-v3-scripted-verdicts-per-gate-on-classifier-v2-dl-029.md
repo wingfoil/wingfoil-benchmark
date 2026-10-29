@@ -3,29 +3,35 @@ id: task-117-approver-policy-v3-scripted-verdicts-per-gate-on-classifier-v2-dl-0
 type: task
 title: "Approver policy v3: scripted verdicts per gate on classifier v2 (dl-029)"
 status: draft
-release: ""           # e.g. v0.1
-wave: ""              # e.g. W1
-features: []          # e.g. [F1.1, F3.1]
-acceptance: []        # e.g. [campaign.feature, scenarios.feature]
-requirements: []      # e.g. [REQ-FMT-01, REQ-FMT-02]
-fixes: []             # optional: the bugs this task fixes, e.g. [bug-005-a-bug-cannot-name-…]
+release: v0.3
+wave: W17
+features: [F2.4]
+acceptance: [runner.feature]
+requirements: [REQ-RUN-06, REQ-RUN-07, REQ-FMT-04]
+fixes: []
 tags: ["v0.3","runner","approver"]
 ---
 
 ## Context
 
-<!-- Why this task, which wave it belongs to, and what "done" means for the wave's "Ends with". -->
+[dl-029](../decision-log/dl-029-a-gates-and-roles-scenario-for-v0-4-s-release-planning-q-e2-q-e3.md) point 7, the
+first of the method's two changes that S10
+([task-116](task-116-s10-gates-and-roles-scenario-dl-029.md)) needs before its calibration: **scripted verdicts**,
+approve or reject with a fixed reason per gate, declared in the scenario and the same in every arm, as a new approver
+policy on classifier v2 (dl-026). v1 and v2 stay frozen; a scenario that declares no verdicts reads v3 as v2. Placed in
+v0.3, W17, as task-116. Implemented after task-116's spec fixes the verdicts' shape and timing; one task at a time in
+review.
 
 ## Acceptance criteria
 
-<!-- One line per criterion (Gherkin scenario or requirement), each classified as red-first
-     (new behaviour: a failing test precedes the code) or characterization (existing behaviour). -->
+- A scenario may declare verdicts per step (shape and timing as S10.md fixes them); `validate` refuses a malformed
+  declaration, naming it — red-first.
+- Policy v3: classifier v2 unchanged; replies to an approval request at a step with verdicts are the scenario's fixed
+  texts, each one an intervention, the cap unchanged; without verdicts, v2's replies — red-first.
+- A campaign pins v1, v2 or v3; requirements (REQ-RUN-06/07) and the experiment design §3 amended — characterization.
 
 ## Design
 
-<!-- Modules, interfaces, data formats touched; decisions taken and their reasons. -->
+To be completed once S10.md fixes what the policy must provide.
 
 ## Execution notes
-
-<!-- What happened while building: deviations, blockers, follow-ups (filed as elements, never left
-     here). For every `wingfoil` command: declared vs observed behaviour. -->
