@@ -7,5 +7,23 @@ status: draft
 tags: ["v0.3","scripts"]
 ---
 
-<!-- bug body. `wingfoil memory add` copies this scaffold verbatim; `memory submit` replaces
-     these placeholder comments with real content and fills the required frontmatter fields. -->
+## Context
+
+Found by S10's calibration ([task-119](../task/task-119-calibration-of-s10-dry-runs-in-three-arms-on-haiku-5.5-and-sonnet-5.5-then-its-registration-dl-029.md),
+2026-10-30): its dry runs, committed on the task's branch, keep each docs control's generated environment under
+`results/dry-runs/<n>/generated/`, WingFoil's captured output among it. Earlier dry runs were committed on main
+directly, so `scripts/pre-review.sh` (task-098) never read them.
+
+## Expected
+
+The script's Markdown check leaves out the byte-pinned paths, as its own comment says: scenario versions and
+WingFoil's captured output, which a run's records under `results/` are.
+
+## Actual
+
+It leaves out `scenarios/<id>/<version>/` and `test/fixtures/wingfoil-config/` only, and turns red on every long line
+of the generated `PROJECT_RULES.md` and of WingFoil's own directives and templates the runs keep.
+
+## Fix
+
+`results/` joins the paths the check leaves out; a test of the script.
