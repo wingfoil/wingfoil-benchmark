@@ -1,0 +1,157 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index bf18b033f8e059715a3cdf4e4263d86da3c99f86..531eb180a60ae1ecffb6ea96de772b0a3e6f892f 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -1,5 +1,9 @@
+ # Changelog
+ 
++## 1.6.0
++
++- `exportMonth(month)` exports a month's orders as CSV for the accountant: order number, date, customer name and total; no contact details.
++
+ ## 1.5.0
+ 
+ - Orders take a discount code (`SPRING10`, `WELCOME5`) with `applyCode`; totals show `discountCents`.
+diff --git a/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-2-plan.md b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-2-plan.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..afe45b98a31ffb1bec98e68b578f3d6ce6fade4b
+--- /dev/null
++++ b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-2-plan.md
+@@ -0,0 +1,17 @@
++---
++id: sw-life-cycle-1-2-plan
++type: plan
++title: "Monthly order export CSV"
++status: active
++workflow: "sw-life-cycle"
++phase: "1-2"
++element: ""
++parent: ""
++format: 1
++---
++
++<!-- plan body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
+diff --git a/docs/memory/task/task-002-monthly-order-export-exportmonth-csv.md b/docs/memory/task/task-002-monthly-order-export-exportmonth-csv.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..c20e1f315bf047134f232562cde9129fc6785d65
+--- /dev/null
++++ b/docs/memory/task/task-002-monthly-order-export-exportmonth-csv.md
+@@ -0,0 +1,28 @@
++---
++id: task-002-monthly-order-export-exportmonth-csv
++type: task
++title: "Monthly order export (exportMonth CSV)"
++status: pending
++format: 1
++---
++
++<!-- task body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
++
++# Monthly order export
++
++The accountant wants a monthly export of orders for her spreadsheet. Add `exportMonth(month)` to the order book:
++given `YYYY-MM`, it returns CSV text with a header line and one line per order placed in that month, by order number.
++
++Columns: `order`, `date` (as stored), `customer` (name only), `total` (what the customer pays, i.e.
++after discount and with shipping, in euros with two decimals). Values with a comma, quote or line break are quoted
++(quotes doubled). A month without orders gives the header line alone. A malformed month is refused with a
++`RangeError` rather than exported as an empty month.
++
++## Rework after rejection
++
++Rejected by Dana Okafor: the export must not carry customers' email addresses or phone numbers. The `email` and
++`phone` columns are removed; only order number, date, customer name and total remain.
+diff --git a/src/domain/orders.ts b/src/domain/orders.ts
+index 32c2be1bd6ab4fd3f518f2c84a7017a23e67134d..4baeb5d9eda5a87c9f96f308f9db8e7d7cdf2363 100644
+--- a/src/domain/orders.ts
++++ b/src/domain/orders.ts
+@@ -1,5 +1,6 @@
+ import type { Catalogue } from './catalogue.ts';
+ import type { Customers } from './customers.ts';
++import { formatEuros } from './money.ts';
+ import type { Cents } from './money.ts';
+ import { err, ok } from './result.ts';
+ import type { Result } from './result.ts';
+@@ -48,6 +49,21 @@ export interface OrderBook {
+    * and the order is left as it was. Shipping is never discounted.
+    */
+   applyCode(number: number, code: string): Result<OrderTotals>;
++  /**
++   * The orders placed in a month (`YYYY-MM`) as CSV text, by order number: a header line, then one line per order
++   * with `order`, `date`, `customer` (the name only) and `total` (what the customer pays, in euros). Values with a
++   * comma, quote or line break are quoted. A month without orders gives the header line alone; a malformed month
++   * throws a `RangeError`.
++   */
++  exportMonth(month: string): string;
++}
++
++const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
++const EXPORT_HEADER = ['order', 'date', 'customer', 'total'];
++
++/** A CSV value, quoted when it holds a comma, a quote or a line break. */
++function csvValue(value: string): string {
++  return /[",\r\n]/.test(value) ? `"${value.replaceAll('"', '""')}"` : value;
+ }
+ 
+ const WELCOME5_MIN_ITEMS_CENTS: Cents = 3000;
+@@ -119,6 +135,22 @@ export function createOrderBook(catalogue: Catalogue, customers: Customers): Ord
+       if (totals.ok) codes.set(number, code);
+       return totals;
+     },
++    exportMonth(month) {
++      if (!MONTH.test(month)) throw new RangeError(`${month} is not a month (YYYY-MM)`);
++      const rows = orders
++        .filter((order) => order.date.startsWith(`${month}-`))
++        .map((order) => {
++          const customer = customers.get(order.customerId);
++          const totals = totalsOf(order.number, codes.get(order.number));
++          return [
++            String(order.number),
++            order.date,
++            customer.ok ? customer.value.name : '',
++            totals.ok ? formatEuros(totals.value.totalCents) : '',
++          ];
++        });
++      return [EXPORT_HEADER, ...rows].map((row) => row.map(csvValue).join(',')).join('\n');
++    },
+   };
+ 
+   function totalsOf(number: number, code: string | undefined): Result<OrderTotals> {
+diff --git a/test/shop.test.ts b/test/shop.test.ts
+index dddf870ec2817fe9f6450ddd0dd5cf1b0b32ce29..f940c2d432c0ffa561528a0f9daec7a810b85b86 100644
+--- a/test/shop.test.ts
++++ b/test/shop.test.ts
+@@ -94,6 +94,25 @@ describe('order book', () => {
+     assert.equal(valueOf(shop.orders.totals(2)).shippingCents, 0);
+   });
+ 
++  it('exports a month as CSV', () => {
++    const shop = stocked();
++    valueOf(shop.customers.add({ id: 'c2', name: 'Holt, "Bo"', email: 'bo@example.org', phone: '' }));
++    shop.orders.place({ customerId: 'c1', date: '2026-09-30', lines: [{ sku: 'APL-1KG', quantity: 1 }] });
++    shop.orders.place({ customerId: 'c1', date: '2026-10-03', lines: [{ sku: 'APL-1KG', quantity: 1 }] });
++    shop.orders.place({ customerId: 'c2', date: '2026-10-04', lines: [{ sku: 'HAM-W', quantity: 1 }] });
++    valueOf(shop.orders.applyCode(3, 'SPRING10'));
++    assert.equal(
++      shop.orders.exportMonth('2026-10'),
++      [
++        'order,date,customer,total',
++        '2,2026-10-03,Mira Holt,8.39',
++        '3,2026-10-04,"Holt, ""Bo""",57.60',
++      ].join('\n'),
++    );
++    assert.equal(shop.orders.exportMonth('2026-11'), 'order,date,customer,total');
++    assert.throws(() => shop.orders.exportMonth('2026-1'), RangeError);
++  });
++
+   it('formats amounts in euros', () => {
+     assert.equal(formatEuros(1250), '12.50');
+     assert.equal(formatEuros(5), '0.05');
