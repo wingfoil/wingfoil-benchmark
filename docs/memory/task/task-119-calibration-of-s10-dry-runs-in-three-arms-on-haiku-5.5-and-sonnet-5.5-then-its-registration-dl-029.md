@@ -2,7 +2,7 @@
 id: task-119-calibration-of-s10-dry-runs-in-three-arms-on-haiku-5.5-and-sonnet-5.5-then-its-registration-dl-029
 type: task
 title: "Calibration of S10: dry runs in three arms on Haiku 5.5 and Sonnet 5.5, then its registration (dl-029)"
-status: draft
+status: pending
 release: v0.3
 wave: W17
 features: [F6.13]
