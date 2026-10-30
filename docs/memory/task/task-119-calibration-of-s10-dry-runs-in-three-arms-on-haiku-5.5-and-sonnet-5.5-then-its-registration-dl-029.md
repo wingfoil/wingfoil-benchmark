@@ -8,7 +8,7 @@ wave: W17
 features: [F6.13]
 acceptance: []
 requirements: [REQ-CLI-05, REQ-RUN-06, REQ-RUN-16, REQ-RUN-17, REQ-SCO-06]
-fixes: []
+fixes: [bug-038-a-verdict-never-reaches-an-agent-that-waits-on-the-scenario-s-approver-in-the-third-person-s10-policy-v3, bug-039-the-wingfoil-arm-s-manual-counts-only-approved-proceed-as-an-approval-and-refuses-a-verdict-already-carried-out]
 tags: ["v0.3","calibration","scenario","dry-run"]
 ---
 
