@@ -795,3 +795,90 @@ describe("a step's scripted verdict (task-117, dl-029)", () => {
     expect(paths(writeScenario(withVerdict(verdict)))).toContain(path);
   });
 });
+
+describe('a separate approver and the governance checks (task-118, dl-029)', () => {
+  const APPROVER = { name: 'Dana Okafor', email: 'dana@example.org' };
+
+  /** A complete scenario with an approver (unless `approver` is null), step 2 rejected, and these extra checks. */
+  function governed(
+    checks: Record<string, string>,
+    approver: Record<string, unknown> | null = APPROVER,
+  ): string {
+    const yaml = completeScenarioYaml();
+    if (approver !== null) yaml.approver = approver;
+    const steps = yaml.steps as Record<string, unknown>[];
+    steps[1] = { ...steps[1], verdict: { kind: 'reject', text: 'Rejected by Dana: no.' } };
+    const oracle = yaml.oracle as { checks: string[] };
+    oracle.checks = [...oracle.checks, ...Object.keys(checks).map((name) => `oracle/checks/${name}.yaml`)];
+    const root = writeScenario(yaml);
+    const dir = join(root, 'S9', '1.0');
+    writeFileSync(join(dir, 'seed', 'package.json'), '{ "name": "shop", "version": "1.4.0" }\n');
+    for (const [name, content] of Object.entries(checks))
+      writeFileSync(join(dir, 'oracle', 'checks', `${name}.yaml`), content);
+    return root;
+  }
+
+  const GATE = 'kind: gate\nsteps: [1, 2]\nrelease: { file: package.json, key: version }\n';
+  const ATTRIBUTION = 'kind: attribution\nsteps: [1]\n';
+  const REJECTION = 'kind: rejection\nsteps: [2]\nrejection_step: 2\nsuite: all\n';
+
+  it('loads the approver and the three kinds, the gate with the seed release', () => {
+    const loaded = loadScenario(
+      governed({ gate: GATE, attribution: ATTRIBUTION, rejection: REJECTION }),
+      'S9',
+      '1.0',
+    );
+    if (!loaded.ok) throw new Error(JSON.stringify(loaded.issues));
+    expect(loaded.value.approver).toEqual(APPROVER);
+    expect(loaded.value.oracle.checks.slice(-3)).toEqual([
+      expect.objectContaining({
+        id: 'gate',
+        kind: 'gate',
+        steps: [1, 2],
+        release: { file: 'package.json', key: 'version' },
+        seedRelease: '1.4.0',
+      }),
+      expect.objectContaining({ id: 'attribution', kind: 'attribution', steps: [1] }),
+      expect.objectContaining({
+        id: 'rejection',
+        kind: 'rejection',
+        steps: [2],
+        rejectionStep: 2,
+        suite: 'all',
+      }),
+    ]);
+  });
+
+  it('refuses the governance kinds in a scenario with no approver', () => {
+    const issues = issuesOf(governed({ gate: GATE }, null));
+    expect(issues).toContainEqual(
+      expect.objectContaining({ message: expect.stringMatching(/needs the scenario's approver/) }),
+    );
+  });
+
+  it.each([
+    [{ name: 'Dana' }, 'approver.email'],
+    [{ name: '', email: 'dana@example.org' }, 'approver.name'],
+    [{ name: 'Dana', email: 'not-an-email' }, 'approver.email'],
+  ])('refuses the approver %j, naming %s', (approver, path) => {
+    expect(paths(governed({}, approver))).toContain(path);
+  });
+
+  it('refuses a rejection check whose step declares no rejection, or whose suite is not scored at its steps', () => {
+    const wrongStep = 'kind: rejection\nsteps: [2]\nrejection_step: 1\nsuite: all\n';
+    const wrongSuite = 'kind: rejection\nsteps: [2]\nrejection_step: 2\nsuite: first\n';
+    const messages = issuesOf(governed({ a: wrongStep, b: wrongSuite })).map(
+      (issue) => `${issue.path} ${issue.message}`,
+    );
+    expect(messages.some((m) => /rejection_step .*does not declare a rejection/.test(m))).toBe(true);
+    expect(messages.some((m) => /suite .*is not scored at step 2/.test(m))).toBe(true);
+  });
+
+  it('refuses a gate whose release file is not in the seed, or has no such key', () => {
+    const noFile = 'kind: gate\nsteps: [1]\nrelease: { file: VERSION.json, key: version }\n';
+    const noKey = 'kind: gate\nsteps: [1]\nrelease: { file: package.json, key: release }\n';
+    const messages = issuesOf(governed({ a: noFile, b: noKey })).map((issue) => issue.message);
+    expect(messages.some((m) => /is not a JSON file of the seed/.test(m))).toBe(true);
+    expect(messages.some((m) => /has no string 'release'/.test(m))).toBe(true);
+  });
+});

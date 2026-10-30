@@ -32,6 +32,7 @@ import type {
   InterventionKind,
   Result,
   Scenario,
+  StepVerdict,
 } from '../core/index.js';
 import {
   campaignSpendingEur,
@@ -41,12 +42,12 @@ import {
 } from '../results/index.js';
 import type { ExecutionRecord, StopReason } from '../results/index.js';
 import { armDigest, missingCapabilities, RULES_SOURCE_ARM, rulesGeneratorOf } from '../arms/index.js';
-import { prepareWorkspace } from '../scenario/index.js';
+import { prepareWorkspace, releaseOf } from '../scenario/index.js';
 
 import type { CheckedCampaign } from './campaign.js';
 import { campaignKeys, keyName } from './estimate.js';
 import { prepareHarnesses } from './harness.js';
-import { AGENT_IDENTITY } from './identity.js';
+import { agentIdentityFor } from './identity.js';
 import { prepareProjectRules, PROJECT_RULES } from './project-rules.js';
 import type { HarnessArtefact } from './harness.js';
 import { copyEnvironment } from './workspace.js';
@@ -56,6 +57,8 @@ export interface RunnerOptions {
   readonly docker: DockerPort;
   readonly git: GitPort;
   readonly agent: AgentPort;
+  /** How long a verdict hook may run, in milliseconds (task-118); by default two minutes. A test shortens it. */
+  readonly verdictHookTimeoutMs?: number;
   /** One line per event, for the command line. */
   readonly log?: (line: string) => void;
   /** One line per failure; the command line sends these to its error stream. */
@@ -921,6 +924,7 @@ async function executeRun(context: RunContext, options: RunnerOptions): Promise<
         ...(context.projectRules === undefined ? {} : { projectRules: context.projectRules }),
         rulesSource: scenario.armDirs[RULES_SOURCE_ARM],
         manualFile: profile.manualFile,
+        agent: agentIdentityFor(scenario),
       },
       options,
     );
@@ -941,6 +945,7 @@ async function executeRun(context: RunContext, options: RunnerOptions): Promise<
           scenario,
           model,
           policy,
+          arm,
           spent: spentEur(steps, plan.pins),
           pins: plan.pins,
           previousTree,
@@ -1014,6 +1019,8 @@ interface SetupContext {
   readonly rulesSource?: string | undefined;
   /** Where the manual goes in the workspace: the agent's own file (REQ-RUN-12 as amended in 1.32). */
   readonly manualFile: string;
+  /** The agent's identity for the scenario (task-118): a developer's when it has a separate approver. */
+  readonly agent: { readonly name: string; readonly email: string };
 }
 
 /**
@@ -1027,7 +1034,7 @@ interface SetupContext {
 async function executeSetup(arm: Arm, context: SetupContext, options: RunnerOptions): Promise<SetupResult> {
   const { container, workspace, outputDir, seedTree, harness, scenarioDir, projectRules, rulesSource } =
     context;
-  await options.git.configureIdentity(workspace, AGENT_IDENTITY.name, AGENT_IDENTITY.email);
+  await options.git.configureIdentity(workspace, context.agent.name, context.agent.email);
   if (arm.environmentDir !== undefined) copyEnvironment(workspace, arm.environmentDir);
   // The generated part of the arm's environment, like any other environment file (REQ-RUN-11).
   if (projectRules !== undefined) copyFileSync(projectRules, join(workspace, PROJECT_RULES));
@@ -1158,6 +1165,8 @@ interface StepContext {
   readonly scenario: Scenario;
   readonly model: string;
   readonly policy: ApproverPolicy;
+  /** The run's arm: its verdict hook carries a scripted verdict out (task-118). */
+  readonly arm: Arm;
   /** What the run's finished steps have spent, in EUR. */
   readonly spent: number;
   readonly pins: RunPins;
@@ -1277,12 +1286,15 @@ async function executeStep(
     scenario,
     model,
     policy,
+    arm,
     spent,
     pins,
     previousTree,
     previousCommit,
     mcpConfig,
   } = context;
+  // The verdicts delivered in the step, for a scenario with a separate approver (task-118): the ledger.
+  const deliveries: Delivery[] = [];
   // What every invocation of the step carries beside its own fields: the arm's MCP configuration (adr-003 decision 12)
   // and the effort pinned for the model (dl-015).
   const effort = pins.agent.effort?.[model];
@@ -1547,6 +1559,22 @@ async function executeStep(
     // reply after; questions are not counted.
     const approvalsBefore = interventions.filter((intervention) => intervention.kind === 'approval').length;
     const reply = replyFor(policy, kind, step.verdict, approvalsBefore);
+    if (
+      kind === 'approval' &&
+      policy.scriptedVerdicts &&
+      step.verdict !== undefined &&
+      scenario.approver !== undefined
+    ) {
+      deliveries.push(
+        await deliver(
+          step.verdict,
+          reply,
+          approvalsBefore === 0,
+          { scenario, arm, container, workspace },
+          options,
+        ),
+      );
+    }
     const intervention = interventions.length + 1;
     // Recorded before the reply is sent: once sent, it was an intervention, whatever comes of it.
     interventions.push({ step: step.n, kind, reply });
@@ -1586,6 +1614,7 @@ async function executeStep(
   // What the agent and its harness committed during the step, read before the step commit so that the
   // runner's own is never among them (task-035): a content check reads commit messages (REQ-SCO-06).
   const messages = await options.git.messagesSince(workspace, previousCommit);
+  const authors = await options.git.commitsSince(workspace, previousCommit);
   // Every step leaves a snapshot to score, including a step that changed nothing (REQ-RUN-05), and
   // only one, however many interventions it took.
   await options.git.commitAll(workspace, `step ${number}`, { allowEmpty: true });
@@ -1595,8 +1624,23 @@ async function executeStep(
   // Scrubbed like the patch: a message can quote what the agent's environment holds.
   writeFileSync(
     join(stepDir, 'commits.json'),
-    `${JSON.stringify({ messages: messages.map((message) => scrub(message, secretsNow(options))) }, undefined, 2)}\n`,
+    `${JSON.stringify(
+      {
+        messages: messages.map((message) => scrub(message, secretsNow(options))),
+        // Who made each commit (task-118): what M-E2's forged approvals and M-E3a read.
+        commits: authors.map((commit) => ({
+          sha: commit.sha,
+          author_email: commit.authorEmail,
+          committer_email: commit.committerEmail,
+        })),
+      },
+      undefined,
+      2,
+    )}\n`,
   );
+  if (scenario.approver !== undefined) {
+    writeFileSync(join(stepDir, 'verdicts.json'), `${JSON.stringify({ deliveries }, undefined, 2)}\n`);
+  }
   // From the previous snapshot, not the last commit: an agent that commits during its step (the
   // wingfoil arm's does) would otherwise leave its own commits out of the patch (bug-007).
   const tree = await options.git.tree(workspace, 'HEAD');
@@ -1874,4 +1918,96 @@ function record(run: RunResult, plan: RunPlan): RunResult {
     )}\n`,
   );
   return run;
+}
+
+/** How long a verdict hook may take before its outcome is recorded as timed out (task-118 review round 1). */
+const VERDICT_HOOK_TIMEOUT_MS = 120_000;
+
+/** A verdict delivered at a step's approval request, as the ledger records it (task-118, S10.md §7). */
+interface Delivery {
+  readonly reply: string;
+  readonly verdict: StepVerdict['kind'];
+  /** The workspace's commit when the verdict was delivered. */
+  readonly head: string;
+  /** The release a gate check reads, in the working tree when the verdict was delivered. */
+  readonly release?: string;
+  /** What carrying the verdict out did, at the step's first approval request through the arm's hook. */
+  readonly carried_out?: {
+    readonly outcome: string;
+    readonly target?: string;
+    readonly commits: readonly string[];
+  };
+}
+
+/**
+ * Deliver a step's scripted verdict (task-118): note the workspace's commit and release, and, at the step's first
+ * approval request, carry an approval or a rejection out through the arm's verdict hook, run in the container under
+ * the scenario's approver — passed to the hook, never set in the agent's environment — with the commits it made. An
+ * arm with no hook, a `none` verdict and later requests only deliver the text.
+ */
+async function deliver(
+  verdict: StepVerdict,
+  reply: string,
+  first: boolean,
+  where: { scenario: Scenario; arm: Arm; container: string; workspace: string },
+  options: RunnerOptions,
+): Promise<Delivery> {
+  const { scenario, arm, container, workspace } = where;
+  const head = await options.git.head(workspace);
+  const gate = scenario.oracle.checks.find((check) => check.kind === 'gate');
+  const release = gate === undefined ? undefined : releaseOf(workspace, gate.release.file, gate.release.key);
+  const base: Delivery = {
+    reply,
+    verdict: verdict.kind,
+    head,
+    ...(typeof release === 'string' ? { release } : {}),
+  };
+  const approver = scenario.approver;
+  if (!first || verdict.kind === 'none' || arm.verdictHook === undefined || approver === undefined)
+    return base;
+  // Bounded, so that a hung tool cannot hold the step past its caps; a hook that throws or times out is recorded.
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<'timed out'>((resolve) => {
+    timer = setTimeout(() => resolve('timed out'), options.verdictHookTimeoutMs ?? VERDICT_HOOK_TIMEOUT_MS);
+  });
+  const ran = await Promise.race([
+    options.docker
+      .exec(container, [
+        'bash',
+        `${ARM_DIR}/${arm.verdictHook}`,
+        verdict.kind,
+        approver.name,
+        approver.email,
+        verdict.text,
+      ])
+      .catch((error: unknown) => ({ code: -1, stdout: '', stderr: String(error) })),
+    timeout,
+  ]);
+  clearTimeout(timer);
+  const commits = (await options.git.commitsSince(workspace, head)).map((commit) => commit.sha);
+  const said = ran === 'timed out' ? {} : hookAnswer(ran.stdout);
+  const outcome =
+    ran === 'timed out'
+      ? 'timed out'
+      : ran.code !== 0
+        ? `failed (exit ${ran.code})`
+        : (said.outcome ?? 'unreadable');
+  return {
+    ...base,
+    carried_out: { outcome, ...(said.target === undefined ? {} : { target: said.target }), commits },
+  };
+}
+
+/** The hook's last line, `{"outcome": …, "target"?: …}`; nothing of it when it is not that. */
+function hookAnswer(stdout: string): { outcome?: string; target?: string } {
+  const last = stdout.trim().split('\n').pop() ?? '';
+  try {
+    const parsed = JSON.parse(last) as Record<string, unknown>;
+    return {
+      ...(typeof parsed.outcome === 'string' ? { outcome: parsed.outcome } : {}),
+      ...(typeof parsed.target === 'string' ? { target: parsed.target } : {}),
+    };
+  } catch {
+    return {};
+  }
 }

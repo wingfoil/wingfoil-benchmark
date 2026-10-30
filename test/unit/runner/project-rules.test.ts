@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { parse, stringify } from 'yaml';
 
 import { renderProjectRules } from '../../../src/arms/index.js';
 import { checkCampaign, runCampaign } from '../../../src/runner/index.js';
@@ -301,5 +302,34 @@ describe('the pairing a docs control records (REQ-SCO-14, task-068)', () => {
     expect(docsOf('baseline-docs')).toBe('wingfoil');
     expect(docsOf('wingfoil')).toBeUndefined();
     expect(docsOf('baseline')).toBeUndefined();
+  });
+});
+
+describe("a docs control's snapshot in a scenario with a separate approver (task-118 review round 1)", () => {
+  it("runs the source arm's setup as the developer the run makes the agent, never as the Benchmark Approver", async () => {
+    const { checked: campaign } = checked(campaignYaml(), ['S1@1.0'], (root) => {
+      const file = join(root, 'scenarios', 'S1', '1.0', 'scenario.yaml');
+      const scenario = parse(readFileSync(file, 'utf8')) as Record<string, unknown>;
+      writeFileSync(
+        file,
+        stringify({ ...scenario, approver: { name: 'Dana Okafor', email: 'dana@example.org' } }),
+      );
+    });
+    const ports = doubles({ onRunOnce: fakeBuild });
+
+    const summary = await runCampaign(campaign, { ...ports, harnessSources: { wingfoil: CLONE } });
+
+    const snapshotWorkspace = join(
+      summary.resultsDir,
+      'generated',
+      'S1@1.0',
+      'baseline-docs',
+      'build',
+      'workspace',
+    );
+    expect(ports.recorded.gitCalls.filter((call) => call.includes(snapshotWorkspace))).toContain(
+      `identity ${snapshotWorkspace} Benchmark Developer <developer@benchmark.localhost>`,
+    );
+    expect(ports.recorded.gitCalls.some((call) => call.includes('Benchmark Approver'))).toBe(false);
   });
 });

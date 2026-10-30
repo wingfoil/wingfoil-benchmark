@@ -114,5 +114,6 @@ function toArm(spec: ArmFile, dir: string): Arm {
     ...(spec.docs_of === undefined ? {} : { docsOf: spec.docs_of }),
     ...(spec.docs_directives === undefined ? {} : { docsDirectives: spec.docs_directives }),
     ...(spec.telemetry_off === undefined ? {} : { telemetryOff: spec.telemetry_off }),
+    ...(spec.verdict_hook === undefined ? {} : { verdictHook: spec.verdict_hook }),
   };
 }

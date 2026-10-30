@@ -15,13 +15,17 @@ import type {
 import { readStepCommits } from '../results/index.js';
 
 import type { AstRunner } from './ast.js';
+import { attributionStep, gateStep, rejectionStep } from './governance.js';
+import type { GovernanceViolation } from './governance.js';
 
 /** Where a content check matched: a file the step wrote, or its commit by 1-based position. */
 export type CheckWhere = { readonly file: string } | { readonly commit: number };
 
 /** Where a directive check found a violation (REQ-SCO-05, task-037): a new dependency, or a place in code. */
 export type Violation =
-  { readonly dependency: string } | { readonly file: string; readonly line: number; readonly rule: AstRule };
+  | { readonly dependency: string }
+  | { readonly file: string; readonly line: number; readonly rule: AstRule }
+  | GovernanceViolation;
 
 /**
  * A check on one step (REQ-SCO-06 as amended in 1.12): it passed, with where a content check matched;
@@ -37,6 +41,7 @@ export type CheckStepScore =
       readonly violations: number;
       readonly found: readonly Violation[];
     }
+  | { readonly n: number; readonly passed: boolean } // a governance verdict: attribution, rejection (task-118)
   | { readonly n: number; readonly not_reached: true };
 
 /** A check across its steps, as `score.json` records it. */
@@ -55,6 +60,8 @@ export interface CheckRequest {
   readonly runDir: string;
   readonly snapshots: ReadonlyMap<number, string>;
   readonly ast?: AstRunner;
+  /** Whether a public suite passed whole at a step, for the rejection checks (M-E4, task-118); absent elsewhere. */
+  readonly suitePassed?: (suite: string, n: number) => boolean | undefined;
 }
 
 /**
@@ -76,9 +83,10 @@ export async function scoreChecks(request: CheckRequest): Promise<Result<CheckSc
         steps.push({ n, not_reached: true });
         continue;
       }
-      const step = scoreStep(check, request.runDir, snapshot, n, found.value);
+      const step = scoreStep(check, request, snapshot, n, found.value);
       if (!step.ok) return step;
-      steps.push(step.value);
+      // A governance check leaves out a step where it does not apply (no verdict delivered there, task-118).
+      if (step.value !== undefined) steps.push(step.value);
     }
     scores.push({ id: check.id, kind: check.kind, steps });
   }
@@ -87,11 +95,12 @@ export async function scoreChecks(request: CheckRequest): Promise<Result<CheckSc
 
 function scoreStep(
   check: Check,
-  runDir: string,
+  request: CheckRequest,
   snapshot: string,
   n: number,
   found: ReadonlyMap<string, Violation[]>,
-): Result<CheckStepScore> {
+): Result<CheckStepScore | undefined> {
+  const { runDir } = request;
   switch (check.kind) {
     case 'content':
       return contentStep(check, runDir, n);
@@ -107,6 +116,12 @@ function scoreStep(
     }
     case 'ast':
       return ok(directive(n, found.get(`${n}#${check.id}`) ?? []));
+    case 'gate':
+      return gateStep(check, runDir, request.snapshots, n);
+    case 'attribution':
+      return attributionStep(check, runDir, n);
+    case 'rejection':
+      return rejectionStep(check, runDir, n, request.suitePassed);
   }
 }
 

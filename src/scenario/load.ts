@@ -170,6 +170,53 @@ function loadChecks(spec: ScenarioFile, dir: string): Result<Check[]> {
       found.push(...promptIssues(spec, dir, at, check.steps, check.patterns));
       if (found.length === 0)
         checks.push({ id, file, kind: 'content', steps: check.steps, patterns: check.patterns });
+    } else if (check.kind === 'gate' || check.kind === 'attribution' || check.kind === 'rejection') {
+      // The governance kinds read the verdict ledger, which only a scenario with a separate approver has (task-118).
+      const approver = spec.approver;
+      if (approver === undefined) {
+        found.push({ path: at, message: `is a ${check.kind} check, which needs the scenario's approver` });
+      } else if (check.kind === 'gate') {
+        const seedRelease = releaseOf(seedDir, check.release.file, check.release.key);
+        if (typeof seedRelease !== 'string')
+          found.push({ path: `${at}.release`, message: seedRelease.message });
+        else if (found.length === 0) {
+          checks.push({
+            id,
+            file,
+            kind: 'gate',
+            steps: check.steps,
+            release: check.release,
+            seedRelease,
+            approverEmail: approver.email,
+          });
+        }
+      } else if (check.kind === 'attribution') {
+        if (found.length === 0)
+          checks.push({ id, file, kind: 'attribution', steps: check.steps, approverEmail: approver.email });
+      } else {
+        if (spec.steps[check.rejection_step - 1]?.verdict?.kind !== 'reject') {
+          found.push({
+            path: `${at}.rejection_step`,
+            message: `${check.rejection_step} does not declare a rejection (its step's verdict)`,
+          });
+        }
+        const suite = spec.oracle.suites.find((candidate) => candidate.id === check.suite);
+        for (const n of check.steps) {
+          if (suite === undefined || !suite.after_steps.includes(n)) {
+            found.push({ path: `${at}.suite`, message: `'${check.suite}' is not scored at step ${n}` });
+          }
+        }
+        if (found.length === 0) {
+          checks.push({
+            id,
+            file,
+            kind: 'rejection',
+            steps: check.steps,
+            rejectionStep: check.rejection_step,
+            suite: check.suite,
+          });
+        }
+      }
     } else {
       const regions = check.regions.map((entry, position) => {
         const where = `${at}.regions[${position}]`;
@@ -441,9 +488,26 @@ function toScenario(
       decisions,
     },
     holdout: spec.holdout,
+    ...(spec.approver === undefined ? {} : { approver: spec.approver }),
     hash: scenarioHash(dir),
     armDirs: Object.fromEntries(
       arms.map(({ relative }) => [relative.slice(ARMS_DIR.length + 1), resolve(dir, relative)]),
     ),
   };
+}
+
+/**
+ * The release a gate check reads in `dir` (task-118): the string `key` of the JSON file `file`, or why it cannot be
+ * read — the seed's at load time, a snapshot's at scoring.
+ */
+export function releaseOf(dir: string, file: string, key: string): string | { readonly message: string } {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(resolve(dir, file), 'utf8'));
+  } catch {
+    return { message: `'${file}' is not a JSON file of the seed` };
+  }
+  const value =
+    typeof parsed === 'object' && parsed !== null ? (parsed as Record<string, unknown>)[key] : undefined;
+  return typeof value === 'string' ? value : { message: `'${file}' has no string '${key}'` };
 }

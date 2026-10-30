@@ -57,8 +57,8 @@ export interface Figures {
   readonly unreached?: readonly { readonly run: string; readonly step?: number }[];
 }
 
-/** The check kinds that count violations (REQ-SCO-05 and -06, task-037): M-E1's. */
-const DIRECTIVE_KINDS: readonly string[] = ['ast', 'dependencies'];
+/** M-E1's check kinds (REQ-SCO-05 and -06, task-037): the directives; the findings read them too (task-118). */
+export const DIRECTIVE_KINDS: readonly string[] = ['ast', 'dependencies'];
 
 /** One side of a comparison: its `n`, the mean of its runs' figures, their range, and the runs. */
 export interface Summary {

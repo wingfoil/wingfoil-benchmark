@@ -81,6 +81,10 @@ const STATEMENTS: readonly (readonly [string, string])[] = [
     "REQ-RUN-06 and REQ-FMT-04 as amended in 1.43 (policy v3, a step's `verdict`); dl-029 point 7; S10.md §6; task-117 Design",
   ],
   [
+    'approver-separate',
+    'REQ-RUN-17, REQ-FMT-04/05/06 and REQ-SCO-06 as amended in 1.44; dl-029 (option (b1), M-E3a zero by construction); S10.md §6, §7, §11; scenario conventions open question 1 (1.6); task-118 Design',
+  ],
+  [
     'approver-decision',
     'REQ-RUN-17; rel-v0-1 W2 and W3 Due before; arms/wingfoil/manual.md (agent runs `memory approve` after "Approved. Proceed.")',
   ],

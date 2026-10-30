@@ -6,7 +6,7 @@ import type { DocsGenerator } from '../arms/index.js';
 import type { Arm, DockerPort, GitPort, Scenario } from '../core/index.js';
 
 import type { HarnessArtefact } from './harness.js';
-import { AGENT_IDENTITY, hostUser } from './identity.js';
+import { agentIdentityFor, hostUser } from './identity.js';
 
 /** The file every docs generator writes, and the docs controls' manual names (task-014). */
 export const PROJECT_RULES = 'PROJECT_RULES.md';
@@ -101,7 +101,9 @@ async function snapshot(
   if (overlay !== undefined) cpSync(overlay, join(build, 'scenario'), { recursive: true });
   // The repository the source arm's runs start from: one commit, and the agent's identity.
   await options.git.init(workspace);
-  await options.git.configureIdentity(workspace, AGENT_IDENTITY.name, AGENT_IDENTITY.email);
+  // The identity the run gives the agent in this scenario: a docs control renders the same team (task-118).
+  const agent = agentIdentityFor(scenario);
+  await options.git.configureIdentity(workspace, agent.name, agent.email);
   await options.git.commitAll(workspace, 'seed', { allowEmpty: true });
 
   const result = await options.docker.runOnce({

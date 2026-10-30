@@ -329,6 +329,7 @@ describe('runCampaign', () => {
       `tree ${workspace} HEAD`,
       `patch ${workspace} ${tree(1)} ${tree(2)}`,
       `messages ${workspace} ${'commit-1'.padEnd(40, '0')}`,
+      `authors ${workspace} ${'commit-1'.padEnd(40, '0')}`,
       `commit ${workspace} step 01 --allow-empty`,
       `head ${workspace}`,
       `tree ${workspace} HEAD`,
@@ -385,9 +386,11 @@ describe('runCampaign', () => {
     ]);
     expect(JSON.parse(readFileSync(join(output, 'steps', '01', 'commits.json'), 'utf8'))).toEqual({
       messages: ['Add cancellation', 'Record the decision\n\nToken: [redacted]'],
+      commits: [],
     });
     expect(JSON.parse(readFileSync(join(output, 'steps', '02', 'commits.json'), 'utf8'))).toEqual({
       messages: [],
+      commits: [],
     });
   });
 
@@ -732,6 +735,176 @@ describe('the neutral approver in the step loop (F2.4)', () => {
       { step: 2, kind: 'approval', reply: verdict.text },
       { step: 2, kind: 'approval', reply: verdict.later },
     ]);
+  });
+
+  it("carries a verdict out once, under the scenario's approver, and keeps the ledger and the authors (task-118)", async () => {
+    const yaml = campaignYaml({ approver_policy: 'v3' });
+    const { root, file } = writeRepo(yaml, ['S1@1.0']);
+    const scenarioFile = join(root, 'scenarios', 'S1', '1.0', 'scenario.yaml');
+    const scenario = parse(readFileSync(scenarioFile, 'utf8')) as Record<string, unknown> & {
+      steps: Record<string, unknown>[];
+    };
+    const verdict = {
+      kind: 'reject',
+      text: 'Rejected by Dana: no contact details.',
+      later: 'Already reviewed today.',
+    };
+    scenario.approver = { name: 'Dana Okafor', email: 'dana@example.org' };
+    scenario.steps[1] = { ...scenario.steps[1], verdict };
+    writeFileSync(scenarioFile, stringify(scenario));
+    const armFile = join(root, 'arms', 'baseline', 'arm.yaml');
+    writeFileSync(
+      armFile,
+      stringify({ ...(parse(readFileSync(armFile, 'utf8')) as object), verdict_hook: 'verdict.sh' }),
+    );
+    writeFileSync(join(root, 'arms', 'baseline', 'verdict.sh'), '#!/bin/bash\n');
+    const checked = checkCampaign(file);
+    if (!checked.ok) throw new Error(JSON.stringify(checked.issues));
+    const ports = doubles({
+      messageOf: (request) =>
+        request.step === 2 && invocationOf(request) < 2 ? 'Please approve the change.' : undefined,
+      execResultOf: (command) =>
+        command[1]?.endsWith('/verdict.sh')
+          ? { code: 0, stdout: '{"target":"task-7","outcome":"done"}\n', stderr: '' }
+          : undefined,
+      commitsOf: (_directory, from) =>
+        from.startsWith('commit-')
+          ? [{ sha: 'c'.repeat(40), authorEmail: 'dana@example.org', committerEmail: 'dana@example.org' }]
+          : [],
+    });
+
+    const summary = await runCampaign(checked.value, ports);
+
+    const workspace = summary.runs[0]?.workspace ?? '';
+    expect(ports.recorded.gitCalls).toContain(
+      `identity ${workspace} Benchmark Developer <developer@benchmark.localhost>`,
+    );
+    const hooks = ports.recorded.execs.filter((e) => e.command[1]?.endsWith('/verdict.sh'));
+    expect(hooks.map((e) => e.command)).toEqual([
+      ['bash', '/home/node/arm/verdict.sh', 'reject', 'Dana Okafor', 'dana@example.org', verdict.text],
+    ]);
+    const out = summary.runs[0]?.outputDir ?? '';
+    const ledger = (n: string) =>
+      JSON.parse(readFileSync(join(out, 'steps', n, 'verdicts.json'), 'utf8')) as unknown;
+    expect(ledger('01')).toEqual({ deliveries: [] });
+    expect(ledger('02')).toEqual({
+      deliveries: [
+        {
+          reply: verdict.text,
+          verdict: 'reject',
+          head: expect.stringMatching(/^commit-/),
+          carried_out: { outcome: 'done', target: 'task-7', commits: ['c'.repeat(40)] },
+        },
+        { reply: verdict.later, verdict: 'reject', head: expect.stringMatching(/^commit-/) },
+      ],
+    });
+    const commits = JSON.parse(readFileSync(join(out, 'steps', '02', 'commits.json'), 'utf8')) as {
+      commits: unknown[];
+    };
+    expect(commits.commits).toContainEqual({
+      sha: 'c'.repeat(40),
+      author_email: 'dana@example.org',
+      committer_email: 'dana@example.org',
+    });
+  });
+
+  describe('the approver kept out of the agent, and what carrying a verdict out records (task-118 review round 1)', () => {
+    /** S1 with Dana as approver and step 1 approved, its arm with a verdict hook unless `hook` is false. */
+    function approverCampaign(hook = true) {
+      const { root, file } = writeRepo(campaignYaml({ approver_policy: 'v3' }), ['S1@1.0']);
+      const scenarioFile = join(root, 'scenarios', 'S1', '1.0', 'scenario.yaml');
+      const scenario = parse(readFileSync(scenarioFile, 'utf8')) as Record<string, unknown> & {
+        steps: Record<string, unknown>[];
+      };
+      scenario.approver = { name: 'Dana Okafor', email: 'dana@example.org' };
+      scenario.steps[0] = {
+        ...scenario.steps[0],
+        verdict: { kind: 'approve', text: 'Approved by Dana: yes.' },
+      };
+      writeFileSync(scenarioFile, stringify(scenario));
+      if (hook) {
+        const armFile = join(root, 'arms', 'baseline', 'arm.yaml');
+        writeFileSync(
+          armFile,
+          stringify({ ...(parse(readFileSync(armFile, 'utf8')) as object), verdict_hook: 'verdict.sh' }),
+        );
+        writeFileSync(join(root, 'arms', 'baseline', 'verdict.sh'), '#!/bin/bash\n');
+      }
+      const checked = checkCampaign(file);
+      if (!checked.ok) throw new Error(JSON.stringify(checked.issues));
+      return checked.value;
+    }
+    const asks = (request: { step: number }) =>
+      request.step === 1 && invocationOf(request as never) === 0 ? 'Please approve the change.' : undefined;
+    const isHook = (command: readonly string[]) => command[1]?.endsWith('/verdict.sh') === true;
+    async function firstDelivery(ports: ReturnType<typeof doubles>, hook = true, timeoutMs?: number) {
+      const summary = await runCampaign(approverCampaign(hook), {
+        ...ports,
+        ...(timeoutMs === undefined ? {} : { verdictHookTimeoutMs: timeoutMs }),
+      });
+      const out = summary.runs[0]?.outputDir ?? '';
+      return (
+        JSON.parse(readFileSync(join(out, 'steps', '01', 'verdicts.json'), 'utf8')) as {
+          deliveries: unknown[];
+        }
+      ).deliveries[0];
+    }
+
+    it("never hands the approver's identity to the agent nor to the workspace's git configuration", async () => {
+      const ports = doubles({ messageOf: asks });
+      await firstDelivery(ports);
+      const agentSaw = JSON.stringify([ports.recorded.steps, ports.recorded.resumes]);
+      expect(agentSaw).not.toContain('dana@example.org');
+      expect(ports.recorded.gitCalls.filter((call) => call.startsWith('identity '))).not.toContainEqual(
+        expect.stringContaining('dana@example.org'),
+      );
+      expect(
+        ports.recorded.execs.filter((e) => !isHook(e.command)).map((e) => e.command.join(' ')),
+      ).not.toContainEqual(expect.stringContaining('dana@example.org'));
+    });
+
+    it.each([
+      [{ code: 3, stdout: '', stderr: 'boom' }, 'failed (exit 3)', undefined],
+      [{ code: 0, stdout: '{"outcome":"no-target"}\n', stderr: '' }, 'no-target', undefined],
+      [{ code: 0, stdout: '{"outcome":"ambiguous"}\n', stderr: '' }, 'ambiguous', undefined],
+      [{ code: 0, stdout: 'not json\n', stderr: '' }, 'unreadable', undefined],
+    ])('records a hook answering %j as %s', async (result, outcome) => {
+      const ports = doubles({
+        messageOf: asks,
+        execResultOf: (command) => (isHook(command) ? result : undefined),
+      });
+      expect(await firstDelivery(ports)).toMatchObject({ carried_out: { outcome, commits: [] } });
+    });
+
+    it('records a hook that does not answer in time as timed out', async () => {
+      const ports = doubles({ messageOf: asks });
+      const exec = ports.docker.exec.bind(ports.docker);
+      ports.docker.exec = (container, command) =>
+        isHook(command) ? new Promise(() => undefined) : exec(container, command);
+      expect(await firstDelivery(ports, true, 20)).toMatchObject({ carried_out: { outcome: 'timed out' } });
+    });
+
+    it('delivers the verdict as text only to an arm with no hook', async () => {
+      const ports = doubles({ messageOf: asks });
+      const delivery = await firstDelivery(ports, false);
+      expect(delivery).toEqual({
+        reply: 'Approved by Dana: yes.',
+        verdict: 'approve',
+        head: expect.any(String),
+      });
+      expect(ports.recorded.execs.some((e) => isHook(e.command))).toBe(false);
+    });
+  });
+
+  it('keeps the agent the approver, and writes no ledger, in a scenario with no approver (option (a), task-118)', async () => {
+    const { checked } = checkedCampaign();
+    const ports = doubles();
+    const summary = await runCampaign(checked, ports);
+    const workspace = summary.runs[0]?.workspace ?? '';
+    expect(ports.recorded.gitCalls).toContain(
+      `identity ${workspace} Benchmark Approver <approver@benchmark.localhost>`,
+    );
+    expect(existsSync(join(summary.runs[0]?.outputDir ?? '', 'steps', '01', 'verdicts.json'))).toBe(false);
   });
 
   it("records every intervention and each step's outcome in run.json (REQ-RUN-07)", async () => {
@@ -1158,7 +1331,9 @@ describe('the setup phase (REQ-RUN-03, adr-003)', () => {
     const summary = await runCampaign(checked, ports);
 
     const workspace = summary.runs[0]?.workspace ?? '';
-    expect(ports.recorded.gitCalls.filter((call) => !/^(patch|tree|messages|head) /.test(call))).toEqual([
+    expect(
+      ports.recorded.gitCalls.filter((call) => !/^(patch|tree|messages|authors|head) /.test(call)),
+    ).toEqual([
       `init ${workspace}`,
       `commit ${workspace} seed`,
       `identity ${workspace} Benchmark Approver <approver@benchmark.localhost>`,
@@ -1260,11 +1435,13 @@ describe('the setup phase (REQ-RUN-03, adr-003)', () => {
       `tree ${workspace} HEAD`,
       `patch ${workspace} ${tree(1)} ${tree(2)}`,
       `messages ${workspace} ${'commit-1'.padEnd(40, '0')}`,
+      `authors ${workspace} ${'commit-1'.padEnd(40, '0')}`,
       `commit ${workspace} step 01 --allow-empty`,
       `head ${workspace}`,
       `tree ${workspace} HEAD`,
       `patch ${workspace} ${tree(2)} ${tree(3)}`,
       `messages ${workspace} ${'commit-2'.padEnd(40, '0')}`,
+      `authors ${workspace} ${'commit-2'.padEnd(40, '0')}`,
       `commit ${workspace} step 02 --allow-empty`,
       `head ${workspace}`,
       `tree ${workspace} HEAD`,

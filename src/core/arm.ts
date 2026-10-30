@@ -49,6 +49,13 @@ export const armSchema = z.strictObject({
    * set in the arm's container; `[]` states the tool has none. Required of an arm that requires a harness.
    */
   telemetry_off: z.array(z.string().regex(/^[A-Z_][A-Z0-9_]*=.*$/, 'must be NAME=value')).optional(),
+  /**
+   * REQ-FMT-05 as amended in 1.44 (task-118): the script that carries a scripted verdict out through the tool's own
+   * approval mechanism, under the scenario's approver. The runner runs it as `bash <hook> <approve|reject> <name>
+   * <email> <reason>`; it prints one JSON line `{"outcome": …, "target"?: …}`. Absent: verdicts reach the arm as
+   * text only.
+   */
+  verdict_hook: relativePath.optional(),
 });
 
 /** An `arm.yaml` as parsed, with relative paths. */
@@ -73,6 +80,8 @@ export interface Arm {
   readonly docsDirectives?: 'every-role';
   /** The settings that turn the arm's tool's telemetry off, `NAME=value` (REQ-RUN-18). */
   readonly telemetryOff?: readonly string[];
+  /** The verdict hook, relative to {@link dir} (task-118); absent for an arm with no approval mechanism. */
+  readonly verdictHook?: string;
   /**
    * Where the arm was read when the working tree no longer holds its pinned digest (REQ-FMT-13 as amended in 1.33):
    * the commit, and the repository-shaped root it was written under. Absent for an arm read from the working tree.

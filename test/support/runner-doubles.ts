@@ -10,6 +10,7 @@ import type {
 } from '../../src/agents/index.js';
 import type {
   BuildRequest,
+  CommitAuthors,
   CreateRequest,
   DockerPort,
   GitPort,
@@ -117,6 +118,8 @@ export function doubles(
     patchOf?: (directory: string, from: string, to: string) => string;
     /** The messages of the commits a step made (task-035); by default none. */
     messagesOf?: (directory: string, from: string) => readonly string[];
+    /** The commits made since `from`, with their authors (task-118); by default none. */
+    commitsOf?: (directory: string, from: string) => readonly CommitAuthors[];
     /** Makes one Docker or git call fail: `create`, `start`, `remove` and `init` break a run
      * outside its steps, `commit` and `patch` break it inside one. */
     failing?: {
@@ -269,6 +272,10 @@ export function doubles(
     messagesSince: (directory, from) => {
       recorded.gitCalls.push(`messages ${directory} ${from}`);
       return Promise.resolve([...(options.messagesOf?.(directory, from) ?? [])]);
+    },
+    commitsSince: (directory, from) => {
+      recorded.gitCalls.push(`authors ${directory} ${from}`);
+      return Promise.resolve([...(options.commitsOf?.(directory, from) ?? [])]);
     },
     // Recorded in the same transcript as the commits, so their order is pinned: a patch read before
     // its commit would hold the previous step's snapshot, and every scored step would slip by one.

@@ -46,6 +46,13 @@ const ISOLATED_ENVIRONMENT = {
   GIT_COMMITTER_EMAIL: EMAIL,
 };
 
+/** A commit and who made it (task-118): its SHA, its author's e-mail and its committer's. */
+export interface CommitAuthors {
+  readonly sha: string;
+  readonly authorEmail: string;
+  readonly committerEmail: string;
+}
+
 /** REQ-ARC-04: git behind one interface. */
 export interface GitPort {
   init(directory: string): Promise<void>;
@@ -80,6 +87,11 @@ export interface GitPort {
    * trees (bug-007). Each without its trailing newlines.
    */
   messagesSince(directory: string, from: string): Promise<string[]>;
+  /**
+   * The same commits, oldest first, each with its SHA and its author's and committer's e-mail (task-118): who made a
+   * step's commits, read by M-E2's forged approvals and M-E3a.
+   */
+  commitsSince(directory: string, from: string): Promise<CommitAuthors[]>;
   /**
    * The full SHA of the commit `rev` names in `repository`, or `undefined` when it names none: how a
    * harness pin is checked against its clone (REQ-RUN-14).
@@ -126,6 +138,14 @@ export function gitCli(process: ProcessPort): GitPort {
       pieces.pop();
       return pieces.map((piece) => piece.replace(/^\n/, '').replace(/\n+$/, ''));
     },
+    commitsSince: async (directory, from) =>
+      (await git(directory, ['log', '--reverse', '--format=%H%x09%ae%x09%ce', `${from}..HEAD`]))
+        .split('\n')
+        .filter((line) => line !== '')
+        .map((line) => {
+          const [sha = '', authorEmail = '', committerEmail = ''] = line.split('\t');
+          return { sha, authorEmail, committerEmail };
+        }),
     resolveCommit: async (repository, rev) => {
       const args = [...ISOLATION, '-C', repository, 'rev-parse', '--verify', '--quiet', `${rev}^{commit}`];
       const result = await process.run('git', args, { env: ISOLATED_ENVIRONMENT });

@@ -1,4 +1,4 @@
-export { loadScenario } from './load.js';
+export { loadScenario, releaseOf } from './load.js';
 export { scenarioHash } from './hash.js';
 export { checkHoldoutRoot, holdoutSuiteIssues, loadHoldoutAdditions } from './holdout.js';
 export type { HoldoutAdditions } from './holdout.js';

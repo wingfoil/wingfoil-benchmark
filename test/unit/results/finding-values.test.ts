@@ -109,6 +109,15 @@ describe('findingNote, every form of a metric (task-044)', () => {
     expect(values(dir, 'M-R')).toContain('- wingfoil: pins differ (scorer): no value');
   });
 
+  it("never lists the gate's violations (M-E2) under M-E1 (task-118 review round 1)", () => {
+    const dir = execution({
+      checks: [
+        { id: 'm-e2-gate', kind: 'gate', steps: [{ step: 4, passed: value([]), violations: value([]), not_reached: [] }] },
+      ],
+    });
+    expect(values(dir, 'M-E1')).toContain('- no directive check in this scenario');
+  });
+
   it('says a scenario whose checks are not directives, and a determinism scored before M-R2', () => {
     const dir = execution({
       checks: [{ id: 'd3', kind: 'content', steps: [{ step: 4, passed: value([]), not_reached: [] }] }],
