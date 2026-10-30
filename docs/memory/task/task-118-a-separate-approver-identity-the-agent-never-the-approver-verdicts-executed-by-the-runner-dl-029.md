@@ -106,3 +106,12 @@ on `c2e34e7d`: no blocker.
 **Round 2** (re-review of `899e7fed`'s diff, a fresh read-only agent, checkouts unchanged): round 1's findings
 resolved; one nit, so the review closes. Applied: a timed-out hook's late commits, counted as forged by the gate, stated
 in S10.md §11, and the calibration's check of the hook's time noted there.
+
+### Approval
+
+- **Full suites** (`scripts/full-suites.sh`, started by a watcher once the machine's load fell below 4), on
+  `e5ae8a9b`, the worktree clean: green — lint, 1915 unit and acceptance tests passed (9 skipped; coverage 97.33 % of
+  lines), build, test:bin 8/8, test:docker 22 passed (2 skipped: the real hold-out is absent beside the worktree), log
+  `.cache/full-suites/2026-10-30/…-e5ae8a9b-053145.txt`.
+- **Approved** by the approver, in-review → approved. The method's two changes are done: S10's calibration waits for
+  the approver's go (task-116, "What the calibration will need").
