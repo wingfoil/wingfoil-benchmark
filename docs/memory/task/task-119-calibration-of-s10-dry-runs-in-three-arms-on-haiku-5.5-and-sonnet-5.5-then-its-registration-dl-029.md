@@ -217,3 +217,12 @@ should-fix items resolved; v3 is task-117's call, v4 frozen as round 3 ran it.
 
 **Round 3** (re-review of `a4861e73`, a fresh read-only agent, checkouts unchanged): round 2's findings resolved, the
 note's claims checked against its table; nits only, so the review closes. Applied: a test title within 120 columns.
+
+### Approval
+
+- **Full suites** (`scripts/full-suites.sh`, started by a watcher once the machine's load fell below 4), on
+  `4c592969`, the worktree clean: green — lint, 1951 unit and acceptance tests passed (9 skipped; coverage 97.34 % of
+  lines), build, test:bin 8/8, test:docker 22 passed (2 skipped: the real hold-out is absent beside the worktree), log
+  `.cache/full-suites/2026-10-30/…-4c592969-222815.txt`.
+- **Approved** by the approver, in-review → approved, with bug-038, bug-039 and bug-040. S10@1.0 is calibrated and
+  registered; the W17 Claude Code campaign pins approver policy v5 and the wingfoil arm's digest `cc009b5a52a9`.
