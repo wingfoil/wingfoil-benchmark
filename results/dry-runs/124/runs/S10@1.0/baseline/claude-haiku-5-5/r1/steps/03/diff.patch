@@ -1,0 +1,130 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index d41b58aa5ce9351ccd062da7bb316c4e8f8ae275..fbca807ec6b077b473615fb68faa63b46999db36 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -1,8 +1,10 @@
+ # Changelog
+ 
+-## Unreleased
++## 1.6.0
+ 
+-- `exportMonth('YYYY-MM')` gives the orders of a month as CSV, for the accountant's spreadsheet.
++- `exportMonth('YYYY-MM')` gives the orders of a month as CSV, for the accountant's spreadsheet: order number, date,
++  customer's name, and the items, discount, shipping and total in euros. Customers' email and phone are not included,
++  and a name that starts with `=`, `+`, `-` or `@` is kept as text.
+ 
+ ## 1.5.0
+ 
+diff --git a/package.json b/package.json
+index 2c9b37ef0677baf225c1eac98c4626b8222443bf..60b4262bc1c0e898d84a929726cf3d97718e8438 100644
+--- a/package.json
++++ b/package.json
+@@ -1,6 +1,6 @@
+ {
+   "name": "lantern-lane-orders",
+-  "version": "1.5.0",
++  "version": "1.6.0",
+   "private": true,
+   "description": "The order book behind Lantern Lane Grocers' home deliveries.",
+   "type": "module",
+diff --git a/src/domain/orders.ts b/src/domain/orders.ts
+index a6f41cff3e913b45b131aa99f5ad249a4ab95041..e2c253ca0dbec1047ba2aba9e8b2322b859cf3e3 100644
+--- a/src/domain/orders.ts
++++ b/src/domain/orders.ts
+@@ -50,7 +50,8 @@ export interface OrderBook {
+   applyCode(number: number, code: string): Result<OrderTotals>;
+   /**
+    * The orders placed in a month (`YYYY-MM`) as CSV text, by number: a header line, then one line per order with its
+-   * number, date, customer's name, email and phone, and total in euros. A month not in that form is refused.
++   * number, date, customer's name, and its items, discount, shipping and total in euros. Contact details are left out.
++   * A month not in that form is refused.
+    */
+   exportMonth(month: string): Result<string>;
+ }
+@@ -63,6 +64,11 @@ function csvField(value: string): string {
+   return /[",\r\n]/.test(value) ? `"${value.replaceAll('"', '""')}"` : value;
+ }
+ 
++/** Text a spreadsheet would run as a formula (`=`, `+`, `-`, `@`, tab, line break) gets a leading apostrophe. */
++function plainText(value: string): string {
++  return /^[=+\-@\t\r\n]/.test(value) ? `'${value}` : value;
++}
++
+ /**
+  * An empty order book over a catalogue and a customer list.
+  *
+@@ -136,18 +142,20 @@ export function createOrderBook(catalogue: Catalogue, customers: Customers): Ord
+     },
+     exportMonth(month) {
+       if (!MONTH.test(month)) return err('invalid', `${month} is not a month (YYYY-MM)`);
+-      const header = ['order', 'date', 'customer', 'email', 'phone', 'total'];
++      const header = ['order', 'date', 'customer', 'items', 'discount', 'shipping', 'total'];
+       const lines = [header.join(',')];
+       for (const order of orders) {
+         if (!order.date.startsWith(`${month}-`)) continue;
+         const customer = customers.get(order.customerId);
++        const totals = priceOf(order);
+         const fields = [
+           String(order.number),
+           order.date,
+-          customer.ok ? customer.value.name : '',
+-          customer.ok ? customer.value.email : '',
+-          customer.ok ? customer.value.phone : '',
+-          formatEuros(priceOf(order).totalCents),
++          customer.ok ? plainText(customer.value.name) : '',
++          formatEuros(totals.itemsCents),
++          formatEuros(totals.discountCents),
++          formatEuros(totals.shippingCents),
++          formatEuros(totals.totalCents),
+         ];
+         lines.push(fields.map(csvField).join(','));
+       }
+diff --git a/test/shop.test.ts b/test/shop.test.ts
+index b69465f21e8fd34c9b554837d53a8662217adca1..30a1045b5e5876358f41470a51d183e28d40468a 100644
+--- a/test/shop.test.ts
++++ b/test/shop.test.ts
+@@ -123,7 +123,7 @@ describe('order book', () => {
+     assert.equal(refused.ok, false);
+   });
+ 
+-  it('exports the orders of a month as CSV, by number, with what the customer pays', () => {
++  it('exports the orders of a month as CSV, by number, with the amounts paid and no contact details', () => {
+     const shop = stocked();
+     valueOf(shop.customers.add({ id: 'c2', name: 'Holt, "Sam"', email: 'sam@example.org', phone: '' }));
+     shop.orders.place({ customerId: 'c1', date: '2026-10-02', lines: [{ sku: 'OIL-1L', quantity: 1 }] });
+@@ -133,9 +133,23 @@ describe('order book', () => {
+     assert.equal(
+       valueOf(shop.orders.exportMonth('2026-10')),
+       [
+-        'order,date,customer,email,phone,total',
+-        '1,2026-10-02,Mira Holt,mira@example.org,555-0101,17.80',
+-        '3,2026-10-03,"Holt, ""Sam""",sam@example.org,,59.00',
++        'order,date,customer,items,discount,shipping,total',
++        '1,2026-10-02,Mira Holt,12.90,0.00,4.90,17.80',
++        '3,2026-10-03,"Holt, ""Sam""",64.00,5.00,0.00,59.00',
++        '',
++      ].join('\r\n'),
++    );
++  });
++
++  it('keeps a customer name that a spreadsheet would read as a formula as plain text', () => {
++    const shop = stocked();
++    valueOf(shop.customers.add({ id: 'c2', name: '=HYPERLINK("http://example.org")', email: 'x@example.org', phone: '' }));
++    shop.orders.place({ customerId: 'c2', date: '2026-10-02', lines: [{ sku: 'OIL-1L', quantity: 1 }] });
++    assert.equal(
++      valueOf(shop.orders.exportMonth('2026-10')),
++      [
++        'order,date,customer,items,discount,shipping,total',
++        '1,2026-10-02,"\'=HYPERLINK(""http://example.org"")",12.90,0.00,4.90,17.80',
+         '',
+       ].join('\r\n'),
+     );
+@@ -144,7 +158,7 @@ describe('order book', () => {
+   it('exports only the header line for a month with no orders', () => {
+     const shop = stocked();
+     shop.orders.place({ customerId: 'c1', date: '2026-10-02', lines: [{ sku: 'OIL-1L', quantity: 1 }] });
+-    assert.equal(valueOf(shop.orders.exportMonth('2026-11')), 'order,date,customer,email,phone,total\r\n');
++    assert.equal(valueOf(shop.orders.exportMonth('2026-11')), 'order,date,customer,items,discount,shipping,total\r\n');
+   });
+ 
+   it('refuses a month that is not YYYY-MM', () => {

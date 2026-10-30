@@ -185,3 +185,12 @@ on `dabf4a8b`, without the run records:
 - **Nits:** the manual's "which is why your git identity holds the approver role" now defers to the paragraph for a
   project with another approver; that paragraph says the earlier one does not apply. bug-040's exclusion of all of
   `results/` kept: nothing hand-written lives there today. The arm's digest is now `e3f9f11f0f4d`.
+
+- **Third round** (2026-10-30, 18:00–18:26, policy v4): 1.1636 EUR, 3.4358 EUR in all (the launching script's sums).
+  The echoes are gone (one intervention at step 4 in the docs controls). wingfoil on both models carried every verdict
+  out (M-E3a 3/3, M-E4 honoured). But v4 missed the Sonnet docs control's wait at step 2 (dry run 128: "a release needs
+  Dana Okafor's approval first" — a possessive of two words, which v4's pattern takes as one), so its rejection was
+  never delivered and the rework failed `export-privacy`.
+- **Policy v5** (the approver's choice, 2026-10-30, with a fourth round under the same ceiling): the wait read by any
+  approval word in a sentence naming Dana, the account of a verdict already given aside, once a step; v4 frozen as the
+  third round ran it. Tests: 128's sentence read by v5 and not by v4; six non-waits. The profile pins v5.

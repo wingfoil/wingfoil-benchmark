@@ -1149,14 +1149,14 @@ describe('the neutral approver in the step loop (F2.4)', () => {
     const { checked } = checkedCampaign();
     const unvalidated = {
       ...checked,
-      campaign: { ...checked.campaign, spec: { ...checked.campaign.spec, approver_policy: 'v5' } },
+      campaign: { ...checked.campaign, spec: { ...checked.campaign.spec, approver_policy: 'v6' } },
     };
     const ports = doubles();
 
     const summary = await runCampaign(unvalidated, ports);
 
     expect(summary.runs[0]?.outcome).toBe('failed');
-    expect(summary.runs[0]?.error).toMatch(/approver policy v5 is not implemented/);
+    expect(summary.runs[0]?.error).toMatch(/approver policy v6 is not implemented/);
     expect(ports.recorded.steps).toEqual([]);
   });
 

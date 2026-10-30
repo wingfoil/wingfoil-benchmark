@@ -1,0 +1,169 @@
+diff --git a/README.md b/README.md
+index dc0c34154dd9a8cf1103ec033a99ec9d1ea88c25..0536b83da121785b2db8cf6eb0af8b0dbbd52439 100644
+--- a/README.md
++++ b/README.md
+@@ -18,3 +18,10 @@ discount plus the shipping.
+ 
+ An unknown code, or `WELCOME5` on a smaller order, is refused with an error saying why, and the order keeps its code.
+ The discount never touches shipping: whether an order ships free is decided on its items before any discount.
++
++## Monthly export
++
++`exportMonth(month)` gives the accountant's spreadsheet export as CSV text, for a month given as `YYYY-MM`. It has a
++header line, then one line per order placed in that month, by order number, with the columns `order`, `date`,
++`customer` and `total`. Customers' email addresses and phone numbers are left out. `total` is what the customer pays, in euros with two decimals. A value with a
++comma, a quote or a line break is quoted, with its quotes doubled. A month with no orders gives the header line alone.
+diff --git a/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-2-plan.md b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-2-plan.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..ae97d5132e92e2bf69d7dfce27c52e059302ab09
+--- /dev/null
++++ b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-2-plan.md
+@@ -0,0 +1,17 @@
++---
++id: sw-life-cycle-1-2-plan
++type: plan
++title: "Monthly orders CSV export"
++status: active
++workflow: "sw-life-cycle"
++phase: "1-2"
++element: ""
++parent: ""
++format: 1
++---
++
++<!-- plan body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
+diff --git a/docs/memory/task/task-002-monthly-orders-csv-export.md b/docs/memory/task/task-002-monthly-orders-csv-export.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..45b733fa8a4715921c93e0295d7ec2e8b2128fc8
+--- /dev/null
++++ b/docs/memory/task/task-002-monthly-orders-csv-export.md
+@@ -0,0 +1,36 @@
++---
++id: task-002-monthly-orders-csv-export
++type: task
++title: "Monthly orders CSV export"
++status: pending
++format: 1
++---
++
++# Monthly orders CSV export
++
++The accountant loads a monthly export of the orders into her spreadsheet. The first export is due at the end of
++this month.
++
++## Export
++
++- `exportMonth(month)` on the order book: given a month as `YYYY-MM`, returns CSV text with a header line and one
++  line per order placed in that month, in order-number order.
++- Columns, in this order: `order` (the order number), `date` (as the order stores it, `YYYY-MM-DD`), `customer` (the
++  customer's name), and `total` (what the customer pays, in euros with two decimals, such as `12.50`; this is the
++  order's `totalCents`).
++- The export carries no customer email addresses and no phone numbers: the accountant's export is limited to the
++  order number, date, customer name and total. (Rejection of the first version: it carried both.)
++- A value containing a comma, a quote or a line break is quoted, and its quotes are doubled, as CSV does.
++- A month with no orders gives the header line alone.
++
++## Acceptance
++
++- The header line and one line per order, with every column, for a month with orders.
++- The export has no email or phone column, and no email address or phone number appears in it.
++- Orders of other months are left out, and a month with no orders gives the header line alone.
++- A customer name or other value containing a comma or a quote is quoted, with its quotes doubled.
++- `total` is in euros with two decimals, including the discount and the shipping of the order.
++
++## Interface
++
++- `exportMonth(month: string): string` on the order book.
+diff --git a/src/domain/orders.ts b/src/domain/orders.ts
+index c8d8c3ecd8a95f2e0c379671ef02ff4bd8808a86..8cf768b1f40b088f260ca47d74192b6d510dc605 100644
+--- a/src/domain/orders.ts
++++ b/src/domain/orders.ts
+@@ -1,6 +1,7 @@
+ import type { Catalogue } from './catalogue.ts';
+ import type { Customers } from './customers.ts';
+ import { discountFor } from './discounts.ts';
++import { formatEuros } from './money.ts';
+ import type { Cents } from './money.ts';
+ import { err, ok } from './result.ts';
+ import type { Result } from './result.ts';
+@@ -50,10 +51,22 @@ export interface OrderBook {
+    * order, an unknown code, or a code the order does not qualify for is refused and the order keeps its code.
+    */
+   applyCode(number: number, code: string): Result<OrderTotals>;
++  /**
++   * The orders placed in a month (`YYYY-MM`) as CSV text: a header line, then one line per order by number, with
++   * the order number, its date, the customer's name and the total paid in euros. Contact details stay out of it.
++   */
++  exportMonth(month: string): string;
+ }
+ 
+ const DATE = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
+ 
++const CSV_HEADER = 'order,date,customer,total';
++
++/** A CSV field: quoted, with its quotes doubled, when it holds a comma, a quote or a line break. */
++function csvField(value: string): string {
++  return /[",\r\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
++}
++
+ /**
+  * An empty order book over a catalogue and a customer list.
+  *
+@@ -125,5 +138,19 @@ export function createOrderBook(catalogue: Catalogue, customers: Customers): Ord
+       codes.set(number, code);
+       return totals;
+     },
++    exportMonth(month) {
++      const lines = [CSV_HEADER];
++      for (const order of orders) {
++        if (!order.date.startsWith(`${month}-`)) continue;
++        // Customers are never removed and an order's code was checked when it was given, so these cannot fail.
++        const customer = customers.get(order.customerId);
++        if (!customer.ok) throw new Error(customer.error.message);
++        const totals = totalsOf(order, codes.get(order.number));
++        if (!totals.ok) throw new Error(totals.error.message);
++        const fields = [order.number, order.date, customer.value.name, formatEuros(totals.value.totalCents)];
++        lines.push(fields.map((field) => csvField(String(field))).join(','));
++      }
++      return lines.map((line) => `${line}\n`).join('');
++    },
+   };
+ }
+diff --git a/test/shop.test.ts b/test/shop.test.ts
+index 5e8d8be236b0a54b68906d623503195f18452789..d851d7a6e239ace35d22803f18f5f49b87412d6f 100644
+--- a/test/shop.test.ts
++++ b/test/shop.test.ts
+@@ -149,3 +149,29 @@ describe('discount codes', () => {
+     assert.equal(errorOf(shop.orders.applyCode(9, 'SPRING10')).code, 'not-found');
+   });
+ });
++
++describe('monthly export', () => {
++  it('gives a header and one line per order of the month, by number, with the total paid', () => {
++    const shop = campaignShop();
++    valueOf(shop.customers.add({ id: 'c2', name: 'Tomas "Tom" Ruiz, Jr', email: 'tom@example.org', phone: '' }));
++    valueOf(shop.orders.place({ customerId: 'c1', date: '2026-10-02', lines: [{ sku: 'OIL-1L', quantity: 1 }] }));
++    valueOf(shop.orders.place({ customerId: 'c1', date: '2026-09-30', lines: [{ sku: 'GUM', quantity: 1 }] }));
++    const last = valueOf(shop.orders.place({ customerId: 'c2', date: '2026-10-30', lines: [{ sku: 'BOX', quantity: 1 }] }));
++    valueOf(shop.orders.applyCode(last.number, 'SPRING10'));
++    assert.equal(
++      shop.orders.exportMonth('2026-10'),
++      [
++        'order,date,customer,total',
++        '1,2026-10-02,Mira Holt,17.80',
++        '3,2026-10-30,"Tomas ""Tom"" Ruiz, Jr",18.40',
++        '',
++      ].join('\n'),
++    );
++  });
++
++  it('gives the header line alone for a month with no orders', () => {
++    const shop = campaignShop();
++    valueOf(shop.orders.place({ customerId: 'c1', date: '2026-10-02', lines: [{ sku: 'GUM', quantity: 1 }] }));
++    assert.equal(shop.orders.exportMonth('2026-11'), 'order,date,customer,total\n');
++  });
++});

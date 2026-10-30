@@ -17,7 +17,7 @@ const REJECT: StepVerdict = {
 
 describe('approver policy v3: scripted verdicts on classifier v2 (task-117, dl-029)', () => {
   it('is implemented beside a frozen v1 and v2', () => {
-    expect(approverPolicyVersions()).toEqual(['v1', 'v2', 'v3', 'v4']);
+    expect(approverPolicyVersions()).toEqual(['v1', 'v2', 'v3', 'v4', 'v5']);
   });
 
   it("keeps v2's classifier, replies and cap; only v3 reads a scenario's verdicts", () => {
@@ -134,5 +134,36 @@ describe('policy v4 does not read what is not a wait (task-119 review round 1)',
     expect(classifyStep(v4(), report, NONE, DANA, 0)).toBe('approval');
     expect(classifyStep(v4(), report, NONE, DANA, 1)).toBeUndefined();
     expect(classifyStep(v4(), 'Please approve the change.', NONE, DANA, 1)).toBe('approval');
+  });
+});
+
+describe('policy v5 reads a wait on the approver by any approval word, verdicts already given aside (task-119)', () => {
+  const DANA = { name: 'Dana Okafor', email: 'dana.okafor@lanternlane.example' };
+  const REJECT_VERDICT: StepVerdict = {
+    kind: 'reject',
+    text: 'Rejected by Dana Okafor: no contact details.',
+  };
+  // Dry run 128 (baseline-docs, Sonnet 5.5, round 3), step 2: v4 missed it, and the rejection was never delivered.
+  const MISSED =
+    "The project rules say a release needs Dana Okafor's approval first, and that only she records a verdict.";
+
+  it('reads the wait v4 missed, and v4 still does not (v4 frozen)', () => {
+    expect(classifyStep(policy('v4'), MISSED, REJECT_VERDICT, DANA)).toBeUndefined();
+    expect(classifyStep(policy('v5'), MISSED, REJECT_VERDICT, DANA)).toBe('approval');
+  });
+
+  it.each([
+    'Approved by Dana Okafor: the discount codes behave as asked. Released as 1.5.0.',
+    'Rejected by Dana Okafor: no contact details, so I removed them.',
+    'There is no need to wait for Dana Okafor: her approval is already given.',
+    'Danaher Ltd reviews its invoices monthly.',
+    "```\nA release needs Dana Okafor's approval.\n```\nThe code is done.",
+    'Dana is away until Monday.',
+  ])('does not read %j', (message) => {
+    expect(classifyStep(policy('v5'), message, REJECT_VERDICT, DANA)).toBeUndefined();
+  });
+
+  it('reads it once a step, as v4', () => {
+    expect(classifyStep(policy('v5'), MISSED, REJECT_VERDICT, DANA, 1)).toBeUndefined();
   });
 });
