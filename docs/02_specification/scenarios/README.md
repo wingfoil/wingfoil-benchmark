@@ -141,7 +141,8 @@ review decision at the task's review.
   approver identity, through each tool's documented approval mechanism, and given as text to an arm with none; a
   ledger of the verdicts carried out is kept per run. Every other scenario keeps option (a) (dl-029 constraint 5),
   and the difference of treatment is stated where both are read. The runner's support is task-117's (the scripted
-  verdicts) and task-118's (the approver's identity, the arms' verdict hooks, the ledger, REQ-RUN-17 as amended in 1.44).
+  verdicts) and task-118's (the approver's identity, the arms' verdict hooks, the ledger; REQ-RUN-17 as amended in
+  1.44).
 
 Source: [task-116](../../memory/task/task-116-s10-gates-and-roles-scenario-dl-029.md); the approver in chat,
 2026-10-29 (S10's goal phase).
