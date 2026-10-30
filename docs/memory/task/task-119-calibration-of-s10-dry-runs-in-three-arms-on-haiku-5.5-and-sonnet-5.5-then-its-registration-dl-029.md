@@ -200,3 +200,6 @@ on `dabf4a8b`, without the run records:
   honoured by either docs control, honoured by wingfoil on both models). wingfoil on Haiku: `ambiguous` again at step
   3. The note (`docs/calibration/s10.md`) and the ledger rewritten for the four rounds, figures generated; the
   ledger's lines name each round's policy.
+- After round 4, the wingfoil manual's Approvals paragraph rewrapped within 120 columns (pre-review), its words
+  unchanged: the arm's digest moves from `e3f9f11f0f4d` (rounds 3–4) to `cc009b5a52a9`, which the profile pins for the
+  campaign.
