@@ -45,7 +45,14 @@ S10's wingfoil runs dearer, for its gates and interventions). Calibration findin
 
 ## Design
 
-To be completed when the task starts.
+1. **Two rounds, one ceiling.** The first round's two defects (bug-038, bug-039) made the comparison invalid; with the
+   approver's choices (2026-10-30) they were fixed in this task, as task-096 fixed v0.2's, each with its red test,
+   and the six dry runs repeated under the same 10 € ceiling. The first round's runs stay, as the evidence of the bugs.
+2. **A budget guard in the launching script:** before each run, it stopped if the spending so far plus 3 € could
+   pass 10 €; the runs started only once the machine's load was low.
+3. **Figures generated:** the calibration note's table, its sums and the ledger's lines come from a script reading the
+   stored runs (`run.json`, `usage.json`, `verdicts.json`, `score.json`).
+4. **Registration** is REQ-FMT-09's: S10@1.0 is frozen from its first stored result; nothing else is written.
 
 ## Execution notes
 
@@ -143,3 +150,10 @@ To be completed when the task starts.
     Red-first: a test of the manual. The arm's digest changes (now `2e67dbeef0bd`), the profile pins it; campaign-007's
     profile still reads its arm from history.
   - The whole default suite green (1932 passed, 9 skipped) before the reruns.
+
+- **Second round** (2026-10-30, 16:21–16:44, on the fixes): 1.1509 EUR, 2.2722 EUR in all of 10 (the launching
+  script's sums). The docs controls received their verdicts (3 and 4 steps of 4); the Sonnet docs control matched
+  wingfoil on M-E2, M-E3 and M-E4, and differed on M-E3a (0 of 3, by construction; wingfoil 3 of 3); wingfoil on
+  Sonnet asked once per approval step (bug-039 fixed). New: wingfoil on Haiku left two documents waiting at step 3,
+  the hook answered `ambiguous` (recorded, not fixed). Secret scan of the twelve runs' files clean. The note:
+  `docs/calibration/s10.md`; the ledger's twelve lines in `v0.3-ledger.md`.
