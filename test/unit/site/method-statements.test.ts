@@ -78,7 +78,7 @@ const STATEMENTS: readonly (readonly [string, string])[] = [
   ],
   [
     'approver-verdicts',
-    "REQ-RUN-06 and REQ-FMT-04 as amended in 1.43 (policy v3, a step's `verdict`); dl-029 point 7; S10.md §6; task-117 Design",
+    "REQ-RUN-06 and REQ-FMT-04 as amended in 1.43 (policy v3, a step's `verdict`); REQ-RUN-06 as amended in 1.45 (policies v4 and v5, a wait on the approver, bug-038); dl-029 point 7; S10.md §6; task-117 Design",
   ],
   [
     'approver-separate',

@@ -1,0 +1,130 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 2dc9e150f5b7ba613b49baeb872d63b24babff4d..4dc365a1be901a8dce038ff5a141f277f7c631d1 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -1,5 +1,11 @@
+ # Changelog
+ 
++## 1.6.1
++
++- The monthly export (`exportMonth`) leaves out customers' email and phone, and gives what the items come to, the
++  discount and the shipping beside the total, so the accountant can reconcile each order. Customer names that begin
++  with `=`, `+`, `-` or `@` are marked so a spreadsheet shows them as typed rather than running them as formulas.
++
+ ## 1.6.0
+ 
+ - `exportMonth('YYYY-MM')` gives the orders placed in a month as CSV for the accountant's spreadsheet: order number, date,
+diff --git a/package.json b/package.json
+index 60b4262bc1c0e898d84a929726cf3d97718e8438..657a305f9b117dc0bd9c2f3890da50f2c30dd3a9 100644
+--- a/package.json
++++ b/package.json
+@@ -1,6 +1,6 @@
+ {
+   "name": "lantern-lane-orders",
+-  "version": "1.6.0",
++  "version": "1.6.1",
+   "private": true,
+   "description": "The order book behind Lantern Lane Grocers' home deliveries.",
+   "type": "module",
+diff --git a/src/domain/orders.ts b/src/domain/orders.ts
+index 8b2521a405bb34b4ea5b41e44ef94d181b15a5c6..9a5238a3d4d2024cb3caccdf4e0355e973eda699 100644
+--- a/src/domain/orders.ts
++++ b/src/domain/orders.ts
+@@ -52,21 +52,26 @@ export interface OrderBook {
+   totals(number: number): Result<OrderTotals>;
+   /**
+    * The orders placed in a month (`YYYY-MM`), by number, as CSV text: a header line, then one line per order with its
+-   * number, date, customer's name, email, phone and what the customer pays in euros. A month that is not `YYYY-MM` is
+-   * refused.
++   * number, date, customer's name, and in euros what its items come to, the discount, the shipping and the total the
++   * customer pays. Contact details are left out. A month that is not `YYYY-MM` is refused.
+    */
+   exportMonth(month: string): Result<string>;
+ }
+ 
+ const DATE = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
+ const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
+-const EXPORT_HEADER = 'order,date,customer,email,phone,total';
++const EXPORT_HEADER = 'order,date,customer,items,discount,shipping,total';
+ 
+ /** A CSV field, in quotes with any quote doubled when it holds a comma, a quote or a line break. */
+ function csvField(value: string): string {
+   return /[",\r\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
+ }
+ 
++/** Text that a spreadsheet would read as a formula gets a leading apostrophe, so it shows as typed. */
++function safeText(value: string): string {
++  return /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
++}
++
+ /**
+  * An empty order book over a catalogue and a customer list.
+  *
+@@ -158,9 +163,10 @@ export function createOrderBook(catalogue: Catalogue, customers: Customers): Ord
+         const fields = [
+           `${order.number}`,
+           order.date,
+-          customer.value.name,
+-          customer.value.email,
+-          customer.value.phone,
++          safeText(customer.value.name),
++          formatEuros(cost.value.itemsCents),
++          formatEuros(cost.value.discountCents),
++          formatEuros(cost.value.shippingCents),
+           formatEuros(cost.value.totalCents),
+         ];
+         lines.push(fields.map(csvField).join(','));
+diff --git a/test/shop.test.ts b/test/shop.test.ts
+index 8f2414166bac667a41289603a57ace66df4b7cd1..d2c05496740bdacd984d40e767f2fe10c85bc490 100644
+--- a/test/shop.test.ts
++++ b/test/shop.test.ts
+@@ -122,7 +122,7 @@ describe('order book', () => {
+     assert.equal(shop.orders.all().length, 0);
+   });
+ 
+-  it('exports the orders of a month as CSV, by number, with what each customer pays', () => {
++  it('exports the orders of a month as CSV, by number, with items, discount, shipping and total', () => {
+     const shop = stocked();
+     valueOf(shop.customers.add({ id: 'c2', name: 'Holt, "Ben"', email: 'ben@example.org', phone: '' }));
+     shop.orders.place({ customerId: 'c1', date: '2026-10-02', lines: [{ sku: 'OIL-1L', quantity: 1 }] });
+@@ -132,18 +132,36 @@ describe('order book', () => {
+     assert.equal(
+       valueOf(shop.orders.exportMonth('2026-10')),
+       [
+-        'order,date,customer,email,phone,total',
+-        '1,2026-10-02,Mira Holt,mira@example.org,555-0101,17.80',
+-        '3,2026-10-30,"Holt, ""Ben""",ben@example.org,,59.00',
++        'order,date,customer,items,discount,shipping,total',
++        '1,2026-10-02,Mira Holt,12.90,0.00,4.90,17.80',
++        '3,2026-10-30,"Holt, ""Ben""",64.00,5.00,0.00,59.00',
+         '',
+       ].join('\n'),
+     );
+   });
+ 
++  it("leaves customers' email and phone out of the export", () => {
++    const shop = stocked();
++    shop.orders.place({ customerId: 'c1', date: '2026-10-02', lines: [{ sku: 'OIL-1L', quantity: 1 }] });
++    const csv = valueOf(shop.orders.exportMonth('2026-10'));
++    assert.equal(csv.includes('mira@example.org'), false);
++    assert.equal(csv.includes('555-0101'), false);
++  });
++
++  it('stops a customer name from being read as a spreadsheet formula', () => {
++    const shop = stocked();
++    valueOf(shop.customers.add({ id: 'c3', name: '=HYPERLINK("x")', email: 'eve@example.org', phone: '' }));
++    shop.orders.place({ customerId: 'c3', date: '2026-10-04', lines: [{ sku: 'OIL-1L', quantity: 1 }] });
++    assert.equal(
++      valueOf(shop.orders.exportMonth('2026-10')).split('\n')[1],
++      `1,2026-10-04,"'=HYPERLINK(""x"")",12.90,0.00,4.90,17.80`,
++    );
++  });
++
+   it('exports the header alone for a month with no orders, and refuses a bad month', () => {
+     const shop = stocked();
+     shop.orders.place({ customerId: 'c1', date: '2026-10-02', lines: [{ sku: 'OIL-1L', quantity: 1 }] });
+-    assert.equal(valueOf(shop.orders.exportMonth('2026-11')), 'order,date,customer,email,phone,total\n');
++    assert.equal(valueOf(shop.orders.exportMonth('2026-11')), 'order,date,customer,items,discount,shipping,total\n');
+     assert.equal(shop.orders.exportMonth('2026-13').ok, false);
+     assert.equal(shop.orders.exportMonth('October').ok, false);
+   });

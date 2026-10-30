@@ -153,6 +153,10 @@ Two goals cut across all categories:
      (S10's, the same in every arm), the first approval request gets the verdict's text (approve, reject, or no
      approver to give one) and the later ones its later reply. A scenario with no verdict reads v3 as v2; a campaign
      running one with verdicts pins v3.
+   - **Policy v4** (1.9, task-119, bug-038): v3, and, in a scenario with an approver, a message that waits on her, by
+     name, is an approval request too, once a step: the verdict reaches an agent that addresses her in the third
+     person; **v5** reads the wait by any approval word in a sentence naming her, verdicts already given aside, after
+     v4 missed "needs Dana Okafor's approval". S10's campaigns pin v5.
    - **A separate approver** (1.10, task-118): in a scenario that declares one (S10), the agent is a developer and the
      runner carries each scripted verdict out under the approver's identity, through the arm's documented approval
      mechanism when it has one, as text otherwise; a ledger of the verdicts delivered and carried out is kept per

@@ -1,0 +1,154 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 56d54474d3c0bf038c5ddcf9d274b141cedf5367..3973c011707e622a2450405f4767c3351e47c724 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -1,5 +1,9 @@
+ # Changelog
+ 
++## 1.6.0
++
++- `exportMonth(month)` on the order book: CSV of a month's orders (number, date, customer name, total) for the accountant; no contact details.
++
+ ## 1.5.0
+ 
+ - Orders take a discount code (`applyCode`): `SPRING10` (10 % off items) or `WELCOME5` (5.00 € off items worth 30.00 € or more). Totals show `discountCents`.
+diff --git a/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-2-plan.md b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-2-plan.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..ae97d5132e92e2bf69d7dfce27c52e059302ab09
+--- /dev/null
++++ b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-2-plan.md
+@@ -0,0 +1,17 @@
++---
++id: sw-life-cycle-1-2-plan
++type: plan
++title: "Monthly orders CSV export"
++status: active
++workflow: "sw-life-cycle"
++phase: "1-2"
++element: ""
++parent: ""
++format: 1
++---
++
++<!-- plan body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
+diff --git a/docs/memory/task/task-002-monthly-orders-csv-export.md b/docs/memory/task/task-002-monthly-orders-csv-export.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..311aee250e2d51e7cb5f3c1087f92b647f0f6515
+--- /dev/null
++++ b/docs/memory/task/task-002-monthly-orders-csv-export.md
+@@ -0,0 +1,21 @@
++---
++id: task-002-monthly-orders-csv-export
++type: task
++title: "Monthly orders CSV export"
++status: pending
++format: 1
++---
++
++<!-- task body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
++
++The accountant wants a monthly export of the orders for her spreadsheet. Add `exportMonth(month)` (`YYYY-MM`) to the
++order book: CSV with header `order,date,customer,total`, one line per order of that month by number,
++total in euros with two decimals (discount and shipping included), CSV quoting; header alone for an empty month.
++
++Done: implemented in `src/domain/orders.ts`, tested in `test/shop.test.ts`, noted in `CHANGELOG.md` (1.6.0).
++
++Rework after rejection: the export carries no email or phone, only order number, date, customer name and total.
+diff --git a/src/domain/orders.ts b/src/domain/orders.ts
+index 6b6efdb6734d967e87fddfbc4823d71621924f90..6c277b4c7f1ebefaafb7c95187a9d5e385800d3e 100644
+--- a/src/domain/orders.ts
++++ b/src/domain/orders.ts
+@@ -1,5 +1,6 @@
+ import type { Catalogue } from './catalogue.ts';
+ import type { Customers } from './customers.ts';
++import { formatEuros } from './money.ts';
+ import type { Cents } from './money.ts';
+ import { err, ok } from './result.ts';
+ import type { Result } from './result.ts';
+@@ -49,6 +50,12 @@ export interface OrderBook {
+   applyCode(orderNumber: number, code: string): Result<Order>;
+   /** What the order with this number costs. */
+   totals(number: number): Result<OrderTotals>;
++  /**
++   * CSV text of the orders placed in a month (`YYYY-MM`), by number: a header line, then one line per order with
++   * `order,date,customer,total` (total in euros, as the customer pays it). A month with no orders, or
++   * one that is not `YYYY-MM`, gives the header line alone.
++   */
++  exportMonth(month: string): string;
+ }
+ 
+ /** `WELCOME5` only applies to orders whose items come to this amount or more. */
+@@ -67,6 +74,13 @@ function discountFor(code: string | undefined, itemsCents: Cents): Result<Cents>
+   return err('invalid', `${code} is not a known discount code`);
+ }
+ 
++const CSV_HEADER = 'order,date,customer,total';
++
++/** A CSV field, quoted when it holds a comma, a quote or a line break. */
++function csvField(value: string): string {
++  return /[",\r\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
++}
++
+ const DATE = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
+ 
+ /**
+@@ -141,5 +155,22 @@ export function createOrderBook(catalogue: Catalogue, customers: Customers): Ord
+       const shippingCents = shippingFor(priced);
+       return ok({ itemsCents, discountCents, shippingCents, totalCents: itemsCents - discountCents + shippingCents });
+     },
++    exportMonth(month) {
++      const lines = [CSV_HEADER];
++      if (/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
++        for (const order of orders) {
++          if (order.date.slice(0, 7) !== month) continue;
++          const customer = customers.get(order.customerId);
++          const totals = this.totals(order.number);
++          lines.push([
++            String(order.number),
++            order.date,
++            customer.ok ? customer.value.name : '',
++            totals.ok ? formatEuros(totals.value.totalCents) : '',
++          ].map(csvField).join(','));
++        }
++      }
++      return lines.join('\n') + '\n';
++    },
+   };
+ }
+diff --git a/test/shop.test.ts b/test/shop.test.ts
+index ab51754e4c8d40e2ae78bbae449aefaad3b10264..86dfbafd143adc4792021e70b6badf31db3a1e58 100644
+--- a/test/shop.test.ts
++++ b/test/shop.test.ts
+@@ -109,3 +109,24 @@ describe('order book', () => {
+     assert.equal(formatEuros(5), '0.05');
+   });
+ });
++
++describe('exportMonth', () => {
++  it('exports the orders of a month as CSV, discount and shipping included', () => {
++    const shop = stocked();
++    valueOf(shop.customers.add({ id: 'c2', name: 'Holt, "Al"', email: 'al@example.org', phone: '555-0102' }));
++    shop.orders.place({ customerId: 'c1', date: '2026-10-02', lines: [{ sku: 'OIL-1L', quantity: 1 }] });
++    shop.orders.place({ customerId: 'c2', date: '2026-09-30', lines: [{ sku: 'APL-1KG', quantity: 1 }] });
++    shop.orders.place({ customerId: 'c2', date: '2026-10-31', lines: [{ sku: 'HAM-W', quantity: 1 }] });
++    valueOf(shop.orders.applyCode(3, 'SPRING10'));
++    assert.equal(
++      shop.orders.exportMonth('2026-10'),
++      'order,date,customer,total\n' +
++        '1,2026-10-02,Mira Holt,17.80\n' +
++        '3,2026-10-31,"Holt, ""Al""",57.60\n',
++    );
++  });
++
++  it('gives the header alone for a month without orders', () => {
++    assert.equal(stocked().orders.exportMonth('2026-11'), 'order,date,customer,total\n');
++  });
++});

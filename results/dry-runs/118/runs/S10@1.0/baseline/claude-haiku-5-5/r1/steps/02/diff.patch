@@ -1,0 +1,164 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 5e0e5dd5e5597aeb3dbb8afcce297c72471c1030..d1cb92e4638834821f8dd5064c4eb6e3e3c679c7 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -1,5 +1,9 @@
+ # Changelog
+ 
++## 1.6.0
++
++- `exportMonth` gives a month's orders as CSV for the accountant's spreadsheet: `YYYY-MM` in, a header line and one line per order out, with the total the customer pays.
++
+ ## 1.5.0
+ 
+ - Discount codes on orders: `SPRING10` takes 10 % off the items; `WELCOME5` takes 5.00 € off items of 30.00 € or more.
+diff --git a/package.json b/package.json
+index 2c9b37ef0677baf225c1eac98c4626b8222443bf..60b4262bc1c0e898d84a929726cf3d97718e8438 100644
+--- a/package.json
++++ b/package.json
+@@ -1,6 +1,6 @@
+ {
+   "name": "lantern-lane-orders",
+-  "version": "1.5.0",
++  "version": "1.6.0",
+   "private": true,
+   "description": "The order book behind Lantern Lane Grocers' home deliveries.",
+   "type": "module",
+diff --git a/src/domain/orders.ts b/src/domain/orders.ts
+index eed3ce8e4d94934e74d17788507747d553001027..22f8084f271be5b38af4b4925756fe3492078649 100644
+--- a/src/domain/orders.ts
++++ b/src/domain/orders.ts
+@@ -1,6 +1,7 @@
+ import type { Catalogue } from './catalogue.ts';
+ import type { Customers } from './customers.ts';
+ import { discountFor } from './discounts.ts';
++import { formatEuros } from './money.ts';
+ import type { Cents } from './money.ts';
+ import { err, ok } from './result.ts';
+ import type { Result } from './result.ts';
+@@ -47,9 +48,19 @@ export interface OrderBook {
+   applyCode(number: number, code: string): Result<Order>;
+   /** What the order with this number costs. */
+   totals(number: number): Result<OrderTotals>;
++  /** The orders placed in a month (`YYYY-MM`) as CSV text: a header line, then one line per order, by number. A malformed month is refused. */
++  exportMonth(month: string): Result<string>;
+ }
+ 
+ const DATE = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
++const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
++
++const EXPORT_HEADER = ['order', 'date', 'customer', 'email', 'phone', 'total'];
++
++/** A CSV field: quoted, with its quotes doubled, when it holds a comma, a quote or a line break. */
++function csvField(value: string): string {
++  return /[",\r\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
++}
+ 
+ /** The items of an order: its lines' prices times their quantities. */
+ function itemsOf(priced: readonly PricedLine[]): Cents {
+@@ -88,6 +99,21 @@ export function createOrderBook(catalogue: Catalogue, customers: Customers): Ord
+     });
+   }
+ 
++  /** What an order costs, its discount and shipping worked out from the catalogue. */
++  function totalsOf(order: Order): Result<OrderTotals> {
++    const priced = pricedLines(order);
++    const itemsCents = itemsOf(priced);
++    // Shipping is decided on the items before any discount
++    const shippingCents = shippingFor(priced);
++    let discountCents = 0;
++    if (order.discountCode !== undefined) {
++      const discount = discountFor(order.discountCode, itemsCents);
++      if (!discount.ok) return discount;
++      discountCents = discount.value;
++    }
++    return ok({ itemsCents, discountCents, shippingCents, totalCents: itemsCents - discountCents + shippingCents });
++  }
++
+   return {
+     place(order) {
+       const valid = validate(order);
+@@ -121,17 +147,28 @@ export function createOrderBook(catalogue: Catalogue, customers: Customers): Ord
+     totals(number) {
+       const order = orders[number - 1];
+       if (order === undefined) return err('not-found', `no order ${number}`);
+-      const priced = pricedLines(order);
+-      const itemsCents = itemsOf(priced);
+-      // Shipping is decided on the items before any discount
+-      const shippingCents = shippingFor(priced);
+-      let discountCents = 0;
+-      if (order.discountCode !== undefined) {
+-        const discount = discountFor(order.discountCode, itemsCents);
+-        if (!discount.ok) return discount;
+-        discountCents = discount.value;
++      return totalsOf(order);
++    },
++    exportMonth(month) {
++      if (!MONTH.test(month)) return err('invalid', `${month} is not a month (YYYY-MM)`);
++      const lines = [EXPORT_HEADER.join(',')];
++      for (const order of orders) {
++        if (!order.date.startsWith(`${month}-`)) continue;
++        const customer = customers.get(order.customerId);
++        if (!customer.ok) return customer;
++        const totals = totalsOf(order);
++        if (!totals.ok) return totals;
++        const fields = [
++          String(order.number),
++          order.date,
++          customer.value.name,
++          customer.value.email,
++          customer.value.phone,
++          formatEuros(totals.value.totalCents),
++        ];
++        lines.push(fields.map(csvField).join(','));
+       }
+-      return ok({ itemsCents, discountCents, shippingCents, totalCents: itemsCents - discountCents + shippingCents });
++      return ok(`${lines.join('\n')}\n`);
+     },
+   };
+ }
+diff --git a/test/shop.test.ts b/test/shop.test.ts
+index eda2578dc6af315eeafa077a33f19b7e4c88013b..765aefdab00b7eab838d2c20d72f2812de19d213 100644
+--- a/test/shop.test.ts
++++ b/test/shop.test.ts
+@@ -113,6 +113,40 @@ describe('order book', () => {
+     assert.equal(valueOf(shop.orders.totals(2)).discountCents, 500);
+   });
+ 
++  it('exports one month of orders as CSV, by number, with the total they pay', () => {
++    const shop = stocked();
++    valueOf(shop.customers.add({ id: 'c2', name: 'Jo "JP" Park, Jr', email: 'jo@example.org', phone: '' }));
++    shop.orders.place({ customerId: 'c1', date: '2026-10-02', lines: [{ sku: 'OIL-1L', quantity: 1 }] });
++    shop.orders.place({ customerId: 'c2', date: '2026-09-30', lines: [{ sku: 'HAM-W', quantity: 1 }] });
++    shop.orders.place({ customerId: 'c2', date: '2026-10-31', lines: [{ sku: 'HAM-W', quantity: 1 }] });
++    shop.orders.place({ customerId: 'c1', date: '2026-11-01', lines: [{ sku: 'APL-1KG', quantity: 1 }] });
++    valueOf(shop.orders.applyCode(1, 'SPRING10'));
++    assert.equal(
++      valueOf(shop.orders.exportMonth('2026-10')),
++      [
++        'order,date,customer,email,phone,total',
++        '1,2026-10-02,Mira Holt,mira@example.org,555-0101,16.51',
++        '3,2026-10-31,"Jo ""JP"" Park, Jr",jo@example.org,,64.00',
++        '',
++      ].join('\n'),
++    );
++  });
++
++  it('exports the header alone for a month with no orders', () => {
++    const shop = stocked();
++    shop.orders.place({ customerId: 'c1', date: '2026-10-02', lines: [{ sku: 'OIL-1L', quantity: 1 }] });
++    assert.equal(valueOf(shop.orders.exportMonth('2026-12')), 'order,date,customer,email,phone,total\n');
++  });
++
++  it('refuses a malformed month', () => {
++    const shop = stocked();
++    for (const month of ['2026-1', '2026-13', '2026-10-02', 'October']) {
++      const refused = shop.orders.exportMonth(month);
++      assert.equal(refused.ok, false);
++      if (!refused.ok) assert.equal(refused.error.code, 'invalid');
++    }
++  });
++
+   it('formats amounts in euros', () => {
+     assert.equal(formatEuros(1250), '12.50');
+     assert.equal(formatEuros(5), '0.05');

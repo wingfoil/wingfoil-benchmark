@@ -811,7 +811,7 @@ describe('the neutral approver in the step loop (F2.4)', () => {
   describe('the approver kept out of the agent, and what carrying a verdict out records (task-118 review round 1)', () => {
     /** S1 with Dana as approver and step 1 approved, its arm with a verdict hook unless `hook` is false. */
     function approverCampaign(hook = true) {
-      const { root, file } = writeRepo(campaignYaml({ approver_policy: 'v3' }), ['S1@1.0']);
+      const { root, file } = writeRepo(campaignYaml({ approver_policy: 'v4' }), ['S1@1.0']);
       const scenarioFile = join(root, 'scenarios', 'S1', '1.0', 'scenario.yaml');
       const scenario = parse(readFileSync(scenarioFile, 'utf8')) as Record<string, unknown> & {
         steps: Record<string, unknown>[];
@@ -882,6 +882,18 @@ describe('the neutral approver in the step loop (F2.4)', () => {
       ports.docker.exec = (container, command) =>
         isHook(command) ? new Promise(() => undefined) : exec(container, command);
       expect(await firstDelivery(ports, true, 20)).toMatchObject({ carried_out: { outcome: 'timed out' } });
+    });
+
+    it('gives the verdict to a session that waits on the approver in the third person (bug-038)', async () => {
+      const ports = doubles({
+        messageOf: (request) =>
+          request.step === 1 && invocationOf(request) === 0
+            ? 'Done. Not released: Dana Okafor, the approver, has to approve this change first.'
+            : undefined,
+      });
+      const delivery = await firstDelivery(ports, false);
+      expect(ports.recorded.resumes.map((r) => [r.step, r.reply])).toEqual([[1, 'Approved by Dana: yes.']]);
+      expect(delivery).toMatchObject({ verdict: 'approve', reply: 'Approved by Dana: yes.' });
     });
 
     it('delivers the verdict as text only to an arm with no hook', async () => {
@@ -1137,14 +1149,14 @@ describe('the neutral approver in the step loop (F2.4)', () => {
     const { checked } = checkedCampaign();
     const unvalidated = {
       ...checked,
-      campaign: { ...checked.campaign, spec: { ...checked.campaign.spec, approver_policy: 'v4' } },
+      campaign: { ...checked.campaign, spec: { ...checked.campaign.spec, approver_policy: 'v6' } },
     };
     const ports = doubles();
 
     const summary = await runCampaign(unvalidated, ports);
 
     expect(summary.runs[0]?.outcome).toBe('failed');
-    expect(summary.runs[0]?.error).toMatch(/approver policy v4 is not implemented/);
+    expect(summary.runs[0]?.error).toMatch(/approver policy v6 is not implemented/);
     expect(ports.recorded.steps).toEqual([]);
   });
 

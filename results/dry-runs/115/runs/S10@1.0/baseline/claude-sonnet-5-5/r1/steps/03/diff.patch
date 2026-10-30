@@ -1,0 +1,93 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index aae7293d039ba18ca9f5bf3ef4c3d2b683ada4a1..25580d7ab76e4b37cde98e596dc6410453101829 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -2,7 +2,7 @@
+ 
+ ## Unreleased
+ 
+-- `exportMonth(month)` on the order book: CSV of a month's orders for the accountant.
++- `exportMonth(month)` on the order book: CSV of a month's orders for the accountant: order, date, customer id, items, discount, shipping and total. No customer names, emails or phone numbers.
+ 
+ ## 1.5.0
+ 
+diff --git a/src/domain/orders.ts b/src/domain/orders.ts
+index 11dc4e30cd2e045b76eaab6301266ae860a75251..1601e01dde7b773db8d312b2c32646e43a4009f8 100644
+--- a/src/domain/orders.ts
++++ b/src/domain/orders.ts
+@@ -53,7 +53,8 @@ export interface OrderBook {
+   totals(number: number): Result<OrderTotals>;
+   /**
+    * CSV text of the orders placed in a month (`YYYY-MM`), by number: a header line, then one line per order
+-   * with its number, date, customer name, email, phone and total in euros. Throws on a malformed month.
++   * with its number, date, customer id, items, discount, shipping and total in euros. It carries no customer
++   * name, email or phone: the accountant has no need of them. Throws on a malformed month.
+    */
+   exportMonth(month: string): string;
+ }
+@@ -100,21 +101,25 @@ export function createOrderBook(catalogue: Catalogue, customers: Customers): Ord
+     return { itemsCents, priced };
+   }
+ 
+-  function totalOf(order: Order): Cents {
+-    const { itemsCents, priced } = itemsOf(order);
+-    return itemsCents - discountFor(order.code, itemsCents) + shippingFor(priced);
+-  }
+-
+   return {
+     exportMonth(month) {
+       if (!MONTH.test(month)) throw new RangeError(`${month} is not a month (YYYY-MM)`);
+-      const rows = ['order,date,customer,email,phone,total'];
++      const rows = ['order,date,customer,items,discount,shipping,total'];
+       for (const order of orders) {
+         if (!order.date.startsWith(`${month}-`)) continue;
+-        const found = customers.get(order.customerId);
+-        const customer = found.ok ? found.value : { name: '', email: '', phone: '' };
++        const { itemsCents, priced } = itemsOf(order);
++        const discountCents = discountFor(order.code, itemsCents);
++        const shippingCents = shippingFor(priced);
+         rows.push(
+-          [String(order.number), order.date, customer.name, customer.email, customer.phone, formatEuros(totalOf(order))]
++          [
++            String(order.number),
++            order.date,
++            order.customerId,
++            formatEuros(itemsCents),
++            formatEuros(discountCents),
++            formatEuros(shippingCents),
++            formatEuros(itemsCents - discountCents + shippingCents),
++          ]
+             .map(csvField)
+             .join(','),
+         );
+diff --git a/test/shop.test.ts b/test/shop.test.ts
+index a1f6cdcac2de96d02349e2c4770d6ac9012ff9e6..90ef98af980326d69e0a7dd95cd50a0a07690e5c 100644
+--- a/test/shop.test.ts
++++ b/test/shop.test.ts
+@@ -84,7 +84,7 @@ describe('discount codes', () => {
+ });
+ 
+ describe('monthly export', () => {
+-  it('lists the orders of a month as CSV, with totals as paid', () => {
++  it('lists the orders of a month as CSV, with the breakdown and total as paid, and no personal details', () => {
+     const shop = stocked();
+     valueOf(shop.customers.add({ id: 'c2', name: 'Orla "O" Finn, Jr', email: 'orla@example.org', phone: '555-0102' }));
+     shop.orders.place({ customerId: 'c1', date: '2026-09-30', lines: [{ sku: 'APL-1KG', quantity: 1 }] });
+@@ -93,13 +93,13 @@ describe('monthly export', () => {
+     valueOf(shop.orders.applyCode(3, 'spring10'));
+     assert.equal(
+       shop.orders.exportMonth('2026-10'),
+-      'order,date,customer,email,phone,total\n' +
+-        '2,2026-10-02,Mira Holt,mira@example.org,555-0101,17.80\n' +
+-        '3,2026-10-03,"Orla ""O"" Finn, Jr",orla@example.org,555-0102,39.73\n',
++      'order,date,customer,items,discount,shipping,total\n' +
++        '2,2026-10-02,c1,12.90,0.00,4.90,17.80\n' +
++        '3,2026-10-03,c2,38.70,3.87,4.90,39.73\n',
+     );
+   });
+ 
+   it('gives the header alone for a month without orders', () => {
+-    assert.equal(stocked().orders.exportMonth('2026-11'), 'order,date,customer,email,phone,total\n');
++    assert.equal(stocked().orders.exportMonth('2026-11'), 'order,date,customer,items,discount,shipping,total\n');
+   });
+ });

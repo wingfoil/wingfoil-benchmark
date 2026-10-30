@@ -1,0 +1,63 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 25c067bb74b5baf82617250af7082ceb56978c19..f8dc75136a170bd4c549eff3e975557d1b2076b2 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -5,6 +5,8 @@
+ - Discount codes: `SPRING10` (10 % off the items) and `WELCOME5` (5.00 € off items of 30.00 € or more), applied with
+   `applyCode`.
+ - Monthly export: `exportMonth` gives the orders placed in a month (`YYYY-MM`) as CSV for the accountant.
++- Fix: orders of exactly 50.00 € ship free, and item quantities count towards the 50.00 € free-shipping threshold
++  (previously quantities were ignored and an order had to exceed 50.00 €).
+ 
+ ## 1.4.0
+ 
+diff --git a/src/domain/shipping.ts b/src/domain/shipping.ts
+index 5c8587fb45c4e5067317ac7db327b8d47df73cd3..96e3d3ec23d29b1b2d46c76758b8a8a7b956f178 100644
+--- a/src/domain/shipping.ts
++++ b/src/domain/shipping.ts
+@@ -18,6 +18,6 @@ export interface PricedLine {
+  * @param lines - the order's lines, priced
+  */
+ export function shippingFor(lines: readonly PricedLine[]): Cents {
+-  const value = lines.reduce((sum, line) => sum + line.unitPriceCents, 0);
+-  return value > FREE_SHIPPING_FROM_CENTS ? 0 : SHIPPING_CENTS;
++  const items = lines.reduce((sum, line) => sum + line.unitPriceCents * line.quantity, 0);
++  return items >= FREE_SHIPPING_FROM_CENTS ? 0 : SHIPPING_CENTS;
+ }
+diff --git a/test/shop.test.ts b/test/shop.test.ts
+index 4f6087e8757a01d0f6b3555b445837a3d2e767b9..acbb5098b765598457b7fe91a6131418adeb4c49 100644
+--- a/test/shop.test.ts
++++ b/test/shop.test.ts
+@@ -46,6 +46,32 @@ describe('order book', () => {
+     assert.equal(valueOf(shop.orders.totals(1)).shippingCents, 0);
+   });
+ 
++  it('ships free an order whose items come to exactly 50.00 €', () => {
++    const shop = stocked();
++    valueOf(shop.catalogue.add({ sku: 'CRATE-5', name: 'Crate', priceCents: 5000 }));
++    const number = placeOrder(shop, [{ sku: 'CRATE-5', quantity: 1 }]);
++    assert.equal(valueOf(shop.orders.totals(number)).shippingCents, 0);
++  });
++
++  it('ships free an order that reaches 50.00 € once quantities count', () => {
++    const shop = stocked();
++    valueOf(shop.catalogue.add({ sku: 'OIL-5L', name: 'Olive oil, 5 l', priceCents: 1700 }));
++    const number = placeOrder(shop, [{ sku: 'OIL-5L', quantity: 3 }]);
++    assert.deepEqual(valueOf(shop.orders.totals(number)), {
++      itemsCents: 5100,
++      discountCents: 0,
++      shippingCents: 0,
++      totalCents: 5100,
++    });
++  });
++
++  it('charges shipping on an order of 49.99 €', () => {
++    const shop = stocked();
++    valueOf(shop.catalogue.add({ sku: 'CRATE-4', name: 'Crate', priceCents: 4999 }));
++    const number = placeOrder(shop, [{ sku: 'CRATE-4', quantity: 1 }]);
++    assert.equal(valueOf(shop.orders.totals(number)).shippingCents, 490);
++  });
++
+   it('refuses an unknown customer, product or a bad quantity', () => {
+     const shop = stocked();
+     assert.equal(shop.orders.place({ customerId: 'zz', date: '2026-10-02', lines: [{ sku: 'OIL-1L', quantity: 1 }] }).ok, false);

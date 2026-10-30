@@ -85,7 +85,9 @@ export type { ProcessPort, ProcessResult } from './ports/process.js';
 export {
   approverPolicy,
   approverPolicyVersions,
+  awaitsApprover,
   classify,
+  classifyStep,
   replyFor,
   verdictPolicyIssue,
 } from './approver.js';

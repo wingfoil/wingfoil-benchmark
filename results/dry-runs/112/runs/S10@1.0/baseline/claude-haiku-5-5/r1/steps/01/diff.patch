@@ -1,0 +1,251 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index fe815c41f116bbd83c67b78d6c2e399f00d1ca4c..6822e8c30b67a35ea565ada0c3a6510a8a4828e3 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -1,5 +1,10 @@
+ # Changelog
+ 
++## Unreleased
++
++- Discount codes: `SPRING10` takes 10 % off the items; `WELCOME5` takes 5.00 € off items of 30.00 € or more.
++  An order takes one code at most, given with `applyCode`.
++
+ ## 1.4.0
+ 
+ - Orders keep the date they were placed on.
+diff --git a/src/domain/discounts.ts b/src/domain/discounts.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..9aad8557a4c27ea346df9fffdcab74fa02737d5c
+--- /dev/null
++++ b/src/domain/discounts.ts
+@@ -0,0 +1,36 @@
++import type { Cents } from './money.ts';
++import { err, ok } from './result.ts';
++import type { Result } from './result.ts';
++
++/** Items must come to this amount or more for WELCOME5 to apply. */
++export const WELCOME5_FROM_CENTS: Cents = 3000;
++
++/** The fixed amount WELCOME5 takes off. */
++export const WELCOME5_OFF_CENTS: Cents = 500;
++
++/**
++ * A code as the shop writes it: without surrounding spaces, in capitals, so `spring10 ` is `SPRING10`.
++ *
++ * @param code - the code the customer gave
++ */
++export function normaliseCode(code: string): string {
++  return code.trim().toUpperCase();
++}
++
++/**
++ * The discount a code gives on an order's items.
++ *
++ * @param code - the code the customer gave
++ * @param itemsCents - what the order's items come to, before any discount
++ */
++export function discountFor(code: string, itemsCents: Cents): Result<Cents> {
++  const name = normaliseCode(code);
++  if (name === 'SPRING10') return ok(Math.floor((itemsCents * 10 + 50) / 100));
++  if (name === 'WELCOME5') {
++    if (itemsCents < WELCOME5_FROM_CENTS) {
++      return err('invalid', 'WELCOME5 needs items that come to 30.00 € or more');
++    }
++    return ok(WELCOME5_OFF_CENTS);
++  }
++  return err('invalid', `${code.trim()} is not a discount code`);
++}
+diff --git a/src/domain/orders.ts b/src/domain/orders.ts
+index 11ac4af143eb5f11227d6e5783ced8c958988b4f..18825db6dc34660e25cf4534a7989c6ea36244f5 100644
+--- a/src/domain/orders.ts
++++ b/src/domain/orders.ts
+@@ -1,9 +1,11 @@
+ import type { Catalogue } from './catalogue.ts';
+ import type { Customers } from './customers.ts';
++import { discountFor, normaliseCode } from './discounts.ts';
+ import type { Cents } from './money.ts';
+ import { err, ok } from './result.ts';
+ import type { Result } from './result.ts';
+ import { shippingFor } from './shipping.ts';
++import type { PricedLine } from './shipping.ts';
+ 
+ /** One line of an order: a product and how many of it. */
+ export interface OrderLine {
+@@ -21,11 +23,14 @@ export interface NewOrder {
+ /** An order, numbered from 1 in the order it was placed. */
+ export interface Order extends NewOrder {
+   readonly number: number;
++  /** The discount code the order takes, if any: at most one, as the shop writes it. */
++  readonly discountCode?: string;
+ }
+ 
+-/** What an order costs: its items, its shipping and the sum of the two. */
++/** What an order costs: its items, the discount its code takes off them, its shipping and the sum of these. */
+ export interface OrderTotals {
+   readonly itemsCents: Cents;
++  readonly discountCents: Cents;
+   readonly shippingCents: Cents;
+   readonly totalCents: Cents;
+ }
+@@ -40,6 +45,11 @@ export interface OrderBook {
+   all(): readonly Order[];
+   /** What the order with this number costs. */
+   totals(number: number): Result<OrderTotals>;
++  /**
++   * Gives the order with this number a discount code, replacing any code it had; an unknown code, or one the order's
++   * items do not qualify for, is refused and the order is left as it was.
++   */
++  applyCode(number: number, code: string): Result<Order>;
+ }
+ 
+ const DATE = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
+@@ -68,6 +78,19 @@ export function createOrderBook(catalogue: Catalogue, customers: Customers): Ord
+     return ok(order);
+   }
+ 
++  /** The items of an order, each priced, as the order's totals and discounts see them. */
++  function pricedLines(order: Order): PricedLine[] {
++    return order.lines.map((line) => {
++      const product = catalogue.get(line.sku);
++      return { unitPriceCents: product.ok ? product.value.priceCents : 0, quantity: line.quantity };
++    });
++  }
++
++  /** What priced lines come to, before any discount. */
++  function itemsOf(priced: readonly PricedLine[]): Cents {
++    return priced.reduce((sum, line) => sum + line.unitPriceCents * line.quantity, 0);
++  }
++
+   return {
+     place(order) {
+       const valid = validate(order);
+@@ -91,13 +114,26 @@ export function createOrderBook(catalogue: Catalogue, customers: Customers): Ord
+     totals(number) {
+       const order = orders[number - 1];
+       if (order === undefined) return err('not-found', `no order ${number}`);
+-      const priced = order.lines.map((line) => {
+-        const product = catalogue.get(line.sku);
+-        return { unitPriceCents: product.ok ? product.value.priceCents : 0, quantity: line.quantity };
+-      });
+-      const itemsCents = priced.reduce((sum, line) => sum + line.unitPriceCents * line.quantity, 0);
++      const priced = pricedLines(order);
++      const itemsCents = itemsOf(priced);
++      let discountCents = 0;
++      if (order.discountCode !== undefined) {
++        const discount = discountFor(order.discountCode, itemsCents);
++        if (!discount.ok) return discount;
++        discountCents = discount.value;
++      }
++      // Shipping is decided on the items before any discount, so a discount never changes it.
+       const shippingCents = shippingFor(priced);
+-      return ok({ itemsCents, shippingCents, totalCents: itemsCents + shippingCents });
++      return ok({ itemsCents, discountCents, shippingCents, totalCents: itemsCents - discountCents + shippingCents });
++    },
++    applyCode(number, code) {
++      const order = orders[number - 1];
++      if (order === undefined) return err('not-found', `no order ${number}`);
++      const discount = discountFor(code, itemsOf(pricedLines(order)));
++      if (!discount.ok) return discount;
++      const applied: Order = { ...order, discountCode: normaliseCode(code) };
++      orders[number - 1] = applied;
++      return ok(applied);
+     },
+   };
+ }
+diff --git a/test/shop.test.ts b/test/shop.test.ts
+index ab07bf3ac46eedb978bdcfc45e128edd3c515a1d..7f6705f9aed7f1db419dc834be5270c4f8bab5c0 100644
+--- a/test/shop.test.ts
++++ b/test/shop.test.ts
+@@ -28,7 +28,7 @@ describe('order book', () => {
+   it('charges shipping on a small order', () => {
+     const shop = stocked();
+     shop.orders.place({ customerId: 'c1', date: '2026-10-02', lines: [{ sku: 'OIL-1L', quantity: 1 }] });
+-    assert.deepEqual(valueOf(shop.orders.totals(1)), { itemsCents: 1290, shippingCents: 490, totalCents: 1780 });
++    assert.deepEqual(valueOf(shop.orders.totals(1)), { itemsCents: 1290, discountCents: 0, shippingCents: 490, totalCents: 1780 });
+   });
+ 
+   it('ships a large order free', () => {
+@@ -45,6 +45,83 @@ describe('order book', () => {
+     assert.equal(shop.orders.all().length, 0);
+   });
+ 
++  it('takes 10 % off the items with SPRING10, shipping still charged on the items', () => {
++    const shop = stocked();
++    valueOf(shop.orders.place({ customerId: 'c1', date: '2026-10-02', lines: [{ sku: 'APL-1KG', quantity: 2 }] }));
++    valueOf(shop.orders.applyCode(1, 'SPRING10'));
++    assert.deepEqual(valueOf(shop.orders.totals(1)), { itemsCents: 698, discountCents: 70, shippingCents: 490, totalCents: 1118 });
++  });
++
++  it('rounds a half cent up with SPRING10', () => {
++    const shop = stocked();
++    valueOf(shop.catalogue.add({ sku: 'HALF', name: 'Half cent', priceCents: 1005 }));
++    valueOf(shop.orders.place({ customerId: 'c1', date: '2026-10-02', lines: [{ sku: 'HALF', quantity: 1 }] }));
++    valueOf(shop.orders.applyCode(1, 'SPRING10'));
++    assert.equal(valueOf(shop.orders.totals(1)).discountCents, 101);
++  });
++
++  it('never lets a discount change free shipping', () => {
++    const shop = stocked();
++    valueOf(shop.catalogue.add({ sku: 'CHE-1', name: 'Cheese, 1 kg', priceCents: 5100 }));
++    valueOf(shop.orders.place({ customerId: 'c1', date: '2026-10-02', lines: [{ sku: 'CHE-1', quantity: 1 }] }));
++    valueOf(shop.orders.applyCode(1, 'SPRING10'));
++    assert.deepEqual(valueOf(shop.orders.totals(1)), { itemsCents: 5100, discountCents: 510, shippingCents: 0, totalCents: 4590 });
++  });
++
++  it('takes 5.00 € off an order of 30.00 € or more with WELCOME5', () => {
++    const shop = stocked();
++    valueOf(shop.orders.place({ customerId: 'c1', date: '2026-10-03', lines: [{ sku: 'HAM-W', quantity: 1 }] }));
++    valueOf(shop.orders.applyCode(1, 'WELCOME5'));
++    assert.deepEqual(valueOf(shop.orders.totals(1)), { itemsCents: 6400, discountCents: 500, shippingCents: 0, totalCents: 5900 });
++  });
++
++  it('refuses WELCOME5 on a smaller order and leaves the order as it was', () => {
++    const shop = stocked();
++    valueOf(shop.orders.place({ customerId: 'c1', date: '2026-10-02', lines: [{ sku: 'OIL-1L', quantity: 2 }] }));
++    const refused = shop.orders.applyCode(1, 'WELCOME5');
++    assert.equal(refused.ok, false);
++    if (!refused.ok) assert.match(refused.error.message, /30\.00 €/);
++    assert.equal(valueOf(shop.orders.get(1)).discountCode, undefined);
++    assert.equal(valueOf(shop.orders.totals(1)).discountCents, 0);
++  });
++
++  it('refuses an unknown code', () => {
++    const shop = stocked();
++    valueOf(shop.orders.place({ customerId: 'c1', date: '2026-10-02', lines: [{ sku: 'HAM-W', quantity: 1 }] }));
++    const refused = shop.orders.applyCode(1, 'SUMMER50');
++    assert.equal(refused.ok, false);
++    if (!refused.ok) assert.match(refused.error.message, /SUMMER50 is not a discount code/);
++  });
++
++  it('keeps the first code when a second one is refused', () => {
++    const shop = stocked();
++    valueOf(shop.orders.place({ customerId: 'c1', date: '2026-10-02', lines: [{ sku: 'OIL-1L', quantity: 1 }] }));
++    valueOf(shop.orders.applyCode(1, 'SPRING10'));
++    assert.equal(shop.orders.applyCode(1, 'WELCOME5').ok, false);
++    assert.equal(valueOf(shop.orders.totals(1)).discountCents, 129);
++  });
++
++  it('replaces an order\'s code with a second one', () => {
++    const shop = stocked();
++    valueOf(shop.orders.place({ customerId: 'c1', date: '2026-10-03', lines: [{ sku: 'HAM-W', quantity: 1 }] }));
++    valueOf(shop.orders.applyCode(1, 'SPRING10'));
++    valueOf(shop.orders.applyCode(1, 'WELCOME5'));
++    assert.equal(valueOf(shop.orders.totals(1)).discountCents, 500);
++  });
++
++  it('takes codes without regard to case or spaces', () => {
++    const shop = stocked();
++    valueOf(shop.orders.place({ customerId: 'c1', date: '2026-10-03', lines: [{ sku: 'HAM-W', quantity: 1 }] }));
++    valueOf(shop.orders.applyCode(1, ' spring10 '));
++    assert.equal(valueOf(shop.orders.get(1)).discountCode, 'SPRING10');
++    assert.equal(valueOf(shop.orders.totals(1)).discountCents, 640);
++  });
++
++  it('refuses a code for an order that does not exist', () => {
++    const shop = stocked();
++    assert.equal(shop.orders.applyCode(7, 'SPRING10').ok, false);
++  });
++
+   it('formats amounts in euros', () => {
+     assert.equal(formatEuros(1250), '12.50');
+     assert.equal(formatEuros(5), '0.05');

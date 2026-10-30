@@ -240,7 +240,7 @@ describe('scripted verdicts need policy v3 (task-117, dl-029)', () => {
     if (checked.ok) return;
     expect(checked.issues).toContainEqual({
       path: 'scenarios[0]',
-      message: `S1@1.0: declares scripted verdicts, which approver policy ${version} does not read; pin v3`,
+      message: `S1@1.0: declares scripted verdicts, which approver policy ${version} does not read; pin v3, v4 or v5`,
     });
   });
 
@@ -266,7 +266,7 @@ describe('scripted verdicts need policy v3 (task-117, dl-029)', () => {
         expect(checked.ok ? [] : checked.issues).toEqual([
           {
             path: 'scenario',
-            message: `S1@1.0: declares scripted verdicts, which approver policy ${version} does not read; pin v3`,
+            message: `S1@1.0: declares scripted verdicts, which approver policy ${version} does not read; pin v3, v4 or v5`,
           },
         ]);
     },
