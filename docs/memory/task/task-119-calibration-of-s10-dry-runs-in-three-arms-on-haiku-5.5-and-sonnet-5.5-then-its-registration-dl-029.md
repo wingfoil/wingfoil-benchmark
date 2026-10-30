@@ -48,3 +48,18 @@ S10's wingfoil runs dearer, for its gates and interventions). Calibration findin
 To be completed when the task starts.
 
 ## Execution notes
+
+- 2026-10-30: backlog → in-progress on main (`e3ac76ba`); worktree `../WingFoil2-Benchmark-wt/s10cal`. The profile
+  `campaigns/s10-calibration.dry-run.yaml` (Claude Code 2.1.300, the approver's choice), its test (criterion 1).
+- **Fake-agent passes** (criterion 2, 0 EUR; profile and scripts in the scratchpad, the fake replaying the reference
+  with a recorded approval request and a resume at every step; their dry runs, 112–114, deleted after reading, never
+  committed):
+  - baseline (112): every step's verdict delivered as text, the texts S10.md §6 fixes; no hook; the agent's commits
+    authored as the developer; the ledger and the authors written.
+  - wingfoil (113), in the real container on WingFoil 0.3.1: the setup declared the agent a developer; at steps 1–3
+    the hook found the one task the fake had submitted and carried the verdict out (`done`), one commit each authored
+    by Dana, listed in the ledger; step 4 delivered, nothing carried out. Scored: M-Q1 full at every step, hold-out
+    8/8, M-E3 three of three, M-E3a three of three, M-E4 honoured; the gate counted steps 1 and 3, rightly — the fake
+    lays the reference, its version raised, before it asks.
+  - baseline-docs (114): its rules, generated from the wingfoil arm's snapshot run as the developer, name Dana as the
+    approver and no Benchmark Approver (task-118's review round 1, seen live).
