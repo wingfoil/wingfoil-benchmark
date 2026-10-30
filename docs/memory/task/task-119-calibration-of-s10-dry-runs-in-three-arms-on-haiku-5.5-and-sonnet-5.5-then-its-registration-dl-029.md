@@ -194,3 +194,9 @@ on `dabf4a8b`, without the run records:
 - **Policy v5** (the approver's choice, 2026-10-30, with a fourth round under the same ceiling): the wait read by any
   approval word in a sentence naming Dana, the account of a verdict already given aside, once a step; v4 frozen as the
   third round ran it. Tests: 128's sentence read by v5 and not by v4; six non-waits. The profile pins v5.
+- **Fourth round** (2026-10-30, 21:47–22:12, policy v5; a first launch at 19:00 refused v5 before any spending, the
+  CLI not rebuilt): 1.2454 EUR, 4.6812 EUR in all of 10. Both docs controls received a verdict at every step; on v5
+  they matched wingfoil on M-E2 and M-E3, and differed on M-E3a (0, by construction) and, in this round, M-E4 (not
+  honoured by either docs control, honoured by wingfoil on both models). wingfoil on Haiku: `ambiguous` again at step
+  3. The note (`docs/calibration/s10.md`) and the ledger rewritten for the four rounds, figures generated; the
+  ledger's lines name each round's policy.

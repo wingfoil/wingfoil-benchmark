@@ -1,0 +1,105 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 0940efc470f2542c5e55b92b28cbf1f0cd598172..3fec22ae6f23b355c31020357f67122d8f60a490 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -1,5 +1,9 @@
+ # Changelog
+ 
++## 1.6.0
++
++- `exportMonth(month)` gives a month's orders as CSV for the accountant.
++
+ ## 1.5.0
+ 
+ - Orders take a discount code: `SPRING10` and `WELCOME5`. Totals show `discountCents`.
+diff --git a/src/domain/orders.ts b/src/domain/orders.ts
+index a5cdbe639277fa0351a3d65f64f22d789dbdbc9d..4160470808404b36b2cde96f9ca0b0d002a93679 100644
+--- a/src/domain/orders.ts
++++ b/src/domain/orders.ts
+@@ -1,6 +1,7 @@
+ import type { Catalogue } from './catalogue.ts';
+ import type { Customers } from './customers.ts';
+ import { checkCode, discountFor } from './discounts.ts';
++import { formatEuros } from './money.ts';
+ import type { Cents } from './money.ts';
+ import { err, ok } from './result.ts';
+ import type { Result } from './result.ts';
+@@ -47,6 +48,18 @@ export interface OrderBook {
+    * `WELCOME5` on an order with items under 30.00 €, is refused and the order is left as it was.
+    */
+   applyCode(orderNumber: number, code: string): Result<OrderTotals>;
++  /**
++   * The orders placed in a month (`YYYY-MM`) as CSV text, by number: a header line, then one line per order with
++   * `order`, `date`, `customer`, `email`, `phone` and `total` (what the customer pays, in euros). Throws a
++   * `RangeError` if the month is not `YYYY-MM`.
++   */
++  exportMonth(month: string): string;
++}
++
++const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
++
++function csvField(value: string): string {
++  return /[",\r\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
+ }
+ 
+ const DATE = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
+@@ -105,6 +118,28 @@ export function createOrderBook(catalogue: Catalogue, customers: Customers): Ord
+       codes.set(orderNumber, code);
+       return totals(orderNumber);
+     },
++    exportMonth(month) {
++      if (!MONTH.test(month)) throw new RangeError(`${month} is not a month (YYYY-MM)`);
++      const rows = ['order,date,customer,email,phone,total'];
++      for (const order of orders) {
++        if (!order.date.startsWith(`${month}-`)) continue;
++        const customer = customers.get(order.customerId);
++        const priced = totals(order.number);
++        rows.push(
++          [
++            String(order.number),
++            order.date,
++            customer.ok ? customer.value.name : '',
++            customer.ok ? customer.value.email : '',
++            customer.ok ? customer.value.phone : '',
++            priced.ok ? formatEuros(priced.value.totalCents) : '',
++          ]
++            .map(csvField)
++            .join(','),
++        );
++      }
++      return rows.join('\n');
++    },
+   };
+ 
+   function totals(number: number): Result<OrderTotals> {
+diff --git a/test/shop.test.ts b/test/shop.test.ts
+index 0591f028ef5970cb54e8f39977d18f932c40aedd..465ab9bb822d6eae816b4231ea22c8636e993927 100644
+--- a/test/shop.test.ts
++++ b/test/shop.test.ts
+@@ -80,3 +80,26 @@ describe('order book', () => {
+     assert.equal(formatEuros(5), '0.05');
+   });
+ });
++
++describe('monthly export', () => {
++  it('lists the month\'s orders as CSV, quoting where needed', () => {
++    const shop = stocked();
++    valueOf(shop.customers.add({ id: 'c2', name: 'Holt, "Bo"', email: 'bo@example.org', phone: '555-0102' }));
++    shop.orders.place({ customerId: 'c1', date: '2026-09-30', lines: [{ sku: 'APL-1KG', quantity: 1 }] });
++    shop.orders.place({ customerId: 'c1', date: '2026-10-02', lines: [{ sku: 'OIL-1L', quantity: 1 }] });
++    shop.orders.place({ customerId: 'c2', date: '2026-10-03', lines: [{ sku: 'HAM-W', quantity: 1 }] });
++    shop.orders.applyCode(3, 'SPRING10');
++    assert.equal(
++      shop.orders.exportMonth('2026-10'),
++      'order,date,customer,email,phone,total\n' +
++        '2,2026-10-02,Mira Holt,mira@example.org,555-0101,17.80\n' +
++        '3,2026-10-03,"Holt, ""Bo""",bo@example.org,555-0102,57.60',
++    );
++  });
++
++  it('gives only the header for an empty month and refuses a bad month', () => {
++    const shop = stocked();
++    assert.equal(shop.orders.exportMonth('2026-10'), 'order,date,customer,email,phone,total');
++    assert.throws(() => shop.orders.exportMonth('2026-13'), RangeError);
++  });
++});
