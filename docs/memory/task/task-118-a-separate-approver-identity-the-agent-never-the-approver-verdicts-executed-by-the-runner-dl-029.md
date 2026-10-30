@@ -102,3 +102,7 @@ on `c2e34e7d`: no blocker.
   in the working tree at delivery); §11's rewritten approval commits and early requests; REQ-SCO-06's missing ledger;
   `verdict.sh`'s line widths. Settled by a second run against WingFoil 0.3.1: a rejection's commit touches only the
   element, an agent's staged file is left out of it, and a reason with quotes and `;` reaches it intact.
+
+**Round 2** (re-review of `899e7fed`'s diff, a fresh read-only agent, checkouts unchanged): round 1's findings
+resolved; one nit, so the review closes. Applied: a timed-out hook's late commits, counted as forged by the gate, stated
+in S10.md §11, and the calibration's check of the hook's time noted there.
