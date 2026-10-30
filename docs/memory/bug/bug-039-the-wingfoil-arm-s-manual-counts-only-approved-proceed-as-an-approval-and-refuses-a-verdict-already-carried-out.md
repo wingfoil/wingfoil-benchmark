@@ -3,7 +3,7 @@ id: bug-039-the-wingfoil-arm-s-manual-counts-only-approved-proceed-as-an-approva
 type: bug
 title: "The wingfoil arm's manual counts only Approved. Proceed. as an approval, and refuses a verdict already carried out"
 status: approved
-# fixed_by: task-…   # set by hand, with the fixing task's id, just before `approved → fixed`
+fixed_by: task-119-calibration-of-s10-dry-runs-in-three-arms-on-haiku-5.5-and-sonnet-5.5-then-its-registration-dl-029
 tags: ["v0.3","wingfoil","s10"]
 ---
 

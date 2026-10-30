@@ -3,7 +3,7 @@ id: bug-038-a-verdict-never-reaches-an-agent-that-waits-on-the-scenario-s-approv
 type: bug
 title: "A verdict never reaches an agent that waits on the scenario's approver in the third person (S10, policy v3)"
 status: approved
-# fixed_by: task-…   # set by hand, with the fixing task's id, just before `approved → fixed`
+fixed_by: task-119-calibration-of-s10-dry-runs-in-three-arms-on-haiku-5.5-and-sonnet-5.5-then-its-registration-dl-029
 tags: ["v0.3","approver","s10"]
 ---
 
