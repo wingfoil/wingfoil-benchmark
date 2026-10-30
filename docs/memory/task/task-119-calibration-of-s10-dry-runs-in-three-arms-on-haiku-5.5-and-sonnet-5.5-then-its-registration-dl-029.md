@@ -214,3 +214,6 @@ should-fix items resolved; v3 is task-117's call, v4 frozen as round 3 ran it.
   dry run 130's step 4 shows; "already approved" suppresses a sentence that also waits) stated in the note §4 and in
   S10.md §11, and pinned by a test; round 2's ledger lines say "recorded `v3`"; the note names the digests rounds 3–4
   ran on; the runner's duplicate count removed.
+
+**Round 3** (re-review of `a4861e73`, a fresh read-only agent, checkouts unchanged): round 2's findings resolved, the
+note's claims checked against its table; nits only, so the review closes. Applied: a test title within 120 columns.

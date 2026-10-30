@@ -163,7 +163,7 @@ describe('policy v5 reads a wait on the approver by any approval word, verdicts 
     expect(classifyStep(policy('v5'), message, REJECT_VERDICT, DANA)).toBeUndefined();
   });
 
-  it('reads, as known limits, an approval word in the past and not a sentence that is already approved (note §4)', () => {
+  it('reads, as known limits, a past approval word, and not an already approved sentence (note §4)', () => {
     expect(
       classifyStep(
         policy('v5'),
