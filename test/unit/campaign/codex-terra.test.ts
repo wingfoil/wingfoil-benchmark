@@ -6,6 +6,7 @@ import { armDigest } from '../../../src/arms/digest.js';
 import { codexScopeIssues } from '../../../src/cli/codex-scope.js';
 import { loadDryRunProfile } from '../../../src/scenario/dry-run.js';
 import { checkCampaign } from '../../../src/runner/index.js';
+import { loadPinnedArm } from '../../../src/runner/pinned-arm.js';
 import type { CampaignFile } from '../../../src/core/index.js';
 import { repoPath } from '../../support/paths.js';
 
@@ -78,15 +79,22 @@ describe('the Terra campaign on approver policy v2 (task-106, characterization)'
 describe("campaign-007's dry-run profile (task-114, characterization)", () => {
   const file = 'campaigns/codex-terra-step-a.dry-run.yaml';
 
-  it('loads, pins WingFoil v0.3.1, approver policy v2 and the step-A arms as the tree has them', () => {
+  it('loads, pins WingFoil v0.3.1, approver policy v2 and the step-A arms as the tree or its history has them', () => {
     const loaded = loadDryRunProfile(repoPath(file));
     if (!loaded.ok) throw new Error(JSON.stringify(loaded.issues));
     const profile = loaded.value;
     expect(profile.harnesses).toEqual({ wingfoil: { tool: 'wingfoil', version: 'v0.3.1' } });
     expect(profile.agent).toMatchObject({ name: 'codex', version: '0.162.1' });
     expect(profile.approver_policy).toBe('v2');
-    for (const arm of ['baseline', 'baseline-docs', 'wingfoil'])
-      expect(profile.arm_digests?.[arm], arm).toBe(armDigest(repoPath(''), arm).slice(0, 12));
+    // An arm changed since (the wingfoil arm's verdict hook, task-118) is read from the commit that holds its pin
+    // (REQ-FMT-13 as amended in 1.33).
+    for (const arm of ['baseline', 'baseline-docs', 'wingfoil']) {
+      const pinned = profile.arm_digests?.[arm];
+      const read = loadPinnedArm(repoPath(''), arm, pinned);
+      expect(read.ok, arm).toBe(true);
+      if (read.ok && read.value.from === undefined)
+        expect(pinned, arm).toBe(armDigest(repoPath(''), arm).slice(0, 12));
+    }
   });
 
   it('pins gpt-6-luna at medium beside gpt-5.6-terra, and no gpt-6.1-terra (dl-031, task-115)', () => {

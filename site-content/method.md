@@ -96,6 +96,14 @@ without verdicts reads v3 as v2. {#approver-verdicts}
 
 In the wingfoil arm, WingFoil's process needs a person with the approver role. The arm's configuration declares a member "Benchmark Approver" with that role, and the container's git identity is that member. After the neutral approver's reply, the agent may run WingFoil's approval commands itself. The *decision* is always the neutral approver's fixed reply; the agent only carries it out. {#approver-decision}
 
+S10 is the exception, and a deliberate difference of treatment. Its approver is a person of the scenario with an
+identity of her own, and the agent is a developer who can never approve. At the scenario's gates the runner carries her
+fixed verdict out itself, under her identity, through each tool's documented approval command when the tool has one;
+WingFoil's is the only one so far. An arm without such a command receives the same verdict as text. The runner keeps a
+record of the verdicts it delivered and of the commits that carried them out. The record shows whether an approval
+was recorded under her identity by the runner or claimed by the agent. In arms without an approval command, no verdict
+can be recorded under her identity: this follows from the design, and is not a result. {#approver-separate}
+
 Every step has a time cap and a token cap, and every run has a cost cap. When a cap is hit, the step or the run ends, and what exists at that moment is scored as it stands. The campaign also stops starting new runs once its total cost reaches its ceiling. {#caps}
 
 The run's cost cap is passed to the agent, which stops by itself, at most one turn past the cap. A session can therefore spend a little more than the cap. In a test, a session capped at 0.04 USD stopped at 0.0419 USD. The real cost is recorded as reported. {#cost-cap-one-turn}

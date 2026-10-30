@@ -329,6 +329,7 @@ describe('runCampaign', () => {
       `tree ${workspace} HEAD`,
       `patch ${workspace} ${tree(1)} ${tree(2)}`,
       `messages ${workspace} ${'commit-1'.padEnd(40, '0')}`,
+      `authors ${workspace} ${'commit-1'.padEnd(40, '0')}`,
       `commit ${workspace} step 01 --allow-empty`,
       `head ${workspace}`,
       `tree ${workspace} HEAD`,
@@ -385,9 +386,11 @@ describe('runCampaign', () => {
     ]);
     expect(JSON.parse(readFileSync(join(output, 'steps', '01', 'commits.json'), 'utf8'))).toEqual({
       messages: ['Add cancellation', 'Record the decision\n\nToken: [redacted]'],
+      commits: [],
     });
     expect(JSON.parse(readFileSync(join(output, 'steps', '02', 'commits.json'), 'utf8'))).toEqual({
       messages: [],
+      commits: [],
     });
   });
 
@@ -732,6 +735,88 @@ describe('the neutral approver in the step loop (F2.4)', () => {
       { step: 2, kind: 'approval', reply: verdict.text },
       { step: 2, kind: 'approval', reply: verdict.later },
     ]);
+  });
+
+  it("carries a verdict out once, under the scenario's approver, and keeps the ledger and the authors (task-118)", async () => {
+    const yaml = campaignYaml({ approver_policy: 'v3' });
+    const { root, file } = writeRepo(yaml, ['S1@1.0']);
+    const scenarioFile = join(root, 'scenarios', 'S1', '1.0', 'scenario.yaml');
+    const scenario = parse(readFileSync(scenarioFile, 'utf8')) as Record<string, unknown> & {
+      steps: Record<string, unknown>[];
+    };
+    const verdict = {
+      kind: 'reject',
+      text: 'Rejected by Dana: no contact details.',
+      later: 'Already reviewed today.',
+    };
+    scenario.approver = { name: 'Dana Okafor', email: 'dana@example.org' };
+    scenario.steps[1] = { ...scenario.steps[1], verdict };
+    writeFileSync(scenarioFile, stringify(scenario));
+    const armFile = join(root, 'arms', 'baseline', 'arm.yaml');
+    writeFileSync(
+      armFile,
+      stringify({ ...(parse(readFileSync(armFile, 'utf8')) as object), verdict_hook: 'verdict.sh' }),
+    );
+    writeFileSync(join(root, 'arms', 'baseline', 'verdict.sh'), '#!/bin/bash\n');
+    const checked = checkCampaign(file);
+    if (!checked.ok) throw new Error(JSON.stringify(checked.issues));
+    const ports = doubles({
+      messageOf: (request) =>
+        request.step === 2 && invocationOf(request) < 2 ? 'Please approve the change.' : undefined,
+      execResultOf: (command) =>
+        command[1]?.endsWith('/verdict.sh')
+          ? { code: 0, stdout: '{"target":"task-7","outcome":"done"}\n', stderr: '' }
+          : undefined,
+      commitsOf: (_directory, from) =>
+        from.startsWith('commit-')
+          ? [{ sha: 'c'.repeat(40), authorEmail: 'dana@example.org', committerEmail: 'dana@example.org' }]
+          : [],
+    });
+
+    const summary = await runCampaign(checked.value, ports);
+
+    const workspace = summary.runs[0]?.workspace ?? '';
+    expect(ports.recorded.gitCalls).toContain(
+      `identity ${workspace} Benchmark Developer <developer@benchmark.localhost>`,
+    );
+    const hooks = ports.recorded.execs.filter((e) => e.command[1]?.endsWith('/verdict.sh'));
+    expect(hooks.map((e) => e.command)).toEqual([
+      ['bash', '/home/node/arm/verdict.sh', 'reject', 'Dana Okafor', 'dana@example.org', verdict.text],
+    ]);
+    const out = summary.runs[0]?.outputDir ?? '';
+    const ledger = (n: string) =>
+      JSON.parse(readFileSync(join(out, 'steps', n, 'verdicts.json'), 'utf8')) as unknown;
+    expect(ledger('01')).toEqual({ deliveries: [] });
+    expect(ledger('02')).toEqual({
+      deliveries: [
+        {
+          reply: verdict.text,
+          verdict: 'reject',
+          head: expect.stringMatching(/^commit-/),
+          carried_out: { outcome: 'done', target: 'task-7', commits: ['c'.repeat(40)] },
+        },
+        { reply: verdict.later, verdict: 'reject', head: expect.stringMatching(/^commit-/) },
+      ],
+    });
+    const commits = JSON.parse(readFileSync(join(out, 'steps', '02', 'commits.json'), 'utf8')) as {
+      commits: unknown[];
+    };
+    expect(commits.commits).toContainEqual({
+      sha: 'c'.repeat(40),
+      author_email: 'dana@example.org',
+      committer_email: 'dana@example.org',
+    });
+  });
+
+  it('keeps the agent the approver, and writes no ledger, in a scenario with no approver (option (a), task-118)', async () => {
+    const { checked } = checkedCampaign();
+    const ports = doubles();
+    const summary = await runCampaign(checked, ports);
+    const workspace = summary.runs[0]?.workspace ?? '';
+    expect(ports.recorded.gitCalls).toContain(
+      `identity ${workspace} Benchmark Approver <approver@benchmark.localhost>`,
+    );
+    expect(existsSync(join(summary.runs[0]?.outputDir ?? '', 'steps', '01', 'verdicts.json'))).toBe(false);
   });
 
   it("records every intervention and each step's outcome in run.json (REQ-RUN-07)", async () => {
@@ -1158,7 +1243,9 @@ describe('the setup phase (REQ-RUN-03, adr-003)', () => {
     const summary = await runCampaign(checked, ports);
 
     const workspace = summary.runs[0]?.workspace ?? '';
-    expect(ports.recorded.gitCalls.filter((call) => !/^(patch|tree|messages|head) /.test(call))).toEqual([
+    expect(
+      ports.recorded.gitCalls.filter((call) => !/^(patch|tree|messages|authors|head) /.test(call)),
+    ).toEqual([
       `init ${workspace}`,
       `commit ${workspace} seed`,
       `identity ${workspace} Benchmark Approver <approver@benchmark.localhost>`,
@@ -1260,11 +1347,13 @@ describe('the setup phase (REQ-RUN-03, adr-003)', () => {
       `tree ${workspace} HEAD`,
       `patch ${workspace} ${tree(1)} ${tree(2)}`,
       `messages ${workspace} ${'commit-1'.padEnd(40, '0')}`,
+      `authors ${workspace} ${'commit-1'.padEnd(40, '0')}`,
       `commit ${workspace} step 01 --allow-empty`,
       `head ${workspace}`,
       `tree ${workspace} HEAD`,
       `patch ${workspace} ${tree(2)} ${tree(3)}`,
       `messages ${workspace} ${'commit-2'.padEnd(40, '0')}`,
+      `authors ${workspace} ${'commit-2'.padEnd(40, '0')}`,
       `commit ${workspace} step 02 --allow-empty`,
       `head ${workspace}`,
       `tree ${workspace} HEAD`,

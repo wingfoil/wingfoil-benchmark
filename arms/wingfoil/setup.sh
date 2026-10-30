@@ -35,8 +35,16 @@ fi
 #    read whole first, as JSON: `grep -q` closing a pipe early would fail it under pipefail. A scenario's
 #    dna.yaml naming another member "Benchmark Approver", or with no `approver` role, makes `dna add`
 #    refuse, and the setup fail.
+#    In a scenario with a separate approver (task-118, dl-029 option (b1)) the runner has written the developer's
+#    identity instead: the agent is then declared a developer only, and the scenario's dna.yaml names its approver.
 team="$(wingfoil --format json dna show team)"
-if ! grep -qi '"approver@benchmark\.localhost"' <<< "$team"; then
+agent_email="$(git config user.email)"
+if [ "$agent_email" = "developer@benchmark.localhost" ]; then
+  if ! grep -qi '"developer@benchmark\.localhost"' <<< "$team"; then
+    wingfoil dna add team.members --value "Benchmark Developer" --entry-email developer@benchmark.localhost \
+      --entry-roles developer > /dev/null
+  fi
+elif ! grep -qi '"approver@benchmark\.localhost"' <<< "$team"; then
   wingfoil dna add team.members --value "Benchmark Approver" --entry-email approver@benchmark.localhost \
     --entry-roles approver > /dev/null
 fi

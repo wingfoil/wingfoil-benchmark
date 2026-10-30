@@ -6,6 +6,12 @@
 export const AGENT_IDENTITY = { name: 'Benchmark Approver', email: 'approver@benchmark.localhost' };
 
 /**
+ * The agent's identity in a scenario with a separate approver (task-118, open question 1 option (b1)): a developer,
+ * never the approver; the wingfoil arm's setup declares it with the `developer` role only.
+ */
+export const DEVELOPER_IDENTITY = { name: 'Benchmark Developer', email: 'developer@benchmark.localhost' };
+
+/**
  * The host's user and group, for a one-off container that writes into a directory of the host: what
  * it writes stays the host's to read and remove, whatever its ids are.
  */

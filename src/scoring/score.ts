@@ -203,10 +203,18 @@ export async function scoreRun(request: ScoreRequest): Promise<Result<ScoreFile>
       if (!scored.ok) return scored;
       holdoutScore = { scored: true, hash, steps: scored.value.steps, final: scored.value.final };
     }
+    const publicSteps = publicScore.value.steps as StepScore[];
     const checks = await scoreChecks({
       checks: scenario.oracle.checks,
       runDir: request.runDir,
       snapshots: snapshots.value,
+      // A rejection check reads its suite whole at the rework's step (M-E4, task-118): every test passed.
+      suitePassed: (id, n) => {
+        const step = publicSteps.find((candidate) => candidate.n === n);
+        const suite =
+          step !== undefined && 'suites' in step ? step.suites.find((s) => s.id === id) : undefined;
+        return suite === undefined ? undefined : suite.total > 0 && suite.passed === suite.total;
+      },
       ast: astInContainer({
         docker: request.docker,
         image: request.image.tag,

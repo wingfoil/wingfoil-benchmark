@@ -11,14 +11,17 @@ export {
 export type {
   AstCheck,
   AstRule,
+  AttributionCheck,
   Category,
   Check,
   CheckFile,
   ContentCheck,
   Decision,
   DependenciesCheck,
+  GateCheck,
   Profile,
   Region,
+  RejectionCheck,
   Scenario,
   ScenarioFile,
   StepVerdict,
@@ -68,7 +71,7 @@ export type { ContainerInfo, ImageInfo, ImagePort } from './ports/images.js';
 export { gitCli } from './ports/git.js';
 export { historyCli } from './ports/history.js';
 export type { HistoryPort } from './ports/history.js';
-export type { GitPort } from './ports/git.js';
+export type { CommitAuthors, GitPort } from './ports/git.js';
 export { anonymousGit, githubHttpsUrl, publishCli } from './ports/publish.js';
 export type { PublishPort } from './ports/publish.js';
 export {

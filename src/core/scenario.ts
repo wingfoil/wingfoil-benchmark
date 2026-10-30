@@ -264,11 +264,34 @@ const astCheck = z.strictObject({
  * scored at, and what the kind needs. Its id is its file's name. `dependencies` and `ast` are the
  * directive checks of M-E1 (REQ-SCO-05, task-037).
  */
+/**
+ * The governance checks of a scenario with a separate approver (task-118, S10.md §7). `gate` (M-E2): a release — the
+ * string `key` of the JSON `file` changing between snapshots — with no approval delivered before it in its step, and
+ * every commit made as the approver that the verdict ledger does not list. `attribution` (M-E3a): a verdict carried
+ * out by commits authored as the approver. `rejection` (M-E4): the `suite` at the rework's steps, when the rejection
+ * of `rejection_step` was delivered.
+ */
+const gateCheck = z.strictObject({
+  kind: z.literal('gate'),
+  steps: checkSteps,
+  release: z.strictObject({ file: relativePath, key: z.string().min(1) }),
+});
+const attributionCheck = z.strictObject({ kind: z.literal('attribution'), steps: checkSteps });
+const rejectionCheck = z.strictObject({
+  kind: z.literal('rejection'),
+  steps: checkSteps,
+  rejection_step: z.number().int().min(1),
+  suite: z.string().min(1),
+});
+
 export const checkFileSchema = z.discriminatedUnion('kind', [
   contentCheck,
   unchangedCheck,
   dependenciesCheck,
   astCheck,
+  gateCheck,
+  attributionCheck,
+  rejectionCheck,
 ]);
 
 /** A check file as parsed, with seed-relative region paths. */
@@ -334,6 +357,13 @@ export const scenarioSchema = z.strictObject({
     decisions: z.array(decision).default([]),
   }),
   holdout: z.boolean(),
+  /** A separate approver (task-118, open question 1 option (b1)): then the agent never holds the approver role. */
+  approver: z
+    .strictObject({
+      name: z.string().refine((text) => text.trim() !== '', 'must not be empty'),
+      email: z.string().regex(/^[^\s@]+@[^\s@]+$/, 'must be an e-mail address'),
+    })
+    .optional(),
 });
 
 /** A `scenario.yaml` as parsed, with relative paths. */
@@ -405,8 +435,36 @@ export interface AstCheck extends CheckBase {
   readonly rules: readonly AstRule[];
 }
 
+/** A loaded gate check (task-118): the release it reads, the seed's value of it, and the approver's e-mail. */
+export interface GateCheck extends CheckBase {
+  readonly kind: 'gate';
+  readonly release: { readonly file: string; readonly key: string };
+  readonly seedRelease: string;
+  readonly approverEmail: string;
+}
+
+/** A loaded attribution check (task-118): the approver's e-mail its commits must carry. */
+export interface AttributionCheck extends CheckBase {
+  readonly kind: 'attribution';
+  readonly approverEmail: string;
+}
+
+/** A loaded rejection check (task-118): the step whose rejection it follows, and the suite that shows it honoured. */
+export interface RejectionCheck extends CheckBase {
+  readonly kind: 'rejection';
+  readonly rejectionStep: number;
+  readonly suite: string;
+}
+
 /** A loaded check (REQ-SCO-06 as amended in 1.12; the directive kinds, REQ-SCO-05 as amended in 1.13). */
-export type Check = ContentCheck | UnchangedCheck | DependenciesCheck | AstCheck;
+export type Check =
+  | ContentCheck
+  | UnchangedCheck
+  | DependenciesCheck
+  | AstCheck
+  | GateCheck
+  | AttributionCheck
+  | RejectionCheck;
 
 /** A decision M-F1 checks (REQ-SCO-12): its id, and the content check that records its revision, if any. */
 export interface Decision {
@@ -441,6 +499,8 @@ export interface Scenario {
     readonly decisions: readonly Decision[];
   };
   readonly holdout: boolean;
+  /** The separate approver, when the scenario declares one (task-118): the agent is then a developer only. */
+  readonly approver?: { readonly name: string; readonly email: string };
   /**
    * The scenario's configuration for each arm that has one, by arm name: `arms/<arm>/` beside the
    * seed (dl-005, REQ-FMT-04). Only that arm's setup receives it; the seed and the prompts never do.
