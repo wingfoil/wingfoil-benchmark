@@ -160,3 +160,28 @@ S10's wingfoil runs dearer, for its gates and interventions). Calibration findin
 - **bug-040**, found by the pre-review of this branch: `scripts/pre-review.sh` checked the Markdown a run keeps under
   `results/` (the docs controls' generated environment, WingFoil's own directives among it); earlier dry runs were
   committed on main, never through it. `results/` joins the byte-pinned paths it leaves out; a red-first test.
+
+### Review
+
+**Round 1** (2026-10-30, a fresh read-only agent in a `mktemp -d` directory; the checkouts' HEAD unchanged after it),
+on `dabf4a8b`, without the run records:
+
+- **Blocker — bug-038's rule read reports as waits, and echoed:** dry run 122's step 4 got two interventions for a
+  finished report that mentions Dana's absence, 120's three; bare `pending`, `had to`, `await` with no word end, no
+  negation, no code stripped, names matched inside other words. These counts feed H6. **Fixed as policy v4** (the
+  approver's choice, 2026-10-30, against amending v3 again): v3 restored to task-117's meaning, which the first round
+  ran on; v4 = v3 plus the wait, read only until the step's first approval request has been answered, outside code,
+  sentences split as classifier v2 splits them, names as whole words, the patterns narrowed (`requires`, `sign-off`
+  added; no bare `pending`, no `had to`), a sentence saying there is no need to wait left out. Tests of false
+  positives and of the once-a-step rule (red before). The profile pins v4; requirements 1.45 rewritten for v4.
+- **Should-fix — the sentence split and the missing `requires`:** fixed with the above.
+- **Should-fix — one version label, two meanings:** resolved by v4. Round 1 ran v3 (task-117's); round 2 ran the
+  wait-reading as first written (`b5fe63ff`), a draft of v4 recorded as `v3` in its runs; the note says so.
+- **Should-fix — the note under-reported where interventions come from:** the note is rewritten after round 3 with
+  the interventions per step.
+- **Should-fix — the second round's consent was not written down:** the approver approved a second round in chat
+  on 2026-10-30 ("Sì, 6 run nello stesso tetto"), and a third, on v4, the same day ("Sì, 6 run"), all within the
+  10 € ceiling: one dry run per arm and model per round, eighteen in all.
+- **Nits:** the manual's "which is why your git identity holds the approver role" now defers to the paragraph for a
+  project with another approver; that paragraph says the earlier one does not apply. bug-040's exclusion of all of
+  `results/` kept: nothing hand-written lives there today. The arm's digest is now `e3f9f11f0f4d`.

@@ -5,11 +5,11 @@ import { checkDryRun } from '../../../src/runner/index.js';
 import { loadDryRunProfile } from '../../../src/scenario/dry-run.js';
 import { repoPath } from '../../support/paths.js';
 
-/** S10's calibration profile (task-119): the step-A arms on WingFoil v0.3.1, Claude Code 2.1.300, policy v3. */
+/** S10's calibration profile (task-119): the step-A arms on WingFoil v0.3.1, Claude Code 2.1.300, policy v4. */
 describe("S10's calibration profile (task-119, characterization)", () => {
   const file = 'campaigns/s10-calibration.dry-run.yaml';
 
-  it('pins Claude Code 2.1.300 at medium on Haiku 5.5 and Sonnet 5.5, WingFoil v0.3.1, policy v3 and the arms', () => {
+  it('pins Claude Code 2.1.300 at medium on Haiku 5.5 and Sonnet 5.5, WingFoil v0.3.1, policy v4 and the arms', () => {
     const loaded = loadDryRunProfile(repoPath(file));
     if (!loaded.ok) throw new Error(JSON.stringify(loaded.issues));
     const profile = loaded.value;
@@ -19,7 +19,7 @@ describe("S10's calibration profile (task-119, characterization)", () => {
       effort: { 'claude-haiku-5-5': 'medium', 'claude-sonnet-5-5': 'medium' },
     });
     expect(profile.harnesses).toEqual({ wingfoil: { tool: 'wingfoil', version: 'v0.3.1' } });
-    expect(profile.approver_policy).toBe('v3');
+    expect(profile.approver_policy).toBe('v4');
     for (const arm of ['baseline', 'baseline-docs', 'wingfoil'])
       expect(profile.arm_digests?.[arm], arm).toBe(armDigest(repoPath(''), arm).slice(0, 12));
   });

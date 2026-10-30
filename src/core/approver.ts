@@ -17,6 +17,8 @@ export interface ApproverPolicy {
   readonly maxInterventions: number;
   /** Whether the policy answers approval requests with a step's scripted verdict (v3, task-117). */
   readonly scriptedVerdicts: boolean;
+  /** Whether a wait on the scenario's approver counts as an approval request (v4, bug-038); absent before v4. */
+  readonly readsApproverWaits?: boolean;
 }
 
 /**
@@ -216,63 +218,93 @@ const V2: ApproverPolicy = {
  */
 const V3: ApproverPolicy = { ...V2, version: 'v3', scriptedVerdicts: true };
 
-/** Every policy this runner implements, by the version a campaign pins. */
-const POLICIES: ReadonlyMap<string, ApproverPolicy> = new Map([
-  [V1.version, V1],
-  [V2.version, V2],
-  [V3.version, V3],
-]);
-
 /**
- * The words of a sentence that waits on someone's approval or verdict (bug-038): the docs controls' own, in S10's
+ * The words of a sentence that waits on someone's approval or verdict (bug-038, v4): the docs controls' own in S10's
  * calibration ("has to approve this change first", "a release waits for approval from", "still needs Dana's
- * approval", "once Dana approves"). A summary of a verdict already given ("Approved by …, released") holds none.
+ * approval", "once Dana approves"), narrowed by its review (task-119 round 1): no bare "pending", no "had to", "await"
+ * as a whole word. A summary of a verdict already given ("Approved by …, released") holds none.
  */
 const WAITING_ON = [
   /\bwait(?:s|ing)?\s+(?:for|on)\b/i,
-  /\bawait/i,
-  /\bpending\b/i,
-  /\b(?:has|have|had)\s+to\s+(?:approve|wait|review|sign)/i,
+  /\bawait(?:s|ing)?\b/i,
+  /\bpending\s+(?:her|\w+(?:'s|’s)|the\s+approver(?:'s|’s))\s+(?:approval|verdict|review|sign-?off)\b/i,
+  /\b(?:has|have)\s+to\s+(?:approve|wait|review|sign)/i,
   /\bmust\s+(?:approve|review|sign)/i,
-  /\bneeds?\s+(?:\w+(?:'s|’s)\s+|her\s+|the\s+approver(?:'s|’s)\s+|an?\s+)?(?:approval|verdict|review|sign-?off)\b/i,
-  /\bneeds?\s+to\s+(?:approve|review)\b/i,
+  /\b(?:needs?|requires?)\s+(?:\w+(?:'s|’s)\s+|her\s+|the\s+approver(?:'s|’s)\s+|an?\s+)?(?:approval|verdict|review|sign-?off)\b/i,
+  /\bneeds?\s+to\s+(?:approve|review|sign)\b/i,
   /\b(?:once|until|only\s+after)\s+(?:she|\w+(?:\s+\w+)?)\s+(?:approves|reviews|signs)\b/i,
-  /\bfor\s+(?:her\s+|\w+(?:'s|’s)\s+)?(?:approval|review|verdict)\b/i,
+  /\bfor\s+(?:her\s+|\w+(?:'s|’s)\s+)?(?:approval|review|verdict|sign-?off)\b/i,
 ];
 
+/** A sentence that says there is nothing to wait for: "no need to wait for Dana", "no longer needs her approval". */
+const NOT_WAITING =
+  /\b(?:no\s+(?:need|longer)|not\s+(?:need|waiting|required)|without\s+waiting|already\s+(?:approved|given))\b/i;
+
+/** `text` as a regular expression matching it as a whole word or address, case aside. */
+function wholeWord(text: string): RegExp {
+  return new RegExp(`(?<![\\w.@-])${text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\w@-])`, 'i');
+}
+
 /**
- * Whether `message` waits on the scenario's approver (bug-038): a sentence naming her — her full name, her first name
- * or her e-mail — that waits on her approval or verdict. An agent that follows the process but names the approver in
- * the third person, the reader being someone else, asks for her verdict as surely as one that asks the reader.
+ * Whether `message` waits on the scenario's approver (bug-038, v4): outside code, a sentence (split as classifier
+ * v2 splits them) naming her — her full name, her first name or her e-mail, each as a whole word — that waits on her
+ * approval or verdict and does not say there is nothing to wait for. An agent that follows the process but names the
+ * approver in the third person, the reader being someone else, asks for her verdict as surely as one that asks the
+ * reader.
  */
 export function awaitsApprover(
   message: string,
   approver: { readonly name: string; readonly email: string },
 ): boolean {
   const first = approver.name.trim().split(/\s+/)[0] ?? '';
-  const names = [approver.name, approver.email, first]
-    .filter((name) => name.length > 1)
-    .map((name) => name.toLowerCase());
-  return message.split(/(?<=[.!?])\s+|\n+/).some((sentence) => {
-    const lower = sentence.toLowerCase();
-    return names.some((name) => lower.includes(name)) && WAITING_ON.some((pattern) => pattern.test(sentence));
-  });
+  const names = [approver.name, approver.email, first].filter((name) => name.length > 1).map(wholeWord);
+  return withoutCode(message)
+    .split(SENTENCE_END)
+    .some(
+      (sentence) =>
+        names.some((name) => name.test(sentence)) &&
+        WAITING_ON.some((pattern) => pattern.test(sentence)) &&
+        !NOT_WAITING.test(sentence),
+    );
 }
 
 /**
- * What a waiting session asks for at a step (REQ-RUN-06): the policy's classifier, and, under a policy with scripted
- * verdicts at a step that declares one in a scenario with an approver, a message waiting on her is an approval request
- * (bug-038), so that the verdict reaches every arm that follows the process, whoever it addresses.
+ * Policy v4 (task-119, bug-038, the approver's choice of 2026-10-30): v3, and, at a step with a verdict in a scenario
+ * with an approver, a message waiting on her is an approval request too, until the step's first approval request has
+ * been answered: an agent that addresses her in the third person gets her verdict, and a report that only mentions
+ * her again after it does not echo it to the cap. v3 stays task-117's.
+ */
+const V4: ApproverPolicy = { ...V3, version: 'v4', readsApproverWaits: true };
+
+/** Every policy this runner implements, by the version a campaign pins. */
+const POLICIES: ReadonlyMap<string, ApproverPolicy> = new Map([
+  [V1.version, V1],
+  [V2.version, V2],
+  [V3.version, V3],
+  [V4.version, V4],
+]);
+
+/**
+ * What a waiting session asks for at a step (REQ-RUN-06): the policy's classifier, and, under v4, at a step that
+ * declares a verdict in a scenario with an approver and while no approval request of the step has been answered
+ * (`approvalsBefore` is 0), a message waiting on her is an approval request (bug-038).
  */
 export function classifyStep(
   policy: ApproverPolicy,
   message: string,
   verdict: StepVerdict | undefined,
   approver: { readonly name: string; readonly email: string } | undefined,
+  approvalsBefore = 0,
 ): InterventionKind | undefined {
   const kind = policy.classify(message);
-  if (kind === 'approval' || !policy.scriptedVerdicts || verdict === undefined || approver === undefined)
+  if (
+    kind === 'approval' ||
+    policy.readsApproverWaits !== true ||
+    verdict === undefined ||
+    approver === undefined
+  )
     return kind;
+  if (approvalsBefore > 0) return kind;
   return awaitsApprover(message, approver) ? 'approval' : kind;
 }
 
@@ -290,7 +322,7 @@ export function verdictPolicyIssue(
 ): string | undefined {
   if (!scenario.steps.some((step) => step.verdict !== undefined)) return undefined;
   if (approverPolicy(version)?.scriptedVerdicts === true) return undefined;
-  return `${scenario.id}@${scenario.version}: declares scripted verdicts, which approver policy ${version} does not read; pin v3`;
+  return `${scenario.id}@${scenario.version}: declares scripted verdicts, which approver policy ${version} does not read; pin v3 or v4`;
 }
 
 /**

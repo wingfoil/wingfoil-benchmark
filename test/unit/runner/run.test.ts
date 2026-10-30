@@ -811,7 +811,7 @@ describe('the neutral approver in the step loop (F2.4)', () => {
   describe('the approver kept out of the agent, and what carrying a verdict out records (task-118 review round 1)', () => {
     /** S1 with Dana as approver and step 1 approved, its arm with a verdict hook unless `hook` is false. */
     function approverCampaign(hook = true) {
-      const { root, file } = writeRepo(campaignYaml({ approver_policy: 'v3' }), ['S1@1.0']);
+      const { root, file } = writeRepo(campaignYaml({ approver_policy: 'v4' }), ['S1@1.0']);
       const scenarioFile = join(root, 'scenarios', 'S1', '1.0', 'scenario.yaml');
       const scenario = parse(readFileSync(scenarioFile, 'utf8')) as Record<string, unknown> & {
         steps: Record<string, unknown>[];
@@ -1149,14 +1149,14 @@ describe('the neutral approver in the step loop (F2.4)', () => {
     const { checked } = checkedCampaign();
     const unvalidated = {
       ...checked,
-      campaign: { ...checked.campaign, spec: { ...checked.campaign.spec, approver_policy: 'v4' } },
+      campaign: { ...checked.campaign, spec: { ...checked.campaign.spec, approver_policy: 'v5' } },
     };
     const ports = doubles();
 
     const summary = await runCampaign(unvalidated, ports);
 
     expect(summary.runs[0]?.outcome).toBe('failed');
-    expect(summary.runs[0]?.error).toMatch(/approver policy v4 is not implemented/);
+    expect(summary.runs[0]?.error).toMatch(/approver policy v5 is not implemented/);
     expect(ports.recorded.steps).toEqual([]);
   });
 

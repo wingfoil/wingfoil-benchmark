@@ -91,10 +91,10 @@ agents. {#approver-classifier}
 Version v3, from v0.3's W17, adds **scripted verdicts** for a scenario that declares them, S10 so far: at a step whose
 gate the scenario scripts, the first approval request is answered with that step's fixed verdict, an approval or a
 rejection with its reason, or word that no approver is available, and later requests in the step with a fixed second
-reply. The verdicts are the same in every arm. A session that ends waiting on the scenario's approver by name, for
-example "Dana Okafor has to approve this change first", counts as asking for her verdict, whoever it addresses.
-Everything else is v2's: its rules, its replies and its cap. A scenario without verdicts reads v3 as v2.
-{#approver-verdicts}
+reply. The verdicts are the same in every arm. Everything else is v2's: its rules, its replies and its cap. A
+scenario without verdicts reads v3 as v2. Version v4 adds one reading: a session that ends waiting on the scenario's
+approver by name, for example "Dana Okafor has to approve this change first", counts as asking for her verdict,
+whoever it addresses, once a step. {#approver-verdicts}
 
 In the wingfoil arm, WingFoil's process needs a person with the approver role. The arm's configuration declares a member "Benchmark Approver" with that role, and the container's git identity is that member. After the neutral approver's reply, the agent may run WingFoil's approval commands itself. The *decision* is always the neutral approver's fixed reply; the agent only carries it out. {#approver-decision}
 

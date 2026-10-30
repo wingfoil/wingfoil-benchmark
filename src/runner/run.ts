@@ -1535,11 +1535,13 @@ async function executeStep(
       break;
     }
     const last = invocations[invocations.length - 1];
-    // A wait on the scenario's approver is an approval request at a step with a verdict (bug-038, policy v3).
+    // A wait on the scenario's approver is an approval request at a step with a verdict, until the step's first one
+    // has been answered (bug-038, policy v4).
+    const answered = interventions.filter((intervention) => intervention.kind === 'approval').length;
     const kind =
       last?.finalMessage === undefined
         ? undefined
-        : classifyStep(policy, last.finalMessage, step.verdict, scenario.approver);
+        : classifyStep(policy, last.finalMessage, step.verdict, scenario.approver, answered);
     if (kind === undefined) break;
     if (interventions.length >= policy.maxInterventions) {
       outcome = 'intervention cap reached';

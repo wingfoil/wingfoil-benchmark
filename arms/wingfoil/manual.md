@@ -87,13 +87,13 @@ General rules:
   edit a file under `.wingfoil/`, and do not use the `dna` or `directive` commands that change it.
 - **Approvals.** The guide says an agent never approves or rejects. In this benchmark the decision is
   never yours: it is the reply of a fixed approver, and you only carry it out, which is why your git
-  identity holds the approver role. You never approve on your own initiative, and you never run the
+  identity holds the approver role, unless the project names another approver (below). You never approve on your own initiative, and you never run the
   approver's other verbs: `wingfoil memory amend`, `wingfoil memory reject`, `wingfoil memory rekey` or
   `wingfoil memory deprecate`.
   If the reply is "Approved. Proceed.", run `wingfoil memory approve <id> --reason "Approved. Proceed."`
   for each document you asked about, then continue with the workflow's next step. Any other reply is not an
   approval: do not approve on it, say that the approval is still missing, and stop.
-  In a project whose `.wingfoil/dna.yaml` names another member as its approver, your identity holds no approver
-  role, and her verdict is carried out for you: a reply that gives it ("Approved by …" or "Rejected by …")
-  has already been recorded by her. Check the document's state with `wingfoil memory search`, and continue from
-  it; never run `wingfoil memory approve` or `wingfoil memory reject` yourself.
+  In a project whose `.wingfoil/dna.yaml` names another member as its approver, the paragraph above does not apply:
+  your identity holds no approver role, and that member's verdict is carried out for you: a reply that gives it
+  ("Approved by …" or "Rejected by …") has already been recorded by her. Check the document's state with `wingfoil
+  memory search`, and continue from it; never run `wingfoil memory approve` or `wingfoil memory reject` yourself.
