@@ -195,6 +195,15 @@ describe('scripts/pre-review.sh (dl-020, task-098)', () => {
     expect(result.status, result.stderr).toBe(0);
   });
 
+  it("leaves out the Markdown a run's records keep under results/, WingFoil's output among it (bug-040)", () => {
+    const long = 'x'.repeat(130);
+    const { run } = fixture([
+      ['results/dry-runs/112/generated/S10@1.0/baseline-docs/PROJECT_RULES.md', `${long}\n`],
+    ]);
+    const result = run();
+    expect(result.status, result.stderr).toBe(0);
+  });
+
   it('stops at the first red check and exits non-zero, naming it', () => {
     const { run, recorded } = fixture(['src/cli/a.ts', 'docs/n.md'], 'npx prettier');
     const result = run();

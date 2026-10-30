@@ -25,9 +25,9 @@ if [ "${#changed[@]}" -eq 0 ]; then echo "pre-review: nothing changed over $base
 # Markdown, which .prettierignore leaves out (Prettier would rewrite the front matter WingFoil writes): every line the
 # branch added within 120 characters, tables, code blocks, the front matter and lines holding a link or a URL apart,
 # and a final newline.
-# The byte-pinned paths stay out (scenario versions, WingFoil's captured output).
+# The byte-pinned paths stay out: scenario versions, WingFoil's captured output, a run's records (results/, bug-040).
 mapfile -t markdown < <(printf '%s\n' "${changed[@]}" | grep -E '\.md$' \
-  | grep -vE '^(scenarios/[^/]+/[^/]+/|test/fixtures/wingfoil-config/)' || true)
+  | grep -vE '^(scenarios/[^/]+/[^/]+/|test/fixtures/wingfoil-config/|results/)' || true)
 if [ "${#markdown[@]}" -gt 0 ]; then
   echo "pre-review: markdown"
   red=0

@@ -8,7 +8,7 @@ wave: W17
 features: [F6.13]
 acceptance: []
 requirements: [REQ-CLI-05, REQ-RUN-06, REQ-RUN-16, REQ-RUN-17, REQ-SCO-06]
-fixes: [bug-038-a-verdict-never-reaches-an-agent-that-waits-on-the-scenario-s-approver-in-the-third-person-s10-policy-v3, bug-039-the-wingfoil-arm-s-manual-counts-only-approved-proceed-as-an-approval-and-refuses-a-verdict-already-carried-out]
+fixes: [bug-038-a-verdict-never-reaches-an-agent-that-waits-on-the-scenario-s-approver-in-the-third-person-s10-policy-v3, bug-039-the-wingfoil-arm-s-manual-counts-only-approved-proceed-as-an-approval-and-refuses-a-verdict-already-carried-out, bug-040-pre-review-s-markdown-check-reads-the-wingfoil-output-a-run-s-results-keep]
 tags: ["v0.3","calibration","scenario","dry-run"]
 ---
 
@@ -71,8 +71,8 @@ S10's wingfoil runs dearer, for its gates and interventions). Calibration findin
   - baseline-docs (114): its rules, generated from the wingfoil arm's snapshot run as the developer, name Dana as the
     approver and no Benchmark Approver (task-118's review round 1, seen live).
 
-- **The six real dry runs** (2026-10-30, 14:01–14:23, started by the load watcher; costs as each run printed them, summed by
-  the launching script: 1.1213 EUR of the 10 EUR ceiling):
+- **The six real dry runs** (2026-10-30, 14:01–14:23, started by the load watcher; costs as each run printed them,
+  summed by the launching script: 1.1213 EUR of the 10 EUR ceiling):
 
   ```
   14:04 exit 0: dry run S10@1.0 in baseline: completed, 0.0397 USD (0.0354 EUR) — step 01 0.0154 USD, step 02 0.0087
@@ -157,3 +157,6 @@ S10's wingfoil runs dearer, for its gates and interventions). Calibration findin
   Sonnet asked once per approval step (bug-039 fixed). New: wingfoil on Haiku left two documents waiting at step 3,
   the hook answered `ambiguous` (recorded, not fixed). Secret scan of the twelve runs' files clean. The note:
   `docs/calibration/s10.md`; the ledger's twelve lines in `v0.3-ledger.md`.
+- **bug-040**, found by the pre-review of this branch: `scripts/pre-review.sh` checked the Markdown a run keeps under
+  `results/` (the docs controls' generated environment, WingFoil's own directives among it); earlier dry runs were
+  committed on main, never through it. `results/` joins the byte-pinned paths it leaves out; a red-first test.
