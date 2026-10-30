@@ -6,6 +6,7 @@ import { fail, ok } from '../core/index.js';
 import type { Result } from '../core/index.js';
 
 import { AGGREGATE_FILE } from './aggregate.js';
+import { DIRECTIVE_KINDS } from './compare.js';
 import type { AggregateFile, BreakEven, Group, Tally, Value } from './aggregate.js';
 
 /** The metrics a finding note reads (REQ-CLI-07 as amended in 1.19), each from one place of the aggregate. */
@@ -164,7 +165,10 @@ function metricLines(metric: Metric, group: Group, aggregate: AggregateFile): st
     case 'M-K4':
       return [breakEvenLine(group, aggregate.break_even)];
     case 'M-E1': {
-      const directive = m.checks.filter((check) => check.steps.some((step) => step.violations !== undefined));
+      // M-E1's checks only: the gate (M-E2) counts violations too, and is not a directive (task-118 review round 1).
+      const directive = m.checks.filter(
+        (check) => DIRECTIVE_KINDS.includes(check.kind) && check.steps.some((step) => step.violations !== undefined),
+      );
       if (m.checks.length === 0) return ['- no check in this scenario'];
       if (directive.length === 0) return ['- no directive check in this scenario'];
       return directive.flatMap((check) =>

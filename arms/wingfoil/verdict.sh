@@ -12,12 +12,19 @@ export PATH="$HOME/.local/bin:$PATH"
 cd "$WORKSPACE" || exit 2
 verdict="$1" name="$2" email="$3" reason="$4"
 
-answer() { printf '{"outcome":"%s"%s}\n' "$1" "${2:+,\"target\":\"$2\"}"; }
+# One JSON line, written by node so that any target id is escaped.
+line='const [o, t] = process.argv.slice(1); console.log(JSON.stringify(t ? { outcome: o, target: t } : { outcome: o }))'
+answer() { node -e "$line" "$1" "${2:-}"; }
 
+# The ids of `memory search --format json`'s matches, one per line; a search that fails is reported, not read as none.
+ids='let s="";process.stdin.on("data",d=>s+=d)
+  .on("end",()=>{for(const m of JSON.parse(s).matches)console.log(m.id)})'
 waiting=""
 for status in in-review pending; do
-  found="$(wingfoil --format json memory search --status "$status" 2>/dev/null |
-    node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{for(const m of JSON.parse(s).matches)console.log(m.id)}catch{}})')"
+  if ! listing="$(wingfoil --format json memory search --status "$status" 2>/dev/null)"; then
+    answer search-failed; exit 0
+  fi
+  if ! found="$(node -e "$ids" <<< "$listing")"; then answer search-failed; exit 0; fi
   [ -n "$found" ] && waiting="${waiting}${found}"$'\n'
 done
 targets="$(printf '%s' "$waiting" | sed '/^$/d' | sort -u)"

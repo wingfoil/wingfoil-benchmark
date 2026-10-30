@@ -808,6 +808,94 @@ describe('the neutral approver in the step loop (F2.4)', () => {
     });
   });
 
+  describe('the approver kept out of the agent, and what carrying a verdict out records (task-118 review round 1)', () => {
+    /** S1 with Dana as approver and step 1 approved, its arm with a verdict hook unless `hook` is false. */
+    function approverCampaign(hook = true) {
+      const { root, file } = writeRepo(campaignYaml({ approver_policy: 'v3' }), ['S1@1.0']);
+      const scenarioFile = join(root, 'scenarios', 'S1', '1.0', 'scenario.yaml');
+      const scenario = parse(readFileSync(scenarioFile, 'utf8')) as Record<string, unknown> & {
+        steps: Record<string, unknown>[];
+      };
+      scenario.approver = { name: 'Dana Okafor', email: 'dana@example.org' };
+      scenario.steps[0] = {
+        ...scenario.steps[0],
+        verdict: { kind: 'approve', text: 'Approved by Dana: yes.' },
+      };
+      writeFileSync(scenarioFile, stringify(scenario));
+      if (hook) {
+        const armFile = join(root, 'arms', 'baseline', 'arm.yaml');
+        writeFileSync(
+          armFile,
+          stringify({ ...(parse(readFileSync(armFile, 'utf8')) as object), verdict_hook: 'verdict.sh' }),
+        );
+        writeFileSync(join(root, 'arms', 'baseline', 'verdict.sh'), '#!/bin/bash\n');
+      }
+      const checked = checkCampaign(file);
+      if (!checked.ok) throw new Error(JSON.stringify(checked.issues));
+      return checked.value;
+    }
+    const asks = (request: { step: number }) =>
+      request.step === 1 && invocationOf(request as never) === 0 ? 'Please approve the change.' : undefined;
+    const isHook = (command: readonly string[]) => command[1]?.endsWith('/verdict.sh') === true;
+    async function firstDelivery(ports: ReturnType<typeof doubles>, hook = true, timeoutMs?: number) {
+      const summary = await runCampaign(approverCampaign(hook), {
+        ...ports,
+        ...(timeoutMs === undefined ? {} : { verdictHookTimeoutMs: timeoutMs }),
+      });
+      const out = summary.runs[0]?.outputDir ?? '';
+      return (
+        JSON.parse(readFileSync(join(out, 'steps', '01', 'verdicts.json'), 'utf8')) as {
+          deliveries: unknown[];
+        }
+      ).deliveries[0];
+    }
+
+    it("never hands the approver's identity to the agent nor to the workspace's git configuration", async () => {
+      const ports = doubles({ messageOf: asks });
+      await firstDelivery(ports);
+      const agentSaw = JSON.stringify([ports.recorded.steps, ports.recorded.resumes]);
+      expect(agentSaw).not.toContain('dana@example.org');
+      expect(ports.recorded.gitCalls.filter((call) => call.startsWith('identity '))).not.toContainEqual(
+        expect.stringContaining('dana@example.org'),
+      );
+      expect(
+        ports.recorded.execs.filter((e) => !isHook(e.command)).map((e) => e.command.join(' ')),
+      ).not.toContainEqual(expect.stringContaining('dana@example.org'));
+    });
+
+    it.each([
+      [{ code: 3, stdout: '', stderr: 'boom' }, 'failed (exit 3)', undefined],
+      [{ code: 0, stdout: '{"outcome":"no-target"}\n', stderr: '' }, 'no-target', undefined],
+      [{ code: 0, stdout: '{"outcome":"ambiguous"}\n', stderr: '' }, 'ambiguous', undefined],
+      [{ code: 0, stdout: 'not json\n', stderr: '' }, 'unreadable', undefined],
+    ])('records a hook answering %j as %s', async (result, outcome) => {
+      const ports = doubles({
+        messageOf: asks,
+        execResultOf: (command) => (isHook(command) ? result : undefined),
+      });
+      expect(await firstDelivery(ports)).toMatchObject({ carried_out: { outcome, commits: [] } });
+    });
+
+    it('records a hook that does not answer in time as timed out', async () => {
+      const ports = doubles({ messageOf: asks });
+      const exec = ports.docker.exec.bind(ports.docker);
+      ports.docker.exec = (container, command) =>
+        isHook(command) ? new Promise(() => undefined) : exec(container, command);
+      expect(await firstDelivery(ports, true, 20)).toMatchObject({ carried_out: { outcome: 'timed out' } });
+    });
+
+    it('delivers the verdict as text only to an arm with no hook', async () => {
+      const ports = doubles({ messageOf: asks });
+      const delivery = await firstDelivery(ports, false);
+      expect(delivery).toEqual({
+        reply: 'Approved by Dana: yes.',
+        verdict: 'approve',
+        head: expect.any(String),
+      });
+      expect(ports.recorded.execs.some((e) => isHook(e.command))).toBe(false);
+    });
+  });
+
   it('keeps the agent the approver, and writes no ledger, in a scenario with no approver (option (a), task-118)', async () => {
     const { checked } = checkedCampaign();
     const ports = doubles();

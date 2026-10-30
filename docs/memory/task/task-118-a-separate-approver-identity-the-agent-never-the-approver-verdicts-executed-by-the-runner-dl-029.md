@@ -83,3 +83,22 @@ authors.
   Dana, its body `Approver: Dana Okafor … Reason: Approved by …` — and left the workspace's identity the developer's;
   with nothing waiting it answered `no-target`. A first version counted one target as none (`wc -l` on a line with no
   newline), found by that run and fixed.
+
+### Review
+
+**Round 1** (2026-10-30, a fresh read-only agent in a `mktemp -d` directory; the checkouts' HEAD unchanged after it),
+on `c2e34e7d`: no blocker.
+
+- **Should-fix — the docs control's snapshot ran as the Benchmark Approver:** `prepareProjectRules` kept the old
+  identity, so S10's baseline-docs would have rendered a team where the agent approves (T3). Fixed: one rule,
+  `agentIdentityFor(scenario)`, for the run and the snapshot; a test (red before) runs the snapshot as the developer.
+- **Should-fix — the gate's violations listed under M-E1** in the findings: fixed, M-E1 reads the directive kinds only
+  (`DIRECTIVE_KINDS`, now shared with the comparisons); a characterization test with a gate check.
+- **Should-fix — criterion 1 had no negative test:** added — the approver's e-mail absent from every agent request,
+  identity call and non-hook command; a hook failing, answering `no-target`, `ambiguous` or nothing readable; a hook
+  that does not answer (timed out); an arm with no hook (text only).
+- **Nits:** the hook bounded by a timeout (two minutes) and its exceptions recorded; its JSON written by node; a failing
+  search reported as `search-failed`, not as no target; S10.md §7's gate rule worded as the code reads it (the version
+  in the working tree at delivery); §11's rewritten approval commits and early requests; REQ-SCO-06's missing ledger;
+  `verdict.sh`'s line widths. Settled by a second run against WingFoil 0.3.1: a rejection's commit touches only the
+  element, an agent's staged file is left out of it, and a reason with quotes and `;` reaches it intact.

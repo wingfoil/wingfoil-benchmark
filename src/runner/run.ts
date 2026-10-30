@@ -47,7 +47,7 @@ import { prepareWorkspace, releaseOf } from '../scenario/index.js';
 import type { CheckedCampaign } from './campaign.js';
 import { campaignKeys, keyName } from './estimate.js';
 import { prepareHarnesses } from './harness.js';
-import { AGENT_IDENTITY, DEVELOPER_IDENTITY } from './identity.js';
+import { agentIdentityFor } from './identity.js';
 import { prepareProjectRules, PROJECT_RULES } from './project-rules.js';
 import type { HarnessArtefact } from './harness.js';
 import { copyEnvironment } from './workspace.js';
@@ -57,6 +57,8 @@ export interface RunnerOptions {
   readonly docker: DockerPort;
   readonly git: GitPort;
   readonly agent: AgentPort;
+  /** How long a verdict hook may run, in milliseconds (task-118); by default two minutes. A test shortens it. */
+  readonly verdictHookTimeoutMs?: number;
   /** One line per event, for the command line. */
   readonly log?: (line: string) => void;
   /** One line per failure; the command line sends these to its error stream. */
@@ -922,7 +924,7 @@ async function executeRun(context: RunContext, options: RunnerOptions): Promise<
         ...(context.projectRules === undefined ? {} : { projectRules: context.projectRules }),
         rulesSource: scenario.armDirs[RULES_SOURCE_ARM],
         manualFile: profile.manualFile,
-        developer: scenario.approver !== undefined,
+        agent: agentIdentityFor(scenario),
       },
       options,
     );
@@ -1017,8 +1019,8 @@ interface SetupContext {
   readonly rulesSource?: string | undefined;
   /** Where the manual goes in the workspace: the agent's own file (REQ-RUN-12 as amended in 1.32). */
   readonly manualFile: string;
-  /** Whether the scenario has a separate approver (task-118): then the agent commits as a developer. */
-  readonly developer: boolean;
+  /** The agent's identity for the scenario (task-118): a developer's when it has a separate approver. */
+  readonly agent: { readonly name: string; readonly email: string };
 }
 
 /**
@@ -1032,8 +1034,7 @@ interface SetupContext {
 async function executeSetup(arm: Arm, context: SetupContext, options: RunnerOptions): Promise<SetupResult> {
   const { container, workspace, outputDir, seedTree, harness, scenarioDir, projectRules, rulesSource } =
     context;
-  const agent = context.developer ? DEVELOPER_IDENTITY : AGENT_IDENTITY;
-  await options.git.configureIdentity(workspace, agent.name, agent.email);
+  await options.git.configureIdentity(workspace, context.agent.name, context.agent.email);
   if (arm.environmentDir !== undefined) copyEnvironment(workspace, arm.environmentDir);
   // The generated part of the arm's environment, like any other environment file (REQ-RUN-11).
   if (projectRules !== undefined) copyFileSync(projectRules, join(workspace, PROJECT_RULES));
@@ -1919,6 +1920,9 @@ function record(run: RunResult, plan: RunPlan): RunResult {
   return run;
 }
 
+/** How long a verdict hook may take before its outcome is recorded as timed out (task-118 review round 1). */
+const VERDICT_HOOK_TIMEOUT_MS = 120_000;
+
 /** A verdict delivered at a step's approval request, as the ledger records it (task-118, S10.md §7). */
 interface Delivery {
   readonly reply: string;
@@ -1961,17 +1965,33 @@ async function deliver(
   const approver = scenario.approver;
   if (!first || verdict.kind === 'none' || arm.verdictHook === undefined || approver === undefined)
     return base;
-  const result = await options.docker.exec(container, [
-    'bash',
-    `${ARM_DIR}/${arm.verdictHook}`,
-    verdict.kind,
-    approver.name,
-    approver.email,
-    verdict.text,
+  // Bounded, so that a hung tool cannot hold the step past its caps; a hook that throws or times out is recorded.
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<'timed out'>((resolve) => {
+    timer = setTimeout(() => resolve('timed out'), options.verdictHookTimeoutMs ?? VERDICT_HOOK_TIMEOUT_MS);
+  });
+  const ran = await Promise.race([
+    options.docker
+      .exec(container, [
+        'bash',
+        `${ARM_DIR}/${arm.verdictHook}`,
+        verdict.kind,
+        approver.name,
+        approver.email,
+        verdict.text,
+      ])
+      .catch((error: unknown) => ({ code: -1, stdout: '', stderr: String(error) })),
+    timeout,
   ]);
+  clearTimeout(timer);
   const commits = (await options.git.commitsSince(workspace, head)).map((commit) => commit.sha);
-  const said = hookAnswer(result.stdout);
-  const outcome = result.code !== 0 ? `failed (exit ${result.code})` : (said.outcome ?? 'unreadable');
+  const said = ran === 'timed out' ? {} : hookAnswer(ran.stdout);
+  const outcome =
+    ran === 'timed out'
+      ? 'timed out'
+      : ran.code !== 0
+        ? `failed (exit ${ran.code})`
+        : (said.outcome ?? 'unreadable');
   return {
     ...base,
     carried_out: { outcome, ...(said.target === undefined ? {} : { target: said.target }), commits },
