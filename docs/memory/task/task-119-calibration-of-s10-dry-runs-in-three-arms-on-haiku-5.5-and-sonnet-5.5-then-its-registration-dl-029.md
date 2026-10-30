@@ -129,3 +129,17 @@ To be completed when the task starts.
   Haiku, never looking at the task's state. A defect of the arm's manual for option (b1).
 - **Finding 3 — a real gate violation:** wingfoil on Sonnet raised the version at step 1 before the approval was
   delivered (the ledger's release 1.5.0 at delivery); the gate counts it.
+
+- **The two fixes** (the approver's choices, 2026-10-30; bug-038 and bug-039 approved, listed in `fixes:`):
+  - **bug-038:** `classifyStep` (`src/core/approver.ts`): under policy v3, at a step with a verdict in a scenario with
+    an approver, a final message with a sentence naming her (full name, first name or e-mail) and waiting on her
+    approval or verdict is an approval request; v2's own reading first. The waiting words are the docs controls' own
+    from dry runs 113 and 116; a summary of a verdict given ("Approved by …, released") is not read as one. Red-first:
+    seven of their sentences read, four non-waits not, the conditions, and a runner case (a third-person wait gets
+    the verdict). Policy v3 is amended rather than a v4: no campaign pins it yet. Requirements 1.45 (REQ-RUN-06), the
+    experiment design's §3 line, the method page's `approver-verdicts` and S10.md §6.
+  - **bug-039:** the wingfoil manual says that in a project whose DNA names another member as approver, a reply giving
+    her verdict has already been recorded: check the document's state and continue, never approve or reject yourself.
+    Red-first: a test of the manual. The arm's digest changes (now `2e67dbeef0bd`), the profile pins it; campaign-007's
+    profile still reads its arm from history.
+  - The whole default suite green (1932 passed, 9 skipped) before the reruns.

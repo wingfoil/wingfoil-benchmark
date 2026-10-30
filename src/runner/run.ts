@@ -16,6 +16,7 @@ import type { AgentPort, ModelsUsage, SessionUsage, StepOutcome } from '../agent
 import {
   approverPolicy,
   approximateTokens,
+  classifyStep,
   fail,
   ok,
   reasonOf,
@@ -1534,7 +1535,11 @@ async function executeStep(
       break;
     }
     const last = invocations[invocations.length - 1];
-    const kind = last?.finalMessage === undefined ? undefined : policy.classify(last.finalMessage);
+    // A wait on the scenario's approver is an approval request at a step with a verdict (bug-038, policy v3).
+    const kind =
+      last?.finalMessage === undefined
+        ? undefined
+        : classifyStep(policy, last.finalMessage, step.verdict, scenario.approver);
     if (kind === undefined) break;
     if (interventions.length >= policy.maxInterventions) {
       outcome = 'intervention cap reached';

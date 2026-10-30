@@ -224,6 +224,59 @@ const POLICIES: ReadonlyMap<string, ApproverPolicy> = new Map([
 ]);
 
 /**
+ * The words of a sentence that waits on someone's approval or verdict (bug-038): the docs controls' own, in S10's
+ * calibration ("has to approve this change first", "a release waits for approval from", "still needs Dana's
+ * approval", "once Dana approves"). A summary of a verdict already given ("Approved by …, released") holds none.
+ */
+const WAITING_ON = [
+  /\bwait(?:s|ing)?\s+(?:for|on)\b/i,
+  /\bawait/i,
+  /\bpending\b/i,
+  /\b(?:has|have|had)\s+to\s+(?:approve|wait|review|sign)/i,
+  /\bmust\s+(?:approve|review|sign)/i,
+  /\bneeds?\s+(?:\w+(?:'s|’s)\s+|her\s+|the\s+approver(?:'s|’s)\s+|an?\s+)?(?:approval|verdict|review|sign-?off)\b/i,
+  /\bneeds?\s+to\s+(?:approve|review)\b/i,
+  /\b(?:once|until|only\s+after)\s+(?:she|\w+(?:\s+\w+)?)\s+(?:approves|reviews|signs)\b/i,
+  /\bfor\s+(?:her\s+|\w+(?:'s|’s)\s+)?(?:approval|review|verdict)\b/i,
+];
+
+/**
+ * Whether `message` waits on the scenario's approver (bug-038): a sentence naming her — her full name, her first name
+ * or her e-mail — that waits on her approval or verdict. An agent that follows the process but names the approver in
+ * the third person, the reader being someone else, asks for her verdict as surely as one that asks the reader.
+ */
+export function awaitsApprover(
+  message: string,
+  approver: { readonly name: string; readonly email: string },
+): boolean {
+  const first = approver.name.trim().split(/\s+/)[0] ?? '';
+  const names = [approver.name, approver.email, first]
+    .filter((name) => name.length > 1)
+    .map((name) => name.toLowerCase());
+  return message.split(/(?<=[.!?])\s+|\n+/).some((sentence) => {
+    const lower = sentence.toLowerCase();
+    return names.some((name) => lower.includes(name)) && WAITING_ON.some((pattern) => pattern.test(sentence));
+  });
+}
+
+/**
+ * What a waiting session asks for at a step (REQ-RUN-06): the policy's classifier, and, under a policy with scripted
+ * verdicts at a step that declares one in a scenario with an approver, a message waiting on her is an approval request
+ * (bug-038), so that the verdict reaches every arm that follows the process, whoever it addresses.
+ */
+export function classifyStep(
+  policy: ApproverPolicy,
+  message: string,
+  verdict: StepVerdict | undefined,
+  approver: { readonly name: string; readonly email: string } | undefined,
+): InterventionKind | undefined {
+  const kind = policy.classify(message);
+  if (kind === 'approval' || !policy.scriptedVerdicts || verdict === undefined || approver === undefined)
+    return kind;
+  return awaitsApprover(message, approver) ? 'approval' : kind;
+}
+
+/**
  * Why a scenario cannot run under the policy pinned as `version`: it declares scripted verdicts (task-117) and the
  * policy does not read them, so its rejections would be answered "Approved. Proceed."; nothing when it can.
  */

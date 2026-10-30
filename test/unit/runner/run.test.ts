@@ -884,6 +884,18 @@ describe('the neutral approver in the step loop (F2.4)', () => {
       expect(await firstDelivery(ports, true, 20)).toMatchObject({ carried_out: { outcome: 'timed out' } });
     });
 
+    it('gives the verdict to a session that waits on the approver in the third person (bug-038)', async () => {
+      const ports = doubles({
+        messageOf: (request) =>
+          request.step === 1 && invocationOf(request) === 0
+            ? 'Done. Not released: Dana Okafor, the approver, has to approve this change first.'
+            : undefined,
+      });
+      const delivery = await firstDelivery(ports, false);
+      expect(ports.recorded.resumes.map((r) => [r.step, r.reply])).toEqual([[1, 'Approved by Dana: yes.']]);
+      expect(delivery).toMatchObject({ verdict: 'approve', reply: 'Approved by Dana: yes.' });
+    });
+
     it('delivers the verdict as text only to an arm with no hook', async () => {
       const ports = doubles({ messageOf: asks });
       const delivery = await firstDelivery(ports, false);

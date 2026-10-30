@@ -133,6 +133,13 @@ describe('the step-A wingfoil manual (dl-021 step A, task-114)', () => {
     );
   });
 
+  it("takes another member's verdict as already recorded, and never approves on it (bug-039, task-119)", () => {
+    const text = manual('wingfoil');
+    expect(text).toContain('names another member as its approver');
+    expect(text).toContain('has already been recorded');
+    expect(text).toMatch(/never run `wingfoil memory approve` or `wingfoil memory reject` yourself/);
+  });
+
   it('gives every request its task, without --workflow when the step does not ask for one (decision 1, F-043)', () => {
     const own = wingfoilOwn();
     expect(own).toContain('**Every request has its task.**');

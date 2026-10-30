@@ -152,7 +152,8 @@ Two goals cut across all categories:
      dl-029): v2's classifier, replies and cap, and a scenario's **scripted verdicts**: at a step that declares one
      (S10's, the same in every arm), the first approval request gets the verdict's text (approve, reject, or no
      approver to give one) and the later ones its later reply. A scenario with no verdict reads v3 as v2; a campaign
-     running one with verdicts pins v3.
+     running one with verdicts pins v3. In a scenario with an approver, a message that waits on her, by name, is an
+     approval request too (bug-038, task-119): the verdict reaches an agent that addresses her in the third person.
    - **A separate approver** (1.10, task-118): in a scenario that declares one (S10), the agent is a developer and the
      runner carries each scripted verdict out under the approver's identity, through the arm's documented approval
      mechanism when it has one, as text otherwise; a ledger of the verdicts delivered and carried out is kept per

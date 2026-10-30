@@ -93,3 +93,7 @@ General rules:
   If the reply is "Approved. Proceed.", run `wingfoil memory approve <id> --reason "Approved. Proceed."`
   for each document you asked about, then continue with the workflow's next step. Any other reply is not an
   approval: do not approve on it, say that the approval is still missing, and stop.
+  In a project whose `.wingfoil/dna.yaml` names another member as its approver, your identity holds no approver
+  role, and her verdict is carried out for you: a reply that gives it ("Approved by …" or "Rejected by …")
+  has already been recorded by her. Check the document's state with `wingfoil memory search`, and continue from
+  it; never run `wingfoil memory approve` or `wingfoil memory reject` yourself.
