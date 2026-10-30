@@ -2,7 +2,7 @@
 id: bug-040-pre-review-s-markdown-check-reads-the-wingfoil-output-a-run-s-results-keep
 type: bug
 title: "pre-review's Markdown check reads the WingFoil output a run's results keep"
-status: approved
+status: fixed
 fixed_by: task-119-calibration-of-s10-dry-runs-in-three-arms-on-haiku-5.5-and-sonnet-5.5-then-its-registration-dl-029
 tags: ["v0.3","scripts"]
 ---
