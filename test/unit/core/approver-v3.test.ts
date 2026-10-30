@@ -163,6 +163,25 @@ describe('policy v5 reads a wait on the approver by any approval word, verdicts 
     expect(classifyStep(policy('v5'), message, REJECT_VERDICT, DANA)).toBeUndefined();
   });
 
+  it('reads, as known limits, an approval word in the past and not a sentence that is already approved (note §4)', () => {
+    expect(
+      classifyStep(
+        policy('v5'),
+        'Dana Okafor approved 1.5.0 last week; I released 1.5.1.',
+        REJECT_VERDICT,
+        DANA,
+      ),
+    ).toBe('approval');
+    expect(
+      classifyStep(
+        policy('v5'),
+        'Dana already approved 1.5.0, but 1.6.0 still needs her review.',
+        REJECT_VERDICT,
+        DANA,
+      ),
+    ).toBeUndefined();
+  });
+
   it('reads it once a step, as v4', () => {
     expect(classifyStep(policy('v5'), MISSED, REJECT_VERDICT, DANA, 1)).toBeUndefined();
   });

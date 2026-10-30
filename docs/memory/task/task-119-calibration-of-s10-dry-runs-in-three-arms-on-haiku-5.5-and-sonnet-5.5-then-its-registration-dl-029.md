@@ -196,10 +196,21 @@ on `dabf4a8b`, without the run records:
   third round ran it. Tests: 128's sentence read by v5 and not by v4; six non-waits. The profile pins v5.
 - **Fourth round** (2026-10-30, 21:47–22:12, policy v5; a first launch at 19:00 refused v5 before any spending, the
   CLI not rebuilt): 1.2454 EUR, 4.6812 EUR in all of 10. Both docs controls received a verdict at every step; on v5
-  they matched wingfoil on M-E2 and M-E3, and differed on M-E3a (0, by construction) and, in this round, M-E4 (not
+  they kept the gate (no M-E2 violation; wingfoil had two on Sonnet) and recorded every verdict (M-E3 3/3, as
+  wingfoil), and differed on M-E3a (0, by construction) and, in this round, M-E4 (not
   honoured by either docs control, honoured by wingfoil on both models). wingfoil on Haiku: `ambiguous` again at step
   3. The note (`docs/calibration/s10.md`) and the ledger rewritten for the four rounds, figures generated; the
   ledger's lines name each round's policy.
 - After round 4, the wingfoil manual's Approvals paragraph rewrapped within 120 columns (pre-review), its words
   unchanged: the arm's digest moves from `e3f9f11f0f4d` (rounds 3–4) to `cc009b5a52a9`, which the profile pins for the
   campaign.
+
+**Round 2** (re-review of `dabf4a8b..df24ff16`, a fresh read-only agent, checkouts unchanged): round 1's blocker and
+should-fix items resolved; v3 is task-117's call, v4 frozen as round 3 ran it.
+
+- **Should-fix — the note said the docs controls "match wingfoil on M-E2"** while wingfoil had two violations on
+  Sonnet in round 4: corrected in the note and in the round-4 entry above.
+- **Nits:** v5's known reading errors (an approval word in the past or as a reason reads as a wait, once a step, as
+  dry run 130's step 4 shows; "already approved" suppresses a sentence that also waits) stated in the note §4 and in
+  S10.md §11, and pinned by a test; round 2's ledger lines say "recorded `v3`"; the note names the digests rounds 3–4
+  ran on; the runner's duplicate count removed.

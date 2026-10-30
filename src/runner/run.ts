@@ -1564,7 +1564,7 @@ async function executeStep(
     }
     // A step's scripted verdict under policy v3 (task-117): its text at the step's first approval request, its later
     // reply after; questions are not counted.
-    const approvalsBefore = interventions.filter((intervention) => intervention.kind === 'approval').length;
+    const approvalsBefore = answered;
     const reply = replyFor(policy, kind, step.verdict, approvalsBefore);
     if (
       kind === 'approval' &&
