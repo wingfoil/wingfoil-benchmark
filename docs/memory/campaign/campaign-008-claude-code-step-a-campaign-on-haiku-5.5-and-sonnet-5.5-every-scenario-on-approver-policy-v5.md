@@ -144,7 +144,10 @@ time.
 
 ## Execution
 
-<!-- Execution id(s) `<campaign-id>/<n>`, outcomes, caps reached, reruns. -->
+- **Spending approved** by the approver (`2594bab9`) and consented in chat (2026-10-31, "sì, approvato: 90 run,
+  tetto 30 €, lancia la campagna"); **approved → running** on start. Launched from the main checkout,
+  `bench campaign run campaigns/claude-step-a.yaml --allow-spending`, under the load watcher, with a guard beside
+  bench's own that stops the execution if the stored runs' cost reaches 29.5 €.
 
 ## Results review
 
