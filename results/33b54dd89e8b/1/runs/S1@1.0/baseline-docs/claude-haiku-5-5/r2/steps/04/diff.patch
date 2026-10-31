@@ -1,0 +1,295 @@
+diff --git a/README.md b/README.md
+index ec41928b6fcec89e509928cb2a4e2cfd8e3ebcc2..4eb9233110812f730d202ada053062ecf94742a4 100644
+--- a/README.md
++++ b/README.md
+@@ -33,3 +33,18 @@ applyPatch({ foo: ["bar"] }, [
+   { op: "test", path: "/foo/0", value: "bar" },
+ ]); // { foo: ["bar", "baz"] }
+ ```
++
++## JSON Merge Patch
++
++`applyMergePatch(target, patch)` (from `src/index.ts`) applies a JSON Merge Patch, as [RFC 7386](https://www.rfc-editor.org/rfc/rfc7386),
++to a JSON document. It is the format for partial updates: an object patch merges into the target, a member set to `null` removes
++that member, and any other patch, such as an array or a scalar, replaces the target as a whole. A patch cannot set a member to `null`;
++use JSON Patch when that is needed.
++
++It returns the merged document as a new value and never modifies its inputs. It throws a `JsonMergePatchError` when the target or
++the patch is not a JSON value.
++
++```ts
++applyMergePatch({ title: "Draft", tags: ["a"], owner: "ana" }, { title: "Final", owner: null });
++// { title: "Final", tags: ["a"] }
++```
+diff --git a/src/index.ts b/src/index.ts
+index 7a69cfba95af62c69b930d226142820690dec01d..b2296a3ebecf5a4d3dab0760858d13c751c101e5 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -2,3 +2,4 @@ export { JsonPointerError, resolvePointer } from "./json-pointer.ts";
+ export type { JsonValue } from "./json-pointer.ts";
+ export { JsonPatchError, applyPatch } from "./json-patch.ts";
+ export type { JsonPatch, JsonPatchOperation } from "./json-patch.ts";
++export { JsonMergePatchError, applyMergePatch } from "./json-merge-patch.ts";
+diff --git a/src/json-merge-patch.test.ts b/src/json-merge-patch.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..da6593fecf1b7dbe4478b1694d038b32618be72b
+--- /dev/null
++++ b/src/json-merge-patch.test.ts
+@@ -0,0 +1,70 @@
++import { test } from "node:test";
++import assert from "node:assert/strict";
++import { applyMergePatch, JsonMergePatchError } from "./index.ts";
++
++// The examples of RFC 7386, appendix A.
++const rfcExamples: [string, unknown, unknown, unknown][] = [
++  ["replaces a member", { a: "b" }, { a: "c" }, { a: "c" }],
++  ["adds a member", { a: "b" }, { b: "c" }, { a: "b", b: "c" }],
++  ["removes a member set to null", { a: "b" }, { a: null }, {}],
++  ["removes only the member set to null", { a: "b", b: "c" }, { a: null }, { b: "c" }],
++  ["replaces an array with a string", { a: ["b"] }, { a: "c" }, { a: "c" }],
++  ["replaces a string with an array", { a: "c" }, { a: ["b"] }, { a: ["b"] }],
++  ["merges nested objects", { a: { b: "c" } }, { a: { b: "d", c: null } }, { a: { b: "d" } }],
++  ["replaces an array of objects", { a: [{ b: "c" }] }, { a: [1] }, { a: [1] }],
++  ["replaces an array", ["a", "b"], ["c", "d"], ["c", "d"]],
++  ["replaces an object with an array", { a: "b" }, ["c"], ["c"]],
++  ["replaces a member with null", { a: "foo" }, null, null],
++  ["replaces a member with a scalar", { a: "foo" }, "bar", "bar"],
++  ["keeps a null member that is not patched", { e: null }, { a: 1 }, { e: null, a: 1 }],
++  ["replaces an array with an object", [1, 2], { a: "b", c: null }, { a: "b" }],
++  ["creates nested objects, dropping null members", {}, { a: { bb: { ccc: null } } }, { a: { bb: {} } }],
++];
++
++for (const [name, target, patch, expected] of rfcExamples) {
++  test(`merge patch ${name} (RFC 7386 appendix A)`, () => {
++    assert.deepEqual(applyMergePatch(target as never, patch as never), expected);
++  });
++}
++
++test("merge patch with an object creates the members of a non-object target", () => {
++  assert.deepEqual(applyMergePatch(5, { a: 1 }), { a: 1 });
++  assert.deepEqual(applyMergePatch(null, { a: { b: 2 } }), { a: { b: 2 } });
++});
++
++test("merge patch with a null member on a missing key leaves the target unchanged", () => {
++  assert.deepEqual(applyMergePatch({ a: 1 }, { missing: null }), { a: 1 });
++});
++
++test("merge patch does not modify the target or the patch", () => {
++  const target = { a: { b: 1 }, c: [1] };
++  const patch = { a: { d: { e: 2 } }, f: { g: null } };
++  const result = applyMergePatch(target, patch);
++  assert.deepEqual(target, { a: { b: 1 }, c: [1] });
++  assert.deepEqual(patch, { a: { d: { e: 2 } }, f: { g: null } });
++  assert.deepEqual(result, { a: { b: 1, d: { e: 2 } }, c: [1], f: {} });
++});
++
++test("merge patch result shares no structure with the patch", () => {
++  const patch = { a: { b: [1] } };
++  const result = applyMergePatch({}, patch) as { a: { b: number[] } };
++  result.a.b.push(2);
++  assert.deepEqual(patch, { a: { b: [1] } });
++});
++
++test("merge patch defines a member named __proto__ as an own property", () => {
++  const result = applyMergePatch({}, JSON.parse('{"__proto__":{"polluted":true}}'));
++  assert.equal(Object.getPrototypeOf(result), Object.prototype);
++  assert.deepEqual(JSON.parse(JSON.stringify(result)), JSON.parse('{"__proto__":{"polluted":true}}'));
++  assert.equal(({} as { polluted?: boolean }).polluted, undefined);
++});
++
++test("merge patch rejects a target that is not a JSON value", () => {
++  assert.throws(() => applyMergePatch(undefined as never, {}), JsonMergePatchError);
++  assert.throws(() => applyMergePatch({ a: Number.NaN }, {}), JsonMergePatchError);
++});
++
++test("merge patch rejects a patch that is not a JSON value", () => {
++  assert.throws(() => applyMergePatch({}, undefined as never), JsonMergePatchError);
++  assert.throws(() => applyMergePatch({}, { a: () => 1 } as never), JsonMergePatchError);
++});
+diff --git a/src/json-merge-patch.ts b/src/json-merge-patch.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..3a1911d8d6015e0ba113b92f5924e0e871ae2eea
+--- /dev/null
++++ b/src/json-merge-patch.ts
+@@ -0,0 +1,59 @@
++import type { JsonValue } from "./json-pointer.ts";
++import { cloneJson, isJsonObject, isJsonValue, setMember, type JsonObject } from "./json-value.ts";
++
++/**
++ * Raised when the target or the patch of a JSON Merge Patch is not a JSON value.
++ */
++export class JsonMergePatchError extends Error {
++  constructor(message: string) {
++    super(message);
++    this.name = "JsonMergePatchError";
++  }
++}
++
++/**
++ * Applies a JSON Merge Patch (RFC 7386) to a JSON document.
++ *
++ * A patch that is an object merges into the target: a member set to `null` is removed from the
++ * target, and any other member is merged recursively into the target's member of the same name.
++ * Where the target is not an object, it is replaced by an empty object first. Any other patch,
++ * including an array or a scalar, replaces the target as a whole.
++ *
++ * The target and the patch are not modified: the result is a new value, which shares no structure
++ * with them.
++ *
++ * @param target - The JSON document to change.
++ * @param patch - The partial document to merge into the target.
++ * @returns The merged document.
++ * @throws {JsonMergePatchError} If the target or the patch is not a JSON value.
++ */
++export function applyMergePatch(target: JsonValue, patch: JsonValue): JsonValue {
++  if (!isJsonValue(target)) {
++    throw new JsonMergePatchError("the target is not a JSON value");
++  }
++  if (!isJsonValue(patch)) {
++    throw new JsonMergePatchError("the patch is not a JSON value");
++  }
++  return merge(cloneJson(target), patch);
++}
++
++/**
++ * Merges a patch into a target that the caller owns: the target is changed in place, and only
++ * the values copied from the patch are new. The target may be `undefined`, for a member the target
++ * does not have.
++ */
++function merge(target: JsonValue | undefined, patch: JsonValue): JsonValue {
++  if (!isJsonObject(patch)) {
++    return cloneJson(patch);
++  }
++  const result: JsonObject = isJsonObject(target) ? target : {};
++  for (const [key, value] of Object.entries(patch)) {
++    if (value === null) {
++      delete result[key];
++    } else {
++      const current = Object.hasOwn(result, key) ? result[key] : undefined;
++      setMember(result, key, merge(current, value));
++    }
++  }
++  return result;
++}
+diff --git a/src/json-patch.ts b/src/json-patch.ts
+index 868d37c2ab58d9ad0579fe4d5dd51cd5e7dc805d..2f8eeb5f665975a679178dc70cdda40d67882096 100644
+--- a/src/json-patch.ts
++++ b/src/json-patch.ts
+@@ -5,6 +5,13 @@ import {
+   resolvePointer,
+   type JsonValue,
+ } from "./json-pointer.ts";
++import {
++  cloneJson,
++  isJsonObject,
++  isJsonValue,
++  setMember,
++  type JsonObject,
++} from "./json-value.ts";
+ 
+ /**
+  * Raised when a JSON Patch is malformed, or when one of its operations cannot be applied.
+@@ -33,7 +40,6 @@ export type JsonPatch = JsonPatchOperation[];
+ const OPERATION_NAMES = ["add", "remove", "replace", "move", "copy", "test"] as const;
+ type OperationName = (typeof OPERATION_NAMES)[number];
+ 
+-type JsonObject = { [key: string]: JsonValue };
+ type JsonContainer = JsonValue[] | JsonObject;
+ 
+ /**
+@@ -266,39 +272,10 @@ function requireMember(object: JsonObject, key: string): void {
+   }
+ }
+ 
+-/**
+- * Sets an own member. `defineProperty` is used so that a key such as "__proto__" becomes a
+- * member, and does not change the prototype of the object.
+- */
+-function setMember(object: JsonObject, key: string, value: JsonValue): void {
+-  Object.defineProperty(object, key, { value, writable: true, enumerable: true, configurable: true });
+-}
+-
+ function isOperationName(name: string): name is OperationName {
+   return (OPERATION_NAMES as readonly string[]).includes(name);
+ }
+ 
+-function isJsonObject(value: unknown): value is JsonObject {
+-  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+-    return false;
+-  }
+-  const prototype = Object.getPrototypeOf(value);
+-  return prototype === Object.prototype || prototype === null;
+-}
+-
+-function isJsonValue(value: unknown): value is JsonValue {
+-  if (value === null || typeof value === "string" || typeof value === "boolean") {
+-    return true;
+-  }
+-  if (typeof value === "number") {
+-    return Number.isFinite(value);
+-  }
+-  if (Array.isArray(value)) {
+-    return value.every(isJsonValue);
+-  }
+-  return isJsonObject(value) && Object.values(value).every(isJsonValue);
+-}
+-
+ /**
+  * Compares two JSON values by content: objects are equal when they have the same members with
+  * equal values, in any order, and arrays when they have equal elements in the same order.
+@@ -319,10 +296,3 @@ function jsonEqual(a: JsonValue, b: JsonValue): boolean {
+   }
+   return false;
+ }
+-
+-/**
+- * Deep-copies a JSON value, so that the copy shares no structure with its source.
+- */
+-function cloneJson(value: JsonValue): JsonValue {
+-  return JSON.parse(JSON.stringify(value)) as JsonValue;
+-}
+diff --git a/src/json-value.ts b/src/json-value.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..96a501eb793cc8e90e197d46203038d91808a19f
+--- /dev/null
++++ b/src/json-value.ts
+@@ -0,0 +1,39 @@
++import type { JsonValue } from "./json-pointer.ts";
++
++export type JsonObject = { [key: string]: JsonValue };
++
++export function isJsonObject(value: unknown): value is JsonObject {
++  if (value === null || typeof value !== "object" || Array.isArray(value)) {
++    return false;
++  }
++  const prototype = Object.getPrototypeOf(value);
++  return prototype === Object.prototype || prototype === null;
++}
++
++export function isJsonValue(value: unknown): value is JsonValue {
++  if (value === null || typeof value === "string" || typeof value === "boolean") {
++    return true;
++  }
++  if (typeof value === "number") {
++    return Number.isFinite(value);
++  }
++  if (Array.isArray(value)) {
++    return value.every(isJsonValue);
++  }
++  return isJsonObject(value) && Object.values(value).every(isJsonValue);
++}
++
++/**
++ * Sets an own member. `defineProperty` is used so that a key such as "__proto__" becomes a
++ * member, and does not change the prototype of the object.
++ */
++export function setMember(object: JsonObject, key: string, value: JsonValue): void {
++  Object.defineProperty(object, key, { value, writable: true, enumerable: true, configurable: true });
++}
++
++/**
++ * Deep-copies a JSON value, so that the copy shares no structure with its source.
++ */
++export function cloneJson(value: JsonValue): JsonValue {
++  return JSON.parse(JSON.stringify(value)) as JsonValue;
++}

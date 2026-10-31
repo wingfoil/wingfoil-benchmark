@@ -1,0 +1,117 @@
+diff --git a/README.md b/README.md
+index 10d70f6cd8ddee650083d7763868857e8f0ac6f1..620081e0e4c85625bc0c91c9b01a734d17074716 100644
+--- a/README.md
++++ b/README.md
+@@ -44,7 +44,8 @@ applyPatch(document, [
+ 
+ Operations run in order, and each one sees the results of the ones before it. The patch is validated
+ in full before any operation runs. It throws an `Error` when the patch is not a valid JSON Patch, for
+-example an unknown `op`, a missing `value` or a `path` that is not a JSON Pointer, and when an
++example an unknown `op`, a missing `value`, a `path` that is not a JSON Pointer, or a `value` that is
++not JSON data (a `Date`, a `Map`, a sparse array or an object that contains itself), and when an
+ operation fails: a `test` whose value does not match, a location that does not exist, an array index
+ out of range, an attempt to remove the whole document, or a move into one of its own children.
+ 
+diff --git a/src/json-patch.ts b/src/json-patch.ts
+index d239473f00aeffb3308234fbc298e9d7ba6cefd4..4a4945ab108b663387525c95f29814ce800047f2 100644
+--- a/src/json-patch.ts
++++ b/src/json-patch.ts
+@@ -30,9 +30,10 @@ const OPERATION_NAMES: readonly string[] = ["add", "remove", "replace", "move",
+  * input or with the patch, so it can be changed freely. The whole patch is validated before any
+  * operation runs, and operations run in order, each seeing the results of the ones before it.
+  *
+- * Throws an `Error` when the patch is not a valid JSON Patch, or when an operation fails: a test
+- * that does not match, a location that does not exist, an array index out of range, an attempt
+- * to remove the whole document, or a move into one of the moved location's own children.
++ * Throws an `Error` when the patch is not a valid JSON Patch (including a value that is not JSON
++ * data), or when an operation fails: a test that does not match, a location that does not exist,
++ * an array index out of range, an attempt to remove the whole document, or a move into one of the
++ * moved location's own children.
+  *
+  * @param document - The JSON document to patch.
+  * @param patch - The operations to apply, in order.
+@@ -47,7 +48,8 @@ function parsePatch(patch: unknown): Step[] {
+   if (!Array.isArray(patch)) {
+     throw new Error("Invalid JSON Patch: expected an array of operations");
+   }
+-  return patch.map((operation: unknown, position) => parseOperation(operation, position));
++  // Array.from, unlike map, visits a hole as undefined, so a hole is rejected rather than skipped.
++  return Array.from(patch, (operation: unknown, position) => parseOperation(operation, position));
+ }
+ 
+ /** Validates one operation of a patch and parses its JSON Pointers. */
+@@ -229,15 +231,27 @@ function isRecord(value: unknown): value is Record<string, unknown> {
+   return typeof value === "object" && value !== null && !Array.isArray(value);
+ }
+ 
+-function isJsonValue(value: unknown): value is JsonValue {
++/** Checks that a value is JSON data: a plain object or a dense array, without a cycle, all the way down. */
++function isJsonValue(value: unknown, ancestors: object[] = []): value is JsonValue {
+   if (value === null || typeof value === "string" || typeof value === "boolean") {
+     return true;
+   }
+   if (typeof value === "number") {
+     return Number.isFinite(value);
+   }
++  if (typeof value !== "object" || ancestors.includes(value)) {
++    return false;
++  }
++  const path = [...ancestors, value];
+   if (Array.isArray(value)) {
+-    return value.every(isJsonValue);
++    // A dense array has exactly one own key per element; a hole or an extra property breaks that.
++    return Object.keys(value).length === value.length && value.every((item) => isJsonValue(item, path));
+   }
+-  return isRecord(value) && Object.values(value).every(isJsonValue);
++  return isPlainObject(value) && Object.values(value).every((member) => isJsonValue(member, path));
++}
++
++/** Checks that an object is a plain object or one with no prototype, such as the result of JSON.parse. */
++function isPlainObject(value: object): boolean {
++  const prototype = Object.getPrototypeOf(value);
++  return prototype === Object.prototype || prototype === null;
+ }
+diff --git a/test/apply-patch.test.ts b/test/apply-patch.test.ts
+index 6e30cee5d3e917b0a70c00856222d403dea3a75b..ff484bce30b05c84000bbd74cfbd97764448ffcc 100644
+--- a/test/apply-patch.test.ts
++++ b/test/apply-patch.test.ts
+@@ -351,6 +351,10 @@ describe("applyPatch", () => {
+       }
+     });
+ 
++    it("throws when an element of the patch is a hole rather than an operation", () => {
++      assert.throws(() => applyPatch({ a: 1 }, untyped([, { op: "replace", path: "/a", value: 2 }])), Error);
++    });
++
+     it("throws for an unknown operation name", () => {
+       assert.throws(() => applyPatch({}, untyped([{ op: "set", path: "/a", value: 1 }])), Error);
+     });
+@@ -385,6 +389,28 @@ describe("applyPatch", () => {
+       assert.throws(() => applyPatch({}, untyped([{ op: "add", path: "/a", value: () => 1 }])), Error);
+     });
+ 
++    it("throws when a value is an object that is not plain JSON data", () => {
++      class Point {
++        x = 1;
++      }
++      const values = [new Date(0), new Map(), new Set(), new Uint8Array(1), new Number(1), new String("a"), new Point()];
++      for (const value of values) {
++        assert.throws(() => applyPatch({}, untyped([{ op: "add", path: "/a", value }])), Error);
++      }
++    });
++
++    it("throws when a value is an array with a hole", () => {
++      const sparse: unknown[] = [1];
++      sparse.length = 2;
++      assert.throws(() => applyPatch({}, untyped([{ op: "add", path: "/a", value: sparse }])), Error);
++    });
++
++    it("throws when a value contains a cycle", () => {
++      const cyclic: Record<string, unknown> = {};
++      cyclic.self = cyclic;
++      assert.throws(() => applyPatch({}, untyped([{ op: "add", path: "/a", value: cyclic }])), /^Error: Invalid JSON Patch/);
++    });
++
+     it("throws when move or copy has no from", () => {
+       assert.throws(() => applyPatch({}, untyped([{ op: "move", path: "/a" }])), Error);
+       assert.throws(() => applyPatch({}, untyped([{ op: "copy", path: "/a" }])), Error);

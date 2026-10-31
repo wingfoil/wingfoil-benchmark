@@ -1,0 +1,184 @@
+diff --git a/README.md b/README.md
+index e382ce22d7e2eb8eb07c4a4eb37a82e053bfffa7..06441d7c2e909884ff2ebfc776c82ca7ffc7fd01 100644
+--- a/README.md
++++ b/README.md
+@@ -32,7 +32,12 @@ day or more that does not start and end at midnight UTC, and an hourly rental of
+ Booking also throws when the item is already booked for any part of the period.
+ 
+ Periods are half-open, so a booking ending on 3 July does not block one starting on 3 July, and a booking ending
+-at 12:00 does not block one starting at 12:00. Cancellations are not implemented yet; the cancellation policy
+-will be added later.
++at 12:00 does not block one starting at 12:00.
++
++`cancel(bookingId, at)` cancels a booking at the whole hour `at` (UTC) and returns `{ bookingId, refund }`. A
++cancelled booking no longer holds its equipment, so `availability` and `book` treat its period as free again. A
++booking can only be cancelled once: cancelling it again throws, and so does an unknown booking id. The refund is
++the whole amount the booking cost, because the cancellation policy is not set yet; once it is, the refund will
++depend on when the booking is cancelled, which is why `at` is taken.
+ 
+ Run the tests with `npm test`.
+diff --git a/src/index.ts b/src/index.ts
+index 11c5eb3e5185a13fffbe6dbb0c27eb9bb0e72645..a77da61e214b29adedd7d0f3b433d839d070ee72 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -38,6 +38,14 @@ export interface Booking extends Quote {
+   id: string;
+ }
+ 
++/** The outcome of cancelling a booking. */
++export interface Cancellation {
++  /** Identifies the cancelled booking. */
++  bookingId: string;
++  /** Amount given back to the customer, in integer euro cents. */
++  refund: number;
++}
++
+ /**
+  * A question about what is free. `kind` restricts the answer to one kind of equipment;
+  * when it is omitted, every kind is considered.
+@@ -69,6 +77,12 @@ export interface RentalService {
+    * listed when a kind is given. Throws for a period the rules do not allow or an unknown kind.
+    */
+   availability(query: AvailabilityQuery): string[];
++  /**
++   * Cancels a booking at the whole hour `at` (UTC), so it no longer holds its equipment. The whole booking
++   * is refunded: the cancellation policy is not set yet. Throws for an unknown booking, a booking that is
++   * already cancelled, or an `at` that is not a whole hour in UTC.
++   */
++  cancel(bookingId: string, at: string): Cancellation;
+ }
+ 
+ interface Period {
+@@ -77,7 +91,11 @@ interface Period {
+ }
+ 
+ interface Reservation extends Period {
++  id: string;
+   itemId: string;
++  /** What the customer paid, which is refunded in full when the booking is cancelled. */
++  total: number;
++  cancelled: boolean;
+ }
+ 
+ const HOUR_MS = 60 * 60 * 1000;
+@@ -177,7 +195,9 @@ export function createRentalService(): RentalService {
+   }
+ 
+   function isTaken(itemId: string, period: Period): boolean {
+-    return reservations.some((reservation) => reservation.itemId === itemId && overlaps(reservation, period));
++    return reservations.some(
++      (reservation) => !reservation.cancelled && reservation.itemId === itemId && overlaps(reservation, period),
++    );
+   }
+ 
+   return {
+@@ -208,10 +228,11 @@ export function createRentalService(): RentalService {
+       if (isTaken(item.id, period)) {
+         throw new Error(`item "${item.id}" is not available for the whole period`);
+       }
+-      reservations.push({ itemId: item.id, start: period.start, end: period.end });
+       bookingCount += 1;
++      const id = `booking-${bookingCount}`;
++      reservations.push({ id, itemId: item.id, start: period.start, end: period.end, total, cancelled: false });
+       return {
+-        id: `booking-${bookingCount}`,
++        id,
+         itemId: request.itemId,
+         start: request.start,
+         end: request.end,
+@@ -230,5 +251,18 @@ export function createRentalService(): RentalService {
+         .map((item) => item.id)
+         .sort();
+     },
++
++    cancel(bookingId: string, at: string): Cancellation {
++      parseWholeHourUtc(at, 'cancellation time');
++      const reservation = reservations.find((candidate) => candidate.id === bookingId);
++      if (!reservation) {
++        throw new Error(`unknown booking "${bookingId}"`);
++      }
++      if (reservation.cancelled) {
++        throw new Error(`booking "${bookingId}" is already cancelled`);
++      }
++      reservation.cancelled = true;
++      return { bookingId, refund: reservation.total };
++    },
+   };
+ }
+diff --git a/test/rental.test.ts b/test/rental.test.ts
+index 1b7a07e6d3253b1e3a9787a7a891049f2a359d53..45c558b264a50653363a514f1ceee72ac5866b13 100644
+--- a/test/rental.test.ts
++++ b/test/rental.test.ts
+@@ -492,3 +492,72 @@ test('book gives no discount for a rental of two days', () => {
+ 
+   assert.equal(booking.total, 5000);
+ });
++
++test('cancel returns the booking id and the total given back to the customer', () => {
++  const service = serviceWithBoard();
++  const booking = service.book({ itemId: 'board-1', start: '2026-07-01T00:00:00Z', end: '2026-07-02T00:00:00Z' });
++
++  assert.deepEqual(service.cancel(booking.id, '2026-06-20T09:00:00Z'), { bookingId: booking.id, refund: 2500 });
++});
++
++test('cancel refunds the discounted total of a rental of three days or more', () => {
++  const service = serviceWithBoard();
++  const booking = service.book({ itemId: 'board-1', start: '2026-07-01T00:00:00Z', end: '2026-07-04T00:00:00Z' });
++
++  assert.equal(service.cancel(booking.id, '2026-06-20T09:00:00Z').refund, 6750);
++});
++
++test('cancel refunds the hourly total of an hourly rental', () => {
++  const service = createRentalService();
++  service.addEquipment({ id: 'board-1', kind: 'board', dailyPrice: 2500, hourlyPrice: 600 });
++  const booking = service.book({ itemId: 'board-1', start: '2026-07-01T10:00:00Z', end: '2026-07-01T13:00:00Z' });
++
++  assert.equal(service.cancel(booking.id, '2026-07-01T09:00:00Z').refund, 1800);
++});
++
++test('a cancelled booking no longer holds its equipment', () => {
++  const service = serviceWithBoard();
++  const booking = service.book({ itemId: 'board-1', start: '2026-07-01T00:00:00Z', end: '2026-07-03T00:00:00Z' });
++  const period = { start: '2026-07-02T00:00:00Z', end: '2026-07-03T00:00:00Z' };
++  assert.deepEqual(service.availability(period), []);
++
++  service.cancel(booking.id, '2026-06-20T09:00:00Z');
++
++  assert.deepEqual(service.availability(period), ['board-1']);
++  assert.equal(service.book({ itemId: 'board-1', ...period }).total, 2500);
++});
++
++test('cancel leaves the other bookings of the equipment in place', () => {
++  const service = serviceWithBoard();
++  const cancelled = service.book({ itemId: 'board-1', start: '2026-07-01T00:00:00Z', end: '2026-07-02T00:00:00Z' });
++  service.book({ itemId: 'board-1', start: '2026-07-02T00:00:00Z', end: '2026-07-03T00:00:00Z' });
++
++  service.cancel(cancelled.id, '2026-06-20T09:00:00Z');
++
++  assert.deepEqual(
++    service.availability({ start: '2026-07-02T00:00:00Z', end: '2026-07-03T00:00:00Z' }),
++    [],
++  );
++});
++
++test('cancel refuses a booking that has already been cancelled', () => {
++  const service = serviceWithBoard();
++  const booking = service.book({ itemId: 'board-1', start: '2026-07-01T00:00:00Z', end: '2026-07-02T00:00:00Z' });
++  service.cancel(booking.id, '2026-06-20T09:00:00Z');
++
++  assert.throws(() => service.cancel(booking.id, '2026-06-21T09:00:00Z'), /already cancelled/);
++});
++
++test('cancel refuses an unknown booking id', () => {
++  const service = serviceWithBoard();
++
++  assert.throws(() => service.cancel('booking-99', '2026-06-20T09:00:00Z'), /unknown booking/);
++});
++
++test('cancel refuses a cancellation time that is not a whole hour in UTC', () => {
++  const service = serviceWithBoard();
++  const booking = service.book({ itemId: 'board-1', start: '2026-07-01T00:00:00Z', end: '2026-07-02T00:00:00Z' });
++
++  assert.throws(() => service.cancel(booking.id, '2026-06-20T09:30:00Z'), /whole hour in UTC/);
++  assert.deepEqual(service.availability({ start: '2026-07-01T00:00:00Z', end: '2026-07-02T00:00:00Z' }), []);
++});

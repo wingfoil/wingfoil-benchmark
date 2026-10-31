@@ -1,0 +1,111 @@
+diff --git a/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-3-plan.md b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-3-plan.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..eddc9b165234af27510af64e454869ad6566c0bc
+--- /dev/null
++++ b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-3-plan.md
+@@ -0,0 +1,17 @@
++---
++id: sw-life-cycle-1-3-plan
++type: plan
++title: "Long-stay discount"
++status: active
++workflow: "sw-life-cycle"
++phase: "1-3"
++element: ""
++parent: ""
++format: 1
++---
++
++<!-- plan body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
+diff --git a/docs/memory/task/task-003-long-stay-discount.md b/docs/memory/task/task-003-long-stay-discount.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..b58b036232aeb45b0b69dea444796ce08d34c28d
+--- /dev/null
++++ b/docs/memory/task/task-003-long-stay-discount.md
+@@ -0,0 +1,11 @@
++---
++id: task-003-long-stay-discount
++type: task
++title: "Long-stay discount"
++status: approved
++format: 1
++---
++
++# Long-stay discount
++
++A rental of 3 days or more costs 10% less than its full price (days × daily price). `quote` and `book` both return the reduced total. The total stays an integer number of euro cents: the reduced price is rounded to the nearest cent (halves round up). Rentals of 1 or 2 days are unchanged.
+diff --git a/src/index.test.ts b/src/index.test.ts
+index 23bce3ae2540dec8eac602ec03576999b4aab026..61b9cee2b1639bceb3dd3b85c0fa7de044d9f15d 100644
+--- a/src/index.test.ts
++++ b/src/index.test.ts
+@@ -11,7 +11,7 @@ const req = (start: string, end: string, itemId = 'b1') => ({ itemId, start, end
+ 
+ test('quote prices whole days in cents', () => {
+   const q = setup().quote(req('2026-07-01T00:00:00Z', '2026-07-04T00:00:00Z'));
+-  assert.deepEqual(q, { itemId: 'b1', start: '2026-07-01T00:00:00Z', end: '2026-07-04T00:00:00Z', total: 7650 });
++  assert.deepEqual(q, { itemId: 'b1', start: '2026-07-01T00:00:00Z', end: '2026-07-04T00:00:00Z', total: 6885 });
+ });
+ 
+ test('quote rejects unknown item, non-midnight, bad order, bad format', () => {
+@@ -77,3 +77,19 @@ test('availability rejects bad periods and unknown kinds', () => {
+   assert.throws(() => s.availability({ start: '2026-07-01T10:00:00Z', end: '2026-07-02T00:00:00Z' }));
+   assert.throws(() => s.availability({ start: '2026-07-01T00:00:00Z', end: '2026-07-02T00:00:00Z', kind: 'boat' as 'board' }));
+ });
++
++test('rentals of 3 days or more get 10% off, in quotes and bookings', () => {
++  const s = createRentalService();
++  s.addEquipment({ id: 'd1', kind: 'board', dailyPrice: 1000 });
++  const two = { itemId: 'd1', start: '2026-07-01T00:00:00Z', end: '2026-07-03T00:00:00Z' };
++  const three = { itemId: 'd1', start: '2026-07-10T00:00:00Z', end: '2026-07-13T00:00:00Z' };
++  assert.equal(s.quote(two).total, 2000);
++  assert.equal(s.quote(three).total, 2700);
++  assert.equal(s.book(three).total, 2700);
++});
++
++test('long-stay total is rounded to whole cents', () => {
++  const s = createRentalService();
++  s.addEquipment({ id: 'd1', kind: 'board', dailyPrice: 105 });
++  assert.equal(s.quote({ itemId: 'd1', start: '2026-07-01T00:00:00Z', end: '2026-07-04T00:00:00Z' }).total, 284);
++});
+diff --git a/src/index.ts b/src/index.ts
+index 1c660fd0520caa22ffba114d5fba43e981371854..7161d088a1f8ad1a1a00a4dfb3389fa601064c55 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -38,6 +38,11 @@ export interface RentalService {
+   availability(query: AvailabilityQuery): string[];
+ }
+ 
++/** Rentals of at least this many days get the long-stay discount. */
++const LONG_STAY_DAYS = 3;
++/** Long-stay price, as a percentage of the full price. */
++const LONG_STAY_PERCENT = 90;
++
+ const DAY_MS = 24 * 60 * 60 * 1000;
+ const ISO_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/;
+ 
+@@ -62,6 +67,12 @@ function parseMidnightUtc(value: unknown, name: string): number {
+   return ms;
+ }
+ 
++/** Total in euro cents; the long-stay price is rounded to the nearest cent, halves up. */
++function totalFor(days: number, dailyPrice: number): number {
++  const full = days * dailyPrice;
++  return days >= LONG_STAY_DAYS ? Math.round((full * LONG_STAY_PERCENT) / 100) : full;
++}
++
+ export function createRentalService(): RentalService {
+   const equipment = new Map<string, Equipment>();
+   const bookings: Array<Booking & { startMs: number; endMs: number }> = [];
+@@ -72,7 +83,7 @@ export function createRentalService(): RentalService {
+     const { startMs, endMs } = parsePeriod(request.start, request.end);
+     const days = (endMs - startMs) / DAY_MS;
+     return {
+-      quote: { itemId: item.id, start: request.start, end: request.end, total: days * item.dailyPrice },
++      quote: { itemId: item.id, start: request.start, end: request.end, total: totalFor(days, item.dailyPrice) },
+       startMs,
+       endMs,
+     };

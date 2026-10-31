@@ -1,0 +1,112 @@
+diff --git a/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-3-plan.md b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-3-plan.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..3d463f2c527a2154115e8a8355279edcb4068fba
+--- /dev/null
++++ b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-3-plan.md
+@@ -0,0 +1,17 @@
++---
++id: sw-life-cycle-1-3-plan
++type: plan
++title: "Make applyPatch conform to RFC 6902"
++status: active
++workflow: "sw-life-cycle"
++phase: "1-3"
++element: ""
++parent: ""
++format: 1
++---
++
++<!-- plan body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
+diff --git a/docs/memory/task/task-003-make-applypatch-conform-to-rfc-6902.md b/docs/memory/task/task-003-make-applypatch-conform-to-rfc-6902.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..6a65458dc80e69854788b5a90850e6d2e778baee
+--- /dev/null
++++ b/docs/memory/task/task-003-make-applypatch-conform-to-rfc-6902.md
+@@ -0,0 +1,15 @@
++---
++id: task-003-make-applypatch-conform-to-rfc-6902
++type: task
++title: "Make applyPatch conform to RFC 6902"
++status: approved
++format: 1
++---
++
++Review `applyPatch` against RFC 6902 and fix every divergence. Found by the review:
++
++- Values that are not JSON (NaN, Infinity, Date, Map, class instances) were accepted in the document or in
++  a patch `value` (NaN silently became `null`); they must be rejected.
++- `replace` removed and re-added the member, moving it to the end of the object; it must replace in place.
++
++Tests in `src/index.test.ts` (red first for each).
+diff --git a/src/index.test.ts b/src/index.test.ts
+index 3e9468102fba5176a51d451eec1e99d98e661f0f..d026ec7619c695e8528bfce2120b9ef497a57d83 100644
+--- a/src/index.test.ts
++++ b/src/index.test.ts
+@@ -100,3 +100,15 @@ test("applyPatch does not mutate input and does not alias", () => {
+   assert.equal(Object.getPrototypeOf(p), Object.prototype);
+   assert.equal(Object.keys(p)[0], "__proto__");
+ });
++
++test("applyPatch rejects values that are not JSON", () => {
++  for (const value of [NaN, Infinity, new Date(0), new Map(), undefined]) {
++    assert.throws(() => applyPatch({}, [{ op: "add", path: "/a", value }]));
++  }
++  assert.throws(() => applyPatch({ a: NaN }, []));
++});
++
++test("replace keeps member order", () => {
++  const out = applyPatch({ a: 1, b: 2 }, [{ op: "replace", path: "/a", value: 5 }]);
++  assert.deepEqual(Object.keys(out as object), ["a", "b"]);
++});
+diff --git a/src/index.ts b/src/index.ts
+index b5b9ca33ac0efab515fcdab66c4e5440487ccfbc..68de4322b368a0e6d1a5d9bc65d551266c9ee368 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -50,14 +50,15 @@ function setMember(obj: { [key: string]: Json }, key: string, value: Json): void
+ function clone(value: unknown): Json {
+   if (Array.isArray(value)) return value.map(clone);
+   if (typeof value === "object" && value !== null) {
++    const proto = Object.getPrototypeOf(value);
++    if (proto !== Object.prototype && proto !== null) throw new Error("Not a JSON value");
+     const out: { [key: string]: Json } = {};
+     for (const key of Object.keys(value)) setMember(out, key, clone((value as Record<string, unknown>)[key]));
+     return out;
+   }
+-  if (value === undefined || typeof value === "function" || typeof value === "symbol" || typeof value === "bigint") {
+-    throw new Error("Not a JSON value");
+-  }
+-  return value as Json;
++  if (value === null || typeof value === "boolean" || typeof value === "string") return value;
++  if (typeof value === "number" && Number.isFinite(value)) return value;
++  throw new Error("Not a JSON value");
+ }
+ 
+ function equal(a: Json, b: Json): boolean {
+@@ -130,6 +131,14 @@ function removeAt(root: Json, tokens: string[]): Json {
+   return root;
+ }
+ 
++function replaceAt(root: Json, tokens: string[], value: Json): Json {
++  const parent = parentOf(root, tokens);
++  const last = tokens[tokens.length - 1];
++  if (Array.isArray(parent)) parent[arrayIndex(last, parent.length, false)] = value;
++  else setMember(parent as { [key: string]: Json }, last, value);
++  return root;
++}
++
+ /** Applies a JSON Patch (RFC 6902) to a document and returns a new document; the input is not mutated. */
+ export function applyPatch(document: unknown, patch: unknown): Json {
+   if (!Array.isArray(patch)) throw new Error("Invalid JSON Patch: not an array");
+@@ -157,7 +166,7 @@ export function applyPatch(document: unknown, patch: unknown): Json {
+           break;
+         case "replace":
+           getAt(result, path);
+-          result = path.length === 0 ? clone(o.value) : addAt(removeAt(result, path), path, clone(o.value));
++          result = path.length === 0 ? clone(o.value) : replaceAt(result, path, clone(o.value));
+           break;
+         case "move":
+         case "copy": {

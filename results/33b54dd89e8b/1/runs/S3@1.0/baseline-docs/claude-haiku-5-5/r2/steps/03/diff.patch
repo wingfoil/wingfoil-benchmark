@@ -1,0 +1,120 @@
+diff --git a/README.md b/README.md
+index db9a902314ca6e4e86ee5f60c1d380c02f93c0d4..8f72d7e964153d80dbf70ba5083a55dc61d7a455 100644
+--- a/README.md
++++ b/README.md
+@@ -24,5 +24,8 @@ The school's rules, which apply to every operation:
+    after the last rented day. Periods are half-open, so one booking may start on the day another ends.
+ 4. An item cannot be booked for overlapping periods. `quote` does not check availability; `book` does.
+ 5. Cancellation policy: not implemented yet.
++6. Long-rental discount: a rental of 3 days or more costs 10% less than its full price (days × daily price).
++   The discounted total is rounded to the nearest cent. Quotes and bookings both show the discounted total.
++   Shorter rentals pay the full price. The discount is what keeps students coming back for longer periods.
+ 
+ Run the tests with `npm test` and the type-check with `npm run typecheck`.
+diff --git a/src/index.ts b/src/index.ts
+index 394b4db5777b97ed28984cdb41b9fbf9445b134a..c268bb71057dfcd8731b77862e5e7885ee017a3d 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -18,7 +18,7 @@ export interface RentalRequest {
+   end: string;
+ }
+ 
+-/** The price of renting an item for a period, in euro cents. */
++/** The price of renting an item for a period, in euro cents, after the long-rental discount. */
+ export interface Quote {
+   itemId: string;
+   start: string;
+@@ -65,6 +65,10 @@ interface Reservation {
+ }
+ 
+ const DAY_MS = 24 * 60 * 60 * 1000;
++/** Rentals of at least this many days get the long-rental discount. */
++const LONG_RENTAL_MIN_DAYS = 3;
++/** The long-rental discount, as a percentage of the full price. */
++const LONG_RENTAL_DISCOUNT_PERCENT = 10;
+ const ISO_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?Z$/;
+ const ITEM_KINDS: readonly ItemKind[] = ['board', 'sail'];
+ 
+@@ -95,6 +99,14 @@ function toIso(time: number): string {
+   return new Date(time).toISOString();
+ }
+ 
++/** Applies the long-rental discount to a full price, rounding to the nearest cent. */
++function priceFor(fullPrice: number, days: number): number {
++  if (days < LONG_RENTAL_MIN_DAYS) {
++    return fullPrice;
++  }
++  return Math.round((fullPrice * (100 - LONG_RENTAL_DISCOUNT_PERCENT)) / 100);
++}
++
+ /**
+  * Creates an empty rental service. Its state lives in memory only and is lost with the process.
+  */
+@@ -122,7 +134,7 @@ export function createRentalService(): RentalService {
+       itemId: item.id,
+       start: toIso(period.start),
+       end: toIso(period.end),
+-      total: days * item.dailyPrice,
++      total: priceFor(days * item.dailyPrice, days),
+     };
+   }
+ 
+diff --git a/test/rental.test.ts b/test/rental.test.ts
+index dc521a2839e05332ca1fd5369ddac11f2e277182..4089fd9a87035e00a80170b367266ce370788597 100644
+--- a/test/rental.test.ts
++++ b/test/rental.test.ts
+@@ -50,10 +50,10 @@ describe('quote', () => {
+     });
+   });
+ 
+-  test('several days cost the daily price times the number of days', () => {
++  test('several days cost the daily price times the number of days, less the long-rental discount', () => {
+     const service = serviceWithBoard();
+-    const quote = service.quote({ itemId: 'board-1', start: midnight('2026-07-10'), end: midnight('2026-07-13') });
+-    assert.equal(quote.total, 7500);
++    const quote = service.quote({ itemId: 'board-1', start: midnight('2026-07-10'), end: midnight('2026-07-14') });
++    assert.equal(quote.total, 9000);
+   });
+ 
+   test('a quote does not reserve the item', () => {
+@@ -107,6 +107,27 @@ describe('quote', () => {
+     );
+   });
+ 
++  test('two days cost the full price, with no discount', () => {
++    const service = serviceWithBoard();
++    const quote = service.quote({ itemId: 'board-1', start: midnight(DAY), end: midnight('2026-07-12') });
++    assert.equal(quote.total, 5000);
++  });
++
++  test('three days or more cost 10% less than the full price', () => {
++    const service = serviceWithBoard();
++    const threeDays = service.quote({ itemId: 'board-1', start: midnight(DAY), end: midnight('2026-07-13') });
++    assert.equal(threeDays.total, 6750);
++    const tenDays = service.quote({ itemId: 'board-1', start: midnight(DAY), end: midnight('2026-07-20') });
++    assert.equal(tenDays.total, 22500);
++  });
++
++  test('the discount rounds to the nearest cent', () => {
++    const service = createRentalService();
++    service.addEquipment({ id: 'sail-1', kind: 'sail', dailyPrice: 1005 });
++    const quote = service.quote({ itemId: 'sail-1', start: midnight(DAY), end: midnight('2026-07-13') });
++    assert.equal(quote.total, 2714);
++  });
++
+   test('normalises an equivalent UTC timestamp without fractional seconds', () => {
+     const service = serviceWithBoard();
+     const quote = service.quote({
+@@ -172,6 +193,12 @@ describe('book', () => {
+     );
+   });
+ 
++  test('a booking of three days or more is charged the discounted total', () => {
++    const service = serviceWithBoard();
++    const booking = service.book({ itemId: 'board-1', start: midnight(DAY), end: midnight('2026-07-13') });
++    assert.equal(booking.total, 6750);
++  });
++
+   test('allows a period that starts on the day an existing booking ends', () => {
+     const service = serviceWithBoard();
+     service.book({ itemId: 'board-1', start: midnight(DAY), end: midnight(NEXT_DAY) });

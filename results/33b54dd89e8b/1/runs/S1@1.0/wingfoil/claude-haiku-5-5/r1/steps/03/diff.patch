@@ -1,0 +1,398 @@
+diff --git a/README.md b/README.md
+index ee4836d5610594be3d6d320c6a7d20eb347e086b..ba10e9dc8caedaa022fc383cfe1edcc693ee5147 100644
+--- a/README.md
++++ b/README.md
+@@ -34,6 +34,7 @@ applyPatch({ foo: ['bar', 'baz'] }, [
+ ]); // { foo: ['bar', 'qux', 'baz'] }
+ ```
+ 
+-It throws a `SyntaxError` when the patch or one of its operations is not valid, and an `Error` when an operation
+-fails: its target does not exist, a `test` value differs, or a `move` would put a value inside its own child.
+-No partial result is returned.
++The whole patch is checked before any operation is applied. It throws a `SyntaxError` when the patch or one of its
++operations is not valid, including when a `value` is not a JSON value (`undefined`, `NaN`, a `Date`, a function...).
++It throws an `Error` when an operation fails: its target does not exist, a `test` value differs, or a `move` would
++put a value inside its own child. No partial result is returned.
+diff --git a/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-3-plan.md b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-3-plan.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..118ad2f7f4e7164c4103709554e1584e4ee0c3e9
+--- /dev/null
++++ b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-3-plan.md
+@@ -0,0 +1,17 @@
++---
++id: sw-life-cycle-1-3-plan
++type: plan
++title: "RFC 6902 conformance of applyPatch"
++status: active
++workflow: "sw-life-cycle"
++phase: "1-3"
++element: ""
++parent: ""
++format: 1
++---
++
++<!-- plan body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
+diff --git a/docs/memory/task/task-003-rfc-6902-conformance-of-applypatch-validation-and-errors.md b/docs/memory/task/task-003-rfc-6902-conformance-of-applypatch-validation-and-errors.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..7505e36e990f68a2cd2a6d6b2408de3a389960f0
+--- /dev/null
++++ b/docs/memory/task/task-003-rfc-6902-conformance-of-applypatch-validation-and-errors.md
+@@ -0,0 +1,53 @@
++---
++id: task-003-rfc-6902-conformance-of-applypatch-validation-and-errors
++type: task
++title: "RFC 6902 conformance of applyPatch: validation and errors"
++status: approved
++format: 1
++---
++
++# Task — RFC 6902 conformance of applyPatch: validation and errors
++
++## Request
++
++Users of `applyPatch` report surprising results: some patches they consider invalid are accepted, some edge
++cases give unexpected results, and a patch that fails does not always behave as RFC 6902 reads. Review how
++patches are checked and applied, and make the behaviour conform to RFC 6902 in every case, errors included.
++
++## Findings (probed on the approved task-002 implementation)
++
++- An invalid operation after a failing one is reported as the operation failure (`Error`, "test failed"), not
++  as an invalid patch (`SyntaxError`). Operations are validated one at a time, interleaved with application.
++- A value that is not a JSON value is accepted: `undefined`, `NaN`, `Infinity`, `Date`, `Map`, class instances,
++  sparse arrays and cyclic structures. `undefined` is stored as a member, and a function fails inside
++  `structuredClone` with a `DOMException`.
++- `op`, `path`, `from` and `value` are read through the prototype chain, so an inherited member counts as a
++  member of the operation. RFC 6902 operations are JSON objects, whose members are their own.
++
++## Scope
++
++- The whole patch is checked before any operation is applied: a malformed patch throws `SyntaxError`, whatever
++  its operations would do. Only a valid patch whose operation fails throws `Error`.
++- A `value` of `add`, `replace` and `test` must be a JSON value (RFC 8259): null, boolean, finite number, string,
++  array or plain object, recursively, with no holes and no cycles.
++- Operation members are read as own properties.
++- Patch array holes are rejected as invalid operations.
++- Documentation (doc comment and README) states the checks and the error types.
++- No change to the approved semantics of the six operations, which already match RFC 6902 section 4.
++
++## Acceptance criteria
++
++1. A patch that is not an array, or whose operation is not a valid operation, throws `SyntaxError` before any
++   operation is applied, even when an earlier operation would fail.
++2. `add`, `replace` and `test` reject a `value` that is not a JSON value with `SyntaxError`: `undefined`, `NaN`,
++   infinite numbers, functions, symbols, bigints, non-plain objects, sparse arrays, cyclic structures, and any of
++   these nested in a valid container.
++3. Inherited members do not count: an operation or value read from the prototype chain is an invalid operation.
++4. Valid JSON values of every kind are accepted, including `null`, `false`, `0`, `""` and nested containers.
++5. The approved behaviour is unchanged for valid patches; the existing tests still pass.
++6. The input document and patch are not mutated; no partial result is returned.
++
++## Out of scope
++
++- Validating the input document: it is assumed to be JSON, as before.
++- JSON Merge Patch (RFC 7396) and other extensions.
+diff --git a/src/index.ts b/src/index.ts
+index 51a1ab6e2ea691821287d1bd5639ae85294f70f4..943e8060c10a6d33f42fe3ea4cf5a9b5f37beee6 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -20,11 +20,12 @@ export function resolvePointer(document: unknown, pointer: string): unknown {
+  * Applies a JSON Patch (RFC 6902) to a JSON document and returns the resulting document.
+  *
+  * The patch is an array of operations, applied in order, each to the result of the previous one:
+- * `add`, `remove`, `replace`, `move`, `copy` and `test`. Paths are JSON Pointers (RFC 6901). The
+- * input document and the patch are not modified: the result is a new value, and values taken from
+- * the patch are copied into it.
++ * `add`, `remove`, `replace`, `move`, `copy` and `test`. Paths are JSON Pointers (RFC 6901), and
++ * the values of `add`, `replace` and `test` are JSON values. The whole patch is checked before any
++ * operation is applied. The input document and the patch are not modified: the result is a new
++ * value, and values taken from the patch are copied into it.
+  *
+- * @throws {SyntaxError} when the patch, or one of its operations or paths, is invalid.
++ * @throws {SyntaxError} when the patch, or one of its operations, paths or values, is invalid.
+  * @throws {Error} when an operation fails, for example when its target does not exist or a
+  *   `test` value differs. No partial result is returned.
+  */
+@@ -32,9 +33,10 @@ export function applyPatch(document: unknown, patch: unknown): unknown {
+   if (!Array.isArray(patch)) {
+     throw new SyntaxError('invalid JSON Patch: it must be an array of operations');
+   }
++  const operations = Array.from(patch, parseOperation);
+   let result = structuredClone(document);
+-  for (const entry of patch) {
+-    result = applyOperation(result, parseOperation(entry));
++  for (const operation of operations) {
++    result = applyOperation(result, operation);
+   }
+   return result;
+ }
+@@ -49,7 +51,8 @@ function parseOperation(entry: unknown): Operation {
+   if (!isObject(entry)) {
+     throw new SyntaxError('invalid JSON Patch operation: it must be an object');
+   }
+-  const { op, path, from } = entry;
++  const op = ownMember(entry, 'op');
++  const path = ownMember(entry, 'path');
+   if (typeof path !== 'string') {
+     throw new SyntaxError('invalid JSON Patch operation: "path" must be a string');
+   }
+@@ -58,24 +61,40 @@ function parseOperation(entry: unknown): Operation {
+     case 'add':
+     case 'replace':
+     case 'test':
+-      if (!Object.hasOwn(entry, 'value')) {
+-        throw new SyntaxError(`invalid JSON Patch operation: "${op}" requires a "value"`);
+-      }
+-      return { op, path, value: entry.value };
++      return { op, path, value: parseValue(entry, op) };
+     case 'remove':
+       return { op, path };
+     case 'move':
+-    case 'copy':
++    case 'copy': {
++      const from = ownMember(entry, 'from');
+       if (typeof from !== 'string') {
+         throw new SyntaxError(`invalid JSON Patch operation: "${op}" requires a string "from"`);
+       }
+       parsePointer(from);
+       return { op, path, from };
++    }
+     default:
+       throw new SyntaxError(`invalid JSON Patch operation: unknown "op" ${JSON.stringify(op)}`);
+   }
+ }
+ 
++/** Returns the `value` member of an operation, which must be present and a JSON value. */
++function parseValue(entry: Record<string, unknown>, op: string): unknown {
++  if (!Object.hasOwn(entry, 'value')) {
++    throw new SyntaxError(`invalid JSON Patch operation: "${op}" requires a "value"`);
++  }
++  const value = ownMember(entry, 'value');
++  if (!isJsonValue(value)) {
++    throw new SyntaxError(`invalid JSON Patch operation: "value" of "${op}" is not a JSON value`);
++  }
++  return value;
++}
++
++/** Returns an own member of an object, or undefined: an inherited property is not a JSON member. */
++function ownMember(object: Record<string, unknown>, key: string): unknown {
++  return Object.hasOwn(object, key) ? object[key] : undefined;
++}
++
+ /** Applies one operation, returning the new document. The document it is given may be changed. */
+ function applyOperation(document: unknown, operation: Operation): unknown {
+   switch (operation.op) {
+@@ -260,3 +279,42 @@ function jsonEqual(a: unknown, b: unknown): boolean {
+ function isObject(value: unknown): value is Record<string, unknown> {
+   return typeof value === 'object' && value !== null && !Array.isArray(value);
+ }
++
++/**
++ * Whether a value is a JSON value (RFC 8259): null, a boolean, a finite number, a string, an array
++ * or a plain object, whose elements and members are JSON values in turn. `undefined`, `NaN`,
++ * infinite numbers, functions, symbols, bigints, other objects, array holes and cycles are not.
++ */
++function isJsonValue(value: unknown, ancestors: object[] = []): boolean {
++  switch (typeof value) {
++    case 'string':
++    case 'boolean':
++      return true;
++    case 'number':
++      return Number.isFinite(value);
++    case 'object':
++      break;
++    default:
++      return false;
++  }
++  if (value === null) {
++    return true;
++  }
++  if (ancestors.includes(value)) {
++    return false;
++  }
++  const path = [...ancestors, value];
++  if (Array.isArray(value)) {
++    for (let index = 0; index < value.length; index++) {
++      if (!Object.hasOwn(value, index) || !isJsonValue(value[index], path)) {
++        return false;
++      }
++    }
++    return true;
++  }
++  const prototype = Object.getPrototypeOf(value);
++  if (!isObject(value) || (prototype !== Object.prototype && prototype !== null)) {
++    return false;
++  }
++  return Object.keys(value).every((key) => isJsonValue(value[key], path));
++}
+diff --git a/test/apply-patch.test.ts b/test/apply-patch.test.ts
+index 87fd7ec4c104f68279f780d2667ef3b02fbe6552..e6480b991502f6d6c4efba8309959d8ebeabf407 100644
+--- a/test/apply-patch.test.ts
++++ b/test/apply-patch.test.ts
+@@ -246,39 +246,146 @@ test('a failing operation makes the whole call throw', () => {
+ });
+ 
+ test('throws when the patch is not an array', () => {
+-  assert.throws(() => applyPatch({}, { op: 'add', path: '/a', value: 1 }), Error);
+-  assert.throws(() => applyPatch({}, undefined), Error);
+-  assert.throws(() => applyPatch({}, 'add'), Error);
++  assert.throws(() => applyPatch({}, { op: 'add', path: '/a', value: 1 }), SyntaxError);
++  assert.throws(() => applyPatch({}, undefined), SyntaxError);
++  assert.throws(() => applyPatch({}, 'add'), SyntaxError);
+ });
+ 
+ test('throws when an operation is not an object', () => {
+-  assert.throws(() => applyPatch({}, [null]), Error);
+-  assert.throws(() => applyPatch({}, ['add']), Error);
+-  assert.throws(() => applyPatch({}, [[]]), Error);
++  assert.throws(() => applyPatch({}, [null]), SyntaxError);
++  assert.throws(() => applyPatch({}, ['add']), SyntaxError);
++  assert.throws(() => applyPatch({}, [[]]), SyntaxError);
+ });
+ 
+ test('throws when the op is unknown or missing', () => {
+-  assert.throws(() => applyPatch({}, [{ op: 'append', path: '/a', value: 1 }]), Error);
+-  assert.throws(() => applyPatch({}, [{ path: '/a', value: 1 }]), Error);
++  assert.throws(() => applyPatch({}, [{ op: 'append', path: '/a', value: 1 }]), SyntaxError);
++  assert.throws(() => applyPatch({}, [{ path: '/a', value: 1 }]), SyntaxError);
+ });
+ 
+ test('throws when the path is missing or not a string', () => {
+-  assert.throws(() => applyPatch({}, [{ op: 'remove' }]), Error);
+-  assert.throws(() => applyPatch({}, [{ op: 'remove', path: 1 }]), Error);
++  assert.throws(() => applyPatch({}, [{ op: 'remove' }]), SyntaxError);
++  assert.throws(() => applyPatch({}, [{ op: 'remove', path: 1 }]), SyntaxError);
+ });
+ 
+ test('throws when the path is not a valid JSON Pointer', () => {
+-  assert.throws(() => applyPatch({ a: 1 }, [{ op: 'remove', path: 'a' }]), Error);
+-  assert.throws(() => applyPatch({ a: 1 }, [{ op: 'remove', path: '/a~2' }]), Error);
++  assert.throws(() => applyPatch({ a: 1 }, [{ op: 'remove', path: 'a' }]), SyntaxError);
++  assert.throws(() => applyPatch({ a: 1 }, [{ op: 'remove', path: '/a~2' }]), SyntaxError);
+ });
+ 
+ test('throws when add, replace or test has no value', () => {
+-  assert.throws(() => applyPatch({}, [{ op: 'add', path: '/a' }]), Error);
+-  assert.throws(() => applyPatch({ a: 1 }, [{ op: 'replace', path: '/a' }]), Error);
+-  assert.throws(() => applyPatch({ a: 1 }, [{ op: 'test', path: '/a' }]), Error);
++  assert.throws(() => applyPatch({}, [{ op: 'add', path: '/a' }]), SyntaxError);
++  assert.throws(() => applyPatch({ a: 1 }, [{ op: 'replace', path: '/a' }]), SyntaxError);
++  assert.throws(() => applyPatch({ a: 1 }, [{ op: 'test', path: '/a' }]), SyntaxError);
+ });
+ 
+ test('throws when move or copy has no string from', () => {
+-  assert.throws(() => applyPatch({ a: 1 }, [{ op: 'move', path: '/b' }]), Error);
+-  assert.throws(() => applyPatch({ a: 1 }, [{ op: 'copy', from: 1, path: '/b' }]), Error);
++  assert.throws(() => applyPatch({ a: 1 }, [{ op: 'move', path: '/b' }]), SyntaxError);
++  assert.throws(() => applyPatch({ a: 1 }, [{ op: 'copy', from: 1, path: '/b' }]), SyntaxError);
++});
++
++test('an invalid operation is a SyntaxError even after an operation that fails', () => {
++  const document = { a: 1 };
++  assert.throws(
++    () =>
++      applyPatch(document, [
++        { op: 'test', path: '/a', value: 9 },
++        { op: 'bogus', path: '/a' },
++      ]),
++    SyntaxError,
++  );
++  assert.throws(
++    () =>
++      applyPatch(document, [
++        { op: 'remove', path: '/missing' },
++        { op: 'move', path: '/b' },
++      ]),
++    SyntaxError,
++  );
++});
++
++test('an invalid patch applies no operation, even one before the invalid one', () => {
++  const document = { a: 1 };
++  assert.throws(
++    () =>
++      applyPatch(document, [
++        { op: 'add', path: '/b', value: 2 },
++        { op: 'replace', path: '/a' },
++      ]),
++    SyntaxError,
++  );
++  assert.deepEqual(document, { a: 1 });
++});
++
++test('a patch with a hole is invalid', () => {
++  const patch = [, { op: 'add', path: '/a', value: 1 }];
++  assert.throws(() => applyPatch({}, patch), SyntaxError);
++});
++
++test('a value that is not JSON is invalid for add, replace and test', () => {
++  const invalid: unknown[] = [
++    undefined,
++    NaN,
++    Infinity,
++    -Infinity,
++    () => 1,
++    Symbol('s'),
++    1n,
++    new Date(0),
++    new Map(),
++    new Set(),
++    Object.create({ inherited: 1 }),
++    [1, , 3],
++    { a: undefined },
++    { list: [1, NaN] },
++    [new Date(0)],
++  ];
++  for (const value of invalid) {
++    for (const op of ['add', 'replace', 'test']) {
++      assert.throws(
++        () => applyPatch({ a: 1 }, [{ op, path: '/a', value }]),
++        SyntaxError,
++        `${op} with ${String(value)}`,
++      );
++    }
++  }
++});
++
++test('a cyclic value is invalid', () => {
++  const value: Record<string, unknown> = { a: 1 };
++  value.self = value;
++  assert.throws(() => applyPatch({}, [{ op: 'add', path: '/a', value }]), SyntaxError);
++});
++
++test('valid JSON values of every kind are accepted', () => {
++  const values = [
++    null,
++    true,
++    false,
++    0,
++    -1.5,
++    1e300,
++    '',
++    'text',
++    [],
++    {},
++    [null, [0]],
++    { '': { x: [] } },
++  ];
++  for (const value of values) {
++    assert.deepEqual(applyPatch({}, [{ op: 'add', path: '/a', value }]), { a: value });
++  }
++});
++
++test('a value holding an own "__proto__" member is valid JSON', () => {
++  const value = JSON.parse('{"__proto__": {"x": 1}}');
++  const result = applyPatch({}, [{ op: 'add', path: '/a', value }]) as { a: object };
++  assert.equal(Object.hasOwn(result.a, '__proto__'), true);
++});
++
++test('operation members are read as own properties, not inherited ones', () => {
++  const operation = Object.create({ op: 'remove', path: '/a' });
++  assert.throws(() => applyPatch({ a: 1 }, [operation]), SyntaxError);
++  const withInheritedValue = Object.create({ value: 1 });
++  Object.assign(withInheritedValue, { op: 'add', path: '/b' });
++  assert.throws(() => applyPatch({ a: 1 }, [withInheritedValue]), SyntaxError);
+ });

@@ -1,0 +1,107 @@
+diff --git a/README.md b/README.md
+index 113df450c46e3a8bbb361a1c7fe96e38dddc410b..6ea1c15398f66881393446db6a30c4443b0d7cbb 100644
+--- a/README.md
++++ b/README.md
+@@ -9,7 +9,8 @@ of its booking desk, written in TypeScript with no runtime dependency.
+ `createRentalService()` (exported from `src/index.ts`) returns an in-memory service with
+ `addEquipment`, `quote`, `book` and `availability`. Run the tests with `npm test`.
+ 
+-- Money is an integer number of euro cents; `total` is `dailyPrice` times the number of days.
++- Money is an integer number of euro cents; `total` is `dailyPrice` times the number of days; a rental of 3 days or more gets 10% off that
++  full price, rounded to the nearest cent. `quote` and `book` both return the reduced total.
+ - Times are ISO-8601 UTC strings with an explicit `Z`. A period starts and ends at midnight UTC and
+   `end` is the start of the day after the last rented day, so `2026-07-01T00:00:00Z` to
+   `2026-07-02T00:00:00Z` is one day. Returned times are normalised to `toISOString()` form.
+diff --git a/src/index.ts b/src/index.ts
+index 96fb45b9a1c29ae69b69332d0c8eb85758176e10..da1009674a664e30cf6978bc87e2dc70986b9050 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -15,7 +15,7 @@ export interface RentalRequest {
+   end: string;
+ }
+ 
+-/** The price of renting an item for a period; `total` is in integer euro cents. */
++/** The price of renting an item for a period; `total` is in integer euro cents, 10% off from 3 days. */
+ export interface Quote {
+   itemId: string;
+   start: string;
+@@ -48,6 +48,8 @@ export interface RentalService {
+ }
+ 
+ const DAY_MS = 24 * 60 * 60 * 1000;
++const DISCOUNT_MIN_DAYS = 3;
++const DISCOUNT_PERCENT = 10;
+ const ISO_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/;
+ 
+ interface Period {
+@@ -94,6 +96,12 @@ function validateEquipment(item: Equipment): void {
+   }
+ }
+ 
++/** Full price for `days` days, less the long-stay discount, rounded to the nearest euro cent. */
++function rentalTotal(dailyPrice: number, days: number): number {
++  const full = dailyPrice * days;
++  return days >= DISCOUNT_MIN_DAYS ? Math.round((full * (100 - DISCOUNT_PERCENT)) / 100) : full;
++}
++
+ function overlaps(a: Period, b: Period): boolean {
+   return a.start < b.end && b.start < a.end;
+ }
+@@ -114,7 +122,7 @@ export function createRentalService(): RentalService {
+       itemId: item.id,
+       start: new Date(period.start).toISOString(),
+       end: new Date(period.end).toISOString(),
+-      total: item.dailyPrice * days,
++      total: rentalTotal(item.dailyPrice, days),
+     };
+     return { quote, period };
+   }
+diff --git a/test/rental.test.ts b/test/rental.test.ts
+index 35785ea556231f4cd2547690e1c62fd552e5a332..a7c4a4ae2b5f6fc6e50a8e7d2d5c4159c253f71b 100644
+--- a/test/rental.test.ts
++++ b/test/rental.test.ts
+@@ -12,15 +12,27 @@ const request = (start: string, end: string, itemId = 'board-1') => ({ itemId, s
+ 
+ describe('quote', () => {
+   it('prices whole days in euro cents', () => {
+-    const q = setup().quote(request('2026-07-01T00:00:00Z', '2026-07-04T00:00:00Z'));
++    const q = setup().quote(request('2026-07-01T00:00:00Z', '2026-07-03T00:00:00Z'));
+     assert.deepEqual(q, {
+       itemId: 'board-1',
+       start: '2026-07-01T00:00:00.000Z',
+-      end: '2026-07-04T00:00:00.000Z',
+-      total: 7500,
++      end: '2026-07-03T00:00:00.000Z',
++      total: 5000,
+     });
+   });
+ 
++  it('takes 10% off rentals of 3 days or more', () => {
++    const s = setup();
++    assert.equal(s.quote(request('2026-07-01T00:00:00Z', '2026-07-04T00:00:00Z')).total, 6750);
++    assert.equal(s.quote(request('2026-07-01T00:00:00Z', '2026-07-11T00:00:00Z')).total, 22500);
++  });
++
++  it('rounds the discounted total to the nearest cent', () => {
++    const s = createRentalService();
++    s.addEquipment({ id: 'sail-1', kind: 'sail', dailyPrice: 1001 });
++    assert.equal(s.quote(request('2026-07-01T00:00:00Z', '2026-07-04T00:00:00Z', 'sail-1')).total, 2703);
++  });
++
+   it('rejects an unknown item', () => {
+     assert.throws(() => setup().quote(request('2026-07-01T00:00:00Z', '2026-07-02T00:00:00Z', 'nope')));
+   });
+@@ -88,6 +100,13 @@ describe('book', () => {
+   });
+ });
+ 
++describe('book discount', () => {
++  it('books at the discounted total for 3 days or more', () => {
++    const b = setup().book(request('2026-07-01T00:00:00Z', '2026-07-04T00:00:00Z'));
++    assert.equal(b.total, 6750);
++  });
++});
++
+ describe('availability', () => {
+   function stocked() {
+     const s = createRentalService();

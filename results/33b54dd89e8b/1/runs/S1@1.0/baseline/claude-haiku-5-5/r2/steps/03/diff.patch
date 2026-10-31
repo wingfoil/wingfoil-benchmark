@@ -1,0 +1,132 @@
+diff --git a/src/index.ts b/src/index.ts
+index 64a3dcbdfceaddacacb7c43fb987f0108c36ac02..31ca21575090d07b6fbebb92320b2a55f11b924d 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -91,7 +91,8 @@ const OPERATIONS: ReadonlySet<string> = new Set(["add", "remove", "replace", "mo
+  * Applies a JSON Patch to a JSON document and returns the resulting document.
+  *
+  * The operations run in order on a copy, so the input document is never mutated. Throws a
+- * `SyntaxError` when the patch is malformed, and an `Error` when an operation cannot be applied,
++ * `SyntaxError` when the patch is malformed, including a `value` that is not a JSON value, and an
++ * `Error` when an operation cannot be applied,
+  * such as a `test` whose value differs or a `remove` of a location that does not exist.
+  */
+ export function applyPatch(document: unknown, patch: readonly PatchOperation[]): unknown {
+@@ -111,10 +112,11 @@ function validateOperation(operation: unknown): PatchOperation {
+   if (!isObject(operation)) {
+     throw new SyntaxError("JSON Patch operation must be an object");
+   }
+-  const { op, path, from } = operation;
++  const op = own(operation, "op");
+   if (typeof op !== "string" || !OPERATIONS.has(op)) {
+     throw new SyntaxError(`Invalid JSON Patch operation ${JSON.stringify(op)}`);
+   }
++  const path = own(operation, "path");
+   if (typeof path !== "string") {
+     throw new SyntaxError(`JSON Patch operation ${op} must have a string "path"`);
+   }
+@@ -122,21 +124,60 @@ function validateOperation(operation: unknown): PatchOperation {
+   switch (op) {
+     case "add":
+     case "replace":
+-    case "test":
+-      // "value" may be any JSON value, including null, so only its presence is checked.
++    case "test": {
+       if (!Object.hasOwn(operation, "value")) {
+         throw new SyntaxError(`JSON Patch operation ${op} must have a "value"`);
+       }
+-      return { op, path, value: operation.value };
++      const value = own(operation, "value");
++      if (!isJsonValue(value)) {
++        throw new SyntaxError(`JSON Patch operation ${op} must have a "value" that is a JSON value`);
++      }
++      return { op, path, value };
++    }
+     case "remove":
+       return { op, path };
+-    default:
++    default: {
+       // "move" and "copy"
++      const from = own(operation, "from");
+       if (typeof from !== "string") {
+         throw new SyntaxError(`JSON Patch operation ${op} must have a string "from"`);
+       }
+       return { op: op as "move" | "copy", from, path };
++    }
++  }
++}
++
++/** Reads an own member. A member inherited through the prototype chain counts as absent. */
++function own(object: Record<string, unknown>, key: string): unknown {
++  return Object.hasOwn(object, key) ? object[key] : undefined;
++}
++
++/**
++ * Tells whether a value is a JSON value: null, a boolean, a string, a finite number, an array or a
++ * plain object whose members are all JSON values. Rejects undefined, functions, symbols, bigints,
++ * NaN and infinities, class instances such as Date, and cyclic structures.
++ */
++function isJsonValue(value: unknown, ancestors: readonly object[] = []): boolean {
++  if (value === null || typeof value === "string" || typeof value === "boolean") {
++    return true;
++  }
++  if (typeof value === "number") {
++    return Number.isFinite(value);
++  }
++  if (typeof value !== "object" || ancestors.includes(value)) {
++    return false;
++  }
++
++  const inside = [...ancestors, value];
++  if (Array.isArray(value)) {
++    // Array.from turns holes into undefined, which is not a JSON value, so sparse arrays are rejected.
++    return Array.from(value).every((item) => isJsonValue(item, inside));
++  }
++  const prototype = Object.getPrototypeOf(value);
++  if (prototype !== Object.prototype && prototype !== null) {
++    return false;
+   }
++  return Object.keys(value).every((key) => isJsonValue((value as Record<string, unknown>)[key], inside));
+ }
+ 
+ function applyOperation(root: unknown, operation: PatchOperation): unknown {
+diff --git a/test/apply-patch.test.js b/test/apply-patch.test.js
+index d947290ad0579c76d242eac5f6c63db6b6782b7b..dd5547bcb2867e93024172f4f6782cf13e46e06c 100644
+--- a/test/apply-patch.test.js
++++ b/test/apply-patch.test.js
+@@ -156,3 +156,35 @@ test("rejects a malformed operation", () => {
+   assert.throws(() => applyPatch({ a: 1 }, [{ op: "copy", from: 1, path: "/b" }]), SyntaxError);
+   assert.throws(() => applyPatch({}, [{ op: "remove" }]), SyntaxError);
+ });
++
++test("add, replace and test reject a value that is not a JSON value", () => {
++  const bad = [undefined, NaN, Infinity, () => 1, Symbol("s"), 1n, new Date(0), new Map(), [undefined], [, 1]];
++  for (const value of bad) {
++    assert.throws(() => applyPatch({ a: 1 }, [{ op: "add", path: "/b", value }]), SyntaxError);
++    assert.throws(() => applyPatch({ a: 1 }, [{ op: "replace", path: "/a", value }]), SyntaxError);
++    assert.throws(() => applyPatch({ a: 1 }, [{ op: "test", path: "/a", value }]), SyntaxError);
++  }
++  assert.throws(() => applyPatch({}, [{ op: "add", path: "/b", value: { nested: { deep: undefined } } }]), SyntaxError);
++});
++
++test("rejects a cyclic value", () => {
++  const value = {};
++  value.self = value;
++  assert.throws(() => applyPatch({}, [{ op: "add", path: "/a", value }]), SyntaxError);
++});
++
++test("accepts every JSON value, including nested null, false, zero and empty strings", () => {
++  const value = { n: null, f: false, z: 0, s: "", list: [[], {}, -1.5e3] };
++  assert.deepEqual(applyPatch({}, [{ op: "add", path: "/a", value }]), { a: value });
++});
++
++test("reads operation members as own properties only", () => {
++  const inherited = Object.create({ op: "add", path: "/b", value: 1 });
++  assert.throws(() => applyPatch({}, [inherited]), SyntaxError);
++  const inheritedPath = Object.create({ path: "/b" });
++  Object.assign(inheritedPath, { op: "remove" });
++  assert.throws(() => applyPatch({ a: 1 }, [inheritedPath]), SyntaxError);
++  const inheritedFrom = Object.create({ from: "/a" });
++  Object.assign(inheritedFrom, { op: "copy", path: "/b" });
++  assert.throws(() => applyPatch({ a: 1 }, [inheritedFrom]), SyntaxError);
++});

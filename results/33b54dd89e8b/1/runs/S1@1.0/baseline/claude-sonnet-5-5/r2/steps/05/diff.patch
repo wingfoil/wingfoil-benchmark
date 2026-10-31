@@ -1,0 +1,115 @@
+diff --git a/src/index.ts b/src/index.ts
+index 0b3dc542990b01588dcb47906ef776e8021c8fde..74572578dedeee2f996897cd3b9bbfcb4e742ea5 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -256,3 +256,58 @@ export function applyMergePatch(target: unknown, patch: unknown): any {
+   }
+   return out;
+ }
++
++function escapeToken(token: string): string {
++  return token.replace(/~/g, "~0").replace(/\//g, "~1");
++}
++
++function diffInto(ops: PatchOperation[], path: string, a: unknown, b: unknown): void {
++  if (deepEqual(a, b)) return;
++
++  if (Array.isArray(a) && Array.isArray(b)) {
++    let start = 0;
++    while (start < a.length && start < b.length && deepEqual(a[start], b[start])) start++;
++    let endA = a.length;
++    let endB = b.length;
++    while (endA > start && endB > start && deepEqual(a[endA - 1], b[endB - 1])) {
++      endA--;
++      endB--;
++    }
++    const m = endA - start;
++    const n = endB - start;
++    const common = Math.min(m, n);
++    for (let i = 0; i < common; i++) diffInto(ops, `${path}/${start + i}`, a[start + i], b[start + i]);
++    for (let i = common; i < m; i++) ops.push({ op: "remove", path: `${path}/${start + common}` });
++    for (let i = common; i < n; i++) {
++      ops.push({ op: "add", path: `${path}/${start + i}`, value: clone(b[start + i]) as JsonValue });
++    }
++    return;
++  }
++
++  if (isContainer(a) && isContainer(b) && !Array.isArray(a) && !Array.isArray(b)) {
++    const ra = a as Record<string, JsonValue>;
++    const rb = b as Record<string, JsonValue>;
++    const has = (o: object, k: string) => Object.prototype.hasOwnProperty.call(o, k);
++    for (const key of Object.keys(ra)) {
++      if (!has(rb, key)) ops.push({ op: "remove", path: `${path}/${escapeToken(key)}` });
++    }
++    for (const key of Object.keys(rb)) {
++      const p = `${path}/${escapeToken(key)}`;
++      if (!has(ra, key)) ops.push({ op: "add", path: p, value: clone(rb[key]) });
++      else diffInto(ops, p, ra[key], rb[key]);
++    }
++    return;
++  }
++
++  ops.push({ op: "replace", path, value: clone(b) as JsonValue });
++}
++
++/**
++ * Computes an RFC 6902 JSON Patch that turns `from` into `to` when applied.
++ * Only the differing parts are described; neither input is mutated.
++ */
++export function createPatch(from: unknown, to: unknown): PatchOperation[] {
++  const ops: PatchOperation[] = [];
++  diffInto(ops, "", from, to);
++  return ops;
++}
+diff --git a/test/createpatch.test.ts b/test/createpatch.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..944ec643bdf49bee09c49a67ca2d25ec3ad09a1f
+--- /dev/null
++++ b/test/createpatch.test.ts
+@@ -0,0 +1,46 @@
++import { test } from "node:test";
++import assert from "node:assert/strict";
++import { applyPatch, createPatch } from "../src/index.ts";
++
++test("small change yields small patch", () => {
++  const from = { a: { b: [1, 2, 3, 4] }, c: "x/y~z", d: 1 };
++  const to = { a: { b: [1, 2, 9, 3, 4] }, c: "x/y~z", d: 1 };
++  assert.deepEqual(createPatch(from, to), [{ op: "add", path: "/a/b/2", value: 9 }]);
++  assert.deepEqual(createPatch(from, from), []);
++});
++
++test("escapes keys, does not mutate", () => {
++  const from = { "a/b": 1, "~": 2 };
++  const to = { "a/b": 3 };
++  const f = JSON.stringify(from);
++  const p = createPatch(from, to);
++  assert.equal(JSON.stringify(from), f);
++  assert.deepEqual(p, [
++    { op: "remove", path: "/~0" },
++    { op: "replace", path: "/a~1b", value: 3 },
++  ]);
++});
++
++test("root and type changes", () => {
++  assert.deepEqual(createPatch(1, [1]), [{ op: "replace", path: "", value: [1] }]);
++  assert.deepEqual(applyPatch({ a: 1 }, createPatch({ a: 1 }, null)), null);
++});
++
++test("random round trip", () => {
++  let s = 12345;
++  const rnd = (n: number) => ((s = (s * 1103515245 + 12345) & 0x7fffffff), s % n);
++  const gen = (d: number): any => {
++    const k = rnd(d > 2 ? 4 : 6);
++    if (k === 0) return rnd(3);
++    if (k === 1) return null;
++    if (k === 2) return "s" + rnd(2);
++    if (k === 3) return rnd(2) === 0;
++    if (k === 4) return Array.from({ length: rnd(5) }, () => gen(d + 1));
++    return Object.fromEntries(Array.from({ length: rnd(4) }, () => ["k" + rnd(4), gen(d + 1)]));
++  };
++  for (let i = 0; i < 3000; i++) {
++    const a = gen(0);
++    const b = gen(0);
++    assert.deepEqual(applyPatch(a, createPatch(a, b)), b);
++  }
++});

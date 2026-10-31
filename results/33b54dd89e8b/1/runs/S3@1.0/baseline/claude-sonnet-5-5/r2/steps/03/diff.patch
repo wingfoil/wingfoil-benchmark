@@ -1,0 +1,63 @@
+diff --git a/src/index.ts b/src/index.ts
+index e077ea7b7710e6c515e1139228993dcf7cf73358..1dacc5c20f2027d056524ee720507e778b042cd2 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -42,6 +42,10 @@ export interface RentalService {
+ }
+ 
+ const DAY_MS = 24 * 60 * 60 * 1000;
++/** Rentals of at least this many days get the long-stay discount. */
++const LONG_STAY_DAYS = 3;
++/** Long-stay discount, as a percentage of the full price. */
++const LONG_STAY_DISCOUNT_PERCENT = 10;
+ const MIDNIGHT_UTC = /^\d{4}-\d{2}-\d{2}T00:00:00(\.0+)?Z$/;
+ 
+ function parseMidnight(value: unknown, name: string): number {
+@@ -67,11 +71,17 @@ export function createRentalService(): RentalService {
+     const endMs = parseMidnight(request.end, 'end');
+     if (endMs <= startMs) throw new Error('end must be after start');
+     const days = (endMs - startMs) / DAY_MS;
++    const fullPrice = days * item.dailyPrice;
++    // Whole euro cents: the discounted total is rounded to the nearest cent.
++    const total =
++      days >= LONG_STAY_DAYS
++        ? Math.round((fullPrice * (100 - LONG_STAY_DISCOUNT_PERCENT)) / 100)
++        : fullPrice;
+     const quote: Quote = {
+       itemId: item.id,
+       start: request.start,
+       end: request.end,
+-      total: days * item.dailyPrice,
++      total,
+     };
+     return { quote, startMs, endMs };
+   }
+diff --git a/test/rental.test.ts b/test/rental.test.ts
+index a7482a3bf63d9a3251ee99e1f344635c558864e6..d917fcc5603b67646366f691d2552082623baa7f 100644
+--- a/test/rental.test.ts
++++ b/test/rental.test.ts
+@@ -9,9 +9,9 @@ function setup() {
+ }
+ const d = (day: number) => `2026-07-${String(day).padStart(2, '0')}T00:00:00Z`;
+ 
+-test('quote multiplies days by daily price', () => {
++test('quote multiplies days by daily price, 10% off from 3 days', () => {
+   assert.deepEqual(setup().quote({ itemId: 'b1', start: d(1), end: d(4) }), {
+-    itemId: 'b1', start: d(1), end: d(4), total: 7650,
++    itemId: 'b1', start: d(1), end: d(4), total: 6885,
+   });
+ });
+ 
+@@ -47,3 +47,12 @@ test('availability lists free items of a kind, sorted', () => {
+   assert.deepEqual(s.availability({ start: d(1), end: d(2), kind: 'sail' }), ['s1']);
+   assert.throws(() => s.availability({ start: d(2), end: d(2) }));
+ });
++
++test('long-stay discount applies from 3 days, in booking too, rounded to the cent', () => {
++  const s = setup();
++  assert.equal(s.quote({ itemId: 'b1', start: d(1), end: d(3) }).total, 5100);
++  assert.equal(s.quote({ itemId: 'b1', start: d(1), end: d(5) }).total, 9180);
++  s.addEquipment({ id: 'o', kind: 'sail', dailyPrice: 1005 });
++  assert.equal(s.quote({ itemId: 'o', start: d(1), end: d(4) }).total, 2714); // 3015 * 0.9 = 2713.5
++  assert.equal(s.book({ itemId: 'b1', start: d(10), end: d(13) }).total, 6885);
++});

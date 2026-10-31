@@ -1,0 +1,228 @@
+diff --git a/README.md b/README.md
+index ff92be649ff3f610b38798b3310751534d032814..8878def7705c22e736446b3d93f406ad4433c083 100644
+--- a/README.md
++++ b/README.md
+@@ -3,3 +3,23 @@
+ A small TypeScript library, with no runtime dependency, of building blocks for our services that store,
+ exchange and update JSON: configuration files, API payloads and stored records. It is imported by the
+ other projects of the team, so its behaviour must follow the published standards it implements.
++
++## JSON Pointer
++
++`resolvePointer(document, pointer)` returns the value of a JSON document that a JSON Pointer
++([RFC 6901](https://www.rfc-editor.org/rfc/rfc6901)) refers to:
++
++```ts
++import { resolvePointer } from 'json-toolkit';
++
++const doc = { users: [{ name: 'Ada' }], 'a/b': true };
++
++resolvePointer(doc, '');              // the whole document
++resolvePointer(doc, '/users/0/name'); // 'Ada'
++resolvePointer(doc, '/a~1b');         // true ("~1" stands for "/")
++```
++
++It throws a `JsonPointerError` when the pointer is malformed (for example, it does not start with
++`/`, or contains a `~` that is not followed by `0` or `1`) or when it does not resolve to a value of
++the document (a missing key, an array index out of range, `-`, or a path through a primitive value).
++Object keys are matched only against the object's own properties, so `/constructor` does not resolve.
+diff --git a/src/index.ts b/src/index.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..cbd178a4f3389729e2b97194b3bff96fa6dfb8fd
+--- /dev/null
++++ b/src/index.ts
+@@ -0,0 +1,70 @@
++/**
++ * A JSON value as defined by RFC 8259.
++ */
++export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
++
++/**
++ * Raised when a JSON Pointer is malformed or does not resolve to a value of the document.
++ */
++export class JsonPointerError extends Error {
++  constructor(message: string) {
++    super(message);
++    this.name = 'JsonPointerError';
++  }
++}
++
++const ARRAY_INDEX = /^(0|[1-9][0-9]*)$/;
++const INVALID_TILDE = /~(?![01])/;
++
++/**
++ * Decodes one reference token of a JSON Pointer: `~1` becomes `/` and `~0` becomes `~`.
++ * `~1` is decoded first so that the `~` of an escape is never read twice (RFC 6901, section 4).
++ */
++function decodeToken(token: string): string {
++  if (INVALID_TILDE.test(token)) {
++    throw new JsonPointerError(`invalid JSON Pointer token "${token}": "~" must be followed by "0" or "1"`);
++  }
++  return token.replace(/~1/g, '/').replace(/~0/g, '~');
++}
++
++/**
++ * Splits a JSON Pointer into its decoded reference tokens (RFC 6901, section 3).
++ * The empty pointer has no tokens and refers to the whole document.
++ */
++function parsePointer(pointer: string): string[] {
++  if (pointer === '') {
++    return [];
++  }
++  if (!pointer.startsWith('/')) {
++    throw new JsonPointerError(`invalid JSON Pointer "${pointer}": it must be empty or start with "/"`);
++  }
++  return pointer.slice(1).split('/').map(decodeToken);
++}
++
++/**
++ * Selects the member or element that `token` names within `container`.
++ * Arrays are indexed by canonical array indexes only; objects by their own keys.
++ */
++function selectChild(container: JsonValue, token: string, pointer: string): JsonValue {
++  if (Array.isArray(container)) {
++    if (ARRAY_INDEX.test(token) && Number(token) < container.length) {
++      return container[Number(token)];
++    }
++  } else if (container !== null && typeof container === 'object' && Object.hasOwn(container, token)) {
++    return container[token];
++  }
++  throw new JsonPointerError(`JSON Pointer "${pointer}" does not resolve: no value for token "${token}"`);
++}
++
++/**
++ * Returns the value of `document` that the JSON Pointer `pointer` refers to (RFC 6901).
++ *
++ * @throws {JsonPointerError} when `pointer` is not a valid JSON Pointer, or when it does not
++ * resolve to a value of `document`.
++ */
++export function resolvePointer(document: JsonValue, pointer: string): JsonValue {
++  if (typeof pointer !== 'string') {
++    throw new JsonPointerError('invalid JSON Pointer: it must be a string');
++  }
++  return parsePointer(pointer).reduce<JsonValue>((current, token) => selectChild(current, token, pointer), document);
++}
+diff --git a/test/resolve-pointer.test.ts b/test/resolve-pointer.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..bb9020d20155f48170af12db4c2220c995f05c6f
+--- /dev/null
++++ b/test/resolve-pointer.test.ts
+@@ -0,0 +1,118 @@
++import { test, describe } from 'node:test';
++import assert from 'node:assert/strict';
++import { resolvePointer, JsonPointerError } from '../src/index.ts';
++
++const document = {
++  foo: ['bar', 'baz'],
++  '': 'empty key',
++  'a/b': 'slash',
++  'm~n': 'tilde',
++  '~1': 'literal tilde one',
++  nested: { list: [{ name: 'deep' }] },
++  zero: 0,
++  no: false,
++  nothing: null,
++  empty: '',
++  '0': 'object zero',
++};
++
++describe('resolvePointer: valid pointers', () => {
++  test('the empty pointer refers to the whole document', () => {
++    assert.equal(resolvePointer(document, ''), document);
++  });
++
++  test('a single token selects an object member', () => {
++    assert.equal(resolvePointer(document, '/nested/list/0/name'), 'deep');
++  });
++
++  test('tokens select array elements by index', () => {
++    assert.equal(resolvePointer(document, '/foo/1'), 'baz');
++  });
++
++  test('the empty token selects the member whose key is the empty string', () => {
++    assert.equal(resolvePointer(document, '/'), 'empty key');
++  });
++
++  test('~1 is decoded to / in a token', () => {
++    assert.equal(resolvePointer(document, '/a~1b'), 'slash');
++  });
++
++  test('~0 is decoded to ~ in a token', () => {
++    assert.equal(resolvePointer(document, '/m~0n'), 'tilde');
++  });
++
++  test('~01 is decoded to ~1 and not to /', () => {
++    assert.equal(resolvePointer(document, '/~01'), 'literal tilde one');
++  });
++
++  test('a numeric token selects an object member when the target is an object', () => {
++    assert.equal(resolvePointer(document, '/0'), 'object zero');
++  });
++
++  test('falsy values are returned as resolved values', () => {
++    assert.equal(resolvePointer(document, '/zero'), 0);
++    assert.equal(resolvePointer(document, '/no'), false);
++    assert.equal(resolvePointer(document, '/nothing'), null);
++    assert.equal(resolvePointer(document, '/empty'), '');
++  });
++
++  test('a key named __proto__ is read as an own member of the document', () => {
++    const parsed = JSON.parse('{"__proto__": 1}');
++    assert.equal(resolvePointer(parsed, '/__proto__'), 1);
++  });
++});
++
++describe('resolvePointer: invalid pointers', () => {
++  test('a non-empty pointer must start with /', () => {
++    assert.throws(() => resolvePointer(document, 'foo'), JsonPointerError);
++    assert.throws(() => resolvePointer(document, 'foo/0'), JsonPointerError);
++  });
++
++  test('~ must be followed by 0 or 1', () => {
++    assert.throws(() => resolvePointer(document, '/a~'), JsonPointerError);
++    assert.throws(() => resolvePointer(document, '/a~2'), JsonPointerError);
++  });
++
++  test('a pointer that is not a string is rejected', () => {
++    assert.throws(() => resolvePointer(document, undefined as unknown as string), JsonPointerError);
++    assert.throws(() => resolvePointer(document, 0 as unknown as string), JsonPointerError);
++  });
++});
++
++describe('resolvePointer: pointers that do not resolve', () => {
++  test('a missing object member throws', () => {
++    assert.throws(() => resolvePointer(document, '/missing'), JsonPointerError);
++  });
++
++  test('inherited object properties do not resolve', () => {
++    assert.throws(() => resolvePointer(document, '/constructor'), JsonPointerError);
++    assert.throws(() => resolvePointer(document, '/toString'), JsonPointerError);
++  });
++
++  test('an array index past the end throws', () => {
++    assert.throws(() => resolvePointer(document, '/foo/2'), JsonPointerError);
++  });
++
++  test('the - token, which names the position past the end, throws', () => {
++    assert.throws(() => resolvePointer(document, '/foo/-'), JsonPointerError);
++  });
++
++  test('array indexes with leading zeros throw', () => {
++    assert.throws(() => resolvePointer(document, '/foo/01'), JsonPointerError);
++  });
++
++  test('non-index tokens on arrays throw', () => {
++    assert.throws(() => resolvePointer(document, '/foo/x'), JsonPointerError);
++    assert.throws(() => resolvePointer(document, '/foo/-1'), JsonPointerError);
++    assert.throws(() => resolvePointer(document, '/foo/1.5'), JsonPointerError);
++  });
++
++  test('descending into a primitive throws', () => {
++    assert.throws(() => resolvePointer(document, '/zero/x'), JsonPointerError);
++    assert.throws(() => resolvePointer(document, '/foo/0/x/y'), JsonPointerError);
++  });
++
++  test('descending into null throws', () => {
++    assert.throws(() => resolvePointer(document, '/nothing/x'), JsonPointerError);
++  });
++});

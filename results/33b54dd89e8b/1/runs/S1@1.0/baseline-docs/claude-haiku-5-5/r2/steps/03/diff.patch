@@ -1,0 +1,173 @@
+diff --git a/README.md b/README.md
+index e3d6524c30e22272112222dd7012a718b1b7b2fd..ec41928b6fcec89e509928cb2a4e2cfd8e3ebcc2 100644
+--- a/README.md
++++ b/README.md
+@@ -22,10 +22,10 @@ to a JSON document. The patch is an array of the six operations `add`, `remove`,
+ the operations are applied in order, each to the result of the previous one.
+ 
+ It returns the changed document as a new value and never modifies its inputs, so a caller can keep the original
+-document, for example to compare it with the result or to retry. It throws a `JsonPatchError` when the patch is malformed
++document, for example to compare it with the result or to retry. It throws a `JsonPatchError` when the document is not a JSON value, when the patch is malformed,
+ or when an operation fails, for example a missing member, an index out of range, or a `test` whose value differs.
+-The whole patch is checked for shape before any operation runs. When the failure comes from a malformed JSON Pointer,
+-the error's `cause` is the `JsonPointerError`.
++The whole patch is checked for shape, including the syntax of every pointer, before any operation runs. When the
++failure comes from a malformed JSON Pointer, the error's `cause` is the `JsonPointerError`.
+ 
+ ```ts
+ applyPatch({ foo: ["bar"] }, [
+diff --git a/src/json-patch.test.ts b/src/json-patch.test.ts
+index 5d1cec912c0126703b3519da61eb893ec4dd1198..a319597d425d3ddcfd3c8fb61c923b6466a41245 100644
+--- a/src/json-patch.test.ts
++++ b/src/json-patch.test.ts
+@@ -341,3 +341,51 @@ test("RFC 6902 appendix A: '~' escapes are decoded in a pointer", () => {
+     "~1": 10,
+   });
+ });
++
++// The patch is checked for shape before any operation runs, so a malformed pointer is reported as
++// such, with the pointer error as cause, even when an earlier operation would fail.
++test("a malformed pointer later in the patch is reported before an earlier operation fails", () => {
++  assert.throws(
++    () =>
++      applyPatch({ a: 1 }, [
++        { op: "test", path: "/a", value: 2 },
++        { op: "add", path: "x", value: 1 },
++      ] as never),
++    (error: unknown) =>
++      error instanceof JsonPatchError &&
++      error.cause instanceof JsonPointerError &&
++      /malformed/.test(error.message),
++  );
++});
++
++test("a malformed 'path' of move is reported as malformed, not as moving into a child", () => {
++  assert.throws(
++    () => applyPatch({ a: { b: 1 } }, [{ op: "move", from: "/a", path: "/a/~2" }] as never),
++    (error: unknown) =>
++      error instanceof JsonPatchError &&
++      error.cause instanceof JsonPointerError &&
++      /malformed/.test(error.message),
++  );
++});
++
++test("a malformed 'from' of move or copy is reported before the source is looked up", () => {
++  assert.throws(
++    () => applyPatch({}, [{ op: "move", from: "x", path: "/b" }] as never),
++    (error: unknown) => error instanceof JsonPatchError && error.cause instanceof JsonPointerError,
++  );
++  assert.throws(
++    () => applyPatch({}, [{ op: "copy", from: "/x/~2", path: "/b" }] as never),
++    (error: unknown) => error instanceof JsonPatchError && error.cause instanceof JsonPointerError,
++  );
++});
++
++test("a sparse patch array is rejected with a JsonPatchError", () => {
++  assert.throws(() => applyPatch({}, new Array(2) as never), JsonPatchError);
++});
++
++test("the document must be a JSON value", () => {
++  assert.throws(() => applyPatch(undefined as never, []), JsonPatchError);
++  assert.throws(() => applyPatch({ n: Number.NaN }, []), JsonPatchError);
++  assert.throws(() => applyPatch({ d: new Date(0) } as never, []), JsonPatchError);
++  assert.throws(() => applyPatch({ u: undefined } as never, []), JsonPatchError);
++});
+diff --git a/src/json-patch.ts b/src/json-patch.ts
+index 006a0f7cae76173a185f82ccfb74c83567abb4c8..868d37c2ab58d9ad0579fe4d5dd51cd5e7dc805d 100644
+--- a/src/json-patch.ts
++++ b/src/json-patch.ts
+@@ -1,4 +1,5 @@
+ import {
++  JsonPointerError,
+   parseArrayIndex,
+   parseTokens,
+   resolvePointer,
+@@ -44,10 +45,14 @@ type JsonContainer = JsonValue[] | JsonObject;
+  * @param document - The JSON document to change.
+  * @param patch - The operations to apply, as an array.
+  * @returns The changed document.
+- * @throws {JsonPatchError} If the patch is malformed, if a pointer in it is malformed, or if an
+- * operation cannot be applied (for example a missing member, or a failing `test`).
++ * @throws {JsonPatchError} If the document is not a JSON value, if the patch is malformed, if a
++ * pointer in it is malformed, or if an operation cannot be applied (for example a missing member,
++ * or a failing `test`).
+  */
+ export function applyPatch(document: JsonValue, patch: JsonPatch): JsonValue {
++  if (!isJsonValue(document)) {
++    throw new JsonPatchError("the document is not a JSON value");
++  }
+   const operations = parsePatch(patch);
+   let result = cloneJson(document);
+   for (const [index, operation] of operations.entries()) {
+@@ -64,18 +69,20 @@ export function applyPatch(document: JsonValue, patch: JsonPatch): JsonValue {
+ }
+ 
+ /**
+- * Checks the shape of every operation before any of them is applied.
++ * Checks the shape of every operation before any of them is applied. `Array.from` reads a hole of a
++ * sparse array as `undefined`, which is then reported as an operation that is not an object.
+  */
+ function parsePatch(patch: unknown): JsonPatchOperation[] {
+   if (!Array.isArray(patch)) {
+     throw new JsonPatchError("a JSON Patch must be an array of operations");
+   }
+-  return patch.map(parseOperation);
++  return Array.from(patch, parseOperation);
+ }
+ 
+ /**
+- * Checks that an operation has the members its kind requires, with values of the right type.
+- * Pointer syntax is checked when the operation is applied.
++ * Checks that an operation has the members its kind requires, with values of the right type, and
++ * that its pointers are syntactically valid JSON Pointers. Whether a pointer resolves in the
++ * document is only known when the operation is applied.
+  */
+ function parseOperation(value: unknown, index: number): JsonPatchOperation {
+   const fail = (reason: string) => new JsonPatchError(`operation ${index} ${reason}`);
+@@ -91,21 +98,43 @@ function parseOperation(value: unknown, index: number): JsonPatchOperation {
+   }
+   switch (op) {
+     case "remove":
+-      return { op, path };
++      return { op, path: checkPointer(path, "path", index) };
+     case "add":
+     case "replace":
+     case "test":
+       if (!Object.hasOwn(value, "value") || !isJsonValue(value.value)) {
+         throw fail(`needs a JSON "value"`);
+       }
+-      return { op, path, value: value.value };
++      return { op, path: checkPointer(path, "path", index), value: value.value };
+     case "move":
+     case "copy":
+       if (typeof from !== "string") {
+         throw fail(`needs a string "from"`);
+       }
+-      return { op, from, path };
++      return {
++        op,
++        from: checkPointer(from, "from", index),
++        path: checkPointer(path, "path", index),
++      };
++  }
++}
++
++/**
++ * Returns a pointer that is syntactically valid, or throws a malformed-patch error whose cause is
++ * the pointer error.
++ */
++function checkPointer(pointer: string, member: string, index: number): string {
++  try {
++    parseTokens(pointer);
++  } catch (error) {
++    if (!(error instanceof JsonPointerError)) {
++      throw error;
++    }
++    throw new JsonPatchError(`operation ${index} has a malformed "${member}": ${error.message}`, {
++      cause: error,
++    });
+   }
++  return pointer;
+ }
+ 
+ function applyOperation(root: JsonValue, operation: JsonPatchOperation): JsonValue {

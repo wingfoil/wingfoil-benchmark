@@ -1,0 +1,171 @@
+diff --git a/src/index.ts b/src/index.ts
+index 8ec30feadb68b282d508510d96ce659c79e186ad..d3af4f1cf443b1c769027ff64315f424e20adc81 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -90,6 +90,54 @@ function invalidOperation(index: number, reason: string, cause?: unknown): JsonP
+   return new JsonPatchError(`Invalid JSON Patch operation at index ${index}: ${reason}`, { cause });
+ }
+ 
++/** Reads a member of an operation. Only the operation's own members count; inherited ones are not members. */
++function own(operation: object, member: string): unknown {
++  return Object.hasOwn(operation, member) ? (operation as Record<string, unknown>)[member] : undefined;
++}
++
++/**
++ * Whether `value` is a JSON value. Rejects what JSON cannot carry: undefined, NaN and infinities, BigInt,
++ * sparse arrays, cycles, and objects that are not plain objects (Date, Map, class instances, ...).
++ */
++function isJsonValue(value: unknown, ancestors: Set<object> = new Set()): boolean {
++  switch (typeof value) {
++    case 'string':
++    case 'boolean':
++      return true;
++    case 'number':
++      return Number.isFinite(value);
++    case 'object':
++      break;
++    default:
++      return false;
++  }
++  if (value === null) {
++    return true;
++  }
++  if (ancestors.has(value)) {
++    return false;
++  }
++  ancestors.add(value);
++  let valid: boolean;
++  if (Array.isArray(value)) {
++    valid = true;
++    for (let i = 0; valid && i < value.length; i++) {
++      valid = Object.hasOwn(value, i) && isJsonValue(value[i], ancestors);
++    }
++  } else {
++    const prototype = Object.getPrototypeOf(value);
++    valid = prototype === Object.prototype || prototype === null;
++    for (const key of Object.keys(value)) {
++      if (!valid) {
++        break;
++      }
++      valid = isJsonValue((value as Record<string, unknown>)[key], ancestors);
++    }
++  }
++  ancestors.delete(value);
++  return valid;
++}
++
+ function validatePointer(pointer: unknown, member: string, index: number): void {
+   if (typeof pointer !== 'string') {
+     throw invalidOperation(index, `"${member}" must be a JSON Pointer string`);
+@@ -105,17 +153,22 @@ function validateOperation(operation: unknown, index: number): void {
+   if (typeof operation !== 'object' || operation === null || Array.isArray(operation)) {
+     throw invalidOperation(index, 'it must be an object');
+   }
+-  const { op, path, from } = operation as Record<string, unknown>;
++  const op = own(operation, 'op');
+   if (typeof op !== 'string' || !OPERATIONS.has(op)) {
+     throw invalidOperation(index, `unknown "op" ${JSON.stringify(op)}`);
+   }
++  const path = own(operation, 'path');
+   validatePointer(path, 'path', index);
+   if (op === 'add' || op === 'replace' || op === 'test') {
+-    if (!('value' in operation)) {
++    if (!Object.hasOwn(operation, 'value')) {
+       throw invalidOperation(index, `"${op}" needs a "value"`);
+     }
++    if (!isJsonValue(own(operation, 'value'))) {
++      throw invalidOperation(index, `"value" must be a JSON value`);
++    }
+   }
+   if (op === 'move' || op === 'copy') {
++    const from = own(operation, 'from');
+     validatePointer(from, 'from', index);
+     // RFC 6902 section 4.4: a location cannot be moved into one of its own children.
+     if (op === 'move' && (path as string).startsWith(`${from}/`)) {
+@@ -128,7 +181,10 @@ function validatePatch(patch: unknown): asserts patch is JsonPatch {
+   if (!Array.isArray(patch)) {
+     throw new JsonPatchError('A JSON Patch must be an array of operations');
+   }
+-  patch.forEach((operation, index) => validateOperation(operation, index));
++  // An index loop rather than forEach, which would skip the holes of a sparse array.
++  for (let index = 0; index < patch.length; index++) {
++    validateOperation(patch[index], index);
++  }
+ }
+ 
+ /** Compares two JSON values: objects match regardless of member order, arrays match element by element. */
+@@ -237,7 +293,12 @@ function applyOperation(document: unknown, operation: JsonPatchOperation): unkno
+  */
+ export function applyPatch(document: unknown, patch: JsonPatch): unknown {
+   validatePatch(patch);
+-  let result = structuredClone(document);
++  let result: unknown;
++  try {
++    result = structuredClone(document);
++  } catch (error) {
++    throw new JsonPatchError(`The target document cannot be copied: ${(error as Error).message}`, { cause: error });
++  }
+   for (const [index, operation] of patch.entries()) {
+     try {
+       result = applyOperation(result, operation);
+diff --git a/test/apply-patch.test.ts b/test/apply-patch.test.ts
+index a588e6c1959b075bafa3d5f008966b4ebffac47d..78ebcf85a705ac81e67b91a8e1b542a8a25e68aa 100644
+--- a/test/apply-patch.test.ts
++++ b/test/apply-patch.test.ts
+@@ -177,3 +177,56 @@ test('rejects patches that are not arrays of valid operations', () => {
+     assert.throws(() => applyPatch({}, patch as never), JsonPatchError, JSON.stringify(patch));
+   }
+ });
++
++test('a sparse patch is rejected with a JsonPatchError', () => {
++  const sparse = [, { op: 'add', path: '/a', value: 1 }] as never;
++  assert.throws(() => applyPatch({}, sparse), JsonPatchError);
++});
++
++test('values must be JSON values', () => {
++  class Point {
++    x = 1;
++  }
++  const cyclic: Record<string, unknown> = {};
++  cyclic.self = cyclic;
++  const invalid: unknown[] = [
++    undefined,
++    NaN,
++    Infinity,
++    -Infinity,
++    1n,
++    new Date(0),
++    new Map(),
++    new Point(),
++    [, 1],
++    { a: undefined },
++    cyclic,
++  ];
++  for (const value of invalid) {
++    for (const patch of [
++      [{ op: 'add', path: '/a', value }],
++      [{ op: 'replace', path: '/a', value }],
++      [{ op: 'test', path: '/a', value }],
++    ]) {
++      assert.throws(() => applyPatch({ a: 0 }, patch as never), JsonPatchError, String(value));
++    }
++  }
++});
++
++test('JSON values of every kind are accepted', () => {
++  const value = { n: null, b: false, s: '', i: -1.5, a: [{}, []] };
++  assert.deepEqual(applyPatch({}, [{ op: 'add', path: '/v', value }]), { v: value });
++  assert.doesNotThrow(() => applyPatch({}, [{ op: 'add', path: '/v', value: Object.create(null) }]));
++  assert.doesNotThrow(() => applyPatch({ a: null }, [{ op: 'test', path: '/a', value: null }]));
++});
++
++test('only own members of an operation count', () => {
++  const inherited = Object.create({ op: 'add', path: '/a', value: 1 });
++  assert.throws(() => applyPatch({}, [inherited]), JsonPatchError);
++  const inheritedValue = Object.assign(Object.create({ value: 1 }), { op: 'add', path: '/a' });
++  assert.throws(() => applyPatch({}, [inheritedValue]), JsonPatchError);
++});
++
++test('a document that cannot be copied fails with a JsonPatchError', () => {
++  assert.throws(() => applyPatch({ f: () => 1 }, []), JsonPatchError);
++});

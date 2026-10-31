@@ -1,0 +1,119 @@
+diff --git a/src/index.ts b/src/index.ts
+index d5d8f8884d67c8069ca23741c212b9f592597a8f..011b4e954d63086b6c8bc66564307291dcc48a30 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -29,10 +29,21 @@ export interface Booking extends Quote {
+   id: string;
+ }
+ 
++export interface AvailabilityQuery {
++  /** Midnight UTC, ISO-8601, as for RentalRequest. */
++  start: string;
++  /** Midnight UTC, ISO-8601, as for RentalRequest. */
++  end: string;
++  /** Only consider equipment of this kind. Any kind when omitted. */
++  kind?: EquipmentKind;
++}
++
+ export interface RentalService {
+   addEquipment(item: Equipment): void;
+   quote(request: RentalRequest): Quote;
+   book(request: RentalRequest): Booking;
++  /** Ids, sorted, of the matching equipment that is free for the whole period. */
++  availability(query: AvailabilityQuery): string[];
+ }
+ 
+ const DAY_MS = 24 * 60 * 60 * 1000;
+@@ -54,7 +65,7 @@ function parseMidnightUtc(value: unknown, label: string): number {
+ }
+ 
+ /** Validates a request and returns its normalized period. */
+-function parsePeriod(request: RentalRequest): { start: string; end: string; days: number } {
++function parsePeriod(request: { start: string; end: string }): { start: string; end: string; days: number } {
+   const startMs = parseMidnightUtc(request.start, 'start');
+   const endMs = parseMidnightUtc(request.end, 'end');
+   if (endMs <= startMs) {
+@@ -79,6 +90,11 @@ export function createRentalService(): RentalService {
+     return item;
+   }
+ 
++  function isFree(itemId: string, start: string, end: string): boolean {
++    // Periods are half-open: [start, end). Two periods overlap when each starts before the other ends.
++    return (bookings.get(itemId) ?? []).every((b) => !(b.start < end && start < b.end));
++  }
++
+   function priceFor(request: RentalRequest): Quote {
+     const item = findItem(request.itemId);
+     const { start, end, days } = parsePeriod(request);
+@@ -112,16 +128,25 @@ export function createRentalService(): RentalService {
+ 
+     book(request) {
+       const quote = priceFor(request);
+-      const existing = bookings.get(quote.itemId) ?? [];
+-      // Periods are half-open: [start, end). Two periods overlap when each starts before the other ends.
+-      const clash = existing.some((b) => b.start < quote.end && quote.start < b.end);
+-      if (clash) {
++      if (!isFree(quote.itemId, quote.start, quote.end)) {
+         throw new Error(`item ${JSON.stringify(quote.itemId)} is not free for ${quote.start} to ${quote.end}`);
+       }
+       const booking: Booking = { id: randomUUID(), ...quote };
++      const existing = bookings.get(quote.itemId) ?? [];
+       existing.push(booking);
+       bookings.set(quote.itemId, existing);
+       return { ...booking };
+     },
++
++    availability(query) {
++      const { start, end } = parsePeriod(query);
++      if (query.kind !== undefined && query.kind !== 'board' && query.kind !== 'sail') {
++        throw new Error(`equipment kind must be 'board' or 'sail', got ${JSON.stringify(query.kind)}`);
++      }
++      return [...items.values()]
++        .filter((item) => (query.kind === undefined || item.kind === query.kind) && isFree(item.id, start, end))
++        .map((item) => item.id)
++        .sort();
++    },
+   };
+ }
+diff --git a/test/rentals.test.ts b/test/rentals.test.ts
+index b2a699ed1d445fe9d30490927f8e828878a52abf..c4d7f5fbea48a664815c2169f325590eb670eff2 100644
+--- a/test/rentals.test.ts
++++ b/test/rentals.test.ts
+@@ -87,6 +87,37 @@ test('book rejects unknown items and bad periods without booking anything', () =
+   assert.doesNotThrow(() => rentals.book({ itemId: 'board-1', start: '2026-07-01', end: '2026-07-02' }));
+ });
+ 
++test('availability lists the free items of the requested kind, sorted', () => {
++  const rentals = createRentalService();
++  rentals.addEquipment({ id: 'sail-2', kind: 'sail', dailyPrice: 1200 });
++  rentals.addEquipment({ id: 'board-2', kind: 'board', dailyPrice: 2500 });
++  rentals.addEquipment({ id: 'board-1', kind: 'board', dailyPrice: 2500 });
++  rentals.addEquipment({ id: 'sail-1', kind: 'sail', dailyPrice: 1200 });
++  rentals.book({ itemId: 'board-1', start: '2026-07-01', end: '2026-07-04' });
++  assert.deepEqual(rentals.availability({ start: '2026-07-02', end: '2026-07-03', kind: 'board' }), ['board-2']);
++  assert.deepEqual(rentals.availability({ start: '2026-07-02', end: '2026-07-03', kind: 'sail' }), ['sail-1', 'sail-2']);
++  assert.deepEqual(rentals.availability({ start: '2026-07-02', end: '2026-07-03' }), ['board-2', 'sail-1', 'sail-2']);
++});
++
++test('availability treats the period as whole days, half-open like book', () => {
++  const rentals = service();
++  rentals.book({ itemId: 'board-1', start: '2026-07-01', end: '2026-07-04' });
++  assert.deepEqual(rentals.availability({ start: '2026-07-04', end: '2026-07-06', kind: 'board' }), ['board-1']);
++  assert.deepEqual(rentals.availability({ start: '2026-06-28', end: '2026-07-01', kind: 'board' }), ['board-1']);
++  assert.deepEqual(rentals.availability({ start: '2026-07-03', end: '2026-07-05', kind: 'board' }), []);
++  assert.deepEqual(rentals.availability({ start: '2026-06-01', end: '2026-08-01', kind: 'board' }), []);
++  assert.deepEqual(rentals.availability({ start: '2026-06-01', end: '2026-08-01' }), ['sail-1']);
++});
++
++test('availability does not change bookings and rejects bad input', () => {
++  const rentals = service();
++  assert.deepEqual(rentals.availability({ start: '2026-07-01', end: '2026-07-02' }), ['board-1', 'sail-1']);
++  assert.doesNotThrow(() => rentals.book({ itemId: 'board-1', start: '2026-07-01', end: '2026-07-02' }));
++  assert.throws(() => rentals.availability({ start: '2026-07-01T06:00:00Z', end: '2026-07-02' }), /midnight UTC/);
++  assert.throws(() => rentals.availability({ start: '2026-07-02', end: '2026-07-01' }), /end must be after start/);
++  assert.throws(() => rentals.availability({ start: '2026-07-01', end: '2026-07-02', kind: 'kite' as 'board' }), /kind/);
++});
++
+ test('quote does not reserve the item', () => {
+   const rentals = service();
+   rentals.quote({ itemId: 'board-1', start: '2026-07-01', end: '2026-07-02' });

@@ -1,0 +1,85 @@
+diff --git a/README.md b/README.md
+index 46cdc522835af7cbbd7ec72659ee7a62a9c32a45..7c1c18afb03d1dcbf235c1bd768464f4a4e1a774 100644
+--- a/README.md
++++ b/README.md
+@@ -11,8 +11,9 @@ of its booking desk, written in TypeScript with no runtime dependency.
+ - `addEquipment({ id, kind, dailyPrice })` — `kind` is `'board'` or `'sail'`; `dailyPrice` is an integer
+   number of euro cents.
+ - `quote({ itemId, start, end })` — returns `{ itemId, start, end, total }`, `total` being the number of
+-  days times the daily price, in cents.
+-- `book({ itemId, start, end })` — returns `{ id, itemId, start, end, total }`.
++  days times the daily price, in cents, less 10% (rounded to the cent) for a rental of 3 days or more.
++- `book({ itemId, start, end })` — returns `{ id, itemId, start, end, total }`, with the same
++  `total` as `quote`.
+ - `availability({ start, end, kind? })` — returns the sorted ids of the equipment of that `kind` (any kind
+   when omitted) that is free for the whole period, i.e. not booked for any overlapping time. It throws for
+   an invalid period or kind.
+diff --git a/src/index.test.ts b/src/index.test.ts
+index bae6d6fb42057f522b56030fec7e8327ea5be934..6d39f496bbacbe60182898b357768fa65f8cc685 100644
+--- a/src/index.test.ts
++++ b/src/index.test.ts
+@@ -12,11 +12,29 @@ function setup() {
+ const d = (day: number) => `2026-07-${String(day).padStart(2, '0')}T00:00:00.000Z`;
+ 
+ test('quote prices whole days in cents', () => {
+-  assert.deepEqual(setup().quote({ itemId: 'b1', start: d(1), end: d(4) }), {
+-    itemId: 'b1', start: d(1), end: d(4), total: 7500,
++  assert.deepEqual(setup().quote({ itemId: 'b1', start: d(1), end: d(3) }), {
++    itemId: 'b1', start: d(1), end: d(3), total: 5000,
+   });
+ });
+ 
++test('quote gives 10% off rentals of 3 days or more', () => {
++  const s = setup();
++  assert.equal(s.quote({ itemId: 'b1', start: d(1), end: d(4) }).total, 6750);
++  assert.equal(s.quote({ itemId: 'b1', start: d(1), end: d(11) }).total, 22500);
++});
++
++test('quote rounds the discounted total to whole cents', () => {
++  const s = createRentalService();
++  s.addEquipment({ id: 'x', kind: 'board', dailyPrice: 1001 });
++  assert.equal(s.quote({ itemId: 'x', start: d(1), end: d(4) }).total, 2703);
++});
++
++test('book charges the discounted total from 3 days', () => {
++  const s = setup();
++  assert.equal(s.book({ itemId: 'b1', start: d(1), end: d(4) }).total, 6750);
++  assert.equal(s.book({ itemId: 'b1', start: d(10), end: d(12) }).total, 5000);
++});
++
+ test('quote accepts timestamps without milliseconds', () => {
+   const q = setup().quote({ itemId: 's1', start: '2026-07-01T00:00:00Z', end: '2026-07-02T00:00:00Z' });
+   assert.equal(q.total, 1500);
+diff --git a/src/index.ts b/src/index.ts
+index 31f986c000637a6efbd2ba621bf3a7e179eebdb6..c03c82ddea630552d500000d07de8aac382cf2e5 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -1,4 +1,6 @@
+ const DAY_MS = 24 * 60 * 60 * 1000;
++const LONG_STAY_DAYS = 3;
++const LONG_STAY_PERCENT_PAID = 90;
+ const MIDNIGHT_UTC = /^\d{4}-\d{2}-\d{2}T00:00:00(\.000)?Z$/;
+ 
+ /** The kinds of equipment the school rents out. */
+@@ -86,6 +88,12 @@ function validateEquipment(item: Equipment): void {
+   }
+ }
+ 
++/** Total in cents for a stay; rentals of `LONG_STAY_DAYS` or more get 10% off, rounded to the cent. */
++function rentalTotal(days: number, dailyPrice: number): number {
++  const fullPrice = days * dailyPrice;
++  return days >= LONG_STAY_DAYS ? Math.round((fullPrice * LONG_STAY_PERCENT_PAID) / 100) : fullPrice;
++}
++
+ /** Creates an empty rental service that keeps everything in memory. */
+ export function createRentalService(): RentalService {
+   const equipment = new Map<string, Equipment>();
+@@ -98,7 +106,7 @@ export function createRentalService(): RentalService {
+     }
+     const { startMs, endMs } = parsePeriod(request.start, request.end);
+     const days = (endMs - startMs) / DAY_MS;
+-    return { itemId: item.id, start: request.start, end: request.end, total: days * item.dailyPrice, startMs, endMs };
++    return { itemId: item.id, start: request.start, end: request.end, total: rentalTotal(days, item.dailyPrice), startMs, endMs };
+   }
+ 
+   function isFree(itemId: string, startMs: number, endMs: number): boolean {

@@ -1,0 +1,160 @@
+diff --git a/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-2-plan.md b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-2-plan.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..569d8e2904424c683f632db7111d6e9e7f99ea9a
+--- /dev/null
++++ b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-2-plan.md
+@@ -0,0 +1,17 @@
++---
++id: sw-life-cycle-1-2-plan
++type: plan
++title: "Rental availability query"
++status: active
++workflow: "sw-life-cycle"
++phase: "1-2"
++element: ""
++parent: ""
++format: 1
++---
++
++<!-- plan body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
+diff --git a/docs/memory/task/task-002-rental-availability-query.md b/docs/memory/task/task-002-rental-availability-query.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..275b71bd2a9b49a0a129c31d99549df0a59f650c
+--- /dev/null
++++ b/docs/memory/task/task-002-rental-availability-query.md
+@@ -0,0 +1,21 @@
++---
++id: task-002-rental-availability-query
++type: task
++title: "Rental availability query"
++status: approved
++format: 1
++---
++
++<!-- task body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
++
++# Rental availability query
++
++Add `availability(query)` to the rental service, where `query` is `{ start, end, kind? }`. It returns the ids of the equipment of that kind (any kind when `kind` is omitted) that is free for the whole period, sorted.
++
++- The period follows the same rules as `quote` and `book` (UTC midnight, `end` after `start`); an invalid period throws.
++- Free means no booking overlaps the period; back-to-back bookings do not overlap.
++- An unknown `kind` throws.
+diff --git a/src/index.test.ts b/src/index.test.ts
+index fd9284aa879e9abfb8bf99f811ee15cd9b290a7f..23bce3ae2540dec8eac602ec03576999b4aab026 100644
+--- a/src/index.test.ts
++++ b/src/index.test.ts
+@@ -58,3 +58,22 @@ test('addEquipment validates input', () => {
+   assert.throws(() => s.addEquipment({ id: 'b2', kind: 'board', dailyPrice: 1.5 }));
+   assert.throws(() => s.addEquipment({ id: 'b2', kind: 'boat' as 'board', dailyPrice: 1 }));
+ });
++
++test('availability lists free items of a kind, sorted', () => {
++  const s = setup();
++  s.addEquipment({ id: 'b0', kind: 'board', dailyPrice: 1 });
++  s.addEquipment({ id: 's1', kind: 'sail', dailyPrice: 1 });
++  s.book(req('2026-07-02T00:00:00Z', '2026-07-05T00:00:00Z'));
++  const q = { start: '2026-07-04T00:00:00Z', end: '2026-07-06T00:00:00Z' };
++  assert.deepEqual(s.availability({ ...q, kind: 'board' }), ['b0']);
++  assert.deepEqual(s.availability(q), ['b0', 's1']);
++  assert.deepEqual(s.availability({ start: '2026-07-05T00:00:00Z', end: '2026-07-06T00:00:00Z', kind: 'board' }), ['b0', 'b1']);
++  assert.deepEqual(s.availability({ start: '2026-07-01T00:00:00Z', end: '2026-07-02T00:00:00Z', kind: 'sail' }), ['s1']);
++});
++
++test('availability rejects bad periods and unknown kinds', () => {
++  const s = setup();
++  assert.throws(() => s.availability({ start: '2026-07-02T00:00:00Z', end: '2026-07-02T00:00:00Z' }));
++  assert.throws(() => s.availability({ start: '2026-07-01T10:00:00Z', end: '2026-07-02T00:00:00Z' }));
++  assert.throws(() => s.availability({ start: '2026-07-01T00:00:00Z', end: '2026-07-02T00:00:00Z', kind: 'boat' as 'board' }));
++});
+diff --git a/src/index.ts b/src/index.ts
+index 34ccd4cebb8293d5c4f8faa49a6f2a7c168ef257..1c660fd0520caa22ffba114d5fba43e981371854 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -24,15 +24,30 @@ export interface Booking extends Quote {
+   id: string;
+ }
+ 
++export interface AvailabilityQuery {
++  start: string;
++  end: string;
++  kind?: EquipmentKind;
++}
++
+ export interface RentalService {
+   addEquipment(item: Equipment): void;
+   quote(request: RentalRequest): Quote;
+   book(request: RentalRequest): Booking;
++  /** Ids, sorted, of the equipment free for the whole period. */
++  availability(query: AvailabilityQuery): string[];
+ }
+ 
+ const DAY_MS = 24 * 60 * 60 * 1000;
+ const ISO_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/;
+ 
++function parsePeriod(start: string, end: string): { startMs: number; endMs: number } {
++  const startMs = parseMidnightUtc(start, 'start');
++  const endMs = parseMidnightUtc(end, 'end');
++  if (endMs <= startMs) throw new Error('end must be after start');
++  return { startMs, endMs };
++}
++
+ function parseMidnightUtc(value: unknown, name: string): number {
+   if (typeof value !== 'string' || !ISO_UTC.test(value)) {
+     throw new Error(`${name} must be an ISO-8601 UTC string, such as 2026-07-01T00:00:00Z`);
+@@ -54,9 +69,7 @@ export function createRentalService(): RentalService {
+   function price(request: RentalRequest): { quote: Quote; startMs: number; endMs: number } {
+     const item = equipment.get(request.itemId);
+     if (!item) throw new Error(`unknown item: ${request.itemId}`);
+-    const startMs = parseMidnightUtc(request.start, 'start');
+-    const endMs = parseMidnightUtc(request.end, 'end');
+-    if (endMs <= startMs) throw new Error('end must be after start');
++    const { startMs, endMs } = parsePeriod(request.start, request.end);
+     const days = (endMs - startMs) / DAY_MS;
+     return {
+       quote: { itemId: item.id, start: request.start, end: request.end, total: days * item.dailyPrice },
+@@ -65,6 +78,10 @@ export function createRentalService(): RentalService {
+     };
+   }
+ 
++  function isFree(itemId: string, startMs: number, endMs: number): boolean {
++    return !bookings.some((b) => b.itemId === itemId && startMs < b.endMs && b.startMs < endMs);
++  }
++
+   return {
+     addEquipment(item) {
+       if (typeof item.id !== 'string' || item.id === '') throw new Error('id must be a non-empty string');
+@@ -82,13 +99,21 @@ export function createRentalService(): RentalService {
+ 
+     book(request) {
+       const { quote, startMs, endMs } = price(request);
+-      const clash = bookings.some(
+-        (b) => b.itemId === quote.itemId && startMs < b.endMs && b.startMs < endMs,
+-      );
+-      if (clash) throw new Error(`item ${quote.itemId} is not free from ${quote.start} to ${quote.end}`);
++      if (!isFree(quote.itemId, startMs, endMs)) throw new Error(`item ${quote.itemId} is not free from ${quote.start} to ${quote.end}`);
+       const booking = { id: `booking-${bookings.length + 1}`, ...quote };
+       bookings.push({ ...booking, startMs, endMs });
+       return booking;
+     },
++
++    availability(query) {
++      const { startMs, endMs } = parsePeriod(query.start, query.end);
++      if (query.kind !== undefined && query.kind !== 'board' && query.kind !== 'sail') {
++        throw new Error(`unknown kind: ${String(query.kind)}`);
++      }
++      return [...equipment.values()]
++        .filter((item) => (query.kind === undefined || item.kind === query.kind) && isFree(item.id, startMs, endMs))
++        .map((item) => item.id)
++        .sort();
++    },
+   };
+ }

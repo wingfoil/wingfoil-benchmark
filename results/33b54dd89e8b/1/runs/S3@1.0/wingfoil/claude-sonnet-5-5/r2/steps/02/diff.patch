@@ -1,0 +1,161 @@
+diff --git a/README.md b/README.md
+index 614edce46c06ba460ae09a0aff5c4446caefa132..524ea2d38f206767b2ada2bc36e6ab2e19175f50 100644
+--- a/README.md
++++ b/README.md
+@@ -7,7 +7,7 @@ of its booking desk, written in TypeScript with no runtime dependency.
+ ## Rental module
+ 
+ `createRentalService()` (from `src/index.ts`) returns an in-memory service: `addEquipment({ id, kind, dailyPrice })`,
+-`quote({ itemId, start, end })` and `book({ itemId, start, end })`. Money is integer euro cents; times are UTC
++`quote({ itemId, start, end })`, `book({ itemId, start, end })` and `availability({ start, end, kind? })` (sorted ids of the equipment free for the whole period). Money is integer euro cents; times are UTC
+ ISO-8601 strings at midnight, `end` being the start of the day after the last rented day. An item cannot be booked
+ for overlapping periods. Invalid requests throw. Cancellations (no refund under 24 hours before start, else full
+ refund) are not implemented yet. Run the tests with `npm test`.
+diff --git a/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-2-plan.md b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-2-plan.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..569d8e2904424c683f632db7111d6e9e7f99ea9a
+--- /dev/null
++++ b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-2-plan.md
+@@ -0,0 +1,17 @@
++---
++id: sw-life-cycle-1-2-plan
++type: plan
++title: "Rental availability query"
++status: active
++workflow: "sw-life-cycle"
++phase: "1-2"
++element: ""
++parent: ""
++format: 1
++---
++
++<!-- plan body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
+diff --git a/docs/memory/task/task-002-rental-availability-query.md b/docs/memory/task/task-002-rental-availability-query.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..e19ffe6d348524aa8acf790d09371f6debe9d2e6
+--- /dev/null
++++ b/docs/memory/task/task-002-rental-availability-query.md
+@@ -0,0 +1,23 @@
++---
++id: task-002-rental-availability-query
++type: task
++title: "Rental availability query"
++status: approved
++format: 1
++---
++
++<!-- task body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
++
++# Request
++
++Add `availability(query)` to the rental service so the desk sees what can still be rented.
++
++# Acceptance
++
++- `query` is `{ start, end, kind? }`; the period is validated like a rental period (UTC midnights, end after start); invalid queries throw, as does an unknown `kind`.
++- Returns the ids of the equipment of `kind` (any kind when omitted) with no booking overlapping the period, sorted.
++- Back-to-back bookings do not make an item unavailable.
+diff --git a/src/index.ts b/src/index.ts
+index 191e0594b04131d3e71a7f1fd237903b1f4d25aa..6a51b04097d23a1d0db8fb604fda638d19dc064f 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -25,6 +25,13 @@ export interface Booking extends Quote {
+   id: string;
+ }
+ 
++/** A search for free equipment; `kind` restricts the search, any kind when omitted. */
++export interface AvailabilityQuery {
++  start: string;
++  end: string;
++  kind?: EquipmentKind;
++}
++
+ /** The booking desk's in-memory rental service. */
+ export interface RentalService {
+   /** Registers an item for rental; throws on an invalid item or a duplicate id. */
+@@ -33,6 +40,8 @@ export interface RentalService {
+   quote(request: RentalRequest): Quote;
+   /** Books an item; throws like `quote`, and when the item is taken during the period. */
+   book(request: RentalRequest): Booking;
++  /** Lists, sorted, the ids of the equipment free for the whole period; throws on an invalid period or kind. */
++  availability(query: AvailabilityQuery): string[];
+ }
+ 
+ const DAY_MS = 24 * 60 * 60 * 1000;
+@@ -73,6 +82,10 @@ export function createRentalService(): RentalService {
+     };
+   }
+ 
++  function isFree(itemId: string, start: number, end: number): boolean {
++    return !bookings.some((b) => b.itemId === itemId && Date.parse(b.start) < end && start < Date.parse(b.end));
++  }
++
+   return {
+     addEquipment(item) {
+       if (!item || typeof item.id !== 'string' || item.id === '') {
+@@ -96,15 +109,27 @@ export function createRentalService(): RentalService {
+ 
+     book(request) {
+       const { quote, start, end } = price(request);
+-      const taken = bookings.some(
+-        (b) => b.itemId === quote.itemId && Date.parse(b.start) < end && start < Date.parse(b.end),
+-      );
+-      if (taken) {
++      if (!isFree(quote.itemId, start, end)) {
+         throw new Error(`${quote.itemId} is not free from ${quote.start} to ${quote.end}`);
+       }
+       const booking: Booking = { id: `booking-${nextBooking++}`, ...quote };
+       bookings.push(booking);
+       return { ...booking };
+     },
++
++    availability(query) {
++      const start = parseMidnight(query?.start, 'start');
++      const end = parseMidnight(query.end, 'end');
++      if (end <= start) {
++        throw new Error('end must be after start');
++      }
++      if (query.kind !== undefined && query.kind !== 'board' && query.kind !== 'sail') {
++        throw new Error(`unknown equipment kind: ${String(query.kind)}`);
++      }
++      return [...equipment.values()]
++        .filter((item) => (query.kind === undefined || item.kind === query.kind) && isFree(item.id, start, end))
++        .map((item) => item.id)
++        .sort();
++    },
+   };
+ }
+diff --git a/test/rental.test.ts b/test/rental.test.ts
+index 01e36f9a5939a58c40a943bdc2173466eb5fa268..fc1c56d90ba9797a21427ca846ea1c3c51d306e6 100644
+--- a/test/rental.test.ts
++++ b/test/rental.test.ts
+@@ -64,3 +64,21 @@ test('equipment validation', () => {
+   s.addEquipment({ id: 'x', kind: 'board', dailyPrice: 10 });
+   assert.throws(() => s.addEquipment({ id: 'x', kind: 'sail', dailyPrice: 10 }));
+ });
++
++test('availability lists free items of a kind or of any kind, sorted', () => {
++  const s = setup();
++  s.addEquipment({ id: 'a0', kind: 'board', dailyPrice: 100 });
++  s.book(r('b1', D2, D4));
++  const D3 = '2026-07-03T00:00:00Z';
++  assert.deepEqual(s.availability({ start: D1, end: D3 }), ['a0', 's1']);
++  assert.deepEqual(s.availability({ start: D1, end: D3, kind: 'board' }), ['a0']);
++  assert.deepEqual(s.availability({ start: D1, end: D2, kind: 'board' }), ['a0', 'b1']);
++  assert.deepEqual(s.availability({ start: D4, end: '2026-07-05T00:00:00Z', kind: 'board' }), ['a0', 'b1']);
++});
++
++test('availability rejects invalid queries', () => {
++  const s = setup();
++  assert.throws(() => s.availability({ start: D2, end: D1 }));
++  assert.throws(() => s.availability({ start: '2026-07-01', end: D2 }));
++  assert.throws(() => s.availability({ start: D1, end: D2, kind: 'boat' as never }));
++});

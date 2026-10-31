@@ -1,0 +1,479 @@
+diff --git a/README.md b/README.md
+index 4eb9233110812f730d202ada053062ecf94742a4..f36567f68ea35a62defb5269e64edb684fcd797b 100644
+--- a/README.md
++++ b/README.md
+@@ -34,6 +34,23 @@ applyPatch({ foo: ["bar"] }, [
+ ]); // { foo: ["bar", "baz"] }
+ ```
+ 
++## Creating a JSON Patch
++
++`createPatch(from, to)` (from `src/index.ts`) produces a JSON Patch, as RFC 6902, that turns the document `from` into the document `to`
++when it is applied with `applyPatch`. It exists so that a client can send only what changed between two versions of a document, instead
++of the whole new version. The patch describes the changes and nothing more: equal members and elements produce no operation, a changed
++member is replaced at its own pointer, and an inserted or removed array element is one `add` or `remove`, so the elements after it are
++not sent again.
++
++It returns the patch as a new array and never modifies its inputs; the values in the patch are copies. It throws a `JsonPatchError`
++when either document is not a JSON value. Two documents that differ in one small place produce a patch of that one operation, but the
++patch is not always the smallest possible: for an array whose changed middle is very large, the elements are paired by position.
++
++```ts
++createPatch({ foo: ["bar", "baz"] }, { foo: ["bar", "qux"] }); // [{ op: "replace", path: "/foo/1", value: "qux" }]
++applyPatch({ foo: ["bar", "baz"] }, createPatch({ foo: ["bar", "baz"] }, { foo: ["bar", "qux"] })); // { foo: ["bar", "qux"] }
++```
++
+ ## JSON Merge Patch
+ 
+ `applyMergePatch(target, patch)` (from `src/index.ts`) applies a JSON Merge Patch, as [RFC 7386](https://www.rfc-editor.org/rfc/rfc7386),
+diff --git a/src/index.ts b/src/index.ts
+index b2296a3ebecf5a4d3dab0760858d13c751c101e5..8436f39c96f2957705f185e272088d5f3a415854 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -2,4 +2,5 @@ export { JsonPointerError, resolvePointer } from "./json-pointer.ts";
+ export type { JsonValue } from "./json-pointer.ts";
+ export { JsonPatchError, applyPatch } from "./json-patch.ts";
+ export type { JsonPatch, JsonPatchOperation } from "./json-patch.ts";
++export { createPatch } from "./json-patch-diff.ts";
+ export { JsonMergePatchError, applyMergePatch } from "./json-merge-patch.ts";
+diff --git a/src/json-patch-diff.test.ts b/src/json-patch-diff.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..d63d8846240fd9104526676f9f557d24edb5da70
+--- /dev/null
++++ b/src/json-patch-diff.test.ts
+@@ -0,0 +1,162 @@
++import { test } from "node:test";
++import assert from "node:assert/strict";
++import { applyPatch, createPatch, JsonPatchError } from "./index.ts";
++
++test("equal documents produce an empty patch", () => {
++  assert.deepEqual(createPatch({ a: [1, { b: "c" }] }, { a: [1, { b: "c" }] }), []);
++});
++
++test("a scalar at the root is replaced as a whole", () => {
++  assert.deepEqual(createPatch(1, 2), [{ op: "replace", path: "", value: 2 }]);
++});
++
++test("a changed member produces a replace of that member only", () => {
++  assert.deepEqual(createPatch({ a: { b: 1, c: 2 } }, { a: { b: 1, c: 3 } }), [
++    { op: "replace", path: "/a/c", value: 3 },
++  ]);
++});
++
++test("an added member produces an add, and a removed member a remove", () => {
++  assert.deepEqual(createPatch({ a: 1 }, { a: 1, b: 2 }), [{ op: "add", path: "/b", value: 2 }]);
++  assert.deepEqual(createPatch({ a: 1, b: 2 }, { a: 1 }), [{ op: "remove", path: "/b" }]);
++});
++
++test("a value whose type changes is replaced as a whole", () => {
++  assert.deepEqual(createPatch({ a: [1] }, { a: { x: 1 } }), [
++    { op: "replace", path: "/a", value: { x: 1 } },
++  ]);
++  assert.deepEqual(createPatch({ a: null }, { a: false }), [
++    { op: "replace", path: "/a", value: false },
++  ]);
++});
++
++test("a changed array element produces a replace of that element only", () => {
++  assert.deepEqual(createPatch({ a: [1, 2, 3] }, { a: [1, 9, 3] }), [
++    { op: "replace", path: "/a/1", value: 9 },
++  ]);
++});
++
++test("elements appended to or removed from the end of an array", () => {
++  assert.deepEqual(createPatch({ a: [1] }, { a: [1, 2, 3] }), [
++    { op: "add", path: "/a/1", value: 2 },
++    { op: "add", path: "/a/2", value: 3 },
++  ]);
++  assert.deepEqual(createPatch({ a: [1, 2, 3] }, { a: [1] }), [
++    { op: "remove", path: "/a/1" },
++    { op: "remove", path: "/a/1" },
++  ]);
++});
++
++test("an element inserted in the middle of an array is one add, not a rewrite of the tail", () => {
++  assert.deepEqual(createPatch([1, 2, 3, 4], [1, 2, 0, 3, 4]), [
++    { op: "add", path: "/2", value: 0 },
++  ]);
++});
++
++test("an element removed from the middle of an array is one remove", () => {
++  assert.deepEqual(createPatch(["a", "b", "c", "d"], ["a", "c", "d"]), [
++    { op: "remove", path: "/1" },
++  ]);
++});
++
++test("an element inserted at the start of an array is one add", () => {
++  assert.deepEqual(createPatch([1, 2, 3], [0, 1, 2, 3]), [{ op: "add", path: "/0", value: 0 }]);
++});
++
++test("a changed element of an array of objects is patched inside that element", () => {
++  assert.deepEqual(
++    createPatch(
++      [
++        { id: 1, v: 1 },
++        { id: 2, v: 2 },
++        { id: 3, v: 3 },
++      ],
++      [
++        { id: 1, v: 1 },
++        { id: 2, v: 5 },
++        { id: 3, v: 3 },
++      ],
++    ),
++    [{ op: "replace", path: "/1/v", value: 5 }],
++  );
++});
++
++test("a repeated element is added or removed once, at the right position", () => {
++  assert.deepEqual(createPatch([1, 1, 1], [1, 1]), [{ op: "remove", path: "/2" }]);
++  assert.deepEqual(createPatch([1, 1], [1, 1, 1]), [{ op: "add", path: "/2", value: 1 }]);
++});
++
++test("a changed element in an array of a different length is paired with its neighbour", () => {
++  assert.deepEqual(createPatch(["a", "x", "c"], ["a", "y", "z", "c"]), [
++    { op: "replace", path: "/1", value: "y" },
++    { op: "add", path: "/2", value: "z" },
++  ]);
++});
++
++test("a large document with one small change produces a patch of one operation", () => {
++  const from = {
++    items: Array.from({ length: 5000 }, (_, index) => ({ id: index, name: `item ${index}` })),
++    meta: { version: 1 },
++  };
++  const to = structuredClone(from);
++  to.items[2500].name = "renamed";
++  const patch = createPatch(from, to);
++  assert.deepEqual(patch, [{ op: "replace", path: "/items/2500/name", value: "renamed" }]);
++});
++
++test("keys are escaped as JSON Pointer tokens", () => {
++  const from = { "a/b": 1, "m~n": 2 };
++  const to = { "a/b": 3, "m~n": 2, "c~/d": 4 };
++  const patch = createPatch(from, to);
++  assert.deepEqual(patch, [
++    { op: "replace", path: "/a~1b", value: 3 },
++    { op: "add", path: "/c~0~1d", value: 4 },
++  ]);
++  assert.deepEqual(applyPatch(from, patch), to);
++});
++
++test("a member named __proto__ is treated as an ordinary member", () => {
++  const from = JSON.parse("{}");
++  const to = JSON.parse('{"__proto__":{"polluted":true}}');
++  assert.deepEqual(createPatch(from, to), [
++    { op: "add", path: "/__proto__", value: { polluted: true } },
++  ]);
++});
++
++test("applying the patch to the source yields the target", () => {
++  const cases: [unknown, unknown][] = [
++    [null, { a: [1, 2] }],
++    [{ a: [1, 2, 3], b: { c: "d" } }, { a: [0, 2, 4], e: null }],
++    [[{ x: 1 }, [2, 3], "s"], [[2, 3], { x: 2 }, "t", true]],
++    [[1, 2, 3, 4, 5, 6], [6, 5, 4, 3, 2, 1]],
++    [{ a: [] }, { a: [[], {}, ""] }],
++    [[1, 2, 3], []],
++  ];
++  for (const [from, to] of cases) {
++    const patch = createPatch(from as never, to as never);
++    assert.deepEqual(applyPatch(from as never, patch), to);
++  }
++});
++
++test("does not mutate either input", () => {
++  const from = { a: [1, { b: 2 }], c: "x" };
++  const to = { a: [1, { b: 3 }, 4], d: { e: [5] } };
++  const fromBefore = JSON.stringify(from);
++  const toBefore = JSON.stringify(to);
++  createPatch(from, to);
++  assert.equal(JSON.stringify(from), fromBefore);
++  assert.equal(JSON.stringify(to), toBefore);
++});
++
++test("the values in the patch share no structure with the target", () => {
++  const to = { a: { b: [1] } };
++  const patch = createPatch({}, to);
++  (patch[0] as { value: { b: number[] } }).value.b.push(2);
++  assert.deepEqual(to, { a: { b: [1] } });
++});
++
++test("rejects a source or target that is not a JSON value", () => {
++  assert.throws(() => createPatch(undefined as never, 1), JsonPatchError);
++  assert.throws(() => createPatch(1, { a: Number.NaN }), JsonPatchError);
++  assert.throws(() => createPatch({ a: () => 1 } as never, {}), JsonPatchError);
++});
+diff --git a/src/json-patch-diff.ts b/src/json-patch-diff.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..0ef0b362a44aa0b46382ef99bd4c67cecfae83b3
+--- /dev/null
++++ b/src/json-patch-diff.ts
+@@ -0,0 +1,201 @@
++import { JsonPatchError, type JsonPatch, type JsonPatchOperation } from "./json-patch.ts";
++import type { JsonValue } from "./json-pointer.ts";
++import { cloneJson, isJsonObject, isJsonValue, jsonEqual, type JsonObject } from "./json-value.ts";
++
++/**
++ * The largest alignment table, in cells, that the array comparison builds. An array whose changed
++ * middle is larger than this is paired by position: the patch is still correct, but it may be
++ * longer than the smallest possible one.
++ */
++const MAX_ALIGNMENT_CELLS = 4_000_000;
++
++/**
++ * Creates a JSON Patch (RFC 6902) that turns `from` into `to` when it is applied with `applyPatch`.
++ *
++ * The patch describes only what changed. Members and elements that are equal in both documents
++ * produce no operation. A member that is added or removed produces one `add` or `remove`, and an
++ * array element that is inserted or removed produces one operation: the elements after it are not
++ * sent again. A value that changed in place is replaced at its own pointer, and a value whose type
++ * changed is replaced as a whole.
++ *
++ * Neither input is modified, and the values in the patch are copies, so the patch shares no
++ * structure with either document.
++ *
++ * @param from - The JSON document that the patch starts from.
++ * @param to - The JSON document that the patch produces.
++ * @returns The operations, in an order in which each one applies to the result of the previous one.
++ * The patch is empty when the documents are equal.
++ * @throws {JsonPatchError} If either document is not a JSON value.
++ */
++export function createPatch(from: JsonValue, to: JsonValue): JsonPatch {
++  if (!isJsonValue(from)) {
++    throw new JsonPatchError("the source is not a JSON value");
++  }
++  if (!isJsonValue(to)) {
++    throw new JsonPatchError("the target is not a JSON value");
++  }
++  const operations: JsonPatchOperation[] = [];
++  diff(from, to, "", operations);
++  return operations;
++}
++
++function diff(
++  from: JsonValue,
++  to: JsonValue,
++  path: string,
++  operations: JsonPatchOperation[],
++): void {
++  if (jsonEqual(from, to)) {
++    return;
++  }
++  if (Array.isArray(from) && Array.isArray(to)) {
++    diffArray(from, to, path, operations);
++  } else if (isJsonObject(from) && isJsonObject(to)) {
++    diffObject(from, to, path, operations);
++  } else {
++    operations.push({ op: "replace", path, value: cloneJson(to) });
++  }
++}
++
++function diffObject(
++  from: JsonObject,
++  to: JsonObject,
++  path: string,
++  operations: JsonPatchOperation[],
++): void {
++  for (const key of Object.keys(from)) {
++    const pointer = `${path}/${escapeToken(key)}`;
++    if (Object.hasOwn(to, key)) {
++      diff(from[key], to[key], pointer, operations);
++    } else {
++      operations.push({ op: "remove", path: pointer });
++    }
++  }
++  for (const key of Object.keys(to)) {
++    if (!Object.hasOwn(from, key)) {
++      const pointer = `${path}/${escapeToken(key)}`;
++      operations.push({ op: "add", path: pointer, value: cloneJson(to[key]) });
++    }
++  }
++}
++
++/**
++ * Compares two arrays in three steps. The elements at both ends that are equal are skipped; the
++ * elements in between are aligned, so that the elements common to both arrays stay in place; and
++ * each gap between two aligned elements is turned into operations on the array as it is at that
++ * point. The operations keep track of the current index, since each one changes the indexes after
++ * it.
++ */
++function diffArray(
++  from: JsonValue[],
++  to: JsonValue[],
++  path: string,
++  operations: JsonPatchOperation[],
++): void {
++  let start = 0;
++  while (start < from.length && start < to.length && jsonEqual(from[start], to[start])) {
++    start++;
++  }
++  let fromEnd = from.length;
++  let toEnd = to.length;
++  while (fromEnd > start && toEnd > start && jsonEqual(from[fromEnd - 1], to[toEnd - 1])) {
++    fromEnd--;
++    toEnd--;
++  }
++
++  let index = start;
++  let fromNext = start;
++  let toNext = start;
++  for (const [fromAnchor, toAnchor] of alignElements(from, fromNext, fromEnd, to, toNext, toEnd)) {
++    index = diffGap(from, fromNext, fromAnchor, to, toNext, toAnchor, path, index, operations);
++    fromNext = fromAnchor + 1;
++    toNext = toAnchor + 1;
++    index++;
++  }
++  diffGap(from, fromNext, fromEnd, to, toNext, toEnd, path, index, operations);
++}
++
++/**
++ * Turns the difference between two runs of unaligned elements into operations. The elements that
++ * occupy the same position are compared with each other; the surplus of one run is removed or added
++ * at the position where it sits. Returns the index of the element after the run, in the array as
++ * it is once the operations have been applied.
++ */
++function diffGap(
++  from: JsonValue[],
++  fromStart: number,
++  fromEnd: number,
++  to: JsonValue[],
++  toStart: number,
++  toEnd: number,
++  path: string,
++  index: number,
++  operations: JsonPatchOperation[],
++): number {
++  const paired = Math.min(fromEnd - fromStart, toEnd - toStart);
++  let position = index;
++  for (let offset = 0; offset < paired; offset++) {
++    diff(from[fromStart + offset], to[toStart + offset], `${path}/${position}`, operations);
++    position++;
++  }
++  for (let offset = fromStart + paired; offset < fromEnd; offset++) {
++    operations.push({ op: "remove", path: `${path}/${position}` });
++  }
++  for (let offset = toStart + paired; offset < toEnd; offset++) {
++    operations.push({ op: "add", path: `${path}/${position}`, value: cloneJson(to[offset]) });
++    position++;
++  }
++  return position;
++}
++
++/**
++ * Finds a longest common subsequence of two runs of elements, compared by content. Returns the
++ * matched pairs of indexes, in order. The table has a cell for every pair of positions, so a run
++ * pair larger than `MAX_ALIGNMENT_CELLS` is not aligned at all.
++ */
++function alignElements(
++  from: JsonValue[],
++  fromStart: number,
++  fromEnd: number,
++  to: JsonValue[],
++  toStart: number,
++  toEnd: number,
++): [number, number][] {
++  const rows = fromEnd - fromStart + 1;
++  const columns = toEnd - toStart + 1;
++  if (rows * columns > MAX_ALIGNMENT_CELLS) {
++    return [];
++  }
++  // lengths[i][j]: the length of a longest common subsequence of
++  // from[fromStart + i..] and to[toStart + j..].
++  const lengths = Array.from({ length: rows }, () => new Array<number>(columns).fill(0));
++  for (let i = rows - 2; i >= 0; i--) {
++    for (let j = columns - 2; j >= 0; j--) {
++      lengths[i][j] = jsonEqual(from[fromStart + i], to[toStart + j])
++        ? lengths[i + 1][j + 1] + 1
++        : Math.max(lengths[i + 1][j], lengths[i][j + 1]);
++    }
++  }
++  const pairs: [number, number][] = [];
++  let i = 0;
++  let j = 0;
++  while (i < rows - 1 && j < columns - 1) {
++    if (jsonEqual(from[fromStart + i], to[toStart + j])) {
++      pairs.push([fromStart + i, toStart + j]);
++      i++;
++      j++;
++    } else if (lengths[i + 1][j] >= lengths[i][j + 1]) {
++      i++;
++    } else {
++      j++;
++    }
++  }
++  return pairs;
++}
++
++/**
++ * Escapes a member name as a JSON Pointer reference token (RFC 6901, section 3).
++ */
++function escapeToken(key: string): string {
++  return key.replace(/~/g, "~0").replace(/\//g, "~1");
++}
+diff --git a/src/json-patch.ts b/src/json-patch.ts
+index 2f8eeb5f665975a679178dc70cdda40d67882096..90375ef6b973d33184db5080dfafc6dea8904319 100644
+--- a/src/json-patch.ts
++++ b/src/json-patch.ts
+@@ -9,6 +9,7 @@ import {
+   cloneJson,
+   isJsonObject,
+   isJsonValue,
++  jsonEqual,
+   setMember,
+   type JsonObject,
+ } from "./json-value.ts";
+@@ -275,24 +276,3 @@ function requireMember(object: JsonObject, key: string): void {
+ function isOperationName(name: string): name is OperationName {
+   return (OPERATION_NAMES as readonly string[]).includes(name);
+ }
+-
+-/**
+- * Compares two JSON values by content: objects are equal when they have the same members with
+- * equal values, in any order, and arrays when they have equal elements in the same order.
+- */
+-function jsonEqual(a: JsonValue, b: JsonValue): boolean {
+-  if (a === b) {
+-    return true;
+-  }
+-  if (Array.isArray(a) && Array.isArray(b)) {
+-    return a.length === b.length && a.every((element, index) => jsonEqual(element, b[index]));
+-  }
+-  if (isJsonObject(a) && isJsonObject(b)) {
+-    const keys = Object.keys(a);
+-    return (
+-      keys.length === Object.keys(b).length &&
+-      keys.every((key) => Object.hasOwn(b, key) && jsonEqual(a[key], b[key]))
+-    );
+-  }
+-  return false;
+-}
+diff --git a/src/json-value.ts b/src/json-value.ts
+index 96a501eb793cc8e90e197d46203038d91808a19f..1541e327d8bbc076ea093262838f00c441d5ba50 100644
+--- a/src/json-value.ts
++++ b/src/json-value.ts
+@@ -37,3 +37,24 @@ export function setMember(object: JsonObject, key: string, value: JsonValue): vo
+ export function cloneJson(value: JsonValue): JsonValue {
+   return JSON.parse(JSON.stringify(value)) as JsonValue;
+ }
++
++/**
++ * Compares two JSON values by content: objects are equal when they have the same members with
++ * equal values, in any order, and arrays when they have equal elements in the same order.
++ */
++export function jsonEqual(a: JsonValue, b: JsonValue): boolean {
++  if (a === b) {
++    return true;
++  }
++  if (Array.isArray(a) && Array.isArray(b)) {
++    return a.length === b.length && a.every((element, index) => jsonEqual(element, b[index]));
++  }
++  if (isJsonObject(a) && isJsonObject(b)) {
++    const keys = Object.keys(a);
++    return (
++      keys.length === Object.keys(b).length &&
++      keys.every((key) => Object.hasOwn(b, key) && jsonEqual(a[key], b[key]))
++    );
++  }
++  return false;
++}

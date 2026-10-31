@@ -1,0 +1,66 @@
+diff --git a/README.md b/README.md
+index 588150fc3ac2ed079b3e70b842845318a9353d5a..764f77eb5969dcf4bf97c67572209383895a8b3e 100644
+--- a/README.md
++++ b/README.md
+@@ -18,5 +18,7 @@ School rules that apply to everything the module does:
+ 5. Cancellation policy: a booking cancelled less than 24 hours before its start gets no refund;
+    otherwise the full amount is refunded. **Not implemented yet** (no cancellation exists); bookings
+    keep their `total` and `start` so the refund can be computed when it is added.
++6. Long-stay discount: a rental of 3 days or more costs 90% of its full price (days × daily price),
++   rounded to the nearest cent. Quotes and bookings both show the discounted `total`.
+ 
+ Tests: `npm test` (Node 22+, runs the TypeScript directly).
+diff --git a/src/index.ts b/src/index.ts
+index 97378ce62433ab7c6d79362ca748bb99477e13a5..025b99285414abb743a710a2b5caa7772846330e 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -46,6 +46,9 @@ export interface RentalService {
+ 
+ const DAY_MS = 24 * 60 * 60 * 1000;
+ 
++// Rentals of at least this many days get 10% off the full price.
++const LONG_STAY_DAYS = 3;
++
+ // Date and time with an explicit UTC designator (Z or +00:00 / -00:00).
+ const ISO_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]00:?00)$/;
+ 
+@@ -86,7 +89,11 @@ export function createRentalService(): RentalService {
+       itemId: item.id,
+       start: new Date(startMs).toISOString(),
+       end: new Date(endMs).toISOString(),
+-      total: days * item.dailyPrice,
++      // 90% of the full price, rounded to the nearest cent (integer arithmetic, no float error).
++      total:
++        days >= LONG_STAY_DAYS
++          ? Math.round((days * item.dailyPrice * 9) / 10)
++          : days * item.dailyPrice,
+     };
+     return { quote, startMs, endMs };
+   }
+diff --git a/test/rental.test.ts b/test/rental.test.ts
+index 306a939c5d88c92e772402da3fde75d6e8ce0bf5..4bde42360aef5aff896955186becf9f5e49f0209 100644
+--- a/test/rental.test.ts
++++ b/test/rental.test.ts
+@@ -15,10 +15,21 @@ test('quotes whole days in cents', () => {
+     itemId: 'b1',
+     start: '2026-07-01T00:00:00.000Z',
+     end: '2026-07-04T00:00:00.000Z',
+-    total: 7500,
++    total: 6750,
+   });
+ });
+ 
++test('10% off from 3 days, none below, rounded to the cent', () => {
++  const s = setup();
++  const total = (end: string) => s.quote(req('2026-07-01T00:00:00Z', end)).total;
++  assert.equal(total('2026-07-03T00:00:00Z'), 5000);
++  assert.equal(total('2026-07-04T00:00:00Z'), 6750);
++  assert.equal(total('2026-07-06T00:00:00Z'), 11250);
++  s.addEquipment({ id: 'odd', kind: 'sail', dailyPrice: 1005 });
++  assert.equal(s.quote({ itemId: 'odd', start: '2026-07-01T00:00:00Z', end: '2026-07-04T00:00:00Z' }).total, 2714);
++  assert.equal(s.book(req('2026-07-01T00:00:00Z', '2026-07-04T00:00:00Z')).total, 6750);
++});
++
+ test('rejects unknown items and bad periods', () => {
+   const s = setup();
+   assert.throws(() => s.quote(req('2026-07-01T00:00:00Z', '2026-07-02T00:00:00Z', 'x')));

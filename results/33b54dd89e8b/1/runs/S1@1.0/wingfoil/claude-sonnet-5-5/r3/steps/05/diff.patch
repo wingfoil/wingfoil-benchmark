@@ -1,0 +1,188 @@
+diff --git a/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-5-plan.md b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-5-plan.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..fe2a589944d4886d75b0c9e86dcce54fa6ab778c
+--- /dev/null
++++ b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-5-plan.md
+@@ -0,0 +1,17 @@
++---
++id: sw-life-cycle-1-5-plan
++type: plan
++title: "createPatch JSON Patch diff"
++status: active
++workflow: "sw-life-cycle"
++phase: "1-5"
++element: ""
++parent: ""
++format: 1
++---
++
++<!-- plan body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
+diff --git a/docs/memory/task/task-005-implement-createpatch-json-patch-diff-rfc-6902.md b/docs/memory/task/task-005-implement-createpatch-json-patch-diff-rfc-6902.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..832567cf2f30ca0258ee890788bd5368c86e7e77
+--- /dev/null
++++ b/docs/memory/task/task-005-implement-createpatch-json-patch-diff-rfc-6902.md
+@@ -0,0 +1,19 @@
++---
++id: task-005-implement-createpatch-json-patch-diff-rfc-6902
++type: task
++title: "Implement createPatch (JSON Patch diff, RFC 6902)"
++status: approved
++format: 1
++---
++
++<!-- task body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
++
++Export `createPatch(from, to)` from `src/index.ts`: returns a minimal-ish RFC 6902 JSON Patch that
++turns `from` into `to` via `applyPatch`. Objects diff per member (add/remove/replace, recursing);
++arrays trim the common prefix and suffix then diff the middle index-wise; differing types replace.
++Pointer tokens are escaped (`~0`, `~1`). Neither input is mutated and the patch shares no structure
++with them. Tests in `test/createpatch.test.mjs`.
+diff --git a/src/index.ts b/src/index.ts
+index 3c496368de168a90de8faa81aee03287224b70d4..642069cc5a02ff2fe1c63b19958ef42509eaf1c9 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -260,3 +260,54 @@ export function applyMergePatch(target: unknown, patch: unknown): JsonValue {
+   }
+   return result as JsonValue;
+ }
++
++function escapeToken(token: string): string {
++  return token.replace(/~/g, "~0").replace(/\//g, "~1");
++}
++
++function diffInto(operations: PatchOperation[], path: string, from: unknown, to: unknown): void {
++  if (deepEqual(from, to)) return;
++  if (Array.isArray(from) && Array.isArray(to)) {
++    let start = 0;
++    while (start < from.length && start < to.length && deepEqual(from[start], to[start])) start++;
++    let fromEnd = from.length;
++    let toEnd = to.length;
++    while (fromEnd > start && toEnd > start && deepEqual(from[fromEnd - 1], to[toEnd - 1])) {
++      fromEnd--;
++      toEnd--;
++    }
++    const shared = Math.min(fromEnd, toEnd) - start;
++    for (let i = 0; i < shared; i++) diffInto(operations, `${path}/${start + i}`, from[start + i], to[start + i]);
++    // Remove surplus items from the highest index down so earlier indices stay valid.
++    for (let i = fromEnd - 1; i >= start + shared; i--) operations.push({ op: "remove", path: `${path}/${i}` });
++    for (let i = start + shared; i < toEnd; i++) {
++      operations.push({ op: "add", path: `${path}/${i}`, value: clone(to[i]) as JsonValue });
++    }
++    return;
++  }
++  if (isPlainObject(from) && isPlainObject(to)) {
++    for (const key of Object.keys(from)) {
++      if (!hasOwn(to, key)) operations.push({ op: "remove", path: `${path}/${escapeToken(key)}` });
++    }
++    for (const key of Object.keys(to)) {
++      const member = `${path}/${escapeToken(key)}`;
++      if (hasOwn(from, key)) {
++        diffInto(operations, member, from[key], to[key]);
++      } else {
++        operations.push({ op: "add", path: member, value: clone(to[key]) as JsonValue });
++      }
++    }
++    return;
++  }
++  operations.push({ op: "replace", path, value: clone(to) as JsonValue });
++}
++
++/**
++ * Computes a JSON Patch (RFC 6902) that turns `from` into `to` when applied with `applyPatch`.
++ * Only the parts that differ are described; neither input is mutated and the patch shares no structure with them.
++ */
++export function createPatch(from: JsonValue, to: JsonValue): PatchOperation[] {
++  const operations: PatchOperation[] = [];
++  diffInto(operations, "", from, to);
++  return operations;
++}
+diff --git a/test/createpatch.test.mjs b/test/createpatch.test.mjs
+new file mode 100644
+index 0000000000000000000000000000000000000000..f2a278f92144f58b0c9d81c53b0001f1d3ecf9a2
+--- /dev/null
++++ b/test/createpatch.test.mjs
+@@ -0,0 +1,75 @@
++import { test } from "node:test";
++import assert from "node:assert/strict";
++import { applyPatch, createPatch } from "../src/index.ts";
++
++function roundTrip(from, to) {
++  const fromCopy = structuredClone(from);
++  const toCopy = structuredClone(to);
++  const patch = createPatch(from, to);
++  assert.deepEqual(from, fromCopy);
++  assert.deepEqual(to, toCopy);
++  assert.deepEqual(applyPatch(from, patch), to);
++  return patch;
++}
++
++test("equal documents give an empty patch", () => {
++  assert.deepEqual(roundTrip({ a: [1, { b: 2 }] }, { a: [1, { b: 2 }] }), []);
++});
++
++test("small change yields a small patch", () => {
++  const from = { a: { b: 1, c: [1, 2, 3] }, d: "x" };
++  const to = { a: { b: 1, c: [1, 9, 3] }, d: "x" };
++  assert.deepEqual(roundTrip(from, to), [{ op: "replace", path: "/a/c/1", value: 9 }]);
++});
++
++test("object members added and removed", () => {
++  assert.deepEqual(roundTrip({ a: 1, b: 2 }, { b: 2, c: 3 }), [
++    { op: "remove", path: "/a" },
++    { op: "add", path: "/c", value: 3 },
++  ]);
++});
++
++test("array insert, append and removal", () => {
++  assert.deepEqual(roundTrip([1, 2, 3], [0, 1, 2, 3]), [{ op: "add", path: "/0", value: 0 }]);
++  assert.deepEqual(roundTrip([1, 2, 3], [1, 2, 3, 4]), [{ op: "add", path: "/3", value: 4 }]);
++  assert.deepEqual(roundTrip([1, 2, 3, 4], [1, 4]), [
++    { op: "remove", path: "/2" },
++    { op: "remove", path: "/1" },
++  ]);
++});
++
++test("type changes, root replacement and null", () => {
++  roundTrip({ a: [1] }, { a: { 0: 1 } });
++  roundTrip({ a: null }, { a: 1 });
++  assert.deepEqual(roundTrip(1, "x"), [{ op: "replace", path: "", value: "x" }]);
++  roundTrip([], {});
++});
++
++test("keys needing escaping, including __proto__", () => {
++  roundTrip({ "a/b": 1, "m~n": 2, "": 3 }, { "a/b": 2, "m~n": 3, "": 4 });
++  const to = JSON.parse('{"__proto__": {"x": 1}}');
++  const patch = roundTrip({}, to);
++  assert.equal(patch[0].path, "/__proto__");
++});
++
++test("patch shares no structure with inputs", () => {
++  const to = { a: { b: 1 } };
++  const patch = createPatch({}, to);
++  patch[0].value.b = 2;
++  assert.equal(to.a.b, 1);
++});
++
++test("randomized round trips", () => {
++  let seed = 7;
++  const rnd = (n) => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff), seed % n);
++  const gen = (depth) => {
++    const k = rnd(depth > 2 ? 4 : 6);
++    if (k === 0) return rnd(3);
++    if (k === 1) return "s" + rnd(3);
++    if (k === 2) return null;
++    if (k === 3) return rnd(2) === 0;
++    if (k === 4) return Array.from({ length: rnd(5) }, () => gen(depth + 1));
++    return Object.fromEntries(Array.from({ length: rnd(4) }, () => ["k" + rnd(4), gen(depth + 1)]));
++  };
++  for (let i = 0; i < 2000; i++) roundTrip(gen(0), gen(0));
++});

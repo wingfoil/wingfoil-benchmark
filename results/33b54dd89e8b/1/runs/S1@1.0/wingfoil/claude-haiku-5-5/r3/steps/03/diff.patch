@@ -1,0 +1,280 @@
+diff --git a/README.md b/README.md
+index 66b4513f128c026ea0aeaecb7e88a82eb64a2e5a..0f07b1880d60b7e0454c6cfe84d3dfbafd474c35 100644
+--- a/README.md
++++ b/README.md
+@@ -20,7 +20,10 @@ resolvePointer({ foo: ['bar', 'baz'] }, '/foo/1'); // 'baz'
+ operations `add`, `remove`, `replace`, `move`, `copy` and `test`. It applies the operations of `patch`
+ in order and returns the resulting document. The input is not modified: the result is a new value.
+ It throws a `SyntaxError` when the patch is not a valid JSON Patch, and an `Error` when an operation
+-cannot be applied (a missing target, a failed `test`, and so on); the whole patch then fails.
++cannot be applied (a missing target, a failed `test`, and so on); the whole patch then fails. A patch is
++checked before any operation runs: a malformed pointer, a missing member, or a `value` that is not a JSON
++value (such as `undefined`, `NaN` or a `Date`) is a `SyntaxError`, wherever in the patch it occurs. A
++`move` of a location onto itself leaves the document unchanged.
+ 
+ ```ts
+ applyPatch({ foo: ['bar'] }, [
+diff --git a/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-3-plan.md b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-3-plan.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..d5cff4a12cddc7b6b2b3c5b611dcb24c7337ce8a
+--- /dev/null
++++ b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-3-plan.md
+@@ -0,0 +1,17 @@
++---
++id: sw-life-cycle-1-3-plan
++type: plan
++title: "Conform applyPatch to RFC 6902"
++status: active
++workflow: "sw-life-cycle"
++phase: "1-3"
++element: ""
++parent: ""
++format: 1
++---
++
++<!-- plan body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
+diff --git a/docs/memory/task/task-003-conform-applypatch-to-rfc-6902.md b/docs/memory/task/task-003-conform-applypatch-to-rfc-6902.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..d4b9a3037f6c347570c2ce11bfabae39d2599b0a
+--- /dev/null
++++ b/docs/memory/task/task-003-conform-applypatch-to-rfc-6902.md
+@@ -0,0 +1,56 @@
++---
++id: task-003-conform-applypatch-to-rfc-6902
++type: task
++title: "Conform applyPatch to RFC 6902"
++status: approved
++format: 1
++---
++
++# Conform applyPatch to RFC 6902
++
++## Request
++
++Users of `applyPatch` report surprising results. Some patches they consider invalid are accepted, some
++edge cases give results they did not expect, and a patch that fails does not always behave the way they
++read the standard. Review how patches are checked and applied, and make the behaviour conform to
++RFC 6902 in every case, errors included.
++
++## Acceptance
++
++- A patch that is not valid JSON Patch throws a `SyntaxError` before any operation runs, whatever the
++  position of the faulty operation: this includes a malformed `path` or `from` pointer, and a `value`
++  that is not a JSON value (such as `undefined`, a function, `NaN`, or a `Date`).
++- A sparse patch array, or an operation that is inherited rather than an own member, is handled as an
++  invalid patch and throws a `SyntaxError`, not a `TypeError` or a silent acceptance.
++- `move` of a location onto itself is a no-op when the location exists, including the whole document.
++- Existing tests in `test/apply-patch.test.ts` and `test/resolve-pointer.test.ts` keep passing; new
++  tests cover each point above.
++- README's JSON Patch section matches the behaviour.
++
++## Outcome
++
++Reviewed `applyPatch` against RFC 6902 and reproduced the faults before changing anything:
++
++- A sparse patch array threw a `TypeError` (the `forEach` skipped the hole, then `op` was read from `undefined`).
++- A `value` of `undefined`, `NaN` or a `Date` was accepted; `undefined` and `Date` silently became `{}`,
++  `NaN` became `null`.
++- A malformed pointer in a later operation was reported only when reached, after an earlier operation had
++  already failed with an `Error`, so the error class depended on the operation order.
++- `move` of the whole document onto itself threw, though RFC 6902 §4.4 makes it a no-op.
++- Operation members were read through the prototype chain, so an inherited `op` or `path` was accepted.
++
++Changes in `src/index.ts`:
++
++- `checkOperation` now reads only own members, parses the `path` and `from` pointers, and requires a
++  JSON value (`isJsonValue`: no `undefined`, non-finite number, sparse array or class instance). Every
++  operation is checked before any runs, so these are `SyntaxError`s whatever the position.
++- The check loop uses `for...of`, so holes are visited and rejected.
++- `move` onto the same location returns the document after checking that the location exists.
++
++Tests: `test/apply-patch.test.ts` gains 6 tests (74 in total, all passing with `npm test`). The source
++type-checks under `tsc --strict` (checked with a temporary TypeScript install outside the repository).
++README's JSON Patch section describes the checks and the `move` case.
++
++Not changed: the input `document` is still copied without validation, so a non-JSON value inside it (for
++example a `Date`) is still turned into `{}`. A cyclic `value` is still not detected. Both are outside the
++patch checks above and are left for a separate decision.
+diff --git a/src/index.ts b/src/index.ts
+index c87fbac0c3ace966a4af98f0d2804181e4602fe6..182886e8e810d73bc02096198f2cfb906f86c0a3 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -40,7 +40,9 @@ export function applyPatch(document: JsonValue, patch: JsonPatch): JsonValue {
+   if (!Array.isArray(patch)) {
+     throw new SyntaxError('invalid JSON Patch: must be an array of operations');
+   }
+-  patch.forEach(checkOperation);
++  for (const operation of patch) {
++    checkOperation(operation);
++  }
+   let result = copyValue(document);
+   for (const operation of patch) {
+     result = applyOperation(result, operation);
+@@ -48,27 +50,64 @@ export function applyPatch(document: JsonValue, patch: JsonPatch): JsonValue {
+   return result;
+ }
+ 
+-/** Checks the members that each operation needs, so that an invalid patch fails before any change. */
++/**
++ * Checks that an operation is a valid JSON Patch operation: its members are its own, it has the members
++ * that it needs, its pointers are well formed and its value is a JSON value. Throws before any change.
++ */
+ function checkOperation(operation: unknown): void {
+   if (typeof operation !== 'object' || operation === null || Array.isArray(operation)) {
+     throw new SyntaxError('invalid JSON Patch operation: must be an object');
+   }
+   const members = operation as Record<string, unknown>;
+-  const op = members.op;
++  const member = (name: string): unknown => (Object.hasOwn(members, name) ? members[name] : undefined);
++  const op = member('op');
+   if (typeof op !== 'string' || !OPERATIONS.includes(op)) {
+     throw new SyntaxError(`invalid JSON Patch operation: unknown "op" ${JSON.stringify(op)}`);
+   }
+-  if (typeof members.path !== 'string') {
++  const path = member('path');
++  if (typeof path !== 'string') {
+     throw new SyntaxError(`invalid JSON Patch operation "${op}": "path" must be a string`);
+   }
+-  if ((op === 'move' || op === 'copy') && typeof members.from !== 'string') {
+-    throw new SyntaxError(`invalid JSON Patch operation "${op}": "from" must be a string`);
++  parsePointer(path);
++  if (op === 'move' || op === 'copy') {
++    const from = member('from');
++    if (typeof from !== 'string') {
++      throw new SyntaxError(`invalid JSON Patch operation "${op}": "from" must be a string`);
++    }
++    parsePointer(from);
+   }
+-  if ((op === 'add' || op === 'replace' || op === 'test') && !Object.hasOwn(members, 'value')) {
+-    throw new SyntaxError(`invalid JSON Patch operation "${op}": "value" is required`);
++  if (op === 'add' || op === 'replace' || op === 'test') {
++    if (!Object.hasOwn(members, 'value')) {
++      throw new SyntaxError(`invalid JSON Patch operation "${op}": "value" is required`);
++    }
++    if (!isJsonValue(member('value'))) {
++      throw new SyntaxError(`invalid JSON Patch operation "${op}": "value" is not a JSON value`);
++    }
+   }
+ }
+ 
++/** True when a value is a JSON value (RFC 8259): no undefined, no non-finite number, no class instance. */
++function isJsonValue(value: unknown): value is JsonValue {
++  if (value === null || typeof value === 'string' || typeof value === 'boolean') {
++    return true;
++  }
++  if (typeof value === 'number') {
++    return Number.isFinite(value);
++  }
++  if (Array.isArray(value)) {
++    return Array.from(value).every(isJsonValue); // Array.from reads a hole as undefined, which is rejected
++  }
++  if (typeof value === 'object') {
++    const prototype = Object.getPrototypeOf(value);
++    const record = value as Record<string, unknown>;
++    return (
++      (prototype === Object.prototype || prototype === null) &&
++      Object.keys(record).every((key) => isJsonValue(record[key]))
++    );
++  }
++  return false;
++}
++
+ /** Applies one operation to the working copy of a document, and returns the new document. */
+ function applyOperation(document: JsonValue, operation: JsonPatchOperation): JsonValue {
+   switch (operation.op) {
+@@ -85,6 +124,10 @@ function applyOperation(document: JsonValue, operation: JsonPatchOperation): Jso
+       if (isProperPrefix(from, path)) {
+         throw new Error(`cannot move ${JSON.stringify(operation.from)} into one of its children`);
+       }
++      if (sameLocation(from, path)) {
++        resolveTokens(document, from); // moving a location onto itself leaves the document as it is
++        return document;
++      }
+       return addAt(document, path, removeAt(document, from));
+     }
+     case 'copy': {
+@@ -225,6 +268,11 @@ function isProperPrefix(prefix: string[], tokens: string[]): boolean {
+   return prefix.length < tokens.length && prefix.every((token, i) => token === tokens[i]);
+ }
+ 
++/** True when two locations are the same: the same reference tokens in the same order. */
++function sameLocation(a: string[], b: string[]): boolean {
++  return a.length === b.length && a.every((token, i) => token === b[i]);
++}
++
+ /** Copies a JSON value, so that the copy shares no array or object with it. */
+ function copyValue(value: JsonValue): JsonValue {
+   if (Array.isArray(value)) {
+diff --git a/test/apply-patch.test.ts b/test/apply-patch.test.ts
+index 1fd5e5efdb209d41e083c3a7ec51b0b378a79db3..0c82a341ff11750a156114cd2429a3ae45c49413 100644
+--- a/test/apply-patch.test.ts
++++ b/test/apply-patch.test.ts
+@@ -140,6 +140,10 @@ describe('applyPatch: move', () => {
+     assert.deepEqual(applyPatch({ a: [1, 2] }, [{ op: 'move', from: '/a/0', path: '/a/0' }]), { a: [1, 2] });
+   });
+ 
++  test('moving the whole document onto itself leaves it unchanged', () => {
++    assert.deepEqual(applyPatch({ a: [1, 2] }, [{ op: 'move', from: '', path: '' }]), { a: [1, 2] });
++  });
++
+   test('moving a location into one of its own children is an error', () => {
+     assert.throws(() => applyPatch({ a: { b: 1 } }, [{ op: 'move', from: '/a', path: '/a/b/c' }]));
+   });
+@@ -283,6 +287,53 @@ describe('applyPatch: invalid patches', () => {
+   });
+ });
+ 
++describe('applyPatch: invalid patches found before any operation runs', () => {
++  test('a sparse patch array is a SyntaxError, not a TypeError', () => {
++    const sparse = [, { op: 'add', path: '/a', value: 1 }] as unknown as JsonPatch;
++    assert.throws(() => applyPatch({}, sparse), SyntaxError);
++  });
++
++  test('a malformed path in a later operation is a SyntaxError, even after a failing operation', () => {
++    assert.throws(
++      () =>
++        applyUnchecked({ a: 1 }, [
++          { op: 'remove', path: '/missing' },
++          { op: 'remove', path: 'a' },
++        ]),
++      SyntaxError,
++    );
++    assert.throws(
++      () =>
++        applyUnchecked({ a: 1 }, [
++          { op: 'remove', path: '/missing' },
++          { op: 'copy', from: '/a~2', path: '/b' },
++        ]),
++      SyntaxError,
++    );
++  });
++
++  test('a value that is not a JSON value is a SyntaxError', () => {
++    const values = [undefined, NaN, Infinity, new Date(0), () => 1, [1, undefined], { a: undefined }];
++    for (const value of values) {
++      assert.throws(() => applyUnchecked({}, [{ op: 'add', path: '/a', value }]), SyntaxError);
++      assert.throws(() => applyUnchecked({ a: 1 }, [{ op: 'test', path: '/a', value }]), SyntaxError);
++    }
++    assert.throws(() => applyUnchecked({}, [{ op: 'add', path: '/a', value: [, 1] }]), SyntaxError);
++  });
++
++  test('JSON values, including nested null and empty containers, are accepted as values', () => {
++    assert.deepEqual(
++      applyUnchecked({}, [{ op: 'add', path: '/a', value: { b: [null, true, 1.5, 'x', {}, []] } }]),
++      { a: { b: [null, true, 1.5, 'x', {}, []] } },
++    );
++  });
++
++  test('an operation member that is inherited rather than its own is an error', () => {
++    const inherited = Object.create({ op: 'remove', path: '/a' });
++    assert.throws(() => applyUnchecked({ a: 1 }, [inherited]), SyntaxError);
++  });
++});
++
+ describe('applyPatch: immutability', () => {
+   test('the input document is not mutated by a successful patch', () => {
+     const document = { foo: ['bar'], nested: { a: 1 } };

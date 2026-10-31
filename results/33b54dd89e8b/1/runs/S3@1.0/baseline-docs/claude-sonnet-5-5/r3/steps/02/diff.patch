@@ -1,0 +1,124 @@
+diff --git a/README.md b/README.md
+index 8abb48a2589cdecf2536ea10ffe78f04f90d6dd4..76f03cb6e9c1a754adaa69f136a8d82bc3504beb 100644
+--- a/README.md
++++ b/README.md
+@@ -13,6 +13,8 @@ of its booking desk, written in TypeScript with no runtime dependency.
+ - `quote({ itemId, start, end })`: returns `{ itemId, start, end, total }`.
+ - `book({ itemId, start, end })`: returns `{ id, itemId, start, end, total }`; throws if the item is not
+   free for the whole period.
++- `availability({ start, end, kind? })`: returns the sorted ids of the equipment of that kind (any kind
++  when `kind` is omitted) that is free for the whole period; throws for an invalid period or unknown kind.
+ 
+ Times are ISO-8601 UTC strings (ending in `Z`) at midnight; `end` is the start of the day after the last
+ rented day, so `2026-07-01T00:00:00Z` to `2026-07-03T00:00:00Z` is two days. Overlapping bookings of the
+diff --git a/src/index.ts b/src/index.ts
+index 7c8f41c0facdf42a8b329a0fe84d094f81a358bc..2779dd307ff45a1664c145c238d7938cc7d14108 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -28,6 +28,13 @@ export interface Booking extends Quote {
+   id: string;
+ }
+ 
++/** A period to search for free equipment; `kind` restricts the search to one kind of equipment. */
++export interface AvailabilityQuery {
++  start: string;
++  end: string;
++  kind?: EquipmentKind;
++}
++
+ /** An in-memory rental desk. */
+ export interface RentalService {
+   /** Registers an item; throws if it is invalid or its id is already taken. */
+@@ -36,6 +43,11 @@ export interface RentalService {
+   quote(request: RentalRequest): Quote;
+   /** Books an item; throws like `quote`, and when the item is not free for the whole period. */
+   book(request: RentalRequest): Booking;
++  /**
++   * Returns the sorted ids of the equipment of `kind` (any kind when omitted) that is free for the
++   * whole period; throws for an invalid period or an unknown kind.
++   */
++  availability(query: AvailabilityQuery): string[];
+ }
+ 
+ const DAY_MS = 24 * 60 * 60 * 1000;
+@@ -61,9 +73,13 @@ function parsePeriod(request: RentalRequest): Period {
+   return { start, end };
+ }
+ 
++function validateKind(kind: unknown): void {
++  if (!KINDS.includes(kind as string)) throw new Error(`unknown kind: ${String(kind)}`);
++}
++
+ function validateEquipment(item: Equipment): void {
+   if (typeof item.id !== 'string' || item.id === '') throw new Error('id must be a non-empty string');
+-  if (!KINDS.includes(item.kind)) throw new Error(`unknown kind: ${String(item.kind)}`);
++  validateKind(item.kind);
+   if (!Number.isSafeInteger(item.dailyPrice) || item.dailyPrice < 0) {
+     throw new Error('dailyPrice must be a non-negative integer number of cents');
+   }
+@@ -108,5 +124,15 @@ export function createRentalService(): RentalService {
+       bookings.push({ ...booking, ...period });
+       return booking;
+     },
++
++    availability(query) {
++      const period = parsePeriod(query);
++      if (query.kind !== undefined) validateKind(query.kind);
++      return [...equipment.values()]
++        .filter((item) => query.kind === undefined || item.kind === query.kind)
++        .filter((item) => !bookings.some((b) => b.itemId === item.id && overlaps(b, period)))
++        .map((item) => item.id)
++        .sort();
++    },
+   };
+ }
+diff --git a/test/rental.test.ts b/test/rental.test.ts
+index f1417db4b3501df0d2e24b4b65743e409cb5f6b8..ccebf0464399188ab7d0250a8a973cfd3ee13dda 100644
+--- a/test/rental.test.ts
++++ b/test/rental.test.ts
+@@ -83,3 +83,45 @@ test('book rejects an unknown item and invalid periods without booking', () => {
+   assert.throws(() => service.book({ itemId: 'board-1', start: '2026-07-01T12:00:00.000Z', end: `2026-07-02${DAY}` }));
+   service.book({ itemId: 'board-1', start: `2026-07-01${DAY}`, end: `2026-07-02${DAY}` });
+ });
++
++function serviceWithFleet() {
++  const service = createRentalService();
++  service.addEquipment({ id: 'sail-1', kind: 'sail', dailyPrice: 1500 });
++  service.addEquipment({ id: 'board-2', kind: 'board', dailyPrice: 2500 });
++  service.addEquipment({ id: 'board-1', kind: 'board', dailyPrice: 2500 });
++  return service;
++}
++
++test('availability lists the free items of any kind, sorted', () => {
++  const service = serviceWithFleet();
++  assert.deepEqual(service.availability({ start: `2026-07-01${DAY}`, end: `2026-07-02${DAY}` }), ['board-1', 'board-2', 'sail-1']);
++});
++
++test('availability filters by kind', () => {
++  const service = serviceWithFleet();
++  const period = { start: `2026-07-01${DAY}`, end: `2026-07-02${DAY}` };
++  assert.deepEqual(service.availability({ ...period, kind: 'board' }), ['board-1', 'board-2']);
++  assert.deepEqual(service.availability({ ...period, kind: 'sail' }), ['sail-1']);
++});
++
++test('availability excludes items booked during any part of the period', () => {
++  const service = serviceWithFleet();
++  service.book({ itemId: 'board-1', start: `2026-07-03${DAY}`, end: `2026-07-04${DAY}` });
++  assert.deepEqual(service.availability({ start: `2026-07-01${DAY}`, end: `2026-07-05${DAY}` }), ['board-2', 'sail-1']);
++  assert.deepEqual(service.availability({ start: `2026-07-03${DAY}`, end: `2026-07-04${DAY}`, kind: 'board' }), ['board-2']);
++});
++
++test('availability keeps items whose bookings only touch the period', () => {
++  const service = serviceWithFleet();
++  service.book({ itemId: 'board-1', start: `2026-07-01${DAY}`, end: `2026-07-03${DAY}` });
++  service.book({ itemId: 'board-1', start: `2026-07-05${DAY}`, end: `2026-07-06${DAY}` });
++  assert.deepEqual(service.availability({ start: `2026-07-03${DAY}`, end: `2026-07-05${DAY}`, kind: 'board' }), ['board-1', 'board-2']);
++});
++
++test('availability is empty when nothing matches and rejects invalid queries', () => {
++  const service = serviceWithFleet();
++  assert.deepEqual(createRentalService().availability({ start: `2026-07-01${DAY}`, end: `2026-07-02${DAY}` }), []);
++  assert.throws(() => service.availability({ start: '2026-07-01T10:00:00.000Z', end: `2026-07-02${DAY}` }));
++  assert.throws(() => service.availability({ start: `2026-07-02${DAY}`, end: `2026-07-02${DAY}` }));
++  assert.throws(() => service.availability({ start: `2026-07-01${DAY}`, end: `2026-07-02${DAY}`, kind: 'kite' as 'board' }));
++});

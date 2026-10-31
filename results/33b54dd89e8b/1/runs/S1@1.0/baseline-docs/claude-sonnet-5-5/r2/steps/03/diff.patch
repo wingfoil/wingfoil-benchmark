@@ -1,0 +1,54 @@
+diff --git a/README.md b/README.md
+index d84f8b95a5b9b8a2ae12155125c1d4bd384f77bc..f52205ac72a4cbb37fc3b897b97c91eebf421c40 100644
+--- a/README.md
++++ b/README.md
+@@ -19,6 +19,6 @@ Tests run with `npm test` (Node 22.18+, which runs TypeScript test files directl
+ `add`, `remove`, `replace`, `move`, `copy` and `test` operations) to a document and returns the result
+ as a new value; neither argument is mutated and the result shares no structure with them. Operations
+ apply in order. It throws an `Error` if the patch is invalid (not an array, unknown `op`, missing or
+-invalid `path`, `from` or `value`) or if an operation fails (target missing, array index out of range,
++invalid `path`, `from` or `value`; a `value` must be JSON: no `NaN`, `Infinity`, `undefined`, functions or class instances) or if an operation fails (target missing, array index out of range,
+ `move` into its own child, failed `test`); a failed patch returns nothing, so it is all-or-nothing.
+ Removing the whole document is rejected. `test` compares by JSON equality (member order is ignored).
+diff --git a/src/patch.ts b/src/patch.ts
+index 49063bf9e05cfc818e5f3a728367e524b8316ba7..f76249a34c60eab0ad72e6ceb4ecbb77d99360b7 100644
+--- a/src/patch.ts
++++ b/src/patch.ts
+@@ -26,10 +26,21 @@ function requirePointer(operation: Record<string, unknown>, name: "path" | "from
+   return parsePointer(operation[name]);
+ }
+ 
++/** True if `value` is made only of null, booleans, finite numbers, strings, arrays and plain objects. */
++function isJsonValue(value: unknown): boolean {
++  if (value === null || typeof value === "boolean" || typeof value === "string") return true;
++  if (typeof value === "number") return Number.isFinite(value);
++  if (Array.isArray(value)) return Array.from(value, (item) => item).every(isJsonValue);
++  if (!isObject(value)) return false;
++  const prototype = Object.getPrototypeOf(value);
++  return (prototype === Object.prototype || prototype === null) && Object.values(value).every(isJsonValue);
++}
++
+ function requireValue(operation: Record<string, unknown>): JsonValue {
+   if (!hasOwn(operation, "value") || operation.value === undefined) {
+     throw new Error(`Invalid JSON Patch: "${operation.op}" needs a "value"`);
+   }
++  if (!isJsonValue(operation.value)) throw new Error(`Invalid JSON Patch: "${operation.op}" needs a JSON "value"`);
+   return structuredClone(operation.value) as JsonValue;
+ }
+ 
+diff --git a/test/patch.test.ts b/test/patch.test.ts
+index 41e5ed7ccde97f75a4e98969f75e6464cc6ff8ff..8d66a6dc1c3e70b86add45731539690c7c637a35 100644
+--- a/test/patch.test.ts
++++ b/test/patch.test.ts
+@@ -161,3 +161,11 @@ test("invalid patches", () => {
+   assert.throws(() => applyPatch({}, [{ op: "add", path: "/a~2", value: 1 }]));
+   assert.throws(() => applyPatch({}, [{ op: "move", from: "x", path: "/a" }]));
+ });
++
++test("a value that is not JSON is rejected, nested or not", () => {
++  for (const value of [NaN, Infinity, { a: undefined }, [undefined], { a: [() => 1] }, new Date(0), new Map(), 1n]) {
++    for (const op of ["add", "replace", "test"] as const) {
++      assert.throws(() => applyPatch({ a: 1 }, [{ op, path: "/a", value } as never]), /JSON/);
++    }
++  }
++});

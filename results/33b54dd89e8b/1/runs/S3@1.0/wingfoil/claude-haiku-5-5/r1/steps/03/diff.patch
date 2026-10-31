@@ -1,0 +1,174 @@
+diff --git a/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-3-plan.md b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-3-plan.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..679640904eee0eaa8602e6dce0e49d9833298308
+--- /dev/null
++++ b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-3-plan.md
+@@ -0,0 +1,17 @@
++---
++id: sw-life-cycle-1-3-plan
++type: plan
++title: "Long-rental 10% discount"
++status: active
++workflow: "sw-life-cycle"
++phase: "1-3"
++element: ""
++parent: ""
++format: 1
++---
++
++<!-- plan body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
+diff --git a/docs/memory/task/task-003-long-rental-10-discount.md b/docs/memory/task/task-003-long-rental-10-discount.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..39bdf9b64da2b3559a39c08fe4c7cad7471ee759
+--- /dev/null
++++ b/docs/memory/task/task-003-long-rental-10-discount.md
+@@ -0,0 +1,63 @@
++---
++id: task-003-long-rental-10-discount
++type: task
++title: "Long-rental 10% discount"
++status: approved
++format: 1
++---
++
++# Long-rental 10% discount
++
++## Request
++
++We want to reward customers who stay longer. A rental of 3 days or more costs 10% less than its full
++price. Quotes and bookings both show the reduced total.
++
++## School rules (requirements)
++
++- R1. Money is an integer number of euro cents.
++- R3. A booking covers whole days: start and end are at midnight UTC, and the end is the start of the day
++  after the last rented day.
++- D1. A rental of 3 or more whole days gets 10% off its full price (`dailyPrice * days`). A rental of 1 or
++  2 days costs its full price.
++
++## Acceptance criteria
++
++- AC1. `quote` returns the full price for a rental of 1 or 2 days, unchanged from task-001 AC2. (D1, R3)
++- AC2. `quote` returns the full price less 10% for a rental of 3 or more days, an integer in euro cents.
++  The discount is applied to the whole rental, not per day. Exactly 3 days qualifies. (D1, R1)
++- AC3. Where the 10% leaves a fraction of a cent, the total is rounded to the nearest cent, halves rounding
++  up. (R1)
++- AC4. `book` returns the same discounted total as `quote` for the same period. (D1)
++- AC5. The discount does not change the availability rules, and `quote` still does not check availability.
++  (task-001 AC7, AC8)
++- AC6. Errors for unknown items and invalid periods are unchanged. (task-001 AC5, AC6)
++
++Supersedes task-001 AC2 for rentals of 3 or more days only: those are priced at 90% of `dailyPrice * days`.
++
++## Test plan
++
++Test first (red, then green). Each acceptance criterion has at least one happy-path test and one
++error-path or edge-path test. Tests cover the boundary at 2 and 3 days, a rounding case, and that `book`
++and `quote` agree. Tests are deterministic: no wall-clock time, no randomness, no external services.
++
++Existing test `several days cost the daily price times the number of days` (3 days, sail at 1800) asserts
++the old full price for a 3-day rental; it is updated to the discounted total as part of this change.
++
++## Out of scope
++
++- Discounts for other durations, and any other pricing rule.
++- Cancellations and refunds.
++- Persistence across restarts.
++
++## Build record
++
++- Tests first: 5 new tests in `tests/rental.test.ts` (quote: two-day full price, three-day discount, a
++  seven-day rental, rounding; book: discounted booking total, booking total equals quote), and the old
++  3-day assertion updated. Red before the change: 5 failing, 36 passing.
++- Implementation: `src/index.ts` applies the discount in `priced`, the helper both `quote` and `book` use,
++  so the two totals cannot drift apart. `LONG_RENTAL_DAYS = 3`.
++- Result: `npm test` passes, 41 of 41 (36 existing and 5 new). Type-checking with `tsc` was not run: no
++  TypeScript compiler is installed in this repository.
++- Choices made: the discount is `Math.round(dailyPrice * days * 9 / 10)`, so a half cent rounds up and the
++  arithmetic stays in integers; the 10% is applied to the whole rental, not per day; exactly 3 days qualifies.
+diff --git a/src/index.ts b/src/index.ts
+index eb8019eb690386c8691a5688ecff5c718120c189..a14513e1b9eb06bf78d37f6076db2074a7763019 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -50,6 +50,7 @@ interface Stay {
+ }
+ 
+ const DAY_MS = 86_400_000;
++const LONG_RENTAL_DAYS = 3;
+ const MIDNIGHT_UTC = /^\d{4}-\d{2}-\d{2}T00:00:00(\.000)?Z$/;
+ const KINDS: readonly string[] = ['board', 'sail'];
+ 
+@@ -98,7 +99,10 @@ export function createRentalService(): RentalService {
+     }
+     const { startMs, endMs } = parsePeriod(request.start, request.end);
+     const days = (endMs - startMs) / DAY_MS;
+-    return { item, startMs, endMs, total: item.dailyPrice * days };
++    const fullPrice = item.dailyPrice * days;
++    // Rentals of three days or more get 10% off, rounded to the nearest cent (halves up).
++    const total = days >= LONG_RENTAL_DAYS ? Math.round((fullPrice * 9) / 10) : fullPrice;
++    return { item, startMs, endMs, total };
+   }
+ 
+   // Periods are half-open: [start, end). Periods that only touch do not overlap.
+diff --git a/tests/rental.test.ts b/tests/rental.test.ts
+index 2578e86b657e7d76a50a595ccd2798887d98bde7..6417e99f89a0a8138762e80cb5cd8df0ad795f2b 100644
+--- a/tests/rental.test.ts
++++ b/tests/rental.test.ts
+@@ -53,10 +53,29 @@ describe('quote', () => {
+     );
+   });
+ 
+-  test('several days cost the daily price times the number of days', () => {
++  test('two days cost the daily price times the number of days, with no discount', () => {
++    const service = serviceWithEquipment();
++    const quote = service.quote({ itemId: 'sail-1', start: '2026-07-01T00:00:00Z', end: '2026-07-03T00:00:00Z' });
++    assert.equal(quote.total, 2 * 1800);
++  });
++
++  test('three days or more cost 10% less than the full price', () => {
+     const service = serviceWithEquipment();
+     const quote = service.quote({ itemId: 'sail-1', start: '2026-07-01T00:00:00Z', end: '2026-07-04T00:00:00Z' });
+-    assert.equal(quote.total, 3 * 1800);
++    assert.equal(quote.total, 4860);
++  });
++
++  test('a long rental gets the discount on its whole price', () => {
++    const service = serviceWithEquipment();
++    const quote = service.quote({ itemId: 'board-1', start: '2026-07-01T00:00:00Z', end: '2026-07-08T00:00:00Z' });
++    assert.equal(quote.total, 15750);
++  });
++
++  test('rounds a discounted total to the nearest cent, halves up', () => {
++    const service = createRentalService();
++    service.addEquipment({ id: 'odd-1', kind: 'board', dailyPrice: 1005 });
++    const quote = service.quote({ itemId: 'odd-1', start: '2026-07-01T00:00:00Z', end: '2026-07-04T00:00:00Z' });
++    assert.equal(quote.total, 2714);
+   });
+ 
+   test('accepts the millisecond form of midnight', () => {
+@@ -115,6 +134,21 @@ describe('book', () => {
+     );
+   });
+ 
++  test('a rental of three days or more shows the discounted total', () => {
++    const service = serviceWithEquipment();
++    const booking = service.book({ itemId: 'board-1', start: '2026-07-01T00:00:00Z', end: '2026-07-04T00:00:00Z' });
++    assert.equal(booking.total, 6750);
++  });
++
++  test('the booking total matches the quote for the same period', () => {
++    const service = serviceWithEquipment();
++    const period = { itemId: 'sail-1', start: '2026-07-01T00:00:00Z', end: '2026-07-06T00:00:00Z' };
++    const quote = service.quote(period);
++    const booking = service.book(period);
++    assert.equal(booking.total, quote.total);
++    assert.equal(booking.total, 8100);
++  });
++
+   test('gives each booking its own id', () => {
+     const service = serviceWithEquipment();
+     const first = service.book({ itemId: 'board-1', start: '2026-07-01T00:00:00Z', end: '2026-07-02T00:00:00Z' });

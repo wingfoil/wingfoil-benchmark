@@ -1,0 +1,176 @@
+diff --git a/src/index.ts b/src/index.ts
+index 094b52935683fb9d3cd29b709850b1752ea48b8a..03ff9ad380a6acad6cd8ab77fa8e61881b0fc360 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -54,14 +54,18 @@ export type JsonPatchOperation =
+ /**
+  * Applies a JSON Patch (RFC 6902) to a JSON document and returns the resulting document.
+  *
+- * The input is never mutated: the operations are applied to a copy, which is returned. Throws a `SyntaxError`
+- * when the patch is malformed, and an `Error` when an operation fails (for instance a `test` that does not
+- * match, or a `remove` of a missing member). When an error is thrown, no result is returned.
++ * The whole patch is validated before any operation is evaluated, so a malformed patch always throws a
++ * `SyntaxError` whatever the document is. The input is never mutated: the operations are applied to a copy,
++ * which is returned. An `Error` is thrown when an operation fails against the document (for instance a `test`
++ * that does not match, or a `remove` of a missing member). When an error is thrown, no result is returned.
+  */
+ export function applyPatch(document: unknown, patch: readonly JsonPatchOperation[]): unknown {
+   if (!Array.isArray(patch)) {
+     throw new SyntaxError("JSON Patch must be an array of operations");
+   }
++  for (const operation of patch) {
++    validateOperation(operation);
++  }
+   let result = cloneValue(document);
+   for (const operation of patch) {
+     result = applyOperation(result, operation);
+@@ -71,7 +75,8 @@ export function applyPatch(document: unknown, patch: readonly JsonPatchOperation
+ 
+ const OPERATIONS = ["add", "remove", "replace", "move", "copy", "test"];
+ 
+-function applyOperation(root: unknown, operation: unknown): unknown {
++/** Checks the shape of one operation: its `op`, its pointers, and its `value` where one is required. */
++function validateOperation(operation: unknown): void {
+   if (typeof operation !== "object" || operation === null || Array.isArray(operation)) {
+     throw new SyntaxError("JSON Patch operation must be an object");
+   }
+@@ -79,33 +84,57 @@ function applyOperation(root: unknown, operation: unknown): unknown {
+   if (typeof op !== "string" || !OPERATIONS.includes(op)) {
+     throw new SyntaxError(`Unknown JSON Patch operation ${JSON.stringify(op)}`);
+   }
++  parsePointer(path, "path");
++
++  switch (op) {
++    case "add":
++    case "replace":
++    case "test":
++      if (!isJsonValue(valueOf(operation, op))) {
++        throw new SyntaxError(`JSON Patch "${op}" operation has a "value" that is not a JSON value`);
++      }
++      break;
++    case "copy":
++    case "move":
++      parsePointer((operation as { from?: unknown }).from, "from");
++      break;
++  }
++}
++
++/** Applies one operation that has passed `validateOperation`. */
++function applyOperation(root: unknown, operation: unknown): unknown {
++  const { op, path } = operation as { op: string; path: string };
+   const tokens = parsePointer(path, "path");
+ 
+   switch (op) {
+     case "add":
+-      return add(root, tokens, path as string, cloneValue(valueOf(operation, op)));
++      return add(root, tokens, path, cloneValue(valueOf(operation, op)));
+     case "replace":
+-      return replace(root, tokens, path as string, cloneValue(valueOf(operation, op)));
++      return replace(root, tokens, path, cloneValue(valueOf(operation, op)));
+     case "test":
+-      if (!deepEqual(resolvePointer(root, path as string), valueOf(operation, op))) {
++      if (!deepEqual(resolvePointer(root, path), valueOf(operation, op))) {
+         throw new Error(`JSON Patch "test" failed at ${JSON.stringify(path)}`);
+       }
+       return root;
+     case "remove":
+-      remove(root, tokens, path as string);
++      remove(root, tokens, path);
+       return root;
+     case "copy": {
+-      const from = (operation as { from?: unknown }).from;
+-      parsePointer(from, "from");
+-      return add(root, tokens, path as string, cloneValue(resolvePointer(root, from as string)));
++      const from = (operation as { from: string }).from;
++      return add(root, tokens, path, cloneValue(resolvePointer(root, from)));
+     }
+     case "move": {
+-      const from = (operation as { from?: unknown }).from;
++      const from = (operation as { from: string }).from;
+       const fromTokens = parsePointer(from, "from");
+       if (fromTokens.length < tokens.length && fromTokens.every((token, i) => token === tokens[i])) {
+         throw new Error(`JSON Patch "move" cannot move ${JSON.stringify(from)} into its child ${JSON.stringify(path)}`);
+       }
+-      const moved = remove(root, fromTokens, from as string);
++      if (fromTokens.length === tokens.length && fromTokens.every((token, i) => token === tokens[i])) {
++        // Moving a location onto itself leaves the document unchanged, provided the location exists.
++        resolvePointer(root, from);
++        return root;
++      }
++      const moved = remove(root, fromTokens, from);
+       return add(root, tokens, path as string, moved);
+     }
+   }
+@@ -118,6 +147,30 @@ function valueOf(operation: object, op: string): unknown {
+   return (operation as { value: unknown }).value;
+ }
+ 
++/** Tells whether a value is a JSON value: no `undefined`, functions, symbols, bigints, or non-finite numbers. */
++function isJsonValue(value: unknown, ancestors: Set<object> = new Set()): boolean {
++  if (value === null || typeof value === "string" || typeof value === "boolean") {
++    return true;
++  }
++  if (typeof value === "number") {
++    return Number.isFinite(value);
++  }
++  if (typeof value !== "object" || ancestors.has(value)) {
++    return false;
++  }
++  const isArray = Array.isArray(value);
++  const prototype = Object.getPrototypeOf(value);
++  if (!isArray && prototype !== Object.prototype && prototype !== null) {
++    return false;
++  }
++  // Array.from turns holes into undefined, which is then rejected.
++  const members = isArray ? Array.from(value) : Object.values(value);
++  ancestors.add(value);
++  const result = members.every((member) => isJsonValue(member, ancestors));
++  ancestors.delete(value);
++  return result;
++}
++
+ /** Splits a pointer into its unescaped reference tokens, validating its syntax. */
+ function parsePointer(pointer: unknown, name: string): string[] {
+   if (typeof pointer !== "string") {
+diff --git a/test/apply-patch.test.ts b/test/apply-patch.test.ts
+index acef329346f95223339f365455e2acc18b8d111a..3f8f125dba91bd4d34817dfcb40e5e052c0e5a2e 100644
+--- a/test/apply-patch.test.ts
++++ b/test/apply-patch.test.ts
+@@ -198,3 +198,37 @@ test("rejects a missing or invalid from", () => {
+ test("the whole document cannot be removed", () => {
+   assert.throws(() => applyPatch({ a: 1 }, [{ op: "remove", path: "" }]), Error);
+ });
++
++test("rejects a value that is not a JSON value", () => {
++  const cyclic: Record<string, unknown> = {};
++  cyclic.self = cyclic;
++  const values = [undefined, NaN, Infinity, () => 1, 1n, Symbol("s"), new Date(0), [undefined], { a: undefined }];
++  values.push(cyclic);
++  for (const value of values) {
++    assert.throws(() => applyPatch({}, [{ op: "add", path: "/a", value } as never]), SyntaxError);
++    assert.throws(() => applyPatch({ a: 1 }, [{ op: "test", path: "/a", value } as never]), SyntaxError);
++  }
++});
++
++test("accepts every JSON value", () => {
++  const value = { n: null, t: true, s: "", i: -1.5e3, a: [[], {}] };
++  assert.deepEqual(applyPatch({}, [{ op: "add", path: "/a", value }]), { a: value });
++});
++
++test("a malformed operation is a SyntaxError even after a failing one", () => {
++  const patch = [
++    { op: "test" as const, path: "/missing", value: 1 },
++    { op: "frob", path: "" } as never,
++  ];
++  assert.throws(() => applyPatch({}, patch), SyntaxError);
++  const missingValue = [{ op: "test", path: "/missing" }, { op: "test", path: "" }];
++  assert.throws(() => applyPatch({}, missingValue as never), SyntaxError);
++});
++
++test("move from the whole document onto itself is a no-op", () => {
++  assert.deepEqual(applyPatch({ a: 1 }, [{ op: "move", from: "", path: "" }]), { a: 1 });
++});
++
++test("move from a missing location onto itself fails", () => {
++  assert.throws(() => applyPatch({ a: 1 }, [{ op: "move", from: "/b", path: "/b" }]), Error);
++});

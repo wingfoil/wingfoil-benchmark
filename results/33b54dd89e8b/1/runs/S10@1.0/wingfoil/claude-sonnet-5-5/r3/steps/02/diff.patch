@@ -1,0 +1,189 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index e2adeee02bffd36bf8a75242902d82daf9df397a..335e97fdb00404267da7820cdc17eb4c81480618 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -1,5 +1,9 @@
+ # Changelog
+ 
++## 1.6.0
++
++- The order book exports a month of orders as CSV for the accountant (`exportMonth('YYYY-MM')`).
++
+ ## 1.5.0
+ 
+ - Orders can take a discount code (`applyCode`): `SPRING10` (10 % off the items) or `WELCOME5` (5.00 € off items of
+diff --git a/README.md b/README.md
+index c0d19fe90e2195b88e33f65277c710d6d2c95d08..8b31525c3e7d0a59f61425eb1d89c97efca4429a 100644
+--- a/README.md
++++ b/README.md
+@@ -10,3 +10,8 @@ Prices are integer cents everywhere.
+ An order can take one discount code with `applyCode(orderNumber, code)`: `SPRING10` (10 % off the items) or
+ `WELCOME5` (5.00 € off items of 30.00 € or more). Totals show `discountCents`; shipping is never discounted and
+ free shipping is decided on the items before the discount. Run the tests with `npm test`.
++
++`exportMonth(month)` (`YYYY-MM`) returns the month's orders as CSV text for a spreadsheet: a header line, then one
++line per order by number, with columns `order,date,customer,total` (the total in euros with two decimals, what the
++customer pays). Customers' email and phone are deliberately left out. Fields with a comma or a quote are quoted; a
++month without orders gives the header alone; a malformed month throws a `RangeError`.
+diff --git a/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-2-plan.md b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-2-plan.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..a7ed560d0965df0cbc08dc6974605de66eaaf552
+--- /dev/null
++++ b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-2-plan.md
+@@ -0,0 +1,17 @@
++---
++id: sw-life-cycle-1-2-plan
++type: plan
++title: "Monthly order CSV export"
++status: active
++workflow: "sw-life-cycle"
++phase: "1-2"
++element: ""
++parent: ""
++format: 1
++---
++
++<!-- plan body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
+diff --git a/docs/memory/task/task-002-monthly-order-csv-export.md b/docs/memory/task/task-002-monthly-order-csv-export.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..4568b9ea331a36d4cf20c2b158a2b3120b018714
+--- /dev/null
++++ b/docs/memory/task/task-002-monthly-order-csv-export.md
+@@ -0,0 +1,35 @@
++---
++id: task-002-monthly-order-csv-export
++type: task
++title: "Monthly order CSV export"
++status: pending
++format: 1
++---
++
++<!-- task body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
++
++## Request
++
++The accountant wants a monthly export of the orders for her spreadsheet. Add `exportMonth(month)` to the order
++book: `month` is `YYYY-MM`; it returns CSV text with a header line and one line per order placed in that month,
++by order number.
++
++- Columns, in order: `order` (number), `date` (as stored), `customer` (name), `total` (what the
++  customer pays — items - discount + shipping — in euros with two decimals, e.g. `12.50`).
++- A value containing a comma or a quote is quoted as usual in CSV (quotes doubled).
++- A month with no orders gives the header line alone.
++- A month that is not `YYYY-MM` throws a `RangeError`.
++- Lines are separated by `\n`, with no trailing newline.
++
++## Acceptance
++
++Tests in `test/shop.test.ts` cover each rule; `npm test` passes. CHANGELOG and README updated.
++
++## Rework
++
++Rejected by Dana Okafor: the export must not carry customers' email addresses or phone numbers. Columns are now
++`order,date,customer,total` only.
+diff --git a/src/domain/orders.ts b/src/domain/orders.ts
+index 0f2e4dca2b1fbb2e4cbd33f90325f6ba759349ee..f4602507f8a5876cf77c80b82ce32860971fa8be 100644
+--- a/src/domain/orders.ts
++++ b/src/domain/orders.ts
+@@ -1,5 +1,6 @@
+ import type { Catalogue } from './catalogue.ts';
+ import type { Customers } from './customers.ts';
++import { formatEuros } from './money.ts';
+ import type { Cents } from './money.ts';
+ import { err, ok } from './result.ts';
+ import type { Result } from './result.ts';
+@@ -48,6 +49,13 @@ export interface OrderBook {
+   applyCode(number: number, code: string): Result<Order>;
+   /** What the order with this number costs. */
+   totals(number: number): Result<OrderTotals>;
++  /**
++   * The orders placed in a month as CSV text for a spreadsheet: a header line, then one line per order by number
++   * (`order,date,customer,total`, the total in euros with two decimals; customers' email and phone are never exported). Lines are separated by `\n`.
++   *
++   * @param month - the month, as `YYYY-MM`; anything else throws a `RangeError`
++   */
++  exportMonth(month: string): string;
+ }
+ 
+ /** `SPRING10` takes this share of the items off, in percent. */
+@@ -72,6 +80,14 @@ function discountFor(code: string, itemsCents: Cents): Result<Cents> {
+   }
+ }
+ 
++const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
++const EXPORT_HEADER = ['order', 'date', 'customer', 'total'];
++
++/** A CSV field, quoted when it holds a comma, a quote or a line break. */
++function csvField(value: string): string {
++  return /[",\r\n]/.test(value) ? `"${value.replaceAll('"', '""')}"` : value;
++}
++
+ const DATE = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
+ 
+ /**
+@@ -107,7 +123,15 @@ export function createOrderBook(catalogue: Catalogue, customers: Customers): Ord
+     return { itemsCents, shippingCents: shippingFor(priced) };
+   }
+ 
+-  return {
++  function exportLine(order: Order): string {
++    const customer = customers.get(order.customerId);
++    const totals = book.totals(order.number);
++    const totalCents = totals.ok ? totals.value.totalCents : 0;
++    const name = customer.ok ? customer.value.name : '';
++    return [String(order.number), order.date, name, formatEuros(totalCents)].map(csvField).join(',');
++  }
++
++  const book: OrderBook = {
+     place(order) {
+       const valid = validate(order);
+       if (!valid.ok) return valid;
+@@ -144,5 +168,11 @@ export function createOrderBook(catalogue: Catalogue, customers: Customers): Ord
+       const discountCents = discount.ok ? discount.value : 0;
+       return ok({ itemsCents, discountCents, shippingCents, totalCents: itemsCents - discountCents + shippingCents });
+     },
++    exportMonth(month) {
++      if (!MONTH.test(month)) throw new RangeError(`${month} is not a month (YYYY-MM)`);
++      const lines = orders.filter((order) => order.date.startsWith(`${month}-`)).map(exportLine);
++      return [EXPORT_HEADER.join(','), ...lines].join('\n');
++    },
+   };
++  return book;
+ }
+diff --git a/test/shop.test.ts b/test/shop.test.ts
+index 8cffa51abe2949b8adb679a2aac09c6c195d0a7f..b5256e9a9a1372ec19cfc3d9d463907487d354d5 100644
+--- a/test/shop.test.ts
++++ b/test/shop.test.ts
+@@ -103,4 +103,24 @@ describe('order book', () => {
+     assert.equal(formatEuros(1250), '12.50');
+     assert.equal(formatEuros(5), '0.05');
+   });
++
++  it('exports the orders of a month as CSV, by order number', () => {
++    const shop = stocked();
++    valueOf(shop.customers.add({ id: 'c2', name: 'Holt, "Jo"', email: 'jo@example.org', phone: '555-0102' }));
++    shop.orders.place({ customerId: 'c1', date: '2026-09-30', lines: [{ sku: 'APL-1KG', quantity: 1 }] });
++    shop.orders.place({ customerId: 'c2', date: '2026-10-02', lines: [{ sku: 'OIL-1L', quantity: 3 }] });
++    shop.orders.applyCode(2, 'WELCOME5');
++    shop.orders.place({ customerId: 'c1', date: '2026-10-31', lines: [{ sku: 'HAM-W', quantity: 1 }] });
++    assert.equal(
++      shop.orders.exportMonth('2026-10'),
++      ['order,date,customer,total', '2,2026-10-02,"Holt, ""Jo""",38.60', '3,2026-10-31,Mira Holt,64.00'].join('\n'),
++    );
++  });
++
++  it('exports the header alone for a month without orders and refuses a bad month', () => {
++    const shop = stocked();
++    assert.equal(shop.orders.exportMonth('2026-10'), 'order,date,customer,total');
++    assert.throws(() => shop.orders.exportMonth('2026-13'), RangeError);
++    assert.throws(() => shop.orders.exportMonth('2026-1'), RangeError);
++  });
+ });

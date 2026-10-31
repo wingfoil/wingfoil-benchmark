@@ -1,0 +1,132 @@
+diff --git a/src/index.ts b/src/index.ts
+index 31ca21575090d07b6fbebb92320b2a55f11b924d..2afafc8e9a27c007899f0c771e8bd2d01ff144fa 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -310,3 +310,40 @@ function jsonEqual(a: unknown, b: unknown): boolean {
+ function isObject(value: unknown): value is Record<string, unknown> {
+   return value !== null && typeof value === "object" && !Array.isArray(value);
+ }
++
++/**
++ * JSON Merge Patch (RFC 7386): a partial JSON document that describes changes to another document.
++ */
++
++/**
++ * Applies a JSON Merge Patch to a JSON document and returns the merged document.
++ *
++ * Object members of the patch are merged into the target recursively, a `null` member removes the
++ * corresponding member, and any other patch value, including an array, replaces the target value.
++ * The input document is never mutated. Throws a `SyntaxError` when the patch is not a JSON value.
++ */
++export function applyMergePatch(target: unknown, patch: unknown): unknown {
++  if (!isJsonValue(patch)) {
++    throw new SyntaxError("JSON Merge Patch must be a JSON value");
++  }
++  return mergePatch(structuredClone(target), patch);
++}
++
++/** Merges a patch into a target that the caller owns, so the target may be modified in place. */
++function mergePatch(target: unknown, patch: unknown): unknown {
++  if (!isObject(patch)) {
++    return structuredClone(patch);
++  }
++
++  // A patch object applied to a non-object target starts from an empty object.
++  const result: Record<string, unknown> = isObject(target) ? target : {};
++  for (const key of Object.keys(patch)) {
++    const value = patch[key];
++    if (value === null) {
++      delete result[key];
++    } else {
++      defineMember(result, key, mergePatch(own(result, key), value));
++    }
++  }
++  return result;
++}
+diff --git a/test/merge-patch.test.js b/test/merge-patch.test.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..38ae81580b5ffe7deda8dd1f18014d689c2eafd4
+--- /dev/null
++++ b/test/merge-patch.test.js
+@@ -0,0 +1,81 @@
++import { test } from "node:test";
++import assert from "node:assert/strict";
++import { applyMergePatch } from "../src/index.ts";
++
++// Cases from the examples in RFC 7386, section 3.
++test("RFC 7386 examples", () => {
++  assert.deepEqual(applyMergePatch({ a: "b" }, { a: "c" }), { a: "c" });
++  assert.deepEqual(applyMergePatch({ a: "b" }, { b: "c" }), { a: "b", b: "c" });
++  assert.deepEqual(applyMergePatch({ a: "b" }, { a: null }), {});
++  assert.deepEqual(applyMergePatch({ a: "b", b: "c" }, { a: null }), { b: "c" });
++  assert.deepEqual(applyMergePatch({ a: ["b"] }, { a: "c" }), { a: "c" });
++  assert.deepEqual(applyMergePatch({ a: "c" }, { a: ["b"] }), { a: ["b"] });
++  assert.deepEqual(applyMergePatch({ a: { b: "c" } }, { a: { b: "d", c: null } }), { a: { b: "d" } });
++  assert.deepEqual(applyMergePatch({ a: [{ b: "c" }] }, { a: [1] }), { a: [1] });
++  assert.deepEqual(applyMergePatch(["a", "b"], ["c", "d"]), ["c", "d"]);
++  assert.deepEqual(applyMergePatch({ a: "b" }, ["c"]), ["c"]);
++  assert.deepEqual(applyMergePatch({ a: "foo" }, null), null);
++  assert.deepEqual(applyMergePatch({ a: "foo" }, "bar"), "bar");
++  assert.deepEqual(applyMergePatch({ e: null }, { a: 1 }), { e: null, a: 1 });
++  assert.deepEqual(applyMergePatch([1, 2], { a: "b", c: null }), { a: "b" });
++  assert.deepEqual(applyMergePatch({}, { a: { bb: { c: null } } }), { a: { bb: {} } });
++});
++
++test("a patch with a null member removes the member, and a missing member is ignored", () => {
++  assert.deepEqual(applyMergePatch({ a: 1, b: 2 }, { a: null, c: null }), { b: 2 });
++  assert.deepEqual(applyMergePatch({ a: { b: 1 } }, { a: { missing: null } }), { a: { b: 1 } });
++});
++
++test("merges nested objects without replacing their siblings", () => {
++  assert.deepEqual(applyMergePatch({ a: { b: 1, c: { d: 2 } } }, { a: { c: { e: 3 } } }), {
++    a: { b: 1, c: { d: 2, e: 3 } },
++  });
++});
++
++test("an empty patch object returns an equal document", () => {
++  assert.deepEqual(applyMergePatch({ a: [1] }, {}), { a: [1] });
++});
++
++test("a patch that is not an object replaces the whole document", () => {
++  assert.deepEqual(applyMergePatch({ a: 1 }, [1, 2]), [1, 2]);
++  assert.equal(applyMergePatch({ a: 1 }, 5), 5);
++});
++
++test("a member named like an inherited property is set as an ordinary member", () => {
++  // JSON.parse makes "__proto__" an own member; an object literal would set the prototype instead.
++  const patch = JSON.parse('{"constructor": "x", "__proto__": {"polluted": true}}');
++  const result = applyMergePatch({}, patch);
++  assert.deepEqual(Object.keys(result), ["constructor", "__proto__"]);
++  assert.deepEqual(Object.getOwnPropertyDescriptor(result, "__proto__").value, { polluted: true });
++  assert.equal(Object.getPrototypeOf(result), Object.prototype);
++  assert.equal({}.polluted, undefined);
++  assert.equal(result.constructor, "x");
++});
++
++test("does not mutate the input document or the patch", () => {
++  const target = { a: { b: 1 }, c: [1] };
++  const patch = { a: { b: 2, d: { e: [null] } }, c: null };
++  const targetBefore = structuredClone(target);
++  const patchBefore = structuredClone(patch);
++
++  const result = applyMergePatch(target, patch);
++
++  assert.deepEqual(result, { a: { b: 2, d: { e: [null] } } });
++  assert.deepEqual(target, targetBefore);
++  assert.deepEqual(patch, patchBefore);
++  assert.notEqual(result, target);
++});
++
++test("the result does not share values with the patch", () => {
++  const value = { list: [1] };
++  const result = applyMergePatch({}, { a: value });
++  result.a.list.push(2);
++  assert.deepEqual(value, { list: [1] });
++});
++
++test("rejects a patch that is not a JSON value", () => {
++  assert.throws(() => applyMergePatch({}, undefined), SyntaxError);
++  assert.throws(() => applyMergePatch({}, { a: undefined }), SyntaxError);
++  assert.throws(() => applyMergePatch({}, { a: NaN }), SyntaxError);
++  assert.throws(() => applyMergePatch({}, { a: new Date(0) }), SyntaxError);
++});

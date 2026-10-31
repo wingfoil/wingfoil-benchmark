@@ -1,0 +1,235 @@
+diff --git a/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-2-plan.md b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-2-plan.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..56da6b22d1bbfdc0f7872208179d8b426e7697d5
+--- /dev/null
++++ b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-2-plan.md
+@@ -0,0 +1,17 @@
++---
++id: sw-life-cycle-1-2-plan
++type: plan
++title: "rental availability query"
++status: active
++workflow: "sw-life-cycle"
++phase: "1-2"
++element: ""
++parent: ""
++format: 1
++---
++
++<!-- plan body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
+diff --git a/docs/memory/task/task-002-rental-availability-query.md b/docs/memory/task/task-002-rental-availability-query.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..cfec4f7b303e7448dd3261cd86f9d556e1e0e85d
+--- /dev/null
++++ b/docs/memory/task/task-002-rental-availability-query.md
+@@ -0,0 +1,46 @@
++---
++id: task-002-rental-availability-query
++type: task
++title: "Rental availability query"
++status: approved
++format: 1
++---
++
++# Rental availability query
++
++## Goal
++
++The desk needs to see at a glance what can still be rented. The rental service gains an `availability` query
++that lists the equipment free for a period.
++
++## Scope
++
++Added to the service returned by `createRentalService()` in `src/index.ts`:
++
++- `availability({ start, end, kind })`: `kind` is optional. Returns the ids of the equipment of that `kind`, or of
++  any kind when `kind` is not given, that is free for the whole period from `start` up to `end`. The ids are sorted
++  in ascending string order. An item with no booking at all is free. The query does not book anything.
++
++## Rules (from task-001, apply here too)
++
++1. Times are UTC ISO-8601 midnights (`YYYY-MM-DDT00:00:00Z`). A period that is not whole UTC days, or whose end is
++   not after its start, throws, as `quote` and `book` do.
++2. Periods are half-open: a booking ending at midnight on day D does not overlap a query starting on day D.
++3. A free item is one with no booking overlapping the period.
++
++## Acceptance criteria
++
++- AC1: With no `kind`, returns the ids of all registered equipment free for the whole period, sorted.
++- AC2: With `kind` set to `'board'` or `'sail'`, returns only the ids of that kind that are free, sorted.
++- AC3: An item booked for a period overlapping the query is left out; an item booked only for adjacent periods
++  (ending at the query's start, or starting at its end) is included.
++- AC4: An empty array is returned when nothing is free, and when no equipment is registered.
++- AC5: Throws for a `kind` that is not `'board'` or `'sail'`.
++- AC6: Throws for a period that is not whole UTC days, or whose end is not after its start (same cases as `quote`).
++- AC7: The query does not change the bookings: a later `book` for a period reported as free succeeds.
++
++## Notes
++
++- No runtime dependency is added. Tests use `node --test` (the existing `test` script).
++- Each acceptance criterion gets at least one happy-path test and one error-path test.
++- Cancellation remains out of scope, as in task-001.
+diff --git a/src/index.ts b/src/index.ts
+index f6a08aacd1743ede47d1928f1479c64d436bd0e1..ede8f64f83bf54f93463ab1be9db782d0b4ab209 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -35,7 +35,14 @@ export interface Booking extends Quote {
+   id: string;
+ }
+ 
+-/** The rental module's service: its equipment register, price quotes and bookings. */
++/** A question about what is free: a period, and optionally one kind of equipment. */
++export interface AvailabilityQuery {
++  start: string;
++  end: string;
++  kind?: EquipmentKind;
++}
++
++/** The rental module's service: its equipment register, price quotes, bookings and availability. */
+ export interface RentalService {
+   /** Registers an item. Throws for an invalid item or an `id` that is already registered. */
+   addEquipment(item: Equipment): void;
+@@ -43,6 +50,11 @@ export interface RentalService {
+   quote(request: PeriodRequest): Quote;
+   /** Books an item for a period. Throws as `quote` does, and when the item is already booked for an overlapping period. */
+   book(request: PeriodRequest): Booking;
++  /**
++   * Returns the sorted ids of the equipment, of `kind` or of any kind when none is given, that is free for the
++   * whole period. Throws for an unknown `kind` or a period the rules do not allow.
++   */
++  availability(query: AvailabilityQuery): string[];
+ }
+ 
+ interface Period {
+@@ -81,7 +93,7 @@ function parseMidnight(value: string, name: string): number {
+   return ms;
+ }
+ 
+-function parsePeriod(request: PeriodRequest): Period {
++function parsePeriod(request: Pick<PeriodRequest, 'start' | 'end'>): Period {
+   const startMs = parseMidnight(request.start, 'start');
+   const endMs = parseMidnight(request.end, 'end');
+   if (endMs <= startMs) {
+@@ -107,6 +119,13 @@ export function createRentalService(): RentalService {
+     return ((period.endMs - period.startMs) / DAY_MS) * item.dailyPrice;
+   }
+ 
++  /** Whether the item already has a booking overlapping the period. Periods are half-open. */
++  function clashes(itemId: string, period: Period): boolean {
++    return booked.some(
++      (other) => other.itemId === itemId && other.period.startMs < period.endMs && period.startMs < other.period.endMs,
++    );
++  }
++
+   return {
+     addEquipment(item: Equipment): void {
+       if (typeof item.id !== 'string' || item.id === '') {
+@@ -138,11 +157,7 @@ export function createRentalService(): RentalService {
+     book(request: PeriodRequest): Booking {
+       const item = findItem(request.itemId);
+       const period = parsePeriod(request);
+-      const clashes = booked.some(
+-        (other) =>
+-          other.itemId === item.id && other.period.startMs < period.endMs && period.startMs < other.period.endMs,
+-      );
+-      if (clashes) {
++      if (clashes(item.id, period)) {
+         throw new Error(`item ${item.id} is already booked for an overlapping period`);
+       }
+       const id = `booking-${booked.length + 1}`;
+@@ -155,5 +170,16 @@ export function createRentalService(): RentalService {
+         total: priceOf(item, period),
+       };
+     },
++
++    availability(query: AvailabilityQuery): string[] {
++      if (query.kind !== undefined && !KINDS.includes(query.kind)) {
++        throw new Error(`kind must be board or sail, got ${query.kind}`);
++      }
++      const period = parsePeriod(query);
++      return [...equipment.values()]
++        .filter((item) => (query.kind === undefined || item.kind === query.kind) && !clashes(item.id, period))
++        .map((item) => item.id)
++        .sort();
++    },
+   };
+ }
+diff --git a/test/rental.test.ts b/test/rental.test.ts
+index 9d52fee53f98793a45d43d1a634afba041ba0ddf..8904fe707e89b07f81d64b7c03df024da45ec08b 100644
+--- a/test/rental.test.ts
++++ b/test/rental.test.ts
+@@ -178,3 +178,70 @@ describe('book', () => {
+     assert.equal(booking.itemId, 'sail-1');
+   });
+ });
++
++describe('availability', () => {
++  test('lists every registered item, sorted, when none is booked', () => {
++    const service = serviceWithBoard();
++    service.addEquipment({ id: 'sail-1', kind: 'sail', dailyPrice: 1500 });
++    service.addEquipment({ id: 'board-0', kind: 'board', dailyPrice: 2500 });
++
++    assert.deepEqual(service.availability({ start: DAY1, end: DAY2 }), ['board-0', 'board-1', 'sail-1']);
++  });
++
++  test('lists only the items of the given kind', () => {
++    const service = serviceWithBoard();
++    service.addEquipment({ id: 'sail-2', kind: 'sail', dailyPrice: 1500 });
++    service.addEquipment({ id: 'sail-1', kind: 'sail', dailyPrice: 1500 });
++
++    assert.deepEqual(service.availability({ start: DAY1, end: DAY2, kind: 'sail' }), ['sail-1', 'sail-2']);
++    assert.deepEqual(service.availability({ start: DAY1, end: DAY2, kind: 'board' }), ['board-1']);
++  });
++
++  test('leaves out an item booked for an overlapping period', () => {
++    const service = serviceWithBoard();
++    service.addEquipment({ id: 'board-2', kind: 'board', dailyPrice: 2500 });
++    service.book({ itemId: 'board-1', start: DAY1, end: DAY3 });
++
++    assert.deepEqual(service.availability({ start: DAY2, end: DAY4 }), ['board-2']);
++    assert.deepEqual(service.availability({ start: DAY1, end: DAY2 }), ['board-2']);
++  });
++
++  test('keeps an item booked only for adjacent periods', () => {
++    const service = serviceWithBoard();
++    service.book({ itemId: 'board-1', start: DAY1, end: DAY2 });
++    service.book({ itemId: 'board-1', start: DAY3, end: DAY4 });
++
++    assert.deepEqual(service.availability({ start: DAY2, end: DAY3 }), ['board-1']);
++  });
++
++  test('returns an empty array when nothing is free or nothing is registered', () => {
++    const service = serviceWithBoard();
++    service.book({ itemId: 'board-1', start: DAY1, end: DAY4 });
++
++    assert.deepEqual(service.availability({ start: DAY2, end: DAY3 }), []);
++    assert.deepEqual(service.availability({ start: DAY1, end: DAY2, kind: 'sail' }), []);
++    assert.deepEqual(createRentalService().availability({ start: DAY1, end: DAY2 }), []);
++  });
++
++  test('throws for a kind that is not board or sail', () => {
++    const service = serviceWithBoard();
++    assert.throws(() => service.availability({ start: DAY1, end: DAY2, kind: 'wetsuit' as 'board' }));
++  });
++
++  test('throws when the period is not whole UTC days or does not run forward', () => {
++    const service = serviceWithBoard();
++    assert.throws(() => service.availability({ start: '2026-07-01T09:00:00Z', end: DAY2 }));
++    assert.throws(() => service.availability({ start: DAY1, end: '2026-07-02T12:00:00Z' }));
++    assert.throws(() => service.availability({ start: DAY1, end: 'not-a-date' }));
++    assert.throws(() => service.availability({ start: DAY2, end: DAY2 }));
++    assert.throws(() => service.availability({ start: DAY2, end: DAY1 }));
++  });
++
++  test('does not book anything, so a free period can still be booked', () => {
++    const service = serviceWithBoard();
++    assert.deepEqual(service.availability({ start: DAY1, end: DAY2 }), ['board-1']);
++
++    assert.equal(service.book({ itemId: 'board-1', start: DAY1, end: DAY2 }).total, 2500);
++    assert.deepEqual(service.availability({ start: DAY1, end: DAY2 }), []);
++  });
++});

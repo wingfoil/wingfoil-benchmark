@@ -1,0 +1,101 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 97dc0b9941f88cb0db6ed5a1bca2cdbda0cd87f6..05dffcac890e4e07dca767bab2e108bda197ac93 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -4,6 +4,7 @@
+ 
+ - Discount codes: `SPRING10` takes 10 % off an order's items, `WELCOME5` takes 5.00 € off items of 30.00 € or more.
+   `applyCode` gives an order a code; totals show the discount as `discountCents`.
++- `exportMonth` gives the orders placed in a month (`YYYY-MM`) as CSV text for the accountant's spreadsheet.
+ 
+ ## 1.4.0
+ 
+diff --git a/src/domain/orders.ts b/src/domain/orders.ts
+index 4a26b3d7ac65a0277e93f5e4cf4855830e29290e..6e3d320bfa6728060de1ec584c59f7a69357add3 100644
+--- a/src/domain/orders.ts
++++ b/src/domain/orders.ts
+@@ -1,6 +1,7 @@
+ import type { Catalogue } from './catalogue.ts';
+ import type { Customers } from './customers.ts';
+ import { discountFor } from './discounts.ts';
++import { formatEuros } from './money.ts';
+ import type { Cents } from './money.ts';
+ import { err, ok } from './result.ts';
+ import type { Result } from './result.ts';
+@@ -48,9 +49,21 @@ export interface OrderBook {
+    * conditions the items do not meet, or an unknown order is refused and the order is left as it was.
+    */
+   applyCode(number: number, code: string): Result<OrderTotals>;
++  /**
++   * The orders placed in a month (`YYYY-MM`) as CSV text: a header line, then one line per order, by number, with
++   * its number, date, customer name, email, phone and total in euros. A malformed month is refused.
++   */
++  exportMonth(month: string): Result<string>;
+ }
+ 
+ const DATE = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
++const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
++const EXPORT_HEADER = 'order,date,customer,email,phone,total';
++
++/** A value as one CSV field: quoted, with its quotes doubled, when it holds a comma, a quote or a line break. */
++function csvField(value: string): string {
++  return /[",\r\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
++}
+ 
+ /**
+  * An empty order book over a catalogue and a customer list.
+@@ -128,5 +141,19 @@ export function createOrderBook(catalogue: Catalogue, customers: Customers): Ord
+       discounts.set(number, discount.value);
+       return ok(totalsOf(number, order));
+     },
++    exportMonth(month) {
++      if (!MONTH.test(month)) return err('invalid', `${month} is not a month (YYYY-MM)`);
++      const lines = [EXPORT_HEADER];
++      for (const order of orders) {
++        if (!order.date.startsWith(`${month}-`)) continue;
++        const customer = customers.get(order.customerId);
++        if (!customer.ok) return customer;
++        const { name, email, phone } = customer.value;
++        const total = formatEuros(totalsOf(order.number, order).totalCents);
++        const fields = [String(order.number), order.date, name, email, phone, total];
++        lines.push(fields.map(csvField).join(','));
++      }
++      return ok(lines.map((line) => `${line}\n`).join(''));
++    },
+   };
+ }
+diff --git a/test/shop.test.ts b/test/shop.test.ts
+index 3451b6d6d909ccacd9c604f6d898c4eff2cd25fc..a02b46756ba110615e04c69ce719fe96aca623a9 100644
+--- a/test/shop.test.ts
++++ b/test/shop.test.ts
+@@ -124,4 +124,30 @@ describe('order book', () => {
+     assert.equal(formatEuros(1250), '12.50');
+     assert.equal(formatEuros(5), '0.05');
+   });
++
++  it('exports the orders of a month as CSV, by number, with the total they pay', () => {
++    const shop = stocked();
++    valueOf(shop.customers.add({ id: 'c2', name: 'Holt, "Mira" Jr', email: 'jr@example.org', phone: '' }));
++    valueOf(shop.orders.place({ customerId: 'c1', date: '2026-10-02', lines: [{ sku: 'OIL-1L', quantity: 1 }] }));
++    valueOf(shop.orders.place({ customerId: 'c2', date: '2026-09-30', lines: [{ sku: 'HAM-W', quantity: 1 }] }));
++    const spring = valueOf(shop.orders.place({ customerId: 'c2', date: '2026-10-31', lines: [{ sku: 'OIL-1L', quantity: 1 }, { sku: 'BUN-6', quantity: 1 }] }));
++    valueOf(shop.orders.applyCode(spring.number, 'SPRING10'));
++    assert.equal(
++      valueOf(shop.orders.exportMonth('2026-10')),
++      [
++        'order,date,customer,email,phone,total',
++        '1,2026-10-02,Mira Holt,mira@example.org,555-0101,17.80',
++        '3,2026-10-31,"Holt, ""Mira"" Jr",jr@example.org,,17.45',
++        '',
++      ].join('\n'),
++    );
++  });
++
++  it('exports the header alone for a month with no orders, and refuses a malformed month', () => {
++    const shop = stocked();
++    placeOrder(shop, [{ sku: 'OIL-1L', quantity: 1 }]);
++    assert.equal(valueOf(shop.orders.exportMonth('2026-11')), 'order,date,customer,email,phone,total\n');
++    assert.equal(shop.orders.exportMonth('2026-13').ok, false);
++    assert.equal(shop.orders.exportMonth('2026-1').ok, false);
++  });
+ });

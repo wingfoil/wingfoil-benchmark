@@ -1,0 +1,207 @@
+diff --git a/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-3-plan.md b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-3-plan.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..3cb322f93a8a765273d8c58adf52ab1b8fe7d671
+--- /dev/null
++++ b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-3-plan.md
+@@ -0,0 +1,17 @@
++---
++id: sw-life-cycle-1-3-plan
++type: plan
++title: "Reduce price for rentals of 3+ days by 10%"
++status: active
++workflow: "sw-life-cycle"
++phase: "1-3"
++element: ""
++parent: ""
++format: 1
++---
++
++<!-- plan body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
+diff --git a/docs/memory/task/task-003-reduce-price-for-rentals-of-3-days-by-10.md b/docs/memory/task/task-003-reduce-price-for-rentals-of-3-days-by-10.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..6e4cbcca54ff78429cc0e2fcf8998623d938b6d3
+--- /dev/null
++++ b/docs/memory/task/task-003-reduce-price-for-rentals-of-3-days-by-10.md
+@@ -0,0 +1,62 @@
++---
++id: task-003-reduce-price-for-rentals-of-3-days-by-10
++type: task
++title: "Reduce price for rentals of 3+ days by 10%"
++status: approved
++format: 1
++---
++
++# Reduce price for rentals of 3+ days by 10%
++
++## Goal
++
++Reward customers who stay longer: a rental of 3 days or more costs 10% less than its full price. Quotes and
++bookings both show the reduced total.
++
++## Scope
++
++Changes the pricing in `src/index.ts`, used by `quote` and `book`:
++
++- A period of 3 or more whole days has its total reduced by 10%: the full price is days times `dailyPrice`, and
++  the total is that full price minus the discount.
++- A period of fewer than 3 days is priced as before (days times `dailyPrice`).
++- The discount is computed on the full price in euro cents and rounded to the nearest cent, halves rounding up,
++  so the total stays an integer. Example: 4 days at 1505 cents = 6020 full; discount 602; total 5418.
++  3 days at 1505 cents = 4515 full; discount 451.5 rounds to 452; total 4063.
++- `quote` and `book` return the reduced total. `book` returns the same total as `quote` for the same period.
++- `availability` and the booking-clash rules are unchanged.
++
++## Rules
++
++1. Money is an integer number of euro cents (task-001 rule 1).
++2. Times are UTC midnights; a rental covers whole days (task-001 rules 2 and 3).
++3. This task supersedes task-001 rule 3 for periods of 3 or more days: their total is the discounted total above,
++   not days times `dailyPrice`. Periods shorter than 3 days keep the task-001 total.
++
++## Acceptance criteria
++
++- AC1: A 3-day period quotes the full price less 10%, rounded to the nearest cent (e.g. 7500 becomes 6750).
++- AC2: A period of 2 days or fewer quotes days times `dailyPrice`, with no discount (e.g. 2 days at 2500 is 5000).
++- AC3: A 4-day or longer period quotes the full price less 10%.
++- AC4: The discount rounds half up to the nearest cent, so the total is always an integer (e.g. 3 days at 1505
++  is 4063).
++- AC5: `book` returns the same discounted total as `quote` for the same period, for both short and long periods.
++- AC6: Existing error behaviour is unchanged: `quote` and `book` still throw for an unknown item or a period the
++  rules do not allow.
++
++## Notes
++
++- No runtime dependency is added. Tests use `node --test` (the existing `test` script).
++- Each acceptance criterion gets at least one happy-path test and one edge- or error-path test.
++- The existing test "returns the total as days times the daily price" uses a 3-day period and is updated to the
++  discounted total, as AC1 requires.
++- Cancellation remains out of scope, as in task-001.
++
++## Build record
++
++- Red first: five new or updated `quote` and `book` tests failed on the unchanged pricing, then passed once the
++  discount was added.
++- Implementation: `priceOf` in `src/index.ts` takes 10% off from `LONG_RENTAL_DAYS` (3) days on, rounding the
++  discount half up to the nearest cent. `quote` and `book` both price through it, so they agree.
++- `npm test`: 35 of 35 pass.
++- Not run: no type checker or linter is installed in this repository; `tsc` and an ESLint run were not available.
+diff --git a/src/index.ts b/src/index.ts
+index ede8f64f83bf54f93463ab1be9db782d0b4ab209..9c40de996302cb62bbbb24799359997196e62366 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -22,7 +22,7 @@ export interface PeriodRequest {
+   end: string;
+ }
+ 
+-/** The price of renting an item for a period, in euro cents. */
++/** The price of renting an item for a period, in euro cents, after the long-rental discount. */
+ export interface Quote {
+   itemId: string;
+   start: string;
+@@ -69,6 +69,9 @@ interface BookedPeriod {
+ 
+ const DAY_MS = 24 * 60 * 60 * 1000;
+ 
++/** A rental of at least this many days gets the long-rental discount. */
++const LONG_RENTAL_DAYS = 3;
++
+ const KINDS: readonly string[] = ['board', 'sail'];
+ 
+ const UTC_MIDNIGHT = /^(\d{4})-(\d{2})-(\d{2})T00:00:00(?:\.000)?Z$/;
+@@ -115,8 +118,15 @@ export function createRentalService(): RentalService {
+     return item;
+   }
+ 
++  /** The total for the period: days times the daily price, less 10% from `LONG_RENTAL_DAYS` days on. */
+   function priceOf(item: Equipment, period: Period): number {
+-    return ((period.endMs - period.startMs) / DAY_MS) * item.dailyPrice;
++    const days = (period.endMs - period.startMs) / DAY_MS;
++    const fullPrice = days * item.dailyPrice;
++    if (days < LONG_RENTAL_DAYS) {
++      return fullPrice;
++    }
++    // The discount is rounded to the nearest cent, halves up, so the total stays an integer.
++    return fullPrice - Math.round(fullPrice / 10);
+   }
+ 
+   /** Whether the item already has a booking overlapping the period. Periods are half-open. */
+diff --git a/test/rental.test.ts b/test/rental.test.ts
+index 8904fe707e89b07f81d64b7c03df024da45ec08b..32c705a733e9f295ed4b47fdfb79f3ac75449d27 100644
+--- a/test/rental.test.ts
++++ b/test/rental.test.ts
+@@ -54,13 +54,13 @@ describe('addEquipment', () => {
+ });
+ 
+ describe('quote', () => {
+-  test('returns the total as days times the daily price', () => {
++  test('returns the total as days times the daily price less 10% from 3 days', () => {
+     const service = serviceWithBoard(2500);
+     assert.deepEqual(service.quote({ itemId: 'board-1', start: DAY1, end: DAY4 }), {
+       itemId: 'board-1',
+       start: DAY1,
+       end: DAY4,
+-      total: 7500,
++      total: 6750,
+     });
+   });
+ 
+@@ -69,6 +69,34 @@ describe('quote', () => {
+     assert.equal(service.quote({ itemId: 'board-1', start: DAY1, end: DAY2 }).total, 2500);
+   });
+ 
++  test('gives no discount for 2 days', () => {
++    const service = serviceWithBoard(2500);
++    assert.equal(service.quote({ itemId: 'board-1', start: DAY1, end: DAY3 }).total, 5000);
++  });
++
++  test('gives 10% off a period of 3 days', () => {
++    const service = serviceWithBoard(2500);
++    assert.equal(service.quote({ itemId: 'board-1', start: DAY1, end: DAY4 }).total, 6750);
++  });
++
++  test('gives 10% off a period longer than 3 days', () => {
++    const service = serviceWithBoard(2500);
++    const end = '2026-07-08T00:00:00Z';
++    // 7 days: 17500 full, less 1750.
++    assert.equal(service.quote({ itemId: 'board-1', start: DAY1, end }).total, 15750);
++  });
++
++  test('rounds the discount half up to the nearest cent', () => {
++    const service = serviceWithBoard(1505);
++    // 3 days: 4515 full, discount 451.5 rounds to 452, total 4063.
++    assert.equal(service.quote({ itemId: 'board-1', start: DAY1, end: DAY4 }).total, 4063);
++    // 4 days: 6020 full, discount 602, total 5418.
++    assert.equal(
++      service.quote({ itemId: 'board-1', start: DAY1, end: '2026-07-05T00:00:00Z' }).total,
++      5418,
++    );
++  });
++
+   test('throws for an unknown item', () => {
+     const service = serviceWithBoard();
+     assert.throws(() => service.quote({ itemId: 'nope', start: DAY1, end: DAY2 }));
+@@ -121,6 +149,20 @@ describe('book', () => {
+     assert.deepEqual({ ...booking, id: undefined }, { ...quote, id: undefined });
+   });
+ 
++  test('books a period of 3 days at the discounted total, the same as its quote', () => {
++    const service = serviceWithBoard(2500);
++    const quote = service.quote({ itemId: 'board-1', start: DAY1, end: DAY4 });
++    const booking = service.book({ itemId: 'board-1', start: DAY1, end: DAY4 });
++
++    assert.equal(booking.total, 6750);
++    assert.equal(booking.total, quote.total);
++  });
++
++  test('books a period of 2 days at the full price', () => {
++    const service = serviceWithBoard(2500);
++    assert.equal(service.book({ itemId: 'board-1', start: DAY1, end: DAY3 }).total, 5000);
++  });
++
+   test('gives each booking its own id, the same sequence on every fresh service', () => {
+     const first = serviceWithBoard();
+     const second = serviceWithBoard();

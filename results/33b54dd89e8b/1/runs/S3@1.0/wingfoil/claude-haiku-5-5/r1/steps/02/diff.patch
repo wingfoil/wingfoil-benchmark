@@ -1,0 +1,296 @@
+diff --git a/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-2-plan.md b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-2-plan.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..6d3f7e374663256fc1ab52222dc4b851ab89f696
+--- /dev/null
++++ b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-2-plan.md
+@@ -0,0 +1,17 @@
++---
++id: sw-life-cycle-1-2-plan
++type: plan
++title: "availability query for rental equipment"
++status: active
++workflow: "sw-life-cycle"
++phase: "1-2"
++element: ""
++parent: ""
++format: 1
++---
++
++<!-- plan body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
+diff --git a/docs/memory/task/task-002-availability-query-for-rental-equipment.md b/docs/memory/task/task-002-availability-query-for-rental-equipment.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..f27cacab6d7e15d2d04fbb77ac4bf932dc1a4750
+--- /dev/null
++++ b/docs/memory/task/task-002-availability-query-for-rental-equipment.md
+@@ -0,0 +1,60 @@
++---
++id: task-002-availability-query-for-rental-equipment
++type: task
++title: "Availability query for rental equipment"
++status: approved
++format: 1
++---
++
++# Availability query for rental equipment
++
++## Request
++
++The desk needs to see at a glance what can still be rented. Add `availability(query)` to the rental
++service, where `query` is `{ start, end, kind }` and `kind` is optional. It returns the ids of the
++equipment of that kind, or of any kind when none is given, that is free for the whole period, sorted.
++
++## School rules (requirements)
++
++- R2. Times are UTC, written as ISO-8601 strings.
++- R3. A booking covers whole days: start and end are at midnight UTC, and the end is the start of the day
++  after the last rented day.
++- R4. The same item cannot be booked for overlapping periods.
++
++## Acceptance criteria
++
++- AC1. `availability` is a method of the service returned by `createRentalService`. It takes
++  `{ start, end, kind? }` and returns a sorted array of item ids. (R2, R3)
++- AC2. An item is free when it has no booking overlapping `[start, end)`. Periods that only touch are
++  free. (R4)
++- AC3. Without `kind`, the result lists the free items of every kind. With `kind`, it lists only the free
++  items of that kind. (R4)
++- AC4. The result is sorted in ascending code-unit order, so it is the same on every call. (determinism)
++- AC5. `availability` throws for a `start` or `end` that is not a valid ISO-8601 UTC timestamp at midnight,
++  or an `end` that is not after the `start`. (R2, R3)
++- AC6. `availability` throws for a `kind` other than `'board'` or `'sail'`.
++- AC7. An item with no bookings is free. An empty result is an empty array, not an error.
++- AC8. Each service instance answers from its own equipment and bookings. (memory-only)
++
++## Test plan
++
++Test first (red, then green). Each acceptance criterion has at least one happy-path test and one
++error-path test. Tests are deterministic: no wall-clock time, no randomness, no external services.
++
++## Out of scope
++
++- Cancellations and refunds.
++- Persistence across restarts.
++- Availability for partial days.
++
++## Build record
++
++- Tests first: 13 tests in `tests/rental.test.ts` under `availability`, red before the method existed
++  (`service.availability is not a function`).
++- Implementation: `src/index.ts` adds `availability(query)` and the `AvailabilityQuery` type. The period
++  parsing moved to `parsePeriod`, and the overlap check to `clashes`, so `book` and `availability` share
++  one rule.
++- Result: `npm test` passes, 36 of 36 (23 existing, 13 new). Type-checking with `tsc` was not run: no
++  TypeScript compiler is installed in this repository.
++- Choices made: ids are sorted with `Array.prototype.sort` (code-unit order); an invalid `kind` throws
++  rather than returning an empty list; the period is validated the same way as for `quote` and `book`.
+diff --git a/src/index.ts b/src/index.ts
+index d8e53827ccff4b54ef6c453028a73362fd0f59a3..eb8019eb690386c8691a5688ecff5c718120c189 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -27,10 +27,20 @@ export interface Booking extends Quote {
+   id: string;
+ }
+ 
++export interface AvailabilityQuery {
++  /** ISO-8601 UTC timestamp at midnight, e.g. `2026-07-01T00:00:00Z`. */
++  start: string;
++  /** ISO-8601 UTC timestamp at midnight: the start of the day after the last day asked about. */
++  end: string;
++  /** Only equipment of this kind; equipment of every kind when omitted. */
++  kind?: EquipmentKind;
++}
++
+ export interface RentalService {
+   addEquipment(item: Equipment): void;
+   quote(request: PeriodRequest): Quote;
+   book(request: PeriodRequest): Booking;
++  availability(query: AvailabilityQuery): string[];
+ }
+ 
+ interface Stay {
+@@ -55,6 +65,15 @@ function parseMidnight(value: unknown, name: string): number {
+   return ms;
+ }
+ 
++function parsePeriod(start: string, end: string): { startMs: number; endMs: number } {
++  const startMs = parseMidnight(start, 'start');
++  const endMs = parseMidnight(end, 'end');
++  if (endMs <= startMs) {
++    throw new Error('end must be after start');
++  }
++  return { startMs, endMs };
++}
++
+ function validateEquipment(item: Equipment): void {
+   if (typeof item.id !== 'string' || item.id.length === 0) {
+     throw new Error('item id must be a non-empty string');
+@@ -77,15 +96,16 @@ export function createRentalService(): RentalService {
+     if (item === undefined) {
+       throw new Error(`unknown item: ${request.itemId}`);
+     }
+-    const startMs = parseMidnight(request.start, 'start');
+-    const endMs = parseMidnight(request.end, 'end');
+-    if (endMs <= startMs) {
+-      throw new Error('end must be after start');
+-    }
++    const { startMs, endMs } = parsePeriod(request.start, request.end);
+     const days = (endMs - startMs) / DAY_MS;
+     return { item, startMs, endMs, total: item.dailyPrice * days };
+   }
+ 
++  // Periods are half-open: [start, end). Periods that only touch do not overlap.
++  function clashes(itemId: string, startMs: number, endMs: number): boolean {
++    return stays.some((stay) => stay.itemId === itemId && startMs < stay.endMs && stay.startMs < endMs);
++  }
++
+   return {
+     addEquipment(item) {
+       validateEquipment(item);
+@@ -102,16 +122,24 @@ export function createRentalService(): RentalService {
+ 
+     book(request) {
+       const { startMs, endMs, total } = priced(request);
+-      // Periods are half-open: [start, end). Periods that only touch do not overlap.
+-      const clash = stays.some(
+-        (stay) => stay.itemId === request.itemId && startMs < stay.endMs && stay.startMs < endMs,
+-      );
+-      if (clash) {
++      if (clashes(request.itemId, startMs, endMs)) {
+         throw new Error(`item ${request.itemId} is already booked for an overlapping period`);
+       }
+       bookingCount += 1;
+       stays.push({ itemId: request.itemId, startMs, endMs });
+       return { id: `booking-${bookingCount}`, itemId: request.itemId, start: request.start, end: request.end, total };
+     },
++
++    availability(query) {
++      const { startMs, endMs } = parsePeriod(query.start, query.end);
++      if (query.kind !== undefined && !KINDS.includes(query.kind)) {
++        throw new Error(`kind must be 'board' or 'sail'`);
++      }
++      return [...items.values()]
++        .filter((item) => query.kind === undefined || item.kind === query.kind)
++        .filter((item) => !clashes(item.id, startMs, endMs))
++        .map((item) => item.id)
++        .sort();
++    },
+   };
+ }
+diff --git a/tests/rental.test.ts b/tests/rental.test.ts
+index 1af4c76c3914defa4bac05807a9d1677a207ffca..2578e86b657e7d76a50a595ccd2798887d98bde7 100644
+--- a/tests/rental.test.ts
++++ b/tests/rental.test.ts
+@@ -162,3 +162,109 @@ describe('book', () => {
+     assert.throws(() => createRentalService().quote({ itemId: 'board-1', start: '2026-07-01T00:00:00Z', end: '2026-07-02T00:00:00Z' }));
+   });
+ });
++
++describe('availability', () => {
++  test('lists every item when no kind is given, sorted by id', () => {
++    const service = createRentalService();
++    service.addEquipment({ id: 'sail-2', kind: 'sail', dailyPrice: 1800 });
++    service.addEquipment({ id: 'board-1', kind: 'board', dailyPrice: 2500 });
++    service.addEquipment({ id: 'sail-1', kind: 'sail', dailyPrice: 1800 });
++    assert.deepEqual(
++      service.availability({ start: '2026-07-01T00:00:00Z', end: '2026-07-02T00:00:00Z' }),
++      ['board-1', 'sail-1', 'sail-2'],
++    );
++  });
++
++  test('lists only the items of the given kind', () => {
++    const service = serviceWithEquipment();
++    service.addEquipment({ id: 'board-2', kind: 'board', dailyPrice: 2500 });
++    assert.deepEqual(
++      service.availability({ start: '2026-07-01T00:00:00Z', end: '2026-07-02T00:00:00Z', kind: 'board' }),
++      ['board-1', 'board-2'],
++    );
++    assert.deepEqual(
++      service.availability({ start: '2026-07-01T00:00:00Z', end: '2026-07-02T00:00:00Z', kind: 'sail' }),
++      ['sail-1'],
++    );
++  });
++
++  test('leaves out an item booked for an overlapping part of the period', () => {
++    const service = serviceWithEquipment();
++    service.book({ itemId: 'board-1', start: '2026-07-02T00:00:00Z', end: '2026-07-04T00:00:00Z' });
++    assert.deepEqual(
++      service.availability({ start: '2026-07-01T00:00:00Z', end: '2026-07-03T00:00:00Z' }),
++      ['sail-1'],
++    );
++  });
++
++  test('keeps an item whose booking only touches the period', () => {
++    const service = serviceWithEquipment();
++    service.book({ itemId: 'board-1', start: '2026-07-01T00:00:00Z', end: '2026-07-02T00:00:00Z' });
++    assert.deepEqual(
++      service.availability({ start: '2026-07-02T00:00:00Z', end: '2026-07-03T00:00:00Z' }),
++      ['board-1', 'sail-1'],
++    );
++  });
++
++  test('an item with no bookings is free', () => {
++    const service = serviceWithEquipment();
++    assert.deepEqual(
++      service.availability({ start: '2026-07-01T00:00:00Z', end: '2026-07-02T00:00:00Z' }),
++      ['board-1', 'sail-1'],
++    );
++  });
++
++  test('returns an empty array when nothing is free', () => {
++    const service = createRentalService();
++    assert.deepEqual(service.availability({ start: '2026-07-01T00:00:00Z', end: '2026-07-02T00:00:00Z' }), []);
++    service.addEquipment({ id: 'board-1', kind: 'board', dailyPrice: 2500 });
++    service.book({ itemId: 'board-1', start: '2026-07-01T00:00:00Z', end: '2026-07-02T00:00:00Z' });
++    assert.deepEqual(
++      service.availability({ start: '2026-07-01T00:00:00Z', end: '2026-07-02T00:00:00Z', kind: 'board' }),
++      [],
++    );
++  });
++
++  test('gives the same answer on every call', () => {
++    const service = serviceWithEquipment();
++    const query = { start: '2026-07-01T00:00:00Z', end: '2026-07-02T00:00:00Z' };
++    assert.deepEqual(service.availability(query), service.availability(query));
++  });
++
++  test('does not change when a period is only quoted', () => {
++    const service = serviceWithEquipment();
++    service.quote({ itemId: 'board-1', start: '2026-07-01T00:00:00Z', end: '2026-07-02T00:00:00Z' });
++    assert.deepEqual(
++      service.availability({ start: '2026-07-01T00:00:00Z', end: '2026-07-02T00:00:00Z', kind: 'board' }),
++      ['board-1'],
++    );
++  });
++
++  test('throws for a kind other than board or sail', () => {
++    const service = serviceWithEquipment();
++    assert.throws(() =>
++      service.availability({ start: '2026-07-01T00:00:00Z', end: '2026-07-02T00:00:00Z', kind: 'kite' as unknown as 'board' }),
++    );
++  });
++
++  test('throws when the start is not at midnight UTC', () => {
++    const service = serviceWithEquipment();
++    assert.throws(() => service.availability({ start: '2026-07-01T12:00:00Z', end: '2026-07-02T00:00:00Z' }));
++  });
++
++  test('throws when the end is not at midnight UTC', () => {
++    const service = serviceWithEquipment();
++    assert.throws(() => service.availability({ start: '2026-07-01T00:00:00Z', end: '2026-07-02T06:00:00Z' }));
++  });
++
++  test('throws for a timestamp that is not a real date', () => {
++    const service = serviceWithEquipment();
++    assert.throws(() => service.availability({ start: '2026-02-30T00:00:00Z', end: '2026-03-01T00:00:00Z' }));
++  });
++
++  test('throws when the end is not after the start', () => {
++    const service = serviceWithEquipment();
++    assert.throws(() => service.availability({ start: '2026-07-02T00:00:00Z', end: '2026-07-01T00:00:00Z' }));
++    assert.throws(() => service.availability({ start: '2026-07-01T00:00:00Z', end: '2026-07-01T00:00:00Z' }));
++  });
++});

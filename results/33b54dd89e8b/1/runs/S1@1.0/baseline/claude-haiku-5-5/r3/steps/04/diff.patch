@@ -1,0 +1,104 @@
+diff --git a/src/index.ts b/src/index.ts
+index d3af4f1cf443b1c769027ff64315f424e20adc81..0fbecb7397e939d76a4c8f9afdd56402b8d153b3 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -310,3 +310,49 @@ export function applyPatch(document: unknown, patch: JsonPatch): unknown {
+   }
+   return result;
+ }
++
++/**
++ * JSON Merge Patch (RFC 7386): a compact way to describe a partial update of a JSON document.
++ */
++
++function isObject(value: unknown): value is Record<string, unknown> {
++  return typeof value === 'object' && value !== null && !Array.isArray(value);
++}
++
++/**
++ * Merges `patch` into `target`, in place where `target` is an object. Members of `patch` that are `null`
++ * remove the member; other members are merged recursively. A non-object patch replaces the target.
++ */
++function merge(target: unknown, patch: unknown): unknown {
++  if (!isObject(patch)) {
++    return patch;
++  }
++  const result: Record<string, unknown> = isObject(target) ? target : {};
++  for (const name of Object.keys(patch)) {
++    const value = patch[name];
++    if (value === null) {
++      Reflect.deleteProperty(result, name);
++    } else {
++      // defineProperty rather than assignment, so that a member named "__proto__" is an ordinary member.
++      const current = Object.hasOwn(result, name) ? result[name] : undefined;
++      Object.defineProperty(result, name, {
++        value: merge(current, value),
++        writable: true,
++        enumerable: true,
++        configurable: true,
++      });
++    }
++  }
++  return result;
++}
++
++/**
++ * Applies `patch` (RFC 7386) to `target` and returns the merged document.
++ *
++ * `target` and the values of `patch` are never modified, and the result shares no objects with them.
++ * A patch that is not an object replaces the whole document; a `null` member of a patch removes the
++ * member from the target.
++ */
++export function applyMergePatch(target: unknown, patch: unknown): unknown {
++  return merge(structuredClone(target), structuredClone(patch));
++}
+diff --git a/test/apply-merge-patch.test.ts b/test/apply-merge-patch.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..c6042caef5693d13924626438352d32449b0472c
+--- /dev/null
++++ b/test/apply-merge-patch.test.ts
+@@ -0,0 +1,44 @@
++import { test } from 'node:test';
++import assert from 'node:assert/strict';
++import { applyMergePatch } from '../src/index.ts';
++
++// Examples from RFC 7386, appendix A.
++test('applies the RFC 7386 examples', () => {
++  const cases: [unknown, unknown, unknown][] = [
++    [{ a: 'b' }, { a: 'c' }, { a: 'c' }],
++    [{ a: 'b' }, { b: 'c' }, { a: 'b', b: 'c' }],
++    [{ a: 'b' }, { a: null }, {}],
++    [{ a: 'b', b: 'c' }, { a: null }, { b: 'c' }],
++    [{ a: ['b'] }, { a: 'c' }, { a: 'c' }],
++    [{ a: 'c' }, { a: ['b'] }, { a: ['b'] }],
++    [{ a: { b: 'c' } }, { a: { b: 'd', c: null } }, { a: { b: 'd' } }],
++    [{ a: [{ b: 'c' }] }, { a: [1] }, { a: [1] }],
++    [['a', 'b'], ['c', 'd'], ['c', 'd']],
++    [{ a: 'b' }, ['c'], ['c']],
++    [{ a: 'foo' }, null, null],
++    [{ a: 'foo' }, 'bar', 'bar'],
++    [{ e: null }, { a: 1 }, { e: null, a: 1 }],
++    [[1, 2], { a: 'b', c: null }, { a: 'b' }],
++    [{}, { a: { bb: { ccc: null } } }, { a: { bb: {} } }],
++  ];
++  for (const [target, patch, expected] of cases) {
++    assert.deepEqual(applyMergePatch(target, patch), expected);
++  }
++});
++
++test('does not modify the target or the patch', () => {
++  const target = { a: { b: 1 } };
++  const patch = { a: { c: [1] } };
++  const result = applyMergePatch(target, patch) as { a: { c: number[] } };
++  assert.deepEqual(target, { a: { b: 1 } });
++  assert.deepEqual(patch, { a: { c: [1] } });
++  result.a.c.push(2);
++  assert.deepEqual(patch, { a: { c: [1] } });
++});
++
++test('treats a "__proto__" member as an ordinary member', () => {
++  const patch = JSON.parse('{"__proto__": {"polluted": true}}');
++  const result = applyMergePatch({}, patch) as Record<string, unknown>;
++  assert.equal(Object.hasOwn(result, '__proto__'), true);
++  assert.equal(({} as Record<string, unknown>).polluted, undefined);
++});

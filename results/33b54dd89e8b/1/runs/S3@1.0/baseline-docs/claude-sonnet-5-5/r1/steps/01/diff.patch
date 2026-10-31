@@ -1,0 +1,222 @@
+diff --git a/README.md b/README.md
+index b5fe1b2a4feac926b16f4b55fd72f2bb6eb7b711..a0d016f943040d953f0c73db65d6a8302ec8c4ac 100644
+--- a/README.md
++++ b/README.md
+@@ -3,3 +3,21 @@
+ The Lakeside Windsurf School teaches windsurfing on the lake from April to October, and rents boards and
+ sails to its students and to visitors who bring their own experience. This repository holds the software
+ of its booking desk, written in TypeScript with no runtime dependency.
++
++## Rental module
++
++`createRentalService()` (exported from `src/index.ts`) returns an in-memory service:
++
++- `addEquipment({ id, kind, dailyPrice })` — `kind` is `'board'` or `'sail'`; `dailyPrice` is an integer
++  number of euro cents.
++- `quote({ itemId, start, end })` — returns `{ itemId, start, end, total }`, `total` being the number of
++  days times the daily price, in cents.
++- `book({ itemId, start, end })` — returns `{ id, itemId, start, end, total }`.
++
++Rules: times are ISO-8601 UTC strings at midnight; `end` is the start of the day after the last rental day
++(exclusive), so `2026-07-01T00:00:00Z` to `2026-07-03T00:00:00Z` is two days. `quote` and `book` throw for
++an unknown item or an invalid period; `book` also throws if the item is already booked for any overlapping
++time. Cancellations (and their refund policy: none under 24 h before start, otherwise full) are not
++implemented yet.
++
++Run the tests with `npm test` (Node 22.18+, which runs TypeScript directly).
+diff --git a/src/index.test.ts b/src/index.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..d278d89488dd28c3e70b2ca21ae081ece1c413da
+--- /dev/null
++++ b/src/index.test.ts
+@@ -0,0 +1,74 @@
++import { test } from 'node:test';
++import assert from 'node:assert/strict';
++import { createRentalService } from './index.ts';
++
++function setup() {
++  const service = createRentalService();
++  service.addEquipment({ id: 'b1', kind: 'board', dailyPrice: 2500 });
++  service.addEquipment({ id: 's1', kind: 'sail', dailyPrice: 1500 });
++  return service;
++}
++
++const d = (day: number) => `2026-07-${String(day).padStart(2, '0')}T00:00:00.000Z`;
++
++test('quote prices whole days in cents', () => {
++  assert.deepEqual(setup().quote({ itemId: 'b1', start: d(1), end: d(4) }), {
++    itemId: 'b1', start: d(1), end: d(4), total: 7500,
++  });
++});
++
++test('quote accepts timestamps without milliseconds', () => {
++  const q = setup().quote({ itemId: 's1', start: '2026-07-01T00:00:00Z', end: '2026-07-02T00:00:00Z' });
++  assert.equal(q.total, 1500);
++});
++
++test('quote rejects unknown items', () => {
++  assert.throws(() => setup().quote({ itemId: 'x', start: d(1), end: d(2) }), /Unknown item/);
++});
++
++test('quote rejects periods that are not whole UTC days', () => {
++  const s = setup();
++  assert.throws(() => s.quote({ itemId: 'b1', start: '2026-07-01T10:00:00Z', end: d(2) }));
++  assert.throws(() => s.quote({ itemId: 'b1', start: '2026-07-01T00:00:00+02:00', end: d(2) }));
++  assert.throws(() => s.quote({ itemId: 'b1', start: '2026-02-30T00:00:00Z', end: d(2) }));
++  assert.throws(() => s.quote({ itemId: 'b1', start: 'garbage', end: d(2) }));
++});
++
++test('quote rejects empty and reversed periods', () => {
++  const s = setup();
++  assert.throws(() => s.quote({ itemId: 'b1', start: d(2), end: d(2) }), /after start/);
++  assert.throws(() => s.quote({ itemId: 'b1', start: d(3), end: d(2) }), /after start/);
++});
++
++test('book returns a booking with its own id', () => {
++  const s = setup();
++  const a = s.book({ itemId: 'b1', start: d(1), end: d(2) });
++  const b = s.book({ itemId: 'b1', start: d(2), end: d(3) });
++  assert.equal(a.total, 2500);
++  assert.notEqual(a.id, b.id);
++});
++
++test('book rejects overlapping periods for the same item only', () => {
++  const s = setup();
++  s.book({ itemId: 'b1', start: d(5), end: d(8) });
++  assert.throws(() => s.book({ itemId: 'b1', start: d(7), end: d(9) }), /not free/);
++  assert.throws(() => s.book({ itemId: 'b1', start: d(4), end: d(6) }), /not free/);
++  assert.throws(() => s.book({ itemId: 'b1', start: d(1), end: d(20) }), /not free/);
++  assert.doesNotThrow(() => s.book({ itemId: 's1', start: d(5), end: d(8) }));
++  assert.doesNotThrow(() => s.book({ itemId: 'b1', start: d(8), end: d(9) }));
++});
++
++test('a rejected booking leaves the period free', () => {
++  const s = setup();
++  assert.throws(() => s.book({ itemId: 'b1', start: d(3), end: d(3) }));
++  assert.doesNotThrow(() => s.book({ itemId: 'b1', start: d(3), end: d(4) }));
++});
++
++test('addEquipment validates its input', () => {
++  const s = setup();
++  assert.throws(() => s.addEquipment({ id: 'b1', kind: 'board', dailyPrice: 1 }), /already exists/);
++  assert.throws(() => s.addEquipment({ id: 'n', kind: 'board', dailyPrice: 12.5 }));
++  assert.throws(() => s.addEquipment({ id: 'n', kind: 'board', dailyPrice: -1 }));
++  assert.throws(() => s.addEquipment({ id: '', kind: 'board', dailyPrice: 1 }));
++  assert.throws(() => s.addEquipment({ id: 'n', kind: 'kayak' as 'board', dailyPrice: 1 }));
++});
+diff --git a/src/index.ts b/src/index.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..a5cc81ac434904f6c2143ef351f1e8d9ada04710
+--- /dev/null
++++ b/src/index.ts
+@@ -0,0 +1,110 @@
++const DAY_MS = 24 * 60 * 60 * 1000;
++const MIDNIGHT_UTC = /^\d{4}-\d{2}-\d{2}T00:00:00(\.000)?Z$/;
++
++/** The kinds of equipment the school rents out. */
++export type EquipmentKind = 'board' | 'sail';
++
++/** A rentable item; `dailyPrice` is an integer number of euro cents per day. */
++export interface Equipment {
++  id: string;
++  kind: EquipmentKind;
++  dailyPrice: number;
++}
++
++/** A rental period for one item; `start` and `end` are ISO-8601 UTC midnights, `end` exclusive. */
++export interface RentalRequest {
++  itemId: string;
++  start: string;
++  end: string;
++}
++
++/** The cost of renting an item for a period; `total` is an integer number of euro cents. */
++export interface Quote extends RentalRequest {
++  total: number;
++}
++
++/** A confirmed booking, identified by `id`. */
++export interface Booking extends Quote {
++  id: string;
++}
++
++/** The in-memory rental service of the booking desk. */
++export interface RentalService {
++  /** Registers an item; throws on invalid data or a duplicate id. */
++  addEquipment(item: Equipment): void;
++  /** Prices a rental; throws for an unknown item or a period the rules do not allow. */
++  quote(request: RentalRequest): Quote;
++  /** Books a rental; throws like `quote`, and when the item is taken during the period. */
++  book(request: RentalRequest): Booking;
++}
++
++function parseMidnight(value: unknown, label: string): number {
++  if (typeof value !== 'string' || !MIDNIGHT_UTC.test(value)) {
++    throw new Error(`${label} must be an ISO-8601 UTC string at midnight, got ${String(value)}`);
++  }
++  const time = Date.parse(value);
++  if (Number.isNaN(time) || new Date(time).toISOString().slice(0, 10) !== value.slice(0, 10)) {
++    throw new Error(`${label} is not a valid date: ${value}`);
++  }
++  return time;
++}
++
++function validateEquipment(item: Equipment): void {
++  if (typeof item?.id !== 'string' || item.id === '') {
++    throw new Error('Equipment id must be a non-empty string');
++  }
++  if (item.kind !== 'board' && item.kind !== 'sail') {
++    throw new Error(`Equipment kind must be 'board' or 'sail', got ${String(item.kind)}`);
++  }
++  if (!Number.isSafeInteger(item.dailyPrice) || item.dailyPrice < 0) {
++    throw new Error('Equipment dailyPrice must be a non-negative integer number of cents');
++  }
++}
++
++/** Creates an empty rental service that keeps everything in memory. */
++export function createRentalService(): RentalService {
++  const equipment = new Map<string, Equipment>();
++  const bookings: Array<Booking & { startMs: number; endMs: number }> = [];
++
++  function price(request: RentalRequest): Quote & { startMs: number; endMs: number } {
++    const item = equipment.get(request?.itemId);
++    if (!item) {
++      throw new Error(`Unknown item: ${String(request?.itemId)}`);
++    }
++    const startMs = parseMidnight(request.start, 'start');
++    const endMs = parseMidnight(request.end, 'end');
++    if (endMs <= startMs) {
++      throw new Error('end must be after start');
++    }
++    const days = (endMs - startMs) / DAY_MS;
++    return { itemId: item.id, start: request.start, end: request.end, total: days * item.dailyPrice, startMs, endMs };
++  }
++
++  return {
++    addEquipment(item) {
++      validateEquipment(item);
++      if (equipment.has(item.id)) {
++        throw new Error(`Equipment already exists: ${item.id}`);
++      }
++      equipment.set(item.id, { id: item.id, kind: item.kind, dailyPrice: item.dailyPrice });
++    },
++
++    quote(request) {
++      const { startMs, endMs, ...quote } = price(request);
++      return quote;
++    },
++
++    book(request) {
++      const { startMs, endMs, ...quote } = price(request);
++      const taken = bookings.some(
++        (b) => b.itemId === quote.itemId && b.startMs < endMs && startMs < b.endMs,
++      );
++      if (taken) {
++        throw new Error(`Item ${quote.itemId} is not free from ${quote.start} to ${quote.end}`);
++      }
++      const booking: Booking = { id: `booking-${bookings.length + 1}`, ...quote };
++      bookings.push({ ...booking, startMs, endMs });
++      return booking;
++    },
++  };
++}

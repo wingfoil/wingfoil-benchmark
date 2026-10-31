@@ -1,0 +1,200 @@
+diff --git a/README.md b/README.md
+index 281ce9efa458e6e1694cf22c6bd67d30b866dac2..6cc4a62acc37764e56c2bffea4c000d825b77337 100644
+--- a/README.md
++++ b/README.md
+@@ -31,3 +31,12 @@ shares no structure with them. A patch that is not an object replaces the target
+ merged member by member, and a `null` member removes that member from the target. Arrays are replaced,
+ not merged, so `null` inside an array is kept. A `null` member of the patch cannot set a value to
+ `null`. It throws an `Error` if `target` or `patch` is not JSON (see `applyPatch` for what counts).
++
++## Creating a JSON Patch
++
++`createPatch(from, to)`, exported from `src/index.ts`, returns a JSON Patch (RFC 6902) that turns `from`
++into `to` when passed to `applyPatch`. It describes only what changed: unchanged members and array
++elements produce no operation, nested changes are addressed by their own path, and identical documents
++give an empty patch. Arrays keep their common head and tail, so inserting or deleting an element is one
++operation rather than a rewrite of the rest. Neither argument is mutated and the patch shares no
++structure with them. It throws an `Error` if `from` or `to` is not JSON (see `applyPatch`).
+diff --git a/src/diff.ts b/src/diff.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..73f3082d532a6cc053893223e86bf8e3e9186aa8
+--- /dev/null
++++ b/src/diff.ts
+@@ -0,0 +1,80 @@
++import { isJsonValue, jsonEqual } from "./patch.ts";
++import type { PatchOperation } from "./patch.ts";
++import type { JsonValue } from "./pointer.ts";
++
++type JsonObject = { [key: string]: JsonValue };
++
++function isPlainObject(value: JsonValue): value is JsonObject {
++  return typeof value === "object" && value !== null && !Array.isArray(value);
++}
++
++/** Escapes a member name as a JSON Pointer token (RFC 6901 §3). */
++function escapeToken(token: string): string {
++  return token.replaceAll("~", "~0").replaceAll("/", "~1");
++}
++
++function diffObjects(from: JsonObject, to: JsonObject, path: string, out: PatchOperation[]): void {
++  for (const key of Object.keys(from)) {
++    if (!Object.hasOwn(to, key)) out.push({ op: "remove", path: `${path}/${escapeToken(key)}` });
++  }
++  for (const key of Object.keys(to)) {
++    const childPath = `${path}/${escapeToken(key)}`;
++    if (Object.hasOwn(from, key)) diff(from[key], to[key], childPath, out);
++    else out.push({ op: "add", path: childPath, value: structuredClone(to[key]) });
++  }
++}
++
++/** Length of the common run of equal elements at the start of `a` and `b`. */
++function commonPrefix(a: JsonValue[], b: JsonValue[]): number {
++  let length = 0;
++  while (length < a.length && length < b.length && jsonEqual(a[length], b[length])) length++;
++  return length;
++}
++
++/** Length of the common run at the end of `a` and `b`, not overlapping the first `skip` elements. */
++function commonSuffix(a: JsonValue[], b: JsonValue[], skip: number): number {
++  let length = 0;
++  const limit = Math.min(a.length, b.length) - skip;
++  while (length < limit && jsonEqual(a[a.length - 1 - length], b[b.length - 1 - length])) length++;
++  return length;
++}
++
++/**
++ * Diffs two arrays: the common head and tail are left alone, the differing middle is diffed element
++ * by element, and any surplus is removed or added, so an insertion or deletion stays a single operation.
++ */
++function diffArrays(from: JsonValue[], to: JsonValue[], path: string, out: PatchOperation[]): void {
++  const head = commonPrefix(from, to);
++  const tail = commonSuffix(from, to, head);
++  const fromLength = from.length - head - tail;
++  const toLength = to.length - head - tail;
++  const shared = Math.min(fromLength, toLength);
++  for (let i = 0; i < shared; i++) diff(from[head + i], to[head + i], `${path}/${head + i}`, out);
++  for (let i = shared; i < fromLength; i++) out.push({ op: "remove", path: `${path}/${head + shared}` });
++  for (let i = shared; i < toLength; i++) {
++    out.push({ op: "add", path: `${path}/${head + i}`, value: structuredClone(to[head + i]) });
++  }
++}
++
++function diff(from: JsonValue, to: JsonValue, path: string, out: PatchOperation[]): void {
++  if (jsonEqual(from, to)) return;
++  if (Array.isArray(from) && Array.isArray(to)) diffArrays(from, to, path, out);
++  else if (isPlainObject(from) && isPlainObject(to)) diffObjects(from, to, path, out);
++  else out.push({ op: "replace", path, value: structuredClone(to) });
++}
++
++/**
++ * Returns a JSON Patch (RFC 6902) that turns `from` into `to` when applied with `applyPatch`.
++ *
++ * Only what differs is described: unchanged members and array elements produce no operation, and
++ * nested changes are addressed by their own path. Identical documents give an empty patch. Neither
++ * argument is mutated and the patch shares no structure with them. Throws an `Error` if `from` or
++ * `to` is not JSON (see `applyPatch` for what counts).
++ */
++export function createPatch(from: JsonValue, to: JsonValue): PatchOperation[] {
++  if (!isJsonValue(from)) throw new Error("Invalid JSON Patch diff: `from` must be JSON");
++  if (!isJsonValue(to)) throw new Error("Invalid JSON Patch diff: `to` must be JSON");
++  const operations: PatchOperation[] = [];
++  diff(from, to, "", operations);
++  return operations;
++}
+diff --git a/src/index.ts b/src/index.ts
+index eb35af9e145be343f859f1213cc6d46f17e29716..9e907b3ab196e4cf7d5bb4411858e2b470e092ef 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -3,3 +3,4 @@ export type { JsonValue } from "./pointer.ts";
+ export { applyPatch } from "./patch.ts";
+ export type { PatchOperation } from "./patch.ts";
+ export { applyMergePatch } from "./merge-patch.ts";
++export { createPatch } from "./diff.ts";
+diff --git a/src/patch.ts b/src/patch.ts
+index 86e309bbd7167496d300c7d5282d80024ebc915e..bd1a6cb94e304b4eba0ba556f6f5bcd1629323bd 100644
+--- a/src/patch.ts
++++ b/src/patch.ts
+@@ -45,7 +45,7 @@ function requireValue(operation: Record<string, unknown>): JsonValue {
+ }
+ 
+ /** Deep equality of two JSON values (RFC 6902 §4.6): object member order is irrelevant. */
+-function jsonEqual(a: unknown, b: unknown): boolean {
++export function jsonEqual(a: unknown, b: unknown): boolean {
+   if (Array.isArray(a) || Array.isArray(b)) {
+     return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((item, i) => jsonEqual(item, b[i]));
+   }
+diff --git a/test/diff.test.ts b/test/diff.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..eb01c8acb8848f08c20dab6848c7bb8c8836b129
+--- /dev/null
++++ b/test/diff.test.ts
+@@ -0,0 +1,69 @@
++import { test } from "node:test";
++import assert from "node:assert/strict";
++import { applyPatch, createPatch } from "../src/index.ts";
++
++test("identical documents give an empty patch", () => {
++  assert.deepEqual(createPatch({ a: [1, { b: 2 }] }, { a: [1, { b: 2 }] }), []);
++});
++
++test("a small change yields a single small operation", () => {
++  const from = { a: { b: 1, c: [1, 2, 3] }, d: "x" };
++  const to = { a: { b: 1, c: [1, 9, 3] }, d: "x" };
++  assert.deepEqual(createPatch(from, to), [{ op: "replace", path: "/a/c/1", value: 9 }]);
++});
++
++test("member order does not matter", () => {
++  assert.deepEqual(createPatch({ a: 1, b: 2 }, { b: 2, a: 1 }), []);
++});
++
++test("adds, removes and escapes member names", () => {
++  assert.deepEqual(createPatch({ "a/b": 1, "m~n": 2 }, { "m~n": 3, c: 4 }), [
++    { op: "remove", path: "/a~1b" },
++    { op: "replace", path: "/m~0n", value: 3 },
++    { op: "add", path: "/c", value: 4 },
++  ]);
++});
++
++test("an inserted or deleted array element is one operation", () => {
++  assert.deepEqual(createPatch([1, 2, 3], [0, 1, 2, 3]), [{ op: "add", path: "/0", value: 0 }]);
++  assert.deepEqual(createPatch([1, 2, 3, 4], [1, 4]), [
++    { op: "remove", path: "/1" },
++    { op: "remove", path: "/1" },
++  ]);
++});
++
++test("type changes and root changes replace", () => {
++  assert.deepEqual(createPatch({ a: 1 }, [1]), [{ op: "replace", path: "", value: [1] }]);
++  assert.deepEqual(createPatch({ a: null }, { a: {} }), [{ op: "replace", path: "/a", value: {} }]);
++});
++
++test("applying the patch yields the target", () => {
++  const cases: [unknown, unknown][] = [
++    [[1, 2, 3], [3, 2, 1]],
++    [[1, 2], [1, 2, 3, 4]],
++    [[1, [2, 3]], [[2, 3], 1, 5]],
++    [{ a: [{ b: 1 }, { c: 2 }] }, { a: [{ c: 2 }, { b: 1, z: [] }] }],
++    [1, "x"],
++    [null, { a: null }],
++    [{ "": 1, "/": { "~": 2 } }, { "": 2, "/": { "~": 3, y: 1 } }],
++  ];
++  for (const [from, to] of cases) {
++    assert.deepEqual(applyPatch(from as never, createPatch(from as never, to as never)), to);
++  }
++});
++
++test("does not mutate arguments and shares no structure", () => {
++  const from = { a: { b: 1 } };
++  const to = { a: { b: 1, c: { d: [1] } } };
++  const fromCopy = structuredClone(from);
++  const toCopy = structuredClone(to);
++  const patch = createPatch(from, to);
++  assert.deepEqual(from, fromCopy);
++  assert.deepEqual(to, toCopy);
++  assert.notEqual((patch[0] as { value: unknown }).value, to.a.c);
++});
++
++test("rejects non-JSON input", () => {
++  assert.throws(() => createPatch({ a: NaN }, {}));
++  assert.throws(() => createPatch({}, { a: undefined } as never));
++});

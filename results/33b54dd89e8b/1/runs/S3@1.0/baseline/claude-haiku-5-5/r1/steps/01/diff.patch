@@ -1,0 +1,283 @@
+diff --git a/package.json b/package.json
+index af51de924b3d8d8b3f5fafcf8ccf30bd663030c7..bd35987acc1ae7d44d3b0ed51c46dde2c9d4dbd9 100644
+--- a/package.json
++++ b/package.json
+@@ -5,6 +5,6 @@
+   "description": "The booking desk software of the Lakeside Windsurf School.",
+   "type": "module",
+   "scripts": {
+-    "test": "node --test"
++    "test": "node --test test/rental.test.ts"
+   }
+ }
+diff --git a/src/index.ts b/src/index.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..d6a093e808456073e4499545355d37f9f585ffaf
+--- /dev/null
++++ b/src/index.ts
+@@ -0,0 +1,142 @@
++import { randomUUID } from 'node:crypto';
++
++export type ItemKind = 'board' | 'sail';
++
++export interface EquipmentItem {
++  id: string;
++  kind: ItemKind;
++  /** Price of one day of rental, in euro cents. */
++  dailyPrice: number;
++}
++
++export interface RentalRequest {
++  itemId: string;
++  /** ISO-8601 UTC instant at midnight, e.g. "2026-07-01T00:00:00Z". */
++  start: string;
++  /** ISO-8601 UTC instant at midnight: the start of the day after the last rental day. */
++  end: string;
++}
++
++export interface Quote {
++  itemId: string;
++  start: string;
++  end: string;
++  /** Total price, in euro cents. */
++  total: number;
++}
++
++export interface Booking extends Quote {
++  id: string;
++}
++
++export interface RentalService {
++  addEquipment(item: EquipmentItem): void;
++  quote(request: RentalRequest): Quote;
++  book(request: RentalRequest): Booking;
++}
++
++const DAY_MS = 24 * 60 * 60 * 1000;
++
++const ISO_UTC_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/;
++
++interface Period {
++  start: number;
++  end: number;
++  days: number;
++}
++
++function parseMidnightUtc(value: unknown, name: string): number {
++  if (typeof value !== 'string' || !ISO_UTC_PATTERN.test(value)) {
++    throw new Error(`${name} must be an ISO-8601 UTC time, got ${JSON.stringify(value)}`);
++  }
++  const time = Date.parse(value);
++  if (Number.isNaN(time)) {
++    throw new Error(`${name} is not a valid date: ${value}`);
++  }
++  if (time % DAY_MS !== 0) {
++    throw new Error(`${name} must be at midnight UTC: ${value}`);
++  }
++  return time;
++}
++
++function parsePeriod(request: RentalRequest): Period {
++  const start = parseMidnightUtc(request.start, 'start');
++  const end = parseMidnightUtc(request.end, 'end');
++  if (end <= start) {
++    throw new Error('end must be after start');
++  }
++  return { start, end, days: (end - start) / DAY_MS };
++}
++
++function toIso(time: number): string {
++  return new Date(time).toISOString();
++}
++
++function overlaps(a: Period, b: Period): boolean {
++  return a.start < b.end && b.start < a.end;
++}
++
++export function createRentalService(): RentalService {
++  const items = new Map<string, EquipmentItem>();
++  const bookings: Array<{ itemId: string; period: Period; booking: Booking }> = [];
++
++  function priceFor(request: RentalRequest): { item: EquipmentItem; period: Period; total: number } {
++    const item = items.get(request.itemId);
++    if (item === undefined) {
++      throw new Error(`unknown item: ${request.itemId}`);
++    }
++    const period = parsePeriod(request);
++    const total = item.dailyPrice * period.days;
++    if (!Number.isSafeInteger(total)) {
++      throw new Error('total price is out of range');
++    }
++    return { item, period, total };
++  }
++
++  return {
++    addEquipment(item: EquipmentItem): void {
++      if (typeof item.id !== 'string' || item.id === '') {
++        throw new Error('item id must be a non-empty string');
++      }
++      if (item.kind !== 'board' && item.kind !== 'sail') {
++        throw new Error(`item kind must be 'board' or 'sail', got ${JSON.stringify(item.kind)}`);
++      }
++      if (!Number.isSafeInteger(item.dailyPrice) || item.dailyPrice < 0) {
++        throw new Error('dailyPrice must be a non-negative integer number of euro cents');
++      }
++      if (items.has(item.id)) {
++        throw new Error(`duplicate item id: ${item.id}`);
++      }
++      items.set(item.id, { ...item });
++    },
++
++    quote(request: RentalRequest): Quote {
++      const { period, total } = priceFor(request);
++      return {
++        itemId: request.itemId,
++        start: toIso(period.start),
++        end: toIso(period.end),
++        total,
++      };
++    },
++
++    book(request: RentalRequest): Booking {
++      const { item, period, total } = priceFor(request);
++      const clash = bookings.some(
++        (other) => other.itemId === item.id && overlaps(other.period, period),
++      );
++      if (clash) {
++        throw new Error(`${item.id} is not free for the whole period`);
++      }
++      const booking: Booking = {
++        id: randomUUID(),
++        itemId: item.id,
++        start: toIso(period.start),
++        end: toIso(period.end),
++        total,
++      };
++      bookings.push({ itemId: item.id, period, booking });
++      return { ...booking };
++    },
++  };
++}
+diff --git a/test/rental.test.ts b/test/rental.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..be4f401c885e5037a026fdabe5138e6692d38e54
+--- /dev/null
++++ b/test/rental.test.ts
+@@ -0,0 +1,117 @@
++import { test } from 'node:test';
++import assert from 'node:assert/strict';
++import { createRentalService } from '../src/index.ts';
++
++function desk() {
++  const service = createRentalService();
++  service.addEquipment({ id: 'board-1', kind: 'board', dailyPrice: 3500 });
++  service.addEquipment({ id: 'sail-1', kind: 'sail', dailyPrice: 2000 });
++  return service;
++}
++
++test('quote returns the price for whole days', () => {
++  const quote = desk().quote({
++    itemId: 'board-1',
++    start: '2026-07-01T00:00:00Z',
++    end: '2026-07-04T00:00:00Z',
++  });
++  assert.deepEqual(quote, {
++    itemId: 'board-1',
++    start: '2026-07-01T00:00:00.000Z',
++    end: '2026-07-04T00:00:00.000Z',
++    total: 10500,
++  });
++});
++
++test('quote rejects an unknown item', () => {
++  assert.throws(
++    () => desk().quote({ itemId: 'nope', start: '2026-07-01T00:00:00Z', end: '2026-07-02T00:00:00Z' }),
++    /unknown item/,
++  );
++});
++
++test('quote rejects periods that are not whole UTC days', () => {
++  const service = desk();
++  assert.throws(
++    () => service.quote({ itemId: 'board-1', start: '2026-07-01T10:00:00Z', end: '2026-07-02T00:00:00Z' }),
++    /midnight/,
++  );
++  assert.throws(
++    () => service.quote({ itemId: 'board-1', start: '2026-07-01T00:00:00+02:00', end: '2026-07-02T00:00:00Z' }),
++    /ISO-8601 UTC/,
++  );
++  assert.throws(
++    () => service.quote({ itemId: 'board-1', start: '2026-07-01', end: '2026-07-02T00:00:00Z' }),
++    /ISO-8601 UTC/,
++  );
++});
++
++test('quote rejects an empty or reversed period', () => {
++  const service = desk();
++  assert.throws(
++    () => service.quote({ itemId: 'board-1', start: '2026-07-02T00:00:00Z', end: '2026-07-02T00:00:00Z' }),
++    /after start/,
++  );
++  assert.throws(
++    () => service.quote({ itemId: 'board-1', start: '2026-07-03T00:00:00Z', end: '2026-07-02T00:00:00Z' }),
++    /after start/,
++  );
++});
++
++test('addEquipment rejects invalid items and duplicate ids', () => {
++  const service = desk();
++  assert.throws(() => service.addEquipment({ id: 'x', kind: 'kite' as 'board', dailyPrice: 1 }), /kind/);
++  assert.throws(() => service.addEquipment({ id: 'x', kind: 'board', dailyPrice: 12.5 }), /integer/);
++  assert.throws(() => service.addEquipment({ id: 'x', kind: 'board', dailyPrice: -1 }), /integer/);
++  assert.throws(() => service.addEquipment({ id: 'board-1', kind: 'board', dailyPrice: 1 }), /duplicate/);
++});
++
++test('book returns a booking with an id and the same total as quote', () => {
++  const service = desk();
++  const request = { itemId: 'sail-1', start: '2026-07-01T00:00:00Z', end: '2026-07-03T00:00:00Z' };
++  const booking = service.book(request);
++  assert.equal(typeof booking.id, 'string');
++  assert.notEqual(booking.id, '');
++  assert.equal(booking.itemId, 'sail-1');
++  assert.equal(booking.start, '2026-07-01T00:00:00.000Z');
++  assert.equal(booking.end, '2026-07-03T00:00:00.000Z');
++  assert.equal(booking.total, service.quote(request).total);
++  const later = service.book({ ...request, start: '2026-07-03T00:00:00Z', end: '2026-07-04T00:00:00Z' });
++  assert.notEqual(later.id, booking.id);
++});
++
++test('book refuses an item that is already booked for an overlapping period', () => {
++  const service = desk();
++  service.book({ itemId: 'board-1', start: '2026-07-01T00:00:00Z', end: '2026-07-04T00:00:00Z' });
++  const overlapping = [
++    { start: '2026-07-01T00:00:00Z', end: '2026-07-04T00:00:00Z' },
++    { start: '2026-06-30T00:00:00Z', end: '2026-07-02T00:00:00Z' },
++    { start: '2026-07-03T00:00:00Z', end: '2026-07-05T00:00:00Z' },
++    { start: '2026-07-02T00:00:00Z', end: '2026-07-03T00:00:00Z' },
++  ];
++  for (const period of overlapping) {
++    assert.throws(() => service.book({ itemId: 'board-1', ...period }), /not free/);
++  }
++});
++
++test('book allows adjacent periods and other items', () => {
++  const service = desk();
++  service.book({ itemId: 'board-1', start: '2026-07-01T00:00:00Z', end: '2026-07-04T00:00:00Z' });
++  assert.doesNotThrow(() =>
++    service.book({ itemId: 'board-1', start: '2026-07-04T00:00:00Z', end: '2026-07-05T00:00:00Z' }),
++  );
++  assert.doesNotThrow(() =>
++    service.book({ itemId: 'sail-1', start: '2026-07-01T00:00:00Z', end: '2026-07-04T00:00:00Z' }),
++  );
++});
++
++test('book does not record a refused booking', () => {
++  const service = desk();
++  service.book({ itemId: 'board-1', start: '2026-07-01T00:00:00Z', end: '2026-07-02T00:00:00Z' });
++  assert.throws(() =>
++    service.book({ itemId: 'board-1', start: '2026-07-01T00:00:00Z', end: '2026-07-02T00:00:00Z' }),
++  );
++  assert.doesNotThrow(() =>
++    service.book({ itemId: 'board-1', start: '2026-07-02T00:00:00Z', end: '2026-07-03T00:00:00Z' }),
++  );
++});

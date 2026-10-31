@@ -1,0 +1,286 @@
+diff --git a/README.md b/README.md
+index 160ec9e3c681f40aac49662d2af5e66c412ed79b..8699045ada152d0371994969c98c132e29bbfdfc 100644
+--- a/README.md
++++ b/README.md
+@@ -38,5 +38,8 @@ Notes on the RFC's rules:
+ - `remove`, `replace`, `move` (from) and `copy` (from) require their source to exist.
+ - `move` cannot move a value into one of its own children.
+ - `test` compares JSON values: object key order is ignored, array order is not.
++- The document and every `value` must be JSON values. `applyPatch` rejects `undefined`, functions, non-finite numbers,
++  class instances such as `Date` (which JSON cannot hold, and which a copy would turn into `{}`), and circular values.
++- An operation's members (`op`, `path`, `from`, `value`) are its own members: an inherited one does not count.
+ 
+ Run the tests with `npm test`.
+diff --git a/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-3-plan.md b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-3-plan.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..3d463f2c527a2154115e8a8355279edcb4068fba
+--- /dev/null
++++ b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-3-plan.md
+@@ -0,0 +1,17 @@
++---
++id: sw-life-cycle-1-3-plan
++type: plan
++title: "Make applyPatch conform to RFC 6902"
++status: active
++workflow: "sw-life-cycle"
++phase: "1-3"
++element: ""
++parent: ""
++format: 1
++---
++
++<!-- plan body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
+diff --git a/docs/memory/task/task-003-make-applypatch-conform-to-rfc-6902-in-every-case.md b/docs/memory/task/task-003-make-applypatch-conform-to-rfc-6902-in-every-case.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..7cfe489fc9e2a71fd8bf90606ca231ba654b5e51
+--- /dev/null
++++ b/docs/memory/task/task-003-make-applypatch-conform-to-rfc-6902-in-every-case.md
+@@ -0,0 +1,46 @@
++---
++id: task-003-make-applypatch-conform-to-rfc-6902-in-every-case
++type: task
++title: "Make applyPatch conform to RFC 6902 in every case"
++status: approved
++format: 1
++---
++
++# Make applyPatch conform to RFC 6902 in every case
++
++## Request
++
++Users of `applyPatch` report surprising results. Some patches they consider invalid are accepted, some edge
++cases give results they did not expect, and a patch that fails does not always behave the way they read the
++standard. Review how patches are checked and applied, and make the behaviour conform to RFC 6902 in every case,
++errors included.
++
++## Scope
++
++- Review `src/patch.ts` against RFC 6902, sections 3 and 4, and against the README's notes on the RFC's rules.
++- Fix each place where the code accepts a patch the RFC does not allow, rejects one it allows, or applies an
++  operation with a result the RFC does not define.
++- Errors keep the two kinds the library already throws: `invalid JSON Patch` for a patch that is malformed,
++  and `JSON Patch operation N (op) failed` for an operation that cannot be applied.
++- Each fix comes with a test. Tests run with `npm test`.
++- Update the README and the doc comments wherever the behaviour they describe changes.
++
++## Acceptance criteria
++
++- A patch operation's `value` (for `add`, `replace` and `test`) must be a JSON value: `undefined`, functions,
++  symbols, bigints, non-finite numbers, and objects that are not plain objects or arrays (such as `Date`) are
++  rejected as an invalid patch.
++- The members of an operation object (`op`, `path`, `from`, `value`) are read as own members only; a value
++  inherited through the prototype chain does not count.
++- A patch whose array has holes is rejected as an invalid patch, not with a `TypeError`.
++- A document passed to `applyPatch` must be a JSON value too; a non-JSON document is rejected rather than
++  silently changed by the copy taken for the result.
++- Circular values, in a document or in a patch, are rejected rather than causing a stack overflow.
++- Every existing acceptance criterion of task-002 still holds.
++
++## Requirements traceability
++
++- Feature: JSON Patch support for the json-toolkit library (follow-up to task-002).
++- Standard: RFC 6902, sections 3 (Operation) and 4 (Operations).
++- Depends on: task-001 (JSON Pointer, RFC 6901), task-002 (JSON Patch).
++- Consumers: the other team projects that import this library (see README.md).
+diff --git a/src/patch.ts b/src/patch.ts
+index 22a034a0730fb0fe0a8838b9dd4a6b08c8c0c00d..9b1ee9ea6d29b7029845fea4a1d6f0f6348e5757 100644
+--- a/src/patch.ts
++++ b/src/patch.ts
+@@ -41,9 +41,13 @@ type Container = unknown[] | Record<string, unknown>;
+  * @param document the JSON value to change.
+  * @param patch the operations to apply, in order.
+  * @returns the resulting document, as a new value.
+- * @throws {Error} when `patch` is not a valid JSON Patch, or when one of its operations fails.
++ * @throws {Error} when `document` is not a JSON value, when `patch` is not a valid JSON Patch, or when one of
++ * its operations fails.
+  */
+ export function applyPatch(document: unknown, patch: readonly PatchOperation[]): unknown {
++  if (!isJsonValue(document)) {
++    throw new Error("invalid JSON document: it holds a value that is not JSON");
++  }
+   const steps = checkPatch(patch);
+   let result = cloneJson(document);
+   for (const [index, step] of steps.entries()) {
+@@ -60,15 +64,19 @@ function checkPatch(patch: unknown): Step[] {
+   if (!Array.isArray(patch)) {
+     throw invalid("the patch must be an array");
+   }
+-  return patch.map((operation, index) => checkOperation(operation, index));
++  // `Array.from` reads a hole as `undefined`, which is then refused as an operation that is not an object.
++  return Array.from(patch, (operation, index) => checkOperation(operation, index));
+ }
+ 
+ /** Checks the shape of one operation, and parses its pointers. */
+ function checkOperation(operation: unknown, index: number): Step {
+-  if (!isRecord(operation)) {
++  if (!isPlainObject(operation)) {
+     throw invalid(`operation ${index} is not an object`);
+   }
+-  const { op, path, from, value } = operation;
++  // Only the operation's own members count: a JSON object has no inherited ones.
++  const op = ownMember(operation, "op");
++  const path = ownMember(operation, "path");
++  const from = ownMember(operation, "from");
+   if (typeof op !== "string" || !OPERATIONS.includes(op as OperationName)) {
+     throw invalid(`operation ${index} has an unknown "op"`);
+   }
+@@ -88,6 +96,10 @@ function checkOperation(operation: unknown, index: number): Step {
+   if (!Object.hasOwn(operation, "value")) {
+     throw invalid(`operation ${index} (${name}) has no "value"`);
+   }
++  const value = ownMember(operation, "value");
++  if (!isJsonValue(value)) {
++    throw invalid(`operation ${index} (${name}) has a "value" that is not JSON`);
++  }
+   return { op: name, path: locate(path), value };
+ }
+ 
+@@ -273,8 +285,48 @@ function cloneJson(value: unknown): unknown {
+   return copy;
+ }
+ 
+-function isRecord(value: unknown): value is Record<string, unknown> {
+-  return typeof value === "object" && value !== null && !Array.isArray(value);
++/** Whether `value` is an object created by a literal or by `JSON.parse`, rather than an array or a class instance. */
++function isPlainObject(value: unknown): value is Record<string, unknown> {
++  if (typeof value !== "object" || value === null) {
++    return false;
++  }
++  const prototype = Object.getPrototypeOf(value);
++  return prototype === Object.prototype || prototype === null;
++}
++
++/**
++ * Whether `value` is a JSON value (RFC 8259, on which RFC 6902 builds): null, a boolean, a finite number, a
++ * string, or an array or plain object whose elements and members are JSON values. `active` holds the
++ * containers being checked, so that a circular value is refused rather than recursed into.
++ */
++function isJsonValue(value: unknown, active: Set<object> = new Set()): boolean {
++  switch (typeof value) {
++    case "string":
++    case "boolean":
++      return true;
++    case "number":
++      return Number.isFinite(value);
++    case "object": {
++      if (value === null) {
++        return true;
++      }
++      if (active.has(value) || !(Array.isArray(value) || isPlainObject(value))) {
++        return false;
++      }
++      active.add(value);
++      const children = Array.isArray(value) ? Array.from(value) : Object.values(value);
++      const json = children.every((child) => isJsonValue(child, active));
++      active.delete(value);
++      return json;
++    }
++    default:
++      return false;
++  }
++}
++
++/** Reads a member the object has as its own; an inherited member is `undefined`. */
++function ownMember(object: Record<string, unknown>, key: string): unknown {
++  return Object.hasOwn(object, key) ? object[key] : undefined;
+ }
+ 
+ function invalid(message: string): Error {
+diff --git a/test/apply-patch.test.ts b/test/apply-patch.test.ts
+index 6345737357203c5baa865d2e59f74a051e2dfeef..514cbd31a3ef9e205fef76e6df3f12359a038f43 100644
+--- a/test/apply-patch.test.ts
++++ b/test/apply-patch.test.ts
+@@ -271,3 +271,89 @@ describe("applyPatch: invalid patches", () => {
+     assert.throws(() => applyPatch(document, [{ op: "copy", from: "/a~2", path: "/b" }]), /invalid JSON Pointer/);
+   });
+ });
++
++describe("applyPatch: values must be JSON", () => {
++  const add = (value: unknown) => [{ op: "add", path: "/b", value }] as never;
++
++  test("rejects a value that JSON cannot represent", () => {
++    assert.throws(() => applyPatch({}, add(undefined)), /invalid JSON Patch/);
++    assert.throws(() => applyPatch({}, add(() => 1)), /invalid JSON Patch/);
++    assert.throws(() => applyPatch({}, add(Symbol("s"))), /invalid JSON Patch/);
++    assert.throws(() => applyPatch({}, add(1n)), /invalid JSON Patch/);
++    assert.throws(() => applyPatch({}, add(NaN)), /invalid JSON Patch/);
++    assert.throws(() => applyPatch({}, add(Infinity)), /invalid JSON Patch/);
++  });
++
++  test("rejects a class instance, such as a Date, which would be copied as an empty object", () => {
++    assert.throws(() => applyPatch({}, add(new Date(0))), /invalid JSON Patch/);
++    assert.throws(() => applyPatch({}, add(new Map())), /invalid JSON Patch/);
++  });
++
++  test("rejects a non-JSON value nested in an array or an object", () => {
++    assert.throws(() => applyPatch({}, add([1, undefined])), /invalid JSON Patch/);
++    assert.throws(() => applyPatch({}, add({ x: { y: () => 1 } })), /invalid JSON Patch/);
++  });
++
++  test("rejects a test value that is not JSON", () => {
++    assert.throws(() => applyPatch({ a: 1 }, [{ op: "test", path: "/a", value: undefined }] as never), /invalid JSON Patch/);
++  });
++
++  test("accepts null, nested arrays and objects, and a key named __proto__ as JSON values", () => {
++    const value = JSON.parse('{"__proto__": {"k": [null, true, 1.5, "s", {}]}}');
++    assert.deepEqual(applyPatch({}, add(value)), { b: value });
++  });
++
++  test("rejects a circular value, rather than recursing into it", () => {
++    const value: Record<string, unknown> = {};
++    value.self = value;
++    assert.throws(() => applyPatch({}, add(value)), /invalid JSON Patch/);
++  });
++
++  test("accepts a value that is shared by two places but is not circular", () => {
++    const shared = { x: 1 };
++    assert.deepEqual(applyPatch({}, [
++      { op: "add", path: "/a", value: shared },
++      { op: "add", path: "/b", value: shared },
++    ]), { a: { x: 1 }, b: { x: 1 } });
++  });
++
++  test("rejects a document that is not JSON, rather than copying it into a different value", () => {
++    assert.throws(() => applyPatch({ d: new Date(0) }, []), /invalid JSON document/);
++    assert.throws(() => applyPatch({ u: undefined }, []), /invalid JSON document/);
++    assert.throws(() => applyPatch({ f: () => 1 }, []), /invalid JSON document/);
++  });
++
++  test("rejects a circular document", () => {
++    const document: Record<string, unknown> = {};
++    document.self = document;
++    assert.throws(() => applyPatch(document, []), /invalid JSON document/);
++  });
++});
++
++describe("applyPatch: operation members are own members", () => {
++  test("ignores an operation member that is only inherited, and rejects the operation", () => {
++    const operation = Object.create({ op: "remove", path: "/a" });
++    assert.throws(() => applyPatch({ a: 1 }, [operation] as never), /invalid JSON Patch/);
++  });
++
++  test("rejects an operation that is an instance of a class rather than a plain object", () => {
++    class Operation {
++      op = "remove";
++      path = "/a";
++    }
++    assert.throws(() => applyPatch({ a: 1 }, [new Operation()] as never), /invalid JSON Patch/);
++  });
++
++  test("rejects an inherited value member, which an add operation does not have", () => {
++    const operation = Object.create({ value: 2 });
++    Object.assign(operation, { op: "add", path: "/b" });
++    assert.throws(() => applyPatch({ a: 1 }, [operation] as never), /invalid JSON Patch/);
++  });
++});
++
++describe("applyPatch: a patch with holes", () => {
++  test("is rejected as an invalid patch", () => {
++    const patch = [, { op: "remove", path: "/a" }];
++    assert.throws(() => applyPatch({ a: 1 }, patch as never), /invalid JSON Patch/);
++  });
++});

@@ -1,0 +1,251 @@
+diff --git a/README.md b/README.md
+index ff92be649ff3f610b38798b3310751534d032814..c8d77d5b4370e8478f432f39eee50f2680c4cd7f 100644
+--- a/README.md
++++ b/README.md
+@@ -3,3 +3,17 @@
+ A small TypeScript library, with no runtime dependency, of building blocks for our services that store,
+ exchange and update JSON: configuration files, API payloads and stored records. It is imported by the
+ other projects of the team, so its behaviour must follow the published standards it implements.
++
++## JSON Pointer
++
++`resolvePointer(document, pointer)` returns the value a JSON Pointer ([RFC 6901](https://www.rfc-editor.org/rfc/rfc6901))
++refers to inside a JSON document. The empty pointer `""` refers to the whole document.
++
++```ts
++import { resolvePointer } from './src/index.ts';
++
++resolvePointer({ foo: ['bar', 'baz'] }, '/foo/1'); // 'baz'
++```
++
++It throws a `SyntaxError` when the pointer is not a valid JSON Pointer, and an `Error` when it does not
++resolve to a value of the document. Inherited object properties do not resolve.
+diff --git a/docs/memory/task/task-001-json-pointer-resolution-rfc-6901.md b/docs/memory/task/task-001-json-pointer-resolution-rfc-6901.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..b4663bbd50188c6931654f33cb1cc0a5fef29159
+--- /dev/null
++++ b/docs/memory/task/task-001-json-pointer-resolution-rfc-6901.md
+@@ -0,0 +1,49 @@
++---
++id: task-001-json-pointer-resolution-rfc-6901
++type: task
++title: "JSON Pointer resolution (RFC 6901)"
++status: approved
++format: 1
++---
++
++# Task — JSON Pointer resolution (RFC 6901)
++
++## Request
++
++Our services need a standard way to refer to a value inside a JSON document. Implement JSON Pointer as
++specified in RFC 6901. Export a function `resolvePointer(document, pointer)` from `src/index.ts`. Given a
++JSON document and a JSON Pointer string, it returns the value the pointer refers to. It throws an error
++when the pointer is not a valid JSON Pointer, or when it does not resolve to a value of the document.
++
++This is the first of several features that build on each other; later features will use it.
++
++## Scope
++
++- New source file `src/index.ts`, exporting `resolvePointer`.
++- Signature: `resolvePointer(document: unknown, pointer: string): unknown`.
++- Doc comment on the exported function, stating the behaviour and the RFC it implements (directive:
++  documentation).
++- Tests under `test/` runnable with `npm test` (`node --test`).
++- No runtime dependency is added (README).
++
++## Acceptance criteria (RFC 6901)
++
++1. The empty pointer `""` refers to the whole document.
++2. A non-empty pointer must start with `/`; otherwise it is invalid and `resolvePointer` throws.
++3. Reference tokens are split on `/`. In each token, `~1` is decoded to `/` and `~0` to `~`, in that
++   order. A `~` followed by any other character, or at the end of a token, is invalid and throws.
++4. Object: a token selects the member whose name equals the decoded token. The member must be an own
++   property; inherited properties (for example `constructor`, `__proto__`) do not resolve.
++5. Array: a token selects an element only when it is a valid array index: `0`, or a non-zero digit
++   followed by digits (no leading zeros, no sign). The token `-` names the position past the end and does
++   not resolve. An index outside the array throws.
++6. A token that selects into a primitive value (string, number, boolean, null) does not resolve and throws.
++7. A pointer that does not resolve to a value throws. A value that is present but `null`, `false`, `0`
++   or `""` resolves successfully and is returned as is.
++8. A pointer that is not a string throws.
++9. The document is not modified.
++
++## Out of scope
++
++- URI fragment form of JSON Pointer (RFC 6901 section 6).
++- Writing or mutating values at a pointer.
+diff --git a/src/index.ts b/src/index.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..2886b21748fc91adbb21d91af63ea89807ad5c26
+--- /dev/null
++++ b/src/index.ts
+@@ -0,0 +1,48 @@
++/**
++ * Resolves a JSON Pointer (RFC 6901) against a JSON document and returns the value it refers to.
++ *
++ * The empty pointer refers to the whole document. Otherwise the pointer is a sequence of reference
++ * tokens, each preceded by "/". Object members are selected by name and array elements by index.
++ * Inherited object properties do not resolve. The document is not modified.
++ *
++ * @throws {SyntaxError} when the pointer is not a valid JSON Pointer.
++ * @throws {Error} when the pointer does not resolve to a value of the document.
++ */
++export function resolvePointer(document: unknown, pointer: string): unknown {
++  if (typeof pointer !== 'string') {
++    throw new TypeError('JSON Pointer must be a string');
++  }
++  if (pointer === '') {
++    return document;
++  }
++  if (!pointer.startsWith('/')) {
++    throw new SyntaxError(`invalid JSON Pointer "${pointer}": it must be empty or start with "/"`);
++  }
++
++  let current = document;
++  for (const escaped of pointer.slice(1).split('/')) {
++    current = select(current, unescapeToken(escaped, pointer), pointer);
++  }
++  return current;
++}
++
++/** Decodes "~1" to "/" and "~0" to "~", in that order; any other "~" is invalid. */
++function unescapeToken(token: string, pointer: string): string {
++  if (/~(?![01])/.test(token)) {
++    throw new SyntaxError(`invalid JSON Pointer "${pointer}": "~" must be followed by "0" or "1"`);
++  }
++  return token.replace(/~1/g, '/').replace(/~0/g, '~');
++}
++
++/** Returns the member or element of `container` named by `token`, or throws if there is none. */
++function select(container: unknown, token: string, pointer: string): unknown {
++  if (Array.isArray(container)) {
++    const isIndex = /^(0|[1-9][0-9]*)$/.test(token);
++    if (isIndex && Number(token) < container.length) {
++      return container[Number(token)];
++    }
++  } else if (typeof container === 'object' && container !== null && Object.hasOwn(container, token)) {
++    return (container as Record<string, unknown>)[token];
++  }
++  throw new Error(`JSON Pointer "${pointer}" does not resolve to a value of the document`);
++}
+diff --git a/test/resolve-pointer.test.ts b/test/resolve-pointer.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..14a90d304f03700fa9beafd170d09c423b94237d
+--- /dev/null
++++ b/test/resolve-pointer.test.ts
+@@ -0,0 +1,114 @@
++import { test } from 'node:test';
++import assert from 'node:assert/strict';
++import { resolvePointer } from '../src/index.ts';
++
++// The example document of RFC 6901, section 5.
++const rfcDocument = {
++  foo: ['bar', 'baz'],
++  '': 0,
++  'a/b': 1,
++  'c%d': 2,
++  'e^f': 3,
++  'g|h': 4,
++  'i\\j': 5,
++  'k"l': 6,
++  ' ': 7,
++  'm~n': 8,
++};
++
++test('the empty pointer refers to the whole document', () => {
++  assert.equal(resolvePointer(rfcDocument, ''), rfcDocument);
++});
++
++test('resolves the RFC 6901 examples', () => {
++  assert.deepEqual(resolvePointer(rfcDocument, '/foo'), ['bar', 'baz']);
++  assert.equal(resolvePointer(rfcDocument, '/foo/0'), 'bar');
++  assert.equal(resolvePointer(rfcDocument, '/'), 0);
++  assert.equal(resolvePointer(rfcDocument, '/a~1b'), 1);
++  assert.equal(resolvePointer(rfcDocument, '/c%d'), 2);
++  assert.equal(resolvePointer(rfcDocument, '/e^f'), 3);
++  assert.equal(resolvePointer(rfcDocument, '/g|h'), 4);
++  assert.equal(resolvePointer(rfcDocument, '/i\\j'), 5);
++  assert.equal(resolvePointer(rfcDocument, '/k"l'), 6);
++  assert.equal(resolvePointer(rfcDocument, '/ '), 7);
++  assert.equal(resolvePointer(rfcDocument, '/m~0n'), 8);
++});
++
++test('resolves nested objects and arrays', () => {
++  const document = { a: { b: [{ c: 'deep' }] } };
++  assert.equal(resolvePointer(document, '/a/b/0/c'), 'deep');
++});
++
++test('decodes ~0 and ~1 in order, so ~01 is the key "~1"', () => {
++  assert.equal(resolvePointer({ '~1': 'x' }, '/~01'), 'x');
++});
++
++test('resolves present values that are falsy', () => {
++  const document = { n: null, f: false, z: 0, e: '' };
++  assert.equal(resolvePointer(document, '/n'), null);
++  assert.equal(resolvePointer(document, '/f'), false);
++  assert.equal(resolvePointer(document, '/z'), 0);
++  assert.equal(resolvePointer(document, '/e'), '');
++});
++
++test('does not modify the document', () => {
++  const document = { a: [1, 2] };
++  const copy = structuredClone(document);
++  resolvePointer(document, '/a/1');
++  assert.deepEqual(document, copy);
++});
++
++test('throws when the pointer does not start with "/"', () => {
++  assert.throws(() => resolvePointer(rfcDocument, 'foo'), Error);
++  assert.throws(() => resolvePointer(rfcDocument, 'foo/bar'), Error);
++  assert.throws(() => resolvePointer(rfcDocument, '#/foo'), Error);
++});
++
++test('throws on a "~" that is not followed by 0 or 1', () => {
++  assert.throws(() => resolvePointer(rfcDocument, '/a~2b'), Error);
++  assert.throws(() => resolvePointer(rfcDocument, '/a~'), Error);
++  assert.throws(() => resolvePointer(rfcDocument, '/~'), Error);
++});
++
++test('throws when a member does not exist', () => {
++  assert.throws(() => resolvePointer(rfcDocument, '/missing'), Error);
++  assert.throws(() => resolvePointer({ a: {} }, '/a/missing'), Error);
++});
++
++test('inherited properties do not resolve', () => {
++  assert.throws(() => resolvePointer({}, '/constructor'), Error);
++  assert.throws(() => resolvePointer({}, '/__proto__'), Error);
++  assert.throws(() => resolvePointer({}, '/toString'), Error);
++});
++
++test('an own "__proto__" member resolves', () => {
++  const document = JSON.parse('{"__proto__": "own"}');
++  assert.equal(resolvePointer(document, '/__proto__'), 'own');
++});
++
++test('array tokens must be array indices', () => {
++  const document = { arr: ['x', 'y'] };
++  assert.equal(resolvePointer(document, '/arr/1'), 'y');
++  assert.throws(() => resolvePointer(document, '/arr/-'), Error);
++  assert.throws(() => resolvePointer(document, '/arr/01'), Error);
++  assert.throws(() => resolvePointer(document, '/arr/+1'), Error);
++  assert.throws(() => resolvePointer(document, '/arr/1x'), Error);
++  assert.throws(() => resolvePointer(document, '/arr/'), Error);
++});
++
++test('an array index outside the array throws', () => {
++  assert.throws(() => resolvePointer({ arr: ['x', 'y'] }, '/arr/2'), Error);
++  assert.throws(() => resolvePointer({ arr: [] }, '/arr/0'), Error);
++});
++
++test('a token cannot select into a primitive value', () => {
++  assert.throws(() => resolvePointer({ a: 5 }, '/a/b'), Error);
++  assert.throws(() => resolvePointer({ a: 'str' }, '/a/0'), Error);
++  assert.throws(() => resolvePointer({ a: null }, '/a/x'), Error);
++  assert.throws(() => resolvePointer(5, '/x'), Error);
++});
++
++test('throws when the pointer is not a string', () => {
++  assert.throws(() => resolvePointer({}, undefined as unknown as string), Error);
++  assert.throws(() => resolvePointer({}, 1 as unknown as string), Error);
++});
