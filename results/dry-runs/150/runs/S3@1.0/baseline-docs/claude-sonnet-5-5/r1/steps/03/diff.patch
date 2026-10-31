@@ -1,0 +1,91 @@
+diff --git a/README.md b/README.md
+index 5a04d880204a1722530c586ce20eca06f836d6f2..ce4281a527f0e7462a56ed734d2b3cdcd0df83a1 100644
+--- a/README.md
++++ b/README.md
+@@ -7,7 +7,7 @@ of its booking desk, written in TypeScript with no runtime dependency.
+ ## Rental module
+ 
+ `createRentalService()` (from `src/index.ts`) returns an in-memory service with `addEquipment`, `quote`,
+-`book` and `availability`. Money is integer euro cents; times are ISO-8601 UTC strings. A period starts and ends at
++`book` and `availability`. Money is integer euro cents; a rental of 3 days or more costs 10% less than its full price (rounded to the nearest cent), in both quotes and bookings; times are ISO-8601 UTC strings. A period starts and ends at
+ midnight UTC and `end` is the start of the day after the last rented day, so `2026-07-01T00:00:00Z` to
+ `2026-07-03T00:00:00Z` is two days. The same item cannot be booked for overlapping periods. `availability({ start, end, kind? })` returns the sorted ids of the equipment of that kind (any kind if
+ omitted) with no booking overlapping the period; it throws on an invalid period or kind. Cancellation
+diff --git a/src/index.test.ts b/src/index.test.ts
+index b813b6816a5c6cea8bd551c3c682fbcf871509e4..f270d7cb28b766747dd7089555513b5e6e568cf9 100644
+--- a/src/index.test.ts
++++ b/src/index.test.ts
+@@ -9,11 +9,31 @@ function serviceWithBoard() {
+ }
+ 
+ test('quote prices whole days at the daily price', () => {
++  const service = serviceWithBoard();
++  assert.deepEqual(
++    service.quote({ itemId: 'board-1', start: '2026-07-01T00:00:00Z', end: '2026-07-03T00:00:00Z' }),
++    { itemId: 'board-1', start: '2026-07-01T00:00:00.000Z', end: '2026-07-03T00:00:00.000Z', total: 9000 },
++  );
++});
++
++test('quote takes 10% off rentals of 3 days or more', () => {
+   const service = serviceWithBoard();
+   assert.deepEqual(
+     service.quote({ itemId: 'board-1', start: '2026-07-01T00:00:00Z', end: '2026-07-04T00:00:00Z' }),
+-    { itemId: 'board-1', start: '2026-07-01T00:00:00.000Z', end: '2026-07-04T00:00:00.000Z', total: 13500 },
++    { itemId: 'board-1', start: '2026-07-01T00:00:00.000Z', end: '2026-07-04T00:00:00.000Z', total: 12150 },
+   );
++  assert.equal(service.quote({ itemId: 'board-1', start: '2026-07-01T00:00:00Z', end: '2026-07-11T00:00:00Z' }).total, 40500);
++});
++
++test('the long-stay discount rounds to whole cents', () => {
++  const service = createRentalService();
++  service.addEquipment({ id: 'sail-1', kind: 'sail', dailyPrice: 1005 });
++  assert.equal(service.quote({ itemId: 'sail-1', start: '2026-07-01T00:00:00Z', end: '2026-07-04T00:00:00Z' }).total, 2714);
++});
++
++test('book charges the discounted total for 3 days or more', () => {
++  const service = serviceWithBoard();
++  assert.equal(service.book({ itemId: 'board-1', start: '2026-07-01T00:00:00Z', end: '2026-07-04T00:00:00Z' }).total, 12150);
+ });
+ 
+ test('quote rejects an unknown item', () => {
+diff --git a/src/index.ts b/src/index.ts
+index 41f8af64531d62a6e218d40da6cee9779b1d7790..6f4b4fab497673e8e7aa81b82927d1f17c365d10 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -1,4 +1,5 @@
+ const DAY_MS = 24 * 60 * 60 * 1000;
++const LONG_STAY_DAYS = 3;
+ const MIDNIGHT_UTC = /^\d{4}-\d{2}-\d{2}T00:00(:00(\.0+)?)?Z$/;
+ 
+ /** The kinds of equipment the school rents. */
+@@ -25,7 +26,7 @@ export interface AvailabilityQuery {
+   kind?: EquipmentKind;
+ }
+ 
+-/** The price of a rental; `total` is in integer euro cents. */
++/** The price of a rental, with the 10% long-stay discount applied from 3 days; `total` is in integer euro cents. */
+ export interface Quote extends RentalRequest {
+   total: number;
+ }
+@@ -79,6 +80,12 @@ function validateKind(kind: unknown): void {
+   }
+ }
+ 
++/** Full price for `days` days, less 10% (rounded to the nearest cent) from `LONG_STAY_DAYS` days on. */
++function rentalTotal(days: number, dailyPrice: number): number {
++  const full = days * dailyPrice;
++  return days >= LONG_STAY_DAYS ? Math.round((full * 9) / 10) : full;
++}
++
+ function overlaps(a: Period, b: Period): boolean {
+   return a.startTime < b.endTime && b.startTime < a.endTime;
+ }
+@@ -108,7 +115,7 @@ export function createRentalService(): RentalService {
+       itemId: item.id,
+       start: new Date(period.startTime).toISOString(),
+       end: new Date(period.endTime).toISOString(),
+-      total: ((period.endTime - period.startTime) / DAY_MS) * item.dailyPrice,
++      total: rentalTotal((period.endTime - period.startTime) / DAY_MS, item.dailyPrice),
+       ...period,
+     };
+   }

@@ -1,0 +1,155 @@
+diff --git a/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-5-plan.md b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-5-plan.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..d281573413361e8224500f5574ce4e877ac93f2d
+--- /dev/null
++++ b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-5-plan.md
+@@ -0,0 +1,17 @@
++---
++id: sw-life-cycle-1-5-plan
++type: plan
++title: "Cancel bookings"
++status: active
++workflow: "sw-life-cycle"
++phase: "1-5"
++element: ""
++parent: ""
++format: 1
++---
++
++<!-- plan body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
+diff --git a/docs/memory/task/task-005-cancel-bookings.md b/docs/memory/task/task-005-cancel-bookings.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..beb6740d765e95e5f99b1a8504f6ca6bb905c570
+--- /dev/null
++++ b/docs/memory/task/task-005-cancel-bookings.md
+@@ -0,0 +1,27 @@
++---
++id: task-005-cancel-bookings
++type: task
++title: "Cancel bookings"
++status: approved
++format: 1
++---
++
++<!-- task body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
++
++# Request
++
++Add `cancel(bookingId, at)` to the rental service: it cancels the booking at the time `at` and returns
++`{ bookingId, refund }`, the amount given back to the customer. A cancelled booking no longer holds its
++equipment, and a booking can only be cancelled once.
++
++# Acceptance
++
++- Refund follows the school's cancellation policy (task-001): no refund when `at` is less than 24h before the
++  booking's start (or later), otherwise the full booking total, in integer cents.
++- `at` is an ISO-8601 UTC string; otherwise `cancel` throws. An unknown booking id throws.
++- A cancelled booking frees its item for new bookings and availability; cancelling twice throws.
++- Tests under `node --test`.
+diff --git a/src/index.test.ts b/src/index.test.ts
+index ad7513499ca6d9342dcf780bbe898de69a0bd18e..03b45936e5bea5745e2902a13ab95c88372b09a8 100644
+--- a/src/index.test.ts
++++ b/src/index.test.ts
+@@ -74,3 +74,26 @@ test('rentals shorter than a day are priced by the hour, only for items with an
+   assert.throws(() => s.addEquipment({ id: 'h2', kind: 'board', dailyPrice: 1, hourlyPrice: 1.5 }));
+   assert.throws(() => s.addEquipment({ id: 'h3', kind: 'board', dailyPrice: 1, hourlyPrice: -1 }));
+ });
++
++test('cancel refunds in full at least 24h before start, nothing later, and frees the item', () => {
++  const s = setup();
++  s.addEquipment({ id: 'b0', kind: 'board', dailyPrice: 100 });
++  const a = s.book(r('2026-05-10T00:00:00Z', '2026-05-12T00:00:00Z'));
++  assert.deepEqual(s.cancel(a.id, '2026-05-09T00:00:00Z'), { bookingId: a.id, refund: a.total });
++  s.book(r('2026-05-10T00:00:00Z', '2026-05-12T00:00:00Z'));
++  const b = s.book(r('2026-05-20T00:00:00Z', '2026-05-21T00:00:00Z'));
++  assert.deepEqual(s.cancel(b.id, '2026-05-19T00:00:01Z'), { bookingId: b.id, refund: 0 });
++  assert.deepEqual(s.availability({ start: '2026-05-20T00:00:00Z', end: '2026-05-21T00:00:00Z', kind: 'board' }), ['b0', 'b1']);
++  const c = s.book(r('2026-06-01T00:00:00Z', '2026-06-02T00:00:00Z'));
++  assert.equal(s.cancel(c.id, '2026-06-05T10:30:00Z').refund, 0);
++});
++
++test('cancel rejects unknown bookings, repeats and bad times', () => {
++  const s = setup();
++  const a = s.book(r('2026-05-10T00:00:00Z', '2026-05-12T00:00:00Z'));
++  assert.throws(() => s.cancel('nope', '2026-05-01T00:00:00Z'));
++  assert.throws(() => s.cancel(a.id, 'yesterday'));
++  assert.throws(() => s.cancel(a.id, undefined as never));
++  s.cancel(a.id, '2026-05-01T00:00:00Z');
++  assert.throws(() => s.cancel(a.id, '2026-05-01T00:00:00Z'));
++});
+diff --git a/src/index.ts b/src/index.ts
+index fb9816876573a22da653edeebd3a32ea1ea441c9..e3d26fcb053b8ca71826b06e2e827fb0cebfe75a 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -45,6 +45,13 @@ export interface RentalService {
+   quote(request: RentalRequest): Quote;
+   book(request: RentalRequest): Booking;
+   availability(query: AvailabilityQuery): string[];
++  cancel(bookingId: string, at: string): Cancellation;
++}
++
++/** The outcome of cancelling a booking; `refund` is in euro cents. */
++export interface Cancellation {
++  bookingId: string;
++  refund: number;
+ }
+ 
+ const HOUR_MS = 60 * 60 * 1000;
+@@ -53,6 +60,8 @@ const DAY_MS = 24 * HOUR_MS;
+ const LONG_STAY_DAYS = 3;
+ /** Long-stay discount, in percent of the full price. */
+ const LONG_STAY_DISCOUNT_PERCENT = 10;
++/** A cancellation at least this long before the start is refunded in full; later ones get nothing. */
++const FULL_REFUND_NOTICE_MS = DAY_MS;
+ const ISO_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]00:?00)$/;
+ 
+ function parseInstant(value: unknown, label: string): number {
+@@ -68,7 +77,9 @@ function parseInstant(value: unknown, label: string): number {
+ /** Creates an empty rental service keeping everything in memory. */
+ export function createRentalService(): RentalService {
+   const items = new Map<string, Equipment>();
+-  const bookings: (Booking & { from: number; to: number })[] = [];
++  const bookings: (Booking & { from: number; to: number; cancelled?: boolean })[] = [];
++  /** Bookings still holding their equipment. */
++  const active = () => bookings.filter((b) => !b.cancelled);
+ 
+   function parsePeriod(start: unknown, end: unknown): { from: number; to: number } {
+     const from = parseInstant(start, 'start');
+@@ -120,7 +131,7 @@ export function createRentalService(): RentalService {
+     },
+     book(request) {
+       const { from, to, ...quote } = price(request);
+-      const clash = bookings.some((b) => b.itemId === quote.itemId && from < b.to && b.from < to);
++      const clash = active().some((b) => b.itemId === quote.itemId && from < b.to && b.from < to);
+       if (clash) throw new Error(`item ${quote.itemId} is not free for the whole period`);
+       const booking = { id: `booking-${bookings.length + 1}`, ...quote };
+       bookings.push({ ...booking, from, to });
+@@ -132,9 +143,19 @@ export function createRentalService(): RentalService {
+       if (kind !== undefined && kind !== 'board' && kind !== 'sail') throw new Error("kind must be 'board' or 'sail'");
+       return [...items.values()]
+         .filter((i) => kind === undefined || i.kind === kind)
+-        .filter((i) => !bookings.some((b) => b.itemId === i.id && from < b.to && b.from < to))
++        .filter((i) => !active().some((b) => b.itemId === i.id && from < b.to && b.from < to))
+         .map((i) => i.id)
+         .sort();
+     },
++    cancel(bookingId, at) {
++      if (typeof at !== 'string' || !ISO_UTC.test(at)) throw new Error('at must be an ISO-8601 UTC string');
++      const when = Date.parse(at);
++      if (Number.isNaN(when)) throw new Error('at is not a valid date');
++      const booking = bookings.find((b) => b.id === bookingId);
++      if (!booking) throw new Error(`unknown booking: ${bookingId}`);
++      if (booking.cancelled) throw new Error(`booking already cancelled: ${bookingId}`);
++      booking.cancelled = true;
++      return { bookingId, refund: booking.from - when >= FULL_REFUND_NOTICE_MS ? booking.total : 0 };
++    },
+   };
+ }

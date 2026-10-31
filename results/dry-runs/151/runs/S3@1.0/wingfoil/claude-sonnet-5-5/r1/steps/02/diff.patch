@@ -1,0 +1,138 @@
+diff --git a/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-2-plan.md b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-2-plan.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..569d8e2904424c683f632db7111d6e9e7f99ea9a
+--- /dev/null
++++ b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-2-plan.md
+@@ -0,0 +1,17 @@
++---
++id: sw-life-cycle-1-2-plan
++type: plan
++title: "Rental availability query"
++status: active
++workflow: "sw-life-cycle"
++phase: "1-2"
++element: ""
++parent: ""
++format: 1
++---
++
++<!-- plan body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
+diff --git a/docs/memory/task/task-002-rental-availability-query.md b/docs/memory/task/task-002-rental-availability-query.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..819ca4ac4c5c31b200191bd6f9401e44708971af
+--- /dev/null
++++ b/docs/memory/task/task-002-rental-availability-query.md
+@@ -0,0 +1,25 @@
++---
++id: task-002-rental-availability-query
++type: task
++title: "Rental availability query"
++status: approved
++format: 1
++---
++
++<!-- task body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
++
++# Request
++
++Add `availability(query)` to the rental service, where `query` is `{ start, end, kind? }`. It returns the
++ids of the equipment of that kind (any kind when none is given) that is free for the whole period, sorted.
++
++# Acceptance
++
++- Same period rules as `quote`/`book` (whole days, midnight UTC, end exclusive); invalid periods and an
++  unknown kind are rejected.
++- An item with a booking overlapping the period is excluded; adjacent bookings do not exclude it.
++- Ids are sorted; tests under `node --test`.
+diff --git a/src/index.test.ts b/src/index.test.ts
+index a9208df0954e069fa4d0bade04fdc653e2c1b05b..3cb83b7fc68fdc68bc30608339cc2cf1ec36d326 100644
+--- a/src/index.test.ts
++++ b/src/index.test.ts
+@@ -36,3 +36,16 @@ test('book rejects overlaps but allows adjacent periods and other items', () =>
+   assert.notEqual(next.id, first.id);
+   s.book(r('2026-05-01T00:00:00Z', '2026-05-03T00:00:00Z', 's1'));
+ });
++
++test('availability lists free items of a kind, sorted', () => {
++  const s = setup();
++  s.addEquipment({ id: 'b0', kind: 'board', dailyPrice: 100 });
++  s.addEquipment({ id: 's1', kind: 'sail', dailyPrice: 1000 });
++  s.book(r('2026-05-01T00:00:00Z', '2026-05-03T00:00:00Z'));
++  const q = { start: '2026-05-02T00:00:00Z', end: '2026-05-04T00:00:00Z' };
++  assert.deepEqual(s.availability(q), ['b0', 's1']);
++  assert.deepEqual(s.availability({ ...q, kind: 'board' }), ['b0']);
++  assert.deepEqual(s.availability({ start: '2026-05-03T00:00:00Z', end: '2026-05-04T00:00:00Z', kind: 'board' }), ['b0', 'b1']);
++  assert.throws(() => s.availability({ start: q.end, end: q.start }));
++  assert.throws(() => s.availability({ ...q, kind: 'car' as never }));
++});
+diff --git a/src/index.ts b/src/index.ts
+index 58b3d0b6058e9f457dbed631c9cc1001d84ac83a..8c5855aa4b054a64e760aad75856a42e527009a6 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -20,6 +20,13 @@ export interface Quote extends RentalRequest {
+   total: number;
+ }
+ 
++/** A query for the equipment free for a whole period, optionally of one kind. */
++export interface AvailabilityQuery {
++  start: string;
++  end: string;
++  kind?: EquipmentKind;
++}
++
+ /** A confirmed booking. */
+ export interface Booking extends Quote {
+   id: string;
+@@ -30,6 +37,7 @@ export interface RentalService {
+   addEquipment(item: Equipment): void;
+   quote(request: RentalRequest): Quote;
+   book(request: RentalRequest): Booking;
++  availability(query: AvailabilityQuery): string[];
+ }
+ 
+ const DAY_MS = 24 * 60 * 60 * 1000;
+@@ -50,12 +58,17 @@ export function createRentalService(): RentalService {
+   const items = new Map<string, Equipment>();
+   const bookings: (Booking & { from: number; to: number })[] = [];
+ 
++  function parsePeriod(start: unknown, end: unknown): { from: number; to: number } {
++    const from = parseMidnight(start, 'start');
++    const to = parseMidnight(end, 'end');
++    if (to <= from) throw new Error('end must be after start');
++    return { from, to };
++  }
++
+   function price(request: RentalRequest): Quote & { from: number; to: number } {
+     const item = items.get(request?.itemId);
+     if (!item) throw new Error(`unknown item: ${request?.itemId}`);
+-    const from = parseMidnight(request.start, 'start');
+-    const to = parseMidnight(request.end, 'end');
+-    if (to <= from) throw new Error('end must be after start');
++    const { from, to } = parsePeriod(request.start, request.end);
+     const total = ((to - from) / DAY_MS) * item.dailyPrice;
+     return { itemId: item.id, start: request.start, end: request.end, total, from, to };
+   }
+@@ -82,5 +95,15 @@ export function createRentalService(): RentalService {
+       bookings.push({ ...booking, from, to });
+       return booking;
+     },
++    availability(query) {
++      const { from, to } = parsePeriod(query?.start, query?.end);
++      const { kind } = query;
++      if (kind !== undefined && kind !== 'board' && kind !== 'sail') throw new Error("kind must be 'board' or 'sail'");
++      return [...items.values()]
++        .filter((i) => kind === undefined || i.kind === kind)
++        .filter((i) => !bookings.some((b) => b.itemId === i.id && from < b.to && b.from < to))
++        .map((i) => i.id)
++        .sort();
++    },
+   };
+ }

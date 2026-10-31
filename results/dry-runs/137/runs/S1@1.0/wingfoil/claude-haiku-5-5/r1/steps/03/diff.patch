@@ -1,0 +1,158 @@
+diff --git a/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-3-plan.md b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-3-plan.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..3d463f2c527a2154115e8a8355279edcb4068fba
+--- /dev/null
++++ b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-3-plan.md
+@@ -0,0 +1,17 @@
++---
++id: sw-life-cycle-1-3-plan
++type: plan
++title: "Make applyPatch conform to RFC 6902"
++status: active
++workflow: "sw-life-cycle"
++phase: "1-3"
++element: ""
++parent: ""
++format: 1
++---
++
++<!-- plan body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
+diff --git a/docs/memory/task/task-003-make-applypatch-conform-to-rfc-6902.md b/docs/memory/task/task-003-make-applypatch-conform-to-rfc-6902.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..5c66016ffca085b9639fdde8faa5ebe80ef15955
+--- /dev/null
++++ b/docs/memory/task/task-003-make-applypatch-conform-to-rfc-6902.md
+@@ -0,0 +1,25 @@
++---
++id: task-003-make-applypatch-conform-to-rfc-6902
++type: task
++title: "Make applyPatch conform to RFC 6902"
++status: approved
++format: 1
++---
++
++# Make applyPatch conform to RFC 6902
++
++## Request
++
++Users of `applyPatch` report surprising results: some patches they consider invalid are accepted, some
++edge cases give results they did not expect, and a patch that fails does not always behave the way the
++standard reads. Review how patches are checked and applied, and make the behaviour conform to RFC 6902 in
++every case, errors included.
++
++## Acceptance
++
++- A patch that is not a JSON Patch throws, including an element of the patch that is a hole of a sparse
++  array.
++- The `value` of `add`, `replace` and `test` must be a JSON value; `undefined`, `NaN`, an infinity and
++  other non-JSON values throw.
++- `replace` sets an object member in place, so that the member keeps its position, as `add` does.
++- The existing tests of `applyPatch` still pass, and each defect above has a test.
+diff --git a/src/index.ts b/src/index.ts
+index 8c918d18f88ff7f8606b1686ddc0dfc7f0c64cf9..6c890622fbe70e34516078acb0d177457b19ec4a 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -27,7 +27,8 @@ export function applyPatch(document: unknown, patch: unknown): unknown {
+   if (!Array.isArray(patch)) {
+     throw new Error('invalid JSON Patch: must be an array of operations');
+   }
+-  const operations = patch.map(parseOperation);
++  // Array.from, not map: a hole of a sparse array is an operation that is not an object, and must throw.
++  const operations = Array.from(patch, parseOperation);
+ 
+   let result = structuredClone(document);
+   operations.forEach((operation, index) => {
+@@ -67,6 +68,9 @@ function parseOperation(raw: unknown, index: number): PatchOperation {
+       if (!Object.hasOwn(raw, 'value')) {
+         throw invalid(`"${op}" must have a "value"`);
+       }
++      if (!isJsonValue(raw.value)) {
++        throw invalid(`"value" of "${op}" is not a JSON value`);
++      }
+       return { op, path, value: raw.value };
+     case 'remove':
+       return { op, path };
+@@ -92,13 +96,20 @@ function applyOperation(document: unknown, operation: PatchOperation): unknown {
+     case 'remove':
+       removeAt(document, operation.path);
+       return document;
+-    case 'replace':
+-      // Functionally a remove followed by an add at the same location (RFC 6902, section 4.3).
+-      if (parsePointer(operation.path).length === 0) {
++    case 'replace': {
++      // Functionally a remove followed by an add at the same location (RFC 6902, section 4.3). The target
++      // must exist; an object member is set in place, so that it keeps its position among the members.
++      const tokens = parsePointer(operation.path);
++      if (tokens.length === 0) {
+         return structuredClone(operation.value);
+       }
++      navigate(document, tokens, operation.path);
++      if (isObject(navigate(document, tokens.slice(0, -1), operation.path))) {
++        return addAt(document, operation.path, structuredClone(operation.value));
++      }
+       removeAt(document, operation.path);
+       return addAt(document, operation.path, structuredClone(operation.value));
++    }
+     case 'move':
+       return addAt(document, operation.path, removeAt(document, operation.from));
+     case 'copy': {
+@@ -214,6 +225,23 @@ function isObject(value: unknown): value is Record<string, unknown> {
+   return typeof value === 'object' && value !== null && !Array.isArray(value);
+ }
+ 
++/**
++ * Whether a value can be a JSON value: null, a boolean, a string, a finite number, an array or a plain
++ * object whose members are JSON values. Not undefined, a hole of an array, NaN or an infinity.
++ */
++function isJsonValue(value: unknown): boolean {
++  if (value === null || typeof value === 'string' || typeof value === 'boolean') {
++    return true;
++  }
++  if (typeof value === 'number') {
++    return Number.isFinite(value);
++  }
++  if (Array.isArray(value)) {
++    return Array.from(value).every(isJsonValue);
++  }
++  return isObject(value) && Object.prototype.toString.call(value) === '[object Object]' && Object.values(value).every(isJsonValue);
++}
++
+ function deepEqual(a: unknown, b: unknown): boolean {
+   if (a === b) {
+     return true;
+diff --git a/test/json-patch.test.ts b/test/json-patch.test.ts
+index fc8b5bdcf782344207297b9896a9fad2fb7a50ad..1da7f664f98edae502bc6300e5cdc1e5a838e5a2 100644
+--- a/test/json-patch.test.ts
++++ b/test/json-patch.test.ts
+@@ -291,5 +291,27 @@ describe('applyPatch', () => {
+       );
+       assert.deepEqual(document, { a: 1 });
+     });
++
++    it('throws when an element of the patch is a hole of a sparse array', () => {
++      assert.throws(() => applyPatch({}, [, { op: 'add', path: '/a', value: 1 }] as unknown[]), Error);
++      assert.throws(() => applyPatch({}, [, ] as unknown[]), Error);
++    });
++
++    it('throws when a value is not a JSON value', () => {
++      assert.throws(() => applyPatch({}, [{ op: 'add', path: '/a', value: undefined }]), Error);
++      assert.throws(() => applyPatch({}, [{ op: 'add', path: '/a', value: [undefined] }]), Error);
++      assert.throws(() => applyPatch({}, [{ op: 'add', path: '/a', value: { b: undefined } }]), Error);
++      assert.throws(() => applyPatch({ a: 1 }, [{ op: 'replace', path: '/a', value: NaN }]), Error);
++      assert.throws(() => applyPatch({ a: 1 }, [{ op: 'test', path: '/a', value: Infinity }]), Error);
++      assert.throws(() => applyPatch({ a: 1 }, [{ op: 'add', path: '/b', value: new Date(0) }]), Error);
++    });
++  });
++
++  describe('keeps the position of a replaced member', () => {
++    it('replaces an object member in place, as add does', () => {
++      const result = applyPatch({ a: 1, b: 2 }, [{ op: 'replace', path: '/a', value: 3 }]);
++      assert.deepEqual(Object.keys(result as object), ['a', 'b']);
++      assert.deepEqual(Object.keys(applyPatch({ a: 1, b: 2 }, [{ op: 'add', path: '/a', value: 3 }]) as object), ['a', 'b']);
++    });
+   });
+ });

@@ -1,0 +1,288 @@
+diff --git a/README.md b/README.md
+index f61d187d0d47469df09db3eb9a513f04a71584ac..979bdf8a19dcc28a828ee72948f2c8a9ca6b3e65 100644
+--- a/README.md
++++ b/README.md
+@@ -33,3 +33,17 @@ applyPatch({ a: [1, 2] }, [
+ ]); // { a: [1, 2, 3] }
+ applyPatch({ a: 1 }, [{ op: 'remove', path: '/b' }]); // throws
+ ```
++
++## JSON Merge Patch
++
++`applyMergePatch(target, patch)` applies a JSON Merge Patch (RFC 7386) to a JSON document and returns the
++merged document. A member of the patch whose value is `null` removes that member from the target; a patch
++that is not an object replaces the target, and arrays are replaced, not merged. It does not mutate its
++inputs, and it throws when the patch is not a JSON value.
++
++```ts
++import { applyMergePatch } from 'json-toolkit';
++
++applyMergePatch({ a: 'b', c: { d: 1, e: 2 } }, { a: null, c: { d: 3 } }); // { c: { d: 3, e: 2 } }
++applyMergePatch({ a: [1, 2] }, { a: [3] }); // { a: [3] }
++```
+diff --git a/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-4-plan.md b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-4-plan.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..58c1facd6dc687da116779cc6a578d5cccb22158
+--- /dev/null
++++ b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-4-plan.md
+@@ -0,0 +1,17 @@
++---
++id: sw-life-cycle-1-4-plan
++type: plan
++title: "Implement JSON Merge Patch (RFC 7386)"
++status: active
++workflow: "sw-life-cycle"
++phase: "1-4"
++element: ""
++parent: ""
++format: 1
++---
++
++<!-- plan body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
+diff --git a/docs/memory/task/task-004-json-merge-patch-rfc-7386-applymergepatch.md b/docs/memory/task/task-004-json-merge-patch-rfc-7386-applymergepatch.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..eb3f6bb9d3e17a97aab1cb58bbe710d729722744
+--- /dev/null
++++ b/docs/memory/task/task-004-json-merge-patch-rfc-7386-applymergepatch.md
+@@ -0,0 +1,38 @@
++---
++id: task-004-json-merge-patch-rfc-7386-applymergepatch
++type: task
++title: "JSON Merge Patch (RFC 7386) applyMergePatch"
++status: approved
++format: 1
++---
++
++# JSON Merge Patch (RFC 7386) applyMergePatch
++
++## Request
++
++Some of our clients send partial updates in the simpler JSON Merge Patch format. Implement JSON Merge
++Patch, as specified in RFC 7386.
++
++Export a function `applyMergePatch(target, patch)` from `src/index.ts`. It applies a merge patch to a
++target JSON document and returns the merged document.
++
++## Acceptance
++
++- The merge follows RFC 7386, section 2: when the patch is an object, each member is merged into the
++  target; a member whose value is `null` removes the member from the target, and any other member is
++  merged recursively. When the patch is not an object (including an array or `null`), it replaces the
++  target entirely.
++- A target that is not an object is treated as `{}` before a patch object is merged into it.
++- Arrays are replaced as a whole, never merged element by element; `null` elements inside an array are
++  kept.
++- Removing a member that does not exist is not an error.
++- A member named `__proto__` is an ordinary member, and does not modify `Object.prototype`.
++- The patch must be a JSON value; `undefined`, `NaN`, an infinity and other non-JSON values throw.
++- The input target and patch are not mutated; the result shares no mutable state with them.
++- Tests cover each example of RFC 7386, appendix A, and the edge and error cases above, with `npm test`
++  (`node --test`).
++- The README documents the function, with an example, as it does for the other functions.
++
++## Requirement
++
++Standard: RFC 7386, JSON Merge Patch. The library must follow the published standard it implements.
+diff --git a/src/index.ts b/src/index.ts
+index 6c890622fbe70e34516078acb0d177457b19ec4a..8f1be54b2174dd6523a4fb91d0d60c84e2237a3f 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -41,7 +41,48 @@ export function applyPatch(document: unknown, patch: unknown): unknown {
+   return result;
+ }
+ 
+-const OPERATION_NAMES = ['add', 'remove', 'replace', 'move', 'copy', 'test'] as const;
++/**
++ * Applies a JSON Merge Patch (RFC 7386) to a JSON document and returns the merged document.
++ *
++ * A member of the patch whose value is null removes that member from the target. A patch that is not an
++ * object replaces the target entirely, and arrays are replaced rather than merged. The input target and
++ * patch are not mutated. Throws when the patch is not a JSON value.
++ */
++export function applyMergePatch(target: unknown, patch: unknown): unknown {
++  if (!isJsonValue(patch)) {
++    throw new Error('invalid JSON Merge Patch: the patch is not a JSON value');
++  }
++  return mergeValue(structuredClone(target), structuredClone(patch));
++}
++
++/**
++ * Merges a patch into a target, in place where the target is an object. The target and patch are owned
++ * by the caller: the result is built from them, without copying again.
++ */
++function mergeValue(target: unknown, patch: unknown): unknown {
++  if (!isObject(patch)) {
++    return patch;
++  }
++  const result = isObject(target) ? target : {};
++  for (const [name, value] of Object.entries(patch)) {
++    if (value === null) {
++      delete result[name];
++    } else {
++      // Only an own member is merged into: an inherited one (Object.prototype for "__proto__") must not be.
++      const current = Object.hasOwn(result, name) ? result[name] : undefined;
++      // defineProperty, not assignment: a member named "__proto__" must stay an ordinary member.
++      Object.defineProperty(result, name, {
++        value: mergeValue(current, value),
++        enumerable: true,
++        writable: true,
++        configurable: true,
++      });
++    }
++  }
++  return result;
++}
++
++const OPERATION_NAMES =['add', 'remove', 'replace', 'move', 'copy', 'test'] as const;
+ 
+ function isOperationName(value: unknown): value is (typeof OPERATION_NAMES)[number] {
+   return (OPERATION_NAMES as readonly unknown[]).includes(value);
+diff --git a/test/json-merge-patch.test.ts b/test/json-merge-patch.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..3d36740d51abb3dab871314d02f8fcfa18a70764
+--- /dev/null
++++ b/test/json-merge-patch.test.ts
+@@ -0,0 +1,139 @@
++import { describe, it } from 'node:test';
++import assert from 'node:assert/strict';
++import { applyMergePatch } from '../src/index.ts';
++
++// The examples of RFC 7386, appendix A.
++describe('applyMergePatch', () => {
++  describe('applies the examples of RFC 7386, appendix A', () => {
++    it('replaces a member', () => {
++      assert.deepEqual(applyMergePatch({ a: 'b' }, { a: 'c' }), { a: 'c' });
++    });
++
++    it('adds a member', () => {
++      assert.deepEqual(applyMergePatch({ a: 'b' }, { b: 'c' }), { a: 'b', b: 'c' });
++    });
++
++    it('removes a member whose patch value is null', () => {
++      assert.deepEqual(applyMergePatch({ a: 'b' }, { a: null }), {});
++      assert.deepEqual(applyMergePatch({ a: 'b', b: 'c' }, { a: null }), { b: 'c' });
++    });
++
++    it('replaces an array with a value', () => {
++      assert.deepEqual(applyMergePatch({ a: ['b'] }, { a: 'c' }), { a: 'c' });
++    });
++
++    it('replaces a value with an array', () => {
++      assert.deepEqual(applyMergePatch({ a: 'c' }, { a: ['b'] }), { a: ['b'] });
++    });
++
++    it('merges a nested object, removing its null members', () => {
++      assert.deepEqual(applyMergePatch({ a: { b: 'c' } }, { a: { b: 'd', c: null } }), { a: { b: 'd' } });
++    });
++
++    it('replaces an array of objects as a whole', () => {
++      assert.deepEqual(applyMergePatch({ a: [{ b: 'c' }] }, { a: [1] }), { a: [1] });
++    });
++
++    it('replaces an array target as a whole', () => {
++      assert.deepEqual(applyMergePatch(['a', 'b'], ['c', 'd']), ['c', 'd']);
++    });
++
++    it('replaces an object target with an array patch', () => {
++      assert.deepEqual(applyMergePatch({ a: 'b' }, ['c']), ['c']);
++    });
++
++    it('replaces the document with null', () => {
++      assert.equal(applyMergePatch({ a: 'foo' }, null), null);
++    });
++
++    it('replaces the document with a string', () => {
++      assert.equal(applyMergePatch({ a: 'foo' }, 'bar'), 'bar');
++    });
++
++    it('keeps a member whose target value is null', () => {
++      assert.deepEqual(applyMergePatch({ e: null }, { a: 1 }), { e: null, a: 1 });
++    });
++
++    it('merges into a target that is not an object, after treating it as an empty object', () => {
++      assert.deepEqual(applyMergePatch([1, 2], { a: 'b', c: null }), { a: 'b' });
++    });
++
++    it('creates the nested objects of the patch, without their null members', () => {
++      assert.deepEqual(applyMergePatch({}, { a: { bb: { ccc: null } } }), { a: { bb: {} } });
++    });
++  });
++
++  describe('merges objects and arrays', () => {
++    it('keeps the members of the target that the patch does not name', () => {
++      assert.deepEqual(applyMergePatch({ a: 1, b: { c: 2, d: 3 } }, { b: { c: 4 } }), { a: 1, b: { c: 4, d: 3 } });
++    });
++
++    it('keeps null elements of an array in the patch', () => {
++      assert.deepEqual(applyMergePatch({}, { a: [null, { b: null }] }), { a: [null, { b: null }] });
++    });
++
++    it('replaces a non-object member with an object, without its null members', () => {
++      assert.deepEqual(applyMergePatch({ a: 1 }, { a: { b: null, c: 2 } }), { a: { c: 2 } });
++    });
++
++    it('is not an error to remove a member that does not exist', () => {
++      assert.deepEqual(applyMergePatch({ a: 1 }, { b: null }), { a: 1 });
++      assert.deepEqual(applyMergePatch({ a: 1 }, { b: { c: null } }), { a: 1, b: {} });
++    });
++
++    it('returns an empty object for an empty patch on a target that is not an object', () => {
++      assert.deepEqual(applyMergePatch(5, {}), {});
++    });
++
++    it('returns the target unchanged for an empty patch', () => {
++      assert.deepEqual(applyMergePatch({ a: { b: 1 } }, {}), { a: { b: 1 } });
++    });
++  });
++
++  describe('keeps the input unchanged', () => {
++    it('does not mutate the target or the patch', () => {
++      const target = { a: { b: 'c' }, d: 1 };
++      const patch = { a: { b: 'e', f: null }, g: [1] };
++      applyMergePatch(target, patch);
++      assert.deepEqual(target, { a: { b: 'c' }, d: 1 });
++      assert.deepEqual(patch, { a: { b: 'e', f: null }, g: [1] });
++    });
++
++    it('shares no mutable state with the patch', () => {
++      const patch = { a: { b: 1 }, c: [1] };
++      const result = applyMergePatch({}, patch) as { a: { b: number }; c: number[] };
++      result.a.b = 2;
++      result.c.push(2);
++      assert.deepEqual(patch, { a: { b: 1 }, c: [1] });
++    });
++
++    it('shares no mutable state with the target', () => {
++      const target = { a: { b: 1 } };
++      const result = applyMergePatch(target, { c: 2 }) as { a: { b: number } };
++      result.a.b = 3;
++      assert.deepEqual(target, { a: { b: 1 } });
++    });
++  });
++
++  describe('handles member names with care', () => {
++    it('treats a member named "__proto__" as an ordinary member', () => {
++      const patch = JSON.parse('{"__proto__": {"polluted": true}}');
++      const result = applyMergePatch({}, patch) as object;
++      assert.ok(Object.hasOwn(result, '__proto__'));
++      assert.equal(({} as Record<string, unknown>).polluted, undefined);
++    });
++  });
++
++  describe('throws when the patch is not a JSON value', () => {
++    it('throws for undefined, NaN and an infinity', () => {
++      assert.throws(() => applyMergePatch({}, undefined), Error);
++      assert.throws(() => applyMergePatch({}, { a: undefined }), Error);
++      assert.throws(() => applyMergePatch({}, { a: NaN }), Error);
++      assert.throws(() => applyMergePatch({}, { a: [Infinity] }), Error);
++    });
++
++    it('throws for a value that is not a plain JSON value', () => {
++      assert.throws(() => applyMergePatch({}, { a: new Date(0) }), Error);
++    });
++  });
++});

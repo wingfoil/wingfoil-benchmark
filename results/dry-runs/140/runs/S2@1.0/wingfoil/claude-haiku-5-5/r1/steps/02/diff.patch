@@ -1,0 +1,133 @@
+diff --git a/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-2-plan.md b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-2-plan.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..a838ac9b35340597cc514e6ba9f9f6d1381c0a58
+--- /dev/null
++++ b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-2-plan.md
+@@ -0,0 +1,17 @@
++---
++id: sw-life-cycle-1-2-plan
++type: plan
++title: "Order service: discount stacking, coupon expiry, shipping VAT"
++status: active
++workflow: "sw-life-cycle"
++phase: "1-2"
++element: ""
++parent: ""
++format: 1
++---
++
++<!-- plan body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
+diff --git a/docs/memory/task/task-002-order-service-coupon-on-post-volume-subtotal-coupon-expiry-day-shipping-vat-report.md b/docs/memory/task/task-002-order-service-coupon-on-post-volume-subtotal-coupon-expiry-day-shipping-vat-report.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..13f8228c1dda7dfb7014c55bc9530ddc1231b758
+--- /dev/null
++++ b/docs/memory/task/task-002-order-service-coupon-on-post-volume-subtotal-coupon-expiry-day-shipping-vat-report.md
+@@ -0,0 +1,39 @@
++---
++id: task-002-order-service-coupon-on-post-volume-subtotal-coupon-expiry-day-shipping-vat-report
++type: task
++title: "Order service: coupon on post-volume subtotal, coupon expiry day, shipping VAT report"
++status: approved
++format: 1
++---
++
++# Order service: coupon on post-volume subtotal, coupon expiry day, shipping VAT report
++
++Three reports against the order service. Each is checked against the business rules in `README.md`,
++which is the reference.
++
++1. **Volume discount and coupon stacked wrongly (finance).** Twelve notebooks at €5.00 with a 10% coupon
++   and the volume discount come to €48.00 of goods; the expected figure is €48.60. The README says a
++   coupon applies to the order's subtotal **after** volume discounts (€54.00 here, so 10% is €5.40 and
++   goods come to €48.60). The code takes the coupon percentage (or fixed amount) from the gross total.
++   - Fix: `priceOrder` in `src/pricing.ts` takes the coupon off the subtotal after volume discounts, for
++     both percentage and fixed coupons. The 50% cap and the VAT allocation stay as they are.
++
++2. **Coupon refused on its last day (customer, Luca).** AUTUMN was advertised as valid until 30
++   November; an order placed on 30 November was refused as expired. The README says a coupon is valid
++   from its first day to its last day, both included.
++   - Fix: `Coupons.redeemable` in `src/coupons.ts` refuses only dates after `validUntil`.
++
++3. **VAT on shipping (customer, Anna).** A receipt shows €1.08 of VAT on €4.90 of shipping, and the
++   customer asks that delivery carry no VAT. The README states that shipping is subject to VAT at the
++   standard rate (22%), shown on its own line, so the current behaviour follows the documented rule.
++   Changing it would change a business rule, which is a product decision: no code change in this task.
++   The report is answered in the final message; the README is not edited.
++
++## Acceptance
++
++- Twelve notebooks at €5.00 with a 10% coupon: goods €48.60, coupon €5.40, volume discount €6.00.
++- A percentage coupon and a fixed coupon both apply to the subtotal after volume discounts; the
++  minimum amount is checked against that same subtotal.
++- A coupon is accepted on its `validUntil` day and refused the day after.
++- Shipping VAT stays at 22% as the README documents.
++- The existing test suite still passes; new tests cover the first two cases.
+diff --git a/src/coupons.ts b/src/coupons.ts
+index 4b7df8e652e5d52033abb2ea07d763007ccce283..496aed7828812115eb643d5d3378af00c2d6948f 100644
+--- a/src/coupons.ts
++++ b/src/coupons.ts
+@@ -74,7 +74,7 @@ export class Coupons {
+     const coupon = this.#coupons.get(canonicalCode(code));
+     if (coupon === undefined) throw new CouponError(code, 'unknown code');
+     if (compareDates(date, coupon.validFrom) < 0) throw new CouponError(coupon.code, 'not valid yet');
+-    if (compareDates(date, coupon.validUntil) >= 0) throw new CouponError(coupon.code, 'expired');
++    if (compareDates(date, coupon.validUntil) > 0) throw new CouponError(coupon.code, 'expired');
+     if (amount < coupon.minimumCents) throw new CouponError(coupon.code, 'order below the minimum amount');
+     if (coupon.singleUse && this.#usedBy.has(coupon.code)) throw new CouponError(coupon.code, 'already used');
+     return coupon;
+diff --git a/src/pricing.ts b/src/pricing.ts
+index 3d07b8e66d51d75411d7694eb6b4d79c95913fee..53183f46b7ff4708ad43e87ff2b9cbce26653019 100644
+--- a/src/pricing.ts
++++ b/src/pricing.ts
+@@ -55,8 +55,9 @@ export function priceOrder(inputs: readonly LineInput[], coupon?: Coupon): Price
+   const afterVolume = gross.map((amount, index) => amount - (volume[index] ?? 0));
+   const volumeTotal = sum(volume);
+ 
++  const subtotal = grossTotal - volumeTotal;
+   const couponTotal =
+-    coupon === undefined ? 0 : capped(couponDiscount(coupon, grossTotal), volumeTotal, grossTotal);
++    coupon === undefined ? 0 : capped(couponDiscount(coupon, subtotal), volumeTotal, grossTotal);
+   const couponShares = allocate(couponTotal, afterVolume);
+ 
+   const lines = inputs.map(({ product, quantity }, index): PricedLine => {
+diff --git a/test/coupons.test.ts b/test/coupons.test.ts
+index 1fdc2519dc031050b1b5593605af611816478518..4a559cd629622f1e79eff615f3161fc7c99c3fd3 100644
+--- a/test/coupons.test.ts
++++ b/test/coupons.test.ts
+@@ -33,6 +33,32 @@ describe('coupons', () => {
+     assert.throws(() => orders.quote({ ...request, date: '2026-04-01' }), CouponError);
+   });
+ 
++  it('accepts a coupon on its last valid day', () => {
++    const { orders } = shop();
++    const request = { customer: 'c-1', lines: [{ sku: 'PEN-4', quantity: 1 }], coupon: 'SPRING' };
++    assert.equal(orders.quote({ ...request, date: '2026-03-31' }).totals.couponDiscountCents, 200);
++  });
++
++  it('takes a percentage coupon off the subtotal after the volume discount', () => {
++    const { orders, catalog, inventory } = shop();
++    catalog.add({ sku: 'NB-5', name: 'Notebook', priceCents: 500, vatClass: 'standard', weightGrams: 100 });
++    inventory.restock('NB-5', 20);
++    const order = orders.place({ customer: 'c-1', date: '2026-03-15', lines: [{ sku: 'NB-5', quantity: 12 }], coupon: 'SPRING' });
++    assert.equal(order.totals.grossCents, 6000);
++    assert.equal(order.totals.volumeDiscountCents, 600);
++    assert.equal(order.totals.couponDiscountCents, 540);
++    assert.equal(order.totals.goodsCents, 4860);
++  });
++
++  it('takes a fixed coupon off the subtotal after the volume discount', () => {
++    const { orders, catalog, coupons } = shop();
++    catalog.add({ sku: 'NB-5', name: 'Notebook', priceCents: 500, vatClass: 'standard', weightGrams: 100 });
++    coupons.add({ code: 'TENOFF', kind: 'fixed', value: 1000, validFrom: '2026-01-01', validUntil: '2026-12-31' });
++    const order = orders.quote({ customer: 'c-1', date: '2026-06-01', lines: [{ sku: 'NB-5', quantity: 12 }], coupon: 'TENOFF' });
++    assert.equal(order.totals.couponDiscountCents, 1000);
++    assert.equal(order.totals.goodsCents, 4400);
++  });
++
+   it('lets a single-use coupon be used once', () => {
+     const { orders, coupons } = shop();
+     coupons.add({ code: 'ONCE', kind: 'fixed', value: 100, validFrom: '2026-01-01', validUntil: '2026-12-31', singleUse: true });

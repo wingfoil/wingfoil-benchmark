@@ -1,0 +1,101 @@
+diff --git a/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-3-plan.md b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-3-plan.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..9273d1908c31c94c6373441e48cf294c23901a2a
+--- /dev/null
++++ b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-3-plan.md
+@@ -0,0 +1,17 @@
++---
++id: sw-life-cycle-1-3-plan
++type: plan
++title: "Welcome code reuse after cancel and free delivery at 50 euro"
++status: active
++workflow: "sw-life-cycle"
++phase: "1-3"
++element: ""
++parent: ""
++format: 1
++---
++
++<!-- plan body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
+diff --git a/docs/memory/task/task-003-welcome-code-reuse-after-cancel-and-free-delivery-at-50-euro.md b/docs/memory/task/task-003-welcome-code-reuse-after-cancel-and-free-delivery-at-50-euro.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..940660902c66fb811a968d479a56f9d65c9ab6eb
+--- /dev/null
++++ b/docs/memory/task/task-003-welcome-code-reuse-after-cancel-and-free-delivery-at-50-euro.md
+@@ -0,0 +1,39 @@
++---
++id: task-003-welcome-code-reuse-after-cancel-and-free-delivery-at-50-euro
++type: task
++title: "Welcome code reuse after cancel and free delivery at 50 euro"
++status: approved
++format: 1
++---
++
++# Welcome code reuse after cancel and free delivery at 50 euro
++
++Two reports against the order service. Each is checked against the business rules in `README.md`,
++which is the reference.
++
++1. **Single-use code refused after a cancelled order (customer, Paolo).** Paolo placed an order with his
++   one-time welcome code, cancelled it the same day (wrong size), and the corrected order was refused
++   with "already used". The README says cancelling an order gives back its coupon, if the coupon was
++   single-use, so the corrected order should accept the code.
++   - Cause: `OrderService.place` records the use under the order's id (`ORD-0001`), but
++     `OrderService.cancel` gives the coupon back under the customer's name (`order.customer`). The
++     `giveBack` match never succeeds, so the code stays used.
++   - Fix: `cancel` in `src/orders.ts` gives the coupon back under `order.id`. The rest stays as it is.
++
++2. **Delivery charged on exactly €50.00 of goods (support team).** A customer paid €4.90 for delivery on
++   an order whose goods came to exactly €50.00. The README says shipping is free when the goods come to
++   €50.00 or more, after every discount and before VAT.
++   - Finding: the threshold is already `>=` in `shippingCost` (`src/shipping.ts`), from task-001, and
++     `test/orders.test.ts` already covers exactly €50.00. A randomised check of 20,000 orders, with and
++     without coupons and volume discounts, found no order of €50.00 or more that paid shipping. The
++     charge the customer saw therefore matches an order placed before that fix, or an order whose
++     goods were below €50.00 after discounts. No code change in this task. Support should check the
++     order's date and goods against the README, and any goodwill refund is a decision for the business.
++
++## Acceptance
++
++- A single-use coupon used by an order that is then cancelled can be used by a new order.
++- A single-use coupon used by a live order is still refused for another order.
++- A non-single-use coupon is unaffected by cancellation.
++- Goods of exactly €50.00 ship free; €49.99 still pays the band cost (already covered; keep it passing).
++- The existing test suite still passes; a new test covers the cancel-and-reuse case.
+diff --git a/src/orders.ts b/src/orders.ts
+index 0c0b1ae889c9df13dffa9de7ed1924a4e8b09afd..a029a93fd6f94a43d5ecd351af29cda4d205ab99 100644
+--- a/src/orders.ts
++++ b/src/orders.ts
+@@ -153,7 +153,7 @@ export class OrderService {
+       throw new OrderStateError(`order ${id} can no longer be cancelled`);
+     }
+     for (const line of order.lines) this.#inventory.release(line.sku, line.quantity, id);
+-    if (order.coupon !== undefined) this.#coupons.giveBack(order.coupon, order.customer);
++    if (order.coupon !== undefined) this.#coupons.giveBack(order.coupon, order.id);
+     const cancelled: Order = { ...order, status: 'cancelled', cancelledOn: date };
+     this.#orders.set(id, cancelled);
+     return cancelled;
+diff --git a/test/coupons.test.ts b/test/coupons.test.ts
+index 4a559cd629622f1e79eff615f3161fc7c99c3fd3..4a9ba72e3f20302d6c0ddb3ada5fd5c516823962 100644
+--- a/test/coupons.test.ts
++++ b/test/coupons.test.ts
+@@ -66,4 +66,15 @@ describe('coupons', () => {
+     assert.equal(coupons.usedBy('ONCE'), 'ORD-0001');
+     assert.throws(() => orders.place({ customer: 'c-2', date: '2026-05-05', lines: [{ sku: 'PEN-4', quantity: 1 }], coupon: 'ONCE' }), CouponError);
+   });
++
++  it('gives a single-use coupon back when its order is cancelled, so a corrected order can use it', () => {
++    const { orders, coupons } = shop();
++    coupons.add({ code: 'WELCOME', kind: 'fixed', value: 100, validFrom: '2026-01-01', validUntil: '2026-12-31', singleUse: true });
++    const first = orders.place({ customer: 'c-1', date: '2026-05-05', lines: [{ sku: 'PEN-4', quantity: 1 }], coupon: 'WELCOME' });
++    orders.cancel(first.id, '2026-05-05');
++    assert.equal(coupons.usedBy('WELCOME'), undefined);
++    const corrected = orders.place({ customer: 'c-1', date: '2026-05-05', lines: [{ sku: 'PEN-4', quantity: 2 }], coupon: 'WELCOME' });
++    assert.equal(corrected.totals.couponDiscountCents, 100);
++    assert.equal(coupons.usedBy('WELCOME'), corrected.id);
++  });
+ });

@@ -1,0 +1,132 @@
+diff --git a/docs/memory/task/task-001-fix-lower-case-sku-lookup-delivery-threshold-and-vat-rounding.md b/docs/memory/task/task-001-fix-lower-case-sku-lookup-delivery-threshold-and-vat-rounding.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..974413bc6d9b5ad744db1d3b500b9d8c6374352d
+--- /dev/null
++++ b/docs/memory/task/task-001-fix-lower-case-sku-lookup-delivery-threshold-and-vat-rounding.md
+@@ -0,0 +1,33 @@
++---
++id: task-001-fix-lower-case-sku-lookup-delivery-threshold-and-vat-rounding
++type: task
++title: "Fix lower-case SKU lookup, delivery threshold, and VAT rounding"
++status: approved
++format: 1
++---
++
++# Fix lower-case SKU lookup, delivery threshold, and VAT rounding
++
++Three reports this week against the order service. Each is a departure from the business rules in
++`README.md`, which is the reference.
++
++1. **Lower-case SKU refused (sales desk, Giulia).** Keying a product code in lower case, as customers
++   read it out (`lb-220`), is refused as an unknown product; the same code in capitals works. The README
++   says SKUs are case-insensitive and always shown in upper case.
++   - Fix: `Catalog.find` must canonicalise the SKU (trim and upper-case), as `Catalog.add` already does.
++
++2. **Delivery charged at €50.00 (customer, Marco).** A basket of €50.00 after discount was charged €4.90
++   for delivery. The README says shipping is free when the goods come to €50.00 **or more**.
++   - Fix: `shippingCost` must treat goods of exactly 5000 cents as free (`>=`, not `>`).
++
++3. **VAT one cent low on some lines (accounting).** A single item at €1.99 at the standard rate shows
++   €0.43 of VAT on its line; the correct figure is €0.44. The README says VAT is rounded half up to the
++   cent on each line.
++   - Fix: `lineVat` must round half up (through `percentOf`), not truncate.
++
++## Acceptance
++
++- A lower-case or padded SKU orders and quotes the same as its upper-case form.
++- Goods of exactly €50.00 after discount ship free; €49.99 still pays the band cost.
++- A €1.99 line at the standard rate carries €0.44 of VAT.
++- The existing test suite still passes; new tests cover each of the three cases.
+diff --git a/src/catalog.ts b/src/catalog.ts
+index 0dfc92645f10374f948e9312a79dc7dca44318e5..b114b9c78623136e5ee8c9b1fc6d118c4c478c33 100644
+--- a/src/catalog.ts
++++ b/src/catalog.ts
+@@ -56,7 +56,7 @@ export class Catalog {
+ 
+   /** The product with `sku`, or undefined. */
+   find(sku: string): Product | undefined {
+-    return this.#products.get(sku.trim());
++    return this.#products.get(canonicalSku(sku));
+   }
+ 
+   /** The product with `sku`; throws UnknownProductError when there is none. */
+diff --git a/src/shipping.ts b/src/shipping.ts
+index 71920b9dc3b375440460eaebb217a70a48152b33..f4290d2a7729ec7e4c062d0d5606894fb26fae09 100644
+--- a/src/shipping.ts
++++ b/src/shipping.ts
+@@ -30,6 +30,6 @@ export function parcelCost(grams: number): Cents {
+ 
+ /** The shipping cost of an order whose goods amount to `goods` and weigh `grams`. */
+ export function shippingCost(goods: Cents, grams: number): Cents {
+-  if (goods > FREE_SHIPPING_FROM_CENTS) return 0;
++  if (goods >= FREE_SHIPPING_FROM_CENTS) return 0;
+   return parcelCost(grams);
+ }
+diff --git a/src/tax.ts b/src/tax.ts
+index 7449c567971f4c22ec68c991949f8652936e091b..5e12c55f1ca4a2044012df5ea175a5b57febbef3 100644
+--- a/src/tax.ts
++++ b/src/tax.ts
+@@ -23,7 +23,7 @@ export function vatRate(vatClass: VatClass): number {
+ 
+ /** The VAT of one order line whose net amount is `net`. */
+ export function lineVat(net: Cents, vatClass: VatClass): Cents {
+-  return Math.floor((net * vatRate(vatClass)) / 100);
++  return percentOf(net, vatRate(vatClass));
+ }
+ 
+ /** The VAT on a shipping cost: the standard rate. */
+diff --git a/test/catalog.test.ts b/test/catalog.test.ts
+index 3c78feb21517c68b01432b4e6c8fdfee3e3914d9..f758e18c39956afb9342c502bfefff37c1733d53 100644
+--- a/test/catalog.test.ts
++++ b/test/catalog.test.ts
+@@ -28,4 +28,12 @@ describe('catalogue', () => {
+     assert.throws(() => catalog.getForSale('TEA-7'), InactiveProductError);
+     assert.throws(() => catalog.get('TEA-8'), UnknownProductError);
+   });
++
++  it('finds a product whatever the case of its SKU, and ignores surrounding spaces', () => {
++    const { catalog } = createShop();
++    catalog.add({ sku: 'LB-220', name: 'Lamp base', priceCents: 1990, vatClass: 'standard', weightGrams: 800 });
++    assert.equal(catalog.get('lb-220').sku, 'LB-220');
++    assert.equal(catalog.find(' lb-220 ')?.name, 'Lamp base');
++    assert.equal(catalog.getForSale('Lb-220').priceCents, 1990);
++  });
+ });
+diff --git a/test/orders.test.ts b/test/orders.test.ts
+index d07f06bd09b3489b674e3119a14ea7d2ced148a7..3cad59eda280a9f1421ffe492b54d8920f682a6a 100644
+--- a/test/orders.test.ts
++++ b/test/orders.test.ts
+@@ -50,6 +50,33 @@ describe('orders', () => {
+     assert.equal(order.lines[0]?.quantity, 4);
+   });
+ 
++  it('orders by a lower-case SKU as it orders by the upper-case one', () => {
++    const { orders } = shop();
++    const order = orders.place({ customer: 'c-1', date: '2026-03-02', lines: [{ sku: 'mug-01', quantity: 1 }] });
++    assert.equal(order.lines[0]?.sku, 'MUG-01');
++    assert.equal(orders.quote({ customer: 'c-1', date: '2026-03-02', lines: [{ sku: ' tea-7 ', quantity: 1 }] }).totals.goodsCents, 500);
++  });
++
++  it('ships free from exactly €50.00 of goods, and charges shipping just below it', () => {
++    const s = shop();
++    s.catalog.add({ sku: 'VASE-1', name: 'Vase', priceCents: 4999, vatClass: 'standard', weightGrams: 900 });
++    s.inventory.restock('VASE-1', 10);
++    const exact = s.orders.place({ customer: 'c-1', date: '2026-03-02', lines: [{ sku: 'MUG-01', quantity: 5 }] });
++    assert.equal(exact.totals.goodsCents, 5000);
++    assert.equal(exact.totals.shippingCents, 0);
++    const below = s.orders.place({ customer: 'c-1', date: '2026-03-02', lines: [{ sku: 'VASE-1', quantity: 1 }] });
++    assert.equal(below.totals.goodsCents, 4999);
++    assert.equal(below.totals.shippingCents, 490);
++  });
++
++  it('rounds the VAT of a line half up to the cent', () => {
++    const s = shop();
++    s.catalog.add({ sku: 'PEN-1', name: 'Pen', priceCents: 199, vatClass: 'standard', weightGrams: 20 });
++    s.inventory.restock('PEN-1', 10);
++    const order = s.orders.place({ customer: 'c-1', date: '2026-03-02', lines: [{ sku: 'PEN-1', quantity: 1 }] });
++    assert.equal(order.lines[0]?.vatCents, 44);
++  });
++
+   it('reserves stock, and refuses an order above it without reserving anything', () => {
+     const { orders, inventory } = shop();
+     orders.place({ customer: 'c-1', date: '2026-03-02', lines: [{ sku: 'MUG-01', quantity: 5 }] });

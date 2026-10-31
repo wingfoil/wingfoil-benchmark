@@ -1,0 +1,139 @@
+diff --git a/README.md b/README.md
+index 15406f791f0d8828a9ab0835a1b90b891885e0fd..2ba9c7891883760c02708de22ed7a8ac28ce4631 100644
+--- a/README.md
++++ b/README.md
+@@ -17,6 +17,6 @@ member, out-of-range or non-canonical array index, `-`, or descent into a primit
+ `remove`, `replace`, `move`, `copy` and `test` operations) to a document and returns the result as a new
+ value: neither `document` nor `patch` is mutated or shared with the result. Paths are JSON Pointers
+ (`-` appends to an array in `add`). It throws an `Error` when the patch is invalid (not an array, an
+-operation that is not an object, an unknown `op`, a missing or non-string `path`/`from`, a missing `value`)
++operation that is not an object, an unknown `op`, a missing or non-string `path`/`from`, a missing `value`, a `value` that is not a JSON value such as `NaN`, or a hole in the patch array)
+ or when an operation fails (target missing, bad array index, `move` into its own child, failed `test`,
+ removing the whole document). `test` compares values structurally, with strict types.
+diff --git a/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-3-plan.md b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-3-plan.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..b7114ed9a51211a9cd9cd14c3065c16dc0125a85
+--- /dev/null
++++ b/docs/memory/plan/sw-life-cycle/sw-life-cycle-1-3-plan.md
+@@ -0,0 +1,17 @@
++---
++id: sw-life-cycle-1-3-plan
++type: plan
++title: "RFC 6902 applyPatch conformance"
++status: active
++workflow: "sw-life-cycle"
++phase: "1-3"
++element: ""
++parent: ""
++format: 1
++---
++
++<!-- plan body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
+diff --git a/docs/memory/task/task-003-applypatch-rfc-6902-conformance-review.md b/docs/memory/task/task-003-applypatch-rfc-6902-conformance-review.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..2199a95958f9c002bc737d0f67a49a0f443b99b9
+--- /dev/null
++++ b/docs/memory/task/task-003-applypatch-rfc-6902-conformance-review.md
+@@ -0,0 +1,24 @@
++---
++id: task-003-applypatch-rfc-6902-conformance-review
++type: task
++title: "applyPatch RFC 6902 conformance review"
++status: approved
++format: 1
++---
++
++<!-- task body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
++
++## Request
++
++Review how `applyPatch` checks and applies patches and make it conform to RFC 6902, errors included.
++
++## Acceptance criteria
++
++- A `value` of `add`, `replace` or `test` that is not a JSON value (NaN, Infinity, undefined, holes,
++  non-plain objects, cycles) makes the patch invalid and throws.
++- A sparse patch array (holes) is not silently skipped: the hole is an invalid operation and throws.
++- All other RFC 6902 behaviour (appendix A, atomic failure, move/copy/test rules) is unchanged and tested.
+diff --git a/src/index.ts b/src/index.ts
+index c20894353f5ec99b69b19c48fc8dcf65f3f29e84..9f2a41f6ae76afc57375dd9427d419979169e1c3 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -87,6 +87,31 @@ function jsonEqual(a: unknown, b: unknown): boolean {
+   return a === b;
+ }
+ 
++function assertJsonValue(value: unknown, where: string, ancestors: unknown[] = []): void {
++  if (value === null || typeof value === "string" || typeof value === "boolean") return;
++  if (typeof value === "number") {
++    if (Number.isFinite(value)) return;
++    throw new Error(`Invalid JSON Patch: ${where} has a number that is not a JSON value`);
++  }
++  if (typeof value === "object") {
++    if (ancestors.includes(value)) throw new Error(`Invalid JSON Patch: ${where} is circular`);
++    const inner = [...ancestors, value];
++    if (Array.isArray(value)) {
++      for (let i = 0; i < value.length; i++) {
++        if (!(i in value)) throw new Error(`Invalid JSON Patch: ${where} has an array with a hole`);
++        assertJsonValue(value[i], where, inner);
++      }
++      return;
++    }
++    const proto = Object.getPrototypeOf(value);
++    if (proto === Object.prototype || proto === null) {
++      for (const member of Object.values(value)) assertJsonValue(member, where, inner);
++      return;
++    }
++  }
++  throw new Error(`Invalid JSON Patch: ${where} has a value that is not a JSON value`);
++}
++
+ function setMember(object: { [key: string]: JsonValue }, key: string, value: JsonValue): void {
+   // defineProperty keeps a "__proto__" key an ordinary member instead of changing the prototype.
+   Object.defineProperty(object, key, { value, writable: true, enumerable: true, configurable: true });
+@@ -152,6 +177,7 @@ function applyOperation(document: JsonValue, raw: unknown, index: number): JsonV
+       if (!Object.hasOwn(raw, "value") || raw.value === undefined) {
+         throw new Error(`Invalid JSON Patch: operation ${index} needs a "value"`);
+       }
++      assertJsonValue(raw.value, `operation ${index}`);
+       const value = structuredClone(raw.value) as JsonValue;
+       if (op === "add") return addValue(document, path, value);
+       if (op === "replace") {
+@@ -197,8 +223,9 @@ function applyOperation(document: JsonValue, raw: unknown, index: number): JsonV
+ export function applyPatch(document: unknown, patch: unknown): JsonValue {
+   if (!Array.isArray(patch)) throw new Error("Invalid JSON Patch: not an array");
+   let result = structuredClone(document) as JsonValue;
+-  patch.forEach((operation, index) => {
+-    result = applyOperation(result, operation, index);
+-  });
++  // A plain loop, unlike forEach, does not skip the holes of a sparse array.
++  for (let index = 0; index < patch.length; index++) {
++    result = applyOperation(result, patch[index], index);
++  }
+   return result;
+ }
+diff --git a/test/patch.test.ts b/test/patch.test.ts
+index 0de18e9653165d7a2730ab7f445c13f5221fc085..4f728033592d8264dac75c200292a06ac497cb7e 100644
+--- a/test/patch.test.ts
++++ b/test/patch.test.ts
+@@ -127,3 +127,12 @@ test("__proto__ is an ordinary member", () => {
+   assert.equal(Object.getPrototypeOf(out), Object.prototype);
+   assert.deepEqual(Object.keys(out), ["__proto__"]);
+ });
++
++test("values must be JSON values, and holes in the patch are invalid", () => {
++  bad({}, [{ op: "add", path: "/a", value: NaN }]);
++  bad({}, [{ op: "add", path: "/a", value: Infinity }]);
++  bad({}, [{ op: "add", path: "/a", value: { b: [undefined] } }]);
++  bad({}, [{ op: "add", path: "/a", value: new Date() }]);
++  bad({ a: 1 }, [{ op: "test", path: "/a", value: NaN }]);
++  bad({}, [, { op: "add", path: "/a", value: 1 }]);
++});

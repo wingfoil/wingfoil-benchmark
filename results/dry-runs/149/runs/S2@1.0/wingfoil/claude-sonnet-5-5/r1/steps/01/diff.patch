@@ -1,0 +1,93 @@
+diff --git a/docs/memory/task/task-001-fix-sku-case-free-shipping-threshold-vat-rounding.md b/docs/memory/task/task-001-fix-sku-case-free-shipping-threshold-vat-rounding.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..c779a137d42b75051780701c75d6cc7cce485b94
+--- /dev/null
++++ b/docs/memory/task/task-001-fix-sku-case-free-shipping-threshold-vat-rounding.md
+@@ -0,0 +1,21 @@
++---
++id: task-001-fix-sku-case-free-shipping-threshold-vat-rounding
++type: task
++title: "Fix SKU case, free-shipping threshold, VAT rounding"
++status: approved
++format: 1
++---
++
++<!-- task body. `wingfoil memory add` copies this scaffold, setting only `id`, `title` and
++     `status` (and any `--tags` or `--set` value). Fill the required frontmatter fields and replace
++     these placeholder comments yourself; `wingfoil memory submit` then checks the required fields,
++     moves `status` forward and commits the document as you left it, naming in the commit body the
++     content it carries. -->
++
++Fix three reported defects, each against the README rules:
++
++1. Lower-case SKUs (lb-220) were refused: `Catalog.find` now canonicalises the SKU (trim + upper case).
++2. Free shipping at exactly €50.00: the threshold is "€50.00 or more", `shippingCost` now uses `>=`.
++3. Line VAT one cent low (€1.99 at 22% gave 0.43): `lineVat` truncated; it now rounds half up via `percentOf`.
++
++Regression tests added in `test/catalog.test.ts`; `npm test` passes (17 tests).
+diff --git a/src/catalog.ts b/src/catalog.ts
+index 0dfc92645f10374f948e9312a79dc7dca44318e5..b114b9c78623136e5ee8c9b1fc6d118c4c478c33 100644
+--- a/src/catalog.ts
++++ b/src/catalog.ts
+@@ -56,7 +56,7 @@ export class Catalog {
+ 
+   /** The product with `sku`, or undefined. */
+   find(sku: string): Product | undefined {
+-    return this.#products.get(sku.trim());
++    return this.#products.get(canonicalSku(sku));
+   }
+ 
+   /** The product with `sku`; throws UnknownProductError when there is none. */
+diff --git a/src/shipping.ts b/src/shipping.ts
+index 71920b9dc3b375440460eaebb217a70a48152b33..f4290d2a7729ec7e4c062d0d5606894fb26fae09 100644
+--- a/src/shipping.ts
++++ b/src/shipping.ts
+@@ -30,6 +30,6 @@ export function parcelCost(grams: number): Cents {
+ 
+ /** The shipping cost of an order whose goods amount to `goods` and weigh `grams`. */
+ export function shippingCost(goods: Cents, grams: number): Cents {
+-  if (goods > FREE_SHIPPING_FROM_CENTS) return 0;
++  if (goods >= FREE_SHIPPING_FROM_CENTS) return 0;
+   return parcelCost(grams);
+ }
+diff --git a/src/tax.ts b/src/tax.ts
+index 7449c567971f4c22ec68c991949f8652936e091b..5e12c55f1ca4a2044012df5ea175a5b57febbef3 100644
+--- a/src/tax.ts
++++ b/src/tax.ts
+@@ -23,7 +23,7 @@ export function vatRate(vatClass: VatClass): number {
+ 
+ /** The VAT of one order line whose net amount is `net`. */
+ export function lineVat(net: Cents, vatClass: VatClass): Cents {
+-  return Math.floor((net * vatRate(vatClass)) / 100);
++  return percentOf(net, vatRate(vatClass));
+ }
+ 
+ /** The VAT on a shipping cost: the standard rate. */
+diff --git a/test/catalog.test.ts b/test/catalog.test.ts
+index 3c78feb21517c68b01432b4e6c8fdfee3e3914d9..3f44cc59ea3460df0901b9e2598759518d58f4f6 100644
+--- a/test/catalog.test.ts
++++ b/test/catalog.test.ts
+@@ -29,3 +29,23 @@ describe('catalogue', () => {
+     assert.throws(() => catalog.get('TEA-8'), UnknownProductError);
+   });
+ });
++
++describe('reported defects', () => {
++  it('finds a product by a lower-case SKU', () => {
++    const { catalog } = createShop();
++    catalog.add({ sku: 'LB-220', name: 'Lamp', priceCents: 1990, vatClass: 'standard', weightGrams: 100 });
++    assert.equal(catalog.get('lb-220').sku, 'LB-220');
++    assert.equal(catalog.getForSale(' lb-220 ').sku, 'LB-220');
++  });
++
++  it('ships free from exactly €50.00 of goods', async () => {
++    const { shippingCost } = await import('../src/shipping.ts');
++    assert.equal(shippingCost(5000, 100), 0);
++    assert.equal(shippingCost(4999, 100), 490);
++  });
++
++  it('rounds line VAT half up', async () => {
++    const { lineVat } = await import('../src/tax.ts');
++    assert.equal(lineVat(199, 'standard'), 44);
++  });
++});
