@@ -2,7 +2,7 @@
 id: campaign-008-claude-code-step-a-campaign-on-haiku-5.5-and-sonnet-5.5-every-scenario-on-approver-policy-v5
 type: campaign
 title: "Claude Code step-A campaign on Haiku 5.5 and Sonnet 5.5, every scenario, on approver policy v5"
-status: pending
+status: approved
 release: v0.3
 campaign_file: campaigns/claude-step-a.yaml
 campaign_id: 33b54dd89e8b
