@@ -91,5 +91,21 @@ WingFoil feedback notes), a task of its own.
 
 ## Execution notes
 
-<!-- What happened while building: deviations, blockers, follow-ups (filed as elements, never left
-     here). For every `wingfoil` command: declared vs observed behaviour. -->
+- Red first: the aggregate's six parity cases failed before `parity.ts` (two more, the section absent and the same
+  bytes, characterize); the parity page's and the landing link's failed with `src/site` set aside; the build's passed
+  with the page in place.
+- **Re-scored, 0 €** (criterion 6): campaigns 002 (`81ebb2691f9c/1`), 007 (`697e79b75e41/1`) and 008
+  (`33b54dd89e8b/1`) re-aggregated from their stored `score.json` by a script calling `aggregateExecution` (no
+  container, no session): every field but `parity` is the same bytes as before. The sections:
+  - 002: Haiku (weak) with wingfoil against Sonnet's baseline fails on S1 and S3 (time 4.3× and 3.3×; n = 1); Sonnet
+    (weak) with each harness against Opus's baseline holds on S1 (n = 1); 19 scenario-harness keys unmatched (no
+    Haiku or Opus run of that arm).
+  - 007: Luna with wingfoil against Terra's baseline holds on S1 (n = 3: cost 0.07×, time 0.44×) and fails on S2, S3
+    and S8 (n = 1, time 1.05–1.28×).
+  - 008: Haiku with wingfoil against Sonnet's baseline fails on all five (n = 3): quality not worse anywhere (S3's
+    and S8's checks better beyond the variance), cost 0.27–0.44×, time 3.8–6.3×; no local profile keeps up.
+- **Against dl-032's script figures:** the samples are the same (007: S1 × 3, S2, S3, S8 × 1; 002: S1, S3 × 1), and
+  the cells' totals reproduce every figure of dl-032's two tables: cost (USD at 0.8917), agent time, tokens processed
+  and output, for the four cells of each campaign. No difference to explain.
+- The site's wording: a quality metric not worse is shown by its outcome (better, same, or "lower, not beyond the
+  variance"), so that S3's checks read better beyond the variance rather than "not worse, beyond variance".

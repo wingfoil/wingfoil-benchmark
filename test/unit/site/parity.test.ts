@@ -60,13 +60,26 @@ describe('the parity page (REQ-RES-12, dl-032, task-121)', () => {
 
   it('shows the verdicts, the ratios and every cell, apart from the same-model results', () => {
     expect(html).toContain(
-      '<td>100.0 % against 100.0 %<br><span class="verdict">not worse, within variance</span></td>',
+      '<td>100.0 % against 100.0 %<br><span class="verdict">same, within variance</span></td>',
     );
     expect(html).toContain('<td>0.20×</td><td>0.67×</td>');
     expect(html).toContain('<td><strong>holds</strong></td>');
     expect(html).toContain('weak model, baseline (baseline, weak)');
     expect(html).toContain('33,000 · 600');
     expect(html).toContain('never mixed with the same-model results');
+  });
+
+  it('words a lower mean short of the variance apart from a worse one, and a better one as better', () => {
+    const built = paritySection(
+      [
+        ...runs('baseline', 'strong', 0.5, 600_000, 1),
+        ...runs('baseline', 'weak', 0.05, 300_000),
+        ...runs('wingfoil', 'weak', 0.1, 400_000, 1).map((run, i) => ({ ...run, mQ1: i === 0 ? 0.9 : 1 })),
+      ],
+      'strong',
+    );
+    const page = parityPage('T', built as ParitySection);
+    expect(page).toContain('<span class="verdict">lower, not beyond the variance, within variance</span>');
   });
 
   it('estimates the local time per profile, under the assumptions’ sentence', () => {

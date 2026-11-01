@@ -30,7 +30,13 @@ function qualityCell(
   const weak = pick(entry.cells.weak_harness);
   const strong = pick(entry.cells.strong_baseline);
   if (verdict === undefined || weak === undefined || strong === undefined) return '<td>—</td>';
-  const mark = verdict.verdict === 'worse' ? 'worse' : 'not worse';
+  // The verdict in words: worse beyond the variance is the only "worse"; a lower mean short of it says so.
+  const mark =
+    verdict.verdict === 'worse'
+      ? 'worse'
+      : verdict.outcome === 'worse'
+        ? 'lower, not beyond the variance'
+        : verdict.outcome;
   return `<td>${percent(weak)} against ${percent(strong)}<br><span class="verdict">${e(mark)}, ${e(verdict.certainty)}</span></td>`;
 }
 
