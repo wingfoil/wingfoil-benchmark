@@ -47,8 +47,29 @@ transcripts only: no real-agent session, 0 €; nothing written into WingFoil (d
 
 ## Design
 
-<!-- To be written at the start: how a turn's tokens are attributed (the usage per assistant message, the tool
-     results' sizes), the transcripts' formats (Claude Code's JSONL, Codex's), where the script lives. -->
+- **The script:** `scripts/token-breakdown.mjs <results-dir> <execution>…`, Node with no dependency, as the other
+  scripts; it reads each run's `steps/NN/transcript.jsonl` and prints JSON (the note's tables are generated from it).
+  A test (`test/unit/scripts/token-breakdown.test.ts`) runs it on small fixture transcripts.
+- **What a turn re-reads.** A model call reads its whole context: the base (system prompt, tools, the manual, the
+  request) and everything the session added before it (the agent's own messages and tool calls, each tool's output,
+  the approver's replies). So an item added to the context costs its size once for every later call of the session,
+  and a resumed session (after the approver's reply) re-reads the history it resumes. The script orders each step's
+  items and calls, estimates each item's size as its characters ÷ 4 (an estimate, labelled so), and attributes to the
+  item `size × later calls`; the **base** is what the measured tokens processed leave once the items are attributed
+  (per call for Claude Code, whose transcripts record each call's usage; per turn for Codex, whose transcripts record
+  only the turn's, its calls counted as one per completed item).
+- **The categories** of an item, from the command or tool that produced it: each `wingfoil` sub-command (`workflow
+  next`, `workflow status`, `workflow finalize`, `workflow start`, `memory search`, `memory add`, `memory submit`,
+  `directives list`, other), by the first `wingfoil` call of a chained command; **documents** (a read of
+  `docs/memory/` or `.wingfoil/`); **code and tests** (`src/`, `test/`, the test runner, the type checker, edits);
+  **project files** (`README.md`, `package.json`, listings); **agent messages** (the agent's text and tool calls);
+  **requests and replies** (the request after the first, the approver's replies); **other**.
+- **Output tokens:** Claude Code's per call, attributed to the call's tool calls' categories (text only: agent
+  messages); Codex's per turn, shared by the turn's items' sizes.
+- **The reading:** per agent, model and scenario, the mean per run of each category's tokens processed in the
+  wingfoil arm, its docs control and the baseline, and the difference (the extra); the share of the extra in calls
+  after an approver's reply (the resumes, the gate's round trip) as a cross-cut; per `wingfoil` sub-command, the calls
+  and mean output size.
 
 ## Execution notes
 
