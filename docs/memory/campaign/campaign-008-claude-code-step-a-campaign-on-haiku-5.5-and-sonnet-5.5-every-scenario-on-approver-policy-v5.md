@@ -279,6 +279,36 @@ in the scratchpad); preliminary, n = 3; wingfoil against its docs control is als
 - **Comparability:** approver policy v5 throughout; no comparison across agents with campaign-007 (policy v2), as the
   Purpose states.
 
+**Cost by component: the gate share against the task's size** (dl-033's reading, the approver's request in chat,
+2026-11-01). The scenarios' steps are small: a median step changes about 58 lines of code in 4 turns on Sonnet's
+baseline (112 lines, 11 turns on Haiku's), where a task merged in this repository changes a median of 557 lines (225
+to 1,268 between the quartiles; WingFoil's own tasks 717) and a development session runs about 200–270 turns. A cost
+that WingFoil adds at each gate weighs far more on such a step than on a task of real size. Per step, from the runs'
+usage files (means over the three repetitions; "extra" is wingfoil's cost a step minus the baseline's):
+
+| Model | Scenario | Steps | Interventions (wingfoil) | Baseline € a step | wingfoil extra € a step | Extra € an intervention | Extra context tokens a step | wingfoil ÷ baseline now | at ten times the work |
+|---|---|---|---|---|---|---|---|---|---|
+| claude-sonnet-5-5 | S1 | 5 | 15 | 0.0659 | 0.0635 | 0.0635 | 286,624 | 1.96× | 1.10× |
+| claude-sonnet-5-5 | S2 | 3 | 9 | 0.0653 | 0.0478 | 0.0478 | 241,420 | 1.73× | 1.07× |
+| claude-sonnet-5-5 | S3 | 5 | 15 | 0.0492 | 0.0651 | 0.0651 | 288,276 | 2.32× | 1.13× |
+| claude-sonnet-5-5 | S8 | 4 | 12 | 0.0573 | 0.0551 | 0.0551 | 256,094 | 1.96× | 1.10× |
+| claude-sonnet-5-5 | S10 | 4 | 16 | 0.0705 | 0.0364 | 0.0273 | 193,784 | 1.52× | 1.05× |
+| claude-haiku-5-5 | S1 | 5 | 15 | 0.0114 | 0.0177 | 0.0177 | 1,070,569 | 2.56× | 1.16× |
+| claude-haiku-5-5 | S2 | 3 | 9 | 0.0078 | 0.0108 | 0.0108 | 691,691 | 2.38× | 1.14× |
+| claude-haiku-5-5 | S3 | 5 | 15 | 0.0077 | 0.0133 | 0.0133 | 817,933 | 2.73× | 1.17× |
+| claude-haiku-5-5 | S8 | 4 | 12 | 0.0066 | 0.0138 | 0.0138 | 801,268 | 3.10× | 1.21× |
+| claude-haiku-5-5 | S10 | 4 | 22 | 0.0095 | 0.0094 | 0.0051 | 568,259 | 2.00× | 1.10× |
+
+- **wingfoil's extra is about one gate a step:** 0.05–0.07 € on Sonnet and 0.01–0.02 € on Haiku, about 0.2–0.3 million
+  context tokens a step on Sonnet and 0.6–1.1 million on Haiku (the stop, the `memory` verbs, the reply and the turn
+  that carries it out), against a baseline step of about the same cost on Sonnet.
+- **At ten times the work** (the last column: the baseline's cost a step × 10, the extra unchanged), wingfoil's ratio
+  falls from 1.5–2.3× to 1.05–1.13× on Sonnet and from 2.0–3.1× to 1.10–1.21× on Haiku. It is a projection, not a
+  measure, and a lower bound: part of the extra grows with the turns (the manual, about 1,800 tokens, is read again
+  at every turn, from the cache), and a real task may hold more than one gate.
+- **What it changes in reading H1 and H8:** their thresholds (1.5× and 1.1×) were written for the scenarios' sizes; on
+  these, wingfoil's gate cost dominates. No scenario of a real task's size is planned (the approver, 2026-11-01).
+
 **Proposed before publication:** read H4 and H5 from the transcripts; file the r2 refusal as a bug if its cause is a
 defect (of the hook, the arm or the scenario), with a note on the run rather than a rerun (campaigns are
 preliminary).
