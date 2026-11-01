@@ -324,9 +324,8 @@ usage files (means over the three repetitions; "extra" is wingfoil's cost a step
 - **What it changes in reading H1 and H8:** their thresholds (1.5× and 1.1×) were written for the scenarios' sizes; on
   these, wingfoil's gate cost dominates. No scenario of a real task's size is planned (the approver, 2026-11-01).
 
-**Proposed before publication:** read H4 and H5 from the transcripts; file the r2 refusal as a bug if its cause is a
-defect (of the hook, the arm or the scenario), with a note on the run rather than a rerun (campaigns are
-preliminary).
+**Proposed before publication, done (2026-11-01):** H4 and H5 read from the transcripts (above); the r2 refusal filed
+as bug-041 and bug-042, fixed by task-120, with a note on the run rather than a rerun (campaigns are preliminary).
 
 ## Findings
 
