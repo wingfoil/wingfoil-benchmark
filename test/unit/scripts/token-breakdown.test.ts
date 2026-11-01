@@ -119,7 +119,9 @@ describe('scripts/token-breakdown.mjs (task-122, dl-032 item 6)', () => {
     expect(cell?.processed['requests and replies']).toBe(Math.round(50 / 16));
     expect(cell?.processed.base).toBe(1000 + (1400 - 400) + (1450 - 450));
     expect(cell?.commands['wingfoil workflow next']).toEqual({ calls: 1, mean_output_chars: 364 });
-    expect(cell?.output['wingfoil workflow next']).toBeGreaterThan(0);
+    // The first session's 60 output tokens by characters: the tool call (36) and m2's text (15); the second's 10, text.
+    expect(cell?.output['wingfoil workflow next']).toBe(Math.round((60 * 36) / 51));
+    expect(cell?.output['agent messages']).toBe(Math.round((60 * 15) / 51 + 10));
   });
 
   it("estimates a Codex item's tokens from its characters, one call per completed item, the turn's rest the base", () => {
@@ -158,7 +160,9 @@ describe('scripts/token-breakdown.mjs (task-122, dl-032 item 6)', () => {
     ['wingfoil workflow next 2>&1', 'wingfoil workflow next'],
     ["cat README.md && wingfoil --format json memory search --status pending'", 'wingfoil memory search'],
     ['wingfoil workflow finalize; wingfoil workflow next', 'wingfoil workflow finalize'],
-    ['wingfoil init --help', 'other'],
+    ['wingfoil init --help', 'wingfoil other'],
+    ["/bin/bash -lc 'wingfoil workflow status && wingfoil workflow next'", 'wingfoil workflow status'],
+    ["/bin/bash -lc 'cd .wingfoil && cat directives/custom/x.md'", 'documents'],
     ['sed -n 1,40p docs/memory/task/task-001.md', 'documents'],
     ['npm test 2>&1 | tail', 'code and tests'],
     ['ls; cat package.json', 'project files'],
@@ -172,6 +176,32 @@ describe('scripts/token-breakdown.mjs (task-122, dl-032 item 6)', () => {
       breakdown(results([{ arm: 'wingfoil', model: 'm', transcript: step }])),
     ) as Summary;
     expect(summary.cells[0]?.processed[category]).toBeGreaterThan(300);
+  });
+
+  it('reads a wrapped Codex command by its first wingfoil sub-command, and leaves a failed turn out', () => {
+    const step =
+      line({ type: 'thread.started', thread_id: 'a' }) +
+      line({
+        type: 'item.completed',
+        item: {
+          type: 'command_execution',
+          command: "/bin/bash -lc 'wingfoil directives list --role developer && wingfoil memory search x'",
+          aggregated_output: 'd'.repeat(800),
+        },
+      }) +
+      line({ type: 'item.completed', item: { type: 'agent_message', text: 'ok' } }) +
+      line({ type: 'turn.completed', usage: { input_tokens: 4000, output_tokens: 10 } }) +
+      line({ type: 'turn.started' }) +
+      line({ type: 'item.completed', item: { type: 'agent_message', text: 'lost' } }) +
+      line({ type: 'turn.failed' });
+    const summary = JSON.parse(
+      breakdown(results([{ arm: 'wingfoil', model: 'm', transcript: step }])),
+    ) as Summary;
+    const [cell] = summary.cells;
+    expect(cell?.processed['wingfoil directives list']).toBe(200);
+    expect(cell?.processed['wingfoil memory search']).toBe(0);
+    expect(cell).toMatchObject({ calls: 2, total: 4000 });
+    expect(cell?.commands['wingfoil directives list']).toEqual({ calls: 1, mean_output_chars: 800 });
   });
 
   it('refuses to run without its arguments', () => {

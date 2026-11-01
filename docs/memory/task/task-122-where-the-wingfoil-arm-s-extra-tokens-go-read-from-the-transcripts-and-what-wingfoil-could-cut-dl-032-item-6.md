@@ -54,18 +54,20 @@ transcripts only: no real-agent session, 0 €; nothing written into WingFoil (d
   request) and everything the session added before it (the agent's own messages and tool calls, each tool's output,
   the approver's replies). So an item added to the context costs its size once for every later call of the session,
   and a resumed session (after the approver's reply) re-reads the history it resumes. The script orders each step's
-  items and calls, estimates each item's size as its characters ÷ 4 (an estimate, labelled so), and attributes to the
-  item `size × later calls`; the **base** is what the measured tokens processed leave once the items are attributed
-  (per call for Claude Code, whose transcripts record each call's usage; per turn for Codex, whose transcripts record
-  only the turn's, its calls counted as one per completed item).
+  items and calls and attributes to an item `size × later calls`; the **base** is what the measured tokens processed
+  leave once the items are attributed. An item's size is measured on Claude Code, whose transcripts record each
+  call's usage (the next call's new tokens, shared by the items added since by their characters), and estimated on
+  Codex, whose transcripts record a turn's usage only (characters ÷ 4, the turn's calls counted as one per completed
+  item). (Changed during the build from "every item ÷ 4": Claude Code's measured sizes are the better figure.)
 - **The categories** of an item, from the command or tool that produced it: each `wingfoil` sub-command (`workflow
   next`, `workflow status`, `workflow finalize`, `workflow start`, `memory search`, `memory add`, `memory submit`,
   `directives list`, other), by the first `wingfoil` call of a chained command; **documents** (a read of
   `docs/memory/` or `.wingfoil/`); **code and tests** (`src/`, `test/`, the test runner, the type checker, edits);
   **project files** (`README.md`, `package.json`, listings); **agent messages** (the agent's text and tool calls);
   **requests and replies** (the request after the first, the approver's replies); **other**.
-- **Output tokens:** Claude Code's per call, attributed to the call's tool calls' categories (text only: agent
-  messages); Codex's per turn, shared by the turn's items' sizes.
+- **Output tokens:** each session's (Claude Code's `result` usage; Codex's turn usage), shared by the agent's items
+  of that session by their characters, a tool call's under its output's category. (Changed during the build from
+  "per call": Claude Code's per-call output figures are partial in its stream.)
 - **The reading:** per agent, model and scenario, the mean per run of each category's tokens processed in the
   wingfoil arm, its docs control and the baseline, and the difference (the extra); the share of the extra in calls
   after an approver's reply (the resumes, the gate's round trip) as a cross-cut; per `wingfoil` sub-command, the calls
@@ -73,23 +75,44 @@ transcripts only: no real-agent session, 0 €; nothing written into WingFoil (d
 
 ## Execution notes
 
-- `scripts/token-breakdown.mjs` and its test (11 cases, fixture transcripts of both agents). The test found a defect
+- `scripts/token-breakdown.mjs` and its test (14 cases, fixture transcripts of both agents). The test found a defect
   of the first draft: the first item added before a step's second call was given no tokens (they went to the base);
   fixed before the note was generated.
-- A first run classified `wingfoil workflow next'` (a sub-command followed by a quote or a semicolon) as "other": the
-  sub-command is now read as a word. `memory approve` and `directives show` became categories of their own (the
-  scenarios other than S10 have the agent approve on "Approved. Proceed.").
+- A `wingfoil` sub-command is read as a word, after a separator or a quote (Codex wraps every command as
+  `/bin/bash -lc '…'`; review round 1's blocker); any other `wingfoil` call is "wingfoil other"; `memory approve` and
+  `directives show` are categories of their own (the scenarios other than S10 have the agent approve on "Approved.
+  Proceed."; `directives show` does not exist in 0.3.1, so its category holds the attempts).
 - **The note:** `docs/calibration/wingfoil-tokens.md`, its tables the script's `--markdown` output on the main
-  checkout's results (the transcripts are git-ignored); 144 runs read (campaign-008's 90, campaign-007's 54), in
-  about three seconds.
+  checkout's results (the transcripts are git-ignored); 144 runs read (campaign-008's 90, campaign-007's 54).
 - **The reading, in short:** the extra is mostly the base re-read by about twice the calls (46 % on Haiku, 65 % on
-  Sonnet, over 80 % on Codex), much of it after the approver's reply (36–41 % on Claude Code, 72–81 % on Codex);
-  WingFoil's own outputs are about a third on Claude Code (`directives list`, `workflow start`, `workflow status`)
-  and a tenth on Codex; Haiku re-reads documents (20 %).
-- **Feedback notes:** F-046 (listings print every field of every record) and F-047 (a step names its directives by
-  id, and an agent reads all of them), with their ledger rows; F-003 (the default format is JSON) is cited, not
-  repeated. Filing in WingFoil stays the approver's (dl-009).
+  Sonnet, over 80 % on Codex), much of it after the approver's reply (36–41 % on Claude Code, 72–81 % on Codex;
+  270–774 thousand tokens per extra intervention); WingFoil's own outputs are about a third on Claude Code and 13–15 %
+  on Codex, `directives list` the largest (6–10 calls a run on Haiku, Terra and Luna); the weaker models re-read the
+  documents. Against the other model's baseline, Haiku with wingfoil processes 6.4–14.7× Sonnet's baseline, in line
+  with task-121's cached ratio.
+- **Feedback note:** F-046 (listings print each record in full), with its ledger row; F-003 (the default format is
+  JSON) and F-032 (the role's context not delivered at a session's start, captured as WingFoil dl-192) are cited, not
+  repeated. **Deviations from criterion 3:** (a) F-046 carries no run figure: the `wingfoil-cli` directive's rule 9
+  says a note never carries a run's results, so the measured shares stay in the calibration note and the note states
+  what is reproducible with WingFoil alone; (b) a second note drafted in the first round (a step names its directives
+  by id) was dropped before merging, a duplicate of F-032. Filing in WingFoil stays the approver's (dl-009).
 - **For the approver, not filed:** the arm's manual asks for `workflow next` after each step though `finalize` prints
   the next step; a change is an arm change (a new digest). Codex's base per call is higher in the wingfoil arm
-  (28–31 thousand tokens against 11–12) by an estimate that cannot separate WingFoil's MCP server's tools from the
+  (28–31 thousand tokens against 11–12) by an estimate that cannot separate what WingFoil's MCP server adds from the
   estimate's error.
+
+### Review
+
+**Round 1** (2026-11-01, a fresh read-only agent in `/tmp/claude-1000/review-122-V58p`, a clone of `809bd66f`; both
+checkouts unchanged after it). It reproduced §2 byte for byte, confirmed the Claude Code attribution on 8 342 calls
+(base never negative, minimum 375), and checked every Claude Code figure. One blocker, five should-fix, nits:
+
+| # | Finding | Outcome |
+|---|---|---|
+| B1 | a quote before `wingfoil` hid Codex's commands (Terra's `directives list` read as `memory search`) | fixed: the quote accepted, a Codex-shaped test; tables regenerated, §3 and the notes rewritten |
+| S1 | F-046/F-047 carried run results against the directive's rule 9 | F-046 rewritten with what WingFoil alone reproduces; recorded as a deviation |
+| S2 | F-047 overlapped F-032 | F-047 dropped; the note cites F-032 with this reading's measures |
+| S3 | F-047 proposed extending `directives show`, which 0.3.1 lacks | moot (F-047 dropped); the note says agents tried it |
+| S4 | criterion 2's comparison with task-121 and a per-gate reading missing | added: a table against the other model's baseline, the extra per intervention |
+| S5 | the Design's sizes and output split differed from the script | the Design records both changes |
+| N | the reply placeholder, thinking, failed Codex turns, Codex relative paths, `wingfoil init` under "other", F-046's sizes (205 lines, 4 549 characters, eight lines a match), the MCP wording, rounding (7–12), the output split unpinned | fixed or stated in the note's limits; the output split pinned in the test |

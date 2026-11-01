@@ -36,7 +36,11 @@ export const CATEGORIES = [
   'other',
 ];
 
-const WINGFOIL = /(?:^|[\s;&|(])wingfoil\s+(?:--\S+\s+\S+\s+)*(workflow|memory|directives)\s+([a-z][a-z-]*)/;
+// A `wingfoil` call: at the start, after a separator, or after the quote a wrapper puts around it (Codex runs every
+// command as `/bin/bash -lc '<command>'`).
+const WINGFOIL =
+  /(?:^|[\s;&|('"])wingfoil\s+(?:--\S+\s+\S+\s+)*(workflow|memory|directives)\s+([a-z][a-z-]*)/;
+const ANY_WINGFOIL = /(?:^|[\s;&|('"])wingfoil(?:\s|$)/;
 
 /** The category of a tool call's output, from its command or its file. */
 export function categoryOf(command) {
@@ -46,10 +50,15 @@ export function categoryOf(command) {
     const name = `wingfoil ${wingfoil[1]} ${wingfoil[2]}`;
     return CATEGORIES.includes(name) ? name : 'wingfoil other';
   }
-  if (/(?:^|[\s'"/])(?:docs\/memory|\.wingfoil)\//.test(text)) return 'documents';
+  if (ANY_WINGFOIL.test(text)) return 'wingfoil other';
+  if (/(?:^|[\s'"/])(?:docs\/memory\/|\.wingfoil\b|directives\/)/.test(text)) return 'documents';
   if (/(?:^|[\s'"/])(?:src|test|tests)\/|\b(?:npm (?:run )?test|vitest|tsc|node --test|npx tsx)\b/.test(text))
     return 'code and tests';
-  if (/\b(?:README\.md|package\.json|CHANGELOG|ls|find|tree|git (?:log|status|diff|show))\b/.test(text))
+  if (
+    /\b(?:README\.md|AGENTS\.md|CLAUDE\.md|package\.json|CHANGELOG|ls|find|tree|rg --files|git (?:log|status|diff|show))\b/.test(
+      text,
+    )
+  )
     return 'project files';
   return 'other';
 }
@@ -206,6 +215,11 @@ function codexStep(list) {
       continue;
     }
     if (event.type === 'turn.completed') close(event.usage);
+    // A failed turn records no usage: its calls cannot be priced, so they are left out, its items kept as context.
+    if (event.type === 'turn.failed') {
+      turn = [];
+      turnItems = [];
+    }
   }
   return { calls, outputs, measured: false };
 }
@@ -307,12 +321,14 @@ export function executionBreakdown(resultsDir, execution) {
       }
     }
     if (sum.steps === 0) continue;
+    const interventions = (run.steps ?? []).reduce((total, step) => total + (step.interventions ?? 0), 0);
     runs.push({
       scenario: run.scenario,
       arm: run.arm,
       model: run.model,
       repetition: run.repetition,
       measured,
+      interventions,
       ...sum,
     });
   }
@@ -354,6 +370,7 @@ export function summarize(runs) {
         total: round(mean(list, (run) => run.total)),
         resumed: round(mean(list, (run) => run.resumed)),
         calls: Math.round(mean(list, (run) => run.calls) * 10) / 10,
+        interventions: Math.round(mean(list, (run) => run.interventions ?? 0) * 10) / 10,
         processed: Object.fromEntries(
           CATEGORIES.map((c) => [c, round(mean(list, (run) => run.processed[c]))]),
         ),
@@ -386,6 +403,7 @@ export function summarize(runs) {
             against,
             total: cell.total - other.total,
             resumed: cell.resumed - other.resumed,
+            interventions: cell.interventions - other.interventions,
             processed: by,
           },
         ];
@@ -414,6 +432,22 @@ function markdown(summary) {
       `| ${model} | ${arm} | ${avg((c) => c.calls).toFixed(1)} | ${avg((c) => c.processed.base / c.calls / 1000).toFixed(1)} | ` +
         `${avg((c) => c.total / 1000).toFixed(0)} | ${avg((c) => c.resumed / 1000).toFixed(0)} |`,
     );
+  }
+  lines.push('');
+  // Against the other model's baseline on the same agent (task-121's comparison across models): wingfoil over baseline.
+  lines.push("**The wingfoil arm's tokens processed over the other model's baseline, per scenario (×)**", '');
+  lines.push('| wingfoil on | baseline on | Scenario | Ratio |');
+  lines.push('|---|---|---|---|');
+  for (const cell of summary.cells.filter((c) => c.arm === 'wingfoil')) {
+    for (const other of summary.cells.filter(
+      (c) => c.arm === 'baseline' && c.scenario === cell.scenario && c.model !== cell.model,
+    )) {
+      const sameAgent = cell.model.startsWith('claude') === other.model.startsWith('claude');
+      if (sameAgent && other.total > 0)
+        lines.push(
+          `| ${cell.model} | ${other.model} | ${cell.scenario} | ${(cell.total / other.total).toFixed(1)} |`,
+        );
+    }
   }
   lines.push('');
   lines.push("**The wingfoil arm's WingFoil commands per run (means over the scenarios)**", '');
@@ -451,17 +485,20 @@ function markdown(summary) {
     '',
   );
   lines.push(
-    '| Model | Extra per run (thousands) | Base | In resumed sessions | WingFoil outputs | Documents | Agent messages | ' +
-      'directives list | memory search | workflow status | workflow start |',
+    '| Model | Extra per run (thousands) | Extra interventions per run | Extra per intervention (thousands) | Base | ' +
+      'In resumed sessions | WingFoil outputs | Documents | Agent messages | directives list | memory search | ' +
+      'workflow status | workflow start |',
   );
-  lines.push('|---|---|---|---|---|---|---|---|---|---|---|');
+  lines.push('|---|---|---|---|---|---|---|---|---|---|---|---|---|');
   for (const model of extraModels) {
     const rows = summary.extras.filter((e) => e.model === model && e.against === 'baseline-docs');
     if (rows.length === 0) continue;
     const perRun = rows.reduce((sum, row) => sum + row.total, 0) / rows.length / 1000;
+    const gates = rows.reduce((sum, row) => sum + row.interventions, 0) / rows.length;
     const pct = (pick) => share(rows, pick).toFixed(0);
     lines.push(
-      `| ${model} | ${perRun.toFixed(0)} | ${pct((r) => r.processed.base)} | ${pct((r) => r.resumed)} | ` +
+      `| ${model} | ${perRun.toFixed(0)} | ${gates.toFixed(1)} | ${gates <= 0 ? '—' : (perRun / gates).toFixed(0)} | ` +
+        `${pct((r) => r.processed.base)} | ${pct((r) => r.resumed)} | ` +
         `${pct(wingfoilOf)} | ${pct((r) => r.processed.documents)} | ${pct((r) => r.processed['agent messages'])} | ` +
         `${pct((r) => r.processed['wingfoil directives list'])} | ${pct((r) => r.processed['wingfoil memory search'])} | ` +
         `${pct((r) => r.processed['wingfoil workflow status'])} | ${pct((r) => r.processed['wingfoil workflow start'])} |`,
