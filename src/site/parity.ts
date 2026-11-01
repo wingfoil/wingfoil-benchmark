@@ -30,14 +30,11 @@ function qualityCell(
   const weak = pick(entry.cells.weak_harness);
   const strong = pick(entry.cells.strong_baseline);
   if (verdict === undefined || weak === undefined || strong === undefined) return '<td>—</td>';
-  // The verdict in words: worse beyond the variance is the only "worse"; a lower mean short of it says so.
-  const mark =
-    verdict.verdict === 'worse'
-      ? 'worse'
-      : verdict.outcome === 'worse'
-        ? 'lower, not beyond the variance'
-        : verdict.outcome;
-  return `<td>${percent(weak)} against ${percent(strong)}<br><span class="verdict">${e(mark)}, ${e(verdict.certainty)}</span></td>`;
+  // The verdict in words, then how sure it is: "worse" only beyond the variance; a lower mean short of it is "lower".
+  const word =
+    verdict.verdict === 'worse' ? 'worse' : verdict.outcome === 'worse' ? 'lower' : verdict.outcome;
+  const mark = `${word} (${verdict.certainty})`;
+  return `<td>${percent(weak)} against ${percent(strong)}<br><span class="verdict">${e(mark)}</span></td>`;
 }
 
 function entryRow(entry: ParityEntry): string {
@@ -68,6 +65,7 @@ function cellsRows(entry: ParityEntry): string {
     return [
       `<tr><th scope="row">${e(entry.scenario)}@${e(entry.version)}</th><td>${e(label)} (${e(cell.arm)}, ${e(cell.model)})</td>` +
         `<td>${cell.n}</td><td>${percent(cell.m_q1)}</td><td>${cell.holdout === undefined ? '—' : percent(cell.holdout)}</td>` +
+        `<td>${cell.checks === undefined ? '—' : percent(cell.checks)}</td>` +
         `<td>${euro(cell.cost_eur)}</td><td>${minutes(cell.time_ms)}</td>` +
         `<td>${grouped(cell.tokens.fresh + cell.tokens.cached)} · ${grouped(cell.tokens.output)}</td></tr>\n`,
     ];
@@ -102,10 +100,22 @@ export function parityPage(title: string, parity: ParitySection): string {
         entry.weak_model === line.weak_model &&
         entry.strong_model === line.strong_model,
     );
+    const heading = `<h2>${e(line.harness)} on ${e(line.weak_model)} against the baseline on ${e(line.strong_model)}</h2>\n`;
+    const notMatched =
+      unmatched.length === 0
+        ? ''
+        : `<p class="meta">Not matched: ${unmatched.map((u) => `${e(u.scenario)}@${e(u.version)} (${e(u.reason)})`).join('; ')}.</p>\n`;
+    const judged = line.holds + line.fails;
+    if (judged === 0)
+      return heading + '<p class="headline">No scenario matched: nothing is judged.</p>\n' + notMatched;
+    const preliminary =
+      line.preliminary === 0
+        ? ''
+        : `; ${line.preliminary} of them preliminary, below three runs a side, where no quality metric can be judged worse`;
     return (
-      `<h2>${e(line.harness)} on ${e(line.weak_model)} against the baseline on ${e(line.strong_model)}</h2>\n` +
-      `<p class="headline">H-W holds in ${line.holds} and fails in ${line.fails} of ${line.holds + line.fails} ` +
-      `scenarios${line.unmatched === 0 ? '' : `; ${line.unmatched} not matched`}.</p>\n` +
+      heading +
+      `<p class="headline">H-W holds in ${line.holds} and fails in ${line.fails} of ${judged} scenarios${preliminary}` +
+      `${line.unmatched === 0 ? '' : `; ${line.unmatched} not matched`}.</p>\n` +
       '<div class="scroll">\n<table>\n<thead><tr><th scope="col">Scenario</th><th scope="col">Runs a side</th>' +
       '<th scope="col">M-Q1</th><th scope="col">Hold-out</th><th scope="col">Checks</th><th scope="col">Cost</th>' +
       '<th scope="col">Agent time</th><th scope="col">Tokens: fresh · cached · output</th><th scope="col">H-W</th></tr></thead>\n<tbody>\n' +
@@ -114,7 +124,7 @@ export function parityPage(title: string, parity: ParitySection): string {
       '<p class="legend">Quality: the weak model with the harness against the strong model\'s baseline, worse only when ' +
       "worse beyond the variance. Cost, time and tokens: the weak harness's figure over the strong baseline's.</p>\n" +
       '<h3>Every cell</h3>\n<div class="scroll">\n<table>\n<thead><tr><th scope="col">Scenario</th><th scope="col">Cell</th>' +
-      '<th scope="col">n</th><th scope="col">M-Q1</th><th scope="col">Hold-out</th><th scope="col">Cost</th>' +
+      '<th scope="col">n</th><th scope="col">M-Q1</th><th scope="col">Hold-out</th><th scope="col">Checks</th><th scope="col">Cost</th>' +
       '<th scope="col">Agent time</th><th scope="col">Tokens: processed · output</th></tr></thead>\n<tbody>\n' +
       entries.map(cellsRows).join('') +
       '</tbody>\n</table>\n</div>\n' +
@@ -135,9 +145,7 @@ export function parityPage(title: string, parity: ParitySection): string {
         )
         .join('') +
       '</tbody>\n</table>\n</div>\n' +
-      (unmatched.length === 0
-        ? ''
-        : `<p class="meta">Not matched: ${unmatched.map((u) => `${e(u.scenario)}@${e(u.version)} (${e(u.reason)})`).join('; ')}.</p>\n`)
+      notMatched
     );
   });
   return page(
@@ -148,7 +156,7 @@ export function parityPage(title: string, parity: ParitySection): string {
       'of a strong model without it at a lower cost and in less time. It holds for a scenario when no quality metric ' +
       'is worse beyond the variance and both the cost and the agent time are lower. The weak model of each pair is the ' +
       'one whose baselines cost less in this execution; each scenario is read over the runs both cells have, and below ' +
-      'three runs a side it is preliminary. <a href="method.html#weak-against-strong">How it is read</a>.</p>\n' +
+      'three runs a side it is preliminary: no quality metric can be judged worse there, so H-W rests on cost and time. <a href="method.html#weak-against-strong">How it is read</a>.</p>\n' +
       sections.join('') +
       `<p class="legend">${e(parity.local_profiles.assumption)}</p>\n`,
     2,

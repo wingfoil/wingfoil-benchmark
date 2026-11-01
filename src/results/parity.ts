@@ -94,9 +94,6 @@ export interface ParityRatios {
   readonly tokens_output?: number;
 }
 
-/** The slowest profile at which the weak harness's local time is not above the strong baseline's agent time. */
-export type BreakEvenProfile = string;
-
 export interface ParityEntry {
   readonly scenario: string;
   readonly version: string;
@@ -118,7 +115,8 @@ export interface ParityEntry {
   readonly ratios: ParityRatios;
   /** dl-032's H-W: every quality metric not worse, and both the cost and the time lower. */
   readonly h_w: 'holds' | 'fails';
-  readonly break_even: { readonly no_cache: BreakEvenProfile | 'none'; readonly prefix_cache: BreakEvenProfile | 'none' };
+  /** The slowest profile (or `none`) at which the weak harness's local time is within the strong baseline's agent time. */
+  readonly break_even: { readonly no_cache: string; readonly prefix_cache: string };
 }
 
 export interface ParityUnmatched {
@@ -136,6 +134,8 @@ export interface ParitySummary {
   readonly harness: string;
   readonly holds: number;
   readonly fails: number;
+  /** Of the holds and fails, those below three runs a side: no quality metric can be judged worse there. */
+  readonly preliminary: number;
   readonly unmatched: number;
 }
 
@@ -149,8 +149,17 @@ export interface ParitySection {
 
 const BASELINE = 'baseline';
 
-function byCodeUnit(a: string, b: string): number {
-  return a < b ? -1 : a > b ? 1 : 0;
+/** Natural order: digit runs compared as numbers, so that S2 comes before S10 and r2 before r10. */
+function natural(a: string, b: string): number {
+  const parts = (text: string) => text.split(/(\d+)/);
+  const [x, y] = [parts(a), parts(b)];
+  for (let i = 0; i < Math.min(x.length, y.length); i++) {
+    const [p, q] = [x[i] as string, y[i] as string];
+    if (p === q) continue;
+    if (i % 2 === 1) return Number(p) - Number(q) || (p < q ? -1 : 1);
+    return p < q ? -1 : 1;
+  }
+  return x.length - y.length;
 }
 
 /** Kept to `places` decimals, so that float noise never reaches the aggregate's bytes. */
@@ -242,33 +251,38 @@ function ratio(weak: number, strong: number): number | undefined {
  * undefined when no pair of models ran a harness arm with both baselines.
  */
 export function paritySection(runs: readonly ParityRun[], model: string): ParitySection | undefined {
-  const others = [...new Set(runs.map((run) => run.model))].filter((other) => other !== model).sort(byCodeUnit);
+  const others = [...new Set(runs.map((run) => run.model))].filter((other) => other !== model).sort(natural);
   const entries: ParityEntry[] = [];
   const unmatched: ParityUnmatched[] = [];
   const summary: ParitySummary[] = [];
   const cell = (scenario: string, version: string, arm: string, of: string) =>
     runs
       .filter((run) => run.scenario === scenario && run.version === version && run.arm === arm && run.model === of)
-      .sort((a, b) => byCodeUnit(a.name, b.name));
+      .sort((a, b) => natural(a.name, b.name));
   for (const other of others) {
     const pair = [model, other];
-    // The weak model: the cheaper baselines over the scenario versions both models ran the baseline on.
+    // The weak model: the cheaper baselines over the scenario versions both models ran the baseline on, each scenario
+    // version weighing the same (the mean of its runs, then the mean of those).
     const versions = (of: string) =>
       new Set(runs.filter((run) => run.arm === BASELINE && run.model === of).map((r) => `${r.scenario}@${r.version}`));
     const shared = [...versions(model)].filter((key) => versions(other).has(key));
     if (shared.length === 0) continue;
     const baselineCost = (of: string) =>
       meanOf(
-        runs
-          .filter((run) => run.arm === BASELINE && run.model === of && shared.includes(`${run.scenario}@${run.version}`))
-          .map((run) => run.costEur),
+        shared.map((key) =>
+          meanOf(
+            runs
+              .filter((run) => run.arm === BASELINE && run.model === of && `${run.scenario}@${run.version}` === key)
+              .map((run) => run.costEur),
+          ),
+        ),
       );
     const [costA, costB] = pair.map(baselineCost) as [number, number];
     if (costA === costB) continue;
     const [weak, strong] = costA < costB ? [model, other] : [other, model];
     const harnesses = [
       ...new Set(runs.filter((run) => run.harness && pair.includes(run.model)).map((run) => run.arm)),
-    ].sort(byCodeUnit);
+    ].sort(natural);
     for (const harness of harnesses) {
       const keys = [
         ...new Set(
@@ -276,10 +290,11 @@ export function paritySection(runs: readonly ParityRun[], model: string): Parity
             .filter((run) => run.arm === harness && pair.includes(run.model))
             .map((run) => `${run.scenario}\u0000${run.version}`),
         ),
-      ].sort(byCodeUnit);
+      ].sort(natural);
       let holds = 0;
       let fails = 0;
       let missing = 0;
+      let preliminary = 0;
       for (const key of keys) {
         const [scenario, version] = key.split('\u0000') as [string, string];
         const weakHarness = cell(scenario, version, harness, weak);
@@ -301,7 +316,7 @@ export function paritySection(runs: readonly ParityRun[], model: string): Parity
             (run) =>
               run.docsOf === harness && run.scenario === scenario && run.version === version && run.model === weak,
           )
-          .sort((a, b) => byCodeUnit(a.name, b.name));
+          .sort((a, b) => natural(a.name, b.name));
         const weakBaseline = reference(cell(scenario, version, BASELINE, weak));
         const weakControl = reference(control);
         const strongHarness = reference(cell(scenario, version, harness, strong));
@@ -337,6 +352,7 @@ export function paritySection(runs: readonly ParityRun[], model: string): Parity
             : 'fails';
         if (hW === 'holds') holds += 1;
         else fails += 1;
+        if (k < 3) preliminary += 1;
         const agentSeconds = sc.time_ms / 1000;
         const breakEven = (mode: keyof LocalTime) =>
           LOCAL_PROFILES.find((profile) => (wc.local[profile.id]?.[mode] ?? Infinity) <= agentSeconds)?.id ?? 'none';
@@ -355,14 +371,10 @@ export function paritySection(runs: readonly ParityRun[], model: string): Parity
           break_even: { no_cache: breakEven('no_cache_s'), prefix_cache: breakEven('prefix_cache_s') },
         });
       }
-      summary.push({ weak_model: weak, strong_model: strong, harness, holds, fails, unmatched: missing });
+      summary.push({ weak_model: weak, strong_model: strong, harness, holds, fails, preliminary, unmatched: missing });
     }
   }
+  // With no scenario matched in any pair there is nothing to read, whatever is unmatched: no section.
   if (entries.length === 0) return undefined;
-  return {
-    local_profiles: { assumption: LOCAL_ASSUMPTION, profiles: LOCAL_PROFILES },
-    entries,
-    unmatched,
-    summary: summary.filter((line) => line.holds + line.fails > 0),
-  };
+  return { local_profiles: { assumption: LOCAL_ASSUMPTION, profiles: LOCAL_PROFILES }, entries, unmatched, summary };
 }

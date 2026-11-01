@@ -59,13 +59,14 @@ WingFoil feedback notes), a task of its own.
   field is optional, as `controls` was (task-068).
 - **The pairs:** the campaign's default model against each slice's model (slices against each other are left out).
   For each scenario version and each harness arm (an arm whose runs record a harness commit) that both models ran, with
-  both baselines: the **weak** model is the one whose baselines cost less (mean M-K1) over the scenarios the pair
-  shares; a tie pairs nothing. No price table and no campaign file is read or changed, so every stored execution
+  both baselines: the **weak** model is the one whose baselines cost less (the mean of each shared scenario version's
+  mean M-K1, so that a scenario with more runs does not weigh more) over the scenarios the pair shares; a tie pairs
+  nothing. No price table and no campaign file is read or changed, so every stored execution
   qualifies (dl-032 asks the cheaper model's question; the measured cost is what makes it cheaper).
 - **The matched sample:** `k` = the lower of the weak harness cell's and the strong baseline cell's `n`; each cell's
-  first `k` runs by name (r1, r2, …), the reference cells (weak baseline, weak docs control — the group whose runs'
-  `docs_of` names the harness —, strong harness) likewise, each with its own `k` when shorter. A scenario where a cell
-  of the pair is missing is listed under `unmatched` with why.
+  first `k` runs in natural order (r1, r2, …, r10), the reference cells (weak baseline, weak docs control — the group
+  whose runs' `docs_of` names the harness —, strong harness) likewise, each with its own `k` when shorter. A scenario
+  where a cell of the pair is missing is listed under `unmatched` with why.
 - **The cells' figures** (means over the sample, money to a millionth): M-Q1 final share; hold-out final share (when
   every run of both cells has it); checks share (each run's passed check-steps over its scored ones, when both cells
   have checks); cost in EUR; agent time (`wall_time_ms`); tokens fresh (input + cache creation), cached (cache read)
@@ -80,7 +81,9 @@ WingFoil feedback notes), a task of its own.
   `(input + cache creation) / prefill + output / decode`, in seconds; tool time excluded. **Break-even:** for each
   cache mode, the slowest profile at which the weak harness cell's local model time is not above the strong
   baseline's measured agent time, or `none`.
-- **The summary:** per pair and harness, how many scenarios hold, fail and are unmatched.
+- **The summary:** per pair and harness, how many scenarios hold, fail, are preliminary and are unmatched, a line for
+  every harness either model ran, one with nothing matched included; scenarios in natural order (S2 before S10). With
+  no entry in any pair the section is absent.
 - **The site:** `parity.html` in the execution's directory, built only when the aggregate has `parity`, linked from
   the landing page in its own section, "Weak model with the harness against the strong model without it (across
   models)", after the comparisons; one table per pair and harness, a row per scenario, the reference cells beside; the
@@ -98,8 +101,8 @@ WingFoil feedback notes), a task of its own.
   (`33b54dd89e8b/1`) re-aggregated from their stored `score.json` by a script calling `aggregateExecution` (no
   container, no session): every field but `parity` is the same bytes as before. The sections:
   - 002: Haiku (weak) with wingfoil against Sonnet's baseline fails on S1 and S3 (time 4.3× and 3.3×; n = 1); Sonnet
-    (weak) with each harness against Opus's baseline holds on S1 (n = 1); 19 scenario-harness keys unmatched (no
-    Haiku or Opus run of that arm).
+    (weak) with each harness against Opus's baseline holds on S1 (n = 1, preliminary: on cost and time only); 19
+    scenario-harness keys unmatched (no Haiku run of openspec or speckit, no Opus baseline outside S1).
   - 007: Luna with wingfoil against Terra's baseline holds on S1 (n = 3: cost 0.07×, time 0.44×) and fails on S2, S3
     and S8 (n = 1, time 1.05–1.28×).
   - 008: Haiku with wingfoil against Sonnet's baseline fails on all five (n = 3): quality not worse anywhere (S3's
@@ -109,3 +112,27 @@ WingFoil feedback notes), a task of its own.
   and output, for the four cells of each campaign. No difference to explain.
 - The site's wording: a quality metric not worse is shown by its outcome (better, same, or "lower, not beyond the
   variance"), so that S3's checks read better beyond the variance rather than "not worse, beyond variance".
+
+### Review
+
+**Round 1** (2026-11-01, a fresh read-only agent in `/tmp/claude-1000/review-121-JGni`, a clone of `c8fba91e`; both
+checkouts' HEAD, reflog and status unchanged after it). It reran the five test files (102 passed), `tsc`, eslint and
+the build; re-aggregated the three executions (byte-identical to the committed files, only `parity` added); checked
+007's S1 entry by hand from the runs' `score.json`; reproduced every figure of dl-032's two tables; confirmed red
+first. No blocker; three should-fix and ten nits:
+
+| # | Finding | Outcome |
+|---|---|---|
+| S1 | `summary` dropped a harness with nothing matched, so 8 unmatched rows of 002 showed nowhere | fixed: a line for every harness, the page says "No scenario matched" |
+| S2 | below 3 runs no quality metric can be worse, and the headline did not say so | fixed: `summary.preliminary`, the headline counts them; method page and REQ-SCO-15 say so |
+| S3 | tests missing: checks share, a final not reached, a partial hold-out, a tie, a ratio of 0 | fixed: three cases |
+| N4 | the sample took r10 before r2 | fixed: natural order, runs and scenarios |
+| N5 | the weak model's cost weighed scenarios by their runs | fixed: the mean of each scenario's mean |
+| N6 | "lower, not beyond the variance, within variance" | fixed: "lower (within variance)" |
+| N7 | scenarios in code-unit order (S10 before S2) | fixed with N4 |
+| N8 | the site's zod shape checked a few fields only | fixed: every field the page reads |
+| N9 | no Checks column in the cells' table | fixed |
+| N10 | `BreakEvenProfile = string` | removed |
+| N11 | Amendment 1.47's first line not wrapped | fixed |
+| N12 | 002's unmatched reason misstated for Opus | fixed |
+| N13 | the method's weak-model rule omitted the shared scenarios and the tie | fixed |

@@ -60,7 +60,7 @@ describe('the parity page (REQ-RES-12, dl-032, task-121)', () => {
 
   it('shows the verdicts, the ratios and every cell, apart from the same-model results', () => {
     expect(html).toContain(
-      '<td>100.0 % against 100.0 %<br><span class="verdict">same, within variance</span></td>',
+      '<td>100.0 % against 100.0 %<br><span class="verdict">same (within variance)</span></td>',
     );
     expect(html).toContain('<td>0.20×</td><td>0.67×</td>');
     expect(html).toContain('<td><strong>holds</strong></td>');
@@ -79,7 +79,7 @@ describe('the parity page (REQ-RES-12, dl-032, task-121)', () => {
       'strong',
     );
     const page = parityPage('T', built as ParitySection);
-    expect(page).toContain('<span class="verdict">lower, not beyond the variance, within variance</span>');
+    expect(page).toContain('<span class="verdict">lower (within variance)</span>');
   });
 
   it('estimates the local time per profile, under the assumptions’ sentence', () => {
@@ -87,6 +87,26 @@ describe('the parity page (REQ-RES-12, dl-032, task-121)', () => {
     expect(html).toContain('<td>2.5 min · 0.8 min</td>');
     expect(html).toContain('<td>slow · slow</td>');
     expect(html).toContain('The profiles are assumptions, not measurements');
+  });
+
+  it('says when nothing matched for a harness, and counts the preliminary verdicts in the headline', () => {
+    const one = (run: ParityRun) => run.name.endsWith('r1');
+    const built = paritySection(
+      [
+        ...runs('baseline', 'strong', 0.5, 600_000).filter(one),
+        ...runs('baseline', 'weak', 0.05, 300_000),
+        ...runs('wingfoil', 'weak', 0.1, 400_000),
+        ...runs('speckit', 'strong', 0.9, 700_000).map((run) => ({ ...run, harness: true })),
+      ],
+      'strong',
+    );
+    const page = parityPage('T', built as ParitySection);
+    expect(page).toContain(
+      '<h2>speckit on weak against the baseline on strong</h2>\n<p class="headline">No scenario matched: nothing is judged.</p>',
+    );
+    expect(page).toContain(
+      'H-W holds in 1 and fails in 0 of 1 scenarios; 1 of them preliminary, below three runs a side, where no quality metric can be judged worse.',
+    );
   });
 
   it('escapes every value and holds no script', () => {

@@ -168,6 +168,20 @@ const groupShape = z.object({
 /** One side of a control comparison (task-068): every figure the page prints. */
 const side = z.object({ n: z.number(), mean: z.number(), min: z.number(), max: z.number() });
 
+/** One cell of the parity comparison (task-121): every figure the parity page prints. */
+const parityCell = z.object({
+  arm: z.string(),
+  model: z.string(),
+  n: z.number(),
+  m_q1: z.number(),
+  holdout: z.number().optional(),
+  checks: z.number().optional(),
+  cost_eur: z.number(),
+  time_ms: z.number(),
+  tokens: z.object({ fresh: z.number(), cached: z.number(), output: z.number() }),
+  local: z.record(z.string(), z.object({ no_cache_s: z.number(), prefix_cache_s: z.number() })),
+});
+
 /** What the site needs an aggregate to be before it reads it: its shape, not every value (task-045's review). */
 const aggregateShape = z.object({
   aggregate_version: z.number().int(),
@@ -200,15 +214,58 @@ const aggregateShape = z.object({
       }),
     )
     .optional(),
-  // Absent before task-121, or with no pair of models: then no parity page.
+  // Absent before task-121, or with no pair of models: then no parity page. Every field the page reads is checked, so
+  // that a malformed section is refused rather than thrown on.
   parity: z
     .object({
-      local_profiles: z.object({ assumption: z.string(), profiles: z.array(z.object({ id: z.string() })) }),
+      local_profiles: z.object({
+        assumption: z.string(),
+        profiles: z.array(z.object({ id: z.string(), prefill: z.number(), decode: z.number() })),
+      }),
       entries: z.array(
-        z.object({ scenario: z.string(), harness: z.string(), h_w: z.enum(['holds', 'fails']) }),
+        z.object({
+          scenario: z.string(),
+          version: z.string(),
+          harness: z.string(),
+          weak_model: z.string(),
+          strong_model: z.string(),
+          k: z.number(),
+          preliminary: z.boolean(),
+          cells: z.object({ weak_harness: parityCell, strong_baseline: parityCell }).catchall(parityCell),
+          quality: z.array(
+            z.object({
+              metric: z.string(),
+              verdict: z.enum(['not worse', 'worse']),
+              outcome: z.enum(['better', 'worse', 'same']),
+              certainty: z.enum(['beyond variance', 'within variance', 'preliminary']),
+            }),
+          ),
+          ratios: z.record(z.string(), z.number()),
+          h_w: z.enum(['holds', 'fails']),
+          break_even: z.object({ no_cache: z.string(), prefix_cache: z.string() }),
+        }),
       ),
-      unmatched: z.array(z.object({ scenario: z.string(), reason: z.string() })),
-      summary: z.array(z.object({ harness: z.string(), holds: z.number(), fails: z.number() })),
+      unmatched: z.array(
+        z.object({
+          scenario: z.string(),
+          version: z.string(),
+          harness: z.string(),
+          weak_model: z.string(),
+          strong_model: z.string(),
+          reason: z.string(),
+        }),
+      ),
+      summary: z.array(
+        z.object({
+          weak_model: z.string(),
+          strong_model: z.string(),
+          harness: z.string(),
+          holds: z.number(),
+          fails: z.number(),
+          preliminary: z.number(),
+          unmatched: z.number(),
+        }),
+      ),
     })
     .optional(),
   // The planned runs never started, of a final execution (task-080): each named `<scenario>@<version>/…`.

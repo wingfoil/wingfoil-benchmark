@@ -247,15 +247,17 @@ Results from a second model (the Opus 5 comparison slice) are reported apart fro
 An execution with two models may also compare the weaker model with a harness against the stronger model without one,
 apart from every same-model comparison and on a page of its own ("across models"). The hypothesis H-W is that a weak
 model with a harness reaches a strong model's quality at a lower cost and in less time. In each pair (the campaign's
-model and one other), the weak model is the one whose baselines cost less in this execution. Each scenario is read over
-the runs both cells have: the weak model's harness arm and the strong model's baseline, each with its first runs up to
-the shorter cell's count. The weak model's baseline and docs control and the strong model's harness arm are shown beside
-them for reference. H-W *holds* for a scenario when no quality metric (M-Q1 on the final snapshot, the hold-out, the
-checks) is worse beyond variance and both the cost and the agent time are lower; otherwise it *fails*. Tokens are
-reported as ratios, not judged. Below 3 runs a side the scenario is preliminary. The page also estimates the time a
-local model would need for the same tokens, at three declared speeds (slow, mid and fast prefill and decode rates), with
-and without a prefix cache, and names the slowest speed at which the weak model would still finish within the strong
-baseline's agent time. Those speeds are assumptions, not measurements, and tool time is left out. {#weak-against-strong}
+model and one other), the weak model is the one whose baselines cost less over the scenarios both models ran (if they
+cost the same, the pair is not compared). Each scenario is read over the runs both cells have: the weak model's harness
+arm and the strong model's baseline, each with its first runs up to the shorter cell's count. The weak model's baseline
+and docs control and the strong model's harness arm are shown beside them for reference. H-W *holds* for a scenario when
+no quality metric (M-Q1 on the final snapshot, the hold-out, the checks) is worse beyond variance and both the cost and
+the agent time are lower; otherwise it *fails*. Tokens are reported as ratios, not judged. Below 3 runs a side the
+scenario is preliminary, and no quality metric can be judged worse there, so H-W then rests on cost and time; the page
+counts those scenarios. The page also estimates the time a local model would need for the same tokens, at three declared
+speeds (slow, mid and fast prefill and decode rates), with and without a prefix cache, and names the slowest speed at
+which the weak model would still finish within the strong baseline's agent time. Those speeds are assumptions, not
+measurements, and tool time is left out. {#weak-against-strong}
 
 A *finding note* is a Markdown file the maintainer generates from one execution, for one scenario, metric and set of arms. It holds fixed sections: the campaign, the WingFoil commit, the scenario and version, the runs, the metric values, and links to each run. Missing values are stated, never invented. It ends with a section shaped as a WingFoil bug or decision record, with the facts filled in and the judgement left to the maintainer. The note is written only into the benchmark's repository; the maintainer files it in WingFoil by hand. Finding notes are not on this site. {#finding-notes}
 
