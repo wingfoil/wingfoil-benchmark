@@ -913,9 +913,9 @@ describe('the neutral approver in the step loop (F2.4)', () => {
       ],
       [
         'at most 500 characters',
-        { code: 1, stdout: '', stderr: `error: ${'é'.repeat(900)}` },
+        { code: 1, stdout: '', stderr: `error: ${'😀'.repeat(900)}` },
         'failed (exit 1)',
-        [...`error: ${'é'.repeat(900)}`].slice(0, 500).join(''),
+        [...`error: ${'😀'.repeat(900)}`].slice(0, 500).join(''),
       ],
     ])('keeps, for a hook that fails, %s as the detail (bug-043)', async (_case, result, outcome, detail) => {
       const ports = doubles({
@@ -930,7 +930,20 @@ describe('the neutral approver in the step loop (F2.4)', () => {
       });
     });
 
-    it('keeps the message of an exec that throws as the detail (bug-043)', async () => {
+    it("keeps a succeeding hook's own detail, its stderr ignored (bug-043)", async () => {
+      const ports = doubles({
+        messageOf: asks,
+        execResultOf: (command) =>
+          isHook(command)
+            ? { code: 0, stdout: '{"outcome":"refused","detail":"why"}\n', stderr: 'noise' }
+            : undefined,
+      });
+      expect(await firstDelivery(ports)).toMatchObject({
+        carried_out: { outcome: 'refused', detail: 'why' },
+      });
+    });
+
+    it('keeps an exec that throws, as text, as the detail (bug-043)', async () => {
       const ports = doubles({ messageOf: asks });
       const exec = ports.docker.exec.bind(ports.docker);
       ports.docker.exec = (container, command) =>

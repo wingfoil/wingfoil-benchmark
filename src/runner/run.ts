@@ -1942,7 +1942,10 @@ interface Delivery {
   readonly carried_out?: {
     readonly outcome: string;
     readonly target?: string;
-    /** WingFoil's reason, as the hook kept it, when the verb was refused or a search failed (bug-041). */
+    /**
+     * WingFoil's reason, as the hook kept it, when the verb was refused or a search failed (bug-041); or, when the hook
+     * itself failed, its own stderr's last non-blank line (bug-043).
+     */
     readonly detail?: string;
     readonly commits: readonly string[];
   };
@@ -1995,7 +1998,7 @@ async function deliver(
   clearTimeout(timer);
   const commits = (await options.git.commitsSince(workspace, head)).map((commit) => commit.sha);
   const failed = ran !== 'timed out' && ran.code !== 0;
-  // A hook that fails is read by its stderr, not its stdout (bug-043): its last non-blank line, as the hook keeps
+  // A hook that fails is read by its stderr, not its stdout (bug-043): its last non-blank line, cut as the hook cuts
   // WingFoil's own (task-120).
   const said = ran === 'timed out' ? {} : failed ? stderrDetail(ran.stderr) : hookAnswer(ran.stdout);
   const outcome =
@@ -2018,7 +2021,7 @@ async function deliver(
 /** The most of a hook's reason the ledger keeps, in characters (code points), as the wingfoil hook cuts it. */
 const DETAIL_LIMIT = 500;
 
-/** A failing hook's reason: its stderr's last non-blank line, at most {@link DETAIL_LIMIT} characters; none if empty. */
+/** A failing hook's reason: its stderr's last non-blank line, at most {@link DETAIL_LIMIT} characters, or none. */
 function stderrDetail(stderr: string): { outcome?: string; target?: string; detail?: string } {
   const last = stderr
     .split('\n')
