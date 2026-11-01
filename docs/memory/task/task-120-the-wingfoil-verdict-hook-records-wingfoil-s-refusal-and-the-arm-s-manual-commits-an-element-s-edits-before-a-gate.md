@@ -31,7 +31,7 @@ are preliminary).
 3. **Red-first (a test of the manual's text):** the wingfoil manual's gate rule says to commit every change, code and
    documents, before asking for an approval, because the verdict is carried out on what is committed; within 120
    columns; the arm's new digest recorded here and in S10's calibration profile, which follows the tree; campaign-008's
-   files keep the old one (`cc009b5a52a9`), as the runs that used it.
+   files keep the old one (`cc009b5a52a9`), the digest their runs used.
 4. A note on r2 in campaign-008's Results review, citing both bugs.
 5. Checks: prettier, `tsc`, eslint, `scripts/pre-review.sh main`; the full suites through the load watcher; an
    independent review (dl-020).
@@ -76,7 +76,8 @@ are preliminary).
   tree, so it pins the new digest, and only campaign-008's files keep the old one, closer to the clause as approved.
   Two wording changes add to the criterion and weaken nothing: the rule's reason ("because the verdict is carried out
   on what is committed") and the old digest's id. The approver accepts the changes or restores them at the gate.
-  **Accepted by the approver in chat (2026-11-01, "accetto il criterio 3"), before the S10 profile change.**
+  **Accepted by the approver in chat (2026-11-01, "accetto il criterio 3"), before the S10 profile change: the
+  digest clause changed again after that acceptance, and the approver re-confirms it at the gate.**
 - **Not in this task, proposed:** when the hook exits non-zero the runner records `failed (exit N)` and drops its
   stderr (`src/runner/run.ts`, `deliver`): the same loss one level up, never observed in a run (round 1's nit).
 
@@ -89,7 +90,7 @@ four should-fix and seven nits:
 
 | # | Finding | Outcome |
 |---|---|---|
-| S1 | bug-042's "not to edit a submitted document" dropped, criterion 3 rewritten after approval | to the approver at the gate; noted in bug-042 and above (round 2: both of criterion 3's changes named) |
+| S1 | bug-042's "not to edit a submitted document" dropped, criterion 3 rewritten after approval | to the approver at the gate; noted in bug-042 and above (round 2: both of criterion 3's changes named; after the full suites, the digest clause changed a third time, to re-confirm) |
 | S2 | the hook's tests miss `no-target`, `ambiguous`, `unknown-verdict` on the real script | fixed: three real-WingFoil cases, no detail |
 | S3 | the scratch project inherits the user's git configuration and `GIT_*` variables | fixed: own `HOME`, `GIT_CONFIG_GLOBAL=/dev/null`, `GIT_CONFIG_NOSYSTEM`, `GIT_*` cleared |
 | S4 | REQ-FMT-05 still says `{outcome, target?}` | fixed: amendment 1.46 |
@@ -113,4 +114,10 @@ should-fix and nits resolved. One nit: criterion 3 also had two wording changes 
 
 **Full suites** (2026-11-01, `5f4e81b5`): LINT 0, TEST 1, BUILD 0, BIN 0, DOCKER 0. The one failure:
 `test/unit/campaign/s10-calibration.test.ts` reads S10's calibration profile pinning the arm's current digest; the
-Design had left it at `cc009b5a52a9`. Fixed: the profile pins `99ea463d1b37` (Design above); the suites rerun.
+Design had left it at `cc009b5a52a9`. Fixed: the profile pins `99ea463d1b37` (Design above). Rerun on `a151ff1e`:
+LINT 0, TEST 0 (1960 passed, 9 skipped), BUILD 0, BIN 0, DOCKER 0.
+
+**Round 4** (2026-11-01, a fresh read-only agent in `/tmp/claude-1000/review4-120-So9V`; both checkouts unchanged
+after it), on `634634a7..a151ff1e`: the profile's digest matches the tree; `bench campaign validate` and `estimate`
+of campaign-008 still pass, reading the arm from the commit that holds `cc009b5a52a9`; the stored dry-run profiles
+keep their digests. Approved, with three wording nits (the acceptance's scope, a phrase, the rerun's outcome): fixed.
