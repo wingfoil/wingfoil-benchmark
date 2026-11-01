@@ -54,9 +54,40 @@ WingFoil feedback notes), a task of its own.
 
 ## Design
 
-<!-- To be written at the start: the weak model's identification (proposed: the model with the lower output-token list
-     price in the agent's pinned price table, so that no campaign file changes and old executions qualify; else a
-     declared pair), where the profiles live, the aggregate's schema, the page's layout. -->
+- **Module:** `src/results/parity.ts`, called by `aggregateExecution`; the aggregate gains an optional `parity` (absent
+  in an aggregate written before it, and in an execution with one model or no pair). `AGGREGATE_VERSION` stays 1: the
+  field is optional, as `controls` was (task-068).
+- **The pairs:** the campaign's default model against each slice's model (slices against each other are left out).
+  For each scenario version and each harness arm (an arm whose runs record a harness commit) that both models ran, with
+  both baselines: the **weak** model is the one whose baselines cost less (mean M-K1) over the scenarios the pair
+  shares; a tie pairs nothing. No price table and no campaign file is read or changed, so every stored execution
+  qualifies (dl-032 asks the cheaper model's question; the measured cost is what makes it cheaper).
+- **The matched sample:** `k` = the lower of the weak harness cell's and the strong baseline cell's `n`; each cell's
+  first `k` runs by name (r1, r2, …), the reference cells (weak baseline, weak docs control — the group whose runs'
+  `docs_of` names the harness —, strong harness) likewise, each with its own `k` when shorter. A scenario where a cell
+  of the pair is missing is listed under `unmatched` with why.
+- **The cells' figures** (means over the sample, money to a millionth): M-Q1 final share; hold-out final share (when
+  every run of both cells has it); checks share (each run's passed check-steps over its scored ones, when both cells
+  have checks); cost in EUR; agent time (`wall_time_ms`); tokens fresh (input + cache creation), cached (cache read)
+  and output; and the local model time per profile.
+- **The verdicts** (weak harness against strong baseline): each quality metric by `compare` and `certaintyOf`, as the
+  docs-control comparison reads them (REQ-SCO-14); **worse** only when worse beyond the variance, else **not worse**;
+  cost, time and the three token counts as ratios (weak ÷ strong). **H-W holds** when every quality metric is not worse
+  and both the cost and the time ratios are below 1, **fails** otherwise; `preliminary` when `k` < 3 (dl-012).
+- **The local estimate:** profiles `slow` (prefill 300, decode 15 tokens a second), `mid` (1 500, 40) and `fast`
+  (5 000, 100), labelled assumptions in the aggregate (`parity.local_profiles`, with a sentence saying so). Per run,
+  without a prefix cache `(input + cache creation + cache read) / prefill + output / decode`, with one
+  `(input + cache creation) / prefill + output / decode`, in seconds; tool time excluded. **Break-even:** for each
+  cache mode, the slowest profile at which the weak harness cell's local model time is not above the strong
+  baseline's measured agent time, or `none`.
+- **The summary:** per pair and harness, how many scenarios hold, fail and are unmatched.
+- **The site:** `parity.html` in the execution's directory, built only when the aggregate has `parity`, linked from
+  the landing page in its own section, "Weak model with the harness against the strong model without it (across
+  models)", after the comparisons; one table per pair and harness, a row per scenario, the reference cells beside; the
+  local estimate below, under the assumptions' sentence. The method page states H-W, the weak model's rule, the
+  matched sample, the verdicts and the profiles as assumptions.
+- **Requirements 1.47:** REQ-SCO-15 (the comparison and the estimate) and REQ-RES-12 (its page), traced to F4.3 and
+  F5.5/F5.8.
 
 ## Execution notes
 
