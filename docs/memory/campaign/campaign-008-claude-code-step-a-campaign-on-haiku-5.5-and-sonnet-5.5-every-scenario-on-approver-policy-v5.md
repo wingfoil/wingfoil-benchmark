@@ -329,4 +329,13 @@ as bug-041 and bug-042, fixed by task-120, with a note on the run rather than a 
 
 ## Findings
 
-<!-- Finding notes produced (F5.4) and where they went in WingFoil. -->
+No finding note for WingFoil (`bench finding`, F5.4): no difference in this execution points to a WingFoil defect or a
+decision WingFoil should take (2026-11-01). Considered and not filed there:
+
+- **The refused verdict in S10's wingfoil r2 on Haiku 5.5:** WingFoil's rule worked as documented (a state-transition
+  commit carries the status change only); the defects were the benchmark's (bug-041, the hook dropped the reason;
+  bug-042, the arm's manual), fixed by task-120.
+- **The wingfoil arm's cost, one gate a step:** a reading of the benchmark's scenario sizes (the Results review's cost
+  by component), not a WingFoil defect; projected at about 1.05–1.21× the baseline at a real task's size.
+- **H5 not observable:** no agent tried to approve on its own, so WingFoil's refusal was never exercised; a scenario
+  matter for v0.4's planning (a step that tempts the agent to approve), not WingFoil's.
