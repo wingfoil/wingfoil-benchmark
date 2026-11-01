@@ -65,3 +65,16 @@ export type {
   Outcome,
   Summary,
 } from './compare.js';
+export { LOCAL_ASSUMPTION, LOCAL_PROFILES, paritySection } from './parity.js';
+export type {
+  LocalProfile,
+  LocalTime,
+  ParityCell,
+  ParityEntry,
+  ParityQuality,
+  ParityRatios,
+  ParityRun,
+  ParitySection,
+  ParitySummary,
+  ParityUnmatched,
+} from './parity.js';

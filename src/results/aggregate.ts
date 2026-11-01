@@ -8,6 +8,8 @@ import type { Issue, Result } from '../core/index.js';
 import { CATEGORY_MAP, compare, readMetric } from './compare.js';
 import type { Certainty, MapEntry, MetricId, Outcome } from './compare.js';
 import { plannedRuns } from './execution.js';
+import { paritySection } from './parity.js';
+import type { ParityRun, ParitySection } from './parity.js';
 import { executionRuns, readStoredRun } from './runs.js';
 
 /** Where an execution's aggregate is stored, beside its runs (REQ-FMT-06). */
@@ -217,6 +219,11 @@ export interface AggregateFile {
    * the site reads as "not measured".
    */
   readonly controls?: readonly ControlComparison[];
+  /**
+   * The weak model with a harness against the strong model without it (REQ-SCO-15, dl-032, task-121): across models,
+   * apart from the same-model comparisons (T14). Absent with one model, with no pair, or in an aggregate written before.
+   */
+  readonly parity?: ParitySection;
   /**
    * The planned runs that never started (REQ-CLI-06 as amended, task-080), by name: an execution the maintainer
    * declared final while it was stopped. Absent when every planned run ran, or the plan cannot be read.
@@ -446,6 +453,7 @@ export function aggregateExecution(executionDir: string): Result<AggregateFile> 
     executionRuns(executionDir).map((runDir) => relative(join(executionDir, 'runs'), runDir).split(sep).join('/')),
   );
   const notRun = (plannedRuns(pins.value) ?? []).filter((name) => !ran.has(name));
+  const parity = paritySection(runs.map(parityRunOf), model);
   return ok({
     aggregate_version: AGGREGATE_VERSION,
     campaign,
@@ -455,6 +463,7 @@ export function aggregateExecution(executionDir: string): Result<AggregateFile> 
     slices: groups.filter((group) => group.model !== model),
     break_even: breakEven(grouped),
     controls: controlComparisons(grouped, groups, model),
+    ...(parity === undefined ? {} : { parity }),
     ...(notRun.length === 0 ? {} : { not_run: notRun }),
   });
 }
@@ -1240,4 +1249,40 @@ function controlMetric(entry: MapEntry, harness: Group, control: Group): Control
 function unpricedRuns(runs: readonly ScoredRun[]): { unpriced?: string[] } {
   const unpriced = runs.filter((run) => run.score.cost.run.cost_priced === false).map((run) => run.name);
   return unpriced.length === 0 ? {} : { unpriced };
+}
+
+/** What the parity comparison reads of a scored run (REQ-SCO-15, task-121): its keys and its figures as shares. */
+function parityRunOf(run: ScoredRun): ParityRun {
+  const shareOf = (m: Tally | undefined) => (m === undefined || m.total === 0 ? 0 : m.passed / m.total);
+  const final = 'not_reached' in run.score.final ? 0 : shareOf(run.score.final.m_q1);
+  const { holdout } = run.score;
+  const holdoutShare = !holdout.scored
+    ? undefined
+    : 'not_reached' in holdout.final
+      ? 0
+      : shareOf(holdout.final.m_q1);
+  const checkSteps = (run.score.checks ?? []).flatMap((check) =>
+    check.steps.flatMap((s) => ('not_reached' in s ? [] : [s.passed])),
+  );
+  const { tokens } = run.score.cost.run;
+  return {
+    name: run.name,
+    scenario: run.scenario,
+    version: run.version,
+    arm: run.arm,
+    model: run.model,
+    harness: run.harnessCommit !== undefined,
+    ...(run.docsOf === undefined ? {} : { docsOf: run.docsOf }),
+    mQ1: final,
+    ...(holdoutShare === undefined ? {} : { holdout: holdoutShare }),
+    ...(checkSteps.length === 0 ? {} : { checks: checkSteps.filter(Boolean).length / checkSteps.length }),
+    costEur: run.score.cost.run.cost_eur,
+    wallTimeMs: run.score.cost.run.wall_time_ms,
+    tokens: {
+      input: tokens.input,
+      output: tokens.output,
+      cacheCreation: tokens.cache_creation,
+      cacheRead: tokens.cache_read,
+    },
+  };
 }

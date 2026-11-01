@@ -11,7 +11,17 @@ import { eligibilityPage } from './eligibility.js';
 import { methodPages } from './method.js';
 import { siteModel } from './model.js';
 import { builtExecutions, loadCatalog, loadProfiles, profileFile, rootIndex } from './profiles.js';
-import { categoryFile, categoryPage, landingPage, plainHeadlines, profilePage, STYLE } from './render.js';
+import { parityPage } from './parity.js';
+import {
+  categoryFile,
+  categoryPage,
+  landingPage,
+  PARITY_FILE,
+  plainHeadlines,
+  profilePage,
+  STYLE,
+  title,
+} from './render.js';
 
 /** Where the site is written, in the repository (REQ-ARC-03). */
 export const SITE = 'site';
@@ -105,6 +115,9 @@ export async function buildSite(
       categoryFile(row.category),
       categoryPage(model.value, row),
     ]),
+    ...(model.value.parity === undefined
+      ? []
+      : [[PARITY_FILE, parityPage(title(model.value), model.value.parity)] as [string, string]]),
     ['method.html', method.value.method],
     ['eligibility.html', eligibility.value],
     ...comparisonPages,

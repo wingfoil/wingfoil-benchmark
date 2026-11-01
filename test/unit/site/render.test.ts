@@ -376,3 +376,20 @@ describe('a one-arm landing page (REQ-RES-07 as amended in 1.36, task-104)', () 
     expect(html.indexOf('class="notes"')).toBeLessThan(html.indexOf('<h2>Compared across agents</h2>'));
   });
 });
+
+describe('the landing page’s link to the parity page (REQ-RES-12, task-121)', () => {
+  it('links the parity page in a section of its own when the aggregate measured it, and not otherwise', () => {
+    const parity = {
+      local_profiles: { assumption: 'Assumptions.', profiles: [] },
+      entries: [],
+      unmatched: [],
+      summary: [],
+    };
+    const page = landingPage({ ...model(), parity });
+    expect(page).toContain(
+      '<h2>Across models</h2>\n<ul>\n<li><a href="parity.html">Weak model with the harness against the strong ' +
+        'model without it (across models)</a></li>\n</ul>\n',
+    );
+    expect(landingPage(model())).not.toContain('parity.html');
+  });
+});

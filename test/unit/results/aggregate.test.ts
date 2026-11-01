@@ -49,6 +49,9 @@ interface RunSpec {
   readonly docsOf?: string;
   /** The scenario hash run.json and score.json both record; by default `sha256:<scenario>`. */
   readonly scenarioHash?: string;
+  /** The run's tokens and wall time in score.json's `cost.run` (task-121); by default 10, 5, 0, 1 and 1000 ms. */
+  readonly tokens?: { readonly input: number; readonly output: number; readonly cache_creation: number; readonly cache_read: number };
+  readonly wallTimeMs?: number;
 }
 
 const tally = (suites: readonly Suite[]) => ({
@@ -143,7 +146,12 @@ function execution(runs: readonly RunSpec[], pins = 'models:\n  default: model-a
               ? { n: index + 1, not_reached: true }
               : { n: index + 1, outcome: 'completed', ...figures(stepEur, true) },
           ),
-          run: { ...figures(eur, run.costReported ?? true), ...(run.unpriced === true ? { cost_priced: false } : {}) },
+          run: {
+            ...figures(eur, run.costReported ?? true),
+            ...(run.tokens === undefined ? {} : { tokens: run.tokens }),
+            ...(run.wallTimeMs === undefined ? {} : { wall_time_ms: run.wallTimeMs }),
+            ...(run.unpriced === true ? { cost_priced: false } : {}),
+          },
           ...(run.setup === undefined
             ? {}
             : {
@@ -1083,5 +1091,220 @@ describe('the runs not run (REQ-CLI-06 as amended, task-080)', () => {
 
   it('gives no plan for a campaign.yaml that does not name its scenarios, arms and repetitions', () => {
     expect(plannedRuns({ models: { default: 'fake-model' } })).toBeUndefined();
+  });
+});
+
+describe('the weak model with a harness against the strong model without it (dl-032, REQ-SCO-15, task-121)', () => {
+  const PINS = 'models:\n  default: model-a\n  slices:\n    - { model: model-b }\n';
+  interface Cell {
+    readonly arm: string;
+    readonly model: string;
+    readonly passed?: number;
+    readonly costEur: number;
+    readonly wallTimeMs: number;
+    readonly reps?: number;
+    readonly scenario?: string;
+  }
+  const TOKENS = { input: 1000, output: 600, cache_creation: 2000, cache_read: 30000 };
+  const runsOf = (cell: Cell): RunSpec[] =>
+    Array.from({ length: cell.reps ?? 3 }, (_, index) => ({
+      arm: cell.arm,
+      model: cell.model,
+      r: index + 1,
+      ...(cell.scenario === undefined ? {} : { scenario: cell.scenario }),
+      ...(cell.arm === 'wingfoil' ? { harnessCommit: 'abc' } : {}),
+      ...(cell.arm === 'baseline-docs' ? { docsOf: 'wingfoil' } : {}),
+      steps: [[s('a', cell.passed ?? 4, 4)]],
+      holdout: { final: [s('h', 2, 2)] },
+      costEur: cell.costEur,
+      wallTimeMs: cell.wallTimeMs,
+      tokens: TOKENS,
+    }));
+  // model-a is the dearer model: its baseline costs 0.5, model-b's 0.05.
+  const strongBaseline: Cell = { arm: 'baseline', model: 'model-a', costEur: 0.5, wallTimeMs: 600_000 };
+  const weakBaseline: Cell = { arm: 'baseline', model: 'model-b', costEur: 0.05, wallTimeMs: 300_000 };
+  const weakHarness: Cell = { arm: 'wingfoil', model: 'model-b', costEur: 0.1, wallTimeMs: 400_000 };
+  const strongHarness: Cell = { arm: 'wingfoil', model: 'model-a', costEur: 0.8, wallTimeMs: 900_000 };
+  const weakControl: Cell = { arm: 'baseline-docs', model: 'model-b', costEur: 0.07, wallTimeMs: 350_000 };
+  const parityOf = (cells: readonly Cell[], pins = PINS) => aggregate(execution(cells.flatMap(runsOf), pins)).parity;
+
+  it('holds H-W when the weak harness is not worse in quality and cheaper and faster than the strong baseline', () => {
+    const parity = parityOf([strongBaseline, weakBaseline, weakHarness, strongHarness, weakControl]);
+    const [entry] = parity?.entries ?? [];
+    expect(entry).toMatchObject({
+      scenario: 'T3',
+      version: '1.0',
+      harness: 'wingfoil',
+      weak_model: 'model-b',
+      strong_model: 'model-a',
+      k: 3,
+      preliminary: false,
+      h_w: 'holds',
+      ratios: { cost: 0.2, time: expect.closeTo(0.666667, 5) as number, tokens_fresh: 1, tokens_cached: 1, tokens_output: 1 },
+    });
+    expect(entry?.quality.map((q) => [q.metric, q.verdict])).toEqual([
+      ['M-Q1', 'not worse'],
+      ['hold-out', 'not worse'],
+    ]);
+    expect(entry?.cells.weak_harness.runs).toEqual([1, 2, 3].map((r) => name('wingfoil', r, 'model-b')));
+    expect(entry?.cells.strong_baseline.runs).toEqual([1, 2, 3].map((r) => name('baseline', r, 'model-a')));
+    expect(Object.keys(entry?.cells ?? {})).toEqual([
+      'weak_harness',
+      'strong_baseline',
+      'weak_baseline',
+      'weak_control',
+      'strong_harness',
+    ]);
+    expect(parity?.summary).toEqual([
+      { weak_model: 'model-b', strong_model: 'model-a', harness: 'wingfoil', holds: 1, fails: 0, preliminary: 0, unmatched: 0 },
+    ]);
+  });
+
+  it('fails H-W on quality worse beyond the variance, and on a time that is not lower', () => {
+    const worse = parityOf([strongBaseline, weakBaseline, { ...weakHarness, passed: 2 }]);
+    expect(worse?.entries[0]?.h_w).toBe('fails');
+    expect(worse?.entries[0]?.quality[0]).toMatchObject({ metric: 'M-Q1', verdict: 'worse', certainty: 'beyond variance' });
+    const slower = parityOf([strongBaseline, weakBaseline, { ...weakHarness, wallTimeMs: 700_000 }]);
+    expect(slower?.entries[0]).toMatchObject({ h_w: 'fails', quality: [{ verdict: 'not worse' }, { verdict: 'not worse' }] });
+  });
+
+  it('matches the sample on the shorter cell, and marks it preliminary below three runs', () => {
+    const parity = parityOf([{ ...strongBaseline, reps: 1 }, weakBaseline, weakHarness]);
+    const [entry] = parity?.entries ?? [];
+    expect(entry).toMatchObject({ k: 1, preliminary: true });
+    expect(entry?.cells.weak_harness.runs).toEqual([name('wingfoil', 1, 'model-b')]);
+    expect(entry?.quality[0]?.certainty).toBe('preliminary');
+  });
+
+  it('takes the cheaper baselines as the weak model, whichever is the default', () => {
+    const parity = parityOf([
+      { ...strongBaseline, model: 'model-b' },
+      { ...weakBaseline, model: 'model-a' },
+      { ...weakHarness, model: 'model-a' },
+    ]);
+    expect(parity?.entries[0]).toMatchObject({ weak_model: 'model-a', strong_model: 'model-b' });
+  });
+
+  it('lists a scenario where a cell of the pair is missing as unmatched, and judges nothing there', () => {
+    const parity = parityOf([
+      strongBaseline,
+      weakBaseline,
+      weakHarness,
+      { ...strongBaseline, scenario: 'A1' },
+      { ...weakBaseline, scenario: 'A1' },
+      { ...strongHarness, scenario: 'A1' },
+    ]);
+    expect(parity?.entries.map((entry) => entry.scenario)).toEqual(['T3']);
+    expect(parity?.unmatched).toEqual([
+      {
+        scenario: 'A1',
+        version: '1.0',
+        harness: 'wingfoil',
+        weak_model: 'model-b',
+        strong_model: 'model-a',
+        reason: 'no wingfoil run on model-b',
+      },
+    ]);
+    expect(parity?.summary[0]).toMatchObject({ holds: 1, fails: 0, preliminary: 0, unmatched: 1 });
+  });
+
+  it('estimates a local model time per profile, labelled assumptions, and the break-even profile', () => {
+    const parity = parityOf([strongBaseline, weakBaseline, weakHarness]);
+    expect(parity?.local_profiles).toEqual({
+      assumption: expect.stringContaining('assumption') as string,
+      profiles: [
+        { id: 'slow', prefill: 300, decode: 15 },
+        { id: 'mid', prefill: 1500, decode: 40 },
+        { id: 'fast', prefill: 5000, decode: 100 },
+      ],
+    });
+    // 33 000 tokens processed and 600 output: slow 110 + 40 s without a prefix cache, 10 + 40 s with one.
+    expect(parity?.entries[0]?.cells.weak_harness.local).toEqual({
+      slow: { no_cache_s: 150, prefix_cache_s: 50 },
+      mid: { no_cache_s: 37, prefix_cache_s: 17 },
+      fast: { no_cache_s: 12.6, prefix_cache_s: 6.6 },
+    });
+    // The strong baseline's agent time is 600 s: the slowest profile is enough either way.
+    expect(parity?.entries[0]?.break_even).toEqual({ no_cache: 'slow', prefix_cache: 'slow' });
+    const tight = parityOf([{ ...strongBaseline, wallTimeMs: 20_000 }, weakBaseline, { ...weakHarness, wallTimeMs: 10_000 }]);
+    expect(tight?.entries[0]?.break_even).toEqual({ no_cache: 'fast', prefix_cache: 'mid' });
+  });
+
+  it('is absent with one model, or with no harness run on both', () => {
+    expect(parityOf([strongBaseline, strongHarness], 'models:\n  default: model-a\n')).toBeUndefined();
+    expect(parityOf([strongBaseline, weakBaseline])).toBeUndefined();
+  });
+
+  it('keeps a summary line for a harness with nothing matched, and counts the preliminary verdicts (review 1)', () => {
+    // speckit ran on the strong model only; wingfoil's strong baseline ran once.
+    const speckit = runsOf({ ...strongHarness, reps: 1 }).map((run) => ({ ...run, arm: 'speckit', harnessCommit: 'def' }));
+    const cells = [{ ...strongBaseline, reps: 1 }, weakBaseline, weakHarness].flatMap(runsOf);
+    const parity = aggregate(execution([...cells, ...speckit], PINS)).parity;
+    expect(parity?.summary).toEqual([
+      { weak_model: 'model-b', strong_model: 'model-a', harness: 'speckit', holds: 0, fails: 0, preliminary: 0, unmatched: 1 },
+      { weak_model: 'model-b', strong_model: 'model-a', harness: 'wingfoil', holds: 1, fails: 0, preliminary: 1, unmatched: 0 },
+    ]);
+  });
+
+  it('reads the checks over their reached steps, a final not reached as 0, and drops a hold-out some runs lack', () => {
+    const check = (passed: boolean[]) => ({
+      id: 'c',
+      kind: 'content',
+      steps: [...passed.map((p, i) => ({ n: i + 1, passed: p })), { n: 9, not_reached: true }],
+    });
+    const cells = [strongBaseline, weakBaseline, weakHarness].flatMap(runsOf).map((run) =>
+      run.arm === 'wingfoil'
+        ? { ...run, checks: [check([true, false])], ...(run.r === 3 ? { holdout: { reason: 'not configured' } } : {}) }
+        : run.arm === 'baseline' && run.model === 'model-a'
+          ? { ...run, checks: [check([true, true])], ...(run.r === 1 ? { final: 'not reached' as const } : {}) }
+          : run,
+    );
+    const [entry] = aggregate(execution(cells, PINS)).parity?.entries ?? [];
+    expect(entry?.cells.weak_harness.checks).toBe(0.5);
+    expect(entry?.cells.strong_baseline.checks).toBe(1);
+    expect(entry?.cells.strong_baseline.m_q1).toBe(0.666667);
+    expect(entry?.cells.weak_harness.holdout).toBeUndefined();
+    expect(entry?.quality.map((q) => q.metric)).toEqual(['M-Q1', 'checks']);
+  });
+
+  it('weighs each shared scenario the same when it picks the weak model, whatever its runs (review 2)', () => {
+    // model-a: one cheap run on T3 (0.01) and three dear ones on A1 (0.6): pooled 0.4525, by scenario 0.305.
+    // model-b: 0.4 on both: by scenario model-a is the weak one, pooled model-b would be.
+    const parity = parityOf([
+      { ...strongBaseline, costEur: 0.01, reps: 1 },
+      { ...strongBaseline, costEur: 0.6, scenario: 'A1' },
+      { ...weakBaseline, costEur: 0.4 },
+      { ...weakBaseline, costEur: 0.4, scenario: 'A1' },
+      { ...weakHarness, model: 'model-a', reps: 1 },
+    ]);
+    expect(parity?.entries[0]).toMatchObject({ weak_model: 'model-a', strong_model: 'model-b' });
+  });
+
+  it('pairs nothing on a tie of the baselines’ cost, and fails H-W on a ratio it cannot take', () => {
+    expect(parityOf([strongBaseline, { ...weakBaseline, costEur: 0.5 }, weakHarness])).toBeUndefined();
+    const [entry] = parityOf([{ ...strongBaseline, wallTimeMs: 0 }, weakBaseline, weakHarness])?.entries ?? [];
+    expect(entry?.ratios.time).toBeUndefined();
+    expect(entry).toMatchObject({ h_w: 'fails', break_even: { no_cache: 'none', prefix_cache: 'none' } });
+  });
+
+  it('samples r1, r2 before r10, and orders the scenarios naturally (S2 before S10)', () => {
+    const parity = parityOf([
+      { ...strongBaseline, reps: 2 },
+      weakBaseline,
+      { ...weakHarness, reps: 10 },
+      { ...strongBaseline, scenario: 'S10' },
+      { ...weakBaseline, scenario: 'S10' },
+      { ...weakHarness, scenario: 'S10' },
+      { ...strongBaseline, scenario: 'S2' },
+      { ...weakBaseline, scenario: 'S2' },
+      { ...weakHarness, scenario: 'S2' },
+    ]);
+    expect(parity?.entries.map((entry) => entry.scenario)).toEqual(['S2', 'S10', 'T3']);
+    expect(parity?.entries[2]?.cells.weak_harness.runs).toEqual([1, 2].map((r) => name('wingfoil', r, 'model-b')));
+  });
+
+  it('is the same bytes aggregated twice', () => {
+    const dir = execution([strongBaseline, weakBaseline, weakHarness].flatMap(runsOf), PINS);
+    expect(JSON.stringify(aggregate(dir))).toBe(JSON.stringify(aggregate(dir)));
   });
 });

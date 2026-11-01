@@ -61,6 +61,13 @@ export const CATEGORY_GOALS: Readonly<Record<Category, { name: string; question:
 
 const NOT_COVERED = 'not covered in this campaign';
 
+/** The parity page's file, beside the landing page (REQ-RES-12, task-121). */
+export const PARITY_FILE = 'parity.html';
+
+/** The parity page's heading, and the landing page's link to it. */
+export const PARITY_HEADING =
+  'Weak model with the harness against the strong model without it (across models)';
+
 /** Escape every character HTML gives a meaning to. */
 export function escapeHtml(text: string): string {
   return text
@@ -88,7 +95,7 @@ export function categoryFile(category: Category): string {
   return `category-${category.toLowerCase()}.html`;
 }
 
-function title(model: SiteModel): string {
+export function title(model: SiteModel): string {
   return `WingFoil Benchmark — campaign ${model.campaign}, execution ${model.execution}`;
 }
 
@@ -427,6 +434,11 @@ export function landingPage(
     others.length === 0 ? '' : `<h2>Compared with earlier executions</h2>\n<ul>\n${linkList(others)}</ul>\n`;
   const acrossAgentsSection =
     across.length === 0 ? '' : `<h2>Compared across agents</h2>\n<ul>\n${linkList(across)}</ul>\n`;
+  // The weak model with a harness against the strong model without it (REQ-RES-12, task-121): across models, apart.
+  const paritySection =
+    model.parity === undefined
+      ? ''
+      : `<h2>Across models</h2>\n<ul>\n<li><a href="${PARITY_FILE}">${e(PARITY_HEADING)}</a></li>\n</ul>\n`;
   const views =
     profiles.length === 0
       ? ''
@@ -448,7 +460,7 @@ export function landingPage(
   }
   return page(
     title(model),
-    landingContent(model, title(model), notesList) + compared + acrossAgentsSection + views,
+    landingContent(model, title(model), notesList) + compared + acrossAgentsSection + paritySection + views,
     2,
   );
 }

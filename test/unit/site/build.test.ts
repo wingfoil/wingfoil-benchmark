@@ -11,7 +11,7 @@ import {
 import { join, relative } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-import { aggregateExecution, writeAggregate } from '../../../src/results/index.js';
+import { aggregateExecution, paritySection, writeAggregate } from '../../../src/results/index.js';
 import { escapeHtml } from '../../../src/site/render.js';
 import { CANCEL, EXECUTION, storedRun } from '../../support/score-fixture.js';
 import {
@@ -183,6 +183,34 @@ describe('bench site build (REQ-CLI-09 as amended in 1.20, task-045)', () => {
     expect(readFileSync(join(root, 'site', 'abcdef012345', '1', 'index.html'), 'utf8')).toContain(
       '<li>Ran on another subscription.</li>',
     );
+  }, 120_000);
+
+  it('writes the parity page and links it when the aggregate measured it (REQ-RES-12, task-121)', async () => {
+    const { root } = await siteExecution();
+    const file = join(root, 'results', 'abcdef012345', '1', 'aggregate.json');
+    const run = (arm: string, model: string, costEur: number) => ({
+      name: `abcdef012345/1/runs/T3@1.0/${arm}/${model}/r1`,
+      scenario: 'T3',
+      version: '1.0',
+      arm,
+      model,
+      harness: arm === 'wingfoil',
+      mQ1: 1,
+      costEur,
+      wallTimeMs: costEur * 1_000_000,
+      tokens: { input: 1, output: 1, cacheCreation: 0, cacheRead: 0 },
+    });
+    const parity = paritySection(
+      [run('baseline', 'strong', 0.5), run('baseline', 'weak', 0.05), run('wingfoil', 'weak', 0.1)],
+      'strong',
+    );
+    writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file, 'utf8')), parity }));
+    expect((await benchSite(root, 'site', 'build', EXECUTION)).code).toBe(0);
+    const at = join(root, 'site', 'abcdef012345', '1');
+    expect(readFileSync(join(at, 'parity.html'), 'utf8')).toContain(
+      '<h2>wingfoil on weak against the baseline on strong</h2>',
+    );
+    expect(readFileSync(join(at, 'index.html'), 'utf8')).toContain('<a href="parity.html">');
   }, 120_000);
 
   it('gives the same bytes from the same aggregate, and leaves another execution pages as they are', async () => {

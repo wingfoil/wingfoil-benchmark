@@ -2,12 +2,12 @@
 id: task-121-weak-with-a-harness-against-strong-without-the-cross-model-parity-comparison-and-a-local-model-s-estimate-dl-032
 type: task
 title: "Weak with a harness against strong without: the cross-model parity comparison and a local model's estimate (dl-032)"
-status: in-progress
+status: approved
 release: v0.3
 wave: W17
 features: [F4.3, F5.5, F5.8]
 acceptance: [scoring.feature, results.feature]
-requirements: [REQ-SCO-14, REQ-RES-02, REQ-NFR-06]
+requirements: [REQ-SCO-15, REQ-RES-12, REQ-SCO-14, REQ-RES-02, REQ-NFR-06]
 fixes: []
 tags: ["v0.3","scoring","weak-models"]
 ---
@@ -54,11 +54,104 @@ WingFoil feedback notes), a task of its own.
 
 ## Design
 
-<!-- To be written at the start: the weak model's identification (proposed: the model with the lower output-token list
-     price in the agent's pinned price table, so that no campaign file changes and old executions qualify; else a
-     declared pair), where the profiles live, the aggregate's schema, the page's layout. -->
+- **Module:** `src/results/parity.ts`, called by `aggregateExecution`; the aggregate gains an optional `parity` (absent
+  in an aggregate written before it, and in an execution with one model or no pair). `AGGREGATE_VERSION` stays 1: the
+  field is optional, as `controls` was (task-068).
+- **The pairs:** the campaign's default model against each slice's model (slices against each other are left out).
+  For each scenario version and each harness arm (an arm whose runs record a harness commit) that both models ran, with
+  both baselines: the **weak** model is the one whose baselines cost less (the mean of each shared scenario version's
+  mean M-K1, so that a scenario with more runs does not weigh more) over the scenarios the pair shares; a tie pairs
+  nothing. No price table and no campaign file is read or changed, so every stored execution
+  qualifies (dl-032 asks the cheaper model's question; the measured cost is what makes it cheaper).
+- **The matched sample:** `k` = the lower of the weak harness cell's and the strong baseline cell's `n`; each cell's
+  first `k` runs in natural order (r1, r2, …, r10), the reference cells (weak baseline, weak docs control — the group
+  whose runs' `docs_of` names the harness —, strong harness) likewise, each with its own `k` when shorter. A scenario
+  where a cell of the pair is missing is listed under `unmatched` with why.
+- **The cells' figures** (means over the sample, money to a millionth): M-Q1 final share; hold-out final share (when
+  every run of both cells has it); checks share (each run's passed check-steps over its scored ones, when both cells
+  have checks); cost in EUR; agent time (`wall_time_ms`); tokens fresh (input + cache creation), cached (cache read)
+  and output; and the local model time per profile.
+- **The verdicts** (weak harness against strong baseline): each quality metric by `compare` and `certaintyOf`, as the
+  docs-control comparison reads them (REQ-SCO-14); **worse** only when worse beyond the variance, else **not worse**;
+  cost, time and the three token counts as ratios (weak ÷ strong). **H-W holds** when every quality metric is not worse
+  and both the cost and the time ratios are below 1, **fails** otherwise; `preliminary` when `k` < 3 (dl-012).
+- **The local estimate:** profiles `slow` (prefill 300, decode 15 tokens a second), `mid` (1 500, 40) and `fast`
+  (5 000, 100), labelled assumptions in the aggregate (`parity.local_profiles`, with a sentence saying so). Per run,
+  without a prefix cache `(input + cache creation + cache read) / prefill + output / decode`, with one
+  `(input + cache creation) / prefill + output / decode`, in seconds; tool time excluded. **Break-even:** for each
+  cache mode, the slowest profile at which the weak harness cell's local model time is not above the strong
+  baseline's measured agent time, or `none`.
+- **The summary:** per pair and harness, how many scenarios hold, fail, are preliminary and are unmatched, a line for
+  every harness either model ran, one with nothing matched included; scenarios in natural order (S2 before S10). With
+  no entry in any pair the section is absent.
+- **The site:** `parity.html` in the execution's directory, built only when the aggregate has `parity`, linked from
+  the landing page in its own section, "Weak model with the harness against the strong model without it (across
+  models)", after the comparisons; one table per pair and harness, a row per scenario, the reference cells beside; the
+  local estimate below, under the assumptions' sentence. The method page states H-W, the weak model's rule, the
+  matched sample, the verdicts and the profiles as assumptions.
+- **Requirements 1.47:** REQ-SCO-15 (the comparison and the estimate) and REQ-RES-12 (its page), traced to F4.3 and
+  F5.5/F5.8.
 
 ## Execution notes
 
-<!-- What happened while building: deviations, blockers, follow-ups (filed as elements, never left
-     here). For every `wingfoil` command: declared vs observed behaviour. -->
+- Red first: the aggregate's six parity cases failed before `parity.ts` (two more, the section absent and the same
+  bytes, characterize); the parity page's and the landing link's failed with `src/site` set aside; the build's passed
+  with the page in place.
+- **Re-scored, 0 €** (criterion 6): campaigns 002 (`81ebb2691f9c/1`), 007 (`697e79b75e41/1`) and 008
+  (`33b54dd89e8b/1`) re-aggregated from their stored `score.json` by a script calling `aggregateExecution` (no
+  container, no session): every field but `parity` is the same bytes as before. The sections:
+  - 002: Haiku (weak) with wingfoil against Sonnet's baseline fails on S1 and S3 (time 4.3× and 3.3×; n = 1); Sonnet
+    (weak) with each harness against Opus's baseline holds on S1 (n = 1, preliminary: on cost and time only); 19
+    scenario-harness keys unmatched (no Haiku run of openspec or speckit, nor of wingfoil on S2 and S8; no Opus
+    baseline outside S1).
+  - 007: Luna with wingfoil against Terra's baseline holds on S1 (n = 3: cost 0.07×, time 0.44×) and fails on S2, S3
+    and S8 (n = 1, time 1.05–1.28×).
+  - 008: Haiku with wingfoil against Sonnet's baseline fails on all five (n = 3): quality not worse anywhere (S3's
+    and S8's checks better beyond the variance), cost 0.27–0.44×, time 3.8–6.3×; no local profile keeps up.
+- **Against dl-032's script figures:** the samples are the same (007: S1 × 3, S2, S3, S8 × 1; 002: S1, S3 × 1), and
+  the cells' totals reproduce every figure of dl-032's two tables: cost (USD at 0.8917), agent time, tokens processed
+  and output, for the four cells of each campaign. No difference to explain.
+- The site's wording: each quality verdict shows its word (better, same, lower, worse; "worse" only beyond the
+  variance, "lower" a lower mean short of it) and its certainty in brackets, e.g. "better (beyond variance)" for S3's
+  checks.
+
+- **Full suites** (2026-11-01, `f11dfa22`, under the load watcher): LINT 0, TEST 0 (1981 passed, 9 skipped), BUILD 0,
+  BIN 0, DOCKER 0.
+
+### Review
+
+**Round 1** (2026-11-01, a fresh read-only agent in `/tmp/claude-1000/review-121-JGni`, a clone of `c8fba91e`; both
+checkouts' HEAD, reflog and status unchanged after it). It reran the five test files (102 passed), `tsc`, eslint and
+the build; re-aggregated the three executions (byte-identical to the committed files, only `parity` added); checked
+007's S1 entry by hand from the runs' `score.json`; reproduced every figure of dl-032's two tables; confirmed red
+first. No blocker; three should-fix and ten nits:
+
+| # | Finding | Outcome |
+|---|---|---|
+| S1 | `summary` dropped a harness with nothing matched, so 8 unmatched rows of 002 showed nowhere | fixed: a line for every harness, the page says "No scenario matched" |
+| S2 | below 3 runs no quality metric can be worse, and the headline did not say so | fixed: `summary.preliminary`, the headline counts them; method page and REQ-SCO-15 say so |
+| S3 | tests missing: checks share, a final not reached, a partial hold-out, a tie, a ratio of 0 | fixed: three cases |
+| N4 | the sample took r10 before r2 | fixed: natural order, runs and scenarios |
+| N5 | the weak model's cost weighed scenarios by their runs | fixed: the mean of each scenario's mean |
+| N6 | "lower, not beyond the variance, within variance" | fixed: "lower (within variance)" |
+| N7 | scenarios in code-unit order (S10 before S2) | fixed with N4 |
+| N8 | the site's zod shape checked a few fields only | fixed: every field the page reads |
+| N9 | no Checks column in the cells' table | fixed |
+| N10 | `BreakEvenProfile = string` | removed |
+| N11 | Amendment 1.47's first line not wrapped | fixed |
+| N12 | 002's unmatched reason misstated for Opus | fixed |
+| N13 | the method's weak-model rule omitted the shared scenarios and the tie | fixed |
+
+**Round 2** (2026-11-01, a fresh read-only agent in `/tmp/claude-1000/review2-121-4gUe`, a clone of `4a6a0b9f`; both
+checkouts unchanged after it), on `c8fba91e..4a6a0b9f`: round 1 resolved. It reran six test files (113 passed),
+`tsc`, eslint; rendered 002's page (all 19 unmatched rows shown, two "No scenario matched"); checked the natural
+order as a total order (200 000 random trials); tried malformed `parity` sections (refused, not thrown); reproduced
+the three aggregates byte for byte; confirmed the summary and order tests red on round 1's code. One should-fix, a
+stale Execution note on the verdict wording: fixed. Two nits: no test pinned the weak model's mean of per-scenario
+means (added: the two rules pick different weak models); 002's unmatched reasons omitted Haiku's wingfoil on S2 and
+S8 (added).
+
+**Round 3** (2026-11-01, a fresh read-only agent, its clone in `/tmp/claude-1000/review3-121-LoJe`; both checkouts
+unchanged), on `72e70d6d`: round 2's should-fix and nits resolved; the per-scenario test fails, alone, on the pooled
+rule (checked in the clone); 002's 19 unmatched rows accounted for by reason. One cosmetic nit, a trailing blank line:
+fixed.
