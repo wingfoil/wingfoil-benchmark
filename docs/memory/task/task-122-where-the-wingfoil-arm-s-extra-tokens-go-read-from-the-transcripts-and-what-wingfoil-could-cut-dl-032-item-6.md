@@ -2,7 +2,7 @@
 id: task-122-where-the-wingfoil-arm-s-extra-tokens-go-read-from-the-transcripts-and-what-wingfoil-could-cut-dl-032-item-6
 type: task
 title: "Where the wingfoil arm's extra tokens go, read from the transcripts, and what WingFoil could cut (dl-032 item 6)"
-status: draft
+status: pending
 release: v0.3
 wave: W17
 features: [F4.3]
