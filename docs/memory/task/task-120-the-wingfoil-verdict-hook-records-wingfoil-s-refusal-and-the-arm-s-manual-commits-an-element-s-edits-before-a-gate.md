@@ -73,7 +73,7 @@ are preliminary).
   where the profiles pin it" to "recorded here": no profile pins the new digest, since the existing ones describe runs
   already made; the next campaign's file will. Two wording changes add to the criterion and weaken nothing: the
   rule's reason ("because the verdict is carried out on what is committed") and the old digest's id. The approver
-  accepts the changes or restores them at the gate.
+  accepts the changes or restores them at the gate. **Accepted by the approver in chat (2026-11-01, "accetto il criterio 3").**
 - **Not in this task, proposed:** when the hook exits non-zero the runner records `failed (exit N)` and drops its
   stderr (`src/runner/run.ts`, `deliver`): the same loss one level up, never observed in a run (round 1's nit).
 
