@@ -347,5 +347,14 @@ decision WingFoil should take (2026-11-01). Considered and not filed there:
   Code); seven notes; no `compared_with` (no execution on approver policy v5 to compare with).
 - **The site built** (`bench site build`, 2026-11-01): every execution under `site/` rebuilt, `33b54dd89e8b/1` last
   (25 pages), so the root page leads to it. Its headline: against the baseline, wingfoil better in 4, worse in 2 of 6
-  comparisons across categories C–F; baseline-docs better in 2, worse in 4. Not yet published: `bench site publish`,
-  the push and the transcripts' release are the approver's.
+  comparisons across categories C–F; baseline-docs better in 2, worse in 4.
+- **Approved for publication** by the approver (`ac4d5740`) and pushed at the approver's request in chat (2026-11-01,
+  "approvato, pusha"): `e840f7ac..ac4d5740`, after a check that no anonymous project is named in the commits.
+- **The transcripts' release, prepared** (`bench transcripts pack 33b54dd89e8b/1`, with the credential's file passed by
+  path so that its value is checked too): `releases/33b54dd89e8b-1/transcripts.tar.gz`, 378 transcripts, sha256
+  `69db090bc3c56007bb6bd73f836e604c2e6f23bd205cee6091f21d61f143719d`; `harnesses.tar.gz`, WingFoil 0.3.1's package and
+  its install, sha256 `3b651019c07931b25a8ed60e7aa225962a1b6baf4419c697420b2ae12d43eb82` (the same as campaign-007's);
+  the asset recorded in the 90 runs. A pattern scan of both archives, unpacked (Anthropic and OpenAI key shapes, JWTs,
+  OAuth token values): clean; two matches read and dismissed, a WingFoil task id cut by `git log` in a transcript and
+  a sample JWT in a test file of the `zod` library inside WingFoil's install. The release upload, `bench site
+  publish` and the push of this record are the approver's.
