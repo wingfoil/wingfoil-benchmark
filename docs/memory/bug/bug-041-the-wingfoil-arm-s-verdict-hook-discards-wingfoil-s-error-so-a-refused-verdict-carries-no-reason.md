@@ -2,7 +2,7 @@
 id: bug-041-the-wingfoil-arm-s-verdict-hook-discards-wingfoil-s-error-so-a-refused-verdict-carries-no-reason
 type: bug
 title: "The wingfoil arm's verdict hook discards WingFoil's error, so a refused verdict carries no reason"
-status: approved
+status: fixed
 fixed_by: task-120-the-wingfoil-verdict-hook-records-wingfoil-s-refusal-and-the-arm-s-manual-commits-an-element-s-edits-before-a-gate
 tags: ["v0.3","wingfoil","s10"]
 ---
