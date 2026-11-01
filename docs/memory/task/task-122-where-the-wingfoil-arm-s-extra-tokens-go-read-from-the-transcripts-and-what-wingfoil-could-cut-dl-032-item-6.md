@@ -129,3 +129,6 @@ of keeping it (fixed, with a test that fails on the old code; no counted run has
 and the note's limit misplaced the failed turns (reworded); Codex's chained `directives list` stated as an upper
 bound. Nits fixed: F-046's tags and `show` wording, the Design's categories and reading, the `which wingfoil` limit.
 
+**Round 3** (2026-11-01, a fresh read-only agent, its clone in `/tmp/claude-1000/review3-122-H2HN`; both checkouts
+unchanged), on `aafb8591`: approved. The failed-turn test fails on round 1's script and passes now; the note's limits
+verified against the stored attempts; §2 byte-identical. Nits fixed: a trailing blank line, F-046 reflowed.
