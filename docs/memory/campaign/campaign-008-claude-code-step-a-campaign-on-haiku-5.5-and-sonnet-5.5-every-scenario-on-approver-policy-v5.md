@@ -339,3 +339,13 @@ decision WingFoil should take (2026-11-01). Considered and not filed there:
   by component), not a WingFoil defect; projected at about 1.05–1.21× the baseline at a real task's size.
 - **H5 not observable:** no agent tried to approve on its own, so WingFoil's refusal was never exercised; a scenario
   matter for v0.4's planning (a step that tempts the agent to approve), not WingFoil's.
+
+## Publication
+
+- **The catalogue** (`site-content/catalog.yaml`, the approver's choice in chat, 2026-11-01): kind `reference`, with a
+  note that only the step-A arms ran (the site's kinds have none for one harness against its docs control on Claude
+  Code); seven notes; no `compared_with` (no execution on approver policy v5 to compare with).
+- **The site built** (`bench site build`, 2026-11-01): every execution under `site/` rebuilt, `33b54dd89e8b/1` last
+  (25 pages), so the root page leads to it. Its headline: against the baseline, wingfoil better in 4, worse in 2 of 6
+  comparisons across categories C–F; baseline-docs better in 2, worse in 4. Not yet published: `bench site publish`,
+  the push and the transcripts' release are the approver's.
