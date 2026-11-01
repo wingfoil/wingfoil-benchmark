@@ -30,8 +30,8 @@ are preliminary).
    schema accepts it (a ledger without it, as campaign-008's, still scores the same).
 3. **Red-first (a test of the manual's text):** the wingfoil manual's gate rule says to commit every change, code and
    documents, before asking for an approval, because the verdict is carried out on what is committed; within 120
-   columns; the arm's new digest recorded here, the old one (`cc009b5a52a9`) kept by the profiles of the runs that
-   used it.
+   columns; the arm's new digest recorded here and in S10's calibration profile, which follows the tree; campaign-008's
+   files keep the old one (`cc009b5a52a9`), as the runs that used it.
 4. A note on r2 in campaign-008's Results review, citing both bugs.
 5. Checks: prettier, `tsc`, eslint, `scripts/pre-review.sh main`; the full suites through the load watcher; an
    independent review (dl-020).
@@ -55,8 +55,10 @@ are preliminary).
   it, so the edit after the submit is the expected path; leaving it uncommitted is the defect. The shared preamble
   ("committed for you when the request ends") is every arm's and stays. baseline and baseline-docs are unchanged
   (no hook, no gate verbs): digests `964b1354526c` and `64e37c838830`.
-- **The arm's digest:** `cc009b5a52a9` → `99ea463d1b37`. No profile is changed: `claude-step-a*.yaml` and
-  `s10-calibration.dry-run.yaml` describe runs already made; the next campaign's file pins the new digest.
+- **The arm's digest:** `cc009b5a52a9` → `99ea463d1b37`. `s10-calibration.dry-run.yaml` pins it: that profile
+  follows the tree ("the arms as the tree has them", its test reads the current digest), as task-119 moved it from
+  `e3f9f11f0f4d` to `cc009b5a52a9`; the dry runs keep the digest they ran in their own stored profile. campaign-008's
+  `claude-step-a*.yaml` keep `cc009b5a52a9`: a change would change the campaign's id.
 
 ## Execution notes
 
@@ -69,12 +71,12 @@ are preliminary).
 - **Deviation, for the approver:** criterion 3 was rewritten in the implementation commit, after the task's approval:
   bug-042's fix as filed also said "not to edit a submitted document afterwards"; the manual asks to submit the task
   before building and to record the outcome in it, so that clause would contradict it, and only the commit before
-  asking is implemented. bug-042 carries the same note. Criterion 3's digest clause changed too, from "recorded
-  where the profiles pin it" to "recorded here": no profile pins the new digest, since the existing ones describe runs
-  already made; the next campaign's file will. Two wording changes add to the criterion and weaken nothing: the
-  rule's reason ("because the verdict is carried out on what is committed") and the old digest's id. The approver
-  accepts the changes or restores them at the gate. **Accepted by the approver in chat (2026-11-01, "accetto il
-  criterio 3").**
+  asking is implemented. bug-042 carries the same note. Criterion 3's digest clause changed too, first to "recorded
+  here" (no profile pinning the new digest); the full suites then showed S10's calibration profile must follow the
+  tree, so it pins the new digest, and only campaign-008's files keep the old one, closer to the clause as approved.
+  Two wording changes add to the criterion and weaken nothing: the rule's reason ("because the verdict is carried out
+  on what is committed") and the old digest's id. The approver accepts the changes or restores them at the gate.
+  **Accepted by the approver in chat (2026-11-01, "accetto il criterio 3"), before the S10 profile change.**
 - **Not in this task, proposed:** when the hook exits non-zero the runner records `failed (exit N)` and drops its
   stderr (`src/runner/run.ts`, `deliver`): the same loss one level up, never observed in a run (round 1's nit).
 
@@ -108,3 +110,7 @@ deviation note named only one of criterion 3's two changes after approval; fixed
 
 **Round 3** (2026-11-01, a fresh read-only agent, nothing run; both checkouts unchanged), on `8363913a`: round 2's
 should-fix and nits resolved. One nit: criterion 3 also had two wording changes the note did not list; listed above.
+
+**Full suites** (2026-11-01, `5f4e81b5`): LINT 0, TEST 1, BUILD 0, BIN 0, DOCKER 0. The one failure:
+`test/unit/campaign/s10-calibration.test.ts` reads S10's calibration profile pinning the arm's current digest; the
+Design had left it at `cc009b5a52a9`. Fixed: the profile pins `99ea463d1b37` (Design above); the suites rerun.
