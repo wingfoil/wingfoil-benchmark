@@ -71,7 +71,9 @@ are preliminary).
   before building and to record the outcome in it, so that clause would contradict it, and only the commit before
   asking is implemented. bug-042 carries the same note. Criterion 3's digest clause changed too, from "recorded
   where the profiles pin it" to "recorded here": no profile pins the new digest, since the existing ones describe runs
-  already made; the next campaign's file will. The approver accepts both changes or restores them at the gate.
+  already made; the next campaign's file will. Two wording changes add to the criterion and weaken nothing: the
+  rule's reason ("because the verdict is carried out on what is committed") and the old digest's id. The approver
+  accepts the changes or restores them at the gate.
 - **Not in this task, proposed:** when the hook exits non-zero the runner records `failed (exit N)` and drops its
   stderr (`src/runner/run.ts`, `deliver`): the same loss one level up, never observed in a run (round 1's nit).
 
@@ -102,3 +104,6 @@ the hook's file twice more, deterministic), `tsc` and eslint, recomputed the dig
 and mutated the script in its clone: the three new cases went red. Round 1 resolved in the code. One should-fix: the
 deviation note named only one of criterion 3's two changes after approval; fixed above. Two nits in requirements 1.46
 ("last non-blank line"; REQ-FMT-06 in the amendment's list): fixed.
+
+**Round 3** (2026-11-01, a fresh read-only agent, nothing run; both checkouts unchanged), on `8363913a`: round 2's
+should-fix and nits resolved. One nit: criterion 3 also had two wording changes the note did not list; listed above.
