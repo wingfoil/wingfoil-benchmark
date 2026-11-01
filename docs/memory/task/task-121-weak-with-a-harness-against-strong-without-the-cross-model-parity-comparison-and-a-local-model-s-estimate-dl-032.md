@@ -148,3 +148,7 @@ stale Execution note on the verdict wording: fixed. Two nits: no test pinned the
 means (added: the two rules pick different weak models); 002's unmatched reasons omitted Haiku's wingfoil on S2 and
 S8 (added).
 
+**Round 3** (2026-11-01, a fresh read-only agent, its clone in `/tmp/claude-1000/review3-121-LoJe`; both checkouts
+unchanged), on `72e70d6d`: round 2's should-fix and nits resolved; the per-scenario test fails, alone, on the pooled
+rule (checked in the clone); 002's 19 unmatched rows accounted for by reason. One cosmetic nit, a trailing blank line:
+fixed.
