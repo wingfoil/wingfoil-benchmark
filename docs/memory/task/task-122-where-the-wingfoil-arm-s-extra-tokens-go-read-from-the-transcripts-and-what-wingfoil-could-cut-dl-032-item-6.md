@@ -73,5 +73,23 @@ transcripts only: no real-agent session, 0 €; nothing written into WingFoil (d
 
 ## Execution notes
 
-<!-- What happened while building: deviations, blockers, follow-ups (filed as elements, never left
-     here). For every `wingfoil` command: declared vs observed behaviour. -->
+- `scripts/token-breakdown.mjs` and its test (11 cases, fixture transcripts of both agents). The test found a defect
+  of the first draft: the first item added before a step's second call was given no tokens (they went to the base);
+  fixed before the note was generated.
+- A first run classified `wingfoil workflow next'` (a sub-command followed by a quote or a semicolon) as "other": the
+  sub-command is now read as a word. `memory approve` and `directives show` became categories of their own (the
+  scenarios other than S10 have the agent approve on "Approved. Proceed.").
+- **The note:** `docs/calibration/wingfoil-tokens.md`, its tables the script's `--markdown` output on the main
+  checkout's results (the transcripts are git-ignored); 144 runs read (campaign-008's 90, campaign-007's 54), in
+  about three seconds.
+- **The reading, in short:** the extra is mostly the base re-read by about twice the calls (46 % on Haiku, 65 % on
+  Sonnet, over 80 % on Codex), much of it after the approver's reply (36–41 % on Claude Code, 72–81 % on Codex);
+  WingFoil's own outputs are about a third on Claude Code (`directives list`, `workflow start`, `workflow status`)
+  and a tenth on Codex; Haiku re-reads documents (20 %).
+- **Feedback notes:** F-046 (listings print every field of every record) and F-047 (a step names its directives by
+  id, and an agent reads all of them), with their ledger rows; F-003 (the default format is JSON) is cited, not
+  repeated. Filing in WingFoil stays the approver's (dl-009).
+- **For the approver, not filed:** the arm's manual asks for `workflow next` after each step though `finalize` prints
+  the next step; a change is an arm change (a new digest). Codex's base per call is higher in the wingfoil arm
+  (28–31 thousand tokens against 11–12) by an estimate that cannot separate WingFoil's MCP server's tools from the
+  estimate's error.
