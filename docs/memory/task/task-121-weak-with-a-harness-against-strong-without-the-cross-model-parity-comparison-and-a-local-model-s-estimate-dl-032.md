@@ -2,7 +2,7 @@
 id: task-121-weak-with-a-harness-against-strong-without-the-cross-model-parity-comparison-and-a-local-model-s-estimate-dl-032
 type: task
 title: "Weak with a harness against strong without: the cross-model parity comparison and a local model's estimate (dl-032)"
-status: approved
+status: done
 release: v0.3
 wave: W17
 features: [F4.3, F5.5, F5.8]
