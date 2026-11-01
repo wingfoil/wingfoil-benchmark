@@ -2,7 +2,7 @@
 id: task-123-the-runner-records-a-failing-verdict-hook-s-stderr-as-its-detail-bug-043
 type: task
 title: "The runner records a failing verdict hook's stderr as its detail (bug-043)"
-status: pending
+status: backlog
 release: v0.3
 wave: W17
 features: [F2.7]
