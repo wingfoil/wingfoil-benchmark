@@ -82,6 +82,7 @@ are in its triage record), 4 `open` (restated with no element), and F-040 to F-0
 | [F-043](F-043-a-new-instance-s-step-evidence-is-read-from-the-whole-repository.md) | A new workflow instance's step evidence is read from the whole repository, so its gate can be skipped | defect | open | |
 | [F-044](F-044-kanban-s-delivery-runs-once-per-instance.md) | Kanban's delivery runs once per instance, though the scaffold says work flows continuously | gap | open | |
 | [F-045](F-045-the-0-3-upgrade-list-omits-two-changes-that-break-a-0-2-configuration.md) | The 0.3 upgrade list omits two changes that break a 0.2 configuration | defect | open | |
+| [F-046](F-046-listings-print-each-record-in-full-which-an-agent-re-reads-at-every-later-call.md) | Listings print each record in full, which an agent re-reads at every later call | request | open | |
 
 ## Context
 
