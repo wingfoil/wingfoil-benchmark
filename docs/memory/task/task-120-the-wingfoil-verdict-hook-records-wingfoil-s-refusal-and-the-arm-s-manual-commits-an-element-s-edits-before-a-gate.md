@@ -69,7 +69,9 @@ are preliminary).
 - **Deviation, for the approver:** criterion 3 was rewritten in the implementation commit, after the task's approval:
   bug-042's fix as filed also said "not to edit a submitted document afterwards"; the manual asks to submit the task
   before building and to record the outcome in it, so that clause would contradict it, and only the commit before
-  asking is implemented. bug-042 carries the same note. The approver accepts or restores the clause at the gate.
+  asking is implemented. bug-042 carries the same note. Criterion 3's digest clause changed too, from "recorded
+  where the profiles pin it" to "recorded here": no profile pins the new digest, since the existing ones describe runs
+  already made; the next campaign's file will. The approver accepts both changes or restores them at the gate.
 - **Not in this task, proposed:** when the hook exits non-zero the runner records `failed (exit N)` and drops its
   stderr (`src/runner/run.ts`, `deliver`): the same loss one level up, never observed in a run (round 1's nit).
 
@@ -82,7 +84,7 @@ four should-fix and seven nits:
 
 | # | Finding | Outcome |
 |---|---|---|
-| S1 | bug-042's "not to edit a submitted document" dropped, criterion 3 rewritten after approval | to the approver at the gate; noted in bug-042 and above |
+| S1 | bug-042's "not to edit a submitted document" dropped, criterion 3 rewritten after approval | to the approver at the gate; noted in bug-042 and above (round 2: both of criterion 3's changes named) |
 | S2 | the hook's tests miss `no-target`, `ambiguous`, `unknown-verdict` on the real script | fixed: three real-WingFoil cases, no detail |
 | S3 | the scratch project inherits the user's git configuration and `GIT_*` variables | fixed: own `HOME`, `GIT_CONFIG_GLOBAL=/dev/null`, `GIT_CONFIG_NOSYSTEM`, `GIT_*` cleared |
 | S4 | REQ-FMT-05 still says `{outcome, target?}` | fixed: amendment 1.46 |
@@ -93,3 +95,10 @@ four should-fix and seven nits:
 | N5 | the runner test ran the campaign twice | fixed |
 | N6 | the test's wrappers did not quote their paths | fixed |
 | N7 | S10.md §11 could list the refused verdict as a threat; the manual's wording repeats "before you ask" | kept: the threat is the agent's, bounded by bug-042's fix; the wording kept for the test's anchor |
+
+**Round 2** (2026-11-01, a fresh read-only agent in `/tmp/claude-1000/review2-120-b8yg`, a clone of `e9a6a299`; both
+checkouts checked unchanged after it), on the fix's diff `ba091f79..e9a6a299`. It reran the four files (126 passed;
+the hook's file twice more, deterministic), `tsc` and eslint, recomputed the digest (`99ea463d1b37`, no stale copy),
+and mutated the script in its clone: the three new cases went red. Round 1 resolved in the code. One should-fix: the
+deviation note named only one of criterion 3's two changes after approval; fixed above. Two nits in requirements 1.46
+("last non-blank line"; REQ-FMT-06 in the amendment's list): fixed.
