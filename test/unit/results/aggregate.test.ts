@@ -1267,6 +1267,19 @@ describe('the weak model with a harness against the strong model without it (dl-
     expect(entry?.quality.map((q) => q.metric)).toEqual(['M-Q1', 'checks']);
   });
 
+  it('weighs each shared scenario the same when it picks the weak model, whatever its runs (review 2)', () => {
+    // model-a: one cheap run on T3 (0.01) and three dear ones on A1 (0.6): pooled 0.4525, by scenario 0.305.
+    // model-b: 0.4 on both: by scenario model-a is the weak one, pooled model-b would be.
+    const parity = parityOf([
+      { ...strongBaseline, costEur: 0.01, reps: 1 },
+      { ...strongBaseline, costEur: 0.6, scenario: 'A1' },
+      { ...weakBaseline, costEur: 0.4 },
+      { ...weakBaseline, costEur: 0.4, scenario: 'A1' },
+      { ...weakHarness, model: 'model-a', reps: 1 },
+    ]);
+    expect(parity?.entries[0]).toMatchObject({ weak_model: 'model-a', strong_model: 'model-b' });
+  });
+
   it('pairs nothing on a tie of the baselines’ cost, and fails H-W on a ratio it cannot take', () => {
     expect(parityOf([strongBaseline, { ...weakBaseline, costEur: 0.5 }, weakHarness])).toBeUndefined();
     const [entry] = parityOf([{ ...strongBaseline, wallTimeMs: 0 }, weakBaseline, weakHarness])?.entries ?? [];

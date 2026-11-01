@@ -102,7 +102,8 @@ WingFoil feedback notes), a task of its own.
   container, no session): every field but `parity` is the same bytes as before. The sections:
   - 002: Haiku (weak) with wingfoil against Sonnet's baseline fails on S1 and S3 (time 4.3× and 3.3×; n = 1); Sonnet
     (weak) with each harness against Opus's baseline holds on S1 (n = 1, preliminary: on cost and time only); 19
-    scenario-harness keys unmatched (no Haiku run of openspec or speckit, no Opus baseline outside S1).
+    scenario-harness keys unmatched (no Haiku run of openspec or speckit, nor of wingfoil on S2 and S8; no Opus
+    baseline outside S1).
   - 007: Luna with wingfoil against Terra's baseline holds on S1 (n = 3: cost 0.07×, time 0.44×) and fails on S2, S3
     and S8 (n = 1, time 1.05–1.28×).
   - 008: Haiku with wingfoil against Sonnet's baseline fails on all five (n = 3): quality not worse anywhere (S3's
@@ -110,8 +111,9 @@ WingFoil feedback notes), a task of its own.
 - **Against dl-032's script figures:** the samples are the same (007: S1 × 3, S2, S3, S8 × 1; 002: S1, S3 × 1), and
   the cells' totals reproduce every figure of dl-032's two tables: cost (USD at 0.8917), agent time, tokens processed
   and output, for the four cells of each campaign. No difference to explain.
-- The site's wording: a quality metric not worse is shown by its outcome (better, same, or "lower, not beyond the
-  variance"), so that S3's checks read better beyond the variance rather than "not worse, beyond variance".
+- The site's wording: each quality verdict shows its word (better, same, lower, worse; "worse" only beyond the
+  variance, "lower" a lower mean short of it) and its certainty in brackets, e.g. "better (beyond variance)" for S3's
+  checks.
 
 ### Review
 
@@ -136,3 +138,13 @@ first. No blocker; three should-fix and ten nits:
 | N11 | Amendment 1.47's first line not wrapped | fixed |
 | N12 | 002's unmatched reason misstated for Opus | fixed |
 | N13 | the method's weak-model rule omitted the shared scenarios and the tie | fixed |
+
+**Round 2** (2026-11-01, a fresh read-only agent in `/tmp/claude-1000/review2-121-4gUe`, a clone of `4a6a0b9f`; both
+checkouts unchanged after it), on `c8fba91e..4a6a0b9f`: round 1 resolved. It reran six test files (113 passed),
+`tsc`, eslint; rendered 002's page (all 19 unmatched rows shown, two "No scenario matched"); checked the natural
+order as a total order (200 000 random trials); tried malformed `parity` sections (refused, not thrown); reproduced
+the three aggregates byte for byte; confirmed the summary and order tests red on round 1's code. One should-fix, a
+stale Execution note on the verdict wording: fixed. Two nits: no test pinned the weak model's mean of per-scenario
+means (added: the two rules pick different weak models); 002's unmatched reasons omitted Haiku's wingfoil on S2 and
+S8 (added).
+
