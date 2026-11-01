@@ -2,7 +2,7 @@
 id: task-120-the-wingfoil-verdict-hook-records-wingfoil-s-refusal-and-the-arm-s-manual-commits-an-element-s-edits-before-a-gate
 type: task
 title: "The wingfoil verdict hook records WingFoil's refusal, and the arm's manual commits an element's edits before a gate"
-status: approved
+status: done
 release: v0.3
 wave: W17
 features: [F2.7]
