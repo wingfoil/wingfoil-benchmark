@@ -15,17 +15,18 @@ verdict="$1" name="$2" email="$3" reason="$4"
 
 # One JSON line, written by node so that any target id and detail are escaped.
 line='const [o, t, d] = process.argv.slice(1);
-  console.log(JSON.stringify({ outcome: o, ...(t ? { target: t } : {}), ...(d ? { detail: d } : {}) }))'
+  const detail = d ? { detail: [...d].slice(0, 500).join("") } : {};
+  console.log(JSON.stringify({ outcome: o, ...(t ? { target: t } : {}), ...detail }))'
 answer() { node -e "$line" "$1" "${2:-}" "${3:-}"; }
 
-# What WingFoil said when it refused: its last `error:` line, or else its last line, at most 500 characters.
-errors="$(mktemp)"
-trap 'rm -f "$errors"' EXIT
+# What WingFoil said when it refused: its last `error:` line, or else its last line; `answer` keeps 500 characters.
+# With no temporary file the hook still works, its refusals then with no detail.
+if errors="$(mktemp 2> /dev/null)"; then trap 'rm -f "$errors"' EXIT; else errors=/dev/null; fi
 refusal() {
   local said
   said="$(grep '^error:' "$errors" | tail -n 1)"
   [ -n "$said" ] || said="$(sed '/^[[:space:]]*$/d' "$errors" | tail -n 1)"
-  printf '%s' "${said:0:500}"
+  printf '%s' "$said"
 }
 
 # The ids of `memory search --format json`'s matches, one per line; a search that fails is reported, not read as none.

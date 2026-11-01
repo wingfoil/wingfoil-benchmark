@@ -890,10 +890,11 @@ describe('the neutral approver in the step loop (F2.4)', () => {
               }
             : undefined,
       });
-      expect(await firstDelivery(ports)).toMatchObject({
+      const delivery = await firstDelivery(ports);
+      expect(delivery).toMatchObject({
         carried_out: { outcome: 'refused', target: 'task-7', detail: said, commits: [] },
       });
-      expect(JSON.stringify(await firstDelivery(ports))).not.toContain('extra');
+      expect(JSON.stringify(delivery)).not.toContain('extra');
     });
 
     it('records a hook that does not answer in time as timed out', async () => {

@@ -258,7 +258,7 @@ in the scratchpad); preliminary, n = 3; wingfoil against its docs control is als
   (a state-transition commit records the status change only); reproduced on a copy of the workspace. Filed as
   [bug-041](../bug/bug-041-the-wingfoil-arm-s-verdict-hook-discards-wingfoil-s-error-so-a-refused-verdict-carries-no-reason.md) (the hook discarded WingFoil's reason) and
   [bug-042](../bug/bug-042-the-wingfoil-arm-s-manual-does-not-say-to-commit-an-element-s-edits-before-stopping-at-a-gate-so-the-approver-s-verdict-is-refused.md) (the arm's manual did not say to commit before a gate), fixed by task-120 at
-  the arm's digest `927ab3adb0bb`; the run is kept as it ran, not rerun.
+  the arm's digest `99ea463d1b37`; the run is kept as it ran, not rerun.
 
 **S1–S8 (v0.2.md §9's hypotheses, step A driving the engine)**
 

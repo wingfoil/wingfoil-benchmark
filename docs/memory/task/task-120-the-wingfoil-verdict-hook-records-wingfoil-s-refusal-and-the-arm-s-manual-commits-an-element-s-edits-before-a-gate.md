@@ -40,8 +40,11 @@ are preliminary).
 
 - **The hook** (`arms/wingfoil/verdict.sh`): WingFoil's stderr goes to a temporary file instead of `/dev/null`; on
   `refused` and `search-failed` the JSON line gains `detail`, WingFoil's last `error:` line (else its last non-blank
-  line), cut at 500 characters; `done`, `no-target`, `ambiguous` and `unknown-verdict` are unchanged. The approver's
-  identity still reaches only WingFoil's command.
+  line), when WingFoil printed one, cut at 500 characters by the node helper that writes the line (not by bash, which
+  would cut bytes in the run image's C locale); `done`, `no-target`, `ambiguous` and `unknown-verdict` are unchanged.
+  With no temporary file (`mktemp` failing) the hook works as before, its refusals with no detail. A search whose JSON
+  does not parse answers `search-failed` with no detail, as before. The approver's identity still reaches only
+  WingFoil's command.
 - **The runner** (`src/runner/run.ts`, `deliver`/`hookAnswer`): reads `detail` when it is a string and records it in
   `carried_out`; other fields of the answer are still dropped.
 - **The scoring** (`src/scoring/governance.ts`): the ledger schema names `detail` as optional; it was already
@@ -52,7 +55,7 @@ are preliminary).
   it, so the edit after the submit is the expected path; leaving it uncommitted is the defect. The shared preamble
   ("committed for you when the request ends") is every arm's and stays. baseline and baseline-docs are unchanged
   (no hook, no gate verbs): digests `964b1354526c` and `64e37c838830`.
-- **The arm's digest:** `cc009b5a52a9` → `927ab3adb0bb`. No profile is changed: `claude-step-a*.yaml` and
+- **The arm's digest:** `cc009b5a52a9` → `99ea463d1b37`. No profile is changed: `claude-step-a*.yaml` and
   `s10-calibration.dry-run.yaml` describe runs already made; the next campaign's file pins the new digest.
 
 ## Execution notes
@@ -63,3 +66,30 @@ are preliminary).
   one second a case. The failing search uses a stub on the hook's PATH.
 - Red first: the hook's two new cases and the runner's failed before the change; the manual's failed before its
   sentence; the scoring's passed (characterization, above).
+- **Deviation, for the approver:** criterion 3 was rewritten in the implementation commit, after the task's approval:
+  bug-042's fix as filed also said "not to edit a submitted document afterwards"; the manual asks to submit the task
+  before building and to record the outcome in it, so that clause would contradict it, and only the commit before
+  asking is implemented. bug-042 carries the same note. The approver accepts or restores the clause at the gate.
+- **Not in this task, proposed:** when the hook exits non-zero the runner records `failed (exit N)` and drops its
+  stderr (`src/runner/run.ts`, `deliver`): the same loss one level up, never observed in a run (round 1's nit).
+
+### Review
+
+**Round 1** (2026-11-01, a fresh read-only agent in `/tmp/claude-1000/review-120-q0RW`, a clone of `ba091f79`; both
+checkouts' HEAD, reflog and status checked unchanged after it). It reran the four test files (123 passed) and the
+red-first claims (4 red on main's code, the schema's characterization green), and confirmed the digests. No blocker;
+four should-fix and seven nits:
+
+| # | Finding | Outcome |
+|---|---|---|
+| S1 | bug-042's "not to edit a submitted document" dropped, criterion 3 rewritten after approval | to the approver at the gate; noted in bug-042 and above |
+| S2 | the hook's tests miss `no-target`, `ambiguous`, `unknown-verdict` on the real script | fixed: three real-WingFoil cases, no detail |
+| S3 | the scratch project inherits the user's git configuration and `GIT_*` variables | fixed: own `HOME`, `GIT_CONFIG_GLOBAL=/dev/null`, `GIT_CONFIG_NOSYSTEM`, `GIT_*` cleared |
+| S4 | REQ-FMT-05 still says `{outcome, target?}` | fixed: amendment 1.46 |
+| N1 | `mktemp` failing breaks every search | fixed: falls back to no detail |
+| N2 | bash cuts 500 bytes in the run image's C locale | fixed: node cuts 500 characters; the test uses multibyte text |
+| N3 | `search-failed` with no detail when the JSON does not parse | the Design says so |
+| N4 | the runner drops a non-zero hook's stderr | out of scope, proposed above |
+| N5 | the runner test ran the campaign twice | fixed |
+| N6 | the test's wrappers did not quote their paths | fixed |
+| N7 | S10.md §11 could list the refused verdict as a threat; the manual's wording repeats "before you ask" | kept: the threat is the agent's, bounded by bug-042's fix; the wording kept for the test's anchor |
