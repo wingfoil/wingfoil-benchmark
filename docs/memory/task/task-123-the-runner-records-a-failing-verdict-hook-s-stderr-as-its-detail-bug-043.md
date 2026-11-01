@@ -41,6 +41,8 @@ observed in a run. The approver asked for its task in chat (2026-11-01). Placed 
 
 ## Execution notes
 
+- Criterion 1's "the error's message" for an exec that throws is recorded as the error as text (`Error: <message>`),
+  as REQ-FMT-05's 1.48 text says.
 - Red first: the four new cases (a last non-blank line, stderr over stdout, the 500-character cut, an exec that
   throws) failed before the change; the empty-stderr case passed before and after (it characterizes no `detail`).
 
@@ -55,3 +57,7 @@ red first confirmed (4 failed, 1 passed on main's runner). Two should-fix and fi
 | S1 | the code-point cut was not pinned (`é` is one UTF-16 unit) | fixed: an astral character |
 | S2 | no test for a succeeding hook with a stderr (criterion 1) | fixed: its own line's `detail`, stderr ignored |
 | N | the throw test's name and REQ-FMT-05's "error's message" (it is the error as text); comments overstating the parallel with the hook; `Delivery.carried_out.detail`'s doc comment; a 121-column comment | fixed |
+
+**Round 2** (2026-11-01, a fresh read-only agent in `/tmp/claude-1000/review2-123-K7CZ`, a clone of `ab81c80b`; both
+checkouts unchanged), on `3324dfe0..ab81c80b`: round 1 resolved; both pinning tests fail when the change they guard is
+undone. One optional nit (criterion 1's wording of a throw): stated in the Execution notes.
