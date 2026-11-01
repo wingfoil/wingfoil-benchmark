@@ -104,6 +104,9 @@ transcripts only: no real-agent session, 0 €; nothing written into WingFoil (d
   (28–31 thousand tokens against 11–12) by an estimate that cannot separate what WingFoil's MCP server adds from the
   estimate's error.
 
+- **Full suites** (2026-11-01, `4251902a`, under the load watcher): LINT 0, TEST 0 (1996 passed, 9 skipped), BUILD 0,
+  BIN 0, DOCKER 0.
+
 ### Review
 
 **Round 1** (2026-11-01, a fresh read-only agent in `/tmp/claude-1000/review-122-V58p`, a clone of `809bd66f`; both
