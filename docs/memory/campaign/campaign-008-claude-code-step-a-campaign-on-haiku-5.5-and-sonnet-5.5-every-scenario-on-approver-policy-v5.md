@@ -356,5 +356,6 @@ decision WingFoil should take (2026-11-01). Considered and not filed there:
   its install, sha256 `3b651019c07931b25a8ed60e7aa225962a1b6baf4419c697420b2ae12d43eb82` (the same as campaign-007's);
   the asset recorded in the 90 runs. A pattern scan of both archives, unpacked (Anthropic and OpenAI key shapes, JWTs,
   OAuth token values): clean; two matches read and dismissed, a WingFoil task id cut by `git log` in a transcript and
-  a sample JWT in a test file of the `zod` library inside WingFoil's install. The release upload, `bench site
-  publish` and the push of this record are the approver's.
+  a sample JWT in a test file of the `zod` library inside WingFoil's install.
+- **Published by the approver** (2026-11-01): the GitHub release `33b54dd89e8b-1` with both archives (sizes checked
+  against the local ones), `e7b0a519` pushed, and `bench site publish`: gh-pages `c9937ff8`, seven executions.
