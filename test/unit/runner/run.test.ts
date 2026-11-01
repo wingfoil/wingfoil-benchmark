@@ -897,6 +897,49 @@ describe('the neutral approver in the step loop (F2.4)', () => {
       expect(JSON.stringify(delivery)).not.toContain('extra');
     });
 
+    it.each([
+      [
+        'its last non-blank stderr line',
+        { code: 2, stdout: '', stderr: 'warning: x\n/workspace: No such file or directory\n\n' },
+        'failed (exit 2)',
+        '/workspace: No such file or directory',
+      ],
+      ['nothing when its stderr is empty', { code: 1, stdout: '', stderr: '' }, 'failed (exit 1)', undefined],
+      [
+        'its stderr, not its stdout’s detail',
+        { code: 4, stdout: '{"outcome":"done","detail":"no"}\n', stderr: 'error: crashed' },
+        'failed (exit 4)',
+        'error: crashed',
+      ],
+      [
+        'at most 500 characters',
+        { code: 1, stdout: '', stderr: `error: ${'é'.repeat(900)}` },
+        'failed (exit 1)',
+        [...`error: ${'é'.repeat(900)}`].slice(0, 500).join(''),
+      ],
+    ])('keeps, for a hook that fails, %s as the detail (bug-043)', async (_case, result, outcome, detail) => {
+      const ports = doubles({
+        messageOf: asks,
+        execResultOf: (command) => (isHook(command) ? result : undefined),
+      });
+      const delivery = (await firstDelivery(ports)) as { carried_out: Record<string, unknown> };
+      expect(delivery.carried_out).toEqual({
+        outcome,
+        commits: [],
+        ...(detail === undefined ? {} : { detail }),
+      });
+    });
+
+    it('keeps the message of an exec that throws as the detail (bug-043)', async () => {
+      const ports = doubles({ messageOf: asks });
+      const exec = ports.docker.exec.bind(ports.docker);
+      ports.docker.exec = (container, command) =>
+        isHook(command) ? Promise.reject(new Error('container gone')) : exec(container, command);
+      expect(await firstDelivery(ports)).toMatchObject({
+        carried_out: { outcome: 'failed (exit -1)', detail: 'Error: container gone' },
+      });
+    });
+
     it('records a hook that does not answer in time as timed out', async () => {
       const ports = doubles({ messageOf: asks });
       const exec = ports.docker.exec.bind(ports.docker);

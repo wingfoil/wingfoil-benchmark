@@ -32,9 +32,13 @@ observed in a run. The approver asked for its task in chat (2026-11-01). Placed 
 
 ## Design
 
-<!-- `src/runner/run.ts`, `deliver`: the cut shared with the hook's (500 characters, code points). -->
+- `src/runner/run.ts`, `deliver`: when the hook's run is not timed out and its exit code is not 0 (a run that throws is
+  recorded as exit -1 with the error as its stderr, as before), its answer is read from its stderr instead of its
+  stdout: `stderrDetail` keeps the last non-blank line, trimmed, cut at 500 code points (`DETAIL_LIMIT`, the wingfoil
+  hook's cut, task-120); an empty stderr gives no `detail`. A hook that succeeds is read from its stdout as before.
+- REQ-FMT-05 amended in 1.48; the scoring's ledger schema unchanged (it accepts `detail` since task-120).
 
 ## Execution notes
 
-<!-- What happened while building: deviations, blockers, follow-ups (filed as elements, never left
-     here). For every `wingfoil` command: declared vs observed behaviour. -->
+- Red first: the four new cases (a last non-blank line, stderr over stdout, the 500-character cut, an exec that
+  throws) failed before the change; the empty-stderr case passed before and after (it characterizes no `detail`).
