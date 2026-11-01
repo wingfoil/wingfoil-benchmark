@@ -115,6 +115,9 @@ WingFoil feedback notes), a task of its own.
   variance, "lower" a lower mean short of it) and its certainty in brackets, e.g. "better (beyond variance)" for S3's
   checks.
 
+- **Full suites** (2026-11-01, `f11dfa22`, under the load watcher): LINT 0, TEST 0 (1981 passed, 9 skipped), BUILD 0,
+  BIN 0, DOCKER 0.
+
 ### Review
 
 **Round 1** (2026-11-01, a fresh read-only agent in `/tmp/claude-1000/review-121-JGni`, a clone of `c8fba91e`; both
