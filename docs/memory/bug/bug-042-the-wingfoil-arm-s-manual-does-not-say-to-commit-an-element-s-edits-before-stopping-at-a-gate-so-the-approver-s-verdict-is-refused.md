@@ -2,7 +2,7 @@
 id: bug-042-the-wingfoil-arm-s-manual-does-not-say-to-commit-an-element-s-edits-before-stopping-at-a-gate-so-the-approver-s-verdict-is-refused
 type: bug
 title: "The wingfoil arm's manual does not say to commit an element's edits before stopping at a gate, so the approver's verdict is refused"
-status: approved
+status: fixed
 fixed_by: task-120-the-wingfoil-verdict-hook-records-wingfoil-s-refusal-and-the-arm-s-manual-commits-an-element-s-edits-before-a-gate
 tags: ["v0.3","wingfoil","s10"]
 ---
