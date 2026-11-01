@@ -1942,6 +1942,8 @@ interface Delivery {
   readonly carried_out?: {
     readonly outcome: string;
     readonly target?: string;
+    /** WingFoil's reason, as the hook kept it, when the verb was refused or a search failed (bug-041). */
+    readonly detail?: string;
     readonly commits: readonly string[];
   };
 }
@@ -2001,18 +2003,24 @@ async function deliver(
         : (said.outcome ?? 'unreadable');
   return {
     ...base,
-    carried_out: { outcome, ...(said.target === undefined ? {} : { target: said.target }), commits },
+    carried_out: {
+      outcome,
+      ...(said.target === undefined ? {} : { target: said.target }),
+      ...(said.detail === undefined ? {} : { detail: said.detail }),
+      commits,
+    },
   };
 }
 
-/** The hook's last line, `{"outcome": …, "target"?: …}`; nothing of it when it is not that. */
-function hookAnswer(stdout: string): { outcome?: string; target?: string } {
+/** The hook's last line, `{"outcome": …, "target"?: …, "detail"?: …}`; nothing of it when it is not that. */
+function hookAnswer(stdout: string): { outcome?: string; target?: string; detail?: string } {
   const last = stdout.trim().split('\n').pop() ?? '';
   try {
     const parsed = JSON.parse(last) as Record<string, unknown>;
     return {
       ...(typeof parsed.outcome === 'string' ? { outcome: parsed.outcome } : {}),
       ...(typeof parsed.target === 'string' ? { target: parsed.target } : {}),
+      ...(typeof parsed.detail === 'string' ? { detail: parsed.detail } : {}),
     };
   } catch {
     return {};

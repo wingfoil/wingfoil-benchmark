@@ -28,18 +28,38 @@ are preliminary).
    that fails answers `search-failed` with its `detail`; `done`, `no-target` and `ambiguous` unchanged.
 2. **Red-first:** the runner records the hook's `detail` in `verdicts.json`'s `carried_out`, and the scoring's ledger
    schema accepts it (a ledger without it, as campaign-008's, still scores the same).
-3. **Red-first (a test of the manual's text):** the wingfoil manual's gate rule says to commit every change,
-   code and documents, before asking for an approval, and not to edit a submitted document afterwards; within 120
-   columns; the arm's new digest recorded where the profiles pin it, and the old one kept for the runs that used it.
+3. **Red-first (a test of the manual's text):** the wingfoil manual's gate rule says to commit every change, code and
+   documents, before asking for an approval, because the verdict is carried out on what is committed; within 120
+   columns; the arm's new digest recorded here, the old one (`cc009b5a52a9`) kept by the profiles of the runs that
+   used it.
 4. A note on r2 in campaign-008's Results review, citing both bugs.
 5. Checks: prettier, `tsc`, eslint, `scripts/pre-review.sh main`; the full suites through the load watcher; an
    independent review (dl-020).
 
 ## Design
 
-<!-- Modules, interfaces, data formats touched; decisions taken and their reasons. -->
+- **The hook** (`arms/wingfoil/verdict.sh`): WingFoil's stderr goes to a temporary file instead of `/dev/null`; on
+  `refused` and `search-failed` the JSON line gains `detail`, WingFoil's last `error:` line (else its last non-blank
+  line), cut at 500 characters; `done`, `no-target`, `ambiguous` and `unknown-verdict` are unchanged. The approver's
+  identity still reaches only WingFoil's command.
+- **The runner** (`src/runner/run.ts`, `deliver`/`hookAnswer`): reads `detail` when it is a string and records it in
+  `carried_out`; other fields of the answer are still dropped.
+- **The scoring** (`src/scoring/governance.ts`): the ledger schema names `detail` as optional; it was already
+  accepted (zod drops unknown keys), so its test is a characterization: a ledger with it scores as one without.
+- **The manual** (`arms/wingfoil/manual.md`, *At a gate*): one sentence, commit every change before asking, since the
+  verdict is carried out while the agent waits and WingFoil refuses to move a document with uncommitted edits. Not "do
+  not edit a submitted document": the manual asks to submit the task before building and to record the outcome in
+  it, so the edit after the submit is the expected path; leaving it uncommitted is the defect. The shared preamble
+  ("committed for you when the request ends") is every arm's and stays. baseline and baseline-docs are unchanged
+  (no hook, no gate verbs): digests `964b1354526c` and `64e37c838830`.
+- **The arm's digest:** `cc009b5a52a9` → `927ab3adb0bb`. No profile is changed: `claude-step-a*.yaml` and
+  `s10-calibration.dry-run.yaml` describe runs already made; the next campaign's file pins the new digest.
 
 ## Execution notes
 
-<!-- What happened while building: deviations, blockers, follow-ups (filed as elements, never left
-     here). For every `wingfoil` command: declared vs observed behaviour. -->
+- The hook's test runs WingFoil 0.3.1 from `node_modules` (the arm's harness release) in a scratch Kanban project with
+  a developer and Dana as the approver, as the setup declares them: a pending task with an uncommitted body edit is
+  refused with `error: refusing to commit …: it carries uncommitted modifications…`, as campaign-008's r2 was; about
+  one second a case. The failing search uses a stub on the hook's PATH.
+- Red first: the hook's two new cases and the runner's failed before the change; the manual's failed before its
+  sentence; the scoring's passed (characterization, above).

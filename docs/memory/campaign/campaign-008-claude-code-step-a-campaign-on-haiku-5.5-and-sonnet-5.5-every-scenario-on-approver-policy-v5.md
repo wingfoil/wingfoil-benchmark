@@ -253,7 +253,12 @@ in the scratchpad); preliminary, n = 3; wingfoil against its docs control is als
 - **The anomaly: Haiku wingfoil r2.** At step 1 the hook's approval of task-001, the one task waiting, was `refused`
   by WingFoil; no release moved past 1.4.0, and the later deliveries were `ambiguous` (nothing carried out). M-E3 1 of
   3 and M-E3a 0 of 3 come from it. The cause is not read yet (the verb's refusal is not in `verdicts.json`): a
-  candidate for a bug before the results are published.
+  candidate for a bug before the results are published. **Note (2026-11-01, task-120):** WingFoil refused because the
+  agent had edited task-001's body after submitting it and left the edit uncommitted when it asked for the approval
+  (a state-transition commit records the status change only); reproduced on a copy of the workspace. Filed as
+  [bug-041](../bug/bug-041-the-wingfoil-arm-s-verdict-hook-discards-wingfoil-s-error-so-a-refused-verdict-carries-no-reason.md) (the hook discarded WingFoil's reason) and
+  [bug-042](../bug/bug-042-the-wingfoil-arm-s-manual-does-not-say-to-commit-an-element-s-edits-before-stopping-at-a-gate-so-the-approver-s-verdict-is-refused.md) (the arm's manual did not say to commit before a gate), fixed by task-120 at
+  the arm's digest `927ab3adb0bb`; the run is kept as it ran, not rerun.
 
 **S1–S8 (v0.2.md §9's hypotheses, step A driving the engine)**
 

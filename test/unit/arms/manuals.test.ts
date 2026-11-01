@@ -140,6 +140,12 @@ describe('the step-A wingfoil manual (dl-021 step A, task-114)', () => {
     expect(text).toMatch(/never run `wingfoil memory approve` or `wingfoil memory reject` yourself/);
   });
 
+  it('commits every change before asking at a gate, as the verdict is carried out on what is committed (bug-042)', () => {
+    const gate = manual('wingfoil').replace(/\s+/g, ' ');
+    expect(gate).toContain('commit every change, the code and the documents, before you ask');
+    expect(gate).toContain('WingFoil refuses to move a document whose file has uncommitted edits');
+  });
+
   it('gives every request its task, without --workflow when the step does not ask for one (decision 1, F-043)', () => {
     const own = wingfoilOwn();
     expect(own).toContain('**Every request has its task.**');
