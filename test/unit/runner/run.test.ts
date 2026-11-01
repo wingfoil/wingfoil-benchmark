@@ -876,6 +876,27 @@ describe('the neutral approver in the step loop (F2.4)', () => {
       expect(await firstDelivery(ports)).toMatchObject({ carried_out: { outcome, commits: [] } });
     });
 
+    it("records WingFoil's reason beside a refused verdict, and the answer's other fields not at all (bug-041)", async () => {
+      const said =
+        'error: refusing to commit docs/memory/task/task-7.md: it carries uncommitted modifications';
+      const ports = doubles({
+        messageOf: asks,
+        execResultOf: (command) =>
+          isHook(command)
+            ? {
+                code: 0,
+                stdout: `${JSON.stringify({ outcome: 'refused', target: 'task-7', detail: said, extra: 1 })}\n`,
+                stderr: '',
+              }
+            : undefined,
+      });
+      const delivery = await firstDelivery(ports);
+      expect(delivery).toMatchObject({
+        carried_out: { outcome: 'refused', target: 'task-7', detail: said, commits: [] },
+      });
+      expect(JSON.stringify(delivery)).not.toContain('extra');
+    });
+
     it('records a hook that does not answer in time as timed out', async () => {
       const ports = doubles({ messageOf: asks });
       const exec = ports.docker.exec.bind(ports.docker);

@@ -34,3 +34,7 @@ with uncommitted edits. Nothing in WingFoil is wrong: the refusal is its rule.
 The manual's gate rule says to commit every change (the code and the documents) before asking for an approval, and
 not to edit a submitted document afterwards. It changes the arm's digest. (Considered and not chosen: the runner
 committing the working tree before running the hook, which would write the agent's work under the runner.)
+
+**Note (task-120, 2026-11-01):** the "not to edit a submitted document afterwards" clause is not implemented: the
+manual asks to submit the task before building and to record the outcome in it, so an edit after the submit is the
+expected path, and leaving it uncommitted was the defect. Raised with the approver at task-120's gate.

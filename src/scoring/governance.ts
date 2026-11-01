@@ -18,7 +18,12 @@ const deliverySchema = z.object({
   head: z.string(),
   release: z.string().optional(),
   carried_out: z
-    .object({ outcome: z.string(), commits: z.array(z.string()), target: z.string().optional() })
+    .object({
+      outcome: z.string(),
+      commits: z.array(z.string()),
+      target: z.string().optional(),
+      detail: z.string().optional(),
+    })
     .optional(),
 });
 const ledgerSchema = z.object({ deliveries: z.array(deliverySchema) });

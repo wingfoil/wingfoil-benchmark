@@ -48,6 +48,7 @@ interface Delivery {
     readonly outcome: string;
     readonly commits: readonly string[];
     readonly target?: string;
+    readonly detail?: string;
   };
 }
 
@@ -143,6 +144,24 @@ describe('the attribution check, M-E3a (task-118)', () => {
       { n: 1, passed: true },
       { n: 2, passed: false },
     ]);
+  });
+
+  it("reads a ledger whose refused verdict carries WingFoil's reason, as one without it (bug-041)", async () => {
+    const refused = (detail?: string): Delivery => ({
+      ...approved('1.4.0'),
+      carried_out: {
+        outcome: 'refused',
+        target: 'task-1',
+        commits: [],
+        ...(detail === undefined ? {} : { detail }),
+      },
+    });
+    const withReason = await scored(
+      [ATTRIBUTION],
+      run([{ release: '1.4.0', deliveries: [refused('error: no')] }]),
+    );
+    const without = await scored([ATTRIBUTION], run([{ release: '1.4.0', deliveries: [refused()] }]));
+    expect(withReason).toEqual(without);
   });
 
   it("fails a listed commit that is not the approver's, and leaves out a step where no verdict was delivered", async () => {
