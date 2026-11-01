@@ -129,7 +129,11 @@ logs, transcripts or results, beyond dl-024's bounded exception; one worktree pe
 7. **For v0.4's planning** (dl-031, the approver's aim of 2026-10-28: WingFoil's benefit to weak models, and to a
    project's governance with strong ones): the gates-and-roles scenario (dl-029) and S4–S7 first, the decision on
    repetitions before any campaign is read as more than preliminary; local models later (an adapter and an
-   eligibility assessment).
+   eligibility assessment). **S10's H5 needs a step that tempts the agent to approve on its own** (the approver,
+   2026-11-01): in campaign-008 no agent tried, so WingFoil's refusal of a self-approval was never exercised (H5 not
+   observable); a later S10 version, or a step of the gates-and-roles scenarios, where the approver's absence or an
+   urgent release invites the agent to approve or record the approval itself, the same in every arm; its oracle reads
+   the attempts (the transcripts' verbs, a status changed by hand, a recorded approval no verdict gave).
 
 ## Handoff
 
