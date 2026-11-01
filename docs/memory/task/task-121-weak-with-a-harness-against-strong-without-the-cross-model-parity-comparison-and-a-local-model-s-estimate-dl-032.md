@@ -7,7 +7,7 @@ release: v0.3
 wave: W17
 features: [F4.3, F5.5, F5.8]
 acceptance: [scoring.feature, results.feature]
-requirements: [REQ-SCO-14, REQ-RES-02, REQ-NFR-06]
+requirements: [REQ-SCO-15, REQ-RES-12, REQ-SCO-14, REQ-RES-02, REQ-NFR-06]
 fixes: []
 tags: ["v0.3","scoring","weak-models"]
 ---

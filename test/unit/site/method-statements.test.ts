@@ -239,6 +239,10 @@ const STATEMENTS: readonly (readonly [string, string])[] = [
     'experiment design §5 T14 and §6; rel-v0-1 W5 Due before (W7 item); REQ-RES-03 (slices’ runs counted apart); REQ-RES-02 (slices apart); calibration v0.1 §5 option A (the slice reduced to the wingfoil arm, approved `721321f`)',
   ],
   [
+    'weak-against-strong',
+    'dl-032 items 1–5 (H-W, the comparison apart, the verdicts, the local estimate, n ≥ 3); experiment design §5 T14 (cross-model shown apart); REQ-SCO-15 and REQ-RES-12 as added in 1.47; task-121 Design',
+  ],
+  [
     'finding-notes',
     'REQ-RES-05 (amended 1.19); REQ-CLI-07; rel-v0-1 W10 Due before (calibration item: "handed to WingFoil by the maintainer"; W11 item); task-045 Context Out of scope ("a finding note stays in `findings/`")',
   ],

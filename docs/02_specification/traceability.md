@@ -61,7 +61,7 @@ scheduled), G-A, G-B (v0.4 from sequencer 1.2) and G-G (v1.0) have no v0.1 scena
 | F3.6 expected failures | vision | scenarios.feature | REQ-FMT-10; REQ-SCO-10 | W6 |
 | F4.1 hidden-test oracle | J2.5 | scoring.feature | REQ-SCO-01, 02, 03, 12 | W6 |
 | F4.2 static quality | J2.5 | scoring.feature | REQ-SCO-04 | W9 |
-| F4.3 cost metrics | J2.5 | scoring.feature | REQ-RUN-09 | W6 |
+| F4.3 cost metrics | J2.5 | scoring.feature | REQ-RUN-09; REQ-SCO-15 (v0.3) | W6; the weak against the strong model W17 (v0.3) |
 | F4.4 setup/step split, break-even | J5.3 | scoring.feature | REQ-RUN-03; REQ-SCO-08 | W9 |
 | F4.5 determinism | J2.6 | scoring.feature | REQ-SCO-05, 07 | W10 |
 | F4.7 continuity metrics | vision | scoring.feature | REQ-SCO-06, 12; REQ-RUN-09 | W9 |
@@ -69,9 +69,9 @@ scheduled), G-A, G-B (v0.4 from sequencer 1.2) and G-G (v1.0) have no v0.1 scena
 | F5.1 results store | J2.7 | results.feature | REQ-FMT-06, 07; REQ-RES-01, 06 | W7 |
 | F5.3 run detail | J2.7, J4.2 | results.feature | REQ-CLI-08; REQ-RES-06 | W10 |
 | F5.4 finding note | J4.3 | results.feature | REQ-CLI-07; REQ-RES-05 | W10 |
-| F5.5 landing page | J1, J6.2 | results.feature | REQ-RES-02, 03, 11 (v0.3); REQ-CLI-09 | W11; the catalogue and the home W15 (v0.3) |
+| F5.5 landing page | J1, J6.2 | results.feature | REQ-RES-02, 03, 11 (v0.3), 12 (v0.3); REQ-CLI-09 | W11; the catalogue and the home W15 (v0.3) |
 | F5.6 manual publish | J2.8 | results.feature | REQ-RES-04, 06; REQ-CLI-09, 11 | W11 |
-| F5.8 method page | J5.4 | results.feature | REQ-RES-02 | W11 |
+| F5.8 method page | J5.4 | results.feature | REQ-RES-02, 12 (v0.3) | W11; the parity statement W17 (v0.3) |
 | F6.1 S1 | — | scenarios.feature (outline) | scenarios/S1.md; REQ-FMT-04 | W7 |
 | F6.2 S2 | — | scenarios.feature (outline) | scenarios/S2.md; REQ-FMT-04 | W7 |
 | F6.3 S3 | — | scenarios.feature (outline) | scenarios/S3.md; REQ-FMT-04 | W8 |

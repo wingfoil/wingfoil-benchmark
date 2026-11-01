@@ -5,7 +5,13 @@ import { z } from 'zod';
 import { campaignSchema, CATEGORIES, fail, ok, parseWith, readYamlFile } from '../core/index.js';
 import type { Category, Issue, Result } from '../core/index.js';
 import { AGGREGATE_FILE, AGGREGATE_VERSION } from '../results/index.js';
-import type { AggregateFile, ControlComparison, ControlMetric, Group } from '../results/index.js';
+import type {
+  AggregateFile,
+  ControlComparison,
+  ControlMetric,
+  Group,
+  ParitySection,
+} from '../results/index.js';
 import { loadScenario } from '../scenario/index.js';
 
 import { CATEGORY_MAP, certaintyOf, compare, harnessLabel, readMetric, summarize } from './rules.js';
@@ -103,6 +109,8 @@ export interface SiteModel {
    * profile page filters the runs not run by, a scenario that never ran included.
    */
   readonly primaryOf?: Readonly<Record<string, Category>>;
+  /** The weak model with a harness against the strong model without it (REQ-RES-12, task-121), when measured. */
+  readonly parity?: ParitySection;
 }
 
 const runRecord = z.object({
@@ -191,6 +199,17 @@ const aggregateShape = z.object({
         ),
       }),
     )
+    .optional(),
+  // Absent before task-121, or with no pair of models: then no parity page.
+  parity: z
+    .object({
+      local_profiles: z.object({ assumption: z.string(), profiles: z.array(z.object({ id: z.string() })) }),
+      entries: z.array(
+        z.object({ scenario: z.string(), harness: z.string(), h_w: z.enum(['holds', 'fails']) }),
+      ),
+      unmatched: z.array(z.object({ scenario: z.string(), reason: z.string() })),
+      summary: z.array(z.object({ harness: z.string(), holds: z.number(), fails: z.number() })),
+    })
     .optional(),
   // The planned runs never started, of a final execution (task-080): each named `<scenario>@<version>/…`.
   not_run: z.array(z.string().regex(/^[^/@]+@[^/]+\/.+/)).optional(),
@@ -342,6 +361,7 @@ export function siteModel(root: string, execution: string): Result<SiteModel> {
     harnesses: harnessLabels(all, records, pinnedVersions(executionDir)),
     ...(aggregate.not_run === undefined ? {} : { notRun: aggregate.not_run }),
     primaryOf: primaryOf.value,
+    ...(aggregate.parity === undefined ? {} : { parity: aggregate.parity }),
   });
 }
 
