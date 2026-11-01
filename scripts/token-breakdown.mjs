@@ -215,8 +215,10 @@ function codexStep(list) {
       continue;
     }
     if (event.type === 'turn.completed') close(event.usage);
-    // A failed turn records no usage: its calls cannot be priced, so they are left out, its items kept as context.
+    // A failed turn records no usage: its calls cannot be priced, so they are left out, and what they added stays in
+    // the context, carried to the next call that is priced.
     if (event.type === 'turn.failed') {
+      pending = [...turn.flatMap((c) => c.added), ...pending];
       turn = [];
       turnItems = [];
     }

@@ -26,7 +26,9 @@ command (`cat README.md && wingfoil workflow status`, or Codex's `/bin/bash -lc 
 `wingfoil` sub-command. Limits of the reading: an approver's reply is not in Claude Code's transcripts, so the
 resumed call's new tokens go almost all to the agent's last message (under 1 % of the extra); thinking that a
 transcript does not show counts in the output tokens but not in their split; a Codex turn that failed records no
-usage and is left out (2 turns in 54 runs).
+usage, so its calls are left out and what they added is carried to the next priced call (no counted run has one:
+the two failed turns are in superseded attempts, which are not read). A test run chained with `which wingfoil` or
+`wingfoil --help` counts as "wingfoil other" (3 Claude Code commands).
 
 ## 2. The breakdown
 
@@ -218,6 +220,9 @@ project files).
    on Codex. The largest is `directives list` (11 % on Haiku, 7 % on Sonnet and Terra, 4 % on Luna): 4–8 thousand
    characters an output, called 6–10 times a run on Haiku, Terra and Luna (about twice on Sonnet). Then `workflow
    start` on Sonnet (11 %, 7.6 thousand characters) and `workflow status` (2–3 thousand characters, 4–5 calls a run).
+   On Codex almost every `directives list` is chained with other commands (`cat` of directives' files, `memory
+   search`), so its size and share there are an upper bound that includes the chain's other outputs, and Codex's
+   "documents" a lower bound.
    `memory search` is small (at most 4 %).
 4. **The weaker models re-read the documents**: reading Memory elements and directives' files (`cat` of
    `docs/memory/` and `.wingfoil/`) is 21 % of Haiku's extra and 7–10 % on Codex, against 3 % on Sonnet; Haiku's own

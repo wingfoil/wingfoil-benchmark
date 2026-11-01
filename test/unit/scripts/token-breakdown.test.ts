@@ -204,6 +204,30 @@ describe('scripts/token-breakdown.mjs (task-122, dl-032 item 6)', () => {
     expect(cell?.commands['wingfoil directives list']).toEqual({ calls: 1, mean_output_chars: 800 });
   });
 
+  it('keeps what a failed Codex turn added in the context of the next priced turn', () => {
+    const step =
+      line({ type: 'thread.started', thread_id: 'a' }) +
+      line({
+        type: 'item.completed',
+        item: {
+          type: 'command_execution',
+          command: 'wingfoil directives list',
+          aggregated_output: 'd'.repeat(800),
+        },
+      }) +
+      line({ type: 'item.completed', item: { type: 'agent_message', text: 'then' } }) +
+      line({ type: 'turn.failed' }) +
+      line({ type: 'item.completed', item: { type: 'agent_message', text: 'retry' } }) +
+      line({ type: 'turn.completed', usage: { input_tokens: 5000, output_tokens: 10 } });
+    const summary = JSON.parse(
+      breakdown(results([{ arm: 'wingfoil', model: 'm', transcript: step }])),
+    ) as Summary;
+    const [cell] = summary.cells;
+    expect(cell).toMatchObject({ calls: 1, total: 5000 });
+    expect(cell?.processed['wingfoil directives list']).toBe(200);
+    expect(cell?.commands['wingfoil directives list']).toEqual({ calls: 1, mean_output_chars: 800 });
+  });
+
   it('refuses to run without its arguments', () => {
     const out = spawnSync(process.execPath, [SCRIPT], { encoding: 'utf8' });
     expect(out.status).toBe(2);
