@@ -2,7 +2,7 @@
 id: bug-045-the-wingfoil-arm-s-manual-runs-workflow-next-after-starting-an-instance-though-its-second-finalize-already-prints-the-next-step
 type: bug
 title: "The wingfoil arm's manual runs workflow next after starting an instance, though its second finalize already prints the next step"
-status: approved
+status: fixed
 fixed_by: task-125-the-wingfoil-arm-s-new-instance-rule-continues-from-the-second-finalize-s-next-step-bug-045
 tags: ["v0.3","wingfoil","weak-models"]
 ---
