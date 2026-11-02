@@ -66,7 +66,8 @@ export function readJudgements(executionDir: string): Result<readonly Judgement[
   const dirs = executionRuns(executionDir);
   // An execution of 1.0 versions has no v2 check (K7), and is not judged: its file is refused whole, an empty one too.
   if (!dirs.some((dir) => hasV2Check(join(dir, 'score.json')))) {
-    return fail([{ path: JUDGEMENTS_FILE, message: 'lies beside an execution with no v2 content check, which is not judged' }]);
+    const message = 'lies beside an execution with no v2 content check, which is not judged';
+    return fail([{ path: JUDGEMENTS_FILE, message }]);
   }
   if (parsed.value.judgements.length === 0) {
     return fail([{ path: JUDGEMENTS_FILE, message: 'holds no judgement' }]);

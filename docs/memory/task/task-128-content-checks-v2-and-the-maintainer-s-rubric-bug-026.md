@@ -96,8 +96,9 @@ the maintainer and validated at the site's build, no new command. No real-agent 
   - The site has no page per run: the judgements are on a page of the execution's, `judgements.html`, each beside
     the automatic verdict, a disagreement marked; the landing page links it with the count. The @F4.7 scenario's
     Then says so.
-  - A judgement of a 1.0 execution is refused by its check: only a v2 check (`match: words` in the run's
-    `score.json`) is judged, and under K7 no 1.0 version has one.
+  - A 1.0 execution is recognised by its checks: under K7 no 1.0 version has a v2 check, so a `judgements.json`
+    beside an execution with no v2 check (`match: words` in no run's `score.json`) is refused whole (review round
+    1), and only a v2 check is judged.
   - A v2 check of a scenario with a separate approver is loaded with `ledger: true`: its step's `verdicts.json` is
     then required, as the governance checks require it.
 - **The erratum** (criterion 7): the method page's `#content-checks-v1-erratum`; all seven catalogue executions run
@@ -121,3 +122,9 @@ checkouts unchanged). No blocker; two should-fix and eight nits:
 | N6 | four executions keep "The content checks are lexical (bug-026)" beside the erratum note | kept: their own published wording; the new note adds the pointer |
 | N7 | three source lines of 121 characters | fixed |
 | N8 | untested cases | fixed: a not-reached step, an unreadable `score.json`, an extra field, a v2 check with no approver |
+
+**Round 2** (2026-11-02, a fresh read-only agent in `/tmp/claude-1000/review2-128-SRWe`, a clone of `c6561eab`; both
+checkouts unchanged), on `f30ff2ea..c6561eab`: every round-1 item resolved as recorded, v1 byte-identical, NFC and
+`\p{M}` in v2 only. No blocker, no should-fix; nits fixed: a new 128-character line; the third deviation's text (the
+whole-file refusal); the method page's front-matter clause and accents. Kept: the v2 prompt refusal reads the prompt
+line by line, as the check reads the agent's text, so a prompt reflowed onto one line is not refused.
