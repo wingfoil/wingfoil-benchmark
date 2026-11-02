@@ -1,9 +1,9 @@
 # Experiment Design (GQM) — WingFoil Benchmark
 
-**Version:** 1.10
-**Date:** 2026-10-30
+**Version:** 1.11
+**Date:** 2026-11-02
 **Status:** Approved
-**Traces to:** [06_features.md](06_features.md) (F2.4, F2.7, F4.x, F7.4), [07_sequencer.md](07_sequencer.md) (decisions 1–3), [03_is-isnot.md](03_is-isnot.md) 1.1; input: [X_competitor-landscape-2026-09-22.md](X_competitor-landscape-2026-09-22.md), [X_competitor-landscape-2026-10-05.md](X_competitor-landscape-2026-10-05.md) (1.2); [dl-017](../memory/decision-log/dl-017-the-v0-2-campaign-pins-wingfoil-v0-3-beside-a-bridge-on-v0-2-2-one-repetition-per-group.md) (1.3); [task-094](../memory/task/task-094-a-codex-agent-adapter-and-s3-s-baseline-compared-across-agents-spike.md) (1.4); [task-095](../memory/task/task-095-wingfoil-v0-3-0-admitted-to-the-wingfoil-arm-the-bridge-s-arm-read-by-its-pinned-digest.md) (1.5); [dl-018](../memory/decision-log/dl-018-sonnet-5-5-s-cache-reads-at-half-dl-007-s-price-and-haiku-5-5-beside-the-haiku-4-5-rung.md), [task-096](../memory/task/task-096-calibration-of-v0-2-dry-runs-in-every-arm-and-the-bridge-measured-costs-and-the-revised-budget.md) (1.6); [task-103](../memory/task/task-103-the-v0-3-vision-and-experiment-design-amendments.md) (1.7); [task-116](../memory/task/task-116-s10-gates-and-roles-scenario-dl-029.md) (1.8); [task-117](../memory/task/task-117-approver-policy-v3-scripted-verdicts-per-gate-on-classifier-v2-dl-029.md) (1.9); [task-118](../memory/task/task-118-a-separate-approver-identity-the-agent-never-the-approver-verdicts-executed-by-the-runner-dl-029.md) (1.10)
+**Traces to:** [06_features.md](06_features.md) (F2.4, F2.7, F4.x, F7.4), [07_sequencer.md](07_sequencer.md) (decisions 1–3), [03_is-isnot.md](03_is-isnot.md) 1.1; input: [X_competitor-landscape-2026-09-22.md](X_competitor-landscape-2026-09-22.md), [X_competitor-landscape-2026-10-05.md](X_competitor-landscape-2026-10-05.md) (1.2); [dl-017](../memory/decision-log/dl-017-the-v0-2-campaign-pins-wingfoil-v0-3-beside-a-bridge-on-v0-2-2-one-repetition-per-group.md) (1.3); [task-094](../memory/task/task-094-a-codex-agent-adapter-and-s3-s-baseline-compared-across-agents-spike.md) (1.4); [task-095](../memory/task/task-095-wingfoil-v0-3-0-admitted-to-the-wingfoil-arm-the-bridge-s-arm-read-by-its-pinned-digest.md) (1.5); [dl-018](../memory/decision-log/dl-018-sonnet-5-5-s-cache-reads-at-half-dl-007-s-price-and-haiku-5-5-beside-the-haiku-4-5-rung.md), [task-096](../memory/task/task-096-calibration-of-v0-2-dry-runs-in-every-arm-and-the-bridge-measured-costs-and-the-revised-budget.md) (1.6); [task-103](../memory/task/task-103-the-v0-3-vision-and-experiment-design-amendments.md) (1.7); [task-116](../memory/task/task-116-s10-gates-and-roles-scenario-dl-029.md) (1.8); [task-117](../memory/task/task-117-approver-policy-v3-scripted-verdicts-per-gate-on-classifier-v2-dl-029.md) (1.9); [task-118](../memory/task/task-118-a-separate-approver-identity-the-agent-never-the-approver-verdicts-executed-by-the-runner-dl-029.md) (1.10); [task-126](../memory/task/task-126-w16-s-requirements-and-acceptance-the-method-corrected-bug-025-bug-026-bug-028-to-bug-032.md) (1.11)
 
 ---
 
@@ -200,9 +200,12 @@ Two goals cut across all categories:
 
   It is defined only when the arm's quality is not worse than the baseline's on M-Q1. Otherwise it
   is reported as "not applicable"; from v0.3 (1.7,
-  [bug-029](../memory/bug/bug-029-m-k3-is-always-zero-and-m-k4-s-not-applicable-ignores-the-variance.md)), the
-  variance is taken into account, and W16's task settles which difference it applies to.
-  When the arm's step cost is not lower, it is reported as "never".
+  [bug-029](../memory/bug/bug-029-m-k3-is-always-zero-and-m-k4-s-not-applicable-ignores-the-variance.md)) the
+  variance is taken into account, on both conditions (1.11): "not applicable" only when the quality is worse beyond
+  the variance, or preliminary and lower.
+  When the arm's step cost is not lower, it is reported as "never"; from 1.11, when it is the same, or higher beyond
+  the variance, or preliminary and higher. A step-cost difference within the variance is reported as "not
+  applicable": a break-even divided by noise is not a number.
 
 ### 4.3 Continuity
 
@@ -492,3 +495,9 @@ The 30 € target above did not hold, and stays as the record of v0.1's plan.
 15. **Amendment 1.10 (v0.3, W17, 2026-10-30).** §3: a separate approver for a scenario that declares one (S10,
     dl-029 option (b1)), the second of the method's two changes. Source:
     [task-118](../memory/task/task-118-a-separate-approver-identity-the-agent-never-the-approver-verdicts-executed-by-the-runner-dl-029.md).
+16. **Amendment 1.11 (v0.3, W16, 2026-11-02).** §4.2: M-K4 reads the variance on both its conditions, the quality as
+    [bug-029](../memory/bug/bug-029-m-k3-is-always-zero-and-m-k4-s-not-applicable-ignores-the-variance.md)'s
+    Resolution reads and the step-cost difference as its Expected reads (the approver's choice in chat); 1.7 had left
+    the choice to W16. Source:
+    [task-126](../memory/task/task-126-w16-s-requirements-and-acceptance-the-method-corrected-bug-025-bug-026-bug-028-to-bug-032.md)
+    (REQ-SCO-08, requirements 1.49).
