@@ -7,7 +7,7 @@ release: v0.3
 wave: W16
 features: []
 acceptance: []
-requirements: [REQ-SCO-06, REQ-SCO-07, REQ-SCO-08, REQ-RES-03, REQ-RES-05, REQ-RUN-09, REQ-FMT-09]
+requirements: [REQ-SCO-05, REQ-SCO-06, REQ-SCO-07, REQ-SCO-08, REQ-RES-03, REQ-RES-05, REQ-RUN-09]
 fixes: []
 tags: ["v0.3","specification","w16"]
 ---
@@ -15,8 +15,7 @@ tags: ["v0.3","specification","w16"]
 ## Context
 
 [plan-005](../../plans/plan-005-release-v0-3.md)'s W16, "The method corrected": its requirements and acceptance first (delivery order
-item 2), then one task per bug group. The experiment design already states the rules (task-103,
-[task-103](task-103-the-v0-3-vision-and-experiment-design-amendments.md): the variance rule for ▲/▼, headline counts and M-K4); this task carries them, and the other
+item 2), then one task per bug group. The experiment design already states the rules ([task-103](task-103-the-v0-3-vision-and-experiment-design-amendments.md): the variance rule for ▲/▼, headline counts and M-K4); this task carries them, and the other
 fixes the retrospective's bugs ask, into `requirements.md` and the acceptance features, so that each later task
 starts from a stated, red-first criterion. The approver asked to start W16 in chat (2026-11-02). A specification
 change: no code, no real-agent session.
@@ -61,35 +60,51 @@ The bugs: [bug-025](../bug/bug-025-s1-1-0-s-step-5-leaves-createpatch-s-diff-amb
 
 ## Design
 
-- **Requirements 1.49** amend REQ-SCO-06, REQ-SCO-07, REQ-SCO-08, REQ-RES-03, REQ-RES-05 and REQ-RUN-09 (each row's
-  new paragraph, and the Amendment 1.49 section). The two points experiment design 1.7 left to W16: **M-K4's
-  variance** applies to its quality condition ("not applicable" only when M-Q1 is worse beyond the variance), not to
-  the step-cost difference, as task-103 attached it; **a preliminary difference** gets no ▲/▼ and is counted apart in
-  the headline ("… and preliminary in *p* of *n*"), as is a difference within the variance.
+- **Requirements 1.49** amend REQ-SCO-05, REQ-SCO-06, REQ-SCO-07, REQ-SCO-08, REQ-RES-03, REQ-RES-05 and REQ-RUN-09,
+  each by the approver's decision recorded in its bug (2026-10-23): content checks on whole words over the agent's own
+  text, template and harness text excluded, with a rubric and a human judgement (`match: words`, `oracle/rubric.md`,
+  `judgements.json`); M-R2 v2 resolved from the entry point; M-K3 as one-off costs per scenario version and harness;
+  M-K4 "not applicable" only beyond the variance; ▲/▼ and the headline only beyond the variance; the template read from
+  the campaign's pin. REQ-RUN-09 keeps REQ-RUN-19's kill at the bound and fixes what bug-032 lists (a step ending with
+  no result event never zero; an interruption recorded `interrupted`).
+- **The two points experiment design 1.7 left to W16.** M-K4's variance applies to its **quality condition**, as
+  bug-029's Resolution (the approver's decision: "not applicable only beyond the variance") reads; its Expected reads
+  the step-cost difference instead, and task-103's review leaned to that reading, so 1.7 left it open (task-103.md,
+  §4.2). This task takes the Resolution's reading; "never" stays a point comparison of the step costs. **A
+  preliminary difference** gets no symbol and is counted apart in the headline, as one within the variance.
+- **Existing tests the implementing tasks will change** (not regressions): REQ-RES-03's headline and marks in
+  `test/acceptance/results.test.ts` (the headline's wording; "Losses, ties and gaps…" expects ▲/▼ on n = 1 fixtures),
+  `test/unit/site/rules.test.ts` and `test/unit/site/build.test.ts`; M-R2's in the scoring tests reading
+  `<file>: <signature>`.
 - **The scenarios, drafted** for the tasks that implement them (each adds its scenario to the `.feature` with its test,
-  red first; the task names it in `acceptance` as `<file>#<title>`):
-  - `scoring.feature`, @F4.7 — "A content check passes only on whole words the agent wrote": Given a step whose added
-    lines hold "unchanged" and a template comment holds "revised", When it is scored with a content check for
-    "changed" / "revised", Then the check fails; And with a commit message of the agent's saying "revised D3", it
-    passes. — "The maintainer's judgement is shown beside a content check's verdict": Given a judgement stored for a
-    check at a step of a run, When the site is built, Then the check's verdict and the judgement are shown together,
-    and a disagreement is counted.
-  - `scoring.feature`, @F4.5 — "M-R2 compares the interface, not the files it lies in": Given two runs exporting the
-    same functions from different files, Then M-R2 is 1; Given two runs with the same files exporting different
-    functions, Then M-R2 is below 1; And each value records M-R2 version 2.
-  - `scoring.feature`, @F4.4 — "Break-even is not applicable only when quality is worse beyond the variance": Given
-    an arm whose final M-Q1 is lower than the baseline's within the variance (n ≥ 3 a side), Then break-even is
-    computed (or "never"), not "not applicable"; Given it lower beyond the variance, Then "not applicable". — "M-K3
-    counts a one-off cost once": Given an arm whose setup runs an agent, Then M-K3 is that cost, once per scenario
-    version and arm.
-  - `results.feature`, @F5.5 — "A difference within the variance has no mark and is not counted as better or worse":
-    Given two arms with overlapping ranges (n ≥ 3), Then their comparison shows the delta with no ▲/▼, and the
-    headline counts it "within the variance"; Given n < 3, Then "preliminary", no mark, counted apart; on every page.
-  - `results.feature`, @F5.4 — "A finding cites the template of the WingFoil version the execution ran": Given an
-    execution on WingFoil 0.3.1, When a finding is exported, Then it cites 0.3.1's template, not v0.2.2's.
-  - `runner.feature`, @F2.3 — "An interrupted step keeps the cost it spent": Given a step whose agent reported usage
-    before an interruption, When the runner is interrupted, Then the step is recorded `interrupted` with that cost;
-    Given no usage reported, Then at its bound with `cost_reported: false`.
+  red first, and names it in `acceptance` as `<file>#<title>`):
+  - `scoring.feature`, @F4.7 — "A v2 content check reads whole words in the agent's own text": Given a check with
+    `match: words` for "revised", When a step adds "unrevised" to a source file, a template line containing "revised"
+    to a document `wingfoil memory add` created, and "D3 revised" to the seed's README, Then only the README line
+    counts and the check passes; And a commit message of the runner's saying "revised" does not count. — "The
+    maintainer's judgement is shown beside a content check's verdict": Given `judgements.json` holds a judgement for a
+    check at a step of a run, When the site is built, Then the verdict and the judgement are shown together and a
+    disagreement is counted.
+  - `scoring.feature`, @F4.5 — "M-R2 v2 compares the interface the entry point exposes": Given two runs whose
+    `src/index.ts` re-exports the same functions from different modules, Then M-R2 is 1; Given two runs with the same
+    files exposing different functions, Then it is below 1; And a module the entry point does not reach is not
+    counted; And each value records version 2.
+  - `scoring.feature`, @F4.4 — "Break-even is not applicable only when quality is worse beyond the variance": Given an
+    arm whose final M-Q1 is lower within the variance (n ≥ 3 a side), Then break-even is computed or "never", marked
+    "within variance"; Given it lower beyond the variance, Then "not applicable"; Given n < 3 and a lower mean, Then
+    "not applicable", preliminary. — "M-K3 is the one-off cost per scenario version and harness": Given a configured
+    arm whose configuration cost is recorded once and three runs' setup costs, Then M-K3 is the configuration's cost
+    plus their mean.
+  - `results.feature`, @F5.5 — "A difference is marked only beyond the variance": Given two arms with overlapping
+    ranges (n ≥ 3), Then the comparison shows the delta and "within the variance", no symbol, and the headline counts
+    it so; Given n < 3, Then "preliminary", no symbol, counted apart; Given equal means, Then "the same". The same on
+    the category, profile, comparison (`comparison.feature`, @F5.7), across-agents and parity pages.
+  - `results.feature`, @F5.4 — "A finding cites the template of the WingFoil the campaign pinned": Given an execution
+    pinning WingFoil v0.3.1, When a finding is exported, Then it cites 0.3.1's template, not the constant v0.3.0's.
+  - `runner.feature`, @F2.3 — "A step that ends with no result event is counted at its bound": Given a Claude Code step
+    killed before its result event, Then its cost is its bound with `cost_reported: false`; Given the runner
+    interrupted during a step, Then the step is recorded `interrupted` at its bound; Given a dry run interrupted, Then
+    its record keeps the cost its steps spent.
   - `scenarios.feature`, @F3.4 — "S1 1.1's step 5 has one reading": Given S1 1.1, Then its step 5's request states
     createPatch's diff form, and 1.0 stays registered with its limit stated.
 
@@ -99,12 +114,31 @@ The bugs: [bug-025](../bug/bug-025-s1-1-0-s-step-5-leaves-createpatch-s-diff-amb
   the tasks that implement them: the traceability test fails on a scenario of a feature that a started task lists
   without a test (checked: a probe scenario tagged @F4.1 turned it red), and no tag marks a scenario as planned.
   `features` and `acceptance` are empty here, as task-103's.
-- **Criterion 3, read for the approver:** it quotes bug-029's "not applicable only when the difference it divides by
-  is within the variance"; the amendment attaches the variance to M-K4's quality condition instead (M-Q1 worse
-  beyond the variance), as experiment design 1.7 and task-103's review attached it, and keeps "never" on the
-  step-cost difference as a point comparison. The approver confirms or asks for the other reading at the gate.
+- **Criteria 2, 3 and 6, as the Design refines them for the approver:** M-R2 v2 resolved from the entry point, not
+  REQ-SCO-05's 1.17 file-keyed entries (bug-028's Resolution); M-K4's variance on its quality condition (bug-029's
+  Resolution, against its Expected and task-103's reviewer, Design); an interruption counted at its bound as
+  REQ-RUN-19 says, not read gracefully.
 - **The W16 tasks to file after this task's approval**, in plan-005's order: (1) content checks v2 and the rubric
   (bug-026); (2) M-R2 v2, M-K3 and M-K4, the variance rule on the site (bug-028, bug-029, bug-030); (3) the cited
   template and an interrupted step's cost (bug-031, bug-032); (4) S1 1.1 (bug-025); (5) the M-K1 annotation (plan-005
   triage item 4); (6) v0.2's campaigns re-scored offline from their transcripts. task-112 and task-113 (W16's
   backlog) stay as they are.
+
+### Review
+
+**Round 1** (2026-11-02, a fresh read-only agent in `/tmp/claude-1000/review-126-hxaA`, a clone of `b9b65b97`; both
+checkouts unchanged; docs and traceability tests green). Two blockers and nine should-fix:
+
+| # | Finding | Outcome |
+|---|---|---|
+| B1 | "the agent's own text" excluded seed files and still counted template text written during the step | fixed: added lines anywhere, less template and harness text; the scenario says where each line is |
+| B2 | M-R2 v2 dropped the file prefix, not the approver's "resolved from the entry point" | fixed: resolved from the entry point; REQ-SCO-05 amended |
+| S1–S2 | REQ-SCO-05 contradicted; "an export named twice" ambiguous | fixed: one entry per name, its declaration's |
+| S3 | v2's selection, stems, whitespace, the agent's commits; S10 1.0 on v1 | fixed: `match: words`, inflections listed, folding kept, the agent's identity; S10 1.0 v1 with its erratum |
+| S4 | rubric and judgement storage | fixed: `oracle/rubric.md` (hashed), `judgements.json`; 1.0 executions not judged |
+| S5 | M-K3's unit and storage; M-K4's preliminary mark | fixed: per scenario version and harness, configuration once plus the setups' mean; `certainty` recorded |
+| S6 | REQ-RES-03's precedence, wording, markup; tests that will change | fixed: the order stated, the headline quoted whole; the tests named in the Design |
+| S7 | REQ-RUN-09's graceful stop contradicted REQ-RUN-19 | fixed: killed at its bound; the dry run's record kept |
+| S8 | several WingFoil versions; no WingFoil; the constant is v0.3.0 | fixed |
+| S9 | the M-K4 history misstated | fixed: bug-029's Resolution and Expected disagree, and this task takes the Resolution |
+| N | link lines with prose, a duplicated id, missing scenario cases | fixed where in this task |
