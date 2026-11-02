@@ -2,7 +2,7 @@
 id: task-125-the-wingfoil-arm-s-new-instance-rule-continues-from-the-second-finalize-s-next-step-bug-045
 type: task
 title: "The wingfoil arm's new-instance rule continues from the second finalize's next step (bug-045)"
-status: backlog
+status: in-progress
 release: v0.3
 wave: W17
 features: [F2.7]
