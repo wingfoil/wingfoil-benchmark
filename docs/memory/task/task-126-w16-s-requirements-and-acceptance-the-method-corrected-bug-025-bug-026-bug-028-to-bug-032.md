@@ -111,15 +111,17 @@ and headline counts within the variance),
   - `scoring.feature`, @F4.4 — "Break-even reads the variance on quality and on step cost": Given an arm whose final
     M-Q1 is lower within the variance (n ≥ 3 a side) and whose step cost is lower beyond it, Then break-even is the
     value, its quality's outcome "within the variance"; Given its M-Q1 lower beyond the variance, Then "not
-    applicable", reason `quality`; Given n < 3 and a lower M-Q1 mean, Then "not applicable", preliminary; Given the
-    same M-Q1 and step costs within the variance, Then "not applicable", reason `saving within variance`; Given equal
-    step-cost means, or a step cost higher beyond the variance, or n < 3, an M-Q1 mean not lower and a higher step
-    cost, Then "never"; Given n < 3, an M-Q1 mean not lower and a lower step cost, Then the value, its step cost's
-    outcome preliminary; Given three runs a side, one of the arm's reaching no step, Then the step-cost comparison
-    reads the other two, its `n` is 2 and its outcome preliminary; Given a side none of whose runs reached a step,
-    Then "not applicable", reason `not measured`; And each entry records both outcomes, each with its runs and `n`.
-    — "M-K3 is the one-off cost per scenario version and harness": Given a configured arm whose configuration cost is
-    recorded once and three runs' setup costs, Then M-K3 is the configuration's cost plus their mean.
+    applicable", reason `quality`; Given n < 3 and a lower M-Q1 mean, Then "not applicable", preliminary. With an M-Q1
+    the same or within the variance (n ≥ 3 a side), or not lower (n < 3): Given step costs within the variance, Then
+    "not applicable", reason `saving within variance`; Given equal step-cost means, a step cost higher beyond the
+    variance, or n < 3 and a higher one, Then "never"; Given n < 3 and a lower step cost, Then the value, its step
+    cost's outcome preliminary; Given three runs a side, one of the arm's reaching no step, Then the step-cost
+    comparison reads the other two, its `n` is 2 and its outcome preliminary; Given the baseline's runs, none of which
+    reached a step (M-Q1 0), Then "not applicable", reason `not measured`; And each entry records both outcomes, each
+    with its runs and `n`. Given the arm's runs, none of which reached a step, and a baseline M-Q1 above 0, Then "not
+    applicable", reason `quality`. — "M-K3 is the one-off cost per scenario version and harness": Given a configured
+    arm whose configuration cost is recorded once and three runs' setup costs, Then M-K3 is the configuration's cost
+    plus their mean.
   - `results.feature`, @F5.5 — "A difference is marked only beyond the variance": Given two arms with overlapping
     ranges (n ≥ 3), Then the comparison shows the delta and "within the variance", no symbol, and the headline counts
     it so; Given n < 3, Then "preliminary", no symbol, counted apart; Given equal means, Then "the same". The same on
