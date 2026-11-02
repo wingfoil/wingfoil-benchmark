@@ -118,10 +118,11 @@ and headline counts within the variance),
     variance`; Given equal step-cost means, a step cost higher beyond the variance, or n < 3 and a higher one, Then
     "never"; Given n < 3 and a lower step cost, Then the value, its step cost's outcome preliminary; Given three runs
     a side, one of the arm's reaching no step, Then the step-cost comparison reads the other two, its `n` is 2 and its
-    outcome preliminary; Given a side's runs, none of which reached a step (the arm's, n ≥ 3 a side, with a baseline run at M-Q1 0, or the baseline's), Then "not applicable", reason `not measured`; And each entry records both outcomes, each
-    with its runs and `n`. — "M-K3 is the one-off cost per scenario version and harness": Given a configured
-    arm whose configuration cost is recorded once and three runs' setup costs, Then M-K3 is the configuration's cost
-    plus their mean.
+    outcome preliminary; Given a side's runs, none of which reached a step (the arm's, n ≥ 3 a side, with a baseline
+    run at M-Q1 0, or the baseline's), Then "not applicable", reason `not measured`; And each entry records both
+    outcomes, each with its runs and `n`. — "M-K3 is the one-off cost per scenario version and harness": Given a
+    configured arm whose configuration cost is recorded once and three runs' setup costs, Then M-K3 is the
+    configuration's cost plus their mean.
   - `results.feature`, @F5.5 — "A difference is marked only beyond the variance": Given two arms with overlapping
     ranges (n ≥ 3), Then the comparison shows the delta and "within the variance", no symbol, and the headline counts
     it so; Given n < 3, Then "preliminary", no symbol, counted apart; Given equal means, Then "the same". The same on
