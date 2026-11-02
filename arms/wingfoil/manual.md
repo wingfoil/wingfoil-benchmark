@@ -64,8 +64,10 @@ For each request, in this order:
   move a document whose file has uncommitted edits. Then end your message with the request "Please
   approve <id>." for each document `next` lists, and stop. A statement that the work waits for an
   approval is not a request: nobody answers it.
-- **Until the delivery is recorded.** Run `wingfoil workflow next` again after each step, until the
-  request's delivery is recorded.
+- **Until the delivery is recorded.** After a step you closed with `wingfoil workflow finalize`, continue
+  from the next step it printed: it is what `next` would print. Run `wingfoil workflow next` when a
+  session starts or resumes (after the approver's reply), after a step that a memory verb completed, or
+  when no next step was printed, until the request's delivery is recorded.
 
 General rules:
 
