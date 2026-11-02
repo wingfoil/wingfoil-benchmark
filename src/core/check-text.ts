@@ -30,13 +30,16 @@ export function satisfies(text: string, patterns: readonly (readonly string[])[]
 
 /** A line as a v2 content check compares it (REQ-SCO-06 as amended in 1.49): lower case, whitespace runs folded. */
 function foldLine(line: string): string {
-  return line.toLowerCase().replace(/\s+/g, ' ');
+  return line.normalize('NFC').toLowerCase().replace(/\s+/g, ' ');
 }
 
-/** A word's character: a letter, a digit or `_`, in any script. */
-const WORD = '[\\p{L}\\p{N}_]';
+/** A word's character: a letter, a combining mark, a digit or `_`, in any script. */
+const WORD = '[\\p{L}\\p{M}\\p{N}_]';
 
-/** Whether `pattern` stands in `line` as whole words: no word character just before or just after it. */
+/**
+ * Whether `pattern` stands in `line` as whole words: no word character just before or just after it, whatever the
+ * pattern's own first and last characters ("(revised)" is not found in "D3(revised)").
+ */
 function hasWords(line: string, pattern: string): boolean {
   const escaped = foldLine(pattern.trim()).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   return new RegExp(`(?<!${WORD})${escaped}(?!${WORD})`, 'u').test(line);

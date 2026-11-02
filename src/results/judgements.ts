@@ -19,7 +19,7 @@ const judgementSchema = z.strictObject({
 });
 const judgementsSchema = z.strictObject({ judgements: z.array(judgementSchema) });
 
-/** The maintainer's judgement of a v2 content check at a step of a run, beside the automatic verdict it is read with. */
+/** The maintainer's judgement of a v2 content check at a step of a run, beside the automatic verdict. */
 export interface Judgement {
   /** The run's path in the execution, `runs/<scenario>@<version>/<arm>/<model>/r<k>`. */
   readonly run: string;
@@ -48,8 +48,9 @@ const scoreChecksSchema = z.object({
 /**
  * An execution's `judgements.json` (REQ-SCO-06 as amended in 1.49, task-128), each judgement with the automatic
  * verdict it is set beside, in the file's order; `undefined` when the execution has none. Written by hand by the
- * maintainer, and refused when a key names no run, no v2 content check of it (a v1 check, every 1.0 version's under
- * K7, is not judged), or no step the check scored, or when a key repeats.
+ * maintainer, and refused whole beside an execution with no v2 content check (every 1.0 one, under K7) or when it
+ * holds no judgement; an entry is refused when its key names no run, no v2 content check of it, or no step the check
+ * scored (one not reached included), or when a key repeats.
  */
 export function readJudgements(executionDir: string): Result<readonly Judgement[] | undefined> {
   const file = join(executionDir, JUDGEMENTS_FILE);
@@ -62,7 +63,15 @@ export function readJudgements(executionDir: string): Result<readonly Judgement[
   }
   const parsed = parseWith(judgementsSchema, data, JUDGEMENTS_FILE);
   if (!parsed.ok) return parsed;
-  const runs = new Set(executionRuns(executionDir).map((dir) => relative(executionDir, dir).split(sep).join('/')));
+  const dirs = executionRuns(executionDir);
+  // An execution of 1.0 versions has no v2 check (K7), and is not judged: its file is refused whole, an empty one too.
+  if (!dirs.some((dir) => hasV2Check(join(dir, 'score.json')))) {
+    return fail([{ path: JUDGEMENTS_FILE, message: 'lies beside an execution with no v2 content check, which is not judged' }]);
+  }
+  if (parsed.value.judgements.length === 0) {
+    return fail([{ path: JUDGEMENTS_FILE, message: 'holds no judgement' }]);
+  }
+  const runs = new Set(dirs.map((dir) => relative(executionDir, dir).split(sep).join('/')));
   const issues: Issue[] = [];
   const seen = new Set<string>();
   const judged: Judgement[] = [];
@@ -94,8 +103,14 @@ function judged1(
     return { field: 'check', message: `'${entry.check}' is no v2 content check of the run` };
   }
   const step = check.steps.find((candidate) => candidate.n === entry.step);
-  if (step?.passed === undefined) return { field: 'step', message: `the check scored no step ${entry.step} of the run` };
+  if (step?.passed === undefined) {
+    return { field: 'step', message: `the check scored no step ${entry.step} of the run` };
+  }
   return { ...entry, automatic: step.passed ? 'pass' : 'fail' };
+}
+
+function hasV2Check(scoreFile: string): boolean {
+  return (readScore(scoreFile)?.checks ?? []).some((check) => check.kind === 'content' && check.match === 'words');
 }
 
 function readScore(file: string): z.infer<typeof scoreChecksSchema> | undefined {

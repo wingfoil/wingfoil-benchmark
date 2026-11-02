@@ -158,14 +158,15 @@ The first three read text in the scorer itself. The `ast` check parses the code 
 
 A `content` check looks for groups of words, ignoring case and spacing. It passes at a step when every group matches in one place: the lines the step *added* to one tracked text file, or one of the step's commit messages. Text that was already there does not count. A check that the step's prompt would satisfy is refused, so an agent cannot pass it by copying the prompt. The check asks only that *some* record exists, not how good it is or how long. A code comment that states the change counts as a record. {#content-checks}
 
-From scenario versions 1.1, a content check matches *whole words* (version 2 of the check). A word is matched only when
-no letter, digit or underscore stands just before or after it, so "unchanged" no longer contains "changed", and a stem
-no longer matches its inflections: each form the check accepts is listed. Case and spacing are still ignored, within one
-line: a phrase broken across two lines does not match. Version 2 also reads only *the agent's own text*. That is every
-line the step added, in any file, the seed's files included, less every line the arm's setup added (the templates and
-scaffold a harness installs, read the same way in every arm); and the step's commit messages, less those made by the
-runner when it carries out the scenario's approver's verdict. Front matter and the text the agent asked a harness
-command to record (for example a reason it gave) count as its own. {#content-checks-v2}
+From scenario versions 1.1, a content check matches *whole words* (version 2 of the check). A pattern is matched only
+when no letter, digit or underscore stands just before or after it, whatever its own first and last characters, so
+"unchanged" no longer contains "changed", and a stem no longer matches its inflections: each form the check accepts is
+listed. Case and spacing are still ignored, within one line: a phrase broken across two lines does not match. Version 2
+also reads only *the agent's own text*. That is every line the step added, in any file, the seed's files included, less
+every line equal to one the arm's setup added (the templates and scaffold a harness installs, read the same way in every
+arm); and the step's commit messages, less those the arm's verdict hook made to carry out the scenario's approver's
+verdict, as the run's ledger of verdicts lists them. Front matter and the text the agent asked a harness command to
+record (for example a reason it gave) count as its own. {#content-checks-v2}
 
 Each version-2 check has a *rubric*, published with its scenario version: what counts as the fact the check looks for.
 The maintainer judges each check at each step of each run of a published execution against it, and the judgement is
@@ -177,9 +178,10 @@ and rejection) are version 1, and their results stay as published. Version 1 mat
 line, template text included, and this made it wrong in known ways. S3's D3 revision passed on "unchanged", which
 contains "changed", and on WingFoil 0.3.0 also on its template comment, which contains "replace": the template favours
 the arms whose harness writes templates. A revision recorded in other words failed, and S2's duplicate check missed a
-duplicate recognised in other words ("already handled", the earlier task looked up). How many 1.0 verdicts version 2
-would change is counted by re-scoring the published runs from their stored files, and added here.
-{#content-checks-v1-erratum}
+duplicate recognised in other words ("already handled", the earlier task looked up). Version 2 removes the first two
+kinds of error, the parts of words and the template text; a fact recorded in words the check does not list is missed by
+version 2 too, and only the maintainer's judgement catches it. How many 1.0 verdicts version 2 would change is counted
+by re-scoring the published runs from their stored files, and added here. {#content-checks-v1-erratum}
 
 The `ast` rules match syntax, not meaning, and this has limits. A clock or random function reached through another name (an alias) is not seen. Test files and declaration files are left out. Node's `crypto` random functions (for example `crypto.randomUUID()`) count as randomness. {#syntactic-limits}
 

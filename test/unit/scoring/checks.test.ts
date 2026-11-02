@@ -508,6 +508,16 @@ describe('v2 content checks, the stored files they need (REQ-SCO-06 as amended i
     });
   });
 
+  it('counts every commit of a scenario with no separate approver, a verdict hook having made none', async () => {
+    const { runDir, snapshots } = await run([{ files: {}, messages: ['approve: D3 revised'] }]);
+    mkdirSync(join(runDir, 'setup'), { recursive: true });
+    writeFileSync(join(runDir, 'setup', 'diff.patch'), '');
+    const scoredSteps = await scoreChecks({ checks: [v2()], runDir, snapshots });
+    expect(scoredSteps.ok && scoredSteps.value[0]?.steps).toEqual([
+      { n: 1, passed: true, where: { commit: 1 } },
+    ]);
+  });
+
   it('refuses, under a ledger, a commits.json whose messages and commits do not align', async () => {
     const { runDir, snapshots } = await run([{ files: {}, messages: ['one', 'two'] }]);
     mkdirSync(join(runDir, 'setup'), { recursive: true });

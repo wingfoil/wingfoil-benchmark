@@ -22,6 +22,13 @@ describe('satisfiesWords', () => {
     expect(satisfiesWords(['überarbeitet'], [['arbeitet']])).toBe(false);
   });
 
+  it('keeps the boundary around a pattern whose ends are not word characters, and reads combining marks as letters', () => {
+    expect(satisfiesWords(['D3(revised)'], [['(revised)']])).toBe(false);
+    expect(satisfiesWords(['D3 (revised)'], [['(revised)']])).toBe(true);
+    expect(satisfiesWords(['cafe\u0301 open'], [['cafe']])).toBe(false);
+    expect(satisfiesWords(['cafe\u0301 open'], [['caf\u00e9']])).toBe(true);
+  });
+
   it('reads a pattern literally, its regular-expression characters included', () => {
     expect(satisfiesWords(['see D3 (revised)'], [['d3 (revised)']])).toBe(true);
     expect(satisfiesWords(['D3 revised'], [['d. revised']])).toBe(false);

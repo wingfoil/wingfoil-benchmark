@@ -174,14 +174,7 @@ function contentStep(check: ContentCheck, runDir: string, n: number): Result<Che
   const number = String(n).padStart(2, '0');
   const messages = readStepCommits(runDir, n);
   if (!messages.ok) return messages;
-  if (messages.value === undefined) {
-    return fail([
-      {
-        path: `steps/${number}/commits.json`,
-        message: 'is missing: the run was stored before steps recorded their commit messages (task-035)',
-      },
-    ]);
-  }
+  if (messages.value === undefined) return fail([unrecordedCommits(number)]);
   const patchFile = join(runDir, 'steps', number, 'diff.patch');
   if (!existsSync(patchFile)) return fail([missing(`steps/${number}/diff.patch`)]);
   for (const [file, added] of addedText(readFileSync(patchFile, 'utf8'))) {
@@ -192,9 +185,9 @@ function contentStep(check: ContentCheck, runDir: string, n: number): Result<Che
 }
 
 /**
- * The lines the arm's setup added (`setup/diff.patch`, every file), trimmed, blank ones left out: template text, which a
- * v2 content check does not count as the agent's (REQ-SCO-06 as amended in 1.49, task-128). Read only when a v2 check
- * is scored; empty otherwise.
+ * The lines the arm's setup added (`setup/diff.patch`, every file), trimmed, blank ones left out: template text,
+ * which a v2 content check does not count as the agent's (REQ-SCO-06 as amended in 1.49, task-128). Read only when a
+ * v2 check is scored; empty otherwise.
  */
 function setupLines(request: CheckRequest): Result<ReadonlySet<string>> {
   const v2 = request.checks.some((check) => check.kind === 'content' && check.match === 'words');
@@ -219,7 +212,7 @@ function wordsStep(
   const number = String(n).padStart(2, '0');
   const messages = readStepCommits(runDir, n);
   if (!messages.ok) return messages;
-  if (messages.value === undefined) return fail([missing(`steps/${number}/commits.json`)]);
+  if (messages.value === undefined) return fail([unrecordedCommits(number)]);
   const patchFile = join(runDir, 'steps', number, 'diff.patch');
   if (!existsSync(patchFile)) return fail([missing(`steps/${number}/diff.patch`)]);
   for (const [file, added] of addedLines(readFileSync(patchFile, 'utf8'))) {
@@ -248,6 +241,13 @@ function wordsStep(
     (message, index) => !hook.has(shas[index] ?? '') && satisfiesWords(linesOf(message), check.patterns),
   );
   return ok(commit === -1 ? { n, passed: false } : { n, passed: true, where: { commit: commit + 1 } });
+}
+
+function unrecordedCommits(number: string): Issue {
+  return {
+    path: `steps/${number}/commits.json`,
+    message: 'is missing: the run was stored before steps recorded their commit messages (task-035)',
+  };
 }
 
 function missing(path: string): Issue {
