@@ -135,6 +135,8 @@ and headline counts within the variance),
   template and an interrupted step's cost (bug-031, bug-032); (4) S1 1.1 (bug-025); (5) the M-K1 annotation (plan-005
   triage item 4); (6) v0.2's campaigns re-scored offline from their transcripts. task-112 and task-113 (W16's
   backlog) stay as they are.
+- **Full suites** (2026-11-02, `a25dc0a1`, under the load watcher): LINT 0, TEST 0 (2004 passed, 9 skipped), BUILD 0,
+  BIN 0, DOCKER 0.
 
 ### Review
 
