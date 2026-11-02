@@ -7,5 +7,26 @@ status: draft
 tags: ["process","wingfoil","v0.4"]
 ---
 
-<!-- bug body. `wingfoil memory add` copies this scaffold verbatim; `memory submit` replaces
-     these placeholder comments with real content and fills the required frontmatter fields. -->
+## Context
+
+WingFoil-Templates published `methodology/kanban` 1.0.0 on 2026-11-02 (tag `methodology/kanban@1.0.0`, `31102df`;
+WingFoil `>=0.3.0 <=0.3.1`; requires `base@^2` and `software@^1`), told to this repository by the coordination
+session the same day. The approver asked for its bug and task in chat (2026-11-02).
+
+## Expected
+
+The repository's process runs a published, versioned methodology within the WingFoil release that manages it
+(0.3.1 since task-109), its delivery loop and limits enforced by WingFoil's workflow engine, and its own rules (the
+independent review, the full suites at approval, one task in progress and one in review) as the project's own
+additions, recorded with the adopted version.
+
+## Actual
+
+`.wingfoil/` is `wingfoil init`'s Kanban scaffold of the 0.2 era (`dna.yaml`: "scaffolded by `wingfoil init` (Kanban
+template)") with a hand-written `workflows/custom/kanban-delivery.yaml` (version 6) whose WIP limits "are not enforced
+by WingFoil"; no published methodology version is recorded.
+
+## Fix (proposed)
+
+Adopt `methodology/kanban` 1.0.0 with `base` and `software` by its README's "Install and update" (eight hand steps),
+keeping `kanban-delivery`'s rules as the project's own, with `wip_in_progress: 1` and `wip_in_review: 1`.
