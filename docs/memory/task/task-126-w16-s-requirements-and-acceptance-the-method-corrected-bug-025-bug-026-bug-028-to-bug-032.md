@@ -48,7 +48,8 @@ and headline counts within the variance),
    counts; a version of the metric recorded with each value. Scenario drafted for its task (`scoring.feature`).
 3. **M-K3 and M-K4 (bug-029):** REQ-SCO-08 amended: M-K3 is the cost an arm pays once (setup, configuration), measured
    where it is spent; M-K4 is "not applicable" only when the difference it divides by is within the variance
-   (experiment design 1.7). Scenario drafted for its task (`scoring.feature`).
+   (experiment design 1.7; the Design and REQ-SCO-08 read bug-029's Resolution instead: the variance on the quality
+   condition, for the approver to confirm). Scenario drafted for its task (`scoring.feature`).
 4. **The variance rule on the site (bug-030):** REQ-RES-03 amended: ▲/▼ and a headline count only beyond the variance,
    on every page; a difference within it is shown without a mark. Scenario drafted for its task (`results.feature`).
 5. **The template cited (bug-031):** REQ-RES-05 amended: a finding note names the WingFoil template of the version it
