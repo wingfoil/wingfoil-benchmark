@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { dependenciesOf, fail, linesOf, ok, satisfies } from '../core/index.js';
+import { dependenciesOf, fail, linesOf, ok, satisfies, satisfiesWords } from '../core/index.js';
 import type {
   AstCheck,
   AstRule,
@@ -15,7 +15,13 @@ import type {
 import { readStepCommits } from '../results/index.js';
 
 import type { AstRunner } from './ast.js';
-import { attributionStep, gateStep, rejectionStep } from './governance.js';
+import {
+  attributionStep,
+  gateStep,
+  rejectionStep,
+  stepCommitShas,
+  verdictHookCommits,
+} from './governance.js';
 import type { GovernanceViolation } from './governance.js';
 
 /** Where a content check matched: a file the step wrote, or its commit by 1-based position. */
@@ -48,6 +54,8 @@ export type CheckStepScore =
 export interface CheckScore {
   readonly id: string;
   readonly kind: Check['kind'];
+  /** A v2 content check's matching (REQ-SCO-06 as amended in 1.49, task-128); absent for v1, as before. */
+  readonly match?: 'words';
   readonly steps: readonly CheckStepScore[];
 }
 
@@ -74,6 +82,8 @@ export interface CheckRequest {
 export async function scoreChecks(request: CheckRequest): Promise<Result<CheckScore[]>> {
   const found = await astFindings(request);
   if (!found.ok) return found;
+  const setup = setupLines(request);
+  if (!setup.ok) return setup;
   const scores: CheckScore[] = [];
   for (const check of request.checks) {
     const steps: CheckStepScore[] = [];
@@ -83,12 +93,13 @@ export async function scoreChecks(request: CheckRequest): Promise<Result<CheckSc
         steps.push({ n, not_reached: true });
         continue;
       }
-      const step = scoreStep(check, request, snapshot, n, found.value);
+      const step = scoreStep(check, request, snapshot, n, found.value, setup.value);
       if (!step.ok) return step;
       // A governance check leaves out a step where it does not apply (no verdict delivered there, task-118).
       if (step.value !== undefined) steps.push(step.value);
     }
-    scores.push({ id: check.id, kind: check.kind, steps });
+    const words = check.kind === 'content' && check.match === 'words';
+    scores.push({ id: check.id, kind: check.kind, ...(words ? { match: 'words' as const } : {}), steps });
   }
   return ok(scores);
 }
@@ -99,11 +110,12 @@ function scoreStep(
   snapshot: string,
   n: number,
   found: ReadonlyMap<string, Violation[]>,
+  setup: ReadonlySet<string>,
 ): Result<CheckStepScore | undefined> {
   const { runDir } = request;
   switch (check.kind) {
     case 'content':
-      return contentStep(check, runDir, n);
+      return check.match === 'words' ? wordsStep(check, runDir, n, setup) : contentStep(check, runDir, n);
     case 'unchanged':
       return ok(unchangedStep(check, snapshot, n));
     case 'dependencies': {
@@ -162,14 +174,7 @@ function contentStep(check: ContentCheck, runDir: string, n: number): Result<Che
   const number = String(n).padStart(2, '0');
   const messages = readStepCommits(runDir, n);
   if (!messages.ok) return messages;
-  if (messages.value === undefined) {
-    return fail([
-      {
-        path: `steps/${number}/commits.json`,
-        message: 'is missing: the run was stored before steps recorded their commit messages (task-035)',
-      },
-    ]);
-  }
+  if (messages.value === undefined) return fail([unrecordedCommits(number)]);
   const patchFile = join(runDir, 'steps', number, 'diff.patch');
   if (!existsSync(patchFile)) return fail([missing(`steps/${number}/diff.patch`)]);
   for (const [file, added] of addedText(readFileSync(patchFile, 'utf8'))) {
@@ -177,6 +182,72 @@ function contentStep(check: ContentCheck, runDir: string, n: number): Result<Che
   }
   const commit = messages.value.findIndex((message) => satisfies(message, check.patterns));
   return ok(commit === -1 ? { n, passed: false } : { n, passed: true, where: { commit: commit + 1 } });
+}
+
+/**
+ * The lines the arm's setup added (`setup/diff.patch`, every file), trimmed, blank ones left out: template text,
+ * which a v2 content check does not count as the agent's (REQ-SCO-06 as amended in 1.49, task-128). Read only when a
+ * v2 check is scored; empty otherwise.
+ */
+function setupLines(request: CheckRequest): Result<ReadonlySet<string>> {
+  const v2 = request.checks.some((check) => check.kind === 'content' && check.match === 'words');
+  if (!v2) return ok(new Set());
+  const patch = join(request.runDir, 'setup', 'diff.patch');
+  if (!existsSync(patch)) return fail([missing('setup/diff.patch')]);
+  const lines = [...addedLines(readFileSync(patch, 'utf8')).values()].flat().map((line) => line.trim());
+  return ok(new Set(lines.filter((line) => line !== '')));
+}
+
+/**
+ * A v2 content check on step `n` (REQ-SCO-06 as amended in 1.49, task-128): every group matched as whole words in one
+ * candidate of the agent's own text — the lines the step added to one file, in the patch's order, less the setup's
+ * lines; then each of its commit messages, less those the verdict hook made (the ledger's, under a separate approver).
+ */
+function wordsStep(
+  check: ContentCheck,
+  runDir: string,
+  n: number,
+  setup: ReadonlySet<string>,
+): Result<CheckStepScore> {
+  const number = String(n).padStart(2, '0');
+  const messages = readStepCommits(runDir, n);
+  if (!messages.ok) return messages;
+  if (messages.value === undefined) return fail([unrecordedCommits(number)]);
+  const patchFile = join(runDir, 'steps', number, 'diff.patch');
+  if (!existsSync(patchFile)) return fail([missing(`steps/${number}/diff.patch`)]);
+  for (const [file, added] of addedLines(readFileSync(patchFile, 'utf8'))) {
+    const own = added.filter((line) => !setup.has(line.trim()));
+    if (satisfiesWords(own, check.patterns)) return ok({ n, passed: true, where: { file } });
+  }
+  let hook: ReadonlySet<string> = new Set();
+  let shas: readonly string[] = [];
+  if (check.ledger === true) {
+    const listed = verdictHookCommits(runDir, n);
+    if (!listed.ok) return listed;
+    const made = stepCommitShas(runDir, n);
+    if (!made.ok) return made;
+    if (made.value.length !== messages.value.length) {
+      return fail([
+        {
+          path: `steps/${number}/commits.json`,
+          message: `holds ${messages.value.length} messages and ${made.value.length} commits: they must align`,
+        },
+      ]);
+    }
+    hook = listed.value;
+    shas = made.value;
+  }
+  const commit = messages.value.findIndex(
+    (message, index) => !hook.has(shas[index] ?? '') && satisfiesWords(linesOf(message), check.patterns),
+  );
+  return ok(commit === -1 ? { n, passed: false } : { n, passed: true, where: { commit: commit + 1 } });
+}
+
+function unrecordedCommits(number: string): Issue {
+  return {
+    path: `steps/${number}/commits.json`,
+    message: 'is missing: the run was stored before steps recorded their commit messages (task-035)',
+  };
 }
 
 function missing(path: string): Issue {
@@ -188,6 +259,11 @@ function missing(path: string): Issue {
  * and a deleted one add no text.
  */
 export function addedText(patch: string): Map<string, string> {
+  return new Map([...addedLines(patch)].map(([path, lines]) => [path, lines.join('\n')]));
+}
+
+/** The lines a patch adds, by the file they are added to, in the patch's order (as {@link addedText}). */
+function addedLines(patch: string): Map<string, string[]> {
   const added = new Map<string, string[]>();
   let file: string | undefined;
   let inHunk = false;
@@ -208,7 +284,7 @@ export function addedText(patch: string): Map<string, string> {
       added.set(file, lines);
     }
   }
-  return new Map([...added].map(([path, lines]) => [path, lines.join('\n')]));
+  return added;
 }
 
 /** A path as git writes it: quoted, with C escapes, when it holds unusual characters. */

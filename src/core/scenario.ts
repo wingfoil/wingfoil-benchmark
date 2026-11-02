@@ -218,11 +218,13 @@ const pattern = z.string().refine((text) => text.trim() !== '', 'must not be emp
 
 /**
  * A content check (REQ-SCO-06 as amended in 1.12): groups of case-insensitive substrings, every group
- * matched in one place — the lines a step added to one text file, or one of its commit messages.
+ * matched in one place — the lines a step added to one text file, or one of its commit messages. With
+ * `match: words` (v2, amended in 1.49, task-128), whole words in the agent's own text.
  */
 const contentCheck = z.strictObject({
   kind: z.literal('content'),
   steps: checkSteps,
+  match: z.literal('words').optional(),
   patterns: z.array(z.array(pattern).min(1)).min(1),
 });
 
@@ -399,10 +401,16 @@ interface CheckBase {
   readonly steps: readonly number[];
 }
 
-/** A loaded content check: its groups of patterns, as written. */
+/**
+ * A loaded content check: its groups of patterns, as written. `match: 'words'` is v2 (REQ-SCO-06 as amended
+ * in 1.49, task-128): whole words in the agent's own text; absent, v1's substrings. `ledger`, for v2 under a
+ * scenario with a separate approver: the commits the verdict hook made, which the ledger lists, are left out.
+ */
 export interface ContentCheck extends CheckBase {
   readonly kind: 'content';
   readonly patterns: readonly (readonly string[])[];
+  readonly match?: 'words';
+  readonly ledger?: true;
 }
 
 /** A seed region as loaded: its seed-relative path, its range, and the seed's own lines in it. */

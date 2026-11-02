@@ -87,6 +87,26 @@ Feature: Scoring runs with defined, reproducible metrics
     When M-F1 is computed
     Then decision D3 counts as a failure
 
+  @F4.7
+  Scenario: A v2 content check reads whole words in the agent's own text
+    Given a content check with "match: words" for "revised"
+    And a run whose setup added a template holding the line "Mark it revised"
+    When a step adds "unrevised" to a source file and the line "Mark it revised" to a new document
+    Then the check fails: a stem is not a word, and the template's line is not the agent's
+    When the step also adds the front-matter line "title: D3 revised" to the document
+    Then the check passes, matched in the document
+    When the step adds "D3 revised" to the seed's README instead
+    Then the check passes, matched in the README
+    And in a scenario with a separate approver, a commit the verdict hook made saying "revised" does not count
+    And the agent's own "Reason: D3 revised" in the commit of a harness command counts
+
+  @F4.7
+  Scenario: The maintainer's judgement is shown beside a content check's verdict
+    Given judgements.json holds the maintainer's judgement of a v2 content check at a step of a run
+    When the site is built
+    Then the execution's judgements page shows the automatic verdict and the judgement together
+    And the execution's landing page counts the disagreements
+
   @F4.8
   Scenario: Directive violations are counted per rule and per step
     When a run of S8 is scored

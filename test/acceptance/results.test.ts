@@ -580,3 +580,81 @@ describe('results.feature', () => {
     expect(existsSync(join(campaign.root, 'results', 'dry-runs', '1', 'aggregate.json'))).toBe(false);
   });
 });
+
+describe("the maintainer's judgements (REQ-SCO-06 as amended in 1.49, task-128)", () => {
+  /** The site fixture's execution, its first run given a v2 content check scored at two steps (one pass, one fail). */
+  async function judgedExecution(judgements: (run: string) => unknown[]) {
+    const { root, executionDir } = await siteExecution();
+    const runs = join(executionDir, 'runs');
+    const scenarioDir = readdirSync(runs).sort()[0] as string;
+    const run = `runs/${scenarioDir}/baseline/fake-model/r1`;
+    const scoreFile = join(executionDir, run, 'score.json');
+    const score = JSON.parse(readFileSync(scoreFile, 'utf8')) as { checks?: unknown[] };
+    score.checks = [
+      ...(score.checks ?? []),
+      {
+        id: 'd3-revision',
+        kind: 'content',
+        match: 'words',
+        steps: [
+          { n: 1, passed: true, where: { file: 'NOTES.md' } },
+          { n: 2, passed: false },
+        ],
+      },
+    ];
+    writeFileSync(scoreFile, JSON.stringify(score));
+    writeFileSync(join(executionDir, 'judgements.json'), JSON.stringify({ judgements: judgements(run) }));
+    return { root, run };
+  }
+  type Entries = (run: string) => unknown[];
+
+  it("@F4.7 The maintainer's judgement is shown beside a content check's verdict", async () => {
+    // Given judgements.json holds the maintainer's judgement of a v2 content check at a step of a run
+    const entries: Entries = (run) => [
+      { run, check: 'd3-revision', step: 1, verdict: 'pass' },
+      { run, check: 'd3-revision', step: 2, verdict: 'pass', note: 'D3 recorded as "superseded"' },
+    ];
+    const { root, run } = await judgedExecution(entries);
+
+    // When the site is built
+    const built = await benchSite(root, 'site', 'build', EXECUTION);
+    expect(built.code, built.stderr).toBe(0);
+
+    // Then the execution's judgements page shows the automatic verdict and the judgement together
+    const page = readFileSync(join(root, 'site', 'abcdef012345', '1', 'judgements.html'), 'utf8');
+    expect(page).toContain(
+      `<tr><td>${run}</td><td>d3-revision</td><td>1</td><td>pass</td><td>pass</td><td>agree</td><td></td></tr>`,
+    );
+    expect(page).toContain(
+      `<tr class="disagreement"><td>${run}</td><td>d3-revision</td><td>2</td><td>fail</td><td>pass</td>` +
+        '<td>disagree</td><td>D3 recorded as &quot;superseded&quot;</td></tr>',
+    );
+    // And the execution's landing page counts the disagreements
+    const landingPage = readFileSync(join(root, 'site', 'abcdef012345', '1', 'index.html'), 'utf8');
+    expect(landingPage).toContain(
+      '<a href="judgements.html">2 judgements, 1 disagreement with the automatic verdict</a>',
+    );
+  });
+
+  it('refuses a judgement of no v2 check, of a step not scored, of no run, or a repeated one', async () => {
+    const entries: Entries = (run) => [
+      { run, check: 'd3-revision', step: 1, verdict: 'pass' },
+      { run, check: 'd3-revision', step: 1, verdict: 'fail' },
+      { run, check: 'd3-revision', step: 3, verdict: 'fail' },
+      { run, check: 'r1', step: 1, verdict: 'fail' },
+      { run: 'runs/nowhere', check: 'd3-revision', step: 1, verdict: 'fail' },
+    ];
+    const { root } = await judgedExecution(entries);
+    const built = await benchSite(root, 'site', 'build', EXECUTION);
+    expect(built.code).toBe(1);
+    const at = 'results/abcdef012345/1/judgements.json.judgements';
+    for (const line of [
+      `${at}[1]: repeats the key of an earlier judgement`,
+      `${at}[2].step: the check scored no step 3 of the run`,
+      `${at}[3].check: 'r1' is no v2 content check of the run`,
+      `${at}[4].run: 'runs/nowhere' is no run of the execution`,
+    ])
+      expect(built.stderr).toContain(line);
+    expect(existsSync(join(root, 'site'))).toBe(false);
+  });
+});

@@ -2,7 +2,7 @@
 id: task-128-content-checks-v2-and-the-maintainer-s-rubric-bug-026
 type: task
 title: "Content checks v2 and the maintainer's rubric (bug-026)"
-status: backlog
+status: approved
 release: v0.3
 wave: W16
 features: [F4.7]
@@ -87,5 +87,46 @@ the maintainer and validated at the site's build, no new command. No real-agent 
 
 ## Execution notes
 
-<!-- What happened while building: deviations, blockers, follow-ups (filed as elements, never left
-     here). For every `wingfoil` command: declared vs observed behaviour. -->
+- **Red first:** the v2 acceptance test failed on v1's code (the template's "Mark it revised" matched), then passed;
+  the judgement tests failed with the site's build unwired, then passed. The loader's and the matcher's unit tests
+  were written with their code.
+- **Deviations from the Design**, each narrower than it and within REQ-SCO-06 1.49:
+  - `score.json` records `match: 'words'` for a v2 check only; a v1 check records no `match`, as before, so the
+    published `score.json` files and the existing tests are unchanged (criterion 5 said `substring` or `words`).
+  - The site has no page per run: the judgements are on a page of the execution's, `judgements.html`, each beside
+    the automatic verdict, a disagreement marked; the landing page links it with the count. The @F4.7 scenario's
+    Then says so.
+  - A 1.0 execution is recognised by its checks: under K7 no 1.0 version has a v2 check, so a `judgements.json`
+    beside an execution with no v2 check (`match: words` in no run's `score.json`) is refused whole (review round
+    1), and only a v2 check is judged.
+  - A v2 check of a scenario with a separate approver is loaded with `ledger: true`: its step's `verdicts.json` is
+    then required, as the governance checks require it.
+- **The erratum** (criterion 7): the method page's `#content-checks-v1-erratum`; all seven catalogue executions run
+  S2, S3 (and 33b54dd89e8b/1 S10) at 1.0, so each gets the note pointing to it.
+- `wingfoil memory add`, `submit` (draft → pending, backlog → in-progress): as declared.
+- **Full suites** (2026-11-02, `cd32874c`, under the load watcher): LINT 0, TEST 0 (2026 passed, 9 skipped), BUILD 0,
+  BIN 0, DOCKER 0.
+
+### Review
+
+**Round 1** (2026-11-02, a fresh read-only agent in `/tmp/claude-1000/review1-128-oJ8C`, a clone of `f30ff2ea`; both
+checkouts unchanged). No blocker; two should-fix and eight nits:
+
+| # | Finding | Outcome |
+|---|---|---|
+| S1 | an empty `judgements.json` beside a 1.0 execution was accepted ("0 judgements") | fixed: the file is refused whole beside an execution with no v2 check, and when it holds no judgement |
+| S2 | the erratum read as if v2 fixed the paraphrase misses | fixed: v2 removes substring and template errors; words the check does not list only the judgement catches |
+| N1 | the boundary holds around a pattern's non-word ends, unstated | kept, stated in the method page and the matcher's comment, tested |
+| N2 | combining marks were not word characters | fixed: `\p{M}` in the word class, lines and patterns NFC-normalised |
+| N3 | the misaligned `commits.json` refusal only under a ledger | kept: shas are read only there; criterion 3 holds under a separate approver |
+| N4 | `wordsStep`'s missing-`commits.json` message differed from v1's | fixed: one message |
+| N5 | the method page's "lines the setup added" and "made by the runner" | fixed: lines equal to a setup line; the verdict hook's commits, as the ledger lists them |
+| N6 | four executions keep "The content checks are lexical (bug-026)" beside the erratum note | kept: their own published wording; the new note adds the pointer |
+| N7 | three source lines of 121 characters | fixed |
+| N8 | untested cases | fixed: a not-reached step, an unreadable `score.json`, an extra field, a v2 check with no approver |
+
+**Round 2** (2026-11-02, a fresh read-only agent in `/tmp/claude-1000/review2-128-SRWe`, a clone of `c6561eab`; both
+checkouts unchanged), on `f30ff2ea..c6561eab`: every round-1 item resolved as recorded, v1 byte-identical, NFC and
+`\p{M}` in v2 only. No blocker, no should-fix; nits fixed: a new 128-character line; the third deviation's text (the
+whole-file refusal); the method page's front-matter clause and accents. Kept: the v2 prompt refusal reads the prompt
+line by line, as the check reads the agent's text, so a prompt reflowed onto one line is not refused.

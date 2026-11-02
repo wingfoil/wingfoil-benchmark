@@ -84,6 +84,21 @@ function listed(delivered: readonly Delivery[]): Set<string> {
 }
 
 /**
+ * The commits that carried out step `n`'s verdicts, by sha, as its ledger lists them: the verdict hook's, which a v2
+ * content check leaves out of the agent's own text (REQ-SCO-06 as amended in 1.49, task-128).
+ */
+export function verdictHookCommits(runDir: string, n: number): Result<ReadonlySet<string>> {
+  const delivered = deliveries(runDir, n);
+  return delivered.ok ? ok(listed(delivered.value)) : delivered;
+}
+
+/** The shas of step `n`'s commits, oldest first, as `commits.json` records them beside their messages. */
+export function stepCommitShas(runDir: string, n: number): Result<readonly string[]> {
+  const made = commits(runDir, n);
+  return made.ok ? ok(made.value.map((commit) => commit.sha)) : made;
+}
+
+/**
  * The gate (M-E2) at step `n`: a release — the snapshot's value differing from the previous one's (the seed's at
  * step 1) — is legal only when an approval was delivered in the step while the release still held the previous value;
  * every commit of the step authored or committed as the approver and not listed by the ledger is a forged approval.

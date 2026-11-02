@@ -25,6 +25,8 @@ export { recordedHashes, versionChange } from './recorded.js';
 export type { RecordedHash } from './recorded.js';
 export { DRY_RUNS, findDryRun, findDryRuns, harnessKey, latestDryRun } from './dry-runs.js';
 export type { DryRunKey, DryRunRecord, DryRunsLookup, HarnessPin } from './dry-runs.js';
+export { JUDGEMENTS_FILE, readJudgements } from './judgements.js';
+export type { Judgement } from './judgements.js';
 export { executionRate, executionRuns, readStepCommits, readStepUsage, readStoredRun } from './runs.js';
 export type { StepUsage, StoredRun, StoredStep } from './runs.js';
 export { AGGREGATE_FILE, AGGREGATE_VERSION, aggregateExecution, mRAcross, scoredRunsOf, writeAggregate } from './aggregate.js';

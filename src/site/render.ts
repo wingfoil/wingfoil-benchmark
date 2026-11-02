@@ -415,7 +415,14 @@ export function landingPage(
   comparisons: readonly ComparisonLink[] = [],
   profiles: readonly ProfileLink[] = [],
   notes: readonly string[] = [],
+  judgements?: { readonly file: string; readonly summary: string },
 ): string {
+  // The maintainer's judgements of the v2 content checks (REQ-SCO-06 as amended in 1.49, task-128): counted, linked.
+  const judged =
+    judgements === undefined
+      ? ''
+      : `<h2>The maintainer's judgements</h2>\n<ul>\n<li><a href="${e(judgements.file)}">${e(judgements.summary)}</a>` +
+        '</li>\n</ul>\n';
   const notesList =
     notes.length === 0
       ? ''
@@ -454,13 +461,18 @@ export function landingPage(
   if (model.arms.length === 1) {
     return page(
       title(model),
-      landingContent(model, title(model), notesList + acrossAgentsSection) + compared + views,
+      landingContent(model, title(model), notesList + acrossAgentsSection) + compared + judged + views,
       2,
     );
   }
   return page(
     title(model),
-    landingContent(model, title(model), notesList) + compared + acrossAgentsSection + paritySection + views,
+    landingContent(model, title(model), notesList) +
+      compared +
+      acrossAgentsSection +
+      paritySection +
+      judged +
+      views,
     2,
   );
 }

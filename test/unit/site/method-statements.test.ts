@@ -135,6 +135,18 @@ const STATEMENTS: readonly (readonly [string, string])[] = [
     'REQ-SCO-06 `content`; requirements amendment 1.12; S3.md §9 ("D3 content check favours verbose arms": some record, amount not scored); task-036 Design "Known limit" (a comment counts as a record); rel-v0-1 W8 Due before',
   ],
   [
+    'content-checks-v2',
+    "REQ-SCO-06 as amended in 1.49 (content checks v2: `match: words`, the agent's own text less the setup's lines and the verdict hook's commits); scenario conventions amendment 1.5 K7 (versions 1.1); bug-026; task-128 Design",
+  ],
+  [
+    'content-checks-judgement',
+    'REQ-SCO-06 as amended in 1.49 (the rubric, `oracle/rubric.md`; `judgements.json`, shown beside the verdict, disagreements counted; 1.0 executions not judged); task-128 criterion 6',
+  ],
+  [
+    'content-checks-v1-erratum',
+    "REQ-SCO-06 as amended in 1.49 (1.0 checks stay v1, their misses published as an erratum); scenario conventions amendment 1.5 K7 (an erratum for 1.0); bug-026 Actual; rel-v0-2 Retrospective; calibration v0.2 §7.4, §7.5; task-128 criterion 7 (the approver's choice A: the figures from W16's re-scoring)",
+  ],
+  [
     'syntactic-limits',
     'REQ-SCO-05 `ast` (test and declaration files left out); requirements amendment 1.13 (`crypto` randomness); S8.md amendment 1.1 (alias not seen); rel-v0-1 W8 Due before',
   ],
