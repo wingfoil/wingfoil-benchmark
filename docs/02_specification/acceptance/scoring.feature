@@ -51,7 +51,8 @@ Feature: Scoring runs with defined, reproducible metrics
     Then break-even is the value, its step cost's outcome "preliminary"
     Given three runs a side, one of the arm's reaching no step
     Then the step-cost comparison reads the other two, its n is 2 and its outcome "preliminary"
-    Given a side's runs, none of which reached a step, with a baseline run at M-Q1 0 or on the baseline's side
+    Given a side's runs, none of which reached a step: the arm's, three runs a side, with a baseline run at M-Q1 0
+    And likewise a baseline none of whose runs reached a step
     Then break-even is "not applicable", reason "not measured"
     And each entry records both outcomes, each with its runs and n
 

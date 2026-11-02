@@ -20,7 +20,7 @@ import type { SuiteReport, TestResult } from './hidden-tests.js';
 import type { ScoringImage } from './image.js';
 import { measuredFiles, qualityInContainer } from './quality.js';
 import type { MQ2Score, QualityRunner } from './quality.js';
-import { determinismPaths, INTERFACE_VERSION, interfaceFiles } from './determinism.js';
+import { determinismPaths, ENTRY_POINT, INTERFACE_VERSION, interfaceFiles } from './determinism.js';
 import type { DeterminismScore } from './determinism.js';
 import { interfaceInContainer } from './interface.js';
 import type { InterfaceRunner } from './interface.js';
@@ -313,9 +313,10 @@ async function determinismOf(
     setupPatch: existsSync(patch) ? readFileSync(patch, 'utf8') : '',
   });
   const files = interfaceFiles(paths);
-  // No TypeScript source, so no entry point: M-R2 v2's interface without a container (REQ-SCO-07 as amended in 1.49).
-  if (files.length === 0)
+  // No entry point, so no container: M-R2 v2's interface (REQ-SCO-07 as amended in 1.49), whatever the setup touched.
+  if (!existsSync(join(snapshot, ENTRY_POINT))) {
     return ok({ interface: ['(no entry point)'], interface_version: INTERFACE_VERSION, paths });
+  }
   const run =
     request.interfaces ??
     interfaceInContainer({

@@ -142,9 +142,19 @@ function sideHtml(metric: MetricId, side: ComparisonRow['earlier']): string {
   const n =
     `n = ${side.arm.n} / ${side.baseline.n}` +
     (ranged ? `, range ${range(metric, side.arm)} / ${range(metric, side.baseline)}` : '');
+  // In the words every page uses (REQ-RES-03 as amended in 1.49, task-129): the same when the delta is nothing, then
+  // how sure it is; this page compares deltas across executions, so it has no better or worse of its own.
+  const word =
+    side.delta === 0
+      ? 'same'
+      : {
+          'beyond variance': 'beyond the variance',
+          'within variance': 'within the variance',
+          preliminary: 'preliminary',
+        }[side.certainty];
   return (
     `<span class="delta">${e(formatDelta(metric, side.delta))}</span> <span class="n">${e(n)}</span> ` +
-    `<span class="certainty">${e(side.certainty)}</span>`
+    `<span class="certainty">${e(word)}</span>`
   );
 }
 

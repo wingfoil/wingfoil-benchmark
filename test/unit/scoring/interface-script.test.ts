@@ -268,6 +268,20 @@ describe('interface.mjs --v2 (M-R2 v2, REQ-SCO-07 as amended in 1.49, task-129)'
     expect(v2({ 'lib/index.ts': 'export const y = 1;\n' })).toEqual(['(no entry point)']);
   });
 
+  it('keeps the names of a later star when an earlier one does not parse, and stops at a namespace cycle', () => {
+    expect(
+      v2({
+        'src/index.ts': "export * from './broken.js';\nexport * from './good.js';\n",
+        'src/broken.ts': 'export const = ;\n',
+        'src/good.ts': 'export function add(a: number): number {\n  return a;\n}\n',
+      }),
+    ).toEqual(['add: function add(a: number): number;', 'src/broken.ts: (does not parse)']);
+    // A namespace of a module already being read adds nothing: its names are the module's own
+    expect(v2({ 'src/index.ts': "export * as self from './index.js';\nexport const s = 1;\n" })).toEqual([
+      's: const s;',
+    ]);
+  });
+
   it('never follows a specifier out of the snapshot', () => {
     expect(v2({ 'src/index.ts': "export * from '../../../../etc/x';\n" })).toEqual([
       '(unresolved ../../../../etc/x)',

@@ -125,8 +125,31 @@ session, no spending; the published values stay as published, and v0.2's re-scor
   - Beside an outcome the certainty is shown only for "the same" (the other words say it); the parity page reads
     "same (within variance)" likewise.
   - The site reads `aggregate.json` versions 1 and 2 (`AGGREGATE_VERSIONS`), so the published executions rebuild.
-  - The comparison page (F5.7) and the across-agents page carried no ▲/▼ already: unchanged, the rule holds there.
+  - The comparison page (F5.7) compares deltas across executions and has no better or worse of its own: it now
+    words each side as every page does ("same" for no delta, "within the variance", "preliminary", "beyond the
+    variance"); the across-agents page carries no outcome marks.
+  - A namespace cycle (`export * as self from './index.js'`) is followed no further: the module's names are its own.
 - **A miss from task-128, repaired:** bug-026 was left `approved` after task-128's done (its `fixed_by` and
   `approved → fixed` are set by hand), which turned the bug-links test red here; fixed on main (`b3071da0`,
   `cc362580`) and merged into this branch.
 - `wingfoil memory add`, `submit` (draft → pending, backlog → in-progress; bug-026 approved → fixed): as declared.
+
+### Review
+
+**Round 1** (2026-11-02, a fresh read-only agent in `/tmp/claude-1000/review1-129-HBTi`, a clone of `b4b5a6b7`; both
+checkouts unchanged). No blocker; five should-fix and six nits:
+
+| # | Finding | Outcome |
+|---|---|---|
+| S1 | a star to a module that does not parse hid every later star's names | fixed: such a star holds no name; tested with the broken star first |
+| S2 | the finding note's M-K3 printed the per-model setup, not REQ-SCO-08 1.49's M-K3 | fixed: `m_k3` read first, the group's setup figures after |
+| S3 | no test of two M-R2 versions never compared | fixed: within a group and across two executions, the pin named |
+| S4 | no test of M-K3 pooled over models | fixed: two models' runs, one M-K3, both break-evens dividing it |
+| S5 | the errata and "from v0.3" misdated (campaign-007 and -008 are v0.3 executions scored by the old rules) | fixed: "since v0.3's W16", campaign-008 included; the rule of presentation stated |
+| N1 | the comparison page printed the stored certainty, not the reported word | fixed: the same words as every page |
+| N2 | direction and divisor from rounded means | fixed: from `compare`'s raw delta |
+| N3 | a namespace cycle emitted eight nested copies | fixed: a module already being read is not followed |
+| N4 | a destructured `export const { a } = …` gives no entry | kept: no scenario's interface uses it; noted here |
+| N5 | the `(no entry point)` shortcut read M-R3's paths, less the setup's | fixed: the snapshot's `src/index.ts` itself |
+| N6 | the last @F4.4 Given garbled; no baseline-only empty case | fixed: the draft's wording, and the case tested |
+| N7 | the version-1 break-even line untested | fixed: a finding test on each version |

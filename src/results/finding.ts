@@ -155,13 +155,27 @@ function metricLines(metric: Metric, group: Group, aggregate: AggregateFile): st
         `- turns: ${valueText(m.cost.turns, count)}`,
         `- wall time: ${valueText(m.cost.wall_time_ms, seconds)}`,
       ];
-    case 'M-K3':
-      if (m.cost.setup_cost_eur === undefined) return ['- setup not recorded for this arm'];
+    case 'M-K3': {
+      // REQ-SCO-08 as amended in 1.49 (task-129): the one-off cost per scenario version and arm, every model's, when
+      // the aggregate has it (version 2); the group's own setup figures follow.
+      const oneOff = (aggregate.m_k3 ?? []).find(
+        (e) => e.scenario === group.scenario && e.version === group.version && e.arm === group.arm,
+      );
+      const head =
+        oneOff === undefined
+          ? []
+          : [
+              `- M-K3: ${eur(oneOff.value)} (configuration ${oneOff.configuration ?? eur(oneOff.configuration_eur)}; ` +
+                `setup mean ${eur(oneOff.setup_mean_eur)}, n ${oneOff.n}, every model's)`,
+            ];
+      if (m.cost.setup_cost_eur === undefined) return [...head, '- setup not recorded for this arm'];
       return [
+        ...head,
         `- setup cost: ${valueText(m.cost.setup_cost_eur, eur)}`,
         `- setup time: ${valueText(m.cost.setup_wall_time_ms, seconds)}`,
         `- manual tokens: ${valueText(m.cost.manual_tokens, count)}`,
       ];
+    }
     case 'M-K4':
       return [breakEvenLine(group, aggregate.break_even)];
     case 'M-E1': {

@@ -443,6 +443,14 @@ describe('scoring.feature', { timeout: 120_000 }, () => {
       value: 'not applicable',
       reason: 'not measured',
     });
+    // And likewise a baseline none of whose runs reached a step, the arm's having reached theirs
+    expect(
+      at([run('b1', 0), run('b2', 0), run('b3', 0)], side('a', [0, 0.1, 0.2], [0.1, 0.1, 0.1])),
+    ).toMatchObject({
+      value: 'not applicable',
+      reason: 'not measured',
+      step_cost: { outcome: 'not measured', baseline: { n: 0 } },
+    });
 
     // And each entry records both outcomes, each with its runs and n
     expect(value.quality).toEqual({

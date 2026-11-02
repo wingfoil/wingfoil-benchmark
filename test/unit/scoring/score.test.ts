@@ -10,7 +10,6 @@ import type { Census, HoldoutInput } from '../../../src/scoring/index.js';
 import { loadHoldoutAdditions } from '../../../src/scenario/index.js';
 import {
   CANCEL,
-  INTERFACE,
   QUALITY,
   HOLDOUT_SECRET,
   HOLDOUT_TESTS,
@@ -148,9 +147,13 @@ describe('scoreRun (F4.1, REQ-SCO-01–03)', () => {
         m_d3: { count: 0, tests: [] },
         // M-Q2 (task-041): on the one source file the run changed, as the image's quality.mjs said.
         m_q2: { measured: ['src/orders.ts'], coverage_targets: ['src/orders.ts'], ...QUALITY },
-        // M-R2's and M-R3's inputs (task-042): the final snapshot's interface, as the image's
-        // interface.mjs said, and its paths, less the setup's CLAUDE.md.
-        determinism: { interface: INTERFACE, interface_version: 2, paths: ['README.md', 'src/orders.ts'] },
+        // M-R2's and M-R3's inputs (task-042): the final snapshot's interface — none read, as this snapshot has no
+        // entry point (M-R2 v2, task-129; the next block reads one) — and its paths, less the setup's CLAUDE.md.
+        determinism: {
+          interface: ['(no entry point)'],
+          interface_version: 2,
+          paths: ['README.md', 'src/orders.ts'],
+        },
         // Not marked (F3.6): the key is there, so aggregation never infers it from an absent one.
         expected_failure: null,
         // M-K1 and M-K2 (F4.3): their own tests are in cost.test.ts.
@@ -158,16 +161,15 @@ describe('scoreRun (F4.1, REQ-SCO-01–03)', () => {
       },
     });
     // The census on the seed, then steps 1 and 2; the final snapshot is step 2's, already scored. Then
-    // M-Q2 on the final snapshot, in a container of its own (task-041), and its interface in another
-    // (task-042).
+    // M-Q2 on the final snapshot, in a container of its own (task-041); no interface container, as the snapshot
+    // has no entry point (M-R2 v2, task-129; the determinism block below reads one).
     expect(recorded.copies.map((copy) => copy.split(' -> ')[0])).toEqual([
       fixture.scenario.seedDir,
       expect.stringMatching(/01$/),
       expect.stringMatching(/02$/),
       expect.stringMatching(/02$/),
-      expect.stringMatching(/02$/),
     ]);
-    expect(recorded.removes).toHaveLength(5);
+    expect(recorded.removes).toHaveLength(4);
   });
 
   it('records the steps a run never reached, and no final snapshot, when it stopped early', async () => {
@@ -733,7 +735,10 @@ describe('determinism in score.json (M-R2, M-R3, task-042)', () => {
   });
 
   it('reads the interface in a scoring container of its own, with no mount, removed afterwards', async () => {
-    const fixture = await storedRun({ steps: [{}, CANCEL] });
+    // M-R2 v2 reads it from the entry point (task-129): a snapshot with one
+    const fixture = await storedRun({
+      steps: [{}, { ...CANCEL, 'src/index.ts': "export * from './orders.js';\n" }],
+    });
     const { recorded } = await score(fixture);
     const exec = recorded.execs.find((candidate) =>
       candidate.command.some((part) => part.includes('interface.mjs')),

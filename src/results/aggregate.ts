@@ -1069,7 +1069,7 @@ function comparedBy(
   better: 'higher' | 'lower',
   baseline: readonly { name: string; value: number }[],
   arm: readonly { name: string; value: number }[],
-): { comparison: BreakEvenComparison; armMean: number; baseMean: number } {
+): { comparison: BreakEvenComparison; delta: number } {
   const figures = (side: readonly { name: string; value: number }[]) => ({
     runs: side.map((entry) => entry.name),
     values: side.map((entry) => entry.value),
@@ -1078,14 +1078,11 @@ function comparedBy(
   const other = figures(arm);
   const sides = { baseline: breakEvenSideOf(base.runs, base.values), arm: breakEvenSideOf(other.runs, other.values) };
   if (base.values.length === 0 || other.values.length === 0) {
-    return { comparison: { outcome: 'not measured', ...sides }, armMean: 0, baseMean: 0 };
+    return { comparison: { outcome: 'not measured', ...sides }, delta: 0 };
   }
+  // The direction and the difference from the unrounded means, as the outcome is (task-129's review).
   const result = compare(better, base, other);
-  return {
-    comparison: { outcome: reported(result), ...sides },
-    armMean: sides.arm.mean as number,
-    baseMean: sides.baseline.mean as number,
-  };
+  return { comparison: { outcome: reported(result), ...sides }, delta: result.delta };
 }
 
 /**
@@ -1109,14 +1106,15 @@ export function breakEvenEntry(
   const entry = { m_k3_eur: mK3, quality: quality.comparison, step_cost: cost.comparison };
   const notApplicable = (reason: BreakEvenReason) => ({ value: 'not applicable' as const, reason, ...entry });
   const q = quality.comparison.outcome;
-  if (q === 'worse' || (q === 'preliminary' && quality.armMean < quality.baseMean)) return notApplicable('quality');
+  // `delta` is the arm's mean less the baseline's: a lower quality is negative, a higher step cost positive.
+  if (q === 'worse' || (q === 'preliminary' && quality.delta < 0)) return notApplicable('quality');
   const c = cost.comparison.outcome;
   if (c === 'not measured') return notApplicable('not measured');
-  if (c === 'same' || c === 'worse' || (c === 'preliminary' && cost.armMean > cost.baseMean)) {
+  if (c === 'same' || c === 'worse' || (c === 'preliminary' && cost.delta > 0)) {
     return { value: 'never', ...entry };
   }
   if (c === 'within the variance') return notApplicable('saving within variance');
-  return { value: Math.round((mK3 / (cost.baseMean - cost.armMean)) * 1e6) / 1e6, ...entry };
+  return { value: Math.round((mK3 / -cost.delta) * 1e6) / 1e6, ...entry };
 }
 
 /** M-K3 of one arm of one scenario version (REQ-SCO-08 as amended in 1.49): `configurationEur` when recorded (F7.5). */

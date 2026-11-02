@@ -40,7 +40,9 @@ interface RunSpec {
   /** score.json's `seed`, `m_f1`, `m_f2` and `m_d3` (task-039); absent, it was scored before them. */
   readonly continuity?: Readonly<Record<string, unknown>>;
   /** score.json's `determinism` (task-042); absent, it was scored before it. */
-  readonly determinism?: { readonly interface: readonly string[]; readonly paths: readonly string[] } | 'not reached';
+  readonly determinism?:
+    | { readonly interface: readonly string[]; readonly interface_version?: number; readonly paths: readonly string[] }
+    | 'not reached';
   /** The harness commit run.json records (REQ-RUN-14), for an arm that requires one. */
   readonly harnessCommit?: string;
   /** The scoring image score.json's `scorer` names; by default `bench-score:x`. */
@@ -137,7 +139,13 @@ function execution(runs: readonly RunSpec[], pins = 'models:\n  default: model-a
               determinism:
                 run.determinism === 'not reached'
                   ? { not_reached: true }
-                  : { interface: run.determinism.interface, paths: run.determinism.paths },
+                  : {
+                      interface: run.determinism.interface,
+                      ...(run.determinism.interface_version === undefined
+                        ? {}
+                        : { interface_version: run.determinism.interface_version }),
+                      paths: run.determinism.paths,
+                    },
             }),
         cost: {
           usd_to_eur: 0.5,
@@ -426,6 +434,13 @@ describe('aggregateExecution (F5.1, REQ-FMT-07)', () => {
       });
     });
 
+    it('gives no value when the runs were scored with different M-R2 versions, and names the pin (task-129)', () => {
+      const v2 = { interface: ['x: function x(): void;'], interface_version: 2, paths: PATHS };
+      const [group] = aggregate(execution([rep(1), rep(2, { determinism: v2 })])).groups;
+      expect(group?.metrics.m_r).toMatchObject({ n: 2, pins_differ: ['m_r2_version'] });
+      expect(group?.metrics.m_r).not.toHaveProperty('m_r2');
+    });
+
     it('counts two empty sets as alike', () => {
       const empty = { interface: [], paths: [] };
       const [group] = aggregate(execution([rep(1, { determinism: empty }), rep(2, { determinism: empty })])).groups;
@@ -557,6 +572,23 @@ describe('aggregateExecution (F5.1, REQ-FMT-07)', () => {
         m_k3_eur: 0.3,
         step_cost: { outcome: 'preliminary', baseline: { mean: 0.3, n: 2 }, arm: { mean: 0.1, n: 2 } },
       });
+    });
+
+    it("pools M-K3 over every model's runs of the arm, and each model's break-even divides it (task-129)", () => {
+      const file = aggregate(
+        execution([
+          baseline(),
+          arm({ setup: { costEur: 0.2 } }),
+          baseline(1, 'model-b'),
+          arm({ model: 'model-b', setup: { costEur: 0.4 } }),
+        ]),
+      );
+      const wingfoil = file.m_k3.filter((entry) => entry.arm === 'wingfoil');
+      expect(wingfoil).toEqual([expect.objectContaining({ value: 0.3, n: 2 })]);
+      expect(file.break_even.map((entry) => [entry.model, entry.m_k3_eur, entry.value])).toEqual([
+        ['model-a', 0.3, 3],
+        ['model-b', 0.3, 3],
+      ]);
     });
 
     it('pairs baseline-docs with the baseline too, and a slice within its own model', () => {

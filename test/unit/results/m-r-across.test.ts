@@ -64,3 +64,23 @@ describe('M-R across two executions (REQ-SCO-07 as amended in 1.32, experiment d
     expect(across).not.toHaveProperty('m_r1');
   });
 });
+
+describe('M-R2 versions never compared (REQ-SCO-07 as amended in 1.49, task-129)', () => {
+  const v2 = (r: MRRun): MRRun => ({
+    ...r,
+    score: { ...r.score, determinism: { interface: ['x: const x;'], interface_version: 2, paths: [] } } as MRRun['score'],
+  });
+  const a = run('a/1/S3@1.0/baseline/claude/r1', [], ['src/x.ts: export const x;'], []);
+  const b = run('b/1/S3@1.0/baseline/gpt/r1', [], ['src/x.ts: export const x;'], []);
+
+  it('gives no value across two executions whose runs ran different versions, and names the pin', () => {
+    const across = mRAcross([a], [v2(b)]);
+    expect(across.pins_differ).toEqual(['m_r2_version']);
+    expect(across).not.toHaveProperty('m_r2');
+  });
+
+  it('records the version of the values it compares', () => {
+    expect(mRAcross([v2(a)], [v2(b)]).m_r2?.version).toBe(2);
+    expect(mRAcross([a], [b]).m_r2?.version).toBe(1);
+  });
+});

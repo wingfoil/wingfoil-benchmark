@@ -490,7 +490,8 @@ function exported(file, name, seen) {
   if (name === 'default') return undefined;
   for (const from of mod.stars) {
     const target = resolved(file, from);
-    if (target === undefined) continue;
+    // A star that resolves to nothing, or to a module that does not parse, is named by namesOf: it holds no name.
+    if (target === undefined || moduleOf(target).error !== undefined) continue;
     const found = exported(target, name, next);
     if (found !== undefined) return found;
   }
@@ -533,7 +534,10 @@ function namesOf(file, seen = new Set()) {
 }
 
 /** The entries of every name `file` exports, each prefixed with `prefix`; a namespace's names nested. */
-function entriesFrom(file, prefix, out, depth = 0) {
+function entriesFrom(file, prefix, out, chain = new Set()) {
+  // A namespace that contains itself, directly or not, is not followed again (task-129's review).
+  if (chain.has(file)) return;
+  const inside = new Set(chain).add(file);
   const { names, specials } = namesOf(file);
   for (const special of specials) out.add(special);
   for (const name of names) {
@@ -542,7 +546,7 @@ function entriesFrom(file, prefix, out, depth = 0) {
     if (found === undefined) out.add(`${shown}: (unresolved)`);
     else if (found.special !== undefined) out.add(found.special);
     else if (found.namespace !== undefined) {
-      if (depth < 8) entriesFrom(found.namespace, `${shown}.`, out, depth + 1);
+      entriesFrom(found.namespace, `${shown}.`, out, inside);
     } else for (const signature of found.signatures) out.add(`${shown}: ${signature}`);
   }
 }

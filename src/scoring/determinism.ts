@@ -27,6 +27,9 @@ export type DeterminismScore =
 /** The version of M-R2 every new score computes (task-129); a `score.json` with none recorded is version 1. */
 export const INTERFACE_VERSION = 2;
 
+/** M-R2 v2's entry point, a constant of the scorer (REQ-SCO-07 as amended in 1.49), as interface.mjs reads it. */
+export const ENTRY_POINT = 'src/index.ts';
+
 function byCodeUnit(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
 }

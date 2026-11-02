@@ -215,7 +215,7 @@ runs the agent, so its cost is 0. {#m-k3}
 Each arm other than the baseline, baseline-docs included, is paired with the baseline of the same scenario version and
 model, and compared with it twice, by the rule of the comparisons below: on its *quality*, each run's final M-Q1 (a
 final not reached counts as 0), and on its *step cost*, each run's mean step cost (a killed step counted at its bound; a
-run with no reached step left out). From v0.3 the rules are applied in this order: {#m-k4}
+run with no reached step left out). Since v0.3's W16 the rules are applied in this order: {#m-k4}
 
 - "not applicable" (quality) when the arm's quality is worse beyond the variance, or preliminary with a lower mean;
 - "not applicable" (not measured) when a side has no run that reached a step;
@@ -225,23 +225,24 @@ run with no reached step left out). From v0.3 the rules are applied in this orde
 - otherwise M-K3 divided by the difference of the two mean step costs.
 
 Both comparisons are recorded with each entry, with their runs and `n`. An expected failure is computed from what it
-measured. **Erratum:** the published executions before v0.3 computed M-K4 by the 1.15 rule, a pooled mean step cost and
-no variance (not applicable when the mean M-Q1 was lower, never when the step cost was not lower); their values stay as
-published, and re-scoring them computes the rule above. {#m-k4-erratum}
+measured. **Erratum:** every execution scored before v0.3's W16, campaign-008 included, computed M-K4 by the 1.15 rule,
+a pooled mean step cost and no variance (not applicable when the mean M-Q1 was lower, never when the step cost was not
+lower); their values stay as published, and re-scoring them computes the rule above. {#m-k4-erratum}
 
 **Determinism** (M-R1 to M-R3) compares repetitions of the same arm, scenario and pins. In v0.1 only S1 has repetitions (three).
 
 **M-R1, outcome agreement:** the share of the final snapshot's public hidden tests that get the same verdict in every repetition. Hold-out tests do not enter it. {#m-r1}
 
-**M-R2, interface similarity:** how alike the repetitions' public interfaces are. From v0.3 (version 2) the interface is
-what the entry point `src/index.ts` exposes: each name it exports, followed through re-exports to its declaration, is
-one entry, the name and its signature, without bodies, initial values, comments or file path, so the same functions
-exposed from other files are the same interface, and a module the entry point does not reach is not counted. It is read
-from the code's syntax, with no type checker, so code that does not compile still has one. A run with no entry point, a
-module that does not parse and a specifier that names no file of the project are entries of their own. Each value
-records its version, and values of different versions are never compared. **Erratum:** version 1, in every execution
-published before v0.3, read every exported declaration of every TypeScript source, keyed by its file, and so measured
-the file layout as much as the interface; those values stay as published. {#m-r2}
+**M-R2, interface similarity:** how alike the repetitions' public interfaces are. Since v0.3's W16 (version 2) the
+interface is what the entry point `src/index.ts` exposes: each name it exports, followed through re-exports to its
+declaration, is one entry, the name and its signature, without bodies, initial values, comments or file path, so the
+same functions exposed from other files are the same interface, and a module the entry point does not reach is not
+counted. It is read from the code's syntax, with no type checker, so code that does not compile still has one. A run
+with no entry point, a module that does not parse and a specifier that names no file of the project are entries of their
+own. Each value records its version, and values of different versions are never compared. **Erratum:** version 1, in
+every execution scored before v0.3's W16, campaign-008 included, read every exported declaration of every TypeScript
+source, keyed by its file, and so measured the file layout as much as the interface; those values stay as published.
+{#m-r2}
 
 **M-R3, structure similarity:** how alike the repetitions' sets of file paths are. The paths are every file of the final snapshot, less every path the setup touched, and less generated paths: anything under `node_modules/`, `dist/`, `build/` or `coverage/`, `*.tsbuildinfo`, and lockfiles. The seed's files are common to all repetitions, so they raise the similarity. {#m-r3}
 
@@ -268,11 +269,12 @@ M-D1 (defects fixed) and M-D2 (false or duplicate reports rejected) are not repo
 
 Each arm other than the baseline is compared with the baseline of the same scenario version and model, metric by metric.
 A value is the mean of its runs, shown with its `n` and, from 3 runs, its range (the chart's whisker shows it from 2).
-From v0.3 the outcome is, in this order: *the same* when the means are equal; *better* or *worse*, by the metric's
-direction (higher is better for M-Q1 and M-F1; lower for M-K1, M-D3 and M-E1), only when the difference is beyond the
-variance; *within the variance* when both sides have at least 3 runs and their ranges overlap; *preliminary* otherwise.
-A metric one side lacks reads "not measured" and is no comparison. Every page applies the same rule: the landing,
-category, profile, comparison, across-agents and parity pages. {#comparisons}
+Since v0.3's W16 the outcome is, in this order: *the same* when the means are equal; *better* or *worse*, by the
+metric's direction (higher is better for M-Q1 and M-F1; lower for M-K1, M-D3 and M-E1), only when the difference is
+beyond the variance; *within the variance* when both sides have at least 3 runs and their ranges overlap; *preliminary*
+otherwise. A metric one side lacks reads "not measured" and is no comparison. Every page applies the same rule: the
+landing, category, profile, comparison, across-agents and parity pages. It is a rule of presentation: a page rebuilt now
+applies it to every execution, whatever its date, and the values do not change. {#comparisons}
 
 Each harness arm is also compared with its own docs control, the arm generated from its configuration (wingfoil with baseline-docs, speckit with speckit-docs, and so on for each harness), by the same rules and on the same metrics. A category page shows it under the harness's value, as "against" its control. It separates what the harness does from what its information alone does (threat T3). It is not counted in the headline, which compares with the baseline only. An execution whose controls recorded no pairing reads "not measured". {#harness-against-control}
 
@@ -285,8 +287,8 @@ M-E1 is *not comparable* for an arm when one of its runs did not reach a step th
 The headline is generated from the comparisons, with no hand-written text. It has one sentence per arm, of the form
 "Against the baseline, *arm* is better in *b*, worse in *w*, the same in *s*, within the variance in *v* and preliminary
 in *p* of *n* comparisons across categories …", then the categories not covered. A difference within the variance or
-preliminary is counted as such, never as better or worse. (Before v0.3, any difference of the means counted as better or
-worse, and the preliminary categories were listed after the counts.) {#headline}
+preliminary is counted as such, never as better or worse. (Pages built before v0.3's W16 counted any difference of the
+means as better or worse, and listed the preliminary categories after the counts.) {#headline}
 
 The landing page's one chart shows M-Q1 on the final snapshot for every covered scenario, one bar per arm, with its value, its `n` and, from two runs, its range. A legend names the arms, and each is told apart by hatching as well as colour. {#chart}
 

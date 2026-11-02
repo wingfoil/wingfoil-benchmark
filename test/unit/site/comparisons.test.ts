@@ -87,7 +87,7 @@ describe('the comparison page (REQ-RES-07, task-084)', () => {
     expect(row).toContain('n = 3 / 3');
     expect(row).toContain('range');
     expect(row).toContain('preliminary');
-    expect(row).toContain('within variance');
+    expect(row).toContain('within the variance');
     expect(row).toContain('<span class="change">');
   });
 
