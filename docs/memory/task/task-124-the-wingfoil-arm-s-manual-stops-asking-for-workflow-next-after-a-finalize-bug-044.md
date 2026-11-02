@@ -54,10 +54,16 @@ the fix in chat (2026-11-01). Placed in v0.3, W17. No real-agent session; the ne
 **Round 1** (2026-11-02, a fresh read-only agent in `/tmp/claude-1000/review-124-htQQ`, a clone of `08d289a7`; both
 checkouts unchanged). On WingFoil 0.3.1's Kanban scaffold, set up as the arm's setup does, `finalize`'s next-step
 block matched `next`'s byte for byte at every step (the actions' commands and the gate's `human needed` included).
-No blocker; two should-fix and two nits:
+No blocker; two should-fix and two nits (one row):
 
 | # | Finding | Outcome |
 |---|---|---|
 | S1 | "after each step, continue from what `finalize` printed" misses the steps a memory verb closes (plan, review) | fixed: the rule names them, and restores "(after the approver's reply)"; the digest moved to `2c39a14f3f91` |
 | S2 | the Design's rationale covered the resume only | fixed |
 | N | the new lines wider than the manual's; the test's title over 120 columns | fixed |
+
+**Round 2** (2026-11-02, a fresh read-only agent in `/tmp/claude-1000/review2-124-yZ1U`, a clone of `2f7e13a9`; both
+checkouts unchanged), on `08d289a7..2f7e13a9`: approved. It walked plan → build → review → deliver on 0.3.1's
+scaffold (`memory submit` and `memory approve` print no next step; each `finalize` prints `next`'s block), confirmed
+the digests and the test red on main's and round 1's manuals. Nits: criterion 1 quotes round 1's wording, which the
+rule still meets (it only adds cases); the table's merged row; both left as they are.
