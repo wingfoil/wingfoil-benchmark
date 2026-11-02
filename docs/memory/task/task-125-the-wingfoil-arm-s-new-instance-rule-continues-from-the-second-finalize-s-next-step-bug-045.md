@@ -47,6 +47,9 @@ in chat (2026-11-02). Placed in v0.3, W17. No real-agent session; the next campa
   evidence. The rule *Every request has its task* then has the agent add and submit its own task before building; the
   next campaign should see whether the weaker models follow it there. The old rule landed on the same step.
 
+- **Full suites** (2026-11-02, `798acd3e`, under the load watcher): LINT 0, TEST 0 (2004 passed, 9 skipped), BUILD 0,
+  BIN 0, DOCKER 0.
+
 ### Review
 
 **Round 1** (2026-11-02, a fresh read-only agent in `/tmp/claude-1000/review-125-V1qg`, a clone of `d1af69a2`; both
