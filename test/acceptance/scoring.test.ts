@@ -7,11 +7,13 @@ import { main } from '../../src/cli/index.js';
 import { gitCli, systemProcess } from '../../src/core/index.js';
 import type { ContentCheck } from '../../src/core/index.js';
 import { loadScenario } from '../../src/scenario/index.js';
+import { breakEvenEntry, mK3Of } from '../../src/results/index.js';
+import type { BreakEvenRun } from '../../src/results/index.js';
 import { scoreChecks } from '../../src/scoring/index.js';
 import { localScoringDocker } from '../support/local-scoring.js';
 import { repoPath } from '../support/paths.js';
 import { referenceFiles, referenceRun } from '../support/reference.js';
-import { CANCEL, EXECUTION, scoringDocker, storedRun, usageOf } from '../support/score-fixture.js';
+import { CANCEL, EXECUTION, scoringDocker, storedRun } from '../support/score-fixture.js';
 import { tempDir } from '../support/scenario-fixture.js';
 import type { Files } from '../support/score-fixture.js';
 
@@ -90,30 +92,6 @@ function scoredS3Runs(): Promise<readonly Record<string, unknown>[]> {
     );
   })();
   return s3Scores;
-}
-
-/**
- * An execution of T3 (standing in for S3) in the baseline and wingfoil arms, scored and aggregated by
- * `bench score` (task-040): the baseline's steps cost 0.05 EUR times their number; wingfoil's cost
- * `stepEur` times their number, with a setup of `setupEur` and the steps `wingfoilSteps` wrote. The
- * aggregate's break-even entry for wingfoil.
- */
-async function breakEvenOf(options: { stepEur: number; setupEur: number; wingfoilSteps: readonly Files[] }) {
-  const base = await storedRun({ steps: [{}, CANCEL] });
-  await storedRun({
-    steps: options.wingfoilSteps,
-    into: { root: base.root, arm: 'wingfoil' },
-    setupUsage: { ...usageOf(0), costUsd: 2 * options.setupEur, costEur: options.setupEur },
-    record: (n) => ({
-      usage: { ...usageOf(n), costUsd: 2 * options.stepEur * n, costEur: options.stepEur * n },
-    }),
-  });
-  const { code, stdout } = await benchScore(base.root);
-  if (code !== 0) throw new Error(stdout);
-  const aggregate = JSON.parse(readFileSync(join(base.executionDir, 'aggregate.json'), 'utf8')) as {
-    break_even: { arm: string; value: unknown }[];
-  };
-  return aggregate.break_even.find((entry) => entry.arm === 'wingfoil');
 }
 
 /**
@@ -372,30 +350,135 @@ describe('scoring.feature', { timeout: 120_000 }, () => {
     );
   }, 600_000);
 
-  it('@F4.4 Break-even is computed only when quality is not worse', async () => {
-    // Given the wingfoil arm's M-Q1 is not lower than the baseline's on S3 — both cancel orders at step 2
-    // And the wingfoil arm's mean step cost is lower than the baseline's — 0.0375 EUR against 0.075
-    // When break-even is computed for S3 — a setup of 0.3 EUR, synthetic: no v0.1 setup costs anything
-    const entry = await breakEvenOf({ stepEur: 0.025, setupEur: 0.3, wingfoilSteps: [{}, CANCEL] });
+  it('@F4.4 Break-even reads the variance on quality and on step cost', () => {
+    // Each run: its final M-Q1 and its reached steps' costs; M-K3 is 0.6 EUR throughout
+    const run = (name: string, finalMQ1: number, ...stepCosts: number[]): BreakEvenRun => ({
+      name,
+      finalMQ1,
+      stepCosts,
+    });
+    const side = (prefix: string, mQ1s: readonly number[], costs: readonly number[]) =>
+      mQ1s.map((q, i) => run(`${prefix}${i + 1}`, q, costs[i] as number, costs[i] as number));
+    const at = (baseline: BreakEvenRun[], arm: BreakEvenRun[]) => breakEvenEntry(baseline, arm, 0.6);
+    const base = side('b', [1, 0.9, 0.8], [0.3, 0.3, 0.3]);
 
-    // Then M-K4 equals the wingfoil setup cost divided by the difference in mean step cost
-    expect(entry).toMatchObject({
-      value: 8,
-      setup_cost_eur: { arm: 0.3 },
-      mean_step_cost_eur: { baseline: 0.075, arm: 0.0375 },
-      final_m_q1: { baseline: 1, arm: 1 },
+    // Given an arm whose final M-Q1 is lower within the variance and whose step cost is lower beyond it, three runs a
+    // side — Then break-even is the value, its quality's outcome "within the variance"
+    const value = at(base, side('a', [0.9, 0.85, 0.85], [0.1, 0.1, 0.1]));
+    expect(value).toMatchObject({
+      value: 3,
+      quality: { outcome: 'within the variance' },
+      step_cost: { outcome: 'better' },
+    });
+    expect(value).not.toHaveProperty('reason');
+
+    // Given its M-Q1 lower beyond the variance — Then "not applicable", reason "quality"
+    expect(at(base, side('a', [0.5, 0.5, 0.5], [0.1, 0.1, 0.1]))).toMatchObject({
+      value: 'not applicable',
+      reason: 'quality',
+      quality: { outcome: 'worse' },
+    });
+
+    // Given fewer than three runs a side and a lower M-Q1 mean — Then "not applicable", reason "quality", preliminary
+    expect(at(base.slice(0, 2), side('a', [0.9, 0.9], [0.1, 0.1]))).toMatchObject({
+      value: 'not applicable',
+      reason: 'quality',
+      quality: { outcome: 'preliminary' },
+    });
+
+    // Given the arm's runs, none of which reached a step, and every baseline run's final M-Q1 above 0
+    // Then "not applicable", reason "quality"
+    const none = [run('a1', 0), run('a2', 0), run('a3', 0)];
+    expect(at(base, none)).toMatchObject({ value: 'not applicable', reason: 'quality' });
+
+    // Given an M-Q1 the same or within the variance, and step costs within the variance
+    // Then "not applicable", reason "saving within variance"
+    const spread = side('b', [1, 1, 1], [0.2, 0.3, 0.4]);
+    expect(at(spread, side('a', [1, 1, 1], [0.25, 0.3, 0.3]))).toMatchObject({
+      value: 'not applicable',
+      reason: 'saving within variance',
+      quality: { outcome: 'same' },
+      step_cost: { outcome: 'within the variance' },
+    });
+
+    // Given equal step-cost means, a step cost higher beyond the variance, or fewer than three runs and a higher one
+    // Then "never"
+    expect(at(base, side('a', [1, 0.9, 0.8], [0.3, 0.3, 0.3]))).toMatchObject({
+      value: 'never',
+      step_cost: { outcome: 'same' },
+    });
+    expect(at(base, side('a', [1, 0.9, 0.8], [0.5, 0.5, 0.5]))).toMatchObject({
+      value: 'never',
+      step_cost: { outcome: 'worse' },
+    });
+    expect(at(base.slice(0, 2), side('a', [1, 0.9], [0.5, 0.5]))).toMatchObject({
+      value: 'never',
+      step_cost: { outcome: 'preliminary' },
+    });
+
+    // Given fewer than three runs a side and a lower step cost — Then the value, its step cost's outcome preliminary
+    expect(at(base.slice(0, 2), side('a', [1, 0.9], [0.1, 0.1]))).toMatchObject({
+      value: 3,
+      step_cost: { outcome: 'preliminary' },
+    });
+
+    // Given three runs a side, one of the arm's reaching no step — Then the step-cost comparison reads the other two,
+    // its n is 2 and its outcome preliminary
+    const short = [...side('a', [1, 0.9], [0.1, 0.1]), run('a3', 0.8)];
+    expect(at(base, short)).toMatchObject({
+      value: 3,
+      quality: { arm: { n: 3 } },
+      step_cost: { outcome: 'preliminary', arm: { n: 2, runs: ['a1', 'a2'] }, baseline: { n: 3 } },
+    });
+
+    // Given a side's runs, none of which reached a step: the arm's, n ≥ 3 a side, with a baseline run at M-Q1 0;
+    // or the baseline's — Then "not applicable", reason "not measured"
+    const zeroed = side('b', [0, 0.1, 0.2], [0.3, 0.3, 0.3]);
+    expect(at(zeroed, none)).toMatchObject({
+      value: 'not applicable',
+      reason: 'not measured',
+      step_cost: { outcome: 'not measured', arm: { n: 0, runs: [] } },
+    });
+    expect(at([run('b1', 0), run('b2', 0), run('b3', 0)], none)).toMatchObject({
+      value: 'not applicable',
+      reason: 'not measured',
+    });
+
+    // And each entry records both outcomes, each with its runs and n
+    expect(value.quality).toEqual({
+      outcome: 'within the variance',
+      baseline: { runs: ['b1', 'b2', 'b3'], n: 3, mean: 0.9, min: 0.8, max: 1 },
+      arm: { runs: ['a1', 'a2', 'a3'], n: 3, mean: 0.866667, min: 0.85, max: 0.9 },
+    });
+    expect(value.step_cost.baseline).toEqual({
+      runs: ['b1', 'b2', 'b3'],
+      n: 3,
+      mean: 0.3,
+      min: 0.3,
+      max: 0.3,
     });
   });
 
-  it('@F4.4 Break-even special cases', async () => {
-    // | quality        | step cost      | result         |
-    // | lower than     | lower than     | not applicable |  wingfoil never cancels an order
-    const lower = await breakEvenOf({ stepEur: 0.025, setupEur: 0.3, wingfoilSteps: [{}, {}] });
-    expect(lower).toMatchObject({ value: 'not applicable', final_m_q1: { baseline: 1, arm: 0 } });
-
-    // | not lower than | not lower than | never          |  wingfoil's steps cost twice the baseline's
-    const dearer = await breakEvenOf({ stepEur: 0.1, setupEur: 0.3, wingfoilSteps: [{}, CANCEL] });
-    expect(dearer).toMatchObject({ value: 'never', mean_step_cost_eur: { baseline: 0.075, arm: 0.15 } });
+  it('@F4.4 M-K3 is the one-off cost per scenario version and harness', () => {
+    // Given a configured arm whose configuration cost is recorded once and three runs' setup costs
+    const runs = [
+      { name: 'r1', setupEur: 0.1 },
+      { name: 'r2', setupEur: 0.2 },
+      { name: 'r3', setupEur: 0.3 },
+    ];
+    // Then M-K3 is the configuration's cost plus their mean
+    expect(mK3Of(runs, 1.5)).toEqual({
+      configuration_eur: 1.5,
+      setup_mean_eur: 0.2,
+      value: 1.7,
+      runs: ['r1', 'r2', 'r3'],
+      n: 3,
+    });
+    // And an arm with no configuration recorded has M-K3 the mean of its runs' setup costs, every model's
+    expect(mK3Of(runs)).toMatchObject({ configuration: 'not recorded', configuration_eur: 0, value: 0.2 });
+    // ... a run whose setup was not recorded left out, and an arm with neither at 0
+    expect(mK3Of([...runs, { name: 'r4' }])).toMatchObject({ value: 0.2, n: 3 });
+    expect(mK3Of([{ name: 'r1' }])).toMatchObject({ value: 0, n: 0, runs: [] });
   });
 
   it('@F4.5 Determinism is measured across repetitions', async () => {

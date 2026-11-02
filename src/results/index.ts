@@ -29,10 +29,25 @@ export { JUDGEMENTS_FILE, readJudgements } from './judgements.js';
 export type { Judgement } from './judgements.js';
 export { executionRate, executionRuns, readStepCommits, readStepUsage, readStoredRun } from './runs.js';
 export type { StepUsage, StoredRun, StoredStep } from './runs.js';
-export { AGGREGATE_FILE, AGGREGATE_VERSION, aggregateExecution, mRAcross, scoredRunsOf, writeAggregate } from './aggregate.js';
+export {
+  AGGREGATE_FILE,
+  AGGREGATE_VERSION,
+  AGGREGATE_VERSIONS,
+  aggregateExecution,
+  breakEvenEntry,
+  mK3Of,
+  mRAcross,
+  scoredRunsOf,
+  writeAggregate,
+} from './aggregate.js';
 export type {
   AggregateFile,
   BreakEven,
+  BreakEvenComparison,
+  BreakEvenReason,
+  BreakEvenRun,
+  BreakEvenSide,
+  MK3,
   ControlComparison,
   ControlMetric,
   ControlSide,

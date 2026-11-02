@@ -7,7 +7,7 @@ import type { Result } from '../core/index.js';
 
 import { AGGREGATE_FILE } from './aggregate.js';
 import { DIRECTIVE_KINDS } from './compare.js';
-import type { AggregateFile, BreakEven, Group, Tally, Value } from './aggregate.js';
+import type { AggregateFile, BreakEven, BreakEvenSide, Group, Tally, Value } from './aggregate.js';
 
 /** The metrics a finding note reads (REQ-CLI-07 as amended in 1.19), each from one place of the aggregate. */
 export const METRICS = [
@@ -184,17 +184,37 @@ function metricLines(metric: Metric, group: Group, aggregate: AggregateFile): st
   }
 }
 
+/** A break-even entry of an aggregate written before task-129 (version 1, REQ-SCO-08 as amended in 1.15). */
+interface BreakEvenV1 {
+  readonly value: number | 'not applicable' | 'never';
+  readonly setup_cost_eur: { readonly arm: number };
+  readonly mean_step_cost_eur: { readonly baseline: number; readonly arm: number };
+  readonly n: { readonly baseline: number; readonly arm: number };
+}
+
 function breakEvenLine(group: Group, entries: readonly BreakEven[]): string {
   if (group.arm === BASELINE) return `- ${BASELINE}: the arm the others are compared with`;
   const entry = entries.find(
     (e) => e.scenario === group.scenario && e.version === group.version && e.model === group.model && e.arm === group.arm,
   );
-  if (entry === undefined) return `- ${group.arm}: no break-even (no baseline, or a setup cost not recorded)`;
+  if (entry === undefined) return `- ${group.arm}: no break-even (no baseline, or a run scored before step costs)`;
   const value = typeof entry.value === 'number' ? `${entry.value} runs` : entry.value;
+  if (!('quality' in entry)) {
+    const v1 = entry as unknown as BreakEvenV1;
+    return (
+      `- ${group.arm}: ${value} (1.15's rule); setup ${eur(v1.setup_cost_eur.arm)}; mean step cost ` +
+      `${eur(v1.mean_step_cost_eur.arm)} against ${eur(v1.mean_step_cost_eur.baseline)}; ` +
+      `n ${v1.n.arm} against ${v1.n.baseline}`
+    );
+  }
+  // REQ-SCO-08 as amended in 1.49 (task-129): the reason, M-K3 and both comparisons, each with its n a side.
+  const side = (s: BreakEvenSide) => (s.mean === undefined ? 'none' : eur(s.mean));
+  const reason = entry.reason === undefined ? '' : ` (${entry.reason})`;
   return (
-    `- ${group.arm}: ${value}; setup ${eur(entry.setup_cost_eur.arm)}; mean step cost ` +
-    `${eur(entry.mean_step_cost_eur.arm)} against ${eur(entry.mean_step_cost_eur.baseline)}; ` +
-    `n ${entry.n.arm} against ${entry.n.baseline}`
+    `- ${group.arm}: ${value}${reason}; M-K3 ${eur(entry.m_k3_eur)}; quality ${entry.quality.outcome}, n ` +
+    `${entry.quality.arm.n} against ${entry.quality.baseline.n}; step cost ${side(entry.step_cost.arm)} against ` +
+    `${side(entry.step_cost.baseline)}, ${entry.step_cost.outcome}, n ${entry.step_cost.arm.n} against ` +
+    `${entry.step_cost.baseline.n}`
   );
 }
 

@@ -4,7 +4,7 @@ import { z } from 'zod';
 
 import { campaignSchema, CATEGORIES, fail, ok, parseWith, readYamlFile } from '../core/index.js';
 import type { Category, Issue, Result } from '../core/index.js';
-import { AGGREGATE_FILE, AGGREGATE_VERSION } from '../results/index.js';
+import { AGGREGATE_FILE, AGGREGATE_VERSIONS } from '../results/index.js';
 import type {
   AggregateFile,
   ControlComparison,
@@ -312,10 +312,12 @@ export function siteModel(root: string, execution: string): Result<SiteModel> {
     const detail = first === undefined ? '' : `: ${first.path.join('.')} ${first.message}`;
     return fail([{ path: at, message: `is not an aggregate this site reads${detail}` }]);
   }
-  if (shape.data.aggregate_version !== AGGREGATE_VERSION) {
+  // Version 1, every execution published before task-129, still builds: the site reads nothing version 2 changed.
+  if (!AGGREGATE_VERSIONS.includes(shape.data.aggregate_version)) {
     const version = shape.data.aggregate_version;
+    const read = AGGREGATE_VERSIONS.join(' and ');
     return fail([
-      { path: at, message: `has aggregate_version ${version}; this site reads version ${AGGREGATE_VERSION}` },
+      { path: at, message: `has aggregate_version ${version}; this site reads versions ${read}` },
     ]);
   }
   const aggregate = parsed as AggregateFile;

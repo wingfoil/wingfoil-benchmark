@@ -34,23 +34,32 @@ Feature: Scoring runs with defined, reproducible metrics
     Then M-K1 and M-K2 are recorded per step and summed per run: tokens by kind, API-equivalent cost in euro, wall time, turns and interventions
 
   @F4.4
-  Scenario: Break-even is computed only when quality is not worse
-    Given the wingfoil arm's M-Q1 is not lower than the baseline's on S3
-    And the wingfoil arm's mean step cost is lower than the baseline's
-    When break-even is computed for S3
-    Then M-K4 equals the wingfoil setup cost divided by the difference in mean step cost
+  Scenario: Break-even reads the variance on quality and on step cost
+    Given an arm whose final M-Q1 is lower within the variance and whose step cost is lower beyond it, three runs a side
+    Then break-even is the value, its quality's outcome "within the variance"
+    Given its M-Q1 lower beyond the variance
+    Then break-even is "not applicable", reason "quality"
+    Given fewer than three runs a side and a lower M-Q1 mean
+    Then break-even is "not applicable", reason "quality", its quality's outcome "preliminary"
+    Given the arm's runs, none of which reached a step, and every baseline run's final M-Q1 above 0
+    Then break-even is "not applicable", reason "quality"
+    Given an M-Q1 the same or within the variance, and step costs within the variance
+    Then break-even is "not applicable", reason "saving within variance"
+    Given equal step-cost means, a step cost higher beyond the variance, or fewer than three runs and a higher one
+    Then break-even is "never"
+    Given fewer than three runs a side and a lower step cost
+    Then break-even is the value, its step cost's outcome "preliminary"
+    Given three runs a side, one of the arm's reaching no step
+    Then the step-cost comparison reads the other two, its n is 2 and its outcome "preliminary"
+    Given a side's runs, none of which reached a step, with a baseline run at M-Q1 0 or on the baseline's side
+    Then break-even is "not applicable", reason "not measured"
+    And each entry records both outcomes, each with its runs and n
 
   @F4.4
-  Scenario Outline: Break-even special cases
-    Given on S3 the wingfoil arm's quality is <quality> the baseline's
-    And its mean step cost is <step cost> the baseline's
-    When break-even is computed for S3
-    Then M-K4 is reported as "<result>"
-
-    Examples:
-      | quality       | step cost        | result         |
-      | lower than    | lower than       | not applicable |
-      | not lower than | not lower than  | never          |
+  Scenario: M-K3 is the one-off cost per scenario version and harness
+    Given a configured arm whose configuration cost is recorded once and three runs' setup costs
+    Then M-K3 is the configuration's cost plus their mean
+    And an arm with no configuration recorded has M-K3 the mean of its runs' setup costs, every model's
 
   @F4.5
   Scenario: Determinism is measured across repetitions

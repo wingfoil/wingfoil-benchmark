@@ -5,8 +5,8 @@ import { z } from 'zod';
 import { canonicalJson, fail, ok, parseWith, readYamlFile } from '../core/index.js';
 import type { Issue, Result } from '../core/index.js';
 
-import { CATEGORY_MAP, compare, readMetric } from './compare.js';
-import type { Certainty, MapEntry, MetricId, Outcome } from './compare.js';
+import { CATEGORY_MAP, compare, readMetric, reported } from './compare.js';
+import type { Certainty, MapEntry, MetricId, Outcome, Reported } from './compare.js';
 import { plannedRuns } from './execution.js';
 import { paritySection } from './parity.js';
 import type { ParityRun, ParitySection } from './parity.js';
@@ -16,7 +16,13 @@ import { executionRuns, readStoredRun } from './runs.js';
 export const AGGREGATE_FILE = 'aggregate.json';
 
 /** The version of `aggregate.json` this module writes. */
-export const AGGREGATE_VERSION = 1;
+export const AGGREGATE_VERSION = 2;
+
+/**
+ * The versions of `aggregate.json` its readers accept (task-129): 2 adds M-K3 (`m_k3`), rewrites `break_even` by
+ * REQ-SCO-08 as amended in 1.49 and records M-R2's version; 1 is every execution published before it.
+ */
+export const AGGREGATE_VERSIONS: readonly number[] = [1, 2];
 
 /** The `score.json` version this module reads (task-027). */
 const SCORE_VERSION = 1;
@@ -203,7 +209,7 @@ export interface CheckAggregate {
   }[];
 }
 
-/** `aggregate.json`, version 1 (F5.1): no timestamp, keys and entries in a fixed order (REQ-SCO-03). */
+/** `aggregate.json`, version 2 (F5.1; task-129): no timestamp, keys and entries in a fixed order (REQ-SCO-03). */
 export interface AggregateFile {
   readonly aggregate_version: number;
   readonly campaign: string;
@@ -212,7 +218,9 @@ export interface AggregateFile {
   readonly model: string;
   readonly groups: readonly Group[];
   readonly slices: readonly Group[];
-  /** M-K4 (REQ-SCO-08, task-040): each arm against the baseline of its scenario version and model. */
+  /** M-K3 (REQ-SCO-08 as amended in 1.49, task-129): each arm's one-off cost per scenario version, every model's. */
+  readonly m_k3: readonly MK3[];
+  /** M-K4 (REQ-SCO-08 as amended in 1.49, task-129): each arm against the baseline of its scenario version and model. */
   readonly break_even: readonly BreakEven[];
   /**
    * Each harness against its own docs control (REQ-SCO-14, task-068). Absent in an aggregate written before it, which
@@ -267,8 +275,52 @@ export interface ControlComparison {
 }
 
 /**
- * M-K4 for one arm (experiment design §4.2, REQ-SCO-08 as amended in 1.15): a number of runs, or why
- * there is none; with what it was computed from, each kept to a millionth, and both groups' runs.
+ * M-K3 for one arm of one scenario version (REQ-SCO-08 as amended in 1.49, task-129): the configuration's cost, recorded
+ * once by a configured variant (F7.5, none before W18), plus the mean setup cost of the arm's runs of the version, every
+ * model's; the runs that recorded no setup left out, and an arm with neither at 0.
+ */
+export interface MK3 {
+  readonly scenario: string;
+  readonly version: string;
+  readonly arm: string;
+  readonly configuration_eur: number;
+  /** Present when no configuration cost was recorded for the arm. */
+  readonly configuration?: 'not recorded';
+  readonly setup_mean_eur: number;
+  readonly value: number;
+  readonly runs: readonly string[];
+  readonly n: number;
+}
+
+/** What M-K4 reads of one run: its final M-Q1 (0 when not reached) and its reached steps' costs, a kill at its bound. */
+export interface BreakEvenRun {
+  readonly name: string;
+  readonly finalMQ1: number;
+  readonly stepCosts: readonly number[];
+}
+
+/** One side of an M-K4 comparison: the runs it read, their `n`, and their figures' mean and range when it has any. */
+export interface BreakEvenSide {
+  readonly runs: readonly string[];
+  readonly n: number;
+  readonly mean?: number;
+  readonly min?: number;
+  readonly max?: number;
+}
+
+/** One of M-K4's two comparisons, by REQ-RES-03's rule, or not measured when a side has no run it can read. */
+export interface BreakEvenComparison {
+  readonly outcome: Reported | 'not measured';
+  readonly baseline: BreakEvenSide;
+  readonly arm: BreakEvenSide;
+}
+
+/** Why M-K4 is not applicable (REQ-SCO-08 as amended in 1.49). */
+export type BreakEvenReason = 'quality' | 'not measured' | 'saving within variance';
+
+/**
+ * M-K4 for one arm (experiment design 1.11 §4.2, REQ-SCO-08 as amended in 1.49, task-129): a number of runs, never, or
+ * not applicable with its reason; the M-K3 it divides, and both comparisons it read, each with its runs and `n`.
  */
 export interface BreakEven {
   readonly scenario: string;
@@ -276,11 +328,10 @@ export interface BreakEven {
   readonly model: string;
   readonly arm: string;
   readonly value: number | 'not applicable' | 'never';
-  readonly setup_cost_eur: { readonly arm: number };
-  readonly mean_step_cost_eur: { readonly baseline: number; readonly arm: number };
-  readonly final_m_q1: { readonly baseline: number; readonly arm: number };
-  readonly runs: { readonly baseline: readonly string[]; readonly arm: readonly string[] };
-  readonly n: { readonly baseline: number; readonly arm: number };
+  readonly reason?: BreakEvenReason;
+  readonly m_k3_eur: number;
+  readonly quality: BreakEvenComparison;
+  readonly step_cost: BreakEvenComparison;
 }
 
 // What aggregation reads of a score.json (task-027): its own schema, as results/ cannot import scoring/.
@@ -454,6 +505,7 @@ export function aggregateExecution(executionDir: string): Result<AggregateFile> 
   );
   const notRun = (plannedRuns(pins.value) ?? []).filter((name) => !ran.has(name));
   const parity = paritySection(runs.map(parityRunOf), model);
+  const mK3 = mK3s(grouped);
   return ok({
     aggregate_version: AGGREGATE_VERSION,
     campaign,
@@ -461,7 +513,8 @@ export function aggregateExecution(executionDir: string): Result<AggregateFile> 
     model,
     groups: groups.filter((group) => group.model === model),
     slices: groups.filter((group) => group.model !== model),
-    break_even: breakEven(grouped),
+    m_k3: mK3,
+    break_even: breakEven(grouped, mK3),
     controls: controlComparisons(grouped, groups, model),
     ...(parity === undefined ? {} : { parity }),
     ...(notRun.length === 0 ? {} : { not_run: notRun }),
@@ -983,36 +1036,124 @@ function mean(values: readonly number[]): number {
   return Math.round((values.reduce((sum, v) => sum + v, 0) / values.length) * 1e6) / 1e6;
 }
 
-/** A group's inputs to M-K4, or undefined when its scores lack one of them (scored before task-029 or -040). */
-function breakEvenInputs(runs: readonly ScoredRun[]) {
-  const finals = runs.map((run) => {
-    const m = 'not_reached' in run.score.final ? undefined : run.score.final.m_q1;
-    return m === undefined || m.total === 0 ? 0 : m.passed / m.total;
+/** A side's figures, each kept to a millionth as money is: its runs, `n`, mean and range; or none. */
+function breakEvenSideOf(runs: readonly string[], values: readonly number[]): BreakEvenSide {
+  if (values.length === 0) return { runs, n: 0 };
+  const round = (value: number) => Math.round(value * 1e6) / 1e6;
+  return { runs, n: values.length, mean: mean(values), min: round(Math.min(...values)), max: round(Math.max(...values)) };
+}
+
+/** One comparison of M-K4 by REQ-RES-03's rule, `better` the way the arm should be; not measured when a side is empty. */
+function comparedBy(
+  better: 'higher' | 'lower',
+  baseline: readonly { name: string; value: number }[],
+  arm: readonly { name: string; value: number }[],
+): { comparison: BreakEvenComparison; armMean: number; baseMean: number } {
+  const figures = (side: readonly { name: string; value: number }[]) => ({
+    runs: side.map((entry) => entry.name),
+    values: side.map((entry) => entry.value),
   });
-  const stepCosts: number[] = [];
-  const setupCosts: number[] = [];
-  for (const run of runs) {
-    const { steps, setup } = run.score.cost;
-    if (steps === undefined) return undefined;
-    for (const step of steps) if (!('not_reached' in step)) stepCosts.push(step.cost_eur);
-    if (setup !== undefined && !('not_recorded' in setup)) setupCosts.push(setup.cost_eur);
+  const base = figures(baseline);
+  const other = figures(arm);
+  const sides = { baseline: breakEvenSideOf(base.runs, base.values), arm: breakEvenSideOf(other.runs, other.values) };
+  if (base.values.length === 0 || other.values.length === 0) {
+    return { comparison: { outcome: 'not measured', ...sides }, armMean: 0, baseMean: 0 };
   }
-  if (stepCosts.length === 0) return undefined;
+  const result = compare(better, base, other);
   return {
-    finalMQ1: mean(finals),
-    stepCost: mean(stepCosts),
-    setupCost: setupCosts.length === runs.length ? mean(setupCosts) : undefined,
-    runs: runs.map((run) => run.name),
+    comparison: { outcome: reported(result), ...sides },
+    armMean: sides.arm.mean as number,
+    baseMean: sides.baseline.mean as number,
   };
 }
 
 /**
- * M-K4 (REQ-SCO-08 as amended in 1.15): each arm but the baseline against the baseline of its scenario
- * version and model — not applicable when its final M-Q1 is lower, never when its mean step cost is not
- * lower, otherwise its mean setup cost over the difference. Left out without a baseline, or when a run
- * of the arm recorded no setup cost: an unknown cost is not a zero.
+ * M-K4 of an arm against the baseline (REQ-SCO-08 as amended in 1.49, the approver's reading C, task-129): the
+ * quality (each run's final M-Q1) and the step cost (each run's mean step cost, a run with no reached step left out)
+ * compared by REQ-RES-03's rule, then, in this order: not applicable (`quality`) when the quality is worse beyond the
+ * variance or preliminary with a lower mean; not applicable (`not measured`) when a side has no run that reached a
+ * step; never when the step cost is the same, higher beyond the variance or preliminary with a higher mean; not
+ * applicable (`saving within variance`) within the variance; otherwise M-K3 over the difference of the two means.
  */
-function breakEven(grouped: readonly ScoredRun[][]): BreakEven[] {
+export function breakEvenEntry(
+  baseline: readonly BreakEvenRun[],
+  arm: readonly BreakEvenRun[],
+  mK3: number,
+): Pick<BreakEven, 'value' | 'reason' | 'm_k3_eur' | 'quality' | 'step_cost'> {
+  const finals = (runs: readonly BreakEvenRun[]) => runs.map((run) => ({ name: run.name, value: run.finalMQ1 }));
+  const steps = (runs: readonly BreakEvenRun[]) =>
+    runs.filter((run) => run.stepCosts.length > 0).map((run) => ({ name: run.name, value: mean(run.stepCosts) }));
+  const quality = comparedBy('higher', finals(baseline), finals(arm));
+  const cost = comparedBy('lower', steps(baseline), steps(arm));
+  const entry = { m_k3_eur: mK3, quality: quality.comparison, step_cost: cost.comparison };
+  const notApplicable = (reason: BreakEvenReason) => ({ value: 'not applicable' as const, reason, ...entry });
+  const q = quality.comparison.outcome;
+  if (q === 'worse' || (q === 'preliminary' && quality.armMean < quality.baseMean)) return notApplicable('quality');
+  const c = cost.comparison.outcome;
+  if (c === 'not measured') return notApplicable('not measured');
+  if (c === 'same' || c === 'worse' || (c === 'preliminary' && cost.armMean > cost.baseMean)) {
+    return { value: 'never', ...entry };
+  }
+  if (c === 'within the variance') return notApplicable('saving within variance');
+  return { value: Math.round((mK3 / (cost.baseMean - cost.armMean)) * 1e6) / 1e6, ...entry };
+}
+
+/** M-K3 of one arm of one scenario version (REQ-SCO-08 as amended in 1.49): `configurationEur` when recorded (F7.5). */
+export function mK3Of(
+  runs: readonly { readonly name: string; readonly setupEur?: number }[],
+  configurationEur?: number,
+): Omit<MK3, 'scenario' | 'version' | 'arm'> {
+  const recorded = runs.filter((run) => run.setupEur !== undefined);
+  const setup = recorded.length === 0 ? 0 : mean(recorded.map((run) => run.setupEur as number));
+  const configuration = configurationEur ?? 0;
+  return {
+    configuration_eur: configuration,
+    ...(configurationEur === undefined ? { configuration: 'not recorded' as const } : {}),
+    setup_mean_eur: setup,
+    value: Math.round((configuration + setup) * 1e6) / 1e6,
+    runs: recorded.map((run) => run.name),
+    n: recorded.length,
+  };
+}
+
+/** What M-K4 reads of a scored run; undefined when it was scored before step costs were recorded (task-029). */
+function breakEvenRun(run: ScoredRun): BreakEvenRun | undefined {
+  const { steps } = run.score.cost;
+  if (steps === undefined) return undefined;
+  const m = 'not_reached' in run.score.final ? undefined : run.score.final.m_q1;
+  return {
+    name: run.name,
+    finalMQ1: m === undefined || m.total === 0 ? 0 : m.passed / m.total,
+    stepCosts: steps.flatMap((step) => ('not_reached' in step ? [] : [step.cost_eur])),
+  };
+}
+
+/** M-K3 of every arm of every scenario version, every model's runs together, in a fixed order. */
+function mK3s(grouped: readonly ScoredRun[][]): MK3[] {
+  const byKey = new Map<string, ScoredRun[]>();
+  for (const runs of grouped) {
+    for (const run of runs) {
+      const key = [run.scenario, run.version, run.arm].join('\u0000');
+      byKey.set(key, [...(byKey.get(key) ?? []), run]);
+    }
+  }
+  return [...byKey.keys()].sort().map((key) => {
+    const runs = byKey.get(key) as ScoredRun[];
+    const first = runs[0] as ScoredRun;
+    const setups = runs.map((run) => {
+      const setup = run.score.cost.setup;
+      return setup === undefined || 'not_recorded' in setup ? { name: run.name } : { name: run.name, setupEur: setup.cost_eur };
+    });
+    return { scenario: first.scenario, version: first.version, arm: first.arm, ...mK3Of(setups) };
+  });
+}
+
+/**
+ * M-K4 (REQ-SCO-08 as amended in 1.49, task-129): each arm but the baseline against the baseline of its scenario version
+ * and model, by {@link breakEvenEntry}, with its M-K3. Left out without a baseline, or when a run of either side was
+ * scored before step costs were recorded.
+ */
+function breakEven(grouped: readonly ScoredRun[][], mK3: readonly MK3[]): BreakEven[] {
   const key = (run: ScoredRun) => [run.scenario, run.version, run.model].join('\u0000');
   const baselines = new Map<string, ScoredRun[]>();
   for (const runs of grouped) {
@@ -1024,26 +1165,16 @@ function breakEven(grouped: readonly ScoredRun[][]): BreakEven[] {
     const first = runs[0] as ScoredRun;
     const reference = baselines.get(key(first));
     if (first.arm === BASELINE || reference === undefined) continue;
-    const base = breakEvenInputs(reference);
-    const arm = breakEvenInputs(runs);
-    if (base === undefined || arm === undefined || arm.setupCost === undefined) continue;
-    const value =
-      arm.finalMQ1 < base.finalMQ1
-        ? 'not applicable'
-        : arm.stepCost >= base.stepCost
-          ? 'never'
-          : Math.round((arm.setupCost / (base.stepCost - arm.stepCost)) * 1e6) / 1e6;
+    const base = reference.map(breakEvenRun);
+    const arm = runs.map(breakEvenRun);
+    if (base.includes(undefined) || arm.includes(undefined)) continue;
+    const cost = mK3.find((m) => m.scenario === first.scenario && m.version === first.version && m.arm === first.arm);
     entries.push({
       scenario: first.scenario,
       version: first.version,
       model: first.model,
       arm: first.arm,
-      value,
-      setup_cost_eur: { arm: arm.setupCost },
-      mean_step_cost_eur: { baseline: base.stepCost, arm: arm.stepCost },
-      final_m_q1: { baseline: base.finalMQ1, arm: arm.finalMQ1 },
-      runs: { baseline: base.runs, arm: arm.runs },
-      n: { baseline: base.runs.length, arm: arm.runs.length },
+      ...breakEvenEntry(base as BreakEvenRun[], arm as BreakEvenRun[], cost?.value ?? 0),
     });
   }
   const order = (e: BreakEven) => [e.scenario, e.version, e.model, e.arm].join('\u0000');

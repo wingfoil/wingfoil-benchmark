@@ -304,7 +304,7 @@ describe('bench site build (REQ-CLI-09 as amended in 1.20, task-045)', () => {
     writeFileSync(
       aggregate,
       JSON.stringify({
-        aggregate_version: 2,
+        aggregate_version: 3,
         campaign: 'x',
         execution: 1,
         model: 'm',
@@ -313,7 +313,7 @@ describe('bench site build (REQ-CLI-09 as amended in 1.20, task-045)', () => {
       }),
     );
     expect((await benchSite(root, 'site', 'build', EXECUTION)).stderr).toContain(
-      'has aggregate_version 2; this site reads version 1',
+      'has aggregate_version 3; this site reads versions 1 and 2',
     );
 
     // A group without the metrics the site reads (task-045's second review)
