@@ -104,8 +104,8 @@ Feature: Scoring runs with defined, reproducible metrics
   Scenario: The maintainer's judgement is shown beside a content check's verdict
     Given judgements.json holds the maintainer's judgement of a v2 content check at a step of a run
     When the site is built
-    Then the run's page shows the automatic verdict and the judgement together
-    And the execution's page counts the disagreements
+    Then the execution's judgements page shows the automatic verdict and the judgement together
+    And the execution's landing page counts the disagreements
 
   @F4.8
   Scenario: Directive violations are counted per rule and per step

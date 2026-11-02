@@ -3,11 +3,13 @@ import { join } from 'node:path';
 
 import { fail, historyCli, ok, systemProcess } from '../core/index.js';
 import type { HistoryPort, Result } from '../core/index.js';
+import { readJudgements } from '../results/index.js';
 
 import { acrossAgents, acrossAgentsFile, acrossAgentsPage } from './across-agents.js';
 import type { AggregateView } from './across-agents.js';
 import { comparisonFile, comparisonPage, crossModel, executionName, readComparisons } from './comparisons.js';
 import { eligibilityPage } from './eligibility.js';
+import { JUDGEMENTS_PAGE, judgementCount, judgementSummary, judgementsPage } from './judgements.js';
 import { methodPages } from './method.js';
 import { siteModel } from './model.js';
 import { builtExecutions, loadCatalog, loadProfiles, profileFile, rootIndex } from './profiles.js';
@@ -63,6 +65,15 @@ export async function buildSite(
   const catalog = loadCatalog(root);
   if (!catalog.ok) return catalog;
   const self = `${model.value.campaign}/${model.value.execution}`;
+  // The maintainer's judgements, when the execution has them (REQ-SCO-06 as amended in 1.49, task-128).
+  const judgements = readJudgements(
+    join(root, 'results', model.value.campaign, String(model.value.execution)),
+  );
+  if (!judgements.ok) {
+    const at = `results/${self}`;
+    return fail(judgements.issues.map((issue) => ({ ...issue, path: `${at}/${issue.path}` })));
+  }
+  const judged = judgements.value;
   const aggregateOf = (campaign: string, n: number): Result<AggregateView> => {
     const file = join(root, 'results', campaign, String(n), 'aggregate.json');
     try {
@@ -105,8 +116,14 @@ export async function buildSite(
         })),
         profiles.value.map((profile) => ({ ...profile, file: profileFile(profile) })),
         catalog.value.get(self)?.notes ?? [],
+        judged === undefined
+          ? undefined
+          : { file: JUDGEMENTS_PAGE, summary: judgementSummary(judgementCount(judged)) },
       ),
     ],
+    ...(judged === undefined
+      ? []
+      : [[JUDGEMENTS_PAGE, judgementsPage(title(model.value), judged)] as [string, string]]),
     ...profiles.value.map((profile): [string, string] => [
       profileFile(profile),
       profilePage(model.value, profile),
