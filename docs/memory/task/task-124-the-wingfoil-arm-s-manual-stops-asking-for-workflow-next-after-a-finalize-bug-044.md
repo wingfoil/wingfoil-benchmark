@@ -31,9 +31,18 @@ the fix in chat (2026-11-01). Placed in v0.3, W17. No real-agent session; the ne
 
 ## Design
 
-<!-- The manual's sentence; the digest. -->
+- `arms/wingfoil/manual.md`, *Until the delivery is recorded*: "After each step, continue from the next step `wingfoil
+  workflow finalize` printed: it is what `next` would print. Run `wingfoil workflow next` when a session starts or
+  resumes, or when no next step was printed, until the request's delivery is recorded." Nothing else of the manual
+  changes. A resumed session (after the approver's reply) still runs `next`, since its context does not hold a
+  `finalize` it can trust to be current.
+- The arm's digest: `99ea463d1b37` → `43b1de33f6c1`; baseline and baseline-docs unchanged (`964b1354526c`,
+  `64e37c838830`). `campaigns/s10-calibration.dry-run.yaml` pins it (it follows the tree, as task-120 found);
+  campaign-008's files keep `cc009b5a52a9`.
 
 ## Execution notes
 
-<!-- What happened while building: deviations, blockers, follow-ups (filed as elements, never left
-     here). For every `wingfoil` command: declared vs observed behaviour. -->
+- Red first: the manual's test failed on the old rule (checked with the manual set aside) and passes on the new.
+- **For the approver, not in this task's scope:** the rule *A new instance for a new request* also says "then `wingfoil
+  workflow finalize` twice …, then `wingfoil workflow next` again", the same repetition after a `finalize`; criterion 1
+  keeps the rest of the manual unchanged, so it stays. A one-line follow-up if wanted.
