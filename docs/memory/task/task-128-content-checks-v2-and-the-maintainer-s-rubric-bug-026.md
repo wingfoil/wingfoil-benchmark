@@ -2,7 +2,7 @@
 id: task-128-content-checks-v2-and-the-maintainer-s-rubric-bug-026
 type: task
 title: "Content checks v2 and the maintainer's rubric (bug-026)"
-status: approved
+status: done
 release: v0.3
 wave: W16
 features: [F4.7]
