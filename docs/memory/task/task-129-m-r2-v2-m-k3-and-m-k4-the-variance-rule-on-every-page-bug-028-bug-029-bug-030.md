@@ -153,3 +153,11 @@ checkouts unchanged). No blocker; five should-fix and six nits:
 | N5 | the `(no entry point)` shortcut read M-R3's paths, less the setup's | fixed: the snapshot's `src/index.ts` itself |
 | N6 | the last @F4.4 Given garbled; no baseline-only empty case | fixed: the draft's wording, and the case tested |
 | N7 | the version-1 break-even line untested | fixed: a finding test on each version |
+
+**Round 2** (2026-11-02, a fresh read-only agent in `/tmp/claude-1000/review2-129-53JL`, a clone of `94a8642e`; both
+checkouts unchanged; it ran round 1's sources against the new tests). Every round-1 item done; one should-fix: N2
+had no test (the aggregate tests passed on the old code). Fixed: the direction of a preliminary quality read from the
+unrounded means, which fails on the old code; a rounded zero divisor cannot arise, each run's step cost being kept to
+a millionth. Nits fixed: the errata dated by requirements 1.49 rather than "W16", which reads as later than W17's
+campaign-008; the across-agents page said to show no outcome. Kept, as a stated reading: a namespace export that
+points back into its own chain gives no entry.

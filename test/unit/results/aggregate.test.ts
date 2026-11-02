@@ -2,7 +2,7 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-import { AGGREGATE_FILE, aggregateExecution, plannedRuns, writeAggregate } from '../../../src/results/index.js';
+import { AGGREGATE_FILE, aggregateExecution, breakEvenEntry, plannedRuns, writeAggregate } from '../../../src/results/index.js';
 import { tempDir } from '../../support/scenario-fixture.js';
 
 const CAMPAIGN = 'c0ffee000001';
@@ -531,6 +531,17 @@ describe('aggregateExecution (F5.1, REQ-FMT-07)', () => {
         value: 0.3,
         runs: [name('wingfoil')],
         n: 1,
+      });
+    });
+
+    it('reads the direction from the unrounded means (task-129)', () => {
+      const one = (name: string, finalMQ1: number, cost: number) => ({ name, finalMQ1, stepCosts: [cost] });
+      // Each run's step cost is kept to a millionth (task-029), so a rounded zero divisor cannot arise from step costs;
+      // a final M-Q1 is not rounded per run, and its direction is read unrounded:
+      // A quality lower by 1e-7, preliminary, is not applicable for its quality, though the rounded means tie
+      expect(breakEvenEntry([one('b', 0.5000001, 0.2)], [one('a', 0.5, 0.1)], 0.6)).toMatchObject({
+        value: 'not applicable',
+        reason: 'quality',
       });
     });
 
