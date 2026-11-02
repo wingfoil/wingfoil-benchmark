@@ -155,12 +155,12 @@ checkouts unchanged). No blocker; five should-fix and six nits:
 | N7 | the version-1 break-even line untested | fixed: a finding test on each version |
 
 **Round 2** (2026-11-02, a fresh read-only agent in `/tmp/claude-1000/review2-129-53JL`, a clone of `94a8642e`; both
-checkouts unchanged; it ran round 1's sources against the new tests). Every round-1 item done; one should-fix: N2
-had no test (the aggregate tests passed on the old code). Fixed: the direction of a preliminary quality read from the
-unrounded means, which fails on the old code; the divisor is the unrounded delta, and below 1e-12 it reads as the
-same (never), so no zero or noise divisor (the reason corrected in round 3). Nits fixed: the errata dated by requirements 1.49 rather than "W16", which reads as later than W17's
-campaign-008; the across-agents page said to show no outcome. Kept, as a stated reading: a namespace export that
-points back into its own chain gives no entry.
+checkouts unchanged; it ran round 1's sources against the new tests). Every round-1 item done; one should-fix: N2 had no
+test (the aggregate tests passed on the old code). Fixed: the direction of a preliminary quality read from the unrounded
+means, which fails on the old code; the divisor is the unrounded delta, and below 1e-12 it reads as the same (never), so
+no zero or noise divisor (the reason corrected in round 3). Nits fixed: the errata dated by requirements 1.49 rather
+than "W16", which reads as later than W17's campaign-008; the across-agents page said to show no outcome. Kept, as a
+stated reading: a namespace export that points back into its own chain gives no entry.
 
 **Round 3** (2026-11-03, a fresh read-only agent in `/tmp/claude-1000/review3-129-Dyb7`, a clone of `1ad7aac2`; both
 checkouts unchanged). Round 2's items confirmed (the direction test fails on round 1's code); no blocker, no
