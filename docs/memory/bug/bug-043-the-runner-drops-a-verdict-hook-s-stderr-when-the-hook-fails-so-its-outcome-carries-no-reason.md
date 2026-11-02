@@ -2,7 +2,7 @@
 id: bug-043-the-runner-drops-a-verdict-hook-s-stderr-when-the-hook-fails-so-its-outcome-carries-no-reason
 type: bug
 title: "The runner drops a verdict hook's stderr when the hook fails, so its outcome carries no reason"
-status: approved
+status: fixed
 fixed_by: task-123-the-runner-records-a-failing-verdict-hook-s-stderr-as-its-detail-bug-043
 tags: ["v0.3","runner","s10"]
 ---
