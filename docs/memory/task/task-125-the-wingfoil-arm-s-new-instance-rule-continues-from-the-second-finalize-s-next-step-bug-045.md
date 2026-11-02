@@ -30,9 +30,14 @@ in chat (2026-11-02). Placed in v0.3, W17. No real-agent session; the next campa
 
 ## Design
 
-<!-- The rule's sentence; the digest. -->
+- `arms/wingfoil/manual.md`, *A new instance for a new request*: "… then `wingfoil workflow finalize` twice (this
+  project is already past its inception and specification), then continue from the next step the second `finalize`
+  printed." Nothing else of the manual changes; the rule *Until the delivery is recorded* (task-124) already covers
+  what follows.
+- The arm's digest: `2c39a14f3f91` → `62bcf64e6dde`; baseline and baseline-docs unchanged.
+  `campaigns/s10-calibration.dry-run.yaml` pins it (it follows the tree); campaign-008's files keep `cc009b5a52a9`.
 
 ## Execution notes
 
-<!-- What happened while building: deviations, blockers, follow-ups (filed as elements, never left
-     here). For every `wingfoil` command: declared vs observed behaviour. -->
+- Red first: the manual's test failed on the old rule and passes on the new; the arms' tests and S10's profile test
+  pass (94 and 2).
