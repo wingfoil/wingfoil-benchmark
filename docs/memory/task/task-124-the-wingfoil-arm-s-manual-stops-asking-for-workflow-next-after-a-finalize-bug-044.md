@@ -49,6 +49,9 @@ the fix in chat (2026-11-01). Placed in v0.3, W17. No real-agent session; the ne
   workflow finalize` twice …, then `wingfoil workflow next` again", the same repetition after a `finalize`; criterion 1
   keeps the rest of the manual unchanged, so it stays. A one-line follow-up if wanted.
 
+- **Full suites** (2026-11-02, `6674a575`, under the load watcher): LINT 0, TEST 0 (1997 passed, 9 skipped), BUILD 0,
+  BIN 0, DOCKER 0.
+
 ### Review
 
 **Round 1** (2026-11-02, a fresh read-only agent in `/tmp/claude-1000/review-124-htQQ`, a clone of `08d289a7`; both
