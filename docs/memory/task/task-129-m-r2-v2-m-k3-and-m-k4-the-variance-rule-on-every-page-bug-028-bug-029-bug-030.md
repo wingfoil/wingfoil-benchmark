@@ -104,5 +104,29 @@ session, no spending; the published values stay as published, and v0.2's re-scor
 
 ## Execution notes
 
-<!-- What happened while building: deviations, blockers, follow-ups (filed as elements, never left
-     here). For every `wingfoil` command: declared vs observed behaviour. -->
+- **Red first:** the variance scenario failed on the old marks (▲ shown within the variance); the M-K3 and M-K4
+  scenarios failed to compile before `breakEvenEntry` and `mK3Of` existed; the M-R2 v2 scenario failed through the
+  runner while it still called v1. The script's v2 unit tests and the loader-free helpers were written with their code.
+- **Readings of REQ-SCO-07 1.49 the Design left open** (for the approver to confirm at the gate):
+  - a namespace (`export * as ns`, or an `import * as ns` re-exported) is its module's names, one entry each,
+    `ns.<name>: <signature>`, rather than one entry for `ns`;
+  - a printed signature drops its `export` and `default` keywords, so `export function f` and a local `function f`
+    exported by `export { f }` are the same entry;
+  - `(unresolved <specifier>)` is the entry of the specifier, the names it would bring counted no further; a name a
+    module exports with neither a declaration nor an import is `<name>: (unresolved)`.
+- **Deviations from the Design**, each within requirements 1.49:
+  - `interface.mjs` keeps v1 under its old arguments (its tests check the signature printing v2 reuses); the runner
+    calls `--v2`. A snapshot with no TypeScript source gets `(no entry point)` without a container.
+  - M-R2's version is a recorded pin (`m_r2_version`, beside the scorer): two versions give no value, the pin
+    named, within an execution and across two.
+  - M-K3 is computed for every arm, the baseline included, with `configuration: 'not recorded'` until F7.5 records
+    one; M-K4 is no longer left out when a setup was not recorded (that run is left out of M-K3, an arm with
+    neither at 0, as REQ-SCO-08 1.49 says), only when a run was scored before step costs were recorded.
+  - Beside an outcome the certainty is shown only for "the same" (the other words say it); the parity page reads
+    "same (within variance)" likewise.
+  - The site reads `aggregate.json` versions 1 and 2 (`AGGREGATE_VERSIONS`), so the published executions rebuild.
+  - The comparison page (F5.7) and the across-agents page carried no ▲/▼ already: unchanged, the rule holds there.
+- **A miss from task-128, repaired:** bug-026 was left `approved` after task-128's done (its `fixed_by` and
+  `approved → fixed` are set by hand), which turned the bug-links test red here; fixed on main (`b3071da0`,
+  `cc362580`) and merged into this branch.
+- `wingfoil memory add`, `submit` (draft → pending, backlog → in-progress; bug-026 approved → fixed): as declared.
