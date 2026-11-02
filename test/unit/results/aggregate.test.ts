@@ -536,8 +536,8 @@ describe('aggregateExecution (F5.1, REQ-FMT-07)', () => {
 
     it('reads the direction from the unrounded means (task-129)', () => {
       const one = (name: string, finalMQ1: number, cost: number) => ({ name, finalMQ1, stepCosts: [cost] });
-      // Each run's step cost is kept to a millionth (task-029), so a rounded zero divisor cannot arise from step costs;
-      // a final M-Q1 is not rounded per run, and its direction is read unrounded:
+      // The divisor is compare's unrounded delta, and a delta below 1e-12 reads as the same, which is never: no zero
+      // or noise divisor. A final M-Q1 lower by 1e-7 has rounded means that tie; its direction is read unrounded:
       // A quality lower by 1e-7, preliminary, is not applicable for its quality, though the rounded means tie
       expect(breakEvenEntry([one('b', 0.5000001, 0.2)], [one('a', 0.5, 0.1)], 0.6)).toMatchObject({
         value: 'not applicable',
