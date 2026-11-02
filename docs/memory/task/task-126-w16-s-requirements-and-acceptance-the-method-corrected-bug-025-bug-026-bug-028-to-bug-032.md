@@ -69,7 +69,7 @@ and headline counts within the variance),
 
 - **Requirements 1.49** amend REQ-SCO-05, REQ-SCO-06, REQ-SCO-07, REQ-SCO-08, REQ-RES-03, REQ-RES-05 and REQ-RUN-09,
   each by the approver's decision recorded in its bug (2026-10-23): content checks on whole words over the agent's own
-  text, template and harness text excluded, with a rubric and a human judgement (`match: words`, `oracle/rubric.md`,
+  text, less the templates the setup installs (the approver's reading of 2026-11-02), with a rubric and a human judgement (`match: words`, `oracle/rubric.md`,
   `judgements.json`); M-R2 v2 resolved from the entry point; M-K3 as one-off costs per scenario version and harness;
   M-K4 "not applicable" only beyond the variance; ▲/▼ and the headline only beyond the variance; the template read from
   the campaign's pin. REQ-RUN-09 keeps REQ-RUN-19's kill at the bound and fixes what bug-032 lists (a step ending with
@@ -88,8 +88,8 @@ and headline counts within the variance),
   - `scoring.feature`, @F4.7 — "A v2 content check reads whole words in the agent's own text": Given a check with
     `match: words` for "revised", When a step adds "unrevised" to a source file, a template line containing "revised"
     to a document `wingfoil memory add` created, and "D3 revised" to the seed's README, Then only the README line
-    counts and the check passes; And a `wf(…)` commit message the harness generated saying "revised", or a
-    front-matter line `status: revised`, does not count. — "The
+    counts and the check passes; And in a scenario with a separate approver, a commit the verdict hook made saying
+    "revised" does not count, while the agent's own `Reason: D3 revised` in a verb's commit does. — "The
     maintainer's judgement is shown beside a content check's verdict": Given `judgements.json` holds a judgement for a
     check at a step of a run, When the site is built, Then the verdict and the judgement are shown together and a
     disagreement is counted.
@@ -97,7 +97,7 @@ and headline counts within the variance),
     `src/index.ts` re-exports the same functions from different modules, Then M-R2 is 1; Given two runs with the same
     files exposing different functions, Then it is below 1; And a module the entry point does not reach is not
     counted; And each value records version 2; Given a run with no `src/index.ts`, Then its interface is
-    `(no entry point)`.
+    `(no entry point)`; Given a reached module that does not parse, Then its entry is `<file>: (does not parse)`.
   - `scoring.feature`, @F4.4 — "Break-even is not applicable only when quality is worse beyond the variance": Given an
     arm whose final M-Q1 is lower within the variance (n ≥ 3 a side), Then break-even is computed or "never", marked
     "within variance"; Given it lower beyond the variance, Then "not applicable"; Given n < 3 and a lower mean, Then
@@ -163,4 +163,15 @@ commits under a separate approver (1.44) are the ones left out; REQ-SCO-07's ent
 folded within a line only; overloads, `export * as ns`, `default`, `.js` specifiers; M-K3's runs and the certainty
 of the quality comparison; 1.20's preliminary list dropped; REQ-RUN-09 per invocation, status against cost; the
 Design's scenarios (a harness commit, no entry point, a bridge); criterion 3's reading; the long context line.
+
+**Round 3** (2026-11-02, a fresh read-only agent in `/tmp/claude-1000/review3-126-4tGQ`, a clone of `21c1f85f`; both
+checkouts unchanged; it sorted every stored commit message). No blocker; four should-fix: the `wf(` prefix missed
+WingFoil's 1 181 `workflow: finalize` commits, and dropping whole verb commits and front matter dropped the agent's
+own words (`Reason:` texts, a document's `title:`), against the wingfoil arm. **The approver chose (chat,
+2026-11-02)** to exclude only the templates the setup installs and the verdict hook's commits: REQ-SCO-06 reworded,
+harness-neutral, which also settles its "never a harness's format" clause and the undefined "document the harness
+manages". REQ-SCO-07's entry point is `src/index.ts`, a constant (a scenario would declare another in
+`scenario.yaml`). Nits fixed: commits matched by sha; directory, extensionless and local re-export specifiers;
+unresolved specifiers and unparsable modules; two runs with no entry point agree; M-K4's "not applicable" wording;
+the Design's cases (the hook's commits, a `Reason:`, `(does not parse)`).
 
