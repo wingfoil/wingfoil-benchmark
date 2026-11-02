@@ -3,7 +3,7 @@ id: bug-044-the-wingfoil-arm-s-manual-asks-for-workflow-next-after-each-step-tho
 type: bug
 title: "The wingfoil arm's manual asks for workflow next after each step, though finalize already prints the next step"
 status: approved
-# fixed_by: task-…   # set by hand, with the fixing task's id, just before `approved → fixed`
+fixed_by: task-124-the-wingfoil-arm-s-manual-stops-asking-for-workflow-next-after-a-finalize-bug-044
 tags: ["v0.3","wingfoil","weak-models"]
 ---
 
