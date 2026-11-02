@@ -87,5 +87,19 @@ the maintainer and validated at the site's build, no new command. No real-agent 
 
 ## Execution notes
 
-<!-- What happened while building: deviations, blockers, follow-ups (filed as elements, never left
-     here). For every `wingfoil` command: declared vs observed behaviour. -->
+- **Red first:** the v2 acceptance test failed on v1's code (the template's "Mark it revised" matched), then passed;
+  the judgement tests failed with the site's build unwired, then passed. The loader's and the matcher's unit tests
+  were written with their code.
+- **Deviations from the Design**, each narrower than it and within REQ-SCO-06 1.49:
+  - `score.json` records `match: 'words'` for a v2 check only; a v1 check records no `match`, as before, so the
+    published `score.json` files and the existing tests are unchanged (criterion 5 said `substring` or `words`).
+  - The site has no page per run: the judgements are on a page of the execution's, `judgements.html`, each beside
+    the automatic verdict, a disagreement marked; the landing page links it with the count. The @F4.7 scenario's
+    Then says so.
+  - A judgement of a 1.0 execution is refused by its check: only a v2 check (`match: words` in the run's
+    `score.json`) is judged, and under K7 no 1.0 version has one.
+  - A v2 check of a scenario with a separate approver is loaded with `ledger: true`: its step's `verdicts.json` is
+    then required, as the governance checks require it.
+- **The erratum** (criterion 7): the method page's `#content-checks-v1-erratum`; all seven catalogue executions run
+  S2, S3 (and 33b54dd89e8b/1 S10) at 1.0, so each gets the note pointing to it.
+- `wingfoil memory add`, `submit` (draft → pending, backlog → in-progress): as declared.
