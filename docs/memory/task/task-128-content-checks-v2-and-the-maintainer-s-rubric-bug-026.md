@@ -104,6 +104,8 @@ the maintainer and validated at the site's build, no new command. No real-agent 
 - **The erratum** (criterion 7): the method page's `#content-checks-v1-erratum`; all seven catalogue executions run
   S2, S3 (and 33b54dd89e8b/1 S10) at 1.0, so each gets the note pointing to it.
 - `wingfoil memory add`, `submit` (draft → pending, backlog → in-progress): as declared.
+- **Full suites** (2026-11-02, `cd32874c`, under the load watcher): LINT 0, TEST 0 (2026 passed, 9 skipped), BUILD 0,
+  BIN 0, DOCKER 0.
 
 ### Review
 
