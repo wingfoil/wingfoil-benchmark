@@ -118,8 +118,7 @@ and headline counts within the variance),
     variance`; Given equal step-cost means, a step cost higher beyond the variance, or n < 3 and a higher one, Then
     "never"; Given n < 3 and a lower step cost, Then the value, its step cost's outcome preliminary; Given three runs
     a side, one of the arm's reaching no step, Then the step-cost comparison reads the other two, its `n` is 2 and its
-    outcome preliminary; Given a side's runs, none of which reached a step (the arm's with a baseline run at M-Q1 0,
-    or the baseline's), Then "not applicable", reason `not measured`; And each entry records both outcomes, each
+    outcome preliminary; Given a side's runs, none of which reached a step (the arm's, n ≥ 3 a side, with a baseline run at M-Q1 0, or the baseline's), Then "not applicable", reason `not measured`; And each entry records both outcomes, each
     with its runs and `n`. — "M-K3 is the one-off cost per scenario version and harness": Given a configured
     arm whose configuration cost is recorded once and three runs' setup costs, Then M-K3 is the configuration's cost
     plus their mean.
@@ -207,3 +206,16 @@ the arm's setup added"; the content-check scenario's fixture made explicit, with
 round 4 resolved, no should-fix. Nits fixed: REQ-SCO-06's parenthetical limited to a front-matter line in a file;
 two ragged lines reflowed.
 
+**Round 6** (2026-11-02, a fresh read-only agent in a `mktemp` clone of `efb2d0c4`; both checkouts unchanged), after
+the approver chose reading C for M-K4 (the variance on quality and on step cost). No blocker; three should-fix, fixed
+in `c54938cf`: the value divided by 1.15's pooled mean while the comparison read per-run means (now the two means
+compared); no outcome for equal means (now the same, and "never" for step cost); experiment design §4.2 still said
+"never" when not lower (amendment 1.11). Nits fixed: "whichever mean is lower", a run with no reached step, 1.15's
+bullets retired, the implementing task's files named, the scenario's preliminary branches.
+
+**Rounds 7 to 10** (2026-11-02, fresh read-only agents in `mktemp` clones of `c54938cf`, `05cc2268`, `e3a79673` and
+`739bdedc`; both checkouts unchanged each time). Round 7: one should-fix, each comparison's runs and `n` (the
+preliminary case counts the runs it read), and a side with no run that reached a step (`not measured`). Rounds 8 and
+9: one should-fix each, in the drafted @F4.4 scenario (an arm with no reached step has M-Q1 0, so `quality` comes
+first unless a baseline run is at 0), and "not measured" among the outcomes. Round 10: every Given walked through the
+ordered cases holds; no should-fix; its one nit (the arm's case at n ≥ 3) fixed.
