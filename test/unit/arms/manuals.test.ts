@@ -140,12 +140,15 @@ describe('the step-A wingfoil manual (dl-021 step A, task-114)', () => {
     expect(text).toMatch(/never run `wingfoil memory approve` or `wingfoil memory reject` yourself/);
   });
 
-  it('continues from the step finalize printed, and runs workflow next only at a session’s start or resume (bug-044)', () => {
+  it('continues from what finalize printed, workflow next where it has nothing current (bug-044)', () => {
     const text = manual('wingfoil').replace(/\s+/g, ' ');
     expect(text).not.toContain('Run `wingfoil workflow next` again after each step');
-    expect(text).toContain('continue from the next step `wingfoil workflow finalize` printed');
     expect(text).toContain(
-      '`wingfoil workflow next` when a session starts or resumes, or when no next step was printed',
+      'After a step you closed with `wingfoil workflow finalize`, continue from the next step it printed',
+    );
+    expect(text).toContain(
+      "`wingfoil workflow next` when a session starts or resumes (after the approver's reply), after a step that a " +
+        'memory verb completed, or when no next step was printed',
     );
   });
 

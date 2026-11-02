@@ -31,12 +31,14 @@ the fix in chat (2026-11-01). Placed in v0.3, W17. No real-agent session; the ne
 
 ## Design
 
-- `arms/wingfoil/manual.md`, *Until the delivery is recorded*: "After each step, continue from the next step `wingfoil
-  workflow finalize` printed: it is what `next` would print. Run `wingfoil workflow next` when a session starts or
-  resumes, or when no next step was printed, until the request's delivery is recorded." Nothing else of the manual
-  changes. A resumed session (after the approver's reply) still runs `next`, since its context does not hold a
-  `finalize` it can trust to be current.
-- The arm's digest: `99ea463d1b37` → `43b1de33f6c1`; baseline and baseline-docs unchanged (`964b1354526c`,
+- `arms/wingfoil/manual.md`, *Until the delivery is recorded*: "After a step you closed with `wingfoil workflow
+  finalize`, continue from the next step it printed: it is what `next` would print. Run `wingfoil workflow next` when
+  a session starts or resumes (after the approver's reply), after a step that a memory verb completed, or when no next
+  step was printed, until the request's delivery is recorded." Nothing else of the manual changes. On the Kanban
+  scaffold two delivery steps close without a `finalize` (plan on `memory submit`, review on `memory approve`): there
+  the last `finalize` output is stale, so the rule sends the agent to `next`; so does a resumed session, whose context
+  holds no current `finalize`.
+- The arm's digest: `99ea463d1b37` → `2c39a14f3f91`; baseline and baseline-docs unchanged (`964b1354526c`,
   `64e37c838830`). `campaigns/s10-calibration.dry-run.yaml` pins it (it follows the tree, as task-120 found);
   campaign-008's files keep `cc009b5a52a9`.
 
@@ -46,3 +48,16 @@ the fix in chat (2026-11-01). Placed in v0.3, W17. No real-agent session; the ne
 - **For the approver, not in this task's scope:** the rule *A new instance for a new request* also says "then `wingfoil
   workflow finalize` twice …, then `wingfoil workflow next` again", the same repetition after a `finalize`; criterion 1
   keeps the rest of the manual unchanged, so it stays. A one-line follow-up if wanted.
+
+### Review
+
+**Round 1** (2026-11-02, a fresh read-only agent in `/tmp/claude-1000/review-124-htQQ`, a clone of `08d289a7`; both
+checkouts unchanged). On WingFoil 0.3.1's Kanban scaffold, set up as the arm's setup does, `finalize`'s next-step
+block matched `next`'s byte for byte at every step (the actions' commands and the gate's `human needed` included).
+No blocker; two should-fix and two nits:
+
+| # | Finding | Outcome |
+|---|---|---|
+| S1 | "after each step, continue from what `finalize` printed" misses the steps a memory verb closes (plan, review) | fixed: the rule names them, and restores "(after the approver's reply)"; the digest moved to `2c39a14f3f91` |
+| S2 | the Design's rationale covered the resume only | fixed |
+| N | the new lines wider than the manual's; the test's title over 120 columns | fixed |
