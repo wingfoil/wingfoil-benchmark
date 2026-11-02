@@ -88,14 +88,14 @@ and headline counts within the variance),
 - **The scenarios, drafted** for the tasks that implement them (each adds its scenario to the `.feature` with its test,
   red first, and names it in `acceptance` as `<file>#<title>`):
   - `scoring.feature`, @F4.7 — "A v2 content check reads whole words in the agent's own text": Given a check with
-    `match: words` for "revised" and a fixture whose `setup/diff.patch` adds a template holding a line "Mark it revised",
-    When a step adds "unrevised" to a source file, the same line "Mark it revised" to a new document, a front-matter
-    line `title: D3 revised` and "D3 revised" to the seed's README, Then the template line does not count, the title
-    and the README line do, and the check passes; And in a scenario with a separate approver, a commit the verdict hook made saying
-    "revised" does not count, while the agent's own `Reason: D3 revised` in a verb's commit does. — "The
-    maintainer's judgement is shown beside a content check's verdict": Given `judgements.json` holds a judgement for a
-    check at a step of a run, When the site is built, Then the verdict and the judgement are shown together and a
-    disagreement is counted.
+    `match: words` for "revised" and a fixture whose `setup/diff.patch` adds a template holding a line "Mark it
+    revised", When a step adds "unrevised" to a source file, the same line "Mark it revised" to a new document, a
+    front-matter line `title: D3 revised` and "D3 revised" to the seed's README, Then the template line does not
+    count, the title and the README line do, and the check passes; And in a scenario with a separate approver, a
+    commit the verdict hook made saying "revised" does not count, while the agent's own `Reason: D3 revised` in a
+    verb's commit does. — "The maintainer's judgement is shown beside a content check's verdict": Given
+    `judgements.json` holds a judgement for a check at a step of a run, When the site is built, Then the verdict and
+    the judgement are shown together and a disagreement is counted.
   - `scoring.feature`, @F4.5 — "M-R2 v2 compares the interface the entry point exposes": Given two runs whose
     `src/index.ts` re-exports the same functions from different modules, Then M-R2 is 1; Given two runs with the same
     files exposing different functions, Then it is below 1; And a module the entry point does not reach is not
