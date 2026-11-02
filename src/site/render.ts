@@ -8,6 +8,7 @@ import {
   headlineSentence,
   notCoveredSentence,
   readMetric,
+  reported,
   summarize,
 } from './rules.js';
 import type { ArmValue } from './model.js';
@@ -127,13 +128,9 @@ function valueHtml(metric: MetricId, value: ArmValue, labelled = false): string 
   const figure = `${label}${e(formatFigure(metric, value.summary.mean))} ${nOf(metric, value.summary)}`;
   const comparison = value.comparison;
   if (comparison === undefined) return `<div class="value">${figure}${note === '' ? '' : ` ${note}`}</div>`;
-  // The badge already says preliminary when this value is a single run; otherwise the certainty does, a side with
-  // fewer than 3 runs included (task-045's review, task-082).
-  const badged = comparison.certainty === 'preliminary' && value.summary.n === 1;
-  const certainty = badged ? '' : ` <span class="certainty">${comparison.certainty}</span>`;
   return (
     `<div class="value">${figure} <span class="delta">${e(formatDelta(metric, comparison.delta))}</span> ` +
-    `${outcomeHtml(comparison)}${certainty}</div>`
+    `${outcomeHtml(comparison)}${certaintyHtml(comparison, value.summary.n)}</div>`
   );
 }
 
@@ -151,18 +148,32 @@ function againstHtml(metric: MetricId, value: ArmValue): string {
   if (compared === undefined) return `<div class="value against">${label}: not measured</div>`;
   if ('note' in compared)
     return `<div class="value against">${label}: <span class="note">${e(compared.note)}</span></div>`;
-  const badged = compared.certainty === 'preliminary' && compared.harness.n === 1;
-  const certainty = badged ? '' : ` <span class="certainty">${e(compared.certainty)}</span>`;
   return (
     `<div class="value against"><span class="metric">${label}</span> <span class="delta">${e(formatDelta(metric, compared.delta))}</span> ` +
-    `${outcomeHtml(compared)}${certainty}</div>`
+    `${outcomeHtml(compared)}${certaintyHtml(compared, compared.harness.n)}</div>`
   );
 }
 
-/** Wins, losses and ties in one markup: the same element and class, told apart by a word and a symbol. */
-function outcomeHtml(comparison: Pick<Comparison, 'outcome'>): string {
-  const symbol = { better: '▲', worse: '▼', same: '=' }[comparison.outcome];
-  return `<span class="outcome" data-outcome="${e(comparison.outcome)}">${symbol} ${e(comparison.outcome)}</span>`;
+/**
+ * The certainty beside an outcome, when the outcome's word does not already say it (task-129): only beside "the same",
+ * which may be within the variance or preliminary; and not when the value's own badge says preliminary (n = 1).
+ */
+function certaintyHtml(comparison: Pick<Comparison, 'outcome' | 'certainty'>, n: number): string {
+  if (reported(comparison) !== 'same') return '';
+  const badged = comparison.certainty === 'preliminary' && n === 1;
+  return badged ? '' : ` <span class="certainty">${e(comparison.certainty)}</span>`;
+}
+
+/**
+ * Every outcome in one markup (REQ-RES-03 as amended in 1.49, task-129): the same element and class, told apart by its
+ * word, and a symbol for better, worse (beyond the variance only) and the same; none within the variance or preliminary.
+ */
+function outcomeHtml(comparison: Pick<Comparison, 'outcome' | 'certainty'>): string {
+  const outcome = reported(comparison);
+  const symbol = { better: '▲ ', worse: '▼ ', same: '= ', 'within the variance': '', preliminary: '' }[
+    outcome
+  ];
+  return `<span class="outcome" data-outcome="${e(outcome)}">${symbol}${e(outcome)}</span>`;
 }
 
 function tallies(values: readonly Tally[]): string {

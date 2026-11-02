@@ -55,7 +55,7 @@ export { findingNote, METRICS } from './finding.js';
 export { packTranscripts, RELEASES, TRANSCRIPTS_ASSET } from './transcripts.js';
 export type { KnownSecret, TranscriptPack } from './transcripts.js';
 export type { FindingNote, FindingRequest, FindingShape, Metric } from './finding.js';
-export { CATEGORY_MAP, certaintyOf, compare, readMetric, summarize } from './compare.js';
+export { CATEGORY_MAP, certaintyOf, compare, readMetric, reported, summarize } from './compare.js';
 export type {
   Better,
   Certainty,
@@ -65,6 +65,7 @@ export type {
   MappedCategory,
   MetricId,
   Outcome,
+  Reported,
   Summary,
 } from './compare.js';
 export { LOCAL_ASSUMPTION, LOCAL_PROFILES, paritySection } from './parity.js';

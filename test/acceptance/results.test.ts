@@ -8,6 +8,12 @@ import type { AgentPort } from '../../src/agents/index.js';
 import { main } from '../../src/cli/index.js';
 import { armDigest } from '../../src/arms/index.js';
 import { gitCli, systemProcess } from '../../src/core/index.js';
+import { paritySection } from '../../src/results/index.js';
+import type { ParityRun, ParitySection } from '../../src/results/index.js';
+import type { SiteModel } from '../../src/site/model.js';
+import { parityPage } from '../../src/site/parity.js';
+import { landingPage } from '../../src/site/render.js';
+import { CATEGORY_MAP, compare } from '../../src/site/rules.js';
 import { aggregatedExecution, WINGFOIL_COMMIT } from '../support/finding-fixture.js';
 import {
   benchPublish,
@@ -408,8 +414,8 @@ describe('results.feature', () => {
 
     // And it shows a headline sentence and one chart comparing the arms
     expect(page).toContain(
-      '<p class="headline">Against the baseline, <strong>wingfoil</strong> is better in 1, worse in 1 and ' +
-        'the same in 3 of 5 comparisons across categories C, D and F (preliminary: n < 3 in C, D and F).</p>',
+      '<p class="headline">Against the baseline, <strong>wingfoil</strong> is better in 0, worse in 0, the same ' +
+        'in 3, within the variance in 0 and preliminary in 2 of 5 comparisons across categories C, D and F.</p>',
     );
     expect(page.match(/<svg /g)).toHaveLength(1);
     const chart = page.slice(page.indexOf('<svg '), page.indexOf('</svg>'));
@@ -430,11 +436,16 @@ describe('results.feature', () => {
     const page = await landing();
     const { files } = await siteBuilt();
 
-    // Then category D shows the loss with the same prominence as the win in category F
-    const loss = /<span class="outcome" data-outcome="worse">[^<]*<\/span>/.exec(rowOf(page, 'D'))?.[0];
-    const win = /<span class="outcome" data-outcome="better">[^<]*<\/span>/.exec(rowOf(page, 'F'))?.[0];
-    expect(loss).toBe('<span class="outcome" data-outcome="worse">▼ worse</span>');
-    expect(win).toBe('<span class="outcome" data-outcome="better">▲ better</span>');
+    // Then category D shows the loss with the same prominence as the win in category F — one run a side, so both are
+    // preliminary, in the same markup, their deltas telling them apart (REQ-RES-03 as amended in 1.49, task-129)
+    const outcome = (row: string) =>
+      /<span class="delta">[^<]*<\/span> <span class="outcome"[^>]*>[^<]*<\/span>/.exec(row)?.[0];
+    expect(outcome(rowOf(page, 'D'))).toBe(
+      '<span class="delta">−100.0 pp</span> <span class="outcome" data-outcome="preliminary">preliminary</span>',
+    );
+    expect(outcome(rowOf(page, 'F'))).toMatch(
+      /^<span class="delta">\+[^<]*<\/span> <span class="outcome" data-outcome="preliminary">preliminary<\/span>$/,
+    );
     // the same element and class, and no style that tells them apart
     expect(files['style.css']).toBeDefined();
     expect(files['style.css']).not.toMatch(/data-outcome|better|worse/);
@@ -473,10 +484,12 @@ describe('results.feature', () => {
     const c = two['abcdef012345/1/category-c.html'] ?? '';
     expect(rowOf(twoLanding, 'C')).not.toContain('<span class="badge">preliminary</span>');
     expect(rowOf(twoLanding, 'C')).toContain('n = 2');
-    expect(rowOf(twoLanding, 'C')).toContain('<span class="certainty">preliminary</span>');
+    const preliminary =
+      /data-outcome="preliminary">preliminary<\/span>|<span class="certainty">preliminary<\/span>/;
+    expect(rowOf(twoLanding, 'C')).toMatch(preliminary);
     expect(c).not.toContain('within variance');
-    expect(c).toContain('<span class="certainty">preliminary</span>');
-    expect(twoLanding).toContain('(preliminary: n < 3 in C)');
+    expect(c).toMatch(preliminary);
+    expect(twoLanding).toMatch(/within the variance in 0 and preliminary in [1-9]/);
     expect(twoLanding).toContain(
       '<th scope="col">wingfoil <span class="harness">wingfoil 0.2.2 · 12537b6</span></th>',
     );
@@ -658,3 +671,121 @@ describe("the maintainer's judgements (REQ-SCO-06 as amended in 1.49, task-128)"
     expect(existsSync(join(root, 'site'))).toBe(false);
   });
 });
+
+describe('the variance rule on every page (REQ-RES-03 as amended in 1.49, task-129)', () => {
+  /** A landing page of category C, where wingfoil's M-Q1 against the baseline's is `arm` against `base`. */
+  function page(base: readonly number[], arm: readonly number[]): string {
+    const runs = (side: string, values: readonly number[]) => ({
+      runs: values.map((_, i) => `${side}${i}`),
+      values: [...values],
+    });
+    const result = compare('higher', runs('b', base), runs('w', arm));
+    const comparison = { category: 'C', metric: 'M-Q1' as const, arm: 'wingfoil', ...result };
+    const [q1] = CATEGORY_MAP.C;
+    const scenario = { id: 'S1', version: '1.0', primary: 'C' as const, secondary: [], hash: 'sha256:s1' };
+    const model = {
+      campaign: 'abcdef012345',
+      execution: 1,
+      model: 'm',
+      arms: ['baseline', 'wingfoil'],
+      runs: base.length + arm.length,
+      sliceRuns: 0,
+      records: [],
+      categories: [
+        {
+          category: 'C',
+          secondary: [],
+          scenarios: [
+            {
+              scenario,
+              groups: [],
+              metrics: [
+                {
+                  entry: q1,
+                  values: [
+                    { arm: 'baseline', summary: result.baseline },
+                    { arm: 'wingfoil', summary: result.other, comparison },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+      comparisons: [comparison],
+      slices: [],
+    } as unknown as SiteModel;
+    return landingPage(model);
+  }
+  const outcome = (html: string) => /<span class="outcome"[^>]*>[^<]*<\/span>/.exec(html)?.[0];
+  const headline = (html: string) => /<p class="headline">(.*?)<\/p>/.exec(html)?.[1];
+
+  it('@F5.5 A difference is marked only beyond the variance', () => {
+    // Given two arms with three runs a side whose ranges overlap
+    // When the site is built
+    const within = page([0.5, 0.6, 0.7], [0.6, 0.7, 0.8]);
+    // Then the comparison shows the delta and "within the variance", with no symbol, and the headline counts it so
+    expect(within).toContain('<span class="delta">+10.0 pp</span>');
+    expect(outcome(within)).toBe(
+      '<span class="outcome" data-outcome="within the variance">within the variance</span>',
+    );
+    expect(headline(within)).toBe(
+      'Against the baseline, <strong>wingfoil</strong> is better in 0, worse in 0, the same in 0, within the ' +
+        'variance in 1 and preliminary in 0 of 1 comparison across category C.',
+    );
+
+    // Given a side with fewer than three runs
+    const preliminary = page([0.5, 0.6], [0.8, 0.9, 1]);
+    // Then the comparison shows the delta and "preliminary", with no symbol, and the headline counts it apart
+    expect(outcome(preliminary)).toBe('<span class="outcome" data-outcome="preliminary">preliminary</span>');
+    expect(headline(preliminary)).toContain('within the variance in 0 and preliminary in 1 of 1 comparison');
+
+    // Given equal means
+    // Then the comparison shows "the same"
+    expect(outcome(page([0.5, 0.6, 0.7], [0.7, 0.6, 0.5]))).toBe(
+      '<span class="outcome" data-outcome="same">= same</span>',
+    );
+
+    // And a difference beyond the variance is marked ▲ or ▼, in the same markup
+    expect(outcome(page([0.1, 0.2, 0.3], [0.8, 0.9, 1]))).toBe(
+      '<span class="outcome" data-outcome="better">▲ better</span>',
+    );
+    expect(outcome(page([0.8, 0.9, 1], [0.1, 0.2, 0.3]))).toBe(
+      '<span class="outcome" data-outcome="worse">▼ worse</span>',
+    );
+
+    // And the parity page reads its quality comparisons by the same rule
+    const parity = (weak: readonly number[]) =>
+      parityPage(
+        'T',
+        paritySection(
+          [
+            ...parityRuns('baseline', 'strong', [1, 1, 1]),
+            ...parityRuns('baseline', 'weak', [1, 1, 1]),
+            ...parityRuns('wingfoil', 'weak', weak),
+          ],
+          'strong',
+        ) as ParitySection,
+      );
+    expect(parity([0.9, 1, 1])).toContain('<span class="verdict">within the variance</span>');
+    expect(parity([0.1, 0.2, 0.3])).toContain('<span class="verdict">worse</span>');
+    expect(parity([1, 1, 1])).toContain('<span class="verdict">same (within variance)</span>');
+  });
+});
+
+/** Three runs of an arm on a model for the parity page, each with its final M-Q1. */
+function parityRuns(arm: string, model: string, mQ1s: readonly number[]): ParityRun[] {
+  return mQ1s.map((mQ1, r) => ({
+    name: `abcdef012345/1/runs/S1@1.0/${arm}/${model}/r${r + 1}`,
+    scenario: 'S1',
+    version: '1.0',
+    arm,
+    model,
+    harness: arm === 'wingfoil',
+    mQ1,
+    holdout: 1,
+    costEur: model === 'weak' ? 0.1 : 0.5,
+    wallTimeMs: 300_000,
+    tokens: { input: 1000, output: 600, cacheCreation: 2000, cacheRead: 30000 },
+  }));
+}

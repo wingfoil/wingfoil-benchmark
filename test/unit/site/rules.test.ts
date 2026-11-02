@@ -211,26 +211,31 @@ describe('reading a metric from a group', () => {
 });
 
 describe('the headline', () => {
-  it('counts better, worse and same with the same weight, and names the categories and the preliminary', () => {
+  it('counts the five reported outcomes with the same weight, and names the categories (REQ-RES-03 1.49)', () => {
+    const beyond = (category: string, outcome: Comparison['outcome']): Comparison => ({
+      ...comparison(category, outcome, 3),
+      certainty: 'beyond variance',
+    });
     const comparisons = [
       comparison('C', 'same'),
       comparison('C', 'same'),
+      beyond('D', 'worse'),
       comparison('D', 'worse'),
-      comparison('D', 'same'),
-      comparison('F', 'better'),
+      beyond('F', 'better'),
+      comparison('F', 'better', 3),
     ];
     expect(headlineSentence('wingfoil', comparisons)).toBe(
-      'Against the baseline, wingfoil is better in 1, worse in 1 and the same in 3 of 5 comparisons ' +
-        'across categories C, D and F (preliminary: n < 3 in C, D and F).',
+      'Against the baseline, wingfoil is better in 1, worse in 1, the same in 2, within the variance in 1 and ' +
+        'preliminary in 1 of 6 comparisons across categories C, D and F.',
     );
   });
 
-  it('emphasises the arm as asked, and leaves out the preliminary clause when none is', () => {
+  it('emphasises the arm as asked', () => {
     expect(
       headlineSentence('wingfoil', [comparison('C', 'better', 3)], (arm) => `<strong>${arm}</strong>`),
     ).toBe(
-      'Against the baseline, <strong>wingfoil</strong> is better in 1, worse in 0 and the same in 0 of 1 ' +
-        'comparison across category C.',
+      'Against the baseline, <strong>wingfoil</strong> is better in 0, worse in 0, the same in 0, within the ' +
+        'variance in 1 and preliminary in 0 of 1 comparison across category C.',
     );
   });
 

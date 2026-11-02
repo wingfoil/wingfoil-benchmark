@@ -200,3 +200,17 @@ export function certaintyOf(base: Spread, arm: Spread, outcome: Outcome): Certai
   const apart = arm.min > base.max || arm.max < base.min;
   return outcome !== 'same' && apart ? 'beyond variance' : 'within variance';
 }
+
+/** A comparison as every page reports it (REQ-RES-03 as amended in 1.49, task-129). */
+export type Reported = 'better' | 'worse' | 'same' | 'within the variance' | 'preliminary';
+
+/**
+ * The outcome a page reports (REQ-RES-03 as amended in 1.49, bug-030), in this order: the same when the means are
+ * equal; better or worse only beyond the variance; within the variance when both sides have n ≥ 3 and the ranges
+ * overlap; preliminary otherwise. Read from a stored comparison's outcome and certainty, which keep their shape.
+ */
+export function reported(comparison: { readonly outcome: Outcome; readonly certainty: Certainty }): Reported {
+  if (comparison.outcome === 'same') return 'same';
+  if (comparison.certainty === 'beyond variance') return comparison.outcome;
+  return comparison.certainty === 'within variance' ? 'within the variance' : 'preliminary';
+}

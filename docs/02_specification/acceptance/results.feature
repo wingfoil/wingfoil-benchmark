@@ -53,6 +53,18 @@ Feature: Stored results, run detail, finding notes and the published site
     And categories A, B and G are listed as "not covered in this campaign"
 
   @F5.5
+  Scenario: A difference is marked only beyond the variance
+    Given two arms with three runs a side whose ranges overlap
+    When the site is built
+    Then the comparison shows the delta and "within the variance", with no symbol, and the headline counts it so
+    Given a side with fewer than three runs
+    Then the comparison shows the delta and "preliminary", with no symbol, and the headline counts it apart
+    Given equal means
+    Then the comparison shows "the same"
+    And a difference beyond the variance is marked ▲ or ▼, in the same markup
+    And the parity page reads its quality comparisons by the same rule
+
+  @F5.5
   Scenario: Preliminary results are labelled
     Given a category whose results come from a single repetition
     When the site is built
