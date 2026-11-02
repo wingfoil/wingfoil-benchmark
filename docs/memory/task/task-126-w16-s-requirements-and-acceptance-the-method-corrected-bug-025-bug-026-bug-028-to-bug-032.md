@@ -2,7 +2,7 @@
 id: task-126-w16-s-requirements-and-acceptance-the-method-corrected-bug-025-bug-026-bug-028-to-bug-032
 type: task
 title: "W16's requirements and acceptance: the method corrected (bug-025, bug-026, bug-028 to bug-032)"
-status: backlog
+status: in-progress
 release: v0.3
 wave: W16
 features: [F4.1, F4.3, F4.5, F5.4, F5.5, F2.4]
