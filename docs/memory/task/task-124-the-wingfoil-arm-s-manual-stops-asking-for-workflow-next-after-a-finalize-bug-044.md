@@ -2,7 +2,7 @@
 id: task-124-the-wingfoil-arm-s-manual-stops-asking-for-workflow-next-after-a-finalize-bug-044
 type: task
 title: "The wingfoil arm's manual stops asking for workflow next after a finalize (bug-044)"
-status: in-progress
+status: in-review
 release: v0.3
 wave: W17
 features: [F2.7]
