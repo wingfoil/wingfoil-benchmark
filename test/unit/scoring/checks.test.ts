@@ -475,3 +475,54 @@ describe("ast checks (REQ-SCO-05, R2–R4), through the scoring image's script",
     });
   });
 });
+
+describe('v2 content checks, the stored files they need (REQ-SCO-06 as amended in 1.49, task-128)', () => {
+  const v2 = (ledger = false): Check => ({
+    ...(content([['revised']]) as Extract<Check, { kind: 'content' }>),
+    match: 'words',
+    ...(ledger ? { ledger: true as const } : {}),
+  });
+
+  it("refuses a run with no setup patch, the template text it leaves out of the agent's", async () => {
+    const { runDir, snapshots } = await run([{ files: { 'n.md': 'D3 revised\n' } }]);
+    expect(await scoreChecks({ checks: [v2()], runDir, snapshots })).toEqual({
+      ok: false,
+      issues: [{ path: 'setup/diff.patch', message: 'is missing' }],
+    });
+  });
+
+  it('records `match: words` in the score, and counts a commit message line by line', async () => {
+    const { runDir, snapshots } = await run([{ files: {}, messages: ['docs: D3\n\nrevised'] }]);
+    mkdirSync(join(runDir, 'setup'), { recursive: true });
+    writeFileSync(join(runDir, 'setup', 'diff.patch'), '');
+    expect(await scoreChecks({ checks: [v2()], runDir, snapshots })).toEqual({
+      ok: true,
+      value: [
+        {
+          id: 'revision',
+          kind: 'content',
+          match: 'words',
+          steps: [{ n: 1, passed: true, where: { commit: 1 } }],
+        },
+      ],
+    });
+  });
+
+  it('refuses, under a ledger, a commits.json whose messages and commits do not align', async () => {
+    const { runDir, snapshots } = await run([{ files: {}, messages: ['one', 'two'] }]);
+    mkdirSync(join(runDir, 'setup'), { recursive: true });
+    writeFileSync(join(runDir, 'setup', 'diff.patch'), '');
+    writeFileSync(
+      join(runDir, 'steps', '01', 'commits.json'),
+      JSON.stringify({
+        messages: ['one', 'two'],
+        commits: [{ sha: 'a', author_email: 'x', committer_email: 'x' }],
+      }),
+    );
+    writeFileSync(join(runDir, 'steps', '01', 'verdicts.json'), JSON.stringify({ deliveries: [] }));
+    expect(await scoreChecks({ checks: [v2(true)], runDir, snapshots })).toEqual({
+      ok: false,
+      issues: [{ path: 'steps/01/commits.json', message: 'holds 2 messages and 1 commits: they must align' }],
+    });
+  });
+});

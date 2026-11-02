@@ -12,6 +12,7 @@ import {
   parseWith,
   readYamlFile,
   satisfies,
+  satisfiesWords,
   scenarioSchema,
 } from '../core/index.js';
 import type { Check, Decision, Issue, Result, Scenario, ScenarioFile, ThirdParty } from '../core/index.js';
@@ -167,9 +168,16 @@ function loadChecks(spec: ScenarioFile, dir: string): Result<Check[]> {
       if (found.length === 0)
         checks.push({ id, file, kind: 'ast', steps: check.steps, dir: check.dir, rules: check.rules });
     } else if (check.kind === 'content') {
-      found.push(...promptIssues(spec, dir, at, check.steps, check.patterns));
-      if (found.length === 0)
-        checks.push({ id, file, kind: 'content', steps: check.steps, patterns: check.patterns });
+      const words = check.match === 'words';
+      found.push(...promptIssues(spec, dir, at, check.steps, check.patterns, words));
+      if (words) found.push(...rubricIssues(dir, at, id));
+      if (found.length === 0) {
+        // v2 (task-128): under a separate approver, the verdict hook's commits are left out, read from the ledger.
+        const v2 = words
+          ? { match: 'words' as const, ...(spec.approver ? { ledger: true as const } : {}) }
+          : {};
+        checks.push({ id, file, kind: 'content', steps: check.steps, patterns: check.patterns, ...v2 });
+      }
     } else if (check.kind === 'gate' || check.kind === 'attribution' || check.kind === 'rejection') {
       // The governance kinds read the verdict ledger, which only a scenario with a separate approver has (task-118).
       const approver = spec.approver;
@@ -251,18 +259,23 @@ function loadChecks(spec: ScenarioFile, dir: string): Result<Check[]> {
   return issues.length > 0 ? fail(issues) : ok(checks);
 }
 
-/** The steps of a content check whose own prompt satisfies it: one issue on the check, the first. */
+/**
+ * The steps of a content check whose own prompt satisfies it, matched as the check matches (v2's whole words,
+ * task-128): one issue on the check, the first.
+ */
 function promptIssues(
   spec: ScenarioFile,
   dir: string,
   at: string,
   steps: readonly number[],
   patterns: readonly (readonly string[])[],
+  words: boolean,
 ): Issue[] {
   for (const n of steps) {
     const prompt = spec.steps[n - 1]?.prompt_file;
     if (prompt === undefined) continue;
-    if (satisfies(readFileSync(resolve(dir, prompt), 'utf8'), patterns)) {
+    const text = readFileSync(resolve(dir, prompt), 'utf8');
+    if (words ? satisfiesWords(linesOf(text), patterns) : satisfies(text, patterns)) {
       return [
         {
           path: at,
@@ -272,6 +285,21 @@ function promptIssues(
     }
   }
   return [];
+}
+
+/** Where a version's rubric lies (REQ-SCO-06 as amended in 1.49): what counts as the fact each v2 check records. */
+export const RUBRIC_FILE = 'oracle/rubric.md';
+
+/** A v2 content check's rubric (task-128): the version's `oracle/rubric.md`, with a `## <id>` section for it. */
+function rubricIssues(dir: string, at: string, id: string): Issue[] {
+  const file = resolve(dir, RUBRIC_FILE);
+  if (!exists(file, 'file')) {
+    return [{ path: at, message: `is a v2 content check ('match: words'), and ${RUBRIC_FILE} is missing` }];
+  }
+  const sections = linesOf(readFileSync(file, 'utf8')).map((line) => line.trim());
+  return sections.includes(`## ${id}`)
+    ? []
+    : [{ path: at, message: `is a v2 content check, and ${RUBRIC_FILE} has no '## ${id}' section` }];
 }
 
 function identityIssues(spec: ScenarioFile, id: string, version: string): Issue[] {

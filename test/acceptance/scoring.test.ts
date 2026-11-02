@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import type { AgentPort } from '../../src/agents/index.js';
 import { main } from '../../src/cli/index.js';
 import { gitCli, systemProcess } from '../../src/core/index.js';
+import type { ContentCheck } from '../../src/core/index.js';
 import { loadScenario } from '../../src/scenario/index.js';
 import { scoreChecks } from '../../src/scoring/index.js';
 import { localScoringDocker } from '../support/local-scoring.js';
@@ -576,6 +577,116 @@ describe('scoring.feature', { timeout: 120_000 }, () => {
           },
         ],
       },
+    ]);
+  });
+});
+
+/**
+ * A run stored as the runner stores one, for a v2 content check (REQ-SCO-06 as amended in 1.49, task-128): the setup's
+ * patch, one step's patch, its commits (message, sha) and, under a separate approver, its verdict ledger.
+ */
+async function wordsRun(options: {
+  step: Files;
+  commits?: readonly { sha: string; message: string }[];
+  hookCommits?: readonly string[];
+}) {
+  const git = gitCli(systemProcess);
+  const workspace = tempDir('bench-words-ws-');
+  const runDir = tempDir('bench-words-run-');
+  const write = (files: Files) => {
+    for (const [path, text] of Object.entries(files)) {
+      mkdirSync(dirname(join(workspace, path)), { recursive: true });
+      if (text !== null) writeFileSync(join(workspace, path), text);
+    }
+  };
+  await git.init(workspace);
+  write({ 'README.md': 'A rental service.\n', 'src/booking.ts': 'export const WHOLE_DAYS = true;\n' });
+  await git.commitAll(workspace, 'seed');
+  const seed = await git.tree(workspace, 'HEAD');
+  write({
+    'templates/decision.md':
+      '# Decision\n\n<!-- Mark it revised when a later decision replaces it. -->\nMark it revised\n',
+  });
+  await git.commitAll(workspace, 'setup');
+  const setup = await git.tree(workspace, 'HEAD');
+  mkdirSync(join(runDir, 'setup'), { recursive: true });
+  writeFileSync(join(runDir, 'setup', 'diff.patch'), await git.patchOf(workspace, seed, setup));
+  write(options.step);
+  await git.commitAll(workspace, 'step 01', { allowEmpty: true });
+  const step = await git.tree(workspace, 'HEAD');
+  const stepDir = join(runDir, 'steps', '01');
+  mkdirSync(stepDir, { recursive: true });
+  writeFileSync(join(stepDir, 'diff.patch'), await git.patchOf(workspace, setup, step));
+  const commits = options.commits ?? [];
+  writeFileSync(
+    join(stepDir, 'commits.json'),
+    JSON.stringify({
+      messages: commits.map((commit) => commit.message),
+      commits: commits.map(({ sha }) => ({ sha, author_email: 'a@b.c', committer_email: 'a@b.c' })),
+    }),
+  );
+  if (options.hookCommits !== undefined) {
+    const carried_out = { outcome: 'approved', commits: options.hookCommits };
+    writeFileSync(
+      join(stepDir, 'verdicts.json'),
+      JSON.stringify({ deliveries: [{ reply: 'Approved.', verdict: 'approve', head: 'h', carried_out }] }),
+    );
+  }
+  return { runDir, snapshots: new Map([[1, workspace]]) };
+}
+
+describe('content checks v2 (REQ-SCO-06 as amended in 1.49, task-128)', () => {
+  const check = (ledger: boolean): ContentCheck => ({
+    id: 'd3-revision',
+    file: '/oracle/checks/d3-revision.yaml',
+    kind: 'content',
+    steps: [1],
+    patterns: [['revised']],
+    match: 'words',
+    ...(ledger ? { ledger: true as const } : {}),
+  });
+  const scored = async (ledger: boolean, options: Parameters<typeof wordsRun>[0]) => {
+    const { runDir, snapshots } = await wordsRun(options);
+    const result = await scoreChecks({ checks: [check(ledger)], runDir, snapshots });
+    if (!result.ok) throw new Error(JSON.stringify(result.issues));
+    return result.value[0]?.steps;
+  };
+
+  it("@F4.7 A v2 content check reads whole words in the agent's own text", async () => {
+    // Given a content check with "match: words" for "revised"
+    // And a run whose setup added a template holding the line "Mark it revised"
+    // When a step adds "unrevised" to a source file and the line "Mark it revised" to a new document
+    const base = {
+      'src/booking.ts': 'export const WHOLE_DAYS = true;\n// unrevised\n',
+      'docs/d3.md': '# D3\n\n  Mark it revised\n',
+    };
+    // Then the check fails: a stem is not a word, and the template's line is not the agent's
+    expect(await scored(false, { step: base })).toEqual([{ n: 1, passed: false }]);
+
+    // When the step also adds the front-matter line "title: D3 revised" to the document
+    // Then the check passes, matched in the document
+    expect(
+      await scored(false, {
+        step: { ...base, 'docs/d3.md': '---\ntitle: D3 revised\n---\n# D3\n\nMark it revised\n' },
+      }),
+    ).toEqual([{ n: 1, passed: true, where: { file: 'docs/d3.md' } }]);
+
+    // When the step adds "D3 revised" to the seed's README instead
+    // Then the check passes, matched in the README
+    expect(
+      await scored(false, { step: { ...base, 'README.md': 'A rental service.\nD3 revised.\n' } }),
+    ).toEqual([{ n: 1, passed: true, where: { file: 'README.md' } }]);
+
+    // And in a scenario with a separate approver, a commit the verdict hook made saying "revised" does not count
+    const hook = { sha: 'h00k', message: 'approve: D3 revised\n\nApproved by the approver.' };
+    expect(await scored(true, { step: base, commits: [hook], hookCommits: ['h00k'] })).toEqual([
+      { n: 1, passed: false },
+    ]);
+
+    // And the agent's own "Reason: D3 revised" in the commit of a harness command counts
+    const own = { sha: '0wn', message: 'wf(decision): add dl-002\n\nReason: D3 revised' };
+    expect(await scored(true, { step: base, commits: [hook, own], hookCommits: ['h00k'] })).toEqual([
+      { n: 1, passed: true, where: { commit: 2 } },
     ]);
   });
 });

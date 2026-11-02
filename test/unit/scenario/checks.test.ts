@@ -265,3 +265,87 @@ describe('loading check files (REQ-SCO-06, task-035)', () => {
     expect(paths('dir: ../src\nrules: [throw]\n')).toEqual(['oracle.checks[0].dir']);
   });
 });
+
+describe('loading v2 content checks (REQ-SCO-06 as amended in 1.49, task-128)', () => {
+  const V2 = 'kind: content\nsteps: [2]\nmatch: words\npatterns:\n  - [whole days]\n  - [revised]\n';
+  const RUBRIC = '# Rubric\n\n## revision\n\nThe D3 revision is recorded.\n';
+
+  it('loads `match: words` with its rubric, and leaves v1 checks as they were', () => {
+    const root = scenarioWith({ 'oracle/checks/revision.yaml': V2 }, { 'oracle/rubric.md': RUBRIC });
+    const result = loadScenario(root, 'S9', '1.0');
+    if (!result.ok) throw new Error(JSON.stringify(result.issues));
+    expect(result.value.oracle.checks).toEqual([
+      {
+        id: 'revision',
+        file: join(root, 'S9', '1.0', 'oracle/checks/revision.yaml'),
+        kind: 'content',
+        steps: [2],
+        patterns: [['whole days'], ['revised']],
+        match: 'words',
+      },
+    ]);
+  });
+
+  it("marks a v2 check of a scenario with a separate approver to read the verdict hook's commits", () => {
+    const yaml = completeScenarioYaml();
+    (yaml.oracle as Record<string, unknown>).checks = ['oracle/checks/revision.yaml'];
+    yaml.approver = { name: 'Dana', email: 'dana@example.org' };
+    const root = writeScenario(
+      yaml,
+      COMPLETE_FILES.filter((file) => file !== 'oracle/checks/decision.yaml'),
+    );
+    for (const [path, text] of Object.entries({
+      'oracle/checks/revision.yaml': V2,
+      'oracle/rubric.md': RUBRIC,
+    })) {
+      mkdirSync(dirname(join(root, 'S9', '1.0', path)), { recursive: true });
+      writeFileSync(join(root, 'S9', '1.0', path), text);
+    }
+    const result = loadScenario(root, 'S9', '1.0');
+    if (!result.ok) throw new Error(JSON.stringify(result.issues));
+    expect(result.value.oracle.checks[0]).toMatchObject({ match: 'words', ledger: true });
+  });
+
+  it('refuses another `match`, naming the field', () => {
+    const root = scenarioWith({ 'oracle/checks/revision.yaml': V2.replace('words', 'stems') });
+    expect(issuesOf(root).map((issue) => issue.path)).toEqual(['oracle.checks[0].match']);
+  });
+
+  it('refuses a v2 check with no rubric, or none of its section', () => {
+    expect(issuesOf(scenarioWith({ 'oracle/checks/revision.yaml': V2 }))).toEqual([
+      {
+        path: 'oracle.checks[0]',
+        message: "is a v2 content check ('match: words'), and oracle/rubric.md is missing",
+      },
+    ]);
+    const other = scenarioWith(
+      { 'oracle/checks/revision.yaml': V2 },
+      { 'oracle/rubric.md': '## duplicate\n' },
+    );
+    expect(issuesOf(other)).toEqual([
+      {
+        path: 'oracle.checks[0]',
+        message: "is a v2 content check, and oracle/rubric.md has no '## revision' section",
+      },
+    ]);
+  });
+
+  it("refuses a v2 check its step's prompt satisfies as whole words, and not one it satisfies as substrings", () => {
+    const copied = scenarioWith(
+      { 'oracle/checks/revision.yaml': V2 },
+      { 'oracle/rubric.md': RUBRIC, 'prompts/02.md': 'Whole  days are revised.\n' },
+    );
+    expect(issuesOf(copied)).toEqual([
+      {
+        path: 'oracle.checks[0]',
+        message: 'is satisfied by the text of prompts/02.md: an agent that copies its prompt would pass',
+      },
+    ]);
+    // v1 would refuse it ("whole days" across two lines, "revised" inside "unrevised"); v2 does not.
+    const apart = scenarioWith(
+      { 'oracle/checks/revision.yaml': V2 },
+      { 'oracle/rubric.md': RUBRIC, 'prompts/02.md': 'Bookings are for whole\ndays, unrevised.\n' },
+    );
+    expect(issuesOf(apart)).toEqual([]);
+  });
+});

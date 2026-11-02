@@ -30,7 +30,7 @@ export type {
   UnchangedCheck,
 } from './scenario.js';
 export { ARM_NAME, armSchema } from './arm.js';
-export { dependenciesOf, foldText, linesOf, satisfies } from './check-text.js';
+export { dependenciesOf, foldText, linesOf, satisfies, satisfiesWords } from './check-text.js';
 export { leakScanSchema } from './leak-scan.js';
 export type { LeakScanDeclarations } from './leak-scan.js';
 export type { Arm, ArmFile } from './arm.js';
