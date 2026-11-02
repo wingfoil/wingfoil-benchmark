@@ -72,10 +72,9 @@ and headline counts within the variance),
   text, less the templates the setup installs (the approver's reading of 2026-11-02), with a rubric and a human
   judgement (`match: words`, `oracle/rubric.md`, `judgements.json`); M-R2 v2 resolved from the entry point; M-K3 as
   one-off costs per scenario version and harness; M-K4 "not applicable" when worse beyond the variance, or preliminary
-  below three runs a side; ▲/▼ and the headline
-  only beyond the variance; the template read from the campaign's pin. REQ-RUN-09 keeps REQ-RUN-19's kill at the bound
-  and fixes what bug-032 lists (a step ending with no result event never zero; an interruption recorded
-  `interrupted`).
+  below three runs a side; ▲/▼ and the headline only beyond the variance; the template read from the campaign's pin.
+  REQ-RUN-09 keeps REQ-RUN-19's kill at the bound and fixes what bug-032 lists (a step ending with no result event
+  never zero; an interruption recorded `interrupted`).
 - **The two points experiment design 1.7 left to W16.** M-K4's variance applies to its **quality condition**, as
   bug-029's Resolution (the approver's decision: "not applicable only beyond the variance") reads; its Expected reads
   the step-cost difference instead, and task-103's review leaned to that reading, so 1.7 left it open (task-103.md,
@@ -102,12 +101,11 @@ and headline counts within the variance),
     counted; And each value records version 2; Given a run with no `src/index.ts`, Then its interface is
     `(no entry point)`; Given a reached module that does not parse, Then its entry is `<file>: (does not parse)`.
   - `scoring.feature`, @F4.4 — "Break-even is not applicable when quality is worse beyond the variance, or
-    preliminary": Given an
-    arm whose final M-Q1 is lower within the variance (n ≥ 3 a side), Then break-even is computed or "never", marked
-    "within variance"; Given it lower beyond the variance, Then "not applicable"; Given n < 3 and a lower mean, Then
-    "not applicable", preliminary. — "M-K3 is the one-off cost per scenario version and harness": Given a configured
-    arm whose configuration cost is recorded once and three runs' setup costs, Then M-K3 is the configuration's cost
-    plus their mean.
+    preliminary": Given an arm whose final M-Q1 is lower within the variance (n ≥ 3 a side), Then break-even is
+    computed or "never", marked "within variance"; Given it lower beyond the variance, Then "not applicable"; Given n
+    < 3 and a lower mean, Then "not applicable", preliminary. — "M-K3 is the one-off cost per scenario version and
+    harness": Given a configured arm whose configuration cost is recorded once and three runs' setup costs, Then M-K3
+    is the configuration's cost plus their mean.
   - `results.feature`, @F5.5 — "A difference is marked only beyond the variance": Given two arms with overlapping
     ranges (n ≥ 3), Then the comparison shows the delta and "within the variance", no symbol, and the headline counts
     it so; Given n < 3, Then "preliminary", no symbol, counted apart; Given equal means, Then "the same". The same on
@@ -185,4 +183,8 @@ rule removes, line for line, the scaffold comment that made v1 match (bug-026). 
 M-K4 scenario's title still said "only" while listing the preliminary case: fixed. Nits fixed: front matter counts
 except its lines equal to a setup line; "the reason the agent gave to a harness command" for `Reason:`; "the lines
 the arm's setup added"; the content-check scenario's fixture made explicit, with a `title:` that counts.
+
+**Round 5** (2026-11-02, a fresh read-only agent, nothing run; both checkouts unchanged), on `14eef7b0..f0f0c02f`:
+round 4 resolved, no should-fix. Nits fixed: REQ-SCO-06's parenthetical limited to a front-matter line in a file;
+two ragged lines reflowed.
 
