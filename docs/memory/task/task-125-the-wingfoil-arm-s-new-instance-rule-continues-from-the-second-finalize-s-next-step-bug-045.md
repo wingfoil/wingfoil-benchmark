@@ -41,3 +41,18 @@ in chat (2026-11-02). Placed in v0.3, W17. No real-agent session; the next campa
 
 - Red first: the manual's test failed on the old rule and passes on the new; the arms' tests and S10's profile test
   pass (94 and 2).
+- Checks: prettier on the changed files, `tsc`, eslint, `scripts/pre-review.sh main`: green.
+- **For the next campaign** (the review's observation, nothing to change here): on 0.3.1 a new instance's second
+  `finalize` prints the delivery's **build** step, not plan: the earlier request's approved task already meets plan's
+  evidence. The rule *Every request has its task* then has the agent add and submit its own task before building; the
+  next campaign should see whether the weaker models follow it there. The old rule landed on the same step.
+
+### Review
+
+**Round 1** (2026-11-02, a fresh read-only agent in `/tmp/claude-1000/review-125-V1qg`, a clone of `d1af69a2`; both
+checkouts unchanged). On 0.3.1's Kanban scaffold it took a first instance to its sunset, then followed the rule
+literally: the second `finalize`'s next-step block equals `next`'s (diffed); with two instances open, `finalize` and
+`next` act on the new, active one. Digests, the red-first test and the Design confirmed. No blocker, no should-fix;
+nits: bug-045's "the delivery's first step" is build on 0.3.1 (acceptable), the checks not yet in the notes (added),
+the calibration note's historical sentence about `next` (out of scope, left).
+
