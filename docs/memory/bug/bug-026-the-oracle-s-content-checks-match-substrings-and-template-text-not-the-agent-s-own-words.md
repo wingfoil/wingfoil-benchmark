@@ -2,8 +2,8 @@
 id: bug-026-the-oracle-s-content-checks-match-substrings-and-template-text-not-the-agent-s-own-words
 type: bug
 title: "The oracle's content checks match substrings and template text, not the agent's own words"
-status: approved
-# fixed_by: task-…   # set by hand, with the fixing task's id, just before `approved → fixed`
+status: fixed
+fixed_by: task-128-content-checks-v2-and-the-maintainer-s-rubric-bug-026
 tags: ["v0.3"]
 ---
 
