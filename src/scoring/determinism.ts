@@ -16,8 +16,16 @@ const LEFT_OUT = /(\.d\.[cm]?ts$)|(\.(test|spec)\.[cm]?tsx?$)/;
 
 /** M-R2's and M-R3's inputs in `score.json` (task-042), on the final snapshot; or that it was not reached. */
 export type DeterminismScore =
-  | { readonly interface: readonly string[]; readonly paths: readonly string[] }
+  | {
+      readonly interface: readonly string[];
+      /** M-R2's version (REQ-SCO-07 as amended in 1.49, task-129): 2, the interface from the entry point. */
+      readonly interface_version: 2;
+      readonly paths: readonly string[];
+    }
   | { readonly not_reached: true };
+
+/** The version of M-R2 every new score computes (task-129); a `score.json` with none recorded is version 1. */
+export const INTERFACE_VERSION = 2;
 
 function byCodeUnit(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;

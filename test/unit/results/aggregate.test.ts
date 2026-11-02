@@ -354,6 +354,8 @@ describe('aggregateExecution (F5.1, REQ-FMT-07)', () => {
             { runs: [runs[0], runs[2]], intersection: 2, union: 2 },
             { runs: [runs[1], runs[2]], intersection: 1, union: 3 },
           ],
+          // A score.json that records no M-R2 version is version 1 (task-129)
+          version: 1,
         },
         m_r3: {
           mean: 0.8333,

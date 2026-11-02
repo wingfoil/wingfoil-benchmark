@@ -122,11 +122,13 @@ export interface Group {
 }
 
 /** The pins M-R compares, each recorded per run: every other pin is the execution's own (task-042). */
-export type RecordedPin = 'scenario_hash' | 'harness_commit' | 'scorer';
+export type RecordedPin = 'scenario_hash' | 'harness_commit' | 'scorer' | 'm_r2_version';
 
 /** A pairwise Jaccard similarity: each pair of runs as integers, and the mean of their ratios. */
 export interface Similarity {
   readonly mean: number;
+  /** M-R2's version, 1 or 2 (REQ-SCO-07 as amended in 1.49, task-129); absent on M-R3. */
+  readonly version?: number;
   readonly pairs: readonly {
     readonly runs: readonly [string, string];
     readonly intersection: number;
@@ -426,7 +428,12 @@ const scoreSchema = z.object({
   determinism: z
     .union([
       z.object({ not_reached: z.literal(true) }),
-      z.object({ interface: z.array(z.string()), paths: z.array(z.string()) }),
+      z.object({
+        interface: z.array(z.string()),
+        // M-R2's version (task-129); absent before it: version 1.
+        interface_version: z.number().int().optional(),
+        paths: z.array(z.string()),
+      }),
     ])
     .optional(),
   scorer: z.record(z.string(), z.string()).optional(),
@@ -664,7 +671,15 @@ const PINS_COMPARED: readonly [RecordedPin, (run: MRRun) => string][] = [
   ['scenario_hash', (run) => run.score.scenario_hash],
   ['harness_commit', (run) => run.harnessCommit ?? ''],
   ['scorer', (run) => canonicalJson(run.score.scorer ?? {})],
+  // M-R2's version (REQ-SCO-07 as amended in 1.49, task-129): values of different versions are never compared.
+  ['m_r2_version', (run) => String(mR2Version(run))],
 ];
+
+/** The M-R2 version a run was scored with: the one its `score.json` records, 1 when it records none. */
+function mR2Version(run: MRRun): number {
+  const determinism = run.score.determinism;
+  return determinism === undefined || 'not_reached' in determinism ? 1 : (determinism.interface_version ?? 1);
+}
 
 function sideOf(runs: readonly MRRun[]): { side: MRSide; reached: MRRun[] } {
   const reached = runs.filter((run) => !('not_reached' in run.score.final));
@@ -699,7 +714,10 @@ export function mRAcross(earlier: readonly MRRun[], newer: readonly MRRun[]): MR
     ...(m_r1 === undefined ? {} : { m_r1 }),
     ...(measured
       ? {
-          m_r2: crossSimilarity(a.reached, b.reached, (run) => inputOf(run).interface),
+          m_r2: {
+            ...crossSimilarity(a.reached, b.reached, (run) => inputOf(run).interface),
+            version: mR2Version(pooled[0] as MRRun),
+          },
           m_r3: crossSimilarity(a.reached, b.reached, (run) => inputOf(run).paths),
         }
       : {}),
@@ -732,7 +750,10 @@ function mROf(runs: readonly ScoredRun[]): MRAggregate {
     ...(measured === undefined
       ? {}
       : {
-          m_r2: similarity(base.runs, measured.map((input) => input.interface)),
+          m_r2: {
+            ...similarity(base.runs, measured.map((input) => input.interface)),
+            version: mR2Version(reached[0] as MRRun),
+          },
           m_r3: similarity(base.runs, measured.map((input) => input.paths)),
         }),
   };

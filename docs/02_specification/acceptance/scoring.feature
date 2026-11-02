@@ -70,6 +70,19 @@ Feature: Scoring runs with defined, reproducible metrics
     And M-R3 is the mean pairwise Jaccard similarity of the file-path sets, excluding generated and harness files
     And no threshold of equivalence is applied
 
+  @F4.5
+  Scenario: M-R2 v2 compares the interface the entry point exposes
+    Given two runs whose src/index.ts re-exports the same functions from different modules
+    Then M-R2 is 1
+    Given two runs with the same files exposing different functions
+    Then M-R2 is below 1
+    And a module the entry point does not reach is not counted
+    And each value records version 2
+    Given a run with no src/index.ts
+    Then its interface is "(no entry point)"
+    Given a reached module that does not parse
+    Then its entry is "<file>: (does not parse)"
+
   @F4.5 @error
   Scenario: Determinism is not computed from a single repetition
     Given 1 completed repetition of S2 in the wingfoil arm

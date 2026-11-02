@@ -20,7 +20,7 @@ import type { SuiteReport, TestResult } from './hidden-tests.js';
 import type { ScoringImage } from './image.js';
 import { measuredFiles, qualityInContainer } from './quality.js';
 import type { MQ2Score, QualityRunner } from './quality.js';
-import { determinismPaths, interfaceFiles } from './determinism.js';
+import { determinismPaths, INTERFACE_VERSION, interfaceFiles } from './determinism.js';
 import type { DeterminismScore } from './determinism.js';
 import { interfaceInContainer } from './interface.js';
 import type { InterfaceRunner } from './interface.js';
@@ -313,7 +313,9 @@ async function determinismOf(
     setupPatch: existsSync(patch) ? readFileSync(patch, 'utf8') : '',
   });
   const files = interfaceFiles(paths);
-  if (files.length === 0) return ok({ interface: [], paths });
+  // No TypeScript source, so no entry point: M-R2 v2's interface without a container (REQ-SCO-07 as amended in 1.49).
+  if (files.length === 0)
+    return ok({ interface: ['(no entry point)'], interface_version: INTERFACE_VERSION, paths });
   const run =
     request.interfaces ??
     interfaceInContainer({
@@ -323,7 +325,7 @@ async function determinismOf(
     });
   const entries = await run({ snapshot, files });
   if (!entries.ok) return entries;
-  return ok({ interface: entries.value, paths });
+  return ok({ interface: entries.value, interface_version: INTERFACE_VERSION, paths });
 }
 
 /** Scores a group of suites on a run's snapshots: every step bound to one, then the final snapshot. */

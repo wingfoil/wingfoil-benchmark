@@ -7,9 +7,9 @@ import { main } from '../../src/cli/index.js';
 import { gitCli, systemProcess } from '../../src/core/index.js';
 import type { ContentCheck } from '../../src/core/index.js';
 import { loadScenario } from '../../src/scenario/index.js';
-import { breakEvenEntry, mK3Of } from '../../src/results/index.js';
+import { breakEvenEntry, mK3Of, mRAcross } from '../../src/results/index.js';
 import type { BreakEvenRun } from '../../src/results/index.js';
-import { scoreChecks } from '../../src/scoring/index.js';
+import { interfaceInContainer, scoreChecks } from '../../src/scoring/index.js';
 import { localScoringDocker } from '../support/local-scoring.js';
 import { repoPath } from '../support/paths.js';
 import { referenceFiles, referenceRun } from '../support/reference.js';
@@ -509,7 +509,8 @@ describe('scoring.feature', { timeout: 120_000 }, () => {
     // And M-R2 is the mean pairwise Jaccard similarity of the public interfaces — r2 changed one export
     const [r1] = scores as [{ determinism: { interface: string[] } }];
     expect(r1.determinism.interface).toContain(
-      'src/merge-patch.ts: export function applyMergePatch(target: unknown, patch: unknown): unknown;',
+      // M-R2 v2 (task-129): the name src/index.ts re-exports, with no file path
+      'applyMergePatch: function applyMergePatch(target: unknown, patch: unknown): unknown;',
     );
     const k = r1.determinism.interface.length;
     const pairs = (m.m_r2 as Jaccard).pairs;
@@ -771,5 +772,85 @@ describe('content checks v2 (REQ-SCO-06 as amended in 1.49, task-128)', () => {
     expect(await scored(true, { step: base, commits: [hook, own], hookCommits: ['h00k'] })).toEqual([
       { n: 1, passed: true, where: { commit: 2 } },
     ]);
+  });
+});
+
+describe('M-R2 v2 (REQ-SCO-07 as amended in 1.49, task-129)', { timeout: 120_000 }, () => {
+  /** A final snapshot of `files`, its interface read by the scoring image's runner (here on this machine). */
+  async function interfaceOf(files: Readonly<Record<string, string>>): Promise<string[]> {
+    const snapshot = tempDir('bench-mr2-');
+    for (const [path, text] of Object.entries(files)) {
+      mkdirSync(dirname(join(snapshot, path)), { recursive: true });
+      writeFileSync(join(snapshot, path), text);
+    }
+    const run = interfaceInContainer({
+      docker: localScoringDocker(),
+      image: 'local',
+      containerPrefix: 'mr2',
+    });
+    const read = await run({ snapshot, files: Object.keys(files).filter((path) => path.endsWith('.ts')) });
+    if (!read.ok) throw new Error(JSON.stringify(read.issues));
+    return read.value;
+  }
+  /** M-R2 of two runs with these interfaces, as the aggregate computes it, with its version. */
+  function mR2(a: string[], b: string[]) {
+    const run = (name: string, entries: string[]) => ({
+      name,
+      score: {
+        scenario_hash: 'sha256:s',
+        scorer: { image: 'bench-score:x' },
+        final: { step: 1, suites: [] },
+        determinism: { interface: entries, interface_version: 2, paths: [] },
+      },
+    });
+    return mRAcross([run('r1', a)], [run('r2', b)]).m_r2;
+  }
+  const ADD = 'export function add(a: number, b: number): number {\n  return a + b;\n}\n';
+  const SUB = 'export function sub(a: number, b: number): number {\n  return a - b;\n}\n';
+
+  it('@F4.5 M-R2 v2 compares the interface the entry point exposes', async () => {
+    // Given two runs whose src/index.ts re-exports the same functions from different modules
+    const one = await interfaceOf({
+      'src/index.ts': "export * from './math.js';\n",
+      'src/math.ts': ADD + SUB,
+    });
+    const two = await interfaceOf({
+      'src/index.ts': "export { add } from './add';\nexport * from './ops/index.js';\n",
+      'src/add.ts': ADD,
+      'src/ops/index.ts': SUB,
+    });
+    // Then M-R2 is 1
+    expect(one).toEqual([
+      'add: function add(a: number, b: number): number;',
+      'sub: function sub(a: number, b: number): number;',
+    ]);
+    expect(mR2(one, two)).toMatchObject({ mean: 1, version: 2 });
+
+    // Given two runs with the same files exposing different functions — Then M-R2 is below 1
+    const other = await interfaceOf({
+      'src/index.ts': "export { add } from './math.js';\n",
+      'src/math.ts': ADD + SUB,
+    });
+    expect(other).toEqual(['add: function add(a: number, b: number): number;']);
+    expect(mR2(one, other)?.mean).toBe(0.5);
+
+    // And a module the entry point does not reach is not counted
+    const unreached = await interfaceOf({
+      'src/index.ts': "export * from './math.js';\n",
+      'src/math.ts': ADD + SUB,
+      'src/extra.ts': 'export const extra = 1;\n',
+    });
+    expect(unreached).toEqual(one);
+
+    // And each value records version 2 — above; Given a run with no src/index.ts, Then "(no entry point)"
+    expect(await interfaceOf({ 'src/math.ts': ADD })).toEqual(['(no entry point)']);
+
+    // Given a reached module that does not parse — Then its entry is "<file>: (does not parse)"
+    expect(
+      await interfaceOf({
+        'src/index.ts': "export * from './broken.js';\n",
+        'src/broken.ts': 'export function (\n',
+      }),
+    ).toEqual(['src/broken.ts: (does not parse)']);
   });
 });

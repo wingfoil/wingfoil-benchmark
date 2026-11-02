@@ -150,7 +150,7 @@ describe('scoreRun (F4.1, REQ-SCO-01–03)', () => {
         m_q2: { measured: ['src/orders.ts'], coverage_targets: ['src/orders.ts'], ...QUALITY },
         // M-R2's and M-R3's inputs (task-042): the final snapshot's interface, as the image's
         // interface.mjs said, and its paths, less the setup's CLAUDE.md.
-        determinism: { interface: INTERFACE, paths: ['README.md', 'src/orders.ts'] },
+        determinism: { interface: INTERFACE, interface_version: 2, paths: ['README.md', 'src/orders.ts'] },
         // Not marked (F3.6): the key is there, so aggregation never infers it from an absent one.
         expected_failure: null,
         // M-K1 and M-K2 (F4.3): their own tests are in cost.test.ts.
@@ -721,8 +721,10 @@ describe('determinism in score.json (M-R2, M-R3, task-042)', () => {
       steps: [{ 'src/orders.ts': null, 'NOTES.md': 'Notes.\n', 'package-lock.json': '{}\n' }, {}],
     });
     const { result, recorded } = await score(fixture);
+    // No TypeScript source, so no entry point (M-R2 v2, task-129)
     expect(result.ok && result.value.determinism).toEqual({
-      interface: [],
+      interface: ['(no entry point)'],
+      interface_version: 2,
       paths: ['NOTES.md', 'README.md'],
     });
     expect(recorded.execs.some((exec) => exec.command.some((part) => part.includes('interface.mjs')))).toBe(
@@ -743,7 +745,7 @@ describe('determinism in score.json (M-R2, M-R3, task-042)', () => {
       'node',
       '/opt/score/interface.mjs',
       'snapshot',
-      JSON.stringify(['src/orders.ts']),
+      '--v2',
     ]);
     const create = recorded.creates.find((request) => request.name.endsWith('-interface'));
     expect(create).toMatchObject({ readOnly: [] });
