@@ -2,7 +2,7 @@
 id: task-127-adopt-methodology-kanban-1.0.0-with-base-2-and-software-1-keeping-the-benchmark-s-delivery-rules-bug-046
 type: task
 title: "Adopt methodology/kanban 1.0.0 with base@^2 and software@^1, keeping the benchmark's delivery rules (bug-046)"
-status: pending
+status: backlog
 release: v0.4
 wave: W20
 features: []          # e.g. [F1.1, F3.1]
