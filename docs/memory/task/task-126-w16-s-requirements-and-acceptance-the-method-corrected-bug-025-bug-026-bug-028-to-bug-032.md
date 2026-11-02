@@ -113,8 +113,11 @@ and headline counts within the variance),
     value, its quality's outcome "within the variance"; Given its M-Q1 lower beyond the variance, Then "not
     applicable", reason `quality`; Given n < 3 and a lower M-Q1 mean, Then "not applicable", preliminary; Given the
     same M-Q1 and step costs within the variance, Then "not applicable", reason `saving within variance`; Given equal
-    step-cost means, or a step cost higher beyond the variance, or n < 3 and a higher one, Then "never"; Given n < 3
-    and a lower step cost, Then the value, its step cost's outcome preliminary; And each entry records both outcomes.
+    step-cost means, or a step cost higher beyond the variance, or n < 3, an M-Q1 mean not lower and a higher step
+    cost, Then "never"; Given n < 3, an M-Q1 mean not lower and a lower step cost, Then the value, its step cost's
+    outcome preliminary; Given three runs a side, one of the arm's reaching no step, Then the step-cost comparison
+    reads the other two, its `n` is 2 and its outcome preliminary; Given a side none of whose runs reached a step,
+    Then "not applicable", reason `not measured`; And each entry records both outcomes, each with its runs and `n`.
     — "M-K3 is the one-off cost per scenario version and harness": Given a configured arm whose configuration cost is
     recorded once and three runs' setup costs, Then M-K3 is the configuration's cost plus their mean.
   - `results.feature`, @F5.5 — "A difference is marked only beyond the variance": Given two arms with overlapping

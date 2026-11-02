@@ -200,8 +200,8 @@ Two goals cut across all categories:
 
   It is defined only when the arm's quality is not worse than the baseline's on M-Q1. Otherwise it
   is reported as "not applicable"; from v0.3 (1.7,
-  [bug-029](../memory/bug/bug-029-m-k3-is-always-zero-and-m-k4-s-not-applicable-ignores-the-variance.md)), the
-  variance is taken into account on both conditions (1.11): "not applicable" only when the quality is worse beyond
+  [bug-029](../memory/bug/bug-029-m-k3-is-always-zero-and-m-k4-s-not-applicable-ignores-the-variance.md)) the
+  variance is taken into account, on both conditions (1.11): "not applicable" only when the quality is worse beyond
   the variance, or preliminary and lower.
   When the arm's step cost is not lower, it is reported as "never"; from 1.11, when it is the same, or higher beyond
   the variance, or preliminary and higher. A step-cost difference within the variance is reported as "not
