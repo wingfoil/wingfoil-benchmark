@@ -14,17 +14,23 @@ tags: ["v0.3","specification","w16"]
 
 ## Context
 
-[plan-005](../../plans/plan-005-release-v0-3.md)'s W16, "The method corrected": its requirements and acceptance first (delivery order
-item 2), then one task per bug group. The experiment design already states the rules ([task-103](task-103-the-v0-3-vision-and-experiment-design-amendments.md): the variance rule for ▲/▼, headline counts and M-K4); this task carries them, and the other
-fixes the retrospective's bugs ask, into `requirements.md` and the acceptance features, so that each later task
-starts from a stated, red-first criterion. The approver asked to start W16 in chat (2026-11-02). A specification
-change: no code, no real-agent session.
+[plan-005](../../plans/plan-005-release-v0-3.md)'s W16, "The method corrected": its requirements and acceptance first
+(delivery order item 2), then one task per bug group. The experiment design already states the rules
+([task-103](task-103-the-v0-3-vision-and-experiment-design-amendments.md): the variance rule for ▲/▼, headline counts
+and M-K4); this task carries them, and the other fixes the retrospective's bugs ask, into `requirements.md` and the
+acceptance features, so that each later task starts from a stated, red-first criterion. The approver asked to start
+W16 in chat (2026-11-02). A specification change: no code, no real-agent session.
 
-The bugs: [bug-025](../bug/bug-025-s1-1-0-s-step-5-leaves-createpatch-s-diff-ambiguous-and-its-result-is-bimodal-in-every-arm.md) (S1 1.0's bimodal step 5),
-[bug-026](../bug/bug-026-the-oracle-s-content-checks-match-substrings-and-template-text-not-the-agent-s-own-words.md) (content checks match substrings and template text),
+The bugs:
+[bug-025](../bug/bug-025-s1-1-0-s-step-5-leaves-createpatch-s-diff-ambiguous-and-its-result-is-bimodal-in-every-arm.md)
+(S1 1.0's bimodal step 5),
+[bug-026](../bug/bug-026-the-oracle-s-content-checks-match-substrings-and-template-text-not-the-agent-s-own-words.md)
+(content checks match substrings and template text),
 [bug-028](../bug/bug-028-m-r2-measures-the-file-layout-not-the-public-interface.md) (M-R2 measures the layout),
-[bug-029](../bug/bug-029-m-k3-is-always-zero-and-m-k4-s-not-applicable-ignores-the-variance.md) (M-K3 always zero; M-K4's "not applicable" ignores the variance),
-[bug-030](../bug/bug-030-the-up-and-down-marks-and-the-headline-counts-flag-differences-within-the-variance.md) (▲/▼ and headline counts within the variance),
+[bug-029](../bug/bug-029-m-k3-is-always-zero-and-m-k4-s-not-applicable-ignores-the-variance.md) (M-K3 always zero;
+M-K4's "not applicable" ignores the variance),
+[bug-030](../bug/bug-030-the-up-and-down-marks-and-the-headline-counts-flag-differences-within-the-variance.md) (▲/▼
+and headline counts within the variance),
 [bug-031](../bug/bug-031-findings-cite-the-v0-2-2-template-through-template-commit.md) (`TEMPLATE_COMMIT`),
 [bug-032](../bug/bug-032-an-interrupted-or-killed-step-loses-the-cost-it-spent.md) (an interrupted step's cost).
 
@@ -81,14 +87,16 @@ The bugs: [bug-025](../bug/bug-025-s1-1-0-s-step-5-leaves-createpatch-s-diff-amb
   - `scoring.feature`, @F4.7 — "A v2 content check reads whole words in the agent's own text": Given a check with
     `match: words` for "revised", When a step adds "unrevised" to a source file, a template line containing "revised"
     to a document `wingfoil memory add` created, and "D3 revised" to the seed's README, Then only the README line
-    counts and the check passes; And a commit message of the runner's saying "revised" does not count. — "The
+    counts and the check passes; And a `wf(…)` commit message the harness generated saying "revised", or a
+    front-matter line `status: revised`, does not count. — "The
     maintainer's judgement is shown beside a content check's verdict": Given `judgements.json` holds a judgement for a
     check at a step of a run, When the site is built, Then the verdict and the judgement are shown together and a
     disagreement is counted.
   - `scoring.feature`, @F4.5 — "M-R2 v2 compares the interface the entry point exposes": Given two runs whose
     `src/index.ts` re-exports the same functions from different modules, Then M-R2 is 1; Given two runs with the same
     files exposing different functions, Then it is below 1; And a module the entry point does not reach is not
-    counted; And each value records version 2.
+    counted; And each value records version 2; Given a run with no `src/index.ts`, Then its interface is
+    `(no entry point)`.
   - `scoring.feature`, @F4.4 — "Break-even is not applicable only when quality is worse beyond the variance": Given an
     arm whose final M-Q1 is lower within the variance (n ≥ 3 a side), Then break-even is computed or "never", marked
     "within variance"; Given it lower beyond the variance, Then "not applicable"; Given n < 3 and a lower mean, Then
@@ -100,7 +108,8 @@ The bugs: [bug-025](../bug/bug-025-s1-1-0-s-step-5-leaves-createpatch-s-diff-amb
     it so; Given n < 3, Then "preliminary", no symbol, counted apart; Given equal means, Then "the same". The same on
     the category, profile, comparison (`comparison.feature`, @F5.7), across-agents and parity pages.
   - `results.feature`, @F5.4 — "A finding cites the template of the WingFoil the campaign pinned": Given an execution
-    pinning WingFoil v0.3.1, When a finding is exported, Then it cites 0.3.1's template, not the constant v0.3.0's.
+    pinning WingFoil v0.3.1, When a finding is exported, Then it cites 0.3.1's template, not the constant v0.3.0's;
+    Given a bridge whose arms ran two versions, Then each arm's is named; Given no WingFoil, Then none.
   - `runner.feature`, @F2.3 — "A step that ends with no result event is counted at its bound": Given a Claude Code step
     killed before its result event, Then its cost is its bound with `cost_reported: false`; Given the runner
     interrupted during a step, Then the step is recorded `interrupted` at its bound; Given a dry run interrupted, Then
@@ -142,3 +151,15 @@ checkouts unchanged; docs and traceability tests green). Two blockers and nine s
 | S8 | several WingFoil versions; no WingFoil; the constant is v0.3.0 | fixed |
 | S9 | the M-K4 history misstated | fixed: bug-029's Resolution and Expected disagree, and this task takes the Resolution |
 | N | link lines with prose, a duplicated id, missing scenario cases | fixed where in this task |
+
+**Round 2** (2026-11-02, a fresh read-only agent in `/tmp/claude-1000/review2-126-SVLu`, a clone of `67c94498`; both
+checkouts unchanged), on `b9b65b97..67c94498`: B2 and S2–S9 resolved, B1's core resolved. Three should-fix, fixed:
+REQ-SCO-06 still counted text the harness's commands write (front-matter states, `wf(…)` commit messages): excluded,
+by the approver's "template and harness text excluded" (**for the approver to confirm at the gate**); its commit
+filter contradicted the 1.1 scenarios, where the agent's identity is the Benchmark Approver: now the verdict hook's
+commits under a separate approver (1.44) are the ones left out; REQ-SCO-07's entry point is the scenario's required
+`src/index.ts`, never `main`/`exports`, with `(no entry point)` and `(does not parse)` stated. Nits fixed: whitespace
+folded within a line only; overloads, `export * as ns`, `default`, `.js` specifiers; M-K3's runs and the certainty
+of the quality comparison; 1.20's preliminary list dropped; REQ-RUN-09 per invocation, status against cost; the
+Design's scenarios (a harness commit, no entry point, a bridge); criterion 3's reading; the long context line.
+
