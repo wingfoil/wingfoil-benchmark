@@ -69,11 +69,12 @@ and headline counts within the variance),
 
 - **Requirements 1.49** amend REQ-SCO-05, REQ-SCO-06, REQ-SCO-07, REQ-SCO-08, REQ-RES-03, REQ-RES-05 and REQ-RUN-09,
   each by the approver's decision recorded in its bug (2026-10-23): content checks on whole words over the agent's own
-  text, less the templates the setup installs (the approver's reading of 2026-11-02), with a rubric and a human judgement (`match: words`, `oracle/rubric.md`,
-  `judgements.json`); M-R2 v2 resolved from the entry point; M-K3 as one-off costs per scenario version and harness;
-  M-K4 "not applicable" only beyond the variance; ▲/▼ and the headline only beyond the variance; the template read from
-  the campaign's pin. REQ-RUN-09 keeps REQ-RUN-19's kill at the bound and fixes what bug-032 lists (a step ending with
-  no result event never zero; an interruption recorded `interrupted`).
+  text, less the templates the setup installs (the approver's reading of 2026-11-02), with a rubric and a human
+  judgement (`match: words`, `oracle/rubric.md`, `judgements.json`); M-R2 v2 resolved from the entry point; M-K3 as
+  one-off costs per scenario version and harness; M-K4 "not applicable" only beyond the variance; ▲/▼ and the headline
+  only beyond the variance; the template read from the campaign's pin. REQ-RUN-09 keeps REQ-RUN-19's kill at the bound
+  and fixes what bug-032 lists (a step ending with no result event never zero; an interruption recorded
+  `interrupted`).
 - **The two points experiment design 1.7 left to W16.** M-K4's variance applies to its **quality condition**, as
   bug-029's Resolution (the approver's decision: "not applicable only beyond the variance") reads; its Expected reads
   the step-cost difference instead, and task-103's review leaned to that reading, so 1.7 left it open (task-103.md,
