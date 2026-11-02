@@ -46,6 +46,9 @@ observed in a run. The approver asked for its task in chat (2026-11-01). Placed 
 - Red first: the four new cases (a last non-blank line, stderr over stdout, the 500-character cut, an exec that
   throws) failed before the change; the empty-stderr case passed before and after (it characterizes no `detail`).
 
+- **Full suites** (2026-11-02, `d204cff2`, under the load watcher): LINT 0, TEST 0 (2002 passed, 9 skipped), BUILD 0,
+  BIN 0, DOCKER 0.
+
 ### Review
 
 **Round 1** (2026-11-01, a fresh read-only agent in `/tmp/claude-1000/review-123-MWVS`, a clone of `3324dfe0`; both
