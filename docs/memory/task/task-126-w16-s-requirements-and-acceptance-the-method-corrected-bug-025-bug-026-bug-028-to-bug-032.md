@@ -71,7 +71,8 @@ and headline counts within the variance),
   each by the approver's decision recorded in its bug (2026-10-23): content checks on whole words over the agent's own
   text, less the templates the setup installs (the approver's reading of 2026-11-02), with a rubric and a human
   judgement (`match: words`, `oracle/rubric.md`, `judgements.json`); M-R2 v2 resolved from the entry point; M-K3 as
-  one-off costs per scenario version and harness; M-K4 "not applicable" only beyond the variance; ▲/▼ and the headline
+  one-off costs per scenario version and harness; M-K4 "not applicable" when worse beyond the variance, or preliminary
+  below three runs a side; ▲/▼ and the headline
   only beyond the variance; the template read from the campaign's pin. REQ-RUN-09 keeps REQ-RUN-19's kill at the bound
   and fixes what bug-032 lists (a step ending with no result event never zero; an interruption recorded
   `interrupted`).
@@ -87,9 +88,10 @@ and headline counts within the variance),
 - **The scenarios, drafted** for the tasks that implement them (each adds its scenario to the `.feature` with its test,
   red first, and names it in `acceptance` as `<file>#<title>`):
   - `scoring.feature`, @F4.7 — "A v2 content check reads whole words in the agent's own text": Given a check with
-    `match: words` for "revised", When a step adds "unrevised" to a source file, a template line containing "revised"
-    to a document `wingfoil memory add` created, and "D3 revised" to the seed's README, Then only the README line
-    counts and the check passes; And in a scenario with a separate approver, a commit the verdict hook made saying
+    `match: words` for "revised" and a fixture whose `setup/diff.patch` adds a template holding a line "Mark it revised",
+    When a step adds "unrevised" to a source file, the same line "Mark it revised" to a new document, a front-matter
+    line `title: D3 revised` and "D3 revised" to the seed's README, Then the template line does not count, the title
+    and the README line do, and the check passes; And in a scenario with a separate approver, a commit the verdict hook made saying
     "revised" does not count, while the agent's own `Reason: D3 revised` in a verb's commit does. — "The
     maintainer's judgement is shown beside a content check's verdict": Given `judgements.json` holds a judgement for a
     check at a step of a run, When the site is built, Then the verdict and the judgement are shown together and a
@@ -99,7 +101,8 @@ and headline counts within the variance),
     files exposing different functions, Then it is below 1; And a module the entry point does not reach is not
     counted; And each value records version 2; Given a run with no `src/index.ts`, Then its interface is
     `(no entry point)`; Given a reached module that does not parse, Then its entry is `<file>: (does not parse)`.
-  - `scoring.feature`, @F4.4 — "Break-even is not applicable only when quality is worse beyond the variance": Given an
+  - `scoring.feature`, @F4.4 — "Break-even is not applicable when quality is worse beyond the variance, or
+    preliminary": Given an
     arm whose final M-Q1 is lower within the variance (n ≥ 3 a side), Then break-even is computed or "never", marked
     "within variance"; Given it lower beyond the variance, Then "not applicable"; Given n < 3 and a lower mean, Then
     "not applicable", preliminary. — "M-K3 is the one-off cost per scenario version and harness": Given a configured
@@ -175,4 +178,11 @@ manages". REQ-SCO-07's entry point is `src/index.ts`, a constant (a scenario wou
 `scenario.yaml`). Nits fixed: commits matched by sha; directory, extensionless and local re-export specifiers;
 unresolved specifiers and unparsable modules; two runs with no entry point agree; M-K4's "not applicable" wording;
 the Design's cases (the hook's commits, a `Reason:`, `(does not parse)`).
+
+**Round 4** (2026-11-02, a fresh read-only agent in `/tmp/claude-1000/review4-126-H0Pg`, a clone of `14eef7b0`; both
+checkouts unchanged). REQ-SCO-06 states the approver's choice harness-neutrally; on stored wingfoil runs the template
+rule removes, line for line, the scaffold comment that made v1 match (bug-026). One should-fix: the Design and the
+M-K4 scenario's title still said "only" while listing the preliminary case: fixed. Nits fixed: front matter counts
+except its lines equal to a setup line; "the reason the agent gave to a harness command" for `Reason:`; "the lines
+the arm's setup added"; the content-check scenario's fixture made explicit, with a `title:` that counts.
 
