@@ -140,6 +140,15 @@ describe('the step-A wingfoil manual (dl-021 step A, task-114)', () => {
     expect(text).toMatch(/never run `wingfoil memory approve` or `wingfoil memory reject` yourself/);
   });
 
+  it('opens a new instance and continues from the second finalize, with no workflow next after it (bug-045)', () => {
+    const text = manual('wingfoil').replace(/\s+/g, ' ');
+    expect(text).not.toContain('then `wingfoil workflow next` again');
+    expect(text).toContain(
+      '`wingfoil workflow finalize` twice (this project is already past its inception and specification), then ' +
+        'continue from the next step the second `finalize` printed.',
+    );
+  });
+
   it('continues from what finalize printed, workflow next where it has nothing current (bug-044)', () => {
     const text = manual('wingfoil').replace(/\s+/g, ' ');
     expect(text).not.toContain('Run `wingfoil workflow next` again after each step');

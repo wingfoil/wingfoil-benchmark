@@ -40,7 +40,8 @@ For each request, in this order:
 - **A new instance for a new request.** If the next step is `sw-life-cycle.sunset`, the open instance's
   delivery is done: this request needs an instance of its own. Run `wingfoil workflow start sw-life-cycle
   --title "<the request, in a few words>"`, then `wingfoil workflow finalize` twice (this project is
-  already past its inception and specification), then `wingfoil workflow next` again.
+  already past its inception and specification), then continue from the next step the second `finalize`
+  printed.
 - **Act in the step's role, with its context.** Read it through the command line: the role's rules with
   `wingfoil directives list --role <role>`, then each file it lists; the decisions already taken with
   `wingfoil memory search --type decision-log --status approved`; the document the step works on, its

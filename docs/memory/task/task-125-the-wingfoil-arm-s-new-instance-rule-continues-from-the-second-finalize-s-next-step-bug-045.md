@@ -2,7 +2,7 @@
 id: task-125-the-wingfoil-arm-s-new-instance-rule-continues-from-the-second-finalize-s-next-step-bug-045
 type: task
 title: "The wingfoil arm's new-instance rule continues from the second finalize's next step (bug-045)"
-status: in-progress
+status: approved
 release: v0.3
 wave: W17
 features: [F2.7]
@@ -30,9 +30,32 @@ in chat (2026-11-02). Placed in v0.3, W17. No real-agent session; the next campa
 
 ## Design
 
-<!-- The rule's sentence; the digest. -->
+- `arms/wingfoil/manual.md`, *A new instance for a new request*: "… then `wingfoil workflow finalize` twice (this
+  project is already past its inception and specification), then continue from the next step the second `finalize`
+  printed." Nothing else of the manual changes; the rule *Until the delivery is recorded* (task-124) already covers
+  what follows.
+- The arm's digest: `2c39a14f3f91` → `62bcf64e6dde`; baseline and baseline-docs unchanged.
+  `campaigns/s10-calibration.dry-run.yaml` pins it (it follows the tree); campaign-008's files keep `cc009b5a52a9`.
 
 ## Execution notes
 
-<!-- What happened while building: deviations, blockers, follow-ups (filed as elements, never left
-     here). For every `wingfoil` command: declared vs observed behaviour. -->
+- Red first: the manual's test failed on the old rule and passes on the new; the arms' tests and S10's profile test
+  pass (94 and 2).
+- Checks: prettier on the changed files, `tsc`, eslint, `scripts/pre-review.sh main`: green.
+- **For the next campaign** (the review's observation, nothing to change here): on 0.3.1 a new instance's second
+  `finalize` prints the delivery's **build** step, not plan: the earlier request's approved task already meets plan's
+  evidence. The rule *Every request has its task* then has the agent add and submit its own task before building; the
+  next campaign should see whether the weaker models follow it there. The old rule landed on the same step.
+
+- **Full suites** (2026-11-02, `798acd3e`, under the load watcher): LINT 0, TEST 0 (2004 passed, 9 skipped), BUILD 0,
+  BIN 0, DOCKER 0.
+
+### Review
+
+**Round 1** (2026-11-02, a fresh read-only agent in `/tmp/claude-1000/review-125-V1qg`, a clone of `d1af69a2`; both
+checkouts unchanged). On 0.3.1's Kanban scaffold it took a first instance to its sunset, then followed the rule
+literally: the second `finalize`'s next-step block equals `next`'s (diffed); with two instances open, `finalize` and
+`next` act on the new, active one. Digests, the red-first test and the Design confirmed. No blocker, no should-fix;
+nits: bug-045's "the delivery's first step" is build on 0.3.1 (acceptable), the checks not yet in the notes (added),
+the calibration note's historical sentence about `next` (out of scope, left).
+
