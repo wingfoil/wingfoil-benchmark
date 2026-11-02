@@ -205,21 +205,43 @@ Scenario S8 gives four project rules, published as the wingfoil arm's [directive
 
 **M-K1, cost:** input, output and cache tokens, and the cost in euro as if paid at API prices, whatever the actual billing. **M-K2:** wall time, turns and interventions. {#m-k1-k2}
 
-**M-K3, setup cost:** the setup's usage, cost and wall time, and the size of the operating manual in tokens. In v0.1 no setup runs the agent, so its cost is 0. {#m-k3}
+**M-K3, one-off cost:** what an arm pays once for a scenario version: the cost of writing its configuration (the
+configured variants, from v0.3's W18; none is recorded before) plus the mean setup cost of the arm's runs of that
+version, on every model; a run whose setup was not recorded is left out, and an arm with neither has 0. Each run also
+records its setup's usage, cost and wall time, and the size of the operating manual in tokens. In v0.1 and v0.2 no setup
+runs the agent, so its cost is 0. {#m-k3}
 
-**M-K4, break-even:** how many steps it takes for an arm's setup cost to pay for itself through cheaper steps. Each arm other than the baseline, baseline-docs included, is paired with the baseline of the same scenario version and model. The rules are applied in this order: {#m-k4}
+**M-K4, break-even:** how many steps it takes for an arm's one-off cost (M-K3) to pay for itself through cheaper steps.
+Each arm other than the baseline, baseline-docs included, is paired with the baseline of the same scenario version and
+model, and compared with it twice, by the rule of the comparisons below: on its *quality*, each run's final M-Q1 (a
+final not reached counts as 0), and on its *step cost*, each run's mean step cost (a killed step counted at its bound; a
+run with no reached step left out). From v0.3 the rules are applied in this order: {#m-k4}
 
-- "not applicable" when the arm's mean final M-Q1 is lower than the baseline's (a final not reached counts as 0);
-- otherwise "never" when the arm's mean step cost is not lower (a killed step counted at its bound);
-- otherwise the arm's mean setup cost divided by the difference in mean step cost.
+- "not applicable" (quality) when the arm's quality is worse beyond the variance, or preliminary with a lower mean;
+- "not applicable" (not measured) when a side has no run that reached a step;
+- "never" when its step cost is the same, higher beyond the variance, or preliminary with a higher mean;
+- "not applicable" (saving within variance) when its step cost is within the variance: a saving that cannot be told
+  from noise is not divided by;
+- otherwise M-K3 divided by the difference of the two mean step costs.
 
-An expected failure is computed from what it measured. In v0.1 a number is always 0, or one of the two special cases: the setup costs nothing, and the harness's overhead is in each step's cost, since every new session reads the manual again.
+Both comparisons are recorded with each entry, with their runs and `n`. An expected failure is computed from what it
+measured. **Erratum:** the published executions before v0.3 computed M-K4 by the 1.15 rule, a pooled mean step cost and
+no variance (not applicable when the mean M-Q1 was lower, never when the step cost was not lower); their values stay as
+published, and re-scoring them computes the rule above. {#m-k4-erratum}
 
 **Determinism** (M-R1 to M-R3) compares repetitions of the same arm, scenario and pins. In v0.1 only S1 has repetitions (three).
 
 **M-R1, outcome agreement:** the share of the final snapshot's public hidden tests that get the same verdict in every repetition. Hold-out tests do not enter it. {#m-r1}
 
-**M-R2, interface similarity:** how alike the repetitions' public interfaces are. The interface is read from the code's syntax, with no type checker, so code that does not compile still has one. It is read from the TypeScript sources among M-R3's paths, not declaration files and not tests. Each exported declaration is one entry: its file name and its signature, without bodies, initial values or comments. A file that does not parse is one entry saying so. The same signature in another file is a different entry. {#m-r2}
+**M-R2, interface similarity:** how alike the repetitions' public interfaces are. From v0.3 (version 2) the interface is
+what the entry point `src/index.ts` exposes: each name it exports, followed through re-exports to its declaration, is
+one entry, the name and its signature, without bodies, initial values, comments or file path, so the same functions
+exposed from other files are the same interface, and a module the entry point does not reach is not counted. It is read
+from the code's syntax, with no type checker, so code that does not compile still has one. A run with no entry point, a
+module that does not parse and a specifier that names no file of the project are entries of their own. Each value
+records its version, and values of different versions are never compared. **Erratum:** version 1, in every execution
+published before v0.3, read every exported declaration of every TypeScript source, keyed by its file, and so measured
+the file layout as much as the interface; those values stay as published. {#m-r2}
 
 **M-R3, structure similarity:** how alike the repetitions' sets of file paths are. The paths are every file of the final snapshot, less every path the setup touched, and less generated paths: anything under `node_modules/`, `dist/`, `build/` or `coverage/`, `*.tsbuildinfo`, and lockfiles. The seed's files are common to all repetitions, so they raise the similarity. {#m-r3}
 
@@ -244,7 +266,13 @@ A category is covered when one of the execution's scenarios has it as its main c
 
 M-D1 (defects fixed) and M-D2 (false or duplicate reports rejected) are not reported on their own in v0.1. S2's defect tests are counted in M-Q1, and each of S2's suites has its own tally on category D's page. {#m-d1-m-d2}
 
-Each arm other than the baseline is compared with the baseline of the same scenario version and model, metric by metric. A value is the mean of its runs, shown with its `n` and, from 3 runs, its range (the chart's whisker shows it from 2). It is *better* or *worse* when the means differ, by the metric's direction (higher is better for M-Q1 and M-F1; lower for M-K1, M-D3 and M-E1), and *the same* when they are equal. A metric one side lacks reads "not measured" and is no comparison. {#comparisons}
+Each arm other than the baseline is compared with the baseline of the same scenario version and model, metric by metric.
+A value is the mean of its runs, shown with its `n` and, from 3 runs, its range (the chart's whisker shows it from 2).
+From v0.3 the outcome is, in this order: *the same* when the means are equal; *better* or *worse*, by the metric's
+direction (higher is better for M-Q1 and M-F1; lower for M-K1, M-D3 and M-E1), only when the difference is beyond the
+variance; *within the variance* when both sides have at least 3 runs and their ranges overlap; *preliminary* otherwise.
+A metric one side lacks reads "not measured" and is no comparison. Every page applies the same rule: the landing,
+category, profile, comparison, across-agents and parity pages. {#comparisons}
 
 Each harness arm is also compared with its own docs control, the arm generated from its configuration (wingfoil with baseline-docs, speckit with speckit-docs, and so on for each harness), by the same rules and on the same metrics. A category page shows it under the harness's value, as "against" its control. It separates what the harness does from what its information alone does (threat T3). It is not counted in the headline, which compares with the baseline only. An execution whose controls recorded no pairing reads "not measured". {#harness-against-control}
 
@@ -254,11 +282,17 @@ A value from a single run is labelled *preliminary* and has no range. A comparis
 
 M-E1 is *not comparable* for an arm when one of its runs did not reach a step the rule checks score, or was not scored by them. Such an arm gets no outcome and no count in the headline. When it is the baseline, each other arm reads "no comparison". A run that stopped early would otherwise look better, with fewer steps to break rules in. {#m-e1-not-comparable}
 
-The headline is generated from the comparisons, with no hand-written text. It has one sentence per arm, of the form "Against the baseline, *arm* is better in *b*, worse in *w* and the same in *s* of *n* comparisons across categories …", then the categories where a side has fewer than 3 runs, marked preliminary, then the categories not covered. A preliminary difference counts, marked as such. {#headline}
+The headline is generated from the comparisons, with no hand-written text. It has one sentence per arm, of the form
+"Against the baseline, *arm* is better in *b*, worse in *w*, the same in *s*, within the variance in *v* and preliminary
+in *p* of *n* comparisons across categories …", then the categories not covered. A difference within the variance or
+preliminary is counted as such, never as better or worse. (Before v0.3, any difference of the means counted as better or
+worse, and the preliminary categories were listed after the counts.) {#headline}
 
 The landing page's one chart shows M-Q1 on the final snapshot for every covered scenario, one bar per arm, with its value, its `n` and, from two runs, its range. A legend names the arms, and each is told apart by hatching as well as colour. {#chart}
 
-Better, worse and the same use the same markup and weight: a word and a symbol (▲ better, ▼ worse, = same), never colour alone. Arms are listed baseline first, then by name. {#same-weight}
+Every outcome uses the same markup and weight, never colour alone: better, worse and the same a word and a symbol (▲
+better, ▼ worse, = same), within the variance and preliminary their word alone, with the delta beside it. Arms are
+listed baseline first, then by name. {#same-weight}
 
 Every value is published with the list of runs it was computed from and its `n`. A value that compares two groups, such as the break-even, carries both groups' runs. Each run can be inspected with the `bench run show` command named beside it. {#aggregate-values}
 

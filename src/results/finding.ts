@@ -227,7 +227,9 @@ function determinismLines(group: Group): string[] {
   const similarity = (name: string, s: typeof r.m_r2) =>
     s === undefined
       ? `- ${name}: not measured (scored before task-042)`
-      : `- ${name}: mean ${s.mean}; ${s.pairs.map((p) => `${short(p.runs[0])}–${short(p.runs[1])} ${p.intersection}/${p.union}`).join(', ')}`;
+      : // M-R2's version, when recorded (REQ-SCO-07 as amended in 1.49, task-129)
+        `- ${name}${s.version === undefined ? '' : ` v${s.version}`}: mean ${s.mean}; ` +
+        s.pairs.map((p) => `${short(p.runs[0])}–${short(p.runs[1])} ${p.intersection}/${p.union}`).join(', ');
   return [
     r.m_r1 === undefined ? '- M-R1: not measured' : `- M-R1: ${r.m_r1.agree}/${r.m_r1.total} over ${over}`,
     similarity('M-R2', r.m_r2),

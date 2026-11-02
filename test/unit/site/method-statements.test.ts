@@ -173,16 +173,20 @@ const STATEMENTS: readonly (readonly [string, string])[] = [
   ['m-k1-k2', 'experiment design §4.2 M-K1, M-K2; REQ-RUN-09; sequencer decision 1 (via REQ-RUN-09)'],
   [
     'm-k3',
-    'experiment design §4.2 M-K3; REQ-SCO-08 (`cost.setup`); task-039 Design decision 2 / task-040 (setup runs no agent, adr-003 decision 11)',
+    "experiment design §4.2 M-K3; REQ-SCO-08 (`cost.setup`), as amended in 1.49 (M-K3 per scenario version and arm: the configuration plus the setups' mean, every model's, 0 with neither); task-039 Design decision 2 / task-040 (setup runs no agent, adr-003 decision 11); bug-029; task-129",
   ],
   [
     'm-k4',
-    'experiment design §4.2 M-K4; REQ-SCO-08 (amended 1.15, rules in order, expected failure computed, v0.1 number 0); task-040 notes "For W11" (rules and order, baseline-docs paired too, overhead in each step’s cost); task-039 Design decision 2 (each session reads the manual again); rel-v0-1 W9 Due before',
+    'experiment design 1.11 §4.2 M-K4; REQ-SCO-08 as amended in 1.49 (reading C: quality and step cost by REQ-RES-03\'s rule, the ordered cases, both comparisons recorded); bug-029; task-129; REQ-SCO-08 (amended 1.15, expected failure computed); task-040 notes "For W11" (rules and order, baseline-docs paired too, overhead in each step’s cost); task-039 Design decision 2 (each session reads the manual again); rel-v0-1 W9 Due before',
   ],
   ['m-r1', 'experiment design §4.5 M-R1; REQ-SCO-07 (public tests only); rel-v0-1 W10 Due before'],
   [
+    'm-k4-erratum',
+    "REQ-SCO-08 as amended in 1.49 (1.15's bullets and pooled mean no longer hold); plan-005 (errata for the published values); bug-029; task-129 criterion 7",
+  ],
+  [
     'm-r2',
-    'experiment design §4.5 M-R2; REQ-SCO-05 (M-R2’s public interface, amended 1.17); requirements amendment 1.17 (code that does not compile still has an interface; an entry names its file); rel-v0-1 W10 Due before',
+    'experiment design §4.5 M-R2; REQ-SCO-07 as amended in 1.49 (M-R2 v2 from `src/index.ts`, `<name>: <signature>`, the special entries, the version recorded, never two compared, v1 values kept with errata); REQ-SCO-05 (amended 1.17, syntax only); bug-028; task-129; rel-v0-1 W10 Due before',
   ],
   [
     'm-r3',
@@ -207,7 +211,10 @@ const STATEMENTS: readonly (readonly [string, string])[] = [
     'REQ-RES-03 (a category is covered …); REQ-RES-02 (uncovered: the release that plans it); experiment design §1 goals table; experiment design §4.6',
   ],
   ['m-d1-m-d2', 'REQ-RES-03 ("M-D1 and M-D2 are not reported apart in v0.1"); task-045 Choices to confirm 1'],
-  ['comparisons', 'REQ-RES-03 (a comparison); task-045 Design "Each comparison’s outcome"'],
+  [
+    'comparisons',
+    'REQ-RES-03 (a comparison), as amended in 1.49 (the outcomes in order, every page); bug-030; task-045 Design "Each comparison’s outcome"; task-129',
+  ],
   [
     'harness-against-control',
     'REQ-SCO-14 (each harness against its own docs control, by the same rules); REQ-RES-03 as amended in 1.26 (the category pages); experiment design §5 T3; task-068 Design',
@@ -226,10 +233,13 @@ const STATEMENTS: readonly (readonly [string, string])[] = [
   ],
   [
     'headline',
-    'REQ-RES-03 (the headline’s grammar), as amended in 1.26 (n < 3); task-045 W11 plan-phase decision 3 and Design "The headline"; task-045 Choices to confirm 2; task-082 Design',
+    'REQ-RES-03 (the headline’s grammar), as amended in 1.26 (n < 3) and in 1.49 (the five counts); bug-030; task-129; task-045 W11 plan-phase decision 3 and Design "The headline"; task-045 Choices to confirm 2; task-082 Design',
   ],
   ['chart', 'REQ-RES-03 (the chart); task-045 "After the reviews" (chart reads every covered scenario)'],
-  ['same-weight', 'REQ-RES-03 (one markup for every outcome; arm order); task-045 Design "The landing page"'],
+  [
+    'same-weight',
+    'REQ-RES-03 (one markup for every outcome; arm order), as amended in 1.49 (no symbol within the variance or preliminary); task-045 Design "The landing page"; task-129',
+  ],
   [
     'aggregate-values',
     'REQ-FMT-07 (amended 1.15); experiment design §4.6; REQ-RES-02 (runs with their `bench run show` command); rel-v0-1 W7 Due before',
