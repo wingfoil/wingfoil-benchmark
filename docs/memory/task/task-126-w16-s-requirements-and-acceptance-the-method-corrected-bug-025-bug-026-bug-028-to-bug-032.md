@@ -48,8 +48,9 @@ and headline counts within the variance),
    counts; a version of the metric recorded with each value. Scenario drafted for its task (`scoring.feature`).
 3. **M-K3 and M-K4 (bug-029):** REQ-SCO-08 amended: M-K3 is the cost an arm pays once (setup, configuration), measured
    where it is spent; M-K4 is "not applicable" only when the difference it divides by is within the variance
-   (experiment design 1.7; the Design and REQ-SCO-08 read bug-029's Resolution instead: the variance on the quality
-   condition, for the approver to confirm). Scenario drafted for its task (`scoring.feature`).
+   (experiment design 1.7); the approver chose (chat, 2026-11-02) the variance on both conditions, the quality as
+   bug-029's Resolution reads and the step-cost difference as its Expected reads. Scenario drafted for its task
+   (`scoring.feature`).
 4. **The variance rule on the site (bug-030):** REQ-RES-03 amended: ▲/▼ and a headline count only beyond the variance,
    on every page; a difference within it is shown without a mark. Scenario drafted for its task (`results.feature`).
 5. **The template cited (bug-031):** REQ-RES-05 amended: a finding note names the WingFoil template of the version it
@@ -71,15 +72,19 @@ and headline counts within the variance),
   each by the approver's decision recorded in its bug (2026-10-23): content checks on whole words over the agent's own
   text, less the templates the setup installs (the approver's reading of 2026-11-02), with a rubric and a human
   judgement (`match: words`, `oracle/rubric.md`, `judgements.json`); M-R2 v2 resolved from the entry point; M-K3 as
-  one-off costs per scenario version and harness; M-K4 "not applicable" when worse beyond the variance, or preliminary
-  below three runs a side; ▲/▼ and the headline only beyond the variance; the template read from the campaign's pin.
+  one-off costs per scenario version and harness; M-K4 with the variance on both its quality and its step-cost
+  comparisons; ▲/▼ and the headline only beyond the variance; the template read from the campaign's pin.
   REQ-RUN-09 keeps REQ-RUN-19's kill at the bound and fixes what bug-032 lists (a step ending with no result event
   never zero; an interruption recorded `interrupted`).
-- **The two points experiment design 1.7 left to W16.** M-K4's variance applies to its **quality condition**, as
-  bug-029's Resolution (the approver's decision: "not applicable only beyond the variance") reads; its Expected reads
-  the step-cost difference instead, and task-103's review leaned to that reading, so 1.7 left it open (task-103.md,
-  §4.2). This task takes the Resolution's reading; "never" stays a point comparison of the step costs. **A
-  preliminary difference** gets no symbol and is counted apart in the headline, as one within the variance.
+- **The two points experiment design 1.7 left to W16.** bug-029's Resolution (the approver's decision: "not
+  applicable only beyond the variance") puts M-K4's variance on its **quality condition**; its Expected puts it on the
+  **step-cost difference** it divides by, and task-103's review leaned to that reading, so 1.7 left it open
+  (task-103.md, §4.2). The approver chose both (chat, 2026-11-02): a quality worse beyond the variance, or preliminary
+  and lower, is "not applicable" (reason `quality`); a step cost the same or higher beyond the variance, or
+  preliminary and not lower, is "never"; a step cost within the variance is "not applicable" (reason `saving within
+  variance`), since a break-even divided by noise would be published as a number. Each comparison's `certainty` is
+  recorded. **A preliminary difference** gets no symbol and is counted apart in the headline, as one within the
+  variance.
 - **Existing tests the implementing tasks will change** (not regressions): REQ-RES-03's headline and marks in
   `test/acceptance/results.test.ts` (the headline's wording; "Losses, ties and gaps…" expects ▲/▼ on n = 1 fixtures),
   `test/unit/site/rules.test.ts` and `test/unit/site/build.test.ts`; M-R2's in the scoring tests reading
@@ -100,12 +105,14 @@ and headline counts within the variance),
     files exposing different functions, Then it is below 1; And a module the entry point does not reach is not
     counted; And each value records version 2; Given a run with no `src/index.ts`, Then its interface is
     `(no entry point)`; Given a reached module that does not parse, Then its entry is `<file>: (does not parse)`.
-  - `scoring.feature`, @F4.4 — "Break-even is not applicable when quality is worse beyond the variance, or
-    preliminary": Given an arm whose final M-Q1 is lower within the variance (n ≥ 3 a side), Then break-even is
-    computed or "never", marked "within variance"; Given it lower beyond the variance, Then "not applicable"; Given n
-    < 3 and a lower mean, Then "not applicable", preliminary. — "M-K3 is the one-off cost per scenario version and
-    harness": Given a configured arm whose configuration cost is recorded once and three runs' setup costs, Then M-K3
-    is the configuration's cost plus their mean.
+  - `scoring.feature`, @F4.4 — "Break-even reads the variance on quality and on step cost": Given an arm whose final
+    M-Q1 is lower within the variance (n ≥ 3 a side) and whose step cost is lower beyond it, Then break-even is the
+    value, its quality marked "within variance"; Given its M-Q1 lower beyond the variance, Then "not applicable",
+    reason `quality`; Given n < 3 and a lower M-Q1 mean, Then "not applicable", preliminary; Given the same M-Q1 and
+    step costs within the variance, Then "not applicable", reason `saving within variance`; Given a step cost higher
+    beyond the variance, Then "never"; And each entry records both certainties. — "M-K3 is the one-off cost per
+    scenario version and harness": Given a configured arm whose configuration cost is recorded once and three runs'
+    setup costs, Then M-K3 is the configuration's cost plus their mean.
   - `results.feature`, @F5.5 — "A difference is marked only beyond the variance": Given two arms with overlapping
     ranges (n ≥ 3), Then the comparison shows the delta and "within the variance", no symbol, and the headline counts
     it so; Given n < 3, Then "preliminary", no symbol, counted apart; Given equal means, Then "the same". The same on
@@ -127,9 +134,9 @@ and headline counts within the variance),
   without a test (checked: a probe scenario tagged @F4.1 turned it red), and no tag marks a scenario as planned.
   `features` and `acceptance` are empty here, as task-103's.
 - **Criteria 2, 3 and 6, as the Design refines them for the approver:** M-R2 v2 resolved from the entry point, not
-  REQ-SCO-05's 1.17 file-keyed entries (bug-028's Resolution); M-K4's variance on its quality condition (bug-029's
-  Resolution, against its Expected and task-103's reviewer, Design); an interruption counted at its bound as
-  REQ-RUN-19 says, not read gracefully.
+  REQ-SCO-05's 1.17 file-keyed entries (bug-028's Resolution); M-K4's variance on both its quality and its step-cost
+  conditions (the approver's choice of 2026-11-02 between bug-029's Resolution and its Expected, Design); an
+  interruption counted at its bound as REQ-RUN-19 says, not read gracefully.
 - **The W16 tasks to file after this task's approval**, in plan-005's order: (1) content checks v2 and the rubric
   (bug-026); (2) M-R2 v2, M-K3 and M-K4, the variance rule on the site (bug-028, bug-029, bug-030); (3) the cited
   template and an interrupted step's cost (bug-031, bug-032); (4) S1 1.1 (bug-025); (5) the M-K1 annotation (plan-005
