@@ -82,13 +82,16 @@ and headline counts within the variance),
   (task-103.md, §4.2). The approver chose both (chat, 2026-11-02): a quality worse beyond the variance, or preliminary
   and lower, is "not applicable" (reason `quality`); a step cost the same or higher beyond the variance, or
   preliminary and not lower, is "never"; a step cost within the variance is "not applicable" (reason `saving within
-  variance`), since a break-even divided by noise would be published as a number. Each comparison's `certainty` is
-  recorded. **A preliminary difference** gets no symbol and is counted apart in the headline, as one within the
-  variance.
+  variance`), since a break-even divided by noise would be published as a number; the value divides by the
+  difference of the two means compared, no longer 1.15's pooled one. Each comparison's outcome is recorded.
+  Experiment design 1.11 amends §4.2 to match. **A preliminary difference** gets no symbol and is counted apart in
+  the headline, as one within the variance.
 - **Existing tests the implementing tasks will change** (not regressions): REQ-RES-03's headline and marks in
   `test/acceptance/results.test.ts` (the headline's wording; "Losses, ties and gaps…" expects ▲/▼ on n = 1 fixtures),
   `test/unit/site/rules.test.ts` and `test/unit/site/build.test.ts`; M-R2's in the scoring tests reading
-  `<file>: <signature>`.
+  `<file>: <signature>`. M-K4's task also rewrites `src/results/aggregate.ts`'s `BreakEven` (a reason and two
+  outcomes), `src/results/finding.ts`'s `breakEvenLine` and `site-content/method.md`'s `#m-k4`, which describe the
+  point comparisons until then.
 - **The scenarios, drafted** for the tasks that implement them (each adds its scenario to the `.feature` with its test,
   red first, and names it in `acceptance` as `<file>#<title>`):
   - `scoring.feature`, @F4.7 — "A v2 content check reads whole words in the agent's own text": Given a check with
@@ -107,12 +110,13 @@ and headline counts within the variance),
     `(no entry point)`; Given a reached module that does not parse, Then its entry is `<file>: (does not parse)`.
   - `scoring.feature`, @F4.4 — "Break-even reads the variance on quality and on step cost": Given an arm whose final
     M-Q1 is lower within the variance (n ≥ 3 a side) and whose step cost is lower beyond it, Then break-even is the
-    value, its quality marked "within variance"; Given its M-Q1 lower beyond the variance, Then "not applicable",
-    reason `quality`; Given n < 3 and a lower M-Q1 mean, Then "not applicable", preliminary; Given the same M-Q1 and
-    step costs within the variance, Then "not applicable", reason `saving within variance`; Given a step cost higher
-    beyond the variance, Then "never"; And each entry records both certainties. — "M-K3 is the one-off cost per
-    scenario version and harness": Given a configured arm whose configuration cost is recorded once and three runs'
-    setup costs, Then M-K3 is the configuration's cost plus their mean.
+    value, its quality's outcome "within the variance"; Given its M-Q1 lower beyond the variance, Then "not
+    applicable", reason `quality`; Given n < 3 and a lower M-Q1 mean, Then "not applicable", preliminary; Given the
+    same M-Q1 and step costs within the variance, Then "not applicable", reason `saving within variance`; Given equal
+    step-cost means, or a step cost higher beyond the variance, or n < 3 and a higher one, Then "never"; Given n < 3
+    and a lower step cost, Then the value, its step cost's outcome preliminary; And each entry records both outcomes.
+    — "M-K3 is the one-off cost per scenario version and harness": Given a configured arm whose configuration cost is
+    recorded once and three runs' setup costs, Then M-K3 is the configuration's cost plus their mean.
   - `results.feature`, @F5.5 — "A difference is marked only beyond the variance": Given two arms with overlapping
     ranges (n ≥ 3), Then the comparison shows the delta and "within the variance", no symbol, and the headline counts
     it so; Given n < 3, Then "preliminary", no symbol, counted apart; Given equal means, Then "the same". The same on
