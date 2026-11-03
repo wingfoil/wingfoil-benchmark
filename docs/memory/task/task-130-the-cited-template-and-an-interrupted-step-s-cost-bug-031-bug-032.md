@@ -85,6 +85,8 @@ tasks in plan-005's order (chat, 2026-11-02). No real-agent session, no spending
   sessions; the run is run again (`RUN_AGAIN`). A second Ctrl-C, which ends the runner at once, leaves the agent's
   `docker exec` client to the container's removal or its in-container `timeout` (stated in the port's comment).
 - `wingfoil memory add`, `submit` (draft → pending, backlog → in-progress): as declared.
+- **Full suites** (2026-11-03, `d456a453`, under the load watcher): LINT 0, TEST 0 (2050 passed, 9 skipped), BUILD 0,
+  BIN 0, DOCKER 0.
 
 ### Review
 
