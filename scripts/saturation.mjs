@@ -5,7 +5,8 @@
 //
 //   node scripts/saturation.mjs <scenario> <version>
 import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { parse } from 'yaml';
 
 const [scenario, version] = process.argv.slice(2);
@@ -13,13 +14,18 @@ if (scenario === undefined || version === undefined) {
   process.stderr.write('usage: node scripts/saturation.mjs <scenario> <version>\n');
   process.exit(2);
 }
-const catalog = parse(readFileSync('site-content/catalog.yaml', 'utf8')).executions;
+/** The repository: the directory above this script, wherever it is run from. */
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
+const catalog = parse(readFileSync(join(ROOT, 'site-content', 'catalog.yaml'), 'utf8')).executions;
 let runs = 0;
 let atMaximum = 0;
 const below = new Map();
 for (const execution of Object.keys(catalog)) {
-  const file = join('results', execution, 'aggregate.json');
-  if (!existsSync(file)) continue;
+  const file = join(ROOT, 'results', execution, 'aggregate.json');
+  if (!existsSync(file)) {
+    process.stderr.write(`${execution}: no aggregate.json, left out\n`);
+    continue;
+  }
   const aggregate = JSON.parse(readFileSync(file, 'utf8'));
   for (const group of [...aggregate.groups, ...aggregate.slices]) {
     if (group.scenario !== scenario || group.version !== version) continue;

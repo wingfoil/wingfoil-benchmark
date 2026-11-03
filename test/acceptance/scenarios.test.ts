@@ -505,7 +505,8 @@ describe('S1 1.1 (bug-025, task-131)', () => {
   }
   const SENTENCE =
     'When an array gains or loses an item, the patch adds or removes that item, and does not rewrite the items ' +
-    'around it.';
+    'around it; when an item moves within an array, the patch moves it, or removes it and adds it back, and does not ' +
+    'rewrite the items in between.';
 
   it("@F3.4 S1 1.1's step 5 has one reading", () => {
     vi.stubEnv('BENCH_HOLDOUT_PATH', '');
@@ -514,7 +515,7 @@ describe('S1 1.1 (bug-025, task-131)', () => {
       ok: true,
       line: 'scenario S1@1.1 is valid (hold-out: not configured)',
     });
-    // And its step 5's request states how a patch describes an item an array gains or loses
+    // And its step 5's request states how a patch describes an item an array gains, loses or moves
     const v10 = treeOf(repoPath('scenarios/S1/1.0'));
     const v11 = treeOf(repoPath('scenarios/S1/1.1'));
     expect(v11['prompts/05.md']?.replace(/\s+/g, ' ')).toContain(SENTENCE);

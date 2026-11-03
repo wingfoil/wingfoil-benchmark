@@ -50,7 +50,7 @@ Feature: Scenario format, hygiene and the v0.1 scenario content
   Scenario: S1 1.1's step 5 has one reading
     Given S1 1.1
     Then it is valid and passes the leak scan
-    And its step 5's request states how a patch describes an item an array gains or loses
+    And its step 5's request states how a patch describes an item an array gains, loses or moves
     And everything else in it is S1 1.0's
     And S1 1.0 stays registered, unchanged, with its step 5's limit stated on the method page
 
