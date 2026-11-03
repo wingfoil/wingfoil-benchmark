@@ -85,6 +85,9 @@ export async function referenceRun(
   const git = gitCli(systemProcess);
   const workspace = tempDir('bench-reference-ws-');
   const runDir = tempDir('bench-reference-run-');
+  // No setup: its patch is empty, which a v2 content check reads for the templates it leaves out (task-132).
+  mkdirSync(join(runDir, 'setup'), { recursive: true });
+  writeFileSync(join(runDir, 'setup', 'diff.patch'), '');
   cpSync(seedDir, workspace, { recursive: true });
   await git.init(workspace);
   await git.commitAll(workspace, 'seed');

@@ -68,5 +68,20 @@ scenario version). No real-agent session, no spending.
 
 ## Execution notes
 
-<!-- What happened while building: deviations, blockers, follow-ups (filed as elements, never left
-     here). For every `wingfoil` command: declared vs observed behaviour. -->
+- **Red first:** the @F3.4 scenario failed before the three versions existed, then passed. The reference tests of
+  S2 1.1 and S3 1.1 were written with the checks.
+- **The versions:** plain copies of 1.0 (no symbolic link), `version: '1.1'`; S2's `duplicate.yaml` and S3's
+  `d3-revision.yaml` rewritten with `match: words` and the Design's patterns; `oracle/rubric.md` added to S2 1.1 and
+  S3 1.1; S8 1.1 changes its version alone. `bench scenario validate` is valid on all six versions, with the hold-out
+  and without, the leak scan and the prompt-satisfaction refusal included.
+- **The references:** S3's reference passes `d3-revision` v2 at step 4 (matched in `DECISIONS.md`), a silent step 4
+  fails it, and so does v1's false positive "unchanged"; S2's reference (in the hold-out) passes `duplicate` v2 at step
+  3 and a step 3 with no `NOTES.md` fails it (run locally with `BENCH_HOLDOUT_PATH`; skipped without it, as S2's other
+  reference tests). `test/support/reference.ts`'s `referenceRun` now writes an empty `setup/diff.patch`, which a v2
+  check reads (the reference has no setup).
+- **K6** (`node scripts/saturation.mjs <id> 1.0`): S2 "29 of 49 runs … saturated: false" (20 below, 3 arms, 5
+  executions); S3 "20 of 51 … false" (31 below, 6 arms, 7 executions); S8 "46 of 49 … false" (3 below, 3 arms, 1
+  execution). Quoted in `S2.md` 1.1, `S3.md` 1.1 and `S8.md` 1.2.
+- **The hold-out** (choice C): each 1.0 copied to its 1.1 with `cp -r`, `diff -rq` identical (S2 8 files, S3 4, S8 4),
+  nothing opened or printed, **not committed** there (with S1 1.1's copy, the approver's to commit).
+- `wingfoil memory add`, `submit` (draft → pending, backlog → in-progress): as declared.

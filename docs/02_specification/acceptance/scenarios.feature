@@ -54,6 +54,14 @@ Feature: Scenario format, hygiene and the v0.1 scenario content
     And everything else in it is S1 1.0's
     And S1 1.0 stays registered, unchanged, with its step 5's limit stated on the method page
 
+  @F3.4
+  Scenario: S2, S3 and S8 1.1 carry the oracle's corrections
+    Given S2, S3 and S8 1.1
+    Then each is valid and passes the leak scan
+    And each is its 1.0 but for its version and, in S2 and S3, its content check and its rubric
+    And S2's duplicate and S3's D3 revision checks match whole words, each with its section in the version's rubric
+    And the 1.0 versions stay registered, unchanged
+
   @F3.5
   Scenario: Hold-out additions are used for scoring only
     Given the hold-out path is configured
