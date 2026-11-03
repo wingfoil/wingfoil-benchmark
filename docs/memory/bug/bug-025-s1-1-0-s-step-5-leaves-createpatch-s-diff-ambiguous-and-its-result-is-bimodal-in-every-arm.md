@@ -2,7 +2,7 @@
 id: bug-025-s1-1-0-s-step-5-leaves-createpatch-s-diff-ambiguous-and-its-result-is-bimodal-in-every-arm
 type: bug
 title: "S1 1.0's step 5 leaves createPatch's diff ambiguous, and its result is bimodal in every arm"
-status: approved
+status: fixed
 fixed_by: task-131-s1-1.1-step-5-s-diff-stated-bug-025
 tags: ["v0.3"]
 ---
