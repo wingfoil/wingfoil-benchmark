@@ -2,7 +2,7 @@
 id: bug-029-m-k3-is-always-zero-and-m-k4-s-not-applicable-ignores-the-variance
 type: bug
 title: "M-K3 is always zero and M-K4's not applicable ignores the variance"
-status: approved
+status: fixed
 fixed_by: task-129-m-r2-v2-m-k3-and-m-k4-the-variance-rule-on-every-page-bug-028-bug-029-bug-030
 tags: ["v0.3"]
 ---
