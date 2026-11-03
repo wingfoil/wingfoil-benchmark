@@ -69,7 +69,14 @@ export interface DockerPort {
    * (no such container, daemon down) arrives as a non-zero code with Docker's message on stderr, so
    * the caller sees the text either way.
    */
-  exec(container: string, command: readonly string[]): Promise<ProcessResult>;
+  exec(
+    container: string,
+    command: readonly string[],
+    options?: {
+      /** The `docker exec` client in a process group of its own, out of the terminal's interrupt (task-130). */
+      readonly ownProcessGroup?: boolean;
+    },
+  ): Promise<ProcessResult>;
   /**
    * Copies the host path `source` (a file or a directory) to `target` in the container (REQ-RUN-03):
    * how an arm's files reach it without a second mount (REQ-RUN-02). Not `--archive`: the files belong
@@ -187,8 +194,12 @@ export function dockerCli(process: ProcessPort): DockerPort {
     async start(container) {
       await docker(['start', container]);
     },
-    exec(container, command) {
-      return process.run('docker', ['exec', container, ...command]);
+    exec(container, command, options) {
+      return process.run(
+        'docker',
+        ['exec', container, ...command],
+        options?.ownProcessGroup === true ? { ownProcessGroup: true } : undefined,
+      );
     },
     async copyTo(container, source, target) {
       await docker(['cp', source, `${container}:${target}`]);

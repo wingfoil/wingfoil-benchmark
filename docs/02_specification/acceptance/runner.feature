@@ -39,6 +39,15 @@ Feature: Isolated, multi-step runs of a scenario in an arm
     Then the run log records, for that session: input, output and cache tokens, the API-equivalent cost, wall time and number of turns
     And the full transcript is stored with the run
 
+  @F2.3
+  Scenario: A step that ends with no result event is counted at its bound
+    Given a Claude Code step whose session ends before its result event
+    Then its cost is its bound, recorded with "cost_reported: false", never zero
+    Given the runner interrupted during a step
+    Then the step is recorded "interrupted" at its bound, the agent's process kept out of the terminal's interrupt
+    Given a dry run interrupted during a step
+    Then its record keeps the cost its steps spent, and its summary counts it
+
   @F2.4
   Scenario: The neutral approver answers an approval request
     Given the fake agent ends a session asking for an approval

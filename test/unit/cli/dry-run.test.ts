@@ -404,6 +404,29 @@ describe('bench scenario dry-run, interrupted (REQ-RUN-19, task-079)', () => {
   });
 });
 
+describe('bench scenario dry-run, interrupted during a step (REQ-RUN-09 as amended in 1.49, task-130)', () => {
+  it('keeps the cost its steps spent in its record, at the bound for the step it stopped, and counts it', async () => {
+    const root = repository();
+    const { stdout } = await dryRun(
+      root,
+      ['T3@1.0', '--arm', 'baseline'],
+      ports({
+        onStep: () => {
+          process.emit('SIGINT');
+          throw new Error('the agent exited with code 130');
+        },
+      }),
+    );
+    const record = runJson(root, 1, 'baseline') as {
+      steps: { cost_reported?: boolean; cost_bound_usd?: number }[];
+    };
+    expect(record.steps[0]).toMatchObject({ cost_reported: false });
+    const bound = record.steps[0]?.cost_bound_usd ?? 0;
+    expect(bound).toBeGreaterThan(0);
+    expect(stdout).toContain(`step 01 ${bound.toFixed(4)} USD (at its bound)`);
+  });
+});
+
 describe('a campaign run, after the runner took plans (task-021)', () => {
   it('still records the campaign it belonged to, and no dry-run mark', async () => {
     const root = repository();

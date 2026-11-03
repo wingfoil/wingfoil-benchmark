@@ -2,7 +2,7 @@ import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFi
 import { join, relative } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-import { fakeAgent, loadFakeScript, readSession } from '../../src/agents/index.js';
+import { claudeCodeAgent, fakeAgent, loadFakeScript, readSession } from '../../src/agents/index.js';
 import { renderProjectRules } from '../../src/arms/index.js';
 import type { AgentPort, ResumeRequest, StepRequest } from '../../src/agents/index.js';
 import { main } from '../../src/cli/index.js';
@@ -692,5 +692,82 @@ describe('runner.feature', () => {
       // ...and the run log of each arm names the approver policy version.
       expect(record.approver_policy).toBe('v1');
     }
+  });
+});
+
+describe('a step that ends with no result event (REQ-RUN-09 as amended in 1.49, task-130)', () => {
+  /** S1 (two steps) in the baseline arm, once, at 1 EUR/USD, a run cost cap of 3 EUR. */
+  function campaign() {
+    const { file } = writeRepo(
+      {
+        ...completeCampaignYaml(),
+        harnesses: {},
+        arms: ['baseline'],
+        scenarios: [{ id: 'S1', version: '1.0' }],
+        repetitions: { S1: 1 },
+        agent: { name: 'claude-code', version: '2.1.300' },
+        models: { default: 'claude-sonnet-5-5' },
+        caps: { step_time_s: 60, step_tokens: 1000, run_cost_eur: 3 },
+        budget: { warn_eur: 100, ceiling_eur: 100 },
+        currency: { usd_to_eur: 1 },
+      },
+      ['S1@1.0'],
+    );
+    const checked = checkCampaign(file);
+    if (!checked.ok) throw new Error(JSON.stringify(checked.issues));
+    return checked.value;
+  }
+  /** A Claude Code session's stream, cut before its result event. */
+  const CUT = `${JSON.stringify({ type: 'system', subtype: 'init', session_id: 's' })}\n`;
+  const agentCommand = (command: readonly string[]) => command.includes('claude');
+
+  it('@F2.3 A step that ends with no result event is counted at its bound', async () => {
+    // Given a Claude Code step whose session ends before its result event
+    const ports = doubles({
+      execResultOf: (command) => (agentCommand(command) ? { code: 1, stdout: CUT, stderr: '' } : undefined),
+    });
+    const agent = claudeCodeAgent({ token: 'not-a-token', usdToEur: 1 });
+    const cut = await runCampaign(campaign(), { ...ports, agent });
+    // Then its cost is its bound, recorded with "cost_reported: false", never zero
+    expect(cut.runs[0]?.steps[0]).toMatchObject({ n: 1, costBoundUsd: 3 });
+    const record = JSON.parse(
+      readFileSync(
+        join(cut.resultsDir, 'runs', 'S1@1.0', 'baseline', 'claude-sonnet-5-5', 'r1', 'run.json'),
+        'utf8',
+      ),
+    ) as {
+      steps: { cost_reported?: boolean; cost_bound_usd?: number }[];
+    };
+    expect(record.steps[0]).toMatchObject({ cost_reported: false, cost_bound_usd: 3 });
+
+    // Given the runner interrupted during a step
+    const interrupt = new AbortController();
+    const options: unknown[] = [];
+    const base = doubles();
+    let ended: ((result: { code: number; stdout: string; stderr: string }) => void) | undefined;
+    const interrupted = await runCampaign(campaign(), {
+      ...base,
+      agent,
+      signal: interrupt.signal,
+      docker: {
+        ...base.docker,
+        exec: (container, command, execOptions) => {
+          if (!agentCommand(command)) return base.docker.exec(container, command, execOptions);
+          options.push(execOptions);
+          setTimeout(() => interrupt.abort(), 0);
+          // The agent runs until the runner removes its container; its process never sees the terminal's SIGINT.
+          return new Promise((resolve) => {
+            ended = resolve;
+          });
+        },
+        remove: async (container) => {
+          ended?.({ code: 137, stdout: CUT, stderr: '' });
+          return base.docker.remove(container);
+        },
+      },
+    });
+    // Then the step is recorded "interrupted" at its bound, the agent's process kept out of the terminal's interrupt
+    expect(interrupted.runs[0]?.steps[0]).toMatchObject({ outcome: 'interrupted', costBoundUsd: 3 });
+    expect(options).toEqual([{ ownProcessGroup: true }]);
   });
 });

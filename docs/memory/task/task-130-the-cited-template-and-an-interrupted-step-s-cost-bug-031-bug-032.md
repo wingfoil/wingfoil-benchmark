@@ -67,5 +67,17 @@ tasks in plan-005's order (chat, 2026-11-02). No real-agent session, no spending
 
 ## Execution notes
 
-<!-- What happened while building: deviations, blockers, follow-ups (filed as elements, never left
-     here). For every `wingfoil` command: declared vs observed behaviour. -->
+- **Red first:** the template scenario failed on the constant; the no-result-event scenario failed on the old code
+  (checked by stashing `src/`: no bound, no own process group); the dry run's summary test failed without its change
+  (checked the same way). The process port's tests were written with its code.
+- **Deviations from the Design**, each within requirements 1.49:
+  - The template's version is the one the run recorded (`run.json`'s `harness.version`, the pin copied with the run),
+    else the campaign's pin when it pins one WingFoil; a run recording neither names its commit alone
+    (`WingFoil 3df305ea`, the test fixture's case).
+  - Node's `execFile` ignores `detached` (checked: the child kept the parent's group), so `ownProcessGroup` runs the
+    process with `spawn`, with the same output bound, time limit and result; only the agent's `docker exec` asks for
+    it, so a scoring or git process interrupted with the CLI still stops with it.
+  - The dry run's record already kept a step's bound when the interrupt was settled during it: what lost the cost was
+    the race the process group removes, and the printed summary, which counted reported costs only; it now counts a
+    step's bound, marked "(at its bound)".
+- `wingfoil memory add`, `submit` (draft → pending, backlog → in-progress): as declared.
