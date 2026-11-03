@@ -2,7 +2,7 @@
 id: bug-031-findings-cite-the-v0-2-2-template-through-template-commit
 type: bug
 title: "Findings cite the v0.2.2 template through TEMPLATE_COMMIT"
-status: approved
+status: fixed
 fixed_by: task-130-the-cited-template-and-an-interrupted-step-s-cost-bug-031-bug-032
 tags: ["v0.3"]
 ---
