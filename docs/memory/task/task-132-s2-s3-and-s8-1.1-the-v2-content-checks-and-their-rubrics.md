@@ -3,27 +3,68 @@ id: task-132-s2-s3-and-s8-1.1-the-v2-content-checks-and-their-rubrics
 type: task
 title: "S2, S3 and S8 1.1, the v2 content checks and their rubrics"
 status: draft
-release: ""           # e.g. v0.1
-wave: ""              # e.g. W1
-features: []          # e.g. [F1.1, F3.1]
-acceptance: []        # e.g. [campaign.feature, scenarios.feature]
-requirements: []      # e.g. [REQ-FMT-01, REQ-FMT-02]
-fixes: []             # optional: the bugs this task fixes, e.g. [bug-005-a-bug-cannot-name-…]
+release: v0.3
+wave: W16
+features: [F3.4, F4.7]
+acceptance:
+  - "scenarios.feature#S2, S3 and S8 1.1 carry the oracle's corrections"
+requirements: [REQ-SCO-06, REQ-FMT-09]
+fixes: []
 tags: ["v0.3","scenarios","w16"]
 ---
 
 ## Context
 
-<!-- Why this task, which wave it belongs to, and what "done" means for the wave's "Ends with". -->
+The fourth W16 task of [plan-005](../../plans/plan-005-release-v0-3.md), its second half (the approver's choices A and B
+in chat, 2026-11-03), after [task-131](task-131-s1-1.1-step-5-s-diff-stated-bug-025.md) (S1 1.1). The scenario
+conventions' K7 (amendment 1.5) put S1, S2, S3 and S8 at 1.1 with the oracle's corrections: content checks v2 and the
+human rubric ([task-128](task-128-content-checks-v2-and-the-maintainer-s-rubric-bug-026.md), REQ-SCO-06 as amended in
+1.49); K6 asks each 1.1 to record whether its 1.0 was saturated. The content checks that change are S2's `duplicate`
+and S3's `d3-revision`; S2's `false-report` is an `unchanged` check and S8's are directive checks, both unaffected by
+bug-026. S8 1.1 is made now, identical but for its version (choice B: the configured variants of W18 are written per
+scenario version). No real-agent session, no spending.
 
 ## Acceptance criteria
 
-<!-- One line per criterion (Gherkin scenario or requirement), each classified as red-first
-     (new behaviour: a failing test precedes the code) or characterization (existing behaviour). -->
+1. **Red-first, a new scenario** "S2, S3 and S8 1.1 carry the oracle's corrections" (`scenarios.feature` @F3.4): each
+   loads and passes the validator and the leak scan; each is its 1.0 but for its version line and, in S2 and S3, the
+   content check and the rubric (a test compares the trees, no symbolic link); S2's `duplicate` and S3's
+   `d3-revision` declare `match: words`, each with its `## <id>` section in the version's `oracle/rubric.md`; the 1.0
+   versions stay registered, unchanged.
+2. **The v2 patterns** are the 1.0 ones made whole words, each stem written out in the inflections the check accepts
+   (the Design lists them); no pattern is added beyond what 1.0's meant, the paraphrases left to the maintainer's
+   judgement against the rubric (REQ-SCO-06 1.49). The validator's refusal of a check its own prompt satisfies passes.
+3. **The references** score as on 1.0: S3's reference records the D3 revision at step 4 under v2 (`d3-revision`
+   passes) and S2's reference its duplicate at step 3, if they do on 1.0; their hidden suites pass as on 1.0.
+4. **K6's record:** `S2.md`, `S3.md` and `S8.md` each gain an amendment for 1.1 with whether its 1.0 was saturated, by
+   `node scripts/saturation.mjs <id> 1.0`, its output quoted.
+5. **The hold-out** (the approver's choice C and path, 2026-11-03): each 1.0's hold-out additions copied, unchanged, to
+   its 1.1 in the private hold-out repository, nothing of it opened or printed, not committed there; the validator
+   with the hold-out passes on each 1.1.
+6. Checks: prettier on every changed file, `tsc`, eslint, `scripts/pre-review.sh main`; an independent review
+   (dl-020); the full suites on the approver's go.
 
 ## Design
 
-<!-- Modules, interfaces, data formats touched; decisions taken and their reasons. -->
+- `scenarios/S2/1.1/`, `scenarios/S3/1.1/`, `scenarios/S8/1.1/`: copies of their 1.0 (no symbolic link, bug-034),
+  `version: '1.1'`.
+- **S3's `d3-revision`**, `match: words`, two groups as in 1.0:
+  - D3's rule: whole day, whole days, whole-day, full day, full days, full-day, entire day, entire days, daily only,
+    days only;
+  - its revision: revise, revised, revises, revision, revising, supersede, supersedes, superseded, replace, replaced,
+    replaces, replacing, replacement, no longer, instead of, now also, amend, amended, amends, amendment, changed,
+    update, updated, updates.
+- **S2's `duplicate`**, `match: words`: 1.0's phrases with the inflections they implied — already fixed, already been
+  fixed, already resolved, already been resolved, already handled, already been handled, already addressed, already
+  been addressed, duplicate, duplicates, duplicated, same defect, same issue, same problem, same bug, fixed earlier,
+  fixed previously, previously fixed, previously reported, already reported, already been reported.
+- **Rubrics** (`oracle/rubric.md` of S2 1.1 and S3 1.1): per check, what counts as the fact recorded — for
+  `d3-revision`, a statement in the agent's own text that "whole days only" (D3) no longer holds or was replaced by
+  hourly rentals; for `duplicate`, a statement that step 3's report restates a defect fixed in step 1 (named,
+  linked or described); what does not count (the request's words copied, template text, a code change alone).
+- `test/unit/scenarios/s2.test.ts` and `s3.test.ts`: each 1.1 loads; its reference passes as 1.0's.
+- `S2.md`, `S3.md`, `S8.md`: amendments with K6's record; `scripts/saturation.mjs` as task-131 left it.
+- Campaign files and presets keep the 1.0 versions.
 
 ## Execution notes
 
