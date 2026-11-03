@@ -2,7 +2,7 @@
 id: bug-030-the-up-and-down-marks-and-the-headline-counts-flag-differences-within-the-variance
 type: bug
 title: "The up and down marks and the headline counts flag differences within the variance"
-status: approved
+status: fixed
 fixed_by: task-129-m-r2-v2-m-k3-and-m-k4-the-variance-rule-on-every-page-bug-028-bug-029-bug-030
 tags: ["v0.3"]
 ---
