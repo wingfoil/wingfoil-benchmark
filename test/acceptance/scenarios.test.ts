@@ -4,6 +4,7 @@ import { stringify } from 'yaml';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { main } from '../../src/cli/index.js';
+import { validateScenario } from '../../src/cli/scenario.js';
 import { checkCampaign, runCampaign } from '../../src/runner/index.js';
 import { latestDryRun } from '../../src/results/index.js';
 import { loadScenario } from '../../src/scenario/index.js';
@@ -484,4 +485,54 @@ describe('scenarios.feature', () => {
     // The hidden tests really run, every suite on every snapshot of every arm: minutes — 173 s alone with
     // S1–S3 on an idle machine, 634 s with S1–S8 at load average 50 (bug-008, task-048).
   }, 1_200_000);
+});
+
+describe('S1 1.1 (bug-025, task-131)', () => {
+  /** Every file under `dir`, relative, with its bytes as text. */
+  function treeOf(dir: string): Record<string, string> {
+    const out: Record<string, string> = {};
+    const walk = (at: string) => {
+      for (const entry of readdirSync(at, { withFileTypes: true }).sort((a, b) =>
+        a.name < b.name ? -1 : 1,
+      )) {
+        const path = join(at, entry.name);
+        // No symbolic link in a scenario version (bug-034): each file is its own bytes.
+        expect(entry.isSymbolicLink(), path).toBe(false);
+        if (entry.isDirectory()) walk(path);
+        else out[relative(dir, path)] = readFileSync(path, 'utf8');
+      }
+    };
+    walk(dir);
+    return out;
+  }
+  const SENTENCE =
+    'When an array gains or loses an item, the patch adds or removes that item, and does not rewrite the items ' +
+    'around it; when an item moves within an array, the patch moves it, or removes it and adds it back, and does not ' +
+    'rewrite the items in between.';
+
+  it("@F3.4 S1 1.1's step 5 has one reading", () => {
+    vi.stubEnv('BENCH_HOLDOUT_PATH', '');
+    // Given S1 1.1 — Then it is valid and passes the leak scan
+    expect(validateScenario({ id: 'S1', version: '1.1' }, repoPath('.'))).toEqual({
+      ok: true,
+      line: 'scenario S1@1.1 is valid (hold-out: not configured)',
+    });
+    // And its step 5's request states how a patch describes an item an array gains, loses or moves
+    const v10 = treeOf(repoPath('scenarios/S1/1.0'));
+    const v11 = treeOf(repoPath('scenarios/S1/1.1'));
+    expect(v11['prompts/05.md']?.replace(/\s+/g, ' ')).toContain(SENTENCE);
+    // And everything else in it is S1 1.0's
+    expect(Object.keys(v11)).toEqual(Object.keys(v10));
+    for (const path of Object.keys(v10)) {
+      if (path === 'prompts/05.md' || path === 'scenario.yaml') continue;
+      expect(v11[path], path).toBe(v10[path]);
+    }
+    expect(v11['scenario.yaml']).toBe(v10['scenario.yaml']?.replace("version: '1.0'", "version: '1.1'"));
+    expect(v11['prompts/05.md']?.replace(/\s+/g, ' ').replace(` ${SENTENCE}`, '')).toBe(
+      v10['prompts/05.md']?.replace(/\s+/g, ' '),
+    );
+    // And S1 1.0 stays registered, unchanged, with its step 5's limit stated on the method page
+    expect(validateScenario({ id: 'S1', version: '1.0' }, repoPath('.')).ok).toBe(true);
+    expect(readFileSync(repoPath('site-content/method.md'), 'utf8')).toContain('{#s1-step-5-limit}');
+  });
 });

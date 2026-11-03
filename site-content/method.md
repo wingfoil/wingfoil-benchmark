@@ -335,6 +335,14 @@ A *finding note* is a Markdown file the maintainer generates from one execution,
 
 S1's hidden tests run on third-party material: the [json-patch-tests](https://github.com/json-patch/json-patch-tests) suite (Apache-2.0) and examples from [RFC 6901](https://www.rfc-editor.org/rfc/rfc6901) and [RFC 7386](https://www.rfc-editor.org/rfc/rfc7386) (BSD-3-Clause, IETF Trust). Their sources, pins and licences are in the [notice](material/notice-s1.html), with the [Apache-2.0](material/licence-apache-2.0.html) and [BSD-3-Clause (IETF)](material/licence-bsd-3-clause-ietf.html) texts. {#oracle-licences}
 
+S1 1.0's step 5 (`createPatch`) asks only that a patch describe what changed, while its hidden pairs bound a patch's
+length by a reference that diffs arrays by their longest common run of items: a patch that rewrites the items after an
+inserted or removed one, or the items between an item's old and new place, fails some pairs. Its results therefore fall
+in three modes across the arms (95 of the 99 published runs), by the diff the agent chose, whichever the arm: 165, 164
+or 158 public tests, mostly 48, 45 or 43 hold-out tests, up to seven public and five hold-out tests apart. They stay as
+published, with this limit. S1 1.1 states the diff, for an item an array gains, loses or moves, in step 5's request, its
+tests unchanged. {#s1-step-5-limit}
+
 ## What could be wrong {#validity-threats}
 
 These threats were listed before any run, each with what is done about it.

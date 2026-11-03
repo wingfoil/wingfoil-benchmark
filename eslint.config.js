@@ -20,8 +20,8 @@ export default tseslint.config(
   {
     // A scenario version is hashed over its bytes (REQ-FMT-09): an oracle file is not edited after its version has
     // been dry-run, so two strict style rules give way for S1's create-patch applier (task-050), which indexes paths it
-    // has checked and deletes the member a patch names.
-    files: ['scenarios/S1/1.0/oracle/create-patch/applier.mts'],
+    // has checked and deletes the member a patch names, the same bytes in every version of S1 (task-131).
+    files: ['scenarios/S1/*/oracle/create-patch/applier.mts'],
     rules: {
       '@typescript-eslint/no-non-null-assertion': 'off',
       '@typescript-eslint/no-dynamic-delete': 'off',
