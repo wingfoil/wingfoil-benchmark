@@ -2,7 +2,7 @@
 id: bug-032-an-interrupted-or-killed-step-loses-the-cost-it-spent
 type: bug
 title: "An interrupted or killed step loses the cost it spent"
-status: approved
+status: fixed
 fixed_by: task-130-the-cited-template-and-an-interrupted-step-s-cost-bug-031-bug-032
 tags: ["v0.3"]
 ---
