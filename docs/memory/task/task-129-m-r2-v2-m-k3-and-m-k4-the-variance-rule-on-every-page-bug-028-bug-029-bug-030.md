@@ -2,7 +2,7 @@
 id: task-129-m-r2-v2-m-k3-and-m-k4-the-variance-rule-on-every-page-bug-028-bug-029-bug-030
 type: task
 title: "M-R2 v2, M-K3 and M-K4, the variance rule on every page (bug-028, bug-029, bug-030)"
-status: in-review
+status: approved
 release: v0.3
 wave: W16
 features: [F4.4, F4.5, F5.5, F5.7]
