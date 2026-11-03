@@ -103,3 +103,9 @@ checkouts unchanged). No blocker; four should-fix and six nits:
 | N4 | a second Ctrl-C leaves the detached client | kept: stated in the port's comment and above |
 | N5 | the verdict hook's exec stays in the runner's group | kept: out of scope, noted above |
 | N6 | the own-group path untested for split UTF-8, stderr, env and cwd | fixed: tested |
+
+**Round 2** (2026-11-03, a fresh read-only agent in `/tmp/claude-1000/review2-130-Jv9Y`, a clone of `0c2b2bac`; both
+checkouts unchanged; it ran round 1's sources against the new tests). Every round-1 item resolved; no blocker, no
+should-fix. Nits fixed: a dry-run step that reported more than its bound (the larger counted, no mark), and a
+campaign pinning one WingFoil version twice, each now tested; the method-statement source worded as the page. Kept:
+the resume case's bound equals the step's cap either way, so it shows the bound, not which one.

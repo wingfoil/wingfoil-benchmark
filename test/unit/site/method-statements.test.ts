@@ -99,7 +99,7 @@ const STATEMENTS: readonly (readonly [string, string])[] = [
   ],
   [
     'killed-step-no-result',
-    'REQ-RUN-09 as amended in 1.49 (no result event at its bound, never zero; an interruption recorded interrupted, the docker exec client kept out of the terminal interrupt; an interrupted dry run keeps its record); REQ-RUN-19; bug-032; task-130',
+    'REQ-RUN-09 as amended in 1.49 (no result event at its bound, never zero; an interruption during a session recorded interrupted at its bound, one between two at the reported cost, the docker exec client kept out of the terminal interrupt; an interrupted dry run keeps its record); REQ-RUN-19; bug-032; task-130',
   ],
   [
     'step-tokens-between-invocations',

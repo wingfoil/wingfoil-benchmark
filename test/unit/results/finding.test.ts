@@ -1,4 +1,4 @@
-import { writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -187,3 +187,18 @@ describe('findingNote (F5.4, REQ-RES-05, task-044)', () => {
   });
 });
 
+
+describe('the template of a campaign pinning one WingFoil version twice (task-130)', () => {
+  it('names that version for a run that recorded none', async () => {
+    const { executionDir } = await aggregatedExecution();
+    const pins = join(executionDir, 'campaign.yaml');
+    writeFileSync(
+      pins,
+      `${readFileSync(pins, 'utf8')}harnesses:\n  wingfoil: { tool: wingfoil, version: v0.3.1 }\n` +
+        '  wingfoil-b: { tool: wingfoil, version: v0.3.1 }\n',
+    );
+    const note = findingNote({ executionDir, ...REQUEST, metric: 'M-Q1' });
+    if (!note.ok) throw new Error(JSON.stringify(note.issues));
+    expect(note.value.text).toContain(`whose template is that of WingFoil v0.3.1 (${WINGFOIL_COMMIT.slice(0, 8)}):`);
+  });
+});
