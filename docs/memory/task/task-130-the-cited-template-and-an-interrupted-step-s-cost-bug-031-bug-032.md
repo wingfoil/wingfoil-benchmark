@@ -2,7 +2,7 @@
 id: task-130-the-cited-template-and-an-interrupted-step-s-cost-bug-031-bug-032
 type: task
 title: "The cited template and an interrupted step's cost (bug-031, bug-032)"
-status: in-progress
+status: in-review
 release: v0.3
 wave: W16
 features: [F5.4, F2.3]
