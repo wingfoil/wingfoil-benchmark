@@ -2,7 +2,7 @@
 id: bug-028-m-r2-measures-the-file-layout-not-the-public-interface
 type: bug
 title: "M-R2 measures the file layout, not the public interface"
-status: approved
+status: fixed
 fixed_by: task-129-m-r2-v2-m-k3-and-m-k4-the-variance-rule-on-every-page-bug-028-bug-029-bug-030
 tags: ["v0.3"]
 ---
