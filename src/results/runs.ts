@@ -202,7 +202,7 @@ export function readStepCommits(runDir: string, n: number): Result<readonly stri
 }
 
 /** The files an execution's pins are copied to, beside its runs: a campaign's, or a dry run's (task-021). */
-const PINS_FILES = ['campaign.yaml', 'dry-run.yaml'] as const;
+export const PINS_FILES = ['campaign.yaml', 'dry-run.yaml'] as const;
 
 const rateSchema = z.object({ currency: z.object({ usd_to_eur: z.number().positive() }) });
 

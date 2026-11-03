@@ -222,6 +222,8 @@ export function readSession(lines: readonly string[], usdToEur: number): Session
         transcript: lines,
         outcome: 'failed',
         error: `a line of the session is not valid JSON: ${(error as Error).message}`,
+        // No result event read before it: its usage is not known (REQ-RUN-09 as amended in 1.49, task-130's review).
+        ...(results === 0 ? { costUnknown: true as const } : {}),
       };
     }
     if (typeof event !== 'object' || event === null) {
@@ -232,6 +234,7 @@ export function readSession(lines: readonly string[], usdToEur: number): Session
         transcript: lines,
         outcome: 'failed',
         error: 'a line of the session is not an object',
+        ...(results === 0 ? { costUnknown: true as const } : {}),
       };
     }
     if (event.type === 'assistant') {

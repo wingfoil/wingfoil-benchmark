@@ -80,4 +80,26 @@ tasks in plan-005's order (chat, 2026-11-02). No real-agent session, no spending
   - The dry run's record already kept a step's bound when the interrupt was settled during it: what lost the cost was
     the race the process group removes, and the printed summary, which counted reported costs only; it now counts a
     step's bound, marked "(at its bound)".
+- **Left as it is** (review round 1): the verdict hook's `docker exec` stays in the runner's group, so an interrupt
+  during it records that delivery `failed (exit 130)` in `verdicts.json` and the step ends interrupted between two
+  sessions; the run is run again (`RUN_AGAIN`). A second Ctrl-C, which ends the runner at once, leaves the agent's
+  `docker exec` client to the container's removal or its in-container `timeout` (stated in the port's comment).
 - `wingfoil memory add`, `submit` (draft → pending, backlog → in-progress): as declared.
+
+### Review
+
+**Round 1** (2026-11-03, a fresh read-only agent in `/tmp/claude-1000/review1-130-VbVe`, a clone of `06d552ef`; both
+checkouts unchanged). No blocker; four should-fix and six nits:
+
+| # | Finding | Outcome |
+|---|---|---|
+| S1 | a stream cut by a line that is not JSON, before any result event, still counted zero | fixed: unknown cost there too; tested |
+| S2 | the @F2.3 test lacked the scenario's dry-run clause (tested only in a unit test) | fixed: the dry run interrupted in the @F2.3 test |
+| S3 | no test of a cut resume, nor of `is_error` keeping its cost | fixed: a resume at its bound, the reported cost within it; `is_error` with no bound |
+| S4 | the method page said every interrupted step is at its bound | fixed: during a session at its bound, between two at the reported cost |
+| N1 | the dry run's summary took the bound, the ledger the larger | fixed: the larger, marked only when the bound is |
+| N2 | the template's pin reader duplicated `PINS_FILES`; two harnesses at one version read as two | fixed: `PINS_FILES` reused, versions deduplicated |
+| N3 | the own-group path dropped the chunk crossing the bound; an `error` after start settled early | fixed: exactly the bound kept; `error` settles only a process that never started |
+| N4 | a second Ctrl-C leaves the detached client | kept: stated in the port's comment and above |
+| N5 | the verdict hook's exec stays in the runner's group | kept: out of scope, noted above |
+| N6 | the own-group path untested for split UTF-8, stderr, env and cwd | fixed: tested |

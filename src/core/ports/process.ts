@@ -84,7 +84,9 @@ export function createSystemProcess(options: { maxOutputBytes?: number } = {}): 
 
 /**
  * A process in a process group of its own (bug-032, task-130): `execFile` ignores `detached`, so `spawn` runs it, with
- * the same bound on each output, the same time limit and the same result as {@link createSystemProcess}'s.
+ * the same bound on each output, the same time limit and the same result as {@link createSystemProcess}'s. Out of the
+ * terminal's group, it is not killed by a second Ctrl-C that ends the caller at once: a `docker exec` client then
+ * lives until the container's removal, which the first interrupt started, or its in-container `timeout` ends it.
  */
 function runInOwnGroup(
   command: string,
@@ -105,8 +107,12 @@ function runInOwnGroup(
     let bounded = false;
     let timedOut = false;
     const collect = (chunks: Buffer[], key: 'out' | 'err') => (chunk: Buffer) => {
+      if (bounded) return;
+      const room = maxOutputBytes - size[key];
       size[key] += chunk.length;
-      if (size[key] > maxOutputBytes) {
+      if (chunk.length > room) {
+        // Exactly the bound kept, as execFile keeps it: the evidence up to the cut.
+        chunks.push(chunk.subarray(0, Math.max(room, 0)));
         bounded = true;
         child.kill('SIGKILL');
         return;
@@ -133,8 +139,10 @@ function runInOwnGroup(
       }
       resolve({ code, stdout, stderr, ...(timedOut ? { timedOut: true as const } : {}) });
     };
-    // A process that cannot start (no such program) ends as one that failed; `close` may follow, and finds it settled.
-    child.on('error', () => settle(1));
+    // A process that cannot start (no such program) ends as one that failed; any other error is followed by `close`.
+    child.on('error', () => {
+      if (child.pid === undefined) settle(1);
+    });
     child.on('close', (code) => settle(code ?? 1));
   });
 }

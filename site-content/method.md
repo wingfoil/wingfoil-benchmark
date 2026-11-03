@@ -116,9 +116,11 @@ A step killed at its time cap reports no cost. It is counted at its upper bound:
 A Claude Code session that ends with no result event (failed, killed, or stopped by an interrupt) is counted the same
 way: its cost was not reported, so it counts at its bound, never as zero, and the step's earlier sessions keep the cost
 they reported. When the maintainer interrupts a campaign or a dry run, the agent's process is kept out of the terminal's
-interrupt: the runner ends it, and the step is recorded as interrupted at its bound, not as failed at a reported cost.
-An interrupted dry run keeps its record and what its steps spent. (Before requirements 1.49, such a session counted as
-zero, and an interrupt could record the step as failed.) {#killed-step-no-result}
+interrupt: the runner ends it, and a step interrupted during the agent's session is recorded as interrupted at its
+bound, not as failed at a reported cost; one interrupted between two sessions (during the approver's reply or a rate
+limit's wait) ends at the cost they reported. An interrupted dry run keeps its record and what its steps spent. (Before
+requirements 1.49, such a session counted as zero, and an interrupt could record the step as failed.)
+{#killed-step-no-result}
 
 The token cap is checked between the agent's invocations, not during one. A step whose tokens exceed the cap is not resumed after its current session. Within one session, only the cost cap bounds it. {#step-tokens-between-invocations}
 

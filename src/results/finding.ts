@@ -6,6 +6,7 @@ import { fail, ok, readYamlFile } from '../core/index.js';
 import type { Result } from '../core/index.js';
 
 import { AGGREGATE_FILE } from './aggregate.js';
+import { PINS_FILES } from './runs.js';
 import { DIRECTIVE_KINDS } from './compare.js';
 import type { AggregateFile, BreakEven, BreakEvenSide, Group, Tally, Value } from './aggregate.js';
 
@@ -251,14 +252,19 @@ const recordSchema = z.object({
 
 /** The WingFoil versions an execution pins (`harnesses.<name>.version` of a WingFoil tool), from its campaign file. */
 function pinnedWingFoil(executionDir: string): string[] {
-  const file = ['campaign.yaml', 'dry-run.yaml'].map((name) => join(executionDir, name)).find((path) => existsSync(path));
+  const file = PINS_FILES.map((name) => join(executionDir, name)).find((path) => existsSync(path));
   if (file === undefined) return [];
   const read = readYamlFile(file);
   if (!read.ok) return [];
   const harnesses = (read.value as { harnesses?: Record<string, { tool?: unknown; version?: unknown }> } | null)?.harnesses;
-  return Object.values(harnesses ?? {}).flatMap((h) =>
-    h.tool === WINGFOIL && typeof h.version === 'string' ? [h.version] : [],
-  );
+  // Two harnesses pinning the same WingFoil version name one version.
+  return [
+    ...new Set(
+      Object.values(harnesses ?? {}).flatMap((h) =>
+        h.tool === WINGFOIL && typeof h.version === 'string' ? [h.version] : [],
+      ),
+    ),
+  ];
 }
 
 /**

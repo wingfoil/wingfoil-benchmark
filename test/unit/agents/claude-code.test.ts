@@ -64,6 +64,29 @@ describe('reading a session (REQ-RUN-09)', () => {
 
     expect(session.outcome).toBe('failed');
     expect(session.error).toMatch(/no result event/);
+    // Its usage is not known: it counts at its bound (REQ-RUN-09 as amended in 1.49, task-130)
+    expect(session.costUnknown).toBe(true);
+  });
+
+  it('calls a stream cut by a line of plain text, before any result event, of unknown cost (task-130)', () => {
+    const init = '{"type":"system","subtype":"init","session_id":"s"}';
+    expect(readSession([init, 'Error: something'], RATE)).toMatchObject({
+      outcome: 'failed',
+      costUnknown: true,
+    });
+    expect(readSession([init, '42'], RATE)).toMatchObject({ outcome: 'failed', costUnknown: true });
+  });
+
+  it('knows the cost of a session that failed with a result event (is_error): no bound (task-130)', () => {
+    const failed = readSession(
+      [
+        '{"type":"system","subtype":"init","session_id":"s"}',
+        '{"type":"result","is_error":true,"terminal_reason":"completed","session_id":"s","total_cost_usd":0.5}',
+      ],
+      RATE,
+    );
+    expect(failed.outcome).toBe('failed');
+    expect(failed).not.toHaveProperty('costUnknown');
   });
 
   it("sums a session's work across a resume, but takes its cost as the session's latest total", () => {

@@ -183,5 +183,19 @@ describe('a process in a group of its own (bug-032, task-130)', () => {
     });
     expect(slow).toMatchObject({ timedOut: true });
     expect((await systemProcess.run('no-such-program-anywhere', [], own)).code).toBe(1);
+    // Exactly the bound kept; a character split across chunks decoded whole; stderr, env and cwd as the other path's
+    expect(bounded.stdout).toBe('x'.repeat(10));
+    const wide = await systemProcess.run(
+      process.execPath,
+      ['-e', 'process.stdout.write("é".repeat(100000))'],
+      own,
+    );
+    expect(wide.stdout).toBe('é'.repeat(100000));
+    const where = await systemProcess.run(
+      process.execPath,
+      ['-e', 'console.error(process.env.BENCH_PROBE + " " + process.cwd())'],
+      { ...own, env: { BENCH_PROBE: 'probe' }, cwd: '/' },
+    );
+    expect(where.stderr).toBe('probe /\n');
   });
 });
