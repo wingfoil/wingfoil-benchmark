@@ -496,6 +496,8 @@ describe('S1 1.1 (bug-025, task-131)', () => {
         a.name < b.name ? -1 : 1,
       )) {
         const path = join(at, entry.name);
+        // No symbolic link in a scenario version (bug-034): each file is its own bytes.
+        expect(entry.isSymbolicLink(), path).toBe(false);
         if (entry.isDirectory()) walk(path);
         else out[relative(dir, path)] = readFileSync(path, 'utf8');
       }

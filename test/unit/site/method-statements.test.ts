@@ -274,7 +274,7 @@ const STATEMENTS: readonly (readonly [string, string])[] = [
   ],
   [
     's1-step-5-limit',
-    "bug-025 (Actual, as amended at task-131: three modes, 165/164/158 public and 48/45/43 hold-out, up to seven and five apart); the published runs' create-patch failures tallied at task-131's review round 1 (the move pair); S1.md §6 (the pairs' length bound, a shift-aware reference) and amendment 1.5 (S1 1.1); scenario conventions amendment 1.5 K7; calibration v0.1 §8; task-131",
+    "bug-025 (Actual; Impact); the published runs' public, hold-out and create-patch figures tallied at task-131's review rounds 1 and 2 (three modes across the arms, 165/164/158 public, mostly 48/45/43 hold-out; the move pair); S1.md §6 (the pairs' length bound, a shift-aware reference) and amendment 1.5 (S1 1.1); scenario conventions amendment 1.5 K7; calibration v0.1 §8; task-131",
   ],
   [
     'oracle-licences',
