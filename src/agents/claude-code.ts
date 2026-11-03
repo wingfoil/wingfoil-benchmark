@@ -103,6 +103,8 @@ export interface Session {
    */
   readonly outcome: 'completed' | 'failed' | 'cap reached' | 'quota exhausted' | 'rate limited';
   readonly error?: string;
+  /** A session that ended with no result event (task-130): its usage is not known. */
+  readonly costUnknown?: true;
   /**
    * The final assistant message: the `result` field of the last result event. In every untrimmed
    * stream of the W2 spike it is byte-identical to the last assistant text, and it is the one place
@@ -220,6 +222,8 @@ export function readSession(lines: readonly string[], usdToEur: number): Session
         transcript: lines,
         outcome: 'failed',
         error: `a line of the session is not valid JSON: ${(error as Error).message}`,
+        // No result event read before it: its usage is not known (REQ-RUN-09 as amended in 1.49, task-130's review).
+        ...(results === 0 ? { costUnknown: true as const } : {}),
       };
     }
     if (typeof event !== 'object' || event === null) {
@@ -230,6 +234,7 @@ export function readSession(lines: readonly string[], usdToEur: number): Session
         transcript: lines,
         outcome: 'failed',
         error: 'a line of the session is not an object',
+        ...(results === 0 ? { costUnknown: true as const } : {}),
       };
     }
     if (event.type === 'assistant') {
@@ -269,6 +274,8 @@ export function readSession(lines: readonly string[], usdToEur: number): Session
       transcript: lines,
       outcome: 'failed',
       error: 'the session ended with no result event',
+      // Its usage is not known, so it counts at its bound, never as zero (REQ-RUN-09 as amended in 1.49, task-130).
+      costUnknown: true,
     };
   }
   const message = finalMessage === undefined ? {} : { finalMessage };
@@ -428,6 +435,7 @@ export function claudeCodeAgent(options: AdapterOptions): AgentPort {
       ...(Object.keys(session.models).length === 0 ? {} : { models: session.models }),
       transcript: session.transcript,
       ...(session.outcome === 'failed' ? { error: session.error ?? 'the session failed' } : {}),
+      ...(session.costUnknown === true ? { costUnknown: true as const } : {}),
       ...(session.outcome === 'cap reached' ||
       session.outcome === 'quota exhausted' ||
       session.outcome === 'rate limited'

@@ -113,6 +113,15 @@ The run's cost cap is passed to the agent, which stops by itself, at most one tu
 
 A step killed at its time cap reports no cost. It is counted at its upper bound: the most it was allowed to spend, which is what was left of the run's cost cap. The budget therefore never counts less than may have been spent. Since that bound is everything left of the run's cost cap, the run then ends. The work done before the kill is kept and scored. A step whose session output (the stream the runner reads from the agent) passes the runner's bound of 256 MiB is a failed step: its cost is not reported, so it too is counted at its upper bound, and the run ends there. {#killed-step}
 
+A Claude Code session that ends with no result event (failed, killed, or stopped by an interrupt) is counted the same
+way: its cost was not reported, so it counts at its bound, never as zero, and the step's earlier sessions keep the cost
+they reported. When the maintainer interrupts a campaign or a dry run, the agent's process is kept out of the terminal's
+interrupt: the runner ends it, and a step interrupted during the agent's session is recorded as interrupted at its
+bound, not as failed at a reported cost; one interrupted between two sessions (during the approver's reply or a rate
+limit's wait) ends at the cost they reported. An interrupted dry run keeps its record and what its steps spent. (Before
+requirements 1.49, such a session counted as zero, and an interrupt could record the step as failed.)
+{#killed-step-no-result}
+
 The token cap is checked between the agent's invocations, not during one. A step whose tokens exceed the cap is not resumed after its current session. Within one session, only the cost cap bounds it. {#step-tokens-between-invocations}
 
 When the subscription's rate limit rejects a session (HTTP 429), the step is not failed: the runner waits 2, 5, 15 and then 30 minutes, resuming the same session with the message "Continue." after each wait. The waits do not count against the step's time cap, and they are recorded with the step, apart from the approver's interventions. The four waits are the step's, not each rejection's, and a step over its token cap or with nothing left of the run's cost cap is not resumed. If the limit still holds after the last wait, the step ends as when the subscription's usage limit is reached: the run ends there, and the campaign starts no further run. {#rate-limit}

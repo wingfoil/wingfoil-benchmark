@@ -789,3 +789,60 @@ function parityRuns(arm: string, model: string, mQ1s: readonly number[]): Parity
     tokens: { input: 1000, output: 600, cacheCreation: 2000, cacheRead: 30000 },
   }));
 }
+
+describe("the finding's template (REQ-RES-05 as amended in 1.49, task-130)", () => {
+  /** A finding of `arms` on the fixture's execution, its campaign pinning WingFoil `version`. */
+  async function finding(version: string, arms: string, edit?: (executionDir: string) => void) {
+    const { root, executionDir } = await aggregatedExecution();
+    const pins = join(executionDir, 'campaign.yaml');
+    writeFileSync(
+      pins,
+      `${readFileSync(pins, 'utf8')}harnesses:\n  wingfoil: { tool: wingfoil, version: ${version} }\n`,
+    );
+    edit?.(executionDir);
+    const { code, stdout } = await benchScoreLike(root, [
+      'finding',
+      EXECUTION,
+      '--scenario',
+      'T3@1.0',
+      '--metric',
+      'M-Q1',
+      '--arms',
+      arms,
+      '--as',
+      'bug',
+    ]);
+    expect(code, stdout).toBe(0);
+    const note = readFileSync(join(root, stdout.replace(/^finding: /, '').trim()), 'utf8');
+    return note.slice(note.indexOf('## For WingFoil: bug'));
+  }
+
+  it('@F5.4 A finding cites the template of the WingFoil the campaign pinned', async () => {
+    // Given an execution whose campaign pins WingFoil v0.3.1 — When a finding is exported
+    // Then its WingFoil section cites v0.3.1's template, with the commit its runs recorded, not a constant
+    const pinned = await finding('v0.3.1', 'baseline,wingfoil');
+    expect(pinned).toContain(`whose template is that of WingFoil v0.3.1 (${WINGFOIL_COMMIT.slice(0, 8)}):`);
+    expect(pinned).not.toContain('v0.3.0');
+
+    // Given a note whose arms ran two WingFoil versions, as in a bridge — the baseline's run made to record v0.2.2
+    const bridge = await finding('v0.3.1', 'baseline,wingfoil', (executionDir) => {
+      const file = join(executionDir, 'runs', 'T3@1.0', 'baseline', 'fake-model', 'r1', 'run.json');
+      const record = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>;
+      const harness = {
+        tool: 'wingfoil',
+        version: 'v0.2.2',
+        commit: '12537b627ce0517222da762e8fa90997a1208a4b',
+      };
+      writeFileSync(file, JSON.stringify({ ...record, harness }));
+    });
+    // Then each arm's template is named
+    expect(bridge).toContain(
+      `whose template is that of the WingFoil each arm ran (baseline: v0.2.2 (12537b62); wingfoil: v0.3.1 (${WINGFOIL_COMMIT.slice(0, 8)})):`,
+    );
+
+    // Given a note of arms none of which ran WingFoil — Then its WingFoil section names no template
+    const none = await finding('v0.3.1', 'baseline');
+    expect(none).toContain('creates: the front matter');
+    expect(none).not.toContain('whose template');
+  });
+});

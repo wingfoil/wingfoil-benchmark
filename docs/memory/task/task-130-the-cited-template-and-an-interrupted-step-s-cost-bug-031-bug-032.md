@@ -2,7 +2,7 @@
 id: task-130-the-cited-template-and-an-interrupted-step-s-cost-bug-031-bug-032
 type: task
 title: "The cited template and an interrupted step's cost (bug-031, bug-032)"
-status: backlog
+status: approved
 release: v0.3
 wave: W16
 features: [F5.4, F2.3]
@@ -67,5 +67,47 @@ tasks in plan-005's order (chat, 2026-11-02). No real-agent session, no spending
 
 ## Execution notes
 
-<!-- What happened while building: deviations, blockers, follow-ups (filed as elements, never left
-     here). For every `wingfoil` command: declared vs observed behaviour. -->
+- **Red first:** the template scenario failed on the constant; the no-result-event scenario failed on the old code
+  (checked by stashing `src/`: no bound, no own process group); the dry run's summary test failed without its change
+  (checked the same way). The process port's tests were written with its code.
+- **Deviations from the Design**, each within requirements 1.49:
+  - The template's version is the one the run recorded (`run.json`'s `harness.version`, the pin copied with the run),
+    else the campaign's pin when it pins one WingFoil; a run recording neither names its commit alone
+    (`WingFoil 3df305ea`, the test fixture's case).
+  - Node's `execFile` ignores `detached` (checked: the child kept the parent's group), so `ownProcessGroup` runs the
+    process with `spawn`, with the same output bound, time limit and result; only the agent's `docker exec` asks for
+    it, so a scoring or git process interrupted with the CLI still stops with it.
+  - The dry run's record already kept a step's bound when the interrupt was settled during it: what lost the cost was
+    the race the process group removes, and the printed summary, which counted reported costs only; it now counts a
+    step's bound, marked "(at its bound)".
+- **Left as it is** (review round 1): the verdict hook's `docker exec` stays in the runner's group, so an interrupt
+  during it records that delivery `failed (exit 130)` in `verdicts.json` and the step ends interrupted between two
+  sessions; the run is run again (`RUN_AGAIN`). A second Ctrl-C, which ends the runner at once, leaves the agent's
+  `docker exec` client to the container's removal or its in-container `timeout` (stated in the port's comment).
+- `wingfoil memory add`, `submit` (draft → pending, backlog → in-progress): as declared.
+- **Full suites** (2026-11-03, `d456a453`, under the load watcher): LINT 0, TEST 0 (2050 passed, 9 skipped), BUILD 0,
+  BIN 0, DOCKER 0.
+
+### Review
+
+**Round 1** (2026-11-03, a fresh read-only agent in `/tmp/claude-1000/review1-130-VbVe`, a clone of `06d552ef`; both
+checkouts unchanged). No blocker; four should-fix and six nits:
+
+| # | Finding | Outcome |
+|---|---|---|
+| S1 | a stream cut by a line that is not JSON, before any result event, still counted zero | fixed: unknown cost there too; tested |
+| S2 | the @F2.3 test lacked the scenario's dry-run clause (tested only in a unit test) | fixed: the dry run interrupted in the @F2.3 test |
+| S3 | no test of a cut resume, nor of `is_error` keeping its cost | fixed: a resume at its bound, the reported cost within it; `is_error` with no bound |
+| S4 | the method page said every interrupted step is at its bound | fixed: during a session at its bound, between two at the reported cost |
+| N1 | the dry run's summary took the bound, the ledger the larger | fixed: the larger, marked only when the bound is |
+| N2 | the template's pin reader duplicated `PINS_FILES`; two harnesses at one version read as two | fixed: `PINS_FILES` reused, versions deduplicated |
+| N3 | the own-group path dropped the chunk crossing the bound; an `error` after start settled early | fixed: exactly the bound kept; `error` settles only a process that never started |
+| N4 | a second Ctrl-C leaves the detached client | kept: stated in the port's comment and above |
+| N5 | the verdict hook's exec stays in the runner's group | kept: out of scope, noted above |
+| N6 | the own-group path untested for split UTF-8, stderr, env and cwd | fixed: tested |
+
+**Round 2** (2026-11-03, a fresh read-only agent in `/tmp/claude-1000/review2-130-Jv9Y`, a clone of `0c2b2bac`; both
+checkouts unchanged; it ran round 1's sources against the new tests). Every round-1 item resolved; no blocker, no
+should-fix. Nits fixed: a dry-run step that reported more than its bound (the larger counted, no mark), and a
+campaign pinning one WingFoil version twice, each now tested; the method-statement source worded as the page. Kept:
+the resume case's bound equals the step's cap either way, so it shows the bound, not which one.

@@ -2,10 +2,11 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { z } from 'zod';
 
-import { fail, ok } from '../core/index.js';
+import { fail, ok, readYamlFile } from '../core/index.js';
 import type { Result } from '../core/index.js';
 
 import { AGGREGATE_FILE } from './aggregate.js';
+import { PINS_FILES } from './runs.js';
 import { DIRECTIVE_KINDS } from './compare.js';
 import type { AggregateFile, BreakEven, BreakEvenSide, Group, Tally, Value } from './aggregate.js';
 
@@ -45,14 +46,6 @@ export interface FindingNote {
   readonly id: string;
   readonly text: string;
 }
-
-/**
- * The WingFoil the finding's WingFoil section follows the templates of: the release the reference
- * campaign runs (sequencer decision 3, amended in 1.1; REQ-RES-05 1.40, task-109), `.wingfoil/memory/templates/`
- * there. Its `bug` and `decision-log` templates are byte-identical at v0.3.1, the WingFoil that manages this
- * repository.
- */
-const TEMPLATE_COMMIT = 'v0.3.0 (cc31d7a8)';
 
 /** The harness tool whose commit the note names (REQ-RUN-14). */
 const WINGFOIL = 'wingfoil';
@@ -254,8 +247,38 @@ function determinismLines(group: Group): string[] {
 
 const recordSchema = z.object({
   scenario_hash: z.string(),
-  harness: z.object({ tool: z.string(), commit: z.string() }).optional(),
+  harness: z.object({ tool: z.string(), version: z.string().optional(), commit: z.string() }).optional(),
 });
+
+/** The WingFoil versions an execution pins (`harnesses.<name>.version` of a WingFoil tool), from its campaign file. */
+function pinnedWingFoil(executionDir: string): string[] {
+  const file = PINS_FILES.map((name) => join(executionDir, name)).find((path) => existsSync(path));
+  if (file === undefined) return [];
+  const read = readYamlFile(file);
+  if (!read.ok) return [];
+  const harnesses = (read.value as { harnesses?: Record<string, { tool?: unknown; version?: unknown }> } | null)?.harnesses;
+  // Two harnesses pinning the same WingFoil version name one version.
+  return [
+    ...new Set(
+      Object.values(harnesses ?? {}).flatMap((h) =>
+        h.tool === WINGFOIL && typeof h.version === 'string' ? [h.version] : [],
+      ),
+    ),
+  ];
+}
+
+/**
+ * The template the WingFoil section follows (REQ-RES-05 as amended in 1.49, task-130): that of the WingFoil the arms
+ * ran, `<version> (<commit>)`, the version the run recorded or the campaign pinned and the commit the run recorded;
+ * each arm's when they differ (a bridge); none when no arm ran WingFoil.
+ */
+function templateClause(templates: ReadonlyMap<string, string[]>): string {
+  const labels = new Set([...templates.values()].flat());
+  if (labels.size === 0) return '';
+  if (labels.size === 1) return `, whose template is that of WingFoil ${[...labels].join('')}`;
+  const each = [...templates.entries()].map(([arm, armLabels]) => `${arm}: ${armLabels.join(', ')}`).join('; ');
+  return `, whose template is that of the WingFoil each arm ran (${each})`;
+}
 
 /** What a note reads of a run's `run.json`: its scenario hash and its harness; or why it cannot. */
 function readRecord(file: string, label: string): Result<z.infer<typeof recordSchema>> {
@@ -330,12 +353,23 @@ export function findingNote(request: FindingRequest): Result<FindingNote> {
   // note, which would otherwise say WingFoil never ran (task-044's review).
   const hashes = new Set<string>();
   const commits = new Map<string, string[]>();
-  for (const run of groups.flatMap((group) => group.runs)) {
-    const record = readRecord(join(runDir(run), 'run.json'), `${run}/run.json`);
-    if (!record.ok) return record;
-    hashes.add(record.value.scenario_hash);
-    const harness = record.value.harness;
-    if (harness?.tool === WINGFOIL) commits.set(harness.commit, [...(commits.get(harness.commit) ?? []), run]);
+  const pinned = pinnedWingFoil(request.executionDir);
+  const templates = new Map<string, string[]>();
+  for (const group of groups) {
+    for (const run of group.runs) {
+      const record = readRecord(join(runDir(run), 'run.json'), `${run}/run.json`);
+      if (!record.ok) return record;
+      hashes.add(record.value.scenario_hash);
+      const harness = record.value.harness;
+      if (harness?.tool !== WINGFOIL) continue;
+      commits.set(harness.commit, [...(commits.get(harness.commit) ?? []), run]);
+      // The version the run recorded, else the one the campaign pinned when it pinned one WingFoil (task-130).
+      const version = harness.version ?? (pinned.length === 1 ? pinned[0] : undefined);
+      const short = harness.commit.slice(0, 8);
+      const label = version === undefined ? short : `${version} (${short})`;
+      const labels = templates.get(group.arm) ?? [];
+      if (!labels.includes(label)) templates.set(group.arm, [...labels, label]);
+    }
   }
   const hash = hashes.size === 1 ? [...hashes].join('') : `its runs disagree: ${[...hashes].join(', ')}`;
   const values = groups.flatMap((group) => ['', `### ${group.arm}`, '', ...metricLines(metric, group, aggregate)]);
@@ -406,7 +440,7 @@ export function findingNote(request: FindingRequest): Result<FindingNote> {
     '',
     `## For WingFoil: ${request.as}`,
     '',
-    `To paste into the element \`wingfoil memory add --type ${request.as} --title "…"\` creates, whose template is that of WingFoil ${TEMPLATE_COMMIT}: the front matter's fields below, then the body. What is marked "to fill" is the maintainer's.`,
+    `To paste into the element \`wingfoil memory add --type ${request.as} --title "…"\` creates${templateClause(templates)}: the front matter's fields below, then the body. What is marked "to fill" is the maintainer's.`,
     '',
     ...(request.as === 'bug' ? bugBlock(actual, facts, reproduce) : decisionLogBlock(actual, facts)),
   ];

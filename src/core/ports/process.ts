@@ -1,4 +1,4 @@
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import process from 'node:process';
 
 /** What running a process produced. A non-zero `code` is data, not an exception. */
@@ -22,6 +22,11 @@ export interface ProcessPort {
       env?: Readonly<Record<string, string | undefined>>;
       /** Stop the process after this many milliseconds, and say so in the result. */
       timeoutMs?: number;
+      /**
+       * Start it in a process group of its own (bug-032, task-130): the terminal's interrupt then reaches the caller
+       * alone, which ends the process itself (REQ-RUN-19), instead of the process dying first.
+       */
+      ownProcessGroup?: boolean;
     },
   ): Promise<ProcessResult>;
 }
@@ -41,6 +46,8 @@ export function createSystemProcess(options: { maxOutputBytes?: number } = {}): 
   const maxOutputBytes = options.maxOutputBytes ?? MAX_OUTPUT_BYTES;
   return {
     run(command, args, runOptions) {
+      if (runOptions?.ownProcessGroup === true)
+        return runInOwnGroup(command, args, runOptions, maxOutputBytes);
       return new Promise((resolve) => {
         const environment = runOptions?.env ? withEnvironment(runOptions.env) : process.env;
         execFile(
@@ -73,6 +80,71 @@ export function createSystemProcess(options: { maxOutputBytes?: number } = {}): 
       });
     },
   };
+}
+
+/**
+ * A process in a process group of its own (bug-032, task-130): `execFile` ignores `detached`, so `spawn` runs it, with
+ * the same bound on each output, the same time limit and the same result as {@link createSystemProcess}'s. Out of the
+ * terminal's group, it is not killed by a second Ctrl-C that ends the caller at once: a `docker exec` client then
+ * lives until the container's removal, which the first interrupt started, or its in-container `timeout` ends it.
+ */
+function runInOwnGroup(
+  command: string,
+  args: readonly string[],
+  runOptions: { cwd?: string; env?: Readonly<Record<string, string | undefined>>; timeoutMs?: number },
+  maxOutputBytes: number,
+): Promise<ProcessResult> {
+  return new Promise((resolve) => {
+    const child = spawn(command, [...args], {
+      cwd: runOptions.cwd,
+      env: runOptions.env ? withEnvironment(runOptions.env) : process.env,
+      detached: true,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    const out: Buffer[] = [];
+    const err: Buffer[] = [];
+    const size = { out: 0, err: 0 };
+    let bounded = false;
+    let timedOut = false;
+    const collect = (chunks: Buffer[], key: 'out' | 'err') => (chunk: Buffer) => {
+      if (bounded) return;
+      const room = maxOutputBytes - size[key];
+      size[key] += chunk.length;
+      if (chunk.length > room) {
+        // Exactly the bound kept, as execFile keeps it: the evidence up to the cut.
+        chunks.push(chunk.subarray(0, Math.max(room, 0)));
+        bounded = true;
+        child.kill('SIGKILL');
+        return;
+      }
+      chunks.push(chunk);
+    };
+    child.stdout.on('data', collect(out, 'out'));
+    child.stderr.on('data', collect(err, 'err'));
+    const timer =
+      runOptions.timeoutMs === undefined || runOptions.timeoutMs === 0
+        ? undefined
+        : setTimeout(() => {
+            timedOut = true;
+            child.kill('SIGKILL');
+          }, runOptions.timeoutMs);
+    const settle = (code: number) => {
+      if (timer !== undefined) clearTimeout(timer);
+      const stdout = Buffer.concat(out).toString('utf8');
+      const stderr = Buffer.concat(err).toString('utf8');
+      if (bounded) {
+        const note = `output bound of ${String(maxOutputBytes)} bytes reached`;
+        resolve({ code: 1, stdout, stderr: stderr ? `${stderr}\n${note}` : note, outputBounded: true });
+        return;
+      }
+      resolve({ code, stdout, stderr, ...(timedOut ? { timedOut: true as const } : {}) });
+    };
+    // A process that cannot start (no such program) ends as one that failed; any other error is followed by `close`.
+    child.on('error', () => {
+      if (child.pid === undefined) settle(1);
+    });
+    child.on('close', (code) => settle(code ?? 1));
+  });
 }
 
 /** The port that really starts processes. */

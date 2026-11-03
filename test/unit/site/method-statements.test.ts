@@ -98,6 +98,10 @@ const STATEMENTS: readonly (readonly [string, string])[] = [
     'rel-v0-1 W5 Due before; task-024 Design "The step caps" (upper bound = the `--max-budget-usd` given) and "Deviation from the Design" (a time-capped step ends the run in practice); task-053 Design (a step whose output passes the 256 MiB bound counted at its bound, bug-011)',
   ],
   [
+    'killed-step-no-result',
+    'REQ-RUN-09 as amended in 1.49 (no result event at its bound, never zero; an interruption during a session recorded interrupted at its bound, one between two at the reported cost, the docker exec client kept out of the terminal interrupt; an interrupted dry run keeps its record); REQ-RUN-19; bug-032; task-130',
+  ],
+  [
     'step-tokens-between-invocations',
     'rel-v0-1 W5 Due before; task-024 Design "The step caps" and Known limits',
   ],

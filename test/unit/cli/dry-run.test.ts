@@ -404,6 +404,59 @@ describe('bench scenario dry-run, interrupted (REQ-RUN-19, task-079)', () => {
   });
 });
 
+describe('bench scenario dry-run, interrupted during a step (REQ-RUN-09 as amended in 1.49, task-130)', () => {
+  it('keeps the cost its steps spent in its record, at the bound for the step it stopped, and counts it', async () => {
+    const root = repository();
+    const { stdout } = await dryRun(
+      root,
+      ['T3@1.0', '--arm', 'baseline'],
+      ports({
+        onStep: () => {
+          process.emit('SIGINT');
+          throw new Error('the agent exited with code 130');
+        },
+      }),
+    );
+    const record = runJson(root, 1, 'baseline') as {
+      steps: { cost_reported?: boolean; cost_bound_usd?: number }[];
+    };
+    expect(record.steps[0]).toMatchObject({ cost_reported: false });
+    const bound = record.steps[0]?.cost_bound_usd ?? 0;
+    expect(bound).toBeGreaterThan(0);
+    expect(stdout).toContain(`step 01 ${bound.toFixed(4)} USD (at its bound)`);
+  });
+});
+
+describe('bench scenario dry-run, a step that reported more than its bound (task-130)', () => {
+  it('counts the larger of the two, as the ledger does, and marks only a bound that is larger', async () => {
+    const root = repository();
+    const { stdout } = await dryRun(
+      root,
+      ['T3@1.0', '--arm', 'baseline'],
+      ports({
+        // An agent that went past its cost cap, interrupted as its session ends: what it reported is above its bound
+        usageOf: () => ({
+          inputTokens: 0,
+          outputTokens: 0,
+          cacheCreationInputTokens: 0,
+          cacheReadInputTokens: 0,
+          costUsd: 50,
+          costEur: 50,
+          turns: 1,
+          durationMs: 1,
+        }),
+        onStep: () => {
+          process.emit('SIGINT');
+        },
+      }),
+    );
+    const record = runJson(root, 1, 'baseline') as { steps: { cost_bound_usd?: number }[] };
+    expect(record.steps[0]?.cost_bound_usd ?? 0).toBeLessThan(50);
+    expect(stdout).toContain('step 01 50.0000 USD');
+    expect(stdout).not.toContain('(at its bound)');
+  });
+});
+
 describe('a campaign run, after the runner took plans (task-021)', () => {
   it('still records the campaign it belonged to, and no dry-run mark', async () => {
     const root = repository();

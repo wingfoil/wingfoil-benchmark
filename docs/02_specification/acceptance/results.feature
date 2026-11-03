@@ -37,6 +37,16 @@ Feature: Stored results, run detail, finding notes and the published site
     And the note is written as a file in the benchmark repository
     And nothing is written to the WingFoil repository
 
+  @F5.4
+  Scenario: A finding cites the template of the WingFoil the campaign pinned
+    Given an execution whose campaign pins WingFoil v0.3.1
+    When a finding is exported
+    Then its WingFoil section cites v0.3.1's template, with the commit its runs recorded, not a constant
+    Given a note whose arms ran two WingFoil versions, as in a bridge
+    Then each arm's template is named
+    Given a note of arms none of which ran WingFoil
+    Then its WingFoil section names no template
+
   @F5.5
   Scenario: The landing page answers the question at a glance
     Given a scored campaign

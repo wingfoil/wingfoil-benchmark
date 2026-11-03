@@ -1342,13 +1342,13 @@ async function executeStep(
       killed = true;
       return { code: TIMED_OUT, stdout: '', stderr: `step ${number}: time cap reached` };
     }
-    const result = await options.docker.exec(container, [
-      'timeout',
-      '-k',
-      String(KILL_AFTER_S),
-      String(seconds),
-      ...command,
-    ]);
+    // The agent's client out of the terminal's interrupt (REQ-RUN-09 as amended in 1.49, task-130): the runner, not
+    // the client, ends it, so that the step is settled interrupted at its bound, never failed at its reported cost.
+    const result = await options.docker.exec(
+      container,
+      ['timeout', '-k', String(KILL_AFTER_S), String(seconds), ...command],
+      { ownProcessGroup: true },
+    );
     if (result.code === TIMED_OUT || result.code === KILLED) killed = true;
     if (result.outputBounded === true) bounded = true;
     return result;

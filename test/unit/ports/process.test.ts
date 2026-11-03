@@ -146,3 +146,56 @@ describe('the git port, when git fails', () => {
     );
   });
 });
+
+describe('a process in a group of its own (bug-032, task-130)', () => {
+  it("starts it outside the caller's process group, so that the terminal's interrupt reaches the caller alone", async () => {
+    // Each child reports its own process group while it runs.
+    const pgidOf =
+      "require('child_process').execFile('ps', ['-o', 'pgid=', '-p', String(process.pid)], (e, o) => console.log(o.trim()))";
+    const groupOf = async (ownProcessGroup: boolean) =>
+      (
+        await systemProcess.run(process.execPath, ['-e', pgidOf], ownProcessGroup ? { ownProcessGroup } : {})
+      ).stdout.trim();
+    const mine = (await systemProcess.run('ps', ['-o', 'pgid=', '-p', String(process.pid)])).stdout.trim();
+    expect(mine).not.toBe('');
+    expect(await groupOf(false)).toBe(mine);
+    expect(await groupOf(true)).not.toBe(mine);
+  });
+
+  it("keeps the port's code, output bound and time limit there too", async () => {
+    const own = { ownProcessGroup: true };
+    expect(
+      await systemProcess.run(process.execPath, ['-e', 'console.log("out"); process.exit(3)'], own),
+    ).toEqual({
+      code: 3,
+      stdout: 'out\n',
+      stderr: '',
+    });
+    const bounded = await createSystemProcess({ maxOutputBytes: 10 }).run(
+      process.execPath,
+      ['-e', 'process.stdout.write("x".repeat(100))'],
+      own,
+    );
+    expect(bounded).toMatchObject({ code: 1, outputBounded: true });
+    const slow = await systemProcess.run(process.execPath, ['-e', 'setTimeout(() => {}, 10000)'], {
+      ...own,
+      timeoutMs: 200,
+    });
+    expect(slow).toMatchObject({ timedOut: true });
+    expect((await systemProcess.run('no-such-program-anywhere', [], own)).code).toBe(1);
+    // Exactly the bound kept; a character split across chunks decoded whole; stderr, env and cwd as the other path's
+    expect(bounded.stdout).toBe('x'.repeat(10));
+    const wide = await systemProcess.run(
+      process.execPath,
+      ['-e', 'process.stdout.write("é".repeat(100000))'],
+      own,
+    );
+    expect(wide.stdout).toBe('é'.repeat(100000));
+    const where = await systemProcess.run(
+      process.execPath,
+      ['-e', 'console.error(process.env.BENCH_PROBE + " " + process.cwd())'],
+      { ...own, env: { BENCH_PROBE: 'probe' }, cwd: '/' },
+    );
+    expect(where.stderr).toBe('probe /\n');
+  });
+});

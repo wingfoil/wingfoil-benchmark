@@ -170,10 +170,18 @@ export async function dryRunCommand(
   // What it spent, once it ended (REQ-NFR-06): what the agent reports, in USD, and at the profile's rate.
   const [run] = summary.runs;
   if (run === undefined) return report([{ path: 'dry run', message: 'no run was executed' }], io);
-  const costs = run.steps.map((step) => step.usage.costUsd);
-  const total = costs.reduce((sum, cost) => sum + cost, 0);
+  // A step that reported no cost counts at its bound (REQ-RUN-09 as amended in 1.49, task-130), as the ledger counts it:
+  // the larger of the two.
+  const costOf = (step: (typeof run.steps)[number]) => Math.max(step.usage.costUsd, step.costBoundUsd ?? 0);
+  const atBound = (step: (typeof run.steps)[number]) =>
+    step.costBoundUsd !== undefined && step.costBoundUsd > step.usage.costUsd;
+  const total = run.steps.reduce((sum, step) => sum + costOf(step), 0);
   const perStep = run.steps
-    .map((step) => `step ${String(step.n).padStart(2, '0')} ${step.usage.costUsd.toFixed(4)} USD`)
+    .map(
+      (step) =>
+        `step ${String(step.n).padStart(2, '0')} ${costOf(step).toFixed(4)} USD` +
+        (atBound(step) ? ' (at its bound)' : ''),
+    )
     .join(', ');
   io.stdout(
     `dry run ${scenario.id}@${scenario.version} in ${arm.name}: ${run.outcome}, ${money(total, rate)}` +

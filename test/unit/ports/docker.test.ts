@@ -9,6 +9,7 @@ interface Call {
   args: string[];
   env?: Readonly<Record<string, string | undefined>>;
   timeoutMs?: number;
+  ownProcessGroup?: boolean;
 }
 
 function recorder(results: ProcessResult[] = []): ProcessPort & { calls: Call[] } {
@@ -21,6 +22,7 @@ function recorder(results: ProcessResult[] = []): ProcessPort & { calls: Call[] 
         args: [...args],
         ...(options?.env ? { env: options.env } : {}),
         ...(options?.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
+        ...(options?.ownProcessGroup === undefined ? {} : { ownProcessGroup: options.ownProcessGroup }),
       });
       return Promise.resolve(results.shift() ?? { code: 0, stdout: '', stderr: '' });
     },
@@ -168,6 +170,13 @@ describe('the Docker port', () => {
     const result = await dockerCli(process).exec('c0ffee', ['sh', '-c', 'echo hi']);
     expect(result).toEqual({ code: 3, stdout: 'out', stderr: 'err' });
     expect(process.calls[0]?.args).toEqual(['exec', 'c0ffee', 'sh', '-c', 'echo hi']);
+    expect(process.calls[0]).not.toHaveProperty('ownProcessGroup');
+  });
+
+  it("runs the client in a process group of its own when asked: the agent's (task-130)", async () => {
+    const process = recorder([ok()]);
+    await dockerCli(process).exec('c0ffee', ['claude'], { ownProcessGroup: true });
+    expect(process.calls[0]).toMatchObject({ args: ['exec', 'c0ffee', 'claude'], ownProcessGroup: true });
   });
 
   it("copies a host path into the container, outside the workspace's mount (REQ-RUN-03)", async () => {
