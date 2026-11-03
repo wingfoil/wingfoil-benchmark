@@ -133,6 +133,8 @@ session, no spending; the published values stay as published, and v0.2's re-scor
   `approved → fixed` are set by hand), which turned the bug-links test red here; fixed on main (`b3071da0`,
   `cc362580`) and merged into this branch.
 - `wingfoil memory add`, `submit` (draft → pending, backlog → in-progress; bug-026 approved → fixed): as declared.
+- **Full suites** (2026-11-03, `e5f400a3`, under the load watcher): LINT 0, TEST 0 (2040 passed, 9 skipped), BUILD 0,
+  BIN 0, DOCKER 0.
 
 ### Review
 
