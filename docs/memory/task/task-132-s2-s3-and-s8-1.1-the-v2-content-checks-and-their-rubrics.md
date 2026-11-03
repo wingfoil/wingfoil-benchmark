@@ -2,7 +2,7 @@
 id: task-132-s2-s3-and-s8-1.1-the-v2-content-checks-and-their-rubrics
 type: task
 title: "S2, S3 and S8 1.1, the v2 content checks and their rubrics"
-status: backlog
+status: in-progress
 release: v0.3
 wave: W16
 features: [F3.4, F4.7]
