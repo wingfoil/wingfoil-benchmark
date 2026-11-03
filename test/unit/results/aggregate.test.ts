@@ -2,7 +2,7 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-import { AGGREGATE_FILE, aggregateExecution, plannedRuns, writeAggregate } from '../../../src/results/index.js';
+import { AGGREGATE_FILE, aggregateExecution, breakEvenEntry, plannedRuns, writeAggregate } from '../../../src/results/index.js';
 import { tempDir } from '../../support/scenario-fixture.js';
 
 const CAMPAIGN = 'c0ffee000001';
@@ -40,7 +40,9 @@ interface RunSpec {
   /** score.json's `seed`, `m_f1`, `m_f2` and `m_d3` (task-039); absent, it was scored before them. */
   readonly continuity?: Readonly<Record<string, unknown>>;
   /** score.json's `determinism` (task-042); absent, it was scored before it. */
-  readonly determinism?: { readonly interface: readonly string[]; readonly paths: readonly string[] } | 'not reached';
+  readonly determinism?:
+    | { readonly interface: readonly string[]; readonly interface_version?: number; readonly paths: readonly string[] }
+    | 'not reached';
   /** The harness commit run.json records (REQ-RUN-14), for an arm that requires one. */
   readonly harnessCommit?: string;
   /** The scoring image score.json's `scorer` names; by default `bench-score:x`. */
@@ -137,7 +139,13 @@ function execution(runs: readonly RunSpec[], pins = 'models:\n  default: model-a
               determinism:
                 run.determinism === 'not reached'
                   ? { not_reached: true }
-                  : { interface: run.determinism.interface, paths: run.determinism.paths },
+                  : {
+                      interface: run.determinism.interface,
+                      ...(run.determinism.interface_version === undefined
+                        ? {}
+                        : { interface_version: run.determinism.interface_version }),
+                      paths: run.determinism.paths,
+                    },
             }),
         cost: {
           usd_to_eur: 0.5,
@@ -196,7 +204,7 @@ describe('aggregateExecution (F5.1, REQ-FMT-07)', () => {
     ]);
     const file = aggregate(dir);
     expect([file.aggregate_version, file.campaign, file.execution, file.model]).toEqual([
-      1,
+      2,
       CAMPAIGN,
       1,
       'model-a',
@@ -354,6 +362,8 @@ describe('aggregateExecution (F5.1, REQ-FMT-07)', () => {
             { runs: [runs[0], runs[2]], intersection: 2, union: 2 },
             { runs: [runs[1], runs[2]], intersection: 1, union: 3 },
           ],
+          // A score.json that records no M-R2 version is version 1 (task-129)
+          version: 1,
         },
         m_r3: {
           mean: 0.8333,
@@ -424,6 +434,13 @@ describe('aggregateExecution (F5.1, REQ-FMT-07)', () => {
       });
     });
 
+    it('gives no value when the runs were scored with different M-R2 versions, and names the pin (task-129)', () => {
+      const v2 = { interface: ['x: function x(): void;'], interface_version: 2, paths: PATHS };
+      const [group] = aggregate(execution([rep(1), rep(2, { determinism: v2 })])).groups;
+      expect(group?.metrics.m_r).toMatchObject({ n: 2, pins_differ: ['m_r2_version'] });
+      expect(group?.metrics.m_r).not.toHaveProperty('m_r2');
+    });
+
     it('counts two empty sets as alike', () => {
       const empty = { interface: [], paths: [] };
       const [group] = aggregate(execution([rep(1, { determinism: empty }), rep(2, { determinism: empty })])).groups;
@@ -482,7 +499,7 @@ describe('aggregateExecution (F5.1, REQ-FMT-07)', () => {
       ...overrides,
     });
 
-    it("is the arm's setup cost over the difference in mean step cost, when its quality is not lower", () => {
+    it("is the arm's M-K3 over the difference of the per-run mean step costs, with both comparisons (task-129)", () => {
       const file = aggregate(execution([baseline(), arm()]));
       expect(file.break_even).toEqual([
         {
@@ -491,13 +508,41 @@ describe('aggregateExecution (F5.1, REQ-FMT-07)', () => {
           model: 'model-a',
           arm: 'wingfoil',
           value: 3,
-          setup_cost_eur: { arm: 0.3 },
-          mean_step_cost_eur: { baseline: 0.2, arm: 0.1 },
-          final_m_q1: { baseline: 1, arm: 1 },
-          runs: { baseline: [name('baseline')], arm: [name('wingfoil')] },
-          n: { baseline: 1, arm: 1 },
+          m_k3_eur: 0.3,
+          quality: {
+            outcome: 'same',
+            baseline: { runs: [name('baseline')], n: 1, mean: 1, min: 1, max: 1 },
+            arm: { runs: [name('wingfoil')], n: 1, mean: 1, min: 1, max: 1 },
+          },
+          step_cost: {
+            outcome: 'preliminary',
+            baseline: { runs: [name('baseline')], n: 1, mean: 0.2, min: 0.2, max: 0.2 },
+            arm: { runs: [name('wingfoil')], n: 1, mean: 0.1, min: 0.1, max: 0.1 },
+          },
         },
       ]);
+      expect(file.m_k3).toContainEqual({
+        scenario: 'T3',
+        version: '1.0',
+        arm: 'wingfoil',
+        configuration_eur: 0,
+        configuration: 'not recorded',
+        setup_mean_eur: 0.3,
+        value: 0.3,
+        runs: [name('wingfoil')],
+        n: 1,
+      });
+    });
+
+    it('reads the direction from the unrounded means (task-129)', () => {
+      const one = (name: string, finalMQ1: number, cost: number) => ({ name, finalMQ1, stepCosts: [cost] });
+      // The divisor is compare's unrounded delta, and a delta below 1e-12 reads as the same, which is never: no zero
+      // or noise divisor. A final M-Q1 lower by 1e-7 has rounded means that tie; its direction is read unrounded:
+      // A quality lower by 1e-7, preliminary, is not applicable for its quality, though the rounded means tie
+      expect(breakEvenEntry([one('b', 0.5000001, 0.2)], [one('a', 0.5, 0.1)], 0.6)).toMatchObject({
+        value: 'not applicable',
+        reason: 'quality',
+      });
     });
 
     it('is 0 for an arm cheaper per step whose setup cost nothing, as every v0.1 setup does', () => {
@@ -505,23 +550,26 @@ describe('aggregateExecution (F5.1, REQ-FMT-07)', () => {
       expect(entry?.value).toBe(0);
     });
 
-    it('is "not applicable" when the arm\'s final M-Q1 is lower, whatever its cost', () => {
+    it('is "not applicable" for its quality when the arm\'s final M-Q1 mean is lower, preliminary, whatever its cost', () => {
       const lower = arm({ steps: [[s('a', 1, 1)], [s('a', 1, 2)]] });
-      expect(aggregate(execution([baseline(), lower])).break_even[0]?.value).toBe('not applicable');
+      expect(aggregate(execution([baseline(), lower])).break_even[0]).toMatchObject({
+        value: 'not applicable',
+        reason: 'quality',
+      });
     });
 
-    it('counts a final not reached as a pass rate of 0, a loss', () => {
+    it('counts a final not reached as a pass rate of 0, and a run with no reached step is left out of the step cost', () => {
       const unfinished = arm({ steps: [[s('a', 1, 1)], 'not reached'], stepCosts: [0.1, 0] });
       const [entry] = aggregate(execution([baseline(), unfinished])).break_even;
-      expect(entry).toMatchObject({ value: 'not applicable', final_m_q1: { baseline: 1, arm: 0 } });
+      expect(entry).toMatchObject({ value: 'not applicable', reason: 'quality', quality: { arm: { mean: 0 } } });
     });
 
-    it('is "never" when the arm\'s mean step cost is not lower, equal included', () => {
+    it('is "never" when the arm\'s step cost is the same, or higher with fewer than three runs', () => {
       expect(aggregate(execution([baseline(), arm({ stepCosts: [0.2, 0.2] })])).break_even[0]?.value).toBe('never');
       expect(aggregate(execution([baseline(), arm({ stepCosts: [0.3, 0.3] })])).break_even[0]?.value).toBe('never');
     });
 
-    it('averages over the runs of each group, and over every reached step', () => {
+    it("averages each run's reached steps, then the runs of each group", () => {
       const file = aggregate(
         execution([
           baseline(1),
@@ -532,10 +580,26 @@ describe('aggregateExecution (F5.1, REQ-FMT-07)', () => {
       );
       expect(file.break_even[0]).toMatchObject({
         value: 1.5,
-        setup_cost_eur: { arm: 0.3 },
-        mean_step_cost_eur: { baseline: 0.3, arm: 0.1 },
-        n: { baseline: 2, arm: 2 },
+        m_k3_eur: 0.3,
+        step_cost: { outcome: 'preliminary', baseline: { mean: 0.3, n: 2 }, arm: { mean: 0.1, n: 2 } },
       });
+    });
+
+    it("pools M-K3 over every model's runs of the arm, and each model's break-even divides it (task-129)", () => {
+      const file = aggregate(
+        execution([
+          baseline(),
+          arm({ setup: { costEur: 0.2 } }),
+          baseline(1, 'model-b'),
+          arm({ model: 'model-b', setup: { costEur: 0.4 } }),
+        ]),
+      );
+      const wingfoil = file.m_k3.filter((entry) => entry.arm === 'wingfoil');
+      expect(wingfoil).toEqual([expect.objectContaining({ value: 0.3, n: 2 })]);
+      expect(file.break_even.map((entry) => [entry.model, entry.m_k3_eur, entry.value])).toEqual([
+        ['model-a', 0.3, 3],
+        ['model-b', 0.3, 3],
+      ]);
     });
 
     it('pairs baseline-docs with the baseline too, and a slice within its own model', () => {
@@ -553,10 +617,10 @@ describe('aggregateExecution (F5.1, REQ-FMT-07)', () => {
       ]);
     });
 
-    it('leaves out an arm with no baseline on its model, or whose setup cost was not recorded', () => {
+    it('leaves out an arm with no baseline on its model; a setup not recorded is left out of M-K3, at 0 alone', () => {
       expect(aggregate(execution([arm()])).break_even).toEqual([]);
-      expect(aggregate(execution([baseline(), arm({ setup: 'not recorded' })])).break_even).toEqual([]);
-      expect(aggregate(execution([baseline(), arm({ setup: undefined })])).break_even).toEqual([]);
+      expect(aggregate(execution([baseline(), arm({ setup: 'not recorded' })])).break_even[0]?.m_k3_eur).toBe(0);
+      expect(aggregate(execution([baseline(), arm({ setup: undefined })])).break_even[0]?.m_k3_eur).toBe(0);
     });
   });
 

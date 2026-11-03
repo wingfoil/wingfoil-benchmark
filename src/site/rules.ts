@@ -1,4 +1,5 @@
-import type { Comparison, MetricId, Outcome } from '../results/index.js';
+import { reported } from '../results/index.js';
+import type { Comparison, MetricId, Reported } from '../results/index.js';
 
 /**
  * The site's reporting rules (REQ-RES-03 as amended in 1.20, task-045): the headline the comparisons make, and how a
@@ -6,7 +7,7 @@ import type { Comparison, MetricId, Outcome } from '../results/index.js';
  * category map and the comparison rules themselves are `results`' (task-068), re-exported here.
  */
 
-export { CATEGORY_MAP, certaintyOf, compare, readMetric, summarize } from '../results/index.js';
+export { CATEGORY_MAP, certaintyOf, compare, readMetric, reported, summarize } from '../results/index.js';
 export type {
   Better,
   Certainty,
@@ -16,6 +17,7 @@ export type {
   MappedCategory,
   MetricId,
   Outcome,
+  Reported,
   Summary,
 } from '../results/index.js';
 
@@ -30,9 +32,9 @@ function unique(items: readonly string[]): string[] {
 }
 
 /**
- * The headline for one arm (the approver's choice 2): its better, worse and same comparisons counted
- * with the same weight, the categories they span, and those where a side has fewer than 3 runs. `emphasis`
- * marks the arm's name (the page's `<strong>`).
+ * The headline for one arm (the approver's choice 2; REQ-RES-03 as amended in 1.49, task-129): its comparisons counted
+ * by the outcome each page reports — better, worse and the same, within the variance and preliminary — with the same
+ * weight, and the categories they span. `emphasis` marks the arm's name (the page's `<strong>`).
  */
 export function headlineSentence(
   arm: string,
@@ -43,21 +45,15 @@ export function headlineSentence(
   if (comparisons.length === 0) {
     return `Against the baseline, ${name} has no comparison: no metric of the category map was measured in both.`;
   }
-  const count = (outcome: Outcome) =>
-    comparisons.filter((comparison) => comparison.outcome === outcome).length;
+  const count = (outcome: Reported) =>
+    comparisons.filter((comparison) => reported(comparison) === outcome).length;
   const categories = unique(comparisons.map((comparison) => comparison.category));
-  const preliminary = unique(
-    comparisons
-      .filter((comparison) => comparison.certainty === 'preliminary')
-      .map((comparison) => comparison.category),
-  );
   const total = comparisons.length;
   return (
-    `Against the baseline, ${name} is better in ${count('better')}, worse in ${count('worse')} and the same in ` +
-    `${count('same')} of ${total} comparison${total === 1 ? '' : 's'} across ` +
-    `${categories.length === 1 ? 'category' : 'categories'} ${listed(categories)}` +
-    (preliminary.length === 0 ? '' : ` (preliminary: n < 3 in ${listed(preliminary)})`) +
-    '.'
+    `Against the baseline, ${name} is better in ${count('better')}, worse in ${count('worse')}, the same in ` +
+    `${count('same')}, within the variance in ${count('within the variance')} and preliminary in ` +
+    `${count('preliminary')} of ${total} comparison${total === 1 ? '' : 's'} across ` +
+    `${categories.length === 1 ? 'category' : 'categories'} ${listed(categories)}.`
   );
 }
 

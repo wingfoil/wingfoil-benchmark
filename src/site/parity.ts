@@ -1,3 +1,4 @@
+import { reported } from '../results/index.js';
 import type { ParityCell, ParityEntry, ParitySection } from '../results/index.js';
 
 import { escapeHtml as e, page, PARITY_HEADING } from './render.js';
@@ -30,10 +31,11 @@ function qualityCell(
   const weak = pick(entry.cells.weak_harness);
   const strong = pick(entry.cells.strong_baseline);
   if (verdict === undefined || weak === undefined || strong === undefined) return '<td>—</td>';
-  // The verdict in words, then how sure it is: "worse" only beyond the variance; a lower mean short of it is "lower".
-  const word =
-    verdict.verdict === 'worse' ? 'worse' : verdict.outcome === 'worse' ? 'lower' : verdict.outcome;
-  const mark = `${word} (${verdict.certainty})`;
+  // The verdict as every page reports an outcome (REQ-RES-03 as amended in 1.49, task-129): better or worse only beyond
+  // the variance, otherwise the same (with how sure it is, as beside the same elsewhere), within the variance or
+  // preliminary.
+  const word = reported(verdict);
+  const mark = word === 'same' ? `same (${verdict.certainty})` : word;
   return `<td>${percent(weak)} against ${percent(strong)}<br><span class="verdict">${e(mark)}</span></td>`;
 }
 

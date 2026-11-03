@@ -106,7 +106,8 @@ describe('the pages, from a hand-built model (task-045)', () => {
   it('shows a range from n = 3, beyond variance, not measured, a loss with its reason, and a hold-out not scored', () => {
     const page = landingPage(model());
     expect(page).toContain('<span class="range">range 10.0%–30.0%</span>');
-    expect(page).toContain('<span class="certainty">beyond variance</span>');
+    // Beyond the variance, the symbol says how sure it is (REQ-RES-03 as amended in 1.49, task-129)
+    expect(page).toContain('<span class="outcome" data-outcome="better">▲ better</span></div>');
     expect(page).toContain('<div class="value"><span class="metric">M-K1</span> not measured</div>');
     expect(page).toContain('loss: r3: expected failure (missing workflow-engine)');
     expect(page).toContain('<span class="holdout">hold-out</span> not scored');
@@ -186,9 +187,7 @@ describe('the pages, from a hand-built model (task-045)', () => {
       ],
     };
     const page = landingPage({ ...m, categories: [row], comparisons: [comparison] });
-    expect(page).toContain(
-      '<span class="outcome" data-outcome="better">▲ better</span> <span class="certainty">preliminary</span>',
-    );
+    expect(page).toContain('<span class="outcome" data-outcome="preliminary">preliminary</span></div>');
   });
 
   it('gives each hold-out value its n, and shows a note in place of a value', () => {
@@ -302,7 +301,7 @@ describe('a harness against its docs control on a category page (REQ-SCO-14, tas
       '<div class="value against"><span class="metric">against baseline-docs</span> <span class="delta">',
     );
     expect(compared).toContain(
-      '<span class="outcome" data-outcome="worse">▼ worse</span> <span class="certainty">within variance</span>',
+      '<span class="outcome" data-outcome="within the variance">within the variance</span></div>',
     );
     expect(
       withAgainst({ control: 'baseline-docs', metric: { metric: 'M-Q1', note: 'not comparable: r2 <x>' } }),

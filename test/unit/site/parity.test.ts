@@ -69,7 +69,7 @@ describe('the parity page (REQ-RES-12, dl-032, task-121)', () => {
     expect(html).toContain('never mixed with the same-model results');
   });
 
-  it('words a lower mean short of the variance apart from a worse one, and a better one as better', () => {
+  it('words a lower mean short of the variance as within the variance, not as worse (REQ-RES-03 1.49)', () => {
     const built = paritySection(
       [
         ...runs('baseline', 'strong', 0.5, 600_000, 1),
@@ -79,7 +79,7 @@ describe('the parity page (REQ-RES-12, dl-032, task-121)', () => {
       'strong',
     );
     const page = parityPage('T', built as ParitySection);
-    expect(page).toContain('<span class="verdict">lower (within variance)</span>');
+    expect(page).toContain('<span class="verdict">within the variance</span>');
   });
 
   it('estimates the local time per profile, under the assumptions’ sentence', () => {

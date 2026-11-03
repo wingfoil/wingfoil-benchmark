@@ -29,10 +29,25 @@ export { JUDGEMENTS_FILE, readJudgements } from './judgements.js';
 export type { Judgement } from './judgements.js';
 export { executionRate, executionRuns, readStepCommits, readStepUsage, readStoredRun } from './runs.js';
 export type { StepUsage, StoredRun, StoredStep } from './runs.js';
-export { AGGREGATE_FILE, AGGREGATE_VERSION, aggregateExecution, mRAcross, scoredRunsOf, writeAggregate } from './aggregate.js';
+export {
+  AGGREGATE_FILE,
+  AGGREGATE_VERSION,
+  AGGREGATE_VERSIONS,
+  aggregateExecution,
+  breakEvenEntry,
+  mK3Of,
+  mRAcross,
+  scoredRunsOf,
+  writeAggregate,
+} from './aggregate.js';
 export type {
   AggregateFile,
   BreakEven,
+  BreakEvenComparison,
+  BreakEvenReason,
+  BreakEvenRun,
+  BreakEvenSide,
+  MK3,
   ControlComparison,
   ControlMetric,
   ControlSide,
@@ -55,7 +70,7 @@ export { findingNote, METRICS } from './finding.js';
 export { packTranscripts, RELEASES, TRANSCRIPTS_ASSET } from './transcripts.js';
 export type { KnownSecret, TranscriptPack } from './transcripts.js';
 export type { FindingNote, FindingRequest, FindingShape, Metric } from './finding.js';
-export { CATEGORY_MAP, certaintyOf, compare, readMetric, summarize } from './compare.js';
+export { CATEGORY_MAP, certaintyOf, compare, readMetric, reported, summarize } from './compare.js';
 export type {
   Better,
   Certainty,
@@ -65,6 +80,7 @@ export type {
   MappedCategory,
   MetricId,
   Outcome,
+  Reported,
   Summary,
 } from './compare.js';
 export { LOCAL_ASSUMPTION, LOCAL_PROFILES, paritySection } from './parity.js';

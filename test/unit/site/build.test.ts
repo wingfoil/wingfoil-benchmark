@@ -68,7 +68,9 @@ describe('bench site build (REQ-CLI-09 as amended in 1.20, task-045)', () => {
     ]);
     // It prints what it wrote and the headline
     expect(built.stdout).toContain('site: site/abcdef012345/1/ (19 pages)\n');
-    expect(built.stdout).toContain('Against the baseline, wingfoil is better in 1, worse in 1');
+    expect(built.stdout).toContain(
+      'Against the baseline, wingfoil is better in 0, worse in 0, the same in 3, within the variance in 0 and preliminary in 2 of 5',
+    );
 
     // Static: no script anywhere, every page linked to the one stylesheet
     for (const [path, text] of Object.entries(files)) {
@@ -302,7 +304,7 @@ describe('bench site build (REQ-CLI-09 as amended in 1.20, task-045)', () => {
     writeFileSync(
       aggregate,
       JSON.stringify({
-        aggregate_version: 2,
+        aggregate_version: 3,
         campaign: 'x',
         execution: 1,
         model: 'm',
@@ -311,7 +313,7 @@ describe('bench site build (REQ-CLI-09 as amended in 1.20, task-045)', () => {
       }),
     );
     expect((await benchSite(root, 'site', 'build', EXECUTION)).stderr).toContain(
-      'has aggregate_version 2; this site reads version 1',
+      'has aggregate_version 3; this site reads versions 1 and 2',
     );
 
     // A group without the metrics the site reads (task-045's second review)
@@ -406,7 +408,7 @@ describe('each harness against its own docs control (REQ-SCO-14, REQ-RES-03 as a
     const landing = readFileSync(join(root, 'site', 'abcdef012345', '1', 'index.html'), 'utf8');
     expect(landing).not.toContain('against baseline-docs');
     expect(built.stdout).toContain(
-      'Against the baseline, wingfoil is better in 1, worse in 1 and the same in 3 of 5',
+      'Against the baseline, wingfoil is better in 0, worse in 0, the same in 3, within the variance in 0 and preliminary in 2 of 5',
     );
   }, 240_000);
 

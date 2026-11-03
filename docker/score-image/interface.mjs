@@ -13,13 +13,20 @@
 // or `satisfies` or as a default export, keeps its parameters and types; one asserted `as T`, behind
 // `satisfies` too, has the type T. A file that does not parse is one entry, `<file>: (does not parse)`.
 // The entries are printed sorted by code unit, without duplicates, one JSON string per line.
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+//
+// Version 2 (REQ-SCO-07 as amended in 1.49, task-129): `node interface.mjs <snapshot> --v2` reads the interface the
+// entry point `src/index.ts` exposes. Each name it exports, followed through re-exports to its declaration, is one
+// entry per signature, `<name>: <signature>`, with no file path and no `export`/`default` keyword; a name exported
+// through `export * as ns` or an `import * as ns` is its module's names, each `ns.<name>: <signature>`. Specifiers:
+// `.js` read as its `.ts` source, extensionless or a directory as its `.ts` file or `index.ts`, relative only. The
+// special entries: `(no entry point)`, `<file>: (does not parse)`, `(unresolved <specifier>)`.
+import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
+import { join, posix, relative, sep } from 'node:path';
 import ts from 'typescript';
 
 const [root, spec] = process.argv.slice(2);
 if (root === undefined || spec === undefined) {
-  process.stderr.write('usage: interface.mjs <snapshot> <files as JSON>\n');
+  process.stderr.write('usage: interface.mjs <snapshot> <files as JSON> | interface.mjs <snapshot> --v2\n');
   process.exit(2);
 }
 
@@ -302,5 +309,257 @@ function entriesOf(file) {
   });
 }
 
-const entries = [...new Set(JSON.parse(spec).flatMap(entriesOf))].sort(byCodeUnit);
+// ---- Version 2: the interface resolved from the entry point (REQ-SCO-07 as amended in 1.49, task-129). ----
+
+/** The entry point, a constant of the scorer: every scenario so far requires it. */
+const ENTRY = 'src/index.ts';
+
+/** A declaration printed as its signature: whitespace collapsed, its `export` and `default` keywords left out. */
+function printed(node, source) {
+  const text = printer.printNode(ts.EmitHint.Unspecified, node, source).replace(/\s+/g, ' ').trim();
+  return text.replace(/^export\s+/, '').replace(/^default\s+/, '');
+}
+
+/** A top-level declaration's signature whether or not it is exported; a namespace keeps its exported members. */
+function declared(statement) {
+  if (ts.isModuleDeclaration(statement)) {
+    const ambient = hasModifier(statement, ts.SyntaxKind.DeclareKeyword);
+    return f.updateModuleDeclaration(
+      statement,
+      statement.modifiers,
+      statement.name,
+      namespaceBody(statement.body, ambient),
+    );
+  }
+  return signature(statement, true);
+}
+
+/** The names a declaration statement declares, each with its own statement to print. */
+function declarations(statement) {
+  if (ts.isVariableStatement(statement)) {
+    return statement.declarationList.declarations
+      .filter((d) => ts.isIdentifier(d.name))
+      .map((d) => [
+        d.name.text,
+        f.updateVariableStatement(
+          statement,
+          statement.modifiers,
+          f.updateVariableDeclarationList(statement.declarationList, [d]),
+        ),
+      ]);
+  }
+  const named =
+    ts.isFunctionDeclaration(statement) ||
+    ts.isClassDeclaration(statement) ||
+    ts.isInterfaceDeclaration(statement) ||
+    ts.isTypeAliasDeclaration(statement) ||
+    ts.isEnumDeclaration(statement) ||
+    ts.isImportEqualsDeclaration(statement) ||
+    (ts.isModuleDeclaration(statement) && ts.isIdentifier(statement.name));
+  if (!named) return [];
+  const isDefault = hasModifier(statement, ts.SyntaxKind.DefaultKeyword);
+  const name = statement.name === undefined ? (isDefault ? '*default*' : undefined) : statement.name.text;
+  return name === undefined ? [] : [[name, statement]];
+}
+
+const modules = new Map();
+
+/** One module's imports, exports and local declarations, read once; or that it does not parse. */
+function moduleOf(file) {
+  const cached = modules.get(file);
+  if (cached !== undefined) return cached;
+  const text = readFileSync(join(root, file), 'utf8');
+  const kind = file.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
+  const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, kind);
+  const mod = { file, locals: new Map(), imports: new Map(), exports: new Map(), stars: [] };
+  if (source.parseDiagnostics.length > 0) {
+    mod.error = `${file}: (does not parse)`;
+    modules.set(file, mod);
+    return mod;
+  }
+  const addLocal = (name, signatures) =>
+    mod.locals.set(name, [...(mod.locals.get(name) ?? []), ...signatures]);
+  const names = overloaded(source.statements);
+  for (const statement of source.statements) {
+    if (isImplementation(statement, names)) continue;
+    if (ts.isImportDeclaration(statement) && ts.isStringLiteral(statement.moduleSpecifier)) {
+      const from = statement.moduleSpecifier.text;
+      const clause = statement.importClause;
+      if (clause?.name !== undefined) mod.imports.set(clause.name.text, { from, name: 'default' });
+      const bindings = clause?.namedBindings;
+      if (bindings !== undefined && ts.isNamespaceImport(bindings))
+        mod.imports.set(bindings.name.text, { from, name: '*' });
+      if (bindings !== undefined && ts.isNamedImports(bindings)) {
+        for (const el of bindings.elements)
+          mod.imports.set(el.name.text, { from, name: (el.propertyName ?? el.name).text });
+      }
+      continue;
+    }
+    if (ts.isExportDeclaration(statement)) {
+      const from =
+        statement.moduleSpecifier !== undefined && ts.isStringLiteral(statement.moduleSpecifier)
+          ? statement.moduleSpecifier.text
+          : undefined;
+      const clause = statement.exportClause;
+      if (clause === undefined) {
+        if (from !== undefined) mod.stars.push(from);
+      } else if (ts.isNamespaceExport(clause)) {
+        if (from !== undefined) mod.exports.set(clause.name.text, { kind: 'namespace', from });
+      } else {
+        for (const el of clause.elements) {
+          const name = (el.propertyName ?? el.name).text;
+          mod.exports.set(
+            el.name.text,
+            from === undefined ? { kind: 'local', local: name } : { kind: 'from', from, name },
+          );
+        }
+      }
+      continue;
+    }
+    if (ts.isExportAssignment(statement)) {
+      const name = statement.isExportEquals ? 'export=' : 'default';
+      if (ts.isIdentifier(statement.expression))
+        mod.exports.set(name, { kind: 'local', local: statement.expression.text });
+      else mod.exports.set(name, { kind: 'signatures', signatures: [printed(signature(statement), source)] });
+      continue;
+    }
+    for (const [name, node] of declarations(statement)) {
+      const shown = declared(node);
+      if (shown !== undefined) addLocal(name, [printed(shown, source)]);
+      if (isExported(statement)) {
+        const exported = hasModifier(statement, ts.SyntaxKind.DefaultKeyword) ? 'default' : name;
+        mod.exports.set(exported, { kind: 'local', local: name });
+      }
+    }
+  }
+  modules.set(file, mod);
+  return mod;
+}
+
+/** A file of the snapshot, by its path under the root, if it is one and lies inside the root. */
+function snapshotFile(path) {
+  if (path.startsWith('..') || posix.isAbsolute(path)) return undefined;
+  const full = join(root, path);
+  if (!existsSync(full) || !statSync(full).isFile()) return undefined;
+  const inside = relative(realpathSync(root), realpathSync(full));
+  return inside.startsWith('..') || inside.split(sep).includes('..') ? undefined : path;
+}
+
+/** The module a relative specifier of `file` names: `.js` as its `.ts` source; extensionless or a directory. */
+function resolved(file, specifier) {
+  if (!specifier.startsWith('./') && !specifier.startsWith('../')) return undefined;
+  const base = posix.normalize(posix.join(posix.dirname(file), specifier));
+  const js = /\.(m|c)?jsx?$/.exec(base);
+  const candidates = js
+    ? [
+        base.replace(/\.js$/, '.ts'),
+        base.replace(/\.js$/, '.tsx'),
+        base.replace(/\.mjs$/, '.mts'),
+        base.replace(/\.cjs$/, '.cts'),
+        base.replace(/\.jsx$/, '.tsx'),
+      ].filter((candidate) => candidate !== base)
+    : /\.(m|c)?tsx?$/.test(base)
+      ? [base]
+      : [`${base}.ts`, `${base}.tsx`, `${base}.mts`, `${base}.cts`, `${base}/index.ts`, `${base}/index.tsx`];
+  for (const candidate of candidates) {
+    const found = snapshotFile(candidate);
+    if (found !== undefined) return found;
+  }
+  return undefined;
+}
+
+/**
+ * What `name`, exported by `file`, is: its signatures, a namespace (a module), or a special entry; undefined when the
+ * module exports no such name. `seen` guards against cycles of re-exports.
+ */
+function exported(file, name, seen) {
+  const key = `${file}#${name}`;
+  if (seen.has(key)) return undefined;
+  const next = new Set(seen).add(key);
+  const mod = moduleOf(file);
+  if (mod.error !== undefined) return { special: mod.error };
+  const entry = mod.exports.get(name);
+  if (entry !== undefined) {
+    if (entry.kind === 'signatures') return { signatures: entry.signatures };
+    if (entry.kind === 'local') return local(file, entry.local, next);
+    const target = resolved(file, entry.from);
+    if (target === undefined) return { special: `(unresolved ${entry.from})` };
+    if (entry.kind === 'namespace') return { namespace: target };
+    return exported(target, entry.name, next);
+  }
+  if (name === 'default') return undefined;
+  for (const from of mod.stars) {
+    const target = resolved(file, from);
+    // A star that resolves to nothing, or to a module that does not parse, is named by namesOf: it holds no name.
+    if (target === undefined || moduleOf(target).error !== undefined) continue;
+    const found = exported(target, name, next);
+    if (found !== undefined) return found;
+  }
+  return undefined;
+}
+
+/** What a local name of `file` is: its declaration, or the import that brought it in. */
+function local(file, name, seen) {
+  const mod = moduleOf(file);
+  const signatures = mod.locals.get(name);
+  if (signatures !== undefined) return { signatures };
+  const imported = mod.imports.get(name);
+  if (imported === undefined) return undefined;
+  const target = resolved(file, imported.from);
+  if (target === undefined) return { special: `(unresolved ${imported.from})` };
+  if (imported.name === '*') return { namespace: target };
+  return exported(target, imported.name, seen);
+}
+
+/** The names `file` exports, `export *` followed (never its default), and the special entries met on the way. */
+function namesOf(file, seen = new Set()) {
+  const names = new Set();
+  const specials = new Set();
+  if (seen.has(file)) return { names, specials };
+  const next = new Set(seen).add(file);
+  const mod = moduleOf(file);
+  if (mod.error !== undefined) return { names, specials: new Set([mod.error]) };
+  for (const name of mod.exports.keys()) names.add(name);
+  for (const from of mod.stars) {
+    const target = resolved(file, from);
+    if (target === undefined) {
+      specials.add(`(unresolved ${from})`);
+      continue;
+    }
+    const inner = namesOf(target, next);
+    for (const name of inner.names) if (name !== 'default') names.add(name);
+    for (const special of inner.specials) specials.add(special);
+  }
+  return { names, specials };
+}
+
+/** The entries of every name `file` exports, each prefixed with `prefix`; a namespace's names nested. */
+function entriesFrom(file, prefix, out, chain = new Set()) {
+  // A namespace that contains itself, directly or not, is not followed again (task-129's review).
+  if (chain.has(file)) return;
+  const inside = new Set(chain).add(file);
+  const { names, specials } = namesOf(file);
+  for (const special of specials) out.add(special);
+  for (const name of names) {
+    const found = exported(file, name, new Set());
+    const shown = `${prefix}${name}`;
+    if (found === undefined) out.add(`${shown}: (unresolved)`);
+    else if (found.special !== undefined) out.add(found.special);
+    else if (found.namespace !== undefined) {
+      entriesFrom(found.namespace, `${shown}.`, out, inside);
+    } else for (const signature of found.signatures) out.add(`${shown}: ${signature}`);
+  }
+}
+
+function interfaceV2() {
+  if (snapshotFile(ENTRY) === undefined) return ['(no entry point)'];
+  const out = new Set();
+  entriesFrom(ENTRY, '', out);
+  return [...out];
+}
+
+const entries =
+  spec === '--v2'
+    ? interfaceV2().sort(byCodeUnit)
+    : [...new Set(JSON.parse(spec).flatMap(entriesOf))].sort(byCodeUnit);
 for (const entry of entries) process.stdout.write(`${JSON.stringify(entry)}\n`);

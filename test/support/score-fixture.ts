@@ -336,7 +336,7 @@ export const QUALITY = {
 };
 
 /** What the image's interface.mjs says of any snapshot, in the scoring double (task-042). */
-export const INTERFACE = ['src/orders.ts: export function cancel(order: Order): Order;'];
+export const INTERFACE = ['cancel: function cancel(order: Order): Order;'];
 
 /** T3's one hidden test, as the reporter names it. */
 export const T3_TEST = {

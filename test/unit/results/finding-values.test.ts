@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -104,7 +104,7 @@ describe('findingNote, every form of a metric (task-044)', () => {
     expect(values(dir, 'M-F2')).toContain(`- step 02: cost 0.1000 EUR (r1); M-Q1 no value; not reached: ${RUNS[1]}`);
     expect(values(dir, 'M-K1')).toContain(`- cost is a bound for: ${RUNS[0]}`);
     expect(values(dir, 'M-K3')).toContain('- setup not recorded for this arm');
-    expect(values(dir, 'M-K4')).toContain('- wingfoil: no break-even (no baseline, or a setup cost not recorded)');
+    expect(values(dir, 'M-K4')).toContain('- wingfoil: no break-even (no baseline, or a run scored before step costs)');
     expect(values(dir, 'M-E1')).toContain('- r1, step 01: violations 2 (r1)');
     expect(values(dir, 'M-R')).toContain('- wingfoil: pins differ (scorer): no value');
   });
@@ -164,3 +164,44 @@ describe('findingNote, every form of a metric (task-044)', () => {
   });
 });
 
+
+describe('findingNote on M-K3 and M-K4, by aggregate version (task-129)', () => {
+  const of = (aggregate: Record<string, unknown>, metric: string) => {
+    const dir = execution({});
+    const file = join(dir, 'aggregate.json');
+    const read = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>;
+    writeFileSync(file, JSON.stringify({ ...read, ...aggregate }));
+    return values(dir, metric);
+  };
+  const key = { scenario: 'S3', version: '1.0', model: 'm', arm: 'wingfoil' };
+
+  it("reads a version-1 break-even by 1.15's rule", () => {
+    const v1 = {
+      ...key,
+      value: 'never',
+      setup_cost_eur: { arm: 0.3 },
+      mean_step_cost_eur: { baseline: 0.1, arm: 0.2 },
+      final_m_q1: { baseline: 1, arm: 1 },
+      runs: { baseline: [], arm: [] },
+      n: { baseline: 1, arm: 1 },
+    };
+    expect(of({ break_even: [v1] }, 'M-K4')).toContain("- wingfoil: never (1.15's rule); setup ");
+  });
+
+  it('reads a version-2 break-even with its reason and both comparisons, and M-K3 every model\'s', () => {
+    const side = (n: number, mean?: number) => ({ runs: [], n, ...(mean === undefined ? {} : { mean, min: mean, max: mean }) });
+    const v2 = {
+      ...key,
+      value: 'not applicable',
+      reason: 'saving within variance',
+      m_k3_eur: 0.3,
+      quality: { outcome: 'same', baseline: side(3, 1), arm: side(3, 1) },
+      step_cost: { outcome: 'within the variance', baseline: side(3, 0.2), arm: side(3, 0.19) },
+    };
+    const m_k3 = [{ scenario: 'S3', version: '1.0', arm: 'wingfoil', configuration_eur: 0, configuration: 'not recorded', setup_mean_eur: 0.3, value: 0.3, runs: [], n: 3 }];
+    const k4 = of({ aggregate_version: 2, break_even: [v2], m_k3 }, 'M-K4');
+    expect(k4).toContain('- wingfoil: not applicable (saving within variance); M-K3 ');
+    expect(k4).toContain('within the variance, n 3 against 3');
+    expect(of({ aggregate_version: 2, break_even: [v2], m_k3 }, 'M-K3')).toContain('(configuration not recorded; setup mean ');
+  });
+});

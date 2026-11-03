@@ -196,3 +196,95 @@ describe('interface.mjs (M-R2, REQ-SCO-05, task-042)', { timeout: 60_000 }, () =
     ]);
   });
 });
+
+/** interface.mjs --v2: the interface resolved from `src/index.ts` (REQ-SCO-07 as amended in 1.49, task-129). */
+function v2(files: Readonly<Record<string, string>>): string[] {
+  const result = spawnSync(
+    process.execPath,
+    [repoPath('docker/score-image/interface.mjs'), snapshot(files), '--v2'],
+    {
+      encoding: 'utf8',
+    },
+  );
+  if (result.status !== 0) throw new Error(`interface.mjs exited ${result.status}: ${result.stderr}`);
+  return result.stdout
+    .split('\n')
+    .filter((line) => line !== '')
+    .map((line) => JSON.parse(line) as string);
+}
+
+describe('interface.mjs --v2 (M-R2 v2, REQ-SCO-07 as amended in 1.49, task-129)', { timeout: 60_000 }, () => {
+  it('follows .js, extensionless and directory specifiers, and a local export of an import', () => {
+    expect(
+      v2({
+        'src/index.ts':
+          "export { a } from './a.js';\nexport { b } from './b';\nexport * from './c';\nimport { d } from './d.js';\nexport { d as dee };\n",
+        'src/a.ts': 'export const a = (x: number): number => x;\n',
+        'src/b.ts': 'export type b = string;\n',
+        'src/c/index.ts': 'export interface C { c: 1 }\n',
+        'src/d.ts': 'export function d(): void {}\n',
+      }),
+    ).toEqual([
+      'C: interface C { c: 1; }',
+      'a: const a = (x: number): number => { };',
+      'b: type b = string;',
+      'dee: function d(): void;',
+    ]);
+  });
+
+  it('gives each overload of a name, a default, a namespace re-export by its members, and a name re-exported twice once', () => {
+    expect(
+      v2({
+        'src/index.ts':
+          "export * from './f';\nexport { f } from './f';\nexport * as ns from './ns';\nexport default class Main { run(): void {} }\n",
+        'src/f.ts':
+          'export function f(x: string): void;\nexport function f(x: number): void;\nexport function f(x: unknown): void {}\n',
+        'src/ns.ts': 'export const one = 1;\nexport enum E { A }\n',
+      }),
+    ).toEqual([
+      'default: class Main { run(): void; }',
+      'f: function f(x: number): void;',
+      'f: function f(x: string): void;',
+      'ns.E: enum E { A }',
+      'ns.one: const one;',
+    ]);
+  });
+
+  it('names an unresolved specifier, a package, a module that does not parse, and survives a cycle', () => {
+    expect(
+      v2({
+        'src/index.ts':
+          "export * from './gone';\nexport * from 'left-pad';\nexport * from './x';\nexport * from './bad';\n",
+        'src/x.ts': "export * from './index';\nexport const x = 1;\n",
+        'src/bad.ts': 'export const = ;\n',
+      }),
+    ).toEqual([
+      '(unresolved ./gone)',
+      '(unresolved left-pad)',
+      'src/bad.ts: (does not parse)',
+      'x: const x;',
+    ]);
+    expect(v2({ 'src/index.ts': 'export function (\n' })).toEqual(['src/index.ts: (does not parse)']);
+    expect(v2({ 'lib/index.ts': 'export const y = 1;\n' })).toEqual(['(no entry point)']);
+  });
+
+  it('keeps the names of a later star when an earlier one does not parse, and stops at a namespace cycle', () => {
+    expect(
+      v2({
+        'src/index.ts': "export * from './broken.js';\nexport * from './good.js';\n",
+        'src/broken.ts': 'export const = ;\n',
+        'src/good.ts': 'export function add(a: number): number {\n  return a;\n}\n',
+      }),
+    ).toEqual(['add: function add(a: number): number;', 'src/broken.ts: (does not parse)']);
+    // A namespace of a module already being read adds nothing: its names are the module's own
+    expect(v2({ 'src/index.ts': "export * as self from './index.js';\nexport const s = 1;\n" })).toEqual([
+      's: const s;',
+    ]);
+  });
+
+  it('never follows a specifier out of the snapshot', () => {
+    expect(v2({ 'src/index.ts': "export * from '../../../../etc/x';\n" })).toEqual([
+      '(unresolved ../../../../etc/x)',
+    ]);
+  });
+});

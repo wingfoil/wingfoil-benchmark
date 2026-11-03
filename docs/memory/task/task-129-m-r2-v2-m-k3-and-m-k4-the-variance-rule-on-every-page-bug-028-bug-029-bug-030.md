@@ -2,7 +2,7 @@
 id: task-129-m-r2-v2-m-k3-and-m-k4-the-variance-rule-on-every-page-bug-028-bug-029-bug-030
 type: task
 title: "M-R2 v2, M-K3 and M-K4, the variance rule on every page (bug-028, bug-029, bug-030)"
-status: backlog
+status: approved
 release: v0.3
 wave: W16
 features: [F4.4, F4.5, F5.5, F5.7]
@@ -104,5 +104,66 @@ session, no spending; the published values stay as published, and v0.2's re-scor
 
 ## Execution notes
 
-<!-- What happened while building: deviations, blockers, follow-ups (filed as elements, never left
-     here). For every `wingfoil` command: declared vs observed behaviour. -->
+- **Red first:** the variance scenario failed on the old marks (▲ shown within the variance); the M-K3 and M-K4
+  scenarios failed to compile before `breakEvenEntry` and `mK3Of` existed; the M-R2 v2 scenario failed through the
+  runner while it still called v1. The script's v2 unit tests and the loader-free helpers were written with their code.
+- **Readings of REQ-SCO-07 1.49 the Design left open** (for the approver to confirm at the gate):
+  - a namespace (`export * as ns`, or an `import * as ns` re-exported) is its module's names, one entry each,
+    `ns.<name>: <signature>`, rather than one entry for `ns`;
+  - a printed signature drops its `export` and `default` keywords, so `export function f` and a local `function f`
+    exported by `export { f }` are the same entry;
+  - `(unresolved <specifier>)` is the entry of the specifier, the names it would bring counted no further; a name a
+    module exports with neither a declaration nor an import is `<name>: (unresolved)`.
+- **Deviations from the Design**, each within requirements 1.49:
+  - `interface.mjs` keeps v1 under its old arguments (its tests check the signature printing v2 reuses); the runner
+    calls `--v2`. A snapshot with no TypeScript source gets `(no entry point)` without a container.
+  - M-R2's version is a recorded pin (`m_r2_version`, beside the scorer): two versions give no value, the pin
+    named, within an execution and across two.
+  - M-K3 is computed for every arm, the baseline included, with `configuration: 'not recorded'` until F7.5 records
+    one; M-K4 is no longer left out when a setup was not recorded (that run is left out of M-K3, an arm with
+    neither at 0, as REQ-SCO-08 1.49 says), only when a run was scored before step costs were recorded.
+  - Beside an outcome the certainty is shown only for "the same" (the other words say it); the parity page reads
+    "same (within variance)" likewise.
+  - The site reads `aggregate.json` versions 1 and 2 (`AGGREGATE_VERSIONS`), so the published executions rebuild.
+  - The comparison page (F5.7) compares deltas across executions and has no better or worse of its own: it now
+    words each side as every page does ("same" for no delta, "within the variance", "preliminary", "beyond the
+    variance"); the across-agents page carries no outcome marks.
+  - A namespace cycle (`export * as self from './index.js'`) is followed no further: the module's names are its own.
+- **A miss from task-128, repaired:** bug-026 was left `approved` after task-128's done (its `fixed_by` and
+  `approved → fixed` are set by hand), which turned the bug-links test red here; fixed on main (`b3071da0`,
+  `cc362580`) and merged into this branch.
+- `wingfoil memory add`, `submit` (draft → pending, backlog → in-progress; bug-026 approved → fixed): as declared.
+- **Full suites** (2026-11-03, `e5f400a3`, under the load watcher): LINT 0, TEST 0 (2040 passed, 9 skipped), BUILD 0,
+  BIN 0, DOCKER 0.
+
+### Review
+
+**Round 1** (2026-11-02, a fresh read-only agent in `/tmp/claude-1000/review1-129-HBTi`, a clone of `b4b5a6b7`; both
+checkouts unchanged). No blocker; five should-fix and six nits:
+
+| # | Finding | Outcome |
+|---|---|---|
+| S1 | a star to a module that does not parse hid every later star's names | fixed: such a star holds no name; tested with the broken star first |
+| S2 | the finding note's M-K3 printed the per-model setup, not REQ-SCO-08 1.49's M-K3 | fixed: `m_k3` read first, the group's setup figures after |
+| S3 | no test of two M-R2 versions never compared | fixed: within a group and across two executions, the pin named |
+| S4 | no test of M-K3 pooled over models | fixed: two models' runs, one M-K3, both break-evens dividing it |
+| S5 | the errata and "from v0.3" misdated (campaign-007 and -008 are v0.3 executions scored by the old rules) | fixed: "since v0.3's W16", campaign-008 included; the rule of presentation stated |
+| N1 | the comparison page printed the stored certainty, not the reported word | fixed: the same words as every page |
+| N2 | direction and divisor from rounded means | fixed: from `compare`'s raw delta |
+| N3 | a namespace cycle emitted eight nested copies | fixed: a module already being read is not followed |
+| N4 | a destructured `export const { a } = …` gives no entry | kept: no scenario's interface uses it; noted here |
+| N5 | the `(no entry point)` shortcut read M-R3's paths, less the setup's | fixed: the snapshot's `src/index.ts` itself |
+| N6 | the last @F4.4 Given garbled; no baseline-only empty case | fixed: the draft's wording, and the case tested |
+| N7 | the version-1 break-even line untested | fixed: a finding test on each version |
+
+**Round 2** (2026-11-02, a fresh read-only agent in `/tmp/claude-1000/review2-129-53JL`, a clone of `94a8642e`; both
+checkouts unchanged; it ran round 1's sources against the new tests). Every round-1 item done; one should-fix: N2 had no
+test (the aggregate tests passed on the old code). Fixed: the direction of a preliminary quality read from the unrounded
+means, which fails on the old code; the divisor is the unrounded delta, and below 1e-12 it reads as the same (never), so
+no zero or noise divisor (the reason corrected in round 3). Nits fixed: the errata dated by requirements 1.49 rather
+than "W16", which reads as later than W17's campaign-008; the across-agents page said to show no outcome. Kept, as a
+stated reading: a namespace export that points back into its own chain gives no entry.
+
+**Round 3** (2026-11-03, a fresh read-only agent in `/tmp/claude-1000/review3-129-Dyb7`, a clone of `1ad7aac2`; both
+checkouts unchanged). Round 2's items confirmed (the direction test fails on round 1's code); no blocker, no
+should-fix; one nit, fixed: the reason no zero divisor arises is compare's 1e-12 tolerance, not the per-run rounding.

@@ -13,7 +13,10 @@ const SNAPSHOT = 'snapshot';
 const INTERFACE_TIMEOUT_S = 300;
 const KILL_AFTER_S = 10;
 
-/** Reads the public interface of a run's final snapshot, from `files`: its entries, sorted. */
+/**
+ * Reads the public interface of a run's final snapshot (M-R2 v2, from its entry point): its entries, sorted. `files`,
+ * its TypeScript sources, tell whether there is any to read.
+ */
 export type InterfaceRunner = (request: {
   readonly snapshot: string;
   readonly files: readonly string[];
@@ -51,7 +54,7 @@ export function interfaceInContainer(options: {
   readonly containerPrefix: string;
 }): InterfaceRunner {
   const { docker } = options;
-  return async ({ snapshot, files }) => {
+  return async ({ snapshot }) => {
     const container = await docker.createScoring({
       image: options.image,
       name: `${options.containerPrefix}-interface`,
@@ -69,7 +72,8 @@ export function interfaceInContainer(options: {
         'node',
         INTERFACE_SCRIPT,
         SNAPSHOT,
-        JSON.stringify(files),
+        // M-R2 v2 (REQ-SCO-07 as amended in 1.49, task-129): the interface the entry point exposes.
+        '--v2',
       ]);
       if (result.code !== 0) {
         const said = result.stderr.trim().split('\n').slice(-5).join('\n');
