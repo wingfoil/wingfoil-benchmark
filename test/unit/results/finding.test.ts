@@ -51,9 +51,9 @@ describe('findingNote (F5.4, REQ-RES-05, task-044)', () => {
     const bug = (await noteOf('M-Q1')).text;
     const tail = bug.slice(bug.indexOf('## For WingFoil: bug'));
     expect(tail).toContain('severity: ""');
-    // The templates of the WingFoil the reference campaign runs (REQ-RES-05 1.40, task-109): v0.3.0's, byte-identical
-    // at the managing pin v0.3.1.
-    expect(tail).toContain('whose template is that of WingFoil v0.3.0 (cc31d7a8):');
+    // The template of the WingFoil the runs recorded (REQ-RES-05 as amended in 1.49, task-130): this fixture's
+    // campaign pins no version, so its commit alone.
+    expect(tail).toContain('whose template is that of WingFoil 3df305ea:');
     for (const section of ['## Summary', '## Steps to Reproduce', '## Expected Behavior', '## Actual Behavior', '## Notes']) {
       expect(tail).toContain(`\n${section}\n`);
     }
