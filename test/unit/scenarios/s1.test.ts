@@ -218,6 +218,19 @@ interface Case {
   readonly disabled?: boolean;
 }
 
+describe('S1 1.1 (bug-025, task-131)', { timeout: 300_000 }, () => {
+  it("passes every suite after the reference step 5, as 1.0 does: the same oracle, step 5's diff stated", async () => {
+    const loaded = loadScenario(repoPath('scenarios'), 'S1', '1.1');
+    if (!loaded.ok) throw new Error(JSON.stringify(loaded.issues));
+    const v11 = loaded.value;
+    expect(v11.hash).not.toBe(s1().hash);
+    const snapshot = referenceSnapshot(v11.seedDir, REFERENCE, 5);
+    for (const [id, counted] of Object.entries(COUNTED)) {
+      expect(tally(await score(v11, id, snapshot))).toMatchObject({ pass: counted, fail: 0 });
+    }
+  });
+});
+
 function isObject(value: unknown): boolean {
   return value !== null && typeof value === 'object';
 }

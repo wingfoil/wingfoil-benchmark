@@ -46,6 +46,14 @@ Feature: Scenario format, hygiene and the v0.1 scenario content
     Then S1 must be registered as a new version before it can run
     And the stored results keep pointing to version 1.0
 
+  @F3.4
+  Scenario: S1 1.1's step 5 has one reading
+    Given S1 1.1
+    Then it is valid and passes the leak scan
+    And its step 5's request states how a patch describes an item an array gains or loses
+    And everything else in it is S1 1.0's
+    And S1 1.0 stays registered, unchanged, with its step 5's limit stated on the method page
+
   @F3.5
   Scenario: Hold-out additions are used for scoring only
     Given the hold-out path is configured

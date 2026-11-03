@@ -273,6 +273,10 @@ const STATEMENTS: readonly (readonly [string, string])[] = [
     'REQ-RES-05 (amended 1.19); REQ-CLI-07; rel-v0-1 W10 Due before (calibration item: "handed to WingFoil by the maintainer"; W11 item); task-045 Context Out of scope ("a finding note stays in `findings/`")',
   ],
   [
+    's1-step-5-limit',
+    "bug-025 (Actual: 158 or 164/165 public, 43 or 45/48 hold-out; Impact: up to six public and two hold-out tests); S1.md §6 (the pairs' length bound, a shift-aware reference) and amendment 1.5 (S1 1.1); scenario conventions amendment 1.5 K7; calibration v0.1 §8; task-131",
+  ],
+  [
     'oracle-licences',
     'scenarios/S1/1.0/oracle/licenses/NOTICE.md; S1.md §6 and amendment 1.2; REQ-FMT-04 `third_party`; dl-002; rel-v0-1 W7 Due before; task-046 Design "The published material"',
   ],
