@@ -92,3 +92,9 @@ the four changed content-check rows in their stored patches. No blocker; one sho
 | N2 | the content-check erratum's wording | fixed: "on S3's D3-revision check"; the comment `wingfoil memory add` copied |
 | N3 | `loadScenario` twice a run | fixed: one load per version |
 | N4 | the report's generated table rows over 120 | kept: tables, exempt |
+
+**Round 2** (2026-11-04, a fresh read-only agent in `/tmp/claude-1000/review2-134-AuXd`, a clone of `81941d1c`; no
+command in either checkout). It regenerated the report (identical bytes, `results/` clean), confirmed the reason
+count against REQ-SCO-08 1.15 (its one "not applicable" condition, every published entry's lower M-Q1), and mutated
+the script four ways, each failing exactly its test. No blocker, no should-fix; nits fixed: the test's comment says
+"this execution's three"; the erratum says "replac" inside "replaces".

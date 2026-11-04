@@ -193,9 +193,9 @@ kinds of error, the parts of words and the template text; a fact recorded in wor
 version 2 too, and only the maintainer's judgement catches it. Re-scored from the published runs' stored files ([the
 v0.3 re-scoring](https://github.com/wingfoil/wingfoil-benchmark/blob/main/docs/calibration/v0.3-rescore.md)), version 2
 changes 4 of the 100 verdicts of S2's and S3's 1.0 checks in the published executions, all on S3's D3-revision check and
-all from a pass to a failure: two matched "changed" inside "unchanged", one "revis" inside "revisit", one "replaces" in
-a WingFoil template comment that `wingfoil memory add` copied into a new record; none goes the other way, and S2's
-duplicate check is unchanged. {#content-checks-v1-erratum}
+all from a pass to a failure: two matched "changed" inside "unchanged", one "revis" inside "revisit", one "replac"
+inside "replaces" in a WingFoil template comment that `wingfoil memory add` copied into a new record; none goes the
+other way, and S2's duplicate check is unchanged. {#content-checks-v1-erratum}
 
 The `ast` rules match syntax, not meaning, and this has limits. A clock or random function reached through another name (an alias) is not seen. Test files and declaration files are left out. Node's `crypto` random functions (for example `crypto.randomUUID()`) count as randomness. {#syntactic-limits}
 

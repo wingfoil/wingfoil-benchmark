@@ -40,7 +40,7 @@ describe('scripts/rescore.mjs (task-134)', { timeout: 600_000 }, () => {
   it('reads a content check under v2 whose verdict differs from the published v1 one', async () => {
     const rows = await rescore.rescoreChecks(RESULTS, SCENARIOS, EXECUTION);
     const changed = rows.filter((row) => row.v1 !== row.v2);
-    // The published runs' three S3 changes (docs/calibration/v0.3-rescore.md): "changed" within "unchanged" twice,
+    // This execution's three S3 changes (docs/calibration/v0.3-rescore.md): "changed" within "unchanged" twice,
     // "revis" within "revisit"; each passed v1 and fails v2
     expect(changed.map((row) => [row.run.split('/')[4], row.step, row.words])).toEqual([
       ['openspec', 4, '"whole-day" + "changed"'],
