@@ -52,5 +52,12 @@ with the approver's consent. The note was exported before
 
 ## Execution notes
 
-<!-- What happened while building: deviations, blockers, follow-ups (filed as elements, never left
-     here). For every `wingfoil` command: declared vs observed behaviour. -->
+- **Re-export:** `bench finding` never overwrites a note, so the committed one was removed first and the command run
+  again; `git diff` showed the template line alone ("WingFoil v0.2.2 (12537b62)" → "WingFoil v0.3.0 (cc31d7a8)"),
+  every figure unchanged. Its own commit (`f6841ae3`).
+- **The ratio**, from `results/81ebb2691f9c/1/aggregate.json` by an inline Node command (the S1@1.0 groups' cost per
+  run): baseline mean 0.3454 EUR, n 3; wingfoil mean 0.5857 EUR, n 3; ratio 1.70.
+- **The reading**, the note's one hand-written line, in its own commit said so: under the title and as "### The
+  reading" in the WingFoil block's Context; campaign-002's Findings carry it.
+- **The filing** (dl-009): handed to the approver at the review gate; nothing written into WingFoil.
+- `wingfoil memory add`, `submit` (draft → pending, backlog → in-progress): as declared.
