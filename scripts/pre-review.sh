@@ -26,8 +26,7 @@ if [ "${#changed[@]}" -eq 0 ]; then echo "pre-review: nothing changed over $base
 # branch added within 120 characters, tables, code blocks, the front matter and lines holding a link or a URL apart,
 # and a final newline.
 # The byte-pinned paths stay out: scenario versions, WingFoil's captured output, a run's records (results/, bug-040),
-# and the finding notes `bench finding` generates (findings/, task-133); their hand-written lines are kept short by
-# hand.
+# and the finding notes `bench finding` generates (findings/, task-133), their hand-written lines kept short by hand.
 mapfile -t markdown < <(printf '%s\n' "${changed[@]}" | grep -E '\.md$' \
   | grep -vE '^(scenarios/[^/]+/[^/]+/|test/fixtures/wingfoil-config/|results/|findings/)' || true)
 if [ "${#markdown[@]}" -gt 0 ]; then

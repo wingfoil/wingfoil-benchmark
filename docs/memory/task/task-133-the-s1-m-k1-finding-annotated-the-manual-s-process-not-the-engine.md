@@ -95,3 +95,11 @@ five nits:
 | N3 | `pre-review.sh`'s new comment line 121 characters | fixed |
 | N4 | dl-009 allows one hand-written line | fixed: stated as an extension, here and with the filing |
 | N5 | red-first only claimed in one commit | kept: the reviewer confirmed it against main's script |
+
+**Round 2** (2026-11-04, a fresh read-only agent in `/tmp/claude-1000/review2-133-SIBm`, a clone of `635a2200`; no
+command in either checkout). The reading identical in its three places and its facts confirmed (15 steps, 15 tasks,
+12 decision-logs, 1 approval, no workflow command; 1.70×, 1.33×, 1.27×, n = 3); the note re-exports but for it. Two
+should-fix in F-047, both fixed: the agent's instruction is said to go beyond WingFoil's guide (which sets no level of
+process), lest the cost read as the guide's; and the sequence is named command by command, as the inbox's rule asks
+(reproducible with WingFoil alone). Nits fixed: `init --template Kanban`; no `workflow start` and no `agent execute`
+run, F-041 cited; Expected's request first; baseline-docs' rules "as a Markdown file"; the script comment's wrap.
