@@ -71,5 +71,8 @@ here (the variance rule is presentation; rebuilding and publishing are the appro
   only the bin tests build first. They read one published execution in place (`81ebb2691f9c/1`) instead of fixtures —
   a check verdict that changes, a group whose M-R2 changes, an M-K4 entry that changes — and check that `results/` is
   unchanged after. Written after the script (red-first not shown).
+- **Deviation, `vitest.bin.config.ts`:** `pre-review`'s `test:bin` stage failed with `bench.test.ts` and this task's
+  test building `dist/` at once (a module missing mid-import); the bin tests now run one file at a time
+  (`fileParallelism: false`), each building first; green after.
 - Catalogue notes left as they are: none of these figures belongs to one execution's note.
 - `wingfoil memory add`, `submit` (draft → pending, backlog → in-progress): as declared.
