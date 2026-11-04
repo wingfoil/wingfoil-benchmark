@@ -60,4 +60,8 @@ with the approver's consent. The note was exported before
 - **The reading**, the note's one hand-written line, in its own commit said so: under the title and as "### The
   reading" in the WingFoil block's Context; campaign-002's Findings carry it.
 - **The filing** (dl-009): handed to the approver at the review gate; nothing written into WingFoil.
+- **Deviation, `scripts/pre-review.sh`:** its Markdown check flagged the note's re-exported template line (236
+  characters, one line as `bench finding` writes it). The generated notes under `findings/` are now left out, as
+  `results/` is (bug-040), red first in `test/unit/scripts/pre-review.test.ts`; the note's hand-written reading is
+  wrapped at 120 by hand.
 - `wingfoil memory add`, `submit` (draft → pending, backlog → in-progress): as declared.
