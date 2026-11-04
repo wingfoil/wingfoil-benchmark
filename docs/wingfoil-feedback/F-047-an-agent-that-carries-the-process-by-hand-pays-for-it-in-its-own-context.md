@@ -28,7 +28,7 @@ same rules as a Markdown file, with no commands.
 Documentation that says which of two readings a set-up measures, so that a consumer measuring WingFoil's cost knows what
 the figure is the cost of: an agent carrying the process by hand, as above; or the work run as a near-deterministic
 sequence of WingFoil commands: creating the Memory's elements, managing their states, executing agents and recording
-people's approvals, the files and the judgement produced inside the commands by the agent a command executes.
+people's approvals; the files and the judgement are produced inside the commands, by the agent a command executes.
 Near-deterministic, not deterministic: an agent's output varies, but within a step whose inputs and outputs are defined;
 and, in this reading, the sequence branches where an approval is rejected, a step cannot go on, or the work is set aside
 (a reading of the process, not a list of what WingFoil 0.3.0 implements). A state machine, then: its steps

@@ -110,3 +110,7 @@ blocker; one should-fix, fixed: F-047's Expected named branches ("an agent is bl
 0.3.0 does not have; it now says the branches belong to the approver's reading, not to what 0.3.0 implements. Nits
 fixed: the approvals' list reworded; `approve` with `--reason` and an identity holding the approver role; "mean cost
 per run"; "inside that request's session".
+
+**Round 4** (2026-11-04, a fresh read-only agent in `/tmp/claude-1000/review4-133-9rgm`, a clone of `7419f3ce`; no
+command in either checkout). Round 3's items confirmed against the campaign's manual and setup. No blocker, no
+should-fix; its one nit, fixed: the files and the judgement said to be what the sequence holds, not a fourth step.
