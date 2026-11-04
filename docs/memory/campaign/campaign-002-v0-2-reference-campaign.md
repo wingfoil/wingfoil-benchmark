@@ -165,6 +165,9 @@ the approver's (dl-009).
   as a **decision-log**: the verification dl-147's Actions ask for (H1). The wingfoil arm on v0.3.0 costs 1.70 times
   the baseline on S1 (n = 3), above the 1.5 its verification sets: not verified. WingFoil v0.3.0's workflow engine
   stays unstarted on S1–S8 (task-095), so the ratio reads WingFoil as its documentation sets it up.
+  **Reading (2026-11-04, task-133):** the wingfoil arm's manual had the agent follow WingFoil's process (records,
+  submissions, approval requests) at every step, and the engine was never started: the 1.70× is the cost of that
+  process as the manual set it, not of the engine; the note carries the line, for its filing (dl-009).
 - **[M-F1 on S3@1.0, baseline-docs against wingfoil](../../../findings/81ebb2691f9c-1-s3-1.0-m-f1-baseline-docs+wingfoil.md)**,
   as a **bug**, preliminary (n = 1): wingfoil 3/5 against baseline-docs' 4/5, D3 and D5 failed; on v0.2.2 (the
   bridge, `bf3a1ac7dff5/1`) the wingfoil arm kept 4/5 with D3 recorded.
