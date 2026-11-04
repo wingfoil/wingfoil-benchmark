@@ -77,6 +77,8 @@ here (the variance rule is presentation; rebuilding and publishing are the appro
   (`fileParallelism: false`), each building first; green after.
 - Catalogue notes left as they are: none of these figures belongs to one execution's note.
 - `wingfoil memory add`, `submit` (draft → pending, backlog → in-progress): as declared.
+- **Full suites** (2026-11-04, `8093499c`, under the load watcher): LINT 0, TEST 0 (2055 passed, 10 skipped), BUILD 0,
+  BIN 0 (12 passed, this task's included), DOCKER 0.
 
 ### Review
 
