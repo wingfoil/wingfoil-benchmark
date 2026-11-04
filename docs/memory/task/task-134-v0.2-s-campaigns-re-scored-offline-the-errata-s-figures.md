@@ -62,11 +62,12 @@ here (the variance rule is presentation; rebuilding and publishing are the appro
   snapshot, in a temporary directory removed after. The paths are made absolute (git applies a run's patches from
   inside the rebuilt repository). A whole run takes several minutes; two runs gave the same bytes (`cmp`), and
   `git status --porcelain -- results` is empty after.
-- **Its figures** (the report's Totals, quoted): content checks, 100 run-steps of S2 and S3 at 1.0, 8 pass under both,
-  4 under v1 only, 0 under v2 only, 88 under neither, the 4 all S3's D3 revision ("changed" inside "unchanged" twice,
-  "revis" inside "revisit", "replaces" in a WingFoil template comment copied into a new record by `memory add`, which
-  v2 leaves out as a setup line); M-R2, 64 groups, v2 lower in 6, the same in 31, higher in 27; M-K4, 88 entries, 16
-  change their value or its kind and 5 more stay not applicable for another reason. The method page's three errata carry them, with a link to the report.
+- **Its figures** (the report's Totals, quoted): content checks, 100 run-steps of S2 and S3 at 1.0, 8 pass under both, 4
+  under v1 only, 0 under v2 only, 88 under neither, the 4 all S3's D3 revision ("changed" inside "unchanged" twice,
+  "revis" inside "revisit", "replaces" in a WingFoil template comment copied into a new record by `memory add`, which v2
+  leaves out as a setup line); M-R2, 64 groups, v2 lower in 6, the same in 31, higher in 27; M-K4, 88 entries, 16 change
+  their value or its kind and 5 more stay not applicable for another reason. The method page's three errata carry them,
+  with a link to the report.
 - **Deviation:** the tests are in `test/bin/rescore.test.ts`, not under `test/unit/`: the script reads `dist/`, which
   only the bin tests build first. They read one published execution in place (`81ebb2691f9c/1`) instead of fixtures —
   a check verdict that changes, a group whose M-R2 changes, an M-K4 entry that changes — and check that `results/` is
