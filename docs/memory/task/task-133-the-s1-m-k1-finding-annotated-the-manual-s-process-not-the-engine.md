@@ -22,8 +22,8 @@ one-line annotation — the arm's manual imposed WingFoil's process on every ste
 and is then filed in WingFoil under [dl-009](../decision-log/dl-009-benchmark-findings-linked-to-wingfoil-both-ways-and-verified-by-the-next-campaign.md)
 with the approver's consent. The note was exported before
 [task-130](task-130-the-cited-template-and-an-interrupted-step-s-cost-bug-031-bug-032.md), and cites v0.2.2's template
-(bug-031). A documentation task: no real-agent session, no spending, nothing written into WingFoil by the agent
-(dl-009's Consequences).
+(bug-031). A documentation task: no real-agent session, no spending; nothing written into WingFoil by the agent
+(dl-009's Consequences) unless the approver asks (criterion 4).
 
 ## Acceptance criteria
 
@@ -64,7 +64,6 @@ with the approver's consent. The note was exported before
   run): baseline mean 0.3454 EUR, n 3; wingfoil mean 0.5857 EUR, n 3; ratio 1.70.
 - **The reading**, the note's one hand-written line, in its own commit said so: under the title and as "### The
   reading" in the WingFoil block's Context; campaign-002's Findings carry it.
-- **The filing** (dl-009): handed to the approver at the review gate; nothing written into WingFoil.
 - **Deviation, `scripts/pre-review.sh`:** its Markdown check flagged the note's re-exported template line (236
   characters, one line as `bench finding` writes it). The generated notes under `findings/` are now left out, as
   `results/` is (bug-040), red first in `test/unit/scripts/pre-review.test.ts`; the note's hand-written reading is
@@ -85,6 +84,11 @@ with the approver's consent. The note was exported before
   section (dl-147's Action 2 verified as missed); committed `bdf890c11` with WingFoil's own trailers
   (`Co-Authored-By: Claude`, `AI-Model`); left `draft`, not submitted, not pushed. The way back (dl-009 point 2): the
   "Filed in WingFoil as" line under the note's title (`3877e70e`), and campaign-002's Findings.
+- **Deviation from dl-009's Consequences** ("nothing is written into the WingFoil repository by the benchmark or its
+  agent"), at the approver's request in chat (2026-11-04), which criterion 4 allows: the agent wrote dl-207 there. At
+  review round 5, dl-207's Relations reworded in WingFoil (`1be558880`): dl-147's Action 2 is re-measured, not
+  "missed", since it asked for the engine and the engine never ran; the benchmark's private names left out. The
+  note's path stands for its permalink until the benchmark's v0.3 tag (dl-009 point 1).
 - `wingfoil memory add`, `submit` (draft → pending, backlog → in-progress): as declared.
 
 ### Review
@@ -121,3 +125,11 @@ per run"; "inside that request's session".
 **Round 4** (2026-11-04, a fresh read-only agent in `/tmp/claude-1000/review4-133-9rgm`, a clone of `7419f3ce`; no
 command in either checkout). Round 3's items confirmed against the campaign's manual and setup. No blocker, no
 should-fix; its one nit, fixed: the files and the judgement said to be what the sequence holds, not a fourth step.
+
+**Round 5** (2026-11-04, a fresh read-only agent in `/tmp/claude-1000/review5-133-9NvH`, a clone of `a9000f94`; it
+read dl-207 and dl-147 by path; it ran one read-only `git -C <main checkout> reflog -0`, against its brief, which
+printed and wrote nothing, main's HEAD and reflog checked unchanged after). dl-207's Context equals the note's block;
+the re-export holds but for the hand-written lines. Two should-fix, both fixed: the Execution notes' stale filing line
+and Context, and the deviation from dl-009 recorded; "dl-147's Action 2, missed" overclaimed (the engine never ran),
+reworded in dl-207 and campaign-002. Nits fixed: the private names left out of dl-207; its permalink to come with the
+tag; the note's Filed line wrapped.
