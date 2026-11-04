@@ -165,6 +165,18 @@ the approver's (dl-009).
   as a **decision-log**: the verification dl-147's Actions ask for (H1). The wingfoil arm on v0.3.0 costs 1.70 times
   the baseline on S1 (n = 3), above the 1.5 its verification sets: not verified. WingFoil v0.3.0's workflow engine
   stays unstarted on S1–S8 (task-095), so the ratio reads WingFoil as its documentation sets it up.
+  **Reading (2026-11-04, task-133):** the wingfoil arm's manual had the agent itself carry WingFoil's sequence of
+  commands at every step, inside its own session: read its role's rules and the approved decisions, add each request as
+  a task and each design decision as a decision-log, submit every one, and ask for an approval when its work needed one
+  (1 step of 15). WingFoil 0.3.0's workflow engine was never started (task-095). The 1.70× the baseline's mean cost per
+  run (n = 3) is the cost of that process carried by hand, as the manual set it, not of the process run as WingFoil
+  commands, where an agent would execute each step and a person give only the approvals. The docs control baseline-docs,
+  which carries WingFoil's information with no process, costs 1.33× (n = 3) the baseline, so part of the gap is the
+  information's own text, before any process. The note carries the reading, for its filing (dl-009); WingFoil feedback
+  F-047 states the command-sequence reading for WingFoil.
+  **Filed in WingFoil** (2026-11-04, by the agent at the approver's request) as `dl-207` (`bdf890c11`), a draft:
+  its Decision, Rationale and Actions are WingFoil's. It re-measures dl-147's Action 2: 1.70×, above its 1.5× target,
+  but without the workflow engine that Action 2 asked for, so the engine's effect (H1) is not tested by it.
 - **[M-F1 on S3@1.0, baseline-docs against wingfoil](../../../findings/81ebb2691f9c-1-s3-1.0-m-f1-baseline-docs+wingfoil.md)**,
   as a **bug**, preliminary (n = 1): wingfoil 3/5 against baseline-docs' 4/5, D3 and D5 failed; on v0.2.2 (the
   bridge, `bf3a1ac7dff5/1`) the wingfoil arm kept 4/5 with D3 recorded.

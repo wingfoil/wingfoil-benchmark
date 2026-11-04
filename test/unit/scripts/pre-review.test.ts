@@ -204,6 +204,13 @@ describe('scripts/pre-review.sh (dl-020, task-098)', () => {
     expect(result.status, result.stderr).toBe(0);
   });
 
+  it('leaves out the finding notes bench finding generates under findings/ (task-133)', () => {
+    const long = 'x'.repeat(130);
+    const { run } = fixture([['findings/c-1-s1-1.0-m-k1-baseline+wingfoil.md', `${long}\n`]]);
+    const result = run();
+    expect(result.status, result.stderr).toBe(0);
+  });
+
   it('stops at the first red check and exits non-zero, naming it', () => {
     const { run, recorded } = fixture(['src/cli/a.ts', 'docs/n.md'], 'npx prettier');
     const result = run();
