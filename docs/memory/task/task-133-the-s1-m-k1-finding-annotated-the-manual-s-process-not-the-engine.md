@@ -79,11 +79,11 @@ with the approver's consent. The note was exported before
   said so to the approver with the filing.
 - **The filing** (criterion 4; the approver asked the agent, chat 2026-11-04, and declined the full suites): in the
   WingFoil repository, on its `main` (four uncommitted changes there, not this task's, left alone), with its own CLI
-  (`node dist/cli.js`, WingFoil 0.3.2): `memory add --type decision-log` made `dl-207-…` (`ae38906b9`); its body is
-  the note's WingFoil block, the reading included, with Decision, Rationale and Actions left to fill and a Relations
-  section (dl-147's Action 2 then called missed, reworded as re-measured at round 5, below); committed `bdf890c11` with WingFoil's own trailers
-  (`Co-Authored-By: Claude`, `AI-Model`); left `draft`, not submitted, not pushed. The way back (dl-009 point 2): the
-  "Filed in WingFoil as" line under the note's title (`3877e70e`), and campaign-002's Findings.
+  (`node dist/cli.js`, WingFoil 0.3.2): `memory add --type decision-log` made `dl-207-…` (`ae38906b9`); its body is the
+  note's WingFoil block, the reading included, with Decision, Rationale and Actions left to fill and a Relations section
+  (dl-147's Action 2 then called missed, reworded as re-measured at round 5, below); committed `bdf890c11` with
+  WingFoil's own trailers (`Co-Authored-By: Claude`, `AI-Model`); left `draft`, not submitted, not pushed. The way back
+  (dl-009 point 2): the "Filed in WingFoil as" line under the note's title (`3877e70e`), and campaign-002's Findings.
 - **Deviation from dl-009's Consequences** ("nothing is written into the WingFoil repository by the benchmark or its
   agent"), at the approver's request in chat (2026-11-04), which criterion 4 allows: the agent wrote dl-207 there. At
   review round 5, dl-207's Relations reworded in WingFoil (`1be558880`): dl-147's Action 2 is re-measured, not
