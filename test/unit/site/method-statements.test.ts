@@ -148,7 +148,7 @@ const STATEMENTS: readonly (readonly [string, string])[] = [
   ],
   [
     'content-checks-v1-erratum',
-    "REQ-SCO-06 as amended in 1.49 (1.0 checks stay v1, their misses published as an erratum); scenario conventions amendment 1.5 K7 (an erratum for 1.0); bug-026 Actual; rel-v0-2 Retrospective; calibration v0.2 §7.4, §7.5; task-128 criterion 7 (the approver's choice A: the figures from W16's re-scoring)",
+    "REQ-SCO-06 as amended in 1.49 (1.0 checks stay v1, their misses published as an erratum); scenario conventions amendment 1.5 K7 (an erratum for 1.0); bug-026 Actual; rel-v0-2 Retrospective; calibration v0.2 §7.4, §7.5; task-128 criterion 7 (the approver's choice A: the figures from W16's re-scoring); task-134 (docs/calibration/v0.3-rescore.md, the figures of the re-scoring)",
   ],
   [
     'syntactic-limits',
@@ -186,11 +186,11 @@ const STATEMENTS: readonly (readonly [string, string])[] = [
   ['m-r1', 'experiment design §4.5 M-R1; REQ-SCO-07 (public tests only); rel-v0-1 W10 Due before'],
   [
     'm-k4-erratum',
-    "REQ-SCO-08 as amended in 1.49 (1.15's bullets and pooled mean no longer hold); plan-005 (errata for the published values); bug-029; task-129 criterion 7",
+    "REQ-SCO-08 as amended in 1.49 (1.15's bullets and pooled mean no longer hold); plan-005 (errata for the published values); bug-029; task-129 criterion 7; task-134 (docs/calibration/v0.3-rescore.md, the figures of the re-scoring)",
   ],
   [
     'm-r2',
-    'experiment design §4.5 M-R2; REQ-SCO-07 as amended in 1.49 (M-R2 v2 from `src/index.ts`, `<name>: <signature>`, the special entries, the version recorded, never two compared, v1 values kept with errata); REQ-SCO-05 (amended 1.17, syntax only); bug-028; task-129; rel-v0-1 W10 Due before',
+    'experiment design §4.5 M-R2; REQ-SCO-07 as amended in 1.49 (M-R2 v2 from `src/index.ts`, `<name>: <signature>`, the special entries, the version recorded, never two compared, v1 values kept with errata); REQ-SCO-05 (amended 1.17, syntax only); bug-028; task-129; rel-v0-1 W10 Due before; task-134 (docs/calibration/v0.3-rescore.md, the figures of the re-scoring)',
   ],
   [
     'm-r3',
