@@ -103,3 +103,10 @@ should-fix in F-047, both fixed: the agent's instruction is said to go beyond Wi
 process), lest the cost read as the guide's; and the sequence is named command by command, as the inbox's rule asks
 (reproducible with WingFoil alone). Nits fixed: `init --template Kanban`; no `workflow start` and no `agent execute`
 run, F-041 cited; Expected's request first; baseline-docs' rules "as a Markdown file"; the script comment's wrap.
+
+**Round 3** (2026-11-04, a fresh read-only agent in `/tmp/claude-1000/review3-133-tYDZ`, a clone of `a8c32cd4`; no
+command in either checkout). Round 2's items confirmed against the campaign's manual and setup (`77b4fea0`). No
+blocker; one should-fix, fixed: F-047's Expected named branches ("an agent is blocked or a plan is paused") WingFoil
+0.3.0 does not have; it now says the branches belong to the approver's reading, not to what 0.3.0 implements. Nits
+fixed: the approvals' list reworded; `approve` with `--reason` and an identity holding the approver role; "mean cost
+per run"; "inside that request's session".
