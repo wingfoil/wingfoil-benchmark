@@ -83,6 +83,7 @@ are in its triage record), 4 `open` (restated with no element), and F-040 to F-0
 | [F-044](F-044-kanban-s-delivery-runs-once-per-instance.md) | Kanban's delivery runs once per instance, though the scaffold says work flows continuously | gap | open | |
 | [F-045](F-045-the-0-3-upgrade-list-omits-two-changes-that-break-a-0-2-configuration.md) | The 0.3 upgrade list omits two changes that break a 0.2 configuration | defect | open | |
 | [F-046](F-046-listings-print-each-record-in-full-which-an-agent-re-reads-at-every-later-call.md) | Listings print each record in full, which an agent re-reads at every later call | request | open | |
+| [F-047](F-047-an-agent-that-carries-the-process-by-hand-pays-for-it-in-its-own-context.md) | An agent that carries the process by hand pays for it in its own context | request | open | |
 
 ## Context
 

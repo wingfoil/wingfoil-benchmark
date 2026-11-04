@@ -30,11 +30,16 @@ with the approver's consent. The note was exported before
 1. **The note re-exported** with `bench finding 81ebb2691f9c/1 --scenario S1@1.0 --metric M-K1 --arms baseline,wingfoil
    --as decision-log`, so that it cites the template of the WingFoil its wingfoil runs ran (task-130); the diff against
    the committed note is that line alone, every figure unchanged.
-2. **The annotation**, one hand-written line, said so in the commit (dl-009 point 2's rule for hand-written lines): in
-   the note under its title and in its WingFoil block's Context, so that it travels with the filing: "Reading: the
-   wingfoil arm's manual had the agent follow WingFoil's process (records, submissions, approval requests) at every
-   step, and WingFoil 0.3.0's workflow engine was never started (task-095): the 1.70× is the cost of that process as
-   the manual set it, not of the engine." Its figures (1.70×, n = 3) recomputed by a script from the aggregate.
+2. **The annotation**, one hand-written line, said so in the commit (dl-009 point 2's rule for hand-written lines, here
+   extended to a second line): in the note under its title and in its WingFoil block's Context, so that it travels with
+   the filing. Its wording, the approver's (chat, 2026-11-04, after review round 1 found "approval requests at every
+   step" an overclaim): "Reading: the wingfoil arm's manual had the agent itself carry WingFoil's sequence of commands
+   at every step, inside its own session: read its role's rules and the approved decisions, add each request as a task
+   and each design decision as a decision-log, submit every one, and ask for an approval when its work needed one (1
+   step of 15). WingFoil 0.3.0's workflow engine was never started (task-095). The 1.70× the baseline's mean cost per
+   run (n = 3) is the cost of that process carried by hand, as the manual set it, not of the process run as WingFoil
+   commands, where an agent would execute each step and a person give only the approvals." Its figures recomputed by
+   a script.
 3. **campaign-002's Findings** carry the same reading beside the note.
 4. **The filing** (dl-009): the decision-log text to paste, from the note's WingFoil block with the annotation, handed
    to the approver with the `wingfoil memory add` command for the WingFoil repository; filed only with the approver's
@@ -64,4 +69,29 @@ with the approver's consent. The note was exported before
   characters, one line as `bench finding` writes it). The generated notes under `findings/` are now left out, as
   `results/` is (bug-040), red first in `test/unit/scripts/pre-review.test.ts`; the note's hand-written reading is
   wrapped at 120 by hand.
+- **The reading reworded** (the approver, chat 2026-11-04): round 1 counted the 15 wingfoil S1 steps — a task added
+  and submitted in 15, a decision-log in 12, an approval asked in 1 (the agent's own count, from `run.json`'s
+  interventions and `commits.json`, agrees) — and the approver chose the command-sequence wording above, in the note's
+  two places and in campaign-002, which adds baseline-docs' 1.33× the baseline (n = 3; wingfoil 1.27× baseline-docs).
+- **WingFoil feedback F-047** (the approver's choice, chat 2026-11-04): "An agent that carries the process by hand pays
+  for it in its own context", the approver's reading of WingFoil's work as a near-deterministic sequence of commands,
+  stated generically, with its ledger row; the method page, dl-021 and H1's verification left as they are.
+- **dl-009's one hand-written line** is extended here to two (this reading, then "Filed in WingFoil as …" once filed):
+  said so to the approver with the filing.
 - `wingfoil memory add`, `submit` (draft → pending, backlog → in-progress): as declared.
+
+### Review
+
+**Round 1** (2026-11-04, a fresh read-only agent in `/tmp/claude-1000/review1-133-OS9I`, a clone of `40ffdf76`; no
+command in either checkout). The re-export reproduces the note but for the reading; the figures and the arm's manual
+(its digest recomputed) confirmed; no workflow commit and nothing under `.wingfoil/` in the runs. One should-fix,
+five nits:
+
+| # | Finding | Outcome |
+|---|---|---|
+| S1 | "approval requests at every step" overstates (1 of 15) and leaves out the rules' and decisions' reading | fixed: the approver's wording (chat 2026-11-04), in the three places |
+| N1 | "1.70×" without saying of what | fixed: "the baseline's mean cost per run (n = 3)" |
+| N2 | baseline-docs' 1.33× worth a clause in campaign-002 | fixed |
+| N3 | `pre-review.sh`'s new comment line 121 characters | fixed |
+| N4 | dl-009 allows one hand-written line | fixed: stated as an extension, here and with the filing |
+| N5 | red-first only claimed in one commit | kept: the reviewer confirmed it against main's script |
