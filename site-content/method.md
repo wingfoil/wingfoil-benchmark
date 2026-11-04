@@ -192,10 +192,10 @@ duplicate recognised in other words ("already handled", the earlier task looked 
 kinds of error, the parts of words and the template text; a fact recorded in words the check does not list is missed by
 version 2 too, and only the maintainer's judgement catches it. Re-scored from the published runs' stored files ([the
 v0.3 re-scoring](https://github.com/wingfoil/wingfoil-benchmark/blob/main/docs/calibration/v0.3-rescore.md)), version 2
-changes 4 of the 100 verdicts of S2's and S3's 1.0 checks in the published executions, all of S3's D3 revision and all
-from a pass to a failure: two matched "changed" inside "unchanged", one "revis" inside "revisit", one "replaces" in a
-WingFoil template comment the agent's harness copied into a new record; none goes the other way, and S2's duplicate
-check is unchanged. {#content-checks-v1-erratum}
+changes 4 of the 100 verdicts of S2's and S3's 1.0 checks in the published executions, all on S3's D3-revision check and
+all from a pass to a failure: two matched "changed" inside "unchanged", one "revis" inside "revisit", one "replaces" in
+a WingFoil template comment that `wingfoil memory add` copied into a new record; none goes the other way, and S2's
+duplicate check is unchanged. {#content-checks-v1-erratum}
 
 The `ast` rules match syntax, not meaning, and this has limits. A clock or random function reached through another name (an alias) is not seen. Test files and declaration files are left out. Node's `crypto` random functions (for example `crypto.randomUUID()`) count as randomness. {#syntactic-limits}
 
@@ -241,7 +241,7 @@ Both comparisons are recorded with each entry, with their runs and `n`. An expec
 measured. **Erratum:** every execution scored before requirements 1.49 (v0.3), campaign-008 included, computed M-K4 by
 the 1.15 rule, a pooled mean step cost and no variance (not applicable when the mean M-Q1 was lower, never when the step
 cost was not lower); their values stay as published; re-scored by the rule above, 16 of their 88 entries change their
-value or its kind. {#m-k4-erratum}
+value or its kind, and 5 more stay not applicable for another reason than 1.15's one, a lower quality. {#m-k4-erratum}
 
 **Determinism** (M-R1 to M-R3) compares repetitions of the same arm, scenario and pins. In v0.1 only S1 has repetitions (three).
 

@@ -66,7 +66,7 @@ here (the variance rule is presentation; rebuilding and publishing are the appro
   4 under v1 only, 0 under v2 only, 88 under neither, the 4 all S3's D3 revision ("changed" inside "unchanged" twice,
   "revis" inside "revisit", "replaces" in a WingFoil template comment copied into a new record by `memory add`, which
   v2 leaves out as a setup line); M-R2, 64 groups, v2 lower in 6, the same in 31, higher in 27; M-K4, 88 entries, 16
-  change their value or its kind. The method page's three errata carry them, with a link to the report.
+  change their value or its kind and 5 more stay not applicable for another reason. The method page's three errata carry them, with a link to the report.
 - **Deviation:** the tests are in `test/bin/rescore.test.ts`, not under `test/unit/`: the script reads `dist/`, which
   only the bin tests build first. They read one published execution in place (`81ebb2691f9c/1`) instead of fixtures —
   a check verdict that changes, a group whose M-R2 changes, an M-K4 entry that changes — and check that `results/` is
@@ -76,3 +76,18 @@ here (the variance rule is presentation; rebuilding and publishing are the appro
   (`fileParallelism: false`), each building first; green after.
 - Catalogue notes left as they are: none of these figures belongs to one execution's note.
 - `wingfoil memory add`, `submit` (draft → pending, backlog → in-progress): as declared.
+
+### Review
+
+**Round 1** (2026-11-04, a fresh read-only agent in `/tmp/claude-1000/review1-134-L8Ea`, a clone of `79a2cf88`; no
+command in either checkout). It re-ran the script (the same bytes as the report, `results/` clean after), compared
+each reading with the scorer and the aggregate (the runs compared, the pairing, M-K3 across models), and spot-checked
+the four changed content-check rows in their stored patches. No blocker; one should-fix and four nits:
+
+| # | Finding | Outcome |
+|---|---|---|
+| S1 | M-K4's count compared values only: 5 entries stay "not applicable" with another reason than 1.15's (a lower quality) | fixed: counted and shown (1.15's not applicable read as reason `quality`); the erratum says 16 and 5 more |
+| N1 | the tests asserted existence only | fixed: concrete rows of `81ebb2691f9c/1` pinned, a reason change and v1's words included |
+| N2 | the content-check erratum's wording | fixed: "on S3's D3-revision check"; the comment `wingfoil memory add` copied |
+| N3 | `loadScenario` twice a run | fixed: one load per version |
+| N4 | the report's generated table rows over 120 | kept: tables, exempt |

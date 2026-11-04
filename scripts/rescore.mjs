@@ -59,17 +59,25 @@ function runsOf(results, execution) {
  * Content checks v2 over one execution: each S2@1.0 and S3@1.0 run's check under the 1.1 version's v2 check, beside
  * its published v1 verdict, at each step the check scores. A step the run did not reach is left out.
  */
+/** A scenario version, loaded once per directory, id and version. */
+const loaded = new Map();
+function scenarioOf(scenariosDir, id, version) {
+  const key = `${scenariosDir}\u0000${id}@${version}`;
+  if (!loaded.has(key)) {
+    const scenario = loadScenario(scenariosDir, id, version);
+    if (!scenario.ok) throw new Error(JSON.stringify(scenario.issues));
+    loaded.set(key, scenario.value);
+  }
+  return loaded.get(key);
+}
+
 export async function rescoreChecks(resultsDir, scenariosDir, execution) {
   const rows = [];
   for (const run of runsOf(resultsDir, execution)) {
     const id = V2_CHECKS[run.scenario];
     if (id === undefined || run.version !== '1.0') continue;
-    const v10 = loadScenario(scenariosDir, run.scenario, '1.0');
-    if (!v10.ok) throw new Error(JSON.stringify(v10.issues));
-    const v1Check = v10.value.oracle.checks.find((c) => c.id === id);
-    const v11 = loadScenario(scenariosDir, run.scenario, '1.1');
-    if (!v11.ok) throw new Error(JSON.stringify(v11.issues));
-    const check = v11.value.oracle.checks.find((c) => c.id === id);
+    const v1Check = scenarioOf(scenariosDir, run.scenario, '1.0').oracle.checks.find((c) => c.id === id);
+    const check = scenarioOf(scenariosDir, run.scenario, '1.1').oracle.checks.find((c) => c.id === id);
     const published = (run.score.checks ?? []).find((c) => c.id === id);
     if (check === undefined || published === undefined) continue;
     const reached = new Map(
@@ -133,8 +141,7 @@ function jaccardMean(sets) {
 
 /** A run's interface under M-R2 v2: its final snapshot rebuilt, then interface.mjs --v2 on it. */
 async function interfaceV2(run, scenariosDir) {
-  const scenario = loadScenario(scenariosDir, run.scenario, run.version);
-  if (!scenario.ok) throw new Error(JSON.stringify(scenario.issues));
+  const scenario = { value: scenarioOf(scenariosDir, run.scenario, run.version) };
   const stored = readStoredRun(run.runDir);
   if (!stored.ok) throw new Error(`${run.name}: ${JSON.stringify(stored.issues)}`);
   const workDir = mkdtempSync(join(tmpdir(), 'bench-rescore-'));
@@ -261,7 +268,13 @@ async function main() {
     if (row.v2 === undefined) continue;
     totals.mr2[row.v2 < row.v1 ? 'lower' : row.v2 > row.v1 ? 'higher' : 'same'] += 1;
   }
+  // 1.15's "not applicable" had one reason, a lower mean M-Q1: its reason `quality` under 1.49's names.
+  const outcome1 = (row) => (row.v1 === 'not applicable' ? 'not applicable (quality)' : show(row.v1));
+  const outcome2 = (row) => (row.reason === undefined ? show(row.v2) : `${show(row.v2)} (${row.reason})`);
   totals.mk4 = mk4.filter((row) => String(row.v1) !== String(row.v2)).length;
+  totals.mk4Reason = mk4.filter(
+    (row) => String(row.v1) === String(row.v2) && outcome1(row) !== outcome2(row),
+  ).length;
 
   out.push(
     "# v0.3's offline re-scoring of the published executions",
@@ -298,7 +311,13 @@ async function main() {
         `${totals.mr2.higher}.`,
     ),
   );
-  out.push(bullet(`M-K4 (${mk4.length} entries): the value or its kind changes in ${totals.mk4}.`), '');
+  out.push(
+    bullet(
+      `M-K4 (${mk4.length} entries): the value or its kind changes in ${totals.mk4}; ${totals.mk4Reason} more stay ` +
+        "not applicable, for another reason (1.15's one reason was a lower quality).",
+    ),
+    '',
+  );
 
   out.push(
     '## Content checks: the verdicts that change',
@@ -329,10 +348,8 @@ async function main() {
     '| Execution | Entry | M-K3 (EUR) | 1.15 | 1.49 |',
     '|---|---|---|---|---|',
   );
-  for (const row of mk4) {
-    const v2 = row.reason === undefined ? show(row.v2) : `${show(row.v2)} (${row.reason})`;
-    out.push(`| ${row.execution} | ${row.entry} | ${row.k3} | ${show(row.v1)} | ${v2} |`);
-  }
+  for (const row of mk4)
+    out.push(`| ${row.execution} | ${row.entry} | ${row.k3} | ${outcome1(row)} | ${outcome2(row)} |`);
   process.stdout.write(`${out.join('\n')}\n`);
 }
 
