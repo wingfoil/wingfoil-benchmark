@@ -180,3 +180,41 @@ describe('S3@1.0 (F6.3)', { timeout: 240_000 }, () => {
     },
   );
 });
+
+describe('S3 1.1 (task-132)', { timeout: 300_000 }, () => {
+  it("passes D3's v2 check when step 4 records the revision, and fails a silent step 4", async () => {
+    const loaded = loadScenario(repoPath('scenarios'), 'S3', '1.1');
+    if (!loaded.ok) throw new Error(JSON.stringify(loaded.issues));
+    const v11 = loaded.value;
+    const d3 = async (edit?: (n: number, workspace: string) => void) => {
+      const { runDir, snapshots } = await referenceRun(v11.seedDir, REFERENCE, edit);
+      const result = await scoreChecks({ checks: v11.oracle.checks, runDir, snapshots });
+      if (!result.ok) throw new Error(JSON.stringify(result.issues));
+      return result.value[0];
+    };
+    expect(await d3()).toEqual({
+      id: 'd3-revision',
+      kind: 'content',
+      match: 'words',
+      steps: [{ n: 4, passed: true, where: { file: 'DECISIONS.md' } }],
+    });
+    const silent = await d3((n, workspace) => {
+      if (n === 4)
+        writeFileSync(
+          join(workspace, 'DECISIONS.md'),
+          readFileSync(join(REFERENCE, '01', 'DECISIONS.md'), 'utf8'),
+        );
+    });
+    expect(silent?.steps).toEqual([{ n: 4, passed: false }]);
+    // "unchanged" no longer contains "changed": v1's false positive (bug-026)
+    const unchanged = await d3((n, workspace) => {
+      if (n !== 4) return;
+      writeFileSync(
+        join(workspace, 'DECISIONS.md'),
+        readFileSync(join(REFERENCE, '01', 'DECISIONS.md'), 'utf8'),
+      );
+      writeFileSync(join(workspace, 'NOTES.md'), 'Whole days only: unchanged.\n');
+    });
+    expect(unchanged?.steps).toEqual([{ n: 4, passed: false }]);
+  });
+});

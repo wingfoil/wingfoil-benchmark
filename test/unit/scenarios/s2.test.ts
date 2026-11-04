@@ -212,3 +212,30 @@ describe('S2@1.0 (F6.2)', { timeout: 120_000 }, () => {
     });
   });
 });
+
+describe.skipIf(!HAS_REFERENCE)(
+  "S2 1.1's v2 duplicate check, with the hold-out's reference (task-132)",
+  () => {
+    it(
+      'passes on the reference, and fails when step 3 records nothing about the duplicate',
+      { timeout: 300_000 },
+      async () => {
+        const loaded = loadScenario(repoPath('scenarios'), 'S2', '1.1');
+        if (!loaded.ok) throw new Error(JSON.stringify(loaded.issues));
+        const v11 = loaded.value;
+        const duplicateOf = async (edit?: (n: number, workspace: string) => void) => {
+          const { runDir, snapshots } = await referenceRun(v11.seedDir, REFERENCE, edit);
+          const result = await scoreChecks({ checks: v11.oracle.checks, runDir, snapshots });
+          if (!result.ok) throw new Error(JSON.stringify(result.issues));
+          return result.value.find((check) => check.id === 'duplicate');
+        };
+        const reference = await duplicateOf();
+        expect(reference).toMatchObject({ match: 'words', steps: [{ n: 3, passed: true }] });
+        const silent = await duplicateOf((n, workspace) => {
+          if (n === 3) rmSync(join(workspace, 'NOTES.md'), { force: true });
+        });
+        expect(silent?.steps).toEqual([{ n: 3, passed: false }]);
+      },
+    );
+  },
+);

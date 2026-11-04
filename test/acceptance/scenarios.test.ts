@@ -536,3 +536,57 @@ describe('S1 1.1 (bug-025, task-131)', () => {
     expect(readFileSync(repoPath('site-content/method.md'), 'utf8')).toContain('{#s1-step-5-limit}');
   });
 });
+
+describe('S2, S3 and S8 1.1 (task-132)', () => {
+  /** Every file under `dir`, relative, with its text; a symbolic link fails it (bug-034). */
+  function filesOf(dir: string): Record<string, string> {
+    const out: Record<string, string> = {};
+    const walk = (at: string) => {
+      for (const entry of readdirSync(at, { withFileTypes: true })) {
+        const path = join(at, entry.name);
+        expect(entry.isSymbolicLink(), path).toBe(false);
+        if (entry.isDirectory()) walk(path);
+        else out[relative(dir, path)] = readFileSync(path, 'utf8');
+      }
+    };
+    walk(dir);
+    return out;
+  }
+  const CHECKS: Record<string, string | undefined> = {
+    S2: 'oracle/checks/duplicate.yaml',
+    S3: 'oracle/checks/d3-revision.yaml',
+    S8: undefined,
+  };
+
+  it("@F3.4 S2, S3 and S8 1.1 carry the oracle's corrections", () => {
+    vi.stubEnv('BENCH_HOLDOUT_PATH', '');
+    for (const [id, check] of Object.entries(CHECKS)) {
+      // Given S2, S3 and S8 1.1 — Then each is valid and passes the leak scan
+      expect(validateScenario({ id, version: '1.1' }, repoPath('.'))).toEqual({
+        ok: true,
+        line: `scenario ${id}@1.1 is valid (hold-out: not configured)`,
+      });
+      // And each is its 1.0 but for its version and, in S2 and S3, its content check and its rubric
+      const v10 = filesOf(repoPath(`scenarios/${id}/1.0`));
+      const v11 = filesOf(repoPath(`scenarios/${id}/1.1`));
+      const changed = ['scenario.yaml', ...(check === undefined ? [] : [check, 'oracle/rubric.md'])];
+      expect(Object.keys(v11).sort()).toEqual(
+        [...Object.keys(v10), ...(check === undefined ? [] : ['oracle/rubric.md'])].sort(),
+      );
+      for (const path of Object.keys(v10))
+        if (!changed.includes(path)) expect(v11[path], `${id} ${path}`).toBe(v10[path]);
+      expect(v11['scenario.yaml']).toBe(v10['scenario.yaml']?.replace("version: '1.0'", "version: '1.1'"));
+      // And S2's duplicate and S3's D3 revision checks match whole words, each with its section in the version's rubric
+      if (check !== undefined) {
+        const loaded = loadScenario(repoPath('scenarios'), id, '1.1');
+        if (!loaded.ok) throw new Error(JSON.stringify(loaded.issues));
+        const content = loaded.value.oracle.checks.filter((c) => c.kind === 'content');
+        expect(content.map((c) => [c.id, c.kind === 'content' ? c.match : undefined])).toEqual([
+          [check.split('/').at(-1)?.replace('.yaml', ''), 'words'],
+        ]);
+      }
+      // And the 1.0 versions stay registered, unchanged
+      expect(validateScenario({ id, version: '1.0' }, repoPath('.')).ok).toBe(true);
+    }
+  });
+});

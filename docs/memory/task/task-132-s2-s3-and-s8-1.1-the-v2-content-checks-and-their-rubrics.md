@@ -2,7 +2,7 @@
 id: task-132-s2-s3-and-s8-1.1-the-v2-content-checks-and-their-rubrics
 type: task
 title: "S2, S3 and S8 1.1, the v2 content checks and their rubrics"
-status: backlog
+status: approved
 release: v0.3
 wave: W16
 features: [F3.4, F4.7]
@@ -49,11 +49,11 @@ scenario version). No real-agent session, no spending.
 - `scenarios/S2/1.1/`, `scenarios/S3/1.1/`, `scenarios/S8/1.1/`: copies of their 1.0 (no symbolic link, bug-034),
   `version: '1.1'`.
 - **S3's `d3-revision`**, `match: words`, two groups as in 1.0:
-  - D3's rule: whole day, whole days, whole-day, full day, full days, full-day, entire day, entire days, daily only,
-    days only;
-  - its revision: revise, revised, revises, revision, revising, supersede, supersedes, superseded, replace, replaced,
-    replaces, replacing, replacement, no longer, instead of, now also, amend, amended, amends, amendment, changed,
-    update, updated, updates.
+  - D3's rule: whole day, whole days, whole-day, whole-days, full day, full days, full-day, full-days, entire day,
+    entire days, daily only, days only;
+  - its revision: revise, revised, revises, revision, revisions, revising, supersede, supersedes, superseded,
+    superseding, replace, replaced, replaces, replacing, replacement, replacements, no longer, instead of, now also,
+    amend, amended, amends, amendment, amendments, amending, changed, update, updated, updates.
 - **S2's `duplicate`**, `match: words`: 1.0's phrases with the inflections they implied — already fixed, already been
   fixed, already resolved, already been resolved, already handled, already been handled, already addressed, already
   been addressed, duplicate, duplicates, duplicated, same defect, same issue, same problem, same bug, fixed earlier,
@@ -68,5 +68,41 @@ scenario version). No real-agent session, no spending.
 
 ## Execution notes
 
-<!-- What happened while building: deviations, blockers, follow-ups (filed as elements, never left
-     here). For every `wingfoil` command: declared vs observed behaviour. -->
+- **Red first:** the @F3.4 scenario failed before the three versions existed, then passed. The reference tests of
+  S2 1.1 and S3 1.1 were written with the checks.
+- **The versions:** plain copies of 1.0 (no symbolic link), `version: '1.1'`; S2's `duplicate.yaml` and S3's
+  `d3-revision.yaml` rewritten with `match: words` and the Design's patterns; `oracle/rubric.md` added to S2 1.1 and
+  S3 1.1; S8 1.1 changes its version alone. `bench scenario validate` is valid on all six versions, with the hold-out
+  and without, the leak scan and the prompt-satisfaction refusal included.
+- **The references:** S3's reference passes `d3-revision` v2 at step 4 (matched in `DECISIONS.md`), a silent step 4
+  fails it, and so does v1's false positive "unchanged"; S2's reference (in the hold-out) passes `duplicate` v2 at step
+  3 and a step 3 with no `NOTES.md` fails it (run locally with `BENCH_HOLDOUT_PATH`; skipped without it, as S2's other
+  reference tests). `test/support/reference.ts`'s `referenceRun` now writes an empty `setup/diff.patch`, which a v2
+  check reads (the reference has no setup).
+- **K6** (`node scripts/saturation.mjs <id> 1.0`): S2 "29 of 49 runs … saturated: false" (20 below, 3 arms, 5
+  executions); S3 "20 of 51 … false" (31 below, 6 arms, 7 executions); S8 "46 of 49 … false" (3 below, 3 arms, 1
+  execution). Quoted in `S2.md` 1.1, `S3.md` 1.1 and `S8.md` 1.2.
+- **The hold-out** (choice C): each 1.0 copied to its 1.1 with `cp -r`, `diff -rq` identical (S2 8 files, S3 4, S8 4),
+  nothing opened or printed, **not committed** there (with S1 1.1's copy, the approver's to commit).
+- `wingfoil memory add`, `submit` (draft → pending, backlog → in-progress): as declared.
+- **The hold-out's commit:** the approver asked for it (chat, 2026-11-03): `6cbf3c4` in the private hold-out
+  repository adds the four 1.1 directories (S1, S2, S3, S8; 21 files) and nothing else, its earlier uncommitted
+  change left as it was; not pushed.
+- **Full suites** (2026-11-04, `f79fe005`, under the load watcher): LINT 0, TEST 0 (2054 passed, 10 skipped: S2 1.1's
+  reference test among them, which needs the hold-out), BUILD 0, BIN 0, DOCKER 0.
+
+### Review
+
+**Round 1** (2026-11-03, a fresh read-only agent in `/tmp/claude-1000/review1-132-qBF4`, a clone of `90194aea`; no
+command in either checkout; the hold-out used only through `validate`, a names-only `diff -rq` and S2's reference
+test). It re-scored every published S2@1.0 and S3@1.0 run under v1 and v2: S2's 81 identical (8 pass both); S3's 91,
+12 pass both, none v2 only, 10 v1 only (7 through "unchanged", 2 through WingFoil's scaffold line, 1 through
+"revisit"), which is what bug-026 asked to remove. No blocker, no should-fix; five nits:
+
+| # | Finding | Outcome |
+|---|---|---|
+| N1 | S3's inflections uneven (`superseding`, `amending`, `revisions`, `replacements`, `amendments` missing; 1.0's stems matched them) | fixed: added; `updating` was never a 1.0 match (`update` is not in it), left out |
+| N2 | `whole-days`, `full-days` lost | fixed: added |
+| N3 | S2's three "already been …" phrases are additions, not inflections; `duplicating`, `duplication` lost | fixed: S2.md says so; the two were never 1.0 matches (`duplicate` is not in them), left out |
+| N4 | some genuine records now fall to the rubric (a run saying "partly changes dl-001") | kept: expected under REQ-SCO-06 1.49, the maintainer's judgement |
+| N5 | the acceptance test does not compare the patterns with the Design's list | kept: the references and the v1 false positive are tested; the list is the Design's |
