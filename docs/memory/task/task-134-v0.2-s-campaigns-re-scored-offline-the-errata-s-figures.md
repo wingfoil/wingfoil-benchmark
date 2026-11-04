@@ -2,7 +2,7 @@
 id: task-134-v0.2-s-campaigns-re-scored-offline-the-errata-s-figures
 type: task
 title: "v0.2's campaigns re-scored offline: the errata's figures"
-status: in-progress
+status: in-review
 release: v0.3
 wave: W16
 features: [F4.5, F4.7, F4.4]
