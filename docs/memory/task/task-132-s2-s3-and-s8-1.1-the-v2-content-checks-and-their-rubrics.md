@@ -85,6 +85,11 @@ scenario version). No real-agent session, no spending.
 - **The hold-out** (choice C): each 1.0 copied to its 1.1 with `cp -r`, `diff -rq` identical (S2 8 files, S3 4, S8 4),
   nothing opened or printed, **not committed** there (with S1 1.1's copy, the approver's to commit).
 - `wingfoil memory add`, `submit` (draft → pending, backlog → in-progress): as declared.
+- **The hold-out's commit:** the approver asked for it (chat, 2026-11-03): `6cbf3c4` in the private hold-out
+  repository adds the four 1.1 directories (S1, S2, S3, S8; 21 files) and nothing else, its earlier uncommitted
+  change left as it was; not pushed.
+- **Full suites** (2026-11-04, `f79fe005`, under the load watcher): LINT 0, TEST 0 (2054 passed, 10 skipped: S2 1.1's
+  reference test among them, which needs the hold-out), BUILD 0, BIN 0, DOCKER 0.
 
 ### Review
 
