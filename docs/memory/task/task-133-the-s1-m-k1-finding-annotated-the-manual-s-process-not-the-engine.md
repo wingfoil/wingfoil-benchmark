@@ -2,7 +2,7 @@
 id: task-133-the-s1-m-k1-finding-annotated-the-manual-s-process-not-the-engine
 type: task
 title: "The S1 M-K1 finding annotated: the manual's process, not the engine"
-status: in-progress
+status: in-review
 release: v0.3
 wave: W16
 features: [F5.4]
