@@ -81,7 +81,7 @@ with the approver's consent. The note was exported before
   WingFoil repository, on its `main` (four uncommitted changes there, not this task's, left alone), with its own CLI
   (`node dist/cli.js`, WingFoil 0.3.2): `memory add --type decision-log` made `dl-207-…` (`ae38906b9`); its body is
   the note's WingFoil block, the reading included, with Decision, Rationale and Actions left to fill and a Relations
-  section (dl-147's Action 2 verified as missed); committed `bdf890c11` with WingFoil's own trailers
+  section (dl-147's Action 2 then called missed, reworded as re-measured at round 5, below); committed `bdf890c11` with WingFoil's own trailers
   (`Co-Authored-By: Claude`, `AI-Model`); left `draft`, not submitted, not pushed. The way back (dl-009 point 2): the
   "Filed in WingFoil as" line under the note's title (`3877e70e`), and campaign-002's Findings.
 - **Deviation from dl-009's Consequences** ("nothing is written into the WingFoil repository by the benchmark or its
@@ -133,3 +133,8 @@ the re-export holds but for the hand-written lines. Two should-fix, both fixed: 
 and Context, and the deviation from dl-009 recorded; "dl-147's Action 2, missed" overclaimed (the engine never ran),
 reworded in dl-207 and campaign-002. Nits fixed: the private names left out of dl-207; its permalink to come with the
 tag; the note's Filed line wrapped.
+
+**Round 6** (2026-11-04, a fresh read-only agent in `/tmp/claude-1000/review6-133-dMLt`, a clone of `73d02eb0`; it
+read dl-207 by path, nothing else outside its clone; main's HEAD and reflog, WingFoil's HEAD and status checked
+unchanged after). Round 5's items confirmed; no blocker, no should-fix; its one nit, fixed: "The filing" bullet points
+to the rewording. **Full suites:** not run, the approver's choice (chat, 2026-11-04).
