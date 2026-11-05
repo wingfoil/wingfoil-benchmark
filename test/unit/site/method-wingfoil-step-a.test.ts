@@ -49,6 +49,20 @@ describe('the method page on the step-A wingfoil arm (task-135, dl-021 step A)',
     expect(stepA).toMatch(/campaign-007 and campaign-008[^.]*step-A manual/);
   });
 
+  it('places the step-A paragraph right after the v0.2 one, a blank line between', () => {
+    const lines = readFileSync(repoPath('site-content/method.md'), 'utf8').split('\n');
+    const v02 = lines.findIndex((l) => l.includes('{#wingfoil-manual-process}'));
+    const stepA = lines.findIndex((l) => l.includes('{#wingfoil-step-a}'));
+    expect(v02).toBeGreaterThan(0);
+    expect(stepA).toBe(v02 + 2);
+  });
+
+  it("keeps S10's own approver apart and dates the commit-before-the-gate rule after campaign-008", () => {
+    const stepA = paragraph('wingfoil-step-a');
+    expect(stepA).toMatch(/except in a scenario with an approver of its own \(S10\)/);
+    expect(stepA).toMatch(/after campaign-008[^.]*commit every change/);
+  });
+
   it('points to the step-A paragraph from the v0.2 one', () => {
     expect(paragraph('wingfoil-manual-process')).toMatch(/\(#wingfoil-step-a\)/);
   });

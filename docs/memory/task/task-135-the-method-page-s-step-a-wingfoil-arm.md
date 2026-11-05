@@ -83,3 +83,17 @@ done, `rel-v0-3`'s W17 row is Verified.
 - No figure added; `results/`, `site/`, arms, campaign files and scenario versions unchanged.
 
 ## Review
+
+**Round 1** (a fresh read-only agent on a clone, `167da22b` against main `5ad262b2`; main's HEAD and reflog unchanged
+after): no blocker, two should-fix, six nits, one uncertain.
+
+| # | Severity | Finding | Outcome |
+|---|---|---|---|
+| 1 | should-fix | "every change committed" before the gate is task-120's rule, added after campaign-008 | Fixed: dropped from the gate's sentence, stated as a correction made after campaign-008; a test pins it |
+| 2 | should-fix | "any reply but "Approved. Proceed." is no approval" omits S10's own approver (bug-039, before campaign-008) | Fixed: the exception stated; a test pins it |
+| 3 | nit | `#other-agents`: campaign-007 ran an earlier step-A revision than campaign-008 | Fixed: "at a revision before campaign-008's" |
+| 4 | nit | F-047 read as a WingFoil document | Fixed: "a limit, not a measured result, which the benchmark has reported to WingFoil in its feedback note F-047" |
+| 5 | nit | the paragraph is long for a lay reader | Kept: one anchored statement as the page's other paragraphs (`#wingfoil-manual-process` is longer); the commands are what the reader meets in the published manual |
+| 6 | nit | `#approver-classifier` still says the executions ran policy v1 (campaign-007 ran v2, campaign-008 v5) | Outside this diff: proposed to the approver as a follow-up |
+| 7 | nit | no test pins the paragraph's position | Fixed: a test that `#wingfoil-step-a` follows `#wingfoil-manual-process` |
+| 8 | uncertain | campaign-007's `wingfoil_commit` `bd27f62a`, not `870bd440` | No change: WingFoil's `bd27f62a` is contained in `v0.3.1` and resolves to `870bd440`, the tag's commit |
