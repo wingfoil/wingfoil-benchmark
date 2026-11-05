@@ -53,3 +53,10 @@ session. Spending: 0 €.**
   no change.
 - `wingfoil memory submit` (backlog → in-progress): as declared.
 
+### Review
+
+**Round 1** (2026-11-05, a fresh read-only agent in `/tmp/claude-1000/review1-113-wHCd`, a clone of `1f36a8a0`; no
+command in either checkout). The phase, the version, dl-030's option B (its approve commit's Reason) and the
+directive's W-19 confirmed; `workflow list` exits 0 with `diagnostics: []` and `workflow show` prints the phase with its
+approval; no other document needs changing. No blocker, no should-fix; its one nit, fixed: the workflow's header says
+completion is also read from approvals.
