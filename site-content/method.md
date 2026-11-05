@@ -76,23 +76,24 @@ The agent works without a human. When a session ends by asking a question or ask
 - After 3 interventions in a step, the step ends.
 
 Whether a session is waiting for input is decided by a small, fixed set of written rules, not by a model. First, the
-last message is checked for approval phrases anywhere in it, such as "are you sure", "please confirm" or "do you want
-me to". If none matches, the message counts as a question when its last line ends with a question mark. Otherwise the
+last message is checked for approval phrases anywhere in it, such as "are you sure", "please confirm" or "do you want me
+to". If none matches, the message counts as a question when its last line ends with a question mark. Otherwise the
 session is not waiting, and the step ends. Code quoted in the message is ignored. The rules have a version, which is
 part of the approver policy's version. Changing a rule makes a new version and is never done quietly. The list is small
 and may misread unusual wording. A session that fails is a failed step, not a waiting one, and is never answered.
 Version v1 was written from Claude Code's messages and missed most of Codex's requests for approval, such as "Please
 reply: Approved. Proceed.", so a Codex execution of the wingfoil arm on v1 measured the manual's stops more than
-WingFoil. Version v2, from v0.3, also reads requests addressed to the reader such as "please reply", "please approve"
-or "once you approve", counts "needs approval" only when it is the reader's approval or the agent's own need and never
-a document's, and reads a question anywhere in the last two paragraphs. Its rules were settled on every final message
-of the earlier executions, and each message whose reading changed is published with the tests. Every version stays
+WingFoil. Version v2, from v0.3, also reads requests addressed to the reader such as "please reply", "please approve" or
+"once you approve", counts "needs approval" only when it is the reader's approval or the agent's own need and never a
+document's, and reads a question anywhere in the last two paragraphs. Its rules were settled on every final message of
+the earlier executions, and each message whose reading changed is published with the tests. Every version stays
 available and each campaign pins one, shown among its execution's pins in [This execution](#this-execution); the
 versions after v2 are described below. The published executions ran v1 for v0.1 and v0.2 and the Codex baseline
-(`c82a5e74885b/2`, `81ebb2691f9c/1`, `bf3a1ac7dff5/1`, `4682bcc65d6b/1`); v2 for the Codex executions of the harness
-arms, the v0.2 manual's and the step-A one (`13fda3099afa/1`, `697e79b75e41/1`); v5 for the Claude Code execution of
-the step-A arms (`33b54dd89e8b/1`). A Codex execution of the wingfoil arm on v1, which missed its approval requests, was
-not published. Two executions on different versions are not compared across agents. {#approver-classifier}
+(`c82a5e74885b/2`, `81ebb2691f9c/1`, `bf3a1ac7dff5/1`, `4682bcc65d6b/1`); v2 for Codex's two executions of WingFoil
+against its docs control, with v0.2's manual and at step A (`13fda3099afa/1`, `697e79b75e41/1`); v5 for the Claude Code
+execution of the step-A arms (`33b54dd89e8b/1`). A Codex execution of the wingfoil arm on v1, which missed most of its
+approval requests, was not published. Two executions on different versions are not compared across agents.
+{#approver-classifier}
 
 Version v3, from v0.3's W17, adds **scripted verdicts** for a scenario that declares them, S10 so far: at a step whose
 gate the scenario scripts, the first approval request is answered with that step's fixed verdict, an approval or a

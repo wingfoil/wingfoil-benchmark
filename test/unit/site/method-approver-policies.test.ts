@@ -32,13 +32,18 @@ function pinnedPolicies(): Map<string, string> {
   return policies;
 }
 
-/** The page's list: for each "vN for …" clause of #approver-classifier, the execution ids it names. */
+/**
+ * The page's list: for each "vN for … (`id`, …)" clause of #approver-classifier, the execution ids in its brackets;
+ * an id listed twice fails.
+ */
 function listedPolicies(): Map<string, string> {
   const text = paragraph('approver-classifier');
   const listed = new Map<string, string>();
-  for (const clause of text.matchAll(/\b(v\d+) for (.*?)(?=; |\. |$)/g)) {
-    const [, version, names] = clause;
-    for (const id of (names ?? '').matchAll(/`([0-9a-f]{12}\/\d+)`/g)) listed.set(id[1] ?? '', version ?? '');
+  for (const [, version, names] of text.matchAll(/\b(v\d+) for [^()]*\(([^)]*)\)/g)) {
+    for (const [, id] of (names ?? '').matchAll(/`([0-9a-f]{12}\/\d+)`/g)) {
+      expect(listed.has(id ?? ''), `${id} listed twice`).toBe(false);
+      listed.set(id ?? '', version ?? '');
+    }
   }
   return listed;
 }

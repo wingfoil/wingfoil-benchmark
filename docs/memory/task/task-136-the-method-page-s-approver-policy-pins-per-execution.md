@@ -62,3 +62,17 @@ shown in its generated section "This execution" (`src/site/method.ts`, the "Appr
 - No figure added; `results/`, `site/`, campaign files, arms and scenario versions unchanged.
 
 ## Review
+
+**Round 1** (a fresh read-only agent on a clone, `ec07db29` against main `937ec234`; main's HEAD and reflog unchanged
+after): no blocker, one should-fix, three nits. It confirmed every id under its pinned version, the groups against the
+catalogue, campaign-005 never published, the "This execution" row, criterion 3, and the departure from the Design.
+
+| # | Severity | Finding | Outcome |
+|---|---|---|---|
+| 1 | should-fix | "which missed its approval requests" reads as all of them; v1 caught one of seven (bug-035) | Fixed: "missed most of its approval requests" |
+| 2 | nit | an id listed under a wrong version and again under its own passed the test | Fixed: an id listed twice fails; checked by the mutation that adds `33b54dd89e8b/1` to the v2 list |
+| 3 | nit | the clause parser could stop at an inner ". " or "; " and drop ids | Fixed: a clause's ids are read inside its brackets |
+| 4 | nit | "the Codex executions of the harness arms, the v0.2 manual's and the step-A one" is hard to read | Fixed: "Codex's two executions of WingFoil against its docs control, with v0.2's manual and at step A" |
+
+The paragraph was rewrapped within 120 columns after the fixes.
+
