@@ -2,7 +2,7 @@
 id: task-112-answers-to-wingfoil-s-four-needs-info-questions-on-wingfoil-0.3.1-f-007-f-009-f-023-f-034
 type: task
 title: "Answers to WingFoil's four needs-info questions on wingfoil@0.3.1 (F-007, F-009, F-023, F-034)"
-status: backlog
+status: approved
 release: v0.3
 wave: W16
 features: []          # e.g. [F1.1, F3.1]
@@ -57,3 +57,42 @@ for WingFoil's next retrospective.
 - **Not in this task:** changing a note's status, or adopting any verb in this repository's configuration.
 
 ## Execution notes
+
+- 2026-11-05: the reproductions ran in a scratch directory under the session's scratchpad (a temporary directory, as
+  `mktemp` gives, holding no file of this repository): `npm i wingfoil@0.3.1` there, its `node_modules/.bin/wingfoil`
+  for every command, and a git project made by `init --template Kanban` with a scratch approver in its DNA. A
+  scratch workflow, `scratch-cycle`, has a phase `plain` and a phase `approved` with `approval: { by_role: approver }`.
+- **F-007:** `memory history` reads a hand-written `wf(task): finalize … [draft → pending]` as `"operation":
+  "finalize"`, as it reads the commit `workflow end` makes; the hand-written one has `"wingfoil": null`.
+- **F-009:** `workflow finalize` on the approval phase refuses without `--reason` and commits `Approver:` and
+  `Reason:`; the plain phase and `workflow end` commit neither. Without the engine, `submit` and `approve` both refuse
+  to move a Kanban plan out of `active`.
+- **F-023:** the Kanban bug machine still ends at `approved`; `supersedes:` is read only where a type has a
+  `superseded` state, which no Kanban type has; no other relation is read.
+- **F-034:** the installed bin is executable and prints `0.3.1 (870bd4406f3b…)`; the tarball's `dist/cli.js` is still
+  `-rw-r--r--` and it ships no lockfile (the install resolved 99 packages).
+- Each answer is a new paragraph at the end of its note's `## Observed`; statuses unchanged; the inbox README says the
+  four answers are in.
+
+- 2026-11-05: `pre-review` green after each round. The full suites are waived by the approver: the branch changes
+  documentation only (four feedback notes, the inbox README, this task).
+
+### Review
+
+Round 1 (a fresh read-only agent, from a clone; it re-ran every reproduction on `wingfoil@0.3.1` itself; no blocker):
+
+| # | Class | Finding | Outcome |
+|---|---|---|---|
+| 1 | should-fix | F-023 showed `supersedes:` as a list; 0.3.1 takes a single id and refuses a list where it reads the field | fixed: a single id, the trigger's condition stated |
+| 2 | should-fix | F-007 left out that `workflow finalize`'s phase commits are in no element's `memory history` | fixed: one sentence added |
+| 3 | should-fix | F-009 left out the approver set-up and that the phase's approval is not in the plan's audit trail | fixed: both added |
+| 4 | nit | F-023: the `superseded` condition sits on the approved element's type | fixed with row 1 |
+| 5 | nit | F-023 did not name `fixed_by` | fixed |
+| 6 | nit | F-034: "on the day" was vague | fixed: dropped |
+
+Round 2 (a second fresh agent, the reproductions re-run; no blocker, no should-fix; verdict approve):
+
+| # | Class | Finding | Outcome |
+|---|---|---|---|
+| 1 | nit | F-007 used `finalize` for the phase-record verb and the engine's move as one thing | fixed: the two named apart |
+| 2 | nit | F-023 named the second decision-log by a short id | fixed: "a second decision-log" |
