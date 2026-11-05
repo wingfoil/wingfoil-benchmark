@@ -87,3 +87,10 @@ Round 1 (a fresh read-only agent, from a clone; it re-ran every reproduction on 
 | 4 | nit | F-023: the `superseded` condition sits on the approved element's type | fixed with row 1 |
 | 5 | nit | F-023 did not name `fixed_by` | fixed |
 | 6 | nit | F-034: "on the day" was vague | fixed: dropped |
+
+Round 2 (a second fresh agent, the reproductions re-run; no blocker, no should-fix; verdict approve):
+
+| # | Class | Finding | Outcome |
+|---|---|---|---|
+| 1 | nit | F-007 used `finalize` for the phase-record verb and the engine's move as one thing | fixed: the two named apart |
+| 2 | nit | F-023 named the second decision-log by a short id | fixed: "a second decision-log" |

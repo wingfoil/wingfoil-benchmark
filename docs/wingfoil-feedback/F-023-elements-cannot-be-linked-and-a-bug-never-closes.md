@@ -21,8 +21,8 @@ its `memory.yaml` declares no relation between elements. 0.3.1 reads one relatio
 list is refused where the field is read): approving an element whose `supersedes:` names another of its type moves the
 other to `superseded`, but only where that type's approve leads to a `waiting` state whose forward edge is `superseded`,
 and the named element is in that state. No Kanban type has a `superseded` state, so the field is never read there: in a
-fresh Kanban project an approved `dl-002` naming `dl-001-first-decision` in `supersedes:` leaves `dl-001` approved.
-`fixes`, `fixed_by` and `implements` are not read.
+fresh Kanban project an approved second decision-log naming `dl-001-first-decision` in `supersedes:` leaves `dl-001`
+approved. `fixes`, `fixed_by` and `implements` are not read.
 
 ## Expected
 

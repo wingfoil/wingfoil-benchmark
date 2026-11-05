@@ -20,9 +20,10 @@ hand-written `wf(task): finalize task-001-a-scratch-task [draft → pending]` re
 `draft`, `to` `pending`, and the commit `workflow end` makes (`wf(plan): finalize <instance> [active → done]`) reads the
 same way. The two differ only in `"wingfoil"`: `null` for the hand-written commit (it has no `WingFoil-Version`
 trailer), the version for the engine's. `finalize` is still no `memory` verb (`memory finalize` is an unknown command);
-it is the `workflow finalize` verb and the engine's word for a `waiting` edge no verb drives. The commits `workflow
-finalize` makes for a phase (`workflow: finalize <instance> <step>`) are entries of no element's `memory history`: the
-plan's history lists its add, submit and finalize only.
+the word names two things: the `workflow finalize` verb, which records a phase step, and, separately, the operation of
+an engine-driven move along a `waiting` edge no verb drives (`workflow end`). The commits `workflow finalize` makes for
+a phase (`workflow: finalize <instance> <step>`) are entries of no element's `memory history`: the plan's history lists
+its add, submit and finalize only.
 
 ## Expected
 
