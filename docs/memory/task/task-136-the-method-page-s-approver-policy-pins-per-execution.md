@@ -76,3 +76,8 @@ catalogue, campaign-005 never published, the "This execution" row, criterion 3, 
 
 The paragraph was rewrapped within 120 columns after the fixes.
 
+**Round 2** (a fresh agent on a new clone, `cb536d38`; main's HEAD and reflog unchanged after): no findings. Round 1's
+four fixes verified (bug-035's one of seven; the mutations of a duplicate and a dropped id fail; text with ". " and
+"; " inside the brackets is read; the v2 wording against the catalogue); the rewrap changed only line breaks in the
+untouched sentences.
+
