@@ -74,3 +74,16 @@ for WingFoil's next retrospective.
 - Each answer is a new paragraph at the end of its note's `## Observed`; statuses unchanged; the inbox README says the
   four answers are in.
 
+
+### Review
+
+Round 1 (a fresh read-only agent, from a clone; it re-ran every reproduction on `wingfoil@0.3.1` itself; no blocker):
+
+| # | Class | Finding | Outcome |
+|---|---|---|---|
+| 1 | should-fix | F-023 showed `supersedes:` as a list; 0.3.1 takes a single id and refuses a list where it reads the field | fixed: a single id, the trigger's condition stated |
+| 2 | should-fix | F-007 left out that `workflow finalize`'s phase commits are in no element's `memory history` | fixed: one sentence added |
+| 3 | should-fix | F-009 left out the approver set-up and that the phase's approval is not in the plan's audit trail | fixed: both added |
+| 4 | nit | F-023: the `superseded` condition sits on the approved element's type | fixed with row 1 |
+| 5 | nit | F-023 did not name `fixed_by` | fixed |
+| 6 | nit | F-034: "on the day" was vague | fixed: dropped |

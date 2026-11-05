@@ -17,14 +17,15 @@ WingFoil's own `memory.yaml` does, makes `submit` refuse it, and with no workflo
 all: it is closed by a hand-written commit. The same operation thus leaves two kinds of audit record.
 
 Answer for WingFoil's v0.3 retrospective (2026-11-05, wingfoil@0.3.1): an approval is recorded on a phase, not on the
-plan. A workflow phase declared with `approval: { by_role: approver }` refuses `workflow finalize` without
-`--reason` (`error: missing required argument: --reason`), and with it commits `Approver: <name> <email> (approver)`
-and `Reason: <text>` beside the `WingFoil-Phase` trailers; a phase without `approval:` commits neither. `workflow
-end` then closes the instance's plan with `wf(plan): finalize <instance> [active → done]`, which carries no
-`Approver:` or `Reason:` line (`memory history`: `"approver": null`, `"reason": null`). Without the engine the
-Kanban plan (`sequence: [draft, active, done]`, `waiting: [active]`) cannot be closed at all: `submit` from
-`active` is refused ("a `waiting` state — its forward edge fires only via a Workflow action"), and so is
-`approve` ("not a `gates` state").
+plan (set-up: a `team.members` entry in `dna.yaml` with `roles: [approver]`, the committer). A workflow phase declared
+with `approval: { by_role: approver }` refuses `workflow finalize` without `--reason` (`error: missing required
+argument: --reason`), and with it commits `Approver: <name> <email> (approver)` and `Reason: <text>` beside the
+`WingFoil-Phase` trailers; a phase without `approval:` commits neither. `workflow end` then closes the instance's plan
+with `wf(plan): finalize <instance> [active → done]`, which carries no `Approver:` or `Reason:` line (`memory history`:
+`"approver": null`, `"reason": null`); the phase's record, the `workflow: finalize <instance> <step>` commit, is not
+listed in the plan's `memory history`, so the approval is not in the plan's audit trail. Without the engine the Kanban
+plan (`sequence: [draft, active, done]`, `waiting: [active]`) cannot be closed at all: `submit` from `active` is refused
+("a `waiting` state — its forward edge fires only via a Workflow action"), and so is `approve` ("not a `gates` state").
 
 ## Expected
 

@@ -16,11 +16,13 @@ machine ends at `approved`: a fixed bug and an untouched one have the same state
 adds its own field (for example `fixes:`) and its own final state.
 
 Answer for WingFoil's v0.3 retrospective (2026-11-05, wingfoil@0.3.1): unchanged for the Kanban scaffold. Its `bug`
-machine still ends at `approved` (`submit` from there: "the last state in `sequence` — there is no forward edge"),
-and its `memory.yaml` declares no relation between elements. 0.3.1 reads one relation, `supersedes:`: approving an
-element that lists another moves the other to `superseded`, but only where the other's type has a `superseded`
-state behind a `waiting` state. No Kanban type has one, so in a fresh Kanban project an approved `dl-002` with
-`supersedes: [dl-001-first-decision]` leaves `dl-001` approved. `fixes` and `implements` are not read.
+machine still ends at `approved` (`submit` from there: "the last state in `sequence` — there is no forward edge"), and
+its `memory.yaml` declares no relation between elements. 0.3.1 reads one relation, `supersedes:`, a single element id (a
+list is refused where the field is read): approving an element whose `supersedes:` names another of its type moves the
+other to `superseded`, but only where that type's approve leads to a `waiting` state whose forward edge is `superseded`,
+and the named element is in that state. No Kanban type has a `superseded` state, so the field is never read there: in a
+fresh Kanban project an approved `dl-002` naming `dl-001-first-decision` in `supersedes:` leaves `dl-001` approved.
+`fixes`, `fixed_by` and `implements` are not read.
 
 ## Expected
 
