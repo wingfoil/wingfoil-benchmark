@@ -57,3 +57,20 @@ for WingFoil's next retrospective.
 - **Not in this task:** changing a note's status, or adopting any verb in this repository's configuration.
 
 ## Execution notes
+
+- 2026-11-05: the reproductions ran in a scratch directory under the session's scratchpad (a temporary directory, as
+  `mktemp` gives, holding no file of this repository): `npm i wingfoil@0.3.1` there, its `node_modules/.bin/wingfoil`
+  for every command, and a git project made by `init --template Kanban` with a scratch approver in its DNA. A
+  scratch workflow, `scratch-cycle`, has a phase `plain` and a phase `approved` with `approval: { by_role: approver }`.
+- **F-007:** `memory history` reads a hand-written `wf(task): finalize … [draft → pending]` as `"operation":
+  "finalize"`, as it reads the commit `workflow end` makes; the hand-written one has `"wingfoil": null`.
+- **F-009:** `workflow finalize` on the approval phase refuses without `--reason` and commits `Approver:` and
+  `Reason:`; the plain phase and `workflow end` commit neither. Without the engine, `submit` and `approve` both refuse
+  to move a Kanban plan out of `active`.
+- **F-023:** the Kanban bug machine still ends at `approved`; `supersedes:` is read only where a type has a
+  `superseded` state, which no Kanban type has; no other relation is read.
+- **F-034:** the installed bin is executable and prints `0.3.1 (870bd4406f3b…)`; the tarball's `dist/cli.js` is still
+  `-rw-r--r--` and it ships no lockfile (the install resolved 99 packages).
+- Each answer is a new paragraph at the end of its note's `## Observed`; statuses unchanged; the inbox README says the
+  four answers are in.
+

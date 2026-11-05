@@ -33,6 +33,10 @@ the citations at WingFoil's `origin/main` (`334a288707c3c817bdc8a1d31b20fb452dc2
 table names. Outcome: 24 `resolved`, 7 `captured`, 4 `needs-info` (F-007, F-009, F-023, F-034: WingFoil's questions
 are in its triage record), 4 `open` (restated with no element), and F-040 to F-044, not yet read, `open`.
 
+**The four `needs-info` answers** (2026-11-05, task-112): F-007, F-009, F-023 and F-034 each carry, at the end of
+their `## Observed`, an answer reproduced on `wingfoil@0.3.1` in a scratch project with WingFoil alone; their status
+stays `needs-info` until the next sync reads them.
+
 ## Ledger
 
 | Note | Title | Kind | Status | Answered by |
