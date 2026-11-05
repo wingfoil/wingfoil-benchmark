@@ -74,6 +74,8 @@ for WingFoil's next retrospective.
 - Each answer is a new paragraph at the end of its note's `## Observed`; statuses unchanged; the inbox README says the
   four answers are in.
 
+- 2026-11-05: `pre-review` green after each round. The full suites are waived by the approver: the branch changes
+  documentation only (four feedback notes, the inbox README, this task).
 
 ### Review
 
