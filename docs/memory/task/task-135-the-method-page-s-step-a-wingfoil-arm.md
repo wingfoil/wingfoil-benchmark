@@ -81,6 +81,9 @@ done, `rel-v0-3`'s W17 row is Verified.
   splits Codex's wingfoil arm (campaign-005 and campaign-006 the v0.2 manual, campaign-007 the step-A one);
   **`#threat-t10`** adds v0.3.1 and the engine the agent drives. The gate's sentence links `#approver-classifier`.
 - No figure added; `results/`, `site/`, arms, campaign files and scenario versions unchanged.
+- **Full suites** (the approver's go, 2026-11-05; the load watcher, then `env -u BENCH_HOLDOUT_PATH
+  BENCH_WINGFOIL_REPO=… bash scripts/full-suites.sh task/task-135-the-method-page-s-step-a-wingfoil-arm`, 18:57–19:05):
+  `f55d54db: LINT 0 TEST 0 BUILD 0 BIN 0 DOCKER 0`, green.
 
 ## Review
 
