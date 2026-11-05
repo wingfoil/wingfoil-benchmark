@@ -2,7 +2,7 @@
 id: task-113-release-cycle-7-the-retrospective-phase-ends-at-the-approver-s-approval-dl-030
 type: task
 title: "release-cycle 7: the retrospective phase ends at the approver's approval (dl-030)"
-status: backlog
+status: approved
 release: v0.3
 wave: W16
 features: []          # e.g. [F1.1, F3.1]
@@ -40,3 +40,24 @@ session. Spending: 0 €.**
 - **Not in this task:** running `release-cycle` on WingFoil's engine.
 
 ## Execution notes
+
+- **`release-cycle` 7** (`.wingfoil/workflows/custom/release-cycle.yaml`): the retrospective phase's `produces` removed,
+  `approval: { by_role: approver }` added, the header's version 7 line (dl-030 option B). After the commit, `npm run -s
+  wingfoil -- workflow list --format json` exits 0 with `diagnostics: []`, and `workflow show release-cycle` prints the
+  phase as `{"role": "facilitator", "produces": [], "approval": {"byRole": "approver"}}`. Run before the commit, both
+  warn `W_UNCOMMITTED_INPUTS` (they read `HEAD`, as the Design says).
+- **The directive** `wingfoil-cli` 1.2: W-19 keeps its rule on path patterns and drops the retrospective's vacuous
+  evidence.
+- **The record:** `git grep "Retrospective section"` finds no document describing the phase's evidence besides
+  F-045, which records WingFoil 0.3's observed refusal and stays as written; the inbox README and the other phases need
+  no change.
+- `wingfoil memory submit` (backlog → in-progress): as declared.
+- **Full suites:** not run, the approver's choice (chat, 2026-11-05): configuration and documentation alone.
+
+### Review
+
+**Round 1** (2026-11-05, a fresh read-only agent in `/tmp/claude-1000/review1-113-wHCd`, a clone of `1f36a8a0`; no
+command in either checkout). The phase, the version, dl-030's option B (its approve commit's Reason) and the
+directive's W-19 confirmed; `workflow list` exits 0 with `diagnostics: []` and `workflow show` prints the phase with its
+approval; no other document needs changing. No blocker, no should-fix; its one nit, fixed: the workflow's header says
+completion is also read from approvals.
