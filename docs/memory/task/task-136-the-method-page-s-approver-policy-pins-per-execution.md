@@ -33,8 +33,8 @@ shown in its generated section "This execution" (`src/site/method.ts`, the "Appr
    execution on a version the list does not hold turns it red.
 3. **`#approver-verdicts`** (v3, v4, v5) re-read against task-117 and task-119; a correction only where it is wrong,
    recorded in the Execution notes.
-4. No figure added; no change to `results/`, `site/`, campaign files, arms or scenario versions; the site neither rebuilt
-   nor published here.
+4. No figure added; no change to `results/`, `site/`, campaign files, arms or scenario versions; the site neither
+   rebuilt nor published here.
 5. Checks: prettier on every changed file, `tsc`, eslint, `scripts/pre-review.sh main`; an independent review
    (dl-020); the full suites on the approver's go.
 
