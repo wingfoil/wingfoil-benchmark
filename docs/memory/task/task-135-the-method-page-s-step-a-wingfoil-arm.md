@@ -2,7 +2,7 @@
 id: task-135-the-method-page-s-step-a-wingfoil-arm
 type: task
 title: "The method page's step-A wingfoil arm"
-status: in-review
+status: approved
 release: v0.3
 wave: W17
 features: [F2.7, F2.6, F5.8]
