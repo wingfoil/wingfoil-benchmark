@@ -2,7 +2,7 @@
 id: task-134-v0.2-s-campaigns-re-scored-offline-the-errata-s-figures
 type: task
 title: "v0.2's campaigns re-scored offline: the errata's figures"
-status: backlog
+status: approved
 release: v0.3
 wave: W16
 features: [F4.5, F4.7, F4.4]
@@ -57,5 +57,46 @@ here (the variance rule is presentation; rebuilding and publishing are the appro
 
 ## Execution notes
 
-<!-- What happened while building: deviations, blockers, follow-ups (filed as elements, never left
-     here). For every `wingfoil` command: declared vs observed behaviour. -->
+- **The script**, `scripts/rescore.mjs`, imports the built modules (`dist/`): `loadScenario`, `scoreChecks`,
+  `rebuildSnapshots`, `addedText`, `breakEvenEntry`, `mK3Of`; `interface.mjs --v2` run with Node on each rebuilt final
+  snapshot, in a temporary directory removed after. The paths are made absolute (git applies a run's patches from
+  inside the rebuilt repository). A whole run takes several minutes; two runs gave the same bytes (`cmp`), and
+  `git status --porcelain -- results` is empty after.
+- **Its figures** (the report's Totals, quoted): content checks, 100 run-steps of S2 and S3 at 1.0, 8 pass under both, 4
+  under v1 only, 0 under v2 only, 88 under neither, the 4 all S3's D3 revision ("changed" inside "unchanged" twice,
+  "revis" inside "revisit", "replaces" in a WingFoil template comment copied into a new record by `memory add`, which v2
+  leaves out as a setup line); M-R2, 64 groups, v2 lower in 6, the same in 31, higher in 27; M-K4, 88 entries, 16 change
+  their value or its kind and 5 more stay not applicable for another reason. The method page's three errata carry them,
+  with a link to the report.
+- **Deviation:** the tests are in `test/bin/rescore.test.ts`, not under `test/unit/`: the script reads `dist/`, which
+  only the bin tests build first. They read one published execution in place (`81ebb2691f9c/1`) instead of fixtures —
+  a check verdict that changes, a group whose M-R2 changes, an M-K4 entry that changes — and check that `results/` is
+  unchanged after. Written after the script (red-first not shown).
+- **Deviation, `vitest.bin.config.ts`:** `pre-review`'s `test:bin` stage failed with `bench.test.ts` and this task's
+  test building `dist/` at once (a module missing mid-import); the bin tests now run one file at a time
+  (`fileParallelism: false`), each building first; green after.
+- Catalogue notes left as they are: none of these figures belongs to one execution's note.
+- `wingfoil memory add`, `submit` (draft → pending, backlog → in-progress): as declared.
+- **Full suites** (2026-11-04, `8093499c`, under the load watcher): LINT 0, TEST 0 (2055 passed, 10 skipped), BUILD 0,
+  BIN 0 (12 passed, this task's included), DOCKER 0.
+
+### Review
+
+**Round 1** (2026-11-04, a fresh read-only agent in `/tmp/claude-1000/review1-134-L8Ea`, a clone of `79a2cf88`; no
+command in either checkout). It re-ran the script (the same bytes as the report, `results/` clean after), compared
+each reading with the scorer and the aggregate (the runs compared, the pairing, M-K3 across models), and spot-checked
+the four changed content-check rows in their stored patches. No blocker; one should-fix and four nits:
+
+| # | Finding | Outcome |
+|---|---|---|
+| S1 | M-K4's count compared values only: 5 entries stay "not applicable" with another reason than 1.15's (a lower quality) | fixed: counted and shown (1.15's not applicable read as reason `quality`); the erratum says 16 and 5 more |
+| N1 | the tests asserted existence only | fixed: concrete rows of `81ebb2691f9c/1` pinned, a reason change and v1's words included |
+| N2 | the content-check erratum's wording | fixed: "on S3's D3-revision check"; the comment `wingfoil memory add` copied |
+| N3 | `loadScenario` twice a run | fixed: one load per version |
+| N4 | the report's generated table rows over 120 | kept: tables, exempt |
+
+**Round 2** (2026-11-04, a fresh read-only agent in `/tmp/claude-1000/review2-134-AuXd`, a clone of `81941d1c`; no
+command in either checkout). It regenerated the report (identical bytes, `results/` clean), confirmed the reason
+count against REQ-SCO-08 1.15 (its one "not applicable" condition, every published entry's lower M-Q1), and mutated
+the script four ways, each failing exactly its test. No blocker, no should-fix; nits fixed: the test's comment says
+"this execution's three"; the erratum says "replac" inside "replaces".

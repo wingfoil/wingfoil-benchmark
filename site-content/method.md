@@ -190,8 +190,12 @@ contains "changed", and on WingFoil 0.3.0 also on its template comment, which co
 the arms whose harness writes templates. A revision recorded in other words failed, and S2's duplicate check missed a
 duplicate recognised in other words ("already handled", the earlier task looked up). Version 2 removes the first two
 kinds of error, the parts of words and the template text; a fact recorded in words the check does not list is missed by
-version 2 too, and only the maintainer's judgement catches it. How many 1.0 verdicts version 2 would change is counted
-by re-scoring the published runs from their stored files, and added here. {#content-checks-v1-erratum}
+version 2 too, and only the maintainer's judgement catches it. Re-scored from the published runs' stored files ([the
+v0.3 re-scoring](https://github.com/wingfoil/wingfoil-benchmark/blob/main/docs/calibration/v0.3-rescore.md)), version 2
+changes 4 of the 100 verdicts of S2's and S3's 1.0 checks in the published executions, all on S3's D3-revision check and
+all from a pass to a failure: two matched "changed" inside "unchanged", one "revis" inside "revisit", one "replac"
+inside "replaces" in a WingFoil template comment that `wingfoil memory add` copied into a new record; none goes the
+other way, and S2's duplicate check is unchanged. {#content-checks-v1-erratum}
 
 The `ast` rules match syntax, not meaning, and this has limits. A clock or random function reached through another name (an alias) is not seen. Test files and declaration files are left out. Node's `crypto` random functions (for example `crypto.randomUUID()`) count as randomness. {#syntactic-limits}
 
@@ -236,7 +240,8 @@ run with no reached step left out). Since requirements 1.49 (v0.3) the rules are
 Both comparisons are recorded with each entry, with their runs and `n`. An expected failure is computed from what it
 measured. **Erratum:** every execution scored before requirements 1.49 (v0.3), campaign-008 included, computed M-K4 by
 the 1.15 rule, a pooled mean step cost and no variance (not applicable when the mean M-Q1 was lower, never when the step
-cost was not lower); their values stay as published, and re-scoring them computes the rule above. {#m-k4-erratum}
+cost was not lower); their values stay as published; re-scored by the rule above, 16 of their 88 entries change their
+value or its kind, and 5 more stay not applicable for another reason than 1.15's one, a lower quality. {#m-k4-erratum}
 
 **Determinism** (M-R1 to M-R3) compares repetitions of the same arm, scenario and pins. In v0.1 only S1 has repetitions (three).
 
@@ -251,7 +256,8 @@ one. A run with no entry point, a module that does not parse and a specifier tha
 entries of their own. Each value records its version, and values of different versions are never compared. **Erratum:**
 version 1, in every execution scored before requirements 1.49 (v0.3), campaign-008 included, read every exported
 declaration of every TypeScript source, keyed by its file, and so measured the file layout as much as the interface;
-those values stay as published. {#m-r2}
+those values stay as published; re-scored by version 2, 33 of their 64 groups change (higher in 27, lower in 6) and 31
+stay the same. {#m-r2}
 
 **M-R3, structure similarity:** how alike the repetitions' sets of file paths are. The paths are every file of the final snapshot, less every path the setup touched, and less generated paths: anything under `node_modules/`, `dist/`, `build/` or `coverage/`, `*.tsbuildinfo`, and lockfiles. The seed's files are common to all repetitions, so they raise the similarity. {#m-r3}
 
