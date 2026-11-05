@@ -40,3 +40,16 @@ session. Spending: 0 €.**
 - **Not in this task:** running `release-cycle` on WingFoil's engine.
 
 ## Execution notes
+
+- **`release-cycle` 7** (`.wingfoil/workflows/custom/release-cycle.yaml`): the retrospective phase's `produces` removed,
+  `approval: { by_role: approver }` added, the header's version 7 line (dl-030 option B). After the commit, `npm run -s
+  wingfoil -- workflow list --format json` exits 0 with `diagnostics: []`, and `workflow show release-cycle` prints the
+  phase as `{"role": "facilitator", "produces": [], "approval": {"byRole": "approver"}}`. Run before the commit, both
+  warn `W_UNCOMMITTED_INPUTS` (they read `HEAD`, as the Design says).
+- **The directive** `wingfoil-cli` 1.2: W-19 keeps its rule on path patterns and drops the retrospective's vacuous
+  evidence.
+- **The record:** `git grep "Retrospective section"` finds no document describing the phase's evidence besides
+  F-045, which records WingFoil 0.3's observed refusal and stays as written; the inbox README and the other phases need
+  no change.
+- `wingfoil memory submit` (backlog → in-progress): as declared.
+
