@@ -52,6 +52,7 @@ session. Spending: 0 €.**
   F-045, which records WingFoil 0.3's observed refusal and stays as written; the inbox README and the other phases need
   no change.
 - `wingfoil memory submit` (backlog → in-progress): as declared.
+- **Full suites:** not run, the approver's choice (chat, 2026-11-05): configuration and documentation alone.
 
 ### Review
 
