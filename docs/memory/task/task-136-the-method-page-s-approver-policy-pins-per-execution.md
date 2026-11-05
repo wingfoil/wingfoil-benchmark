@@ -2,7 +2,7 @@
 id: task-136-the-method-page-s-approver-policy-pins-per-execution
 type: task
 title: "The method page's approver-policy pins, per execution"
-status: draft
+status: pending
 release: v0.3
 wave: W17
 features: [F5.8]
