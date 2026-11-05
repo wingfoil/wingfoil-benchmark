@@ -60,6 +60,9 @@ shown in its generated section "This execution" (`src/site/method.ts`, the "Appr
   scripted verdicts, v4's narrow wait once a step, v5's broad wait with verdicts already given aside, as the page says;
   no correction.
 - No figure added; `results/`, `site/`, campaign files, arms and scenario versions unchanged.
+- **Full suites** (the approver's go, 2026-11-05; the load watcher from 21:02, the suites 2026-11-06 00:40–00:47,
+  `env -u BENCH_HOLDOUT_PATH BENCH_WINGFOIL_REPO=… bash scripts/full-suites.sh task/task-136-…`):
+  `1c0318d2: LINT 0 TEST 0 BUILD 0 BIN 0 DOCKER 0`, green.
 
 ## Review
 
