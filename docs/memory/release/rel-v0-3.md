@@ -25,7 +25,7 @@ first task.
 | Wave | Features | High unc. | Ends with | Verified |
 |---|---|---|---|---|
 | W15 — Presets and Codex | F1.1 presets and `extends:` | the Codex spike | the Codex baseline campaign run | |
-| W16 — The method corrected | F4.1 · F4.3 | — | v0.2's campaigns re-scored offline | 2026-11-05: task-134, `docs/calibration/v0.3-rescore.md` (task-126 to task-134 done; task-112, task-113 left in backlog) |
+| W16 — The method corrected | F4.1 · F4.3 | — | v0.2's campaigns re-scored offline | 2026-11-05: task-134, `docs/calibration/v0.3-rescore.md` (task-126 to task-134 done; task-112 and task-113, its backlog, done the same day) |
 | W17 — WingFoil 0.3.1, step A | F2.7 · F2.6 | the spike on 0.3.1 | an S1 dry run driving the engine | |
 | W18 — Configured variants | F7.5 | the configuring agent | every arm in a dry run | |
 | W19 — The review loop | F4.9 | F4.9 | the review-loop metrics in the dry runs | |
