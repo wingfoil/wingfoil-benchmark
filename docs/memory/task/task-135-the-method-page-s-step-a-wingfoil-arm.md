@@ -2,7 +2,7 @@
 id: task-135-the-method-page-s-step-a-wingfoil-arm
 type: task
 title: "The method page's step-A wingfoil arm"
-status: backlog
+status: approved
 release: v0.3
 wave: W17
 features: [F2.7, F2.6, F5.8]
@@ -69,4 +69,43 @@ done, `rel-v0-3`'s W17 row is Verified.
 
 ## Execution notes
 
+- **Red first:** `test/unit/site/method-wingfoil-step-a.test.ts` (seven cases) and `#wingfoil-step-a` in
+  `method-statements.test.ts`'s anchors, run before the text: 8 failed, 4 passed; after it, `test/unit/site/` 173/173.
+  Its `paragraph()` reads the whole paragraph before an anchor (`#other-agents` spans several lines).
+- **`#wingfoil-step-a`** states dl-021's step A from the step-A manual (`arms/wingfoil/manual.md`) and `arm.yaml`
+  (`provides.workflow-engine`: records and routes, executes none, task-107), task-114's baseline-docs row, F-047 as a
+  limit, and the executions per manual: campaign-002 and campaign-003 the v0.2 manual, campaign-007 and campaign-008
+  the step-A one. The manual changed after campaign-008 (bug-044, bug-045): the paragraph names no version of it and
+  sends the reader to the setup page, which shows each execution's manual by its digest.
+- **`#wingfoil-manual-process`** keeps its text, plus a closing sentence linking `#wingfoil-step-a`; **`#other-agents`**
+  splits Codex's wingfoil arm (campaign-005 and campaign-006 the v0.2 manual, campaign-007 the step-A one);
+  **`#threat-t10`** adds v0.3.1 and the engine the agent drives. The gate's sentence links `#approver-classifier`.
+- No figure added; `results/`, `site/`, arms, campaign files and scenario versions unchanged.
+- **Full suites** (the approver's go, 2026-11-05; the load watcher, then `env -u BENCH_HOLDOUT_PATH
+  BENCH_WINGFOIL_REPO=… bash scripts/full-suites.sh task/task-135-the-method-page-s-step-a-wingfoil-arm`, 18:57–19:05):
+  `f55d54db: LINT 0 TEST 0 BUILD 0 BIN 0 DOCKER 0`, green.
+
 ## Review
+
+**Round 1** (a fresh read-only agent on a clone, `167da22b` against main `5ad262b2`; main's HEAD and reflog unchanged
+after): no blocker, two should-fix, six nits, one uncertain.
+
+| # | Severity | Finding | Outcome |
+|---|---|---|---|
+| 1 | should-fix | "every change committed" before the gate is task-120's rule, added after campaign-008 | Fixed: dropped from the gate's sentence, stated as a correction made after campaign-008; a test pins it |
+| 2 | should-fix | "any reply but "Approved. Proceed." is no approval" omits S10's own approver (bug-039, before campaign-008) | Fixed: the exception stated; a test pins it |
+| 3 | nit | `#other-agents`: campaign-007 ran an earlier step-A revision than campaign-008 | Fixed: "at a revision before campaign-008's" |
+| 4 | nit | F-047 read as a WingFoil document | Fixed: "a limit, not a measured result, which the benchmark has reported to WingFoil in its feedback note F-047" |
+| 5 | nit | the paragraph is long for a lay reader | Kept: one anchored statement as the page's other paragraphs (`#wingfoil-manual-process` is longer); the commands are what the reader meets in the published manual |
+| 6 | nit | `#approver-classifier` still says the executions ran policy v1 (campaign-007 ran v2, campaign-008 v5) | Outside this diff: proposed to the approver as a follow-up |
+| 7 | nit | no test pins the paragraph's position | Fixed: a test that `#wingfoil-step-a` follows `#wingfoil-manual-process` |
+| 8 | uncertain | campaign-007's `wingfoil_commit` `bd27f62a`, not `870bd440` | No change: WingFoil's `bd27f62a` is contained in `v0.3.1` and resolves to `870bd440`, the tag's commit |
+
+**Round 2** (a fresh agent on a new clone, `9aff59d3`; main's HEAD and reflog unchanged after): round 1's fixes
+verified against the manual's history (`ba091f79` after campaign-008's `cc009b5a52a9`; bug-039's clause before it;
+campaign-007 on `cf70ad7ed9aa`); no blocker, no should-fix, two nits; #5 and #6 judged reasonable, #6 to be filed.
+
+| # | Severity | Finding | Outcome |
+|---|---|---|---|
+| 1 | nit | "A correction made after campaign-008" is singular; three corrections followed it (task-120, task-124, task-125) | Fixed: "One of the corrections made after campaign-008" |
+| 2 | nit | "dl-021's step A" could be read as dl-021's rejected Option A | Kept: "step A" is dl-021's own name for it, used across the repository, and the same sentence says "no driver written by the benchmark" |
