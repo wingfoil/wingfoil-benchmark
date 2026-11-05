@@ -57,6 +57,10 @@ const STATEMENTS: readonly (readonly [string, string])[] = [
     'arms/wingfoil/manual.md (a task per request, a decision-log per design decision, each submitted and approved); calibration v0.1 §7 and §10 (the process is the manual’s choice); campaign-001 Findings (M-K1 on S1); task-055 Design item 3b; task-086 Design (started from WingFoil’s docs/agents.md at v0.2.2, its three departures, the approver’s choice C; REQ-RUN-12, the manual’s size per run)',
   ],
   [
+    'wingfoil-step-a',
+    'dl-021 step A (the session agent drives the cycle, no benchmark-written driver); arms/wingfoil/manual.md and arm.yaml at v0.3.1 (one instance per request, the work done before the gate, "Please approve <id>.", `provides.workflow-engine`); task-107 Execution notes (the engine records and routes, executes none); task-114 Design and Execution notes (baseline-docs with every role’s directives; dry runs 88–95); campaign-007, campaign-008 (the executions on the step-A manual); F-047 (the process carried in the agent’s context, a limit); task-135',
+  ],
+  [
     'identical-prompts',
     'experiment design §2 parity rules (prompts identical, leak scan); REQ-FMT-08; experiment design §5 T4',
   ],
