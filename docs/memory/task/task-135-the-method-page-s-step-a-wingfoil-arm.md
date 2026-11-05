@@ -97,3 +97,12 @@ after): no blocker, two should-fix, six nits, one uncertain.
 | 6 | nit | `#approver-classifier` still says the executions ran policy v1 (campaign-007 ran v2, campaign-008 v5) | Outside this diff: proposed to the approver as a follow-up |
 | 7 | nit | no test pins the paragraph's position | Fixed: a test that `#wingfoil-step-a` follows `#wingfoil-manual-process` |
 | 8 | uncertain | campaign-007's `wingfoil_commit` `bd27f62a`, not `870bd440` | No change: WingFoil's `bd27f62a` is contained in `v0.3.1` and resolves to `870bd440`, the tag's commit |
+
+**Round 2** (a fresh agent on a new clone, `9aff59d3`; main's HEAD and reflog unchanged after): round 1's fixes
+verified against the manual's history (`ba091f79` after campaign-008's `cc009b5a52a9`; bug-039's clause before it;
+campaign-007 on `cf70ad7ed9aa`); no blocker, no should-fix, two nits; #5 and #6 judged reasonable, #6 to be filed.
+
+| # | Severity | Finding | Outcome |
+|---|---|---|---|
+| 1 | nit | "A correction made after campaign-008" is singular; three corrections followed it (task-120, task-124, task-125) | Fixed: "One of the corrections made after campaign-008" |
+| 2 | nit | "dl-021's step A" could be read as dl-021's rejected Option A | Kept: "step A" is dl-021's own name for it, used across the repository, and the same sentence says "no driver written by the benchmark" |
