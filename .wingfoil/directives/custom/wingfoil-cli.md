@@ -9,9 +9,10 @@ tags: [custom, wingfoil, cli, governance]
 
 # Directive — Using the pinned WingFoil CLI
 
-**Version:** 1.1 · **Date:** 2026-10-27 (1.1: rule 8 for a published pin; entries re-checked, W-04, W-05, W-06,
-W-10, W-11 and W-12 removed as fixed, W-18 and W-19 added — task-109) · **Checked against:** `wingfoil@0.3.1`
-(`870bd440`)
+**Version:** 1.2 · **Date:** 2026-11-05 (1.2: W-19's retrospective evidence dropped, `release-cycle` 7 ending
+that phase at the approver's approval — dl-030, task-113; 1.1: rule 8 for a published pin; entries re-checked, W-04,
+W-05, W-06, W-10, W-11 and W-12 removed as fixed, W-18 and W-19 added — task-109) · **Checked against:**
+`wingfoil@0.3.1` (`870bd440`)
 
 Global. Applies to every role, human or agent, that runs the WingFoil CLI in this repository.
 
@@ -54,4 +55,4 @@ Global. Applies to every role, human or agent, that runs the WingFoil CLI in thi
 | W-16 | The default `bug` machine ends at `approved`, and no field links a bug to the task that fixes it. | The `bug` type adds a `fixed` state, reached by `submit` once the fixing task is done; the bug's `fixed_by` and the task's `fixes` name each other, and the traceability test holds them together. | F-023 | |
 | W-17 | A `waiting` state, once declared, has no verb that leaves it without a workflow engine; a `plan` closes by a plain `submit`, with no approver or reason. | The `task` machine drops WingFoil's `waiting` states; a plan is closed by `submit` only after the approver's go, which the plan's text or its completion criterion records (the first plan was closed by a hand-written commit carrying `Approver:` and `Reason:`). | F-009 | |
 | W-18 | A required field holding a list is missing unless the type lists it in `template.frontmatter.lists`; there `[]` is filled. | Every required list field goes in its type's `lists` (`task.requirements`; `release.waves`, `features`). | F-045 | bug-147 |
-| W-19 | A phase's `produces` must be a path pattern; prose fails `workflow list` and `workflow show` for every workflow. | Name the file that holds the evidence. `release-cycle`'s retrospective names the release element, which exists from planning, so that evidence is always present: the approver decides what closes the phase. | F-045 | |
+| W-19 | A phase's `produces` must be a path pattern; prose fails `workflow list` and `workflow show` for every workflow. | Name the file that holds the evidence; a phase with no file to name has no `produces` and ends at an approval (`release-cycle`'s retrospective since version 7, dl-030). | F-045 | |
