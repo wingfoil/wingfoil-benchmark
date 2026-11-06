@@ -195,7 +195,7 @@ The approver's choices in chat (2026-11-06):
 
   Scenario: A harness arm's configuration places hold its project rules
     Given the speckit arm declares configuration ".specify/memory/constitution.md"
-    And its state globs match ".specify/memory/**" except nothing it declares as configuration
+    And no state glob of the speckit arm matches ".specify/memory/constitution.md"
     When a configuring session for S8 1.1 and "speckit" extends the generated constitution
     Then the configuration is written with ".specify/memory/constitution.md"
 
