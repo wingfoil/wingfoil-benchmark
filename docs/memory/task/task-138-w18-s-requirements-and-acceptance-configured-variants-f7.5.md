@@ -98,7 +98,7 @@ The approver's choices in chat (2026-11-06):
   - M-K3 counts every session's cost, refused, killed and replaced ones included, for the configured arm and its
     docs control (REQ-SCO-08);
   - a correction after a contest is a new scenario version (REQ-RES-10), since a configuration is scenario content;
-    `--replace` only before any execution has run the version;
+    `--replace` only before any run of the version, a dry run's included;
   - the method page quotes the prompt in full rather than linking a separate page (REQ-RES-02);
   - **nothing is written to a version's configurations once any run, a dry run's included, has recorded its hash**
     (REQ-FMT-04): every configuration of S1, S2, S3 and S8 at 1.1 is written before their first 1.1 run, and a
@@ -202,7 +202,7 @@ The approver's choices in chat (2026-11-06):
 
   Scenario: A version 1.0 is never configured
     When "bench scenario configure S1@1.0 --arm wingfoil --allow-spending" runs
-    Then it is refused, naming the approver's choice, and exits 1
+    Then it is refused before any session, naming the approver's choice, and exits 1
 
   Scenario: The leak scan covers a configuration
     Given a configuration file holds an oracle literal of S2 1.1
@@ -231,7 +231,7 @@ The approver's choices in chat (2026-11-06):
 
   Scenario: Without --allow-spending nothing runs
     When "bench scenario configure S1@1.1 --arm speckit" runs
-    Then it exits 2 with the usage, and no session starts
+    Then it is refused before any session, with campaign run's message, and exits 1
 
   Scenario: A symbolic link in a configuration is refused
     Given "arms/openspec-configured/" of S3 1.1 holds a symbolic link
@@ -261,6 +261,22 @@ The approver's choices in chat (2026-11-06):
       | speckit-configured  | nothing else      |
       | baseline            | nothing else      |
 
+  Scenario: A configured arm is compared with its configured docs control
+    Given an execution that ran "speckit-configured" and "speckit-docs-configured" on S1 1.1
+    When it is aggregated
+    Then the harness-versus-docs comparison pairs "speckit-configured" with "speckit-docs-configured"
+    And the site gives "speckit-configured" a setup page with the speckit arm's manual and setup script
+
+  Scenario: A failed replacement keeps the configuration
+    Given S1 1.1 holds a configuration for "wingfoil-configured"
+    When a "--replace" session for it is refused
+    Then S1 1.1 still holds the earlier configuration, and both records are kept
+
+  Scenario: A version 1.0 holding a configuration is refused
+    Given S2 1.0 holds "arms/speckit-configured/"
+    When S2 1.0 is loaded
+    Then it is refused, naming the directory
+
   Scenario: The contest form covers a configured arm's configuration
     When the contest form is read
     Then it lists the configured arms and asks whether the setup or the configuration is contested
@@ -268,8 +284,8 @@ The approver's choices in chat (2026-11-06):
   Scenario: The method page states the configuring agent and each configuration
     When the site is built for an execution that ran "speckit-configured" on S1 1.1
     Then the method page names the agent, the model and the caps, and quotes the prompt with its SHA-256
-    And lists the configuration's files, the session's patch against the setup's workspace, and the files its docs
-      control did not render
+    And lists the configuration's files and the session's patch against the setup's workspace
+    And lists the configuration files its docs control did not render
   ```
 
 - No code, no `results/`, `site/`, arm or scenario file changed; nothing spent.
@@ -320,3 +336,15 @@ not. All taken; the vision's wording left to the approver.
 | 10 | scenarios missing (link, contest form, killed session, prompt scan, pins, arm.yaml) | drafted |
 | 11 | Design's decided-here list incomplete | completed |
 | 12–21 | nits: "the tool's defaults" on S8, K6 and K7 cited for what they do not say, the profile's image and effort, which setup applies `~/scenario`, the docs control's rules check, "exactly the record's files", files the docs control does not render, T3 and the vision | taken; the vision's wording left to the approver |
+
+**Round 3** (`634379d4`): 0 blockers, 6 should-fix, 7 nits; round 2's findings resolved. All taken.
+
+| # | Finding | Outcome |
+|---|---|---|
+| 1 | "2 when `--allow-spending` is missing, as the other commands do" is false: they exit 1 | aligned: refused with exit 1, `campaign run`'s message; the flag optional in the synopsis |
+| 2 | the freeze keyed on the version's hash misses runs under an earlier hash | keyed on `<id>@<version>`, whatever hash a run recorded |
+| 3 | a failed `--replace` left the version without a configuration | "holds" reads the newest `written` record; later failures do not undo it |
+| 4 | moving the manual aside reads as a deletion; restoring hides a written manual | the order stated: check the manual's path, restore, then compare |
+| 5 | REQ-SCO-14, REQ-RES-09 and the site's manual read leave configured arms out | REQ-FMT-05: a configured arm reads as a harness arm with its base's files there; a scenario drafted |
+| 6 | sessions that fail or are interrupted have no outcome | `failed` and `interrupted` added, as REQ-RUN-09 names them |
+| 7–13 | nits: a Gherkin continuation line, the docs control's rules check, the directives page, REQ-CLI-11's runs and missing transcripts, Design's `--replace` wording, the profile's fields, a 1.0 holding a configuration | taken |
