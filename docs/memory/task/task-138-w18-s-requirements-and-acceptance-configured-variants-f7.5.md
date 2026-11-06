@@ -2,7 +2,7 @@
 id: task-138-w18-s-requirements-and-acceptance-configured-variants-f7.5
 type: task
 title: "W18's requirements and acceptance: configured variants (F7.5)"
-status: pending
+status: backlog
 release: v0.3
 wave: W18
 features: []
