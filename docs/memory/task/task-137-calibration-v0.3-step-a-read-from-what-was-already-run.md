@@ -85,6 +85,8 @@ measured effect of step A.
   named campaign-002 only. **The pins** give the WingFoil commit too, from each execution's first wingfoil `run.json`
   (`harness.commit`), as criterion 1 asks.
 - No change to `results/`, `site/`, campaign files, arms or scenario versions; nothing spent.
+- **Full suites** (2026-11-06, on the approver's go, after the load watcher): `scripts/full-suites.sh` on
+  `7e8d1b1d`, 14:17–14:38, LINT 0 TEST 0 BUILD 0 BIN 0 DOCKER 0.
 
 ## Review
 
