@@ -75,10 +75,10 @@ measured effect of step A.
   S3 and S8 is the script's too.
 - **Departure from criterion 1:** the dry runs give the cycle only; no ratio is computed for them, since a dry run
   holds one arm and no baseline group. The ratios come from the three executions.
-- **`docs/calibration/v0.3.md`** (version 0.1): §1 what was read, §2 the cycle, §3 what it shows, §4 H1, H2 and H8
-  with the pair across executions and its pins, §5 what plan-005 step 3 adds. Its tables are the script's output,
-  pasted by a generator from the output file (`node scripts/step-a-reading.mjs --markdown <main checkout>/results
-  dry-runs/88 … 81ebb2691f9c/1 13fda3099afa/1`); two runs printed the same bytes; `git status -- results` clean after. H8's M-F1 and
+- **`docs/calibration/v0.3.md`** (version 0.1): §1 what was read, §2 the cycle, §3 what it shows, §4 H1, H2 and H8 with
+  the pair across executions and its pins, §5 what plan-005 step 3 adds. Its tables are the script's output, pasted by a
+  generator from the output file (`node scripts/step-a-reading.mjs --markdown <main checkout>/results dry-runs/88 …
+  81ebb2691f9c/1 13fda3099afa/1`); two runs printed the same bytes; `git status -- results` clean after. H8's M-F1 and
   S2's checks are not read: on 1.0 they are content checks v1 (bug-026's erratum); step 3 reads them at 1.1.
 - **A second pair, after review round 1:** campaign-006 (`13fda3099afa/1`, Codex, Terra, the v0.2 manual) against
   campaign-007, on the same approver policy (v2) and agent, with campaign-006's bug-036 erratum stated; the Context
