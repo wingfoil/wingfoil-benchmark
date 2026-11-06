@@ -94,9 +94,12 @@ The approver's choices in chat (2026-11-06):
   - **the configuration is confined to its harness's configuration places** (the approver's choice at the gate,
     2026-11-06, the stricter of the two review round 4 offered): each harness arm declares `configuration`, the
     workspace globs where its tool's and agent's configuration lives, read from the tool's documentation and
-    published (REQ-FMT-05, REQ-RES-02); a session that adds or changes any other path (a seed file, a new project
-    file, the manual, the tool's state such as a WingFoil workflow instance), deletes a file or writes a link is
-    refused (REQ-RUN-20). The lists themselves are the implementing task's, from each tool's documentation;
+    published (REQ-FMT-05, REQ-RES-02), the project rules' place and wingfoil's directives included; and `state`,
+    the globs of the tool's state and records, which win over a configuration place; a session that adds or changes
+    any other path (a seed file, a new project file, the manual, the tool's state such as a WingFoil workflow
+    instance, the members and roles REQ-RUN-17 declares), deletes a file or writes a link is refused (REQ-RUN-20).
+    The lists themselves are the implementing task's, from each tool's documentation; its prompt should ask for
+    configuration files written directly, since a tool command that also writes a record refuses the session;
   - in a run, the configuration is copied after the whole setup and before the setup commit (REQ-RUN-03);
   - the records live in the scenario version's `configured/`, beside the configuration, not in its directory as
     criterion 3 reads, so that the configuration's directory holds only what is copied into the workspace;
@@ -177,17 +180,24 @@ The approver's choices in chat (2026-11-06):
     Given the wingfoil arm declares configuration ".wingfoil/dna.yaml" and ".wingfoil/roles.yaml"
     And the wingfoil arm declares configuration ".wingfoil/directives/custom/**"
     When a configuring session for S1 1.1 and "wingfoil" <writes>
-    Then no configuration is written, its record names "<path>", and the command exits 1
+    Then no configuration is written, its record names <path>, and the command exits 1
 
     Examples:
-      | writes                                  | path                 |
-      | adds "src/helpers.ts"                   | src/helpers.ts       |
-      | changes the setup's workflow instance   | the instance's file  |
+      | writes                                         | path                                   |
+      | adds "src/helpers.ts"                          | "src/helpers.ts"                       |
+      | changes a file its declared state globs match  | that file                              |
+      | changes the Benchmark Approver's role          | ".wingfoil/roles.yaml"                 |
 
-  Scenario: A configuration place over a seed file is refused
+  Scenario: A configuration place over a seed file is refused for that version
     Given the speckit arm declares configuration "src/**"
-    When the arm is loaded for S1 1.1
-    Then it is refused, naming the glob and the seed file it matches
+    When "bench scenario configure S1@1.1 --arm speckit --allow-spending" runs
+    Then it is refused before any session, naming the glob and the seed file it matches, and exits 1
+
+  Scenario: A harness arm's configuration places hold its project rules
+    Given the speckit arm declares configuration ".specify/memory/constitution.md"
+    And its state globs match ".specify/memory/**" except nothing it declares as configuration
+    When a configuring session for S8 1.1 and "speckit" extends the generated constitution
+    Then the configuration is written with ".specify/memory/constitution.md"
 
   Scenario: The configuring agent for Spec Kit on S8 sees S8's project rules
     When the configuring agent runs for S8 1.1 and "speckit"
@@ -382,3 +392,12 @@ not. All taken; the vision's wording left to the approver.
 **Round 5** (`03f043d5`): 0 blockers, 0 should-fix, 1 nit (REQ-CLI-11: which sessions' transcripts are packed),
 taken: every session's, as M-K3 counts them. Round 4's findings resolved. No further round: a nit only.
 
+**Round 6** (`6082cf07`, the gate's changes: the configuration places and the vision aligned): 0 blockers, 3
+should-fix, 4 nits. All taken.
+
+| # | Finding | Outcome |
+|---|---|---|
+| 1 | the state paths a glob may not match are declared nowhere | REQ-FMT-05: a `state` field; a path it matches is state, even inside a configuration place |
+| 2 | the seed check has no scenario at load time; two pre-session refusals missing | checked per version by `configure` and `campaign validate`; REQ-RUN-20's refusals completed |
+| 3 | S8's extensions could be refused if the rules' places were read as state | REQ-FMT-05: REQ-FMT-14's rules place and wingfoil's directives are configuration places |
+| 4–7 | nits: the pin the documentation is read at, a non-literal path in an Examples row, the members and roles of REQ-RUN-17, the experiment design's Traces line and "alone" | taken; a change to REQ-RUN-17's members and roles refused |
