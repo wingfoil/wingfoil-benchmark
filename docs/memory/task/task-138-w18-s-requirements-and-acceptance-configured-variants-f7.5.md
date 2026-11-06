@@ -91,7 +91,10 @@ The approver's choices in chat (2026-11-06):
     generates (S8's rules for Spec Kit and OpenSpec). Criterion 3's "nothing else of the scenario" and choice 1 hold
     for what is not the arm's setup; the review's round 1 asked for it (finding 2);
   - the configuration is what the session added or changed outside the seed's files and the manual; a deletion, a
-    link, a changed seed file or a changed manual refuses it (REQ-RUN-20);
+    link, a changed seed file or a changed manual refuses it (REQ-RUN-20). **A new file or a change to the state the
+    setup left (a WingFoil workflow instance, say) is not refused:** the prompt and the published patch are the only
+    guard (review round 4's finding 2). The stricter rule, per-harness lists of configuration places with anything
+    else refused, is the approver's to choose instead;
   - in a run, the configuration is copied after the whole setup and before the setup commit (REQ-RUN-03);
   - the records live in the scenario version's `configured/`, beside the configuration, not in its directory as
     criterion 3 reads, so that the configuration's directory holds only what is copied into the workspace;
@@ -348,3 +351,11 @@ not. All taken; the vision's wording left to the approver.
 | 5 | REQ-SCO-14, REQ-RES-09 and the site's manual read leave configured arms out | REQ-FMT-05: a configured arm reads as a harness arm with its base's files there; a scenario drafted |
 | 6 | sessions that fail or are interrupted have no outcome | `failed` and `interrupted` added, as REQ-RUN-09 names them |
 | 7–13 | nits: a Gherkin continuation line, the docs control's rules check, the directives page, REQ-CLI-11's runs and missing transcripts, Design's `--replace` wording, the profile's fields, a 1.0 holding a configuration | taken |
+
+**Round 4** (`ce8cfefc`): 0 blockers, 2 should-fix, 3 nits; round 3's findings resolved. All taken.
+
+| # | Finding | Outcome |
+|---|---|---|
+| 1 | "the configuration's record" undefined; a refused record under an older prompt would block `validate` | REQ-FMT-04 defines it as the newest `written` record; the prompt check reads one per configuration |
+| 2 | new files and changed setup state (a workflow instance) pass as configuration | stated in REQ-RUN-20 as accepted, the prompt and the patch the guard; listed for the approver in Design |
+| 3–5 | nits: every non-`written` outcome, the patch written only on `written`, the transcripts' directory in REQ-ARC-03 | taken |
