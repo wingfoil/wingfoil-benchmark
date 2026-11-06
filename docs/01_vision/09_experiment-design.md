@@ -105,12 +105,12 @@ Two goals cut across all categories:
   (WingFoil 0.4, the runner launching through `wingfoil agent execute`) and C (1.0, the engine executing the steps)
   are not commitments.
 - **Configured variants** (1.7, F7.5): the configuring agent runs once per scenario version and harness, before any
-  campaign, from the seed (its README included) and the harness as its setup installs it alone (1.12); its configuration is versioned in the scenario (1.1) and published;
-  its cost is the arm's one-off setup cost (M-K3). Each configured arm has a configured docs control generated from
-  that configuration by the same generator as its harness's, so T3 holds for it too. Whether the unconfigured arms
-  stay, or campaigns run partially from presets, is decided after calibration. **The configuring agent, its model
-  and its prompt are the same for every harness and published** (T12); the installation follows the setup rule above,
-  and the configuration is the published deviation from the tool's defaults.
+  campaign, from the seed (its README included) and the harness as its setup installs it alone (1.12); its configuration
+  is versioned in the scenario (1.1) and published; its cost is the arm's one-off setup cost (M-K3). Each configured arm
+  has a configured docs control generated from that configuration by the same generator as its harness's, so T3 holds
+  for it too. Whether the unconfigured arms stay, or campaigns run partially from presets, is decided after calibration.
+  **The configuring agent, its model and its prompt are the same for every harness and published** (T12); the
+  installation follows the setup rule above, and the configuration is the published deviation from the tool's defaults.
 - **Step prompts are identical** across arms and name no harness. The leak scan (F3.2) checks this.
 
 ---
@@ -504,4 +504,5 @@ The 30 € target above did not hold, and stays as the record of v0.1's plan.
 17. **Amendment 1.12 (v0.3, W18, 2026-11-06).** §2: the configuring agent sees the seed, its README included, and
     the harness as its arm's setup installs it, with a run's network, never the prompts, the oracle or the hold-out
     (the approver's choice in chat); 1.7 read "the seed and the README alone". Source:
-    [task-138](../memory/task/task-138-w18-s-requirements-and-acceptance-configured-variants-f7.5.md) (requirements 1.50, REQ-RUN-20).
+    [task-138](../memory/task/task-138-w18-s-requirements-and-acceptance-configured-variants-f7.5.md)
+    (requirements 1.50, REQ-RUN-20).

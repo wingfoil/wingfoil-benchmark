@@ -188,4 +188,5 @@ phase. The IDs below are the candidates from the brief.
     that writes a configured variant's configuration sees the seed, its README included, and the harness as its arm's
     setup installs it (the tool's own files and documentation), with a run's network; 1.4's "only the seed and the
     README" left the installed harness out, which the agent needs to configure it. Source:
-    [task-138](../memory/task/task-138-w18-s-requirements-and-acceptance-configured-variants-f7.5.md) (requirements 1.50, REQ-RUN-20).
+    [task-138](../memory/task/task-138-w18-s-requirements-and-acceptance-configured-variants-f7.5.md)
+    (requirements 1.50, REQ-RUN-20).
