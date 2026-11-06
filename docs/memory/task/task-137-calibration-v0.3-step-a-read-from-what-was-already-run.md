@@ -65,4 +65,21 @@ measured effect of step A.
 
 ## Execution notes
 
+- **`scripts/step-a-reading.mjs`** and `test/bin/step-a-reading.test.ts` (six cases, fixtures built in a temporary
+  directory; a bin test, since the script imports `dist/results/compare.js`). **Not red-first:** the script was
+  written before its test, then the test was run against it (one wrong expectation of the fixture corrected: a
+  docs-control range that touched the arm's is within the variance, as the rule says).
+- **The approvals split by the reply before their session** (beyond criterion 1's wording): after "Approved.
+  Proceed.", after another reply, or with no reply in the step; a first reading counted every approval after a reply
+  as one, which hid `dry-runs/93`'s approvals on a question's reply (task-114's finding). **H8's mean** over S1, S2,
+  S3 and S8 is the script's too.
+- **Departure from criterion 1:** the dry runs give the cycle only; no ratio is computed for them, since a dry run
+  holds one arm and no baseline group. The ratios come from the three executions.
+- **`docs/calibration/v0.3.md`** (version 0.1): §1 what was read, §2 the cycle, §3 what it shows, §4 H1, H2 and H8
+  with the pair across executions and its pins, §5 what plan-005 step 3 adds. Its tables are the script's output,
+  pasted by a generator from the output file (`node scripts/step-a-reading.mjs --markdown <main checkout>/results
+  dry-runs/88 … 81ebb2691f9c/1`); two runs printed the same bytes; `git status -- results` clean after. H8's M-F1 and
+  S2's checks are not read: on 1.0 they are content checks v1 (bug-026's erratum); step 3 reads them at 1.1.
+- No change to `results/`, `site/`, campaign files, arms or scenario versions; nothing spent.
+
 ## Review
