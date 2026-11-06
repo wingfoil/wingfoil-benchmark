@@ -125,3 +125,6 @@ word-diff only the fixes. One should-fix, one nit.
 | 1 | should-fix | H1's qualification pointed the wrong way: a v0.2 side that leans towards the arm reads too low, so the fall to step A would be larger, not smaller | Fixed: "so the size of the fall is uncertain", with no direction |
 | 2 | nit | "priced as Terra, so … lean towards the arm" made the pricing the cause; Terra's row is the dearer one, and the lean comes from the stronger model doing the work | Fixed: "ran on gpt-6.1-sol, a stronger model (priced as Terra), so its comparisons lean towards the arm" |
 
+**Round 4** (a fresh agent on a new clone, `12a85948`, the change since round 3 only; main's HEAD and reflog
+unchanged after): no findings. Both fixes as recorded, no other wording changed.
+
