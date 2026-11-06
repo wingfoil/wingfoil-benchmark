@@ -7,7 +7,7 @@ release: v0.3
 wave: W17
 features: [F2.7, F4.3]
 acceptance: []
-requirements: [REQ-SCO-14, REQ-SCO-15]
+requirements: [REQ-SCO-14, REQ-SCO-15, REQ-RES-03]
 fixes: []
 tags: ["v0.3","calibration","w17"]
 ---
@@ -38,7 +38,7 @@ measured effect of step A.
      verdict, `workflow` commands per step;
    - **H1, H2 and H8 restated on the engine:** wingfoil ÷ baseline (cost, H1; turns, H2) and wingfoil ÷ baseline-docs
      (cost, H8), per scenario and model, the mean over the repetitions (n = 3 in the campaigns, 1 in the dry runs), a
-     ▲ or ▼ only beyond the variance (REQ-SCO-08 as amended in 1.49), from the published `score.json` and aggregates;
+     ▲ or ▼ only beyond the variance (REQ-RES-03 as amended in 1.49), from the published `score.json` and aggregates;
    - **the campaign-002 pair** on Sonnet 5.5: the same ratios on both sides, and the differences between the two
      executions read from their campaign files (approver policy, WingFoil commit, agent version).
 2. **`docs/calibration/v0.3.md`** opened with a header (version, date, status, traces), a section "Step A" (what was
