@@ -65,7 +65,7 @@ measured effect of step A.
 
 ## Execution notes
 
-- **`scripts/step-a-reading.mjs`** and `test/bin/step-a-reading.test.ts` (six cases, fixtures built in a temporary
+- **`scripts/step-a-reading.mjs`** and `test/bin/step-a-reading.test.ts` (seven cases, fixtures built in a temporary
   directory; a bin test, since the script imports `dist/results/compare.js`). **Not red-first:** the script was
   written before its test, then the test was run against it (one wrong expectation of the fixture corrected: a
   docs-control range that touched the arm's is within the variance, as the rule says).
@@ -78,7 +78,7 @@ measured effect of step A.
 - **`docs/calibration/v0.3.md`** (version 0.1): §1 what was read, §2 the cycle, §3 what it shows, §4 H1, H2 and H8
   with the pair across executions and its pins, §5 what plan-005 step 3 adds. Its tables are the script's output,
   pasted by a generator from the output file (`node scripts/step-a-reading.mjs --markdown <main checkout>/results
-  dry-runs/88 … 81ebb2691f9c/1`); two runs printed the same bytes; `git status -- results` clean after. H8's M-F1 and
+  dry-runs/88 … 81ebb2691f9c/1 13fda3099afa/1`); two runs printed the same bytes; `git status -- results` clean after. H8's M-F1 and
   S2's checks are not read: on 1.0 they are content checks v1 (bug-026's erratum); step 3 reads them at 1.1.
 - **A second pair, after review round 1:** campaign-006 (`13fda3099afa/1`, Codex, Terra, the v0.2 manual) against
   campaign-007, on the same approver policy (v2) and agent, with campaign-006's bug-036 erratum stated; the Context
@@ -103,4 +103,16 @@ counts of `dry-runs/93` and a campaign-008 run equal to the script's.
 | 6 | nit | a loop over several approvals counts once | Fixed: the columns and the text say `memory approve` commands, a loop counted once |
 | 7 | nit | criterion 1's WingFoil commit missing from the pins | Fixed: the commit column, from `run.json`'s `harness` |
 | 8 | nit | not red-first is the approver's call | Stated in the Execution notes; for the approver |
+
+**Round 2** (a fresh agent on a new clone, `6a93868e`; main's HEAD and reflog unchanged after): round 1's outcomes 1–7
+verified; the tables byte-identical to a re-run; every claim of §4 checked against the tables and the runs. One
+should-fix, four nits.
+
+| # | Severity | Finding | Outcome |
+|---|---|---|---|
+| 1 | should-fix | bug-036's erratum understated, and the Terra pair's "falls" (H1) and "about the same" (H8) lean on campaign-006's costs | Fixed: the erratum's own figures (12 of 27 steps resumed on gpt-6.1-sol, priced as Terra, leaning towards the arm) in §1, and both Terra readings qualified by it |
+| 2 | nit | Luna's extra `memory approve` commands named S1 and S8 only | Fixed: S1, S2 and S8 |
+| 3 | nit | "on Haiku, S3 starts one more" read as every run | Fixed: "one run of Haiku's S3" |
+| 4 | nit | the Execution notes said six cases and quoted the old command | Fixed |
+| 5 | nit | a comment line of the script over 120 columns | Fixed: rewrapped |
 

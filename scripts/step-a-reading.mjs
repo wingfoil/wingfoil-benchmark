@@ -3,11 +3,11 @@
 // workflow cycle, read from its transcripts, and the hypotheses H1, H2 and H8 restated on the engine, read from the
 // executions' aggregates. It writes nothing under results/, runs no agent and spends nothing.
 //
-// The cycle, per run: the requests (steps), the `wingfoil` commands of each kind (every sub-command of a chained shell
-// command counts; a loop counts once), the workflow instances started, the finalizes, the sessions that ended asking
-// for an approval with "Please approve", the approver's replies (run.json), and the agent's `wingfoil memory approve`
-// commands (a loop over several documents counts once): after "Approved. Proceed.", after another reply (a question's, a scenario approver's), or
-// in a session no reply in its step preceded.
+// The cycle, per run: the requests (steps), the `wingfoil` commands of each kind (every sub-command of a chained
+// shell command counts; a loop counts once), the workflow instances started, the finalizes, the sessions that ended
+// asking for an approval with "Please approve", the approver's replies (run.json), and the agent's `wingfoil memory
+// approve` commands (a loop over several documents counts once): after "Approved. Proceed.", after another reply (a
+// question's, a scenario approver's), or in a session no reply in its step preceded.
 //
 // The ratios, per execution, scenario and model: wingfoil ÷ baseline in cost (H1) and turns (H2), wingfoil ÷
 // baseline-docs in cost (H8), the means of each group's runs, and the comparison as every page reports it (REQ-RES-03
