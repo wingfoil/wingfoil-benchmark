@@ -39,7 +39,8 @@ review loop measured per arm. The sequencer's "Broader categories" (S4, S7, S5 w
   directives, labelled. **The step's work is completed before stopping at the workflow's gate.** The arm's
   agent-specific files are explicit (dl-022's arm B depends on it).
 - **Configured variants** for wingfoil, speckit and openspec, each with its configured docs control, the configuration
-  written by an agent that sees only the seed and the README, in scenario versions 1.1. Extra cost accepted; after
+  written by an agent that sees only the seed, its README included, and the harness as its setup installs it (the
+  approver's choice of 2026-11-06, task-138), in scenario versions 1.1. Extra cost accepted; after
   calibration, presets make partial campaigns ordinary (dl-022). Prototype, enterprise and critical profiles are later.
 - **Oracle and metrics:** word-boundary content checks over the agent's own text, plus a published human judgement
   with a rubric (1.1; errata for 1.0); classifier v2; M-R2 v2; M-K3 as one-off costs, M-K4 "not applicable" only

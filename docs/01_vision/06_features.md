@@ -1,7 +1,7 @@
 # Features — WingFoil Benchmark
 
-**Version:** 1.5
-**Date:** 2026-10-29
+**Version:** 1.6
+**Date:** 2026-11-06
 **Status:** Approved
 **Traces to:** [05_journeys.md](05_journeys.md), [03_is-isnot.md](03_is-isnot.md); input: [X_competitor-landscape-2026-09-22.md](X_competitor-landscape-2026-09-22.md)
 
@@ -108,7 +108,7 @@ phase. The IDs below are the candidates from the brief.
 | F7.4 | **Harness eligibility criteria**: published criteria a tool must meet to get an arm, for example: runs with the campaign's agent and model id; version can be pinned; runs headless in a container; is a workflow harness rather than only a standards or prompt pack. Exclusions are published with their reason (from the input landscape, probable ones are Kiro, which imposes its own models and IDE, Taskmaster, which calls its own LLMs, and Agent OS, no longer a workflow harness). | J6.1 | M | L | M |
 | F7.2 | **Setup contest process**: an issue template for contesting a setup; a corrected setup yields a new campaign and the old one stays published. | J6.3 | L | L | L |
 | F7.3 | **External contribution guide**: guide and review step for outside scenario authors (deferred). | J7 | L | L | L |
-| F7.5 | **Configured variants** (v0.3): each harness arm also run configured for the project — its configuration written by an agent that sees only the seed and the README, never the prompts or the oracle, versioned with the scenario (1.1) — beside a configured docs control generated from that configuration; the configuring cost is a one-off setup cost (M-K3). | J6.1 | H | H | H |
+| F7.5 | **Configured variants** (v0.3): each harness arm also run configured for the project — its configuration written by an agent that sees only the seed, its README included, and the harness as its setup installs it (1.6), never the prompts or the oracle, versioned with the scenario (1.1) — beside a configured docs control generated from that configuration; the configuring cost is a one-off setup cost (M-K3). | J6.1 | H | H | H |
 
 ---
 
@@ -183,3 +183,10 @@ phase. The IDs below are the candidates from the brief.
     campaign. **F6.13 S10 gates and roles**, primary category E. Source:
     [task-116](../memory/task/task-116-s10-gates-and-roles-scenario-dl-029.md);
     [dl-029](../memory/decision-log/dl-029-a-gates-and-roles-scenario-for-v0-4-s-release-planning-q-e2-q-e3.md).
+
+11. **Amendment 1.6 (v0.3, W18, 2026-11-06) — F7.5's configuring agent.** The approver's choice in chat: the agent
+    that writes a configured variant's configuration sees the seed, its README included, and the harness as its arm's
+    setup installs it (the tool's own files and documentation), with a run's network; 1.4's "only the seed and the
+    README" left the installed harness out, which the agent needs to configure it. Source:
+    [task-138](../memory/task/task-138-w18-s-requirements-and-acceptance-configured-variants-f7.5.md)
+    (requirements 1.50, REQ-RUN-20).

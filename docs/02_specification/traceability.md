@@ -1,7 +1,7 @@
 # Traceability (v0.1, v0.2, v0.3)
 
-**Version:** 1.6
-**Date:** 2026-10-25
+**Version:** 1.7
+**Date:** 2026-11-06
 **Status:** Approved
 **Traces to:** [06_features.md](../01_vision/06_features.md) 1.2, [07_sequencer.md](../01_vision/07_sequencer.md) 1.1, [09_experiment-design.md](../01_vision/09_experiment-design.md) 1.1, [scenarios/](scenarios/), [acceptance/](acceptance/), [requirements.md](requirements.md)
 
@@ -81,6 +81,7 @@ scheduled), G-A, G-B (v0.4 from sequencer 1.2) and G-G (v1.0) have no v0.1 scena
 | F7.4 eligibility criteria (v0.2) | J6.1 | competitors.feature | REQ-FMT-01, 11; REQ-RES-09 | W12 |
 | F7.1 competitor arms (v0.2) | J6.1 | competitors.feature | REQ-FMT-01, 05, 06, 12, 13, 14; REQ-RUN-01, 11, 12, 14, 18; REQ-SCO-14; REQ-RES-09; REQ-CLI-11 | W12 (Spec Kit), W13 (OpenSpec) |
 | F7.2 setup contest process (v0.2) | J6.3 | competitors.feature | REQ-FMT-01, 06, 13; REQ-RES-10 | W13 |
+| F7.5 configured variants (v0.3) | J6.1 | campaign.feature, competitors.feature, scenarios.feature, runner.feature, scoring.feature, results.feature (W18's tasks) | REQ-ARC-03; REQ-FMT-01, 04, 05, 08, 13; REQ-RUN-03, 11, 20; REQ-SCO-08; REQ-RES-02, 10; REQ-CLI-11, 14 | W18 |
 
 **Coverage:**
 
@@ -94,7 +95,7 @@ scheduled), G-A, G-B (v0.4 from sequencer 1.2) and G-G (v1.0) have no v0.1 scena
 |---|---|---|
 | T1 maintainer bias | GQM fixed before runs; losses published equally; tool-neutral metrics; eligibility by published criteria, WingFoil assessed too; contest process | REQ-RES-03, REQ-SCO-06; v0.2: REQ-FMT-11, REQ-RES-09, REQ-RES-10 |
 | T2 category bias | no overall score; outcome-based governance | REQ-RES-03; REQ-SCO-05, 06 |
-| T3 more context, not harness | a docs control per harness, generated mechanically; each harness compared with its own; manual size recorded | REQ-RUN-11, 12; v0.2: REQ-FMT-14, REQ-SCO-14 |
+| T3 more context, not harness | a docs control per harness, generated mechanically; each harness compared with its own; manual size recorded | REQ-RUN-11, 12; v0.2: REQ-FMT-14, REQ-SCO-14; v0.3: REQ-RUN-11 (1.50), the configured docs controls |
 | T4 prompt leakage or asymmetry | identical prompts; leak scan | REQ-FMT-08; runner.feature @F2.7 |
 | T5 training contamination | hold-out additions; purpose-written seeds (S2, S3, S8) | REQ-SCO-09; scenario specs |
 | T6 model non-determinism | repetitions; `n` on every value | REQ-FMT-07; REQ-SCO-07 |
@@ -103,7 +104,7 @@ scheduled), G-A, G-B (v0.4 from sequencer 1.2) and G-G (v1.0) have no v0.1 scena
 | T9 approver policy favours some tools | one versioned policy; interventions per arm | REQ-RUN-06, 07 |
 | T10 harness capability gap | expected failures | REQ-FMT-10; REQ-SCO-10 |
 | T11 oracle validity | several metrics per goal | scoring.feature (all); blind judge in **v0.4** (sequencer 1.2) |
-| T12 unequal setup effort | scripted setups from official documentation; telemetry off; setups published and contestable; setup cost apart; v0.3: the configured variants' configuring agent the same for every harness (experiment design 1.7) | REQ-RUN-03; REQ-FMT-05; v0.2: REQ-RUN-18, REQ-RES-09, REQ-RES-10 |
+| T12 unequal setup effort | scripted setups from official documentation; telemetry off; setups published and contestable; setup cost apart; v0.3: the configured variants' configuring agent the same for every harness (experiment design 1.7) | REQ-RUN-03; REQ-FMT-05; v0.2: REQ-RUN-18, REQ-RES-09, REQ-RES-10; v0.3: REQ-FMT-01, REQ-RUN-20, REQ-RES-02 (1.50) |
 | T13 answer lookup | web requests logged; hold-out additions | REQ-RUN-10 (**partial**: shell network use is not detected); REQ-SCO-09 |
 | T14 model sensitivity | model slices as a separate comparison; v0.2: a model ladder (dl-007, dl-008), cross-model comparisons marked | REQ-FMT-01 (`models` slices); v0.2: REQ-SCO-13 |
 | T15 tool drift (v0.2) | every harness pinned, assessed at that version and its artifact published; the version beside every value; across campaigns only deltas | REQ-FMT-03, 11, 12; REQ-RES-03 (as amended in 1.26); REQ-SCO-13 |
@@ -185,3 +186,9 @@ review decision of the approver at that task's review, 2026-10-03 (`721321f`).
 Source: [rel-v0-2](../memory/release/rel-v0-2.md) and the approver's decisions on the specification review
 (2026-10-05); review decision: the approver's review decision in chat, 2026-10-05 ("ok prosegui"), after three independent reviews.
 
+## Amendment 1.7 (v0.3, W18 task-138, 2026-11-06)
+
+**§2** gains F7.5, the configured variants, with the requirements of requirements 1.50 and its acceptance files, whose
+scenarios W18's tasks write with their tests. **§3:** T3 and T12 read the configured variants' requirements.
+
+Source: [task-138](../memory/task/task-138-w18-s-requirements-and-acceptance-configured-variants-f7.5.md).

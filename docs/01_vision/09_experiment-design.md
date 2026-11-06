@@ -1,9 +1,9 @@
 # Experiment Design (GQM) — WingFoil Benchmark
 
-**Version:** 1.11
-**Date:** 2026-11-02
+**Version:** 1.12
+**Date:** 2026-11-06
 **Status:** Approved
-**Traces to:** [06_features.md](06_features.md) (F2.4, F2.7, F4.x, F7.4), [07_sequencer.md](07_sequencer.md) (decisions 1–3), [03_is-isnot.md](03_is-isnot.md) 1.1; input: [X_competitor-landscape-2026-09-22.md](X_competitor-landscape-2026-09-22.md), [X_competitor-landscape-2026-10-05.md](X_competitor-landscape-2026-10-05.md) (1.2); [dl-017](../memory/decision-log/dl-017-the-v0-2-campaign-pins-wingfoil-v0-3-beside-a-bridge-on-v0-2-2-one-repetition-per-group.md) (1.3); [task-094](../memory/task/task-094-a-codex-agent-adapter-and-s3-s-baseline-compared-across-agents-spike.md) (1.4); [task-095](../memory/task/task-095-wingfoil-v0-3-0-admitted-to-the-wingfoil-arm-the-bridge-s-arm-read-by-its-pinned-digest.md) (1.5); [dl-018](../memory/decision-log/dl-018-sonnet-5-5-s-cache-reads-at-half-dl-007-s-price-and-haiku-5-5-beside-the-haiku-4-5-rung.md), [task-096](../memory/task/task-096-calibration-of-v0-2-dry-runs-in-every-arm-and-the-bridge-measured-costs-and-the-revised-budget.md) (1.6); [task-103](../memory/task/task-103-the-v0-3-vision-and-experiment-design-amendments.md) (1.7); [task-116](../memory/task/task-116-s10-gates-and-roles-scenario-dl-029.md) (1.8); [task-117](../memory/task/task-117-approver-policy-v3-scripted-verdicts-per-gate-on-classifier-v2-dl-029.md) (1.9); [task-118](../memory/task/task-118-a-separate-approver-identity-the-agent-never-the-approver-verdicts-executed-by-the-runner-dl-029.md) (1.10); [task-126](../memory/task/task-126-w16-s-requirements-and-acceptance-the-method-corrected-bug-025-bug-026-bug-028-to-bug-032.md) (1.11)
+**Traces to:** [06_features.md](06_features.md) (F2.4, F2.7, F4.x, F7.4), [07_sequencer.md](07_sequencer.md) (decisions 1–3), [03_is-isnot.md](03_is-isnot.md) 1.1; input: [X_competitor-landscape-2026-09-22.md](X_competitor-landscape-2026-09-22.md), [X_competitor-landscape-2026-10-05.md](X_competitor-landscape-2026-10-05.md) (1.2); [dl-017](../memory/decision-log/dl-017-the-v0-2-campaign-pins-wingfoil-v0-3-beside-a-bridge-on-v0-2-2-one-repetition-per-group.md) (1.3); [task-094](../memory/task/task-094-a-codex-agent-adapter-and-s3-s-baseline-compared-across-agents-spike.md) (1.4); [task-095](../memory/task/task-095-wingfoil-v0-3-0-admitted-to-the-wingfoil-arm-the-bridge-s-arm-read-by-its-pinned-digest.md) (1.5); [dl-018](../memory/decision-log/dl-018-sonnet-5-5-s-cache-reads-at-half-dl-007-s-price-and-haiku-5-5-beside-the-haiku-4-5-rung.md), [task-096](../memory/task/task-096-calibration-of-v0-2-dry-runs-in-every-arm-and-the-bridge-measured-costs-and-the-revised-budget.md) (1.6); [task-103](../memory/task/task-103-the-v0-3-vision-and-experiment-design-amendments.md) (1.7); [task-116](../memory/task/task-116-s10-gates-and-roles-scenario-dl-029.md) (1.8); [task-117](../memory/task/task-117-approver-policy-v3-scripted-verdicts-per-gate-on-classifier-v2-dl-029.md) (1.9); [task-118](../memory/task/task-118-a-separate-approver-identity-the-agent-never-the-approver-verdicts-executed-by-the-runner-dl-029.md) (1.10); [task-126](../memory/task/task-126-w16-s-requirements-and-acceptance-the-method-corrected-bug-025-bug-026-bug-028-to-bug-032.md) (1.11), [task-138](../memory/task/task-138-w18-s-requirements-and-acceptance-configured-variants-f7.5.md) (1.12)
 
 ---
 
@@ -59,7 +59,7 @@ Two goals cut across all categories:
 | **wingfoil** | as baseline, plus WingFoil at the campaign's version, initialized and configured, with its MCP server, and the arm's operating manual. From v0.3.0 (1.5), WingFoil as its documentation sets it up: the `init` scaffold, whose workflows declare no role, action or product, with no workflow written for the benchmark | the subject |
 | **competitor arms** (v0.2: **speckit**, **openspec**) | as baseline, plus the tool at a pinned version, set up from its official documentation, and the arm's operating manual | fair comparison |
 | **docs controls** (v0.2: **speckit-docs**, **openspec-docs**) | as baseline, plus the **same information** as their harness arm, rendered as free-form Markdown. `baseline-docs` keeps its name and stays the wingfoil arm's control | a control per harness: "more context" versus "this harness" (1.2) |
-| **configured variants** (v0.3, 1.7: **wingfoil-configured**, **speckit-configured**, **openspec-configured**, each with its configured docs control) | as their harness arm, plus a configuration for the project written by a configuring agent that sees only the seed and the README | the harness as its users would configure it, not only on its defaults (F7.5) |
+| **configured variants** (v0.3, 1.7: **wingfoil-configured**, **speckit-configured**, **openspec-configured**, each with its configured docs control) | as their harness arm, plus a configuration for the project written by a configuring agent that sees only the seed, its README included, and the harness as its setup installs it (1.12) | the harness as its users would configure it, not only on its defaults (F7.5) |
 
 **Parity rules:**
 
@@ -105,12 +105,13 @@ Two goals cut across all categories:
   (WingFoil 0.4, the runner launching through `wingfoil agent execute`) and C (1.0, the engine executing the steps)
   are not commitments.
 - **Configured variants** (1.7, F7.5): the configuring agent runs once per scenario version and harness, before any
-  campaign, from the seed and the README alone; its configuration is versioned in the scenario (1.1) and published;
-  its cost is the arm's one-off setup cost (M-K3). Each configured arm has a configured docs control generated from
-  that configuration by the same generator as its harness's, so T3 holds for it too. Whether the unconfigured arms
-  stay, or campaigns run partially from presets, is decided after calibration. **The configuring agent, its model
-  and its prompt are the same for every harness and published** (T12); the installation follows the setup rule above,
-  and the configuration is the published deviation from the tool's defaults.
+  campaign, from the seed (its README included) and the harness as its setup installs it, nothing else (1.12); its
+  configuration is versioned in the scenario (1.1) and published; its cost is the arm's one-off setup cost (M-K3). Each
+  configured arm has a configured docs control generated from that configuration by the same generator as its harness's,
+  so T3 holds for it too. Whether the unconfigured arms stay, or campaigns run partially from presets, is decided after
+  calibration. **The configuring agent, its model and its prompt are the same for every harness and published** (T12);
+  the installation follows the setup rule above, and the configuration is the published deviation from the tool's
+  defaults.
 - **Step prompts are identical** across arms and name no harness. The leak scan (F3.2) checks this.
 
 ---
@@ -501,3 +502,8 @@ The 30 € target above did not hold, and stays as the record of v0.1's plan.
     the choice to W16. Source:
     [task-126](../memory/task/task-126-w16-s-requirements-and-acceptance-the-method-corrected-bug-025-bug-026-bug-028-to-bug-032.md)
     (REQ-SCO-08, requirements 1.49).
+17. **Amendment 1.12 (v0.3, W18, 2026-11-06).** §2: the configuring agent sees the seed, its README included, and
+    the harness as its arm's setup installs it, with a run's network, never the prompts, the oracle or the hold-out
+    (the approver's choice in chat); 1.7 read "the seed and the README alone". Source:
+    [task-138](../memory/task/task-138-w18-s-requirements-and-acceptance-configured-variants-f7.5.md)
+    (requirements 1.50, REQ-RUN-20).
