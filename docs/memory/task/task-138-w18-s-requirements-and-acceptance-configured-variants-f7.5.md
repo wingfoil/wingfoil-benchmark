@@ -359,3 +359,6 @@ not. All taken; the vision's wording left to the approver.
 | 1 | "the configuration's record" undefined; a refused record under an older prompt would block `validate` | REQ-FMT-04 defines it as the newest `written` record; the prompt check reads one per configuration |
 | 2 | new files and changed setup state (a workflow instance) pass as configuration | stated in REQ-RUN-20 as accepted, the prompt and the patch the guard; listed for the approver in Design |
 | 3–5 | nits: every non-`written` outcome, the patch written only on `written`, the transcripts' directory in REQ-ARC-03 | taken |
+
+**Round 5** (`03f043d5`): 0 blockers, 0 should-fix, 1 nit (REQ-CLI-11: which sessions' transcripts are packed),
+taken: every session's, as M-K3 counts them. Round 4's findings resolved. No further round: a nit only.
