@@ -75,7 +75,8 @@ The approver's choices in chat (2026-11-06):
 ## Design
 
 - Documents only: `docs/02_specification/requirements.md` (1.50) and `docs/02_specification/traceability.md` (1.7);
-  the scenarios drafted below, for the implementing tasks.
+  the scenarios drafted below, for the implementing tasks; after the gate's choices, `docs/01_vision/06_features.md`
+  (1.6), `docs/01_vision/09_experiment-design.md` (1.12) and plan-005's scope paragraph.
 - Names: the `-configured` suffix for every configured arm and docs control (experiment design 1.7 §2), so that a
   configured arm and its base arm never share a path or a group.
 - **Decided here, beyond the criteria's wording** (for the approver's review):
@@ -90,11 +91,12 @@ The approver's choices in chat (2026-11-06):
     scenario's base configuration (S8's wingfoil directives), the merged manual and the project rules REQ-FMT-14
     generates (S8's rules for Spec Kit and OpenSpec). Criterion 3's "nothing else of the scenario" and choice 1 hold
     for what is not the arm's setup; the review's round 1 asked for it (finding 2);
-  - the configuration is what the session added or changed outside the seed's files and the manual; a deletion, a
-    link, a changed seed file or a changed manual refuses it (REQ-RUN-20). **A new file or a change to the state the
-    setup left (a WingFoil workflow instance, say) is not refused:** the prompt and the published patch are the only
-    guard (review round 4's finding 2). The stricter rule, per-harness lists of configuration places with anything
-    else refused, is the approver's to choose instead;
+  - **the configuration is confined to its harness's configuration places** (the approver's choice at the gate,
+    2026-11-06, the stricter of the two review round 4 offered): each harness arm declares `configuration`, the
+    workspace globs where its tool's and agent's configuration lives, read from the tool's documentation and
+    published (REQ-FMT-05, REQ-RES-02); a session that adds or changes any other path (a seed file, a new project
+    file, the manual, the tool's state such as a WingFoil workflow instance), deletes a file or writes a link is
+    refused (REQ-RUN-20). The lists themselves are the implementing task's, from each tool's documentation;
   - in a run, the configuration is copied after the whole setup and before the setup commit (REQ-RUN-03);
   - the records live in the scenario version's `configured/`, beside the configuration, not in its directory as
     criterion 3 reads, so that the configuration's directory holds only what is copied into the workspace;
@@ -170,6 +172,22 @@ The approver's choices in chat (2026-11-06):
       | writes a symbolic link       |
       | changes "src/index.ts"       |
       | writes CLAUDE.md             |
+
+  Scenario Outline: A configuring session that writes outside its configuration places is refused
+    Given the wingfoil arm declares configuration ".wingfoil/dna.yaml" and ".wingfoil/roles.yaml"
+    And the wingfoil arm declares configuration ".wingfoil/directives/custom/**"
+    When a configuring session for S1 1.1 and "wingfoil" <writes>
+    Then no configuration is written, its record names "<path>", and the command exits 1
+
+    Examples:
+      | writes                                  | path                 |
+      | adds "src/helpers.ts"                   | src/helpers.ts       |
+      | changes the setup's workflow instance   | the instance's file  |
+
+  Scenario: A configuration place over a seed file is refused
+    Given the speckit arm declares configuration "src/**"
+    When the arm is loaded for S1 1.1
+    Then it is refused, naming the glob and the seed file it matches
 
   Scenario: The configuring agent for Spec Kit on S8 sees S8's project rules
     When the configuring agent runs for S8 1.1 and "speckit"
@@ -292,10 +310,11 @@ The approver's choices in chat (2026-11-06):
   ```
 
 - No code, no `results/`, `site/`, arm or scenario file changed; nothing spent.
-- **For the approver, not done here:** choice 1 extends F7.5's "sees only the seed and the README"
-  (`06_features.md`, experiment design §2, plan-005) to the harness as its setup installs it; the vision documents
-  still read the shorter form. An erratum in this task, or a note in the vision's next amendment, is the approver's
-  choice (review round 2).
+- **The vision aligned with choice 1** (the approver at the gate, 2026-11-06: "as soon as possible"):
+  `06_features.md` 1.6 (F7.5) and `09_experiment-design.md` 1.12 (§2) read "the seed, its README included, and the
+  harness as its setup installs it"; plan-005's scope paragraph the same.
+- **The configuration places** (the approver at the gate): REQ-FMT-05 and REQ-RUN-20 confine a configuration to its
+  harness arm's declared `configuration` globs, anything else refused; review round 4's lighter rule replaced.
 
 ## Review
 
@@ -362,3 +381,4 @@ not. All taken; the vision's wording left to the approver.
 
 **Round 5** (`03f043d5`): 0 blockers, 0 should-fix, 1 nit (REQ-CLI-11: which sessions' transcripts are packed),
 taken: every session's, as M-K3 counts them. Round 4's findings resolved. No further round: a nit only.
+
