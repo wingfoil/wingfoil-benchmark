@@ -97,7 +97,8 @@ The approver's choices in chat (2026-11-06):
     published (REQ-FMT-05, REQ-RES-02), the project rules' place and wingfoil's directives included; and `state`,
     the globs of the tool's state and records, which win over a configuration place; a session that adds or changes
     any other path (a seed file, a new project file, the manual, the tool's state such as a WingFoil workflow
-    instance, the members and roles REQ-RUN-17 declares), deletes a file or writes a link is refused (REQ-RUN-20).
+    instance), deletes a file, writes a link, or changes the members and roles REQ-RUN-17 declares is refused
+    (REQ-RUN-20).
     The lists themselves are the implementing task's, from each tool's documentation; its prompt should ask for
     configuration files written directly, since a tool command that also writes a record refuses the session;
   - in a run, the configuration is copied after the whole setup and before the setup commit (REQ-RUN-03);
@@ -179,19 +180,27 @@ The approver's choices in chat (2026-11-06):
   Scenario Outline: A configuring session that writes outside its configuration places is refused
     Given the wingfoil arm declares configuration ".wingfoil/dna.yaml" and ".wingfoil/roles.yaml"
     And the wingfoil arm declares configuration ".wingfoil/directives/custom/**"
+    And the wingfoil arm declares state ".wingfoil/directives/custom/.index/**"
     When a configuring session for S1 1.1 and "wingfoil" <writes>
     Then no configuration is written, its record names <path>, and the command exits 1
 
     Examples:
       | writes                                         | path                                   |
       | adds "src/helpers.ts"                          | "src/helpers.ts"                       |
-      | changes a file its declared state globs match  | that file                              |
+      | adds ".wingfoil/directives/custom/.index/a"    | ".wingfoil/directives/custom/.index/a" |
       | changes the Benchmark Approver's role          | ".wingfoil/roles.yaml"                 |
+      | adds a member with the approver role           | ".wingfoil/roles.yaml"                 |
 
   Scenario: A configuration place over a seed file is refused for that version
     Given the speckit arm declares configuration "src/**"
     When "bench scenario configure S1@1.1 --arm speckit --allow-spending" runs
     Then it is refused before any session, naming the glob and the seed file it matches, and exits 1
+
+  Scenario: A campaign over a configuration place that matches a seed file is refused
+    Given the speckit arm declares configuration "src/**"
+    And a campaign that runs "speckit-configured" on S1 1.1
+    When the campaign is validated
+    Then it is refused, naming S1 1.1, "speckit-configured", the glob and the seed file
 
   Scenario: A harness arm's configuration places hold its project rules
     Given the speckit arm declares configuration ".specify/memory/constitution.md"
@@ -401,3 +410,11 @@ should-fix, 4 nits. All taken.
 | 2 | the seed check has no scenario at load time; two pre-session refusals missing | checked per version by `configure` and `campaign validate`; REQ-RUN-20's refusals completed |
 | 3 | S8's extensions could be refused if the rules' places were read as state | REQ-FMT-05: REQ-FMT-14's rules place and wingfoil's directives are configuration places |
 | 4–7 | nits: the pin the documentation is read at, a non-literal path in an Examples row, the members and roles of REQ-RUN-17, the experiment design's Traces line and "alone" | taken; a change to REQ-RUN-17's members and roles refused |
+
+**Round 7** (`59d62985`): 0 blockers, 2 should-fix, 4 nits. All taken.
+
+| # | Finding | Outcome |
+|---|---|---|
+| 1 | an Examples row still non-literal, and no `state` glob declared, so "state wins" untested | a `state` glob inside a configuration place declared; the row's path literal |
+| 2 | "the state the setup left" leaves state the session creates open | REQ-RUN-20: any path a `state` glob matches, left by the setup or added |
+| 3–6 | nits: added members and roles, a missing `state` and the rules' place check, `campaign validate`'s seed check, members and roles in a path list | taken |
