@@ -2,7 +2,7 @@
 id: task-137-calibration-v0.3-step-a-read-from-what-was-already-run
 type: task
 title: "Calibration v0.3, step A read from what was already run"
-status: pending
+status: backlog
 release: v0.3
 wave: W17
 features: [F2.7, F4.3]
