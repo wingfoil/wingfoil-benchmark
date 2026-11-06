@@ -80,6 +80,27 @@ measured effect of step A.
   pasted by a generator from the output file (`node scripts/step-a-reading.mjs --markdown <main checkout>/results
   dry-runs/88 … 81ebb2691f9c/1`); two runs printed the same bytes; `git status -- results` clean after. H8's M-F1 and
   S2's checks are not read: on 1.0 they are content checks v1 (bug-026's erratum); step 3 reads them at 1.1.
+- **A second pair, after review round 1:** campaign-006 (`13fda3099afa/1`, Codex, Terra, the v0.2 manual) against
+  campaign-007, on the same approver policy (v2) and agent, with campaign-006's bug-036 erratum stated; the Context
+  named campaign-002 only. **The pins** give the WingFoil commit too, from each execution's first wingfoil `run.json`
+  (`harness.commit`), as criterion 1 asks.
 - No change to `results/`, `site/`, campaign files, arms or scenario versions; nothing spent.
 
 ## Review
+
+**Round 1** (a fresh read-only agent on a clone, `5dc5e850` against main `fbec4387`, reading the main checkout's
+`results/` by absolute path only; main's HEAD and reflog unchanged after): no blocker, three should-fix, five nits.
+It found the tables byte-identical to the script's output, the session split matching every step's replies, and hand
+counts of `dry-runs/93` and a campaign-008 run equal to the script's.
+
+| # | Severity | Finding | Outcome |
+|---|---|---|---|
+| 1 | should-fix | H1's "above 1.5×, beyond the variance" mixes the threshold with the comparison against the baseline | Fixed: above 1.5×, each worse than the baseline beyond the variance, the threshold's own variance not tested |
+| 2 | should-fix | "H2 does not hold" rests on one confounded pair, and Codex was said to have no v0.2 reading | Fixed: "not met", per pair; campaign-006 added as Codex's pair on Terra (the reviewer's "no v0.2 reading" was wrong too) |
+| 3 | should-fix | no test of Codex's transcript format | Fixed: a Codex step with two threads, chained commands and an approval after the reply |
+| 4 | nit | Luna's "fewer instances than requests" is true of every row; approvals above gates unmentioned | Fixed: "fewer than one per request after the first", and more `memory approve` commands than gates asked |
+| 5 | nit | H8's "every execution and model" counted the Opus slice's one scenario | Fixed: "every execution and model that ran the four" |
+| 6 | nit | a loop over several approvals counts once | Fixed: the columns and the text say `memory approve` commands, a loop counted once |
+| 7 | nit | criterion 1's WingFoil commit missing from the pins | Fixed: the commit column, from `run.json`'s `harness` |
+| 8 | nit | not red-first is the approver's call | Stated in the Execution notes; for the approver |
+

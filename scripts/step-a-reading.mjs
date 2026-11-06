@@ -5,8 +5,8 @@
 //
 // The cycle, per run: the requests (steps), the `wingfoil` commands of each kind (every sub-command of a chained shell
 // command counts; a loop counts once), the workflow instances started, the finalizes, the sessions that ended asking
-// for an approval with "Please approve", the approver's replies (run.json), and the approvals the agent recorded with
-// `wingfoil memory approve`: after "Approved. Proceed.", after another reply (a question's, a scenario approver's), or
+// for an approval with "Please approve", the approver's replies (run.json), and the agent's `wingfoil memory approve`
+// commands (a loop over several documents counts once): after "Approved. Proceed.", after another reply (a question's, a scenario approver's), or
 // in a session no reply in its step preceded.
 //
 // The ratios, per execution, scenario and model: wingfoil ÷ baseline in cost (H1) and turns (H2), wingfoil ÷
@@ -225,13 +225,23 @@ export function h8Means(rows) {
   });
 }
 
-/** What an execution's campaign file pins that a reading across two executions must state. */
+/**
+ * What an execution pins that a reading across two executions must state: from its campaign file, and the WingFoil
+ * commit its first wingfoil run installed (`run.json`'s `harness`).
+ */
 export function pins(resultsDir, execution) {
   const campaign = parse(readFileSync(join(resultsDir, execution, 'campaign.yaml'), 'utf8'));
+  let commit = null;
+  for (const dir of runDirs(join(resultsDir, execution, 'runs'))) {
+    if (!dir.split('/').includes('wingfoil')) continue;
+    commit = JSON.parse(readFileSync(join(dir, 'run.json'), 'utf8')).harness?.commit ?? null;
+    break;
+  }
   return {
     execution,
     approver_policy: campaign.approver_policy ?? null,
     wingfoil: campaign.harnesses?.wingfoil?.version ?? null,
+    wingfoil_commit: commit === null ? null : String(commit).slice(0, 12),
     wingfoil_digest: campaign.arm_digests?.wingfoil ?? null,
     agent: `${campaign.agent?.name ?? '?'} ${campaign.agent?.version ?? '?'}`,
   };
@@ -256,8 +266,8 @@ export function markdown(result) {
   lines.push('**The cycle per wingfoil run** (means over the runs of each source, scenario and model)', '');
   lines.push(
     '| Source | Scenario | Model | Runs | Requests | `workflow start` | `finalize` | `next` | `status` | ' +
-      'Asked "Please approve" | Replies | Approvals recorded on "Approved. Proceed." | on another reply | ' +
-      'with no reply in the step |',
+      'Asked "Please approve" | Replies | `memory approve` commands after "Approved. Proceed." | ' +
+      'after another reply | with no reply in the step |',
   );
   lines.push('|---|---|---|---|---|---|---|---|---|---|---|---|---|---|');
   const groups = new Map();
@@ -300,11 +310,11 @@ export function markdown(result) {
   for (const h of result.h8)
     lines.push(`| ${h.execution} | ${h.model} | ${h.scenarios} | ${h.mean}× | ${h.values.join(', ')} |`);
   lines.push('', '**What each execution pins**', '');
-  lines.push('| Execution | Approver policy | WingFoil | wingfoil arm digest | Agent |');
-  lines.push('|---|---|---|---|---|');
+  lines.push('| Execution | Approver policy | WingFoil | WingFoil commit | wingfoil arm digest | Agent |');
+  lines.push('|---|---|---|---|---|---|');
   for (const p of result.pins)
     lines.push(
-      `| ${p.execution} | ${p.approver_policy} | ${p.wingfoil} | ${p.wingfoil_digest} | ${p.agent} |`,
+      `| ${p.execution} | ${p.approver_policy} | ${p.wingfoil} | ${p.wingfoil_commit} | ${p.wingfoil_digest} | ${p.agent} |`,
     );
   return `${lines.join('\n')}\n`;
 }

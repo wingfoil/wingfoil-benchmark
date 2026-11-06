@@ -62,6 +62,7 @@ function writeRun(
       agent: { name: 'claude-code', version: '9.9.9' },
       approver_policy: 'v5',
       arm_digest: 'abc',
+      harness: { tool: 'wingfoil', version: 'v0.3.1', commit: '870bd4406f3b9bba5ecde7a5f8198b80c2a98583' },
       steps: steps.map((_, i) => ({ n: i + 1 })),
       interventions: replies.map((r) => ({ ...r, kind: 'approval' })),
     }),
@@ -191,6 +192,41 @@ describe('scripts/step-a-reading.mjs (task-137)', { timeout: 600_000 }, () => {
     return results;
   }
 
+  it("splits a Codex step's threads and reads its commands and last message", () => {
+    const results = tempDir('step-a-reading-codex-');
+    const dir = join(results, 'dry-runs', '8', 'runs', 'S1@1.0', 'wingfoil', 'm', 'r1');
+    writeRun(dir, [[]], [{ step: 1, reply: 'Approved. Proceed.' }]);
+    const command = (text: string) =>
+      line({ type: 'item.completed', item: { type: 'command_execution', command: text } });
+    const message = (text: string) => line({ type: 'item.completed', item: { type: 'agent_message', text } });
+    writeFileSync(
+      join(dir, 'steps', '01', 'transcript.jsonl'),
+      line({ type: 'thread.started' }) +
+        command("/bin/bash -lc 'wingfoil workflow status && wingfoil workflow next'") +
+        message('Done. Please approve task-001.') +
+        line({ type: 'turn.completed', usage: {} }) +
+        line({ type: 'thread.started' }) +
+        command('/bin/bash -lc \'wingfoil memory approve task-001 --reason "Approved. Proceed."\'') +
+        command("/bin/bash -lc 'wingfoil workflow finalize'") +
+        message('Approved and finalized.') +
+        line({ type: 'turn.completed', usage: {} }),
+    );
+    const { cycles } = mod.reading(results, ['dry-runs/8']);
+    expect(cycles[0]).toMatchObject({
+      steps: 1,
+      asked: 1,
+      replies: 1,
+      approvedOnApproval: 1,
+      approvedOnOtherReply: 0,
+      approvedWithoutReply: 0,
+    });
+    expect(cycles[0]?.verbs).toMatchObject({
+      'workflow status': 1,
+      'workflow next': 1,
+      'workflow finalize': 1,
+    });
+  });
+
   it('counts every wingfoil verb of a chained command', () => {
     expect(mod.verbsOf('cat README.md && wingfoil workflow status; wingfoil workflow next | head')).toEqual([
       'workflow status',
@@ -250,6 +286,7 @@ describe('scripts/step-a-reading.mjs (task-137)', { timeout: 600_000 }, () => {
         execution: 'f00d00000001/1',
         approver_policy: 'v5',
         wingfoil: 'v0.3.1',
+        wingfoil_commit: '870bd4406f3b',
         wingfoil_digest: 'abc',
         agent: 'claude-code 9.9.9',
       },
