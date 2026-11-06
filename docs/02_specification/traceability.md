@@ -81,7 +81,7 @@ scheduled), G-A, G-B (v0.4 from sequencer 1.2) and G-G (v1.0) have no v0.1 scena
 | F7.4 eligibility criteria (v0.2) | J6.1 | competitors.feature | REQ-FMT-01, 11; REQ-RES-09 | W12 |
 | F7.1 competitor arms (v0.2) | J6.1 | competitors.feature | REQ-FMT-01, 05, 06, 12, 13, 14; REQ-RUN-01, 11, 12, 14, 18; REQ-SCO-14; REQ-RES-09; REQ-CLI-11 | W12 (Spec Kit), W13 (OpenSpec) |
 | F7.2 setup contest process (v0.2) | J6.3 | competitors.feature | REQ-FMT-01, 06, 13; REQ-RES-10 | W13 |
-| F7.5 configured variants (v0.3) | J6.1 | campaign.feature, competitors.feature, scenarios.feature, runner.feature, scoring.feature, results.feature (W18's tasks) | REQ-ARC-03; REQ-FMT-01, 04, 05, 08, 13; REQ-RUN-03, 11, 20; REQ-SCO-08; REQ-RES-02, 10; REQ-CLI-14 | W18 |
+| F7.5 configured variants (v0.3) | J6.1 | campaign.feature, competitors.feature, scenarios.feature, runner.feature, scoring.feature, results.feature (W18's tasks) | REQ-ARC-03; REQ-FMT-01, 04, 05, 08, 13; REQ-RUN-03, 11, 20; REQ-SCO-08; REQ-RES-02, 10; REQ-CLI-11, 14 | W18 |
 
 **Coverage:**
 
@@ -95,7 +95,7 @@ scheduled), G-A, G-B (v0.4 from sequencer 1.2) and G-G (v1.0) have no v0.1 scena
 |---|---|---|
 | T1 maintainer bias | GQM fixed before runs; losses published equally; tool-neutral metrics; eligibility by published criteria, WingFoil assessed too; contest process | REQ-RES-03, REQ-SCO-06; v0.2: REQ-FMT-11, REQ-RES-09, REQ-RES-10 |
 | T2 category bias | no overall score; outcome-based governance | REQ-RES-03; REQ-SCO-05, 06 |
-| T3 more context, not harness | a docs control per harness, generated mechanically; each harness compared with its own; manual size recorded | REQ-RUN-11, 12; v0.2: REQ-FMT-14, REQ-SCO-14 |
+| T3 more context, not harness | a docs control per harness, generated mechanically; each harness compared with its own; manual size recorded | REQ-RUN-11, 12; v0.2: REQ-FMT-14, REQ-SCO-14; v0.3: REQ-RUN-11 (1.50), the configured docs controls |
 | T4 prompt leakage or asymmetry | identical prompts; leak scan | REQ-FMT-08; runner.feature @F2.7 |
 | T5 training contamination | hold-out additions; purpose-written seeds (S2, S3, S8) | REQ-SCO-09; scenario specs |
 | T6 model non-determinism | repetitions; `n` on every value | REQ-FMT-07; REQ-SCO-07 |
@@ -189,6 +189,6 @@ Source: [rel-v0-2](../memory/release/rel-v0-2.md) and the approver's decisions o
 ## Amendment 1.7 (v0.3, W18 task-138, 2026-11-06)
 
 **§2** gains F7.5, the configured variants, with the requirements of requirements 1.50 and its acceptance files, whose
-scenarios W18's tasks write with their tests. **§3:** T12 reads the configuring agent's requirements.
+scenarios W18's tasks write with their tests. **§3:** T3 and T12 read the configured variants' requirements.
 
 Source: [task-138](../memory/task/task-138-w18-s-requirements-and-acceptance-configured-variants-f7.5.md).
