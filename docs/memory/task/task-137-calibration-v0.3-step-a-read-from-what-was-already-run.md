@@ -116,3 +116,12 @@ should-fix, four nits.
 | 4 | nit | the Execution notes said six cases and quoted the old command | Fixed |
 | 5 | nit | a comment line of the script over 120 columns | Fixed: rewrapped |
 
+**Round 3** (a fresh agent on a new clone, `e1d73336`; main's HEAD and reflog unchanged after): round 2's nits
+verified (Luna's S1, S2, S8; Haiku's S3 runs at 4, 5 and 4 starts); the tables byte-identical to a re-run; the
+word-diff only the fixes. One should-fix, one nit.
+
+| # | Severity | Finding | Outcome |
+|---|---|---|---|
+| 1 | should-fix | H1's qualification pointed the wrong way: a v0.2 side that leans towards the arm reads too low, so the fall to step A would be larger, not smaller | Fixed: "so the size of the fall is uncertain", with no direction |
+| 2 | nit | "priced as Terra, so … lean towards the arm" made the pricing the cause; Terra's row is the dearer one, and the lean comes from the stronger model doing the work | Fixed: "ran on gpt-6.1-sol, a stronger model (priced as Terra), so its comparisons lean towards the arm" |
+
