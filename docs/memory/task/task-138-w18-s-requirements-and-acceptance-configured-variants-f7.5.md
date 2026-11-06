@@ -193,17 +193,20 @@ The approver's choices in chat (2026-11-06):
 
   Scenario: A configuration place over a seed file is refused for that version
     Given the speckit arm declares configuration "src/**"
+    And the speckit arm is otherwise valid, its state and its constitution's place declared
     When "bench scenario configure S1@1.1 --arm speckit --allow-spending" runs
     Then it is refused before any session, naming the glob and the seed file it matches, and exits 1
 
   Scenario: A campaign over a configuration place that matches a seed file is refused
     Given the speckit arm declares configuration "src/**"
+    And the speckit arm is otherwise valid, its state and its constitution's place declared
     And a campaign that runs "speckit-configured" on S1 1.1
     When the campaign is validated
     Then it is refused, naming S1 1.1, "speckit-configured", the glob and the seed file
 
   Scenario: A harness arm's configuration places hold its project rules
     Given the speckit arm declares configuration ".specify/memory/constitution.md"
+    And the speckit arm declares its state globs
     And no state glob of the speckit arm matches ".specify/memory/constitution.md"
     When a configuring session for S8 1.1 and "speckit" extends the generated constitution
     Then the configuration is written with ".specify/memory/constitution.md"
@@ -418,3 +421,6 @@ should-fix, 4 nits. All taken.
 | 1 | an Examples row still non-literal, and no `state` glob declared, so "state wins" untested | a `state` glob inside a configuration place declared; the row's path literal |
 | 2 | "the state the setup left" leaves state the session creates open | REQ-RUN-20: any path a `state` glob matches, left by the setup or added |
 | 3–6 | nits: added members and roles, a missing `state` and the rules' place check, `campaign validate`'s seed check, members and roles in a path list | taken |
+
+**Round 8** (`9f241ddb`): 0 blockers, 0 should-fix, 1 nit (two scenarios' arms would fail at load before the check
+they name), taken: each arm otherwise valid. Round 7's findings resolved. No further round: a nit only.
