@@ -1,9 +1,15 @@
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import type { DockerPort, ProcessResult } from '../../../src/core/index.js';
-import { measuredFiles, parseQuality, qualityInContainer } from '../../../src/scoring/index.js';
+import {
+  filesUnder,
+  measuredFiles,
+  parseQuality,
+  patchPaths,
+  qualityInContainer,
+} from '../../../src/scoring/index.js';
 import { tempDir } from '../../support/scenario-fixture.js';
 
 /**
@@ -81,6 +87,46 @@ describe('measuredFiles (REQ-SCO-04 as amended in 1.16)', () => {
       measured: [],
       coverageTargets: [],
     });
+  });
+});
+
+describe("the scoring's path helpers (task-139, bug-034)", () => {
+  it('reads every path of a patch, spaces, quoted names, octal escapes and renames included', () => {
+    const patch = [
+      'diff --git a/src/my file.ts b/src/my file.ts',
+      'new file mode 100644',
+      '--- /dev/null',
+      '+++ b/src/my file.ts\t',
+      'diff --git "a/src/caf\\303\\251 \\"q\\".ts" "b/src/caf\\303\\251 \\"q\\".ts"',
+      'index 1..2 100644',
+      'diff --git a/old name.ts b/new name.ts',
+      'similarity index 100%',
+      'rename from old name.ts',
+      'rename to new name.ts',
+      'diff --git a/plain.ts b/plain.ts',
+      'index 1..2 100644',
+    ].join('\n');
+    expect([...patchPaths(patch)].sort()).toEqual(
+      ['new name.ts', 'old name.ts', 'plain.ts', 'src/café "q".ts', 'src/my file.ts'].sort(),
+    );
+  });
+
+  it('lists no symbolic link and enters no linked directory', () => {
+    const root = tree({ 'src/a.ts': 'export const a = 1;\n' });
+    const outside = tree({ 'secret.ts': 'export const s = 1;\n' });
+    symlinkSync(join(outside, 'secret.ts'), join(root, 'src', 'link.ts'));
+    symlinkSync(outside, join(root, 'linked'));
+    expect(filesUnder(root).sort()).toEqual(['src/a.ts']);
+  });
+
+  it('leaves out a path with a space the setup touched', () => {
+    const snapshot = tree({
+      ...SEED,
+      'src/my file.ts': 'export const f = 1;\n',
+      'src/new.ts': 'export const n = 1;\n',
+    });
+    const setupPatch = 'diff --git a/src/my file.ts b/src/my file.ts\nnew file mode 100644\n';
+    expect(measuredFiles({ seedDir: tree(SEED), snapshot, setupPatch }).measured).toEqual(['src/new.ts']);
   });
 });
 
