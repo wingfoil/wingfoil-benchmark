@@ -100,3 +100,14 @@ Feature: Scenario format, hygiene and the v0.1 scenario content
       | S2 |
       | S3 |
       | S8 |
+
+  # task-139, bug-034 (requirements 1.51)
+  @F3.1
+  Scenario: A scenario version holds no symbolic link and no directive file with an open fence
+    Given a scenario version whose scenario.yaml is a symbolic link leading outside it
+    When the scenario is validated
+    Then it is refused, naming scenario.yaml as a symbolic link
+    Given a scenario version with a symbolic link deep in its seed
+    Then it is refused, naming the link
+    Given an arm configuration whose directive file leaves a code fence open
+    Then it is refused, naming the file

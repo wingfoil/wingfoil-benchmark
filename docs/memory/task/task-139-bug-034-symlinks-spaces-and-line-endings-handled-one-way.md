@@ -6,7 +6,10 @@ status: in-progress
 release: v0.3
 wave: W18
 features: [F3.1, F4.2, F7.1]
-acceptance: []
+acceptance:
+  - "scenarios.feature#A scenario version holds no symbolic link and no directive file with an open fence"
+  - "competitors.feature#An arm holds no symbolic link, and every generator reads a directive file one way"
+  - "scoring.feature#The scoring reads a patch's paths exactly and follows no symbolic link"
 requirements: [REQ-FMT-04, REQ-FMT-05, REQ-FMT-14, REQ-SCO-04, REQ-SCO-07]
 fixes: [bug-034-symlinks-spaces-and-line-endings-in-scenario-and-arm-files-are-handled-inconsistently]
 tags: ["v0.3","w18","bug-034"]
@@ -55,8 +58,43 @@ Code and tests only: no real-agent session, nothing spent.
 
 ## Design
 
-<!-- Filled when the task starts. -->
+- `src/core/markdown.ts` (new): `toLf`, `fencedLines` and `hasUnclosedFence`, the one reading of a directive file's
+  line endings and fences (CommonMark's: three or more backticks or tildes after up to three spaces, closed by the
+  same character at least as long), shared by the scenario loader and the generators.
+- `src/scenario/load.ts`: `linksUnder` refuses every symbolic link under the version first, before `scenario.yaml` is
+  read; `fenceIssues` refuses a Markdown file of a scenario's `arms/<arm>/` with an open fence.
+- `src/arms/load.ts`: `linksIn` refuses every link under the arm once the declared paths exist; `src/arms/digest.ts`
+  keeps hashing a link by its target (history), its comment aligned.
+- `src/arms/baseline-docs.ts`: `documents` reads every directive file as LF and refuses an open fence, naming the
+  path; `shiftHeadings` reads fences with `fencedLines` and strips every line's trailing spaces, a heading's too. Spec
+  Kit's constitution and OpenSpec's context read through it (`developerDirectives`).
+- `src/scoring/quality.ts`: `filesUnder` lists files only, neither listing nor following a link; `patchPaths` reads
+  both sides of a header (C-quoted with octal escapes, or unquoted with spaces when both sides name the same path),
+  `rename`/`copy` and `---`/`+++` lines. `filesUnder` and `patchPaths` exported for their tests.
 
 ## Execution notes
+
+- **Red first** for every criterion in the unit tests (`test/unit/scenario/load.test.ts`,
+  `test/unit/arms/baseline-docs.test.ts`, `test/unit/arms/load.test.ts`, `test/unit/scoring/quality.test.ts`), each
+  red commit before its fix. The three acceptance scenarios (one per feature file) and their tests were written after
+  the fixes, so they passed at once: characterization of the fixed behaviour, recorded as a departure.
+- **Five older scenario-loader tests** expected another message for a link (an overlap, "leads outside"): a link is
+  now refused as a link, first, so their expectations read that.
+- **The published runs, criterion 3** (scripts in the scratchpad, output quoted):
+  - `node bug034-published.mjs results` (main checkout):
+    `{"patches":2536,"runs":476,"headers":13617,"quoted":0,"unparsed_unquoted":0,"symlink_modes":0,"patches_hit":0}`;
+  - `node bug034-compare.mjs <worktree>/dist results`, the new `patchPaths` against the old on every stored patch:
+    `{"patches":2536,"differ":0}`.
+
+  No published value changes, so no erratum (the approver's choice applied to an empty set).
+- **"A list of files reaches a tool as separate arguments":** already so (`quality.mjs` spreads the measured files
+  into jscpd's and c8's arguments); task-042's "the file list is one argument" is the JSON spec passed to the script
+  as one argument, left as it is: changing it changes the scoring image, and so every rescore's image pin, for no
+  published case. Stated in REQ-SCO-04 as amended in 1.51.
+- **task-064's Design** is not edited (a done element): the code and REQ-FMT-05 as amended in 1.51 now agree, the
+  loader refusing a link anywhere and the digest hashing it by its target; `digest.ts`'s comment says so.
+- No directive, manual or arm file of the repository has a heading with trailing spaces, a fence, a link or CRLF, so
+  no generated output and no digest changes.
+- `requirements.md` 1.51.
 
 ## Review

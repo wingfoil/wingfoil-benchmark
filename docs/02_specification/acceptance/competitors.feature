@@ -104,3 +104,15 @@ Feature: Competitor arms admitted by published criteria and set up under the sam
     Given a campaign file that pins an arm's digest, and that arm's files changed since
     When the maintainer validates the campaign file
     Then the campaign is rejected, naming the arm
+
+  # task-139, bug-034 (requirements 1.51)
+  @F7.1
+  Scenario: An arm holds no symbolic link, and every generator reads a directive file one way
+    Given an arm with a symbolic link in a file its arm.yaml does not declare
+    When the arm is loaded
+    Then it is refused, naming the link
+    Given a directive file with CRLF line endings and a heading with trailing spaces
+    When the project rules and the constitution are rendered
+    Then they are the same as for its LF twin, and the heading's trailing spaces are gone
+    Given a directive file whose code fence is left open
+    Then rendering it is refused, naming the file
