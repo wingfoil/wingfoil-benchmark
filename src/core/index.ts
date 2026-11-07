@@ -94,3 +94,5 @@ export {
   verdictPolicyIssue,
 } from './approver.js';
 export type { ApproverPolicy, InterventionKind } from './approver.js';
+export { configuringProfileSchema } from './configuring.js';
+export type { ConfiguringProfile } from './configuring.js';

@@ -165,7 +165,7 @@ function reservedIn(seed: string): string[] {
 }
 
 /** Every file below `directory` (one the loader found), sorted, not following links. */
-function filesUnder(directory: string): string[] {
+export function filesUnder(directory: string): string[] {
   return readdirSync(directory, { withFileTypes: true })
     .sort((a, b) => (a.name < b.name ? -1 : 1))
     .flatMap((entry) => {
