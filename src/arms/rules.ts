@@ -44,8 +44,8 @@ export function rulesGeneratorOf(tool: string | undefined): RulesGenerator | und
 export interface RulesPlace {
   /** The place as messages name it: a file, or a directory ending in `/`. */
   readonly place: string;
-  /** A path in it, which a configuration place must match and no state place may. */
-  readonly probe: string;
+  /** Paths in it, which a configuration place must match and no state place may. */
+  readonly probes: readonly string[];
 }
 
 /**
@@ -55,9 +55,14 @@ export interface RulesPlace {
  */
 export function rulesPlaceOf(tool: string | undefined): RulesPlace | undefined {
   if (tool === 'wingfoil') {
-    return { place: '.wingfoil/directives/custom/', probe: '.wingfoil/directives/custom/rule.md' };
+    // A file and a nested one, so that a glob naming a single file does not pass for the whole place; a state place
+    // inside it (an index, say) is allowed, state winning there (REQ-FMT-05 as amended in 1.50).
+    return {
+      place: '.wingfoil/directives/custom/',
+      probes: ['.wingfoil/directives/custom/rule.md', '.wingfoil/directives/custom/area/rule.md'],
+    };
   }
   const generator = rulesGeneratorOf(tool);
   if (generator === undefined) return undefined;
-  return { place: generator.path, probe: generator.path };
+  return { place: generator.path, probes: [generator.path] };
 }

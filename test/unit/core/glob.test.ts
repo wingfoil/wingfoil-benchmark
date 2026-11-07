@@ -35,6 +35,8 @@ describe('matchesGlob (REQ-FMT-05 as amended in 1.50: configuration and state pl
     ['a/../b', "must not hold '..'"],
     ['a\\b', 'must use forward slashes'],
     ['a//b', 'must not hold an empty segment'],
+    ['./a', "must not hold '.'"],
+    ['a/./b', "must not hold '.'"],
     ['a/***/b', "'**' must be a whole segment"],
     ['a**/b', "'**' must be a whole segment"],
     ['[ab].md', 'supports only *, ** and ?'],

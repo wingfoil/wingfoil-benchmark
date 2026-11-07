@@ -201,3 +201,88 @@ describe('configurations refused where a version cannot hold one (REQ-FMT-04 as 
     },
   );
 });
+
+describe('configurations: review round 1 (task-140)', () => {
+  it('refuses a configured/ that is not a directory', () => {
+    const { root, dir } = version();
+    writeFileSync(join(dir, 'configured'), 'x');
+
+    expect(issues(root)).toEqual([{ path: 'configured', message: "'configured' is not a directory" }]);
+  });
+
+  it('refuses a seed or a prompt inside configured/', () => {
+    const yaml = completeScenarioYaml('S9', '1.1');
+    const root = writeScenario(
+      { ...yaml, seed: 'configured/seed' },
+      [
+        'configured/seed/README.md',
+        'prompts/01.md',
+        'prompts/02.md',
+        'oracle/first/a.test.ts',
+        'oracle/first/vendor/cases.json',
+        'oracle/first/examples.json',
+        'oracle/all/b.test.ts',
+        'oracle/checks/decision.yaml',
+      ],
+      'S9',
+      '1.1',
+    );
+
+    expect(issues(root)).toContainEqual({ path: 'seed', message: "'seed' overlaps configured" });
+  });
+
+  it("refuses a configuration's Markdown file that leaves a code fence open, as an arm's (REQ-FMT-14, 1.51)", () => {
+    const { root, dir } = version();
+    writeConfiguration(dir, 'wingfoil-configured', {
+      '.wingfoil/directives/custom/r9.md': '# R9\n\n~~~\nopen\n',
+    });
+
+    expect(issues(root)).toEqual([
+      {
+        path: 'arms.wingfoil-configured',
+        message: "'arms/wingfoil-configured/.wingfoil/directives/custom/r9.md' has an unclosed code fence",
+      },
+    ]);
+  });
+
+  it('refuses a patch with no written record', () => {
+    const { root, dir } = version();
+    mkdirSync(join(dir, 'configured'));
+    writeFileSync(join(dir, 'configured', 'speckit-configured.patch'), 'diff\n');
+
+    expect(issues(root)).toEqual([
+      {
+        path: 'configured',
+        message:
+          "'configured/speckit-configured.patch' has no written record in 'configured/speckit-configured.json'",
+      },
+    ]);
+  });
+
+  it.each([
+    [
+      'a repeated path',
+      [
+        { path: 'a.md', sha256: 'd'.repeat(64) },
+        { path: 'a.md', sha256: 'e'.repeat(64) },
+      ],
+      'lists a path once',
+    ],
+    ['a path leaving the workspace', [{ path: '../a.md', sha256: 'd'.repeat(64) }], 'a workspace path'],
+    ['an absolute path', [{ path: '/a.md', sha256: 'd'.repeat(64) }], 'a workspace path'],
+    ['a backslash', [{ path: 'a\\b.md', sha256: 'd'.repeat(64) }], 'a workspace path'],
+  ])("refuses a record's files with %s", (_label, files, message) => {
+    const { root, dir } = version();
+    mkdirSync(join(dir, 'configured'));
+    writeFileSync(
+      join(dir, 'configured', 'wingfoil-configured.json'),
+      JSON.stringify([configuredRecord({}, { files })]),
+    );
+
+    expect(
+      issues(root)
+        .map((issue) => issue.message)
+        .join('\n'),
+    ).toContain(message);
+  });
+});

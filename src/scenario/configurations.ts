@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 import { ARM_NAME, configuredRecordsSchema, fail, ok, parseWith } from '../core/index.js';
@@ -39,6 +39,9 @@ export function loadConfigurations(
             message: `a version 1.0 holds no configuration: '${name}' (the approver's choice of 2026-11-06)`,
           })),
         );
+  }
+  if (hasRecords && !statSync(recordsDir).isDirectory()) {
+    return fail([{ path: CONFIGURED_DIR, message: `'${CONFIGURED_DIR}' is not a directory` }]);
   }
   const issues: Issue[] = [];
   const records = new Map<string, readonly ConfiguredRecord[]>();
@@ -83,6 +86,13 @@ export function loadConfigurations(
       records: records.get(name) ?? [],
       patchPath: join(recordsDir, `${name}.patch`),
     };
+  }
+  for (const name of [...patches].sort()) {
+    if (newestWritten(records.get(name) ?? []) !== undefined) continue;
+    issues.push({
+      path: CONFIGURED_DIR,
+      message: `'${CONFIGURED_DIR}/${name}.patch' has no written record in '${CONFIGURED_DIR}/${name}.json'`,
+    });
   }
   for (const [name, list] of records) {
     if (newestWritten(list) === undefined) continue;

@@ -23,6 +23,8 @@ Change configuration only:
 - Do not record any work in the tool: no task, change, specification, plan or other record.
 - Do not change the project's team: its members, their roles or the roles' definitions.
 - Do not write an instructions file at the project's root (such as `CLAUDE.md` or `AGENTS.md`).
+- Write new files only where the tool's documentation puts its configuration; the coding agent's own settings and
+  its MCP server setup are not part of it.
 - Do not implement or fix anything in the project.
 
 When you are done, reply with a short list of the files you wrote, each with one line on why.

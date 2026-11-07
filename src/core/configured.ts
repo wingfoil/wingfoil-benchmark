@@ -43,7 +43,26 @@ export const configuredRecordSchema = z
     date: z.iso.datetime(),
     outcome: z.enum(CONFIGURED_OUTCOMES),
     reason: z.string().min(1).optional(),
-    files: z.array(z.strictObject({ path: z.string().min(1), sha256 })).optional(),
+    files: z
+      .array(
+        z.strictObject({
+          path: z
+            .string()
+            .refine(
+              (path) =>
+                path !== '' &&
+                !path.includes('\\') &&
+                !path.startsWith('/') &&
+                path.split('/').every((segment) => segment !== '' && segment !== '.' && segment !== '..'),
+              { message: 'must be a workspace path: relative, /-separated, with no empty, . or .. segment' },
+            ),
+          sha256,
+        }),
+      )
+      .refine((files) => new Set(files.map((file) => file.path)).size === files.length, {
+        message: 'lists a path once',
+      })
+      .optional(),
   })
   .superRefine((record, context) => {
     const issue = (message: string, path: string) =>

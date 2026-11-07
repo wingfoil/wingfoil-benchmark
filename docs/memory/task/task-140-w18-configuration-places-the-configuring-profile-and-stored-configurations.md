@@ -128,3 +128,20 @@ amended in 1.33), which the checks confirm.
 - No real-agent session, nothing spent; no scenario version holds a configuration.
 
 ## Review
+
+### Round 1 (a fresh read-only agent, clone `/tmp/claude-1000/review1-t140-*`, at `162975ca`)
+
+Main's HEAD and reflog the same before and after (`d989138f`).
+
+| Severity   | Finding                                                                                         | Outcome                                                                                                       |
+| ---------- | ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| should-fix | A `configured` that is a file crashed the loader (`ENOTDIR`)                                    | Refused, named; red test first                                                                                |
+| should-fix | The open-fence rule reaches a configuration, which 1.52 did not state                          | Kept and stated in 1.52 (REQ-FMT-04): the session refuses such a result (next task); characterization test    |
+| should-fix | No test for `configured/` among the paths a seed or a prompt must not overlap                  | Test added (characterization: the code already refused it)                                                    |
+| nit        | An orphan patch was accepted                                                                    | Refused, named; 1.52; red test first                                                                          |
+| nit        | A record's file paths: duplicates, `..`, absolute paths, backslashes accepted; dates not ordered | Paths refused (red tests first), 1.52; the order of dates left to the next task, which appends the records    |
+| nit        | A `.` segment passed the glob check and never matched                                           | Refused; 1.52; red test first                                                                                 |
+| nit        | WingFoil's rules place checked by one probe file                                                | A nested probe added (red test first), 1.52; a state glob over part of the place stays allowed (task-138's drafted scenario has one) |
+| nit        | The profile loader does not check `harnesses` keys or the effort against `models.default`      | Left to the next task's command, which reads the profile with the arms; noted here                            |
+| nit        | The prompt's step 2 could lead the agent to the agent's own settings, outside every place      | A line added: new files only where the tool's documentation puts its configuration, not the agent's settings or MCP setup |
+

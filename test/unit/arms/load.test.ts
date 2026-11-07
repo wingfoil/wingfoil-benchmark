@@ -350,6 +350,7 @@ describe('loadArm: configuration and state places (REQ-FMT-05 as amended in 1.50
 
   it.each([
     ['wingfoil', '.wingfoil/dna.yaml', "'.wingfoil/directives/custom/'"],
+    ['wingfoil', '.wingfoil/directives/custom/rule.md', "'.wingfoil/directives/custom/'"],
     ['speckit', '.specify/templates/**', "'.specify/memory/constitution.md'"],
     ['openspec', 'openspec/specs/**', "'openspec/config.yaml'"],
   ])("refuses %s's places when they leave out its project rules' place", (tool, glob, place) => {

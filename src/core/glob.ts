@@ -12,6 +12,7 @@ export function globIssue(glob: string): string | undefined {
   if (glob.startsWith('/')) return 'must be relative to the workspace';
   const segments = (glob.endsWith('/') ? glob.slice(0, -1) : glob).split('/');
   if (segments.includes('..')) return "must not hold '..'";
+  if (segments.includes('.')) return "must not hold '.'";
   if (segments.includes('')) return 'must not hold an empty segment';
   if (segments.some((segment) => segment.includes('**') && segment !== '**'))
     return "'**' must be a whole segment";

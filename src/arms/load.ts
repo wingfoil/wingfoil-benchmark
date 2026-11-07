@@ -101,7 +101,10 @@ function placeIssues(spec: ArmFile): Issue[] {
         ];
   });
   const rules = rulesPlaceOf(spec.requires);
-  if (rules !== undefined && !isConfigurationPath({ name: spec.name, configuration, state }, rules.probe)) {
+  if (
+    rules !== undefined &&
+    !rules.probes.every((probe) => isConfigurationPath({ name: spec.name, configuration, state }, probe))
+  ) {
     issues.push({
       path: 'configuration',
       message: `does not include the place of the project rules, '${rules.place}'`,
