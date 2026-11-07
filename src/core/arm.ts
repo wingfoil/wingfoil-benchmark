@@ -1,6 +1,8 @@
 import { isAbsolute } from 'node:path';
 import { z } from 'zod';
 
+import { globIssue } from './glob.js';
+
 /** An arm's name: its directory under `arms/` (REQ-ARC-03). */
 export const ARM_NAME = /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/;
 
@@ -11,6 +13,21 @@ const relativePath = z
   .refine((path) => !isAbsolute(path) && !path.split(/[\\/]/).includes('..'), {
     message: 'must be a relative path inside the arm directory',
   });
+
+/**
+ * A configuration or state place (REQ-FMT-05 as amended in 1.50): a glob relative to the workspace, and the tool's
+ * documentation it is read from.
+ */
+const placeSchema = z.strictObject({
+  glob: z.string().superRefine((glob, context) => {
+    const issue = globIssue(glob);
+    if (issue !== undefined) context.addIssue({ code: 'custom', message: `'${glob}' ${issue}` });
+  }),
+  source: z.string().min(1, 'names the documentation the glob is read from'),
+});
+
+/** A configuration or state place, as declared. */
+export type Place = z.infer<typeof placeSchema>;
 
 /** REQ-FMT-05: the `arm.yaml` of `arms/<arm>/`. Unknown keys are rejected. */
 export const armSchema = z.strictObject({
@@ -56,6 +73,13 @@ export const armSchema = z.strictObject({
    * text only.
    */
   verdict_hook: relativePath.optional(),
+  /**
+   * REQ-FMT-05 as amended in 1.50 (F7.5): where a harness arm's tool and agent keep their configuration in the
+   * workspace, the only paths a configuring session may write (REQ-RUN-20).
+   */
+  configuration: z.array(placeSchema).optional(),
+  /** Where the tool keeps its state and records: state even inside a configuration place. Required beside it. */
+  state: z.array(placeSchema).optional(),
 });
 
 /** An `arm.yaml` as parsed, with relative paths. */
@@ -82,6 +106,10 @@ export interface Arm {
   readonly telemetryOff?: readonly string[];
   /** The verdict hook, relative to {@link dir} (task-118); absent for an arm with no approval mechanism. */
   readonly verdictHook?: string;
+  /** The configuration places (REQ-FMT-05 as amended in 1.50); absent for an arm that declares none. */
+  readonly configuration?: readonly Place[];
+  /** The state places, declared beside {@link configuration}. */
+  readonly state?: readonly Place[];
   /**
    * Where the arm was read when the working tree no longer holds its pinned digest (REQ-FMT-13 as amended in 1.33):
    * the commit, and the repository-shaped root it was written under. Absent for an arm read from the working tree.

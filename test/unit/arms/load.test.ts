@@ -260,3 +260,130 @@ describe('loadArm (REQ-FMT-05)', () => {
     ]);
   });
 });
+
+describe('loadArm: configuration and state places (REQ-FMT-05 as amended in 1.50, task-140)', () => {
+  const RULES = { glob: '.wingfoil/directives/custom/**', source: 'docs/directives.md' };
+  const STATE = { glob: '.wingfoil/memory/**', source: 'docs/memory.md' };
+
+  function withPlaces(extra: Record<string, unknown>, name = 'wingfoil') {
+    const root = tempDir('bench-arm-');
+    writeArmAt(root, name, { ...completeArmYaml(name), ...extra }, COMPLETE_ARM_FILES);
+    return root;
+  }
+
+  it('loads the places, each glob with its source', () => {
+    const root = withPlaces({ configuration: [RULES], state: [STATE] });
+
+    const result = loadArm(root, 'wingfoil');
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.configuration).toEqual([RULES]);
+    expect(result.value.state).toEqual([STATE]);
+  });
+
+  it('accepts an empty state stated so, where the tool keeps none', () => {
+    const result = loadArm(withPlaces({ configuration: [RULES], state: [] }), 'wingfoil');
+
+    expect(result.ok && result.value.state).toEqual([]);
+  });
+
+  it('leaves an arm with neither field as it was: no places', () => {
+    const result = loadArm(withPlaces({}), 'wingfoil');
+
+    expect(result.ok && 'configuration' in result.value).toBe(false);
+  });
+
+  it('refuses configuration without state, and state without configuration', () => {
+    expect(issuesOf(withPlaces({ configuration: [RULES] }))).toEqual([
+      {
+        path: 'state',
+        message: 'is required beside configuration: an empty list where the tool keeps no state',
+      },
+    ]);
+    expect(issuesOf(withPlaces({ state: [STATE] }))).toEqual([
+      { path: 'state', message: 'is declared only beside configuration' },
+    ]);
+  });
+
+  it('refuses places on an arm with no harness tool', () => {
+    const root = tempDir('bench-arm-');
+    writeArmAt(root, 'baseline', { ...plainArmYaml(), configuration: [RULES], state: [] }, [
+      'setup.sh',
+      'manual.md',
+    ]);
+
+    expect(issuesOf(root, 'baseline')).toEqual([
+      { path: 'configuration', message: 'only a harness arm (requires) declares configuration places' },
+    ]);
+  });
+
+  it('refuses a place with no source, or with an unknown field', () => {
+    const issues = issuesOf(
+      withPlaces({ configuration: [{ glob: RULES.glob }, { ...RULES, why: 'x' }], state: [] }),
+    );
+
+    expect(issues.map((issue) => issue.path)).toEqual(['configuration[0].source', 'configuration[1].why']);
+  });
+
+  it('refuses a glob it cannot match, naming it', () => {
+    expect(
+      issuesOf(withPlaces({ configuration: [RULES], state: [{ glob: '../x/**', source: 'a' }] })),
+    ).toEqual([{ path: 'state[0].glob', message: "'../x/**' must not hold '..'" }]);
+  });
+
+  it.each([['*.md'], ['**'], ['CLAUDE.md'], ['AGENTS.md'], ['**/*.md']])(
+    "refuses a configuration glob '%s' that matches the manual's path",
+    (glob) => {
+      const issues = issuesOf(withPlaces({ configuration: [RULES, { glob, source: 'a' }], state: [] }));
+
+      expect(issues).toEqual([
+        {
+          path: 'configuration[1].glob',
+          message: expect.stringMatching(
+            new RegExp(`^'.+' matches the manual's path '(CLAUDE|AGENTS)\\.md'$`),
+          ),
+        },
+      ]);
+    },
+  );
+
+  it.each([
+    ['wingfoil', '.wingfoil/dna.yaml', "'.wingfoil/directives/custom/'"],
+    ['speckit', '.specify/templates/**', "'.specify/memory/constitution.md'"],
+    ['openspec', 'openspec/specs/**', "'openspec/config.yaml'"],
+  ])("refuses %s's places when they leave out its project rules' place", (tool, glob, place) => {
+    const root = withPlaces({ requires: tool, configuration: [{ glob, source: 'a' }], state: [] });
+
+    expect(issuesOf(root)).toEqual([
+      { path: 'configuration', message: `does not include the place of the project rules, ${place}` },
+    ]);
+  });
+
+  it("refuses the rules' place when a state glob makes it state", () => {
+    const root = withPlaces({
+      requires: 'speckit',
+      configuration: [{ glob: '.specify/**', source: 'a' }],
+      state: [{ glob: '.specify/memory/**', source: 'b' }],
+    });
+
+    expect(issuesOf(root)).toEqual([
+      {
+        path: 'configuration',
+        message: "does not include the place of the project rules, '.specify/memory/constitution.md'",
+      },
+    ]);
+  });
+
+  it.each([
+    ['speckit', '.specify/memory/constitution.md'],
+    ['openspec', 'openspec/config.yaml'],
+  ])("accepts %s's places when they hold its project rules' place", (tool, glob) => {
+    const result = loadArm(
+      withPlaces({ requires: tool, configuration: [{ glob, source: 'a' }], state: [] }),
+      'wingfoil',
+    );
+
+    expect(result.ok).toBe(true);
+  });
+});

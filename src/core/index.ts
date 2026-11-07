@@ -34,7 +34,8 @@ export { dependenciesOf, foldText, linesOf, satisfies, satisfiesWords } from './
 export { leakScanSchema } from './leak-scan.js';
 export { fencedLines, hasUnclosedFence, toLf } from './markdown.js';
 export type { LeakScanDeclarations } from './leak-scan.js';
-export type { Arm, ArmFile } from './arm.js';
+export type { Arm, ArmFile, Place } from './arm.js';
+export { globIssue, matchesGlob } from './glob.js';
 export {
   campaignConsistency,
   campaignSchema,
