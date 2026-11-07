@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { isAbsolute, join, relative } from 'node:path';
 import { describe, expect, it, onTestFinished } from 'vitest';
 
@@ -880,5 +880,42 @@ describe('a separate approver and the governance checks (task-118, dl-029)', () 
     const messages = issuesOf(governed({ a: noFile, b: noKey })).map((issue) => issue.message);
     expect(messages.some((m) => /is not a JSON file of the seed/.test(m))).toBe(true);
     expect(messages.some((m) => /has no string 'release'/.test(m))).toBe(true);
+  });
+});
+
+describe('symbolic links and directive files (task-139, bug-034)', () => {
+  it('refuses a scenario.yaml that is a symbolic link leading outside the scenario', () => {
+    const root = writeScenario();
+    const dir = join(root, 'S9', '1.0');
+    const outside = join(tempDir('bench-outside-'), 'scenario.yaml');
+    writeFileSync(outside, readFileSync(join(dir, 'scenario.yaml')));
+    rmSync(join(dir, 'scenario.yaml'));
+    symlinkSync(outside, join(dir, 'scenario.yaml'));
+    expect(issuesOf(root)).toEqual([{ path: 'scenario.yaml', message: "'scenario.yaml' is a symbolic link" }]);
+  });
+
+  it('refuses a symbolic link anywhere under the version, naming each', () => {
+    const root = writeScenario();
+    const dir = join(root, 'S9', '1.0');
+    mkdirSync(join(dir, 'seed', 'src', 'deep'), { recursive: true });
+    symlinkSync('../../README.md', join(dir, 'seed', 'src', 'deep', 'readme.md'));
+    symlinkSync('01.md', join(dir, 'prompts', 'again.md'));
+    expect(issuesOf(root)).toEqual([
+      { path: 'prompts/again.md', message: "'prompts/again.md' is a symbolic link" },
+      { path: 'seed/src/deep/readme.md', message: "'seed/src/deep/readme.md' is a symbolic link" },
+    ]);
+  });
+
+  it("refuses a directive file of an arm's configuration with an unclosed code fence", () => {
+    const root = writeScenario();
+    const custom = join(root, 'S9', '1.0', 'arms', 'wingfoil', '.wingfoil', 'directives', 'custom');
+    mkdirSync(custom, { recursive: true });
+    writeFileSync(join(custom, 'r1.md'), '---\nid: r1\ntitle: One\n---\n\nText.\n\n```ts\nconst a = 1;\n');
+    expect(issuesOf(root)).toEqual([
+      {
+        path: 'arms.wingfoil',
+        message: "'arms/wingfoil/.wingfoil/directives/custom/r1.md' has an unclosed code fence",
+      },
+    ]);
   });
 });
