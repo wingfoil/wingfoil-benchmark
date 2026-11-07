@@ -99,6 +99,8 @@ Code and tests only: no real-agent session, nothing spent.
   reads: deliberate, as REQ-FMT-04 as amended in 1.51 states, so that an agent-written configuration (F7.5) is
   checked whole.
 - `requirements.md` 1.51.
+- **Full suites** (2026-11-07, on the approver's go, after the load watcher): `scripts/full-suites.sh` on `be255c12`,
+  10:04–10:15, LINT 0 TEST 0 BUILD 0 BIN 0 DOCKER 0.
 
 ## Review
 
