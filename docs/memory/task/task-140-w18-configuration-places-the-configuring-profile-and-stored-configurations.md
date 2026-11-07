@@ -131,6 +131,8 @@ amended in 1.33), which the checks confirm.
   tree's, which the arm's new places change. Pre-review's targeted tests did not include it. The test now pins the
   literal digest and states that the working tree's differs; its second test still resolves the pin, from the
   history. The profile is unchanged.
+- Full suites, second run at `255f4f2e`: LINT 0, TEST 0, BUILD 0, BIN 0, DOCKER 0; unit 2198 passed and 10 skipped of
+  2208, in 131 files.
 
 ## Review
 
