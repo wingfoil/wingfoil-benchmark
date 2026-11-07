@@ -45,8 +45,9 @@ interface Declared {
  */
 export function loadScenario(scenariosRoot: string, id: string, version: string): Result<Scenario> {
   const dir = resolve(scenariosRoot, id, version);
-  // A version that is itself a link is refused; one that is not a directory fails below, reading its scenario.yaml.
-  if (existsSync(dir) && lstatSync(dir).isSymbolicLink()) {
+  // A version that is itself a link, dangling or not, is refused; one that is not a directory fails below, reading its
+  // scenario.yaml. The scenarios root and an id directory may be links: the rule is the version's (REQ-FMT-04).
+  if (lstatSync(dir, { throwIfNoEntry: false })?.isSymbolicLink() === true) {
     return fail([{ path: SCENARIO_FILE, message: `'${id}/${version}' is a symbolic link` }]);
   }
   const links = existsSync(dir) && statSync(dir).isDirectory() ? linksUnder(dir) : [];

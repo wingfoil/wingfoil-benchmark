@@ -114,3 +114,6 @@ reflog checked unchanged after each.
 | 3 | every `.md` of a scenario's arms is checked, not only the generators' | kept, deliberate, stated in the Execution notes |
 | 4 | the arms-link and "leads outside" branches are now unreachable | marked defensive |
 | 5 | a version path that is a file throws; a linked version directory is followed | a linked version refused; a non-directory left to `scenario.yaml`'s read |
+
+**Round 2** (`7415e4fe`): 0 blockers, 0 should-fix, 2 nits, taken: a dangling version link refused as a link; a linked
+scenarios root or id directory allowed, stated in `load.ts`. Round 1's findings resolved. No further round: nits only.
