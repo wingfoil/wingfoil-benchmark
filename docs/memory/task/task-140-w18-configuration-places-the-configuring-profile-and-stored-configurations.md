@@ -126,6 +126,11 @@ amended in 1.33), which the checks confirm.
 - For the approver at the gate: the prompt's text (`configuring/prompt.md`); the places left out (`.mcp.json`,
   `.claude/settings.json`, a whole `.claude/**`); the profile's 5 EUR ceiling per session (the dry-run profile's cap).
 - No real-agent session, nothing spent; no scenario version holds a configuration.
+- Full suites, first run at `2de02609`: LINT 0, TEST 1, BUILD 0, BIN 0, DOCKER 0. One unit test failed:
+  `s10-calibration.test.ts` compared S10's pinned wingfoil digest (`62bcf64e6dde`, campaign-008's) with the working
+  tree's, which the arm's new places change. Pre-review's targeted tests did not include it. The test now pins the
+  literal digest and states that the working tree's differs; its second test still resolves the pin, from the
+  history. The profile is unchanged.
 
 ## Review
 
