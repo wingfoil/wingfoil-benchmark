@@ -111,6 +111,20 @@ describe("the scoring's path helpers (task-139, bug-034)", () => {
     );
   });
 
+  it("never reads a hunk's content line as a path (review round 1)", () => {
+    const patch = [
+      'diff --git a/sqlf b/sqlf',
+      'index 1..2 100644',
+      '--- a/sqlf',
+      '+++ b/sqlf',
+      '@@ -1,2 +1,2 @@',
+      '--- a/sql',
+      '+++ b/other',
+      ' kept',
+    ].join('\n');
+    expect([...patchPaths(patch)]).toEqual(['sqlf']);
+  });
+
   it('lists no symbolic link and enters no linked directory', () => {
     const root = tree({ 'src/a.ts': 'export const a = 1;\n' });
     const outside = tree({ 'secret.ts': 'export const s = 1;\n' });
