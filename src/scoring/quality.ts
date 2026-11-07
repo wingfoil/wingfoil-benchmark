@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { z } from 'zod';
 
@@ -59,31 +59,84 @@ function byCodeUnit(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
 }
 
-/** Every file under `root`, relative and with `/`, `node_modules/` not entered. */
+/**
+ * Every file under `root`, relative and with `/`, `node_modules/` and `.git/` not entered; a symbolic link is neither
+ * listed nor followed (task-139, bug-034), so a link is never measured as the file it points to.
+ */
 export function filesUnder(root: string): string[] {
   const found: string[] = [];
   const walk = (directory: string): void => {
-    for (const name of readdirSync(directory)) {
-      const path = join(directory, name);
-      if (statSync(path).isDirectory()) {
-        if (name !== 'node_modules' && name !== '.git') walk(path);
-      } else found.push(relative(root, path).split(sep).join('/'));
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const path = join(directory, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name !== 'node_modules' && entry.name !== '.git') walk(path);
+      } else if (entry.isFile()) found.push(relative(root, path).split(sep).join('/'));
     }
   };
   walk(root);
   return found;
 }
 
-/** The paths a stored patch touches, on either side: `diff --git a/<path> b/<path>`, quoted or not. */
+/** A path as git writes it in a patch: C-quoted when it holds a special character, its octal escapes UTF-8 bytes. */
+function unquote(text: string): string {
+  if (!text.startsWith('"')) return text;
+  const bytes: number[] = [];
+  const named: Record<string, number> = { a: 7, b: 8, t: 9, n: 10, v: 11, f: 12, r: 13, '"': 34, '\\': 92 };
+  for (let i = 1; i < text.length - 1; i += 1) {
+    const char = text.charAt(i);
+    if (char !== '\\') {
+      bytes.push(...Buffer.from(char, 'utf8'));
+      continue;
+    }
+    const next = text.charAt(i + 1);
+    if (/[0-7]/.test(next)) {
+      bytes.push(Number.parseInt(text.slice(i + 1, i + 4), 8));
+      i += 3;
+    } else {
+      bytes.push(named[next] ?? next.charCodeAt(0));
+      i += 1;
+    }
+  }
+  return Buffer.from(bytes).toString('utf8');
+}
+
+/**
+ * The paths a stored patch touches, on either side (task-139, bug-034): each `diff --git` header's two paths, quoted
+ * or not, spaces included (an unquoted header names the same path twice unless the file was renamed or copied, and
+ * then its `rename`/`copy` lines name both), and every `---`/`+++` path of a file's extended header, never a hunk's line.
+ */
 export function patchPaths(patch: string): Set<string> {
   const paths = new Set<string>();
+  const add = (path: string) => {
+    if (path !== '/dev/null') paths.add(path);
+  };
+  // Only a file's extended header names paths: from its `diff --git` line to its first hunk or binary patch.
+  let header = false;
   for (const line of patch.split('\n')) {
-    const quoted = /^diff --git "a\/(.*)" "b\/(.*)"$/.exec(line);
-    const plain = quoted ?? /^diff --git a\/(\S+) b\/(\S+)$/.exec(line);
-    if (plain !== null) {
-      paths.add(plain[1] as string);
-      paths.add(plain[2] as string);
+    if (line.startsWith('@@') || line.startsWith('GIT binary patch')) header = false;
+    const quoted = /^diff --git ("(?:[^"\\]|\\.)*"|a\/\S*) ("(?:[^"\\]|\\.)*"|b\/.*)$/.exec(line);
+    if (line.startsWith('diff --git ')) {
+      const rest = line.slice('diff --git '.length);
+      const half = (rest.length - 1) / 2;
+      if (quoted !== null && (quoted[1]?.startsWith('"') === true || quoted[2]?.startsWith('"') === true)) {
+        add(unquote(quoted[1] as string).replace(/^a\//, ''));
+        add(unquote(quoted[2] as string).replace(/^b\//, ''));
+      } else if (
+        Number.isInteger(half) &&
+        rest.slice(2, half) === rest.slice(half + 3) &&
+        rest.charAt(half) === ' '
+      ) {
+        add(rest.slice(2, half));
+      }
+      header = true;
+      continue;
     }
+    if (!header) continue;
+    const named =
+      /^(?:rename|copy) (?:from|to) (.*)$/.exec(line) ?? /^(?:---|\+\+\+) [ab]\/(.*?)\t?$/.exec(line);
+    if (named !== null) add(unquote(named[1] as string));
+    const quotedSide = /^(?:---|\+\+\+) ("(?:[^"\\]|\\.)*")\t?$/.exec(line);
+    if (quotedSide !== null) add(unquote(quotedSide[1] as string).replace(/^[ab]\//, ''));
   }
   return paths;
 }

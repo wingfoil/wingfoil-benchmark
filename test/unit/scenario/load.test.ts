@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { isAbsolute, join, relative } from 'node:path';
 import { describe, expect, it, onTestFinished } from 'vitest';
 
@@ -279,9 +279,8 @@ describe('loadScenario', () => {
     const files = COMPLETE_FILES.filter((file) => !file.startsWith('seed/'));
     const root = writeScenario(completeScenarioYaml(), files);
     symlinkSync(tempDir('bench-outside-'), join(root, 'S9', '1.0', 'seed'));
-    expect(issuesOf(root)).toEqual([
-      { path: 'seed', message: "'seed' leads outside the scenario directory" },
-    ]);
+    // A link is refused as a link, before anything is read through it (task-139, bug-034).
+    expect(issuesOf(root)).toEqual([{ path: 'seed', message: "'seed' is a symbolic link" }]);
   });
 
   it('explains that an unquoted version is read as a number', () => {
@@ -337,7 +336,10 @@ describe('loadScenario', () => {
     const dir = join(root, 'S9', '1.0');
     mkdirSync(join(dir, 'arms'));
     make(dir);
-    expect(issuesOf(root)).toEqual([{ path: 'arms', message }]);
+    // A link anywhere under the version is refused as itself, first (task-139, bug-034).
+    expect(issuesOf(root)).toEqual([
+      { path: /symbolic link/.test(message) ? 'arms/wingfoil' : 'arms', message },
+    ]);
   });
 
   it("keeps the seed and the prompts apart from an arm's configuration: the baseline must not see a rule", () => {
@@ -400,13 +402,7 @@ describe('loadScenario', () => {
     const files = COMPLETE_FILES.filter((file) => !file.startsWith('seed/'));
     const root = writeScenario(completeScenarioYaml(), files);
     symlinkSync(join(root, 'S9', '1.0', 'oracle'), join(root, 'S9', '1.0', 'seed'));
-    expect(issuesOf(root)).toEqual([
-      { path: 'seed', message: "'seed' overlaps oracle.suites[0].dir" },
-      { path: 'seed', message: "'seed' overlaps oracle.suites[1].dir" },
-      { path: 'seed', message: "'seed' overlaps oracle.checks[0]" },
-      { path: 'seed', message: "'seed' overlaps oracle.third_party[0].files[0]" },
-      { path: 'seed', message: "'seed' overlaps oracle.third_party[1].files[0]" },
-    ]);
+    expect(issuesOf(root)).toEqual([{ path: 'seed', message: "'seed' is a symbolic link" }]);
   });
 
   it.each([
@@ -575,9 +571,7 @@ describe('loadScenario — oracle suites (dl-001)', () => {
     const files = COMPLETE_FILES.filter((file) => !file.startsWith('oracle/all/'));
     const root = writeScenario(completeScenarioYaml(), files);
     symlinkSync(join(root, 'S9', '1.0', 'oracle', 'first'), join(root, 'S9', '1.0', 'oracle', 'all'));
-    expect(issuesOf(root)).toEqual([
-      { path: 'oracle.suites[1].dir', message: "'oracle.suites[1].dir' overlaps oracle.suites[0].dir" },
-    ]);
+    expect(issuesOf(root)).toEqual([{ path: 'oracle/all', message: "'oracle/all' is a symbolic link" }]);
   });
 
   it('refuses a check inside a suite: a check is a pattern file, not a test to run', () => {
@@ -704,10 +698,7 @@ describe('loadScenario — third-party material (dl-002)', () => {
     writeFileSync(outside, '');
     symlinkSync(outside, join(root, 'S9', '1.0', 'oracle/first/link.json'));
     expect(issuesOf(root)).toEqual([
-      {
-        path: 'oracle.third_party[0].files[0]',
-        message: "'oracle/first/link.json' leads outside the scenario directory",
-      },
+      { path: 'oracle/first/link.json', message: "'oracle/first/link.json' is a symbolic link" },
     ]);
   });
 
@@ -880,5 +871,52 @@ describe('a separate approver and the governance checks (task-118, dl-029)', () 
     const messages = issuesOf(governed({ a: noFile, b: noKey })).map((issue) => issue.message);
     expect(messages.some((m) => /is not a JSON file of the seed/.test(m))).toBe(true);
     expect(messages.some((m) => /has no string 'release'/.test(m))).toBe(true);
+  });
+});
+
+describe('symbolic links and directive files (task-139, bug-034)', () => {
+  it('refuses a scenario.yaml that is a symbolic link leading outside the scenario', () => {
+    const root = writeScenario();
+    const dir = join(root, 'S9', '1.0');
+    const outside = join(tempDir('bench-outside-'), 'scenario.yaml');
+    writeFileSync(outside, readFileSync(join(dir, 'scenario.yaml')));
+    rmSync(join(dir, 'scenario.yaml'));
+    symlinkSync(outside, join(dir, 'scenario.yaml'));
+    expect(issuesOf(root)).toEqual([
+      { path: 'scenario.yaml', message: "'scenario.yaml' is a symbolic link" },
+    ]);
+  });
+
+  it('refuses a version directory that is itself a symbolic link (review round 1)', () => {
+    const real = writeScenario();
+    const root = tempDir('bench-linked-');
+    mkdirSync(join(root, 'S9'));
+    symlinkSync(join(real, 'S9', '1.0'), join(root, 'S9', '1.0'));
+    expect(issuesOf(root)).toEqual([{ path: 'scenario.yaml', message: "'S9/1.0' is a symbolic link" }]);
+  });
+
+  it('refuses a symbolic link anywhere under the version, naming each', () => {
+    const root = writeScenario();
+    const dir = join(root, 'S9', '1.0');
+    mkdirSync(join(dir, 'seed', 'src', 'deep'), { recursive: true });
+    symlinkSync('../../README.md', join(dir, 'seed', 'src', 'deep', 'readme.md'));
+    symlinkSync('01.md', join(dir, 'prompts', 'again.md'));
+    expect(issuesOf(root)).toEqual([
+      { path: 'prompts/again.md', message: "'prompts/again.md' is a symbolic link" },
+      { path: 'seed/src/deep/readme.md', message: "'seed/src/deep/readme.md' is a symbolic link" },
+    ]);
+  });
+
+  it("refuses a directive file of an arm's configuration with an unclosed code fence", () => {
+    const root = writeScenario();
+    const custom = join(root, 'S9', '1.0', 'arms', 'wingfoil', '.wingfoil', 'directives', 'custom');
+    mkdirSync(custom, { recursive: true });
+    writeFileSync(join(custom, 'r1.md'), '---\nid: r1\ntitle: One\n---\n\nText.\n\n```ts\nconst a = 1;\n');
+    expect(issuesOf(root)).toEqual([
+      {
+        path: 'arms.wingfoil',
+        message: "'arms/wingfoil/.wingfoil/directives/custom/r1.md' has an unclosed code fence",
+      },
+    ]);
   });
 });

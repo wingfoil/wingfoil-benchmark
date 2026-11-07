@@ -9,20 +9,23 @@ import {
   rmSync,
   statSync,
   writeFileSync,
+  symlinkSync,
 } from 'node:fs';
 import { join } from 'node:path';
 
 import { parse, stringify } from 'yaml';
 import { describe, expect, it } from 'vitest';
 
-import { armDigest } from '../../src/arms/index.js';
+import { armDigest, loadArm, renderConstitution, renderProjectRules } from '../../src/arms/index.js';
 import { campaignId } from '../../src/campaign/index.js';
 import { checkCampaign } from '../../src/cli/index.js';
 import type { RunOnceRequest } from '../../src/core/index.js';
 import { runCampaign } from '../../src/runner/index.js';
 import { escapeHtml } from '../../src/site/render.js';
 import { repoPath } from '../support/paths.js';
+import { COMPLETE_ARM_FILES, completeArmYaml, writeArmAt } from '../support/arm-fixture.js';
 import { doubles, fakeBuild } from '../support/runner-doubles.js';
+import { tempDir } from '../support/scenario-fixture.js';
 import { completeCampaignYaml, writeRepo } from '../support/campaign-fixture.js';
 import { registerEntry, writeRegister } from '../support/eligibility-fixture.js';
 import { EXECUTION } from '../support/score-fixture.js';
@@ -647,5 +650,34 @@ describe('competitors.feature, contesting a setup (F7.2, REQ-RES-10, task-073)',
       readFileSync(join(root, 'site', 'abcdef012345', '1', 'material', 'setup-wingfoil.html'), 'utf8'),
     ).toContain('href="../../../fedcba987654/1/index.html"');
     // The execution's values stay published: its landing page is the one built before the correction.
+  });
+});
+
+describe('links in an arm and directive files read one way (task-139, bug-034)', () => {
+  it('@F7.1 An arm holds no symbolic link, and every generator reads a directive file one way', () => {
+    const root = tempDir('bench-arm-');
+    const dir = writeArmAt(root, 'wingfoil', completeArmYaml(), COMPLETE_ARM_FILES);
+    symlinkSync('manual.md', join(dir, 'NOTES.md'));
+    const arm = loadArm(root, 'wingfoil');
+    expect(arm.ok ? [] : arm.issues).toEqual([
+      { path: 'NOTES.md', message: "'NOTES.md' is a symbolic link" },
+    ]);
+
+    const rule = (body: string) =>
+      new Map([
+        ['.wingfoil/roles.yaml', 'assignments:\n  developer:\n    - r1\n'],
+        [
+          '.wingfoil/directives/custom/r1.md',
+          `---\nid: r1\nname: r1\ntype: directive\nkind: custom\ntitle: "One"\n---\n\n${body}`,
+        ],
+      ]);
+    const lf = '# One\n\nText.\n\n## Why   \n\nBecause.\n';
+    const crlf = lf.replace(/\n/g, '\r\n');
+    expect(renderProjectRules(rule(crlf))).toBe(renderProjectRules(rule(lf)));
+    expect(renderConstitution(rule(crlf))).toBe(renderConstitution(rule(lf)));
+    expect(renderConstitution(rule(lf))).toMatch(/#+ Why\n/);
+    expect(() => renderProjectRules(rule('```\nopen\n'))).toThrow(
+      "'.wingfoil/directives/custom/r1.md' has an unclosed code fence",
+    );
   });
 });

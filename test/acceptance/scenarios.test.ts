@@ -1,4 +1,13 @@
-import { copyFileSync, cpSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  copyFileSync,
+  cpSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { join, relative } from 'node:path';
 import { stringify } from 'yaml';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -588,5 +597,34 @@ describe('S2, S3 and S8 1.1 (task-132)', () => {
       // And the 1.0 versions stay registered, unchanged
       expect(validateScenario({ id, version: '1.0' }, repoPath('.')).ok).toBe(true);
     }
+  });
+});
+
+describe('symbolic links and open fences in a scenario version (task-139, bug-034)', () => {
+  it('@F3.1 A scenario version holds no symbolic link and no directive file with an open fence', () => {
+    const messages = (root: string) => {
+      const result = loadScenario(root, 'S9', '1.0');
+      return result.ok ? [] : result.issues.map((issue) => issue.message);
+    };
+    const linked = writeScenario();
+    const dir = join(linked, 'S9', '1.0');
+    const outside = join(tempDir('bench-outside-'), 'scenario.yaml');
+    writeFileSync(outside, readFileSync(join(dir, 'scenario.yaml')));
+    rmSync(join(dir, 'scenario.yaml'));
+    symlinkSync(outside, join(dir, 'scenario.yaml'));
+    expect(messages(linked)).toEqual(["'scenario.yaml' is a symbolic link"]);
+
+    const deep = writeScenario();
+    mkdirSync(join(deep, 'S9', '1.0', 'seed', 'lib'), { recursive: true });
+    symlinkSync('../README.md', join(deep, 'S9', '1.0', 'seed', 'lib', 'readme.md'));
+    expect(messages(deep)).toEqual(["'seed/lib/readme.md' is a symbolic link"]);
+
+    const fenced = writeScenario();
+    const custom = join(fenced, 'S9', '1.0', 'arms', 'wingfoil', '.wingfoil', 'directives', 'custom');
+    mkdirSync(custom, { recursive: true });
+    writeFileSync(join(custom, 'r1.md'), '---\nid: r1\ntitle: One\n---\n\n~~~\nopen\n');
+    expect(messages(fenced)).toEqual([
+      "'arms/wingfoil/.wingfoil/directives/custom/r1.md' has an unclosed code fence",
+    ]);
   });
 });

@@ -140,3 +140,11 @@ Feature: Scoring runs with defined, reproducible metrics
     Given two runs of S3 that record the D3 revision, one in a WingFoil decision-log and one in a plain notes file
     When M-F1 is computed for both
     Then D3 counts as consistent in both runs
+
+  # task-139, bug-034 (requirements 1.51)
+  @F4.2
+  Scenario: The scoring reads a patch's paths exactly and follows no symbolic link
+    Given a setup patch touching a path with a space, a quoted path and a renamed file
+    Then every one of their paths is read, and none is measured
+    Given a snapshot holding a symbolic link to a file and one to a directory
+    Then neither is listed or entered

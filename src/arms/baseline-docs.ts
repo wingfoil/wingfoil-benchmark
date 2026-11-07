@@ -1,5 +1,7 @@
 import { parse } from 'yaml';
 
+import { fencedLines, hasUnclosedFence, toLf } from '../core/index.js';
+
 /**
  * The baseline-docs generator (REQ-RUN-11, F2.5): the wingfoil arm's configuration for a scenario,
  * rendered as one Markdown file, `PROJECT_RULES.md`. A pure function of that configuration — a map from
@@ -200,7 +202,10 @@ export interface Document {
 function documents(files: ReadonlyMap<string, string>, matches: (path: string) => boolean): Document[] {
   return [...files]
     .filter(([path]) => matches(path))
-    .map(([path, content]) => {
+    .map(([path, raw]) => {
+      // One reading of a directive file for every generator (task-139, bug-034): CRLF as LF, no fence left open.
+      const content = toLf(raw);
+      if (hasUnclosedFence(content)) throw new Error(`'${path}' has an unclosed code fence`);
       const found = /^---\n([\s\S]*?)\n---\n?([\s\S]*)$/.exec(content);
       const front = yamlOf(found?.[1]);
       const fallback = path.slice(path.lastIndexOf('/') + 1).replace(/\.md$/, '');
@@ -218,17 +223,19 @@ function render(document: Document): string[] {
   return [`### ${document.title}`, ...(body === '' ? [] : [body])];
 }
 
-/** Every heading outside a code fence, moved {@link HEADING_SHIFT} levels down, to at most six. */
+/**
+ * Every heading outside a code fence, moved {@link HEADING_SHIFT} levels down, to at most six; every line's trailing
+ * spaces stripped, a heading's too, and the fences read as {@link fencedLines} reads them (task-139, bug-034).
+ */
 export function shiftHeadings(body: string): string {
-  let fenced = false;
-  return body
-    .split('\n')
-    .map((line) => {
-      if (/^\s*(```|~~~)/.test(line)) fenced = !fenced;
-      const heading = fenced ? null : /^(#{1,6})(\s.*)$/.exec(line);
+  const lines = toLf(body).split('\n');
+  const { fenced } = fencedLines(lines);
+  return lines
+    .map((line, index) => {
+      const heading = fenced[index] === true ? null : /^(#{1,6})(\s.*)$/.exec(line);
       if (heading === null) return line.trimEnd();
       const level = Math.min(6, (heading[1] ?? '').length + HEADING_SHIFT);
-      return `${'#'.repeat(level)}${heading[2] ?? ''}`;
+      return `${'#'.repeat(level)}${heading[2] ?? ''}`.trimEnd();
     })
     .join('\n');
 }

@@ -54,6 +54,11 @@ export function loadArm(armsRoot: string, name: string): Result<Arm> {
     ...(spec.mcp === undefined ? [] : [{ path: 'mcp', relative: spec.mcp, kind: 'file' } as const]),
   ];
   const issues = declared.flatMap((entry) => pathIssues(entry, dir));
+  // An arm holds no link, declared or not (REQ-FMT-05 as amended in 1.51, task-139, bug-034): its digest hashes a
+  // link by its target, so a link anywhere is refused here, where the arm is read.
+  if (issues.length === 0) {
+    issues.push(...linksIn(dir).map((link) => ({ path: link, message: `'${link}' is a symbolic link` })));
+  }
   if (issues.length === 0 && spec.mcp !== undefined) issues.push(...jsonIssues(spec.mcp, dir));
   return issues.length > 0 ? fail(issues) : ok(toArm(spec, dir));
 }
@@ -67,6 +72,17 @@ function pathIssues({ path, relative: declared, kind }: Declared, dir: string): 
   const link = kind === 'directory' ? firstLinkIn(target) : undefined;
   if (link !== undefined) return [{ path, message: `'${relative(dir, link)}' is a symbolic link` }];
   return [];
+}
+
+/** Every symbolic link below `directory`, relative to it, in code-unit order. */
+function linksIn(directory: string, prefix = ''): string[] {
+  return readdirSync(join(directory, prefix), { withFileTypes: true })
+    .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+    .flatMap((entry) => {
+      const path = prefix === '' ? entry.name : `${prefix}/${entry.name}`;
+      if (entry.isSymbolicLink()) return [path];
+      return entry.isDirectory() ? linksIn(directory, path) : [];
+    });
 }
 
 /** The first symbolic link below `directory`, in name order, or `undefined`. */

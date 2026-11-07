@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -9,7 +9,7 @@ import type { ContentCheck } from '../../src/core/index.js';
 import { loadScenario } from '../../src/scenario/index.js';
 import { breakEvenEntry, mK3Of, mRAcross } from '../../src/results/index.js';
 import type { BreakEvenRun } from '../../src/results/index.js';
-import { interfaceInContainer, scoreChecks } from '../../src/scoring/index.js';
+import { filesUnder, interfaceInContainer, measuredFiles, scoreChecks } from '../../src/scoring/index.js';
 import { localScoringDocker } from '../support/local-scoring.js';
 import { repoPath } from '../support/paths.js';
 import { referenceFiles, referenceRun } from '../support/reference.js';
@@ -860,5 +860,41 @@ describe('M-R2 v2 (REQ-SCO-07 as amended in 1.49, task-129)', { timeout: 120_000
         'src/broken.ts': 'export function (\n',
       }),
     ).toEqual(['src/broken.ts: (does not parse)']);
+  });
+});
+
+describe("the scoring's path helpers (task-139, bug-034)", () => {
+  it("@F4.2 The scoring reads a patch's paths exactly and follows no symbolic link", () => {
+    const write = (files: Readonly<Record<string, string>>) => {
+      const root = tempDir('bench-paths-');
+      for (const [path, content] of Object.entries(files)) {
+        mkdirSync(dirname(join(root, path)), { recursive: true });
+        writeFileSync(join(root, path), content);
+      }
+      return root;
+    };
+    const seed = write({ 'src/kept.ts': 'export const k = 1;\n' });
+    const snapshot = write({
+      'src/kept.ts': 'export const k = 1;\n',
+      'src/my file.ts': 'export const a = 1;\n',
+      'src/new name.ts': 'export const b = 1;\n',
+      'src/é.ts': 'export const c = 1;\n',
+      'src/run.ts': 'export const d = 1;\n',
+    });
+    const setupPatch = [
+      'diff --git a/src/my file.ts b/src/my file.ts',
+      'new file mode 100644',
+      'diff --git a/src/old name.ts b/src/new name.ts',
+      'rename from src/old name.ts',
+      'rename to src/new name.ts',
+      'diff --git "a/src/\\303\\251.ts" "b/src/\\303\\251.ts"',
+      'new file mode 100644',
+    ].join('\n');
+    expect(measuredFiles({ seedDir: seed, snapshot, setupPatch }).measured).toEqual(['src/run.ts']);
+
+    const outside = write({ 'secret.ts': 'export const s = 1;\n' });
+    symlinkSync(join(outside, 'secret.ts'), join(snapshot, 'src', 'link.ts'));
+    symlinkSync(outside, join(snapshot, 'linked'));
+    expect(filesUnder(snapshot).filter((path) => /link/.test(path))).toEqual([]);
   });
 });
