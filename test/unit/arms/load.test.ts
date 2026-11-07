@@ -206,6 +206,19 @@ describe('loadArm (REQ-FMT-05)', () => {
     expect(issuesOf(root)).toEqual([{ path: 'manual', message: "'link.md' is a symbolic link" }]);
   });
 
+  it('refuses a symbolic link anywhere under the arm, declared or not, naming each (task-139, bug-034)', () => {
+    const root = tempDir('bench-arm-');
+    const dir = writeArmAt(root, 'wingfoil', completeArmYaml(), COMPLETE_ARM_FILES);
+    mkdirSync(join(dir, 'notes'));
+    symlinkSync('../manual.md', join(dir, 'notes', 'copy.md'));
+    symlinkSync('manual.md', join(dir, 'README.md'));
+
+    expect(issuesOf(root)).toEqual([
+      { path: 'README.md', message: "'README.md' is a symbolic link" },
+      { path: 'notes/copy.md', message: "'notes/copy.md' is a symbolic link" },
+    ]);
+  });
+
   it('refuses an environment that holds a symbolic link, since it is copied into the workspace', () => {
     const root = tempDir('bench-arm-');
     const dir = writeArmAt(root, 'wingfoil', completeArmYaml(), COMPLETE_ARM_FILES);
