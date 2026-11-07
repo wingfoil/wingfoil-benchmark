@@ -223,3 +223,47 @@ describe("the baseline-docs generator, every role's directives labelled (dl-021 
     expect(renderProjectRules(everyRoleSnapshot())).not.toMatch(/For: |Code review/);
   });
 });
+
+describe("directive files' line endings, trailing spaces and fences (task-139, bug-034)", () => {
+  const withNoThrow = (text: string) => {
+    const files = snapshot();
+    files.set('.wingfoil/directives/custom/no-throw.md', text);
+    return files;
+  };
+
+  it('reads a CRLF directive file as its LF twin', () => {
+    const lf = directive(
+      'no-throw',
+      'No throw',
+      '# No throw\n\nNever throw.\n\n## Why  \n\nErrors are values.\n',
+    );
+    expect(renderProjectRules(withNoThrow(lf.replace(/\n/g, '\r\n')))).toBe(
+      renderProjectRules(withNoThrow(lf)),
+    );
+  });
+
+  it("strips a heading's trailing spaces, as every other line's", () => {
+    const rules = renderProjectRules(
+      withNoThrow(
+        directive('no-throw', 'No throw', '# No throw\n\nNever throw.\n\n## Why   \n\nBecause.  \n'),
+      ),
+    );
+    expect(rules).toContain('##### Why\n\nBecause.\n');
+  });
+
+  it("refuses a directive file whose code fence is left open, naming it, so it never leaks into the next rule's title", () => {
+    const files = withNoThrow(directive('no-throw', 'No throw', 'Never throw.\n\n```ts\nconst a = 1;\n'));
+    expect(() => renderProjectRules(files)).toThrow(
+      "'.wingfoil/directives/custom/no-throw.md' has an unclosed code fence",
+    );
+  });
+
+  it('shifts no heading inside a fence, whatever its length or marker', () => {
+    const rules = renderProjectRules(
+      withNoThrow(
+        directive('no-throw', 'No throw', 'Never.\n\n````md\n# Not a heading\n```\n# Still not\n````\n'),
+      ),
+    );
+    expect(rules).toContain('````md\n# Not a heading\n```\n# Still not\n````');
+  });
+});
