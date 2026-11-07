@@ -110,4 +110,21 @@ amended in 1.33), which the checks confirm.
 
 ## Execution notes
 
+- Red first: the unit tests of each criterion (globs, places, the arms' places, profile and prompt scan, stored
+  configurations, leak scan) failed before their code. **Departure:** the three acceptance scenarios were written
+  after the code of criteria 4 and 5, so they passed when added, as in task-139; the unit tests stated the same
+  behaviour red first.
+- The published campaigns' pins (criterion 2): `bench campaign validate` on each of the 13 campaign files (dry-run
+  profiles aside), on main and on the branch, outputs compared by a script: 13 of 13 exit 0 on both; the branch's
+  output adds 4 lines and removes none, `arm speckit` and `arm openspec` each read twice from the commit that holds
+  its pinned digest (two campaigns pin them). No campaign file was changed.
+- The arms' places were read by a read-only helper agent from a temporary directory holding the three tools' material
+  (no command in WingFoil's checkout but one `git archive v0.3.1`, nothing written there); its citations were
+  spot-checked (WingFoil's pillars table and spec-011's `.wingfoil/` rule, OpenSpec's project schemas directory, Spec
+  Kit's template resolution order).
+- `requirements.md` 1.52 records what was made precise (REQ-FMT-04, REQ-FMT-05, REQ-RUN-20).
+- For the approver at the gate: the prompt's text (`configuring/prompt.md`); the places left out (`.mcp.json`,
+  `.claude/settings.json`, a whole `.claude/**`); the profile's 5 EUR ceiling per session (the dry-run profile's cap).
+- No real-agent session, nothing spent; no scenario version holds a configuration.
+
 ## Review
