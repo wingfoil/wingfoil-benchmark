@@ -31,8 +31,8 @@ function contentOf({ full, kind }: { full: string; kind: 'file' | 'link' | 'othe
  * REQ-FMT-13: the digest of an arm, the SHA-256 (64 hex) of one line per file under `arms/<arm>/`, in sorted path
  * order (JavaScript's code-unit order, independent of the locale; the same as byte order for every path an arm has,
  * ASCII), `<path>\0<sha256 of its content>\n`, the path from the repository root. A symbolic link — which the arm
- * loader refuses where it reads — is hashed by its target, so that it cannot change unseen; the Design had it refused,
- * but the digest has no channel for a refusal, and the loader already gives one. A docs control's manual is a copy
+ * loader refuses wherever it lies (task-139, bug-034) — is hashed by its target, so that it cannot change unseen: the
+ * digest has no channel for a refusal, and the loader gives it. A docs control's manual is a copy
  * of baseline-docs' under its own directory (task-067), so its digest covers it.
  */
 export function armDigest(repoRoot: string, arm: string): string {
