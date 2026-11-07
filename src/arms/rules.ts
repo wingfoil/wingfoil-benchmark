@@ -39,3 +39,30 @@ export const RULES_GENERATORS: Readonly<Record<string, RulesGenerator>> = {
 export function rulesGeneratorOf(tool: string | undefined): RulesGenerator | undefined {
   return tool !== undefined && Object.hasOwn(RULES_GENERATORS, tool) ? RULES_GENERATORS[tool] : undefined;
 }
+
+/** Where a harness keeps a project's rules, as a place a configuration must include (REQ-FMT-05 as amended in 1.50). */
+export interface RulesPlace {
+  /** The place as messages name it: a file, or a directory ending in `/`. */
+  readonly place: string;
+  /** Paths in it, which a configuration place must match and no state place may. */
+  readonly probes: readonly string[];
+}
+
+/**
+ * The place of the project rules of each harness: the path its rules generator writes (REQ-FMT-14), or, for WingFoil,
+ * the directory of a scenario's directives (`.wingfoil/directives/custom/`, which its setup copies the scenario's
+ * configuration into, dl-005).
+ */
+export function rulesPlaceOf(tool: string | undefined): RulesPlace | undefined {
+  if (tool === 'wingfoil') {
+    // A file and a nested one, so that a glob naming a single file does not pass for the whole place; a state place
+    // inside it (an index, say) is allowed, state winning there (REQ-FMT-05 as amended in 1.50).
+    return {
+      place: '.wingfoil/directives/custom/',
+      probes: ['.wingfoil/directives/custom/rule.md', '.wingfoil/directives/custom/area/rule.md'],
+    };
+  }
+  const generator = rulesGeneratorOf(tool);
+  if (generator === undefined) return undefined;
+  return { place: generator.path, probes: [generator.path] };
+}

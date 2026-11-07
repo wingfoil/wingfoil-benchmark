@@ -1,8 +1,10 @@
 import { existsSync, lstatSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 
-import { armSchema, fail, ok, parseWith, readYamlFile } from '../core/index.js';
+import { armSchema, fail, matchesGlob, ok, parseWith, readYamlFile } from '../core/index.js';
 import type { Arm, ArmFile, Issue, Result } from '../core/index.js';
+import { isConfigurationPath, MANUAL_PATHS } from './places.js';
+import { rulesPlaceOf } from './rules.js';
 
 const ARM_FILE = 'arm.yaml';
 
@@ -45,6 +47,8 @@ export function loadArm(armsRoot: string, name: string): Result<Arm> {
       { path: 'docs_directives', message: 'only a docs control of the wingfoil arm chooses its directives' },
     ]);
   }
+  const places = placeIssues(spec);
+  if (places.length > 0) return fail(places);
   const declared: Declared[] = [
     { path: 'setup', relative: spec.setup, kind: 'file' },
     { path: 'manual', relative: spec.manual, kind: 'file' },
@@ -61,6 +65,52 @@ export function loadArm(armsRoot: string, name: string): Result<Arm> {
   }
   if (issues.length === 0 && spec.mcp !== undefined) issues.push(...jsonIssues(spec.mcp, dir));
   return issues.length > 0 ? fail(issues) : ok(toArm(spec, dir));
+}
+
+/**
+ * REQ-FMT-05 as amended in 1.50: a harness arm's configuration places come with its state places (an empty list stated
+ * so), match no manual's path, and include the place of its tool's project rules, which no state place may cover.
+ */
+function placeIssues(spec: ArmFile): Issue[] {
+  const { configuration, state } = spec;
+  if (configuration === undefined) {
+    return state === undefined ? [] : [{ path: 'state', message: 'is declared only beside configuration' }];
+  }
+  if (spec.requires === undefined) {
+    return [
+      { path: 'configuration', message: 'only a harness arm (requires) declares configuration places' },
+    ];
+  }
+  if (state === undefined) {
+    return [
+      {
+        path: 'state',
+        message: 'is required beside configuration: an empty list where the tool keeps no state',
+      },
+    ];
+  }
+  const issues: Issue[] = configuration.flatMap(({ glob }, index) => {
+    const manual = MANUAL_PATHS.find((path) => matchesGlob(glob, path));
+    return manual === undefined
+      ? []
+      : [
+          {
+            path: `configuration[${index}].glob`,
+            message: `'${glob}' matches the manual's path '${manual}'`,
+          },
+        ];
+  });
+  const rules = rulesPlaceOf(spec.requires);
+  if (
+    rules !== undefined &&
+    !rules.probes.every((probe) => isConfigurationPath({ name: spec.name, configuration, state }, probe))
+  ) {
+    issues.push({
+      path: 'configuration',
+      message: `does not include the place of the project rules, '${rules.place}'`,
+    });
+  }
+  return issues;
 }
 
 function pathIssues({ path, relative: declared, kind }: Declared, dir: string): Issue[] {
@@ -131,5 +181,7 @@ function toArm(spec: ArmFile, dir: string): Arm {
     ...(spec.docs_directives === undefined ? {} : { docsDirectives: spec.docs_directives }),
     ...(spec.telemetry_off === undefined ? {} : { telemetryOff: spec.telemetry_off }),
     ...(spec.verdict_hook === undefined ? {} : { verdictHook: spec.verdict_hook }),
+    ...(spec.configuration === undefined ? {} : { configuration: spec.configuration }),
+    ...(spec.state === undefined ? {} : { state: spec.state }),
   };
 }

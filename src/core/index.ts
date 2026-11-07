@@ -10,6 +10,7 @@ export {
 } from './scenario.js';
 export type {
   AstCheck,
+  Configuration,
   AstRule,
   AttributionCheck,
   Category,
@@ -34,7 +35,8 @@ export { dependenciesOf, foldText, linesOf, satisfies, satisfiesWords } from './
 export { leakScanSchema } from './leak-scan.js';
 export { fencedLines, hasUnclosedFence, toLf } from './markdown.js';
 export type { LeakScanDeclarations } from './leak-scan.js';
-export type { Arm, ArmFile } from './arm.js';
+export type { Arm, ArmFile, Place } from './arm.js';
+export { globIssue, matchesGlob } from './glob.js';
 export {
   campaignConsistency,
   campaignSchema,
@@ -93,3 +95,7 @@ export {
   verdictPolicyIssue,
 } from './approver.js';
 export type { ApproverPolicy, InterventionKind } from './approver.js';
+export { configuringProfileSchema } from './configuring.js';
+export type { ConfiguringProfile } from './configuring.js';
+export { CONFIGURED_OUTCOMES, configuredRecordSchema, configuredRecordsSchema } from './configured.js';
+export type { ConfiguredRecord } from './configured.js';

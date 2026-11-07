@@ -11,3 +11,10 @@ export {
 } from './leak-scan.js';
 export { DRY_RUN_PROFILE, loadDryRunProfile } from './dry-run.js';
 export { keepInsideSeed, prepareWorkspace } from './workspace.js';
+export {
+  CONFIGURING_PROFILE,
+  CONFIGURING_PROMPT,
+  loadConfiguringProfile,
+  scanConfiguringPrompt,
+} from './configuring.js';
+export { CONFIGURED_DIR, CONFIGURED_SUFFIX, loadConfigurations } from './configurations.js';

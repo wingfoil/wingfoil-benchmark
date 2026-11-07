@@ -10,6 +10,7 @@ import {
   oracleLiterals,
   scanScenario,
 } from '../../../src/scenario/index.js';
+import { writeConfiguration } from '../../support/configured-fixture.js';
 import { repoPath } from '../../support/paths.js';
 import { tempDir } from '../../support/scenario-fixture.js';
 
@@ -264,5 +265,84 @@ describe('loadLeakScanDeclarations', () => {
         'harness_names',
         'oracle_literal_min_length',
       ]);
+  });
+});
+
+/** T3 copied as a version 1.1, with a wingfoil configuration written by `change`'s files (task-140). */
+function t3Configured(files: Readonly<Record<string, string>>, change?: (dir: string) => void) {
+  const root = tempDir('bench-repo-');
+  const dir = join(root, 'scenarios', 'T3', '1.1');
+  cpSync(repoPath('test/fixtures/scenarios/T3/1.0'), dir, { recursive: true });
+  const yaml = join(dir, 'scenario.yaml');
+  writeFileSync(yaml, readFileSync(yaml, 'utf8').replace("version: '1.0'", "version: '1.1'"));
+  writeConfiguration(dir, 'wingfoil-configured', files);
+  change?.(dir);
+  const scenario = loadScenario(join(root, 'scenarios'), 'T3', '1.1');
+  if (!scenario.ok) throw new Error(JSON.stringify(scenario.issues));
+  return scenario.value;
+}
+
+describe('scanScenario: configurations (REQ-FMT-08 as amended in 1.50, task-140)', () => {
+  const RULE = '.wingfoil/directives/custom/r9.md';
+
+  it('finds nothing in a configuration that holds neither an oracle literal nor a prompt line', () => {
+    expect(
+      scanScenario(
+        t3Configured({ [RULE]: '# Orders rule\n\nKeep every order state named.\n' }),
+        DECLARATIONS,
+      ),
+    ).toEqual([]);
+  });
+
+  it('names the configuration file holding an oracle literal, and the oracle file, never the literal', () => {
+    const issues = scanScenario(
+      t3Configured({ [RULE]: '# Rule\n\nA test checks it: marks a pending order as cancelled.\n' }),
+      DECLARATIONS,
+    );
+
+    expect(issues).toEqual([
+      {
+        path: 'arms.wingfoil-configured',
+        message: `${RULE} holds a literal of oracle/public/cancel.test.ts`,
+      },
+    ]);
+    expect(JSON.stringify(issues)).not.toContain('marks a pending');
+  });
+
+  it('names the hold-out file whose literal a configuration file holds, when a hold-out is set', () => {
+    const holdout = tempDir('bench-holdout-');
+    writeFileSync(join(holdout, 'extra.test.ts'), "it('a hidden expectation here', () => {});\n");
+
+    const issues = scanScenario(
+      t3Configured({ [RULE]: '# Rule\n\nMind a hidden expectation here.\n' }),
+      DECLARATIONS,
+      { dir: holdout, files: ['extra.test.ts'] },
+    );
+
+    expect(issues).toEqual([
+      {
+        path: 'arms.wingfoil-configured',
+        message: `${RULE} holds a literal of the hold-out file extra.test.ts`,
+      },
+    ]);
+  });
+
+  it("names the step whose prompt repeats a configuration's Markdown line", () => {
+    const scenario = t3Configured(
+      { [RULE]: '# Rule\n\nEvery shipped order keeps its tracking code.\n' },
+      (dir) => writeFileSync(join(dir, 'prompts', '02.md'), 'Every shipped order keeps its tracking code.\n'),
+    );
+
+    expect(scanScenario(scenario, DECLARATIONS)).toEqual([
+      { path: 'steps[1].prompt_file', message: `repeats a line of arms/wingfoil-configured/${RULE}` },
+    ]);
+  });
+
+  it("does not search the seed for a configuration's lines: it is written from the seed", () => {
+    const scenario = t3Configured({
+      [RULE]: '# Orders\n\nA small orders domain: orders are created, then shipped.\n',
+    });
+
+    expect(scanScenario(scenario, DECLARATIONS)).toEqual([]);
   });
 });

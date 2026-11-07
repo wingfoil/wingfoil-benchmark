@@ -9,5 +9,7 @@ export { renderConstitution } from './constitution.js';
 export { renderOpenSpecConfig } from './openspec.js';
 export { DOCS_GENERATORS, docsGeneratorOf, renderOpenSpecDocs, renderSpeckitDocs } from './docs-controls.js';
 export type { DeclaredContent, DocsGenerator } from './docs-controls.js';
-export { RULES_GENERATORS, rulesGeneratorOf, RULES_SOURCE_ARM } from './rules.js';
+export { isConfigurationPath, MANUAL_PATHS, seedClashes } from './places.js';
+export type { ArmPlaces, SeedClash } from './places.js';
+export { RULES_GENERATORS, rulesGeneratorOf, rulesPlaceOf, RULES_SOURCE_ARM } from './rules.js';
 export type { RulesGenerator } from './rules.js';

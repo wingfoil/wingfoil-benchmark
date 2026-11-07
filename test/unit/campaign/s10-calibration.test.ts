@@ -20,8 +20,12 @@ describe("S10's calibration profile (task-119, characterization)", () => {
     });
     expect(profile.harnesses).toEqual({ wingfoil: { tool: 'wingfoil', version: 'v0.3.1' } });
     expect(profile.approver_policy).toBe('v5');
-    for (const arm of ['baseline', 'baseline-docs', 'wingfoil'])
+    for (const arm of ['baseline', 'baseline-docs'])
       expect(profile.arm_digests?.[arm], arm).toBe(armDigest(repoPath(''), arm).slice(0, 12));
+    // The wingfoil arm has since declared its configuration places (task-140): the profile keeps campaign-008's
+    // digest, read from the history, which the next test resolves (REQ-FMT-13 as amended in 1.33).
+    expect(profile.arm_digests?.wingfoil).toBe('62bcf64e6dde');
+    expect(armDigest(repoPath(''), 'wingfoil').slice(0, 12)).not.toBe('62bcf64e6dde');
   });
 
   it('is accepted for S10 in each arm, where the default profile (policy v1) is refused', () => {

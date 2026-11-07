@@ -2,11 +2,16 @@
 id: task-140-w18-configuration-places-the-configuring-profile-and-stored-configurations
 type: task
 title: "W18: configuration places, the configuring profile and stored configurations"
-status: backlog
+status: approved
 release: v0.3
 wave: W18
 features: [F7.5]
-acceptance: []
+acceptance:
+  [
+    "scenarios.feature#A symbolic link in a configuration is refused",
+    "scenarios.feature#A version 1.0 holding a configuration is refused",
+    "scenarios.feature#The leak scan covers a configuration",
+  ]
 requirements: [REQ-FMT-04, REQ-FMT-05, REQ-FMT-08, REQ-RUN-20]
 fixes: []
 tags: ["v0.3","w18","f7.5"]
@@ -67,8 +72,93 @@ amended in 1.33), which the checks confirm.
 
 ## Design
 
-<!-- Filled when the task starts. -->
+- **Globs** (`src/core/glob.ts`): `*`, `?` and `**` (a whole segment), a trailing `/` for a directory; a dot segment
+  is matched like any other (`path.matchesGlob` skips them, and a tool's state may live in one). Anything else
+  (classes, braces, `..`, absolute paths, backslashes, empty segments) is refused when the arm is loaded.
+- **Places** (`src/core/arm.ts`, `src/arms/load.ts`, `src/arms/places.ts`): `configuration` and `state` are lists of
+  `{glob, source}`. Beyond 1.50's rules, `state` without `configuration` and places on an arm with no `requires` are
+  refused, so that the fields mean one thing. The manual's paths are every agent profile's `manualFile` (`CLAUDE.md`,
+  `AGENTS.md`), a test keeping the two lists equal. The project rules' place is checked by a probe path:
+  REQ-FMT-14's generator path for Spec Kit and OpenSpec, a file under `.wingfoil/directives/custom/` for WingFoil; it
+  must be configuration and not state. `isConfigurationPath` (state wins) and `seedClashes` (glob and file) are for the
+  next tasks' session and `campaign validate`.
+- **The arms' places**: read by a read-only helper agent from each tool's material in a temporary directory (WingFoil
+  v0.3.1's tree, exported by `git archive`; the Spec Kit wheel and the OpenSpec package from `.cache/harnesses/`; the
+  setup patches of the latest dry run of each arm), spot-checked by hand. WingFoil: `.wingfoil/**` (its own documents
+  keep every configuration there), state `docs/memory/**` and `docs/runs/**`. Spec Kit: the constitution, template
+  overrides, presets, extensions, `extensions.yml`, workflows, the init options, the integration file and its skills
+  under `.claude/skills/speckit-*/`; the scripts, templates and manifests init installs are the tool's own files.
+  OpenSpec: `openspec/config.yaml` (and `.yml`), `openspec/schemas/**`, its commands and skills under `.claude/`;
+  state its changes and specs. Left out on purpose: `.mcp.json` (the arm's MCP server is the runner's, from
+  `mcp.json`), `.claude/settings.json` and a whole `.claude/**` (Claude Code's own settings, hooks and permissions,
+  which no harness's documentation names as its configuration).
+- **The profile and the prompt** (`src/core/configuring.ts`, `src/scenario/configuring.ts`, `configuring/`): the
+  profile's schema picks a campaign's `harnesses`, `agent`, `caps` and `currency`, and a single `models.default`. Its
+  pins are campaign-008's agent (Claude Code 2.1.300) and the three arms' tool versions; caps and rate are the dry-run
+  profile's (a session's ceiling is `run_cost_eur`, 5 EUR). The prompt names no tool, describes what configuration is
+  in general terms and lists what the session must not touch, REQ-RUN-20's refusals in plain words.
+- **Stored configurations** (`src/core/configured.ts`, `src/scenario/configurations.ts`): `arms/<name>-configured/`
+  directories are configurations, kept out of `armDirs` (the runner copies those by arm name, and the leak scan reads
+  their lines in the seed) and loaded into `Scenario.configurations`. The record file is a JSON array, oldest first;
+  `usage` has a step's shape (`SessionUsage`). A record states its own consistency: a `written` one lists files and
+  reported its cost; only it lists files; a `refused` one has a reason. `configured/` holds `<name>.json` and
+  `<name>.patch` only. `configured/` joins the hidden paths of the overlap check. The scenario hash already covered
+  both directories.
+- **The leak scan** (`src/scenario/leak-scan.ts`): the oracle and hold-out sources are kept apart from the arms' lines;
+  prompts are searched for all of them and the configurations' lines, the seed for the first two, each configuration
+  file for the oracle and hold-out literals only.
 
 ## Execution notes
 
+- Red first: the unit tests of each criterion (globs, places, the arms' places, profile and prompt scan, stored
+  configurations, leak scan) failed before their code. **Departure:** the three acceptance scenarios were written
+  after the code of criteria 4 and 5, so they passed when added, as in task-139; the unit tests stated the same
+  behaviour red first.
+- The published campaigns' pins (criterion 2): `bench campaign validate` on each of the 13 campaign files (dry-run
+  profiles aside), on main and on the branch, outputs compared by a script: 13 of 13 exit 0 on both; the branch's
+  output adds 4 lines and removes none, `arm speckit` and `arm openspec` each read twice from the commit that holds
+  its pinned digest (two campaigns pin them). No campaign file was changed.
+- The arms' places were read by a read-only helper agent from a temporary directory holding the three tools' material
+  (no command in WingFoil's checkout but one `git archive v0.3.1`, nothing written there); its citations were
+  spot-checked (WingFoil's pillars table and spec-011's `.wingfoil/` rule, OpenSpec's project schemas directory, Spec
+  Kit's template resolution order).
+- `requirements.md` 1.52 records what was made precise (REQ-FMT-04, REQ-FMT-05, REQ-RUN-20).
+- For the approver at the gate: the prompt's text (`configuring/prompt.md`); the places left out (`.mcp.json`,
+  `.claude/settings.json`, a whole `.claude/**`); the profile's 5 EUR ceiling per session (the dry-run profile's cap).
+- No real-agent session, nothing spent; no scenario version holds a configuration.
+- Full suites, first run at `2de02609`: LINT 0, TEST 1, BUILD 0, BIN 0, DOCKER 0. One unit test failed:
+  `s10-calibration.test.ts` compared S10's pinned wingfoil digest (`62bcf64e6dde`, campaign-008's) with the working
+  tree's, which the arm's new places change. Pre-review's targeted tests did not include it. The test now pins the
+  literal digest and states that the working tree's differs; its second test still resolves the pin, from the
+  history. The profile is unchanged.
+- Full suites, second run at `255f4f2e`: LINT 0, TEST 0, BUILD 0, BIN 0, DOCKER 0; unit 2198 passed and 10 skipped of
+  2208, in 131 files.
+
 ## Review
+
+### Round 1 (a fresh read-only agent, clone `/tmp/claude-1000/review1-t140-*`, at `162975ca`)
+
+Main's HEAD and reflog the same before and after (`d989138f`).
+
+| Severity   | Finding                                                                                         | Outcome                                                                                                       |
+| ---------- | ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| should-fix | A `configured` that is a file crashed the loader (`ENOTDIR`)                                    | Refused, named; red test first                                                                                |
+| should-fix | The open-fence rule reaches a configuration, which 1.52 did not state                          | Kept and stated in 1.52 (REQ-FMT-04): the session refuses such a result (next task); characterization test    |
+| should-fix | No test for `configured/` among the paths a seed or a prompt must not overlap                  | Test added (characterization: the code already refused it)                                                    |
+| nit        | An orphan patch was accepted                                                                    | Refused, named; 1.52; red test first                                                                          |
+| nit        | A record's file paths: duplicates, `..`, absolute paths, backslashes accepted; dates not ordered | Paths refused (red tests first), 1.52; the order of dates left to the next task, which appends the records    |
+| nit        | A `.` segment passed the glob check and never matched                                           | Refused; 1.52; red test first                                                                                 |
+| nit        | WingFoil's rules place checked by one probe file                                                | A nested probe added (red test first), 1.52; a state glob over part of the place stays allowed (task-138's drafted scenario has one) |
+| nit        | The profile loader does not check `harnesses` keys or the effort against `models.default`      | Left to the next task's command, which reads the profile with the arms; noted here                            |
+| nit        | The prompt's step 2 could lead the agent to the agent's own settings, outside every place      | A line added: new files only where the tool's documentation puts its configuration, not the agent's settings or MCP setup |
+
+### Round 2 (a fresh read-only agent, clone `/tmp/claude-1000/review2-t140-*`, at `4143f3ec`)
+
+Round 1's outcomes verified; nits only, so no further round. Main's HEAD and reflog the same (`d989138f`).
+
+| Severity | Finding                                                                                  | Outcome                                                                     |
+| -------- | ---------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| nit      | No test of a state place inside WingFoil's directives place, which 1.52 states allowed  | Tests added: the drafted scenario's index accepted, `custom/*/**` refused  |
+| nit      | The prompt scan repeated the leak scan's list of oracle files                            | `oracleFiles` exported and reused                                           |
+| nit      | A record's `usage` not tied to a step's `SessionUsage`                                   | A type test keeps the keys the same and each assignable to the other       |
+
