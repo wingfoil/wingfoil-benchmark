@@ -39,10 +39,9 @@ export function scanConfiguringPrompt(
     ...scenario.oracle.suites
       .flatMap((suite) => filesUnder(suite.dir))
       .map((file) => ({ label: relative(scenario.dir, file), path: file })),
-    ...(holdout?.files ?? []).map((file) => ({
-      label: `the hold-out file ${file}`,
-      path: join(holdout!.dir, file),
-    })),
+    ...(holdout === undefined
+      ? []
+      : holdout.files.map((file) => ({ label: `the hold-out file ${file}`, path: join(holdout.dir, file) }))),
   ];
   for (const source of sources) {
     if (oracleLiterals(readFileSync(source.path, 'utf8'), min).some((literal) => text.includes(literal))) {

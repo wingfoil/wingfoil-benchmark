@@ -1,8 +1,8 @@
 /**
  * The globs of a harness arm's configuration and state places (REQ-FMT-05 as amended in 1.50): paths relative to the
- * workspace, `/`-separated, with `*` (any characters but `/`), `?` (one character but `/`) and `**` (a whole segment:
- * any number of segments, none included). A glob ending in `/` names a directory: everything below it. Unlike a shell's,
- * a segment starting with a dot is matched like any other, since a tool's state often lives in one (`.index/`).
+ * workspace, `/`-separated, with `*` (any characters but `/`), `?` (one character but `/`) and `**` (a whole
+ * segment: any number of segments, none included). A glob ending in `/` names a directory: everything below it. Unlike
+ * a shell's, a segment starting with a dot is matched like any other, since a tool's state often lives in one.
  */
 
 /** Why `glob` is not one {@link matchesGlob} reads, or `undefined` when it is. */

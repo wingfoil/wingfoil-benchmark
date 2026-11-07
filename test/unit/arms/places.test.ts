@@ -34,7 +34,7 @@ describe('configuration places (REQ-FMT-05 as amended in 1.50, task-140)', () =>
   });
 
   it('names each configuration glob that matches a seed file, with the file, in order', () => {
-    const arm = { ...ARM, configuration: [...ARM.configuration!, { glob: 'src/**', source: 'd' }] };
+    const arm = { ...ARM, configuration: [...(ARM.configuration ?? []), { glob: 'src/**', source: 'd' }] };
 
     expect(seedClashes(arm, ['README.md', 'src/index.ts', 'src/a/b.ts', 'package.json'])).toEqual([
       { glob: 'src/**', file: 'src/a/b.ts' },

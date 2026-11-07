@@ -6,7 +6,12 @@ status: in-progress
 release: v0.3
 wave: W18
 features: [F7.5]
-acceptance: []
+acceptance:
+  [
+    "scenarios.feature#A symbolic link in a configuration is refused",
+    "scenarios.feature#A version 1.0 holding a configuration is refused",
+    "scenarios.feature#The leak scan covers a configuration",
+  ]
 requirements: [REQ-FMT-04, REQ-FMT-05, REQ-FMT-08, REQ-RUN-20]
 fixes: []
 tags: ["v0.3","w18","f7.5"]
@@ -67,7 +72,41 @@ amended in 1.33), which the checks confirm.
 
 ## Design
 
-<!-- Filled when the task starts. -->
+- **Globs** (`src/core/glob.ts`): `*`, `?` and `**` (a whole segment), a trailing `/` for a directory; a dot segment
+  is matched like any other (`path.matchesGlob` skips them, and a tool's state may live in one). Anything else
+  (classes, braces, `..`, absolute paths, backslashes, empty segments) is refused when the arm is loaded.
+- **Places** (`src/core/arm.ts`, `src/arms/load.ts`, `src/arms/places.ts`): `configuration` and `state` are lists of
+  `{glob, source}`. Beyond 1.50's rules, `state` without `configuration` and places on an arm with no `requires` are
+  refused, so that the fields mean one thing. The manual's paths are every agent profile's `manualFile` (`CLAUDE.md`,
+  `AGENTS.md`), a test keeping the two lists equal. The project rules' place is checked by a probe path:
+  REQ-FMT-14's generator path for Spec Kit and OpenSpec, a file under `.wingfoil/directives/custom/` for WingFoil; it
+  must be configuration and not state. `isConfigurationPath` (state wins) and `seedClashes` (glob and file) are for the
+  next tasks' session and `campaign validate`.
+- **The arms' places**: read by a read-only helper agent from each tool's material in a temporary directory (WingFoil
+  v0.3.1's tree, exported by `git archive`; the Spec Kit wheel and the OpenSpec package from `.cache/harnesses/`; the
+  setup patches of the latest dry run of each arm), spot-checked by hand. WingFoil: `.wingfoil/**` (its own documents
+  keep every configuration there), state `docs/memory/**` and `docs/runs/**`. Spec Kit: the constitution, template
+  overrides, presets, extensions, `extensions.yml`, workflows, the init options, the integration file and its skills
+  under `.claude/skills/speckit-*/`; the scripts, templates and manifests init installs are the tool's own files.
+  OpenSpec: `openspec/config.yaml` (and `.yml`), `openspec/schemas/**`, its commands and skills under `.claude/`;
+  state its changes and specs. Left out on purpose: `.mcp.json` (the arm's MCP server is the runner's, from
+  `mcp.json`), `.claude/settings.json` and a whole `.claude/**` (Claude Code's own settings, hooks and permissions,
+  which no harness's documentation names as its configuration).
+- **The profile and the prompt** (`src/core/configuring.ts`, `src/scenario/configuring.ts`, `configuring/`): the
+  profile's schema picks a campaign's `harnesses`, `agent`, `caps` and `currency`, and a single `models.default`. Its
+  pins are campaign-008's agent (Claude Code 2.1.300) and the three arms' tool versions; caps and rate are the dry-run
+  profile's (a session's ceiling is `run_cost_eur`, 5 EUR). The prompt names no tool, describes what configuration is
+  in general terms and lists what the session must not touch, REQ-RUN-20's refusals in plain words.
+- **Stored configurations** (`src/core/configured.ts`, `src/scenario/configurations.ts`): `arms/<name>-configured/`
+  directories are configurations, kept out of `armDirs` (the runner copies those by arm name, and the leak scan reads
+  their lines in the seed) and loaded into `Scenario.configurations`. The record file is a JSON array, oldest first;
+  `usage` has a step's shape (`SessionUsage`). A record states its own consistency: a `written` one lists files and
+  reported its cost; only it lists files; a `refused` one has a reason. `configured/` holds `<name>.json` and
+  `<name>.patch` only. `configured/` joins the hidden paths of the overlap check. The scenario hash already covered
+  both directories.
+- **The leak scan** (`src/scenario/leak-scan.ts`): the oracle and hold-out sources are kept apart from the arms' lines;
+  prompts are searched for all of them and the configurations' lines, the seed for the first two, each configuration
+  file for the oracle and hold-out literals only.
 
 ## Execution notes
 

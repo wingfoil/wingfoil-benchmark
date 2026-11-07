@@ -1,6 +1,8 @@
 import { isAbsolute, posix } from 'node:path';
 import { z } from 'zod';
 
+import type { ConfiguredRecord } from './configured.js';
+
 /** The benchmark categories A–G (09_experiment-design.md). */
 export const CATEGORIES = ['A', 'B', 'C', 'D', 'E', 'F', 'G'] as const;
 
@@ -480,6 +482,18 @@ export interface Decision {
   readonly revisedBy?: string;
 }
 
+/** A configuration a scenario version holds (REQ-FMT-04 as amended in 1.50). */
+export interface Configuration {
+  /** `arms/<harness>-configured/`: the files at their workspace paths. */
+  readonly dir: string;
+  /** The configuration's record: the newest `written` one, which every rule reading the configuration reads. */
+  readonly record: ConfiguredRecord;
+  /** Every session's record, oldest first: M-K3 counts them all (REQ-SCO-08 as amended in 1.50). */
+  readonly records: readonly ConfiguredRecord[];
+  /** `configured/<harness>-configured.patch`: the session's patch against the setup's workspace. */
+  readonly patchPath: string;
+}
+
 /** A loaded scenario version, with every path resolved to an absolute one. */
 export interface Scenario {
   readonly id: string;
@@ -514,6 +528,11 @@ export interface Scenario {
    * seed (dl-005, REQ-FMT-04). Only that arm's setup receives it; the seed and the prompts never do.
    */
   readonly armDirs: Readonly<Record<string, string>>;
+  /**
+   * The configurations the configuring agent wrote (REQ-FMT-04 as amended in 1.50), by configured arm name
+   * (`<harness>-configured`): only those the version holds, each with its record (the newest `written` one).
+   */
+  readonly configurations: Readonly<Record<string, Configuration>>;
   /** The version's content hash (REQ-FMT-09), `sha256:<hex>`: what results record, and what makes it immutable. */
   readonly hash: string;
 }

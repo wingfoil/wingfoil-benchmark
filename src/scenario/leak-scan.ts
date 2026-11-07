@@ -76,8 +76,8 @@ interface Source {
 }
 
 /**
- * Scan `scenario` (REQ-FMT-08): its prompts, by step, then its seed. `holdout` is the scenario's
- * additions (task-016), read here into memory and named only by file.
+ * Scan `scenario` (REQ-FMT-08): its prompts, by step, then its seed, then its configurations (REQ-FMT-08 as amended
+ * in 1.50). `holdout` is the scenario's additions (task-016), read here into memory and named only by file.
  */
 export function scanScenario(
   scenario: Scenario,
@@ -85,7 +85,7 @@ export function scanScenario(
   holdout?: HoldoutAdditions,
 ): Issue[] {
   const min = declarations.oracle_literal_min_length;
-  const sources: Source[] = [
+  const oracle: Source[] = [
     ...oracleFiles(scenario).map((file) => ({
       label: relative(scenario.dir, file),
       needles: oracleLiterals(readFileSync(file, 'utf8'), min),
@@ -98,7 +98,9 @@ export function scanScenario(
           needles: oracleLiterals(readFileSync(join(holdout.dir, file), 'utf8'), min),
           verb: 'holds a literal of' as const,
         }))),
-    ...Object.entries(scenario.armDirs)
+  ];
+  const lines = (dirs: Readonly<Record<string, string>>): Source[] =>
+    Object.entries(dirs)
       .sort(([a], [b]) => (a < b ? -1 : 1))
       .flatMap(([, dir]) =>
         filesUnder(dir)
@@ -108,10 +110,17 @@ export function scanScenario(
             needles: armLines(readFileSync(file, 'utf8'), min),
             verb: 'repeats a line of' as const,
           })),
-      ),
-  ];
-  const leaks = (text: string) =>
-    sources.filter((source) => source.needles.some((needle) => text.includes(needle)));
+      );
+  const armSources = lines(scenario.armDirs);
+  // A configuration's lines are searched for in the prompts only: it is written from the seed (REQ-FMT-08 as amended
+  // in 1.50), so repeating a README line is expected.
+  const configurations = Object.fromEntries(
+    Object.entries(scenario.configurations).map(([name, configuration]) => [name, configuration.dir]),
+  );
+  const sources = [...oracle, ...armSources];
+  const promptSources = [...sources, ...lines(configurations)];
+  const leaks = (text: string, from: readonly Source[] = sources) =>
+    from.filter((source) => source.needles.some((needle) => text.includes(needle)));
 
   const issues: Issue[] = [];
   scenario.steps.forEach((step, index) => {
@@ -120,7 +129,9 @@ export function scanScenario(
     for (const mention of harnessMentions(text, declarations.harness_names)) {
       issues.push({ path, message: `names the harness '${mention}'` });
     }
-    for (const source of leaks(text)) issues.push({ path, message: `${source.verb} ${source.label}` });
+    for (const source of leaks(text, promptSources)) {
+      issues.push({ path, message: `${source.verb} ${source.label}` });
+    }
   });
   for (const reserved of reservedIn(scenario.seedDir)) {
     issues.push({ path: 'seed', message: `holds ${reserved}, which a run's setup reserves` });
@@ -132,6 +143,17 @@ export function scanScenario(
         path: 'seed',
         message: `${relative(scenario.seedDir, file)} ${source.verb} ${source.label}`,
       });
+    }
+  }
+  // Every file of a configuration is searched for the oracle's literals, as the seed is (REQ-FMT-08, 1.50).
+  for (const [name, dir] of Object.entries(configurations).sort(([a], [b]) => (a < b ? -1 : 1))) {
+    for (const file of filesUnder(dir)) {
+      for (const source of leaks(readFileSync(file, 'utf8'), oracle)) {
+        issues.push({
+          path: `arms.${name}`,
+          message: `${relative(dir, file)} ${source.verb} ${source.label}`,
+        });
+      }
     }
   }
   return issues;

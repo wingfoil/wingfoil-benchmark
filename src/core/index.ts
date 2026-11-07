@@ -10,6 +10,7 @@ export {
 } from './scenario.js';
 export type {
   AstCheck,
+  Configuration,
   AstRule,
   AttributionCheck,
   Category,
@@ -96,3 +97,5 @@ export {
 export type { ApproverPolicy, InterventionKind } from './approver.js';
 export { configuringProfileSchema } from './configuring.js';
 export type { ConfiguringProfile } from './configuring.js';
+export { CONFIGURED_OUTCOMES, configuredRecordSchema, configuredRecordsSchema } from './configured.js';
+export type { ConfiguredRecord } from './configured.js';

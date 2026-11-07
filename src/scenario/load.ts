@@ -16,8 +16,18 @@ import {
   satisfiesWords,
   scenarioSchema,
 } from '../core/index.js';
-import type { Check, Decision, Issue, Result, Scenario, ScenarioFile, ThirdParty } from '../core/index.js';
+import type {
+  Check,
+  Configuration,
+  Decision,
+  Issue,
+  Result,
+  Scenario,
+  ScenarioFile,
+  ThirdParty,
+} from '../core/index.js';
 
+import { CONFIGURED_DIR, CONFIGURED_SUFFIX, loadConfigurations } from './configurations.js';
 import { scenarioHash } from './hash.js';
 
 const SCENARIO_FILE = 'scenario.yaml';
@@ -41,7 +51,8 @@ interface Declared {
  * then every declared path on disk, in declaration order; then the entries of `arms/`; then every
  * overlap between what the agent sees and what it must not see, and between the oracle's own paths;
  * then the third-party files outside every suite and those that no longer match their `sha256` (dl-002);
- * then each check file's own issues, in declaration order (REQ-SCO-06, task-035).
+ * then the configurations the configuring agent wrote (REQ-FMT-04 as amended in 1.50); then each check file's own
+ * issues, in declaration order (REQ-SCO-06, task-035).
  */
 export function loadScenario(scenariosRoot: string, id: string, version: string): Result<Scenario> {
   const dir = resolve(scenariosRoot, id, version);
@@ -69,13 +80,27 @@ export function loadScenario(scenariosRoot: string, id: string, version: string)
     ...arms.issues,
     ...fenceIssues(arms.declared, dir),
   ];
-  if (issues.length === 0) issues.push(...overlapIssues(seed, others, arms.declared, dir));
+  const hidden = existsSync(resolve(dir, CONFIGURED_DIR))
+    ? [...arms.declared, { path: CONFIGURED_DIR, relative: CONFIGURED_DIR, kind: 'directory' } as const]
+    : arms.declared;
+  if (issues.length === 0) issues.push(...overlapIssues(seed, others, hidden, dir));
   if (issues.length === 0) issues.push(...vendoredIssues(spec, dir));
   if (issues.length > 0) return fail(issues);
+  // The configurations the configuring agent wrote (REQ-FMT-04 as amended in 1.50): not an arm's configuration.
+  const configured = arms.declared.filter(({ relative }) => relative.endsWith(CONFIGURED_SUFFIX));
+  const configurations = loadConfigurations(
+    dir,
+    version,
+    configured.map(({ relative }) => relative.slice(ARMS_DIR.length + 1)),
+  );
+  if (!configurations.ok) return configurations;
+  const armDirs = arms.declared.filter((entry) => !configured.includes(entry));
   const checks = loadChecks(spec, dir);
   if (!checks.ok) return checks;
   const decisions = loadDecisions(spec, checks.value);
-  return decisions.ok ? ok(toScenario(spec, dir, arms.declared, checks.value, decisions.value)) : decisions;
+  return decisions.ok
+    ? ok(toScenario(spec, dir, armDirs, configurations.value, checks.value, decisions.value))
+    : decisions;
 }
 
 /**
@@ -525,6 +550,7 @@ function toScenario(
   spec: ScenarioFile,
   dir: string,
   arms: readonly Declared[],
+  configurations: Readonly<Record<string, Configuration>>,
   checks: readonly Check[],
   decisions: readonly Decision[],
 ): Scenario {
@@ -566,6 +592,7 @@ function toScenario(
     armDirs: Object.fromEntries(
       arms.map(({ relative }) => [relative.slice(ARMS_DIR.length + 1), resolve(dir, relative)]),
     ),
+    configurations,
   };
 }
 

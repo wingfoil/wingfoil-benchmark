@@ -17,3 +17,4 @@ export {
   loadConfiguringProfile,
   scanConfiguringPrompt,
 } from './configuring.js';
+export { CONFIGURED_DIR, CONFIGURED_SUFFIX, loadConfigurations } from './configurations.js';

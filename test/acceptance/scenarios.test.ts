@@ -16,8 +16,9 @@ import { main } from '../../src/cli/index.js';
 import { validateScenario } from '../../src/cli/scenario.js';
 import { checkCampaign, runCampaign } from '../../src/runner/index.js';
 import { latestDryRun } from '../../src/results/index.js';
-import { loadScenario } from '../../src/scenario/index.js';
+import { loadScenario, oracleLiterals } from '../../src/scenario/index.js';
 import { writeArmsNamed } from '../support/arm-fixture.js';
+import { writeConfiguration } from '../support/configured-fixture.js';
 import { completeCampaignYaml, writeRepo } from '../support/campaign-fixture.js';
 import { writeDryRunProfile } from '../support/dry-run-fixture.js';
 import { doubles, fakeBuild, invocationOf } from '../support/runner-doubles.js';
@@ -626,5 +627,79 @@ describe('symbolic links and open fences in a scenario version (task-139, bug-03
     expect(messages(fenced)).toEqual([
       "'arms/wingfoil/.wingfoil/directives/custom/r1.md' has an unclosed code fence",
     ]);
+  });
+});
+
+describe("a scenario version's configurations (task-140, F7.5)", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  /** A repository holding a copy of the scenario version, and the leak-scan declarations. */
+  function copied(id: string, version: string) {
+    const root = tempDir('bench-repo-');
+    cpSync(repoPath(join('scenarios', id, version)), join(root, 'scenarios', id, version), {
+      recursive: true,
+    });
+    copyFileSync(repoPath('scenarios/leak-scan.yaml'), join(root, 'scenarios', 'leak-scan.yaml'));
+    return { root, dir: join(root, 'scenarios', id, version) };
+  }
+
+  it('@F7.5 A symbolic link in a configuration is refused', () => {
+    const { root, dir } = copied('S3', '1.1');
+    writeConfiguration(dir, 'openspec-configured', { 'openspec/config.yaml': 'context: |\n  Orders.\n' });
+    symlinkSync('config.yaml', join(dir, 'arms', 'openspec-configured', 'openspec', 'context.yaml'));
+
+    const result = loadScenario(join(root, 'scenarios'), 'S3', '1.1');
+
+    expect(result.ok ? [] : result.issues).toEqual([
+      {
+        path: 'arms/openspec-configured/openspec/context.yaml',
+        message: "'arms/openspec-configured/openspec/context.yaml' is a symbolic link",
+      },
+    ]);
+  });
+
+  it('@F7.5 A version 1.0 holding a configuration is refused', () => {
+    const { root, dir } = copied('S2', '1.0');
+    mkdirSync(join(dir, 'arms', 'speckit-configured', '.specify', 'memory'), { recursive: true });
+    writeFileSync(join(dir, 'arms', 'speckit-configured', '.specify', 'memory', 'constitution.md'), '# C\n');
+
+    const result = loadScenario(join(root, 'scenarios'), 'S2', '1.0');
+
+    expect(result.ok ? [] : result.issues).toEqual([
+      {
+        path: 'arms.speckit-configured',
+        message:
+          "a version 1.0 holds no configuration: 'arms/speckit-configured' (the approver's choice of 2026-11-06)",
+      },
+    ]);
+  });
+
+  it('@F7.5 The leak scan covers a configuration', () => {
+    vi.stubEnv('BENCH_HOLDOUT_PATH', '');
+    const { root, dir } = copied('S2', '1.1');
+    const loaded = loadScenario(join(root, 'scenarios'), 'S2', '1.1');
+    if (!loaded.ok) throw new Error(JSON.stringify(loaded.issues));
+    const suiteDir = loaded.value.oracle.suites[0]?.dir ?? '';
+    const suiteFile = readdirSync(suiteDir).find((file) => /\.test\.m?ts$/.test(file)) ?? '';
+    const literal = oracleLiterals(readFileSync(join(suiteDir, suiteFile), 'utf8'), 8)[0] ?? '';
+    expect(literal).not.toBe('');
+    const rule = '.wingfoil/directives/custom/r9.md';
+    writeConfiguration(dir, 'wingfoil-configured', { [rule]: `# Rule\n\nRemember: ${literal}\n` });
+
+    const result = validateScenario({ id: 'S2', version: '1.1' }, root);
+
+    expect(result.ok).toBe(false);
+    const issues = result.ok ? [] : result.issues;
+    expect(issues).toEqual([
+      {
+        path: 'arms.wingfoil-configured',
+        message: expect.stringMatching(
+          new RegExp(`^${rule.replace(/\./g, '\\.')} holds a literal of oracle/`),
+        ),
+      },
+    ]);
+    expect(JSON.stringify(issues)).not.toContain(literal);
   });
 });

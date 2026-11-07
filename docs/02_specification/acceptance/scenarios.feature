@@ -111,3 +111,22 @@ Feature: Scenario format, hygiene and the v0.1 scenario content
     Then it is refused, naming the link
     Given an arm configuration whose directive file leaves a code fence open
     Then it is refused, naming the file
+
+  # task-140, F7.5 (requirements 1.50): a scenario version's configurations
+  @F7.5
+  Scenario: A symbolic link in a configuration is refused
+    Given "arms/openspec-configured/" of S3 1.1 holds a symbolic link
+    When S3 1.1 is loaded
+    Then it is refused, naming the link
+
+  @F7.5
+  Scenario: A version 1.0 holding a configuration is refused
+    Given S2 1.0 holds "arms/speckit-configured/"
+    When S2 1.0 is loaded
+    Then it is refused, naming the directory
+
+  @F7.5
+  Scenario: The leak scan covers a configuration
+    Given a configuration file holds an oracle literal of S2 1.1
+    When S2 1.1 is validated
+    Then the scan fails, naming the file and the configuration, not the literal

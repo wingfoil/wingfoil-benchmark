@@ -48,7 +48,7 @@ describe('the configuring profile (REQ-RUN-20, task-140)', () => {
   });
 
   it.each(['agent', 'models', 'harnesses', 'caps', 'currency'])('refuses a profile with no %s', (field) => {
-    const { [field]: _left, ...rest } = PROFILE as Record<string, unknown>;
+    const rest = Object.fromEntries(Object.entries(PROFILE).filter(([key]) => key !== field));
 
     expect(loadConfiguringProfile(profileAt(rest)).ok).toBe(false);
   });
@@ -103,7 +103,8 @@ describe('the configuring prompt scan (REQ-FMT-08 as amended in 1.50, task-140)'
   it('names the oracle file whose literal the prompt holds, never the literal', () => {
     const scenario = s1();
     const file = readFileSync(join(scenario.dir, 'oracle', 'create-patch', 'create-patch.test.mts'), 'utf8');
-    const literal = oracleLiterals(file, 8)[0]!;
+    const literal = oracleLiterals(file, 8)[0] ?? '';
+    expect(literal).not.toBe('');
 
     const issues = scanConfiguringPrompt(`Keep ${literal} in mind.`, scenario, declarations());
 
